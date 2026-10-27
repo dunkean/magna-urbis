@@ -2,19 +2,19 @@
   "schema_version": "1",
   "sources": [
     {
-      "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+      "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
       "sha256": "51ffec03a4f13c088e09b0351d22c4039f305dbd04fbd7d423108603e066faba"
     },
     {
-      "path": "docs/catalogue_settlements_antiquite_moyen_age_rpg.md",
+      "path": "docs/catalogue_settlements_antiquite_moyen_age_rpg_FR.md",
       "sha256": "6d962393466f82ca438f0ccc9f883e9315daa525c4221475415f2d043e4b1e70"
     },
     {
-      "path": "docs/sources/javanese-domestic-architecture.md",
+      "path": "docs/sources/javanese-domestic-architecture_FR.md",
       "sha256": "a387908f0081f47248953f62306fdf163c72fb753fa0ef5f36d1ad770ba4aa05"
     },
     {
-      "path": "docs/sources/roman-compact-domestic-architecture.md",
+      "path": "docs/sources/roman-compact-domestic-architecture_FR.md",
       "sha256": "8ba83ef5581403cf375340e4fca8e52a977e02f4897a237f2f84f142bc63bcd9"
     }
   ],

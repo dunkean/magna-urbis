@@ -45,3 +45,6 @@ dialog button { padding: 8px 16px; border: 0; border-radius: 3px; background: #2
 @media (max-width: 1000px) { .bench-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .shell-header { gap: 15px; padding-inline: 16px; } nav a { padding-inline: 8px; } }
 @media (max-width: 680px) { .shell-header { flex-wrap: wrap; gap: 8px; } nav { order: 3; width: 100%; } nav a { flex: 1; text-align: center; font-size: 11px; padding: 7px 5px; } .shell-actions { margin-left: auto; } .bench-grid { grid-template-columns: 1fr; } .bench-card { min-height: 250px; } }
 @media (prefers-reduced-motion: reduce) { .bench-card { transition: none; } }
+.shell-language { margin-left: auto; }
+.shell-language select { color: #f7f3e8; background: #233e32; border: 1px solid #ffffff60; border-radius: 3px; padding: 6px; font: 11px system-ui, sans-serif; }
+.shell-language + .shell-actions { margin-left: 0; }

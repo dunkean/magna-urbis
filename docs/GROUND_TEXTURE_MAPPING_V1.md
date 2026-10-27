@@ -1,80 +1,82 @@
-# Carte de textures du sol à partir des informations de terrain
+# Ground texture map from terrain information
 
-Proposition de palette et de classement pour Test-Render, 25 octobre 2026.
+Palette and classification proposal for Test-Render, October 25, 2026.
 
-Le lot retient **90 types visuels**, associés à **142 textures candidates** de Poly Haven et ambientCG. Il inclut les terres, les sables et fragments, **22 types de roches**, les sols forestiers et leurs litières, les prairies, steppes, savanes, mousses, neiges et glaces de surface. Les arbres, leurs couronnes et les constructions restent séparés. Les textures du couvert au ras du sol font partie de cette carte, conformément au périmètre demandé ici.
+> English translation of the [French original](GROUND_TEXTURE_MAPPING_V1_FR.md).
 
-Les quatre blocs **N1–N4 de la section 4.1** de [l'étude exhaustive](GROUND_MATERIAL_MAPPING.md) sont considérés disponibles. Les extensions physiques et historiques de sa section 4.2 ne sont pas requises. Les types sont des choix d'apparence : un sol forestier, une roche veinée ou une neige transformée peuvent être représentés sans simuler leur formation.
+The package selects **90 visual types** associated with **142 candidate textures** from Poly Haven and ambientCG. It includes earths, sands and fragments, **22 rock types**, forest soils and litter, grasslands, steppes, savannas, mosses, snow, and surface ice. Trees, their crowns, and buildings remain separate. Ground-level cover textures are part of this map, as requested for this scope.
 
-**Un seul asset est choisi par type pour toute la carte**, parmi ses candidats compatibles. Les conditions de terrain choisissent ensuite les types et leurs transitions ; elles ne relancent pas un tirage de texture à chaque endroit. Toutes les occurrences de `F04`, par exemple, emploient le même matériau de litière d'aiguilles. Une autre seed peut choisir un autre candidat pour F04 sur une autre carte.
+The four **N1–N4 blocks of section 4.1** of the [comprehensive study](GROUND_MATERIAL_MAPPING.md) are assumed available. Its section 4.2 physical and historical extensions are not required. Types are appearance choices: forest ground, veined rock, or transformed snow can be represented without simulating their formation.
 
-Le [catalogue associé](GROUND_TEXTURE_PALETTE_V1.json) contient les types, conditions, pools et références des assets. Il décrit la sélection proposée ; il ne modifie pas le générateur ni le renderer.
+**One asset is selected per type for the entire map** from compatible candidates. Terrain conditions then select types and transitions; they do not draw another texture at every location. Every `F04` occurrence, for example, uses the same needle-litter material. Another seed can select a different F04 candidate on another map.
 
-## 1 Sources et réduction du périmètre
+The [associated catalog](GROUND_TEXTURE_PALETTE_V1.json) contains types, conditions, pools, and asset references. It describes the proposed selection; it does not modify the generator or renderer.
 
-La sélection part des banques de [RENDER_REVIEW.md du worktree height-chain-budget](../../magna-urbis-height-chain-budget/docs/RENDER_REVIEW.md), §6–9. Poly Haven et ambientCG couvrent le présent catalogue ; MatSynth reste une réserve et n'est pas une dépendance du lot. La bibliothèque de 15 sources déjà déclarée dans [surface/materials/catalogue.json](../../magna-urbis-height-chain-budget/surface/materials/catalogue.json) est réutilisable en partie, mais ne constitue pas une limite au nombre de types.
+## 1. Sources and scope reduction
 
-Les assets sont fournis sous CC0 selon les [conditions de Poly Haven](https://polyhaven.com/license) et celles [d'ambientCG](https://docs.ambientcg.com/license/). Le catalogue conserve le fournisseur et le lien de chaque fiche. Il faut distinguer cette licence des modalités d'accès aux API.
+The selection starts from libraries in [RENDER_REVIEW.md from the height-chain-budget worktree](../../magna-urbis-height-chain-budget/docs/RENDER_REVIEW.md), §§6–9. Poly Haven and ambientCG cover this catalog; MatSynth remains a reserve, not a dependency. The 15-source library already declared in [surface/materials/catalogue.json](../../magna-urbis-height-chain-budget/surface/materials/catalogue.json) can be partially reused but does not limit the number of types.
 
-La disponibilité des canaux couleur, normale, rugosité et hauteur des 142 candidats a été contrôlée dans les métadonnées de téléchargement des fournisseurs. Des albedos Poly Haven et des aperçus officiels ambientCG ont aussi été examinés pour une partie des candidats ; le JSON indique cette portée par asset. **Disponibilité dans une banque et pré-sélection visuelle ne valent pas validation artistique dans Test-Render.** Les packs complets ne sont pas tous téléchargés ou intégrés.
+Assets are supplied under CC0 according to [Poly Haven's terms](https://polyhaven.com/license) and [ambientCG's terms](https://docs.ambientcg.com/license/). The catalog retains each provider and asset link. This license must be distinguished from API access terms.
 
-La réduction porte sur les besoins de simulation et la sélection des textures, pas sur la diversité visible :
+Availability of color, normal, roughness, and height channels for the 142 candidates was checked in provider download metadata. Poly Haven albedos and official ambientCG previews were also examined for some candidates; the JSON records that scope per asset. **Availability in a library and visual preselection do not constitute artistic validation in Test-Render.** Not all full packs are downloaded or integrated.
 
-| Groupe | Types |
+The reduction concerns simulation needs and texture selection, not visible diversity:
+
+| Group | Types |
 | --- | ---: |
-| Terres et matrices | 12 |
-| Sables et fragments | 12 |
-| Roches | 22 |
-| Sols forestiers | 12 |
-| Prairies, steppes, savanes et autres couverts ras | 16 |
-| Sols humides et mousses | 6 |
-| Neiges et glaces de surface | 10 |
+| Earths and matrices | 12 |
+| Sands and fragments | 12 |
+| Rocks | 22 |
+| Forest soils | 12 |
+| Grasslands, steppes, savannas, and other low cover | 16 |
+| Wet ground and mosses | 6 |
+| Snow and surface ice | 10 |
 | **Total** | **90** |
 
-Toutes les cartes n'ont pas vocation à présenter les 90 types. Un catalogue riche permet de couvrir des climats et reliefs différents ; une carte donnée ne charge que les types présents et nécessaires à la vue.
+Not every map is intended to show all 90 types. A rich catalog covers differing climates and terrain; a given map loads only types present and needed by the view.
 
-## 2 Informations utilisées
+## 2. Information used
 
-| Entrée | Rôle dans le choix de texture |
+| Input | Role in texture selection |
 | --- | --- |
-| N1 : exposition de roche, couverture de matrice et rugosité structurelle | Support rocheux, mosaïque roche-terre ou sol meuble ; aspect compact, grossier ou fracturé |
-| N2 : sable, fines, graviers, pierres, tailles, arrondi et origine | Sable libre, terre sableuse, gravier, galets ou fragments ; couleur du dépôt issue de sa source |
-| N3 : eaux typées, connexions, rives et emprises mouillées | Lit mouillé, banc émergé, berge, rive lacustre et côte ; maintien des masques et niveaux d'eau |
-| N4 : état et saison d'affichage | Sec/humide, état herbacé vert/sec, neige fraîche/ancienne/ventée/partielle, glace si le preset la demande |
-| Roche mère et altération déjà disponibles | Compatibilité des aspects rocheux et des teintes minérales ; transition vers les résidus meubles |
-| Climat, altitude, pente, exposition, courbures et géomorphons | Préférences d'apparence et de rétention ; contexte humide/sec, froid/chaud, stable/exposé, creux/versant/crête |
-| Humidité, drainage et organique déjà disponibles | Terre sombre, boue, tapis humide ou mousseux ; ces proxys ne deviennent pas une classification de tourbe |
+| N1: rock exposure, matrix cover, and structural roughness | Rocky support, rock–earth mosaic, or loose ground; compact, coarse, or fractured appearance |
+| N2: sand, fines, gravel, stones, sizes, roundness, and origin | Loose sand, sandy earth, gravel, pebbles, or fragments; deposit color from its source |
+| N3: typed water, connections, banks, and wet footprints | Wet bed, exposed bar, bank, lakeshore, and coast; retain water masks and levels |
+| N4: display state and season | Dry/wet, green/dry grass state, fresh/old/windblown/partial snow, ice if requested by preset |
+| Available bedrock and weathering | Compatibility of rock appearances and mineral tints; transition to loose residues |
+| Climate, altitude, slope, aspect, curvatures, and geomorphons | Appearance and retention preferences; wet/dry, cold/warm, stable/exposed, hollow/slope/ridge context |
+| Available moisture, drainage, and organic matter | Dark earth, mud, wet or mossy mat; these proxies do not become a peat classification |
 
-Les catégories N4 de neige et de glace sont des **presets d'apparence de scène**, avec modulation locale par le relief et l'humidité. Par rapport au N4 minimal de l'étude exhaustive, on élargit ici le vocabulaire du préréglage ; cela ne demande pas une nouvelle simulation ni les extensions 4.2. Ces presets ne constituent pas des cartes d'histoire glaciaire, de pergélisol ou un bilan d'accumulation. Sans preset neige/glace, le froid seul ne recouvre pas la carte de blanc.
+N4 snow and ice categories are **scene appearance presets**, locally modulated by relief and moisture. Compared with minimal N4 in the comprehensive study, this broadens preset vocabulary; it requires neither new simulation nor section 4.2 extensions. These presets are not glacial-history maps, permafrost maps, or accumulation balances. Without a snow/ice preset, cold alone does not cover the map in white.
 
-### 2.1 Forêt prairie savane et autres contextes
+### 2.1. Forest, grassland, savanna, and other contexts
 
-Le contexte du couvert sert à sélectionner les textures de sol, sans imposer de générer des arbres ou des brins d'herbe. Deux chemins sont possibles :
+Cover context selects ground textures without requiring generation of trees or grass blades. Two paths are possible:
 
-1. Si le générateur fournit déjà une occupation ou un potentiel canonique de couvert, le réutiliser : forêt feuillue/résineuse/mixte, herbacé ouvert, etc. Ne pas reconstruire ces informations en lisant les couleurs de l'image Render.
-2. À défaut, calculer des **préférences d'apparence** depuis les entrées existantes, puis les départager avec un profil global stable. Ce classement produit une carte plausible ; il ne prétend pas retrouver exactement une canopée déjà peinte dans une image aplatie.
+1. Reuse existing canonical land use or cover potential supplied by the generator: broadleaf/conifer/mixed forest, open herbaceous cover, etc. Do not reconstruct these by reading colors from the Render image.
+2. Otherwise compute **appearance preferences** from existing inputs, then resolve them using a stable global profile. This produces a plausible map; it does not claim to recover a canopy already painted into a flattened image exactly.
 
-| Contexte d'apparence | Préférences calculables avec les entrées disponibles |
+| Appearance context | Preferences computable from available inputs |
 | --- | --- |
-| Forestier humide | Eau disponible et climat favorables, manteau de sol, stabilité et organique ; adapter feuillu/résineux/mixte au climat local et au profil global |
-| Forestier sec | Potentiel forestier retenu, état sec N4 ou climat plus sec ; litière et matrice sèches |
-| Prairie | Sol stable, eau suffisante pour un couvert herbacé, contexte ouvert retenu |
-| Steppe | Eau limitée, sol minéral apparent, herbacé clairsemé ; ne pas convertir automatiquement en sable |
-| Savane | Contexte chaud et profil herbacé saisonnier retenu ; N4 distingue phase verte et sèche, sans dessiner les arbres |
-| Couvert ras froid | Température locale basse, sol émergé, humidité et stabilité compatibles ; aucune histoire de pergélisol nécessaire |
-| Mousse | Eau disponible élevée et surface favorable relativement stable ; roche ou matrice selon N1 |
+| Wet forest | Favorable available water and climate, soil cover, stability and organic matter; adapt broadleaf/conifer/mixed to local climate and global profile |
+| Dry forest | Retained forest potential, dry N4 state or drier climate; dry litter and matrix |
+| Grassland | Stable soil, sufficient water for herbaceous cover, selected open context |
+| Steppe | Limited water, visible mineral soil, sparse herbaceous cover; do not automatically convert to sand |
+| Savanna | Warm context and selected seasonal herbaceous profile; N4 distinguishes green and dry phases without drawing trees |
+| Cold low cover | Low local temperature, exposed ground, compatible moisture and stability; no permafrost history required |
+| Moss | High available water and relatively stable favorable surface; rock or matrix according to N1 |
 
-Les préférences restent continues. Dans les cas ambigus forêt/prairie ou feuillu/résineux, un **profil d'apparence tiré une fois pour la carte** peut biaiser les scores admissibles. Ce tirage est distinct du tirage des assets par type et ne fabrique pas un bruit de biomes pixel par pixel. Le profil, ses biais et les textures choisies sont sauvegardés.
+Preferences remain continuous. In ambiguous forest/grassland or broadleaf/conifer cases, an **appearance profile drawn once per map** can bias admissible scores. This draw is distinct from per-type asset selection and does not create per-pixel biome noise. The profile, its biases, and selected textures are saved.
 
-La litière et les herbes de cette version sont donc des apparences contextuelles de surface. Leur présence n'exige pas l'historique biologique détaillé de l'ancienne extension O7. Si la correspondance exacte avec les arbres du générateur est souhaitée, il faut brancher son champ de couvert existant ; une inférence à partir du climat seul ne suffit pas à cette égalité exacte.
+This version's litter and grass are contextual surface appearances. Their presence does not require the detailed biological history of the old O7 extension. If exact correspondence with the generator's trees is desired, its existing cover field must be connected; climate-only inference cannot guarantee exact equality.
 
-### 2.2 Vingt aspects rocheux de base et deux aspects colonisés
+### 2.2. Twenty base rock appearances and two colonized appearances
 
-Les cinq parents actuels — granite, calcaire, grès, argilo-marneux et basalte — restent inchangés dans les données. Chacun porte quatre profils d'apparence : compact, plus grossier/structuré, fracturé et altéré, adaptés à son cas. On obtient ainsi vingt types rocheux de base, plus deux types à mousse/lichens.
+The five current parents — granite, limestone, sandstone, clay-marl, and basalt — remain unchanged in the data. Each carries four appearance profiles: compact, coarser/structured, fractured, and weathered, adapted to its case. This yields twenty base rock types plus two moss/lichen types.
 
-Ce sont des **types visuels**, pas vingt nouvelles lithologies déduites de cinq fractions. Les noms des banques ne certifient pas toujours la pétrographie : un exemplaire est retenu pour son grain, sa structure et ses possibilités de coloration. La provenance physique du terrain reste distincte du nom de la photo.
+These are **visual types**, not twenty new lithologies inferred from five fractions. Library names do not always certify petrography: an example is selected for grain, structure, and coloring options. Physical terrain provenance remains separate from the photograph's name.
 
-Une répartition possible entre quatre profils, pour chaque parent, est :
+One possible distribution among four profiles for each parent is:
 
 ```text
 compact  = (1 - alteration) * (1 - rugosite)
@@ -83,275 +85,275 @@ fracture = (1 - alteration) * rugosite * expositionForte
 altere   = alteration
 ```
 
-Ces poids totalisent 1. Ils sont ensuite multipliés par la fraction du parent et l'exposition rocheuse N1. `rugosite` et `expositionForte` sont des proxys d'apparence, pas une mesure de taille des cristaux ou de fracturation géologique. La légende peut donner un type dominant, mais le renderer conserve des transitions entre types.
+These weights sum to 1. They are then multiplied by the parent fraction and N1 rock exposure. `rugosite` and `expositionForte` are appearance proxies, not measurements of crystal size or geological fracturing. The legend can show a dominant type while the renderer retains transitions between types.
 
-## 3 Table informations de carte vers textures
 
-Chaque ligne ci-dessous constitue un type persistant. **PH** désigne Poly Haven, **ACG** ambientCG. Les candidats liés sur une même ligne sont des alternatives ; un seul est sélectionné pour toute la carte. La présence d'un asset dans plusieurs pools est permise, mais ses réglages peuvent différer selon le type.
+## 3. Map information to texture table
 
-Les conditions sont des règles d'apparence à calibrer, pas des lois universelles. Les noms « forêt chaude », « savane » ou « alpine » désignent le contexte visuel ; les photos ne certifient pas une essence ou une région de capture. Les paramètres de couleur et d'état complètent la texture, sans remplacer une structure différente par une simple teinte.
+Each row below is one persistent type. **PH** means Poly Haven, **ACG** ambientCG. Linked candidates on one row are alternatives; only one is selected for the entire map. An asset may occur in multiple pools, but its settings may differ by type.
 
-### Terres et matrices
+Conditions are appearance rules to calibrate, not universal laws. “Warm forest,” “savanna,” and “alpine” identify visual context; photographs do not certify species or capture region. Color and state parameters complement the texture without replacing a different structure with mere tint.
 
-| Type | Informations de carte / conditions | Textures candidates | Adaptation |
+### Earths and matrices
+
+| Type | Map information / conditions | Candidate textures | Adaptation |
 | --- | --- | --- | --- |
-| **B01 — Terre brune fine** | Matrice émergée dominante, ni sable libre ni couvert ras choisi | [PH brown_mud](https://polyhaven.com/a/brown_mud), [ACG Ground048](https://ambientcg.com/a/Ground048) | Teinte minérale et humidité |
-| **B02 — Terre sombre riche en organique** | Matrice stable, organique élevé, sans tapis forestier dense | [PH dirt_floor](https://polyhaven.com/a/dirt_floor), [ACG Ground051](https://ambientcg.com/a/Ground051) | Assombrissement organique, pas de tourbe revendiquée |
-| **B03 — Terre claire limoneuse** | Fines limoneuses disponibles, faible pierrosité, surface stable | [ACG Ground102](https://ambientcg.com/a/Ground102), [ACG Ground103](https://ambientcg.com/a/Ground103) | Détail très fin et couleur parentale ; pas de loess historique |
-| **B04 — Terre argileuse compacte** | Argile dominante, fines exposées, sans dessiccation active | [ACG Ground026](https://ambientcg.com/a/Ground026), [PH brown_mud](https://polyhaven.com/a/brown_mud) | Faible relief, humidité variable |
-| **B05 — Terre argileuse fissurée** | Matrice argileuse, N4 sec et cycle humide-sec autorisé | [PH dry_ground_01](https://polyhaven.com/a/dry_ground_01), [PH mud_cracked_dry_03](https://polyhaven.com/a/mud_cracked_dry_03) | Échelle des fissures modeste ; pas de vertisol déduit |
-| **B06 — Terre poussiéreuse sèche** | Fines disponibles, faible humidité, surface meuble découverte | [ACG Ground104](https://ambientcg.com/a/Ground104), [ACG Ground099](https://ambientcg.com/a/Ground099) | Palette claire et faible relief |
-| **B07 — Terre grumeleuse** | Matrice meuble irrégulière, humidité intermédiaire et faible exposition rocheuse | [ACG Ground104](https://ambientcg.com/a/Ground104), [PH brown_mud_dry](https://polyhaven.com/a/brown_mud_dry) | Granularité de motte ; pas de sillons agricoles |
-| **B08 — Terre sèche caillouteuse** | Matrice avec fragments épars, stock grossier modéré | [PH brown_mud_dry](https://polyhaven.com/a/brown_mud_dry), [ACG Ground091](https://ambientcg.com/a/Ground091) | Pierrosité à l'échelle de l'exemplaire |
-| **B09 — Boue fine humide** | Matrice fine émergée, état humide/saturé N4, hors eau libre | [ACG Ground036](https://ambientcg.com/a/Ground036), [ACG Ground083](https://ambientcg.com/a/Ground083) | Rugosité abaissée, eau libre traitée séparément |
-| **B10 — Boue desséchée en plaques** | Fines cohésives, cycle sec-humide N4, surface desséchée | [PH mud_cracked_dry_riverbed_002](https://polyhaven.com/a/mud_cracked_dry_riverbed_002), [PH mud_cracked_dry_03](https://polyhaven.com/a/mud_cracked_dry_03) | Plaques et fissures calibrées ; pas de nouvelle histoire pédologique |
-| **B11 — Terre chaude ocre ou rougeâtre** | Source minérale et palette compatibles, exposition sèche | [PH red_dirt_mud_01](https://polyhaven.com/a/red_dirt_mud_01), [ACG Ground098](https://ambientcg.com/a/Ground098) | Variante d'apparence ; ne signifie pas latérite ou cuirasse |
-| **B12 — Résidu minéral friable** | Altération élevée, manteau résiduel exposé, stock de fines | [PH dirt](https://polyhaven.com/a/dirt), [ACG Ground105](https://ambientcg.com/a/Ground105) | Couleur du parent et rugosité ; pas de profil géologique profond |
+| **B01 — Fine brown earth** | Dominant exposed matrix, neither loose sand nor selected low cover | [PH brown_mud](https://polyhaven.com/a/brown_mud), [ACG Ground048](https://ambientcg.com/a/Ground048) | Mineral tint and moisture |
+| **B02 — Dark organic-rich earth** | Stable matrix, high organic matter, no dense forest carpet | [PH dirt_floor](https://polyhaven.com/a/dirt_floor), [ACG Ground051](https://ambientcg.com/a/Ground051) | Organic darkening; no claim of peat |
+| **B03 — Light silty earth** | Available silty fines, low stoniness, stable surface | [ACG Ground102](https://ambientcg.com/a/Ground102), [ACG Ground103](https://ambientcg.com/a/Ground103) | Very fine detail and parent color; no historical loess |
+| **B04 — Compact clay earth** | Dominant clay, exposed fines, no active desiccation | [ACG Ground026](https://ambientcg.com/a/Ground026), [PH brown_mud](https://polyhaven.com/a/brown_mud) | Low relief, variable moisture |
+| **B05 — Cracked clay earth** | Clay matrix, dry N4 and permitted wet–dry cycle | [PH dry_ground_01](https://polyhaven.com/a/dry_ground_01), [PH mud_cracked_dry_03](https://polyhaven.com/a/mud_cracked_dry_03) | Modest crack scale; no inferred vertisol |
+| **B06 — Dry dusty earth** | Available fines, low moisture, exposed loose surface | [ACG Ground104](https://ambientcg.com/a/Ground104), [ACG Ground099](https://ambientcg.com/a/Ground099) | Light palette and low relief |
+| **B07 — Cloddy earth** | Irregular loose matrix, intermediate moisture, low rock exposure | [ACG Ground104](https://ambientcg.com/a/Ground104), [PH brown_mud_dry](https://polyhaven.com/a/brown_mud_dry) | Clod granularity; no agricultural furrows |
+| **B08 — Dry stony earth** | Matrix with scattered fragments, moderate coarse stock | [PH brown_mud_dry](https://polyhaven.com/a/brown_mud_dry), [ACG Ground091](https://ambientcg.com/a/Ground091) | Stoniness at sample scale |
+| **B09 — Wet fine mud** | Exposed fine matrix, wet/saturated N4, outside open water | [ACG Ground036](https://ambientcg.com/a/Ground036), [ACG Ground083](https://ambientcg.com/a/Ground083) | Reduced roughness; open water handled separately |
+| **B10 — Dried mud plates** | Cohesive fines, N4 wet–dry cycle, desiccated surface | [PH mud_cracked_dry_riverbed_002](https://polyhaven.com/a/mud_cracked_dry_riverbed_002), [PH mud_cracked_dry_03](https://polyhaven.com/a/mud_cracked_dry_03) | Calibrated plates and cracks; no new soil history |
+| **B11 — Warm ocher or reddish earth** | Compatible mineral source and palette, dry exposure | [PH red_dirt_mud_01](https://polyhaven.com/a/red_dirt_mud_01), [ACG Ground098](https://ambientcg.com/a/Ground098) | Appearance variant; does not imply laterite or duricrust |
+| **B12 — Friable mineral residue** | High weathering, exposed residual mantle, available fines | [PH dirt](https://polyhaven.com/a/dirt), [ACG Ground105](https://ambientcg.com/a/Ground105) | Parent color and roughness; no deep geological profile |
 
-### Sables et fragments
+### Sands and fragments
 
-| Type | Informations de carte / conditions | Textures candidates | Adaptation |
+| Type | Map information / conditions | Candidate textures | Adaptation |
 | --- | --- | --- | --- |
-| **S01 — Sable fin clair** | Sable libre disponible et dominant, peu de grossiers | [PH sand_02](https://polyhaven.com/a/sand_02), [ACG Ground052](https://ambientcg.com/a/Ground052) | Palette sableuse compatible, sec ou humide |
-| **S02 — Sable fin ocre** | Sable libre dominant, parent/palette plus chauds | [PH sand_03](https://polyhaven.com/a/sand_03), [ACG Ground080](https://ambientcg.com/a/Ground080) | Teinte choisie sans créer une province minérale |
-| **S03 — Sable graveleux** | Stock sableux avec petits fragments abondants | [PH gravelly_sand](https://polyhaven.com/a/gravelly_sand), [PH sandy_gravel_02](https://polyhaven.com/a/sandy_gravel_02) | Pré-mélange photographique sable et gravier |
-| **S04 — Sable humide compact** | Stock sableux, N4 humide, proximité typée ou rétention | [PH damp_sand](https://polyhaven.com/a/damp_sand), [PH damp_beach_sand](https://polyhaven.com/a/damp_beach_sand) | Reste une surface de sol, pas un plan d'eau |
-| **S05 — Sable à rides fines** | Sable libre, vent ou courant pertinent, pas de grande dune à fabriquer | [PH sand_02](https://polyhaven.com/a/sand_02), [PH sand_03](https://polyhaven.com/a/sand_03) | Base PBR et rides directionnelles fines ; ensemble choisi une fois |
-| **S06 — Sable ferme peu texturé** | Sable compact ou mélange fin stable, faible rugosité | [ACG Ground092C](https://ambientcg.com/a/Ground092C), [ACG Ground101](https://ambientcg.com/a/Ground101) | Relief faible ; pas de sel ou gypse inféré |
-| **G01 — Gravier fin anguleux** | Stock grossier fin, angularité élevée, couverture importante | [PH gravel_stones](https://polyhaven.com/a/gravel_stones), [ACG Gravel043](https://ambientcg.com/a/Gravel043) | Taille réelle des éléments à calibrer |
-| **G02 — Gravier grossier** | Stock anguleux plus gros, dépôt ou versant connecté | [PH rock_ground](https://polyhaven.com/a/rock_ground), [ACG Gravel022](https://ambientcg.com/a/Gravel022) | Fragments et matrice déjà présents dans la photo |
-| **G03 — Petits galets roulés** | N2 arrondi et petites tailles, dépôt remanié | [PH clean_pebbles](https://polyhaven.com/a/clean_pebbles), [ACG Gravel020](https://ambientcg.com/a/Gravel020) | Provenance du dépôt, pas roche locale imposée |
-| **G04 — Galets moyens et gros** | N2 arrondi et tailles plus grandes, stock remanié suffisant | [PH dry_river_pebbles](https://polyhaven.com/a/dry_river_pebbles), [PH ganges_river_pebbles](https://polyhaven.com/a/ganges_river_pebbles) | Échelle cohérente, pas grossissement arbitraire d'un grain |
-| **G05 — Sol à pierres dispersées** | Fragments sur matrice, couverture intermédiaire | [PH rocks_ground_03](https://polyhaven.com/a/rocks_ground_03), [ACG Rocks009](https://ambientcg.com/a/Rocks009) | Texture de zone pré-mélangée |
-| **G06 — Roche et fragments en mosaïque** | N1 roche partielle avec manteau meuble et fragments | [PH rocks_ground_06](https://polyhaven.com/a/rocks_ground_06), [PH rocks_ground_05](https://polyhaven.com/a/rocks_ground_05) | Pas de double ajout de la matrice ni de gros volumes nouveaux |
+| **S01 — Fine light sand** | Available dominant loose sand, few coarse particles | [PH sand_02](https://polyhaven.com/a/sand_02), [ACG Ground052](https://ambientcg.com/a/Ground052) | Compatible sand palette, dry or wet |
+| **S02 — Fine ocher sand** | Dominant loose sand, warmer parent/palette | [PH sand_03](https://polyhaven.com/a/sand_03), [ACG Ground080](https://ambientcg.com/a/Ground080) | Chosen tint without creating a mineral province |
+| **S03 — Gravelly sand** | Sand stock with abundant small fragments | [PH gravelly_sand](https://polyhaven.com/a/gravelly_sand), [PH sandy_gravel_02](https://polyhaven.com/a/sandy_gravel_02) | Photographic sand–gravel premix |
+| **S04 — Compact wet sand** | Sand stock, wet N4, typed proximity or retention | [PH damp_sand](https://polyhaven.com/a/damp_sand), [PH damp_beach_sand](https://polyhaven.com/a/damp_beach_sand) | Remains a ground surface, not a water plane |
+| **S05 — Sand with fine ripples** | Loose sand, relevant wind or current, no large dune to create | [PH sand_02](https://polyhaven.com/a/sand_02), [PH sand_03](https://polyhaven.com/a/sand_03) | PBR base and fine directional ripples; set selected once |
+| **S06 — Firm lightly textured sand** | Compact sand or stable fine mixture, low roughness | [ACG Ground092C](https://ambientcg.com/a/Ground092C), [ACG Ground101](https://ambientcg.com/a/Ground101) | Low relief; no inferred salt or gypsum |
+| **G01 — Fine angular gravel** | Fine coarse stock, high angularity, substantial cover | [PH gravel_stones](https://polyhaven.com/a/gravel_stones), [ACG Gravel043](https://ambientcg.com/a/Gravel043) | Calibrate physical element size |
+| **G02 — Coarse gravel** | Larger angular stock, connected deposit or slope | [PH rock_ground](https://polyhaven.com/a/rock_ground), [ACG Gravel022](https://ambientcg.com/a/Gravel022) | Fragments and matrix already present in photograph |
+| **G03 — Small rounded pebbles** | N2 rounded small sizes, reworked deposit | [PH clean_pebbles](https://polyhaven.com/a/clean_pebbles), [ACG Gravel020](https://ambientcg.com/a/Gravel020) | Deposit provenance; no imposed local rock |
+| **G04 — Medium and large pebbles** | N2 rounded larger sizes, sufficient reworked stock | [PH dry_river_pebbles](https://polyhaven.com/a/dry_river_pebbles), [PH ganges_river_pebbles](https://polyhaven.com/a/ganges_river_pebbles) | Consistent scale, no arbitrary grain enlargement |
+| **G05 — Ground with scattered stones** | Fragments on matrix, intermediate coverage | [PH rocks_ground_03](https://polyhaven.com/a/rocks_ground_03), [ACG Rocks009](https://ambientcg.com/a/Rocks009) | Premixed area texture |
+| **G06 — Rock and fragment mosaic** | N1 partial rock with loose mantle and fragments | [PH rocks_ground_06](https://polyhaven.com/a/rocks_ground_06), [PH rocks_ground_05](https://polyhaven.com/a/rocks_ground_05) | Do not add matrix twice or introduce large new volumes |
 
-### Roches
+### Rocks
 
-| Type | Informations de carte / conditions | Textures candidates | Adaptation |
+| Type | Map information / conditions | Candidate textures | Adaptation |
 | --- | --- | --- | --- |
-| **R01 — Aspect granitique fin compact** | Parent granitique, faible altération et rugosité faible | [PH rock_01](https://polyhaven.com/a/rock_01), [ACG Rock024](https://ambientcg.com/a/Rock024) | Grain et couleur de roche ; exemplaires non certifiés pétrographiquement |
-| **R02 — Aspect granitique à gros grain** | Parent granitique, rugosité intermédiaire, roche exposée | [PH rock_boulder_dry](https://polyhaven.com/a/rock_boulder_dry), [ACG Rock048](https://ambientcg.com/a/Rock048) | Préserver le détail minéral, teinte granitique |
-| **R03 — Roche granitique très fracturée** | Parent granitique, forte rugosité structurelle ou pente exposée | [ACG Rock058](https://ambientcg.com/a/Rock058), [PH rock_05](https://polyhaven.com/a/rock_05) | Fractures de l'exemplaire, pas faille géologique ajoutée |
-| **R04 — Roche granitique altérée** | Parent granitique et altération forte, transition vers fines | [PH rock_surface](https://polyhaven.com/a/rock_surface), [PH rock_08](https://polyhaven.com/a/rock_08) | Atténuation du relief et palette d'altération |
-| **R05 — Roche carbonatée claire massive** | Parent calcaire, roche exposée compacte | [ACG Rock018](https://ambientcg.com/a/Rock018), [PH rock_08](https://polyhaven.com/a/rock_08) | Couleur claire, sans karst nouveau |
-| **R06 — Roche carbonatée en bancs** | Parent calcaire, structure orientée exposée | [ACG Rock019](https://ambientcg.com/a/Rock019), [ACG Rock017](https://ambientcg.com/a/Rock017) | Orientation du motif ; pas de pendage supplémentaire exigé |
-| **R07 — Roche carbonatée fissurée** | Parent calcaire, forte rugosité ou exposition | [ACG Rock027](https://ambientcg.com/a/Rock027), [PH rock_boulder_dry](https://polyhaven.com/a/rock_boulder_dry) | Fissures locales de texture, pas de dolines |
-| **R08 — Roche carbonatée altérée ou piquetée** | Parent calcaire, altération et couverture mince | [ACG Rock032](https://ambientcg.com/a/Rock032), [PH rock_08](https://polyhaven.com/a/rock_08) | Aspect érodé générique ; pas de dissolution simulée |
-| **R09 — Grès stratifié** | Parent gréseux, exposition de structure orientée | [PH cliff_side](https://polyhaven.com/a/cliff_side), [ACG Rock061](https://ambientcg.com/a/Rock061) | Aligner les bancs, éviter rotations aléatoires |
-| **R10 — Grès massif ocre** | Parent gréseux, roche compacte et palette chaude | [PH rock_face](https://polyhaven.com/a/rock_face), [ACG Rock029](https://ambientcg.com/a/Rock029) | Conserver la structure sans revendiquer une chimie précise |
-| **R11 — Grès clair altéré** | Parent gréseux, altération et teinte claire compatibles | [PH worn_rock_natural_01](https://polyhaven.com/a/worn_rock_natural_01), [ACG Rock052](https://ambientcg.com/a/Rock052) | Teinte et échelle des aspérités |
-| **R12 — Grès grossier fracturé** | Parent gréseux, forte rugosité et pente exposée | [PH rock_boulder_cracked](https://polyhaven.com/a/rock_boulder_cracked), [ACG Rock056](https://ambientcg.com/a/Rock056) | Gros reliefs limités à leur représentation de texture |
-| **R13 — Roche argilo-marneuse compacte** | Parent argilo-marneux, roche accessible et compacte | [PH rock_surface](https://polyhaven.com/a/rock_surface), [ACG Rock041](https://ambientcg.com/a/Rock041) | Substitut visuel fin, adouci et recoloré |
-| **R14 — Roche argilo-marneuse en plaquettes** | Parent argilo-marneux, texture structurale rugueuse | [ACG Rock060](https://ambientcg.com/a/Rock060), [ACG Rock034](https://ambientcg.com/a/Rock034) | Plaquettes visuelles ; pas de schistosité physique déduite |
-| **R15 — Roche argilo-marneuse finement stratifiée** | Parent argilo-marneux, structure orientée, altération modérée | [ACG Rock027](https://ambientcg.com/a/Rock027), [ACG Rock038](https://ambientcg.com/a/Rock038) | Direction fournie, variation de relief limitée |
-| **R16 — Roche argilo-marneuse friable** | Parent argilo-marneux, altération forte et fines disponibles | [ACG Rock062](https://ambientcg.com/a/Rock062), [PH rock_2](https://polyhaven.com/a/rock_2) | Transition vers B12/B04, pas d'alternance de classes sèches |
-| **R17 — Roche basaltique sombre compacte** | Parent basaltique, faible altération, rugosité faible | [PH dark_rock_02](https://polyhaven.com/a/dark_rock_02), [ACG Rock031](https://ambientcg.com/a/Rock031) | Apparence de roche sombre, pas lave récente |
-| **R18 — Roche basaltique sombre fissurée** | Parent basaltique, rugosité ou exposition fortes | [PH dark_rock](https://polyhaven.com/a/dark_rock), [ACG Rock035](https://ambientcg.com/a/Rock035) | Réseau de fractures du matériau, pas coulée inventée |
-| **R19 — Roche basaltique très rugueuse** | Parent basaltique, forte rugosité et fragmentation | [ACG Rock047](https://ambientcg.com/a/Rock047), [ACG Rock048](https://ambientcg.com/a/Rock048) | Aspect massif ou bréchique générique ; pas de scorie identifiée |
-| **R20 — Roche basaltique altérée** | Parent basaltique, altération élevée, humidité et dépôts compatibles | [ACG Rock033](https://ambientcg.com/a/Rock033), [ACG Rock037](https://ambientcg.com/a/Rock037) | Patine et teinte d'altération, sans diagnostic minéralogique |
-| **R21 — Roche à mousse** | Roche exposée et contexte humide à couvert ras, exposition favorable | [ACG Rock064](https://ambientcg.com/a/Rock064), [PH mossy_rock](https://polyhaven.com/a/mossy_rock) | Texture combinant déjà roche et mousse ; contexte identifié |
-| **R22 — Roche à lichens ou mouchetures végétales** | Roche exposée, contexte frais/relativement stable de couvert ras | [PH lichen_rock](https://polyhaven.com/a/lichen_rock), [ACG Rock046S](https://ambientcg.com/a/Rock046S) | Apparence de surface, sans nouvelle carte biologique |
+| **R01 — Compact fine granite appearance** | Granite parent, low weathering and roughness | [PH rock_01](https://polyhaven.com/a/rock_01), [ACG Rock024](https://ambientcg.com/a/Rock024) | Rock grain and color; samples not petrographically certified |
+| **R02 — Coarse-grained granite appearance** | Granite parent, intermediate roughness, exposed rock | [PH rock_boulder_dry](https://polyhaven.com/a/rock_boulder_dry), [ACG Rock048](https://ambientcg.com/a/Rock048) | Preserve mineral detail and granite tint |
+| **R03 — Highly fractured granitic rock** | Granite parent, high structural roughness or exposed slope | [ACG Rock058](https://ambientcg.com/a/Rock058), [PH rock_05](https://polyhaven.com/a/rock_05) | Sample fractures, no added geological fault |
+| **R04 — Weathered granitic rock** | Granite parent and high weathering, transition to fines | [PH rock_surface](https://polyhaven.com/a/rock_surface), [PH rock_08](https://polyhaven.com/a/rock_08) | Reduced relief and weathering palette |
+| **R05 — Massive light carbonate rock** | Limestone parent, compact exposed rock | [ACG Rock018](https://ambientcg.com/a/Rock018), [PH rock_08](https://polyhaven.com/a/rock_08) | Light color, no new karst |
+| **R06 — Bedded carbonate rock** | Limestone parent, exposed oriented structure | [ACG Rock019](https://ambientcg.com/a/Rock019), [ACG Rock017](https://ambientcg.com/a/Rock017) | Orient pattern; no additional bedding dip required |
+| **R07 — Cracked carbonate rock** | Limestone parent, high roughness or exposure | [ACG Rock027](https://ambientcg.com/a/Rock027), [PH rock_boulder_dry](https://polyhaven.com/a/rock_boulder_dry) | Local texture cracks, no sinkholes |
+| **R08 — Weathered or pitted carbonate rock** | Limestone parent, weathering and thin cover | [ACG Rock032](https://ambientcg.com/a/Rock032), [PH rock_08](https://polyhaven.com/a/rock_08) | Generic eroded appearance; no simulated dissolution |
+| **R09 — Layered sandstone** | Sandstone parent, exposed oriented structure | [PH cliff_side](https://polyhaven.com/a/cliff_side), [ACG Rock061](https://ambientcg.com/a/Rock061) | Align beds; avoid random rotations |
+| **R10 — Massive ocher sandstone** | Sandstone parent, compact rock and warm palette | [PH rock_face](https://polyhaven.com/a/rock_face), [ACG Rock029](https://ambientcg.com/a/Rock029) | Preserve structure without claiming precise chemistry |
+| **R11 — Light weathered sandstone** | Sandstone parent, compatible weathering and light tint | [PH worn_rock_natural_01](https://polyhaven.com/a/worn_rock_natural_01), [ACG Rock052](https://ambientcg.com/a/Rock052) | Tint and asperity scale |
+| **R12 — Coarse fractured sandstone** | Sandstone parent, high roughness and exposed slope | [PH rock_boulder_cracked](https://polyhaven.com/a/rock_boulder_cracked), [ACG Rock056](https://ambientcg.com/a/Rock056) | Large relief limited to texture representation |
+| **R13 — Compact clay-marl rock** | Clay-marl parent, accessible compact rock | [PH rock_surface](https://polyhaven.com/a/rock_surface), [ACG Rock041](https://ambientcg.com/a/Rock041) | Fine visual substitute, softened and recolored |
+| **R14 — Platy clay-marl rock** | Clay-marl parent, rough structural texture | [ACG Rock060](https://ambientcg.com/a/Rock060), [ACG Rock034](https://ambientcg.com/a/Rock034) | Visual plates; no inferred physical schistosity |
+| **R15 — Finely layered clay-marl rock** | Clay-marl parent, oriented structure, moderate weathering | [ACG Rock027](https://ambientcg.com/a/Rock027), [ACG Rock038](https://ambientcg.com/a/Rock038) | Provided direction, limited relief variation |
+| **R16 — Friable clay-marl rock** | Clay-marl parent, high weathering and available fines | [ACG Rock062](https://ambientcg.com/a/Rock062), [PH rock_2](https://polyhaven.com/a/rock_2) | Transition to B12/B04, no dry class alternation |
+| **R17 — Compact dark basaltic rock** | Basalt parent, low weathering and roughness | [PH dark_rock_02](https://polyhaven.com/a/dark_rock_02), [ACG Rock031](https://ambientcg.com/a/Rock031) | Dark rock appearance, not recent lava |
+| **R18 — Cracked dark basaltic rock** | Basalt parent, high roughness or exposure | [PH dark_rock](https://polyhaven.com/a/dark_rock), [ACG Rock035](https://ambientcg.com/a/Rock035) | Material fracture network, no invented flow |
+| **R19 — Very rough basaltic rock** | Basalt parent, high roughness and fragmentation | [ACG Rock047](https://ambientcg.com/a/Rock047), [ACG Rock048](https://ambientcg.com/a/Rock048) | Generic massive or brecciated appearance; no identified scoria |
+| **R20 — Weathered basaltic rock** | Basalt parent, high weathering, compatible moisture and deposits | [ACG Rock033](https://ambientcg.com/a/Rock033), [ACG Rock037](https://ambientcg.com/a/Rock037) | Patina and weathering tint, no mineralogical diagnosis |
+| **R21 — Mossy rock** | Exposed rock, wet low-cover context, favorable aspect | [ACG Rock064](https://ambientcg.com/a/Rock064), [PH mossy_rock](https://polyhaven.com/a/mossy_rock) | Texture already combines rock and moss; context identified |
+| **R22 — Rock with lichens or vegetation speckles** | Exposed rock, cool and relatively stable low-cover context | [PH lichen_rock](https://polyhaven.com/a/lichen_rock), [ACG Rock046S](https://ambientcg.com/a/Rock046S) | Surface appearance without a new biological map |
 
-### Sols forestiers
+### Forest soils
 
-| Type | Informations de carte / conditions | Textures candidates | Adaptation |
+| Type | Map information / conditions | Candidate textures | Adaptation |
 | --- | --- | --- | --- |
-| **F01 — Litière feuillue sèche dense** | Contexte feuillu, sec ou saison sèche N4, manteau accessible | [PH forest_leaves_03](https://polyhaven.com/a/forest_leaves_03), [PH forest_leaves_04](https://polyhaven.com/a/forest_leaves_04) | Feuilles et sol déjà mélangés, aucun arbre peint |
-| **F02 — Litière feuillue claire** | Contexte feuillu, palette claire ou saison de chute déclarée | [ACG ScatteredLeaves008](https://ambientcg.com/a/ScatteredLeaves008), [ACG ScatteredLeaves009](https://ambientcg.com/a/ScatteredLeaves009) | Choix saisonnier global, pas changement à chaque pixel |
-| **F03 — Sol feuillu humide sombre** | Contexte feuillu, humidité forte et organique | [ACG Ground023](https://ambientcg.com/a/Ground023), [PH mud_forest](https://polyhaven.com/a/mud_forest) | Pas de tourbe physique revendiquée |
-| **F04 — Litière d'aiguilles dense** | Contexte résineux, manteau d'aiguilles stable | [PH forrest_ground_03](https://polyhaven.com/a/forrest_ground_03), [ACG Ground082S](https://ambientcg.com/a/Ground082S) | Détail d'aiguilles, sans génération de conifères |
-| **F05 — Sol résineux sableux** | Contexte résineux, matrice sableuse disponible | [PH forrest_sand_01](https://polyhaven.com/a/forrest_sand_01), [ACG Ground084](https://ambientcg.com/a/Ground084) | Conserver le sable et les débris, pas vert uniforme |
-| **F06 — Sol forestier mixte** | Contexte forestier mélangé ou profil d'apparence mixte | [PH leaves_forest_ground](https://polyhaven.com/a/leaves_forest_ground), [ACG Ground078](https://ambientcg.com/a/Ground078) | Mélange déjà présent dans la texture |
-| **F07 — Sol forestier caillouteux** | Contexte forestier, N1/N2 fragments ou roche partielle | [PH forest_ground_04](https://polyhaven.com/a/forest_ground_04), [ACG Ground085](https://ambientcg.com/a/Ground085) | Pas reclassé en roche massive |
-| **F08 — Sol forestier mousseux** | Contexte forestier humide, couverture ras mousseux autorisée | [PH forest_leaves_02](https://polyhaven.com/a/forest_leaves_02), [ACG Ground024](https://ambientcg.com/a/Ground024) | Mousse et feuilles d'un même exemplaire |
-| **F09 — Sol forestier à racines apparentes** | Contexte forestier, manteau mince ou décapage relatif | [PH roots](https://polyhaven.com/a/roots), [ACG Ground076](https://ambientcg.com/a/Ground076) | Racines au sol, pas tronc ou houppier |
-| **F10 — Terre de clairière forestière** | Contexte forestier ouvert, peu de litière, matrice exposée | [ACG Ground071](https://ambientcg.com/a/Ground071), [PH dirt_floor](https://polyhaven.com/a/dirt_floor) | Raccord vers les sols herbacés et nus |
-| **F11 — Sol de forêt sèche** | Contexte forestier chaud/sec ou phase sèche N4 | [PH dry_decay_leaves](https://polyhaven.com/a/dry_decay_leaves), [PH winter_leaves](https://polyhaven.com/a/winter_leaves) | Débris secs, recoloration bornée |
-| **F12 — Sol de forêt chaude humide** | Contexte forestier chaud/humide, matrice organique et litière | [PH leaves_forest_ground](https://polyhaven.com/a/leaves_forest_ground), [ACG Ground106](https://ambientcg.com/a/Ground106) | Approximation de l'apparence au sol, pas identification d'essences tropicales |
+| **F01 — Dense dry broadleaf litter** | Broadleaf context, dry or N4 dry season, accessible mantle | [PH forest_leaves_03](https://polyhaven.com/a/forest_leaves_03), [PH forest_leaves_04](https://polyhaven.com/a/forest_leaves_04) | Leaves and ground already mixed; no painted tree |
+| **F02 — Light broadleaf litter** | Broadleaf context, light palette or declared leaf-fall season | [ACG ScatteredLeaves008](https://ambientcg.com/a/ScatteredLeaves008), [ACG ScatteredLeaves009](https://ambientcg.com/a/ScatteredLeaves009) | Global seasonal choice, not change per pixel |
+| **F03 — Dark wet broadleaf ground** | Broadleaf context, high moisture and organic matter | [ACG Ground023](https://ambientcg.com/a/Ground023), [PH mud_forest](https://polyhaven.com/a/mud_forest) | No claim of physical peat |
+| **F04 — Dense needle litter** | Conifer context, stable needle mantle | [PH forrest_ground_03](https://polyhaven.com/a/forrest_ground_03), [ACG Ground082S](https://ambientcg.com/a/Ground082S) | Needle detail without generating conifers |
+| **F05 — Sandy conifer ground** | Conifer context, available sandy matrix | [PH forrest_sand_01](https://polyhaven.com/a/forrest_sand_01), [ACG Ground084](https://ambientcg.com/a/Ground084) | Retain sand and debris, not uniform green |
+| **F06 — Mixed forest ground** | Mixed forest context or mixed appearance profile | [PH leaves_forest_ground](https://polyhaven.com/a/leaves_forest_ground), [ACG Ground078](https://ambientcg.com/a/Ground078) | Mixture already in texture |
+| **F07 — Stony forest ground** | Forest context, N1/N2 fragments or partial rock | [PH forest_ground_04](https://polyhaven.com/a/forest_ground_04), [ACG Ground085](https://ambientcg.com/a/Ground085) | Not reclassified as massive rock |
+| **F08 — Mossy forest ground** | Wet forest context, mossy low cover permitted | [PH forest_leaves_02](https://polyhaven.com/a/forest_leaves_02), [ACG Ground024](https://ambientcg.com/a/Ground024) | Moss and leaves from one sample |
+| **F09 — Forest ground with exposed roots** | Forest context, thin mantle or relative stripping | [PH roots](https://polyhaven.com/a/roots), [ACG Ground076](https://ambientcg.com/a/Ground076) | Ground roots, not trunk or crown |
+| **F10 — Forest clearing earth** | Open forest context, little litter, exposed matrix | [ACG Ground071](https://ambientcg.com/a/Ground071), [PH dirt_floor](https://polyhaven.com/a/dirt_floor) | Transition to grass and bare ground |
+| **F11 — Dry forest ground** | Warm/dry forest context or N4 dry phase | [PH dry_decay_leaves](https://polyhaven.com/a/dry_decay_leaves), [PH winter_leaves](https://polyhaven.com/a/winter_leaves) | Dry debris, bounded recoloring |
+| **F12 — Warm wet forest ground** | Warm/wet forest context, organic matrix and litter | [PH leaves_forest_ground](https://polyhaven.com/a/leaves_forest_ground), [ACG Ground106](https://ambientcg.com/a/Ground106) | Ground appearance approximation, not identification of tropical species |
 
-### Prairies steppes savanes et couverts ras
+### Grasslands, steppes, savannas, and low cover
 
-| Type | Informations de carte / conditions | Textures candidates | Adaptation |
+| Type | Map information / conditions | Candidate textures | Adaptation |
 | --- | --- | --- | --- |
-| **P01 — Prairie verte dense** | Contexte herbacé, humidité moyenne à forte, matrice stable | [ACG Grass001](https://ambientcg.com/a/Grass001), [ACG Grass002](https://ambientcg.com/a/Grass002) | Texture au ras du sol, pas arbres |
-| **P02 — Pelouse ou prairie très rase** | Contexte herbacé ras, surface régulière et stable | [ACG Grass005](https://ambientcg.com/a/Grass005), [ACG Grass006](https://ambientcg.com/a/Grass006) | Usage d'apparence, pas preuve de tonte humaine |
-| **P03 — Prairie verte hétérogène** | Contexte herbacé, sol et humidité variables | [ACG Grass003](https://ambientcg.com/a/Grass003), [ACG Grass004](https://ambientcg.com/a/Grass004) | Hétérogénéité de l'exemplaire, identité stable |
-| **P04 — Prairie à feuilles larges** | Contexte herbacé relativement chaud/humide | [PH leafy_grass](https://polyhaven.com/a/leafy_grass), [ACG Grass001](https://ambientcg.com/a/Grass001) | Petites plantes du couvert ras, pas canopée |
-| **P05 — Prairie dense à aspect haut** | Contexte herbacé productif et humide | [PH leafy_grass](https://polyhaven.com/a/leafy_grass), [ACG Grass004](https://ambientcg.com/a/Grass004) | Aspect de dessus ; la texture ne crée pas des tiges en volume |
-| **P06 — Prairie sèche feutrée** | Contexte herbacé, N4 sec, faible eau disponible | [PH withered_grass](https://polyhaven.com/a/withered_grass), [PH grass_ground](https://polyhaven.com/a/grass_ground) | Structure sèche conservée, pas seul changement de couleur du gazon |
-| **P07 — Prairie clairsemée sur terre** | Couvert herbacé ouvert, matrice visible | [PH sparse_grass](https://polyhaven.com/a/sparse_grass), [ACG Ground003](https://ambientcg.com/a/Ground003) | Texture pré-mélangée plantes/terre |
-| **P08 — Steppe sèche** | Contexte herbacé sec, eau limitée, peu de couvert dense | [PH sparse_grass](https://polyhaven.com/a/sparse_grass), [ACG Ground013](https://ambientcg.com/a/Ground013) | Palette paille et terre, densité adaptée au type |
-| **P09 — Steppe pierreuse** | Contexte herbacé ouvert et froid/sec, fragments/roche partielle | [PH aerial_grass_rock](https://polyhaven.com/a/aerial_grass_rock), [ACG Ground067](https://ambientcg.com/a/Ground067) | Pré-mélange minéral/herbacé ; pas matériau de roche nue |
-| **P10 — Savane verte de saison humide** | Contexte chaud saisonnier, herbacé dominant, N4 humide | [PH leafy_grass](https://polyhaven.com/a/leafy_grass), [ACG Grass004](https://ambientcg.com/a/Grass004) | Aucun arbre dans cette texture de sol |
-| **P11 — Savane sèche à herbes continues** | Contexte chaud saisonnier, N4 sec, couvert herbacé continu | [PH withered_grass](https://polyhaven.com/a/withered_grass), [PH grass_ground](https://polyhaven.com/a/grass_ground) | Graminées sèches, sans convertir tout le sol en sable |
-| **P12 — Savane ouverte à terre visible** | Contexte chaud, eau limitée et couverture herbacée discontinue | [PH sparse_grass](https://polyhaven.com/a/sparse_grass), [ACG Ground003](https://ambientcg.com/a/Ground003) | Matrice visible et teintée selon source |
-| **P13 — Savane pierreuse** | Contexte chaud herbacé ouvert et stock grossier | [PH brown_mud_rocks_01](https://polyhaven.com/a/brown_mud_rocks_01), [ACG Ground067](https://ambientcg.com/a/Ground067) | Herbe/terre/pierres comme une seule recette de zone |
-| **P14 — Prairie alpine rase** | Contexte froid d'altitude, sol émergé non enneigé, couvert ras | [ACG Grass003](https://ambientcg.com/a/Grass003), [ACG Grass004](https://ambientcg.com/a/Grass004) | Pas de pergélisol ni glacier inféré |
-| **P15 — Tapis herbeux et mousseux froid** | Contexte froid humide, couvert ras et matrice stable | [ACG Moss003](https://ambientcg.com/a/Moss003), [ACG Grass003](https://ambientcg.com/a/Grass003) | Apparence de type toundra, sans histoire de pergélisol |
-| **P16 — Lande herbacée mêlée de débris** | Contexte frais, ouvert, humidité moyenne, couvert ras mixte | [ACG Ground037](https://ambientcg.com/a/Ground037), [PH forrest_ground_01](https://polyhaven.com/a/forrest_ground_01) | Petites plantes et débris, sans arbustes ou arbres en volume |
+| **P01 — Dense green grassland** | Herbaceous context, medium to high moisture, stable matrix | [ACG Grass001](https://ambientcg.com/a/Grass001), [ACG Grass002](https://ambientcg.com/a/Grass002) | Ground-level texture, no trees |
+| **P02 — Very short turf or grassland** | Short herbaceous context, regular stable surface | [ACG Grass005](https://ambientcg.com/a/Grass005), [ACG Grass006](https://ambientcg.com/a/Grass006) | Appearance use, not evidence of human mowing |
+| **P03 — Heterogeneous green grassland** | Herbaceous context, variable soil and moisture | [ACG Grass003](https://ambientcg.com/a/Grass003), [ACG Grass004](https://ambientcg.com/a/Grass004) | Sample heterogeneity, stable identity |
+| **P04 — Broadleaf grassland** | Relatively warm/wet herbaceous context | [PH leafy_grass](https://polyhaven.com/a/leafy_grass), [ACG Grass001](https://ambientcg.com/a/Grass001) | Small low-cover plants, no canopy |
+| **P05 — Dense tall-looking grassland** | Productive wet herbaceous context | [PH leafy_grass](https://polyhaven.com/a/leafy_grass), [ACG Grass004](https://ambientcg.com/a/Grass004) | Top-down appearance; texture does not create volumetric stems |
+| **P06 — Matted dry grassland** | Herbaceous context, dry N4, low available water | [PH withered_grass](https://polyhaven.com/a/withered_grass), [PH grass_ground](https://polyhaven.com/a/grass_ground) | Retain dry structure, not merely recolored lawn |
+| **P07 — Sparse grass on earth** | Open herbaceous cover, visible matrix | [PH sparse_grass](https://polyhaven.com/a/sparse_grass), [ACG Ground003](https://ambientcg.com/a/Ground003) | Premixed plant/earth texture |
+| **P08 — Dry steppe** | Dry herbaceous context, limited water, little dense cover | [PH sparse_grass](https://polyhaven.com/a/sparse_grass), [ACG Ground013](https://ambientcg.com/a/Ground013) | Straw and earth palette, density suited to type |
+| **P09 — Stony steppe** | Open cold/dry herbaceous context, fragments/partial rock | [PH aerial_grass_rock](https://polyhaven.com/a/aerial_grass_rock), [ACG Ground067](https://ambientcg.com/a/Ground067) | Mineral/herbaceous premix, not bare rock material |
+| **P10 — Green wet-season savanna** | Warm seasonal context, dominant herbaceous cover, wet N4 | [PH leafy_grass](https://polyhaven.com/a/leafy_grass), [ACG Grass004](https://ambientcg.com/a/Grass004) | No trees in this ground texture |
+| **P11 — Dry savanna with continuous grasses** | Warm seasonal context, dry N4, continuous herbaceous cover | [PH withered_grass](https://polyhaven.com/a/withered_grass), [PH grass_ground](https://polyhaven.com/a/grass_ground) | Dry grasses without converting all ground to sand |
+| **P12 — Open savanna with visible earth** | Warm context, limited water and discontinuous grass | [PH sparse_grass](https://polyhaven.com/a/sparse_grass), [ACG Ground003](https://ambientcg.com/a/Ground003) | Visible matrix tinted according to source |
+| **P13 — Stony savanna** | Warm open herbaceous context and coarse stock | [PH brown_mud_rocks_01](https://polyhaven.com/a/brown_mud_rocks_01), [ACG Ground067](https://ambientcg.com/a/Ground067) | Grass/earth/stones as one area recipe |
+| **P14 — Short alpine meadow** | Cold high-altitude context, exposed snow-free ground, low cover | [ACG Grass003](https://ambientcg.com/a/Grass003), [ACG Grass004](https://ambientcg.com/a/Grass004) | No inferred permafrost or glacier |
+| **P15 — Cold grass and moss mat** | Cold wet context, low cover and stable matrix | [ACG Moss003](https://ambientcg.com/a/Moss003), [ACG Grass003](https://ambientcg.com/a/Grass003) | Tundra-like appearance without permafrost history |
+| **P16 — Herbaceous heath mixed with debris** | Cool open context, medium moisture, mixed low cover | [ACG Ground037](https://ambientcg.com/a/Ground037), [PH forrest_ground_01](https://polyhaven.com/a/forrest_ground_01) | Small plants and debris, no volumetric shrubs or trees |
 
-### Sols humides et mousses
+### Wet ground and mosses
 
-| Type | Informations de carte / conditions | Textures candidates | Adaptation |
+| Type | Map information / conditions | Candidate textures | Adaptation |
 | --- | --- | --- | --- |
-| **H01 — Herbe humide sombre** | Couvert herbacé, bas-fond ou rétention et état humide | [ACG Grass002](https://ambientcg.com/a/Grass002), [ACG Ground037](https://ambientcg.com/a/Ground037) | Fines et vert sombre, pas végétation flottante |
-| **H02 — Sol humide organique découvert** | Matrice riche en organique et N4 humide, hors eau libre | [ACG Ground051](https://ambientcg.com/a/Ground051), [PH mud_forest](https://polyhaven.com/a/mud_forest) | Aspect organique, pas tourbe épaisse |
-| **H03 — Mousse dense en coussinets** | Profil de couvert ras humide et support stable | [ACG Moss002](https://ambientcg.com/a/Moss002), [ACG Moss004](https://ambientcg.com/a/Moss004) | Texture complète de mousse, pas forêt |
-| **H04 — Mousse mêlée de litière** | Contexte humide, débris et couvert ras mêlés | [ACG Moss001](https://ambientcg.com/a/Moss001), [PH forest_leaves_02](https://polyhaven.com/a/forest_leaves_02) | Un pré-mélange, pas deux couches comptées deux fois |
-| **H05 — Pierres humides et mousse** | Support ou fragments rocheux partiels et couvert ras humide | [ACG Ground068](https://ambientcg.com/a/Ground068), [ACG Ground086](https://ambientcg.com/a/Ground086) | Roche/mousse, identité locale minérale conservée |
-| **H06 — Berge humide à petits débris** | N3 rive typée, matrice fine humide et couvert ras/débris | [ACG Ground024](https://ambientcg.com/a/Ground024), [PH mud_forest](https://polyhaven.com/a/mud_forest) | Pas de marée, salinité ou tourbière requises |
+| **H01 — Dark wet grass** | Herbaceous cover, hollow or retention, wet state | [ACG Grass002](https://ambientcg.com/a/Grass002), [ACG Ground037](https://ambientcg.com/a/Ground037) | Fines and dark green, no floating vegetation |
+| **H02 — Exposed wet organic ground** | Organic-rich matrix and wet N4, outside open water | [ACG Ground051](https://ambientcg.com/a/Ground051), [PH mud_forest](https://polyhaven.com/a/mud_forest) | Organic appearance, not thick peat |
+| **H03 — Dense cushion moss** | Wet low-cover profile and stable support | [ACG Moss002](https://ambientcg.com/a/Moss002), [ACG Moss004](https://ambientcg.com/a/Moss004) | Complete moss texture, not forest |
+| **H04 — Moss mixed with litter** | Wet context, mixed debris and low cover | [ACG Moss001](https://ambientcg.com/a/Moss001), [PH forest_leaves_02](https://polyhaven.com/a/forest_leaves_02) | One premix, not two layers counted twice |
+| **H05 — Wet stones and moss** | Partial rocky support or fragments and wet low cover | [ACG Ground068](https://ambientcg.com/a/Ground068), [ACG Ground086](https://ambientcg.com/a/Ground086) | Rock/moss, retain local mineral identity |
+| **H06 — Wet bank with small debris** | N3 typed bank, wet fine matrix and low cover/debris | [ACG Ground024](https://ambientcg.com/a/Ground024), [PH mud_forest](https://polyhaven.com/a/mud_forest) | No tide, salinity, or peatland required |
 
-### Neiges et glaces de surface
+### Snow and surface ice
 
-| Type | Informations de carte / conditions | Textures candidates | Adaptation |
+| Type | Map information / conditions | Candidate textures | Adaptation |
 | --- | --- | --- | --- |
-| **N01 — Neige fraîche fine** | Preset neige fraîche N4 et rétention locale positive | [ACG Snow005](https://ambientcg.com/a/Snow005), [ACG Snow001](https://ambientcg.com/a/Snow001) | Manteau de surface, pas glacier |
-| **N02 — Neige fraîche irrégulière** | Preset neige N4, surface moins régulière | [ACG Snow002](https://ambientcg.com/a/Snow002), [ACG Snow004](https://ambientcg.com/a/Snow004) | Relief de surface calibré |
-| **N03 — Neige compacte** | Preset neige compacte ou tassée naturellement N4 | [ACG Snow007A](https://ambientcg.com/a/Snow007A), [ACG Snow010A](https://ambientcg.com/a/Snow010A) | Candidats sans traces humaines explicites |
-| **N04 — Neige transformée granuleuse** | Preset neige ancienne/transformée N4 | [ACG Snow003](https://ambientcg.com/a/Snow003), [ACG Snow010A](https://ambientcg.com/a/Snow010A) | Variante d'apparence, pas simulation de métamorphisme |
-| **N05 — Neige soufflée à ondulations** | Preset neige ventée N4 et direction régionale disponible | [ACG Snow008A](https://ambientcg.com/a/Snow008A), [ACG Snow009A](https://ambientcg.com/a/Snow009A) | Alignement du motif, pas corniche nouvelle |
-| **N06 — Neige salie ou fondante** | Preset fonte N4, support minéral ou organique affleurant | [ACG Snow014](https://ambientcg.com/a/Snow014), [PH snow_04](https://polyhaven.com/a/snow_04) | Couverture et humidité séparées de la roche mère |
-| **N07 — Neige discontinue sur herbe** | Preset neige partielle N4, contexte herbacé sous-jacent | [ACG Snow015](https://ambientcg.com/a/Snow015) | Pré-mélange déjà enneigé ; ne pas ajouter une seconde neige complète |
-| **N08 — Neige discontinue sur minéral** | Preset neige partielle N4, support rocheux/minéral | [ACG Snow014](https://ambientcg.com/a/Snow014), [PH snow_05](https://polyhaven.com/a/snow_05) | Taches minérales et raccord au support ; pas une histoire glaciaire |
-| **I01 — Glace à petites fractures** | Preset glace de surface N4, sol ou eau gelée explicitement sélectionné | [ACG Ice002](https://ambientcg.com/a/Ice002), [ACG Ice003](https://ambientcg.com/a/Ice003) | Niveau d'eau conservé si domaine aquatique |
-| **I02 — Glace à grandes fractures** | Preset glace fracturée N4 et domaine compatible | [ACG Ice001](https://ambientcg.com/a/Ice001), [ACG Ice004](https://ambientcg.com/a/Ice004) | Aucune banquise ou crevasse de glacier générée par le choix de texture |
+| **N01 — Fine fresh snow** | N4 fresh-snow preset and positive local retention | [ACG Snow005](https://ambientcg.com/a/Snow005), [ACG Snow001](https://ambientcg.com/a/Snow001) | Surface mantle, not glacier |
+| **N02 — Irregular fresh snow** | N4 snow preset, less regular surface | [ACG Snow002](https://ambientcg.com/a/Snow002), [ACG Snow004](https://ambientcg.com/a/Snow004) | Calibrated surface relief |
+| **N03 — Compact snow** | N4 compact or naturally packed snow preset | [ACG Snow007A](https://ambientcg.com/a/Snow007A), [ACG Snow010A](https://ambientcg.com/a/Snow010A) | Candidates without explicit human tracks |
+| **N04 — Granular transformed snow** | N4 old/transformed snow preset | [ACG Snow003](https://ambientcg.com/a/Snow003), [ACG Snow010A](https://ambientcg.com/a/Snow010A) | Appearance variant, not metamorphism simulation |
+| **N05 — Windblown rippled snow** | N4 windblown-snow preset and available regional direction | [ACG Snow008A](https://ambientcg.com/a/Snow008A), [ACG Snow009A](https://ambientcg.com/a/Snow009A) | Align pattern, no new cornice |
+| **N06 — Dirty or melting snow** | N4 melt preset, exposed mineral or organic support | [ACG Snow014](https://ambientcg.com/a/Snow014), [PH snow_04](https://polyhaven.com/a/snow_04) | Coverage and moisture separate from bedrock |
+| **N07 — Patchy snow on grass** | N4 partial-snow preset, underlying herbaceous context | [ACG Snow015](https://ambientcg.com/a/Snow015) | Premix already snowy; do not add a second full snow layer |
+| **N08 — Patchy snow on mineral ground** | N4 partial-snow preset, rocky/mineral support | [ACG Snow014](https://ambientcg.com/a/Snow014), [PH snow_05](https://polyhaven.com/a/snow_05) | Mineral patches and support transition; no glacial history |
+| **I01 — Ice with small fractures** | N4 surface-ice preset, explicitly selected frozen ground or water | [ACG Ice002](https://ambientcg.com/a/Ice002), [ACG Ice003](https://ambientcg.com/a/Ice003) | Retain water level in aquatic domain |
+| **I02 — Ice with large fractures** | N4 fractured-ice preset and compatible domain | [ACG Ice001](https://ambientcg.com/a/Ice001), [ACG Ice004](https://ambientcg.com/a/Ice004) | Texture selection generates no sea ice or glacier crevasse |
 
+## 4. Resolving choices and covering the whole map
 
-## 4 Résolution des choix et couverture de toute la carte
+### 4.1. Classification order
 
-### 4.1 Ordre de classement
+1. **Water domain:** retain water and its N3 levels. N4 ice states explicitly concern this domain or exposed support; they do not change lake height. Without a qualified bottom, deep water is not repainted with sandy ground.
+2. **Mineral support:** N1/N2 determine rock/matrix/fragment possibilities. Parents and deposit proportions constrain R, B, S, and G types. Earth over basalt is not necessarily a black slab.
+3. **Surface context:** select F, P, and H possibilities from provided cover or §2.1-derived preferences. Exposed rock areas remain rocky; a wet climate does not paint leaves on a cliff.
+4. **N4 state:** apply dry/wet variants and allowed N/I types. Snow can mask support while the latter is retained underneath.
+5. **Transitions and color:** produce type weights, tint, and moisture. None of these calculations redraws the global asset choice.
 
-1. **Domaine eau** : conserver l'eau et ses niveaux N3. Les états de glace N4 concernent explicitement ce domaine ou le support émergé ; ils ne changent pas la hauteur d'un lac. Sans fond qualifié, une eau profonde n'est pas repeinte avec un sol sableux.
-2. **Support minéral** : N1/N2 déterminent les possibilités roche/matrice/fragments. Les parents et les proportions du dépôt contraignent les types R, B, S et G. Une terre au-dessus d'un basalte n'est pas forcément une dalle noire.
-3. **Contexte de surface** : sélectionner les possibilités F, P et H à partir du couvert fourni ou des préférences dérivées de §2.1. Les zones rocheuses exposées restent rocheuses ; un climat humide ne peint pas de feuilles sur une paroi.
-4. **État N4** : appliquer les variantes sèches/humides et les types N/I autorisés. La neige peut masquer le support qui reste conservé en dessous.
-5. **Transitions et couleur** : produire les poids de types, la teinte et l'humidité. Aucun de ces calculs ne relance le choix d'asset global.
+Climate alone therefore does not select a material: savanna on sand, savanna on stony earth, and wet-phase savanna may yield different types without new simulation.
 
-Le climat ne sélectionne donc pas à lui seul un matériau : savane sur sable, savane sur terre pierreuse et savane en phase humide peuvent donner des types distincts, sans nouvelle simulation.
+To convert table conditions into weights, distinguish necessary constraints from preferences. A type without admissible support receives zero: no pebbles without rounded stock, no litter without forest context, and no snow without a preset. Other criteria yield continuous scores with transition ranges to calibrate: moisture, cold, weathering, cover openness, roughness. Normalize admissible scores **within the relevant support budget**, then apply contextual and state cover; do not normalize all catalog rows together. If no score is admissible, use the §4.3 fallback.
 
-Pour traduire les conditions des tables en poids, distinguer les contraintes nécessaires des préférences. Un type sans support admissible reçoit zéro : pas de galets sans stock arrondi, de litière sans contexte forestier, ni de neige sans preset. Les autres critères donnent des scores continus, avec des plages de transition à calibrer : humidité, froid, altération, ouverture du couvert, rugosité. Normaliser les scores admissibles **à l'intérieur du budget de support concerné**, puis appliquer les couvertures de contexte et d'état ; ne pas normaliser ensemble toutes les lignes du catalogue. En l'absence de score admissible, appliquer le repli de §4.3.
+Cases sharing inputs can remain a mixture or be resolved by the saved global profile. For example, tall grassland and dense grassland are not two measured observations if no height information exists: they are then appearance options. No new random field is fabricated to distribute them locally. Numeric score thresholds and texture scales still need calibration against actual layer ranges; this table does not present them as already validated in the renderer.
 
-Les cas qui partagent les mêmes entrées peuvent rester un mélange ou être départagés par le profil global enregistré. Par exemple, une prairie haute et une prairie dense ne sont pas deux observations mesurées si aucune information de hauteur n'existe : ce sont alors deux options d'apparence. On ne fabrique pas un nouveau champ de hasard pour les distribuer localement. Les seuils numériques de ces scores et les échelles des textures restent à calibrer sur les plages réelles des layers ; la présente table ne les présente pas comme déjà validés dans le renderer.
+### 4.2. Homogeneous and premixed textures
 
-### 4.2 Textures homogènes et textures déjà mélangées
+A forest texture often contains earth, leaves, and twigs; an open-savanna texture contains grass and earth; G06 already contains rock and matrix; N07 already contains grass and snow. These types are **premixed area recipes**. Their weights are not exact grain-size fractions.
 
-Une texture de forêt contient souvent terre, feuilles et brindilles ; une texture de savane ouverte contient herbe et terre ; G06 contient déjà roche et matrice ; N07 contient déjà herbe et neige. Ces types sont des **recettes de zone pré-mélangées**. Leurs poids ne sont pas des fractions granulométriques exactes.
+When such a type is used, do not add everything it contains a second time. In particular, do not add N07 and full snow, F01 and full litter, or G06 and a full matrix. It can gradually transition to palette neighbors at its edges. If exact physical shares or separate coloring of each component become necessary, prepare material masks or separate components; that is not an entry requirement for this package.
 
-Quand un tel type est utilisé, ne pas rajouter une seconde fois tout ce qu'il contient. En particulier, ne pas additionner N07 et une neige complète, ni F01 et une litière intégrale, ni G06 et une matrice complète. On peut le remplacer progressivement par ses voisins de palette à ses limites. Si des parts physiques exactes ou une coloration séparée de chaque composant deviennent nécessaires, il faudra préparer des masques de matériau ou séparer les composants ; ce n'est pas une condition d'entrée du présent lot.
+N1/N2 set or bound support coverage; textures are chosen among types compatible with this budget. Transitions cannot remove known exposed rock to arbitrarily increase grassland. The exact budget can be approximated by a premixed photographic recipe; that approximation remains identified as such.
 
-N1/N2 fixent ou bornent la couverture de support ; les textures sont choisies dans les types compatibles avec ce budget. Les transitions ne peuvent pas supprimer une roche connue exposée pour augmenter arbitrairement une prairie. Le budget exact peut être approximé par une recette photographique pré-mélangée : cette approximation reste identifiée comme telle.
+### 4.3. Fallback without holes
 
-### 4.3 Repli sans trou
-
-| Situation restant sans candidat spécialisé | Type de repli |
+| Situation without a specialized candidate | Fallback type |
 | --- | --- |
-| Matrice minérale émergée ordinaire | B01 ; B08 si des petits fragments sont connus |
-| Sable meuble connu | S01 ; pas de sable inventé lorsqu'il n'est pas disponible |
-| Stock grossier sans variante d'apparence plus précise | G01/G02 selon taille ; arrondi connu conduit à G03/G04 |
-| Roche exposée | Type compact du parent dominant, avec proportions de parents conservées |
-| Contexte herbacé sans sous-type retenu | P01 humide, P06 sec, P07 ouvert selon N4/N1 |
-| Contexte forestier sans sous-type retenu | F06 ; F10 si la matrice est surtout découverte |
-| Neige demandée sans autre détail | N01 ; le masque de couverture vient du preset N4 |
-| Eau sans fond décrit | Autorité eau, sans faux matériau de fond |
+| Ordinary exposed mineral matrix | B01; B08 if small fragments are known |
+| Known loose sand | S01; do not invent sand when unavailable |
+| Coarse stock without a more precise appearance variant | G01/G02 by size; known roundness leads to G03/G04 |
+| Exposed rock | Compact type of dominant parent, preserving parent proportions |
+| Herbaceous context without a selected subtype | P01 wet, P06 dry, P07 open according to N4/N1 |
+| Forest context without a selected subtype | F06; F10 if matrix is mostly exposed |
+| Requested snow without other detail | N01; coverage mask comes from N4 preset |
+| Water without a described bottom | Water authority, without a false bottom material |
 
-Ce repli couvre les surfaces valides de la carte ; les régions hors domaine et les données absentes restent signalées. Un problème de téléchargement se traite à la préparation de la palette, avec un candidat de repli compatible et enregistré ; il n'entraîne pas un autre tirage lors du déplacement de la caméra.
+This fallback covers valid map surfaces; out-of-domain regions and missing data remain flagged. Download problems are handled during palette preparation with a compatible recorded fallback candidate; they do not cause a new draw when the camera moves.
 
-Les types de sols salins, gypseux, tourbeux spécifiques, hydrothermaux ou pyroclastiques spécialisés ne sont pas activés par défaut faute des informations 4.2. Cela n'empêche ni les sols organiques d'apparence, ni les nombreuses roches, ni les neiges de scène demandées. Les glaciers, dunes majeures et falaises restent des formes du terrain, pas des effets produits par le choix d'une photo.
+Specialized saline, gypsiferous, peat, hydrothermal, or pyroclastic types are not enabled by default without section 4.2 information. This does not prevent organic-looking soils, numerous rocks, or requested scene snow. Glaciers, major dunes, and cliffs remain terrain forms, not effects produced by choosing a photograph.
 
-## 5 Un tirage par type pour toute la carte
+## 5. One draw per type for the entire map
 
 ```text
-pour chaque type T :
-    candidats = pool[T] validé et trié par identifiant stable
-    index = hash(worldSeed, paletteVersion, T.id) modulo len(candidats)
-    palette[T] = {asset choisi, échelle, teinte de référence, paramètres d'état}
-    sauvegarder le résultat et les hashes des images
+for each type T:
+    candidates = validated pool[T], sorted by stable identifier
+    index = hash(worldSeed, paletteVersion, T.id) modulo len(candidates)
+    palette[T] = {chosen asset, scale, reference tint, state parameters}
+    save result and image hashes
 
-pour chaque position x :
-    typesEtPoids = classer(infosCarte(x), N1(x), N2(x), N3(x), N4, profilGlobal)
-    textures = palette[typesEtPoids.types]
-    synthétiser ces mêmes textures en coordonnées physiques
+for each position x:
+    typesAndWeights = classify(mapInfo(x), N1(x), N2(x), N3(x), N4, globalProfile)
+    textures = palette[typesAndWeights.types]
+    synthesize those same textures in physical coordinates
 ```
 
-Le choix du profil global de surface, s'il est nécessaire, possède sa propre clé de seed. Il n'est pas caché dans le choix de l'image. Les listes de candidats sont versionnées ; une carte sauvegardée garde ses assets résolus même si la banque ou la sélection évolue.
+The global surface profile draw, when necessary, has its own seed key. It is not hidden in image selection. Candidate lists are versioned; a saved map retains its resolved assets even if the library or selection changes.
 
-La même texture peut être décalée ou tournée localement pour casser le tuilage, sans changer d'identité. Tous ses canaux PBR subissent les mêmes transformations. Les textures orientées — bancs rocheux, rides, stries de neige — conservent leur direction cohérente plutôt qu'une rotation libre à chaque patch. Une même seed et une même version produisent la même palette, indépendamment de la caméra et du LOD.
+The same texture can be offset or rotated locally to break tiling without changing identity. All its PBR channels undergo the same transformations. Oriented textures — rock beds, ripples, snow striations — retain a consistent direction rather than unrestricted rotation per patch. One seed and version produce the same palette independently of camera and LOD.
 
-Une version 1 peut prendre des probabilités égales entre candidats admis. Des poids de préférence peuvent ensuite favoriser les sources les mieux adaptées ; ils sont globaux par type, pas recalculés avec une préférence de photo différente dans chaque zone.
+Version 1 can use equal probabilities among admissible candidates. Preference weights can later favor better-suited sources; they are global per type, not recalculated with a different photo preference in every area.
 
-## 6 Recoloration et texturing à plusieurs échelles
+## 6. Recoloring and multi-scale texturing
 
-### 6.1 Couleur de référence et détail
+### 6.1. Reference color and detail
 
-L'albédo source est converti en lumière linéaire. Sa moyenne `mu` est mesurée après préparation. Pour une cible `C` compatible, un premier réglage est :
+Source albedo is converted to linear light. Its mean `mu` is measured after preparation. For a compatible target `C`, a first adjustment is:
 
 ```text
-gain = bornes(C / max(mu, epsilon))
-albedoRecolore(x) = albedoSource(x) * gain
+gain = clamp(C / max(mu, epsilon))
+recoloredAlbedo(x) = sourceAlbedo(x) * gain
 ```
 
-Le gain reste borné pour conserver le contraste et éviter l'amplification des canaux presque noirs. Une cible incompatible demande un autre asset admis, pas un gain extrême. Il faut recalculer la moyenne du matériau préparé/recoloré : cette moyenne est celle affichée à distance. Ne pas employer les couleurs arbitraires des calques diagnostiques comme couleurs du sol.
+Gain stays bounded to preserve contrast and avoid amplifying nearly black channels. An incompatible target requires another admissible asset, not extreme gain. Recalculate the prepared/recolored material mean: that mean is displayed at distance. Do not use arbitrary diagnostic-layer colors as ground colors.
 
-Pour les minéraux, la cible vient du type, de la source rocheuse ou du dépôt N2, de l'organique et de l'humidité. Les verts des prairies, les feuilles, la mousse, les neiges et les glaces ont leurs palettes propres ; ils ne prennent pas la teinte de la roche mère. Pour les textures pré-mélangées sans masque interne, la recoloration est modérée ou désactivée si elle dénature leurs composants.
+For minerals, the target comes from type, rock source or N2 deposit, organic matter, and moisture. Grassland greens, leaves, moss, snow, and ice have their own palettes; they do not inherit bedrock tint. Premixed textures without internal masks use moderate recoloring or none if it distorts their components.
 
-Changer le bleu d'une normale ou une valeur de rugosité ne constitue pas une recoloration. Les normales, hauteurs et rugosités suivent leurs propres conventions et échelles. L'humidité modifie les réponses du matériau ; elle ne crée pas à elle seule des mares ni une nouvelle surface d'eau.
+Changing normal-map blue or a roughness value is not recoloring. Normals, heights, and roughness follow their own conventions and scales. Moisture modifies material response; by itself it does not create ponds or a new water surface.
 
-### 6.2 Du survol au détail
+### 6.2. From flyover to detail
 
-| Régime | Valeur à afficher |
+| Regime | Value to display |
 | --- | --- |
-| Texture non résolue au survol | Moyenne linéaire du matériau recoloré, combinée avec les mêmes poids de types |
-| Détail en cours de résolution | Apparition filtrée du résidu de couleur, normales, rugosité et hauteur |
-| Texture proche | Même asset et même échelle physique, synthèse stochastique cohérente |
-| Détail plus fin que la photo | Grains, fines rides ou petits débris compatibles avec le type ; pas un bruit rocheux identique appliqué à toutes les matières |
+| Texture unresolved in flyover | Recolored material's linear mean, combined using the same type weights |
+| Detail becoming resolved | Filtered appearance of color residual, normals, roughness, and height |
+| Close texture | Same asset and physical scale, coherent stochastic synthesis |
+| Detail finer than the photograph | Grains, fine ripples, or small debris compatible with type; not identical rock noise applied to every material |
 
-La moyenne et le détail ne sont pas deux palettes choisies séparément. Une prairie verte distante ne doit pas devenir un autre sol au zoom ; une neige blanche ne disparaît pas lorsque ses grains apparaissent. Les transitions entre types sont filtrées, tout en respectant les rivages et emprises N3. Les canaux PBR sont mélangés avec des poids cohérents et des amplitudes physiques comparables.
+Mean and detail are not two separately selected palettes. Distant green grassland must not become different ground when zoomed in; white snow must not disappear as its grains appear. Type transitions are filtered while respecting N3 shores and footprints. PBR channels are blended using consistent weights and comparable physical amplitudes.
 
-Les dimensions de capture et les échelles de rendu ne sont pas interchangeables. Les anciens `physicalExtentMetres` du catalogue sont des réglages d'auteur, pas une attestation de taille de capture. À l'ingestion, conserver les métadonnées du fournisseur et calibrer les tailles des éléments reconnaissables. Ne pas étirer un gravier pour représenter des blocs métriques ou agrandir une neige à petits grains pour fabriquer une corniche.
+Capture dimensions and rendering scales are not interchangeable. Legacy catalog `physicalExtentMetres` values are author settings, not proof of capture size. During ingestion, retain provider metadata and calibrate recognizable element sizes. Do not stretch gravel to represent meter-scale blocks or enlarge fine-grained snow to create a cornice.
 
-## 7 Carte produite et critères de contrôle
+## 7. Produced map and checks
 
-La sortie peut rester compacte :
+The output can remain compact:
 
 ```text
-palette globale : typeId -> assetId + canaux + échelle + paramètres + hashes
-carte : type dominant + voisins/poids de transition + teinte + humidité
-domaines : eau / sol / neige-glace d'affichage + masques de validité
-diagnostic : règle appliquée + profil de couvert + repli éventuel
+global palette: typeId -> assetId + channels + scale + parameters + hashes
+map: dominant type + transition neighbors/weights + tint + moisture
+domains: water / ground / display snow-ice + validity masks
+diagnostic: applied rule + cover profile + possible fallback
 ```
 
-Les poids complets utiles à la classification restent la référence. Une réduction à deux ou trois types pour l'affichage ne doit pas provoquer de changement brutal aux jonctions ni altérer la moyenne distante. Une exportation de carte peut cuire la vue ou des pages de texture ; elle n'exige pas une image unique du territoire entier au centimètre.
+Full classification weights remain the reference. Reducing to two or three types for display must not cause abrupt changes at junctions or alter the distant mean. Map export can bake the view or texture pages; it does not require one centimeter-resolution image of the entire territory.
 
-| Contrôle | Attendu |
+| Check | Expected |
 | --- | --- |
-| Diversité | Les 90 types sont accessibles par leurs règles ; une carte n'est pas forcée de tous les montrer |
-| Références réelles | Chaque candidat pointe vers un asset existant et les quatre canaux annoncés ; aucune texture de mur/pavage n'est confondue avec un sol naturel |
-| Tirage global | Un type possède un seul asset résolu sur toute la carte ; panoramique et zoom ne le changent pas |
-| Forestier et herbacé | Les feuilles, aiguilles, mousses, herbes vertes/sèches et sols ouverts restent distincts ; aucun houppier n'est peint dans le sol |
-| Roche | Les cinq parents gardent leur identité physique ; les 22 aspects de surface n'inventent pas 22 observations lithologiques |
-| Neige et glace | Preset N4 explicite, support conservé, absence de nouvelle histoire glaciaire exigée |
-| Couverture | Aucun trou sur le domaine valide ; eau traitée explicitement ; repli compatible avec le support |
-| Pré-mélanges | Une texture qui contient déjà terre/herbe/pierres/neige n'est pas doublée par les mêmes couches |
-| Qualité des assets | Examiner les répétitions, empreintes humaines, éclairage résiduel et échelle ; les candidats non adaptés sortent du pool avant son tirage |
-| Plusieurs échelles | Moyenne lointaine et texture proche issues des mêmes assets, teintes et proportions |
+| Diversity | All 90 types accessible through their rules; a map need not show all of them |
+| Real references | Every candidate points to an existing asset and the four stated channels; no wall/paving texture confused with natural ground |
+| Global draw | One resolved asset per type across the map; pan and zoom do not change it |
+| Forest and herbaceous | Leaves, needles, mosses, green/dry grasses, and open soils remain distinct; no crown painted into ground |
+| Rock | Five parents retain physical identity; 22 surface appearances do not invent 22 lithological observations |
+| Snow and ice | Explicit N4 preset, retained support, no new glacial history required |
+| Coverage | No holes in valid domain; water treated explicitly; support-compatible fallback |
+| Premixes | A texture already containing earth/grass/stones/snow is not doubled by identical layers |
+| Asset quality | Inspect repetition, human traces, residual lighting, and scale; unsuitable candidates leave pool before draw |
+| Multiple scales | Distant mean and close texture derive from the same assets, tints, and proportions |
 
-## 8 Exemples de sources examinées
+## 8. Examples of examined sources
 
-Ces planches montrent des albedos ou aperçus de banque pour comparer la diversité des matières. Les sphères ambientCG sont des aperçus éclairés du fournisseur, pas le rendu de notre carte ni la couleur moyenne à y recopier. Elles illustrent une partie des candidats, pas une qualification intégrale des 142 packs dans le moteur.
+These plates show library albedos or previews to compare material diversity. The ambientCG spheres are provider-lit previews, not our map's rendering or a mean color to copy. They illustrate some candidates, not full qualification of all 142 packs in the engine.
 
-### Sols forestiers : aiguilles, feuilles, racines, terre et mousses
+### Forest soils: needles, leaves, roots, earth, and mosses
 
-![Sols forestiers : aiguilles, feuilles, racines, terre et mousses](surface/evidence/ground-texture-palette-v1/forest-sources.png)
+![Forest soils: needles, leaves, roots, earth, and mosses](surface/evidence/ground-texture-palette-v1/forest-sources.png)
 
-### Couverts ras : prairies, sols ouverts et mousses
+### Low cover: grasslands, open ground, and mosses
 
-![Couverts ras : prairies, sols ouverts et mousses](surface/evidence/ground-texture-palette-v1/herbaceous-sources.png)
+![Low cover: grasslands, open ground, and mosses](surface/evidence/ground-texture-palette-v1/herbaceous-sources.png)
 
-### Roches : structures, grains, fractures et surfaces colonisées
+### Rocks: structures, grains, fractures, and colonized surfaces
 
-![Roches : structures, grains, fractures et surfaces colonisées](surface/evidence/ground-texture-palette-v1/rock-sources.png)
+![Rocks: structures, grains, fractures, and colonized surfaces](surface/evidence/ground-texture-palette-v1/rock-sources.png)
 
-### Neiges et glaces : textures fines, ondulations et couvertures partielles
+### Snow and ice: fine textures, ripples, and partial cover
 
-![Neiges et glaces : textures fines, ondulations et couvertures partielles](surface/evidence/ground-texture-palette-v1/snow-sources.png)
+![Snow and ice: fine textures, ripples, and partial cover](surface/evidence/ground-texture-palette-v1/snow-sources.png)
 

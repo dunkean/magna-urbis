@@ -1,48 +1,26 @@
-# Bord du terrain : diagnostic des trous aux sommets
+# Terrain boundary: vertex-hole diagnostic
 
-La sonde autonome `viewer-local/diagnostics/terrain_boundary_holes_probe.gd`
-utilise le shader minimum natif Terrain3D, en remplaçant uniquement la couleur
-du fragment pour mesurer la couverture et l'erreur de hauteur. Aucun fichier de
-production n'est modifié. Le contrôle est une **fixture synthétique plane à
-1 000 m**, pas un replay du terrain Magna V5.
+Standalone probe `viewer-local/diagnostics/terrain_boundary_holes_probe.gd` uses the minimal native Terrain3D shader, replacing only fragment colour to measure coverage and height error. No production file is modified. The control is a **synthetic flat fixture at 1,000 m**, not a replay of Magna V5 terrain.
 
-Le shader natif transforme un sommet en NaN lorsque son contrôle porte le bit
-« trou ». Tout triangle incident peut alors disparaître. Un rectangle de source
-qui tombe juste avant une ligne de sommets grossiers peut perdre une bande
-entière de triangles à l'intérieur de ses bornes.
+The native shader transforms a vertex to NaN when its control has the “hole” bit. Any incident triangle may then disappear. A source rectangle ending just before a coarse vertex line can lose an entire band of triangles inside its bounds.
 
-## Résultats Forward+ / RTX 4090
+## Forward+ / RTX 4090 results
 
-Vue verticale 40 km, 2048² pixels ; même image de hauteur 1024², pas
-77,972412109375 m, origine d'import −39 921,875 m, régions 256, maillage 32,
-10 niveaux. Cinq lignes de pixels réparties dans le terrain sont sondées.
+Vertical 40 km view, 2048² pixels; same 1024² height image, spacing 77.972412109375 m, import origin −39,921.875 m, 256 regions, mesh 32, 10 levels. Five pixel rows distributed across terrain are probed.
 
-| Demi-largeur source | Masque | Sondes attendues absentes / 10 220 | Retrait de chaque bord |
+| Source half-width | Mask | Expected probes missing / 10,220 | Retreat from each edge |
 | --- | --- | ---: | ---: |
-| 19 960 m | Trous aux sommets hors domaine | 318 | 31–32 px |
-| 19 960 m | Contrôles sans trous + discard fragment au rectangle exact | 0 | 0 px |
-| 19 960,9375 m | Trous aux sommets hors domaine | 0 | 0 px |
-| 19 960,9375 m | Contrôles sans trous + discard fragment exact | 0 | 0 px |
+| 19,960 m | Holes at out-of-domain vertices | 318 | 31–32 px |
+| 19,960 m | Controls without holes + fragment discard at exact rectangle | 0 | 0 px |
+| 19,960.9375 m | Holes at out-of-domain vertices | 0 | 0 px |
+| 19,960.9375 m | Controls without holes + exact fragment discard | 0 | 0 px |
 
-Les octets de hauteur importés sont identiques dans les quatre cas. L'erreur de
-hauteur encodée sur les fragments présents reste nulle. Le retrait observé de
-31–32 pixels vaut environ 605–625 m ; il correspond à l'ordre de grandeur de la
-bande de ciel signalée dans V5. Mais le cas exactement aligné à
-`256 * spacing` n'a aucune perte : le phénomène dépend de la phase des bornes.
+Imported height bytes are identical in all four cases. Height error encoded on present fragments remains zero. The observed 31–32 pixel retreat is approximately 605–625 m, comparable in magnitude to the sky strip reported in V5. However, the case exactly aligned to `256 * spacing` has no loss: the phenomenon depends on boundary phase.
 
-## Comparaison aux paramètres réels V5 et limites
+## Comparison with real V5 parameters and limits
 
-[v5-frame-phase.json](v5-frame-phase.json) extrait en lecture seule le monde
-`72041dc7…` de `native-tour/stdout.log` et ses bornes enregistrées. Son origine
-de rendu X/Z vaut 20 038,9862060547 m, son image de hauteur vaut **2048²** et son
-pas vaut 77,972412109375 m. Les bornes source sont 39,0625–39 960,9375 m ; dans
-ce repère local elles correspondent approximativement à −256,5 et +255,5 pas,
-avec caméra à −0,5 pas. La phase est donc différente du contrôle aligné.
+[v5-frame-phase.json](v5-frame-phase.json) read-only extracts world `72041dc7…` from `native-tour/stdout.log` and its recorded bounds. Its X/Z render origin is 20,038.9862060547 m, height image **2048²** and spacing 77.972412109375 m. Source bounds are 39.0625–39,960.9375 m; in this local frame they correspond to approximately −256.5 and +255.5 steps, with camera at −0.5 steps. Phase therefore differs from the aligned control.
 
-Le diagnostic prouve le mécanisme natif et son amplitude possible. Il **ne
-prouve pas encore** la cause de l'asymétrie est ≈33 px / ouest ≈5 px dans V5,
-ni une correction de production. Une éventuelle évolution doit conserver le
-contrat des limites source, considérer l'union des parents et vérifier le
-relief non linéaire au bord ; ce contrôle plan ne garantit pas que toutes les
-interpolations frontalières restent identiques. Aucun décalage de source,
-nouveau relief, changement de contrôle ou shader de production n'est livré ici.
+The diagnostic proves the native mechanism and its possible magnitude. It **does not yet prove** the cause of V5's east ≈33 px / west ≈5 px asymmetry or a production fix. Any change must preserve the source-bounds contract, consider the union of parents and check nonlinear terrain at the edge; this planar control does not guarantee all boundary interpolations remain identical. No source offset, new terrain, control change or production shader is delivered here.
+
+[Original French version](README_FR.md).

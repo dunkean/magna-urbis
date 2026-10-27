@@ -2,13 +2,19 @@ import { ROAD_CLASSES, ROAD_LEVELS, ROAD_PROFILES, ROAD_SURFACES, defaultRoadCon
 import type { Layout } from '../../../rust/bridge/urban';
 import { prepareUrbanRoadClip } from '../../../rust/bridge/urbanNetwork';
 import { bindGear, gearButton } from './mapGroup';
+import { urbanText } from './urbanPanelLocale';
+import { LOCALE_KEY } from './shellLocale';
 import { RENDER_ROAD_PX, ROAD_STROKE_LAYERS, renderCrossingStrokes, renderRoadStrokes, roadStrokeWidth, splitAtCrossings, type RoadStroke } from '../render/roadPaintRender';
 
 const ns = 'http://www.w3.org/2000/svg';
-const CLASS_LABEL: Record<RoadClass, string> = { highway: 'Highway', main: 'Main road', local: 'Local road', track: 'Track', trail: 'Trail' };
 /** Screen widths (px): roads keep their weight at every zoom. */
 const CLASS_PX: Record<RoadClass, number> = { highway: 3.6, main: 2.8, local: 2.1, track: 1.5, trail: 1.2 };
 const SURFACE_LABEL: Record<RoadSurface, string> = { dirt: 'Dirt', gravel: 'Gravel', paved: 'Paved', flagstone: 'Flagstone' };
+type Words = readonly [string,string,string,string,string];
+const classWords: Record<RoadClass,Words> = { highway:['Route majeure','Highway','主干公路','Carretera principal','Rodovia'], main:['Route principale','Main road','主要道路','Camino principal','Estrada principal'], local:['Route locale','Local road','地方道路','Camino local','Estrada local'], track:['Piste','Track','小路','Pista','Caminho'], trail:['Sentier','Trail','步道','Sendero','Trilha'] };
+const surfaceWords: Record<RoadSurface,Words> = { dirt:['Terre','Dirt','土路','Tierra','Terra'], gravel:['Gravier','Gravel','碎石','Grava','Cascalho'], paved:['Pavé','Paved','铺装','Pavimentado','Pavimentado'], flagstone:['Dalles','Flagstone','石板','Losas','Lajes'] };
+const levelWords: Record<string,Words> = { primitive:['Primitif · pistes et sentiers','Primitive · tracks and trails','原始 · 小路和步道','Primitivo · pistas y senderos','Primitivo · caminhos e trilhas'], rural:['Rural · sans routes majeures','Rural · no highways','乡村 · 无主干公路','Rural · sin carreteras principales','Rural · sem rodovias'], developed:['Développé · axes pavés','Developed · paved trunks','发达 · 铺装干道','Desarrollado · ejes pavimentados','Desenvolvido · eixos pavimentados'], imperial:['Impérial · réseau pavé','Imperial · paved network','帝国 · 铺装路网','Imperial · red pavimentada','Imperial · rede pavimentada'] };
+const profileWords: Record<string,Words> = { medieval:['Europe médiévale','Medieval European','中世纪欧洲','Europa medieval','Europa medieval'], roman:['Romain / byzantin','Roman / Byzantine','罗马 / 拜占庭','Romano / bizantino','Romano / bizantino'], 'east-asian':['Routes postales est-asiatiques','East Asian post roads','东亚驿道','Rutas postales de Asia oriental','Estradas postais do Leste Asiático'], caravan:['Routes caravanières','Caravan routes','商队路线','Rutas de caravanas','Rotas de caravanas'], andean:['Andin · escaliers de pierre','Andean · stone stairs','安第斯 · 石阶','Andino · escaleras de piedra','Andino · escadas de pedra'], mesoamerican:['Chaussées mésoaméricaines','Mesoamerican causeways','中美洲堤道','Calzadas mesoamericanas','Calçadas mesoamericanas'], tribal:['Chemins tribaux','Tribal paths','部族小径','Caminos tribales','Caminhos tribais'], elven:['Elfe · chemins de contour','Elven · contour paths','精灵 · 等高小径','Élfico · caminos de contorno','Élfico · caminhos de contorno'], dwarven:['Nain · pavé et raide','Dwarven · paved and steep','矮人 · 铺装陡路','Enano · pavimentado y empinado','Anão · pavimentado e íngreme'] };
 /** Fill and casing; dirt has no casing. */
 const SURFACE_COLOR: Record<RoadSurface, [string, string | null]> = {
   dirt: ['#8b6840', null], gravel: ['#f2ead6', '#8b7c63'], paved: ['#eeb465', '#6b4527'], flagstone: ['#d9c8a1', '#463729'],
@@ -217,10 +223,10 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
     const km = (v = 0): string => `${(v / 1000).toFixed(1)} km`;
     q('#roadLegend').innerHTML = `<div>${classes.map(c => {
       const surface = surfaces.find(s => used.has(`${c}|${s}`)) ?? (c === 'trail' || c === 'track' ? 'dirt' : 'paved');
-      return `<span>${sample(c, surface)}${CLASS_LABEL[c]}${output ? ` · ${km(output.lengthByClass[c])}` : ''}</span>`;
+      return `<span>${sample(c, surface)}${urbanText(classWords[c])}${output ? ` · ${km(output.lengthByClass[c])}` : ''}</span>`;
     }).join('')}</div><div>${surfaces.map(s => {
       const swatch = style.preset === 'surface' ? `<i style="background:${SURFACE_COLOR[s][0]};border-color:${SURFACE_COLOR[s][1] ?? SURFACE_COLOR[s][0]}"></i>` : '';
-      return `<span>${swatch}${SURFACE_LABEL[s]}${output ? ` · ${km(output.lengthBySurface[s])}` : ''}</span>`;
+      return `<span>${swatch}${urbanText(surfaceWords[s])}${output ? ` · ${km(output.lengthBySurface[s])}` : ''}</span>`;
     }).join('')}</div>`;
   }
   /** Minor roads first, casings under all fills, so junctions merge cleanly. */
@@ -360,9 +366,9 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
     painted.append(...crossings.values());
   }
   function describe(s: RoadSegment): string {
-    const profile = ROAD_PROFILES.find(p => p.id === s.profile)?.label ?? s.profile;
+    const profile = profileWords[s.profile] ? urbanText(profileWords[s.profile]) : s.profile;
     const bridges = s.crossings.length ? ` · ${s.crossings.map(c => c.kind).join(', ')}` : '';
-    return `${CLASS_LABEL[s.class]} · ${SURFACE_LABEL[s.surface]} · ${profile}\n${(s.length / 1000).toFixed(2)} km · steepest ${(s.grade * 100).toFixed(1)} % · width ${s.width.toFixed(1)} m${bridges}`;
+    return `${urbanText(classWords[s.class])} · ${urbanText(surfaceWords[s.surface])} · ${profile}\n${(s.length / 1000).toFixed(2)} km · ${urbanText(['pente maximale','steepest','最大坡度','pendiente máxima','inclinação máxima'])} ${(s.grade * 100).toFixed(1)} % · ${urbanText(['largeur','width','宽度','ancho','largura'])} ${s.width.toFixed(1)} m${bridges}`;
   }
   options.map.addEventListener('urban:road-ownership', event => {
     const next = (event as CustomEvent<Layout[] | undefined>).detail;
@@ -370,21 +376,71 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
     urbanOwnership = next;
     draw();
   });
-  controls(); legend();
+  function localizeRoads(): void {
+    const text = (selector: string, words: Words): void => { const target=panel.querySelector(selector); const node=(target instanceof HTMLInputElement || target instanceof HTMLSelectElement ? target.closest('label') : target)?.firstChild; if (node?.nodeType===Node.TEXT_NODE) node.textContent=urbanText(words)+' '; };
+    const inputLabel = (selector: string, words: Words): void => { const node=panel.querySelector(selector)?.nextSibling; if (node?.nodeType===Node.TEXT_NODE) node.textContent=urbanText(words); };
+    text('summary',['Routes','Roads','道路','Carreteras','Estradas']);
+    text('[data-road="exits"]',['Sorties','Exits','出口','Salidas','Saídas']);
+    text('[data-road="density"]',['Densité','Density','密度','Densidad','Densidade']);
+    for (const option of Array.from(select('roadLevel').options)) if (levelWords[option.value]) option.textContent=urbanText(levelWords[option.value]);
+    for (const option of Array.from(select('roadCulture').options)) option.textContent=option.value==='auto' ? urbanText(['Selon les implantations','From the settlements','根据聚落','Según los asentamientos','Conforme os assentamentos']) : profileWords[option.value] ? urbanText(profileWords[option.value]) : option.textContent;
+    for (const option of Array.from(select('roadSurface').options)) option.textContent=option.value==='auto' ? urbanText(['Selon niveau et culture','By level and culture','按等级和文化','Según nivel y cultura','Conforme nível e cultura']) : `${urbanText(surfaceWords[option.value as RoadSurface])} ${urbanText(['uniquement','only','仅','solamente','somente'])}`;
+    const presets: Record<string,Words> = { surface:['Selon la surface','By surface','按路面','Según superficie','Conforme superfície'], atlas:['Atlas routier','Road atlas','道路图集','Atlas de carreteras','Atlas de estradas'], topographic:['Topographique','Topographic','地形图','Topográfico','Topográfico'], ink:['Encre sur parchemin','Ink on parchment','羊皮纸墨绘','Tinta sobre pergamino','Tinta em pergaminho'], minimal:['Minimal','Minimal','简约','Minimalista','Minimalista'], render:['Render · peint','Render · painted','Render · 绘制','Render · pintado','Render · pintado'] };
+    for (const option of Array.from(select('roadPreset').options)) if (presets[option.value]) option.textContent=urbanText(presets[option.value]);
+    const fields: Record<string,Words> = { gradeWeight:['Aversion aux pentes','Slope aversion','坡度回避','Evitar pendientes','Evitar declives'], maxGrade:['Pente maximale des routes principales (%)','Max grade of main roads (%)','主要道路最大坡度（%）','Pendiente máxima de caminos principales (%)','Inclinação máxima das estradas principais (%)'], crossingCost:['Coût de franchissement des rivières','River crossing cost','河流跨越成本','Coste de cruce de ríos','Custo de travessia de rios'], wobble:['Sinusité × culture','Winding × culture','弯曲度 × 文化','Sinuosidad × cultura','Sinuosidade × cultura'], sharing:['Partage des troncs','Trunk sharing','主干共享','Tramos compartidos','Compartilhamento de troncos'] };
+    for (const [key,words] of Object.entries(fields)) text(`[data-road="${key}"]`,words);
+    text('#roadSurface',['Surfaces','Surfaces','路面','Superficies','Superfícies']); text('#roadCulture',['Culture routière','Road culture','道路文化','Cultura viaria','Cultura viária']); text('#roadPreset',['Style','Style','样式','Estilo','Estilo']); text('[data-road-style="width"]',['Largeur ×','Width ×','宽度 ×','Ancho ×','Largura ×']); text('[data-road-style="opacity"]',['Opacité','Opacity','不透明度','Opacidad','Opacidade']);
+    inputLabel('#roadEnabled',['Générer les routes','Generate roads','生成道路','Generar carreteras','Gerar estradas']);
+    inputLabel('#roadShow',['Afficher les routes','Show roads','显示道路','Mostrar carreteras','Mostrar estradas']);
+    inputLabel('[data-road-style="curves"]',['Courbes lissées','Smooth curves','平滑曲线','Curvas suaves','Curvas suaves']);
+    inputLabel('[data-road-style="casing"]',['Contour','Casing','描边','Contorno','Contorno']);
+    inputLabel('[data-road-style="crossings"]',['Ponts et gués','Bridges & fords','桥梁与渡口','Puentes y vados','Pontes e vaus']);
+    const recalculate=q<HTMLButtonElement>('#roadRecalculate'); recalculate.textContent=urbanText(['Recalculer les routes','Recalculate roads','重新计算道路','Recalcular carreteras','Recalcular estradas']);
+    const routing=panel.querySelector('details.advanced:not(#roadRendering) > summary'); if(routing) routing.textContent=urbanText(['Tracé','Routing','路线规划','Trazado','Traçado']);
+    q('#roadRendering > summary').textContent=urbanText(['Rendu','Rendering','渲染','Renderizado','Renderização']);
+    const gear=panel.querySelector<HTMLButtonElement>('.map-gear'); if(gear) { const label=urbanText(['Réglages des routes','Road settings','道路设置','Ajustes de carreteras','Configurações das estradas']); gear.title=label; gear.setAttribute('aria-label',label); }
+    select('roadLevel').setAttribute('aria-label',urbanText(['Réseau','Network','路网','Red','Rede']));
+    q('[data-road="exits"]').setAttribute('aria-label',urbanText(['Sorties de carte','Map exits','地图出口','Salidas del mapa','Saídas do mapa']));
+    q('[data-road="density"]').setAttribute('aria-label',urbanText(['Densité du réseau','Network density','路网密度','Densidad de la red','Densidade da rede']));
+    const titles: Record<string,Words> = {
+      '#roadLevel':['Définit les classes de routes et leurs surfaces','Sets the road classes and their surfaces','设置道路等级及其路面','Define las clases de carretera y sus superficies','Define as classes de estradas e suas superfícies'],
+      '[data-road="exits"]':['Routes sortant de la carte depuis l’implantation principale (0 à 16)','Roads leaving the map from the main settlement (0 to 16)','从主要聚落通向地图外的道路（0 至 16）','Carreteras que salen del mapa desde el asentamiento principal (0 a 16)','Estradas que saem do mapa a partir do assentamento principal (0 a 16)'],
+      '[data-road="density"]':['0 : arbre couvrant seul · 1 : nombreuses boucles, pistes et sentiers','0: spanning tree only · 1: many loops, tracks and trails','0：仅生成树 · 1：大量环路、小路和步道','0: solo árbol de expansión · 1: muchos bucles, pistas y senderos','0: apenas árvore geradora · 1: muitos circuitos, caminhos e trilhas'],
+      '#roadSurface':['Imposer une surface à tout le réseau','Force one surface on the whole network','为整个路网指定一种路面','Imponer una superficie a toda la red','Definir uma superfície para toda a rede'],
+      '#roadCulture':['Culture routière : pentes, rectitude, ponts et chaussées','Road-building culture: grades, straightness, bridges, causeways','道路文化：坡度、直线度、桥梁和堤道','Cultura viaria: pendientes, rectitud, puentes y calzadas','Cultura viária: inclinações, retidão, pontes e calçadas'],
+      '[data-road="gradeWeight"]':['0 ignore entièrement le relief','0 ignores the relief entirely','0 完全忽略地形','0 ignora por completo el relieve','0 ignora completamente o relevo'],
+      '[data-road="maxGrade"]':['0 conserve la valeur culturelle ; routes locales ×1,2, pistes ×1,5, sentiers plus raides','0 keeps the culture value; local roads ×1.2, tracks ×1.5, trails steeper','0 保留文化值；地方道路 ×1.2，小路 ×1.5，步道更陡','0 conserva el valor cultural; caminos locales ×1,2, pistas ×1,5, senderos más pendientes','0 mantém o valor cultural; estradas locais ×1,2, caminhos ×1,5, trilhas mais íngremes'],
+      '[data-road="sharing"]':['Force du regroupement sur les routes existantes','How strongly routes merge onto existing roads','路线合并到现有道路的强度','Intensidad de unión a carreteras existentes','Intensidade da união a estradas existentes'],
+      '#roadPreset':['Couleurs, contours et tirets des classes de routes','Colours, casings and dashes of the road classes','道路等级的颜色、描边和虚线','Colores, contornos y trazos de las clases de carretera','Cores, contornos e tracejados das classes de estradas'],
+      '[data-road-style="width"]':['Multiplie la largeur des traits','Multiplies the line widths','调整线条宽度','Multiplica el ancho de línea','Multiplica a largura das linhas'],
+      '[data-road-style="curves"]':['Dessine des courbes lisses plutôt que des segments droits','Draw smooth curves rather than straight segments','绘制平滑曲线而非直线段','Dibuja curvas suaves en lugar de tramos rectos','Desenha curvas suaves em vez de trechos retos'],
+      '[data-road-style="casing"]':['Contour sombre sous les routes pavées et en gravier','Dark edge under paved and gravel roads','铺装和碎石道路下方的深色边缘','Borde oscuro bajo carreteras pavimentadas y de grava','Borda escura sob estradas pavimentadas e de cascalho'],
+    };
+    for (const [selector,words] of Object.entries(titles)) { const label=panel.querySelector(selector)?.closest<HTMLElement>('label'); if(label) label.title=urbanText(words); }
+    if (panel.getAttribute('aria-busy') !== 'true') updateRoadStatus();
+    legend(); draw();
+  }
+  function updateRoadStatus(): void {
+    const km=output ? output.segments.reduce((sum,s)=>sum+s.length,0)/1000 : 0;
+    q('#roadStatus').textContent=!enabled ? urbanText(['Génération des routes désactivée.','Road generation disabled.','道路生成已禁用。','Generación de carreteras desactivada.','Geração de estradas desativada.']) : output
+      ? `Rust · ${output.segments.length} ${urbanText(['segments','segments','段','segmentos','segmentos'])} · ${output.junctions.length} ${urbanText(['jonctions','junctions','个交叉点','cruces','entroncamentos'])} · ${km.toFixed(1)} km · ${output.routes} ${urbanText(['itinéraires','routes','条路线','rutas','rotas'])} · ${output.ms.toFixed(0)} ms`
+      : urbanText(['En attente des implantations…','Waiting for settlements…','等待聚落…','Esperando asentamientos…','Aguardando assentamentos…']);
+  }
+  window.addEventListener('magna-locale-change', localizeRoads);
+  window.addEventListener('storage', event => { if (event.key===LOCALE_KEY) localizeRoads(); });
+  controls(); localizeRoads();
   return {
     get config(): RoadConfig { return config; },
     /** Replace the routing options (a loaded decor's), without routing. */
     setConfig(next: RoadConfig): void { config = { ...defaultRoadConfig(), ...next }; controls(); },
     get enabled(): boolean { return enabled; },
-    pending(text = 'Routing in Rust…'): void { q('#roadStatus').textContent = text; panel.setAttribute('aria-busy', 'true'); },
-    error(text: string): void { q('#roadStatus').textContent = `Roads: ${text}`; panel.removeAttribute('aria-busy'); },
+    pending(text = urbanText(['Tracé des routes avec Rust…','Routing in Rust…','正在使用 Rust 规划道路…','Trazando carreteras con Rust…','Traçando estradas com Rust…'])): void { q('#roadStatus').textContent = text; panel.setAttribute('aria-busy', 'true'); },
+    error(text: string): void { q('#roadStatus').textContent = `${urbanText(['Routes','Roads','道路','Carreteras','Estradas'])}: ${text}`; panel.removeAttribute('aria-busy'); },
     set(next: RoadOutput | undefined): void {
       output = next; panel.removeAttribute('aria-busy');
       const km = next ? next.segments.reduce((sum, s) => sum + s.length, 0) / 1000 : 0;
       q('#roadState').textContent = next ? `${km.toFixed(0)} km` : '';
-      q('#roadStatus').textContent = !enabled ? 'Road generation disabled.' : next
-        ? `Rust · ${next.segments.length} segments · ${next.junctions.length} junctions · ${km.toFixed(1)} km from ${next.routes} routes · ${next.ms.toFixed(0)} ms`
-        : 'Waiting for settlements…';
+      updateRoadStatus();
       q('#roadWarnings').textContent = next?.warnings.join('\n') ?? '';
       window.dispatchEvent(new CustomEvent('roads:generated', { detail: next }));
       legend(); draw();

@@ -1,175 +1,63 @@
-# Sol, couvert bas, arbres et représentation de canopée
+# Ground, low cover, trees, and canopy representation
 
-Le contrat `surface-layers-1` (compilateur `surface-1.5.3`, analyse physique
-`surface-1.5.2`) distingue trois
-étages physiques. Leur représentation optique est un choix de rendu, séparé des
-données canoniques. La campagne V5 portait sur `surface-1.4.0` : elle **ne valide
-pas** ce nouveau contrat, son shader ni sa qualité visuelle. La campagne
-[V8](surface/evidence/native-e2e-v8.json) qualifie techniquement son intégration
-live : quatre visibilités distinctes, mêmes données physiques et inventaire.
-La campagne [V12 complète](surface/evidence/NATIVE_V12.md) qualifie maintenant
-les contrôles à 10 km et à 160 m sur le snapshot figé `bc6579f`, avec navigation
-nominale de 20 secondes et sept captures de zoom. Les
-[preuves structurées](surface/evidence/native-e2e-v12.json) conservent les
-584 hashes runtime identiques avant/après. Elle ne vaut pas acceptation
-artistique ; les échecs V9–V11 restent conservés.
+English translation of the [French original](SURFACE_RENDER_LAYERS_FR.md).
 
-1. **Sol/support** : roche, dépôts, sol minéral et matière organique du sol. Le
-   carbone/humus du sol reste distinct de la litière morte en surface. Ce support
-   existe aussi sous les herbes, les couronnes et l'eau ; l'eau possède sa propre
-   classe/niveau/autorité et n'est pas une recette de sol.
-2. **Couvert bas** : herbes, arbustes bas et litière morte. Les champs physiques
-   existants `grassCover`, `shrubCover`, `litter` restent inchangés. La couche
-   projetée possède ses recettes, sa moyenne linéaire et son opacité explicites.
-3. **Arbres** : potentiel canonique de projection des couronnes `treeCover`,
-   inventaire stable `family:'tree'`, appuis, tailles et rayons des couronnes.
-   La canopée distante/les instances sont des représentations de ces arbres,
-   jamais une nouvelle lithologie ni une composante minérale du sol.
+The `surface-layers-1` contract (compiler `surface-1.5.3`, physical analysis `surface-1.5.2`) distinguishes three physical layers. Their optical representation is a rendering choice separate from canonical data. The V5 campaign covered `surface-1.4.0`: it **does not validate** this new contract, its shader, or visual quality. The [V8 campaign](surface/evidence/native-e2e-v8.json) technically qualifies live integration: four distinct visibilities, identical physical data and inventory. The [complete V12 campaign](surface/evidence/NATIVE_V12.md) now qualifies controls at 10 km and 160 m on frozen snapshot `bc6579f`, with nominal 20-second navigation and seven zoom captures. [Structured evidence](surface/evidence/native-e2e-v12.json) retains all 584 identical runtime hashes before/after. It is not artistic acceptance; V9–V11 failures remain recorded.
 
-Le budget de matière d'un sol minéral est `sand+silt+clay=1`, avec `organic`
-distinct. Une paire de matériaux se normalise **dans son étage**. Il n'existe
-aucune partition globale imposant `sol+herbes+arbres=1` : des herbes et une
-couronne peuvent occuper le même point à des hauteurs différentes.
+1. **Ground/support:** rock, deposits, mineral soil, and soil organic matter. Soil carbon/humus remains distinct from dead surface litter. This support also exists under grasses, crowns, and water; water has its own class/level/authority and is not a ground recipe.
+2. **Low cover:** grasses, low shrubs, and dead litter. Existing physical fields `grassCover`, `shrubCover`, and `litter` remain unchanged. The projected layer has explicit recipes, linear mean, and opacity.
+3. **Trees:** canonical crown projection potential `treeCover`, stable `family:'tree'` inventory, supports, sizes, and crown radii. Distant canopy/instances represent these trees, never a new lithology or mineral soil component.
 
-## Transport compact
+A mineral soil's material budget is `sand+silt+clay=1`, with separate `organic`. A material pair is normalized **within its layer**. There is no global partition requiring `ground+grass+trees=1`: grass and a crown may occupy the same point at different heights.
 
-Les nouvelles arrays sont dans `world.fields`, alignées sur la grille de ce
-world. Les grilles projetées conservent le contexte canonique de la même manière
-que les autres champs de SurfaceWorld.
+## Compact transport
 
-| Champ | Type | Sens |
+The new arrays are in `world.fields`, aligned with that world's grid. Projected grids retain canonical context just like other SurfaceWorld fields.
+
+| Field | Type | Meaning |
 | --- | --- | --- |
-| `groundMaterial`, `groundMaterialSecondary` | `Uint16Array` | Indices du support roche/dépôt/sol, sans litière ni vivant. |
-| `groundMaterialBlend` | `Float32Array` | Paire support : `primary*(1-blend)+secondary*blend`. |
-| `groundMaterialMeanColor` | `Uint32Array` | Moyenne linéaire de tous les poids support avant réduction top2 ; même packing sRGB8 que le legacy. |
-| `lowCoverMaterial`, `lowCoverMaterialSecondary` | `Uint16Array` | Indices de recettes de couvert bas, normalisés dans cette couche. |
-| `lowCoverMaterialBlend` | `Float32Array` | Mélange des deux recettes basses. |
-| `lowCoverMaterialMeanColor` | `Uint32Array` | Moyenne linéaire basse, obtenue directement des recettes. |
-| `lowCoverOpacity` | `Float32Array` | Fraction projetée `[0,1]` du couvert bas sur le support disponible. |
+| `groundMaterial`, `groundMaterialSecondary` | `Uint16Array` | Rock/deposit/soil support indices, excluding litter and living matter. |
+| `groundMaterialBlend` | `Float32Array` | Support pair: `primary*(1-blend)+secondary*blend`. |
+| `groundMaterialMeanColor` | `Uint32Array` | Linear mean of all support weights before top-two reduction; same sRGB8 packing as legacy. |
+| `lowCoverMaterial`, `lowCoverMaterialSecondary` | `Uint16Array` | Low-cover recipe indices, normalized within that layer. |
+| `lowCoverMaterialBlend` | `Float32Array` | Mixture of the two low-cover recipes. |
+| `lowCoverMaterialMeanColor` | `Uint32Array` | Low-cover linear mean, obtained directly from recipes. |
+| `lowCoverOpacity` | `Float32Array` | Projected `[0,1]` fraction of low cover on available support. |
 
-Coût supplémentaire : **28 octets par échantillon**, soit 28 Mo pour un million
-d'échantillons, avant éventuelle copie du contexte canonique dans un export.
-Le budget mémoire est vérifié avant allocation. Le binaire conserve les types ;
-le JSON restaure les constructeurs exacts et reste soumis à sa limite de taille.
+Additional cost: **28 bytes per sample**, or 28 MB per million samples, before any canonical-context copy in an export. Memory budget is checked before allocation. Binary retains types; JSON restores exact constructors and remains subject to its size limit.
 
-`world.surfaceLayers` annonce `version:'surface-layers-1'`,
-`groundAvailability`, `lowCoverAvailability` et `fieldsVersion`. Une compilation
-nouvelle utilise `explicit`. `fieldsVersion` lie les neuf arrays de la grille
-actuelle ; `versions.surfaceLayers` lie les arrays canoniques. Le retargeting
-conserve cette dernière version et transporte
-`canonicalContextRef.surfaceLayersVersion`. Ces versions participent aux IDs.
+`world.surfaceLayers` declares `version:'surface-layers-1'`, `groundAvailability`, `lowCoverAvailability`, and `fieldsVersion`. A new compilation uses `explicit`. `fieldsVersion` binds the current grid's nine arrays; `versions.surfaceLayers` binds canonical arrays. Retargeting preserves the latter and carries `canonicalContextRef.surfaceLayersVersion`. These versions contribute to IDs.
 
-Les recettes ont un rôle facultatif pour les anciens catalogues,
-`surfaceRole:'ground'|'low-cover'|'water'|'seasonal'`. Les nouveaux catalogues
-intégrés l'annoncent explicitement. Normales, rugosité et palette cartographique
-doivent être résolues depuis **la recette de la couche concernée**. La famille
-legacy `vegetation` ne suffit pas à choisir entre herbe et litière.
+Recipes have an optional role for old catalogs, `surfaceRole:'ground'|'low-cover'|'water'|'seasonal'`. New bundled catalogs declare it explicitly. Normals, roughness, and cartographic palette must be resolved from **the relevant layer's recipe**. The legacy `vegetation` family is insufficient to choose between grass and litter.
 
-La couleur stockée de couvert bas est une moyenne non prémultipliée ; son alpha
-est distinct. Toute interpolation de couleur/IDs/rugosité/normales utilise les
-poids `bilerp*lowCoverOpacity`, puis normalise par la somme des alphas. Un texel
-transparent ne contribue jamais sa couleur de fallback. Le GPU doit multiplier
-le RGB linéaire par l'alpha **avant** filtrage/mipmaps, puis récupérer la couleur
-si l'alpha est positif. Une somme nulle reste neutre et invisible.
+Stored low-cover color is an unpremultiplied mean with separate alpha. Any interpolation of color/IDs/roughness/normals uses `bilerp*lowCoverOpacity` weights, then normalizes by the alpha sum. A transparent texel never contributes its fallback color. The GPU must multiply linear RGB by alpha **before** filtering/mipmaps, then recover color if alpha is positive. A zero sum remains neutral and invisible.
 
-## Construction et invariants
+## Construction and invariants
 
-Le support est calculé à partir des mêmes scores roche/dépôts/sols que le
-compilateur, avant le couvert. Il conserve les contacts, les affleurements et les
-dépôts ; il n'est pas remplacé par une couleur de sol uniforme. Les recettes
-rocheuses de support utilisent le substrat déclaré, les dépôts gravitaires leur
-source de fragments. Les sols humiques utilisent la nouvelle recette brune
-`organic-soil`, ajoutée en fin de catalogue ; `wetland-organic` conserve son ID
-et sa couleur legacy mais ne remplace plus brutalement le support.
-La fraction dérivée de humus varie continûment (C1) avec l'humidité entre
-0,72 et 0,88, décroît avec la pente entre 0,08 et 0,16 **radian**, et utilise la
-fraction organique existante entre 0,02 et 0,16. Ces intervalles sont des choix
-d'auteur pour un potentiel d'apparence, pas des seuils de classification
-pédologique calibrés. Ils ne dépendent ni du zoom ni d'un filtrage UV ajouté.
-Les poids minéral/humus se répartissent le même support ; la moyenne conserve
-tous les poids avant réduction top2. Les champs physiques restent inchangés.
+Support is calculated from the compiler's same rock/deposit/soil scores before cover. It retains contacts, outcrops, and deposits; it is not replaced by uniform soil color. Rocky support recipes use declared substrate; gravity deposits use their fragment source. Humic soils use the new brown `organic-soil` recipe, appended to the catalog; `wetland-organic` keeps its legacy ID and color but no longer abruptly replaces support.
 
-Depuis 1.5.3, les cellules d'occupation Road, Yard et Built conservent ce support
-naturel. Leur emprise raster est une exclusion conservatrice, pas la preuve
-d'un revêtement posé sur toute la cellule. Les routes vectorielles et les
-bâtiments portent leurs matériaux propres. Les cultures explicites et les
-exclusions du couvert restent conservées. Le composite legacy reste identique,
-y compris ses anciennes matières d'infrastructure. Voir
-[la politique et la migration retenue](surface/URBAN_GROUND_SUPPORT.md).
+The derived humus fraction varies continuously (C1) with moisture between 0.72 and 0.88, decreases with slope between 0.08 and 0.16 **radians**, and uses the existing organic fraction between 0.02 and 0.16. These intervals are authoring choices for appearance potential, not calibrated pedological classification thresholds. They depend neither on zoom nor added UV filtering. Mineral/humus weights share the same support; the mean retains all weights before top-two reduction. Physical fields remain unchanged.
 
-L'opacité basse prend successivement le support non rocheux, la litière, les
-arbustes puis les herbes. Cette priorité est une approximation déclarée de la
-projection de cet étage. Elle ne modifie pas ses champs physiques et ne débite
-jamais `treeCover`. Les herbes utilisent la recette legacy `vegetation-litter`,
-liée au PBR `grass` ; la litière utilise `forest-litter`, liée au PBR `litter`.
-Les arbustes emploient actuellement la recette de végétation basse comme proxy,
-sans prétendre disposer d'un asset PBR de feuilles spécifique. Routes,
-constructions et eau bloquent le couvert bas ; le rocher réduit son support.
+Since 1.5.3, Road, Yard, and Built occupation cells retain this natural support. Their raster footprint is a conservative exclusion, not proof that pavement covers the entire cell. Vector roads and buildings carry their own materials. Explicit crops and cover exclusions are retained. The legacy composite remains identical, including its old infrastructure materials. See [the chosen policy and migration](surface/URBAN_GROUND_SUPPORT.md).
 
-Les hauteurs source, minéraux, sols physiques, climat, couverts canoniques,
-masques d'appui et IDs/acceptations/rangs des candidats ne changent pas avec ce
-contrat. `sampleSurface(...).surfaceLayers` expose les trois étages.
-`selectSurfaceLayerView(sample,{lowCover:false,trees:false})` produit seulement
-une sélection de visibilité ; le sol retourné reste le même objet et aucun
-champ, appui ou inventaire n'est édité. La couleur d'une canopée distante,
-ses empreintes et ses transitions restent du ressort de la représentation.
+Low-cover opacity successively considers non-rocky support, litter, shrubs, then grasses. This priority is a declared approximation of the layer's projection. It does not change physical fields or subtract from `treeCover`. Grass uses the legacy `vegetation-litter` recipe, linked to PBR `grass`; litter uses `forest-litter`, linked to PBR `litter`. Shrubs currently use the low-vegetation recipe as a proxy, without claiming a specific leaf PBR asset. Roads, construction, and water block low cover; rock reduces its support.
 
-## Compatibilité honnête
+Source heights, minerals, physical soils, climate, canonical cover, support masks, and candidate IDs/acceptances/ranks do not change under this contract. `sampleSurface(...).surfaceLayers` exposes the three layers. `selectSurfaceLayerView(sample,{lowCover:false,trees:false})` only selects visibility; returned ground remains the same object and no field, support, or inventory is edited. Distant canopy color, footprints, and transitions belong to representation.
 
-Les champs historiques `material`, `materialSecondary`, `materialBlend`,
-`materialMeanColor` sont conservés **exactement** : c'est le composite
-support+litière+herbes, sans canopée ni neige. Ils ne doivent pas être présentés
-comme un diagnostic de sol nu. Le préclassement historique fondé sur
-`treeCover+grassCover` est ensuite remplacé par cette composition naturelle ;
-il ne constitue pas, à lui seul, la preuve d'une double canopée dans le sol.
+## Honest compatibility
 
-Un ancien paquet sans les neuf arrays porte
-`groundAvailability:'legacy-composite-unavailable'` et
-`lowCoverAvailability:'legacy-composite-unavailable'`, avec un avertissement
-explicite. L'hydratation ne tente aucune soustraction ou reconstruction depuis
-son top2 mélangé. Le sample fournit `ground:undefined`/`lowCover:undefined` ; un
-viewer peut afficher le composite legacy en annonçant ce fallback. Un groupe
-partiel, une disponibilité mensongère, un mauvais type/rôle, un blend/alpha hors
-borne ou une version de champs éditée est refusé.
+Historical `material`, `materialSecondary`, `materialBlend`, and `materialMeanColor` fields are retained **exactly**: the support+litter+grass composite, without canopy or snow. They must not be presented as a bare-ground diagnostic. Historical preclassification based on `treeCover+grassCover` is subsequently replaced by this natural composition; by itself it does not prove a duplicate canopy in the ground.
 
-## Contrôles et reste à qualifier
+An old package without the nine arrays carries `groundAvailability:'legacy-composite-unavailable'` and `lowCoverAvailability:'legacy-composite-unavailable'`, with an explicit warning. Hydration does not attempt subtraction or reconstruction from its mixed top two. The sample returns `ground:undefined`/`lowCover:undefined`; a viewer may show the legacy composite while declaring this fallback. A partial group, false availability, wrong type/role, out-of-range blend/alpha, or edited field version is rejected.
 
-Les tests comparent tous les anciens champs et 6 422 candidats complets au
-snapshot pré-couches `f6a45af` : même géométrie, mêmes acceptations, positions,
-appuis, IDs et rangs. Ils vérifient aussi les toggles sans mutation, les rochers
-sous couvert, les exclusions, les saisons, les patches superposés, le binaire,
-le JSON, les budgets et les métadonnées legacy/malformées.
+## Checks and remaining qualification
 
-L'intégration GD possède des diagnostics séparés **sol nu**, **herbes et
-litière**, **arbres** et **canopée optique**, avec contrôles de visibilité
-indépendants. V8 prouvait leur isolation à 10 km, sans qualifier le masquage
-réel des instances proches. V12 exécute les deux probes, chacune avec cinq
-images : tous les étages, sans arbres, sans couvert bas, sol seul et sol moyen
-sans éclairage. À 160 m, les comptes CPU réellement alpha-positifs dans le
-frustum sont **64 arbres / 64 troncs, 288 herbes, 17 arbustes, 61 débris et
-31 rochers** dans l'état complet. Sans arbres, arbres/troncs passent à zéro,
-ainsi que la canopée et son ombre optique. Sans couvert bas, herbes/arbustes/débris
-passent à zéro ; les 31 rochers persistent. Les allocations soumises restent
-fixes entre toggles. Ces comptes de buffers et de frustum CPU ne sont pas des
-comptes de pixels visibles après occlusion GPU.
+Tests compare every old field and 6,422 complete candidates against pre-layer snapshot `f6a45af`: identical geometry, acceptances, positions, supports, IDs, and ranks. They also check toggles without mutation, rocks under cover, exclusions, seasons, overlapping patches, binary, JSON, budgets, and legacy/malformed metadata.
 
-Les champs physiques, le contexte, les hauteurs, les arrays de sol et les
-empreintes de l'inventaire restent identiques entre états de visibilité d'une
-même vue. Les inventaires de deux largeurs de vue différentes ne sont pas
-supposés identiques. Les contrôles avant gel passent : **224 tests Surface dans
-42 fichiers**, typecheck complet et build de 445 modules.
+The Godot integration has separate **bare ground**, **grass and litter**, **trees**, and **optical canopy** diagnostics with independent visibility controls. V8 proved their isolation at 10 km without qualifying actual near-instance masking. V12 runs both probes, each with five images: all layers, without trees, without low cover, ground only, and unlit mean ground. At 160 m, CPU counts actually alpha-positive in the frustum are **64 trees / 64 trunks, 288 grasses, 17 shrubs, 61 debris, and 31 rocks** in the complete state. Without trees, trees/trunks fall to zero, as do canopy and optical shadow. Without low cover, grasses/shrubs/debris fall to zero; the 31 rocks persist. Submitted allocations remain fixed across toggles. These buffer and CPU frustum counts are not counts of visible pixels after GPU occlusion.
 
-La navigation V12 applique **une seule nouvelle preview distincte**, demandée
-à 128 et livrée en 128², deux fois pendant la fenêtre nominale. Son espacement
-natif est de 30 m et `decoderUsed=false` : cela prouve la progression du flux,
-pas un raffinement neural appris pendant le mouvement. Le vrai support fin à
-0,46875 m natif, `decoderUsed=true`, arrive seulement pendant le drain final.
-La grille environnementale canonique reste à **78,125 m** ; les couches et les
-petits objets ne transforment pas cette résolution en mesure physique fine.
+Physical fields, context, heights, ground arrays, and inventory footprints remain identical across visibility states of one view. Inventories at two different view widths are not assumed identical. Pre-freeze checks pass: **224 Surface tests in 42 files**, full typecheck, and a 445-module build.
 
-V12 ne qualifie ni le photoréalisme, ni 60 FPS, ni une interaction à faible
-latence. La couronne proxy uniforme et les petites végétations en blocs restent
-visibles dans la capture à 10 m. Les ombres forestières restent optiques. La
-ville retenue de 419 réalisations natives est une preuve séparée, sur un parent
-à 15,625 m / LOD inconnu, sans nouvelle génération neurale urbaine. Les captures
-V5 ne qualifient ni ces couches ni cette scène construite.
+V12 navigation applies **one distinct new preview**, requested at 128 and delivered at 128², twice during the nominal window. Its native spacing is 30 m and `decoderUsed=false`: this proves stream progress, not learned neural refinement during movement. Genuine fine support at native 0.46875 m, `decoderUsed=true`, arrives only during final drain. The canonical environmental grid remains **78.125 m**; layers and small objects do not turn that resolution into fine physical measurement.
+
+V12 qualifies neither photorealism, 60 FPS, nor low-latency interaction. Uniform proxy crowns and blocky small vegetation remain visible in the 10 m capture. Forest shadows remain optical. The retained city of 419 native realizations is separate evidence, on a 15.625 m parent / unknown LOD, without new neural urban generation. V5 captures qualify neither these layers nor this built scene.

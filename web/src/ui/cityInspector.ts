@@ -13,6 +13,7 @@ import { DISTRICT_ROLES, districtRoleLabel, type CityParcel, type CityPick, type
 import { functionLabel, lotRoleChoices, roleLabel, streetLabel } from '../render/cityRoles';
 import type { CityEdits, HouseEdit, LotEdit, QuarterEdit } from './cityEdits';
 import { ensureEditStyles, type Pt } from './cityShapeEditor';
+import { localizeCityInspector } from './cityInspectorLocale';
 
 export interface CityInspectorHooks {
   edits(): CityEdits;
@@ -223,6 +224,7 @@ function houseSection(target: CityInspectorTarget, hooks: CityInspectorHooks): s
 export function renderCityInspector(host: HTMLElement, target: CityInspectorTarget, plan: CityScene, hooks: CityInspectorHooks): void {
   ensureEditStyles();
   host.innerHTML = houseSection(target, hooks) + lotSection(target, plan, hooks) + quarterSection(target, plan, hooks) || '<small>Rien d’inspectable ici.</small>';
+  localizeCityInspector(host);
   if (target.built && !hooks.styles() && !hooks.houseLocked(target.built)) void hooks.loadStyles().then(index => { if (index && host.isConnected && host.querySelector('[data-styles-loading]')) renderCityInspector(host, target, plan, hooks); });
   for (const box of Array.from(host.querySelectorAll<HTMLElement>('.city-inspect'))) {
     const [scope, ...rest] = box.dataset.scope!.split(':'), key = rest.join(':');

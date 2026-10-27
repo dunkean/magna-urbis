@@ -1,4 +1,13 @@
 import { openMethodNote, type MethodNoteId } from './methodNotes';
+import { savedLocale, LOCALE_KEY } from './shellLocale';
+import { urbanText } from './urbanPanelLocale';
+import { terrainHelpTranslations } from './terrainHelpTranslations';
+
+function terrainHelpText(source: string): string {
+  const locale = savedLocale();
+  if (locale === 'fr') return source;
+  return terrainHelpTranslations[source]?.[(['en','zh','es','pt'] as const).indexOf(locale)] ?? source;
+}
 
 /** Short, keyboard-accessible explanations next to the controls they describe. */
 export function installTerrainHelp(): void {
@@ -45,29 +54,39 @@ export function installTerrainHelp(): void {
     tileBounds3d: () => 'Superpose les limites des tuiles affichées pour examiner leurs raccords. Cette option ne change ni le relief ni son niveau de détail.',
   };
   const tip = document.createElement('div'); tip.id = 'terrainHelpText'; tip.className = 'terrain-help-text'; tip.setAttribute('popover', 'auto'); tip.setAttribute('role', 'note'); document.body.append(tip);
-  let current: HTMLButtonElement | undefined;
-  tip.addEventListener('toggle', () => { if (!tip.matches(':popover-open')) { current?.setAttribute('aria-expanded', 'false'); current = undefined; } });
+  let current: HTMLButtonElement | undefined, refreshCurrent: (() => void) | undefined;
+  const refreshLabels: (() => void)[] = [];
+  const refreshLocale = (): void => { for (const update of refreshLabels) update(); refreshCurrent?.(); };
+  window.addEventListener('magna-locale-change', refreshLocale);
+  window.addEventListener('storage', event => { if (event.key === LOCALE_KEY) refreshLocale(); });
+  tip.addEventListener('toggle', () => { if (!tip.matches(':popover-open')) { current?.setAttribute('aria-expanded', 'false'); current = undefined; refreshCurrent = undefined; } });
   function attach(control: Element, explain: () => string): void {
     const label = control.closest('label') ?? control;
     const row = document.createElement('div'); row.className = 'terrain-help-row'; label.before(row); row.append(label);
     const button = document.createElement('button'); button.type = 'button'; button.className = 'terrain-help'; button.textContent = '?';
-    const title = Array.from(label.childNodes).filter(n => n.nodeType === Node.TEXT_NODE).map(n => n.textContent).join('').trim();
-    button.setAttribute('aria-label', `Aide : ${title || 'terrain'}`); button.setAttribute('aria-controls', tip.id); button.setAttribute('aria-expanded', 'false');
+    const refreshLabel = (): void => {
+      const title = Array.from(label.childNodes).filter(n => n.nodeType === Node.TEXT_NODE).map(n => n.textContent).join('').trim();
+      button.setAttribute('aria-label', `${urbanText(['Aide','Help','帮助','Ayuda','Ajuda'])} : ${title || urbanText(['terrain','terrain','地形','terreno','terreno'])}`);
+    };
+    refreshLabels.push(refreshLabel); refreshLabel(); button.setAttribute('aria-controls', tip.id); button.setAttribute('aria-expanded', 'false');
     row.append(button);
     const method = (): MethodNoteId | undefined => control.id==='renderV2Season'||control.id==='renderV2Diagnostic'||control.id==='style'&&(control as HTMLSelectElement).value.startsWith('render-v2')?'render-v2': control.id === 'style' && (control as HTMLSelectElement).value === 'render3d-brush' ? 'render3d-brush'
       : ['brush_landuse', 'brush_size'].includes(control.id) ? 'fantasy-landuse'
       : ['forestEnabled', 'forestDensity', 'forestClearings'].includes(control.id) ? 'render3d-vegetation' : ['projection3d', 'refinement3d', 'tileBounds3d'].includes(control.id)
       || control.id === 'style' && (control as HTMLSelectElement).value === 'render3d' ? 'render3d-ground' : undefined;
+    const refresh = (): void => {
+      tip.textContent = terrainHelpText(explain());
+      if (method()) tip.append(urbanText([' Cliquez sur ? pour lire la note scientifique en anglais.',' Click ? to read the scientific note in English.',' 点击 ? 阅读英文科学说明。',' Pulsa ? para leer la nota científica en inglés.',' Clique em ? para ler a nota científica em inglês.']));
+    };
     const show = (): void => {
-      current?.setAttribute('aria-expanded', 'false'); current = button; tip.textContent = explain();
-      if (method()) tip.append(' Cliquez sur ? pour lire la note scientifique en anglais.');
+      current?.setAttribute('aria-expanded', 'false'); current = button; refreshCurrent = refresh; refresh();
       tip.showPopover(); button.setAttribute('aria-expanded', 'true');
       const b = button.getBoundingClientRect(); tip.style.left = `${Math.min(b.left, Math.max(8, innerWidth - Math.min(340, innerWidth - 16) - 8))}px`;
       tip.style.top = `${Math.max(8, Math.min(b.bottom + 6, innerHeight - tip.offsetHeight - 8))}px`;
     };
     const hide = (): void => {
       if (current !== button) return;
-      tip.hidePopover(); button.setAttribute('aria-expanded', 'false'); current = undefined;
+      tip.hidePopover(); button.setAttribute('aria-expanded', 'false'); current = undefined; refreshCurrent = undefined;
     };
     button.addEventListener('mouseenter', show);
     button.addEventListener('mouseleave', hide);
@@ -78,7 +97,7 @@ export function installTerrainHelp(): void {
       if (note) { hide(); openMethodNote(note); }
       else show();
     });
-    control.addEventListener('input', () => { if (current === button) tip.textContent = explain(); });
+    control.addEventListener('input', () => { if (current === button) refresh(); });
   }
   for (const [id, explain] of Object.entries(explanations)) { const control = document.getElementById(id); if (control) attach(control, explain); }
   const input = document.querySelector('#terrainSketchEditor [data-id=input]');

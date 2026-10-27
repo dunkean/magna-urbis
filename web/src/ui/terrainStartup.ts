@@ -1,5 +1,6 @@
 import { executionProfiles, executionRuntime } from './executionProfile';
-import { initialTerrainSource, neuralModelLabel, type NeuralServiceState } from './terrainStartupState';
+import { initialTerrainSource, neuralModelLabel, terrainStartupText, type NeuralServiceState } from './terrainStartupState';
+import { LOCALE_KEY, savedLocale } from './shellLocale';
 
 export type TerrainLoadingPhase = 'interface' | 'generation' | 'rendering' | 'ready' | 'error';
 export interface TerrainLoading { phase: TerrainLoadingPhase; message?: string }
@@ -21,10 +22,7 @@ if (source && overlay) {
   const model = document.getElementById('terrainModelStatus')!;
   let phase: TerrainLoadingPhase = 'interface', started = performance.now(), initialized = false;
   let lastProgress = started, polling = false, modelsLoaded = false, stopped = false;
-  const titles: Record<TerrainLoadingPhase, string> = {
-    interface: 'Chargement de l’atelier', generation: 'Génération du terrain',
-    rendering: 'Préparation de la vue', ready: 'Terrain prêt', error: 'Chargement interrompu',
-  };
+  const t = (key: Parameters<typeof terrainStartupText>[0]): string => terrainStartupText(key, savedLocale());
   function update(next: TerrainLoading): void {
     if (next.phase !== phase) started = performance.now();
     phase = next.phase; lastProgress = performance.now();
@@ -33,8 +31,8 @@ if (source && overlay) {
       document.querySelector('.terrain-workspace')?.removeAttribute('inert');
     }
     overlay!.dataset.phase = phase;
-    title.textContent = titles[phase];
-    message.textContent = next.message ?? (phase === 'interface' ? 'Chargement de l’interface et du moteur. La méthode choisie est déjà affichée.' : '');
+    title.textContent = t(phase);
+    message.textContent = next.message ?? (phase === 'interface' ? t('interfaceHint') : '');
     overlay!.hidden = phase === 'ready';
     document.getElementById('viewport')?.setAttribute('aria-busy', String(phase !== 'ready' && phase !== 'error'));
     if (phase === 'error') model.dataset.state = 'error';
@@ -43,7 +41,7 @@ if (source && overlay) {
   function showModels(): void {
     const neural = source!.value !== 'procedural'; model.hidden = !neural;
     if (source!.value === 'neural-wasm') {
-      model.textContent = modelsLoaded ? 'Modèles chargés · GPU du navigateur prêt' : 'Modèles navigateur · chargement au premier calcul';
+      model.textContent = t(modelsLoaded ? 'browserReady' : 'browserWaiting');
       model.dataset.state = modelsLoaded ? 'ready' : 'waiting';
     }
   }
@@ -58,22 +56,25 @@ if (source && overlay) {
       if (!response.ok) throw new Error('Service neuronal indisponible');
       const status = await response.json() as NeuralServiceState;
       if (source!.value !== selected || stopped) return;
-      model.textContent = neuralModelLabel(status); model.dataset.state = status.state;
+      model.textContent = neuralModelLabel(status, savedLocale()); model.dataset.state = status.state;
       if (phase === 'generation' && ['loading', 'generating'].includes(status.state)) {
         message.textContent = status.message; lastProgress = performance.now();
       }
     } catch {
-      if (source!.value === selected && !stopped) { model.textContent = 'Service neuronal indisponible · vérifier Python/CUDA'; model.dataset.state = 'error'; }
+      if (source!.value === selected && !stopped) { model.textContent = t('checkCuda'); model.dataset.state = 'error'; }
     } finally { polling = false; }
   }
   window.addEventListener('terrain:loading', event => update((event as CustomEvent<TerrainLoading>).detail));
   window.addEventListener('bench-source-change', () => { void poll(); });
   source.addEventListener('change', () => { modelsLoaded = false; void poll(); });
-  window.addEventListener('error', event => { if (!initialized) update({ phase: 'error', message: event.message || 'Impossible de charger l’atelier. Rechargez la fenêtre.' }); });
+  window.addEventListener('error', event => { if (!initialized) update({ phase: 'error', message: event.message || t('loadFailed') }); });
+  const refreshLocale = (): void => { title.textContent = t(phase); if (phase === 'interface') message.textContent = t('interfaceHint'); void poll(); };
+  window.addEventListener('magna-locale-change', refreshLocale);
+  window.addEventListener('storage', event => { if (event.key === LOCALE_KEY) refreshLocale(); });
   const timer = setInterval(() => {
     if (!overlay!.hidden) {
       const seconds = Math.floor((performance.now() - started) / 1000);
-      elapsed.textContent = `${seconds} s écoulées${performance.now() - lastProgress > 8000 ? ' · étape en cours, sans nouveau message' : ''}`;
+      elapsed.textContent = `${seconds} ${t('elapsed')}${performance.now() - lastProgress > 8000 ? ` · ${t('noProgress')}` : ''}`;
     }
     void poll();
   }, 1000);

@@ -1,111 +1,84 @@
-# Cultures urbaines du City Bench
+# City Bench urban cultures
 
-Le catalogue natif `rust/crates/core/src/urban/catalogue.json` décrit **79 cultures** :
-les 53 d’origine et 26 ajoutées le 22 octobre 2026 pour couvrir un monde médiéval et
-fantastique inspiré du réel. Chaque culture est une recette de **forme urbaine** (trame,
-enceinte, noyau, densités, lots, phases) rattachée à un **pack de maisons existant** par
-`urban/culture.rs::MAPPINGS`. Aucune recette de maison n’est inventée côté ville : les
-packs appartiennent au moteur `houses`.
+[Français](CITY_CULTURES_FR.md)
 
-Les valeurs numériques sont des **plages artistiques** de génération, pas des relevés.
-Les références `XX-YY-Snn` renvoient à l’atlas
-[`styles_architecturaux_mondiaux_city_mapper.md`](styles_architecturaux_mondiaux_city_mapper.md).
+The native catalogue `rust/crates/core/src/urban/catalogue.json` describes **79 cultures**: the original 53 and 26 added on October 22, 2026 for a medieval and fantasy world inspired by reality. Each culture is an **urban-form** recipe (fabric, enclosure, core, densities, lots and phases) linked to an **existing house pack** by `urban/culture.rs::MAPPINGS`. No house recipe is invented by the city stage: packs belong to the `houses` engine.
 
-## Comment une culture est construite
+Numerical values are **artistic generation ranges**, not surveys. `XX-YY-Snn` references point to the [architectural atlas](styles_architecturaux_mondiaux_city_mapper.md).
 
-| Élément | Où | Rôle |
+## How a culture is constructed
+
+| Element | Where | Role |
 |---|---|---|
-| `plan` | `cultures[id].plan` | trame (`organic`, `grid`, `terraces`, `linear`, `radial`, `dispersed`), forme d’enceinte, fortification, portes, orientation, escaliers, front d’eau |
-| `nucleus` | `cultures[id].nucleus` | monument central (`kind` → rôle de `services.json::nucleus`), forme, surface ; donne le rôle du quartier central |
-| `phaseCount`, `faubShare`, `ring` | `cultures[id]` | nombre de couronnes selon la population ; part de faubourgs (enceinte / sans enceinte) ; `ring: null` = une seule phase (camps) |
-| recettes `core/ring/faubourg/village/hamlet` | `presets[id/recette].params` | rues (`streets`, `streetOp`, `closeOp`), lots (`plotOp`, `frontage`, `plotDepth`, `houseArea`, `coverage`), densité par zone (hab/ha), largeurs par rang |
-| `growth` | `cultures[id].growth` | un camp qui devient ville au-delà de `minPop` (recettes `grown-*`) |
-| `MAPPINGS` | `urban/culture.rs` | famille foncière, pack, emprunt déclaré (fantasy), profil fonctionnel, famille architecturale |
-| `PREFERRED` | `urban/culture.rs` | recette native par défaut quand l’heuristique « plus petite enveloppe » du pack choisirait une maison moins typique |
-| famille de services | `urban/services.json::cultures` | équipements (culte, marché, entrepôts…), libellés et occupation des ménages |
+| `plan` | `cultures[id].plan` | fabric (`organic`, `grid`, `terraces`, `linear`, `radial`, `dispersed`), enclosure shape, fortification, gates, orientation, stairs, waterfront |
+| `nucleus` | `cultures[id].nucleus` | central monument (`kind` → `services.json::nucleus` role), shape and area; gives the central neighborhood its role |
+| `phaseCount`, `faubShare`, `ring` | `cultures[id]` | number of rings by population; suburb share (enclosed / open); `ring: null` = a single phase (camps) |
+| `core/ring/faubourg/village/hamlet` recipes | `presets[id/recette].params` | streets (`streets`, `streetOp`, `closeOp`), lots (`plotOp`, `frontage`, `plotDepth`, `houseArea`, `coverage`), density by zone (people/ha), widths by rank |
+| `growth` | `cultures[id].growth` | a camp becoming a town above `minPop` (`grown-*` recipes) |
+| `MAPPINGS` | `urban/culture.rs` | land family, pack, declared borrowing (fantasy), functional profile, architectural family |
+| `PREFERRED` | `urban/culture.rs` | default native recipe when the pack’s “smallest envelope” heuristic would choose a less typical house |
+| service family | `urban/services.json::cultures` | facilities (worship, markets, storage, etc.), labels and household occupancy |
 
-Les nouvelles cultures sont produites par un générateur reproductible,
-[`docs/methods/city_cultures_generator.mjs`](methods/city_cultures_generator.mjs) (base = préréglage
-existant + surcharges, comme les `extensions` de `rust/scripts/export-urban-catalogue.ts`) :
-`node docs/methods/city_cultures_generator.mjs rust/crates/core/src/urban/catalogue.json`
-remplace uniquement ses 26 entrées et laisse le reste du catalogue intact.
-Relancer l’ancien export TypeScript **effacerait** ces entrées : reporter d’abord ces
-spécifications dans ses `extensions`.
+The new cultures are produced by reproducible generator [`docs/methods/city_cultures_generator.mjs`](methods/city_cultures_generator.mjs) (base = existing preset + overrides, like `extensions` in `rust/scripts/export-urban-catalogue.ts`): `node docs/methods/city_cultures_generator.mjs rust/crates/core/src/urban/catalogue.json` replaces only its 26 entries and leaves the rest intact. Rerunning the old TypeScript export **would erase** them: first carry these specifications into its `extensions`.
 
-## Les 26 cultures ajoutées
+## The 26 added cultures
 
-| Id | Libellé | Trame · enceinte | Noyau | Densité cœur/milieu/bord (hab./ha, préréglage cœur) | Lot cœur (front × prof., m) | Pack → maison par défaut | Services |
+| Id | Label | Fabric · enclosure | Core | Core/middle/edge density (people/ha, core preset) | Core lot (front × depth, m) | Pack → default house | Services |
 |---|---|---|---|---|---|---|---|
-| <a id="al-andalus"></a>`al-andalus` | Al-Andalus · médina ibérique à patios | organique, muraille, pente | grande mosquée | 300/220/140 | souk 4,8–7 × 7–12 ; patios 7–12 × 14–24 | AF-MAG → B02 (cour), B01 en échoppe | islamic |
-| <a id="italian-comune"></a>`italian-comune` | Italie · commune à piazza et tours | organique, cerchie successives | piazza | 364/252/154 | 7,5–10 × 17–28 | EUR-MED → B02 rangée étroite au cœur, B09 portique en mixte, B04 dans les borghi | european |
-| <a id="flemish-cloth-town"></a>`flemish-cloth-town` | Flandre · ville drapière à beffroi | organique, canaux, enceintes | beffroi + Grand-Place | 210/160/110 | 6–8 × 26–44 | EUR-MED → B11 pignons à redents, B05 halle en mixte | european |
-| <a id="rynek-town"></a>`rynek-town` | Europe centrale · ville à rynek | damier, enceinte ovale | grande place 0,8–3 ha | 170/140/100 | 7–10 × 28–40 | EUR-MED → B03 pans de bois | european |
-| <a id="slavic-gord"></a>`slavic-gord` | Slaves · gród palissadé et podgrodzie | radiale, palissade | gród (château) | 80/60/45 | 12–18 × 26–40 (cours) | EUR-EAST → B01 isba | european |
-| <a id="caucasian-highland"></a>`caucasian-highland` | Caucase · bourg fortifié géorgien et arménien | terrasses, muraille | église en enceinte | 195/150/103 | 6–10 × 12–20 | EUR-EAST → B03 maison caucasienne | european |
-| <a id="ethiopian-highland"></a>`ethiopian-highland` | Éthiopie · cité d’altitude | organique, ouverte | enclos d’église circulaire | 130/105/85 | concessions 12–20 × 18–30 | AF-EAST → B04 maison des hauts plateaux | african |
-| <a id="great-zimbabwe"></a>`great-zimbabwe` | Zimbabwe · enclos de pierre sèche | organique, ovale | enclos royal (`royal-enclosure` → palais) | 60/45/35 | concessions 28–38 × 30–42 | AF-SOUTH → B05 concession de cases | african |
-| <a id="hausa-kano"></a>`hausa-kano` | Hausa · cité-État à enceinte de terre | organique, muraille de terre | grande mosquée | 140/110/80 | cours 19–26 × 20–30 | AF-SAHEL → B05 maison hausa à cour, B04 en échoppe | islamic |
-| <a id="hadhrami-tower"></a>`hadhrami-tower` | Hadramaout · cité verticale (Shibam) | compacte, rectangulaire, murée, une seule phase | mosquée | 450/380/300 | 7–11 × 9–15 | AS-MIDE → B13 maison-tour hadramie (4–7 niveaux) | islamic |
-| <a id="rajput-fort"></a>`rajput-fort` | Rajputana · ville au pied du fort | organique, muraille, pente | fort (garnison) | 260/190/120 | bazar 5–8 × 12–20 ; havelis 13–25 × 22–32 | AS-IND → B10 maison à balcon (cour), B01 en échoppe | indian |
-| <a id="dravidian-temple"></a>`dravidian-temple` | Inde du Sud · ville-temple concentrique | damier + anneaux carrés, portes cardinales | temple 2–8 ha | 200/160/110 | 5,5–8 × 24–40 | AS-IND → B01 maison rectangulaire | indian |
-| <a id="bagan"></a>`bagan` | Birmanie · cité royale de Pagan | damier, enceinte carrée, fleuve | temple | 90/70/50 | enclos 14–22 × 20–32 | AS-SEA → B01 pilotis (plateforme) | indian |
-| <a id="vietnamese-citadel"></a>`vietnamese-citadel` | Viêt · citadelle et quartier marchand | citadelle carrée ; extension organique | citadelle 4–12 ha | 140/120/90 | citadelle 25–34 × 36–48 ; maisons-tubes 6–9 × 26–46 | AS-SEA → B04 maison à cour, B02 en lot étroit | chinese |
-| <a id="tibetan-monastery"></a>`tibetan-monastery` | Tibet · bourg monastique de pente | terrasses, escaliers | monastère | 300/220/160 | 12–17 × 14–21 (famille `compound`) | AS-HIM → B04 maison à galerie, B03 sur lot étroit | indian |
-| <a id="mongol-ordu"></a>`mongol-ordu` | Mongols · ordu de yourtes ; capitale murée ≥ 8 000 hab. | radiale, portes cardinales ; puis damier muré | tente du khan (famille steppe) | 105/90/75 | 10–16 × 12–20 | AS-STEP → B01 yourte | steppe |
-| <a id="maori-pa"></a>`maori-pa` | Māori · pā fortifié en terrasses | terrasses, palissade | — (place commune du clan) | 420/350/280 | 7–12 × 10–16 | OC-PAC → B03 whare | clan |
-| <a id="pnw-plank-village"></a>`pnw-plank-village` | Côte Nord-Ouest · maisons de planches | linéaire face au rivage | — | 90/80/70 | 13–20 × 28–38 | AM-PNW → B01 longue maison de planches | clan |
-| <a id="inuit-camp"></a>`inuit-camp` | Arctique · camp inuit d’hiver | dispersée, rivage | — | 260/228/195 | 8–13 × 9–14 | AM-ARC → B05 igloo | clan |
-| <a id="siberian-camp"></a>`siberian-camp` | Sibérie · campement de chums | radiale | — | 210/192/168 | 9–14 × 10–15 | AS-SIB → B01 chum | clan |
-| <a id="guarani-village"></a>`guarani-village` | Guaraní · village de grandes maisons | radiale, palissade | — (place de danse du clan) | 105/90/83 | 12–20 × 26–38 | AM-SOUTH → B03 longhouse guaraní | clan |
-| <a id="budj-bim"></a>`budj-bim` | Australie · village de pierre du Budj Bim | dispersée, chenaux | — | 200/180/160 | 8–13 × 10–16 | OC-AUS → B03 cabane de pierre | clan |
-| <a id="lizardfolk-swamp"></a>`lizardfolk-swamp` | Hommes-lézards · cité lacustre sur pilotis* | dispersée, passerelles | bassin sacré | 131/116/102 | 9–14 × 14–22 | AM-TROP → B05 pilotis (plateforme) | fantasy |
-| <a id="merfolk-tidal"></a>`merfolk-tidal` | Ondins · grève et grottes marines* | organique, escaliers, front d’eau | sanctuaire de marée | 176/152/128 | 8–13 × 12–20 | OC-PAC → B08 pilotis de lagune | fantasy |
-| <a id="giant-hold"></a>`giant-hold` | Géants · bourg mégalithique* | radiale, enceinte cyclopéenne, voies ×2 | salle du jarl | 25/22/18 | 20–32 × 40–60 | EUR-NOR → B01 maison longue | fantasy |
-| <a id="goblin-warren"></a>`goblin-warren` | Gobelins · terrier à flanc de colline* | organique, impasses (0,95), palissade | — | 320/260/200 | 17–24 × 15–22 | AS-SIB → B08 maison semi-souterraine | fantasy |
+| <a id="al-andalus"></a>`al-andalus` | Al-Andalus · Iberian patio medina | organic, wall, slope | great mosque | 300/220/140 | souk 4.8–7 × 7–12; patios 7–12 × 14–24 | AF-MAG → B02 (courtyard), B01 as shop | islamic |
+| <a id="italian-comune"></a>`italian-comune` | Italy · comune with piazza and towers | organic, successive cerchie | piazza | 364/252/154 | 7.5–10 × 17–28 | EUR-MED → B02 narrow row house in core, B09 portico for mixed use, B04 in borghi | european |
+| <a id="flemish-cloth-town"></a>`flemish-cloth-town` | Flanders · cloth town with belfry | organic, canals, enclosures | belfry + Grand-Place | 210/160/110 | 6–8 × 26–44 | EUR-MED → B11 stepped gables, B05 hall for mixed use | european |
+| <a id="rynek-town"></a>`rynek-town` | Central Europe · town with rynek | grid, oval enclosure | large square 0.8–3 ha | 170/140/100 | 7–10 × 28–40 | EUR-MED → B03 half-timbered house | european |
+| <a id="slavic-gord"></a>`slavic-gord` | Slavic · palisaded gród and podgrodzie | radial, palisade | gród (castle) | 80/60/45 | 12–18 × 26–40 (courtyards) | EUR-EAST → B01 izba | european |
+| <a id="caucasian-highland"></a>`caucasian-highland` | Caucasus · Georgian and Armenian fortified town | terraces, wall | enclosed church | 195/150/103 | 6–10 × 12–20 | EUR-EAST → B03 Caucasian house | european |
+| <a id="ethiopian-highland"></a>`ethiopian-highland` | Ethiopia · highland town | organic, open | circular church enclosure | 130/105/85 | 12–20 × 18–30 compounds | AF-EAST → B04 highland house | african |
+| <a id="great-zimbabwe"></a>`great-zimbabwe` | Zimbabwe · dry-stone enclosure | organic, oval | royal enclosure (`royal-enclosure` → palace) | 60/45/35 | 28–38 × 30–42 compounds | AF-SOUTH → B05 hut compound | african |
+| <a id="hausa-kano"></a>`hausa-kano` | Hausa · walled earthen city-state | organic, earthen wall | great mosque | 140/110/80 | courtyards 19–26 × 20–30 | AF-SAHEL → B05 Hausa courtyard house, B04 as shop | islamic |
+| <a id="hadhrami-tower"></a>`hadhrami-tower` | Hadhramaut · vertical city (Shibam) | compact, rectangular, walled, single phase | mosque | 450/380/300 | 7–11 × 9–15 | AS-MIDE → B13 Hadhrami tower house (4–7 levels) | islamic |
+| <a id="rajput-fort"></a>`rajput-fort` | Rajputana · town below a fort | organic, wall, slope | fort (garrison) | 260/190/120 | bazaar 5–8 × 12–20; havelis 13–25 × 22–32 | AS-IND → B10 balcony house (courtyard), B01 as shop | indian |
+| <a id="dravidian-temple"></a>`dravidian-temple` | South India · concentric temple town | grid + square rings, cardinal gates | temple 2–8 ha | 200/160/110 | 5.5–8 × 24–40 | AS-IND → B01 rectangular house | indian |
+| <a id="bagan"></a>`bagan` | Myanmar · royal city of Pagan | grid, square enclosure, river | temple | 90/70/50 | enclosures 14–22 × 20–32 | AS-SEA → B01 stilt house (platform) | indian |
+| <a id="vietnamese-citadel"></a>`vietnamese-citadel` | Việt · citadel and merchant quarter | square citadel; organic extension | citadel 4–12 ha | 140/120/90 | citadel 25–34 × 36–48; tube houses 6–9 × 26–46 | AS-SEA → B04 courtyard house, B02 on narrow lot | chinese |
+| <a id="tibetan-monastery"></a>`tibetan-monastery` | Tibet · sloped monastic town | terraces, stairs | monastery | 300/220/160 | 12–17 × 14–21 (`compound` family) | AS-HIM → B04 gallery house, B03 on narrow lot | indian |
+| <a id="mongol-ordu"></a>`mongol-ordu` | Mongol · yurt ordu; walled capital ≥ 8,000 people | radial, cardinal gates; then walled grid | khan’s tent (steppe family) | 105/90/75 | 10–16 × 12–20 | AS-STEP → B01 yurt | steppe |
+| <a id="maori-pa"></a>`maori-pa` | Māori · fortified terraced pā | terraces, palisade | — (clan common square) | 420/350/280 | 7–12 × 10–16 | OC-PAC → B03 whare | clan |
+| <a id="pnw-plank-village"></a>`pnw-plank-village` | Northwest Coast · plank-house village | linear, facing shore | — | 90/80/70 | 13–20 × 28–38 | AM-PNW → B01 long plank house | clan |
+| <a id="inuit-camp"></a>`inuit-camp` | Arctic · Inuit winter camp | dispersed, shore | — | 260/228/195 | 8–13 × 9–14 | AM-ARC → B05 igloo | clan |
+| <a id="siberian-camp"></a>`siberian-camp` | Siberia · chum camp | radial | — | 210/192/168 | 9–14 × 10–15 | AS-SIB → B01 chum | clan |
+| <a id="guarani-village"></a>`guarani-village` | Guaraní · longhouse village | radial, palisade | — (clan dance square) | 105/90/83 | 12–20 × 26–38 | AM-SOUTH → B03 Guaraní longhouse | clan |
+| <a id="budj-bim"></a>`budj-bim` | Australia · Budj Bim stone village | dispersed, channels | — | 200/180/160 | 8–13 × 10–16 | OC-AUS → B03 stone hut | clan |
+| <a id="lizardfolk-swamp"></a>`lizardfolk-swamp` | Lizardfolk · stilt lake city* | dispersed, walkways | sacred pool | 131/116/102 | 9–14 × 14–22 | AM-TROP → B05 stilt house (platform) | fantasy |
+| <a id="merfolk-tidal"></a>`merfolk-tidal` | Merfolk · strand and sea caves* | organic, stairs, waterfront | tidal shrine | 176/152/128 | 8–13 × 12–20 | OC-PAC → B08 lagoon stilt house | fantasy |
+| <a id="giant-hold"></a>`giant-hold` | Giants · megalithic town* | radial, cyclopean enclosure, streets ×2 | jarl’s hall | 25/22/18 | 20–32 × 40–60 | EUR-NOR → B01 longhouse | fantasy |
+| <a id="goblin-warren"></a>`goblin-warren` | Goblins · hillside warren* | organic, dead ends (0.95), palisade | — | 320/260/200 | 17–24 × 15–22 | AS-SIB → B08 semi-underground house | fantasy |
 
-`*` emprunt fantastique déclaré (`borrowed = true` dans `MAPPINGS`) : la culture repose
-sur des morphologies réelles citées, le mode strict la refuse comme tradition documentée.
+`*` indicates declared fantasy borrowing (`borrowed = true` in `MAPPINGS`): the culture uses cited real morphologies; strict mode rejects it as a documented tradition.
 
-Profil fonctionnel (`MAPPINGS`, 5ᵉ champ) : `communal` = un ménage par lot (tentes,
-igloos, cases familiales, pilotis) ; `town` laisse un lot accueillir plusieurs ménages selon la
-surface utile (`services.json::occupancy`). Sont `town` : les concessions lignagères de
-`great-zimbabwe`, l’ordu (`mongol-ordu`, qui devient capitale murée), les maisons de
-planches multifamiliales (`pnw-plank-village`) et le terrier gobelin.
+Functional profile (`MAPPINGS`, fifth field): `communal` = one household per lot (tents, igloos, family huts, stilt houses); `town` allows multiple households per lot according to usable area (`services.json::occupancy`). The `town` profiles are lineage compounds of `great-zimbabwe`, the ordu (`mongol-ordu`, which becomes a walled capital), multifamily plank houses (`pnw-plank-village`) and the goblin warren.
 
-Les six packs maisons qui n’avaient aucune ville sont maintenant utilisés :
-AM-ARC, AM-PNW, AM-SOUTH, AS-SIB, OC-AUS, OC-PAC (32 packs sur 32).
+The six house packs previously without a city are now used: AM-ARC, AM-PNW, AM-SOUTH, AS-SIB, OC-AUS, OC-PAC (32 of 32 packs).
 
-### Famille de services `clan`
+### `clan` service family
 
-Nouvelle famille pour les villages lignagers sans ville-temple (Māori, Côte Nord-Ouest,
-Inuit, Sibérie, Guaraní, Budj Bim) : maison commune (repère), place des rassemblements,
-caches/greniers sur poteaux, abris à canots au bord de l’eau, séchoirs-ateliers, petits
-sanctuaires en hauteur. Occupation : 8 personnes par ménage, 40 m² par ménage, 6 ménages
-par lot au plus (grandes maisons de clan).
+New family for lineage villages without a temple town (Māori, Northwest Coast, Inuit, Siberia, Guaraní, Budj Bim): common house (landmark), gathering square, raised caches/granaries, waterside canoe shelters, drying sheds/workshops and small elevated shrines. Occupancy: 8 people per household, 40 m² per household, at most 6 households per lot (large clan houses).
 
-## Cohérence foncière (vérification du 22 octobre)
+## Land consistency (October 22 check)
 
-Chaque culture est rejouée sur une carte du City Bench (`city_replay.mjs --sites`, quartiers →
-parcelles → sites de construction) et jugée sur l’équilibre lots / ménages, pas sur des
-comptes seuls : un lot bâtissable laissé en jardin signale une recette de maison que les
-lots ne contiennent pas ; des ménages sans lot signalent une densité ou un profil faux.
-Corrections apportées par cette vérification :
+Each culture is replayed on a City Bench map (`city_replay.mjs --sites`, neighborhoods → parcels → building sites) and judged by lot/household balance, not counts alone: a buildable lot left as garden indicates a house recipe that does not fit the lots; households without a lot indicate incorrect density or profile. Corrections from this check:
 
-| Culture | Symptôme (avant) | Correction | Après |
+| Culture | Symptom (before) | Correction | After |
 |---|---|---|---|
-| `italian-comune` | 53 % des lots en jardin : la parcelle est taillée pour la maison compacte du pack (B04), le programme exigeait le portique B09 (7 × 13,2 m) | lots 7,5–10 × 17–28 ; B02 au cœur, B09 en mixte, B04 hors les murs ; densité ×1,4 au lieu de ×1,8 | 1 % de jardins, 1 111 ménages logés |
-| `tibetan-monastery` | 47 % de jardins (même écart B04 / B03) | lots 12–17 × 14–21 ; famille `compound` (choix par lot entre B04 et B03) | 2 % de jardins |
-| `ethiopian-highland` | 0 logement sur 04 (pente médiane 0,27 > 0,21 admise par AF-EAST-B04) ; 27 % de jardins sur 13 | carte de vérification 13 ; densité 130/105/85 | 1 % de jardins, 588 logements |
-| `great-zimbabwe`, `mongol-ordu` (12 000), `goblin-warren` | ménages sans lot (un ménage par lot imposé) | profil `town` | 1,5 / 1,9 / 3,7 ménages par lot, tous logés |
+| `italian-comune` | 53% of lots in gardens: parcels sized for the pack’s compact B04 house, but the program required the B09 portico (7 × 13.2 m) | lots 7.5–10 × 17–28; B02 in core, B09 mixed, B04 outside walls; density ×1.4 instead of ×1.8 | 1% gardens, 1,111 households housed |
+| `tibetan-monastery` | 47% gardens (same B04 / B03 mismatch) | lots 12–17 × 14–21; `compound` family (lot-by-lot choice between B04 and B03) | 2% gardens |
+| `ethiopian-highland` | no housing on 04 (median slope 0.27 > AF-EAST-B04’s admitted 0.21); 27% gardens on 13 | verification map 13; density 130/105/85 | 1% gardens, 588 homes |
+| `great-zimbabwe`, `mongol-ordu` (12,000), `goblin-warren` | households without lots (one household per lot imposed) | `town` profile | 1.5 / 1.9 / 3.7 households per lot, all housed |
 
-### Rejeu de vérification (serveur natif, arbre du 22 octobre)
+### Verification replay (native server, October 22 tree)
 
-Requêtes de quartiers figées du City Bench, culture et population remplacées
-(`web/out/p5-cultures-final/<culture>-<carte>-<hab>/`, images `.png` à côté de chaque requête).
-« logements » = sites de construction domestiques ou mixtes ; « warn » exclut les résidus
-cadastraux < 0,02 m². `european-organic` et `medina` servent de référence.
+Frozen City Bench neighborhood requests with culture and population replaced (`web/out/p5-cultures-final/<culture>-<map>-<pop>/`, `.png` images beside each request). “Homes” means domestic or mixed building sites; “warn” excludes cadastral remnants < 0.02 m². `european-organic` and `medina` are references.
 
-| culture | carte | hab. | îlots | rues | lots (plot) | jardins | résid. | requêtes | logements | logts/plot | warn | ms |
+| culture | map | people | blocks | streets | lots (plot) | gardens | residential | requests | homes | homes/plot | warn | ms |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | european-organic | 01-river-plain-s | 5000 | 162 | 145 | 863 | 98 | 38 | 872 | 846 | 0.98 | 3 | 3432 |
 | medina | 05-arid-plateau-s | 5000 | 171 | 271 | 423 | 69 | 53 | 436 | 410 | 0.97 | 3 | 3770 |
 | al-andalus | 07-arid-shore-s | 5000 | 206 | 272 | 724 | 160 | 51 | 735 | 710 | 0.98 | 3 | 4237 |
@@ -136,35 +109,14 @@ cadastraux < 0,02 m². `european-organic` et `medina` servent de référence.
 | giant-hold | 09-boreal-river-s | 800 | 55 | 55 | 146 | 88 | 3 | 145 | 138 | 0.95 | 3 | 3489 |
 | goblin-warren | 03-aegean-hills-s | 2000 | 74 | 88 | 114 | 0 | 16 | 115 | 106 | 0.93 | 2 | 11309 |
 
-## Lacunes connues
+## Known gaps
 
-- `pnw-plank-village` : une bourgade de 600 habitants n’a que des îlots « village », où
-  le programme impose un ménage par lot (`programme.rs`) : 57 maisons pour 75 ménages
-  (rejeu final).
-  Les grandes maisons de planches (30–50 personnes) demanderaient la capacité multi-ménages
-  aussi en zone village.
-- Écart général entre étapes (hors fichiers culture) : la parcelle témoigne d’abord la maison
-  compacte du pack (`parcels/admission.rs::compact_fallback`) tandis que le programme exige la
-  recette principale pour les familles `frontage`/`compact` ; seules les familles
-  `courtyard`/`compound` reprennent la maison compacte lot par lot. Toute recette
-  principale de plus de 1,5 × l’aire de la maison compacte du pack laisse des lots vides.
-- `ethiopian-highland` et les autres packs à une seule maison de plain-pied refusent les
-  pentes > 0,21 : sur une carte de montagne, la ville se vide.
-- `guarani-village`, `maori-pa` : des îlots du cercle palissadé n’ont pas de contact
-  continu avec une rue et restent en espace ouvert (avertissements du découpage).
-
-- Les maisons restent celles des packs : pas de maison de géant, de terrier gobelin ni de
-  grotte d’ondins ; pas de gopuram, de stupa, de beffroi, de tour hadramie isolée comme
-  monument spécifique (les monuments sont des réserves de programme).
-- Les ponts : `footprint/crossings.rs::spans` ne connaît pas les nouvelles cultures (valeur
-  par défaut 1,0) ; les camps (`inuit-camp`, `siberian-camp`, `mongol-ordu`…) devraient
-  y être traités comme bâtisseurs de gués.
-- Les variantes contextuelles (`culture.rs::contextual_uncached`) ne couvrent que les lots
-  étroits ; les élites (maisons-tours toscanes EUR-MED-B08, tours svanes EUR-EAST-B04)
-  ne sont pas encore choisies par rang social.
-- Les villes `hadhrami-tower` déclarent une seule phase (`phaseCount [[0, 1]]`, `ring: null`) :
-  Shibam est un rectangle muré unique. Le rejeu du 22 octobre (arbre partagé, étapes de
-  composition en cours de refonte) produit pourtant 3 époques et 2 enceintes sur 07 :
-  le nombre de phases de la culture n’est plus respecté par la composition.
-- Les comptes varient d’un rejeu à l’autre tant que les étapes parcelles/composition
-  évoluent (ex. `budj-bim` : 41 lots puis 73 lots dont 40 % de jardins).
+- `pnw-plank-village`: a town of 600 has only “village” blocks, where the program imposes one household per lot (`programme.rs`): 57 houses for 75 households in the final replay. Large plank houses (30–50 people) would require multi-household capacity in village zones too.
+- General mismatch between stages (outside culture files): the parcel first witnesses the pack’s compact house (`parcels/admission.rs::compact_fallback`) while the program requires the main recipe for `frontage`/`compact` families; only `courtyard`/`compound` families reuse the compact house lot by lot. Any main recipe over 1.5 × the pack’s compact-house area leaves lots empty.
+- `ethiopian-highland` and other single-story, single-house packs refuse slopes > 0.21: on a mountain map, the town empties.
+- `guarani-village`, `maori-pa`: some blocks of the palisaded ring have no continuous street contact and remain open space (subdivision warnings).
+- Houses remain those of the packs: no giant house, goblin warren or merfolk cave; no gopuram, stupa, belfry or isolated Hadhrami tower as a specific monument (monuments are program reserves).
+- Bridges: `footprint/crossings.rs::spans` does not know the new cultures (default 1.0); camps (`inuit-camp`, `siberian-camp`, `mongol-ordu`, etc.) should be treated there as ford builders.
+- Contextual variants (`culture.rs::contextual_uncached`) cover only narrow lots; elite houses (Tuscan towers EUR-MED-B08, Svan towers EUR-EAST-B04) are not yet selected by social rank.
+- `hadhrami-tower` declares one phase (`phaseCount [[0, 1]]`, `ring: null`): Shibam is a single walled rectangle. The October 22 replay (shared tree, composition stages being redesigned) nevertheless produces 3 epochs and 2 enclosures on 07: the culture’s phase count is no longer respected by composition.
+- Counts vary between replays while parcel/composition stages evolve (e.g. `budj-bim`: 41 lots then 73 lots, 40% gardens).

@@ -1,4 +1,7 @@
 import { retainCityPlacement } from './cityRetainedPlacement';
+import { setupSettlementLocale } from './settlementLocale';
+import { urbanText } from './urbanPanelLocale';
+import { LOCALE_KEY } from './shellLocale';
 import { retainSelectValue } from './retainedSelectValue';
 import { bindCityPlaceCulture } from './cityPlanCulture';
 import { urbanOptionSync } from './urbanOptionSync';
@@ -9,8 +12,7 @@ import type { TerrainData, TerrainSettings } from '../../../rust/bridge/terrain'
 import type { View } from '../render/view';
 import { CULTURES, getCulture } from '../gen/urban/culture';
 import { SITE_ARCHETYPES, classOfPop } from '../gen/options';
-import { settlementPopulationChoices } from './settlementKinds';
-import { demographicLabel } from '../../../rust/bridge/settlementDemography';
+import { localizedDemographicLabel, settlementPopulationChoices } from './settlementKinds';
 import { bindGear, gearButton } from './mapGroup';
 import { createTerrainRoads } from './terrainRoads';
 import { createTerrainUrban } from './terrainUrban';
@@ -144,6 +146,18 @@ export function createTerrainSettlements(options: {
   // One « Auto » switch in the city panel drives the settlements & roads auto-refresh too; only its manual button moves there.
   el('setAutoRefresh').closest('label')!.hidden = true;
   urban.regenerationSlot.append(el('setRefresh'));
+  setupSettlementLocale(panel, !!options.city);
+  const updateSiteWeightsLocale = (): void => {
+    for (const control of Array.from(panel.querySelectorAll<HTMLInputElement>('[data-site]'))) {
+      const text = control.closest('label')?.firstChild;
+      if (text?.nodeType === Node.TEXT_NODE) text.textContent = siteLabel(control.dataset.site ?? '');
+    }
+    const note = panel.querySelector<HTMLElement>('.map-detail > details.advanced:last-of-type small');
+    if (note) note.textContent = urbanText(['Multiplicateurs des préférences de chaque culture (0 évite, 1 neutre, 3 favorise).','Multipliers on top of each culture’s preferences (0 avoids, 1 neutral, 3 favours).','对各文化偏好的倍率（0 为避免，1 为中性，3 为偏好）。','Multiplicadores de las preferencias de cada cultura (0 evita, 1 neutro, 3 favorece).','Multiplicadores das preferências de cada cultura (0 evita, 1 neutro, 3 favorece).']);
+  };
+  window.addEventListener('magna-locale-change', updateSiteWeightsLocale);
+  window.addEventListener('storage', event => { if (event.key === LOCALE_KEY) updateSiteWeightsLocale(); });
+  updateSiteWeightsLocale();
   const publishOptions = urbanOptionSync(() => { const d = options.getDecor?.(); return d && urban.target !== 'all' ? `${d.meta.pipeline?.syncSource ?? d.meta.id}:${urban.target}` : undefined; }, state => urban.applyWorkshopDraft(state));
   map.addEventListener('urban:settings', event => publishOptions((event as CustomEvent).detail));
   // Only an applied rural plan constrains the forest; natural cover never does.
@@ -208,8 +222,15 @@ export function createTerrainSettlements(options: {
     for (const id of ['setEnabled', 'setMode', 'setDistribution', 'setMainPop', 'setCulture']) el(id).closest('label')!.hidden = true;
     for (const id of ['setCounts', 'setTakeOver', 'setAdd', 'setExportDecor', 'setList', 'setCount']) el(id).hidden = true;
     for (const box of Array.from(panel.querySelectorAll<HTMLElement>(':scope > .stage-controls > details, :scope > .stage-controls > .control-group[data-show]'))) box.hidden = true;
-    el('setGenerate').hidden = false; el('setGenerate').textContent = 'Rechercher un nouvel emplacement';
-    el('setGenerate').title = 'Recherche explicite : peut déplacer la ville. Les changements de population, culture ou plan conservent sa position.';
+    el('setGenerate').hidden = false; el('setGenerate').dataset.placementAction = 'search';
+    const updatePlacementAction = (): void => {
+      const button = el('setGenerate'); button.textContent = button.dataset.placementAction === 'validate' ? urbanText(['Valider les positions fournies','Validate provided positions','验证提供的位置','Validar posiciones proporcionadas','Validar posições fornecidas']) : urbanText(['Rechercher un nouvel emplacement','Search for a new location','搜索新位置','Buscar nueva ubicación','Buscar novo local']);
+      button.title = urbanText(['Recherche explicite : peut déplacer la ville. Les changements de population, culture ou plan conservent sa position.','Explicit search may move the city. Changes to population, culture or plan preserve its position.','明确搜索可能移动城市。更改人口、文化或规划会保留其位置。','La búsqueda explícita puede mover la ciudad. Los cambios de población, cultura o plano conservan su posición.','A busca explícita pode mover a cidade. Alterações de população, cultura ou plano mantêm sua posição.']);
+      const autoButton = document.getElementById('setAutoPosition'); if (autoButton) autoButton.textContent = button.textContent;
+    };
+    window.addEventListener('magna-locale-change', updatePlacementAction);
+    window.addEventListener('storage', event => { if (event.key === LOCALE_KEY) updatePlacementAction(); });
+    updatePlacementAction();
   }
   /** Population ceiling of the loaded City Bench map (decor tag), else the editor's own limit. */
   /** Nearest dry cell to a point, on the raster Rust places settlements on. */
@@ -244,7 +265,7 @@ export function createTerrainSettlements(options: {
   function setPicking(key?: string): void {
     picking = key; if (key) { options.onPicking(); showPoints = true; input('setShowPoints').checked = true; }
     viewport.classList.toggle('settlement-picking', !!key);
-    el('setPickHint').textContent = options.city ? 'Cliquez sur la terre ferme. Échap annule.' : 'Click dry land on the map. Esc cancels.';
+    el('setPickHint').textContent = urbanText(['Cliquez sur la terre ferme. Échap annule.','Click dry land on the map. Esc cancels.','点击地图上的陆地。Esc 取消。','Haz clic en tierra firme. Esc cancela.','Clique em terra firme. Esc cancela.']);
     el('setPickHint').hidden = !key;
     draw();
   }
@@ -265,14 +286,14 @@ export function createTerrainSettlements(options: {
     draw();
     if (autoRefresh) timer = setTimeout(recalculate, 180);
     else {
-      el('setStatus').textContent = 'Changes pending · move or edit more places, then click Apply changes & recalculate.';
-      el('setState').textContent = 'Changes pending';
+      el('setStatus').textContent = urbanText(['Modifications en attente · déplacez ou modifiez les lieux, puis appliquez et recalculez.','Changes pending · move or edit more places, then click Apply changes & recalculate.','更改待处理 · 移动或编辑地点后，点击应用更改并重新计算。','Cambios pendientes · mueve o edita lugares y aplica los cambios para recalcular.','Alterações pendentes · mova ou edite locais e aplique as alterações para recalcular.']);
+      el('setState').textContent = urbanText(['Modifications en attente','Changes pending','更改待处理','Cambios pendientes','Alterações pendentes']);
     }
   }
   function recalculate(): void {
     clearTimeout(timer);
     const t = options.getTerrain(); if (!t || !complete || options.active === false) return;
-    if (!enabled) { ++id; pending = false; output = undefined; draw(); list(); roads.set(undefined); urban.setSettlements(undefined); el('setStatus').textContent = 'Settlement generation disabled.'; el('setState').textContent = ''; return; }
+    if (!enabled) { ++id; pending = false; output = undefined; draw(); list(); roads.set(undefined); urban.setSettlements(undefined); el('setStatus').textContent = urbanText(['Génération des implantations désactivée.','Settlement generation disabled.','聚落生成已禁用。','Generación de asentamientos desactivada.','Geração de assentamentos desativada.']); el('setState').textContent = ''; return; }
     config.relief = options.getSettings().relief;
     if (options.city && !citySearchRequested) {
       const retained = retainCityPlacement(output, config.mode === 'list' ? config.list : output?.settlements ?? []);
@@ -280,12 +301,14 @@ export function createTerrainSettlements(options: {
         ++id; answered = id; needsPlacement = false; output = undefined;
         roads.set(undefined); urban.setSettlements(undefined); draw(); list(); editor();
         const pinned = config.list.filter(s => s.position && Number.isFinite(s.position.x) && Number.isFinite(s.position.y));
+        const coordinates = pinned.map(s => `${s.key}: ${s.position!.x}, ${s.position!.y}`).join(' ; ');
         el('setStatus').textContent = pinned.length
-          ? `Coordonnées fournies conservées (${pinned.map(s => `${s.key}: ${s.position!.x}, ${s.position!.y}`).join(' ; ')}), mais données de site non validées. Cliquez sur Valider les positions fournies ; aucun centre n’est fabriqué.`
-          : 'Aucune position conservée : cliquez sur Rechercher un nouvel emplacement ou placez la ville sur la carte.';
-        el('setGenerate').textContent = pinned.length === config.list.length && pinned.length ? 'Valider les positions fournies' : 'Rechercher un nouvel emplacement';
+          ? urbanText([`Coordonnées fournies conservées (${coordinates}), mais données de site non validées. Cliquez sur Valider les positions fournies ; aucun centre n’est fabriqué.`,`Provided coordinates retained (${coordinates}), but site data is not validated. Choose Validate provided positions; no center is invented.`,`已保留提供的坐标（${coordinates}），但场地数据尚未验证。请点击“验证提供的位置”；不会虚构中心。`,`Coordenadas proporcionadas conservadas (${coordinates}), pero datos del sitio sin validar. Pulsa Validar posiciones proporcionadas; no se inventa ningún centro.`,`Coordenadas fornecidas mantidas (${coordinates}), mas dados do local não validados. Clique em Validar posições fornecidas; nenhum centro é inventado.`])
+          : urbanText(['Aucune position conservée : cliquez sur Rechercher un nouvel emplacement ou placez la ville sur la carte.','No retained position: choose Search for a new location or place the city on the map.','没有保留的位置：请选择“搜索新位置”或在地图上放置城市。','Sin posición conservada: elige Buscar nueva ubicación o sitúa la ciudad en el mapa.','Nenhuma posição mantida: escolha Buscar novo local ou posicione a cidade no mapa.']);
+        el('setGenerate').dataset.placementAction = pinned.length === config.list.length && pinned.length ? 'validate' : 'search';
+        el('setGenerate').textContent = el('setGenerate').dataset.placementAction === 'validate' ? urbanText(['Valider les positions fournies','Validate provided positions','验证提供的位置','Validar posiciones proporcionadas','Validar posições fornecidas']) : urbanText(['Rechercher un nouvel emplacement','Search for a new location','搜索新位置','Buscar nueva ubicación','Buscar novo local']);
         editor();
-        el('setState').textContent = 'Placement explicite requis'; options.onChange(); return;
+        el('setState').textContent = urbanText(['Placement explicite requis','Explicit placement required','需要明确选址','Se requiere ubicación explícita','Posicionamento explícito necessário']); options.onChange(); return;
       }
       output = retained.output; cityPlacementScoresStale ||= retained.changed; needsPlacement = false;
     }
@@ -305,7 +328,7 @@ export function createTerrainSettlements(options: {
       request.raster = retained ? { ...retained, height: retained.height.slice(), water: retained.water.slice(), waterLevel: retained.waterLevel.slice(), riverWidth: retained.riverWidth.slice(), riverIds: retained.riverIds.slice() } : settlementRaster(t); cachedTerrain = t;
       validation = { width: request.raster.width, n: request.raster.n, water: request.raster.water.slice() };
     }
-    if (place) { el('setGenerate').setAttribute('aria-busy', 'true'); el('setStatus').textContent = 'Placing settlements in Rust…'; }
+    if (place) { el('setGenerate').setAttribute('aria-busy', 'true'); el('setStatus').textContent = urbanText(['Placement des implantations avec Rust…','Placing settlements in Rust…','正在使用 Rust 放置聚落…','Situando asentamientos con Rust…','Posicionando assentamentos com Rust…']); }
     if (roads.enabled) roads.pending(); else roads.set(undefined);
     if (fallback) void runSettlementRequest(request).then(receive, error => receive({ id: request.id, error: String(error) }));
     else try {
@@ -321,21 +344,21 @@ export function createTerrainSettlements(options: {
   function receive(response: SettlementResponse): void {
     if (response.id !== id) return;
     el('setGenerate').removeAttribute('aria-busy');
-    if ('error' in response) { el('setStatus').textContent = `Settlement generation: ${response.error}`; roads.error(response.error); return; }
+    if ('error' in response) { el('setStatus').textContent = `${urbanText(['Génération des implantations','Settlement generation','聚落生成','Generación de asentamientos','Geração de assentamentos'])}: ${response.error}`; roads.error(response.error); return; }
     answered = response.id;
     pending = false;
     if (response.settlements) {
       output = response.settlements; needsPlacement = false; citySearchRequested = false; cityPlacementScoresStale = false;
-      if (options.city) el('setGenerate').textContent = 'Rechercher un nouvel emplacement';
+      if (options.city) { el('setGenerate').dataset.placementAction = 'search'; el('setGenerate').textContent = urbanText(['Rechercher un nouvel emplacement','Search for a new location','搜索新位置','Buscar nueva ubicación','Buscar novo local']); }
       window.dispatchEvent(new CustomEvent('settlements:generated', { detail: output }));
       if (selection && !output.settlements.some(s => s.key === selection) && !config.list.some(s => s.key === selection)) selection = '';
       const people = output.settlements.reduce((sum, s) => sum + s.population, 0);
-      el('setStatus').textContent = `Rust · ${output.settlements.length}/${output.requested} places · ${people.toLocaleString()} inhabitants · ${output.ms.toFixed(0)} ms`;
-      el('setState').textContent = `${output.settlements.length} places`;
+      el('setStatus').textContent = `Rust · ${output.settlements.length}/${output.requested} ${urbanText(['lieux','places','个地点','lugares','locais'])} · ${people.toLocaleString()} ${urbanText(['habitants','inhabitants','名居民','habitantes','habitantes'])} · ${output.ms.toFixed(0)} ms`;
+      el('setState').textContent = `${output.settlements.length} ${urbanText(['lieux','places','个地点','lugares','locais'])}`;
       el('setWarnings').textContent = output.warnings.join('\n');
     } else if (output) {
-      el('setStatus').textContent = `Rust · ${output.settlements.length}/${output.requested} places · roads recalculated`;
-      el('setState').textContent = `${output.settlements.length} places`;
+      el('setStatus').textContent = `Rust · ${output.settlements.length}/${output.requested} ${urbanText(['lieux','places','个地点','lugares','locais'])} · ${urbanText(['routes recalculées','roads recalculated','道路已重新计算','carreteras recalculadas','estradas recalculadas'])}`;
+      el('setState').textContent = `${output.settlements.length} ${urbanText(['lieux','places','个地点','lugares','locais'])}`;
     }
     roads.set(response.roads ?? undefined);
     urban.setSettlements(output, response.roads ?? undefined);
@@ -357,7 +380,7 @@ export function createTerrainSettlements(options: {
       button.className = 'terrain-place'; button.setAttribute('aria-pressed', String(selection === s.key));
       const result = output?.settlements.find(p => p.key === s.key);
       button.innerHTML = `${classIcon(classOfPop(s.population))}<b>${esc(s.name || s.key)}</b><small>${shortPop(s.population)}</small>`;
-      button.title = `${s.name || s.key} · ${demographicLabel(s.population)} · ${s.population.toLocaleString()} hab. · ${result ? `${result.archetype} · score ${result.scores.total.toFixed(2)}` : 'awaiting placement'}`;
+      button.title = `${s.name || s.key} · ${localizedDemographicLabel(s.population)} · ${s.population.toLocaleString()} ${urbanText(['hab.','inhabitants','名居民','hab.','hab.'])} · ${result ? `${result.archetype} · score ${result.scores.total.toFixed(2)}` : urbanText(['en attente du placement','awaiting placement','等待选址','pendiente de ubicación','aguardando posicionamento'])}`;
       button.onclick = () => { selection = s.key; urban.selectCity(s.key); setPicking(); list(); editor(); draw(); };
       return button;
     }), el('setAdd'));
@@ -371,6 +394,9 @@ export function createTerrainSettlements(options: {
   }
   /** The selected settlement's editor lives in the city inspector's slot (looked up at each render); the left panel is the fallback. */
   let editorOpen = false;
+  let updateScoreLocale = (): void => {};
+  window.addEventListener('magna-locale-change', () => updateScoreLocale());
+  window.addEventListener('storage', event => { if (event.key === LOCALE_KEY) updateScoreLocale(); });
   const inspectorSlot = (): HTMLElement | null => document.getElementById('cityInspectorSettlement');
   const inspector = document.getElementById('cityInspector');
   // The inspector may render (or re-render) its slot after this code ran: mount the editor whenever an empty slot appears.
@@ -379,6 +405,7 @@ export function createTerrainSettlements(options: {
     if (selection && (slot ? !slot.hasChildNodes() : !el('setEditor').hasChildNodes())) editor();
   }).observe(inspector, { childList: true, subtree: true });
   function editor(): void {
+    updateScoreLocale = () => {};
     followInspector();
     const result = output?.settlements.find(s => s.key === selection);
     const spec = config.mode === 'list' ? config.list.find(s => s.key === selection) : result;
@@ -388,7 +415,7 @@ export function createTerrainSettlements(options: {
       <div class="map-line se-line"><input id="setName" type="text" maxlength="60" aria-label="Nom" title="Nom" placeholder="Nom"><input id="setPopulation" type="number" min="1" max="5000000" step="1" aria-label="Population" title="Population"><select id="setClass" aria-label="Classe démographique" title="Classe démographique : raccourci de population. La classe est déduite de la population ; elle ne choisit pas une grammaire de plan.">${settlementPopulationChoices().map(c => `<option value="${c.kind}">${c.label}</option>`).join('')}</select>${gearButton('Réglages du lieu')}</div>
       <div class="map-detail" hidden>
       <label>Culture du lieu <select id="setPlaceCulture">${options.city ? cityCultures.map(c => `<option value="${esc(c.id)}">${esc(c.label)}</option>`).join('') : culture.innerHTML}</select></label>${options.city ? '<div class="settlement-actions"><button id="setCulturePrevious" type="button" title="Profil précédent">◀ Profil</button><button id="setCultureNext" type="button" title="Profil suivant">Profil ▶</button></div>' : ''}
-      ${options.city ? '<small>Les profils nommés combinent parfois tradition, organisation urbaine et thème. Leur présence au catalogue ne certifie pas une époque ni une taille historique. Les recettes appliquées se lisent dans le programme.</small>' : ''}
+      ${options.city ? '<small data-profile-note>Les profils nommés combinent parfois tradition, organisation urbaine et thème. Leur présence au catalogue ne certifie pas une époque ni une taille historique. Les recettes appliquées se lisent dans le programme.</small>' : ''}
       <label>Role (label) <input id="setKind" type="text" maxlength="60"></label>
       <label>Site preference <select id="setSite"><option value="auto">Automatic</option>${SITE_ARCHETYPES.map(s => `<option value="${s}">${s}</option>`).join('')}</select></label>
       <label>X (m) <input id="setX" type="number" min="0" step="1" placeholder="auto"></label><label>Y (m) <input id="setY" type="number" min="0" step="1" placeholder="auto"></label>
@@ -416,7 +443,7 @@ export function createTerrainSettlements(options: {
     };
     const positionChanged = (): void => {
       const x = input('setX'), y = input('setY'); if (!x.value && !y.value) { edit(s => { delete s.position; }); return; }
-      if (!x.value || !y.value || !x.reportValidity() || !y.reportValidity()) { el('setScore').textContent = 'Enter both coordinates, or clear both for automatic placement.'; return; }
+      if (!x.value || !y.value || !x.reportValidity() || !y.reportValidity()) { el('setScore').textContent = urbanText(['Saisissez les deux coordonnées, ou videz-les pour le placement automatique.','Enter both coordinates, or clear both for automatic placement.','请输入两个坐标，或清空两者以使用自动选址。','Introduce ambas coordenadas o borra las dos para la ubicación automática.','Informe as duas coordenadas ou limpe ambas para o posicionamento automático.']); return; }
       edit(s => { s.position = { x: Number(x.value), y: Number(y.value) }; });
     };
     input('setX').onchange = input('setY').onchange = positionChanged;
@@ -427,14 +454,14 @@ export function createTerrainSettlements(options: {
       // Implantation: a fixed position (map centre by default) or a site found by the placement strategy.
       const site = el<HTMLSelectElement>('setSite');
       site.closest('label')!.firstChild!.textContent = 'Implantation ';
-      site.replaceChildren(...IMPLANTATIONS.map(([value, label]) => new Option(label, value)));
+      site.replaceChildren(...IMPLANTATIONS.map(([value]) => new Option(siteLabel(value), value)));
       // A placed site keeps its type once adopted (adoption pins the found position).
       site.value = spec.siteType !== 'auto' ? spec.siteType : spec.position ? 'fixed' : 'auto';
       site.onchange = () => {
         if (site.value !== 'fixed') { edit(s => { s.siteType = site.value as SettlementSpec['siteType']; delete s.position; }); return; }
         const p = spec.position ?? result?.center;
         if (p) edit(s => { s.siteType = 'auto'; s.position = { ...p }; });
-        else { setPicking(selection); el('setScore').textContent = 'Aucune position connue : cliquez sur la carte pour placer la ville.'; }
+        else { setPicking(selection); el('setScore').textContent = urbanText(['Aucune position connue : cliquez sur la carte pour placer la ville.','No known position: click the map to place the city.','位置未知：请点击地图放置城市。','Posición desconocida: haz clic en el mapa para situar la ciudad.','Posição desconhecida: clique no mapa para posicionar a cidade.']); }
       };
       el('setRemove').hidden = true; el('setMountain').closest('details')!.hidden = true;
       const cultureSelect = el<HTMLSelectElement>('setPlaceCulture');
@@ -444,23 +471,47 @@ export function createTerrainSettlements(options: {
       el('setCulturePrevious').onclick = () => step(-1); el('setCultureNext').onclick = () => step(1);
       el('setCentre').onclick = () => {
         const width = options.getTerrain()?.width ?? 0, p = dryNear({ x: width / 2, y: width / 2 });
-        if (!p) { el('setScore').textContent = 'Aucune terre ferme sur cette carte.'; return; }
+        if (!p) { el('setScore').textContent = urbanText(['Aucune terre ferme sur cette carte.','No dry land on this map.','此地图上没有陆地。','No hay tierra firme en este mapa.','Não há terra firme neste mapa.']); return; }
         edit(s => { s.position = { x: Math.round(p.x), y: Math.round(p.y) }; });
       };
     }
     el('setMove').onclick = () => { adopt(); setPicking(selection); };
-    el('setAutoPosition').textContent = options.city ? el('setGenerate').textContent : 'Automatic position';
+    el('setAutoPosition').textContent = options.city ? el('setGenerate').textContent : urbanText(['Position automatique','Automatic position','自动选址','Posición automática','Posição automática']);
     el('setAutoPosition').onclick = () => { if (options.city) requestPlacementSearch(); else edit(s => { delete s.position; }); };
     el('setRemove').onclick = () => { adopt(); config.list = config.list.filter(s => s.key !== selection); selection = ''; setPicking(); list(); editor(); changed(); };
-    if (result) {
+    updateScoreLocale = (): void => {
+      const classSelect = document.getElementById('setClass') as HTMLSelectElement | null;
+      if (classSelect) { const names = new Map(settlementPopulationChoices().map(choice => [choice.kind, choice.label])); for (const option of Array.from(classSelect.options)) option.textContent = names.get(option.value as ReturnType<typeof classOfPop>) ?? option.textContent; }
+      const setLabel = (id: string, value: string): void => { const text = document.getElementById(id)?.closest('label')?.firstChild; if (text?.nodeType === Node.TEXT_NODE) text.textContent = `${value} `; };
+      const names = urbanText(['Nom','Name','名称','Nombre','Nome']);
+      const nameField = document.getElementById('setName'); if (nameField) for (const attribute of ['aria-label','title','placeholder']) nameField.setAttribute(attribute,names);
+      const populationField = document.getElementById('setPopulation'); if (populationField) for (const attribute of ['aria-label','title']) populationField.setAttribute(attribute,urbanText(['Population','Population','人口','Población','População']));
+      classSelect?.setAttribute('aria-label',urbanText(['Classe démographique','Demographic class','人口类别','Clase demográfica','Classe demográfica']));
+      classSelect?.setAttribute('title',urbanText(['Classe démographique : raccourci de population. La classe est déduite de la population ; elle ne choisit pas une grammaire de plan.','Demographic class: population shortcut. Class is derived from population; it does not select a plan grammar.','人口类别是人口快捷值。类别根据人口推导，不选择规划规则。','Clase demográfica: valor rápido de población. La clase se deduce de la población y no elige la gramática del plano.','Classe demográfica: atalho de população. A classe é derivada da população e não escolhe a gramática do plano.']));
+      setLabel('setPlaceCulture',urbanText(['Culture du lieu','Place culture','地点文化','Cultura del lugar','Cultura do local']));
+      setLabel('setKind',urbanText(['Rôle (libellé)','Role (label)','角色（标签）','Función (etiqueta)','Função (rótulo)']));
+      setLabel('setSite',options.city ? urbanText(['Implantation','Placement','选址','Ubicación','Implantação']) : urbanText(['Préférence de site','Site preference','场地偏好','Preferencia de sitio','Preferência de local']));
+      setLabel('setMountain',urbanText(['Versant de montagne','Mountain face','山坡','Ladera de montaña','Encosta de montanha'])); setLabel('setWood',urbanText(['Boisement','Woodland','林地','Arbolado','Área florestal'])); setLabel('setHill',urbanText(['Poids du sommet','Hilltop weight','山顶权重','Peso de la cima','Peso do topo']));
+      const site = document.getElementById('setSite') as HTMLSelectElement | null; if (site) for (const option of Array.from(site.options)) option.textContent = siteLabel(option.value);
+      const gear = host.querySelector<HTMLButtonElement>('.map-gear'); if (gear) { const title=urbanText(['Réglages du lieu','Place settings','地点设置','Ajustes del lugar','Configurações do local']); gear.title=title; gear.setAttribute('aria-label',title); }
+      const note = host.querySelector<HTMLElement>('[data-profile-note]'); if (note) note.textContent = urbanText(['Les profils nommés combinent parfois tradition, organisation urbaine et thème. Leur présence au catalogue ne certifie pas une époque ni une taille historique. Les recettes appliquées se lisent dans le programme.','Named profiles sometimes combine tradition, urban organization and theme. Their presence in the catalogue does not certify a historical period or size. Applied recipes appear in the programme.','命名配置有时结合传统、城市组织和主题。目录中的配置不能证明历史时期或规模。已应用配方可在规划方案中查看。','Los perfiles combinan a veces tradición, organización urbana y tema. Su presencia en el catálogo no certifica época ni tamaño histórico. Las recetas aplicadas aparecen en el programa.','Os perfis às vezes combinam tradição, organização urbana e tema. Sua presença no catálogo não certifica período nem tamanho histórico. As receitas aplicadas aparecem no programa.']);
+      const preferences = host.querySelector<HTMLElement>('.map-detail details summary'); if (preferences) preferences.textContent = urbanText(['Préférences de site','Site preferences','场地偏好','Preferencias de sitio','Preferências do local']);
+      const move = document.getElementById('setMove'); if (move) move.textContent = urbanText(['Placer sur la carte','Place on map','在地图上放置','Situar en el mapa','Posicionar no mapa']);
+      const automatic = document.getElementById('setAutoPosition'); if (automatic) automatic.textContent = options.city ? el('setGenerate').textContent : urbanText(['Position automatique','Automatic position','自动选址','Posición automática','Posição automática']);
+      const remove = document.getElementById('setRemove'); if (remove) remove.textContent = urbanText(['Supprimer','Delete','删除','Eliminar','Excluir']);
+      const center = document.getElementById('setCentre'); if (center) { center.textContent = urbanText(['Centre de la carte','Map center','地图中心','Centro del mapa','Centro do mapa']); center.title = urbanText(['Terre ferme la plus proche du centre de la carte','Dry land closest to the map center','离地图中心最近的陆地','Tierra firme más cercana al centro del mapa','Terra firme mais próxima do centro do mapa']); }
+      const previous = document.getElementById('setCulturePrevious'); if (previous) { previous.textContent = `◀ ${urbanText(['Profil','Profile','配置','Perfil','Perfil'])}`; previous.title = urbanText(['Profil précédent','Previous profile','上一配置','Perfil anterior','Perfil anterior']); }
+      const next = document.getElementById('setCultureNext'); if (next) { next.textContent = `${urbanText(['Profil','Profile','配置','Perfil','Perfil'])} ▶`; next.title = urbanText(['Profil suivant','Next profile','下一配置','Perfil siguiente','Próximo perfil']); }
+      if (!document.getElementById('setScore')) return; if (result) {
       const scores = result.scores, stale = options.city && cityPlacementScoresStale;
-      const ranking = scores.rankingScore == null ? '' : `<small>Candidate rank ${scores.candidateRank} · ranking score ${scores.rankingScore.toFixed(3)} (class reference ${scores.rankingPopulation} inhabitants, before jitter)</small>`;
-      const terms: [string, number][] = [['Flatness', scores.flatness], ['Buildable land', scores.buildable], ['Fresh water', scores.freshWater], ['River access', scores.river], ['Harbor', scores.harbor], ['Flood risk', scores.flood], ['Culture', scores.culture], ['Site type', scores.site], ['Defensibility', scores.defense], ['Elevation', scores.elevation], ['Clustering', scores.cluster], ['Seed variation', scores.variation]];
-      const unreachable = roads.output?.unreachable.includes(result.key) ? '<br>Unreachable by road' : '';
-      el('setScore').innerHTML = `<b>${stale ? 'Score conservé' : 'Choice score'} ${scores.total.toFixed(3)}</b><small>${stale ? 'Données du site initial non réévaluées.' : scores.manual ? 'Manual position; score shown for comparison.' : 'Weighted draw over available sites, favouring suitable ground and unoccupied territory.'}<br>${result.center.x.toFixed(0)}, ${result.center.y.toFixed(0)} m · ${esc(result.archetype)} · radius ${result.radius.toFixed(0)} m</small><table>${terms.filter(([, v]) => v !== 0).map(([label, value]) => `<tr><td>${label}</td><td>${value >= 0 ? '+' : ''}${value.toFixed(3)}</td></tr>`).join('')}</table><small>Buildable ${(scores.buildableFraction * 100).toFixed(0)}% · slope ${(Math.atan(scores.slope) * 180 / Math.PI).toFixed(1)}°<br>Water ${scores.waterDistance >= 1e6 ? 'absent' : `${scores.waterDistance.toFixed(0)} m away`} · above water ${scores.heightAboveWater.toFixed(1)} m<br>Spacing × ${scores.spacingRelaxation.toFixed(2)}${unreachable}</small>`;
-      if (options.city && cityPlacementScoresStale) el('setScore').insertAdjacentHTML('afterbegin', '<p><strong>Position conservée ou déplacée manuellement ; scores, rayon et archétype du site initial non recalculés.</strong> Ces valeurs ne certifient pas les nouveaux réglages ni le nouveau centre.</p>');
+      const ranking = scores.rankingScore == null ? '' : `<small>${urbanText(['Rang du candidat','Candidate rank','候选排名','Puesto del candidato','Posição do candidato'])} ${scores.candidateRank} · ${urbanText(['score de classement','ranking score','排名分数','puntuación de clasificación','pontuação de classificação'])} ${scores.rankingScore.toFixed(3)} (${urbanText(['référence de classe','class reference','类别参考','referencia de clase','referência de classe'])} ${scores.rankingPopulation} ${urbanText(['habitants, avant variation','inhabitants, before jitter','名居民，变动之前','habitantes, antes de la variación','habitantes, antes da variação'])})</small>`;
+      const terms: [string, number][] = [[urbanText(['Planéité','Flatness','平坦度','Llanura','Planura']), scores.flatness], [urbanText(['Terrain constructible','Buildable land','可建土地','Terreno edificable','Terreno edificável']), scores.buildable], [urbanText(['Eau douce','Fresh water','淡水','Agua dulce','Água doce']), scores.freshWater], [urbanText(['Accès à la rivière','River access','河流通达','Acceso al río','Acesso ao rio']), scores.river], [urbanText(['Port','Harbor','港口','Puerto','Porto']), scores.harbor], [urbanText(['Risque d’inondation','Flood risk','洪水风险','Riesgo de inundación','Risco de inundação']), scores.flood], [urbanText(['Culture','Culture','文化','Cultura','Cultura']), scores.culture], [urbanText(['Type de site','Site type','场地类型','Tipo de sitio','Tipo de local']), scores.site], [urbanText(['Défense','Defensibility','防御性','Defensa','Defesa']), scores.defense], [urbanText(['Altitude','Elevation','海拔','Elevación','Altitude']), scores.elevation], [urbanText(['Regroupement','Clustering','聚集','Agrupamiento','Agrupamento']), scores.cluster], [urbanText(['Variation de graine','Seed variation','种子变化','Variación de semilla','Variação da semente']), scores.variation]];
+      const unreachable = roads.output?.unreachable.includes(result.key) ? `<br>${urbanText(['Inaccessible par route','Unreachable by road','道路无法到达','Inaccesible por carretera','Inacessível por estrada'])}` : '';
+      el('setScore').innerHTML = `<b>${stale ? urbanText(['Score conservé','Retained score','保留的分数','Puntuación conservada','Pontuação mantida']) : urbanText(['Score de choix','Choice score','选址分数','Puntuación de elección','Pontuação de escolha'])} ${scores.total.toFixed(3)}</b><small>${stale ? urbanText(['Données du site initial non réévaluées.','Original site data not reassessed.','原场地数据未重新评估。','Datos del sitio inicial no reevaluados.','Dados do local inicial não reavaliados.']) : scores.manual ? urbanText(['Position manuelle ; score affiché pour comparaison.','Manual position; score shown for comparison.','手动位置；分数仅供比较。','Posición manual; puntuación mostrada para comparación.','Posição manual; pontuação exibida para comparação.']) : urbanText(['Tirage pondéré parmi les sites disponibles, favorisant les terrains adaptés et libres.','Weighted draw over available sites, favouring suitable ground and unoccupied territory.','在可用地点中加权选择，优先考虑适宜且未占用的土地。','Sorteo ponderado entre sitios disponibles, favoreciendo terrenos adecuados y libres.','Sorteio ponderado entre locais disponíveis, favorecendo terrenos adequados e livres.'])}<br>${result.center.x.toFixed(0)}, ${result.center.y.toFixed(0)} m · ${esc(result.archetype)} · ${urbanText(['rayon','radius','半径','radio','raio'])} ${result.radius.toFixed(0)} m</small><table>${terms.filter(([, v]) => v !== 0).map(([label, value]) => `<tr><td>${label}</td><td>${value >= 0 ? '+' : ''}${value.toFixed(3)}</td></tr>`).join('')}</table><small>${urbanText(['Constructible','Buildable','可建','Edificable','Edificável'])} ${(scores.buildableFraction * 100).toFixed(0)}% · ${urbanText(['pente','slope','坡度','pendiente','inclinação'])} ${(Math.atan(scores.slope) * 180 / Math.PI).toFixed(1)}°<br>${urbanText(['Eau','Water','水','Agua','Água'])} ${scores.waterDistance >= 1e6 ? urbanText(['absente','absent','无','ausente','ausente']) : `${scores.waterDistance.toFixed(0)} m`} · ${urbanText(['au-dessus de l’eau','above water','高于水面','sobre el agua','acima da água'])} ${scores.heightAboveWater.toFixed(1)} m<br>${urbanText(['Espacement','Spacing','间距','Espaciado','Espaçamento'])} × ${scores.spacingRelaxation.toFixed(2)}${unreachable}</small>`;
+      if (options.city && cityPlacementScoresStale) el('setScore').insertAdjacentHTML('afterbegin', `<p><strong>${urbanText(['Position conservée ou déplacée manuellement ; scores, rayon et archétype du site initial non recalculés.','Position retained or manually moved; scores, radius and archetype from the original site were not recomputed.','位置已保留或手动移动；原场地的分数、半径和类型未重新计算。','Posición conservada o movida manualmente; no se recalcularon las puntuaciones, el radio ni el arquetipo del sitio inicial.','Posição mantida ou movida manualmente; pontuações, raio e arquétipo do local inicial não foram recalculados.'])}</strong> ${urbanText(['Ces valeurs ne certifient pas les nouveaux réglages ni le nouveau centre.','These values do not certify the new settings or center.','这些数值不能证明新设置或新中心有效。','Estos valores no certifican los nuevos ajustes ni el nuevo centro.','Esses valores não certificam as novas configurações nem o novo centro.'])}</p>`);
       el('setScore').insertAdjacentHTML('beforeend', ranking);
-    } else el('setScore').textContent = 'This settlement has no valid position yet. Use automatic position or place it on dry land.';
+    } else el('setScore').textContent = urbanText(['Cette implantation n’a pas encore de position valide. Utilisez le placement automatique ou placez-la sur une terre ferme.','This settlement has no valid position yet. Use automatic position or place it on dry land.','此聚落尚无有效位置。请使用自动选址或将其放在陆地上。','Este asentamiento aún no tiene una posición válida. Usa la posición automática o colócalo en tierra firme.','Este assentamento ainda não tem posição válida. Use a posição automática ou coloque-o em terra firme.']); };
+    updateScoreLocale();
   }
   function draw(): void {
     let layer = map.querySelector<SVGGElement>('#settlementOverlay');
@@ -503,7 +554,7 @@ export function createTerrainSettlements(options: {
     const t = options.getTerrain(); if (!t || !complete || p.x < 0 || p.y < 0 || p.x >= t.width || p.y >= t.width) return false;
     // Validate against the same adapted raster as Rust before committing the editable list.
     const raster = validation ?? options.getRaster?.() ?? settlementRaster(t), i = Math.floor(p.y / raster.width * raster.n) * raster.n + Math.floor(p.x / raster.width * raster.n);
-    if (raster.water[i]) { el('setPickHint').textContent = 'Choose dry land: this point is on water or solid rock.'; el('setPickHint').hidden = false; return false; }
+    if (raster.water[i]) { el('setPickHint').textContent = urbanText(['Choisissez une terre ferme : ce point est sur de l’eau ou de la roche massive.','Choose dry land: this point is on water or solid rock.','请选择陆地：此位置位于水面或坚岩上。','Elige tierra firme: este punto está sobre agua o roca maciza.','Escolha terra firme: este ponto está sobre água ou rocha maciça.']); el('setPickHint').hidden = false; return false; }
     adopt();
     if (picking === 'new') {
       config.mode = 'list'; const key = `manual:${crypto.randomUUID()}`; const s = defaultSettlementSpec(key); s.culture = config.main.culture; s.name = `Place ${config.list.length + 1}`; s.position = p; config.list.push(s); selection = key;
@@ -642,7 +693,7 @@ export function createTerrainSettlements(options: {
       const key = (s: SettlementSpec): string => JSON.stringify([s.key, s.population, s.culture, s.name, s.position && [s.position.x, s.position.y]]);
       const replaced = !!edited && edited.map(key).join() !== config.list.map(key).join();
       if (replaced) config.list = edited!; selection = d.meta.pipeline?.city ?? (options.city ? output.settlements[0]?.key ?? '' : ''); controls(); list(); editor();
-      el('setStatus').textContent = `Map · ${output.settlements.length} place(s) · ${output.settlements.reduce((sum, s) => sum + s.population, 0).toLocaleString()} inhabitants`;
+      el('setStatus').textContent = `${urbanText(['Carte','Map','地图','Mapa','Mapa'])} · ${output.settlements.length} ${urbanText(['lieux','places','个地点','lugares','locais'])} · ${output.settlements.reduce((sum, s) => sum + s.population, 0).toLocaleString()} ${urbanText(['habitants','inhabitants','名居民','habitantes','habitantes'])}`;
       if (d.meta.roadConfig) roads.setConfig(d.meta.roadConfig);
       restoringDecor = true; roads.set(d.meta.roads ?? undefined);
       // An edited city (link or situation) is placed and routed again right below:
@@ -671,11 +722,11 @@ export function createTerrainSettlements(options: {
     terrainFailed(message: string): void {
       complete = false; ++id; clearTimeout(timer);
       el('setGenerate').removeAttribute('aria-busy');
-      el('setStatus').textContent = `Settlements blocked by terrain generation: ${message}`;
+      el('setStatus').textContent = `${urbanText(['Implantations bloquées par la génération du terrain','Settlements blocked by terrain generation','地形生成阻止了聚落生成','Asentamientos bloqueados por la generación del terreno','Assentamentos bloqueados pela geração do terreno'])}: ${message}`;
       roads.error(`Terrain generation failed: ${message}`);
       urban.terrainFailed(message);
     },
-    terrainPending(): void { complete = false; ++id; output = undefined; cachedTerrain = undefined; validation = undefined; roads.set(undefined); urban.terrainPending(); draw(); el('setStatus').textContent = 'Waiting for the completed map…'; },
+    terrainPending(): void { complete = false; ++id; output = undefined; cachedTerrain = undefined; validation = undefined; roads.set(undefined); urban.terrainPending(); draw(); el('setStatus').textContent = urbanText(['En attente de la carte terminée…','Waiting for the completed map…','正在等待地图生成完成…','Esperando a que termine el mapa…','Aguardando o mapa concluído…']); },
     updateView(): void { draw(); roads.draw(); urban.updateView(); landuse?.updateView(); },
     isPicking: (): boolean => !!picking,
     click(event: MouseEvent): boolean { if (!picking) return false; placeAt(world(event)); return true; },
@@ -698,3 +749,7 @@ const IMPLANTATIONS: [string, string][] = [
   ['hilltop', 'Colline'], ['spur', 'Hauteur fortifiée, éperon'], ['pass', 'Col de montagne'],
   ['valley', 'Fond de vallée'], ['plain', 'Plaine'],
 ];
+const SITE_LABELS: Record<string, readonly [string,string,string,string,string]> = {
+  fixed:['Position conservée ou placée à la main','Retained or manually placed position','保留或手动放置的位置','Posición conservada o manual','Posição mantida ou manual'], auto:['Stratégie automatique','Automatic strategy','自动策略','Estrategia automática','Estratégia automática'], harbor:['Côte, port','Coast, harbor','海岸、港口','Costa, puerto','Costa, porto'], estuary:['Estuaire','Estuary','河口','Estuario','Estuário'], bridge:['Bord de rivière, pont','Riverbank, bridge','河岸、桥梁','Ribera, puente','Margem do rio, ponte'], meander:['Méandre','Meander','曲流','Meandro','Meandro'], confluence:['Confluence','Confluence','汇流处','Confluencia','Confluência'], lakeshore:['Rive de lac','Lakeshore','湖岸','Orilla del lago','Margem do lago'], island:['Île','Island','岛屿','Isla','Ilha'], hilltop:['Colline','Hilltop','山顶','Colina','Colina'], spur:['Hauteur fortifiée, éperon','Fortified height, spur','高地堡垒、山嘴','Altura fortificada, espolón','Altura fortificada, esporão'], pass:['Col de montagne','Mountain pass','山口','Puerto de montaña','Passagem de montanha'], valley:['Fond de vallée','Valley floor','谷底','Fondo de valle','Fundo do vale'], plain:['Plaine','Plain','平原','Llanura','Planície'],
+};
+function siteLabel(id: string): string { return SITE_LABELS[id] ? urbanText(SITE_LABELS[id]) : id; }

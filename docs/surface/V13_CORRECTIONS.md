@@ -1,74 +1,30 @@
-# Corrections après la revue V12
+# Corrections after the V12 review
 
-24 octobre 2026. La [revue Opus V12](reviews/phase06-followup-v12.md)
-accepte la campagne technique sur `bc6579f`, mais refuse la qualité artistique
-et la mise en production. Les changements suivants ne sont pas validés par cette
-campagne et nécessitent leurs propres preuves. Les résultats V12 restent figés.
+24 October 2026. The [Opus V12 review](reviews/phase06-followup-v12.md) accepts the technical campaign on `bc6579f`, but refuses artistic quality and production release. The following changes are not validated by that campaign and require their own evidence. V12 results remain frozen.
 
-## Distinguer les délais du producteur
+## Distinguishing producer delays
 
-`surface_page_timing.mjs` version 2 ajoute les jalons sur l'horloge de la page :
-réception SSE de la requête native, début/headers/fin du vrai téléchargement
-Infinite Generation, puis les jalons Worker et upload existants. Les coordonnées
-numériques et identifiants bornés permettent de joindre les étapes sans conserver
-les hauteurs ou les gros corps de registration dans les diagnostics.
+`surface_page_timing.mjs` version 2 adds milestones on the page clock: SSE receipt of the native request, start/headers/end of the actual Infinite Generation download, then existing Worker and upload milestones. Numeric coordinates and bounded IDs allow stages to be joined without retaining heights or large registration bodies in diagnostics.
 
-Le wrapper ne lit aucun corps avant son consommateur et renvoie son buffer
-original. Il conserve les événements, arguments, réponses, erreurs et ownership
-des transferts. Les flux sans instrumentation gardent leur chemin ordinaire.
-Les cinq tests de l'instrumentation et les contrôles de logs/rétention passent.
+The wrapper reads no body before its consumer and returns its original buffer. It preserves events, arguments, responses, errors and transfer ownership. Flows without instrumentation keep their ordinary path. The five instrumentation tests and log/retention checks pass.
 
-Cette instrumentation vise le délai encore non attribué de la preview V12 ;
-elle ne démontre pas sa cause et n'accélère pas à elle seule la génération.
-`processorTiming.synchronousMs` et les jalons restent des durées murales, pas des
-mesures de temps CPU.
+This instrumentation targets the still-unattributed V12 preview delay; it does not demonstrate its cause or accelerate generation by itself. `processorTiming.synchronousMs` and milestones remain wall durations, not CPU-time measurements.
 
-Le [diagnostic de trois parcours](evidence/navigation-repeat-v13.json) sur
-`d195068` garde une source fraîche et une session commune. Chaque fenêtre
-nominale de 20 s affiche deux nouveaux mondes : le parent natif 30 m après
-11,720 / 11,727 / 12,290 s, puis un raffinement neuronal de
-0,9375 / 1,875 / 0,9375 m après 17,111 / 16,899 / 17,334 s. Les trois
-vérifications temporelles/source passent. **Les trois phases strictes restent
-échouées** : deux erreurs WASAPI d'initialisation audio sont présentes à chaque
-démarrage. Le collecteur sort à zéro pour avoir collecté ses trois résultats ;
-ce n'est pas une qualification globale réussie.
+The [three-journey diagnostic](evidence/navigation-repeat-v13.json) on `d195068` retains a fresh source and shared session. Each nominal 20 s window displays two new worlds: native 30 m parent after 11.720 / 11.727 / 12.290 s, then 0.9375 / 1.875 / 0.9375 m neural refinement after 17.111 / 16.899 / 17.334 s. All three timing/source checks pass. **All three strict phases remain failed**: two WASAPI audio-initialisation errors occur at each startup. The collector exits zero because it collected three results; this is not a successful global qualification.
 
-Les nouveaux jalons mesurent réception SSE → upload accepté en 914–1 039 ms
-pour les premiers mondes et 429–452 ms pour les raffinements affichés. Ce sont
-les durées de ces parcours, pas une explication rétrospective des 8,28 s HTTP
-de V12. L'ordre et les caches sont partagés, la charge de l'hôte diffère, et des
-gels de frame de 1,12–3,20 s persistent. Aucun gain causal ou 60 FPS n'est déduit.
+The new milestones measure SSE receipt → accepted upload at 914–1,039 ms for first worlds and 429–452 ms for displayed refinements. These are durations of those journeys, not a retrospective explanation of V12's 8.28 s HTTP time. Order and caches are shared, host load differs, and 1.12–3.20 s frame freezes persist. No causal gain or 60 FPS is inferred.
 
-Le lanceur cartographique utilise désormais explicitement `--audio-driver Dummy` :
-aucune scène audio n'existe ici, donc le rendu ne doit pas dépendre d'un
-périphérique Windows, notamment en session distante. Les erreurs des anciennes
-mesures sont conservées ; cette configuration nécessite sa propre exécution.
-Le driver transmet aussi le manifeste de végétation par
-`--viewer-vegetation-assets` à chaque phase, avec hash initial/final séparé.
+The cartographic launcher now explicitly uses `--audio-driver Dummy`: there is no audio scene here, so rendering must not depend on a Windows device, especially in a remote session. Errors in older measurements remain preserved; this configuration requires its own run. The driver also passes the vegetation manifest via `--viewer-vegetation-assets` to each phase, with separate initial/final hashes.
 
-## Intégration et suite ciblée
+## Integration and targeted next steps
 
-- Herbes CC0 légères : ingestion et rendu intégrés, 52 assertions natives et
-  [six A/B GPU](evidence/vegetation-grass-v13/README.md) passent sous leurs limites.
-  Le [consommateur arbre](evidence/vegetation-tree-v13/GPU.md) est intégré en option,
-  avec ses contrôles TOP, son rendu urbain oblique et ses limites déclarées.
-- Sol : la [réponse physique continue](GROUND_RESPONSE.md) est intégrée et contrôlée
-  numériquement/GPU ; les champs physiques restent ceux du contexte canonique.
-  Aucune texture floutée ne remplace des observations fines absentes.
-- Eau : les [six canaux isolés et l'A/B de teinte](HYDROLOGY_V13_DIAGNOSTIC.md)
-  distinguent support alluvial et composite. L'option uniforme passe ses contrôles
-  GPU sans modifier l'alpha, les classes ou la géométrie ; le défaut reste inchangé.
-- Bord : la [capture 40 km](evidence/source-edge-v13/40000m.png) vérifie une bande
-  de ciel de deux pixels conforme au domaine réel, sans étendre les hauteurs source.
+- Lightweight CC0 grasses: ingestion and rendering integrated; 52 native assertions and [six GPU A/B comparisons](evidence/vegetation-grass-v13/README.md) pass within their limits. The [tree consumer](evidence/vegetation-tree-v13/GPU.md) is integrated optionally, with TOP controls, oblique urban rendering and declared limits.
+- Ground: [continuous physical response](GROUND_RESPONSE.md) is integrated and checked numerically/on GPU; physical fields remain those of canonical context. No blurred texture replaces missing fine observations.
+- Water: [six isolated channels and tint A/B](HYDROLOGY_V13_DIAGNOSTIC.md) distinguish alluvial support from composite. Uniform mode passes GPU checks without changing alpha, classes or geometry; the default is unchanged.
+- Edge: the [40 km capture](evidence/source-edge-v13/40000m.png) checks a two-pixel sky strip consistent with the actual domain, without extending source heights.
 
-La [campagne V13 complète](evidence/NATIVE_V13.md) qualifie techniquement ces
-changements réunis sur `6ef8d3c` : 624 fichiers identiques, source fraîche,
-navigation nominale 20 s, sept niveaux de zoom, deux probes de couches et
-restauration stricte des archives. La revue artistique reste séparée. Les
-[vues des 419 bâtiments](NATIVE_CITY419_V13.md) utilisent une source retenue
-legacy, sans GR ni nouvelle génération.
+The [complete V13 campaign](evidence/NATIVE_V13.md) technically qualifies these changes together on `6ef8d3c`: 624 identical files, fresh source, nominal 20 s navigation, seven zoom levels, two layer probes and strict archive restoration. Artistic review remains separate. [Views of 419 buildings](NATIVE_CITY419_V13.md) use a retained legacy source, without GR or fresh generation.
 
-La planification oblique commune (atlas/résident/enveloppe des mêmes hauteurs)
-et la sélection haute LOD par support plutôt que centre sont préparées dans
-d'autres worktrees. Le contre-exemple oblique à phase 0 et le tour 10 m sans
-haute géométrie restent conservés ; aucun correctif futur n'est crédité à V13.
+Shared oblique scheduling (atlas/resident/envelope of the same heights) and high-LOD selection by support rather than centre are prepared in other worktrees. The phase-0 oblique counterexample and 10 m tour without high geometry remain retained; no future fix is credited to V13.
+
+[Original French version](V13_CORRECTIONS_FR.md).

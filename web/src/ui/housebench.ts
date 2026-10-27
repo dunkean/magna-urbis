@@ -6,6 +6,11 @@ import { callHouses, compileHousesModule, defaultHouseConfig, decodeHouseReplay,
 import { commonHouseExtent, renderHouseSheet, renderHouseSvg, surfaceArea, unitBounds, xml } from '../../../rust/bridge/houseRender';
 import { readUrbanHouseCase } from './urbanHouseTransfer';
 import { enrichUrbanBuilding } from '../../../rust/bridge/architecture';
+import { houseGenerateLabel } from './houseLocale';
+import { houseGeometryLabel, houseGeometryDescription } from './houseGeometryLocale';
+import { houseVariantText } from './houseVariantsLocale';
+import { houseArchetypeLabel, houseMaterialLabel, housePackLabel, houseSourceDescription, houseSourceText } from './houseCatalogueLocale';
+import { urbanText } from './urbanPanelLocale';
 
 const $ = <T extends HTMLElement>(id: string): T => {
   const element = document.getElementById(id);
@@ -28,11 +33,40 @@ let detailPan: Point = {x: 0, y: 0};
 let detailMode: HouseView['mode'] = 'roof', syncFatal = false;
 let noWorker = typeof Worker === 'undefined';
 const overrideInputs = Array.from(form.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-override]'));
+const localizedRoles: { [key in keyof typeof ROLE_LABELS]: readonly [string,string,string,string,string] } = {
+  dwelling:['habitation','dwelling','住宅','vivienda','moradia'], residential_ensemble:['ensemble résidentiel','residential complex','住宅组群','conjunto residencial','conjunto residencial'],
+  communal_dwelling:['habitat collectif','communal dwelling','集体住宅','vivienda colectiva','moradia coletiva'], mixed_residential:['habitat mixte','mixed residential','混合住宅','vivienda mixta','moradia mista'],
+  domestic_annex:['annexe domestique','domestic annex','家庭附属建筑','anexo doméstico','anexo doméstico'], spatial_component:['composant spatial','spatial component','空间组件','componente espacial','componente espacial'],
+  non_domestic:['non résidentiel','non-residential','非住宅','no residencial','não residencial'], landscape:['paysage','landscape','景观','paisaje','paisagem'],
+};
+const houseRole = (role: keyof typeof ROLE_LABELS): string => urbanText(localizedRoles[role] ?? [ROLE_LABELS[role],ROLE_LABELS[role],ROLE_LABELS[role],ROLE_LABELS[role],ROLE_LABELS[role]]);
+const confidenceLabels: Record<string, readonly [string,string,string,string,string]> = {
+  stylized: ['stylisé','stylized','风格化','estilizado','estilizado'],
+  source_preset: ['préréglage issu des sources','source-based preset','基于来源的预设','preajuste basado en fuentes','predefinição baseada em fontes'],
+  uncertain: ['incertain','uncertain','不确定','incierto','incerto'],
+  not_applicable: ['sans objet','not applicable','不适用','no aplicable','não aplicável'],
+  broad_tradition: ['tradition générale','broad tradition','广义传统','tradición general','tradição geral'],
+  source_period: ['période des sources','source period','来源时期','período de las fuentes','período das fontes'],
+  undated_tradition: ['tradition non datée','undated tradition','未定年代的传统','tradición sin datar','tradição sem datação'],
+};
+const houseConfidence = (value: string): string => confidenceLabels[value] ? urbanText(confidenceLabels[value]) : value;
 const NO_MATERIAL = '__house_no_material__';
 let screenSource: 'atlas' | 'workshop' = 'atlas';
 const sourceState = new Map<string, Map<string, string | boolean>>();
 const sourceFields = ['pack', 'recipe', 'mode', 'era', 'allow-late', 'size', ...overrideInputs.map(element => element.id)];
 function workshopPresets() { return bundle?.catalogue.workshop_presets ?? []; }
+function workshopLabel(preset: {id: string; label: string}): string {
+  const id = preset.id.replace(/^WORKSHOP-/, '');
+  if (!id.startsWith('FP-') && !id.startsWith('RF-')) return preset.label;
+  const original = bundle?.inventory.entries.find(entry => entry.id === id)?.label ?? id;
+  return `${id.startsWith('FP-') ? urbanText(['Plan','Footprint','平面','Planta','Planta']) : urbanText(['Toiture','Roof','屋顶','Cubierta','Telhado'])} · ${houseGeometryLabel(id, original)} (${id})`;
+}
+function workshopDescription(preset: {id: string; description: string}): string {
+  if (preset.id.startsWith('WORKSHOP-FP-')) return urbanText(['Primitive géométrique expérimentale, matériaux et programme déclarés.','Experimental geometric primitive, with declared materials and programme.','实验性几何基本形体，材料和用途已声明。','Primitiva geométrica experimental, con materiales y programa declarados.','Primitiva geométrica experimental, com materiais e programa declarados.']);
+  if (preset.id.startsWith('WORKSHOP-RF-')) return urbanText(['Toiture expérimentale sur emprise et porteur compatibles.','Experimental roof on a compatible footprint and support.','用于兼容占地和支撑结构的实验性屋顶。','Cubierta experimental sobre una planta y soporte compatibles.','Telhado experimental sobre implantação e suporte compatíveis.']);
+  return preset.description;
+}
+function unitLabel(unit: HouseUnit): string { const preset = workshopPresets().find(value => value.id === unit.recipe_id); return preset ? workshopLabel(preset) : houseArchetypeLabel(unit.recipe_id, unit.label); }
 function isWorkshop(): boolean { return select('source').value === 'workshop'; }
 function updateSourceControls(): void {
   const workshop = isWorkshop();
@@ -42,8 +76,8 @@ function updateSourceControls(): void {
   select('variant').disabled = workshop || !select('recipe').value;
   button('tour').disabled = workshop || tourRunning;
   if (workshop) { select('mode').value = 'fantasy_mix'; select('era').value = 'any'; input('allow-late').checked = false; input('size').value = '1'; }
-  for (const id of ['footprint', 'roof', 'frame', 'infill', 'coating', 'cladding']) if (select(id).options[0]) select(id).options[0].text = workshop ? 'Selon le preset' : 'Selon la recette';
-  $('footprint-hint').textContent = workshop ? 'Primitive native du preset. Les combinaisons incompatibles restent refusées.' : "L'organisation de l'ensemble reste celle de la recette. Une substitution non appliquée est refusée.";
+  for (const id of ['footprint', 'roof', 'frame', 'infill', 'coating', 'cladding']) if (select(id).options[0]) select(id).options[0].text = workshop ? urbanText(['Selon le preset', 'From preset', '遵循预设', 'Según el preajuste', 'Conforme a predefinição']) : urbanText(['Selon la recette', 'From recipe', '遵循配方', 'Según la receta', 'Conforme a receita']);
+  $('footprint-hint').textContent = workshop ? urbanText(['Primitive native du preset. Les combinaisons incompatibles restent refusées.', 'Native preset primitive. Incompatible combinations are rejected.', '预设的原生基本形体。不兼容的组合会被拒绝。', 'Primitiva nativa del preajuste. Se rechazan las combinaciones incompatibles.', 'Primitiva nativa da predefinição. Combinações incompatíveis são rejeitadas.']) : urbanText(["L'organisation de l'ensemble reste celle de la recette. Une substitution non appliquée est refusée.", 'The overall layout follows the recipe. An unapplied substitution is rejected.', '整体布局遵循配方。未应用的替换会被拒绝。', 'La organización del conjunto sigue la receta. Se rechazan las sustituciones no aplicadas.', 'A organização do conjunto segue a receita. Substituições não aplicadas são rejeitadas.']);
   updateOutputs(); updateRecipeHint();
 }
 function switchSource(next: 'atlas' | 'workshop'): void {
@@ -58,7 +92,9 @@ function switchSource(next: 'atlas' | 'workshop'): void {
   lastPreflight = undefined; $('preflight').textContent = ''; updateSourceControls(); dirtyState(); schedulePreflight();
 }
 
-function message(text: string, loading = false): void { status.textContent = text; status.classList.toggle('busy', loading); }
+type LocalizedMessage = [string, string, string, string, string];
+let currentMessage: string | LocalizedMessage = '';
+function message(text: string | LocalizedMessage, loading = false): void { currentMessage = text; status.textContent = typeof text === 'string' ? text : urbanText(text); status.classList.toggle('busy', loading); }
 function showError(error: unknown): void { errorBox.textContent = error instanceof Error ? error.message : String(error); errorBox.hidden = false; }
 function clearError(): void { errorBox.hidden = true; errorBox.textContent = ''; }
 function cancelRequest(): void {
@@ -86,8 +122,8 @@ function makeWorker(): Worker {
 async function request(kind: HouseRequest['kind'], config?: HouseConfig): Promise<{json: string; elapsed_ms: number}> {
   const id = ++ticket;
   if (noWorker) {
-    if (syncFatal) throw new Error('Le module WASM a rencontré une erreur fatale. Rechargez la page pour le réinitialiser.');
-    if (executionRuntime.profile === 'web' && config && config.count > 10) throw new Error('Le mode sans worker est limité à dix unités.');
+    if (syncFatal) throw new Error(urbanText(['Le module WASM a rencontré une erreur fatale. Rechargez la page pour le réinitialiser.', 'The WASM module encountered a fatal error. Reload the page to reset it.', 'WASM 模块发生严重错误。请重新加载页面以重置。', 'El módulo WASM sufrió un error fatal. Recarga la página para restablecerlo.', 'O módulo WASM encontrou um erro fatal. Recarregue a página para reiniciá-lo.']));
+    if (executionRuntime.profile === 'web' && config && config.count > 10) throw new Error(urbanText(['Le mode sans worker est limité à dix unités.', 'Without a worker, generation is limited to ten units.', '无 worker 模式最多生成十个单元。', 'El modo sin worker está limitado a diez unidades.', 'O modo sem worker está limitado a dez unidades.']));
     const started = performance.now();
     const message = kind === 'catalogue' ? {ticket: id, kind, module, runtime: executionRuntime} : {ticket: id, kind, config: config!, module, runtime: executionRuntime};
     let json: string;
@@ -97,9 +133,9 @@ async function request(kind: HouseRequest['kind'], config?: HouseConfig): Promis
   }
   if (!worker) {
     try { worker = makeWorker(); }
-    catch { noWorker = true; message('Worker indisponible : exécution WASM synchrone, dix unités maximum.'); return request(kind, config); }
+    catch { noWorker = true; message(['Worker indisponible : exécution WASM synchrone, dix unités maximum.', 'Worker unavailable: synchronous WASM, maximum ten units.', 'Worker 不可用：使用同步 WASM，最多十个单元。', 'Worker no disponible: WASM síncrono, máximo diez unidades.', 'Worker indisponível: WASM síncrono, máximo de dez unidades.']); return request(kind, config); }
   }
-  if (pending) throw new Error('Une génération est déjà active.');
+  if (pending) throw new Error(urbanText(['Une génération est déjà active.', 'Generation is already running.', '生成任务已在运行。', 'Ya hay una generación en curso.', 'Uma geração já está em andamento.']));
   return new Promise((resolve, reject) => {
     pending = {ticket: id, resolve: response => {
       if ('error' in response) reject(new Error(response.error.message));
@@ -121,7 +157,7 @@ async function request(kind: HouseRequest['kind'], config?: HouseConfig): Promis
 function readConfig(): HouseConfig {
   const config = defaultHouseConfig();
   config.seed = input('seed').value;
-  if (!wellFormedSeed(config.seed)) throw new Error('La graine contient une séquence Unicode invalide.');
+  if (!wellFormedSeed(config.seed)) throw new Error(urbanText(['La graine contient une séquence Unicode invalide.', 'The seed contains an invalid Unicode sequence.', '种子包含无效的 Unicode 序列。', 'La semilla contiene una secuencia Unicode inválida.', 'A semente contém uma sequência Unicode inválida.']));
   config.pack = select('pack').value; config.recipe = select('recipe').value || null;
   config.mode = select('mode').value as HouseConfig['mode']; config.era = select('era').value; config.allow_late = input('allow-late').checked;
   for (const [id, key] of [['count', 'count'], ['size', 'size'], ['variation', 'variation'], ['wealth', 'wealth'], ['orientation', 'orientation_deg']] as const) {
@@ -181,11 +217,11 @@ function setConfig(config: HouseConfig): void {
 function option(value: string, label: string): HTMLOptionElement { const result = document.createElement('option'); result.value = value; result.textContent = label; return result; }
 function populateRecipes(current: string | null = null): void {
   if (!bundle) return;
-  select('recipe').replaceChildren(option('', 'Palette résidentielle du pack'));
+  select('recipe').replaceChildren(option('', urbanText(['Palette résidentielle du pack', 'Pack residential palette', '文化包住宅组合', 'Paleta residencial del paquete', 'Paleta residencial do pacote'])));
   for (const recipe of bundle.catalogue.recipes.filter(recipe => recipe.pack_id === select('pack').value)) {
-    const role = recipe.role === 'dwelling' ? '' : ` · ${ROLE_LABELS[recipe.role]}`;
+    const role = recipe.role === 'dwelling' ? '' : ` · ${houseRole(recipe.role)}`;
     const rejected = lastPreflight?.rejected_recipes.some(rejection => rejection.id === recipe.id);
-    select('recipe').add(option(recipe.id, `${recipe.label}${recipe.temporal.late_only ? ' · L tardif' : ''}${role}${rejected ? ' · incompatible' : ''}`));
+    select('recipe').add(option(recipe.id, `${houseArchetypeLabel(recipe.id, recipe.label)}${recipe.temporal.late_only ? ` · ${urbanText(['L tardif', 'L late', 'L 晚期', 'L tardío', 'L tardio'])}` : ''}${role}${rejected ? ` · ${urbanText(['incompatible', 'incompatible', '不兼容', 'incompatible', 'incompatível'])}` : ''}`));
   }
   if (current && Array.from(select('recipe').options).some(option => option.value === current)) select('recipe').value = current;
   populateVariants();
@@ -193,43 +229,54 @@ function populateRecipes(current: string | null = null): void {
 function populateVariants(): void {
   const recipe = bundle?.catalogue.recipes.find(recipe => recipe.id === select('recipe').value);
   const previous = select('variant').value;
-  select('variant').replaceChildren(option('', recipe ? 'Tirage parmi les variantes admises' : 'Choisissez un type explicite'));
+  select('variant').replaceChildren(option('', recipe ? urbanText(['Tirage parmi les variantes admises', 'Choose from allowed variants', '从允许的变体中选择', 'Elegir entre variantes admitidas', 'Escolher entre variantes permitidas']) : urbanText(['Choisissez un type explicite', 'Choose an explicit type', '请选择具体类型', 'Elige un tipo explícito', 'Escolha um tipo específico'])));
   select('variant').disabled = !recipe;
   if (!recipe) return;
-  select('variant').add(option(recipe.parameters.variant_id, 'Variante principale'));
-  for (const variant of recipe.variants) select('variant').add(option(variant.id, variant.label));
+  select('variant').add(option(recipe.parameters.variant_id, urbanText(['Variante principale', 'Main variant', '主要变体', 'Variante principal', 'Variante principal'])));
+  for (const variant of recipe.variants) select('variant').add(option(variant.id, houseVariantText(variant.label)));
   if (Array.from(select('variant').options).some(option => option.value === previous)) select('variant').value = previous;
 }
 function updateRecipeHint(): void {
   if (isWorkshop()) {
     const preset = workshopPresets().find(preset => preset.id === select('workshop-preset').value);
-    $('recipe-hint').textContent = preset ? `${preset.parameters.footprint_family} · ${preset.parameters.roof_system} · confiance ${preset.confidence}. ${preset.description}` : 'L’atelier nécessite le catalogue natif de presets.';
+    $('recipe-hint').textContent = preset ? `${preset.parameters.footprint_family} · ${preset.parameters.roof_system} · ${urbanText(['confiance', 'confidence', '可信度', 'confianza', 'confiança'])} ${preset.confidence}. ${workshopDescription(preset)}` : urbanText(['L’atelier nécessite le catalogue natif de presets.', 'The workshop requires the native preset catalogue.', '工作坊需要原生预设目录。', 'El taller necesita el catálogo nativo de preajustes.', 'O ateliê exige o catálogo nativo de predefinições.']);
     return;
   }
   const recipe = bundle?.catalogue.recipes.find(recipe => recipe.id === select('recipe').value);
-  $('recipe-hint').textContent = recipe ? `${recipe.parameters.footprint_family} · ${recipe.parameters.roof_system} · ${ROLE_LABELS[recipe.role]}. ${recipe.temporal.late_only ? 'Profil caractéristique tardif. ' : ''}${recipe.chronology_note || recipe.context_note || 'Preset cartographique stylisé.'}` : 'Palette résidentielle : un choix déterministe parmi les recettes compatibles de cette tradition.';
+  $('recipe-hint').textContent = recipe ? `${recipe.parameters.footprint_family} · ${recipe.parameters.roof_system} · ${houseRole(recipe.role)}. ${recipe.temporal.late_only ? urbanText(['Profil caractéristique tardif. ', 'Characteristic late profile. ', '典型晚期形态。', 'Perfil característico tardío. ', 'Perfil característico tardio. ']) : ''}${houseSourceText(recipe.chronology_note || recipe.context_note) || urbanText(['Preset cartographique stylisé.', 'Stylised map preset.', '风格化地图预设。', 'Preajuste cartográfico estilizado.', 'Predefinição cartográfica estilizada.'])}` : urbanText(['Palette résidentielle : un choix déterministe parmi les recettes compatibles de cette tradition.', 'Residential palette: a deterministic choice among recipes compatible with this tradition.', '住宅组合：从符合该传统的配方中确定性地选择。', 'Paleta residencial: selección determinista entre recetas compatibles con esta tradición.', 'Paleta residencial: escolha determinística entre receitas compatíveis com esta tradição.']);
 }
 function populateCatalogueControls(): void {
   if (!bundle) return;
   const {catalogue, inventory} = bundle;
-  select('pack').replaceChildren(...catalogue.packs.map(pack => option(pack.id, pack.label)));
-  select('workshop-preset').replaceChildren(...workshopPresets().map(preset => option(preset.id, preset.label)));
+  select('pack').replaceChildren(...catalogue.packs.map(pack => option(pack.id, housePackLabel(pack.id, pack.label))));
+  select('workshop-preset').replaceChildren(...workshopPresets().map(preset => option(preset.id, workshopLabel(preset))));
   select('source').disabled = false; select('source').querySelector<HTMLOptionElement>('option[value="workshop"]')!.disabled = !workshopPresets().length;
   select('workshop-preset').disabled = !workshopPresets().length;
   for (const [id, prefix] of [['footprint', 'FP-'], ['roof', 'RF-']] as const) {
-    select(id).replaceChildren(option('', 'Selon la recette'), ...inventory.entries.filter(entry => entry.id.startsWith(prefix)).map(entry => option(entry.id, `${entry.id} · ${entry.label}`)));
+    select(id).replaceChildren(option('', urbanText(['Selon la recette', 'From recipe', '遵循配方', 'Según la receta', 'Conforme a receita'])), ...inventory.entries.filter(entry => entry.id.startsWith(prefix)).map(entry => option(entry.id, `${entry.id} · ${houseGeometryLabel(entry.id, entry.label)}`)));
   }
   for (const [id, roles] of [['frame', ['frame', 'load_bearing']], ['infill', ['infill']], ['coating', ['coating']], ['cladding', ['cladding']]] as const) {
-    select(id).replaceChildren(option('', 'Selon la recette'), ...catalogue.materials.filter(material => material.roles.some(role => (roles as readonly string[]).includes(role))).map(material => option(material.id, material.label)));
-    if (id === 'coating') select(id).add(option(NO_MATERIAL, 'Aucun'), 1);
+    select(id).replaceChildren(option('', urbanText(['Selon la recette', 'From recipe', '遵循配方', 'Según la receta', 'Conforme a receita'])), ...catalogue.materials.filter(material => material.roles.some(role => (roles as readonly string[]).includes(role))).map(material => option(material.id, houseMaterialLabel(material.id, material.label))));
+    if (id === 'coating') select(id).add(option(NO_MATERIAL, urbanText(['Aucun', 'None', '无', 'Ninguno', 'Nenhum'])), 1);
   }
   for (const [id, roles] of [['workshop-roof-frame', ['roof_frame', 'load_bearing']], ['workshop-base', ['base', 'floor']], ['workshop-support-material', ['support', 'load_bearing', 'frame', 'base']]] as const) {
-    select(id).replaceChildren(option('', 'Preset'), ...catalogue.materials.filter(material => material.roles.some(role => (roles as readonly string[]).includes(role))).map(material => option(material.id, material.label)));
-    if (id === 'workshop-base') select(id).add(option(NO_MATERIAL, 'Aucune'), 1);
+    select(id).replaceChildren(option('', 'Preset'), ...catalogue.materials.filter(material => material.roles.some(role => (roles as readonly string[]).includes(role))).map(material => option(material.id, houseMaterialLabel(material.id, material.label))));
+    if (id === 'workshop-base') select(id).add(option(NO_MATERIAL, urbanText(['Aucune', 'None', '无', 'Ninguna', 'Nenhuma'])), 1);
   }
   select('pack').disabled = false; select('recipe').disabled = false;
   for (const id of ['generate', 'show-catalogue', 'tour']) button(id).disabled = false;
-  $('catalogue-summary').textContent = `${catalogue.packs.length} packs · ${catalogue.recipes.length} recettes · ${catalogue.coverage.length} entrées B classées · ${inventory.entries.filter(entry => entry.id.startsWith('FP-')).length} plans · ${inventory.entries.filter(entry => entry.id.startsWith('RF-')).length} toitures · ${catalogue.materials.length} matériaux. Version ${catalogue.catalogue_version}. Les associations de sources et leurs statuts ne prouvent pas la génération de chaque configuration.`;
+  updateCatalogueSummary();
+}
+function updateCatalogueSummary(): void {
+  if (!bundle) return;
+  const {catalogue, inventory} = bundle, fp = inventory.entries.filter(entry => entry.id.startsWith('FP-')).length, roofs = inventory.entries.filter(entry => entry.id.startsWith('RF-')).length;
+  $('catalogue-summary').textContent = urbanText([
+    `${catalogue.packs.length} packs · ${catalogue.recipes.length} recettes · ${catalogue.coverage.length} entrées B classées · ${fp} plans · ${roofs} toitures · ${catalogue.materials.length} matériaux. Version ${catalogue.catalogue_version}. Les associations de sources et leurs statuts ne prouvent pas la génération de chaque configuration.`,
+    `${catalogue.packs.length} packs · ${catalogue.recipes.length} recipes · ${catalogue.coverage.length} classified B entries · ${fp} footprints · ${roofs} roofs · ${catalogue.materials.length} materials. Version ${catalogue.catalogue_version}. Source associations and statuses do not prove that every configuration can be generated.`,
+    `${catalogue.packs.length} 个包 · ${catalogue.recipes.length} 个配方 · ${catalogue.coverage.length} 个已分类 B 条目 · ${fp} 个平面 · ${roofs} 种屋顶 · ${catalogue.materials.length} 种材料。版本 ${catalogue.catalogue_version}。来源关联和状态不能证明每种配置均可生成。`,
+    `${catalogue.packs.length} paquetes · ${catalogue.recipes.length} recetas · ${catalogue.coverage.length} entradas B clasificadas · ${fp} plantas · ${roofs} cubiertas · ${catalogue.materials.length} materiales. Versión ${catalogue.catalogue_version}. Las asociaciones de fuentes y sus estados no demuestran que se genere cada configuración.`,
+    `${catalogue.packs.length} pacotes · ${catalogue.recipes.length} receitas · ${catalogue.coverage.length} entradas B classificadas · ${fp} plantas · ${roofs} telhados · ${catalogue.materials.length} materiais. Versão ${catalogue.catalogue_version}. As associações de fontes e seus estados não comprovam a geração de cada configuração.`,
+  ]);
 }
 async function preflight(config: HouseConfig): Promise<Preflight> {
   const result = await request('preflight', config);
@@ -237,12 +284,29 @@ async function preflight(config: HouseConfig): Promise<Preflight> {
   if (check.schema_version !== config.schema_version) throw new Error('Version de prévalidation incompatible.');
   return check;
 }
+function updatePreflightText(check: Preflight): void {
+  const rejection = check.rejected_recipes.find(recipe => recipe.id === select('recipe').value);
+  if (rejection) { $('preflight').textContent = rejection.reason; return; }
+  const count = check.admissible_recipes.length, bodies = check.estimate.bodies, rooms = check.estimate.rooms, faces = check.estimate.faces, budget = check.budgets.faces;
+  $('preflight').textContent = check.settings.workshop ? urbanText([
+    `${count} preset admis · estimation par unité : ${bodies} corps, ${rooms} pièces, ${faces} faces. Budget du lot : ${budget} faces.`,
+    `${count} admissible presets · estimate per unit: ${bodies} volumes, ${rooms} rooms, ${faces} faces. Batch budget: ${budget} faces.`,
+    `${count} 个可用预设 · 每个单元预计：${bodies} 个体量、${rooms} 个房间、${faces} 个面。批次预算：${budget} 个面。`,
+    `${count} preajustes admitidos · estimación por unidad: ${bodies} volúmenes, ${rooms} habitaciones, ${faces} caras. Presupuesto del lote: ${budget} caras.`,
+    `${count} predefinições admitidas · estimativa por unidade: ${bodies} volumes, ${rooms} cômodos, ${faces} faces. Orçamento do lote: ${budget} faces.`,
+  ]) : urbanText([
+    `${count} recettes admises · estimation par unité : ${bodies} corps, ${rooms} pièces, ${faces} faces. Budget du lot : ${budget} faces.`,
+    `${count} admissible recipes · estimate per unit: ${bodies} volumes, ${rooms} rooms, ${faces} faces. Batch budget: ${budget} faces.`,
+    `${count} 个可用配方 · 每个单元预计：${bodies} 个体量、${rooms} 个房间、${faces} 个面。批次预算：${budget} 个面。`,
+    `${count} recetas admitidas · estimación por unidad: ${bodies} volúmenes, ${rooms} habitaciones, ${faces} caras. Presupuesto del lote: ${budget} caras.`,
+    `${count} receitas admitidas · estimativa por unidade: ${bodies} volumes, ${rooms} cômodos, ${faces} faces. Orçamento do lote: ${budget} faces.`,
+  ]);
+}
 function displayPreflight(check: Preflight): void {
   lastPreflight = check;
   const explicit = select('recipe').value;
   if (!check.settings.workshop) populateRecipes(explicit || null);
-  const rejection = check.rejected_recipes.find(recipe => recipe.id === explicit);
-  $('preflight').textContent = rejection ? rejection.reason : `${check.admissible_recipes.length} ${check.settings.workshop ? 'preset admis' : 'recettes admises'} · estimation par unité : ${check.estimate.bodies} corps, ${check.estimate.rooms} pièces, ${check.estimate.faces} faces. Budget du lot : ${check.budgets.faces} faces.`;
+  updatePreflightText(check);
 }
 function schedulePreflight(): void {
   clearTimeout(preflightTimer);
@@ -254,9 +318,9 @@ function schedulePreflight(): void {
   }, 450);
 }
 function dirtyState(): void {
-  if (batch && !busy && !tourRunning) message('Paramètres modifiés · la planche conserve le dernier lot réussi.');
+  if (batch && !busy && !tourRunning) message(['Paramètres modifiés · la planche conserve le dernier lot réussi.', 'Settings changed · the sheet retains the last successful batch.', '参数已更改 · 展示板保留上次成功的批次。', 'Parámetros modificados · la lámina conserva el último lote generado.', 'Parâmetros alterados · o painel mantém o último lote gerado.']);
 }
-function setBusy(value: boolean): void { busy = value; button('generate').textContent = value ? 'Relancer la génération ↗' : 'Générer les maisons ↗'; }
+function setBusy(value: boolean): void { busy = value; button('generate').dataset.busy = String(value); button('generate').textContent = houseGenerateLabel(value); }
 function updateReplay(): boolean {
   if (!batch) return false;
   try {
@@ -273,12 +337,50 @@ function updateReplay(): boolean {
     return false;
   }
 }
+function houseMetric(unit: HouseUnit): string {
+  const area = surfaceArea(unit.partition.occupied).toFixed(0);
+  return urbanText([`${unit.bodies.length} corps · ${unit.rooms.length} pièces · ${area} m²`, `${unit.bodies.length} volumes · ${unit.rooms.length} rooms · ${area} m²`, `${unit.bodies.length} 个体量 · ${unit.rooms.length} 个房间 · ${area} m²`, `${unit.bodies.length} volúmenes · ${unit.rooms.length} habitaciones · ${area} m²`, `${unit.bodies.length} volumes · ${unit.rooms.length} cômodos · ${area} m²`]);
+}
+function updateLocalizedBatchText(): void {
+  if (!batch) return;
+  const count = batch.units.length, seed = batch.settings.seed, version = batch.generator_version;
+  const pack = bundle?.catalogue.packs.find(item => item.id === batch!.settings.pack);
+  $('batch-title').textContent = batch.settings.workshop ? `${urbanText(['Atelier libre', 'Free workshop', '自由工作坊', 'Taller libre', 'Ateliê livre'])} · ${(() => { const preset = workshopPresets().find(value => value.id === batch!.settings.workshop!.preset_id); return preset ? workshopLabel(preset) : batch!.settings.workshop!.preset_id; })()}` : housePackLabel(batch.settings.pack, pack?.label ?? batch.settings.pack);
+  $('batch-meta').textContent = urbanText([`Graine ${seed} · ${count} unités à échelle commune · ${version} · cliquez pour le détail`, `Seed ${seed} · ${count} units at a common scale · ${version} · click for details`, `种子 ${seed} · ${count} 个同尺度单元 · ${version} · 点击查看详情`, `Semilla ${seed} · ${count} unidades a escala común · ${version} · pulsa para ver detalles`, `Semente ${seed} · ${count} unidades na mesma escala · ${version} · clique para detalhes`]);
+  for (const [index, unit] of batch.units.entries()) {
+    const card = Array.from(document.querySelectorAll<HTMLElement>('.house-card')).find(element => element.dataset.unit === unit.id);
+    if (!card) continue;
+    const title = card.querySelector<HTMLElement>('.card-foot h3'); if (title) title.textContent = unitLabel(unit);
+    const role = card.querySelector<HTMLElement>('.card-top span'); if (role) role.textContent = `${String(index + 1).padStart(2, '0')} / ${houseRole(unit.role)}`;
+    const metric = card.querySelector<HTMLElement>('.card-foot p'); if (metric) {
+      const missing = view.mode === 'plan' && !unit.levels.some(level => level.index === view.level) ? ` · ${urbanText(['niveau absent','floor unavailable','楼层不可用','planta no disponible','pavimento indisponível'])}` : '';
+      metric.replaceChildren(document.createTextNode(houseMetric(unit)), document.createElement('br'), document.createTextNode(unit.recipe_id + missing));
+    }
+  }
+}
+window.addEventListener('magna-locale-change', () => {
+  if (bundle) {
+    populateRecipes(select('recipe').value); updateRecipeHint(); updateSourceControls();
+    for (const pack of bundle.catalogue.packs) { const item = Array.from(select('pack').options).find(option => option.value === pack.id); if (item) item.textContent = housePackLabel(pack.id, pack.label); }
+    for (const item of Array.from(select('workshop-preset').options)) { const preset = workshopPresets().find(value => value.id === item.value); if (preset) item.textContent = workshopLabel(preset); }
+    for (const id of ['footprint', 'roof']) for (const item of Array.from(select(id).options)) { const entry = bundle.inventory.entries.find(value => value.id === item.value); if (entry) item.textContent = `${entry.id} · ${houseGeometryLabel(entry.id, entry.label)}`; }
+    for (const id of ['frame', 'infill', 'coating', 'cladding', 'workshop-roof-frame', 'workshop-base', 'workshop-support-material']) {
+      for (const item of Array.from(select(id).options)) { const material = bundle.catalogue.materials.find(value => value.id === item.value); if (material) item.textContent = houseMaterialLabel(material.id, material.label); }
+    }
+    for (const item of Array.from(document.querySelectorAll<HTMLElement>('.legend-item[data-material]'))) { const material = bundle.catalogue.materials.find(value => value.id === item.dataset.material); if (material && item.lastChild) item.lastChild.textContent = houseMaterialLabel(material.id, material.label); }
+    for (const id of ['coating', 'workshop-base']) {
+      const none = Array.from(select(id).options).find(item => item.value === NO_MATERIAL);
+      if (none) none.textContent = urbanText(['Aucun', 'None', '无', 'Ninguno', 'Nenhum']);
+    }
+    if ($<HTMLDialogElement>('catalogue-dialog').open) showCatalogue();
+  }
+  if (typeof currentMessage !== 'string') status.textContent = urbanText(currentMessage);
+  updateCatalogueSummary(); updateLocalizedBatchText(); if (lastPreflight) updatePreflightText(lastPreflight); if (selected) { $('detail-title').textContent = unitLabel(selected); $('detail-info').innerHTML = recipeInfo(selected); }
+});
 function renderBatch(): void {
   if (!batch || !bundle) return;
-  const pack = bundle.catalogue.packs.find(pack => pack.id === batch!.settings.pack);
-  $('batch-title').textContent = batch.settings.workshop ? `Atelier libre · ${workshopPresets().find(preset => preset.id === batch!.settings.workshop!.preset_id)?.label ?? batch.settings.workshop.preset_id}` : pack?.label ?? batch.settings.pack;
   $('batch-number').textContent = String(batch.units.length).padStart(2, '0');
-  $('batch-meta').textContent = `Graine ${batch.settings.seed} · ${batch.units.length} unités à échelle commune · ${batch.generator_version} · cliquez pour le détail`;
+  updateLocalizedBatchText();
   const levels = [...new Map(batch.units.flatMap(unit => unit.levels).map(level => [level.index, level])).values()].sort((a, b) => a.index - b.index);
   select('level').replaceChildren(...levels.map(level => option(String(level.index), `${level.index} · ${level.z_min.toFixed(1)}–${level.z_max.toFixed(1)} m`)));
   if (!levels.some(level => level.index === view.level)) view.level = levels[0]?.index ?? 0;
@@ -287,15 +389,15 @@ function renderBatch(): void {
   const extent = commonHouseExtent(batch.units);
   const cards = batch.units.map((unit, index) => {
     const card = document.createElement('button'); card.type = 'button'; card.className = 'house-card'; card.dataset.unit = unit.id;
-    const metric = `${unit.bodies.length} corps · ${unit.rooms.length} pièces · ${surfaceArea(unit.partition.occupied).toFixed(0)} m²`;
-    card.innerHTML = `<div class="card-top"><span>${String(index + 1).padStart(2, '0')} / ${xml(ROLE_LABELS[unit.role])}</span><span>↗</span></div>${renderHouseSvg(unit, bundle!.catalogue, view, {extent, prefix: `card-${index}`})}<div class="card-foot"><h3>${xml(unit.label)}</h3><p>${xml(metric)}<br/>${xml(unit.recipe_id)}${view.mode === 'plan' && !unit.levels.some(level => level.index === view.level) ? ' · niveau absent' : ''}</p></div>`;
+    const metric = houseMetric(unit);
+    card.innerHTML = `<div class="card-top"><span>${String(index + 1).padStart(2, '0')} / ${xml(houseRole(unit.role))}</span><span>↗</span></div>${renderHouseSvg(unit, bundle!.catalogue, view, {extent, prefix: `card-${index}`})}<div class="card-foot"><h3>${xml(unitLabel(unit))}</h3><p>${xml(metric)}<br/>${xml(unit.recipe_id)}${view.mode === 'plan' && !unit.levels.some(level => level.index === view.level) ? ` · ${urbanText(['niveau absent','floor unavailable','楼层不可用','planta no disponible','pavimento indisponível'])}` : ''}</p></div>`;
     card.addEventListener('click', () => openDetail(unit));
     return card;
   });
   $('gallery').replaceChildren(...cards);
   const used = new Set(batch.units.flatMap(unit => unit.bodies.flatMap(body => body.levels.flatMap(level => Object.values(level.materials)))));
   const colors: Record<string, string> = {tile: '#ad7f62', thatch: '#c9b47b', wood: '#b69b72', stone: '#bbb9a9', earth: '#c5ac8a', fabric: '#dad1b4', snow: '#e5e9e4', plain: '#cfbf9b'};
-  $('legend').innerHTML = bundle.catalogue.materials.filter(material => used.has(material.id)).map(material => `<span class="legend-item"><i class="legend-swatch" style="background:${colors[material.pattern] ?? colors.plain}"></i>${xml(material.label)}</span>`).join('');
+  $('legend').innerHTML = bundle.catalogue.materials.filter(material => used.has(material.id)).map(material => `<span class="legend-item" data-material="${xml(material.id)}"><i class="legend-swatch" style="background:${colors[material.pattern] ?? colors.plain}"></i>${xml(houseMaterialLabel(material.id, material.label))}</span>`).join('');
   $('legend').hidden = false;
   for (const id of ['copy-link', 'export-svg', 'export-json']) button(id).disabled = false;
   if (selected) { selected = batch.units.find(unit => unit.id === selected!.id); if (selected) renderDetail(); else $<HTMLDialogElement>('detail-dialog').close(); }
@@ -303,13 +405,16 @@ function renderBatch(): void {
 }
 function commitBatch(next: HouseBatch, elapsed: number): void {
   batch = next; renderBatch();
-  message(`${next.units.length} unités générées en ${elapsed.toFixed(0)} ms${executionRuntime.profile === 'local' ? ' · moteur Rust natif' : noWorker ? ' · WASM synchrone, sans worker' : ' · moteur Rust/WASM'}.${next.diagnostics.length ? ` ${next.diagnostics.join(' ')}` : ''}`);
+  const count = next.units.length, time = elapsed.toFixed(0), diagnostics = next.diagnostics.length ? ` ${next.diagnostics.join(' ')}` : '';
+  const engine = executionRuntime.profile === 'local' ? ['moteur Rust natif', 'native Rust engine', '原生 Rust 引擎', 'motor Rust nativo', 'mecanismo Rust nativo'] : noWorker ? ['WASM synchrone, sans worker', 'synchronous WASM, no worker', '同步 WASM，无 worker', 'WASM síncrono, sin worker', 'WASM síncrono, sem worker'] : ['moteur Rust/WASM', 'Rust/WASM engine', 'Rust/WASM 引擎', 'motor Rust/WASM', 'mecanismo Rust/WASM'];
+  let notices: LocalizedMessage = ['', '', '', '', ''];
   if (!tourRunning) {
-    try { if (JSON.stringify(readConfig()) !== JSON.stringify(next.settings)) message(`${status.textContent} Paramètres modifiés pendant le calcul · la planche conserve les réglages de ce lot.`); }
-    catch { message(`${status.textContent} Les contrôles diffèrent du lot affiché.`); }
+    try { if (JSON.stringify(readConfig()) !== JSON.stringify(next.settings)) notices = [' Paramètres modifiés pendant le calcul · la planche conserve les réglages de ce lot.', ' Settings changed during generation · the sheet retains this batch’s settings.', ' 计算期间参数已更改 · 展示板保留此批次的设置。', ' Los parámetros cambiaron durante el cálculo · la lámina conserva los de este lote.', ' Os parâmetros mudaram durante o cálculo · o painel mantém os deste lote.']; }
+    catch { notices = [' Les contrôles diffèrent du lot affiché.', ' The controls differ from the displayed batch.', ' 当前控件与显示的批次不同。', ' Los controles difieren del lote mostrado.', ' Os controles diferem do lote exibido.']; }
   }
+  message([`${count} unités générées en ${time} ms · ${engine[0]}.${diagnostics}${notices[0]}`, `${count} units generated in ${time} ms · ${engine[1]}.${diagnostics}${notices[1]}`, `${count} 个单元生成耗时 ${time} 毫秒 · ${engine[2]}。${diagnostics}${notices[2]}`, `${count} unidades generadas en ${time} ms · ${engine[3]}.${diagnostics}${notices[3]}`, `${count} unidades geradas em ${time} ms · ${engine[4]}.${diagnostics}${notices[4]}`]);
   if (replayGenerator && replayGenerator !== next.generator_version) {
-    $('replay-warning').textContent = `Le lien utilisait ${replayGenerator}, le moteur courant est ${next.generator_version} : le rejeu peut différer.`;
+    $('replay-warning').textContent = urbanText([`Le lien utilisait ${replayGenerator}, le moteur courant est ${next.generator_version} : le rejeu peut différer.`, `The link used ${replayGenerator}; the current engine is ${next.generator_version}, so replay may differ.`, `链接使用 ${replayGenerator}，当前引擎为 ${next.generator_version}；重放结果可能不同。`, `El enlace usaba ${replayGenerator} y el motor actual es ${next.generator_version}; la reproducción puede variar.`, `O link usava ${replayGenerator} e o mecanismo atual é ${next.generator_version}; a reprodução pode variar.`]);
     $('replay-warning').hidden = false;
   }
 }
@@ -317,16 +422,16 @@ async function generate(config?: HouseConfig): Promise<void> {
   const currentAction = ++action; clearTimeout(preflightTimer); stopTour = true; tourRunning = false; button('tour').disabled = isWorkshop(); button('stop-tour').hidden = true; cancelRequest(); clearError(); setBusy(true);
   try {
     const settings = config ?? readConfig();
-    message('Vérification des paramètres et du budget…', true);
+    message(['Vérification des paramètres et du budget…', 'Checking settings and budget…', '正在检查参数和预算…', 'Comprobando parámetros y presupuesto…', 'Verificando parâmetros e orçamento…'], true);
     const check = await preflight(settings);
     if (currentAction !== action) return;
-    displayPreflight(check); message(`Génération de ${settings.count} unités architecturales…`, true);
+    displayPreflight(check); message([`Génération de ${settings.count} unités architecturales…`, `Generating ${settings.count} architectural units…`, `正在生成 ${settings.count} 个建筑单元…`, `Generando ${settings.count} unidades arquitectónicas…`, `Gerando ${settings.count} unidades arquitetônicas…`], true);
     const response = await request('generate', settings);
     if (currentAction !== action) return;
     const forkUrl = new URL(location.href); forkUrl.searchParams.delete('placement'); history.replaceState(null, '', forkUrl);
     commitBatch(parseHouseBatch(response.json), response.elapsed_ms);
   } catch (error) {
-    if (currentAction === action) { showError(error); message(batch ? 'Génération rejetée · le dernier lot réussi reste affiché.' : 'Génération rejetée. Corrigez les paramètres puis relancez.'); }
+    if (currentAction === action) { showError(error); message(batch ? ['Génération rejetée · le dernier lot réussi reste affiché.', 'Generation rejected · the last successful batch remains displayed.', '生成被拒绝 · 仍显示上次成功的批次。', 'Generación rechazada · se conserva el último lote generado.', 'Geração rejeitada · o último lote gerado permanece exibido.'] : ['Génération rejetée. Corrigez les paramètres puis relancez.', 'Generation rejected. Correct the settings and try again.', '生成被拒绝。请修正参数后重试。', 'Generación rechazada. Corrige los parámetros y vuelve a intentarlo.', 'Geração rejeitada. Corrija os parâmetros e tente novamente.']); }
   } finally { if (currentAction === action) setBusy(false); }
 }
 function recipeInfo(unit: HouseUnit): string {
@@ -334,11 +439,11 @@ function recipeInfo(unit: HouseUnit): string {
   const variant = recipe?.variants.find(variant => variant.id === unit.variant_id);
   const preset = workshopPresets().find(preset => preset.id === unit.recipe_id);
   const slots = unit.bodies[0]?.levels[0]?.materials;
-  const materialName = (id: string) => id === '' ? 'Aucun matériau' : bundle?.catalogue.materials.find(material => material.id === id)?.label ?? id;
+  const materialName = (id: string) => id === '' ? urbanText(['Aucun matériau','No material','无材料','Sin material','Sem material']) : houseMaterialLabel(id, bundle?.catalogue.materials.find(material => material.id === id)?.label ?? id);
   const roofSystems = [...new Set([...unit.bodies.map(body => body.roof_system), ...unit.roofs.groups.filter(group => group.feature_id).map(group => group.rf)])];
-  const roofName = (id: string) => { const label = bundle?.inventory.entries.find(entry => entry.id === id)?.label; return label ? `${label} (${id})` : id; };
-  const context = recipe ? `<h3>Contexte</h3><p>${xml(recipe.subtradition || recipe.context_note)}</p><p>${xml(recipe.chronology_note)} ${recipe.temporal.late_only ? 'Profil caractéristique postérieur à 1500.' : ''}</p><div class="source-note"><strong>Confiance de la recette : ${xml(recipe.confidence)}</strong>${variant ? `<br/>Bundle ${xml(variant.label)} : ${xml(variant.confidence)}` : ''}<br/>Toit : ${xml(recipe.roof_confidence)} · chronologie : ${xml(recipe.chronology_confidence)}<p>${recipe.source_description.map(description => xml(description)).join('<br/>')}</p><small>${recipe.sources.map(source => `${xml(source.path)}:${source.line}`).join('<br/>')}</small></div>` : `<h3>Atelier libre</h3><p>${xml(preset?.label ?? unit.label)}</p><p>${xml(preset?.description ?? 'Primitive paramétrique sans recette culturelle.')}</p><div class="source-note"><strong>Confiance : ${xml(preset?.confidence ?? 'non renseignée')}</strong><p>Origine : preset libre du moteur. Aucune chronologie ou provenance archéologique attribuée.</p></div>`;
-  return `<h3>Forme et métriques</h3><dl><dt>${recipe ? 'Recette' : 'Preset'}</dt><dd>${xml(unit.recipe_id)}</dd><dt>Variante</dt><dd>${xml(unit.variant_id)}</dd><dt>Rôle</dt><dd>${xml(ROLE_LABELS[unit.role])}</dd><dt>Corps / pièces</dt><dd>${unit.bodies.length} / ${unit.rooms.length}</dd><dt>Emprise occupée</dt><dd>${surfaceArea(unit.partition.occupied).toFixed(1)} m²</dd><dt>Cours ouvertes</dt><dd>${surfaceArea(unit.partition.courtyards).toFixed(1)} m²</dd><dt>Niveaux</dt><dd>${unit.levels.length}</dd><dt>Toitures</dt><dd>${xml(roofSystems.map(roofName).join(', '))}</dd></dl>${slots ? `<h3>Construction du corps principal</h3><dl><dt>Structure</dt><dd>${xml(materialName(slots.frame))}</dd><dt>Remplissage</dt><dd>${xml(materialName(slots.infill))}</dd><dt>Enduit</dt><dd>${xml(materialName(slots.coating))}</dd><dt>Couverture</dt><dd>${xml(materialName(slots.cladding))}</dd><dt>Porteur du toit</dt><dd>${xml(materialName(slots.roof_frame))}</dd><dt>Base</dt><dd>${xml(materialName(slots.base))}</dd></dl>` : ''}${context}${unit.diagnostics.length ? `<h3>Diagnostics</h3><p>${unit.diagnostics.map(diagnostic => xml(diagnostic)).join('<br/>')}</p>` : ''}`;
+  const roofName = (id: string) => { const label = bundle?.inventory.entries.find(entry => entry.id === id)?.label; return label ? `${houseGeometryLabel(id, label)} (${id})` : id; };
+  const context = recipe ? `<h3>${urbanText(['Contexte','Context','背景','Contexto','Contexto'])}</h3><p>${xml(houseSourceText(recipe.subtradition || recipe.context_note))}</p><p>${xml(houseSourceText(recipe.chronology_note))} ${recipe.temporal.late_only ? urbanText(['Profil caractéristique postérieur à 1500.','Characteristic profile after 1500.','典型特征晚于 1500 年。','Perfil característico posterior a 1500.','Perfil característico posterior a 1500.']) : ''}</p><div class="source-note"><strong>${urbanText(['Confiance de la recette','Recipe confidence','配方可信度','Confianza de la receta','Confiança da receita'])} : ${xml(houseConfidence(recipe.confidence))}</strong>${variant ? `<br/>Bundle ${xml(houseVariantText(variant.label))} : ${xml(houseConfidence(variant.confidence))}` : ''}<br/>${urbanText(['Toit','Roof','屋顶','Cubierta','Telhado'])} : ${xml(houseConfidence(recipe.roof_confidence))} · ${urbanText(['chronologie','chronology','年代','cronología','cronologia'])} : ${xml(houseConfidence(recipe.chronology_confidence))}<p>${houseSourceDescription(recipe.id, recipe.source_description).map(description => xml(description)).join('<br/>')}</p><small>${recipe.sources.map(source => `${xml(source.path)}:${source.line}`).join('<br/>')}</small></div>` : `<h3>${urbanText(['Atelier libre','Free workshop','自由工作坊','Taller libre','Ateliê livre'])}</h3><p>${xml(preset ? workshopLabel(preset) : unit.label)}</p><p>${xml(preset ? workshopDescription(preset) : urbanText(['Primitive paramétrique sans recette culturelle.','Parametric primitive without a cultural recipe.','无文化配方的参数化基本形体。','Primitiva paramétrica sin receta cultural.','Primitiva paramétrica sem receita cultural.']))}</p><div class="source-note"><strong>${urbanText(['Confiance','Confidence','可信度','Confianza','Confiança'])} : ${xml(preset?.confidence ? houseConfidence(preset.confidence) : urbanText(['non renseignée','not specified','未指定','no indicada','não informada']))}</strong><p>${urbanText(['Origine : preset libre du moteur. Aucune chronologie ou provenance archéologique attribuée.','Origin: free engine preset. No archaeological chronology or provenance is assigned.','来源：引擎的自由预设，未指定考古年代或来源。','Origen: preajuste libre del motor. No se atribuyen cronología ni procedencia arqueológica.','Origem: predefinição livre do mecanismo. Não há cronologia ou proveniência arqueológica atribuída.'])}</p></div>`;
+  return `<h3>${urbanText(['Forme et métriques','Form and metrics','形状与指标','Forma y métricas','Forma e métricas'])}</h3><dl><dt>${recipe ? urbanText(['Recette','Recipe','配方','Receta','Receita']) : urbanText(['Preset','Preset','预设','Preajuste','Predefinição'])}</dt><dd>${xml(unit.recipe_id)}</dd><dt>${urbanText(['Variante','Variant','变体','Variante','Variante'])}</dt><dd>${xml(unit.variant_id)}</dd><dt>${urbanText(['Rôle','Role','角色','Función','Função'])}</dt><dd>${xml(houseRole(unit.role))}</dd><dt>${urbanText(['Corps / pièces','Volumes / rooms','体量 / 房间','Volúmenes / habitaciones','Volumes / cômodos'])}</dt><dd>${unit.bodies.length} / ${unit.rooms.length}</dd><dt>${urbanText(['Emprise occupée','Occupied footprint','占地面积','Superficie ocupada','Área ocupada'])}</dt><dd>${surfaceArea(unit.partition.occupied).toFixed(1)} m²</dd><dt>${urbanText(['Cours ouvertes','Open courtyards','开放庭院','Patios abiertos','Pátios abertos'])}</dt><dd>${surfaceArea(unit.partition.courtyards).toFixed(1)} m²</dd><dt>${urbanText(['Niveaux','Floors','楼层','Plantas','Pavimentos'])}</dt><dd>${unit.levels.length}</dd><dt>${urbanText(['Toitures','Roofs','屋顶','Cubiertas','Telhados'])}</dt><dd>${xml(roofSystems.map(roofName).join(', '))}</dd></dl>${slots ? `<h3>${urbanText(['Construction du corps principal','Main volume construction','主体结构','Construcción del volumen principal','Construção do volume principal'])}</h3><dl><dt>${urbanText(['Structure','Structure','结构','Estructura','Estrutura'])}</dt><dd>${xml(materialName(slots.frame))}</dd><dt>${urbanText(['Remplissage','Infill','填充材料','Relleno','Vedação'])}</dt><dd>${xml(materialName(slots.infill))}</dd><dt>${urbanText(['Enduit','Coating','饰面','Revestimiento','Revestimento'])}</dt><dd>${xml(materialName(slots.coating))}</dd><dt>${urbanText(['Couverture','Roof covering','屋面材料','Material de cubierta','Cobertura'])}</dt><dd>${xml(materialName(slots.cladding))}</dd><dt>${urbanText(['Porteur du toit','Roof support','屋顶支撑','Soporte del techo','Suporte do telhado'])}</dt><dd>${xml(materialName(slots.roof_frame))}</dd><dt>${urbanText(['Base','Base','底部','Base','Base'])}</dt><dd>${xml(materialName(slots.base))}</dd></dl>` : ''}${context}${unit.diagnostics.length ? `<h3>${urbanText(['Diagnostics','Diagnostics','诊断','Diagnósticos','Diagnósticos'])}</h3><p>${unit.diagnostics.map(diagnostic => xml(diagnostic)).join('<br/>')}</p>` : ''}`;
 }
 function openDetail(unit: HouseUnit): void {
   selected = unit; detailMode = view.mode; detailPan = {x: 0, y: 0}; input('detail-zoom').value = '1';
@@ -349,7 +454,7 @@ function openDetail(unit: HouseUnit): void {
 function detailView(): HouseView { return {...view, mode: detailMode, level: Number(select('detail-level').value)}; }
 function renderDetail(): void {
   if (!selected || !bundle) return;
-  $('detail-title').textContent = selected.label;
+  $('detail-title').textContent = unitLabel(selected);
   button('detail-view-roof').classList.toggle('active', detailMode === 'roof'); button('detail-view-plan').classList.toggle('active', detailMode === 'plan'); select('detail-level').disabled = detailMode !== 'plan';
   $('detail-map').innerHTML = renderHouseSvg(selected, bundle.catalogue, detailView(), {width: 740, height: 620, prefix: 'detail', zoom: Number(input('detail-zoom').value), pan: detailPan});
   $('detail-info').innerHTML = recipeInfo(selected);
@@ -363,19 +468,23 @@ function download(content: string, mime: string, name: string): void {
 function showCatalogue(): void {
   if (!bundle) return;
   const term = input('catalogue-search').value.toLocaleLowerCase('fr-FR'), kind = select('catalogue-kind').value;
-  const match = (value: unknown) => JSON.stringify(value).toLocaleLowerCase('fr-FR').includes(term);
+  const match = (value: unknown) => {
+    const item = value as {id?: string; label?: string};
+    const id = item?.id ?? '', label = item?.label ?? '';
+    return `${JSON.stringify(value)} ${houseArchetypeLabel(id, label)} ${houseMaterialLabel(id, label)} ${housePackLabel(id, label)} ${houseGeometryLabel(id, label)} ${id.startsWith('WORKSHOP-') ? workshopLabel({id, label}) : ''}`.toLocaleLowerCase('fr-FR').includes(term);
+  };
   let entries: string[] = [];
   if (kind === 'coverage') entries = bundle.catalogue.coverage.filter(match).map(entry => {
     const source = bundle!.inventory.entries.find(source => source.id === entry.id);
-    return `<article class="catalogue-entry"><h3>${xml(source?.label ?? entry.id)}</h3><code>${xml(entry.id)} · ${xml(ROLE_LABELS[entry.role])} · ${xml(entry.status)}</code><p>${xml(entry.reason)}</p><small>Atlas · ligne ${source?.source_line ?? '?'}${source?.pack_id ? ` · ${xml(source.pack_id)}` : ''}</small></article>`;
+    return `<article class="catalogue-entry"><h3>${xml(houseArchetypeLabel(entry.id, source?.label ?? entry.id))}</h3><code>${xml(entry.id)} · ${xml(houseRole(entry.role))} · ${xml(houseVariantText(entry.status))}</code><p>${xml(houseVariantText(entry.reason))}</p><small>Atlas · ${urbanText(['ligne', 'line', '行', 'línea', 'linha'])} ${source?.source_line ?? '?'}${source?.pack_id ? ` · ${xml(source.pack_id)}` : ''}</small></article>`;
   });
-  else if (kind === 'recipes') entries = bundle.catalogue.recipes.filter(match).map(recipe => `<article class="catalogue-entry"><h3>${xml(recipe.label)}</h3><code>${xml(recipe.id)} · ${xml(recipe.pack_id)} · ${xml(ROLE_LABELS[recipe.role])} · ${xml(recipe.priority)}</code><p>${xml(recipe.parameters.footprint_family)} · ${xml(recipe.parameters.roof_system)} · ${xml(recipe.compound_pattern)}</p><p>${xml(recipe.context_note)} ${xml(recipe.chronology_note)}</p><p>${recipe.source_description.map(description => xml(description)).join('<br/>')}</p><small>Confiance ${xml(recipe.confidence)} · toit ${xml(recipe.roof_confidence)} · ${recipe.sources.map(source => `${xml(source.path)}:${source.line}`).join(', ')}</small></article>`);
-  else if (kind === 'workshop') entries = workshopPresets().filter(match).map(preset => `<article class="catalogue-entry"><h3>${xml(preset.label)}</h3><code>${xml(preset.id)} · ${xml(preset.parameters.footprint_family)} · ${xml(preset.parameters.roof_system)}</code><p>${xml(preset.description)}</p><small>Preset libre · confiance ${xml(preset.confidence)}</small></article>`);
-  else if (kind === 'materials') entries = bundle.catalogue.materials.filter(match).map(material => `<article class="catalogue-entry"><h3>${xml(material.label)}</h3><code>${xml(material.id)} · ${xml(material.pattern)}</code><p>Fonctions : ${xml(material.roles.join(', '))}</p><small>Origine : ${xml(material.origin ?? 'non renseignée')}${material.source_ref ? ` · ${xml(material.source_ref)}` : ''}</small></article>`);
-  else if (kind === 'functional') entries = bundle.catalogue.functional_mappings.filter(match).map(mapping => `<article class="catalogue-entry"><h3>${xml(mapping.label)}</h3><code>${xml(mapping.kind)} · ${xml(mapping.status)}</code><p>${xml(mapping.usage)} · ${xml(mapping.recipe_ids.join(', '))}</p><small>Catalogue fonctionnel · ligne ${mapping.source_line}</small></article>`);
-  else if (kind === 'geometry') entries = bundle.catalogue.geometry_traits.filter(match).map(trait => `<article class="catalogue-entry"><h3>${xml(trait.id)}</h3><code>${xml(trait.status)}</code><p>Opérateur déclaré : ${xml(trait.operator)}</p></article>`);
-  else entries = bundle.inventory.entries.filter(entry => entry.id.startsWith(kind === 'footprints' ? 'FP-' : 'RF-')).filter(match).map(entry => `<article class="catalogue-entry"><h3>${xml(entry.label)}</h3><code>${xml(entry.id)} · ${xml(entry.priority)}</code><p>${xml(entry.columns.at(-1) ?? '')}</p><small>Atlas · ligne ${entry.source_line}</small></article>`);
-  $('catalogue-content').innerHTML = entries.join('') || '<p>Aucune entrée ne correspond à la recherche.</p>';
+  else if (kind === 'recipes') entries = bundle.catalogue.recipes.filter(match).map(recipe => `<article class="catalogue-entry"><h3>${xml(houseArchetypeLabel(recipe.id, recipe.label))}</h3><code>${xml(recipe.id)} · ${xml(recipe.pack_id)} · ${xml(houseRole(recipe.role))} · ${xml(recipe.priority)}</code><p>${xml(recipe.parameters.footprint_family)} · ${xml(recipe.parameters.roof_system)} · ${xml(recipe.compound_pattern)}</p><p>${xml(houseSourceText(recipe.context_note))} ${xml(houseSourceText(recipe.chronology_note))}</p><p>${houseSourceDescription(recipe.id, recipe.source_description).map(description => xml(description)).join('<br/>')}</p><small>${urbanText(['Confiance', 'Confidence', '可信度', 'Confianza', 'Confiança'])} ${xml(houseConfidence(recipe.confidence))} · ${urbanText(['toit', 'roof', '屋顶', 'cubierta', 'telhado'])} ${xml(houseConfidence(recipe.roof_confidence))} · ${recipe.sources.map(source => `${xml(source.path)}:${source.line}`).join(', ')}</small></article>`);
+  else if (kind === 'workshop') entries = workshopPresets().filter(match).map(preset => `<article class="catalogue-entry"><h3>${xml(workshopLabel(preset))}</h3><code>${xml(preset.id)} · ${xml(preset.parameters.footprint_family)} · ${xml(preset.parameters.roof_system)}</code><p>${xml(workshopDescription(preset))}</p><small>${urbanText(['Preset libre · confiance', 'Free preset · confidence', '自由预设 · 可信度', 'Preajuste libre · confianza', 'Predefinição livre · confiança'])} ${xml(houseConfidence(preset.confidence))}</small></article>`);
+  else if (kind === 'materials') entries = bundle.catalogue.materials.filter(match).map(material => `<article class="catalogue-entry"><h3>${xml(houseMaterialLabel(material.id, material.label))}</h3><code>${xml(material.id)} · ${xml(material.pattern)}</code><p>${urbanText(['Fonctions', 'Roles', '用途', 'Funciones', 'Funções'])} : ${xml(material.roles.join(', '))}</p><small>${urbanText(['Origine', 'Origin', '来源', 'Origen', 'Origem'])} : ${xml(material.origin ?? urbanText(['non renseignée', 'not specified', '未指定', 'no indicado', 'não informada']))}${material.source_ref ? ` · ${xml(material.source_ref)}` : ''}</small></article>`);
+  else if (kind === 'functional') entries = bundle.catalogue.functional_mappings.filter(match).map(mapping => `<article class="catalogue-entry"><h3>${xml(mapping.label)}</h3><code>${xml(mapping.kind)} · ${xml(mapping.status)}</code><p>${xml(mapping.usage)} · ${xml(mapping.recipe_ids.join(', '))}</p><small>${urbanText(['Catalogue fonctionnel · ligne', 'Functional catalogue · line', '功能目录 · 行', 'Catálogo funcional · línea', 'Catálogo funcional · linha'])} ${mapping.source_line}</small></article>`);
+  else if (kind === 'geometry') entries = bundle.catalogue.geometry_traits.filter(match).map(trait => `<article class="catalogue-entry"><h3>${xml(trait.id)}</h3><code>${xml(trait.status)}</code><p>${urbanText(['Opérateur déclaré', 'Declared operator', '声明的运算符', 'Operador declarado', 'Operador declarado'])} : ${xml(trait.operator)}</p></article>`);
+  else entries = bundle.inventory.entries.filter(entry => entry.id.startsWith(kind === 'footprints' ? 'FP-' : 'RF-')).filter(match).map(entry => `<article class="catalogue-entry"><h3>${xml(houseGeometryLabel(entry.id, entry.label))}</h3><code>${xml(entry.id)} · ${xml(entry.priority)}</code><p>${xml(houseGeometryDescription(entry.id, entry.columns.at(-1) ?? ''))}</p><small>Atlas · ${urbanText(['ligne', 'line', '行', 'línea', 'linha'])} ${entry.source_line}</small></article>`);
+  $('catalogue-content').innerHTML = entries.join('') || `<p>${urbanText(['Aucune entrée ne correspond à la recherche.', 'No entries match the search.', '没有符合搜索条件的条目。', 'Ninguna entrada coincide con la búsqueda.', 'Nenhuma entrada corresponde à busca.'])}</p>`;
 }
 async function tour(): Promise<void> {
   if (!bundle || isWorkshop()) return;
@@ -391,18 +500,20 @@ async function tour(): Promise<void> {
       if (stopTour || action !== currentAction) break;
       const config = {...base, pack: pack.id};
       $('tour-progress').textContent = `${++completed} / ${bundle.catalogue.packs.length}`;
-      message(`Tournée · ${pack.label}`, true);
+      const packName = housePackLabel(pack.id, pack.label);
+      message([`Tournée · ${packName}`, `Tour · ${packName}`, `巡览 · ${packName}`, `Recorrido · ${packName}`, `Percurso · ${packName}`], true);
       const row = document.createElement('tr');
-      const nameCell = document.createElement('td'), nameButton = document.createElement('button'); nameButton.textContent = pack.label; nameButton.disabled = true;
+      const nameCell = document.createElement('td'), nameButton = document.createElement('button'); nameButton.textContent = housePackLabel(pack.id, pack.label); nameButton.disabled = true;
       nameCell.append(nameButton); row.append(nameCell);
       for (let index = 0; index < 3; index++) row.append(document.createElement('td'));
-      row.cells[1].textContent = 'Génération…'; table.append(row);
+      row.cells[1].textContent = urbanText(['Génération…', 'Generating…', '正在生成…', 'Generando…', 'Gerando…']); table.append(row);
       try {
         await preflight(config);
         const response = await request('generate', config);
         if (currentAction !== action) break;
         const generated = parseHouseBatch(response.json);
-        row.cells[1].textContent = `${generated.units.length} unités · réussi`;
+        const count = generated.units.length;
+        row.cells[1].textContent = urbanText([`${count} unités · réussi`, `${count} units · successful`, `${count} 个单元 · 成功`, `${count} unidades · correcto`, `${count} unidades · concluído`]);
         row.cells[2].textContent = String(generated.units.reduce((sum, unit) => sum + unit.rooms.length, 0));
         row.cells[3].textContent = `${response.elapsed_ms.toFixed(0)} ms`;
         nameButton.disabled = false;
@@ -412,7 +523,7 @@ async function tour(): Promise<void> {
     }
     if (currentAction === action) {
       if (batch) setConfig(batch.settings);
-      message(`Tournée ${stopTour ? 'arrêtée' : 'terminée'} · ${completed} packs examinés. Cliquez une ligne réussie pour rejouer son lot.`);
+      message([`Tournée ${stopTour ? 'arrêtée' : 'terminée'} · ${completed} packs examinés. Cliquez une ligne réussie pour rejouer son lot.`, `Tour ${stopTour ? 'stopped' : 'completed'} · ${completed} packs examined. Click a successful row to replay its batch.`, `巡览${stopTour ? '已停止' : '已完成'} · 已检查 ${completed} 个文化包。点击成功的行可重放其批次。`, `Recorrido ${stopTour ? 'detenido' : 'terminado'} · ${completed} paquetes examinados. Pulsa una fila correcta para reproducir su lote.`, `Percurso ${stopTour ? 'interrompido' : 'concluído'} · ${completed} pacotes examinados. Clique em uma linha concluída para reproduzir o lote.`]);
     }
   } finally { if (currentAction === action) { tourRunning = false; button('tour').disabled = isWorkshop(); button('stop-tour').hidden = true; } }
 }
@@ -440,8 +551,8 @@ button('detail-view-roof').addEventListener('click', () => { detailMode = 'roof'
 button('detail-svg').addEventListener('click', () => { if (selected && bundle) download(renderHouseSvg(selected, bundle.catalogue, detailView(), {width: 1200, height: 1000, prefix: 'export-detail', zoom: Number(input('detail-zoom').value), pan: detailPan}), 'image/svg+xml;charset=utf-8', `${safeName(selected.recipe_id)}-${safeName(batch?.settings.seed ?? '')}.svg`); });
 button('export-svg').addEventListener('click', () => { if (batch && bundle) download(renderHouseSheet(batch, bundle.catalogue, view), 'image/svg+xml;charset=utf-8', `maisons-${safeName(batch.settings.pack)}-${safeName(batch.settings.seed)}.svg`); });
 button('export-json').addEventListener('click', () => { if (batch) download(JSON.stringify(batch, null, 2), 'application/json;charset=utf-8', `maisons-${safeName(batch.settings.pack)}-${safeName(batch.settings.seed)}.json`); });
-button('copy-link').addEventListener('click', async () => { if (!updateReplay()) return; try { await navigator.clipboard.writeText(location.href); message('Lien rejouable copié.'); } catch { input('link-input').value = location.href; $<HTMLDialogElement>('link-dialog').showModal(); input('link-input').select(); } });
-button('tour').addEventListener('click', () => void tour()); button('stop-tour').addEventListener('click', () => { stopTour = true; button('stop-tour').disabled = true; $('tour-progress').textContent += ' · arrêt demandé'; });
+button('copy-link').addEventListener('click', async () => { if (!updateReplay()) return; try { await navigator.clipboard.writeText(location.href); message(['Lien rejouable copié.', 'Replay link copied.', '重放链接已复制。', 'Enlace reproducible copiado.', 'Link de reprodução copiado.']); } catch { input('link-input').value = location.href; $<HTMLDialogElement>('link-dialog').showModal(); input('link-input').select(); } });
+button('tour').addEventListener('click', () => void tour()); button('stop-tour').addEventListener('click', () => { stopTour = true; button('stop-tour').disabled = true; $('tour-progress').textContent += ` · ${urbanText(['arrêt demandé', 'stop requested', '已请求停止', 'parada solicitada', 'parada solicitada'])}`; });
 let drag: {x: number; y: number; pan: Point} | undefined;
 $('detail-map').addEventListener('pointerdown', event => { if (!selected) return; drag = {x: event.clientX, y: event.clientY, pan: {...detailPan}}; $('detail-map').setPointerCapture(event.pointerId); });
 $('detail-map').addEventListener('pointermove', event => {

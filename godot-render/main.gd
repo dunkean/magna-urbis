@@ -1,5 +1,6 @@
 extends SceneTree
 # Window/input envelope only. RenderOriginalRD owns the original render math.
+const TileLocale = preload("res://tile_locale.gd")
 class ViewRoot extends Control:
 	var app:SceneTree
 	func _input(event:InputEvent)->void:app.handle_input(event)
@@ -20,6 +21,7 @@ var capturing:=false
 var exiting:=false
 var drag:=false
 var last_hud:=""
+var language:=TileLocale.normalize(OS.get_locale())
 
 func _initialize()->void:call_deferred("start")
 func fail(message:String)->void:
@@ -31,8 +33,9 @@ func start()->void:
 	var args=OS.get_cmdline_user_args();var i=0
 	while i<args.size():
 		var key=args[i]
-		if key not in ["--scene","--width","--x","--z","--capture","--frames","--resolution"] or i+1>=args.size():fail("Unknown or incomplete option: "+key);return
+		if key not in ["--scene","--width","--x","--z","--capture","--frames","--resolution","--lang"] or i+1>=args.size():fail("Unknown or incomplete option: "+key);return
 		options[key]=args[i+1];i+=2
+	if options.has("--lang"):language=TileLocale.normalize(str(options["--lang"]))
 	if not options.has("--scene") or not FileAccess.file_exists(str(options["--scene"])):fail("Required local --scene JSON file is missing");return
 	width_m=number("--width",40000.0);focus_x=number("--x",20000.0);focus_y=number("--z",20000.0)
 	if not is_finite(width_m) or width_m<=0 or not is_finite(focus_x) or not is_finite(focus_y):fail("Width must be positive and focus coordinates finite");return
@@ -61,7 +64,7 @@ func _process(_delta:float)->bool:
 		renderer.set_view([focus_x-width_m*.5,focus_y-float(pixels.y)*mpp*.5],mpp)
 		view_dirty=false;frames_ready=0
 	if renderer.output_texture!=null and display.texture!=renderer.output_texture:display.texture=renderer.output_texture
-	var text="Render original 2D · %.2f m · %.6f m/px · %s\nGlisser : déplacer · molette : zoom · H : aide · S : capture · Échap : quitter"%[width_m,width_m/float(pixels.x),"prêt" if renderer.ready else "chargement"]
+	var text=TileLocale.text(language,"original_hud")%[width_m,width_m/float(pixels.x),TileLocale.text(language,"ready" if renderer.ready else "loading")]
 	if text!=last_hud:hud.text=text;last_hud=text
 	if renderer.ready and display.texture!=null:
 		frames_ready+=1
@@ -74,6 +77,7 @@ func handle_input(event:InputEvent)->void:
 		match event.keycode:
 			KEY_ESCAPE:exiting=true;quit()
 			KEY_H:hud.visible=not hud.visible
+			KEY_L:language=TileLocale.LANGS[(TileLocale.LANGS.find(language)+1)%TileLocale.LANGS.size()]
 			KEY_S:if not capturing and renderer!=null and renderer.ready:save_interactive()
 	if event is InputEventMouseButton:
 		if event.button_index==MOUSE_BUTTON_LEFT:drag=event.pressed

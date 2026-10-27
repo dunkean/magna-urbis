@@ -1,154 +1,156 @@
-# Synthèse de rivières sur heightmap : état de l'art et plan d'évolution
+# River synthesis on heightmaps: state of the art and development plan
 
-> **Objet :** situer les chaînes hydrologiques de Magna Urbis (Rust `rust/crates/core`, TypeScript `web/src/gen/terrain`, banc neuronal `web/src/ui/riverVectors.ts`) par rapport à la littérature, et fixer la liste des améliorations à implémenter.
+[Français](synthese_rivieres_heightmap_FR.md)
+
+> **Purpose:** situate Magna Urbis's hydrological pipelines (Rust `rust/crates/core`, TypeScript `web/src/gen/terrain`, neural bench `web/src/ui/riverVectors.ts`) against the literature, and define improvements to implement.
 >
-> **Date :** 2026-10-12. État de référence avant implémentation : tag `rivers-neural-best-2026-10-12`. Implémentation : section 6.
+> **Date:** 2026-10-12. Baseline before implementation: tag `rivers-neural-best-2026-10-12`. Implementation: section 6.
 
-## 1. Résumé
+## 1. Summary
 
-- La littérature est abondante et vient de deux communautés : la **géomorphologie / hydrologie numérique** (MNT, SIG, évolution des paysages) et l'**informatique graphique** (génération procédurale, édition de terrains).
-- Nos briques d'extraction (priority-flood, zones plates, brèches, D∞, stream power implicite, migration de méandres) correspondent à l'état de l'art. Le « standard » du jeu vidéo, l'érosion hydraulique sur grille (gouttes ou *pipe model*), ne produit pas de réseau de rivières et serait un recul.
-- Le point faible n'est pas l'algorithme de rivière mais **l'entrée** : un relief (surtout neuronal) qui n'est pas hydrologiquement cohérent. Les correctifs accumulés en aval dans `riverVectors.ts` (passages par le fond des dépressions, hauts-fonds, `uncross`, `despike`, `unfold`) traitent le symptôme.
+- The extensive literature comes from two communities: **geomorphology / numerical hydrology** (DEMs, GIS, landscape evolution) and **computer graphics** (procedural generation, terrain editing).
+- Our extraction components (priority-flood, flats, breaching, D∞, implicit stream power, meander migration) correspond to established methods. Grid hydraulic erosion, common in games (droplets or *pipe model*), does not produce a river network and would be a step backward.
+- The weak point is not the river algorithm but the **input**: terrain, especially neural terrain, that is not hydrologically consistent. Accumulated downstream corrections in `riverVectors.ts` (depression-floor crossings, shallows, `uncross`, `despike`, `unfold`) address symptoms.
 
-## 2. Inventaire de nos chaînes
+## 2. Inventory of our pipelines
 
-| Brique | Implémentation | Référence |
+| Component | Implementation | Reference |
 |---|---|---|
-| Remplissage des dépressions | priority-flood (`hydrology.rs`, `erosion.ts`, `simpleHydrology.ts`) | Barnes, Lehman & Mulla 2014 |
-| Zones plates | `hydrology_flats.rs` (coûts métriques symétriques) | Barnes, Lehman & Mulla 2014b |
-| Brèches | bornées à 12 m / 1 km (`hydrology_depressions.rs`) | Lindsay 2016 (brèche au moindre coût) |
-| Écoulement | D8 ; D∞ dans l'érosion | O'Callaghan & Mark 1984 ; Tarboton 1997 |
-| Évolution du relief | stream power implicite + relaxation thermique (`erosion.rs`, `erosion.ts`) | Braun & Willett 2013 |
-| Tracé fin | contour actif dans le thalweg (`riverVectors.ts`) | Kass, Witkin & Terzopoulos 1988 |
-| Méandres | Howard & Knutson à la manière de meanderpy, recoupements, bras morts | Howard & Knutson 1984 ; Sylvester et al. 2019 |
-| Largeur, sinuosité | W ∝ A^0,45, longueur d'onde ≈ 11 W, sinuosité décroissante avec la pente | Leopold & Wolman 1957/1960 ; Schumm 1963 |
-| Lacs | bassins de débordement retenus en entier, sélection heuristique (`hydrology_lakes.rs`) | — |
-| Estuaires | chenaux noyés, sans delta (`estuary.ts`) | — |
+| Depression filling | priority-flood (`hydrology.rs`, `erosion.ts`, `simpleHydrology.ts`) | Barnes, Lehman & Mulla 2014 |
+| Flats | `hydrology_flats.rs` (symmetric metric costs) | Barnes, Lehman & Mulla 2014b |
+| Breaching | bounded to 12 m / 1 km (`hydrology_depressions.rs`) | Lindsay 2016 (least-cost breach) |
+| Flow routing | D8; D∞ in erosion | O'Callaghan & Mark 1984; Tarboton 1997 |
+| Terrain evolution | implicit stream power + thermal relaxation (`erosion.rs`, `erosion.ts`) | Braun & Willett 2013 |
+| Fine tracing | active contour in the thalweg (`riverVectors.ts`) | Kass, Witkin & Terzopoulos 1988 |
+| Meanders | Howard & Knutson in the style of meanderpy, cutoffs, oxbows | Howard & Knutson 1984; Sylvester et al. 2019 |
+| Width, sinuosity | W ∝ A^0.45, wavelength ≈ 11 W, sinuosity decreases with slope | Leopold & Wolman 1957/1960; Schumm 1963 |
+| Lakes | spill basins retained whole, heuristic selection (`hydrology_lakes.rs`) | — |
+| Estuaries | drowned channels, no delta (`estuary.ts`) | — |
 
-## 3. Les grandes familles de méthodes
+## 3. Major method families
 
-### 3.1 Relief d'abord, rivières ensuite (notre approche)
+### 3.1 Terrain first, rivers afterward (our approach)
 
-On extrait le réseau d'un MNT existant. C'est l'outillage des SIG : RichDEM (Barnes), WhiteboxTools (Lindsay), TauDEM (Tarboton). Les difficultés connues sont précisément les nôtres : dépressions parasites, zones plates, artefacts D8 à 0°/45°.
+The network is extracted from an existing DEM. This is GIS tooling: RichDEM (Barnes), WhiteboxTools (Lindsay), TauDEM (Tarboton). Known difficulties are exactly ours: spurious depressions, flats and D8 artifacts at 0°/45°.
 
-### 3.2 Rivières d'abord, relief ensuite
+### 3.2 Rivers first, terrain afterward
 
-On construit le réseau de drainage comme un graphe, puis un relief qui lui est cohérent par construction.
+Build the drainage network as a graph, then terrain consistent with it by construction.
 
 - Kelley, Malin & Nielson 1988, *Terrain simulation using a model of stream erosion*.
 - Derzapf, Ganster, Guthe & Klein 2011, *River networks for instant procedural planets*.
-- **Génevaux, Galin, Guérin, Peytavie & Benes 2013**, *Terrain generation using procedural models based on hydrology* (SIGGRAPH). Le type de chenal est choisi selon la pente et la position dans le réseau (classes de Rosgen : rectiligne, méandres, tresses…), et le relief est assemblé à partir de primitives le long du graphe.
+- **Génevaux, Galin, Guérin, Peytavie & Benes 2013**, *Terrain generation using procedural models based on hydrology* (SIGGRAPH). Channel type is chosen by slope and network position (Rosgen classes: straight, meandering, braided, etc.), and terrain is assembled from primitives along the graph.
 
-### 3.3 Coévolution relief–rivières
+### 3.3 Terrain–river coevolution
 
-Une surrection tectonique lutte contre l'incision fluviale (loi de *stream power*) : rivières et relief émergent ensemble, cohérents par construction.
+Tectonic uplift competes with river incision (the *stream-power* law): rivers and terrain emerge together, consistent by construction.
 
-- Braun & Willett 2013, solveur implicite O(n) (déjà dans `erosion.rs`).
+- Braun & Willett 2013, O(n) implicit solver (already in `erosion.rs`).
 - Cordonnier, Braun, Cani, Benes, Galin, Peytavie & Guérin 2016, *Large scale terrain generation from tectonic uplift and fluvial erosion*.
-- Cordonnier, Bovy & Braun 2019, *A versatile, linear complexity algorithm for flow routing in topographies with depressions* (ESurf) : routage à travers les dépressions par arbre couvrant des bassins, alternative au remplissage.
+- Cordonnier, Bovy & Braun 2019, *A versatile, linear complexity algorithm for flow routing in topographies with depressions* (ESurf): routing through depressions using a basin spanning tree, an alternative to filling.
 - Schott, Paris, Fournier, Guérin & Galin 2023, *Large-scale terrain authoring through interactive erosion simulation* (TOG).
-- **Tzathas, Gailleton, Steer & Cordonnier 2024**, *Physically-based analytical erosion for fast terrain generation* (Eurographics) : solution analytique du stream power, le temps devient un curseur.
+- **Tzathas, Gailleton, Steer & Cordonnier 2024**, *Physically-based analytical erosion for fast terrain generation* (Eurographics): analytical stream-power solution, with time as a slider.
 
-### 3.4 Réseaux neuronaux guidés par le drainage
+### 3.4 Drainage-guided neural networks
 
-- Hu et al. 2024, *Terrain Diffusion Network: climatic-aware terrain generation with geological sketch guidance* (AAAI) : croquis avec rivières, crêtes, bassins.
-- *Earthbender* (Brême, MIG 2025) : croquis → relief par diffusion guidée, rivières comprises.
-- *Authoring Terrestrial Planets with Diffusion Models* (CGF) : réseau global extrait du croquis et passé en conditionnement.
-- Goslin 2025, *Terrain Diffusion* (arXiv 2512.08309) : le modèle que nous utilisons, sans contrainte hydrologique.
+- Hu et al. 2024, *Terrain Diffusion Network: climatic-aware terrain generation with geological sketch guidance* (AAAI): sketches with rivers, ridges and basins.
+- *Earthbender* (Bremen, MIG 2025): sketch → terrain via guided diffusion, including rivers.
+- *Authoring Terrestrial Planets with Diffusion Models* (CGF): global network extracted from the sketch and passed as conditioning.
+- Goslin 2025, *Terrain Diffusion* (arXiv 2512.08309): the model we use, without hydrological constraint.
 
-Aucun modèle publié ne **garantit** la cohérence du drainage : il faut un post-traitement hydrologique.
+No published model **guarantees** drainage consistency: hydrological post-processing is required.
 
-### 3.5 Méandres et lits
+### 3.5 Meanders and beds
 
-- **Paris, Guérin, Collon & Galin 2023**, *Authoring and simulating meandering rivers* (TOG / SIGGRAPH Asia) : version publiée et vectorielle de ce que fait `riverVectors.ts`. Migration par courbure, recoupements et bras morts, **avulsions**, contraintes de trajectoire et **terme d'influence du relief** dans l'équation de migration ; validation par sinuosité et longueur d'onde.
-- Peytavie, Dupont, Guérin, Cortial, Benes, Gain & Galin 2019, *Procedural Riverscapes* (CGF) : creusement du lit, surface de l'eau, chutes et rapides.
-- Ikeda, Parker & Sawai 1981 ; Howard & Knutson 1984 ; Sylvester, Durkin & Covault 2019 (meanderpy).
+- **Paris, Guérin, Collon & Galin 2023**, *Authoring and simulating meandering rivers* (TOG / SIGGRAPH Asia): published vector version of what `riverVectors.ts` does. Curvature-driven migration, cutoffs and oxbows, **avulsions**, path constraints and a **terrain influence term** in the migration equation; validation by sinuosity and wavelength.
+- Peytavie, Dupont, Guérin, Cortial, Benes, Gain & Galin 2019, *Procedural Riverscapes* (CGF): channel carving, water surface, waterfalls and rapids.
+- Ikeda, Parker & Sawai 1981; Howard & Knutson 1984; Sylvester, Durkin & Covault 2019 (meanderpy).
 
-### 3.6 Lacs et bilan hydrique
+### 3.6 Lakes and water balance
 
-- **Barnes, Callaghan & Wickert 2021**, *Computing water flow through complex landscapes – Part 3: Fill–Spill–Merge* (ESurf 9, 105–121). Le ruissellement remplit chaque dépression ; une dépression pleine déborde vers sa voisine, deux voisines pleines fusionnent. Une dépression ne devient lac que si le bilan hydrique suffit : lacs endoréiques, lacs salés et cuvettes sèches émergent naturellement. Code libre (RichDEM, `r.richdem.fsm`).
+- **Barnes, Callaghan & Wickert 2021**, *Computing water flow through complex landscapes – Part 3: Fill–Spill–Merge* (ESurf 9, 105–121). Runoff fills each depression; a full depression spills to its neighbor and two full neighbors merge. A depression becomes a lake only if the water balance suffices: endorheic lakes, salt lakes and dry basins emerge naturally. Open-source code (RichDEM, `r.richdem.fsm`).
 
-### 3.7 Lois de validation
+### 3.7 Validation laws
 
-| Loi | Forme | Usage |
+| Law | Form | Use |
 |---|---|---|
-| Hack 1957 | L ∝ A^0,6 | longueur du cours principal |
-| Horton–Strahler | rapports de bifurcation ≈ 3–5 | hiérarchie du réseau |
-| Flint 1974 | S ∝ A^-θ, θ ≈ 0,45 | profils en long |
-| Leopold & Wolman 1957 | tresses si S > 0,012 Q^-0,44 | style de chenal |
-| Leopold & Wolman 1960 | λ ≈ 10–14 W | longueur d'onde des méandres |
-| Seybold, Rothman & Kirchner 2017 | angle de confluence ≈ 72° humide, ≈ 45° aride | géométrie des confluences selon le climat |
+| Hack 1957 | L ∝ A^0.6 | main channel length |
+| Horton–Strahler | bifurcation ratios ≈ 3–5 | network hierarchy |
+| Flint 1974 | S ∝ A^-θ, θ ≈ 0.45 | longitudinal profiles |
+| Leopold & Wolman 1957 | braided if S > 0.012 Q^-0.44 | channel style |
+| Leopold & Wolman 1960 | λ ≈ 10–14 W | meander wavelength |
+| Seybold, Rothman & Kirchner 2017 | confluence angle ≈ 72° humid, ≈ 45° arid | climate-dependent confluence geometry |
 
-### 3.8 Ce qui ne serait pas mieux
+### 3.8 What would not be better
 
-- L'érosion hydraulique sur grille (Mei, Decaudin & Hu 2007 ; gouttes) : ravines plausibles, pas de réseau hiérarchisé.
-- Les *optimal channel networks* (Rinaldo, Rodríguez-Iturbe) : bonnes statistiques mais ignorent le relief existant.
+- Grid hydraulic erosion (Mei, Decaudin & Hu 2007; droplets): plausible gullies, not a hierarchical network.
+- *Optimal channel networks* (Rinaldo, Rodríguez-Iturbe): good statistics but ignore existing terrain.
 
-## 4. Diagnostic
+## 4. Diagnosis
 
-1. **Relief neuronal non cohérent.** Les reliefs bruts de Terrain Diffusion contiennent des dépressions de 100 à 260 m avec des collines noyées ; le D8 rempli les traversait en ligne droite. Les correctifs de `riverVectors.ts` contournent le problème au lieu de le résoudre.
-2. **Lacs heuristiques.** Le choix des bassins conservés ne dépend pas d'un bilan hydrique.
-3. **Deux styles de chenal seulement** (rectiligne, méandres) : ni tresses, ni anastomoses, ni méandres encaissés.
-4. **Contrainte dure sur les méandres** (jamais au-dessus du niveau de l'eau, sinon retour au thalweg) au lieu d'une influence continue du relief ; pas d'avulsion.
-5. **Deux hydrologies et deux bancs** : la meilleure chaîne (banc neuronal) n'est pas accessible au relief procédural, et l'inverse.
-6. **Validation surtout visuelle** : les lois de la section 3.7 ne sont pas mesurées.
+1. **Inconsistent neural terrain.** Raw Terrain Diffusion relief contains 100–260 m depressions with drowned hills; filled D8 crossed them in straight lines. `riverVectors.ts` corrections work around the problem rather than solving it.
+2. **Heuristic lakes.** Selection of retained basins does not depend on a water balance.
+3. **Only two channel styles** (straight, meandering): no braiding, anastomosis or incised meanders.
+4. **Hard meander constraint** (never above water level, otherwise return to thalweg) instead of continuous terrain influence; no avulsion.
+5. **Two hydrologies and two benches**: the best pipeline (neural bench) is unavailable to procedural terrain, and vice versa.
+6. **Mostly visual validation**: the laws in section 3.7 are not measured.
 
-## 5. Plan d'évolution
+## 5. Development plan
 
-Par priorité, toutes les étapes restant optionnelles dans le banc.
+In priority order, all stages remaining optional in the bench.
 
-1. **Conditionnement « pré-hydrique » du relief**, avant toute extraction :
-   - quelques itérations de stream power implicite à basse résolution et faible surrection, appliquées au relief neuronal ou procédural : les fausses cuvettes sont entaillées au seuil au lieu d'être remplies ;
-   - variante : brèche au moindre coût (Lindsay) avec bornes larges, puis remplissage du reste.
-2. **Lacs par bilan hydrique** (Fill–Spill–Merge) : ruissellement P−E issu du climat, niveau de chaque lac, bassins endoréiques et cuvettes sèches.
-3. **Style de chenal selon pente et débit** : seuil de Leopold & Wolman pour les tresses, anastomoses en plaine très plate, méandres encaissés dans les vallées sinueuses.
-4. **Influence continue du relief sur la migration** (Paris et al. 2023) au lieu de la contrainte dure ; avulsions.
-5. **Banc unique** : terrain bench avec choix du générateur (procédural Rust ± érosion, neuronal), hydrologie vectorielle du banc neuronal par défaut, ancienne hydrologie Rust en option ; relief neuronal recadré ou mis à l'échelle et raffiné au zoom.
-6. **Mesures** : Hack, Horton, Flint, longueur d'onde, angles de confluence, calculés dans les scripts de vérification.
-7. Plus tard : deltas (arbre de bifurcations procédural, sans aller jusqu'à DeltaRCM).
+1. **“Pre-hydric” terrain conditioning** before extraction:
+   - a few low-resolution implicit stream-power iterations with weak uplift, applied to neural or procedural terrain: false depressions are incised at their sills instead of filled;
+   - alternative: least-cost breaching (Lindsay) with broad bounds, then fill the remainder.
+2. **Water-balance lakes** (Fill–Spill–Merge): climate-derived P−E runoff, each lake's level, endorheic basins and dry depressions.
+3. **Channel style by slope and discharge**: Leopold & Wolman threshold for braiding, anastomosis on very flat plains, incised meanders in sinuous valleys.
+4. **Continuous terrain influence on migration** (Paris et al. 2023) instead of the hard constraint; avulsions.
+5. **Unified bench**: terrain bench with generator choice (procedural Rust ± erosion, neural), neural bench vector hydrology by default, old Rust hydrology as an option; neural terrain cropped or scaled and refined on zoom.
+6. **Measurements**: Hack, Horton, Flint, wavelength and confluence angles, calculated in verification scripts.
+7. Later: deltas (procedural bifurcation tree, without going as far as DeltaRCM).
 
-## 6. Implémentation (2026-10-12)
+## 6. Implementation (2026-10-12)
 
-Le banc neuronal est fusionné dans le banc terrain (`terrainbench.html` ; `neuralbench.html` redirige en gardant les réglages des anciens liens). Tout est optionnel et partageable par lien.
+The neural bench is merged into Terrain Bench (`terrainbench.html`; `neuralbench.html` redirects while retaining old-link settings). Everything is optional and shareable by link.
 
-| Point du plan | Où | État |
+| Plan item | Where | Status |
 |---|---|---|
-| Choix du relief | étape Relief : source procédurale (± érosion Rust) ou neuronale | fait |
-| Relief neuronal sur la carte | emprise *recadrer* (fenêtre de la taille de la carte, déplacée vers les côtes) ou *mettre à l'échelle* (± pentes conservées) | fait |
-| Familles neuronales | relief local imposé par famille en mode Auto : plaine 20 m, colline 110 m, plateau 100 m (mesuré sur les graines 42, 7, 1234) | fait |
-| Pixelisation au zoom | rééchantillonnage régional du moteur Rust + raffinement fractal optionnel sous la maille source (Hurst 0,8, amplitude ∝ pente) | fait |
-| Réglages des réseaux neuronaux | « Réseaux neuronaux » (altitude ×, pas, bruits, relief local, histogramme, détail decoder) et « Climat détaillé » | fait |
-| 1 · Conditionnement pré-hydrique | `web/src/ui/reliefConditioning.ts` : stream power implicite à 512² (niveau de base = surface de l'eau) + ouverture des seuils à pleine résolution ; force, profondeur et longueur réglables ; diagnostic « Conditionnement pré-hydrique » | fait, pour les deux moteurs |
-| 2 · Lacs par bilan hydrique | `waterBalance.ts` : Turc–Pike, dépressions du routage priority-flood, passes de remplissage-débordement, lacs fermés à e·A = Q ; micro-cuvettes non dessinables comblées avant | fait |
-| 3 · Styles de chenal | `riverVectors.ts` : tresses (seuil de Leopold & Wolman, vallée non confinée), anastomoses (plaines plates et humides), méandres encaissés via le talweg | fait |
-| 4 · Influence du relief, avulsions | migration freinée par la hauteur de berge au-dessus de l'eau ; avulsions laissant d'anciens chenaux | fait |
-| Angles de confluence | redessin de l'arrivée des affluents à 45–72° selon l'aridité | fait |
-| 5 · Banc unique | moteur hydrique *Vectoriel* (défaut) ou *Rust (ancien)* ; diagnostics des deux chaînes ; rendus du banc terrain | fait |
-| 6 · Mesures | `riverMetrics.ts`, panneau « Mesures » : Hack, Flint, Horton, longueur d'onde, sinuosité, confluences | fait |
-| 7 · Deltas | défluents suivant le chemin le plus bas jusqu'à la mer depuis un apex où la ligne d'eau descend sous 1,5 m/km | fait, rares sur les reliefs actuels |
+| Terrain choice | Relief stage: procedural source (± Rust erosion) or neural | done |
+| Neural terrain on the map | *crop* extent (map-sized window shifted toward coasts) or *scale* (± slopes retained) | done |
+| Neural families | family-specific local relief in Auto mode: plain 20 m, hill 110 m, plateau 100 m (measured on seeds 42, 7, 1234) | done |
+| Zoom pixelation | regional resampling by Rust engine + optional fractal refinement below source spacing (Hurst 0.8, amplitude ∝ slope) | done |
+| Neural network settings | “Neural networks” (elevation ×, spacing, noise, local relief, histogram, decoder detail) and “Detailed climate” | done |
+| 1 · Pre-hydric conditioning | `web/src/ui/reliefConditioning.ts`: implicit stream power at 512² (base level = water surface) + full-resolution sill opening; adjustable strength, depth and length; “Pre-hydric conditioning” diagnostic | done, for both engines |
+| 2 · Water-balance lakes | `waterBalance.ts`: Turc–Pike, priority-flood routing depressions, fill/spill passes, closed lakes at e·A = Q; undrawable micro-depressions filled first | done |
+| 3 · Channel styles | `riverVectors.ts`: braiding (Leopold & Wolman threshold, unconfined valley), anastomosis (flat humid plains), incised meanders via thalweg | done |
+| 4 · Terrain influence, avulsions | migration slowed by bank height above water; avulsions leave old channels | done |
+| Confluence angles | redraw tributary approach at 45–72° according to aridity | done |
+| 5 · Unified bench | *Vector* hydrology engine (default) or *Rust (legacy)*; diagnostics for both pipelines; Terrain Bench renderings | done |
+| 6 · Measurements | `riverMetrics.ts`, “Measurements” panel: Hack, Flint, Horton, wavelength, sinuosity, confluences | done |
+| 7 · Deltas | distributaries following the lowest path to the sea from an apex where water-surface slope falls below 1.5 m/km | done, rare on current terrain |
 
-Mesures sur le relief neuronal *colline*, graine 42, 40 km, climat tempéré :
+Measurements on neural *hill* terrain, seed 42, 40 km, temperate climate:
 
-| Loi | Sans conditionnement | Avec (défaut) | Réel |
+| Law | Without conditioning | With (default) | Real |
 |---|---|---|---|
-| Hack h | 0,53 | 0,54 | 0,5–0,6 |
-| Horton R_b | 4,4 | 3,9 | 3–5 |
-| Flint θ | 0,10 | 0,24 | 0,35–0,6 |
-| Confluences | 52° | 62° (cible 71°) | 45–72° |
-| Cuvettes > 1 m (grille 1024²) | 1 003 (4 570 hm³) | 504 (164 hm³) | — |
-| Lacs dessinés | 112 (122 km²) | 26 (53 km²) | — |
+| Hack h | 0.53 | 0.54 | 0.5–0.6 |
+| Horton R_b | 4.4 | 3.9 | 3–5 |
+| Flint θ | 0.10 | 0.24 | 0.35–0.6 |
+| Confluences | 52° | 62° (target 71°) | 45–72° |
+| Depressions > 1 m (1024² grid) | 1,003 (4,570 hm³) | 504 (164 hm³) | — |
+| Lakes drawn | 112 (122 km²) | 26 (53 km²) | — |
 
-Constats : le relief neuronal brut a des profils en long trop peu concaves (θ ≈ 0,1). Le conditionnement les rend plus concaves, sans atteindre les valeurs réelles : seule une évolution du relief plus longue y parviendrait. Les deltas demandent une plaine côtière basse, que ni l'esquisse neuronale (côte en tanh) ni le relief procédural ne produisent encore. Sans GPU, le calcul complet prend 10 à 25 s pour une grille de 1024².
+Findings: raw neural terrain has longitudinal profiles that are too weakly concave (θ ≈ 0.1). Conditioning makes them more concave without reaching real values: only longer terrain evolution would achieve that. Deltas require a low coastal plain that neither the neural sketch (tanh coast) nor procedural terrain yet produces. Without GPU, full computation takes 10–25 s for a 1024² grid.
 
-## 7. Références
+## 7. References
 
 - Barnes, Lehman & Mulla 2014, *Priority-flood: an optimal depression-filling and watershed-labeling algorithm*, Computers & Geosciences 62.
 - Barnes, Lehman & Mulla 2014, *An efficient assignment of drainage direction over flat surfaces in raster digital elevation models*, Computers & Geosciences 62.
-- [Barnes, Callaghan & Wickert 2021, Fill–Spill–Merge](https://esurf.copernicus.org/articles/9/105/2021/), Earth Surface Dynamics 9 · [GRASS r.richdem.fsm](https://grass.osgeo.org/grass85/manuals/addons/r.richdem.fsm.html)
+- [Barnes, Callaghan & Wickert 2021, Fill–Spill–Merge](https://esurf.copernicus.org/articles/9/105/2021/), Earth Surface Dynamics 9 · [GRASS r.richdem.fsm](https://grass.osgeo.org/grass85/manuals/addons/r.richdem.fsm.html).
 - Braun & Willett 2013, *A very efficient O(n), implicit and parallel method to solve the stream power equation*, Geomorphology 180–181.
 - Cordonnier, Bovy & Braun 2019, *A versatile, linear complexity algorithm for flow routing in topographies with depressions*, Earth Surface Dynamics 7.
 - Cordonnier et al. 2016, *Large scale terrain generation from tectonic uplift and fluvial erosion*, Computer Graphics Forum 35(2).
-- [Génevaux et al. 2013, Terrain generation using procedural models based on hydrology](https://hal.archives-ouvertes.fr/hal-01339224) · [PDF](https://www.cs.purdue.edu/homes/bbenes/papers/Genevaux13ToG.pdf)
+- [Génevaux et al. 2013, Terrain generation using procedural models based on hydrology](https://hal.archives-ouvertes.fr/hal-01339224) · [PDF](https://www.cs.purdue.edu/homes/bbenes/papers/Genevaux13ToG.pdf).
 - Howard & Knutson 1984, *Sufficient conditions for river meandering: a simulation approach*, Water Resources Research 20.
 - Kelley, Malin & Nielson 1988, *Terrain simulation using a model of stream erosion*, SIGGRAPH.
 - Leopold & Wolman 1957, *River channel patterns: braided, meandering and straight*, USGS PP 282-B.

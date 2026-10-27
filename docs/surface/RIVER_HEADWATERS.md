@@ -1,32 +1,12 @@
-# Départs des rivières dans la vue texturée
+# River headwaters in the textured view
 
-Les lignes vectorielles conservées commencent au seuil d'aire contributive.
-La largeur hydraulique à ce premier point vaut déjà couramment 19 à 31 m.
-Le rendu des berges ajoutait un cap circulaire de cette largeur : la rivière
-apparaissait immédiatement en gros tube ou en pastille sur le terrain.
+Retained vector lines start at the contributing-area threshold. Hydraulic width at that first point is already commonly 19–31 m. Bank rendering added a circular cap of that width, making the river appear immediately as a large tube or dot on the terrain.
 
-`ground_water_masks.mjs` construit maintenant une empreinte d'apparence avec
-une émergence progressive aux vraies petites têtes de réseau. La largeur
-initiale est plafonnée à 0,60 m, puis rejoint la largeur conservée par un
-profil smoothstep. La transition s'étend sur dix largeurs initiales, bornées
-entre 100 et 420 m, et au plus 60 % de la longueur d'une ligne courte.
-Les segments du départ sont subdivisés pour que la transition ne dépende
-pas d'un premier segment exceptionnellement long.
+`ground_water_masks.mjs` now builds an appearance footprint with a gradual emergence at genuine small network headwaters. Initial width is capped at 0.60 m, then joins the retained width using a smoothstep profile. The transition spans ten initial widths, bounded between 100 and 420 m and at most 60% of a short line's length. Initial segments are subdivided so the transition does not depend on an exceptionally long first segment.
 
-Ce traitement exclut les entrants par les bords de carte, les sorties de
-lacs/mer, les connexions à d'autres lignes et les gros débits initiaux
-(aire dépassant deux fois le seuil). Les bras, distributaires et méandres
-abandonnés gardent leurs largeurs. La topologie, les niveaux d'eau, les
-positions retenues, les sections aval et les sources hydrologiques restent
-inchangés. Ce profil est une règle d'apparence au seuil d'affichage, pas
-une mesure de la largeur réelle d'une source. Aucune mare n'est inventée.
+This treatment excludes map-edge inflows, lake/sea outlets, connections to other lines and high initial flows (area exceeding twice the threshold). Branches, distributaries and abandoned meanders keep their widths. Topology, water levels, retained positions, downstream sections and hydrological sources remain unchanged. The profile is an appearance rule at the display threshold, not a measurement of the real width of a source. No pond is invented.
 
-Le masque local `surface-river-footprint.png` est utilisé par la vue texturée
-et par les informations N1–N4 qui en dépendent. Les cartes et SVG historiques
-du Render de référence restent inchangés. Le descripteur voisin `.json`
-enregistre le profil, le hash du réseau et de l'image et les têtes traitées.
-La préparation réutilise les fonctions de largeur et de berges du worktree
-Render original conservé ; elle ne modifie pas cette référence.
+The local `surface-river-footprint.png` mask is used by the textured view and dependent N1–N4 information. Historical reference Render maps and SVGs remain unchanged. The neighbouring `.json` descriptor records the profile, network and image hashes, and treated headwaters. Preparation reuses the width and bank functions from the retained original Render worktree; it does not modify that reference.
 
 ```powershell
 node --test godot-render/tools/test_river_headwaters.mjs
@@ -36,7 +16,6 @@ node godot-render/tools/validate_river_headwaters.mjs
 python godot-render/tools/validate_ground_surface.py
 ```
 
-Le préparateur accepte `--tile mountains--temperate`. Les tests couvrent la
-progression de largeur, la conservation des sorties de lacs et connexions,
-les entrants par les bords et le retour à la largeur aval des lignes courtes.
-Le validateur contrôle les 42 masques et leur cohérence avec N1–N4.
+The preparer accepts `--tile mountains--temperate`. Tests cover width progression, preservation of lake outlets and connections, map-edge inflows and restoration of downstream width for short lines. The validator checks all 42 masks and their consistency with N1–N4.
+
+[Original French version](RIVER_HEADWATERS_FR.md).

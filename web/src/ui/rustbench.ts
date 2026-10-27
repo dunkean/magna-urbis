@@ -2,6 +2,7 @@ import { sketchQuery, placeSketchInFragment } from './terrainSketchSharing';
 import { captureBenchUi, restoreBenchUi, type BenchUiContext } from './benchContext';
 import { installRecipeSharing } from './recipeSharing';
 import { executionRuntime, applyExecutionProfile, installExecutionProfile } from './executionProfile';
+import { shellLabel } from './shellLocale';
 
 installExecutionProfile(document.querySelector('.shell-header')!);
 
@@ -94,7 +95,7 @@ function updateStandalone(): void {
   target.searchParams.set('standalone', '1');
   standalone.href = target.href;
   share.disabled = !url;
-  share.title = 'Copier le code unique de la carte affichée';
+  share.title = shellLabel('copyTitle');
 }
 
 function syncRoute(): void {
@@ -145,7 +146,7 @@ function navigate(): void {
     else link.removeAttribute('aria-current');
   }
   for (const [bench, frame] of loaded) frame.hidden = bench !== active;
-  document.title = `${active ? benches[active].title : 'Ateliers Rust'} · Magna Urbis`;
+  document.title = `${active ? benchTitle(active) : shellLabel('home')} · Magna Urbis`;
   if (!active) return;
   const bench = active, definition = benches[bench];
   const url = new URL(definition.path, location.href);
@@ -158,7 +159,7 @@ function navigate(): void {
   if (!frame) {
     if (!resume && separator >= 0) { uiContexts.delete(bench); persistUi(); }
     frame = document.createElement('iframe');
-    frame.title = `Atelier ${definition.title} — Magna Urbis`;
+    frame.title = `${shellLabel('workshop')} ${benchTitle(bench)} — Magna Urbis`;
     frame.dataset.bench = bench;
     frame.allow = 'clipboard-write; fullscreen';
     loading.add(bench);
@@ -186,8 +187,17 @@ function navigate(): void {
   frame.hidden = false;
   if (!loading.has(bench)) syncRoute();
   else updateStandalone();
-  announcement.textContent = `Atelier ${definition.title}`;
+  announcement.textContent = `${shellLabel('workshop')} ${benchTitle(bench)}`;
 }
+
+function benchTitle(bench: Bench): string {
+  return bench === 'city' ? shellLabel('city') : bench === 'houses' ? shellLabel('houses') : benches[bench].title;
+}
+
+window.addEventListener('magna-locale-change', () => {
+  document.title = `${active ? benchTitle(active) : shellLabel('home')} · Magna Urbis`;
+  for (const [bench, frame] of loaded) frame.title = `${shellLabel('workshop')} ${benchTitle(bench)} — Magna Urbis`;
+});
 
 standalone.addEventListener('pointerdown', updateStandalone);
 standalone.addEventListener('focus', updateStandalone);

@@ -9,10 +9,12 @@
  * The single shared editor is moved into the selected card, so what it edits is always visible.
  */
 import type { Options, SettlementSpec, SettlementOverrides } from '../gen/options';
-import { SETTLEMENT_OVERRIDE_KEYS, SIZE_PRESETS, optionsForSettlement, mapSizeOf, MAP_SIZE_MIN, MAP_SIZE_MAX, POP_MIN, POP_MAX, sizeForPop, cleanSettlementName } from '../gen/options';
+import { SETTLEMENT_OVERRIDE_KEYS, optionsForSettlement, mapSizeOf, MAP_SIZE_MIN, MAP_SIZE_MAX, POP_MIN, POP_MAX, sizeForPop, cleanSettlementName } from '../gen/options';
 import { CULTURE_LIST } from '../gen/urban/cultures';
 import type { ControlRegistry } from './controls';
 import { appendSettlementDraft, generatedSettlementSize, regionAsList, settlementComposition, type GeneratedPlace } from './workflowDraft';
+import { mainMessage, mainSizeLabel } from './mainLocale';
+import { savedLocale } from './shellLocale';
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, string> = {}, text?: string): HTMLElementTagNameMap[K] => {
   const e = document.createElement(tag);
@@ -105,15 +107,16 @@ export function initSettlementsUI(registry: ControlRegistry, getOpts: () => Opti
 
   // position: automatic (by the chosen site) or a click on the map; coordinates stay editable
   const modeRow = el('div', { class: 'seg' });
-  const auto = el('button', { id: 'centerAuto', type: 'button', title: 'Let the generator find the best spot for the chosen site' }, 'Automatic (by site)');
-  const pick = el('button', { id: 'centerPick', type: 'button', title: 'Click the map where this place should be' }, 'Click on the map');
+  const auto = el('button', { id: 'centerAuto', type: 'button', title: mainMessage('autoSiteHelp') }, mainMessage('autoSite'));
+  const pick = el('button', { id: 'centerPick', type: 'button', title: mainMessage('pickHelp') }, mainMessage('pickMap'));
   modeRow.append(auto, pick);
   const coords = el('div', { class: 'row' });
-  const xEl = el('input', { id: 'centerX', type: 'number', step: '1', placeholder: 'x auto', 'aria-label': 'Selected place x (m)' });
-  const yEl = el('input', { id: 'centerY', type: 'number', step: '1', placeholder: 'y auto', 'aria-label': 'Selected place y (m)' });
+  const xEl = el('input', { id: 'centerX', type: 'number', step: '1', placeholder: 'x auto', 'aria-label': mainMessage('positionX') });
+  const yEl = el('input', { id: 'centerY', type: 'number', step: '1', placeholder: 'y auto', 'aria-label': mainMessage('positionY') });
   coords.append(xEl, yEl);
   const posHint = el('div', { id: 'centerHint', class: 'hint' });
-  positionBox.append(el('label', {}, 'Position'), modeRow, siteCell, coords, posHint);
+  const positionLabel = el('label', {}, mainMessage('position'));
+  positionBox.append(positionLabel, modeRow, siteCell, coords, posHint);
   // The fields show metres; a taken-over place keeps its exact position until its field is really edited.
   const exactOr = (input: HTMLInputElement): number => input.dataset.exact && String(Math.round(Number(input.dataset.exact))) === input.value ? Number(input.dataset.exact) : Number(input.value);
   registry.add({ el: positionBox,
@@ -138,15 +141,15 @@ export function initSettlementsUI(registry: ControlRegistry, getOpts: () => Opti
   positionBox.addEventListener('change', (e) => {
     showPositionMode();
     if (e.target !== xEl && e.target !== yEl) return;
-    if (!!xEl.value !== !!yEl.value) { posHint.textContent = 'Enter both coordinates, or clear both for an automatic position.'; }
+    if (!!xEl.value !== !!yEl.value) { posHint.textContent = mainMessage('coordHint'); }
   });
 
   function setPicking(value: number | null): void {
     const wasPicking = picking !== null;
     picking = value;
     document.getElementById('map')!.classList.toggle('picking', value !== null);
-    pick.textContent = value === null ? 'Click on the map' : 'Click the map… (Esc)';
-    posHint.textContent = value === null ? 'Its marker can also be dragged on the map.' : 'Click the landscape where it should be. Esc cancels.';
+    pick.textContent = mainMessage(value === null ? 'pickMap' : 'pickingMap');
+    posHint.textContent = mainMessage(value === null ? 'dragHint' : 'pickingHint');
     showPositionMode();
     if (wasPicking !== (value !== null)) onPicking(value !== null);
   }
@@ -155,22 +158,22 @@ export function initSettlementsUI(registry: ControlRegistry, getOpts: () => Opti
   const generatedPlace = (key: string) => generated.all().find((p) => p.key === key);
   const displayName = (o: Options, target: SettlementTarget): string => {
     const spec = listOf(o)[target];
-    return cleanSettlementName(spec?.name) ?? generatedPlace(keyOf(o, target))?.name ?? (target === 0 ? 'Main town' : `Place ${target + 1}`);
+    return cleanSettlementName(spec?.name) ?? generatedPlace(keyOf(o, target))?.name ?? (target === 0 ? mainMessage('mainTown') : `${mainMessage('place')} ${target + 1}`);
   };
 
   /** One place card; the editor goes inside the selected one. */
   function card(index: number, title: string, meta: string, onOpen: () => void, onPlace: () => void, onDelete: (() => void) | null): HTMLElement {
     const box = el('div', { class: 'card' + (selected === index ? ' sel' : ''), 'data-settlement': String(index) });
     const head = el('div', { class: 'card-head' });
-    const main = el('button', { type: 'button', class: 'card-main settlement-choice', 'aria-pressed': String(selected === index), title: 'Edit this place' });
+    const main = el('button', { type: 'button', class: 'card-main settlement-choice', 'aria-pressed': String(selected === index), title: mainMessage('editPlace') });
     const badge = el('span', { class: 'badge' }); badge.append(el('span', {}, index === 0 ? '★' : String(index + 1)));
     const txt = el('span', { class: 'txt' }); txt.append(el('b', {}, title), el('small', {}, meta));
     main.append(badge, txt);
     main.addEventListener('click', onOpen);
     const tools = el('span', { class: 'card-tools' });
-    const placeBtn = el('button', { type: 'button', class: 'secondary icon', title: 'Place it on the map', 'aria-label': `Place ${title} on the map` });
+    const placeBtn = el('button', { type: 'button', class: 'secondary icon', title: mainMessage('placeMap'), 'aria-label': `${mainMessage('placeMap')}: ${title}` });
     placeBtn.innerHTML = ICON_PIN; placeBtn.addEventListener('click', onPlace);
-    const delBtn = el('button', { type: 'button', class: 'secondary icon', title: onDelete ? 'Delete' : 'The map keeps at least one place', 'aria-label': `Delete ${title}` });
+    const delBtn = el('button', { type: 'button', class: 'secondary icon', title: mainMessage(onDelete ? 'delete' : 'keepPlace'), 'aria-label': `${mainMessage('delete')}: ${title}` });
     delBtn.innerHTML = ICON_DEL; delBtn.disabled = !onDelete;
     if (onDelete) delBtn.addEventListener('click', onDelete);
     tools.append(placeBtn, delBtn);
@@ -190,7 +193,7 @@ export function initSettlementsUI(registry: ControlRegistry, getOpts: () => Opti
       specs.forEach((spec, index) => {
         const settings = optionsForSettlement(o, spec);
         choices.append(card(index, displayName(o, index),
-          `${SIZE_PRESETS[settings.size].label} · ${spec.population.toLocaleString('en')} · ${cultureLabel(settings.culture)}${settings.cultureMix ? ' + mix' : ''}${spec.position ? '' : ' · auto'}`,
+          `${mainSizeLabel(settings.size)} · ${spec.population.toLocaleString(savedLocale())} · ${cultureLabel(settings.culture)}${settings.cultureMix ? ' + mix' : ''}${spec.position ? '' : ' · auto'}`,
           () => changeEditor((draft) => { selected = selected === index ? -1 : index; setPicking(null); render(draft); return draft; }),
           () => { changeEditor((draft) => { selected = index; render(draft); return draft; }); setPicking(index); },
           specs.length > 1 ? () => removeAt(index) : null));
@@ -198,35 +201,65 @@ export function initSettlementsUI(registry: ControlRegistry, getOpts: () => Opti
     } else {
       // the displayed region, read-only until one place is touched
       places.forEach((p, index) => {
-        choices.append(card(index, p.name ?? (index === 0 ? 'Main town' : `Place ${index + 1}`), `${SIZE_PRESETS[generatedSettlementSize(o, p)].label} · ${p.population.toLocaleString('en')} · ${cultureLabel(o.culture)}`,
+        choices.append(card(index, p.name ?? (index === 0 ? mainMessage('mainTown') : `${mainMessage('place')} ${index + 1}`), `${mainSizeLabel(generatedSettlementSize(o, p))} · ${p.population.toLocaleString(savedLocale())} · ${cultureLabel(o.culture)}`,
           () => takeOver(index), () => { takeOver(index); setPicking(index); }, places.length > 1 ? () => { takeOver(-1); removeAt(index); } : null));
       });
     }
     const count = mode === 'list' ? specs.length : places.length;
-    placesTitle.textContent = `Places${count ? ` (${count})` : ''}`;
+    placesTitle.textContent = `${mainMessage('places')}${count ? ` (${count})` : ''}`;
     // the general card: theme culture, place names and the default layout
     const theme = selected < 0;
     themeCard.classList.toggle('sel', theme);
     themeSlot.hidden = !theme;
     if (theme) themeSlot.append(editor);
-    themeSummary.textContent = `${cultureLabel(o.culture)} · names ${o.language && o.language !== 'auto' ? o.language : 'from the culture'}`;
+    themeSummary.textContent = `${cultureLabel(o.culture)} · ${o.language && o.language !== 'auto' ? `${mainMessage('placeNames')} ${o.language}` : mainMessage('namesFrom')}`;
     themeButton.setAttribute('aria-pressed', String(theme));
     themeHint.textContent = mode === 'list'
-      ? 'Click a place to edit it, or drag its marker on the map.'
-      : count ? 'Generated from the target population. Click a place to edit it: the list becomes yours.' : 'Generate the places automatically, or add them one by one.';
-    autoGenerate.textContent = mode === 'list' ? 'Regenerate all' : 'Generate places';
-    autoGenerate.title = mode === 'list' ? 'Replace the list by an automatic region around a town of this population' : 'Generate a town of this population with its villages, hamlets and farms';
+      ? mainMessage('editPlacesHint') : mainMessage(count ? 'generatedPlacesHint' : 'emptyPlacesHint');
+    autoGenerate.textContent = mainMessage(mode === 'list' ? 'regenerateAll' : 'generatePlaces');
+    autoGenerate.title = mainMessage(mode === 'list' ? 'replacePlacesHelp' : 'generatePlacesHelp');
     if (document.activeElement !== autoPop) autoPop.value = String(o.population > 0 ? o.population : mode === 'list' && specs[0] ? specs[0].population : 3000);
     clearButton.hidden = mode !== 'list' && !count;
-    heading.textContent = theme ? 'General' : displayName(o, selected);
-    cultureLabelEl.textContent = theme ? 'Theme culture' : 'Culture';
+    heading.textContent = theme ? mainMessage('general') : displayName(o, selected);
+    cultureLabelEl.textContent = mainMessage(theme ? 'themeCulture' : 'culture');
     nameRow.hidden = theme; kindRow.hidden = theme; positionBox.hidden = theme; langRow.hidden = !theme;
     nameEl.value = !theme ? cleanSettlementName(specs[selected]?.name) ?? '' : '';
-    nameEl.placeholder = !theme ? generatedPlace(keyOf(o, selected))?.name ?? 'Generated name' : '';
+    nameEl.placeholder = !theme ? generatedPlace(keyOf(o, selected))?.name ?? mainMessage('generatedName') : '';
     resetButton.hidden = theme;
     removeButton.disabled = theme || specs.length <= 1;
     showPositionMode();
   }
+  window.addEventListener('magna-locale-change', () => {
+    positionLabel.textContent = mainMessage('position');
+    auto.textContent = mainMessage('autoSite'); auto.title = mainMessage('autoSiteHelp');
+    pick.textContent = mainMessage(picking === null ? 'pickMap' : 'pickingMap'); pick.title = mainMessage('pickHelp');
+    xEl.setAttribute('aria-label', mainMessage('positionX')); yEl.setAttribute('aria-label', mainMessage('positionY'));
+    posHint.textContent = mainMessage(!!xEl.value !== !!yEl.value ? 'coordHint' : picking === null ? 'dragHint' : 'pickingHint');
+    const count = mode === 'list' ? listOf(lastDraft).length : generated.all().length;
+    placesTitle.textContent = `${mainMessage('places')}${count ? ` (${count})` : ''}`;
+    themeSummary.textContent = `${cultureLabel(lastDraft.culture)} · ${lastDraft.language && lastDraft.language !== 'auto' ? `${mainMessage('placeNames')} ${lastDraft.language}` : mainMessage('namesFrom')}`;
+    themeHint.textContent = mainMessage(mode === 'list' ? 'editPlacesHint' : count ? 'generatedPlacesHint' : 'emptyPlacesHint');
+    autoGenerate.textContent = mainMessage(mode === 'list' ? 'regenerateAll' : 'generatePlaces');
+    autoGenerate.title = mainMessage(mode === 'list' ? 'replacePlacesHelp' : 'generatePlacesHelp');
+    if (selected < 0) heading.textContent = mainMessage('general');
+    cultureLabelEl.textContent = mainMessage(selected < 0 ? 'themeCulture' : 'culture');
+    if (selected >= 0 && !generatedPlace(keyOf(lastDraft, selected))?.name) nameEl.placeholder = mainMessage('generatedName');
+    for (const box of Array.from(choices.querySelectorAll<HTMLElement>('[data-settlement]'))) {
+      const index = Number(box.dataset.settlement), spec = listOf(lastDraft)[index], place = generated.all()[index];
+      const titleNode = box.querySelector<HTMLElement>('.card-main b');
+      if (titleNode) titleNode.textContent = mode === 'list' ? displayName(lastDraft, index) : place?.name ?? (index === 0 ? mainMessage('mainTown') : `${mainMessage('place')} ${index + 1}`);
+      const title = titleNode?.textContent ?? '';
+      const meta = box.querySelector<HTMLElement>('.card-main small');
+      if (meta && mode === 'list' && spec) {
+        const settings = optionsForSettlement(lastDraft, spec);
+        meta.textContent = `${mainSizeLabel(settings.size)} · ${spec.population.toLocaleString(savedLocale())} · ${cultureLabel(settings.culture)}${settings.cultureMix ? ' + mix' : ''}${spec.position ? '' : ' · auto'}`;
+      } else if (meta && place) meta.textContent = `${mainSizeLabel(generatedSettlementSize(lastDraft, place))} · ${place.population.toLocaleString(savedLocale())} · ${cultureLabel(lastDraft.culture)}`;
+      const main = box.querySelector<HTMLElement>('.card-main'); if (main) main.title = mainMessage('editPlace');
+      const buttons = box.querySelectorAll<HTMLButtonElement>('.card-tools button');
+      if (buttons[0]) { buttons[0].title = mainMessage('placeMap'); buttons[0].setAttribute('aria-label', `${mainMessage('placeMap')}: ${title}`); }
+      if (buttons[1]) { buttons[1].title = mainMessage(buttons[1].disabled ? 'keepPlace' : 'delete'); buttons[1].setAttribute('aria-label', `${mainMessage('delete')}: ${title}`); }
+    }
+  });
   const editorOptions = (o: Options): Options => selected >= 0 && mode === 'list' && listOf(o)[selected] ? optionsForSettlement(o, listOf(o)[selected]) : o;
   function capture(input: Options, base: Options): Options {
     // Environment and display settings are shared, including while a place is selected.

@@ -1,6 +1,27 @@
 import { decodeDecorAsync, decorEntry, encodeDecorAsync, type Decor, type DecorEntry } from './decor';
 import { downloadDecorFile, readDecorFile } from './decorFile';
 import { placeSketchInFragment, sketchQuery } from './terrainSketchSharing';
+import { savedLocale, type Locale } from './shellLocale';
+
+type HistoryWords = readonly [string, string, string, string, string];
+const historyLanguages: Locale[] = ['fr', 'en', 'zh', 'es', 'pt'];
+function historyText(words: HistoryWords): string {
+  return words[historyLanguages.indexOf(typeof window === 'undefined' ? 'fr' : savedLocale())];
+}
+const historyWords = {
+  title: ['Historique des exports', 'Export history', '导出历史', 'Historial de exportaciones', 'Histórico de exportações'],
+  saved: ['Carte conservée', 'Saved map', '已保存的地图', 'Mapa guardado', 'Mapa salvo'],
+  choose: ['Choisir un export…', 'Choose an export…', '选择导出记录…', 'Elegir una exportación…', 'Escolher uma exportação…'],
+  open: ['Charger', 'Load', '加载', 'Cargar', 'Carregar'],
+  download: ['Exporter .decor', 'Export .decor', '导出 .decor', 'Exportar .decor', 'Exportar .decor'],
+  upload: ['Importer .decor', 'Import .decor', '导入 .decor', 'Importar .decor', 'Importar .decor'],
+  hint: ['Historique conservé dans ce navigateur. Le fichier .decor permet le partage entre machines.', 'History is stored in this browser. A .decor file can be shared between machines.', '历史记录保存在此浏览器中。.decor 文件可在不同设备之间共享。', 'El historial se guarda en este navegador. El archivo .decor permite compartir entre equipos.', 'O histórico é salvo neste navegador. O arquivo .decor permite compartilhar entre máquinas.'],
+  denied: ['Historique indisponible : stockage du navigateur refusé.', 'History unavailable: browser storage was denied.', '历史记录不可用：浏览器存储被拒绝。', 'Historial no disponible: se rechazó el almacenamiento del navegador.', 'Histórico indisponível: o armazenamento do navegador foi recusado.'],
+  failed: ['Échec du stockage de l’export.', 'Could not store the export.', '无法保存导出记录。', 'No se pudo guardar la exportación.', 'Não foi possível salvar a exportação.'],
+  unavailable: ['Historique indisponible.', 'History unavailable.', '历史记录不可用。', 'Historial no disponible.', 'Histórico indisponível.'],
+  missing: ['Export absent de ce navigateur. Importez le fichier .decor partagé.', 'This export is not in this browser. Import the shared .decor file.', '此浏览器中没有该导出记录。请导入共享的 .decor 文件。', 'Esta exportación no está en este navegador. Importa el archivo .decor compartido.', 'Esta exportação não está neste navegador. Importe o arquivo .decor compartilhado.'],
+  missingShort: ['Export absent de ce navigateur.', 'This export is not in this browser.', '此浏览器中没有该导出记录。', 'Esta exportación no está en este navegador.', 'Esta exportação não está neste navegador.'],
+} satisfies { [key: string]: HistoryWords };
 
 export interface HistoryEntry { entry: DecorEntry; created: string; stage: string }
 interface Record extends HistoryEntry { bytes: Uint8Array }
@@ -10,7 +31,7 @@ function db(): Promise<IDBDatabase> {
     const request = indexedDB.open('magna-bench-exports', 1);
     request.onupgradeneeded = () => request.result.createObjectStore('exports', { keyPath: 'entry.id' });
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(new Error('Historique indisponible : stockage du navigateur refusé.'));
+    request.onerror = () => reject(new Error(historyText(historyWords.denied)));
   });
 }
 async function access<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
@@ -18,7 +39,7 @@ async function access<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore) 
   return new Promise((resolve, reject) => {
     const transaction = database.transaction('exports', mode), request = run(transaction.objectStore('exports'));
     transaction.oncomplete = () => resolve(request.result);
-    transaction.onabort = transaction.onerror = () => reject(transaction.error ?? new Error('Échec du stockage de l’export.'));
+    transaction.onabort = transaction.onerror = () => reject(transaction.error ?? new Error(historyText(historyWords.failed)));
   });
 }
 export async function listHistory(): Promise<HistoryEntry[]> {
@@ -32,12 +53,12 @@ export async function listHistory(): Promise<HistoryEntry[]> {
       entries.push({ entry, created, stage }); cursor.continue();
     };
     transaction.oncomplete = () => resolve(entries.sort((a, b) => b.created.localeCompare(a.created)));
-    transaction.onabort = transaction.onerror = () => reject(transaction.error ?? new Error('Historique indisponible.'));
+    transaction.onabort = transaction.onerror = () => reject(transaction.error ?? new Error(historyText(historyWords.unavailable)));
   });
 }
 export async function readHistory(id: string): Promise<Decor> {
   const record = await access<Record | undefined>('readonly', store => store.get(id));
-  if (!record) throw new Error('Export absent de ce navigateur. Importez le fichier .decor partagé.');
+  if (!record) throw new Error(historyText(historyWords.missing));
   return decodeDecorAsync(record.bytes);
 }
 /** Local history references become a complete portable file on download. The
@@ -46,7 +67,7 @@ export function downloadHistory(id: string, fallback?: Decor): Promise<void> {
   const decor = access<Record | undefined>('readonly', store => store.get(id)).then(record => {
     if (record) return decodeDecorAsync(record.bytes);
     if (fallback) return fallback;
-    throw new Error('Export absent de ce navigateur.');
+    throw new Error(historyText(historyWords.missingShort));
   });
   return downloadDecorFile(decor, `${id}.decor`);
 }
@@ -89,17 +110,31 @@ export function syncBenchUrl(): void {
 
 export function createHistoryPanel(options: { before: Element; onOpen(decor: Decor): void | Promise<void>; current(): Decor | undefined }) {
   const panel = document.createElement('details'); panel.className = 'stage'; panel.id = 'benchHistory'; panel.open = true;
-  panel.innerHTML = '<summary>Historique des exports</summary><div class="stage-controls"><label>Carte conservée<select data-history><option value="">Choisir un export…</option></select></label><div class="settlement-actions"><button data-open>Charger</button><button data-download>Exporter .decor</button><label>Importer .decor<input data-import type="file" accept=".decor" multiple></label></div><small data-note role="status">Historique conservé dans ce navigateur. Le fichier .decor permet le partage entre machines.</small></div>';
+  panel.innerHTML = '<summary></summary><div class="stage-controls"><label><span data-saved></span><select data-history></select></label><div class="settlement-actions"><button data-open></button><button data-download></button><label><span data-upload></span><input data-import type="file" accept=".decor" multiple></label></div><small data-note role="status"></small></div>';
   options.before.before(panel);
   const select = panel.querySelector('select')!, note = panel.querySelector<HTMLElement>('[data-note]')!;
-  const error = (e: unknown): void => { note.textContent = e instanceof Error ? e.message : String(e); };
+  let items: HistoryEntry[] = [], defaultNote = true;
+  const error = (e: unknown): void => { defaultNote = false; note.textContent = e instanceof Error ? e.message : String(e); };
+  function paint(): void {
+    const selected = select.value, locale = typeof window === 'undefined' ? 'fr' : savedLocale();
+    panel.querySelector('summary')!.textContent = historyText(historyWords.title);
+    panel.querySelector('[data-saved]')!.textContent = historyText(historyWords.saved);
+    panel.querySelector('[data-open]')!.textContent = historyText(historyWords.open);
+    panel.querySelector('[data-download]')!.textContent = historyText(historyWords.download);
+    panel.querySelector('[data-upload]')!.textContent = historyText(historyWords.upload);
+    if (defaultNote) note.textContent = historyText(historyWords.hint);
+    const dateLocale: { [key in Locale]: string } = { fr: 'fr-FR', en: 'en', zh: 'zh-CN', es: 'es', pt: 'pt' };
+    select.replaceChildren(new Option(historyText(historyWords.choose), ''), ...items.map(({ entry, stage, created }) => new Option(`${stage} · ${entry.label} · ${new Date(created).toLocaleString(dateLocale[locale])}`, entry.id)));
+    select.value = selected;
+  }
   async function refresh(id?: string): Promise<void> {
     try {
-      const selected = id ?? select.value, items = await listHistory();
-      select.replaceChildren(new Option('Choisir un export…', ''), ...items.map(({ entry, stage, created }) => new Option(`${stage} · ${entry.label} · ${new Date(created).toLocaleString('fr-FR')}`, entry.id)));
-      select.value = selected;
+      const selected = id ?? select.value;
+      items = await listHistory(); paint(); select.value = selected;
     } catch (e) { error(e); }
   }
+  window.addEventListener('magna-locale-change', paint);
+  paint();
   panel.querySelector<HTMLButtonElement>('[data-open]')!.onclick = () => { if (select.value) void readHistory(select.value).then(options.onOpen).catch(error); };
   panel.querySelector<HTMLButtonElement>('[data-download]')!.onclick = () => {
     const current = options.current();
@@ -120,6 +155,6 @@ export function createHistoryPanel(options: { before: Element; onOpen(decor: Dec
   panel.addEventListener('toggle', () => { if (panel.open) void refresh(); });
   window.addEventListener('focus', () => void refresh());
   void refresh();
-  return { refresh, note: (text: string): void => { note.textContent = text; } };
+  return { refresh, note: (text: string): void => { defaultNote = false; note.textContent = text; } };
 }
 import { applyExecutionProfile } from './executionProfile';

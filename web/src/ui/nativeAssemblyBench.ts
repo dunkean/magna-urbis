@@ -9,6 +9,8 @@ import { nativeAssemblyWindow, type NativeAssemblyMemberVisual, type NativeAssem
 import { attemptSelectedNativeAssembly, type AssemblyExperimentState } from './nativeAssemblyExperiment';
 import { assemblyInputFingerprint, openNativeAssemblyArtifactBackend, parseAssemblyArtifact, readNativeAssemblyArtifact,
   stageNativeAssembly, type NativeAssemblyArtifact } from './nativeAssemblyStore';
+import { urbanText } from './urbanPanelLocale';
+import { assemblyText } from './nativeAssemblyLocale';
 const amount = (value: number | null | undefined) => typeof value === 'number' && Number.isFinite(value) ? `${value.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} m²` : 'inconnu';
 export function assemblyParentRows(native: RetainedNativeAssembly): [string, string][] {
   const p = native.programme, n = p.housing_floor_need, m = n?.model, o = native.outcome;
@@ -18,9 +20,9 @@ export function assemblyParentRows(native: RetainedNativeAssembly): [string, str
     ['Emprise des corps mesurée', amount(o.body_footprint.actual_m2)], ['Brut des niveaux retenus mesuré', amount(o.gross_floor_m2)],
     ['Besoin utile indicatif du modèle', amount(o.requested_useful_m2)], ['Déficit nécessaire du modèle', amount(o.useful_shortfall_lower_bound_m2)],
     ['Modèle conservé', n ? `${n.version} · ${m?.family} · ${m?.profile_provenance} · ${m?.calibration}` : 'inconnu'],
-    ['Base utile / facteur du modèle', m ? `${m.floor_m2_per_household} m² utiles/ménage × ${m.wealth_factor}` : 'inconnus'],
+    ['Base utile / facteur du modèle', m ? `${m.floor_m2_per_household} ${urbanText(['m² utiles/ménage','usable m²/household','实用平方米 / 家庭','m² útiles/hogar','m² úteis/família'])} × ${m.wealth_factor}` : 'inconnus'],
     ['Capacité résidentielle / utile réel', 'inconnus ; aucune conversion m² → ménages'],
-    ['Circulation', `${native.circulation.construction_status} ; construction et accessibilité non certifiées`]];
+    ['Circulation', `${native.circulation.construction_status} ; ${urbanText(['construction et accessibilité non certifiées','construction and accessibility not certified','建设与可达性未经认证','construcción y accesibilidad no certificadas','construção e acessibilidade não certificadas'])}`]];
 }
 function download(value: unknown, name: string) {
   const url = URL.createObjectURL(new Blob([JSON.stringify(value)], { type: 'application/json' })), a = document.createElement('a');
@@ -45,7 +47,7 @@ export async function openNativeAssemblyBench(options: {
   document.body.append(dialog); if (typeof dialog.showModal === 'function') dialog.showModal(); else dialog.open = true;
   const $ = <T extends HTMLElement>(selector: string) => dialog.querySelector<T>(selector)!;
   const api: NativeAssemblyApi = nativeAssemblyApi(options.runtime), life = new AbortController();
-  let alive = true, busy = false, state: AssemblyExperimentState = 'ready', artifact: NativeAssemblyArtifact | undefined,
+  let alive = true, busy = false, state: AssemblyExperimentState = 'ready', statusOverride: string | undefined, artifact: NativeAssemblyArtifact | undefined,
     native: RetainedNativeAssembly | undefined, view: ReturnType<typeof nativeAssemblyWindow> | undefined,
     selection: NativeAssemblySelection | undefined, renderer: UrbanBuildingLodRenderer<NativeAssemblyMemberVisual> | undefined,
     backend: Awaited<ReturnType<typeof openNativeAssemblyArtifactBackend>> | undefined;
@@ -53,10 +55,10 @@ export async function openNativeAssemblyBench(options: {
   const storage = async () => backend ??= await openNativeAssemblyArtifactBackend();
   const setState = (next: AssemblyExperimentState, text?: string) => {
     if (!alive) return;
-    state = next; dialog.dataset.nativeAssemblyState = next;
-    $('[data-assembly-status]').textContent = text ?? ({ ready: 'Choisir une action explicite.', 'loading-site': 'Lecture bornée du vrai site et de ses voisins…',
+    state = next; statusOverride = text; dialog.dataset.nativeAssemblyState = next;
+    $('[data-assembly-status]').textContent = assemblyText(text ?? ({ ready: 'Choisir une action explicite.', 'loading-site': 'Lecture bornée du vrai site et de ses voisins…',
       assembling: 'Essai natif en cours…', retained: 'Parent Single conservé ; aucun nouveau groupe enregistré.',
-      proposed: 'Proposition archivée, NON APPLIQUÉE à la ville.', stale: 'Origine native non liée ou remplacée ; une archive éventuelle reste historique NON APPLIQUÉE et ne sert pas de proposition courante.', error: 'Essai refusé.' }[next]);
+      proposed: 'Proposition archivée, NON APPLIQUÉE à la ville.', stale: 'Origine native non liée ou remplacée ; une archive éventuelle reste historique NON APPLIQUÉE et ne sert pas de proposition courante.', error: 'Essai refusé.' }[next]));
     $<HTMLButtonElement>('[data-assembly-export]').disabled = !artifact || busy;
     $<HTMLButtonElement>('[data-assembly-realize]').disabled = !artifact || state !== 'proposed' || busy;
     $<HTMLButtonElement>('[data-assembly-parent]').disabled = !view || busy;
@@ -72,9 +74,21 @@ export async function openNativeAssemblyBench(options: {
       ['Source native', `${member.plan.recipe_id} · ${member.plan.variant_id}`], ['Sol propre', `${member.plan.ground_z_m} m`],
       ['Corps / niveaux retenus', `${member.plan.volumes.length} / ${member.plan.volumes.reduce((n, body) => n + body.levels.length, 0)}`],
       ['Programme / capacité du membre', 'aucun programme parent copié ; capacité inconnue']] : assemblyParentRows(native);
-    $('[data-assembly-inspection]').innerHTML = `<p>1 résultat parent · ${view.counts.members} membres natifs · ${view.counts.bodies} corps retenus</p><dl>${rows.map(([label, value]) => `<dt>${xml(label)}</dt><dd>${xml(value)}</dd>`).join('')}</dl>`;
+    const summary = urbanText([`1 résultat parent · ${view.counts.members} membres natifs · ${view.counts.bodies} corps retenus`, `1 parent result · ${view.counts.members} native members · ${view.counts.bodies} retained volumes`, `1 个父级结果 · ${view.counts.members} 个原生成员 · ${view.counts.bodies} 个保留体量`, `1 resultado principal · ${view.counts.members} miembros nativos · ${view.counts.bodies} volúmenes conservados`, `1 resultado principal · ${view.counts.members} membros nativos · ${view.counts.bodies} volumes mantidos`]);
+    $('[data-assembly-inspection]').innerHTML = `<p>${xml(summary)}</p><dl>${rows.map(([label, value]) => `<dt>${xml(assemblyText(label))}</dt><dd>${xml(assemblyText(value))}</dd>`).join('')}</dl>`;
   };
   const canvas = $<HTMLCanvasElement>('[data-assembly-canvas]');
+  const staticNodes = [dialog.querySelector('h2')!, ...Array.from(dialog.querySelectorAll(':scope > p')).slice(0, 3), ...Array.from(dialog.querySelectorAll('button'))];
+  const originalText = staticNodes.map(node => node.textContent ?? '');
+  const importLabel = $<HTMLInputElement>('[data-assembly-import]').parentElement!.firstChild!;
+  const localize = () => {
+    staticNodes.forEach((node, index) => { node.textContent = assemblyText(originalText[index]); });
+    importLabel.textContent = assemblyText('Importer une proposition');
+    canvas.setAttribute('aria-label', assemblyText('Vue propre de la proposition, indépendante de la ville'));
+    setState(state, statusOverride); inspect();
+    if (native && artifact) $('[data-assembly-origin]').textContent = urbanText([`Parent natif ${native.id} · archive ${artifact.archive.sha256} · proposition non appliquée`, `Native parent ${native.id} · archive ${artifact.archive.sha256} · proposal not applied`, `原生父级 ${native.id} · 存档 ${artifact.archive.sha256} · 提案未应用`, `Elemento principal nativo ${native.id} · archivo ${artifact.archive.sha256} · propuesta no aplicada`, `Elemento principal nativo ${native.id} · arquivo ${artifact.archive.sha256} · proposta não aplicada`]);
+  };
+  window.addEventListener('magna-locale-change', localize);
   let camera = { x: 0, y: 0, mpp: 1 };
   const paint = () => {
     if (!view || !renderer) return; const w = 680, h = 420, dpr = Math.min(2, window.devicePixelRatio || 1), b = view.bounds;
@@ -93,7 +107,7 @@ export async function openNativeAssemblyBench(options: {
     artifact = a; native = n; view = nativeAssemblyWindow(n); selection = { kind: 'parent', parent_id: n.id };
     renderer = new UrbanBuildingLodRenderer(view.scene, { raster: false, maxCachedBuildings: 2, maxFacetBuildings: 2 });
     dialog.dataset.archiveSha256 = a.archive.sha256; dialog.dataset.inputSha256 = a.input_sha256;
-    $('[data-assembly-origin]').textContent = `Parent natif ${n.id} · archive ${a.archive.sha256} · proposition non appliquée`;
+    $('[data-assembly-origin]').textContent = urbanText([`Parent natif ${n.id} · archive ${a.archive.sha256} · proposition non appliquée`, `Native parent ${n.id} · archive ${a.archive.sha256} · proposal not applied`, `原生父级 ${n.id} · 存档 ${a.archive.sha256} · 提案未应用`, `Elemento principal nativo ${n.id} · archivo ${a.archive.sha256} · propuesta no aplicada`, `Elemento principal nativo ${n.id} · arquivo ${a.archive.sha256} · proposta não aplicada`]);
     inspect(); paint();
   };
   const act = async (run: () => Promise<void>) => {
@@ -112,18 +126,18 @@ export async function openNativeAssemblyBench(options: {
   }); };
   $('[data-assembly-restore]').onclick = () => { void act(async () => {
     await api.require(); const value = await readNativeAssemblyArtifact(await storage(), api);
-    if (!value) throw new Error('Aucune proposition archivée.'); show(value.artifact, value.native); setState('stale');
+    if (!value) throw new Error(assemblyText('Aucune proposition archivée.')); show(value.artifact, value.native); setState('stale');
   }); };
   $<HTMLInputElement>('[data-assembly-import]').onchange = event => { const file = (event.target as HTMLInputElement).files?.[0]; if (!file) return;
-    void act(async () => { if (file.size > 32 * 1024 * 1024) throw new Error('Archive supérieure à 32 MiB.'); await api.require();
+    void act(async () => { if (file.size > 32 * 1024 * 1024) throw new Error(assemblyText('Archive supérieure à 32 MiB.')); await api.require();
       const a = parseAssemblyArtifact(await file.text()), staged = await stageNativeAssembly(await storage(), a, api, { current: () => alive, signal: life.signal });
       await staged.commit(); show(staged.artifact, staged.native); setState('stale'); }); };
   $('[data-assembly-export]').onclick = () => { if (artifact) download(artifact, 'native-assembly-proposal-not-applied.json'); };
   $('[data-assembly-realize]').onclick = () => { void act(async () => {
-    if (!artifact || state !== 'proposed' || !current()) throw new Error('Proposition périmée ou non liée.');
+    if (!artifact || state !== 'proposed' || !current()) throw new Error(assemblyText('Proposition périmée ou non liée.'));
     const saved = artifact, realized = await api.realize(saved.archive);
     if (!current() || artifact !== saved) { setState('stale'); return; }
-    if (realized.id !== saved.parent_id || realized.parcel_id !== saved.parcel_id || realized.members.length !== 2) throw new Error('Identité native réalisée contradictoire.');
+    if (realized.id !== saved.parent_id || realized.parcel_id !== saved.parcel_id || realized.members.length !== 2) throw new Error(assemblyText('Identité native réalisée contradictoire.'));
     download({ application: 'proposal_not_applied', archive_sha256: saved.archive.sha256, native: realized }, 'native-assembly-realized-not-applied.json');
     setState('proposed', 'Deux extérieurs natifs réalisés et exportés ; la proposition reste NON APPLIQUÉE à la ville.');
   }); };
@@ -132,7 +146,7 @@ export async function openNativeAssemblyBench(options: {
     selection = view.pick({ x: camera.x + (event.clientX - rect.left) * 680 / rect.width * camera.mpp,
       y: camera.y + (event.clientY - rect.top) * 420 / rect.height * camera.mpp }); inspect(); paint(); };
   const timer = setInterval(() => { if (alive && state !== 'stale' && !current()) { life.abort(new DOMException('Origine remplacée', 'AbortError')); setState('stale'); } }, 250);
-  const close = () => { if (!alive) return; alive = false; clearInterval(timer); life.abort(); backend?.close(); renderer = undefined; native = undefined; view = undefined; dialog.remove(); };
+  const close = () => { if (!alive) return; alive = false; clearInterval(timer); life.abort(); window.removeEventListener('magna-locale-change', localize); backend?.close(); renderer = undefined; native = undefined; view = undefined; dialog.remove(); };
   $('[data-assembly-close]').onclick = () => { if (typeof dialog.close === 'function') dialog.close(); close(); };
-  dialog.addEventListener('close', close); setState('ready');
+  dialog.addEventListener('close', close); localize();
 }

@@ -13,10 +13,10 @@ from pathlib import Path
 REPOSITORY = Path(__file__).resolve().parents[2]
 DESTINATION = REPOSITORY / 'rust/crates/houses/data/source-inventory.json'
 SOURCE_FILES = [
-    'docs/styles_architecturaux_mondiaux_city_mapper.md',
-    'docs/catalogue_settlements_antiquite_moyen_age_rpg.md',
-    'docs/sources/javanese-domestic-architecture.md',
-    'docs/sources/roman-compact-domestic-architecture.md',
+    'docs/styles_architecturaux_mondiaux_city_mapper_FR.md',
+    'docs/catalogue_settlements_antiquite_moyen_age_rpg_FR.md',
+    'docs/sources/javanese-domestic-architecture_FR.md',
+    'docs/sources/roman-compact-domestic-architecture_FR.md',
 ]
 
 

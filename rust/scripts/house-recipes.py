@@ -207,8 +207,8 @@ LATE_IDS = {'AS-MIDE-B13', 'AF-WEST-B10', 'AF-EAST-B12', 'AS-HIM-B11',
 TRADITION_ASSIGNMENTS = {identifier: 'javanese' for identifier in ['AS-ISL-B06', 'AS-ISL-B14', 'AS-ISL-B15']}
 TRADITION_ASSIGNMENTS['MED-ANT-B12'] = 'roman_urban'
 TRADITION_ASSIGNMENTS['MED-ANT-B13'] = 'roman_urban'
-JAVA_SOURCE = 'docs/sources/javanese-domestic-architecture.md'
-ROMAN_SOURCE = 'docs/sources/roman-compact-domestic-architecture.md'
+JAVA_SOURCE = 'docs/sources/javanese-domestic-architecture_FR.md'
+ROMAN_SOURCE = 'docs/sources/roman-compact-domestic-architecture_FR.md'
 # Provenance and artistic defaults belong to a recipe, not to the generic
 # inspired_only permission. Keep the two existing Java records byte-identical.
 JAVA_INSPIRED_METADATA = dict(
@@ -230,19 +230,19 @@ INSPIRED_ONLY_RECIPES['MED-ANT-B12'] = dict(
     chronology_confidence='broad_tradition',
     roof_confidence='uncertain',
 )
-INSPIRED_ONLY_RECIPES['MED-ANT-B13'] = {'source': 'docs/sources/roman-compact-domestic-architecture.md',
+INSPIRED_ONLY_RECIPES['MED-ANT-B13'] = {'source': 'docs/sources/roman-compact-domestic-architecture_FR.md',
  'level_height_m': 2.8,
  'parameter_note': 'Inspired compact Roman street block: all dimensional ranges, 2/3/4 storeys, 2.8m storey '
                    'height, room count, roof, rear court and lateral passage proportions are artistic/native '
                    'construction defaults, not archaeological measurements. Generic communal rooms and '
                    'internal stairs do not certify apartments, independent tenancy, households or '
                    'inhabitants. No automatic burgage infill, shopfront, gallery or multiple_households '
-                   'programme is declared. See docs/sources/roman-compact-domestic-architecture.md.',
+                   'programme is declared. See docs/sources/roman-compact-domestic-architecture_FR.md.',
  'temporal': {'eras': ['A'], 'tradition_long': False, 'late_only': False, 'from_year': None, 'to_year': None},
  'chronology_note': 'Imperial Roman multi-storey street dwellings are documented, including facade-lit and '
                     'court-lit examples; this generated block has no exact archaeological date or measured '
                     'dimensional range. Inspired interpretation only; see '
-                    'docs/sources/roman-compact-domestic-architecture.md',
+                    'docs/sources/roman-compact-domestic-architecture_FR.md',
  'chronology_confidence': 'broad_tradition',
  'roof_confidence': 'uncertain'}
 INSPIRED_ONLY_IDS = set(INSPIRED_ONLY_RECIPES)

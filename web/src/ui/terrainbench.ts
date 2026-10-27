@@ -9,6 +9,9 @@ import { DIAGNOSTICS, diagnosticAvailable, diagnosticDefinition } from '../rende
 import { DEFAULT_TERRAIN_LAYERS, DEFAULT_TERRAIN_LIGHTING, type TerrainLayers, type TerrainLighting } from '../render/terrainLighting';
 import { createTerrainSketchEditor } from './terrainSketchEditor';
 import { installTerrainHelp } from './terrainHelp';
+import { localizeCityInspector } from './cityInspectorLocale';
+import { urbanText } from './urbanPanelLocale';
+import { LOCALE_KEY } from './shellLocale';
 import { decodeSketch, encodeSketch, decodeZones, encodeZones, sketchQuery, placeSketchInFragment, INLINE_SKETCH_LIMIT, storeSketch, readStoredSketch } from './terrainSketchSharing';
 import type { TerrainZones } from '../../../rust/bridge/terrainZones';
 import type { TerrainSketch } from '../../../rust/bridge/terrainSketch';
@@ -507,7 +510,7 @@ function ensureRefinement(): Promise<TerrainRefinementSession> {
     refinementSession?.dispose(); refinementSession = undefined; refinementTerrain = terrain; refinementError = '';
     const epoch = ++refinementEpoch;
     const retained = terrain, field = retained.field;
-    refinementStatus('Neural Earth · préparation…');
+    refinementStatus(urbanText(['Neural Earth · préparation…','Neural Earth · preparing…','Neural Earth · 正在准备…','Neural Earth · preparando…','Neural Earth · preparando…']));
     const server = settings.source === 'neural-python' ? settings.neuralServer ?? DEFAULT_PYTHON_SERVER : DEFAULT_PYTHON_SERVER;
     refinementReady = TerrainRefinementSession.create(server, { x: 0, y: 0, width: retained.width, n: field?.n ?? retained.resolution, data: field?.data ?? retained.height }, {
       seed: retained.neural?.neuralSeed ?? String(seedHash(settings.seed) >>> 0), source: settings.source, neuralToken: retained.neural?.neuralToken,
@@ -515,7 +518,7 @@ function ensureRefinement(): Promise<TerrainRefinementSession> {
     }).then(session => {
       if (refinementTerrain !== retained || epoch !== refinementEpoch) { session.dispose(); throw new DOMException('Terrain remplacé', 'AbortError'); }
       refinementSession = session;
-      refinementStatus(`Neural Earth · ${session.registration.decoderUsed ? 'décodeur + noise' : 'noise sur relief retenu'} · jusqu’à ${session.registration.minMpp.toLocaleString('fr-FR', { maximumFractionDigits: 3 })} m`);
+      refinementStatus(`Neural Earth · ${session.registration.decoderUsed ? urbanText(['décodeur + noise','decoder + noise','解码器 + 噪声','decodificador + ruido','decodificador + ruído']) : urbanText(['noise sur relief retenu','noise on retained terrain','保留地形上的噪声','ruido sobre relieve conservado','ruído sobre relevo mantido'])} · ${urbanText(['jusqu’à','down to','最低','hasta','até'])} ${session.registration.minMpp.toLocaleString(undefined, { maximumFractionDigits: 3 })} m`);
       return session;
     }).catch(error => {
       if (refinementTerrain === retained && epoch === refinementEpoch) { refinementError = error instanceof Error ? error.message : String(error); refinementStatus(refinementError); }
@@ -684,7 +687,7 @@ function runForest(): void {
       controls.dataset.buildMs = ms.toFixed(1); controls.dataset.waitMs = (performance.now() - started).toFixed(1); controls.dataset.thread = thread;
       controls.title = `Champ forestier ${field.n}² · ${ms.toFixed(0)} ms${thread === 'main' ? ' (fil principal)' : ''}`;
       if (forestWanted === job.key && terrain === job.data && forestActive()) showForest(entry);
-    } else if (forestWanted === job.key) status(`Forêt : ${error}`, true);
+    } else if (forestWanted === job.key) status(`${urbanText(['Forêt','Forest','森林','Bosque','Floresta'])} : ${error}`, true);
     runForest();
   };
   const onMain = (): void => {
@@ -695,7 +698,7 @@ function runForest(): void {
   if (!forestWorker) { setTimeout(onMain); return; }
   forestReply = reply => {
     forestReply = undefined;
-    if (!reply) { status('Forêt : worker indisponible, calcul sur le fil principal.', true); onMain(); }
+    if (!reply) { status(urbanText(['Forêt : worker indisponible, calcul sur le fil principal.','Forest: worker unavailable; computing on the main thread.','森林：工作线程不可用，正在主线程计算。','Bosque: worker no disponible; cálculo en el hilo principal.','Floresta: worker indisponível; cálculo na thread principal.']), true); onMain(); }
     else if ('field' in reply) done(reply.field, reply.ms, 'worker');
     else done(undefined, 0, 'worker', reply.error);
   };
@@ -757,7 +760,7 @@ function setPerspective(active: boolean): void {
   viewport.classList.toggle('perspective', active);
   el('projection3d').setAttribute('aria-pressed', String(active));
   el('projection3d').textContent = active ? '2D' : '3D';
-  el('projection3d').title = active ? 'Revenir à la carte 2D' : 'Survoler le relief en 3D';
+  el('projection3d').title = active ? urbanText(['Revenir à la carte 2D','Return to 2D map','返回二维地图','Volver al mapa 2D','Voltar ao mapa 2D']) : urbanText(['Survoler le relief en 3D','Fly over terrain in 3D','三维俯瞰地形','Sobrevolar el relieve en 3D','Sobrevoar o relevo em 3D']);
   el('perspectiveControls').hidden = !active;
   el('refinement3dControl').hidden = !active && !isRender3dStyle(style);
   el('refinement3dStatus').hidden = refinement3d !== 'neural-earth' || (!active && !isRender3dStyle(style));
@@ -1516,11 +1519,21 @@ function requestDetail(): void {
   detailRequest = { id: ++requestId, generation, kind: 'detail', settings, region };
   dispatch(detailRequest);
 }
+function localizeTerrainProgress(progress: string): string {
+  if (progress === 'Neuronal Python · calcul PyTorch/CUDA') return urbanText(['Neuronal Python · calcul PyTorch/CUDA','Neural Python · PyTorch/CUDA computation','神经 Python · PyTorch/CUDA 计算','Python neuronal · cálculo PyTorch/CUDA','Python neural · cálculo PyTorch/CUDA']);
+  if (progress === 'Relief · Rust natif') return urbanText(['Relief · Rust natif','Terrain · native Rust','地形 · 原生 Rust','Relieve · Rust nativo','Relevo · Rust nativo']);
+  if (progress === 'Neuronal WASM · transfert des poids vers le GPU') return urbanText(['Neuronal WASM · transfert des poids vers le GPU','Neural WASM · transferring weights to GPU','神经 WASM · 正在向 GPU 传输权重','WASM neuronal · transfiriendo pesos a la GPU','WASM neural · transferindo pesos para a GPU']);
+  if (progress === 'Neuronal WASM · calcul coarse → base → decoder') return urbanText(['Neuronal WASM · calcul coarse → base → decoder','Neural WASM · computing coarse → base → decoder','神经 WASM · 正在计算 coarse → base → decoder','WASM neuronal · calculando coarse → base → decoder','WASM neural · calculando coarse → base → decoder']);
+  const model = progress.match(/^Neuronal WASM · (.+) · ([\d.]+) Mo$/);
+  if (model) return `${urbanText(['Neuronal WASM','Neural WASM','神经 WASM','WASM neuronal','WASM neural'])} · ${model[1]} · ${model[2]} MB`;
+  return progress;
+}
 function receive(response: TerrainResponse): void {
   if (response.generation !== generation) return;
   if ('progress' in response) {
-    el('neuralState').textContent = response.progress; status(response.progress);
-    if (response.kind === 'overview' && overviewPending) terrainLoading('generation', response.progress);
+    const progress = localizeTerrainProgress(response.progress);
+    el('neuralState').textContent = progress; status(progress);
+    if (response.kind === 'overview' && overviewPending) terrainLoading('generation', progress);
     return;
   }
   if (response.kind === 'detail') {
@@ -1581,7 +1594,7 @@ function receive(response: TerrainResponse): void {
   settlements.terrainReady();
   updateStageStates();
   const prepared = overviewRequest.scene?.style === style && overviewRequest.scene.waterStyle === baseStyle && overviewRequest.scene.showContours === input('showContours').checked && JSON.stringify(overviewRequest.scene.lighting) === JSON.stringify(lighting) && JSON.stringify(overviewRequest.scene.layers) === JSON.stringify(layers);
-  terrainLoading('rendering', 'Le terrain est calculé. Préparation de la carte et des couches…');
+  terrainLoading('rendering', urbanText(['Le terrain est calculé. Préparation de la carte et des couches…','Terrain computed. Preparing the map and layers…','地形已计算完成。正在准备地图和图层…','Terreno calculado. Preparando el mapa y las capas…','Terreno calculado. Preparando o mapa e as camadas…']));
   requestAnimationFrame(() => requestAnimationFrame(() => {
     if (response.generation !== generation) return;
     overviewPending = false;
@@ -1669,7 +1682,7 @@ function generate(stage: GenerationStage = 'all'): void {
   el('generate').setAttribute('aria-busy', 'true');
   const neural = !next.sketch?.processing && isNeuralSource(next.source) && stage !== 'hydrology';
   status(neural ? 'Neural generation (coarse → base → decoder), then water…' : stage === 'hydrology' ? 'Recalculating water… terrain and coasts preserved.' : stage === 'coasts' ? 'Recalculating coasts and water… terrain preserved.' : 'Generating terrain and the water network in Rust…');
-  terrainLoading('generation', neural ? 'Vérification des modèles, puis calcul neuronal et réseau d’eau…' : 'Calcul du relief et du réseau d’eau…');
+  terrainLoading('generation', neural ? urbanText(['Vérification des modèles, puis calcul neuronal et réseau d’eau…','Checking models, then computing neural terrain and water network…','正在检查模型，然后计算神经地形和水系…','Comprobando modelos y después calculando el relieve neuronal y la red de agua…','Verificando modelos e depois calculando o relevo neural e a rede de água…']) : urbanText(['Calcul du relief et du réseau d’eau…','Computing terrain and water network…','正在计算地形和水系…','Calculando el relieve y la red de agua…','Calculando o relevo e a rede de água…']));
   if (neural) void pollNeural();
   const request = overviewRequest;
   requestAnimationFrame(() => requestAnimationFrame(() => { if (request.generation === generation) dispatch(request); }));
@@ -1786,12 +1799,12 @@ el('fit').onclick = fit;
 el('terrain3dControls').hidden = legacyPipeline;
 el('refinement3dControl').hidden = !perspective && !isRender3dStyle(style);
 el<HTMLButtonElement>('projection3d').disabled = !gpu;
-if (!gpu) el('projection3d').title = 'La vue 3D nécessite le rendu WebGL2.';
+if (!gpu) el('projection3d').title = urbanText(['La vue 3D nécessite le rendu WebGL2.','3D view requires WebGL2 rendering.','三维视图需要 WebGL2 渲染。','La vista 3D requiere renderizado WebGL2.','A visão 3D requer renderização WebGL2.']);
 el('projection3d').onclick = () => setPerspective(!perspective);
 input('textured3d').onchange = () => settlements.urban.setTextured(input('textured3d').checked);
 const capture3d = document.createElement('button'); capture3d.id = 'capture3d'; capture3d.type = 'button'; capture3d.textContent = 'Capturer PNG';
 capture3d.style.width = 'auto'; capture3d.style.whiteSpace = 'nowrap';
-capture3d.title = 'Exporter la vue 3D affichée avec ses bâtiments';
+capture3d.title = urbanText(['Exporter la vue 3D affichée avec ses bâtiments','Export the displayed 3D view with buildings','导出显示的三维视图及其建筑','Exportar la vista 3D mostrada con sus edificios','Exportar a visão 3D exibida com seus edifícios']);
 capture3d.onclick = async () => {
   if (!terrain3d || !perspective || capture3d.disabled) return;
   capture3d.disabled = true;
@@ -1799,11 +1812,19 @@ capture3d.onclick = async () => {
     const image = await terrain3d.capture(), url = URL.createObjectURL(image);
     const link = document.createElement('a'); link.href = url; link.download = `magna-urbis-3d-${settings.seed.replace(/[^a-z0-9_-]/gi, '_')}.png`; link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    status('Capture 3D PNG exportée.');
+    status(urbanText(['Capture 3D PNG exportée.','3D PNG capture exported.','三维 PNG 截图已导出。','Captura 3D PNG exportada.','Captura 3D PNG exportada.']));
   } catch (error) { status(`Capture 3D : ${error instanceof Error ? error.message : error}`, true); }
   finally { capture3d.disabled = false; }
 };
 el('perspectiveControls').append(capture3d);
+const update3dLocale = (): void => {
+  el('projection3d').title = !gpu ? urbanText(['La vue 3D nécessite le rendu WebGL2.','3D view requires WebGL2 rendering.','三维视图需要 WebGL2 渲染。','La vista 3D requiere renderizado WebGL2.','A visão 3D requer renderização WebGL2.']) : perspective ? urbanText(['Revenir à la carte 2D','Return to 2D map','返回二维地图','Volver al mapa 2D','Voltar ao mapa 2D']) : urbanText(['Survoler le relief en 3D','Fly over terrain in 3D','三维俯瞰地形','Sobrevolar el relieve en 3D','Sobrevoar o relevo em 3D']);
+  capture3d.textContent = urbanText(['Capturer PNG','Capture PNG','截取 PNG','Capturar PNG','Capturar PNG']);
+  capture3d.title = urbanText(['Exporter la vue 3D affichée avec ses bâtiments','Export the displayed 3D view with buildings','导出显示的三维视图及其建筑','Exportar la vista 3D mostrada con sus edificios','Exportar a visão 3D exibida com seus edifícios']);
+};
+window.addEventListener('magna-locale-change', update3dLocale);
+window.addEventListener('storage', event => { if (event.key === LOCALE_KEY) update3dLocale(); });
+update3dLocale();
 let buildingPickStart: [number, number] | undefined;
 el<HTMLCanvasElement>('terrain3d').addEventListener('pointerdown', event => { buildingPickStart = [event.clientX, event.clientY]; });
 el<HTMLCanvasElement>('terrain3d').addEventListener('pointerup', event => {
@@ -1862,7 +1883,7 @@ input('showContours').onchange = () => {
 
 function link(): string { save(); const url = new URL(location.href); url.search = shareQuery(); url.hash = ''; return placeSketchInFragment(url).href; }
 async function copy(text: string): Promise<void> {
-  try { await navigator.clipboard.writeText(text); status(appliedSketchRef && appliedSketchRef.sketch === settings.sketch ? 'Lien copié · heightmap conservée dans ce navigateur. Pour une autre machine, partagez le JSON/PNG ou le fichier .decor.' : 'Copied: terrain, settings, pins and view.'); }
+  try { await navigator.clipboard.writeText(text); status(appliedSketchRef && appliedSketchRef.sketch === settings.sketch ? urbanText(['Lien copié · heightmap conservée dans ce navigateur. Pour une autre machine, partagez le JSON/PNG ou le fichier .decor.','Link copied · heightmap retained in this browser. For another machine, share the JSON/PNG or .decor file.','链接已复制 · 高程图保留在此浏览器中。如需在其他设备使用，请分享 JSON/PNG 或 .decor 文件。','Enlace copiado · mapa de altura conservado en este navegador. Para otro equipo, comparte el JSON/PNG o el archivo .decor.','Link copiado · mapa de altura mantido neste navegador. Para outra máquina, compartilhe o JSON/PNG ou o arquivo .decor.']) : urbanText(['Copié : terrain, réglages, repères et vue.','Copied: terrain, settings, pins and view.','已复制：地形、设置、标记和视图。','Copiado: terreno, ajustes, marcadores y vista.','Copiado: terreno, configurações, marcadores e visualização.'])); }
   catch { window.prompt('Copy', text); }
 }
 el('copy').onclick = () => { void retainAppliedSketch().then(() => copy(link())).catch(error => status(String(error), true)); };
@@ -1948,7 +1969,12 @@ editMapButton.onclick = () => {
 installTerrainHelp();
 updateErosionControl();
 // Successive benches exchange frozen, portable snapshots, never generation drafts.
-document.querySelector('.brand')!.textContent = pipelineStage === 'terrain' ? 'Terrain · étapes 1–3' : 'Settlements · routes et quartiers';
+const updatePipelineTitle = (): void => {
+  document.querySelector('.brand')!.textContent = pipelineStage === 'terrain' ? urbanText(['Terrain · étapes 1–3','Terrain · stages 1–3','地形 · 阶段 1–3','Terreno · etapas 1–3','Terreno · etapas 1–3']) : urbanText(['Implantations · routes et quartiers','Settlements · roads and districts','聚落 · 道路与街区','Asentamientos · carreteras y barrios','Assentamentos · estradas e bairros']);
+};
+window.addEventListener('magna-locale-change', updatePipelineTitle);
+window.addEventListener('storage', event => { if (event.key === LOCALE_KEY) updatePipelineTitle(); });
+updatePipelineTitle();
 const stagePanels = Array.from(document.querySelectorAll<HTMLElement>('.stages > .stage'));
 for (const panel of stagePanels) {
   const downstream = ['settlementStage', 'roadStage', 'urbanMainStage', 'urbanAdvancedFrame', 'urbanQuarterStage', 'urbanParcelStage', 'urbanProgrammeStage', 'urbanBuildingStage', 'landuseStage'].includes(panel.id);
@@ -1969,6 +1995,7 @@ const transfer = document.createElement('details'); transfer.className = 'stage'
 transfer.innerHTML = `<summary>${pipelineStage === 'terrain' ? 'Terrain → settlements' : 'Ville → atelier Ville'}</summary><div class="stage-controls">
   ${pipelineStage === 'terrain' ? '<label>Étendue<select id="transferExtent"><option value="all">Tout le terrain</option><option value="crop">Portion carrée</option></select></label><div id="transferCrop" hidden><label>X m<input id="transferX" type="number" min="0" value="0"></label><label>Y m<input id="transferY" type="number" min="0" value="0"></label><label>Côté m<input id="transferWidth" type="number" min="1" value="1200"></label><button id="transferPick">Placer la portion sur la carte</button><small>Découpe alignée sur les cellules, sans rééchantillonnage.</small></div>' : '<small>Choisissez la ville dans « Quartiers et îlots ». Le plan affiché est transmis avec ses rues et ses îlots.</small>'}
   <div class="settlement-actions"><button id="pipelineSave">Conserver cet export</button><button id="pipelineNext">${pipelineStage === 'terrain' ? 'Envoyer aux settlements' : 'Ouvrir la ville dans l’atelier'}</button><button id="pipelineDownload">Partager .decor</button><button id="pipelineSurface">Exporter la surface 3D</button></div><small id="pipelineStatus" role="status"></small></div>`;
+localizeCityInspector(transfer);
 document.querySelector('.stages')!.append(transfer);
 createTerrainDecorLibrary({ before: transfer, onOpen: d => { const params = new URLSearchParams(d.meta.query); params.set('artifact', d.meta.id); params.set('stage', 'settlements'); openBench('settlements', params); } });
 const historyPanel = createHistoryPanel({ before: transfer, current: () => lastExport ?? retainedDecor,
@@ -2003,9 +2030,9 @@ function capturePipelineState() {
   return { query: shareQuery(), workshop: JSON.stringify(settlements.urban.workshopSettings()), draft: JSON.stringify(settlements.urban.workshopDraft()), terrain, context: settlements.paintingContext, layouts: settlements.urban.layouts, scene: settlements.urban.buildingState.scene };
 }
 function pipelineCapture(): Decor {
-  if (!terrain || overviewPending || generationError || terrain.hydrologyError) throw new Error('Attendez la fin de la génération du terrain et de l’eau.');
+  if (!terrain || overviewPending || generationError || terrain.hydrologyError) throw new Error(urbanText(['Attendez la fin de la génération du terrain et de l’eau.','Wait for terrain and water generation to finish.','请等待地形和水系生成完成。','Espera a que termine la generación del terreno y del agua.','Aguarde a geração do terreno e da água terminar.']));
   if (pipelineStage === 'settlements') {
-    if (settlements.urban.layoutPending || settlements.urban.generationPending) throw new Error('Attendez le calcul des quartiers et des parcelles activées.');
+    if (settlements.urban.layoutPending || settlements.urban.generationPending) throw new Error(urbanText(['Attendez le calcul des quartiers et des parcelles activées.','Wait for districts and enabled parcels to finish computing.','请等待街区及已启用地块的计算完成。','Espera al cálculo de los barrios y las parcelas activadas.','Aguarde o cálculo dos bairros e lotes ativados.']));
     return settlements.captureData();
   }
   let d = retainedDecor ? withForestQuery(retainedDecor) : captureDecorData(terrain, settings, { settlements: [], warnings: [], requested: 0, usableKm2: 0, ms: 0 }, undefined, null, { query: shareQuery() });
@@ -2031,10 +2058,10 @@ async function exportPipeline(action: 'save' | 'next' | 'download'): Promise<voi
       await downloadHistory(lastExport.meta.id);
       return;
     }
-    el('pipelineStatus').textContent = 'Préparation de l’export…';
+    el('pipelineStatus').textContent = urbanText(['Préparation de l’export…','Preparing export…','正在准备导出…','Preparando la exportación…','Preparando a exportação…']);
     await new Promise<void>(resolve => setTimeout(resolve, 0));
     if (pipelineStage === 'settlements' && action === 'next') {
-      el('pipelineStatus').textContent = 'Préparation du plan de la ville…';
+      el('pipelineStatus').textContent = urbanText(['Préparation du plan de la ville…','Preparing city plan…','正在准备城市规划…','Preparando el plano de la ciudad…','Preparando o plano da cidade…']);
       const deadline = Date.now() + 60000;
       while ((settlements.urban.layoutPending || settlements.urban.generationPending) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100));
     }
@@ -2042,7 +2069,7 @@ async function exportPipeline(action: 'save' | 'next' | 'download'): Promise<voi
     let d = pipelineCapture();
     if (action === 'next' && pipelineStage === 'settlements') {
       const target = settlements.urban.target, plan = d.meta.pipeline?.urban;
-      if (target === 'all' || !plan?.layouts?.some(l => l.key === target)) throw new Error('Choisissez une ville et générez ses quartiers avant d’ouvrir l’atelier.');
+      if (target === 'all' || !plan?.layouts?.some(l => l.key === target)) throw new Error(urbanText(['Choisissez une ville et générez ses quartiers avant d’ouvrir l’atelier.','Choose a city and generate its districts before opening the workshop.','请先选择城市并生成街区，再打开工作坊。','Elige una ciudad y genera sus barrios antes de abrir el taller.','Escolha uma cidade e gere seus bairros antes de abrir a oficina.']));
       d = await saveHistory(d);
       d.meta.pipeline!.city = target;
       d.meta.pipeline!.urban = { ...plan, layouts: plan.layouts.filter(l => l.key === target), partitions: plan.partitions?.filter(p => p.key === target) };
@@ -2050,7 +2077,7 @@ async function exportPipeline(action: 'save' | 'next' | 'download'): Promise<voi
       d.meta.pipeline!.syncSource = retainedDecor?.meta.pipeline?.syncSource ?? retainedDecor?.meta.id;
     }
     d = await saveHistory(d); lastExport = d; lastExportState = action === 'next' ? undefined : capturedState; await historyPanel.refresh(d.meta.id);
-    el('pipelineStatus').textContent = `Export conservé · ${d.raster.n}² · ${(d.raster.width / d.raster.n).toFixed(2)} m/cellule.`;
+    el('pipelineStatus').textContent = `${urbanText(['Export conservé','Export saved','导出已保存','Exportación guardada','Exportação salva'])} · ${d.raster.n}² · ${(d.raster.width / d.raster.n).toFixed(2)} ${urbanText(['m/cellule','m/cell','米/网格','m/celda','m/célula'])}.`;
     if (action === 'download') await downloadHistory(d.meta.id);
     if (action === 'next') {
       const params = new URLSearchParams(d.meta.query); params.delete('view'); params.set('artifact', d.meta.id);
@@ -2068,21 +2095,21 @@ let surfaceExportAbort: AbortController | undefined;
 window.addEventListener('pagehide', () => surfaceExportAbort?.abort(), { once: true });
 el('pipelineSurface').onclick = async () => {
   if (surfaceExportAbort) { surfaceExportAbort.abort(); return; }
-  const button = el<HTMLButtonElement>('pipelineSurface'), label = button.textContent;
-  const controller = new AbortController(); surfaceExportAbort = controller; button.textContent = 'Annuler l’export surface';
+  const button = el<HTMLButtonElement>('pipelineSurface');
+  const controller = new AbortController(); surfaceExportAbort = controller; button.textContent = urbanText(['Annuler l’export surface','Cancel surface export','取消地表导出','Cancelar exportación de superficie','Cancelar exportação de superfície']);
   try {
     const { exportSurfaceInWorker } = await import('./surfaceExport');
     const retained = pipelineCapture(), scene = pipelineStage === 'settlements' ? settlements.urban.buildingState.scene : undefined;
-    el('pipelineStatus').textContent = 'Compilation des surfaces et conservation des bâtiments…';
+    el('pipelineStatus').textContent = urbanText(['Compilation des surfaces et conservation des bâtiments…','Compiling surfaces and preserving buildings…','正在编译地表并保留建筑…','Compilando superficies y conservando edificios…','Compilando superfícies e preservando edifícios…']);
     await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
     const bytes = await exportSurfaceInWorker(retained, scene, controller.signal);
     const blob = new Blob([bytes], { type: 'application/octet-stream' });
     const url = URL.createObjectURL(blob), link = document.createElement('a');
     link.href = url; link.download = `${retained.meta.id}.surfacebin`; link.click();
     setTimeout(() => URL.revokeObjectURL(url), 10000);
-    el('pipelineStatus').textContent = 'Surface exportée pour le visualiseur local ; données de ville conservées.';
-  } catch (error) { el('pipelineStatus').textContent = error instanceof Error && error.name === 'AbortError' ? 'Export surface annulé.' : error instanceof Error ? error.message : String(error); }
-  finally { if (surfaceExportAbort === controller) surfaceExportAbort = undefined; button.textContent = label; button.disabled = false; }
+    el('pipelineStatus').textContent = urbanText(['Surface exportée pour le visualiseur local ; données de ville conservées.','Surface exported for the local viewer; city data preserved.','地表已导出供本地查看器使用；城市数据已保留。','Superficie exportada para el visor local; datos de ciudad conservados.','Superfície exportada para o visualizador local; dados da cidade preservados.']);
+  } catch (error) { el('pipelineStatus').textContent = error instanceof Error && error.name === 'AbortError' ? urbanText(['Export surface annulé.','Surface export cancelled.','地表导出已取消。','Exportación de superficie cancelada.','Exportação de superfície cancelada.']) : error instanceof Error ? error.message : String(error); }
+  finally { if (surfaceExportAbort === controller) surfaceExportAbort = undefined; button.textContent = urbanText(['Exporter la surface 3D','Export 3D surface','导出三维地表','Exportar superficie 3D','Exportar superfície 3D']); button.disabled = false; }
 };
 
 if (import.meta.env.DEV) {
@@ -2092,8 +2119,8 @@ if (import.meta.env.DEV) {
   let appliedLiveRevision: ReturnType<typeof liveRevision> | undefined;
   let liveHandler: Promise<ReturnType<typeof import('./surfaceLiveSession').createSurfaceLiveBinarySession>> | undefined;
   const disconnect = installSurfaceLive(async (region, signal) => {
-    if (!terrain || overviewPending || generationError) throw new Error('Attendez un terrain conservé avant la connexion du visualiseur.');
-    if (el<HTMLSelectElement>('transferExtent').value === 'crop') throw new Error('Le mode live demande le monde source complet. La portion sélectionnée reste disponible pour un export surface hors ligne.');
+    if (!terrain || overviewPending || generationError) throw new Error(urbanText(['Attendez un terrain conservé avant la connexion du visualiseur.','Wait for retained terrain before connecting the viewer.','请等待地形保存完成后再连接查看器。','Espera a tener un terreno conservado antes de conectar el visor.','Aguarde um terreno mantido antes de conectar o visualizador.']));
+    if (el<HTMLSelectElement>('transferExtent').value === 'crop') throw new Error(urbanText(['Le mode live demande le monde source complet. La portion sélectionnée reste disponible pour un export surface hors ligne.','Live mode requires the complete source world. The selected portion remains available for offline surface export.','实时模式需要完整源世界。所选区域仍可用于离线地表导出。','El modo en vivo requiere el mundo fuente completo. La porción seleccionada sigue disponible para exportar la superficie sin conexión.','O modo ao vivo requer o mundo de origem completo. A porção selecionada continua disponível para exportação de superfície offline.']));
     const scene = pipelineStage === 'settlements' ? settlements.urban.buildingState.scene : undefined;
     const revision = liveRevision();
     if (!liveHandler || appliedLiveRevision?.sourceEpoch !== revision.sourceEpoch || appliedLiveRevision?.sceneEpoch !== revision.sceneEpoch) {
@@ -2105,8 +2132,8 @@ if (import.meta.env.DEV) {
         : retainedDecor ? withForestQuery(retainedDecor)
         : captureDecorData(retained, applied, { settlements: [], warnings: [], requested: 0, usableKm2: 0, ms: 0 }, undefined, null, { query: shareQuery() });
       assertSurfaceLiveFrame(decor);
-      if (decor.raster.width !== retained.width) throw new Error('Le contexte conservé ne correspond pas à la largeur du fournisseur de relief.');
-      if (pipelineStage === 'settlements' && decor.meta.pipeline?.urban?.buildingState?.cold && !scene) throw new Error('Chargez les bâtiments conservés avant leur rendu local.');
+      if (decor.raster.width !== retained.width) throw new Error(urbanText(['Le contexte conservé ne correspond pas à la largeur du fournisseur de relief.','The retained context does not match the terrain provider width.','保留的上下文与地形提供者的宽度不匹配。','El contexto conservado no coincide con el ancho del proveedor de relieve.','O contexto mantido não corresponde à largura do provedor de relevo.']));
+      if (pipelineStage === 'settlements' && decor.meta.pipeline?.urban?.buildingState?.cold && !scene) throw new Error(urbanText(['Chargez les bâtiments conservés avant leur rendu local.','Load the retained buildings before rendering them locally.','请先加载保留的建筑，再进行本地渲染。','Carga los edificios conservados antes de renderizarlos localmente.','Carregue os edifícios mantidos antes de renderizá-los localmente.']));
       appliedLiveRevision = revision;
       liveHandler = (async () => {
         const [{ createInfiniteRefinementProvider }, { createSurfaceLiveBinarySession }, { magnaSurfacePresentation }] = await Promise.all([
@@ -2174,11 +2201,11 @@ window.magnaBenchContext = {
 installRecipeSharing({
   host: el('copy').parentElement!, embedded: window.parent !== window,
   terrain: async () => {
-    if (!terrain || overviewPending || generationError || terrain.hydrologyError) throw new Error('Attendez la fin de la génération du terrain.');
+    if (!terrain || overviewPending || generationError || terrain.hydrologyError) throw new Error(urbanText(['Attendez la fin de la génération du terrain.','Wait for terrain generation to finish.','请等待地形生成完成。','Espera a que termine la generación del terreno.','Aguarde a geração do terreno terminar.']));
     return retainedDecor ? withForestQuery(retainedDecor) : captureDecorData(terrain, settings, { settlements: [], warnings: [], requested: 0, usableKm2: 0, ms: 0 }, undefined, null, { query: shareQuery() });
   },
   capture: async () => {
-    if (!terrain || overviewPending || generationError || terrain.hydrologyError || (pipelineStage === 'settlements' && !settlements.contextReady())) throw new Error('Attendez la fin de la génération avant d’exporter.');
+    if (!terrain || overviewPending || generationError || terrain.hydrologyError || (pipelineStage === 'settlements' && !settlements.contextReady())) throw new Error(urbanText(['Attendez la fin de la génération avant d’exporter.','Wait for generation to finish before exporting.','请等待生成完成后再导出。','Espera a que termine la generación antes de exportar.','Aguarde a geração terminar antes de exportar.']));
     const applied = pipelineStage === 'settlements' && settlements.urban.layouts?.length
       ? settlements.captureData() : retainedDecor;
     return portableRecipe(pipelineStage, shareQuery(), applied);
@@ -2186,7 +2213,7 @@ installRecipeSharing({
 });
 
 mountIllustration({ host: document.querySelector('header')!, capture: async () => {
-  if (!terrain || overviewPending || generationError || terrain.hydrologyError || (pipelineStage === 'settlements' && !settlements.contextReady())) throw new Error('Attendez la fin de la génération avant de capturer la vue.');
+  if (!terrain || overviewPending || generationError || terrain.hydrologyError || (pipelineStage === 'settlements' && !settlements.contextReady())) throw new Error(urbanText(['Attendez la fin de la génération avant de capturer la vue.','Wait for generation to finish before capturing the view.','请等待生成完成后再截取视图。','Espera a que termine la generación antes de capturar la vista.','Aguarde a geração terminar antes de capturar a visualização.']));
   const captured = perspective && terrain3d ? await terrain3d.captureIllustration() : undefined;
   const context = illustrationContext({ sourceStyle: el<HTMLSelectElement>('style').value, seed: settings.seed, camera: captured?.camera,
     view: { ...view }, width: viewport.clientWidth, height: viewport.clientHeight,

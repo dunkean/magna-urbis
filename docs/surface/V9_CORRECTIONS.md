@@ -1,151 +1,47 @@
-# Corrections du mapper de V9 à V12
+# Mapper corrections from V9 to V12
 
-24 octobre 2026. La [revue Opus V8](reviews/phase06-followup-v8.md) qualifie le
-prototype technique et refuse l'acceptation artistique. Ce document décrit la
-correction suivante et sa qualification technique V12. Les preuves isolées
-restent distinctes de la [campagne fraîche complète V12](evidence/NATIVE_V12.md) ;
-son succès technique n'annule pas le refus artistique ni les échecs antérieurs.
+October 24, 2026. The [Opus V8 review](reviews/phase06-followup-v8.md) qualifies the technical prototype and declines artistic acceptance. This document describes the subsequent corrections and their V12 technical qualification. Isolated evidence remains distinct from the [complete fresh V12 campaign](evidence/NATIVE_V12.md); its technical success does not reverse the artistic refusal or earlier failures.
 
-## Forêt : une page de données ne délimite plus une forêt visible
+## Forest: a data page no longer bounds the visible forest
 
-Les producteurs live et offline partagent maintenant des pages par famille :
-inventaire d'arbres complet jusqu'à 4 km, autres objets dans une petite fenêtre.
-Le rayon est réduit si nécessaire pour respecter le budget de 100 000 candidats,
-sans annoncer une sélection tronquée comme complète. Les arbres hors du petit
-heightfield fin utilisent le véritable parent ; les champs, seeds, IDs, rangs et
-acceptations restent canoniques. Voir [le contrat](CANDIDATE_PAGES.md).
+Live and offline producers now share pages by family: a complete tree inventory up to 4 km, and other objects in a small window. The radius is reduced when necessary to respect the 100,000-candidate budget, without describing a truncated selection as complete. Trees outside the small fine heightfield use the true parent; fields, seeds, IDs, ranks and acceptances remain canonical. See the [contract](CANDIDATE_PAGES.md).
 
-Le renderer exige que la page, l'atlas et les hauteurs résidentes couvrent les
-rayons de toute la vue et une enveloppe des hauteurs chargées. Sinon il utilise
-la représentation mésoscopique sur toute l'image. Deux phases globales séparent
-la transition optique de l'apparition des maillages : la géométrie n'apparaît
-qu'après la transition vers l'optique exacte. Les anciennes géométries sont
-immédiatement retirées si la lignée source/scène change.
+The renderer requires the page, atlas and resident heights to cover the rays of the entire view and an envelope of loaded heights. Otherwise it uses the mesoscopic representation across the entire image. Two global phases separate the optical transition from mesh appearance: geometry appears only after the transition to exact optics. Old geometry is immediately removed if source or scene lineage changes.
 
-L'atlas est aligné sur le monde et ses mipmaps ont une grille dyadique. Les
-transmittances et la couverture partagent le même noyau de filtrage. Le contrôle
-spatial mesure les pans, pas seulement une moyenne sur une toile. Les
-[preuves retenues](evidence/canopy-v9/README.md) comprennent 9 175 040 échantillons
-sans violation ponctuelle V>C et une reprojection dont l'écart maximal est de
-deux niveaux sur 255. En oblique, la garde peut conserver la méso sur toute la
-vue ; elle ne prétend pas disposer de géométrie exacte là où le support résident
-ne couvre pas le frustum.
+The atlas is world-aligned and its mipmaps use a dyadic grid. Transmittance and coverage share the same filtering kernel. Spatial verification measures pans, not just an average over a canvas. The [retained evidence](evidence/canopy-v9/README.md) includes 9,175,040 samples with no pointwise V>C violation and a reprojection with a maximum deviation of two levels out of 255. In oblique views, the guard may retain meso across the entire view; it does not claim exact geometry where resident support does not cover the frustum.
 
-## Eau : une symbologie explicite avant la rasterisation
+## Water: explicit symbology before rasterization
 
-La carte fixe reprend toujours les contours et niveaux de Magna Urbis. Le profil
-mapper source-map emploie désormais un contour de 1,25 pixel écran, déclaré comme
-symbole cartographique. `--water-symbol-width-px 0` conserve le mode sans contour
-élargi. Le mode physique source-levels n'emploie aucun symbole.
+The fixed map still uses Magna Urbis contours and levels. The source-map mapper profile now uses a 1.25 screen-pixel outline declared as a cartographic symbol. `--water-symbol-width-px 0` retains the mode without a widened outline. The physical source-levels mode uses no symbol.
 
-Les anneaux source clippés sont conservés en Float64 et tracés avant le raster.
-Le contour s'applique aux rives des polygones, sans inventer de centreline ; la
-mer reste l'union des cellules d'origine si aucune rive vectorielle n'existe.
-Les surfaces géométriques source et celles des symboles restent distinctes dans
-les diagnostics. La projection ne peint que le terrain, jamais les toits.
+Clipped source rings are retained in Float64 and drawn before the raster. The outline applies to polygon shores without inventing a centerline; the sea remains the union of original cells where no vector shoreline exists. Source geometry and symbol areas remain separate in diagnostics. Projection paints only the terrain, never roofs.
 
-Le [contrôle GPU à 40 km](evidence/water-vector-symbols-v9-gpu.json) retrouve les
-863 échantillons de rive que la dilatation du premier raster manquait : les
-182 735 échantillons vérifiés sont visibles et les nouveaux pixels restent dans
-la bande de rendu des véritables segments. Aucun triangle, niveau ou champ
-hydrologique n'est modifié. Ce contrôle sur récepteur plat ne constitue pas une
-preuve de débit, de topologie géographique ni une nouvelle génération neurale.
-Voir [les paramètres et budgets](WATER_SYMBOLS.md).
+The [40 km GPU check](evidence/water-vector-symbols-v9-gpu.json) recovers the 863 shore samples missed by dilation of the first raster: all 182,735 checked samples are visible, and new pixels remain within the rendering band of the actual segments. No triangle, level or hydrological field is changed. This flat-receiver check does not prove flow, geographic topology or a new neural generation. See [parameters and budgets](WATER_SYMBOLS.md).
 
-## Ville : le support naturel persiste sous les occupations grossières
+## City: natural ground persists under coarse occupations
 
-Le compilateur 1.5.3 retire l'assimilation automatique des cellules Road, Yard et
-Built à une matière de revêtement. Le sol local reste sous les constructions ;
-les routes et bâtiments gardent leurs propres matériaux et emprises vectorielles.
-Cultures explicites, occupations et exclusions de végétation restent conservées.
-La version de l'analyse physique reste 1.5.2 ; la dérivation des matières et ses
-identités changent explicitement.
+Compiler 1.5.3 removes automatic treatment of Road, Yard and Built cells as paving material. Local ground remains under buildings; roads and buildings retain their own materials and vector footprints. Explicit crops, occupations and vegetation exclusions are preserved. The physical analysis version remains 1.5.2; material derivation and its identities change explicitly.
 
-La [migration contrôlée des 419 extérieurs](evidence/urban-ground-v9-migration.json)
-ne change que les quatre tableaux de support sur 4 712 cellules d'infrastructure.
-Toutes les cellules naturelles, les champs physiques, les cinq tableaux de
-couvert bas, le legacy, les candidats, reliefs, plans, matériaux architecturaux et
-archives source sont identiques. Le nouvel inventaire de pages est ensuite une
-[requête retenue explicite](evidence/native419-pages-v9.json), sans altérer le
-monde ni inventer de hauteurs. Les anciens paquets et leurs preuves restent intacts.
+The [controlled migration of the 419 exteriors](evidence/urban-ground-v9-migration.json) changes only four support arrays on 4,712 infrastructure cells. All natural cells, physical fields, five low-cover arrays, legacy data, candidates, terrain, plans, architectural materials and source archives remain identical. The new page inventory is then an [explicit retained query](evidence/native419-pages-v9.json), without altering the world or inventing heights. Old packages and their evidence remain intact.
 
-## Qualification intégrée : échec V9 conservé
+## Integrated qualification: V9 failure retained
 
-Les tests du contrat, les contrôles CPU et les probes GPU isolés passent.
-Les [trois vues urbaines V9](evidence/native-current-419-v9-render.json) sont
-capturées sur le snapshot propre `ab3c499`, sans erreur ni omission d'eau,
-avec canopée convergée et les 419 vrais extérieurs natifs dans la vue d'ensemble.
+Contract tests, CPU checks and isolated GPU probes pass. The [three V9 urban views](evidence/native-current-419-v9-render.json) were captured on clean snapshot `ab3c499`, without errors or missing water, with converged canopy and all 419 real native exteriors in the overview.
 
-La [campagne fraîche V9](evidence/native-e2e-v9-negative.json) échoue : aucune
-nouvelle source n'est réellement affichée pendant les 20,004 secondes de mouvement.
-La preview est acceptée à la fin du mouvement, puis affichée après celui-ci.
-Les observations du driver mesurent 13,928 s entre retour neural et réponse
-compilée, puis 0,618 s jusqu'à l'ACK d'upload de 9,35 Mo ; elles ne constituent
-pas des mesures isolées de CPU Worker ou de réseau. La préparation native
-suivante prend encore 3,7 s.
-La tournée et les probes ne sont pas exécutées. Les 560 fichiers runtime et le
-HEAD restent identiques avant/après ; aucun critère n'est assoupli.
+The [fresh V9 campaign](evidence/native-e2e-v9-negative.json) fails: no new source is actually displayed during the 20.004 seconds of motion. The preview is accepted at the end of motion and displayed afterward. Driver observations measure 13.928 s between neural return and compiled response, then 0.618 s until upload ACK for 9.35 MB; these are not isolated CPU Worker or network measurements. Subsequent native preparation takes another 3.7 s. The tour and probes are not run. The 560 runtime files and HEAD remain identical before and after; no criterion is relaxed.
 
-La [campagne suivante V10](evidence/native-e2e-v10-negative.json), sur `f4d25e1`,
-reste échouée. La correction bit-exact de population réduit l'intervalle observé
-retour neural→réponse compilée de 13,928 s à 1,223 s. Le gain CPU est prouvé
-séparément par le Worker Chromium direct, pas par cet intervalle de callbacks. La
-[vérification indépendante](evidence/population-optimization-independent-v10.json)
-conserve les sorties sur 480 requêtes et le corpus historique. Mais des délais
-de callback/ACK et un gel natif de 10,55 s empêchent encore l'affichage live
-pendant le mouvement. Le dépassement réel à 27,015 s, puis le drain final,
-ne qualifient pas le critère de 20 s nominales. L'origine du blocage suivant
-reste à mesurer avec les horloges et sous-phases séparées ; les délais d'ACK
-observés ne sont pas présentés comme un coût réseau causal prouvé.
+The [next V10 campaign](evidence/native-e2e-v10-negative.json), on `f4d25e1`, also fails. The bit-exact population correction reduces the observed neural-return-to-compiled-response interval from 13.928 s to 1.223 s. The CPU gain is demonstrated separately by the direct Chromium Worker, not by this callback interval. [Independent verification](evidence/population-optimization-independent-v10.json) preserves outputs over 480 requests and the historical corpus. However, callback/ACK delays and a 10.55 s native freeze still prevent live display during motion. The actual overrun to 27.015 s, followed by final drain, does not satisfy the nominal 20 s criterion. The next blockage must be measured with separate clocks and subphases; observed ACK delays are not presented as a proven causal network cost.
 
-La [campagne V11](evidence/native-e2e-v11-negative.json) échoue également :
-une preview arrive trop tard pour être affichée pendant les 20 secondes
-nominales. Les horloges PAGE/Worker et les traces ultérieures distinguent le
-calcul, l'attente et la livraison ; un span Worker ne devient pas une mesure de
-CPU. Les pauses hors CPU observées dans le diagnostic scheduler restent une
-limite sans cause déclarée résolue. Aucun gate historique n'est modifié.
+The [V11 campaign](evidence/native-e2e-v11-negative.json) also fails: a preview arrives too late to display during the nominal 20 seconds. PAGE/Worker clocks and later traces distinguish computation, waiting and delivery; a Worker span does not become a CPU measurement. The off-CPU pauses observed in the scheduler diagnosis remain a limitation with no declared resolved cause. No historical gate is changed.
 
-## Qualification intégrée V12 : critères techniques complets
+## V12 integrated qualification: complete technical criteria
 
-La [preuve lisible](evidence/NATIVE_V12.md) et le
-[rapport structuré V12](evidence/native-e2e-v12.json) enregistrent une campagne
-complète sur le runtime propre figé `bc6579f208ce1e4f05b471a1699de2ba05fae6b8` :
-source Infinite Generation fraîche, navigation nominale stricte de 20 secondes,
-sept captures de zoom et deux probes de cinq images à 10 km et à 160 m. Les
-584 hashes runtime et le manifeste d'assets sont identiques avant/après ; driver
-et superviseur sortent à zéro. L'option de rétention des visuels après échec de
-navigation est déclarée mais **n'a pas servi**. Les contrôles avant gel passent :
-**224 tests Surface / 42 fichiers**, typecheck complet et build de 445 modules.
+The [readable evidence](evidence/NATIVE_V12.md) and [structured V12 report](evidence/native-e2e-v12.json) record a complete campaign on frozen clean runtime `bc6579f208ce1e4f05b471a1699de2ba05fae6b8`: fresh Infinite Generation source, strict nominal 20-second navigation, seven zoom captures and two five-frame probes at 10 km and 160 m. All 584 runtime hashes and the asset manifest are identical before and after; driver and supervisor exit zero. The option to retain visuals after a navigation failure is declared but **was not used**. Pre-freeze checks pass: **224 Surface tests / 42 files**, full typecheck and build of 445 modules.
 
-La navigation applique deux fois **une seule preview distincte** nouvelle,
-livrée en 128² après une demande 128. Son espacement natif est de 30 m,
-LOD 0, `decoderUsed=false` ; la première application survient à 17,018 s.
-Ce progrès de streaming ne prouve pas une nouvelle finesse neurale apprise
-pendant le mouvement. Le support final livré en 133², à 0,468353 m par sample
-et **0,46875 m natif / `decoderUsed=true`**, apparaît seulement dans le drain.
-La durée réelle du mouvement est de 20,118 s, son écart d'entrée maximal de
-1,498 s et le drain de 17,207 s : le succès du gate n'est pas une promesse de
-faible latence. Le contexte environnemental reste à **78,125 m** ; 4,88 mm par
-pixel écran dans la vue de 10 m ne signifie pas 4,88 mm de données source.
+Navigation applies **one distinct** new preview twice, delivered at 128² after a 128 request. Its native spacing is 30 m, LOD 0, `decoderUsed=false`; the first application occurs at 17.018 s. This streaming progress does not demonstrate newly learned neural detail during motion. The final support delivered at 133², at 0.468353 m per sample and **0.46875 m native / `decoderUsed=true`**, appears only during drain. Actual motion takes 20.118 s, its maximum input gap is 1.498 s and drain takes 17.207 s: passing the gate is not a low-latency promise. Environmental context remains at **78.125 m**; 4.88 mm per screen pixel in the 10 m view does not mean 4.88 mm source data.
 
-À 160 m, les instances alpha-positives dans le frustum CPU sont arbres 64,
-troncs 64, herbes 288, arbustes 17, débris 61 et rochers 31. Les deux premiers
-comptes passent à zéro sans arbres ; herbes/arbustes/débris passent à zéro sans
-couvert bas, tandis que les 31 rochers persistent. Les allocations soumises,
-champs et empreintes restent identiques entre toggles d'une même vue. Ce ne sont
-pas des comptages de visibilité GPU après occlusion.
+At 160 m, alpha-positive instances in the CPU frustum are 64 trees, 64 trunks, 288 grasses, 17 shrubs, 61 debris and 31 rocks. The first two counts become zero without trees; grasses, shrubs and debris become zero without low cover, while all 31 rocks persist. Submitted allocations, fields and footprints remain identical between toggles of the same view. These are not GPU visibility counts after occlusion.
 
-L'eau conserve contours/niveaux source et symbole de rive explicite à 1,25 pixel,
-projeté sur le terrain seulement. Les contrôles de couverture et de budgets
-passent ; les conflits de niveau avec le terrain restent des diagnostics. Les
-archives source fraîche/live passent aussi leur restauration stricte complète.
-Les [trois vues retenues des 419](evidence/native-city419-v12.json) sont séparées :
-parent 15,625 m / LOD inconnu, source inchangée, réalisations natives existantes,
-aucune nouvelle génération neurale de ville. Elles sont byte-identiques à V11/V9.
+Water retains source contours and levels and an explicit 1.25-pixel shoreline symbol projected onto terrain only. Coverage and budget checks pass; conflicts between water levels and terrain remain diagnostics. Fresh/live source archives also pass full strict restoration. The [three retained views of the 419](evidence/native-city419-v12.json) are separate: 15.625 m parent / unknown LOD, unchanged source, existing native realizations, and no new neural city generation. They are byte-identical to V11/V9.
 
-Couronnes et petits objets restent des représentations stylisées : la vue de
-10 m montre encore une surface de couronne proxy uniforme et de petites
-végétations en blocs. Les ombres forestières sont optiques ; les couleurs de sol
-restent contraintes par la grille canonique de 78,125 m. La parité artistique de
-tous les styles, 60 FPS et l'adoption définitive de Godot ne sont pas acquises.
-La revue Opus reste indépendante ; V12 ne réécrit aucun verdict V9–V11.
+Crowns and small objects remain stylized representations: the 10 m view still shows a uniform proxy crown surface and blocky small vegetation. Forest shadows are optical; ground colors remain constrained by the canonical 78.125 m grid. Artistic parity across all styles, 60 FPS and final adoption of Godot are not established. The Opus review remains independent; V12 rewrites no V9–V11 verdict.

@@ -88,20 +88,10 @@ This is a bounded display control, not a survey/topology or production-style
 claim. Exact digests and scope are in
 [the vector evidence](evidence/water-vector-symbols-v9-gpu.json).
 
-## Teinte des polygones non typés : option de comparaison
+## Tint of untyped polygons: comparison option
 
-`--water-vector-tint source-classes` reste le défaut. Il conserve la couleur de
-la grille de classes source et le fallback déclaré. Le mode explicite
-`--water-mode source-map --water-vector-tint uniform` applique ce même fallback
-aux remplissages des polygones retenus non typés et à leurs symboles de rive.
-Il ne leur invente aucune classe rivière/lac. L'union de cellules de mer conserve
-sa teinte de mer. Le harnais expose `--viewer-water-vector-tint uniform`.
+`--water-vector-tint source-classes` remains the default. It retains the source-class grid colour and declared fallback. Explicit `--water-mode source-map --water-vector-tint uniform` applies that same fallback to retained untyped polygon fills and their bank symbols. It does not invent a river/lake class for them. The sea-cell union retains its sea tint. The harness exposes `--viewer-water-vector-tint uniform`.
 
-Le DTO distingue un préfixe de vertices vectoriels et un suffixe de mer,
-avec comptes explicites, bornés et divisibles par trois. L'option refuse une
-partition absente, partielle, incohérente ou un fallback générique ; elle est
-interdite en mode physique `source-levels`. Les cache keys et diagnostics
-`sourceVectorTintVersion:source-vector-tint-1` distinguent les deux politiques.
-Contours, niveaux, classes archivées, aire et support alluvial restent inchangés.
-Ce choix harmonise une représentation ; il n'est ni une correction hydrologique
-ni une preuve de débit. Sa comparaison GPU reste une preuve distincte.
+The DTO distinguishes a vector-vertex prefix and sea suffix, with explicit bounded counts divisible by three. The option rejects a missing, partial or inconsistent partition or generic fallback; it is forbidden in physical `source-levels` mode. Cache keys and `sourceVectorTintVersion:source-vector-tint-1` diagnostics distinguish the policies. Contours, levels, archived classes, area and alluvial support remain unchanged. This choice harmonises a representation; it is neither a hydrological correction nor proof of flow. Its GPU comparison remains separate evidence.
+
+[Original version, including the French comparison section](WATER_SYMBOLS_FR.md).

@@ -8,6 +8,8 @@ import programmeNote from '../../../docs/methods/urban-programme-allocation.md?r
 import architectureNote from '../../../docs/methods/urban-architecture-placement.md?raw';
 import urbanRenderingNote from '../../../docs/methods/urban-buildings-rendering.md?raw';
 import settlementStylesNote from '../../../docs/methods/urban-settlement-styles.md?raw';
+import { urbanText } from './urbanPanelLocale';
+import { LOCALE_KEY } from './shellLocale';
 
 const bundledFigures = import.meta.glob<string>('../../../docs/methods/images/*.webp', {
   eager: true, query: '?inline', import: 'default',
@@ -77,16 +79,38 @@ function renderMarkdown(markdown: string, images: Record<string, string>): strin
 }
 
 let dialog: HTMLDialogElement | undefined;
+let currentNote: MethodNoteId | undefined;
+const noteTitles: Record<MethodNoteId, readonly [string,string,string,string,string]> = {
+  'render-v2':['Render v2 : paysage satellite procédural','Render v2: procedural satellite environment','Render v2：程序化卫星景观','Render v2: paisaje satelital procedural','Render v2: paisagem de satélite procedural'],
+  'urban-settlement-styles':['Styles d’implantation et étapes indépendantes','Settlement styles and independent stages','聚落风格与独立阶段','Estilos de asentamiento y etapas independientes','Estilos de assentamento e etapas independentes'],
+  'urban-buildings-rendering':['Bâtiments urbains appliqués en 2D et perspective','Applied urban buildings in 2D and perspective','二维及透视视图中的已应用城市建筑','Edificios urbanos aplicados en 2D y perspectiva','Edifícios urbanos aplicados em 2D e perspectiva'],
+  'urban-parcels':['Façades continues et parcelles culturelles','Continuous frontage and cultural parcels','连续临街面与文化地块','Fachadas continuas y parcelas culturales','Testadas contínuas e lotes culturais'],
+  'urban-programme-allocation':['Programme urbain et allocation bornée','Urban programme and bounded allocation','城市规划方案与有界分配','Programa urbano y asignación acotada','Programa urbano e alocação limitada'],
+  'urban-architecture-placement':['Implantation architecturale extérieure','External architectural placement','建筑外部布置','Implantación arquitectónica exterior','Implantação arquitetônica externa'],
+  'render3d-brush':['Render3DBrush : motifs de biome dans la matière forestière','Render3DBrush: biome brushes in the forest material','Render3DBrush：森林材质中的生物群落画笔','Render3DBrush: pinceles de bioma en el material forestal','Render3DBrush: pincéis de bioma no material florestal'],
+  'fantasy-landuse':['Motifs Fantasy et occupation du territoire','Fantasy brushes and territory occupation','幻想画笔与土地利用','Pinceles Fantasy y ocupación del territorio','Pincéis Fantasy e ocupação do território'],
+  'render3d-vegetation':['Render3D : forêt, couronnes et occupation','Render3D forest field, crowns and occupation','Render3D 森林场、树冠与土地利用','Render3D: bosque, copas y ocupación','Render3D: floresta, copas e ocupação'],
+  'render3d-ground':['Terrain multiscalaire et matière de sol','Multiscale terrain and ground material','多尺度地形与地面材质','Terreno multiescala y material de suelo','Terreno multiescala e material do solo'],
+};
+function localizeNoteControls(): void {
+  if (!dialog || !currentNote) return;
+  dialog.querySelector('strong')!.textContent = urbanText(noteTitles[currentNote]);
+  dialog.querySelector<HTMLButtonElement>('[data-download]')!.textContent = urbanText(['Télécharger le Markdown','Download Markdown','下载 Markdown','Descargar Markdown','Baixar Markdown']);
+  dialog.querySelector<HTMLButtonElement>('.method-note-bar button')!.setAttribute('aria-label', urbanText(['Fermer la note','Close note','关闭说明','Cerrar nota','Fechar nota']));
+}
 export function openMethodNote(id: MethodNoteId): void {
   const note = notes[id];
+  currentNote = id;
   if (!dialog) {
     dialog = document.createElement('dialog'); dialog.className = 'method-note';
     dialog.setAttribute('aria-labelledby', 'methodNoteTitle');
     dialog.innerHTML = '<form method="dialog" class="method-note-bar"><strong id="methodNoteTitle"></strong><button aria-label="Fermer la note">×</button></form><article lang="en" tabindex="0"></article><footer><button type="button" data-download>Download Markdown</button></footer>';
     document.body.append(dialog);
+    window.addEventListener('magna-locale-change', localizeNoteControls);
+    window.addEventListener('storage', event => { if (event.key === LOCALE_KEY) localizeNoteControls(); });
     dialog.addEventListener('click', event => { if (event.target === dialog) { const r = dialog!.getBoundingClientRect(); const p = event as MouseEvent; if (p.clientX < r.left || p.clientX > r.right || p.clientY < r.top || p.clientY > r.bottom) dialog!.close(); } });
   }
-  dialog.querySelector('strong')!.textContent = note.title;
+  localizeNoteControls();
   const article = dialog.querySelector('article')!; article.innerHTML = renderMarkdown(note.markdown, note.images); article.scrollTop = 0;
   dialog.querySelector<HTMLButtonElement>('[data-download]')!.onclick = () => {
     const url = URL.createObjectURL(new Blob([note.markdown], { type: 'text/markdown;charset=utf-8' }));

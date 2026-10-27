@@ -1,4 +1,7 @@
 import { growthPhaseCultureHtml, growthStepLabel } from './urbanGrowthEvidence';
+import { setupUrbanRenderLocale } from './urbanRenderLocale';
+import { setupUrbanPanelLocale, urbanText } from './urbanPanelLocale';
+import { LOCALE_KEY } from './shellLocale';
 import { bindControlRelevance, controlRelevanceControlsHtml } from './urbanControlRelevance';
 import { retainSelectValue } from './retainedSelectValue';
 import { bindCityPlanCulture, withCityPlanCulture } from './cityPlanCulture';
@@ -350,8 +353,9 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     one<HTMLInputElement>('quarters', '[data-config="radius"]').disabled = complete && !legacy && layoutConfig.footprint.budget !== 'radius';
     one<HTMLInputElement>('quarters', '[data-config="radiusScale"]').disabled = complete && !legacy && layoutConfig.footprint.budget !== 'radius';
     for (const key of ['accessDepth', 'accessBudget']) one<HTMLInputElement>('quarters', `[data-config="${key}"]`).disabled = layoutConfig.accessMode !== 'adaptive';
-    const hint = complete ? '' : 'Secteur isolé : sa disposition impose le contour, indépendamment de la culture et du maillage des rues. Choisissez « Agglomération complète » pour une ville adaptée au site.';
-    const preset = layoutConfig.preset === 'culture' ? '' : ` Préréglage imposé : ${catalogue.presets[layoutConfig.preset]?.label ?? layoutConfig.preset}. Il remplace les recettes culturelles.`;
+    const hint = complete ? '' : urbanText(['Secteur isolé : sa disposition impose le contour, indépendamment de la culture et du maillage des rues. Choisissez « Agglomération complète » pour une ville adaptée au site.', 'Isolated district: its layout determines the outline regardless of culture and street network. Choose “Complete settlement” for a city adapted to the site.', '独立区域：布局决定轮廓，与文化和街道网络无关。选择“完整聚落”以生成适应场地的城市。', 'Sector aislado: su disposición determina el contorno independientemente de la cultura y la red viaria. Elige «Asentamiento completo» para adaptar la ciudad al terreno.', 'Setor isolado: sua disposição determina o contorno independentemente da cultura e da rede de ruas. Escolha “Assentamento completo” para uma cidade adaptada ao local.']);
+    const presetName = catalogue.presets[layoutConfig.preset]?.label ?? layoutConfig.preset;
+    const preset = layoutConfig.preset === 'culture' ? '' : urbanText([` Préréglage imposé : ${presetName}. Il remplace les recettes culturelles.`, ` Forced preset: ${presetName}. It replaces cultural recipes.`, ` 指定预设：${presetName}。它会替代文化配方。`, ` Preajuste impuesto: ${presetName}. Sustituye las recetas culturales.`, ` Predefinição imposta: ${presetName}. Ela substitui as receitas culturais.`]);
     one('quarters', '[data-mode-hint]').textContent = hint + preset;
     controlRelevance?.sync(layoutConfig, layouts);
   }
@@ -361,14 +365,14 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     one<HTMLInputElement>(kind, '[data-seed]').value = kind === 'quarters' ? quarterSeed : parcelSeed;
     const culture = catalogue.cultures[config.culture && config.culture !== 'site' ? config.culture : siteCulture(kind)];
     const recipe = one<HTMLSelectElement>(kind, '[data-config="recipe"]');
-    recipe.replaceChildren(new Option(kind === 'quarters' ? 'Par phase · profil du plan' : 'Par phase · plan conservé', 'auto'), ...(culture?.recipes ?? [{ id: 'core', label: 'Cœur', zone: 'core', preset: '' }]).map(r => new Option(r.label, r.id)));
+    recipe.replaceChildren(new Option(kind === 'quarters' ? urbanText(['Par phase · profil du plan','By phase · plan profile','按阶段 · 规划配置','Por fase · perfil del plan','Por fase · perfil do plano']) : urbanText(['Par phase · plan conservé','By phase · preserved plan','按阶段 · 保留规划','Por fase · plan conservado','Por fase · plano preservado']), 'auto'), ...(culture?.recipes ?? [{ id: 'core', label: 'Cœur', zone: 'core', preset: '' }]).map(r => new Option(r.label, r.id)));
     // A shared recipe may be valid for another settlement culture; Rust validates it per site.
-    if (!Array.from(recipe.options).some(o => o.value === config.recipe)) retainSelectValue(recipe, config.recipe, 'Recette conservée hors du profil courant');
+    if (!Array.from(recipe.options).some(o => o.value === config.recipe)) retainSelectValue(recipe, config.recipe, urbanText(['Recette conservée hors du profil courant','Recipe retained outside the current profile','保留当前配置以外的配方','Receta conservada fuera del perfil actual','Receita mantida fora do perfil atual']));
     if (kind === 'quarters') one<HTMLSelectElement>(kind, '[data-config="settlementForm"]').innerHTML = morphologyOptions(layoutConfig.settlementForm);
     for (const c of Array.from(all<HTMLInputElement | HTMLSelectElement>(kind, '[data-config]'))) {
       const value = (config as unknown as Record<string, unknown>)[c.dataset.config!];
       if (c instanceof HTMLInputElement && c.type === 'checkbox') c.checked = Boolean(value);
-      else if (c instanceof HTMLSelectElement) retainSelectValue(c, String(value ?? ''), 'Choix conservé hors du catalogue UI');
+      else if (c instanceof HTMLSelectElement) retainSelectValue(c, String(value ?? ''), urbanText(['Choix conservé hors du catalogue UI','Selection retained outside the UI catalog','保留界面目录以外的选择','Selección conservada fuera del catálogo de la interfaz','Seleção mantida fora do catálogo da interface']));
       else c.value = String(value ?? '');
     }
     if (kind === 'quarters') {
@@ -415,6 +419,8 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   const rendering = document.createElement('details'); rendering.className = 'advanced';
   rendering.innerHTML = `<summary>⚙ Rendu · couches, palette, opacité</summary><div class="control-group">${Object.entries({ reserve: 'Réserve de croissance', allocated: 'Terre urbaine attribuée', centers: 'Noyaux et identités de quartier', domains: 'Domaines réservés', quarters: 'Secteurs de calcul', blocks: 'Îlots', streets: 'Rues urbaines', enclosures: 'Enceintes et portes', parcels: 'Parcelles', gardens: 'Jardins', places: 'Places et communs', fronts: 'Façades accessibles', axes: 'Axes des parcelles', access: 'Statut de desserte des parcelles', textured: 'Matières texturées' }).map(([key, label]) => `<label><input data-render="${key}" type="checkbox">${label}</label>`).join('')}<label>Palette<select data-render="palette"><option value="growth">Phases de croissance</option><option value="atlas">Atlas · quartiers</option><option value="ink">Encre</option><option value="terrain">Terrain</option></select></label><label>Opacité<input data-render="opacity" type="number" min="0" max="1" step="0.05"></label><label>Épaisseur des traits (px)<input data-render="width" type="number" min="0" max="5" step="0.1"></label></div><small>Ces réglages redessinent les résultats conservés, sans appel de génération. La réserve, la terre attribuée et les enceintes sont trois objets différents.</small>`;
   displayHost.append(rendering);
+  setupUrbanRenderLocale(rendering);
+  setupUrbanPanelLocale([...roots.quarters, ...roots.parcels, ...(displaySection ? [displaySection] : [])], !!options.city);
   for (const e of Array.from(rendering.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-render]'))) {
     const key = e.dataset.render as keyof Render;
     if (e instanceof HTMLInputElement && e.type === 'checkbox') e.checked = Boolean(render[key]); else e.value = String(render[key]);
@@ -478,7 +484,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   });
   function clearColdView(): void { ++coldViewEpoch; coldViewLoad = undefined; coldViewKey = ''; coldViewportSlot.clear(); coldView = undefined; }
   async function ensureColdView(state: ColdCityState): Promise<ColdCityViewport> {
-    if (coldRepairAbort && !coldRepairAbort.signal.aborted && sameCold(coldRepairState, state)) throw new Error('Reconstruction de l’aperçu en cours.');
+    if (coldRepairAbort && !coldRepairAbort.signal.aborted && sameCold(coldRepairState, state)) throw new Error(urbanText(['Reconstruction de l’aperçu en cours.','Preview reconstruction is in progress.','正在重建预览。','Reconstrucción de la vista previa en curso.','Reconstrução da prévia em andamento.']));
     const key = coldKey(state);
     if (sameCold(coldView?.state, state)) {
       if (coldViewLoad && coldViewKey !== key) { ++coldViewEpoch; coldViewLoad = undefined; coldViewKey = ''; }
@@ -494,7 +500,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   let coldEditAbort: AbortController | undefined;
   let coldLoad: Promise<ColdCitySession> | undefined;
   async function ensureColdSession(state: ColdCityState): Promise<ColdCitySession> {
-    if (coldRepairAbort && !coldRepairAbort.signal.aborted && sameCold(coldRepairState, state)) throw new Error('Reconstruction de l’aperçu en cours.');
+    if (coldRepairAbort && !coldRepairAbort.signal.aborted && sameCold(coldRepairState, state)) throw new Error(urbanText(['Reconstruction de l’aperçu en cours.','Preview reconstruction is in progress.','正在重建预览。','Reconstrucción de la vista previa en curso.','Reconstrução da prévia em andamento.']));
     if (sameCold(coldSession?.state, state)) return coldSession!;
     const key = coldKey(state);
     if (coldLoadKey === key && coldLoad) return coldLoad;
@@ -550,13 +556,13 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       // would re-run the plan and invalidate architecture already in progress.
       const settling = (): boolean => !!options.upstreamPending?.() || (['quarters', 'parcels'] as const).some(kind => one(kind, '[data-apply]').getAttribute('aria-busy') === 'true');
       await waitForArchitectureInputs({ pending: settling, current: active });
-      if (!layouts || !partitions) throw new Error('Générez les parcelles avant les bâtiments.');
-      if (singleCityArchitecture()) throw new Error('Choisissez une ville avant d’implanter ses plans de bâtiments ; « Volumes de la ville » couvre tous les settlements.');
+      if (!layouts || !partitions) throw new Error(urbanText(['Générez les parcelles avant les bâtiments.','Generate parcels before buildings.','请先生成地块，再生成建筑。','Genera las parcelas antes que los edificios.','Gere os lotes antes dos edifícios.']));
+      if (singleCityArchitecture()) throw new Error(urbanText(['Choisissez une ville avant d’implanter ses plans de bâtiments ; « Volumes de la ville » couvre tous les settlements.','Choose a city before placing its building plans; “City volumes” covers all settlements.','放置建筑平面图前请选择城市；“城市体量”覆盖所有聚落。','Elige una ciudad antes de situar sus planos de edificios; «Volúmenes de la ciudad» abarca todos los asentamientos.','Escolha uma cidade antes de implantar seus planos de edifícios; “Volumes da cidade” abrange todos os povoados.']));
       const inputLayouts = layouts, inputPartitions = partitions;
       const selectedLayouts = layouts.filter(layout => target === 'all' || layout.key === target), selectedPartitions = partitions.filter(partition => selectedLayouts.some(layout => layout.key === partition.key));
-      if (!selectedLayouts.length) throw new Error('Le plan de la ville sélectionnée est absent.');
+      if (!selectedLayouts.length) throw new Error(urbanText(['Le plan de la ville sélectionnée est absent.','The selected city plan is missing.','缺少所选城市的规划。','Falta el plan de la ciudad seleccionada.','O plano da cidade selecionada está ausente.']));
       const source = options.getRaster?.() ?? options.getTerrain();
-      if (!source) throw new Error('Le terrain d’appui est absent.');
+      if (!source) throw new Error(urbanText(['Le terrain d’appui est absent.','The supporting terrain is missing.','缺少支撑地形。','Falta el terreno de apoyo.','O terreno de apoio está ausente.']));
       const retained = cityView ? urbanSource.select({ layouts, partitions, terrain: source, runtime: executionRuntime,
         keys: selectedLayouts.map(layout => layout.key) }) : undefined;
       const raster = retained ? undefined : 'n' in source ? source : { ...settlementRaster(source, 1024), geometry: terrainGeography(source) };
@@ -570,7 +576,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
           if (!support.supported && buildingPanel.state.architectureContract === 'parent-session-1') throw new Error(`Ce replay exige le flux parents natifs : ${support.reason}`);
           if (!support.supported) generationNote = `Ancien moteur, flux de plans historiques : ${support.reason}`;
           if (support.supported) {
-            if (typeof indexedDB === 'undefined') throw new Error('Le flux parents natifs nécessite le stockage transactionnel IndexedDB.');
+            if (typeof indexedDB === 'undefined') throw new Error(urbanText(['Le flux parents natifs nécessite le stockage transactionnel IndexedDB.','The native parent workflow requires transactional IndexedDB storage.','原生父对象流程需要 IndexedDB 事务存储。','El flujo de elementos principales nativos requiere almacenamiento transaccional IndexedDB.','O fluxo de objetos principais nativos exige armazenamento transacional IndexedDB.']));
             const stillCurrent = () => active() && architecturePreview === preview && layouts === inputLayouts && partitions === inputPartitions;
             const actualSeed = seed || appliedParcelSeed || options.getSeed(), backend = (await getColdBackend()).parents;
             const residentFingerprint = retained ? undefined : await coldCityFingerprint({ layouts: selectedLayouts, partitions: selectedPartitions,
@@ -637,7 +643,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
             publishArchitectureBatch(preview, delta, progress, scene);
           } : undefined);
         if (!active() || layouts !== inputLayouts || partitions !== inputPartitions) throw new DOMException('Plan remplacé', 'AbortError');
-        if (!response.scene) throw new Error('La scène bâtie est absente.');
+        if (!response.scene) throw new Error(urbanText(['La scène bâtie est absente.','The building scene is missing.','缺少建筑场景。','Falta la escena construida.','A cena construída está ausente.']));
         const merged = replaceCities(selectedLayouts, response.partitions ?? selectedPartitions, response.scene), scene = merged.buildingState!.scene!;
         const nextSites = response.sites !== undefined
           ? createNativeSiteStore(response.sites, response.siteQuery!, executionRuntime)
@@ -681,7 +687,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     exportCold: state => downloadColdBuildings(getColdBackend(), state),
     readParentBuilding: async (state, id) => (await ensureParentView(state)).read(id),
     exportParent: state => downloadParentBuildings(getColdBackend().then(b => b.parents), state),
-    importParent: async file => { if (buildingPanel.busy) throw new Error('Attendez la génération en cours.');
+    importParent: async file => { if (buildingPanel.busy) throw new Error(urbanText(['Attendez la génération en cours.','Wait for the current generation to finish.','请等待当前生成完成。','Espera a que termine la generación actual.','Aguarde a geração atual terminar.']));
       const state = await readParentBuildings(file, (await getColdBackend()).parents, nativeParentApi(executionRuntime), { expectedCityKey: target === 'all' ? undefined : target });
       invalidateArchitecture(); await ensureParentView(state); return state; },
     onProjection: active => { if (active && buildingPanel.state.parent) { inspectorNote('La vue 3D des parents natifs n’est pas encore prise en charge.'); return; } const applied = options.onProjection?.(active, buildingPanel.state.camera); if (typeof applied === 'boolean') buildingPanel.state.projection = applied; },
@@ -690,18 +696,27 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   // City Bench has no backend anchor: the display section follows the building panel.
   else if (displaySection) buildingPanel.panel.after(displaySection);
   const architectureNames: Record<UrbanSceneMode, string> = { silhouette: 'Volumes de la ville', compact: 'Plan compact (générateur houses)', detailed: 'Détaillé (générateur houses)' };
-  const architectureActions: Record<UrbanSceneMode, string> = { silhouette: 'Tracer les silhouettes', compact: 'Planifier les bâtiments', detailed: 'Planifier et détailler la vue' };
+  const architectureLocalized: Record<UrbanSceneMode, readonly [string, string, string, string, string]> = {
+    silhouette: ['Volumes de la ville','City volumes','城市体量','Volúmenes de la ciudad','Volumes da cidade'],
+    compact: ['Plan compact (générateur houses)','Compact plan (houses generator)','紧凑方案（房屋生成器）','Plan compacto (generador houses)','Plano compacto (gerador houses)'],
+    detailed: ['Détaillé (générateur houses)','Detailed (houses generator)','详细方案（房屋生成器）','Detallado (generador houses)','Detalhado (gerador houses)'],
+  };
+  const architectureActions: Record<UrbanSceneMode, readonly [string, string, string, string, string]> = {
+    silhouette: ['Tracer les silhouettes','Draw silhouettes','绘制轮廓','Dibujar siluetas','Desenhar silhuetas'],
+    compact: ['Planifier les bâtiments','Plan buildings','规划建筑','Planificar edificios','Planejar edifícios'],
+    detailed: ['Planifier et détailler la vue','Plan and detail the view','规划并细化视图','Planificar y detallar la vista','Planejar e detalhar a visualização'],
+  };
   const architectureLabel = document.createElement('label'), cityCounts = document.createElement('small');
   const cacheRepair = document.createElement('details'); cacheRepair.className = 'advanced'; cacheRepair.dataset.coldRepair = ''; cacheRepair.hidden = true;
   cacheRepair.innerHTML = '<summary>Reconstruire l’aperçu</summary><small>Les plans sont conservés. Reconstruit seulement leur affichage, sans modifier les bâtiments.</small><button type="button" data-cold-repair-start>Reconstruire l’aperçu</button><button type="button" data-cold-repair-cancel hidden>Annuler</button><small data-cold-repair-status role="status"></small>';
   const repairStart = cacheRepair.querySelector<HTMLButtonElement>('[data-cold-repair-start]')!, repairCancel = cacheRepair.querySelector<HTMLButtonElement>('[data-cold-repair-cancel]')!;
   const repairStatus = cacheRepair.querySelector<HTMLElement>('[data-cold-repair-status]')!;
-  repairCancel.onclick = () => { coldRepairAbort?.abort(new DOMException('Réparation annulée', 'AbortError')); repairCancel.disabled = true; repairStatus.textContent = 'Annulation : attente de la lecture déjà engagée…'; };
+  repairCancel.onclick = () => { coldRepairAbort?.abort(new DOMException('Réparation annulée', 'AbortError')); repairCancel.disabled = true; repairStatus.textContent = urbanText(['Annulation : attente de la lecture déjà engagée…','Cancelling: waiting for the active read…','正在取消：等待当前读取完成…','Cancelando: esperando la lectura en curso…','Cancelando: aguardando a leitura em andamento…']); };
   repairStart.onclick = () => { void (async () => {
     const parent = buildingPanel.state.parent;
     if (parent) { if (coldRepairAbort) return; const abort = new AbortController(); coldRepairAbort = abort;
-      repairStart.disabled = true; repairCancel.disabled = false; repairCancel.hidden = false; repairStatus.textContent = 'Relecture native des seules archives pour reconstruire les affichages…';
-      try { await (await ensureParentView(parent)).repair(abort.signal); repairStatus.textContent = 'Affichage reconstruit, plans inchangés.'; draw(); }
+      repairStart.disabled = true; repairCancel.disabled = false; repairCancel.hidden = false; repairStatus.textContent = urbanText(['Relecture native des seules archives pour reconstruire les affichages…','Reading the native archives to reconstruct the views…','正在读取原生档案以重建视图…','Leyendo los archivos nativos para reconstruir las vistas…','Lendo os arquivos nativos para reconstruir as visualizações…']);
+      try { await (await ensureParentView(parent)).repair(abort.signal); repairStatus.textContent = urbanText(['Affichage reconstruit, plans inchangés.','View reconstructed; plans unchanged.','视图已重建，规划未改变。','Vista reconstruida; planos sin cambios.','Visualização reconstruída; planos inalterados.']); draw(); }
       catch (e) { repairStatus.textContent = String(e); }
       finally { if (coldRepairAbort === abort) coldRepairAbort = undefined; repairStart.disabled = false; repairCancel.hidden = true; }
       return;
@@ -711,20 +726,20 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     clearColdView(); ++coldLoadEpoch; coldLoad = undefined; coldLoadKey = ''; coldSession?.dispose(); coldSession = undefined; coldFailedKey = coldKey(state);
     repairStart.disabled = true; repairCancel.disabled = false; repairCancel.hidden = false; cacheRepair.setAttribute('aria-busy', 'true');
     const current = () => epoch === architectureEpoch && sameCold(state, buildingPanel.state.cold);
-    repairStatus.textContent = 'Préparation de l’aperçu des plans conservés…'; draw();
+    repairStatus.textContent = urbanText(['Préparation de l’aperçu des plans conservés…','Preparing the retained plans preview…','正在准备已保存规划的预览…','Preparando la vista previa de los planos conservados…','Preparando a prévia dos planos mantidos…']); draw();
     try {
       const backend = await getColdBackend();
       await repairColdDerivedCache(backend, state, { signal: abort.signal, current,
-        progress: p => { if (current()) repairStatus.textContent = `${p.phase === 'complete' ? 'Aperçu préparé' : 'Reconstruction de l’aperçu'} : ${p.completed.toLocaleString()}/${p.total.toLocaleString()} lots`; } });
+        progress: p => { if (current()) repairStatus.textContent = `${p.phase === 'complete' ? urbanText(['Aperçu préparé','Preview ready','预览已就绪','Vista previa lista','Prévia pronta']) : urbanText(['Reconstruction de l’aperçu','Reconstructing preview','正在重建预览','Reconstruyendo la vista previa','Reconstruindo a prévia'])} : ${p.completed.toLocaleString()}/${p.total.toLocaleString()} ${urbanText(['lots','batches','批次','lotes','lotes'])}`; } });
       if (!current()) throw new DOMException('Plan remplacé', 'AbortError');
       coldFailedKey = ''; coldRepairAbort = undefined; coldRepairState = undefined; repairCancel.hidden = true; repairCancel.disabled = true;
-      await ensureColdView(state); repairStatus.textContent = 'Affichage proche disponible. L’aperçu global continue de se préparer.';
+      await ensureColdView(state); repairStatus.textContent = urbanText(['Affichage proche disponible. L’aperçu global continue de se préparer.','Close view available. The overall preview is still being prepared.','近景已可用。整体预览仍在准备中。','Vista cercana disponible. La vista previa general sigue preparándose.','Visualização próxima disponível. A prévia geral ainda está sendo preparada.']);
       buildingPanel.refreshReport(); draw(); options.onChange();
     } catch (e) {
       if (current()) { coldFailedKey = coldKey(state); cacheRepair.dataset.diagnostic = String(e);
-        repairStatus.textContent = abort.signal.aborted ? 'Reconstruction annulée. Les plans n’ont pas été modifiés ; vous pouvez réessayer.'
-          : /quota/i.test(String(e)) ? 'Espace disponible insuffisant pour reconstruire l’aperçu. Les plans sont conservés ; libérez du stockage puis réessayez.'
-          : 'L’aperçu n’a pas pu être reconstruit. Les archives n’ont pas été modifiées ; vous pouvez réessayer.'; }
+        repairStatus.textContent = abort.signal.aborted ? urbanText(['Reconstruction annulée. Les plans n’ont pas été modifiés ; vous pouvez réessayer.','Reconstruction cancelled. Plans were not changed; you can retry.','重建已取消。规划未更改；可以重试。','Reconstrucción cancelada. Los planos no se modificaron; puedes volver a intentarlo.','Reconstrução cancelada. Os planos não foram alterados; você pode tentar novamente.'])
+          : /quota/i.test(String(e)) ? urbanText(['Espace disponible insuffisant pour reconstruire l’aperçu. Les plans sont conservés ; libérez du stockage puis réessayez.','Not enough storage to reconstruct the preview. Plans are preserved; free space and retry.','存储空间不足，无法重建预览。规划已保留；请释放空间后重试。','No hay espacio suficiente para reconstruir la vista previa. Los planos se conservan; libera espacio y vuelve a intentarlo.','Espaço insuficiente para reconstruir a prévia. Os planos estão preservados; libere espaço e tente novamente.'])
+          : urbanText(['L’aperçu n’a pas pu être reconstruit. Les archives n’ont pas été modifiées ; vous pouvez réessayer.','The preview could not be reconstructed. Archives were not changed; you can retry.','无法重建预览。档案未更改；可以重试。','No se pudo reconstruir la vista previa. Los archivos no se modificaron; puedes volver a intentarlo.','Não foi possível reconstruir a prévia. Os arquivos não foram alterados; você pode tentar novamente.']); }
     } finally {
       if (coldRepairAbort === abort) { coldRepairAbort = undefined; coldRepairState = undefined; }
       repairStart.disabled = !buildingPanel.state.cold; repairCancel.hidden = true; cacheRepair.removeAttribute('aria-busy');
@@ -733,8 +748,15 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
 
   function architectureTitles(): void {
     if (!cityView) return;
-    if (options.city) buildingPanel.panel.querySelector('summary')!.textContent = `9 · Bâtiments · ${architectureNames[architectureMode].toLowerCase()}`;
-    buildingPanel.panel.querySelector('[data-buildings-generate]')!.textContent = architectureActions[architectureMode];
+    cacheRepair.querySelector('summary')!.textContent = urbanText(['Reconstruire l’aperçu','Reconstruct preview','重建预览','Reconstruir vista previa','Reconstruir prévia']);
+    cacheRepair.querySelector('small')!.textContent = urbanText(['Les plans sont conservés. Reconstruit seulement leur affichage, sans modifier les bâtiments.','Plans are retained. Only their display is reconstructed; buildings are not changed.','规划会保留。仅重建其显示，不更改建筑。','Los planos se conservan. Solo se reconstruye su visualización, sin modificar los edificios.','Os planos são mantidos. Apenas sua visualização é reconstruída, sem alterar os edifícios.']);
+    repairStart.textContent = urbanText(['Reconstruire l’aperçu','Reconstruct preview','重建预览','Reconstruir vista previa','Reconstruir prévia']);
+    repairCancel.textContent = urbanText(['Annuler','Cancel','取消','Cancelar','Cancelar']);
+    if (options.city) buildingPanel.panel.querySelector('summary')!.textContent = `9 · ${urbanText(['Bâtiments','Buildings','建筑','Edificios','Edifícios'])} · ${urbanText(architectureLocalized[architectureMode])}`;
+    buildingPanel.panel.querySelector('[data-buildings-generate]')!.textContent = urbanText(architectureActions[architectureMode]);
+    if (architectureLabel.firstChild?.nodeType === Node.TEXT_NODE) architectureLabel.firstChild.textContent = urbanText(['Architecture','Architecture','建筑','Arquitectura','Arquitetura']);
+    const select = architectureLabel.querySelector<HTMLSelectElement>('select');
+    if (select) for (const option of Array.from(select.options)) option.textContent = urbanText(architectureLocalized[option.value as UrbanSceneMode]);
   }
   if (cityView) {
     // Silhouettes: city footprints only. Compact: native plans drawn by the LOD renderer.
@@ -754,6 +776,8 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       if (layouts && partitions && regenerate) void buildingPanel.generate({ seed: buildingPanel.state.seed, settings: buildingPanel.state.settings });
     };
     architectureTitles();
+    window.addEventListener('magna-locale-change', architectureTitles);
+    window.addEventListener('storage', event => { if (event.key === LOCALE_KEY) architectureTitles(); });
   }
   buildingPanel.restore(initialBuildingState);
   let completeGeneration = false;
@@ -821,18 +845,18 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     const config = getConfig(kind);
     for (const c of Array.from(all<HTMLInputElement | HTMLSelectElement>(kind, '[data-config]'))) {
       if (c.disabled) continue;
-      if (!c.checkValidity()) { c.reportValidity(); throw new Error('Corrigez les paramètres signalés.'); }
+      if (!c.checkValidity()) { c.reportValidity(); throw new Error(urbanText(['Corrigez les paramètres signalés.','Correct the highlighted settings.','请修正标出的设置。','Corrige los ajustes indicados.','Corrija as configurações indicadas.'])); }
       (config as unknown as Record<string, unknown>)[c.dataset.config!] = configValue(c);
     }
     if (kind === 'quarters') for (const c of Array.from(all<HTMLInputElement | HTMLSelectElement>(kind, '[data-footprint]'))) {
       if (c.disabled) continue;
-      if (!c.checkValidity()) { c.reportValidity(); throw new Error('Corrigez les paramètres d’empreinte signalés.'); }
+      if (!c.checkValidity()) { c.reportValidity(); throw new Error(urbanText(['Corrigez les paramètres d’empreinte signalés.','Correct the highlighted footprint settings.','请修正标出的范围设置。','Corrige los ajustes de ocupación indicados.','Corrija as configurações de área indicadas.'])); }
       (layoutConfig.footprint as unknown as Record<string, unknown>)[c.dataset.footprint!] = configValue(c);
     }
     const json = one<HTMLTextAreaElement>(kind, '[data-json]').value.trim();
     if (json) {
       const parsed: unknown = JSON.parse(json);
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Les overrides doivent être un objet JSON.');
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error(urbanText(['Les overrides doivent être un objet JSON.','Overrides must be a JSON object.','覆盖设置必须是 JSON 对象。','Las sustituciones deben ser un objeto JSON.','As substituições devem ser um objeto JSON.']));
       for (const key of Object.keys(parsed)) if (!catalogue.fields[kind].includes(key)) throw new Error(`Paramètre inconnu à cette étape : ${key}`);
       for (const [key, value] of Object.entries(parsed)) {
         const previous = config.params[key];
@@ -858,7 +882,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   function changed(kind: Kind): void {
     dirty[kind] = true;
     const hint = one(kind, '[data-draft-state]'); hint.hidden = false;
-    hint.textContent = autoOn() ? 'Modifications en attente · application automatique…' : `Modifications non appliquées · régénérez ${kind === 'quarters' ? 'le plan et les quartiers' : 'les parcelles'} (ou toute la ville).`;
+    hint.textContent = autoOn() ? urbanText(['Modifications en attente · application automatique…','Changes pending · applying automatically…','更改待处理 · 正在自动应用…','Cambios pendientes · aplicación automática…','Alterações pendentes · aplicação automática…']) : kind === 'quarters' ? urbanText(['Modifications non appliquées · régénérez le plan et les quartiers (ou toute la ville).','Changes not applied · regenerate the plan and districts (or the whole city).','更改尚未应用 · 请重新生成规划和街区（或整个城市）。','Cambios sin aplicar · regenera el plano y los barrios (o toda la ciudad).','Alterações não aplicadas · regenere o plano e os bairros (ou toda a cidade).']) : urbanText(['Modifications non appliquées · régénérez les parcelles (ou toute la ville).','Changes not applied · regenerate parcels (or the whole city).','更改尚未应用 · 请重新生成地块（或整个城市）。','Cambios sin aplicar · regenera las parcelas (o toda la ciudad).','Alterações não aplicadas · regenere os lotes (ou toda a cidade).']);
     mainPanel?.note(hint.textContent);
     clearTimeout(draftTimers[kind]);
     try { read(kind, false); if (kind === 'quarters') controlRelevance?.sync(layoutConfig, layouts); options.map.dispatchEvent(new CustomEvent('urban:settings', { detail: { layoutConfig: clone(layoutConfig), parcelConfig: clone(parcelConfig), quarterSeed: one<HTMLInputElement>('quarters', '[data-seed]').value, parcelSeed: one<HTMLInputElement>('parcels', '[data-seed]').value } })); } catch { /* Keep invalid drafts local. */ }
@@ -876,7 +900,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     const source = options.getRaster ? options.getRaster() : options.getTerrain();
     if (!ready || !source || !settlements) return;
     if (kind === 'quarters' && !enabled || kind === 'parcels' && !parcelEnabled) return;
-    if (kind === 'parcels' && !layouts) { status(kind, 'Générez d’abord les quartiers (bloc 6).'); return; }
+    if (kind === 'parcels' && !layouts) { status(kind, urbanText(['Générez d’abord les quartiers (bloc 6).','Generate districts first (stage 6).','请先生成街区（阶段 6）。','Genera primero los barrios (etapa 6).','Gere primeiro os bairros (etapa 6).'])); return; }
     // A new applied computation may mutate the native revisions even if the
     // previous displayed plan survives a refusal. Do not keep its old handle.
     urbanSource.clear(); parcelSourceInput = undefined;
@@ -906,7 +930,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       message.parcelConfig = parcelWithEdits(clone(appliedParcel), edits);
     }
     appliedKind = kind; appliedOnly = only;
-    status(kind, `Rust · génération ${kind === 'quarters' ? 'des quartiers' : 'des parcelles'}…`, true);
+    status(kind, kind === 'quarters' ? urbanText(['Rust · génération des quartiers…','Rust · generating districts…','Rust · 正在生成街区…','Rust · generando barrios…','Rust · gerando bairros…']) : urbanText(['Rust · génération des parcelles…','Rust · generating parcels…','Rust · 正在生成地块…','Rust · generando parcelas…','Rust · gerando lotes…']), true);
     if (fallback) void runUrbanRequest(message).then(receive, error => receive({ id: message.id, error: String(error) }));
     else try { const r = message.raster; worker!.postMessage(message, r ? [r.height.buffer, r.water.buffer, r.waterLevel.buffer, r.riverWidth.buffer, r.riverIds.buffer] : []); } catch { useFallback(); }
   }
@@ -936,10 +960,10 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       rememberCities(response.layouts.map(layout => layout.key));
       populate('parcels'); syncCityPlanCulture();
       const count = (layouts ?? []).reduce((n, l) => n + l.blocks.length, 0);
-      status('quarters', `Rust · ${layouts?.length ?? 0} settlement(s) · ${count} îlots · ${response.ms?.toFixed(0)} ms`);
+      status('quarters', `Rust · ${layouts?.length ?? 0} ${urbanText(['implantations','settlements','聚落','asentamientos','assentamentos'])} · ${count} ${urbanText(['îlots','blocks','街区','manzanas','quadras'])} · ${response.ms?.toFixed(0)} ms`);
       one('quarters', '[data-state]').textContent = `${count} îlots`;
       one('quarters', '[data-warnings]').textContent = warningText((layouts ?? []).flatMap(l => l.warnings.map(w => `${l.key} : ${w}`)));
-      if (parcelEnabled) request('parcels'); else status('parcels', 'Génération des parcelles désactivée.');
+      if (parcelEnabled) request('parcels'); else status('parcels', urbanText(['Génération des parcelles désactivée.','Parcel generation disabled.','地块生成已禁用。','Generación de parcelas desactivada.','Geração de lotes desativada.']));
     }
     if (response.partitions) {
       successfulParcel = clone(appliedParcel); successfulParcelSeed = appliedParcelSeed;
@@ -952,18 +976,18 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
           urbanSource.bind({ source: response.urbanSource, layouts, partitions, terrain: parcelSourceInput.terrain,
             nativeLayouts: parcelSourceInput.layouts, nativePartitions: response.partitions, runtime: parcelSourceInput.runtime });
         } catch (error) {
-          completeGeneration = false; status('parcels', `Source urbaine retenue invalide : ${String(error)}`); draw(); options.onChange(); return;
+          completeGeneration = false; status('parcels', `${urbanText(['Source urbaine retenue invalide','Invalid retained urban source','保留的城市源无效','Fuente urbana conservada no válida','Fonte urbana mantida inválida'])} : ${String(error)}`); draw(); options.onChange(); return;
         }
       }
       rememberCities(incoming.map(layout => layout.key));
       leaveAll();
       const count = (partitions ?? []).reduce((n, p) => n + p.parcels.length, 0);
-      status('parcels', `Rust · ${count} parcelles · ${response.ms?.toFixed(0)} ms`);
+      status('parcels', `Rust · ${count} ${urbanText(['parcelles','parcels','地块','parcelas','lotes'])} · ${response.ms?.toFixed(0)} ms`);
       one('parcels', '[data-state]').textContent = `${count} parcelles`;
       one('parcels', '[data-warnings]').textContent = warningText((partitions ?? []).flatMap(p => p.warnings.map(w => `${p.key} : ${urbanCapacityWarningText(w)}`)));
       if (completeGeneration) {
         completeGeneration = false; initialBuildingState = undefined;
-        if (singleCityArchitecture()) status('parcels', 'Plan prêt · choisissez une ville pour implanter ses plans de bâtiments.');
+        if (singleCityArchitecture()) status('parcels', urbanText(['Plan prêt · choisissez une ville pour implanter ses plans de bâtiments.','Plan ready · choose a city to place its building plans.','规划已就绪 · 请选择城市以布置建筑方案。','Plano listo · elige una ciudad para ubicar sus planos de edificios.','Plano pronto · escolha uma cidade para implantar seus planos de edifícios.']));
         else void buildingPanel.generate();
       } else if (initialBuildingState?.generated || buildingPanel.state.generated) { initialBuildingState = undefined; void buildingPanel.generate({ seed: buildingPanel.state.seed, settings: buildingPanel.state.settings }); }
     }
@@ -1441,20 +1465,20 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   /** Picks the quarter, lot and house at `p` and renders the inspector; returns the house id. */
   function inspectAt(p: Point): string | undefined {
     if (!cityPlan) { inspection.replaceChildren(); return undefined; }
-    if (architecturePreview?.parent) { inspection.textContent = 'Aperçu provisoire du préfixe conservé ; sélection disponible après validation complète.'; return undefined; }
+    if (architecturePreview?.parent) { inspection.textContent = urbanText(['Aperçu provisoire du préfixe conservé ; sélection disponible après validation complète.','Temporary preview of the retained prefix; selection is available after full validation.','保留前缀的临时预览；完整验证后可选择。','Vista previa provisional del prefijo conservado; selección disponible tras la validación completa.','Prévia temporária do prefixo mantido; seleção disponível após validação completa.']); return undefined; }
     if (buildingPanel.state.parent && buildingPanel.state.visible && render.view === 'buildings') {
-      const view = boundedParent(); if (!view) { inspection.textContent = 'Lecture des archives natives en cours…'; return undefined; }
+      const view = boundedParent(); if (!view) { inspection.textContent = urbanText(['Lecture des archives natives en cours…','Reading native archives…','正在读取原生档案…','Leyendo archivos nativos…','Lendo arquivos nativos…']); return undefined; }
       const show = (found: import('./urbanParentColdWindow').ParentMapPick) => {
         if (boundedParent() !== view || inspected?.x !== p.x || inspected?.y !== p.y) return;
-        if (found.status !== 'exact') { inspection.textContent = 'Lecture partielle : aucun vide ne peut être conclu.'; return; }
-        view.select(found.selection); if (!found.selection) { inspection.textContent = 'Aucun membre ni contexte natif à cet endroit.'; return; }
-        buildingPanel.selectParent(found.selection); inspection.textContent = 'Lecture du parent natif…';
+        if (found.status !== 'exact') { inspection.textContent = urbanText(['Lecture partielle : aucun vide ne peut être conclu.','Partial read: absence cannot be concluded.','读取不完整：不能据此判定为空。','Lectura parcial: no se puede concluir que esté vacío.','Leitura parcial: não se pode concluir que esteja vazio.']); return; }
+        view.select(found.selection); if (!found.selection) { inspection.textContent = urbanText(['Aucun membre ni contexte natif à cet endroit.','No native member or context at this location.','此位置没有原生成员或上下文。','No hay miembro ni contexto nativo en este punto.','Nenhum membro ou contexto nativo neste ponto.']); return; }
+        buildingPanel.selectParent(found.selection); inspection.textContent = urbanText(['Lecture du parent natif…','Reading native parent…','正在读取原生父级…','Leyendo elemento principal nativo…','Lendo elemento principal nativo…']);
         const pick = found.selection;
         void publishParentUiTask(view.read(pick.parent_id), () => boundedParent() === view && !architecturePreview
           && inspected?.x === p.x && inspected?.y === p.y && JSON.stringify(buildingPanel.state.parentSelected) === JSON.stringify(pick),
           value => { inspection.innerHTML = nativeParentInspectionHtml(value, pick); }, e => { inspection.textContent = String(e); });
       };
-      const picked = view.pick(p); if (picked.status === 'pending') { inspection.textContent = 'Lecture exacte du parent à cet endroit…';
+      const picked = view.pick(p); if (picked.status === 'pending') { inspection.textContent = urbanText(['Lecture exacte du parent à cet endroit…','Reading the exact parent at this location…','正在精确读取此位置的父级…','Leyendo el elemento principal exacto en este punto…','Lendo o elemento principal exato neste ponto…']);
         void publishParentUiTask(view.pickAt(p), () => boundedParent() === view && !architecturePreview && inspected?.x === p.x && inspected?.y === p.y,
           show, e => { inspection.textContent = String(e); }); }
       else show(picked);
@@ -1469,9 +1493,9 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     const boundedHit = viewport?.pick(p);
     if (viewport && boundedHit?.status === 'pending') {
       renderCityInspector(inspection, hit, cityPlan, inspectorHooks); const pending = document.createElement('small');
-      pending.textContent = 'Lecture exacte du bâtiment à cet endroit…'; pending.setAttribute('role', 'status'); inspection.append(pending);
+      pending.textContent = urbanText(['Lecture exacte du bâtiment à cet endroit…','Reading the exact building at this location…','正在精确读取此位置的建筑…','Leyendo el edificio exacto en este punto…','Lendo o edifício exato neste ponto…']); pending.setAttribute('role', 'status'); inspection.append(pending);
       void viewport.pickAt(p).then(found => { if (boundedCold() === viewport && inspected?.x === p.x && inspected?.y === p.y) {
-        if (found.status === 'exact') { const id = inspectAt(p); if (id) buildingPanel.select(id); } else pending.textContent = 'Lecture exacte encore partielle : aucun vide ne peut être conclu.';
+        if (found.status === 'exact') { const id = inspectAt(p); if (id) buildingPanel.select(id); } else pending.textContent = urbanText(['Lecture exacte encore partielle : aucun vide ne peut être conclu.','Exact read is still partial: absence cannot be concluded.','精确读取仍不完整：不能据此判定为空。','La lectura exacta sigue siendo parcial: no se puede concluir que esté vacío.','A leitura exata ainda é parcial: não se pode concluir que esteja vazio.']);
       } }, e => { pending.textContent = String(e); }); return undefined;
     }
     const buildingId = boundedHit?.status === 'exact' ? boundedHit.building?.id : native?.pick(p)?.id ?? hit.building?.id;
@@ -1480,7 +1504,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     if (built && 'projection' in built) {
       const session = viewport ?? coldSession, point = { ...p }, plan = cityPlan;
       renderCityInspector(inspection, hit, plan, inspectorHooks);
-      const pending = document.createElement('small'); pending.textContent = 'Lecture du plan natif…'; pending.setAttribute('role', 'status'); inspection.append(pending);
+      const pending = document.createElement('small'); pending.textContent = urbanText(['Lecture du plan natif…','Reading native plan…','正在读取原生平面…','Leyendo plano nativo…','Lendo planta nativa…']); pending.setAttribute('role', 'status'); inspection.append(pending);
       if (!architecturePreview && session && sameCold(session.state, buildingPanel.state.cold)) void (viewport ? viewport.read(built.id, 'inspector', built as NativeBuildingProjection) : session.read(built.id, 'inspector')).then(value => {
         if (!value || (viewport ? boundedCold() !== viewport : coldSession !== session) || cityPlan !== plan || inspected?.x !== point.x || inspected?.y !== point.y) return;
         renderCityInspector(inspection, { ...hit, built: value.building }, plan, inspectorHooks);
@@ -1499,14 +1523,14 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   function appendArchitectureOutcome(parcelId?: string, building?: PlacedBuilding): void {
     const refusal = parcelId && displayedColdProjection()?.refusals?.find(value => value.parcel_id === parcelId);
     if (refusal) {
-      const note = document.createElement('small'); note.setAttribute('role', 'status'); note.textContent = `Implantation refusée : ${refusal.message}`; inspection.append(note);
+      const note = document.createElement('small'); note.setAttribute('role', 'status'); note.textContent = `${urbanText(['Implantation refusée','Placement rejected','布置被拒绝','Implantación rechazada','Implantação rejeitada'])} : ${refusal.message}`; inspection.append(note);
     }
     if (!building || building.simplification !== 'architectural_plan') return;
     const target = sceneRequestList.find(site => site.id === building.id)?.programme?.built_area_m2;
     if (typeof target !== 'number' || !Number.isFinite(target) || target <= 0) return;
     const actual = building.footprint.reduce((sum, polygon) => sum + shapeArea(polygon), 0), note = document.createElement('small');
-    const targetScope = sceneSites?.matchesRuntime(executionRuntime) ? 'demande actuelle du site' : 'demande de site conservée (origine native non liée)';
-    note.textContent = `Emprise du plan : ${actual.toFixed(1)} m²; ${targetScope} : ${target.toFixed(1)} m² (${(actual / target * 100).toFixed(1)} %). La capacité habitante reste non évaluée.`;
+    const targetScope = sceneSites?.matchesRuntime(executionRuntime) ? urbanText(['demande actuelle du site','current site request','当前场地请求','solicitud actual del sitio','solicitação atual do local']) : urbanText(['demande de site conservée (origine native non liée)','retained site request (native source unlinked)','保留的场地请求（原生来源未关联）','solicitud conservada del sitio (origen nativo no vinculado)','solicitação de local mantida (origem nativa não vinculada)']);
+    note.textContent = `${urbanText(['Emprise du plan','Plan footprint','平面占地','Superficie del plano','Área da planta'])} : ${actual.toFixed(1)} m²; ${targetScope} : ${target.toFixed(1)} m² (${(actual / target * 100).toFixed(1)} %). ${urbanText(['La capacité habitante reste non évaluée.','Residential capacity remains unevaluated.','居住容量尚未评估。','La capacidad residencial sigue sin evaluarse.','A capacidade residencial permanece não avaliada.'])}`;
     inspection.append(note);
   }
   function inspectorNote(text: string): void { if (!cityView) return; const note = document.createElement('small'); note.setAttribute('role', 'status'); note.className = 'city-edit-refusal'; note.textContent = text; inspection.prepend(note); }
@@ -1627,9 +1651,9 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       && buildingPanel.state.cold === cold && buildingPanel.state.selected === building.id && !architecturePreview && sitesCurrent() && sites?.matchesRuntime(executionRuntime);
     await openNativeAssemblyBench({ runtime: executionRuntime, parentId: building.id, isCurrent: () => Boolean(current()), async load() {
       if (!current() || !sites?.has(building.id) || building.simplification !== 'architectural_plan')
-        throw new Error('Site natif absent ou périmé ; aucun assemblage ne peut être inféré depuis un aperçu.');
+        throw new Error(urbanText(['Site natif absent ou périmé ; aucun assemblage ne peut être inféré depuis un aperçu.','Native site missing or stale; no assembly can be inferred from a preview.','原生场地缺失或已过期；不能从预览推断装配。','Sitio nativo ausente o desactualizado; no se puede inferir un ensamblaje de una vista previa.','Local nativo ausente ou desatualizado; nenhuma montagem pode ser inferida de uma prévia.']));
       if (cold && ((cold.offset?.x ?? 0) !== 0 || (cold.offset?.y ?? 0) !== 0))
-        throw new Error('L’essai d’assemblage des villes translatées exige un site natif dans les mêmes coordonnées.');
+        throw new Error(urbanText(['L’essai d’assemblage des villes translatées exige un site natif dans les mêmes coordonnées.','Assembly testing for translated cities requires a native site in the same coordinates.','平移城市的装配测试需要坐标相同的原生场地。','La prueba de ensamblaje de ciudades trasladadas requiere un sitio nativo con las mismas coordenadas.','O teste de montagem de cidades transladadas requer um local nativo nas mesmas coordenadas.']));
       const [{ resolveArchivedPlan }, { coldArchitectureEditBounds }, { assemblyNeighborParts, readBoundedAssemblyNeighbors }, original] = await Promise.all([
         import('../../../rust/bridge/compactPlanArchive'), import('./urbanColdCityEdit'), import('./nativeAssemblyNeighbors'), sites.read(building.id),
       ]);
@@ -1696,13 +1720,13 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     if (!box || !id || architectureMode !== 'detailed') { if (box) box.textContent = ''; return; }
     const view = boundedCold(), building = view?.selected(id) ?? cityRenderer?.getBuilding(id), status = view?.details?.status(id) ?? cityDetails?.status(id);
     if (!building || !status) return;
-    const text = status.state === 'ready' ? 'Extérieur natif réalisé.' : status.state === 'refused' ? `Extérieur non réalisé : ${status.message}. Le plan est conservé.`
-      : status.state === 'loading' ? 'Calcul de l’extérieur…' : status.state === 'queued' ? 'Extérieur en attente…' : 'Plan conservé ; détail selon la vue.';
+    const text = status.state === 'ready' ? urbanText(['Extérieur natif réalisé.','Native exterior realized.','原生外观已生成。','Exterior nativo realizado.','Exterior nativo realizado.']) : status.state === 'refused' ? urbanText([`Extérieur non réalisé : ${status.message}. Le plan est conservé.`,`Exterior not realized: ${status.message}. The plan is preserved.`,`未生成外观：${status.message}。规划已保留。`,`Exterior no realizado: ${status.message}. Se conserva el plano.`,`Exterior não realizado: ${status.message}. O plano foi preservado.`])
+      : status.state === 'loading' ? urbanText(['Calcul de l’extérieur…','Computing exterior…','正在计算外观…','Calculando el exterior…','Calculando o exterior…']) : status.state === 'queued' ? urbanText(['Extérieur en attente…','Exterior queued…','外观等待处理…','Exterior en espera…','Exterior em espera…']) : urbanText(['Plan conservé ; détail selon la vue.','Plan retained; detail depends on the view.','规划已保留；细节取决于视图。','Plano conservado; el detalle depende de la vista.','Plano mantido; o detalhe depende da visualização.']);
     const key = `${id}/${status.state}/${text}`;
     if (box.dataset.detailStatus === key) return;
     box.dataset.detailStatus = key;
     box.textContent = text;
-    const open = document.createElement('button'); open.type = 'button'; open.textContent = 'Ouvrir dans Maisons';
+    const open = document.createElement('button'); open.type = 'button'; open.textContent = urbanText(['Ouvrir dans Maisons','Open in Houses','在房屋工作坊中打开','Abrir en Casas','Abrir em Casas']);
     open.onclick = () => { void (async () => {
       if ('projection' in building) {
         const value = await (boundedCold()?.read(building.id, 'open') ?? coldSession?.read(building.id, 'open')); if (!value) throw new Error('Plan natif absent ou remplacé.');
@@ -1726,13 +1750,13 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       if (!checked) { urbanSource.clear(); invalidateArchitecture(); buildingPanel.invalidate(); }
       if (kind === 'quarters') {
         ++id; enabled = checked;
-        if (!enabled) { layouts = undefined; partitions = undefined; status('quarters', 'Génération des quartiers désactivée.'); status('parcels', 'En attente des quartiers…'); }
+        if (!enabled) { layouts = undefined; partitions = undefined; status('quarters', urbanText(['Génération des quartiers désactivée.','District generation disabled.','街区生成已禁用。','Generación de barrios desactivada.','Geração de bairros desativada.'])); status('parcels', urbanText(['En attente des quartiers…','Waiting for districts…','等待街区…','Esperando los barrios…','Aguardando os bairros…'])); }
         else schedule();
       } else {
         if (appliedKind === 'parcels') ++id;
         parcelEnabled = checked; partitions = undefined;
         if (checked) { if (layouts) request('parcels'); else if (enabled) schedule(); }
-        else status('parcels', 'Génération des parcelles désactivée.');
+        else status('parcels', urbanText(['Génération des parcelles désactivée.','Parcel generation disabled.','地块生成已禁用。','Generación de parcelas desactivada.','Geração de lotes desativada.']));
       }
       draw(); options.onChange();
     };
@@ -2021,8 +2045,8 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       for (const layout of layouts ?? []) if (!citySettings[layout.key]) rememberCities([layout.key]);
       render.view = state.view ?? (state.buildingState?.scene || state.buildingState?.cold || state.buildingState?.parent ? 'buildings' : 'parcels'); lastBuiltScene = state.buildingState?.scene; lastBuiltCold = state.buildingState?.cold;
       for (const kind of ['quarters', 'parcels'] as const) { clearTimeout(draftTimers[kind]); dirty[kind] = false; populate(kind); }
-      status('quarters', `Plan conservé · ${layouts?.length ?? 0} ville(s)`);
-      status('parcels', partitions ? 'Parcelles conservées.' : 'Parcelles non calculées.');
+      status('quarters', `${urbanText(['Plan conservé','Plan retained','规划已保留','Plano conservado','Plano mantido'])} · ${layouts?.length ?? 0} ${urbanText(['villes','cities','城市','ciudades','cidades'])}`);
+      status('parcels', partitions ? urbanText(['Parcelles conservées.','Parcels retained.','地块已保留。','Parcelas conservadas.','Lotes mantidos.']) : urbanText(['Parcelles non calculées.','Parcels not computed.','尚未计算地块。','Parcelas sin calcular.','Lotes não calculados.']));
       draw(); options.onPlanChange?.();
       // City Bench always cuts parcels: a plan sent without them gets them now.
       if (options.city && layouts?.length && !partitions) { parcelEnabled = true; populate('parcels'); request('parcels'); }
@@ -2132,13 +2156,13 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       targetSelect.replaceChildren(new Option('All · tous les settlements', 'all'), ...sorted.map(s => new Option(`${s.name || s.key} · ${s.population.toLocaleString()} hab. · ${Math.round(s.radius)} m`, s.key)));
       targetSelect.value = target; targetSelect.disabled = !sorted.length;
       populate('quarters'); populate('parcels'); draw();
-      if (ready && sorted.length && enabled) schedule(); else { status('quarters', 'En attente des settlements…'); status('parcels', 'En attente des quartiers…'); }
+      if (ready && sorted.length && enabled) schedule(); else { status('quarters', urbanText(['En attente des implantations…','Waiting for settlements…','等待聚落…','Esperando los asentamientos…','Aguardando os assentamentos…'])); status('parcels', urbanText(['En attente des quartiers…','Waiting for districts…','等待街区…','Esperando los barrios…','Aguardando os bairros…'])); }
     },
-    terrainPending(): void { urbanSource.clear(); invalidateArchitecture(); buildingPanel.invalidate(); ++id; ready = false; clearTimeout(timer); layouts = undefined; partitions = undefined; cachedTerrain = undefined; draw(); status('quarters', 'En attente du terrain et des settlements…'); status('parcels', 'En attente des quartiers…'); },
+    terrainPending(): void { urbanSource.clear(); invalidateArchitecture(); buildingPanel.invalidate(); ++id; ready = false; clearTimeout(timer); layouts = undefined; partitions = undefined; cachedTerrain = undefined; draw(); status('quarters', urbanText(['En attente du terrain et des implantations…','Waiting for terrain and settlements…','等待地形和聚落…','Esperando el terreno y los asentamientos…','Aguardando o terreno e os assentamentos…'])); status('parcels', urbanText(['En attente des quartiers…','Waiting for districts…','等待街区…','Esperando los barrios…','Aguardando os bairros…'])); },
     terrainFailed(message: string): void {
       urbanSource.clear(); ++id; ready = false; clearTimeout(timer);
-      status('quarters', `Génération du terrain échouée : ${message}`);
-      status('parcels', `Génération du terrain échouée : ${message}`);
+      status('quarters', `${urbanText(['Génération du terrain échouée','Terrain generation failed','地形生成失败','Falló la generación del terreno','Falha na geração do terreno'])} : ${message}`);
+      status('parcels', `${urbanText(['Génération du terrain échouée','Terrain generation failed','地形生成失败','Falló la generación del terreno','Falha na geração do terreno'])} : ${message}`);
     },
     updateView: draw,
     share(params: URLSearchParams): void { params.set('urban', JSON.stringify({ enabled, parcelEnabled, target, quarterSeed: appliedQuarterSeed, parcelSeed: appliedParcelSeed, layoutConfig: appliedLayout, parcelConfig: appliedParcel, render, buildingState: buildingSettings(buildingPanel.state), ...(cityView ? { architecture: architectureMode } : {}), ...(hasEdits(edits) ? { edits: packEdits(edits) } : {}) })); }, // edits hook (cityEdits.ts): outlines packed in links

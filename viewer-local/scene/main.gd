@@ -15,6 +15,7 @@ const WaterProjection=preload("res://adapters/surface_water_projection.gd")
 const MapProjection=preload("res://adapters/surface_map_projection.gd")
 const Presentation = preload("res://adapters/surface_presentation.gd")
 const GroundResponse=preload("res://adapters/surface_ground_response.gd")
+const Locale=preload("res://adapters/surface_locale.gd")
 var surface_shader_code := ""
 var world: Dictionary = {}
 var packet: Dictionary = {}
@@ -926,7 +927,8 @@ func _update_hud() -> void:
 	var sample_z: float = focus.y
 	var material_id := int(Data.field_at(world,"material",sample_x,sample_z,true))
 	var recipe: Dictionary = world.materials[material_id]
-	hud.text = "MAGNA URBIS  /  SURFACE WORLD\n%.2f m wide · %.4f m/px · %s\n%s · source LOD %s / %.2f m native\n%s · rock %d · deposit %d · wet %.2f · trees %.2f\n%d / %d candidates visible · %d frames · %s\nWheel: zoom  Drag: pan  O: top/oblique  D: diagnostics  F: inspect  S: capture  1–7: scales\n%s" % [width_m,width_m/get_viewport().get_visible_rect().size.x,"oblique" if oblique else "top",world.terrain.source.id,str(world.terrain.source.sourceLOD) if world.terrain.source.get("sourceLODKnown",true) else "unknown (retained)",spacing,recipe.family,int(Data.field_at(world,"bedrock",sample_x,sample_z,true)),int(Data.field_at(world,"depositOrigin",sample_x,sample_z,true)),Data.field_at(world,"moisture",sample_x,sample_z),Data.field_at(world,"treeCover",sample_x,sample_z),selected_candidates,candidate_count,frames,"preparing (parent remains visible)" if worker!=null else "ready",world.diagnostics.warnings[0] if world.diagnostics.warnings.size()>0 else ""]
+	var locale := Locale.normalize(str(options.get("--locale", OS.get_locale())))
+	hud.text = Locale.template(locale) % [width_m,width_m/get_viewport().get_visible_rect().size.x,Locale.label(locale,0 if oblique else 1),world.terrain.source.id,str(world.terrain.source.sourceLOD) if world.terrain.source.get("sourceLODKnown",true) else Locale.label(locale,2),spacing,recipe.family,int(Data.field_at(world,"bedrock",sample_x,sample_z,true)),int(Data.field_at(world,"depositOrigin",sample_x,sample_z,true)),Data.field_at(world,"moisture",sample_x,sample_z),Data.field_at(world,"treeCover",sample_x,sample_z),selected_candidates,candidate_count,frames,Locale.label(locale,3 if worker!=null else 4),world.diagnostics.warnings[0] if world.diagnostics.warnings.size()>0 else ""]
 
 func _unhandled_input(event: InputEvent) -> void:
 	if world.is_empty(): return

@@ -16,7 +16,7 @@ There are two implementations: **TypeScript**, currently the most complete, and 
 
 **The Rust version is actively being implemented.** Its dedicated benches already expose terrain, erosion, hydrology, settlement placement, regional roads, streets, blocks and parcels. A separate Rust house generator is also under development; assembling these stages into the complete application is ongoing.
 
-Read the [technical and scientific overview (in French)](docs/TECHNICAL_AND_SCIENTIFIC_OVERVIEW.md) for the generation pipeline, InfiniteDiffusion / Terrain Diffusion, erosion, rivers and lakes, urban plans, and the Rust / WASM / neural-network stack. It includes research citations, source-code links and the current implementation boundaries.
+Read the [technical and scientific overview](docs/TECHNICAL_AND_SCIENTIFIC_OVERVIEW.md) for the generation pipeline, InfiniteDiffusion / Terrain Diffusion, erosion, rivers and lakes, urban plans, and the Rust / WASM / neural-network stack. It includes research citations, source-code links and the current implementation boundaries. A [French version](docs/TECHNICAL_AND_SCIENTIFIC_OVERVIEW_FR.md) is also available.
 
 The long-term goal is to **integrate Magna Urbis into [Neural Earth](https://github.com/dunkean/neural-earth)**, the procedural world project developed in Infinite Map, placing cities and villages within a regional and planetary landscape. This integration is planned for the future and has not been delivered yet.
 
@@ -238,7 +238,27 @@ npm run check:terrain  # Check Rust code and WASM compilation
 
 Generated modules stay in `rust/pkg/wasm/`, which Git ignores. See the [Rust README](rust/README.md) for the engine's organization.
 
-The terrain bench also supports **neural relief** through a local native Rust service using Burn and Terrain Diffusion's coarse → base → decoder models. Start it from `web/` with `npm run neural:serve`. This optional source requires model weights and a compatible GPU; it is separate from the serverless TypeScript application. Magna Urbis's browser neural-inference crate remains experimental and is not connected to the bench. See the [execution paths and limitations](docs/TECHNICAL_AND_SCIENTIFIC_OVERVIEW.md#7-rust-webassembly-webgpu-et-inférence-neuronale).
+The [sharing recipe guide](docs/MAP_RECIPES.md) explains how to export and import workshop settings and maps, including the limits of replay across generator versions. The [Rust workshop workflow](docs/RUST_BENCH_PIPELINE.md) documents stage transfers, generation zones and heightmaps. The [rendering guide](docs/RENDERING.md) describes styles, layers, materials and diagnostics.
+
+The [urban redesign study](docs/REFONTE_GENERATION_URBAINE_2026-10-13.md) covers the earlier workflows, literature and proposals. The [native implementation report](docs/REFONTE_URBAINE_IMPLEMENTATION_2026-10-13.md) records its methods, validation and limitations as of October 2026.
+
+The [river synthesis study](docs/synthese_rivieres_heightmap.md) reviews hydrology methods, references and the October 2026 implementation.
+
+The [building texture library](docs/BUILDING_TEXTURE_LIBRARY.md) documents the offline collection, provenance and material coverage; it is not yet integrated into the renderer.
+
+The [world architectural styles atlas](docs/styles_architecturaux_mondiaux_city_mapper.md) surveys regional building and settlement forms; its [French original](docs/styles_architecturaux_mondiaux_city_mapper_FR.md) is preserved for reference.
+
+The [settlement and building catalog](docs/catalogue_settlements_antiquite_moyen_age_rpg.md) covers historical and fantasy archetypes, with a preserved [French version](docs/catalogue_settlements_antiquite_moyen_age_rpg_FR.md).
+
+The [City Bench culture guide](docs/CITY_CULTURES.md) describes the urban catalogue, its architectural mappings and known gaps. The [settlement variation inventory](docs/CITY_VARIATION_VARIABLES.md) documents available controls, recipes and their limits.
+
+The [ground material study](docs/GROUND_MATERIAL_MAPPING.md) and [ground texture proposal](docs/GROUND_TEXTURE_MAPPING_V1.md) document the inputs, limitations and candidate assets.
+
+The [surface rendering design](docs/RENDER_SURFACE_DESIGN.md) describes the proposed architecture, validation criteria and delivery milestones; the [rendering research review](docs/RENDER_REVIEW.md) surveys the underlying techniques, and the [natural materials atlas](docs/MATERIALS_REVIEW.md) catalogs landscape forms and patterns.
+
+The optional [local SurfaceWorld viewer](viewer-local/README.md) documents the Godot preview, its setup and rendering limitations.
+
+The terrain bench also supports **neural relief** through a local native Rust service using Burn and Terrain Diffusion's coarse → base → decoder models. Start it from `web/` with `npm run neural:serve`. This optional source requires model weights and a compatible GPU; it is separate from the serverless TypeScript application. Magna Urbis's browser neural-inference crate remains experimental and is not connected to the bench. See the [execution paths and limitations](docs/TECHNICAL_AND_SCIENTIFIC_OVERVIEW.md#7-rust-webassembly-webgpu-and-neural-inference).
 
 ## Repository layout
 

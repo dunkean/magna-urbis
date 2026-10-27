@@ -1,18 +1,12 @@
-# Prévisualisation locale SurfaceWorld
+# Local SurfaceWorld preview
 
-Godot est un moteur de rendu candidat pour les cartes et plans JDR 2D/3D de
-Magna Urbis. Les contrats de données restent indépendants du moteur ; les palettes
-existantes, les vues orthographiques et les exports de cartes guident son évaluation.
-Les sorties SVG/Canvas conservent actuellement les étiquettes et la composition
-finale non reprises ici. Ce projet ne génère aucun relief et ne modifie ni les hauteurs
-source, ni les volumes urbains natifs, ni leurs identifiants de matériaux.
+[French original](README_FR.md).
 
-## Installer et lancer
+Godot is a candidate renderer for Magna Urbis 2D/3D RPG maps and plans. Data contracts remain engine-independent; existing palettes, orthographic views and map exports guide its evaluation. SVG/Canvas output currently retains labels and final composition that are not reproduced here. This project generates no terrain and changes neither source heights, native urban volumes nor their material IDs.
 
-Versions épinglées : **Godot 4.7.2 stable**, **Terrain3D 1.0.2 stable**. Le bootstrap
-Windows vérifie le SHA-256 de l'archive Terrain3D et installe l'extension hors Git.
-Le moteur doit être installé séparément. Forward+ est le backend par défaut ; il
-permet les Decals de routes. Compatibility est un repli avec des capacités différentes.
+## Install and launch
+
+Pinned versions: **Godot 4.7.2 stable**, **Terrain3D 1.0.2 stable**. The Windows bootstrap verifies the Terrain3D archive's SHA-256 and installs the extension outside Git. Install the engine separately. Forward+ is the default backend and supports road Decals. Compatibility is a fallback with different capabilities.
 
 ```powershell
 $env:GODOT = 'C:/tools/Godot_v4.7.2-stable_win64_console.exe'
@@ -21,95 +15,41 @@ node web/scripts/surface_viewer.mjs --check
 node web/scripts/surface_viewer.mjs --world C:/data/world.surfacebin --assets C:/data/surface-assets/resolved.json
 ```
 
-Le lanceur accepte `--godot <exécutable>` et `--renderer forward_plus|mobile|gl_compatibility`.
-Les chemins relatifs sont résolus depuis le répertoire courant. Il importe le
-projet au premier lancement. `--check` vérifie les scripts, le contrat de shader
-Terrain3D et les versions ; un test GPU reste nécessaire pour qualifier un backend.
-Sur Linux/macOS, décompresser le zip épinglé dans `viewer-local/` et importer avec
-`godot --headless --path viewer-local --editor --import --quit`. Ces plateformes
-ne sont pas qualifiées par les mesures Windows.
+The launcher accepts `--godot <executable>` and `--renderer forward_plus|mobile|gl_compatibility`. Relative paths resolve from the current directory. It imports the project on first launch. `--check` verifies scripts, the Terrain3D shader contract and versions; a GPU test is still required to qualify a backend. On Linux/macOS, unpack the pinned zip into `viewer-local/` and import with `godot --headless --path viewer-local --editor --import --quit`. Windows measurements do not qualify those platforms.
 
-Le lecteur accepte JSON `magna-surface-packet` v1, `SurfaceWorld` JSON, et le
-transport binaire **MUFSURF1**. Ce dernier conserve les colonnes typées, les doubles
-précisions urbaines et les sentinelles ; il évite les chaînes JSON géantes des
-grilles 1024². Les colonnes urbaines et de population sont lues sans matérialiser
-un million d'objets JavaScript/Godot. Les schémas canoniques restent sous
-`web/src/surface/`.
+The viewer accepts `magna-surface-packet` v1 JSON, `SurfaceWorld` JSON, and **MUFSURF1** binary transport. The latter preserves typed columns, urban double precision and sentinels; it avoids giant JSON strings for 1024² grids. Urban and population columns are read without materializing a million JavaScript/Godot objects. Canonical schemas remain under `web/src/surface/`.
 
-`resolved.json` provient de `web/scripts/surface_assets.mjs`. Ses cartes sont
-locales : aucun téléchargement n'a lieu pendant le rendu hors ligne. Le catalogue
-actuel contient quinze jeux PBR CC0 ; `recipeIds` est prioritaire sur le repli par
-famille. Sans catalogue, le matériau analytique de repli est explicite. Une carte
-de hauteur absente devient un relief de texture plat, avec avertissement.
-`SurfaceMaterialLibrary.asset_version` et `asset_digest` identifient les assets
-réellement chargés, leurs affectations, tailles physiques, amplitudes et SHA-256
-déclarés et constatés. Les chemins absolus et l’ordre des clés ne participent pas
-au digest. `loaded_asset_bindings` expose les couches et leurs moyennes linéaires.
-Cette provenance de rendu reste distincte de `World.versions.materialLibrary`,
-qui décrit les recettes du modèle canonique.
+`resolved.json` comes from `web/scripts/surface_assets.mjs`. Its maps are local: offline rendering performs no downloads. The current catalog has fifteen CC0 PBR sets; `recipeIds` takes priority over family fallback. Without a catalog, the analytical fallback material is explicit. A missing height map becomes flat texture relief with a warning. `SurfaceMaterialLibrary.asset_version` and `asset_digest` identify actually loaded assets, their bindings, physical sizes, amplitudes, and declared and observed SHA-256 values. Absolute paths and key order do not enter the digest. `loaded_asset_bindings` exposes layers and their linear means. This render provenance is distinct from `World.versions.materialLibrary`, which describes canonical-model recipes.
 
-Les assets végétaux ont leurs manifestes séparés :
-`--vegetation-assets C:/data/grass/resolved.json` active les touffes CC0 en vue
-aérienne ; `--tree-assets C:/data/tree/resolved.json` active le chemin expérimental
-d'arbres, avec maillage proche, imposteurs et masque optique commun. Les glyphes
-cartographiques gardent leur présentation. Ces options ne changent aucune hauteur,
-identité de candidat, roche ou rivière. Voir la
-[préparation des arbres](../docs/surface/TREE_ASSET_EXPERIMENT.md) et les
-[preuves des herbes](../docs/surface/evidence/vegetation-grass-v13/README.md).
-Le driver de campagne transmet respectivement `--viewer-vegetation-assets` et
-`--viewer-tree-assets` et vérifie les manifestes au début et à la fin.
+Vegetation assets have separate manifests: `--vegetation-assets C:/data/grass/resolved.json` enables CC0 tufts in aerial view; `--tree-assets C:/data/tree/resolved.json` enables the experimental tree path with near meshes, impostors and a shared optical mask. Map glyphs retain their presentation. These options change no height, candidate identity, rock or river. See [tree preparation](../docs/surface/TREE_ASSET_EXPERIMENT.md) and [grass evidence](../docs/surface/evidence/vegetation-grass-v13/README.md). The campaign driver passes `--viewer-vegetation-assets` and `--viewer-tree-assets` respectively and checks manifests at the beginning and end.
 
-Le compilateur `surface-1.6.0` fournit la
-[réponse continue du sol](../docs/surface/GROUND_RESPONSE.md) : les paramètres
-physiques sont interpolés avant la recette. Les anciens paquets gardent leur
-ancien rendu ; le lecteur ne reconstruit pas des sols fins depuis leurs couleurs.
-Sol, herbes/litière et arbres restent trois couches indépendantes.
+The `surface-1.6.0` compiler provides [continuous ground response](../docs/surface/GROUND_RESPONSE.md): physical parameters are interpolated before the recipe. Older packets retain their previous rendering; the viewer does not reconstruct fine soils from their colors. Ground, grass/litter and trees remain three independent layers.
 
-## Vues et styles de carte
+## Views and map styles
 
 ```powershell
 node web/scripts/surface_viewer.mjs --world C:/data/city.surfacebin --presentation cartographic --style blueprint --top
 node web/scripts/surface_viewer.mjs --world C:/data/world.surfacebin --assets C:/data/surface-assets/resolved.json --presentation aerial
 ```
 
-Le paquet transporte `presentation`, une copie de la palette commune et de son
-origine. Le lanceur fournit aussi `surface/presentation/palettes.json`, exporté des
-styles existants, pour les overrides `--style`. Le profil conserve l'identité des
-quinze styles terrain, leurs palettes et métadonnées d'eau. Godot prévisualise la
-palette, la hiérarchie des masses urbaines, les groupes de matériaux natifs et la
-vue orthographique. Les brosses fantasy, la composition, les étiquettes et la mise
-en page finale restent assurées par les renderers web existants.
+The packet carries `presentation`, a copy of the shared palette and its provenance. The launcher also supplies `surface/presentation/palettes.json`, exported from existing styles, for `--style` overrides. The profile retains the identity of fifteen terrain styles, their palettes and water metadata. Godot previews the palette, urban mass hierarchy, native material groups and orthographic view. Fantasy brushes, composition, labels and final layout remain the responsibility of existing web renderers.
 
-La vue cartographique emploie une exposition linéaire, une lumière ambiante blanche
-et aucun soleil direct. Les routes projetées peuvent ainsi conserver leurs
-couleurs CSS. La vue aérienne emploie les matières PBR et les teintes de prévisualisation
-associées aux motifs natifs (`tile`, `wood`, `stone`, etc.). Ces teintes ne réécrivent
-pas le catalogue architectural source. Le cache de matériaux est borné et distingue
-les palettes, les affectations de slots et les identifiants source.
+Cartographic view uses linear exposure, white ambient light and no direct sun. Projected roads can thus retain CSS colors. Aerial view uses PBR materials and preview tints associated with native patterns (`tile`, `wood`, `stone`, etc.). These tints do not rewrite the source architecture catalog. The material cache is bounded and distinguishes palettes, slot assignments and source IDs.
 
-L'interface de diagnostic est masquée par défaut ; `--hud` ou `H` l'affiche.
-Molette : zoom ; glisser gauche : déplacement ; `O` : dessus/oblique ; `1` à `7` :
-40 km à 10 m ; `D` : diagnostics ; `F` : inspection JSON du centre ; `S` : capture ;
-Échap : profil et fermeture. La largeur orthographique et le pas en m/px sont
-exacts. En perspective, le pas annoncé concerne le plan du centre visé.
+The diagnostic interface is hidden by default; `--hud` or `H` shows it. Wheel: zoom; left drag: pan; `O`: top/oblique; `1` to `7`: 40 km to 10 m; `D`: diagnostics; `F`: inspect center JSON; `S`: capture; Escape: profile and close. Orthographic width and meters/pixel spacing are exact. In perspective, the stated spacing applies to the targeted center plane.
 
-## Captures, profils et contrôles GPU
+The diagnostic HUD follows the system language when it is French, English, simplified Chinese, Spanish or Portuguese; other languages fall back to English. Pass `--locale fr|en|zh|es|pt` to select one explicitly. Source warnings and material identifiers retain their original text.
+
+## Captures, profiles and GPU checks
 
 ```powershell
 node web/scripts/surface_viewer.mjs --world C:/data/world.surfacebin --assets C:/data/surface-assets/resolved.json --width 10 --top --frames 180 --capture C:/data/close.png --metrics C:/data/close.json
 node web/scripts/surface_viewer.mjs --world C:/data/world.surfacebin --assets C:/data/surface-assets/resolved.json --top --tour C:/data/tour --metrics C:/data/tour.json
 ```
 
-`--x` et `--z` fixent le centre canonique. `--frames` et `--tour` désactivent les
-entrées pour rendre la capture reproductible. Une étape de tour attend la
-préparation et la réponse live appliquée, ou l'erreur explicite de cette requête,
-puis stabilise les images. Les profils séparent préparation CPU, import des
-régions/objets, durée de navigation, rendu CPU/GPU mesuré par le viewport et mémoire
-graphique déclarée. Les quantiles d'image incluent la synchronisation verticale ;
-les timestamps GPU ne mesurent pas tout le coût CPU et restent absents si le
-backend ne fournit aucun échantillon positif.
+`--x` and `--z` set the canonical center. `--frames` and `--tour` disable input for reproducible capture. A tour step waits for preparation and the applied live response, or that request's explicit error, then stabilizes frames. Profiles separate CPU preparation, region/object import, navigation time, viewport-measured CPU/GPU rendering and reported graphics memory. Frame quantiles include vertical synchronization; GPU timestamps do not measure all CPU cost and remain absent if the backend provides no positive sample.
 
-Contrôles indépendants, avec le même exécutable Godot et le répertoire `viewer-local` :
+Independent checks, using the same Godot executable and `viewer-local` directory:
 
 ```powershell
 & $env:GODOT --path viewer-local --rendering-method forward_plus --script diagnostics/material_mean_probe.gd -- C:/data/surface-assets/resolved.json C:/data/material-mean.json
@@ -119,116 +59,34 @@ Contrôles indépendants, avec le même exécutable Godot et le répertoire `vie
 & $env:GODOT --headless --path viewer-local --script diagnostics/asset_provenance_probe.gd
 ```
 
-`material_mean_probe` emploie le sampler de production et trois empreintes par
-matériau, puis compare une origine déplacée de 64 m à travers 4096 m. Sur RTX 4090
-Forward+, quinze jeux PBR et le repli ont donné une erreur maximale de moyenne
-linéaire de **0,154 %**, et une différence de rebase de **1 niveau 8 bits**.
-La rotation de normales 0/90/180/270° a donné zéro écart encodé dans le probe GPU.
-Le probe Decal donne la couleur route CSS exacte, avec zéro pixel différent après
-une déformation du sol de ±2 m ; le sol diffère de sa cible de moins d'un niveau
-8 bits. Ces contrôles isolés ne constituent pas une qualification visuelle complète.
+`material_mean_probe` uses the production sampler and three footprints per material, then compares an origin shifted by 64 m across 4096 m. On RTX 4090 Forward+, fifteen PBR sets and the fallback produced a maximum linear-mean error of **0.154%**, and a rebase difference of **one 8-bit level**. Normal rotation by 0/90/180/270° produced zero encoded difference in the GPU probe. The Decal probe gives the exact CSS road color, with zero differing pixels after ±2 m ground deformation; ground differs from its target by less than one 8-bit level. These isolated checks do not constitute complete visual qualification.
 
-## Source, précision et alimentation à la demande
+## Source, precision and on-demand supply
 
-La caméra conserve les coordonnées canoniques en doubles précisions. La
-soustraction de l'origine précède les coordonnées GPU. Les fenêtres Terrain3D
-sont reconstruites depuis la source et remplacées ensemble ; le nœud n'est pas
-simplement translaté. Le pas et les origines d'affichage suivent la grille source.
-Terrain3D limite son espacement à 0,25–100 m : toute interpolation d'affichage reste
-distincte de `sourceLOD`, `nativeSpacingM` et `sourceLODKnown`.
+The camera retains canonical coordinates in double precision. Origin subtraction precedes GPU coordinates. Terrain3D windows are rebuilt from the source and replaced together; the node is not simply translated. Display spacing and origins follow the source grid. Terrain3D limits spacing to 0.25–100 m: display interpolation remains distinct from `sourceLOD`, `nativeSpacingM` and `sourceLODKnown`.
 
-Les shaders reconstruisent les poids des deux matériaux de chacun des quatre
-voisins du contexte. Les moyennes de couleur sont linéaires. Les cartes PBR utilisent
-une couleur/hauteur RGBA16F linéaire et une normale/rugosité, en tableaux 1024² avec
-mips. Les transformations et poids stochastiques sont communs aux cartes ; les
-normales OpenGL tournent dans le même repère. La variation de couleur est centrée
-sur la moyenne et bornée sans amplification des cibles sombres. Les dérivées sont
-calculées avant les branches ; le bruit macro est filtré selon l'empreinte.
+Shaders reconstruct weights for both materials of each of the context's four neighbors. Color means are linear. PBR maps use linear RGBA16F color/height and normal/roughness, in 1024² arrays with mips. Transforms and stochastic weights are shared across maps; OpenGL normals rotate in the same frame. Color variation is centered on the mean and bounded without amplifying dark targets. Derivatives are computed before branches; macro noise is filtered by footprint.
 
-`--live-url http://127.0.0.1:PORT/surface-live/terrain` utilise le navigateur Terrain
-Bench actif et son moteur réel. `--session-id` sélectionne facultativement sa
-session, pas un monde. Les demandes indiquent une origine minimale, une étendue
-et une résolution, et restent dans l'emprise retenue du contexte. Les identités
-`knownContextId` et `knownSceneContextId` évitent de retransmettre le contexte et
-la ville inchangés. Les parents restent visibles pendant le chargement ; une
-erreur du fournisseur conserve le dernier monde valide et sa provenance. Le
-lecteur ne remplace jamais une erreur de décodeur par un bruit de relief.
+`--live-url http://127.0.0.1:PORT/surface-live/terrain` uses the active Terrain Bench browser and its real engine. `--session-id` optionally selects its session, not a world. Requests specify a minimum origin, extent and resolution and remain within the retained context footprint. `knownContextId` and `knownSceneContextId` avoid retransmitting unchanged context and city. Parents remain visible during loading; a provider error retains the last valid world and provenance. The viewer never replaces a decoder error with terrain noise.
 
-`--stream-dir <répertoire>` permet également des demandes/réponses par fichiers ;
-le fournisseur doit publier ses réponses atomiquement. Un export hors ligne ne
-prouve pas que le raffinement source a été généré à la demande.
+`--stream-dir <directory>` also permits file-based requests/responses; the provider must publish responses atomically. An offline export does not prove source refinement was generated on demand.
 
-## Limites de cette prévisualisation
+## Preview limitations
 
-Le transfert des régions peut dépasser 16,7 ms ; les profils l'indiquent. Les
-arbres, buissons et débris sont des représentants géométriques simples. Le couvert
-lointain utilise l'atlas des couronnes candidates et leur transmittance ; cela ne
-constitue pas une forêt photographique. Il n'y a pas de microgéométrie centimétrique
-certifiée. Un zoom à 1 cm/px n'ajoute aucune information à un DEM grossier.
-L'eau conserve les classes/niveaux fournis ; les rives dépendent de leur support.
-Les volumes urbains natifs sont conservés ; les proxies cartographiques restent
-identifiés comme tels et sont masqués par défaut. Les routes projetées ne terrassent
-pas le terrain. Le rendu Godot actuel ne remplace pas encore les styles cartographiques
-finis de Magna Urbis.
+Region transfer can exceed 16.7 ms; profiles report it. Trees, shrubs and debris are simple geometric representatives. Distant cover uses the candidate-crown atlas and their transmittance; this is not a photographic forest. There is no certified centimeter-scale microgeometry. Zooming to 1 cm/pixel adds no information to a coarse DEM. Water retains supplied classes/levels; shores depend on their support. Native urban volumes are retained; cartographic proxies remain identified as such and hidden by default. Projected roads do not earthwork terrain. Current Godot rendering does not yet replace Magna Urbis's finished map styles.
 
-Références : [Terrain3D 1.0.2](https://github.com/TokisanGames/Terrain3D/releases/tag/v1.0.2-stable),
-[régions Terrain3D](https://terrain3d.readthedocs.io/en/stable/api/class_terrain3ddata.html),
-[environnement et tonemapping Godot](https://docs.godotengine.org/en/stable/tutorials/3d/environment_and_post_processing.html).
-La licence MIT du shader Terrain3D reste dans l'archive installée par le bootstrap.
+References: [Terrain3D 1.0.2](https://github.com/TokisanGames/Terrain3D/releases/tag/v1.0.2-stable), [Terrain3D regions](https://terrain3d.readthedocs.io/en/stable/api/class_terrain3ddata.html), [Godot environment and tonemapping](https://docs.godotengine.org/en/stable/tutorials/3d/environment_and_post_processing.html). The Terrain3D shader's MIT license remains in the archive installed by the bootstrap.
 
+## Ground, low cover and canopy
 
-## Sol, couvert bas et canopée
+Modern packets carry the nine `ground*` / `lowCover*` fields: physical ground (rock, deposits, humus), low cover (grass, low shrubs and litter) and trees remain independent layers. Canopy does not rename a ground texture. `--layers all|ground|low-cover|canopy` and `set_layer_visibility(ground, low_cover, trees)` isolate these representations without changing heights, fields or source IDs. An old composite packet is reported as `legacy-composite-unavailable`: its bare ground cannot be reconstructed. Low-cover means are premultiplied by opacity before filtering; colors, normals and roughness of transparent texels do not contribute.
 
-Les paquets modernes portent les neuf champs `ground*` / `lowCover*` : le sol
-physique (roche, dépôts, humus), le couvert bas (herbes, arbustes bas et litière)
-et les arbres restent trois couches indépendantes. La canopée ne renomme pas une
-texture de sol. `--layers all|ground|low-cover|canopy` et
-`set_layer_visibility(ground, low_cover, trees)` isolent ces représentations sans
-modifier les hauteurs, champs ni identifiants source. Un ancien paquet composite
-est annoncé `legacy-composite-unavailable` : son sol nu ne peut pas être reconstruit.
-Les moyennes du couvert bas sont prémultipliées par leur opacité avant filtrage ;
-les couleurs, normales et rugosités des texels transparents ne contribuent pas.
+Unlit diagnostics 7, 8, 9 and 10 isolate ground mean, low-cover opacity, `treeCover` and geometric normal respectively. 11 and 12 show low cover and optical canopy residual; 13 and 14 isolate ground roughness and normal; 15 and 16 isolate refined rock detail. Diagnostics 17–19 support compositor evidence (mean, roughness, normal), not aesthetic map export.
 
-Les diagnostics non éclairés 7, 8, 9 et 10 isolent respectivement la moyenne du
-sol, l'opacité du couvert bas, `treeCover` et la normale géométrique. 11 et 12
-montrent le couvert bas et le résidu optique de canopée ; 13 et 14 isolent la
-rugosité et la normale du sol ; 15 et 16 isolent le détail de roche raffiné.
-Les diagnostics 17–19 servent aux preuves du compositeur (moyenne, rugosité,
-normale), pas à l'export esthétique d'une carte.
+The supplied tree inventory is exact within its declared page. Beyond that, a coverage-calibrated optical crown approximation uses only the canonical seed and world coordinates. These approximate positions are never inventory IDs. The pattern converges to the mean when statistical crown diameter becomes subpixel; the page transition is C1 and instances are selected by rank within an interior band. Painted crowns have an optical normal and approximate shadow transfer (authored crown center 8 m, sun direction, RGB transmission [0.25, 0.34, 0.50]). This transfer does not claim to reproduce geometric shadows on sloping receivers or exactly conserve light energy. It is removed with the tree layer and disabled in cartography. Real-instance shadows and colors use the same main-camera LOD, including during light shadow passes.
 
-L'inventaire d'arbres fourni est exact dans sa page déclarée. Au-delà, une
-approximation optique de couronnes, calibrée en couverture, utilise uniquement
-la graine canonique et les coordonnées monde. Ces positions approximatives ne
-sont jamais des identifiants d'inventaire. Le motif rejoint la moyenne quand le
-diamètre statistique des couronnes devient sous-pixel ; la transition de page
-est C1 et les instances sont sélectionnées par rang dans une bande intérieure.
-Les couronnes peintes ont une normale optique et un transfert d'ombre approximatif
-(centre de couronne authored 8 m, direction du soleil, transmission RGB
-[0.25, 0.34, 0.50]). Ce transfert ne prétend pas reproduire les ombres géométriques
-sur récepteurs en pente ni conserver exactement l'énergie lumineuse. Il est
-retiré avec la couche arbres et désactivé en cartographie. Les ombres et couleurs
-des vraies instances emploient le même LOD de la caméra principale, y compris
-pendant les passes d'ombre de la lumière.
+## Hydrology of fixed maps
 
-## Hydrologie des cartes fixes
+For a fixed Magna map, the default `--water-mode source-map` projects retained hydrological contours onto terrain only (Decal, mask 1). Buildings and trees, on mask 2, remain occluders. This water is a projected cartographic representation, including in the PBR aerial view; it is not a physical water surface fitted to terrain. `--water-mode source-levels` retains the presentation of measured levels and their possible conflicts with terrain. No source level, bed or network is raised, carved or recomputed to correct presentation. Projection preserves source widths and may lose a subpixel watercourse; no minimum stroke is added. Its budgets, omissions and conflicts are reported in each capture's metrics. GPU baking of an immutable snapshot precedes its application; captures wait for it to finish. Forward+ is required for terrain-only projection.
 
-Pour une carte Magna fixe, le défaut `--water-mode source-map` projette les
-contours hydrologiques retenus uniquement sur le terrain (Decal, masque 1).
-Les bâtiments et arbres, sur le masque 2, restent des occluders. Cette eau est
-une représentation cartographique projetée, y compris dans la vue aérienne PBR ;
-elle ne constitue pas une surface d'eau physique ajustée au relief.
-`--water-mode source-levels` conserve la présentation des niveaux mesurés et
-leurs conflits éventuels avec le terrain. Aucun niveau, lit ou réseau source
-n'est remonté, creusé ou recalculé pour corriger la présentation.
-La projection conserve les largeurs source et peut perdre un cours d'eau
-sous-pixel ; aucun trait minimum n'est ajouté. Ses budgets, omissions et conflits
-sont déclarés dans les métriques de chaque capture. Le bake GPU d'un snapshot
-immuable précède son application ; les captures attendent sa fin. Forward+ est
-nécessaire pour cette projection sur terrain seul.
-
-
-For readable regional mapper output, source-map water defaults to a declared
-1.25-screen-pixel outline of the retained Float64 vector contours. The metadata
-separates that display recipe from source geometry/levels/areas. Use
-`--water-symbol-width-px 0` for unexpanded contours; source-levels physical mode
-never enables symbols. See [the policy and limits](../docs/surface/WATER_SYMBOLS.md).
+For readable regional mapper output, source-map water defaults to a declared 1.25-screen-pixel outline of retained Float64 vector contours. Metadata separates that display recipe from source geometry, levels and areas. Use `--water-symbol-width-px 0` for unexpanded contours; source-levels physical mode never enables symbols. See [the policy and limits](../docs/surface/WATER_SYMBOLS.md).

@@ -1,117 +1,63 @@
-# Refonte urbaine native — implémentation du 13 octobre 2026
+# Native urban redesign — implementation of October 13, 2026
 
-La refonte sépare désormais empreinte, centres et histoire, tissus de rues,
-secteurs de calcul, îlots et parcelles. Elle s'exécute en Rust/WASM dans Terrain
-Bench et Urban Bench, jusqu'au parcellaire. Le catalogue culturel existant reste
-disponible ; l'application TypeScript historique conserve son moteur indépendant.
+[French original](REFONTE_URBAINE_IMPLEMENTATION_2026-10-13_FR.md).
 
-## Mécanismes livrés
+The redesign now separates footprint, centers and history, street fabrics, computation sectors, blocks and parcels. It runs in Rust/WASM in Terrain Bench and Urban Bench through parcel generation. The existing cultural catalog remains available; the historical TypeScript application retains its independent engine.
 
-| Échelle | Méthodes et comportement |
-|---|---|
-| Empreinte | Fondation vectorielle, croissance accessible anisotrope, accrétion le long des routes, fusion de noyaux |
-| Familles | Circulaire/ovale, rectangulaire, polygonale, compacte, allongée, ruban, éventail, doigts, dendrite, lobée, archipel, composite |
-| Surface | Budget démographique strict population/densité brute, ou budget artistique par rayon ; déficit explicite |
-| Géographie | Coûts locaux de terrain et d'accès, exclusions d'eau, composantes et trous conservés |
-| Centres | Plusieurs noyaux, ancrage de leurs réseaux ; centres de desserte explicites pour les composantes planifiées |
-| Histoire | Domaines chronologiques disjoints, extensions et fusion annoncée seulement si les composantes se rejoignent |
-| Tissus | Culture, grille, organique, radial, terrasses, ramifié et groupes autour d'un commun |
-| Interfaces | Armature commune ; les frontières d'époque ne deviennent pas des frontières artificielles de génération de rues |
-| Îlots | Recettes et zones choisies spatialement selon la phase ; phase conservée par îlot |
-| Desserte | Boucle locale ajoutant des passages publics/piétons, collectifs ou privés selon profondeur, recette et pente |
-| Parcelles | Bandes, découpe orientée, concurrence des territoires de façade, domaines entiers et jardins |
-| Géométrie | Contrôles de couverture, dépassement et chevauchement par union, conservation des exclusions |
+## Delivered mechanisms
 
-Les noms de familles sont des préréglages et des guides. Le choix automatique
-associe les mécanismes cohérents ; une surcharge manuelle du mécanisme garde
-sa priorité. Une forme ne dicte pas automatiquement le tissu ni le parcellaire.
+| Scale | Methods and behavior |
+| --- | --- |
+| Footprint | Vector foundation, anisotropic accessible growth, accretion along roads, merging cores |
+| Families | Circular/oval, rectangular, polygonal, compact, elongated, ribbon, fan, fingers, dendritic, lobed, archipelago, composite |
+| Area | Strict population/gross-density budget, or artistic radius budget; explicit shortfall |
+| Geography | Local terrain and access costs, water exclusions, retained components and holes |
+| Centers | Multiple cores anchoring their networks; explicit service centers for planned components |
+| History | Disjoint chronological domains, extensions and merging announced only when components meet |
+| Fabrics | Cultural, grid, organic, radial, terraces, branching and groups around a common |
+| Interfaces | Shared framework; period boundaries do not become artificial street-generation boundaries |
+| Blocks | Recipes and zones selected spatially by phase; phase retained per block |
+| Access | Local loop adds public/pedestrian, collective or private passages according to depth, recipe and slope |
+| Parcels | Bands, oriented cuts, competing frontage territories, whole domains and gardens |
+| Geometry | Coverage, overflow and overlap checks by union, preservation of exclusions |
 
-### Ajustement des empreintes naturelles
+Family names are presets and guides. Automatic selection combines consistent mechanisms; a manual mechanism override keeps priority. A shape does not automatically dictate fabric or parcels.
 
-Le choix automatique distingue désormais la forme d'une enceinte culturelle
-d'une fondation géométrique. Une enceinte ronde ou ovale ne suffit plus à
-produire une ville circulaire planifiée. Les fondations orthogonales culturelles
-conservent leur contour géométrique lorsque le site est suffisamment plat et
-sec ; un site contraint utilise une croissance adaptée au terrain. Un choix
-explicite de famille géométrique ou de fondation planifiée garde sa priorité.
+### Natural-footprint adjustment
 
-Le diagnostic géographique échantillonne le voisinage à l'échelle de la ville,
-avec pente, relief et proportion de sol disponible. La croissance combine
-accessibilité, pente du sol et variation spatiale déterministe à plusieurs
-échelles. La pente du sol évite de considérer un versant raide comme constructible
-simplement parce qu'un trajet horizontal le longe. Les noyaux organiques utilisent
-le même terrain ; les exclusions ne sont pas remplies pour atteindre artificiellement
-le budget de population.
+Automatic selection now distinguishes the shape of a cultural enclosure from a geometric foundation. A round or oval enclosure no longer suffices to produce a planned circular city. Cultural orthogonal foundations retain their geometric outline when the site is sufficiently flat and dry; a constrained site uses terrain-adapted growth. An explicit geometric family or planned foundation retains priority.
 
-Les quartiers exposés regroupent les secteurs selon centre et phase dominante.
-Ils représentent des identités morphologiques de génération, sans prétendre
-simuler à ce stade tous les quartiers sociaux ou administratifs historiques.
+The geographic diagnostic samples the neighborhood at city scale, with slope, relief and share of available land. Growth combines accessibility, ground slope and deterministic multiscale spatial variation. Ground slope avoids treating a steep hillside as buildable merely because a horizontal route follows it. Organic cores use the same terrain; exclusions are not filled to artificially meet the population budget.
 
-## Utilisation des bancs
+Displayed neighborhoods group sectors by center and dominant phase. They represent morphological generation identities, without claiming at this stage to simulate every historical social or administrative neighborhood.
 
-Dans le bloc 6, choisir **Empreinte et croissance**, le budget, la famille et
-éventuellement plusieurs noyaux. Le **Tissu de rues** et la **Desserte** se règlent
-séparément. Les groupes autour d'un commun créent les espaces collectifs avant
-les parcelles. Le bloc 7 affine ces mêmes îlots et conserve le layout.
+## Using the benches
 
-Les couches réserve, terre attribuée, noyaux/identités, phases et desserte aident
-à lire le résultat. Les tableaux affichent surface cible, surface attribuée,
-voirie et limites, réserves/communs, déficit et accessibilité. Le rendu ne relance
-aucune génération. Les terrains ruraux et le réseau régional utilisent
-l'emprise réellement attribuée.
+In block 6, choose **Footprint and growth**, the budget, family and optionally multiple cores. **Street fabric** and **Access** are configured separately. Groups around a common create collective spaces before parcels. Block 7 refines the same blocks and retains the layout.
 
-Les URL ne sérialisent que les réglages appliqués. Les anciennes entrées sans
-configuration d'empreinte utilisent le mécanisme historique et les recettes
-d'accès historiques. Les ateliers isolés restent disponibles pour comparer
-les opérateurs locaux.
+Reserve, allocated land, cores/identities, phases and access layers help interpret results. Tables show target area, allocated area, roads and boundaries, reserves/commons, shortfall and accessibility. Rendering does not rerun generation. Rural land and the regional network use the actually allocated footprint.
 
-Les configurations importées sont limitées aux champs de leur contrat, avant
-génération et avant sauvegarde. Cela corrige les liens où un opérateur parcellaire
-avait été conservé dans les réglages des quartiers : le moteur Rust refusait
-ce champ et la ville ne se construisait pas. L'opérateur reste conservé dans
-les réglages des parcelles.
+URLs serialize only applied settings. Old entries without footprint configuration use the historical mechanism and access recipes. Standalone workshops remain available for comparing local operators.
 
-## Choix de méthode et coût
+Imported configurations are limited to fields in their contract before generation and before saving. This fixes links where a parcel operator had been retained in neighborhood settings: the Rust engine rejected that field and the city failed to build. The operator remains retained in parcel settings.
 
-Le champ d'accessibilité est local et borné à 192², indépendant du raster
-régional. Les fondations planifiées sont calibrées par aire ; les noyaux organiques
-et rubans automatiques emploient le champ de croissance sur le terrain. Les
-bandes de routes imposées explicitement ne commencent pas par une ville circulaire
-à déformer.
+## Method choices and cost
 
-Les contours de croissance sont lissés avec déplacement borné, puis simplifiés.
-Le candidat est accepté seulement si topologie, trous, centres et bras fins
-restent conservés, avec variation d'aire et différence symétrique limitées à
-1 %. Les trous d'eau restent ceux du masque. Un index exact des segments par
-ordonnée accélère ensuite la recherche de phase sans changer le test de rayon ;
-le snapshot de 30 000 habitants conserve les mêmes layouts et parcelles après
-cette optimisation.
+The accessibility field is local and bounded to 192², independent of the regional raster. Planned foundations are calibrated by area; organic cores and automatic ribbons use the terrain growth field. Explicitly imposed road bands do not begin with a circular city to distort.
 
-La desserte adaptative est limitée par le nombre de tentatives par îlot et à
-96 accès ajoutés par lieu. L'index des façades est réutilisé tant que les rues
-ne changent pas. Un accès candidat doit respecter le terrain, éviter l'eau et
-les voisins et conserver le découpage du parent. Les fonds impossibles à
-desservir restent explicites.
+Growth contours are smoothed with bounded displacement, then simplified. A candidate is accepted only if topology, holes, centers and thin arms remain preserved, with area variation and symmetric difference limited to 1%. Water holes remain those of the mask. An exact segment index by ordinate then accelerates phase lookup without changing the radius test; the 30,000-person snapshot retains identical layouts and parcels after this optimization.
 
-Les territoires de façade concurrents emploient des plans de distance orientés.
-C'est une alternative native légère aux bandes prioritaires, pas une
-implémentation générale du squelette droit. Le moteur peut choisir une méthode
-différente par programme foncier.
+Adaptive access is bounded by attempts per block and 96 added accesses per place. The frontage index is reused while streets do not change. An access candidate must respect terrain, avoid water and neighbors, and preserve the parent partition. Rear areas impossible to serve remain explicit.
 
-Le cadre réutilise les principes de champs et subdivision hiérarchique,
-et introduit une co-génération locale accès/foncier. Les références sont dans
-la [revue bibliographique](REFONTE_GENERATION_URBAINE_2026-10-13.md). Aucun modèle
-neuronal de ville ni nouvelle dépendance lourde n'a été ajouté.
+Competing frontage territories use oriented distance planes. This is a lightweight native alternative to priority strips, not a general straight-skeleton implementation. The engine can choose a different method per land-use program.
 
-## Validation et reproduction
+The framework reuses field and hierarchical subdivision principles and introduces local access/land co-generation. References are in the [literature review](URBAN_REDESIGN_LITERATURE_2026-10-13.md). No neural city model or new heavy dependency was added.
 
-La revue Astra a été faite par phases puis sur les snapshots natifs. Elle a
-conduit aux corrections suivantes : contrat numérique des centres, contrôles
-historiques inactifs masqués, distinction doigts/dendrites, événements de fusion
-réels, accès ne débordant pas sur les voisins, index partagé et diagnostics
-d'accès cohérents avec les statuts exportés.
+## Validation and reproduction
 
-Vérifications à exécuter depuis `rust/` :
+The Astra review was conducted by phase and then on native snapshots. It led to corrections to the centers' numeric contract, hidden inactive historical controls, finger/dendrite distinction, real merge events, access not spilling into neighbors, shared index and access diagnostics consistent with exported statuses.
+
+Checks to run from `rust/`:
 
 ```powershell
 cargo test -p magna-urbis-core urban --lib --release
@@ -120,7 +66,7 @@ cargo check -p magna-urbis-core -p magna-urbis-wasm --target wasm32-unknown-unkn
 cargo run --release -p magna-urbis-core --example urban_refonte -- --repeat --out out/urban-refonte.json
 ```
 
-Depuis `web/` :
+From `web/`:
 
 ```powershell
 npm run typecheck
@@ -133,93 +79,48 @@ node scripts/urban_natural_scenes_check.mjs
 node scripts/urban_natural_ui_check.mjs
 ```
 
-Le corpus d'exemple permet `--case`, `--population`, `--seed`, `--repeat`,
-`--out` et `--geometry`. Les rapports et captures produits restent dans les
-répertoires ignorés. Les temps natifs et WASM mesurés sont à lire avec la
-population, le nombre d'îlots/parcelles et les paramètres de chaque cas ;
-ils n'établissent pas un gain sur un moteur produisant un autre niveau de détail.
+The example corpus supports `--case`, `--population`, `--seed`, `--repeat`, `--out` and `--geometry`. Generated reports and captures remain in ignored directories. Read native and WASM timings alongside each case's population, block/parcel counts and parameters; they do not establish a gain over an engine producing a different level of detail.
 
-### Validation initiale, avant l'ajustement naturel
+### Initial validation, before natural adjustment
 
-- 39 tests natifs urbains passent, ainsi que Clippy strict et la compilation WASM.
-- Typecheck et 8 tests TypeScript ciblés passent ; application historique et
-  builds autonomes Terrain/Urban Bench compilent.
-- Les 12 familles du corpus reproduisent exactement leurs JSON sur deux générations.
-- Suites navigateur moderne et historique, démarrage Terrain Bench, isolement
-  des parcelles, brouillons après import atelier et replay exact passent.
-- Le bundle hors ligne importe un décor local et rejoue le plan exactement
-  après réattachement du fichier, avec repli sans worker forcé, aucune erreur
-  de page et aucune requête HTTP externe.
+- 39 native urban tests pass, as do strict Clippy and WASM compilation.
+- Typecheck and eight targeted TypeScript tests pass; the historical application and standalone Terrain/Urban Bench builds compile.
+- The corpus's 12 families reproduce exactly the same JSON over two generations.
+- Modern and historical browser suites, Terrain Bench startup, parcel isolation, drafts after workshop import and exact replay pass.
+- The offline bundle imports a local decor and exactly replays its plan after the file is reattached, with forced worker-free fallback, no page error and no external HTTP request.
 
-| Exécution / scène | Population | Parcelles | Quartiers et accès | Parcelles |
-|---|---:|---:|---:|---:|
-| Native release, compact/croisement, 70 hab./ha | 30 000 | 10 171 | 5,215 s | 1,557 s |
-| Native release, rectangle/plat, 70 hab./ha | 100 000 | 20 345 | 4,807 s | 2,561 s |
-| Chrome, WASM release, rectangle/grille, 160 hab./ha | 4 000 | 409 | 42 ms | 61 ms |
-| Chrome, WASM release, même décor et réglages de grille | 30 000 | 3 130 | 763 ms | 828 ms |
+| Execution / scene | Population | Parcels | Neighborhoods and access | Parcels |
+| --- | ---: | ---: | ---: | ---: |
+| Native release, compact/crossing, 70 people/ha | 30,000 | 10,171 | 5.215 s | 1.557 s |
+| Native release, rectangle/flat, 70 people/ha | 100,000 | 20,345 | 4.807 s | 2.561 s |
+| Chrome, WASM release, rectangle/grid, 160 people/ha | 4,000 | 409 | 42 ms | 61 ms |
+| Chrome, WASM release, same decor and grid settings | 30,000 | 3,130 | 763 ms | 828 ms |
 
-Ces mesures sont des appels observés sur cette machine, sous charge locale
-variable, pas des médianes garanties. Les appels navigateur incluent la frontière
-JSON/WASM et excluent le rendu. Les cas natifs et navigateur utilisent des
-densités et niveaux de détail différents : ils ne comparent pas les deux
-technologies. Le petit corpus natif, de 600 à 2 500 habitants, mesure 26–461 ms
-pour quartiers/accès et 11–299 ms pour parcelles.
+These are observed calls on this machine under variable local load, not guaranteed medians. Browser calls include the JSON/WASM boundary and exclude rendering. Native and browser cases use different densities and detail levels: they do not compare the two technologies. The small native corpus, 600–2,500 inhabitants, measures 26–461 ms for neighborhoods/access and 11–299 ms for parcels.
 
-Rapports : `rust/out/urban-refonte-smooth-{12,30k,100k}.json`, géométries associées,
-`web/out/urban-refactor/result.json` et `offline-result.json`. Les captures sont
-dans `web/out/urban-refactor/`. Sur les deux grandes scènes natives, les terres
-sans desserte représentent respectivement environ 7,6 % et 22,4 % de la surface
-foncière partitionnée ; les diagnostics les conservent explicitement.
+Reports: `rust/out/urban-refonte-smooth-{12,30k,100k}.json`, associated geometries, `web/out/urban-refactor/result.json` and `offline-result.json`. Captures are in `web/out/urban-refactor/`. In the two large native scenes, land without access represents approximately 7.6% and 22.4% of partitioned land respectively; diagnostics retain these explicitly.
 
-### Validation après l'ajustement naturel
+### Validation after natural adjustment
 
-Les 41 tests urbains natifs et 10 tests TypeScript ciblés passent, ainsi que
-rustfmt, Clippy strict, typecheck et les compilations WASM/Terrain/Urban Bench.
-Le corpus des douze familles reproduit exactement ses layouts et parcelles.
-La suite navigateur conserve les mécanismes, les composantes disjointes, les
-graines, les brouillons non appliqués et l'isolement de l'étape parcellaire.
+The 41 native urban tests and 10 targeted TypeScript tests pass, as do rustfmt, strict Clippy, typecheck and WASM/Terrain/Urban Bench builds. The twelve-family corpus exactly reproduces layouts and parcels. The browser suite preserves mechanisms, disjoint components, seeds, unapplied drafts and parcel-stage isolation.
 
-Cinq scènes comparent la plaine organique, la vallée courbe organique, une
-fondation chinoise sur cette vallée, une fondation chinoise en plaine et une
-ellipse explicitement planifiée en vallée. Les deux villes automatiques de
-vallée suivent désormais le fond incurvé. La grille chinoise en plaine et
-l'ellipse explicite conservent exactement leurs géométries précédentes.
-Les captures ont été inspectées, puis revues par Astra, sans problème bloquant
-restant identifié. Le bord garde un léger crénelage issu du raster.
+Five scenes compare an organic plain, an organic curved valley, a Chinese foundation on that valley, a Chinese foundation on a plain and an explicitly planned ellipse in a valley. The two automatic valley cities now follow the curved valley floor. The Chinese grid on a plain and explicit ellipse retain exactly their previous geometries. Captures were inspected and then reviewed by Astra, with no remaining blocking problem identified. The edge retains slight raster-derived aliasing.
 
-Le lien signalé `d085-hills-coast-E-city`, avec 12 000 habitants, génère
-177 îlots et 1 773 parcelles, sans erreur et avec replay exact. La caméra du
-lien est conservée jusqu'au chargement du décor. La terre attribuée vaut
-1 599 197 m² pour une cible de 1 600 000 m² ; l'amélioration de silhouette
-ne provient donc pas d'une forte réduction de l'emprise.
+The reported `d085-hills-coast-E-city` link, with 12,000 inhabitants, generates 177 blocks and 1,773 parcels without error and with exact replay. The link camera is retained until the decor loads. Allocated land is 1,599,197 m² for a 1,600,000 m² target; the silhouette improvement therefore does not come from a large reduction in footprint.
 
-| Exécution / scène | Population | Parcelles | Quartiers et accès | Parcelles |
-|---|---:|---:|---:|---:|
-| Chrome, WASM release, site côtier vallonné signalé, 75 hab./ha | 12 000 | 1 773 | 1,695 s | 0,624 s |
-| Native release, compact/croisement, 70 hab./ha | 30 000 | 11 552 | 4,312 s | 1,728 s |
+| Execution / scene | Population | Parcels | Neighborhoods and access | Parcels |
+| --- | ---: | ---: | ---: | ---: |
+| Chrome, WASM release, reported hilly coastal site, 75 people/ha | 12,000 | 1,773 | 1.695 s | 0.624 s |
+| Native release, compact/crossing, 70 people/ha | 30,000 | 11,552 | 4.312 s | 1.728 s |
 
-Ces mesures restent des appels observés, sans garantie de médiane ni revendication
-d'accélération. Le nombre de parcelles de la scène native a changé avec son
-empreinte ; les temps de validation initiale ne constituent pas un comparatif
-à géométrie constante. Le corpus des douze petites scènes mesure 37–338 ms
-pour les quartiers et 7–122 ms pour les parcelles.
+These remain observed calls, without guaranteed median or acceleration claim. The native scene's parcel count changed with its footprint; initial-validation timings are not a constant-geometry comparison. The twelve small scenes measure 37–338 ms for neighborhoods and 7–122 ms for parcels.
 
-Rapports actuels : `rust/out/urban-natural-12.json`, `urban-natural-30k.json`,
-`web/out/urban-natural/after-result.json` et `scenes-after/result.json`.
-Les captures et les géométries avant/après sont dans `web/out/urban-natural/`.
+Current reports: `rust/out/urban-natural-12.json`, `urban-natural-30k.json`, `web/out/urban-natural/after-result.json` and `scenes-after/result.json`. Captures and before/after geometries are in `web/out/urban-natural/`.
 
-## Limites explicites
+## Explicit limitations
 
-L'histoire livrée est une chronologie légère d'emprises ; elle ne simule pas
-encore économie, mutations cadastrales successives ou tous les types de traces
-d'enceintes anciennes. Les bâtiments restent différés.
+Delivered history is a lightweight footprint chronology; it does not yet simulate economy, successive cadastral changes or every kind of trace of old walls. Buildings remain deferred.
 
-L'eau utilisée par les étapes urbaines reste celle du raster de settlements,
-jusqu'à 512². Un masque régional grossier ne restitue pas un petit canal par
-lissage. Les contrôles de pente sont exacts sur la surface interpolée transmise,
-pas sur un relief inconnu plus fin.
+Water used by urban stages remains that of the settlements raster, up to 512². Smoothing a coarse regional mask does not recover a small canal. Slope checks are exact on the transmitted interpolated surface, not on unknown finer terrain.
 
-Les réserves et fonds non desservis peuvent rester importants dans les terrains
-contraints et certains tissus. Les diagnostics les montrent sans leur attribuer
-une capacité de logement fictive. Les densités sont des budgets de planification,
-pas une mesure de logements construits.
+Reserves and unserved rear areas can remain significant on constrained terrain and in some fabrics. Diagnostics show them without assigning fictional housing capacity. Densities are planning budgets, not a measure of constructed housing.

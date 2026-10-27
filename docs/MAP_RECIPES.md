@@ -1,16 +1,18 @@
-# Recettes de partage
+# Sharing recipes
 
-Dans les ateliers Rust (terrain, settlements, urbanisme et maisons), **Exporter code** ouvre une recette `MU.…`. On peut copier ce texte ou télécharger un fichier **.murecipe**. **Importer code** accepte le texte collé, y compris avec des retours à la ligne, ou ce même fichier. L’import ouvre automatiquement le bon atelier.
+[French original](MAP_RECIPES_FR.md).
 
-La recette conserve les paramètres appliqués, les graines, les pins et notes lorsqu’ils existent, la caméra et les réglages d’affichage sérialisés par l’atelier. Les brouillons de génération ne remplacent pas l’état appliqué. Aucun service de raccourcissement ni compte n’est nécessaire.
+In the Rust workshops (terrain, settlements, urban planning and houses), **Export code** opens a `MU.…` recipe. You can copy this text or download a **.murecipe** file. **Import code** accepts pasted text, including line breaks, or the same file. Import automatically opens the right workshop.
 
-Les nouveaux exports procéduraux conservent la recette du terrain et la liste des découpes alignées sur ses cellules. À l’import, le terrain est régénéré par le même atelier, puis les découpes sont rejouées et les étapes suivantes recalculées avec leurs paramètres. Les données sans recette de reconstruction (anciens fichiers .decor, par exemple) sont embarquées directement. Une heightmap locale est intégrée : aucun identifiant de stockage local n’est laissé comme seule source du relief. Ces cas peuvent donc produire des codes plus longs ; le fichier est alors plus pratique.
+The recipe retains applied parameters, seeds, pins and notes when present, the camera, and display settings serialized by the workshop. Generation drafts do not replace the applied state. No URL-shortening service or account is required.
 
-Le format est du JSON compacté, compressé en zlib avec un dictionnaire des réglages courants, puis encodé en base64url. Le checksum détecte les codes endommagés. Le fichier contient exactement le même code, suivi d’un retour à la ligne. Il n’y a pas de garantie de compatibilité entre révisions du générateur.
+New procedural exports retain the terrain recipe and the list of crops aligned to its cells. On import, the same workshop regenerates the terrain, then replays the crops and recomputes subsequent stages with their parameters. Data without a reconstruction recipe (such as older .decor files) is embedded directly. A local heightmap is included: no local-storage identifier is left as the sole source of terrain. These cases can therefore produce longer codes, for which a file is more convenient.
 
-Le codec est dans `web/src/ui/recipe.ts` (`encodeRecipe` / `decodeRecipe`). L’interface et la reconstruction sont dans `recipeSharing.ts`. `recipeDictionary.json` contient seulement le vocabulaire et des valeurs courantes, pas un catalogue de cartes. Le script développeur `node scripts/recipe_dictionary.mjs` le régénère depuis Vite ; cela invalide volontairement les anciens codes.
+The format is compact JSON, zlib-compressed using a dictionary of common settings, then base64url-encoded. The checksum detects damaged codes. The file contains exactly the same code followed by a newline. Compatibility between generator revisions is not guaranteed.
 
-Vérification depuis `web/` :
+The codec is in `web/src/ui/recipe.ts` (`encodeRecipe` / `decodeRecipe`). The interface and reconstruction are in `recipeSharing.ts`. `recipeDictionary.json` contains only vocabulary and common values, not a map catalog. The developer script `node scripts/recipe_dictionary.mjs` regenerates it from Vite; this deliberately invalidates old codes.
+
+Verification from `web/`:
 
 ```powershell
 npx vitest run tests/ui.recipe.test.ts

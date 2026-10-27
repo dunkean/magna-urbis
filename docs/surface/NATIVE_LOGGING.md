@@ -38,57 +38,27 @@ flushes, accepted-message drain after overflow, bounded statistics and clean
 join/resource release. This is not evidence of improved navigation, a cause for
 the historical stalls, or a global real-time performance qualification. A/B
 navigation on the same retained source/session is a separate required proof.
-## Diagnostic A/B V13 : deux phases strictement échouées
+## V13 A/B diagnostic: two strictly failed phases
 
-Le [rapport compact](evidence/native-log-modes-v13.json) conserve le diagnostic
-exécuté sur `cf760322364c5efa94ad58bebecbfa2aeb40234b`, avec **613 hashes runtime
-identiques** et des snapshots propres avant/après. Les deux processus natifs
-sortent à zéro et leurs critères temporels/source passent, mais les deux phases
-restent **FAILED** : chacune contient le vrai `SCRIPT ERROR` dans
-`SurfaceGroundResponse.expected_wire_dtype`, comparant un indice de tableau JSON
-float à une String. Le correctif ultérieur `e75e54a` et son décodage CPU réussi
-ne changent pas rétroactivement ces verdicts. Le statut `diagnostic-complete`
-et l'exit zéro du superviseur signifient seulement que la collecte a fini.
+The [compact report](evidence/native-log-modes-v13.json) retains the diagnostic run on `cf760322364c5efa94ad58bebecbfa2aeb40234b`, with **613 identical runtime hashes** and clean before/after snapshots. Both native processes exit zero and their timing/source criteria pass, but both phases remain **FAILED**: each contains the real `SCRIPT ERROR` in `SurfaceGroundResponse.expected_wire_dtype`, comparing a float JSON array index to a String. The later `e75e54a` fix and its successful CPU decoding do not retroactively change these verdicts. `diagnostic-complete` and supervisor exit zero mean only that collection finished.
 
-Une seule génération fraîche fournit le même paquet de 91 626 097 octets aux
-deux modes, dans le même navigateur, contexte et session. L'ordre est fixé :
-synchrone, puis threaded. Les caches peuvent donc être plus chauds dans le
-second passage. Les requêtes et mondes affichés diffèrent légèrement selon
-le calendrier d'input ; ce n'est pas une comparaison causale à requêtes égales.
-Les deux utilisent Forward+ sur RTX 5090, audio Dummy et le même manifeste PBR.
-Aucun flag expérimental d'assets d'arbres ou d'herbes n'est activé.
+A single fresh generation supplies the same 91,626,097-byte packet to both modes, in the same browser, context and session. Order is fixed: synchronous, then threaded. Caches may therefore be warmer on the second pass. Requests and displayed worlds differ slightly with input timing; this is not a causal comparison with identical requests. Both use Forward+ on RTX 5090, Dummy audio and the same PBR manifest. No experimental tree or grass asset flag is enabled.
 
-| Mesure de ce diagnostic | Synchrone | Threaded |
+| Diagnostic measurement | Synchronous | Threaded |
 | --- | ---: | ---: |
-| Mouvement nominal / réel | 20 / 20,006 s | 20 / 20,015 s |
-| Écart d'input maximal | 0,302 s | 0,429 s |
-| Mondes live distincts affichés pendant les 20 s | 2 | 2 |
-| Premier / second affichage nouveau | 11,436 / 16,583 s | 11,653 / 16,921 s |
-| Maximum `printMs` du thread principal | 33,700 ms | absent, mesure déplacée |
-| Maximum `enqueueMs` du thread principal | absent | 0,033 ms |
-| Maximum writer `printWallMs` | absent | 45,415 ms |
-| Maximum writer `queueWaitMs` | absent | 42,743 ms |
+| Nominal / actual movement | 20 / 20.006 s | 20 / 20.015 s |
+| Maximum input gap | 0.302 s | 0.429 s |
+| Distinct live worlds displayed during 20 s | 2 | 2 |
+| First / second new display | 11.436 / 16.583 s | 11.653 / 16.921 s |
+| Maximum main-thread `printMs` | 33.700 ms | absent, measurement moved |
+| Maximum main-thread `enqueueMs` | absent | 0.033 ms |
+| Maximum writer `printWallMs` | absent | 45.415 ms |
+| Maximum writer `queueWaitMs` | absent | 42.743 ms |
 
-Les deux premières réponses affichées sont des previews : un support natif de
-30 m avec `decoderUsed=false`, puis 0,9375 m avec `decoderUsed=true`. Le support
-final natif à 0,46875 m arrive pendant le drain. Ces progrès temporels/source
-ne dispensent jamais du contrôle des erreurs runtime.
+The first two displayed responses are previews: native 30 m support with `decoderUsed=false`, then 0.9375 m with `decoderUsed=true`. Final native 0.46875 m support arrives during drain. These timing/source improvements never waive runtime-error checks.
 
-Le snapshot du writer threaded indique **64 acceptés et écrits, 0 rejet,
-0 pending et aucune failure**, après le flush hors input. Les 64 numéros de
-séquence et noms d'événement correspondent exactement aux 64 premières lignes
-JSON applicatives. La ligne `metrics` suivante est sa propre émission exclue
-du snapshot : **64 + 1 = 65 lignes applicatives**. Le `navigation-proof` du
-script diagnostic, hors FIFO du viewer, porte le total à 66. Le mode synchrone
-produit aussi 65 + 1 lignes. Les champs `closed:false` et `joined:false` du
-snapshot sont pré-exit ; ils ne sont pas réétiquetés en preuve de join terminé.
-La vérification ultérieure des noms exacts et PIDs propres ne trouve aucun
-survivant ; elle n'arrête ni ne détaille les processus tiers.
+The threaded writer snapshot reports **64 accepted and written, 0 rejected, 0 pending and no failure**, after the out-of-input flush. All 64 sequence numbers and event names exactly match the first 64 application JSON lines. The following `metrics` line is its own emission, excluded from the snapshot: **64 + 1 = 65 application lines**. The diagnostic script's `navigation-proof`, outside the viewer FIFO, brings the total to 66. Synchronous mode also produces 65 + 1 lines. Snapshot fields `closed:false` and `joined:false` are pre-exit; they are not relabelled as proof of completed joining. A later check of exact names and owned PIDs finds no survivors; it does not stop or inspect third-party processes.
 
-`navigationFrameWallMs` provient de `all_frame_times`, qui couvre l'échauffement,
-le mouvement et le drain après `_ready`, pas seulement les 20 secondes d'input.
-Ses maxima de 3 630,672 / 741,844 ms ne sont donc pas une mesure de gels pendant
-le mouvement ni une preuve de 60 FPS. Réduire le span d'enqueue ne prouve pas
-que l'I/O physique est plus rapide. L'ordre fixe, les caches partagés, les
-requêtes différentes et le défaut runtime empêchent toute conclusion causale,
-qualification artistique ou validation d'une campagne fraîche complète.
+`navigationFrameWallMs` comes from `all_frame_times`, which covers warmup, movement and drain after `_ready`, not only the 20 seconds of input. Its maxima of 3,630.672 / 741.844 ms are therefore neither a measurement of freezes during movement nor proof of 60 FPS. Reducing enqueue span does not prove physical I/O is faster. Fixed order, shared caches, different requests and the runtime defect prevent causal conclusions, artistic qualification or validation of a complete fresh campaign.
+
+[Original version, including the French diagnostic](NATIVE_LOGGING_FR.md).

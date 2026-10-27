@@ -1,5 +1,6 @@
 import { executionProfiles, executionRuntime } from './executionProfile';
 import { initialTerrainSource } from './terrainStartupState';
+import { urbanText } from './urbanPanelLocale';
 
 /** Presentation only: keep the engines, input identities and event handlers owned by each stage. */
 type PanelSpec = {
@@ -45,7 +46,7 @@ function group(title: string, className: string): HTMLElement {
 
 function advanced(title = 'Paramètres avancés'): HTMLDetailsElement {
   const details = document.createElement('details'); details.className = 'panel-advanced';
-  const summary = document.createElement('summary'); summary.title = title; summary.setAttribute('aria-label', title);
+  const summary = document.createElement('summary'); summary.dataset.panelAdvancedKind = title === 'Paramètres avancés' ? 'advanced' : 'export'; summary.title = title; summary.setAttribute('aria-label', title);
   summary.textContent = title === 'Paramètres avancés' ? 'Avancé' : title;
   const body = document.createElement('div'); body.className = 'panel-advanced-body';
   details.append(summary, body); return details;
@@ -130,7 +131,7 @@ function organizeStage(panel: HTMLDetailsElement, spec: PanelSpec): void {
   // Select controls before reparenting the original containers.
   take(controls, spec.main, main); take(controls, spec.method, method); take(controls, spec.compute, compute);
   for (const [target, text] of [[method, spec.methodText], [compute, spec.computeText]] as const) {
-    if (text) { const value = document.createElement('span'); value.className = 'panel-value'; value.textContent = text; target.append(value); }
+    if (text) { const value = document.createElement('span'); value.className = 'panel-value'; value.dataset.panelSourceText = text; value.textContent = text; target.append(value); }
   }
   const action = spec.action ? controls.querySelector<HTMLButtonElement>(spec.action) : undefined;
   const toolbar = document.createElement('div'); toolbar.className = 'panel-toolbar';
@@ -218,7 +219,7 @@ function organize(): void {
     dock.append(download);
     const workshop = document.querySelector<HTMLButtonElement>('[data-workshop-space]');
     if (workshop) {
-      const next = document.createElement('button'); next.textContent = 'Ouvrir l’atelier quartiers / parcelles';
+      const next = document.createElement('button'); next.dataset.openUrbanWorkshop = ''; next.textContent = 'Ouvrir l’atelier quartiers / parcelles';
       next.onclick = () => workshop.click(); dock.prepend(next);
     }
   }
@@ -242,11 +243,63 @@ function organize(): void {
       if (stage) new MutationObserver(sync).observe(stage, { attributes: true, attributeFilter: ['hidden'] });
     }
   }
+  applyPanelLocale();
 }
+
+function applyPanelLocale(): void {
+  const groups = {
+    'panel-main': urbanText(['Paramètres principaux','Main settings','主要设置','Ajustes principales','Configurações principais']),
+    'panel-method': urbanText(['Méthode de calcul','Calculation method','计算方法','Método de cálculo','Método de cálculo']),
+    'panel-compute': urbanText(['Support de calcul','Compute backend','计算后端','Motor de cálculo','Backend de cálculo']),
+  };
+  for (const [cls, title] of Object.entries(groups)) document.querySelectorAll<HTMLElement>(`.panel-group.${cls}`).forEach(group => {
+    group.setAttribute('aria-label', title); const icon = group.querySelector<HTMLElement>('.panel-group-icon'); if (icon) icon.title = title;
+  });
+  document.querySelectorAll<HTMLElement>('[data-panel-advanced-kind]').forEach(summary => {
+    const advanced = summary.dataset.panelAdvancedKind === 'advanced';
+    const title = advanced ? urbanText(['Paramètres avancés','Advanced settings','高级设置','Ajustes avanzados','Configurações avançadas']) : urbanText(['Options d’export','Export options','导出选项','Opciones de exportación','Opções de exportação']);
+    summary.title = title; summary.setAttribute('aria-label', title);
+    summary.textContent = advanced ? urbanText(['Avancé','Advanced','高级','Avanzado','Avançado']) : title;
+  });
+  const sourceText: { [key: string]: readonly [string,string,string,string,string] } = {
+    'Découpe du relief':['Découpe du relief','Terrain cutout','地形裁剪','Recorte del relieve','Recorte do relevo'],
+    'Support du terrain · Rust / WebGPU':['Support du terrain · Rust / WebGPU','Terrain backend · Rust / WebGPU','地形后端 · Rust / WebGPU','Motor del terreno · Rust / WebGPU','Backend do terreno · Rust / WebGPU'],
+    'Placement sur la carte':['Placement sur la carte','Map placement','地图放置','Ubicación en el mapa','Posicionamento no mapa'],
+    'Décor conservé':['Décor conservé','Saved map','已保存地图','Mapa guardado','Mapa salvo'],
+    'Import local':['Import local','Local import','本地导入','Importación local','Importação local'],
+  };
+  document.querySelectorAll<HTMLElement>('[data-panel-source-text]').forEach(value => {
+    const words = sourceText[value.dataset.panelSourceText ?? '']; if (words) value.textContent = urbanText(words);
+  });
+  const method = document.querySelector<HTMLSelectElement>('#terrainMethod');
+  if (method) {
+    const label = method.closest('label'); if (label?.firstChild?.nodeType === Node.TEXT_NODE) label.firstChild.textContent = urbanText(['Méthode ','Method ','方法 ','Método ','Método ']);
+    const procedural = method.querySelector<HTMLOptionElement>('[value="procedural"]'); if (procedural) procedural.textContent = urbanText(['Procédurale','Procedural','程序生成','Procedural','Procedural']);
+    const neural = method.querySelector<HTMLOptionElement>('[value="neural"]'); if (neural) neural.textContent = urbanText(['Neuronale','Neural','神经网络','Neuronal','Neural']);
+  }
+  const source = document.querySelector<HTMLSelectElement>('#terrainSource');
+  if (source) {
+    const label = source.closest('label'); if (label?.firstChild?.nodeType === Node.TEXT_NODE) label.firstChild.textContent = urbanText(['Exécution ','Execution ','执行 ','Ejecución ','Execução ']);
+    const wasm = source.querySelector<HTMLOptionElement>('[value="neural-wasm"]'); if (wasm) wasm.textContent = urbanText(['Navigateur · WASM / WebGPU','Browser · WASM / WebGPU','浏览器 · WASM / WebGPU','Navegador · WASM / WebGPU','Navegador · WASM / WebGPU']);
+  }
+  const engine = document.querySelector<HTMLSelectElement>('#hydroEngine');
+  if (engine && document.getElementById('hydroStage')?.dataset.panelLayout) {
+    const label = engine.closest('label'); if (label?.firstChild?.nodeType === Node.TEXT_NODE) label.firstChild.textContent = urbanText(['Méthode ','Method ','方法 ','Método ','Método ']);
+    const rust = engine.querySelector<HTMLOptionElement>('[value="rust"]'); if (rust) rust.textContent = urbanText(['Réseau hydrologique','Hydrological network','水文网络','Red hidrológica','Rede hidrológica']);
+    const vector = engine.querySelector<HTMLOptionElement>('[value="vector"]'); if (vector) vector.textContent = urbanText(['Vectoriel · référence','Vector · reference','矢量 · 参考','Vectorial · referencia','Vetorial · referência']);
+  }
+  const sketch = document.querySelector<HTMLElement>('#terrainSketchEditor > details > summary'); if (sketch) sketch.textContent = urbanText(['Dessin et heightmap','Drawing and heightmap','绘图与高度图','Dibujo y mapa de alturas','Desenho e mapa de altura']);
+  const dock = document.querySelector<HTMLElement>('.bench-footer'); if (dock) dock.setAttribute('aria-label', urbanText(['Transfert et export','Transfer and export','传输与导出','Transferencia y exportación','Transferência e exportação']));
+  const download = document.getElementById('urbanDownloadExport'); if (download) download.textContent = urbanText(['Exporter .decor','Export .decor','导出 .decor','Exportar .decor','Exportar .decor']);
+  const workshop = document.querySelector<HTMLElement>('[data-open-urban-workshop]'); if (workshop) workshop.textContent = urbanText(['Ouvrir l’atelier quartiers / parcelles','Open districts / parcels workshop','打开街区 / 地块工作台','Abrir taller de barrios / parcelas','Abrir oficina de bairros / parcelas']);
+  const progress = document.querySelector<HTMLElement>('#calculationProgress span:last-child'); if (progress) progress.textContent = urbanText(['Calcul en cours…','Calculating…','正在计算…','Calculando…','Calculando…']);
+}
+window.addEventListener('magna-locale-change', applyPanelLocale);
 
 const stages = document.querySelector('.stages');
 if (stages) {
   organize();
+  applyPanelLocale();
   // Only watch the control column, never the map's large, frequently changing SVG tree.
   new MutationObserver(organize).observe(stages, { childList: true });
   window.addEventListener('bench-space-change', organize);
@@ -262,4 +315,5 @@ if (displayBar) {
   const syncProgress = (): void => { progress.hidden = !document.querySelector('[aria-busy="true"]'); };
   new MutationObserver(syncProgress).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['aria-busy'] });
   syncProgress();
+  applyPanelLocale();
 }

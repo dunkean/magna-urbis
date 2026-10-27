@@ -15,6 +15,7 @@ import type { TerrainData, TerrainSettings } from '../../../rust/bridge/terrain'
 import type {} from './benchContext';
 import { decodeSituation, encodeSituation, type SituationPin } from './citySituation';
 import { mountCity3d } from './city3d';
+import { urbanText } from './urbanPanelLocale';
 import { mountIllustration, captureViewport } from '../../../illustration/web/index.mjs';
 import { illustrationContext, illustrationTerrainFromDecor } from './illustrationContext';
 
@@ -225,9 +226,9 @@ const situation = document.createElement('details'); situation.className = 'stag
 situation.innerHTML = `<summary>Situation à signaler</summary><div class="stage-controls">
   <small>Copiez un code (ou un lien) qui rouvre exactement cette ville, ce cadrage et vos épingles.</small>
   <div class="settlement-actions"><button id="situationPin" type="button" aria-pressed="false" title="Puis cliquez sur la carte">Épingler un point</button><button id="situationCopy" type="button">Copier le code</button><button id="situationLink" type="button">Copier le lien</button></div>
-  <label>Note générale <textarea id="situationNote" rows="2" placeholder="Ce qui ne va pas…"></textarea></label>
+  <label><span data-situation-label="note">Note générale</span> <textarea id="situationNote" rows="2" placeholder="Ce qui ne va pas…"></textarea></label>
   <ol id="situationPins"></ol>
-  <label>Coller un code <input id="situationInput" type="text" placeholder="MU1.…" spellcheck="false"></label>
+  <label><span data-situation-label="paste">Coller un code</span> <input id="situationInput" type="text" placeholder="MU1.…" spellcheck="false"></label>
   <div class="settlement-actions"><button id="situationOpen" type="button">Ouvrir ce code</button></div>
   <small id="situationStatus" role="status"></small></div>`;
 stages.append(situation);
@@ -237,7 +238,7 @@ function drawPins(): void {
   pinLayer.replaceChildren(...pins.map((p, i) => {
     const g = document.createElementNS(ns, 'g'); g.setAttribute('transform', `translate(${p.x} ${p.y}) scale(${k})`);
     g.innerHTML = `<path d="M0 0 C -6 -10 -11 -14 -11 -21 A 11 11 0 1 1 11 -21 C 11 -14 6 -10 0 0 Z" fill="#c0392b" stroke="#fff" stroke-width="2"/><text y="-17" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">${i + 1}</text>`;
-    const title = document.createElementNS(ns, 'title'); title.textContent = p.note || `Épingle ${i + 1}`; g.append(title);
+    const title = document.createElementNS(ns, 'title'); title.textContent = p.note || urbanText([`Épingle ${i + 1}`,`Pin ${i + 1}`,`图钉 ${i + 1}`,`Marcador ${i + 1}`,`Marcador ${i + 1}`]); g.append(title);
     return g;
   }));
   if (map.lastChild !== pinLayer) map.append(pinLayer);
@@ -245,14 +246,27 @@ function drawPins(): void {
 function listPins(): void {
   const list = el('situationPins'); list.replaceChildren(...pins.map((p, i) => {
     const item = document.createElement('li');
-    item.innerHTML = `<small>${Math.round(p.x)}, ${Math.round(p.y)} m</small> <input type="text" placeholder="Note de l’épingle"> <button type="button" title="Cadrer">◎</button> <button type="button" title="Supprimer">×</button>`;
+    item.innerHTML = `<small>${Math.round(p.x)}, ${Math.round(p.y)} m</small> <input type="text"> <button type="button">◎</button> <button type="button">×</button>`;
     const note = item.querySelector('input')!, [focus, remove] = Array.from(item.querySelectorAll('button'));
+    note.placeholder = urbanText(['Note de l’épingle','Pin note','图钉备注','Nota del marcador','Nota do marcador']); focus.title = urbanText(['Cadrer','Focus','定位','Centrar','Centralizar']); remove.title = urbanText(['Supprimer','Remove','删除','Eliminar','Remover']);
     note.value = p.note; note.oninput = () => { p.note = note.value; drawPins(); };
     focus.onclick = () => setView({ cx: p.x, cy: p.y, scale: Math.max(view.scale, 1.5) });
     remove.onclick = () => { pins.splice(i, 1); listPins(); drawPins(); };
     return item;
   }));
 }
+function localizeSituation(): void {
+  situation.querySelector('summary')!.textContent = urbanText(['Situation à signaler','Report a situation','报告情况','Informar de una situación','Relatar uma situação']);
+  situation.querySelector('.stage-controls > small')!.textContent = urbanText(['Copiez un code (ou un lien) qui rouvre exactement cette ville, ce cadrage et vos épingles.','Copy a code or link that reopens this exact city, view and pins.','复制代码或链接，重新打开当前城市、视图和图钉。','Copia un código o enlace que reabra exactamente esta ciudad, vista y marcadores.','Copie um código ou link que reabra exatamente esta cidade, vista e marcadores.']);
+  el('situationPin').textContent = urbanText(['Épingler un point','Pin a point','标记位置','Marcar un punto','Marcar um ponto']); el('situationPin').title = urbanText(['Puis cliquez sur la carte','Then click the map','然后点击地图','Después haz clic en el mapa','Depois clique no mapa']);
+  el('situationCopy').textContent = urbanText(['Copier le code','Copy code','复制代码','Copiar código','Copiar código']); el('situationLink').textContent = urbanText(['Copier le lien','Copy link','复制链接','Copiar enlace','Copiar link']);
+  situation.querySelector('[data-situation-label="note"]')!.textContent = urbanText(['Note générale','General note','总体备注','Nota general','Nota geral']);
+  el<HTMLTextAreaElement>('situationNote').placeholder = urbanText(['Ce qui ne va pas…','What is wrong…','问题描述…','Qué falla…','O que está errado…']);
+  situation.querySelector('[data-situation-label="paste"]')!.textContent = urbanText(['Coller un code','Paste a code','粘贴代码','Pegar un código','Colar um código']); el('situationOpen').textContent = urbanText(['Ouvrir ce code','Open code','打开代码','Abrir código','Abrir código']);
+  for (const item of Array.from(el('situationPins').querySelectorAll('li'))) { const note=item.querySelector('input')!, buttons=item.querySelectorAll('button'); note.placeholder=urbanText(['Note de l’épingle','Pin note','图钉备注','Nota del marcador','Nota do marcador']); buttons[0].title=urbanText(['Cadrer','Focus','定位','Centrar','Centralizar']); buttons[1].title=urbanText(['Supprimer','Remove','删除','Eliminar','Remover']); }
+  drawPins();
+}
+window.addEventListener('magna-locale-change',localizeSituation); localizeSituation();
 async function situationCode(): Promise<string> {
   // Execution belongs to whoever reopens the code: never carry a profile or a local port.
   const q = new URLSearchParams(shareQuery()); for (const key of ['profile', 'localServer', 'compute', 'generation']) q.delete(key);
@@ -260,15 +274,15 @@ async function situationCode(): Promise<string> {
 }
 async function copy(text: string, done: string): Promise<void> {
   try { await navigator.clipboard.writeText(text); situationStatus(done); }
-  catch { el<HTMLInputElement>('situationInput').value = text; situationStatus('Presse-papiers refusé : le code est dans le champ ci-dessous.'); }
+  catch { el<HTMLInputElement>('situationInput').value = text; situationStatus(urbanText(['Presse-papiers refusé : le code est dans le champ ci-dessous.','Clipboard denied: the code is in the field below.','剪贴板访问被拒绝：代码位于下方字段。','Acceso al portapapeles denegado: el código está en el campo inferior.','Acesso à área de transferência negado: o código está no campo abaixo.'])); }
 }
 const localMap = (): boolean => !!decor && !decor.meta.id.startsWith('city-');
-el('situationPin').onclick = () => { pinning = !pinning; el('situationPin').setAttribute('aria-pressed', String(pinning)); situationStatus(pinning ? 'Cliquez sur la carte pour poser l’épingle.' : ''); };
-el('situationCopy').onclick = async () => copy(await situationCode(), localMap() ? 'Code copié. Carte locale : joignez aussi son .decor.' : 'Code copié.');
+el('situationPin').onclick = () => { pinning = !pinning; el('situationPin').setAttribute('aria-pressed', String(pinning)); situationStatus(pinning ? urbanText(['Cliquez sur la carte pour poser l’épingle.','Click the map to place the pin.','点击地图放置图钉。','Haz clic en el mapa para colocar el marcador.','Clique no mapa para colocar o marcador.']) : ''); };
+el('situationCopy').onclick = async () => copy(await situationCode(), localMap() ? urbanText(['Code copié. Carte locale : joignez aussi son .decor.','Code copied. For a local map, also attach its .decor file.','代码已复制。本地地图还需附上其 .decor 文件。','Código copiado. Para un mapa local, adjunta también su archivo .decor.','Código copiado. Para mapa local, anexe também o arquivo .decor.']) : urbanText(['Code copié.','Code copied.','代码已复制。','Código copiado.','Código copiado.']));
 el('situationLink').onclick = async () => {
   const url = new URL(location.pathname, location.href); url.searchParams.set('situation', await situationCode());
   if (query.get('standalone') === '1') url.searchParams.set('standalone', '1');
-  await copy(url.href, 'Lien copié.');
+  await copy(url.href, urbanText(['Lien copié.','Link copied.','链接已复制。','Enlace copiado.','Link copiado.']));
 };
 el<HTMLTextAreaElement>('situationNote').oninput = event => { situationNote = (event.target as HTMLTextAreaElement).value; };
 el('situationOpen').onclick = async () => {

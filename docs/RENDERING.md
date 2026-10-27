@@ -1,176 +1,87 @@
-# Styles, couches, diagnostics et masques
+# Styles, layers, diagnostics and masks
 
-Le rendu combine quatre notions distinctes, sans modifier la génération :
+[French original](RENDERING_FR.md).
 
-| Notion | Rôle | Exemple |
+Rendering combines four distinct concepts without changing generation:
+
+| Concept | Role | Example |
 | --- | --- | --- |
-| Style | Définit les couleurs et matériaux des éléments | Atlas, Parchment, Render |
-| Couche | Contenu dont on choisit la visibilité | Fond de terrain, eau, courbes, bâtiments |
-| Diagnostic | Visualise une donnée de calcul | Altitude, bassin versant, identité des quartiers |
-| Masque | Donnée spatiale qui délimite ou pondère une opération | Zones de génération, emprise lacustre |
+| Style | Defines element colors and materials | Atlas, Parchment, Render |
+| Layer | Content whose visibility can be selected | Terrain background, water, contours, buildings |
+| Diagnostic | Visualizes computed data | Elevation, watershed, neighborhood identity |
+| Mask | Spatial data that bounds or weights an operation | Generation zones, lake footprint |
 
-Un diagnostic peut remplacer la coloration du terrain, comme Altitude, ou se
-superposer à la carte. Il conserve le style sélectionné. Les masques internes
-ne deviennent pas des styles lorsqu'un diagnostic les affiche.
+A diagnostic can replace terrain coloring, as Elevation does, or overlay the map. It retains the selected style. Internal masks do not become styles when a diagnostic displays them.
 
-## Définitions communes
+## Shared definitions
 
-- `web/src/render/styles.ts` : palettes cartographiques et leurs matériaux d'eau.
-- `web/src/render/terrainStyle.ts` : catalogue commun des styles du terrain,
-  incluant le compositeur de matériaux Render et les illustrations Fantasy.
-- `web/src/render/waterStyle.ts` : contrat, interpolation CPU et GLSL des palettes
-  d'eau ; uniformes préparés une seule fois par matériau.
-- `web/src/render/displayLayers.ts` : vocabulaire et commandes de visibilité.
-- `web/src/render/displayDiagnostics.ts` : diagnostics hydrologiques et
-  d'altitude, données requises, légendes et mode de composition.
+- `web/src/render/styles.ts`: map palettes and their water materials.
+- `web/src/render/terrainStyle.ts`: shared terrain-style catalog, including the Render material compositor and Fantasy illustrations.
+- `web/src/render/waterStyle.ts`: water-palette contract and CPU/GLSL interpolation; uniforms prepared once per material.
+- `web/src/render/displayLayers.ts`: visibility vocabulary and controls.
+- `web/src/render/displayDiagnostics.ts`: hydrology and elevation diagnostics, required data, legends and composition mode.
 
-Terrain et Settlements utilisent le même panneau et les mêmes renderers.
-L'atelier urbain distingue aussi le style cartographique de l'identité colorée
-des quartiers et des diagnostics d'îlots, de parcelles et d'orientation.
+Terrain and Settlements use the same panel and renderers. The urban workshop also distinguishes map style from colored neighborhood identity and block, parcel and orientation diagnostics.
 
-## Un matériau d'eau par style
+## One water material per style
 
-`WaterStyle` porte une liste de points `[position, couleur]` et une largeur de
-transition. La position est la distance à la rive divisée par la largeur de
-référence de la carte et `bandFraction`. Les segments utilisent une interpolation
-lissée identique en CPU et en GLSL. Les rivières utilisent la couleur de rive.
+`WaterStyle` contains a list of `[position, color]` points and a transition width. Position is distance from the shore divided by the map's reference width and `bandFraction`. Segments use the same smooth interpolation on CPU and in GLSL. Rivers use the shore color.
 
-Une mer et un lac évaluent le même matériau à la même distance de la rive.
-L'ombrage du fond marin ne modifie pas cette couleur. Le style Render fournit
-sa propre palette, sans chemin de coloration réservé aux lacs. Les brushes
-restent une couche d'illustration indépendante du matériau d'eau.
+Sea and lake evaluate the same material at the same distance from shore. Seabed shading does not change that color. Render supplies its own palette, with no lake-specific coloring path. Brushes remain an illustration layer independent of the water material.
 
-`terrainWater.ts` adapte les surfaces aux images SVG/PNG et au Canvas de
-l'application. `TerrainGl` utilise les mêmes points de couleur. Les rives et
-les trous restent définis par leurs géométries ; changer de style ne les recalcule
-pas. La case Eau inclut la mer, les lacs et les rivières. Masquer le fond de
-terrain conserve l'eau lorsqu'elle est activée.
+`terrainWater.ts` adapts surfaces to SVG/PNG images and the application's Canvas. `TerrainGl` uses the same color points. Shores and holes remain defined by their geometries; changing style does not recompute them. The Water checkbox includes sea, lakes and rivers. Hiding the terrain background retains water when enabled.
 
-## Échelles, portions et fichiers conservés
+## Scales, crops and retained files
 
-La largeur de référence et les coordonnées du matériau appartiennent à la carte
-source. Le zoom et les portions successives traduisent ce repère sans resserrer
-le dégradé. Les surfaces de distance et les images sont mises en cache par leurs
-données et leurs dimensions.
+The material's reference width and coordinates belong to the source map. Zoom and successive crops translate this frame without narrowing the gradient. Distance surfaces and images are cached by their data and dimensions.
 
-Les nouveaux `.decor` conservent les champs neutres en FP32 encodé en base64,
-leurs rives et le repère source. Leur compression reste celle du fichier decor.
-Le style est évalué à l'affichage, y compris après une portion ou un changement
-de vue. Les recettes qui régénèrent le terrain omettent ces données dérivées.
-Les anciens fichiers restent lisibles : leurs matériaux lacustres sont reconstruits
-depuis le masque disponible. Un ancien fichier déjà découpé ne permet pas de
-retrouver des données de rive extérieures qu'il ne contenait pas.
+New `.decor` files retain neutral fields in base64-encoded FP32, their shores and the source frame. Compression remains that of the decor file. Style is evaluated on display, including after a crop or view change. Recipes that regenerate terrain omit this derived data. Old files remain readable: their lake materials are reconstructed from the available mask. An old file already cropped cannot recover outside-shore data it did not contain.
 
-Les liens utilisent `style` pour l'apparence et `diagnostic` pour la visualisation
-de calcul. Les anciens `overlay` et `style=copernicus` sont encore lus ; ce
-dernier devient le diagnostic Altitude avec le style Parchment.
+Links use `style` for appearance and `diagnostic` for computed-data visualization. Legacy `overlay` and `style=copernicus` are still read; the latter becomes the Elevation diagnostic with Parchment style.
 
-## Sol procédural Render3D
+## Render3D procedural ground
 
-`Render3DBrush` conserve ce matériau et remplace les couronnes analytiques de
-la forêt par 48 motifs aquarellés teintés selon la palette Render3D : couronnes
-vues presque à la verticale (pins, feuillus, tropicaux, arbres secs) et vrais
-arbustes bas, choisis selon la hauteur physique (≤ 3 m) et non la taille à
-l'écran. Les rives portent une bande étroite (quelques mètres à quelques
-dizaines de mètres) mesurée sur la géométrie affichée des rivières. Même champ
-forestier et LOD en 2D, perspective et export raster ; voir la
-[note de méthode](methods/render3d-brush.md), aussi disponible depuis le `?`
-du sélecteur de style, hors ligne.
+`Render3DBrush` retains this material and replaces analytical forest crowns with 48 watercolor motifs tinted to the Render3D palette: near-vertical crown views (pines, broadleaf, tropical and dry trees) and actual low shrubs, chosen by physical height (≤ 3 m), not screen size. Shores have a narrow band (a few to a few dozen meters) measured on displayed river geometry. The same forest field and LOD apply in 2D, perspective and raster export; see the [method note](methods/render3d-brush.md), also available offline from the style selector's `?`.
 
-La [note scientifique en anglais](methods/render3d-ground.md) décrit le champ,
-les équations, le filtrage, les références et les limites de cette intégration.
+The [scientific note in English](methods/render3d-ground.md) describes the field, equations, filtering, references and limits of this integration.
 
-`Render3D` possède un matériau de sol évalué dans le shader de perspective :
-albédo, normales et rugosité suivent des structures partagées en mètres. Le
-shader utilise la position physique, avant exagération verticale, et l'empreinte
-du pixel sur cette surface pour filtrer les détails. Les autres styles et le
-matériau `Render` conservent leur chemin cartographique.
-Le zoom maximal de `Render3D` est de 128 pixels CSS par mètre, en 2D et en 3D ;
-les autres styles conservent leur limite de 8 pixels CSS par mètre.
+`Render3D` has a ground material evaluated in the perspective shader: albedo, normals and roughness follow shared structures measured in meters. The shader uses physical position before vertical exaggeration and the pixel footprint on that surface to filter detail. Other styles and the `Render` material retain their map-rendering path. Maximum `Render3D` zoom is 128 CSS pixels per meter in 2D and 3D; other styles retain their 8 CSS pixels per meter limit.
 
-La classification des matériaux utilise les coefficients B-spline du champ
-source global stocké en R32F, indépendamment de la résolution du maillage.
-Changer de niveau de détail ne redéfinit donc pas les zones de roche ou d'herbe.
+Material classification uses B-spline coefficients of the global source field stored in R32F, independently of mesh resolution. Changing level of detail therefore does not redefine rock or grass areas.
 
-`rust/bridge/terrainGround.ts` définit le champ de détail CPU/GLSL commun. Le
-maillage échantillonne une hauteur canonique indépendante de la caméra ; les
-transitions parent/enfant interpolent ses approximations. Le matériau suit la
-normale physique canonique et conserve la variance des pentes non résolues.
-Des graviers elliptiques compacts complètent les bandes de bruit analytique.
-Les plaines restent lisses et les déplacements fins sont atténués
-près de l'eau. Ce détail de présentation ne recalcule ni relief Rust ni hydrologie.
-La réflectance emploie GGX, Smith et Schlick avec un albédo linéaire, selon le
-[modèle temps réel décrit par Filament](https://google.github.io/filament/main/filament.html).
-La variance non résolue élargit la distribution des pentes. Les gradients du
-détail sont analytiques ; les variations de son enveloppe pente/climat sont
-traitées comme des variations macroscopiques, sans en dériver tous les termes.
+`rust/bridge/terrainGround.ts` defines the shared CPU/GLSL detail field. The mesh samples a canonical camera-independent height; parent/child transitions interpolate its approximations. The material follows the canonical physical normal and retains unresolved slope variance. Compact elliptical gravel complements analytical noise bands. Plains remain smooth and fine displacement is attenuated near water. This presentation detail recomputes neither Rust terrain nor hydrology. Reflectance uses GGX, Smith and Schlick with linear albedo, following the [real-time model described by Filament](https://google.github.io/filament/main/filament.html). Unresolved variance broadens the slope distribution. Detail gradients are analytical; variations in its slope/climate envelope are treated as macroscopic variations without differentiating every term.
 
-Le matériau 3D reçoit une capture RGBA contenant uniquement eau, courbes et
-superpositions. Son alpha porte leur couverture explicite : la couleur du sol
-ne sert pas à reconnaître l'eau. Les captures conservent des voisins réels dans
-une bordure de deux texels et les textures sont composées avec alpha prémultiplié.
-Le diagnostic « Tuiles » superpose les limites sans changer les hauteurs.
+The 3D material receives an RGBA capture containing only water, contours and overlays. Its alpha carries their explicit coverage: ground color is not used to identify water. Captures retain real neighbors in a two-texel border, and textures are composited with premultiplied alpha. The “Tiles” diagnostic overlays boundaries without changing heights.
 
-Les méthodes de référence sont [Wave Noise, SIGGRAPH 2025](https://pascalguehl.github.io/siggraph2025-wave-noise/),
-le [mélange laplacien, JCGT 2025](https://jcgt.org/published/0014/01/02/) et
-[LEADR, SIGGRAPH Asia 2013](https://perso.liris.cnrs.fr/victor.ostromoukhov/publications/pdf/SAsia2013-LEADR.pdf).
-L'implémentation locale utilise une synthèse spectrale bornée, un mélange par
-bandes et une approximation de variance des pentes ; elle ne constitue pas un
-port complet de ces trois travaux. Elle ne simule pas l'érosion, les ombres de
-chaque grain ou des surplombs. Un détail sous-pixel influence la réflectance,
-sans créer une silhouette que le maillage ne pourrait représenter.
+Reference methods are [Wave Noise, SIGGRAPH 2025](https://pascalguehl.github.io/siggraph2025-wave-noise/), [Laplacian blending, JCGT 2025](https://jcgt.org/published/0014/01/02/) and [LEADR, SIGGRAPH Asia 2013](https://perso.liris.cnrs.fr/victor.ostromoukhov/publications/pdf/SAsia2013-LEADR.pdf). The local implementation uses bounded spectral synthesis, band blending and a slope-variance approximation; it is not a complete port of those three works. It does not simulate erosion, individual grain shadows or overhangs. Subpixel detail affects reflectance without creating a silhouette the mesh could not represent.
 
-## Forêt Render3D et occupation appliquée
+## Render3D forest and applied land use
 
-La [note scientifique en anglais](methods/render3d-vegetation.md) décrit le
-champ forestier, les houppiers, le filtrage, la calibration empirique CHMv2 et
-leurs limites.
+The [scientific note in English](methods/render3d-vegetation.md) describes the forest field, crowns, filtering, empirical CHMv2 calibration and their limitations.
 
-**Principe**
-- Les commandes `forestEnabled`, `forestDensity` et `forestClearings` agissent
-  sur l'affichage seulement. Elles n'apparaissent qu'avec le style `Render3D`.
-- Elles restent hors de `TerrainSettings`. Les liens portent `forest=0|1`, puis
-  `forestDensity` et `forestClearings` lorsqu'ils diffèrent des valeurs par défaut.
-- Un champ canonique RGBA8 est calculé une fois sur le relief retenu.
-  - R : couvert ; G : hauteur 0–50 m ; B : part de résineux ; A : tonalité du peuplement.
-  - R et G portent l'éligibilité arborée de `Render` (affleurements rocheux,
-    pente, neige pérenne, limite des arbres), évaluée sur le CPU avec la
-    sémantique de son matériau : pas d'arbres sur les pentes rocheuses de
-    `Render`, ni bois appliqué ni verger au-delà.
-  - La carte 2D, la vue 3D et l'export raster l'échantillonnent en coordonnées monde.
-- Le rendu `Render` (bois macroscopiques compris) reste la référence non
-  résolue. Au-delà d'environ 32 m par pixel, `Render3D` et `Render3DBrush`
-  affichent exactement son sol ; vers 8 m par pixel, clairières et peuplements
-  apparaissent atténués et adoucis ; en dessous de 2 m par pixel, houppiers,
-  litière et clairières canoniques sont entiers. Les couleurs des houppiers et
-  du sol ouvert dérivent de celles de `Render`.
-- « Canopée détaillée » décochée, `Render3D` retrouve son rendu antérieur, avec
-  la teinte forestière grossière d'origine. Le style `Render` est inchangé.
+**Principle**
 
-**Occupation appliquée**
-- Dans l'étape Settlements, l'occupation du territoire appliquée devient une
-  texture de distances signées, produite par `web/src/ui/forestOccupation.ts`.
-  - Champs, prés, pâtures, vergers, jardins, communaux et emprises bâties ouvrent la forêt.
-  - Les bois du plan rural restent boisés.
-  - Les marais restent naturels.
-- La couverture naturelle produite sans ville (`generateNaturalCover`) ne
-  contraint jamais le matériau.
-- Les polygones, le raster du décor et le terrain affiché partagent le repère
-  `[0, largeur]²`, y compris après une portion alignée sur les cellules. Un
-  écart de largeur suspend la contrainte.
-- Lorsque la forêt Render3D est active, le calque Canvas d'occupation masque
-  ses forêts dessinées. Champs, sillons, haies, vergers, jardins et fermes
-  restent visibles. Les autres styles conservent le dessin complet.
+- `forestEnabled`, `forestDensity` and `forestClearings` affect display only. They appear only with `Render3D`.
+- They remain outside `TerrainSettings`. Links carry `forest=0|1`, then `forestDensity` and `forestClearings` when they differ from defaults.
+- A canonical RGBA8 field is computed once over retained terrain.
+  - R: cover; G: height 0–50 m; B: conifer share; A: stand tone.
+  - R and G carry `Render` tree eligibility (rock outcrops, slope, perennial snow, tree line), evaluated on CPU with its material semantics: no trees on `Render` rocky slopes, and no applied woodland or orchard beyond them.
+  - The 2D map, 3D view and raster export sample it in world coordinates.
+- `Render` rendering, including macroscopic woodland, remains the unresolved reference. Beyond approximately 32 m per pixel, `Render3D` and `Render3DBrush` display exactly its ground; around 8 m per pixel, clearings and stands appear attenuated and softened; below 2 m per pixel, canonical crowns, litter and clearings are fully visible. Crown and open-ground colors derive from `Render`.
+- With “Detailed canopy” unchecked, `Render3D` returns to its previous rendering with its original coarse forest tint. `Render` is unchanged.
 
-**Limite actuelle :** la perspective n'existe que dans l'étape Terrain, sans
-occupation. Les découpes agricoles se voient donc dans la carte 2D Render3D de
-l'étape Settlements. Les afficher en 3D demanderait d'ouvrir la perspective à
-cette étape, ce qui n'est pas prévu ici.
+**Applied land use**
 
-## Vérification
+- In the Settlements stage, applied land use becomes a signed-distance texture produced by `web/src/ui/forestOccupation.ts`.
+  - Fields, meadows, pasture, orchards, gardens, commons and built footprints open the forest.
+  - Woodlands in the rural plan remain wooded.
+  - Wetlands remain natural.
+- Natural cover produced without a city (`generateNaturalCover`) never constrains the material.
+- Polygons, decor raster and displayed terrain share the `[0, width]²` frame, including after a cell-aligned crop. A width mismatch suspends the constraint.
+- When Render3D forest is active, the land-use Canvas layer hides its drawn forests. Fields, furrows, hedges, orchards, gardens and farms remain visible. Other styles retain the complete drawing.
 
-Depuis `web/`, `node scripts/styles_ui_check.mjs` vérifie les couleurs mer/lac
-des douze styles sur le GPU, l'indépendance des couches, la composition d'un
-diagnostic et la relecture des liens dans les renderers WebGL et SVG.
-`tests/render.water-style.test.ts` couvre les palettes, caches, anciens décors et
-portions successives. Les suites de rendu et d'export existantes restent applicables.
+**Current limit:** perspective exists only in the Terrain stage, without land use. Agricultural clearings therefore appear in the Settlements stage's 2D Render3D map. Showing them in 3D would require enabling perspective at that stage, which is not planned here.
+
+## Verification
+
+From `web/`, `node scripts/styles_ui_check.mjs` checks sea/lake colors for the twelve styles on the GPU, layer independence, diagnostic composition and link replay in WebGL and SVG renderers. `tests/render.water-style.test.ts` covers palettes, caches, legacy decors and successive crops. Existing rendering and export suites remain applicable.

@@ -176,7 +176,7 @@ fn roman_b12_minimum_compact_restores_native_shop_and_living_levels() {
         recipe
             .sources
             .iter()
-            .any(|s| s.path == "docs/sources/roman-compact-domestic-architecture.md")
+            .any(|s| s.path == "docs/sources/roman-compact-domestic-architecture_FR.md")
     );
 
     let result = batch(

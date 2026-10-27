@@ -6,6 +6,8 @@ import { saveHistory } from './benchHistory';
 import { encodeSketch, readStoredSketch, placeSketchInFragment } from './terrainSketchSharing';
 import { cropTerrain } from './benchTerrainTransfer';
 import './recipeSharing.css';
+import { LOCALE_KEY } from './shellLocale';
+import { recipeText as t, translateRecipeError } from './recipeLocale';
 
 declare global { interface Window { magnaRecipe?: { capture(): Promise<MapRecipe>; terrain?(): Promise<Decor> } } }
 
@@ -132,31 +134,44 @@ export function installRecipeSharing(options: {
   let currentImport: AbortController | undefined;
   dialog.addEventListener('close', () => currentImport?.abort());
   let mode: 'export' | 'import' = 'import';
+  const translate = (): void => {
+    const exportButton = controls.querySelector<HTMLButtonElement>('[data-recipe-export]')!;
+    exportButton.textContent = t('exportButton'); exportButton.title = t('exportTitle'); exportButton.setAttribute('aria-label', exportButton.title);
+    controls.querySelector('[data-recipe-import]')!.textContent = t('importButton');
+    dialog.querySelector('[data-title]')!.textContent = t(mode === 'export' ? 'titleExport' : 'titleImport');
+    dialog.querySelector('.recipe-close')!.setAttribute('aria-label', t('close'));
+    field.setAttribute('aria-label', t('code'));
+    copy.textContent = t('copy'); download.textContent = t('download'); load.textContent = t('load');
+    const fileLabel = file.parentElement!; if (fileLabel.firstChild?.nodeType === Node.TEXT_NODE) fileLabel.firstChild.textContent = t('choose');
+  };
+  translate();
+  window.addEventListener('magna-locale-change', translate);
+  window.addEventListener('storage', event => { if (event.key === LOCALE_KEY) translate(); });
   function show(next: typeof mode): void {
     mode = next; field.value = ''; field.readOnly = mode === 'export'; note.textContent = '';
-    dialog.querySelector('[data-title]')!.textContent = mode === 'export' ? 'Code unique de la carte' : 'Coller le code d’une carte';
+    dialog.querySelector('[data-title]')!.textContent = t(mode === 'export' ? 'titleExport' : 'titleImport');
     copy.hidden = download.hidden = mode !== 'export'; load.hidden = mode !== 'import';
     file.parentElement!.hidden = mode !== 'import'; file.value = '';
     if (!dialog.open) dialog.showModal(); field.focus();
   }
-  const error = (e: unknown): void => { note.textContent = e instanceof Error ? e.message : String(e); };
+  const error = (e: unknown): void => { note.textContent = translateRecipeError(e instanceof Error ? e.message : String(e)); };
   controls.querySelector('[data-recipe-export]')!.addEventListener('click', async () => {
-    show('export'); note.textContent = 'Préparation du code…'; copy.disabled = download.disabled = true;
+    show('export'); note.textContent = t('preparing'); copy.disabled = download.disabled = true;
     try {
       const recipe = await options.capture();
       let code: string;
       try { code = encodeRecipe(recipe); }
       catch (error) {
         if (error instanceof Error && error.message.includes('volumineuse'))
-          throw new Error('Carte trop volumineuse pour un code (format limité à 32 Mo). Utilisez le partage .decor avec enregistrement direct sur disque.');
+          throw new Error(t('tooLarge'));
         throw error;
       }
       field.value = code; field.select(); copy.disabled = download.disabled = false;
       const seed = new URLSearchParams(recipe.query).get('seed') ?? 'carte';
       filename = `${recipe.stage}-${seed.replace(/[^\p{L}\p{N}_-]/gu, '_').slice(0, 60)}.murecipe`;
-      const description = `${code.length.toLocaleString('fr-FR')} caractères · réglages, pins et vue${recipe.decor ? ' · terrain intégré' : recipe.terrain ? ' · terrain reproductible' : ''}.`;
-      try { await navigator.clipboard.writeText(code); note.textContent = `Code copié. ${description}`; }
-      catch { note.textContent = `Copiez le code sélectionné (Ctrl+C). ${description}`; }
+      const description = `${code.length.toLocaleString()} ${t('characters')} · ${t('settings')}${recipe.decor ? ` · ${t('embedded')}` : recipe.terrain ? ` · ${t('reproducible')}` : ''}.`;
+      try { await navigator.clipboard.writeText(code); note.textContent = `${t('copied')} ${description}`; }
+      catch { note.textContent = `${t('copyManually')} ${description}`; }
     } catch (e) { error(e); }
   });
   controls.querySelector('[data-recipe-import]')!.addEventListener('click', async () => {
@@ -167,26 +182,26 @@ export function installRecipeSharing(options: {
     } catch { /* Ctrl+V remains available. */ }
   });
   copy.onclick = async () => {
-    try { await navigator.clipboard.writeText(field.value); note.textContent = 'Code copié.'; }
-    catch { field.focus(); field.select(); note.textContent = 'Copiez le texte sélectionné (Ctrl+C).'; }
+    try { await navigator.clipboard.writeText(field.value); note.textContent = t('copied'); }
+    catch { field.focus(); field.select(); note.textContent = t('copyManually'); }
   };
   download.onclick = () => {
     const url = URL.createObjectURL(new Blob([field.value + '\n'], { type: 'text/plain;charset=utf-8' }));
     const a = document.createElement('a'); a.href = url; a.download = filename;
     document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
-    note.textContent = 'Fichier téléchargé · il contient le même code.';
+    note.textContent = t('downloaded');
   };
   file.onchange = async () => {
     const selected = file.files?.[0]; if (!selected) return;
     try {
-      if (selected.size > 45 * 1024 * 1024) throw new Error('Fichier trop volumineux.');
+      if (selected.size > 45 * 1024 * 1024) throw new Error(t('fileTooLarge'));
       field.value = await selected.text(); load.click();
     } catch (e) { error(e); }
   };
   load.onclick = async () => {
     load.disabled = true;
     currentImport = new AbortController(); const signal = currentImport.signal;
-    note.textContent = 'Chargement de la recette et reconstruction de la carte…';
+    note.textContent = t('loading');
     try {
       const recipe = await restoreRecipe(decodeRecipe(field.value), signal);
       signal.throwIfAborted();

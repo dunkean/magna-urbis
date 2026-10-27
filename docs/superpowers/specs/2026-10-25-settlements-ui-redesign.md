@@ -1,51 +1,53 @@
-# Settlements & City Bench : carte à gauche, ville à droite
+# Settlements & City Bench: map on the left, city on the right
 
-Date : 2026-10-25. Remplace la disposition de `2026-10-25-city-panel-design.md` (la règle « le plus précis gagne » et le mélange de maisons restent).
+Date: 2026-10-25. Replaces the layout in `2026-10-25-city-panel-design.md` (the “most specific wins” rule and house mixing remain).
 
-## Intention
+## Intent
 
-L'utilisateur change sa ville **en direct, sans ouvrir 15 menus**. Ce qui change le visuel est à **1 clic** ; le reste est dans un **⚙ Avancé**. Interface **compacte** : pas de titres qui prennent de la place, des **icônes** quand c'est évident, des lignes denses. On distingue nettement **la carte** (vaut pour tous les settlements) et **la ville** (vaut pour le settlement sélectionné).
+The user changes their city **live, without opening 15 menus**. Visual changes are **one click** away; everything else is in **⚙ Advanced**. The interface is **compact**: no space-consuming titles, **icons** where obvious, dense rows. Clearly distinguish **map** settings (all settlements) from **city** settings (the selected settlement).
 
-## Disposition (Settlements et City Bench, même code)
+## Layout (Settlements and City Bench, same code)
 
 ```
-[ barre carte : affichage, vues, calques ]
-[ Carte (gauche ~230px) | carte | Inspecteur Ville (droite ~340px) ]
+[ map bar: display, views, layers ]
+[ Map (left ~230px) | map | City inspector (right ~340px) ]
 ```
 
-### Panneau Carte (gauche) : réglages de toute la carte
+### Map panel (left): settings for the whole map
 
-Groupes compacts (une icône + une ligne, pas de titre de section ; un ⚙ à droite ouvre le détail en place) :
+Compact groups (one icon + one row, no section heading; ⚙ on the right opens details in place):
 
-- ⛰ **Terrain** : terrain chargé (City Bench : le catalogue + charger).
-- 🏘 **Settlements** : nombres par classe en pastilles numériques (ville / bourg / village / hameau / ferme), culture par défaut. ⚙ : mode, distribution, population, espacement, poids géographiques, types de site.
-- 🛣 **Routes** : sorties (0–16), réseau (level), densité. ⚙ : surfaces, culture des routes, routage, rendu.
-- 🌾 **Occupation des sols** : case « auto » **décochée par défaut** (pas de génération automatique) ; tout le reste derrière ⚙.
-- **Liste** des settlements en pastilles (icône de classe, nom, population) ; clic = sélection (même effet qu'un clic sur la carte) ; ＋ placer.
-- City Bench : seulement Terrain et Routes (une ville au centre, éditée dans l'inspecteur).
+- ⛰ **Terrain**: loaded terrain (City Bench: catalogue + load).
+- 🏘 **Settlements**: counts by class in numeric badges (city / town / village / hamlet / farm), default culture. ⚙: mode, distribution, population, spacing, geographic weights, site types.
+- 🛣 **Routes**: exits (0–16), network (level), density. ⚙: surfaces, road culture, routing, rendering.
+- 🌾 **Land use**: “auto” checkbox **off by default** (no automatic generation); everything else behind ⚙.
+- Settlement **list** as badges (class icon, name, population); click selects (same effect as clicking the map); ＋ place.
+- City Bench: Terrain and Routes only (one city in the centre, edited in the inspector).
 
-### Inspecteur Ville (droite) : le settlement sélectionné
+### City inspector (right): selected settlement
 
-1. **En-tête** : icône de classe, nom, population (éditable), type de ville (Auto → résolu, ou forcé) ; pastilles d'étape **Plan · Lots · Maisons** (état, clic = relancer cette étape et les suivantes) ; **⟳ Auto** ; **▶ Générer**. Lien « Appliquer à tous les settlements » (remplace le sélecteur de portée « All »).
-2. **Ligne générale** : 🎨 culture (défaut « du lieu »), 🧱 enceinte ; « + influence » (autre culture, part, répartition) replié tant qu'il est vide.
-3. **Grille des phases** : lignes = aspects 🎨 Plan · ╬ Rues · ▦ Îlots · ▤ Lots · ⌂ Maisons ; colonnes = Toute · ◉ Cœur · ◎ Ext. · ○ Pér. · ⋯ Faub. (Village pour les petits types, phases absentes grisées).
-   - Cellule héritée : gris italique « ↳ » (source au survol). Cellule choisie : orange, ↺ au survol.
-   - Clic sur une cellule = petite liste de choix en place (popover), un clic pour choisir.
-   - Maisons : ouvre l'éditeur de mélange existant.
-   - Îlots : forme des quartiers/îlots (recette / recipe de la phase si elle existe ; sinon colonne retirée, au choix du constructeur selon ce que le moteur expose déjà).
-4. **Quartier sélectionné** (clic sur un quartier) : une ligne « Quartier n » ajoutée sous la grille, mêmes colonnes.
-5. **⚙ Avancé** : un tiroir unique, rangé par étape, avec tout le reste : composition et emprise (cachées par défaut), squelette détaillé (axes, sorties, rocade, faubourgs), pentes et escaliers, recettes, préréglages, paramètres JSON, graines, programme, détail bâtiments.
+1. **Header**: class icon, name, population (editable), city type (Auto → resolved, or forced); **Plan · Lots · Houses** stage badges (state, click reruns that stage and subsequent ones); **⟳ Auto**; **▶ Generate**. “Apply to all settlements” link (replaces the “All” scope selector).
+2. **General row**: 🎨 culture (default “from place”), 🧱 enclosure; “+ influence” (other culture, share, distribution) collapsed while empty.
+3. **Phase grid**: rows = aspects 🎨 Plan · ╬ Streets · ▦ Blocks · ▤ Lots · ⌂ Houses; columns = All · ◉ Core · ◎ Ext. · ○ Per. · ⋯ Suburbs (Village for small types, absent phases greyed out).
+   - Inherited cell: grey italic “↳” (source on hover). Chosen cell: orange, ↺ on hover.
+   - Clicking a cell opens a small inline choice list (popover), one click to choose.
+   - Houses opens the existing mix editor.
+   - Blocks: shape of quarters/blocks (phase recipe if present; otherwise remove the column, at the implementer's discretion according to what the engine already exposes).
+4. **Selected quarter** (click a quarter): add a “Quarter n” row below the grid, same columns.
+5. **⚙ Advanced**: one drawer, organised by stage, containing everything else: composition and footprint (hidden by default), detailed skeleton (axes, exits, ring road, suburbs), slopes and stairs, recipes, presets, JSON parameters, seeds, programme and building detail.
 
-L'affichage (vues Tissu/Usages/Parcelles/Bâtiments/Rôles, couches) reste dans la barre au-dessus de la carte : ce n'est pas de la génération.
+Display (Tissue/Uses/Parcels/Buildings/Roles views, layers) stays in the bar above the map: it is not generation.
 
-## Routes régionales : plus de 4 sorties
+## Regional roads: more than four exits
 
-- Les sorties ne sont plus « une par bord » : N sorties (0–16) réparties par **secteurs d'angle** autour de la ville principale, chacune visant le point du bord dans son secteur (le moins coûteux / le plus proche), avec un espacement minimal sur le bord.
-- Deux sorties proches peuvent **se rejoindre** : le partage de tronc existant (sharing / réutilisation A*) les fusionne naturellement.
-- **Gabarits différents** : la classe vient du trafic comme aujourd'hui ; les sorties ont un poids décroissant (la première = grande route, les suivantes secondaires), pour que toutes n'aient pas la même taille.
-- Les anciens liens (exits ≤ 4) restent valides ; la géométrie peut changer.
+- Exits are no longer “one per edge”: N exits (0–16) distributed by **angular sectors** around the main city, each targeting the edge point in its sector (lowest cost / closest), with minimum edge spacing.
+- Two nearby exits can **join**: existing trunk sharing / A* reuse naturally merges them.
+- **Different widths**: class comes from traffic as today; exits have decreasing weight (the first is a major road, subsequent ones secondary), so they do not all have the same size.
+- Old links (exits ≤ 4) remain valid; geometry may change.
 
-## Non-objectifs
+## Non-goals
 
-- Pas de changement de la génération urbaine (plan, parcelles, maisons).
-- Pas de suppression de réglages : tout ce qui n'est pas en 1 clic reste accessible dans un ⚙.
+- No change to urban generation (plan, parcels, houses).
+- No settings removed: everything not one click away remains accessible through ⚙.
+
+[Original French version](2026-10-25-settlements-ui-redesign_FR.md).

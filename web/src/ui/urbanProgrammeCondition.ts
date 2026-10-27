@@ -2,6 +2,9 @@
  * substituted into an applied report, and vacancy never proves inhabitants. */
 import type { ProgrammeContext, ProgrammeState } from '../../../rust/bridge/urbanConfig';
 import type { UrbanProgramme } from '../../../rust/bridge/urban';
+import { urbanText } from './urbanPanelLocale';
+import { LOCALE_KEY } from './shellLocale';
+import { urbanProgrammeLabel } from './urbanBuildingLocale';
 import { retainSelectValue } from './retainedSelectValue';
 const ABSENT = '@absent', RETAINED = '@retained';
 export const PROGRAMME_STATE_LABELS: Record<ProgrammeState, string> = {
@@ -33,10 +36,14 @@ export function bindProgrammeConditionControls(host: ParentNode) {
   const refresh = () => {
     decay.disabled = mode.value !== 'value';
     note.textContent = state.value === RETAINED || mode.value === RETAINED
-      ? 'Valeur importée hors du domaine UI conservée sans conversion ; le moteur natif peut la refuser. Choisissez une valeur connue pour la corriger explicitement.'
-      : 'État/vacance demandés ; le rapport appliqué conserve séparément le contexte retourné. Aucun taux de catalogue courant n’est attribué à un ancien plan.';
+      ? urbanText(['Valeur importée hors du domaine UI conservée sans conversion ; le moteur natif peut la refuser. Choisissez une valeur connue pour la corriger explicitement.','Imported value outside the UI range is retained without conversion; the native engine may reject it. Choose a known value to correct it explicitly.','导入值超出界面范围，未转换而保留；原生引擎可能拒绝。请选择已知值以明确修正。','El valor importado fuera del dominio de la interfaz se conserva sin conversión; el motor nativo puede rechazarlo. Elige un valor conocido para corregirlo.','O valor importado fora do domínio da interface é mantido sem conversão; o motor nativo pode recusá-lo. Escolha um valor conhecido para corrigi-lo.'])
+      : urbanText(['État/vacance demandés ; le rapport appliqué conserve séparément le contexte retourné. Aucun taux de catalogue courant n’est attribué à un ancien plan.','Requested state/vacancy; the applied report separately retains the returned context. No current catalogue rate is assigned to an old plan.','请求的状态和空置率；已应用报告单独保留返回的上下文。不会将当前目录比率分配给旧方案。','Estado y vacancia solicitados; el informe aplicado conserva por separado el contexto devuelto. No se asigna una tasa del catálogo actual a un plan antiguo.','Estado e vacância solicitados; o relatório aplicado mantém separadamente o contexto retornado. Nenhuma taxa do catálogo atual é atribuída a um plano antigo.']);
   };
   state.onchange = refresh; mode.onchange = refresh;
+  if (typeof window !== 'undefined') {
+    window.addEventListener('magna-locale-change', refresh);
+    window.addEventListener('storage', event => { if (event.key === LOCALE_KEY) refresh(); });
+  }
   return { sync(context: ProgrammeContext): void {
       savedState = context.state; savedDecay = context.decay;
       savedStateOwn = own(context, 'state'); savedDecayOwn = own(context, 'decay');
@@ -72,10 +79,11 @@ export function bindProgrammeConditionControls(host: ParentNode) {
  * recomputed effective rate participates in this frozen report. */
 export function programmeConditionEvidenceHtml(programme?: Partial<Pick<UrbanProgramme, 'context'>>): string {
   const context = programme?.context;
-  if (!context) return '<small data-programme-condition-evidence>État/vacance inconnus : contexte absent de cet import.</small>';
-  const state = !own(context, 'state') || context.state === undefined ? 'Non conservé dans ce contexte' : isState(context.state) ? `${PROGRAMME_STATE_LABELS[context.state]} · ${context.state}` : `Valeur conservée hors domaine : ${format(context.state)}`;
-  const decay = !own(context, 'decay') || context.decay === undefined ? 'Champ absent · défaut à l’entrée ; taux effectif inconnu'
-    : context.decay === null ? 'Défaut de l’état · null conservé ; taux effectif non conservé séparément'
-      : validDecay(context.decay) ? `Taux explicite conservé : ${String(context.decay)}` : `Valeur conservée hors domaine : ${format(context.decay)}`;
-  return `<dl data-programme-condition-evidence><dt>État conservé au programme</dt><dd>${xml(state)}</dd><dt>Vacance conservée au programme</dt><dd>${xml(decay)}</dd></dl><small>Ces paramètres du programme ne prouvent ni vacance construite ni capacité résidentielle. Aucun taux effectif n’est reconstruit depuis le catalogue actuel.</small>`;
+  if (!context) return `<small data-programme-condition-evidence>${urbanText(['État/vacance inconnus : contexte absent de cet import.','State/vacancy unknown: context missing from this import.','状态/空置率未知：此导入缺少上下文。','Estado/vacancia desconocidos: falta el contexto de esta importación.','Estado/vacância desconhecidos: contexto ausente desta importação.'])}</small>`;
+  const outOfRange = urbanText(['Valeur conservée hors domaine','Retained value outside range','保留值超出范围','Valor conservado fuera de rango','Valor mantido fora do intervalo']);
+  const state = !own(context, 'state') || context.state === undefined ? urbanText(['Non conservé dans ce contexte','Not retained in this context','此上下文中未保留','No conservado en este contexto','Não mantido neste contexto']) : isState(context.state) ? urbanProgrammeLabel('state', context.state, `${PROGRAMME_STATE_LABELS[context.state]} · ${context.state}`) : `${outOfRange} : ${format(context.state)}`;
+  const decay = !own(context, 'decay') || context.decay === undefined ? urbanText(['Champ absent · défaut à l’entrée ; taux effectif inconnu','Field absent · input default; effective rate unknown','字段缺失 · 输入默认值；实际比例未知','Campo ausente · valor inicial; tasa efectiva desconocida','Campo ausente · padrão de entrada; taxa efetiva desconhecida'])
+    : context.decay === null ? urbanText(['Défaut de l’état · null conservé ; taux effectif non conservé séparément','State default · null retained; effective rate not separately retained','状态默认值 · 保留 null；未单独保留实际比例','Valor del estado · null conservado; tasa efectiva no conservada por separado','Padrão do estado · null mantido; taxa efetiva não mantida separadamente'])
+      : validDecay(context.decay) ? `${urbanText(['Taux explicite conservé','Explicit rate retained','保留的明确比例','Tasa explícita conservada','Taxa explícita mantida'])} : ${String(context.decay)}` : `${outOfRange} : ${format(context.decay)}`;
+  return `<dl data-programme-condition-evidence><dt>${urbanText(['État conservé au programme','State retained in program','规划中保留的状态','Estado conservado en el programa','Estado mantido no programa'])}</dt><dd>${xml(state)}</dd><dt>${urbanText(['Vacance conservée au programme','Vacancy retained in program','规划中保留的空置率','Vacancia conservada en el programa','Vacância mantida no programa'])}</dt><dd>${xml(decay)}</dd></dl><small>${urbanText(['Ces paramètres du programme ne prouvent ni vacance construite ni capacité résidentielle. Aucun taux effectif n’est reconstruit depuis le catalogue actuel.','These program settings prove neither built vacancy nor residential capacity. No effective rate is reconstructed from the current catalogue.','这些规划参数不能证明实际建筑空置率或居住容量。不会从当前目录重建实际比例。','Estos parámetros no prueban vacancia construida ni capacidad residencial. No se reconstruye ninguna tasa efectiva del catálogo actual.','Esses parâmetros não comprovam vacância construída nem capacidade residencial. Nenhuma taxa efetiva é reconstruída do catálogo atual.'])}</small>`;
 }

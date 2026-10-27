@@ -17,13 +17,17 @@ import { buildingHeight } from '../render/urbanBuildings';
 import { programmeBalanceEvidence } from './urbanProgrammeEvidence';
 import { programmeOutcomeRows } from '../render/programmeOutcome';
 import { retainedBodyInventoryRows } from '../render/retainedBuildingInventory';
-import { urbanCapacityWarningText, PARCEL_CAPACITY_SCOPE } from './urbanCapacityWording';
+import { urbanCapacityWarningText, urbanCapacityScopeText } from './urbanCapacityWording';
 import { URBAN_FUNCTION_LABELS, type UrbanBuildingAppearance, type UrbanBuildingDiagnostic, type UrbanBuildingStyle } from '../render/urbanBuildingStyle';
 import type { UrbanColdSceneResponse } from './urbanScene';
 import type { BuildingChunkRead } from './urbanBuildingChunkStore';
 import type { PlanArchiveScene } from '../../../rust/bridge/compactPlanArchive';
 import type { NativeBuildingProjectionRefusal } from './urbanBuildingProjection';
 import { programmeFunctionControlsHtml, bindProgrammeFunctionControls, programmeFunctionsSummary } from './urbanProgrammeFunctions';
+import { setupUrbanBuildingLocale } from './urbanBuildingLocale';
+import { localizeCityInspector } from './cityInspectorLocale';
+import { urbanText } from './urbanPanelLocale';
+import { LOCALE_KEY } from './shellLocale';
 
 export interface UrbanBuildingDraft { seed: string; floors: string; typology: string; model: string; culture?: string; fit?: boolean; houses?: HouseSettings }
 export type UrbanColdBuildingState = Pick<UrbanColdSceneResponse, 'store' | 'counts'> & {
@@ -40,7 +44,15 @@ export interface UrbanBuildingState {
   selected?: string; projection?: boolean; camera?: import('./terrain3d').Terrain3dCamera;
 }
 const xml = (text: string): string => text.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
-const functionName = (key: string): string => ({ housing: 'Habitat', residential: 'Habitat', commerce: 'Commerce', craft: 'Artisanat', institution: 'Institution', market: 'Marché', common: 'Communs', agriculture: 'Agriculture', ...URBAN_FUNCTION_LABELS } as Record<string, string>)[key] ?? key;
+const functionName = (key: string): string => {
+  const labels: Record<string, readonly [string, string, string, string, string]> = {
+    housing:['Habitat','Housing','住宅','Vivienda','Habitação'], residential:['Habitat','Housing','住宅','Vivienda','Habitação'],
+    commerce:['Commerce','Commerce','商业','Comercio','Comércio'], craft:['Artisanat','Craft','手工业','Artesanía','Artesanato'],
+    institution:['Institution','Institution','机构','Institución','Instituição'], market:['Marché','Market','市场','Mercado','Mercado'],
+    common:['Communs','Commons','公共空间','Espacios comunes','Espaços comuns'], agriculture:['Agriculture','Agriculture','农业','Agricultura','Agricultura'],
+  };
+  return labels[key] ? urbanText(labels[key]) : (URBAN_FUNCTION_LABELS as Record<string, string>)[key] ?? key;
+};
 
 export type UrbanBuildingPanelSelection = { status: 'none' } | { status: 'pending' | 'missing'; id: string }
   | { status: 'error'; id: string; message: string } | { status: 'ready'; id: string; value: BuildingChunkRead }
@@ -70,21 +82,23 @@ function panelState(value: UrbanBuildingState): UrbanBuildingState {
     selected: parent ? undefined : cold ? value.selected : value.scene?.buildings.some(b => b.id === value.selected) ? value.selected : undefined };
 }
 export function urbanBuildingPanelSummary(state: UrbanBuildingState): string {
-  if (state.parent) { const c = state.parent.counts; return `${c.admitted_parents} parents admis · ${c.physical_members} membres natifs · ${c.refusals} refus · ${c.open_spaces} issues ouvertes · capacité résidentielle inconnue`; }
+  const refusals = urbanText(['refus','refusals','项拒绝','rechazos','recusas']);
+  const open = urbanText(['issues ouvertes','open outcomes','项未解决结果','resultados abiertos','resultados abertos']);
+  if (state.parent) { const c = state.parent.counts; return `${c.admitted_parents} ${urbanText(['parents admis','admitted parents','个已接纳父对象','elementos principales admitidos','objetos principais admitidos'])} · ${c.physical_members} ${urbanText(['membres natifs','native members','个原生成员','miembros nativos','membros nativos'])} · ${c.refusals} ${refusals} · ${c.open_spaces} ${open} · ${urbanText(['capacité résidentielle inconnue','residential capacity unknown','居住容量未知','capacidad residencial desconocida','capacidade residencial desconhecida'])}`; }
   if (state.cold) {
     const c = state.cold.counts;
-    return `${c.buildings} plans de bâtiments · ${c.refusals} refus · ${c.open_spaces} issues ouvertes · capacité non évaluée`;
+    return `${c.buildings} ${urbanText(['plans de bâtiments','building plans','份建筑方案','planos de edificios','planos de edifícios'])} · ${c.refusals} ${refusals} · ${c.open_spaces} ${open} · ${urbanText(['capacité non évaluée','capacity not assessed','容量未评估','capacidad no evaluada','capacidade não avaliada'])}`;
   }
   const scene = state.scene;
-  return scene ? `${scene.buildings.length} bâtiments · ${scene.refusals.length} refus · ${scene.open_spaces.length} issues ouvertes`
-    : 'Générez les parcelles pour implanter les bâtiments.';
+  return scene ? `${scene.buildings.length} ${urbanText(['bâtiments','buildings','栋建筑','edificios','edifícios'])} · ${scene.refusals.length} ${refusals} · ${scene.open_spaces.length} ${open}`
+    : urbanText(['Générez les parcelles pour implanter les bâtiments.','Generate parcels before placing buildings.','请先生成地块，再放置建筑。','Genera las parcelas antes de implantar edificios.','Gere os lotes antes de implantar edifícios.']);
 }
 /** Missing metadata differs from an authenticated empty list. Counts continue
  * to come from the committed manifest, never an inferred native batch. */
 export function urbanBuildingPanelRefusalsHtml(state: UrbanBuildingState, coldRefusals?: readonly NativeBuildingProjectionRefusal[]): string {
-  if (state.parent) return state.parent.counts.refusals ? `<li>${state.parent.counts.refusals} refus conservés dans les archives natives.</li>` : '';
+  if (state.parent) return state.parent.counts.refusals ? `<li>${state.parent.counts.refusals} ${urbanText(['refus conservés dans les archives natives.','refusals retained in native archives.','项拒绝记录保存在原生档案中。','rechazos conservados en los archivos nativos.','recusas mantidas nos arquivos nativos.'])}</li>` : '';
   if (state.cold && coldRefusals === undefined) return state.cold.counts.refusals
-    ? `<li>${state.cold.counts.refusals} refus conservés dans l’archive ; liste détaillée indisponible.</li>` : '';
+    ? `<li>${state.cold.counts.refusals} ${urbanText(['refus conservés dans l’archive ; liste détaillée indisponible.','refusals retained in the archive; detailed list unavailable.','项拒绝记录保存在档案中；详细列表不可用。','rechazos conservados en el archivo; lista detallada no disponible.','recusas mantidas no arquivo; lista detalhada indisponível.'])}</li>` : '';
   const refusals = state.cold ? coldRefusals! : state.scene?.refusals ?? [];
   return refusals.map(r => `<li data-refusal="${xml(r.parcel_id)}">${xml(r.parcel_id)} : ${xml(r.message)}</li>`).join('');
 }
@@ -92,7 +106,7 @@ export function urbanBuildingPanelCapacity(state: UrbanBuildingState, selected: 
   const scene = state.scene;
   return !state.cold && !!scene && selected.simplification === 'recipe_volumes' && scene.generator_version !== 'silhouette'
     && !scene?.generator_version.startsWith('architectural-plans-') && selected.cartographic?.validation !== 'plan_only'
-    ? `${selected.useful_area_m2.toFixed(1)} m² utiles indicatifs · ${selected.domestic_units.toFixed(1)} unités domestiques estimées` : 'capacité non évaluée';
+    ? `${selected.useful_area_m2.toFixed(1)} ${urbanText(['m² utiles indicatifs','indicative usable m²','平方米参考使用面积','m² útiles indicativos','m² úteis indicativos'])} · ${selected.domestic_units.toFixed(1)} ${urbanText(['unités domestiques estimées','estimated domestic units','个估计居住单元','unidades domésticas estimadas','unidades domésticas estimadas'])}` : urbanText(['capacité non évaluée','capacity not assessed','容量未评估','capacidad no evaluada','capacidade não avaliada']);
 }
 export function urbanBuildingPanelEvidence(state: UrbanBuildingState): ReturnType<typeof programmeBalanceEvidence> {
   return state.cold || state.parent ? () => 'not_calculated' : programmeBalanceEvidence(state.scene);
@@ -105,14 +119,14 @@ export function urbanBuildingPanelProgrammeOutcomeHtml(selected: Pick<PlacedBuil
 /** Declarations displayed from retained outcomes only; never reconstructed
  * from a restored allocation. A declaration is not a feasibility certificate. */
 export function urbanBuildingPanelOpenDeficitsHtml(state: UrbanBuildingState): string {
-  if (state.parent) return state.parent.counts.open_spaces ? '<li>Motifs conservés dans les sorties natives ; aucune capacité bâtie ou ouverte n’est déduite ici.</li>' : '';
+  if (state.parent) return state.parent.counts.open_spaces ? `<li>${urbanText(['Motifs conservés dans les sorties natives ; aucune capacité bâtie ou ouverte n’est déduite ici.','Reasons are retained in native outputs; no built or open capacity is inferred here.','原因保存在原生输出中；此处不推断建筑或开放空间容量。','Los motivos se conservan en las salidas nativas; aquí no se deduce capacidad construida ni abierta.','Os motivos são mantidos nas saídas nativas; nenhuma capacidade construída ou aberta é inferida aqui.'])}</li>` : '';
   if (state.cold) return state.cold.counts.open_spaces
-    ? '<li>Motifs des issues ouvertes conservés dans l’archive ; non relus dans ce panneau.</li>' : '';
+    ? `<li>${urbanText(['Motifs des issues ouvertes conservés dans l’archive ; non relus dans ce panneau.','Open-outcome reasons are retained in the archive; this panel does not reread them.','开放结果的原因保存在档案中；此面板不会重新读取。','Los motivos de resultados abiertos se conservan en el archivo; este panel no los vuelve a leer.','Os motivos dos resultados abertos são mantidos no arquivo; este painel não os relê.'])}</li>` : '';
   return (state.scene?.open_spaces ?? []).filter(space => space.deficit?.version === 'architectural-deficit-1').map(space => {
     const d = space.deficit!;
     if (![d.original_function, d.role, d.message, d.cause].every(value => typeof value === 'string' && value.length)
-      || !Number.isFinite(d.households) || d.households < 0) return '<li>Déclaration d’issue ouverte mal formée ; motif inconnu.</li>';
-    return `<li data-open-deficit="${xml(space.parcel_id)}">${xml(d.original_function)} · ${xml(d.role)} : ${xml(d.message)} (déclaration ${xml(d.cause)} ; aucune capacité bâtie ou ouverte créditée par cette déclaration)</li>`;
+      || !Number.isFinite(d.households) || d.households < 0) return `<li>${urbanText(['Déclaration d’issue ouverte mal formée ; motif inconnu.','Malformed open-outcome declaration; reason unknown.','开放结果声明格式错误；原因未知。','Declaración de resultado abierto mal formada; motivo desconocido.','Declaração de resultado aberto malformada; motivo desconhecido.'])}</li>`;
+    return `<li data-open-deficit="${xml(space.parcel_id)}">${xml(d.original_function)} · ${xml(d.role)} : ${xml(d.message)} (${urbanText(['déclaration','declaration','声明','declaración','declaração'])} ${xml(d.cause)} ; ${urbanText(['aucune capacité bâtie ou ouverte créditée par cette déclaration','this declaration credits no built or open capacity','此声明不计入建筑或开放空间容量','esta declaración no atribuye capacidad construida ni abierta','esta declaração não atribui capacidade construída ou aberta'])})</li>`;
   }).join('');
 }
 /** State/async orchestration also used by the actual DOM panel. It retains one
@@ -143,7 +157,7 @@ export function createUrbanBuildingPanelState(initial: UrbanBuildingState, optio
         try {
           const value = await readColdBuilding!(job.cold, job.id); if (!current(job)) continue;
           if (value && (value.building.id !== job.id || value.scene.buildings.length !== 1 || value.scene.buildings[0] !== value.building))
-            throw new Error('Le bâtiment chargé ne correspond pas à la sélection et à son contexte.');
+            throw new Error(urbanText(['Le bâtiment chargé ne correspond pas à la sélection et à son contexte.','The loaded building does not match the selection and its context.','加载的建筑与所选项及其上下文不匹配。','El edificio cargado no coincide con la selección y su contexto.','O edifício carregado não corresponde à seleção e ao seu contexto.']));
           loaded = value ? job : undefined;
           selection = value ? { status: 'ready', id: job.id, value: Object.freeze({ building: value.building, scene: value.scene, chunkIndex: value.chunkIndex }) }
             : { status: 'missing', id: job.id };
@@ -167,7 +181,7 @@ export function createUrbanBuildingPanelState(initial: UrbanBuildingState, optio
     if (state.selected === id && (selection.status === 'pending' || selection.status === 'ready' && loaded && current(loaded))) return false;
     clear(); state = { ...state, selected: id };
     const cold = state.cold!;
-    if (!readColdBuilding) selection = { status: 'error', id, message: 'La lecture du bâtiment sélectionné est indisponible.' };
+    if (!readColdBuilding) selection = { status: 'error', id, message: urbanText(['La lecture du bâtiment sélectionné est indisponible.','Reading the selected building is unavailable.','无法读取所选建筑。','La lectura del edificio seleccionado no está disponible.','A leitura do edifício selecionado está indisponível.']) };
     else { selection = { status: 'pending', id }; pending = { cold, identity: coldIdentity(cold), id, version }; schedule(); }
     if (update) notify(); return true;
   }
@@ -177,10 +191,10 @@ export function createUrbanBuildingPanelState(initial: UrbanBuildingState, optio
     clear(); const own = version; state = { ...state, parentSelected: { ...pick }, selected: undefined };
     selection = { status: 'parent_pending', id: pick.parent_id };
     parentWork = Promise.resolve().then(async () => {
-      if (!readParentBuilding) throw new Error('Lecture native parent indisponible.');
+      if (!readParentBuilding) throw new Error(urbanText(['Lecture native parent indisponible.','Native parent reading is unavailable.','无法读取原生父对象。','Lectura nativa del elemento principal no disponible.','Leitura nativa do objeto principal indisponível.']));
       const value = await readParentBuilding(parent, pick.parent_id);
       if (own !== version || state.parent !== parent) return;
-      if (!nativeParentHasSelection(value, pick)) throw new Error('La sélection parent/membre/contexte ne correspond pas à son archive.');
+      if (!nativeParentHasSelection(value, pick)) throw new Error(urbanText(['La sélection parent/membre/contexte ne correspond pas à son archive.','The parent/member/context selection does not match its archive.','所选父对象 / 成员 / 上下文与其档案不匹配。','La selección de elemento principal/miembro/contexto no coincide con su archivo.','A seleção de objeto principal/membro/contexto não corresponde ao seu arquivo.']));
       selection = { status: 'parent_ready', id: pick.parent_id, value, pick };
     }).catch(error => { if (own === version && state.parent === parent) selection = { status: 'parent_error', id: pick.parent_id, message: String(error) }; })
       .finally(() => { if (own === version && state.parent === parent) notify(); });
@@ -210,20 +224,20 @@ export function createUrbanBuildingPanelState(initial: UrbanBuildingState, optio
         architectureContract: result.parent ? 'parent-session-1' : result.scene?.generator_version === 'silhouette' ? undefined : 'legacy-plan' });
     },
     async openSelected(open: (building: PlacedBuilding, context?: PlanArchiveScene) => Promise<void>): Promise<void> {
-      if (state.parent) throw new Error('Le transfert Maisons d’un parent archivé n’est pas encore pris en charge. Exportez les archives natives.');
+      if (state.parent) throw new Error(urbanText(['Le transfert Maisons d’un parent archivé n’est pas encore pris en charge. Exportez les archives natives.','Transferring an archived parent to Houses is not yet supported. Export the native archives.','尚不支持将已归档父对象传送到房屋工作坊。请导出原生档案。','Aún no se admite transferir un elemento principal archivado a Casas. Exporta los archivos nativos.','A transferência de um objeto principal arquivado para Casas ainda não é suportada. Exporte os arquivos nativos.']));
       if (state.cold) {
-        if (selection.status !== 'ready' || !loaded || !current(loaded)) throw new Error('Le bâtiment sélectionné n’est pas chargé.');
+        if (selection.status !== 'ready' || !loaded || !current(loaded)) throw new Error(urbanText(['Le bâtiment sélectionné n’est pas chargé.','The selected building is not loaded.','所选建筑尚未加载。','El edificio seleccionado no está cargado.','O edifício selecionado não está carregado.']));
         return open(selection.value.building, selection.value.scene);
       }
-      const building = state.scene?.buildings.find(b => b.id === state.selected); if (!building) throw new Error('Aucun bâtiment sélectionné.');
+      const building = state.scene?.buildings.find(b => b.id === state.selected); if (!building) throw new Error(urbanText(['Aucun bâtiment sélectionné.','No building selected.','未选择建筑。','No hay ningún edificio seleccionado.','Nenhum edifício selecionado.']));
       return open(building);
     },
     async exportCurrent(): Promise<void> {
-      if (exporting) throw new Error('Un export est déjà en cours.');
+      if (exporting) throw new Error(urbanText(['Un export est déjà en cours.','An export is already in progress.','导出已在进行中。','Ya hay una exportación en curso.','Já há uma exportação em andamento.']));
       const cold = state.cold, scene = state.scene, parent = state.parent;
-      if (parent && !exportParent) throw new Error('Export natif parent indisponible.');
-      if (cold && !exportCold) throw new Error('L’export complet de cette scène est indisponible.');
-      if (!parent && !cold && (!scene || !exportScene)) throw new Error('Aucune scène bâtie à exporter.');
+      if (parent && !exportParent) throw new Error(urbanText(['Export natif parent indisponible.','Native parent export is unavailable.','无法导出原生父对象。','Exportación nativa del elemento principal no disponible.','Exportação nativa do objeto principal indisponível.']));
+      if (cold && !exportCold) throw new Error(urbanText(['L’export complet de cette scène est indisponible.','Full export of this scene is unavailable.','无法完整导出此场景。','La exportación completa de esta escena no está disponible.','A exportação completa desta cena está indisponível.']));
+      if (!parent && !cold && (!scene || !exportScene)) throw new Error(urbanText(['Aucune scène bâtie à exporter.','No built scene to export.','没有可导出的建筑场景。','No hay ninguna escena construida para exportar.','Não há cena construída para exportar.']));
       exporting = true; notify();
       try { if (parent) await exportParent!(parent); else if (cold) await exportCold!(cold); else await exportScene!(scene!); }
       finally { exporting = false; notify(); }
@@ -318,6 +332,9 @@ export function createUrbanBuildingsPanel(options: {
     $('[data-building-3d]').textContent = 'Vue 3D';
     architectureHint.textContent = 'Emprise proposée par chaque lot (rectangle d’admission, sinon surface constructible). Les maisons détaillées seront réintégrées plus tard.';
   }
+  setupUrbanBuildingLocale(programme, panel, !!options.silhouettes);
+  localizeCityInspector(programme);
+  localizeCityInspector(panel);
   let state: UrbanBuildingState = { seed: '', visible: true, appearance: { style: buildingStyle, diagnostic: 'none' } };
   let epoch = 0, busy = false;
   const draftControls = '[data-building-seed], [data-building-floors], [data-building-typology], [data-building-house-model], [data-building-culture], [data-building-fit]';
@@ -327,6 +344,7 @@ export function createUrbanBuildingsPanel(options: {
   }
   let reportedRefusals: readonly NativeBuildingProjectionRefusal[] | undefined;
   let reportedCold: UrbanColdBuildingState | undefined;
+  let lastPanelSummary = '';
   let programmes: UrbanProgramme[] = [], reportedProgrammes: UrbanProgramme[] | undefined, programmeScene: PlacementBatch | undefined,
     programmeCold: UrbanColdBuildingState | undefined, programmeParent: UrbanParentBuildingState | undefined;
   function reportProgrammes(): void {
@@ -335,32 +353,37 @@ export function createUrbanBuildingsPanel(options: {
     const balanceEvidence = urbanBuildingPanelEvidence(state);
     p$('[data-programme-report]').innerHTML = programmes.map(p => {
       const evidence = balanceEvidence(p), known = evidence === 'scene_consistent';
-      const missing = evidence === 'not_calculated' ? 'non calculé' : 'non vérifié';
-      return `${programmePolicyEvidenceHtml(p)}${programmeConditionEvidenceHtml(p)}<small data-programme-functions-applied>${xml(programmeFunctionsSummary(p.context))}</small><table class="urban-programme"><thead><tr><th>Besoin</th><th>Demande</th><th title="Estimation de capacité des parcelles après affectation, avant admission des bâtiments">Parcellaire estimé</th><th title="Valeur du bilan calculé sur les sorties de cette scène, si disponible">Bilan bâti estimé</th><th title="Espaces ouverts conservés dans le bilan de cette scène">Libre</th><th title="Besoin restant selon le programme">Déficit du programme</th></tr></thead><tbody>${p.demands.map(d => `<tr title="${xml([...d.provenance, ...d.reasons].join(' · '))}"><th>${xml(functionName(d.function))}<small>${d.unit === 'domesticUnits' ? 'ménages du modèle' : 'm² utiles indicatifs'}</small></th><td>${d.requested.toFixed(1)}</td><td>${d.parcelCapacity.toFixed(1)}</td><td>${known ? d.builtCapacity.toFixed(1) : missing}</td><td>${known ? (d.openCapacity ?? 0).toFixed(1) : missing}</td><td>${d.deficit.toFixed(1)}${known ? '' : ' (bilan bâti non confirmé)'}</td></tr>`).join('')}</tbody></table><small>${known ? 'Estimation cohérente avec les sorties de cette scène ; capacité habitante non certifiée.' : evidence === 'not_calculated' ? 'La capacité des bâtiments n’a pas été évaluée. Les valeurs parcellaires restent des estimations du modèle.' : 'Le bilan bâti n’est pas vérifié pour cette scène ; aucune capacité habitante n’est déduite.'}</small><small>${xml(PARCEL_CAPACITY_SCOPE)}</small>${p.warnings.length ? `<small data-programme-warnings role="status">${p.warnings.map(w => xml(urbanCapacityWarningText(w))).join('<br>')}</small>` : ''}<small>${p.cultures.map(c => `${xml(c.culture)} → ${xml(c.architecturePack)}${c.borrowing ? ` · ${xml(c.borrowing)}` : ''}`).join('<br>')}</small>`;
-    }).join('') || '<small>Le programme apparaît avec le plan appliqué.</small>';
+      const missing = evidence === 'not_calculated' ? urbanText(['non calculé','not calculated','未计算','no calculado','não calculado']) : urbanText(['non vérifié','unverified','未经验证','no verificado','não verificado']);
+      const titleParcel = urbanText(['Estimation de capacité des parcelles après affectation, avant admission des bâtiments','Estimated parcel capacity after allocation, before building admission','分配后、建筑接纳前的地块容量估算','Capacidad parcelaria estimada tras la asignación y antes de admitir edificios','Capacidade estimada dos lotes após alocação e antes da admissão de edifícios']);
+      const titleBuilt = urbanText(['Valeur du bilan calculé sur les sorties de cette scène, si disponible','Balance calculated from this scene’s outputs, if available','根据此场景输出计算的结果（如有）','Balance calculado con los resultados de esta escena, si está disponible','Balanço calculado a partir dos resultados desta cena, se disponível']);
+      const titleOpen = urbanText(['Espaces ouverts conservés dans le bilan de cette scène','Open spaces retained in this scene balance','此场景结果中保留的开放空间','Espacios abiertos conservados en el balance de esta escena','Espaços abertos mantidos no balanço desta cena']);
+      const titleDeficit = urbanText(['Besoin restant selon le programme','Remaining need according to the program','规划中的剩余需求','Necesidad restante según el programa','Necessidade restante segundo o programa']);
+      const conclusion = known ? urbanText(['Estimation cohérente avec les sorties de cette scène ; capacité habitante non certifiée.','Estimate consistent with this scene’s outputs; residential capacity is not certified.','估算与此场景输出一致；居住容量未经认证。','Estimación coherente con los resultados de esta escena; capacidad residencial no certificada.','Estimativa coerente com os resultados desta cena; capacidade residencial não certificada.']) : evidence === 'not_calculated' ? urbanText(['La capacité des bâtiments n’a pas été évaluée. Les valeurs parcellaires restent des estimations du modèle.','Building capacity has not been assessed. Parcel values remain model estimates.','建筑容量尚未评估。地块数值仍是模型估算。','No se ha evaluado la capacidad de los edificios. Los valores parcelarios siguen siendo estimaciones del modelo.','A capacidade dos edifícios não foi avaliada. Os valores dos lotes continuam sendo estimativas do modelo.']) : urbanText(['Le bilan bâti n’est pas vérifié pour cette scène ; aucune capacité habitante n’est déduite.','The building balance is unverified for this scene; no residential capacity is inferred.','此场景的建筑结果未经验证；不推断居住容量。','El balance construido no está verificado para esta escena; no se deduce capacidad residencial.','O balanço construído não foi verificado para esta cena; nenhuma capacidade residencial é inferida.']);
+      return `${programmePolicyEvidenceHtml(p)}${programmeConditionEvidenceHtml(p)}<small data-programme-functions-applied>${xml(programmeFunctionsSummary(p.context))}</small><table class="urban-programme"><thead><tr><th>${urbanText(['Besoin','Need','需求','Necesidad','Necessidade'])}</th><th>${urbanText(['Demande','Demand','需求量','Demanda','Demanda'])}</th><th title="${xml(titleParcel)}">${urbanText(['Parcellaire estimé','Estimated parcels','估计地块','Parcelario estimado','Lotes estimados'])}</th><th title="${xml(titleBuilt)}">${urbanText(['Bilan bâti estimé','Estimated building balance','估计建筑结果','Balance construido estimado','Balanço construído estimado'])}</th><th title="${xml(titleOpen)}">${urbanText(['Libre','Open','开放','Libre','Livre'])}</th><th title="${xml(titleDeficit)}">${urbanText(['Déficit du programme','Program deficit','规划缺口','Déficit del programa','Déficit do programa'])}</th></tr></thead><tbody>${p.demands.map(d => `<tr title="${xml([...d.provenance, ...d.reasons].join(' · '))}"><th>${xml(functionName(d.function))}<small>${d.unit === 'domesticUnits' ? urbanText(['ménages du modèle','model households','模型家庭','hogares del modelo','domicílios do modelo']) : urbanText(['m² utiles indicatifs','indicative usable m²','平方米参考使用面积','m² útiles indicativos','m² úteis indicativos'])}</small></th><td>${d.requested.toFixed(1)}</td><td>${d.parcelCapacity.toFixed(1)}</td><td>${known ? d.builtCapacity.toFixed(1) : missing}</td><td>${known ? (d.openCapacity ?? 0).toFixed(1) : missing}</td><td>${d.deficit.toFixed(1)}${known ? '' : ` (${urbanText(['bilan bâti non confirmé','building balance unconfirmed','建筑结果未确认','balance construido no confirmado','balanço construído não confirmado'])})`}</td></tr>`).join('')}</tbody></table><small>${conclusion}</small><small>${xml(urbanCapacityScopeText())}</small>${p.warnings.length ? `<small data-programme-warnings role="status">${p.warnings.map(w => xml(urbanCapacityWarningText(w))).join('<br>')}</small>` : ''}<small>${p.cultures.map(c => `${xml(c.culture)} → ${xml(c.architecturePack)}${c.borrowing ? ` · ${xml(c.borrowing)}` : ''}`).join('<br>')}</small>`;
+    }).join('') || `<small>${urbanText(['Le programme apparaît avec le plan appliqué.','The program appears with the applied plan.','规划随已应用的方案显示。','El programa aparece con el plan aplicado.','O programa aparece com o plano aplicado.'])}</small>`;
   }
   const report = (): void => {
     const scene = state.scene, cold = state.cold, loading = model.selection;
-    if (!busy) $('[data-buildings-status]').textContent = urbanBuildingPanelSummary(state);
+    if (!busy) { lastPanelSummary = urbanBuildingPanelSummary(state); $('[data-buildings-status]').textContent = lastPanelSummary; }
     const exportButton = $<HTMLButtonElement>('[data-building-json]'); exportButton.disabled = !model.canExport;
-    exportButton.textContent = state.parent ? 'Exporter les archives parent natives' : cold ? 'Exporter la scène complète' : 'Exporter la scène JSON';
-    exportButton.title = cold && !options.exportCold ? 'L’export complet de cette scène est indisponible.' : '';
+    exportButton.textContent = state.parent ? urbanText(['Exporter les archives parent natives','Export native parent archives','导出原生父对象档案','Exportar archivos de elementos principales nativos','Exportar arquivos de objetos principais nativos']) : cold ? urbanText(['Exporter la scène complète','Export full scene','导出完整场景','Exportar escena completa','Exportar cena completa']) : urbanText(['Exporter la scène JSON','Export scene JSON','导出场景 JSON','Exportar escena JSON','Exportar cena JSON']);
+    exportButton.title = cold && !options.exportCold ? urbanText(['L’export complet de cette scène est indisponible.','Full export of this scene is unavailable.','无法完整导出此场景。','La exportación completa de esta escena no está disponible.','A exportação completa desta cena está indisponível.']) : '';
     if (model.exporting) exportButton.setAttribute('aria-busy', 'true'); else exportButton.removeAttribute('aria-busy');
     const refusals = cold ? options.getColdRefusals?.(cold) : scene?.refusals;
     if (refusals !== reportedRefusals || cold !== reportedCold) $('[data-building-refusals]').innerHTML = urbanBuildingPanelRefusalsHtml(state, cold ? refusals : undefined);
     reportedRefusals = refusals; reportedCold = cold;
     $('[data-building-open-deficits]').innerHTML = urbanBuildingPanelOpenDeficitsHtml(state);
     const selected = cold ? loading.status === 'ready' ? loading.value.building : undefined : scene?.buildings.find(b => b.id === state.selected);
-    const box = $('[data-building-inspection]'), capacity = selected ? urbanBuildingPanelCapacity(state, selected) : 'capacité non évaluée';
-    const emptyInspection = cold && loading.status === 'pending' ? '<small>Chargement du bâtiment sélectionné…</small>'
-      : cold && loading.status === 'missing' ? '<small>Le bâtiment sélectionné est absent de cette scène.</small>'
-        : cold && loading.status === 'error' ? `<small>Lecture du bâtiment impossible : ${xml(loading.message)}</small>`
-          : '<small>Cliquer sur un bâtiment pour l’inspecter.</small>';
-    box.innerHTML = selected ? `<strong>${xml(functionName(selected.function))}</strong><dl class="urban-inspection"><dt>Parcelle</dt><dd>${xml(selected.parcel_id)}</dd><dt>Culture et recette</dt><dd>${xml(selected.culture.culture)} · ${xml(selected.recipe_id)}</dd><dt>Sol / hauteur physique</dt><dd>${selected.ground_z_m.toFixed(2)} m / ${buildingHeight(selected).toFixed(2)} m</dd><dt>Indicateurs domestiques</dt><dd>${capacity}</dd><dt>Accès</dt><dd>${xml(selected.access_id)}</dd>${urbanBuildingPanelProgrammeOutcomeHtml(selected)}</dl><button type="button" data-open-house>Ouvrir dans Maisons</button>${options.onAssembly && selected.simplification === 'architectural_plan' ? '<button type="button" data-open-assembly>Essai assemblage natif · parent sélectionné</button>' : ''}${selected.culture.borrowing ? `<small>${xml(selected.culture.borrowing)}</small>` : ''}` : emptyInspection;
+    const box = $('[data-building-inspection]'), capacity = selected ? urbanBuildingPanelCapacity(state, selected) : urbanText(['capacité non évaluée','capacity not assessed','容量未评估','capacidad no evaluada','capacidade não avaliada']);
+    const emptyInspection = cold && loading.status === 'pending' ? `<small data-building-i18n="pending">${urbanText(['Chargement du bâtiment sélectionné…','Loading selected building…','正在加载所选建筑…','Cargando el edificio seleccionado…','Carregando o edifício selecionado…'])}</small>`
+      : cold && loading.status === 'missing' ? `<small data-building-i18n="missing">${urbanText(['Le bâtiment sélectionné est absent de cette scène.','The selected building is missing from this scene.','此场景中没有所选建筑。','El edificio seleccionado no está en esta escena.','O edifício selecionado não está nesta cena.'])}</small>`
+        : cold && loading.status === 'error' ? `<small>${urbanText(['Lecture du bâtiment impossible :','Unable to read building:','无法读取建筑：','No se puede leer el edificio:','Não foi possível ler o edifício:'])} ${xml(loading.message)}</small>`
+          : `<small data-building-i18n="empty">${urbanText(['Cliquer sur un bâtiment pour l’inspecter.','Click a building to inspect it.','点击建筑查看详情。','Haz clic en un edificio para inspeccionarlo.','Clique em um edifício para inspecioná-lo.'])}</small>`;
+    box.innerHTML = selected ? `<strong data-building-function>${xml(functionName(selected.function))}</strong><dl class="urban-inspection"><dt data-building-i18n="parcel">${urbanText(['Parcelle','Parcel','地块','Parcela','Lote'])}</dt><dd>${xml(selected.parcel_id)}</dd><dt data-building-i18n="culture">${urbanText(['Culture et recette','Culture and recipe','文化与配方','Cultura y receta','Cultura e receita'])}</dt><dd>${xml(selected.culture.culture)} · ${xml(selected.recipe_id)}</dd><dt data-building-i18n="height">${urbanText(['Sol / hauteur physique','Ground / physical height','地面 / 物理高度','Suelo / altura física','Solo / altura física'])}</dt><dd>${selected.ground_z_m.toFixed(2)} m / ${buildingHeight(selected).toFixed(2)} m</dd><dt data-building-i18n="domestic">${urbanText(['Indicateurs domestiques','Domestic indicators','居住指标','Indicadores domésticos','Indicadores domésticos'])}</dt><dd data-building-capacity>${capacity}</dd><dt data-building-i18n="access">${urbanText(['Accès','Access','通道','Acceso','Acesso'])}</dt><dd>${xml(selected.access_id)}</dd>${urbanBuildingPanelProgrammeOutcomeHtml(selected)}</dl><button type="button" data-open-house data-building-i18n="open">${urbanText(['Ouvrir dans Maisons','Open in Houses','在房屋中打开','Abrir en Casas','Abrir em Casas'])}</button>${options.onAssembly && selected.simplification === 'architectural_plan' ? `<button type="button" data-open-assembly data-building-i18n="assembly">${urbanText(['Essai assemblage natif · parent sélectionné','Native assembly test · selected parent','原生装配测试 · 所选父对象','Prueba de ensamblaje nativo · elemento principal seleccionado','Teste de montagem nativa · objeto principal selecionado'])}</button>` : ''}${selected.culture.borrowing ? `<small>${xml(selected.culture.borrowing)}</small>` : ''}` : emptyInspection;
     if (state.parent) {
       box.innerHTML = loading.status === 'parent_ready' ? nativeParentInspectionHtml(loading.value, loading.pick)
-        : loading.status === 'parent_pending' ? '<small>Lecture de l’archive du parent sélectionné…</small>'
-          : loading.status === 'parent_error' ? `<small>Lecture native impossible : ${xml(loading.message)}</small>` : '<small>Cliquez sur un membre ou un contexte réel pour lire son parent archivé.</small>';
+        : loading.status === 'parent_pending' ? `<small>${urbanText(['Lecture de l’archive du parent sélectionné…','Reading the selected parent archive…','正在读取所选父对象档案…','Leyendo el archivo del elemento principal seleccionado…','Lendo o arquivo do objeto principal selecionado…'])}</small>`
+          : loading.status === 'parent_error' ? `<small>${urbanText(['Lecture native impossible :','Unable to read native archive:','无法读取原生档案：','No se puede leer el archivo nativo:','Não foi possível ler o arquivo nativo:'])} ${xml(loading.message)}</small>` : `<small>${urbanText(['Cliquez sur un membre ou un contexte réel pour lire son parent archivé.','Click a real member or context to read its archived parent.','点击实际成员或上下文以读取其已归档的父对象。','Haz clic en un miembro o contexto real para leer su elemento principal archivado.','Clique em um membro ou contexto real para ler seu objeto principal arquivado.'])}</small>`;
     }
     if (state.generationNote) box.insertAdjacentHTML('afterbegin', `<small role="status">${xml(state.generationNote)}</small>`);
     const open = box.querySelector<HTMLButtonElement>('[data-open-house]');
@@ -386,6 +409,27 @@ export function createUrbanBuildingsPanel(options: {
       const link = document.createElement('a'); link.href = url; link.download = 'urban-scene.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 0);
     }, onUpdate: next => { state = next; report(); } });
   state = model.state;
+  const updateLanguage = (): void => {
+    const status = $('[data-buildings-status]');
+    if (!busy && status.textContent === lastPanelSummary) { lastPanelSummary = urbanBuildingPanelSummary(state); status.textContent = lastPanelSummary; }
+    const button = $<HTMLButtonElement>('[data-building-json]');
+    button.textContent = state.parent ? urbanText(['Exporter les archives parent natives','Export native parent archives','导出原生父对象档案','Exportar archivos de elementos principales nativos','Exportar arquivos de objetos principais nativos']) : state.cold ? urbanText(['Exporter la scène complète','Export full scene','导出完整场景','Exportar escena completa','Exportar cena completa']) : urbanText(['Exporter la scène JSON','Export scene JSON','导出场景 JSON','Exportar escena JSON','Exportar cena JSON']);
+    if (state.cold && !options.exportCold) button.title = urbanText(['L’export complet de cette scène est indisponible.','Full export of this scene is unavailable.','无法完整导出此场景。','La exportación completa de esta escena no está disponible.','A exportação completa desta cena está indisponível.']);
+    const loading = model.selection;
+    const selected = state.cold ? loading.status === 'ready' ? loading.value.building : undefined : state.scene?.buildings.find(building => building.id === state.selected);
+    if (selected) {
+      const name = panel.querySelector<HTMLElement>('[data-building-function]'); if (name) name.textContent = functionName(selected.function);
+      const capacity = panel.querySelector<HTMLElement>('[data-building-capacity]'); if (capacity) capacity.textContent = urbanBuildingPanelCapacity(state, selected);
+    }
+    $('[data-building-refusals]').innerHTML = urbanBuildingPanelRefusalsHtml(state, state.cold ? options.getColdRefusals?.(state.cold) : undefined);
+    $('[data-building-open-deficits]').innerHTML = urbanBuildingPanelOpenDeficitsHtml(state);
+    const report = p$<HTMLElement>('[data-programme-report]');
+    const open = Array.from(report.querySelectorAll<HTMLDetailsElement>('details')).map(details => details.open);
+    reportedProgrammes = undefined; reportProgrammes();
+    Array.from(report.querySelectorAll<HTMLDetailsElement>('details')).forEach((details, index) => { if (index < open.length) details.open = open[index]; });
+  };
+  window.addEventListener('magna-locale-change', updateLanguage);
+  window.addEventListener('storage', event => { if (event.key === LOCALE_KEY) updateLanguage(); });
   function changed(): void { report(); options.onChange(state); }
   const functionControls = bindProgrammeFunctionControls(programme);
   const policyControls = bindProgrammePolicyControls(programme);
@@ -412,7 +456,7 @@ export function createUrbanBuildingsPanel(options: {
       Object.assign(context, { [key]: value });
     }
     try { options.applyProgramme(conditionControls.read(functionControls.read(policyControls.read(context)))); p$('[data-programme-draft]').hidden = true; }
-    catch (error) { p$('[data-programme-draft]').hidden = false; p$('[data-programme-draft]').textContent = error instanceof Error ? error.message : 'Programme invalide.'; }
+    catch (error) { p$('[data-programme-draft]').hidden = false; p$('[data-programme-draft]').textContent = error instanceof Error ? error.message : urbanText(['Programme invalide.','Invalid program.','规划无效。','Programa no válido.','Programa inválido.']); }
   };
   $<HTMLButtonElement>('[data-building-house-bench]').onclick = () => openBench('houses', new URLSearchParams());
   $<HTMLButtonElement>('[data-buildings-generate]').onclick = () => { void generate(); };
@@ -420,14 +464,14 @@ export function createUrbanBuildingsPanel(options: {
     if (busy) return;
     const ticket = ++epoch, seed = applied ? applied.seed : $<HTMLInputElement>('[data-building-seed]').value;
     busy = true; $<HTMLButtonElement>('[data-buildings-generate]').setAttribute('aria-busy', 'true');
-    $('[data-buildings-status]').textContent = 'Recherche d’implantations compatibles…';
+    $('[data-buildings-status]').textContent = urbanText(['Recherche d’implantations compatibles…','Finding compatible placements…','正在查找兼容的布局…','Buscando implantaciones compatibles…','Buscando implantações compatíveis…']);
     try {
       const floors = $<HTMLInputElement>('[data-building-floors]'), typology = $<HTMLSelectElement>('[data-building-typology]').value as PlacementBatchSettings['typology'];
       if (!applied && (!floors.checkValidity() || floors.value.trim() && !Number.isSafeInteger(Number(floors.value)))) throw new Error('Le nombre de niveaux doit être un entier positif. La recette vérifie sa propre plage.');
       const house_config = applied ? applied.settings?.house_config : readUrbanHouseModel($<HTMLInputElement>('[data-building-house-model]').value, options.getProgramme().mode);
       const settings: PlacementBatchSettings = applied ? structuredClone(applied.settings ?? {}) : { parcel_fit: $<HTMLInputElement>('[data-building-fit]').checked, ...(architectureCulture.value ? { culture: architectureCulture.value } : {}), ...(houseMix.get() ? { houses: structuredClone(houseMix.get()!) } : {}), ...(house_config ? { house_config } : {}), ...(floors.value.trim() ? { floors: Number(floors.value) } : {}), ...(typology ? { typology } : {}) };
       const result = await options.generate(seed, settings, (completed, total) => {
-        if (ticket === epoch && busy) $('[data-buildings-status]').textContent = `${completed.toLocaleString()} / ${total.toLocaleString()} lots traités`;
+        if (ticket === epoch && busy) $('[data-buildings-status]').textContent = `${completed.toLocaleString()} / ${total.toLocaleString()} ${urbanText(['lots traités','lots processed','个地块已处理','parcelas procesadas','lotes processados'])}`;
       });
       if (ticket !== epoch) return;
       busy = false; model.applyGenerated(result, seed, settings); if (!applied) $('[data-building-draft]').hidden = true; options.onChange(state);
@@ -438,7 +482,7 @@ export function createUrbanBuildingsPanel(options: {
   $<HTMLInputElement>('[data-building-visible]').onchange = event => { state.visible = (event.target as HTMLInputElement).checked; changed(); };
   $<HTMLSelectElement>('[data-building-style]').onchange = event => { state.appearance = { ...state.appearance, style: (event.target as HTMLSelectElement).value as UrbanBuildingStyle }; changed(); };
   $<HTMLSelectElement>('[data-building-diagnostic]').onchange = event => { state.appearance = { ...state.appearance, diagnostic: (event.target as HTMLSelectElement).value as UrbanBuildingDiagnostic }; changed(); };
-  $<HTMLButtonElement>('[data-building-3d]').onclick = () => { if (state.parent) { $('[data-buildings-status]').textContent = 'Vue 3D du format parent non prise en charge ; la scène native reste conservée.'; return; } state.projection = !state.projection; options.onProjection?.(!!state.projection); $<HTMLButtonElement>('[data-building-3d]').setAttribute('aria-pressed', String(!!state.projection)); options.onChange(state); };
+  $<HTMLButtonElement>('[data-building-3d]').onclick = () => { if (state.parent) { $('[data-buildings-status]').textContent = urbanText(['Vue 3D du format parent non prise en charge ; la scène native reste conservée.','3D view is not supported for the parent format; the native scene remains retained.','父对象格式不支持三维视图；原生场景仍会保留。','La vista 3D no admite el formato principal; se conserva la escena nativa.','A visão 3D não é compatível com o formato principal; a cena nativa permanece preservada.']); return; } state.projection = !state.projection; options.onProjection?.(!!state.projection); $<HTMLButtonElement>('[data-building-3d]').setAttribute('aria-pressed', String(!!state.projection)); options.onChange(state); };
   $<HTMLButtonElement>('[data-building-json]').onclick = () => {
     const ticket = epoch, scene = state.scene, cold = state.cold;
     void model.exportCurrent().catch(error => {
@@ -447,7 +491,7 @@ export function createUrbanBuildingsPanel(options: {
   };
   const parentImport = $<HTMLInputElement>('[data-building-parent-import]'); parentImport.closest('label')!.hidden = !options.importParent;
   parentImport.onchange = () => { const file = parentImport.files?.[0]; if (!file || !options.importParent) return;
-    if (busy) { $('[data-buildings-status]').textContent = 'Attendez la génération en cours.'; return; }
+    if (busy) { $('[data-buildings-status]').textContent = urbanText(['Attendez la génération en cours.','Wait for the current generation to finish.','请等待当前生成完成。','Espera a que termine la generación actual.','Aguarde a geração atual terminar.']); return; }
     const ticket = ++epoch; parentImport.disabled = true;
     void options.importParent(file).then(parent => { if (ticket !== epoch) throw new Error('Import remplacé ; archive historique conservée sans affichage.');
       model.replaceParent(parent); options.onChange(state); }, e => { if (ticket === epoch) $('[data-buildings-status]').textContent = String(e); })

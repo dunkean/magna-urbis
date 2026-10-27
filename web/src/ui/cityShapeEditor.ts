@@ -14,6 +14,8 @@
  *   re-picking the inspector while editing.
  * The geometry helpers are pure and unit tested (`web/tests/cityShapeEditor.test.ts`). */
 
+import { localizeCityInspector } from './cityInspectorLocale';
+
 export interface Pt { x: number; y: number }
 
 // ---------------------------------------------------------------- pure helpers
@@ -200,6 +202,7 @@ export function createShapeEditor(map: SVGSVGElement, viewport: HTMLElement): Sh
   ensureEditStyles();
   let session: ShapeEditSession | undefined, ring: Pt[] = [], undo: Pt[][] = [], selected: number | undefined, snappedAt: number | undefined;
   let layer: SVGGElement | undefined, toolbar: HTMLDivElement | undefined, handles: SVGCircleElement[] = [], edges: SVGPathElement[] = [], pluses: SVGCircleElement[] = [];
+  let disposeToolbarLocale: (() => void) | undefined;
   let ghost: SVGPathElement | undefined, draftPath: SVGPathElement | undefined;
   let drag: { index: number; pointer: number; moved: boolean; before: Pt[] } | undefined;
   /** World metres per screen pixel. */
@@ -320,6 +323,7 @@ export function createShapeEditor(map: SVGSVGElement, viewport: HTMLElement): Sh
   }
   function teardown(): void {
     if (drag) { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); window.removeEventListener('pointercancel', onUp); drag = undefined; }
+    disposeToolbarLocale?.(); disposeToolbarLocale = undefined;
     layer?.remove(); toolbar?.remove(); layer = undefined; toolbar = undefined; handles = []; edges = []; pluses = []; session = undefined; undo = []; selected = undefined;
     viewport.removeEventListener('click', swallowClick, true); window.removeEventListener('keydown', onKey);
   }
@@ -339,6 +343,7 @@ export function createShapeEditor(map: SVGSVGElement, viewport: HTMLElement): Sh
         <button type="button" data-se-undo title="Ctrl+Z">↶</button>
         <button type="button" data-se-commit title="Entrée">Valider</button><button type="button" data-se-cancel title="Échap">Annuler</button>
         <small>Glisser un sommet · appuyer sur un bord pour en ajouter un</small>`;
+      disposeToolbarLocale = localizeCityInspector(toolbar);
       toolbar.addEventListener('pointerdown', e => e.stopPropagation());
       toolbar.addEventListener('wheel', e => e.stopPropagation());
       toolbar.querySelector('[data-se-commit]')!.addEventListener('click', commit);

@@ -3,19 +3,19 @@
   "catalogue_version": "atlas-houses-3",
   "sources": [
     {
-      "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+      "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
       "sha256": "51ffec03a4f13c088e09b0351d22c4039f305dbd04fbd7d423108603e066faba"
     },
     {
-      "path": "docs/catalogue_settlements_antiquite_moyen_age_rpg.md",
+      "path": "docs/catalogue_settlements_antiquite_moyen_age_rpg_FR.md",
       "sha256": "6d962393466f82ca438f0ccc9f883e9315daa525c4221475415f2d043e4b1e70"
     },
     {
-      "path": "docs/sources/javanese-domestic-architecture.md",
+      "path": "docs/sources/javanese-domestic-architecture_FR.md",
       "sha256": "a387908f0081f47248953f62306fdf163c72fb753fa0ef5f36d1ad770ba4aa05"
     },
     {
-      "path": "docs/sources/roman-compact-domestic-architecture.md",
+      "path": "docs/sources/roman-compact-domestic-architecture_FR.md",
       "sha256": "8ba83ef5581403cf375340e4fca8e52a977e02f4897a237f2f84f142bc63bcd9"
     }
   ],
@@ -29,7 +29,7 @@
       ],
       "confidence": "stylized",
       "sources": [
-        "docs/styles_architecturaux_mondiaux_city_mapper.md"
+        "docs/styles_architecturaux_mondiaux_city_mapper_FR.md"
       ]
     },
     {
@@ -42,7 +42,7 @@
       ],
       "confidence": "stylized",
       "sources": [
-        "docs/styles_architecturaux_mondiaux_city_mapper.md"
+        "docs/styles_architecturaux_mondiaux_city_mapper_FR.md"
       ]
     },
     {
@@ -54,7 +54,7 @@
       ],
       "confidence": "stylized",
       "sources": [
-        "docs/styles_architecturaux_mondiaux_city_mapper.md"
+        "docs/styles_architecturaux_mondiaux_city_mapper_FR.md"
       ]
     },
     {
@@ -66,7 +66,7 @@
       ],
       "confidence": "stylized",
       "sources": [
-        "docs/styles_architecturaux_mondiaux_city_mapper.md"
+        "docs/styles_architecturaux_mondiaux_city_mapper_FR.md"
       ]
     },
     {
@@ -79,7 +79,7 @@
       ],
       "confidence": "stylized",
       "sources": [
-        "docs/styles_architecturaux_mondiaux_city_mapper.md"
+        "docs/styles_architecturaux_mondiaux_city_mapper_FR.md"
       ]
     },
     {
@@ -92,7 +92,7 @@
       ],
       "confidence": "stylized",
       "sources": [
-        "docs/styles_architecturaux_mondiaux_city_mapper.md"
+        "docs/styles_architecturaux_mondiaux_city_mapper_FR.md"
       ]
     },
     {
@@ -105,7 +105,7 @@
       ],
       "confidence": "stylized",
       "sources": [
-        "docs/styles_architecturaux_mondiaux_city_mapper.md"
+        "docs/styles_architecturaux_mondiaux_city_mapper_FR.md"
       ]
     },
     {
@@ -118,7 +118,7 @@
       ],
       "confidence": "stylized",
       "sources": [
-        "docs/styles_architecturaux_mondiaux_city_mapper.md"
+        "docs/styles_architecturaux_mondiaux_city_mapper_FR.md"
       ]
     },
     {
@@ -131,7 +131,7 @@
       ],
       "confidence": "stylized",
       "sources": [
-        "docs/styles_architecturaux_mondiaux_city_mapper.md"
+        "docs/styles_architecturaux_mondiaux_city_mapper_FR.md"
       ]
     },
     {
@@ -144,7 +144,7 @@
       ],
       "confidence": "stylized",
       "sources": [
-        "docs/styles_architecturaux_mondiaux_city_mapper.md"
+        "docs/styles_architecturaux_mondiaux_city_mapper_FR.md"
       ]
     },
     {
@@ -157,7 +157,7 @@
       ],
       "confidence": "stylized",
       "sources": [
-        "docs/styles_architecturaux_mondiaux_city_mapper.md"
+        "docs/styles_architecturaux_mondiaux_city_mapper_FR.md"
       ]
     },
     {
@@ -170,7 +170,7 @@
       ],
       "confidence": "stylized",
       "sources": [
-        "docs/styles_architecturaux_mondiaux_city_mapper.md"
+        "docs/styles_architecturaux_mondiaux_city_mapper_FR.md"
       ]
     },
     {
@@ -183,7 +183,7 @@
       ],
       "confidence": "stylized",
       "sources": [
-        "docs/styles_architecturaux_mondiaux_city_mapper.md"
+        "docs/styles_architecturaux_mondiaux_city_mapper_FR.md"
       ]
     },
     {
@@ -196,7 +196,7 @@
       ],
       "confidence": "stylized",
       "sources": [
-        "docs/styles_architecturaux_mondiaux_city_mapper.md"
+        "docs/styles_architecturaux_mondiaux_city_mapper_FR.md"
       ]
     },
     {
@@ -209,7 +209,7 @@
       ],
       "confidence": "stylized",
       "sources": [
-        "docs/styles_architecturaux_mondiaux_city_mapper.md"
+        "docs/styles_architecturaux_mondiaux_city_mapper_FR.md"
       ]
     },
     {
@@ -222,7 +222,7 @@
       ],
       "confidence": "stylized",
       "sources": [
-        "docs/styles_architecturaux_mondiaux_city_mapper.md"
+        "docs/styles_architecturaux_mondiaux_city_mapper_FR.md"
       ]
     },
     {
@@ -235,7 +235,7 @@
       ],
       "confidence": "stylized",
       "sources": [
-        "docs/styles_architecturaux_mondiaux_city_mapper.md"
+        "docs/styles_architecturaux_mondiaux_city_mapper_FR.md"
       ]
     },
     {
@@ -248,7 +248,7 @@
       ],
       "confidence": "stylized",
       "sources": [
-        "docs/styles_architecturaux_mondiaux_city_mapper.md"
+        "docs/styles_architecturaux_mondiaux_city_mapper_FR.md"
       ]
     },
     {
@@ -261,7 +261,7 @@
       ],
       "confidence": "stylized",
       "sources": [
-        "docs/styles_architecturaux_mondiaux_city_mapper.md"
+        "docs/styles_architecturaux_mondiaux_city_mapper_FR.md"
       ]
     },
     {
@@ -274,7 +274,7 @@
       ],
       "confidence": "stylized",
       "sources": [
-        "docs/styles_architecturaux_mondiaux_city_mapper.md"
+        "docs/styles_architecturaux_mondiaux_city_mapper_FR.md"
       ]
     },
     {
@@ -287,7 +287,7 @@
       ],
       "confidence": "stylized",
       "sources": [
-        "docs/styles_architecturaux_mondiaux_city_mapper.md"
+        "docs/styles_architecturaux_mondiaux_city_mapper_FR.md"
       ]
     },
     {
@@ -300,7 +300,7 @@
       ],
       "confidence": "stylized",
       "sources": [
-        "docs/styles_architecturaux_mondiaux_city_mapper.md"
+        "docs/styles_architecturaux_mondiaux_city_mapper_FR.md"
       ]
     },
     {
@@ -313,7 +313,7 @@
       ],
       "confidence": "stylized",
       "sources": [
-        "docs/styles_architecturaux_mondiaux_city_mapper.md"
+        "docs/styles_architecturaux_mondiaux_city_mapper_FR.md"
       ]
     },
     {
@@ -326,7 +326,7 @@
       ],
       "confidence": "stylized",
       "sources": [
-        "docs/styles_architecturaux_mondiaux_city_mapper.md"
+        "docs/styles_architecturaux_mondiaux_city_mapper_FR.md"
       ]
     },
     {
@@ -339,7 +339,7 @@
       ],
       "confidence": "stylized",
       "sources": [
-        "docs/styles_architecturaux_mondiaux_city_mapper.md"
+        "docs/styles_architecturaux_mondiaux_city_mapper_FR.md"
       ]
     },
     {
@@ -352,7 +352,7 @@
       ],
       "confidence": "stylized",
       "sources": [
-        "docs/styles_architecturaux_mondiaux_city_mapper.md"
+        "docs/styles_architecturaux_mondiaux_city_mapper_FR.md"
       ]
     },
     {
@@ -365,7 +365,7 @@
       ],
       "confidence": "stylized",
       "sources": [
-        "docs/styles_architecturaux_mondiaux_city_mapper.md"
+        "docs/styles_architecturaux_mondiaux_city_mapper_FR.md"
       ]
     },
     {
@@ -378,7 +378,7 @@
       ],
       "confidence": "stylized",
       "sources": [
-        "docs/styles_architecturaux_mondiaux_city_mapper.md"
+        "docs/styles_architecturaux_mondiaux_city_mapper_FR.md"
       ]
     },
     {
@@ -391,7 +391,7 @@
       ],
       "confidence": "stylized",
       "sources": [
-        "docs/styles_architecturaux_mondiaux_city_mapper.md"
+        "docs/styles_architecturaux_mondiaux_city_mapper_FR.md"
       ]
     },
     {
@@ -404,7 +404,7 @@
       ],
       "confidence": "stylized",
       "sources": [
-        "docs/styles_architecturaux_mondiaux_city_mapper.md"
+        "docs/styles_architecturaux_mondiaux_city_mapper_FR.md"
       ]
     },
     {
@@ -417,7 +417,7 @@
       ],
       "confidence": "stylized",
       "sources": [
-        "docs/styles_architecturaux_mondiaux_city_mapper.md"
+        "docs/styles_architecturaux_mondiaux_city_mapper_FR.md"
       ]
     },
     {
@@ -430,7 +430,7 @@
       ],
       "confidence": "stylized",
       "sources": [
-        "docs/styles_architecturaux_mondiaux_city_mapper.md"
+        "docs/styles_architecturaux_mondiaux_city_mapper_FR.md"
       ]
     }
   ],
@@ -1932,11 +1932,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 241
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 229
         }
       ],
@@ -2535,11 +2535,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 242
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 229
         }
       ],
@@ -3130,11 +3130,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 243
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 229
         }
       ],
@@ -3811,11 +3811,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 244
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 229
         }
       ],
@@ -4406,11 +4406,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 245
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 227
         }
       ],
@@ -4723,11 +4723,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 248
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 232
         }
       ],
@@ -5022,11 +5022,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 251
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 234
         }
       ],
@@ -5270,7 +5270,7 @@
           }
         ],
         "notes": [
-          "Inspired compact Roman envelope: dimensions, two storeys, room count, roof shape/pitch, eaves, wall thickness and production weight are artistic defaults, not measured historical ranges. Shopfront adds a decorative panel and marks the first ground-floor room as Shop; this generic partition, separate commercial access, apartments and household capacity are not certified as a Roman functional programme. See docs/sources/roman-compact-domestic-architecture.md."
+          "Inspired compact Roman envelope: dimensions, two storeys, room count, roof shape/pitch, eaves, wall thickness and production weight are artistic defaults, not measured historical ranges. Shopfront adds a decorative panel and marks the first ground-floor room as Shop; this generic partition, separate commercial access, apartments and household capacity are not certified as a Roman functional programme. See docs/sources/roman-compact-domestic-architecture_FR.md."
         ],
         "enclosure_family": "none",
         "envelope": "walled",
@@ -5315,15 +5315,15 @@
       "roof_confidence": "uncertain",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 252
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 230
         },
         {
-          "path": "docs/sources/roman-compact-domestic-architecture.md",
+          "path": "docs/sources/roman-compact-domestic-architecture_FR.md",
           "line": 5
         }
       ],
@@ -5336,7 +5336,7 @@
       "settlement_archetype": "MED-ANT-S04",
       "subtradition": "Vicus romain",
       "context_note": "Le long des chaussées et postes frontaliers, A",
-      "chronology_note": "Shop-and-upper-dwelling arrangements are documented in Imperial Roman contexts; this generated envelope has no exact archaeological date or measured dimensional range. Inspired interpretation only; see docs/sources/roman-compact-domestic-architecture.md",
+      "chronology_note": "Shop-and-upper-dwelling arrangements are documented in Imperial Roman contexts; this generated envelope has no exact archaeological date or measured dimensional range. Inspired interpretation only; see docs/sources/roman-compact-domestic-architecture_FR.md",
       "chronology_confidence": "broad_tradition",
       "compound_pattern": "LOT-COMPOUND",
       "surface_language": "Deux pans de tuiles proposés ; forme et pente artistiques",
@@ -5570,7 +5570,7 @@
           }
         ],
         "notes": [
-          "Inspired compact Roman street block: all dimensional ranges, 2/3/4 storeys, 2.8m storey height, room count, roof, rear court and lateral passage proportions are artistic/native construction defaults, not archaeological measurements. Generic communal rooms and internal stairs do not certify apartments, independent tenancy, households or inhabitants. No automatic burgage infill, shopfront, gallery or multiple_households programme is declared. See docs/sources/roman-compact-domestic-architecture.md."
+          "Inspired compact Roman street block: all dimensional ranges, 2/3/4 storeys, 2.8m storey height, room count, roof, rear court and lateral passage proportions are artistic/native construction defaults, not archaeological measurements. Generic communal rooms and internal stairs do not certify apartments, independent tenancy, households or inhabitants. No automatic burgage infill, shopfront, gallery or multiple_households programme is declared. See docs/sources/roman-compact-domestic-architecture_FR.md."
         ],
         "enclosure_family": "none",
         "envelope": "walled",
@@ -5830,7 +5830,7 @@
               }
             ],
             "notes": [
-              "Inspired compact Roman street block: all dimensional ranges, 2/3/4 storeys, 2.8m storey height, room count, roof, rear court and lateral passage proportions are artistic/native construction defaults, not archaeological measurements. Generic communal rooms and internal stairs do not certify apartments, independent tenancy, households or inhabitants. No automatic burgage infill, shopfront, gallery or multiple_households programme is declared. See docs/sources/roman-compact-domestic-architecture.md."
+              "Inspired compact Roman street block: all dimensional ranges, 2/3/4 storeys, 2.8m storey height, room count, roof, rear court and lateral passage proportions are artistic/native construction defaults, not archaeological measurements. Generic communal rooms and internal stairs do not certify apartments, independent tenancy, households or inhabitants. No automatic burgage infill, shopfront, gallery or multiple_households programme is declared. See docs/sources/roman-compact-domestic-architecture_FR.md."
             ],
             "enclosure_family": "none",
             "envelope": "walled",
@@ -6105,7 +6105,7 @@
               }
             ],
             "notes": [
-              "Inspired compact Roman street block: all dimensional ranges, 2/3/4 storeys, 2.8m storey height, room count, roof, rear court and lateral passage proportions are artistic/native construction defaults, not archaeological measurements. Generic communal rooms and internal stairs do not certify apartments, independent tenancy, households or inhabitants. No automatic burgage infill, shopfront, gallery or multiple_households programme is declared. See docs/sources/roman-compact-domestic-architecture.md."
+              "Inspired compact Roman street block: all dimensional ranges, 2/3/4 storeys, 2.8m storey height, room count, roof, rear court and lateral passage proportions are artistic/native construction defaults, not archaeological measurements. Generic communal rooms and internal stairs do not certify apartments, independent tenancy, households or inhabitants. No automatic burgage infill, shopfront, gallery or multiple_households programme is declared. See docs/sources/roman-compact-domestic-architecture_FR.md."
             ],
             "enclosure_family": "none",
             "envelope": "walled",
@@ -6166,15 +6166,15 @@
       "roof_confidence": "uncertain",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 253
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 229
         },
         {
-          "path": "docs/sources/roman-compact-domestic-architecture.md",
+          "path": "docs/sources/roman-compact-domestic-architecture_FR.md",
           "line": 15
         }
       ],
@@ -6187,7 +6187,7 @@
       "settlement_archetype": "MED-ANT-S03",
       "subtradition": "Colonie romaine à trame régulière",
       "context_note": "Cité fondée/recadrée, A",
-      "chronology_note": "Imperial Roman multi-storey street dwellings are documented, including facade-lit and court-lit examples; this generated block has no exact archaeological date or measured dimensional range. Inspired interpretation only; see docs/sources/roman-compact-domestic-architecture.md",
+      "chronology_note": "Imperial Roman multi-storey street dwellings are documented, including facade-lit and court-lit examples; this generated block has no exact archaeological date or measured dimensional range. Inspired interpretation only; see docs/sources/roman-compact-domestic-architecture_FR.md",
       "chronology_confidence": "broad_tradition",
       "compound_pattern": "LOT-STRIP",
       "surface_language": "Deux pans de tuiles proposés ; aucun remplissage burgage automatique",
@@ -6720,11 +6720,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 275
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 262
         }
       ],
@@ -7368,11 +7368,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 276
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 262
         }
       ],
@@ -7663,11 +7663,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 277
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 262
         }
       ],
@@ -8413,11 +8413,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 278
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 264
         }
       ],
@@ -8721,11 +8721,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 279
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 262
         }
       ],
@@ -9297,11 +9297,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 280
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 263
         }
       ],
@@ -9592,11 +9592,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 281
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 268
         }
       ],
@@ -9929,11 +9929,11 @@
       "roof_confidence": "uncertain",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 282
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 269
         }
       ],
@@ -10222,11 +10222,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 283
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 267
         }
       ],
@@ -10968,11 +10968,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 310
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 294
         }
       ],
@@ -11810,11 +11810,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 311
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 295
         }
       ],
@@ -12652,11 +12652,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 312
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 296
         }
       ],
@@ -13203,11 +13203,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 313
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 294
         }
       ],
@@ -13528,11 +13528,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 314
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 295
         }
       ],
@@ -14087,11 +14087,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 315
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 294
         }
       ],
@@ -14922,11 +14922,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 316
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 298
         }
       ],
@@ -15609,11 +15609,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 317
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 302
         }
       ],
@@ -16184,11 +16184,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 318
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 301
         }
       ],
@@ -16879,11 +16879,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 319
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 299
         }
       ],
@@ -17184,11 +17184,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 320
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 296
         }
       ],
@@ -17733,11 +17733,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 321
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 300
         }
       ],
@@ -18025,11 +18025,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 322
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 295
         }
       ],
@@ -18538,11 +18538,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 346
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 333
         }
       ],
@@ -19115,11 +19115,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 347
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 337
         }
       ],
@@ -19406,11 +19406,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 348
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 335
         }
       ],
@@ -19700,11 +19700,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 349
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 334
         }
       ],
@@ -20008,11 +20008,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 350
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 337
         }
       ],
@@ -20856,11 +20856,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 352
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 338
         }
       ],
@@ -21131,11 +21131,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 353
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 338
         }
       ],
@@ -21949,11 +21949,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 354
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 337
         }
       ],
@@ -22240,11 +22240,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 355
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 335
         }
       ],
@@ -22549,11 +22549,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 379
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 366
         }
       ],
@@ -23296,11 +23296,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 380
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 367
         }
       ],
@@ -23876,11 +23876,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 381
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 370
         }
       ],
@@ -24224,11 +24224,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 382
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 373
         }
       ],
@@ -24541,11 +24541,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 384
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 368
         }
       ],
@@ -24834,11 +24834,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 387
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 372
         }
       ],
@@ -25152,11 +25152,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 412
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 399
         }
       ],
@@ -25470,11 +25470,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 413
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 399
         }
       ],
@@ -25791,11 +25791,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 414
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 400
         }
       ],
@@ -26070,11 +26070,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 415
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 403
         }
       ],
@@ -26380,11 +26380,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 417
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 402
         }
       ],
@@ -26708,11 +26708,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 419
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 399
         }
       ],
@@ -27254,11 +27254,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 447
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 432
         }
       ],
@@ -27850,11 +27850,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 448
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 434
         }
       ],
@@ -28723,11 +28723,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 449
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 434
         }
       ],
@@ -29269,11 +29269,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 450
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 435
         }
       ],
@@ -29937,11 +29937,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 451
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 433
         }
       ],
@@ -30245,11 +30245,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 453
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 438
         }
       ],
@@ -30523,11 +30523,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 454
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 437
         }
       ],
@@ -31119,11 +31119,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 455
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 434
         }
       ],
@@ -31429,11 +31429,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 456
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 439
         }
       ],
@@ -31722,11 +31722,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 457
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 440
         }
       ],
@@ -32318,11 +32318,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 486
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 472
         }
       ],
@@ -33190,11 +33190,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 487
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 470
         }
       ],
@@ -33840,11 +33840,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 488
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 476
         }
       ],
@@ -34436,11 +34436,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 489
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 472
         }
       ],
@@ -35554,11 +35554,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 491
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 475
         }
       ],
@@ -35873,11 +35873,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 494
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 479
         }
       ],
@@ -36485,11 +36485,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 495
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 473
         }
       ],
@@ -37145,11 +37145,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 497
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 478
         }
       ],
@@ -37523,11 +37523,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 498
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 480
         }
       ],
@@ -38073,11 +38073,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 525
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 511
         }
       ],
@@ -38653,11 +38653,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 526
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 512
         }
       ],
@@ -38946,11 +38946,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 527
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 514
         }
       ],
@@ -39542,11 +39542,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 528
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 513
         }
       ],
@@ -40088,11 +40088,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 531
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 517
         }
       ],
@@ -40366,11 +40366,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 532
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 512
         }
       ],
@@ -40666,11 +40666,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 533
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 517
         }
       ],
@@ -40960,11 +40960,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 559
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 545
         }
       ],
@@ -41556,11 +41556,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 560
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 547
         }
       ],
@@ -42288,11 +42288,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 561
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 545
         }
       ],
@@ -42581,11 +42581,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 562
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 546
         }
       ],
@@ -43193,11 +43193,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 563
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 548
         }
       ],
@@ -43988,11 +43988,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 565
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 545
         }
       ],
@@ -44398,11 +44398,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 566
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 550
         }
       ],
@@ -44712,11 +44712,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 567
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 548
         }
       ],
@@ -45248,11 +45248,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 568
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 549
         }
       ],
@@ -45557,11 +45557,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 569
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 553
         }
       ],
@@ -46153,11 +46153,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 595
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 582
         }
       ],
@@ -46747,11 +46747,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 596
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 583
         }
       ],
@@ -47023,11 +47023,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 597
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 585
         }
       ],
@@ -47300,11 +47300,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 598
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 585
         }
       ],
@@ -47645,11 +47645,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 599
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 584
         }
       ],
@@ -47922,11 +47922,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 600
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 588
         }
       ],
@@ -48221,11 +48221,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 601
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 587
         }
       ],
@@ -48497,11 +48497,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 602
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 582
         }
       ],
@@ -49055,11 +49055,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 603
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 586
         }
       ],
@@ -49405,11 +49405,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 604
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 589
         }
       ],
@@ -49953,11 +49953,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 629
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 615
         }
       ],
@@ -50140,11 +50140,11 @@
       "roof_confidence": "not_applicable",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 630
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 615
         }
       ],
@@ -50941,11 +50941,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 631
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 620
         }
       ],
@@ -51235,11 +51235,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 632
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 616
         }
       ],
@@ -51523,11 +51523,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 633
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 617
         }
       ],
@@ -52273,11 +52273,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 634
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 619
         }
       ],
@@ -52787,11 +52787,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 636
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 621
         }
       ],
@@ -53365,11 +53365,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 637
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 617
         }
       ],
@@ -53951,11 +53951,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 666
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 655
         }
       ],
@@ -54545,11 +54545,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 667
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 652
         }
       ],
@@ -55059,11 +55059,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 668
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 653
         }
       ],
@@ -55860,11 +55860,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 669
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 654
         }
       ],
@@ -56404,11 +56404,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 671
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 659
         }
       ],
@@ -56591,11 +56591,11 @@
       "roof_confidence": "not_applicable",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 672
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 656
         }
       ],
@@ -56897,11 +56897,11 @@
       "roof_confidence": "uncertain",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 673
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 657
         }
       ],
@@ -57174,11 +57174,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 675
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 651
         }
       ],
@@ -58724,11 +58724,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 704
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 688
         }
       ],
@@ -59317,11 +59317,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 705
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 689
         }
       ],
@@ -60189,11 +60189,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 706
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 688
         }
       ],
@@ -60737,11 +60737,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 707
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 693
         }
       ],
@@ -61031,11 +61031,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 708
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 688
         }
       ],
@@ -61939,11 +61939,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 713
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 690
         }
       ],
@@ -62238,11 +62238,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 715
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 697
         }
       ],
@@ -62591,11 +62591,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 716
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 696
         }
       ],
@@ -63177,11 +63177,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 742
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 730
         }
       ],
@@ -63499,11 +63499,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 743
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 729
         }
       ],
@@ -63835,11 +63835,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 744
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 731
         }
       ],
@@ -64531,11 +64531,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 745
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 733
         }
       ],
@@ -64880,11 +64880,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 749
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 735
         }
       ],
@@ -65193,11 +65193,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 750
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 731
         }
       ],
@@ -65487,11 +65487,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 751
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 729
         }
       ],
@@ -66001,11 +66001,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 780
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 763
         }
       ],
@@ -66459,11 +66459,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 781
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 763
         }
       ],
@@ -67225,11 +67225,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 782
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 765
         }
       ],
@@ -67801,11 +67801,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 783
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 766
         }
       ],
@@ -68363,11 +68363,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 784
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 763
         }
       ],
@@ -69164,11 +69164,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 787
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 769
         }
       ],
@@ -69965,11 +69965,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 789
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 770
         }
       ],
@@ -70302,11 +70302,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 790
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 772
         }
       ],
@@ -70580,11 +70580,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 791
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 766
         }
       ],
@@ -71254,11 +71254,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 792
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 773
         }
       ],
@@ -71576,11 +71576,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 793
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 774
         }
       ],
@@ -71853,11 +71853,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 817
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 806
         }
       ],
@@ -72447,11 +72447,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 818
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 806
         }
       ],
@@ -72742,11 +72742,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 819
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 809
         }
       ],
@@ -73286,11 +73286,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 821
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 806
         }
       ],
@@ -73632,11 +73632,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 824
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 811
         }
       ],
@@ -74322,11 +74322,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 849
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 835
         }
       ],
@@ -74613,11 +74613,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 850
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 840
         }
       ],
@@ -75356,11 +75356,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 851
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 836
         }
       ],
@@ -75932,11 +75932,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 852
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 838
         }
       ],
@@ -76508,11 +76508,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 853
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 835
         }
       ],
@@ -77034,11 +77034,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 857
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 842
         }
       ],
@@ -77341,11 +77341,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 858
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 842
         }
       ],
@@ -77649,11 +77649,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 859
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 838
         }
       ],
@@ -78450,11 +78450,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 886
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 871
         }
       ],
@@ -78964,11 +78964,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 887
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 879
         }
       ],
@@ -79522,11 +79522,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 888
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 871
         }
       ],
@@ -80256,11 +80256,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 889
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 876
         }
       ],
@@ -80802,11 +80802,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 890
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 875
         }
       ],
@@ -81110,11 +81110,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 896
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 871
         }
       ],
@@ -81406,11 +81406,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 897
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 875
         }
       ],
@@ -81954,11 +81954,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 928
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 911
         }
       ],
@@ -82502,11 +82502,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 929
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 912
         }
       ],
@@ -82796,11 +82796,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 930
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 913
         }
       ],
@@ -83090,11 +83090,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 931
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 913
         }
       ],
@@ -83616,11 +83616,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 932
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 914
         }
       ],
@@ -83893,11 +83893,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 933
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 915
         }
       ],
@@ -84695,11 +84695,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 934
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 916
         }
       ],
@@ -85271,11 +85271,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 936
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 918
         }
       ],
@@ -85582,11 +85582,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 937
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 922
         }
       ],
@@ -85875,11 +85875,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 938
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 919
         }
       ],
@@ -86112,7 +86112,7 @@
           }
         ],
         "notes": [
-          "Dimensions, pitch, eaves, wall thickness, room count and production weight are explicit artistic defaults; measured late buildings are examples, not universal ranges. See docs/sources/javanese-domestic-architecture.md. Simple closed dwelling: no emper, gallery, annex or extra household is implied."
+          "Dimensions, pitch, eaves, wall thickness, room count and production weight are explicit artistic defaults; measured late buildings are examples, not universal ranges. See docs/sources/javanese-domestic-architecture_FR.md. Simple closed dwelling: no emper, gallery, annex or extra household is implied."
         ],
         "enclosure_family": "none",
         "envelope": "walled",
@@ -86147,15 +86147,15 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 941
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 915
         },
         {
-          "path": "docs/sources/javanese-domestic-architecture.md",
+          "path": "docs/sources/javanese-domestic-architecture_FR.md",
           "line": 5
         }
       ],
@@ -86168,7 +86168,7 @@
       "settlement_archetype": "AS-ISL-S05",
       "subtradition": "Village javanais de cours",
       "context_note": "Java, M/T",
-      "chronology_note": "Late documented examples; no ancient or medieval date is asserted. Inspired interpretation only; see docs/sources/javanese-domestic-architecture.md",
+      "chronology_note": "Late documented examples; no ancient or medieval date is asserted. Inspired interpretation only; see docs/sources/javanese-domestic-architecture_FR.md",
       "chronology_confidence": "undated_tradition",
       "compound_pattern": "LOT-COMPOUND",
       "surface_language": "Deux pans et pignons triangulaires ; couverture de tuiles",
@@ -86390,7 +86390,7 @@
           }
         ],
         "notes": [
-          "Dimensions, pitch, eaves, wall thickness, room count and production weight are explicit artistic defaults; measured late buildings are examples, not universal ranges. See docs/sources/javanese-domestic-architecture.md. Simple closed dwelling: no emper, gallery, annex or extra household is implied."
+          "Dimensions, pitch, eaves, wall thickness, room count and production weight are explicit artistic defaults; measured late buildings are examples, not universal ranges. See docs/sources/javanese-domestic-architecture_FR.md. Simple closed dwelling: no emper, gallery, annex or extra household is implied."
         ],
         "enclosure_family": "none",
         "envelope": "walled",
@@ -86425,15 +86425,15 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 942
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 915
         },
         {
-          "path": "docs/sources/javanese-domestic-architecture.md",
+          "path": "docs/sources/javanese-domestic-architecture_FR.md",
           "line": 13
         }
       ],
@@ -86446,7 +86446,7 @@
       "settlement_archetype": "AS-ISL-S05",
       "subtradition": "Village javanais de cours",
       "context_note": "Java, M/T",
-      "chronology_note": "Late documented examples; no ancient or medieval date is asserted. Inspired interpretation only; see docs/sources/javanese-domestic-architecture.md",
+      "chronology_note": "Late documented examples; no ancient or medieval date is asserted. Inspired interpretation only; see docs/sources/javanese-domestic-architecture_FR.md",
       "chronology_confidence": "undated_tradition",
       "compound_pattern": "LOT-COMPOUND",
       "surface_language": "Quatre versants avec faîtage ; couverture de tuiles, sans tumpang sari de joglo",
@@ -86708,11 +86708,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 973
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 957
         }
       ],
@@ -86984,11 +86984,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 974
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 957
         }
       ],
@@ -87534,11 +87534,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 975
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 961
         }
       ],
@@ -87842,11 +87842,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 976
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 960
         }
       ],
@@ -88358,11 +88358,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 977
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 967
         }
       ],
@@ -88906,11 +88906,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 980
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 959
         }
       ],
@@ -89201,11 +89201,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 981
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 958
         }
       ],
@@ -89516,11 +89516,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 982
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 964
         }
       ],
@@ -90028,11 +90028,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1011
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 998
         }
       ],
@@ -90576,11 +90576,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1012
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 998
         }
       ],
@@ -90853,11 +90853,11 @@
       "roof_confidence": "uncertain",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1013
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1001
         }
       ],
@@ -91130,11 +91130,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1016
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1003
         }
       ],
@@ -91425,11 +91425,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1017
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1002
         }
       ],
@@ -91941,11 +91941,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1044
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1031
         }
       ],
@@ -92517,11 +92517,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1045
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1032
         }
       ],
@@ -93093,11 +93093,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1046
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1038
         }
       ],
@@ -93671,11 +93671,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1047
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1037
         }
       ],
@@ -93948,11 +93948,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1048
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1034
         }
       ],
@@ -94754,11 +94754,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1049
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1033
         }
       ],
@@ -95266,11 +95266,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1050
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1035
         }
       ],
@@ -95451,11 +95451,11 @@
       "roof_confidence": "not_applicable",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1051
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1033
         }
       ],
@@ -95759,11 +95759,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1052
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1035
         }
       ],
@@ -96052,11 +96052,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1053
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1036
         }
       ],
@@ -96347,11 +96347,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1078
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1064
         }
       ],
@@ -96861,11 +96861,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1079
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1065
         }
       ],
@@ -97137,11 +97137,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1080
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1067
         }
       ],
@@ -97445,11 +97445,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1081
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1068
         }
       ],
@@ -97722,11 +97722,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1082
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1069
         }
       ],
@@ -98270,11 +98270,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1084
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1070
         }
       ],
@@ -98578,11 +98578,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1085
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1065
         }
       ],
@@ -98765,11 +98765,11 @@
       "roof_confidence": "not_applicable",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1086
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1066
         }
       ],
@@ -99042,11 +99042,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1087
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1064
         }
       ],
@@ -99335,11 +99335,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1114
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1100
         }
       ],
@@ -99911,11 +99911,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1115
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1103
         }
       ],
@@ -100514,11 +100514,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1116
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1101
         }
       ],
@@ -100807,11 +100807,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1118
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1102
         }
       ],
@@ -101387,11 +101387,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1119
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1106
         }
       ],
@@ -101599,11 +101599,11 @@
       "roof_confidence": "not_applicable",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1120
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1104
         }
       ],
@@ -101906,11 +101906,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1121
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1103
         }
       ],
@@ -102199,11 +102199,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1122
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1102
         }
       ],
@@ -102595,11 +102595,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1123
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1107
         }
       ],
@@ -102870,11 +102870,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1146
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1134
         }
       ],
@@ -103147,11 +103147,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1147
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1135
         }
       ],
@@ -103424,11 +103424,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1148
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1135
         }
       ],
@@ -103610,11 +103610,11 @@
       "roof_confidence": "not_applicable",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1150
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1137
         }
       ],
@@ -103917,11 +103917,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1153
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1136
         }
       ],
@@ -104429,11 +104429,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1181
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1170
         }
       ],
@@ -104724,11 +104724,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1182
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1165
         }
       ],
@@ -105056,11 +105056,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1183
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1167
         }
       ],
@@ -105650,11 +105650,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1184
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1171
         }
       ],
@@ -105972,11 +105972,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1187
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1173
         }
       ],
@@ -106267,11 +106267,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1190
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1170
         }
       ],
@@ -106459,11 +106459,11 @@
       "roof_confidence": "not_applicable",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1191
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1173
         }
       ],
@@ -106776,11 +106776,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1192
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1173
         }
       ],
@@ -107073,11 +107073,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1193
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1169
         }
       ],
@@ -107925,11 +107925,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1220
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1204
         }
       ],
@@ -108518,11 +108518,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1221
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1205
         }
       ],
@@ -109097,11 +109097,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1222
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1206
         }
       ],
@@ -109374,11 +109374,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1223
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1213
         }
       ],
@@ -109951,11 +109951,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1224
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1212
         }
       ],
@@ -110296,11 +110296,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1226
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1208
         }
       ],
@@ -110487,11 +110487,11 @@
       "roof_confidence": "not_applicable",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1229
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1206
         }
       ],
@@ -111001,11 +111001,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1260
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1245
         }
       ],
@@ -111278,11 +111278,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1261
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1247
         }
       ],
@@ -111828,11 +111828,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1262
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1250
         }
       ],
@@ -112340,11 +112340,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1263
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1250
         }
       ],
@@ -112634,11 +112634,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1264
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1249
         }
       ],
@@ -112929,11 +112929,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1265
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1246
         }
       ],
@@ -113207,11 +113207,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1267
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1252
         }
       ],
@@ -113393,11 +113393,11 @@
       "roof_confidence": "not_applicable",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1268
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1251
         }
       ],
@@ -113701,11 +113701,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1269
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1248
         }
       ],
@@ -114217,11 +114217,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1295
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1283
         }
       ],
@@ -114530,11 +114530,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1296
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1284
         }
       ],
@@ -115106,11 +115106,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1297
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1286
         }
       ],
@@ -115682,11 +115682,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1298
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1285
         }
       ],
@@ -115990,11 +115990,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1299
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1288
         }
       ],
@@ -116284,11 +116284,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1300
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1287
         }
       ],
@@ -116576,11 +116576,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1301
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1286
         }
       ],
@@ -116884,11 +116884,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1302
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1289
         }
       ],
@@ -117162,11 +117162,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1325
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1313
         }
       ],
@@ -117440,11 +117440,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1326
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1317
         }
       ],
@@ -117734,11 +117734,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1327
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1315
         }
       ],
@@ -118248,11 +118248,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1328
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1316
         }
       ],
@@ -118434,11 +118434,11 @@
       "roof_confidence": "not_applicable",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1329
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1314
         }
       ],
@@ -118711,11 +118711,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1330
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1314
         }
       ],
@@ -118988,11 +118988,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1331
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1315
         }
       ],
@@ -119265,11 +119265,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1332
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1317
         }
       ],
@@ -119541,11 +119541,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1356
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1343
         }
       ],
@@ -119819,11 +119819,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1357
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1344
         }
       ],
@@ -120097,11 +120097,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1358
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1345
         }
       ],
@@ -120649,11 +120649,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1359
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1346
         }
       ],
@@ -121197,11 +121197,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1360
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1349
         }
       ],
@@ -121505,11 +121505,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1361
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1347
         }
       ],
@@ -122021,11 +122021,11 @@
       "roof_confidence": "source_preset",
       "sources": [
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1362
         },
         {
-          "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+          "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
           "line": 1348
         }
       ],

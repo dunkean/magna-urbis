@@ -1,610 +1,334 @@
-# État de l'art — Génération procédurale de textures à très haute résolution
+# State of the art — Procedural generation of very high-resolution textures
 
-Revue technique et scientifique · 23 octobre 2026 · Neural Earth / Magna Urbis
+Technical and scientific review · October 23, 2026 · Neural Earth / Magna Urbis
 
-## 1. Synthèse : ce qui existe et ce qui est pertinent
+> English translation of the [French original](RENDER_REVIEW_FR.md).
 
-Pour Neural Earth et Magna Urbis, l'objectif est assez particulier : produire des détails de surface réalistes à des échelles de 10 cm à 1 cm, sur des territoires potentiellement immenses, en restant capable de zoomer librement, sans rupture ni répétition visible.
+## 1. Summary: what exists and what is relevant
 
-La bonne nouvelle est qu'il existe de nombreuses solutions open source. Elles ne résolvent toutefois pas toutes le même problème.
+Neural Earth and Magna Urbis have a particular objective: produce realistic surface detail at scales from 10 cm to 1 cm over potentially immense territories, while allowing free zoom without visible seams or repetition.
 
-On peut distinguer cinq familles :
+Many open-source solutions exist, but they do not all solve the same problem. Five families can be distinguished:
 
-1. Shaders mathématiques purs : bruit procédural, Voronoï, domain warping, fonctions de distance. Évaluation directe en coordonnées mondiales, sans texture précalculée.
-2. Synthèse de textures par exemples : création d'une surface infinie à partir d'une petite texture de référence, sans répétition évidente.
-3. Génération structurée et contextuelle : cailloux, fissures, galets, herbes, pavés, dépôts de sable, etc., positionnés en fonction de règles physiques ou spatiales.
-4. Générateurs de matériaux PBR : production de couleurs, reliefs, normales, rugosité et autres propriétés de surface à partir de graphes procéduraux.
-5. Méthodes neuronales et diffusion : apprentissage de la distribution visuelle d'un matériau, génération de variantes, éventuellement conditionnées par l'environnement.
+1. Pure mathematical shaders: procedural noise, Voronoi, domain warping, and distance functions. Direct evaluation in world coordinates without a precomputed texture.
+2. Example-based texture synthesis: create an infinite surface from a small reference texture without obvious repetition.
+3. Structured, contextual generation: stones, cracks, pebbles, grasses, paving stones, sand deposits, etc., positioned according to physical or spatial rules.
+4. PBR material generators: produce colors, relief, normals, roughness, and other surface properties from procedural graphs.
+5. Neural and diffusion methods: learn the visual distribution of a material and generate variants, potentially conditioned on the environment.
 
-Pour tes projets, je privilégierais une architecture hybride où le shader fait l'essentiel du travail en temps réel et où les modèles génératifs servent surtout à créer les matériaux, les variantes et les détails structurés.
+For these projects, a hybrid architecture is preferred: the shader performs most real-time work, while generative models mainly create materials, variants, and structured details.
 
-Le point important : à l'échelle centimétrique, ajouter des octaves de bruit n'est généralement plus suffisant pour produire un rendu convaincant. Il faut commencer à représenter des objets reconnaissables — grains, pierres, débris, touffes végétales, fissures et joints — ainsi que leur organisation spatiale.
+At centimeter scale, adding noise octaves is generally no longer sufficient for convincing rendering. Recognizable objects — grains, stones, debris, vegetation tufts, cracks, and joints — and their spatial organization must be represented.
 
-## 2. Les grandes approches, comparées
+## 2. Comparing the major approaches
 
-| Approche                           | Réalisme potentiel        | Temps réel GPU               | Zoom déterministe | Intérêt                |
-| ---------------------------------- | ------------------------- | ---------------------------- | ----------------- | ---------------------- |
-| Noise / fBm / Voronoï / warping    | Moyen à bon               | Excellent                    | Excellent         | Base indispensable     |
-| Textures stochastiques par tuilage | Très bon                  | Très bon                     | Excellent         | Prioritaire            |
-| Wang tiles / synthèse par patches  | Très bon                  | Très bon                     | Excellent         | Prioritaire            |
-| Scatter de primitives / SDF        | Très bon                  | Bon à excellent              | Excellent         | Prioritaire à 1–10 cm  |
-| Matériaux procéduraux PBR          | Très bon                  | Bon, selon complexité        | Excellent         | Création des matériaux |
-| Diffusion de textures              | Très bon à excellent      | Faible en génération directe | Difficile         | Production hors ligne  |
-| Réseaux neuronaux de textures      | Potentiellement excellent | Variable                     | À concevoir       | R&D à explorer         |
+| Approach | Potential realism | Real-time GPU | Deterministic zoom | Value |
+| --- | --- | --- | --- | --- |
+| Noise / fBm / Voronoi / warping | Medium to good | Excellent | Excellent | Essential foundation |
+| Stochastic texture tiling | Very good | Very good | Excellent | Priority |
+| Wang tiles / patch synthesis | Very good | Very good | Excellent | Priority |
+| Primitive / SDF scatter | Very good | Good to excellent | Excellent | Priority at 1–10 cm |
+| Procedural PBR materials | Very good | Good, depending on complexity | Excellent | Material creation |
+| Texture diffusion | Very good to excellent | Poor for direct generation | Difficult | Offline production |
+| Neural texture networks | Potentially excellent | Variable | To be designed | Research to explore |
 
-Il existe d'ailleurs une bonne synthèse académique des approches classiques : Survey of Procedural Methods for Two-Dimensional Texture Generation (2020). Elle couvre les textures structurées et non structurées, ainsi que leur combinaison.&#x20;
+The academic *Survey of Procedural Methods for Two-Dimensional Texture Generation* (2020), available through [PMC](https://pmc.ncbi.nlm.nih.gov/), surveys structured and unstructured textures and their combination.
 
-[image](https://www.google.com/s2/favicons?domain=https://pmc.ncbi.nlm.nih.gov\&sz=32)
+Two techniques deserve attention ahead of some newer generative models: stochastic tiling and Wang tiles. Both enable very large surfaces with high visual diversity and fast, reproducible evaluation.
 
-PMC
+## 3. Classical methods to study first
 
+### 3.1. Stochastic texturing: photorealism without repetition
 
+Very high priority · 2D and 3D · Compatible with real-time shaders
 
-Pour ton besoin, je regarderais d'abord deux techniques qui reçoivent parfois moins d'attention que les modèles génératifs récents : le stochastic tiling et les Wang tiles.
+The most directly applicable family is the work of Eric Heitz and Fabrice Neyret. Foundational publications:
 
-Ces méthodes permettent de générer de très grandes surfaces avec une diversité visuelle élevée, tout en conservant une évaluation rapide et reproductible.
+- Heitz & Neyret, *High-Performance By-Example Noise Using a Histogram-Preserving Blending Operator*, HPG 2018.
+- Deliot & Heitz, *Procedural Stochastic Textures by Tiling and Blending*, GPU Zen 2.
+- Mikkelsen, *Practical Real-Time Hex-Tiling*, JCGT 2022.
 
-## 3. Méthodes classiques à étudier en priorité
+A 512 × 512 rock texture repeated over a mountain quickly becomes recognizable. The solution uses a triangular or hexagonal grid to sample the texture with pseudorandom transformations and blend samples at boundaries. It:
 
-### 3.1. Stochastic texturing : du photoréalisme sans répétition
+- Does not require generating a new giant image.
+- Can evaluate the material directly from world coordinates.
+- Produces immense surface variety from a few samples.
+- Preserves material statistics to varying degrees depending on the method.
 
-Priorité très élevée · 2D et 3D · Compatible shader temps réel
+Heitz's method notably uses a histogram transform to prevent blending from reducing contrast. Mikkelsen offers a simplified version, easier to integrate and particularly interesting for normal maps.
 
-La famille la plus directement applicable est celle des travaux d'Eric Heitz et Fabrice Neyret.
+Directly usable code:
 
-Publications fondamentales :
+- [mmikk/hextile-demo](https://github.com/mmikk/hextile-demo?utm_source=chatgpt.com) — MIT, implementation accompanying Mikkelsen, including a variant maintaining precision far from the origin.
+- [UnityLabs/procedural-stochastic-texturing](https://github.com/UnityLabs/procedural-stochastic-texturing?utm_source=chatgpt.com) — complete Heitz/Deliot example, archived since 2025 but still usable as a reference.
 
-- Heitz & Neyret, High-Performance By-Example Noise Using a Histogram-Preserving Blending Operator, HPG 2018.
-- Deliot & Heitz, Procedural Stochastic Textures by Tiling and Blending, GPU Zen 2.
-- Mikkelsen, Practical Real-Time Hex-Tiling, JCGT 2022.&#x20;
+The method works well for earth, sand, granular rock, and fine gravel. It is less suited to strongly structured patterns such as large paving stones, long cracks, or agricultural furrows: blending can break their geometry.
 
-  [image](https://www.google.com/s2/favicons?domain=https://eheitzresearch.wordpress.com\&sz=32)
+### 3.2. Wang tiles: structured materials over infinite surfaces
 
-  eheitzresearch.wordpress.com
+Very high priority for ground, paving, walls, and paths
 
-  +1
+The reference is Cohen et al., *Wang Tiles for Image and Texture Generation*, SIGGRAPH 2003. A small tile atlas has edge-matching constraints; tiles are assembled under those constraints to produce a large nonperiodic surface without visible seams.
 
+| Material | Wang-tile use |
+| --- | --- |
+| Paved street | Variation in placement and wear of stones |
+| Rocky ground | Assembly of fractured slabs |
+| Forest floor | Distribution of leaves, moss, and stones |
+| Fields | Small coherent patterns and controlled repetition |
+| Roofs | Tile or shingle variation |
+| Ancient ground | Mosaics and irregular paving |
 
+Tile choice can be deterministic from world cells and a seed without saving the generated map. On-demand generation in arbitrary order nevertheless requires a selection scheme compatible with neighboring constraints.
 
-Le problème : une texture de roche de 512 × 512 pixels, répétée sur une montagne, devient vite reconnaissable.
+Wei & Levoy's *Order-Independent Texture Synthesis* (2003) explicitly addresses arbitrary-order texel generation with a pyramidal representation and cache, close to the zoom-exploration problem.
 
-La solution consiste à utiliser une grille triangulaire ou hexagonale pour échantillonner la texture avec des transformations pseudo-aléatoires et mélanger les échantillons aux frontières.
+### 3.3. Noise more sophisticated than Perlin and fBm
 
-Le procédé :
+Some algorithms suit particular material structures better than classical fractal noise.
 
-- Ne nécessite pas de générer une nouvelle image géante.
-- Peut évaluer directement le matériau en fonction des coordonnées mondiales.
-- Produit une immense variété de surfaces à partir de quelques échantillons.
-- Préserve plus ou moins bien les statistiques du matériau selon la méthode.
+| Technique | Characteristic | Applications |
+| --- | --- | --- |
+| Worley / cellular | Distances to sites | Pebbles, stones, mud cells |
+| Domain warping | Spatial distortion of patterns | Rock, marble, organic soils |
+| Gabor noise | Frequency and direction control | Striations, sand, anisotropy |
+| Wavelet noise | Frequency control | Microrelief, filterable details |
+| Reaction–diffusion | Emerging biological structures | Mosses, lichens, deposit patterns |
+| Sparse textons | Primitives distributed in space | Stones, leaves, grains, debris |
+| SDF | Signed distances to shapes | Cracks, joints, stone outlines |
 
-La méthode Heitz utilise notamment une transformation d'histogramme pour éviter que le mélange ne diminue les contrastes. Mikkelsen propose une version simplifiée, plus facile à intégrer et particulièrement intéressante pour les normal maps.
+Gabor noise merits special attention. Lagae et al. (SIGGRAPH 2009) propose procedural sparse-convolution noise with spectral control. It suits materials with a dominant pattern orientation, such as rock strata or wind ripples.
 
-[Unity Labs | Unity](https://images.openai.com/static-rsc-4/WFBZXpTSm5XHwPy-V3LOErnvArB4P_QanNE2RYA3v1hzFIBFD7PFdILZiCf5Uvqt251kRSQVbdRX7iJQv-0Rlq3GyY26xiCMlGykU1eHhyaBgCevWZ-H3fWRS8gz6JRWf73M-w3NcBpm2SMHzl52h0a1TYVyOAj4sEpCcIvrE-o?purpose=inline)
+Practical mathematical-noise foundations include [FastNoiseLite](https://github.com/Auburn/FastNoiseLite?utm_source=chatgpt.com) (MIT, Rust, JS, GLSL, HLSL, etc.) and [procedural-tileable-shaders](https://github.com/tuxalin/procedural-tileable-shaders?utm_source=chatgpt.com) (MIT, GLSL, including warping and cellular noise).
 
-Code directement exploitable
+### 3.4. Texture bombing and textons: the centimeter-object layer
 
-[mmikk/hextile-demo](https://github.com/mmikk/hextile-demo?utm_source=chatgpt.com) — MIT, implémentation associée à Mikkelsen, avec une variante qui maintient la précision loin de l'origine.
+This is probably what a renderer based exclusively on noise bands lacks most. Instead of visually simulating stones with a continuous function, place them explicitly:
 
-[UnityLabs/procedural-stochastic-texturing](https://github.com/UnityLabs/procedural-stochastic-texturing?utm_source=chatgpt.com) — exemple complet Heitz/Deliot, archivé depuis 2025 mais toujours exploitable comme référence.&#x20;
+\\[ P_i = f(\\operatorname{hash}(\\text{cell}_i,\\text{seed})) \\]
 
-[image](https://www.google.com/s2/favicons?domain=https://github.com\&sz=32)
+Each object has a position, orientation, size, shape, and optionally a material. The shader evaluates only objects in the pixel's neighborhood; sprites, distance functions, or analytical relief can be associated with them.
 
-GitHub
+This produces actual distributions of:
 
-+1
+- 1–10 cm stones in soil.
+- Leaves and twigs on earth.
+- Grass tufts and low plants.
+- Water-arranged pebbles.
+- Debris and rubble around buildings.
 
+To avoid an overly random appearance, use context-dependent spatial distributions: Poisson disk / blue noise, clusters, and distributions conditioned by slope, flow, or paths. This is closer to procedural generation of a microscopic 2D scene than conventional texturing, a fundamental distinction for this use.
 
+## 4. Concrete open-source projects
 
-Limite importante : cette approche marche très bien pour la terre, le sable, les roches granuleuses ou le gravier fin. Elle est moins adaptée aux motifs fortement structurés : gros pavés, fissures longues, sillons agricoles. Le mélange peut casser leur géométrie.
+| Project | Technology | Value |
+| --- | --- | --- |
+| [Material Maker](https://github.com/RodZill4/material-maker?utm_source=chatgpt.com) | Godot, GLSL, graphs | Excellent for material creation |
+| [Hex-Tile Demo](https://github.com/mmikk/hextile-demo?utm_source=chatgpt.com) | C++ / shaders | Excellent for breaking tiling |
+| [FastNoiseLite](https://github.com/Auburn/FastNoiseLite?utm_source=chatgpt.com) | Multilanguage | Reproducible noise foundation |
+| [Tileable Shaders](https://github.com/tuxalin/procedural-tileable-shaders?utm_source=chatgpt.com) | GLSL | Shader primitives |
+| [TextureLab](https://github.com/njbrown/texturelab?utm_source=chatgpt.com) | Electron, GPU | Tileable texture editor |
+| [VFX Texture Lab](https://github.com/MattyGWS/VFXTextureLab?utm_source=chatgpt.com) | WGSL, GPU | Experimental graphs and materials |
+| [DiffMat](https://github.com/mit-gfx/diffmat?utm_source=chatgpt.com) | PyTorch | Material graph optimization |
+| [MatFuse](https://github.com/giuvecchio/matfuse?utm_source=chatgpt.com) | PyTorch, diffusion | Neural PBR generation |
+| [MatLat](https://github.com/KAIST-Visual-AI-Group/MatLat?utm_source=chatgpt.com) | PyTorch, diffusion | Recent PBR latent research |
+| [Water Shader](https://github.com/tuxalin/water-shader?utm_source=chatgpt.com) | HLSL | Procedural water reference |
+| [Unity Voronoi Water](https://github.com/cbunt/unity-voronoi-water?utm_source=chatgpt.com) | Shader Graph | Stylized water and flow maps |
 
-### 3.2. Wang tiles : les matériaux structurés sur des surfaces infinies
+The neural projects are discussed in the next section.
 
-Priorité très élevée pour sols, pavés, murs et chemins
+### A closer look at Material Maker
 
-La référence est Cohen et al., Wang Tiles for Image and Texture Generation, SIGGRAPH 2003.&#x20;
+[Material Maker – Godot Engine illustration](https://images.openai.com/static-rsc-4/xdzphVfRdnHd4Dsx0sIy-rsKwRRN1UT5rd5lby6_0tpiUJTqvzbEL4tn73Eq2DqkAPXicFbbugfMSIqvN7hTC2U24R109mubarYHUHSRudexIb56TalXy4OvqkSbr0ZJmTJi6GTRq9xrO2EWqjiTIDk36r8rMIGqoGTg2fWX6rg?purpose=inline)
 
-[image](https://www.google.com/s2/favicons?domain=https://graphics.uni-konstanz.de\&sz=32)
+This is probably the best practical starting point. The application supplies over 200 nodes, PBR materials, a community library, and the ability to create GLSL nodes. Its repository is MIT-licensed.
 
-graphics.uni-konstanz.de
+A soil, rock, or stone texture can be designed, its maps exported, and those used in a 2D WebGPU engine. This separates material creation from application to a procedural world: a curated material library can coexist with a general-purpose renderer.
 
+A Material Maker graph should not, however, be assumed to run automatically in WGSL: exporting maps is simple; dynamically porting graphs takes additional work.
 
+### Two other tools to watch
 
-L'idée est de constituer un petit atlas de tuiles dont les côtés portent des contraintes de raccord. Les tuiles sont assemblées selon ces contraintes, produisant une grande surface non périodique sans joint visible.
+VFX Texture Lab has a graph architecture using WGSL for GPU evaluation, with noise, shape, erosion, height, normal, and material nodes. It is interesting for a WebGPU pipeline, but remains in public beta.
 
-C'est particulièrement intéressant pour Magna Urbis :
+MIT's DiffMat is more research-oriented. It makes material graphs differentiable and optimizes their parameters to reproduce a reference image, a promising way to turn a ground photograph into a procedural recipe. The repository license is noncommercial and some features still require proprietary Adobe tools.
 
-| Matériau      | Usage des Wang tiles                               |
-| ------------- | -------------------------------------------------- |
-| Rue pavée     | Variation dans le placement et l'usure des pierres |
-| Sol rocheux   | Assemblage de plaques fissurées                    |
-| Sol forestier | Distribution de feuilles, mousse, pierres          |
-| Champs        | Petits motifs cohérents et répétition contrôlée    |
-| Toitures      | Variations de tuiles ou bardeaux                   |
-| Sol antique   | Mosaïques et pavages irréguliers                   |
+## 5. Neural state of the art: 2024–2026
 
-Le choix d'une tuile peut être déterministe à partir des cellules mondiales et d'une graine, sans sauvegarder la carte générée. Pour une génération à la demande et dans un ordre arbitraire, il faut toutefois construire un schéma de sélection compatible avec les contraintes de voisinage.
+Research is moving from models that produce only RGB images toward models generating complete, consistent materials with albedo, height, normals, and roughness. Two problems must be distinguished:
 
-L'autre référence intéressante est Order-Independent Texture Synthesis de Wei & Levoy (2003), qui aborde explicitement la génération de texels dans un ordre quelconque grâce à une représentation pyramidale et un cache. C'est très proche du problème d'exploration par zoom.&#x20;
+- Generate an excellent 2 × 2 meter material.
+- Generate that material over an infinite territory with spatial, climatic, and geological consistency.
 
-[image](https://www.google.com/s2/favicons?domain=https://graphics.stanford.edu\&sz=32)
+Research is advancing rapidly on the first; the second remains largely a systems-integration problem.
 
-graphics.stanford.edu
+### Recent work to follow
 
+[MatFuse](https://github.com/giuvecchio/matfuse?utm_source=chatgpt.com) — CVPR 2024. Diffusion-based SVBRDF generation conditioned by text, image, sketch, or palette. Material maps are represented in a learned latent space. PyTorch code is available under MIT, making it an interesting experimental basis for generating material libraries.
 
+[StableMaterials](https://openaccess.thecvf.com/content/CVPR2026/html/Vecchio_StableMaterials_Enhancing_Diversity_in_Material_Generation_via_Semi-Supervised_Learning_CVPR_2026_paper.html?utm_source=chatgpt.com) — CVPR 2026. Among recent work, this is especially relevant to the problem. It uses latent diffusion, semi-supervised learning to increase material diversity, and distillation enabling four-step generation. It also introduces seamless tiling. It directly targets PBR material variety, unlike much work on 3D meshes. The paper and presentation are available; availability of a complete reusable repository was not confirmed.
 
-### 3.3. Bruits plus sophistiqués que Perlin et fBm
+[MatLat](https://github.com/KAIST-Visual-AI-Group/MatLat?utm_source=chatgpt.com) — CVPR 2026. Introduces a specialized PBR-material latent space built from a pretrained VAE, better preserving local information across material maps. Code and checkpoints are published. It is principally a 3D object texturing model and therefore less directly applicable to an infinite 2D world.
 
-Il existe des algorithmes mieux adaptés à certaines structures matérielles que le bruit fractal classique.
+[ProcTex](https://github.com/ruiqixu37/ProcTex?utm_source=chatgpt.com) — Eurographics 2026. Addresses a problem particularly relevant to Magna Urbis: consistent appearance across instances of a procedural model. It generates a texture on a reference shape, then learns correspondences to transfer it to shape variants. Code is MIT-licensed; the repository mentions configurations tested on RTX 4090 and 5090. It would apply more to building families than continuous ground.
 
-| Technique          | Particularité                        | Applications                          |
-| ------------------ | ------------------------------------ | ------------------------------------- |
-| Worley / Cellular  | Distances à des sites                | Galets, pierres, cellules de boue     |
-| Domain warping     | Distorsion spatiale de motifs        | Roche, marbre, sols organiques        |
-| Gabor noise        | Contrôle fréquentiel et directionnel | Stries, sable, anisotropie            |
-| Wavelet noise      | Contrôle des fréquences              | Microrelief, détails filtrables       |
-| Reaction–diffusion | Structures biologiques émergentes    | Mousses, lichens, motifs de dépôts    |
-| Sparse textons     | Primitives distribuées dans l'espace | Cailloux, feuilles, grains, débris    |
-| SDF                | Distances signées aux formes         | Fissures, joints, contours de pierres |
+[Texture Space Material Diffusion](https://nvlabs.github.io/texdiffusion/?utm_source=chatgpt.com) — NVIDIA, September 2026. Generates PBR maps up to 8K by diffusion directly in texture space. It can be conditioned on text, photographs, and low-resolution material maps. It is useful for material generation and refinement, but is not designed to generate pixels of an infinite territory on the fly.
 
-Le Gabor noise mérite une attention particulière. Lagae et al. (SIGGRAPH 2009) proposent un bruit procédural à convolution parcimonieuse avec contrôle spectral. Cette représentation est intéressante pour les matériaux dont les motifs ont une orientation dominante, comme des stratifications rocheuses ou des rides éoliennes.&#x20;
+Two other publications merit mention: *MaTi — Make PBR Materials Tileable With Latent Diffusion Inpainting* (2025), which makes non-tileable materials seamless, and *TexPro* (2025), which seeks to reconstruct procedural PBR materials from text descriptions.
 
-[image](https://www.google.com/s2/favicons?domain=https://graphics.cs.kuleuven.be\&sz=32)
+### What this research suggests for Neural Earth
 
-graphics.cs.kuleuven.be
+Three realistic AI uses are proposed:
 
+1. **Offline material generation.** Create, for example, 20 volcanic-soil, 30 sedimentary-rock, and 15 mud variants. These form a reusable library for a deterministic shader.
+2. **Procedural-material optimization.** Instead of generating final pixels, learn graph parameters such as pebble density, size distribution, colors, and crack frequency. This is illustrated by MATch, DiffMat, and *Generating Procedural Materials from Text or Image Prompts* (SIGGRAPH 2023).
+3. **Locally conditioned generation.** More experimentally, train a model to produce surface detail from geology, moisture, slope, land use, water proximity, and other context. Spatial and multi-scale consistency would need to be imposed explicitly.
 
+The last direction is potentially scientifically original, but not the most economical starting point for a convincing result quickly.
 
-Pour le noise mathématique, les deux bases pratiques sont [FastNoiseLite](https://github.com/Auburn/FastNoiseLite?utm_source=chatgpt.com) (MIT, Rust, JS, GLSL, HLSL, etc.) et [procedural-tileable-shaders](https://github.com/tuxalin/procedural-tileable-shaders?utm_source=chatgpt.com) (MIT, GLSL, avec warping et bruit cellulaire).&#x20;
+## 6. Useful datasets
 
-[image](https://www.google.com/s2/favicons?domain=https://github.com\&sz=32)
+- [Poly Haven](https://polyhaven.com/textures?utm_source=chatgpt.com): photographic, generally high-resolution CC0 PBR materials; a good choice for rock, earth, paving, and natural surfaces.
+- [ambientCG](https://ambientcg.com?utm_source=chatgpt.com): a large CC0 library of ground, gravel, stone, mud, and architectural materials, useful for automatically populating atlases.
+- [MatSynth](https://www.gvecchio.com/matsynth?utm_source=chatgpt.com) — CVPR 2024: over 4,000 high-resolution CC0 PBR materials with metadata and associated renders, useful for training or evaluating a specialized generator.
 
-GitHub
+Retain physical-scale metadata where available. A 2K image covering 50 cm means something very different from one covering 5 m. Height and normal maps must also have consistent scales.
 
-+1
+## 7. Approach by surface type
 
+At centimeter scale, each material family needs a different strategy:
 
+| Surface | Preferred technique | Contextual information |
+| --- | --- | --- |
+| Dry earth | Stochastic tiling + grains + cracks | Soil texture, moisture |
+| Wet earth / mud | Voronoi, height map, roughness variation | Water, drainage, traffic |
+| Sand | Directional noise, ripples, grains | Wind, slope, moisture |
+| Gravel | Texton placement + atlas | Grain size, transport |
+| Massive rock | PBR material + SDF cracks | Lithology, fracturing |
+| Scree | Hierarchical fragment scatter | Slope, erosion |
+| Short grass | Sprites / textons + background material | Climate, trampling |
+| Forest litter | Leaf and twig scatter | Vegetation type |
+| Snow | Irregular surface, hollows, and crusts | Wind, melting, shading |
+| Paving stones / slabs | Structural paving + PBR wear | Roads, culture, age |
+| Still water | Animated normals + reflection | Wind, depth |
+| Flowing water | Flow map + normals + foam | Speed, depth, obstacles |
 
-### 3.4. Texture bombing et textons : la couche des objets centimétriques
+### Special case: water
 
-C'est probablement ce qui manque le plus à un rendu exclusivement fondé sur des bandes de bruit.
+Water should not be treated as a simple tileable material. For rivers and coasts, separate water geometry from visual details. The latter can be produced with:
 
-Plutôt que de simuler visuellement des pierres avec une fonction continue, on place des pierres explicitement :
+\\[ C(x,y,t) = F\\big(d_{\\text{shore}},h_{\\text{water}},\\vec v,\\nabla z,N(x,y,t)\\big) \\]
 
-\\[ P_i = f(\operatorname{hash}(\text{cellule}\_i,\text{seed})) \\]
+Here `d_shore` is signed distance to shore, `h_water` is depth, `v` is the current velocity field, `∇z` represents terrain variation, and `N` is animated noise.
 
-Chaque objet possède une position, une orientation, une taille, une forme et éventuellement un matériau.
+For small streams this orients ripples along the current, generates turbulence near obstacles, and places foam bands near banks. Oceans can add spectral components or even FFT simulation for a true 3D surface, though a full ocean FFT seems disproportionate for a top-down map view.
 
-Le shader n'évalue que les objets présents dans le voisinage du pixel. On peut associer des sprites, des fonctions de distance ou des reliefs analytiques à ces objets.
+[water-shader](https://github.com/tuxalin/water-shader?utm_source=chatgpt.com) and [unity-voronoi-water](https://github.com/cbunt/unity-voronoi-water?utm_source=chatgpt.com) provide examples of procedural water effects and flow maps, respectively.
 
-Cela permet de produire de véritables distributions de :
+### Special case: roads and urban ground
 
-- Cailloux de 1 à 10 cm dans un sol.
-- Feuilles et brindilles sur la terre.
-- Touffes d'herbe et plantes basses.
-- Galets disposés par l'eau.
-- Débris et gravats autour des habitations.
+A paved street in Magna Urbis should not be generated solely with a texture. Paving structure depends on street geometry: stone orientation, curbs, gutters, transitions to walls, and so on.
 
-Pour éviter un aspect trop aléatoire, on utilise des distributions spatiales dépendant du contexte : Poisson disk / blue noise, agrégations, distributions conditionnées par la pente, les écoulements ou les chemins.
+The urban generator defines paving stones or their cells. The shader then adds material, small cracks, wear, color variations, and dirt. This avoids asking the shader to reconstruct structure the generator already knows.
 
-On est alors davantage dans la génération procédurale d'une scène microscopique en 2D que dans la texturation traditionnelle. Pour ton usage, cette distinction est fondamentale.
 
-## 4. Projets open source concrets
+## 8. Proposed architecture for both projects
 
-Voici les outils que je retiendrais, avec leur valeur réelle pour tes projets.
+The [Neural Earth Render3D documentation](https://github.com/dunkean/neural-earth/blob/main/docs/render3d.md?utm_source=chatgpt.com) addresses many difficult problems already:
 
-| Projet                                                                                            | Technologie          | Intérêt                                |
-| ------------------------------------------------------------------------------------------------- | -------------------- | -------------------------------------- |
-| [Material Maker](https://github.com/RodZill4/material-maker?utm_source=chatgpt.com)               | Godot, GLSL, graphes | Excellent pour fabriquer des matériaux |
-| [Hex-Tile Demo](https://github.com/mmikk/hextile-demo?utm_source=chatgpt.com)                     | C++ / shaders        | Excellent pour casser le tuilage       |
-| [FastNoiseLite](https://github.com/Auburn/FastNoiseLite?utm_source=chatgpt.com)                   | Multilangage         | Base de bruit reproductible            |
-| [Tileable Shaders](https://github.com/tuxalin/procedural-tileable-shaders?utm_source=chatgpt.com) | GLSL                 | Primitives de shaders                  |
-| [TextureLab](https://github.com/njbrown/texturelab?utm_source=chatgpt.com)                        | Electron, GPU        | Éditeur de textures tuilables          |
-| [VFX Texture Lab](https://github.com/MattyGWS/VFXTextureLab?utm_source=chatgpt.com)               | WGSL, GPU            | Graphes et matériaux expérimentaux     |
-| [DiffMat](https://github.com/mit-gfx/diffmat?utm_source=chatgpt.com)                              | PyTorch              | Optimisation de graphes de matériaux   |
-| [MatFuse](https://github.com/giuvecchio/matfuse?utm_source=chatgpt.com)                           | PyTorch, diffusion   | Génération neuronale de PBR            |
-| [MatLat](https://github.com/KAIST-Visual-AI-Group/MatLat?utm_source=chatgpt.com)                  | PyTorch, diffusion   | Recherche récente sur les latents PBR  |
-| [Water Shader](https://github.com/tuxalin/water-shader?utm_source=chatgpt.com)                    | HLSL                 | Référence pour une eau procédurale     |
-| [Unity Voronoi Water](https://github.com/cbunt/unity-voronoi-water?utm_source=chatgpt.com)        | Shader Graph         | Eau stylisée et flow maps              |
+- Material evaluation in physical coordinates.
+- Numerical precision far from the origin.
+- Progressive appearance of detail according to pixel footprint.
+- GGX lighting integration.
+- Deterministic grains, small relief, and vegetation.
 
-Les derniers projets neuronaux seront discutés dans la section suivante.
+The current implementation uses four ground-detail bands at 8 m, 2.2 m, 0.32 m, and 0.055 m. Rendering can reach 1/128 m per pixel, with unresolved frequencies contributing to roughness instead of aliased visual detail. This is a suitable foundation to retain.
 
-### Zoom sur Material Maker
+### Proposed pipeline
 
-[Material Maker – Godot Engine](https://images.openai.com/static-rsc-4/xdzphVfRdnHd4Dsx0sIy-rsKwRRN1UT5rd5lby6_0tpiUJTqvzbEL4tn73Eq2DqkAPXicFbbugfMSIqvN7hTC2U24R109mubarYHUHSRudexIb56TalXy4OvqkSbr0ZJmTJi6GTRq9xrO2EWqjiTIDk36r8rMIGqoGTg2fWX6rg?purpose=inline)
-
-&#x20;Material Maker&#x20;
-
-C'est probablement le meilleur point de départ pratique.
-
-L'application fournit plus de 200 nœuds, des matériaux PBR, une bibliothèque communautaire et la possibilité de créer des nœuds en GLSL. Son dépôt est sous licence MIT.&#x20;
-
-[image](https://www.google.com/s2/favicons?domain=https://materialmaker.org\&sz=32)
-
-materialmaker.org
-
-+1
-
-
-
-Tu peux concevoir une texture de terre, roche ou pierre, puis exporter les différentes cartes et les utiliser dans un moteur 2D WebGPU.
-
-Ce que j'apprécie ici, c'est la séparation entre création d'un matériau et application de ce matériau à un monde procédural. Tu peux disposer d'une bibliothèque de matériaux travaillés et conserver un moteur de rendu très généraliste.
-
-Il ne faut toutefois pas considérer qu'un graphe Material Maker s'exécute automatiquement dans WGSL : exporter les cartes est simple, porter les graphes dynamiquement est un travail supplémentaire.
-
-### Deux autres outils à surveiller
-
-VFX Texture Lab possède une architecture de graphe utilisant WGSL pour l'évaluation GPU, avec des nœuds de bruit, formes, érosion, hauteur, normales et matériaux. C'est intéressant pour une chaîne WebGPU, mais le projet est encore en bêta publique.&#x20;
-
-[image](https://www.google.com/s2/favicons?domain=https://github.com\&sz=32)
-
-GitHub
-
-
-
-DiffMat, du MIT, est plus orienté recherche. Il permet de rendre différentiables des graphes de matériaux et d'optimiser leurs paramètres pour reproduire une image de référence. C'est prometteur pour transformer une photo de sol en recette procédurale. Attention : la licence du dépôt est non commerciale et certaines fonctions nécessitent encore des outils propriétaires Adobe.&#x20;
-
-[image](https://www.google.com/s2/favicons?domain=https://github.com\&sz=32)
-
-GitHub
-
-
-
-## 5. L'état de l'art neuronal : 2024–2026
-
-C'est la partie la plus intéressante en termes de recherche. On observe une évolution des modèles capables de produire seulement une image RGB vers des modèles capables de générer des matériaux complets et cohérents, avec albédo, hauteur, normales et rugosité.
-
-Mais il faut bien distinguer deux problèmes :
-
-- Générer un excellent matériau de 2 × 2 mètres.
-- Générer ce matériau sur un territoire infini, avec une cohérence spatiale, climatique et géologique.
-
-La recherche progresse fortement sur le premier. Le deuxième reste largement à assembler.
-
-### Travaux récents à suivre
-
-[CVPR Poster MatFuse: Controllable Material Generation with Diffusion Models](https://images.openai.com/static-rsc-4/nQx8zoEF8F4a1byDgMGl-1nbZpPvgX3hF2FJW0tOB7jKHoQsuAYguY_u8zK76ImYUzRGQqJkslXQJ7Pdzf0l3paPjQq1pUQXWa_DCaPVvZpwUfJA44Trtb5LTKLmrva4ydagq7bbGtBgQrjvihQR151M3iOzE-aHKUpo0qCiZA4?purpose=inline)
-
-[MatFuse](https://github.com/giuvecchio/matfuse?utm_source=chatgpt.com) — CVPR 2024
-
-Génération de SVBRDF par diffusion, conditionnée par du texte, une image, une esquisse ou une palette. Les différentes cartes de matériau sont représentées dans un espace latent appris.
-
-Code PyTorch disponible sous MIT. Très intéressant comme base expérimentale pour générer des bibliothèques de matériaux.&#x20;
-
-[image](https://www.google.com/s2/favicons?domain=https://github.com\&sz=32)
-
-GitHub
-
-
-
-[TileGen: Tileable, Controllable Material Generation and Capture](https://images.openai.com/static-rsc-4/cR_v7u2PyYOtdDQsUboysbIBTUCpQyAgQzJ4AUNXfuN5NB0jg_ajjpWN4p4V5QIwPti5O9eycKAhHF1tVl407L2X4w_gi7Cj-JR8aELexkHV2Gh-p3BsmjQ-SsrWJRWIpteo1p885yAS23AAmCLy-qpn-_8zsfbw7mtqzU5po9g?purpose=inline)
-
-[StableMaterials](https://openaccess.thecvf.com/content/CVPR2026/html/Vecchio_StableMaterials_Enhancing_Diversity_in_Material_Generation_via_Semi-Supervised_Learning_CVPR_2026_paper.html?utm_source=chatgpt.com) — CVPR 2026
-
-À mon avis, le travail récent le plus pertinent pour ta problématique.
-
-Utilise une diffusion latente, un apprentissage semi-supervisé pour accroître la diversité des matériaux et une distillation permettant une génération en quatre étapes. Introduit également une technique de tuilage sans coutures.
-
-L'approche est directement centrée sur la variété des matériaux PBR, contrairement à beaucoup de travaux consacrés aux maillages 3D. La publication et sa présentation sont disponibles ; je n'ai pas confirmé la disponibilité d'un dépôt complet réutilisable.&#x20;
-
-[image](https://www.google.com/s2/favicons?domain=https://openaccess.thecvf.com\&sz=32)
-
-CVF Open Access
-
-
-
-[MaterialPicker: Multi-Modal Material Generation with Diffusion Transformers](https://images.openai.com/static-rsc-4/Xckp1govyuyeGjb-Tf7B2LLG5T8WgornLlCwB0LAM-vs0NmrsAoB_U9utQR6jEVXgGtlxO-23hhD5GCt3IwGV7VbLrJATxIkw7uJukJpROLonhNAAIkwwDzJDr2bQn3-mEe_o4lncVT_8e0lu87Qx1ukAuNxh0GXPfO5GWn4srs?purpose=inline)
-
-[MatLat](https://github.com/KAIST-Visual-AI-Group/MatLat?utm_source=chatgpt.com) — CVPR 2026
-
-Introduit un espace latent spécialisé pour les matériaux PBR, construit à partir d'un VAE préentraîné. Il permet de mieux conserver les informations locales entre les différentes cartes de matériau.
-
-Le code et les checkpoints sont publiés. C'est principalement un modèle de texturation d'objets 3D, donc moins directement transposable à un monde 2D infini.&#x20;
-
-[image](https://www.google.com/s2/favicons?domain=https://github.com\&sz=32)
-
-GitHub
-
-
-
-[ProcTex: Consistent and Interactive Text-to-texture Synthesis for Procedural Models | AI Research Paper Details](https://images.openai.com/static-rsc-4/KcADMt1mYJjmKchrKcXKrorcQF0mC0drk0S6t3sat4JHIcdYAdk9Rh3PTFUOw2-MkfbWVakT4rCR34zIVHUoI5-1L5jv2nKygaMNc1CCrBbZ4EJiaHpbKZo1WjR5FKYJFwf2mbuGbDVJ15SYt2uFJ_yAuY4J6ai5oy45Zt8QBeo?purpose=inline)
-
-[ProcTex](https://github.com/ruiqixu37/ProcTex?utm_source=chatgpt.com) — Eurographics 2026
-
-Problème particulièrement intéressant pour Magna Urbis : conserver une apparence cohérente entre différentes instances d'un modèle procédural.
-
-La méthode génère une texture sur une forme de référence, puis apprend des correspondances pour la transférer à des variantes de cette forme.
-
-Code MIT. Le dépôt mentionne des configurations testées sur RTX 4090 et 5090. Ce serait davantage applicable à tes familles de bâtiments qu'aux sols continus.&#x20;
-
-[image](https://www.google.com/s2/favicons?domain=https://onlinelibrary.wiley.com\&sz=32)
-
-Wiley Online Library
-
-+1
-
-
-
-[MaterialPicker: Multi-Modal Material Generation with Diffusion Transformers](https://images.openai.com/static-rsc-4/_0PlHT_2pJXWhcAOigDxodqfuTCZjCxeqW9VKqwGDmksUNykCb_SInl7KdzSMgTgDS0Ovrsno4GbQek4ggoj0y4z4a-tzQ7FTcRQeu0sBYpdFUOYy3zXebP_K1zpRDvm1QCBESoOuaJEPUUnedZdDJKZs8WNXLp-A8DKJYa5Imc?purpose=inline)
-
-[Texture Space Material Diffusion](https://nvlabs.github.io/texdiffusion/?utm_source=chatgpt.com) — NVIDIA, septembre 2026
-
-Génération de cartes PBR jusqu'à 8K par diffusion directement dans l'espace des textures.
-
-Peut être conditionné par du texte, des photographies et des cartes de matériau basse résolution. L'approche est intéressante pour la génération et le raffinement de matériaux, mais n'est pas conçue pour générer à la volée les pixels d'un territoire infini.&#x20;
-
-[image](https://www.google.com/s2/favicons?domain=https://arxiv.org\&sz=32)
-
-arXiv
-
-
-
-Deux autres publications méritent une mention : MaTi — Make PBR Materials Tileable With Latent Diffusion Inpainting (2025), qui transforme des matériaux non tuilables en matériaux raccordables, et TexPro (2025), qui cherche à reconstruire des matériaux PBR procéduraux à partir de descriptions textuelles.&#x20;
-
-[image](https://www.google.com/s2/favicons?domain=https://pubmed.ncbi.nlm.nih.gov\&sz=32)
-
-PubMed
-
-+1
-
-
-
-### Ce que ces travaux suggèrent pour Neural Earth
-
-Je vois trois utilisations réalistes de l'IA :
-
-Génération hors ligne de matériaux. On crée, par exemple, 20 variantes de sol volcanique, 30 variantes de roche sédimentaire, 15 de boue, etc. Ces matériaux deviennent une bibliothèque réutilisable dans un shader déterministe.
-
-Optimisation de matériaux procéduraux. Au lieu de générer des pixels définitifs, on apprend les paramètres d'un graphe (densité de cailloux, distribution de tailles, couleurs, fréquence des fissures). C'est la voie illustrée par les travaux MATch, DiffMat et Generating Procedural Materials from Text or Image Prompts (SIGGRAPH 2023).&#x20;
-
-[image](https://www.google.com/s2/favicons?domain=https://github.com\&sz=32)
-
-GitHub
-
-+1
-
-
-
-Génération conditionnée localement. Une approche plus exploratoire consisterait à entraîner un modèle produisant des détails de surface à partir de variables de contexte : géologie, humidité, pente, occupation du sol, proximité de l'eau, etc. Il faudrait imposer explicitement la cohérence spatiale et multi-échelle.
-
-Cette dernière voie est potentiellement originale scientifiquement, mais ce n'est pas le point de départ le plus économique pour obtenir rapidement un rendu convaincant.
-
-## 6. Les datasets utiles
-
-Pour constituer une bibliothèque réaliste sans tout générer soi-même :
-
-[Textures: Aerial > Outdoor > Terrain • Poly Haven](https://images.openai.com/static-rsc-4/Jo8po5fb4mMp59VY1tvXgj2FKSxhRegzlRWT3QkKt4QtVp41T3pHDQILUmcWZLm_m-ox7qxAYnhRJnNP-eX-g_ZQvIbo3_EAA7VmTKtRrWl7VP8Ln9jw3TdZgp9JCCpmH5Pf7hBa-ClpChYRB1ckp8fR3ivWxAuXLBS00WrY8kM?purpose=inline)
-
-[Poly Haven](https://polyhaven.com/textures?utm_source=chatgpt.com)
-
-Matériaux PBR photographiques, généralement en haute résolution, avec licence CC0. Très bon choix pour la roche, la terre, les pavés et les surfaces naturelles.&#x20;
-
-[image](https://www.google.com/s2/favicons?domain=https://polyhaven.com\&sz=32)
-
-Poly Haven
-
-
-
-[Ground 062 S | ambientCG](https://images.openai.com/static-rsc-4/_AnhZ6T2ZqmkDxPhWQVsqdMPu2UF1Rf8baH3suCdJyA7ghezDZINeTQOigOHLW52l1IfyYkn78RIH9MQBxc8kGln9KP9cWZcAw5zUrJEH2Gs-JZoLYcWHQL_uCVi19aaCFxEH0RC6IGrhURVqmupIsJD3mtl1FwYwnB-iabro20?purpose=inline)
-
-[ambientCG](https://ambientcg.com?utm_source=chatgpt.com)
-
-Grande bibliothèque CC0 avec matériaux de sol, gravier, pierre, boue et surfaces architecturales. Très utile pour alimenter automatiquement des atlas.&#x20;
-
-[image](https://www.google.com/s2/favicons?domain=https://tmhsdigital.github.io\&sz=32)
-
-CC0
-
-
-
-[MATch: Differentiable Material Graphs for Procedural Material Capture](https://images.openai.com/static-rsc-4/bcTMRrzm6ZtGHRekncB8B3oR7p-71fAQvGVBHhTYlxkcbf3l1pjtKe9x2trVx0ngKyjSPHG54Eut0kKdP_-07fuUNfBugBpGRGpaPgg-xpIQfmoAGzRWUasfi4eXXMI-VNyLv5nSqAlXQyJ00UJxGnQ4pV-zLxfLt968Qt-fYo4?purpose=inline)
-
-[MatSynth](https://www.gvecchio.com/matsynth?utm_source=chatgpt.com) — CVPR 2024
-
-Plus de 4 000 matériaux PBR haute résolution sous CC0, avec métadonnées et rendus associés. C'est une des meilleures bases publiques pour entraîner ou évaluer un générateur spécialisé.&#x20;
-
-[image](https://www.google.com/s2/favicons?domain=https://ieeexplore.ieee.org\&sz=32)
-
-IEEE Xplore
-
-
-
-Attention à conserver les métadonnées d'échelle physique quand elles existent. Une image 2K couvrant 50 cm n'a pas du tout la même signification qu'une image 2K couvrant 5 m. Il faut aussi conserver une échelle cohérente entre les cartes de relief et les normales.
-
-## 7. Approche par type de surface
-
-À l'échelle centimétrique, chaque famille de matériau nécessite une stratégie différente. Je proposerais cette classification pour ton moteur.
-
-| Surface             | Technique privilégiée                      | Informations contextuelles     |
-| ------------------- | ------------------------------------------ | ------------------------------ |
-| Terre sèche         | Stochastic tiling + grains + fissures      | Texture du sol, humidité       |
-| Terre humide / boue | Voronoï, height map, variation de rugosité | Eau, drainage, passages        |
-| Sable               | Bruit directionnel, rides, grains          | Vent, pente, humidité          |
-| Gravier             | Placement de textons + atlas               | Granulométrie, transport       |
-| Roche massive       | Matériau PBR + fissures SDF                | Lithologie, fracturation       |
-| Éboulis             | Scatter hiérarchique de fragments          | Pente, érosion                 |
-| Herbe courte        | Sprites / textons + matériau de fond       | Climat, piétinement            |
-| Litière forestière  | Scatter feuilles et brindilles             | Type de végétation             |
-| Neige               | Surface irrégulière, creux et croûtes      | Vent, fonte, ombrage           |
-| Pavés / dallages    | Pavage structurel + usure PBR              | Voirie, culture, âge           |
-| Eau calme           | Normales animées + réflexion               | Vent, profondeur               |
-| Eau courante        | Flow map + normales + écume                | Vitesse, profondeur, obstacles |
-
-### Cas particulier : l'eau
-
-Je ne traiterais pas l'eau comme un simple matériau tuilable.
-
-Pour les rivières et les littoraux, il faut distinguer la géométrie de l'eau et ses détails visuels. On peut produire ces derniers avec :
-
-\\[ C(x,y,t) = F\big(d\_{\text{rive}},h\_{\text{eau}},\vec v,\nabla z,N(x,y,t)\big) \\]
-
-où :
-
-- \\(d\_{\text{rive}}\\) est la distance signée au rivage ;
-- \\(h\_{\text{eau}}\\) est la profondeur ;
-- \\(\vec v\\) est le champ de vitesse du courant ;
-- \\(\nabla z\\) représente les variations du relief ;
-- \\(N\\) est un champ de bruit animé.
-
-Pour les petits cours d'eau, cela permet d'orienter les vaguelettes selon le courant, de générer des turbulences près des obstacles et de placer des bandes d'écume près des berges.
-
-Pour les océans, on peut ajouter des composantes spectrales, voire une simulation FFT si tu passes à une véritable surface 3D. Mais une FFT océanique complète me semble disproportionnée pour une vue cartographique de dessus.
-
-Les projets [water-shader](https://github.com/tuxalin/water-shader?utm_source=chatgpt.com) et [unity-voronoi-water](https://github.com/cbunt/unity-voronoi-water?utm_source=chatgpt.com) fournissent respectivement des exemples d'effets d'eau procédurale et de flow maps.&#x20;
-
-[image](https://www.google.com/s2/favicons?domain=https://github.com\&sz=32)
-
-GitHub
-
-+1
-
-
-
-### Cas particulier : les routes et sols urbains
-
-Pour Magna Urbis, je ne chercherais surtout pas à générer une rue pavée uniquement avec une texture.
-
-La structure du pavage doit dépendre de la géométrie de la rue : orientation des pierres, bordures, caniveaux, transitions avec les murs, etc.
-
-Le générateur urbain définirait les pavés ou leurs cellules. Le shader interviendrait ensuite pour ajouter la matière, les petites fissures, l'usure, les variations chromatiques et les salissures.
-
-Cela évite de demander au shader de reconstruire une structure que ton générateur connaît déjà.
-
-## 8. Architecture que je retiendrais pour tes deux projets
-
-J'ai regardé en particulier la documentation de [Render3D de Neural Earth](https://github.com/dunkean/neural-earth/blob/main/docs/render3d.md?utm_source=chatgpt.com).
-
-Tu as déjà résolu une bonne partie des problèmes difficiles :
-
-- Évaluation des matériaux en coordonnées physiques.
-- Gestion de la précision numérique loin de l'origine.
-- Apparition progressive des détails selon l'empreinte du pixel.
-- Intégration de l'éclairage GGX.
-- Grains, petits reliefs et végétation déterministes.
-
-Ton implémentation actuelle utilise notamment quatre bandes de détail au sol, de 8 m, 2,2 m, 0,32 m et 0,055 m. Le rendu peut descendre à 1/128 m par pixel, et les fréquences non résolues contribuent à la rugosité plutôt qu'à un détail visuel aliasé.&#x20;
-
-[image](https://www.google.com/s2/favicons?domain=https://github.com\&sz=32)
-
-GitHub
-
-
-
-C'est une base tout à fait adaptée. Je ne la remplacerais pas.
-
-### Proposition de pipeline
-
+```text
 Neural Earth / Magna Urbis
-
-Biomes · géologie · pente · hydrologie · occupation du sol · voirie
-
-Champ de matériaux contextuel
-
-Poids des matériaux, humidité, directionnalité, densité d'objets
-
-Shader procédural
-
-Noise · SDF · relief analytique · scatter déterministe
-
-Atlas de matériaux
-
-Photogrammétrie · Material Maker · textures génératives
-
-Composition stochastique
-
-Hex tiling · Wang tiles · blending de matériaux · masques physiques
-
+  Biomes · geology · slope · hydrology · land use · roads
+       ↓
+Contextual material field
+  Material weights, moisture, directionality, object density
+       ↓
+Procedural shader                       Material atlas
+  Noise · SDF · analytical relief         Photogrammetry · Material Maker
+  · deterministic scatter                 · generative textures
+       ↓                                  ↓
+Stochastic composition
+  Hex tiling · Wang tiles · material blending · physical masks
+       ↓
 Render3D / WebGPU
+  Albedo · relief · normals · roughness · lighting · multi-scale antialiasing
+```
 
-Albédo · relief · normales · rugosité · éclairage · anti-aliasing multi-échelle
+This pipeline could be shared despite the projects' different territorial representations.
 
-Ce pipeline pourrait être commun aux deux projets, malgré leurs différences de représentation du territoire.
+### A useful representation: probabilistic material
 
-### Une représentation intéressante : un matériau probabiliste
+Instead of associating a single texture with each pixel, represent a local composition:
 
-Plutôt que d'associer une seule texture à un pixel, tu pourrais représenter localement une composition :
+\\[ M(x,y)=\\{(w_i,\\theta_i,s_i)\\}_{i=1}^{K} \\]
 
-\\[ M(x,y)=\\{(w_i,\theta_i,s_i)\\}\_{i=1}^{K} \\]
+Here `w_i` is material proportion, `θ_i` orientation, and `s_i` physical scale. For example, ground beside a river could comprise 60% gravel, 25% sand, and 15% silt. The engine would arrange components spatially rather than blend them uniformly pixel by pixel.
 
-avec \\(w_i\\) la proportion d'un matériau, \\(\theta_i\\) son orientation et \\(s_i\\) son échelle physique.
+Geology and hydrology would determine proportions and distributions; the shader would perform fine synthesis. This maintains physical continuity from landscape scale down to small detail.
 
-Par exemple, un sol au bord d'une rivière pourrait être composé de 60 % de gravier, 25 % de sable et 15 % de limon. Le moteur produirait un agencement spatial de ces composantes, sans les mélanger uniformément pixel par pixel.
+## 9. The central problem: consistency from 10 m to 1 cm
 
-La géologie et l'hydrologie détermineraient les proportions et les distributions. Le shader réaliserait la synthèse fine.
+The difficulty is not maximum resolution, but transition between scales.
 
-C'est un moyen de garder une continuité physique depuis l'échelle du paysage jusqu'aux petits détails.
+| Characteristic scale | Dominant representation |
+| --- | --- |
+| 100–10 m | Geology, terrain, ground cover |
+| 10–1 m | Outcrops, large stones, tufts, paths |
+| 1 m–10 cm | Stones, roots, mud patches, cracks |
+| 10–1 cm | Small gravel, leaves, joints, fine relief |
+| Below 1 cm | Filtered microstructure, statistical roughness |
 
-## 9. Le vrai problème : la cohérence entre 10 m et 1 cm
+The system must avoid two recurring defects. First, arbitrary appearance of detail: if a stone becomes visible at 5 cm/px, its aggregate contribution should ideally already appear at 20 cm/px. LOD changes must preserve average appearance and, where possible, roughness properties.
 
-Le point délicat n'est pas la résolution maximale. C'est le passage entre les échelles.
+Second, zoom and boundary inconsistencies: a grain must retain its position as the camera moves, and objects must not be cut or resampled differently between tiles. A worldwide implementation should consistently use integer cell coordinates and hierarchical seeds, with local shader evaluation. Existing tile-origin handling already points in that direction.
 
-| Échelle caractéristique | Représentation dominante                         |
-| ----------------------- | ------------------------------------------------ |
-| 100–10 m                | Géologie, relief, couverture du sol              |
-| 10–1 m                  | Affleurements, grandes pierres, touffes, chemins |
-| 1 m–10 cm               | Cailloux, racines, plaques de boue, fissures     |
-| 10–1 cm                 | Petits graviers, feuilles, joints, relief fin    |
-| Moins de 1 cm           | Microstructure filtrée, rugosité statistique     |
+Remaining documented limits include possible detail drift between some LODs, distortion toward the poles in planetary projection, and discontinuities at the antimeridian.
 
-Le système doit éviter deux défauts récurrents.
+### Why not precompute everything
 
-Premièrement, l'apparition arbitraire des détails. Si une pierre devient visible à 5 cm/px, sa contribution globale doit idéalement déjà être représentée dans l'image à 20 cm/px. Autrement dit, le changement de niveau de détail doit préserver l'apparence moyenne et, dans la mesure du possible, les propriétés de rugosité.
+At 1 cm per pixel, a 1 km square already represents 10 billion pixels, or approximately 40 GB for one uncompressed RGBA8 image. Materials must therefore be evaluated on demand according to displayed pixel footprints, rather than always generating maximum resolution.
 
-Deuxièmement, les incohérences au zoom et aux frontières. Le même grain doit conserver sa position lors d'un déplacement de la caméra, et les objets ne doivent pas être coupés ou rééchantillonnés différemment entre deux tuiles.
+A 512 × 512 tile at 1 cm/px covers only 5.12 × 5.12 m on the ground. The actual memory budget depends on the visible area, caches, and loaded material maps, not the planet's total area.
 
-Pour une implémentation mondiale, j'utiliserais systématiquement les coordonnées de cellules entières et des graines hiérarchiques, avec évaluation locale dans le shader. Ton traitement actuel de l'origine des tuiles va déjà dans ce sens.
+## 10. Experimental roadmap
 
-Il resterait notamment à traiter les limites que tu documentes toi-même : dérive possible des détails entre certains LOD, déformations sur la projection planétaire vers les pôles et discontinuités à l'antiméridien.&#x20;
+Benchmark in four stages, directly reusing existing Render3D rendering:
 
-[image](https://www.google.com/s2/favicons?domain=https://github.com\&sz=32)
+| Stage | Experiment | Success criterion |
+| --- | --- | --- |
+| 1 | Integrate a photographic material and hex tiling in WebGPU | Credible rendering without repetition or seams |
+| 2 | Add consistent height, normals, and roughness | Good rendering under multiple light directions |
+| 3 | Add deterministic scatter of centimeter-scale objects | Convincing rocky / forest ground when zoomed in |
+| 4 | Condition materials on local context | Natural transitions between rock, sand, earth, and vegetation |
 
-GitHub
+Compare three representative scenes: volcanic ground with scree, a sedimentary riverbank, and a worn medieval paved street. Measure 1080p smoothness, tile and LOD discontinuities, stability during camera motion, and especially visible repetition over large areas. Neural Earth's documented timings offer a starting comparison, not a guarantee for new methods.
 
+## 11. Ranking of directions to explore
 
-
-### Pourquoi il ne faut pas tout précalculer
-
-À seulement 1 cm par pixel, un carré de 1 km de côté représente 10 milliards de pixels, soit environ 40 Go pour une seule image RGBA8 non compressée.
-
-Il faut donc évaluer les matériaux à la demande, en fonction de l'empreinte des pixels affichés, et non générer systématiquement la résolution maximale.
-
-Un tile de 512 × 512 pixels à 1 cm/px ne représente finalement que 5,12 × 5,12 m au sol. Le vrai budget mémoire dépend de la portion visible, des caches et des cartes de matériau chargées, pas de la surface totale de la planète.
-
-## 10. Feuille de route expérimentale
-
-Je ferais un benchmark en quatre étapes, en réutilisant directement le rendu Render3D existant.
-
-| Étape | Expérience                                                       | Critère de réussite                                            |
-| ----- | ---------------------------------------------------------------- | -------------------------------------------------------------- |
-| 1     | Intégrer un matériau photographique et un hex tiling dans WebGPU | Rendu crédible sans répétition ni couture                      |
-| 2     | Ajouter une hauteur, des normales et une rugosité cohérentes     | Bon rendu sous plusieurs directions lumineuses                 |
-| 3     | Ajouter le scatter déterministe d'objets centimétriques          | Sol rocheux / forestier convaincant au zoom                    |
-| 4     | Conditionner les matériaux par le contexte local                 | Transitions naturelles entre roche, sable, terre et végétation |
-
-Pour comparer correctement les méthodes, je choisirais trois scènes représentatives : un sol volcanique avec éboulis, une rive de rivière avec sédiments et une rue médiévale pavée et usée.
-
-Je mesurerais la fluidité en 1080p, les discontinuités entre tuiles et LOD, la stabilité au déplacement de la caméra, et surtout la répétition perceptible sur de grandes surfaces. Les temps de calcul déjà documentés dans Neural Earth offrent un point de comparaison de départ, sans constituer une garantie pour les nouvelles méthodes.
-
-## 11. Mon classement des pistes à explorer
-
-| Rang | Piste                                                        | Apport probable                      | Effort estimé  |
-| ---- | ------------------------------------------------------------ | ------------------------------------ | -------------- |
-| 1    | Hex tiling de Mikkelsen                                      | Très fort sur les matériaux naturels | Faible à moyen |
-| 2    | Bibliothèque PBR issue de Material Maker et Poly Haven       | Très fort sur le réalisme immédiat   | Faible à moyen |
-| 3    | Texture bombing / textons déterministes                      | Très fort à l'échelle centimétrique  | Moyen          |
-| 4    | Wang tiles pour structures                                   | Fort pour Magna Urbis                | Moyen          |
-| 5    | Conditionnement géologique et hydrologique                   | Fort sur la cohérence mondiale       | Moyen à élevé  |
-| 6    | MatFuse / StableMaterials en génération hors ligne           | Fort pour la diversité               | Moyen          |
-| 7    | Apprentissage direct d'un champ neuronal infini de matériaux | Incertain mais intéressant en R&D    | Élevé          |
+| Rank | Direction | Likely contribution | Estimated effort |
+| --- | --- | --- | --- |
+| 1 | Mikkelsen hex tiling | Very strong for natural materials | Low to medium |
+| 2 | PBR library from Material Maker and Poly Haven | Very strong immediate realism | Low to medium |
+| 3 | Deterministic texture bombing / textons | Very strong at centimeter scale | Medium |
+| 4 | Wang tiles for structures | Strong for Magna Urbis | Medium |
+| 5 | Geological and hydrological conditioning | Strong for world consistency | Medium to high |
+| 6 | MatFuse / StableMaterials for offline generation | Strong for diversity | Medium |
+| 7 | Direct learning of an infinite neural material field | Uncertain but interesting research | High |
 
 ### Conclusion
 
-Pour les résultats à court terme, je combinerais des textures PBR photographiques ou synthétiques, un échantillonnage stochastique sans répétition, et des détails structurés procéduralement.
+For near-term results, combine photographic or synthetic PBR textures, nonrepeating stochastic sampling, and procedurally structured details. A multi-scale renderer with coordinate management, filtering, and lighting is already in place.
 
-Tu disposes déjà de la partie difficile : un moteur de rendu multi-échelle avec gestion des coordonnées, filtrage et éclairage.
+The most visible improvement is likely to come from replacing noise bands with a genuine description of physical ground composition, so the shader knows whether to draw sand, stones, cracks, leaves, or paving.
 
-L'amélioration qui devrait changer le plus visiblement le rendu n'est pas un nouveau réseau de diffusion. C'est le passage de bandes de bruit à une véritable description de la composition physique du sol, où le shader sait qu'il doit dessiner du sable, des pierres, des fissures, des feuilles ou des pavés.
-
-Pour la recherche neuronale, je regarderais en priorité StableMaterials, MatFuse et les modèles de génération de graphes procéduraux. Ils pourraient permettre de créer automatiquement des centaines de matériaux cohérents à partir de quelques références et de paramètres environnementaux.
-
-C'est probablement le meilleur équilibre entre qualité visuelle, générativité, temps réel et compatibilité avec l'ambition de Neural Earth : pouvoir zoomer sur n'importe quel endroit du monde, sans avoir précalculé ce qui s'y trouve.
+For neural research, prioritize StableMaterials, MatFuse, and procedural-graph generation models. They could automatically create hundreds of consistent materials from a few references and environmental parameters. This is a promising balance between visual quality, generativity, real-time performance, and Neural Earth's ambition to zoom anywhere in the world without precomputing what is there.

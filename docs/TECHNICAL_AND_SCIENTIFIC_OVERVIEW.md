@@ -1,214 +1,216 @@
-# Magna Urbis : architecture technique et fondements scientifiques
+# Magna Urbis: technical architecture and scientific foundations
 
-État documentaire : **14 octobre 2026**. Magna Urbis est un prototype de génération de paysages et d'établissements préindustriels. L'application TypeScript reste la référence la plus complète ; la version Rust/WebAssembly est **en cours d'implémentation et d'intégration**. Ce document décrit les chemins présents dans le dépôt et leurs fondements, sans proposer une nouvelle architecture définitive.
+[French original](TECHNICAL_AND_SCIENTIFIC_OVERVIEW_FR.md).
 
-Les liens de code permettent de distinguer une méthode effectivement utilisée d'une référence scientifique qui sert à expliquer ou comparer une approche. Les articles cités ne constituent pas une validation scientifique de Magna Urbis : les paramètres, simplifications et choix artistiques du projet ont leur propre domaine de validité.
+Document status: **October 14, 2026**. Magna Urbis is a prototype for generating landscapes and preindustrial settlements. The TypeScript application remains the most complete reference; the Rust/WebAssembly version is **being implemented and integrated**. This document describes paths present in the repository and their foundations, without proposing a new definitive architecture.
 
-## 1. Les couches du système
+Code links distinguish methods actually used from scientific references that explain or compare an approach. The cited papers do not constitute scientific validation of Magna Urbis: the project's parameters, simplifications and artistic choices have their own domain of validity.
 
-| Couche | Entrées et résultats | Implémentation et état |
+## 1. System layers
+
+| Layer | Inputs and results | Implementation and status |
 | --- | --- | --- |
-| Application de référence | Graine, environnement et cultures → paysage, villes, bâtiments et exports | TypeScript dans `web/`, sans serveur de génération |
-| Relief procédural | Bruits, formes de relief, côtes et érosion → champ d'altitude | Rust `crates/core`, WASM ; accélération WebGPU de certaines passes |
-| Relief neuronal optionnel | Esquisse, climat et graine → champ d'altitude appris | WASM/WebGPU dans le navigateur ou service Python/CUDA ; Rust natif conservé pour les anciens liens |
-| Hydrologie | Altitudes → drainage, lacs, graphe de rivières et lits | Rust ; préparation du drainage possible sur GPU, finalisation vectorielle CPU/WASM |
-| Implantations et routes | Terrain et eau → lieux habités et réseau régional | Rust, étapes distinctes dans Terrain Bench |
-| Plans urbains | Site, accès, population et culture → quartiers, rues, îlots et parcelles | Rust/WASM dans Terrain Bench et Urban Bench ; intégration en cours |
-| Maisons | Recettes architecturales et contraintes → corps, cours et toitures | Moteur Rust indépendant, House Bench ; assemblage avec les villes encore distinct |
-| Occupation rurale et rendu | Géométrie et environnement → champs, végétation et carte | TypeScript et adaptateurs temporaires ; le renderer final reste à développer |
+| Reference application | Seed, environment and cultures → landscape, cities, buildings and exports | TypeScript in `web/`, without a generation server |
+| Procedural terrain | Noise, landforms, coasts and erosion → elevation field | Rust `crates/core`, WASM; WebGPU acceleration for selected passes |
+| Optional neural terrain | Sketch, climate and seed → learned elevation field | WASM/WebGPU in the browser or Python/CUDA service; native Rust retained for legacy links |
+| Hydrology | Elevations → drainage, lakes, river graph and beds | Rust; drainage preparation can run on GPU, vector finalization on CPU/WASM |
+| Settlements and roads | Terrain and water → inhabited places and regional network | Rust, separate stages in Terrain Bench |
+| Urban plans | Site, access, population and culture → neighborhoods, streets, blocks and parcels | Rust/WASM in Terrain Bench and Urban Bench; integration in progress |
+| Houses | Architectural recipes and constraints → building volumes, courtyards and roofs | Independent Rust engine, House Bench; assembly with cities remains separate |
+| Rural land use and rendering | Geometry and environment → fields, vegetation and map | TypeScript and temporary adapters; final renderer remains to be developed |
 
-La dépendance logique principale est :
+The main logical dependency is:
 
 ```text
-graine + paramètres
-  ├─ relief procédural → érosion et côtes
-  └─ esquisse + climat → coarse → base → decoder → altitude neuronale
+seed + parameters
+  ├─ procedural terrain → erosion and coasts
+  └─ sketch + climate → coarse → base → decoder → neural elevation
                          ↓
-                 surface physique conservée
+                 retained physical surface
                          ↓
-               drainage → lacs et rivières
+                 drainage → lakes and rivers
                          ↓
-             implantations → routes régionales
+                 settlements → regional roads
                          ↓
-             quartiers → rues / îlots → parcelles
+             neighborhoods → streets / blocks → parcels
                          ↓
-                 interface, rendu et exports
+                 interface, rendering and exports
 
-maisons : moteur indépendant, raccordement aux parcelles en cours
+houses: independent engine, connection to parcels in progress
 ```
 
-Une modification de parcelles n'a pas à recalculer le terrain. La caméra échantillonne la surface conservée : zoomer ne relance ni l'érosion ni les réseaux neuronaux. Voir [le moteur de terrain](../rust/crates/core/src/engine.rs), [les implantations](../rust/crates/core/src/settlements/mod.rs) et [les étapes urbaines](../rust/crates/core/src/urban/mod.rs).
+A parcel change does not need to recompute terrain. The camera samples the retained surface: zooming reruns neither erosion nor neural networks. See the [terrain engine](../rust/crates/core/src/engine.rs), [settlements](../rust/crates/core/src/settlements/mod.rs) and [urban stages](../rust/crates/core/src/urban/mod.rs).
 
-### Explorer les implémentations
+### Exploring the implementations
 
-Après installation des outils indiqués dans le [README Rust](../rust/README.md), les commandes suivantes se lancent depuis `web/`. Choisir le banc à examiner ; le service neuronal s'exécute dans un terminal séparé lorsque cette source est utilisée.
+After installing the tools listed in the [Rust README](../rust/README.md), run these commands from `web/`. Choose the bench to inspect; the neural service runs in a separate terminal when that source is used.
 
-| Commande | Point d'entrée |
+| Command | Entry point |
 | --- | --- |
-| `npm run dev` | Application TypeScript de référence |
-| `npm run dev:terrain` | Compilation WASM et bancs `terrainbench.html` / `urbanbench.html` |
-| `npm run dev:houses` | Moteur de maisons indépendant, `housebench.html` |
-| `npm run neural:serve` | Service natif optionnel pour le relief neuronal |
+| `npm run dev` | TypeScript reference application |
+| `npm run dev:terrain` | WASM build and `terrainbench.html` / `urbanbench.html` benches |
+| `npm run dev:houses` | Independent house engine, `housebench.html` |
+| `npm run neural:serve` | Optional native neural-terrain service |
 
-Pour reproduire un résultat, conserver la graine, les paramètres appliqués et les versions du moteur, des catalogues et des poids. Les [instructions du banc de maisons](../rust/crates/houses/README.md) précisent ses entrées et ses refus de configuration.
+To reproduce a result, retain the seed, applied parameters and versions of the engine, catalogs and weights. The [house bench instructions](../rust/crates/houses/README.md) specify inputs and rejected configurations.
 
-## 2. Relief procédural : bruits, motifs et échelles
+## 2. Procedural terrain: noise, patterns and scales
 
-Un bruit cohérent attribue des valeurs voisines à des coordonnées voisines. La référence classique est le travail de Perlin sur les bruits de gradient ; l'implémentation locale utilise un **bruit simplex 2D** et des sommes d'octaves. Il faut distinguer cette variante du bruit amélioré de Perlin, cité ici comme fondement général. [Perlin, 2002](https://mrl.cs.nyu.edu/~perlin/paper445.pdf) ; [code local](../rust/crates/core/src/noise.rs).
+Coherent noise assigns nearby values to nearby coordinates. Perlin's work on gradient noise is the classic reference; the local implementation uses **2D simplex noise** and sums of octaves. This variant must be distinguished from improved Perlin noise, cited here as general background. [Perlin, 2002](https://mrl.cs.nyu.edu/~perlin/paper445.pdf); [local code](../rust/crates/core/src/noise.rs).
 
-Une écriture simplifiée de la somme est :
+A simplified sum is:
 
 ```text
-h_bruit(x, y) = Σ a_k · N(f_k · x, f_k · y)
+h_noise(x, y) = Σ a_k · N(f_k · x, f_k · y)
 ```
 
-`N` est le bruit cohérent, `f_k` sa fréquence et `a_k` l'amplitude de l'octave. Les basses fréquences structurent les masses ; les hautes apportent les détails. Le *domain warping* déforme les coordonnées d'évaluation par d'autres bruits, ce qui évite des crêtes trop régulières. L'appellation « fractal » décrit cette construction multi-échelle ; elle ne démontre pas une loi géologique.
+`N` is coherent noise, `f_k` its frequency and `a_k` the octave's amplitude. Low frequencies structure large masses; high frequencies add detail. *Domain warping* distorts evaluation coordinates using other noise fields, avoiding overly regular ridges. The term “fractal” describes this multiscale construction; it does not demonstrate a geological law.
 
-La taille de carte et l'échelle du motif sont séparées. Les familles de relief ajoutent des contraintes de forme : plaine, collines, vallée, montagnes, plateau, canyon, volcan ou caldeira. La découpe côtière définit une surface signée, avec mer à zéro, puis conserve le résultat des traitements physiques. Les octaves non résolues à l'échelle d'échantillonnage sont filtrées pour limiter les artefacts. Voir [le cœur](../rust/crates/core/src/lib.rs), [les côtes](../rust/crates/core/src/coast.rs) et [la préparation des bruits](../rust/crates/core/src/generation_noise.rs).
+Map size and pattern scale are separate. Terrain families add shape constraints: plain, hills, valley, mountains, plateau, canyon, volcano or caldera. Coastal cutting defines a signed surface with sea at zero, then retains the results of physical processing. Octaves unresolved at the sampling scale are filtered to limit artifacts. See the [core](../rust/crates/core/src/lib.rs), [coasts](../rust/crates/core/src/coast.rs) and [noise preparation](../rust/crates/core/src/generation_noise.rs).
 
-## 3. Érosion : drainage, incision et redistribution
+## 3. Erosion: drainage, incision and redistribution
 
-### Dépressions et directions d'écoulement
+### Depressions and flow directions
 
-Un champ d'altitude contient des cuvettes sans sortie et des zones plates où la pente ne suffit pas à choisir un aval. **Priority-Flood** explore les cellules depuis les sorties, par altitude croissante, et calcule le niveau nécessaire pour évacuer chaque dépression. Ce niveau est un potentiel de drainage ; il ne signifie pas que toutes les cuvettes doivent devenir des lacs ou être physiquement remplies. [Barnes, Lehman et Mulla, 2014](https://doi.org/10.1016/j.cageo.2013.04.024) ; [implémentation des auteurs](https://github.com/r-barnes/Barnes2013-Depressions).
+An elevation field contains closed depressions and flat areas where slope alone cannot choose a downstream direction. **Priority-Flood** explores cells from outlets in increasing elevation order and computes the level needed to drain each depression. This level is a drainage potential; it does not mean that every depression must become a lake or be physically filled. [Barnes, Lehman and Mulla, 2014](https://doi.org/10.1016/j.cageo.2013.04.024); [authors' implementation](https://github.com/r-barnes/Barnes2013-Depressions).
 
-Dans l'érosion, le routage **D∞** estime une direction sur les facettes triangulaires autour d'une cellule et répartit l'aire contributive entre deux voisins aval. Il atténue la préférence des grilles D8 pour huit directions fixes. Le réseau vectoriel final utilise, lui, une topologie de drainage propre : ces deux représentations répondent à des besoins différents. [Tarboton, 1997](https://doi.org/10.1029/96WR03137) ; [code d'érosion](../rust/crates/core/src/erosion.rs).
+For erosion, **D∞** routing estimates a direction on triangular facets around a cell and divides contributing area between two downstream neighbors. It reduces the preference of D8 grids for eight fixed directions. The final vector network instead uses its own drainage topology: the two representations serve different purposes. [Tarboton, 1997](https://doi.org/10.1029/96WR03137); [erosion code](../rust/crates/core/src/erosion.rs).
 
-### Incision fluviale
+### Fluvial incision
 
-La loi de *stream power* relie l'abaissement du lit à l'aire drainée et à la pente. Une forme de référence pour l'évolution du relief est :
+The *stream-power* law relates bed lowering to drainage area and slope. A reference form for landscape evolution is:
 
 ```text
 ∂h/∂t = U − K · A^m · S^n
 ```
 
-`h` est l'altitude, `U` la surrection, `A` l'aire contributive, `S` la pente et `K` l'érodabilité. Les exposants décrivent la réponse du modèle. Le solveur implicite de Braun et Willett traite les dépendances aval sans imposer les petits pas d'un schéma explicite. [Braun et Willett, 2013](https://doi.org/10.1016/j.geomorph.2012.10.008).
+`h` is elevation, `U` uplift, `A` contributing area, `S` slope and `K` erodibility. The exponents describe the model's response. Braun and Willett's implicit solver handles downstream dependencies without requiring the small steps of an explicit scheme. [Braun and Willett, 2013](https://doi.org/10.1016/j.geomorph.2012.10.008).
 
-Magna Urbis applique une adaptation interactive : aire contributive plafonnée, réponse atténuée aux faibles pentes, incision bornée et mise à jour implicite vers l'altitude aval. Le réglage « érosion » pilote une intensité, pas une durée géologique calibrée. L'équation ci-dessus explique la famille de méthodes ; elle n'est pas la transcription exacte de toutes les passes du générateur. Les ouvertures de seuils et le remplissage partiel des bassins sont eux aussi limités. [Implémentation CPU](../rust/crates/core/src/erosion.rs) ; [passes GPU](../rust/bridge/terrainErosion.wgsl).
+Magna Urbis applies an interactive adaptation: capped contributing area, attenuated response on gentle slopes, bounded incision and implicit updates toward downstream elevation. The “erosion” setting controls intensity, not a calibrated geological duration. The equation above explains the family of methods; it is not an exact transcription of every generator pass. Threshold openings and partial basin filling are also bounded. [CPU implementation](../rust/crates/core/src/erosion.rs); [GPU passes](../rust/bridge/terrainErosion.wgsl).
 
-### Relaxation thermique et diffusion de versant
+### Thermal relaxation and hillslope diffusion
 
-La relaxation thermique déplace du matériau lorsque la pente dépasse un seuil de talus. La diffusion lisse les petites irrégularités, avec protection de certains chenaux. Elles complètent l'incision : creuser les vallées et redistribuer les versants ne sont pas la même opération.
+Thermal relaxation moves material when slope exceeds a talus threshold. Diffusion smooths small irregularities while protecting certain channels. These complement incision: cutting valleys and redistributing hillslopes are different operations.
 
-Il faut également distinguer la **diffusion géomorphologique**, qui redistribue une grandeur spatiale, de la **diffusion neuronale**, qui apprend à retirer du bruit. L'érosion locale n'est pas un solveur complet d'hydraulique, de transport sédimentaire et de conservation de masse à l'échelle géologique.
+**Geomorphological diffusion**, which redistributes a spatial quantity, must also be distinguished from **neural diffusion**, which learns to remove noise. Local erosion is not a complete solver for hydraulics, sediment transport and mass conservation over geological time.
 
-## 4. Hydrologie : du raster aux rivières et aux lacs
+## 4. Hydrology: from rasters to rivers and lakes
 
-### Graphe de drainage et géométrie des cours d'eau
+### Drainage graph and river geometry
 
-L'étape hydrologique lit la surface physique et construit directions aval, aires contributives, bassins et dépressions. Les diagnostics initiaux restent distincts des décisions de routage et des corrections du terrain. Une brèche bornée peut ouvrir une cuvette non retenue ; les zones plates nécessitent un classement topologique pour éviter boucles et écoulements arbitraires. [Hydrologie](../rust/crates/core/src/hydrology.rs) ; [zones plates](../rust/crates/core/src/hydrology_flats.rs) ; [dépressions](../rust/crates/core/src/hydrology_depressions.rs).
+The hydrology stage reads the physical surface and builds downstream directions, contributing areas, basins and depressions. Initial diagnostics remain separate from routing decisions and terrain corrections. A bounded breach can open a depression that is not retained; flats require topological ordering to avoid loops and arbitrary flow. [Hydrology](../rust/crates/core/src/hydrology.rs); [flats](../rust/crates/core/src/hydrology_flats.rs); [depressions](../rust/crates/core/src/hydrology_depressions.rs).
 
-Les cellules de drainage deviennent ensuite un **graphe vectoriel** : sources, tronçons, confluences et sorties. Les largeurs et les profils sont évalués le long des axes ; les lits incisés et les surfaces d'eau servent aussi à l'échantillonnage du terrain. Des nœuds partagés maintiennent les raccords aux confluences. Le profil d'eau doit rester descendant et compatible avec les budgets de correction du sol.
+Drainage cells then become a **vector graph**: sources, reaches, confluences and outlets. Widths and profiles are evaluated along centerlines; incised beds and water surfaces also contribute to terrain sampling. Shared nodes maintain confluence joins. The water profile must remain downhill and compatible with ground-correction budgets.
 
-Les courbes locales utilisent des variations déterministes à plusieurs échelles, exprimées en unités physiques et contraintes par le terrain. Elles ne sont pas une sinusoïde dessinée par-dessus une ligne de grille. Les modèles de migration de méandres, comme celui de Howard et Knutson, constituent un point de comparaison scientifique ; le module Rust actuel n'est pas une réimplémentation intégrale de cette simulation temporelle. [Howard et Knutson, 1984](https://doi.org/10.1029/WR020i011p01659) ; [courbes Rust](../rust/crates/core/src/hydrology_meanders.rs).
+Local curves use deterministic multiscale variation in physical units constrained by terrain. They are not a sine wave drawn over a grid line. Meander-migration models such as Howard and Knutson's provide scientific comparison; the current Rust module is not a complete reimplementation of that time-dependent simulation. [Howard and Knutson, 1984](https://doi.org/10.1029/WR020i011p01659); [Rust curves](../rust/crates/core/src/hydrology_meanders.rs).
 
-### Lacs et bilan d'eau
+### Lakes and water balance
 
-Une dépression topographique ne garantit pas un lac permanent. Le module local estime le ruissellement annuel à partir des précipitations et d'une évapotranspiration empirique dépendant de la température et de l'altitude. Le lac atteint un niveau compatible avec ses apports et l'évaporation de sa surface : il peut rester fermé ou déborder au seuil et transmettre l'excédent. Les minima et plafonds artistiques restent des paramètres du générateur. [Bilan hydrologique local](../rust/crates/core/src/hydrology_balance.rs).
+A topographic depression does not guarantee a permanent lake. The local module estimates annual runoff from precipitation and empirical evapotranspiration depending on temperature and elevation. A lake reaches a level compatible with its inflows and surface evaporation: it can remain closed or overflow at its threshold and pass on the surplus. Artistic minima and caps remain generator parameters. [Local water balance](../rust/crates/core/src/hydrology_balance.rs).
 
-La famille **Fill–Spill–Merge** conserve les dépressions et distribue les apports entre bassins qui se remplissent, débordent et fusionnent. Le module local s'en inspire pour un équilibre simplifié sur son drainage ; il ne reproduit pas toute la hiérarchie et la dynamique de l'algorithme publié. [Barnes, Callaghan et Wickert, 2021](https://esurf.copernicus.org/articles/9/105/2021/).
+The **Fill–Spill–Merge** family retains depressions and distributes inflows among basins that fill, spill and merge. The local module takes inspiration from it for a simplified equilibrium on its drainage; it does not reproduce the published algorithm's entire hierarchy and dynamics. [Barnes, Callaghan and Wickert, 2021](https://esurf.copernicus.org/articles/9/105/2021/).
 
-Ces traitements recherchent une cohérence de réseau et une lisibilité cartographique. Ils ne prédisent ni crues, ni marées, ni navigation. Un relief neuronal plausible visuellement peut encore demander des corrections hydrologiques ou être rejeté par une contrainte de profil.
+These treatments seek network consistency and cartographic legibility. They do not predict floods, tides or navigation. Visually plausible neural terrain may still need hydrological corrections or be rejected by a profile constraint.
 
-## 5. InfiniteDiffusion, Terrain Diffusion et Neural Earth
+## 5. InfiniteDiffusion, Terrain Diffusion and Neural Earth
 
-### Ce que signifie « infini »
+### What “infinite” means
 
-**InfiniteDiffusion** est l'algorithme de Goslin permettant une génération paresseuse, non bornée, cohérente avec la graine et indépendante de l'ordre de visite. **Terrain Diffusion** est son application à la synthèse de terrain. Les fenêtres partagent un bruit spatial déterministe et leurs contributions se mélangent dans les recouvrements. Le calcul ne consiste donc pas à juxtaposer des images générées indépendamment. [Goslin, 2025, version révisée en 2026](https://arxiv.org/abs/2512.08309).
+**InfiniteDiffusion** is Goslin's algorithm for lazy, unbounded generation that is consistent with the seed and independent of visit order. **Terrain Diffusion** applies it to terrain synthesis. Windows share deterministic spatial noise and their contributions blend in overlaps. The computation therefore does not simply juxtapose independently generated images. [Goslin, 2025, revised in 2026](https://arxiv.org/abs/2512.08309).
 
-Les dépendances spatiales sont évaluées à la demande ; la troncature du nombre d'étapes de fusion rend leur expansion praticable. Le coût annoncé constant concerne une région de taille et de configuration fixées, quelle que soit sa position. Agrandir la région, augmenter la résolution ou changer le nombre d'évaluations augmente toujours le travail. [Article, sections 3.3–3.4](https://arxiv.org/html/2512.08309v4).
+Spatial dependencies are evaluated on demand; truncating the number of blending steps makes their expansion tractable. The stated constant cost concerns a region of fixed size and configuration, regardless of its position. Enlarging the region, increasing resolution or changing the number of evaluations still increases work. [Paper, sections 3.3–3.4](https://arxiv.org/html/2512.08309v4).
 
-### La chaîne utilisée dans Magna Urbis
+### The pipeline used in Magna Urbis
 
-Le port Rust calcule une **fenêtre finie de 40 × 40 km**, et non un monde infini navigable. Il enchaîne :
+The Rust port computes a **finite 40 × 40 km window**, not an infinitely navigable world. It runs:
 
-1. **Coarse** : structure régionale conditionnée par l'esquisse d'altitude et le climat, à une maille de 7 680 m.
-2. **Base** : champ latent à une maille de 240 m, conditionné par le coarse.
-3. **Decoder** : détail à la maille native de 30 m, puis reconstruction de l'altitude et rééchantillonnage en 1024² pour le banc.
+1. **Coarse**: regional structure conditioned on the altitude sketch and climate, at 7,680 m spacing.
+2. **Base**: latent field at 240 m spacing, conditioned on coarse.
+3. **Decoder**: detail at the native 30 m spacing, followed by altitude reconstruction and 1024² resampling for the bench.
 
-Le profil local est `coarse4` → base original en une évaluation → decoder étudiant distillé. Le planificateur remonte depuis la zone livrée pour déterminer les fenêtres nécessaires ; le mélange normalise leurs contributions pondérées. Le decoder seul ne remplace pas les informations régionales et latentes. [Planificateur](../rust/crates/neural/src/plan.rs) ; [chaîne](../rust/crates/neural/src/pipeline.rs) ; [reconstruction](../rust/crates/neural/src/reconstruct.rs).
+The local profile is `coarse4` → original base in one evaluation → distilled student decoder. The planner traces backwards from the delivered area to determine required windows; blending normalizes their weighted contributions. The decoder alone does not replace regional and latent information. [Planner](../rust/crates/neural/src/plan.rs); [pipeline](../rust/crates/neural/src/pipeline.rs); [reconstruction](../rust/crates/neural/src/reconstruct.rs).
 
-La théorie des modèles de diffusion distingue le réseau de débruitage, son conditionnement et le schéma d'échantillonnage. EDM et EDM2 apportent des formulations et des mécanismes de normalisation utilisés dans cette famille de réseaux. La distillation entraîne un étudiant à remplacer une chaîne plus coûteuse ; les modèles de consistance permettent notamment une génération en peu d'évaluations. Cela ne rend pas n'importe quel modèle original fiable en une passe. [Karras et al., 2022](https://arxiv.org/abs/2206.00364), [Karras et al., 2024](https://arxiv.org/abs/2312.02696), [Song et al., 2023](https://proceedings.mlr.press/v202/song23a.html).
+Diffusion-model theory distinguishes the denoising network, its conditioning and the sampling scheme. EDM and EDM2 provide formulations and normalization mechanisms used by this family of networks. Distillation trains a student to replace a more expensive chain; consistency models in particular allow generation in few evaluations. This does not make any original model reliable in one pass. [Karras et al., 2022](https://arxiv.org/abs/2206.00364), [Karras et al., 2024](https://arxiv.org/abs/2312.02696), [Song et al., 2023](https://proceedings.mlr.press/v202/song23a.html).
 
-L'esquisse règle les grandes formes et le climat oriente les structures apprises. Une petite caractéristique sous la résolution coarse n'est pas assurée de survivre. La surface neuronale est importée sans réappliquer l'érosion et la découpe côtière procédurales ; l'hydrologie constitue une étape séparée. [Esquisse](../rust/crates/neural/src/sketch.rs) ; [surface importée](../rust/crates/core/src/engine.rs).
+The sketch controls large shapes and climate guides learned structures. A small feature below coarse resolution is not guaranteed to survive. The neural surface is imported without reapplying procedural erosion and coastal cutting; hydrology is a separate stage. [Sketch](../rust/crates/neural/src/sketch.rs); [imported surface](../rust/crates/core/src/engine.rs).
 
-### Lien avec Neural Earth et Orogen
+### Relationship to Neural Earth and Orogen
 
-**Neural Earth**, développé dans le projet Infinite Map, combine la géographie planétaire de **World Orogen** et le raffinement appris de Terrain Diffusion. Orogen produit notamment continents, structures tectoniques, traitements d'érosion et climat ; Neural Earth les relie à l'exploration et aux couches cartographiques. Cette chaîne planétaire appartient à un projet distinct. [Neural Earth](https://github.com/dunkean/neural-earth) ; [World Orogen](https://github.com/raguilar011095/planet_heightmap_generation).
+**Neural Earth**, developed in Infinite Map, combines **World Orogen** planetary geography with Terrain Diffusion's learned refinement. Orogen produces continents, tectonic structures, erosion processing and climate; Neural Earth connects them to exploration and map layers. This planetary pipeline belongs to a separate project. [Neural Earth](https://github.com/dunkean/neural-earth); [World Orogen](https://github.com/raguilar011095/planet_heightmap_generation).
 
-L'objectif de Magna Urbis est d'y ajouter routes, établissements et villes. Cette intégration complète reste à réaliser. L'utilisation des mêmes modèles de relief, ou le partage d'un style de rendu, ne prouve pas que les villes sont déjà intégrées dans un monde planétaire.
+Magna Urbis aims to add roads, settlements and cities. Full integration remains to be done. Using the same terrain models or sharing a rendering style does not prove cities are already integrated into a planetary world.
 
-## 6. Implantations, routes, plans de villes et bâtiments
+## 6. Settlements, roads, city plans and buildings
 
-### Où placer les établissements et comment les relier
+### Where to place settlements and how to connect them
 
-Les implantations combinent constructibilité, pente, eau douce, côtes, position défensive, préférences culturelles et espacement. Une option démographique suit une loi rang-taille : `P_r ≈ P_1 / r^q`. Elle donne une distribution réglable, pas une prédiction historique ou économique. Les exclusions d'emprise évitent de traiter la population comme un simple nuage de points. [Placement](../rust/crates/core/src/settlements/placement.rs).
+Placement combines buildability, slope, freshwater, coasts, defensive position, cultural preferences and spacing. A demographic option follows a rank–size law: `P_r ≈ P_1 / r^q`. It provides an adjustable distribution, not a historical or economic prediction. Footprint exclusions avoid treating population as a mere point cloud. [Placement](../rust/crates/core/src/settlements/placement.rs).
 
-Le réseau régional sélectionne des liaisons sur un graphe de Delaunay, avec arbre couvrant et raccourcis. La recherche de trajet combine coûts du terrain, pentes, virages, obstacles et réutilisation des routes. Son état conserve une direction d'arrivée ; des mouvements plus variés que les huit voisins permettent de former des lacets. Les intersections sont ensuite réunies dans un graphe planaire. [Routes](../rust/crates/core/src/settlements/roads/mod.rs) ; [recherche](../rust/crates/core/src/settlements/roads/search.rs).
+The regional network selects links on a Delaunay graph using a spanning tree and shortcuts. Route search combines terrain costs, slopes, turns, obstacles and road reuse. Its state retains an arrival direction; moves more varied than the eight neighbors allow switchbacks. Intersections are then joined into a planar graph. [Roads](../rust/crates/core/src/settlements/roads/mod.rs); [search](../rust/crates/core/src/settlements/roads/search.rs).
 
-Cette approche appartient à la famille des chemins anisotropes à moindre coût : Galin et ses coauteurs montrent comment intégrer pente et obstacles dans la génération routière. Les classes et contraintes locales de Magna Urbis sont ses propres choix. [Galin et al., 2010](https://doi.org/10.1111/j.1467-8659.2009.01612.x).
+This approach belongs to the family of anisotropic least-cost paths: Galin and coauthors show how to incorporate slope and obstacles into road generation. Magna Urbis's local classes and constraints are its own choices. [Galin et al., 2010](https://doi.org/10.1111/j.1467-8659.2009.01612.x).
 
-### De la culture au graphe de rues
+### From culture to street graph
 
-Une ville ne se résume pas à une grille déformée. Le modèle TypeScript combine des morphologies et des phases de croissance : noyaux, axes, enceintes, extensions, places et équipements. Les familles organiques, bastides, médinas, plans chinois ou japonais et cultures fantasy imposent des règles différentes. Les recettes sont des approximations documentées, et leur mélange ne vaut pas reconstitution archéologique. [Cultures](../web/src/gen/urban/cultures.ts) ; [rues](../web/src/gen/urban/streets.ts) ; [catalogue d'établissements](catalogue_settlements_antiquite_moyen_age_rpg.md).
+A city is not just a distorted grid. The TypeScript model combines morphologies and growth phases: cores, axes, walls, extensions, squares and amenities. Organic families, bastides, medinas, Chinese or Japanese plans and fantasy cultures impose different rules. Recipes are documented approximations; mixing them does not constitute an archaeological reconstruction. [Cultures](../web/src/gen/urban/cultures.ts); [streets](../web/src/gen/urban/streets.ts); [settlement catalog](catalogue_settlements_antiquite_moyen_age_rpg.md).
 
-Deux références situent cette démarche : Parish et Müller séparent objectifs globaux et contraintes locales dans des L-systems urbains ; Chen et ses coauteurs utilisent des champs de tenseurs pour guider deux orientations principales de rues et éditer leur graphe. Elles expliquent les familles de méthodes ; les appeler ne signifie pas que Magna Urbis utilise leur solveur exact. [Parish et Müller, 2001](https://people.eecs.berkeley.edu/~sequin/CS285/PAPERS/Parish_Muller01.pdf) ; [Chen et al., 2008](https://www2.cs.uh.edu/~chengu/Publications/streetModeling/street_sig08.pdf).
+Two references situate this approach: Parish and Müller separate global goals and local constraints in urban L-systems; Chen and coauthors use tensor fields to guide two main street orientations and edit their graph. These explain families of methods; citing them does not mean Magna Urbis uses their exact solver. [Parish and Müller, 2001](https://people.eecs.berkeley.edu/~sequin/CS285/PAPERS/Parish_Muller01.pdf); [Chen et al., 2008](https://www2.cs.uh.edu/~chengu/Publications/streetModeling/street_sig08.pdf).
 
-Le port urbain Rust applique des données culturelles versionnées, utilise les accès régionaux et les terres sèches, route les axes puis subdivise les quartiers en îlots et parcelles. Les emprises, tissus de rues et logiques de croissance continuent d'évoluer. Les pentes sont contrôlées le long des segments ; les passages sur l'eau doivent correspondre aux franchissements acceptés. Les recalculs de parcelles conservent les rues et les îlots. [Profils](../rust/crates/core/src/urban/profiles.rs), [macroplan](../rust/crates/core/src/urban/macroplan.rs), [quartiers](../rust/crates/core/src/urban/quarters.rs), [parcelles](../rust/crates/core/src/urban/parcels.rs).
+The Rust urban port applies versioned cultural data, uses regional access and dry land, routes axes, then subdivides neighborhoods into blocks and parcels. Footprints, street fabrics and growth logic continue to evolve. Slopes are checked along segments; water crossings must correspond to accepted crossings. Parcel recomputation retains streets and blocks. [Profiles](../rust/crates/core/src/urban/profiles.rs), [macroplan](../rust/crates/core/src/urban/macroplan.rs), [neighborhoods](../rust/crates/core/src/urban/quarters.rs), [parcels](../rust/crates/core/src/urban/parcels.rs).
 
-### Géométrie et maisons
+### Geometry and houses
 
-Les îlots et lots demandent des opérations géométriques avec trous, intersections et façades explicites. Les invariants utiles sont la couverture de l'îlot, l'absence de recouvrement, l'accès à la rue et la contenance des bâtiments. Une somme d'aires correcte ne suffit pas à garantir une partition correcte.
+Blocks and lots require geometric operations with holes, intersections and explicit frontages. Useful invariants are block coverage, absence of overlap, street access and building containment. A correct sum of areas alone does not guarantee a correct partition.
 
-Le moteur de maisons Rust assemble des recettes de corps bâtis, cours, matériaux, niveaux et toitures, puis contrôle les contraintes géométriques et d'accès. Il peut refuser une configuration plutôt que produire une structure invalide. Son banc est indépendant ; construire une maison ne démontre pas que toutes les parcelles d'une ville sont déjà peuplées de bâtiments. [Moteur de maisons](../rust/crates/houses/src/lib.rs) ; [catalogue architectural](styles_architecturaux_mondiaux_city_mapper.md).
+The Rust house engine assembles recipes for building volumes, courtyards, materials, levels and roofs, then checks geometric and access constraints. It can reject a configuration instead of producing an invalid structure. Its bench is independent; building a house does not prove that all city parcels are already populated with buildings. [House engine](../rust/crates/houses/src/lib.rs); [architectural catalog](styles_architecturaux_mondiaux_city_mapper.md).
 
-## 7. Rust, WebAssembly, WebGPU et inférence neuronale
+## 7. Rust, WebAssembly, WebGPU and neural inference
 
-| Chemin d'exécution | Où tourne le calcul ? | Ce que cela implique |
+| Execution path | Where computation runs | Implication |
 | --- | --- | --- |
-| TypeScript | JavaScript du navigateur, avec workers | Application statique ; développement et build indépendants de Rust |
-| Rust → WASM | CPU du navigateur | Même cœur natif exposé par `wasm-bindgen`, appels par étapes et tableaux numériques |
-| Compute WebGPU | GPU du navigateur, shaders WGSL | Accélère certaines passes de terrain et de drainage ; demande un navigateur et un adaptateur compatibles |
-| Rust neuronal natif | Service local, GPU via Burn/wgpu | Référence conservée pour les anciens liens `source=neural` |
-| Neuronal WASM | Rust/WASM et moteur WebGPU direct de Neural Earth, dans un worker | Branché à Monde ; base NF4 B75, poids externes vérifiés et cache navigateur |
-| Neuronal Python | Service local PyTorch/CUDA | Branché à Monde ; base originale en une passe, même conditionnement régional préparé en Rust/WASM |
+| TypeScript | Browser JavaScript with workers | Static application; development and build independent of Rust |
+| Rust → WASM | Browser CPU | Same native core exposed through `wasm-bindgen`, staged calls and numeric arrays |
+| WebGPU compute | Browser GPU, WGSL shaders | Accelerates selected terrain and drainage passes; requires a compatible browser and adapter |
+| Native neural Rust | Local service, GPU via Burn/wgpu | Reference retained for legacy `source=neural` links |
+| Neural WASM | Rust/WASM and Neural Earth's direct WebGPU engine in a worker | Connected to World; NF4 B75 base, verified external weights and browser cache |
+| Neural Python | Local PyTorch/CUDA service | Connected to World; original base in one pass, same regional conditioning prepared in Rust/WASM |
 
-WebAssembly est un format d'exécution portable ; il n'active pas automatiquement le GPU. WebGPU expose les ressources et commandes GPU ; WGSL décrit les shaders. `wgpu` propose une abstraction utilisable en natif et sur le Web, tandis que Burn organise tenseurs, réseaux et backends de calcul. Les performances dépendent des transferts, des noyaux et des capacités du matériel. [Objectifs WASM](https://webassembly.org/docs/high-level-goals/), [spécification WGSL](https://www.w3.org/TR/WGSL/), [wgpu](https://docs.rs/wgpu/latest/wgpu/), [backends Burn](https://burn.dev/books/burn/building-blocks/backend.html).
+WebAssembly is a portable execution format; it does not automatically enable the GPU. WebGPU exposes GPU resources and commands; WGSL describes shaders. `wgpu` provides an abstraction usable natively and on the Web, while Burn organizes tensors, networks and compute backends. Performance depends on transfers, kernels and hardware capabilities. [WASM goals](https://webassembly.org/docs/high-level-goals/), [WGSL specification](https://www.w3.org/TR/WGSL/), [wgpu](https://docs.rs/wgpu/latest/wgpu/), [Burn backends](https://burn.dev/books/burn/building-blocks/backend.html).
 
-Les frontières du dépôt sont explicites : `crates/core` ignore le navigateur et le renderer ; `crates/wasm` expose ses fonctions ; `bridge` transporte et adapte les résultats à l'interface. Les shaders procéduraux ne sont pas des réseaux neuronaux. Le port neuronal est dans `crates/neural`, avec Burn 0.22 déclaré dans son manifeste ; les convolutions utilisent FP16 et des calculs de statistiques restent FP32. [Manifeste](../rust/crates/neural/Cargo.toml) ; [opérations GPU](../rust/crates/neural/src/gpu.rs).
+Repository boundaries are explicit: `crates/core` knows nothing of the browser or renderer; `crates/wasm` exposes its functions; `bridge` transports and adapts results to the interface. Procedural shaders are not neural networks. The neural port is in `crates/neural`, with Burn 0.22 declared in its manifest; convolutions use FP16 and some statistics computations remain FP32. [Manifest](../rust/crates/neural/Cargo.toml); [GPU operations](../rust/crates/neural/src/gpu.rs).
 
-Le service natif conserve les poids sur son GPU et fournit notamment `/status` et `/generate`. La réponse de relief contient des hauteurs FP32 en mètres, avec résolution et étendue définies. Depuis `web/`, `npm run neural:serve` lance ce chemin optionnel. Il nécessite les poids et un GPU compatible ; les poids et modules générés ne sont pas inclus dans Git. [Service](../rust/crates/neural/src/server.rs) ; [commandes](../web/package.json).
+The native service retains weights on its GPU and supplies `/status` and `/generate`, among other endpoints. Its terrain response contains FP32 heights in meters with defined resolution and extent. From `web/`, `npm run neural:serve` starts this optional path. It requires weights and a compatible GPU; generated weights and modules are not included in Git. [Service](../rust/crates/neural/src/server.rs); [commands](../web/package.json).
 
-La crate [neural-wasm](../rust/crates/neural-wasm/src/lib.rs) remplace l'ancien essai Burn/autotune par le moteur WebGPU direct partagé avec Neural Earth. Le rejeu navigateur 42 → 43 → 42 retrouve le même raster pour la même graine dans les cas contrôlés. Le [service Python](../web/scripts/neural_python.py) exécute les réseaux sur CUDA, avec des hooks qui vérifient le périphérique des entrées. Les deux modes utilisent des bases et des précisions différentes : leurs sorties ne sont pas interchangeables numériquement. Ces vérifications ciblées ne certifient ni toutes les graines, ni tous les GPU.
+The [neural-wasm](../rust/crates/neural-wasm/src/lib.rs) crate replaces the former Burn/autotune experiment with the direct WebGPU engine shared with Neural Earth. Browser replay 42 → 43 → 42 recovers the same raster for the same seed in controlled cases. The [Python service](../web/scripts/neural_python.py) runs networks on CUDA with hooks that verify input devices. The two modes use different bases and precisions: their outputs are not numerically interchangeable. These targeted checks certify neither every seed nor every GPU.
 
-## 8. Reproductibilité, rendu et limites
+## 8. Reproducibility, rendering and limitations
 
-Les coordonnées et altitudes locales sont en mètres ; les aires en mètres carrés. Le générateur procédural utilise des sous-graines nommées par étape et par objet, afin de ne pas redistribuer tous les tirages à chaque changement de contrôle. Le port RNG conserve le flux `sfc32` et le hachage UTF-16 de la référence TypeScript. La chaîne neuronale a son propre bruit portable. [RNG partagé](../rust/crates/random/src/lib.rs) ; [bruit neuronal](../rust/crates/neural/src/noise.rs).
+Local coordinates and elevations are in meters; areas are in square meters. The procedural generator uses named sub-seeds per stage and object so changing a control does not redistribute every random draw. The RNG port retains the TypeScript reference's `sfc32` stream and UTF-16 hash. The neural pipeline has its own portable noise. [Shared RNG](../rust/crates/random/src/lib.rs); [neural noise](../rust/crates/neural/src/noise.rs).
 
-La reproductibilité dépend de la version du moteur, des catalogues, des poids, de la configuration et du chemin CPU/GPU. FP16, BF16 et FP32 ne donnent pas nécessairement des sorties identiques bit à bit ; l'autotuning peut changer les noyaux. Un lien doit décrire les réglages appliqués à la carte affichée. Les brouillons, la caméra et les annotations n'ont pas tous le même rôle dans la génération.
+Reproducibility depends on engine, catalog and weight versions, configuration and CPU/GPU path. FP16, BF16 and FP32 do not necessarily produce bit-identical outputs; autotuning can change kernels. A link must describe the settings applied to the displayed map. Drafts, camera and annotations do not all play the same role in generation.
 
-Le rendu transforme les données en carte : couleurs de biomes, ombrage, courbes de niveau, textures, végétation et symboles. La résolution des diagnostics et des masques impose une limite géométrique ; un zoom plus fin n'ajoute pas automatiquement de l'information physique. La génération, les adaptations, les transferts, la préparation de scène et l'affichage doivent être mesurés séparément. [Renderer actuel](../web/src/render) ; [interfaces et workers](../web/src/ui).
+Rendering turns data into a map: biome colors, shading, contours, textures, vegetation and symbols. Diagnostic and mask resolution imposes a geometric limit; finer zoom does not automatically add physical information. Generation, adaptations, transfers, scene preparation and display must be measured separately. [Current renderer](../web/src/render); [interfaces and workers](../web/src/ui).
 
-L'interface actuelle est destinée à être conservée. Le renderer et les contrats des bancs restent transitoires. La priorité d'intégration est de relier des étapes cohérentes tout en gardant leur indépendance ; les cartes produites restent des créations procédurales pour la cartographie et le jeu, avec des simplifications physiques, démographiques et historiques explicites.
+The current interface is intended to be retained. The renderer and bench contracts remain transitional. Integration prioritizes connecting coherent stages while preserving their independence; produced maps remain procedural creations for cartography and games, with explicit physical, demographic and historical simplifications.
 
-## 9. Références
+## 9. References
 
-Sources consultées le 14 octobre 2026. Les articles fondent ou situent les méthodes ; les fichiers liés dans les sections décrivent leur adaptation locale.
+Sources consulted October 14, 2026. The papers establish or situate methods; files linked in the sections describe their local adaptation.
 
-| Référence | Contribution pertinente |
+| Reference | Relevant contribution |
 | --- | --- |
-| [Perlin, K. (2002), *Improving Noise*](https://mrl.cs.nyu.edu/~perlin/paper445.pdf) | Bruits cohérents de gradient ; contexte du bruit simplex local |
-| [Barnes, R., Lehman, C. et Mulla, D. (2014), *Priority-Flood: An Optimal Depression-Filling and Watershed-Labeling Algorithm for Digital Elevation Models*](https://doi.org/10.1016/j.cageo.2013.04.024) | Dépressions et bassins ; Computers & Geosciences 62, 117–127 |
-| [Tarboton, D. (1997), *A New Method for the Determination of Flow Directions and Upslope Areas in Grid Digital Elevation Models*](https://doi.org/10.1029/96WR03137) | D∞ ; Water Resources Research 33(2), 309–319 |
-| [Braun, J. et Willett, S. D. (2013), *A Very Efficient O(n), Implicit and Parallel Method to Solve the Stream Power Equation Governing Fluvial Incision and Landscape Evolution*](https://doi.org/10.1016/j.geomorph.2012.10.008) | Incision implicite ; Geomorphology 180–181, 170–179 |
-| [Barnes, R., Callaghan, K. L. et Wickert, A. D. (2021), *Computing Water Flow through Complex Landscapes — Part 3: Fill–Spill–Merge*](https://esurf.copernicus.org/articles/9/105/2021/) | Routage dans les hiérarchies de dépressions ; Earth Surface Dynamics 9, 105–121 |
-| [Howard, A. D. et Knutson, T. R. (1984), *Sufficient Conditions for River Meandering: A Simulation Approach*](https://doi.org/10.1029/WR020i011p01659) | Référence comparative sur les méandres ; Water Resources Research 20(11), 1659–1667 |
-| [Goslin, A. (2025/2026), *InfiniteDiffusion: Bridging Learned Fidelity and Procedural Utility for Open-World Terrain Generation*](https://arxiv.org/abs/2512.08309) | Génération non bornée, paresseuse et cohérente ; [code des auteurs](https://github.com/xandergos/terrain-diffusion) |
-| [Karras et al. (2022), *Elucidating the Design Space of Diffusion-Based Generative Models*](https://arxiv.org/abs/2206.00364) | Formulation EDM et échantillonnage |
-| [Karras et al. (2024), *Analyzing and Improving the Training Dynamics of Diffusion Models*](https://arxiv.org/abs/2312.02696) | Architecture EDM2 et préservation des magnitudes |
-| [Song, Y., Dhariwal, P., Chen, M. et Sutskever, I. (2023), *Consistency Models*](https://proceedings.mlr.press/v202/song23a.html) | Génération en peu d'évaluations et distillation ; ICML, PMLR 202 |
-| [Galin, E., Peytavie, A., Maréchal, N. et Guérin, E. (2010), *Procedural Generation of Roads*](https://doi.org/10.1111/j.1467-8659.2009.01612.x) | Chemins anisotropes et contraintes de terrain ; Computer Graphics Forum 29(2), 429–438 |
-| [Parish, Y. I. H. et Müller, P. (2001), *Procedural Modeling of Cities*](https://people.eecs.berkeley.edu/~sequin/CS285/PAPERS/Parish_Muller01.pdf) | Objectifs globaux et contraintes locales ; SIGGRAPH, 301–308 |
-| [Chen, G., Esch, G., Wonka, P., Müller, P. et Zhang, E. (2008), *Interactive Procedural Street Modeling*](https://www2.cs.uh.edu/~chengu/Publications/streetModeling/street_sig08.pdf) | Champs de tenseurs et graphes de rues ; ACM Transactions on Graphics 27(3), article 103 |
+| [Perlin, K. (2002), *Improving Noise*](https://mrl.cs.nyu.edu/~perlin/paper445.pdf) | Coherent gradient noise; context for local simplex noise |
+| [Barnes, R., Lehman, C. and Mulla, D. (2014), *Priority-Flood: An Optimal Depression-Filling and Watershed-Labeling Algorithm for Digital Elevation Models*](https://doi.org/10.1016/j.cageo.2013.04.024) | Depressions and basins; Computers & Geosciences 62, 117–127 |
+| [Tarboton, D. (1997), *A New Method for the Determination of Flow Directions and Upslope Areas in Grid Digital Elevation Models*](https://doi.org/10.1029/96WR03137) | D∞; Water Resources Research 33(2), 309–319 |
+| [Braun, J. and Willett, S. D. (2013), *A Very Efficient O(n), Implicit and Parallel Method to Solve the Stream Power Equation Governing Fluvial Incision and Landscape Evolution*](https://doi.org/10.1016/j.geomorph.2012.10.008) | Implicit incision; Geomorphology 180–181, 170–179 |
+| [Barnes, R., Callaghan, K. L. and Wickert, A. D. (2021), *Computing Water Flow through Complex Landscapes — Part 3: Fill–Spill–Merge*](https://esurf.copernicus.org/articles/9/105/2021/) | Routing through depression hierarchies; Earth Surface Dynamics 9, 105–121 |
+| [Howard, A. D. and Knutson, T. R. (1984), *Sufficient Conditions for River Meandering: A Simulation Approach*](https://doi.org/10.1029/WR020i011p01659) | Comparative meander reference; Water Resources Research 20(11), 1659–1667 |
+| [Goslin, A. (2025/2026), *InfiniteDiffusion: Bridging Learned Fidelity and Procedural Utility for Open-World Terrain Generation*](https://arxiv.org/abs/2512.08309) | Unbounded, lazy and consistent generation; [authors' code](https://github.com/xandergos/terrain-diffusion) |
+| [Karras et al. (2022), *Elucidating the Design Space of Diffusion-Based Generative Models*](https://arxiv.org/abs/2206.00364) | EDM formulation and sampling |
+| [Karras et al. (2024), *Analyzing and Improving the Training Dynamics of Diffusion Models*](https://arxiv.org/abs/2312.02696) | EDM2 architecture and magnitude preservation |
+| [Song, Y., Dhariwal, P., Chen, M. and Sutskever, I. (2023), *Consistency Models*](https://proceedings.mlr.press/v202/song23a.html) | Few-evaluation generation and distillation; ICML, PMLR 202 |
+| [Galin, E., Peytavie, A., Maréchal, N. and Guérin, E. (2010), *Procedural Generation of Roads*](https://doi.org/10.1111/j.1467-8659.2009.01612.x) | Anisotropic paths and terrain constraints; Computer Graphics Forum 29(2), 429–438 |
+| [Parish, Y. I. H. and Müller, P. (2001), *Procedural Modeling of Cities*](https://people.eecs.berkeley.edu/~sequin/CS285/PAPERS/Parish_Muller01.pdf) | Global goals and local constraints; SIGGRAPH, 301–308 |
+| [Chen, G., Esch, G., Wonka, P., Müller, P. and Zhang, E. (2008), *Interactive Procedural Street Modeling*](https://www2.cs.uh.edu/~chengu/Publications/streetModeling/street_sig08.pdf) | Tensor fields and street graphs; ACM Transactions on Graphics 27(3), article 103 |
 
-Documentation logicielle : [WebAssembly](https://webassembly.org/docs/high-level-goals/), [WGSL](https://www.w3.org/TR/WGSL/), [wgpu](https://docs.rs/wgpu/latest/wgpu/), [Burn](https://burn.dev/books/burn/). Projets associés : [Terrain Diffusion](https://github.com/xandergos/terrain-diffusion), [World Orogen](https://github.com/raguilar011095/planet_heightmap_generation), [Neural Earth](https://github.com/dunkean/neural-earth).
+Software documentation: [WebAssembly](https://webassembly.org/docs/high-level-goals/), [WGSL](https://www.w3.org/TR/WGSL/), [wgpu](https://docs.rs/wgpu/latest/wgpu/), [Burn](https://burn.dev/books/burn/). Related projects: [Terrain Diffusion](https://github.com/xandergos/terrain-diffusion), [World Orogen](https://github.com/raguilar011095/planet_heightmap_generation), [Neural Earth](https://github.com/dunkean/neural-earth).

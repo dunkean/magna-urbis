@@ -1,112 +1,43 @@
-# Viewer de comparaison 40 × 40 km
+# 40 × 40 km comparison viewer
 
-## Sol visible : N1–N4 et textures
+> The [original French version](TILE_VIEWER_FR.md) is preserved for reference.
 
-Le menu **Vue · Sol texturé** affiche maintenant le sol sans arbres, canopée ni
-constructions, sur le même relief en Dessus et en 3D. **Vue · Render** conserve
-la carte d'origine ; **Vue · Types de sol** montre le classement avec des couleurs
-de diagnostic. **Vue · Support minéral** retire les couvertures pour comparer le
-substrat à la surface finale. Les calques d'Informations fonctionnent sur ces vues.
+## Visible ground: N1–N4 and textures
 
-La composition suit maintenant trois étages : **support minéral → surface de
-litière/herbe/mousse → neige**. Les textures de couvert ne se partagent plus le
-même budget que les roches et graviers. Une couverture dense masque leur couleur ;
-les affleurements et les versants très exposés la limitent. La vue du support
-permet de voir les informations conservées sous ces couvertures.
+The **View · Textured ground** menu displays ground without trees, canopy or buildings, on the same terrain in Top and 3D. **View · Render** retains the original map; **View · Soil types** shows classification with diagnostic colours. **View · Mineral support** removes covers to compare substrate with the final surface. Information layers work on these views.
 
-**Nouvelles variantes de textures** tire un nouvel asset parmi les candidats de
-chaque type, une seule fois pour tout le terrain. La classification des zones ne
-bouge pas. La palette, les échelles et les hashes préparés sont conservés dans
-`user://ground-texture-palettes-v1.json`. Les six climats d'une famille partagent
-la même seed et les mêmes choix de textures. Un type à candidat unique garde sa
-source. Le survol du curseur identifie le type dominant et l'asset effectivement
-utilisé. La molette permet maintenant une vue jusqu'à environ 12 m de large.
+Composition now follows three stages: **mineral support → litter/grass/moss surface → snow**. Cover textures no longer share the same budget as rocks and gravel. Dense cover masks their colour; outcrops and highly exposed slopes limit it. The support view reveals information retained beneath these covers.
 
-Le catalogue local `godot-render/ground_texture_catalogue.json` reprend les
-**90 types / 142 candidats** de l'étude, avec leurs sources et licences CC0.
-Les packs sont préparés en images de 512² ; les téléchargements originaux et
-leurs hashes sont conservés dans `materials/cache/` et `materials/prepared/`.
-Godot utilise uniquement cette bibliothèque locale, sans téléchargement.
+**New texture variants** draws a new asset among the candidates for each type, once for the entire terrain. Zone classification does not change. Palette, scales and prepared hashes are retained in `user://ground-texture-palettes-v1.json`. The six climates of a family share the same seed and texture choices. A type with a single candidate keeps its source. Cursor hover identifies the dominant type and asset actually used. The wheel now allows views down to approximately 12 m wide.
 
-| Bloc | Données produites |
+The local `godot-render/ground_texture_catalogue.json` contains the study's **90 types / 142 candidates**, with sources and CC0 licences. Packs are prepared as 512² images; original downloads and their hashes are retained in `materials/cache/` and `materials/prepared/`. Godot uses only this local library, without downloading.
+
+| Block | Produced data |
 | --- | --- |
-| N1 | Roche exposée, couverture de matrice et de fragments, rugosité structurelle ; budgets dont la somme vaut 1 |
-| N2 | Stocks séparés sable/fines/graviers/pierres/blocs, taille, arrondi et mélange de provenance du dépôt ; aucun sable créé par la seule aridité |
-| N3 | Distances signées rivière/lac/mer, connexion fluviale, emprise mouillée des rivières rasterisée depuis les polygones vectoriels conservés, potentiel de berges émergées |
-| N4 | État Render avec sa neige canonique, états sec/humide ; presets supplémentaires de neige fraîche, irrégulière, compacte, ancienne, ventée, partielle, fonte et deux glaces |
+| N1 | Exposed rock, matrix and fragment cover, structural roughness; budgets summing to 1 |
+| N2 | Separate sand/fines/gravel/stones/boulder stocks, deposit size, roundness and provenance mix; no sand created by aridity alone |
+| N3 | Signed river/lake/sea distances, river connection, wet river footprint rasterised from retained vector polygons, potential exposed banks |
+| N4 | Render state with canonical snow, dry/wet states; additional fresh, irregular, compact, old, windblown, partial and melting snow presets and two ice presets |
 
-Treize nouveaux diagnostics s'ajoutent à Informations : **47 calques** en comptant
-les cinq hydrologiques et les 29 précédents. Les données FP32 sont archivées dans
-`surface-grids.bin.gz`, séparément des diagnostics antérieurs. Les emprises fines
-des rivières et de neige Render sont conservées en 4096² ; les autres champs
-restent à 1334². Les deux nouveaux diagnostics de surface montrent sa couverture
-et le masque de neige. Les diagnostics portent le préfixe `surface-info-` pour ne
-jamais écraser les masques canoniques.
+Thirteen new diagnostics join Information: **47 layers**, including five hydrological and the previous 29. FP32 data are archived in `surface-grids.bin.gz`, separately from earlier diagnostics. Fine river and Render-snow footprints are retained at 4096²; other fields remain at 1334². The two new surface diagnostics show its cover and snow mask. Diagnostics use the `surface-info-` prefix so canonical masks are never overwritten.
 
-Les préférences forestières, prairiales, steppiques et de savane sont dérivées des
-entrées environnementales ; elles ne prétendent pas retrouver une canopée exacte
-de l'ancien Render. Un profil d'apparence global, stable par seed et enregistré
-dans `tile.json`, départage les préférences non mesurées. Il ne dépend pas du
-bouton de variantes. Les cinq parents géologiques gardent vingt profils rocheux
-de base et deux profils colonisés ; aucune nouvelle lithologie n'est inventée.
+Forest, grassland, steppe and savanna preferences derive from environmental inputs; they do not claim to recover the exact canopy of the old Render. A global appearance profile, stable by seed and recorded in `tile.json`, resolves unmeasured preferences. It is independent of the variants button. The five geological parents retain twenty base rock profiles and two colonised profiles; no new lithology is invented.
 
-Le classement normalise les recettes dans leurs budgets physiques. Pour limiter
-les textures lues, le support conserve deux profils rocheux, une recette de
-fragments et trois recettes de matrice minérale. Les budgets roche/fragments/
-matrice sont quantifiés ensemble à une somme de 255, puis répartis dans leurs
-slots : l'erreur par budget reste inférieure à 1/255. Au-dessus, la surface porte
-trois proportions continues : litière, herbacé et humide/mousse. Chacun possède
-sa recette dominante et une couverture séparée. Le shader interpole les réponses
-de quatre cellules voisines, jamais leurs IDs.
+Classification normalises recipes within their physical budgets. To limit texture reads, support retains two rock profiles, one fragment recipe and three mineral matrix recipes. Rock/fragment/matrix budgets are quantised together to sum to 255, then distributed among their slots: error per budget remains below 1/255. Above that, surface has three continuous proportions: litter, herbaceous and wet/moss. Each has its dominant recipe and separate cover. The shader interpolates responses of four neighbouring cells, never their IDs.
 
-L'humidité d'apparence est filtrée sur 110 m, l'organique sur 85 m et les scores
-sur 75 m avant la réduction des recettes. Les champs hydrologiques de référence,
-les niveaux d'eau et les polygones des rivières restent inchangés. Le filtrage des
-entrées est normalisé hors eaux permanentes. Les proportions forestière/herbacée/
-mousse restent séparées pour éviter qu'un changement de rang ne recrée une
-frontière brusque de prairie.
+Appearance moisture is filtered over 110 m, organic matter over 85 m and scores over 75 m before recipe reduction. Reference hydrological fields, water levels and river polygons remain unchanged. Input filtering is normalised outside permanent water. Forest/herbaceous/moss proportions remain separate so a rank change does not recreate an abrupt grassland boundary.
 
-Au survol, la couleur est la moyenne linéaire de l'asset préparé et recoloré.
-Au zoom, le même asset apporte couleur, normales OpenGL et rugosité ; la hauteur
-module seulement la micro-réponse, sans déplacer le relief. Les minéraux reçoivent
-une palette resserrée dont les moyennes sont communes aux profils d'un même
-parent : la succession géologique procédurale ne domine plus la couleur au
-survol. Le recalage affine conserve cette même moyenne au zoom, avec un contraste
-borné. Feuilles, herbes, mousses et neige gardent leurs palettes propres.
-Les normales du relief suivent le gradient B-spline pour éviter
-les facettes visibles. Les strates suivent leur orientation continue ; les rides
-de sable et de neige utilisent le vent régional déclaré. Les coordonnées sont
-physiques et fixes, indépendantes de la caméra.
+At overview scale, colour is the linear mean of the prepared, recoloured asset. Zoomed in, the same asset supplies colour, OpenGL normals and roughness; height modulates only micro-response, without displacing terrain. Minerals receive a narrower palette with shared means across profiles of a parent: procedural geological succession no longer dominates overview colour. Affine adjustment preserves that same mean when zoomed in, with bounded contrast. Leaves, grass, moss and snow retain their own palettes. Terrain normals follow the B-spline gradient to avoid visible facets. Strata follow their continuous orientation; sand and snow ripples use the declared regional wind. Coordinates are physical and fixed, independent of camera.
 
-Le tuilage utilise une grille triangulaire avec trois patches aux translations
-et rotations déterministes, selon la technique décrite dans
-[RENDER_REVIEW §3.1](../../../magna-urbis-height-chain-budget/docs/RENDER_REVIEW.md)
-et [RENDER_SURFACE_DESIGN §7.2](../../../magna-urbis-height-chain-budget/docs/RENDER_SURFACE_DESIGN.md).
-Les UV, dérivées, couleur, hauteur et rugosité suivent
-les mêmes transformations et poids ; les normales tangentes sont tournées en
-sens inverse. Les matières orientées gardent leur direction avec une petite
-dispersion. Une correction de variance limitée à 1,4 réduit la perte de contraste.
-C'est une correction approchée, sans LUT de conservation exacte d'histogramme.
+Tiling uses a triangular grid with three patches at deterministic translations and rotations, following the technique described in [RENDER_REVIEW §3.1](../../../magna-urbis-height-chain-budget/docs/RENDER_REVIEW.md) and [RENDER_SURFACE_DESIGN §7.2](../../../magna-urbis-height-chain-budget/docs/RENDER_SURFACE_DESIGN.md). UVs, derivatives, colour, height and roughness follow the same transformations and weights; tangent normals rotate inversely. Oriented materials retain their direction with small dispersion. Variance correction limited to 1.4 reduces contrast loss. This is an approximate correction, without an exact histogram-preserving LUT.
 
-Le soleil Godot projette les ombres du relief, avec une carte directionnelle de
-8192² et une portée adaptée à la caméra. L'ambiant réduit et l'occlusion calculée
-sur huit horizons du DEM rendent les creux lisibles ; cette occlusion ne remplace
-pas les ombres portées. L'ancien Render reste affiché sans nouvel éclairage.
+The Godot sun casts terrain shadows, using an 8192² directional map with camera-adapted range. Reduced ambient light and occlusion computed over eight DEM horizons make hollows legible; this occlusion does not replace cast shadows. The old Render remains displayed without new lighting.
 
-**État Render** superpose automatiquement le masque de neige calculé par le
-shader Render d'origine, avant son éclairage, à partir du même DEM et du même
-climat. `ground_render_snow.mjs` instrumente uniquement un passage GPU hors ligne :
-aucun pixel blanc de la carte n'est interprété comme de la neige. Le masque et
-ses hashes sont conservés ; le sol sous-jacent reste disponible.
+**Render state** automatically overlays the snow mask computed by the original Render shader, before its lighting, from the same DEM and climate. `ground_render_snow.mjs` instruments only an offline GPU pass: no white pixel in the map is interpreted as snow. The mask and its hashes are retained; underlying ground remains available.
 
-Les presets neige/glace supplémentaires sont des états de test avec une anomalie
-froide de scène déclarée de −18 °C. Sec et Humide conservent aussi la neige Render.
-Cela reste une apparence de scène, sans simulation d'histoire glaciaire. Sec déclare un
-cycle de dessiccation pour autoriser les petites fissures. Les niveaux d'eau et
-la géométrie restent inchangés. Les berges sont des potentiels dérivés, pas des
-bancs observés ; aucune histoire glaciaire, tourbeuse ou saline de 4.2 n'est exigée.
+Additional snow/ice presets are test states with a declared scene cold anomaly of −18 °C. Dry and Wet also retain Render snow. This remains scene appearance, without glacial history simulation. Dry declares a desiccation cycle to permit small cracks. Water levels and geometry remain unchanged. Banks are derived potentials, not observed bars; no glacial, peat or saline history from 4.2 is required.
 
-Préparation depuis ce worktree, après les données de relief/hydrologie/sol :
+Prepare from this worktree after terrain/hydrology/ground data:
 
 ```powershell
 node godot-render/tools/ground_water_masks.mjs
@@ -118,192 +49,69 @@ python godot-render/tools/validate_ground_surface.py
 ./Test-Render.ps1
 ```
 
-La préparation PBR est la seule étape qui accède à Internet. L'extraction du
-masque de neige demande la page du Render de référence servie localement sur
-`http://127.0.0.1:5203`, avec Edge/Playwright ; aucun service neuronal n'est requis.
-Le viewer Godot utilise ensuite les fichiers conservés, sans serveur.
-Un téléchargement JPG indisponible
-peut utiliser le pack PNG du même asset. Les scripts sont relançables et gardent
-les sorties complètes dont l'identité est inchangée. `--tile mountains--temperate`
-permet de limiter les compilateurs de carte et le validateur à une tuile.
+PBR preparation is the only step accessing the Internet. Snow-mask extraction requires the reference Render page served locally at `http://127.0.0.1:5203`, with Edge/Playwright; no neural service is required. The Godot viewer then uses retained files without a server. An unavailable JPG download may use the PNG pack of the same asset. Scripts can be rerun and retain complete outputs whose identity is unchanged. `--tile mountains--temperate` restricts map compilers and validator to one tile.
 
-Vérifications : `test_ground_surface.py` contrôle les budgets, les matières
-admissibles et les états ; `validate_ground_surface.py` vérifie les archives,
-les hashes, les 42 tuiles et les 142 assets. Le test GPU
-`res://tests/ground_textures_test.gd` contrôle vues, presets, stabilité de palette,
-changement visible des variantes et conservation de la classification.
-`ground_quality_test.gd -- --tile mountains--cold` isole aussi les ombres, la
-couverture, la neige et un matériau plan. `validate_ground_quality.py` compare
-sa synthèse au tuilage périodique de référence, au pas réel de l'asset, et vérifie
-la dérive de moyenne et de contraste.
+Checks: `test_ground_surface.py` checks budgets, admissible materials and states; `validate_ground_surface.py` verifies archives, hashes, all 42 tiles and 142 assets. GPU test `res://tests/ground_textures_test.gd` checks views, presets, palette stability, visible variant changes and classification preservation. `ground_quality_test.gd -- --tile mountains--cold` also isolates shadows, cover, snow and a planar material. `validate_ground_quality.py` compares its summary with reference periodic tiling at actual asset spacing and checks mean and contrast drift.
 
-## Navigation et données de référence
+## Navigation and reference data
 
-Double-cliquer `Test-Render.cmd`, ou lancer `./Test-Render.ps1` sans argument.
-Le projet `godot-render/project.godot` ouvre aussi directement la démo.
+Double-click `Test-Render.cmd`, or run `./Test-Render.ps1` with no arguments. The `godot-render/project.godot` project also opens the demo directly.
 
-Une scène 3D, un maillage et un matériau sont conservés pour les deux vues.
-Au démarrage, la caméra est verticale et orthographique. Le bouton « Passer en
-3D » ou Tab active la perspective ; revenir à la carte garde le centre et la
-largeur de vue. La dernière orientation orbitale est mémorisée.
+One 3D scene, mesh and material are retained for both views. At startup the camera is vertical and orthographic. The “Switch to 3D” button or Tab enables perspective; returning to the map retains centre and view width. The last orbital orientation is remembered.
 
-- Gauche ou milieu + glisser : déplacement latéral.
-- Droit ou Alt + gauche + glisser : orbite, avec entrée automatique en 3D.
-- Molette : zoom centré.
-- ZQSD / WASD physiques ou flèches : déplacement ; Maj accélère.
-- R : recentrer ; H : masquer le panneau ; Échap : quitter.
-- Menus relief et climat, liste des 42 combinaisons, boutons précédent/suivant.
-- Le changement de tuile conserve la position XY, le zoom et la projection.
-- La règle graduée, en bas à gauche, suit le zoom. En perspective elle mesure
-  la distance horizontale au centre de la vue, à l'altitude du pivot.
-- En bas à droite, l'altitude et les coordonnées sont celles de l'intersection
-  du rayon du curseur avec les triangles du terrain affiché. Hors tuile : « — ».
-  La surface de la mer est à 0 m.
+- Left or middle drag: pan.
+- Right or Alt + left drag: orbit, automatically entering 3D.
+- Wheel: centred zoom.
+- Physical ZQSD / WASD or arrows: move; Shift accelerates.
+- R: recenter; H: hide panel; Escape: quit.
+- Terrain and climate menus, list of 42 combinations, previous/next buttons.
+- Changing tile retains XY position, zoom and projection.
+- The bottom-left ruler follows zoom. In perspective it measures horizontal distance at the centre of the view, at pivot elevation.
+- At bottom right, elevation and coordinates are the intersection of the cursor ray with displayed terrain triangles. Outside the tile: “—”. Sea surface is at 0 m.
 
-Le catalogue contient 7 reliefs × 6 climats, sur 40 000 m de côté. Default
-correspond au preset tempéré existant (18 °C, 1 000 mm/an). Les trois familles
-côtières demandent une côte sud au conditionnement neuronal. Chaque combinaison
-a réellement été générée par le service Python/CUDA, avec les trois modèles
-`original`. Une seed par famille permet les comparaisons de climat.
+The catalogue contains 7 terrain forms × 6 climates on a 40,000 m square. Default corresponds to the existing temperate preset (18 °C, 1,000 mm/year). The three coastal families request a south coast in neural conditioning. Every combination was actually generated by the Python/CUDA service with all three `original` models. One seed per family enables climate comparisons.
 
-Chaque dossier dans `godot-render/tiles/` contient le heightfield FP32 1334²,
-son SHA-256, les paramètres et la provenance neuronale, ainsi qu'une carte
-4096² produite par le Render web existant. La scène affiche cette carte sur un
-maillage 1335², déplacé par le heightfield avec interpolation B-spline cubique,
-sans exagération verticale. La mer est plane à zéro. Le pivot suit la hauteur
-locale afin que le zoom reste au-dessus du terrain.
+Each folder in `godot-render/tiles/` contains the 1334² FP32 heightfield, its SHA-256, neural parameters and provenance, and a 4096² map produced by the existing web Render. The scene displays that map on a 1335² mesh displaced by the heightfield using cubic B-spline interpolation, without vertical exaggeration. The sea is flat at zero. The pivot follows local height so zoom stays above terrain.
 
-La chaîne complète est `coarse → base → decoder`, avec les modèles originaux.
-Le checkpoint du décodeur est natif à 30 m. Le mode `outputResolution=native`
-conserve cette définition : 1334 échantillons sur 40 km, soit 29,985 m par
-échantillon. Il évite la réduction historique à 1024² (39,0625 m) et le maillage
-plus grossier de 513². La légère interpolation de la grille native de 30 m vers
-le domaine exact de 40 km ne crée pas de nouvelle information neuronale.
-Chaque descripteur conserve `decoderNativeCell`, `outputResolution`, les trois
-étages exécutés et `nativeDefinitionRetained`. La génération refuse une réponse
-qui n'atteste pas cette définition.
+The complete chain is `coarse → base → decoder`, with original models. The decoder checkpoint is native at 30 m. `outputResolution=native` retains that definition: 1,334 samples over 40 km, or 29.985 m per sample. It avoids the historical reduction to 1024² (39.0625 m) and coarser 513² mesh. Slight interpolation from the native 30 m grid to the exact 40 km domain does not create new neural information. Each descriptor retains `decoderNativeCell`, `outputResolution`, the three executed stages and `nativeDefinitionRetained`. Generation rejects a response that does not attest this definition.
 
-C'est la première base d'exploration : couleur et éclairage de la carte sont
-précalculés, la texture ne gagne pas de détail au zoom. Les 42 terrains passent
-désormais dans la chaîne **vector** du Terrain Bench : drainage priority-flood,
-bilan des lacs Fill–Spill–Merge et rivières vectorielles (méandres, bras, deltas).
-Le bilan utilise la température, les précipitations et l'évaporation du climat.
-Le seuil de rivière vaut `min(16 ; 4,8 × √(300 / max(3, ruissellement)))` km² : les milieux
-arides exigent un bassin plus grand, les tropiques montrent davantage de cours
-d'eau. La génération vérifie nombre et longueur aride < tropical pour les sept
-familles. Aucun lac artificiel n'est ajouté si le relief et le bilan ne le permettent.
+This is the first exploration baseline: map colour and lighting are precomputed, so the texture gains no detail when zooming in. All 42 terrains now pass through Terrain Bench's **vector** chain: priority-flood drainage, Fill–Spill–Merge lake balance and vector rivers (meanders, branches, deltas). Balance uses climate temperature, precipitation and evaporation. The river threshold is `min(16 ; 4.8 × √(300 / max(3, runoff)))` km²: arid environments require a larger basin, while the tropics show more watercourses. Generation checks arid < tropical in count and length for all seven families. No artificial lake is added unless terrain and balance allow it.
 
-`height.f32` et son hash conservent le décodeur brut. `surface.f32` relève les
-cellules lacustres à leur niveau hydraulique pour la vue 3D. `water.json` conserve
-les polylignes et leur topologie ; `water.svg` contient uniquement des vecteurs,
-sans image incorporée. Le Render web compose ces eaux sur la carte 4096².
+`height.f32` and its hash retain the raw decoder output. `surface.f32` raises lake cells to hydraulic level for the 3D view. `water.json` retains polylines and topology; `water.svg` contains vectors only, without embedded image. Web Render composes these waters onto the 4096² map.
 
-La combo **Informations** superpose des calques à la même surface, dans les deux
-projections : bassins versants, accumulation/ruissellement, réservoirs potentiels
-(profondeur des dépressions sous leur seuil), bilan des lacs ouverts/fermés et
-directions d'écoulement. Le curseur règle leur opacité ; « Aucun calque » rétablit
-la carte. La sélection est conservée au changement de tuile. Une légende décrit
-les couleurs. Les réservoirs potentiels sont des dépressions topographiques,
-pas des barrages construits ni une simulation de retenues aménagées.
+The **Information** selector overlays layers on the same surface in both projections: watersheds, accumulation/runoff, potential reservoirs (depression depth below threshold), balance of open/closed lakes and flow directions. The slider adjusts opacity; “No layer” restores the map. Selection is retained when changing tile. A legend describes colours. Potential reservoirs are topographic depressions, not built dams or a simulation of engineered impoundments.
 
-Les PNG transparents des calques sont dérivés des calculs conservés dans
-`hydrology-grids.bin.gz` : bassins, receveurs, accumulation, niveaux de remplissage,
-masque marin, lacs, niveaux et types des lacs. Le descripteur fournit types,
-offsets et unités spatiales ; les flottants sont FP32 et les entiers 32 bits,
-little-endian. Aucun calcul hydrologique ne dépend de la caméra.
-Le viewer fonctionne ensuite hors ligne, sans service ni régénération.
-L'ancienne lecture exacte de fixture 2D reste accessible avec `-Scene`.
+Transparent layer PNGs derive from calculations retained in `hydrology-grids.bin.gz`: basins, receivers, accumulation, fill levels, sea mask, lakes, lake levels and types. The descriptor supplies types, offsets and spatial units; floats are FP32 and integers are 32-bit, little-endian. No hydrology computation depends on the camera. The viewer then runs offline, without service or regeneration. The old exact 2D fixture reader remains available with `-Scene`.
 
-### Étape 1 : contexte du sol (§5.1–5.4)
+### Step 1: ground context (§5.1–5.4)
 
-Les cinq diagnostics hydrologiques sont complétés par **29 calques du sol**
-sur chacune des 42 tuiles. Ils partagent la grille canonique 1334² (~30 m),
-les coordonnées et le relief des vues Dessus et 3D. La sélection persiste au
-changement de tuile ; les catégories ont des légendes avec pastilles colorées,
-les champs continus affichent leurs plages et unités. L'opacité règle la
-superposition sur la carte Render ; « Aucun calque » rétablit le fond.
+The five hydrology diagnostics are supplemented by **29 ground layers** on each of the 42 tiles. They share the canonical 1334² grid (~30 m), coordinates and terrain of Top and 3D views. Selection persists when changing tile; categories have legends with colour swatches, continuous fields show ranges and units. Opacity controls overlay on the Render map; “No layer” restores the background.
 
-| Partie | Calques ajoutés |
+| Part | Added layers |
 | --- | --- |
-| 5.1 Géomorphologie | Géomorphons 150, 600 et 2 000 m ; pente ; exposition ; courbures de profil et en plan ; positions topographiques aux trois rayons |
-| 5.2 Géologie | Composition de roche mère ; roche dominante (diagnostic) ; dureté ; altérabilité ; orientation des strates |
-| 5.3 Processus | Domaine dominant ; provenance fluviale amont ; épaisseur potentielle des dépôts |
-| 5.4 Eau et sol | TWI ; HAND ; distance aux eaux ; eau disponible ; drainage ; réserve utile ; texture sable/limon/argile ; organique ; pierrosité ; profondeur du sol |
-| Contexte | Limites et confiance selon la complétude du domaine |
+| 5.1 Geomorphology | Geomorphons at 150, 600 and 2,000 m; slope; aspect; profile and plan curvature; topographic positions at all three radii |
+| 5.2 Geology | Bedrock composition; dominant rock (diagnostic); hardness; weatherability; bedding orientation |
+| 5.3 Processes | Dominant domain; upstream river provenance; potential deposit thickness |
+| 5.4 Water and soil | TWI; HAND; water distance; available water; drainage; available storage; sand/silt/clay texture; organic matter; stoniness; soil depth |
+| Context | Limits and confidence according to domain completeness |
 
-Les géomorphons utilisent huit lignes de visée avec tous les échantillons
-disponibles dans chaque rayon physique, une comparaison d'ouverture zénith/nadir
-signée et un seuil de platitude de 1°. La réduction donne dix classes : plat,
-sommet, crête, épaule, éperon, versant, creux, pied de pente, vallée, dépression.
-Références : [Jasiewicz et Stepinski](https://doi.org/10.1016/j.geomorph.2012.11.005)
-et [r.geomorphon](https://grass.osgeo.org/grass-stable/manuals/r.geomorphon.html).
-C'est une implémentation locale des visées et de leur classification, pas une
-exécution de GRASS ni une reproduction de ses corrections étendues. Le TPI
-emploie un voisinage carré dont la demi-largeur est le rayon annoncé ; pente,
-exposition et courbures utilisent un lissage gaussien de sigma 60 m. Aucun de
-ces champs n'est dérivé du maillage de la caméra ou des couleurs Render.
+Geomorphons use eight sightlines with every sample available within each physical radius, a signed zenith/nadir opening comparison and a flatness threshold of 1°. Reduction yields ten classes: flat, summit, ridge, shoulder, spur, slope, hollow, footslope, valley, depression. References: [Jasiewicz and Stepinski](https://doi.org/10.1016/j.geomorph.2012.11.005) and [r.geomorphon](https://grass.osgeo.org/grass-stable/manuals/r.geomorphon.html). This is a local implementation of sightlines and classification, not a GRASS execution or reproduction of its extended corrections. TPI uses a square neighbourhood whose half-width is the stated radius; slope, aspect and curvatures use Gaussian smoothing with sigma 60 m. None of these fields derives from the camera mesh or Render colours.
 
-La roche mère est un **prior procédural déclaré**, indépendant de l'altitude
-et du climat : séries calcaire/grès/argilo-marneux plissées, contacts déformés
-par bruits cohérents, intrusion granitique et province basaltique. Les bruits
-s'étagent de 70 m à 8 km ; la seed commune à une famille garantit la même
-composition dans ses six climats. Le modèle conserve cinq proportions dont
-la somme vaut 1. Les contacts sont des zones graduelles de largeur variable,
-déformées à plusieurs échelles ; une hétérogénéité interne complète les unités.
-Dureté, altérabilité, texture minérale source et provenance transportée
-consomment ces proportions, sans passer par une classe dominante.
+Bedrock is a **declared procedural prior**, independent of elevation and climate: folded limestone/sandstone/clay-marl sequences, contacts warped by coherent noise, granite intrusion and basalt province. Noise scales range from 70 m to 8 km; a shared family seed guarantees the same composition across its six climates. The model retains five proportions summing to 1. Contacts are gradual zones of variable width, warped at multiple scales; internal heterogeneity supplements the units. Hardness, weatherability, source mineral texture and transported provenance consume these proportions without going through a dominant class.
 
-« Roche mère — composition » visualise ces fractions avec des couleurs
-mélangées en lumière linéaire et une variation interne modérée. « Roche
-dominante (classes) » sert uniquement à inspecter la classification et garde
-ses limites franches. Les champs continus utilisent interpolation et mipmaps
-dans Godot ; les classes conservent un échantillonnage au plus proche voisin.
-Le terrain Render de base reste la carte source précalculée : les proportions
-sont désormais disponibles pour la prochaine étape des matériaux du sol.
-Cette représentation prépare les raccords ; elle ne constitue pas encore
-une validation du futur mélange PBR au centimètre.
+“Bedrock composition” visualises fractions with colours mixed in linear light and moderate internal variation. “Dominant rock (classes)” is only for inspecting classification and retains sharp boundaries. Continuous fields use interpolation and mipmaps in Godot; classes retain nearest-neighbour sampling. Base Render terrain remains the precomputed source map: proportions are now available for the next ground-material step. This representation prepares transitions; it is not yet centimetre-scale validation of future PBR blending.
 
-L'orientation structurale et les propriétés minérales restent des champs
-distincts. La roche mère
-reste visible sous les lacs dans son diagnostic, mais les diagnostics de sol
-sont masqués sous les eaux permanentes.
+Structural orientation and mineral properties remain distinct fields. Bedrock remains visible under lakes in its diagnostic, while soil diagnostics are masked under permanent water.
 
-Le compilateur suit exactement les receveurs conservés de l'hydrologie
-vectorielle. Il recalcule une **aire contributive géométrique** pour le TWI,
-distincte de l'accumulation pondérée par le bilan hydrique. HAND suit le graphe
-jusqu'au premier chenal, lac ou mer ; il est indéfini et transparent si le
-chemin finit à un exutoire sans cette référence. Les références et les types
-d'exutoires sont archivés. Les chenaux conservent les tronçons aval où le
-ruissellement diminue, selon la logique du réseau vectoriel.
+The compiler follows retained receivers of vector hydrology exactly. It recalculates **geometric contributing area** for TWI, distinct from accumulation weighted by water balance. HAND follows the graph to the first channel, lake or sea; it is undefined and transparent if the path ends at an outlet without that reference. References and outlet types are archived. Channels retain downstream reaches where runoff decreases, following the vector-network logic.
 
-Un mélange des cinq provenances, pondéré par un potentiel d'érosion, circule
-de l'amont vers l'aval. Les alluvions latérales reçoivent le mélange du tronçon
-voisin, sous contraintes de pente, distance et hauteur au drainage. Les
-potentiels colluviaux suivent une source rocheuse et un chemin aval avec
-atténuation ; les accumulations éoliennes demandent un stock sableux, un
-climat sec et des pièges sous un vent régional déclaré à 70°. Le littoral
-dépend de la proximité marine, de l'altitude, de la pente et du stock ; le gel
-dépend du climat corrigé de l'altitude. Ce sont des domaines de synthèse :
-aucune dune, incision, croûte saline ou modification du relief n'est produite.
+A mix of five provenances, weighted by erosion potential, travels upstream to downstream. Lateral alluvium receives the neighbouring reach's mix under slope, distance and height-above-drainage constraints. Colluvial potentials follow a rock source and downstream path with attenuation; aeolian accumulations require sand stock, dry climate and traps under a regional wind declared at 70°. Coastal potential depends on sea proximity, elevation, slope and stock; frost depends on altitude-corrected climate. These are synthetic domains: no dune, incision, salt crust or terrain modification is produced.
 
-Le sol conserve **sable + limon + argile = 1** et sépare organique, pierrosité,
-profondeur, stockage et potentiel hydrique. Les épaisseurs, le stockage et
-l'eau disponible sont des proxys de synthèse, sans bilan de masse, nappe,
-drainage karstique, pluie datée ou prédiction de crue. Les bassins fermés
-existants sont conservés. Le domaine ne connaît pas les apports extérieurs :
-un diagnostic réduit la confiance dans les bassins touchant les limites et
-dans une bande de 2 km au bord. Il ne remplace pas le bassin amont manquant.
+Soil retains **sand + silt + clay = 1** and separates organic matter, stoniness, depth, storage and water potential. Thickness, storage and available water are synthetic proxies, without mass balance, groundwater, karst drainage, dated rain or flood prediction. Existing closed basins are retained. The domain does not know outside inflows: a diagnostic reduces confidence in basins touching edges and in a 2 km edge strip. It does not replace the missing upstream basin.
 
-`tile.json.ground` conserve l'identité du compilateur et de ses dépendances,
-le scénario géologique, les paramètres, les plages, les palettes et les hashes.
-`ground-grids.bin.gz` archive les catégories entières et les champs FP32,
-y compris les cinq proportions de roche mère, leur variation interne, les
-cinq fractions de provenance, les potentiels de processus et
-les références HAND. Le schéma donne offsets, types, taille, repère local
-(x vers l'est, y vers le sud), largeur en mètres et endianness little-endian.
-`ground-*.png` ne sert qu'à l'affichage. Les fichiers générés restent hors Git.
+`tile.json.ground` retains compiler and dependency identity, geological scenario, parameters, ranges, palettes and hashes. `ground-grids.bin.gz` archives integer categories and FP32 fields, including five bedrock proportions, internal variation, five provenance fractions, process potentials and HAND references. The schema supplies offsets, types, size, local frame (x east, y south), width in metres and little-endian ordering. `ground-*.png` serves display only. Generated files remain outside Git.
 
-Pour reconstruire le contexte sans recalculer le relief, l'eau ou Render :
+To rebuild context without recalculating terrain, water or Render:
 
 ```powershell
 python -m pip install -r godot-render/tools/requirements-ground.txt
@@ -312,24 +120,9 @@ python godot-render/tools/validate_ground.py
 python godot-render/tools/test_surface_context.py
 ```
 
-`--tile mountains--temperate` limite la reconstruction à une tuile ;
-`--force` ignore le cache ; `--scenario` accepte `mixed` (défaut), `granite`,
-`limestone`, `sandstone`, `marl` ou `basalt`. Une modification du compilateur,
-du terrain, du graphe, du climat ou du scénario invalide les sorties. La reconstruction
-traite deux tuiles en parallèle par défaut ; `--workers` et `--threads`
-règlent les processus et les threads de visée par processus. Le catalogue
-est publié par le seul processus principal, après les fichiers de chaque tuile.
-`hydrate_tiles.mjs` appelle ensuite ce compilateur automatiquement ; `--python`
-permet d'indiquer son exécutable. Les dossiers de données sont exclus de
-l'import Godot via `.gdignore` et leurs PNG sont lus explicitement.
+`--tile mountains--temperate` limits rebuilding to one tile; `--force` ignores cache; `--scenario` accepts `mixed` (default), `granite`, `limestone`, `sandstone`, `marl` or `basalt`. Changes to compiler, terrain, graph, climate or scenario invalidate outputs. Rebuilding processes two tiles in parallel by default; `--workers` and `--threads` set processes and sightline threads per process. The catalogue is published only by the main process, after each tile's files. `hydrate_tiles.mjs` then invokes this compiler automatically; `--python` specifies its executable. Data directories are excluded from Godot import with `.gdignore` and PNGs are read explicitly.
 
-Le validateur contrôle les 1 218 PNG du sol, leurs hashes, les archives,
-les sources inchangées, les fractions minérales, la conservation des aires
-contributives, HAND, TWI, la géologie identique entre climats et une eau
-disponible moyenne plus élevée sous climat tropical qu'aride. Le test GPU
-`res://tests/ground_layers_test.gd` parcourt les 34 couches, vérifie les palettes,
-les projections, le maintien de la sélection, puis produit les captures
-`evidence/ground-*.png`. Le test général parcourt aussi les 42 tuiles.
+The validator checks 1,218 ground PNGs and hashes, archives, unchanged sources, mineral fractions, contributing-area conservation, HAND, TWI, geology identical across climates and higher mean available water in tropical than arid climate. GPU test `res://tests/ground_layers_test.gd` traverses all 34 layers, checks palettes, projections and retained selection, then produces `evidence/ground-*.png` captures. The general test also traverses all 42 tiles.
 
 ```powershell
 ./Test-Render.ps1 -Check
@@ -337,115 +130,38 @@ les projections, le maintien de la sélection, puis produit les captures
 ./Test-Render.ps1 -Capture ./godot-render/evidence/manual.png
 ```
 
-Les fichiers générés restent locaux, hors Git. Le script de génération reprend
-les tuiles terminées ; il nécessite les services et les assets neuronaux locaux
-déjà installés ainsi que le worktree du Render original :
+Generated files remain local, outside Git. The generation script resumes completed tiles; it requires already-installed local services and neural assets and the original Render worktree:
 
 ```powershell
 node godot-render/tools/generate_tiles.mjs --web-root ../magna-urbis-render-original-reference/web --base http://127.0.0.1:5203 --assets-base http://127.0.0.1:5197 --neural http://127.0.0.1:8894
 ```
 
-Si les 42 sources natives existent, ce script les réutilise et régénère seulement
-l'eau, les cartes et les couches, sans service neuronal. Cette étape peut aussi
-être lancée directement avec `node godot-render/tools/hydrate_tiles.mjs`.
-Le rapport `tiles/hydrology-report.json` conserve les statistiques par climat.
-`--force` recalcule aussi les sorties déjà présentes ; sinon une configuration
-inchangée et complète est reprise. `terrain-render.png` garde le fond sans eau
-pour éviter d'accumuler les superpositions lors des relances.
+If all 42 native sources exist, the script reuses them and regenerates only water, maps and layers, without neural service. This step can also be run directly with `node godot-render/tools/hydrate_tiles.mjs`. `tiles/hydrology-report.json` retains statistics by climate. `--force` also recalculates existing outputs; otherwise a complete unchanged configuration is reused. `terrain-render.png` retains the water-free background to avoid accumulating overlays on reruns.
 
-`node godot-render/tools/validate_hydrology.mjs` vérifie les 42 sources et surfaces,
-les hashes des cartes, les polylignes, les grilles compressées, les niveaux des
-lacs et les 210 calques, puis compare aride et tropical pour chaque relief.
+`node godot-render/tools/validate_hydrology.mjs` checks all 42 sources and surfaces, map hashes, polylines, compressed grids, lake levels and 210 layers, then compares arid and tropical for each terrain form.
 
-Validation GPU : `godot --path godot-render --audio-driver Dummy --script
-res://tests/tile_viewer_test.gd`. Le test charge les 42 tuiles, contrôle les
-hashes, l'unicité des surfaces, la présence terre/mer sur les côtes, l'identité
-du maillage, les projections, le zoom, l'orbite et le déplacement. Captures et
-rapport sont écrits dans `godot-render/evidence/`.
-`res://tests/survey_test.gd` vérifie en plus l'altitude sur un terrain plat puis
-le relief réel sous plusieurs angles, la reprojection du point sous le curseur,
-les points hors tuile et la variation de la règle avec le zoom.
+GPU validation: `godot --path godot-render --audio-driver Dummy --script res://tests/tile_viewer_test.gd`. The test loads all 42 tiles, checks hashes, surface uniqueness, land/sea presence on coasts, mesh identity, projections, zoom, orbit and movement. Captures and report are written to `godot-render/evidence/`. `res://tests/survey_test.gd` additionally checks elevation on flat terrain then actual terrain at multiple angles, reprojection of the point under the cursor, points outside the tile and ruler variation with zoom.
 
-## Couvert visible, détail rapproché et eau
+## Visible cover, close detail and water
 
-La vue **Sol texturé** conserve la vue Render comme référence d'ensemble au
-dézoom. Entre 4 et 24 mètres par pixel, le matériau rejoint progressivement
-ses couleurs et son ombrage ; la teinte des affleurements peut conserver celle
-du matériau minéral choisi. En rapprochant la caméra, les textures, normales,
-ombres Godot et objets forestiers prennent le relais. Les photographies des
-herbes/mousses sont recentrées autour du guide ouvert du Render : leurs détails
-restent visibles avec une couleur cohérente entre échelles.
-En forêt, le guide de canopée est conservé tant que les houppiers ne sont pas
-résolus, puis laisse progressivement voir le sol PBR entre leurs silhouettes.
+The **Textured ground** view retains the Render view as its overview reference when zoomed out. Between 4 and 24 metres per pixel, the material gradually approaches its colours and shading; outcrop tint may retain that of the chosen mineral material. As the camera moves closer, textures, normals, Godot shadows and forest objects take over. Grass/moss photographs are centred around the open-ground guide from Render: details remain visible with consistent colour between scales. In forests, the canopy guide is retained while crowns are unresolved, then gradually reveals PBR ground between their silhouettes.
 
-Le sol demeure texturé dans toutes les zones. Litière, herbe et mousse ne
-consomment que la part de **matrice** N1 : les budgets de roche et de fragments
-restent entiers. Les crêtes/sommets à 150 m, affleurements importants et pentes
-très fortes restent dégagés. **Support minéral** permet d'inspecter le substrat
-sans végétation basse. Les plages et dépôts sableux gardent leurs textures de sable.
+Ground remains textured in every zone. Litter, grass and moss consume only the N1 **matrix** share: rock and fragment budgets remain intact. Ridges/summits at 150 m, major outcrops and very steep slopes stay clear. **Mineral support** permits substrate inspection without low vegetation. Beaches and sandy deposits retain their sand textures.
 
-Les masques d'herbes, sable et bois proviennent du **Render3D original**,
-référence `dff14f387a6d1edc89d93737f861ee91e022a5aa`. Leur export est opaque :
-l'affleurement est exporté séparément dans `original-outcrop.png`. Un canal de
-données ne doit pas servir d'alpha de transparence lors de `canvas.toDataURL`,
-qui modifie/perd les autres canaux par prémultiplication.
+Grass, sand and wood masks come from the **original Render3D**, reference `dff14f387a6d1edc89d93737f861ee91e022a5aa`. Their export is opaque: outcrop is exported separately in `original-outcrop.png`. A data channel must not serve as transparency alpha during `canvas.toDataURL`, which alters/loses other channels through premultiplication.
 
-La végétation reprend `buildForestField`, les paramètres historiques
-`density=1`, `clearings=.45`, la graine `1905266606` et le GLSL des houppiers
-analytiques de cette référence. `forest_placement.py` filtre maintenant le
-canal de densité du champ retenu, en conservant hauteur, type et tonalité.
-Le filtre associe le guide de bois à une densité et une hauteur suffisantes,
-au climat et au potentiel forestier ; il exclut eau, plages, crêtes et roche
-exposée, avec une marge de transition mesurée en mètres. Un faible potentiel
-d'arbres ne suffit plus à transformer une prairie en forêt. Les galeries
-automatiques sont désactivées pour empêcher des arbres isolés de contourner
-ce filtre dans le désert ou sur une plage. La végétation basse des prairies,
-steppes et déserts est portée par les textures, sans houppiers miniatures.
-Il s'agit d'une politique d'apparence déduite des couches, pas d'un inventaire
-écologique observé. Aucun profil V2 n'est utilisé. L'adaptation du GLSL ne modifie que
-les signatures de fonctions, les conversions de types et le cache de neuf
-gradients, aplati car Godot ne permet pas de tableau dans une structure.
-Un complément séparé de conifères clairsemés est maintenant fusionné dans les
-secteurs froids/montagnards favorables. Il utilise le même modèle de couronnes,
-avec son propre potentiel et sa propre moyenne de couleur ; les exports
-originaux restent conservés. Voir [Profils et littoral](SUPPORT_SHORES_REFINEMENT.md).
-À distance rapprochée, l'éclairage est celui de Godot avec les ombres du relief.
-Les houppiers restent analytiques dans le matériau, comme dans la référence,
-sans instances d'arbres ajoutées. Le bouton des variantes change la palette
-PBR du monde, y compris le sol entre les arbres ; les houppiers conservent leur
-graine et leurs couleurs originales.
+Vegetation reuses `buildForestField`, historical parameters `density=1`, `clearings=.45`, seed `1905266606` and the reference's analytical crown GLSL. `forest_placement.py` now filters the retained field's density channel while retaining height, type and tone. The filter associates the wood guide with sufficient density and height, climate and forest potential; it excludes water, beaches, ridges and exposed rock, with a transition margin measured in metres. Low tree potential no longer suffices to turn grassland into forest. Automatic galleries are disabled to prevent isolated trees bypassing this filter in desert or on a beach. Low vegetation in grasslands, steppes and deserts is represented by textures, without miniature crowns. This is an appearance policy inferred from layers, not an observed ecological inventory. No V2 profile is used. GLSL adaptation changes only function signatures, type conversions and a flattened cache of nine gradients, because Godot does not permit an array inside a structure. A separate sparse-conifer supplement is now blended into favourable cold/mountain sectors. It uses the same crown model with its own potential and mean colour; original exports remain retained. See [Profiles and coastline](SUPPORT_SHORES_REFINEMENT.md). At close range, lighting is Godot's with terrain shadows. Crowns remain analytical in the material, as in the reference, without added tree instances. The variants button changes the world's PBR palette, including ground between trees; crowns retain their original seed and colours.
 
-Le relief intermédiaire utilise désormais quatre champs de 64 / 27 / 9,5 /
-3,75 m, conditionnés par le support et filtrés selon le pas du maillage. Le
-raffinement du même plan de 40 km arrive dès le zoom moyen ; la matière prend
-le relais pour les détails que le maillage ne résout plus. Le DEM natif et
-les surfaces hydrauliques restent intacts. Les masques hydriques sont protégés
-strictement. Voir [Relief et matière intermédiaires](TERRAIN_MESOSCALE.md) pour
-les amplitudes, les transitions, le picking, les tests et les mesures GPU.
+Intermediate terrain now uses four fields of 64 / 27 / 9.5 / 3.75 m, conditioned by support and filtered according to mesh spacing. Refinement of the same 40 km plane begins at medium zoom; material takes over details the mesh no longer resolves. Native DEM and hydraulic surfaces remain intact. Water masks are strictly protected. See [Intermediate terrain and material](TERRAIN_MESOSCALE.md) for amplitudes, transitions, picking, tests and GPU measurements.
 
-Les affleurements rapprochés utilisent une projection tangentielle par patch
-pour limiter l'étirement des photographies sur les versants, avec un profil
-géométrique et des normales plus lisibles à quelques mètres. Les trois
-patches PBR existants sont réutilisés. Voir [Roche rapprochée](ROCK_CLOSE_DETAIL.md)
-pour le fonctionnement, les limites et le coût GPU mesuré.
+Close outcrops use per-patch tangent projection to limit photograph stretching on slopes, with a geometric profile and normals more legible at a few metres. The existing three PBR patches are reused. See [Close-range rock](ROCK_CLOSE_DETAIL.md) for operation, limitations and measured GPU cost.
 
-L'eau utilise un spectre procédural non périodique de 233 m à 60 cm, filtré avec
-les dérivées d'écran. Les rivières suivent la direction aval dans des frames
-fixes mélangées ; lacs et mer utilisent une dérive de vent. Le littoral est
-reconstruit par un contour continu, conservé au raccord Render lointain.
-La teinte dépend de la
-profondeur retenue pour lacs/mer, d'une profondeur optique indicative de 1,5 m
-pour les rivières, et de la distance aux berges. Normales, rugosité, reflet
-spéculaire, contribution de ciel et écume côtière remplacent l'aplat émissif.
-Il ne s'agit pas d'une simulation de vagues ni de reflets de scène tracés.
-Les niveaux et les presets de glace sont conservés. Les sources vectorielles
-utilisent maintenant un départ fin qui rejoint progressivement la largeur
-aval ; voir [Départs des rivières](RIVER_HEADWATERS.md).
+Water uses a non-periodic procedural spectrum from 233 m to 60 cm, filtered using screen derivatives. Rivers follow downstream direction in blended fixed frames; lakes and sea use wind drift. The shoreline is reconstructed as a continuous contour, retained at the distant Render transition. Tint depends on retained depth for lakes/sea, an indicative 1.5 m optical depth for rivers and distance to banks. Normals, roughness, specular reflection, sky contribution and coastal foam replace the emissive flat fill. This is not a wave simulation or traced scene reflection. Levels and ice presets are retained. Vector sources now use a fine start gradually joining downstream width; see [River headwaters](RIVER_HEADWATERS.md).
 
-Reconstruction locale, après les étapes N1–N4 et la bibliothèque PBR :
+Local reconstruction after N1–N4 and the PBR library:
 
 ```powershell
-# Référence originale et serveur Vite local sur 127.0.0.1:5203 requis.
+# Original reference and local Vite server on 127.0.0.1:5203 required.
 node godot-render/tools/prepare_original_cover.mjs
 node godot-render/tools/export_original_cover.mjs
 python godot-render/tools/forest_placement.py
@@ -456,22 +172,8 @@ python godot-render/tools/validate_mesoscale.py
 ./Test-Render.ps1 -Check
 ```
 
-Chaque préparateur accepte `--tile mountains--temperate`. Le générateur du
-GLSL accepte aussi `--shader-only`. Les descripteurs locaux conservent le commit
-source, les paramètres et hashes des guides, des champs forestiers et des
-textures d'eau. Ces données générées restent hors Git. Les textures du couvert
-sont chargées une fois par tuile et réutilisées lors des changements de preset
-ou de palette.
+Each preparer accepts `--tile mountains--temperate`. The GLSL generator also accepts `--shader-only`. Local descriptors retain source commit, parameters and hashes of guides, forest fields and water textures. Generated data remain outside Git. Cover textures are loaded once per tile and reused when changing preset or palette.
 
-`res://tests/surface_finish_test.gd` produit des captures avec/sans couvert,
-avec/sans détail géométrique et avec/sans vaguelettes. Il vérifie la référence
-originale, la stabilité des houppiers, la résolution du maillage, la stabilité
-spatiale du relief, le picking rapproché, l'immobilité des niveaux d'eau et
-l'advection des textures. Les rapports sont dans `godot-render/evidence/`.
+`res://tests/surface_finish_test.gd` produces captures with/without cover, geometric detail and ripples. It checks the original reference, crown stability, mesh resolution, spatial terrain stability, close picking, stationary water levels and texture advection. Reports are in `godot-render/evidence/`.
 
-`res://tests/cover_policy_test.gd` compare les vues Render/texturée au dézoom,
-vérifie les textures des terrains ouverts et des affleurements, l'absence de
-houppiers sur prairie/désert, puis leur présence en forêt. `test_forest_placement.py`
-couvre les exclusions de plage, crête, falaise, eau et climat aride. Le validateur
-vérifie ces exclusions et les hashes des placements sur les 42 tuiles. Après
-une reconstruction des N1–N4, relancer `forest_placement.py`.
+`res://tests/cover_policy_test.gd` compares zoomed-out Render/textured views, checks textures of open terrain and outcrops, absence of crowns on grassland/desert and their presence in forest. `test_forest_placement.py` covers beach, ridge, cliff, water and arid-climate exclusions. The validator checks these exclusions and placement hashes on all 42 tiles. After rebuilding N1–N4, rerun `forest_placement.py`.

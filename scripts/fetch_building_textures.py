@@ -194,7 +194,7 @@ def write_readme(catalog):
     entries = catalog["textures"]
     count = sum(len(e["maps"]) for e in entries)
     size = sum(m["bytes"] for e in entries for m in e["maps"].values()) / 1024 ** 2
-    lines = ["# Textures de bâtiments — collection hors ligne", "",
+    lines = ["# Textures de bâtiments — collection hors ligne", "", "[English](README.md)", "",
              f"{len(entries)} jeux PBR, {count} cartes, {size:.1f} Mio de cartes. Résolution source 1K, fichiers originaux sans retouche.", "",
              "Collecte seule : aucun branchement au moteur, aucune affectation automatique aux bâtiments.", "",
              "[Guide et limites](../../../docs/BUILDING_TEXTURE_LIBRARY.md) · [Planche des couleurs](contact-sheet.jpg) · "
@@ -231,7 +231,7 @@ def write_readme(catalog):
     for p in catalog["pack_coverage"]:
         lines.append(f'| `{p["pack_id"]}` | {p["recipe_count"]} | {len(p["direct"])} '
                      f'| {", ".join(p["proxy"]) or "—"} | {", ".join(p["missing"]) or "—"} |')
-    (LIB / "README.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    (LIB / "README_FR.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def verify(catalog):
@@ -278,6 +278,9 @@ def main():
     save_json(path, catalog)
     previews(entries)
     write_readme(catalog)
+    # Regenerate the primary English guide from the preserved French source.
+    import runpy
+    runpy.run_path(str(Path(__file__).with_name("translate_building_textures.py")))
     verify(catalog)
 
 

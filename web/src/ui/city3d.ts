@@ -16,6 +16,7 @@ import type { Layout, Partition, Street } from '../../../rust/bridge/urban';
 import type { Point } from '../../../rust/bridge/housesContract';
 import type { Decor } from './decor';
 import { executionRuntime } from './executionProfile';
+import { urbanText } from './urbanPanelLocale';
 
 export interface City3dOptions {
   /** Positioned container (the bench viewport); the 3D view covers it when shown. */
@@ -105,7 +106,25 @@ export function mountCity3d(options: City3dOptions): City3d {
   options.host.append(root);
   const canvas = root.querySelector('canvas')!, marker = root.querySelector<HTMLElement>('.city3d-marker')!, info = root.querySelector<HTMLElement>('.city3d-info')!;
   const $ = <T extends HTMLElement>(selector: string): T => root.querySelector(selector) as T;
+  const localizeControls = (): void => {
+    canvas.setAttribute('aria-label', urbanText(['Vue 3D de la ville. Glisser : déplacer, clic droit ou Maj + glisser : orbiter, molette : zoom, clic : sélectionner.', '3D city view. Drag to pan, right-click or Shift-drag to orbit, wheel to zoom, click to select.', '城市三维视图。拖动平移，右键或 Shift 拖动环绕，滚轮缩放，点击选择。', 'Vista 3D de la ciudad. Arrastra para desplazar, clic derecho o Mayús y arrastrar para orbitar, rueda para zoom y clic para seleccionar.', 'Vista 3D da cidade. Arraste para mover, clique direito ou Shift e arraste para orbitar, roda para zoom e clique para selecionar.']));
+    $('.city3d-bar').setAttribute('aria-label', urbanText(['Vue 3D','3D view','三维视图','Vista 3D','Vista 3D']));
+    const label = (selector: string, words: [string, string, string, string, string], title?: [string, string, string, string, string]) => { const parent = $(selector).closest('label'); if (!parent) return; const node = Array.from(parent.childNodes).find(n => n.nodeType === Node.TEXT_NODE); if (node) node.textContent = urbanText(words); if (title) parent.title = urbanText(title); };
+    label('[data-ground]', ['Sol','Ground','地面','Suelo','Solo'], ['Fond drapé sur le relief','Background draped over terrain','覆盖在地形上的背景','Fondo ajustado al relieve','Fundo sobre o relevo']);
+    label('[data-plan]', ['Plan','Plan','平面','Plano','Planta'], ['Rues, îlots et parcelles dessinés sur le sol en vue rapprochée','Streets, blocks and parcels drawn on the ground in close view','近景中绘制在地面的街道、街区与地块','Calles, manzanas y parcelas dibujadas en el suelo de cerca','Ruas, quadras e parcelas desenhadas no solo de perto']);
+    label('[data-textured]', ['Textures','Textures','纹理','Texturas','Texturas'], ['Textures des toits, murs, rues et places (bâtiments et constructions seulement)','Roof, wall, street and square textures (buildings and structures only)','屋顶、墙壁、街道和广场纹理（仅建筑与构筑物）','Texturas de tejados, muros, calles y plazas (solo edificios y construcciones)','Texturas de telhados, paredes, ruas e praças (somente edifícios e construções)']);
+    label('[data-colors]', ['Couleurs','Colours','颜色','Colores','Cores']); label('[data-relief]', ['Relief','Terrain','地形','Relieve','Relevo'], ['Exagération du relief','Terrain exaggeration','地形夸张','Exageración del relieve','Exagero do relevo']);
+    $<HTMLOptionElement>('[data-ground] option[value="map"]').textContent = urbanText(['Carte pré-rendue','Pre-rendered map','预渲染地图','Mapa prerenderizado','Mapa pré-renderizado']);
+    $<HTMLOptionElement>('[data-ground] option[value="render"]').textContent = urbanText(['Rendu 3D (sol procédural)','3D render (procedural ground)','三维渲染（程序化地面）','Render 3D (suelo procedural)','Renderização 3D (solo procedural)']);
+    $<HTMLOptionElement>('[data-colors] option[value="materials"]').textContent = urbanText(['Matériaux','Materials','材料','Materiales','Materiais']);
+    $<HTMLOptionElement>('[data-colors] option[value="uses"]').textContent = urbanText(['Usages','Uses','用途','Usos','Usos']);
+    $('[data-north]').title = urbanText(['Nord en haut','North up','北朝上','Norte arriba','Norte para cima']);
+    const detail = $('[data-detail]'); detail.textContent = urbanText(['Détailler autour','Detail nearby','细化附近','Detallar alrededor','Detalhar ao redor']); detail.title = urbanText(['Réaliser en natif les plans compacts proches du centre de la vue','Realize compact plans near the centre of the view natively','原生生成视图中心附近的紧凑平面','Realizar de forma nativa los planos compactos cerca del centro de la vista','Realizar nativamente as plantas compactas perto do centro da vista']);
+    updateInfo();
+  };
+  window.addEventListener('magna-locale-change', localizeControls);
   let terrain: Terrain3d | undefined, active = false, disposed = false, error = '';
+  localizeControls();
   let ground: Ground = 'map', colors: Colors = 'materials', planOverlay = true;
   let surfaceDecor: Decor | undefined, imageUrl: string | undefined, heightAt: City3dHeight | undefined, image: HTMLImageElement | HTMLCanvasElement | undefined, waterMask: HTMLCanvasElement | undefined, waterPaths: Path2D | undefined;
   const textured = (): boolean => options.getTextured?.() ?? false;
@@ -354,7 +373,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     const near = scene.buildings.filter(b => city3dDisplayKind(b) === 'compact' && !details.has(b.id)).map(b => ({ b, d: Math.hypot(center(b).x - c.x, center(b).y - c.y) }))
       .filter(e => e.d < radius).sort((a, b) => a.d - b.d).slice(0, 24).map(e => e.b.id);
     info.dataset.detailError = '';
-    if (!near.length) { info.textContent = 'Aucun plan compact à détailler près du centre de la vue.'; return; }
+    if (!near.length) { info.textContent = urbanText(['Aucun plan compact à détailler près du centre de la vue.', 'No compact plans to detail near the centre of the view.', '视图中心附近没有可细化的紧凑平面。', 'No hay planos compactos que detallar cerca del centro de la vista.', 'Não há plantas compactas para detalhar perto do centro da vista.']); return; }
     void realize(near);
   }
 

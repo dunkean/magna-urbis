@@ -1,1564 +1,1578 @@
-# Catalogue de settlements et de bâtiments — Antiquité à fin du Moyen Âge
+# Settlement and building catalog — Antiquity to the end of the Middle Ages
 
-> **Destination :** génération procédurale de villages, bourgs, villes et cités pour le jeu de rôle sur table.
+> **Purpose:** procedural generation of villages, market towns, towns, and cities for tabletop role-playing games.
 >
-> **Périmètre :** Antiquité et périodes médiévales (jusqu'au XVe siècle environ), avec une base européenne et méditerranéenne, plus des ouvertures culturelles facultatives.
+> **Scope:** Antiquity and medieval periods (to approximately the 15th century), with a European and Mediterranean base and optional additional cultures.
 >
-> **Principe :** privilégier la **diversité morphologique utile à une carte** plutôt qu'un inventaire purement lexical. Les descriptions sont volontairement brèves.
+> **Principle:** favor **morphological diversity useful on a map** over a purely lexical inventory. Descriptions are deliberately brief.
 
-## Comment lire et utiliser ce catalogue
+> English translation of the [French original](catalogue_settlements_antiquite_moyen_age_rpg_FR.md).
 
-Les trois inventaires répondent à trois questions différentes :
+## How to read and use this catalog
 
-1. **Settlement :** quelle forme prend l'ensemble habité ? C'est une combinaison de **taille + plan + implantation + fonction + statut + époque/culture**. Les entrées de ces axes sont **cumulables**.
-2. **Bâti ordinaire :** quelles maisons, parcelles, dépendances, activités et infrastructures constituent la majorité des surfaces ? Certains noms désignent une **fonction commerciale** logée dans une maison ordinaire, pas une géométrie autonome.
-3. **Bâti particulier :** quels édifices, ensembles et monuments organisent ou singularisent le lieu ? Ils sont soumis à des conditions d'échelle, de richesse, de période et de tradition.
+The three inventories answer different questions:
 
-**Périodes :** `ANT` = Antiquité ; `HMA` = haut Moyen Âge ; `MMA` = Moyen Âge central et tardif ; `TRA` = différentes périodes selon les régions. Les périodes indiquées entre parenthèses restent des **repères**, pas des frontières absolues. Les variantes régionales ne doivent pas être mélangées automatiquement dans un settlement historiquement cohérent. Pour les civilisations hors d’Europe, les sigles chronologiques sont seulement des correspondances approximatives : employer les chronologies locales.
+1. **Settlement:** what form does the inhabited whole take? It combines **size + plan + siting + function + status + period/culture**. Entries on these axes **can be combined**.
+2. **Ordinary built fabric:** which houses, parcels, outbuildings, activities, and infrastructure cover most of the area? Some names denote a **commercial function** housed in an ordinary house, not autonomous geometry.
+3. **Special built fabric:** which buildings, complexes, and monuments organize or distinguish the place? These depend on scale, wealth, period, and tradition.
 
-**Vocabulaire de génération :**
-- **Forme** = géométrie des empreintes, parcelles et rues.
-- **Usage** = rôle attribué à une empreinte ordinaire ou monumentale.
-- **Ensemble** = plusieurs bâtiments, cours, murs et annexes interdépendants.
-- **Objet spatial** = voie, place, quai, enceinte ou ouvrage sans intérieur nécessairement explorable.
+**Periods:** `ANT` = Antiquity; `HMA` = early Middle Ages; `MMA` = high and late Middle Ages; `TRA` = different periods by region. Parenthesized periods remain **guides**, not absolute boundaries. Regional variants should not automatically be mixed in a historically coherent settlement. For civilizations outside Europe, chronological codes are only approximate correspondences: use local chronologies.
+
+**Generation vocabulary:**
+
+- **Form** = geometry of footprints, parcels, and streets.
+- **Use** = role assigned to an ordinary or monumental footprint.
+- **Complex** = several interdependent buildings, courtyards, walls, and annexes.
+- **Spatial object** = road, square, quay, enclosure, or work without a necessarily explorable interior.
+
+---
+
+# 1. Settlement types and siting structures
+
+## 1.1. Scale and settlement level
+
+- **Isolated shelter** — One occupant, temporary dwelling.
+- **Isolated hut** — Small household outside a village.
+- **Isolated farm** — Holding with grouped buildings.
+- **Fortified farm** — Defended holding with its own enclosure.
+- **Agricultural estate** — Several buildings and land.
+- **Outlying rural cluster** — A few separate households.
+- **Farm group** — Several neighboring holdings.
+- **Hamlet** — Small group of houses.
+- **Seasonal hamlet** — Occupied for part of the year.
+- **Small village** — Sparse permanent settlement.
+- **Village** — Structured rural community.
+- **Large village** — Extended village with local services.
+- **Service village** — Services neighboring hamlets.
+- **Market town** — Craft and commercial center.
+- **Market borough** — Regular trade, central square.
+- **Small town** — Built fabric and trades.
+- **Medium town** — Multiple districts, varied functions.
+- **Large city** — High density, specialized functions.
+- **Regional city** — Religious and political center.
+- **Metropolis** — Very large urban center.
+- **Provincial capital** — Administration of an extensive territory.
+- **Royal capital** — Sovereign's principal seat.
+- **Imperial capital** — Center of a large empire.
+- **City-state** — Center of an autonomous territory.
+- **Polycentric conurbation** — Several linked urban nuclei.
+- **Twin town** — Two distinct neighboring nuclei.
+- **Satellite new town** — Planned extension of a center.
+
+> *Village*, *town*, and *city* have no universal population thresholds: legal status and region can matter more than size.
+
+## 1.2. Plan and parcel morphology
+
+- **Dispersed settlement** — Distant farms without a nucleus.
+- **Loose settlement** — Spaced houses with gardens between them.
+- **Nucleated village** — Houses close around a core.
+- **Compact village** — Dense buildings and narrow streets.
+- **Street village** — Houses aligned along a road.
+- **Double street village** — Two facing rows.
+- **String village** — Successive hamlets along a road.
+- **Crossroads village** — Four roads structure the settlement.
+- **Y-shaped village** — Three street branches.
+- **Road-star village** — Several roads converge at the center.
+- **Loop village** — Road closes around a block.
+- **Central-court village** — Houses around a courtyard.
+- **Common-centered village** — Shared space at center.
+- **Circular village** — Settlement arranged in a ring.
+- **Concentric village** — Successive rings of streets.
+- **Radial village** — Streets radiate from center.
+- **Spiral village** — Streets follow a slope.
+- **Terraced village** — Buildings stepped on a hillside.
+- **Amphitheater village** — Houses follow a hollow.
+- **Comb village** — Perpendicular secondary streets.
+- **Spine village** — Backbone street with descending lanes.
+- **Coastal-strip village** — Frontages aligned with shore.
+- **Two-center village** — Two centers organize settlement.
+- **Polynuclear village** — Several separate built groups.
+- **Fortified ring village** — Settlement enclosed by defenses.
+- **Village of domestic compounds** — Adjacent fenced courtyards.
+- **Grid village** — Orthogonal streets and regular blocks.
+- **Strip-plot village** — Long, narrow parcels.
+- **Equal-plot village** — Parcels from a division of land.
+- **Irregular-parcel village** — Forms inherited from successive extensions.
+- **Street market town** — Large linear commercial axis.
+- **Central-square market town** — Market structures streets.
+- **Two-parallel-street town** — Frontages and rear gardens.
+- **Concentric castle town** — Settlement around castle.
+- **Organic town** — Streets from gradual growth.
+- **Ancient grid city** — Cardo, decumanus, or equivalents.
+- **Planned grid town** — Blocks defined before construction.
+- **Mixed-grid town** — Old grid and irregular suburbs.
+- **Fan-shaped town** — Expansion from gate or port.
+- **Fortified concentric town** — Extensions enclosed by successive walls.
+- **Town with successive walls** — Historical cores and extensions.
+- **Town with monumental axes** — Major roads connect centers.
+- **Polycentric town** — Autonomous squares and districts.
+- **Upper and lower town** — Nuclei separated by terrain.
+- **Town with offset citadel** — Dominant fortress outside center.
+- **Town with radiating suburbs** — Extensions along roads.
+- **Linear port town** — Streets parallel to quays.
+- **Bridge town** — Two banks and central crossing.
+- **Confluence town** — Districts around rivers.
+- **Peninsula town** — Built fabric bounded by water.
+- **Island town** — Built center isolated by water.
+- **Stepped town** — Terraced blocks and many stairs.
+- **Courtyard town** — Restrained frontages, private interiors.
+- **Town with closed lanes** — Dead ends and controlled access.
+
+## 1.3. Topographic siting and environment
+
+- **Plain village** — Open terrain, easy expansion.
+- **Plateau village** — Settlement on elevated surface.
+- **Valley village** — Development in an enclosed valley floor.
+- **Piedmont village** — Contact between plain and mountains.
+- **Pass village** — Controls a mountain crossing.
+- **Hillside village** — Houses cling to slope.
+- **Ridge village** — Built on dominant ridgeline.
+- **Summit village** — Difficult access, extensive views.
+- **Barred-spur village** — Defense on rocky promontory.
+- **Cliff village** — Settlement along steep break.
+- **Cave village** — Cavities used as dwellings.
+- **Rock-cut village** — Dwellings excavated into rock.
+- **Rock-shelter village** — Buildings sheltered by overhang.
+- **Forest village** — Clearing in woodland.
+- **Bocage village** — Parcels surrounded by hedges.
+- **Open-field village** — Open fields around the core.
+- **Marsh village** — Wet ground, raised paths.
+- **Lakeside village** — Settlement near a lake.
+- **Stilt village** — Buildings supported on piles.
+- **Island village** — Settlement on a small island.
+- **Delta village** — Channels and alluvial ground.
+- **Ford village** — Traversable river crossing.
+- **Bridge village** — Permanent watercourse crossing.
+- **Spring village** — Cluster around drinking water.
+- **Estuary village** — Between river and sea.
+- **Lagoon village** — Channels, fishing, low land.
+- **Coastal village** — Shore and maritime access.
+- **Cove village** — Small naturally sheltered port.
+- **Oasis village** — Settlement grouped around irrigation.
+- **Desert village** — Shade, wells, compact settlement.
+- **Steppe village** — Open ground, dominant pastoralism.
+- **Volcanic village** — Buildings adapted to volcanic rock.
+- **Village on ruins** — Reuses an ancient site.
+- **Frontier village** — Strategic control position.
+
+## 1.4. Dominant economic function
+
+### Rural production and resources
+
+- **Cereal village** — Barns and open fields.
+- **Market-garden village** — Intensive gardens near walls.
+- **Winegrowing village** — Many cellars and presses.
+- **Olive-growing village** — Olive groves and oil mills.
+- **Fruit-growing village** — Orchards and produce dryers.
+- **Livestock village** — Nearby enclosures and pasture.
+- **Highland pastoral village** — Summer pastures and seasonal huts.
+- **Transhumance village** — Occupation follows herds.
+- **Woodcutters' village** — Timber cutting and storage.
+- **Charcoal burners' village** — Woodland charcoal piles and temporary dwellings.
+- **Resin collectors' village** — Harvesting forest resins.
+- **Fishing village** — Boats, nets, and drying racks.
+- **Hunters' village** — Stops and game processing.
+- **Salt workers' village** — Salt marshes or saltworks.
+- **Mining village** — Extraction shafts and modest spoil heaps.
+- **Quarry village** — Nearby stone extraction.
+- **Potters' village** — Clustered clay, workshops, and kilns.
+- **Metalworkers' village** — Furnaces, forges, fuel stores.
+- **Glassmakers' village** — Furnaces, sand, abundant wood.
+- **Weavers' village** — Dwellings associated with looms.
+- **Tanners' village** — Water, hides, craft vats.
+- **Millers' village** — River-organized mills.
+- **Boatmen's village** — Transport on a river route.
+- **Shipbuilders' village** — Supports and maritime work.
+
+### Trade, roads, and services
+
+- **Wayside village** — Stop on a major road.
+- **Caravan-stop village** — Organized caravan passage.
+- **Fair town** — Large periodic markets.
+- **Toll town** — Tax on a compulsory passage.
+- **Ford town** — Controls river crossing.
+- **Bridge town** — Flows concentrated at the crossing.
+- **Pass town** — Caravan or military crossing.
+- **Frontier town** — Customs and cross-border trade.
+- **Port market town** — Quays, warehouses, maritime crafts.
+- **Merchant city** — Commercial squares and streets.
+- **Fair city** — Large periodic trading spaces.
+- **Warehouse city** — Merchant transit and storage.
+- **Maritime port city** — Basins, quays, naval activities.
+- **River port city** — Quays, mills, river barges.
+- **Crossroads city** — Major routes meet.
+- **Pilgrimage city** — Shrines and religious lodging.
+- **Spa town** — Springs and specialized baths.
+- **University town** — Schools and student housing.
+- **Craft town** — Trades grouped by street.
+- **Manufacturing town** — Large-scale specialized workshops.
+- **Mint town** — Mint and trade.
+
+### Power, religion, and defense
+
+- **Manorial village** — Estate controlled by a manor.
+- **Monastic village** — Settlement dependent on an abbey.
+- **Sauveté village** — Foundation under religious protection.
+- **Castle village** — Settlement near a fortress.
+- **Garrison village** — Civilians serving soldiers.
+- **Shrine village** — Settlement linked to a sacred place.
+- **Abbey market town** — Market adjoining a monastery.
+- **Episcopal market town** — Center organized by a bishopric.
+- **Fortified market town** — Settlement and defensive enclosure.
+- **Garrison town** — Barracks and defense predominate.
+- **Court town** — Nobles close to the sovereign.
+- **Episcopal city** — Cathedral and bishop's palace.
+- **Administrative city** — Offices and archives grouped together.
+- **Shrine city** — Religious center with broad influence.
+- **Religious capital** — Numerous religious institutions.
+- **Fortified frontier town** — Garrison, gates, military control.
+- **Settlement colony** — Foundation organized by an authority.
+- **Inhabited military camp** — Permanent districts around camp.
+
+## 1.5. Status, origin, and urban tradition (historical types)
+
+### Ancient, Celtic, and Greco-Roman Europe
+
+- **Celtic oppidum (ANT)** — Large fortified hill settlement.
+- **Protohistoric fortified spur (ANT)** — Rampart cuts off land access.
+- **Hillfort (ANT/HMA)** — Community hilltop enclosure.
+- **Dún / Gaelic fort (HMA)** — Fortified seat of power.
+- **Irish ringfort (HMA)** — Farm with ring enclosure.
+- **Crannog (ANT/HMA)** — Lake island settlement.
+- **Scottish broch (ANT)** — Inhabited defensive round tower.
+- **Greek polis (ANT)** — Civic community and territory.
+- **Greek asty (ANT)** — Urban nucleus of a polis.
+- **Greek colony (ANT)** — Colonial foundation and territory.
+- **Roman castrum (ANT)** — Fortified grid camp.
+- **Roman canabae (ANT)** — Civilian settlement near legions.
+- **Gallo-Roman vicus (ANT)** — Craft or roadside town.
+- **Roman colonia (ANT)** — Colonial foundation city.
+- **Roman municipium (ANT)** — Municipal community with rights.
+- **Civitas capital (ANT)** — Administrative center of a people.
+- **Villa rustica (ANT)** — Large built agricultural estate.
+- **Ancient road station (ANT)** — Stop on a major route.
+- **Byzantine kastron (HMA/MMA)** — Inhabited fortified place.
+
+### Medieval Europe
+
+- **Anglo-Saxon burh (HMA)** — Often planned fortified town.
+- **Occitan castelnau (MMA)** — New settlement linked to castle.
+- **Sauveté (MMA)** — Settlement under ecclesiastical protection.
+- **Bastide (MMA)** — Planned foundation with regular plots.
+- **Villeneuve (MMA)** — Settlement created by charter.
+- **Castle town (HMA/MMA)** — Market and castle settlement.
+- **Monastic town (HMA/MMA)** — Settlement developed around abbey.
+- **Church-centered town (MMA)** — Settlement organized around church.
+- **Privileged borough (MMA)** — Privileges granted to inhabitants.
+- **Communal city (MMA)** — Partly autonomous municipal government.
+- **Free imperial city (MMA)** — Autonomy within the Empire.
+- **Hanseatic city (MMA)** — Maritime trade and merchant leagues.
+- **Italian maritime city (MMA)** — Port trade and urban powers.
+- **March town (MMA)** — Settlement in frontier region.
+- **Slavic gorodishche (HMA/MMA)** — Fortified settlement, generally on high ground.
+- **Slavic grad (HMA/MMA)** — Fortified principality center.
+- **Norse kaupang (HMA)** — Early Scandinavian trading port.
+- **Norse longhouse village (HMA)** — Farms and elongated buildings.
+- **Alpine road town (MMA)** — Mountain tolls and stops.
+
+### Mediterranean, Near East, and desert areas
+
+- **Islamic medina (MMA)** — Urban center with interlocking districts.
+- **Qasba / kasbah (MMA)** — Citadel or fortified district.
+- **North African ksar (MMA)** — Fortified earthen village.
+- **Oasis qsar (MMA)** — Dense settlement around irrigation.
+- **Inhabited ribat (HMA/MMA)** — Religious and military fort.
+- **Caravan city (ANT/MMA)** — Stop on overland trade.
+- **Souk city (MMA)** — Commercial activity in specialized streets.
+- **Oasis city (ANT/MMA)** — Development dependent on canals.
+- **Collective-granary village (MMA)** — Communally defended stores.
+- **Citadel city (TRA)** — Power concentrated in inner fort.
+
+### Other civilizations (optional modules)
+
+- **Chinese imperial city (ANT/MMA)** — Enclosures and ceremonial axes.
+- **Chinese market town (MMA)** — Trade and densified districts.
+- **Japanese palace city (MMA)** — Aristocratic residences and shrines.
+- **Japanese mountain village (MMA)** — Dispersed wooden houses.
+- **Steppe nomad camp (TRA)** — Mobile tents and enclosures.
+- **Nomadic imperial ordo (MMA)** — Mobile court of large tents.
+- **Khmer temple city (MMA)** — Ritual enclosures and pools.
+- **West African royal city (MMA)** — Palace, markets, craft districts.
+- **Sahelian earthen village (MMA)** — Earthen-built courtyards.
+- **Swahili city (MMA)** — Stone and coral port.
+- **Mesoamerican city (ANT/MMA)** — Squares, pyramids, ritual grounds.
+- **Andean city (MMA)** — Terraces, enclosures, squares.
+- **Andean terrace village (MMA)** — Settlement follows agricultural terrain.
+
+## 1.6. Districts and internal substructures
+
+Combine these with the preceding types:
+
+- **Original core** — Oldest retained fabric.
+- **Upper town** — Dominant fortified or aristocratic core.
+- **Lower town** — Crafts and popular housing.
+- **Acropolis / sacred height** — Temples overlooking ancient city.
+- **Inner citadel** — Defensive seat of power.
+- **Castle district** — Outbuildings and manorial services.
+- **Cathedral district** — Palace, cloister, canons' houses.
+- **Temple district** — Shrines and processional roads.
+- **Monastic district** — Cloisters, orchards, outbuildings.
+- **Administrative district** — Offices and official residences.
+- **Central merchant district** — Shops and main market.
+- **Craft street** — Workshops of a nearby specialty.
+- **Peripheral craft district** — Noisy or polluting trades.
+- **Tanners' district** — Waterside workshops.
+- **Smiths' district** — Fires and intensive handling.
+- **Potters' district** — Kilns and clay yards.
+- **Weavers' district** — Workshops mixed with houses.
+- **Warehouse district** — Large storage parcels.
+- **Quayside district** — Merchants, fishers, boatmen.
+- **Inn district** — Transient lodging and stables.
+- **Soldiers' district** — Garrison and fortified access.
+- **Aristocratic district** — Mansions and private courts.
+- **Dense popular district** — Small heavily built parcels.
+- **Courtyard-house district** — Dense streets, open interiors.
+- **Immigrant merchant district** — Trade networks by context.
+- **Historical religious-community district** — Local grouping, not universal.
+- **University district** — Schools, colleges, booksellers.
+- **Bath district** — Water-related establishments.
+- **Garden district** — Kitchen gardens and spaced houses.
+- **Roadside suburb** — Growth beyond town gate.
+- **Craft suburb** — Workshops outside walls.
+- **Bridge suburb** — Development on opposite bank.
+- **Port suburb** — Settlement extending toward quays.
+- **Religious precinct** — Delimited space dependent on worship.
+- **Peripheral fairground** — Seasonal ground outside walls.
+- **Peripheral necropolis** — Burials outside inhabited core.
+- **Abandoned district** — Empty parcels and ruined houses.
+- **New extension** — Regular plots on open ground.
+
+## 1.7. Current state and visible settlement history (modifiers)
+
+- **Expanding** — Suburbs and active building sites.
+- **Overcrowded** — Subdivided parcels and cluttered courtyards.
+- **Depopulated** — Empty houses and overgrown gardens.
+- **Partly ruined** — Collapsed fabric among inhabited buildings.
+- **Rebuilt after fire** — Regular districts within older fabric.
+- **Rebuilt after war** — Reuse of old walls.
+- **Under siege** — Barricades, breaches, bivouacs.
+- **Under quarantine** — Guarded gates and restricted access.
+- **Seasonally flooded** — Walkways and raised floors.
+- **Relocated** — Former site reduced to remains.
+- **Seasonally occupied** — Houses closed part of the year.
+- **Declined market town** — Large facilities underused.
+- **City over an ancient city** — Ancient network partly retained.
+- **Double historic enclosure** — Older walls absorbed inside.
 
 ---
 
-# 1. Types de settlements et structures d'implantation
-
-## 1.1. Échelle et niveau de peuplement
-
-- **Abri isolé** — Un occupant, habitat ponctuel.
-- **Cabane isolée** — Petit foyer hors village.
-- **Ferme isolée** — Exploitation à bâtiments groupés.
-- **Ferme fortifiée** — Exploitation défendue, enceinte propre.
-- **Domaine agricole** — Plusieurs bâtiments et terres.
-- **Écart rural** — Quelques foyers séparés.
-- **Groupe de fermes** — Plusieurs exploitations voisines.
-- **Hameau** — Petit groupe de maisons.
-- **Hameau saisonnier** — Occupation limitée dans l'année.
-- **Petit village** — Habitat permanent peu dense.
-- **Village** — Communauté rurale structurée.
-- **Gros village** — Village étendu, services locaux.
-- **Village-centre** — Services pour hameaux voisins.
-- **Bourg** — Centre artisanal et commercial.
-- **Bourg de marché** — Échanges réguliers, place centrale.
-- **Petite ville** — Tissu bâti et métiers.
-- **Ville moyenne** — Quartiers multiples, fonctions variées.
-- **Grande ville** — Densité forte, fonctions spécialisées.
-- **Cité régionale** — Centre religieux et politique.
-- **Métropole** — Très grand pôle urbain.
-- **Capitale provinciale** — Administration d'un territoire étendu.
-- **Capitale royale** — Siège principal du souverain.
-- **Capitale impériale** — Centre d'un grand empire.
-- **Cité-État** — Centre d'un territoire autonome.
-- **Agglomération polycentrique** — Plusieurs noyaux urbains liés.
-- **Ville double** — Deux noyaux voisins distincts.
-- **Ville nouvelle satellite** — Extension planifiée d'un centre.
-
-> Les mots *village*, *bourg*, *ville* et *cité* n'ont pas de seuil de population universel : le statut juridique et la région peuvent compter davantage que la taille.
-
-## 1.2. Morphologie du plan et du parcellaire
-
-- **Habitat dispersé** — Fermes éloignées sans noyau.
-- **Habitat lâche** — Maisons espacées, jardins intermédiaires.
-- **Village groupé** — Maisons proches autour d'un cœur.
-- **Village compact** — Bâti serré, rues étroites.
-- **Village-rue** — Maisons alignées sur voie.
-- **Village-rue double** — Deux alignements se faisant face.
-- **Village en chapelet** — Hameaux successifs sur route.
-- **Village-carrefour** — Quatre voies structurent l'habitat.
-- **Village en Y** — Trois branches de rues.
-- **Village en étoile viaire** — Plusieurs voies convergent au centre.
-- **Village en boucle** — Voie refermée autour d'un îlot.
-- **Village à courette centrale** — Maisons autour d'une cour.
-- **Village autour d'un commun** — Espace partagé au centre.
-- **Village circulaire** — Habitat disposé en anneau.
-- **Village concentrique** — Rues en anneaux successifs.
-- **Village radial** — Rues partant du centre.
-- **Village en spirale** — Rues épousant une pente.
-- **Village en terrasse** — Bâti étagé sur versant.
-- **Village en amphithéâtre** — Maisons suivant une cuvette.
-- **Village en peigne** — Rues secondaires perpendiculaires.
-- **Village en arête** — Rue dorsale, venelles descendantes.
-- **Village en bande côtière** — Façades alignées au rivage.
-- **Village à deux pôles** — Deux centres organisent l'habitat.
-- **Village polynucléaire** — Plusieurs groupes bâtis disjoints.
-- **Village annulaire fortifié** — Habitat enserré par enceinte.
-- **Village à enclos domestiques** — Cours clôturées juxtaposées.
-- **Village en damier** — Rues orthogonales, îlots réguliers.
-- **Village à lots laniérés** — Parcelles longues et étroites.
-- **Village à lots égaux** — Parcelles issues d'un partage.
-- **Village à parcelles irrégulières** — Formes héritées d'extensions successives.
-- **Bourg-rue** — Grand axe commerçant linéaire.
-- **Bourg à place centrale** — Marché structurant les rues.
-- **Bourg à deux rues parallèles** — Façades et jardins arrière.
-- **Bourg castral concentrique** — Habitat autour du château.
-- **Ville organique** — Rues issues de croissance progressive.
-- **Ville en damier antique** — Cardo, decumanus ou équivalents.
-- **Ville quadrillée planifiée** — Îlots définis avant construction.
-- **Ville à trame mixte** — Damier ancien, faubourgs irréguliers.
-- **Ville en éventail** — Expansion depuis porte ou port.
-- **Ville concentrique fortifiée** — Extensions enfermées d'enceintes successives.
-- **Ville à enceintes successives** — Noyaux historiques et extensions.
-- **Ville à axes monumentaux** — Grandes voies reliant les pôles.
-- **Ville polycentrique** — Places et quartiers autonomes.
-- **Ville haute et basse** — Noyaux séparés par relief.
-- **Ville à citadelle excentrée** — Forteresse dominante hors centre.
-- **Ville à faubourgs rayonnants** — Extensions le long des routes.
-- **Ville-port linéaire** — Rues parallèles aux quais.
-- **Ville de pont** — Deux rives, franchissement central.
-- **Ville de confluence** — Quartiers autour de rivières.
-- **Ville en presqu'île** — Tissu borné par l'eau.
-- **Ville-île** — Centre bâti isolé par l'eau.
-- **Ville en gradins** — Îlots étagés, escaliers nombreux.
-- **Ville à cours intérieures** — Façades sobres, cœurs privatifs.
-- **Ville à venelles closes** — Impasses et accès contrôlés.
-
-## 1.3. Implantation topographique et milieu
-
-- **Village de plaine** — Terrain ouvert, expansion facile.
-- **Village de plateau** — Habitat sur surface élevée.
-- **Village de vallée** — Développement dans fond encaissé.
-- **Village de piedmont** — Contact plaine et montagne.
-- **Village de col** — Contrôle d'un passage montagnard.
-- **Village de versant** — Maisons accrochées à pente.
-- **Village de crête** — Bâti sur ligne dominante.
-- **Village de sommet** — Accès difficile, vue étendue.
-- **Village d'éperon barré** — Défense sur promontoire rocheux.
-- **Village de falaise** — Habitat longeant rupture abrupte.
-- **Village de grotte** — Cavités utilisées comme logements.
-- **Village troglodytique** — Habitats creusés dans roche.
-- **Village sous roche** — Constructions abritées par surplomb.
-- **Village forestier** — Clairière dans massif boisé.
-- **Village de bocage** — Parcelles entourées de haies.
-- **Village d'openfield** — Champs ouverts autour du noyau.
-- **Village de marais** — Sol humide, cheminements surélevés.
-- **Village lacustre** — Habitat établi près du lac.
-- **Village palafittique** — Constructions portées sur pilotis.
-- **Village insulaire** — Habitat sur petite île.
-- **Village de delta** — Canaux et terres alluviales.
-- **Village de gué** — Passage praticable dans rivière.
-- **Village de pont** — Franchissement permanent de cours d'eau.
-- **Village de source** — Groupement autour d'eau potable.
-- **Village d'estuaire** — Entre fleuve et mer.
-- **Village de lagune** — Canaux, pêche, terres basses.
-- **Village côtier** — Rivage et accès maritime.
-- **Village de crique** — Petit port naturellement abrité.
-- **Village d'oasis** — Habitat groupé autour d'irrigation.
-- **Village de désert** — Ombre, puits, habitat compact.
-- **Village de steppe** — Sol ouvert, élevage dominant.
-- **Village volcanique** — Bâti adapté aux roches volcaniques.
-- **Village sur ruines** — Réemploi d'un site ancien.
-- **Village de frontière** — Position de contrôle stratégique.
-
-## 1.4. Fonction économique dominante
-
-### Production rurale et ressources
-
-- **Village céréalier** — Granges et champs ouverts.
-- **Village maraîcher** — Jardins intensifs près des murs.
-- **Village viticole** — Celliers et pressoirs nombreux.
-- **Village oléicole** — Oliveraies, moulins à huile.
-- **Village fruitier** — Vergers et séchoirs végétaux.
-- **Village d'éleveurs** — Enclos et pacages proches.
-- **Village pastoral d'altitude** — Estives et cabanes saisonnières.
-- **Village de transhumance** — Occupation dépendant des troupeaux.
-- **Village de bûcherons** — Débitage et stockage du bois.
-- **Village charbonnier** — Meules forestières, habitat temporaire.
-- **Village de résiniers** — Exploitation de résines forestières.
-- **Village de pêcheurs** — Barques, filets et séchoirs.
-- **Village de chasseurs** — Haltes et transformation du gibier.
-- **Village de saliniers** — Marais salants ou salines.
-- **Village minier** — Puits d'extraction, terrils modestes.
-- **Village de carrière** — Extraction de pierre à proximité.
-- **Village de potiers** — Argile, ateliers, fours regroupés.
-- **Village de métallurgistes** — Fours, forges, réserves de combustible.
-- **Village de verriers** — Fours, sable, bois abondant.
-- **Village de tisserands** — Habitat associé aux métiers.
-- **Village de tanneurs** — Eau, peaux, bassins artisanaux.
-- **Village de meuniers** — Moulins structurés par rivière.
-- **Village de bateliers** — Transport sur axe fluvial.
-- **Village de constructeurs navals** — Calage et travail maritime.
-
-### Échanges, routes et services
-
-- **Village d'étape** — Relais sur grand chemin.
-- **Village de relais caravanier** — Passage organisé de caravanes.
-- **Bourg de foire** — Marchés périodiques à grande échelle.
-- **Bourg de péage** — Taxe sur passage obligatoire.
-- **Bourg de gué** — Contrôle du passage fluvial.
-- **Bourg de pont** — Flux concentrés au franchissement.
-- **Bourg de col** — Passage caravanier ou militaire.
-- **Bourg de frontière** — Douanes et échanges limitrophes.
-- **Bourg portuaire** — Quais, entrepôts, artisans maritimes.
-- **Ville marchande** — Places et rues commerciales.
-- **Ville de foire** — Grands espaces marchands périodiques.
-- **Ville d'entrepôt** — Transit et stockage marchand.
-- **Ville portuaire maritime** — Bassins, quais, activités navales.
-- **Ville portuaire fluviale** — Quais, moulins, barges fluviales.
-- **Ville-carrefour** — Routes majeures se rencontrant.
-- **Ville de pèlerinage** — Sanctuaires et hébergements religieux.
-- **Ville thermale** — Sources et bains spécialisés.
-- **Ville universitaire** — Écoles et logements étudiants.
-- **Ville artisanale** — Professions regroupées par rues.
-- **Ville manufacturière** — Ateliers spécialisés à grande échelle.
-- **Ville monétaire** — Hôtel des monnaies, commerce.
-
-### Pouvoir, religion et défense
-
-- **Village seigneurial** — Domaine contrôlé par manoir.
-- **Village monastique** — Habitat dépendant d'une abbaye.
-- **Village de sauveté** — Fondation sous protection religieuse.
-- **Village castral** — Habitat établi près forteresse.
-- **Village de garnison** — Civils au service des soldats.
-- **Village de sanctuaire** — Habitat lié à lieu sacré.
-- **Bourg abbatial** — Marché adossé à monastère.
-- **Bourg épiscopal** — Centre organisé par évêché.
-- **Bourg fortifié** — Habitat et enceinte défensive.
-- **Ville de garnison** — Casernes et défense prédominantes.
-- **Ville de cour** — Nobles proches du souverain.
-- **Ville épiscopale** — Cathédrale et palais épiscopal.
-- **Ville administrative** — Offices et archives regroupés.
-- **Ville-sanctuaire** — Centre religieux à rayonnement large.
-- **Capitale religieuse** — Institutions cultuelles très nombreuses.
-- **Ville-frontière fortifiée** — Garnison, portes, contrôle militaire.
-- **Colonie de peuplement** — Fondation organisée par autorité.
-- **Camp militaire habité** — Quartiers durables autour du camp.
-
-## 1.5. Statut, origine et tradition urbaine (types historiques)
-
-### Europe ancienne, celtique et gréco-romaine
-
-- **Oppidum celtique (ANT)** — Grande agglomération fortifiée de hauteur.
-- **Éperon fortifié protohistorique (ANT)** — Rempart coupant accès terrestre.
-- **Hillfort (ANT/HMA)** — Enceinte de hauteur communautaire.
-- **Dún / fort gaélique (HMA)** — Enclos fortifié de pouvoir.
-- **Ringfort irlandais (HMA)** — Ferme à enceinte annulaire.
-- **Crannog (ANT/HMA)** — Habitat insulaire dans lac.
-- **Broch écossais (ANT)** — Tour ronde habitée défensive.
-- **Polis grecque (ANT)** — Communauté civique et territoire.
-- **Asty grecque (ANT)** — Noyau urbain de polis.
-- **Colonie grecque (ANT)** — Fondation et territoire colonial.
-- **Castrum romain (ANT)** — Camp quadrillé et fortifié.
-- **Canabae romaines (ANT)** — Habitat civil près des légions.
-- **Vicus gallo-romain (ANT)** — Bourg artisanal ou routier.
-- **Colonia romaine (ANT)** — Ville de fondation coloniale.
-- **Municipium romain (ANT)** — Communauté municipale dotée de droits.
-- **Chef-lieu de civitas (ANT)** — Centre administratif d'un peuple.
-- **Villa rustica (ANT)** — Grand domaine agricole bâti.
-- **Station routière antique (ANT)** — Étape sur voie majeure.
-- **Kastron byzantin (HMA/MMA)** — Place fortifiée et habitée.
-
-### Europe médiévale
-
-- **Burh anglo-saxon (HMA)** — Bourg fortifié souvent planifié.
-- **Castelnau occitan (MMA)** — Habitat neuf lié au château.
-- **Sauveté (MMA)** — Habitat sous protection ecclésiastique.
-- **Bastide (MMA)** — Fondation planifiée à lots réguliers.
-- **Villeneuve (MMA)** — Agglomération créée par charte.
-- **Bourg castral (HMA/MMA)** — Marché et habitat du château.
-- **Bourg monastique (HMA/MMA)** — Habitat développé autour d'abbaye.
-- **Bourg ecclésial (MMA)** — Habitat organisé autour d'église.
-- **Bourg franc (MMA)** — Privilèges accordés aux habitants.
-- **Ville de commune (MMA)** — Gouvernement municipal partiellement autonome.
-- **Ville libre d'Empire (MMA)** — Autonomie au sein de l'Empire.
-- **Ville hanséatique (MMA)** — Commerce maritime et ligues marchandes.
-- **Cité maritime italienne (MMA)** — Commerce portuaire et pouvoirs urbains.
-- **Bourg de marche (MMA)** — Habitat dans région frontalière.
-- **Gorodichtché slave (HMA/MMA)** — Établissement fortifié, généralement sur hauteur.
-- **Grad slave (HMA/MMA)** — Centre fortifié de principauté.
-- **Kaupang nordique (HMA)** — Port marchand scandinave ancien.
-- **Village nordique à longues maisons (HMA)** — Fermes et bâtiments allongés.
-- **Bourg de route alpine (MMA)** — Péages et relais montagnards.
-
-### Méditerranée, Proche-Orient et zones désertiques
-
-- **Médina islamique (MMA)** — Centre urbain à quartiers imbriqués.
-- **Qasba / kasbah (MMA)** — Citadelle ou quartier fortifié.
-- **Ksar nord-africain (MMA)** — Village fortifié de terre.
-- **Qsar oasien (MMA)** — Habitat dense autour d'irrigation.
-- **Ribat habité (HMA/MMA)** — Fort religieux et militaire.
-- **Ville de caravane (ANT/MMA)** — Étape sur échanges terrestres.
-- **Ville de souk (MMA)** — Activités commerciales en rues spécialisées.
-- **Ville-oasis (ANT/MMA)** — Développement dépendant de canaux.
-- **Village de greniers collectifs (MMA)** — Réserves défendues en commun.
-- **Ville de citadelle (TRA)** — Pouvoir regroupé dans fort intérieur.
-
-### Ouvertures à d'autres civilisations (modules optionnels)
-
-- **Ville impériale chinoise (ANT/MMA)** — Enceintes et axes cérémoniels.
-- **Ville de marché chinoise (MMA)** — Échanges et quartiers densifiés.
-- **Ville du palais japonais (MMA)** — Résidences aristocratiques et sanctuaires.
-- **Village de montagne japonais (MMA)** — Maisons de bois dispersées.
-- **Campement nomade des steppes (TRA)** — Tentes et enclos mobiles.
-- **Ordo impérial nomade (MMA)** — Cour mobile de grandes tentes.
-- **Ville-temple khmère (MMA)** — Enclos rituels et bassins.
-- **Ville royale ouest-africaine (MMA)** — Palais, marchés, quartiers de métier.
-- **Village sahélien en banco (MMA)** — Cours bâties en terre.
-- **Cité swahilie (MMA)** — Port de pierre et corail.
-- **Cité mésoaméricaine (ANT/MMA)** — Places, pyramides, terrains rituels.
-- **Cité andine (MMA)** — Terrasses, enceintes et places.
-- **Village andin en terrasses (MMA)** — Implantation suivant relief agricole.
-
-## 1.6. Quartiers et sous-structures internes (à combiner avec les types précédents)
-
-- **Noyau primitif** — Plus vieux tissu conservé.
-- **Ville haute** — Noyau dominant fortifié ou aristocratique.
-- **Ville basse** — Artisanat et habitat populaire.
-- **Acropole / hauteur sacrée** — Temples dominant ville antique.
-- **Citadelle intérieure** — Réduit défensif du pouvoir.
-- **Quartier du château** — Dépendances et services seigneuriaux.
-- **Quartier cathédral** — Palais, cloître, maisons canoniales.
-- **Quartier des temples** — Sanctuaires et voies processionnelles.
-- **Quartier monastique** — Cloîtres, vergers, dépendances.
-- **Quartier administratif** — Offices et résidences officielles.
-- **Quartier marchand central** — Boutiques et marché principal.
-- **Rue des métiers** — Ateliers de spécialité proche.
-- **Quartier artisanal périphérique** — Métiers bruyants ou polluants.
-- **Quartier des tanneurs** — Ateliers en bord d'eau.
-- **Quartier des forgerons** — Feux et manutention intense.
-- **Quartier des potiers** — Fours et cours d'argile.
-- **Quartier des tisserands** — Ateliers mêlés aux maisons.
-- **Quartier des entrepôts** — Grandes parcelles de stockage.
-- **Quartier des quais** — Marchands, pêcheurs et bateliers.
-- **Quartier des auberges** — Logements de passage, écuries.
-- **Quartier des soldats** — Garnison et accès fortifiés.
-- **Quartier aristocratique** — Hôtels et cours privées.
-- **Quartier populaire dense** — Petites parcelles très bâties.
-- **Quartier de maisons à cour** — Rues denses, intérieurs ouverts.
-- **Quartier d'immigrants marchands** — Réseaux commerciaux selon contexte.
-- **Quartier confessionnel historique** — Regroupement local, non universel.
-- **Quartier universitaire** — Écoles, collèges, libraires.
-- **Quartier des bains** — Établissements liés à l'eau.
-- **Quartier des jardins** — Potagers et maisons espacées.
-- **Faubourg routier** — Croissance hors porte de ville.
-- **Faubourg de métiers** — Ateliers hors de l'enceinte.
-- **Faubourg de pont** — Développement sur autre rive.
-- **Faubourg portuaire** — Habitat prolongé vers les quais.
-- **Enclos religieux** — Espace délimité dépendant du culte.
-- **Champ de foire périphérique** — Terrain saisonnier hors des murs.
-- **Nécropole périphérique** — Sépultures hors noyau habité.
-- **Quartier abandonné** — Parcelles vides et maisons ruinées.
-- **Extension neuve** — Lots réguliers sur terrain libre.
-
-## 1.7. État actuel et histoire visible du settlement (modificateurs)
-
-- **En expansion** — Faubourgs et chantiers ouverts.
-- **Surpeuplé** — Parcelles subdivisées, cours encombrées.
-- **Dépeuplé** — Maisons vides et jardins envahis.
-- **Partiellement ruiné** — Bâti effondré parmi habitations.
-- **Reconstruit après incendie** — Quartiers réguliers au milieu.
-- **Reconstruit après guerre** — Réemploi de murs anciens.
-- **Assiégé** — Barricades, brèches et bivouacs.
-- **Sous quarantaine** — Portes surveillées, accès limités.
-- **Inondé saisonnièrement** — Passerelles et sols surélevés.
-- **Déplacé** — Ancien site devenu vestiges.
-- **À occupation saisonnière** — Maisons fermées une partie de l'année.
-- **Bourg déchu** — Grands équipements sous-utilisés.
-- **Ville sur ville antique** — Réseau ancien partiellement conservé.
-- **Double enceinte historique** — Remparts anciens absorbés dedans.
-
----
-# 2. Habitations, bâtiments ordinaires et équipements courants
-
-> Une entrée désigne tantôt un **morphotype architectural** (maison longue), tantôt un **programme** (cordonnerie). Deux programmes peuvent partager le même plan de maison. Les adjectifs de matériau, de toiture et de richesse doivent idéalement être gérés comme des variantes paramétriques.
-
-## 2.1. Habitations modestes et rurales — formes du bâtiment
-
-- **Hutte circulaire** — Pièce ronde autour d'un foyer.
-- **Hutte ovale** — Volume simple aux parois courbes.
-- **Hutte rectangulaire** — Petit volume à couverture légère.
-- **Cabane forestière** — Abri de bois sommaire.
-- **Cabane de berger** — Abri provisoire près des pâtures.
-- **Cabane de pêcheur** — Habitat au bord de l'eau.
-- **Cabane de charbonnier** — Logement forestier temporaire.
-- **Abri sous roche habité** — Paroi naturelle, fermeture construite.
-- **Habitation troglodytique** — Pièces excavées en falaise.
-- **Maison semi-enterrée** — Plancher sous niveau du sol.
-- **Maison à fosse** — Petit édifice excavé, couvert.
-- **Maison paysanne monocellulaire** — Une pièce pour tout.
-- **Maison paysanne à deux pièces** — Foyer et réserve séparés.
-- **Maison à salle centrale** — Grande pièce de vie.
-- **Maison-halle (hall house)** — Grande salle avec annexes.
-- **Maison à nef unique** — Volume allongé sans cloison majeure.
-- **Maison longue (longhouse)** — Long bâtiment partagé en fonctions.
-- **Maison-bloc** — Logement et exploitation accolés.
-- **Maison-étable** — Hommes et bétail contigus.
-- **Maison à cour fermée** — Dépendances entourant cour privée.
-- **Maison à cour ouverte** — Bâtiments autour d'espace libre.
-- **Maison à galerie** — Circulation sous galerie couverte.
-- **Maison à porche** — Entrée abritée dans façade.
-- **Maison à appentis** — Petit volume secondaire adossé.
-- **Maison à étage simple** — Habitat réparti sur niveaux.
-- **Maison à rez-de-chaussée surélevé** — Accès élevé contre humidité.
-- **Maison sur pilotis** — Plancher au-dessus d'eau ou boue.
-- **Maison de rive** — Bâti étroit en bord d'eau.
-- **Maison de montagne** — Bâtiment compact, toiture adaptée.
-- **Maison d'éleveur nomade** — Habitat démontable et transportable.
-- **Yourte / ger (TRA)** — Tente circulaire à ossature.
-- **Tente pastorale** — Couverture textile sur mâts.
-- **Tente longue de camp** — Abri collectif démontable.
-- **Loge de terre et gazon** — Murs ou toit végétalisés.
-- **Maison en bois empilé** — Parois de rondins assemblés.
-- **Maison en pierre sèche** — Maçonnerie sans mortier.
-- **Maison de terre massive** — Murs épais de terre.
-
-## 2.2. Habitations urbaines — formes du bâtiment
-
-- **Maison mitoyenne** — Façades continues et murs communs.
-- **Maison en bande** — Suite de logements accolés.
-- **Maison de parcelle laniérée** — Façade étroite, grande profondeur.
-- **Maison à pignon sur rue** — Pignon orienté vers rue.
-- **Maison gouttereau sur rue** — Long mur donnant sur voie.
-- **Maison à encorbellement (MMA)** — Étage débordant sur rue.
-- **Maison à boutique** — Vente en façade, logement derrière.
-- **Maison-atelier** — Travail et résidence imbriqués.
-- **Maison à échoppe multiple** — Plusieurs boutiques au rez-de-chaussée.
-- **Maison à porte cochère** — Passage vers cour intérieure.
-- **Maison à deux cours** — Cours successives, parcelle profonde.
-- **Maison à cour intérieure** — Pièces orientées vers patio.
-- **Maison à toit-terrasse** — Toiture plate utilisée dehors.
-- **Maison à terrasse en gradins** — Niveaux épousant le relief.
-- **Maison à couloir latéral** — Distribution le long d'un passage.
-- **Maison à escalier extérieur** — Étage accessible depuis cour.
-- **Maison à galerie intérieure** — Chambres desservies autour cour.
-- **Maison urbaine subdivisée** — Plusieurs foyers dans bâtiment ancien.
-- **Maison d'artisan** — Atelier visible depuis rue.
-- **Maison de marchand** — Boutique, réserve et logement.
-- **Maison de notable** — Cour privée et pièces nombreuses.
-- **Maison de maître rurale** — Logis dominant les dépendances.
-- **Maison grecque à pastas (ANT)** — Cour bordée de galerie.
-- **Maison grecque à prostas (ANT)** — Cour, portique devant salle.
-- **Maison grecque à cour (ANT)** — Pièces distribuées par patio.
-- **Domus romaine (ANT)** — Maison unifamiliale à cour.
-- **Domus à atrium (ANT)** — Atrium organisant circulation intérieure.
-- **Domus à péristyle (ANT)** — Jardin entouré de portiques.
-- **Insula d'habitation (ANT)** — Immeuble collectif à étages.
-- **Insula à boutiques (ANT)** — Commerces dessous, logements dessus.
-- **Taberna avec arrière-logement (ANT)** — Local marchand et habitation.
-- **Maison de cour islamique (MMA)** — Patio central, façade discrète.
-- **Maison-tente de camp permanent** — Structure démontable, emplacement durable.
-
-## 2.3. Matériaux et couvertures — variantes, pas catégories séparées
-
-- **Ossature bois et torchis** — Trame de bois remplie.
-- **Pan de bois apparent** — Charpente visible en façade.
-- **Clayonnage enduit** — Branchages entrelacés et terre.
-- **Adobe / brique crue** — Blocs séchés au soleil.
-- **Brique cuite** — Maçonnerie régulière en terre cuite.
-- **Pisé** — Terre compactée entre coffrages.
-- **Pierre appareillée** — Blocs taillés en assises.
-- **Moellons maçonnés** — Pierres irrégulières liées au mortier.
-- **Pierre sèche** — Empilement sans liant hydraulique.
-- **Bois empilé** — Rondins ou madriers horizontaux.
-- **Toit de chaume** — Couverture végétale épaisse.
-- **Toit de roseaux** — Couverture de tiges palustres.
-- **Toit de bardeaux** — Petites planches superposées.
-- **Toit de tuiles** — Éléments cuits de couverture.
-- **Toit de lauzes** — Plaques de pierre minces.
-- **Toit de gazon** — Couche de terre végétalisée.
-- **Toit-terrasse en terre** — Couverture plate et praticable.
-- **Toiture à forte pente** — Évacuation rapide des précipitations.
-- **Toiture à faible pente** — Adaptée au climat sec.
-
-## 2.4. Dépendances domestiques et petits enclos
-
-- **Cour domestique** — Espace privé de travail.
-- **Cour fermée par murs** — Accès limité depuis rue.
-- **Jardin potager** — Petites planches vivrières.
-- **Jardin de simples** — Plantes médicinales et culinaires.
-- **Verger domestique** — Arbres fruitiers de proximité.
-- **Clos de vigne** — Petite parcelle viticole entourée.
-- **Cellier** — Conservation des aliments et boissons.
-- **Cave enterrée** — Réserve fraîche sous construction.
-- **Cave voûtée** — Sous-sol maçonné de stockage.
-- **Grenier d'habitation** — Réserves sous la toiture.
-- **Garde-manger** — Petite pièce de conservation.
-- **Bûcher** — Bois de chauffe abrité.
-- **Appentis** — Couverture adossée pour outils.
-- **Remise** — Petit bâtiment de rangement.
-- **Abri à charrette** — Stationnement d'un véhicule agricole.
-- **Four à pain privé** — Four domestique indépendant.
-- **Cuisine séparée** — Foyer déporté du logis.
-- **Fumoir** — Séchage d'aliments par fumée.
-- **Séchoir à fruits** — Déshydratation des récoltes.
-- **Puits privé** — Prélèvement d'eau domestique.
-- **Citerne domestique** — Réserve d'eau de pluie.
-- **Bassin de cour** — Récipient maçonné pour usages multiples.
-- **Latrines privées** — Cabinet vers fosse ou puisard.
-- **Fosse d'aisances** — Réceptacle de rejets domestiques.
-- **Puisard** — Infiltration des eaux usées.
-- **Lavoir domestique** — Bassin privé pour linge.
-- **Petit bain domestique (selon culture)** — Bassin et chauffage privés.
-- **Niche cultuelle domestique** — Petit espace de dévotion.
-- **Autel domestique** — Culte au sein du foyer.
-- **Colombier domestique (selon droits)** — Élevage de pigeons privilégié.
-- **Niche à chien / chenil** — Abri pour animaux domestiques.
-- **Ruche et rucher** — Installation pour abeilles.
-- **Pergola et treille** — Ombre et vigne de cour.
-
-## 2.5. Exploitations agricoles, pastorales et forestières
-
-- **Ferme à cour ouverte** — Logis et dépendances dispersés.
-- **Ferme à cour close** — Ensemble autour cour contrôlée.
-- **Ferme en long** — Bâtiments alignés en bande.
-- **Ferme en L** — Deux ailes autour cour.
-- **Ferme en U** — Trois ailes autour cour.
-- **Grange à récoltes** — Stockage de gerbes et grains.
-- **Grange à dîme** — Grande réserve de prélèvements.
-- **Grange à foin** — Réserve volumineuse de fourrage.
-- **Aire de battage** — Sol préparé pour céréales.
-- **Grenier surélevé** — Réserve protégée des rongeurs.
-- **Grenier sur poteaux** — Petit stockage au-dessus du sol.
-- **Grenier collectif rural** — Réserve commune de village.
-- **Silo enterré** — Fosse de conservation céréalière.
-- **Silo maçonné** — Réserve fixe à parois résistantes.
-- **Hangar à matériel** — Abri d'outils et charrettes.
-- **Étable** — Logement des bovins.
-- **Écurie rurale** — Logement et soin des chevaux.
-- **Bergerie** — Abri collectif des moutons.
-- **Chèvrerie** — Enclos couvert des chèvres.
-- **Porcherie** — Logement clos des porcs.
-- **Poulailler** — Petit bâtiment pour volailles.
-- **Basse-cour agricole** — Enclos polyvalent de volaille.
-- **Clapier** — Cases pour petits animaux.
-- **Chenil de chasse** — Logement des chiens nombreux.
-- **Enclos de pâturage** — Clôture retenant les troupeaux.
-- **Corral / parc à bétail** — Grand enclos de rassemblement.
-- **Parc de tri des troupeaux** — Couloirs et petits enclos.
-- **Abreuvoir** — Bassin d'eau pour animaux.
-- **Fenil** — Stockage de foin en hauteur.
-- **Meule de foin** — Réserve extérieure temporaire.
-- **Fourrageoir** — Espace couvert d'alimentation animale.
-- **Cabane d'estive** — Abri saisonnier en montagne.
-- **Buron / cabane fromagère (selon région)** — Transformation laitière en alpage.
-- **Laiterie rurale** — Pièce de traitement du lait.
-- **Fromagerie artisanale** — Fabrication et affinage de fromages.
-- **Parc à moutons saisonnier** — Enclos mobile de montagne.
-- **Abri à bois forestier** — Bois d'œuvre en séchage.
-- **Scierie manuelle** — Débitage à scies longues.
-- **Fosse de sciage** — Coupe manuelle de troncs.
-- **Charbonnière** — Meule de carbonisation du bois.
-- **Four à chaux rural** — Production de chaux de construction.
-- **Rucher agricole** — Regroupement de ruches exploitées.
-
-## 2.6. Production alimentaire et transformation courante
-
-- **Four banal / four communal** — Cuisson collective contre redevance.
-- **Boulangerie artisanale** — Pétrin, four et étal.
-- **Meunerie** — Bâtiment de mouture céréalière.
-- **Moulin à eau** — Roue entraînée par courant.
-- **Moulin à vent (MMA, selon région)** — Ailes utilisant le vent.
-- **Moulin à bras** — Petite meule à main.
-- **Moulin à traction animale** — Mécanisme entraîné par animaux.
-- **Moulin à huile** — Presse et broyage d'olives.
-- **Pressoir à raisin** — Extraction du jus fermentescible.
-- **Pressoir à fruits** — Extraction de jus divers.
-- **Fouloir viticole** — Cuve de pressurage manuel.
-- **Cuvier** — Grande pièce de fermentation.
-- **Chai / cave à vin** — Stockage et vieillissement du vin.
-- **Brasserie artisanale** — Cuves et foyer de brassage.
-- **Malterie** — Germination et séchage de grains.
-- **Brûlerie de malt** — Chauffage et séchage spécialisé.
-- **Taverne-brasserie** — Production et consommation associées.
-- **Vinaigrerie** — Fermentation et conservation acide.
-- **Huilerie de graines** — Extraction d'huiles végétales.
-- **Boucherie avec arrière-cour** — Découpe et vente animales.
-- **Abattoir artisanal** — Mise à mort et découpe.
-- **Salaison** — Conservation par le sel.
-- **Fumoir à poissons** — Conservation des prises par fumée.
-- **Séchoir à poisson** — Étendoirs ventilés près du rivage.
-- **Atelier de garum (ANT)** — Salaison et sauces de poisson.
-- **Four de potier alimentaire** — Cuisson de vaisselle commune.
-- **Four de cuisine collective** — Préparation pour groupe nombreux.
-- **Cuisine d'auberge** — Foyers adaptés aux voyageurs.
-- **Cuisine de monastère** — Préparation pour communauté religieuse.
-
-## 2.7. Commerces et échoppes — programmes du bâti ordinaire
-
-- **Étal de plein air** — Table de vente mobile.
-- **Échoppe ouverte** — Comptoir donnant sur rue.
-- **Boutique à volet-étal** — Façade transformée en comptoir.
-- **Boutique sous arcade** — Vente abritée par galerie.
-- **Boutique avec arrière-boutique** — Étal, réserve, parfois logement.
-- **Boutique de marchand général** — Marchandises variées du quotidien.
-- **Épicerie** — Denrées conservées et condiments.
-- **Marchand de grains** — Mesures et sacs céréaliers.
-- **Marchand de légumes** — Produits frais et paniers.
-- **Marchand de fruits** — Fruits frais ou secs.
-- **Marchand de poisson** — Étals humides et salés.
-- **Boucherie de détail** — Viandes suspendues et billots.
-- **Charcuterie / salaisonnerie** — Viandes préparées et conservées.
-- **Boulangerie de vente** — Pains vendus en façade.
-- **Laitier / fromager** — Vente de produits laitiers.
-- **Débit de vin** — Vente sur place et emport.
-- **Débit de bière / cervoise** — Boissons brassées au comptoir.
-- **Marchand de sel** — Sel protégé de l'humidité.
-- **Marchand d'épices** — Petites denrées de valeur.
-- **Marchand d'huile** — Jarres et amphores de stockage.
-- **Marchand d'étoffes** — Tissus déployés sur étal.
-- **Fripier** — Vêtements d'occasion et tissus.
-- **Drapier** — Étoffes, draps et stockage.
-- **Tailleur-boutiquier** — Confection et vente de vêtements.
-- **Cordonnier-boutiquier** — Chaussures réparées et vendues.
-- **Chapelier** — Coiffes fabriquées et vendues.
-- **Fourreur** — Peaux préparées et vêtements.
-- **Mercerie** — Petits accessoires de couture.
-- **Marchand de cuir** — Peaux, lanières et courroies.
-- **Marchand de cordages** — Rouleaux et longue réserve.
-- **Marchand d'outils** — Vente d'outils et quincaillerie.
-- **Quincaillerie** — Clous, serrures et ferrures.
-- **Marchand de poteries** — Vaisselle empilée et amphores.
-- **Marchand de verrerie** — Objets fragiles et récipients.
-- **Marchand de bois** — Planches et pièces de charpente.
-- **Marchand de charbon** — Combustible et poussière noire.
-- **Libraire / stationnaire (MMA)** — Manuscrits, parchemins et matériel.
-- **Vendeur de parchemin** — Feuilles et peaux préparées.
-- **Apothicaire** — Remèdes, balances et récipients.
-- **Herboriste** — Plantes séchées, simples médicinaux.
-- **Parfumeur** — Huiles, aromates et essences.
-- **Changeur** — Change des monnaies étrangères.
-- **Prêteur sur gage** — Objets consignés contre avances.
-- **Courtage marchand** — Bureau de négociation commerciale.
-- **Écrivain public** — Table de rédaction et registre.
-- **Notaire / tabellion** — Actes et contrats rédigés.
-- **Marchand d'armes** — Vente d'armes et accessoires.
-- **Marchand de chevaux** — Vente avec enclos voisins.
-- **Marchand d'esclaves (selon époque/lieu)** — Vente humaine institutionnalisée historiquement.
-- **Brocanteur** — Objets réemployés et disparates.
-
-## 2.8. Hébergement, sociabilité et services personnels
-
-- **Taverne** — Boisson, bancs, foyer commun.
-- **Cabaret de quartier** — Petite salle à consommation.
-- **Auberge routière** — Chambres, nourriture et écurie.
-- **Auberge urbaine** — Hébergement de marchands itinérants.
-- **Hôtellerie de pèlerins** — Dortoir proche d'itinéraire sacré.
-- **Maison de logement** — Chambres louées aux résidents.
-- **Pension de marchands** — Couchage avec stockage marchand.
-- **Dortoir collectif** — Couchage pour groupe temporaire.
-- **Maison de bains de quartier** — Bassins et chauffage communs.
-- **Bains romains modestes (ANT)** — Petit établissement public chauffé.
-- **Hammam de quartier (MMA)** — Bains de proximité à salles.
-- **Barbier** — Coupe, rasage et soins usuels.
-- **Blanchisserie** — Lavage de tissus collecté.
-- **Buanderie** — Cuves de chauffe et lessive.
-- **Lavoir de quartier** — Bassins communs pour linge.
-- **Bordel / maison de prostitution (selon contexte)** — Chambres et accueil spécialisés.
-- **Maison de jeux (selon contexte)** — Tables de jeux et paris.
-- **Cour d'auberge** — Charrettes, chevaux, approvisionnements.
-- **Écurie de louage** — Chevaux disponibles aux voyageurs.
-- **Relais de messagers** — Chevaux et courrier de passage.
-- **Office de guide / porteur** — Recrutement de services locaux.
-
-## 2.9. Ateliers artisanaux et métiers de fabrication
-
-### Métal, pierre, terre et verre
-
-- **Forge de village** — Foyer, enclume et soufflet.
-- **Forge de maréchal-ferrant** — Ferrage et travail équin.
-- **Atelier de serrurier** — Serrures, clefs et mécanismes.
-- **Atelier de coutelier** — Fabrication de lames courtes.
-- **Atelier de taillandier** — Outils tranchants agricoles forgés.
-- **Atelier d'armurier** — Réparation et assemblage d'armures.
-- **Atelier de fourbisseur** — Polissage et entretien d'armes.
-- **Atelier de dinandier** — Objets martelés en cuivre.
-- **Atelier de chaudronnier** — Cuves et chaudrons métalliques.
-- **Atelier de cloutier** — Clous et petites pièces.
-- **Atelier de fondeur** — Métal liquide et moules.
-- **Atelier d'orfèvre** — Objets précieux travaillés finement.
-- **Atelier de bijoutier** — Parures et petites montures.
-- **Atelier de tailleur de pierre** — Blocs taillés pour construction.
-- **Atelier de maçon** — Mortier, pierre et échafaudages.
-- **Atelier de chaufournier** — Chaux produite au four.
-- **Briqueterie** — Façonnage et cuisson de briques.
-- **Tuilerie** — Fabrication de tuiles cuites.
-- **Poterie** — Tours, argile et four.
-- **Atelier de céramique fine** — Vaisselle décorée et vernissée.
-- **Verrerie / four verrier** — Fusion et façonnage du verre.
-- **Atelier de mosaïste (ANT/MMA)** — Tesselles et surfaces décorées.
-
-### Bois, cuir, textile et objets
-
-- **Menuiserie** — Mobilier et pièces de bois.
-- **Charpenterie** — Grandes pièces et assemblages.
-- **Atelier de charron** — Roues, moyeux et charrettes.
-- **Atelier de tonnelier** — Barriques et baquets cerclés.
-- **Atelier de sculpteur sur bois** — Figurines, ornements et moules.
-- **Atelier de fabricant d'arcs** — Bois courbés et cordes.
-- **Atelier de fabricant de flèches** — Fûts, plumes et pointes.
-- **Corderie** — Torsion de fibres en longueurs.
-- **Vannerie** — Paniers et claies tressés.
-- **Atelier de fabricant de nattes** — Fibres végétales assemblées.
-- **Tannerie** — Peaux traitées dans bassins.
-- **Corroierie** — Cuir assoupli et travaillé.
-- **Mégisserie** — Traitement de peaux fines.
-- **Cordonnerie** — Chaussures confectionnées et réparées.
-- **Bourrellerie** — Harnais et équipement de traction.
-- **Sellerie** — Selles et sangles d'équitation.
-- **Ganterie** — Petits articles en cuir.
-- **Atelier de fourreur** — Préparation et montage de fourrures.
-- **Atelier de filage** — Fibres transformées en fils.
-- **Atelier de tissage** — Métiers à tisser et bobines.
-- **Atelier de foulonnage** — Drap épaissi par battage.
-- **Teinturerie** — Cuves colorantes près de l'eau.
-- **Atelier de pareur de drap** — Finition des étoffes tissées.
-- **Atelier de brodeur** — Décor textile à l'aiguille.
-- **Atelier de tailleur** — Coupe et assemblage vêtements.
-- **Atelier de chapelier** — Façonnage de coiffes et feutres.
-- **Atelier de cordier** — Cordes de chanvre et fibres.
-- **Atelier de filetier** — Fabrication de filets de pêche.
-- **Atelier de teinturier de cuir** — Coloration de peaux apprêtées.
-- **Parcheminerie** — Transformation de peaux en supports.
-- **Scriptorium artisanal (MMA)** — Copie de manuscrits sur commande.
-- **Reliure (MMA)** — Couture et couverture des cahiers.
-- **Atelier d'enlumineur (MMA)** — Peinture et ornement manuscrits.
-- **Fabrique de chandelles** — Cire ou suif moulés.
-- **Savonnerie (selon région)** — Cuisson de graisses et lessives.
-- **Parfumerie artisanale** — Mélanges de résines et huiles.
-- **Atelier de fabricant d'instruments** — Cordes, vents et percussions.
-- **Atelier de réparation de chars** — Entretien d'essieux et roues.
-
-### Ateliers de chantier et activités spécialisées
-
-- **Cour de chantier** — Matériaux et échafaudages préparés.
-- **Atelier de cordages navals** — Cordes longues pour navires.
-- **Atelier de voilerie** — Coupe et réparation de voiles.
-- **Atelier de calfatage** — Étanchéité des coques en bois.
-- **Atelier de charpentier naval** — Coques et membrures construites.
-- **Atelier de carreleur** — Sols et revêtements préparés.
-- **Atelier de graveur** — Inscriptions sur matières dures.
-- **Atelier de sceaux** — Cachets et matrices gravés.
-- **Atelier de copiste** — Documents reproduits à la main.
-- **Atelier de lampes** — Lampes à huile ou métal.
-- **Atelier de poêlier** — Poêles et éléments de chauffage.
-
-## 2.10. Stockage, dépôts et logistique
-
-- **Magasin de marchand** — Pièces réservées aux stocks.
-- **Entrepôt de quai** — Réception de cargaisons fluviales.
-- **Hangar portuaire** — Abri de marchandises volumineuses.
-- **Grenier commercial** — Grains conservés pour revente.
-- **Horreum romain (ANT)** — Entrepôt à vocation spécialisée.
-- **Dépôt de sel** — Réserve sèche de sel.
-- **Dépôt de bois** — Grumes et planches empilées.
-- **Dépôt de pierre** — Blocs entreposés avant chantier.
-- **Dépôt de charbon de bois** — Combustible entreposé sous abri.
-- **Cave de marchand de vin** — Amphores ou tonneaux rangés.
-- **Dépôt d'amphores (ANT)** — Jarres de transport regroupées.
-- **Réserve de jarres** — Huiles et denrées liquides.
-- **Remise à chariots** — Véhicules remisés sous toiture.
-- **Hangar à barques** — Petites embarcations tirées au sec.
-- **Abri de filets** — Filets séchés puis stockés.
-- **Cour de transbordement** — Charges transférées entre transports.
-- **Écurie de commerce** — Animaux gardés pour échange.
-- **Parc à bœufs** — Attelages réunis avant départ.
-- **Enclos à caravanes** — Animaux, charges et tentes.
-- **Relais de batellerie** — Stockage et équipages fluviaux.
-- **Échouage aménagé** — Grève pour petites embarcations.
-
-## 2.11. Services de proximité et petits équipements collectifs
-
-- **Puits collectif** — Point d'eau du voisinage.
-- **Fontaine de quartier** — Alimentation accessible aux habitants.
-- **Bassin public** — Réserve d'eau à ciel ouvert.
-- **Citerne de quartier** — Eau stockée pour plusieurs foyers.
-- **Abreuvoir communal** — Eau destinée aux animaux.
-- **Lavoir public** — Bassins de lavage collectifs.
-- **Latrines publiques modestes** — Installation sanitaire à plusieurs places.
-- **Petit bain public** — Hygiène selon usages régionaux.
-- **Four communal** — Cuisson mutualisée des habitants.
-- **Presse / pressoir communautaire** — Outil lourd utilisé collectivement.
-- **Forge communautaire** — Matériel partagé entre foyers.
-- **Abri de marché** — Toiture ouverte sur étals.
-- **Place de marché** — Espace public d'échanges.
-- **Petite place de rencontre** — Carrefour élargi, bancs possibles.
-- **Maison communale de village** — Réunions et petites décisions.
-- **Maison de garde** — Veille et patrouilles locales.
-- **Petit poste de péage** — Collecte sur route ou pont.
-- **Gué aménagé** — Passage renforcé dans l'eau.
-- **Pont en bois ordinaire** — Tablier simple sur appuis.
-- **Passerelle piétonne** — Franchissement léger de fossé.
-- **Bac de traversée** — Embarcation de passage fluvial.
-- **Débarcadère fluvial** — Accostage d'embarcations légères.
-- **Petit quai maçonné** — Rive équipée pour déchargement.
-- **Escalier de rive** — Accès direct à l'eau.
-- **Chapelle de hameau** — Petit lieu de prière.
-- **Église paroissiale modeste (MMA)** — Lieu de culte villageois.
-- **Oratoire de chemin** — Petite construction pour dévotion.
-- **École élémentaire locale (selon contexte)** — Pièce d'enseignement non systématique.
-- **Salle de soin locale (selon contexte)** — Soins dans bâtiment ordinaire.
-- **Cimetière paroissial (MMA)** — Sépultures liées à l'église.
-- **Salle de guilde modeste (MMA)** — Réunions dans maison ordinaire.
-- **Atelier municipal** — Réparation d'outils et équipements.
-- **Dépôt de voirie** — Matériaux d'entretien des voies.
-
-## 2.12. Objets spatiaux ordinaires indispensables à la carte
-
-> Ces éléments ne sont pas tous des « bâtiments », mais un city mapper ne peut pas obtenir une texture crédible en les omettant.
-
-### Voirie et parcellaire
-
-- **Grand chemin** — Voie principale de circulation.
-- **Route pavée** — Chaussée durable, entretien coûteux.
-- **Chemin de terre** — Liaison non revêtue.
-- **Rue principale** — Axe commercial et traversant.
-- **Rue secondaire** — Liaison entre blocs urbains.
-- **Ruelle** — Passage étroit entre façades.
-- **Venelle** — Liaison étroite de desserte.
-- **Impasse** — Desserte sans sortie directe.
-- **Passage couvert** — Traversée sous bâtiment ou galerie.
-- **Ruelle en escalier** — Voie suivant forte pente.
-- **Arcade de rue** — Passage abrité sous façade.
-- **Portique antique (ANT)** — Galerie de colonnes sur rue.
-- **Carrefour élargi** — Nœud local de circulation.
-- **Cour commune** — Espace mutualisé entre logements.
-- **Cour arrière** — Service en fond de parcelle.
-- **Parcelle laniérée** — Lot étroit et profond.
-- **Parcelle trapézoïdale** — Lot façonné par rues obliques.
-- **Parcelle d'angle** — Lot donnant sur deux voies.
-- **Îlot clos** — Front bâti entourant intérieur.
-- **Îlot traversé de venelles** — Plusieurs accès aux cours.
-- **Jardin arrière de maison** — Bande non bâtie en fond.
-- **Mur de parcelle** — Délimitation en pierre ou terre.
-- **Clôture de bois** — Séparation légère et économique.
-- **Haie bocagère** — Limite végétale de parcelle.
-- **Talus de terrasse** — Soutien des parcelles en pente.
-- **Escalier extérieur urbain** — Liaison de niveaux de rue.
-- **Rampe pour charrettes** — Accès en pente praticable.
-
-### Eau, drainage et terrains utilitaires
-
-- **Rigole de rue** — Écoulement superficiel des eaux.
-- **Fossé d'assainissement** — Drainage ouvert de quartier.
-- **Égout maçonné antique (ANT)** — Canal enterré des eaux.
-- **Caniveau de pierre** — Conduit étroit en bord de voie.
-- **Canal d'irrigation** — Eau distribuée aux cultures.
-- **Bief de moulin** — Dérivation alimentant roue hydraulique.
-- **Canal de dérivation** — Branche d'eau dirigée artificiellement.
-- **Digue de terre** — Protection de rive et champs.
-- **Levée de berge** — Rehaussement contre débordement.
-- **Étang de moulin** — Réserve pour la roue hydraulique.
-- **Petit réservoir** — Eau accumulée dans bassin.
-- **Mare commune** — Eau stagnante à usages multiples.
-- **Gué de pierres** — Passage fluvial à fond renforcé.
-- **Petit pont voûté** — Franchissement maçonné d'un ruisseau.
-- **Pont de bois** — Poutres sur culées ou piles.
-- **Ponton** — Plateforme sur eau peu profonde.
-- **Cale de mise à l'eau** — Rampe pour embarcations.
-- **Rive de halage** — Passage longeant cours d'eau.
-- **Chemin de halage** — Traction des bateaux depuis berge.
-
-### Espaces de voisinage et interstices
-
-- **Petit marché informel** — Étals aux croisements fréquentés.
-- **Terrain vague intra-muros** — Parcelle momentanément vacante.
-- **Jardin intra-muros** — Sol cultivé dans l'enceinte.
-- **Verger de monastère** — Arbres clos près du couvent.
-- **Enclos à animaux** — Détention ponctuelle de bétail.
-- **Dépotoir de quartier** — Rejets concentrés hors circulation.
-- **Fosse d'extraction d'argile** — Matériaux pris près d'ateliers.
-- **Tas de fumier** — Fertilisant près des exploitations.
-- **Terrain de battage** — Sol dégagé pour céréales.
-- **Clairière de travail** — Espace d'artisanat à ciel ouvert.
-- **Cimetière de proximité** — Parcelles funéraires réservées.
-- **Petite croix ou stèle** — Repère religieux local contextualisé.
-- **Portail de cour** — Accès privé à grande parcelle.
-- **Mur mitoyen haut** — Séparation dense entre logements.
-- **Porte secondaire de parcelle** — Accès discret aux annexes.
-
----
-# 3. Bâtiments particuliers, monuments et grands ensembles
-
-> Contrairement aux maisons et ateliers, ces éléments servent souvent de **repères structurants**. Un temple, un château ou un amphithéâtre peut modifier tout le réseau viaire adjacent. Beaucoup n'existent que dans certains mondes culturels, à certaines époques, et dans des villes de taille suffisante.
-
-## 3.1. Pouvoir, résidences d'élite et administration
-
-- **Palais royal** — Résidence et représentation du souverain.
-- **Palais impérial** — Grand complexe politique et résidentiel.
-- **Palais princier** — Siège d'un pouvoir territorial.
-- **Palais ducal** — Cour et administration d'un duché.
-- **Palais épiscopal** — Demeure et pouvoir d'évêque.
-- **Palais patriarcal** — Résidence d'autorité religieuse supérieure.
-- **Palais urbain aristocratique** — Grande cour et logis nobles.
-- **Hôtel particulier médiéval** — Résidence urbaine de grande famille.
-- **Tour seigneuriale habitée** — Demeure fortifiée très verticale.
-- **Maison-tour patricienne** — Résidence urbaine haute et défensive.
-- **Maison forte** — Petit logis fortifié rural.
-- **Manoir seigneurial** — Logis dominant exploitation rurale.
-- **Manoir à enceinte** — Maison noble derrière fossés.
-- **Château seigneurial** — Résidence fortifiée avec dépendances.
-- **Château comtal** — Forteresse de pouvoir régional.
-- **Château royal** — Résidence défendue du roi.
-- **Château de motte (HMA/MMA)** — Tour sur tertre, basse-cour.
-- **Château à donjon rectangulaire (MMA)** — Grand réduit fortifié massif.
-- **Château à donjon cylindrique (MMA)** — Tour maîtresse de pierre.
-- **Château concentrique (MMA)** — Plusieurs lignes défensives fermées.
-- **Château de plaine (MMA)** — Forteresse sur terrain ouvert.
-- **Château de montagne (MMA)** — Ouvrages intégrés au relief.
-- **Château d'éperon (MMA)** — Défense sur promontoire étroit.
-- **Château à enceinte polygonale (MMA)** — Courtines adaptées au terrain.
-- **Château-palais** — Résidence prestigieuse dans forteresse.
-- **Pavillon de chasse princier** — Retraite forestière de haut rang.
-- **Résidence de gouverneur** — Logis et administration provinciale.
-- **Prétoire romain (ANT)** — Siège de commandement provincial.
-- **Praetorium de camp (ANT)** — Quartier général de commandement.
-- **Villa urbaine aristocratique (ANT)** — Demeure luxueuse à jardins.
-- **Villa rurale monumentale (ANT)** — Domaine à bâtiments résidentiels imposants.
-- **Villa maritime romaine (ANT)** — Résidence prestigieuse sur littoral.
-- **Palais ducal italien (MMA)** — Gouvernement d'une cité marchande.
-- **Palais du podestat (MMA)** — Siège du magistrat communal.
-- **Palais communal (MMA)** — Autorités civiques et salles d'apparat.
-- **Hôtel de ville médiéval (MMA)** — Gouvernement municipal et archives.
-- **Beffroi communal (MMA)** — Tour d'autonomie et d'alerte.
-- **Maison des échevins (MMA)** — Délibérations des magistrats urbains.
-- **Maison du conseil** — Réunions des autorités locales.
-- **Curie romaine (ANT)** — Salle du conseil municipal.
-- **Bouleutérion grec (ANT)** — Salle couverte du conseil.
-- **Prytanée grec (ANT)** — Foyer civique et magistrats.
-- **Basilique civile romaine (ANT)** — Justice et affaires publiques.
-- **Tribunal monumental** — Audiences dans bâtiment spécialisé.
-- **Palais de justice** — Magistrature et salles d'audience.
-- **Chancellerie** — Émission d'actes et de décisions.
-- **Trésor public** — Réserve sécurisée des fonds.
-- **Archives municipales** — Conservation d'actes et registres.
-- **Hôtel des monnaies** — Frappe officielle des monnaies.
-- **Maison des collecteurs d'impôts** — Administration des prélèvements.
-- **Maison du receveur des péages** — Registres et recettes de passage.
-- **Hôtel des douanes** — Contrôle fiscal des marchandises.
-- **Palais de légat / ambassade** — Représentation politique étrangère.
-- **Résidence de consul marchand** — Représentation d'une communauté négociante.
-- **Salle d'assemblée civique** — Rencontres des citoyens ou notables.
-- **Salle de banquet seigneurial** — Festins et audiences de cour.
-
-## 3.2. Fortifications, ouvrages militaires et contrôle
-
-### Enceintes et organes défensifs
-
-- **Rempart de terre** — Talus défensif élevé artificiellement.
-- **Palissade défensive** — Mur vertical de pieux.
-- **Mur d'enceinte** — Protection maçonnée du settlement.
-- **Enceinte cyclopéenne (ANT)** — Gros blocs de pierre assemblés.
-- **Mur de contour d'oppidum (ANT)** — Rempart suivant relief dominant.
-- **Mur de barrage d'oppidum (ANT)** — Ligne défensive coupant éperon.
-- **Mur gaulois de type murus gallicus (ANT)** — Terre, pierre, structure boisée.
-- **Enceinte antique à tours (ANT)** — Mur régulier et tours.
-- **Enceinte médiévale crénelée (MMA)** — Courtines et chemin de ronde.
-- **Enceinte secondaire** — Nouvelle ligne autour d'extension.
-- **Citadelle** — Forteresse dominante à l'intérieur.
-- **Réduit fortifié** — Dernier refuge d'une garnison.
-- **Basse-cour fortifiée** — Dépendances défendues du château.
-- **Barbacane (MMA)** — Ouvrage avancé protégeant entrée.
-- **Châtelet de porte** — Deux tours encadrant passage.
-- **Porte fortifiée urbaine** — Entrée contrôlée dans rempart.
-- **Porte monumentale antique (ANT)** — Passage officiel et décoré.
-- **Poterne** — Petite ouverture secondaire défensive.
-- **Tour-porte** — Tour traversée par circulation.
-- **Tour de flanquement** — Contrôle latéral de courtine.
-- **Tour ronde de rempart** — Poste défensif circulaire saillant.
-- **Tour carrée de rempart** — Poste défensif à angles.
-- **Tour de guet** — Observation des voies et horizons.
-- **Échauguette (MMA)** — Petite tourelle en surplomb.
-- **Bretèche (MMA)** — Défense en saillie sur façade.
-- **Mâchicoulis (MMA)** — Défense verticale au sommet.
-- **Hourds de bois (MMA)** — Galeries défensives en encorbellement.
-- **Chemin de ronde** — Circulation protégée sur rempart.
-- **Créneaux et merlons** — Alternance d'abris et ouvertures.
-- **Herse de porte** — Grille mobile fermant passage.
-- **Pont-levis (MMA)** — Accès mobile au-dessus fossé.
-- **Pont dormant de château** — Traversée fixe devant entrée.
-- **Fossé sec** — Obstacle excavé sans eau.
-- **Douves en eau** — Fossé alimenté autour forteresse.
-- **Contrescarpe maçonnée** — Bord extérieur renforcé du fossé.
-- **Talus extérieur défensif** — Obstacle d'approche par terrassement.
-- **Barricade provisoire** — Obstacle improvisé sur rue.
-- **Tour maîtresse / donjon** — Grand réduit de commandement.
-- **Courtine double** — Deux barrières défensives successives.
-- **Enceinte de village circulaire** — Palissade ou mur continu.
-- **Pont fortifié** — Franchissement protégé par tours.
-- **Tête de pont fortifiée** — Défense commandant accès fluvial.
-- **Fort de col** — Position bloquant passage de montagne.
-- **Fort côtier** — Protection d'une rade maritime.
-- **Fort de frontière** — Garnison surveillant territoire périphérique.
-- **Fortin de route** — Poste défensif sur itinéraire.
-- **Camp fortifié antique (ANT)** — Fossé, levée, portes planifiées.
-- **Camp romain de légion (ANT)** — Quadrillage, principia, casernes.
-- **Fortin romain / castellum (ANT)** — Petit poste militaire défendu.
-- **Tour de signalisation** — Relais de messages visuels.
-- **Tour à feu / fanal** — Signal lumineux de nuit.
-- **Maison-tour frontalière** — Logis et défense rapprochés.
-
-### Bâtiments militaires et annexes de forteresse
-
-- **Caserne de soldats** — Hébergement collectif de garnison.
-- **Quartiers de cavalerie** — Écuries et logements militaires.
-- **Principia romains (ANT)** — Administration centrale du camp.
-- **Arsenal militaire** — Stockage et entretien d'armes.
-- **Armurerie de forteresse** — Armes protégées dans enceinte.
-- **Magasin de vivres militaire** — Stocks pour tenir un siège.
-- **Grenier de garnison** — Réserve céréalière fortifiée.
-- **Écuries de château** — Chevaux et équipement seigneurial.
-- **Fosse ou cour d'entraînement** — Exercices à l'intérieur du fort.
-- **Champ de tir à l'arc** — Entraînement des archers.
-- **Lice d'entraînement** — Terrain clos pour exercices.
-- **Atelier de machines de siège** — Charpentes et engins militaires.
-- **Abri de machines de guerre** — Stockage d'engins démontés.
-- **Poudrière (fin MMA, selon technologie)** — Réserve sécurisée de poudre.
-- **Tour-prison** — Détention dans ouvrage défensif.
-- **Citerne de siège** — Eau sécurisée pour défense.
-- **Passage de sortie dissimulé** — Accès secondaire à l'extérieur.
-- **Souterrain de desserte fortifiée** — Liaison protégée entre ouvrages.
-
-## 3.3. Religion, lieux sacrés et complexes monastiques
-
-### Antiquité polythéiste et traditions anciennes
-
-- **Sanctuaire à ciel ouvert (ANT)** — Espace rituel sans édifice fermé.
-- **Bois sacré (ANT)** — Bosquet réservé au culte.
-- **Enclos cultuel antique (ANT)** — Aire délimitée avec autels.
-- **Temple grec (ANT)** — Cella et colonnades éventuelles.
-- **Temple romain (ANT)** — Podium, cella et portique.
-- **Temple capitolin (ANT)** — Sanctuaire civique de cité.
-- **Temple à péristyle (ANT)** — Colonnade entourant bâtiment sacré.
-- **Fanum gallo-romain (ANT)** — Temple à galerie périphérique.
-- **Tholos sacré grec (ANT)** — Petit temple de plan rond.
-- **Sanctuaire oraculaire (ANT)** — Temple et consultation religieuse.
-- **Sanctuaire de guérison (ANT)** — Culte et soins rituels.
-- **Mithraeum romain (ANT)** — Sanctuaire souvent souterrain, allongé.
-- **Autel public monumental (ANT)** — Sacrifices sur plateforme cérémonielle.
-- **Auguraculum romain (ANT)** — Espace d'observation religieuse.
-- **Temple égyptien (ANT)** — Pylônes, cours et salles.
-- **Temple funéraire égyptien (ANT)** — Culte durable du défunt.
-- **Ziggourat mésopotamienne (ANT)** — Plateformes sacrées superposées.
-- **Temple mésopotamien (ANT)** — Sanctuaire au sein d'enceinte.
-- **Temple du feu iranien (ANT/MMA)** — Culte lié au feu sacré.
-- **Haut lieu mégalithique ancien** — Monuments préhistoriques parfois réutilisés.
-
-### Monde chrétien ancien et médiéval
-
-- **Basilique paléochrétienne (ANT/HMA)** — Grande nef de culte.
-- **Église paroissiale monumentale (MMA)** — Centre religieux de quartier.
-- **Église fortifiée (MMA)** — Refuge avec dispositifs défensifs.
-- **Église collégiale (MMA)** — Église desservie par chanoines.
-- **Cathédrale (MMA)** — Église siège de l'évêque.
-- **Cathédrale romane (MMA)** — Volumes massifs et voûtes.
-- **Cathédrale gothique (MMA)** — Nefs hautes et contreforts.
-- **Baptistère (ANT/MMA)** — Bâtiment dédié au baptême.
-- **Chapelle castrale (MMA)** — Sanctuaire intégré au château.
-- **Chapelle funéraire (MMA)** — Culte lié à sépultures.
-- **Chapelle de pèlerinage (MMA)** — Lieu secondaire de dévotion.
-- **Sanctuaire à reliques (MMA)** — Affluence autour d'objets sacrés.
-- **Abbaye bénédictine (HMA/MMA)** — Grand ensemble monastique organisé.
-- **Abbaye cistercienne (MMA)** — Ensemble austère et économique.
-- **Prieuré (MMA)** — Petite dépendance de monastère.
-- **Couvent urbain (MMA)** — Communauté religieuse dans ville.
-- **Ermitage (HMA/MMA)** — Refuge isolé d'un religieux.
-- **Monastère fortifié (MMA)** — Cloître et murs défensifs.
-- **Cloître monastique** — Galerie autour jardin central.
-- **Salle capitulaire** — Réunion quotidienne des religieux.
-- **Réfectoire conventuel** — Salle de repas en commun.
-- **Dortoir monastique** — Couchage de communauté religieuse.
-- **Scriptorium monastique** — Copie et conservation de manuscrits.
-- **Bibliothèque monastique** — Manuscrits protégés et consultés.
-- **Infirmerie monastique** — Soins à l'intérieur du couvent.
-- **Hostellerie d'abbaye** — Hébergement de visiteurs et pèlerins.
-- **Clocher isolé / campanile (MMA)** — Tour de cloches indépendante.
-- **Tour-lanterne d'église (MMA)** — Éclairage au croisement des nefs.
-- **Crypte monumentale (MMA)** — Espaces inférieurs de dévotion.
-- **Palais abbatial (MMA)** — Logis de l'autorité monastique.
-
-### Monde islamique et traditions méditerranéennes médiévales
-
-- **Mosquée de quartier (MMA)** — Petit espace de prière collective.
-- **Grande mosquée / mosquée du vendredi (MMA)** — Culte urbain à grande échelle.
-- **Mosquée à cour (MMA)** — Salle de prière et patio.
-- **Minaret (MMA)** — Tour de l'appel à prière.
-- **Madrasa / médersa (MMA)** — Enseignement religieux et résidence.
-- **Zawiya / zaouïa (MMA)** — Dévotion, apprentissage et accueil.
-- **Khanqah (MMA)** — Résidence communautaire de dévotion.
-- **Ribat religieux (HMA/MMA)** — Défense et vie spirituelle.
-- **Mausolée de saint local (MMA)** — Tombe vénérée et fréquentée.
-- **Dôme funéraire islamique (MMA)** — Couverture monumentale de tombeau.
-- **Complexe de waqf / habous (MMA)** — Biens soutenant œuvres religieuses.
-- **Mosquée-palais (selon région)** — Ensemble articulant culte et cour.
-
-### Autres lieux de culte et variantes culturelles
-
-- **Synagogue (ANT/MMA)** — Réunion, prière et lecture.
-- **Maison d'étude juive (MMA)** — Enseignement et textes religieux.
-- **Stupa bouddhique (ANT/MMA)** — Monument de reliques et circumambulation.
-- **Vihara bouddhique (ANT/MMA)** — Monastère à cellules et cour.
-- **Pagode bouddhique (MMA)** — Tour sacrée à étages.
-- **Temple hindou (ANT/MMA)** — Sanctuaire et espaces processionnels.
-- **Mandapa (ANT/MMA)** — Hall à piliers du temple.
-- **Gopuram (MMA)** — Porte-tour de temple méridional.
-- **Sanctuaire shinto ancien (MMA)** — Enclos de culte local.
-- **Temple mésoaméricain (ANT/MMA)** — Sanctuaire sur socle pyramidal.
-- **Huaca andine (ANT/MMA)** — Lieu ou structure sacrée.
-- **Sanctuaire de sommet** — Culte installé en hauteur.
-- **Sanctuaire de grotte** — Rite utilisant cavité naturelle.
-- **Temple rupestre** — Salles sacrées taillées dans roche.
-
-## 3.4. Commerce monumental, guildes et places marchandes
-
-- **Agora grecque (ANT)** — Place civique et commerciale.
-- **Forum romain (ANT)** — Place politique et marchande.
-- **Forum provincial monumental (ANT)** — Ensemble civique à portiques.
-- **Stoa grecque (ANT)** — Galerie monumentale de rassemblement.
-- **Portique commercial monumental (ANT)** — Longue façade d'arcades.
-- **Macellum romain (ANT)** — Marché alimentaire organisé en cour.
-- **Marché couvert médiéval (MMA)** — Grand hall abritant étals.
-- **Halle aux grains (MMA)** — Vente et mesure céréalière.
-- **Halle aux draps (MMA)** — Commerce des textiles en gros.
-- **Halle aux poissons** — Marché spécialisé près débarcadère.
-- **Halle aux viandes** — Vente collective de viande.
-- **Grande place de marché** — Centre de l'activité marchande.
-- **Place à arcades (MMA)** — Façades commerçantes abritées.
-- **Loggia marchande (MMA)** — Galerie de négociation et rencontre.
-- **Maison des marchands (MMA)** — Réunions d'une corporation marchande.
-- **Maison de guilde / guildhall (MMA)** — Siège collectif d'un métier.
-- **Hôtel des corporations (MMA)** — Salles partagées par confréries.
-- **Maison de la Hanse (MMA)** — Établissement marchand de réseau.
-- **Fondaco italien (MMA)** — Hébergement et entrepôt de négociants.
-- **Funduq / fondouk (MMA)** — Cour d'accueil, entrepôts, chambres.
-- **Khan commercial (MMA)** — Marchands et biens autour cour.
-- **Caravansérail monumental (MMA)** — Cour close, écuries, hébergement.
-- **Grand souk (MMA)** — Réseau dense de commerces.
-- **Souk couvert (MMA)** — Allées commerciales sous toiture.
-- **Bazaar à coupoles (MMA, selon région)** — Rue marchande couverte monumentale.
-- **Grand entrepôt public** — Réserves stratégiques d'une cité.
-- **Grenier municipal monumental** — Sécurité d'approvisionnement urbain.
-- **Horreum public monumental (ANT)** — Stockage contrôlé de denrées.
-- **Magasin des taxes en nature** — Dépôt de prélèvements publics.
-- **Bâtiment de pesée publique** — Grande balance et étalonnage.
-- **Bourse marchande pré-moderne (MMA, selon lieu)** — Réunions de négociants spécialisés.
-- **Maison de change publique** — Transactions surveillées de monnaies.
-- **Enclos de foire** — Activité saisonnière à grande échelle.
-- **Marché aux bestiaux** — Vastement clos pour troupeaux.
-- **Marché aux chevaux** — Enclos et démonstrations d'animaux.
-- **Place des enchères** — Présentation et vente publique.
-
-## 3.5. Jeux, spectacles, sport et rassemblements publics
-
-### Antiquité
-
-- **Théâtre grec (ANT)** — Gradins semi-circulaires à flanc de pente.
-- **Théâtre romain (ANT)** — Gradins et scène monumentale.
-- **Odéon (ANT)** — Salle couverte pour musique.
-- **Amphithéâtre romain (ANT)** — Arène ovale entourée de gradins.
-- **Grand amphithéâtre impérial (ANT)** — Immense arène de spectacles.
-- **Colisée de Rome (ANT, exemple unique)** — Amphithéâtre flavien, pas catégorie générique.
-- **Cirque romain (ANT)** — Piste allongée de courses.
-- **Hippodrome antique (ANT)** — Courses de chevaux et chars.
-- **Stade grec (ANT)** — Piste de compétition athlétique.
-- **Palestre grecque (ANT)** — Cour d'entraînement aux exercices.
-- **Gymnase grec (ANT)** — Enseignement et préparation sportive.
-- **Xyste / portique d'entraînement (ANT)** — Galerie longue pour exercices.
-- **Naumachie (ANT, exceptionnelle)** — Bassin de spectacle naval.
-- **Portique de promenade monumental (ANT)** — Déambulation autour des espaces publics.
-
-### Monde médiéval
-
-- **Champ de tournoi (MMA)** — Terrain de rencontres chevaleresques.
-- **Lices de tournoi (MMA)** — Aire délimitée de combats.
-- **Tribunes de tournoi (MMA)** — Gradins temporaires ou permanents.
-- **Place de fêtes civiques** — Grand dégagement de rassemblement.
-- **Terrain d'archerie (MMA)** — Concours et entraînement à l'arc.
-- **Terrain de jeux de balle (MMA)** — Espace de pratique locale.
-- **Cour de jeu de paume (fin MMA)** — Jeu de balle en enceinte.
-- **Champ de foire saisonnier (MMA)** — Spectacles et marchands ambulants.
-- **Estrade publique** — Plateforme d'orateurs ou artistes.
-- **Jardin seigneurial clos (MMA)** — Promenade et agrément privilégiés.
-- **Jardin du palais (ANT/MMA)** — Composition paysagère et prestige.
-- **Grand parc de chasse (MMA)** — Domaine clôturé réservé au seigneur.
-
-## 3.6. Santé, charité, hébergement institutionnel
-
-- **Hôtel-Dieu (MMA)** — Soins et accueil des indigents.
-- **Grand hôpital charitable (MMA)** — Salle de malades et chapelle.
-- **Hospice de pèlerins (MMA)** — Étape d'accueil sur route sacrée.
-- **Maison-Dieu (MMA)** — Petite institution hospitalière charitable.
-- **Léproserie / maladrerie (MMA)** — Hébergement séparé des lépreux.
-- **Hôpital monastique (MMA)** — Soins administrés par communauté.
-- **Maison des pauvres (MMA)** — Logement et aide aux démunis.
-- **Aumônerie institutionnelle (MMA)** — Distribution organisée de secours.
-- **Orphelinat / maison d'enfants (selon contexte)** — Protection de mineurs sans famille.
-- **Hôpital de marins (selon contexte)** — Assistance aux équipages blessés.
-- **Sanctuaire guérisseur antique (ANT)** — Pèlerins cherchant soins divins.
-- **Valétudinaire militaire romain (ANT)** — Hôpital de garnison planifié.
-- **Grand hammam (MMA)** — Bains urbains à salles successives.
-- **Thermes monumentaux romains (ANT)** — Complexe de bains chauffés.
-- **Établissement thermal de source (ANT/MMA)** — Bains alimentés naturellement.
-- **Lazaret portuaire (fin MMA, selon cité)** — Quarantaine des voyageurs maritimes.
-- **Maison de retraite religieuse (selon époque)** — Accueil de vieillards dépendants.
-
-## 3.7. Justice, coercition et exécutions
-
-- **Prison urbaine** — Détention surveillée au centre.
-- **Prison de château** — Cellules dans ensemble fortifié.
-- **Tour de détention** — Prison intégrée à fortification.
-- **Geôle de porte** — Cellules attenantes à porte fortifiée.
-- **Salle d'audience seigneuriale** — Justice locale et redevances.
-- **Salle de tribunal urbain** — Litiges commerciaux et pénaux.
-- **Maison du prévôt** — Administration judiciaire et policière.
-- **Pilori** — Poteau ou colonne d'exposition.
-- **Carcan public** — Entrave installée sur place.
-- **Cage de punition** — Exposition temporaire d'un détenu.
-- **Potence / gibet** — Poteaux d'exécution publique.
-- **Fourches patibulaires (MMA)** — Gibet permanent de haute justice.
-- **Place d'exécution** — Espace ouvert de supplices.
-- **Échafaud d'exécution** — Plateforme dressée pour sentence.
-- **Lieu d'ordalie (selon époque)** — Espace de jugement rituel.
-- **Salle d'interrogatoire** — Local intégré à autorité pénale.
-- **Maison du bourreau (selon contexte)** — Logis lié à l'office.
-- **Enclos de justice seigneuriale** — Espace clos d'assemblée judiciaire.
-
-## 3.8. Enseignement, savoir, livres et mémoire publique
-
-- **Académie philosophique grecque (ANT)** — Enseignement et débats savants.
-- **Bibliothèque antique (ANT)** — Collection organisée de rouleaux.
-- **Muséion / centre savant (ANT)** — Études, collections et recherche.
-- **École de rhétorique (ANT)** — Formation avancée aux discours.
-- **École cathédrale (MMA)** — Enseignement auprès d'un chapitre.
-- **Studium generale (MMA)** — Enseignement supérieur reconnu largement.
-- **Université médiévale (MMA)** — Maîtres et étudiants organisés.
-- **Collège universitaire (MMA)** — Communauté résidente d'étudiants.
-- **Bibliothèque capitulaire (MMA)** — Livres liés à cathédrale.
-- **Bibliothèque de palais (ANT/MMA)** — Collection du pouvoir central.
-- **Observatoire astronomique ancien (selon culture)** — Observations systématiques des astres.
-- **Maison d'érudit** — Résidence et étude privée.
-- **Atelier de cartographe (MMA, selon contexte)** — Cartes copiées et dessinées.
-- **École juridique (MMA)** — Enseignement du droit savant.
-- **Madrasa savante (MMA)** — Enseignement et hébergement associés.
-- **Archives impériales** — Dépôts officiels de documents.
-- **Salle des chroniques** — Conservation de récits et annales.
-- **Maison des scribes (selon culture)** — Production institutionnelle d'écrit.
-- **Tour horloge publique (fin MMA, selon région)** — Mesure mécanique du temps civique.
-
-## 3.9. Eau, ingénierie et infrastructures monumentales
-
-- **Aqueduc antique (ANT)** — Adduction sur longue distance.
-- **Pont-aqueduc (ANT)** — Canal porté sur arches.
-- **Château d'eau de distribution (ANT)** — Répartition de l'eau urbaine.
-- **Grand réservoir maçonné** — Réserve alimentant un quartier.
-- **Citerne souterraine monumentale** — Grand espace voûté d'eau.
-- **Bassin cérémoniel** — Plan d'eau à usage rituel.
-- **Nymphée romain (ANT)** — Fontaine monumentale décorée.
-- **Fontaine civique monumentale** — Eau et prestige de ville.
-- **Grand lavoir public** — Série de bassins organisés.
-- **Thermes impériaux (ANT)** — Immenses bains et cours annexes.
-- **Grand égout antique (ANT)** — Collecteur maçonné souterrain.
-- **Grand pont de pierre** — Franchissement à plusieurs arches.
-- **Pont habité médiéval (MMA)** — Maisons construites sur tablier.
-- **Grand pont fortifié (MMA)** — Tours, chaussée et péages.
-- **Barrage de retenue antique (ANT)** — Stockage d'eau pour ville.
-- **Écluse rudimentaire / vanne de canal** — Contrôle local des niveaux d'eau.
-- **Canal de navigation** — Voie artificielle de transport.
-- **Canal urbain majeur** — Distribution et circulation aquatiques.
-- **Port intérieur canalisé** — Bassin intégré au tissu urbain.
-- **Qanat (ANT/MMA, régions arides)** — Galerie drainante à puits.
-- **Foggara (MMA, Sahara)** — Conduite souterraine de drainage.
-- **Noria monumentale (ANT/MMA)** — Grande roue de levage d'eau.
-- **Sakia à traction animale (ANT/MMA)** — Élévation mécanique de l'eau.
-- **Grande digue de protection** — Ouvrage défensif contre crues.
-- **Polder aménagé (MMA, selon région)** — Terres asséchées derrière digues.
-- **Grand bassin d'irrigation** — Distribution vers terres agricoles.
-- **Terrasses irriguées monumentales** — Pentes cultivées par murets.
-
-## 3.10. Ports, flottes et ouvrages maritimes
-
-- **Grand port marchand** — Bassins, quais et entrepôts.
-- **Port militaire antique (ANT)** — Bassins défendus de flotte.
-- **Port fluvial monumental** — Longs quais et greniers.
-- **Bassin portuaire fermé** — Accès contrôlé aux navires.
-- **Darse de réparation** — Bassin abrité pour maintenance.
-- **Cale de construction navale** — Rampe pour assemblage des coques.
-- **Grand chantier naval** — Plusieurs cales et ateliers.
-- **Arsenal maritime** — Production et entretien de flotte.
-- **Hangars à navires grecs (ANT)** — Grandes neosoikoi pour galères.
-- **Abri de galères** — Long hangar pour navires tirés.
-- **Phare antique monumental (ANT)** — Tour lumineuse de navigation.
-- **Phare médiéval / tour à feu (MMA)** — Repère côtier et signal.
-- **Tour de garde du port** — Contrôle des approches maritimes.
-- **Chaîne de fermeture du port** — Obstacle tendu entre rives.
-- **Forteresse d'entrée de port** — Ouvrage contrôlant passes maritimes.
-- **Quai marchand monumental** — Déchargement de grosses cargaisons.
-- **Môle portuaire** — Jetée protégeant un bassin.
-- **Brise-lames** — Ouvrage réduisant la houle.
-- **Pêcherie fixe de marée** — Pièges structurés dans estran.
-- **Grandes salines** — Bassins successifs d'évaporation saline.
-- **Marché maritime de gros** — Vente des prises et cargaisons.
-- **Cour des douanes portuaires** — Contrôle des cargaisons débarquées.
-
-## 3.11. Grands ateliers, industrie et énergie préindustrielle
-
-- **Complexe minier** — Puits, galeries et haldes.
-- **Grande carrière de pierre** — Fronts d'extraction et rampes.
-- **Mine de sel** — Galeries ou puits salifères.
-- **Salines intérieures** — Bassins et chauffage de saumure.
-- **Grand haut fourneau précoce (fin MMA, selon région)** — Réduction métallurgique à grande échelle.
-- **Bas fourneau collectif** — Extraction du fer par réduction.
-- **Fonderie d'État antique (ANT)** — Production métallique sous contrôle public.
-- **Forge hydraulique (MMA)** — Marteau mû par roue.
-- **Martinet hydraulique (MMA)** — Petit marteau actionné par eau.
-- **Moulin à foulon hydraulique (MMA)** — Battage mécanisé des draps.
-- **Grand moulin seigneurial (MMA)** — Mouture contrôlée par pouvoir.
-- **Moulin à marée (MMA, selon région)** — Roue utilisant le reflux.
-- **Moulin-bateau (ANT/MMA)** — Roue montée sur embarcation.
-- **Batterie de moulins à eau** — Plusieurs roues le long bief.
-- **Atelier textile de grande taille** — Métiers et ouvriers regroupés.
-- **Grande teinturerie urbaine** — Multiples cuves et évacuations.
-- **Grande tannerie urbaine** — Bassins, peaux et eaux polluées.
-- **Fabrique de poteries à fours multiples** — Plusieurs ateliers et cuissons.
-- **Verrerie de grande production** — Fours et fours annexes.
-- **Atelier impérial de céramique (ANT/MMA, selon culture)** — Production organisée pour élites.
-- **Complexe de pressoirs antiques (ANT)** — Production massive de vin ou huile.
-- **Grand horreum d'État (ANT)** — Réserve contrôlée à grande capacité.
-- **Atelier monétaire d'État** — Frappe organisée de numéraire.
-
-## 3.12. Domaines ruraux et équipements seigneuriaux remarquables
-
-- **Grand domaine à villa antique (ANT)** — Résidence, production et dépendances.
-- **Résidence rurale à péristyle (ANT)** — Architecture prestigieuse dans les champs.
-- **Grange monastique cistercienne (MMA)** — Ferme dépendante d'abbaye.
-- **Grande ferme fortifiée (MMA)** — Ensemble rural derrière murs.
-- **Grenier fortifié collectif** — Stocks vitaux sous protection.
-- **Agadir / grenier-forteresse (MMA, Maghreb)** — Cellules de stockage défendues.
-- **Colombier seigneurial monumental (MMA)** — Tour d'élevage de pigeons.
-- **Pigeonnier sur colonnes (MMA, selon droits)** — Réserve d'élevage privilégiée.
-- **Grand pressoir banal** — Installation partagée sous monopole.
-- **Grande brasserie monastique (MMA)** — Production intégrée à abbaye.
-- **Grand vivier à poissons** — Bassins d'élevage contrôlés.
-- **Pêcherie seigneuriale** — Installation durable de capture.
-- **Garennes et parc à gibier (MMA)** — Espaces réservés à la chasse.
-- **Haras seigneurial** — Élevage et dressage de chevaux.
-- **Grand chenil princier** — Élevage organisé de chiens.
-- **Bergerie de domaine** — Grand cheptel administré.
-- **Enclos pastoral de transhumance** — Rassemblements périodiques importants.
-
-## 3.13. Sépultures, mémoire, triomphe et monuments commémoratifs
-
-- **Nécropole antique (ANT)** — Quartier de tombes hors ville.
-- **Nécropole royale** — Regroupement funéraire de dynastie.
-- **Mausolée dynastique** — Tombe monumentale de souverains.
-- **Mausolée urbain romain (ANT)** — Tombe monumentale sur voie.
-- **Columbarium romain (ANT)** — Niches funéraires pour urnes.
-- **Catacombes (ANT/MMA, selon région)** — Galeries de sépultures souterraines.
-- **Crypte funéraire monumentale** — Chambres de sépulture sous édifice.
-- **Ossuaire (MMA)** — Dépôt collectif de restes osseux.
-- **Chapelle des morts (MMA)** — Culte au voisinage funéraire.
-- **Enclos funéraire aristocratique** — Tombes protégées par clôture.
-- **Tumulus antique (ANT)** — Tombe recouverte d'un tertre.
-- **Cairn funéraire (ANT)** — Amas de pierres sur tombe.
-- **Mastaba égyptien (ANT)** — Tombe à superstructure trapézoïdale.
-- **Pyramide funéraire égyptienne (ANT)** — Tombe monumentale de souverain.
-- **Tombe rupestre antique (ANT)** — Chambre creusée dans falaise.
-- **Hypogée funéraire (ANT)** — Chambre ou réseau souterrain.
-- **Martyrium chrétien ancien (ANT/HMA)** — Sanctuaire d'un martyr.
-- **Mémorial de bataille** — Stèle commémorant affrontement historique.
-- **Colonne honorifique romaine (ANT)** — Monument vertical à reliefs.
-- **Arc de triomphe romain (ANT)** — Monument à passage voûté.
-- **Arc honorifique antique (ANT)** — Passage célébrant un pouvoir.
-- **Statue monumentale** — Effigie de souverain ou dieu.
-- **Obélisque antique (ANT)** — Monolithe vertical de prestige.
-- **Pilier votif** — Colonne offerte à divinité.
-- **Stèle de frontière** — Borne fixant limite officielle.
-- **Pierre de fondation** — Monument rappelant création du lieu.
-- **Mégalithe préhistorique réutilisé** — Trace ancienne dans paysage ultérieur.
-- **Cimetière de catastrophe** — Tombes liées à crise collective.
-- **Fosse commune exceptionnelle** — Inhumation massive après désastre.
-
-## 3.14. Variantes remarquables par aire culturelle (à activer par région)
-
-### Égypte, Proche-Orient et mondes antiques
-
-- **Porte à pylônes égyptiens (ANT)** — Façade monumentale d'un temple.
-- **Avenue processionnelle égyptienne (ANT)** — Axe sacré bordé de statues.
-- **Palais assyrien (ANT)** — Cours, reliefs et grandes salles.
-- **Porte monumentale mésopotamienne (ANT)** — Entrée fortifiée à décor.
-- **Jardin-palais mésopotamien (ANT)** — Espaces plantés dans complexe royal.
-- **Apadana perse (ANT)** — Grande salle d'audience à colonnes.
-- **Citadelle achéménide (ANT)** — Ensemble royal sur terrasse.
-- **Nécropole rupestre royale (ANT)** — Tombeaux creusés en montagne.
-- **Souterrain de stockage antique (ANT)** — Galerie servant de réserve.
-
-### Byzance, monde arabo-islamique et péninsule Ibérique
-
-- **Grand hippodrome byzantin (HMA/MMA)** — Courses et cérémonies impériales.
-- **Palais byzantin à cours (HMA/MMA)** — Pavillons reliés par enceintes.
-- **Fort byzantin de frontière (HMA/MMA)** — Tours, casernes et citernes.
-- **Citadelle de médina (MMA)** — Fort intérieur commandant la ville.
-- **Alcázar andalou (MMA)** — Palais fortifié à patios.
-- **Bāb monumentale de médina (MMA)** — Porte urbaine décorée et défendue.
-- **Grande médersa à patio (MMA)** — Enseignement autour cour ornée.
-- **Maristan / bimaristan (MMA)** — Institution de soins islamique.
-- **Grand caravansérail seldjoukide (MMA)** — Cour, salle couverte, portail.
-- **Tour de guet de côte andalouse (MMA)** — Surveillance du littoral.
-- **Grand grenier collectif oasien (MMA)** — Stockage socialement organisé et protégé.
-
-### Asie et civilisations des steppes
-
-- **Palais à enceintes multiples chinois (ANT/MMA)** — Cours hiérarchisées et portes.
-- **Porte cérémonielle chinoise (ANT/MMA)** — Accès monumental sur axe.
-- **Tour de cloche urbaine chinoise (MMA)** — Signal public et horaire.
-- **Tour du tambour chinoise (MMA)** — Annonce du temps civique.
-- **Temple ancestral chinois (ANT/MMA)** — Culte des lignées familiales.
-- **Yamen / siège de magistrat (MMA)** — Administration, cour et tribunal.
-- **Grand monastère bouddhique (MMA)** — Temples, dortoirs et jardins.
-- **Palais de Heian (MMA)** — Ensemble cérémoniel japonais ancien.
-- **Sanctuaire japonais à portique torii (MMA)** — Enclos sacré et cheminement.
-- **Fort de montagne japonais / yamajiro (MMA)** — Retranchements adaptés aux crêtes.
-- **Grand camp d'ordo mongole (MMA)** — Résidence politique de tentes.
-- **Enclos de rassemblement de clan (MMA)** — Cérémonies et troupeaux nomades.
-- **Temple-montagne khmer (MMA)** — Terrasses et tours sacrées.
-- **Baray khmer (MMA)** — Vaste réservoir d'eau rectangulaire.
-- **Chaussée cérémonielle khmère (MMA)** — Axe monumental vers sanctuaire.
-
-### Afrique subsaharienne, Mésoamérique et Andes
-
-- **Grande mosquée sahélienne en terre (MMA)** — Grande salle et contreforts.
-- **Palais sahélien en banco (MMA)** — Cours et murs de terre.
-- **Grande enceinte de Zimbabwe (MMA)** — Murs monumentaux de pierre sèche.
-- **Maison de pierre swahilie (MMA)** — Résidence urbaine à cour.
-- **Port marchand swahili (MMA)** — Quais, mosquées et entrepôts.
-- **Stèle monumentale aksoumite (ANT)** — Monolithe funéraire élancé.
-- **Plateforme-pyramide mésoaméricaine (ANT/MMA)** — Socle élevé de sanctuaire.
-- **Terrain de jeu de balle mésoaméricain (ANT/MMA)** — Aire rituelle aux murs latéraux.
-- **Grand palais maya (ANT/MMA)** — Pièces en enfilade et cours.
-- **Chaussée sacrée / sacbé maya (ANT/MMA)** — Route surélevée en maçonnerie.
-- **Cenote cérémoniel mésoaméricain (ANT/MMA)** — Point d'eau à usage rituel.
-- **Terrasse agricole andine monumentale (MMA)** — Agriculture à murs de soutènement.
-- **Qullqa / grenier inca (MMA)** — Entrepôt public réparti en série.
-- **Tambo / relais inca (MMA)** — Hébergement et stocks routiers.
-- **Ushnu inca (MMA)** — Plateforme de cérémonie étatique.
-- **Kallanka inca (MMA)** — Grand hall de rassemblement.
-- **Pont suspendu andin en fibres (MMA)** — Franchissement léger de gorge.
-- **Citadelle andine à terrasses (MMA)** — Urbanisme adapté aux pentes.
-
-## 3.15. Lieux singuliers utiles au JDR — base historique ou réinterprétation
-
-> Ici, la différence est parfois **narrative**, non architecturale. Un repaire de voleurs doit le plus souvent réutiliser une taverne, une maison ou un entrepôt plutôt que nécessiter une nouvelle forme de bâtiment.
-
-### Historiquement plausibles
-
-- **Maison de contrebandiers** — Maison ordinaire, cave dissimulée.
-- **Entrepôt clandestin** — Réserve cachée derrière façade.
-- **Passage de contrebande** — Liaison secrète entre parcelles.
-- **Cave d'assemblée clandestine** — Réunion dans sous-sol ordinaire.
-- **Chapelle clandestine** — Culte discret dans bâtiment privé.
-- **Maison d'informateur** — Logement servant d'observation.
-- **Maison de prêteur influent** — Habitation et coffre sécurisés.
-- **Relais de messagers secrets** — Auberge jouant double rôle.
-- **Ancien temple réoccupé** — Sanctuaire devenu nouveau programme.
-- **Thermes antiques abandonnés** — Grands volumes convertis en abris.
-- **Villa antique ruinée** — Domaine démembré puis squatté.
-- **Quartier enseveli / détruit** — Ruines sous nouvelles parcelles.
-- **Nécropole oubliée** — Tombeaux au bord de ville.
-- **Crypte murée** — Salle funéraire condamnée anciennement.
-- **Tour effondrée** — Vestige militaire dominant quartier.
-- **Moulin abandonné** — Bief ruiné et bâtiment vide.
-- **Île de quarantaine (fin MMA, selon contexte)** — Isolement des arrivants maritimes.
-- **Prison désaffectée** — Cellules réutilisées en stockage.
-- **Campement de réfugiés** — Abris temporaires hors enceinte.
-- **Village déserté** — Parcellaire persistant sans habitants.
-- **Cimetière sous construction** — Ancien espace funéraire réemployé.
-- **Souterrain de carrière réaffecté** — Réseau excavé transformé en refuge.
-- **Cache sous maison marchande** — Réduit inaccessible depuis rue.
-- **Marché noir improvisé** — Vente discrète dans cour.
-- **Camp de brigands fortifié** — Palissades et structures de fortune.
-- **Tour de péage contestée** — Point de conflit sur route.
-
-### Fantasy explicite — facultatif, hors réalisme strict
-
-- **Tour de mage** — Repère vertical à fonction magique.
-- **Académie de magie** — Campus clos et salles spécialisées.
-- **Temple d'un dieu imaginaire** — Plan défini par culte fictif.
-- **Sanctuaire interdit** — Lieu sacré à accès limité.
-- **Guilde d'aventuriers** — Halle, dortoirs et contrats.
-- **Guilde de voleurs** — Réseau de locaux et caves.
-- **Maison d'alchimiste fantastique** — Laboratoire, fours, réserves dangereuses.
-- **Portail de téléportation** — Nœud de transit surnaturel.
-- **Cercle d'invocation** — Aire rituelle au sol.
-- **Crypte nécromantique** — Complexe funéraire détourné magiquement.
-- **Arène de monstres** — Spectacles impliquant créatures fantastiques.
-- **Tour de guet enchantée** — Signal ou défense magique.
-- **Forge runique** — Artisanat doté de procédés occultes.
-- **Bibliothèque interdite** — Dépôt de savoirs dangereux.
-- **Marché des curiosités** — Échoppes d'objets insolites.
-- **Quartier extra-humain** — Morphologie adaptée à peuple fictif.
-- **Sanctuaire souterrain vivant** — Architecture fantastique non historique.
+
+# 2. Dwellings, ordinary buildings, and common facilities
+
+> An entry may denote an **architectural morphotype** (longhouse) or a **program** (shoemaker). Two programs can share the same house plan. Material, roof, and wealth adjectives should ideally be handled as parametric variants.
+
+## 2.1. Modest and rural dwellings — building forms
+
+- **Circular hut** — Round room around a hearth.
+- **Oval hut** — Simple volume with curved walls.
+- **Rectangular hut** — Small volume with light roof.
+- **Forest cabin** — Rudimentary wooden shelter.
+- **Shepherd's hut** — Temporary shelter near pastures.
+- **Fisher's cabin** — Waterside dwelling.
+- **Charcoal burner's hut** — Temporary forest lodging.
+- **Inhabited rock shelter** — Natural wall and built closure.
+- **Rock-cut dwelling** — Rooms excavated in a cliff.
+- **Semi-subterranean house** — Floor below ground level.
+- **Pit house** — Small roofed excavated building.
+- **Single-cell peasant house** — One room for everything.
+- **Two-room peasant house** — Separate hearth and store.
+- **Central-hall house** — Large living room.
+- **Hall house** — Large hall with annexes.
+- **Single-aisle house** — Elongated volume without major partitions.
+- **Longhouse** — Long building divided by function.
+- **Combined house and farm** — Adjoining dwelling and holding.
+- **House-byre** — People and livestock in contiguous spaces.
+- **Closed-courtyard house** — Outbuildings surround private court.
+- **Open-courtyard house** — Buildings around open space.
+- **Gallery house** — Circulation under covered gallery.
+- **Porch house** — Sheltered entrance in facade.
+- **House with lean-to** — Small secondary attached volume.
+- **Simple two-level house** — Dwelling spread across floors.
+- **Raised-ground-floor house** — Elevated access against damp.
+- **Stilt house** — Floor above water or mud.
+- **Riverside house** — Narrow waterside building.
+- **Mountain house** — Compact building and adapted roof.
+- **Nomadic herder's dwelling** — Dismountable, transportable home.
+- **Yurt / ger (TRA)** — Circular framed tent.
+- **Pastoral tent** — Textile covering on poles.
+- **Long camp tent** — Dismountable communal shelter.
+- **Earth and turf lodge** — Vegetated walls or roof.
+- **Stacked-wood house** — Joined log walls.
+- **Dry-stone house** — Masonry without mortar.
+- **Mass-earth house** — Thick earthen walls.
+
+## 2.2. Urban dwellings — building forms
+
+- **Party-wall house** — Continuous facades and shared walls.
+- **Row house** — Series of attached dwellings.
+- **Strip-plot house** — Narrow frontage, great depth.
+- **Gable-front house** — Gable faces street.
+- **Eaves-front house** — Long wall faces street.
+- **Jettied house (MMA)** — Upper floor projects over street.
+- **Shop house** — Sales at front, dwelling behind.
+- **House-workshop** — Interwoven work and residence.
+- **Multiple-shop house** — Several ground-floor shops.
+- **Carriage-gate house** — Passage to inner court.
+- **Two-courtyard house** — Successive courts, deep parcel.
+- **Courtyard house** — Rooms oriented to patio.
+- **Flat-roof house** — Roof used as outdoor terrace.
+- **Stepped-terrace house** — Levels follow terrain.
+- **Side-passage house** — Rooms distributed along passage.
+- **External-stair house** — Upper floor accessed from court.
+- **Inner-gallery house** — Rooms served around courtyard.
+- **Subdivided urban house** — Several households in older building.
+- **Craftsperson's house** — Workshop visible from street.
+- **Merchant's house** — Shop, store, and dwelling.
+- **Notable's house** — Private court and many rooms.
+- **Rural manor house** — Residence overlooking outbuildings.
+- **Greek pastas house (ANT)** — Courtyard bordered by gallery.
+- **Greek prostas house (ANT)** — Courtyard and porch before hall.
+- **Greek courtyard house (ANT)** — Patio distributes rooms.
+- **Roman domus (ANT)** — Single-family courtyard house.
+- **Atrium domus (ANT)** — Atrium organizes interior circulation.
+- **Peristyle domus (ANT)** — Garden surrounded by porticoes.
+- **Residential insula (ANT)** — Multi-story apartment building.
+- **Insula with shops (ANT)** — Shops below, dwellings above.
+- **Taberna with rear dwelling (ANT)** — Trading space and home.
+- **Islamic courtyard house (MMA)** — Central patio, discreet facade.
+- **Permanent-camp tent house** — Dismountable structure, lasting site.
+
+## 2.3. Materials and roofs — variants, not separate categories
+
+- **Timber frame and daub** — Filled wood framework.
+- **Exposed timber framing** — Frame visible on facade.
+- **Plastered wattle** — Interwoven branches and earth.
+- **Adobe / mud brick** — Sun-dried blocks.
+- **Fired brick** — Regular fired-clay masonry.
+- **Rammed earth** — Earth compacted between forms.
+- **Dressed stone** — Cut blocks in courses.
+- **Mortared rubble** — Irregular stones joined by mortar.
+- **Dry stone** — Stacked without hydraulic binder.
+- **Stacked timber** — Horizontal logs or planks.
+- **Thatch roof** — Thick vegetation covering.
+- **Reed roof** — Wetland-stem covering.
+- **Shingle roof** — Overlapping small boards.
+- **Tile roof** — Fired roofing elements.
+- **Stone-slab roof** — Thin stone plates.
+- **Turf roof** — Vegetated earth layer.
+- **Earthen roof terrace** — Flat usable covering.
+- **Steep-pitched roof** — Rapid precipitation drainage.
+- **Low-pitched roof** — Suited to dry climate.
+
+## 2.4. Domestic outbuildings and small enclosures
+
+- **Domestic courtyard** — Private working space.
+- **Walled courtyard** — Restricted street access.
+- **Kitchen garden** — Small food-growing beds.
+- **Herb garden** — Medicinal and culinary plants.
+- **Domestic orchard** — Nearby fruit trees.
+- **Enclosed vineyard** — Small surrounded vine plot.
+- **Pantry cellar** — Food and drink storage.
+- **Underground cellar** — Cool store below building.
+- **Vaulted cellar** — Masonry storage basement.
+- **Household loft** — Stores under roof.
+- **Larder** — Small preservation room.
+- **Woodshed** — Sheltered firewood.
+- **Lean-to** — Attached cover for tools.
+- **Store shed** — Small storage building.
+- **Cart shelter** — Parking for farm vehicle.
+- **Private bread oven** — Separate household oven.
+- **Separate kitchen** — Hearth away from dwelling.
+- **Smokehouse** — Food drying by smoke.
+- **Fruit dryer** — Harvest dehydration.
+- **Private well** — Domestic water supply.
+- **Domestic cistern** — Rainwater store.
+- **Courtyard basin** — Masonry vessel for multiple uses.
+- **Private latrine** — Closet to pit or cesspool.
+- **Cesspit** — Domestic waste receptacle.
+- **Soakaway** — Wastewater infiltration.
+- **Domestic washbasin** — Private laundry basin.
+- **Small domestic bath (culture-dependent)** — Private basin and heating.
+- **Domestic devotional niche** — Small devotional space.
+- **Household altar** — Worship within household.
+- **Domestic dovecote (subject to rights)** — Privileged pigeon keeping.
+- **Doghouse / kennel** — Domestic animal shelter.
+- **Beehive and apiary** — Bee installations.
+- **Pergola and vine trellis** — Shade and courtyard vine.
+
+
+## 2.5. Agricultural, pastoral, and forestry holdings
+
+- **Open-courtyard farm** — Dispersed dwelling and outbuildings.
+- **Enclosed-courtyard farm** — Complex around controlled court.
+- **Linear farm** — Buildings aligned in a row.
+- **L-shaped farm** — Two wings around courtyard.
+- **U-shaped farm** — Three wings around courtyard.
+- **Harvest barn** — Sheaves and grain storage.
+- **Tithe barn** — Large store of levies.
+- **Hay barn** — Bulky fodder storage.
+- **Threshing floor** — Prepared surface for grain.
+- **Raised granary** — Rodent-protected store.
+- **Granary on posts** — Small above-ground store.
+- **Communal rural granary** — Shared village store.
+- **Underground silo** — Grain storage pit.
+- **Masonry silo** — Fixed store with sturdy walls.
+- **Equipment shed** — Shelter for tools and carts.
+- **Cattle byre** — Cattle housing.
+- **Rural stable** — Housing and care of horses.
+- **Sheepfold** — Shared sheep shelter.
+- **Goat shed** — Covered goat enclosure.
+- **Pigsty** — Enclosed pig housing.
+- **Henhouse** — Small poultry building.
+- **Farm poultry yard** — Multipurpose poultry enclosure.
+- **Hutch** — Compartments for small animals.
+- **Hunting kennel** — Housing many dogs.
+- **Pasture enclosure** — Fence retaining herds.
+- **Corral / cattle pen** — Large gathering enclosure.
+- **Herd-sorting pen** — Lanes and small enclosures.
+- **Watering trough** — Water basin for animals.
+- **Hayloft** — Elevated hay storage.
+- **Haystack** — Temporary outdoor store.
+- **Fodder shelter** — Covered animal-feeding space.
+- **Summer pasture hut** — Seasonal mountain shelter.
+- **Buron / cheesemaker's hut (region-dependent)** — Dairy processing on mountain pasture.
+- **Rural dairy** — Milk-processing room.
+- **Artisanal cheese dairy** — Cheese making and aging.
+- **Seasonal sheep pen** — Movable mountain enclosure.
+- **Forest timber shelter** — Seasoning timber.
+- **Manual sawmill** — Cutting with long saws.
+- **Sawpit** — Manual log cutting.
+- **Charcoal kiln** — Wood-carbonization pile.
+- **Rural lime kiln** — Production of building lime.
+- **Farm apiary** — Group of managed hives.
+
+## 2.6. Food production and everyday processing
+
+- **Common / communal oven** — Collective baking for a fee.
+- **Artisanal bakery** — Kneading area, oven, and stall.
+- **Grain mill** — Grain-grinding building.
+- **Water mill** — Wheel driven by current.
+- **Windmill (MMA, region-dependent)** — Sails driven by wind.
+- **Hand mill** — Small manually operated millstone.
+- **Animal-powered mill** — Mechanism driven by animals.
+- **Olive oil mill** — Olive crushing and pressing.
+- **Grape press** — Extracts fermentable juice.
+- **Fruit press** — Extracts various juices.
+- **Wine treading vat** — Manual pressing vat.
+- **Vat house** — Large fermentation room.
+- **Wine store / cellar** — Wine storage and aging.
+- **Artisanal brewery** — Vats and brewing hearth.
+- **Malthouse** — Grain germination and drying.
+- **Malt kiln** — Specialized heating and drying.
+- **Brewpub tavern** — Combined production and consumption.
+- **Vinegar works** — Acid fermentation and storage.
+- **Seed-oil press** — Vegetable oil extraction.
+- **Butcher's with rear yard** — Animal cutting and sale.
+- **Artisanal slaughterhouse** — Slaughter and cutting.
+- **Salting house** — Preservation with salt.
+- **Fish smokehouse** — Preserves catches with smoke.
+- **Fish drying shed** — Ventilated racks near shore.
+- **Garum workshop (ANT)** — Salting and fish sauces.
+- **Foodware pottery kiln** — Firing common tableware.
+- **Communal cooking oven** — Preparation for large group.
+- **Inn kitchen** — Hearths suited to travelers.
+- **Monastery kitchen** — Preparation for religious community.
+
+## 2.7. Shops and stalls — ordinary-building programs
+
+- **Outdoor stall** — Movable sales table.
+- **Open shop** — Counter facing street.
+- **Shutter-stall shop** — Facade becomes counter.
+- **Arcade shop** — Sales sheltered by gallery.
+- **Shop with back room** — Stall, storage, sometimes dwelling.
+- **General merchant's shop** — Varied everyday goods.
+- **Grocery** — Preserved foods and condiments.
+- **Grain merchant** — Measures and grain sacks.
+- **Vegetable seller** — Fresh produce and baskets.
+- **Fruit seller** — Fresh or dried fruit.
+- **Fishmonger** — Wet and salted stalls.
+- **Retail butcher** — Hanging meat and chopping blocks.
+- **Charcuterie / cured-meat shop** — Prepared preserved meat.
+- **Retail bakery** — Bread sold at frontage.
+- **Dairy / cheese seller** — Dairy products for sale.
+- **Wine seller** — On-site and takeaway sales.
+- **Beer / ale seller** — Brewed drinks at counter.
+- **Salt merchant** — Salt protected from damp.
+- **Spice merchant** — Small valuable goods.
+- **Oil merchant** — Storage jars and amphorae.
+- **Cloth merchant** — Fabric displayed at stall.
+- **Secondhand clothes dealer** — Used clothes and fabric.
+- **Draper** — Cloth, textiles, and storage.
+- **Tailor's shop** — Clothing made and sold.
+- **Shoemaker's shop** — Shoes repaired and sold.
+- **Hatter** — Headwear made and sold.
+- **Furrier** — Prepared pelts and clothing.
+- **Haberdashery** — Small sewing accessories.
+- **Leather merchant** — Hides, strips, and straps.
+- **Rope merchant** — Coils and long storage area.
+- **Tool merchant** — Tools and hardware for sale.
+- **Hardware shop** — Nails, locks, and fittings.
+- **Pottery merchant** — Stacked tableware and amphorae.
+- **Glassware merchant** — Fragile objects and vessels.
+- **Timber merchant** — Boards and structural members.
+- **Charcoal merchant** — Fuel and black dust.
+- **Bookseller / stationer (MMA)** — Manuscripts, parchment, supplies.
+- **Parchment seller** — Prepared sheets and skins.
+- **Apothecary** — Remedies, scales, and vessels.
+- **Herbalist** — Dried herbs and medicinal simples.
+- **Perfumer** — Oils, aromatics, and essences.
+- **Money changer** — Foreign currency exchange.
+- **Pawnbroker** — Objects pledged against advances.
+- **Trade broker** — Commercial negotiation office.
+- **Public scribe** — Writing table and register.
+- **Notary / tabellion** — Written deeds and contracts.
+- **Arms dealer** — Weapons and accessories for sale.
+- **Horse dealer** — Sales with neighboring pens.
+- **Slave trader (period/place-dependent)** — Historically institutionalized sale of people.
+- **Secondhand dealer** — Reused, assorted objects.
+
+## 2.8. Lodging, sociability, and personal services
+
+- **Tavern** — Drink, benches, communal hearth.
+- **Neighborhood alehouse** — Small drinking room.
+- **Roadside inn** — Rooms, food, stable.
+- **Urban inn** — Lodging for itinerant merchants.
+- **Pilgrim hostel** — Dormitory near sacred route.
+- **Lodging house** — Rooms rented to residents.
+- **Merchants' boarding house** — Sleeping with trade storage.
+- **Communal dormitory** — Sleeping for a temporary group.
+- **Neighborhood bathhouse** — Shared pools and heating.
+- **Modest Roman baths (ANT)** — Small heated public establishment.
+- **Neighborhood hammam (MMA)** — Local baths with rooms.
+- **Barber** — Haircuts, shaves, customary care.
+- **Laundry** — Collected fabric washing.
+- **Washhouse** — Heating tubs and laundry.
+- **Neighborhood washhouse** — Communal laundry basins.
+- **Brothel / prostitution house (context-dependent)** — Specialized rooms and reception.
+- **Gaming house (context-dependent)** — Game tables and wagers.
+- **Inn courtyard** — Carts, horses, supplies.
+- **Livery stable** — Horses available to travelers.
+- **Messenger relay** — Passing horses and mail.
+- **Guide / porter office** — Local service hiring.
+
+
+## 2.9. Craft workshops and manufacturing trades
+
+### Metal, stone, earth, and glass
+
+- **Village forge** — Hearth, anvil, bellows.
+- **Farrier's forge** — Shoeing and equine work.
+- **Locksmith's workshop** — Locks, keys, mechanisms.
+- **Cutler's workshop** — Short-blade production.
+- **Edge-tool smithy** — Forged agricultural cutting tools.
+- **Armorer's workshop** — Armor repair and assembly.
+- **Weapons finisher's workshop** — Polishing and maintenance.
+- **Coppersmith's workshop** — Hammered copper objects.
+- **Boilermaker's workshop** — Metal vats and cauldrons.
+- **Nailmaker's workshop** — Nails and small pieces.
+- **Foundry** — Liquid metal and molds.
+- **Goldsmith's workshop** — Finely worked precious objects.
+- **Jeweler's workshop** — Jewelry and small settings.
+- **Stonemason's workshop** — Cut building blocks.
+- **Mason's workshop** — Mortar, stone, scaffolding.
+- **Lime burner's workshop** — Kiln-produced lime.
+- **Brickworks** — Shaping and firing bricks.
+- **Tileworks** — Fired roofing tiles.
+- **Pottery** — Wheels, clay, kiln.
+- **Fine ceramics workshop** — Decorated glazed tableware.
+- **Glassworks / glass furnace** — Melting and shaping glass.
+- **Mosaicist's workshop (ANT/MMA)** — Tesserae and decorated surfaces.
+
+### Wood, leather, textiles, and objects
+
+- **Joinery** — Furniture and wooden pieces.
+- **Carpentry** — Large timbers and joints.
+- **Wheelwright's workshop** — Wheels, hubs, carts.
+- **Cooper's workshop** — Hooped barrels and tubs.
+- **Woodcarver's workshop** — Figures, ornaments, molds.
+- **Bowyer's workshop** — Curved wood and strings.
+- **Fletcher's workshop** — Shafts, feathers, points.
+- **Ropewalk** — Twisting fibers into lengths.
+- **Basketry** — Woven baskets and hurdles.
+- **Matmaker's workshop** — Assembled plant fibers.
+- **Tannery** — Hides treated in vats.
+- **Curriery** — Softened and worked leather.
+- **Tawery** — Processing fine skins.
+- **Shoemaker's workshop** — Shoes made and repaired.
+- **Harness maker** — Harnesses and traction equipment.
+- **Saddlery** — Saddles and riding straps.
+- **Glovemaker** — Small leather goods.
+- **Furrier's workshop** — Fur preparation and assembly.
+- **Spinning workshop** — Fibers made into thread.
+- **Weaving workshop** — Looms and bobbins.
+- **Fulling workshop** — Cloth thickened by beating.
+- **Dye works** — Dye vats near water.
+- **Cloth finisher's workshop** — Finishing woven textiles.
+- **Embroiderer's workshop** — Needlework decoration.
+- **Tailor's workshop** — Cutting and assembling clothing.
+- **Hatter's workshop** — Shaping headwear and felt.
+- **Cordmaker's workshop** — Hemp and fiber rope.
+- **Netmaker's workshop** — Fishing-net manufacture.
+- **Leather dyer's workshop** — Coloring dressed hides.
+- **Parchment works** — Turning skins into writing media.
+- **Artisanal scriptorium (MMA)** — Manuscript copying to order.
+- **Bindery (MMA)** — Sewing and covering book gatherings.
+- **Illuminator's workshop (MMA)** — Manuscript painting and ornament.
+- **Candleworks** — Molded wax or tallow.
+- **Soapworks (region-dependent)** — Boiling fats and lyes.
+- **Artisanal perfumery** — Resin and oil mixtures.
+- **Instrument maker's workshop** — Strings, winds, percussion.
+- **Cart repair workshop** — Axle and wheel maintenance.
+
+### Construction yards and specialist activities
+
+- **Construction yard** — Prepared materials and scaffolds.
+- **Naval rope workshop** — Long ropes for ships.
+- **Sailmaker's workshop** — Cutting and repairing sails.
+- **Caulking workshop** — Waterproofing wooden hulls.
+- **Shipwright's workshop** — Building hulls and frames.
+- **Floor-tile maker's workshop** — Prepared floors and coverings.
+- **Engraver's workshop** — Inscriptions on hard materials.
+- **Seal workshop** — Engraved seals and matrices.
+- **Copyist's workshop** — Documents copied by hand.
+- **Lamp workshop** — Oil or metal lamps.
+- **Stove maker's workshop** — Stoves and heating elements.
+
+## 2.10. Storage, depots, and logistics
+
+- **Merchant's storeroom** — Rooms reserved for stock.
+- **Quayside warehouse** — Receiving river cargoes.
+- **Port shed** — Shelter for bulky goods.
+- **Commercial granary** — Grain kept for resale.
+- **Roman horreum (ANT)** — Specialized warehouse.
+- **Salt depot** — Dry salt reserve.
+- **Timber depot** — Stacked logs and boards.
+- **Stone depot** — Blocks stored before construction.
+- **Charcoal depot** — Sheltered stored fuel.
+- **Wine merchant's cellar** — Stored amphorae or barrels.
+- **Amphora depot (ANT)** — Grouped transport jars.
+- **Jar store** — Oils and liquid foods.
+- **Cart shed** — Vehicles stored under roof.
+- **Boat shed** — Small boats pulled ashore.
+- **Net shelter** — Nets dried then stored.
+- **Transshipment yard** — Loads transferred between transports.
+- **Trading stable** — Animals kept for exchange.
+- **Ox pen** — Draft teams assembled before departure.
+- **Caravan enclosure** — Animals, loads, tents.
+- **River-transport relay** — Storage and river crews.
+- **Prepared landing beach** — Shore for small boats.
+
+## 2.11. Local services and small communal facilities
+
+- **Communal well** — Neighborhood water point.
+- **Neighborhood fountain** — Accessible water supply.
+- **Public basin** — Open-air water reserve.
+- **Neighborhood cistern** — Water for several households.
+- **Communal trough** — Water for animals.
+- **Public washhouse** — Shared washing basins.
+- **Modest public latrines** — Multiple-seat sanitary facility.
+- **Small public bath** — Hygiene by regional practice.
+- **Communal oven** — Shared baking.
+- **Community press** — Heavy tool used collectively.
+- **Community forge** — Equipment shared among households.
+- **Market shelter** — Open roof over stalls.
+- **Market square** — Public trading space.
+- **Small meeting square** — Widened crossroads, possible benches.
+- **Village communal house** — Meetings and small decisions.
+- **Guardhouse** — Local watch and patrols.
+- **Small toll post** — Collection on road or bridge.
+- **Prepared ford** — Reinforced water crossing.
+- **Ordinary wooden bridge** — Simple deck on supports.
+- **Footbridge** — Light ditch crossing.
+- **Ferry** — River crossing boat.
+- **River landing** — Small-boat mooring.
+- **Small masonry quay** — Shore equipped for unloading.
+- **Riverside steps** — Direct water access.
+- **Hamlet chapel** — Small place of prayer.
+- **Modest parish church (MMA)** — Village place of worship.
+- **Wayside shrine** — Small devotional structure.
+- **Local elementary school (context-dependent)** — Teaching room, not universal.
+- **Local treatment room (context-dependent)** — Care in ordinary building.
+- **Parish cemetery (MMA)** — Burials associated with church.
+- **Modest guild room (MMA)** — Meetings in ordinary house.
+- **Municipal workshop** — Tool and equipment repair.
+- **Road-maintenance depot** — Materials for road upkeep.
+
+## 2.12. Ordinary spatial objects essential to the map
+
+> These are not all “buildings,” but a city mapper cannot achieve credible texture by omitting them.
+
+### Roads and parcels
+
+- **Major road** — Main circulation route.
+- **Paved road** — Durable, costly-to-maintain roadway.
+- **Dirt path** — Unpaved connection.
+- **Main street** — Commercial through-axis.
+- **Secondary street** — Connection between urban blocks.
+- **Alley** — Narrow passage between facades.
+- **Lane** — Narrow access connection.
+- **Dead end** — Access without through exit.
+- **Covered passage** — Crossing beneath building or gallery.
+- **Stepped alley** — Route following steep slope.
+- **Street arcade** — Sheltered passage beneath frontage.
+- **Ancient portico (ANT)** — Street-side columned gallery.
+- **Widened crossroads** — Local circulation node.
+- **Shared courtyard** — Common space between dwellings.
+- **Rear courtyard** — Service at parcel back.
+- **Strip parcel** — Narrow deep plot.
+- **Trapezoidal parcel** — Plot shaped by angled streets.
+- **Corner parcel** — Plot fronting two roads.
+- **Enclosed block** — Built frontage around interior.
+- **Block crossed by lanes** — Multiple courtyard accesses.
+- **Rear house garden** — Unbuilt strip at back.
+- **Parcel wall** — Stone or earth boundary.
+- **Wooden fence** — Light economical division.
+- **Bocage hedge** — Vegetated parcel boundary.
+- **Terrace bank** — Supports sloping parcels.
+- **External urban stairs** — Connection between street levels.
+- **Cart ramp** — Traversable sloped access.
+
+### Water, drainage, and utility ground
+
+- **Street runnel** — Surface water drainage.
+- **Drainage ditch** — Open neighborhood drainage.
+- **Ancient masonry sewer (ANT)** — Underground water channel.
+- **Stone gutter** — Narrow conduit at road edge.
+- **Irrigation canal** — Water distributed to crops.
+- **Millrace** — Diversion feeding waterwheel.
+- **Diversion channel** — Artificially directed water branch.
+- **Earth dike** — Protects bank and fields.
+- **Bank levee** — Raised protection against overflow.
+- **Millpond** — Reserve for waterwheel.
+- **Small reservoir** — Water collected in basin.
+- **Communal pond** — Standing water for multiple uses.
+- **Stone ford** — River crossing with reinforced bed.
+- **Small arched bridge** — Masonry stream crossing.
+- **Wooden bridge** — Beams on abutments or piers.
+- **Pontoon** — Platform over shallow water.
+- **Boat-launch ramp** — Ramp for vessels.
+- **Towpath bank** — Passage along watercourse.
+- **Towpath** — Boats pulled from bank.
+
+### Neighborhood spaces and interstices
+
+- **Small informal market** — Stalls at busy crossings.
+- **Vacant ground within walls** — Temporarily empty parcel.
+- **Garden within walls** — Cultivated ground inside enclosure.
+- **Monastery orchard** — Enclosed trees near convent.
+- **Animal enclosure** — Temporary livestock keeping.
+- **Neighborhood dump** — Waste concentrated away from circulation.
+- **Clay extraction pit** — Material taken near workshops.
+- **Manure heap** — Fertilizer near holdings.
+- **Threshing ground** — Cleared ground for grain.
+- **Working clearing** — Open-air craft space.
+- **Local cemetery** — Reserved burial parcels.
+- **Small cross or stele** — Contextual local religious marker.
+- **Courtyard gate** — Private access to large parcel.
+- **High party wall** — Dense separation between dwellings.
+- **Secondary parcel gate** — Discreet access to annexes.
 
 ---
 
-# 4. Notes d'implémentation pour un city mapper
 
-Cette quatrième section n'ajoute **pas** une nouvelle famille de bâtiments : elle explique comment exploiter les trois inventaires sans obtenir un assemblage aléatoire de symboles.
+# 3. Special buildings, monuments, and major complexes
 
-## 4.1. Séparer les dimensions combinables
+> Unlike houses and workshops, these often serve as **structuring landmarks**. A temple, castle, or amphitheater can change the entire neighboring street network. Many exist only in certain cultural worlds, periods, and sufficiently large cities.
 
-Pour un settlement, choisir indépendamment :
+## 3.1. Power, elite residences, and administration
 
-1. **Échelle** : hameau, village, bourg, ville, cité…
-2. **Morphologie** : dispersée, village-rue, organique, quadrillée, concentrique…
-3. **Site** : plateau, vallée, rivière, colline, littoral, oasis…
-4. **Fonction dominante** : agricole, artisanale, marchande, castrale, religieuse, portuaire…
-5. **Tradition historique** : romaine, celtique, médiévale occidentale, islamique, byzantine, nordique…
-6. **État** : prospère, déclinant, en croissance, ruiné, reconstruit, assiégé…
+- **Royal palace** — Sovereign's residence and representation.
+- **Imperial palace** — Large political and residential complex.
+- **Princely palace** — Territorial power's seat.
+- **Ducal palace** — Court and administration of duchy.
+- **Episcopal palace** — Bishop's residence and authority.
+- **Patriarchal palace** — Senior religious authority's residence.
+- **Urban aristocratic palace** — Large court and noble dwelling.
+- **Medieval mansion** — Great family's urban residence.
+- **Inhabited lordly tower** — Very vertical fortified dwelling.
+- **Patrician tower house** — Tall defensive urban residence.
+- **Fortified house** — Small rural fortified dwelling.
+- **Manor house** — Dwelling overlooking rural holding.
+- **Enclosed manor** — Noble house behind ditches.
+- **Lordly castle** — Fortified residence with outbuildings.
+- **Count's castle** — Regional-power fortress.
+- **Royal castle** — King's defended residence.
+- **Motte-and-bailey castle (HMA/MMA)** — Tower on mound and bailey.
+- **Rectangular-keep castle (MMA)** — Large massive fortified refuge.
+- **Cylindrical-keep castle (MMA)** — Principal stone tower.
+- **Concentric castle (MMA)** — Several enclosed defensive lines.
+- **Lowland castle (MMA)** — Fortress on open ground.
+- **Mountain castle (MMA)** — Works integrated into terrain.
+- **Spur castle (MMA)** — Defense on narrow promontory.
+- **Polygonal-enclosure castle (MMA)** — Curtain walls adapted to terrain.
+- **Palace-castle** — Prestigious residence in fortress.
+- **Princely hunting lodge** — High-ranking forest retreat.
+- **Governor's residence** — Provincial dwelling and administration.
+- **Roman praetorium (ANT)** — Provincial command seat.
+- **Camp praetorium (ANT)** — Command headquarters.
+- **Aristocratic urban villa (ANT)** — Luxury dwelling with gardens.
+- **Monumental rural villa (ANT)** — Estate with imposing residential buildings.
+- **Roman maritime villa (ANT)** — Prestigious coastal residence.
+- **Italian ducal palace (MMA)** — Government of merchant city.
+- **Podestà palace (MMA)** — Communal magistrate's seat.
+- **Communal palace (MMA)** — Civic authorities and ceremonial halls.
+- **Medieval town hall (MMA)** — Municipal government and archives.
+- **Communal belfry (MMA)** — Tower of autonomy and warning.
+- **Aldermen's house (MMA)** — Urban magistrates' deliberations.
+- **Council house** — Local authorities' meetings.
+- **Roman curia (ANT)** — Municipal council chamber.
+- **Greek bouleuterion (ANT)** — Roofed council chamber.
+- **Greek prytaneion (ANT)** — Civic hearth and magistrates.
+- **Roman civic basilica (ANT)** — Justice and public business.
+- **Monumental court** — Hearings in specialized building.
+- **Palace of justice** — Magistracy and courtrooms.
+- **Chancery** — Issuing deeds and decisions.
+- **Public treasury** — Secured fund reserve.
+- **Municipal archives** — Deed and register storage.
+- **Mint** — Official coin striking.
+- **Tax collectors' house** — Levy administration.
+- **Toll receiver's house** — Passage records and receipts.
+- **Customs house** — Fiscal control of goods.
+- **Legate's palace / embassy** — Foreign political representation.
+- **Merchant consul's residence** — Trading-community representation.
+- **Civic assembly hall** — Citizens' or notables' meetings.
+- **Lordly banquet hall** — Feasts and court audiences.
 
-La **taille ne détermine pas à elle seule** les monuments : statut, routes, richesse, culte, garnison, liens politiques et histoire comptent autant.
+## 3.2. Fortifications, military works, and control
 
-## 4.2. Distinguer quatre couches spatiales
+### Enclosures and defensive elements
 
-| Couche | Ce qui est généré | Exemples |
-|---|---|---|
-| **Macro** | Site et grands invariants | Relief, eau, routes, enceinte, port, citadelle, sanctuaire |
-| **Méso** | Quartiers et îlots | Bourg marchand, faubourg, quartier portuaire, parcellaire |
-| **Micro** | Empreintes ordinaires | Maisons, ateliers, granges, cours, jardins |
-| **Singularités** | Sites scénaristiques ou monuments | Palais, amphithéâtre, crypte, beffroi, marché noir |
+- **Earthen rampart** — Artificial raised defensive bank.
+- **Defensive palisade** — Vertical wall of stakes.
+- **Enclosure wall** — Masonry settlement protection.
+- **Cyclopean wall (ANT)** — Joined large stone blocks.
+- **Oppidum contour wall (ANT)** — Rampart follows dominant terrain.
+- **Oppidum cross wall (ANT)** — Defensive line cuts off spur.
+- **Murus gallicus-type Gaulish wall (ANT)** — Earth, stone, timber structure.
+- **Ancient towered wall (ANT)** — Regular wall and towers.
+- **Crenellated medieval wall (MMA)** — Curtain walls and wall walk.
+- **Secondary enclosure** — New line around extension.
+- **Citadel** — Dominant internal fortress.
+- **Fortified refuge** — Garrison's final refuge.
+- **Fortified bailey** — Defended castle outbuildings.
+- **Barbican (MMA)** — Advanced work protecting entrance.
+- **Gatehouse** — Two towers flank passage.
+- **Fortified town gate** — Controlled entrance in wall.
+- **Monumental ancient gate (ANT)** — Official decorated passage.
+- **Postern** — Small secondary defensive opening.
+- **Gate tower** — Tower traversed by traffic.
+- **Flanking tower** — Lateral control of curtain wall.
+- **Round wall tower** — Projecting circular defensive post.
+- **Square wall tower** — Angular defensive post.
+- **Watchtower** — Observes roads and horizons.
+- **Bartizan (MMA)** — Small projecting turret.
+- **Bretèche (MMA)** — Projecting facade defense.
+- **Machicolations (MMA)** — Vertical defense at top.
+- **Wooden hoardings (MMA)** — Projecting defensive galleries.
+- **Wall walk** — Protected movement on rampart.
+- **Crenels and merlons** — Alternating cover and openings.
+- **Portcullis** — Movable grille closing passage.
+- **Drawbridge (MMA)** — Movable access over ditch.
+- **Fixed castle bridge** — Fixed crossing before entrance.
+- **Dry moat** — Excavated waterless obstacle.
+- **Water moat** — Supplied ditch around fortress.
+- **Masonry counterscarp** — Reinforced outer ditch edge.
+- **Defensive outer bank** — Earthwork approach obstacle.
+- **Temporary barricade** — Improvised street obstacle.
+- **Keep / main tower** — Large command refuge.
+- **Double curtain wall** — Two successive defensive barriers.
+- **Circular village enclosure** — Continuous palisade or wall.
+- **Fortified bridge** — Crossing protected by towers.
+- **Fortified bridgehead** — Defense controlling river access.
+- **Pass fort** — Position blocking mountain crossing.
+- **Coastal fort** — Protection for maritime anchorage.
+- **Frontier fort** — Garrison watching peripheral territory.
+- **Road fortlet** — Defensive post on route.
+- **Ancient fortified camp (ANT)** — Ditch, bank, planned gates.
+- **Roman legionary camp (ANT)** — Grid, principia, barracks.
+- **Roman fortlet / castellum (ANT)** — Small defended military post.
+- **Signal tower** — Visual-message relay.
+- **Beacon tower** — Night light signal.
+- **Frontier tower house** — Dwelling and close defense.
 
-Une *taverne*, une *apothicairerie* ou une *guilde de voleurs* peut être une **étiquette d'usage** sur une maison ou un entrepôt. À l'inverse, un *amphithéâtre*, une *cathédrale*, un *château* ou un *caravansérail* exige un **gabarit spatial dédié**.
+### Military buildings and fortress annexes
 
-## 4.3. Règles de placement conseillées
+- **Soldiers' barracks** — Communal garrison housing.
+- **Cavalry quarters** — Stables and military lodging.
+- **Roman principia (ANT)** — Central camp administration.
+- **Military arsenal** — Weapons storage and maintenance.
+- **Fortress armory** — Protected weapons in enclosure.
+- **Military provisions store** — Supplies for a siege.
+- **Garrison granary** — Fortified grain reserve.
+- **Castle stables** — Horses and lordly equipment.
+- **Training pit or yard** — Exercises inside fort.
+- **Archery range** — Archers' training.
+- **Training lists** — Enclosed exercise ground.
+- **Siege-engine workshop** — Military frames and machines.
+- **War-machine shelter** — Dismantled-engine storage.
+- **Powder magazine (late MMA, technology-dependent)** — Secured gunpowder store.
+- **Prison tower** — Detention in defensive work.
+- **Siege cistern** — Secured defensive water.
+- **Concealed exit passage** — Secondary access outside.
+- **Fortified service tunnel** — Protected link between works.
 
-- **Eau** : placer la ressource en premier ; villages, moulins, abreuvoirs, fontaines et zones irriguées en dépendent.
-- **Relief** : les pentes dictent terrasses, escaliers, murs de soutènement et orientations possibles des parcelles.
-- **Réseau viaire** : former d'abord les axes vers les destinations extérieures, puis les rues de desserte ; ne pas commencer par remplir des îlots indépendants.
-- **Centralités** : une place de marché, un château, un sanctuaire, un pont ou un port attirent des rues et génèrent des tissus différents.
-- **Rues marchandes** : commerces en façades sur les axes passants, logements et dépendances souvent derrière.
-- **Parcellaire médiéval** : lots fréquemment étroits sur rue, profonds vers l'intérieur de l'îlot ; subdiviser historiquement et conserver des anomalies.
-- **Tissus antiques planifiés** : îlots réguliers si fondation quadrillée ; variations et ruptures après croissance, destruction ou remaniement.
-- **Ateliers gênants** : tanneries, teintureries, fours et fonderies près des ressources utiles et parfois en périphérie ; appliquer les contraintes locales plutôt qu'une règle universelle.
-- **Faubourgs** : laisser l'habitat se développer le long des routes, près des portes, du port et des ponts.
-- **Défenses** : fermer l'enceinte de manière plausible, ménager les portes sur les voies et adapter les remparts au relief.
-- **Bâti non résidentiel** : conserver cours, zones de stockage, jardins, marchés ouverts, cimetières, enclos et sols improductifs. Une ville ancienne n'est pas un pavage intégral de maisons.
-- **Réemploi historique** : superposer des phases : ville antique devenue médiévale, enceinte abandonnée, ancien temple converti, nouveaux lots sur ruines.
-- **Rareté** : l'absence de monument est courante dans les petites implantations ; la cathédrale, le cirque et le palais impérial restent exceptionnels.
-- **Cohérence culturelle** : ne pas mélanger sans justification une trame romaine, une cathédrale gothique, un grand bazar ottoman et un stade grec encore en activité.
 
-## 4.4. Quelques compositions-tests pour valider le moteur
+## 3.3. Religion, sacred places, and monastic complexes
 
-| Archétype à tester | Ossature urbaine attendue | Signatures du bâti |
-|---|---|---|
-| **Hameau agricole médiéval** | Chemin, fermes lâches, puits | Maisons-étables, granges, enclos, four possible |
-| **Village-rue de vallée** | Axe longitudinal, petites traverses | Parcelles en bande, jardins arrière, gué ou pont |
-| **Village castral de hauteur** | Château, rampe d'accès, rues serrées | Maisons étagées, portes, courtines, église |
-| **Bourg marchand médiéval** | Marché, carrefour, faubourgs routiers | Halles, boutiques, maisons profondes, auberges |
-| **Bastide médiévale** | Trame planifiée, place structurante | Lots réguliers, arcades possibles, halles |
-| **Oppidum celtique** | Enceinte suivant relief, portes rares | Enclos domestiques, ateliers, réserves, voies internes |
-| **Vicus gallo-romain** | Voie majeure et carrefours | Ateliers, tabernae, habitat mixte, petit sanctuaire |
-| **Cité romaine planifiée** | Trame principale, forum, réseaux d'eau | Domus, insulae, thermes, temples, horrea |
-| **Cité antique organique** | Agora, acropole selon site, rues variées | Maisons à cour, stoas, temples, ateliers |
-| **Médina médiévale maghrébine** | Portes, voies hiérarchisées, ruelles/impasses | Maisons à cour, souks, hammams, fondouks, mosquées |
-| **Ville portuaire médiévale** | Quais, entrepôts, accès aux portes | Halles, ateliers navals, auberges, douanes |
-| **Ville médiévale sur noyau antique** | Trame héritée puis déformée | Ruines réemployées, enceinte médiévale, quartiers mixtes |
-| **Ville-oasis fortifiée** | Source, canaux, ksar dense | Habitations en terre, greniers, souk, citernes |
-| **Camp nordique marchand** | Rivage abrité, rues de débarquement | Longues maisons, entrepôts, ateliers, quais légers |
-| **Ville de grand pèlerinage** | Chemins convergeant au sanctuaire | Hostelleries, commerces, hospices, enceintes religieuses |
+### Polytheistic Antiquity and ancient traditions
 
-## 4.5. Mini-schéma de données recommandé
+- **Open-air sanctuary (ANT)** — Ritual space without enclosed building.
+- **Sacred grove (ANT)** — Grove reserved for worship.
+- **Ancient sacred precinct (ANT)** — Delimited area with altars.
+- **Greek temple (ANT)** — Cella and possible colonnades.
+- **Roman temple (ANT)** — Podium, cella, portico.
+- **Capitoline temple (ANT)** — Civic city sanctuary.
+- **Peristyle temple (ANT)** — Colonnade around sacred building.
+- **Gallo-Roman fanum (ANT)** — Temple with surrounding gallery.
+- **Greek sacred tholos (ANT)** — Small round-plan temple.
+- **Oracular sanctuary (ANT)** — Temple and religious consultation.
+- **Healing sanctuary (ANT)** — Worship and ritual care.
+- **Roman mithraeum (ANT)** — Often underground elongated sanctuary.
+- **Monumental public altar (ANT)** — Sacrifices on ceremonial platform.
+- **Roman auguraculum (ANT)** — Religious observation space.
+- **Egyptian temple (ANT)** — Pylons, courts, halls.
+- **Egyptian mortuary temple (ANT)** — Lasting cult of deceased.
+- **Mesopotamian ziggurat (ANT)** — Superposed sacred platforms.
+- **Mesopotamian temple (ANT)** — Sanctuary within enclosure.
+- **Iranian fire temple (ANT/MMA)** — Worship linked to sacred fire.
+- **Ancient megalithic sacred site** — Prehistoric monuments sometimes reused.
 
-Ne pas transformer directement chaque ligne en **classe architecturale indépendante** : les variantes de matériaux, les usages et les modules doivent pouvoir partager les mêmes empreintes génératives.
+### Early and medieval Christian world
+
+- **Early Christian basilica (ANT/HMA)** — Large worship nave.
+- **Monumental parish church (MMA)** — District religious center.
+- **Fortified church (MMA)** — Refuge with defenses.
+- **Collegiate church (MMA)** — Church served by canons.
+- **Cathedral (MMA)** — Bishop's seat church.
+- **Romanesque cathedral (MMA)** — Massive volumes and vaults.
+- **Gothic cathedral (MMA)** — High naves and buttresses.
+- **Baptistery (ANT/MMA)** — Building for baptism.
+- **Castle chapel (MMA)** — Sanctuary integrated into castle.
+- **Funerary chapel (MMA)** — Worship linked to burials.
+- **Pilgrimage chapel (MMA)** — Secondary devotional place.
+- **Relic shrine (MMA)** — Visitors around sacred objects.
+- **Benedictine abbey (HMA/MMA)** — Large organized monastic complex.
+- **Cistercian abbey (MMA)** — Austere economic complex.
+- **Priory (MMA)** — Small monastery dependency.
+- **Urban convent (MMA)** — Religious community in city.
+- **Hermitage (HMA/MMA)** — Isolated religious retreat.
+- **Fortified monastery (MMA)** — Cloister and defensive walls.
+- **Monastic cloister** — Gallery around central garden.
+- **Chapter house** — Religious community's daily meeting.
+- **Convent refectory** — Shared dining hall.
+- **Monastic dormitory** — Religious community sleeping quarters.
+- **Monastic scriptorium** — Manuscript copying and preservation.
+- **Monastic library** — Manuscripts protected and consulted.
+- **Monastic infirmary** — Care inside convent.
+- **Abbey guesthouse** — Visitor and pilgrim lodging.
+- **Detached bell tower / campanile (MMA)** — Independent bell tower.
+- **Church lantern tower (MMA)** — Light at nave crossing.
+- **Monumental crypt (MMA)** — Lower devotional spaces.
+- **Abbot's palace (MMA)** — Residence of monastic authority.
+
+### Islamic world and medieval Mediterranean traditions
+
+- **Neighborhood mosque (MMA)** — Small communal prayer space.
+- **Great / Friday mosque (MMA)** — Large-scale urban worship.
+- **Courtyard mosque (MMA)** — Prayer hall and patio.
+- **Minaret (MMA)** — Tower for call to prayer.
+- **Madrasa (MMA)** — Religious teaching and residence.
+- **Zawiya (MMA)** — Devotion, learning, hospitality.
+- **Khanqah (MMA)** — Communal devotional residence.
+- **Religious ribat (HMA/MMA)** — Defense and spiritual life.
+- **Local saint's mausoleum (MMA)** — Venerated visited tomb.
+- **Islamic funerary dome (MMA)** — Monumental tomb covering.
+- **Waqf / habous complex (MMA)** — Property supporting religious works.
+- **Palace mosque (region-dependent)** — Combined worship and court complex.
+
+### Other places of worship and cultural variants
+
+- **Synagogue (ANT/MMA)** — Assembly, prayer, reading.
+- **Jewish house of study (MMA)** — Teaching and religious texts.
+- **Buddhist stupa (ANT/MMA)** — Relic monument and circumambulation.
+- **Buddhist vihara (ANT/MMA)** — Monastery with cells and court.
+- **Buddhist pagoda (MMA)** — Multi-story sacred tower.
+- **Hindu temple (ANT/MMA)** — Sanctuary and processional spaces.
+- **Mandapa (ANT/MMA)** — Pillared temple hall.
+- **Gopuram (MMA)** — Southern temple gateway tower.
+- **Early Shinto shrine (MMA)** — Local worship enclosure.
+- **Mesoamerican temple (ANT/MMA)** — Sanctuary on pyramidal base.
+- **Andean huaca (ANT/MMA)** — Sacred place or structure.
+- **Summit shrine** — Worship established on high ground.
+- **Cave sanctuary** — Ritual using natural cavity.
+- **Rock-cut temple** — Sacred halls cut into rock.
+
+## 3.4. Monumental commerce, guilds, and marketplaces
+
+- **Greek agora (ANT)** — Civic and commercial square.
+- **Roman forum (ANT)** — Political and trading square.
+- **Monumental provincial forum (ANT)** — Porticoed civic complex.
+- **Greek stoa (ANT)** — Monumental gathering gallery.
+- **Monumental commercial portico (ANT)** — Long arcaded frontage.
+- **Roman macellum (ANT)** — Food market organized around court.
+- **Medieval covered market (MMA)** — Large hall sheltering stalls.
+- **Grain hall (MMA)** — Grain sales and measuring.
+- **Cloth hall (MMA)** — Wholesale textile trade.
+- **Fish hall** — Specialized market near landing.
+- **Meat hall** — Collective meat sales.
+- **Great market square** — Center of merchant activity.
+- **Arcaded square (MMA)** — Sheltered commercial frontages.
+- **Merchant loggia (MMA)** — Gallery for negotiation and meeting.
+- **Merchants' house (MMA)** — Merchant corporation meetings.
+- **Guildhall (MMA)** — Collective seat of a trade.
+- **Corporations' hall (MMA)** — Rooms shared by guilds.
+- **Hanseatic house (MMA)** — Network trading establishment.
+- **Italian fondaco (MMA)** — Merchants' lodging and warehouse.
+- **Funduq / fondouk (MMA)** — Reception courtyard, stores, rooms.
+- **Commercial khan (MMA)** — Merchants and goods around court.
+- **Monumental caravanserai (MMA)** — Enclosed court, stables, lodging.
+- **Great souk (MMA)** — Dense commercial network.
+- **Covered souk (MMA)** — Roofed commercial lanes.
+- **Domed bazaar (MMA, region-dependent)** — Monumental covered market street.
+- **Large public warehouse** — Strategic city reserves.
+- **Monumental municipal granary** — Urban supply security.
+- **Monumental public horreum (ANT)** — Controlled food storage.
+- **Tax-in-kind store** — Public levy depot.
+- **Public weighing house** — Large scale and calibration.
+- **Premodern merchants' exchange (MMA, place-dependent)** — Specialist traders' meetings.
+- **Public exchange house** — Supervised currency transactions.
+- **Fair enclosure** — Large-scale seasonal activity.
+- **Livestock market** — Broad enclosure for herds.
+- **Horse market** — Pens and animal demonstrations.
+- **Auction square** — Public display and sale.
+
+## 3.5. Games, performances, sport, and public gatherings
+
+### Antiquity
+
+- **Greek theater (ANT)** — Semicircular hillside seating.
+- **Roman theater (ANT)** — Seating and monumental stage.
+- **Odeon (ANT)** — Roofed hall for music.
+- **Roman amphitheater (ANT)** — Oval arena surrounded by seating.
+- **Great imperial amphitheater (ANT)** — Immense performance arena.
+- **Colosseum of Rome (ANT, unique example)** — Flavian amphitheater, not generic category.
+- **Roman circus (ANT)** — Elongated racing track.
+- **Ancient hippodrome (ANT)** — Horse and chariot racing.
+- **Greek stadium (ANT)** — Athletic competition track.
+- **Greek palaestra (ANT)** — Exercise training courtyard.
+- **Greek gymnasium (ANT)** — Education and athletic preparation.
+- **Xystus / training portico (ANT)** — Long exercise gallery.
+- **Naumachia (ANT, exceptional)** — Naval spectacle basin.
+- **Monumental promenade portico (ANT)** — Walking around public spaces.
+
+### Medieval world
+
+- **Tournament field (MMA)** — Ground for chivalric contests.
+- **Tournament lists (MMA)** — Delimited combat area.
+- **Tournament stands (MMA)** — Temporary or permanent seating.
+- **Civic festival square** — Large gathering space.
+- **Archery field (MMA)** — Archery competition and training.
+- **Ball-game ground (MMA)** — Local play space.
+- **Jeu de paume court (late MMA)** — Enclosed ball-game court.
+- **Seasonal fairground (MMA)** — Performances and itinerant merchants.
+- **Public platform** — Platform for speakers or performers.
+- **Enclosed lordly garden (MMA)** — Privileged walking and pleasure.
+- **Palace garden (ANT/MMA)** — Landscape composition and prestige.
+- **Great hunting park (MMA)** — Enclosed domain reserved to lord.
+
+## 3.6. Health, charity, and institutional lodging
+
+- **Hôtel-Dieu (MMA)** — Care and reception for the indigent.
+- **Great charitable hospital (MMA)** — Sick ward and chapel.
+- **Pilgrims' hospice (MMA)** — Hospitality stop on sacred route.
+- **Maison-Dieu (MMA)** — Small charitable hospital institution.
+- **Leper house (MMA)** — Separate lodging for people with leprosy.
+- **Monastic hospital (MMA)** — Community-administered care.
+- **Poorhouse (MMA)** — Housing and aid for the destitute.
+- **Institutional almonry (MMA)** — Organized relief distribution.
+- **Orphanage / children's house (context-dependent)** — Protection for children without family.
+- **Sailors' hospital (context-dependent)** — Assistance to injured crews.
+- **Ancient healing sanctuary (ANT)** — Pilgrims seeking divine care.
+- **Roman military valetudinarium (ANT)** — Planned garrison hospital.
+- **Great hammam (MMA)** — Urban baths with successive rooms.
+- **Monumental Roman thermae (ANT)** — Heated bath complex.
+- **Spring spa establishment (ANT/MMA)** — Naturally supplied baths.
+- **Port lazaretto (late MMA, city-dependent)** — Maritime traveler quarantine.
+- **Religious retirement house (period-dependent)** — Care for dependent elders.
+
+## 3.7. Justice, coercion, and executions
+
+- **Urban prison** — Supervised detention in center.
+- **Castle prison** — Cells in fortified complex.
+- **Detention tower** — Prison integrated into fortification.
+- **Gate jail** — Cells beside fortified gate.
+- **Lordly courtroom** — Local justice and dues.
+- **Urban courtroom** — Commercial and criminal disputes.
+- **Provost's house** — Judicial and policing administration.
+- **Pillory** — Post or column for exposure.
+- **Public stocks** — Restraint installed in square.
+- **Punishment cage** — Temporary public exposure of prisoner.
+- **Gallows / gibbet** — Public execution posts.
+- **Permanent high-justice gallows (MMA)** — Lasting execution structure.
+- **Execution square** — Open punishment space.
+- **Execution scaffold** — Platform erected for sentence.
+- **Ordeal site (period-dependent)** — Ritual judgment space.
+- **Interrogation room** — Room integrated into penal authority.
+- **Executioner's house (context-dependent)** — Dwelling linked to office.
+- **Lordly justice enclosure** — Enclosed judicial assembly space.
+
+
+## 3.8. Education, knowledge, books, and public memory
+
+- **Greek philosophical academy (ANT)** — Teaching and scholarly debate.
+- **Ancient library (ANT)** — Organized scroll collection.
+- **Mouseion / scholarly center (ANT)** — Study, collections, research.
+- **School of rhetoric (ANT)** — Advanced speech training.
+- **Cathedral school (MMA)** — Teaching attached to a chapter.
+- **Studium generale (MMA)** — Widely recognized higher learning.
+- **Medieval university (MMA)** — Organized masters and students.
+- **University college (MMA)** — Resident student community.
+- **Chapter library (MMA)** — Books linked to cathedral.
+- **Palace library (ANT/MMA)** — Central authority's collection.
+- **Early astronomical observatory (culture-dependent)** — Systematic astronomical observations.
+- **Scholar's house** — Residence and private study.
+- **Cartographer's workshop (MMA, context-dependent)** — Maps copied and drawn.
+- **Law school (MMA)** — Learned legal teaching.
+- **Scholarly madrasa (MMA)** — Combined teaching and lodging.
+- **Imperial archives** — Official document stores.
+- **Chronicles room** — Preservation of accounts and annals.
+- **Scribes' house (culture-dependent)** — Institutional writing production.
+- **Public clock tower (late MMA, region-dependent)** — Mechanical civic timekeeping.
+
+## 3.9. Water, engineering, and monumental infrastructure
+
+- **Ancient aqueduct (ANT)** — Long-distance water supply.
+- **Aqueduct bridge (ANT)** — Channel carried on arches.
+- **Distribution water tower (ANT)** — Urban water distribution.
+- **Large masonry reservoir** — Reserve supplying a district.
+- **Monumental underground cistern** — Large vaulted water space.
+- **Ceremonial basin** — Ritual water body.
+- **Roman nymphaeum (ANT)** — Decorated monumental fountain.
+- **Monumental civic fountain** — Water and city prestige.
+- **Large public washhouse** — Organized basin series.
+- **Imperial thermae (ANT)** — Immense baths and ancillary courts.
+- **Great ancient sewer (ANT)** — Underground masonry collector.
+- **Great stone bridge** — Multi-arch crossing.
+- **Inhabited medieval bridge (MMA)** — Houses built on deck.
+- **Great fortified bridge (MMA)** — Towers, roadway, tolls.
+- **Ancient retention dam (ANT)** — Water storage for city.
+- **Rudimentary lock / canal gate** — Local water-level control.
+- **Navigation canal** — Artificial transport route.
+- **Major urban canal** — Aquatic distribution and circulation.
+- **Canalized inland port** — Basin integrated into urban fabric.
+- **Qanat (ANT/MMA, arid regions)** — Drainage gallery with shafts.
+- **Foggara (MMA, Sahara)** — Underground drainage conduit.
+- **Monumental noria (ANT/MMA)** — Large water-lifting wheel.
+- **Animal-powered sakia (ANT/MMA)** — Mechanical water lifting.
+- **Great protective dike** — Flood-defense work.
+- **Engineered polder (MMA, region-dependent)** — Drained land behind dikes.
+- **Large irrigation basin** — Distribution to farmland.
+- **Monumental irrigated terraces** — Cultivated slopes with retaining walls.
+
+## 3.10. Ports, fleets, and maritime works
+
+- **Great merchant port** — Basins, quays, warehouses.
+- **Ancient military port (ANT)** — Defended fleet basins.
+- **Monumental river port** — Long quays and granaries.
+- **Enclosed harbor basin** — Controlled vessel access.
+- **Repair dock** — Sheltered maintenance basin.
+- **Shipbuilding slipway** — Ramp for hull assembly.
+- **Great shipyard** — Multiple slipways and workshops.
+- **Naval arsenal** — Fleet production and maintenance.
+- **Greek ship sheds (ANT)** — Large neosoikoi for galleys.
+- **Galley shed** — Long shed for hauled-out vessels.
+- **Monumental ancient lighthouse (ANT)** — Navigation light tower.
+- **Medieval lighthouse / beacon tower (MMA)** — Coastal marker and signal.
+- **Harbor guard tower** — Controls seaward approaches.
+- **Harbor chain** — Barrier stretched between shores.
+- **Harbor entrance fortress** — Work controlling maritime passes.
+- **Monumental merchant quay** — Unloading large cargoes.
+- **Harbor mole** — Pier protecting basin.
+- **Breakwater** — Work reducing swell.
+- **Fixed tidal fishery** — Structured traps on tidal flat.
+- **Great saltworks** — Successive salt evaporation basins.
+- **Wholesale maritime market** — Sale of catches and cargoes.
+- **Port customs yard** — Control of unloaded cargoes.
+
+## 3.11. Major workshops, industry, and preindustrial energy
+
+- **Mining complex** — Shafts, galleries, spoil heaps.
+- **Large stone quarry** — Extraction faces and ramps.
+- **Salt mine** — Salt-bearing galleries or shafts.
+- **Inland saltworks** — Basins and brine heating.
+- **Large early blast furnace (late MMA, region-dependent)** — Large-scale metallurgical reduction.
+- **Communal bloomery** — Iron extraction by reduction.
+- **Ancient state foundry (ANT)** — Publicly controlled metal production.
+- **Water-powered forge (MMA)** — Hammer driven by wheel.
+- **Water-powered trip hammer (MMA)** — Small water-driven hammer.
+- **Water-powered fulling mill (MMA)** — Mechanized cloth beating.
+- **Great manorial mill (MMA)** — Grinding controlled by authority.
+- **Tide mill (MMA, region-dependent)** — Wheel using ebb tide.
+- **Ship mill (ANT/MMA)** — Wheel mounted on vessel.
+- **Battery of water mills** — Several wheels along millrace.
+- **Large textile workshop** — Grouped looms and workers.
+- **Large urban dye works** — Multiple vats and drains.
+- **Large urban tannery** — Vats, hides, polluted water.
+- **Multi-kiln pottery works** — Several workshops and firings.
+- **Large-scale glassworks** — Furnaces and ancillary ovens.
+- **Imperial ceramic workshop (ANT/MMA, culture-dependent)** — Organized elite production.
+- **Ancient press complex (ANT)** — Mass wine or oil production.
+- **Great state horreum (ANT)** — Controlled high-capacity reserve.
+- **State mint workshop** — Organized coinage striking.
+
+## 3.12. Notable rural estates and manorial facilities
+
+- **Great ancient villa estate (ANT)** — Residence, production, outbuildings.
+- **Rural peristyle residence (ANT)** — Prestigious architecture among fields.
+- **Cistercian monastic grange (MMA)** — Farm dependent on abbey.
+- **Great fortified farm (MMA)** — Rural complex behind walls.
+- **Fortified communal granary** — Vital stores under protection.
+- **Agadir / granary fortress (MMA, Maghreb)** — Defended storage cells.
+- **Monumental lordly dovecote (MMA)** — Pigeon-breeding tower.
+- **Column-supported dovecote (MMA, rights-dependent)** — Privileged breeding reserve.
+- **Great manorial press** — Shared installation under monopoly.
+- **Great monastic brewery (MMA)** — Production integrated into abbey.
+- **Large fishpond** — Controlled breeding basins.
+- **Manorial fishery** — Lasting capture installation.
+- **Warrens and game park (MMA)** — Areas reserved for hunting.
+- **Lordly stud farm** — Horse breeding and training.
+- **Great princely kennel** — Organized dog breeding.
+- **Estate sheepfold** — Large administered flock.
+- **Transhumance pastoral enclosure** — Large periodic gatherings.
+
+## 3.13. Burials, memory, triumph, and commemorative monuments
+
+- **Ancient necropolis (ANT)** — Tomb district outside city.
+- **Royal necropolis** — Dynastic burial group.
+- **Dynastic mausoleum** — Monumental rulers' tomb.
+- **Roman urban mausoleum (ANT)** — Monumental roadside tomb.
+- **Roman columbarium (ANT)** — Funerary niches for urns.
+- **Catacombs (ANT/MMA, region-dependent)** — Underground burial galleries.
+- **Monumental funerary crypt** — Burial chambers beneath building.
+- **Ossuary (MMA)** — Collective bone repository.
+- **Chapel of the dead (MMA)** — Worship near burials.
+- **Aristocratic burial enclosure** — Fenced protected tombs.
+- **Ancient tumulus (ANT)** — Tomb under mound.
+- **Burial cairn (ANT)** — Stone pile over tomb.
+- **Egyptian mastaba (ANT)** — Tomb with trapezoidal superstructure.
+- **Egyptian funerary pyramid (ANT)** — Monumental ruler's tomb.
+- **Ancient rock-cut tomb (ANT)** — Chamber excavated in cliff.
+- **Funerary hypogeum (ANT)** — Underground chamber or network.
+- **Early Christian martyrium (ANT/HMA)** — Martyr's sanctuary.
+- **Battle memorial** — Stele commemorating historical battle.
+- **Roman honorific column (ANT)** — Vertical relief monument.
+- **Roman triumphal arch (ANT)** — Monument with vaulted passage.
+- **Ancient honorific arch (ANT)** — Passage celebrating power.
+- **Monumental statue** — Effigy of ruler or deity.
+- **Ancient obelisk (ANT)** — Prestigious vertical monolith.
+- **Votive pillar** — Column offered to deity.
+- **Boundary stele** — Marker establishing official limit.
+- **Foundation stone** — Monument recalling site's creation.
+- **Reused prehistoric megalith** — Ancient trace in later landscape.
+- **Disaster cemetery** — Graves linked to collective crisis.
+- **Exceptional mass grave** — Mass burial after disaster.
+
+
+## 3.14. Notable variants by cultural area (enable by region)
+
+### Egypt, Near East, and ancient worlds
+
+- **Egyptian pylon gate (ANT)** — Monumental temple facade.
+- **Egyptian processional avenue (ANT)** — Sacred axis lined with statues.
+- **Assyrian palace (ANT)** — Courtyards, reliefs, great halls.
+- **Monumental Mesopotamian gate (ANT)** — Decorated fortified entrance.
+- **Mesopotamian palace garden (ANT)** — Planted spaces in royal complex.
+- **Persian apadana (ANT)** — Great columned audience hall.
+- **Achaemenid citadel (ANT)** — Royal complex on terrace.
+- **Royal rock-cut necropolis (ANT)** — Tombs cut into mountain.
+- **Ancient underground store (ANT)** — Gallery used as reserve.
+
+### Byzantium, Arab-Islamic world, and Iberian Peninsula
+
+- **Great Byzantine hippodrome (HMA/MMA)** — Imperial races and ceremonies.
+- **Courtyard Byzantine palace (HMA/MMA)** — Pavilions linked by enclosures.
+- **Byzantine frontier fort (HMA/MMA)** — Towers, barracks, cisterns.
+- **Medina citadel (MMA)** — Inner fort commanding city.
+- **Andalusian alcázar (MMA)** — Fortified palace with patios.
+- **Monumental medina bāb (MMA)** — Decorated defended town gate.
+- **Great courtyard madrasa (MMA)** — Teaching around decorated court.
+- **Maristan / bimaristan (MMA)** — Islamic care institution.
+- **Great Seljuk caravanserai (MMA)** — Court, covered hall, portal.
+- **Andalusian coastal watchtower (MMA)** — Coast surveillance.
+- **Great communal oasis granary (MMA)** — Socially organized protected storage.
+
+### Asia and steppe civilizations
+
+- **Chinese multiple-enclosure palace (ANT/MMA)** — Hierarchical courts and gates.
+- **Chinese ceremonial gate (ANT/MMA)** — Monumental access on axis.
+- **Chinese urban bell tower (MMA)** — Public signal and timekeeping.
+- **Chinese drum tower (MMA)** — Civic time announcement.
+- **Chinese ancestral temple (ANT/MMA)** — Family-lineage worship.
+- **Yamen / magistrate's seat (MMA)** — Administration, court, tribunal.
+- **Great Buddhist monastery (MMA)** — Temples, dormitories, gardens.
+- **Heian palace (MMA)** — Early Japanese ceremonial complex.
+- **Japanese shrine with torii (MMA)** — Sacred enclosure and approach.
+- **Japanese mountain fort / yamajiro (MMA)** — Defenses adapted to ridges.
+- **Great Mongol ordo camp (MMA)** — Political residence of tents.
+- **Clan gathering enclosure (MMA)** — Nomadic ceremonies and herds.
+- **Khmer temple mountain (MMA)** — Terraces and sacred towers.
+- **Khmer baray (MMA)** — Vast rectangular water reservoir.
+- **Khmer ceremonial causeway (MMA)** — Monumental axis toward sanctuary.
+
+### Sub-Saharan Africa, Mesoamerica, and the Andes
+
+- **Great Sahelian earthen mosque (MMA)** — Great hall and buttresses.
+- **Sahelian earthen palace (MMA)** — Courtyards and earth walls.
+- **Great Zimbabwe enclosure (MMA)** — Monumental dry-stone walls.
+- **Swahili stone house (MMA)** — Urban courtyard residence.
+- **Swahili trading port (MMA)** — Quays, mosques, warehouses.
+- **Monumental Aksumite stele (ANT)** — Slender funerary monolith.
+- **Mesoamerican pyramid platform (ANT/MMA)** — Raised sanctuary base.
+- **Mesoamerican ballcourt (ANT/MMA)** — Ritual area with side walls.
+- **Great Maya palace (ANT/MMA)** — Enfilade rooms and courts.
+- **Maya sacred causeway / sacbé (ANT/MMA)** — Raised masonry road.
+- **Mesoamerican ceremonial cenote (ANT/MMA)** — Ritual water site.
+- **Monumental Andean agricultural terrace (MMA)** — Farming with retaining walls.
+- **Qullqa / Inca granary (MMA)** — Public stores in series.
+- **Tambo / Inca relay (MMA)** — Roadside lodging and stores.
+- **Inca ushnu (MMA)** — State ceremony platform.
+- **Inca kallanka (MMA)** — Great gathering hall.
+- **Andean fiber suspension bridge (MMA)** — Light gorge crossing.
+- **Terraced Andean citadel (MMA)** — Urbanism adapted to slopes.
+
+## 3.15. Singular RPG locations — historical basis or reinterpretation
+
+> The distinction here is sometimes **narrative**, not architectural. A thieves' den should usually reuse a tavern, house, or warehouse rather than require a new building form.
+
+### Historically plausible
+
+- **Smugglers' house** — Ordinary house, concealed cellar.
+- **Clandestine warehouse** — Store hidden behind facade.
+- **Smuggling passage** — Secret link between parcels.
+- **Clandestine meeting cellar** — Meeting in ordinary basement.
+- **Clandestine chapel** — Discreet worship in private building.
+- **Informant's house** — Dwelling used for observation.
+- **Influential lender's house** — Secured residence and strongbox.
+- **Secret messenger relay** — Inn serving dual role.
+- **Reoccupied ancient temple** — Sanctuary given new program.
+- **Abandoned ancient baths** — Large volumes converted to shelters.
+- **Ruined ancient villa** — Estate divided and squatted.
+- **Buried / destroyed district** — Ruins below new parcels.
+- **Forgotten necropolis** — Tombs at city edge.
+- **Walled-up crypt** — Long-sealed burial room.
+- **Collapsed tower** — Military ruin overlooking district.
+- **Abandoned mill** — Ruined millrace and empty building.
+- **Quarantine island (late MMA, context-dependent)** — Isolation of maritime arrivals.
+- **Decommissioned prison** — Cells reused for storage.
+- **Refugee camp** — Temporary shelters outside walls.
+- **Deserted village** — Parcels remain without inhabitants.
+- **Cemetery under construction** — Former burial space reused.
+- **Repurposed quarry tunnels** — Excavated network converted to refuge.
+- **Cache under merchant's house** — Refuge inaccessible from street.
+- **Improvised black market** — Discreet sales in courtyard.
+- **Fortified bandit camp** — Palisades and improvised structures.
+- **Contested toll tower** — Roadside conflict point.
+
+### Explicit fantasy — optional, outside strict realism
+
+- **Wizard tower** — Vertical landmark with magical function.
+- **Magic academy** — Enclosed campus and specialist rooms.
+- **Imaginary deity's temple** — Plan defined by fictional cult.
+- **Forbidden sanctuary** — Restricted sacred place.
+- **Adventurers' guild** — Hall, dormitories, contracts.
+- **Thieves' guild** — Network of rooms and cellars.
+- **Fantastic alchemist's house** — Laboratory, furnaces, dangerous stores.
+- **Teleportation portal** — Supernatural transit node.
+- **Summoning circle** — Ritual area on ground.
+- **Necromantic crypt** — Funerary complex magically repurposed.
+- **Monster arena** — Shows involving fantastic creatures.
+- **Enchanted watchtower** — Magical signal or defense.
+- **Runic forge** — Craft with occult processes.
+- **Forbidden library** — Repository of dangerous knowledge.
+- **Curiosities market** — Stalls of unusual objects.
+- **Nonhuman district** — Morphology adapted to fictional people.
+- **Living underground sanctuary** — Nonhistorical fantasy architecture.
+
+---
+
+# 4. Implementation notes for a city mapper
+
+This fourth section adds **no** new building family: it explains how to use the three inventories without producing a random assembly of symbols.
+
+## 4.1. Separate combinable dimensions
+
+For a settlement, choose independently:
+
+1. **Scale:** hamlet, village, market town, town, city…
+2. **Morphology:** dispersed, street village, organic, grid, concentric…
+3. **Site:** plateau, valley, river, hill, coast, oasis…
+4. **Dominant function:** agricultural, craft, merchant, castle, religious, port…
+5. **Historical tradition:** Roman, Celtic, western medieval, Islamic, Byzantine, Norse…
+6. **State:** thriving, declining, growing, ruined, rebuilt, besieged…
+
+**Size alone does not determine** monuments: status, roads, wealth, worship, garrison, political ties, and history matter as much.
+
+## 4.2. Distinguish four spatial layers
+
+| Layer | What is generated | Examples |
+| --- | --- | --- |
+| **Macro** | Site and major invariants | Terrain, water, roads, enclosure, port, citadel, sanctuary |
+| **Meso** | Districts and blocks | Merchant town, suburb, port district, parcels |
+| **Micro** | Ordinary footprints | Houses, workshops, barns, courts, gardens |
+| **Singularities** | Story sites or monuments | Palace, amphitheater, crypt, belfry, black market |
+
+A *tavern*, *apothecary*, or *thieves' guild* can be a **use label** on a house or warehouse. An *amphitheater*, *cathedral*, *castle*, or *caravanserai*, by contrast, requires a **dedicated spatial template**.
+
+## 4.3. Recommended placement rules
+
+- **Water:** place the resource first; villages, mills, troughs, fountains, and irrigated areas depend on it.
+- **Terrain:** slopes dictate terraces, stairs, retaining walls, and possible parcel orientations.
+- **Road network:** first form routes to external destinations, then access streets; do not start by filling independent blocks.
+- **Centers:** market square, castle, sanctuary, bridge, or port attract streets and generate different fabrics.
+- **Commercial streets:** shops on busy frontages, often with dwellings and annexes behind.
+- **Medieval parcels:** often narrow on street and deep toward block interior; subdivide historically and retain anomalies.
+- **Planned ancient fabrics:** regular blocks for grid foundations; variation and breaks after growth, destruction, or alteration.
+- **Nuisance workshops:** tanneries, dye works, kilns, and foundries near useful resources and sometimes peripheral; apply local constraints rather than a universal rule.
+- **Suburbs:** allow settlement to grow along roads near gates, port, and bridges.
+- **Defenses:** close enclosure plausibly, place gates on roads, adapt walls to terrain.
+- **Nonresidential fabric:** retain courts, storage areas, gardens, open markets, cemeteries, enclosures, and unproductive ground. An ancient city is not uniformly paved with houses.
+- **Historical reuse:** superpose phases: ancient city becoming medieval, abandoned wall, converted temple, new plots on ruins.
+- **Rarity:** small settlements often lack monuments; cathedral, circus, and imperial palace remain exceptional.
+- **Cultural coherence:** do not combine a Roman grid, Gothic cathedral, great Ottoman bazaar, and still-active Greek stadium without justification.
+
+## 4.4. Example compositions for engine validation
+
+| Archetype to test | Expected urban skeleton | Built signatures |
+| --- | --- | --- |
+| **Medieval agricultural hamlet** | Path, loose farms, well | House-byres, barns, enclosures, possible oven |
+| **Valley street village** | Longitudinal axis, small cross streets | Strip plots, rear gardens, ford or bridge |
+| **Hilltop castle village** | Castle, access ramp, tight streets | Stepped houses, gates, curtain walls, church |
+| **Medieval merchant town** | Market, crossroads, roadside suburbs | Market halls, shops, deep houses, inns |
+| **Medieval bastide** | Planned grid, structuring square | Regular plots, possible arcades, halls |
+| **Celtic oppidum** | Enclosure follows terrain, few gates | Domestic enclosures, workshops, stores, internal roads |
+| **Gallo-Roman vicus** | Major road and crossroads | Workshops, tabernae, mixed dwellings, small sanctuary |
+| **Planned Roman city** | Main grid, forum, water networks | Domus, insulae, thermae, temples, horrea |
+| **Organic ancient city** | Agora, acropolis by site, varied streets | Courtyard houses, stoas, temples, workshops |
+| **Medieval Maghrebi medina** | Gates, hierarchical roads, alleys/dead ends | Courtyard houses, souks, hammams, funduqs, mosques |
+| **Medieval port city** | Quays, warehouses, gate access | Halls, naval workshops, inns, customs |
+| **Medieval city on ancient core** | Inherited then distorted grid | Reused ruins, medieval enclosure, mixed districts |
+| **Fortified oasis city** | Spring, canals, dense ksar | Earthen dwellings, granaries, souk, cisterns |
+| **Norse trading camp** | Sheltered shore, landing streets | Longhouses, warehouses, workshops, light quays |
+| **Great pilgrimage city** | Roads converge on sanctuary | Guesthouses, shops, hospices, religious enclosures |
+
+## 4.5. Recommended small data schema
+
+Do not directly turn each row into an **independent architectural class**: material variants, uses, and modules should be able to share the same generative footprints. The following preserves the source's example identifiers:
 
 ```yaml
 settlement:
@@ -1592,25 +1606,25 @@ landmark_archetype:
   dependencies: [bourg_ou_plus, activite_marchande]
 ```
 
-**Attributs à ajouter quand tu construiras les générateurs :** `footprint_shape`, `frontage`, `depth`, `floors`, `courtyard`, `roof_family`, `material_set`, `lot_coverage`, `street_access`, `setback`, `adjacency_rules`, `pollution`, `water_requirement`, `rarity`, `social_status`, `build_period`, `ruin_level`.
+**Attributes to add when building generators:** `footprint_shape`, `frontage`, `depth`, `floors`, `courtyard`, `roof_family`, `material_set`, `lot_coverage`, `street_access`, `setback`, `adjacency_rules`, `pollution`, `water_requirement`, `rarity`, `social_status`, `build_period`, `ruin_level`.
 
 ---
 
-# 5. Références pour approfondir et vérifier les morphologies
+# 5. References for further study and morphology verification
 
-Ce catalogue est une **taxonomie de conception pour génération procédurale**, pas un lexique archéologique normalisé. Certaines entrées sont des synonymes régionaux, d'autres des programmes fonctionnels, des sous-parties d'ensembles ou des variantes de plan. Les sources suivantes servent de repères historiques ; elles **ne valident pas individuellement** chacune des catégories du document.
+This catalog is a **design taxonomy for procedural generation**, not a standardized archaeological lexicon. Some entries are regional synonyms; others are functional programs, complex subparts, or plan variants. The following historical references **do not individually validate** every document category.
 
-- [Historic England — *Medieval Settlements*](https://historicengland.org.uk/images-books/publications/iha-medieval-settlements/heag210-medieval-settlements/) : habitats médiévaux, dispersions et morphologies rurales.
-- [East Midlands Historic Environment Research Framework — *Medieval Period*](https://researchframeworks.org/emherf/regional-overview/medieval-period/) : parcelles, villages groupés et plans réguliers.
-- [Historic England — Burh anglo-saxon de Lydford](https://historicengland.org.uk/listing/the-list/list-entry/1002506/) : ville défendue et fondations planifiées.
-- [Ministère français de la Culture — Mottes et forteresses](https://archeologie.culture.gouv.fr/archeologie-aerienne/fr/les-forteresses-et-mottes-castrales) : morphologie castrale et implantation rurale.
-- [Inventaire général, Région Occitanie — Bastide de Sauveterre-de-Rouergue](https://inventaire.patrimoines.laregion.fr/dossier/IA12000079) : exemple de fondation du XIIIe siècle.
-- [Odysseum / Éducation nationale — Maison romaine](https://odysseum.eduscol.education.fr/la-maison-romaine-plan-et-vie-quotidienne-dans-la-domus) : maison à atrium, pièces et boutiques.
-- [Khan Academy — *Roman Domestic Architecture: Insula*](https://www.khanacademy.org/humanities/all-history/art-history/ancient-art-civilizations/roman/beginners-guide-rome/a/roman-domestic-architecture-insula) : immeubles d'habitation romains.
-- [Oxford Academic — *Public Buildings*, *The City in Roman Palestine*](https://academic.oup.com/book/40657/chapter-abstract/348340942) : équipements civiques gréco-romains.
-- [UNESCO — Médina de Fès](https://whc.unesco.org/fr/list/170/) : tissu urbain, monuments et quartiers médiévaux.
-- [UNESCO — Médina de Marrakech](https://whc.unesco.org/fr/list/331/) : morphologie urbaine, souks et fortifications.
-- [Metropolitan Museum — *The Art of the Seljuq Period in Anatolia*](https://www.metmuseum.org/fr/essays/the-art-of-the-seljuq-period-in-anatolia-1081-1307) : mosquées, médersas et caravansérails médiévaux.
-- [Metropolitan Museum — *Teotihuacan*](https://www.metmuseum.org/TOAH/hd/teot/hd_teot.htm) : trame urbaine et monumentalité mésoaméricaine.
+- [Historic England — *Medieval Settlements*](https://historicengland.org.uk/images-books/publications/iha-medieval-settlements/heag210-medieval-settlements/): medieval settlement, dispersion, rural morphology.
+- [East Midlands Historic Environment Research Framework — *Medieval Period*](https://researchframeworks.org/emherf/regional-overview/medieval-period/): parcels, nucleated villages, regular plans.
+- [Historic England — Anglo-Saxon burh of Lydford](https://historicengland.org.uk/listing/the-list/list-entry/1002506/): defended town and planned foundations.
+- [French Ministry of Culture — Mottes and fortresses](https://archeologie.culture.gouv.fr/archeologie-aerienne/fr/les-forteresses-et-mottes-castrales): castle morphology and rural siting.
+- [Occitanie regional inventory — Bastide of Sauveterre-de-Rouergue](https://inventaire.patrimoines.laregion.fr/dossier/IA12000079): 13th-century foundation example.
+- [Odysseum / French Education Ministry — Roman house](https://odysseum.eduscol.education.fr/la-maison-romaine-plan-et-vie-quotidienne-dans-la-domus): atrium house, rooms, shops.
+- [Khan Academy — *Roman Domestic Architecture: Insula*](https://www.khanacademy.org/humanities/all-history/art-history/ancient-art-civilizations/roman/beginners-guide-rome/a/roman-domestic-architecture-insula): Roman apartment buildings.
+- [Oxford Academic — *Public Buildings*, *The City in Roman Palestine*](https://academic.oup.com/book/40657/chapter-abstract/348340942): Greco-Roman civic facilities.
+- [UNESCO — Medina of Fez](https://whc.unesco.org/fr/list/170/): urban fabric, monuments, medieval districts.
+- [UNESCO — Medina of Marrakesh](https://whc.unesco.org/fr/list/331/): urban morphology, souks, fortifications.
+- [Metropolitan Museum — *The Art of the Seljuq Period in Anatolia*](https://www.metmuseum.org/fr/essays/the-art-of-the-seljuq-period-in-anatolia-1081-1307): medieval mosques, madrasas, caravanserais.
+- [Metropolitan Museum — *Teotihuacan*](https://www.metmuseum.org/TOAH/hd/teot/hd_teot.htm): Mesoamerican urban grid and monumentality.
 
-**Note historique :** « Colisée » est le nom propre de l'amphithéâtre flavien de Rome. Pour une catégorie générable, utiliser **amphithéâtre** ; « grand amphithéâtre impérial » est une variante monumentale. De même, une *bastide* du XIIIe siècle n'est pas une *fortification bastionnée* de la Renaissance, et une *basilique civile romaine* n'est pas une *basilique chrétienne*.
+**Historical note:** “Colosseum” is the proper name of Rome's Flavian amphitheater. For a generatable category use **amphitheater**; “great imperial amphitheater” is a monumental variant. Likewise, a 13th-century *bastide* is not Renaissance *bastioned fortification*, and a *Roman civic basilica* is not a *Christian basilica*.

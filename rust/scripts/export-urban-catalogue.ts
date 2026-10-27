@@ -18,7 +18,7 @@ interface Plan {
   waterfront: boolean;
   sources: string[];
 }
-const atlas = 'docs/styles_architecturaux_mondiaux_city_mapper.md';
+const atlas = 'docs/styles_architecturaux_mondiaux_city_mapper_FR.md';
 const source = (...ids: string[]): string[] => ids.map(id => `${atlas}#${id}`);
 // Camp operators carried their own plans outside Culture.core in TypeScript.
 // Preserve those distinctions instead of turning every camp into a loose circle.

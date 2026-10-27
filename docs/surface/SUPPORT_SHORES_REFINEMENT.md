@@ -1,109 +1,44 @@
-# Conifères clairsemés, profils de support et littoral continu
+# Sparse conifers, support profiles and continuous coastline
 
-Cette itération prolonge le relief intermédiaire de `338efaf`. Elle ajoute une
-végétation arborée discrète dans les secteurs froids/montagnards favorables,
-différencie la forme des détails du sol, et corrige les plages en escalier et
-la répétition des textures d'eau. Les champs hydrologiques et le DEM sont conservés.
+This iteration extends intermediate terrain from `338efaf`. It adds discreet tree cover in favourable cold/mountain areas, differentiates ground-detail shapes, and fixes stepped beaches and repetitive water textures. Hydrological fields and DEM are retained.
 
-## Conifères : complément séparé et mesurable
+## Conifers: separate, measurable supplement
 
-`forest_placement.py` conserve le champ original filtré dans
-`forest-base-field.png`. Le complément `montane-forest.png` décrit sa propre
-couverture, hauteur, proportion de conifères et tonalité. Il est fusionné dans
-`forest-placed-field.png` par moments pondérés de canopée. Les attributs des
-cellules sans complément restent identiques ; dans une cellule partagée, les
-attributs représentent le mélange des deux couverts. La réduction 1334→1024
-interpole aussi ces moments, pour ne pas transformer les conifères des bordures
-en petits buissons par dilution de leur hauteur avec des pixels vides.
+`forest_placement.py` retains the original filtered field in `forest-base-field.png`. The `montane-forest.png` supplement describes its own cover, height, conifer proportion and tone. It is merged into `forest-placed-field.png` using weighted canopy moments. Attributes of cells without supplement remain identical; in a shared cell, attributes represent the mixture of both covers. The 1334→1024 reduction also interpolates these moments, avoiding dilution of edge conifer height with empty pixels into small shrubs.
 
-Le proxy d'aptitude utilise température locale, humidité, épaisseur de sol,
-matrice, fragments, pente et géomorphons. La température annuelle locale +11 °C
-est un proxy déclaré de saison favorable, pas une température estivale simulée.
-Creux et pieds de pente sont favorisés comme proxy d'abri topographique ; aucun
-champ de vent n'est prétendu. La couverture maximale théorique est 6 %, sans
-objectif de remplissage si le terrain est inéligible. Hauteurs : 4,5–9 m et
-proportion de conifères : 97 %.
+The suitability proxy uses local temperature, moisture, soil thickness, matrix, fragments, slope and geomorphons. Local annual temperature +11 °C is a declared favourable-season proxy, not simulated summer temperature. Hollows and footslopes are favoured as a topographic-shelter proxy; no wind field is claimed. Theoretical maximum cover is 6%, with no filling target where terrain is ineligible. Heights: 4.5–9 m; conifer proportion: 97%.
 
-Crêtes, pente ≥32°, sol très mince, dépôts à forte fraction de fragments, eau,
-plages et neige dominante sont exclus. L'exposition est le maximum du guide
-Render et de N1. Une marge physique 100–170 m et une réduction conservative
-protègent le support des couronnes et les rivières vectorielles subpixel.
+Ridges, slopes ≥32°, very thin soil, deposits with high fragment fraction, water, beaches and dominant snow are excluded. Exposure is the maximum of the Render guide and N1. A physical 100–170 m margin and conservative reduction protect crown support and sub-pixel vector rivers.
 
-Le GLSL des couronnes reste celui du Render original épinglé. Le guide de
-couleur du complément utilise sa palette de conifères. Sa contribution moyenne
-est ajoutée uniquement à la branche non résolue du modèle : elle ne teinte pas
-le sol entre les couronnes proches. La même moyenne accompagne la référence
-lointaine, sans apparition soudaine au zoom.
+Crown GLSL remains that of pinned original Render. The supplement's colour guide uses its conifer palette. Mean contribution is added only to the model's unresolved branch: it does not tint ground between nearby crowns. The same mean accompanies the distant reference, without sudden appearance while zooming.
 
-Mesures de couverture supplémentaire préparée : environ 0,93 % de la tuile de
-collines froides, 0,47 % du plateau froid et 0,074 % de montagne tempérée. Les
-montagnes froides dominées par la neige restent sans complément. Sur les quatre
-cadrages proches de contrôle des collines froides, la couverture effectivement
-rastérisée est d'environ 1,85 %.
+Measured prepared additional cover: about 0.93% of the cold-hills tile, 0.47% of the cold plateau and 0.074% of temperate mountains. Snow-dominated cold mountains remain without supplement. Across four close cold-hills control framings, actually rasterised cover is about 1.85%.
 
-## Formes propres au support, dans la même enveloppe
+## Support-specific shapes within the same envelope
 
-`meso-profiles.png` contient un mélange convexe RGBA8 : roche massive,
-roche stratifiée, fragments, reste tendre. Les fractions lithologiques,
-l'altération, l'arrondi des fragments et le potentiel colluvial déterminent les
-poids. Leur somme quantifiée vaut exactement 255, sans sélection de matériau
-par seuil ni changement des variantes PBR choisies pour la carte.
+`meso-profiles.png` contains a convex RGBA8 blend: massive rock, layered rock, fragments, remaining soft support. Lithological fractions, weathering, fragment roundness and colluvial potential determine weights. Their quantised sum is exactly 255, without threshold material selection or changing the map's selected PBR variants.
 
-La bande de 27 m utilise ces profils : bosses asymétriques pour la roche
-massive, épaules plus marquées pour les fragments, formes allongées orientées
-pour la roche stratifiée, réponse douce pour les autres supports. L'orientation
-est lue dans le champ de structure à quatre ancres fixes de patches de 256 m.
-Les hauteurs et leurs gradients sont mélangés avec les dérivées des poids ;
-faire tourner les coordonnées par un axe variable aurait créé du cisaillement.
+The 27 m band uses these profiles: asymmetric bumps for massive rock, more pronounced shoulders for fragments, oriented elongated forms for layered rock, smooth response for other supports. Orientation is read from the structure field at four fixed anchors of 256 m patches. Heights and their gradients are blended with weight derivatives; rotating coordinates by a variable axis would have produced shear.
 
-Les autres bandes 64 / 9,5 / 3,75 m restent partagées. Une enveloppe déterministe
-sur une grille de 150 m module doucement les amplitudes entre 76 et 100 %, sans
-dessiner directement de taches colorées. Ses gradients passent par le contexte
-natif. Les profils remplacent une partie du champ existant : l'enveloppe totale
-reste ±3 m, avec le même picking et les mêmes bornes de culling.
+Other 64 / 9.5 / 3.75 m bands remain shared. A deterministic envelope on a 150 m grid gently modulates amplitudes between 76% and 100%, without directly drawing coloured patches. Its gradients pass through native context. Profiles replace part of the existing field: the total envelope remains ±3 m, with the same picking and culling bounds.
 
-Couleur et rugosité suivent ces formes, avec une modulation faible. Le détail
-PBR, la neige et les budgets d'affleurement/fragments restent conservés. Le
-cache ajoute une image de profils de 7 118 224 octets décodée par tuile ; le CPU
-charge aussi la structure RGB native nécessaire aux mêmes calculs que le GPU.
-Les hashes de géologie, structure et profils sont contrôlés au chargement.
+Colour and roughness follow these forms with weak modulation. PBR detail, snow and outcrop/fragment budgets remain retained. Cache adds a decoded 7,118,224-byte profile image per tile; CPU also loads the native RGB structure needed for the same calculations as GPU. Geology, structure and profile hashes are checked at loading.
 
-## Plages et eau à plusieurs échelles
+## Beaches and water at multiple scales
 
-`prepare_surface_water.py` produit un champ côtier signé séparé pour mer et
-lacs. Les passages du DEM au niveau marin ou lacustre positionnent les contours
-à l'intérieur des cellules, au lieu de couper systématiquement leurs arêtes en
-deux. Les signes aux centres natifs sont contraints ; des coefficients B-spline
-interpolants sont ensuite stockés sur 16 bits par distance, à 1/32 m.
+`prepare_surface_water.py` produces a separate signed coastal field for sea and lakes. DEM crossings of sea or lake level position contours inside cells rather than always bisecting their edges. Signs at native centres are constrained; interpolating B-spline coefficients are then stored at 16 bits per distance, to 1/32 m.
 
-Le shader reconstruit ce contour continu et antialiase selon l'empreinte du
-pixel. Les tests couvrent îlot/lac d'une cellule, isthme et chenal d'une cellule,
-séparation de deux lacs et une côte diagonale connue. Le validateur vérifie les
-signes reconstruits de chaque centre sur les 42 tuiles. C'est une reconstruction
-d'affichage : niveaux, fond et masques de simulation restent inchangés.
+The shader reconstructs this continuous contour and antialiases according to pixel footprint. Tests cover a one-cell island/lake, one-cell isthmus and channel, separation of two lakes and a known diagonal coast. The validator checks reconstructed signs at every centre on all 42 tiles. This is display reconstruction: simulation levels, bed and masks remain unchanged.
 
-Le raccord Render utilise deux cartes dérivées de couleurs sèches/mouillées,
-avec donneurs certifiés, composantes séparées et recherche bornée. Une petite
-composante sans donneur intérieur conserve ses propres couleurs. La correction
-se limite à une bande littorale de 60–120 m et respecte la priorité du vectoriel
-des rivières. Ces deux cartes portent `source_color`, comme la carte Render,
-pour éviter une seconde interprétation de leurs RGB sRGB comme valeurs linéaires.
+The Render transition uses two maps derived from dry/wet colours, with certified donors, separate components and bounded search. A small component without an interior donor retains its own colours. Correction is limited to a 60–120 m coastal band and respects vector-river priority. Both maps carry `source_color`, like the Render map, to avoid a second interpretation of their sRGB RGB as linear values.
 
-L'eau utilise maintenant des gradients procéduraux en coordonnées monde aux
-échelles 233 / 61 / 13 / 2,7 / 0,6 m. Chaque bande s'efface lorsqu'elle devient
-non résolue ; la rugosité compense approximativement les détails fins perdus.
-Les anciens fichiers de vaguelettes restent des ressources préparées historiques,
-mais le shader courant ne répète plus ces deux images comme motif principal.
+Water now uses procedural world-coordinate gradients at 233 / 61 / 13 / 2.7 / 0.6 m scales. Each band fades when unresolved; roughness approximately compensates for lost fine detail. Old ripple files remain historical prepared resources, but the current shader no longer repeats those two images as its main pattern.
 
-Mer et lacs ont une dérive de vent. Les rivières utilisent trois bandes fines
-advectées vers l'aval dans quatre frames fixes de 64 m, avec dérivées des poids
-de mélange des hauteurs. Le temps ne multiplie donc pas le gradient spatial
-d'un champ de flux variable. L'amplitude et les niveaux géométriques de l'eau
-ne sont pas modifiés : ce spectre agit sur l'apparence et les normales.
+Sea and lakes have wind drift. Rivers use three fine bands advected downstream in four fixed 64 m frames, with derivatives of height-blend weights. Time therefore does not multiply the spatial gradient of a variable flow field. Water amplitude and geometric levels are unchanged: this spectrum affects appearance and normals.
 
-## Reconstruction et contrôles
+## Reconstruction and controls
 
-Après les données N1–N4 et les exports originaux déjà présents :
+After N1–N4 data and original exports are already present:
 
 ```powershell
 python godot-render/tools/forest_placement.py
@@ -115,22 +50,17 @@ python godot-render/tools/validate_surface_finish.py
 ./Test-Render.ps1 -Check
 ```
 
-Les préparateurs acceptent `--tile <id>`. Les données dérivées et rapports
-restent hors Git. Tests Godot, sans `--headless` :
+Preparers accept `--tile <id>`. Derived data and reports remain outside Git. Godot tests, without `--headless`:
 
-| Test | Contrôle |
+| Test | Control |
 | --- | --- |
-| `montane_forest_test.gd` | Canopée rastérisée, absence de teinte moyenne sur sol proche, contribution lointaine, image identique après zoom |
-| `meso_support_test.gd` | 1 440 points CPU/GPU, profils purs/mélangés, limites de frames, gradients et bornes |
-| `meso_support_view_test.gd` | Captures avec/sans profils, quatre supports, stabilité temporelle |
-| `water_surface_test.gd` | Mer/lac distincts, littoral proche/loin, décodage couleur, spectre multiéchelle, flux à 0/60/3600 s |
+| `montane_forest_test.gd` | Rasterised canopy, no mean tint on nearby ground, distant contribution, identical image after zoom |
+| `meso_support_test.gd` | 1,440 CPU/GPU points, pure/mixed profiles, frame boundaries, gradients and bounds |
+| `meso_support_view_test.gd` | Captures with/without profiles, four supports, temporal stability |
+| `water_surface_test.gd` | Distinct sea/lake, near/far shoreline, colour decoding, multiscale spectrum, flow at 0/60/3600 s |
 
-Les tests géométriques, normales, matière, transitions, couvert, ombres/neige,
-palette et navigation existants complètent ces contrôles.
+Existing geometry, normals, material, transition, cover, shadow/snow, palette and navigation tests supplement these controls.
 
-La comparaison GPU utilise le commit `338efaf`, protocole ABBA à 1280×800,
-30 frames de chauffe et 45 mesures. `prepare_meso_baseline.py` extrait les
-sources antérieures, reconstruit leurs amplitudes et redirige uniquement leurs
-caches et le champ forestier de base ; les données natives et palettes sont
-communes. Les résultats concernent le temps GPU du viewport, hors chargement.
-Les chiffres finaux sont reportés dans [TERRAIN_MESOSCALE.md](TERRAIN_MESOSCALE.md).
+GPU comparison uses commit `338efaf`, ABBA protocol at 1280×800, 30 warmup frames and 45 measurements. `prepare_meso_baseline.py` extracts earlier sources, rebuilds their amplitudes and redirects only their caches and base forest field; native data and palettes are shared. Results concern viewport GPU time, excluding loading. Final figures are reported in [TERRAIN_MESOSCALE.md](TERRAIN_MESOSCALE.md).
+
+[Original French version](SUPPORT_SHORES_REFINEMENT_FR.md).

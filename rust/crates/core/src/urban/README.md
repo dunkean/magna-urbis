@@ -1,407 +1,122 @@
-# Quartiers et parcelles dans Terrain Bench
+# Neighborhoods and parcels in Terrain Bench
 
-## Dispersion et coupures — 20 octobre 2026
+[Français](README_FR.md)
 
-Dans **Quartiers → Agglomération complète → Dispersion et coupures**, quatre
-réglages complètent les formes naturelles, indépendamment du tissu de rues :
+## Dispersion and gaps — October 20, 2026
 
-| Réglage | Effet | Nouvelle scène |
+Under **Neighborhoods → Complete settlement → Dispersion and gaps**, four settings complement natural shapes independently of the street fabric:
+
+| Setting | Effect | New scene |
 |---|---|---|
-| Cohésion | Baisser laisse davantage de terrain libre en périphérie ; 1 supprime ces coupures | 0,85 |
-| Propension aux satellites | Favorise jusqu'à trois noyaux secondaires sur des sites secs, peu pentus et accessibles | 0,15 |
-| Profondeur des branches | Allonge les corridors guides et renforce la croissance à leur proximité | 0,20 |
-| Taille des coupures | Échelle spatiale des espaces libres, en mètres (10–500) | 60 m |
+| Cohesion | Lower values leave more open land at the edge; 1 removes these gaps | 0.85 |
+| Satellite tendency | Favors up to three secondary cores on dry, gently sloping, accessible sites | 0.15 |
+| Branch depth | Extends guide corridors and strengthens growth near them | 0.20 |
+| Gap size | Spatial scale of open spaces in meters (10–500) | 60 m |
 
-La propagation peut traverser une cellule sans l'attribuer à la ville. Les
-coupures suivent un champ spatial déterministe et le coût du relief ; le cœur
-reste plus continu et les petits trous sous la résolution utile sont évités.
-L'échelle des coupures est au minimum de trois cellules du champ de croissance.
-Les poches significatives sont conservées avec une liaison routée sur le sol,
-éventuellement par escalier si autorisé. Cette liaison traverse le terrain libre
-sans le convertir en quartier. Les miettes et poches nouvelles impossibles à
-desservir sont écartées ; leur surface manque au budget, avec le diagnostic
-habituel de déficit. Les noyaux explicites séparés par l'eau restent conservés,
-sans création automatique de pont.
+Propagation can cross a cell without allocating it to the city. Gaps follow a deterministic spatial field and terrain cost; the core stays more continuous and small holes below useful resolution are avoided. Gap scale is at least three growth-field cells. Significant pockets are retained with a ground-routed connection, optionally using stairs where allowed. This connection crosses open land without converting it into a neighborhood. Fragments and new pockets that cannot be served are discarded; their area is missing from the budget, with the usual shortfall diagnostic. Explicit cores separated by water remain, without automatically creating a bridge.
 
-Les valeurs initiales restent modérées. Pour accentuer : cohésion 0,6,
-satellites 0,5, branches 0,6 et coupures 100 m. Les réglages sont conservés dans
-les liens, décors et ateliers ; les brouillons ne remplacent pas les valeurs
-appliquées. Les anciens liens sans ces champs gardent 1 / 0 / 0 et leur
-croissance antérieure. Les fondations géométriques et les rubans vectoriels
-explicitement imposés gardent leur comportement. Il s'agit d'une croissance
-procédurale bornée, pas d'une simulation économique ou d'une histoire urbaine
-complète ; les guides dendritiques restent des suggestions de forme.
+Initial values remain moderate. For a stronger effect: cohesion 0.6, satellites 0.5, branches 0.6 and gaps 100 m. Settings are retained in links, decors and workshops; drafts do not replace applied values. Old links without these fields retain 1 / 0 / 0 and their previous growth. Explicitly imposed geometric foundations and vector strips retain their behavior. This is bounded procedural growth, not an economic simulation or complete urban history; dendritic guides remain suggestions of form.
 
-Contrôles ciblés : `cargo test -p magna-urbis-core --lib urban::footprint`,
-`npx vitest run --project fast tests/urbanRust.bridge.test.ts` et
-`node scripts/urban_sparse_ui_check.mjs` depuis `web/` pour les deux derniers.
-Validation : 57 tests urbains natifs et 7 tests du pont réussis ; contrôle
-navigateur sans erreur, replay exact et conservation du plan pendant le
-recalcul parcellaire. Clippy strict, compilation WASM, typecheck et builds passés.
+Targeted checks: `cargo test -p magna-urbis-core --lib urban::footprint`, `npx vitest run --project fast tests/urbanRust.bridge.test.ts` and `node scripts/urban_sparse_ui_check.mjs` from `web/` for the last two. Validation recorded 57 native urban and 7 bridge tests passing; browser check without error, exact replay and preservation of the plan during parcel recomputation. Strict Clippy, WASM compilation, typecheck and builds passed.
 
-## Refonte du 13 octobre 2026
+## October 13, 2026 redesign
 
-Les nouveaux plans utilisent une empreinte native indépendante du tissu de rues.
-**Empreinte et croissance** propose douze familles et quatre mécanismes :
-fondation planifiée, croissance par accessibilité, accrétion sur réseau et fusion
-de noyaux. Le choix automatique évalue la culture, le relief et les accès ; une
-surcharge manuelle conserve la priorité du mécanisme. Le budget démographique
-est population / densité brute en habitants par hectare. Le budget artistique
-utilise le rayon et son échelle. Le rayon n'agit pas en budget démographique.
+New plans use a native footprint independent of street fabric. **Footprint and growth** offers twelve families and four mechanisms: planned foundation, accessibility-driven growth, network accretion and core merging. Automatic choice evaluates culture, terrain and access; a manual override retains mechanism priority. The demographic budget is population / gross density in inhabitants per hectare. The artistic budget uses radius and its scale. Radius does not act in the demographic budget.
 
-`footprint.rs` utilise des gabarits vectoriels calibrés par aire pour les
-fondations planifiées et des bandes pour les rubans explicitement imposés sur
-terrain compatible. La croissance accessible, les noyaux organiques et les
-rubans automatiques utilisent un champ d'arrivée anisotrope local borné à 192².
-Le coût combine pente du sol, pente des trajets, accès et bruit spatial à plusieurs
-échelles. Une enceinte culturelle ovale ne force plus une fondation circulaire ;
-les fondations orthogonales automatiques demandent un site suffisamment plat et sec.
-Les choix géométriques explicites restent disponibles. Les doigts
-et les dendrites disposent de corridors différents. Toutes les composantes et
-les exclusions d'eau sont conservées ; une emprise irréalisable expose son déficit.
+`footprint.rs` uses area-calibrated vector templates for planned foundations and strips for explicitly imposed ribbons on compatible terrain. Accessible growth, organic cores and automatic ribbons use a local anisotropic arrival field bounded at 192². Cost combines ground slope, route slope, access and multiscale spatial noise. An oval cultural enclosure no longer forces a circular foundation; automatic orthogonal foundations require a sufficiently flat, dry site. Explicit geometric choices remain available. Fingers and dendrites have different corridors. All components and water exclusions are retained; an infeasible footprint reports its shortfall.
 
-Le layout exporte `structure` : réserve de croissance, terre attribuée, centres
-de desserte, identités de quartiers, événements et budgets. Les secteurs de
-calcul suivent l'armature partagée ; ils ne sont pas coupés artificiellement aux
-frontières d'âge. Les recettes et les zones sont évaluées spatialement pendant
-la subdivision ; chaque îlot conserve sa phase locale. La forme composite peut
-associer un noyau organique à une extension en grille.
+The layout exports `structure`: growth reserve, allocated land, service centers, neighborhood identities, events and budgets. Calculation sectors follow the shared framework; they are not artificially cut at age boundaries. Recipes and zones are evaluated spatially during subdivision; each block retains its local phase. Composite form can combine an organic core with a grid extension.
 
-**Desserte adaptative** ajoute des accès locaux lorsqu'un îlot dépasse la
-profondeur foncière de sa recette. Les tentatives sont bornées par îlot et à
-96 accès par lieu. Le corridor doit rester dans la terre du parent, éviter
-l'eau et les îlots voisins et respecter la pente. Le tissu **Groupes autour d'un
-commun** crée de vraies cours collectives à cette étape. Refaire les parcelles
-conserve ces accès, les communs et les rues.
+**Adaptive access** adds local access when a block exceeds its recipe's land depth. Attempts are bounded per block and at 96 accesses per place. The corridor must remain on parent land, avoid water and neighboring blocks, and respect slope. The **Groups around a common** fabric creates actual shared courtyards at this stage. Recomputing parcels retains these accesses, commons and streets.
 
-Les parcelles proposent recettes culturelles, bandes, subdivision orientée,
-territoires de façade en concurrence, domaines, îlots entiers et jardins. La
-concurrence utilise des plans de distance orientés depuis les façades ; ce n'est
-pas un squelette droit CGAL. Les accès publics, collectifs et privés sont
-identifiés contre le réseau final. Les diagnostics contrôlent couverture et
-chevauchement par union géométrique, en plus des sommes d'aires.
+Parceling offers cultural recipes, strips, oriented subdivision, competing frontage territories, domains, whole blocks and gardens. Competition uses distance planes oriented from frontages; it is not a CGAL straight skeleton. Public, collective and private access are identified against the final network. Diagnostics check coverage and overlap through geometric union in addition to area sums.
 
-Les couches **Réserve**, **Terre attribuée**, **Noyaux et identités**, **Desserte**
-et **Phases de croissance** ne relancent pas le moteur. L'occupation rurale et
-la substitution du réseau régional utilisent la terre attribuée. Les anciens
-liens sans `footprint` restent en mode **Historique** ; seuls les paramètres
-appliqués sont partagés.
+**Reserve**, **Allocated land**, **Centers and identities**, **Access** and **Growth phases** layers do not rerun the engine. Rural occupation and regional-network substitution use allocated land. Old links without `footprint` remain in **Legacy** mode; only applied settings are shared.
 
-Corpus natif : `cargo run --release -p magna-urbis-core --example urban_refonte --
---repeat --out out/urban-refonte.json`. Les options `--case`, `--population`,
-`--seed` et `--geometry` permettent une reproduction et des mesures à entrées
-fixes. Navigateur : `node scripts/urban_refactor_ui_check.mjs
-http://localhost:5173/urbanbench.html` depuis `web/`.
-Pour comparer les empreintes sur plaine et vallée :
-`node scripts/urban_natural_scenes_check.mjs`. Le replay du site signalé utilise
-`node scripts/urban_natural_ui_check.mjs` et son décor local.
+Native corpus: `cargo run --release -p magna-urbis-core --example urban_refonte -- --repeat --out out/urban-refonte.json`. Options `--case`, `--population`, `--seed` and `--geometry` allow replay and measurements on fixed inputs. Browser: `node scripts/urban_refactor_ui_check.mjs http://localhost:5173/urbanbench.html` from `web/`. To compare footprints on plain and valley: `node scripts/urban_natural_scenes_check.mjs`. Replay of the reported site uses `node scripts/urban_natural_ui_check.mjs` and its local decor.
 
-Voir [la note d'implémentation](../../../../../docs/REFONTE_URBAINE_IMPLEMENTATION_2026-10-13.md)
-pour les validations et les limites. L'histoire reste une chronologie légère
-des emprises et des fusions ; les maisons et une simulation économique complète
-restent des étapes indépendantes. La précision d'eau dépend toujours du raster
-fourni par le terrain, jusqu'à 512².
+See the [implementation note](../../../../../docs/REFONTE_URBAINE_IMPLEMENTATION_2026-10-13.md) for validation and limits. History remains a light chronology of footprints and mergers; houses and a complete economic simulation remain independent stages. Water precision still depends on the terrain-provided raster, up to 512².
 
-Le bloc **6 · Quartiers et îlots** puis le bloc **7 · Parcelles** utilisent
-`crates/core/src/urban/` exclusivement en Rust/WASM. Le TypeScript transporte les
-entrées, présente les contrôles et dessine les résultats. Ces structures sont un
-contrat temporaire du banc, pas le modèle permanent du moteur.
+Stage **6 · Neighborhoods and blocks**, then stage **7 · Parcels**, use `crates/core/src/urban/` exclusively in Rust/WASM. TypeScript transports inputs, presents controls and draws results. These structures are a temporary bench contract, not the engine's permanent model.
 
-La sélection propose **All**, puis tous les settlements par population
-décroissante. Le plus grand est sélectionné au premier démarrage. Les graines
-sont indépendantes par étape et par clé de settlement : sélectionner un lieu seul
-ou dans All ne change pas ses tirages. Les quartiers utilisent le relief physique,
-le masque d'eau/roche et les routes régionales déjà calculés. Le masque est celui
-du raster de settlements, jusqu'à 512² : ses limites d'eau restent donc limitées
-par cette résolution. Les paramètres de rivière et relief synthétiques de
-l'ancien banc sont remplacés par les blocs terrain et hydrologie.
+Selection offers **All**, then all settlements by decreasing population. The largest is selected at first startup. Seeds are independent by stage and settlement key: selecting a place alone or in All does not change its draws. Neighborhoods use already calculated physical terrain, water/rock mask and regional roads. The mask is the settlement raster, up to 512², so water boundaries remain limited by that resolution. Synthetic river and terrain settings from the old bench are replaced by terrain and hydrology stages.
 
-Chaque étape possède sa culture, recette, zone, densité, préréglage, paramètres
-natifs et surcharges JSON. Les recettes proviennent du catalogue TypeScript
-résolu, porté comme données versionnées dans `urban/catalogue.json`. Leur
-application, la densité, les surcharges et les opérations géométriques sont
-natives. Le script `rust/scripts/export-urban-catalogue.ts` permet de renouveler
-ces données : depuis la racine, `node web/node_modules/tsx/dist/cli.mjs
-rust/scripts/export-urban-catalogue.ts`.
+Each stage has its own culture, recipe, zone, density, preset, native settings and JSON overrides. Recipes come from the resolved TypeScript catalogue, carried as versioned data in `urban/catalogue.json`. Their application, density, overrides and geometric operations are native. `rust/scripts/export-urban-catalogue.ts` refreshes the data: from the root, `node web/node_modules/tsx/dist/cli.mjs rust/scripts/export-urban-catalogue.ts`.
 
-Le plan commence par les corridors régionaux et les terres sèches. Les axes
-culturels sont ensuite routés, puis les quartiers subdivisés : rues organiques,
-grilles, terrasses, impasses/closes/hutong/roji. Les dispositions rectangle,
-oblique et avec encoche restent disponibles comme scènes de travail. Le
-catalogue contient 53 cultures et 326 préréglages ; ses profils conservent les
-orientations, enceintes et logiques de croissance des documents culturels.
+The plan starts with regional corridors and dry land. Cultural axes are then routed and neighborhoods subdivided: organic streets, grids, terraces, dead ends/closes/hutong/roji. Rectangle, oblique and notched layouts remain available as work scenes. The catalogue contains 53 cultures and 326 presets; profiles retain the cultural documents' orientations, enclosures and growth logic.
 
-Les limites de pente sont séparées : rues 12 %, ruelles 18 %, escaliers 65 %
-par défaut. Ce sont des paramètres visuels du générateur, pas des normes de
-construction. Chaque segment est contrôlé sur le relief bilinéaire, y compris
-les crêtes entre ses extrémités. Les détours utilisent une recherche locale à
-coût de pente et de virage ; seuls les franchissements régionaux existants
-peuvent passer sur l'eau. Les escaliers sont explicitement identifiés et dessinés.
-Les croisements sont des nœuds partagés ; les fragments isolés sont éliminés.
+Slope limits are separate: streets 12%, lanes 18%, stairs 65% by default. These are visual generator settings, not construction standards. Each segment is checked on bilinear terrain, including ridges between endpoints. Detours use local search with slope and turn costs; only existing regional crossings may cross water. Stairs are explicitly identified and drawn. Intersections are shared nodes; isolated fragments are removed.
 
-La fortification est indépendante du style de rues : culturelle, absente,
-muraille ou palissade. Les portes suivent les traversées réelles. Les villes
-ouvertes s'étendent davantage le long des approches, avec des cellules libres
-entre les extensions et une progression cœur → périphérie des paramètres.
-Ces cellules restent accessibles à l'occupation rurale. Les quais suivent les
-rives sèches et rejoignent le réseau ; il ne s'agit pas encore d'un générateur
-complet de bassins portuaires, de jetées ou de navigation. La réserve de monument
-conserve un îlot libre ; elle ne construit aucun monument.
+Fortification is independent of street style: cultural, absent, wall or palisade. Gates follow actual crossings. Open cities extend farther along approaches, with open cells between extensions and a core → outskirts progression of parameters. These cells remain available for rural use. Quays follow dry shores and join the network; this is not yet a complete harbor-basin, pier or navigation generator. A monument reserve retains an open block; it does not build a monument.
 
-Parcelles : bandes de façade (burgage/machiya), découpage des cours/compounds,
-raffinement siheyuan, jardins. Leurs axes, façades et fonds restent explicites.
-Les booléens conservent les trous et les parcelles partitionnent leurs îlots.
-Les places et réserves ne sont pas recoupées. Recalculer les parcelles conserve
-les quartiers, îlots et rues. Les contrôles de rendu ne lancent aucun calcul.
-Les liens conservent les paramètres appliqués, graines, sélection et rendu ; les
-changements de paramètres non appliqués ne modifient pas le replay.
+Parcels include frontage strips (burgage/machiya), courtyard/compound subdivision, siheyuan refinement and gardens. Their axes, frontages and backland stay explicit. Boolean operations retain holes and parcels partition their blocks. Squares and reserves are not recut. Recomputing parcels retains neighborhoods, blocks and streets. Rendering controls trigger no calculation. Links retain applied settings, seeds, selection and rendering; unapplied changes do not alter replay.
 
-Dans Terrain Bench, **Auto** applique les menus urbains après une courte pause,
-sans recalculer le terrain ou l'eau. Auto désactivé, un message signale les
-modifications en attente ; les boutons de chaque étape ou le bouton général
-**Générer** les appliquent. Urban Bench conserve ses boutons d'application.
-Changer de culture revient aux recettes culturelles et retire le préréglage
-forcé précédent. Le menu **Génération** reste visible : les secteurs isolés
-conservent leur contour de scène, même avec un maillage organique.
+In Terrain Bench, **Auto** applies urban menus after a short pause without recalculating terrain or water. With Auto disabled, a message reports pending changes; stage buttons or the general **Generate** button apply them. Urban Bench retains its apply buttons. Changing culture returns to cultural recipes and removes the previous forced preset. The **Generation** menu stays visible: isolated sectors retain their scene contour even with organic fabric.
 
-Un décor exporté transmet les paramètres urbains **appliqués**, les graines et
-le settlement ciblé à Urban Bench. Sans paramètres urbains propres dans son
-lien, Urban Bench reprend cette configuration au lieu de ses valeurs par
-défaut. Les étapes y sont activées pour travailler les décors du catalogue,
-exportés sans génération de villes. Un lien Urban Bench explicite garde la
-priorité sur le décor, y compris pour les paramètres routiers. Réattacher le même
-fichier conserve aussi les réglages routiers courants. « Ouvrir Terrain Bench »
-reprend les paramètres urbains et routiers actuels, la sélection et la désactivation
-des routes lorsqu’elles sont retirées. À terrain, ville, routes, options et graines identiques,
-les deux benches produisent les mêmes rues, îlots et parcelles.
+An exported decor passes **applied** urban settings, seeds and targeted settlement to Urban Bench. Without its own urban parameters in the link, Urban Bench uses that configuration instead of defaults. Stages are enabled there for working on catalogue decors exported without city generation. An explicit Urban Bench link takes priority over the decor, including road settings. Reattaching the same file also retains current road settings. **Open Terrain Bench** carries current urban and road settings, selection and disabled-road state when roads are removed. With identical terrain, city, roads, options and seeds, both benches produce the same streets, blocks and parcels.
 
-Changer de style restaure aussi les routes régionales lorsque le rendu SVG
-reconstruit ses calques. Les styles Fantasy des deux bancs utilisent le même
-masque : terre attribuée native, trous conservés et approches régionales
-remplacées par la voirie urbaine. Le lissage conserve la surface des petits
-quartiers et répare localement les cellules protégées, sans rétablir tout le
-contour en escalier. Vérification : `node scripts/urban_styles_ui_check.mjs`
-(styles Terrain en SVG/WebGL, styles Urban et cinq rendus de routes).
+Changing style also restores regional roads when SVG rendering rebuilds layers. Both benches' Fantasy styles use the same mask: native allocated land with holes retained and regional approaches replaced by urban roads. Smoothing preserves small-neighborhood area and locally repairs protected cells without restoring the entire stair-step contour. Check: `node scripts/urban_styles_ui_check.mjs` (Terrain SVG/WebGL styles, Urban styles and five road renderings).
 
-Un index spatial accélère la recherche des façades sans changer leur sélection.
-Les parcelles résidentielles profondes sont bornées par leur profondeur
-culturelle ; les fonds inaccessibles restent des jardins, même dans un grand
-îlot que le relief empêche de subdiviser. Un îlot sans façade conservée ne
-produit pas de parcelles résidentielles accessibles fictives.
+A spatial index accelerates frontage lookup without changing selection. Deep residential parcels are bounded by their cultural depth; inaccessible backland remains garden, even in a large block that terrain prevents subdividing. A block without retained frontage does not produce fictitiously accessible residential parcels.
 
-Le worker conserve son terrain Rust entre appels. Un navigateur qui refuse le
-worker utilise les mêmes appels WASM sur la page. Une modification du terrain,
-des settlements ou des routes invalide les quartiers qui en dépendent. Les
-réponses obsolètes ne remplacent pas la génération courante.
+The worker retains Rust terrain between calls. A browser refusing workers uses the same WASM calls on the page. A terrain, settlement or road change invalidates dependent neighborhoods. Stale responses do not replace current generation.
 
-Vérification depuis `rust/` : `cargo test -p magna-urbis-core urban --lib`,
-`cargo clippy -p magna-urbis-core -p magna-urbis-wasm --all-targets -- -D warnings`,
-`cargo check -p magna-urbis-core -p magna-urbis-wasm --target wasm32-unknown-unknown`.
-Depuis `web/` : `npm run typecheck`, `npm run build`, `npm run build:terrain`.
-Le contrôle navigateur partagé s'exécute depuis `web/` avec
-`node scripts/urban_workshop_ui_check.mjs http://localhost:5173/urbanbench.html chemin/vers/carte.decor`.
-Il vérifie les scènes isolées, le replay exact, l'import du plan et son retour
-vers la carte. Une URL `file:///.../rust/out/browser/urbanbench.html` vérifie
-le même parcours hors ligne, avec `testbench.html` dans le même dossier.
-`node scripts/urban_composition_ui_check.mjs http://localhost:5173/urbanbench.html`
-vérifie sur un carrefour plat figé le village groupé avec faubourgs, les phases
-de ville, les enceintes, les réglages non appliqués et le replay exact. Les
-captures et le fichier `.decor` sont écrits dans `web/out/urban-composition/`.
+Checks from `rust/`: `cargo test -p magna-urbis-core urban --lib`, `cargo clippy -p magna-urbis-core -p magna-urbis-wasm --all-targets -- -D warnings`, `cargo check -p magna-urbis-core -p magna-urbis-wasm --target wasm32-unknown-unknown`. From `web/`: `npm run typecheck`, `npm run build`, `npm run build:terrain`. The shared browser check runs from `web/` with `node scripts/urban_workshop_ui_check.mjs http://localhost:5173/urbanbench.html path/to/map.decor`. It checks isolated scenes, exact replay, plan import and return to the map. A `file:///.../rust/out/browser/urbanbench.html` URL checks the same offline flow, with `testbench.html` in the same directory. `node scripts/urban_composition_ui_check.mjs http://localhost:5173/urbanbench.html` checks on a frozen flat intersection the clustered village with suburbs, town phases, enclosures, unapplied settings and exact replay. Captures and `.decor` file are written to `web/out/urban-composition/`.
 
-Lors de la validation du 13 octobre 2026, l'index de façades seul a été mesuré
-sur six layouts figés : de 1,20× à 11,72× plus rapide, 4,72× sur la somme des
-médianes, avec sorties identiques bit à bit. Ce résultat isole l'index avant
-les changements de morphologie et de profondeur ; il ne mesure pas un gain
-global sur des villes différentes. Les entrées figées, captures et mesures
-de cette session sont dans `web/out/urban-audit-frozen/` (sorties locales ignorées).
+During October 13 validation, the frontage index alone was measured on six fixed layouts: 1.20× to 11.72× faster, 4.72× on the sum of medians, with bit-identical outputs. This isolates the index before morphology and depth changes; it does not measure an overall gain on different cities. Frozen inputs, captures and measurements from that session are in `web/out/urban-audit-frozen/` (ignored local outputs).
 
 ## Urban Bench
 
-Le mode par défaut est **Agglomération complète**. Le plan compose d’abord le
-lieu à partir de sa population, de la culture et des accès : hameau,
-village-rue, village groupé ou ville. Le noyau possède ses phases culturelles
-(cœur, extensions et périphérie) ; les faubourgs occupent des rubans le long des
-approches réellement raccordées. Les parts de population, densités, seuils de
-phases, recettes de village et changements de recette des cultures qui deviennent
-des villes proviennent du générateur TypeScript, via le catalogue versionné.
-Les paramètres **Forme du lieu**, **Faubourgs** et **Phases du noyau** permettent
-de comparer les compositions. Les enceintes restent autour du noyau.
-**Retirer l’enceinte**, sur la carte comme dans l’atelier, recalcule immédiatement
-le plan sans murs avec les graines et paramètres appliqués. Les autres réglages
-en attente restent des brouillons. Le choix **Sans enceinte** du menu peut aussi
-être appliqué avec la génération des quartiers ; masquer le rendu des enceintes
-ne change, lui, aucune géométrie.
+The default mode is **Complete settlement**. The plan first composes the place from population, culture and access: hamlet, street village, clustered village or town. The core has its cultural phases (core, extensions and outskirts); suburbs occupy strips along actually connected approaches. Population shares, densities, phase thresholds, village recipes and recipe changes for cultures becoming towns come from the TypeScript generator via the versioned catalogue. **Place shape**, **Suburbs** and **Core phases** allow composition comparisons. Enclosures remain around the core. **Remove enclosure**, on the map or in the workshop, immediately recomputes the open plan using applied seeds and settings. Other pending settings remain drafts. The **No enclosure** menu option can also be applied with neighborhood generation; hiding enclosure rendering changes no geometry.
 
-Les quartiers et îlots héritent de leur phase ; **Recettes · Par phase** transmet
-cette recette aux rues et aux parcelles. Une recette ou un préréglage explicite
-permet de forcer une morphologie commune. La palette **Phases de croissance** et
-le tableau de composition distinguent le noyau et les faubourgs, avec population
-prévue et surface sèche obtenue. La population est un budget de composition, pas
-une capacité mesurée de logements (les maisons restent une étape indépendante).
-Le rayon fourni est une emprise indicative répartie entre les phases ; les
-faubourgs peuvent s’étendre au-delà. **Centrer** englobe le plan réalisé.
+Neighborhoods and blocks inherit their phase; **Recipes · By phase** passes that recipe to streets and parcels. An explicit recipe or preset can force a common morphology. The **Growth phases** palette and composition table distinguish core and suburbs, with planned population and obtained dry area. Population is a composition budget, not measured housing capacity (houses remain an independent stage). The supplied radius is an indicative footprint divided among phases; suburbs can extend beyond it. **Center** frames the completed plan.
 
-**Secteur isolé · ancien banc** conserve les scènes d’une seule recette,
-rectangles, dispositions obliques et encoches. L’atelier utilise ce mode pour ses
-scènes isolées, et conserve la composition du plan importé depuis la carte.
-Les anciens liens sans champ `composition` s’ouvrent dans le mode isolé afin
-de conserver leur replay ; un nouveau lien inclut tous les réglages appliqués.
+**Single sector · legacy bench** retains one-recipe scenes, rectangles, oblique layouts and notches. The workshop uses this mode for isolated scenes and retains composition of the plan imported from the map. Old links without `composition` open in isolated mode to preserve replay; a new link includes all applied settings.
 
-Cette étape rétablit la composition d’agglomération pour évaluer quartiers et
-îlots dans leur contexte. Le routage local et les subdivisions restent les
-opérateurs natifs existants ; elle n’ajoute ni maisons ni générateur de monuments.
+This stage restores complete-settlement composition to evaluate neighborhoods and blocks in context. Local routing and subdivision remain the existing native operators; it adds neither houses nor a monument generator.
 
-`web/src/ui/urbanbench.html` (`http://localhost:5173/urbanbench.html` with
-`npm run dev:terrain`) prototype les mêmes blocs 6 et 7 sans la chaîne
-terrain → eaux → settlements → routes. Il charge des **décors** : le raster
-exact transmis à Rust par Terrain Bench, les settlements, les routes et l'eau
-vectorielle d'une carte, au format `.decor` (`web/src/ui/decor.ts`).
+`web/src/ui/urbanbench.html` (`http://localhost:5173/urbanbench.html` with `npm run dev:terrain`) prototypes the same stages 6 and 7 without the terrain → water → settlements → roads pipeline. It loads **decors**: the exact raster passed to Rust by Terrain Bench, settlements, roads and vector water from a map, in `.decor` format (`web/src/ui/decor.ts`).
 
-- Exporter la carte courante : bouton **Export decor** du bloc Settlements.
-- Exporter un lot varié (relief, côtes, rivières, routes, tailles, cultures) :
-  `node scripts/export_decors.mjs [--count 100] [--force]` depuis `web/`, serveur
-  de développement lancé. Les fichiers vont dans `web/decors/` (ignoré par git)
-  avec `index.json` ; `--index` reconstruit l'index après suppression manuelle.
-- Graine de ville : un lieu du décor (mêmes routes, même graine, mêmes quartiers
-  que Terrain Bench) ou une graine libre posée sur la carte (P), avec population,
-  culture et rayon. Les routes régionales peuvent être recalculées avec la graine.
-- Le bench construit hors ligne (`npm run build:terrain`) ouvre ou reçoit par
-  glisser-déposer des fichiers `.decor`.
-- **Atelier quartiers / parcelles** ouvre l'éditeur historique avec les mêmes
-  appels Rust que la carte. Il permet des scènes isolées, des formes de parcelles
-  de référence et l'import du plan exact affiché sur la carte. Refaire les
-  parcelles conserve les îlots ; **Appliquer les réglages à la carte** transmet
-  les paramètres. Le lien mémorise les deux espaces. L'atelier seul s'ouvre par
-  `urbanbench.html?space=workshop` ; `testbench.html?engine=rust` y redirige.
-  Le testbench TypeScript original reste indépendant de Rust.
-- **8 · Occupation du territoire** reprend `gen/landuse/rural.ts` et le rendu
-  Canvas 2D de l'application TypeScript : champs et sillons, haies, chemins agricoles,
-  vergers, jardins, prairies, bois et marais. Le terrain, les niveaux d'eau et les
-  routes du décor alimentent un adaptateur temporaire (`ui/urbanLanduseData.ts`).
-  Les quartiers réservent leur emprise exacte même sans maisons ; les autres
-  lieux du décor conservent leurs réserves projetées. Les bâtiments agricoles
-  attendent eux aussi l'intégration des maisons.
-  Le calcul s'exécute dans un Worker avec repli local. Déplacer la ville ou
-  régénérer ses quartiers recalcule les paysages ; modifier les parcelles,
-  le style, les textures ou l'opacité conserve leur géométrie. Biome, graine et
-  affichage sont enregistrés dans le lien. Le bouton **Occupation** masque la
-  couche. La case **Générer l’occupation du territoire** du bloc 8 désactive
-  aussi les calculs, y compris ceux en cours ; son état est conservé dans le lien.
-  Le rendu Rust et le modèle urbain natif ne sont pas modifiés.
+- Export the current map: **Export decor** in the Settlements stage.
+- Export a varied batch (terrain, coasts, rivers, roads, sizes, cultures): `node scripts/export_decors.mjs [--count 100] [--force]` from `web/`, with the development server running. Files go to `web/decors/` (ignored by Git) with `index.json`; `--index` rebuilds the index after manual removal.
+- City seed: a decor place (same roads, seed and neighborhoods as Terrain Bench) or a free seed placed on the map (P), with population, culture and radius. Regional roads can be recomputed with the seed.
+- The offline-built bench (`npm run build:terrain`) opens or receives `.decor` files by drag and drop.
+- **Neighborhood / parcel workshop** opens the historical editor with the same Rust calls as the map. It supports isolated scenes, reference parcel shapes and import of the exact plan displayed on the map. Recomputing parcels retains blocks; **Apply settings to map** transfers settings. The link stores both spaces. The workshop alone opens at `urbanbench.html?space=workshop`; `testbench.html?engine=rust` redirects there. The original TypeScript testbench remains independent of Rust.
+- **8 · Land use** reuses `gen/landuse/rural.ts` and the TypeScript application's Canvas 2D rendering: fields and furrows, hedges, farm tracks, orchards, gardens, meadows, woods and marshes. Decor terrain, water levels and roads feed a temporary adapter (`ui/urbanLanduseData.ts`). Neighborhoods reserve their exact footprint even without houses; other decor places retain projected reserves. Farm buildings also await house integration. Calculation runs in a Worker with local fallback. Moving the city or regenerating neighborhoods recomputes landscapes; changing parcels, style, textures or opacity retains geometry. Biome, seed and display are saved in the link. **Land use** hides the layer. The **Generate land use** checkbox in stage 8 also disables calculations, including ongoing ones; its state is saved in the link. Rust rendering and the native urban model are unchanged.
 
-  Le Canvas suit la caméra SVG, avec les niveaux de détail et les caches du
-  moteur TypeScript. Le relief conservé sert de fond pour le mélange des teintes.
-  **Feuillages et canopée** remplace les ronds par des couronnes irrégulières,
-  ombrées et jointives en forêt, alignées en verger ; **Symboles classiques**
-  permet la comparaison. Les textures peintes restent disponibles. Les motifs
-  de feuillage sont vectoriels, déterministes et partagés avec l'export SVG.
-  Les arbres sont placés individuellement avec un espacement minimal et des
-  nuances discrètes, sans tuile répétée. Leur centre appartient à la zone boisée ;
-  leur couronne reste entière et peut dépasser du contour. Les vergers gardent
-  leurs rangées. Les sillons utilisent l'échelle du preset TypeScript de la ville,
-  indépendamment de la largeur du décor chargé.
+  Canvas follows the SVG camera using TypeScript-engine LODs and caches. Retained terrain is the background for color blending. **Foliage and canopy** replaces circles with irregular, shaded crowns that join in forest and align in orchards; **Classic symbols** allows comparison. Painted textures remain available. Foliage patterns are vector, deterministic and shared with SVG export. Trees are placed individually with minimum spacing and subtle shades, without a repeating tile. Their centers belong to the wooded area; crowns remain whole and may extend outside its boundary. Orchards retain rows. Furrows use the city's TypeScript preset scale independently of loaded decor width.
 
-Les tracés régionaux sont conservés à l'extérieur des quartiers et remplacés
-par le graphe natif à l'intérieur, pour l'affichage comme pour les coûts ruraux.
-Une approche physiquement impraticable donne un avertissement explicite.
+Regional paths are retained outside neighborhoods and replaced by the native graph inside, for both display and rural costs. A physically impassable approach produces an explicit warning.
 
-Références de méthode : Galin et al., *Procedural Generation of Roads* (2010),
-https://perso.liris.cnrs.fr/egalin/Articles/2010-roads.pdf ; Chen et al.,
-*Interactive Procedural Street Modeling* (2008),
-https://peterwonka.net/Publications/pdfs/2008.SG.Chen.InteractiveProceduralStreetModeling.pdf.
-Le solveur reste une approximation locale bornée pour la génération interactive.
+Method references: Galin et al., [*Procedural Generation of Roads* (2010)](https://perso.liris.cnrs.fr/egalin/Articles/2010-roads.pdf); Chen et al., [*Interactive Procedural Street Modeling* (2008)](https://peterwonka.net/Publications/pdfs/2008.SG.Chen.InteractiveProceduralStreetModeling.pdf). The solver remains a bounded local approximation for interactive generation.
 
+## Influences, exits and site adaptation
 
-## Influences, sorties et adaptation au site
+Stage 6 offers a second culture, its area share and two distributions: `mixMode=phases` assigns newer extensions to that influence; `mixMode=sectors` divides land by an orientable axis (`mixAngle`). Shares remain disjoint and preserve population budgets. Each phase carries its culture and recipe, reused by streets and parcels in “By phase” mode. Explicitly forced recipes, fabrics or operators retain priority. Shared axes cross cultural boundaries.
 
-Le bloc 6 propose une seconde culture, sa part de surface et deux répartitions :
-`mixMode=phases` attribue les extensions les plus récentes à cette influence ;
-`mixMode=sectors` partage les terres par un axe orientable (`mixAngle`). Les
-parts restent disjointes et conservent les budgets de population. Chaque phase
-porte sa culture et sa recette, reprises par les rues et les parcelles en mode
-« Par phase ». Les recettes, tissus ou opérateurs explicitement forcés gardent
-leur priorité. Les axes partagés traversent les limites culturelles.
+`exitTreatment=adaptive` handles peripheral ends before parcel subdivision: connection to a nearby regional axis, circumferential sections, a few narrower rural paths, or withdrawal into the block to close access with parcel land. `closed` retains only dead ends and existing regional approaches. `peripheralRoad` selects none, automatic choice, partial sections or a complete circuit when slopes and water permit. Each section joins two actual accesses; an obstacle leaves a break rather than an invented crossing. An enclosure retains wall-and-gate handling.
 
-`exitTreatment=adaptive` traite les extrémités périphériques avant le découpage
-parcellaire : raccordement à un axe régional proche, sections circumférentielles,
-quelques chemins ruraux plus étroits, ou retrait dans l’îlot pour fermer l’accès
-par du terrain parcellaire. `closed` conserve seulement les impasses et les
-approches régionales existantes. `peripheralRoad` sélectionne aucun périphérique,
-un choix automatique, des sections partielles ou un circuit complet lorsque
-les pentes et l’eau le permettent. Chaque section relie deux accès réels ; un
-obstacle laisse une interruption plutôt qu’un franchissement inventé. Une
-enceinte conserve le traitement par murs et portes.
+`siteAdaptation` (0–2, default 1) strengthens local following of contours and shores, including for grids. Axes generated on slopes compare detours with the direct route even when it respects maximum grade; simplification retains the detour's benefit. Imported regional roads and bridges retain their paths. Old Legacy-mode links without these fields retain previous behavior; modern plans receive new defaults.
 
-`siteAdaptation` (0–2, défaut 1) renforce le suivi local des courbes de niveau et
-des berges, y compris pour les grilles. Les axes générés sur pente comparent
-les détours au trajet direct même lorsque celui-ci respecte la pente maximale ;
-la simplification conserve le bénéfice du détour. Les routes régionales et les
-ponts importés gardent leurs tracés. Les anciens liens du mode Historique sans ces champs gardent
-leur comportement antérieur ; les plans modernes reçoivent les nouveaux défauts.
+Targeted validation: `cargo test -p magna-urbis-core urban --lib`, usual Clippy/WASM checks, and from `web/`: `node scripts/urban_influences_ui_check.mjs` (plain), then `node scripts/urban_influences_ui_check.mjs http://127.0.0.1:5173/urbanbench.html --terrain` (slope and river). These also check unapplied drafts and exact replay. Captures remain in `web/out/urban-influences*/`.
 
-Validation ciblée : `cargo test -p magna-urbis-core urban --lib`, contrôles
-Clippy/WASM habituels, et depuis `web/` :
-`node scripts/urban_influences_ui_check.mjs` (plaine), puis
-`node scripts/urban_influences_ui_check.mjs http://127.0.0.1:5173/urbanbench.html --terrain`
-(versant et rivière). Ces contrôles vérifient aussi les brouillons non appliqués
-et le replay exact. Les captures restent dans `web/out/urban-influences*/`.
+`axisAlignment=regional` (new default) aligns the foundation, major axes and local street field with the tangent of incoming major regional roads. Rank, width and proximity prioritize major axes over tracks; artificial footprint guides do not drive this selection. Terrain and shores then adapt the alignment. The `culture` choice and explicit orientation overrides retain priority. The browser check also accepts `--aligned` for a principal axis at 27°.
 
-`axisAlignment=regional` (nouveau défaut) aligne la fondation, les grands axes
-et le champ local des rues sur la tangente des principales routes régionales
-entrantes. Le rang, la largeur et la proximité donnent priorité aux axes majeurs
-sur les pistes ; les guides artificiels d’empreinte ne pilotent pas cette
-sélection. Le relief et les berges adaptent ensuite cet alignement. Le choix
-`culture` et les surcharges explicites d’orientation conservent leur priorité.
-Le contrôle navigateur accepte aussi `--aligned` pour un axe principal à 27°.
+The panel keeps shape, growth, fabric and accessibility visible. Regeneration is at the top; seeds, recipes, diagnostics and fine settings remain in collapsed sections. Drafts retain their scope.
 
+Regional roads crossing the core are the place's framework: cultural axes no longer duplicate those branches and extend only missing directions, with their tangent and width. Accessible growth favors dry shores according to cultural affinities; accretion shifts its land budget toward water without moving roads or building on water.
 
-Le panneau garde visibles la forme, la croissance, le maillage et l’accessibilité.
-La régénération est placée en haut ; graines, recettes, diagnostics et réglages
-fins restent dans des sections repliées. Les brouillons conservent leur portée.
+Width transitions are handled before reserving streets in blocks. Drawing uses the same tapered strips as Rust. Peripheral roads now border allocated land and reuse nearby parallel corridors. A road at the foot of the inner enclosure often appears; other draws let parcels reach the wall. Impassable terrain or slopes interrupt this road without inventing a crossing. The reported Swahili case is checked by `node scripts/urban_junctions_ui_check.mjs`.
 
-Les routes régionales traversant le noyau sont l’ossature du lieu : les axes
-culturels ne doublent plus ces branches et ne prolongent que les directions
-manquantes, avec leur tangente et leur largeur. La croissance accessible favorise
-les rives sèches selon les affinités culturelles ; l’accrétion décale son budget
-foncier du côté de l’eau sans déplacer les routes ni construire sur l’eau.
+Planned growth is no longer offered in the panel; old links fall back to automatic mode. Explicit square, rectangular, polygonal and circular forms remain available. A square cultural enclosure retains its straight foundation; an open city regains natural growth.
 
-Les raccords de largeur sont traités avant de réserver les rues dans les îlots.
-Le dessin utilise les mêmes rubans effilés que Rust. Les chemins périphériques
-bordent désormais la terre attribuée et réutilisent les corridors parallèles
-proches. Une voie au pied de l’enceinte intérieure apparaît fréquemment ; les
-autres tirages permettent aux parcelles d’atteindre le mur. Les terrains ou les
-pentes impraticables interrompent cette voie, sans franchissement inventé.
-Le cas Swahili signalé est vérifié par `node scripts/urban_junctions_ui_check.mjs`.
+Open cities can add small parcel strips beyond some peripheral-road sections, directly served by that road without new outgoing streets. Their extra area remains limited to 8% of the initial footprint; population budgets and cultural shares are preserved. Up to three local connections seek a regional axis within 360 m, with reduced width in the middle and transitions at junctions.
 
-La croissance planifiée n’est plus proposée dans le panneau ; ses anciens liens
-reviennent au mode automatique. Les formes explicites carrées, rectangulaires,
-polygonales et circulaires restent disponibles. Une enceinte culturelle carrée
-conserve sa fondation droite ; une ville ouverte retrouve sa croissance naturelle.
+Both benches pass the same vector land and water contours to the urban engine. New decors retain these contours and terrain up to 1024²; old ones reconstruct the coast from signed elevations and reuse saved vector water. This removes cell-shaped cuts without inventing details absent from old exports. Street strips use `nonzero` fill to avoid holes at overlapping junctions.
 
-Les villes ouvertes peuvent ajouter de petites bandes de parcelles au-delà de
-certains tronçons du périphérique, directement desservies par celui-ci, sans
-nouvelles rues sortantes. Leur surface supplémentaire reste limitée à 8 % de
-l’emprise initiale ; les budgets de population et les parts culturelles sont
-conservés. Jusqu’à trois liaisons locales cherchent un axe régional à moins de
-360 m, avec une largeur réduite au milieu et des transitions aux raccords.
+Worker results are immutable snapshots: SVG path and road-cut caches are invalidated by replacing the plan, not by its display settings. The worker retains the last plan JSON and accepts its response identifier for parcel requests. A terrain change or new generation invalidates that identifier; the workerless fallback supplies the complete plan. `JSON.parse`/`JSON.stringify` stays identical to the historical path to preserve the same Rust input numbers and cuts.
 
-Les deux bancs transmettent les mêmes contours vectoriels de terre et d’eau au
-moteur urbain. Les nouveaux décors conservent ces contours et un relief jusqu’à
-1024² ; les anciens reconstruisent la côte depuis leurs altitudes signées et
-réutilisent leur eau vectorielle sauvegardée. Cela supprime les découpes par
-cellules, sans inventer les détails absents des anciens exports. Les rubans de
-rues se remplissent en `nonzero` pour éviter les trous aux raccords superposés.
-
-Les résultats reçus du worker sont des instantanés immuables : les caches de
-chemins SVG et de découpage des routes sont invalidés par remplacement du plan,
-pas par ses réglages d'affichage. Le worker conserve le JSON du dernier plan et
-accepte son identifiant de réponse pour les demandes de parcelles. Un changement
-de terrain ou une nouvelle génération invalide cet identifiant ; le repli sans
-worker fournit le plan complet. Le passage `JSON.parse`/`JSON.stringify` reste
-identique au chemin historique afin de conserver les mêmes nombres en entrée
-Rust et les mêmes découpes.
-
-Mesures reproductibles depuis `web/`, avec un serveur Vite actif et Chrome :
+Reproducible measurements from `web/`, with an active Vite server and Chrome:
 
 ```sh
 node scripts/generation_perf.mjs http://localhost:5173/urbanbench.html out/perf.json
@@ -410,15 +125,4 @@ npx tsx scripts/ts_generation_perf.ts 3
 node scripts/ts_generation_browser_perf.mjs http://localhost:5173
 ```
 
-Le premier contrôle mesure trois scènes natives dans le navigateur, le transfert
-worker, la fin du rendu et les changements de palette. Il compare les géométries
-complètes et le SVG (ordre des attributs normalisé). Comparer des builds WASM de
-même profil, sur la même machine ; les durées ne sont pas des seuils de tests.
-Le dernier script accepte aussi l'URL d'un module TypeScript de référence et un
-chemin de rapport pour alterner les mesures avant/après. Le corpus natif existant
-`urban_refonte --geometry` exporte les entrées et sorties complètes pour vérifier
-leur égalité à l'octet, y compris les côtes, rivières et reliefs.
-Avec `TS_PERF_APP=town` ou `city`, le script TypeScript navigateur mesure la
-génération de l'application entière ; le module de référence doit alors exporter
-`generate`. La comparaison de `World` exclut uniquement les diagnostics de durée.
-`TS_PERF_RUNS` règle le nombre de passages mesurés après un passage de chauffe.
+The first check measures three native browser scenes, worker transfer, rendering completion and palette changes. It compares complete geometries and SVG (attribute order normalized). Compare WASM builds with the same profile on the same machine; times are not test thresholds. The last script also accepts a reference TypeScript module URL and report path to alternate before/after measurements. The existing native corpus `urban_refonte --geometry` exports complete inputs and outputs for byte-equality checks, including coasts, rivers and relief. With `TS_PERF_APP=town` or `city`, the browser TypeScript script measures generation of the whole application; the reference module must then export `generate`. `World` comparison excludes only duration diagnostics. `TS_PERF_RUNS` sets the number of measured runs after a warmup run.

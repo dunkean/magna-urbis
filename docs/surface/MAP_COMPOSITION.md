@@ -1,39 +1,39 @@
-# Composer une carte finale sur une capture SurfaceWorld
+# Composing a final map over a SurfaceWorld capture
 
-Le bridge `web/src/surface/mapComposition.ts` compose un SVG autonome sur un PNG géoréférencé, sans génération ni modification du monde. Il réutilise les palettes, piles de polices, moteur de placement des noms, sérialiseur de labels, primitives de panneaux et cadres du renderer web. Le CLI produit SVG, PNG via resvg et preuve JSON. Il ne remplace ni les styles web ni le pipeline SVG existant.
+The `web/src/surface/mapComposition.ts` bridge composes a standalone SVG over a georeferenced PNG without generating or changing the world. It reuses the web renderer's palettes, font stacks, name placement engine, label serializer, panel primitives and frames. The CLI produces SVG, PNG via resvg and JSON evidence. It does not replace the web styles or existing SVG pipeline.
 
-## Entrées et API
+## Inputs and API
 
-`composeSurfaceMap(capture, pngBytes, content, { style?, gridMeters? })` retourne `{ svg, evidence }`. Le binding `SurfaceMapCapture` lie les SHA256 du paquet source, des métriques et du PNG aux identifiants de monde et de contexte canonique. Le PNG est vérifié et embarqué dans le SVG avec ses octets originaux. Le CLI vérifie aussi les octets du paquet et des métriques ; aucune URL de raster externe n’est acceptée.
+`composeSurfaceMap(capture, pngBytes, content, { style?, gridMeters? })` returns `{ svg, evidence }`. The `SurfaceMapCapture` binding links SHA256 hashes of the source packet, metrics and PNG to the world and canonical-context IDs. The PNG is verified and embedded in the SVG with its original bytes. The CLI also verifies the packet and metrics bytes; external raster URLs are not accepted.
 
-Le TOP est un rectangle métrique exact dans le repère du paquet, jamais dans l’origine de rendu locale. Son rapport largeur/hauteur doit correspondre au PNG. L’échelle est en mètres ou kilomètres ; une grille JDR optionnelle est ancrée sur les coordonnées métriques source, avec un budget de 2 048 lignes. Le nord est explicitement le nord de grille local, `-Z`, sans prétention géodésique.
+TOP is an exact metric rectangle in the packet coordinate system, never the local rendering origin. Its aspect ratio must match the PNG. Scale is in metres or kilometres; an optional RPG grid is anchored to source metric coordinates, with a budget of 2,048 lines. North is explicitly local grid north, `-Z`, without a geodetic claim.
 
-`surfaceMapContent(packet, capture)` extrait les recettes réellement présentes dans les nœuds canoniques voisins du cadre, les potentiels arbre/couvert et les records natifs/voirie source. Les comptes ne sont ni des aires ni une visibilité GPU. La légende distingue ces sémantiques de leur apparence ; les recettes de sol n’ont pas de fausse couleur de raster attribuée. Les noms sont lus seulement dans `source.meta.names.entries`. Un producteur possédant un vrai `World` peut appeler `sourceMapLabels(world.names.entries, 'world.names', translation)` ; le bridge n’appelle aucune grammaire de noms. Les IDs, textes et chemins restent conservés, avec translation de repère explicite et sans mutation.
+`surfaceMapContent(packet, capture)` extracts recipes actually present in canonical nodes near the frame, tree/canopy potentials and native/source road records. Counts are neither areas nor GPU visibility. The legend distinguishes those semantics from appearance; ground recipes are not assigned fictitious raster colours. Names are read only from `source.meta.names.entries`. A producer with an actual `World` may call `sourceMapLabels(world.names.entries, 'world.names', translation)`; the bridge does not invoke a name grammar. IDs, texts and paths are retained, with explicit coordinate translation and no mutation.
 
-## Projection native et vues 3D
+## Native projection and 3D views
 
-`nativeSurfaceMapCapture(identity, projection)` joint le sidecar natif suivant :
+`nativeSurfaceMapCapture(identity, projection)` attaches the following native sidecar:
 
 ```ts
 {
   format: 'surface-map-projection', version: 1, worldId,
   projectionMode: 'orthographic-top' | 'perspective',
   viewportPixels: { width, height },
-  worldToClip: [/* 16 nombres, column-major */],
-  renderOrigin: { x, y, z }, // float64, soustraite AVANT la matrice
+  worldToClip: [/* 16 numbers, column-major */],
+  renderOrigin: { x, y, z }, // float64, subtracted BEFORE the matrix
   clipRange: [-1, 1], focus: { x, z },
   uniformMetricScale: null // perspective
-  // TOP : { metresPerPixel, bounds:{minX,minZ,maxX,maxZ}, north:'local-negative-z' }
+  // TOP: { metresPerPixel, bounds:{minX,minZ,maxX,maxZ}, north:'local-negative-z' }
 }
 ```
 
-La matrice doit être réellement exportée par la caméra native et inversible. Un test à coordonnées ±1e9 vérifie la soustraction de l’origine avant multiplication. La perspective ne reçoit pas de règle métrique uniforme, nord automatique ou grille JDR. Les annotations ponctuelles exigent une altitude source ; à défaut elles sont omises et diagnostiquées. Le drapé des labels linéaires et l’occlusion par les volumes ne sont pas reconstruits. Les anciennes captures obliques sans matrice sont refusées par l’auto-binding ; aucun calcul approximatif de caméra ne les remplace.
+The matrix must actually be exported by the native camera and be invertible. A test at coordinates ±1e9 checks origin subtraction before multiplication. Perspective receives no uniform metric scale, automatic north or RPG grid. Point annotations require a source elevation; otherwise they are omitted and diagnosed. Draping linear labels and occlusion by volumes are not reconstructed. Auto-binding rejects older oblique captures without a matrix; no approximate camera calculation replaces them.
 
-Le CLI utilise `metrics.mapProjection` quand il existe, avec contrôle des identités. Sinon, un `--capture-proof` permet uniquement le TOP explicitement demandé dans la commande native, avec SHA du PNG et des métriques. Un `--binding fichier.json` explicite peut fournir un binding moteur neutre ; s’il existe une projection native dans les métriques, les deux doivent coïncider.
+The CLI uses `metrics.mapProjection` when present, with identity checks. Otherwise, `--capture-proof` permits only TOP explicitly requested in the native command, with PNG and metrics hashes. An explicit `--binding file.json` can supply an engine-neutral binding; if the metrics contain a native projection, both must agree.
 
-## Exemple reproductible CITY419
+## Reproducible CITY419 example
 
-Depuis `web/`, les entrées restent dans les sorties ignorées du worktree ROOT :
+From `web/`, inputs remain in ignored outputs of the ROOT worktree:
 
 ```powershell
 node --import tsx scripts/compose_surface_map.ts `
@@ -45,6 +45,8 @@ node --import tsx scripts/compose_surface_map.ts `
   --out out/surface/map-composition/city419-blueprint
 ```
 
-La [preuve CITY](evidence/map-composition-city419.json) conserve le paquet de 419 réalisations natives et 81 refus, le parent retenu à 15,625 m et le sol legacy 1.5.3. Elle produit un plan de 400 m avec cadre blueprint, nord de grille, barre de 25 m, grille de 5 m et cinq entrées de légende. Le paquet n’archive aucun nom à l’emplacement prévu : zéro toponyme et zéro POI sont ajoutés. Le SHA du raster embarqué est exactement `c69ecb23fc11944e7553908834b1fa934634869b9ef121ce8068e909fb0d2452`. Le PNG composé est `75621009d8f089f98e7949f152ea2af9cff72b00dfbf4d0a6c32263aa98fbb26`.
+The [CITY evidence](evidence/map-composition-city419.json) retains the packet of 419 native realizations and 81 rejections, the retained 15.625 m parent and legacy 1.5.3 ground. It produces a 400 m plan with a blueprint frame, grid north, 25 m scale bar, 5 m grid and five legend entries. The packet archives no names in the expected location: zero place names and zero POIs are added. The embedded raster SHA is exactly `c69ecb23fc11944e7553908834b1fa934634869b9ef121ce8068e909fb0d2452`. The composed PNG SHA is `75621009d8f089f98e7949f152ea2af9cff72b00dfbf4d0a6c32263aa98fbb26`.
 
-Neuf palettes de carte sont partagées (`styles.ts`), distinctes des quinze terrain styles. Les tests exercent les neuf surcouches ; ils ne qualifient pas quinze réalisations natives finales. Changer la palette du cadre ne repeint pas le raster. Les pinceaux SVG, hachures de relief et noms absents ne sont pas inventés. Les polices utilisent les piles système existantes et ne sont pas embarquées : aucune identité PNG entre machines n’est promise. Cette preuve est une composition CPU sur une capture retenue, sans nouveau rendu GPU, génération neuronale, acceptation artistique globale ou promesse de FPS.
+Nine map palettes are shared (`styles.ts`), distinct from the fifteen terrain styles. Tests exercise all nine overlays; they do not qualify fifteen final native realizations. Changing the frame palette does not repaint the raster. Missing SVG brushes, relief hatching and names are not invented. Fonts use existing system stacks and are not embedded, so identical PNGs across machines are not promised. This evidence is a CPU composition over a retained capture, without new GPU rendering, neural generation, overall artistic acceptance or an FPS claim.
+
+[Original French version](MAP_COMPOSITION_FR.md).

@@ -58,6 +58,7 @@ import { createMarks } from './marks';
 import { surprisePatch } from './randomMap';
 import { DebugGeneration, debugConfigurationKey, type DebugStage } from '../gen/debugPipeline';
 import { initDeveloper, type DeveloperControls } from './developer';
+import { mainMessage } from './mainLocale';
 let developer: DeveloperControls | null = null;
 let debugRunStage: DebugStage | undefined;
 let mainDebug: DebugGeneration | null = null;
@@ -160,6 +161,7 @@ fillSelect(styleEl, STYLE_LIST.map((s) => [s.id, s.label] as [string, string]), 
 // Show caps only for cultures without population-driven urban growth.
 fillSelect(cultureEl, CULTURE_LIST.map((c) => [c.id, `${c.label}${!c.urbanGrowth && c.scale && c.scale.max !== 'megacity' ? ` (up to ${c.scale.max})` : ''}${c.fantasy ? ' (fantasy)' : ''}`] as [string, string]), opts.culture);
 fillSelect(languageEl, [['auto', 'Auto (from plan)'], ...NAME_FAMILIES.map((f) => [f, f[0].toUpperCase() + f.slice(1)] as [string, string])], opts.language ?? 'auto');
+document.dispatchEvent(new Event('magna-main-options-ready'));
 
 const seedControl = {
   el: seedEl, live: true,
@@ -278,14 +280,14 @@ hmFile.addEventListener('change', async () => {
   const f = hmFile.files?.[0];
   if (!f) return;
   try {
-    statusEl.textContent = 'Reading heightmap...';
+    statusEl.textContent = mainMessage('reading');
     importedMem = await readHeightmap(f);
     missingCustom = false;
     heightDraftId++;
     draft = { ...settlUI.capture(registry.readAll(settlUI.editorOptions(draft)), draft), importedHeight: importedMem };
     updateHeightmapUI(); markDraft();
   } catch (e) {
-    statusEl.textContent = 'Could not read the image: ' + (e as Error).message;
+    statusEl.textContent = mainMessage('imageError') + (e as Error).message;
   }
   hmFile.value = '';
 });
@@ -300,9 +302,11 @@ function updateHeightmapUI(): void {
   hmClear.hidden = !custom;
   reliefEl.disabled = custom; coastEl.disabled = custom;
   hmInfo.textContent = custom ? `${draft.importedHeight!.name ?? 'image'} (${draft.importedHeight!.w} x ${draft.importedHeight!.h} px)` : '';
-  $('shareState').innerHTML = custom
-    ? '<span class="chip" id="customChip">custom heightmap (not included in the link)</span>'
-    : missingCustom ? '<span class="chip warn" id="customChip">this link used a custom heightmap: import it again to reproduce the map</span>' : '';
+  const shareState = $('shareState'); shareState.replaceChildren();
+  if (custom || missingCustom) {
+    const chip = document.createElement('span'); chip.className = custom ? 'chip' : 'chip warn'; chip.id = 'customChip';
+    chip.textContent = mainMessage(custom ? 'customHeight' : 'missingHeight'); shareState.append(chip);
+  }
 }
 
 // ---------- generation: workers + OffscreenCanvas when possible, else the original main-thread path ----------
@@ -386,15 +390,26 @@ function show(world: World, stats: Record<string, number | string>, ms: number):
   setBusy(true, 'drawing');
 }
 
+let latestStats: { stats: Record<string, number | string>; ms: number } | undefined;
+let lastStatsText = '';
+function renderStatsText(stats: Record<string, number | string>, ms: number): void {
+  genTimeEl.textContent = `${mainMessage('generated')} ${(ms / 1000).toFixed(2)} s`;
+  const seaPct = Math.round(Number(stats.seaFraction ?? 0) * 100);
+  statusEl.textContent = `${mainMessage('terrain')} ${stats['ms.terrain']} ms, ${mainMessage('urban')} ${stats['ms.urban'] ?? 0} ms - ${stats.rivers} ${mainMessage('rivers')}, ${stats.lakes} ${mainMessage('lakes')}, ${mainMessage('sea')} ${seaPct}% - ${stats.roads ?? 0} ${mainMessage('roads')}, ${stats.bridges ?? 0} ${mainMessage('bridges')} - ${stats['urban.archetype'] ?? ''} ${mainMessage('population')} ${stats['urban.pop'] ?? 0}: ${stats['urban.blocks'] ?? 0} ${mainMessage('blocks')}, ${stats['urban.buildings'] ?? 0} ${mainMessage('buildings')}`
+    + (Number(stats['settlements'] ?? 0) > 1 ? ` - ${stats['settlements']} ${mainMessage('settlements')} (${stats['ms.settlements'] ?? 0} ms)` : '')
+    + (stats['urban.mega'] ? ` - ${mainMessage('megaPlan')}: ${stats['urban.quarters']} ${mainMessage('quarters')}, ${stats['urban.rings']} ${mainMessage('rings')}, ${stats['urban.nuclei']} ${mainMessage('nuclei')} (${mainMessage('zoomDetail')})` : '');
+  if (typeof stats['developer.stage'] === 'number') genTimeEl.textContent = `${mainMessage('developer')} ${stats['developer.stage']}/4 · ${(ms / 1000).toFixed(2)} s`;
+  lastStatsText = statusEl.textContent ?? '';
+}
+window.addEventListener('magna-locale-change', () => {
+  if (latestStats && !busyEl.classList.contains('on') && statusEl.textContent === lastStatsText) renderStatsText(latestStats.stats, latestStats.ms);
+  feedbackEl.textContent = mainMessage(feedbackEl.classList.contains('dirty') ? 'unapplied' : 'changesApply');
+  if (feedbackEl.classList.contains('dirty')) $('draftState').textContent = mainMessage('draft');
+});
 function showStats(stats: Record<string, number | string>, ms: number): void {
   const town = stats['names.town'];
   document.title = town ? `${town} - Magna Urbis` : 'Magna Urbis';
-  genTimeEl.textContent = `Generated in ${(ms / 1000).toFixed(2)} s`;
-  const seaPct = Math.round(Number(stats.seaFraction ?? 0) * 100);
-  statusEl.textContent = `terrain ${stats['ms.terrain']} ms, urban ${stats['ms.urban'] ?? 0} ms - ${stats.rivers} rivers, ${stats.lakes} lakes, sea ${seaPct}% - ${stats.roads ?? 0} roads, ${stats.bridges ?? 0} bridges - ${stats['urban.archetype'] ?? ''} pop ${stats['urban.pop'] ?? 0}: ${stats['urban.blocks'] ?? 0} blocks, ${stats['urban.buildings'] ?? 0} buildings`
-    + (Number(stats['settlements'] ?? 0) > 1 ? ` - ${stats['settlements']} settlements (${stats['ms.settlements'] ?? 0} ms)` : '')
-    + (stats['urban.mega'] ? ` - megacity plan: ${stats['urban.quarters']} quarters in ${stats['urban.rings']} rings, ${stats['urban.nuclei']} nuclei (zoom in to detail the quarters)` : '');
-  if (typeof stats['developer.stage'] === 'number') genTimeEl.textContent = `Developer · stage ${stats['developer.stage']}/4 · ${(ms / 1000).toFixed(2)} s`;
+  latestStats = { stats, ms }; renderStatsText(stats, ms);
   ($('exportSvgFull') as HTMLButtonElement).hidden = !stats['urban.mega'];
   showSettlementWarnings(stats);
   // generated names and positions are now known: placeholders and markers follow the displayed map
@@ -435,7 +450,7 @@ function setBusy(on: boolean, stage = ''): void {
   setLoad(on, stage);
   busyEl.classList.toggle('on', on);
   progressEl.classList.toggle('on', on || exporting);
-  if (on) { busyEl.textContent = stage ? `generating: ${stage}...` : 'generating...'; genTimeEl.textContent = stage ? `Generating: ${stage}...` : 'Generating...'; }
+  if (on) { const text = stage ? `${mainMessage('generating')}: ${mainMessage(stage)}...` : `${mainMessage('generating')}...`; busyEl.textContent = text; genTimeEl.textContent = text; }
 }
 
 /** The view of an opened link: set after the first content (the map size is then known); later changes are the user's. */
@@ -467,12 +482,12 @@ const backendEvents: BackendEvents = {
   },
   onError(id, error) {
     if (id !== reqId) return;
-    setBusy(false); developer?.failed(); genTimeEl.textContent = 'Generation failed'; statusEl.textContent = 'Error: ' + error.split('\n')[0]; console.error(error);
+    setBusy(false); developer?.failed(); genTimeEl.textContent = mainMessage('generationFailed'); statusEl.textContent = mainMessage('error') + error.split('\n')[0]; console.error(error);
   },
   onRenderError(id, error) {
     if (id !== reqId) return;
     renderFailedGen = id;
-    setBusy(false); developer?.failed(); genTimeEl.textContent = 'Rendering failed'; statusEl.textContent = 'Error: ' + error.split('\n')[0];
+    setBusy(false); developer?.failed(); genTimeEl.textContent = mainMessage('renderingFailed'); statusEl.textContent = mainMessage('error') + error.split('\n')[0];
   },
   onContent(c) {
     if (!handoff.acceptsContent(c.gen)) return;
@@ -516,7 +531,7 @@ const backendEvents: BackendEvents = {
     maybeDetail(f.view);
   },
   onFatal(msg) {
-    setBusy(false); genTimeEl.textContent = 'Renderer stopped'; statusEl.textContent = 'A worker failed (' + msg + '): reload the page, or add ?render=main to the address.';
+    setBusy(false); genTimeEl.textContent = mainMessage('rendererStopped'); statusEl.textContent = `${mainMessage('workerFailed')} (${msg}). ${mainMessage('workerHelp')}`;
   },
 };
 
@@ -538,7 +553,7 @@ function spawnWorker(): void {
     if (r.detail) { applyDetail(r.detail.index, r.detail.urban, r.detail.bridges); return; }
     if (r.quarters) { applyQuarters(r.quarters.layers, r.quarters.drop); megaProgress(r.quarters.done, r.quarters.queued, r.quarters.total, r.quarters.failed); return; }
     workerBusy = false;
-    if (r.error) { setBusy(false); developer?.failed(); genTimeEl.textContent = 'Generation failed'; statusEl.textContent = 'Error: ' + r.error.split('\n')[0]; console.error(r.error); return; }
+    if (r.error) { setBusy(false); developer?.failed(); genTimeEl.textContent = mainMessage('generationFailed'); statusEl.textContent = mainMessage('error') + r.error.split('\n')[0]; console.error(r.error); return; }
     show(r.world!, r.stats!, r.ms!);
   };
   // e.g. blob workers are refused on file:// - fall back to generating on the main thread
@@ -584,7 +599,7 @@ function run(debugStage?: DebugStage): void {
         const world = debugStage === undefined ? generate(opts, undefined, { cache: mainCache }) : mainDebug!.advance(debugStage, undefined, opts);
         show(world, world.stats, Math.round(performance.now() - genStart));
       } catch (err) {
-        setBusy(false); developer?.failed(); statusEl.textContent = 'Error: ' + String((err as Error).message);
+        setBusy(false); developer?.failed(); statusEl.textContent = mainMessage('error') + String((err as Error).message);
       }
     }, 10);
   }
@@ -599,7 +614,7 @@ function schedule(): void {
 function commit(mode: 'push' | 'replace' | 'none', displayOnly = false): void {
   if (!displayOnly) {
     pendingSettings = false; menuBtn.classList.remove('dirty');
-    feedbackEl.textContent = 'Changes apply when you generate.'; feedbackEl.classList.remove('dirty');
+    feedbackEl.textContent = mainMessage('changesApply'); feedbackEl.classList.remove('dirty');
     draft = structuredClone(opts);
     settlUI.load(draft);
     registry.writeAll(settlUI.editorOptions(draft));
@@ -621,8 +636,8 @@ function commit(mode: 'push' | 'replace' | 'none', displayOnly = false): void {
 function markDraft(): void {
   developer?.invalidate();
   pendingSettings = true; menuBtn.classList.add('dirty');
-  feedbackEl.textContent = 'Unapplied changes'; feedbackEl.classList.add('dirty');
-  $('draftState').textContent = 'Unapplied changes in Customize';
+  feedbackEl.textContent = mainMessage('unapplied'); feedbackEl.classList.add('dirty');
+  $('draftState').textContent = mainMessage('draft');
   refreshMarks();
 }
 function changeEditor(change: (o: Options) => Options): void {
@@ -645,7 +660,7 @@ registry.onChange((control) => {
 });
 function applyGeneration(environment: boolean, keepOpen = false): boolean {
   if (!registry.controls.every((control) => Array.from(control.el.matches('input') ? [control.el] : control.el.querySelectorAll('input')).every((input) => !(input instanceof HTMLInputElement) || input.checkValidity()))) {
-    $('draftState').textContent = 'Check the highlighted values before generating.';
+    $('draftState').textContent = mainMessage('invalid');
     for (const input of Array.from(document.querySelectorAll<HTMLInputElement>('#panel input, #layoutFlyout input'))) if (!input.checkValidity()) {
       configuration.open(input.closest('[role=tabpanel]')?.id);
       if (input.closest('#layoutFlyout')) layoutFlyout.open();
@@ -655,7 +670,7 @@ function applyGeneration(environment: boolean, keepOpen = false): boolean {
   }
   const x = $<HTMLInputElement>('centerX'), y = $<HTMLInputElement>('centerY');
   if (!!x.value !== !!y.value) {
-    $('draftState').textContent = 'Enter both position coordinates, or clear both for automatic placement.';
+    $('draftState').textContent = mainMessage('coordinates');
     configuration.open('settlementsPane'); (x.value ? y : x).focus(); return false;
   }
   draft = settlUI.capture(registry.readAll(settlUI.editorOptions(draft)), draft);
@@ -746,15 +761,15 @@ async function copyText(text: string): Promise<boolean> {
   return ok;
 }
 function wireCopy(btn: HTMLButtonElement, text: () => string, done: string): void {
-  const label = btn.textContent;
   btn.addEventListener('click', async () => {
+    const label = btn.textContent;
     const ok = await copyText(text());
-    btn.textContent = ok ? done : 'Copy failed';
+    btn.textContent = ok ? mainMessage(done) : mainMessage('copyFailed');
     window.setTimeout(() => { btn.textContent = label; }, 1600);
   });
 }
-wireCopy($<HTMLButtonElement>('copyLink'), () => location.origin + location.pathname + '?' + curQuery(), 'Link copied');
-wireCopy($<HTMLButtonElement>('copyId'), () => mapId(opts), 'ID copied');
+wireCopy($<HTMLButtonElement>('copyLink'), () => location.origin + location.pathname + '?' + curQuery(), 'linkCopied');
+wireCopy($<HTMLButtonElement>('copyId'), () => mapId(opts), 'idCopied');
 /** The one reusable identifier of the applied map (settings + seed), shown in the corner and the share menu. */
 function showMapId(): void {
   const id = mapId(opts);
@@ -764,7 +779,7 @@ function showMapId(): void {
 $('generationIdentity').addEventListener('click', async () => {
   const el = $('generationIdentity');
   const ok = await copyText(mapId(opts));
-  el.textContent = ok ? 'ID copied' : 'Copy failed';
+  el.textContent = ok ? mainMessage('idCopied') : mainMessage('copyFailed');
   window.setTimeout(showMapId, 1200);
 });
 /** Open a pasted ID (or a whole link, or a legacy query): the page reloads on it, exactly like a shared link. */
@@ -773,10 +788,10 @@ $('openIdForm').addEventListener('submit', (e) => {
   const raw = $<HTMLInputElement>('openIdInput').value.trim();
   const query = raw.includes('?') ? raw.slice(raw.indexOf('?')) : /^[a-z]+=/.test(raw) ? '?' + raw : '?id=' + encodeURIComponent(raw);
   const options = raw ? fromQuery(query) : null;
-  if (!options || !expandMapQuery(query).get('seed')) { $('openIdState').textContent = 'This is not a Magna Urbis ID or link.'; return; }
+  if (!options || !expandMapQuery(query).get('seed')) { $('openIdState').textContent = mainMessage('invalidId'); return; }
   location.search = query;
 });
-wireCopy($<HTMLButtonElement>('copyBug'), () => bugReport(opts, pinsUI.pins, viewer.getView(), location.origin + location.pathname, map.clientWidth, paintedTextures ? appearanceQuery(fullQuery(opts, pinsUI.pins, viewer.getView()), true) : undefined), 'Report copied');
+wireCopy($<HTMLButtonElement>('copyBug'), () => bugReport(opts, pinsUI.pins, viewer.getView(), location.origin + location.pathname, map.clientWidth, paintedTextures ? appearanceQuery(fullQuery(opts, pinsUI.pins, viewer.getView()), true) : undefined), 'reportCopied');
 
 // ---------- viewer (canvas, LOD) ----------
 // CANVAS-VIEWER (begin viewer)
@@ -845,8 +860,8 @@ $('coordCopy').addEventListener('click', async (e) => {
   if (!p) return;
   const b = e.currentTarget as HTMLButtonElement;
   const ok = await copyText(`${p[0].toFixed(1)},${p[1].toFixed(1)}`);
-  b.textContent = ok ? 'Copied' : 'Failed';
-  window.setTimeout(() => { b.textContent = 'Copy'; }, 1200);
+  b.textContent = ok ? mainMessage('copied') : mainMessage('failed');
+  window.setTimeout(() => { b.textContent = mainMessage('copy'); }, 1200);
 });
 $('coords').addEventListener('pointerdown', (e) => e.stopPropagation());
 $('coords').addEventListener('pointerup', (e) => e.stopPropagation());
@@ -1008,9 +1023,9 @@ const selectedExportLayers = createExportLayerControls($('exportLayers'));
 async function exportFile(name: string, data: Blob | string, mime: string): Promise<void> {
   try {
     const r = await saveFile(name, data, mime);
-    if (r === 'saved' || r === 'fallback') statusEl.textContent = `Exported ${name}`;
+    if (r === 'saved' || r === 'fallback') statusEl.textContent = `${mainMessage('exported')} ${name}`;
   } catch (e) {
-    statusEl.textContent = 'Export failed: ' + (e as Error).message;
+    statusEl.textContent = mainMessage('exportFailed') + (e as Error).message;
   }
 }
 function captureExport(): ExportSnapshot {
@@ -1069,7 +1084,7 @@ async function withProgress(btn: HTMLButtonElement, label: string, job: (snapsho
   exporting = true; buttons.forEach((b) => { b.disabled = true; }); btn.textContent = label;
   progressEl.classList.add('on'); statusEl.textContent = label.replace(/\.\.\.$/, '') + ' in the background...';
   const progress = (message: string): void => { btn.textContent = message; if (!busyEl.classList.contains('on')) statusEl.textContent = message; };
-  try { await job(captureExport(), progress); } catch (e) { statusEl.textContent = 'Export failed: ' + (e as Error).message; } finally {
+  try { await job(captureExport(), progress); } catch (e) { statusEl.textContent = mainMessage('exportFailed') + (e as Error).message; } finally {
     exporting = false; buttons.forEach((b, i) => { b.disabled = disabled[i]; }); btn.textContent = text;
     if (!busyEl.classList.contains('on')) progressEl.classList.remove('on');
   }

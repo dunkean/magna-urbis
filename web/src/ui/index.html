@@ -316,7 +316,7 @@ y  –</span><button id="coordCopy" type="button" tabindex="-1">Copy</button></d
   </main>
 
   <aside id="panel" class="glass" aria-labelledby="settingsTitle">
-    <div class="drawer-head"><h2 id="settingsTitle">Customize</h2><button id="closeSettings" type="button" class="secondary" aria-label="Close customize panel" title="Close (Esc)">&times;</button></div>
+    <div class="drawer-head"><h2 id="settingsTitle">Customize</h2><select id="main-language" aria-label="Language"><option value="fr">Français</option><option value="en">English</option><option value="zh">简体中文</option><option value="es">Español</option><option value="pt">Português</option></select><button id="closeSettings" type="button" class="secondary" aria-label="Close customize panel" title="Close (Esc)">&times;</button></div>
     <div class="settings-tabs" role="tablist" aria-label="Map settings">
       <button id="environmentTab" type="button" role="tab" data-tab="environmentPane" aria-controls="environmentPane" aria-selected="false" tabindex="-1">World</button>
       <button id="settlementsTab" type="button" role="tab" data-tab="settlementsPane" aria-controls="settlementsPane" aria-selected="true">Settlements</button>
@@ -399,6 +399,7 @@ y  –</span><button id="coordCopy" type="button" tabindex="-1">Copy</button></d
     <div id="mapInfoContent"></div>
   </dialog>
 </div>
+<script type="module" src="./mainLocaleEntry.ts"></script>
 <script type="module" src="./main.ts"></script>
 </body>
 </html>

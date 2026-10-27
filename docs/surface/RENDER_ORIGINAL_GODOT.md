@@ -1,51 +1,26 @@
-# Render original : fenêtre Godot 2D
+# Original renderer: Godot 2D window
 
-Ce projet isolé affiche la sortie du renderer `RenderOriginalRD`. Il ne charge
-ni Terrain3D, ni atlas/PBR, ni arbre, ni pipeline SurfaceWorld 3D. Les calculs du
-Render original et ses quatre pipelines appartiennent au renderer ; `main.gd`
-ne fait que charger la scène exportée, afficher sa texture et déplacer la vue.
-La texture plein écran est retournée verticalement (`flip_v=true`) pour conserver
-la convention du FBO WebGL original ; le filtrage d'affichage est nearest.
+This isolated project displays the output of `RenderOriginalRD`. It loads no Terrain3D, atlas/PBR, trees or SurfaceWorld 3D pipeline. The original renderer's calculations and four pipelines belong to the renderer; `main.gd` only loads the exported scene, displays its texture and moves the view. The full-screen texture is vertically flipped (`flip_v=true`) to preserve the original WebGL FBO convention; display filtering is nearest-neighbor.
 
 ```powershell
-.\Test-Render.ps1 -Scene 'CHEMIN/fixture.json' -Check
-.\Test-Render.ps1 -Scene 'CHEMIN/fixture.json'
-.\Test-Render.ps1 -Scene 'CHEMIN/fixture.json' -Width 160 -Focus '20000,20000'
-.\Test-Render.ps1 -Scene 'CHEMIN/fixture.json' -Resolution 1024x640 -Frames 4 -Capture './capture.png'
+.\Test-Render.ps1 -Scene 'PATH/fixture.json' -Check
+.\Test-Render.ps1 -Scene 'PATH/fixture.json'
+.\Test-Render.ps1 -Scene 'PATH/fixture.json' -Width 160 -Focus '20000,20000'
+.\Test-Render.ps1 -Scene 'PATH/fixture.json' -Resolution 1024x640 -Frames 4 -Capture './capture.png'
 ```
 
-`Test-Render.cmd` transmet les mêmes arguments à PowerShell local. Aucun fichier
-n'est installé ou téléchargé. `-Check` vérifie les entrées, shaders et références
-locales de la fixture sans lancer Godot/GPU. Il ne certifie pas à lui seul leur
-identité avec l'original : les hashes et comparaisons du renderer restent la
-preuve séparée. Le chemin de scène est explicite ; aucune scène de substitution
-n'est fabriquée lorsqu'il manque.
+`Test-Render.cmd` passes the same arguments to local PowerShell. No files are installed or downloaded. `-Check` validates the fixture's inputs, shaders and local references without starting Godot or the GPU. It does not independently certify identity with the original: renderer hashes and comparisons remain separate evidence. The scene path is explicit; no substitute scene is fabricated if it is missing.
 
-Défauts : largeur 40000 m, centre 20000/20000, fenêtre fixe 1280×800. `-Resolution`
-fixe la taille au démarrage ; aucune réallocation par redimensionnement de fenêtre
-n'est demandée dans cette première version. `-Width` et `-Focus` sont des paramètres
-de caméra, pas une génération ou un déplacement des données source.
+Defaults: 40000 m width, center 20000/20000, fixed 1280×800 window. `-Resolution` sets the startup size; this first version does not request reallocation on window resize. `-Width` and `-Focus` are camera parameters, not generation or movement of source data.
 
-- Glisser gauche : déplacement.
-- Molette : zoom autour du curseur.
-- H : masquer/afficher l'aide.
-- S : capture du renderer dans le dossier utilisateur Godot `captures`.
-- Échap : quitter et nettoyer les ressources du renderer.
+- Left drag: pan.
+- Wheel: zoom around the cursor.
+- H: show or hide help.
+- S: capture the renderer in the Godot user `captures` directory.
+- Escape: exit and clean up renderer resources.
 
-La caméra logique garde centre/largeur en scalaires float64. Elle transmet le
-coin supérieur gauche `[x,y]` et les mètres par pixel ; aucune position mondiale
-n'est convertie en `Vector2` float32 dans l'enveloppe. Une requête de vue est envoyée
-seulement lors d'une modification, sans worker ScenePrepare ni calcul de scène 3D.
-Le paramètre CLI historique `--z` porte la seconde coordonnée plane Y du Render.
+The logical camera retains center and width as float64 scalars. It sends the top-left corner `[x,y]` and meters per pixel; no world position is converted to float32 `Vector2` in the wrapper. A view request is sent only on change, without a ScenePrepare worker or 3D scene computation. The historical `--z` CLI parameter carries the second planar Y coordinate of Render.
 
-Contrat requis : `configure(scene_path, size)->bool`, `set_view(origin, mpp)`,
-`output_texture`, `ready`, `failed`, `stats()`, `capture_png(path)` asynchrone et
-`cleanup()`. Une configuration/erreur du renderer provoque un échec explicite.
-`--frames 0` laisse la fenêtre interactive ; un nombre positif termine après les
-frames prêtes. Avec capture, le défaut est deux frames prêtes. Le PNG vient du
-renderer sans HUD, distinct d'une capture écran de la fenêtre.
+The required contract is `configure(scene_path, size)->bool`, `set_view(origin, mpp)`, `output_texture`, `ready`, `failed`, `stats()`, asynchronous `capture_png(path)` and `cleanup()`. A renderer configuration or runtime error causes explicit failure. `--frames 0` leaves the window interactive; a positive number exits after that many ready frames. With capture, the default is two ready frames. The PNG comes from the renderer without HUD, separate from a window screenshot.
 
-Cette enveloppe n'ajoute aucun motif, recette, relief ou preuve de sol observé.
-La source reste celle de la fixture exportée. La parité visuelle GPU avec le
-Render web original doit être mesurée séparément ; la vérification de syntaxe ou
-le précontrôle du lanceur ne constituent pas une telle qualification.
+This wrapper adds no pattern, recipe, terrain or evidence of observed ground. The source remains the exported fixture. GPU visual parity with the original web Render must be measured separately; syntax validation or launcher preflight does not provide that qualification.

@@ -73,7 +73,7 @@ fn inspired_only_is_independent_of_late_and_explicit_pins_cannot_bypass_strict()
             recipe
                 .sources
                 .iter()
-                .any(|s| s.path == "docs/sources/javanese-domestic-architecture.md")
+                .any(|s| s.path == "docs/sources/javanese-domestic-architecture_FR.md")
         );
         assert!(
             recipe

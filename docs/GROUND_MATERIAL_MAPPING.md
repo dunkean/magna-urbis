@@ -1,80 +1,82 @@
-# Relations entre informations de carte et matériaux du sol visible
+# Relationships between map information and visible ground materials
 
-Étude de conception pour Test-Render, 24 octobre 2026.
+Design study for Test-Render, October 24, 2026.
 
-Le résultat recherché est une **carte de composition du sol naturel**, visible en survol lorsque l'on retire les plantes, les arbres et les constructions. Les informations déjà générées permettent d'en produire une première version : elles contraignent la roche exposée, la terre, les sables, les matériaux pierreux, les dépôts et les états humides. Elles ne déterminent pas une matière unique à chaque endroit. La sortie doit conserver plusieurs matériaux admissibles, leurs proportions et leur organisation locale.
+> English translation of the [French original](GROUND_MATERIAL_MAPPING_FR.md).
 
-La solution proposée est un petit compilateur de règles sur les champs existants. Il ne requiert ni nouveau moteur, ni simulation géologique, ni génération complète des paysages du catalogue. **Les règles fixent ce qui est possible ; un hasard spatial stable choisit parmi les possibilités restantes.** Les cas qui exigent une information absente reçoivent un scénario explicite ou restent désactivés. Un climat sec ne suffit pas à créer du sable, du sel ou du gypse ; une roche basaltique ne suffit pas à identifier une coulée de lave récente.
+The target is a **natural ground composition map**, visible from above when plants, trees, and buildings are removed. Already generated information supports a first version: it constrains exposed rock, earth, sand, stony material, deposits, and wet states. It does not determine one unique material everywhere. Output must retain several admissible materials, their proportions, and local organization.
 
-Le contrat ci-dessous concerne la décision de matière. Les textures PBR, leur synthèse fine et l'éclairage consommeront ensuite cette décision. Il ne constitue pas une nouvelle implémentation du rendu.
+The proposal is a small rule compiler over existing fields. It requires neither a new engine, geological simulation, nor complete generation of catalog landscapes. **Rules determine what is possible; stable spatial randomness chooses among remaining possibilities.** Cases needing missing information receive an explicit scenario or stay disabled. Dry climate alone cannot create sand, salt, or gypsum; basaltic rock alone cannot identify a recent lava flow.
 
-## 1 Sources et périmètre
+The contract below concerns material decisions. PBR textures, fine synthesis, and lighting consume those decisions later. It is not a new rendering implementation.
 
-### 1.1 Documents de référence
+## 1. Sources and scope
 
-Les trois documents définissent des rôles complémentaires :
+### 1.1. Reference documents
 
-| Document | Apport retenu |
+The documents have complementary roles:
+
+| Document | Contribution retained |
 | --- | --- |
-| [MATERIALS_REVIEW.md](MATERIALS_REVIEW.md), §1 à §5 | Catalogue des apparences, variantes, contextes et motifs à couvrir |
-| [RENDER_SURFACE_DESIGN.md](RENDER_SURFACE_DESIGN.md), §5 et §7 | Relations entre formes, substrat, dépôts, eau, sol et recettes ; distinction entre contexte et rendu |
-| [RENDER_REVIEW.md](RENDER_REVIEW.md), §3 et §7 à §9 | Composition probabiliste `{poids, orientation, échelle}`, agencement des composants, choix des techniques selon la matière et stabilité au zoom |
-| [SURFACE_RENDER_LAYERS.md](SURFACE_RENDER_LAYERS.md) | Séparation physique entre support, couvert bas et arbres ; litière distincte de l'humus |
+| [MATERIALS_REVIEW.md](MATERIALS_REVIEW.md), §§1–5 | Catalog of appearances, variants, contexts, and patterns to cover |
+| [RENDER_SURFACE_DESIGN.md](RENDER_SURFACE_DESIGN.md), §§5 and 7 | Relationships among forms, substrate, deposits, water, soil, and recipes; context/rendering separation |
+| [RENDER_REVIEW.md](RENDER_REVIEW.md), §§3 and 7–9 | Probabilistic `{weight, orientation, scale}` composition, component arrangement, material-specific techniques, and zoom stability |
+| [SURFACE_RENDER_LAYERS.md](SURFACE_RENDER_LAYERS.md) | Physical separation between support, low cover, and trees; litter distinct from humus |
 
-L'état des entrées est celui du [compilateur de Test-Render](../../magna-urbis-render-godot-original/godot-render/tools/surface_context.py) et de son [contrat de tuiles](../../magna-urbis-render-godot-original/docs/surface/TILE_VIEWER.md), dans le worktree `magna-urbis-render-godot-original`. Son schéma `ground.version=2` ne doit pas être confondu avec les contrats SurfaceWorld développés dans les autres worktrees.
+Input state is that of the [Test-Render compiler](../../magna-urbis-render-godot-original/godot-render/tools/surface_context.py) and its [tile contract](../../magna-urbis-render-godot-original/docs/surface/TILE_VIEWER.md) in worktree `magna-urbis-render-godot-original`. Its `ground.version=2` schema must not be confused with SurfaceWorld contracts developed in other worktrees.
 
-Les règles et valeurs proposées ici sont des règles de **synthèse d'apparence**, issues de l'organisation décrite dans ces documents. Elles ne constituent pas une classification pédologique ni un modèle de transport calibré. Aucune source extérieure supplémentaire n'est nécessaire à ce lot.
+Proposed rules and values are **appearance synthesis** rules derived from the organization in these documents. They are neither soil classification nor a calibrated transport model. No additional external source is required for this package.
 
-### 1.2 Ce que signifie retirer la végétation
+### 1.2. What removing vegetation means
 
-On retire l'occultation et le dessin des organismes vivants : couronnes, herbes, arbustes, mousses, lichens, algues et végétation aquatique. On conserve le support qui existe à leur emplacement. On ne transforme pas automatiquement une forêt en sable ni une prairie en roche ; la composition du support reste la même quand on masque le vivant.
+Remove occlusion and drawing of living organisms: crowns, grasses, shrubs, mosses, lichens, algae, and aquatic vegetation. Retain the support at their locations. A forest does not automatically become sand or a grassland rock; support composition stays the same when living matter is hidden.
 
-L'humus et la tourbe sont des matières du sol. La **litière morte mince** — feuilles, aiguilles, petites brindilles et laisses mortes — peut appartenir à l'apparence demandée, mais reste un étage séparé du support. La convention de cette étude est `includeDeadLitter=true` quand sa présence est connue ou déclarée ; `false` donne le support nu. Faute d'information de litière, on affiche le support sans inventer un tapis forestier à partir du seul climat. Les gros troncs, arbres morts dressés, animaux et objets associés restent hors périmètre.
+Humus and peat are soil materials. **Thin dead litter** — leaves, needles, small twigs, and dead wrack — may belong to the requested appearance but remains a layer separate from support. This study uses `includeDeadLitter=true` when its presence is known or declared; `false` yields bare support. Without litter information, display support without inventing a forest carpet from climate alone. Large logs, standing dead trees, animals, and associated objects remain out of scope.
 
-On retire aussi les couches artificielles de bâtiments, chaussées et pavages. Si le terrain a déjà été terrassé, le relief naturel antérieur ne se reconstruit pas à partir de cette opération de masquage : le support est alors une hypothèse sous l'aménagement, signalée comme telle.
+Also remove artificial building, road, and paving layers. If terrain was already graded, earlier natural relief cannot be reconstructed by masking: support beneath the improvement is then an explicitly identified assumption.
 
-### 1.3 Eau et solides à la surface
+### 1.3. Water and solids at the surface
 
-L'eau conserve son masque et son niveau. Une zone sous eau permanente ne devient pas du sol sec parce que la végétation est masquée. La sortie distingue :
+Water retains its mask and level. Permanently submerged areas do not become dry ground when vegetation is hidden. Output distinguishes:
 
-- **Sol émergé** : composition de support, dépôts et états de surface.
-- **Fond subaquatique** : composition distincte, seulement si le fond est qualifié ; sa visibilité dépend de profondeur et de transparence.
-- **Eau masquant le fond** : aucune couleur de sol ne remplace la surface liquide.
-- **Neige ou glace déclarée** : couche d'état ou support glacé selon le cas ; jamais une conséquence automatique de la température annuelle.
+- **Exposed ground:** support composition, deposits, and surface states.
+- **Underwater bed:** distinct composition only if the bed is qualified; visibility depends on depth and transparency.
+- **Water occluding the bed:** no ground color replaces the liquid surface.
+- **Declared snow or ice:** state layer or icy support depending on case; never an automatic consequence of annual temperature.
 
-Le catalogue contient aussi des phénomènes d'eau et des couverts vivants. L'annexe leur donne un statut explicite plutôt que de les rebaptiser matériaux de sol.
+The catalog also contains water phenomena and living cover. The appendix assigns them explicit status rather than renaming them ground materials.
 
-## 2 Ce que la carte doit contenir
+## 2. What the map must contain
 
-Une zone de sol est décrite par cinq éléments indépendants :
+A ground area is described by five independent elements:
 
-| Élément | Question | Exemple |
+| Element | Question | Example |
 | --- | --- | --- |
-| Matières | Qu'est-ce qui occupe la surface du support ? | 60 % gravier, 25 % sable, 15 % limon |
-| Provenance | D'où viennent ces matières ? | Roche locale, apports fluviaux granitiques, débris de paroi |
-| Agencement | Comment sont-elles distribuées ? | Bancs, amas, matrice entre pierres, poches dans les fractures |
-| État | Comment se présente cette surface maintenant ? | Sèche, humide, boueuse, encroûtée, gelée ou enneigée |
-| Variation | Quelles variantes compatibles sont présentes ? | Gravier fin ou grossier, galets arrondis, teinte minérale locale |
+| Materials | What occupies the support surface? | 60% gravel, 25% sand, 15% silt |
+| Provenance | Where do materials come from? | Local rock, granite fluvial inputs, cliff debris |
+| Arrangement | How are they distributed? | Bars, clusters, matrix between stones, fracture pockets |
+| State | How does the surface look now? | Dry, wet, muddy, crusted, frozen, or snow-covered |
+| Variation | Which compatible variants are present? | Fine or coarse gravel, rounded pebbles, local mineral tint |
 
-« Dune », « falaise », « delta », « moraine » ou « doline » ne sont pas des matériaux. Ce sont des formes et des contextes portant des matières. « Polygonal » est un motif qui peut appartenir à l'argile, au sel, à la roche ou au gel ; le motif ne révèle pas à lui seul sa cause. « Humide » est un état commun à de nombreuses matières.
+“Dune,” “cliff,” “delta,” “moraine,” and “doline” are not materials. They are forms and contexts carrying materials. “Polygonal” is a pattern that can belong to clay, salt, rock, or frost; pattern alone does not reveal its cause. “Wet” is a state shared by many materials.
 
-### 2.1 Fractions qui ne doivent pas être confondues
+### 2.1. Fractions that must not be confused
 
-`bedrockGranite..bedrockBasalt` décrivent le contexte lithologique synthétique. `sand+silt+clay=1` décrit la matrice minérale fine. La pierrosité décrit un potentiel de présence de fragments, pas encore une couverture de cailloux mesurée. Les fractions de matériaux visibles décrivent une **part de surface**. Ces nombres ne se substituent pas les uns aux autres.
+`bedrockGranite..bedrockBasalt` describe synthetic lithological context. `sand+silt+clay=1` describes the fine mineral matrix. Stoniness describes fragment-presence potential, not yet measured pebble coverage. Visible material fractions describe **surface area share**. These numbers do not replace one another.
 
-De même, `organic` enrichit la description de la matrice ; il ne donne pas directement la part de surface d'un tapis d'humus nu. Une couverture organique dominante doit être autorisée par l'exposition et la nature du support dans N1.
+Likewise, `organic` enriches matrix description; it does not directly give the surface share of a bare humus carpet. Dominant organic cover must be permitted by support exposure and nature in N1.
 
-Pour le support, on cherche `sum(surfaceAreaFraction)=1`. Les couches de litière et de neige ont leur propre couverture. Avec seulement ces deux couches, une composition visible possible est :
+For support, target `sum(surfaceAreaFraction)=1`. Litter and snow layers have their own coverage. With only these two layers, one possible visible composition is:
 
 ```text
-neige visible   = snowCover
-litière visible = (1 - snowCover) * litterCover
+visible snow   = snowCover
+visible litter = (1 - snowCover) * litterCover
 support i      = (1 - snowCover) * (1 - litterCover) * supportWeight[i]
 ```
 
-Cette somme vaut 1 dans le domaine émergé. Elle n'impose pas `sol + arbres + herbes = 1`. Le support existe sous les autres étages. Le cas de la glace est traité selon sa fonction : support glaciaire, couche sur sol ou eau gelée.
+This sums to 1 in the exposed domain. It does not impose `ground + trees + grass = 1`. Support exists beneath other layers. Ice is handled according to its function: glacial support, layer on ground, or frozen water.
 
-### 2.2 Sortie proposée
+### 2.2. Proposed output
 
 ```text
 VisibleGround
@@ -88,692 +90,699 @@ VisibleGround
   evidence: {inputCompleteness, providedOrDerivedOrSynthetic}
 ```
 
-Un matériau dominant peut être calculé pour la légende, mais il ne remplace pas les proportions qui pilotent le rendu. L'inspecteur doit pouvoir expliquer « gravier et sable d'origine fluviale, banc émergé, faible fraction de fines », y compris lorsque la roche sous-jacente est marneuse.
+A dominant material can be computed for the legend but does not replace proportions driving rendering. The inspector must explain “fluvial gravel and sand, exposed bar, low fines fraction,” including when underlying rock is marly.
 
-Chaque composant peut avoir son propre agencement : dalles orientées suivant les strates, galets suivant l'écoulement et rides dans les plages sableuses. Le statut « fourni, dérivé ou synthétique » est distinct de la complétude des entrées. Ni ce statut ni le `confidence` actuel ne sont une probabilité de justesse géologique.
+Each component may have its own arrangement: slabs oriented with strata, pebbles along flow, and ripples in sandy patches. “Provided, derived, or synthetic” status is distinct from input completeness. Neither status nor current `confidence` is a probability of geological correctness.
 
-## 3 Informations disponibles et portée réelle
+## 3. Available information and its actual scope
 
-Les grilles de Test-Render ont 1334² échantillons pour 40 km, soit environ 30 m. Les motifs plus fins seront une synthèse conditionnée ; interpoler cette grille ne crée pas de nouvelle observation du terrain.
+Test-Render grids have 1334² samples for 40 km, approximately 30 m. Finer patterns will be conditioned synthesis; interpolating the grid creates no new terrain observation.
 
-| Entrées actuelles | Utilisation pour les matériaux | Limite à conserver |
+| Current inputs | Material use | Limitation to retain |
 | --- | --- | --- |
-| `height.f32`, pente, exposition, courbures | Support, stabilité, exposition, accumulation relative | Le DEM ne nomme ni la matière ni l'histoire du paysage |
-| `geomorphon150/600/2000`, `tpi150/600/2000` | Crête, versant, creux, pied de pente ; intensité des préférences | Les classes ne doivent pas tracer des frontières matérielles nettes ; une dépression n'est pas nécessairement un lac, une doline ou une tourbière |
-| Cinq fractions de roche mère, `bedrockVariation` | Compatibilité des affleurements et des résidus ; variation des propriétés | Seulement granite, calcaire, grès, argilo-marneux et basalte ; aucune identification de gneiss, quartzite, sel, gypse, ponce ou cendres |
-| `hardness`, `weatherability`, `structureAzimuth` | Résistance relative, altération, direction de strates | Proxys synthétiques ; pas de pendage, de réseaux de fractures ni de minéralogie chromatique détaillée |
-| Receveurs, bassins, `contributingArea`, accumulation | Connexion au drainage, apports et contexte fluvial | L'accumulation pondérée par ruissellement n'est pas l'aire géométrique ; aucun débit instantané mesuré |
-| `hand`, référence et type de référence | Hauteur au drainage connecté | HAND est parfois indéfini ; ce n'est ni une cote de crue ni une durée d'inondation |
-| `distanceToWater`, `channel`, `sea`, `lake`, `lakeLevel`, `lakeKind` | Contraintes d'émergence, proximité des eaux, lacs ouverts ou fermés | Distance commune à toutes les eaux ; `channel` est un diagnostic de graphe, pas l'emprise exacte des rivières dessinées |
-| `alluvialPotential`, `colluvialPotential`, `aeolianPotential`, `coastalPotential`, `frostPotential` | Préférences de processus | Potentiels et non preuve de dépôts. L'alluvial actuel utilise la proximité de toute eau ; il ne prouve pas une connexion à un apport fluvial |
-| `upstreamGranite..upstreamBasalt`, `sedimentProvenance` | Provenance fluviale des matériaux remaniés | Le mélange est pondéré par un potentiel d'érosion. Le mélange utilisé latéralement vient de l'eau la plus proche ; il faut vérifier son lien hydraulique. Le transport gravitaire actuel ne transporte pas de composition lithologique |
-| `depositDepth`, `soilDepth`, `stoniness` | Préférences pour dépôt, matrice et support exposé | Épaisseurs de synthèse ; les deux profondeurs ne sont pas deux couches indépendantes à additionner. La pierrosité ne donne ni taille, ni forme, ni part de surface des fragments |
-| `sand`, `silt`, `clay` | Compatibilité des matrices fines, sable, terre argileuse ou limoneuse | Une fraction de sable n'est pas un stock meuble disponible ; pas de distribution des graviers, galets ou blocs |
-| `organic`, `moisture`, `drainage`, `storage`, `permeability` | Humus, capacité de rétention et potentiel de sol humide | Pas d'histoire d'engorgement, de nappe, de tourbe, de litière ni d'humidité instantanée observée |
-| Température, précipitations, aridité, vent régional à 70° | Préférences climatiques et directionnelles | Climat annuel et vent simplifié ; pas de saison complète, pluie récente, régime de vents ou historique de gel |
-| `soilMask`, `boundaryAffected`, `confidence` | Validité des données et confiance de la décision | `soilMask` exclut mer et lacs ; les valeurs archivées sous ces masques ne sont pas un fond subaquatique qualifié. Les bassins amont extérieurs sont inconnus |
+| `height.f32`, slope, aspect, curvatures | Support, stability, exposure, relative accumulation | DEM names neither material nor landscape history |
+| `geomorphon150/600/2000`, `tpi150/600/2000` | Ridge, slope, hollow, slope foot; preference strength | Classes must not draw hard material boundaries; a depression is not necessarily a lake, sinkhole, or peatland |
+| Five bedrock fractions, `bedrockVariation` | Outcrop/residue compatibility; property variation | Only granite, limestone, sandstone, clay-marl, and basalt; no gneiss, quartzite, salt, gypsum, pumice, or ash identification |
+| `hardness`, `weatherability`, `structureAzimuth` | Relative resistance, weathering, strata direction | Synthetic proxies; no dip, fracture networks, or detailed color mineralogy |
+| Receivers, basins, `contributingArea`, accumulation | Drainage connection, inputs, fluvial context | Runoff-weighted accumulation is not geometric area; no measured instantaneous discharge |
+| `hand`, reference and reference type | Height above connected drainage | HAND is sometimes undefined; neither flood elevation nor flood duration |
+| `distanceToWater`, `channel`, `sea`, `lake`, `lakeLevel`, `lakeKind` | Exposure constraints, water proximity, open or closed lakes | Distance combines all waters; `channel` is graph diagnostic, not exact footprint of drawn rivers |
+| `alluvialPotential`, `colluvialPotential`, `aeolianPotential`, `coastalPotential`, `frostPotential` | Process preferences | Potentials, not evidence of deposits. Current alluvial uses proximity to any water; it does not prove connection to fluvial supply |
+| `upstreamGranite..upstreamBasalt`, `sedimentProvenance` | Fluvial provenance of reworked material | Mixture weighted by erosion potential. Lateral mixture comes from nearest water; hydraulic connection must be checked. Current gravity transport carries no lithological composition |
+| `depositDepth`, `soilDepth`, `stoniness` | Preferences for deposit, matrix, and exposed support | Synthetic thicknesses; depths are not independent layers to add. Stoniness gives neither fragment size, shape, nor surface share |
+| `sand`, `silt`, `clay` | Compatibility of fine matrices, sand, clayey or silty earth | Sand fraction is not available loose stock; no gravel, pebble, or block distribution |
+| `organic`, `moisture`, `drainage`, `storage`, `permeability` | Humus, retention capacity, wet-soil potential | No history of waterlogging, water table, peat, litter, or observed instantaneous moisture |
+| Temperature, precipitation, aridity, regional wind at 70° | Climate and directional preferences | Annual climate and simplified wind; no complete seasons, recent rain, wind regime, or frost history |
+| `soilMask`, `boundaryAffected`, `confidence` | Data validity and decision confidence | `soilMask` excludes sea and lakes; values archived under masks are not a qualified underwater bed. External upstream basins are unknown |
 
-Le relief de fond reste `height.f32`. `surface.f32` relève les cellules lacustres au niveau d'eau pour l'affichage : il ne faut pas l'utiliser comme bathymétrie.
+Base terrain remains `height.f32`. `surface.f32` raises lake cells to water level for display: do not use it as bathymetry.
 
-## 4 Compléments minimaux et informations optionnelles
+## 4. Minimum additions and optional information
 
-### 4.1 Quatre blocs pour le sol courant
+### 4.1. Four blocks for ordinary ground
 
-Ces ajouts enrichissent le compilateur existant. Un indice relatif de disponibilité ou un état déclaré suffit pour cette étape ; il n'est pas nécessaire d'introduire des volumes transportés ou une météorologie simulée.
+These additions enrich the existing compiler. Relative availability indices or declared state suffice at this stage; transported volumes or simulated weather are unnecessary.
 
-| Code | Information à produire | Construction légère proposée | Ce qu'elle débloque et repli |
+| Code | Information to produce | Proposed lightweight construction | What it enables and fallback |
 | --- | --- | --- | --- |
-| N1 | Exposition du support et couverture de matrice : `exposedRock`, `matrixCover`, rugosité structurelle | Combiner profondeur effective de couverture, pente, courbure, altération et petites variations stables ; calibrer ensemble les valeurs, pas une soustraction aveugle de `soilDepth` et `depositDepth` | Roche massive, mosaïque roche-terre, sol mince. Si inconnu : mosaïque générique compatible et confiance réduite |
-| N2 | Matériaux meubles disponibles : sable, poussière/fines, graviers, galets, blocs ; tailles, arrondi et origine | Indices 0..1 conditionnés par roche altérable, source de versant et réseau ; conserver une provenance gravitaire ; autoriser un dépôt hérité déclaré. Arrondi conditionné par le mode de transport | Distingue terre sableuse et nappe de sable, gravier et éboulis. Si les gros éléments sont inconnus : pas de champ de blocs ; sol minéral avec petites inclusions seulement |
-| N3 | Eaux typées et zones de rive : distances rivière/lac/mer séparées, connexion au tronçon source, emprises mouillées et bancs émergés | Réutiliser les vecteurs et niveaux conservés ; rasteriser les emprises au pas utile ; garder les distances signées pour les détails proches | Sols de berge, bancs fluviaux, rives lacustres et côtes distincts. Sans banc identifié : rive générique, pas de croissant de gravier inventé |
-| N4 | État d'affichage déclaré : sec / moyen / humide, saison froide éventuelle et cycle humide-sec si utilisé | Un préréglage de carte et des corrections locales par les proxys actuels ; les coordonnées des motifs restent stables lorsque l'état change | Variantes sèche, humide et boueuse. En l'absence d'état : vue moyenne explicitement synthétique ; neige, glace et grandes fissures historiques restent désactivées |
+| N1 | Support exposure and matrix cover: `exposedRock`, `matrixCover`, structural roughness | Combine effective cover depth, slope, curvature, weathering, and small stable variations; calibrate together, not blindly subtracting `soilDepth` and `depositDepth` | Massive rock, rock–earth mosaic, thin soil. If unknown: compatible generic mosaic and reduced confidence |
+| N2 | Available loose materials: sand, dust/fines, gravel, pebbles, blocks; sizes, roundness, and origin | 0..1 indices conditioned by weatherable rock, slope source, and network; retain gravity provenance; permit declared inherited deposit. Roundness conditioned by transport mode | Distinguishes sandy earth from sand sheet, gravel from scree. If large elements unknown: no boulder field; mineral soil with small inclusions only |
+| N3 | Typed waters and bank areas: separate river/lake/sea distances, connection to source reach, wet footprints and exposed bars | Reuse retained vectors and levels; rasterize footprints at useful spacing; retain signed distances for near detail | Distinct bank soils, river bars, lakeshores, and coasts. Without identified bar: generic shore, no invented gravel crescent |
+| N4 | Declared display state: dry / medium / wet, possible cold season, and wet–dry cycle if used | Map preset and local corrections from current proxies; pattern coordinates remain stable when state changes | Dry, wet, and muddy variants. Without state: explicitly synthetic mean view; snow, ice, and large historical cracks remain disabled |
 
-N1 et N2 sont des champs synthétiques nouveaux. Une partie de N3 est dérivable des données déjà archivées. N4 peut d'abord être un paramètre de scène. Les motifs de fissures, l'arrangement des fragments et les limites de bancs peuvent être évalués à la demande ; une carte géante au centimètre n'est pas requise.
+N1 and N2 are new synthetic fields. Part of N3 can be derived from archived data. N4 can initially be a scene parameter. Crack patterns, fragment arrangement, and bar boundaries can be evaluated on demand; no giant centimeter-resolution map is required.
 
-### 4.2 Extensions qui débloquent seulement certaines variantes
+### 4.2. Extensions unlocking only certain variants
 
-| Code | Information optionnelle | Cas concernés | Valeur en l'absence de déclaration |
+| Code | Optional information | Relevant cases | Value absent declaration |
 | --- | --- | --- | --- |
-| O1 | Lithologies et caractères minéraux supplémentaires : feuilletage, quartzite, conglomérat, couleurs minérales, oxydes, carbonates secondaires, gypse, sels | Roches spéciales, sols rouges, croûtes carbonatées, gypse et sel | Inconnu ; la roche générique actuelle reste autorisée, pas les variantes chimiques spécifiques |
-| O2 | Dépôts hérités et âge relatif : loess, terrasses, till/moraine, paléochenal, pavement stable, niveau d'altération | Héritages fluviaux, éoliens, désertiques et glaciaires | Aucun héritage revendiqué ; utiliser le matériau courant compatible |
-| O3 | Durée d'engorgement, intermittence, nappe ou saturation persistante, potentiel tourbeux | Tourbe, hydromorphie durable, marais, lacs temporaires | Potentiel humide seulement ; ni tourbe épaisse ni mare permanente déduite de `moisture` |
-| O4 | Contexte littoral : apport sédimentaire, salinité, énergie eau/houle, marée, état du niveau marin | Vasières, estrans, plages triées, sebkhas, dépôts coquilliers | Côte générique rocheuse ou sédimentaire selon stock ; pas d'estran de marée nommé sans marée déclarée |
-| O5 | Unités volcaniques et hydrothermales déclarées : forme de lave, scories, cendres, ponce, tuf, silice, soufre | Volcanisme et dépôts géothermiques | Basalte générique ; pas de lave cordée, de ponce ou de soufre à partir du seul poids basaltique |
-| O6 | Régime froid et histoire : gel-dégel, pergélisol, couverture neigeuse, glace, héritage glaciaire | Neige, glace, motifs périglaciaires, moraines | Sol froid compatible et débris de gel potentiels ; pas de glacier ni de pingo automatique |
-| O7 | Source biologique morte et perturbations : litière, laisses, coquilles, corail mort, guano, incendie | Litière, débris naturels, dépôts biogéniques, cendres et charbon | Pas de tapis ou de dépôt spécifique inventé ; `organic` peut encore modifier le sol |
-| O8 | Fond subaquatique qualifié, profondeur, transparence et charge en suspension | Fonds sableux, rocheux ou vaseux visibles | Eau masquant le fond ; ne pas utiliser les valeurs de sol hors `soilMask` |
-| O9 | Forme ou événement identifié et géométrie compatible : dune, cône, banc, glissement, karst, récif, cratère | Types du catalogue qui sont des paysages et non des matières | Matériau parent possible ; forme nommée non produite. Un simple drapeau ne crée pas la géométrie correspondante |
-| O10 | Propriétés de surface spécifiques : retrait-gonflement, cimentation, réseau de fractures, pendage, tri et vernis | Grandes fissures, dalles, schiste feuilleté, pavement et patines | Motif discret générique ; les variantes structurées fortes restent conditionnelles |
+| O1 | Additional lithologies and mineral characteristics: foliation, quartzite, conglomerate, mineral colors, oxides, secondary carbonates, gypsum, salts | Special rocks, red soils, carbonate crusts, gypsum and salt | Unknown; current generic rock remains allowed, not specific chemical variants |
+| O2 | Inherited deposits and relative age: loess, terraces, till/moraine, paleochannel, stable pavement, weathering stage | Fluvial, aeolian, desert, and glacial legacies | No inherited history claimed; use compatible current material |
+| O3 | Waterlogging duration, intermittence, water table or persistent saturation, peat potential | Peat, persistent hydromorphy, marshes, temporary lakes | Wet potential only; no thick peat or permanent pond inferred from `moisture` |
+| O4 | Coastal context: sediment supply, salinity, water/wave energy, tides, sea-level state | Mudflats, tidal flats, sorted beaches, sebkhas, shell deposits | Generic rocky or sedimentary coast according to stock; no named tidal flat without declared tide |
+| O5 | Declared volcanic and hydrothermal units: lava form, scoria, ash, pumice, tuff, silica, sulfur | Volcanism and geothermal deposits | Generic basalt; no ropy lava, pumice, or sulfur from basalt weight alone |
+| O6 | Cold regime and history: freeze–thaw, permafrost, snow cover, ice, glacial legacy | Snow, ice, periglacial patterns, moraines | Compatible cold ground and potential frost debris; no automatic glacier or pingo |
+| O7 | Dead biological source and disturbances: litter, wrack, shells, dead coral, guano, fire | Litter, natural debris, biogenic deposits, ash and charcoal | No invented specific carpet or deposit; `organic` can still modify soil |
+| O8 | Qualified underwater bed, depth, transparency, suspended load | Visible sandy, rocky, or muddy bottoms | Water occludes bed; do not use soil values outside `soilMask` |
+| O9 | Identified form/event and compatible geometry: dune, cone, bar, landslide, karst, reef, crater | Catalog types that are landscapes, not materials | Parent material possible; named form not produced. A flag alone does not create corresponding geometry |
+| O10 | Specific surface properties: shrink–swell, cementation, fracture network, dip, sorting, varnish | Large cracks, slabs, foliated schist, pavements and patinas | Generic discreet pattern; strongly structured variants remain conditional |
 
-Ces informations peuvent être des masques, attributs de régions ou scénarios tirés une fois. Elles ne demandent pas nécessairement de nouvelles simulations. Leur absence doit rester visible dans l'explication de la recette.
+These inputs can be masks, region attributes, or once-drawn scenarios. They do not necessarily require new simulations. Their absence must remain visible in the recipe explanation.
 
-## 5 Règles communes de décision
+## 5. Common decision rules
 
-### 5.1 Ordre de résolution
+### 5.1. Resolution order
 
-1. **Fixer le domaine** à partir des autorités d'eau et de la validité des données. Retirer l'occultation du vivant et des constructions sans modifier les entrées du support.
-2. **Déterminer le support exposé et les matières disponibles**, avec N1 et N2. La roche mère contraint l'origine, mais un dépôt peut la masquer complètement.
-3. **Combiner les processus**, en conservant leurs potentiels : résiduel, versant, fluvial, éolien, littoral, hérité. Ne pas passer par le seul `process` dominant. Vérifier source, stock et connexion avant de placer un dépôt nommé.
-4. **Établir les recettes admissibles** avec les conditions de la section 6. Une condition nécessaire absente n'est pas réparée par le hasard.
-5. **Calculer des proportions continues dans les budgets de couverture**, puis une organisation : matrice, plaques, amas, bancs, poches ou fragments orientés.
-6. **Appliquer l'état et les couvertures mortes autorisées**. L'humidité peut assombrir une matière ou transformer une matrice fine en boue sans changer sa provenance.
-7. **Produire la carte et son explication**, puis laisser le renderer réaliser les grains et motifs résolus à son échelle.
+1. **Set the domain** from water authorities and data validity. Remove living/building occlusion without modifying support inputs.
+2. **Determine exposed support and available materials** using N1 and N2. Bedrock constrains origin, but a deposit may completely cover it.
+3. **Combine processes**, retaining potentials: residual, slope, fluvial, aeolian, coastal, inherited. Do not rely only on dominant `process`. Check source, stock, and connection before placing a named deposit.
+4. **Establish admissible recipes** using section 6 conditions. Randomness cannot repair an absent necessary condition.
+5. **Compute continuous proportions within coverage budgets**, then an organization: matrix, slabs, clusters, bars, pockets, or oriented fragments.
+6. **Apply state and permitted dead cover**. Moisture can darken a material or turn fine matrix into mud without changing provenance.
+7. **Produce map and explanation**, then let the renderer realize grains and patterns resolved at its scale.
 
-### 5.2 Nécessité et préférence
+### 5.2. Necessity and preference
 
-N1 et la couverture des fragments issue de N2 fixent d'abord, ou bornent si elles sont incertaines, les parts **roche exposée, fragments meubles et matrice**. La matrice peut être minérale ou organique. Ces parts forment le budget du support visible. Les préférences choisissent ensuite les matières à l'intérieur de chaque part : le hasard ne peut pas effacer une exposition rocheuse connue pour installer du sable sans dépôt.
+N1 and fragment coverage from N2 first set, or bound if uncertain, **exposed rock, loose fragment, and matrix** shares. Matrix may be mineral or organic. These shares form the visible-support budget. Preferences then choose materials within each share: randomness cannot erase known rock exposure to install sand without a deposit.
 
-Une règle sépare trois niveaux : une éligibilité forte, un stock disponible et des préférences graduelles. Pour un groupe de support `g`, une expression de départ est :
+A rule separates strong eligibility, available stock, and gradual preferences. For support group `g`, a starting expression is:
 
 ```text
 score[m in g] = eligible[m] * availability[m] * suitability[m]
-score[m] *= stableVariation(m, worldPosition)   # positif, par exemple 0,85..1,15
+score[m] *= stableVariation(m, worldPosition)   # positive, e.g. 0.85..1.15
 supportWeight[m] = cover[g] * score[m] / sum(score[k in g])
 ```
 
-`eligible` désigne un fait de domaine ou de scénario : une source de gypse, un dépôt glaciaire déclaré, un fond qualifié, etc. `availability` interdit de fabriquer une nappe de sable ou de blocs sans matière disponible. `suitability` combine les préférences de pente, position, eau et climat. Ces facteurs sont des scores de synthèse, **pas des probabilités physiques indépendantes** : pente, TPI et géomorphons sont corrélés et ne doivent pas compter trois fois le même signal.
+`eligible` denotes a domain/scenario fact: gypsum source, declared glacial deposit, qualified bed, etc. `availability` prevents fabricating a sand or boulder sheet without stock. `suitability` combines slope, position, water, and climate preferences. These are synthesis scores, **not independent physical probabilities**: slope, TPI, and geomorphons correlate and must not count the same signal three times.
 
-Cette normalisation porte sur les matières de support émises par les recettes, pas sur tous les identifiants M01–M28 pris comme concurrents. Les états, motifs, couches mortes et assemblages sont résolus selon les rôles décrits en section 6.
+Normalization applies to support materials emitted by recipes, not all M01–M28 IDs as competitors. States, patterns, dead layers, and assemblies are resolved according to section 6 roles.
 
-Une donnée manquante prend l'état « inconnu », distinct de « présent » et « absent ». Un cas spécialisé inconnu ne s'active pas ; une matière générique reste possible, avec une explication et une confiance réduite. Si les scores d'un groupe non vide sont tous nuls, le repli reste compatible avec le domaine, l'exposition et la source : roche générique sur roche exposée, matrice générique sur manteau meuble, fragments génériques si leur présence est connue. À défaut on conserve `unresolved`. Le repli ne transforme pas une eau ou un fond inconnu en terre et n'active aucune spécialité.
+Missing data is “unknown,” distinct from “present” and “absent.” An unknown specialized case does not activate; a generic material remains possible with explanation and reduced confidence. If scores of a nonempty group are all zero, fallback remains compatible with domain, exposure, and source: generic rock on exposed rock, generic matrix on loose mantle, generic fragments if known present. Otherwise retain `unresolved`. Fallback does not turn water or unknown bed into earth or activate a specialty.
 
-Les préférences sont lissées sur des plages, non découpées par classes. Des rampes de pente autour de 10–25° ou de profondeur relative autour de quelques dizaines de centimètres peuvent servir à une première calibration, mais ne sont pas des seuils universels. Les valeurs exactes seront ajustées sur les 42 tuiles.
+Preferences are smoothed over ranges, not cut by classes. Slope ramps around 10–25° or relative depths of a few tens of centimeters can support initial calibration but are not universal thresholds. Exact values will be adjusted on the 42 tiles.
 
-### 5.3 Place du hasard
+### 5.3. Role of randomness
 
-| Décision | Règle | Part aléatoire autorisée |
+| Decision | Rule | Permitted randomness |
 | --- | --- | --- |
-| Lithologie et unité spéciale | Scénario régional connu | Choix stable de scénario avant la classification, jamais une lithologie différente à chaque pixel |
-| Matériau parmi plusieurs possibilités | Tirage pondéré entre candidats admissibles | À l'échelle d'une plage de dépôt ou d'une unité locale, avec raccords continus |
-| Proportions à contexte semblable | Variation bornée des scores et stocks relatifs | Champs cohérents qui préservent la dominance des contraintes |
-| Taille, orientation et regroupement des éléments | Distribution conditionnée par source, pente, transport et échelle | Candidats déterministes, amas et textons |
-| Couleur et usure | Palette de la matière, minéralogie et état | Variation dans une famille compatible ; sel blanc, sol noir et terre rouge ne sont pas des couleurs libres interchangeables |
-| Dune, tourbe, glacier, source hydrothermale | Information nécessaire explicite | Aucun tirage ne remplace le stock, l'histoire ou la forme manquante |
+| Lithology and special unit | Known regional scenario | Stable scenario choice before classification, never different lithology per pixel |
+| Material among multiple possibilities | Weighted draw among admissible candidates | At deposit-patch or local-unit scale, with continuous joins |
+| Proportions in similar context | Bounded score and relative-stock variation | Coherent fields preserving dominance of constraints |
+| Element size, orientation, and clustering | Distribution conditioned by source, slope, transport, and scale | Deterministic candidates, clusters, and textons |
+| Color and wear | Material palette, mineralogy, and state | Variation within compatible family; white salt, black soil, and red earth are not freely interchangeable colors |
+| Dune, peat, glacier, hydrothermal spring | Explicit necessary information | No draw substitutes for missing stock, history, or form |
 
-La clé aléatoire est du type `hash(worldSeed, recipeFamily, canonicalRegionOrCell, candidateId)`. Elle ne dépend ni de la caméra, ni du pixel écran, ni du LOD, ni de l'ordre des requêtes. Un changement d'humidité ne reroule pas toutes les positions des pierres. Une tuile affichée n'est pas une unité géologique.
+A random key resembles `hash(worldSeed, recipeFamily, canonicalRegionOrCell, candidateId)`. It depends neither on camera, screen pixel, LOD, nor request order. A moisture change does not reroll every stone position. A displayed tile is not a geological unit.
 
-### 5.4 Éviter les bruits seuillés et la soupe de matériaux
+### 5.4. Avoiding thresholded noise and material soup
 
-Les proportions continues ne sont pas une moyenne uniforme des couleurs PBR. Suivant RENDER_REVIEW §8, « 60 % gravier, 25 % sable, 15 % limon » doit devenir des fragments, des interstices et des plages. Dans cet exemple, les fragments occupent 60 % du support et les 40 % de matrice se répartissent entre sable et limon. La matrice remplit les espaces entre les pierres ; un dépôt recouvre un support ; des plaques de roche affleurent à travers une couverture. L'opérateur d'agencement dépend du processus.
+Continuous proportions are not a uniform average of PBR colors. Following RENDER_REVIEW §8, “60% gravel, 25% sand, 15% silt” should become fragments, interstices, and patches. In this example fragments occupy 60% of support and the 40% matrix is divided between sand and silt. Matrix fills gaps between stones; a deposit covers support; rock slabs emerge through cover. Arrangement operator depends on process.
 
-Les limites de classe servent à la légende. À l'intérieur d'un domaine compatible, l'exposition, les stocks et les poids varient graduellement. Les masques d'eau et les emprises physiques explicites peuvent garder une frontière localisée ; il ne s'agit pas de flouter un rivage ni de déplacer les autorités du terrain. Les détails fins varient aussi à l'intérieur d'une unité ; ils ne sont pas concentrés dans une couronne de bruit autour de son contour. Les données à 30 m déterminent le contexte, tandis que les détails de 1–50 m puis centimétriques sont des recettes stables et identifiées comme synthétiques. Les fractures, les rides et les bancs utilisent une direction ou une géométrie causale.
+Class boundaries serve the legend. Within a compatible domain, exposure, stocks, and weights vary gradually. Water masks and explicit physical footprints may keep localized boundaries; this does not mean blurring a shore or moving terrain authorities. Fine details also vary within a unit rather than concentrating in a noise halo around its edge. Data at 30 m determine context; 1–50 m and centimeter details are stable recipes identified as synthetic. Fractures, ripples, and bars use causal direction or geometry.
 
-La représentation distante conserve la fraction de surface et l'apparence moyenne des détails. Un affleurement ou une pierre ne change pas d'identité lorsque sa représentation change. Cette contrainte vient de RENDER_REVIEW §9 ; elle n'impose pas de précalculer une image au centimètre.
+Distant representation retains surface fraction and average detail appearance. An outcrop or stone does not change identity when representation changes. This constraint follows RENDER_REVIEW §9; it does not require precomputing a centimeter image.
 
-## 6 Matériaux et conditions de production
+## 6. Materials and production conditions
 
-Les identifiants M01 à M28 nomment des **familles de recettes de sol visible**. Certaines correspondent à une matière ; d'autres ajoutent un état, un motif ou un assemblage à des matières déjà présentes. Elles ne demandent pas 28 shaders indépendants. Les identifiants N/O renvoient aux informations de la section 4.
+M01–M28 identify **visible-ground recipe families**. Some correspond to a material; others add state, pattern, or assembly to existing materials. They do not require 28 independent shaders. N/O IDs refer to section 4 information.
 
-Les renvois tels que `N2/N3/N4` ou `O1/O3/O4` désignent les informations pertinentes selon l'origine et la variante, pas une conjonction obligatoire de toutes ces entrées. Les colonnes de conditions nécessaires précisent les alternatives. De même, `M04/M05` désigne des candidats à combiner selon les données, pas leur présence obligatoire.
+References such as `N2/N3/N4` or `O1/O3/O4` identify relevant information depending on origin and variant, not a mandatory conjunction of every input. Necessary-condition columns specify alternatives. Likewise, `M04/M05` denotes candidates to combine according to data, not mandatory presence of both.
 
-| Familles de recettes | Rôle dans le budget de surface |
+| Recipe families | Role in surface budget |
 | --- | --- |
-| M01–M10, M13–M20 et M25 | Émettent des matières de support dans les groupes roche, fragments ou matrice. Une recette telle que M19 se développe en cendre fine, ponce granulaire ou tuf rocheux selon son sous-type ; ces variantes ne forment pas une classe unique interchangeable |
-| M11 et M12 | État ou variante de la matrice parente : par exemple argile boueuse ou argile à croûte fissurée. Ne pas ajouter un poids de boue ou de fissures au poids déjà présent de l'argile |
-| M21 et M23 | Recouvrements morts et neige, séparés du budget du support selon la section 2.1 |
-| M24 | Support glacé, couche de glace sur sol ou état d'eau gelée selon le domaine. Le névé/firn reste M23 tant qu'il est décrit comme manteau neigeux transformé ; il devient M24 seulement lorsque le scénario le décrit comme support glacé. Un même emplacement ne compte pas les deux pour la même couche |
-| M26–M28 | Assemblage, motif ou origine qui organise et qualifie les matières parentes. Un dépôt morainique émet ses terres, sables et fragments avec l'origine glaciaire ; « moraine » n'est pas une fraction ajoutée une seconde fois |
+| M01–M10, M13–M20, and M25 | Emit support materials in rock, fragment, or matrix groups. A recipe such as M19 expands into fine ash, granular pumice, or rocky tuff by subtype; these variants are not one interchangeable class |
+| M11 and M12 | State or variant of parent matrix: e.g. muddy or cracked-crust clay. Do not add a mud or crack weight to the already present clay weight |
+| M21 and M23 | Dead cover and snow, separate from support budget as in §2.1 |
+| M24 | Icy support, ice layer on ground, or frozen-water state depending on domain. Névé/firn remains M23 when described as transformed snow mantle; it becomes M24 only when scenario describes icy support. One location does not count both for the same layer |
+| M26–M28 | Assembly, pattern, or origin organizing and qualifying parent materials. A moraine deposit emits its earth, sand, and fragments with glacial origin; “moraine” is not an extra fraction counted twice |
 
-### 6.1 Matrices minérales et support rocheux
+### 6.1. Mineral matrices and rocky support
 
-| ID et recette | Conditions nécessaires | Conditions favorables | Exclusions et variantes | Information à compléter |
+| ID and recipe | Necessary conditions | Favorable conditions | Exclusions and variants | Information to add |
 | --- | --- | --- | --- | --- |
-| M01 Terre minérale et mélange terre-sable | Matrice fine exposée, hors eau masquant le fond | Couverture stable ; altération et dépôts fins ; relief peu ou moyennement pentu | Teintes brune, ocre, beige ; noir ou rouge spécifique seulement avec source compatible. Fraction de sable ≠ nappe de sable libre | N1/N2 ; O1 pour couleur minérale spécifique |
-| M02 Terre argileuse | Fraction argileuse significative dans la matrice exposée | Matériau argilo-marneux local ou fines remaniées ; zones calmes | Compacte/croûteuse selon état ; gonflante et grandes fissures demandent O10. Ni toute plaine ni toute marne n'impose de l'argile nue | N1/N4 ; O10 |
-| M03 Limon et poussière | Fines limoneuses disponibles, couverture exposée | Alluvions fines, zones de dépôt peu énergétiques ; apport poussiéreux déclaré | Le loess exige un dépôt éolien limoneux hérité ou une source déclarée ; un sol clair seul ne l'identifie pas | N2/N3 ; O2 pour loess |
-| M04 Sable meuble ou nappe sableuse | Sable libre disponible, matrice peu cohésive et surface exposée | Tri fluvial/littoral, transport éolien, arène remaniée | Sec ou humide selon N4. Blanc coquillier/gypseux, noir volcanique ou rouge ferrugineux demandent la provenance correspondante. Le climat aride seul ne suffit pas | N2/N3/N4 ; O1/O4/O5/O7 pour variantes |
-| M05 Gravier et galets | Stock grossier et part de surface suffisants | Chenaux et bancs grossiers, plages énergétiques, dépôts remaniés | Fin/grossier via tailles ; galets arrondis via histoire de transport. La pierrosité actuelle seule ne distingue pas les tailles ni l'arrondi | N2/N3 ; O2/O4 selon contexte |
-| M06 Pierres et blocs anguleux | Fragments rocheux disponibles, source ou dépôt hérité, appui compatible | Rupture de pente, pied de paroi, convergence et runout de versant | Blocs plats selon feuilletage ; blocs géants et chaos imposent dimensions et support. Une pente forte sans source ne crée pas d'éboulis | N1/N2, provenance gravitaire ; O2/O10 |
-| M07 Roche massive exposée | Roche accessible et faible couverture effective | Crêtes, épaules, parois, sols minces, abrasion ou décapage | Lithologie locale continue : granite, calcaire, grès, marne ou basalte actuels. Schiste, ardoise, gneiss, quartzite, conglomérat et bandes minéralisées demandent O1. Le froid/sec n'est pas une lithologie | N1 ; O1/O10 pour sous-types et motifs |
-| M08 Roche altérée, arène et saprolite | Substrat altérable et altération/ancienneté compatibles | Climat et stabilité permettant l'altération ; transitions roche-matrice | L'arène reste liée à sa roche parentale. Une saprolite profonde ou des tors/chaos ne se déduisent pas de `weatherability` seul | N1/N2 ; O2/O9 pour profil hérité et forme |
+| M01 Mineral earth and earth–sand mixture | Exposed fine matrix, outside water occluding bed | Stable cover; weathering and fine deposits; low/moderate slope | Brown, ocher, beige; specific black/red only with compatible source. Sand fraction ≠ loose sand sheet | N1/N2; O1 for specific mineral color |
+| M02 Clay earth | Significant clay fraction in exposed matrix | Local clay-marl or reworked fines; calm areas | Compact/crusted by state; swelling and large cracks require O10. Neither every plain nor every marl implies bare clay | N1/N4; O10 |
+| M03 Silt and dust | Available silty fines, exposed cover | Fine alluvium, low-energy deposits; declared dust input | Loess requires inherited aeolian silt or declared source; light soil alone does not identify it | N2/N3; O2 for loess |
+| M04 Loose sand or sand sheet | Available free sand, weakly cohesive matrix, exposed surface | Fluvial/coastal sorting, wind transport, reworked grus | Dry/wet by N4. White shell/gypsum, volcanic black, ferruginous red require corresponding provenance. Aridity alone is insufficient | N2/N3/N4; O1/O4/O5/O7 for variants |
+| M05 Gravel and pebbles | Coarse stock and sufficient surface share | Channels and coarse bars, energetic beaches, reworked deposits | Fine/coarse by size; rounded pebbles by transport history. Current stoniness alone distinguishes neither size nor roundness | N2/N3; O2/O4 by context |
+| M06 Angular stones and blocks | Available rock fragments, source or inherited deposit, compatible support | Slope break, cliff foot, convergence and slope runout | Flat blocks by foliation; giant blocks and boulder fields require dimensions and support. Steep slope without source creates no scree | N1/N2, gravity provenance; O2/O10 |
+| M07 Exposed massive rock | Accessible rock and low effective cover | Ridges, shoulders, cliffs, thin soils, abrasion or stripping | Continuous local lithology: current granite, limestone, sandstone, marl, basalt. Schist, slate, gneiss, quartzite, conglomerate, mineral bands require O1. Cold/dry is not lithology | N1; O1/O10 for subtypes/patterns |
+| M08 Weathered rock, grus, saprolite | Weatherable substrate and compatible weathering/age | Climate and stability allowing weathering; rock–matrix transitions | Grus stays tied to parent rock. Deep saprolite or tors/boulder fields cannot be inferred from `weatherability` alone | N1/N2; O2/O9 for inherited profile and form |
 
-Pour M07, la lithologie choisit les familles de matière et de fracturation, pas un aplat de couleur. Le feuilletage de schiste, les rubans de gneiss, les galets cimentés d'un conglomérat et les couches d'un grès restent des structures distinctes. « Stratifié », « multicolore », « fissuré », « en dalles » ou « poli » sont des variantes conditionnelles, jamais une obligation de générer un autre shader complet.
+For M07, lithology chooses material and fracture families, not a flat color. Schist foliation, gneiss bands, conglomerate cemented pebbles, and sandstone beds remain distinct structures. “Layered,” “multicolored,” “cracked,” “slabby,” or “polished” are conditional variants, never an obligation to generate a different complete shader.
 
-### 6.2 Sol organique et états de surface
+### 6.2. Organic soil and surface states
 
-| ID et recette | Conditions nécessaires | Conditions favorables | Exclusions et variantes | Information à compléter |
+| ID and recipe | Necessary conditions | Favorable conditions | Exclusions and variants | Information to add |
 | --- | --- | --- | --- | --- |
-| M09 Sol organique et humus exposé | Matière organique du support, surface accessible | Accumulation et conservation de matière organique ; stabilité ; sol peu décapé | Terre noire/humus ne signifie pas tourbe ; l'humus ne remplace pas le limon dans la texture minérale | `organic` + N1 ; origine organique à qualifier si dominante |
-| M10 Tourbe exposée | Dépôt tourbeux connu ou scénario de formation et conservation persistante | Engorgement durable et accumulation ; contexte froid ou tropical compatible | `moisture` élevé, TWI élevé ou basse température seuls insuffisants ; tourbières structurées demandent aussi forme/microrelief | O3 ; O9 pour bombements, lanières et buttes |
-| M11 Boue, vase et matrice hydromorphe | Matrice fine disponible et état suffisamment humide/saturé ; domaine émergé ou fond qualifié | Dépressions, faibles pentes, fines alluviales/lacustres/littorales, drainage lent | La boue est un état/assemblage des M01–M03. Marbrures hydromorphes et vase organique demandent une histoire ou origine spécifique | N2/N3/N4 ; O3/O4/O8 |
-| M12 Croûte et fissures de dessiccation | Matrice cohésive compatible et cycle de dessiccation déclaré | Argile, dépôt fin calme, contraste humide-sec | Un état sec seul ne prouve pas un cycle ; grand retrait-gonflement demande O10. Ne pas réutiliser indistinctement les motifs du sel et du gel | N4 ; O10 ; motif physique stable |
-| M13 Terre ferrugineuse et cuirasse | Source/stock d'oxydes et niveau d'altération ou dépôt ferrugineux déclaré | Altération prolongée, surfaces stables ; climat régional compatible | Le tropical humide seul n'impose pas une latérite. Terre rouge meuble et cuirasse indurée sont deux états/profils | O1/O2/O10 |
-| M14 Sol carbonaté et encroûtement calcaire | Carbonates disponibles et accumulation/cimentation déclarée | Circulation puis évaporation, dépôt ou héritage compatible | Une roche calcaire n'est pas automatiquement du calcrète ; distinguer roche M07, dépôt M14 et travertin M20 | O1/O2/O10 ; N4 |
-| M15 Sol salin et croûte saline | Source de sels et concentration/stock salin déclaré | Évaporation, bassin fermé ou contexte côtier compatible, alternance humide-sec | Ni endoréisme ni aridité seuls suffisants. Une playa peut rester argileuse sans sel | O1/O3/O4 ; N4 |
-| M16 Sol et dépôt gypseux | Gypse disponible ou unité gypsifère déclarée | Évaporites, dépôts hérités et remaniement compatible | Gypse blanc ≠ sable coquillier blanc ≠ neige ; couleur commune, causes différentes | O1/O2 ; N2 pour sable gypseux |
+| M09 Organic soil and exposed humus | Support organic matter, accessible surface | Organic accumulation and preservation; stability; little stripping | Black earth/humus does not mean peat; humus does not replace silt in mineral texture | `organic` + N1; qualify organic origin if dominant |
+| M10 Exposed peat | Known peat deposit or persistent formation/preservation scenario | Long-term waterlogging and accumulation; compatible cold or tropical context | High `moisture`, high TWI, or low temperature alone insufficient; structured peatlands also require form/microrelief | O3; O9 for raised bogs, strings, hummocks |
+| M11 Mud, silt, and hydromorphic matrix | Available fine matrix and sufficiently wet/saturated state; exposed domain or qualified bed | Depressions, low slopes, alluvial/lake/coastal fines, slow drainage | Mud is a state/assembly of M01–M03. Hydromorphic mottling and organic mud require specific history/origin | N2/N3/N4; O3/O4/O8 |
+| M12 Desiccation crust and cracks | Compatible cohesive matrix and declared desiccation cycle | Clay, calm fine deposit, wet–dry contrast | Dry state alone does not prove a cycle; large shrink–swell requires O10. Do not indiscriminately reuse salt/frost patterns | N4; O10; stable physical pattern |
+| M13 Ferruginous earth and duricrust | Declared oxide source/stock and weathering level or ferruginous deposit | Long weathering, stable surfaces; compatible regional climate | Wet tropics alone do not imply laterite. Loose red earth and hardened duricrust are different states/profiles | O1/O2/O10 |
+| M14 Carbonate soil and limestone crust | Available carbonates and declared accumulation/cementation | Circulation then evaporation, compatible deposit or legacy | Limestone is not automatically calcrete; distinguish M07 rock, M14 deposit, M20 travertine | O1/O2/O10; N4 |
+| M15 Saline soil and salt crust | Salt source and declared saline concentration/stock | Evaporation, compatible closed basin or coast, wet–dry alternation | Neither endorheism nor aridity alone suffices. A playa may remain clay without salt | O1/O3/O4; N4 |
+| M16 Gypsiferous soil and deposit | Available gypsum or declared gypsum unit | Evaporites, inherited deposits and compatible reworking | White gypsum ≠ white shell sand ≠ snow; shared color, different causes | O1/O2; N2 for gypsum sand |
 
-### 6.3 Volcanisme et dépôts spécifiques
 
-| ID et recette | Conditions nécessaires | Conditions favorables | Exclusions et variantes | Information à compléter |
+### 6.3. Volcanism and specific deposits
+
+| ID and recipe | Necessary conditions | Favorable conditions | Exclusions and variants | Information to add |
 | --- | --- | --- | --- | --- |
-| M17 Lave compacte à structure déclarée | Unité de coulée et type de surface connus | Forme cordée, lobée ou plissée compatible | Le basalte seul autorise M07.basalt, pas la distinction pāhoehoe/ʻaʻā. Le matériau ne fabrique pas une coulée ni un cratère | O5/O9 ; direction et échelle |
-| M18 Scories et lave bréchique | Stock scoriacé ou surface de lave fragmentée déclarée | Dépôts volcaniques, ʻaʻā, fronts et fragments de coulée | Noir/rouge/brun selon source et altération ; pas un simple gravier sombre tiré au hasard | O5 ; N2 ; O9 pour forme |
-| M19 Cendres, ponce, tuf et ignimbrite | Nature du produit volcanique et dépôt déclarés | Dépôts pyroclastiques, consolidation et remaniement | Cendres fines, ponce granulaire et tuf rocheux ne partagent ni tailles ni cohésion. Ils ne sont pas fournis par la seule fraction basaltique | O5/O2 ; N2 ; O9 si plateau/forme |
-| M20 Dépôt hydrothermal ou carbonate précipité | Source et substance déclarées : silice, soufre, carbonate, argiles altérées | Source hydrothermale ou résurgence compatible | Travertin et tuf calcaire diffèrent du tuf volcanique M19. Les bassins colorés sont aussi des eaux, pas des taches de sol librement choisies | O5 ou O1+O3 ; O9 |
-| M21 Litière morte mince et laisses | Source morte connue, couverture et type déclarés ; option active | Accumulation en poches et à proximité de la source, piégeage, rive | Feuilles, aiguilles, brindilles et algues mortes sont un recouvrement distinct de M09. Gros troncs et vivant exclus | O7 ; transport/localisation ; couvert séparé |
-| M22 Sol brûlé, charbon et cendres d'incendie | Événement/incendie et résidu déclaré | Âge relatif, dépôt de cendres, substrat brûlé accessible | Pas d'incendie déduit d'un climat sec ou d'une terre sombre ; cendres d'incendie distinctes des cendres volcaniques | O7 ; N4 et support antérieur |
-| M25 Débris biogéniques et dépôts animaux | Source/coquilles/corail mort/guano déclarés | Plage coquillière, support récifal connu, accumulation locale | Vivant et animaux non rendus ; corail mort peut constituer un support minéral. Le guano n'est pas une couleur de sol tirée sans source | O7 ; O4/O8/O9 selon cas |
+| M17 Compact lava with declared structure | Known flow unit and surface type | Compatible ropy, lobate, or folded form | Basalt alone permits M07.basalt, not pāhoehoe/ʻaʻā distinction. Material does not create flow or crater | O5/O9; direction and scale |
+| M18 Scoria and brecciated lava | Declared scoriaceous stock or fragmented lava surface | Volcanic deposits, ʻaʻā, flow fronts/fragments | Black/red/brown by source and weathering; not simply randomly drawn dark gravel | O5; N2; O9 for form |
+| M19 Ash, pumice, tuff, ignimbrite | Declared volcanic product nature and deposit | Pyroclastic deposits, consolidation, reworking | Fine ash, granular pumice, and rocky tuff share neither size nor cohesion. Basalt fraction alone does not supply them | O5/O2; N2; O9 for plateau/form |
+| M20 Hydrothermal or precipitated carbonate deposit | Declared source and substance: silica, sulfur, carbonate, altered clays | Compatible hydrothermal spring or resurgence | Travertine and calcareous tufa differ from M19 volcanic tuff. Colored pools are also waters, not freely chosen ground spots | O5 or O1+O3; O9 |
+| M21 Thin dead litter and wrack | Known dead source, declared cover and type; option active | Accumulation in pockets and near source, trapping, bank | Leaves, needles, twigs, dead algae are cover distinct from M09. Large logs and living matter excluded | O7; transport/location; separate cover |
+| M22 Burned soil, charcoal, and wildfire ash | Declared fire event and residue | Relative age, ash deposit, accessible burned substrate | No fire inferred from dry climate or dark earth; wildfire ash distinct from volcanic ash | O7; N4 and previous support |
+| M25 Biogenic debris and animal deposits | Declared source/shells/dead coral/guano | Shell beach, known reef support, local accumulation | Living matter and animals not rendered; dead coral may be mineral support. Guano is not a ground color drawn without source | O7; O4/O8/O9 by case |
 
-### 6.4 Froid et assemblages de paysage
+### 6.4. Cold and landscape assemblies
 
-| ID et recette | Conditions nécessaires | Conditions favorables | Exclusions et variantes | Information à compléter |
+| ID and recipe | Necessary conditions | Favorable conditions | Exclusions and variants | Information to add |
 | --- | --- | --- | --- | --- |
-| M23 Neige et névé | Présence/stock de neige déclaré | Rétention, exposition, vent, altitude et température compatibles | Fraîche, ancienne, granuleuse, soufflée et regelée selon état/histoire. Une température annuelle basse seule ne donne ni couverture ni épaisseur | O6 + état ; O9 pour congère/corniche |
-| M24 Glace exposée ou support glacé | Glace présente et domaine identifié : sol, glacier, eau gelée | Régime froid et histoire compatibles | Glace bleue, firn et glace lacustre sont des variantes différentes. Banquise et icebergs restent des objets/eaux extérieurs au sol ; glacier non créé par la recette | O6 ; O8/O9 selon domaine |
-| M26 Pavement et patine désertiques | Fragments disponibles, surface stable et contexte de décapage/héritage | Déflation, faible couverture, temps de résidence déclaré | Assemblage de M01/M05/M06, avec vernis si O10 ; aridité seule insuffisante | N2 ; O2/O10 |
-| M27 Sol structuré par le gel | Sol minéral et régime gel-dégel/pergélisol déclaré selon le motif | Eau disponible, tailles de fragments et pente compatibles | Cercles/bandes triés, polygones à coins de glace et lobes de solifluxion ont des conditions et structures distinctes ; `frostPotential` seul ne les identifie pas | O6/O9/O10 ; N2/N4 |
-| M28 Dépôt glaciaire et proglaciaire | Héritage ou dépôt glaciaire déclaré et matériaux disponibles | Moraines, till, épandages remaniés et surface déglacée | Assemblage M01–M06 et support M07. Une moraine ne se déduit pas du froid actuel ; till peu trié et dépôt fluvioglaciaire trié à distinguer | O2/O6 ; N2/N3 ; O9 pour forme |
+| M23 Snow and névé | Declared snow presence/stock | Compatible retention, exposure, wind, altitude, temperature | Fresh, old, granular, windblown, refrozen by state/history. Low annual temperature alone gives neither cover nor thickness | O6 + state; O9 for drift/cornice |
+| M24 Exposed ice or icy support | Ice present and identified domain: ground, glacier, frozen water | Compatible cold regime and history | Blue ice, firn, and lake ice are different variants. Sea ice and icebergs remain objects/waters outside ground; recipe creates no glacier | O6; O8/O9 by domain |
+| M26 Desert pavement and patina | Available fragments, stable surface, declared stripping/legacy context | Deflation, low cover, declared residence time | M01/M05/M06 assembly, with varnish if O10; aridity alone insufficient | N2; O2/O10 |
+| M27 Frost-structured ground | Mineral soil and declared freeze–thaw/permafrost regime according to pattern | Available water, compatible fragment sizes and slope | Sorted circles/stripes, ice-wedge polygons, solifluction lobes have distinct conditions/structures; `frostPotential` alone does not identify them | O6/O9/O10; N2/N4 |
+| M28 Glacial and proglacial deposit | Declared glacial legacy/deposit and available materials | Moraines, till, reworked outwash, deglaciated surface | M01–M06 assembly and M07 support. Moraine does not follow from current cold; distinguish poorly sorted till from sorted fluvioglacial deposit | O2/O6; N2/N3; O9 for form |
 
-Les sols sous un couvert vivant du catalogue restent des combinaisons de ces familles. Une forêt ne crée pas une famille « sol forêt » universelle. Le sol sous mangrove demande notamment un contexte sédimentaire et hydrique ; la canopée ne décide pas si la matrice est sableuse, vaseuse ou organique.
+Soils under the catalog's living cover remain combinations of these families. A forest does not create one universal “forest soil” family. Ground under mangrove notably needs sedimentary and hydric context; canopy does not decide whether matrix is sandy, muddy, or organic.
 
-## 7 Passage du contexte à la composition
+## 7. From context to composition
 
-L'annexe B reprend les 28 contextes de MATERIALS_REVIEW §3. La règle générale reste : **le contexte choisit des candidats, les stocks et la surface exposée choisissent leurs proportions**.
+Appendix B reprises the 28 MATERIALS_REVIEW §3 contexts. General rule: **context selects candidates; stocks and exposed surface choose proportions**.
 
-### 7.1 Six exemples de décisions complètes
+### 7.1. Six complete decision examples
 
-| Entrées de carte et compléments | Composition plausible | Variantes et hasard autorisés | Décisions interdites faute d'entrée |
+| Map inputs and additions | Plausible composition | Permitted variants and randomness | Decisions forbidden without input |
 | --- | --- | --- | --- |
-| Épaule/versant calcaire, sol mince, faible potentiel hydrique, support exposé | M07.calcaire avec poches de M01/M02 et M06 selon fragments | Taille des poches, espacement des joints et pierres, teintes compatibles | Pas de calcrète, dolines ou lapiaz automatique sans O1/O9/O10 |
-| Pied de paroi basaltique, chemin gravitaire connecté, stock grossier | M06 basaltique et matrice M01/M04 issue du même apport | Amas, tri longitudinal et tailles ; résidu local dans les interstices | Pas de scories ou ʻaʻā simplement parce que le parent est basaltique |
-| Banc fluvial émergé, faible HAND, apport amont granitique, tri grossier | M05/M04/M03 : par exemple 60/25/15 en surface | Position des galets et plages de fines ; humidité selon état | La roche sous-jacente locale ne remplace pas la provenance des galets ; pas de banc sans emprise émergée |
-| Plaine aride, matrice argileuse, pas de sable libre ni sel déclaré | M02 ; M12 seulement si cycle sec-humide et retrait compatibles | Plages compactes et petites variations ; fissures conditionnelles | Pas d'erg, de salar ni de sable uniforme |
-| Creux humide sous une forêt masquée, matrice fine et organique connus | M01/M02/M09, M11 selon état ; M21 seulement si litière déclarée | Humidité en poches, répartition des débris morts autorisés | Pas de tourbe épaisse, mousse ou tapis de feuilles déduit du seul climat |
-| Côte basse proche de l'eau, stock fin et faible énergie déclarée | M11/M03, éventuellement M04, sur les parties émergées | Chenaux existants, granulométrie, teinte organique et humidité | Pas de plage sableuse automatique ; pas d'estran de marée sans O4 |
+| Limestone shoulder/slope, thin soil, low water potential, exposed support | M07.limestone with M01/M02 pockets and M06 by fragments | Pocket size, joint/stone spacing, compatible tints | No automatic calcrete, dolines, or limestone pavement without O1/O9/O10 |
+| Basalt cliff foot, connected gravity path, coarse stock | Basaltic M06 and M01/M04 matrix from same input | Clusters, longitudinal sorting and sizes; local interstitial residue | No scoria or ʻaʻā merely because parent is basaltic |
+| Exposed river bar, low HAND, upstream granite input, coarse sorting | M05/M04/M03: e.g. 60/25/15 by surface | Pebble and fine-patch position; moisture by state | Local underlying rock does not replace pebble provenance; no bar without exposed footprint |
+| Arid plain, clay matrix, no free sand or declared salt | M02; M12 only with compatible wet–dry cycle and shrinkage | Compact patches and small variations; conditional cracks | No erg, salar, or uniform sand |
+| Wet hollow under hidden forest, known fine and organic matrix | M01/M02/M09, M11 by state; M21 only if litter declared | Moisture pockets, distribution of allowed dead debris | No thick peat, moss, or leaf carpet inferred from climate alone |
+| Low coast near water, declared fine stock and low energy | M11/M03, possibly M04, on exposed parts | Existing channels, grain size, organic tint and moisture | No automatic sandy beach; no tidal flat without O4 |
 
-L'exemple 60/25/15 est une recette illustrative de RENDER_REVIEW, pas une constante à appliquer à toutes les rivières.
+The 60/25/15 example is an illustrative RENDER_REVIEW recipe, not a constant for all rivers.
 
-### 7.2 Questions qui lèvent une ambiguïté
+### 7.2. Questions resolving ambiguity
 
-| Apparence possible | Information qui la décide |
+| Possible appearance | Deciding information |
 | --- | --- |
-| Plaine sableuse ou terre sableuse | Disponibilité et couverture de sable meuble, pas seulement `sand` |
-| Roche massive ou sol pierreux | Exposition du support, épaisseur de matrice et distribution des fragments |
-| Gravier roulé ou éboulis anguleux | Origine et trajet du dépôt, tailles et arrondi |
-| Argile sèche ou salar | Source et concentration de sels ; le bassin fermé ne suffit pas |
-| Sol noir, basalte, tourbe ou charbon | Matière minérale, accumulation organique, histoire d'engorgement ou incendie |
-| Calcaire, calcrète, travertin ou sable coquillier | Roche, accumulation secondaire, précipitation ou apport biogénique |
-| Basalte ancien, lave cordée ou scories | Identité et état de l'unité volcanique |
-| Boue actuelle, marbrures hydromorphes ou tourbe | État instantané synthétique, durée d'engorgement et histoire organique |
-| Polygones d'argile, de sel, de gel ou de fractures rocheuses | Cause, support et état ; ne pas choisir au seul motif |
-| Rivage sableux ou vaseux | Nature et stock des apports, énergie et immersion, pas seulement distance à l'eau |
+| Sandy plain or sandy earth | Free-sand availability and coverage, not only `sand` |
+| Massive rock or stony soil | Support exposure, matrix thickness, fragment distribution |
+| Rounded gravel or angular scree | Deposit origin and path, sizes, roundness |
+| Dry clay or salar | Salt source and concentration; closed basin insufficient |
+| Black soil, basalt, peat, or charcoal | Mineral matter, organic accumulation, waterlogging history, or fire |
+| Limestone, calcrete, travertine, or shell sand | Rock, secondary accumulation, precipitation, or biogenic input |
+| Old basalt, ropy lava, or scoria | Volcanic-unit identity and state |
+| Current mud, hydromorphic mottling, or peat | Synthetic instantaneous state, waterlogging duration, organic history |
+| Clay, salt, frost, or rock-fracture polygons | Cause, support, state; do not choose from pattern alone |
+| Sandy or muddy shore | Nature and stock of supply, energy and immersion, not just water distance |
 
-## 8 Agencement selon le matériau
+## 8. Arrangement by material
 
-Cette table traduit RENDER_REVIEW §3 et §7 sans choisir une technologie obligatoire pour cette étude.
+This table translates RENDER_REVIEW §§3 and 7 without choosing mandatory technology for this study.
 
-| Recettes | Agencement à demander au rendu | Entrées de la recette |
+| Recipes | Arrangement requested from renderer | Recipe inputs |
 | --- | --- | --- |
-| Terre fine, limon, arène, sable sans grande forme | Matière stochastique et grains filtrés | Composition, échelle des grains, variation et humidité |
-| Gravier, galets, pierres, scories, ponce | Fragments ou textons, tailles distribuées, matrice entre éléments | Stock grossier, couverture, tailles, arrondi, agrégation et provenance |
-| Roche massive, feuilletée ou stratifiée | Matériau de roche avec structures orientées et fractures cohérentes | Parent lithologique, exposition, orientation, pendage/fractures si connus |
-| Fissures, pavement et grands polygones | Réseau ou motif structuré raccordable | Cause, échelle, état, orientation ; pas une nouvelle sélection de matériau |
-| Rides de sable et stries | Motif directionnel cohérent | Vent/courant, humidité, grains et support |
-| Dépôts fluviaux, gravitaires et littoraux | Bancs, amas, nappes et langues liés à leurs sources | Emprises, distances signées, direction de transport et stocks |
-| Litière morte | Petits éléments et amas séparés du support | Type de débris, couverture, taille et piégeage |
-| Neige/glace | Couche ou support cohérent avec son domaine | Présence, épaisseur relative, état, vent et accumulation |
+| Fine earth, silt, grus, sand without major form | Stochastic material and filtered grains | Composition, grain scale, variation, moisture |
+| Gravel, pebbles, stones, scoria, pumice | Fragments or textons, distributed sizes, matrix between elements | Coarse stock, coverage, sizes, roundness, clustering, provenance |
+| Massive, foliated, or layered rock | Rock material with oriented structures and coherent fractures | Lithological parent, exposure, orientation, dip/fractures if known |
+| Cracks, pavement, large polygons | Connectable network or structured pattern | Cause, scale, state, orientation; not new material selection |
+| Sand ripples and striations | Coherent directional pattern | Wind/current, moisture, grains, support |
+| Fluvial, gravity, and coastal deposits | Bars, clusters, sheets, tongues connected to sources | Footprints, signed distances, transport direction, stocks |
+| Dead litter | Small elements and clusters separate from support | Debris type, cover, size, trapping |
+| Snow/ice | Layer or support coherent with domain | Presence, relative thickness, state, wind, accumulation |
 
-Une photo de sable ne crée pas une dune ; un motif de fractures ne crée pas une falaise ; une texture de gravier ne crée pas le cône qui la porte. Ces formes sont reconnues si elles existent ou fournies par un scénario géométriquement compatible. Leur fabrication n'est pas une dépendance du premier compilateur de matière.
+A sand photo does not create a dune; a fracture pattern does not create a cliff; a gravel texture does not create its supporting cone. Forms are recognized if present or supplied by a geometrically compatible scenario. Their creation is not a dependency of the first material compiler.
 
-## 9 Livraison progressive proposée
+## 9. Proposed incremental delivery
 
-### 9.1 Première carte de sol visible
+### 9.1. First visible-ground map
 
-1. Ajouter N1–N4 et les explications de validité aux données actuelles.
-2. Produire M01–M09 et M11 pour les cas courants, avec les parents lithologiques actuels. M12 reste conditionnel à son état ; les types spéciaux ne sont pas tirés par défaut.
-3. Afficher « composition du sol », « matière dominante », « origine », « état » et « information manquante » dans Informations. Conserver les couches explicatives actuelles.
-4. Vérifier d'abord que les données du support restent identiques quand les visibilités du vivant et des constructions changent. La nouvelle carte de matières se compare au fond historique comme référence ; elle ne nécessite pas de séparer après coup les composants déjà aplatis dans son image. Lorsque les étages sont rendus séparément, vérifier aussi l'image au même cadrage avec et sans occultation.
+1. Add N1–N4 and validity explanations to current data.
+2. Produce M01–M09 and M11 for common cases with current lithological parents. M12 remains state-dependent; special types are not drawn by default.
+3. Show “ground composition,” “dominant material,” “origin,” “state,” and “missing information” in Information. Keep existing explanatory layers.
+4. First check that support data stays identical when living/building visibility changes. Compare the new material map with historical background as reference; it does not require separating components already flattened in that image afterward. When layers are rendered separately, also compare the image at identical framing with and without occlusion.
 
-Cette première carte peut être affichée avec une palette de recettes et des proportions. Elle ne nécessite pas de constituer toute la bibliothèque PBR. La carte Render actuelle contient déjà des apparences compositées ; ses pixels ne sont pas la source des nouvelles décisions de matière.
+This first map can display a recipe palette and proportions. It does not require assembling the entire PBR library. Current Render maps already contain composited appearances; their pixels are not the source of new material decisions.
 
-### 9.2 Extension du catalogue sans changer le contrat
+### 9.2. Catalog expansion without changing the contract
 
-Activer ensuite les familles spécialisées par O1–O10 selon les paysages souhaités. Une carte peut déclarer un dépôt de loess, un secteur gypsifère, une unité de scories ou un héritage glaciaire sans simuler leur formation. Les mêmes règles consomment ces entrées. Une forme absente reste absente même si sa matière est disponible.
+Then activate specialized families with O1–O10 according to desired landscapes. A map can declare loess deposit, gypsiferous area, scoria unit, or glacial legacy without simulating formation. The same rules consume these inputs. An absent form remains absent even if its material is available.
 
-Le travail de matière peut rester dans une fonction `compileVisibleGround(context, sceneState, declaredScenarios, worldSeed)`. Les tableaux du présent document servent de catalogue de règles et de conditions, avec leurs références N/O ; les recopier en listes indépendantes dans plusieurs renderers créerait des divergences.
+Material work can remain in `compileVisibleGround(context, sceneState, declaredScenarios, worldSeed)`. This document's tables serve as the rules/conditions catalog with N/O references; copying them into independent lists in several renderers would cause divergence.
 
-## 10 Critères de validation
+## 10. Validation criteria
 
-| Vérification | Résultat attendu |
+| Check | Expected result |
 | --- | --- |
-| Couverture du catalogue | Chaque type et ses variantes ont un renvoi de matière, de forme, d'état ou une exclusion explicite dans l'annexe A ; aucune prétention à 235 matériaux indépendants |
-| Budgets distincts | Proportions lithologiques, texture fine, stocks et couverture visible ne sont pas confondus ; chaque mélange applicable est normalisé |
-| Dépôts | Matière disponible et source compatible ; provenance remaniée conservée ; gravitaire et fluvial ne sont pas assimilés |
-| Eau | Banc émergé distinct de chenal mouillé ; mer, lac et rivière typés ; données sous masque non qualifiées non utilisées comme fond |
-| Cas ambigus | Plaine sèche sans stock sableux ≠ erg ; bassin fermé sans sel ≠ salar ; basalte seul ≠ scories ; creux humide seul ≠ tourbe |
-| Continuité | Variations graduelles à domaine compatible et motifs stables à la caméra, au zoom et aux limites ; les emprises explicites et masques d'eau restent respectés |
-| Contrefactuel sans couvert | Masquer arbre, herbe ou bâtiment conserve la matière du support et son identité |
-| État | Passer de sec à humide ne déplace pas toutes les pierres ; une couche de neige ne modifie pas la lithologie |
-| Informations absentes | Repli explicite, confiance réduite et liste des cas spécialisés désactivés ; pas de remplissage silencieux par du bruit |
-| Formes | Les dunes, moraines, falaises, récifs et dépôts en éventail nommés ont une forme compatible ; une texture seule ne revendique pas leur existence |
+| Catalog coverage | Every type and variant references a material, form, state, or explicit exclusion in appendix A; no claim of 235 independent materials |
+| Separate budgets | Lithological proportions, fine texture, stocks, and visible coverage not confused; each applicable mixture normalized |
+| Deposits | Available material and compatible source; retain reworked provenance; gravity and fluvial not equated |
+| Water | Exposed bar distinct from wet channel; sea, lake, river typed; unqualified masked data not used as bed |
+| Ambiguities | Dry plain without sand stock ≠ erg; closed basin without salt ≠ salar; basalt alone ≠ scoria; wet hollow alone ≠ peat |
+| Continuity | Gradual variation in compatible domain and stable patterns across camera, zoom, boundaries; respect explicit footprints and water masks |
+| No-cover counterfactual | Hiding tree, grass, or building preserves support material and identity |
+| State | Dry-to-wet does not move every stone; snow layer does not change lithology |
+| Missing information | Explicit fallback, reduced confidence, list of disabled specialized cases; no silent noise fill |
+| Forms | Named dunes, moraines, cliffs, reefs, and fan deposits have compatible form; texture alone does not claim existence |
 
-Les 42 tuiles fournissent des comparaisons utiles : même géologie entre les six climats d'une famille, aride contre tropical, côte contre intérieur, sommet contre vallée et zone de dépôt contre roche locale. Des scénarios ciblés supplémentaires peuvent tester les matières rares sans les injecter arbitrairement dans toutes les cartes.
+The 42 tiles provide useful comparisons: same geology across six climates of a family, arid versus tropical, coast versus inland, summit versus valley, deposit area versus local rock. Additional targeted scenarios can test rare materials without injecting them arbitrarily into every map.
 
-## 11 Lecture des annexes
+## 11. Reading the appendices
 
-L'annexe A couvre les **235 lignes de types** de MATERIALS_REVIEW §1, avec leurs variantes conservées. Les références M donnent les conditions inverses de la section 6 ; N/O précisent l'information à produire. Les autres annexes couvrent les 28 contextes, les 22 motifs et les 12 familles exceptionnelles des §2–4.
+Appendix A covers the **235 type rows** of MATERIALS_REVIEW §1 with variants retained. M references give inverse conditions from §6; N/O specify information to produce. Other appendices cover 28 contexts, 22 patterns, and 12 exceptional families from §§2–4.
 
-Statuts : **C** = combinaison du socle courant avec N1–N4 ; **O** = information/scénario optionnel nécessaire ; **F** = forme à reconnaître ou fournir, sans la générer par la matière ; **W** = autorité eau ou fond qualifié ; **E** = apparence vivante/objet hors périmètre. Un statut F ou E n'empêche pas de calculer le support minéral sous-jacent. Tous les renvois sont des règles proposées ; ils ne déclarent pas ces recettes déjà implémentées.
+Statuses: **C** = current foundation combination with N1–N4; **O** = optional information/scenario needed; **F** = form to recognize or supply, without generating it from material; **W** = water authority or qualified bed; **E** = living appearance/object outside scope. F or E does not prevent calculation of underlying mineral support. All references are proposed rules; they do not assert recipes are already implemented.
 
-## Annexe A Couverture des types et variantes du catalogue
 
-Chaque ligne reprend le type et toutes les variantes de MATERIALS_REVIEW §1. Les conditions complètes sont celles des familles M de la section 6 ; la colonne centrale précise les prérequis propres à cette ligne. Les termes de végétation dans les variantes sont conservés pour la traçabilité mais leur dessin est exclu.
 
-### Catalogue 1.1 Plaines et sols minéraux nus
+## Appendix A. Coverage of catalog types and variants
 
-| Type et variantes du catalogue | Recettes de sol ou traitement | Condition particulière et information requise | Statut |
+Each row repeats the type and all variants from MATERIALS_REVIEW §1. Full conditions are those of section 6 M families; the middle column specifies row-specific prerequisites. Vegetation terms in variants are retained for traceability, but their drawing is excluded.
+
+### Catalog 1.1. Plains and bare mineral soils
+
+| Catalog type and variants | Ground recipes or treatment | Specific condition and information required | Status |
 | --- | --- | --- | --- |
-| **Terre fine sèche** — Brune, ocre, rouge, beige, noire | M01 | N1/N2/N4 ; palette minérale compatible ; variante humique M09 ou ferrugineuse M13 si qualifiée | C/O |
-| **Terre argileuse** — Compacte, fissurée, gonflante, croûteuse | M02/M12 | N4 ; gonflante et grandes fissures : O10 ; pas de fissures sous eau | C/O |
-| **Terre limoneuse** — Loess, poussière, limon alluvial | M03 | Alluvial : N3 ; loess/poussière éolienne : N2/O2 | C/O |
-| **Sol organique nu** — Terre noire, humus, tourbe exposée | M09/M10 | Humus distinct de tourbe ; tourbe : O3 | C/O |
-| **Sol ferrugineux** — Latérite, cuirasse ferrallitique, terre rouge | M13 | O1/O2/O10 ; latérite et cuirasse déclarées | O |
-| **Sol carbonaté** — Calcrète, encroûtement calcaire, caliche | M14 | O1/O2/O10 ; pas de caliche automatique sur calcaire | O |
-| **Sol caillouteux** — Gravier fin, gravier grossier, galets dispersés | M05 | N2 ; tailles et couverture de fragments ; galets selon transport | C |
-| **Sol pierreux** — Pierres plates, blocs épars, roche subaffleurante | M06/M07 | N1/N2 ; pierres plates selon O10 ; affleurement via couverture | C/O |
-| **Sol hydromorphe** — Saturé d'eau, boueux, marbré | M11 | N4 ; hydromorphie et marbrures durables : O3 | C/O |
-| **Sol salin** — Efflorescences, croûtes blanches, argile salée | M15 | Source de sels O1/O4 ; état et concentration N4/O3 | O |
-| **Sol gypseux** — Gypse blanc, terre gypsifère | M16 | Gypse O1 ; grain selon N2 ; blanc non suffisant | O |
-| **Sol sableux** — Sable fin, grossier, mélange sable-terre | M01/M04 | N2 ; proportion sableuse de matrice distincte du sable meuble libre | C |
+| **Dry fine earth** — Brown, ocher, red, beige, black | M01 | N1/N2/N4; compatible mineral palette; M09 humic or M13 ferruginous variant if qualified | C/O |
+| **Clay soil** — Compact, cracked, swelling, crusted | M02/M12 | N4; swelling and large cracks: O10; no cracks underwater | C/O |
+| **Silty soil** — Loess, dust, alluvial silt | M03 | Alluvial: N3; aeolian loess/dust: N2/O2 | C/O |
+| **Bare organic soil** — Black earth, humus, exposed peat | M09/M10 | Humus distinct from peat; peat: O3 | C/O |
+| **Ferruginous soil** — Laterite, ferrallitic duricrust, red earth | M13 | O1/O2/O10; declared laterite and duricrust | O |
+| **Carbonate soil** — Calcrete, limestone crust, caliche | M14 | O1/O2/O10; no automatic caliche on limestone | O |
+| **Gravelly soil** — Fine gravel, coarse gravel, scattered pebbles | M05 | N2; fragment sizes and coverage; pebbles according to transport | C |
+| **Stony soil** — Flat stones, scattered blocks, near-surface rock | M06/M07 | N1/N2; flat stones according to O10; outcrop through cover | C/O |
+| **Waterlogged soil** — Saturated, muddy, mottled | M11 | N4; persistent hydromorphy and mottling: O3 | C/O |
+| **Saline soil** — Efflorescence, white crusts, saline clay | M15 | Salt source O1/O4; state and concentration N4/O3 | O |
+| **Gypsiferous soil** — White gypsum, gypsum-bearing earth | M16 | Gypsum O1; grain according to N2; white alone insufficient | O |
+| **Sandy soil** — Fine sand, coarse sand, sand-earth mixture | M01/M04 | N2; matrix sand proportion distinct from free loose sand | C |
 
-### Catalogue 1.2 Affleurements rocheux et substrats géologiques
+### Catalog 1.2. Rock outcrops and geological substrates
 
-| Type et variantes du catalogue | Recettes de sol ou traitement | Condition particulière et information requise | Statut |
+| Catalog type and variants | Ground recipes or treatment | Specific condition and information required | Status |
 | --- | --- | --- | --- |
-| **Granite massif** — Poli, altéré, fracturé, en dalles | M07/M08 | Granite exposé N1 ; dalles/fractures/poli : O10 ; altération M08 | C/O |
-| **Chaos granitique** — Boules, blocs arrondis, tors | M06/M07/M08 | Source granitique et altération ; tors/boules/chaos : O9 | C/O/F |
-| **Grès** — Rouge, jaune, blanc, stratifié | M07 | Source gréseuse ; couleur et strates O1/O10 | C/O |
-| **Calcaire massif** — Blanc, gris, beige, fissuré | M07 | Calcaire exposé N1 ; fractures/pavement O10 | C/O |
-| **Schiste et ardoise** — Feuilleté, incliné, fracturé | M07 | Unité schiste/ardoise O1 ; feuilletage et inclinaison O10 | O |
-| **Gneiss et roches métamorphiques** — Rubané, plissé, fortement déformé | M07 | Unité métamorphique O1 ; rubans/plis O10 | O |
-| **Quartzite** — Massif, en arêtes, fracturé | M07 | Unité quartzitique O1 ; arêtes et fractures compatibles | O/F |
-| **Conglomérat** — Galets cimentés, roche érodée | M07 | Conglomérat cimenté O1 ; éléments et érosion O10 | O |
-| **Roches sédimentaires stratifiées** — Couches horizontales, inclinées, plissées | M07 | Couches et orientation O1/O10 ; gradins seulement si forme existante | C/O/F |
-| **Roches multicolores** — Couches ferrugineuses, argileuses, minéralisées | M07/M13/M16 | Palettes/couches minéralisées O1 ; pas de rayures colorées libres | O |
-| **Pavement rocheux** — Dalles régulières, fractures polygonales | M07 | Roche exposée N1 ; réseau de dalles et joints O10 | C/O |
-| **Roches fortement altérées** — Arènes, saprolites, affleurements résiduels | M08/M07/M01 | Altération liée au parent ; saprolite ou résidu hérité : O2 | C/O |
+| **Massive granite** — Polished, weathered, fractured, slabs | M07/M08 | Exposed granite N1; slabs/fractures/polish: O10; weathering M08 | C/O |
+| **Granite boulder fields** — Rounded boulders, blocks, tors | M06/M07/M08 | Granite source and weathering; tors/boulders/boulder field: O9 | C/O/F |
+| **Sandstone** — Red, yellow, white, stratified | M07 | Sandstone source; color and beds O1/O10 | C/O |
+| **Massive limestone** — White, gray, beige, fractured | M07 | Exposed limestone N1; fractures/pavement O10 | C/O |
+| **Schist and slate** — Foliated, inclined, fractured | M07 | Schist/slate unit O1; foliation and inclination O10 | O |
+| **Gneiss and metamorphic rocks** — Banded, folded, strongly deformed | M07 | Metamorphic unit O1; bands/folds O10 | O |
+| **Quartzite** — Massive, ridged, fractured | M07 | Quartzite unit O1; compatible ridges and fractures | O/F |
+| **Conglomerate** — Cemented pebbles, eroded rock | M07 | Cemented conglomerate O1; elements and erosion O10 | O |
+| **Layered sedimentary rock** — Horizontal, inclined, folded layers | M07 | Beds and orientation O1/O10; steps only if form exists | C/O/F |
+| **Multicolored rocks** — Ferruginous, clay, mineralized layers | M07/M13/M16 | Mineralized palettes/layers O1; no free colored stripes | O |
+| **Rock pavement** — Regular slabs, polygonal fractures | M07 | Exposed rock N1; slab and joint network O10 | C/O |
+| **Strongly weathered rocks** — Grus, saprolite, residual outcrops | M08/M07/M01 | Weathering linked to parent; inherited saprolite or residue: O2 | C/O |
 
-### Catalogue 1.3 Déserts sableux et formes éoliennes
+### Catalog 1.3. Sandy deserts and aeolian landforms
 
-| Type et variantes du catalogue | Recettes de sol ou traitement | Condition particulière et information requise | Statut |
+| Catalog type and variants | Ground recipes or treatment | Specific condition and information required | Status |
 | --- | --- | --- | --- |
-| **Erg sableux** — Sable uniforme, sable mêlé de roche | M04/M07 | N2 : manteau de sable ; mélange roche selon N1 ; champ déclaré O9 | C/F |
-| **Dunes barkhanes** — Isolées, alignées, coalescentes | M04 | N2 + vent ; barkhanes O9 ; isolées/alignées/coalescentes = forme | C/F |
-| **Dunes transversales** — Simples, multiples, superposées | M04 | N2 + vent ; rides/crêtes et superposition de dunes O9 | C/F |
-| **Dunes longitudinales** — Seifs, dunes linéaires géantes | M04 | N2 ; régime de vent/direction et crêtes longitudinales O9 | C/O/F |
-| **Dunes étoilées** — Complexes, pyramidales | M04 | N2 ; régime de vents et forme étoilée O9 | C/O/F |
-| **Dunes paraboliques** — Fixées ou semi-fixées par végétation | M04 | N2/O9 ; géométrie fixée héritée conservée, plantes retirées | C/O/F |
-| **Dunes en dôme** — Arrondies, sans crête dominante | M04 | N2 ; bosses arrondies de dunes O9 | C/F |
-| **Dunes composites** — Dunes sur dunes, champs imbriqués | M04 | N2 ; formes imbriquées O9, non produites par le grain de sable | C/F |
-| **Sable ridé** — Rides éoliennes, mégarides | M04 | N2/N4 ; vent/courant et support ; mégarides structurées O9 | C/O/F |
-| **Couloirs interdunaires** — Sable compact, gravier, zones humides | M04/M05/M11 | N2/N3/N4 ; dépression entre dunes identifiée O9 | C/F |
-| **Reg désertique** — Graviers, cailloux, pavement désertique | M26 | Fragments disponibles N2 ; pavement/ancienneté O2/O10 | O |
-| **Hamada** — Plateau rocheux nu, roches fracturées | M07/M06 | Support rocheux N1 ; plateau/formes préexistantes O9 | C/F |
-| **Désert de loess** — Dépôts poussiéreux, reliefs disséqués | M03 | Poussière/loess O2 ; formes de dissection O9 | O/F |
-| **Désert de sable coloré** — Rouge, noir volcanique, blanc gypseux | M04 | Palette/source rouge O1 ; noir via provenance basaltique N2 ; gypse blanc M16/O1 ; grain N2 | C/O |
+| **Sandy erg** — Uniform sand, sand mixed with rock | M04/M07 | N2: sand mantle; rock mixture by N1; declared field O9 | C/F |
+| **Barchan dunes** — Isolated, aligned, coalescing | M04 | N2 + wind; barchans O9; isolated/aligned/coalescing = form | C/F |
+| **Transverse dunes** — Single, multiple, superimposed | M04 | N2 + wind; ripples/ridges and superposed dunes O9 | C/F |
+| **Longitudinal dunes** — Seifs, giant linear dunes | M04 | N2; wind regime/direction and longitudinal ridges O9 | C/O/F |
+| **Star dunes** — Complex, pyramidal | M04 | N2; wind regime and star shape O9 | C/O/F |
+| **Parabolic dunes** — Fixed or semifixed by vegetation | M04 | N2/O9; retained inherited fixed geometry, plants removed | C/O/F |
+| **Dome dunes** — Rounded, no dominant ridge | M04 | N2; rounded dune mounds O9 | C/F |
+| **Composite dunes** — Dunes on dunes, nested fields | M04 | N2; nested forms O9, not created by sand grain | C/F |
+| **Rippled sand** — Wind ripples, megaripples | M04 | N2/N4; wind/current and support; structured megaripples O9 | C/O/F |
+| **Interdune corridors** — Compact sand, gravel, wetlands | M04/M05/M11 | N2/N3/N4; identified interdune depression O9 | C/F |
+| **Desert reg** — Gravel, stones, desert pavement | M26 | Available fragments N2; pavement/age O2/O10 | O |
+| **Hamada** — Bare rocky plateau, fractured rocks | M07/M06 | Rock support N1; existing plateau/forms O9 | C/F |
+| **Loess desert** — Dust deposits, dissected relief | M03 | Dust/loess O2; dissected forms O9 | O/F |
+| **Colored sand desert** — Red, volcanic black, gypsum white | M04 | Red palette/source O1; black via basalt provenance N2; white gypsum M16/O1; grain N2 | C/O |
 
-### Catalogue 1.4 Reliefs érodés, déserts rocheux et surfaces arides
+### Catalog 1.4. Eroded landforms, rocky deserts, and arid surfaces
 
-| Type et variantes du catalogue | Recettes de sol ou traitement | Condition particulière et information requise | Statut |
+| Catalog type and variants | Ground recipes or treatment | Specific condition and information required | Status |
 | --- | --- | --- | --- |
-| **Badlands** — Argileux, marneux, multicolores | M02/M07/M13 | Matrice marneuse/argileuse ; couleurs O1 ; ravinement O9 | C/O/F |
-| **Yardangs** — Petits, longs, géants | M07/M03 | Substrat et vent érosif ; nervures/forme O9/O10 | O/F |
-| **Inselbergs** — Dômes, massifs résiduels, monolithes | M07/M06 | Source et exposition ; dôme/monolithe résiduel O9 | C/F |
-| **Mesas** — Plateaux isolés, buttes tabulaires | M07/M01 | Couches et couverture ; forme tabulaire O9 | C/F |
-| **Plateaux disséqués** — Canyons, ravins, escarpements | M07/M06/M01 | Substrat, exposition et versant ; canyon/ravins O9 | C/F |
-| **Plaines de déflation** — Cuvettes éoliennes, surfaces décapées | M01/M03/M05/M26 | Déflation et stock N2 ; surface décapée/héritage O2/O9 | O/F |
-| **Playas** — Argile sèche, boue durcie, sel | M02/M11/M15 | Fines et état N4 ; sel seulement avec O1/O3 ; cuvette O9 | C/O/F |
-| **Salars** — Sel homogène, polygones, bassins humides | M15 | Stock salin O1 ; état N4/O3 ; motifs et bassin O9/O10 | O/F |
-| **Sebkhas** — Dépressions salées, côtières ou continentales | M02/M11/M15 | Salinité O1/O3/O4 ; fin humide ou croûte selon état | O/F |
-| **Croûtes de dessiccation** — Fissures fines, grandes plaques polygonales | M12 | Matrice cohésive, cycle N4 et retrait O10 ; tailles des plaques | O |
-| **Dépôts de crue désertique** — Épandages sableux, graviers, boues | M04/M05/M11 | Apport et événement de crue O2/O3 ; chenaux/éventails O9 | O/F |
-| **Réseaux d'oueds secs** — Simples, dendritiques, anastomosés | M04/M05/M03 | Réseau sec/intermittent déclaré N3/O3 ; héritage O2 | O/F |
-| **Pavements désertiques** — Vernis sombre, pierres sur sol clair | M26 | Stock de fragments N2 ; vernis et surface stable O2/O10 | O |
+| **Badlands** — Clayey, marly, multicolored | M02/M07/M13 | Marl/clay matrix; colors O1; gullies O9 | C/O/F |
+| **Yardangs** — Small, long, giant | M07/M03 | Substrate and erosive wind; ribs/form O9/O10 | O/F |
+| **Inselbergs** — Domes, residual massifs, monoliths | M07/M06 | Source and exposure; residual dome/monolith O9 | C/F |
+| **Mesas** — Isolated plateaus, tableland buttes | M07/M01 | Layers and cover; tabular form O9 | C/F |
+| **Dissected plateaus** — Canyons, ravines, escarpments | M07/M06/M01 | Substrate, exposure, and slope; canyon/gullies O9 | C/F |
+| **Deflation plains** — Wind hollows, scoured surfaces | M01/M03/M05/M26 | Deflation and stock N2; scoured surface/legacy O2/O9 | O/F |
+| **Playas** — Dry clay, hardened mud, salt | M02/M11/M15 | Fines and state N4; salt only with O1/O3; basin O9 | C/O/F |
+| **Salars** — Uniform salt, polygons, wet basins | M15 | Saline stock O1; state N4/O3; patterns and basin O9/O10 | O/F |
+| **Sebkhas** — Coastal or inland saline depressions | M02/M11/M15 | Salinity O1/O3/O4; wet fines or crust by state | O/F |
+| **Desiccation crusts** — Fine cracks, large polygonal plates | M12 | Cohesive matrix, N4 cycle and O10 shrinkage; plate sizes | O |
+| **Desert flood deposits** — Sandy spreads, gravel, mud | M04/M05/M11 | Supply and flood event O2/O3; channels/fans O9 | O/F |
+| **Dry wadi networks** — Simple, dendritic, anastomosing | M04/M05/M03 | Declared dry/intermittent network N3/O3; legacy O2 | O/F |
+| **Desert pavements** — Dark varnish, stones on light ground | M26 | Fragment stock N2; varnish and stable surface O2/O10 | O |
 
-### Catalogue 1.5 Montagnes, pentes et dépôts gravitaires
+### Catalog 1.5. Mountains, slopes, and gravity deposits
 
-| Type et variantes du catalogue | Recettes de sol ou traitement | Condition particulière et information requise | Statut |
+| Catalog type and variants | Ground recipes or treatment | Specific condition and information required | Status |
 | --- | --- | --- | --- |
-| **Versant rocheux** — Lisse, fissuré, stratifié, feuilleté | M07 | N1 ; lisse/fracturé/stratifié/feuilleté par O10 | C/O/F |
-| **Falaise continentale** — Verticale, étagée, fracturée | M07/M06 | Paroi existante O9 ; parent lithologique et fragments N2 | C/F |
-| **Éboulis** — Fin, grossier, blocs géants | M06/M05/M01 | Source gravitaire, N2 ; fin/grossier/géant par tailles | C |
-| **Cône de déjection rocheux** — Isolé, coalescent | M06/M01 | Source et chemin de dépôt N2 ; cônes/coalescence O9 | C/F |
-| **Coulée de blocs** — Stable, récente, végétalisée | M06/M01 | Runout et dépôt hérités O2/O9 ; plantes retirées | O/F |
-| **Glissement de terrain** — Translation, rotation, complexe | M06/M01/M02 | Cicatrice et masse déplacée O2/O9 ; source conservée | O/F |
-| **Coulée de débris** — Boue, roche, mélange | M06/M11 | Dépôt/événement O2/O9 ; matrice fine et état N4 | O/F |
-| **Couloir d'avalanche** — Rocheux, herbacé, traversant la forêt | M07/M06/M01 | Couloir identifié O9 ; retrait du contraste vivant sans inventer une matière | C/O/F |
-| **Éboulis végétalisé** — Herbes, lichens, arbustes pionniers | M06/M01 | Dépôt source N2 ; herbes, lichens et arbustes retirés | C |
-| **Crêtes rocheuses** — Dentelées, arrondies, stratifiées | M07/M06 | Crête existante O9 ; roche et fracturation O10 | C/F |
-| **Surface alpine érodée** — Sol mince, petites pierres, roche affleurante | M01/M06/M07 | Sol mince N1 ; petits fragments N2 ; vivant retiré | C |
-| **Formations morainiques** — Frontales, latérales, de fond | M28 | Héritage glaciaire O2/O6 ; bourrelets O9 ; tri N2 | O/F |
-| **Terrasses naturelles de versant** — Structurales, d'érosion, dépôts anciens | M07/M01/M05 | Origine structurale/érosive/héritée O2/O9 ; matériaux selon source | O/F |
+| **Rocky slope** — Smooth, fractured, stratified, foliated | M07 | N1; smooth/fractured/layered/foliated according to O10 | C/O/F |
+| **Inland cliff** — Vertical, stepped, fractured | M07/M06 | Existing cliff O9; lithological parent and fragments N2 | C/F |
+| **Scree** — Fine, coarse, giant blocks | M06/M05/M01 | Gravity source, N2; fine/coarse/giant by size | C |
+| **Rockfall cone** — Isolated, coalescing | M06/M01 | Source and deposit path N2; cones/coalescence O9 | C/F |
+| **Block flow** — Stable, recent, vegetated | M06/M01 | Inherited runout and deposit O2/O9; plants removed | O/F |
+| **Landslide** — Translational, rotational, complex | M06/M01/M02 | Scar and displaced mass O2/O9; preserve source | O/F |
+| **Debris flow** — Mud, rock, mixture | M06/M11 | Deposit/event O2/O9; fine matrix and state N4 | O/F |
+| **Avalanche chute** — Rocky, grassy, crossing forest | M07/M06/M01 | Identified chute O9; remove living contrast without inventing material | C/O/F |
+| **Vegetated scree** — Grasses, lichens, pioneer shrubs | M06/M01 | Source deposit N2; grass, lichens, shrubs removed | C |
+| **Rocky ridges** — Jagged, rounded, stratified | M07/M06 | Existing ridge O9; rock and fracturing O10 | C/F |
+| **Eroded alpine surface** — Thin soil, small stones, exposed rock | M01/M06/M07 | Thin soil N1; small fragments N2; living matter removed | C |
+| **Moraine formations** — Terminal, lateral, ground | M28 | Glacial legacy O2/O6; ridges O9; sorting N2 | O/F |
+| **Natural slope terraces** — Structural, erosional, ancient deposits | M07/M01/M05 | Structural/erosional/inherited origin O2/O9; materials by source | O/F |
 
-### Catalogue 1.6 Reliefs karstiques et dissolution
+### Catalog 1.6. Karst landforms and dissolution
 
-| Type et variantes du catalogue | Recettes de sol ou traitement | Condition particulière et information requise | Statut |
+| Catalog type and variants | Ground recipes or treatment | Specific condition and information required | Status |
 | --- | --- | --- | --- |
-| **Lapiaz** — Fissuré, rainuré, à rigoles | M07/M01 | Roche soluble et dissolution O1/O10 ; rainures/rigoles O9 | O/F |
-| **Doline** — Petite, grande, sèche, humide | M07/M01/M11 | Doline O9 ; sèche/humide selon eau N3/O3, pas selon calcaire seul | O/F |
-| **Ouvala** — Fusion de plusieurs dolines | M07/M01/M11 | Dépressions karstiques fusionnées O9 ; fond selon dépôt et état | O/F |
-| **Poljé** — Plaine karstique fermée | M01/M02/M11/M07 | Plaine karstique O9 ; apport et drainage distincts O3 | O/F |
-| **Karst à pitons** — Tours isolées, pitons densément groupés | M07/M06 | Roche et pitons/tours O1/O9 ; ombres hors décision de matière | O/F |
-| **Karst conique** — Cônes serrés, cônes isolés | M07/M01 | Cônes et dépressions existants O9 ; matériaux de surface N1/N2 | O/F |
-| **Karst à cockpit** — Dépressions jointives entre collines | M07/M01/M11 | Cuvettes karstiques O9 ; fond selon drainage et dépôts | O/F |
-| **Effondrement karstique** — Gouffre, puits, effondrement récent | M07/M06 | Effondrement/gouffre O9 ; volume absent non simulé par couleur sombre | O/F |
-| **Source karstique** — Résurgence, bassin turquoise | Eau et fond qualifié ; M20 conditionnel | Résurgence O3/O9 ; fond O8 ; M20 seulement si dépôt carbonaté/minéralisé déclaré | O/F/W |
-| **Travertin** — Bassins étagés, terrasses calcaires | M20 | Dépôt carbonaté de source O1/O3 ; terrasses et bassins O9 | O/F/W |
-| **Tuf calcaire** — Dépôts poreux, cascades pétrifiantes | M20 | Tuf calcaire précipité O1/O3 ; porosité/forme O9/O10 | O/F |
+| **Limestone pavement** — Fractured, grooved, runneled | M07/M01 | Soluble rock and dissolution O1/O10; grooves/runnels O9 | O/F |
+| **Doline** — Small, large, dry, wet | M07/M01/M11 | Doline O9; dry/wet from water N3/O3, not limestone alone | O/F |
+| **Uvala** — Several merged dolines | M07/M01/M11 | Merged karst depressions O9; bottom by deposit and state | O/F |
+| **Polje** — Closed karst plain | M01/M02/M11/M07 | Karst plain O9; distinct supply and drainage O3 | O/F |
+| **Tower karst** — Isolated towers, densely grouped peaks | M07/M06 | Rock and peaks/towers O1/O9; shadows outside material decision | O/F |
+| **Cone karst** — Clustered or isolated cones | M07/M01 | Existing cones and depressions O9; surface materials N1/N2 | O/F |
+| **Cockpit karst** — Adjacent depressions between hills | M07/M01/M11 | Karst hollows O9; bottom according to drainage and deposits | O/F |
+| **Karst collapse** — Sinkhole, shaft, recent collapse | M07/M06 | Collapse/shaft O9; absent volume not simulated by dark color | O/F |
+| **Karst spring** — Resurgence, turquoise pool | Water and qualified bed; M20 conditional | Resurgence O3/O9; bed O8; M20 only for declared carbonate/mineral deposit | O/F/W |
+| **Travertine** — Stepped pools, limestone terraces | M20 | Spring carbonate deposit O1/O3; terraces and pools O9 | O/F/W |
+| **Calcareous tufa** — Porous deposits, petrifying waterfalls | M20 | Precipitated calcareous tufa O1/O3; porosity/form O9/O10 | O/F |
 
-### Catalogue 1.7 Terrains volcaniques et géothermiques
+### Catalog 1.7. Volcanic and geothermal terrain
 
-| Type et variantes du catalogue | Recettes de sol ou traitement | Condition particulière et information requise | Statut |
+| Catalog type and variants | Ground recipes or treatment | Specific condition and information required | Status |
 | --- | --- | --- | --- |
-| **Lave basaltique pāhoehoe** — Cordée, lobée, plissée | M17 | Unité pāhoehoe O5 ; cordée/lobée/plissée O9/O10 | O/F |
-| **Lave ʻaʻā** — Scoriacée, chaotique | M18 | Unité ʻaʻā O5 ; fragments et rugosité N2/O10 | O/F |
-| **Coulée solidifiée** — Ancienne, récente, superposée | M17/M18/M07 | Coulée et âge O5/O9 ; succession ancienne/récente déclarée | O/F |
-| **Champ de scories** — Noires, rouges, brunes | M18 | Scories O5 ; grains N2 ; noir/rouge/brun selon source | O |
-| **Plaine de cendres** — Fine, consolidée, remaniée | M19 | Cendres O5 ; fines/consolidation/remaniement N2/O2/O10 | O |
-| **Dépôt de ponce** — Blanc, beige, gris | M19 | Ponce O5 ; granularité N2 ; palette compatible | O |
-| **Tuf et ignimbrite** — Compact, stratifié, raviné | M19/M07 | Tuf/ignimbrite O5 ; consolidation et ravins O9/O10 | O/F |
-| **Cône volcanique** — Scories, cendres, roches nues | M18/M19/M07 | Cône O9 et produits volcaniques O5 ; pentes radiales préexistantes | O/F |
-| **Caldeira** — Sèche, lacustre, végétalisée | M07/M19/M01 | Caldeira O9 ; état sec/lacustre via N3/N4 ; vivant retiré | O/F/W |
-| **Cratère secondaire** — Petits cônes, maars, évents | M18/M19/M07 | Cône/maar/évent O5/O9 ; eau des maars indépendante | O/F/W |
-| **Dôme de lave** — Compact, fracturé, en éboulis | M17/M07/M06 | Dôme O9 ; roche et éboulis N1/N2/O5 | O/F |
-| **Lahar** — Sec, humide, ancien | M19/M11/M06 | Dépôt de lahar O5/O9 ; état et âge N4/O2 | O/F |
-| **Champ hydrothermal** — Argiles altérées, soufre, silice | M20 | Hydrothermalisme et substances O5 ; argiles/soufre/silice distincts | O |
-| **Bassins géothermiques** — Chauds, siliceux, multicolores | M20 ; fond qualifié | Bassin/source O5/O9 ; eau chaude/minéralisée hors matière du sol | O/F/W |
-| **Solfatares et fumerolles** — Minéralisées, croûtées | M20 | Solfatare/fumerolle O5 ; croûtes minérales admises, vapeur hors périmètre | O/F/E |
+| **Pāhoehoe basalt lava** — Ropy, lobed, folded | M17 | Pāhoehoe unit O5; ropy/lobate/folded O9/O10 | O/F |
+| **ʻAʻā lava** — Scoriaceous, chaotic | M18 | ʻAʻā unit O5; fragments and roughness N2/O10 | O/F |
+| **Solidified flow** — Old, recent, superimposed | M17/M18/M07 | Flow and age O5/O9; declared old/recent succession | O/F |
+| **Scoria field** — Black, red, brown | M18 | Scoria O5; grains N2; black/red/brown by source | O |
+| **Ash plain** — Fine, consolidated, reworked | M19 | Ash O5; fines/consolidation/reworking N2/O2/O10 | O |
+| **Pumice deposit** — White, beige, gray | M19 | Pumice O5; granularity N2; compatible palette | O |
+| **Tuff and ignimbrite** — Compact, layered, gullied | M19/M07 | Tuff/ignimbrite O5; consolidation and gullies O9/O10 | O/F |
+| **Volcanic cone** — Scoria, ash, bare rock | M18/M19/M07 | Cone O9 and volcanic products O5; existing radial slopes | O/F |
+| **Caldera** — Dry, lake-filled, vegetated | M07/M19/M01 | Caldera O9; dry/lake state via N3/N4; living matter removed | O/F/W |
+| **Secondary crater** — Small cones, maars, vents | M18/M19/M07 | Cone/maar/vent O5/O9; maar water independent | O/F/W |
+| **Lava dome** — Compact, fractured, scree-covered | M17/M07/M06 | Dome O9; rock and scree N1/N2/O5 | O/F |
+| **Lahar** — Dry, wet, old | M19/M11/M06 | Lahar deposit O5/O9; state and age N4/O2 | O/F |
+| **Hydrothermal field** — Altered clays, sulfur, silica | M20 | Hydrothermalism and substances O5; distinct clays/sulfur/silica | O |
+| **Geothermal pools** — Hot, siliceous, multicolored | M20 ; qualified bed | Basin/spring O5/O9; hot/mineral water outside ground material | O/F/W |
+| **Solfataras and fumaroles** — Mineralized, crusted | M20 | Solfatara/fumarole O5; mineral crusts allowed, steam outside scope | O/F/E |
 
-### Catalogue 1.8 Rivières, torrents et plaines alluviales
+### Catalog 1.8. Rivers, torrents, and alluvial plains
 
-| Type et variantes du catalogue | Recettes de sol ou traitement | Condition particulière et information requise | Statut |
+| Catalog type and variants | Ground recipes or treatment | Specific condition and information required | Status |
 | --- | --- | --- | --- |
-| **Ruisseau naturel** — Rectiligne, sinueux, encaissé | Fond M04/M05/M07/M11 | Réseau et emprise N3 ; eau séparée ; fond seulement si O8 | C/F/W |
-| **Rivière à méandres** — Faiblement ou fortement sinueuse | M04/M05/M03 ; fond | Méandres existants N3/O9 ; dépôts selon source et tri | C/F/W |
-| **Rivière en tresses** — Quelques bras, réseau très dense | M05/M04/M03 | Bras et bancs émergés N3/O9 ; eau entre bancs | C/F/W |
-| **Rivière anastomosée** — Plusieurs chenaux stables végétalisés | M04/M03/M11 | Chenaux stables O9 ; retirer vivant des îles, garder dépôts et eau | C/F/W |
-| **Torrent montagnard** — Rocheux, graveleux, à cascades | M07/M06/M05 | Source grossière et réseau N2/N3 ; cascades/eau hors matière | C/F/W |
-| **Bancs alluviaux** — Sable, gravier, galets | M04/M05 | Emprise de banc émergé N3 ; courbure seule non suffisante | C/F |
-| **Îles fluviales** — Sableuses, boisées, rocheuses | M04/M05/M07 | Île existante N3/O9 ; sable/roche selon source, boisements retirés | C/F |
-| **Méandres abandonnés** — Bras morts, lacs en fer à cheval | M11/M03/M04 ; fond | Bras abandonné O2/O9 ; eau/état N3/O3 ; vivant retiré | O/F/W |
-| **Paléochenaux** — Humides, secs, comblés | M03/M04/M11 | Paléochenal O2/O9 ; humide/sec/comblé selon état, non déduit du seul HAND | O/F |
-| **Plaine d'inondation** — Limoneuse, marécageuse, boisée | M03/M02/M11 | Plaine connectée N3 et inondation O3 ; boisements retirés | C/O/F |
-| **Levées naturelles** — Bourrelets riverains, berges surélevées | M04/M03 | Levée naturelle O9 ; tri/dépôt fluvial N2/N3 | C/O/F |
-| **Cônes alluviaux** — Petits, géants, actifs, fossiles | M05/M04/M03 | Cône alluvial O9 ; apport N2/N3 ; actif/fossile O2/O3 | C/O/F |
-| **Bajadas** — Cônes de piémont coalescents | M05/M04/M03 | Cônes coalescents O9 ; stock et apport N2/N3 | C/O/F |
-| **Terrasses fluviales** — Anciennes, récentes, étagées | M05/M04/M03/M01 | Terrasse/héritage O2/O9 ; état récent/ancien déclaré | O/F |
-| **Ravines et rigoles** — Peu profondes, très incisées | M01/M02/M07 | Incision présente O9 ; matière selon substrat/dépôt N1/N2 | C/F |
-| **Cascades et rapides** — Rocheux, en marches, à seuils | M07/M06 ; fond | Seuils et géométrie N3/O9 ; écume et animation d'eau hors matière | C/F/W |
+| **Natural stream** — Straight, winding, incised | Bed M04/M05/M07/M11 | Network and footprint N3; separate water; bed only if O8 | C/F/W |
+| **Meandering river** — Weakly or strongly sinuous | M04/M05/M03 ; bed | Existing meanders N3/O9; deposits by source and sorting | C/F/W |
+| **Braided river** — Few channels, very dense network | M05/M04/M03 | Channels and exposed bars N3/O9; water between bars | C/F/W |
+| **Anastomosing river** — Multiple stable vegetated channels | M04/M03/M11 | Stable channels O9; remove living matter from islands, retain deposits and water | C/F/W |
+| **Mountain torrent** — Rocky, gravelly, waterfalls | M07/M06/M05 | Coarse source and network N2/N3; waterfalls/water outside material | C/F/W |
+| **Alluvial bars** — Sand, gravel, pebbles | M04/M05 | Exposed bar footprint N3; curvature alone insufficient | C/F |
+| **River islands** — Sandy, wooded, rocky | M04/M05/M07 | Existing island N3/O9; sand/rock by source, woodland removed | C/F |
+| **Abandoned meanders** — Oxbows, horseshoe lakes | M11/M03/M04 ; bed | Abandoned channel O2/O9; water/state N3/O3; living matter removed | O/F/W |
+| **Paleochannels** — Wet, dry, filled | M03/M04/M11 | Paleochannel O2/O9; wet/dry/filled by state, not HAND alone | O/F |
+| **Floodplain** — Silty, marshy, wooded | M03/M02/M11 | Connected plain N3 and flooding O3; woodland removed | C/O/F |
+| **Natural levees** — Riverside ridges, elevated banks | M04/M03 | Natural levee O9; fluvial sorting/deposit N2/N3 | C/O/F |
+| **Alluvial fans** — Small, giant, active, fossil | M05/M04/M03 | Alluvial fan O9; supply N2/N3; active/fossil O2/O3 | C/O/F |
+| **Bajadas** — Coalescing piedmont fans | M05/M04/M03 | Coalescing fans O9; stock and supply N2/N3 | C/O/F |
+| **River terraces** — Old, recent, stepped | M05/M04/M03/M01 | Terrace/legacy O2/O9; declared recent/old state | O/F |
+| **Gullies and rills** — Shallow, deeply incised | M01/M02/M07 | Existing incision O9; material by substrate/deposit N1/N2 | C/F |
+| **Waterfalls and rapids** — Rocky, stepped, with sills | M07/M06 ; bed | Sills and geometry N3/O9; foam and water animation outside material | C/F/W |
 
-### Catalogue 1.9 Lacs et eaux intérieures
+### Catalog 1.9. Lakes and inland waters
 
-| Type et variantes du catalogue | Recettes de sol ou traitement | Condition particulière et information requise | Statut |
+| Catalog type and variants | Ground recipes or treatment | Specific condition and information required | Status |
 | --- | --- | --- | --- |
-| **Lac profond clair** — Bleu foncé, bleu-noir | Fond non visible | Eau profonde claire : W ; support seulement si fond O8 et visibilité suffisante | W |
-| **Lac peu profond** — Fond sableux, rocheux, vaseux | M04/M07/M11 | Fond et profondeur O8 ; pas de fond qualifié à partir du seul masque lac | O/W |
-| **Lac glaciaire** — Turquoise, laiteux, chargé en sédiments | M28 ; fond éventuel | Eau glaciaire chargée : W ; support glaciaire seulement O2/O6/O8 | O/W |
-| **Lac volcanique** — Acide, minéralisé, chaud | Fond qualifié éventuel | Chimie/température d'eau hors sol ; O5/O8 pour dépôts et fond | O/W |
-| **Lac salé** — Permanent, saisonnier, hypersalin | M15/M11 ; fond | Salinité et immersion O1/O3 ; pas de sel automatique pour lac fermé | O/W |
-| **Lac organique** — Eau chargée en tanins | M09/M11 ; fond | Tanins/couleur appartiennent à l'eau ; organique du fond séparé O3/O8 | O/W |
-| **Lac turbide** — Charge argileuse, limoneuse | M03/M02/M11 ; fond | Charge en suspension dans l'eau ; dépôt/fond seulement N2/O8 | O/W |
-| **Lac à végétation aquatique** — Plantes submergées, flottantes | Fond qualifié éventuel | Plantes flottantes/submergées retirées ; eau et fond O8 conservés | E/W |
-| **Lac de barrage naturel** — Glaciaire, volcanique, éboulement | M06/M28/M17 selon obstacle | Obstacle naturel et origine déclarés O2/O5/O6/O9 ; eau W | O/F/W |
-| **Lac temporaire** — Flaques, bassins saisonniers, playa inondée | M02/M11/M15 | État temporairement inondé O3/N4 ; émergé selon masque, sel conditionnel | O/F/W |
-| **Mare forestière** — Claire, sombre, couverte de feuilles | M11/M09 ; M21 optionnel | Mare et fond O3/O8 ; feuilles mortes O7 ; canopée retirée | O/W |
-| **Réseau de lacs** — Thermokarst, glaciaire, tourbeux | Fond qualifié éventuel | Thermokarst/glaciaire/tourbeux O2/O3/O6/O9 ; réseau ≠ matière | O/F/W |
-| **Lac à dépôts littoraux** — Plages, bancs, deltas lacustres | M04/M05/M03 | Dépôts lacustres et apports N2/N3 ; delta/plage/banc O9 | C/O/F/W |
+| **Clear deep lake** — Dark blue, blue-black | Bed not visible | Clear deep water: W; support only if O8 bed and sufficient visibility | W |
+| **Shallow lake** — Sandy, rocky, muddy bottom | M04/M07/M11 | Bed and depth O8; lake mask alone does not qualify bed | O/W |
+| **Glacial lake** — Turquoise, milky, sediment-laden | M28 ; possible bed | Sediment-laden glacial water: W; glacial support only O2/O6/O8 | O/W |
+| **Volcanic lake** — Acidic, mineralized, hot | Possible qualified bed | Water chemistry/temperature outside soil; O5/O8 for deposits and bed | O/W |
+| **Salt lake** — Permanent, seasonal, hypersaline | M15/M11 ; bed | Salinity and immersion O1/O3; no automatic salt in closed lake | O/W |
+| **Organic lake** — Tannin-laden water | M09/M11 ; bed | Tannins/color belong to water; separate bottom organic matter O3/O8 | O/W |
+| **Turbid lake** — Clay or silt load | M03/M02/M11 ; bed | Suspended load in water; deposit/bed only N2/O8 | O/W |
+| **Lake with aquatic vegetation** — Submerged, floating plants | Possible qualified bed | Floating/submerged plants removed; water and O8 bed retained | E/W |
+| **Naturally dammed lake** — Glacial, volcanic, landslide | M06/M28/M17 depending on obstacle | Declared natural obstacle and origin O2/O5/O6/O9; water W | O/F/W |
+| **Temporary lake** — Puddles, seasonal basins, flooded playa | M02/M11/M15 | Temporarily flooded state O3/N4; exposed per mask, salt conditional | O/F/W |
+| **Forest pond** — Clear, dark, leaf-covered | M11/M09 ; M21 optional | Pond and bed O3/O8; dead leaves O7; canopy removed | O/W |
+| **Lake network** — Thermokarst, glacial, peaty | Possible qualified bed | Thermokarst/glacial/peat O2/O3/O6/O9; network ≠ material | O/F/W |
+| **Lake with shore deposits** — Beaches, bars, lake deltas | M04/M05/M03 | Lake deposits and supply N2/N3; delta/beach/bar O9 | C/O/F/W |
 
-### Catalogue 1.10 Marais, tourbières et zones humides
+### Catalog 1.10. Marshes, peatlands, and wetlands
 
-| Type et variantes du catalogue | Recettes de sol ou traitement | Condition particulière et information requise | Statut |
+| Catalog type and variants | Ground recipes or treatment | Specific condition and information required | Status |
 | --- | --- | --- | --- |
-| **Marais herbacé** — Dense, clairsemé, inondé | M01/M02/M09/M11 | Herbes retirées ; fond minéral/organique selon N2/O3 ; inondation W | C/O/E/W |
-| **Marais à roseaux** — Roselières homogènes ou fragmentées | M01/M11/M09 | Roseaux retirés ; fond et état selon N2/O3, pas selon densité des plantes | C/O/E/W |
-| **Marécage boisé** — Arbres dispersés, forêt inondée | M01/M09/M11 | Arbres retirés ; eau conservée ; tourbe seulement si O3 | C/O/E/W |
-| **Tourbière bombée** — À sphaignes, à mares | M10/M11 | Tourbe et bombement O3/O9 ; sphaignes retirées ; mares W | O/F/E/W |
-| **Tourbière réticulée** — Tourbière à lanières (aapa) | M10/M11 | Tourbe et lanières O3/O9 ; vivant retiré ; bandes non créées par texture | O/F/E/W |
-| **Tourbière à buttes** — Buttes de sphaignes, creux humides | M10/M11 | Tourbe et buttes/creux O3/O9 ; sphaignes retirées | O/F/E/W |
-| **Prairie humide** — Joncs, graminées, zones engorgées | M01/M02/M09/M11 | Joncs/graminées retirés ; engorgement O3 et état N4 | C/O/E |
-| **Marais salé** — Prés salés, salicornes, chenaux | M11/M03 ; M15 conditionnel | Régime salin O4 ; végétation retirée ; chenaux eau W | O/F/E/W |
-| **Vasière intérieure** — Boue nue, eau peu profonde | M11/M03/M02 | Matrice fine N2 ; saturation/émersion N3/N4 ; fond sous eau O8 | C/O/W |
-| **Plaine saisonnièrement inondée** — Savane inondable, cuvette herbacée | M01/M03/M11 | Inondation saisonnière O3/N4 ; végétation retirée | O/E/W |
-| **Marais de papyrus** — Dense, fragmenté, flottant | M09/M11 ; fond | Papyrus et tapis flottants retirés ; tourbe non automatique ; fond O3/O8 | O/E/W |
-| **Marais tourbeux tropical** — Tourbière boisée, tourbière ouverte | M10/M11/M09 | Dépôt tourbeux tropical O3 ; bois/végétation retirés | O/E/W |
+| **Herbaceous marsh** — Dense, sparse, flooded | M01/M02/M09/M11 | Grass removed; mineral/organic bed by N2/O3; flooding W | C/O/E/W |
+| **Reed marsh** — Uniform or fragmented reedbeds | M01/M11/M09 | Reeds removed; bed and state by N2/O3, not plant density | C/O/E/W |
+| **Wooded swamp** — Scattered trees, flooded forest | M01/M09/M11 | Trees removed; water retained; peat only if O3 | C/O/E/W |
+| **Raised bog** — Sphagnum, pools | M10/M11 | Peat and raised form O3/O9; sphagnum removed; ponds W | O/F/E/W |
+| **Reticulated peatland** — Aapa string mire | M10/M11 | Peat and strings O3/O9; living matter removed; bands not created by texture | O/F/E/W |
+| **Hummock peatland** — Sphagnum hummocks, wet hollows | M10/M11 | Peat and hummocks/hollows O3/O9; sphagnum removed | O/F/E/W |
+| **Wet meadow** — Rushes, grasses, waterlogged areas | M01/M02/M09/M11 | Rushes/grasses removed; waterlogging O3 and state N4 | C/O/E |
+| **Salt marsh** — Salt meadows, glasswort, channels | M11/M03 ; M15 conditional | Saline regime O4; vegetation removed; channels water W | O/F/E/W |
+| **Inland mudflat** — Bare mud, shallow water | M11/M03/M02 | Fine matrix N2; saturation/emergence N3/N4; underwater bed O8 | C/O/W |
+| **Seasonally flooded plain** — Floodable savanna, grassy hollow | M01/M03/M11 | Seasonal flooding O3/N4; vegetation removed | O/E/W |
+| **Papyrus swamp** — Dense, fragmented, floating | M09/M11 ; bed | Papyrus and floating mats removed; peat not automatic; bed O3/O8 | O/E/W |
+| **Tropical peat swamp** — Forested or open peatland | M10/M11/M09 | Tropical peat deposit O3; wood/vegetation removed | O/E/W |
 
-### Catalogue 1.11 Littoraux sableux, vaseux et sédimentaires
+### Catalog 1.11. Sandy, muddy, and sedimentary coasts
 
-| Type et variantes du catalogue | Recettes de sol ou traitement | Condition particulière et information requise | Statut |
+| Catalog type and variants | Ground recipes or treatment | Specific condition and information required | Status |
 | --- | --- | --- | --- |
-| **Plage sableuse** — Blanche, dorée, noire, rouge, grossière | M04 | Stock/provenance N2/O4 ; blanc ou doré selon palette claire, noir via apport basaltique ; O7 si coquillier, O1 si couleur spéciale ; grain N2 | C/O/F |
-| **Plage de galets** — Fins, grossiers, mélangés au sable | M05/M04 | Stock grossier, arrondi, tri et énergie N2/O4 | C/O/F |
-| **Plage à coquillages** — Débris coquilliers, sable coquillier | M25/M04 | Apport coquillier O7 ; sable coquillier et débris selon N2 | O/F |
-| **Haut de plage** — Sable sec, laisses naturelles, végétation pionnière | M04 ; M21 optionnel | Émergence N3/N4 ; laisses O7 ; pionnières vivantes retirées | C/O/F/E |
-| **Estran sableux** — Sec, humide, parcouru de chenaux | M04/M11 | Estran et marée O4 ; sec/humide/chenaux via niveau et état | O/F/W |
-| **Estran vaseux** — Vases grises, brunes, noires | M11/M03 | Fines disponibles et faible énergie O4 ; marée/niveau N3/N4 | O/F/W |
-| **Banc de sable littoral** — Émergé, submergé, mobile | M04 | Banc identifié O9 ; émersion/immersion N3/O4 ; mobilité déclarée | C/O/F/W |
-| **Flèche littorale** — Droite, recourbée, multiple | M04/M05 | Apport/transport littoral O4 ; forme droite/recourbée/multiple O9 | O/F |
-| **Tombolo** — Simple, double, temporairement submergé | M04/M05 | Connexion littorale existante O9 ; niveau/marée O4 | O/F/W |
-| **Île-barrière** — Avec dunes, lagune, marais arrière-littoral | M04/M11 | Île-barrière O9 ; dunes/lagune selon forme, marais selon O3/O4 | O/F/W |
-| **Cordon dunaire** — Dune embryonnaire, haute dune, dune fixée | M04 | Sable N2 ; cordon O9 et histoire O2 ; vivant des dunes fixées retiré | O/F/E |
-| **Plaines à cordons littoraux** — Crêtes de plage successives | M04/M05 | Cordons hérités O2/O9 ; source et grain N2/O4 | O/F |
-| **Dépression interdunaire** — Sèche, humide, marécageuse | M04/M11/M09 | Dépression O9 ; état N4/O3 ; tourbe M10 seulement déclarée | C/O/F |
-| **Lagune littorale** — Ouverte, fermée, salée, saumâtre | Fond M04/M11 qualifié | Lagune O9 ; salinité et connexion O4 ; fond O8 | O/F/W |
-| **Delta** — Digité, lobé, arqué, estuarien | M04/M05/M03/M11 | Delta O9 ; apport/tri N2/N3 ; régime côtier O4 ; eau séparée | O/F/W |
-| **Estuaire** — Vaseux, sableux, à bancs multiples | M04/M03/M11 | Estuaire O9 ; mélange et énergie O4 ; turbidité dans l'eau | O/F/W |
-| **Chenaux de marée** — Rectilignes, sinueux, dendritiques | M11/M04 | Chenaux de marée O4/O9 ; fond/berge selon apports et émergence | O/F/W |
-| **Sabkha côtière** — Saline, humide, encroûtée | M15/M11/M02 | Salinité et concentration O1/O4 ; croûte seulement selon état | O/F |
-| **Littoral de mangrove** — Dense, fragmenté, entrecoupé de chenaux | M11/M04/M09 | Mangrove retirée ; fond selon N2/O3/O4 ; tourbe seulement déclarée | O/F/E/W |
+| **Sandy beach** — White, golden, black, red, coarse | M04 | Stock/provenance N2/O4; white or golden by light palette, black via basalt supply; O7 if shell, O1 for special color; grain N2 | C/O/F |
+| **Pebble beach** — Fine, coarse, mixed with sand | M05/M04 | Coarse stock, roundness, sorting, energy N2/O4 | C/O/F |
+| **Shell beach** — Shell debris, shell sand | M25/M04 | Shell supply O7; shell sand and debris by N2 | O/F |
+| **Upper beach** — Dry sand, natural wrack, pioneer vegetation | M04 ; M21 optional | Emergence N3/N4; wrack O7; living pioneers removed | C/O/F/E |
+| **Sandy intertidal flat** — Dry, wet, crossed by channels | M04/M11 | Tidal flat and tide O4; dry/wet/channels via level and state | O/F/W |
+| **Muddy intertidal flat** — Gray, brown, black mud | M11/M03 | Available fines and low energy O4; tide/level N3/N4 | O/F/W |
+| **Coastal sandbar** — Emergent, submerged, mobile | M04 | Identified bar O9; emergence/immersion N3/O4; declared mobility | C/O/F/W |
+| **Spit** — Straight, recurved, multiple | M04/M05 | Coastal supply/transport O4; straight/recurved/multiple form O9 | O/F |
+| **Tombolo** — Single, double, temporarily submerged | M04/M05 | Existing coastal connection O9; level/tide O4 | O/F/W |
+| **Barrier island** — With dunes, lagoon, back-barrier marsh | M04/M11 | Barrier island O9; dunes/lagoon by form, marsh by O3/O4 | O/F/W |
+| **Dune ridge** — Embryonic, high, stabilized dune | M04 | Sand N2; dune ridge O9 and history O2; living matter on fixed dunes removed | O/F/E |
+| **Beach-ridge plain** — Successive beach ridges | M04/M05 | Inherited ridges O2/O9; source and grain N2/O4 | O/F |
+| **Interdune depression** — Dry, wet, marshy | M04/M11/M09 | Depression O9; state N4/O3; M10 peat only if declared | C/O/F |
+| **Coastal lagoon** — Open, closed, salty, brackish | Qualified M04/M11 bed | Lagoon O9; salinity and connection O4; bed O8 | O/F/W |
+| **Delta** — Bird-foot, lobate, arcuate, estuarine | M04/M05/M03/M11 | Delta O9; supply/sorting N2/N3; coastal regime O4; separate water | O/F/W |
+| **Estuary** — Muddy, sandy, multiple bars | M04/M03/M11 | Estuary O9; mixture and energy O4; turbidity in water | O/F/W |
+| **Tidal channels** — Straight, winding, dendritic | M11/M04 | Tidal channels O4/O9; bed/bank by supply and emergence | O/F/W |
+| **Coastal sabkha** — Saline, wet, crusted | M15/M11/M02 | Salinity and concentration O1/O4; crust only by state | O/F |
+| **Mangrove coast** — Dense, fragmented, crossed by channels | M11/M04/M09 | Mangrove removed; bed by N2/O3/O4; peat only if declared | O/F/E/W |
 
-### Catalogue 1.12 Côtes rocheuses, falaises et littoraux découpés
+### Catalog 1.12. Rocky coasts, cliffs, and indented shores
 
-| Type et variantes du catalogue | Recettes de sol ou traitement | Condition particulière et information requise | Statut |
+| Catalog type and variants | Ground recipes or treatment | Specific condition and information required | Status |
 | --- | --- | --- | --- |
-| **Côte rocheuse basse** — Dalles, blocs, surfaces fracturées | M07/M06 | Roche accessible N1 ; dalles/fractures O10 ; état de rive N3/N4 | C/O/F |
-| **Falaise marine** — Calcaire, grès, granite, volcanique | M07/M06 | Falaise existante O9 ; source lithologique ou unité O1/O5 | C/O/F |
-| **Plateforme d'abrasion** — Roche nue, algues, cuvettes | M07 ; fond éventuel | Plateforme O9 ; algues retirées ; cuvettes eau N3/O4 | C/O/F/E/W |
-| **Côte à blocs** — Éboulis, chaos rocheux, gros galets | M06/M05 | Stock et source N2 ; arrondi selon remaniement O4 | C/O/F |
-| **Côte en fjord** — Étroit, ramifié, glaciaire | M07/M28 ; fond | Fjord et héritage O6/O9 ; eau séparée | O/F/W |
-| **Côte à rias** — Vallées fluviales noyées | M07/M03 ; fond | Vallée noyée O2/O9 ; eau actuelle N3/O4 | O/F/W |
-| **Côte à calanques** — Calcaire, étroite, profonde | M07/M06 ; fond | Source calcaire et forme O9 ; fond O8 si visible | O/F/W |
-| **Côte à skerries** — Îlots rocheux, récifs affleurants | M07 ; fond | Îlots/récifs affleurants O9 ; masque eau N3/O4 | O/F/W |
-| **Côte en arches et pitons** — Arches, aiguilles, stacks | M07/M06 | Arches/pitons/stacks existants O9 ; pas de volume créé par la matière | O/F |
-| **Côte volcanique** — Basalte noir, coulées, falaises | M07/M17/M18 | Basalte O1 actuel ; coulée/falaise spécifiques O5/O9 | C/O/F |
-| **Côte soulevée** — Anciennes plages, terrasses marines | M04/M05/M07 | Soulèvement et plage/terrasse héritée O2/O9 | O/F |
-| **Côte polaire rocheuse** — Roches nues, neige, glace littorale | M07/M06 ; M23/M24 optionnels | Roche selon source ; neige/glace selon état O6, pas selon nom polaire seul | C/O/F |
-| **Littoral à blocs glaciels** — Blocs échoués, sédiments remaniés par la glace | M06/M28 | Apport par glace/héritage O2/O6 ; blocs et remaniement N2 | O/F |
+| **Low rocky coast** — Slabs, blocks, fractured surfaces | M07/M06 | Accessible rock N1; slabs/fractures O10; shore state N3/N4 | C/O/F |
+| **Sea cliff** — Limestone, sandstone, granite, volcanic | M07/M06 | Existing cliff O9; lithological source or unit O1/O5 | C/O/F |
+| **Wave-cut platform** — Bare rock, algae, pools | M07 ; possible bed | Platform O9; algae removed; water pools N3/O4 | C/O/F/E/W |
+| **Boulder coast** — Scree, rock fields, large pebbles | M06/M05 | Stock and source N2; roundness by O4 reworking | C/O/F |
+| **Fjord coast** — Narrow, branching, glacial | M07/M28 ; bed | Fjord and legacy O6/O9; separate water | O/F/W |
+| **Ria coast** — Drowned river valleys | M07/M03 ; bed | Drowned valley O2/O9; current water N3/O4 | O/F/W |
+| **Calanque coast** — Limestone, narrow, deep | M07/M06 ; bed | Limestone source and form O9; bed O8 if visible | O/F/W |
+| **Skerry coast** — Rocky islets, emergent reefs | M07 ; bed | Islets/emergent reefs O9; water mask N3/O4 | O/F/W |
+| **Arch and pinnacle coast** — Arches, needles, stacks | M07/M06 | Existing arches/pinnacles/stacks O9; material creates no volume | O/F |
+| **Volcanic coast** — Black basalt, flows, cliffs | M07/M17/M18 | Current basalt O1; specific flow/cliff O5/O9 | C/O/F |
+| **Uplifted coast** — Former beaches, marine terraces | M04/M05/M07 | Uplift and inherited beach/terrace O2/O9 | O/F |
+| **Rocky polar coast** — Bare rocks, snow, coastal ice | M07/M06 ; M23/M24 optional | Rock by source; snow/ice by O6 state, not polar name alone | C/O/F |
+| **Ice-rafted boulder shore** — Stranded blocks, ice-reworked sediments | M06/M28 | Ice supply/legacy O2/O6; blocks and reworking N2 | O/F |
 
-### Catalogue 1.13 Fonds marins visibles, récifs et surfaces océaniques
+### Catalog 1.13. Visible seabeds, reefs, and ocean surfaces
 
-| Type et variantes du catalogue | Recettes de sol ou traitement | Condition particulière et information requise | Statut |
+| Catalog type and variants | Ground recipes or treatment | Specific condition and information required | Status |
 | --- | --- | --- | --- |
-| **Eau océanique profonde** — Bleu foncé, presque noir | Aucune matière visible imposée | Eau profonde ; fond seulement si O8 conclut réellement à sa visibilité | W |
-| **Eau océanique côtière** — Bleue, verte, turbide | Fond qualifié éventuel | Couleur/turbidité d'eau W ; composition de fond O8 indépendante | O/W |
-| **Fond sableux immergé** — Blanc, beige, ondulé | M04 | Fond sableux disponible O8 ; couleur de source ; rides selon courant/motif | O/W |
-| **Fond rocheux immergé** — Rochers, dalles, blocs | M07/M06 | Fond rocheux et profondeur O8 ; blocs/dalles selon N2/O10 | O/W |
-| **Herbiers marins** — Denses, fragmentés, en mosaïque | Support minéral qualifié | Herbiers vivants retirés ; fond O8 inchangé | E/W |
-| **Forêt de kelp** — Dense, dispersée, en franges | Support minéral qualifié | Kelp vivant retiré ; fond O8 inchangé | E/W |
-| **Récif frangeant** — Continu, discontinu | M25/M07/M04 | Support récifal déclaré O7/O9 ; vivant retiré ; visibilité O8 | O/F/E/W |
-| **Barrière corallienne** — Linéaire, percée de passes | M25/M07/M04 | Barrière et passes O7/O9 ; fond O8 ; vivant retiré | O/F/E/W |
-| **Atoll** — Anneau simple, complexe, interrompu | M25/M04/M07 | Anneau et lagon O9 ; support biogénique O7 ; eau O8 | O/F/E/W |
-| **Récifs coralliens internes** — Patates de corail, récifs en plaques | M25/M07/M04 | Récifs internes et formes O7/O9 ; vivant retiré ; fond O8 | O/F/E/W |
-| **Platier récifal** — Corail mort, algues, sable | M25/M04 | Corail mort admissible O7 ; algues vivantes retirées ; platier O9/O8 | O/F/E/W |
-| **Récifs à sillons** — Éperons et sillons coralliens | M25/M04/M07 | Support et sillons/éperons O7/O9 ; vivant retiré ; fond O8 | O/F/E/W |
-| **Bancs sableux sous-marins** — Mobiles, ondulés, en chenaux | M04 | Stock sableux N2 ; bancs et courant O4/O9 ; fond O8 | O/F/W |
-| **Panache sédimentaire** — Fluvial, côtier, glaciaire | Aucune matière de sol nouvelle | Particules en suspension et colonne d'eau ; dépôt ultérieur exige N2/N3 | W |
-| **Prolifération planctonique** — Phytoplancton, cyanobactéries | Aucune matière de sol nouvelle | Plancton/cyanobactéries vivants hors vue du sol ; eau conservée | E/W |
-| **Sargasses flottantes** — Dispersées, concentrées | Aucune matière de sol nouvelle | Sargasses vivantes/flottantes exclues ; laisses mortes seulement M21/O7 | E/W |
-| **Vagues et houle** — Petites vagues, déferlantes, vagues longues | Aucune matière de sol nouvelle | Vagues/houle/écume dans l'eau ; ne sélectionnent pas un fond | W |
-| **Tourbillons et fronts marins** — Convergences, fronts de turbidité | Aucune matière de sol nouvelle | Fronts et tourbillons dans l'eau ; fond éventuel indépendant O8 | W |
-| **Eau à glace dérivante** — Glaçons, petits floes, brash ice | Aucune matière de sol nouvelle | Glace flottante et floes : état/objets de l'eau O6, hors support terrestre | O/E/W |
+| **Deep ocean water** — Dark blue, almost black | No visible material imposed | Deep water; bed only if O8 actually establishes visibility | W |
+| **Coastal ocean water** — Blue, green, turbid | Possible qualified bed | Water color/turbidity W; independent bed composition O8 | O/W |
+| **Submerged sandy bottom** — White, beige, rippled | M04 | Available sandy bed O8; source color; ripples by current/pattern | O/W |
+| **Submerged rocky bottom** — Rocks, slabs, blocks | M07/M06 | Rocky bed and depth O8; blocks/slabs by N2/O10 | O/W |
+| **Seagrass beds** — Dense, fragmented, mosaic | Qualified mineral support | Living seagrass removed; O8 bed unchanged | E/W |
+| **Kelp forest** — Dense, scattered, fringed | Qualified mineral support | Living kelp removed; O8 bed unchanged | E/W |
+| **Fringing reef** — Continuous, discontinuous | M25/M07/M04 | Declared reef support O7/O9; living matter removed; visibility O8 | O/F/E/W |
+| **Barrier reef** — Linear, cut by passes | M25/M07/M04 | Barrier and passes O7/O9; bed O8; living matter removed | O/F/E/W |
+| **Atoll** — Simple, complex, interrupted ring | M25/M04/M07 | Ring and lagoon O9; biogenic support O7; water O8 | O/F/E/W |
+| **Inner coral reefs** — Coral heads, patch reefs | M25/M07/M04 | Inner reefs and forms O7/O9; living matter removed; bed O8 | O/F/E/W |
+| **Reef flat** — Dead coral, algae, sand | M25/M04 | Dead coral allowed O7; living algae removed; reef flat O9/O8 | O/F/E/W |
+| **Spur-and-groove reefs** — Coral spurs and grooves | M25/M04/M07 | Support and grooves/spurs O7/O9; living matter removed; bed O8 | O/F/E/W |
+| **Underwater sandbars** — Mobile, rippled, channeled | M04 | Sand stock N2; bars and current O4/O9; bed O8 | O/F/W |
+| **Sediment plume** — River, coastal, glacial | No new ground material | Suspended particles and water column; later deposit requires N2/N3 | W |
+| **Plankton bloom** — Phytoplankton, cyanobacteria | No new ground material | Living plankton/cyanobacteria outside ground view; water retained | E/W |
+| **Floating sargassum** — Scattered, concentrated | No new ground material | Living/floating sargassum excluded; dead wrack only M21/O7 | E/W |
+| **Waves and swell** — Small waves, breakers, long waves | No new ground material | Waves/swell/foam in water; do not select bed | W |
+| **Marine eddies and fronts** — Convergences, turbidity fronts | No new ground material | Fronts and eddies in water; any bed independent O8 | W |
+| **Water with drifting ice** — Ice pieces, small floes, brash ice | No new ground material | Floating ice and floes: water state/objects O6, outside land support | O/E/W |
 
-### Catalogue 1.14 Couvert végétal naturel
+### Catalog 1.14. Natural vegetation cover
 
-| Type et variantes du catalogue | Recettes de sol ou traitement | Condition particulière et information requise | Statut |
+| Catalog type and variants | Ground recipes or treatment | Specific condition and information required | Status |
 | --- | --- | --- | --- |
-| **Forêt feuillue fermée** — Canopée continue, irrégulière, stratifiée | Support inchangé et états déclarés | Vivant masqué ; humus conservé si présent ; litière M21 seulement via O7 | E |
-| **Forêt feuillue ouverte** — Arbres espacés, sous-bois visible | Support inchangé et états déclarés | Vivant masqué ; humus conservé si présent ; litière M21 seulement via O7 | E |
-| **Forêt de conifères fermée** — Conifères réguliers, irréguliers | Support inchangé et états déclarés | Vivant masqué ; humus conservé si présent ; litière M21 seulement via O7 | E |
-| **Forêt de conifères claire** — Mélèzes, pins dispersés | Support inchangé et états déclarés | Vivant masqué ; humus conservé si présent ; litière M21 seulement via O7 | E |
-| **Forêt tropicale à canopée complexe** — Couronnes multiples, émergents | Support inchangé et états déclarés | Vivant masqué ; humus conservé si présent ; litière M21 seulement via O7 | E |
-| **Forêt sèche** — Caducifoliée, épineuse | Support inchangé et états déclarés | Vivant masqué ; humus conservé si présent ; litière M21 seulement via O7 | E |
-| **Forêt riparienne** — Dense, discontinue, en galerie | Support inchangé et états déclarés | Vivant masqué ; humus conservé si présent ; litière M21 seulement via O7 | E |
-| **Forêt marécageuse** — Dense, trouée, inondée | Support inchangé et états déclarés | Vivant masqué ; humus conservé si présent ; litière M21 seulement via O7 | E |
-| **Mangrove** — Dense, basse, haute, zonée | Support inchangé et états déclarés | Vivant masqué ; humus conservé si présent ; litière M21 seulement via O7 | E |
-| **Forêt de palmiers naturelle** — Dense, dispersée, mixte | Support inchangé et états déclarés | Vivant masqué ; humus conservé si présent ; litière M21 seulement via O7 | E |
-| **Bambouseraie naturelle** — Dense, mixte, en bosquets | Support inchangé et états déclarés | Vivant masqué ; humus conservé si présent ; litière M21 seulement via O7 | E |
-| **Forêt rabougrie** — Krummholz, arbres tortueux | Support inchangé et états déclarés | Vivant masqué ; humus conservé si présent ; litière M21 seulement via O7 | E |
-| **Broussailles hautes** — Denses, buissonnantes | Support inchangé et états déclarés | Vivant masqué ; humus conservé si présent ; litière M21 seulement via O7 | E |
-| **Maquis ou matorral** — Dense, clairsemé, rocheux | Support inchangé et états déclarés | Vivant masqué ; humus conservé si présent ; litière M21 seulement via O7 | E |
-| **Fourrés épineux** — Acacias, arbustes épineux, buissons secs | Support inchangé et états déclarés | Vivant masqué ; humus conservé si présent ; litière M21 seulement via O7 | E |
-| **Végétation arbustive basse** — Continue, dispersée | Support inchangé et états déclarés | Vivant masqué ; humus conservé si présent ; litière M21 seulement via O7 | E |
-| **Arbres isolés** — Solitaires, petits groupes, bouquets | Support inchangé et états déclarés | Vivant masqué ; humus conservé si présent ; litière M21 seulement via O7 | E |
-| **Formation herbeuse continue** — Haute, courte, dense, sèche | Support inchangé et états déclarés | Vivant masqué ; humus conservé si présent ; litière M21 seulement via O7 | E |
-| **Formation herbeuse en touffes** — Tussocks, grandes graminées | Support inchangé et états déclarés | Vivant masqué ; humus conservé si présent ; litière M21 seulement via O7 | E |
-| **Prairie alpine** — Rase, fleurie, rocheuse | Support inchangé et états déclarés | Vivant masqué ; humus conservé si présent ; litière M21 seulement via O7 | E |
-| **Steppe clairsemée** — Herbes basses, petits buissons | Support inchangé et états déclarés | Vivant masqué ; humus conservé si présent ; litière M21 seulement via O7 | E |
-| **Végétation désertique ponctuelle** — Buissons isolés, plantes succulentes | Support inchangé et états déclarés | Vivant masqué ; humus conservé si présent ; litière M21 seulement via O7 | E |
-| **Végétation en bandes** — Tiger bush, broussailles en bandes | Support inchangé et états déclarés | Vivant masqué ; humus conservé si présent ; litière M21 seulement via O7 | E |
-| **Mosaïque arborée-herbacée** — Arbres dispersés, herbes continues | Support inchangé et états déclarés | Vivant masqué ; humus conservé si présent ; litière M21 seulement via O7 | E |
-| **Mousses et lichens** — Tapis, plaques, croûtes biologiques | Support inchangé et états déclarés | Vivant masqué ; humus conservé si présent ; litière M21 seulement via O7 | E |
-| **Landes** — Bruyères, plantes basses et ligneuses | Support inchangé et états déclarés | Vivant masqué ; humus conservé si présent ; litière M21 seulement via O7 | E |
-| **Végétation aquatique flottante** — Nénuphars, lentilles d'eau, tapis flottants | Support inchangé et états déclarés | Vivant masqué ; humus conservé si présent ; litière M21 seulement via O7 | E |
-| **Végétation pionnière** — Lichens, mousses, herbes sur dépôts neufs | Support inchangé et états déclarés | Vivant masqué ; humus conservé si présent ; litière M21 seulement via O7 | E |
+| **Closed broadleaf forest** — Continuous, irregular, layered canopy | Unchanged support and declared states | Living matter hidden; humus retained if present; M21 litter only via O7 | E |
+| **Open broadleaf forest** — Spaced trees, visible understory | Unchanged support and declared states | Living matter hidden; humus retained if present; M21 litter only via O7 | E |
+| **Closed conifer forest** — Regular or irregular conifers | Unchanged support and declared states | Living matter hidden; humus retained if present; M21 litter only via O7 | E |
+| **Open conifer forest** — Larches, scattered pines | Unchanged support and declared states | Living matter hidden; humus retained if present; M21 litter only via O7 | E |
+| **Tropical forest with complex canopy** — Multiple crowns, emergent trees | Unchanged support and declared states | Living matter hidden; humus retained if present; M21 litter only via O7 | E |
+| **Dry forest** — Deciduous, thorny | Unchanged support and declared states | Living matter hidden; humus retained if present; M21 litter only via O7 | E |
+| **Riparian forest** — Dense, discontinuous, gallery | Unchanged support and declared states | Living matter hidden; humus retained if present; M21 litter only via O7 | E |
+| **Swamp forest** — Dense, open, flooded | Unchanged support and declared states | Living matter hidden; humus retained if present; M21 litter only via O7 | E |
+| **Mangrove** — Dense, low, high, zoned | Unchanged support and declared states | Living matter hidden; humus retained if present; M21 litter only via O7 | E |
+| **Natural palm forest** — Dense, scattered, mixed | Unchanged support and declared states | Living matter hidden; humus retained if present; M21 litter only via O7 | E |
+| **Natural bamboo stand** — Dense, mixed, in groves | Unchanged support and declared states | Living matter hidden; humus retained if present; M21 litter only via O7 | E |
+| **Stunted forest** — Krummholz, twisted trees | Unchanged support and declared states | Living matter hidden; humus retained if present; M21 litter only via O7 | E |
+| **Tall scrub** — Dense, bushy | Unchanged support and declared states | Living matter hidden; humus retained if present; M21 litter only via O7 | E |
+| **Maquis or matorral** — Dense, sparse, rocky | Unchanged support and declared states | Living matter hidden; humus retained if present; M21 litter only via O7 | E |
+| **Thorn scrub** — Acacias, thorny shrubs, dry bushes | Unchanged support and declared states | Living matter hidden; humus retained if present; M21 litter only via O7 | E |
+| **Low shrub vegetation** — Continuous, scattered | Unchanged support and declared states | Living matter hidden; humus retained if present; M21 litter only via O7 | E |
+| **Isolated trees** — Solitary, small groups, clumps | Unchanged support and declared states | Living matter hidden; humus retained if present; M21 litter only via O7 | E |
+| **Continuous grassland** — Tall, short, dense, dry | Unchanged support and declared states | Living matter hidden; humus retained if present; M21 litter only via O7 | E |
+| **Tufted grassland** — Tussocks, tall grasses | Unchanged support and declared states | Living matter hidden; humus retained if present; M21 litter only via O7 | E |
+| **Alpine meadow** — Short, flowering, rocky | Unchanged support and declared states | Living matter hidden; humus retained if present; M21 litter only via O7 | E |
+| **Sparse steppe** — Low grass, small bushes | Unchanged support and declared states | Living matter hidden; humus retained if present; M21 litter only via O7 | E |
+| **Scattered desert vegetation** — Isolated bushes, succulents | Unchanged support and declared states | Living matter hidden; humus retained if present; M21 litter only via O7 | E |
+| **Banded vegetation** — Tiger bush, banded scrub | Unchanged support and declared states | Living matter hidden; humus retained if present; M21 litter only via O7 | E |
+| **Tree–grass mosaic** — Scattered trees, continuous grass | Unchanged support and declared states | Living matter hidden; humus retained if present; M21 litter only via O7 | E |
+| **Mosses and lichens** — Carpets, patches, biological crusts | Unchanged support and declared states | Living matter hidden; humus retained if present; M21 litter only via O7 | E |
+| **Heathland** — Heather, low woody plants | Unchanged support and declared states | Living matter hidden; humus retained if present; M21 litter only via O7 | E |
+| **Floating aquatic vegetation** — Water lilies, duckweed, floating mats | Unchanged support and declared states | Living matter hidden; humus retained if present; M21 litter only via O7 | E |
+| **Pioneer vegetation** — Lichens, moss, grass on new deposits | Unchanged support and declared states | Living matter hidden; humus retained if present; M21 litter only via O7 | E |
 
-### Catalogue 1.15 Neige, glace et paysages périglaciaires
+### Catalog 1.15. Snow, ice, and periglacial landscapes
 
-| Type et variantes du catalogue | Recettes de sol ou traitement | Condition particulière et information requise | Statut |
+| Catalog type and variants | Ground recipes or treatment | Specific condition and information required | Status |
 | --- | --- | --- | --- |
-| **Neige fraîche** — Continue, poudreuse, peu ventée | M23 | Stock neigeux et état O6 ; poudreuse/ventée selon état, pas altitude seule | O |
-| **Neige ancienne** — Transformée, granuleuse, regelée | M23 | Neige et transformation O6 ; grain/regel déclarés | O |
-| **Neige soufflée** — Congères, corniches, sastrugi | M23 | Stock, vent et formes O6/O9 ; corniches ne viennent pas d'un albédo | O/F |
-| **Neige discontinue** — Sur herbe, forêt, roche | M23 sur support conservé | Couverture neigeuse O6 ; herbe/forêt retirées, roche/sol conservés | O/E |
-| **Névé et firn** — Compact, ancien, en accumulation | M23/M24 | Stock ancien et transformation O6 ; accumulation selon forme O9 | O/F |
-| **Glacier de vallée** — Propre, strié, chargé de débris | M24 ; M28/M06 en débris | Glacier existant/déclaré O6/O9 ; stries et débris selon origine | O/F |
-| **Glacier à crevasses** — Parallèles, transversales, entrecroisées | M24 | Glacier et crevasses O6/O9 ; pas de glacier généré par un réseau de lignes | O/F |
-| **Séracs** — Fracturés, en cascades | M24 | Séracs et support de glace O6/O9 ; volumes préexistants | O/F |
-| **Glacier couvert de débris** — Dépôts morainiques, blocs, poussière | M28/M06/M01 sur glace | Stock et emprise de débris O2/O6 ; glace sous couverture conservée | O/F |
-| **Glacier rocheux** — Actif, fossile, végétalisé | M06/M28/M01 | Langue active/fossile O2/O6/O9 ; vivant retiré, glace éventuelle distincte | O/F/E |
-| **Calotte glaciaire** — Uniforme, fissurée, traversée de flux | M23/M24 | Calotte et flux O6/O9 ; neige ou glace selon état de surface | O/F |
-| **Glace bleue** — Compacte, exposée, polie | M24 | Glace exposée O6 ; compacte/polie/striée selon O10 | O |
-| **Glace lacustre** — Lisse, fissurée, enneigée | M24 sur eau gelée ; M23 si enneigée | Gel et neige déclarés O6 ; couvert neigeux propre ; domaine eau et niveau conservés | O/W |
-| **Banquise compacte** — Continue, bosselée | Hors support terrestre | Banquise O6 ; glace/eau et bosses, pas recette de terre | O/F/W |
-| **Banquise fragmentée** — Floes, chenaux d'eau libre, crêtes de pression | Hors support terrestre | Floes/chenaux/crêtes de pression O6/O9 ; objets et eau | O/F/E/W |
-| **Glace de rive** — Fixe, fissurée, partiellement rompue | M24 au domaine de rive | Glace fixée O6 ; niveau/côte N3/O4 ; état de rupture déclaré | O/F/W |
-| **Polynie** — Ouverture d'eau dans la banquise | Aucune matière de sol nouvelle | Ouverture d'eau dans glace O6/O9 ; autorité eau | O/F/W |
-| **Icebergs** — Isolés, nombreux, tabulaires | Hors support terrestre | Icebergs O6 ; objets flottants/échoués, non générés dans la carte de sol | O/E/W |
-| **Sol polygonal périglaciaire** — Polygones à coins de glace, centrés hauts ou bas | M27 avec M01/M02/M05 | Pergélisol/coins de glace O6 ; polygones hauts/bas O9/O10 | O/F |
-| **Sol trié par le gel** — Cercles de pierres, bandes de pierres | M27 avec M05/M06/M01 | Gel-dégel O6 et grains N2 ; cercles/bandes O9/O10 | O/F |
-| **Buttes de pergélisol** — Palses, lithalses, pingos | M27/M10/M01 | Pergélisol/nappe et forme O3/O6/O9 ; palses/lithalses/pingos distincts | O/F |
-| **Thermokarst** — Affaissements, mares, lacs de dégel | M27/M11 ; fond | Dégradation et affaissements O6/O9 ; mares/eaux séparées | O/F/W |
-| **Toundra à microrelief** — Buttes herbeuses, mousses, mares | M01/M09/M10/M27 | Microrelief O6/O9 ; mousses/herbes retirées ; tourbe seulement O3 | O/F/E/W |
-| **Solifluxion** — Lobes, terrassettes, coulées lentes | M27/M06/M01 | Gel-dégel/eau et versant O6 ; lobes/terrassettes O9 | O/F |
-| **Stries et dépôts glaciaires** — Roches moutonnées, moraines, drumlins | M28/M07 | Héritage et direction glaciaires O2/O6 ; moraines/drumlins O9 | O/F |
+| **Fresh snow** — Continuous, powdery, little wind | M23 | Snow stock and state O6; powdery/windblown by state, not altitude alone | O |
+| **Old snow** — Metamorphosed, granular, refrozen | M23 | Snow and transformation O6; declared grain/refreezing | O |
+| **Windblown snow** — Drifts, cornices, sastrugi | M23 | Stock, wind, and forms O6/O9; cornices do not come from albedo | O/F |
+| **Discontinuous snow** — On grass, forest, rock | M23 on retained support | Snow cover O6; grass/forest removed, rock/soil retained | O/E |
+| **Névé and firn** — Compact, old, accumulating | M23/M24 | Old stock and transformation O6; accumulation by form O9 | O/F |
+| **Valley glacier** — Clean, striated, debris-laden | M24 ; M28/M06 as debris | Existing/declared glacier O6/O9; striations and debris by origin | O/F |
+| **Crevassed glacier** — Parallel, transverse, intersecting | M24 | Glacier and crevasses O6/O9; line network does not generate glacier | O/F |
+| **Seracs** — Fractured, icefalls | M24 | Seracs and ice support O6/O9; existing volumes | O/F |
+| **Debris-covered glacier** — Moraine deposits, blocks, dust | M28/M06/M01 on ice | Debris stock and footprint O2/O6; preserve ice under cover | O/F |
+| **Rock glacier** — Active, fossil, vegetated | M06/M28/M01 | Active/fossil tongue O2/O6/O9; living matter removed, possible ice separate | O/F/E |
+| **Ice cap** — Uniform, fractured, crossed by flows | M23/M24 | Ice cap and flows O6/O9; snow or ice by surface state | O/F |
+| **Blue ice** — Compact, exposed, polished | M24 | Exposed ice O6; compact/polished/striated by O10 | O |
+| **Lake ice** — Smooth, cracked, snow-covered | M24 on frozen water ; M23 if snow-covered | Declared freezing and snow O6; separate snow cover; retain water domain and level | O/W |
+| **Compact sea ice** — Continuous, hummocked | Outside land support | Sea ice O6; ice/water and hummocks, not earth recipe | O/F/W |
+| **Fragmented sea ice** — Floes, open-water channels, pressure ridges | Outside land support | Floes/channels/pressure ridges O6/O9; objects and water | O/F/E/W |
+| **Shore ice** — Fixed, fractured, partly broken | M24 in shore domain | Fixed ice O6; level/coast N3/O4; declared breakup state | O/F/W |
+| **Polynya** — Open water within sea ice | No new ground material | Open water in ice O6/O9; water authority | O/F/W |
+| **Icebergs** — Isolated, numerous, tabular | Outside land support | Icebergs O6; floating/stranded objects not generated in ground map | O/E/W |
+| **Periglacial polygon ground** — Ice-wedge polygons, high- or low-centered | M27 with M01/M02/M05 | Permafrost/ice wedges O6; high/low polygons O9/O10 | O/F |
+| **Frost-sorted ground** — Stone circles, stone stripes | M27 with M05/M06/M01 | Freeze–thaw O6 and grains N2; circles/stripes O9/O10 | O/F |
+| **Permafrost mounds** — Palsas, lithalsas, pingos | M27/M10/M01 | Permafrost/water table and form O3/O6/O9; distinguish palsas/lithalsas/pingos | O/F |
+| **Thermokarst** — Subsidence, ponds, thaw lakes | M27/M11 ; bed | Degradation and subsidence O6/O9; separate ponds/waters | O/F/W |
+| **Microrelief tundra** — Grassy hummocks, moss, ponds | M01/M09/M10/M27 | Microrelief O6/O9; moss/grass removed; peat only O3 | O/F/E/W |
+| **Solifluction** — Lobes, terracettes, slow flows | M27/M06/M01 | Freeze–thaw/water and slope O6; lobes/terracettes O9 | O/F |
+| **Glacial striations and deposits** — Roches moutonnées, moraines, drumlins | M28/M07 | Glacial legacy and direction O2/O6; moraines/drumlins O9 | O/F |
 
-## Annexe B Contextes de carte vers compositions de sol
 
-Cette lecture directe reprend les 28 situations de MATERIALS_REVIEW §3. Elle ne transforme pas les noms de paysages en classes de matière.
+## Appendix B. Map contexts to ground compositions
 
-| Contexte | Recettes candidates ou traitement | Conditions et portée | Statut |
+This direct reading reprises the 28 MATERIALS_REVIEW §3 situations. It does not turn landscape names into material classes.
+
+| Context | Candidate recipes or treatment | Conditions and scope | Status |
 | --- | --- | --- | --- |
-| Plaine continentale sèche | M01/M02/M03 ; M04/M05/M06 selon stock | N1/N2/N4 ; humidité localisée ; sel et sable libre non automatiques | C |
-| Plaine continentale humide | M01/M02/M09/M11 | N1/N4 ; mares selon N3/O3 ; tourbe seulement déclarée | C/O |
-| Plateau rocheux | M07/M06/M01 | N1/N2 ; roche accessible, couverture mince et poches de terre | C |
-| Plateau disséqué | M07/M06/M01/M03 | N1/N2 ; stratification et formes si O1/O9/O10 | C/O/F |
-| Collines arrondies | M01/M08/M07/M11 | N1/N4 ; affleurements localisés et vallons ; pas de sol uniforme | C |
-| Montagne tempérée | M01/M09/M07/M06 ; M23 optionnel | Vivant retiré ; neige O6 ; stock pierreux N2 | C/O |
-| Montagne tropicale | M01/M09/M11/M07 | Vivant retiré ; humide selon N4 ; ferrugineux M13 seulement O1/O2 | C/O |
-| Haute montagne aride | M07/M06/M01 ; M23 optionnel | N1/N2 ; poussière si disponible ; neige seulement O6 | C/O |
-| Haute montagne polaire | M07/M06/M28 ; M23/M24 conditionnels | O6 pour glace/pergélisol ; froid seul insuffisant | C/O |
-| Piémont | M05/M04/M03/M06 | Apports N2/N3 ; cônes et ravines O9 ; héritage O2 | C/O/F |
-| Vallée fluviale | M05/M04/M03/M02/M11 | Connexion et emprises N3 ; terrasses O2 ; vivant retiré | C/O/F/W |
-| Bassin endoréique | M02/M11 ; M15/M04 conditionnels | Stock salin/sableux O1/N2 ; cuvette/niveaux O3/O9 | C/O/F/W |
-| Désert sableux | M04 ; M05/M11 en interdunes | Stock sableux N2 ; dunes O9 ; vent et état déclarés | C/O/F |
-| Désert rocheux | M07/M06/M26 ; M04 ponctuel | Exposition N1 ; fragments N2 ; pavement O2/O10 | C/O |
-| Karst humide | M07.calcaire/M01/M11 | Karst et eau O3/O9 ; végétation retirée ; dissolution O10 | C/O/F |
-| Karst tropical | M07.calcaire/M01/M11 | Pitons et dépressions O9 ; couverture réelle, pas calcaire nu partout | C/O/F |
-| Plaine côtière sableuse | M04/M05/M11 | N2/O4 ; dunes/lagunes/marais selon O3/O9 ; eau W | C/O/F/W |
-| Côte rocheuse tempérée | M07/M06/M05 ; M04 local | N1/N2/O4 ; algues retirées ; petites plages selon apport | C/O/F/E |
-| Côte tropicale | M04/M11/M25/M07 | O4/O7/O9 ; vivant retiré ; récifs et mangrove ne dictent pas un sable blanc | O/F/E/W |
-| Côte glaciaire | M07/M28/M06 ; M23/M24 | Héritage O2/O6 ; fjord O9 ; neige/glace déclarées | O/F/W |
-| Delta fluvial | M04/M05/M03/M11 | Apports N2/N3 ; delta O9 ; eau et vivant séparés | C/O/F/W |
-| Estuaire | M04/M03/M11 | O4/O9 ; bancs selon emprise et tri ; turbidité dans eau | O/F/W |
-| Archipel rocheux | M07/M06 ; fond qualifié | Îlots et eau O9/N3 ; roche source N1 ; fond O8 | C/O/F/W |
-| Archipel corallien | M25/M04/M07 ; fond | Support biogénique O7/O9 ; vivant retiré ; fond O8 | O/F/E/W |
-| Zone de volcanisme actif | M17/M18/M19/M20 | Unités et dépôts O5 ; pas d'activité déduite du basalte seul | O/F |
-| Plaine arctique | M01/M09/M11/M27 ; M10 conditionnel | Régime froid O6 ; tourbe O3 ; vivant retiré ; lacs W | O/F/E/W |
-| Inlandsis | M23/M24 ; M28 aux marges | Glace et formes O6/O9 ; pas d'inlandsis dessiné par texture seule | O/F |
-| Mer peu profonde | M04/M07/M11/M25 | Fond O8 ; vivant retiré ; eau conserve visibilité et niveaux | O/E/W |
+| Dry continental plain | M01/M02/M03; M04/M05/M06 by stock | N1/N2/N4; localized moisture; salt and loose sand not automatic | C |
+| Wet continental plain | M01/M02/M09/M11 | N1/N4; ponds by N3/O3; peat only if declared | C/O |
+| Rocky plateau | M07/M06/M01 | N1/N2; accessible rock, thin cover and earth pockets | C |
+| Dissected plateau | M07/M06/M01/M03 | N1/N2; layering and forms if O1/O9/O10 | C/O/F |
+| Rounded hills | M01/M08/M07/M11 | N1/N4; localized outcrops and small valleys; no uniform soil | C |
+| Temperate mountain | M01/M09/M07/M06; M23 optional | Living matter removed; snow O6; stone stock N2 | C/O |
+| Tropical mountain | M01/M09/M11/M07 | Living matter removed; wet by N4; ferruginous M13 only O1/O2 | C/O |
+| Arid high mountain | M07/M06/M01; M23 optional | N1/N2; dust if available; snow only O6 | C/O |
+| Polar high mountain | M07/M06/M28; M23/M24 conditional | O6 for ice/permafrost; cold alone insufficient | C/O |
+| Piedmont | M05/M04/M03/M06 | Supply N2/N3; fans and gullies O9; legacy O2 | C/O/F |
+| River valley | M05/M04/M03/M02/M11 | Connection and footprints N3; terraces O2; living matter removed | C/O/F/W |
+| Endorheic basin | M02/M11; M15/M04 conditional | Saline/sand stock O1/N2; basin/levels O3/O9 | C/O/F/W |
+| Sandy desert | M04; M05/M11 in interdunes | Sand stock N2; dunes O9; declared wind and state | C/O/F |
+| Rocky desert | M07/M06/M26; localized M04 | Exposure N1; fragments N2; pavement O2/O10 | C/O |
+| Wet karst | M07.limestone/M01/M11 | Karst and water O3/O9; vegetation removed; dissolution O10 | C/O/F |
+| Tropical karst | M07.limestone/M01/M11 | Towers and depressions O9; actual cover, not bare limestone everywhere | C/O/F |
+| Sandy coastal plain | M04/M05/M11 | N2/O4; dunes/lagoons/marshes according to O3/O9; water W | C/O/F/W |
+| Temperate rocky coast | M07/M06/M05; local M04 | N1/N2/O4; algae removed; small beaches by supply | C/O/F/E |
+| Tropical coast | M04/M11/M25/M07 | O4/O7/O9; living matter removed; reefs and mangroves do not dictate white sand | O/F/E/W |
+| Glacial coast | M07/M28/M06; M23/M24 | Legacy O2/O6; fjord O9; declared snow/ice | O/F/W |
+| River delta | M04/M05/M03/M11 | Supply N2/N3; delta O9; separate water and living matter | C/O/F/W |
+| Estuary | M04/M03/M11 | O4/O9; bars by footprint and sorting; turbidity in water | O/F/W |
+| Rocky archipelago | M07/M06; qualified bed | Islets and water O9/N3; source rock N1; bed O8 | C/O/F/W |
+| Coral archipelago | M25/M04/M07; bed | Biogenic support O7/O9; living matter removed; bed O8 | O/F/E/W |
+| Active volcanic area | M17/M18/M19/M20 | Units and deposits O5; activity not inferred from basalt alone | O/F |
+| Arctic plain | M01/M09/M11/M27; M10 conditional | Cold regime O6; peat O3; living matter removed; lakes W | O/F/E/W |
+| Ice sheet | M23/M24; M28 at margins | Ice and forms O6/O9; texture alone does not draw ice sheet | O/F |
+| Shallow sea | M04/M07/M11/M25 | Bed O8; living matter removed; water retains visibility and levels | O/E/W |
 
-## Annexe C Motifs compatibles avec les matières
 
-Les 22 motifs de MATERIALS_REVIEW §2 précisent un agencement. Le choix de leur cause appartient aux règles de matière et de scénario.
+## Appendix C. Patterns compatible with materials
 
-| Motif et variantes | Recettes candidates ou traitement | Conditions et portée | Statut |
+The 22 MATERIALS_REVIEW §2 patterns specify arrangement. Their cause belongs to material and scenario rules.
+
+| Pattern and variants | Candidate recipes or treatment | Conditions and scope | Status |
 | --- | --- | --- | --- |
-| **Homogène** — Lisse, légèrement bruité | M01/M03/M04/M23 | Échelle et variations internes ; eau hors sol ; pas de nouvelle cause | C/O |
-| **Granulaire** — Fin, grossier, multiscalaire | M05/M06/M18/M19 | Distribution des grains N2 ; couvert forestier exclu | C/O |
-| **Tacheté** — Petites taches, larges taches, amas | M01/M07/M09/M11 | Taches liées à exposition/état/stock ; taches vivantes exclues | C/O |
-| **Ponctuel** — Aléatoire, agrégé, répulsif | M06 ; petites dépressions | Blocs selon N2 ; mares selon eau ; arbres/buissons exclus | C/O/F |
-| **Rayé** — Parallèle, ondulé, interrompu | M07/M04 | Strates ou rides avec source et direction ; bandes végétales exclues | C/O/F |
-| **Nervuré** — Parallèle, divergent, convergent | M07/M24 | Direction et forme compatibles O9/O10 ; yardangs préexistants | O/F |
-| **Ondulatoire** — Rides, crêtes, ondes superposées | M04/M23 | Vent/courant, grains/stock et échelle ; vagues restent eau | C/O |
-| **Polygonal** — Régulier, irrégulier, hiérarchique | M12/M15/M27/M07 | Cause et échelle séparées : dessiccation/sel/gel/fracture | O |
-| **Réticulé** — Mailles fines, larges, irrégulières | M10/M07/M11 | Réseau de lanières/fractures/chenaux O3/O9/O10 | O/F |
-| **Dendritique** — Ramifié, fractal, hiérarchique | M01/M03/M11 avec réseau | Écoulement ou incision existants N3/O9 ; pas un matériau en soi | C/O/F |
-| **Radial** — Divergent, convergent | M18/M19/M05/M28 | Volcan/cône/glacier identifié O9 ; direction issue de sa forme | O/F |
-| **Concentrique** — Anneaux, arcs, couronnes partielles | M04/M05/M03 | Cordons/dépôts et histoire O2/O9 ; anneaux non créés par texture | O/F |
-| **Lobé** — Langues, coulées, digitations | M17/M06/M24 | Coulée/glissement/glacier O9 ; matière selon source et état | O/F |
-| **En éventail** — Rayonnant, superposé | M05/M04/M03/M06 | Source, transport et forme d'éventail N2/N3/O9 | C/O/F |
-| **Rubané** — Continu, sinueux, interrompu | M04/M05/M11 | Bandes suivant réseau/emprises N3 ; forêt-galerie retirée | C/O/F |
-| **Cellulaire** — Cellules jointives, séparées | M27 ; support récifal M25 | Cellules par gel ou structure O6/O9 ; canopée exclue | O/F/E |
-| **Fracturé** — Rectiligne, angulaire, ramifié | M07/M24/M12 | Fractures et cause O10 ; roche/glace/argile restent distinctes | C/O |
-| **Moucheté multiscalaire** — Texture fine sur grandes taches | M01/M07/M09 | Variation de support sur plusieurs échelles ; canopée/steppe retirées | C/O/E |
-| **Tressé** — Canaux entrecroisés | M05/M04 | Forme de chenaux O9/N3 ; dépôt entre eaux, pas eau transformée en gravier | C/O/F/W |
-| **Directionnel** — Aligné sur pente, vent ou écoulement | M04/M07/M06 | Direction physique de vent/pente/écoulement ; végétation retirée | C/O |
-| **Graduel** — Transition progressive, auréoles | M01/M11/M15 | Transitions de stocks/états ; salinité seulement déclarée | C/O |
-| **Chaotique** — Éboulis, débris, fractures multiples | M06/M18/M24 | Source et tailles connues ; désordre conditionné, pas bruit libre | C/O |
+| **Homogeneous** — Smooth, slightly noisy | M01/M03/M04/M23 | Scale and internal variation; water outside ground; no new cause | C/O |
+| **Granular** — Fine, coarse, multiscale | M05/M06/M18/M19 | Grain distribution N2; forest cover excluded | C/O |
+| **Patchy** — Small spots, large patches, clusters | M01/M07/M09/M11 | Patches linked to exposure/state/stock; living patches excluded | C/O |
+| **Point-like** — Random, clustered, repulsive | M06; small depressions | Blocks by N2; ponds by water; trees/shrubs excluded | C/O/F |
+| **Striped** — Parallel, wavy, interrupted | M07/M04 | Strata or ripples with source and direction; vegetation bands excluded | C/O/F |
+| **Ribbed** — Parallel, divergent, convergent | M07/M24 | Compatible direction and form O9/O10; existing yardangs | O/F |
+| **Wavelike** — Ripples, ridges, superimposed waves | M04/M23 | Wind/current, grains/stock, and scale; waves remain water | C/O |
+| **Polygonal** — Regular, irregular, hierarchical | M12/M15/M27/M07 | Separate cause and scale: desiccation/salt/frost/fracture | O |
+| **Reticulated** — Fine, broad, irregular meshes | M10/M07/M11 | String/fracture/channel network O3/O9/O10 | O/F |
+| **Dendritic** — Branching, fractal, hierarchical | M01/M03/M11 with network | Existing flow or incision N3/O9; not itself a material | C/O/F |
+| **Radial** — Divergent, convergent | M18/M19/M05/M28 | Identified volcano/fan/glacier O9; direction from its form | O/F |
+| **Concentric** — Rings, arcs, partial crowns | M04/M05/M03 | Ridges/deposits and history O2/O9; rings not created by texture | O/F |
+| **Lobate** — Tongues, flows, fingers | M17/M06/M24 | Flow/landslide/glacier O9; material by source and state | O/F |
+| **Fan-shaped** — Radiating, superimposed | M05/M04/M03/M06 | Source, transport, and fan form N2/N3/O9 | C/O/F |
+| **Ribbon-like** — Continuous, winding, interrupted | M04/M05/M11 | Bands follow network/footprints N3; gallery forest removed | C/O/F |
+| **Cellular** — Adjacent or separate cells | M27; reef support M25 | Cells from frost or structure O6/O9; canopy excluded | O/F/E |
+| **Fractured** — Straight, angular, branching | M07/M24/M12 | Fractures and cause O10; rock/ice/clay remain distinct | C/O |
+| **Multiscale speckled** — Fine texture on large patches | M01/M07/M09 | Multiscale support variation; canopy/steppe removed | C/O/E |
+| **Braided** — Interlaced channels | M05/M04 | Channel form O9/N3; deposit between waters, not water turned to gravel | C/O/F/W |
+| **Directional** — Aligned with slope, wind, or flow | M04/M07/M06 | Physical wind/slope/flow direction; vegetation removed | C/O |
+| **Gradual** — Progressive transition, halos | M01/M11/M15 | Stock/state transitions; salinity only if declared | C/O |
+| **Chaotic** — Scree, debris, multiple fractures | M06/M18/M24 | Known source and sizes; conditioned disorder, not free noise | C/O |
 
-## Annexe D Phénomènes spéciaux et périmètre du sol
 
-Les 12 familles de MATERIALS_REVIEW §4 sont couvertes par une recette, une condition de scénario ou une exclusion du vivant/de l’eau/des objets.
+## Appendix D. Special phenomena and ground scope
 
-| Famille et exemples | Recettes candidates ou traitement | Conditions et portée | Statut |
+The 12 MATERIALS_REVIEW §4 families are covered by a recipe, scenario condition, or exclusion of living matter/water/objects.
+
+| Family and examples | Candidate recipes or treatment | Conditions and scope | Status |
 | --- | --- | --- | --- |
-| **Sols biologiques** — Croûtes biologiques désertiques, biofilms, tapis microbiens | Support sous vivant ; dépôt minéral éventuel | Biofilms/tapis/croûtes vivants exclus ; minéraux support conservés selon source | E/O |
-| **Motifs végétaux spontanés** — Cercles de fées, végétation en bandes, mosaïques de broussailles | Support inchangé | Plantes retirées ; éventuelles différences du support seulement si données propres | E |
-| **Formations animales** — Grandes termitières, récifs biogéniques, colonies d'oiseaux et dépôts de guano | M25/M01/M02 | Guano et support biogénique O7 ; termitières/structures O9 ; animaux exclus | O/F/E |
-| **Bois mort** — Chablis, accumulations de troncs, embâcles, forêts mortes | M21 pour petits débris | Gros troncs/chablis/embâcles et arbres dressés hors sol ; dépôt mort séparé | O/E |
-| **Incendies naturels** — Sol brûlé, canopée carbonisée, cendres, reprise végétale | M22/M01 ; M21 éventuel | Incendie et âge O7 ; canopée carbonisée/reprise vivante exclues | O/E |
-| **Érosion récente** — Coulées de boue, cicatrices de glissement, ravines nouvelles | M06/M11/M01 | Événement et emprise O2/O9 ; support/source et état conservés | O/F |
-| **Inondations** — Sols submergés, sédiments déposés, débris végétaux | M03/M04/M05/M11 ; M21 éventuel | Eau et événement O3 ; dépôt après crue N2 ; débris morts O7 | O/F/W |
-| **Proliférations biologiques** — Algues de surface, tapis flottants, floraisons planctoniques | Support qualifié éventuel | Algues/plancton/tapis flottants vivants exclus ; eau indépendante | E/W |
-| **Dépôts organiques côtiers** — Algues échouées, laisses naturelles, accumulations coquillières | M21/M25/M04 | Laisses mortes/coquilles O7 et apport littoral O4 ; vivant exclu | O |
-| **Dépôts minéraux exceptionnels** — Soufre, silice, croûtes hydrothermales, oxydes de fer | M20/M13/M15/M16 | Substance et emprise O1/O5 ; pas de taches minérales libres | O |
-| **Textures de cratère** — Cratères d'impact, dépôts d'éjectas, anneaux de débris | M06/M07/M01 | Impact, éjectas et anneaux déclarés O2/O9 ; pas de cratère par couleur | O/F |
-| **Événements glaciaires** — Vidanges de lacs, épandages proglaciaires, icebergs échoués | M28/M04/M05 ; état eau | Vidange/épandage O2/O6/O9 ; iceberg reste un objet hors sol | O/F/E/W |
+| **Biological soils** — Desert biological crusts, biofilms, microbial mats | Support beneath living matter; possible mineral deposit | Living biofilms/mats/crusts excluded; support minerals retained by source | E/O |
+| **Spontaneous vegetation patterns** — Fairy circles, banded vegetation, scrub mosaics | Unchanged support | Plants removed; support differences only with their own data | E |
+| **Animal formations** — Large termite mounds, biogenic reefs, bird colonies and guano deposits | M25/M01/M02 | Guano and biogenic support O7; termite mounds/structures O9; animals excluded | O/F/E |
+| **Dead wood** — Windthrow, log accumulations, logjams, dead forests | M21 for small debris | Large logs/windthrow/logjams and standing trees outside ground; dead deposit separate | O/E |
+| **Natural fires** — Burned ground, charred canopy, ash, vegetation regrowth | M22/M01; possible M21 | Fire and age O7; charred canopy/living regrowth excluded | O/E |
+| **Recent erosion** — Mudflows, landslide scars, new gullies | M06/M11/M01 | Event and footprint O2/O9; support/source and state retained | O/F |
+| **Flooding** — Submerged ground, deposited sediment, vegetation debris | M03/M04/M05/M11; possible M21 | Water and event O3; post-flood deposit N2; dead debris O7 | O/F/W |
+| **Biological blooms** — Surface algae, floating mats, plankton blooms | Possible qualified support | Living algae/plankton/floating mats excluded; water independent | E/W |
+| **Coastal organic deposits** — Stranded algae, natural wrack, shell accumulations | M21/M25/M04 | Dead wrack/shells O7 and coastal input O4; living matter excluded | O |
+| **Exceptional mineral deposits** — Sulfur, silica, hydrothermal crusts, iron oxides | M20/M13/M15/M16 | Substance and footprint O1/O5; no free mineral patches | O |
+| **Crater textures** — Impact craters, ejecta deposits, debris rings | M06/M07/M01 | Declared impact, ejecta, and rings O2/O9; no crater by color | O/F |
+| **Glacial events** — Lake outburst floods, proglacial outwash, stranded icebergs | M28/M04/M05; water state | Outburst/outwash O2/O6/O9; iceberg remains object outside ground | O/F/E/W |
 
-## Annexe E Contrôle de couverture
 
-| Partie de MATERIALS_REVIEW | Lignes couvertes | Portée |
+## Appendix E. Coverage check
+
+| MATERIALS_REVIEW section | Rows covered | Scope |
 | --- | --- | --- |
-| 1.1 | 12 | Toutes les variantes de chaque ligne sont reprises |
-| 1.2 | 12 | Toutes les variantes de chaque ligne sont reprises |
-| 1.3 | 14 | Toutes les variantes de chaque ligne sont reprises |
-| 1.4 | 13 | Toutes les variantes de chaque ligne sont reprises |
-| 1.5 | 13 | Toutes les variantes de chaque ligne sont reprises |
-| 1.6 | 11 | Toutes les variantes de chaque ligne sont reprises |
-| 1.7 | 15 | Toutes les variantes de chaque ligne sont reprises |
-| 1.8 | 16 | Toutes les variantes de chaque ligne sont reprises |
-| 1.9 | 13 | Toutes les variantes de chaque ligne sont reprises |
-| 1.10 | 12 | Toutes les variantes de chaque ligne sont reprises |
-| 1.11 | 19 | Toutes les variantes de chaque ligne sont reprises |
-| 1.12 | 13 | Toutes les variantes de chaque ligne sont reprises |
-| 1.13 | 19 | Toutes les variantes de chaque ligne sont reprises |
-| 1.14 | 28 | Toutes les variantes de chaque ligne sont reprises |
-| 1.15 | 25 | Toutes les variantes de chaque ligne sont reprises |
-| Total du §1 | **235** | Types et variantes associés à une matière, une forme, un état ou une exclusion |
-| §2 | 22 | Motifs |
-| §3 | 28 | Contextes |
-| §4 | 12 | Phénomènes spéciaux |
+| 1.1 | 12 | All variants in each row retained |
+| 1.2 | 12 | All variants in each row retained |
+| 1.3 | 14 | All variants in each row retained |
+| 1.4 | 13 | All variants in each row retained |
+| 1.5 | 13 | All variants in each row retained |
+| 1.6 | 11 | All variants in each row retained |
+| 1.7 | 15 | All variants in each row retained |
+| 1.8 | 16 | All variants in each row retained |
+| 1.9 | 13 | All variants in each row retained |
+| 1.10 | 12 | All variants in each row retained |
+| 1.11 | 19 | All variants in each row retained |
+| 1.12 | 13 | All variants in each row retained |
+| 1.13 | 19 | All variants in each row retained |
+| 1.14 | 28 | All variants in each row retained |
+| 1.15 | 25 | All variants in each row retained |
+| Total §1 | **235** | Types and variants associated with a material, form, state, or exclusion |
+| §2 | 22 | Patterns |
+| §3 | 28 | Contexts |
+| §4 | 12 | Special phenomena |
 
-La couverture du catalogue ne signifie pas que toutes ces surfaces sont présentes dans une carte donnée, ni que leurs formes et matériaux sont déjà implémentés. Elle signifie que chaque entrée a une place explicite dans le sélecteur, une condition de production et une réponse lorsque l’information manque.
+Catalog coverage does not mean all surfaces appear on a given map or that their forms and materials are already implemented. It means every entry has an explicit place in the selector, a production condition, and a response when information is missing.

@@ -1,5 +1,10 @@
 extends Node3D
 ## One terrain mesh, one material, two camera projections. All distances are metres.
+const TileLocale = preload("res://tile_locale.gd")
+const MaterialLocale = preload("res://tile_material_locale.gd")
+const LayerLocale = preload("res://tile_layer_locale.gd")
+var language:=TileLocale.normalize(OS.get_locale())
+var ui_labels:Dictionary={}
 var catalog:Dictionary
 var catalog_dir:String
 var current_index:=-1
@@ -100,7 +105,9 @@ class SurveyOverlay extends Control:
 		var label=("%.1f km"%(distance/1000.0)) if distance>=1000 else ("%.0f m"%distance)
 		draw_string(font,origin+Vector2(0,-12),"0",HORIZONTAL_ALIGNMENT_LEFT,-1,14,Color.WHITE)
 		draw_string(font,origin+Vector2(length-font.get_string_size(label,HORIZONTAL_ALIGNMENT_LEFT,-1,14).x,-12),label,HORIZONTAL_ALIGNMENT_LEFT,-1,14,Color.WHITE)
-		draw_string(font,origin+Vector2(0,23),"Échelle au centre" if not app.top_view else "Échelle",HORIZONTAL_ALIGNMENT_LEFT,-1,12,Color("c6cfd8"))
+		draw_string(font,origin+Vector2(0,23),app.locale_text("scale_center" if not app.top_view else "scale"),HORIZONTAL_ALIGNMENT_LEFT,-1,12,Color("c6cfd8"))
+
+func locale_text(key:String)->String:return TileLocale.text(language,key)
 
 func _ready()->void:
 	var catalog_path="res://tiles/catalog.json"
@@ -108,6 +115,7 @@ func _ready()->void:
 	while i<args.size():
 		match args[i]:
 			"--catalog":i+=1;catalog_path=args[i]
+			"--lang":i+=1;language=TileLocale.normalize(args[i])
 			"--tile":i+=1;initial_tile=args[i]
 			"--capture":i+=1;capture_path=args[i];capture_frames=8
 			"--oblique":test_orbit=true
@@ -151,46 +159,92 @@ func build_ui()->void:
 	var scroll:=ScrollContainer.new();scroll.custom_minimum_size=Vector2(438,610);scroll.horizontal_scroll_mode=ScrollContainer.SCROLL_MODE_DISABLED;margin.add_child(scroll)
 	# The information legend and material controls remain reachable at 800px.
 	hud=VBoxContainer.new();hud.size_flags_horizontal=Control.SIZE_EXPAND_FILL;hud.add_theme_constant_override("separation",8);scroll.add_child(hud)
-	var title:=Label.new();title.text="TUILES · 40 × 40 km";title.add_theme_font_size_override("font_size",20);hud.add_child(title)
+	var title:=Label.new();title.text=TileLocale.text(language,"title");title.add_theme_font_size_override("font_size",20);hud.add_child(title);ui_labels["title"]=title
+	var language_selector:=OptionButton.new();hud.add_child(language_selector)
+	for entry in [["en","English"],["fr","Français"],["zh","中文"],["es","Español"],["pt","Português"]]:language_selector.add_item(entry[1])
+	language_selector.select(TileLocale.LANGS.find(language));language_selector.item_selected.connect(func(index:int):language=TileLocale.LANGS[index];refresh_locale())
 	var filters:=HBoxContainer.new();hud.add_child(filters)
 	family_filter=OptionButton.new();climate_filter=OptionButton.new();filters.add_child(family_filter);filters.add_child(climate_filter)
-	for f in catalog.families:family_filter.add_item(f.label)
-	for c in catalog.climates:climate_filter.add_item(c.label)
+	for f in catalog.families:family_filter.add_item(TileLocale.catalogue_label(language,"family",f.id,f.label))
+	for c in catalog.climates:climate_filter.add_item(TileLocale.catalogue_label(language,"climate",c.id,c.label))
 	family_filter.item_selected.connect(select_filtered);climate_filter.item_selected.connect(select_filtered)
 	selector=OptionButton.new();selector.custom_minimum_size.x=410;hud.add_child(selector)
-	for t in catalog.tiles:selector.add_item(t.label)
+	for t in catalog.tiles:selector.add_item(tile_label(t))
 	selector.item_selected.connect(load_tile)
 	var buttons:=HBoxContainer.new();hud.add_child(buttons)
-	for spec in [["‹ Tuile",previous_tile],["Tuile ›",next_tile],["Recentrer",reset_view]]:
-		var button:=Button.new();button.text=spec[0];button.pressed.connect(spec[1]);buttons.add_child(button)
+	for spec in [["previous",previous_tile],["next",next_tile],["reset",reset_view]]:
+		var button:=Button.new();button.text=TileLocale.text(language,spec[0]);button.pressed.connect(spec[1]);buttons.add_child(button);ui_labels[spec[0]]=button
 	mode_button=Button.new();mode_button.pressed.connect(toggle_mode);buttons.add_child(mode_button)
 	status=Label.new();hud.add_child(status)
 	var ground_row:=HBoxContainer.new();hud.add_child(ground_row)
 	ground_view_selector=OptionButton.new();ground_row.add_child(ground_view_selector)
-	for label in ["Vue · Render", "Vue · Sol texturé", "Vue · Types de sol", "Vue · Support minéral"]:ground_view_selector.add_item(label)
+	for label in TileLocale.items(language,"views"):ground_view_selector.add_item(label)
 	ground_view_selector.item_selected.connect(select_ground_view)
 	ground_state_selector=OptionButton.new();ground_row.add_child(ground_state_selector)
-	for label in ["État Render","Sec","Humide","Neige fraîche","Neige irrégulière","Neige compacte","Neige ancienne","Neige ventée","Neige partielle","Fonte","Glace fine","Glace fracturée"]:ground_state_selector.add_item(label)
-	ground_state_selector.tooltip_text="État Render conserve automatiquement la neige du Render source. Les autres presets permettent les essais."
+	for label in TileLocale.items(language,"states"):ground_state_selector.add_item(label)
+	ground_state_selector.tooltip_text=TileLocale.text(language,"state_help")
 	ground_state_selector.item_selected.connect(select_ground_state)
-	variants_button=Button.new();variants_button.text="Nouvelles variantes de textures";variants_button.tooltip_text="Un nouveau choix par type pour toute la carte ; les zones de sol restent fixes.";variants_button.pressed.connect(randomize_ground_variants);hud.add_child(variants_button)
+	variants_button=Button.new();variants_button.text=TileLocale.text(language,"variants");variants_button.tooltip_text=TileLocale.text(language,"variants_help");variants_button.pressed.connect(randomize_ground_variants);hud.add_child(variants_button)
 	ground_status=Label.new();ground_status.custom_minimum_size.x=410;ground_status.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART;ground_status.add_theme_font_size_override("font_size",12);hud.add_child(ground_status)
-	var info_title:=Label.new();info_title.text="Informations";hud.add_child(info_title)
-	info_selector=OptionButton.new();info_selector.tooltip_text="Superposer une couche calculée au terrain";info_selector.get_popup().max_size.y=560;hud.add_child(info_selector)
+	var info_title:=Label.new();info_title.text=TileLocale.text(language,"information");hud.add_child(info_title);ui_labels["information"]=info_title
+	info_selector=OptionButton.new();info_selector.tooltip_text=TileLocale.text(language,"info_help");info_selector.get_popup().max_size.y=560;hud.add_child(info_selector)
 	info_selector.item_selected.connect(select_info_layer)
 	var opacity_row:=HBoxContainer.new();hud.add_child(opacity_row)
-	var opacity_label:=Label.new();opacity_label.text="Opacité du calque";opacity_row.add_child(opacity_label)
+	var opacity_label:=Label.new();opacity_label.text=TileLocale.text(language,"opacity");opacity_row.add_child(opacity_label);ui_labels["opacity"]=opacity_label
 	var opacity_slider:=HSlider.new();opacity_slider.min_value=0;opacity_slider.max_value=1;opacity_slider.step=.05;opacity_slider.value=info_opacity;opacity_slider.custom_minimum_size.x=180;opacity_row.add_child(opacity_slider)
 	opacity_slider.value_changed.connect(func(value:float):info_opacity=value;material.set_shader_parameter("info_opacity",0.0 if selected_info=="none" else value))
 	info_legend=Label.new();info_legend.custom_minimum_size.x=410;info_legend.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART;info_legend.add_theme_font_size_override("font_size",12);hud.add_child(info_legend)
 	info_palette=GridContainer.new();info_palette.columns=2;info_palette.add_theme_constant_override("h_separation",14);info_palette.add_theme_constant_override("v_separation",3);hud.add_child(info_palette)
-	var help:=Label.new();help.text="Glisser gauche / milieu : déplacer · molette : zoom\nDroit ou Alt + gauche : orbiter · Tab : Dessus / 3D\nZQSD / WASD / flèches : strafe · Maj : accélérer\n[ / ] : tuile précédente / suivante · R : recentrer · H : aide";help.add_theme_font_size_override("font_size",13);hud.add_child(help)
+	var help:=Label.new();help.text=TileLocale.text(language,"help");help.add_theme_font_size_override("font_size",13);hud.add_child(help);ui_labels["help"]=help
 	survey=SurveyOverlay.new();survey.app=self;survey.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT);survey.mouse_filter=Control.MOUSE_FILTER_IGNORE;layer.add_child(survey)
 	altitude_label=Label.new();altitude_label.mouse_filter=Control.MOUSE_FILTER_IGNORE
 	altitude_label.add_theme_color_override("font_shadow_color",Color.BLACK);altitude_label.add_theme_constant_override("shadow_offset_x",2);altitude_label.add_theme_constant_override("shadow_offset_y",2)
 	altitude_label.add_theme_font_size_override("font_size",16);survey.add_child(altitude_label)
 	cursor_altitude=Label.new();cursor_altitude.mouse_filter=Control.MOUSE_FILTER_IGNORE;cursor_altitude.add_theme_font_size_override("font_size",15)
 	cursor_altitude.add_theme_color_override("font_shadow_color",Color.BLACK);cursor_altitude.add_theme_constant_override("shadow_offset_x",2);cursor_altitude.add_theme_constant_override("shadow_offset_y",2);survey.add_child(cursor_altitude)
+
+func refresh_locale()->void:
+	for key in ui_labels:ui_labels[key].text=TileLocale.text(language,key)
+	for index in catalog.families.size():family_filter.set_item_text(index,TileLocale.catalogue_label(language,"family",catalog.families[index].id,catalog.families[index].label))
+	for index in catalog.climates.size():climate_filter.set_item_text(index,TileLocale.catalogue_label(language,"climate",catalog.climates[index].id,catalog.climates[index].label))
+	for index in catalog.tiles.size():selector.set_item_text(index,tile_label(catalog.tiles[index]))
+	for index in ground_view_selector.item_count:ground_view_selector.set_item_text(index,TileLocale.items(language,"views")[index])
+	for index in ground_state_selector.item_count:ground_state_selector.set_item_text(index,TileLocale.items(language,"states")[index])
+	ground_state_selector.tooltip_text=TileLocale.text(language,"state_help")
+	variants_button.text=TileLocale.text(language,"variants");variants_button.tooltip_text=TileLocale.text(language,"variants_help")
+	info_selector.tooltip_text=TileLocale.text(language,"info_help")
+	if info_selector.item_count>0:info_selector.set_item_text(0,TileLocale.text(language,"no_layer"))
+	for index in tile_layers.size():
+		var layer:Dictionary=tile_layers[index]
+		info_selector.set_item_text(index+1,LayerLocale.label(language,str(layer.id),str(layer.label)))
+		info_selector.set_item_tooltip(index+1,LayerLocale.legend(language,str(layer.id),str(layer.legend)))
+	if info_selector.selected>0:
+		var layer:Dictionary=tile_layers[info_selector.selected-1]
+		info_legend.text=LayerLocale.legend(language,str(layer.id),str(layer.legend))
+		var palette:Array=layer.get("palette",[])
+		for index in mini(palette.size(),info_palette.get_child_count()):
+			var row=info_palette.get_child(index)
+			if row.get_child_count()>1:row.get_child(1).text=LayerLocale.palette(language,str(palette[index].label))
+	mode_button.text=TileLocale.text(language,"to3d" if top_view else "totop")
+	update_tile_status()
+	if surface_meta.is_empty():ground_status.text=TileLocale.text(language,"ground_missing")
+	elif ground_view==0:ground_status.text=TileLocale.text(language,"ground_available")
+	elif ground_library.error.is_empty():ground_status.text=TileLocale.text(language,"materials_status")%[ground_library.assets.size(),ground_library.palette_seed]+TileLocale.text(language,"mineral_before" if ground_view==3 else "surface_description")
+	if survey!=null:survey.queue_redraw()
+
+func tile_label(tile:Dictionary)->String:
+	var family_name="";var climate_name=""
+	for family in catalog.families:
+		if family.id==tile.family:family_name=TileLocale.catalogue_label(language,"family",family.id,family.label);break
+	for climate in catalog.climates:
+		if climate.id==tile.climate:climate_name=TileLocale.catalogue_label(language,"climate",climate.id,climate.label);break
+	return family_name+" · "+climate_name if not family_name.is_empty() and not climate_name.is_empty() else str(tile.label)
+
+func update_tile_status()->void:
+	if current_meta.is_empty() or current_index<0:return
+	var meta=current_meta;var hydro:Dictionary=meta.get("hydrology",{})
+	status.text=TileLocale.text(language,"status")%[current_index+1,meta.min,meta.max,meta.seed,meta.temperature,meta.precipitation,float(meta.get("neural",{}).get("decoderNativeCell",40000.0/meta.n)),int(meta.n)]
+	if not hydro.is_empty():status.text+=TileLocale.text(language,"water")%[hydro.rivers,hydro.riverKm,hydro.lakes]
 
 func load_local_png(path:String)->Image:
 	# Diagnostic data are external files, deliberately excluded from asset import.
@@ -228,19 +282,18 @@ func load_tile(index:int)->void:
 		if catalog.families[j].id==entry.family:family_filter.select(j)
 	for j in catalog.climates.size():
 		if catalog.climates[j].id==entry.climate:climate_filter.select(j)
-	status.text="%02d / 42 · altitude %.0f à %.0f m\n%s · %.0f °C · %.0f mm/an\nDécodeur : %.0f m · grille %d²"%[index+1,meta.min,meta.max,meta.seed,meta.temperature,meta.precipitation,float(meta.get("neural",{}).get("decoderNativeCell",40000.0/meta.n)),int(meta.n)]
-	if not hydro.is_empty():status.text+="\nEau vectorielle : %d rivières · %.1f km · %d lacs"%[hydro.rivers,hydro.riverKm,hydro.lakes]
+	update_tile_status()
 	tile_layers=hydro.get("layers",[]).duplicate();tile_layers.append_array(meta.get("ground",{}).get("layers",[]));tile_dir=dir
 	original_cover_meta={}
 	if FileAccess.file_exists(dir.path_join("original-cover.json")):
 		original_cover_meta=JSON.parse_string(FileAccess.get_file_as_string(dir.path_join("original-cover.json")))
 	surface_meta=meta.get("groundSurface",{});tile_layers.append_array(surface_meta.get("layers",[]))
 	load_detail_context(tile_dir)
-	info_selector.clear();info_selector.add_item("Aucun calque")
+	info_selector.clear();info_selector.add_item(TileLocale.text(language,"no_layer"))
 	var selected=0
 	for j in tile_layers.size():
-		info_selector.add_item(tile_layers[j].label)
-		info_selector.set_item_tooltip(j+1,tile_layers[j].legend)
+		info_selector.add_item(LayerLocale.label(language,str(tile_layers[j].id),str(tile_layers[j].label)))
+		info_selector.set_item_tooltip(j+1,LayerLocale.legend(language,str(tile_layers[j].id),str(tile_layers[j].legend)))
 		if tile_layers[j].id==selected_info:selected=j+1
 	select_info_layer(selected)
 	update_ground_surface()
@@ -253,17 +306,24 @@ func select_ground_view(index:int)->void:
 func select_ground_state(index:int)->void:
 	ground_state=index;ground_state_selector.select(index);update_ground_surface()
 
+func localized_ground_error(message:String)->String:
+	if message=="Bibliothèque PBR absente : lancer prepare_ground_textures.py":return TileLocale.text(language,"pbr_library_missing")
+	if message=="Création des tableaux de textures impossible":return TileLocale.text(language,"pbr_arrays_failed")
+	for item in [["Texture PBR absente : ","pbr_texture_missing"],["Aucun candidat préparé : ","pbr_candidate_missing"]]:
+		if message.begins_with(item[0]):return TileLocale.text(language,item[1])+message.substr(item[0].length())
+	return message
+
 func update_ground_surface()->void:
 	survey_tile=-1
 	material.set_shader_parameter("ground_view",0)
 	ground_state_selector.disabled=surface_meta.is_empty()
 	variants_button.disabled=surface_meta.is_empty()
-	if surface_meta.is_empty():ground_status.text="N1–N4 absents pour cette tuile : lancer ground_surface.py.";return
+	if surface_meta.is_empty():ground_status.text=TileLocale.text(language,"ground_missing");return
 	if ground_view==0:
-		update_camera();ground_status.text="Sol : 90 types · N1–N4 disponibles";return
-	if not ground_library.initialize(material):ground_status.text=ground_library.error;return
+		update_camera();ground_status.text=TileLocale.text(language,"ground_available");return
+	if not ground_library.initialize(material):ground_status.text=localized_ground_error(ground_library.error);return
 	ground_library.resolve(str(current_meta.seed),material)
-	if not ground_library.error.is_empty():ground_status.text=ground_library.error;return
+	if not ground_library.error.is_empty():ground_status.text=localized_ground_error(ground_library.error);return
 	var state_key=ground_states[ground_state] if ground_state<3 else "mean"
 	var state:Dictionary=surface_meta.states[state_key]
 	ground_ids_image=load_local_png(tile_dir.path_join(state.indices))
@@ -271,7 +331,7 @@ func update_ground_surface()->void:
 	ground_ids_extra_image=load_local_png(tile_dir.path_join(state.indicesExtra))
 	ground_weights_extra_image=load_local_png(tile_dir.path_join(state.weightsExtra))
 	cover_ids_image=load_local_png(tile_dir.path_join(state.coverIndices));cover_weights_image=load_local_png(tile_dir.path_join(state.coverWeights))
-	if ground_ids_image==null or ground_weights_image==null:ground_status.text="Classification du sol absente : "+state_key;return
+	if ground_ids_image==null or ground_weights_image==null:ground_status.text=TileLocale.text(language,"ground_classification_missing")+state_key;return
 	material.set_shader_parameter("ground_indices",ImageTexture.create_from_image(ground_ids_image))
 	material.set_shader_parameter("ground_weights",ImageTexture.create_from_image(ground_weights_image))
 	material.set_shader_parameter("ground_indices_extra",ImageTexture.create_from_image(ground_ids_extra_image))
@@ -280,7 +340,7 @@ func update_ground_surface()->void:
 	material.set_shader_parameter("cover_weights",ImageTexture.create_from_image(cover_weights_image))
 	for pair in [["ground_attributes",surface_meta.attributes],["ground_water",surface_meta.water],["river_footprint",surface_meta.riverFootprint],["ground_structure",surface_meta.get("structure","surface-structure.png")],["render_snow",surface_meta.renderSnow]]:
 		var image=load_local_png(tile_dir.path_join(pair[1]))
-		if image==null:ground_status.text="Donnée sol absente : "+str(pair[1]);return
+		if image==null:ground_status.text=TileLocale.text(language,"ground_data_missing")+str(pair[1]);return
 		if pair[0]=="ground_water":ground_water_image=image
 		if pair[0]=="river_footprint":ground_river_image=image
 		if pair[0]=="ground_attributes":ground_attributes_image=image
@@ -291,7 +351,7 @@ func update_ground_surface()->void:
 	material.set_shader_parameter("ground_view",ground_view)
 	load_original_cover()
 	update_camera()
-	ground_status.text="90 types · %d sources PBR · palette %d\n"%[ground_library.assets.size(),ground_library.palette_seed]+("Support minéral · avant les couvertures" if ground_view==3 else "Surface du sol · ombres · neige Render")
+	ground_status.text=TileLocale.text(language,"materials_status")%[ground_library.assets.size(),ground_library.palette_seed]+TileLocale.text(language,"mineral_before" if ground_view==3 else "surface_description")
 	print(JSON.stringify({"event":"ground-view","view":ground_view,"state":ground_states[ground_state],"seed":ground_library.palette_seed,"types":ground_library.selected.size()}))
 
 func load_detail_context(directory:String,report_error:bool=true)->bool:
@@ -347,6 +407,11 @@ func randomize_ground_variants()->void:
 	# Reuse classifications and physical fields: this button only changes palette.
 	update_ground_surface()
 
+func material_label(index:int)->String:
+	if index<0 or index>=ground_library.selected.size():return ""
+	var type:Dictionary=ground_library.types[index];var choice:Dictionary=ground_library.selected[index]
+	return MaterialLocale.label(language,str(type.id),str(type.label))+" · "+str(choice.asset)
+
 func ground_at(x:float,z:float)->String:
 	if ground_view==0 or ground_ids_image==null:return ""
 	var p=Vector2i(clampi(int(x/40000.0*ground_ids_image.get_width()),0,ground_ids_image.get_width()-1),clampi(int(z/40000.0*ground_ids_image.get_height()),0,ground_ids_image.get_height()-1))
@@ -356,16 +421,16 @@ func ground_at(x:float,z:float)->String:
 	var rp=Vector2i(clampi(int(x/40000.0*ground_river_image.get_width()),0,ground_river_image.get_width()-1),clampi(int(z/40000.0*ground_river_image.get_height()),0,ground_river_image.get_height()-1))
 	var river=ground_river_image.get_pixelv(rp).a
 	var water_mask=maxf(maxf(water.g,water.b),river)
-	var domain="Mer" if water.b>.5 else ("Lac" if water.g>.5 else "Rivière")
+	var domain=locale_text("sea" if water.b>.5 else ("lake" if water.g>.5 else "river"))
 	if water_mask>.5:
-		if ground_view!=3 and ground_state>=10 and ground_attributes_image.get_pixelv(p).g*70.0-48.0<3.0:return domain+" · "+ground_library.describe(88 if ground_state==10 else 89)
-		return domain+" · surface d’eau"
+		if ground_view!=3 and ground_state>=10 and ground_attributes_image.get_pixelv(p).g*70.0-48.0<3.0:return domain+" · "+material_label(88 if ground_state==10 else 89)
+		return domain+" · "+locale_text("water_surface")
 	var best_weight=shares[0];var best_id=roundi(ids[0]*255)
 	for j in range(1,6):
 		var share=shares[j] if j<4 else extra_shares[j-4]
 		if share>best_weight:best_weight=share;best_id=roundi((ids[j] if j<4 else extra_ids[j-4])*255)
-	var support=ground_library.describe(best_id)
-	if ground_view==3:return "Support minéral · "+support
+	var support=material_label(best_id)
+	if ground_view==3:return locale_text("mineral")+" · "+support
 	var cover_shares=cover_weights_image.get_pixelv(p)
 	if forest_placement_image!=null:
 		var policy=sample_map(forest_placement_image,x,z)
@@ -375,16 +440,16 @@ func ground_at(x:float,z:float)->String:
 			var cover_ids=cover_ids_image.get_pixelv(p);var context=Vector3(cover_shares.r*policy.r,cover_shares.g,cover_shares.b);var best=0
 			for j in range(1,3):
 				if context[j]>context[best]:best=j
-			support=("Forêt · " if policy.r>.5 else "Couvert bas · ")+ground_library.describe(roundi(cover_ids[best]*255))+" · %d %%\nSupport : "%roundi(amount*100)+support
-		elif policy.b>.3:support="Sol découvert / affleurement · "+support
+			support=locale_text("forest" if policy.r>.5 else "low_cover")+" · "+material_label(roundi(cover_ids[best]*255))+" · %d %%\n"%roundi(amount*100)+locale_text("support")+" : "+support
+		elif policy.b>.3:support=locale_text("bare")+" · "+support
 	elif cover_shares.a>.05:
 		var cover_ids=cover_ids_image.get_pixelv(p);var cover_best=0
 		for j in range(1,3):
 			if cover_shares[j]>cover_shares[cover_best]:cover_best=j
-		support="Surface %d %% · "%roundi(cover_shares.a*100)+ground_library.describe(roundi(cover_ids[cover_best]*255))+"\nSupport : "+support
+		support=locale_text("surface")+" %d %% · "%roundi(cover_shares.a*100)+material_label(roundi(cover_ids[cover_best]*255))+"\n"+locale_text("support")+" : "+support
 	if ground_state<3:
 		var snow_p=Vector2i(clampi(int(x/40000.0*ground_snow_image.get_width()),0,ground_snow_image.get_width()-1),clampi(int(z/40000.0*ground_snow_image.get_height()),0,ground_snow_image.get_height()-1))
-		if ground_snow_image.get_pixelv(snow_p).r>.05:return "Neige Render · "+ground_library.describe(80)+"\nSupport : "+support
+		if ground_snow_image.get_pixelv(snow_p).r>.05:return locale_text("render_snow")+" · "+material_label(80)+"\n"+locale_text("support")+" : "+support
 	if ground_state>=3 and ground_state<=9:
 		var attrs=ground_attributes_image.get_pixelv(p)
 		var temperature=attrs.g*70.0-30.0-18.0
@@ -394,7 +459,7 @@ func ground_at(x:float,z:float)->String:
 		if snow>.05:
 			var on_grass=cover_shares.a>.25 and cover_shares.g>cover_shares.r and cover_shares.g>cover_shares.b
 			var snow_type=[80,81,82,83,84,86 if on_grass else 87,85][ground_state-3]
-			return ground_library.describe(snow_type)+"\nSupport : "+support
+			return material_label(snow_type)+"\n"+locale_text("support")+" : "+support
 	return support
 
 func select_info_layer(index:int)->void:
@@ -408,11 +473,11 @@ func select_info_layer(index:int)->void:
 	if image==null or image.is_empty():push_error("Calque absent : "+str(layer.file));return
 	var smooth_layer:bool=layer.get("filter","")=="linear"
 	if smooth_layer:image.generate_mipmaps()
-	selected_info=layer.id;info_legend.text=layer.legend
+	selected_info=layer.id;info_legend.text=LayerLocale.legend(language,str(layer.id),str(layer.legend))
 	for entry in layer.get("palette",[]):
 		var row:=HBoxContainer.new();info_palette.add_child(row)
 		var swatch:=ColorRect.new();swatch.color=Color(entry.color);swatch.custom_minimum_size=Vector2(14,14);row.add_child(swatch)
-		var label:=Label.new();label.text=entry.label;label.add_theme_font_size_override("font_size",12);row.add_child(label)
+		var label:=Label.new();label.text=LayerLocale.palette(language,str(entry.label));label.add_theme_font_size_override("font_size",12);row.add_child(label)
 	var texture:=ImageTexture.create_from_image(image)
 	material.set_shader_parameter("info_image",texture)
 	material.set_shader_parameter("info_image_linear",texture)
@@ -456,7 +521,7 @@ func update_camera()->void:
 	camera.size=view_width/aspect
 	camera.position=focus+Vector3(sin(yaw)*cos(elevation),sin(elevation),cos(yaw)*cos(elevation))*distance
 	camera.look_at(focus,Vector3.FORWARD if top_view else Vector3.UP)
-	mode_button.text="Passer en 3D" if top_view else "Vue de dessus"
+	mode_button.text=TileLocale.text(language,"to3d" if top_view else "totop")
 
 func surface_height(x:float,z:float)->float:
 	var n=height_image.get_width();var p=Vector2(x,z)/40000.0*n-Vector2(.5,.5)

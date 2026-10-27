@@ -1,53 +1,32 @@
-# Frontière WASM maisons
+# House WASM boundary
 
-Bindings groupés du [moteur de maisons](../houses/README.md), sans dépendance au
-terrain ou au rendu. Le paquet généré est dans `rust/pkg/houses/`. Le guide du
-banc, ses modes, les replays et les exports sont dans le README du moteur.
+[Français](README_FR.md)
 
-Trois exports renvoient une chaîne JSON avec une enveloppe
-`{ok:true,data}` ou `{ok:false,error:{code,field,message}}` :
+Bundled bindings for the [house engine](../houses/README.md), with no terrain or rendering dependency. The generated package is in `rust/pkg/houses/`. The engine README describes the bench, its modes, replays and exports.
 
-- `catalogue_json()` fournit le catalogue et l'inventaire des sources.
-- `preflight_json(config_json)` valide les réglages, filtre les recettes et
-  estime les budgets avant la géométrie.
-- `generate_houses_json(config_json)` effectue ce préflight puis génère un lot.
+Three exports return a JSON string with a `{ok:true,data}` or `{ok:false,error:{code,field,message}}` envelope:
 
-Le parcours urbain ajoute `architecture_profiles_json()`,
-`place_buildings_json(batch_json)` et `enrich_placement_json(building_json)`.
-Ils utilisent la même enveloppe de résultat, avec un schéma de placement `1`
-indépendant du schéma autonome des maisons `2`. Les entrées urbaines ont une
-limite de 32 Mio ; les réponses conservent la limite de 64 Mio. Le cas retenu
-contient le plan résolu pour un enrichissement exact ou un refus explicite.
+- `catalogue_json()` supplies the catalogue and source inventory.
+- `preflight_json(config_json)` validates settings, filters recipes and estimates budgets before geometry.
+- `generate_houses_json(config_json)` performs that preflight and then generates a batch.
 
-La configuration et la scène utilisent `schema_version: "2"` ; l'inventaire
-des sources a son propre format versionné. Une erreur attendue utilise une
-catégorie explicite dans l'enveloppe. Un piège WASM reste une erreur fatale
-distincte. L'entrée est limitée à 32 Kio et la réponse à 64 Mio. La validation
-et les règles géométriques appartiennent au moteur natif, pas aux bindings.
+The urban workflow adds `architecture_profiles_json()`, `place_buildings_json(batch_json)` and `enrich_placement_json(building_json)`. They use the same result envelope, with placement schema `1` independent of standalone house schema `2`. Urban inputs are limited to 32 MiB; responses retain the 64 MiB limit. The retained case contains the resolved plan for exact enrichment or an explicit refusal.
 
-`HouseConfig.workshop`, absent pour l'Atlas, identifie un preset libre et ses
-dimensions/matériaux/supports optionnels. L'atelier utilise les mêmes appels et
-enveloppes. `catalogue.workshop_presets` reste séparé de ses 32 packs culturels.
+Configuration and scene use `schema_version: "2"`; the source inventory has its own versioned format. An expected error uses an explicit category in the envelope. A WASM trap remains a separate fatal error. Input is limited to 32 KiB and the response to 64 MiB. Validation and geometry rules belong to the native engine, not the bindings.
 
-Depuis `web/` :
+`HouseConfig.workshop`, absent for the Atlas, identifies a free-workshop preset and its optional dimensions/materials/supports. The workshop uses the same calls and envelopes. `catalogue.workshop_presets` remains separate from its 32 cultural packs.
+
+From `web/`:
 
 ```sh
-npm run wasm:houses    # Paquet WASM de développement uniquement
-npm run dev:houses     # Compile, surveille Rust et ouvre Vite
-npm run build:houses   # WASM release et HTML autonome
-npm run check:houses   # Vérifications natives, WASM et contrat
+npm run wasm:houses    # Development WASM package only
+npm run dev:houses     # Compile, watch Rust and open Vite
+npm run build:houses   # Release WASM and standalone HTML
+npm run check:houses   # Native, WASM and contract checks
 ```
 
-La page de développement est `/housebench.html`. Le build est
-`rust/out/houses/housebench.html`, avec le WASM embarqué et sans requête réseau
-nécessaire pour générer hors ligne. L'interface transfère une configuration
-au Worker et reçoit un lot complet ; des tickets écartent les réponses
-obsolètes. Un Worker fatal est recréé avant une nouvelle tentative.
+The development page is `/housebench.html`. The build is `rust/out/houses/housebench.html`, with embedded WASM and no network request required for offline generation. The UI sends a configuration to a Worker and receives a complete batch; tickets discard stale responses. A fatal Worker is recreated before retrying.
 
-`rust/bridge/housesContract.ts` fournit les types manuels et le validateur de
-scène. `rust/bridge/houseRender.ts` est un adaptateur SVG temporaire. Les
-commandes ordinaires de développement, de typecheck et de build de `web/` ne
-compilent pas Rust et n'exigent pas le paquet ignoré.
+`rust/bridge/housesContract.ts` supplies manual types and scene validation. `rust/bridge/houseRender.ts` is a temporary SVG adapter. Ordinary `web/` development, typecheck and build commands do not compile Rust and do not require the ignored package.
 
-Contrat : [modèle natif](../houses/src/model.rs) et
-[validateur TypeScript](../../bridge/housesContract.ts).
+Contract: [native model](../houses/src/model.rs) and [TypeScript validator](../../bridge/housesContract.ts).

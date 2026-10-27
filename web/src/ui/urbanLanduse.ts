@@ -1,4 +1,7 @@
 import { bindGear, gearButton } from './mapGroup';
+import { localizeCityInspector } from './cityInspectorLocale';
+import { urbanText } from './urbanPanelLocale';
+import { LOCALE_KEY } from './shellLocale';
 import LanduseWorker from './urbanLanduseWorker?worker&inline';
 import { BIOME_NAMES, type BiomeName } from '../gen/biomes';
 import { SIZE_PRESETS } from '../gen/options';
@@ -71,6 +74,7 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     <small>Champs, sillons, haies, chemins agricoles, vergers, jardins et végétation. Les quartiers réservent leur emprise avant l’ajout des maisons.</small>
     </div></div>`;
   bindGear(panel);
+  localizeCityInspector(panel);
   options.before.parentElement!.insertBefore(panel, options.before);
   const q = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
   const seed = q<HTMLInputElement>('landuseSeed'), biome = q<HTMLSelectElement>('landuseBiome');
@@ -111,6 +115,19 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
   function state(text: string, busy = false): void {
     status.textContent = text; button.setAttribute('aria-busy', String(busy));
   }
+  function summary(stats: UrbanLanduseScene['stats']): string {
+    return `${stats.areas} ${urbanText(['zones','zones','个区域','zonas','zonas'])} · ${stats.fieldHa ?? 0} ${urbanText(['ha cultivés','ha cultivated','公顷耕地','ha cultivadas','ha cultivados'])} · ${stats.strips ?? 0} ${urbanText(['bandes','strips','条带','franjas','faixas'])} · ${stats.ms} ms`;
+  }
+  const refreshLocale = (): void => {
+    const styles: Record<string, readonly [string,string,string,string,string]> = { parchment:['Parchemin','Parchment','羊皮纸','Pergamino','Pergaminho'], atlas:['Atlas','Atlas','图集','Atlas','Atlas'], watabou:['Simple (classique)','Plain (classic)','简洁（经典）','Sencillo (clásico)','Simples (clássico)'], engraving:['Gravure','Engraving','版画','Grabado','Gravura'], cadastre:['Cadastre 1:1250','Cadastre 1:1250','地籍图 1:1250','Catastro 1:1250','Cadastro 1:1250'], blueprint:['Plan bleu','Blueprint','蓝图','Plano azul','Planta azul'], illuminated:['Enluminé','Illuminated','手抄本','Iluminado','Iluminado'], topographic:['Topographique','Topographic','地形图','Topográfico','Topográfico'], night:['Nuit','Night','夜间','Noche','Noite'] };
+    for (const option of Array.from(style.options)) if (styles[option.value]) option.textContent = urbanText(styles[option.value]);
+    if (scene && active()) { q('landuseState').textContent = `${scene.stats.areas} ${urbanText(['zones','zones','个区域','zonas','zonas'])}`; if (button.getAttribute('aria-busy') !== 'true') status.textContent = summary(scene.stats); }
+    else if (button.getAttribute('aria-busy') !== 'true' && !active()) status.textContent = urbanText(['Auto désactivé : ouvrez ⚙ et cliquez sur Générer.','Auto disabled: open ⚙ and click Generate.','自动模式已禁用：打开 ⚙ 并点击生成。','Auto desactivado: abre ⚙ y pulsa Generar.','Auto desativado: abra ⚙ e clique em Gerar.']);
+    else if (button.getAttribute('aria-busy') !== 'true' && (!context || waiting)) status.textContent = context ? urbanText(['En attente des quartiers…','Waiting for districts…','等待街区…','Esperando los barrios…','Aguardando os bairros…']) : urbanText(['En attente du décor…','Waiting for the decor…','等待场景…','Esperando el decor…','Aguardando o decor…']);
+  };
+  window.addEventListener('magna-locale-change', refreshLocale);
+  window.addEventListener('storage', event => { if (event.key === LOCALE_KEY) refreshLocale(); });
+  refreshLocale();
   function visibility(): void {
     // Terrain redraws replace the SVG children. Restore this retained overlay
     // above the terrain painting and below water, streets and city markers.
@@ -175,11 +192,11 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
   function receive(response: UrbanLanduseResponse): void {
     if (response.id !== id) return;
     worker?.terminate(); worker = undefined;
-    if ('error' in response) { state(`Occupation du territoire : ${response.error}`); return; }
+    if ('error' in response) { state(`${urbanText(['Occupation du territoire','Land use','土地利用','Uso del territorio','Uso do território'])} : ${response.error}`); return; }
     scene = response.scene; applied = requested; renderWorld = undefined; renderScene = undefined; draw(); notify();
     const stats = scene.stats;
-    q('landuseState').textContent = `${stats.areas} zones`;
-    state(`${stats.areas} zones · ${stats.fieldHa ?? 0} ha cultivés · ${stats.strips ?? 0} bandes · ${stats.ms} ms`);
+    q('landuseState').textContent = `${stats.areas} ${urbanText(['zones','zones','个区域','zonas','zonas'])}`;
+    state(summary(stats));
   }
   function generate(): void {
     cancel();
@@ -188,7 +205,7 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     notify(); draw();
     const request = { id, input: { ...context, seed: settings.seed || context.seed, biome: settings.biome } };
     requested = !!request.input.city;
-    state('Génération des champs et de la végétation…', true);
+    state(urbanText(['Génération des champs et de la végétation…','Generating fields and vegetation…','正在生成田地和植被…','Generando campos y vegetación…','Gerando campos e vegetação…']), true);
     const runFallback = (): void => {
       worker?.terminate(); worker = undefined; fallback = true;
       // Give the browser a frame to display the busy state, including file:// without workers.
@@ -210,16 +227,16 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     button.disabled = !context || waiting;
     visible.disabled = !active();
     panelVisible.disabled = !active();
-    if (!active()) { q('landuseState').textContent = ''; state('Auto désactivé : ouvrez ⚙ et cliquez sur Générer.'); return; }
-    q('landuseState').textContent = scene ? `${scene.stats.areas} zones` : '';
-    if (!context || waiting) { state(context ? 'En attente des quartiers…' : 'En attente du décor…'); return; }
+    if (!active()) { q('landuseState').textContent = ''; state(urbanText(['Auto désactivé : ouvrez ⚙ et cliquez sur Générer.','Auto disabled: open ⚙ and click Generate.','自动模式已禁用：打开 ⚙ 并点击生成。','Auto desactivado: abre ⚙ y pulsa Generar.','Auto desativado: abra ⚙ e clique em Gerar.'])); return; }
+    q('landuseState').textContent = scene ? `${scene.stats.areas} ${urbanText(['zones','zones','个区域','zonas','zonas'])}` : '';
+    if (!context || waiting) { state(context ? urbanText(['En attente des quartiers…','Waiting for districts…','等待街区…','Esperando los barrios…','Aguardando os bairros…']) : urbanText(['En attente du décor…','Waiting for the decor…','等待场景…','Esperando el decor…','Aguardando o decor…'])); return; }
     if (scene) {
-      q('landuseState').textContent = `${scene.stats.areas} zones`;
-      state(`${scene.stats.areas} zones · ${scene.stats.fieldHa ?? 0} ha cultivés · ${scene.stats.strips ?? 0} bandes · ${scene.stats.ms} ms`);
+      q('landuseState').textContent = `${scene.stats.areas} ${urbanText(['zones','zones','个区域','zonas','zonas'])}`;
+      state(summary(scene.stats));
       return;
     }
     q('landuseState').textContent = '';
-    state('Préparation des paysages…', true);
+    state(urbanText(['Préparation des paysages…','Preparing landscapes…','正在准备景观…','Preparando paisajes…','Preparando paisagens…']), true);
     timer = setTimeout(generate, 120);
   }
   function notify(): void {

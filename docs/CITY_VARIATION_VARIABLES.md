@@ -1,296 +1,298 @@
-# Variables de variation des settlements : inventaire, effets et critique
+# Settlement variation variables: inventory, effects, and critique
 
-État relu dans le dépôt le 24 octobre 2026. Inventaire des comportements et limites du code ; les propositions non livrées sont indiquées comme telles. Les annexes de catalogue sont extraites des données présentes, sans exécuter de génération. Les contrôles exposent les fonctions combinables, la distinction entre classe démographique et grammaire morphologique, les profils et leurs surcharges indépendantes, ainsi que la politique d’admission et le filtre d’époque. Les liens et imports conservent leurs valeurs explicites ; le rapport distingue les réglages demandés des données retournées avec le plan. Ces contrôles n’ajoutent aucun plafond historique ni moteur de plausibilité : une couverture culturelle ou historique non documentée reste inconnue.
+Repository state reviewed October 24, 2026. This inventory describes code behavior and limitations; undelivered proposals are identified as such. Catalog appendices are extracted from existing data without running generation. Controls expose combinable functions, the distinction between demographic class and morphological grammar, profiles and independent overrides, admission policy, and period filtering. Links and imports retain explicit values; the report distinguishes requested settings from data returned with the plan. These controls introduce no historical ceiling or plausibility engine: undocumented cultural or historical coverage remains unknown.
 
-Lecture : [réponses aux trois questions](#1-réponses-aux-trois-questions), [matrice et effets](#2-matrice-des-principaux-axes-énumérables), [sélecteurs complémentaires](#3-autres-sélecteurs-urbains--inventaire-sans-les-masquer-dans--etc-), [terrain et réseau régional](#4-terrain-eau-routes-et-ensemble-régional), [critique et combinaisons](#6-critique-générale-et-modèle-de-combinaisons-proposé), [79 cultures](#7-catalogue-culturel-complet-et-variations-selon-léchelle), [presets et rôles](#8-préréglages-et-rôles--domaines-dépendants-complets).
+> English translation of the [French original](CITY_VARIATION_VARIABLES_FR.md).
 
-## 1. Réponses aux trois questions
+## 1. Answers to the three questions
 
-### 1.1 Que fait la « vocation » ?
+### 1.1 What does “vocation” do?
 
-`programme.role` est un biais du programme fonctionnel : il change ce que le moteur demande et réserve dans les îlots/parcelles. Ce n'est pas une classification complète des villes, ni une simulation de leur économie. Le catalogue culturel de services apporte déjà beaucoup plus de rôles de bâtiments que les six vocations urbaines proposées.
+`programme.role` biases the functional program: it changes what the engine requests and reserves in blocks/parcels. It is not a complete city classification or economic simulation. The cultural services catalog already supplies many more building roles than the six proposed urban vocations.
 
-| Valeur | Effet effectivement lu dans le code |
-|---|---|
-| `auto` | À moins de 500 habitants, ou pour le profil fonctionnel `communal`, le programme choisit `agricultural`. Sinon il conserve le programme culturel sans spécialisation explicite. |
-| `agricultural` | Demande d'espaces communs portée à 2 m²/hab. contre 0,5 hors profil communal ; double les sites de stockage du catalogue, sous ses règles et plafonds. |
-| `crossroads` | Part des ménages en habitat/boutique portée à 25 % contre 8 % ordinairement, sauf sous 150 habitants où elle est nulle ; double certains établissements commerciaux ; triple le coefficient surfacique des marchés concernés. |
-| `artisan` | Ajoute une demande d'ateliers de 3,5 m²/hab. avec minimum de 80 m² et double les sites de métiers du catalogue. |
-| `riverine` | Double les sites de moulins du catalogue. Ce choix ne crée pas une rivière. |
-| `port` | Part d'habitat/boutique à 25 % ; demande d'entrepôts de 2 m²/hab., minimum 180 m². Cette demande générique exige ensuite une preuve d'accès navigable et un emplacement riverain ; la valeur ne fabrique pas cet accès. Les services et aménagements de rive ont aussi leur propre logique. |
-| `capital` | Part d'habitat/boutique à 25 % ; seuils de population des services d'élite, civiques et défensifs divisés par quatre. Ce n'est pas une administration ou une économie simulée. |
-| `isolated-farm` | Intention d'une structure domestique isolée ; remplace les demandes de ville. |
-| `roadside-temple` | Un temple de bord de route, rôle `worship.wayside`. |
-| `isolated-shrine` | Un sanctuaire isolé, rôle `worship.shrine`. |
-| `isolated-mill` | Un moulin isolé, rôle `craft.mill`. |
-| `isolated-inn` | Une auberge isolée, rôle `commerce.inn`. |
-| `isolated-tower` | Une tour isolée, rôle `defence.tower`. |
+| Value | Effect actually observed in code |
+| --- | --- |
+| `auto` | Below 500 inhabitants, or for the `communal` functional profile, the program selects `agricultural`. Otherwise it retains the cultural program without explicit specialization. |
+| `agricultural` | Requests 2 m²/person of communal space versus 0.5 outside the communal profile; doubles catalog storage sites under its rules and ceilings. |
+| `crossroads` | Raises household shop-house share to 25% versus the usual 8%, except below 150 inhabitants where it is zero; doubles certain commercial establishments; triples the area coefficient for affected markets. |
+| `artisan` | Adds workshop demand of 3.5 m²/person, minimum 80 m², and doubles catalog craft sites. |
+| `riverine` | Doubles catalog mill sites. It does not create a river. |
+| `port` | Shop-house share of 25%; warehouse demand of 2 m²/person, minimum 180 m². This generic demand subsequently requires evidence of navigable access and a waterfront location; the value does not create that access. Waterfront services and works have their own logic. |
+| `capital` | Shop-house share of 25%; population thresholds for elite, civic, and defensive services divided by four. This is not simulated administration or economy. |
+| `isolated-farm` | Intention for an isolated domestic structure; replaces city demands. |
+| `roadside-temple` | One roadside temple, role `worship.wayside`. |
+| `isolated-shrine` | One isolated shrine, role `worship.shrine`. |
+| `isolated-mill` | One isolated mill, role `craft.mill`. |
+| `isolated-inn` | One isolated inn, role `commerce.inn`. |
+| `isolated-tower` | One isolated tower, role `defence.tower`. |
 
-Pour les intentions isolées, la population n'est plus une demande de logement de toute une ville : elle sert notamment au dimensionnement du programme. Le type macro devient bâtiment isolé ou ferme ; l'état `ruined` peut donner une ruine isolée.
+For isolated intentions, population no longer requests housing for an entire city: it helps size the program. The macro type becomes an isolated building or farm; `ruined` state can yield an isolated ruin.
 
-**Critique du contrat exclusif conservé :** le champ mélange une activité économique (artisanat), une fonction politique (capitale), une situation géographique (fluvial), une fonction de réseau (carrefour), et une intention de bâtiment unique. Ces concepts ne sont ni exclusifs ni au même niveau. Une capitale peut aussi être portuaire, artisanale et religieuse. Ajouter vingt valeurs exclusives conserverait ce défaut.
+**Critique of the retained exclusive contract:** the field mixes economic activity (craft), political function (capital), geographic situation (riverine), network function (crossroads), and single-building intention. These concepts are neither exclusive nor at the same level. A capital can also be a port, craft center, and religious center. Adding twenty exclusive values would preserve this flaw.
 
-**Reste à étendre :** l’UI sépare désormais intention et six fonctions combinables (1.1 bis) ; les activités/ressources et institutions supplémentaires demandent encore un modèle et des consommateurs explicites. Les poids devraient produire des besoins, des implantations et des signes visuels vérifiables, plutôt qu'un simple nom de catégorie. Exemples aujourd'hui peu ou pas exprimables comme vocations distinctes : extraction/mines, pêche, pèlerinage, monastère, garnison, passage caravanier, transit fluvial, élevage, résidence royale, chantier naval. Ce sont des pistes de modèle, pas des fonctionnalités annoncées comme existantes.
+**Still to extend:** the UI now separates intention and six combinable functions (1.1 bis); additional activities/resources and institutions still need an explicit model and consumers. Weights should produce verifiable needs, placements, and visual signs, not merely a category name. Examples currently difficult or impossible to express as distinct vocations include extraction/mining, fishing, pilgrimage, monastery, garrison, caravan stop, river transit, livestock, royal residence, and shipyard. These are model directions, not claims of existing functionality.
 
-### 1.1 bis Fonctions pondérées et intention : ce qui est déjà implémenté
+### 1.1 bis Weighted functions and intention: what is implemented
 
-Les six biais `agricultural`, `commerce`, `artisan`, `riverine`, `port`, `capital` sont désormais combinables dans `programme.functions` avec des poids finis de 0 à 1. L’UI les montre séparément de l’intention d’agglomération ou d’établissement isolé. Ce sont six biais fonctionnels existants, pas une économie complète. Les effets communs prennent le maximum et ne sont pas comptés deux fois ; les nombres de services restent entiers, arrondis vers le bas, et les minima génériques d’atelier/entrepôt restent 80/180 m² lorsqu’une demande positive est créée. Les ressources peuvent encore ajouter leurs propres besoins.
+The six biases `agricultural`, `commerce`, `artisan`, `riverine`, `port`, and `capital` can now be combined in `programme.functions` with finite weights from 0 to 1. The UI displays them separately from settlement or isolated-establishment intention. These are six existing functional biases, not a complete economy. Shared effects use the maximum and are not counted twice; service counts remain integers rounded down, and generic workshop/warehouse minima remain 80/180 m² when positive demand is created. Resources can still add their own needs.
 
-Champ absent ou `null` : comportement exact de l’ancien rôle exclusif. Objet explicite `{}` : aucune spécialisation, sans réactiver le rôle précédent. Une intention isolée conserve les poids mais les rend non applicables ; elle reste transportée dans les anciens IDs de rôle pour compatibilité. Un ancien moteur doit refuser le champ explicite non supporté. La taxonomie économique/institutionnelle générale et le contrôle de navigation réelle restent des chantiers distincts.
+Absent or `null` field: exact old exclusive-role behavior. Explicit `{}`: no specialization, without reactivating the previous role. An isolated intention retains weights but makes them inapplicable; it remains carried in legacy role IDs for compatibility. An older engine must reject an unsupported explicit field. General economic/institutional taxonomy and checking real navigation remain separate work.
 
-### 1.2 Le classement hameau / village / ville / métropole existe-t-il encore ?
+### 1.2 Do hamlet / village / town / metropolis classes still exist?
 
-**Oui, mais plusieurs classifications coexistent.** Ma réponse précédente donnait des populations de raccourcis comme si elles définissaient les classes ; ce sont deux choses différentes.
+**Yes, but several classifications coexist.** The previous answer presented shortcut populations as if they defined classes; these are separate things.
 
-| Couche | Valeurs et seuils actuels | Effet |
-|---|---|---|
-| Classe démographique affichée, TS et placement Rust | `farmstead` < 15 ; `hamlet` 15–149 ; `village` 150–999 ; `town` 1 000–19 999 ; `city` 20 000–99 999 ; `metropolis` 100 000–999 999 ; `megacity` ≥ 1 000 000 | Classement de la population et raccourcis de sélection. Ce n'est pas à lui seul le choix de forme native. |
-| Raccourcis de population de l'interface | Ferme 10 ; hameau 40 ; village 300 ; bourg 3 000 ; ville 30 000 ; métropole 250 000 ; mégapole 1 500 000 | Remplissent une population ; ne définissent pas les seuils. |
-| Ancien `SizeName` | `hamlet`, `village`, `town`, `city`, `capital` ; `sizeForPop` bascule à 200, 1 200, 8 000 et 30 000 | Anciens préréglages de superficie et réglages de certaines étapes ; `capital` est ici un nom de taille, pas la vocation politique. |
-| Ancienne échelle culturelle `ScaleClass` | `hamlet` < 200 ; `village` < 1 200 ; `town` < 20 000 ; `city` < 100 000 ; `metropolis` < 1 000 000 ; `megacity` au-delà | Métadonnées historiques TS `scale.min/max`, indépendantes de la nouvelle grammaire native. |
-| Type morphologique natif `Kind` | 11 types détaillés ci-dessous ; métropole à partir de 200 000 en résolution automatique | Choisit une grammaire de plan : un site unique, fermes sur chemin, village-rue, quartiers, phases ou plusieurs centres. |
+| Layer | Current values and thresholds | Effect |
+| --- | --- | --- |
+| Displayed demographic class, TS and Rust placement | `farmstead` < 15; `hamlet` 15–149; `village` 150–999; `town` 1,000–19,999; `city` 20,000–99,999; `metropolis` 100,000–999,999; `megacity` ≥ 1,000,000 | Population classification and selection shortcuts. This alone does not choose native form. |
+| UI population shortcuts | Farm 10; hamlet 40; village 300; market town 3,000; city 30,000; metropolis 250,000; megacity 1,500,000 | Fill in a population; do not define thresholds. |
+| Legacy `SizeName` | `hamlet`, `village`, `town`, `city`, `capital`; `sizeForPop` switches at 200, 1,200, 8,000, and 30,000 | Legacy area presets and settings for some stages; `capital` is a size name here, not political vocation. |
+| Legacy cultural `ScaleClass` | `hamlet` < 200; `village` < 1,200; `town` < 20,000; `city` < 100,000; `metropolis` < 1,000,000; `megacity` above | Historical TS `scale.min/max` metadata independent of the new native grammar. |
+| Native morphological `Kind` | 11 types detailed below; metropolis from 200,000 in automatic resolution | Chooses plan grammar: one site, farms along a road, street village, districts, phases, or multiple centers. |
 
-Résolution automatique native, après prise en compte des valeurs explicites :
+Native automatic resolution after explicit values are considered:
 
-| Condition | Type obtenu et comportement |
-|---|---|
-| `settlementForm` nomme directement l'un des 11 types | Ce choix prend priorité sur les déductions suivantes. |
-| Intention isolée | `single`, `farmstead`, ou `ruin` selon l'intention et l'état. |
-| `nomad-camp` ou `native-plains`, population < 5 000 | `camp`. Cette règle n'inclut pas automatiquement tous les autres presets évoquant des camps. |
-| Population ≤ 12 | `farmstead`, ou `ruin` si l'état l'exige. |
+| Condition | Resulting type and behavior |
+| --- | --- |
+| `settlementForm` directly names one of the 11 types | Takes priority over the following deductions. |
+| Isolated intention | `single`, `farmstead`, or `ruin` depending on intention and state. |
+| `nomad-camp` or `native-plains`, population < 5,000 | `camp`. This rule does not automatically include every other camp-themed preset. |
+| Population ≤ 12 | `farmstead`, or `ruin` if state requires it. |
 | 13–149 | `hamlet`. |
-| 150–1 199 | `street-village` ou `nucleated-village` : dépend du choix explicite `ribbon/nucleated`, de la culture, du site et de la route proche. |
-| 1 200–4 999 | `market-town`, ou `walled-town` si la culture fortifie et que la population atteint 2 500 ou que le site est défensif. |
-| 5 000–29 999 | `walled-town` si fortifié ; sinon `city`. |
-| 30 000–199 999 | `city`. |
-| ≥ 200 000 | `metropolis`. |
+| 150–1,199 | `street-village` or `nucleated-village`, depending on explicit `ribbon/nucleated` choice, culture, site, and nearby road. |
+| 1,200–4,999 | `market-town`, or `walled-town` if culture fortifies and population reaches 2,500 or the site is defensive. |
+| 5,000–29,999 | `walled-town` if fortified; otherwise `city`. |
+| 30,000–199,999 | `city`. |
+| ≥ 200,000 | `metropolis`. |
 
-Les différences de formes existent donc toujours : les petits types contournent la grammaire des quartiers ; une ferme est une parcelle avec accès, un hameau suit un chemin, un village-rue crée des bandes riveraines. Les petites implantations ont normalement une phase, sans faubourgs ni périphérique ; le petit bourg peut avoir deux phases ; la métropole favorise quatre phases et de nombreux faubourgs. La composition métropolitaine ajoute plusieurs centres et rattache des quartiers à ces centres. Le catalogue distingue aussi les formes culturelles des hameaux/villages et, pour certaines cultures, une recette de ville au-delà d'un seuil.
+Form differences still exist: small types bypass district grammar; a farm is a parcel with access, a hamlet follows a road, and a street village creates roadside strips. Small settlements normally have one phase, without suburbs or ring road; a small market town can have two phases; a metropolis favors four phases and many suburbs. Metropolitan composition adds multiple centers and attaches districts to them. The catalog also distinguishes cultural hamlet/village forms and, for some cultures, a city recipe above a threshold.
 
-**Séparation explicite :** les classes démographiques proviennent désormais du catalogue partagé `rust/crates/core/src/settlements/demographic_classes.json`, lu par TS, le placement Rust et les raccourcis UI. Les populations de raccourci ne sont pas les seuils des classes. Les seuils morphologiques ci-dessus restent inchangés : à 100 000 habitants, la classe est Métropole et la grammaire appliquée est encore Cité à quartiers ; à 200 000, la grammaire automatique devient multicentre. À 13–14 habitants, la classe reste Ferme mais la grammaire est un Hameau le long d’un chemin. Ces deux axes sont affichés séparément dans CityBench ; ils ne sont plus présentés comme un seul enum. Les anciens `SizeName` et `ScaleClass` restent des réglages historiques de dimensions et de recettes, pas des classes démographiques ; le code de taille `capital` ne confère aucun statut politique. Une mégapole démographique prolonge la grammaire métropolitaine, sans catégorie native `megacity` distincte.
+**Explicit separation:** demographic classes now come from shared `rust/crates/core/src/settlements/demographic_classes.json`, read by TS, Rust placement, and UI shortcuts. Shortcut populations are not class thresholds. Morphological thresholds above remain unchanged: at 100,000 inhabitants, the class is Metropolis while the grammar remains district-based City; at 200,000, automatic grammar becomes multicenter. At 13–14 inhabitants, class remains Farm but grammar is a road-following Hamlet. CityBench displays these axes separately, not as one enum. Legacy `SizeName` and `ScaleClass` remain historical dimension and recipe settings, not demographic classes; `capital` size code confers no political status. A demographic megacity extends metropolitan grammar, without a distinct native `megacity` category.
 
-L’interface expose les onze grammaires natives, les deux préférences historiques de village et le choix automatique. Un retour explicite à automatique ne modifie pas les autres paramètres. Le rapport lit uniquement la population du programme, la configuration et l’archétype retournés avec le plan ; les preuves absentes dans un ancien import restent inconnues. Les choix de forme imposés gardent leur priorité native, même sur une intention isolée, et cette priorité est signalée. La pertinence culturelle/historique d’une forme forcée n’est pas certifiée par ce lot.
+The UI exposes all eleven native grammars, the two historical village preferences, and automatic choice. An explicit return to automatic changes no other parameters. The report reads only program population, configuration, and archetype returned with the plan; missing evidence in an old import remains unknown. Forced forms retain native priority even for an isolated intention, and this priority is indicated. Cultural/historical suitability of a forced form is not certified by this work.
 
-### 1.3 Existe-t-il des limites de taille selon les cultures ?
+### 1.3 Are there culture-specific size limits?
 
-Il faut distinguer trois mécanismes :
+Three mechanisms must be distinguished:
 
-1. **Ancienne infrastructure TS :** `Culture.scale.min/max` existe encore. `pipeline.mainPopulation` et le chemin urbain historique peuvent borner la population à `scaleMaxPop(max) × 1,5`, avec aussi une borne basse. Cela peut donc changer la population demandée. Les déclarations `scale` explicites relevées dans les fichiers `cultures*.ts` actuels ont toutes `max: 'megacity'` : ce mécanisme ne fournit pas aujourd'hui un tableau de plafonds réalistes différenciés. Certaines branches de camp et de croissance suivent en outre leur propre chemin.
-2. **CityBench natif :** le catalogue exporté ne fournit pas de champ de plage démographique culturelle appliquée comme plafond. `scope` est un texte signalant des recettes artistiques, pas une contrainte calculée. Le type natif accepte les cultures au-delà des seuils génériques ; `maori-pa` n'a pas de maximum démographique propre dans cette chaîne.
-3. **Limite de la carte :** CityBench lit `decor.meta.tags.maxPopulation` pour limiter les choix de l'éditeur. C'est une capacité déclarée de la carte, commune aux cultures ; elle ne prouve ni capacité bâtie réelle ni plausibilité historique. L'ancien éditeur a également sa limite globale de population de 5 millions.
+1. **Legacy TS infrastructure:** `Culture.scale.min/max` still exists. `pipeline.mainPopulation` and the historical urban path can bound population to `scaleMaxPop(max) × 1.5`, with a lower bound as well. This can change requested population. Explicit `scale` declarations found in current `cultures*.ts` files all have `max: 'megacity'`: this mechanism currently provides no table of differentiated realistic ceilings. Some camp and growth branches also follow their own paths.
+2. **Native CityBench:** the exported catalog has no cultural demographic-range field applied as a ceiling. `scope` is text indicating artistic recipes, not a calculated constraint. Native types accept cultures beyond generic thresholds; `maori-pa` has no specific population maximum in this path.
+3. **Map limit:** CityBench reads `decor.meta.tags.maxPopulation` to limit editor choices. This is a declared map capacity shared by cultures; it proves neither actual built capacity nor historical plausibility. The old editor also has a global five-million population limit.
 
-**Réponse au cas des deux millions d'habitants en `maori-pa` :** le programme ne dispose pas du contrôle culturel nécessaire pour déclarer ce cas historiquement étayé, extrapolé ou interdit. La recette locale de pā est susceptible d'être utilisée à une échelle métropolitaine. Ce n'est pas une preuve de cohérence, même si la génération aboutit techniquement.
+**Two million inhabitants in `maori-pa`:** the program lacks the cultural checks needed to declare this historically supported, extrapolated, or forbidden. The local pā recipe may be used at metropolitan scale. Successful technical generation is not proof of coherence.
 
-Le mode `strict` refuse notamment des emprunts architecturaux déclarés ; la période peut filtrer les recettes natives admissibles. **Ces contrôles ne constituent pas un validateur historique général culture × époque × taille.** Les modes `inspired` et `fantasy` ne doivent pas être présentés comme des simulations historiques complètes non plus.
+`strict` mode rejects, among other things, declared architectural borrowing; period can filter admissible native recipes. **These controls are not a general culture × period × size historical validator.** Neither `inspired` nor `fantasy` should be presented as complete historical simulation.
 
-**Proposition à discuter :** distinguer une plage documentée, une plage d'extrapolation assumée et la capacité calculée sur le site. Au-delà de la plage documentée : refus motivé en mode strict si le profil ne couvre pas le cas ; transformation explicitée ou réseau de settlements en mode inspiré ; extrapolation autorisée en fantasy en conservant des règles constructives. Aucun chiffre de plafond culturel ne doit être inventé sans source ni confondu avec une limite technique.
+**Proposal for discussion:** distinguish a documented range, an explicitly assumed extrapolation range, and site-calculated capacity. Beyond the documented range: reject with reasons in strict mode if the profile does not cover the case; explain transformation or settlement network in inspired mode; allow extrapolation in fantasy while retaining construction rules. No cultural population ceiling should be invented without a source or confused with a technical limit.
 
-### 1.4 Profils, recettes et politiques dans les contrôles
+### 1.4 Profiles, recipes, and policies in the controls
 
-L’ID `culture` reste un **profil nommé** compatible : selon l’entrée, il peut décrire une tradition, une organisation de plan ou un thème. Le nouveau libellé « Profil culturel urbain » ne reclassifie pas les 79 IDs en traditions historiques et ne change ni leur routage ni leurs graines. La surcharge du profil des bâtiments est nommée séparément. Le programme appliqué conserve et affiche la famille foncière, le profil fonctionnel, la famille et le pack architecturaux, la recette témoin d’admissibilité, ses périodes et les emprunts déclarés. Une recette témoin sert au routage/admission amont ; ce n’est ni une recette de phase urbaine ni la liste des maisons construites. Les maisons effectivement retenues se lisent dans leurs archives natives.
+The `culture` ID remains a compatible **named profile**: depending on input, it can describe a tradition, plan organization, or theme. The new “Urban cultural profile” label does not reclassify the 79 IDs as historical traditions or change routing or seeds. The building-profile override is named separately. The applied program retains and displays land-tenure family, functional profile, architectural family and pack, admission witness recipe, its periods, and declared borrowing. A witness recipe is used for upstream routing/admission; it is neither an urban phase recipe nor the list of built houses. Actual selected houses are read from their native archives.
 
-La « politique d’admission » utilise les IDs existants : `strict` → `historical_strict`, `inspired` → `historical_inspired`, `fantasy` → `fantasy_mix`. Le mode strict refuse notamment les emprunts déclarés et certaines sources non couvertes ; il ne certifie pas une combinaison culture × époque × population. Sans métadonnées de plage documentée, sa plausibilité reste **inconnue**, y compris pour `maori-pa` à deux millions d’habitants. Aucun maximum culturel n’est fabriqué, aucune population n’est réduite pour donner une fausse impression de conformité.
+“Admission policy” uses existing IDs: `strict` → `historical_strict`, `inspired` → `historical_inspired`, `fantasy` → `fantasy_mix`. Strict mode rejects declared borrowing and certain uncovered sources; it does not certify a culture × period × population combination. Without documented range metadata, plausibility remains **unknown**, including `maori-pa` with two million inhabitants. No cultural maximum is invented and population is not reduced to suggest false compliance.
 
-`programme.period` est un filtre, pas une époque calculée automatiquement : `''` et `any` désactivent le filtre tout en restant deux valeurs transportées distinctes. `auto` n’est pas un alias natif ; un ancien code `auto` reste un code conservé hors des choix, sans conversion silencieuse en chaîne vide. Les codes d’époque actuellement présents dans les profils natifs sont `A` et `M`. Le sélecteur provient d’une petite projection de `rust/crates/houses/data/urban-admission.json` ; elle conserve version, générateur et SHA source, vérifiés strictement par un test de parité. Maintenance explicite, jamais lancée automatiquement par l’UI ou le build :
+`programme.period` is a filter, not an automatically calculated era: `''` and `any` disable filtering while remaining distinct transported values. `auto` is not a native alias; an old `auto` code remains a preserved code outside the choices, without silent conversion to an empty string. Period codes currently present in native profiles are `A` and `M`. The selector comes from a small projection of `rust/crates/houses/data/urban-admission.json`; it retains version, generator, and source SHA, strictly checked by a parity test. Maintenance is explicit, never run automatically by UI or build:
 
 ```powershell
 node web/scripts/update_native_admission_periods.mjs --check
 node web/scripts/update_native_admission_periods.mjs
 ```
 
-Un code de période ou de profil importé absent des options de cette UI reste visible et conserve sa valeur exacte ; il n’est plus remplacé par une valeur vide lors de l’application des contrôles. Sa compatibilité relève du consommateur natif, qui peut le refuser. Une politique importée inconnue est conservée pour lecture, puis demande une correction explicite avant application ; elle ne devient jamais implicitement `inspired`. Retirer le filtre d’époque ne touche pas les fonctions, l’intention, les ressources, les graines ou les positions.
+An imported period or profile code absent from UI options remains visible and retains its exact value; applying controls no longer replaces it with an empty value. Compatibility belongs to the native consumer, which may reject it. An unknown imported policy is retained for reading, then requires explicit correction before application; it never implicitly becomes `inspired`. Removing the period filter does not touch functions, intention, resources, seeds, or positions.
 
-Le résumé de politique/routage lit uniquement le `programme` retourné/importé. Un contexte ou identifiant de tradition précis absent reste inconnu ; ni le catalogue actuel ni les réglages courants ne le reconstituent pour un ancien plan. L’absence de certification culturelle/historique reste distincte de la grammaire morphologique, de l’admission architecturale physique et de la validation visuelle.
+The policy/routing summary reads only the returned/imported `programme`. A missing precise context or tradition ID remains unknown; neither the current catalog nor current settings reconstruct it for an old plan. Lack of cultural/historical certification remains distinct from morphological grammar, physical architectural admission, and visual validation.
 
-### 1.4 bis État du lieu et vacance : demande et contexte conservé
+### 1.4 bis Place state and vacancy: retained demand and context
 
-CityBench expose `programme.state` (`thriving`, `declining`, `abandoned`, `ruined`) et `programme.decay` dans un volet avancé du programme. L’état non précisé garde le défaut natif d’entrée `thriving`. Pour la vacance, **champ absent**, **`null` explicite : défaut de l’état** et **taux explicite entre0 et1**, notamment **0**, restent des valeurs distinctes au roundtrip. Un champ `undefined` est omis à la sérialisation JSON, comme un champ absent ; aucune valeur n’est fabriquée pour le remplacer. Le bouton de réinitialisation retire seulement ces deux champs. Les fonctions, intention, ressources, profils, période, population, positions et graines restent conservés.
+CityBench exposes `programme.state` (`thriving`, `declining`, `abandoned`, `ruined`) and `programme.decay` in an advanced program panel. Unspecified state keeps the native input default `thriving`. For vacancy, **absent field**, **explicit `null`: state default**, and **explicit rate from 0 to 1**, especially **0**, remain distinct on roundtrip. An `undefined` field is omitted in JSON serialization, like an absent field; no replacement is invented. Reset removes only these two fields. Functions, intention, resources, profiles, period, population, positions, and seeds are retained.
 
-La vacance influence le programme et certains rôles de bâtiments ; ce n’est ni un taux observé sur les maisons réalisées, ni une capacité habitante. Le moteur possède ses règles d’état ; l’UI ne remplace pas `null`/l’absence par un taux numérique du catalogue courant. Les valeurs importées hors du domaine UI restent visibles et conservées dans leur contexte d’origine, sans conversion silencieuse ; le consommateur natif peut les refuser. Une nouvelle saisie explicite de taux doit être finie et comprise entre0 et1.
+Vacancy influences the program and some building roles; it is neither a rate observed in realized houses nor inhabitant capacity. The engine has its own state rules; the UI does not replace `null`/absence with a numerical rate from the current catalog. Imported values outside the UI domain remain visible and retained in their original context, without silent conversion; the native consumer may reject them. A newly entered explicit rate must be finite and between 0 and 1.
 
-Le résumé appliqué lit seulement le contexte retourné/importé du programme, distinct des réglages en attente. Un contexte, champ ou taux effectif non conservé reste inconnu ; un taux par défaut n’est jamais recalculé depuis le catalogue actuel pour un ancien plan. Ces contrôles ne changent pas les règles de pertinence des formes ou de vacance du moteur.
+The applied summary reads only returned/imported program context, separate from pending settings. A context, field, or effective rate not retained remains unknown; a default rate is never recalculated from the current catalog for an old plan. These controls do not change engine rules for form suitability or vacancy.
 
-### 1.4 ter Culture conservée des phases et étapes de croissance
+### 1.4 ter Retained culture of phases and growth stages
 
-Le tableau de composition appliquée affiche le profil urbain effectivement enregistré dans `GrowthPhase.culture`, avec son identifiant exact. Une valeur absente, nulle ou vide reste **inconnue** ; ni le profil demandé ni le mélange courant ne la complètent. Un identifiant conservé hors catalogue reste affiché, sans certification de couverture. Ce profil de phase n’est pas une tradition architecturale attestée pour chaque maison. Les contrôles « Étapes de croissance » et les lignes « Étape 1, 2… » décrivent des étapes ordinales sans datation historique enregistrée. Les clés `epochs`, `epoch`, leurs valeurs, liens et imports restent identiques ; le filtre historique `programme.period` (A/M, etc.) reste indépendant et inchangé.
+The applied composition table displays the urban profile actually recorded in `GrowthPhase.culture`, with its exact ID. An absent, null, or empty value remains **unknown**; neither requested profile nor current mix fills it in. An out-of-catalog retained ID remains displayed without certifying coverage. This phase profile is not an attested architectural tradition for every house. “Growth stages” controls and “Stage 1, 2…” rows describe ordinal stages without recorded historical dates. The `epochs` and `epoch` keys, their values, links, and imports remain identical; historical `programme.period` filtering (A/M, etc.) remains separate and unchanged.
 
-### 1.5 Précédence des profils du lieu, du plan, des parcelles et des bâtiments
+### 1.5 Precedence of place, plan, parcel, and building profiles
 
-Dans CityBench, l’ouverture d’un lien/MU ou d’un import n’écrase plus la surcharge `layoutConfig.culture` par `site`. Un champ absent prend seulement le défaut `site` de la normalisation existante. Le vrai sélecteur du plan est accessible dans « Profil culturel du plan · surcharge », ouvert automatiquement si une surcharge est conservée, même inconnue du catalogue UI. Le résumé distingue le profil demandé et le dernier profil effectivement retourné avec le plan ; un plan absent ne reçoit pas de résolution déduite des réglages courants.
+In CityBench, opening a link/MU or import no longer overwrites `layoutConfig.culture` with `site`. An absent field takes only the existing normalization default `site`. The actual plan selector is available under “Plan cultural profile · override,” opened automatically if an override is retained, even if unknown to the UI catalog. The summary distinguishes requested profile and last profile actually returned with the plan; an absent plan is not assigned a resolution inferred from current settings.
 
-| Étage | Héritage / surcharge | Effet d’un changement |
-|---|---|---|
-| Lieu | `SettlementSpec.culture` | Change le profil du lieu et ses préférences de site ; conserve les graines, la population et la position demandée. Ne réinitialise aucune surcharge du plan, des parcelles ou des bâtiments. L’implantation reste soumise au moteur. |
-| Plan | `layoutConfig.culture = site` suit le lieu ; autre ID = surcharge du plan | Le changement ou le bouton « Plan : comme le lieu » modifie seulement ce champ. Recette, préréglage, paramètres, parcellaire et architecture restent conservés. |
-| Parcelles | `parcelConfig.culture = site` suit le profil / les cultures des phases du plan retourné ; autre ID = surcharge du parcellaire | Ce n’est pas un second choix de profil du lieu. L’ID reste indépendant de la surcharge du plan. |
-| Architecture | `buildingState.settings.culture` absent suit le routage du programme architectural de chaque demande ; ID présent = surcharge des bâtiments | Ne change pas les rues ni le parcellaire. Ce n’est pas une certification de tradition historique ; les droits et sources admissibles sont contrôlés par le natif. |
+| Layer | Inheritance / override | Effect of a change |
+| --- | --- | --- |
+| Place | `SettlementSpec.culture` | Changes place profile and site preferences; retains requested seeds, population, and position. Does not reset plan, parcel, or building overrides. Placement remains subject to the engine. |
+| Plan | `layoutConfig.culture = site` follows place; another ID overrides plan | Changing it or using “Plan: match place” modifies only this field. Recipe, preset, parameters, parcels, and architecture remain retained. |
+| Parcels | `parcelConfig.culture = site` follows returned plan profile / phase cultures; another ID overrides parcels | Not a second place-profile choice. ID remains independent of the plan override. |
+| Architecture | Absent `buildingState.settings.culture` follows each request's architectural program routing; present ID overrides buildings | Does not change streets or parcels. Not historical-tradition certification; native code checks rights and admissible sources. |
 
-Le bouton de **style global** existant conserve sa fonction annoncée de réinitialisation des recettes et surcharges des rues, parcelles et bâtiments ; il est distinct du changement d’un profil et du retour du seul plan au lieu. Une recette/préréglage explicite peut devenir incompatible après changement du profil : elle n’est pas silencieusement remplacée, le refus natif reste visible. Les IDs hors catalogue sont conservés sans promesse de support. Les réglages demandés peuvent différer du dernier plan appliqué tant que la régénération n’a pas réussi. Aucune plage historique, limite culturelle de population ou substitution d’ID n’est inventée.
+The existing **global style** button retains its advertised function of resetting street, parcel, and building recipes and overrides; it is distinct from changing a profile or returning only the plan to the place profile. An explicit recipe/preset can become incompatible after a profile change: it is not silently replaced and native rejection stays visible. Out-of-catalog IDs are retained without a support promise. Requested settings may differ from the last applied plan until regeneration succeeds. No historical range, cultural population limit, or ID substitution is invented.
 
-### 1.6 Pertinence des réglages : petit chemin direct et repli
+### 1.6 Settings relevance: small direct path and fallback
 
-Le diagnostic CityBench distingue la **demande courante** du **chemin documenté par le plan retourné**. Une forme native explicitement imposée prend priorité sur l’intention isolée ; `nucleated` et `ribbon` restent des préférences, et `nucleated-village` passe par les quartiers. Les six petites grammaires directes natives sont `single`, `ruin`, `farmstead`, `camp`, `hamlet` et `street-village`. Une demande `auto` avec intention isolée permet seulement d’attendre un petit chemin direct, sans refaire la résolution de population/culture dans l’UI.
+The CityBench diagnostic distinguishes **current request** from **path documented by the returned plan**. An explicitly forced native form takes priority over an isolated intention; `nucleated` and `ribbon` remain preferences, and `nucleated-village` uses districts. The six native small direct grammars are `single`, `ruin`, `farmstead`, `camp`, `hamlet`, and `street-village`. An `auto` request with isolated intention only suggests a small direct path, without reimplementing population/culture resolution in the UI.
 
-Même dans ces cas, le natif peut échouer à poser le petit plan sur le site, puis utiliser la grammaire de quartiers. Les réglages d’emprise/croissance, phases/faubourgs et mélange restent donc **conservés et éditables pour ce repli** ; ils ne sont pas désactivés sur le seul rôle ou Kind demandé. Le mécanisme `legacy` n’utilise pas ce chemin direct. Recettes, paramètres morphologiques, maillage, accès et contraintes physiques peuvent encore intervenir dans la validation et les étapes communes ; aucun groupe entier n’est déclaré inutile par simple supposition.
+Even then, native code may fail to place the small plan on the site and fall back to district grammar. Extent/growth, phases/suburbs, and mix settings are therefore **retained and editable for this fallback**; they are not disabled solely because of the requested role or Kind. The `legacy` mechanism does not use this direct path. Recipes, morphological parameters, meshing, access, and physical constraints may still participate in validation and common stages; no whole group is declared irrelevant on assumption alone.
 
-Pour le plan conservé seulement, `structure.mechanism=kind`, une famille égale à son petit archétype natif, une configuration non-legacy connue et l’absence de retouches de quartiers documentent la composition directe. Le rapport nomme alors les champs de composition de quartiers qui n’ont pas piloté cette étape : forme/budget/dimensions de croissance (hors mécanisme et étapes de croissance), phases, faubourgs et mélange. Il ne prédit pas leur utilisation à la prochaine génération. L’archétype seul ne suffit pas : il est aussi écrit après un repli. Marqueurs absents/contradictoires, ancien import ou plan composé avec retouches : aucune non-utilisation n’est affirmée. Aucune valeur ni paramètre de génération n’est modifié par ce diagnostic, aucune capacité ni admission architecturale n’en est déduite.
+For the retained plan only, `structure.mechanism=kind`, a family equal to its small native archetype, a known non-legacy configuration, and absence of district edits document direct composition. The report then names district-composition fields that did not drive that stage: growth shape/budget/dimensions (excluding mechanism and growth stages), phases, suburbs, and mix. It does not predict their use at next generation. Archetype alone is insufficient: it is also written after fallback. Missing/contradictory markers, an old import, or a plan composed with edits: no non-use is asserted. This diagnostic changes no generation value or parameter and infers no capacity or architectural admission.
 
-## 2. Matrice des principaux axes énumérables
 
-Une ligne de scénario choisit une valeur par colonne applicable. Ces tableaux sont des dictionnaires de colonnes, pas une autorisation de multiplier tous les domaines sans vérifier leurs dépendances. Les valeurs automatiques ne garantissent pas un résultat distinct d'une valeur explicite.
+## 2. Matrix of principal enumerable axes
 
-| Culture | Classe démographique | Type morphologique | Maillage explicite | Forme d'emprise explicite |
-|---|---|---|---|---|
-| 79 IDs, annexe 7 | `farmstead`, `hamlet`, `village`, `town`, `city`, `metropolis`, `megacity` | `single`, `ruin`, `farmstead`, `camp`, `hamlet`, `street-village`, `nucleated-village`, `market-town`, `walled-town`, `city`, `metropolis` | `grid`, `organic`, `radial`, `terraces`, `dendritic`, `clusters` ; défaut `culture` | `circle`, `rectangle`, `polygon`, `compact`, `elongated`, `linear`, `fan`, `fingers`, `dendritic`, `lobed`, `archipelago`, `composite` ; défaut `auto` |
+A scenario row chooses one value per applicable column. These tables are column dictionaries, not permission to multiply all domains without checking dependencies. Automatic values do not guarantee a result distinct from an explicit value.
 
-| Biome | Climat du terrain | Relief | Archétype de site |
-|---|---|---|---|
-| `temperate`, `forest`, `desert`, `steppe`, `tropical`, `tundra`, `underdark`, `underdark-caverns` | `temperate`, `oceanic`, `mediterranean`, `arid`, `cold`, `tropical` | `flat`, `hills`, `valley`, `canyon`, `mountains`, `mixed`, `plateau`, `high-mountains`, `volcano`, `caldera`, `cavern` | `bridge`, `confluence`, `meander`, `harbor`, `estuary`, `valley`, `hilltop`, `plain`, `lakeshore`, `island`, `spur`, `pass` ; sélection `auto` possible |
+| Culture | Demographic class | Morphological type | Explicit mesh | Explicit footprint shape |
+| --- | --- | --- | --- | --- |
+| 79 IDs, appendix 7 | `farmstead`, `hamlet`, `village`, `town`, `city`, `metropolis`, `megacity` | `single`, `ruin`, `farmstead`, `camp`, `hamlet`, `street-village`, `nucleated-village`, `market-town`, `walled-town`, `city`, `metropolis` | `grid`, `organic`, `radial`, `terraces`, `dendritic`, `clusters`; default `culture` | `circle`, `rectangle`, `polygon`, `compact`, `elongated`, `linear`, `fan`, `fingers`, `dendritic`, `lobed`, `archipelago`, `composite`; default `auto` |
 
-| Vocation | État | Enceinte demandée | Faubourgs | Mélange culturel | Cadre du programme |
-|---|---|---|---|---|---|
-| `auto`, `agricultural`, `crossroads`, `artisan`, `riverine`, `port`, `capital`, `isolated-farm`, `roadside-temple`, `isolated-shrine`, `isolated-mill`, `isolated-inn`, `isolated-tower` | `thriving`, `declining`, `abandoned`, `ruined` | `culture`, `none`, `wall`, `palisade` | `auto`, `none`, `few`, `many` | Aucun ; deuxième culture parmi les mêmes 79 IDs ; répartition `phases` ou `sectors` | `strict`, `inspired`, `fantasy` |
+| Biome | Terrain climate | Relief | Site archetype |
+| --- | --- | --- | --- |
+| `temperate`, `forest`, `desert`, `steppe`, `tropical`, `tundra`, `underdark`, `underdark-caverns` | `temperate`, `oceanic`, `mediterranean`, `arid`, `cold`, `tropical` | `flat`, `hills`, `valley`, `canyon`, `mountains`, `mixed`, `plateau`, `high-mountains`, `volcano`, `caldera`, `cavern` | `bridge`, `confluence`, `meander`, `harbor`, `estuary`, `valley`, `hilltop`, `plain`, `lakeshore`, `island`, `spur`, `pass`; `auto` selection possible |
 
-Effets des axes :
+| Vocation | State | Requested enclosure | Suburbs | Cultural mix | Program framework |
+| --- | --- | --- | --- | --- | --- |
+| `auto`, `agricultural`, `crossroads`, `artisan`, `riverine`, `port`, `capital`, `isolated-farm`, `roadside-temple`, `isolated-shrine`, `isolated-mill`, `isolated-inn`, `isolated-tower` | `thriving`, `declining`, `abandoned`, `ruined` | `culture`, `none`, `wall`, `palisade` | `auto`, `none`, `few`, `many` | None; second culture from the same 79 IDs; `phases` or `sectors` distribution | `strict`, `inspired`, `fantasy` |
 
-| Axe | Ce qui change | Limite / critique |
-|---|---|---|
-| Culture | Recettes de cœur, extensions, village et hameau ; noyau, enceinte, orientations, espaces, services, ménage culturel et routage vers les recettes architecturales. | Le catalogue mêle traditions, plans de référence, organisations sociales et thèmes fantasy. 79 entrées ne signifient pas 79 moteurs entièrement distincts ni une couverture égale. |
-| Population / classe | Besoins en logements et services, emprise, phases, nombre de centres et largeur/hiérarchie de réseaux selon les étapes. | Une classe est dérivée de la population. Demande, capacité foncière et habitants réellement logés doivent rester trois mesures distinctes. |
-| Type morphologique | Choix entre grammaires de site unique, petites implantations et composition de quartiers. | Le forçage peut court-circuiter les protections par échelle. Le type résolu doit être enregistré avec la raison de son choix. |
-| Maillage | `grid` force l'opérateur grille ; `organic` renforce la variation ; `radial` guide le squelette ; `terraces` suit le relief ; `dendritic` favorise les impasses ; `clusters` favorise les closes/groupements. | Les six choix ne correspondent pas à six opérateurs locaux indépendants : plusieurs passent par l'opérateur organique. Une surcharge peut gommer des traits culturels. |
-| Emprise | Silhouette territoriale, continuité, allongement, ramifications ou pluralité des composantes. | Ce n'est pas la forme d'une maison. La famille oriente une construction contrainte par le terrain ; elle n'impose pas nécessairement une silhouette géométrique exacte. |
-| Biome | Couverture du sol, végétation et agriculture dans la chaîne qui le consomme ; contexte visuel souterrain. | Le module biome précise que la géométrie urbaine en est indépendante. La carte fixe chargée dans CityBench doit déjà porter ce contexte. |
-| Climat | Conditions amont du terrain/climat et budget d'eau selon le générateur de terrain utilisé. | Pas six grammaires de ville ; ce champ ne recrée pas le décor lors d'un simple recalcul urbain. |
-| Relief | Pentes, place réellement accessible, orientation, terrasses/escaliers et admissibilité des bâtiments. | Dépend d'un raster réel, pas seulement de son étiquette. `valley` est aussi un archétype de site : ce sont deux champs différents. |
-| Site | Rapports à l'eau, aux routes, à la défense et à la pente ; influe sur le choix village-rue/groupé, les quartiers et équipements possibles. | Choisir « port » ne suffit pas à prouver un accès navigable, des quais construits ou des entrepôts admis. |
-| Intention et spécialisation | Six fonctions pondérées combinables (1.1 bis) ; anciens rôles conservés comme compatibilité. | Plusieurs fonctions restent hors des six biais ; les intentions isolées ne sont pas des spécialisations de ville. |
-| État | Part de bâtiments vides (déclin : défaut 20 %, abandon/ruine : 100 %), rôles et ménages ; dans la chaîne native, rues de l'abandon/ruine requalifiées en chemins. | Un rôle `.ruin` ne garantit pas à lui seul un modèle architectural détruit ou une végétalisation détaillée. |
-| Enceinte | Absence, palissade ou muraille et choix culturel de fortification. | Type de settlement, tracé, portes, voies et bâtiments doivent rester compatibles ; tous les styles ne sont pas interchangeables. |
-| Faubourgs | Présence et intensité des extensions périphériques. | Récoupe les phases, satellites et forme générale ; un produit cartésien brut produit des doublons ou des demandes contradictoires. |
-| Mélange | Autre culture dans des phases ou des secteurs. | Ce n'est pas une fusion illimitée de toutes les architectures. Deux cultures, leur ordre et leur territoire doivent être enregistrés. |
-| Cadre historique | Contrôles d'emprunt et d'admission du programme ; routage vers des modes architecturaux distincts. | Pas de plage historique de population validée automatiquement. |
+Axis effects:
 
-## 3. Autres sélecteurs urbains : inventaire sans les masquer dans « etc. »
+| Axis | What changes | Limit / critique |
+| --- | --- | --- |
+| Culture | Core, extension, village, and hamlet recipes; core, enclosure, orientations, spaces, services, cultural household, and architectural recipe routing. | Catalog mixes traditions, reference plans, social organizations, and fantasy themes. 79 entries do not imply 79 entirely distinct engines or equal coverage. |
+| Population / class | Housing and service demand, footprint, phases, center count, and network width/hierarchy depending on stage. | Class derives from population. Demand, land capacity, and actually housed inhabitants must remain three distinct measures. |
+| Morphological type | Choice between single-site, small-settlement, and district-composition grammars. | Forcing can bypass scale protections. Resolved type and reason should be recorded. |
+| Mesh | `grid` forces grid operator; `organic` strengthens variation; `radial` guides skeleton; `terraces` follows terrain; `dendritic` favors dead ends; `clusters` favors closes/groupings. | Six choices are not six independent local operators: several use the organic operator. An override can erase cultural traits. |
+| Footprint | Territorial silhouette, continuity, elongation, branching, or multiple components. | Not a house shape. Family guides construction constrained by terrain; it does not necessarily impose an exact geometric silhouette. |
+| Biome | Ground cover, vegetation, and agriculture in the consuming pipeline; underground visual context. | The biome module states urban geometry is independent. A fixed map loaded in CityBench must already carry this context. |
+| Climate | Upstream terrain/climate conditions and water budget depending on terrain generator. | Not six city grammars; this field does not recreate scenery during urban-only recalculation. |
+| Relief | Slopes, actually accessible space, orientation, terraces/stairs, and building admissibility. | Depends on a real raster, not just its label. `valley` is also a site archetype: these are different fields. |
+| Site | Relationships to water, roads, defense, and slope; influences street/grouped village choice, districts, and possible facilities. | Choosing “port” does not prove navigable access, built quays, or admitted warehouses. |
+| Intention and specialization | Six combinable weighted functions (1.1 bis); old roles retained for compatibility. | Several functions remain outside the six biases; isolated intentions are not city specializations. |
+| State | Empty-building share (decline default 20%, abandonment/ruin 100%), roles and households; in the native pipeline abandoned/ruined streets become paths. | A `.ruin` role alone does not guarantee a destroyed architectural model or detailed vegetation. |
+| Enclosure | None, palisade, or wall and cultural fortification choice. | Settlement type, route, gates, roads, and buildings must remain compatible; styles are not all interchangeable. |
+| Suburbs | Presence and intensity of peripheral extensions. | Overlaps phases, satellites, and overall form; a raw Cartesian product yields duplicates or contradictory requests. |
+| Mix | Another culture in phases or sectors. | Not unlimited fusion of every architecture. Two cultures, their order, and territory must be recorded. |
+| Historical framework | Program borrowing/admission controls; routing to distinct architectural modes. | No automatically validated historical population range. |
 
-Ils font varier la scène ou le chemin de génération, mais ne sont pas tous des axes de scénario à multiplier.
+## 3. Other urban selectors: inventory without hiding them in “etc.”
 
-| Champ | Domaine | Effet et statut |
-|---|---|---|
-| Style d'agglomération UI | `culture`, `walled-core`, `dense-core`, `growing-town`, `village` | Macro-préréglages remplaçant plusieurs réglages de plan/parcelles. Axe composite, donc redondant avec ses réglages. |
-| `composition` | `settlement`, `district` | Composition complète ou quartier isolé. Ne pas confondre un échantillon de tissu avec une ville. |
-| `settlementForm` | `auto`, `nucleated`, `ribbon`, puis les 11 `Kind` | Demande de forme ; `nucleated/ribbon` orientent le village alors qu'un ID de type force le type. |
-| `footprint.mechanism` | `auto`, `legacy`, `planned`, `accessibility`, `ribbon`, `fusion` | Algorithme de fabrication de l'emprise. `legacy` conserve des comportements anciens. Le normaliseur web remplace un `planned` sauvegardé par `auto` ; le natif possède aussi sa résolution et force `planned` pour une famille rectangle. Ne pas compter les six comme six modes également accessibles et indépendants. |
-| `footprint.budget` | `population`, `radius` | Déduit le foncier d'une population ou d'un rayon. Ce n'est pas une validation de capacité bâtie. |
-| `axisAlignment` | `regional`, `culture` | Influence des axes régionaux ou culturels. |
-| `exitTreatment` | `legacy`, `adaptive`, `closed` | Traitement des sorties et raccordements. |
-| `peripheralRoad` | `auto`, `none`, `partial`, `full` | Route périphérique absente, partielle ou complète. |
-| `accessMode` | `adaptive`, `cultural`, `none` | Mode de desserte des fonds et intérieurs. |
-| `allowStairs` | `false`, `true` | Autorisation conditionnelle : la culture ou le tissu doit aussi autoriser les escaliers. |
-| `placement` | Natif : `center`, `rectangle`, `skew`, `notched` ; ancien atelier ajoute `lateral` | Placement/forme de la fixture ou composition de quartiers selon le chemin. Pas une nouvelle culture. |
-| `ParcelConfig.operator` | `culture`, `strips`, `oriented`, `compact`, `inherited`, `courtyard`, `frontage`, `compound`, `wholeBlock`, `garden` | Choix de découpe. `strips` est traduit en `burgage`, `oriented` en `compact`. Les autres noms n'impliquent pas tous une méthode indépendante. |
-| `preset`, plan/parcelles | `culture` ou un preset du catalogue, notamment `morph/...` | Choix d'une recette de paramètres ; liste complète déductible des annexes 7 et 8. |
-| `recipe`, plan/parcelles | `auto` ou ID de recette disponible pour la culture | Cœur, extension, faubourg, village, hameau, secteur et variantes de croissance selon la culture. Les domaines ne sont pas identiques pour les 79 cultures. |
-| `culture`, plan/parcelles | `site` ou ID culturel du catalogue | Chaque étape peut hériter de la culture du site ou la surcharger ; la culture de parcellaire peut donc différer de celle du plan. C'est une surcharge supplémentaire, à distinguer du mélange culturel en phases/secteurs. |
-| `zone` | `auto` ; zones morphologiques `core`, `middle`, `edge`, `faubourg`, `village` | Choisit les plages de paramètres par position urbaine. `edge` existe dans les morphologies même si les recettes exportées utilisent surtout les quatre autres zones. |
-| `streetOp` | `organic`, `grid` | Opérateurs locaux de rues, sous le maillage macroscopique. |
-| `closeOp` | Menu : `closes`, `culDeSacTree`, `hutong`, `roji`, `none` ; le tissu natif dendritique peut écrire `derbs` | Desserte secondaire. La différence menu/valeur interne doit être conservée lors d'une analyse de combinaison. |
-| `orientation` morphologique | `road`, `cardinal`, `terrain`, `water` | Orientation préférentielle par rapport aux routes, points cardinaux, pente ou eau. |
-| `plotOp` du menu historique | `burgage`, `courtyard`, `siheyuan`, `machiya`, `compound`, `garden`, `wholeBlock` | Méthodes/alias historiques de parcellaire. Le natif peut les réorienter selon la famille d'admission culturelle (`compact`, `inherited`, etc.). |
-| `fortificationStyle` | `auto`, `palisade`, `gord`, `hedge`, `curtain`, `flanked`, `concentric`, `rammed-earth`, `wengcheng`, `bastioned` | Sous-types de fortification : terre/bois, haie, courtine, tours, enceintes concentriques, terre compactée, portes à cour, bastions. Un style incompatible avec le type peut être remplacé par le style culturel. |
-| `monument` | Chaîne libre ; défaut `none` | Dans la grammaire des quartiers, peut marquer le plus grand îlot `compound:<nom>`. Ce n'est pas une énumération fermée de monuments effectivement construits. |
-| `programme.resources` | Liste libre ; déclencheurs explicitement lus : `timber`, `stone`, `ore`, `clay` | Ajoute des besoins d'ateliers ; d'autres mots ne garantissent pas une filière spécialisée. |
-| `programme.lore` | Liste libre ; déclencheurs explicites : `temple`, `palace`, `necropolis`, `magic` | Crée une demande collective portant le premier token reconnu. Ce n'est pas une ontologie narrative complète. |
-| `programme.period` | Chaîne libre ; vide et `any` désactivent certains filtres ; sinon périodes présentes dans l'admission architecturale | Filtre des recettes ; pas une liste globale de périodes homogène aux 79 cultures. |
-| `programme.navigableAccess` | `false`, `true` | Déclaration explicite de navigation utilisée par certaines demandes ; indépendante de la simple présence d'eau. |
-| Préférences de site historiques | `waterSide`, `hillSide` : `N`, `E`, `S`, `W` ; poids et préférences quantitatifs | L'ancien contrat ajoute `flatness`, `margin`, `centerInset` aux poids par archétype, `mountainFace` et `woodland`. Le bridge de placement natif expose directement surtout `weights`, `mountainFace`, `woodland` ; ne pas supposer un transfert de toutes les préférences historiques. L'ancien commentaire marque `woodland` comme réservé dans ce chemin. |
-| Construction sur l'eau culturelle | Ancien `Culture.waterBuild` booléen ; plateformes/pilotis selon l'admission native | Une tradition sur pilotis ne doit pas être traitée comme une simple maison terrestre. C'est une capacité culturelle/architecturale conditionnelle, pas une autorisation globale de construire sur toute eau ni un bouton universel attesté dans CityBench. |
+These vary the scene or generation path, but are not all scenario axes to multiply.
 
-### Architecture : domaines dérivés et surcharges
+| Field | Domain | Effect and status |
+| --- | --- | --- |
+| UI settlement style | `culture`, `walled-core`, `dense-core`, `growing-town`, `village` | Macro presets replacing several plan/parcel settings. Composite axis, redundant with its settings. |
+| `composition` | `settlement`, `district` | Complete composition or isolated district. A fabric sample is not a city. |
+| `settlementForm` | `auto`, `nucleated`, `ribbon`, then the 11 `Kind` | Form request; `nucleated/ribbon` guide villages while a type ID forces the type. |
+| `footprint.mechanism` | `auto`, `legacy`, `planned`, `accessibility`, `ribbon`, `fusion` | Footprint construction algorithm. `legacy` preserves old behavior. Web normalization replaces saved `planned` with `auto`; native code also resolves it and forces `planned` for a rectangle family. Do not count six equally accessible independent modes. |
+| `footprint.budget` | `population`, `radius` | Derives land from population or radius. Not built-capacity validation. |
+| `axisAlignment` | `regional`, `culture` | Influence of regional or cultural axes. |
+| `exitTreatment` | `legacy`, `adaptive`, `closed` | Exit and connection treatment. |
+| `peripheralRoad` | `auto`, `none`, `partial`, `full` | Absent, partial, or complete peripheral road. |
+| `accessMode` | `adaptive`, `cultural`, `none` | Access mode for rear and internal areas. |
+| `allowStairs` | `false`, `true` | Conditional permission: culture or fabric must also permit stairs. |
+| `placement` | Native: `center`, `rectangle`, `skew`, `notched`; old workshop adds `lateral` | Fixture placement/shape or district composition depending on path. Not a new culture. |
+| `ParcelConfig.operator` | `culture`, `strips`, `oriented`, `compact`, `inherited`, `courtyard`, `frontage`, `compound`, `wholeBlock`, `garden` | Subdivision choice. `strips` maps to `burgage`, `oriented` to `compact`. Other names do not all imply independent methods. |
+| `preset`, plan/parcels | `culture` or catalog preset, notably `morph/...` | Parameter recipe choice; complete list derivable from appendices 7 and 8. |
+| `recipe`, plan/parcels | `auto` or recipe ID available for culture | Core, extension, suburb, village, hamlet, sector, and growth variants depending on culture. Domains differ across 79 cultures. |
+| `culture`, plan/parcels | `site` or catalog cultural ID | Each stage can inherit or override site culture; parcel culture may differ from plan culture. Extra override distinct from phase/sector cultural mix. |
+| `zone` | `auto`; morphological zones `core`, `middle`, `edge`, `faubourg`, `village` | Selects parameter ranges by urban position. `edge` exists in morphologies even though exported recipes mostly use the other four zones. |
+| `streetOp` | `organic`, `grid` | Local street operators beneath macroscopic mesh. |
+| `closeOp` | Menu: `closes`, `culDeSacTree`, `hutong`, `roji`, `none`; native dendritic fabric can write `derbs` | Secondary access. Preserve menu/internal-value difference in combination analysis. |
+| Morphological `orientation` | `road`, `cardinal`, `terrain`, `water` | Preferred orientation relative to roads, cardinal directions, slope, or water. |
+| Historical menu `plotOp` | `burgage`, `courtyard`, `siheyuan`, `machiya`, `compound`, `garden`, `wholeBlock` | Historical parcel methods/aliases. Native code can reroute according to cultural admission family (`compact`, `inherited`, etc.). |
+| `fortificationStyle` | `auto`, `palisade`, `gord`, `hedge`, `curtain`, `flanked`, `concentric`, `rammed-earth`, `wengcheng`, `bastioned` | Fortification subtypes: earth/wood, hedge, curtain wall, towers, concentric walls, rammed earth, courtyard gates, bastions. A style incompatible with type may be replaced by cultural style. |
+| `monument` | Free string; default `none` | In district grammar, can mark the largest block `compound:<name>`. Not a closed enumeration of actually built monuments. |
+| `programme.resources` | Free list; explicitly read triggers: `timber`, `stone`, `ore`, `clay` | Adds workshop needs; other words do not guarantee a specialized industry. |
+| `programme.lore` | Free list; explicit triggers: `temple`, `palace`, `necropolis`, `magic` | Creates collective demand bearing the first recognized token. Not a complete narrative ontology. |
+| `programme.period` | Free string; empty and `any` disable some filters; otherwise periods present in architectural admission | Recipe filter, not a global period list homogeneous across 79 cultures. |
+| `programme.navigableAccess` | `false`, `true` | Explicit navigation declaration used by some demands; independent of mere water presence. |
+| Historical site preferences | `waterSide`, `hillSide`: `N`, `E`, `S`, `W`; quantitative weights and preferences | Historical contract adds `flatness`, `margin`, `centerInset` to archetype weights, `mountainFace`, and `woodland`. Native placement bridge directly exposes mainly `weights`, `mountainFace`, `woodland`; do not assume all historical preferences transfer. Historical comment marks `woodland` reserved on this path. |
+| Cultural construction on water | Legacy `Culture.waterBuild` boolean; platforms/stilts according to native admission | A stilt tradition is not merely a land house. Conditional cultural/architectural capability, not global permission to build on all water or an attested universal CityBench button. |
 
-| Champ | Domaine | Portée |
-|---|---|---|
-| Fonction du bâtiment | `domestic`, `mixed`, `workshop`, `warehouse`, `collective`, `open_space` | Six grandes fonctions d'admission ; les rôles détaillés du catalogue complètent ce découpage. |
-| Typologie d'admission | `common`, `row`, `courtyard`, `compound`, `detached` | Préférence architecturale, normalement issue du programme/culture, parfois surchargée. |
-| Composition du programme architectural | `row`, `detached`, `courtyard`, `farm`, `compound`, `hall`, `religious`, `civic`, `defence`, `inn` | Organisation de l'établissement demandé. Ne pas la confondre avec `LayoutConfig.composition`. |
-| Mode historique Houses | `historical_strict`, `historical_inspired`, `fantasy_mix` | Contrat architectural distinct des noms de modes du programme urbain. |
-| Recette / variante / style de maison | IDs du catalogue Houses et index architectural | Dépendent de la culture, période, fonction, taille et admission réelle du site ; ce document n'énumère pas toutes les variantes internes de chaque maison. |
-| `parcel_fit` | `false`, `true` | Autorise l'adaptation prévue par le moteur, sous les contraintes d'accès, droits, terrain et toiture. |
-| Rôle, quartier, richesse, ménages, étages, aire bâtie, continuité et mitoyenneté | Rôle/ID ou valeurs quantitatives du programme | Variations effectives de maison ; généralement sorties du programme urbain, pas axes catégoriels indépendants de la ville. |
+### Architecture: derived domains and overrides
 
-Le menu d'opérateurs de bâtiments de l'ancien atelier comprend : `streetFrontRow`, `streetFrontRowExperimental`, `courtyardHouse`, `shopRow`, `pavilionCompound`, `yashiki`, `machiya`, `detached`, `treeHouse`, `hall`, `longhouse`, `kancha`, `yardHouse`, `tomb`, `venetian`, `konak`, `sahelCompound`, `giebelhaus`, `hanok`, `gnome`, `primitive`, `fungalHouse`, `duergarHall`, `perimeterBlock`. Ce sont des opérateurs du générateur historique/atelier ; ils ne doivent pas être présentés comme 24 choix autonomes de modèle Houses natif.
+| Field | Domain | Scope |
+| --- | --- | --- |
+| Building function | `domestic`, `mixed`, `workshop`, `warehouse`, `collective`, `open_space` | Six broad admission functions; detailed catalog roles supplement them. |
+| Admission typology | `common`, `row`, `courtyard`, `compound`, `detached` | Architectural preference, normally from program/culture, sometimes overridden. |
+| Architectural program composition | `row`, `detached`, `courtyard`, `farm`, `compound`, `hall`, `religious`, `civic`, `defence`, `inn` | Organization of requested establishment. Do not confuse with `LayoutConfig.composition`. |
+| Houses historical mode | `historical_strict`, `historical_inspired`, `fantasy_mix` | Architectural contract distinct from urban-program mode names. |
+| House recipe / variant / style | Houses catalog IDs and architectural index | Depend on culture, period, function, size, and actual site admission; this document does not enumerate every internal variant. |
+| `parcel_fit` | `false`, `true` | Permits engine-supported adaptation under access, rights, terrain, and roof constraints. |
+| Role, district, wealth, households, floors, built area, continuity, and party walls | Program role/ID or quantitative values | Actual house variations; generally urban-program outputs, not independent categorical city axes. |
 
-## 4. Terrain, eau, routes et ensemble régional
+The old workshop building-operator menu includes `streetFrontRow`, `streetFrontRowExperimental`, `courtyardHouse`, `shopRow`, `pavilionCompound`, `yashiki`, `machiya`, `detached`, `treeHouse`, `hall`, `longhouse`, `kancha`, `yardHouse`, `tomb`, `venetian`, `konak`, `sahelCompound`, `giebelhaus`, `hanok`, `gnome`, `primitive`, `fungalHouse`, `duergarHall`, `perimeterBlock`. These are historical generator/workshop operators; they must not be presented as 24 autonomous native Houses model choices.
 
-Ces variables sont amont de la ville. Un scénario CityBench sur un décor fixe ne les fait pas varier en changeant uniquement `LayoutConfig`.
 
-| Variable | Domaine énumérable | Effet |
-|---|---|---|
-| Terrain côtier | Masque des huit directions `N`, `NE`, `E`, `SE`, `S`, `SW`, `W`, `NW` ; absence de côte ; modes insulaires `island`, `archipelago`, `random` | Continuité des terres, rivages et place disponible. Le masque peut combiner des directions, ce n'est pas huit formes de côte exclusives. |
-| Environnement des terrains géologiques | `flat`, `hills`, `mixed`, `mountains`, `high-mountains` | Fond du plateau/volcan/caldeira ; sous-option conditionnelle. |
-| Hydrologie active | `false`, `true` | Présence de la chaîne hydrologique et de ses contraintes. |
-| Rivière principale | `auto`, `none`, `stream`, `river`, `major` | Famille de cours d'eau visée. |
-| Lacs | `auto`, `none`, `some` | Présence/ajout des lacs, soumis au relief et à l'eau disponible. |
-| Méandres | `natural`, `reduced`, `none` | Forme des cours d'eau et terrains riverains. |
-| Estuaire | `auto`, `simple`, `widening`, `funnel`, `tidal` | Morphologie de l'embouchure selon la chaîne utilisée. |
-| Politique de dépressions | `auto`, `fill` | Traitement hydrologique du relief. |
-| Conditionnement préalable | `none`, `erosion`, `breach`, `both` | Modification du relief avant l'eau ; sous-mode technique. |
-| Chaîne hydrologique | `vector`, `rust` | Implémentation ; domaine de certaines options différent. |
-| Traçage rivière vectorielle | `vector`, `grid` | Méthode du chemin vectoriel. |
-| Confluence | `climate`, `drainage` | Mode de la chaîne vectorielle. |
-| Options hydrologiques booléennes | Érosion active/affichée, équilibre, anabranches, influence du relief, avulsions, deltas | Certaines changent la géographie ; l'affichage de l'érosion peut aussi changer le fond montré. Pas des familles de villes. |
-| Niveau du réseau régional | `primitive`, `rural`, `developed`, `imperial` | Types de routes, développement du réseau et raccordements disponibles. |
-| Profil routier | `auto`, `medieval`, `roman`, `east-asian`, `caravan`, `andean`, `mesoamerican`, `tribal`, `elven`, `dwarven` | Largeurs, pentes et choix routiers selon le profil. |
-| Surface routière demandée | `auto`, `dirt`, `gravel`, `paved`, `flagstone` | Revêtement et représentation du réseau. |
-| Classes de route produites | `highway`, `main`, `local`, `track`, `trail` | Résultats de la hiérarchie, pas cinq forçages indépendants pour une ville. |
-| Franchissements produits | `bridge`, `ford`, `causeway` | Pont, gué ou chaussée selon les contraintes du réseau. |
-| Mode de génération régional | `auto`, `counts`, `list` | Placement automatique, nombres par classe ou liste explicite de settlements. |
-| Distribution des tailles régionales | `classes`, `zipf` | Répartition des populations de plusieurs settlements. |
-| Intention historique de `SettlementSpec.kind` | Champ chaîne, défaut `settlement` | Ne pas assimiler ce champ au type natif résolu dans `LayoutConfig.settlementForm`. |
+## 4. Terrain, water, roads, and regional ensemble
 
-### Variation quantitative ou libre, non énumérable sans choisir des paliers
+These variables are upstream of the city. A CityBench scenario on fixed scenery does not vary them merely by changing `LayoutConfig`.
 
-| Groupe | Champs conservés dans l'inventaire | Effet |
-|---|---|---|
-| Identité / réalisation | Graines terrain, routes, quartiers, parcelles, bâtiments ; ID, nom, position et centre | Autres réalisations d'un même profil ; la position change les contraintes réelles. Un nom seul ne définit pas une nouvelle géométrie. |
-| Taille et carte | Population, largeur de carte, rayon et facteur de rayon | Volume de besoins et espace de travail ; doivent être explicités dans les benchmarks. |
-| Emprise | `grossDensity`, `aspect`, `orientation`, `nuclei`, `irregularity`, `anisotropy`, `separation`, `epochs`, `cohesion`, `satellites`, `branchDepth`, `gapSize` | Densité brute, proportions, noyaux, croissance, continuité et discontinuités. |
-| Plan | `density`, `count`, `rings`, `phases`, `siteAdaptation`, `maxStreetGrade`, `maxLaneGrade`, `maxStairGrade`, `accessDepth`, `accessBudget` | Intensité, nombre d'éléments et adaptation/accessibilité. Certaines valeurs sont des entiers bornés ; elles restent des réglages internes de ces modes. |
-| Mélange | `mixShare`, `mixAngle` | Part et orientation de la seconde influence ; l'ancienne représentation TS connaît aussi `blend`, que le contrat natif `mixMode` n'accepte pas. |
-| Programme | `decay`, ressources libres, période libre, lore libre | Vacance et demandes particulières ; les mots non reconnus n'ont pas un effet garanti. |
-| Morphologie de rues | `laneSpacing`, `wardArea`, `accessDepth`, `fieldTwist`, `curvature`, `fieldNoise`, `fieldWavelength`, `fieldRandom`, `gridSpacing`, `gridSkew`, `blockSize`, `minBlock`, `minWidth`, `widthByRank`, `widthScale`, `widthJitter`, `placeThreshold`, `deadEndRatio`, `slitDepth`, `plotDepth`, `contourFollow`, `contourBlend`, `longCut` | Espacements, angles, surfaces, largeurs, places et suivi du relief. Liste des champs exposés au catalogue natif pour les quartiers, hors opérateurs déjà listés. |
-| Morphologie de parcelles | `houseArea`, `coverage`, `frontage`, `plotDepth`, `plotTilt`, `wideLotChance`, `deepFill` | Surfaces, occupation, façade, profondeur, biais et remplissage. `deepFill` est booléen. |
-| Morphologie de bâtiments de l'atelier | `arch`, `roomDepth`, `courtyardShare`, `buildDepth`, `setback`, `bigCourtChance`, `houseVariation`, `blockCourtShare`, `blockSolidChance`, `blockInfillChance`, `footprintConformity`, `cornerFill`, et champs de dimensions/occupation communs | Variations internes de l'ancien opérateur sélectionné ; pas la définition exhaustive des options Houses. |
-| Placement régional | `density`, `zipfExponent`, `minPopulation`, `populationJitter`, `spread`, `smallTop`, `mainClear`, `clustering`, `edgeMargin`, `flatnessWeight`, `buildableWeight`, `freshWaterWeight`, `riverWeight`, `coastWeight`, `floodWeight`, `defenseWeight`, `elevation`, `variationWeight`, `siteWeights`, `sitePrefs` | Nombre et position des settlements ; préférences de pente, eau, défense, bois et montagne selon le chemin qui les consomme. |
-| Routes régionales | `density`, `gradeWeight`, `maxGrade`, `crossingCost`, `wobble`, `sharing`, `exits` | Densité, pente, franchissement, sinuosité, mutualisation et débouchés. |
-| Édition locale | Quartier : culture, tissu, densité, rôle, richesse, forme, suppression, sel ; parcelle : rôle, fonction, ménages, forme, suppression/fusion/jardin, sel | Peut produire une ville qui ne se résume plus à un unique profil global. Les polygones édités ne sont pas un domaine fini. |
-| Terrain / eau | Dimensions, résolution, intensités d'érosion, eau, pentes, bruit, seuils de rivière/lac, largeurs, sinuosité, tressage ; valeurs climatiques et dessin/import de raster | Paramètres amont continus ; les détails internes de ces générateurs ne sont pas des catégories supplémentaires de ville. |
+| Variable | Enumerable domain | Effect |
+| --- | --- | --- |
+| Coastal terrain | Eight-direction mask `N`, `NE`, `E`, `SE`, `S`, `SW`, `W`, `NW`; no coast; island modes `island`, `archipelago`, `random` | Land continuity, shores, and available space. The mask can combine directions; these are not eight exclusive coast shapes. |
+| Geological terrain environment | `flat`, `hills`, `mixed`, `mountains`, `high-mountains` | Plateau/volcano/caldera background; conditional sub-option. |
+| Active hydrology | `false`, `true` | Presence of hydrology pipeline and constraints. |
+| Main river | `auto`, `none`, `stream`, `river`, `major` | Target watercourse family. |
+| Lakes | `auto`, `none`, `some` | Presence/addition of lakes subject to relief and available water. |
+| Meanders | `natural`, `reduced`, `none` | Watercourse and riverside terrain form. |
+| Estuary | `auto`, `simple`, `widening`, `funnel`, `tidal` | Mouth morphology depending on pipeline. |
+| Depression policy | `auto`, `fill` | Hydrological treatment of relief. |
+| Preconditioning | `none`, `erosion`, `breach`, `both` | Terrain modification before water; technical submode. |
+| Hydrology pipeline | `vector`, `rust` | Implementation; some option domains differ. |
+| Vector river tracing | `vector`, `grid` | Vector path method. |
+| Confluence | `climate`, `drainage` | Vector pipeline mode. |
+| Boolean hydrology options | Active/displayed erosion, balance, anabranches, terrain influence, avulsions, deltas | Some change geography; erosion display can also change the shown background. Not city families. |
+| Regional network level | `primitive`, `rural`, `developed`, `imperial` | Road types, network development, and available connections. |
+| Road profile | `auto`, `medieval`, `roman`, `east-asian`, `caravan`, `andean`, `mesoamerican`, `tribal`, `elven`, `dwarven` | Widths, slopes, and road choices by profile. |
+| Requested road surface | `auto`, `dirt`, `gravel`, `paved`, `flagstone` | Network surface and representation. |
+| Produced road classes | `highway`, `main`, `local`, `track`, `trail` | Hierarchy outputs, not five independent city overrides. |
+| Produced crossings | `bridge`, `ford`, `causeway` | Bridge, ford, or causeway according to network constraints. |
+| Regional generation mode | `auto`, `counts`, `list` | Automatic placement, counts by class, or explicit settlement list. |
+| Regional size distribution | `classes`, `zipf` | Population distribution across settlements. |
+| Historical `SettlementSpec.kind` intention | String field, default `settlement` | Do not equate with native type resolved by `LayoutConfig.settlementForm`. |
 
-## 5. Variations de présentation et d'exécution à enregistrer séparément
+### Quantitative or free variation, not enumerable without chosen steps
 
-| Variable | Domaine | Ce que cela permet de conclure |
-|---|---|---|
-| Architecture CityBench | `silhouette`, `compact`, `detailed` | `silhouette` est un aperçu, les deux autres reposent sur des plans architecturaux natifs ; le détaillé enrichit la vue. Une silhouette ne prouve pas l'admission d'une maison ni sa capacité. |
-| Style de peinture des bâtiments | `geometric`, `cartographic`, `silhouette` | Présentation de la géométrie retenue ; ce n'est pas une culture supplémentaire. |
-| Diagnostic | `none`, `uses`, `height`, `access` | Lecture des fonctions, hauteurs et accès. |
-| Couche urbaine | `tissue`, `uses`, `parcels`, `buildings`, `roles` (CityBench) | Objet inspecté ; les autres couches/contours/centres peuvent être activés séparément. |
-| Fond CityBench | `relief`, `render`, `parchment` | Fond cartographique ; disponibilité dépend des images pré-rendues. |
-| Vue / caméra | 2D / 3D, cadrage, zoom, orientation | Niveau de détail effectivement visible et coût ; pas nouvelle génération de settlement par principe. |
-| Fabrication terrain | `procedural`, `neural-wasm`, `neural-python`, `neural` | Source de terrain, compatibilités et réalisation amont différentes. |
-| Calcul terrain/hydrologie | WASM/CPU, GPU selon l'étape ; modes natifs selon le runtime | Variable d'exécution et de reproductibilité ; ne doit pas gonfler le nombre de styles urbains. |
+| Group | Fields retained in inventory | Effect |
+| --- | --- | --- |
+| Identity / realization | Terrain, road, district, parcel, building seeds; ID, name, position, and center | Other realizations of one profile; position changes actual constraints. A name alone does not define new geometry. |
+| Size and map | Population, map width, radius and radius factor | Volume of demand and working space; must be explicit in benchmarks. |
+| Footprint | `grossDensity`, `aspect`, `orientation`, `nuclei`, `irregularity`, `anisotropy`, `separation`, `epochs`, `cohesion`, `satellites`, `branchDepth`, `gapSize` | Gross density, proportions, nuclei, growth, continuity and discontinuities. |
+| Plan | `density`, `count`, `rings`, `phases`, `siteAdaptation`, `maxStreetGrade`, `maxLaneGrade`, `maxStairGrade`, `accessDepth`, `accessBudget` | Intensity, element counts, adaptation/accessibility. Some are bounded integers but remain internal settings of these modes. |
+| Mix | `mixShare`, `mixAngle` | Share and orientation of second influence; historical TS also knows `blend`, which native `mixMode` does not accept. |
+| Program | `decay`, free resources, free period, free lore | Vacancy and special demands; unrecognized words have no guaranteed effect. |
+| Street morphology | `laneSpacing`, `wardArea`, `accessDepth`, `fieldTwist`, `curvature`, `fieldNoise`, `fieldWavelength`, `fieldRandom`, `gridSpacing`, `gridSkew`, `blockSize`, `minBlock`, `minWidth`, `widthByRank`, `widthScale`, `widthJitter`, `placeThreshold`, `deadEndRatio`, `slitDepth`, `plotDepth`, `contourFollow`, `contourBlend`, `longCut` | Spacings, angles, areas, widths, places, and terrain following. Native district catalog fields, excluding operators already listed. |
+| Parcel morphology | `houseArea`, `coverage`, `frontage`, `plotDepth`, `plotTilt`, `wideLotChance`, `deepFill` | Areas, coverage, frontage, depth, bias, and filling. `deepFill` is boolean. |
+| Workshop building morphology | `arch`, `roomDepth`, `courtyardShare`, `buildDepth`, `setback`, `bigCourtChance`, `houseVariation`, `blockCourtShare`, `blockSolidChance`, `blockInfillChance`, `footprintConformity`, `cornerFill`, and common dimension/coverage fields | Internal variations of selected historical operator; not an exhaustive definition of Houses options. |
+| Regional placement | `density`, `zipfExponent`, `minPopulation`, `populationJitter`, `spread`, `smallTop`, `mainClear`, `clustering`, `edgeMargin`, `flatnessWeight`, `buildableWeight`, `freshWaterWeight`, `riverWeight`, `coastWeight`, `floodWeight`, `defenseWeight`, `elevation`, `variationWeight`, `siteWeights`, `sitePrefs` | Settlement count and position; slope, water, defense, woodland, and mountain preferences depending on consuming path. |
+| Regional roads | `density`, `gradeWeight`, `maxGrade`, `crossingCost`, `wobble`, `sharing`, `exits` | Density, slope, crossing, sinuosity, sharing, and exits. |
+| Local editing | District: culture, fabric, density, role, wealth, shape, deletion, salt; parcel: role, function, households, shape, deletion/merge/garden, salt | Can produce a city no longer described by one global profile. Edited polygons are not a finite domain. |
+| Terrain / water | Dimensions, resolution, erosion intensities, water, slopes, noise, river/lake thresholds, widths, sinuosity, braiding; climate values and raster drawing/import | Continuous upstream parameters; generator internals are not extra city categories. |
 
-## 6. Critique générale et modèle de combinaisons proposé
+## 5. Presentation and execution variations to record separately
 
-1. **La matrice est conditionnelle.** Une ferme isolée ne possède pas les mêmes axes actifs qu'une métropole. Les recettes disponibles dépendent de la culture. Une forme d'emprise n'est pas un découpage de parcelle, un type de toit ou une classe démographique.
-2. **La culture est actuellement un paquet trop large.** `bastide` est un principe de plan, `maori-pa` un type d'établissement situé culturellement, `japanese-jokamachi` une ville de château, `necropolis` un programme/thème. Cette hétérogénéité explique des comparaisons difficiles. Conserver les IDs pour la compatibilité, mais décrire séparément tradition architecturale, organisation urbaine, époque et institutions serait plus lisible.
-3. **Les synonymes de forme masquent plusieurs échelles.** Village-rue, emprise linéaire et mécanisme ruban agissent à des niveaux différents ; « dendritique » existe pour l'emprise et pour le tissu ; « archipel » existe pour les îles et pour une urbanisation discontinue.
-4. **Il manque une politique explicite d'échelle culturelle.** Distinguer « documenté », « extrapolé », « incompatible » et « couverture technique insuffisante ». Ne pas réduire silencieusement la population pour rendre la demande calculable.
-5. **Six fonctions sont combinables, la taxonomie générale reste ouverte.** Intention isolée et poids sont exposés avec leurs effets existants. Activités/institutions/ressources supplémentaires ne doivent pas devenir des options sans consommateur ni être assimilées à une économie simulée.
-6. **Le catalogue doit annoncer son niveau de support.** Référence historique, recette morphologique, admission architecturale et validation visuelle sont quatre choses. Une entrée présente ou une capture réussie ne démontre pas les quatre.
-7. **Les variables résolues doivent accompagner les variables demandées.** Enregistrer au minimum culture(s), population demandée, classe, type résolu, recette par phase, emprise et maillage résolus, programme, capacité foncière, habitants réellement logés, déficits et motifs de substitution.
-8. **Le nettoyage doit être livré dans l'interface.** Les axes destinés à l'utilisateur doivent être accessibles dans CityBench, avec des libellés distincts, les fonctions combinables et leurs poids, les choix automatiques résolus et les substitutions expliquées. Les options dépendantes doivent suivre le contexte : phases et faubourgs ne sont pas des réglages pertinents pour un moulin isolé. La génération, l'inspecteur, les exemples, la réinitialisation et les liens/imports doivent partager le même modèle. Cette exigence utilisateur est suivie dans le [TODO](../TODO.md#cohérence-des-paramètres-et-accès-ui--priorité-haute). Fonctions pondérées, classes et grammaires sont actives ; la tranche 1.4 traite les libellés/politiques/imports. La désactivation contextuelle générale et le modèle culturel décomposé ne sont pas terminés.
+| Variable | Domain | What can be concluded |
+| --- | --- | --- |
+| CityBench architecture | `silhouette`, `compact`, `detailed` | `silhouette` is a preview; the other two use native architectural plans, with detailed view enriched. A silhouette does not prove house admission or capacity. |
+| Building paint style | `geometric`, `cartographic`, `silhouette` | Presentation of retained geometry; not another culture. |
+| Diagnostic | `none`, `uses`, `height`, `access` | Read functions, heights, and access. |
+| Urban layer | `tissue`, `uses`, `parcels`, `buildings`, `roles` (CityBench) | Inspected object; other layers/outlines/centers can be enabled independently. |
+| CityBench background | `relief`, `render`, `parchment` | Cartographic background; availability depends on prerendered images. |
+| View / camera | 2D / 3D, framing, zoom, orientation | Actually visible detail and cost; not inherently a new settlement generation. |
+| Terrain creation | `procedural`, `neural-wasm`, `neural-python`, `neural` | Different terrain sources, compatibility, and upstream realization. |
+| Terrain/hydrology computation | WASM/CPU, GPU depending on stage; native modes depending on runtime | Execution and reproducibility variable; should not inflate urban style counts. |
 
-Pour énumérer les combinaisons, partir de `culture × population/échelle × intention × contexte de terrain`, résoudre les valeurs culturelles par défaut, puis appliquer seulement les surcharges pertinentes. Un scénario doit porter les colonnes suivantes, même si certaines sont marquées « non applicable » :
+## 6. General critique and proposed combination model
+
+1. **The matrix is conditional.** An isolated farm does not have the same active axes as a metropolis. Available recipes depend on culture. Footprint shape is not a parcel subdivision, roof type, or demographic class.
+2. **Culture currently bundles too much.** `bastide` is a plan principle, `maori-pa` a culturally situated settlement type, `japanese-jokamachi` a castle town, and `necropolis` a program/theme. This heterogeneity makes comparisons difficult. Keep IDs for compatibility, but separately describe architectural tradition, urban organization, period, and institutions.
+3. **Form synonyms mask several scales.** Street village, linear footprint, and ribbon mechanism act at different levels; “dendritic” exists for footprint and fabric; “archipelago” for islands and discontinuous urbanization.
+4. **An explicit cultural scale policy is missing.** Distinguish “documented,” “extrapolated,” “incompatible,” and “insufficient technical coverage.” Do not silently reduce population to make a request computable.
+5. **Six functions are combinable; general taxonomy remains open.** Isolated intention and weights are exposed with existing effects. Additional activities/institutions/resources should not become options without consumers or be equated with a simulated economy.
+6. **The catalog must state its support level.** Historical reference, morphological recipe, architectural admission, and visual validation are four different things. An entry or successful capture does not demonstrate all four.
+7. **Resolved variables must accompany requested variables.** Record at least culture(s), requested population, class, resolved type, recipe per phase, resolved footprint and mesh, program, land capacity, actually housed inhabitants, deficits, and substitution reasons.
+8. **Cleanup must reach the interface.** User-facing axes must be accessible in CityBench with distinct labels, combinable weighted functions, resolved automatic choices, and explained substitutions. Dependent options should follow context: phases and suburbs are not relevant settings for an isolated mill. Generation, inspector, examples, reset, and links/imports must share one model. This user requirement is tracked in [TODO](../TODO.md#cohérence-des-paramètres-et-accès-ui--priorité-haute). Weighted functions, classes, and grammars are active; section 1.4 covers labels/policies/imports. General contextual disabling and decomposed cultural model remain unfinished.
+
+To enumerate combinations, start from `culture × population/scale × intention × terrain context`, resolve cultural defaults, then apply only relevant overrides. A scenario must carry these columns, even when some are “not applicable”:
 
 ```text
 culture_principale, culture_secondaire, mode_melange,
@@ -306,17 +308,17 @@ architecture_affichee, camera,
 capacite_fonciere, population_logee, deficits, substitutions
 ```
 
-`fonctions_dominantes` combinables et les statuts de plausibilité sont une proposition ; ils ne sont pas aujourd'hui des champs implémentés tels quels. La population exacte, les nombres de phases et les graines doivent être définis pour rendre une matrice finie. Les 39 816 configurations de mon message précédent ne comptaient que 79 cultures × 7 classes × 6 tissus forcés × 12 formes forcées ; ce n'est ni le nombre des variantes distinctes supportées ni celui des cas cohérents.
+Combinable `fonctions_dominantes` and plausibility statuses are proposals, not fields implemented exactly as shown. Exact population, phase counts, and seeds must be defined for a finite matrix. The previous figure of 39,816 configurations counted only 79 cultures × 7 classes × 6 forced fabrics × 12 forced forms; it is neither the number of distinct supported variants nor coherent cases.
 
-Pour les captures : distinguer couverture des cultures, couverture des échelles, couverture des interactions et stress de performance. Cinquante captures peuvent fournir un échantillon contrasté ; elles ne peuvent pas couvrir individuellement 79 cultures, encore moins toutes leurs combinaisons.
+For captures, distinguish cultural, scale, and interaction coverage and performance stress. Fifty captures can provide a contrasting sample; they cannot individually cover 79 cultures, much less all combinations.
 
-## 7. Catalogue culturel complet et variations selon l'échelle
 
-Table extraite du catalogue natif. `—` signifie absence de valeur ou de recette de croissance explicite ; cela ne signifie pas plafond de population. Le champ de croissance sélectionne un autre jeu de recettes au seuil indiqué. Les formes hameau/village sont des métadonnées culturelles ; leur résultat final dépend des règles natives décrites plus haut.
 
-<!-- GENERATED_CATALOGUE_START -->
+## 7. Complete cultural catalog and variation by scale
 
-| ID culturel | Libellé | Plan culturel | Hameau / village | Croissance à partir de | Recettes disponibles |
+Table extracted from the native catalog. `—` means no explicit value or growth recipe; it does not mean a population ceiling. Growth selects another recipe set at the indicated threshold. Hamlet/village forms are cultural metadata; their final result depends on the native rules described above.
+
+| Cultural ID | Label | Cultural plan | Hamlet / village | Growth from | Available recipes |
 |---|---|---|---|---|---|
 | `european-organic` | Medieval organic (Europe) | `organic` | `auto` / `auto` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
 | `bastide` | Bastide (planned grid) | `grid` | `auto` / `auto` | — | `core` ; `faubourg` ; `village` ; `hamlet` |
@@ -359,48 +361,49 @@ Table extraite du catalogue natif. `—` signifie absence de valeur ou de recett
 | `drow-enclave` | Drow enclave | `organic` | `auto` / `walled` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
 | `duergar-hold` | Duergar industrial hold | `terraces` | `walled` / `walled` | — | `core` ; `faubourg` ; `village` ; `hamlet` |
 | `myconid-colony` | Myconid colony | `radial` | `walled` / `walled` | — | `core` ; `village` ; `hamlet` |
-| `egyptian-planned` | Égypte · ville planifiée du Nil | `grid` | `auto` / `walled` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
-| `nubian-fortified` | Nubie · ville fortifiée | `grid` | `auto` / `walled` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
-| `mesopotamian` | Mésopotamie · quartiers de cours | `organic` | `auto` / `walled` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
-| `levantine-tell` | Levant · ville fortifiée sur tell | `terraces` | `auto` / `auto` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
-| `oasis-caravan` | Asie centrale · cité caravanière d’oasis | `organic` | `auto` / `walled` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
-| `ksar-oasis` | Maghreb · ksar d’oasis | `organic` | `auto` / `walled` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
-| `yoruba` | Yoruba · ville de concessions | `organic` | `auto` / `walled` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
-| `himalayan-terraces` | Tibet et Ladakh · habitat en terrasses | `terraces` | `auto` / `auto` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
-| `newar` | Népal newar · ville à places rituelles | `organic` | `auto` / `auto` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
-| `indus-planned` | Indus · cité harappéenne | `grid` | `auto` / `walled` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
-| `javanese-courts` | Java · ville de cours et enclos | `grid` | `auto` / `walled` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
-| `mississippian` | Mississippien · centre à place palissadée | `radial` | `auto` / `auto` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
-| `al-andalus` | Al-Andalus · médina ibérique à patios | `organic` | `auto` / `auto` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
-| `italian-comune` | Italie · commune à piazza et tours | `organic` | `auto` / `auto` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
-| `flemish-cloth-town` | Flandre · ville drapière à beffroi | `organic` | `auto` / `auto` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
-| `rynek-town` | Europe centrale · ville à rynek | `grid` | `auto` / `auto` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
-| `slavic-gord` | Slaves · gród palissadé et podgrodzie | `radial` | `ring` / `ring` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
-| `caucasian-highland` | Caucase · bourg fortifié géorgien et arménien | `terraces` | `auto` / `auto` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
-| `ethiopian-highland` | Éthiopie · cité d’altitude (Aksum, Lalibela) | `organic` | `auto` / `auto` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
-| `great-zimbabwe` | Zimbabwe · enclos de pierre sèche | `organic` | `ring` / `ring` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
-| `hausa-kano` | Hausa · cité-État à enceinte de terre (Kano) | `organic` | `walled` / `walled` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
-| `hadhrami-tower` | Hadramaout · cité verticale de maisons-tours (Shibam) | `organic` | `walled` / `walled` | — | `core` ; `village` ; `hamlet` |
-| `rajput-fort` | Rajputana · ville au pied du fort (Jaisalmer, Amber) | `organic` | `auto` / `auto` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
-| `dravidian-temple` | Inde du Sud · ville-temple à rues concentriques (Madurai) | `grid` | `auto` / `auto` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
-| `bagan` | Birmanie · cité royale de Pagan | `grid` | `auto` / `auto` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
-| `vietnamese-citadel` | Viêt · citadelle et quartier marchand (Thăng Long) | `grid` | `auto` / `auto` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
-| `tibetan-monastery` | Tibet · bourg monastique de pente | `terraces` | `terraces` / `terraces` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
-| `mongol-ordu` | Mongols · ordu, camp princier de yourtes | `radial` | `ring` / `ring` | 8000 | `core` ; `village` ; `hamlet` ; `grown-core` ; `grown-ring` ; `grown-faubourg` |
-| `maori-pa` | Māori · pā fortifié en terrasses | `terraces` | `terraces` / `terraces` | — | `core` ; `village` ; `hamlet` |
-| `pnw-plank-village` | Côte Nord-Ouest · village de maisons de planches | `linear` | `auto` / `auto` | — | `core` ; `village` ; `hamlet` |
-| `inuit-camp` | Arctique · camp inuit d’hiver | `dispersed` | `ring` / `ring` | — | `core` ; `village` ; `hamlet` |
-| `siberian-camp` | Sibérie · campement de chums des éleveurs de rennes | `radial` | `ring` / `ring` | — | `core` ; `village` ; `hamlet` |
-| `guarani-village` | Guaraní · village de grandes maisons (tekoha) | `radial` | `ring` / `ring` | — | `core` ; `village` ; `hamlet` |
-| `budj-bim` | Australie · village de pierre du Budj Bim | `dispersed` | `auto` / `auto` | — | `core` ; `village` ; `hamlet` |
-| `lizardfolk-swamp` | Hommes-lézards · cité lacustre sur pilotis | `dispersed` | `auto` / `auto` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
-| `merfolk-tidal` | Ondins · village de grève et de grottes marines | `organic` | `auto` / `auto` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
-| `giant-hold` | Géants · bourg mégalithique | `radial` | `ring` / `ring` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
-| `goblin-warren` | Gobelins · terrier à flanc de colline | `organic` | `auto` / `auto` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
+| `egyptian-planned` | Egypt · planned Nile town | `grid` | `auto` / `walled` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
+| `nubian-fortified` | Nubia · fortified town | `grid` | `auto` / `walled` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
+| `mesopotamian` | Mesopotamia · courtyard districts | `organic` | `auto` / `walled` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
+| `levantine-tell` | Levant · fortified tell town | `terraces` | `auto` / `auto` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
+| `oasis-caravan` | Central Asia · oasis caravan city | `organic` | `auto` / `walled` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
+| `ksar-oasis` | Maghreb · oasis ksar | `organic` | `auto` / `walled` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
+| `yoruba` | Yoruba · compound town | `organic` | `auto` / `walled` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
+| `himalayan-terraces` | Tibet and Ladakh · terraced settlement | `terraces` | `auto` / `auto` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
+| `newar` | Newar Nepal · town with ritual squares | `organic` | `auto` / `auto` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
+| `indus-planned` | Indus · Harappan city | `grid` | `auto` / `walled` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
+| `javanese-courts` | Java · city of courtyards and enclosures | `grid` | `auto` / `walled` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
+| `mississippian` | Mississippian · palisaded plaza center | `radial` | `auto` / `auto` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
+| `al-andalus` | Al-Andalus · Iberian patio medina | `organic` | `auto` / `auto` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
+| `italian-comune` | Italy · comune with piazza and towers | `organic` | `auto` / `auto` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
+| `flemish-cloth-town` | Flanders · cloth town with belfry | `organic` | `auto` / `auto` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
+| `rynek-town` | Central Europe · rynek town | `grid` | `auto` / `auto` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
+| `slavic-gord` | Slavs · palisaded gord and podgrodzie | `radial` | `ring` / `ring` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
+| `caucasian-highland` | Caucasus · Georgian and Armenian fortified town | `terraces` | `auto` / `auto` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
+| `ethiopian-highland` | Ethiopia · highland city (Aksum, Lalibela) | `organic` | `auto` / `auto` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
+| `great-zimbabwe` | Zimbabwe · dry-stone enclosures | `organic` | `ring` / `ring` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
+| `hausa-kano` | Hausa · earthen-walled city-state (Kano) | `organic` | `walled` / `walled` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
+| `hadhrami-tower` | Hadhramaut · vertical tower-house city (Shibam) | `organic` | `walled` / `walled` | — | `core` ; `village` ; `hamlet` |
+| `rajput-fort` | Rajputana · town below a fort (Jaisalmer, Amber) | `organic` | `auto` / `auto` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
+| `dravidian-temple` | South India · temple town with concentric streets (Madurai) | `grid` | `auto` / `auto` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
+| `bagan` | Burma · royal city of Pagan | `grid` | `auto` / `auto` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
+| `vietnamese-citadel` | Viet · citadel and merchant district (Thăng Long) | `grid` | `auto` / `auto` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
+| `tibetan-monastery` | Tibet · hillside monastic town | `terraces` | `terraces` / `terraces` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
+| `mongol-ordu` | Mongols · ordu, princely yurt camp | `radial` | `ring` / `ring` | 8000 | `core` ; `village` ; `hamlet` ; `grown-core` ; `grown-ring` ; `grown-faubourg` |
+| `maori-pa` | Māori · fortified terraced pā | `terraces` | `terraces` / `terraces` | — | `core` ; `village` ; `hamlet` |
+| `pnw-plank-village` | Northwest Coast · plank-house village | `linear` | `auto` / `auto` | — | `core` ; `village` ; `hamlet` |
+| `inuit-camp` | Arctic · Inuit winter camp | `dispersed` | `ring` / `ring` | — | `core` ; `village` ; `hamlet` |
+| `siberian-camp` | Siberia · reindeer herders’ chum camp | `radial` | `ring` / `ring` | — | `core` ; `village` ; `hamlet` |
+| `guarani-village` | Guaraní · longhouse village (tekoha) | `radial` | `ring` / `ring` | — | `core` ; `village` ; `hamlet` |
+| `budj-bim` | Australia · Budj Bim stone village | `dispersed` | `auto` / `auto` | — | `core` ; `village` ; `hamlet` |
+| `lizardfolk-swamp` | Lizardfolk · stilt lake city | `dispersed` | `auto` / `auto` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
+| `merfolk-tidal` | Merfolk · shore and sea-cave village | `organic` | `auto` / `auto` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
+| `giant-hold` | Giants · megalithic town | `radial` | `ring` / `ring` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
+| `goblin-warren` | Goblins · hillside warren | `organic` | `auto` / `auto` | — | `core` ; `ring` ; `faubourg` ; `village` ; `hamlet` |
 
-### Seuils de changement de recette de croissance
 
-| Culture | Seuil (habitants) |
+### Growth recipe change thresholds
+
+| Culture | Threshold (inhabitants) |
 |---|---|
 | `barbarian` | 2000 |
 | `barbarian-celtic` | 2400 |
@@ -416,13 +419,13 @@ Table extraite du catalogue natif. `—` signifie absence de valeur ou de recett
 | `nomad-camp` | 6000 |
 | `mongol-ordu` | 8000 |
 
-Ces seuils ne sont pas des maxima de population. Une recette de croissance peut changer le plan tout en conservant une tradition architecturale. L’absence de croissance explicite ne bloque pas l’usage métropolitain.
+These thresholds are not population maxima. A growth recipe can change the plan while preserving an architectural tradition. Absence of explicit growth does not prevent metropolitan use.
 
-### Domaines culturels internes présents dans les données
+### Internal cultural domains present in the data
 
-Ces valeurs sont des composants des recettes, pas autant de sélecteurs indépendants exposés par CityBench. La liste comprend les valeurs présentes dans les profils de base et de croissance.
+These values are recipe components, not independent selectors exposed by CityBench. The list includes values in base and growth profiles.
 
-| Composant | Valeurs effectivement présentes |
+| Component | Values actually present |
 |---|---|
 | `plan.pattern` | `dispersed`, `grid`, `linear`, `organic`, `radial`, `terraces` |
 | `plan.enclosure` | `circle`, `organic`, `oval`, `rect`, `rounded-rect`, `square`, `terraces` |
@@ -441,15 +444,16 @@ Ces valeurs sont des composants des recettes, pas autant de sélecteurs indépen
 | `hamlet.form` | `auto`, `ring`, `terraces`, `walled` |
 | `village.form` | `auto`, `ring`, `terraces`, `walled` |
 
-Les profils TS connaissent aussi les formes `grove`, les orientations de noyau `qibla`, les fossiles d’enceinte `street/wall/none` et des attributs de rendu tels que canopée, pilotis, canaux et terrasses. Présence dans le contrat historique et prise en charge effective dans la scène native doivent être distinguées.
+TS profiles also know `grove` forms, `qibla` nucleus orientations, `street/wall/none` enclosure fossils, and rendering attributes such as canopy, stilts, canals, and terraces. Presence in the historical contract must be distinguished from actual native scene support.
 
-## 8. Préréglages et rôles : domaines dépendants complets
 
-Le catalogue contient **79 cultures, 382 références de recettes culturelles et 443 presets**. Ces nombres ne s’additionnent pas pour obtenir des styles indépendants. Les références ci-dessous rendent la liste des presets explicite.
+## 8. Presets and roles: complete dependent domains
 
-### Références exactes des recettes culturelles
+The catalog contains **79 cultures, 382 cultural recipe references, and 443 presets**. These counts do not add up to independent styles. The references below make the preset list explicit.
 
-| Culture | Recette → preset |
+### Exact cultural recipe references
+
+| Culture | Recipe → preset |
 |---|---|
 | `european-organic` | `core` → `european-organic/core` ; `ring` → `european-organic/ring` ; `faubourg` → `european-organic/faubourg` ; `village` → `european-organic/village` ; `hamlet` → `european-organic/hamlet` |
 | `bastide` | `core` → `bastide/core` ; `faubourg` → `bastide/faubourg` ; `village` → `bastide/village` ; `hamlet` → `bastide/hamlet` |
@@ -531,9 +535,10 @@ Le catalogue contient **79 cultures, 382 références de recettes culturelles et
 | `giant-hold` | `core` → `giant-hold/core` ; `ring` → `giant-hold/ring` ; `faubourg` → `giant-hold/faubourg` ; `village` → `giant-hold/village` ; `hamlet` → `giant-hold/hamlet` |
 | `goblin-warren` | `core` → `goblin-warren/core` ; `ring` → `goblin-warren/ring` ; `faubourg` → `goblin-warren/faubourg` ; `village` → `goblin-warren/village` ; `hamlet` → `goblin-warren/hamlet` |
 
-### Autres presets du catalogue
 
-61 presets ne sont pas référencés par les recettes culturelles ci-dessus :
+### Other catalog presets
+
+61 presets are not referenced by the cultural recipes above:
 
 - `morph/european-organic`
 - `morph/bastide`
@@ -597,141 +602,143 @@ Le catalogue contient **79 cultures, 382 références de recettes culturelles et
 - `morph/duergar-hold`
 - `morph/myconid-colony`
 
-### Rôles fonctionnels détaillés
 
-Les familles de services contiennent **87 rôles distincts**. En ajoutant les services ruraux, les intentions isolées et la correspondance des noyaux, on obtient **98 IDs de rôles référencés** dans ces sections. Cela montre pourquoi les six vocations urbaines ne résument pas toute la variété fonctionnelle du générateur. Ce sont des rôles de programme, pas la garantie d’un bâtiment dédié effectivement admis.
+### Detailed functional roles
 
-| Rôle | Libellé générique du catalogue, si présent | Provenance |
+Service families contain **87 distinct roles**. Adding rural services, isolated intentions, and nucleus mapping yields **98 referenced role IDs** in these sections. This shows why six urban vocations do not summarize the generator’s full functional variety. These are program roles, not a guarantee that a dedicated building is actually admitted.
+
+| Role | Generic catalog label, where present | Provenance |
 |---|---|---|
-| `civic.academy` | Académie | services culturels |
-| `civic.amphitheatre` | Amphithéâtre | services culturels |
-| `civic.ballcourt` | Jeu de balle | services culturels |
-| `civic.basilica` | Basilique | services culturels |
-| `civic.bathhouse` | Étuves | services culturels |
-| `civic.calmecac` | Calmecac (école) | services culturels |
-| `civic.clocktower` | Beffroi | noyau |
-| `civic.council-house` | Maison du conseil | services culturels |
-| `civic.drum-tower` | Tour du tambour | noyau |
-| `civic.forum` | Forum | services culturels, noyau |
-| `civic.ghat` | Ghats (marches du fleuve) | services culturels |
-| `civic.guildhall` | Maison des corporations | services culturels |
-| `civic.hall` | Salle commune | services culturels |
-| `civic.hammam` | Hammam | services culturels |
-| `civic.hospital` | Hôtel-Dieu | services culturels |
-| `civic.kallanka` | Kallanka (grande halle) | services culturels |
-| `civic.khan-tent` | Tente du khan | services culturels |
-| `civic.longhall` | Grande halle | services culturels |
-| `civic.madrasa` | Médersa | services culturels |
-| `civic.maristan` | Maristan (hôpital) | services culturels |
-| `civic.palace` | Palais | services culturels, noyau |
-| `civic.stepwell` | Puits à degrés | services culturels |
-| `civic.tank` | Bassin sacré | services culturels |
-| `civic.theatre` | Théâtre | services culturels |
-| `civic.thermae` | Thermes | services culturels |
-| `civic.townhall` | Hôtel de ville | services culturels |
-| `civic.university` | Université | services culturels |
-| `civic.wizard-tower` | Tour du mage | noyau |
-| `civic.yamen` | Yamen (siège du magistrat) | services culturels |
-| `commerce.bazaar` | Bazar | services culturels |
-| `commerce.caravanserai` | Caravansérail | services culturels |
-| `commerce.dharamshala` | Dharamshala (gîte des pèlerins) | services culturels |
-| `commerce.emporium` | Emporium (marché du port) | services culturels |
-| `commerce.fishmarket` | Marché aux poissons | services culturels |
-| `commerce.funduq` | Fondouk | services culturels |
-| `commerce.inn` | Auberge | services culturels, isolé |
-| `commerce.macellum` | Macellum (marché couvert) | services culturels |
-| `commerce.maidan` | Maidan | noyau |
-| `commerce.market` | Place du marché | services culturels, noyau |
-| `commerce.market.gate` | Marché de porte | services culturels |
-| `commerce.market.ward` | Marché de quartier | services culturels |
-| `commerce.souk` | Souk | services culturels |
-| `commerce.taberna` | Taberna | services culturels |
-| `commerce.tianguis` | Tianguis (marché) | services culturels |
-| `commerce.warehouse` | Entrepôt du port | services culturels |
-| `craft.alchemist` | Officine d’alchimiste | services culturels |
-| `craft.bakery` | Boulangerie | services culturels |
-| `craft.boatshed` | Abri à bateaux | services culturels |
-| `craft.brewery` | Brasserie | services culturels |
-| `craft.dyer` | Teinturerie | services culturels |
-| `craft.fullonica` | Foulerie | services culturels |
-| `craft.mill` | Moulin à eau | services culturels, isolé |
-| `craft.obsidian` | Atelier d’obsidienne | services culturels |
-| `craft.potter` | Poterie | services culturels |
-| `craft.smithy` | Forge | services culturels |
-| `craft.tannery` | Tannerie | services culturels |
-| `craft.weaver` | Atelier de tissage | services culturels |
-| `craft.workshop` | Atelier | services culturels |
-| `defence.barracks` | Caserne | services culturels |
-| `defence.castle` | Château | services culturels, noyau |
-| `defence.fort` | Fort | services culturels |
-| `defence.fortress` | Forteresse | services culturels |
-| `defence.kasbah` | Kasbah | services culturels |
-| `defence.keep` | Donjon | services culturels |
-| `defence.tower` | Tour de guet | isolé |
-| `dwelling.farm` | Ferme (logis, grange et cour) | isolé |
-| `elite.kancha-palace` | Palais (kancha) | services culturels |
-| `elite.palace` | Palais | services culturels |
-| `open.cemetery` | Cimetière | services culturels |
-| `open.corral` | Enclos à bétail | services culturels |
-| `open.kraal` | Kraal | services culturels |
-| `open.necropolis` | Nécropole | services culturels |
-| `open.plaza` | Place | services culturels |
-| `open.thing` | Lieu du thing | services culturels |
-| `storage.barn` | Grange commune | rural |
-| `storage.granary` | Grenier | services culturels |
-| `storage.horreum` | Horreum (entrepôt) | services culturels |
-| `storage.qollqa` | Qollqa (grenier d’État) | services culturels |
-| `worship.capitolium` | Capitole | services culturels |
-| `worship.cathedral` | Cathédrale | services culturels |
-| `worship.city-god-temple` | Temple du dieu de la ville | services culturels |
-| `worship.confucian-temple` | Temple de Confucius | services culturels |
-| `worship.grove` | Bois sacré | noyau |
-| `worship.hof` | Hof (temple) | services culturels |
-| `worship.huaca` | Huaca (lieu sacré) | services culturels |
-| `worship.kiva` | Kiva | services culturels |
-| `worship.masjid` | Mosquée de quartier | services culturels |
-| `worship.monastery` | Monastère | services culturels |
-| `worship.mortuary-temple` | Temple funéraire | noyau |
-| `worship.mosque.friday` | Mosquée du vendredi | services culturels, noyau |
-| `worship.parish` | Église paroissiale | services culturels |
-| `worship.precinct` | Enceinte sacrée | noyau |
-| `worship.pyramid-precinct` | Enceinte de la pyramide | services culturels |
-| `worship.shrine` | Sanctuaire | services culturels, isolé |
-| `worship.temple` | Temple | services culturels |
-| `worship.temple.major` | Grand temple | services culturels, noyau |
-| `worship.ushnu` | Ushnu (plate-forme cérémonielle) | services culturels, noyau |
-| `worship.wayside` | Oratoire | isolé |
+| `civic.academy` | Academy | cultural services |
+| `civic.amphitheatre` | Amphitheatre | cultural services |
+| `civic.ballcourt` | Ballcourt | cultural services |
+| `civic.basilica` | Basilica | cultural services |
+| `civic.bathhouse` | Bathhouse | cultural services |
+| `civic.calmecac` | Calmecac (school) | cultural services |
+| `civic.clocktower` | Belfry | nucleus |
+| `civic.council-house` | Council house | cultural services |
+| `civic.drum-tower` | Drum tower | nucleus |
+| `civic.forum` | Forum | cultural services, nucleus |
+| `civic.ghat` | Ghats (river steps) | cultural services |
+| `civic.guildhall` | Guildhall | cultural services |
+| `civic.hall` | Common hall | cultural services |
+| `civic.hammam` | Hammam | cultural services |
+| `civic.hospital` | Hospital | cultural services |
+| `civic.kallanka` | Kallanka (great hall) | cultural services |
+| `civic.khan-tent` | Khan’s tent | cultural services |
+| `civic.longhall` | Great hall | cultural services |
+| `civic.madrasa` | Madrasa | cultural services |
+| `civic.maristan` | Maristan (hospital) | cultural services |
+| `civic.palace` | Palace | cultural services, nucleus |
+| `civic.stepwell` | Stepwell | cultural services |
+| `civic.tank` | Sacred tank | cultural services |
+| `civic.theatre` | Theatre | cultural services |
+| `civic.thermae` | Thermae | cultural services |
+| `civic.townhall` | Town hall | cultural services |
+| `civic.university` | University | cultural services |
+| `civic.wizard-tower` | Wizard tower | nucleus |
+| `civic.yamen` | Yamen (magistrate’s seat) | cultural services |
+| `commerce.bazaar` | Bazaar | cultural services |
+| `commerce.caravanserai` | Caravanserai | cultural services |
+| `commerce.dharamshala` | Dharamshala (pilgrim lodging) | cultural services |
+| `commerce.emporium` | Emporium (port market) | cultural services |
+| `commerce.fishmarket` | Fish market | cultural services |
+| `commerce.funduq` | Funduq | cultural services |
+| `commerce.inn` | Inn | cultural services, isolated |
+| `commerce.macellum` | Macellum (covered market) | cultural services |
+| `commerce.maidan` | Maidan | nucleus |
+| `commerce.market` | Market square | cultural services, nucleus |
+| `commerce.market.gate` | Gate market | cultural services |
+| `commerce.market.ward` | District market | cultural services |
+| `commerce.souk` | Souk | cultural services |
+| `commerce.taberna` | Taberna | cultural services |
+| `commerce.tianguis` | Tianguis (market) | cultural services |
+| `commerce.warehouse` | Port warehouse | cultural services |
+| `craft.alchemist` | Alchemist’s shop | cultural services |
+| `craft.bakery` | Bakery | cultural services |
+| `craft.boatshed` | Boatshed | cultural services |
+| `craft.brewery` | Brewery | cultural services |
+| `craft.dyer` | Dye works | cultural services |
+| `craft.fullonica` | Fullery | cultural services |
+| `craft.mill` | Water mill | cultural services, isolated |
+| `craft.obsidian` | Obsidian workshop | cultural services |
+| `craft.potter` | Pottery | cultural services |
+| `craft.smithy` | Smithy | cultural services |
+| `craft.tannery` | Tannery | cultural services |
+| `craft.weaver` | Weaving workshop | cultural services |
+| `craft.workshop` | Workshop | cultural services |
+| `defence.barracks` | Barracks | cultural services |
+| `defence.castle` | Castle | cultural services, nucleus |
+| `defence.fort` | Fort | cultural services |
+| `defence.fortress` | Fortress | cultural services |
+| `defence.kasbah` | Kasbah | cultural services |
+| `defence.keep` | Keep | cultural services |
+| `defence.tower` | Watchtower | isolated |
+| `dwelling.farm` | Farm (dwelling, barn, and courtyard) | isolated |
+| `elite.kancha-palace` | Palace (kancha) | cultural services |
+| `elite.palace` | Palace | cultural services |
+| `open.cemetery` | Cemetery | cultural services |
+| `open.corral` | Livestock enclosure | cultural services |
+| `open.kraal` | Kraal | cultural services |
+| `open.necropolis` | Necropolis | cultural services |
+| `open.plaza` | Square | cultural services |
+| `open.thing` | Thing meeting place | cultural services |
+| `storage.barn` | Communal barn | rural |
+| `storage.granary` | Granary | cultural services |
+| `storage.horreum` | Horreum (warehouse) | cultural services |
+| `storage.qollqa` | Qollqa (state granary) | cultural services |
+| `worship.capitolium` | Capitolium | cultural services |
+| `worship.cathedral` | Cathedral | cultural services |
+| `worship.city-god-temple` | City god temple | cultural services |
+| `worship.confucian-temple` | Confucian temple | cultural services |
+| `worship.grove` | Sacred grove | nucleus |
+| `worship.hof` | Hof (temple) | cultural services |
+| `worship.huaca` | Huaca (sacred place) | cultural services |
+| `worship.kiva` | Kiva | cultural services |
+| `worship.masjid` | Neighborhood mosque | cultural services |
+| `worship.monastery` | Monastery | cultural services |
+| `worship.mortuary-temple` | Mortuary temple | nucleus |
+| `worship.mosque.friday` | Friday mosque | cultural services, nucleus |
+| `worship.parish` | Parish church | cultural services |
+| `worship.precinct` | Sacred precinct | nucleus |
+| `worship.pyramid-precinct` | Pyramid precinct | cultural services |
+| `worship.shrine` | Shrine | cultural services, isolated |
+| `worship.temple` | Temple | cultural services |
+| `worship.temple.major` | Major temple | cultural services, nucleus |
+| `worship.ushnu` | Ushnu (ceremonial platform) | cultural services, nucleus |
+| `worship.wayside` | Wayside shrine | isolated |
 
-Des rôles domestiques et d’espaces ouverts sont aussi produits par le programme (par exemple `dwelling`, `dwelling.shop`, `open.common`, `open.garden`) ; les rôles locaux peuvent être édités et les états ajoutent des suffixes. L’ensemble des chaînes possibles n’est donc pas une énumération fermée globale.
 
-## 9. Sources et périmètre de l’exhaustivité
+The program also produces domestic and open-space roles (for example `dwelling`, `dwelling.shop`, `open.common`, `open.garden`); local roles can be edited and states add suffixes. The set of possible strings is therefore not one globally closed enumeration.
 
-L’inventaire couvre tous les axes cités dans la discussion, tous les sélecteurs de `LayoutConfig`, `ParcelConfig`, `FootprintConfig`, `ProgrammeContext`, les classifications d’échelle, les 79 cultures et leurs recettes, les principaux contextes terrain/eau/routes, ainsi que les différences de présentation. Les champs quantitatifs et libres sont signalés pour ne pas les faire disparaître de la matrice. Les versions de modèles neuronaux, les paramètres internes de chaque recette de maison, les palettes/dimensions de chaque pinceau et les réglages de chaque tour ou portail ne constituent pas de nouvelles catégories de ville ; leurs domaines détaillés restent dans leurs catalogues respectifs.
+## 9. Sources and scope of completeness
 
-Sources principales, toutes locales :
+The inventory covers every axis cited in the discussion; all selectors in `LayoutConfig`, `ParcelConfig`, `FootprintConfig`, and `ProgrammeContext`; scale classifications; the 79 cultures and their recipes; major terrain/water/road contexts; and presentation differences. Quantitative and free fields are identified so they do not disappear from the matrix. Neural model versions, internal parameters of each house recipe, individual brush palettes/dimensions, and settings for every tower or portal are not new city categories; their detailed domains remain in their respective catalogs.
 
-- [Contrat de configuration urbaine](../rust/bridge/urbanConfig.ts)
-- [Catalogue natif des cultures et recettes](../rust/crates/core/src/urban/catalogue.json)
-- [Résolution native des types et petites implantations](../rust/crates/core/src/urban/kinds.rs)
-- [Composition, phases et centres](../rust/crates/core/src/urban/composition.rs)
-- [Profils culturels et adaptation à la population](../rust/crates/core/src/urban/profiles.rs)
-- [Emprise et mécanismes de croissance](../rust/crates/core/src/urban/footprint.rs)
-- [Programme et admission des demandes](../rust/crates/core/src/urban/programme.rs)
-- [Services et effets des vocations](../rust/crates/core/src/urban/roles.rs)
-- [Catalogue des services et états](../rust/crates/core/src/urban/services.json)
-- [Correspondance culture / architecture](../rust/crates/core/src/urban/culture.rs)
-- [Anciennes classes et seuils démographiques](../web/src/gen/options.ts)
-- [Anciennes plages d’échelle et formes culturelles](../web/src/gen/urban/culture.ts)
-- [Ancien plafonnement dans le pipeline](../web/src/gen/pipeline.ts)
-- [Raccourcis de population de l’interface](../web/src/ui/settlementKinds.ts)
-- [Limite déclarée de la carte CityBench](../web/src/ui/terrainSettlements.ts)
-- [Préréglages composites de settlement](../web/src/ui/urbanSettlementStyles.ts)
-- [Opérateurs de l’atelier historique](../web/src/gen/urban/testbenchConfig.ts)
+Principal sources, all local:
+
+- [Urban configuration contract](../rust/bridge/urbanConfig.ts)
+- [Native cultures and recipes catalog](../rust/crates/core/src/urban/catalogue.json)
+- [Native type and small-settlement resolution](../rust/crates/core/src/urban/kinds.rs)
+- [Composition, phases, and centers](../rust/crates/core/src/urban/composition.rs)
+- [Cultural profiles and population adaptation](../rust/crates/core/src/urban/profiles.rs)
+- [Footprint and growth mechanisms](../rust/crates/core/src/urban/footprint.rs)
+- [Program and request admission](../rust/crates/core/src/urban/programme.rs)
+- [Services and vocation effects](../rust/crates/core/src/urban/roles.rs)
+- [Services and states catalog](../rust/crates/core/src/urban/services.json)
+- [Culture / architecture mapping](../rust/crates/core/src/urban/culture.rs)
+- [Legacy demographic classes and thresholds](../web/src/gen/options.ts)
+- [Legacy scale ranges and cultural forms](../web/src/gen/urban/culture.ts)
+- [Legacy pipeline ceiling](../web/src/gen/pipeline.ts)
+- [UI population shortcuts](../web/src/ui/settlementKinds.ts)
+- [Declared CityBench map limit](../web/src/ui/terrainSettlements.ts)
+- [Composite settlement presets](../web/src/ui/urbanSettlementStyles.ts)
+- [Historical workshop operators](../web/src/gen/urban/testbenchConfig.ts)
 - [Biomes](../web/src/gen/biomes.ts)
-- [Terrain et climats](../rust/bridge/terrain.ts)
-- [Hydrologie](../rust/bridge/hydrology.ts)
-- [Placement et routes régionaux](../rust/bridge/settlements.ts)
-- [Contrat architectural natif](../rust/bridge/urbanArchitecture.ts)
-- [Modes et peinture des bâtiments](../web/src/render/urbanBuildingStyle.ts)
+- [Terrain and climates](../rust/bridge/terrain.ts)
+- [Hydrology](../rust/bridge/hydrology.ts)
+- [Regional placement and roads](../rust/bridge/settlements.ts)
+- [Native architectural contract](../rust/bridge/urbanArchitecture.ts)
+- [Building modes and painting](../web/src/render/urbanBuildingStyle.ts)
 
-Aucun plafond historique de population n’est affirmé pour une culture sur la seule base de ce code. Les critiques et propositions des sections 1 et 6 sont des recommandations de modèle, distinctes des comportements existants.
+No historical population ceiling is asserted for a culture on this code alone. Sections 1 and 6 contain model recommendations distinct from existing behavior.

@@ -13,6 +13,8 @@ import type { LayoutConfig, ParcelConfig } from '../../../rust/bridge/urban';
 import { normalizeLayoutConfig, normalizeParcelConfig } from '../../../rust/bridge/urbanConfig';
 import { executionRuntime } from './executionProfile';
 import { installWorkshopSkin } from './testbenchWorkshop';
+import { installTestbenchLocale } from './testbenchLocale';
+import { urbanText } from './urbanPanelLocale';
 import { appliedParcelAt, parcelInspectionHtml } from './urbanInspector';
 import { createUrbanBuildingsPanel, type UrbanBuildingState } from './urbanBuildingsPanel';
 import { urbanBuildingsSvg } from '../render/urbanBuildings';
@@ -118,7 +120,7 @@ parcelOperatorLabel.append(parcelOperatorControl); cityShapeControls.append(parc
 function cityFootprint(config: LayoutConfig): LayoutConfig['footprint'] {
   const footprint = { ...config.footprint };
   for (const control of Array.from(cityShapeControls.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-city-footprint]'))) {
-    if (!control.reportValidity()) throw new Error('Corrigez la forme de l’agglomération.');
+    if (!control.reportValidity()) throw new Error(urbanText(['Corrigez la forme de l’agglomération.','Correct the settlement shape.','请修正聚落形状。','Corrige la forma del asentamiento.','Corrija a forma do assentamento.']));
     (footprint as unknown as Record<string, unknown>)[control.dataset.cityFootprint!] = control instanceof HTMLInputElement ? Number(control.value) : control.value;
   }
   return footprint;
@@ -152,11 +154,11 @@ const buildingPanel = createUrbanBuildingsPanel({ host: document.querySelector('
   getProgramme: () => normalizeLayoutConfig(state.urban?.layoutConfig).programme,
   applyProgramme: programme => { pendingProgramme = programme; void generate('layout'); },
   generate: async (seed, settings, onProgress) => {
-    if (!nativeResult?.partitions) throw new Error('Générez les parcelles avant les bâtiments.');
+    if (!nativeResult?.partitions) throw new Error(urbanText(['Générez les parcelles avant les bâtiments.','Generate parcels before buildings.','请先生成地块，再生成建筑。','Genera las parcelas antes que los edificios.','Gere os lotes antes dos edifícios.']));
     const inputPlan = nativeResult;
     const result = await nativeClient.generate({ kind: 'buildings', options: state.plotOptions, seed: seed || state.plotSeed, buildingSettings: settings, context: state.urban!, layouts: nativeResult.layouts, partitions: nativeResult.partitions }, onProgress);
     if (nativeResult !== inputPlan) throw new DOMException('Plan remplacé', 'AbortError');
-    if (!result.buildingState?.scene) throw new Error('La scène bâtie est absente.');
+    if (!result.buildingState?.scene) throw new Error(urbanText(['La scène bâtie est absente.','The building scene is missing.','缺少建筑场景。','Falta la escena construida.','A cena construída está ausente.']));
     nativeResult = result; return { scene: result.buildingState.scene };
   },
   onChange: buildingState => {
@@ -558,7 +560,7 @@ function render(): void {
     svg += '<g data-overlay="plots" stroke-width="1" stroke-opacity=".8">';
     houses.parcels.forEach((p, i) => {
       const color = ['garden', 'reserve'].includes(p.use) ? '#5f8d42' : p.use === 'place' ? '#9b6450' : '#d68634';
-      svg += `<path data-parcel="${i}" d="${path(p.poly)} ${nativeParcels?.[i]?.shape.holes.map(path).join(' ') ?? ''}" fill-rule="evenodd" fill="${color}" fill-opacity="${rustMode && urbanView === 'uses' ? '0' : '.07'}" stroke="${rustMode && urbanView === 'uses' ? 'none' : color}" pointer-events="all" vector-effect="non-scaling-stroke"><title>Parcelle ${i} · ${escape(p.use)} · îlot ${p.block} · ${p.poly.length} sommets</title></path>`;
+      svg += `<path data-parcel="${i}" d="${path(p.poly)} ${nativeParcels?.[i]?.shape.holes.map(path).join(' ') ?? ''}" fill-rule="evenodd" fill="${color}" fill-opacity="${rustMode && urbanView === 'uses' ? '0' : '.07'}" stroke="${rustMode && urbanView === 'uses' ? 'none' : color}" pointer-events="all" vector-effect="non-scaling-stroke"><title>${urbanText(['Parcelle','Parcel','地块','Parcela','Lote'])} ${i} · ${escape(p.use)} · ${urbanText(['îlot','block','街块','manzana','quadra'])} ${p.block} · ${p.poly.length} ${urbanText(['sommets','vertices','个顶点','vértices','vértices'])}</title></path>`;
     });
     svg += '</g>';
   }
@@ -629,7 +631,7 @@ function fit(): void {
 function newSeed(): string { return crypto.getRandomValues(new Uint32Array(1))[0].toString(36); }
 function counts(ms?: number): void {
   el('pipeline').textContent = `${layout.options.mode === 'micro' ? 'Diversité · 10 micro formes' : layout.morph.streetOp + ' → ' + layout.morph.closeOp} → ${state.stage >= 2 ? benchMethod('plots', editorMorph(state.plotOptions, 'plots').plotOp) : '…'} → ${state.stage === 3 ? benchMethod('buildings', editorMorph(state.houseOptions, 'buildings').buildingOp) : '…'}`;
-  status(`${rustMode ? `Rust · ${state.urban?.population?.toLocaleString() ?? '—'} hab. appliqués · ` : ''}${layout.quarters.length} ${layout.options.mode === 'micro' ? 'micro formes' : 'quartiers'} · ${layout.blocks.length} îlots · ${houses.parcels.filter(p => p.use === 'plot').length} parcelles constructibles · ${houses.parcels.filter(p => p.use === 'garden').length} arrière-terrains${rustMode ? '' : ` · ${houses.buildings.filter(b => b.kind !== 'garden').length} bâtiments`}${ms === undefined ? '' : ` · ${Math.round(ms)} ms`}${nativeResult?.layouts.flatMap(l => l.warnings).length ? ' · ' + nativeResult.layouts.flatMap(l => l.warnings).join(' ') : ''}`);
+  status(`${rustMode ? `Rust · ${state.urban?.population?.toLocaleString() ?? '—'} ${urbanText(['hab. appliqués','applied population','已应用人口','hab. aplicados','hab. aplicados'])} · ` : ''}${layout.quarters.length} ${layout.options.mode === 'micro' ? urbanText(['micro formes','micro shapes','微型形状','microformas','microformas']) : urbanText(['quartiers','districts','街区','barrios','bairros'])} · ${layout.blocks.length} ${urbanText(['îlots','blocks','街块','manzanas','quadras'])} · ${houses.parcels.filter(p => p.use === 'plot').length} ${urbanText(['parcelles constructibles','buildable parcels','可建地块','parcelas edificables','lotes edificáveis'])} · ${houses.parcels.filter(p => p.use === 'garden').length} ${urbanText(['arrière-terrains','rear lots','后方地块','fondos de parcela','fundos de lote'])}${rustMode ? '' : ` · ${houses.buildings.filter(b => b.kind !== 'garden').length} ${urbanText(['bâtiments','buildings','建筑','edificios','edifícios'])}`}${ms === undefined ? '' : ` · ${Math.round(ms)} ms`}${nativeResult?.layouts.flatMap(l => l.warnings).length ? ' · ' + nativeResult.layouts.flatMap(l => l.warnings).join(' ') : ''}`);
 }
 async function generate(action: 'layout' | 'parcels' | 'houses' | 'replay' | 'random' | 'load' | 'fortification'): Promise<void> {
   if (busy) return;
@@ -698,7 +700,7 @@ async function generate(action: 'layout' | 'parcels' | 'houses' | 'replay' | 'ra
       } else if (action !== 'load' && !programmeCandidate) {
         const native: Record<string, unknown> = {};
         for (const control of Array.from(document.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-native]'))) {
-          if (!control.checkValidity()) { control.reportValidity(); throw new Error('Corrigez les paramètres du plan urbain.'); }
+          if (!control.checkValidity()) { control.reportValidity(); throw new Error(urbanText(['Corrigez les paramètres du plan urbain.','Correct the urban plan settings.','请修正城市规划设置。','Corrige los ajustes del plano urbano.','Corrija as configurações do plano urbano.'])); }
           native[control.dataset.native!] = control instanceof HTMLInputElement ? control.type === 'checkbox' ? control.checked : Number(control.value) : control.value;
         }
         const quarterZone = native.autoQuarterZones ? 'auto' : settings.zone, parcelZone = native.autoParcelZones ? 'auto' : settings.zone; delete native.autoQuarterZones; delete native.autoParcelZones;
@@ -715,12 +717,12 @@ async function generate(action: 'layout' | 'parcels' | 'houses' | 'replay' | 'ra
         if (['parcels', 'replay', 'random'].includes(action)) state.urban.parcelConfig = { ...state.urban.parcelConfig, zone: parcelZone, operator: parcelOperatorControl.value as ParcelConfig['operator'] } as ParcelConfig;
       }
       if (action !== 'load' && ['parcels', 'replay', 'random'].includes(action)) {
-        if (!input('urbanParcelDensity').reportValidity()) throw new Error('Corrigez la densité des parcelles.');
+        if (!input('urbanParcelDensity').reportValidity()) throw new Error(urbanText(['Corrigez la densité des parcelles.','Correct the parcel density.','请修正地块密度。','Corrige la densidad de parcelas.','Corrija a densidade dos lotes.']));
         state.plotOptions = { ...state.plotOptions, density: Number(input('urbanParcelDensity').value) };
       }
       if (state.stage === 3) state.stage = 2;
       if (action === 'layout' || action === 'replay' || action === 'random' || action === 'load' || action === 'fortification') nativeResult = await nativeClient.generate({ kind: 'quarters', options: state.options, seed: state.layoutSeed, context: state.urban });
-      if (!nativeResult) throw new Error('Générez d’abord les quartiers.');
+      if (!nativeResult) throw new Error(urbanText(['Générez d’abord les quartiers.','Generate districts first.','请先生成街区。','Genera primero los barrios.','Gere primeiro os bairros.']));
       if (state.stage >= 2) nativeResult = await nativeClient.generate({ kind: 'parcels', options: state.plotOptions, seed: state.plotSeed, context: { ...state.urban, layoutConfig: nativeResult.layoutConfig }, layouts: nativeResult.layouts });
       state.urban = { ...state.urban, layoutConfig: nativeResult.layoutConfig, parcelConfig: nativeResult.parcelConfig };
       const view = workshopView(nativeResult, state.options, editorMorph(state.options, 'streets')); layout = view.layout; partition = view.partition;
@@ -977,13 +979,14 @@ function receiveWorkshop(event: MessageEvent): void {
   houses = { parcels: partition.parcels, buildings: [] };
   restoreControls(); fit(); render(); save(); counts();
 }
+installTestbenchLocale();
 window.addEventListener('message', receiveWorkshop);
 restoreControls();
 if (hosted) window.parent.postMessage({ channel: WORKSHOP_CHANNEL, type: 'ready' }, location.protocol === 'file:' || location.origin === 'null' ? '*' : location.origin);
 if (awaitingMapImport) status('Chargement du plan appliqué de la carte…'); else void generate('load');
 
 mountIllustration({ host: document.querySelector('header') ?? document.querySelector('.workshop-controls') ?? el('stages'), capture: async () => {
-  if (busy || !layout) throw new Error('Attendez la fin de la génération du plan.');
+  if (busy || !layout) throw new Error(urbanText(['Attendez la fin de la génération du plan.','Wait for plan generation to finish.','请等待规划生成完成。','Espera a que termine la generación del plano.','Aguarde a geração do plano terminar.']));
   const host = map.parentElement!, [x, y, width, height] = state.view;
   const captured = perspective.isActive ? await perspective.captureIllustration() : undefined;
   const context = illustrationContext({ sourceStyle: select('mapStyle').value, seed: state.layoutSeed, camera: captured?.camera,

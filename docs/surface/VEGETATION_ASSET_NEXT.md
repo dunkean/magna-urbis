@@ -1,46 +1,44 @@
-# Prochaine étape artistique : végétation proche
+# Next artistic step: close vegetation
 
-Cette page conserve l'audit initial, avant import. Les travaux exécutés depuis
-sont documentés séparément : [herbes GPU](evidence/vegetation-grass-v13/README.md),
-[préparation des arbres](evidence/vegetation-tree-v13/README.md),
-[consommateur expérimental](TREE_ASSET_EXPERIMENT.md) et
-[audit optique indépendant](TREE_OPTICAL_INDEPENDENT_REVIEW.md).
+This page preserves the initial audit, before import. Work executed since is documented separately: [GPU grasses](evidence/vegetation-grass-v13/README.md), [tree preparation](evidence/vegetation-tree-v13/README.md), [experimental consumer](TREE_ASSET_EXPERIMENT.md) and [independent optical audit](TREE_OPTICAL_INDEPENDENT_REVIEW.md).
 
-Audit du 24 octobre 2026, pendant la revue Opus V12. Proposition uniquement : aucun import, téléchargement de géométrie, code runtime, test GPU ou changement ROOT. V12 reste figé. Les chiffres ci-dessous viennent des métadonnées et des petits documents glTF officiels consultés ; ils ne mesurent pas le rendu.
+Audit of 24 October 2026 during the Opus V12 review. Proposal only: no import, geometry download, runtime code, GPU test or ROOT change. V12 remains frozen. Figures below come from metadata and small official glTF documents consulted; they do not measure rendering.
 
-## Constat et première étape bornée
+## Findings and first bounded step
 
-`scene/main.gd::_build_populations` construit actuellement des couronnes/arbustes sphériques, des herbes en prismes et des débris grossiers. `surface_object.gdshader` ne possède aucune texture de brin/feuille. Les quinze jeux PBR existants décrivent le sol/couvert bas, pas des arbres. `forest_leaves_03` est téléchargé mais sans liaison recette/famille ; ce n'est pas une texture de couronne à activer.
+`scene/main.gd::_build_populations` currently builds spherical crowns/shrubs, prism grasses and coarse debris. `surface_object.gdshader` has no blade/leaf texture. The fifteen existing PBR sets describe ground/low cover, not trees. `forest_leaves_03` is downloaded but has no recipe/family binding; it is not a crown texture to activate.
 
-**Commencer par les herbes réelles.** Sélectionner quelques petites touffes de `grass_medium_01`, supprimer leurs décalages de présentation dans la collection, mesurer leur pivot bas/dimensions et normaliser leur hauteur sur `candidate.size`. Conserver exactement position, orientation, rang, variante stable et identité. La litière reste une réponse du couvert bas, distincte du sol et des arbres. Aucun nouveau candidat, champ physique ou type botanique canonique n'est nécessaire.
+**Start with real grasses.** Select a few small `grass_medium_01` clumps, remove their collection presentation offsets, measure bottom pivot/dimensions and normalise height to `candidate.size`. Keep position, orientation, rank, stable variant and identity exactly. Litter remains a low-cover response, distinct from ground and trees. No new candidate, physical field or canonical botanical type is necessary.
 
-Créer un catalogue neutre `surface/vegetation/catalogue.json` et un adaptateur `surface_vegetation_library.gd` : URL/licence/hashes des sources et produits préparés, nom du sous-maillage, pivot, dimensions, normalisation, surfaces, cartes et espaces colorimétriques, politique alpha, budgets. Les fichiers préparés sont locaux et versionnés par leur digest de renderer ; ils ne changent pas les versions de géologie/recettes/population. Garder le chemin cartographique actuel, avec palette source et glyphes lisibles.
+Create an engine-neutral `surface/vegetation/catalogue.json` and a `surface_vegetation_library.gd` adapter: source and prepared-product URLs/licences/hashes, submesh name, pivot, dimensions, normalisation, surfaces, maps and colour spaces, alpha policy, budgets. Prepared files are local and versioned by renderer digest; they do not change geology/recipe/population versions. Keep the current cartographic path with source palette and legible glyphs.
 
-## Sources CC0 vérifiées et coût réel
+## Verified CC0 sources and actual cost
 
-Poly Haven autorise modification et redistribution de ses assets sous [CC0](https://polyhaven.com/license). Les [conditions de l'API](https://github.com/Poly-Haven/Public-API) sont distinctes : ingestion attribuée, runtime hors réseau.
+Poly Haven permits modification and redistribution of its assets under [CC0](https://polyhaven.com/license). [API terms](https://github.com/Poly-Haven/Public-API) are separate: attribute ingestion and keep runtime offline.
 
-| Asset officiel | Contenu du glTF consulté | Téléchargement 1k avec dépendances |
+| Official asset | Contents of consulted glTF | 1k download with dependencies |
 |---|---|---:|
-| [grass_medium_01](https://api.polyhaven.com/info/grass_medium_01) / [fichiers](https://api.polyhaven.com/files/grass_medium_01) | 17 touffes nommées ; variantes tiny de 28–79 triangles, autres de 290–6422 | 3 065 099 octets |
-| [tree_small_02](https://api.polyhaven.com/info/tree_small_02) / [fichiers](https://api.polyhaven.com/files/tree_small_02) | 2 062 487 triangles, 3 surfaces | 100 974 143 octets |
-| [fir_tree_01](https://api.polyhaven.com/info/fir_tree_01) / [fichiers](https://api.polyhaven.com/files/fir_tree_01) | 3 maillages de 4 176 819 / 2 300 624 / 505 494 triangles, 4 surfaces chacun | 487 358 833 octets |
+| [grass_medium_01](https://api.polyhaven.com/info/grass_medium_01) / [files](https://api.polyhaven.com/files/grass_medium_01) | 17 named clumps; tiny variants of 28–79 triangles, others 290–6,422 | 3,065,099 bytes |
+| [tree_small_02](https://api.polyhaven.com/info/tree_small_02) / [files](https://api.polyhaven.com/files/tree_small_02) | 2,062,487 triangles, 3 surfaces | 100,974,143 bytes |
+| [fir_tree_01](https://api.polyhaven.com/info/fir_tree_01) / [files](https://api.polyhaven.com/files/fir_tree_01) | 3 meshes of 4,176,819 / 2,300,624 / 505,494 triangles, 4 surfaces each | 487,358,833 bytes |
 
-Ce sont les comptes d'indices des exports, différents du nombre de polygones publicitaire. Les arbres bruts sont exclus du runtime proposé. Il faut une préparation hors ligne reproductible, pas un stub qui charge deux millions de triangles. Cibles à valider, non réalisées : un arbre feuillu, deux surfaces maximum, LOD proche ≤8k triangles, intermédiaire ≤1k puis imposteur ; atlas 1–2k. À64 arbres proches cela représente au plus512k triangles ;10k arbres à ce LOD seraient excessifs. Le LOD doit suivre la taille projetée physique et garder une représentation des identités retenues.
+These are export index counts, different from advertised polygon counts. Raw trees are excluded from the proposed runtime. Reproducible offline preparation is needed, not a stub loading two million triangles. Targets to validate, not yet realized: one broadleaf tree, at most two surfaces, near LOD ≤8k triangles, intermediate ≤1k then impostor; 1–2k atlas. At 64 nearby trees this represents at most 512k triangles; 10k trees at that LOD would be excessive. LOD must follow physical projected size and retain a representation of retained identities.
 
-## Arbres : masque partagé obligatoire avant activation
+## Trees: shared mask required before activation
 
-Le remplacement suivant concerne un arbre préparé **avec son imposteur alpha/normal/réponse moyenne dérivé du même asset**. Aujourd'hui C et V supposent des disques pleins ; une feuille ajourée change la couverture visible. Substituer un glTF sans modifier cette liaison fausserait la peinture résiduelle et pourrait recréer un halo.
+The next substitution concerns a prepared tree **with its alpha/normal/mean-response impostor derived from the same asset**. C and V currently assume solid discs; open foliage changes visible cover. Substituting a glTF without changing this binding would falsify residual painting and could recreate a halo.
 
-L'atlas de couverture sélectionnée doit utiliser le même masque alpha, les mêmes variantes et transformations que la géométrie. Le support canonique des couronnes, treeCover, les IDs, les gardes de page/frustum et les trois couches restent inchangés. Les garanties V≤C et ≤2 points de couverture doivent être remesurées, notamment en oblique ; elles ne sont pas héritées du test des sphères. Si elles échouent, cet arbre reste expérimental, et les herbes peuvent être livrées séparément.
+The selected-cover atlas must use the same alpha mask, variants and transformations as geometry. Canonical crown support, treeCover, IDs, page/frustum guards and the three layers remain unchanged. V≤C and ≤2 percentage-point coverage guarantees must be remeasured, especially obliquely; they are not inherited from sphere tests. If they fail, this tree remains experimental, and grasses can be delivered separately.
 
-Adapter le shader végétal pour albédo/normal/rugosité et alpha testé/haché, TBN correct sous transformation non uniforme, fade caméra commun et lumière linéaire. Ne pas importer BLEND tel quel : [Godot décrit ses différences de coût/tri](https://docs.godotengine.org/en/stable/tutorials/3d/standard_material_3d.html). Répartir les MultiMeshes par variante/surface/LOD ; l'override actuel de la seule surface0 ne convient pas. Conserver initialement les ombres optiques C total et cast-shadow OFF arbres/troncs, pour éviter un second modèle d'ombre non qualifié.
+Adapt the vegetation shader for albedo/normal/roughness and tested/hashed alpha, correct TBN under non-uniform transformation, shared camera fade and linear lighting. Do not import BLEND unchanged: [Godot describes its cost/sorting differences](https://docs.godotengine.org/en/stable/tutorials/3d/standard_material_3d.html). Split MultiMeshes by variant/surface/LOD; the current surface-0-only override is unsuitable. Initially retain total-C optical shadows and tree/trunk cast-shadow OFF to avoid a second unqualified shadow model.
 
-## Preuves nécessaires et limites
+## Required evidence and limits
 
-- CPU : hashes/licences/pivots/tailles, source/candidats strictement inchangés, variante stable au zoom/raffinement/rebase, buffers et budgets bornés.
-- GPU sur snapshot isolé : 10m/160m/640m/2560m et oblique contrôlé ; mesh contre imposteur, vrai MultiMesh, alpha/normales, couverture ≤2 points, pans/franchissements de page sans rectangle/halo.
-- Couches/styles : sol RGB/normal/rugosité inchangés ; herbes/litière et arbres/ombres réellement retirés par leurs toggles ; styles cartographiques et bâtiments conservés.
-- QoS : navigation stricte20s, mémoire, bytes chargés, triangles/draws et upload mesurés. Les [MultiMeshes ne font pas de culling individuel](https://docs.godotengine.org/en/stable/tutorials/performance/using_multimesh.html) ; les gros lots devront rester bornés. Cette page signale elle-même une mise à jour4.7 incomplète : vérifier sur le moteur épinglé.
+- CPU: hashes/licences/pivots/sizes, strictly unchanged source/candidates, stable variant during zoom/refinement/rebase, bounded buffers and budgets.
+- GPU on isolated snapshot: 10 m/160 m/640 m/2,560 m and controlled oblique view; mesh versus impostor, actual MultiMesh, alpha/normals, coverage within two percentage points, pans/page crossings without rectangle/halo.
+- Layers/styles: unchanged ground RGB/normal/roughness; grasses/litter and trees/shadows actually removed by their toggles; cartographic styles and buildings preserved.
+- QoS: strict 20 s navigation, measured memory, loaded bytes, triangles/draws and upload. [MultiMeshes do not cull individually](https://docs.godotengine.org/en/stable/tutorials/performance/using_multimesh.html); large batches must remain bounded. That page itself notes an incomplete 4.7 update: verify on the pinned engine.
 
-Risques principaux : overdraw des feuilles, surfaces multiples, coût de préparation et parité optique en oblique. Aucun de ces nouveaux assets n'a été importé ou rendu ici ; aucune promesse de photoréalisme ou de FPS. Première livraison conseillée : touffes réelles puis arbre préparé et qualifié, sans modification des données physiques.
+Main risks: foliage overdraw, multiple surfaces, preparation cost and optical parity in oblique views. None of these new assets was imported or rendered here; no photorealism or FPS promise. Recommended first delivery: real clumps, then a prepared and qualified tree, without physical-data changes.
+
+[Original French version](VEGETATION_ASSET_NEXT_FR.md).

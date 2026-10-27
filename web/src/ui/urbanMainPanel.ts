@@ -1,12 +1,16 @@
 import type { LayoutConfig, ParcelConfig, QuarterOverride } from '../../../rust/bridge/urbanConfig';
 import type { HouseMix, HouseSettings } from '../../../rust/bridge/urbanArchitecture';
+import { cityUiText, localizeCityInspector } from './cityInspectorLocale';
+import { urbanText } from './urbanPanelLocale';
+import { LOCALE_KEY } from './shellLocale';
 
 const esc = (s: string): string => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 export const ZONES: Record<string, string> = { core: 'Cœur', middle: 'Extension', edge: 'Périphérie', faubourg: 'Faubourgs', village: 'Village' };
 const COLUMNS: [string, string, string][] = [['all', 'Toute', 'Toute la ville'], ['core', '◉ Cœur', 'Cœur'], ['middle', '◎ Ext.', 'Extension'], ['edge', '○ Pér.', 'Périphérie'], ['faubourg', '⋯ Faub.', 'Faubourgs'], ['village', 'Vil.', 'Village']];
 export type StageState = 'none' | 'ok' | 'stale' | 'busy' | 'error';
 const STAGES = { plan: 'Plan', parcels: 'Lots', houses: 'Maisons' } as const;
-const STATE_TEXT: Record<StageState, string> = { none: 'à faire', ok: 'à jour', stale: 'à refaire', busy: 'en cours', error: 'erreur' };
+const STATE_LOCALIZED: Record<StageState, readonly [string,string,string,string,string]> = { none:['à faire','to do','待完成','pendiente','a fazer'], ok:['à jour','up to date','已更新','actualizado','atualizado'], stale:['à refaire','needs regeneration','需重新生成','pendiente de regenerar','precisa regenerar'], busy:['en cours','in progress','进行中','en curso','em andamento'], error:['erreur','error','错误','error','erro'] };
+const STAGE_LOCALIZED: Record<keyof typeof STAGES, readonly [string,string,string,string,string]> = { plan:['Plan','Plan','规划','Plano','Plano'], parcels:['Lots','Parcels','地块','Parcelas','Lotes'], houses:['Maisons','Houses','房屋','Casas','Casas'] };
 const SPREADS: Record<HouseMix['spread'], string> = { lot: 'par maison', block: 'par îlot', quarter: 'par quartier' };
 const ROWS = [['culture', '🎨', 'Plan', 'Culture du plan'], ['tissue', '╬', 'Rues', 'Maillage des rues'], ['recipe', '▦', 'Îlots', 'Recette des îlots et quartiers'], ['operator', '▤', 'Parcel.', 'Opérateur parcellaire (découpe des lots)'], ['houses', '⌂', 'Maisons', 'Mélange de styles de maisons']] as const;
 type MixScope = { kind: 'city' } | { kind: 'zone'; zone: string } | { kind: 'quarter'; key: string };
@@ -56,7 +60,7 @@ const abbr = (text: string): string => { const t = text.replace(/\s*\(.*\)$/, ''
 /** The city inspector: one rule (the most precise choice wins: place culture, city, phase, quarter, lot), one grid, mixed house styles. */
 export function createUrbanMainPanel(host: UrbanMainHost) {
   const panel = document.createElement('div'); panel.className = 'urban-main'; panel.id = 'urbanMainStage';
-  const label = (id: string): string => host.cultures.find(([c]) => c === id)?.[1] ?? id;
+  const label = (id: string): string => cityUiText(host.cultures.find(([c]) => c === id)?.[1] ?? id);
   const tissueEntries = Object.entries(host.tissues).filter(([id]) => id !== 'culture') as [string, string][];
   const operatorEntries = Object.entries(host.operators).filter(([id]) => id !== 'culture') as [string, string][];
   const mirror = (key: string, icon: string, title: string, cls = ''): string => `<label class="um-f ${cls}" title="${title}"><span>${icon}</span><select data-um-cfg="${key}"></select></label>`;
@@ -85,6 +89,7 @@ export function createUrbanMainPanel(host: UrbanMainHost) {
         ${['culture', 'tissue', 'operator', 'houses'].map(row => cellHtml(row, 'q')).join('')}</div></div>
     <div class="um-pop" data-um-pop hidden></div>
     <button type="button" class="um-advanced" data-um-advanced aria-expanded="false" title="Tous les autres réglages, par étape">⚙ Avancé</button>`;
+  localizeCityInspector(panel);
   const q = <T extends Element>(selector: string): T => panel.querySelector<T>(selector)!;
   const cellEl = (row: string, col: string): HTMLElement => q(`.um-c[data-r="${row}"][data-c="${col}"]`);
 
@@ -116,30 +121,30 @@ export function createUrbanMainPanel(host: UrbanMainHost) {
   };
   const summary = (mix: HouseMix): string => {
     const styles = mix.styles.filter(s => s.weight > 0 && s.culture), total = styles.reduce((n, s) => n + s.weight, 0) || 1;
-    return `${styles.map(s => `${label(s.culture)} ${Math.round(s.weight / total * 100)} %`).join(' · ')}${styles.length > 1 || mix.spread !== 'lot' ? ` · ${SPREADS[mix.spread]}` : ''}`;
+    return `${styles.map(s => `${label(s.culture)} ${Math.round(s.weight / total * 100)} %`).join(' · ')}${styles.length > 1 || mix.spread !== 'lot' ? ` · ${cityUiText(SPREADS[mix.spread])}` : ''}`;
   };
   function cellOf(row: string, col: string): Cell {
     const s = host.state(), { layout, parcels, siteCulture } = s;
     const base = layout.culture && layout.culture !== 'site' ? layout.culture : siteCulture;
-    const tissueName = (id: string): string => id === 'culture' ? 'selon la culture' : host.tissues[id] ?? id;
-    const operatorName = (id: string): string => id === 'culture' ? 'selon la culture' : host.operators[id] ?? id;
+    const tissueName = (id: string): string => cityUiText(id === 'culture' ? 'selon la culture' : host.tissues[id] ?? id);
+    const operatorName = (id: string): string => cityUiText(id === 'culture' ? 'selon la culture' : host.operators[id] ?? id);
     const over = col === 'all' || col === 'q' ? undefined : layout.phaseOverrides?.[col];
     const cityMix = usable(s.houses.city) ? s.houses.city : undefined;
-    const zoneName = ZONES[col] ?? 'la phase';
+    const zoneName = cityUiText(ZONES[col] ?? 'la phase');
     const choice = (own: string, inheritedText: string, source: string, entries: [string, string][], reset: string, set: (v: string) => void, names: (id: string) => string = id => label(id)): Cell =>
-      ({ own: !!own && own !== reset, text: own && own !== reset ? abbr(names(own)) : `↳ ${abbr(inheritedText)}`, title: own && own !== reset ? `Choisi ici : ${names(own)}` : `Hérité ${source} : ${inheritedText}`,
-        entries: [[reset, `↳ ${inheritedText}`], ...entries.filter(([id]) => id !== reset)], current: own || reset, reset, set, label: '' });
+      ({ own: !!own && own !== reset, text: own && own !== reset ? abbr(cityUiText(names(own))) : `↳ ${abbr(cityUiText(inheritedText))}`, title: own && own !== reset ? `${urbanText(['Choisi ici','Selected here','在此选择','Elegido aquí','Escolhido aqui'])} : ${cityUiText(names(own))}` : `${urbanText(['Hérité','Inherited','继承','Heredado','Herdado'])} ${cityUiText(source)} : ${cityUiText(inheritedText)}`,
+        entries: [[reset, `↳ ${cityUiText(inheritedText)}`], ...entries.filter(([id]) => id !== reset)], current: own || reset, reset, set, label: '' });
     if (row === 'houses') {
       const scope = scopeOf(col), own = mixOf(s.houses, scope), inheritedMix = col === 'all' ? undefined : col === 'q' ? (usable(s.houses.zones?.[s.quarter?.zone ?? '']) ? s.houses.zones![s.quarter!.zone] : cityMix) : cityMix;
       const mine = usable(own);
-      return { own: mine, text: mine ? mixText(own!) : inheritedMix ? `↳ ${mixText(inheritedMix)}` : '↳ culture', title: mine ? `Choisi ici : ${summary(own!)}` : inheritedMix ? `Hérité : ${summary(inheritedMix)}` : 'Hérité de la culture de chaque phase', reset: '', houses: scope, label: col === 'all' ? 'Toute la ville' : col === 'q' ? `Quartier ${s.quarter?.key}` : zoneName };
+      return { own: mine, text: mine ? mixText(own!) : inheritedMix ? `↳ ${mixText(inheritedMix)}` : `↳ ${cityUiText('Culture')}`, title: mine ? `${urbanText(['Choisi ici','Selected here','在此选择','Elegido aquí','Escolhido aqui'])} : ${summary(own!)}` : inheritedMix ? `${urbanText(['Hérité','Inherited','继承','Heredado','Herdado'])} : ${summary(inheritedMix)}` : urbanText(['Hérité de la culture de chaque phase','Inherited from each phase’s culture','继承各阶段的文化','Heredado de la cultura de cada fase','Herdado da cultura de cada fase']), reset: '', houses: scope, label: col === 'all' ? cityUiText('Toute la ville') : col === 'q' ? `${urbanText(['Quartier','District','街区','Barrio','Bairro'])} ${s.quarter?.key}` : zoneName };
     }
     if (col === 'q') {
       const qs = s.quarter!, edit = qs.edit, zn = ZONES[qs.zone] ?? 'la phase';
       if (row === 'culture') return choice(edit?.culture ?? '', label(qs.culture), `de ${zn}`, host.cultures, '', v => host.editQuarter(qs.key, { culture: v }));
       if (row === 'tissue') return choice(edit?.tissue ?? '', tissueName(qs.tissue), `de ${zn}`, tissueEntries, '', v => host.editQuarter(qs.key, { tissue: v }), tissueName);
       const op = parcels.zoneOperators?.[qs.zone] ?? parcels.operator;
-      return { own: false, text: `↳ ${abbr(operatorName(op))}`, title: 'La découpe se règle par phase, pas par quartier.', reset: '', label: '' };
+      return { own: false, text: `↳ ${abbr(operatorName(op))}`, title: urbanText(['La découpe se règle par phase, pas par quartier.','Subdivision is set by phase, not by district.','划分按阶段设置，而非按街区设置。','La división se configura por fase, no por barrio.','A divisão é configurada por fase, não por bairro.']), reset: '', label: '' };
     }
     if (row === 'culture') {
       if (col === 'all') return { ...choice(layout.culture || 'site', `Culture du lieu (${label(siteCulture)})`, 'du lieu', [['site', `Culture du lieu (${label(siteCulture)})`], ...host.cultures], 'site', v => host.setLayout('culture', v), id => id === 'site' ? 'lieu' : label(id)), text: layout.culture && layout.culture !== 'site' ? abbr(label(layout.culture)) : `↳ ${abbr(label(siteCulture))}`, label: '' };
@@ -260,7 +265,7 @@ export function createUrbanMainPanel(host: UrbanMainHost) {
   function schedule(): void { clearTimeout(timer); timer = setTimeout(sync, 40); }
   function paint(node: HTMLElement, cell: Cell, absent: boolean, active: boolean): void {
     const button = node.querySelector<HTMLButtonElement>('.um-cb')!;
-    button.textContent = cell.text; node.title = absent ? 'Cette phase n’existe pas dans le plan affiché.' : cell.title;
+    button.textContent = cell.text; node.title = absent ? urbanText(['Cette phase n’existe pas dans le plan affiché.','This phase does not exist in the displayed plan.','显示的规划中没有此阶段。','Esta fase no existe en el plano mostrado.','Esta fase não existe no plano exibido.']) : cell.title;
     node.classList.toggle('um-own', cell.own); node.classList.toggle('um-absent', absent); node.classList.toggle('um-active', active);
     node.querySelector<HTMLElement>('.um-x')!.hidden = !cell.own;
   }
@@ -270,7 +275,7 @@ export function createUrbanMainPanel(host: UrbanMainHost) {
     // Header
     for (const chip of Array.from(panel.querySelectorAll<HTMLElement>('[data-um-chip]'))) {
       const state = s.stages[chip.dataset.umChip as keyof typeof STAGES]; chip.dataset.state = state;
-      chip.title = `${STAGES[chip.dataset.umChip as keyof typeof STAGES]} · ${STATE_TEXT[state]} · cliquer pour relancer cette étape et les suivantes`;
+      chip.title = `${urbanText(STAGE_LOCALIZED[chip.dataset.umChip as keyof typeof STAGES])} · ${urbanText(STATE_LOCALIZED[state])} · ${urbanText(['cliquer pour relancer cette étape et les suivantes','click to rerun this stage and the following stages','点击以重新运行此阶段及后续阶段','pulsa para ejecutar de nuevo esta etapa y las siguientes','clique para executar novamente esta etapa e as seguintes'])}`;
     }
     const archLabel = arch.closest('label')!;
     archLabel.hidden = !s.architecture;
@@ -289,10 +294,10 @@ export function createUrbanMainPanel(host: UrbanMainHost) {
       fill(control, entries); set(control, String(value ?? ''));
       control.title = control.selectedOptions[0]?.textContent ?? '';
     }
-    fill(cityOp, [['culture', 'Parcellaire selon la culture'], ...operatorEntries]); set(cityOp, s.parcels.operator || 'culture');
-    cityOp.title = `Opérateur parcellaire : ${cityOp.selectedOptions[0]?.textContent ?? ''}`;
+    fill(cityOp, [['culture', urbanText(['Parcellaire selon la culture','Parcels by culture','按文化划分地块','Parcelas según la cultura','Lotes conforme a cultura'])], ...operatorEntries]); set(cityOp, s.parcels.operator || 'culture');
+    cityOp.title = `${urbanText(['Opérateur parcellaire','Parcel operator','地块操作方式','Operador parcelario','Operador de lotes'])} : ${cityOp.selectedOptions[0]?.textContent ?? ''}`;
     const styles = s.houses.city?.styles.filter(st => st.weight > 0 && st.culture) ?? [];
-    fill(cityHouse, [['', 'Maisons selon la culture du plan'], ...host.cultures, ...(styles.length > 1 ? [['mix', `Mélange de ${styles.length} styles (grille ⌂)`] as [string, string]] : [])]);
+    fill(cityHouse, [['', urbanText(['Maisons selon la culture du plan','Houses by plan culture','按规划文化选择房屋','Casas según la cultura del plano','Casas conforme a cultura do plano'])], ...host.cultures, ...(styles.length > 1 ? [['mix', urbanText([`Mélange de ${styles.length} styles (grille ⌂)`,`Mix of ${styles.length} styles (grid ⌂)`,`${styles.length} 种风格组合（网格 ⌂）`,`Mezcla de ${styles.length} estilos (cuadrícula ⌂)`,`Mistura de ${styles.length} estilos (grade ⌂)`])] as [string, string]] : [])]);
     set(cityHouse, styles.length > 1 ? 'mix' : styles[0]?.culture ?? '');
     cityHouse.title = `Silhouettes : ${cityHouse.selectedOptions[0]?.textContent ?? ''}`;
     q('[data-um-simple]').toggleAttribute('hidden', !s.small);
@@ -320,6 +325,8 @@ export function createUrbanMainPanel(host: UrbanMainHost) {
     } else if (editing?.kind === 'quarter') closePop();
     else if (!pop.hidden && anchor && !anchor.isConnected) closePop();
   }
+  window.addEventListener('magna-locale-change', schedule);
+  window.addEventListener('storage', event => { if (event.key === LOCALE_KEY) schedule(); });
   return {
     element: panel, sync, schedule,
     regenerationSlot: q<HTMLElement>('[data-um-regen-slot]'),

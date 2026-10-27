@@ -1,94 +1,41 @@
-# Eau régionale : contours source et occlusion
+# Regional water: source contours and occlusion
 
-Le vrai paquet `native-e2e-40km-v5/fresh-source.surfacebin` est lu sans mutation.
-Le test ne génère aucun réseau et ne relève aucun niveau d'eau. Les contours
-retenus Magna restent l'autorité de la carte ; le raster physique validé sert à
-une autre représentation. Le champ ancien `resolvedBedConflicts` ne compte que
-les cellules de ce raster, pas les sommets des contours.
+The actual `native-e2e-40km-v5/fresh-source.surfacebin` packet is read without mutation. The test generates no network and raises no water levels. Retained Magna contours remain authoritative for the map; the validated physical raster serves a different representation. The old `resolvedBedConflicts` field counts only cells of that raster, not contour vertices.
 
-## Diagnostic CPU
+## CPU diagnostic
 
-Le test `viewer-local/tests/surface_hydrology_visibility_test.gd` passe avec le
-paquet réel et une fixture de contrôle explicitement synthétique : un polygone
-mesuré sous un lit plat reste complet malgré un raster physique entièrement sec.
-Les niveaux, classes et géométries source sont inchangés.
+`viewer-local/tests/surface_hydrology_visibility_test.gd` passes with the real packet and an explicitly synthetic control fixture: a surveyed polygon below a flat bed remains complete despite an entirely dry physical raster. Source levels, classes and geometry are unchanged.
 
-| Vue demandée | Groupes affichés | Triangles sans niveau | Sondes sous le lit / sondes | Δ maximum sondé |
+| Requested view | Displayed groups | Triangles without level | Probes below bed / probes | Maximum probed Δ |
 | --- | ---: | ---: | ---: | ---: |
-| 10 000 m | 702 | 0 | 2 670 / 4 087 | 46,0716 m |
-| 2 560 m | 59 | 0 | 3 647 / 3 961 | 27,8235 m |
+| 10,000 m | 702 | 0 | 2,670 / 4,087 | 46.0716 m |
+| 2,560 m | 59 | 0 | 3,647 / 3,961 | 27.8235 m |
 
-Ces sondes sont déterministes, bornées à 4 096 sommets et **non pondérées par
-l'aire** : elles ne mesurent pas un pourcentage de pixels ni un débit. La fenêtre
-de cache de la vue 10 km couvre ici toute la source 40 km. Elle représente
-48 038 663,75 m² après conversion GPU contre 48 038 668,53 m² pour la triangulation
-source en double. Elle utilise 719 184 sommets et 480 887 visites de balayage,
-sous les plafonds respectifs 999 996 et 12 000 000. Aucun fallback ni niveau
-manquant ne cause les ruptures observées. Un groupe source exactement dupliqué
-est dédupliqué uniquement à l'affichage.
+These probes are deterministic, bounded to 4,096 vertices and **not area-weighted**: they measure neither pixel percentage nor flow. The 10 km view's cache window here covers the entire 40 km source. It represents 48,038,663.75 m² after GPU conversion versus 48,038,668.53 m² for double-precision source triangulation. It uses 719,184 vertices and 480,887 sweep visits, below respective caps of 999,996 and 12,000,000. No fallback or missing level causes the observed breaks. One exactly duplicated source group is deduplicated only for display.
 
-## Contrôle GPU Forward+ / RTX 4090
+## Forward+ / RTX 4090 GPU control
 
-La sonde autonome `viewer-local/diagnostics/hydrology_source_map_probe.gd`
-affiche les mêmes contours et niveaux réels dans une vue verticale de 10 km,
-1024² pixels. Le terrain de contrôle est un maillage reconstruit sur CPU depuis
-le paquet ; **ce n'est pas une preuve d'intégration Terrain3D**. La palette bleue
-est diagnostique, pas un style final. Les résultats sont dans
-[gpu-report.json](gpu-report.json).
+Standalone probe `viewer-local/diagnostics/hydrology_source_map_probe.gd` displays the same real contours and levels in a vertical 10 km view, 1024² pixels. Control terrain is a mesh reconstructed on CPU from the packet; **this is not proof of Terrain3D integration**. The blue palette is diagnostic, not a final style. Results are in [gpu-report.json](gpu-report.json).
 
-| Représentation | Pixels d'eau |
+| Representation | Water pixels |
 | --- | ---: |
-| Contours source seuls | 6 495 |
-| Niveaux source soumis à la profondeur du terrain | 263 |
-| Overlay sans test de profondeur | 6 495 |
-| Projection Decal limitée au terrain (`cull_mask=1`) | 6 495 |
+| Source contours alone | 6,495 |
+| Source levels subject to terrain depth | 263 |
+| Overlay without depth test | 6,495 |
+| Decal projection limited to terrain (`cull_mask=1`) | 6,495 |
 
-La projection conserve exactement l'empreinte GPU de référence (zéro pixel
-discordant) et ne peint aucun pixel d'eau sur le toit de contrôle en couche 2.
-L'overlay direct peint au contraire **52 pixels d'eau sur ce toit**. Il reste un
-outil de diagnostic / de préparation de texture et ne constitue pas une
-résolution finale acceptable pour la carte urbaine. Le mode source-map doit
-projeter sur le terrain uniquement ; l'eau physique garde ses niveaux et ses
-conflits explicites. Aucun déplacement des niveaux ou des contours source n'est
-une solution à l'occlusion.
+Projection retains the reference GPU footprint exactly (zero differing pixels) and paints no water pixels on the layer-2 control roof. Direct overlay instead paints **52 water pixels on that roof**. It remains a diagnostic / texture-preparation tool and is not an acceptable final resolution for the urban map. Source-map mode must project onto terrain only; physical water retains its levels and explicit conflicts. Moving source levels or contours is not an occlusion solution.
 
-Les textures de couverture du fond doivent provenir de `groundMaterial*`, qui
-exclut les recettes d'eau, afin de ne pas conserver des cellules bleues derrière
-les contours source. Le raster de sécurité d'origine reste archivé tel quel.
+Background coverage textures must come from `groundMaterial*`, which excludes water recipes, to avoid retaining blue cells behind source contours. The original safety raster remains archived unchanged.
 
-À cette échelle, un pixel représente environ 9,77 m : certains tronçons fins
-restent sous-pixel dans la référence elle-même. Ces résultats ne prouvent donc
-pas une lisibilité continue de tous les cours d'eau. Une largeur cartographique
-minimale éventuelle doit être déclarée comme largeur d'affichage, distincte de la
-largeur physique. Les limites déjà documentées des contours source aplatis et
-des anneaux invalides demeurent ; aucune réparation topologique, conservation
-du débit ou équivalence à un relevé hydraulique n'est affirmée.
+At this scale, one pixel represents approximately 9.77 m: some narrow reaches remain sub-pixel in the reference itself. These results therefore do not prove continuous legibility of every watercourse. Any minimum cartographic width must be declared as display width, separate from physical width. Already-documented limits of flattened source contours and invalid rings remain; no topological repair, flow conservation or equivalence to a hydraulic survey is claimed.
 
-## Module de projection pour le viewer
+## Viewer projection module
 
-`SurfaceWaterProjection.bake(parent, geometry, origin, focus, widthM, colors,
-options)` est une coroutine GPU à appeler sur le thread de scène. `geometry`
-est le résultat de `SurfaceHydrology.prepare` ; les couleurs `river`, `lake`,
-`sea`, `fallback` sont des **Vector3 linéaires**. `options.sourceKey` est requis.
-Les options bornent la résolution à 64–2048 (1024 par défaut) et déclarent les
-hauteurs canoniques `minHeightM`/`maxHeightM` du volume projeté. `msaa` peut valoir
-0, 2, 4 ou 8. Aucun trait minimal n'est appliqué.
+`SurfaceWaterProjection.bake(parent, geometry, origin, focus, widthM, colors, options)` is a GPU coroutine to call on the scene thread. `geometry` is the result of `SurfaceHydrology.prepare`; `river`, `lake`, `sea` and `fallback` colours are **linear Vector3s**. `options.sourceKey` is required. Options bound resolution to 64–2048 (1024 default) and declare canonical `minHeightM`/`maxHeightM` of the projected volume. `msaa` can be 0, 2, 4 or 8. No minimum stroke is applied.
 
-Le résultat contient `texture`, `bounds`, `worldCenter`, `position`, `size`,
-`cullMask=1`, `cacheKey`, `diagnostics`, ou un champ `error`. Le caller conserve
-son cache, rejette les réponses de générations périmées et crée le Decal avec
-`create_decal(result, currentRenderOrigin)` : le rebase s'applique ainsi aussi
-aux textures mises en cache. Le cache SHA-256 dépend des octets de géométrie,
-des classes, de la couverture, de la palette, de la fenêtre et de la résolution.
-Compatibility ne supportant pas les Decals, ce backend retourne une erreur
-explicite ; le caller doit conserver un fallback déclaré.
+The result contains `texture`, `bounds`, `worldCenter`, `position`, `size`, `cullMask=1`, `cacheKey`, `diagnostics`, or an `error` field. The caller retains its cache, rejects stale-generation responses and creates the Decal with `create_decal(result, currentRenderOrigin)`: rebasing thus also applies to cached textures. The SHA-256 cache depends on geometry bytes, classes, coverage, palette, window and resolution. Compatibility does not support Decals, so this backend returns an explicit error; the caller must retain a declared fallback.
 
-Le contrôle GPU du module de production est distinct de la preuve régionale
-ci-dessus : c'est une **fixture synthétique déclarée**, avec eau à −20 m, terrain
-à 0 m, toit à 10 m et coordonnées canoniques de l'ordre de 10⁹ m. Il passe sur
-Forward+ / RTX 4090 : teinte décodée à moins d'un octet, alpha du contour,
-rebase exact avant Float32, toit rouge intact et source inchangée. Voir
-[projection-module-report.json](projection-module-report.json). Le contrôle CPU
-du cache vérifie séparément les changements de classe, couverture, identité
-source, échelle et position canonique. Le temps de bake de 137,7 ms porte sur la
-fixture 256² et ne mesure pas une performance régionale de production.
+The production module's GPU control is distinct from the regional proof above: it is a **declared synthetic fixture**, with water at −20 m, terrain at 0 m, roof at 10 m and canonical coordinates around 10⁹ m. It passes on Forward+ / RTX 4090: decoded tint within one byte, contour alpha, exact rebase before Float32, intact red roof and unchanged source. See [projection-module-report.json](projection-module-report.json). The CPU cache control separately checks class, coverage, source identity, scale and canonical position changes. Bake time of 137.7 ms applies to the 256² fixture and does not measure regional production performance.
+
+[Original French version](README_FR.md).

@@ -2619,11 +2619,11 @@
     "roof_confidence": "source_preset",
     "sources": [
       {
-        "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+        "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
         "line": 933
       },
       {
-        "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+        "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
         "line": 915
       }
     ],
