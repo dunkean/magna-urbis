@@ -16,7 +16,7 @@ use std::collections::BinaryHeap;
 use std::f64::consts::{PI, TAU};
 
 pub(in crate::urban) mod capacity;
-mod crossings;
+pub(super) mod crossings;
 mod sparse;
 
 pub(super) struct Footprint {
@@ -2435,6 +2435,7 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
     let reserve_area = area(&dry(surface, &reserve));
     let components = allocated.len();
     let structure = UrbanStructure {
+        quays: vec![],
         version: 1,
         mechanism: mechanism.into(),
         family: family.into(),

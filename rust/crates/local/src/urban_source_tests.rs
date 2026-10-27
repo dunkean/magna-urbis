@@ -1,6 +1,48 @@
 use super::*;
 
 #[test]
+fn urban_panic_reports_error_without_poisoning_session_or_retaining_partial_work() {
+    let state = Mutex::new(Session::default());
+    {
+        let mut state = state.lock().unwrap();
+        state.urban.retain_terrain().unwrap();
+        state.urban.retain_partitions(Arc::new(vec![]), Arc::new(vec![])).unwrap();
+        let source = state.urban.source("panic-owner").unwrap();
+        let result: ApiResult<()> = urban_guard(&mut state, |state| {
+            state.layouts = Some((1, Arc::new(vec![])));
+            state.urban.retain_layouts(Arc::new(vec![])).unwrap();
+            panic!("injected urban worker failure");
+        });
+        assert!(result.unwrap_err().starts_with("[urban_panic]"));
+        assert!(state.layouts.is_none());
+        assert!(state.urban.validate_source("panic-owner", &source).is_err());
+    }
+    let mut state = state.lock().expect("urban panic must not poison the session");
+    assert_eq!(urban_guard(&mut state, |_| Ok(42)).unwrap(), 42);
+}
+
+#[test]
+fn urban_panic_sends_a_complete_http_error_instead_of_leaving_the_client_waiting() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    client.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+    let worker = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let result: ApiResult<Reply> = urban_guard(&mut Session::default(), |_| panic!("injected urban panic"));
+        respond_result(&mut stream, "http://127.0.0.1:5173", result);
+    });
+    let mut response = String::new();
+    client.read_to_string(&mut response).expect("panic response must finish");
+    worker.join().unwrap();
+    assert!(response.starts_with("HTTP/1.1 500 Internal Server Error\r\n"));
+    assert!(response.contains("Access-Control-Allow-Origin: http://127.0.0.1:5173\r\n"));
+    let (head, body) = response.split_once("\r\n\r\n").unwrap();
+    assert!(head.contains(&format!("Content-Length: {}\r\n", body.len())));
+    let body: Value = decode(body.as_bytes()).unwrap();
+    assert!(body["error"].as_str().unwrap().starts_with("[urban_panic]"));
+}
+
+#[test]
 fn programme_functions_capability_announces_consumed_native_weights() {
     let sessions = Mutex::new(Sessions::default());
     let status: Value = decode(&dispatch("/status", b"", &sessions).unwrap().body).unwrap();

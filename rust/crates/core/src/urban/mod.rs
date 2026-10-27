@@ -36,8 +36,11 @@ mod stilt_ground_tests;
 mod small_settlement_tests;
 #[cfg(test)]
 mod regression;
+#[cfg(test)]
+mod panic20k_tests;
 pub mod roles;
 mod routing;
+mod trim;
 mod widths;
 
 use crate::rng::Rng;
@@ -205,6 +208,8 @@ pub struct Layout {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct UrbanStructure {
+    /// Built waterfront platforms, retained independently from street centrelines.
+    pub quays: Vec<macroplan::harbour::Quay>,
     pub version: u32,
     pub mechanism: String,
     pub family: String,
@@ -497,6 +502,8 @@ pub struct LayoutConfig {
     /// Site archetype from settlement placement (`harbor`, `bridge`, `hilltop`,
     /// `spur`, `pass`, `island`, `lakeshore`, `valley`, `plain`); empty = unknown.
     pub site_archetype: String,
+    /// Placement context per settlement when a request contains several towns.
+    pub site_archetypes: std::collections::BTreeMap<String, String>,
     pub suburbs: String,
     /// Zero follows the cultural population thresholds.
     pub phases: usize,
@@ -597,6 +604,7 @@ impl Default for LayoutConfig {
             composition: "settlement".into(),
             settlement_form: "auto".into(),
             site_archetype: String::new(),
+            site_archetypes: std::collections::BTreeMap::new(),
             suburbs: "auto".into(),
             phases: 0,
             culture: "site".into(),
@@ -1090,6 +1098,7 @@ pub fn generate_quarters(
         || !(["auto", "nucleated", "ribbon"].contains(&config.settlement_form.as_str())
             || kinds::Kind::from_id(&config.settlement_form).is_some())
         || config.site_archetype.len() > 32
+        || config.site_archetypes.values().any(|a| a.len() > 32)
         || !["auto", "none", "few", "many"].contains(&config.suburbs.as_str())
         || config.phases > 5
         || !(3..=64).contains(&config.count)
@@ -1111,9 +1120,19 @@ pub fn generate_quarters(
     {
         return Err("Configuration de quartiers invalide".into());
     }
+    let mut crossing_roads = roads.to_vec();
+    network::bridge_water(&mut crossing_roads, surface, config.max_street_grade);
+    let roads = crossing_roads.as_slice();
     let mut keys = BTreeSet::new();
     let mut out = vec![];
     for site in sites {
+        let mut site_config;
+        let config = if let Some(archetype) = config.site_archetypes.get(&site.key) {
+            site_config = config.clone();
+            site_config.site_archetype = archetype.clone();
+            site_config.site_archetypes.clear();
+            &site_config
+        } else { config };
         if !keys.insert(&site.key)
             || site.key.is_empty()
             || !site.radius.is_finite()
@@ -1138,6 +1157,7 @@ pub fn generate_quarters(
         };
         // Resolve the effective shore once for every plan/finish path, including
         // small kinds and quarter edits. The programme must see the same ground.
+        let physical_surface = surface;
         let stilt = geography::stilt_ground(site, culture, surface);
         let (site, surface) = stilt
             .as_ref()
@@ -1159,7 +1179,7 @@ pub fn generate_quarters(
         let key_seed = format!("{seed}\u{1}settlement:{}", site.key);
         // edits hook (urban/edits.rs): structural quarter edits splice a
         // variant plan into this one; without them this is plan then finish.
-        let plan = |config: &LayoutConfig| -> Result<Layout, String> {
+        let plan_at = |config: &LayoutConfig, site: &Site| -> Result<Layout, String> {
             let small = (kind.small() && config.footprint.mechanism != "legacy")
                 .then(|| kinds::lay_out(&key_seed, site, config, kind, &morph, surface, roads))
                 .flatten();
@@ -1170,16 +1190,44 @@ pub fn generate_quarters(
                 )?,
             };
             kinds::stamp(&mut layout, kind, original);
+            trim::prepare(&mut layout);
             access::refine(&mut layout, config, &morph, surface);
+            // Blocks nobody builds on go back to the fields, with their streets.
+            if layout.structure.as_ref().is_some_and(|s| s.mechanism != "legacy") {
+                trim::run(seed, &mut layout, config, original, site.population, surface);
+            }
             // Fortifications follow the final streets and blocks.
+            macroplan::harbour::open_gates(&mut layout);
             fortification::settle(&mut layout, surface);
+            // Wall clipping can expose new terminal chains or change lot access.
+            if !layout.enclosures.is_empty() && layout.structure.as_ref().is_some_and(|s| s.mechanism != "legacy") {
+                trim::run(seed, &mut layout, config, original, site.population, surface);
+            }
             Ok(layout)
         };
         let finish = |layout: &mut Layout| -> Result<(), String> {
+            // Regional spans just outside the built land still belong to the
+            // visible transport network; keep their corrected decks and ramps.
+            layout.streets.extend(roads.iter().filter(|s| {
+                matches!(s.role.as_str(), "bridge" | "causeway" | "approach") && s.path.first().zip(s.path.last()).is_some_and(|(&a, &b)|
+                    (((a.x + b.x) * 0.5 - site.center.x).hypot((a.y + b.y) * 0.5 - site.center.y)) <= site.radius * 1.6)
+            }).cloned());
+            if let Some(ground) = &stilt { ground.walkways(&mut layout.streets, physical_surface); }
+            network::bridge_water_on_ground(&mut layout.streets, surface, physical_surface, config.max_street_grade);
             access::summarize(layout, config);
             programme::prepare(layout, site.population, &config.programme, surface)?;
             kinds::finish(layout, kind, original);
+            if layout.structure.as_ref().is_some_and(|s|s.mechanism != "legacy") { trim::finish(seed,layout,physical_surface); }
+            network::select_bridges(layout, site.population, physical_surface, roads);
+            trim::footprint(layout);
+            macroplan::harbour::platforms(layout, surface);
             Ok(())
+        };
+        let plan = |config: &LayoutConfig| -> Result<Layout, String> {
+            let layout = plan_at(config, site)?;
+            if let Some(ground) = &stilt && !kind.small() {
+                ground.balance(seed, layout, physical_surface, |s| plan_at(config, s), |l| finish(l))
+            } else { Ok(layout) }
         };
         out.push(edits::with_quarter_edits(config, plan, finish)?);
     }
@@ -1233,9 +1281,13 @@ pub fn generate_parcels(
         )?;
         let key_seed = format!("{seed}\u{1}settlement:{}", layout.key);
         let mut partition = parcels::generate(&key_seed, layout, config, &morph)?;
-        // edits hook (urban/edits.rs): lot shapes and deletions.
+        programme::allocate(layout, &mut partition);
+        programme::consolidate(&mut partition);
+        // Edits address the occupied properties, including their merged yards.
         edits::apply_parcel_edits(layout, &mut partition);
         programme::allocate(layout, &mut partition);
+        programme::finish_lots(layout, &mut partition);
+        roles::face_quays(layout, &mut partition);
         out.push(partition);
     }
     Ok(out)

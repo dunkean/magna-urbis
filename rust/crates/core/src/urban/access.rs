@@ -84,7 +84,7 @@ pub(super) fn refine(layout: &mut Layout, cfg: &LayoutConfig, morph: &Morph, sur
             .or_else(|| layout.quarters.get(block.quarter).map(|q| q.phase))
             .and_then(|i| phase_morphs.get(i))
             .unwrap_or(morph);
-        if block.kind != "block" || g::area(&block.shape) < 600.0 || added >= cap {
+        if block.kind != "block" || !morph.text("campLayout").is_empty() || g::area(&block.shape) < 600.0 || added >= cap {
             result.push(block);
             continue;
         }

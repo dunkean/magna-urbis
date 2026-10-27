@@ -1397,16 +1397,12 @@ pub(super) fn generate_domain(
             });
         }
     }
-    // Waterfront cultures and every port build quays (`harbour`).
+    // Every navigable waterfront builds quays, independently of culture.
     let port = harbour::port_town(cfg);
-    if profile.waterfront || port {
+    if surface.n > 1 {
         harbour::quays(&regions, &mut streets, surface, cfg, site, culture, port);
-        // A town whose programme has quay services (warehouse, emporium,
-        // fish market) gets a landing row behind its quays.
-        if super::roles::services(culture, site.population, "auto")
-            .iter()
-            .any(|n| n.entry.site == "quay")
-        {
+        // The landing row gives port services their own waterfront blocks.
+        if streets.iter().any(|s| s.role == "quay") {
             add_landing_rows(&regions, &mut streets, roads, surface, cfg, m, culture);
         }
     }

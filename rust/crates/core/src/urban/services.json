@@ -21,6 +21,12 @@
   "rural": [
     { "role": "storage.barn", "function": "warehouse", "per": 250, "minPop": 60, "maxPop": 499, "max": 2, "site": "edge", "area": [150, 400] }
   ],
+  "_docHarbour": "Shared port roles, added only when actual quay streets exist; a family's own quay warehouse takes precedence. Buildings use the culture's normal architectural material mapping.",
+  "harbour": [
+    { "role": "commerce.warehouse", "function": "warehouse", "per": 2500, "minPop": 500, "max": 20, "site": "quay", "area": [220, 800], "requires": "water", "district": "port" },
+    { "role": "civic.harbour", "function": "collective", "per": 0, "minPop": 500, "max": 1, "site": "quay", "area": [120, 300], "requires": "water", "district": "port" },
+    { "role": "craft.boatshed", "function": "workshop", "per": 5000, "minPop": 500, "max": 12, "site": "quay", "area": [120, 450], "requires": "water", "district": "port" }
+  ],
   "_docLabels": "French labels shown by the UI (allocation.label, district.label). familyLabels override per culture family; an unknown role falls back to its longest known prefix.",
   "labels": {
     "dwelling": "Habitation", "dwelling.row": "Maison en bande", "dwelling.house": "Maison", "dwelling.courtyard": "Maison à cour",
@@ -35,7 +41,7 @@
     "commerce": "Commerce", "commerce.market": "Place du marché", "commerce.market.gate": "Marché de porte", "commerce.market.ward": "Marché de quartier",
     "commerce.inn": "Auberge", "commerce.souk": "Souk", "commerce.caravanserai": "Caravansérail", "commerce.funduq": "Fondouk", "commerce.bazaar": "Bazar",
     "commerce.dharamshala": "Dharamshala (gîte des pèlerins)", "commerce.tianguis": "Tianguis (marché)", "commerce.macellum": "Macellum (marché couvert)",
-    "commerce.taberna": "Taberna", "commerce.maidan": "Maidan", "commerce.warehouse": "Entrepôt du port", "commerce.fishmarket": "Marché aux poissons",
+    "commerce.taberna": "Taberna", "commerce.maidan": "Maidan", "commerce.warehouse": "Entrepôt du port", "civic.harbour": "Capitainerie et douane", "commerce.fishmarket": "Marché aux poissons",
     "commerce.emporium": "Emporium (marché du port)",
     "civic": "Édifice public", "civic.hall": "Salle commune", "civic.townhall": "Hôtel de ville", "civic.hospital": "Hôtel-Dieu", "civic.university": "Université",
     "civic.guildhall": "Maison des corporations", "civic.bathhouse": "Étuves", "civic.madrasa": "Médersa", "civic.maristan": "Maristan (hôpital)",

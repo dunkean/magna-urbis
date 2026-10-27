@@ -6,7 +6,6 @@ use super::{
     composition, macroplan, network, profiles, routing,
 };
 use crate::{noise::Noise, rng::Rng};
-use geo::BooleanOps;
 use std::f64::consts::{FRAC_PI_2, PI, TAU};
 use std::sync::OnceLock;
 
@@ -285,11 +284,22 @@ fn rejoin_slivers(blocks: &mut Vec<Block>) {
     });
 }
 fn block_boundary_served(shape: &Shape, streets: &[Street], all: &Bins, reach: f64) -> bool {
-    shape.outer.iter().chain(shape.holes.iter().flatten()).any(|&p| {
-        all.around(p, reach).any(|(i, j)| {
-            let s = &streets[i];
-            g::distance(p, s.path[j], s.path[j + 1]).0
-                <= s.widths[j].max(s.widths[j + 1]) * 0.5 + 2.0
+    // A trimmed street may front the middle of a long edge or hole, without
+    // reaching any polygon vertex. Query along edges, then test exact contact.
+    std::iter::once(&shape.outer).chain(&shape.holes).any(|ring| {
+        ring.iter().zip(ring.iter().cycle().skip(1)).any(|(&a,&b)| {
+            let n = ((b.x-a.x).hypot(b.y-a.y)/reach.max(1.)).ceil().max(1.) as usize;
+            (0..=n).any(|k| {
+                let t = k as f64/n as f64;
+                let p = Point{x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t};
+                all.around(p, reach).any(|(i, j)| {
+                    let s = &streets[i];
+                    let (c,d) = (s.path[j],s.path[j+1]);
+                    let distance = g::distance(a,c,d).0.min(g::distance(b,c,d).0)
+                        .min(g::distance(c,a,b).0).min(g::distance(d,a,b).0);
+                    g::segment_hit(a,b,c,d).is_some() || distance <= s.widths[j].max(s.widths[j+1])*0.5+2.
+                })
+            })
         })
     })
 }
@@ -302,7 +312,7 @@ struct RibbonBins {
     map: std::collections::HashMap<(i64, i64), Vec<u32>>,
 }
 impl RibbonBins {
-    fn new(ribbons: &[(geo::Polygon<f64>, (f64, f64, f64, f64))]) -> Self {
+    fn new(ribbons: &[(Shape, (f64, f64, f64, f64))]) -> Self {
         let cell = 100.0;
         let mut map: std::collections::HashMap<(i64, i64), Vec<u32>> = Default::default();
         for (k, (_, b)) in ribbons.iter().enumerate() {
@@ -2624,6 +2634,30 @@ pub(super) fn generate(
     stilt_grounded: bool,
 ) -> Result<Layout, String> {
     let mut layout = generate_planned(seed, site, cfg, m, surface, roads, stilt_grounded)?;
+    // A minimum of one household per enclosed block must fit the +30 %
+    // programme. Replan the land budget; wall tracing remains unchanged.
+    let culture = if cfg.culture == "site" { &site.culture } else { &cfg.culture };
+    let limit = (1.3 * site.population as f64 / super::roles::occupancy(culture).household_size).floor().max(1.0);
+    let enclosed_blocks = |l: &Layout| {
+        let rings: Vec<Shape> = l.enclosures.iter().map(|e| Shape { outer: e.path.clone(), holes: vec![] }).collect();
+        l.blocks.iter().filter(|b| b.kind == "block" && rings.iter().any(|r| g::contains(r, g::interior_point(&b.shape)))).count()
+    };
+    let mut count = enclosed_blocks(&layout);
+    for _ in 0..3 {
+        if count as f64 <= limit || cfg.footprint.mechanism == "legacy" { break; }
+        let Some(structure) = &layout.structure else { break };
+        let target = structure.metrics.target_area * (limit / count as f64) * 0.9;
+        if target <= 0.0 { break; }
+        let mut smaller = cfg.clone();
+        smaller.footprint.budget = "population".into();
+        smaller.footprint.gross_density = site.population as f64 * 10_000.0 / target;
+        let mut next = generate_planned(seed, site, &smaller, m, surface, roads, stilt_grounded)?;
+        let next_count = enclosed_blocks(&next);
+        if next_count >= count { break; }
+        next.warnings.push("Emprise intra-muros réduite pour remplir les îlots dans la marge de population de +30 %.".into());
+        layout = next;
+        count = next_count;
+    }
     let mut dropped = drop_vacant_quarters(&mut layout);
     let peeled = peel_vacant_edges(&mut layout);
     // Growth quarters the peeling emptied go too.
@@ -2888,9 +2922,7 @@ fn generate_once(
             }
         }
     }
-    let fixture_footprint = g::shapes(geo::algorithm::bool_ops::unary_union(
-        &raw.iter().map(|q| g::polygon(&q.shape)).collect::<Vec<_>>(),
-    ));
+    let fixture_footprint = g::union(&raw.iter().map(|q| q.shape.clone()).collect::<Vec<_>>());
     let quarters: Vec<_> = raw
         .into_iter()
         .flat_map(|q| {
@@ -3601,13 +3633,18 @@ fn generate_once(
         cfg.culture.as_str()
     };
     let port = macroplan::harbour::port_town(cfg);
-    if cfg.placement == "center"
-        && (port || profiles::settlement_profile(culture, site.population, phases.len()).waterfront)
-    {
+    if cfg.placement == "center" {
         let shapes: Vec<Shape> = quarters.iter().map(|q| q.shape.clone()).collect();
         macroplan::harbour::quays(&shapes, &mut streets, surface, cfg, site, culture, port);
     }
     lap("harmonize+fringe");
+    if cfg.settlement_form == "camp" && !m.text("campLayout").is_empty() {
+        let width = m.number_or("campPath", 2.5).clamp(1.2, 3.0);
+        for s in streets.iter_mut().filter(|s| s.rank > 0 && matches!(s.role.as_str(), "street" | "lane" | "gate-street" | "wall-lane")) {
+            for w in &mut s.widths { *w = w.min(width); }
+            if s.role == "street" { s.role = "track".into(); }
+        }
+    }
     let seaward = macroplan::harbour::seaward(&streets, surface);
     // Street and wall ribbons, built per street in parallel (input order),
     // with the land between each quay and its water.
@@ -3632,7 +3669,7 @@ fn generate_once(
         .into_iter()
         .map(|p| {
             let bb = g::bbox(&p);
-            (g::polygon(&p), bb)
+            (p, bb)
         })
         .collect::<Vec<_>>()
     })
@@ -3665,7 +3702,7 @@ fn generate_once(
             }
             polys = polys
                 .into_iter()
-                .flat_map(|p| g::shapes(g::polygon(&p).difference(r)))
+                .flat_map(|p| g::difference(&p, r))
                 .collect();
             if polys.is_empty() {
                 break;
@@ -3842,6 +3879,8 @@ fn generate_once(
     for (b, vacancy) in blocks.iter_mut().zip(&vacancies) {
         if let Some(vacancy) = vacancy
             && b.kind == "block"
+            && b.zone != "core"
+            && !enclosures.iter().any(|e| g::contains(&Shape { outer: e.path.clone(), holes: vec![] }, g::interior_point(&b.shape)))
         {
             let c = g::interior_point(&b.shape);
             // The block's interior point on a 2 m grid: its identity, blind
@@ -3856,6 +3895,7 @@ fn generate_once(
     // A small village is cut to the lots it fills: the outermost blocks beyond the housing the
     // plan needs (with a margin) are open land, and the lanes that served only them go too.
     if site.population < 1200
+        && enclosures.is_empty()
         && measured.is_some()
         && let Some(p) = plan.as_ref()
         && p.required > 0.0
@@ -4024,6 +4064,7 @@ fn generate_once(
         },
     );
     streets.extend(works);
+    network::join_waterfront(&mut streets, radius);
     let mut layout = Layout {
         config: Some(applied.clone()),
         programme: None,
@@ -4207,7 +4248,6 @@ pub(super) fn probe_quarter(
     let ribbons: Vec<_> = streets
         .iter()
         .flat_map(|s| g::ribbon(&s.path, &s.widths))
-        .map(|r| g::polygon(&r))
         .collect();
     let mut blocks = vec![];
     for pc in pieces {
@@ -4215,7 +4255,7 @@ pub(super) fn probe_quarter(
         for r in &ribbons {
             polys = polys
                 .into_iter()
-                .flat_map(|p| g::shapes(g::polygon(&p).difference(r)))
+                .flat_map(|p| g::difference(&p, r))
                 .collect();
         }
         for shape in polys.into_iter().filter(|p| g::area(p) > 1.0) {
@@ -5039,8 +5079,10 @@ mod tests {
     }
     /// Street land of the core: the share of its quarters left out of blocks.
     fn core_street_share(layout: &Layout) -> f64 {
-        let core: Vec<usize> = (0..layout.quarters.len())
-            .filter(|&i| layout.quarters[i].zone == "core")
+        // A composition quarter can straddle epochs; its actual core blocks
+        // identify the quarters whose street share is measured.
+        let core: std::collections::BTreeSet<usize> = layout.blocks.iter()
+            .filter(|b| b.zone == "core").map(|b| b.quarter)
             .collect();
         let land: f64 = core
             .iter()

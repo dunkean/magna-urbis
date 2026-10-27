@@ -72,6 +72,8 @@ struct Catalogue {
     #[serde(default)]
     rural: Vec<ServiceEntry>,
     #[serde(default)]
+    harbour: Vec<ServiceEntry>,
+    #[serde(default)]
     labels: BTreeMap<String, String>,
     #[serde(default)]
     family_labels: BTreeMap<String, BTreeMap<String, String>>,
@@ -109,6 +111,7 @@ pub fn role_function(role: &str) -> Option<&'static str> {
         .values()
         .flatten()
         .chain(&cat.rural)
+        .chain(&cat.harbour)
         .find(|e| e.role == role)
         .map(|e| e.function.as_str())
         .or_else(|| {
@@ -277,6 +280,46 @@ pub fn services_with_functions(culture: &str, population: u32, functions: super:
             })
         })
         .collect()
+}
+
+/// Quay services exist in every culture, but only a built port requests them.
+pub fn services_for_layout(layout: &Layout, population: u32, functions: super::programme::ProgrammeFunctions) -> Vec<ServiceNeed> {
+    let mut needs = services_with_functions(&layout.culture, population, functions);
+    if !layout.streets.iter().any(|s| s.role == "quay") { return needs; }
+    let mut entries: Vec<ServiceEntry> = needs.iter().map(|n| n.entry.clone()).collect();
+    for e in &catalogue().harbour {
+        if entries.iter().any(|n| n.role == e.role || e.function == "warehouse" && n.site == "quay" && n.function == e.function) { continue; }
+        entries.push(e.clone());
+    }
+    for e in entries.into_iter().skip(needs.len()) {
+        if population < e.min_pop as u32 { continue; }
+        let sites = if e.per > 0.0 { (population as f64 / e.per).floor().max(1.0) as usize } else { 1 };
+        let area = e.area[0] + (e.area[1] - e.area[0]) * ((population as f64 / e.min_pop).log10() / 2.0).clamp(0.0, 1.0);
+        needs.push(ServiceNeed { sites: sites.min(e.max), area, entry: e });
+    }
+    for need in &mut needs {
+        if need.entry.role == "craft.boatshed" { need.entry.site = "quay".into(); need.entry.district = "port".into(); }
+    }
+    needs
+}
+
+/// A port service with direct quay frontage opens onto that frontage, even
+/// when its parcel also touches a rear service lane.
+pub(super) fn face_quays(layout: &Layout, partition: &mut super::Partition) {
+    let Some(programme) = &partition.programme else { return };
+    let port: std::collections::BTreeSet<&str> = programme.allocations.iter().filter(|a|
+        programme.demands.iter().any(|d| d.id == a.demand_id && d.site == "quay"))
+        .map(|a| a.parcel_id.as_str()).collect();
+    for p in &mut partition.parcels {
+        if !port.contains(p.id.as_str()) { continue; }
+        let Some(c) = p.contacts.iter().filter(|c| layout.streets.get(c.street).is_some_and(|s| s.role == "quay"))
+            .max_by(|a, b| a.length.total_cmp(&b.length)) else { continue };
+        p.front = Some([c.a, c.b]);
+        let length = (c.b.x - c.a.x).hypot(c.b.y - c.a.y).max(1e-9);
+        p.axis = Point { x: (c.b.x - c.a.x) / length, y: (c.b.y - c.a.y) / length };
+        p.rank = c.rank;
+        p.access = Some(super::ParcelAccess { kind: "public".into(), street: Some(c.street), front_length: c.length });
+    }
 }
 
 /// Normalised siting facts of one block (or of a plot, through its block).
@@ -531,6 +574,21 @@ pub fn quay_contacts(layout: &Layout) -> Vec<f64> {
                 .sum()
         })
         .collect()
+}
+
+/// The quay apron belongs to the waterfront: its street-side blocks keep
+/// their physical water access even when the embankment is wider than a probe.
+pub(super) fn quay_water_fronts(layout: &Layout, surface: super::Surface<'_>) -> Vec<Option<(&'static str, f64)>> {
+    let contact = quay_contacts(layout);
+    let quays: Vec<_> = layout.streets.iter().filter(|s| s.role == "quay")
+        .filter_map(|s| super::macroplan::harbour::front_water(surface, &s.path).map(|water| (s, water))).collect();
+    layout.blocks.iter().enumerate().map(|(i, b)| {
+        if contact[i] < QUAY_FRONT { return None; }
+        let c = g::interior_point(&b.shape);
+        quays.iter().map(|(s, water)| (s.path.windows(2).map(|w| g::distance(c, w[0], w[1]).0)
+            .fold(f64::INFINITY, f64::min), *water))
+            .min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, water)| water)
+    }).collect()
 }
 
 /// A `quay` service in a town with quays may only stand on a block that a

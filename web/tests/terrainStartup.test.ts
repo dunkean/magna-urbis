@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { initialTerrainSource, neuralModelLabel } from '../src/ui/terrainStartupState';
+import { initialTerrainSource, neuralModelLabel, terrainStartupText } from '../src/ui/terrainStartupState';
 
 describe('terrain startup', () => {
   it('starts new local and browser maps with the corresponding neural backend', () => {
@@ -18,5 +18,11 @@ describe('terrain startup', () => {
     expect(neuralModelLabel({ state: 'generating', message: 'Computing', loaded: true })).toBe('Modèles chargés · calcul sur le GPU…');
     expect(neuralModelLabel({ state: 'ready', message: 'Ready', loaded: true })).toBe('Modèles chargés · GPU prêt');
     expect(neuralModelLabel({ state: 'error', message: 'CUDA absent' })).toContain('indisponible');
+  });
+  it('localizes status while retaining the underlying service error', () => {
+    expect(neuralModelLabel({ state: 'error', message: 'CUDA absent' }, 'en')).toBe('Neural service unavailable · CUDA absent');
+    expect(neuralModelLabel({ state: 'loading', message: '' }, 'zh')).toBe('正在将模型加载到 GPU…');
+    expect(terrainStartupText('generation', 'es')).toBe('Generando terreno');
+    expect(terrainStartupText('generation', 'pt')).toBe('Gerando terreno');
   });
 });

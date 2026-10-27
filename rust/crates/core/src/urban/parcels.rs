@@ -259,6 +259,7 @@ impl FrontageIndex {
     pub(super) fn new(layout: &Layout) -> Self {
         let mut cells: BTreeMap<(i32, i32), Vec<(usize, usize)>> = BTreeMap::new();
         for (si, s) in layout.streets.iter().enumerate() {
+            if s.role == "track" && s.rank >= 4 { continue; }
             for (j, w) in s.path.windows(2).enumerate() {
                 let x0 = ((w[0].x.min(w[1].x) - 14.0) / 64.0).floor() as i32;
                 let x1 = ((w[0].x.max(w[1].x) + 14.0) / 64.0).floor() as i32;
@@ -1088,61 +1089,6 @@ fn strips(
     }
     merge_slivers(&mut plots, fronts, Some(maximum_depth));
     plots
-}
-
-/// Invariant (edge reserves): open land left between the built fingers of a
-/// town is not a blank. A vacant block with street frontage is enclosed as
-/// crofts, orchards and market gardens, cut like lots at field scale (16-36 m
-/// fronts, as deep as the block allows). They hold no house: use `garden`,
-/// family `reserve`, so housing demand and population never move there.
-fn edge_enclosures(
-    shape: &Shape,
-    block: usize,
-    axis: Point,
-    fronts: &[Front],
-    morph: &Morph,
-    zone: &str,
-    rng: &mut Rng,
-) -> Vec<Parcel> {
-    let mut field = morph.clone();
-    field.value["frontage"][zone] = serde_json::json!([16.0, 36.0]);
-    field.value["plotDepth"][zone] = serde_json::json!([60.0, 160.0]);
-    field.value["houseArea"][zone] = serde_json::json!([400.0, 900.0]);
-    field.value["coverage"][zone] = serde_json::json!([0.95, 0.95]);
-    field.value["deepFill"] = serde_json::json!(true);
-    field.value["wideLotChance"] = serde_json::json!(0.15);
-    let mut lots = strips(shape, block, axis, fronts, &field, zone, rng);
-    // A field larger than a few crofts (an unserved reserve keeps the block
-    // whole) is fenced into field-sized plots along the block's axis, never
-    // one garden of hectares.
-    lots = lots
-        .into_iter()
-        .flat_map(|p| {
-            if area(&p.shape) <= 6000.0 {
-                return vec![p];
-            }
-            let cells = field_grid(&p.shape, axis, 45.0, 75.0);
-            if cells.len() < 2 {
-                return vec![p];
-            }
-            cells
-                .into_iter()
-                .map(|c| {
-                    let mut q = p.clone();
-                    q.shape = c;
-                    q
-                })
-                .collect()
-        })
-        .collect();
-    for p in &mut lots {
-        p.use_kind = "garden".into();
-        p.reason = "edge-enclosure".into();
-        p.family = "reserve".into();
-        p.envelope = None;
-        p.provenance.push("edge-enclosure".into());
-    }
-    lots
 }
 
 /// Field plots: the shape cut by a grid of `w` × `d` m cells along `axis`.
@@ -3700,33 +3646,6 @@ pub(super) fn generate(
         }
         let backed = |p: &Parcel| wall_contact(&p.shape, &faces) >= 2.0;
         let morph = &local_morph;
-        if block.kind == "reserve" {
-            let fronts = frontages(&block.shape, layout, &index);
-            if !fronts.is_empty() {
-                let mut axis = unit(block.axis);
-                if length(axis) < 0.5 {
-                    axis = Point { x: 1.0, y: 0.0 };
-                }
-                let mut rng = root.fork(&super::edits::block_fork(
-                    &format!("enclosure:{block_id}"),
-                    layout,
-                    block.quarter,
-                )); // edits hook (urban/edits.rs): salt
-                for mut p in edge_enclosures(&block.shape, bi, axis, &fronts, morph, zone, &mut rng)
-                {
-                    p.pressure = occupation;
-                    p.contacts = network_contacts(&p.shape, layout, &index);
-                    resolve_identity(&mut p, bi, &block_id);
-                    // A field enclosed behind the others has no street of its own.
-                    if p.access.as_ref().is_some_and(|a| a.kind == "unserved") {
-                        out.diagnostics.unserved_area += area(&p.shape);
-                    }
-                    out.parcels.push(p);
-                }
-                out.diagnostics.covered_area += area(&block.shape);
-                return out;
-            }
-        }
         if block.kind != "block" {
             out.diagnostics.covered_area += area(&block.shape);
             out.parcels.push(Parcel {
@@ -4141,6 +4060,22 @@ pub(super) fn generate(
             }
         }
         tidy::tidy(&mut parcels, &fronts, layout, depth_limit, organic, dense);
+        // A failed cut cannot turn a served block wholly into gardens when
+        // the unsplit frontage still admits a native house. Keep its rear land.
+        if morph.text("plotOp") != "garden" && !camp
+            && !parcels.iter().any(|p| matches!(p.use_kind.as_str(), "plot" | "compound"))
+        {
+            let whole = parcel(block.shape.clone(), bi, axis, &fronts, "plot");
+            let mut retry = match depth_limit {
+                Some(limit) => bound_frontage_depth(whole, limit),
+                None => vec![whole],
+            };
+            qualify(&mut retry, &fronts, layout, &admission, fallback.as_ref(), family == "courtyard", family, depth_limit, dense);
+            if retry.iter().any(|p| p.use_kind == "plot" && p.envelope.is_some()) {
+                for p in &mut retry { p.provenance.push("served-block-infill".into()); }
+                parcels = retry;
+            }
+        }
         for p in &mut parcels {
             p.pressure = occupation;
             if p.use_kind == "plot" && backed(p) {
@@ -4173,22 +4108,14 @@ pub(super) fn generate(
         // never replaced by a filled exterior ring.
         let actual: f64 = parcels.iter().map(|p| area(&p.shape)).sum();
         let expected = area(&block.shape);
-        use geo::BooleanOps;
-        let merged = geo::algorithm::bool_ops::unary_union(
+        let merged = super::geometry::union(
             &parcels
                 .iter()
-                .map(|p| super::geometry::polygon(&p.shape))
+                .map(|p| p.shape.clone())
                 .collect::<Vec<_>>(),
         );
-        let coverage =
-            super::geometry::shapes(super::geometry::polygon(&block.shape).intersection(&merged))
-                .iter()
-                .map(area)
-                .sum::<f64>();
-        let union_area = super::geometry::shapes(merged)
-            .iter()
-            .map(area)
-            .sum::<f64>();
+        let coverage = merged.iter().flat_map(|s| super::geometry::intersection(&block.shape, s)).map(|s| area(&s)).sum::<f64>();
+        let union_area = merged.iter().map(area).sum::<f64>();
         let residual = (expected - coverage).max(0.0) + (union_area - coverage).max(0.0);
         let overlap = (actual - union_area).max(0.0);
         out.diagnostics.covered_area += coverage;
@@ -4843,11 +4770,9 @@ mod tests {
         }
     }
 
-    /// Invariant (edge reserves): open land between the built fingers that
-    /// fronts a street is enclosed as crofts and market gardens at field
-    /// scale, never left as one blank reserve; it holds no house.
+    /// Fields remain whole, even alongside a street; no vacant cadastral row.
     #[test]
-    fn edge_reserve_on_a_street_is_enclosed_as_fields_without_houses() {
+    fn edge_reserve_on_a_street_stays_uncut_field() {
         let shape = rectangle(0.0, 0.0, 240.0, 120.0);
         let layout = strip_layout(
             "edge-reserve",
@@ -4857,15 +4782,24 @@ mod tests {
         let lots = &super::super::generate_parcels("edge", &[layout], &ParcelConfig::default())
             .unwrap()[0]
             .parcels;
-        assert!(lots.len() >= 4, "{} enclosures", lots.len());
+        assert_eq!(lots.len(), 1);
         assert!(
             lots.iter()
-                .all(|p| p.use_kind == "garden" && p.family == "reserve" && p.envelope.is_none())
+                .all(|p| p.use_kind == "reserve" && p.family == "reserve" && p.envelope.is_none())
         );
         let total: f64 = lots.iter().map(|p| area(&p.shape)).sum();
         assert!((total - area(&shape)).abs() < 1e-3 * area(&shape));
-        // Field scale: no enclosure is a house lot or the whole block.
-        assert!(lots.iter().all(|p| area(&p.shape) < 0.5 * area(&shape)));
+        assert_eq!(lots[0].shape.outer, shape.outer);
+    }
+
+    #[test]
+    fn field_paths_never_create_parcel_frontage() {
+        let mut s = road((-20.,-3.),(80.,-3.),2);
+        super::super::network::downgrade_path(&mut s);
+        let l = strip_layout("field-path",vec![],vec![s]);
+        let shape = rectangle(0.,0.,60.,30.);
+        assert!(frontages(&shape,&l,&FrontageIndex::new(&l)).is_empty());
+        assert!(block_contacts(&shape,&l).is_empty());
     }
 
     /// Invariant (residual slivers): the strip left along a street when the
@@ -4995,7 +4929,8 @@ mod tests {
         let lots: Vec<&Parcel> = serial
             .parcels
             .iter()
-            .filter(|p| p.use_kind == "plot" && p.envelope.is_some())
+            .filter(|p| p.use_kind == "plot" && p.envelope.is_some()
+                && !p.provenance.iter().any(|s| s == "occupied-yard-merge"))
             .collect();
         let mut by_block: BTreeMap<usize, Vec<&Parcel>> = BTreeMap::new();
         for p in &lots {

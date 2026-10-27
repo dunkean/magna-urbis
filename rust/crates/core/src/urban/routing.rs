@@ -30,6 +30,44 @@ const NONE: usize = usize::MAX;
 /// Route cost of one switchback hairpin, in metres of ordinary road.
 const HAIRPIN: f64 = 45.0;
 
+pub(super) struct Profile(Option<std::time::Instant>, &'static str);
+impl Profile {
+    pub(super) fn new(label: &'static str) -> Self {
+        let enabled = std::env::var_os("URBAN_PROFILE").is_some();
+        #[cfg(test)]
+        let enabled = enabled || bridge_timing::active();
+        Self(enabled.then(std::time::Instant::now), label)
+    }
+}
+impl Drop for Profile {
+    fn drop(&mut self) {
+        if let Some(start) = self.0 {
+            let elapsed = start.elapsed();
+            #[cfg(test)]
+            bridge_timing::add(elapsed);
+            if std::env::var_os("URBAN_PROFILE").is_some() {
+                eprintln!("  {}: {:.3}s", self.1, elapsed.as_secs_f64());
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+pub(super) mod bridge_timing {
+    use std::{cell::Cell, time::Duration};
+    thread_local! { static TIME: Cell<Option<(Duration, usize)>> = const { Cell::new(None) }; }
+    pub(super) fn active() -> bool { TIME.with(|t| t.get().is_some()) }
+    pub(super) fn add(elapsed: Duration) {
+        TIME.with(|t| { if let Some((total, calls)) = t.get() { t.set(Some((total + elapsed, calls + 1))); } });
+    }
+    pub(in crate::urban) fn measure<R>(f: impl FnOnce() -> R) -> (R, Duration, usize) {
+        TIME.with(|t| t.set(Some((Duration::ZERO, 0))));
+        let result = f();
+        let (elapsed, calls) = TIME.with(|t| t.take().unwrap());
+        (result, elapsed, calls)
+    }
+}
+
 fn distance(a: Point, b: Point) -> f64 {
     (b.x - a.x).hypot(b.y - a.y)
 }
@@ -137,6 +175,49 @@ pub(super) fn path_clear(surface: Surface<'_>, path: &[Point], max_grade: f64) -
             .all(|p| segment_clear(surface, p[0], p[1], max_grade))
 }
 
+/// Wet intervals, including water between two dry vertices. Keep the exact
+/// raster-cell boundaries; vector channels are sampled then bisected.
+pub(super) fn water_intervals(surface: Surface<'_>, a: Point, b: Point) -> Vec<(f64, f64)> {
+    if segment_clear(surface, a, b, f64::INFINITY) { return vec![]; }
+    let len = distance(a, b);
+    if len < 1e-8 { return vec![]; }
+    let mut cuts = vec![0.0, 1.0];
+    let cell = surface.width / surface.n as f64;
+    for (start, delta) in [(a.x, b.x - a.x), (a.y, b.y - a.y)] {
+        if delta.abs() < 1e-9 { continue; }
+        let lo = start.min(start + delta); let hi = start.max(start + delta);
+        for k in (lo / cell).floor() as i64 + 1..=(hi / cell).floor() as i64 {
+            let t = (k as f64 * cell - start) / delta;
+            if t > 0.0 && t < 1.0 { cuts.push(t); }
+        }
+    }
+    if surface.geometry.is_some() {
+        let steps = (len / (cell * 0.1).clamp(0.25, 0.5)).ceil() as usize;
+        let mut last = surface.wet(a);
+        for k in 1..=steps {
+            let t = k as f64 / steps as f64;
+            let wet = surface.wet(lerp(a, b, t));
+            if wet != last {
+                let (mut lo, mut hi) = ((k - 1) as f64 / steps as f64, t);
+                for _ in 0..16 { let m = (lo + hi) * 0.5;
+                    if surface.wet(lerp(a, b, m)) == last { lo = m; } else { hi = m; }
+                }
+                cuts.push((lo + hi) * 0.5);
+            }
+            last = wet;
+        }
+    }
+    cuts.sort_by(f64::total_cmp); cuts.dedup_by(|a, b| (*a - *b).abs() < 1e-10);
+    let mut runs: Vec<(f64, f64)> = vec![];
+    for w in cuts.windows(2) {
+        if surface.wet(lerp(a, b, (w[0] + w[1]) * 0.5)) {
+            if let Some(last) = runs.last_mut().filter(|last| (last.1 - w[0]).abs() < 1e-9) { last.1 = w[1]; }
+            else { runs.push((w[0], w[1])); }
+        }
+    }
+    runs
+}
+
 /// Closed polygon membership lets existing road ends lie exactly on a town edge.
 /// Intervals between crossings also catch thin holes and non-convex indentations.
 fn inside(shape: &Shape, a: Point, b: Point) -> bool {
@@ -202,10 +283,12 @@ impl Ord for Entry {
     }
 }
 
-/// A shared, bounded local lattice. The maximum side is 161 nodes; edge grades
-/// and obstacles are cached across primary routes and connector searches.
+/// A bounded local lattice; bank connectors refine below city-block scale.
+/// Edge grades and obstacles are cached across routes and connector searches.
 pub(super) struct RoutePlanner<'a> {
     adaptation: f64,
+    seam: f64,
+    bank: bool,
     surface: Surface<'a>,
     x0: f64,
     y0: f64,
@@ -230,6 +313,8 @@ impl<'a> RoutePlanner<'a> {
         let ny = ((y1 - y0) / step).floor() as usize + 1;
         Self {
             adaptation: 0.0,
+            seam: 0.0,
+            bank: false,
             surface,
             x0,
             y0,
@@ -242,6 +327,32 @@ impl<'a> RoutePlanner<'a> {
         }
     }
 
+    /// Narrow bank paths and quay access need a finer lattice than city blocks.
+    pub(super) fn bank(surface: Surface<'a>, bounds: (f64, f64, f64, f64)) -> Self {
+        let mut route = Self::new(surface, bounds);
+        route.bank = true;
+        route.step = (surface.width / surface.n as f64 * 0.2).clamp(0.5, 1.5)
+            .max((bounds.2 - bounds.0).max(bounds.3 - bounds.1) / 384.0);
+        route.nx = ((bounds.2.min(surface.width) - route.x0) / route.step).floor() as usize + 1;
+        route.ny = ((bounds.3.min(surface.width) - route.y0) / route.step).floor() as usize + 1;
+        route
+    }
+
+    /// Constructed bank ramps may span sub-cell vector seams, never a channel.
+    pub(super) fn raised_bank(surface: Surface<'a>, bounds: (f64, f64, f64, f64)) -> Self {
+        let mut route = Self::bank(surface, bounds);
+        route.seam = (surface.width / surface.n as f64 * 0.25).min(1.0);
+        route
+    }
+
+    fn inspect(&self, a: Point, b: Point) -> Option<f64> {
+        inspect_segment(self.surface, a, b, true).or_else(|| {
+            if self.seam <= 0.0 || self.surface.wet(a) || self.surface.wet(b) { return None; }
+            let wet: f64 = water_intervals(self.surface, a, b).iter().map(|&(lo, hi)| (hi - lo) * distance(a, b)).sum();
+            (wet <= self.seam).then(|| inspect_segment(self.surface, a, b, false)).flatten()
+        })
+    }
+
     fn cost(&self, length: f64, grade: f64, max_grade: f64) -> f64 {
         route_cost(length, grade, max_grade)
             + length * self.adaptation * 6.0 * (grade / max_grade).powi(2)
@@ -251,6 +362,41 @@ impl<'a> RoutePlanner<'a> {
             x: self.x0 + (cell % self.nx) as f64 * self.step,
             y: self.y0 + (cell / self.nx) as f64 * self.step,
         }
+    }
+
+    fn edge_grade(&mut self, cell: usize, next: usize, dir: usize) -> f64 {
+        let edge = cell * HEADINGS + dir;
+        if self.grades[edge].is_nan() {
+            let grade = self.inspect(self.position(cell), self.position(next)).unwrap_or(f64::INFINITY);
+            self.grades[edge] = grade;
+            self.grades[next * HEADINGS + (dir + HEADINGS / 2) % HEADINGS] = grade;
+        }
+        self.grades[edge]
+    }
+
+    // A wrong-bank ramp has no path. Prove that on cells before expanding
+    // sixteen incoming headings at every reachable cell. Ignoring turns is
+    // conservative: it can admit a search, never reject a possible route.
+    fn connected(&mut self, origins: &[(usize, f64)], goals: &[(usize, f64)], max_grade: f64) -> bool {
+        let mut seen = vec![0_u8; self.nx * self.ny];
+        for &(cell, _) in goals { seen[cell] = 2; }
+        let mut stack = vec![];
+        for &(cell, _) in origins {
+            if seen[cell] == 2 { return true; }
+            seen[cell] = 1; stack.push(cell);
+        }
+        while let Some(cell) = stack.pop() {
+            let (x, y) = ((cell % self.nx) as isize, (cell / self.nx) as isize);
+            for (dir, &(dx, dy)) in DIRS.iter().enumerate() {
+                let (xx, yy) = (x + dx, y + dy);
+                if xx < 0 || yy < 0 || xx >= self.nx as isize || yy >= self.ny as isize { continue; }
+                let next = yy as usize * self.nx + xx as usize;
+                if seen[next] == 1 || self.edge_grade(cell, next, dir) > max_grade + 1e-8 { continue; }
+                if seen[next] == 2 { return true; }
+                seen[next] = 1; stack.push(next);
+            }
+        }
+        false
     }
 
     fn anchors(&self, point: Point, max_grade: f64, shape: Option<&Shape>) -> Vec<(usize, f64)> {
@@ -269,7 +415,7 @@ impl<'a> RoutePlanner<'a> {
                 if shape.is_some_and(|shape| !inside(shape, point, p)) {
                     continue;
                 }
-                if let Some(grade) = inspect_segment(self.surface, point, p, true)
+                if let Some(grade) = self.inspect(point, p)
                     && grade <= max_grade + 1e-8
                 {
                     out.push((cell, route_cost(distance(point, p), grade, max_grade)));
@@ -317,7 +463,7 @@ impl<'a> RoutePlanner<'a> {
             return None;
         }
         if (self.adaptation == 0.0 || segment_grade(self.surface, start, end) < 0.015)
-            && segment_clear(self.surface, start, end, max_grade)
+            && self.inspect(start, end).is_some_and(|g| g <= max_grade)
             && shape.is_none_or(|shape| inside(shape, start, end))
         {
             return Some(vec![start, end]);
@@ -327,11 +473,14 @@ impl<'a> RoutePlanner<'a> {
         if origins.is_empty() || goals.is_empty() {
             return None;
         }
+        if self.grades.is_empty() {
+            self.grades.resize(self.nx * self.ny * HEADINGS, f64::NAN);
+        }
+        if self.bank && !self.connected(&origins, &goals, max_grade) { return None; }
         if self.slots.is_empty() {
             // Most streets on level ground use the direct fast path and never
             // need the search lattice or its per-heading cache.
             let size = self.nx * self.ny * HEADINGS;
-            self.grades.resize(size, f64::NAN);
             self.slots.resize(
                 size,
                 Slot {
@@ -417,21 +566,7 @@ impl<'a> RoutePlanner<'a> {
                         continue;
                     }
                 }
-                let grade = if self.grades[edge].is_nan() {
-                    let grade = inspect_segment(
-                        self.surface,
-                        self.position(cell),
-                        self.position(next),
-                        true,
-                    )
-                    .unwrap_or(f64::INFINITY);
-                    self.grades[edge] = grade;
-                    // Opposite directions use identical obstacles and grades.
-                    self.grades[next * HEADINGS + (dir + HEADINGS / 2) % HEADINGS] = grade;
-                    grade
-                } else {
-                    self.grades[edge]
-                };
+                let grade = self.edge_grade(cell, next, dir);
                 if grade > max_grade + 1e-8 {
                     continue;
                 }
@@ -531,7 +666,7 @@ impl<'a> RoutePlanner<'a> {
             }
             simplified = rounded;
         }
-        debug_assert!(path_clear(self.surface, &simplified, max_grade));
+        debug_assert!(simplified.windows(2).all(|p| self.inspect(p[0], p[1]).is_some_and(|g| g <= max_grade + 1e-8)));
         debug_assert!(
             shape.is_none_or(|shape| simplified.windows(2).all(|p| inside(shape, p[0], p[1])))
         );
@@ -546,6 +681,30 @@ fn route_cost(length: f64, grade: f64, max_grade: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bank_connectivity_preserves_routes_and_rejects_barriers_before_heading_search() {
+        let n = 48;
+        let height = vec![0.0; n * n];
+        let (a, b) = (Point { x: 24.0, y: 48.0 }, Point { x: 68.0, y: 48.0 });
+        for closed in [false, true] {
+            let water: Vec<_> = (0..n * n).map(|i| u8::from((22..26).contains(&(i % n)) && (closed || i / n < 34))).collect();
+            let surface = Surface { geometry: None, width: 96.0, n, height: &height, water: &water };
+            for raised in [false, true] {
+                let mut planner = if raised { RoutePlanner::raised_bank(surface, (8.0, 8.0, 88.0, 88.0)) }
+                    else { RoutePlanner::bank(surface, (8.0, 8.0, 88.0, 88.0)) };
+                let mut original = if raised { RoutePlanner::raised_bank(surface, (8.0, 8.0, 88.0, 88.0)) }
+                    else { RoutePlanner::bank(surface, (8.0, 8.0, 88.0, 88.0)) };
+                original.bank = false;
+                for grade in [0.12, 1e6] {
+                    let path = planner.route(a, b, grade);
+                    assert_eq!(path, original.route(a, b, grade));
+                    assert_eq!(path.is_none(), closed);
+                    if closed { assert!(planner.slots.is_empty(), "disconnected banks expanded heading states"); }
+                }
+            }
+        }
+    }
 
     #[test]
     fn adaptation_keeps_a_cheaper_contour_detour_even_when_direct_grade_is_legal() {

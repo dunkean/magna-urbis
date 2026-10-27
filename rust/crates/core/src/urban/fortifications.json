@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "invaginations": {"maxDepthSpanRatio": 0.4, "minDepthM": 12, "foldGapM": 10},
   "notes": "Fortification styles (stream W). Artistic presets, not measured reconstructions. Every value can be overridden per culture here (cultures.*) or in catalogue.json cultures[c].fortification.",
   "styles": {
     "palisade": {"kind": "palisade", "material": "timber", "curtainWidthM": 1.5, "heightM": 3.5, "towerHeightM": 5, "towerShape": "square", "fixedTowers": true, "towerRadius": [2.5, 2.5], "towerSpacing": null, "cornerTurn": null, "gate": "timber", "minorGate": "opening", "gateMinPop": 600, "ditch": "dry", "ditchP": 0.6, "ditchWidthM": [4, 4], "bermM": 1.5, "outworks": [], "attached": 0},

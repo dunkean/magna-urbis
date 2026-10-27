@@ -32,7 +32,9 @@ export interface Enclosure {
   reserve?: Shape[];
 }
 export interface GrowthPhase { culture?: string; kind: string; zone: string; recipe: string; population: number; targetArea: number; shapes: Shape[] }
+export interface Quay { kind: string; shape: Shape; deck_z_m: number; material: string }
 export interface UrbanStructure {
+  quays?: Quay[];
   version: 1; mechanism: string; family: string; reserve: Shape[]; allocated: Shape[];
   centers: { id: number; point: Point; weight: number }[];
   districts: { id: number; center: number; phase: number; tissue: string; quarters: number[] }[];

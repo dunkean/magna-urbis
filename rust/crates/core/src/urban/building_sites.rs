@@ -953,9 +953,25 @@ impl BuildingSiteIndex {
         // One occupation choice (role + tissue, then the lot's geometry) feeds
         // both the preview and the wished composition: the realized form when
         // the preview builds, else the wished one.
-        let (parts, realized) = occupancy.as_ref().map_or((Vec::new(), None), |o| {
+        let (mut parts, realized) = occupancy.as_ref().map_or((Vec::new(), None), |o| {
             super::parcels::occupation_preview(parcel, o)
         });
+        let arch = tissue.as_ref().map_or(&Value::Null, |(_, morph)| &morph.value["arch"]);
+        let home_area = if domestic && !parts.is_empty() && tissue.as_ref().is_some_and(|(zone,_)| zone != "core")
+            && !programme["landmark"].as_bool().unwrap_or(false)
+            && !role.contains("tower") && parts.iter().all(|(_,l)| matches!(*l, "building" | "barn" | "byre"))
+            && super::house_mix::ordinary_home(building_culture, arch, &site_seed) {
+            let radius = (layout.quarters.iter().map(|q| super::geometry::area(&q.shape)).sum::<f64>() / std::f64::consts::PI).sqrt().max(1.0);
+            let outside = !layout.enclosures.is_empty() && !layout.enclosures.iter().any(|e|
+                super::geometry::contains(&super::Shape { outer:e.path.clone(), holes:vec![] }, center));
+            super::house_mix::HomeContext {
+                zone:tissue.as_ref().map_or("", |(zone,_)| zone.as_str()),
+                district:programme["district_role"].as_str().unwrap_or(""), wealth, pressure:parcel.pressure,
+                distance:(center.x-layout.center.x).hypot(center.y-layout.center.y)/radius,
+                outside, farm:role.starts_with("dwelling.farm"),
+            }.area_scale(&site_seed)
+        } else { 1.0 };
+        super::house_mix::scale_home(&mut parts, parcel, home_area);
         let kind = realized.or_else(|| occupancy.as_ref().map(super::parcels::occupation_kind));
         let preview: Vec<_> = parts.iter().map(|(s, _)| s).collect();
         let preview_parts: Vec<_> = parts.iter().map(|(_, l)| *l).collect();
@@ -1002,6 +1018,7 @@ impl BuildingSiteIndex {
         {
             programme["floors"] = json!(feasibility::feasible_floors(wish, composition, fits));
         }
+        if home_area < 1.0 { programme["floors"] = json!([1, 1]); }
         let built: f64 = parts.iter().map(|(s, _)| super::geometry::area(s)).sum();
         if built.is_finite() && built > 1.0 {
             programme["built_area_m2"] = json!((built * 10.0).round() / 10.0);
@@ -1197,7 +1214,7 @@ impl BuildingSiteIndex {
             .collect();
         let massing = super::massing::massing(&super::massing::Input {
             parts: &parts,
-            arch: tissue.as_ref().map_or(&Value::Null, |(_, morph)| &morph.value["arch"]),
+            arch,
             culture: building_culture,
             zone: tissue.as_ref().map_or("", |(zone, _)| zone.as_str()),
             role: &role,
@@ -1205,6 +1222,7 @@ impl BuildingSiteIndex {
             landmark: programme["landmark"].as_bool().unwrap_or(false),
             wealth,
             pressure: parcel.pressure,
+            small_home: home_area < 1.0,
             fronts: &fronts,
             seed: &site_seed,
         });
@@ -1577,6 +1595,40 @@ mod tests {
         invalid = partitions.clone();
         invalid[1].programme.as_mut().unwrap().allocations[3].culture = "missing".into();
         assert!(BuildingSiteIndex::prepare(&layouts, &invalid, &[0, 1]).is_err());
+    }
+
+    #[test]
+    fn fringe_home_request_keeps_preview_area_and_single_storey_massing_together() {
+        let (mut layouts, mut partitions) = paging_fixture();
+        let layout = &mut layouts[0];
+        layout.blocks[0].zone = "faubourg".into(); layout.quarters[0].zone = "faubourg".into();
+        partitions[0].config.as_mut().unwrap().zone = "auto".into();
+        let context = super::super::house_mix::HomeContext {
+            zone:"faubourg", district:"elite", wealth:0.9, pressure:0.85, distance:1.0, outside:false, farm:false,
+        };
+        let seed = (0..100).map(|k| format!("houses2-request-{k}")).find(|s|
+            context.area_scale(&format!("{s}/démo-a/lot-0")) < 1.0).unwrap();
+        let site_seed = format!("{seed}/démo-a/lot-0");
+        let parcel = &partitions[0].parcels[0];
+        let (zone, morph) = super::super::culture::parcel_morph(layout, &partitions[0], "european-organic", 0).unwrap();
+        let mapping = super::super::culture::parcel_mapping(layout, parcel, "european-organic", "domestic").unwrap();
+        let (original, _) = super::super::parcels::occupation_preview(parcel, &super::super::parcels::Occupancy {
+            morph:&morph, zone, function:"domestic", role:"dwelling", landmark:false,
+            party_walls:mapping.admissibility.party_walls, wealth:0.9, seed:&site_seed,
+            pack:&mapping.architecture_pack, court_lot:false, court_kept:None,
+        });
+        let heights = vec![20.; 16*16]; let water = vec![0; heights.len()];
+        let surface = Surface { geometry:None, width:512., n:16, height:&heights, water:&water };
+        let index = BuildingSiteIndex::prepare(&layouts, &partitions, &[0]).unwrap();
+        let request = index.request_one(0, &seed, &layouts, &partitions, surface, &heights, None).unwrap();
+        let preview: Vec<super::super::Shape> = serde_json::from_value(request["preview"].clone()).unwrap();
+        let area = |parts: &[super::super::Shape]| parts.iter().map(super::super::geometry::area).sum::<f64>();
+        let original: Vec<_> = original.into_iter().map(|(s,_)| s).collect();
+        assert!(area(&original) > 4.0);
+        assert!((area(&preview)/area(&original)-context.area_scale(&site_seed)).abs() < 1e-6);
+        assert_eq!(request["programme"]["floors"], json!([1,1]));
+        for piece in request["programme"]["massing"].as_array().unwrap() { assert_eq!(piece["floors"], 1); }
+        assert!((request["programme"]["built_area_m2"].as_f64().unwrap()-area(&preview)).abs() <= 0.051);
     }
 
     #[test]

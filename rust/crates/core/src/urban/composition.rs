@@ -1352,6 +1352,54 @@ fn partition(quarters: &mut Vec<Quarter>, regions: &[Shape]) {
     }
     *quarters = out;
 }
+/// Straight curtains can leave narrow dry strips beyond the growth outline.
+/// Give that land to an adjoining quarter; the later ribbons cut the ring road.
+fn fit_enclosed_quarters(quarters: &mut [Quarter], walls: &[Shape], streets: &[Street], surface: Surface<'_>) {
+    let occupied = g::union(&quarters.iter().map(|q| q.shape.clone()).collect::<Vec<_>>());
+    let mut gaps = walls.to_vec();
+    for shape in &occupied {
+        gaps = gaps.iter().flat_map(|s| g::difference(s, shape)).collect();
+    }
+    // Separate the strips at real roads, so a belt cannot all join one ward.
+    for st in streets {
+        for ribbon in g::ribbon(&st.path, &st.widths) {
+            gaps = gaps.iter().flat_map(|s| g::difference(s, &ribbon)).collect();
+        }
+    }
+    for gap in gaps.iter().flat_map(|s| g::dry_clip(&surface, s)) {
+        let mut best = None;
+        for (i, q) in quarters.iter().enumerate() {
+            let merged = g::union(&[q.shape.clone(), gap.clone()]);
+            if merged.len() != 1 { continue; }
+            let added = g::area(&merged[0]) - g::area(&q.shape);
+            if added < g::area(&gap) * 0.99 { continue; }
+            let center = g::centroid(&q.shape);
+            let c = g::centroid(&gap);
+            let score = (center.x - c.x).hypot(center.y - c.y);
+            if best.as_ref().is_none_or(|(_, _, old)| score < *old) {
+                best = Some((i, merged.into_iter().next().unwrap(), score));
+            }
+        }
+        if let Some((i, shape, _)) = best { quarters[i].shape = shape; }
+    }
+}
+
+#[test]
+fn enclosed_quarters_reach_the_ring_road_without_claiming_water() {
+    let mut quarters = vec![Quarter { shape:g::rectangle(20.,20.,80.,80.), phase:0, zone:"core".into() }];
+    let wall = g::rectangle(10.,10.,90.,90.);
+    let road = Street { path:vec![Point{x:10.,y:50.},Point{x:90.,y:50.}],widths:vec![4.;2],rank:1,role:"street".into() };
+    let height = vec![10.;100];
+    let water: Vec<_> = (0..100).map(|i|u8::from(i % 10 >= 8)).collect();
+    let surface = Surface {geometry:None,width:100.,n:10,height:&height,water:&water};
+    fit_enclosed_quarters(&mut quarters, std::slice::from_ref(&wall), std::slice::from_ref(&road), surface);
+    let added = g::difference(&quarters[0].shape, &g::rectangle(20.,20.,80.,80.));
+    let road = g::rectangle(10.,48.,90.,52.);
+    assert!(added.iter().map(g::area).sum::<f64>() > 1000.);
+    assert!(added.iter().flat_map(|s|g::intersection(s,&road)).map(|s|g::area(&s)).sum::<f64>() < 0.01);
+    assert!(g::difference(&quarters[0].shape,&wall).iter().map(g::area).sum::<f64>() < 0.01);
+    assert!((g::area(&quarters[0].shape) - g::dry_clip(&surface,&quarters[0].shape).iter().map(g::area).sum::<f64>()).abs() < 0.01);
+}
 fn closed(ring: &[Point]) -> Vec<Point> {
     let mut path = ring.to_vec();
     if let Some(&p) = path.first() {
@@ -1539,6 +1587,8 @@ fn fortify(
     } else {
         walls
     };
+    let walls = fortification::trace_enclosures(walls, &plan.quarters.iter()
+        .map(|q| q.shape.clone()).collect::<Vec<_>>(), surface);
     let inner_style = style.inner(culture, site.population);
     let data = culture_data(culture, site.population);
     let fossil = data["core"]["enclosure"]["fossil"]
@@ -1587,10 +1637,13 @@ fn fortify(
             } else {
                 old
             };
+            let old = fortification::trace_enclosures(old, &plan.quarters.iter()
+                .map(|q| q.shape.clone()).collect::<Vec<_>>(), surface);
             partition(&mut plan.quarters, &old);
             inner_walls.extend(old);
         }
     }
+    if small { fit_enclosed_quarters(&mut plan.quarters, &walls, &plan.streets, surface); }
     partition(&mut plan.quarters, &walls);
     let first = plan.enclosures.len();
     let outer = walls.len();

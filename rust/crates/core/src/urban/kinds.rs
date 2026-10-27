@@ -870,6 +870,7 @@ pub(super) fn lay_out(
         })
         .collect();
     let structure = UrbanStructure {
+        quays: vec![],
         version: 1,
         mechanism: "kind".into(),
         family: kind.id().into(),

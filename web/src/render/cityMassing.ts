@@ -4,12 +4,13 @@
  * roof pans, height shadows) and the 3D view. The building shown is the planned
  * silhouette raised in volume; no other house generator is involved. */
 import type { Point, Surface, Vertex3 } from '../../../rust/bridge/housesContract';
+import { treeDwelling, treeCrownFaces, type TreeDwelling } from './cityTrees';
 type Shape = Surface[number];
 
 /** Roof-top feature of a flat roof (massing.rs `flat_details`): plan centre, footprint w × d turned by `angle`, height h. */
 export interface MassingFeature { kind: 'stair' | 'dome' | 'windcatcher'; x: number; y: number; w: number; d: number; h: number; angle: number }
 /** Detail of a volume decided in Rust: parapet above a flat eave, roof-top features, hut roof overhang, trim colour. */
-export interface VolumeDetail { parapet_m?: number; features?: MassingFeature[]; overhang_m?: number; trim?: string; form?: 'yurt' | 'tipi'; stilts_m?: number }
+export interface VolumeDetail { parapet_m?: number; features?: MassingFeature[]; overhang_m?: number; trim?: string; form?: 'yurt' | 'tipi' | 'tree' | 'mushroom' | 'longhouse' | 'tower' | 'battered'; stilts_m?: number; tree_seed?: string }
 export type MassingRoof = 'gable' | 'hip' | 'shed' | 'pyramid' | 'cone' | 'dome' | 'barrel' | 'ring' | 'tent' | 'flat';
 /** One sub-volume partitioning a preview piece: own ring, heights, roof and (optionally) materials. */
 export interface MassingVolume extends VolumeDetail {
@@ -27,7 +28,7 @@ export interface MassingPiece {
 export interface RoofFace { points: Vertex3[]; normal: [number, number, number]; piece: number; vol: number; cover: string; wall: string; tone: number }
 
 /** A piece resolved to the volumes to draw (the piece itself when it has no `volumes`). */
-export interface ResolvedVolume { shape: Shape; floors: number; eave_m: number; rise_m: number; roof: MassingRoof; ridges: [number, number, number, number][]; cover: string; wall: string; tone: number; detail?: VolumeDetail }
+export interface ResolvedVolume { shape: Shape; floors: number; eave_m: number; rise_m: number; roof: MassingRoof; ridges: [number, number, number, number][]; cover: string; wall: string; tone: number; detail?: VolumeDetail; tree?: TreeDwelling }
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const clamp01 = (v: unknown, d = 0.5): number => finite(v) ? Math.max(0, Math.min(1, v)) : d;
 export function pieceVolumes(shape: Shape, m: MassingPiece): ResolvedVolume[] {
@@ -37,19 +38,25 @@ export function pieceVolumes(shape: Shape, m: MassingPiece): ResolvedVolume[] {
     out.push({ shape: { outer: v.ring.map(([x, y]) => ({ x, y })), holes: [] }, floors: finite(v.floors) ? v.floors : m.floors, eave_m: v.eave_m, rise_m: finite(v.rise_m) ? v.rise_m : 0, roof: v.roof,
       ridges: Array.isArray(v.ridges) ? v.ridges.filter(r => Array.isArray(r) && r.length === 4 && r.every(finite)) : [],
       cover: v.cover ?? m.cover, wall: v.wall ?? m.wall, tone: clamp01(v.tone, clamp01(m.tone)),
-      detail: { parapet_m: finite(v.parapet_m) ? v.parapet_m : undefined, overhang_m: finite(v.overhang_m) ? v.overhang_m : undefined, trim: v.trim,
-        form: v.form === 'yurt' || v.form === 'tipi' ? v.form : undefined, stilts_m: finite(v.stilts_m) && v.stilts_m > 0 ? Math.min(v.stilts_m, 4) : undefined,
+      detail: { tree_seed: typeof v.tree_seed === 'string' ? v.tree_seed : undefined, parapet_m: finite(v.parapet_m) ? v.parapet_m : undefined, overhang_m: finite(v.overhang_m) ? v.overhang_m : undefined, trim: v.trim,
+        form: v.form && ['yurt', 'tipi', 'tree', 'mushroom', 'longhouse', 'tower', 'battered'].includes(v.form) ? v.form : undefined, stilts_m: finite(v.stilts_m) && v.stilts_m > 0 ? Math.min(v.stilts_m, 4) : undefined,
         features: Array.isArray(v.features) ? v.features.filter(f => f && ['x', 'y', 'w', 'd', 'h', 'angle'].every(k => finite((f as unknown as Record<string, unknown>)[k]))) : undefined } });
   }
-  if (out.length) return out;
+  if (out.length) return out.map(v => {
+    if (v.detail?.form !== 'tree') return v;
+    const tree = treeDwelling(v.shape.outer, v.eave_m, v.rise_m, v.detail.tree_seed ?? JSON.stringify(v.shape.outer));
+    return { ...v, tree, shape: { outer: tree.outline, holes: [] }, eave_m: tree.height, rise_m: Math.max(...tree.crowns.map(c => c.z + c.height)) - tree.height };
+  });
   return [{ shape, floors: m.floors, eave_m: m.eave_m, rise_m: m.rise_m, roof: m.roof, ridges: m.ridges ?? [], cover: m.cover, wall: m.wall, tone: clamp01(m.tone) }];
 }
 
 /** Massing of a building's preview pieces, when the city sent one aligned with its footprint. */
-export function readMassing(programme: unknown, footprint: Surface): MassingPiece[] | undefined {
+export function readMassing(programme: unknown, footprint: Surface, buildingId?: string): MassingPiece[] | undefined {
   const massing = (programme as { massing?: unknown } | null | undefined)?.massing;
   if (!Array.isArray(massing) || massing.length !== footprint.length) return undefined;
-  return massing.every(m => m && typeof m.eave_m === 'number' && typeof m.roof === 'string' && (m.ridges === undefined || Array.isArray(m.ridges))) ? massing as MassingPiece[] : undefined;
+  if (!massing.every(m => m && typeof m.eave_m === 'number' && typeof m.roof === 'string' && (m.ridges === undefined || Array.isArray(m.ridges)))) return undefined;
+  return (massing as MassingPiece[]).map((m, i) => buildingId && m.volumes?.some(v => v.form === 'tree' && !v.tree_seed)
+    ? { ...m, volumes: m.volumes.map((v, j) => v.form === 'tree' && !v.tree_seed ? { ...v, tree_seed: `${buildingId}:${i}:${j}` } : v) } : m);
 }
 
 const signedArea = (ring: readonly Point[]): number => ring.reduce((s, p, i) => { const n = ring[(i + 1) % ring.length]; return s + p.x * n.y - n.x * p.y; }, 0) / 2;
@@ -92,6 +99,15 @@ class Faces {
   }
 }
 const at = (p: Point, z: number): Vertex3 => ({ x: p.x, y: p.y, z });
+
+/** Concentric outlines keep the roof, body and raised deck in the same frame. */
+export function scaledRing(ring: readonly Point[], scale: number): Point[] {
+  const c = centroid(ring); return ring.map(p => ({ x: c.x + (p.x - c.x) * scale, y: c.y + (p.y - c.y) * scale }));
+}
+export function stiltDeck(ring: readonly Point[]): Point[] {
+  const c = centroid(ring); return ring.map(p => { const dx = p.x - c.x, dy = p.y - c.y, l = Math.hypot(dx, dy) || 1; return { x: p.x + dx / l * 0.65, y: p.y + dy / l * 0.65 }; });
+}
+export const stiltSupports = (ring: readonly Point[]): Point[] => stiltDeck(ring).filter((_, i) => i % Math.max(1, Math.ceil(ring.length / 4)) === 0);
 
 // ---------------------------------------------------------------- pitched roofs
 const cross2 = (o: Point, a: Point, b: Point): number => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
@@ -238,13 +254,30 @@ function barrel(f: Faces, ring: readonly Point[], [r0, r1]: [Point, Point], eave
   const ux = r1.x - r0.x, uy = r1.y - r0.y, l = Math.hypot(ux, uy) || 1, nx = -uy / l, ny = ux / l;
   let half = 0; for (const p of ring) half = Math.max(half, Math.abs((p.x - r0.x) * nx + (p.y - r0.y) * ny));
   if (half < 1e-6) return;
-  // Barrel = gable whose height follows a circle across the span.
+  // Clip each course to the actual ring: no rectangle can escape the roof plan.
+  const coord = (p: Point): number => (p.x - r0.x) * nx + (p.y - r0.y) * ny;
+  const clip = (poly: readonly Point[], w: number, sign: number): Point[] => {
+    const out: Point[] = [];
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i], b = poly[(i + 1) % poly.length], da = sign * (coord(a) - w), db = sign * (coord(b) - w);
+      if (da >= -1e-8) out.push(a);
+      if ((da > 0) !== (db > 0)) { const t = da / (da - db); out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }); }
+    }
+    return out;
+  };
   const k = 4;
   for (let s = 0; s < k; s++) for (const side of [-1, 1]) {
     const w0 = side * half * s / k, w1 = side * half * (s + 1) / k;
     const z = (w: number) => eave + rise * Math.sqrt(Math.max(0, 1 - (w / half) ** 2));
-    const p = (along: Point, w: number): Vertex3 => ({ x: along.x + nx * w, y: along.y + ny * w, z: z(w) });
-    f.add([p(r0, w0), p(r1, w0), p(r1, w1), p(r0, w1)]);
+    const lo = Math.min(w0, w1), hi = Math.max(w0, w1), course = clip(clip(ring, lo, 1), hi, -1);
+    if (course.length >= 3) f.add(course.map(p => ({ ...p, z: z(lo) + (z(hi) - z(lo)) * (coord(p) - lo) / (hi - lo) })));
+    // Close the barrel ends down to the wall eave (edge-on in plan).
+    for (let i = 0; i < course.length; i++) {
+      const a = course[i], b = course[(i + 1) % course.length];
+      if (Math.abs(coord(a) - coord(b)) < 1e-6) continue;
+      const onEdge = ring.some((p, j) => { const q = ring[(j + 1) % ring.length]; return Math.abs(cross2(p, q, a)) < 1e-5 && Math.abs(cross2(p, q, b)) < 1e-5; });
+      if (onEdge) f.add([at(a, eave), at(b, eave), at(b, z(coord(b))), at(a, z(coord(a)))]);
+    }
   }
 }
 /** Court range: outer and court eaves rise to a ridge half way across the range. */
@@ -262,14 +295,15 @@ function flat(f: Faces, ring: readonly Point[], z: number): void { f.add(ring.ma
 
 /** Roof faces of one volume, z relative to the building ground. */
 export function volumeRoof(v: ResolvedVolume, piece: number, vol: number): RoofFace[] {
-  const f = new Faces(piece, vol, v.cover, v.wall, v.tone), eave = v.eave_m, rise = Math.max(0, v.rise_m), shape = v.shape, outer = shape.outer;
+  const f = new Faces(piece, vol, v.cover, v.wall, v.tone), eave = v.eave_m, rise = Math.max(0, v.rise_m), shape = v.shape, outer = v.detail?.form === 'battered' ? scaledRing(shape.outer, 0.92) : shape.outer;
+  if (v.tree) { for (const points of treeCrownFaces(v.tree)) f.add(points); return f.list; }
   const ridges = v.ridges.map(([x0, y0, x1, y1]) => [{ x: x0, y: y0 }, { x: x1, y: y1 }] as [Point, Point]);
   if (outer.length < 3) return [];
   if (v.roof === 'ring') ring(f, shape, eave, rise);
   else if (v.roof === 'dome') dome(f, outer, eave, rise);
   else if (v.roof === 'tent' && rise > 0.05) tent(f, outer, eave, rise);
   else if (v.roof === 'shed' && ridges.length) shed(f, outer, ridges[0], eave, rise);
-  else if (v.roof === 'barrel' && ridges.length) { barrel(f, outer, ridges[0], eave, rise); flat(f, outer, eave); }
+  else if (v.roof === 'barrel' && ridges.length) barrel(f, outer, ridges[0], eave, rise);
   else if (rise > 0.05 && ridges.length) lofted(f, outer, ridges, eave, eave + rise);
   else if (rise > 0.05 && (v.roof === 'pyramid' || v.roof === 'cone' || v.roof === 'hip')) { const c = centroid(outer); lofted(f, outer, [[c, c]], eave, eave + rise); }
   else flat(f, outer, eave);
@@ -286,7 +320,10 @@ export function buildingRoof(footprint: Surface, massing: readonly MassingPiece[
 /** Highest point of a piece above the ground. */
 export const pieceTop = (m: MassingPiece): number => {
   const own = Array.isArray(m.volumes) ? m.volumes.filter(v => finite(v?.eave_m) && Array.isArray(v.ring) && v.ring.length >= 3) : [];
-  return own.length ? Math.max(...own.map(v => v.eave_m + Math.max(0, finite(v.rise_m) ? v.rise_m : 0))) : m.eave_m + Math.max(0, m.rise_m);
+  return own.length ? Math.max(...own.map(v => {
+    if (v.form === 'tree') { const tree = treeDwelling(v.ring.map(([x, y]) => ({ x, y })), v.eave_m, v.rise_m, v.tree_seed ?? JSON.stringify(v.ring.map(([x, y]) => ({ x, y })))); return Math.max(...tree.crowns.map(c => c.z + c.height)); }
+    return v.eave_m + Math.max(0, finite(v.rise_m) ? v.rise_m : 0) + (finite(v.stilts_m) ? Math.max(0, Math.min(v.stilts_m, 4)) : 0);
+  })) : m.eave_m + Math.max(0, m.rise_m);
 };
 
 /** Map light from the north-west, high: brightness factor of a roof face (−0.42…+0.26). */
@@ -312,5 +349,5 @@ export function pieceShadow(shape: Shape, height: number, k = 0.55): Shape | und
 
 /** Ground shadows of a piece, one per volume (each swept by its own height). */
 export function pieceShadows(shape: Shape, m: MassingPiece): Shape[] {
-  return pieceVolumes(shape, m).flatMap(v => { const s = pieceShadow(v.shape, v.eave_m + Math.max(0, v.rise_m)); return s ? [s] : []; });
+  return pieceVolumes(shape, m).flatMap(v => { const s = pieceShadow(v.shape, v.eave_m + Math.max(0, v.rise_m) + (v.detail?.stilts_m ?? 0)); return s ? [s] : []; });
 }

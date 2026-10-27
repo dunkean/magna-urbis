@@ -220,6 +220,8 @@ pub(super) struct Input<'a> {
     pub landmark: bool,
     pub wealth: f64,
     pub pressure: f64,
+    /// Selected ordinary fringe/poor home (same draw as its smaller preview).
+    pub small_home: bool,
     /// Street frontage segments of the lot (public accesses).
     pub fronts: &'a [[Point; 2]],
     pub seed: &'a str,
@@ -301,6 +303,17 @@ fn seg(a: Point, b: Point) -> Value {
     json!([round2(a.x), round2(a.y), round2(b.x), round2(b.y)])
 }
 
+pub(super) fn tower_house(culture: &str, arch: &Value) -> bool {
+    arch["typology"].as_str().unwrap_or("").contains("tower") || tradition(arch, culture).storeys[0] >= 4
+}
+
+fn small_home(m: &Input) -> bool {
+    m.small_home && m.zone != "core" && !m.landmark && !m.role.contains("tower")
+        && matches!(m.function, "domestic" | "mixed")
+        && m.parts.iter().all(|(_,l)| matches!(*l, "building" | "barn" | "byre"))
+        && super::house_mix::ordinary_home(m.culture, m.arch, m.seed)
+}
+
 /// Lot-level floor count: the tradition's range by zone, pressure, wealth,
 /// corner and a per-lot draw; roles pick their end of the range.
 fn lot_floors(m: &Input, tr: &Tradition, rng: &mut Rng) -> u32 {
@@ -338,7 +351,7 @@ fn lot_floors(m: &Input, tr: &Tradition, rng: &mut Rng) -> u32 {
     if matches!(m.function, "warehouse" | "workshop") || role.starts_with("storage") {
         floors = floors.min(lo + 1);
     }
-    floors.clamp(lo, hi)
+    if small_home(m) { 1 } else { floors.clamp(lo, hi) }
 }
 
 // ---- polygon helpers (convex decomposition, clipping, ridges) ----
@@ -784,9 +797,24 @@ pub(super) fn massing(m: &Input) -> Value {
     if m.parts.is_empty() {
         return Value::Null;
     }
-    let tr = tradition(m.arch, m.culture);
+    let mut tr = tradition(m.arch, m.culture);
+    let (metric_scale, form) = super::culture::house_parameters(m.culture);
+    // Elven settlements mix tree dwellings and ordinary houses half and half (user: equal proportions).
+    let tree_share = form != "tree" || Rng::new(m.seed).fork("tree-share").float() < 0.5;
+    if !form.is_empty() && tree_share { tr.form = form; }
+    match tr.form {
+        "tree" => { tr.roof = "dome"; tr.cover = "turf"; tr.wall = "wood"; }
+        "mushroom" => { tr.roof = "dome"; tr.cover = "fungal"; tr.wall = "wattle"; }
+        "longhouse" => { tr.roof = "barrel"; tr.cover = "bark"; tr.wall = "wood"; tr.storeys = [1, 1]; }
+        "yurt" => { tr.roof = "tent"; tr.cover = "felt"; tr.wall = "hide"; tr.storeys = [1, 1]; }
+        "battered" => { tr.roof = "flat"; tr.cover = "earth"; tr.wall = "plaster"; }
+        _ => {}
+    }
+    // Giant houses: one huge storey of massive stone under a flat roof (user: no storeys, flat roofs).
+    if m.culture == "giant-hold" { tr.roof = "flat"; tr.cover = "stone"; tr.wall = "stone"; tr.storeys = [1, 1]; }
     let mut rng = Rng::new(m.seed).fork("massing");
     let floors = lot_floors(m, &tr, &mut rng);
+    let compact = small_home(m);
     // Variety inside the tradition: pitch ±15 %, a share of lots turn gables
     // to hips (and conversely), some turn the ridge across the street axis,
     // a few tile roofs go slate / shingle by wealth; one tone per lot.
@@ -835,7 +863,7 @@ pub(super) fn massing(m: &Input) -> Value {
             let mut composable = false;
             // A tent people's landmark is a larger tent of its own tradition,
             // never a stone nave or tower of another one.
-            let tribal = tr.roof == "tent";
+            let tribal = tr.roof == "tent" || matches!(tr.form, "tree" | "mushroom" | "longhouse");
             match if tribal { "building" } else { *label } {
                 "tower" | "belfry" | "minaret" | "keep" => {
                     n = floors.max(2) + 3 + rng.int(0, 2);
@@ -906,8 +934,9 @@ pub(super) fn massing(m: &Input) -> Value {
             }
             if m.landmark && *label == "building" && !tribal {
                 n = n.max(floors) + 1;
-                cover = if tr.cover == "thatch" { "thatch" } else { "slate" };
+                cover = if tr.roof == "flat" || tr.cover == "thatch" { tr.cover } else { "slate" };
             }
+            if tr.form == "battered" { wall = tr.wall; }
             if swap && !m.landmark {
                 kind = match kind {
                     "gable" => "hip",
@@ -916,7 +945,7 @@ pub(super) fn massing(m: &Input) -> Value {
                 };
             }
             let base_eave = |n: u32| {
-                eave.unwrap_or_else(|| n as f64 * STOREY_M + if shop && i == main { SHOP_EXTRA_M } else { 0.0 })
+                metric_scale * eave.unwrap_or_else(|| n as f64 * STOREY_M + if shop && i == main { SHOP_EXTRA_M } else { 0.0 })
             };
             if min_frame(ring).is_none() {
                 return json!({"floors":n,"eave_m":round2(base_eave(n)),"rise_m":0.0,"roof":"flat","ridges":[],"cover":cover,"wall":wall,"tone":round2(lot_tone)});
@@ -944,7 +973,7 @@ pub(super) fn massing(m: &Input) -> Value {
             // part much longer than wide, along its long side.
             let axis = |vr: &[Point], kind: &str| -> Point {
                 let part = Shape { outer: vr.to_vec(), holes: vec![] };
-                if let Some(d) = front_dir {
+                if let Some(d) = front_dir.filter(|_| kind != "barrel") {
                     if matches!(kind, "gable" | "hip" | "barrel") && on_front(&part) {
                         let along = frame_along(vr, d);
                         let across = frame_along(vr, perp(d));
@@ -966,14 +995,33 @@ pub(super) fn massing(m: &Input) -> Value {
                     }
                 }
                 let u = axis(vr, vkind);
-                let subs = if composable { split_body(vr, u, vn, vkind, &mut rng) } else { vec![(vr.clone(), 0, false)] };
+                let subs = if composable && !tribal {
+                    let metric: Vec<Point> = vr.iter().map(|p| Point { x: p.x / metric_scale, y: p.y / metric_scale }).collect();
+                    split_body(&metric, u, vn, vkind, &mut rng).into_iter().map(|(r, d, c)|
+                        (r.into_iter().map(|p| Point { x: p.x * metric_scale, y: p.y * metric_scale }).collect(), d, c)).collect()
+                } else { vec![(vr.clone(), 0, false)] };
                 let multi = subs.len() > 1;
-                for (si, (sr, delta, cross)) in subs.into_iter().enumerate() {
-                    let sn = (vn as i32 + delta).max(1) as u32;
+                for (si, (mut sr, delta, cross)) in subs.into_iter().enumerate() {
+                    let one_storey = compact || m.culture == "giant-hold" && !m.landmark && *label == "building";
+                    let sn = if one_storey { 1 } else { (vn as i32 + delta).max(1) as u32 };
                     let mut sk = vkind;
                     if multi && si > 0 && !m.landmark && matches!(sk, "gable" | "hip") && rng.chance(0.25) {
                         sk = if sk == "gable" { "hip" } else { "gable" };
                     }
+                    let mage = tr.form == "mage" && i == main && pi == 0 && si == 0 && (m.landmark || drng.chance(0.36));
+                    let exterior = if mage { "tower" } else if tr.form == "mage" { "" } else { tr.form };
+                    if matches!(exterior, "tree" | "mushroom" | "yurt" | "tower") {
+                        if let Some(f) = min_frame(&sr) {
+                            let c = super::geometry::centroid(&Shape { outer: sr.clone(), holes: vec![] });
+                            let r = depth_in(&sr, c).min(if mage { 3.8 } else { f.half_w }).max(0.1);
+                            sr = (0..16).map(|k| {
+                                let a = k as f64 * std::f64::consts::TAU / 16.0;
+                                let r = r * if exterior == "tree" { 0.94 + 0.06 * (5.0 * a).cos() } else { 1.0 };
+                                Point { x: c.x + r * a.cos(), y: c.y + r * a.sin() }
+                            }).collect();
+                        }
+                    }
+                    if mage { sk = "cone"; }
                     let su = if cross { perp(u) } else { u };
                     let c = ring_centroid(&sr);
                     let high = if i != main {
@@ -981,9 +1029,9 @@ pub(super) fn massing(m: &Input) -> Value {
                     } else {
                         front_dir.map_or(Point { x: 0.0, y: 1.0 }, |d| Point { x: -d.x, y: -d.y })
                     };
-                    let vp = pitch * (1.0 + rng.range(-0.04, 0.04));
+                    let vp = if mage { 68.0 } else { pitch * (1.0 + rng.range(-0.04, 0.04)) };
                     let roof = roof_of(&sr, sk, vp, su, high);
-                    let rise_cap = if *label == "tower" { 14.0 } else { 12.0 };
+                    let rise_cap = metric_scale * if *label == "tower" { 14.0 } else { 12.0 };
                     let roof = Roof { rise: roof.rise.min(rise_cap), ..roof };
                     let (parapet, features) = if roof.kind == "flat" {
                         flat_details(&sr, label, flavor(m.culture), wall, m.wealth, m.landmark, &mut drng)
@@ -1001,7 +1049,7 @@ pub(super) fn massing(m: &Input) -> Value {
                         (true, "tipi") => Roof { rise: (radius * 1.8).min(rise_cap), ..roof },
                         _ => roof,
                     };
-                    let stilts = if tr.form == "stilt" && sn == 1 && !m.landmark { 1.8 + 0.7 * drng.float() } else { 0.0 };
+                    let stilts = if tr.form == "stilt" { 2.4 + 0.7 * drng.float() } else { 0.0 };
                     let (eave_v, overhang) = match (hut, roof.kind) {
                         (true, "tent") if tent && tr.form == "yurt" => (1.6, 0.2),
                         (true, "tent") if tent && tr.form == "tipi" => (0.1, 0.0),
@@ -1009,14 +1057,24 @@ pub(super) fn massing(m: &Input) -> Value {
                         (true, _) => (base_eave(sn).min(2.2), 0.65),
                         _ => (base_eave(sn), 0.0),
                     };
-                    let roof = if hut && roof.kind == "cone" { Roof { rise: roof.rise * 1.12, ..roof } } else { roof };
+                    let eave_v = match exterior {
+                        "yurt" => 1.6,
+                        "tipi" => 0.1,
+                        "tree" => 11.5,
+                        "mushroom" => 2.5 + 2.0 * drng.float(),
+                        "longhouse" => 1.5,
+                        "tower" => 15.0 + 22.0 * drng.float(),
+                        _ => eave_v,
+                    };
+                    let roof = if matches!(exterior, "tree" | "mushroom") { Roof { kind: "dome", rise: radius * if exterior == "tree" { 0.95 } else { 0.65 }, ..roof } }
+                        else if hut && roof.kind == "cone" && !mage { Roof { rise: roof.rise * 1.12, ..roof } } else { roof };
                     let trim = if roof.kind == "flat" && parapet > 0.0 && flavor(m.culture) == "meso" && sn >= 1 { "red" } else { "" };
                     vols.push(Vol {
                         parapet,
                         features,
                         overhang,
                         trim,
-                        form: if tent { tr.form } else { "" },
+                        form: exterior,
                         stilts,
                         eave: eave_v,
                         n: sn,
@@ -1037,7 +1095,11 @@ pub(super) fn massing(m: &Input) -> Value {
             let t = &vols[top];
             json!({"floors":vols.iter().map(|v| v.n).max().unwrap_or(n),"eave_m":round2(t.eave),"rise_m":round2(t.roof.rise),
                 "roof":t.roof.kind,"ridges":t.roof.ridges,"cover":t.cover,"wall":t.wall,"tone":round2(lot_tone),
-                "volumes":vols.iter().map(Vol::json).collect::<Vec<_>>()})
+                "volumes":vols.iter().enumerate().map(|(j, v)| {
+                    let mut out = v.json();
+                    if v.form == "tree" { out["tree_seed"] = json!(format!("{}:tree:{}:{}", m.seed, i, j)); }
+                    out
+                }).collect::<Vec<_>>()})
         })
         .collect();
     Value::Array(out)
@@ -1051,7 +1113,7 @@ mod tests {
     }
     fn input<'a>(parts: &'a [(Shape, &'static str)], arch: &'a Value, fronts: &'a [[Point; 2]], seed: &'a str) -> Input<'a> {
         Input { parts, arch, culture: "european-organic", zone: "core", role: "dwelling.row", function: "domestic",
-            landmark: false, wealth: 0.5, pressure: 0.8, fronts, seed }
+            landmark: false, wealth: 0.5, pressure: 0.8, small_home: false, fronts, seed }
     }
 
     #[test]
@@ -1069,6 +1131,86 @@ mod tests {
     }
 
     #[test]
+    fn giant_storeys_use_the_house_metric_scale() {
+        let parts = [(rect(0.0, 0.0, 10.0, 8.0), "building")];
+        let arch = json!({"roof":"gable","storeys":[1,1],"material":"stone"});
+        let mut i = input(&parts, &arch, &[], "giant-scale");
+        let human = massing(&i);
+        i.culture = "giant-hold";
+        let giant = massing(&i);
+        assert_eq!(giant[0]["eave_m"].as_f64().unwrap(), human[0]["eave_m"].as_f64().unwrap() * 2.5);
+        assert_eq!(giant[0]["roof"], "flat", "{giant}");
+        let recipe = json!({"roof":"gable","storeys":[3,4],"material":"timber"});
+        i.arch = &recipe;
+        let tall = massing(&i);
+        assert_eq!(tall[0]["eave_m"], giant[0]["eave_m"], "giant houses keep one storey whatever the recipe: {tall}");
+    }
+
+    #[test]
+    fn culture_house_forms_have_physical_heights_and_roof_plans() {
+        let mut fixtures = vec![];
+        for (culture, form, w, d) in [
+            ("elven", "tree", 14.0, 14.0), ("myconid-colony", "mushroom", 10.0, 10.0),
+            ("mongol-ordu", "yurt", 7.0, 7.0), ("native-iroquoian", "longhouse", 40.0, 6.5),
+            ("tibetan-monastery", "battered", 14.0, 10.0), ("merfolk-tidal", "", 10.0, 8.0),
+            ("giant-hold", "", 40.0, 24.0), ("wizard-city", "", 10.0, 8.0),
+        ] {
+            let arch = super::super::catalogue()["presets"][format!("{culture}/village")]["params"]["arch"].clone();
+            let parts = [(rect(0.0, 0.0, w, d), "building")];
+            let fronts = [[Point { x: 0.0, y: 0.0 }, Point { x: w, y: 0.0 }]];
+            let mut i = input(&parts, &arch, &fronts, "houses-review");
+            i.culture = culture;
+            if culture == "wizard-city" { i.landmark = true; }
+            let m = massing(&i);
+            for v in m[0]["volumes"].as_array().unwrap() {
+                assert!(v["eave_m"].as_f64().unwrap() > 0.0, "{culture}: {m}");
+                if !form.is_empty() && culture != "elven" { assert_eq!(v["form"], form, "{culture}: {m}"); }
+            }
+            if form == "mushroom" { assert_eq!(m[0]["roof"], "dome"); }
+            if form == "longhouse" {
+                assert_eq!(m[0]["roof"], "barrel");
+                assert_eq!(m[0]["eave_m"], 1.5);
+                let r = &m[0]["ridges"][0];
+                assert!((r[2].as_f64().unwrap() - r[0].as_f64().unwrap()).abs() > 39.0);
+            }
+            if culture == "merfolk-tidal" { assert!(m[0]["volumes"][0]["stilts_m"].as_f64().unwrap() >= 2.4); }
+            fixtures.push(json!({"culture":culture,"footprint":[parts[0].0],"massing":m}));
+        }
+        if let Ok(path) = std::env::var("HOUSES_MASSING_OUT") { std::fs::write(path, serde_json::to_vec(&fixtures).unwrap()).unwrap(); }
+    }
+
+    #[test]
+    fn elven_settlements_mix_tree_and_ordinary_houses() {
+        let parts = [(rect(0.0, 0.0, 14.0, 14.0), "building")];
+        let arch = json!({"roof":"gable","storeys":[1,2],"material":"wood"});
+        let trees = (0..100).filter(|k| {
+            let seed = format!("elf-{k}");
+            let mut i = input(&parts, &arch, &[], &seed); i.culture = "elven";
+            massing(&i)[0]["volumes"].as_array().unwrap().iter().any(|v| v["form"] == "tree")
+        }).count();
+        assert!((35..=65).contains(&trees), "{trees} tree dwellings / 100 homes");
+    }
+
+    #[test]
+    fn mage_towers_are_a_frequent_varied_culture_feature() {
+        let parts = [(rect(0.0, 0.0, 10.0, 8.0), "building")];
+        let arch = json!({"roof":"hip","storeys":[2,4],"material":"stone"});
+        let mut heights = vec![];
+        for k in 0..100 {
+            let seed = format!("mage-{k}");
+            let mut i = input(&parts, &arch, &[], &seed); i.culture = "wizard-city";
+            let m = massing(&i);
+            for v in m[0]["volumes"].as_array().unwrap() {
+                if v["form"] == "tower" {
+                    assert_eq!(v["roof"], "cone"); heights.push(v["eave_m"].as_f64().unwrap());
+                }
+            }
+        }
+        assert!(heights.len() >= 20 && heights.len() <= 55, "{} towers / 100 homes", heights.len());
+        assert!(heights.iter().copied().fold(f64::MIN, f64::max) - heights.iter().copied().fold(f64::MAX, f64::min) > 10.0);
+    }
+
+    #[test]
     fn rear_annex_is_lower_than_the_street_body() {
         let parts = [(rect(0.0, 0.0, 8.0, 10.0), "building"), (rect(2.0, 10.0, 6.0, 15.0), "building")];
         let arch = json!({"roof":"gable","typology":"gabled-row-house","storeys":[3,4],"material":"timber"});
@@ -1077,6 +1219,85 @@ mod tests {
             let m = massing(&input(&parts, &arch, &fronts, seed));
             assert!(m[1]["eave_m"].as_f64() < m[0]["eave_m"].as_f64(), "{m}");
             assert_eq!(m[1]["roof"], "shed", "{m}");
+        }
+    }
+
+    #[test]
+    fn small_homes_follow_distance_and_poverty_without_changing_the_core() {
+        let parts = [(rect(0.0, 0.0, 24.0, 12.0), "building")];
+        let arch = json!({"roof":"gable","storeys":[2,4],"material":"timber"});
+        let share = |zone: &str, district: &str, wealth: f64, distance: f64, outside: bool, farm: bool| {
+            let mut single = 0;
+            for k in 0..1000 {
+                let seed = format!("houses2-{k}");
+                let mut m = input(&parts, &arch, &[], &seed);
+                m.zone = zone; m.wealth = wealth; m.pressure = 0.5;
+                let old = massing(&m);
+                let area = super::super::house_mix::HomeContext {
+                    zone, district, wealth, pressure:m.pressure, distance, outside, farm,
+                }.area_scale(&seed);
+                m.small_home = area < 1.0;
+                let new = massing(&m);
+                assert_eq!(new, massing(&m), "deterministic per lot");
+                if m.small_home {
+                    assert_eq!(new[0]["floors"], 1, "no raised section: {new}");
+                    assert!(volumes_of(&new, 0).iter().all(|v| v["floors"] == 1));
+                    assert!((if zone == "middle" && !outside && !farm { 0.88..=0.93 } else { 0.7..=1.0 }).contains(&area));
+                } else { assert_eq!(old, new, "unselected lots keep every original draw"); }
+                single += usize::from(new[0]["floors"] == 1);
+            }
+            single as f64 / 1000.0
+        };
+        let core = share("core", "poor", 0.1, 2.0, true, true);
+        let middle = share("middle", "commoner", 0.5, 0.4, false, false);
+        let poor = share("middle", "poor", 0.25, 0.4, false, false);
+        let low_wealth = share("middle", "commoner", 0.25, 0.4, false, false);
+        let near = share("edge", "commoner", 0.5, 0.55, false, false);
+        let far = share("edge", "commoner", 0.5, 1.0, false, false);
+        assert_eq!(core, 0.0); assert_eq!(middle, 0.0);
+        assert!((0.45..=0.55).contains(&poor), "poor: {poor}");
+        assert_eq!(poor, low_wealth);
+        assert!(near > middle && far > near && far > poor, "{middle} {near} {far} {poor}");
+        for (zone, district, outside, farm) in [
+            ("faubourg", "commoner", false, false), ("village", "commoner", false, false),
+            ("middle", "commoner", true, false), ("middle", "commoner", false, true),
+            ("edge", "gardens", false, false), ("edge", "poor", true, false),
+        ] {
+            let fringe = share(zone, district, 0.5, 1.0, outside, farm);
+            assert!((0.6..=0.7).contains(&fringe), "{zone}/{district}: {fringe}");
+        }
+        eprintln!("houses2 single-storey shares: core={core:.3}, middle={middle:.3}, near={near:.3}, fringe={far:.3}, poor={poor:.3}");
+    }
+
+    #[test]
+    fn small_home_selection_preserves_landmarks_towers_and_cultural_forms() {
+        let parts = [(rect(0.0, 0.0, 24.0, 12.0), "building")];
+        let arch = json!({"roof":"gable","storeys":[2,4],"material":"timber"});
+        for culture in ["giant-hold", "mongol-ordu", "native-iroquoian", "myconid-colony", "wizard-city", "hadhrami-tower"] {
+            let mut m = input(&parts, &Value::Null, &[], "protected");
+            m.zone = "faubourg"; m.culture = culture;
+            let old = massing(&m); m.small_home = true;
+            assert_eq!(old, massing(&m), "{culture}");
+            if culture == "giant-hold" {
+                assert_eq!(old[0]["floors"], 1);
+                assert_eq!(old[0]["roof"], "flat");
+            }
+        }
+        for k in 0..100 {
+            let seed = format!("elf-{k}");
+            let mut m = input(&parts, &arch, &[], &seed);
+            m.zone = "faubourg"; m.culture = "elven";
+            let old = massing(&m); m.small_home = true;
+            let new = massing(&m);
+            let trees = |v: &Value| volumes_of(v, 0).iter().filter(|v| v["form"] == "tree").count();
+            assert_eq!(trees(&old), trees(&new));
+            if trees(&old) > 0 { assert_eq!(old, new); }
+        }
+        let tower = [(parts[0].0.clone(), "tower")];
+        for (zone, landmark, parts) in [("core", false, parts.as_slice()), ("faubourg", true, parts.as_slice()), ("faubourg", false, tower.as_slice())] {
+            let mut m = input(parts, &arch, &[], "protected"); m.zone = zone; m.landmark = landmark;
+            let old = massing(&m); m.small_home = true;
+            assert_eq!(old, massing(&m));
         }
     }
 

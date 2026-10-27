@@ -6,6 +6,13 @@ use std::collections::{BTreeMap, BTreeSet};
 type Key = (i64, i64);
 const EPS: f64 = 1e-6;
 
+/// A retained connection without built frontage is a field/access path.
+pub(super) fn downgrade_path(s: &mut Street) {
+    s.role = "track".into();
+    s.rank = 4;
+    s.widths = (0..s.path.len()).map(|i| s.widths.get(i).or(s.widths.last()).copied().unwrap_or(2.0).min(2.0)).collect();
+}
+
 fn key(p: Point) -> Key {
     (
         (p.x * 10000.0).round() as i64,
@@ -1590,7 +1597,8 @@ fn candidates(segments: &[Segment], cell: f64) -> BTreeSet<(usize, usize)> {
         );
         let axis = |a: f64, b: f64, index: i64| {
             let delta = b - a;
-            if delta.abs() < 1e-12 {
+            // Even a sub-epsilon delta can straddle a bucket boundary.
+            if delta == 0.0 {
                 (0, f64::INFINITY, f64::INFINITY)
             } else {
                 let step = if delta > 0.0 { 1 } else { -1 };
@@ -1721,10 +1729,14 @@ fn planarize(streets: &mut Vec<Street>, radius: f64) {
         s.path = path;
         s.widths = widths;
     }
-    // A regional axis wins over a generated copy; otherwise preserve the more
-    // important street. Every ownership decision is stable in input order.
+    // Water supports keep their roles, then a regional axis wins over a
+    // generated copy. Every ownership decision is stable in input order.
     let mut order: Vec<_> = (0..streets.len()).collect();
-    order.sort_by_key(|&i| (!protected(&streets[i]), streets[i].rank, i));
+    order.sort_by_key(|&i| {
+        let s = &streets[i];
+        let support = match s.role.as_str() { "bridge" => 0, "quay" => 1, "ford" | "causeway" => 2, _ if protected(s) => 3, _ => 4 };
+        (support, s.rank, i)
+    });
     let mut used = BTreeSet::new();
     let mut unique = vec![];
     for i in order {
@@ -2196,6 +2208,7 @@ pub(super) fn join_crossings(
         .collect();
     if abutments.is_empty() {
         footbridges(streets, surface, max_grade);
+        bridge_water(streets, surface, max_grade);
         return;
     }
     snap_to_abutments(streets, surface, max_grade);
@@ -2268,10 +2281,11 @@ pub(super) fn join_crossings(
         }
     }
     footbridges(streets, surface, max_grade);
+    bridge_water(streets, surface, max_grade);
 }
 
-/// Longest footbridge a town lays over a brook (m).
-const FOOTBRIDGE: f64 = 16.0;
+/// Opposite built banks can need a river bridge as well as a brook footbridge.
+const FOOTBRIDGE: f64 = 400.0;
 /// Invariant (a brook is crossed where its streets meet it): two streets
 /// ending loose on opposite banks of narrow water, each heading for the
 /// other a few metres away, are one way the stream cuts, and a footbridge
@@ -2328,23 +2342,15 @@ fn footbridges(streets: &mut Vec<Street>, surface: super::Surface<'_>, max_grade
         }
     }
     pairs.sort_by(|p, q| p.0.total_cmp(&q.0).then(p.1.cmp(&q.1)));
-    let mut crossings: Vec<Point> = streets
-        .iter()
-        .filter(|s| span(s))
-        .flat_map(|s| s.path.iter().copied())
-        .collect();
     let mut used = BTreeSet::new();
     for (_, x, y) in pairs {
         let (a, b) = (ends[x], ends[y]);
-        let mid = lerp(a.2, b.2, 0.5);
         if used.contains(&x)
             || used.contains(&y)
-            || crossings.iter().any(|&p| distance(p, mid) < 30.0)
         {
             continue;
         }
         used.extend([x, y]);
-        crossings.push(mid);
         let end_width = |i: usize, at_end: bool| {
             width(&streets[i], if at_end { streets[i].path.len() - 1 } else { 0 })
         };
@@ -2356,6 +2362,483 @@ fn footbridges(streets: &mut Vec<Street>, surface: super::Surface<'_>, max_grade
             role: "bridge".into(),
         });
     }
+}
+
+/// Wet runs are crossing candidates. Apply before importing roads and after
+/// the last trim: bank snapping and waterfront joints can introduce wet metres.
+/// Nearby parallel decks share dry approaches on each bank, never a wet link.
+pub(super) fn bridge_water(streets: &mut Vec<Street>, surface: super::Surface<'_>, max_grade: f64) {
+    bridge_water_inner(streets, surface, None, max_grade);
+}
+pub(super) fn bridge_water_on_ground<'a>(streets: &mut Vec<Street>, surface: super::Surface<'a>, physical: super::Surface<'a>, max_grade: f64) {
+    bridge_water_inner(streets, surface, Some(physical), max_grade);
+}
+fn bridge_water_inner<'a>(streets: &mut Vec<Street>, surface: super::Surface<'a>, physical: Option<super::Surface<'a>>, max_grade: f64) {
+    let _profile = super::routing::Profile::new("bridge_water");
+    #[cfg(test)]
+    if let Some(dir) = std::env::var_os("BRIDGE_CAPTURE") {
+        thread_local! { static PASS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
+        let pass = PASS.with(|p| { let i = p.get(); p.set(i + 1); i });
+        std::fs::write(std::path::Path::new(&dir).join(format!("streets-{pass}.json")), serde_json::to_vec(streets).unwrap()).unwrap();
+    }
+    use super::{footprint::crossings, geometry as g, routing};
+    struct Request<'a> { a: Point, b: Point, middle: Point, width: f64, rank: usize, path: Vec<Point>, retain: bool, crossing: bool, surface: super::Surface<'a> }
+    let mut requests = vec![];
+    let mut dry = vec![];
+    let ground = surface;
+    let mut junctions: BTreeMap<Key, usize> = BTreeMap::new();
+    for s in streets.iter() { for &p in &s.path { *junctions.entry(key(p)).or_default() += 1; } }
+    let mut bank_junctions = BTreeSet::new();
+    if let Some(physical) = physical {
+        for s in streets.iter().filter(|s| !matches!(s.role.as_str(), "pier" | "mole" | "landing")) {
+            for w in s.path.windows(2) {
+                for (p, q) in [(w[0], w[1]), (w[1], w[0])] {
+                    // A vector/raster seam can leave the shore joint just wet.
+                    let inside = lerp(p, q, (1.0 / distance(p, q).max(EPS)).min(0.5));
+                    if routing::segment_clear(physical, inside, q, f64::INFINITY) { bank_junctions.insert(key(p)); }
+                }
+            }
+        }
+    }
+    let waterfront: Vec<_> = streets.iter().filter(|s| s.role == "quay").flat_map(|s|
+        s.path.windows(2).map(|w| (w[0], w[1], s.widths.iter().copied().fold(1.0, f64::max) * 0.5 + 0.5))).collect();
+    let old = std::mem::take(streets);
+    for mut s in old {
+        // A stilt walkway returning to streets on both physical banks is a
+        // crossing, even when reclaimed shallows hid the river during planning.
+        if s.role == "pier" && s.path.len() >= 2 && [s.path[0], *s.path.last().unwrap()].iter().all(|p| bank_junctions.contains(&key(*p))) {
+            s.role = "bridge".into();
+        }
+        // Built waterfront platforms have their own support geometry.
+        if s.path.len() < 2 || matches!(s.role.as_str(), "quay" | "pier" | "mole" | "landing") {
+            dry.push(s); continue;
+        }
+        let surface = if s.role == "bridge" { physical.unwrap_or(surface) } else { surface };
+        let mut stations = vec![0.0];
+        let mut wet: Vec<(f64, f64)> = vec![];
+        for w in s.path.windows(2) {
+            let start = *stations.last().unwrap(); let len = distance(w[0], w[1]);
+            for (a, b) in routing::water_intervals(surface, w[0], w[1]) {
+                let (a, b) = (start + a * len, start + b * len);
+                if let Some(last) = wet.last_mut().filter(|last| a - last.1 < 0.01) { last.1 = b; }
+                else { wet.push((a, b)); }
+            }
+            stations.push(start + len);
+        }
+        if wet.is_empty() {
+            if s.role == "bridge" && physical.is_some() { s.role = "approach".into(); }
+            dry.push(s); continue;
+        }
+        let total = *stations.last().unwrap();
+        let retain = s.role == "bridge" && wet.len() == 1 && !surface.wet(s.path[0]) && !surface.wet(*s.path.last().unwrap())
+            && s.path.iter().all(|&p| g::distance(p, s.path[0], *s.path.last().unwrap()).0 < 0.05);
+        let at = |t: f64| {
+            let i = stations.partition_point(|&v| v < t).clamp(1, stations.len() - 1);
+            lerp(s.path[i - 1], s.path[i], (t - stations[i - 1]) / (stations[i] - stations[i - 1]).max(1e-9))
+        };
+        let slice = |a: f64, b: f64| {
+            let mut path = vec![at(a)];
+            path.extend(s.path.iter().zip(&stations).filter(|(_, t)| **t > a + EPS && **t < b - EPS).map(|(&p, _)| p));
+            path.push(at(b)); path
+        };
+        let role = if matches!(s.role.as_str(), "bridge" | "ford" | "causeway") { "approach" } else { &s.role };
+        let w = s.widths.iter().copied().fold(1.0, f64::max);
+        let mut cursor = 0.0;
+        for (i, &(from, to)) in wet.iter().enumerate() {
+            let landing = (surface.width / surface.n as f64 * 6.0).clamp(2.0, 45.0).min(((to - from) * 0.5).max(2.0));
+            let next = wet.get(i + 1).map_or(total, |next| (to + next.0) * 0.5);
+            let mut a = if retain { 0.0 } else { (from - landing).max(cursor) };
+            let mut b = if retain { total } else { (to + landing).min(next) };
+            if !retain {
+                let step = (surface.width / surface.n as f64 * 0.5).clamp(1.0, 4.0);
+                let radius = (step * 0.5).min(1.0);
+                let land = |p: Point| [(0.0, 0.0), (radius, 0.0), (-radius, 0.0), (0.0, radius), (0.0, -radius)].iter()
+                    .all(|&(x, y)| !surface.wet(Point { x: p.x + x, y: p.y + y }));
+                while a > cursor.max(from - 200.0) && (!land(at(a)) || !routing::segment_clear(surface, at((a - step).max(cursor)), at(a), max_grade)) { a = (a - step).max(cursor); }
+                while b < next.min(to + 200.0) && (!land(at(b)) || !routing::segment_clear(surface, at(b), at((b + step).min(next)), max_grade)) { b = (b + step).min(next); }
+            }
+            if a > cursor + EPS { let path = slice(cursor, a);
+                dry.push(Street { widths: vec![w; path.len()], path, rank: s.rank, role: role.into() });
+            }
+            requests.push(Request { a: at(a), b: at(b), middle: at((from + to) * 0.5), width: w, rank: s.rank, path: slice(a, b), retain, crossing: s.role == "bridge", surface });
+            cursor = b;
+        }
+        if cursor < total - EPS { let path = slice(cursor, total);
+            dry.push(Street { widths: vec![w; path.len()], path, rank: s.rank, role: role.into() });
+        }
+    }
+    if requests.is_empty() { *streets = dry; return; }
+    requests.sort_by(|a, b| a.rank.cmp(&b.rank).then_with(|| b.width.total_cmp(&a.width)));
+    let mut decks: Vec<Street> = vec![];
+    let approach_uncached = |surface: super::Surface<'_>, a: Point, b: Point, local: bool| -> Option<Vec<Point>> {
+        if distance(a, b) < 0.05 { return Some(vec![]); }
+        if surface.wet(a) { return None; }
+        if routing::segment_clear(surface, a, b, max_grade) { return Some(vec![a, b]); }
+        if routing::segment_clear(surface, a, b, f64::INFINITY) { return Some(vec![a, b]); }
+        // A local crossing joins nearby streets; it does not invent a long
+        // bank road to make a difficult landing work.
+        if local && distance(a, b) > 120.0 { return None; }
+        for (margin, fine) in [(30.0, false), (30.0, true), (150.0, true)] {
+            if local && fine { continue; }
+            let bounds = (a.x.min(b.x) - margin, a.y.min(b.y) - margin, a.x.max(b.x) + margin, a.y.max(b.y) + margin);
+            let mut planner = if fine { routing::RoutePlanner::bank(surface, bounds) } else { routing::RoutePlanner::new(surface, bounds) };
+            if let Some(path) = planner.route(a, b, max_grade) { return Some(path); }
+        }
+        // A raised bank approach carries the road above a steep bed edge.
+        // It still stays on this bank; its causeway record provides support.
+        let margin = if local { 30.0 } else { 150.0 };
+        let mut planner = routing::RoutePlanner::bank(surface, (a.x.min(b.x) - margin, a.y.min(b.y) - margin, a.x.max(b.x) + margin, a.y.max(b.y) + margin));
+        if !local && let Some(path) = planner.route(a, b, 1e6) { return Some(path); }
+        let mut planner = routing::RoutePlanner::raised_bank(surface, (a.x.min(b.x) - margin, a.y.min(b.y) - margin, a.x.max(b.x) + margin, a.y.max(b.y) + margin));
+        planner.route(a, b, 1e6)
+    };
+    // Alternate deck positions and nearby segment projections revisit the same
+    // ramps. Cache failures as well as paths, on this exact planning surface.
+    let approach_cache = std::cell::RefCell::new(std::collections::HashMap::<_, Option<Vec<Point>>>::new());
+    let approach = |surface: super::Surface<'_>, a: Point, b: Point, local: bool| -> Option<Vec<Point>> {
+        let k = (surface.geometry.map_or(0, |g| g as *const _ as usize),
+            surface.height.as_ptr() as usize, surface.water.as_ptr() as usize, surface.n, surface.width.to_bits(),
+            a.x.to_bits(), a.y.to_bits(), b.x.to_bits(), b.y.to_bits(), local);
+        if let Some(path) = approach_cache.borrow().get(&k) { return path.clone(); }
+        let path = approach_uncached(surface, a, b, local);
+        approach_cache.borrow_mut().insert(k, path.clone());
+        path
+    };
+    let bank_street = |surface: super::Surface<'_>, path: Vec<Point>, width: f64, rank: usize| {
+        let role = if routing::path_clear(surface, &path, max_grade) { "approach" } else { "causeway" };
+        Street { widths: vec![width; path.len()], path, rank, role: role.into() }
+    };
+    // Old deck records can contain long dry approaches and their junctions.
+    // Keep that bank network available while choosing the shorter wet span.
+    for r in &requests { for w in r.path.windows(2) {
+        let mut cursor = 0.0;
+        for (a, b) in routing::water_intervals(r.surface, w[0], w[1]).into_iter().chain(std::iter::once((1.0, 1.0))) {
+            if a - cursor > 1e-6 {
+                let (mut p, mut q) = (lerp(w[0], w[1], cursor), lerp(w[0], w[1], a));
+                let step = (r.surface.width / r.surface.n as f64 * 0.5).clamp(0.5, 2.0);
+                for _ in 0..24 {
+                    let length = distance(p, q);
+                    if length <= step * 2.0 { break; }
+                    let (next, before) = (lerp(p, q, step / length), lerp(q, p, step / length));
+                    let trim_start = !routing::segment_clear(r.surface, p, next, max_grade);
+                    let trim_end = !routing::segment_clear(r.surface, before, q, max_grade);
+                    if !trim_start && !trim_end { break; }
+                    if trim_start { p = next; } if trim_end { q = before; }
+                }
+                if routing::segment_clear(r.surface, p, q, max_grade) {
+                    dry.push(bank_street(r.surface, vec![p, q], r.width, r.rank));
+                }
+            }
+            cursor = b;
+        }
+    }}
+    let bank_segments: Vec<_> = dry.iter().filter(|s| !matches!(s.role.as_str(), "pier" | "mole" | "landing"))
+        .flat_map(|s| s.path.windows(2).map(|w| (w[0], w[1]))).collect();
+    let bank_graph = Graph::new(&dry);
+    let ramps = |r: &Request<'_>, ends: [Point; 2]| -> Option<Vec<Vec<Point>>> {
+        let joint = |p: Point, end: Point| -> Option<Vec<Point>> {
+            if distance(p, end) < 0.05 { return Some(vec![]); }
+            if routing::segment_clear(r.surface, p, end, max_grade) { return Some(vec![p, end]); }
+            // A clipped bank tip need not be the junction: use an existing
+            // street on this bank and let planarization share the new point.
+            let mut nearby: Vec<_> = bank_segments.iter().filter_map(|&(a, b)| {
+                let (d, _, q) = g::distance(end, a, b);
+                (d < 200.0 && distance(p, q) < distance(p, end) + 80.0 && !r.surface.wet(q))
+                    .then_some((d + distance(p, q) * 0.25, q, a, b))
+            }).collect();
+            nearby.sort_by(|a, b| a.0.total_cmp(&b.0));
+            // Use streets already connected on this bank before searching a
+            // long new detour from the old oblique crossing's landing.
+            for &(_, q, a, _) in nearby.iter().take(12) {
+                if !routing::segment_clear(r.surface, q, end, f64::INFINITY) { continue; }
+                let joined = bank_graph.component.get(&key(p)).is_some_and(|c| bank_graph.component.get(&key(a)) == Some(c));
+                if joined { return Some(vec![q, end]); }
+                if routing::segment_clear(r.surface, p, q, f64::INFINITY) { return Some(vec![p, q, end]); }
+            }
+            if let Some(path) = approach(r.surface, p, end, r.rank > 1) { return Some(path); }
+            for (_, q, a, b) in nearby.into_iter().take(12) {
+                if [a, b].iter().any(|&p| routing::segment_clear(r.surface, q, p, f64::INFINITY))
+                    && let Some(path) = approach(r.surface, q, end, r.rank > 1) { return Some(path); }
+            }
+            None
+        };
+        let mut paths = vec![joint(r.a, ends[0])?, joint(r.b, ends[1])?];
+        // Bank ramps may swallow a quay/street junction between the old
+        // landing and the water. Keep its identity and attach it on land.
+        for (i, &p) in r.path.iter().enumerate() {
+            if p == r.a || p == r.b || r.surface.wet(p) || junctions.get(&key(p)).copied().unwrap_or(0) < 2 { continue; }
+            let before = &r.path[..=i]; let after = &r.path[i..];
+            if routing::path_clear(r.surface, before, f64::INFINITY) { paths.push(before.to_vec()); continue; }
+            if routing::path_clear(r.surface, after, f64::INFINITY) { paths.push(after.to_vec()); continue; }
+            let end = if distance(p, ends[0]) < distance(p, ends[1]) { ends[0] } else { ends[1] };
+            paths.push(approach(r.surface, p, end, r.rank > 1)?);
+        }
+        Some(paths)
+    };
+    for r in requests {
+        let surface = r.surface;
+        // Reclaimed/stilt ground changes where streets can stand, not the
+        // river's flow. Fit every deck against the physical channel.
+        let channel_surface = physical.unwrap_or(surface);
+        let supported = |p: Point| !surface.wet(p)
+            || (!r.crossing && physical.is_some() && !ground.wet(p))
+            || waterfront.iter().any(|&(a, b, width)| g::distance(p, a, b).0 <= width);
+        let on_platform = r.path.windows(2).all(|w| {
+            let steps = (distance(w[0], w[1]) / 1.0).ceil().max(1.0) as usize;
+            (0..=steps).all(|i| { let p = lerp(w[0], w[1], i as f64 / steps as f64);
+                supported(p)
+            })
+        });
+        if on_platform {
+            // A supported quay joint is a causeway, not a second quay branch.
+            decks.push(Street { widths: vec![r.width; r.path.len()], path: r.path, rank: r.rank, role: "causeway".into() });
+            continue;
+        }
+        let middle = if surface.wet(r.middle) { r.middle } else {
+            r.path.windows(2).flat_map(|w| routing::water_intervals(surface, w[0], w[1]).into_iter().map(move |(a, b)|
+                ((b - a) * distance(w[0], w[1]), lerp(w[0], w[1], (a + b) * 0.5))))
+                .max_by(|a, b| a.0.total_cmp(&b.0)).map_or(r.middle, |v| v.1)
+        };
+        let Some(mut ends) = crossings::deck(channel_surface, middle) else {
+            #[cfg(test)]
+            if std::env::var_os("BRIDGE_TRACE").is_some() { eprintln!("bridge/no-banks {:?} {:?}, middle {middle:?}", r.a, r.b); }
+            if let Some(path) = approach(surface, r.a, r.b, r.rank > 1).filter(|p| p.len() >= 2) { dry.push(bank_street(surface, path, r.width, r.rank)); }
+            continue;
+        };
+        if distance(r.a, ends[0]) > distance(r.a, ends[1]) { ends.swap(0, 1); }
+        if r.retain {
+            let (dx, dy) = (r.b.x - r.a.x, r.b.y - r.a.y);
+            let cosine = (dx * (ends[1].x - ends[0].x) + dy * (ends[1].y - ends[0].y)).abs() / (distance(r.a, r.b) * distance(ends[0], ends[1])).max(1e-9);
+            if cosine >= 15.0_f64.to_radians().cos() && distance(r.a, r.b) <= distance(ends[0], ends[1]) + 4.0 { ends = [r.a, r.b]; }
+        }
+        let length = distance(ends[0], ends[1]);
+        let u = ((ends[1].x - ends[0].x) / length, (ends[1].y - ends[0].y) / length);
+        let mid = lerp(ends[0], ends[1], 0.5);
+        let channel = routing::water_intervals(surface, ends[0], ends[1]).into_iter()
+            .max_by(|a, b| (a.1 - a.0).total_cmp(&(b.1 - b.0)))
+            .map_or(mid, |(a, b)| lerp(ends[0], ends[1], (a + b) * 0.5));
+        let side = |p: Point| (p.x - channel.x) * u.0 + (p.y - channel.y) * u.1;
+        // A chord clipping a bend can enter water and return to the same
+        // bank. Keep that street on land instead of bridging along the flow.
+        if !surface.wet(r.a) && !surface.wet(r.b) && side(r.a) * side(r.b) > 0.0 {
+            let path = approach(surface, r.a, r.b, r.rank > 1).or_else(|| {
+                let margin = 150.0;
+                let mut planner = routing::RoutePlanner::new(surface, (r.a.x.min(r.b.x) - margin, r.a.y.min(r.b.y) - margin, r.a.x.max(r.b.x) + margin, r.a.y.max(r.b.y) + margin));
+                planner.route(r.a, r.b, max_grade)
+            });
+            if let Some(path) = path {
+                for &p in &r.path {
+                    if surface.wet(p) || junctions.get(&key(p)).copied().unwrap_or(0) < 2 { continue; }
+                    let Some((_, _, target)) = path.windows(2).map(|w| g::distance(p, w[0], w[1])).min_by(|a, b| a.0.total_cmp(&b.0)) else { continue; };
+                    if let Some(branch) = approach(surface, p, target, r.rank > 1).filter(|p| p.len() >= 2) {
+                        dry.push(bank_street(surface, branch, r.width, r.rank));
+                    }
+                }
+                if path.len() >= 2 { dry.push(bank_street(surface, path, r.width, r.rank)); }
+                continue;
+            }
+            // No buildable shortcut on this bank: retain its dry approaches,
+            // rather than inventing a deck that runs along the watercourse.
+            for w in r.path.windows(2) {
+                let mut cursor = 0.0;
+                for (a, b) in routing::water_intervals(surface, w[0], w[1]).into_iter().chain(std::iter::once((1.0, 1.0))) {
+                    if a - cursor > 1e-6 {
+                        let path = vec![lerp(w[0], w[1], cursor), lerp(w[0], w[1], a)];
+                        dry.push(Street { widths: vec![r.width; 2], path, rank: r.rank, role: "approach".into() });
+                    }
+                    cursor = b;
+                }
+            }
+            continue;
+        }
+        let mut own_paths = ramps(&r, ends);
+        if own_paths.is_none() {
+            ends.swap(0, 1); own_paths = ramps(&r, ends);
+            if own_paths.is_none() { ends.swap(0, 1); }
+        }
+        if own_paths.is_none() {
+            // Move a perpendicular span along the channel until both landings
+            // admit ramps. The road turns on land, never on the deck.
+            for offset in [12.0, -12.0, 24.0, -24.0, 48.0, -48.0, 96.0, -96.0] {
+                let p = Point { x: middle.x - u.1 * offset, y: middle.y + u.0 * offset };
+                let Some(mut candidate) = crossings::deck(channel_surface, p) else { continue; };
+                if distance(r.a, candidate[0]) > distance(r.a, candidate[1]) { candidate.swap(0, 1); }
+                let mut paths = ramps(&r, candidate);
+                if paths.is_none() { candidate.swap(0, 1); paths = ramps(&r, candidate); }
+                if let Some(paths) = paths { ends = candidate; own_paths = Some(paths); break; }
+            }
+        }
+        let length = distance(ends[0], ends[1]);
+        let u = ((ends[1].x - ends[0].x) / length, (ends[1].y - ends[0].y) / length);
+        let mid = lerp(ends[0], ends[1], 0.5);
+        let mut merged = false;
+        for d in &mut decks {
+            if d.role != "bridge" { continue; }
+            let (a, b) = (d.path[0], *d.path.last().unwrap());
+            let len = distance(a, b); let v = ((b.x - a.x) / len, (b.y - a.y) / len);
+            let other = lerp(a, b, 0.5);
+            if (u.0 * v.0 + u.1 * v.1).abs() < 15.0_f64.to_radians().cos()
+                || distance(mid, other) > (30.0 + 2.0 * length.max(len)).min(200.0)
+                || !(1..4).all(|k| surface.wet(lerp(mid, other, k as f64 / 4.0))) { continue; }
+            let mut target = if distance(r.a, a) < distance(r.a, b) { [a, b] } else { [b, a] };
+            if [r.a, r.b].iter().any(|&p| surface.wet(p) && g::distance(p, a, b).0 > 0.05) { continue; }
+            let mut paths = ramps(&r, target);
+            if paths.is_none() { target.swap(0, 1); paths = ramps(&r, target); }
+            let Some(paths) = paths else { continue; };
+            for path in paths.into_iter().filter(|p| p.len() >= 2) {
+                dry.push(bank_street(surface, path, r.width, r.rank));
+            }
+            for w in &mut d.widths { *w = w.max(r.width); }
+            merged = true; break;
+        }
+        if merged { continue; }
+        let paths = own_paths;
+        // A crossing needs both ramps; an isolated deck serves neither bank.
+        if paths.is_none() {
+            #[cfg(test)]
+            if std::env::var_os("BRIDGE_TRACE").is_some() { eprintln!("bridge/no-ramps {:?} {:?}, deck {ends:?}, wet={}/{}", r.a, r.b, surface.wet(r.a), surface.wet(r.b)); }
+            for (a, b) in [(r.a, ends[0]), (r.b, ends[1])] {
+                if let Some(path) = approach(surface, a, b, r.rank > 1).filter(|p| p.len() >= 2) { dry.push(bank_street(surface, path, r.width, r.rank)); }
+            }
+            continue;
+        }
+        for path in paths.unwrap().into_iter().filter(|p| p.len() >= 2) {
+            dry.push(bank_street(surface, path, r.width, r.rank));
+        }
+        decks.push(Street { path: ends.to_vec(), widths: vec![r.width; 2], rank: r.rank, role: "bridge".into() });
+    }
+    dry.extend(decks); *streets = dry;
+    planarize(streets, surface.width * 0.25);
+}
+
+/// Keep useful, spaced crossings after the last land/stilt trim. Streets on
+/// rejected crossings keep their dry bank ends. Only connectivity between
+/// served bank networks can justify a second bridge inside the catchment.
+pub(super) fn select_bridges(layout: &mut super::Layout, population: u32, surface: super::Surface<'_>, roads: &[Street]) {
+    let _profile = super::routing::Profile::new("bridge_select");
+    use super::{footprint::crossings, geometry as g, routing};
+    let streets = &mut layout.streets;
+    if !streets.iter().any(|s| s.role == "bridge") { return; }
+    let land: Vec<_> = streets.iter().filter(|s| s.role != "bridge").cloned().collect();
+    let spans: Vec<_> = streets.iter().filter(|s| s.role == "bridge").cloned().collect();
+    let banks = Graph::new(&land);
+    let bridges = Graph::new(&spans);
+    let blocks: Vec<_> = layout.blocks.iter().filter(|b| b.kind == "block")
+        .map(|b| (g::bbox(&b.shape), &b.shape)).collect();
+    let mut served = vec![false; banks.length.len()];
+    let mut frontage = vec![0.0; served.len()];
+    for s in &land {
+        let Some(&c) = s.path.first().and_then(|p| banks.component.get(&key(*p))) else { continue; };
+        let length: f64 = s.path.windows(2).map(|w| distance(w[0], w[1])).sum();
+        // Outbound transport serves the countryside even without urban lots.
+        if matches!(s.role.as_str(), "regional" | "outbound") && length >= 40.0 { served[c] = true; }
+        if served[c] || matches!(s.role.as_str(), "track" | "causeway" | "pier" | "mole" | "landing") { continue; }
+        let reach = s.widths.iter().copied().fold(1.0, f64::max) * 0.5 + 12.0;
+        for w in s.path.windows(2) {
+            let length = distance(w[0], w[1]);
+            let n = (length / 10.0).ceil().max(1.0) as usize;
+            for i in 0..n {
+                let p = lerp(w[0], w[1], (i as f64 + 0.5) / n as f64);
+                if blocks.iter().any(|&((x0, y0, x1, y1), b)| {
+                    p.x >= x0 - reach && p.x <= x1 + reach && p.y >= y0 - reach && p.y <= y1 + reach
+                        && (g::contains(b, p) || b.outer.iter().zip(b.outer.iter().cycle().skip(1)).take(b.outer.len())
+                            .any(|(&a, &b)| g::distance(p, a, b).0 <= reach))
+                }) { frontage[c] += length / n as f64; }
+            }
+        }
+        served[c] |= frontage[c] >= 12.0;
+    }
+    // A regional bridge can land just outside the clipped town. Carry its
+    // existing road on far enough to show the outward connection as well.
+    let exposed: BTreeSet<_> = spans.iter().flat_map(|s| [s.path[0], *s.path.last().unwrap()])
+        .filter_map(|p| banks.component.get(&key(p)).copied()).filter(|&c| !served[c]).collect();
+    let mut outward = vec![];
+    for s in roads.iter().filter(|s| matches!(s.role.as_str(), "regional" | "outbound")) {
+        for reverse in [false, true] {
+            let mut path = s.path.clone(); if reverse { path.reverse(); }
+            if path.first().and_then(|p| banks.component.get(&key(*p))).is_none_or(|c| !exposed.contains(c)) { continue; }
+            let mut kept = vec![path[0]]; let mut left = 120.0;
+            for w in path.windows(2) {
+                let length = distance(w[0], w[1]);
+                if length >= left { kept.push(lerp(w[0], w[1], left / length)); left = 0.0; break; }
+                kept.push(w[1]); left -= length;
+            }
+            if left <= 80.0 && routing::path_clear(surface, &kept, f64::INFINITY) {
+                outward.push(Street { widths: vec![width(s, 0); kept.len()], path: kept, rank: s.rank, role: s.role.clone() });
+            }
+        }
+    }
+    if !outward.is_empty() {
+        streets.extend(outward);
+        select_bridges(layout, population, surface, &[]);
+        return;
+    }
+    struct Candidate { parts: Vec<usize>, banks: BTreeSet<usize>, middle: Point, direction: (f64, f64), span: f64, rank: usize, width: f64, valid: bool }
+    let mut candidates: Vec<_> = (0..bridges.length.len()).map(|_| Candidate {
+        parts: vec![], banks: BTreeSet::new(), middle: Point { x: 0.0, y: 0.0 }, direction: (0.0, 0.0),
+        span: 0.0, rank: usize::MAX, width: 0.0, valid: true,
+    }).collect();
+    for (i, s) in streets.iter().enumerate().filter(|(_, s)| s.role == "bridge") {
+        let c = &mut candidates[bridges.component[&key(s.path[0])]];
+        c.parts.push(i); c.rank = c.rank.min(s.rank);
+        c.width = c.width.max(s.widths.iter().copied().fold(1.0, f64::max));
+        let (a, b) = (s.path[0], *s.path.last().unwrap());
+        let length = distance(a, b);
+        let wet = routing::water_intervals(surface, a, b);
+        let span = wet.iter().map(|&(lo, hi)| (hi - lo) * length).sum::<f64>();
+        if span > c.span {
+            c.span = span; c.direction = ((b.x - a.x) / length, (b.y - a.y) / length);
+            c.middle = wet.into_iter()
+                .max_by(|a, b| (a.1 - a.0).total_cmp(&(b.1 - b.0)))
+                .map_or(lerp(a, b, 0.5), |(lo, hi)| lerp(a, b, (lo + hi) * 0.5));
+        }
+    }
+    for (&p, &i) in &bridges.component {
+        let c = &mut candidates[i];
+        let bank = banks.component.get(&p).copied().filter(|&b| served[b]);
+        if let Some(b) = bank { c.banks.insert(b); }
+        // Include split decks as one crossing, but never accept a free end.
+        if bridges.neighbors[&p].len() == 1 && bank.is_none() { c.valid = false; }
+    }
+    #[cfg(test)]
+    if std::env::var_os("BRIDGE_TRACE").is_some() {
+        for c in &candidates { eprintln!("bridge/select {} rank={} span={:.1} valid={} served={:?} at {:?}", layout.culture, c.rank, c.span, c.valid, c.banks, c.middle); }
+    }
+    let mut order: Vec<_> = (0..candidates.len()).filter(|&i| candidates[i].valid && candidates[i].span > EPS && !candidates[i].banks.is_empty()).collect();
+    order.sort_by(|&a, &b| {
+        let (a, b) = (&candidates[a], &candidates[b]);
+        a.rank.cmp(&b.rank).then_with(|| b.width.total_cmp(&a.width)).then_with(|| a.span.total_cmp(&b.span))
+            .then_with(|| a.parts[0].cmp(&b.parts[0]))
+    });
+    let mut parent: Vec<_> = (0..served.len()).collect();
+    fn root(parent: &[usize], mut i: usize) -> usize { while parent[i] != i { i = parent[i]; } i }
+    let mut kept: Vec<usize> = vec![];
+    let mut pending = vec![];
+    for &i in &order {
+        let c = &candidates[i];
+        let close = kept.iter().any(|&j| {
+            let d = &candidates[j];
+            let same_banks = c.banks.len() > 1 && c.banks == d.banks;
+            let same_channel = (c.direction.0 * d.direction.0 + c.direction.1 * d.direction.1).abs() >= 0.5
+                && (1..8).all(|k| surface.wet(lerp(c.middle, d.middle, k as f64 / 8.0)));
+            distance(c.middle, d.middle) < crossings::street_spacing(c.span.max(d.span), population)
+                && (same_banks || same_channel)
+        });
+        if close { pending.push(i); continue; }
+        kept.push(i);
+        let bank = root(&parent, *c.banks.first().unwrap());
+        for &other in &c.banks { let other = root(&parent, other); parent[other] = bank; }
+    }
+    for i in pending {
+        let c = &candidates[i];
+        let bank = root(&parent, *c.banks.first().unwrap());
+        if c.banks.iter().all(|&b| root(&parent, b) == bank) { continue; }
+        kept.push(i);
+        for &other in &c.banks { let other = root(&parent, other); parent[other] = bank; }
+    }
+    let selected: BTreeSet<_> = kept.into_iter().flat_map(|i| candidates[i].parts.iter().copied()).collect();
+    let mut i = 0;
+    streets.retain(|s| { let keep = s.role != "bridge" || selected.contains(&i); i += 1; keep });
 }
 
 /// Invariant (no dangling bridge approach): a street that stops on the bank a
@@ -2457,6 +2940,11 @@ fn snap_to_abutments(streets: &mut [Street], surface: super::Surface<'_>, max_gr
             }
         }
     }
+}
+
+/// Landing streets and piers added after the main cleanup need actual graph junctions.
+pub(super) fn join_waterfront(streets: &mut Vec<Street>, radius: f64) {
+    planarize(streets, radius);
 }
 
 pub(super) fn clean(
@@ -3134,6 +3622,19 @@ mod tests {
     }
 
     #[test]
+    fn spatial_buckets_cross_boundaries_for_sub_epsilon_coordinate_steps() {
+        for reverse in [false, true] { for swap in [false, true] {
+            let point = |x, y| if swap { Point { x: y, y: x } } else { Point { x, y } };
+            let (a, b) = (point(60.0 - 1e-14, 0.0), point(60.0, 100.0));
+            let (a, b) = if reverse { (b, a) } else { (a, b) };
+            let segments = [Segment { street: 0, offset: 0, a, b }, Segment {
+                street: 1, offset: 0, a: point(59.0, 50.0), b: point(61.0, 50.0),
+            }];
+            assert!(candidates(&segments, 60.0).contains(&(0, 1)));
+        }}
+    }
+
+    #[test]
     fn crossings_are_shared_junctions_and_orphans_are_removed() {
         let mut streets = vec![
             street(&[(-100.0, 0.0), (100.0, 0.0)], "regional"),
@@ -3212,8 +3713,8 @@ mod tests {
         join_crossings(&mut streets, surface, 0.12, 40.0);
         let bridges: Vec<_> = streets.iter().filter(|s| s.role == "bridge").collect();
         assert_eq!(bridges.len(), 1, "{bridges:?}");
-        assert_eq!(bridges[0].path[0], Point { x: 298.0, y: 300.0 });
-        assert_eq!(bridges[0].path[1], Point { x: 313.0, y: 300.0 });
+        assert!(distance(bridges[0].path[0], Point { x: 298.0, y: 300.0 }) < 0.01);
+        assert!(distance(*bridges[0].path.last().unwrap(), Point { x: 313.0, y: 300.0 }) < 0.01);
     }
 
     #[test]

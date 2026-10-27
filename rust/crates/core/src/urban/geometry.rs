@@ -250,6 +250,8 @@ pub(super) fn difference(a: &Shape, b: &Shape) -> Vec<Shape> {
 const SLIVER_UNITS: f64 = 4.0;
 /// Retry grid (m): operands snapped to 1 mm (then 1 cm) and reduced exactly.
 const GRID: f64 = 1e-3;
+// Match the overlay output cutoff: rings below 0.01 m² reserve no land.
+const MIN_RING_AREA: f64 = 0.01;
 /// Overlays that still failed and returned their documented conservative result.
 static FALLBACKS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 #[allow(dead_code)]
@@ -352,7 +354,7 @@ fn reduced_ring(r: &[Point], reduce: Reduce) -> Option<Vec<Coord<f64>>> {
         .zip(q.iter().cycle().skip(1))
         .map(|(a, b)| a.0 * b.1 - b.0 * a.1)
         .sum();
-    if twice == 0.0 {
+    if !twice.is_finite() || twice.abs() * unit * unit <= 2.0 * MIN_RING_AREA {
         return None;
     }
     if twice < 0.0 {
@@ -746,6 +748,23 @@ pub(super) fn dry_clip(surface: &Surface<'_>, s: &Shape) -> Vec<Shape> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn overlay_operands_drop_collapsed_and_sub_area_rings_before_boolean_work() {
+        let mut subject = rectangle(0.0, 0.0, 100.0, 100.0);
+        subject.outer.insert(1, subject.outer[0]);
+        subject.outer.insert(2, Point { x: f64::NAN, y: 0.0 });
+        subject.holes.push(vec![Point { x: 1.0, y: 1.0 }; 4]);
+        subject.holes.push(rectangle(20.0, 20.0, 20.001, 20.001).outer);
+        let reduced = operand(&subject, Reduce::Within(0.0)).unwrap();
+        assert_eq!(reduced.exterior().0.len(), 5);
+        assert!(reduced.interiors().is_empty());
+        assert_eq!(reduced.unsigned_area(), 10_000.0);
+        let cut = rectangle(40.0, 40.0, 60.0, 60.0);
+        let rest = difference(&subject, &cut);
+        assert!((rest.iter().map(area).sum::<f64>() - 9_600.0).abs() < 1e-6);
+        assert!(operand(&rectangle(0.0, 0.0, 0.0001, 1.0), Reduce::Within(0.0)).is_none());
+        assert!(operand(&rectangle(0.0, 0.0, 0.0001, 1000.0), Reduce::Grid(GRID)).is_none());
+    }
     /// Regression (review #24): this pair made i_overlay 4.5.2 panic in its hole
     /// binder. Sanitized operands resolve it without falling back, and the result
     /// never exceeds the subject.

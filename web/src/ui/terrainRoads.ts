@@ -1,11 +1,13 @@
 import { ROAD_CLASSES, ROAD_LEVELS, ROAD_PROFILES, ROAD_SURFACES, defaultRoadConfig, type Point, type RoadClass, type RoadConfig, type RoadCrossing, type RoadOutput, type RoadSegment, type RoadSurface } from '../../../rust/bridge/settlements';
 import type { Layout } from '../../../rust/bridge/urban';
 import { prepareUrbanRoadClip } from '../../../rust/bridge/urbanNetwork';
+import { bridgeRoadOwnership } from '../render/cityBridges';
 import { bindGear, gearButton } from './mapGroup';
 import { urbanText } from './urbanPanelLocale';
 import { LOCALE_KEY } from './shellLocale';
 import { RENDER_ROAD_PX, ROAD_STROKE_LAYERS, renderCrossingStrokes, renderRoadStrokes, roadStrokeWidth, splitAtCrossings, type RoadStroke } from '../render/roadPaintRender';
 
+import { v1RoadPaint, type V1LandscapeStyle } from '../render/v1Landscape';
 const ns = 'http://www.w3.org/2000/svg';
 /** Screen widths (px): roads keep their weight at every zoom. */
 const CLASS_PX: Record<RoadClass, number> = { highway: 3.6, main: 2.8, local: 2.1, track: 1.5, trail: 1.2 };
@@ -108,6 +110,11 @@ const esc = (text: string): string => text.replace(/[&<>"']/g, ch => ({ '&': '&a
 
 /** The "Roads" stage: its own options, status and drawing; placement never runs from here. */
 export function createTerrainRoads(options: { map: SVGSVGElement; before: Element | null; onConfigChange(): void; onDisplayChange(): void }) {
+  let v1Style: V1LandscapeStyle | undefined;
+  options.map.addEventListener('urban:v1-style', event => {
+    const detail = (event as CustomEvent<{ active: boolean; style: V1LandscapeStyle }>).detail;
+    v1Style = detail.active ? detail.style : undefined; draw();
+  });
   let config = defaultRoadConfig(), style = defaultRoadStyle(), enabled = true, show = true, output: RoadOutput | undefined;
   let drawnLayer: SVGGElement | undefined, drawnState = '', drawn: RoadOutput | undefined;
   let urbanOwnership: Layout[] | undefined, drawnOwnership: Layout[] | undefined;
@@ -240,7 +247,8 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
     // Screen px per metre: the painted preset's widths follow the zoom through CSS only.
     const box = options.map.viewBox.baseVal;
     if (box?.width) layer.style.setProperty('--road-k', String(+(options.map.clientWidth / box.width).toPrecision(5)));
-    const state = `${enabled}|${show}|${JSON.stringify(style)}`;
+    const scale = box?.width ? options.map.clientWidth / box.width : 1;
+    const state = `${enabled}|${show}|${JSON.stringify(style)}|${v1Style ?? ''}|${v1Style ? scale : ''}`;
     if (layer === drawnLayer && drawn === output && state === drawnState && drawnOwnership === urbanOwnership) return;
     drawnLayer = layer; drawn = output; drawnState = state; drawnOwnership = urbanOwnership; layer.replaceChildren();
     if (!output || !show || !enabled) return;
@@ -259,7 +267,7 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
     // Generation replaces these snapshots. Styling and replacing the SVG layer
     // retain the same clipping and curve geometry without repeating preparation.
     if (preparedOwnership !== urbanOwnership || preparedOutput !== output) {
-      if (preparedOwnership !== urbanOwnership) clipUrban = urbanOwnership?.length ? prepareUrbanRoadClip(urbanOwnership) : undefined;
+      clipUrban = urbanOwnership?.length ? prepareUrbanRoadClip(bridgeRoadOwnership(urbanOwnership, output)) : undefined;
       preparedOwnership = urbanOwnership; preparedOutput = output;
       pathCache = new WeakMap();
     }
@@ -276,7 +284,7 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
       if (curves) return entry.curved ??= entry.paths.map(curveData).join(' ');
       return entry.straight ??= entry.paths.map(pathData).join(' ');
     };
-    if (style.preset === 'render') {
+    if (!v1Style && style.preset === 'render') {
       drawRender(order, outsidePath, painted, hits);
       layer.append(painted, hits);
       return;
@@ -285,11 +293,12 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
       // Cut the physical polyline first: smoothing each remainder preserves its
       // exact attachment to the native street instead of moving it along a curve.
       const d = outsidePath(s.path, s.width, style.curves);
-      const { fill, casing, width: w, dash } = paintOf(style, s.class, s.surface);
+      const v1 = v1Style ? v1RoadPaint(s.class === 'track' || s.class === 'trail' ? 'track' : s.class === 'highway' || s.class === 'main' ? 'major' : 'minor', s.width, scale, v1Style) : undefined;
+      const { fill, casing, width: w, dash } = v1 ?? paintOf(style, s.class, s.surface);
       const extra: Record<string, string> = dash ? { 'stroke-dasharray': dash } : {};
       if (d) {
-        if (casing) casings.append(line(d, casing, w + 1.6, extra));
-        fills.append(line(d, fill, w, extra));
+        if (casing) casings.append(line(d, casing, v1?.casingWidth ?? w + 1.6, extra));
+        const road = line(d, fill, w, extra); if (v1) road.setAttribute('opacity', String(v1.opacity)); fills.append(road);
       }
       // A crossing can extend beyond the main segment's visible pieces. Clip it
       // independently once, including its casing, rather than repeating its art.

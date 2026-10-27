@@ -19,6 +19,7 @@ export interface CityDisplayBuffers {
   /** Code → name tables (`zone`, `blockKind`, `districtRole`, `use`, `role`, `streetRole`); code 0 is "". */
   tables: Record<string, string[]>;
   parcelIds?: string[];
+  quays?: DisplayPolygons & { kind: Uint16Array; material: Uint16Array; deckZ: Float32Array };
   quarters: DisplayPolygons;
   blocks: DisplayPolygons & { zone: Uint16Array; kind: Uint16Array; quarter: Uint32Array; districtRole: Uint16Array; wealth: Uint8Array };
   parcels: DisplayPolygons & { block: Uint32Array; use: Uint16Array; role: Uint16Array; landmark: Uint8Array; households: Float32Array };
@@ -45,6 +46,7 @@ export function decodeCityDisplayBuffers(buffer: ArrayBuffer): CityDisplayBuffer
   const polygons = (layer: string): DisplayPolygons => ({ polys: view(`${layer}.polys`, 'u32'), rings: view(`${layer}.rings`, 'u32'), coords: view(`${layer}.coords`, 'f32') });
   return {
     origin: header.origin, layouts: header.layouts, tables: header.tables, parcelIds: header.parcelIds ?? undefined,
+    quays: header.sections['quays.polys'] ? { ...polygons('quays'), kind: view('quays.kind', 'u16'), material: view('quays.material', 'u16'), deckZ: view('quays.deckZ', 'f32') } : undefined,
     quarters: polygons('quarters'),
     blocks: { ...polygons('blocks'), zone: view('blocks.zone', 'u16'), kind: view('blocks.kind', 'u16'), quarter: view('blocks.quarter', 'u32'), districtRole: view('blocks.districtRole', 'u16'), wealth: view('blocks.wealth', 'u8') },
     parcels: { ...polygons('parcels'), block: view('parcels.block', 'u32'), use: view('parcels.use', 'u16'), role: view('parcels.role', 'u16'), landmark: view('parcels.landmark', 'u8'), households: view('parcels.households', 'f32') },

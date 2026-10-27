@@ -1,3 +1,7 @@
+import { CityGround } from '../render/cityGround';
+import { city3dBoardwalks } from '../render/city3dBoardwalks';
+import { city3dQuays } from '../render/city3dQuays';
+import { cityBridgeStreets } from '../render/cityBridges';
 /** City Bench 3D view. Reuses the Terrain Bench engine (Terrain3d: quadtree
  * relief, tiled materials, orbit camera, native building pass with 256 m sectors,
  * overview LOD, bounded GPU cache and picking). This module only adapts the city
@@ -126,13 +130,15 @@ export function mountCity3d(options: City3dOptions): City3d {
   let terrain: Terrain3d | undefined, active = false, disposed = false, error = '';
   localizeControls();
   let ground: Ground = 'map', colors: Colors = 'materials', planOverlay = true;
-  let surfaceDecor: Decor | undefined, imageUrl: string | undefined, heightAt: City3dHeight | undefined, image: HTMLImageElement | HTMLCanvasElement | undefined, waterMask: HTMLCanvasElement | undefined, waterPaths: Path2D | undefined;
+  let surfaceDecor: Decor | undefined, imageUrl: string | undefined, heightAt: City3dHeight | undefined, stiltWaterAt: City3dHeight | undefined, image: HTMLImageElement | HTMLCanvasElement | undefined, waterMask: HTMLCanvasElement | undefined, waterPaths: Path2D | undefined;
+  let bridgeWaterAt: City3dHeight | undefined;
   const textured = (): boolean => options.getTextured?.() ?? false;
   let texturedSeen = false;
   let plan: CityScene | undefined, planOf: [unknown, unknown] | undefined;
   let sceneOf: PlacementBatch | NativeBuildingProjectionScene | undefined, display: City3dDisplayScene | undefined, displayMs = 0, focused = false, sourceEpoch = 0;
   const details = new Map<string, PlacedBuilding>(), detailBases = new Map<string, Building3dVisual>(), converting = new Set<string>();
   let byId = new Map<string, Building3dVisual>(), bridgesOf: [readonly Layout[] | undefined, readonly Street[] | undefined] = [undefined, undefined], bridgeStats: { count: number; first?: Point } = { count: 0 };
+  let quayCount = 0;
   let wallStats: City3dWallStats = { count: 0, pieces: 0, triangles: 0, ms: 0 };
   const realized = new WeakSet<Building3dVisual>();
   let displayIndex = new Map<string, number>(), indexOf: unknown;
@@ -209,8 +215,10 @@ export function mountCity3d(options: City3dOptions): City3d {
   }
   function setSurface(d: Decor): void {
     const t = terrain!, r = d.raster;
-    surfaceDecor = d; heightAt = rasterHeight(r.height, r.n, r.width); sceneOf = undefined; sourceEpoch++; details.clear(); detailBases.clear();
-    waterMask = undefined; waterPaths = undefined; image = undefined;
+    surfaceDecor = d; heightAt = rasterHeight(r.height, r.n, r.width); bridgeWaterAt = r.waterLevel ? rasterHeight(r.waterLevel, r.n, r.width) : undefined; sceneOf = undefined; sourceEpoch++; details.clear(); detailBases.clear();
+    const physical = new CityGround(r), levels = bridgeWaterAt;
+    stiltWaterAt = levels ? (x, y) => physical.waterAt({ x, y }) ? levels(x, y) : NaN : undefined;
+    waterMask = undefined; waterPaths = undefined; image = undefined; planOf = undefined;
     t.setSurface({ x: 0, y: 0, width: r.width, n: r.n, data: r.height });
     imageUrl = undefined; syncImage(d);
     applyGround();
@@ -255,7 +263,7 @@ export function mountCity3d(options: City3dOptions): City3d {
   function cityPlan(): CityScene | undefined {
     const layouts = options.getLayouts?.(), partitions = options.getPartitions?.();
     if (!layouts?.length) return plan = undefined;
-    if (!planOf || planOf[0] !== layouts || planOf[1] !== partitions) { plan = buildCityScene(layouts, partitions ?? []); planOf = [layouts, partitions]; }
+    if (!planOf || planOf[0] !== layouts || planOf[1] !== partitions) { plan = buildCityScene(layouts, partitions ?? [], surfaceDecor?.raster); planOf = [layouts, partitions]; }
     return plan;
   }
 
@@ -274,19 +282,20 @@ export function mountCity3d(options: City3dOptions): City3d {
       // Swaps queued for the previous display must not be reinjected by id.
       clearTimeout(detailTimer); pendingSwaps.clear();
       const started = performance.now();
-      display = scene ? 'projection' in scene ? city3dProjectionScene(scene, { details }) : city3dScene(scene, { heightAt, details }) : undefined;
+      display = scene ? 'projection' in scene ? city3dProjectionScene(scene, { details }) : city3dScene(scene, { heightAt, waterAt: stiltWaterAt, details }) : undefined;
       // Bridges stand over the water even before any building is placed.
-      const bridges = city3dBridges([...(layouts ?? []).flatMap(l => l.streets), ...(regional ?? [])], heightAt);
+      const bridges = city3dBridges(cityBridgeStreets(layouts ?? [], regional ?? []), heightAt, bridgeWaterAt);
       bridgeStats = { count: bridges.length, first: bridges[0] && center(bridges[0]) };
       // Walls, towers and gates stand before any building is placed, like bridges.
       const wallStarted = performance.now();
-      const walls = (layouts ?? []).flatMap((l, li) => city3dWalls(l.enclosures ?? [], heightAt, String(li)));
+      const walls = (layouts ?? []).flatMap((l, li) => city3dWalls(l.enclosures ?? [], heightAt, String(li), l.culture));
       const enclosures = new Set(walls.map(w => w.id.split(':').slice(1, 3).join(':')));
       const gate = walls.find(w => w.id.includes(':gate:') && !w.variant_id.endsWith(':water'));
       wallStats = { count: enclosures.size, pieces: walls.length, ms: Math.round(performance.now() - wallStarted),
         triangles: walls.reduce((n, w) => n + w.volumes.reduce((m, v) => m + v.roof_mesh.faces.reduce((k, f) => k + f.vertices.length - 2, 0), 0), 0),
         first: walls[0] && center(walls[0]), gate: gate && center(gate) };
-      const extra = [...bridges, ...walls];
+      const quays = city3dQuays(layouts ?? []), boardwalks = city3dBoardwalks(cityBridgeStreets(layouts ?? [], regional ?? []), heightAt, bridgeWaterAt); quayCount = quays.length + boardwalks.length;
+      const extra = [...bridges, ...walls, ...quays, ...boardwalks];
       if (extra.length) display = display ? { ...display, buildings: [...display.buildings, ...extra],
         ...(display.occupationBuildings ? { occupationBuildings: [...display.occupationBuildings, ...extra] } : {}) }
         : { materials: city3dScene({ schema_version: '1', generator_version: '', buildings: [], refusals: [], open_spaces: [] }).materials, buildings: extra, kinds: { silhouette: 0, compact: 0, detailed: 0 } };
@@ -388,10 +397,10 @@ export function mountCity3d(options: City3dOptions): City3d {
     const t = terrain, c = t?.getCamera(), k = display?.kinds, id = options.getSelected?.(), b = id ? display?.buildings.find(x => x.id === id) : undefined;
     const height = b ? building3dHeight(b) : 0;
     info.innerHTML = [
-      display && display.buildings.length > bridgeStats.count + wallStats.pieces ? `<b>${(display.buildings.length - bridgeStats.count - wallStats.pieces).toLocaleString('fr-FR')}</b> bâtiments${bridgeStats.count ? ` · ponts ${bridgeStats.count}` : ''}${wallStats.count ? ` · enceintes ${wallStats.count}` : ''} · silhouettes ${k!.silhouette} · plans ${k!.compact} · détaillés ${k!.detailed}${converting.size ? ` · réalisation ${converting.size}…` : ''}` : 'Aucun bâtiment : tracez les silhouettes ou implantez les bâtiments.',
-      b ? `Sélection : ${b.id} · ${b.recipe_id} · ${height.toFixed(1)} m${isBuildingProjection(b) ? ' · volume cartographique' : ''}` : '',
-      c ? `Distance ${(c.distance).toFixed(0)} m · inclinaison ${Math.round(c.pitch * 180 / Math.PI)}° · glisser : déplacer · clic droit / Maj : orbiter` : '',
-      info.dataset.detailError ? `Réalisation : ${info.dataset.detailError}` : '',
+      display && display.buildings.length > bridgeStats.count + wallStats.pieces + quayCount ? `<b>${(display.buildings.length - bridgeStats.count - wallStats.pieces - quayCount).toLocaleString()}</b> ${urbanText(['bâtiments','buildings','栋建筑','edificios','edifícios'])}${bridgeStats.count ? ` · ${urbanText(['ponts','bridges','桥梁','puentes','pontes'])} ${bridgeStats.count}` : ''}${wallStats.count ? ` · ${urbanText(['enceintes','enclosures','围墙','recintos','muralhas'])} ${wallStats.count}` : ''} · ${urbanText(['silhouettes','silhouettes','轮廓','siluetas','silhuetas'])} ${k!.silhouette} · ${urbanText(['plans','plans','平面','planos','plantas'])} ${k!.compact} · ${urbanText(['détaillés','detailed','详细','detallados','detalhados'])} ${k!.detailed}${converting.size ? ` · ${urbanText(['réalisation','realizing','生成中','realizando','realizando'])} ${converting.size}…` : ''}` : urbanText(['Aucun bâtiment : tracez les silhouettes ou implantez les bâtiments.', 'No buildings: draw silhouettes or place buildings.', '没有建筑：请绘制轮廓或放置建筑。', 'Sin edificios: dibuja siluetas o coloca edificios.', 'Sem edifícios: desenhe silhuetas ou posicione edifícios.']),
+      b ? `${urbanText(['Sélection','Selection','选择','Selección','Seleção'])} : ${b.id} · ${b.recipe_id} · ${height.toFixed(1)} m${isBuildingProjection(b) ? ` · ${urbanText(['volume cartographique','map volume','地图体量','volumen cartográfico','volume cartográfico'])}` : ''}` : '',
+      c ? `${urbanText(['Distance','Distance','距离','Distancia','Distância'])} ${(c.distance).toFixed(0)} m · ${urbanText(['inclinaison','tilt','倾角','inclinación','inclinação'])} ${Math.round(c.pitch * 180 / Math.PI)}° · ${urbanText(['glisser : déplacer · clic droit / Maj : orbiter','drag: pan · right-click / Shift: orbit','拖动：平移 · 右键 / Shift：环绕','arrastrar: desplazar · clic derecho / Mayús: orbitar','arrastar: mover · clique direito / Shift: orbitar'])}` : '',
+      info.dataset.detailError ? `${urbanText(['Réalisation','Realization','生成','Realización','Realização'])} : ${info.dataset.detailError}` : '',
     ].filter(Boolean).join('<br>');
   }
   let down: [number, number] | undefined;
@@ -467,8 +476,8 @@ export function mountCity3d(options: City3dOptions): City3d {
     setCamera(camera: Terrain3dCamera): void { terrain?.setCamera(camera); focused = true; },
     capture: () => terrain ? terrain.capture() : Promise.reject(new Error('Vue 3D inactive.')),
     captureIllustration: () => terrain ? terrain.captureIllustration() : Promise.reject(new Error('Vue 3D inactive.')),
-    stats: () => ({ buildings: (display?.buildings.length ?? 0) - bridgeStats.count - wallStats.pieces, ...(display?.kinds ?? { silhouette: 0, compact: 0, detailed: 0 }), displayMs, timings: { ...timings }, realizing: converting.size, realizeError: info.dataset.detailError || undefined, bridges: bridgeStats, walls: wallStats, lod: terrain?.getLodInfo() }),
-    dispose(): void { disposed = true; active = false; sourceEpoch++; clearTimeout(detailTimer); cancelAnimationFrame(detailFrame); unsubscribeDetails?.(); unsubscribeDetails = undefined; options.details?.setActiveView('2d'); resize.disconnect(); terrain?.dispose(); terrain = undefined; root.remove(); },
+    stats: () => ({ buildings: (display?.buildings.length ?? 0) - bridgeStats.count - wallStats.pieces - quayCount, ...(display?.kinds ?? { silhouette: 0, compact: 0, detailed: 0 }), displayMs, timings: { ...timings }, realizing: converting.size, realizeError: info.dataset.detailError || undefined, bridges: bridgeStats, walls: wallStats, lod: terrain?.getLodInfo() }),
+    dispose(): void { disposed = true; active = false; sourceEpoch++; clearTimeout(detailTimer); cancelAnimationFrame(detailFrame); unsubscribeDetails?.(); unsubscribeDetails = undefined; options.details?.setActiveView('2d'); window.removeEventListener('magna-locale-change', localizeControls); resize.disconnect(); terrain?.dispose(); terrain = undefined; root.remove(); },
   };
   return api;
 }

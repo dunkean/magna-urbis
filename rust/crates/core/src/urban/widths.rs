@@ -11,7 +11,7 @@ fn key(p: Point) -> (i64, i64) {
 fn fixed(s: &Street) -> bool {
     matches!(
         s.role.as_str(),
-        "regional" | "bridge" | "ford" | "causeway" | "stairs" | "quay"
+        "regional" | "bridge" | "ford" | "causeway" | "stairs" | "quay" | "track"
     )
 }
 fn width(s: &Street, i: usize) -> f64 {

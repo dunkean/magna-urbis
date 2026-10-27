@@ -84,10 +84,10 @@ export function buildCityGlMesh(scene: CityScene, buildings?: CityBuildings, ori
   for (const shape of scene.footprint) addShape(shape, feature++, false);
   const footprint = range(t0, tri);
   t0 = tri.length; let l0 = lin.length; features.blocks = feature;
-  for (const block of scene.blocks) addShape(block.shape, feature++, true);
+  for (const block of scene.blocks) { for (const shape of block.ground ?? [block.shape]) addShape(shape, feature, true); feature++; }
   const blocks = range(t0, tri), blockLines = range(l0, lin);
   t0 = tri.length; l0 = lin.length; features.parcels = feature;
-  for (const parcel of scene.parcels) addShape(parcel.shape, feature++, true);
+  for (const parcel of scene.parcels) { for (const shape of parcel.ground ?? [parcel.shape]) addShape(shape, feature, true); feature++; }
   const parcels = range(t0, tri), parcelLines = range(l0, lin);
   t0 = tri.length; l0 = lin.length; features.buildings = feature;
   for (const building of buildings?.items ?? []) { for (const shape of building.surface) addShape(shape, feature, true); feature++; }

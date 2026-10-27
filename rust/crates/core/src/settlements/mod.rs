@@ -210,7 +210,7 @@ impl Terrain {
         roads: &[crate::urban::Street],
     ) -> Result<Vec<crate::urban::Layout>, String> {
         let r = &self.fields.r;
-        crate::urban::generate_quarters(
+        let mut layouts = crate::urban::generate_quarters(
             seed,
             sites,
             config,
@@ -222,7 +222,9 @@ impl Terrain {
                 water: &r.water,
             },
             roads,
-        )
+        )?;
+        crate::urban::display::quay_water_levels(&mut layouts, r.width, r.n, &r.water, &r.water_level);
+        Ok(layouts)
     }
     /// Physical placement intents from retained parcel/programme outputs.
     pub fn urban_building_sites(

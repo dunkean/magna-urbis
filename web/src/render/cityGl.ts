@@ -34,10 +34,9 @@ export interface CityGlDrawOptions {
   buildingsVisible?: boolean; diagnostic?: 'none' | 'uses' | string; refusedParcels?: ReadonlySet<string>;
   /** Clear colour (straight RGBA 0–1); transparent by default so the map shows through. */
   clear?: [number, number, number, number];
-  /** Bridges as stone decks (parapets, inner kerb line, transverse joints). Default: the
-   * City Bench « Rendu » background (`<html data-city-background="render">`). */
+  /** Bridge parapets, kerbs and deck joints; enabled by default at every LOD. */
   bridgeDeck?: boolean;
-  /** Painted building silhouettes (tints, ground shadows, edges). Same default as bridgeDeck. */
+  /** Painted building silhouettes (tints, ground shadows, edges). Default: Render background. */
   paintedBuildings?: boolean;
   /** Textured materials: roofs, streets and plazas sample the PBR albedo atlas in world metres. */
   textured?: boolean;
@@ -291,9 +290,9 @@ layout(location = 0) in vec2 aPos;
 layout(location = 1) in uint aFeature;
 uniform vec4 uView;
 uniform highp sampler2D uColors, uMats;
-uniform float uExt[32];
+uniform float uExt[32], uMean[32];
 uniform int uOnly;
-out vec4 vColor; out vec2 vUv; flat out float vLayer; flat out float vBright;
+out vec4 vColor; out vec2 vUv; flat out float vLayer; flat out float vBright; flat out float vMean; flat out float vRoof;
 void main() {
   int f = int(aFeature);
   ivec2 q = ivec2(f & 4095, f >> 12);
@@ -301,18 +300,22 @@ void main() {
   vec4 m = texelFetch(uMats, q, 0) * 255.0;
   float layer = m.r - 1.0, ang = m.g / 255.0 * 6.2831853;
   vec2 dir = vec2(cos(ang), sin(ang)), p = aPos / uExt[int(max(layer, 0.0))];
-  vUv = vec2(dot(p, vec2(-dir.y, dir.x)), dot(p, dir)); vLayer = layer; vBright = m.b / 128.0;
+  vUv = vec2(dot(p, vec2(-dir.y, dir.x)), dot(p, dir)); vLayer = layer; vBright = m.b / 128.0; vMean = uMean[int(max(layer, 0.0))]; vRoof = m.a;
   bool shown = vColor.a > 0.0 && (uOnly == 0 || layer >= 0.0);
   gl_Position = shown ? vec4(aPos * uView.xy + uView.zw, 0.0, 1.0) : vec4(2.0, 2.0, 2.0, 1.0);
 }`;
 const TFILL_FS = `#version 300 es
 precision highp float;
-in vec4 vColor; in vec2 vUv; flat in float vLayer; flat in float vBright;
+in vec4 vColor; in vec2 vUv; flat in float vLayer; flat in float vBright; flat in float vMean; flat in float vRoof;
 uniform highp sampler2DArray uAlbedo;
 out vec4 outColor;
 void main() {
   vec3 tex = texture(uAlbedo, vec3(vUv, max(vLayer, 0.0))).rgb * vBright;
-  vec3 c = vLayer >= 0.0 ? min(tex, vec3(1.0)) : vColor.rgb;
+  // Recenter roof grain around its mean; soft light preserves the culture tint.
+  float grain = clamp((dot(tex, vec3(0.3, 0.59, 0.11)) / max(vMean, 0.02) - 1.0) * 0.35 + 0.5, 0.0, 1.0);
+  vec3 base = vColor.rgb, curve = mix(((16.0 * base - 12.0) * base + 4.0) * base, sqrt(base), step(vec3(0.25), base));
+  vec3 roof = grain <= 0.5 ? base - (1.0 - 2.0 * grain) * base * (1.0 - base) : base + (2.0 * grain - 1.0) * (curve - base);
+  vec3 c = vLayer < 0.0 ? base : vRoof > 0.0 ? roof : min(tex, vec3(1.0));
   outColor = vec4(c * vColor.a, vColor.a);
 }`;
 const DISC_VS = `#version 300 es
@@ -602,10 +605,12 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
       gl.activeTexture(gl.TEXTURE0);
       // Binds a material table (unit 1) and the albedo array (unit 2) to a textured program.
       const extents = new Float32Array(32).fill(2); MATERIALS.layers.forEach((l, i) => { extents[i] = l.extent_m; });
+      const means = new Float32Array(32).fill(0.5); MATERIALS.layers.forEach((l, i) => { means[i] = (l.mean_rgb[0] * 0.3 + l.mean_rgb[1] * 0.59 + l.mean_rgb[2] * 0.11) / 255; });
       const useTextured = (prog: Program, mats: WebGLTexture | undefined, only: boolean): void => {
         gl.useProgram(prog.program);
         gl.uniform4fv(prog.u.uView, view); gl.uniform1i(prog.u.uColors, 0); gl.uniform1i(prog.u.uMats, 1); gl.uniform1i(prog.u.uAlbedo, 2); gl.uniform1fv(prog.u['uExt[0]'], extents);
         gl.uniform1i(prog.u.uOnly, only ? 1 : 0);
+        if (prog === tfillP) gl.uniform1fv(prog.u['uMean[0]'], means);
         gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, mats ?? null);
         gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D_ARRAY, albedoTex ?? null);
         gl.activeTexture(gl.TEXTURE0);
@@ -638,6 +643,7 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
           if (d.blockLines) fills(plan, 'blocks', true); if (d.parcelLines) fills(plan, 'parcels', true);
         }
       }
+      if (layers.streets) { fills(plan, 'quays', false); fills(plan, 'quays', true); }
       const wallDraw = { view, mpp, lod, palette, painted: renderBackground && palette !== 'parchment' && palette !== 'ink', enabled: layers.enclosures }; // walls hook
       frame.drawCalls += wallGl.draw('ground', wallDraw); // walls hook: ditches and glacis under the streets
       // Strokes: streets (casing then fill), walls (outer then inner line).
@@ -657,15 +663,15 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
         for (const [start, count] of ranges) { pack.bind(start); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count); frame.drawCalls++; frame.instances += count; }
       };
       if (d.streets && streets) {
-        const maxRank = lod === 'far' ? 1 : lod === 'mid' ? 2 : 15, crossings = lod !== 'far';
+        const maxRank = lod === 'far' ? 1 : lod === 'mid' ? 2 : 15, crossings = true;
         const first = Math.min(streets.strokes.firstWithRank[maxRank], crossings ? streets.strokes.firstWithRank[0] : Infinity);
-        const s = { edgePx: lod === 'mid' ? 0.7 : 0.9, inner: 1, minPx: 1, maxRank, crossings, dash: 1 };
+        const s = { edgePx: lod === 'far' ? 0 : lod === 'mid' ? 0.7 : 0.9, inner: 1, minPx: 1, maxRank, crossings, dash: 1 };
         const paintRoads = renderBackground && palette !== 'parchment' && palette !== 'ink';
         if (paintRoads) useStroke(casingP);
         if (d.streetCasing) strokes(streets, first, 0, s);
         if (textured && streets.mats && palette !== 'parchment' && palette !== 'ink') { useStroke(texturedP); useTextured(texturedP, streets.mats, false); u = texturedP.u; }
         else if (paintRoads) useStroke(surfaceP);
-        gl.uniform1i(u.uBridgeDeck, (o.bridgeDeck ?? renderBackground) ? 1 : 0);
+        gl.uniform1i(u.uBridgeDeck, (o.bridgeDeck ?? true) ? 1 : 0);
         strokes(streets, first, 1, s);
         gl.uniform1i(u.uBridgeDeck, 0);
       }
@@ -701,7 +707,7 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
         }
         fills(built, 'buildings', false);
         if (pans) {
-          if (textured && built.mats && palette !== 'parchment') { useTextured(tfillP, built.mats, false); fills(built, 'roofs', false); gl.useProgram(fillP.program); gl.uniform4fv(fillP.u.uView, view); gl.uniform1i(fillP.u.uColors, 0); }
+          if (textured && built.mats && palette !== 'parchment' && palette !== 'ink') { useTextured(tfillP, built.mats, false); fills(built, 'roofs', false); gl.useProgram(fillP.program); gl.uniform4fv(fillP.u.uView, view); gl.uniform1i(fillP.u.uColors, 0); }
           else fills(built, 'roofs', false);
           if (lod === 'close') fills(built, 'roofs', true);
         }

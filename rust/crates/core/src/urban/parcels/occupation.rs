@@ -1815,7 +1815,40 @@ pub(in super::super) fn preview_parts(
     p: &Parcel,
     o: &Occupancy,
 ) -> (Vec<(Shape, &'static str)>, Option<Kind>) {
-    let (parts, form) = preview_form(p, o);
+    let (mut parts, mut form) = preview_form(p, o);
+    let mosque = o.role.starts_with("worship.mosque") || o.role.starts_with("worship.masjid");
+    if kind(o) != Kind::Open && (parts.is_empty() || mosque && !parts.iter().any(|(_,label)| *label == "prayer-hall")) {
+        // Admission already proved a house fits. Decorative setbacks and wings
+        // cannot turn that occupied property (or a reserved monument) vacant.
+        let domain = p.envelope.as_ref().unwrap_or(&p.shape);
+        let u = unit(p.axis);
+        let u = if length(u) > 0.5 { u } else { Point { x:1., y:0. } };
+        let frames = std::iter::once(u).chain(domain.outer.iter().zip(domain.outer.iter().cycle().skip(1))
+            .take(domain.outer.len()).map(|(&a,&b)| unit(sub(b,a))));
+        let best = frames.filter(|u| length(*u) > 0.5).filter_map(|u| {
+            let f = Frame { u, n:normal(u), t0:0. };
+            let r = inscribed(&domain.outer, &f)?;
+            Some((f,r,(r[1]-r[0])*(r[3]-r[2])))
+        }).max_by(|a,b|a.2.total_cmp(&b.2));
+        if let Some((f,[s0,s1,t0,t1],_)) = best {
+            let at = |s,t| add(scale(f.u,s),scale(f.n,t));
+            let ring = if kind(o) == Kind::Round && !mosque {
+                let c = at((s0+s1)*0.5,(t0+t1)*0.5);
+                let r = (s1-s0).min(t1-t0)*0.5;
+                (0..16).map(|i| { let a = i as f64*std::f64::consts::TAU/16.;
+                    Point { x:c.x+r*a.cos(), y:c.y+r*a.sin() } }).collect()
+            } else { vec![at(s0,t0),at(s1,t0),at(s1,t1),at(s0,t1)] };
+            let label = if mosque { "prayer-hall" } else { "building" };
+            let fallback = finish(&p.shape, vec![(ring,None,label)], 3.);
+            if !fallback.is_empty() {
+                parts = fallback;
+                form = match kind(o) {
+                    Kind::Court | Kind::Insula | Kind::Pavilions | Kind::Hanok | Kind::Yashiki => Kind::Row,
+                    k => k,
+                };
+            }
+        }
+    }
     // An empty building reads its settlement's decay (ruins.rs).
     let parts = super::ruins::decayed(p, o, parts);
     let form = (!parts.is_empty()).then_some(form);
@@ -1984,9 +2017,11 @@ fn preview_form(p: &Parcel, o: &Occupancy) -> (Vec<(Shape, &'static str)>, Kind)
     // massing in the lot itself: odd-shaped precincts are common in towns.
     let mut probe = rng.clone();
     if let Some(in_lot) = super::landmark::massing(o, &b, main, (s0, s1, ta, t1), &mut probe) {
+        let mosque = o.role.starts_with("worship.mosque") || o.role.starts_with("worship.masjid");
         let built = |parts: &[Piece]| {
             parts
                 .iter()
+                .filter(|(_, _, label)| !mosque || *label == "prayer-hall")
                 .map(|(r, _, _)| ring_area(r).abs())
                 .sum::<f64>()
         };
@@ -2013,13 +2048,14 @@ fn preview_form(p: &Parcel, o: &Occupancy) -> (Vec<(Shape, &'static str)>, Kind)
         });
         // The precinct holds no such monument: the ordinary occupation.
         let done = match parts {
-            Some(parts) if built(&parts) >= 0.6 * built(&in_lot) => {
+            Some(parts) if built(&parts) >= 4.0 && built(&parts) >= 0.6 * built(&in_lot) => {
                 finish(&shape, ruined(o, parts, &mut whole), wing)
             }
+            Some(parts) if built(&in_lot) < 4.0 => finish(&shape, ruined(o, parts, &mut whole), wing),
             Some(_) => finish(&shape, ruined(o, in_lot, &mut probe), wing),
-            None => vec![],
+            None => finish(&shape, ruined(o, in_lot, &mut probe), wing),
         };
-        if !done.is_empty() {
+        if !done.is_empty() && (!mosque || done.iter().any(|(_,label)| *label == "prayer-hall")) {
             return (done, kind);
         }
     }
@@ -2585,6 +2621,9 @@ fn preview_form(p: &Parcel, o: &Occupancy) -> (Vec<(Shape, &'static str)>, Kind)
                         depth.min(rng.range(8.0, 11.0)),
                     ),
                 };
+                let culture = o.morph.value["id"].as_str().unwrap_or("").split('/').next().unwrap_or("");
+                let (house_scale, _) = super::super::culture::house_parameters(culture);
+                let (house_w, house_d) = (house_w * house_scale, house_d * house_scale);
                 // A camp's long house (Iroquoian longhouse, maloca, plank
                 // house) fills its lot's length at the culture's width
                 // (`campHouse`: [width, longest]), its long side along the
@@ -3494,6 +3533,20 @@ mod tests {
                 "setback":{"core":[0.0,0.3]},"sideGap":{"core":[0.0,0.0]},"roomDepth":[4.5,6.0],
                 "bigCourtChance":0.1,"courtyardMin":9,"openCourtChance":0.0}),
         }
+    }
+
+    #[test]
+    fn giant_house_scale_enlarges_the_body_inside_its_lot() {
+        let p = lot(rectangle(0.0, 0.0, 60.0, 80.0), [Point { x: 0.0, y: 0.0 }, Point { x: 60.0, y: 0.0 }], 0.5);
+        let mut morph = tissue("hall", "stone-hall");
+        morph.value["id"] = json!("european-organic/village");
+        let human = preview(&p, &home(&morph, "dwelling.house", "giant-body"));
+        morph.value["id"] = json!("giant-hold/village");
+        let giant = preview(&p, &home(&morph, "dwelling.house", "giant-body"));
+        let human_area: f64 = human.iter().map(area).sum();
+        let giant_area: f64 = giant.iter().map(area).sum();
+        assert!(giant_area > 4.0 * human_area, "giant {giant_area}m2, human {human_area}m2");
+        assert!(giant.iter().flat_map(|s| difference(s, &p.shape)).map(|s| area(&s)).sum::<f64>() < 1e-5);
     }
 
     /// Exact A3 corner-lot witness: two individually near-axis street edges

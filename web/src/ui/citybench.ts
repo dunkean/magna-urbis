@@ -10,6 +10,7 @@ import { terrainFromDecor } from './benchTerrainTransfer';
 import type { Decor } from './decor';
 import { downloadDecorFile, readDecorFile } from './decorFile';
 import { clampView, fitView, panBy, zoomAt, type View } from '../render/view';
+import { CITY_LOD_OFF } from '../render/cityCanvas';
 import { applyExecutionProfile, installExecutionProfile } from './executionProfile';
 import type { TerrainData, TerrainSettings } from '../../../rust/bridge/terrain';
 import type {} from './benchContext';
@@ -335,7 +336,7 @@ map.addEventListener('click', event => {
 new ResizeObserver(() => showView()).observe(viewport);
 el('fit').onclick = fit;
 // The 2D frame is never wider than the near LOD (2.2 m/px): the buildings stay drawn on a big town.
-el('focusCity').onclick = () => { const e = settlements.urban.extent; if (e && city3d.active) city3d.focus(e.center, e.radius); else if (e) setView({ cx: e.center.x, cy: e.center.y, scale: Math.max(1 / 2.0, Math.min(viewport.clientWidth, viewport.clientHeight) / Math.max(200, 2.4 * e.radius)) }); else fit(); };
+el('focusCity').onclick = () => { const e = settlements.urban.extent; if (e && city3d.active) city3d.focus(e.center, e.radius); else if (e) setView({ cx: e.center.x, cy: e.center.y, scale: Math.max(CITY_LOD_OFF ? 0 : 1 / 2.0, Math.min(viewport.clientWidth, viewport.clientHeight) / Math.max(200, 2.4 * e.radius)) }); else fit(); };
 el<HTMLInputElement>('showBackground').onchange = event => { background.style.display = (event.target as HTMLInputElement).checked ? '' : 'none'; };
 el<HTMLInputElement>('showPlan').onchange = event => settlements.urban.setPlanVisible((event.target as HTMLInputElement).checked);
 el<HTMLSelectElement>('backgroundStyle').value = backgroundStyle;
@@ -347,6 +348,9 @@ el<HTMLSelectElement>('backgroundStyle').onchange = event => {
   if (decor) void drawBackground(decor);
 };
 syncCityPalette(); syncRoadPreset(); document.documentElement.dataset.cityBackground = backgroundStyle;
+map.addEventListener('urban:v1-style', event => {
+  if ((event as CustomEvent).detail.active && city3d.active) setProjection(false);
+});
 el<HTMLInputElement>('backgroundOpacity').oninput = event => { background.setAttribute('opacity', (event.target as HTMLInputElement).value); };
 
 /** An export of this browser, otherwise the catalogue file of the same id. */

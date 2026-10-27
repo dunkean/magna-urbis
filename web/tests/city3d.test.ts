@@ -60,7 +60,9 @@ describe('city 3D silhouettes', () => {
     const footprint = rect(0, 0, 12, 6), massing = [{ floors: 2, eave_m: 6, rise_m: 3, roof: 'hip', ridges: [[3, 3, 9, 3]], cover: 'slate', wall: 'brick' }];
     const batch: PlacementBatch = { schema_version: '1', generator_version: 'silhouette', buildings: [silhouette('m', footprint, { role: 'dwelling.house', massing })], refusals: [], open_spaces: [] };
     const roof = city3dScene(batch).buildings[0].volumes[0].roof_mesh, plan = buildingRoof(footprint, massing as MassingPiece[]);
-    expect(roof.faces.map(f => f.vertices.map(i => [roof.vertices[i].x, roof.vertices[i].y, roof.vertices[i].z - 10])))
+    // Facade details share this mesh; compare only the cover faces to the plan.
+    expect(roof.faces.filter(f => f.material.startsWith('city3d:cover:')).map(f => f.vertices.map(i => [roof.vertices[i].x, roof.vertices[i].y, roof.vertices[i].z - 10])))
       .toEqual(plan.map(f => f.points.map(p => [p.x, p.y, p.z])));
+    expect(roof.faces.filter(f => f.material.startsWith('city3d:cover:')).every(f => /@[0-9a-f]{6}$/.test(f.material))).toBe(true);
   });
 });

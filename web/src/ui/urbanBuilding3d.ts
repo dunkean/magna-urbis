@@ -2,12 +2,13 @@ import { buildingPaint, type UrbanBuildingAppearance } from '../render/urbanBuil
 import { building3dHeight, isBuildingProjection, buildingRayDistance, eachBuildingTriangle, type BuildingVector, type Building3dVisual, type Building3dScene } from '../render/urbanBuildingGeometry';
 import { layerExtent, loadMaterialImages, uploadMaterialArrays, coverLayer, wallLayer, MATERIALS } from '../render/buildingMaterials';
 import { buildingFeatureLod, buildingFeatureMetresPerPixel, hasBuildingFeatureLod, sameBuildingFeatureLod, type BuildingFeatureLod } from '../render/urbanBuildingFeatureLod';
+import { buildingTint } from '../render/buildingPalette';
 
 type Vec3 = [number, number, number];
 type Bounds = [number, number, number, number, number, number];
 interface BuildingFrame { matrix: Float32Array; cameraX: number; cameraY: number; targetHeight: number; exaggeration: number; focal: number; distance: number }
 /** `stride`: floats per vertex, 6 (position, normal) or 9 (+ uv in tiles, material layer) for textured materials. */
-interface Batch { color: Vec3; tint: Vec3; values: number[]; buffer?: WebGLBuffer; vao?: WebGLVertexArrayObject; count: number; stride: number }
+interface Batch { color: Vec3; tint: Vec3; recolored: boolean; values: number[]; buffer?: WebGLBuffer; vao?: WebGLVertexArrayObject; count: number; stride: number }
 interface Entry { building: Building3dVisual; bounds: Bounds }
 interface Sector { origin: [number, number]; entries: Entry[]; bounds: Bounds; width: number; featureLodEligible: boolean; overview: boolean; shown: boolean; cached?: { overview: boolean; featureLod?: BuildingFeatureLod; batches: Batch[]; used: number } }
 const SECTOR = 256, MAX_CACHE_BYTES = 96 * 1024 * 1024;
@@ -45,6 +46,7 @@ precision highp float;
 in vec3 n; in vec3 wp; in vec2 uv; flat in float layer;
 uniform vec3 material;
 uniform vec3 tint;
+uniform int recolored;
 uniform int useTex;
 uniform highp sampler2DArray albedoTex;
 uniform highp sampler2DArray normalTex;
@@ -60,7 +62,8 @@ void main(){
     vec3 dp2perp=cross(dp2,N), dp1perp=cross(N,dp1);
     vec3 T=dp2perp*duv1.x+dp1perp*duv2.x, B=dp2perp*duv1.y+dp1perp*duv2.y;
     float invmax=inversesqrt(max(max(dot(T,T),dot(B,B)),1e-20));
-    base=albedo*tint; N=normalize(mat3(T*invmax,-B*invmax,N)*normalize(tn));
+    base=recolored==1?clamp(mix(material,albedo*tint,.65),0.,1.):albedo*tint;
+    N=normalize(mat3(T*invmax,-B*invmax,N)*normalize(tn));
   }
   float light=.55+.45*abs(dot(N,normalize(vec3(-.4,.85,.3))));color=vec4(base*light,1.);
 }`;
@@ -181,18 +184,44 @@ export class UrbanBuildingPass {
   private prepare(sector: Sector, overview: boolean, featureLod?: BuildingFeatureLod): void {
     this.release(sector);
     const groups = new Map<string, Batch>(), textured = !!this.appearance.textured, stride = textured ? 9 : 6;
-    for (const { building } of sector.entries) eachBuildingTriangle(building, face => {
-      const raw = face.material ?? (face.surface === 'roof' ? face.materials.cladding : face.materials.coating), tm = /@([0-9a-f]{3})$/.exec(raw ?? '');
-      const tint = tm ? [...tm[1]].map(c => parseInt(c, 16) / 8) as Vec3 : [1, 1, 1] as Vec3, id = tm ? raw.slice(0, tm.index) : face.material;
-      const paint = buildingPaint(face.materials, building.function, building3dHeight(building), this.appearance, id, {materials: this.source?.materials ?? []});
-      const base = face.surface === 'roof' ? paint.roof : paint.wall, color = tm ? `${base}|${tm[1]}` : base;
-      let batch = groups.get(color); if (!batch) { const c = rgb(base); batch = { color: tm ? c.map((v, i) => Math.min(1, v * tint[i])) as Vec3 : c, tint, values: [], count: 0, stride }; groups.set(color, batch); }
-      const layer = textured ? materialLayer(id ?? (face.surface === 'roof' ? face.materials.cladding : face.materials.coating)) : -1;
-      for (const p of face.points) {
-        batch.values.push(p[0] - sector.origin[0], p[2], p[1] - sector.origin[1], face.normal[0], face.normal[2], face.normal[1]);
-        if (textured) { const [u, v] = faceUv(p, face.normal, layer); batch.values.push(u, v, layer); }
-      }
-    }, overview, featureLod);
+    for (const { building } of sector.entries) {
+      const colors = new Map<string, Vec3>(), culture = building.culture?.culture ?? '';
+      let h = 2166136261; for (let i = 0; i < building.id.length; i++) h = Math.imul(h ^ building.id.charCodeAt(i), 16777619);
+      const tone = Math.round((h >>> 0) / 0xffffffff * 15) / 15;
+      const programme = (building as unknown as { programme?: { role?: string; landmark?: boolean } }).programme;
+      const role = `${programme?.role ?? ''}${programme?.landmark ? ' monument' : ''}`;
+      eachBuildingTriangle(building, face => {
+        const raw = face.material ?? (face.surface === 'roof' ? face.materials.cladding : face.materials.coating), tm = /@([0-9a-f]{6}|[0-9a-f]{3})$/.exec(raw ?? '');
+        const id = tm ? raw.slice(0, tm.index) : raw;
+        const paint = buildingPaint(face.materials, building.function, building3dHeight(building), this.appearance, id, {materials: this.source?.materials ?? []});
+        const layer = textured ? materialLayer(id ?? (face.surface === 'roof' ? face.materials.cladding : face.materials.coating)) : -1;
+        const base = face.surface === 'roof' ? paint.roof : paint.wall, key = `${raw}|${face.surface}`;
+        let c = colors.get(key);
+        if (!c) {
+          c = rgb(base);
+          if (this.appearance.diagnostic === 'none') {
+            if (tm?.[1].length === 6) c = rgb(`#${tm[1]}`);
+            else if (tm) c = c.map((v, i) => Math.min(1, v * parseInt(tm[1][i], 16) / 8)) as Vec3;
+            else if (culture && !building.id.startsWith('city3d-')) {
+              const material = (s: string): string => /(?:^|[:/_-])(timber|wood|brick|stone|earth|plaster|bamboo|wattle|hide|coral|tile|slate|thatch|reed|palm|shingle|bark|turf|felt|snow|metal|lead)(?:$|[:/_-])/.exec(s)?.[1] ?? '';
+              const w = material(face.materials.coating || face.materials.infill), r = material(face.materials.cladding);
+              const p = buildingTint(culture, w, r, tone, role + (/tower|minaret|stone/.test(id) ? ' monument' : ''));
+              c = face.surface === 'roof' ? p.roof : p.wall;
+            }
+          }
+          colors.set(key, c);
+        }
+        const recolored = this.appearance.diagnostic === 'none' && (tm?.[1].length === 6 || !!culture && !building.id.startsWith('city3d-'));
+        const color = `${c.join(',')}|${layer}|${recolored}`, mean = MATERIALS.layers[layer]?.mean_rgb;
+        const tint = mean && recolored ? c.map((v, i) => v / Math.max(0.04, mean[i] / 255)) as Vec3
+          : tm?.[1].length === 3 ? [...tm[1]].map(v => parseInt(v, 16) / 8) as Vec3 : [1, 1, 1] as Vec3;
+        let batch = groups.get(color); if (!batch) { batch = { color: c, tint, recolored, values: [], count: 0, stride }; groups.set(color, batch); }
+        for (const p of face.points) {
+          batch.values.push(p[0] - sector.origin[0], p[2], p[1] - sector.origin[1], face.normal[0], face.normal[2], face.normal[1]);
+          if (textured) { const [u, v] = faceUv(p, face.normal, layer); batch.values.push(u, v, layer); }
+        }
+      }, overview, featureLod);
+    }
     const gl = this.gl, batches: Batch[] = [];
     for (const batch of groups.values()) {
       if (!batch.values.length) continue;
@@ -248,7 +277,9 @@ export class UrbanBuildingPass {
       sector.shown = true; sector.overview = sector.cached!.overview; sector.cached!.used = this.tick;
       gl.uniform3f(gl.getUniformLocation(p, 'offset'), sector.origin[0] - frame.cameraX, -frame.targetHeight, sector.origin[1] - frame.cameraY);
       for (const batch of sector.cached!.batches) {
-        gl.uniform3fv(gl.getUniformLocation(p, 'material'), batch.color); gl.uniform3fv(gl.getUniformLocation(p, 'tint'), batch.tint); gl.bindVertexArray(batch.vao!); gl.drawArrays(gl.TRIANGLES, 0, batch.count);
+        gl.uniform3fv(gl.getUniformLocation(p, 'material'), batch.color); gl.uniform3fv(gl.getUniformLocation(p, 'tint'), batch.tint);
+        if (texProgram) gl.uniform1i(gl.getUniformLocation(p, 'recolored'), batch.recolored ? 1 : 0);
+        gl.bindVertexArray(batch.vao!); gl.drawArrays(gl.TRIANGLES, 0, batch.count);
       }
     }
     gl.bindVertexArray(null);

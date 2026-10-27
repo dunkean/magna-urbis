@@ -1,3 +1,5 @@
+import { v1LandscapeCanvas, type V1LandscapeStyle } from '../render/v1Landscape';
+import { CityGround } from '../render/cityGround';
 import { bindGear, gearButton } from './mapGroup';
 import { localizeCityInspector } from './cityInspectorLocale';
 import { urbanText } from './urbanPanelLocale';
@@ -107,6 +109,7 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
   let sample: ReturnType<typeof fantasyLanduseSample> | undefined;
   let worker: Worker | undefined, fallback = false, id = 0, timer: ReturnType<typeof setTimeout> | undefined;
   let previous: Context | undefined, previousKey = '', previousWaiting = false;
+  let v1Style: V1LandscapeStyle | undefined;
   let applied = false, requested = false, withoutForest = false;
   let renderer: CanvasRenderer | undefined, renderWorld: World | undefined, renderScene: Scene | undefined;
   let canvas: HTMLCanvasElement | undefined, host: SVGForeignObjectElement | undefined, frame = 0, rendererDpr = 1;
@@ -143,22 +146,24 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     renderer?.dispose(); renderer = undefined; cancelAnimationFrame(frame);
     if (!active() || !scene || !context) { landuseLayer.replaceChildren(); canvas = undefined; host = undefined; renderWorld = undefined; renderScene = undefined; return; }
     if (!canvas) {
-      landuseLayer.innerHTML = `<defs><clipPath id="urban-landuse-clip"><rect width="${scene.mapSize}" height="${scene.mapSize}"/></clipPath></defs><g clip-path="url(#urban-landuse-clip)"><foreignObject/></g>`;
+      const dry = new CityGround(context.raster).land().flatMap(s => [s.outer, ...s.holes]).map(r => r.map((p, i) => `${i ? 'L' : 'M'}${p.x},${p.y}`).join('') + 'Z').join('');
+      landuseLayer.innerHTML = `<defs><clipPath id="urban-landuse-clip"><path d="${dry}" clip-rule="evenodd"/></clipPath></defs><g clip-path="url(#urban-landuse-clip)"><foreignObject/></g>`;
       host = landuseLayer.querySelector('foreignObject')!;
       canvas = document.createElement('canvas'); canvas.id = 'landuseCanvas'; canvas.style.display = 'block'; host.append(canvas);
     }
-    if (withoutForest !== !!options.forestMaterial?.()) { withoutForest = !withoutForest; renderWorld = undefined; renderScene = undefined; }
+    if (withoutForest !== (!v1Style && !!options.forestMaterial?.())) { withoutForest = !withoutForest; renderWorld = undefined; renderScene = undefined; }
     renderWorld ??= urbanLanduseRenderWorld({ ...scene, landuse: scene.landuse && { ...scene.landuse,
       areas: scene.landuse.areas.filter(a => !settings.hiddenKinds.includes(a.kind) && !(withoutForest && a.kind === 'forest')),
       farmsteads: settings.showFarms ? scene.landuse.farmsteads : [] } }, context.raster);
-    const pal = { ...biomePalette(settings.style, scene.options.biome), frameKind: 'none' as const };
+    const pal = { ...biomePalette(v1Style ?? settings.style, scene.options.biome), frameKind: 'none' as const };
     const background = options.getBackground();
     rendererDpr = window.devicePixelRatio || 1;
     renderer = createCanvasRenderer(canvas, renderWorld, pal, {
       dpr: rendererDpr, scene: renderScene, transparentBackground: true, raster: false,
-      vegetation: settings.vegetation, brushes: settings.painted ? brushImages : undefined,
+      vegetation: v1Style ? 'classic' : settings.vegetation, brushes: !v1Style && settings.painted ? brushImages : undefined,
       furrowReferenceSize: SIZE_PRESETS[scene.options.size].mapSize,
       terrain: () => {
+        if (v1Style) return v1LandscapeCanvas(context!.raster, v1Style, scene!.options.biome);
         if (!background.image || background.opacity <= 0) return null;
         if (background.opacity === 1) return background.image;
         const base = document.createElement('canvas'); base.width = background.image.width; base.height = background.image.height;
@@ -259,13 +264,22 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
   visible.onchange = () => setVisible(visible.checked);
   panelVisible.onchange = () => setVisible(panelVisible.checked);
   farms.onchange = () => { settings.showFarms = farms.checked; renderWorld = undefined; renderScene = undefined; draw(); options.onChange(); };
+  options.map.addEventListener('urban:v1-style', event => {
+    const detail = (event as CustomEvent<{ active: boolean; style: V1LandscapeStyle }>).detail;
+    v1Style = detail.active ? detail.style : undefined;
+    draw();
+  });
+  // This module is lazy-loaded after the urban view may already be selected.
+  const selectedV1 = options.map.querySelector<HTMLButtonElement>('[data-urban-view="v1"][aria-pressed="true"]')
+    ?? document.querySelector<HTMLButtonElement>('[data-urban-view="v1"][aria-pressed="true"]');
+  if (selectedV1) v1Style = document.querySelector<HTMLSelectElement>('[data-v1-style]')?.value === 'atlas' ? 'atlas' : 'parchment';
   visibility(); schedule();
   return {
     get sample() { return sample; },
     updateView,
     refreshBackground: draw,
     /** Re-evaluate the Render3D forest suppression after a style or forest change. */
-    refreshForest(): void { if (withoutForest !== !!options.forestMaterial?.()) draw(); },
+    refreshForest(): void { if (withoutForest !== (!v1Style && !!options.forestMaterial?.())) draw(); },
     set(next?: Context, pending = false): void {
       context = next; waiting = pending;
       const key = next ? JSON.stringify({ seed: next.seed, city: next.city, neighbours: next.neighbours, relief: next.relief,

@@ -865,6 +865,22 @@ fn houses_reply(path: &str, body: &[u8]) -> ApiResult<Reply> {
     }
 }
 
+// Catch while the session guard is still held: unwinding past it poisons the
+// mutex and leaves both this request and later retained-source reads unusable.
+fn urban_guard<T>(state: &mut Session, work: impl FnOnce(&mut Session) -> ApiResult<T>) -> ApiResult<T> {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| work(state))) {
+        Ok(result) => result,
+        Err(panic) => {
+            state.layouts = None;
+            state.urban.invalidate_layouts();
+            let message = panic.downcast_ref::<String>().map(String::as_str)
+                .or_else(|| panic.downcast_ref::<&str>().copied()).unwrap_or("unknown panic");
+            eprintln!("[urban_panic] {message}");
+            Err("[urban_panic] Urban generation failed; regenerate the urban plan.".into())
+        }
+    }
+}
+
 fn dispatch(path: &str, body: &[u8], sessions: &Mutex<Sessions>) -> ApiResult<Reply> {
     if path == "/status" {
         return json_reply(
@@ -951,7 +967,7 @@ fn dispatch(path: &str, body: &[u8], sessions: &Mutex<Sessions>) -> ApiResult<Re
     match path {
         "/terrain" => terrain_reply(value(&input)?, &mut state),
         "/settlements" => settlement_reply(input, &state),
-        "/urban" => urban_reply(input, &mut state, &id),
+        "/urban" => urban_guard(&mut state, |state| urban_reply(input, state, &id)),
         _ => Err("Point dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢entrÃƒÆ’Ã‚Â©e local inconnu.".into()),
     }
 }
@@ -1000,6 +1016,17 @@ const MAX_NATIVE_ASSEMBLY_BODY:usize=32*1024*1024;
 fn native_assembly_body_budget(path:&str,length:usize)->bool {
     !matches!(path,"/houses/assemble-pair"|"/houses/unpack-assembly"|"/houses/realize-assembly"|"/houses/native-assembly-capability"|"/houses/plan-parent-batch"|"/houses/unpack-parent"|"/houses/realize-parent"|"/houses/unpack-parent-batch"|"/houses/begin-parent-session"|"/houses/plan-parent-session"|"/houses/ack-parent-session"|"/houses/abort-parent-session"|"/houses/release-parent-session")
         ||length<=MAX_NATIVE_ASSEMBLY_BODY
+}
+fn respond_result(stream: &mut TcpStream, origin: &str, result: ApiResult<Reply>) {
+    match result {
+        Ok(reply) => { let _ = respond(stream, "200 OK", origin, reply); }
+        Err(error) => {
+            let status = if error.starts_with("[urban_panic]") { "500 Internal Server Error" } else { "400 Bad Request" };
+            if let Ok(reply) = json_reply(json!({"error": error})) {
+                let _ = respond(stream, status, origin, reply);
+            }
+        }
+    }
 }
 fn handle(mut stream: TcpStream, sessions: &Mutex<Sessions>) {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(120)));
@@ -1095,16 +1122,7 @@ fn handle(mut stream: TcpStream, sessions: &Mutex<Sessions>) {
             Ok(n) => bytes.extend_from_slice(&scratch[..n]),
         }
     }
-    match dispatch(path, &bytes[head_end..head_end + length], sessions) {
-        Ok(reply) => {
-            let _ = respond(&mut stream, "200 OK", origin, reply);
-        }
-        Err(error) => {
-            if let Ok(reply) = json_reply(json!({"error": error})) {
-                let _ = respond(&mut stream, "400 Bad Request", origin, reply);
-            }
-        }
-    }
+    respond_result(&mut stream, origin, dispatch(path, &bytes[head_end..head_end + length], sessions));
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

@@ -11,6 +11,7 @@
  * The triangulation can be split over workers by polygon ranges (cityGlWorker.ts). */
 import type { Point, Shape } from '../../../rust/bridge/urban';
 import type { CityBuildings, CityScene } from './cityCanvas';
+import { isBoardwalk } from './cityGround';
 import { earcut } from './cityGlEarcut';
 
 export interface CityGlRange { start: number; count: number }
@@ -185,8 +186,9 @@ export function packPlan(scene: CityScene, origin = cityOrigin(scene)): CityGlFi
   let feature = 0;
   const layer = (name: string, items: readonly Shape[]): void => { layers[name] = packLayer(packer, items.map(s => [s]), feature); feature += items.length; };
   layer('footprint', scene.footprint);
-  layer('blocks', scene.blocks.map(b => b.shape));
-  layer('parcels', scene.parcels.map(p => p.shape));
+  layers.blocks = packLayer(packer, scene.blocks.map(b => b.ground ?? [b.shape]), feature); feature += scene.blocks.length;
+  layers.parcels = packLayer(packer, scene.parcels.map(p => p.ground ?? [p.shape]), feature); feature += scene.parcels.length;
+  layer('quays', (scene.quays ?? []).map(q => q.shape));
   return { polygons: packer.done(), layers, featureCount: feature, origin };
 }
 /** Building polygons: every shape of a building's surface shares its feature id (= item index). */
@@ -242,7 +244,7 @@ export interface CityGlStrokes {
   firstWithRank: number[];
 }
 const STREET_MIN_PX = [3, 2.4, 1.6, 1.1, 0.8];
-const CROSSINGS = new Set(['bridge', 'causeway', 'ford']);
+const CROSSINGS = new Set(['bridge', 'causeway', 'ford', 'pier', 'boardwalk', 'walkway']);
 function strokeWriter(segments: number): { f: Float32Array; u: Uint32Array; buffer: ArrayBuffer; n: number; put(a: Point, b: Point, o: Point, width: number, minPx: number, along: number, feature: number, meta: number): void } {
   const buffer = new ArrayBuffer(Math.max(1, segments) * STROKE_STRIDE * 4), f = new Float32Array(buffer), u = new Uint32Array(buffer);
   const w = { f, u, buffer, n: 0, put(a: Point, b: Point, o: Point, width: number, minPx: number, along: number, feature: number, meta: number): void {
@@ -278,7 +280,7 @@ export function buildStreetStrokes(scene: CityScene, origin: Point): CityGlStrok
     for (let r = Math.max(0, k); r < 16; r++) if (firstWithRank[r] < 0) firstWithRank[r] = w.n;
     const meta = rank | (CROSSINGS.has(s.role) ? META.crossing : 0) | (s.role === 'ford' ? META.dash : 0) | (s.role === 'bridge' || s.role === 'quay' ? META.solidEdge : 0);
     const ck = `${k}|${cells[i]}`, before = w.n;
-    putPolyline(w, s.street.path, origin, s.width, STREET_MIN_PX[Math.min(4, rank)], i, meta, s.role === 'bridge' || s.role === 'quay');
+    putPolyline(w, s.street.path, origin, s.width, isBoardwalk(s.role) ? 0.8 : STREET_MIN_PX[Math.min(4, rank)], i, meta, s.role === 'bridge' || s.role === 'quay');
     if (w.n === before) continue;
     let chunk = chunks[chunks.length - 1];
     if (!chunk || ck !== chunkKey) { chunk = { box: [Infinity, Infinity, -Infinity, -Infinity], first: before, count: 0 }; chunks.push(chunk); chunkKey = ck; }

@@ -26,6 +26,13 @@ fn actual_clipped_path_entry_anchors_shared_front_to_its_real_regional_street() 
     assert_eq!(on.len(),fs.len(),"no frontage on removed global geometry");
 }
 #[test]
+fn a_planned_gate_is_an_access_source_without_a_regional_road() {
+    let p=g::rectangle(5.,0.,7.,10.);let block=g::rectangle(0.,0.,20.,20.);
+    let mut l=layout_at(-1.);l.streets[0].role="gate-street".into();l.streets[0].rank=1;
+    assert_eq!(regional_streets(&l),vec![true]);
+    assert!(!certified(&block,&[p.clone()],&front_edges(&p),&l).is_empty());
+}
+#[test]
 fn nearest_street_and_disconnected_local_road_cannot_certify_a_path() {
     let p=g::rectangle(5.,10.,7.,18.);let block=g::rectangle(0.,0.,20.,20.);
     let eligible=front_edges(&p);let mut l=layout_at(-1.);

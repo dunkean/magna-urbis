@@ -5,9 +5,11 @@
  * reserve outlines, the thicker landmark outline of the roles view (1 px here). */
 import type { CityBuildings, CityLayers, CityLod, CityPalette, CityScene, CityView, CityDistrict } from './cityCanvas';
 import { BUILDING_FAMILIES, DISTRICT_ROLES, districtRoleKey, roleFamily } from './cityCanvas';
+import { isBoardwalk } from './cityGround';
 import { urbanFunctionColor } from './urbanBuildingStyle';
 import type { CityGlFillMesh } from './cityGlBuild';
 import { MATERIALS, coverLayer, placeLayer, streetLayer } from './buildingMaterials';
+import { planBuildingColors, planRoofColor, planShade } from './cityBuildingPalette';
 
 export interface CityGlStyleState {
   view: CityView; lod: CityLod; palette: CityPalette; layers: CityLayers;
@@ -71,7 +73,9 @@ export const PAVED_ALPHA = 253 / 255;
 const YARD_EARTH = '#b3a27c';
 function paintedYard(d: CityDistrict | undefined, fallback: string): string { return mix(districtColor(d, fallback), YARD_EARTH, 0.45); }
 export function streetPaint(role: string, rank: number, palette: CityPalette): { fill: string; casing: string } {
+  if (role === 'track') { const ink = palette === 'ink' ? '#776348' : '#a58e65'; return { fill: ink, casing: ink }; }
   if (palette === 'ink') return { fill: '#6b5640', casing: '#3c3024' };
+  if (isBoardwalk(role)) return { fill: '#b49a6d', casing: '#514431' };
   if (palette === 'parchment') return role === 'ford' ? { fill: PARCH.ford, casing: PARCH.ink } : role === 'bridge' ? { fill: PARCH.bridge, casing: PARCH.wall }
     : role === 'quay' ? { fill: PARCH.quay, casing: PARCH.ink } : { fill: PARCH.street, casing: PARCH.streetEdge };
   switch (role) {
@@ -100,8 +104,13 @@ export function planColors(scene: CityScene, mesh: Pick<CityGlFillMesh, 'layers'
   const outline = palette === 'ink' ? '#3c3024' : parchment ? PARCH.inkSoft : '#655847';
   const growth = (zone: string): string => ZONE_COLORS[zone] ?? ZONE_COLORS.core;
   const draws: CityGlDraws = { footprint: false, footprintLines: false, blocks: false, blockLines: false, parcels: false, parcelLines: false,
-    streets: layers.streets, streetCasing: layers.streets && lod !== 'far', walls: layers.enclosures, wallInner: layers.enclosures && lod !== 'far', towers: layers.enclosures && lod !== 'far',
+    streets: layers.streets, streetCasing: layers.streets, walls: layers.enclosures, wallInner: layers.enclosures && lod !== 'far', towers: layers.enclosures && lod !== 'far',
     buildings: false, buildingLines: false };
+  if (layers.streets && mesh.layers.quays) (scene.quays ?? []).forEach((q, i) => {
+    const f = mesh.layers.quays.features[0] + i;
+    put(fill, f, q.material === 'timber' ? '#b49a6d' : '#c8c0a7');
+    put(line, f, parchment ? PARCH.ink : '#57534b');
+  });
   if (lod === 'far') {
     if (layers.blocks) {
       const f0 = mesh.layers.footprint.features[0];
@@ -166,32 +175,26 @@ export function planColors(scene: CityScene, mesh: Pick<CityGlFillMesh, 'layers'
 }
 
 /** Colours of the building mesh (feature = item index). */
-export function buildingColors(buildings: CityBuildings | undefined, s: CityGlStyleState, scene?: CityScene): { fill: Uint8Array; line: Uint8Array } {
+export function buildingColors(buildings: CityBuildings | undefined, s: CityGlStyleState, _scene?: CityScene): { fill: Uint8Array; line: Uint8Array } {
   const items = buildings?.items ?? [], roofs = buildings?.roofs, count = items.length + (roofs ? roofs.shapes.length + items.length : 0);
   const fill = new Uint8Array(Math.max(1, count) * 4), line = new Uint8Array(Math.max(1, count) * 4), colors: string[] = [];
   const parchment = s.palette === 'parchment', edge = parchment ? '#f1e5c6' : '#2e261d';
-  const painted = !!s.painted && !parchment && s.view !== 'roles' && s.diagnostic !== 'uses';
+  const diagnostic = s.view === 'roles' || s.diagnostic === 'uses';
+  const painted = !!s.painted && !parchment && s.palette !== 'ink' && !diagnostic;
   items.forEach((b, i) => {
-    const wealth = b.parcel === undefined ? undefined : scene?.parcels[b.parcel]?.allocation?.wealth ?? scene?.parcels[b.parcel]?.district?.wealth;
+    const tint = planBuildingColors(b, s.palette);
     const color = s.view === 'roles' ? BUILDING_FAMILIES[b.family]?.color ?? '#5a4b3c' : s.diagnostic === 'uses' ? urbanFunctionColor(b.fn)
-      : painted ? shade(paintedRoof(b.family, b.fn, b.landmark, wealth), roofJitter(b.id))
-      : parchment ? b.landmark ? PARCH.landmark : PARCH.mass : b.landmark ? '#3f3329' : '#5a4b3c';
+      : roofs ? tint.wall : tint.roof;
     // Party walls: every roof keeps a dark edge, so adjoining houses of a row stay distinct.
-    put(fill, i, color); put(line, i, painted ? b.landmark ? '#e2d3a6' : '#1f1811' : edge, painted && !b.landmark ? 0.8 : 1);
+    put(fill, i, color); put(line, i, b.stilts ? '#514431' : painted ? b.landmark ? '#e2d3a6' : '#1f1811' : edge, painted && !b.landmark ? 0.8 : 1);
     colors.push(color);
   });
-  // Roof pans: the building's colour lit by the pan's slope (sun north-west), a
-  // darker hip/ridge line; flat views (roles, uses, parchment) keep a softer relief.
+  // Roof pans use the exact shared culture/material/tone, softened for ink maps.
   if (roofs) {
-    const flatView = s.view === 'roles' || s.diagnostic === 'uses' || parchment, relief = parchment ? 0.9 : flatView ? 0.5 : 1;
     for (let k = 0; k < roofs.shapes.length; k++) {
-      // Plan views paint the roof material (tile, slate, thatch…) varied per house (jitter)
-      // and per volume (massing tone, ±8 %); parchment keeps its ink, tinted by the cover.
-      const cover = roofs.cover[k], owner = items[roofs.owner[k]], material = flatView ? undefined : ROOF_COVERS[cover], f = items.length + k;
-      let base = material ? shade(owner.landmark ? mix(material, '#3a3440', 0.2) : material, roofJitter(owner.id) * 1.6) : colors[roofs.owner[k]];
-      if (parchment && ROOF_COVERS[cover] && s.view !== 'roles' && s.diagnostic !== 'uses') base = mix(base, mix(ROOF_COVERS[cover], '#8a7355', 0.3), 0.7);
-      base = shade(base, ((roofs.tone?.[k] ?? 0.5) - 0.5) * 0.16);
-      put(fill, f, shade(base, roofs.light[k] * relief)); put(line, f, shade(base, -0.38), COVER_EDGE[cover] ?? 0.55);
+      const cover = roofs.cover[k], f = items.length + k;
+      const color = diagnostic ? planShade(colors[roofs.owner[k]], roofs.light[k] * 0.5) : planRoofColor(items[roofs.owner[k]], roofs, k, s.palette);
+      put(fill, f, color); put(line, f, planShade(color, -0.38), COVER_EDGE[cover] ?? 0.55);
     }
     // Shadow features are drawn with a tint; they only need to be shown.
     for (let i = 0; i < items.length; i++) put(fill, items.length + roofs.shapes.length + i, '#000000');
@@ -209,13 +212,6 @@ export function paintedRoof(family: string, fn: string, landmark: boolean, wealt
   // Poor: duller, browner (thatch, old tile); rich: warmer, redder tile.
   const tinted = family === 'dwelling' || family === 'commerce' || family === 'craft' ? (w < 0.5 ? mix(base, '#7d6a52', (0.5 - w) * 0.9) : mix(base, '#a05438', (w - 0.5) * 0.5)) : base;
   return landmark ? mix(tinted, '#1d1a22', 0.18) : tinted;
-}
-/** ±7 % brightness per building (stable hash of its id): adjoining roofs of a row read
- * as separate houses even where their party-wall edge is under a pixel. */
-function roofJitter(id: string): number { let h = 2166136261; for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619); return ((h >>> 0) % 1000) / 1000 * 0.14 - 0.07; }
-function shade(color: string, k: number): string {
-  const v = rgb(color), c = (sh: number): number => Math.max(0, Math.min(255, Math.round(((v >> sh) & 255) * (1 + k))));
-  return `#${((c(16) << 16) | (c(8) << 8) | c(0)).toString(16).padStart(6, '0')}`;
 }
 /** Roof covers of the city massing (urban/massing.rs). */
 export const ROOF_COVERS: Record<string, string> = {
@@ -259,19 +255,18 @@ export const rgba01 = (color: string, alpha = 1): [number, number, number, numbe
 
 // ---------------------------------------------------------------- textured materials
 // Per-feature material tables (RGBA8, same layout as the colour tables): R = layer + 1 (0: none, keep the flat colour),
-// G = roof downslope angle (0..255 → 0..2π) or, for streets, 1 = texture follows the street, B = brightness × 128.
-const matPut = (out: Uint8Array, i: number, layer: number, g: number, bright: number): void => {
-  out[i * 4] = layer < 0 ? 0 : layer + 1; out[i * 4 + 1] = g; out[i * 4 + 2] = Math.max(0, Math.min(255, Math.round(bright * 128))); out[i * 4 + 3] = 255;
+// G = roof downslope angle (0..255 → 0..2π) or street direction; B = brightness × 128, A = roof tint flag.
+const matPut = (out: Uint8Array, i: number, layer: number, g: number, bright: number, roof = false): void => {
+  out[i * 4] = layer < 0 ? 0 : layer + 1; out[i * 4 + 1] = g; out[i * 4 + 2] = Math.max(0, Math.min(255, Math.round(bright * 128))); out[i * 4 + 3] = roof ? 255 : 0;
 };
-/** Roof pans: cover layer, downslope angle, and the brightness of the flat render (per-house jitter, volume tone, slope light). */
+/** Roof pans keep their flat tint; the shader recentres texture detail around its mean. */
 export function roofMaterialTable(buildings: CityBuildings | undefined, s: CityGlStyleState): Uint8Array {
   const items = buildings?.items ?? [], roofs = buildings?.roofs, n = items.length + (roofs ? roofs.shapes.length + items.length : 0), out = new Uint8Array(Math.max(1, n) * 4);
-  if (!roofs || s.view === 'roles' || s.diagnostic === 'uses' || s.palette === 'parchment') return out;
+  if (!roofs || s.view === 'roles' || s.diagnostic === 'uses' || (s.palette === 'parchment' || s.palette === 'ink')) return out;
   for (let k = 0; k < roofs.shapes.length; k++) {
-    const layer = coverLayer(roofs.cover[k]), owner = items[roofs.owner[k]];
+    const layer = coverLayer(roofs.cover[k]);
     if (layer < 0) continue;
-    const bright = (1 + roofJitter(owner.id) * 1.6) * (1 + ((roofs.tone?.[k] ?? 0.5) - 0.5) * 0.16) * (1 + roofs.light[k]);
-    matPut(out, items.length + k, layer, Math.round(((roofs.dir[k] ?? 0) / (2 * Math.PI) + 1) % 1 * 255), bright);
+    matPut(out, items.length + k, layer, Math.round(((roofs.dir[k] ?? 0) / (2 * Math.PI) + 1) % 1 * 255), 1, true);
   }
   return out;
 }
@@ -287,6 +282,6 @@ export function planMaterialTable(scene: CityScene, mesh: Pick<CityGlFillMesh, '
 export function streetMaterialTable(scene: CityScene): Uint8Array {
   const out = new Uint8Array(Math.max(1, scene.streets.length) * 4);
   // Narrow bridges are timber decks (planks along the span); wider ones are stone paving.
-  scene.streets.forEach((st, i) => { const planks = st.role === 'bridge' && st.width < 4, layer = planks ? MATERIALS.road.bridge_timber : streetLayer(st.role, st.rank); matPut(out, i, layer, planks ? 1 : 0, 1); });
+  scene.streets.forEach((st, i) => { const planks = isBoardwalk(st.role) || st.role === 'bridge' && st.width < 4, layer = planks ? MATERIALS.road.bridge_timber : streetLayer(st.role, st.rank); matPut(out, i, layer, planks ? 1 : 0, 1); });
   return out;
 }

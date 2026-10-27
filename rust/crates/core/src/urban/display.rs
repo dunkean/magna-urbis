@@ -13,6 +13,52 @@ use super::{Layout, Partition, Point, Shape};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
+/// Retained terrain knows the physical water levels separately from its bed.
+/// Direct core callers keep the bank-height fallback produced by the planner.
+pub fn quay_water_levels(layouts: &mut [Layout], width: f64, n: usize, water: &[u8], levels: &[f32]) {
+    if n == 0 || water.len() != n * n || levels.len() != n * n { return; }
+    let cell = width / n as f64;
+    let level_at = |p: Point| {
+        let x = (p.x / cell).floor().clamp(0.0, (n - 1) as f64) as usize;
+        let y = (p.y / cell).floor().clamp(0.0, (n - 1) as f64) as usize;
+        let mut best = (f64::INFINITY, None);
+        for j in y.saturating_sub(2)..=(y + 2).min(n - 1) { for i in x.saturating_sub(2)..=(x + 2).min(n - 1) {
+            let k = j * n + i;
+            if water[k] == 0 || !levels[k].is_finite() { continue; }
+            let d = (p.x - (i as f64 + 0.5) * cell).hypot(p.y - (j as f64 + 0.5) * cell);
+            if d < best.0 { best = (d, Some(levels[k] as f64)); }
+        } }
+        best.1
+    };
+    for structure in layouts.iter_mut().filter_map(|l| l.structure.as_mut()) {
+        let mut quays = vec![];
+        for q in std::mem::take(&mut structure.quays) {
+            let (lo, hi) = q.shape.outer.iter().filter_map(|&p| level_at(p))
+                .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), z| (lo.min(z), hi.max(z)));
+            let shapes = if hi - lo > 0.8 {
+                let (x0, y0, x1, y1) = super::geometry::bbox(&q.shape);
+                let horizontal = x1 - x0 > y1 - y0;
+                let (mut at, end) = if horizontal { (x0, x1) } else { (y0, y1) };
+                let mut shapes = vec![];
+                while at < end {
+                    let next = (at + 40.0).min(end);
+                    let tile = if horizontal { super::geometry::rectangle(at, y0 - 1.0, next, y1 + 1.0) }
+                        else { super::geometry::rectangle(x0 - 1.0, at, x1 + 1.0, next) };
+                    shapes.extend(super::geometry::intersection(&q.shape, &tile)); at = next;
+                }
+                shapes
+            } else { vec![q.shape.clone()] };
+            for shape in shapes {
+                let level = shape.outer.iter().filter_map(|&p| level_at(p)).reduce(f64::min);
+                let mut part = q.clone(); part.shape = shape;
+                if let Some(level) = level { part.deck_z_m = level + 1.0; }
+                quays.push(part);
+            }
+        }
+        structure.quays = quays;
+    }
+}
+
 /// String table: stable small codes, index 0 = "".
 #[derive(Default)]
 struct Table {
@@ -149,12 +195,20 @@ pub fn display_buffers_refs(layouts: &[&Layout], partitions: &[&Partition], ids:
         mut parcel_landmark,
         mut parcel_households,
     ) = (vec![], vec![], vec![], vec![], vec![]);
+    let mut quays = Polygons::default();
+    let (mut quay_kind, mut quay_material, mut quay_deck) = (vec![], vec![], vec![]);
     let mut parcel_ids = vec![];
     let (mut lines, mut line_coords, mut line_width, mut line_rank, mut line_role) =
         (vec![0u32], vec![], vec![], vec![], vec![]);
     let mut block_base = 0u32;
     let mut layout_blocks = vec![];
     for layout in layouts {
+        for q in layout.structure.iter().flat_map(|s| &s.quays) {
+            quays.push(&q.shape, origin);
+            quay_kind.push(tables.entry("quayKind").or_default().code(&q.kind));
+            quay_material.push(tables.entry("quayMaterial").or_default().code(&q.material));
+            quay_deck.push(q.deck_z_m as f32);
+        }
         let districts = layout
             .structure
             .as_ref()
@@ -232,6 +286,10 @@ pub fn display_buffers_refs(layouts: &[&Layout], partitions: &[&Partition], ids:
         }
     }
     let mut w = Writer::default();
+    w.polygons("quays", &quays);
+    w.u16s("quays.kind", &quay_kind);
+    w.u16s("quays.material", &quay_material);
+    w.f32s("quays.deckZ", &quay_deck);
     w.polygons("quarters", &quarters);
     w.polygons("blocks", &blocks);
     w.u16s("blocks.zone", &block_zone);
@@ -302,6 +360,10 @@ mod tests {
         }))
         .unwrap();
         let mut layout = layout;
+        layout.structure = Some(super::super::UrbanStructure {
+            quays: vec![super::super::macroplan::harbour::Quay { kind: "quay".into(), shape: square(90.0, 95.0, 12.0), deck_z_m: 3.0, material: "stone".into() }],
+            ..Default::default()
+        });
         layout.quarters.push(Quarter {
             shape: square(90.0, 90.0, 60.0),
             phase: 0,
@@ -326,6 +388,7 @@ mod tests {
             warnings: vec![],
             diagnostics: None,
         };
+        quay_water_levels(std::slice::from_mut(&mut layout), 200.0, 4, &[1; 16], &[7.0; 16]);
         let blob = display_buffers(&[layout], &[partition], true);
         let head = u32::from_le_bytes(blob[0..4].try_into().unwrap()) as usize;
         let header: Value = serde_json::from_slice(&blob[4..4 + head]).unwrap();
@@ -358,9 +421,36 @@ mod tests {
         let coords = read_f32("parcels.coords");
         assert_eq!(coords[..2], [0.0, 0.0]);
         assert_eq!(coords[8..10], [5.0, 5.0]);
+        assert_eq!(read_u32("quays.polys"), vec![0, 1]);
+        assert_eq!(read_f32("quays.deckZ"), vec![8.0]);
+        assert_eq!(header["tables"]["quayMaterial"][1], "stone");
         assert_eq!(read_u32("streets.lines"), vec![0, 2]);
         assert_eq!(header["tables"]["streetRole"][1], "market");
         assert_eq!(header["parcelIds"][0], "p1");
         assert_eq!(blob.len() % 4, 0);
+    }
+
+    #[test]
+    fn narrow_minor_bridges_are_retained_in_display_buffers() {
+        let mut layout: Layout = serde_json::from_value(json!({
+            "key": "bridges", "culture": "bastide", "center": {"x": 100.0, "y": 100.0},
+            "quarters": [], "streets": [], "blocks": [], "warnings": []
+        })).unwrap();
+        for width in [1.5, 3.0, 8.0] {
+            layout.streets.push(Street { path: vec![Point { x: 90.0, y: 100.0 + width }, Point { x: 120.0, y: 100.0 + width }],
+                widths: vec![width; 2], rank: 4, role: "bridge".into() });
+        }
+        let blob = display_buffers(&[layout], &[], false);
+        let head = u32::from_le_bytes(blob[..4].try_into().unwrap()) as usize;
+        let header: Value = serde_json::from_slice(&blob[4..4 + head]).unwrap();
+        let body = &blob[4 + head..];
+        let roles = &header["sections"]["streets.role"];
+        let offset = roles["offset"].as_u64().unwrap() as usize;
+        assert_eq!(roles["length"], 3);
+        for bytes in body[offset..offset + 6].chunks_exact(2) {
+            let code = u16::from_le_bytes(bytes.try_into().unwrap()) as usize;
+            assert_eq!(header["tables"]["streetRole"][code], "bridge");
+        }
+        assert_eq!(header["sections"]["streets.width"]["length"], 3);
     }
 }

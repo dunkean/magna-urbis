@@ -1783,6 +1783,9 @@ el<HTMLSelectElement>('style').onchange = () => {
   const selected = el<HTMLSelectElement>('style').value as TerrainStyle;
   changeStyle(selected === 'render-v2' ? v2DiagnosticStyle : selected);
 };
+map.addEventListener('urban:v1-style', event => {
+  if ((event as CustomEvent).detail.active && perspective) setPerspective(false);
+});
 el<HTMLSelectElement>('renderV2Diagnostic').onchange = () => changeStyle(el<HTMLSelectElement>('renderV2Diagnostic').value as TerrainStyle);
 function changeRefinement(): void {
   refinement3d = el<HTMLSelectElement>('refinement3d').value as TerrainRefinement;

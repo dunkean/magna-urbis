@@ -372,8 +372,11 @@ fn lot_reshape_keeps_the_partition_and_gives_the_remainder_to_a_neighbour() {
             !x.contacts.is_empty()
                 || x.access
                     .as_ref()
-                    .is_some_and(|a| a.kind == "unserved" || a.kind == "reserved"),
-            "lot {} neither served nor marked unserved",
+                    .is_some_and(|a| a.kind == "unserved" || a.kind == "reserved"
+                        || a.kind == "attached" && x.parent_ids.iter().any(|id|
+                            edited.programme.as_ref().is_some_and(|pr| pr.allocations.iter()
+                                .any(|a| &a.parcel_id == id && !a.role.starts_with("open."))))),
+            "lot {} has neither access, a declared reserve nor an occupied owner",
             x.id
         );
     }

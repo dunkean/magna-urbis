@@ -85,6 +85,7 @@ export interface LayoutConfig extends Omit<ParcelConfig, 'operator' | 'zoneOpera
   maxStreetGrade: number; maxLaneGrade: number; maxStairGrade: number; allowStairs: boolean;
   /** Site archetype from settlement placement (`harbor`, `bridge`, `hilltop`…); absent = unknown. */
   siteArchetype?: string;
+  siteArchetypes?: Record<string, string>;
   footprint: FootprintConfig; tissue: 'culture' | 'grid' | 'organic' | 'radial' | 'terraces' | 'dendritic' | 'clusters'; accessMode: 'adaptive' | 'cultural' | 'none'; accessDepth: number; accessBudget: number;
 }
 /** Native plan grammars (Rust `urban::kinds::Kind`), distinct from demographic classes. */
@@ -112,6 +113,7 @@ export function normalizeLayoutConfig(saved?: Partial<Omit<LayoutConfig, 'footpr
   if (saved?.programme?.decay !== undefined) config.programme.decay = saved.programme.decay;
   if (saved?.programme?.functions !== undefined) config.programme.functions = saved.programme.functions === null ? null : normalizeProgrammeFunctions(saved.programme.functions);
   if (saved?.siteArchetype) config.siteArchetype = saved.siteArchetype;
+  if (saved?.siteArchetypes) config.siteArchetypes = { ...saved.siteArchetypes };
   config.footprint = contractFields(defaults.footprint, saved?.footprint);
   // Missing controls in an existing scene retain the former geometry.
   if (saved) {

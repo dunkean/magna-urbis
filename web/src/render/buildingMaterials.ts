@@ -15,6 +15,7 @@ export const wallLayer = (wall: string | undefined): number => MATERIALS.wall[wa
 export function streetLayer(role: string, rank = 2): number {
   switch (role) {
     case 'bridge': return MATERIALS.road.bridge; case 'causeway': return MATERIALS.road.causeway; case 'ford': return MATERIALS.road.ford;
+    case 'pier': case 'boardwalk': case 'walkway': return MATERIALS.road.bridge_timber;
     case 'quay': return MATERIALS.road.quay; case 'stairs': return MATERIALS.road.stairs; case 'market': return MATERIALS.road.market;
     case 'collective': case 'private': return MATERIALS.road.street_lane;
     default: return rank <= 1 ? MATERIALS.road.street_main : rank === 2 ? MATERIALS.road.street_main : MATERIALS.road.street_lane;

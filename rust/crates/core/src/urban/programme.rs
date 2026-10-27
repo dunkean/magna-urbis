@@ -14,6 +14,8 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap};
 
 #[path = "programme_functions.rs"]
 mod functions;
+#[path = "programme_lots.rs"]
+mod lots;
 pub use functions::{ProgrammeFunctions, PROGRAMME_FUNCTIONS_VERSION};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -421,7 +423,7 @@ pub fn prepare(
     let isolated = isolated_rule.is_some();
     if !isolated {
         // Data-driven building roles, landmarks first so they win central land.
-        let mut needs = roles::services_with_functions(&layout.culture, population, functions);
+        let mut needs = roles::services_for_layout(layout, population, functions);
         needs.sort_by_key(|s| !s.entry.landmark);
         for need in needs {
             let e = &need.entry;
@@ -543,6 +545,7 @@ pub fn prepare(
         super::parcels::block_contacts_indexed(&b.shape, layout, &front_index)
     });
     lap("contacts");
+    let quay_water = roles::quay_water_fronts(layout, surface);
     let mut environment = layout
         .blocks
         .iter()
@@ -556,7 +559,7 @@ pub fn prepare(
                 .iter()
                 .map(|p| (surface.height_at(*p) - h).abs() / dist(*p, c).max(1.0))
                 .fold(0.0, f64::max);
-            let front = water_front(&surface, &b.shape);
+            let front = water_front(&surface, &b.shape).or(quay_water[block]);
             BlockEnvironment {
                 pressure: if surface.wet(c) {
                     0.0
@@ -830,6 +833,11 @@ pub fn prepare(
             // or workshop. Existing places and explicit isolated estates
             // retain their real geometry independently of this heuristic.
             if !isolated && !existing_open && a > target * 4.0 {
+                return None;
+            }
+            // A small common or cemetery takes a parcel, not a whole ward.
+            if !isolated && !existing_open && !layout.enclosures.is_empty()
+                && d.function == "common" && a > d.target_area.max(30.0) * 1.5 {
                 return None;
             }
             let c = centroids[bi];
@@ -1368,6 +1376,7 @@ fn eligible_memo(
         if matches!(d.function.as_str(), "market" | "common") {
             return open_access_with(p, c.min_access_width, memo.frontage(pi, p).1);
         }
+        if d.landmark && has_envelope(p, 4.0, 4.0) { return true; }
         return envelope(memo) || memo.block_witness(layout, pi, p, c.min_frontage, c.min_depth);
     }
     if roles::is_isolated(&pr.context.role) {
@@ -1379,7 +1388,8 @@ fn eligible_memo(
             || (p.use_kind == "reserve"
                 && matches!(p.reason.as_str(), "reserve:market" | "reserve:common"));
         if open_kind || d.function == "common" {
-            return accessible && (open_kind || p.use_kind == "garden");
+            return accessible && (open_kind || p.use_kind == "garden"
+                || d.sites > 0 && matches!(p.use_kind.as_str(), "plot" | "compound"));
         }
     }
     if matches!(p.use_kind.as_str(), "reserve" | "place" | "market") {
@@ -1503,6 +1513,13 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
     pr.reconciliation_passes = 0;
     // Gardens are the remainder of each allocation, never an input.
     pr.demands.retain(|d| d.role != "open.garden");
+    for p in &mut partition.parcels {
+        if p.reason == "public-garden" && p.envelope.is_some()
+            && !partition.config.as_ref().is_some_and(|c|c.overrides.parcels.contains_key(&p.id)) {
+            p.use_kind = if p.family == "compound" { "compound" } else { "plot" }.into();
+            p.reason = "programme-retry".into();
+        }
+    }
     for d in &mut pr.demands {
         d.parcel_capacity = 0.0;
         d.built_capacity = 0.0;
@@ -1726,7 +1743,8 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
         let mut candidates: Vec<(usize, f64)> = (0..parcels.len())
             .filter(|&pi| {
                 assignments[pi].is_none()
-                    && matches!(parcels[pi].use_kind.as_str(), "plot" | "compound")
+                    && (matches!(parcels[pi].use_kind.as_str(), "plot" | "compound")
+                        || d.function == "common" && parcels[pi].use_kind == "garden")
                     && !reserved_for.contains_key(&parcels[pi].block)
                     && roles::site_admissible(&d.site, &facts[pi])
             })
@@ -1793,7 +1811,7 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
     let occupancy = roles::occupancy(&layout.culture);
     let village = pr.population < 500
         || mapping(&layout.culture).is_some_and(|m| m.functional_profile == "communal");
-    let mut morphs: HashMap<(usize, String), Option<(f64, [f64; 2])>> = HashMap::new();
+    let mut morphs: HashMap<(usize, String), Option<(f64, [f64; 2], bool)>> = HashMap::new();
     let dwelling = pr
         .demands
         .iter()
@@ -1826,11 +1844,12 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
                             (
                                 ((c[0] + c[1]) * 0.5).clamp(0.2, 0.95),
                                 [s[0].as_f64().unwrap_or(1.0), s[1].as_f64().unwrap_or(1.0)],
+                                matches!(m.value["arch"]["typology"].as_str().unwrap_or(""), "longhouse" | "maloca" | "plank-house"),
                             )
                         },
                     )
                 })
-                .unwrap_or((0.5, [1.0, 1.0]));
+                .unwrap_or((0.5, [1.0, 1.0], false));
             let zone_village = layout
                 .blocks
                 .get(p.block)
@@ -1851,7 +1870,7 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
                 floors,
                 &occupancy,
                 district_of(p).map_or(0.5, |d| d.wealth),
-                village || zone_village,
+                (village || zone_village) && !tissue.2,
             )
         })
         .collect::<Vec<_>>();
@@ -1887,6 +1906,36 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
         1.0
     };
     let mut extra_households = vec![false; parcels.len()];
+    let requested: f64 = dwelling.iter().map(|&di| pr.demands[di].requested).sum();
+    let fill_limit = (requested * 1.3).floor().max(requested.ceil());
+    // Seed every buildable block, core outward, before cohesion can consume
+    // the programme on a handful of peripheral street fronts.
+    if !roles::is_isolated(&pr.context.role) {
+        let mut built = vec![false; layout.blocks.len()];
+        for (pi, assignment) in assignments.iter().enumerate() {
+            if assignment.is_some_and(|di| !pr.demands[di].role.starts_with("open.")) {
+                built[parcels[pi].block] = true;
+            }
+        }
+        let mut candidates: Vec<usize> = (0..parcels.len())
+            .filter(|&pi| assignments[pi].is_none() && dwelling.iter().any(|&di| admission[di][pi]))
+            .collect();
+        candidates.sort_by(|&a, &b| {
+            let core = |pi: usize| layout.blocks.get(parcels[pi].block).is_some_and(|b| b.zone == "core");
+            core(b).cmp(&core(a)).then(prime[b].cmp(&prime[a]))
+                .then(center_distances[a].total_cmp(&center_distances[b])).then(parcels[a].id.cmp(&parcels[b].id))
+        });
+        let mut held: f64 = dwelling.iter().map(|&di| pr.demands[di].parcel_capacity).sum();
+        for pi in candidates {
+            let block = parcels[pi].block;
+            if built[block] || held + 1.0 > fill_limit { continue; }
+            let Some(di) = dwelling.iter().copied().find(|&di| admission[di][pi]) else { continue };
+            take(&mut pr, &mut assignments, pi, di, 1.0);
+            households[pi] = 1.0;
+            built[block] = true;
+            held += 1.0;
+        }
+    }
     let mut dwelling_order = dwelling.clone();
     dwelling_order.sort_by_key(|&di| {
         (
@@ -1921,11 +1970,13 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
                     (false, true) => 1.0,
                     _ => 0.0,
                 };
+                let core = !commercial && layout.blocks.get(p.block).is_some_and(|b| b.zone == "core");
                 p.pressure * if commercial { 3.0 } else { 0.5 }
                     + front.min(30.0) * if commercial { 0.15 } else { 0.02 }
                     - center_distances[pi] / if commercial { 250.0 } else { 1500.0 }
                     + quarter
                     + street
+                    + if core { 2.0 * PRIME_TIER } else { 0.0 }
             })
             .collect::<Vec<_>>();
         let mut row = admission[di].clone();
@@ -1972,7 +2023,10 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
             if assignments[pi].is_some() || cohesion[pi] != version {
                 continue;
             }
-            take(&mut pr, &mut assignments, pi, di, households[pi].max(1.0));
+            let held: f64 = dwelling.iter().map(|&di| pr.demands[di].parcel_capacity).sum();
+            if held + 1.0 > fill_limit { break; }
+            households[pi] = households[pi].max(1.0).min((goal - pr.demands[di].parcel_capacity).ceil().max(1.0)).min(fill_limit - held);
+            take(&mut pr, &mut assignments, pi, di, households[pi]);
             for &j in &neighbours[pi] {
                 if row[j] && assignments[j].is_none() {
                     cohesion[j] += 1;
@@ -2010,23 +2064,24 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
         if commercial {
             continue;
         }
-        // A main-street lot never stays an empty garden while a house can
-        // stand there: surplus frontage gets one household past the demand.
+        // Fill serviced land within the same bounded population margin.
         let mut extra = 0usize;
         while let Some((_, _, pi, version)) = heap.pop() {
             if assignments[pi].is_some() || cohesion[pi] != version {
                 continue;
             }
-            if !prime[pi] {
-                break;
-            }
+            let enclosed = layout.enclosures.iter().any(|e| super::geometry::contains(
+                &Shape { outer: e.path.clone(), holes: vec![] }, centres[pi]));
+            if !prime[pi] && !enclosed && !public_street(&parcels[pi]) { continue; }
+            let held: f64 = dwelling.iter().map(|&di| pr.demands[di].parcel_capacity).sum();
+            if held + 1.0 > fill_limit { break; }
             take(&mut pr, &mut assignments, pi, di, 1.0);
             extra_households[pi] = true;
             extra += 1;
         }
         if extra > 0 {
             pr.demands[di].reasons.push(format!(
-                "{extra} maison(s) ajoutée(s) au-delà de la demande pour fermer les façades sur rue principale"
+                "{extra} maison(s) ajoutée(s) pour remplir les îlots desservis (plafond de population : +30 %)"
             ));
         }
     }
@@ -2058,6 +2113,29 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
         );
     }
     pr.reconciliation_passes = 2;
+    // A multi-household home can seed an empty frontage without adding people.
+    let mut scattered = 0;
+    let mut donors: BTreeMap<usize,BinaryHeap<(u64,Reverse<usize>)>> = BTreeMap::new();
+    for j in 0..parcels.len() {
+        if !locked[j] && households[j] >= 2.0 && let Some(di) = assignments[j]
+            && pr.demands[di].unit == "domesticUnits" {
+            donors.entry(di).or_default().push((households[j] as u64,Reverse(j)));
+        }
+    }
+    for pi in 0..parcels.len() {
+        if assignments[pi].is_some() || !public_street(&parcels[pi]) && !layout.enclosures.iter().any(|e|
+            super::geometry::contains(&Shape { outer:e.path.clone(), holes:vec![] },centres[pi])) { continue; }
+        let Some(di) = dwelling.iter().copied().filter(|&di|admission[di][pi] && donors.get(&di).is_some_and(|h|!h.is_empty()))
+            .max_by_key(|di|donors[di].peek().copied()) else { continue };
+        let (_,Reverse(j)) = donors.get_mut(&di).unwrap().pop().unwrap();
+        households[j] -= 1.0;
+        if households[j] >= 2.0 { donors.get_mut(&di).unwrap().push((households[j] as u64,Reverse(j))); }
+        pr.demands[di].parcel_capacity -= 1.0;
+        households[pi] = 1.0;
+        take(&mut pr,&mut assignments,pi,di,1.0);
+        scattered += 1;
+    }
+    if scattered > 0 { pr.warnings.push(format!("{scattered} ménage(s) réparti(s) sur des façades vacantes, sans population supplémentaire.")); }
     // Band 5: every plot left over is an explicit garden, orchard or yard.
     // An isolated site is one intention: its other land stays as it is.
     let isolated = roles::is_isolated(&pr.context.role);
@@ -2065,7 +2143,10 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
         .filter(|&pi| {
             !isolated
                 && assignments[pi].is_none()
-                && matches!(parcels[pi].use_kind.as_str(), "plot" | "compound")
+                && (matches!(parcels[pi].use_kind.as_str(), "plot" | "compound")
+                    || parcels[pi].use_kind == "garden" && parcels[pi].family != "reserve"
+                        && parcels[pi].reason != "camp-open"
+                        && parcels[pi].access.as_ref().is_none_or(|a| a.kind != "private"))
                 && !reserved_for.contains_key(&parcels[pi].block)
                 && pr.environment.get(parcels[pi].block).is_none_or(|e| !e.wet)
         })
@@ -2264,6 +2345,12 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
     }
     partition.programme = Some(pr);
     lap("done");
+}
+pub(super) fn consolidate(partition: &mut Partition) {
+    lots::consolidate(None,partition);
+}
+pub(super) fn finish_lots(layout: &Layout, partition: &mut Partition) {
+    lots::consolidate(Some(layout),partition);
 }
 /// Heap tier of a main-street lot for housing: above any cohesion bonus.
 const PRIME_TIER: f64 = 100.0;
@@ -3816,10 +3903,46 @@ mod tests {
         assert!(p.programme.unwrap().allocations.is_empty());
     }
 
+    #[test]
+    fn an_owned_rear_garden_connects_spare_land_to_its_house() {
+        let l = prepare_case("agricultural",false,"european-organic");
+        let mut part = partition(&l);
+        part.programme = l.programme.clone();
+        let mut owner = Allocation {
+            parcel_id:String::new(),demand_id:"owner".into(),function:"domestic".into(),culture:"european-organic".into(),
+            architecture_pack:"EUR-MED".into(),capacity:1.,unit:"domesticUnits".into(),score:0.,reasons:vec![],
+            role:"dwelling.house".into(),label:String::new(),landmark:false,households:1.,housing_floor_need:None,
+            district_role:String::new(),wealth:0.5,
+        };
+        let mut p = part.parcels[0].clone();
+        let mut cells = vec![];
+        for i in 0..3 {
+            p.id = format!("relay/{i}");
+            p.block = 0;
+            p.shape = rectangle(i as f64*20.,0.,i as f64*20.+20.,20.);
+            p.parent_ids = vec![];
+            cells.push(p.clone());
+        }
+        owner.parcel_id = cells[0].id.clone();
+        cells[1].use_kind = "garden".into();
+        cells[1].reason = "attached-rear-land".into();
+        cells[1].parent_ids = vec![owner.parcel_id.clone()];
+        cells[1].access = Some(super::super::ParcelAccess {kind:"attached".into(),street:None,front_length:0.});
+        cells[2].use_kind = "garden".into();
+        cells[2].reason = "public-garden".into();
+        part.parcels = cells;
+        part.programme.as_mut().unwrap().allocations = vec![owner.clone()];
+        part.programme.as_mut().unwrap().adjacency = graph(&part).0;
+        lots::consolidate(None,&mut part);
+        let rear = part.parcels.iter().find(|p|p.id == "relay/2").unwrap();
+        assert_eq!(rear.parent_ids,vec![owner.parcel_id]);
+        assert!(rear.access.as_ref().is_some_and(|a|a.kind == "attached" && a.street.is_none()));
+        assert!(rear.front.is_none() && rear.contacts.is_empty());
+    }
+
     /// Review #17: with more lots than households, gardens go to the lane
     /// lots and every main-street lot holds a house, even when the lane lots
-    /// are nearer the centre; households sum to the demand without a rounding
-    /// cliff.
+    /// are nearer the centre; infill respects the population margin.
     #[test]
     fn main_street_lots_are_housed_before_any_garden() {
         let blocks = (0..8)
@@ -3876,15 +3999,14 @@ mod tests {
                 role(i)
             );
         }
-        assert!(
-            (4..8).any(|i| role(i) == "open.garden"),
-            "surplus land becomes lane gardens"
-        );
         let housed: f64 = pr.allocations.iter().map(|a| a.households).sum();
         assert!(
-            (housed - wanted.round()).abs() < 0.5,
+            housed >= wanted.round() && housed <= (1.3 * wanted).floor(),
             "{housed} households for {wanted}"
         );
+        if housed + 1.0 > 1.3 * wanted {
+            assert!((4..8).any(|i| role(i) == "open.garden"), "the population margin stops infill");
+        }
         // Spread: exact total, busiest plots first, no rounding cliff.
         let caps = [6.0, 6.0, 6.0, 6.0, 1.0];
         let spread = spread_households(&caps, &[0.9, 0.1, 0.1, 0.1, 0.5], &[true; 5], 11.0);

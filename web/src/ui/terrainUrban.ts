@@ -42,6 +42,7 @@ import { siteVisualScene } from './urbanSilhouettes';
 import { createNativeSiteStore, createLegacySiteStore, createUnboundSiteStore, type UrbanSiteStore, type UrbanSiteVisual } from './urbanSiteStore';
 import { CityGlCanvasLayer, type CityGlHostFrame } from '../render/cityGlHost';
 import { cityGlOverlayLayers } from '../render/cityGl';
+import { V1LandscapeLayer, type V1LandscapeStyle } from '../render/v1Landscape';
 import { cityWallSvg } from '../render/cityWalls'; // walls hook
 import { BUILDING_FAMILIES, CityCanvasLayer, DISTRICT_ROLES, districtRoleKey, buildCityBuildings, buildCityScene, drawCity, pickCity, selectCityLod, type CityBuildings, type CityFrameStats, type CityLod, type CityPick, type CityScene } from '../render/cityCanvas';
 import { UrbanBuildingLodRenderer } from '../render/urbanBuildingLod';
@@ -127,7 +128,7 @@ const mechanisms: Record<string, string> = { auto: 'Selon le relief et les accè
 const families: Record<string, string> = { auto: 'Selon culture, relief et accès', circle: 'Circulaire / ovalaire', rectangle: 'Carrée / rectangulaire', polygon: 'Polygonale', compact: 'Organique compacte', elongated: 'Allongée / fusiforme', linear: 'Linéaire / ruban', fan: 'Éventail / secteur', fingers: 'Radiale à bras', dendritic: 'Ramifiée / dendritique', lobed: 'Lobée / polynucléaire', archipelago: 'Discontinue / archipel', composite: 'Composite / asymétrique' };
 const tissues: Record<string, string> = { culture: 'Recettes culturelles par phase', grid: 'Grille orthogonale', organic: 'Organique', radial: 'Radial', terraces: 'Topographique / terrasses', dendritic: 'Ramifié', clusters: 'Groupes autour de communs' };
 const parcelOperators: Record<string, string> = { culture: 'Recettes culturelles par phase', strips: 'Bandes de façade', compact: 'Lots compacts', courtyard: 'Cours et enclos', inherited: 'Parcellaire hérité', oriented: 'Subdivision orientée', frontage: 'Territoires de façade', compound: 'Domaines / compounds', wholeBlock: 'Îlot entier', garden: 'Jardin' };
-interface Render { view: 'tissue' | 'uses' | 'parcels' | 'buildings' | 'roles'; reserve: boolean; allocated: boolean; centers: boolean; domains: boolean; quarters: boolean; blocks: boolean; streets: boolean; enclosures: boolean; parcels: boolean; gardens: boolean; places: boolean; fronts: boolean; axes: boolean; access: boolean; opacity: number; width: number; palette: 'growth' | 'atlas' | 'ink' | 'terrain'; /** PBR textures on constructions (roofs, streets, plazas, bridges, walls). */ textured?: boolean }
+interface Render { v1?: boolean; v1Style?: V1LandscapeStyle; view: 'tissue' | 'uses' | 'parcels' | 'buildings' | 'roles'; reserve: boolean; allocated: boolean; centers: boolean; domains: boolean; quarters: boolean; blocks: boolean; streets: boolean; enclosures: boolean; parcels: boolean; gardens: boolean; places: boolean; fronts: boolean; axes: boolean; access: boolean; opacity: number; width: number; palette: 'growth' | 'atlas' | 'ink' | 'terrain'; /** PBR textures on constructions (roofs, streets, plazas, bridges, walls). */ textured?: boolean }
 type Kind = 'quarters' | 'parcels';
 
 /** `getRaster` replaces `getTerrain` where the raster is already adapted (Urban Bench decors). */
@@ -147,7 +148,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   let regionalOf: RoadOutput | undefined, regional: Street[] = [];
   let layouts: Layout[] | undefined, partitions: Partition[] | undefined;
   // Automated checks (shot scripts): the quarter layouts and the water raster they sit on.
-  (window as unknown as { magnaCityProbe?: unknown }).magnaCityProbe = () => ({ layouts, raster: options.getRaster?.() });
+  (window as unknown as { magnaCityProbe?: unknown }).magnaCityProbe = () => ({ layouts, partitions, raster: options.getRaster?.() });
   let initialBuildingState: import('./urbanBuildingsPanel').UrbanBuildingState | undefined;
   // Retained quarter layouts: parcels reuse them by id instead of resending the plan.
   let layoutsId: number | undefined, retainedLayouts: Layout[] | undefined, parcelsById = false;
@@ -186,7 +187,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     if (d === undefined) { d = prepare(source); paths.set(source, d); }
     return d;
   };
-  let render: Render = { view: 'parcels', reserve: false, allocated: false, centers: false, domains: true, quarters: false, blocks: true, streets: true, enclosures: true, parcels: true, gardens: true, places: true, fronts: false, axes: false, access: false, opacity: 0.8, width: 0.6, palette: 'growth', textured: false };
+  let render: Render = { view: 'parcels', reserve: false, allocated: false, centers: false, domains: true, quarters: false, blocks: true, streets: true, enclosures: true, parcels: true, gardens: true, places: true, fronts: false, axes: false, access: false, opacity: 0.8, width: 0.6, palette: 'growth', textured: false, v1: false, v1Style: 'parchment' };
   function restoreState(saved: string | null): boolean {
     if (!saved) return false;
     try {
@@ -202,6 +203,8 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     } catch { return false; }
   }
   restoreState(new URLSearchParams(location.search).get('urban'));
+  const v1Query = new URLSearchParams(location.search).get('v1');
+  if (v1Query === 'parchment' || v1Query === 'atlas') { render.v1 = true; render.v1Style = v1Query; render.view = 'buildings'; }
   // Missing profiles already default to 'site' in normalizeLayoutConfig.
   // CityBench enables its stages without changing an explicit restored override.
   if (options.city) { enabled = parcelEnabled = true; }
@@ -424,7 +427,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   for (const e of Array.from(rendering.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-render]'))) {
     const key = e.dataset.render as keyof Render;
     if (e instanceof HTMLInputElement && e.type === 'checkbox') e.checked = Boolean(render[key]); else e.value = String(render[key]);
-    e.onchange = () => { (render as unknown as Record<string, unknown>)[key] = e instanceof HTMLInputElement && e.type === 'checkbox' ? e.checked : key === 'palette' ? e.value : Number(e.value); draw(); options.onChange(); };
+    e.onchange = () => { (render as unknown as Record<string, unknown>)[key] = e instanceof HTMLInputElement && e.type === 'checkbox' ? e.checked : e instanceof HTMLSelectElement ? e.value : Number(e.value); draw(); options.onChange(); };
   }
   let appliedLayout = clone(layoutConfig), appliedParcel = clone(parcelConfig), appliedQuarterSeed = quarterSeed, appliedParcelSeed = parcelSeed;
   let successfulLayout = clone(appliedLayout), successfulParcel = clone(appliedParcel), successfulQuarterSeed = appliedQuarterSeed, successfulParcelSeed = appliedParcelSeed;
@@ -811,8 +814,17 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   const views = document.createElement('nav'); views.className = 'urban-view-tabs'; views.setAttribute('aria-label', 'Vue du plan urbain');
   for (const [view, label] of Object.entries({ tissue: 'Tissu', uses: 'Usages', parcels: 'Parcelles', buildings: 'Bâtiments', ...(cityView ? { roles: 'Rôles' } : {}) })) {
     const button = document.createElement('button'); button.type = 'button'; button.textContent = label; button.dataset.urbanView = view;
-    button.onclick = () => { render.view = view as Render['view']; draw(); options.onChange(); options.onPlanChange?.(); }; views.append(button);
+    button.onclick = () => { render.v1 = false; render.view = view as Render['view']; draw(); options.onChange(); options.onPlanChange?.(); }; views.append(button);
   }
+  const v1Button = document.createElement('button'); v1Button.type = 'button'; v1Button.textContent = 'Carte V1'; v1Button.dataset.urbanView = 'v1';
+  v1Button.title = 'Fond et occupation du sol V1, maisons V2 conservées';
+  v1Button.onclick = () => { render.v1 = true; render.view = 'buildings'; draw(); options.onChange(); options.onPlanChange?.(); };
+  views.append(v1Button);
+  const v1Style = document.createElement('select'); v1Style.dataset.v1Style = ''; v1Style.setAttribute('aria-label', 'Style cartographique V1');
+  v1Style.add(new Option('V1 · Parchemin', 'parchment')); v1Style.add(new Option('V1 · Atlas', 'atlas'));
+  v1Style.value = render.v1Style ?? 'parchment';
+  v1Style.onchange = () => { render.v1Style = v1Style.value as V1LandscapeStyle; render.v1 = true; render.view = 'buildings'; draw(); options.onChange(); options.onPlanChange?.(); };
+  views.append(v1Style);
   displayHost.prepend(views);
   const help = document.createElement('button'); help.type = 'button'; help.textContent = '?'; help.title = 'Méthode du parcellaire et des accès'; help.onclick = () => openMethodNote('urban-parcels'); views.append(help);
   const inspection = document.createElement('section'); inspection.className = 'urban-parcel-inspection';
@@ -918,6 +930,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     }
     if (kind === 'quarters') {
       message.layoutConfig = layoutWithEdits(clone(appliedLayout), edits); message.sites = selected.map(s => ({ key: s.key, population: s.population, culture: s.culture, center: s.center, radius: s.radius }));
+      message.layoutConfig.siteArchetypes = Object.fromEntries(selected.map(s => [s.key, s.siteType && s.siteType !== 'auto' ? s.siteType : s.archetype]));
       message.roads = regionalStreets(roads);
     } else {
       // The engine retains the exact serialized layouts of its last quarter response:
@@ -1038,8 +1051,17 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     }
   }
   let programmesOf: object | undefined = {};
+  let lastV1Style = '';
+  const v1Landscape = new V1LandscapeLayer();
+  let v1TerrainOf: TerrainData | undefined, v1Raster: SettlementRaster | undefined;
   function draw(): void {
-    for (const button of Array.from(views.querySelectorAll<HTMLButtonElement>('[data-urban-view]'))) button.setAttribute('aria-pressed', String(button.dataset.urbanView === render.view));
+    for (const button of Array.from(views.querySelectorAll<HTMLButtonElement>('[data-urban-view]'))) button.setAttribute('aria-pressed', String(button.dataset.urbanView === (render.v1 ? 'v1' : render.view)));
+    const terrainForV1 = options.getTerrain();
+    if (render.v1 && !options.getRaster && v1TerrainOf !== terrainForV1) { v1TerrainOf = terrainForV1; v1Raster = terrainForV1 ? settlementRaster(terrainForV1, 512) : undefined; }
+    v1Landscape.draw(options.map, options.getRaster?.() ?? v1Raster, render.v1 ? render.v1Style ?? 'parchment' : undefined);
+    v1Style.value = render.v1Style ?? 'parchment';
+    const v1State = `${!!render.v1}:${render.v1Style ?? 'parchment'}`;
+    if (v1State !== lastV1Style) { lastV1Style = v1State; options.map.dispatchEvent(new CustomEvent('urban:v1-style', { detail: { active: !!render.v1, style: render.v1Style ?? 'parchment' } })); }
     // Camera changes call draw(): the programme table is rebuilt only for a new plan.
     if (programmesOf !== (partitions ?? layouts)) { programmesOf = partitions ?? layouts; buildingPanel.updateProgrammes((partitions ?? layouts ?? []).flatMap(p => p.programme ? [p.programme] : [])); }
     // Regional pieces are clipped before smoothing so their rendered endpoints
@@ -1051,7 +1073,8 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     if (!layer) { layer = document.createElementNS(ns, 'g'); layer.id = 'urbanOverlay'; layer.style.pointerEvents = 'none'; options.map.insertBefore(layer, options.map.querySelector('#roadOverlay, #settlementOverlay')); }
     const { opacity, ...appearance } = render;
     const state = JSON.stringify({ enabled, parcelEnabled, render: appearance });
-    if (layer !== drawnLayer || opacity !== drawnOpacity) { layer.setAttribute('opacity', String(opacity)); drawnOpacity = opacity; }
+    const effectiveOpacity = opacity;
+    if (layer !== drawnLayer || effectiveOpacity !== drawnOpacity) { layer.setAttribute('opacity', String(effectiveOpacity)); drawnOpacity = effectiveOpacity; }
     if (cityView) { drawCityLayer(layer); return; }
     updateUrbanBuildingSelection(layer, buildingPanel.state.scene, buildingPanel.state.selected);
     const buildingAppearance = JSON.stringify({ visible: buildingPanel.state.visible, appearance: buildingPanel.state.appearance });
@@ -1155,7 +1178,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   }
   // ------------------------------------------------------------ City Bench canvas
   // The plan is indexed once per applied result; camera changes only repaint.
-  let cityLayer: CityCanvasLayer | CityGlCanvasLayer | undefined, cityPlan: CityScene | undefined, cityPlanOf: [Layout[] | undefined, Partition[] | undefined] | undefined;
+  let cityLayer: CityCanvasLayer | CityGlCanvasLayer | undefined, cityPlan: CityScene | undefined, cityPlanOf: [Layout[] | undefined, Partition[] | undefined, TerrainData | SettlementRaster | undefined] | undefined;
   type CityVisual = PlacedBuilding | NativeBuildingProjection;
   let cityBuilt: CityBuildings | undefined, cityBuiltOf: PlacementBatch | undefined | null = null;
   let cityRenderer: UrbanBuildingLodRenderer<CityVisual> | undefined, cityProjectionOf: NativeBuildingProjectionScene | undefined;
@@ -1273,10 +1296,10 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     // WebGL2 draws the plan and silhouettes (one upload per plan, a few draw calls per
     // frame); the 2D canvas above keeps labels, glyphs, diagnostics and native roofs.
     cityLayer ??= new CityGlCanvasLayer(options.map, layer, paintCity); cityLayer.attach(layer);
-    const visiblePartitions = parcelEnabled ? partitions : undefined;
+    const visiblePartitions = parcelEnabled ? partitions : undefined, physical = options.getRaster?.() ?? options.getTerrain();
     if (!enabled || !layouts) { cityPlan = undefined; cityPlanOf = undefined; }
-    else if (!cityPlanOf || cityPlanOf[0] !== layouts || cityPlanOf[1] !== visiblePartitions) {
-      cityPlan = buildCityScene(layouts, visiblePartitions ?? []); cityPlanOf = [layouts, visiblePartitions];
+    else if (!cityPlanOf || cityPlanOf[0] !== layouts || cityPlanOf[1] !== visiblePartitions || cityPlanOf[2] !== physical) {
+      cityPlan = buildCityScene(layouts, visiblePartitions ?? [], physical && ('n' in physical ? physical : settlementRaster(physical, 1024))); cityPlanOf = [layouts, visiblePartitions, physical];
       if (!architecturePreview?.scene) cityBuiltOf = null;
     }
     const parentState = buildingPanel.state.parent;
@@ -1396,7 +1419,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     frameInfo.dataset.detailCacheBytes = String(detail?.cacheBytes ?? 0);
     frameInfo.dataset.buildingsPainted = viewport?.stats.coverage === 'complete-native-contours' ? 'unknown' : String(cityFrame.buildings);
     frameInfo.dataset.renderer = glFrame ? 'webgl2' : 'canvas2d';
-    frameInfo.textContent = `Vue ${lodNames[cityFrame.lod]} · ${frame.mpp < 1 ? frame.mpp.toFixed(2) : frame.mpp.toFixed(1)} m/px · ${glFrame ? `WebGL2 · ${glFrame.drawCalls} appels, ${(glFrame.triangles / 1000).toFixed(0)} k triangles` : `${cityFrame.blocks} îlots, ${cityFrame.parcels} parcelles, ${cityFrame.streets} rues`}${cityFrame.buildings ? `, ${cityFrame.buildings} bâtiments` : ''} · ${cityFrame.ms.toFixed(1)} ms${architectureMode === 'detailed' && detail ? ` · ${detail.cached} extérieurs détaillés, ${detail.inFlight} en calcul` : ''}`;
+    frameInfo.textContent = `${render.v1 ? 'Style V1 · ' : ''}Vue ${lodNames[cityFrame.lod]} · ${frame.mpp < 1 ? frame.mpp.toFixed(2) : frame.mpp.toFixed(1)} m/px · ${glFrame ? `WebGL2 · ${glFrame.drawCalls} appels, ${(glFrame.triangles / 1000).toFixed(0)} k triangles` : `${cityFrame.blocks} îlots, ${cityFrame.parcels} parcelles, ${cityFrame.streets} rues`}${cityFrame.buildings ? `, ${cityFrame.buildings} bâtiments` : ''} · ${cityFrame.ms.toFixed(1)} ms${architectureMode === 'detailed' && detail ? ` · ${detail.cached} extérieurs détaillés, ${detail.inFlight} en calcul` : ''}`;
     if (viewport) frameInfo.textContent += ` · ${viewport.statusText}`;
     else if (architecturePreview?.coldProjection) { frameInfo.textContent += ' · contours partiels pendant l’implantation'; frameInfo.dataset.coldCoverage = 'partial-native-contours'; }
     return cityFrame.pending;
@@ -2165,7 +2188,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       status('parcels', `${urbanText(['Génération du terrain échouée','Terrain generation failed','地形生成失败','Falló la generación del terreno','Falha na geração do terreno'])} : ${message}`);
     },
     updateView: draw,
-    share(params: URLSearchParams): void { params.set('urban', JSON.stringify({ enabled, parcelEnabled, target, quarterSeed: appliedQuarterSeed, parcelSeed: appliedParcelSeed, layoutConfig: appliedLayout, parcelConfig: appliedParcel, render, buildingState: buildingSettings(buildingPanel.state), ...(cityView ? { architecture: architectureMode } : {}), ...(hasEdits(edits) ? { edits: packEdits(edits) } : {}) })); }, // edits hook (cityEdits.ts): outlines packed in links
+    share(params: URLSearchParams): void { if (render.v1) params.set('v1', render.v1Style ?? 'parchment'); else params.delete('v1'); params.set('urban', JSON.stringify({ enabled, parcelEnabled, target, quarterSeed: appliedQuarterSeed, parcelSeed: appliedParcelSeed, layoutConfig: appliedLayout, parcelConfig: appliedParcel, render, buildingState: buildingSettings(buildingPanel.state), ...(cityView ? { architecture: architectureMode } : {}), ...(hasEdits(edits) ? { edits: packEdits(edits) } : {}) })); }, // edits hook (cityEdits.ts): outlines packed in links
   };
 }
 import { executionRuntime } from './executionProfile';

@@ -115,7 +115,7 @@ describe('cityGl scene, picking and styles', () => {
   it('switches draws and colours with the level of detail, never the geometry', () => {
     const mesh = cityGlPlanMesh(scene), state = { view: 'parcels' as const, palette: 'growth' as const, layers: DEFAULT_LAYERS, buildingsVisible: true, diagnostic: 'none' };
     const far = planColors(scene, mesh, { ...state, lod: 'far' }), near = planColors(scene, mesh, { ...state, lod: 'near' });
-    expect(far.draws).toMatchObject({ footprint: true, blocks: false, parcels: false, streetCasing: false });
+    expect(far.draws).toMatchObject({ footprint: true, blocks: false, parcels: false, streetCasing: true });
     expect(near.draws).toMatchObject({ footprint: false, blocks: true, parcels: true, parcelLines: true, streetCasing: true });
     const p0 = mesh.layers.parcels.features[0];
     expect(far.fill[p0 * 4 + 3]).toBe(0);

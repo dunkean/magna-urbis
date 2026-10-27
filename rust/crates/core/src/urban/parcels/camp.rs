@@ -579,8 +579,15 @@ fn regional_streets(layout: &Layout) -> Vec<bool> {
         for &p in &s.path { members.entry(key(p)).or_default().push(i); }
     }
     let mut reached=vec![false;layout.streets.len()];let mut queue=vec![];
+    let explicit = layout.streets.iter().any(|s| matches!(s.role.as_str(), "regional" | "road" | "gate-street" | "outbound"));
+    let entrance = |s:&super::super::Street| !explicit && matches!(s.role.as_str(),"street"|"track") && s.rank <= 1
+        && [s.path.first(),s.path.last()].into_iter().flatten().any(|&p| layout.blocks.iter().any(|b|
+            b.shape.outer.iter().zip(b.shape.outer.iter().cycle().skip(1)).take(b.shape.outer.len())
+                .any(|(&a,&b)| super::super::geometry::distance(p,a,b).0 <= s.widths.first().copied().unwrap_or(3.)*0.5+0.1)));
     for (i,s) in layout.streets.iter().enumerate() {
-        if s.role=="regional" && s.path.len()>1 {reached[i]=true;queue.push(i);}
+        if s.path.len()>1 && (matches!(s.role.as_str(),"regional"|"road"|"gate-street"|"outbound") || entrance(s)) {
+            reached[i]=true;queue.push(i);
+        }
     }
     let mut visited=BTreeSet::new();
     while let Some(i)=queue.pop() {

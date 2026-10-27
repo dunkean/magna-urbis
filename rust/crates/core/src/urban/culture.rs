@@ -39,6 +39,21 @@ pub struct CultureMapping {
 fn one_floor() -> [u32; 2] {
     [1, 1]
 }
+
+/// Metric house scale and exterior form, independent of the borrowed recipe.
+pub(super) fn house_parameters(culture: &str) -> (f64, &'static str) {
+    match culture {
+        "giant-hold" => (2.5, ""),
+        "elven" => (1.0, "tree"),
+        "myconid-colony" => (1.0, "mushroom"),
+        "native-iroquoian" => (1.0, "longhouse"),
+        "mongol-ordu" => (1.0, "yurt"),
+        "tibetan-monastery" => (1.0, "battered"),
+        "wizard-city" => (1.0, "mage"),
+        "merfolk-tidal" => (1.0, "stilt"),
+        _ => (1.0, ""),
+    }
+}
 // Every UI culture has a deliberate entry. Fantasy borrowing is a declaration,
 // The final column declares architectural layout independently of land family.
 // Shared compound land can contain individual houses or native platforms.

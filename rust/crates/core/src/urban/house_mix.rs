@@ -8,6 +8,68 @@ use crate::rng::Rng;
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
+/// Ordinary homes only: cultural silhouettes and tower houses keep their size.
+pub(super) fn ordinary_home(culture: &str, arch: &serde_json::Value, seed: &str) -> bool {
+    let (scale, form) = super::culture::house_parameters(culture);
+    let typology = arch["typology"].as_str().unwrap_or("");
+    scale == 1.0
+        && (matches!(form, "" | "stilt" | "battered")
+            || form == "tree" && Rng::new(seed).fork("tree-share").float() >= 0.5)
+        && !super::massing::tower_house(culture, arch)
+        && !matches!(typology, "longhouse" | "maloca" | "plank-house" | "ger" | "yurt" | "tipi" | "tepee")
+        && !matches!(arch["material"].as_str().unwrap_or(""), "hide" | "felt" | "fabric")
+}
+
+pub(super) struct HomeContext<'a> {
+    pub zone: &'a str,
+    pub district: &'a str,
+    pub wealth: f64,
+    pub pressure: f64,
+    /// Distance from the city centre in equivalent settled radii.
+    pub distance: f64,
+    pub outside: bool,
+    pub farm: bool,
+}
+
+impl HomeContext<'_> {
+    /// Area multiplier; a separate stream leaves the unchanged houses' draws intact.
+    pub fn area_scale(&self, seed: &str) -> f64 {
+        if self.zone == "core" { return 1.0; }
+        let p = self.pressure.clamp(0.0, 1.0);
+        let fringe = if self.outside || self.farm || self.district == "gardens"
+            || matches!(self.zone, "faubourg" | "fringe" | "rural" | "village" | "hamlet") {
+            1.0
+        } else if self.zone == "edge" {
+            ((self.distance - 0.45) / 0.55).clamp(0.0, 1.0)
+        } else { 0.0 };
+        let poor = if self.district == "poor" { 1.0 }
+            else { ((0.5 - self.wealth) / 0.25).clamp(0.0, 1.0) };
+        let chance = (fringe * (0.6 + 0.1 * (1.0 - p))).max(poor * (0.45 + 0.1 * (1.0 - p)));
+        if Rng::new(seed).fork("small-home").float() >= chance { return 1.0; }
+        // 15–22 % less area at the fringe, 7–12 % in poor urban quarters.
+        1.0 - (fringe * (0.22 - 0.07 * p)).max(poor * (0.12 - 0.05 * p))
+    }
+}
+
+/// Contract the whole house together, preserving its courts and connected wings.
+/// A concave lot or reserved hole may prevent a contraction: keep its valid plan.
+pub(super) fn scale_home(parts: &mut [(super::Shape, &'static str)], lot: &super::Parcel, area: f64) {
+    if area >= 1.0 || parts.is_empty() { return; }
+    let c = lot.front.map(|f| super::Point { x:(f[0].x+f[1].x)*0.5, y:(f[0].y+f[1].y)*0.5 })
+        .unwrap_or_else(|| super::geometry::interior_point(&parts[0].0));
+    let k = area.sqrt();
+    let ring = |r: &[super::Point]| r.iter().map(|p| super::Point {
+        x:c.x + (p.x-c.x)*k, y:c.y + (p.y-c.y)*k,
+    }).collect();
+    let scaled: Vec<_> = parts.iter().map(|(s,l)| (super::Shape {
+        outer:ring(&s.outer), holes:s.holes.iter().map(|h| ring(h)).collect(),
+    }, *l)).collect();
+    if scaled.iter().all(|(s,_)| super::geometry::area(s) >= 4.0
+        && super::geometry::difference(s, &lot.shape).iter().map(super::geometry::area).sum::<f64>() < 0.01) {
+        parts.clone_from_slice(&scaled);
+    }
+}
+
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct HouseStyle {
@@ -128,6 +190,35 @@ impl HouseSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn smaller_footprints_keep_courts_wings_and_lot_reserves() {
+        use super::super::geometry::{area, difference, rectangle};
+        use serde_json::json;
+        let mut lot: super::super::Parcel = serde_json::from_value(json!({
+            "shape":rectangle(0.,0.,24.,30.), "block":0, "use":"domestic",
+            "front":[{"x":0.,"y":0.},{"x":24.,"y":0.}], "axis":{"x":1.,"y":0.}, "rank":0,
+        })).unwrap();
+        let mut court = rectangle(3.,2.,21.,20.);
+        court.holes.push(rectangle(8.,7.,16.,14.).outer);
+        let mut parts = vec![(court, "building"), (rectangle(3.,20.,9.,26.), "building")];
+        let original = parts.clone();
+        scale_home(&mut parts, &lot, 1.0);
+        assert_eq!(parts, original);
+        scale_home(&mut parts, &lot, 0.8);
+        for ((s,_),(old,_)) in parts.iter().zip(&original) {
+            assert!((area(s)/area(old)-0.8).abs() < 1e-6);
+            assert!(difference(s, &lot.shape).iter().map(area).sum::<f64>() < 0.01);
+            assert_eq!(s.holes.len(), old.holes.len());
+        }
+        assert!((parts[0].0.outer[2].y-parts[1].0.outer[0].y).abs() < 1e-6, "wings stay attached");
+        lot.front = Some([super::super::Point { x:0.,y:0. }, super::super::Point { x:8.,y:0. }]);
+        lot.shape.holes.push(rectangle(10.,5.,12.,10.).outer);
+        let mut parts = vec![(rectangle(12.2,2.,20.,15.), "building")];
+        let original = parts.clone();
+        scale_home(&mut parts, &lot, 0.8);
+        assert_eq!(parts, original, "a contraction cannot invade a reserved hole");
+    }
 
     fn mix(spread: &str, styles: &[(&str, f64)]) -> HouseMix {
         HouseMix {

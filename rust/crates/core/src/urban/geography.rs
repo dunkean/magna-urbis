@@ -393,8 +393,57 @@ pub(super) fn raster_shoreline(surface: &super::Surface<'_>) -> Option<Geography
 pub(super) struct StiltGround {
     pub site: super::Site,
     water: Vec<u8>,
+    inland: Point,
 }
 impl StiltGround {
+    /// A dry planning mask is permission to build, not proof of water occupation.
+    /// Measure the allocated homes and shift the neighbourhood about its shore
+    /// anchor; retain the best feasible drawing when the shore is too narrow.
+    pub fn balance(
+        &self, seed: &str, first: super::Layout, physical: super::Surface<'_>,
+        mut plan: impl FnMut(&super::Site) -> Result<super::Layout,String>,
+        mut finish: impl FnMut(&mut super::Layout) -> Result<(),String>,
+    ) -> Result<super::Layout,String> {
+        let radius = (first.blocks.iter().filter(|b|b.kind == "block").map(|b|g::area(&b.shape)).sum::<f64>() / std::f64::consts::PI).sqrt().max(40.);
+        let (mut lo,mut hi,mut offset) = (-stilt_reach(self.site.radius).min(radius)*0.85, radius*1.5, 0.);
+        let mut current = first;
+        let mut best: Option<(super::Layout,f64,f64)> = None;
+        for attempt in 0..8 {
+            // The public centre stays at the bank, shared with the programme.
+            current.center = self.site.center;
+            let mut probe = current.clone();
+            finish(&mut probe)?;
+            let parts = super::generate_parcels(seed, &[probe], &super::ParcelConfig::default())?;
+            let p = &parts[0];
+            let pr = p.programme.as_ref().ok_or("Stilt occupation needs a programme")?;
+            let used: std::collections::HashSet<_> = pr.allocations.iter().filter(|a|
+                !a.role.starts_with("open.") && !matches!(a.function.as_str(),"market"|"common"))
+                .map(|a|a.parcel_id.as_str()).collect();
+            let (mut lots,mut wet) = (0,0);
+            for p in p.parcels.iter().filter(|p|used.contains(p.id.as_str())) {
+                lots += 1;
+                wet += usize::from(physical.wet(g::interior_point(p.envelope.as_ref().unwrap_or(&p.shape))));
+            }
+            let share = wet as f64 / lots.max(1) as f64;
+            let wanted: f64 = pr.demands.iter().filter(|d|d.unit == "domesticUnits").map(|d|d.requested).sum();
+            let held: f64 = pr.allocations.iter().map(|a|a.households).sum();
+            let score = (share-0.4).abs() + 2.*(0.9-held/wanted.max(1.)).max(0.);
+            if best.as_ref().is_none_or(|b|score < b.1) { best = Some((current.clone(),score,share)); }
+            if (0.3..=0.5).contains(&share) && held >= wanted*0.9 { break; }
+            if attempt == 7 { break; }
+            if share < 0.3 { hi = offset; } else { lo = offset; }
+            offset = (lo+hi)*0.5;
+            let mut site = self.site.clone();
+            site.center = Point { x:site.center.x+self.inland.x*offset, y:site.center.y+self.inland.y*offset };
+            if self.surface(physical).wet(site.center) { break; }
+            current = plan(&site)?;
+        }
+        let (mut layout,_,share) = best.unwrap();
+        if !(0.3..=0.5).contains(&share) {
+            layout.warnings.push(format!("Occupation sur pilotis : {:.0} % sur l’eau ; la rive et le terrain limitent l’objectif de 30–50 %.",share*100.));
+        }
+        Ok(layout)
+    }
     /// The raster ground with the stilt water dry (the vector geography, if
     /// any, is replaced by this raster, which samples it). For
     /// `generate_quarters`, plan and programme alike (OPUS_CITY.md request).
@@ -405,10 +454,51 @@ impl StiltGround {
             ..s
         }
     }
+    /// Shallow-water streets stand on decks too; the planning mask alone
+    /// must not export them as roads on dry ground. Existing crossings stay intact.
+    pub fn walkways(&self, streets: &mut Vec<super::Street>, physical: super::Surface<'_>) {
+        let planning = self.surface(physical);
+        let mut out = vec![];
+        for s in std::mem::take(streets) {
+            if s.path.len() < 2 || matches!(s.role.as_str(), "bridge" | "ford" | "causeway" | "quay" | "pier" | "mole" | "landing") {
+                out.push(s);
+                continue;
+            }
+            let mut runs: Vec<super::Street> = vec![];
+            let at = |a: Point, b: Point, t: f64| Point { x:a.x+(b.x-a.x)*t, y:a.y+(b.y-a.y)*t };
+            for (i,w) in s.path.windows(2).enumerate() {
+                let wet = super::routing::water_intervals(physical,w[0],w[1]);
+                let mut cuts = vec![0.,1.];
+                cuts.extend(wet.iter().flat_map(|&(a,b)| [a,b]));
+                cuts.sort_by(f64::total_cmp);
+                cuts.dedup_by(|a,b| (*a-*b).abs() < 1e-9);
+                for t in cuts.windows(2) {
+                    let mid = at(w[0],w[1],(t[0]+t[1])*0.5);
+                    let deck = physical.wet(mid) && !planning.wet(mid);
+                    // A boardwalk is a timber pier platform, often with only
+                    // one dry end. Bridge recovery requires two opposite banks.
+                    let role = if deck { "pier" } else { &s.role };
+                    let width = s.widths.get(i).or(s.widths.first()).copied().unwrap_or(3.);
+                    let regional = s.rank == 0 || matches!(s.role.as_str(), "regional" | "road" | "outbound");
+                    let width = if deck && !regional { width.min(3.) } else { width };
+                    let (a,b) = (at(w[0],w[1],t[0]),at(w[0],w[1],t[1]));
+                    if let Some(run) = runs.last_mut().filter(|r| r.role == role) {
+                        run.path.push(b);
+                        run.widths.push(width);
+                    } else {
+                        runs.push(super::Street { path:vec![a,b], widths:vec![width;2], rank:s.rank, role:role.into() });
+                    }
+                }
+            }
+            if runs.iter().all(|r| r.role == s.role) { out.push(s); }
+            else { out.extend(runs); }
+        }
+        *streets = out;
+    }
 }
-/// Water a stilt town builds over, from the shore (m): half the town radius.
+/// A shore neighbourhood reaches onto the water at every settlement scale.
 fn stilt_reach(radius: f64) -> f64 {
-    (0.5 * radius).clamp(40.0, 160.0)
+    (0.5 * radius).clamp(40.0, 800.0)
 }
 pub(super) fn stilt_ground(
     site: &super::Site,
@@ -519,6 +609,7 @@ pub(super) fn stilt_ground(
             ..site.clone()
         },
         water: water_mask,
+        inland: toward,
     })
 }
 

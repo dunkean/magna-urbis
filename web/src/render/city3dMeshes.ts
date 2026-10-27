@@ -11,7 +11,9 @@ import { isBuildingProjection, surfaceTriangles, type Building3dScene, type Buil
 import type { NativeBuildingProjection, NativeBuildingProjectionScene } from '../ui/urbanBuildingProjection';
 import { roleFamily } from './cityCanvas';
 import type { Enclosure } from '../../../rust/bridge/urban';
-import { loftRidges, pieceVolumes, readMassing, volumeRoof, type ResolvedVolume } from './cityMassing';
+import { loftRidges, pieceVolumes, readMassing, scaledRing, stiltDeck, stiltSupports, volumeRoof, type ResolvedVolume } from './cityMassing';
+import { buildingTint } from './buildingPalette';
+import type { TreeDwelling } from './cityTrees';
 
 type RoofMesh = ArchitectureVolume['roof_mesh'];
 type RoofMeshFace = RoofMesh['faces'][number];
@@ -54,7 +56,7 @@ const FAMILY_MASSING: Record<string, Massing> = {
 /** Massing covers and walls (urban/massing.rs) on the display materials. */
 const COVERS: Record<string, MaterialPattern> = {
   tile: 'tile', slate: 'stone', thatch: 'thatch', reed: 'thatch', palm: 'thatch', bamboo: 'wood', shingle: 'wood', bark: 'wood', turf: 'earth', hide: 'fabric', felt: 'fabric',
-  earth: 'earth', plaster: 'plain', stone: 'stone', snow: 'snow', metal: 'stone', lead: 'stone',
+  earth: 'earth', plaster: 'plain', stone: 'stone', snow: 'snow', metal: 'stone', lead: 'stone', fungal: 'plain',
 };
 const WALLS: Record<string, MaterialPattern> = { timber: 'wood', wood: 'wood', brick: 'tile', stone: 'stone', earth: 'earth', plaster: 'plain', bamboo: 'wood', wattle: 'earth', hide: 'fabric', coral: 'stone' };
 CITY3D_MATERIALS.push(...Object.entries(COVERS).map(([k, pattern]) => ({ id: `city3d:cover:${k}`, label: k, roles: [], pattern, origin: 'city3d', source_ref: null } as HouseMaterial)),
@@ -191,16 +193,14 @@ function flatRoof(roof: RoofBuilder, surface: Surface, z: number, material: stri
 
 
 // ---------------------------------------------------------------- volume details
-// Materials may carry a colour tint `@rgb` (hex digits, 8 = 1.0) that UrbanBuildingPass multiplies into the albedo.
-const TINTS: [number, number, number][] = [[1.15, 1.12, 1.05], [1.02, 0.98, 0.9], [0.96, 0.88, 0.72], [1.04, 0.92, 0.88], [0.9, 0.8, 0.7], [0.95, 0.92, 0.88]];
-const hex3 = (t: readonly number[]): string => t.map(v => Math.max(0, Math.min(15, Math.round(v * 8))).toString(16)).join('');
-/** Wall tint of a volume from its lot tone: whitewash / sand / ochre / pink / terracotta on earth and plaster, a mild jitter elsewhere. */
-function wallTint(wall: string, tone: number): string {
-  if (wall === 'earth' || wall === 'plaster' || wall === 'coral') return hex3(TINTS[Math.min(TINTS.length - 1, Math.floor(tone * TINTS.length))]);
-  const j = 0.9 + 0.2 * ((tone * 7) % 1); return hex3([j, j, j]);
-}
+// Six-digit suffixes are final sRGB; bucket tone, never individual channels.
+const hex6 = (t: readonly number[]): string => t.map(v => Math.max(0, Math.min(255, Math.round(v * 255))).toString(16).padStart(2, '0')).join('');
 const tinted = (id: string, tint: string): string => tint ? `${id}@${tint}` : id;
-const OPENING = 'city3d:wall:opening@333';
+function paletteSlots(plain: MaterialSlots, culture: string, wall: string, cover: string, tone: number, role: string): MaterialSlots {
+  const p = buildingTint(culture, wall, cover, Math.round(tone * 15) / 15, role), w = tinted(plain.coating, hex6(p.wall));
+  return { ...plain, frame: w, infill: w, coating: w, base: w, cladding: tinted(plain.cladding, hex6(p.roof)) };
+}
+const OPENING = 'city3d:wall:opening@393126';
 const ringCentre = (ring: readonly Point[]): Point => ({ x: ring.reduce((s, p) => s + p.x, 0) / ring.length, y: ring.reduce((s, p) => s + p.y, 0) / ring.length });
 
 /** Roof faces with a hut overhang: eave vertices pushed outward from the centre and dropped a little. */
@@ -208,9 +208,12 @@ function overhung(points: Vertex3[], eave: number, c: Point, d: number): Vertex3
   return points.map(p => { if (Math.abs(p.z - eave) > 1e-6) return p; const dx = p.x - c.x, dy = p.y - c.y, l = Math.hypot(dx, dy) || 1; return { x: p.x + dx / l * d, y: p.y + dy / l * d, z: p.z - d * 0.35 }; });
 }
 /** Facade quad on an edge: `s0..s1` metres along it from `a`, `z0..z1` up, `off` out of the wall. */
-function facadeQuad(roof: RoofBuilder, a: Point, b: Point, outward: number, s0: number, s1: number, z0: number, z1: number, off: number, material: string): void {
+function facadeQuad(roof: RoofBuilder, a: Point, b: Point, outward: number, s0: number, s1: number, z0: number, z1: number, off: number, material: string, batter?: { center: Point; ground: number; height: number }): void {
   const l = Math.hypot(b.x - a.x, b.y - a.y) || 1, ux = (b.x - a.x) / l, uy = (b.y - a.y) / l, nx = uy * outward * off, ny = -ux * outward * off;
-  const p = (s: number, z: number): Vertex3 => ({ x: a.x + ux * s + nx, y: a.y + uy * s + ny, z });
+  const p = (s: number, z: number): Vertex3 => {
+    const k = batter ? 1 - 0.08 * (z - batter.ground) / batter.height : 1, c = batter?.center ?? { x: 0, y: 0 };
+    return { x: c.x + (a.x + ux * s - c.x) * k + nx, y: c.y + (a.y + uy * s - c.y) * k + ny, z };
+  };
   roof.face([p(s0, z0), p(s1, z0), p(s1, z1), p(s0, z1)], material);
 }
 /** Box on the roof: four walls and a flat top, turned by `angle`, standing at `z`. */
@@ -224,6 +227,41 @@ function featureDome(roof: RoofBuilder, x: number, y: number, r: number, h: numb
   const n = 8, rings = [0, 0.45, 0.8, 1].map(t => ({ k: Math.cos(t * Math.PI / 2), z: z + h * Math.sin(t * Math.PI / 2) }));
   const at = (i: number, k: number, zz: number): Vertex3 => ({ x: x + Math.cos(i / n * Math.PI * 2) * r * k, y: y + Math.sin(i / n * Math.PI * 2) * r * k, z: zz });
   for (let s = 0; s + 1 < rings.length; s++) for (let i = 0; i < n; i++) roof.face([at(i, rings[s].k, rings[s].z), at(i + 1, rings[s].k, rings[s].z), at(i + 1, rings[s + 1].k, rings[s + 1].z), at(i, rings[s + 1].k, rings[s + 1].z)], material);
+}
+/** All tree parts enter the existing sector/material batches, including rails. */
+function treeDetails(roof: RoofBuilder, tree: TreeDwelling, base: number, wood: string, canopy: string): Point[] {
+  const { center: c, radius: r, trunkRadius: tr, height: h, lean } = tree, n = 12;
+  const trunk = (t: number, k: number): Vertex3[] => Array.from({ length: n }, (_, i) => {
+    const a = i / n * Math.PI * 2 + t * 0.18, root = t === 0 ? 1 + 0.32 * Math.cos(a * 4) : 1;
+    return { x: c.x + lean.x * t + Math.cos(a) * tr * k * root, y: c.y + lean.y * t + Math.sin(a) * tr * k * root, z: base + h * t };
+  });
+  const rings = [trunk(0, 1.5), trunk(0.12, 1.05), trunk(0.5, 0.91), trunk(1.03, 0.65)];
+  const loft = (a: Vertex3[], b: Vertex3[], material: string): void => { for (let i = 0; i < a.length; i++) { const j = (i + 1) % a.length; roof.face([a[i], a[j], b[j], b[i]], material); } };
+  for (let i = 1; i < rings.length; i++) loft(rings[i - 1], rings[i], wood);
+  for (const p of tree.platforms) {
+    const z = base + p.height, pc = { x: c.x + lean.x * p.height / h, y: c.y + lean.y * p.height / h }, count = p.shape === 'polygon' ? 6 : 12;
+    const arc = p.shape === 'partial' ? Math.PI * 1.5 : Math.PI * 2, steps = p.shape === 'partial' ? count + 1 : count;
+    const ring = (radius: number): Point[] => Array.from({ length: steps }, (_, i) => { const a = p.angle + i / count * arc; return { x: pc.x + Math.cos(a) * radius, y: pc.y + Math.sin(a) * radius }; });
+    const outer = ring(p.radius), inner = ring(tr * 1.15), shape = p.shape === 'partial' ? { outer: outer.concat([...inner].reverse()), holes: [] } : { outer, holes: [[...inner].reverse()] };
+    const edges = p.shape === 'partial' ? outer.length - 1 : outer.length;
+    for (let i = 0; i < edges; i++) {
+      const j = (i + 1) % outer.length, points = [outer[i], outer[j], inner[j], inner[i]];
+      roof.face(points.map(p => ({ ...p, z: z + 0.22 })), wood); roof.face(points.map(p => ({ ...p, z })), wood);
+    }
+    loft(shape.outer.map(p => ({ ...p, z })), shape.outer.map(p => ({ ...p, z: z + 0.22 })), wood);
+    if (p.shape !== 'partial') loft(inner.map(p => ({ ...p, z })), inner.map(p => ({ ...p, z: z + 0.22 })), wood);
+    for (let i = 0; i < edges; i++) {
+      const a = outer[i], b = outer[(i + 1) % outer.length], length = Math.hypot(b.x - a.x, b.y - a.y);
+      featureBox(roof, a.x, a.y, 0.1, 0.1, 0.95, 0, z + 0.22, wood);
+      featureBox(roof, (a.x + b.x) / 2, (a.y + b.y) / 2, length, 0.09, 0.1, Math.atan2(b.y - a.y, b.x - a.x), z + 1.08, wood);
+    }
+    const a = p.angle + arc * 0.45, offset = (tr + p.radius) * 0.5, x = pc.x + Math.cos(a) * offset, y = pc.y + Math.sin(a) * offset;
+    const size = Math.max(0.65, Math.min(r * 0.43, (p.radius - tr) * 1.1)), podHeight = Math.max(1.2, Math.min(2.2, r * 0.5));
+    featureBox(roof, x, y, size, size * 0.85, podHeight, a, z + 0.22, wood);
+    featureDome(roof, x, y, size * 0.72, size * 0.32, z + 0.22 + podHeight, canopy);
+    featureBox(roof, x + Math.cos(a) * size * 0.51, y + Math.sin(a) * size * 0.51, 0.04, size * 0.32, podHeight * 0.65, a, z + 0.23, OPENING);
+  }
+  return rings[0].map(({ x, y }) => ({ x, y }));
 }
 /** Posts and a floor under a body raised on stilts: thin prisms on a 2.2 m grid inside the ring, a plank floor above them. */
 function stiltPosts(roof: RoofBuilder, ring: readonly Point[], ground: number, h: number, floor: string, post: string): void {
@@ -240,7 +278,7 @@ function stiltPosts(roof: RoofBuilder, ring: readonly Point[], ground: number, h
 }
 /** Parapet, roof-top features, trim, facade openings and tent pole of a volume (detailed LOD only), into its roof mesh. */
 function volumeDetails(roof: RoofBuilder, v: ResolvedVolume, ground: number, wallId: string, id: string): void {
-  const ring = v.shape.outer, n = ring.length, eave = ground + v.eave_m, d = v.detail ?? {}, out = ringArea(ring) >= 0 ? -1 : 1;
+  const d = v.detail ?? {}, ring = d.form === 'battered' ? scaledRing(v.shape.outer, 0.92) : v.shape.outer, n = ring.length, eave = ground + v.eave_m, out = ringArea(ring) >= 0 ? 1 : -1;
   const parapet = v.roof === 'flat' ? d.parapet_m ?? 0 : 0;
   if (parapet > 0.05) {
     const inner = insetRing(ring, 0.3, true), top = eave + parapet;
@@ -262,7 +300,7 @@ function volumeDetails(roof: RoofBuilder, v: ResolvedVolume, ground: number, wal
     if (f.kind === 'windcatcher') for (const [s, t] of [[-sx, 0], [0, sy], [0, -sy]]) roof.face(s ? [at(s, -hw, z0), at(s, hw, z0), at(s, hw, z1), at(s, -hw, z1)] : [at(-hw, t, z0), at(hw, t, z0), at(hw, t, z1), at(-hw, t, z1)], OPENING);
   }
   if (v.roof === 'tent' && v.rise_m > 0.05) {
-    const c = ringCentre(ring), top = eave + v.rise_m, r = 0.07, form = d.form, DARK = 'city3d:wall:wood@333';
+    const c = ringCentre(ring), top = eave + v.rise_m, r = 0.07, form = d.form, DARK = 'city3d:wall:wood@393126';
     if (form) {
       // Door on the longest facet: a dark flap rising up the slope.
       const e = ring.map((a, i) => ({ a, b: ring[(i + 1) % n] })).sort((x, y) => Math.hypot(y.b.x - y.a.x, y.b.y - y.a.y) - Math.hypot(x.b.x - x.a.x, x.b.y - x.a.y))[0];
@@ -296,20 +334,26 @@ function volumeDetails(roof: RoofBuilder, v: ResolvedVolume, ground: number, wal
     return;
   }
   // Edges by length: red trim band, then a door and windows on the longest ones.
-  const edges = ring.map((a, i) => { const b = ring[(i + 1) % n]; return { a, b, l: Math.hypot(b.x - a.x, b.y - a.y) }; }).filter(e => e.l >= 2.2).sort((x, y) => y.l - x.l);
+  const facade = v.shape.outer, batter = d.form === 'battered' ? { center: ringCentre(facade), ground, height: v.eave_m } : undefined;
+  const edges = facade.map((a, i) => { const b = facade[(i + 1) % n]; return { a, b, l: Math.hypot(b.x - a.x, b.y - a.y) }; }).filter(e => e.l >= 2.2).sort((x, y) => y.l - x.l);
   const h = hash(id), storey = v.eave_m / Math.max(1, v.floors), hut = (d.overhang_m ?? 0) > 0 || v.roof === 'cone';
-  if (d.trim === 'red' && parapet > 0) for (const e of edges) facadeQuad(roof, e.a, e.b, out, 0.15, e.l - 0.15, eave - 0.95, eave - 0.4, 0.03, `city3d:wall:plaster@${hex3([0.9, 0.35, 0.3])}`);
+  const scale = d.form ? 1 : Math.max(1, Math.min(2.5, storey / CITY3D_LEVEL_M));
+  if (scale > 1.8) for (const e of edges) {
+    facadeQuad(roof, e.a, e.b, out, 0, e.l, eave - 0.65, eave - 0.05, 0.06, 'city3d:wall:timber');
+    for (const s of [0.3, e.l - 0.8]) facadeQuad(roof, e.a, e.b, out, s, s + 0.5, ground, eave, 0.07, 'city3d:wall:timber');
+  }
+  if (d.trim === 'red' && parapet > 0) for (const e of edges) facadeQuad(roof, e.a, e.b, out, 0.15, e.l - 0.15, eave - 0.95, eave - 0.4, 0.03, 'city3d:wall:plaster@a75e4b');
   let windows = 0;
   edges.slice(0, hut ? 1 : 2).forEach((e, k) => {
-    const doorW = hut ? 0.8 : 1.0, doorH = hut ? 1.6 : 2.1, doorAt = Math.max(0.3, Math.min(e.l - doorW - 0.3, ((h >>> (k * 3)) % 100) / 100 * e.l));
-    if (k === 0 || (h >>> 5) % 3 === 0) facadeQuad(roof, e.a, e.b, out, doorAt, doorAt + doorW, ground + 0.02, ground + Math.min(doorH, v.eave_m - 0.2), 0.04, OPENING);
+    const doorW = (hut ? 0.8 : 1.0) * scale, doorH = (hut ? 1.6 : 2.1) * scale, doorAt = Math.max(0.3, Math.min(e.l - doorW - 0.3, ((h >>> (k * 3)) % 100) / 100 * e.l));
+    if (k === 0 || (h >>> 5) % 3 === 0) facadeQuad(roof, e.a, e.b, out, doorAt, doorAt + doorW, ground + 0.02, ground + Math.min(doorH, v.eave_m - 0.2), 0.04, OPENING, batter);
     if (hut) return;
-    const medina = v.roof === 'flat', gap = medina ? 3.4 : 2.6, count = Math.floor((e.l - 1) / gap), ww = medina ? 0.4 : 0.85, wh = medina ? 0.55 : 1.1;
+    const medina = v.roof === 'flat', gap = (medina ? 3.4 : 2.6) * scale, count = Math.floor((e.l - 1) / gap), ww = (medina ? 0.4 : 0.85) * scale, wh = (medina ? 0.55 : 1.1) * scale;
     for (let f = medina ? 1 : 0; f < v.floors && windows < 10; f++) for (let c = 0; c < count && windows < 10; c++) {
-      const s = 0.5 + (c + 0.5) * (e.l - 1) / count - ww / 2, z0 = f * storey + (medina ? 1.8 : 1.0);
+      const s = 0.5 + (c + 0.5) * (e.l - 1) / count - ww / 2, z0 = f * storey + (medina ? 1.8 : 1.0) * scale;
       if (z0 + wh > v.eave_m - 0.25 || (medina && (h >>> (c + f)) % 3 === 0)) continue;
       if (f === 0 && s < doorAt + doorW + 0.3 && s + ww > doorAt - 0.3) continue;
-      facadeQuad(roof, e.a, e.b, out, s, s + ww, ground + z0, ground + z0 + wh, 0.04, OPENING); windows++;
+      facadeQuad(roof, e.a, e.b, out, s, s + ww, ground + z0, ground + z0 + wh, 0.04, OPENING, batter); windows++;
     }
   });
 }
@@ -323,37 +367,65 @@ function baseVolume(id: string, footprint: Surface, z: number, wall: number, ris
 /** Extruded silhouette: walls of `floors × 3 m`, a gable or hip roof on
  * rectangular shapes, a pitched border elsewhere, a foundation down to the lowest
  * terrain sample so no wall floats above a slope. */
-export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHeight): PlacedBuilding {
+export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHeight, waterAt?: City3dHeight): PlacedBuilding {
   const footprint = building.footprint, area = surfaceArea(footprint), m = silhouetteMassing(building, area);
+  const culture = building.culture.culture, programme = (building as PlacedBuilding & { programme?: Programme }).programme;
+  const role = `${programme?.role ?? ''} ${m.family}${programme?.landmark ? ' monument' : ''}`;
   let low = Infinity, high = -Infinity;
   if (heightAt) for (const shape of footprint) for (const p of shape.outer) { const h = heightAt(p.x, p.y); if (Number.isFinite(h)) { low = Math.min(low, h); high = Math.max(high, h); } }
   let ground = Number.isFinite(building.ground_z_m) ? building.ground_z_m : (Number.isFinite(low) ? (low + high) / 2 : 0);
   if (Number.isFinite(low)) ground = Math.max(low, Math.min(high, ground));
-  const massing = readMassing((building as PlacedBuilding & { programme?: unknown }).programme, footprint);
+  const massing = readMassing((building as PlacedBuilding & { programme?: unknown }).programme, footprint, building.id);
+  const raised = massing?.some((m, i) => pieceVolumes(footprint[i], m).some(v => (v.detail?.stilts_m ?? 0) > 0));
+  if (raised && waterAt) for (const shape of footprint) for (const p of [...shape.outer, ringCentre(shape.outer)]) {
+    const water = waterAt(p.x, p.y); if (Number.isFinite(water)) ground = Math.max(ground, water);
+  }
   if (massing) {
     // City massing (cityMassing.ts): one volume per preview piece, its own height and roof.
     const foundation = { footprint, z_min_m: Math.min(ground, Number.isFinite(low) ? low : ground) - 0.3, z_max_m: ground };
     const volumes = footprint.flatMap((shape, i) => {
       const piece = massing[i]; if (!piece) return [];
       return pieceVolumes(shape, piece).map((v, j) => {
-        const plain = massingSlots(v.wall, v.cover, WALLS[v.wall] ?? m.wall, COVERS[v.cover] ?? m.roof), tint = wallTint(v.wall, v.tone), roof = new RoofBuilder();
-        const pale = v.roof === 'flat' || v.roof === 'dome' || v.roof === 'barrel', wallId = tinted(plain.coating, tint);
-        const materials = { ...plain, frame: wallId, infill: wallId, coating: wallId, cladding: pale && /^(earth|plaster)$/.test(v.cover) ? tinted(plain.cladding, tint) : plain.cladding };
-        const over = v.detail?.overhang_m ?? 0, centre = ringCentre(v.shape.outer), lift = v.detail?.stilts_m ?? 0, form = v.detail?.form;
-        const tent = form === 'yurt' ? 'aab' : form === 'tipi' ? 'a98' : '';
-        if (tent) { materials.cladding = tinted(materials.cladding, tent); materials.coating = materials.frame = materials.infill = tinted(plain.coating, tent); }
-        const body = tent ? materials.coating : wallId;
-        if (lift > 0) stiltPosts(roof, v.shape.outer, ground, lift, wallId, 'city3d:wall:wood');
+        const plain = massingSlots(v.wall, v.cover, WALLS[v.wall] ?? m.wall, COVERS[v.cover] ?? m.roof), roof = new RoofBuilder();
+        const materials = paletteSlots(plain, culture, v.wall, v.cover, v.tone, role + (v.wall === 'stone' ? ' monument' : '')), wallId = materials.coating;
+        if (v.tree) {
+          for (const face of volumeRoof(v, i, j)) roof.face(face.points.map(p => ({ ...p, z: p.z + ground })), materials.cladding);
+          const trunk = treeDetails(roof, v.tree, ground, wallId, materials.cladding), bodyShape = { outer: trunk, holes: [] };
+          const volume = baseVolume(`${building.id}:city3d:${i}:${j}`, [v.shape], ground, v.eave_m, v.rise_m, materials, roof.mesh(), 'RF-DOME',
+            { ...foundation, footprint: [bodyShape] }, [{ index: 0, footprint: [{ outer: scaledRing(v.shape.outer, v.tree.trunkRadius / v.tree.radius), holes: [] }], z_m: ground, height_m: v.eave_m }]);
+          volume.envelope = 'open'; return volume;
+        }
+        const over = v.detail?.overhang_m ?? 0, centre = ringCentre(v.shape.outer), lift = v.detail?.stilts_m ?? 0;
+        const body = wallId;
+        if (lift > 0) {
+          stiltPosts(roof, stiltDeck(v.shape.outer), ground, lift, wallId, materials.roof_frame);
+          for (const p of stiltSupports(v.shape.outer)) featureBox(roof, p.x, p.y, 0.32, 0.32, lift + 0.45, 0, ground, materials.roof_frame);
+        }
         const base = ground + lift;
         for (const face of volumeRoof(v, i, j)) roof.face((over > 0 ? overhung(face.points, v.eave_m, centre, over) : face.points).map(p => ({ x: p.x, y: p.y, z: p.z + base })), materials.cladding);
-        volumeDetails(roof, v, base, body, `${building.id}:${i}:${j}`);
+        const form = v.detail?.form, organic = form === 'tree' || form === 'mushroom';
+        const bodyShape = organic ? { outer: scaledRing(v.shape.outer, form === 'tree' ? 0.22 : 0.3), holes: [] } : v.shape;
+        if (organic) {
+          flatRoof(roof, [v.shape], base + v.eave_m, materials.cladding);
+          volumeDetails(roof, { ...v, shape: bodyShape, detail: { ...v.detail, overhang_m: 0.1 } }, base, body, `${building.id}:${i}:${j}`);
+        } else if (form === 'battered') {
+          const bottom = v.shape.outer, top = scaledRing(bottom, 0.92);
+          for (let k = 0; k < bottom.length; k++) { const n = (k + 1) % bottom.length; roof.face([{ ...bottom[k], z: base }, { ...bottom[n], z: base }, { ...top[n], z: base + v.eave_m }, { ...top[k], z: base + v.eave_m }], wallId); }
+          volumeDetails(roof, v, base, body, `${building.id}:${i}:${j}`);
+        } else volumeDetails(roof, v, base, body, `${building.id}:${i}:${j}`);
         const system = v.roof === 'flat' ? 'RF-FLAT' : v.roof === 'hip' || v.roof === 'pyramid' || v.roof === 'tent' ? 'RF-HIP' : 'RF-GABLE';
-        return baseVolume(`${building.id}:city3d:${i}:${j}`, [v.shape], base, v.eave_m, Math.max(0, v.rise_m), materials, roof.mesh(), system, { ...foundation, footprint: [v.shape] });
+        const volume = baseVolume(`${building.id}:city3d:${i}:${j}`, [v.shape], base, v.eave_m, Math.max(0, v.rise_m), materials, roof.mesh(), system,
+          { ...foundation, footprint: [bodyShape], z_max_m: lift > 0 ? foundation.z_min_m : ground },
+          [{ index: 0, footprint: [bodyShape], z_m: base, height_m: v.eave_m }]);
+        if (form === 'battered') volume.envelope = 'open';
+        return volume;
       });
     });
-    return { ...building, ground_z_m: ground, roof_footprint: building.roof_footprint.length ? building.roof_footprint : footprint, volumes };
+    const treeCrowns = massing.some(p => p.volumes?.some(v => v.form === 'tree'));
+    return { ...building, ground_z_m: ground, roof_footprint: treeCrowns ? volumes.flatMap(v => v.footprint) : building.roof_footprint.length ? building.roof_footprint : footprint, volumes };
   }
-  const wall = m.floors * CITY3D_LEVEL_M, eave = ground + wall, materials = slots(m.wall, m.roof), roof = new RoofBuilder();
+  const plain = slots(m.wall, m.roof), materials = paletteSlots(plain, culture, WALL_ID[m.wall].split(':')[1], COVER_ID[m.roof].split(':')[1], hash(building.id) / 0xffffffff, role);
+  const wall = m.floors * CITY3D_LEVEL_M, eave = ground + wall, roof = new RoofBuilder();
   let rise = 0;
   for (const shape of footprint) {
     const box = orientedBox(shape.outer); if (!box) continue;
@@ -415,13 +487,13 @@ export const city3dKind = (building: PlacedBuilding): City3dKind =>
 
 /** Display batch for the 3D pass. `details` replaces buildings by their realized
  * native exterior (same id). Ids, parcels and functions are those of the scene. */
-export function city3dScene(scene: PlacementBatch, options: { heightAt?: City3dHeight; details?: ReadonlyMap<string, PlacedBuilding> } = {}): PlacementBatch & { kinds: Record<City3dKind, number> } {
+export function city3dScene(scene: PlacementBatch, options: { heightAt?: City3dHeight; waterAt?: City3dHeight; details?: ReadonlyMap<string, PlacedBuilding> } = {}): PlacementBatch & { kinds: Record<City3dKind, number> } {
   const kinds: Record<City3dKind, number> = { silhouette: 0, compact: 0, detailed: 0 };
   const buildings = scene.buildings.map(source => {
     const detail = options.details?.get(source.id);
     if (detail) { kinds.detailed++; return detail; }
     const kind = city3dKind(source); kinds[kind]++;
-    return kind === 'silhouette' ? silhouetteBuilding(source, options.heightAt) : kind === 'compact' ? compactBuilding(source) : source;
+    return kind === 'silhouette' ? silhouetteBuilding(source, options.heightAt, options.waterAt) : kind === 'compact' ? compactBuilding(source) : source;
   });
   return { ...scene, materials: [...(scene.materials ?? []), ...CITY3D_MATERIALS], buildings, kinds };
 }
@@ -445,14 +517,19 @@ export function rasterHeight(data: Float32Array, n: number, width: number): City
  * Each segment becomes a deck (0.9 m thick, at the higher bank plus 0.6 m, raised
  * by the clearance of wide spans) with piers down to the bed every ~14 m. These are
  * city volumes for the 3D view only, not authoritative architecture. */
-export function city3dBridges(streets: readonly { path: Point[]; widths: number[]; role: string }[], heightAt?: City3dHeight): PlacedBuilding[] {
+export function city3dBridges(streets: readonly { path: Point[]; widths: number[]; role: string }[], heightAt?: City3dHeight, waterAt?: City3dHeight): PlacedBuilding[] {
   const out: PlacedBuilding[] = [];
   const h = (p: Point): number => (heightAt ? heightAt(p.x, p.y) : 0) || 0;
   streets.forEach((street, si) => {
     if ((street.role !== 'bridge' && street.role !== 'causeway') || street.path.length < 2) return;
     const a = street.path[0], b = street.path[street.path.length - 1];
     const span = street.path.slice(1).reduce((sum, p, i) => sum + Math.hypot(p.x - street.path[i].x, p.y - street.path[i].y), 0);
-    const deck = Math.max(h(a), h(b)) + 0.6 + (street.role === 'bridge' ? Math.min(4, span / 40) : 0);
+    let water = -Infinity;
+    if (waterAt) for (let i = 1; i < street.path.length; i++) {
+      const p = street.path[i - 1], q = street.path[i], steps = Math.max(1, Math.ceil(Math.hypot(q.x - p.x, q.y - p.y) / 8));
+      for (let k = 0; k <= steps; k++) { const z = waterAt(p.x + (q.x - p.x) * k / steps, p.y + (q.y - p.y) * k / steps); if (Number.isFinite(z)) water = Math.max(water, z); }
+    }
+    const deck = Math.max(h(a), h(b), water) + 0.6 + (street.role === 'bridge' ? Math.min(4, span / 40) : 0);
     const width = Math.max(3, ...street.widths.filter(Number.isFinite)) + 0.8;
     // Narrow bridges are timber decks (as in the textured 2D plan), wider ones stone paving.
     const materials: MaterialSlots = { ...slots('stone', 'stone'), cladding: width < 4.8 ? 'city3d:road:timber' : 'city3d:road:bridge' }, volumes: ArchitectureVolume[] = [], footprint: Surface = [];
@@ -464,8 +541,17 @@ export function city3dBridges(streets: readonly { path: Point[]; widths: number[
       const shape = { outer: quad, holes: [] }, roof = new RoofBuilder();
       flatRoof(roof, [shape], deck, materials.cladding); footprint.push(shape);
       volumes.push(baseVolume(`bridge:${si}:${i}:deck`, [shape], deck - 0.9, 0.9, 0, materials, roof.mesh(), 'RF-FLAT', { footprint: [shape], z_min_m: deck - 0.9, z_max_m: deck - 0.9 }));
+      // Two parapets share the deck's volume batch and leave the bank ends open.
+      const railWidth = Math.min(0.45, width * 0.1), railHeight = 1.05;
+      for (const side of [-1, 1]) {
+        const inner = 1 - railWidth / (width / 2);
+        const rail = { outer: [{ x: p.x + nx * side, y: p.y + ny * side }, { x: q.x + nx * side, y: q.y + ny * side },
+          { x: q.x + nx * side * inner, y: q.y + ny * side * inner }, { x: p.x + nx * side * inner, y: p.y + ny * side * inner }], holes: [] };
+        const cap = new RoofBuilder(); flatRoof(cap, [rail], deck + railHeight, materials.cladding);
+        volumes.push(baseVolume(`bridge:${si}:${i}:parapet:${side}`, [rail], deck, railHeight, 0, materials, cap.mesh(), 'RF-FLAT', { footprint: [rail], z_min_m: deck, z_max_m: deck }));
+      }
       // Piers, only where the deck stands clear of the ground (over water or a ravine).
-      if (street.role === 'bridge') for (let t = 14; t < len - 4; t += 14) {
+      for (let t = 14; t < len - 4; t += 14) {
         const c = { x: p.x + (q.x - p.x) * t / len, y: p.y + (q.y - p.y) * t / len }, bed = h(c);
         if (deck - 0.9 - bed < 1.5) continue;
         const ux = (q.x - p.x) / len * 0.9, uy = (q.y - p.y) / len * 0.9, wx = nx * 0.8, wy = ny * 0.8;
@@ -608,10 +694,20 @@ function wallPiece(id: string, variant: string, mesh: WallMesh, pattern: Materia
 /** Curtains, towers, gatehouses, bastions, outworks and lean-tos of every
  * enclosure. Stone curtains carry a wall walk and merlons; palisades are a
  * timber line (on an earth bank for `gord`); hedges stay on the plan. */
-export function city3dWalls(enclosures: readonly Enclosure[], heightAt?: City3dHeight, key = 'w'): PlacedBuilding[] {
+export function city3dWalls(enclosures: readonly Enclosure[], heightAt?: City3dHeight, key = 'w', culture = ''): PlacedBuilding[] {
   const out: PlacedBuilding[] = [];
   const g = (p: Point): number => (heightAt ? heightAt(p.x, p.y) : 0) || 0;
-  const push = (b: PlacedBuilding | undefined): void => { if (b) out.push(b); };
+  const push = (b: PlacedBuilding | undefined): void => {
+    if (!b) return;
+    const paint = (id: string): string => {
+      const m = /^city3d:(wall|cover):(.+)$/.exec(id); if (!m || !culture) return id;
+      const p = buildingTint(culture, m[2], m[2], 0.5, m[2] === 'stone' || m[2] === 'earth' ? 'defence' : 'dwelling');
+      return tinted(id, hex6(m[1] === 'cover' ? p.roof : p.wall));
+    };
+    out.push({ ...b, culture: { ...b.culture, culture }, volumes: b.volumes.map(v => ({ ...v,
+      materials: Object.fromEntries(Object.entries(v.materials).map(([k, id]) => [k, paint(id)])) as unknown as MaterialSlots,
+      roof_mesh: { ...v.roof_mesh, faces: v.roof_mesh.faces.map(f => ({ ...f, material: paint(f.material) })) } })) });
+  };
   enclosures.forEach((e, ei) => {
     if (e.kind === 'hedge' || e.path.length < 4) return;
     const id = `city3d-wall:${key}:${ei}`, curtain = new Curtain(e.path), L = curtain.length;

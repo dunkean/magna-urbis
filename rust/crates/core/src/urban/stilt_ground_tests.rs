@@ -95,15 +95,15 @@ fn stilt_entry_keeps_stilt_bank_priority_over_a_second_port_relocation() {
     let effective_surface = ground.surface(surface);
     assert!(macroplan::harbour::sited(&ground.site, &cfg, effective_surface).is_some(),
         "the competing port relocation must actually be available");
-    let (effective, kind) = kinds::effective(&site, &cfg, &[]);
+    let (_, kind) = kinds::effective(&site, &cfg, &[]);
     assert!(!kind.small());
-    let morph = with_tissue(resolve("stilt-town", &effective.preset, &effective.recipe, "core",
-        effective.density, &effective.params, "quarters").unwrap(), &effective.tissue);
-    let expected = quarters::generate("shared-port\u{1}settlement:shared-stilt-ground",
-        &ground.site, &effective, &morph, effective_surface, &[], true).unwrap();
     let actual = generate_quarters("shared-port", &[site], &cfg, surface, &[]).unwrap().remove(0);
-    assert_eq!(actual.center, expected.center);
-    assert_eq!(serde_json::to_value(&actual.quarters).unwrap(), serde_json::to_value(&expected.quarters).unwrap());
+    at_bank(&actual, &ground);
+    // Neighbourhoods may balance around the anchor; the port cannot move it.
+    let parts = generate_parcels("shared-port", std::slice::from_ref(&actual), &ParcelConfig::default()).unwrap();
+    let pr = parts[0].programme.as_ref().unwrap();
+    assert!(parts[0].parcels.iter().any(|p| surface.wet(geometry::interior_point(p.envelope.as_ref().unwrap_or(&p.shape)))
+        && pr.allocations.iter().any(|a| a.parcel_id == p.id && a.households > 0.)));
     environment_matches(&actual, 2000, effective_surface);
 }
 
@@ -163,4 +163,59 @@ fn stilt_entry_p29_shared_surface_allocates_wet_lots_and_exports_real_water_leve
     }
     assert!(water_requests > 0, "wet planned lots must retain a water-level witness in actual site requests");
     println!("P29 current source: shared_dry_blocks={made_available}; wet_lots={wet_lots}; allocated_wet={allocated_wet}; requests_with_water_z={water_requests}; constructed_buildings=UNVERIFIED");
+}
+
+#[test]
+fn tidal_settlements_build_a_real_share_of_their_occupied_lots_over_water() {
+    let n = 240;
+    let width = 4000.;
+    let height = vec![1.; n*n];
+    let water = shore_water(n, width, 2000.);
+    let surface = Surface { geometry:None, width, n, height:&height, water:&water };
+    let mut shares = vec![];
+    let mut footprint_shares = vec![];
+    for population in [500, 10000] {
+        let site = Site { key:"tidal-share".into(), name:String::new(), population,
+            culture:"merfolk-tidal".into(), center:Point { x:1900., y:2000. },
+            radius:if population == 500 { 150. } else { 650. } };
+        let cfg = LayoutConfig { fortification:"none".into(), ..Default::default() };
+        let layouts = generate_quarters("tidal-share", &[site], &cfg, surface, &[]).unwrap();
+        let parts = generate_parcels("tidal-share", &layouts, &ParcelConfig::default()).unwrap();
+        let pr = parts[0].programme.as_ref().unwrap();
+        let lots: Vec<_> = parts[0].parcels.iter().filter(|p| pr.allocations.iter()
+            .any(|a| a.parcel_id == p.id && !a.role.starts_with("open.") && !matches!(a.function.as_str(),"common"|"market"))).collect();
+        let wet = lots.iter().filter(|p| surface.wet(geometry::interior_point(p.envelope.as_ref().unwrap_or(&p.shape)))).count();
+        let share = wet as f64 / lots.len().max(1) as f64;
+        println!("TIDAL {population}: wet {wet}/{} = {share:.3}",lots.len());
+        let levels = vec![2.; n*n];
+        let mut index = building_sites::BuildingSiteIndex::prepare(&layouts, &parts, &[0]).unwrap();
+        let (mut offset,mut built,mut over_water) = (0,0,0);
+        loop {
+            let page = index.page("tidal-share", &layouts, &parts, surface, &levels, None, offset, 64, 24*1024*1024).unwrap();
+            offset += page.requests.len();
+            for r in &page.requests {
+                let Some(shape) = r["preview"].as_array().and_then(|s|s.first()) else { continue };
+                let shape: Shape = serde_json::from_value(shape.clone()).unwrap();
+                built += 1;
+                if surface.wet(geometry::centroid(&shape)) {
+                    over_water += 1;
+                    if pr.allocations.iter().any(|a| r["parcel_id"] == a.parcel_id && a.households > 0.) {
+                        assert!(r["programme"]["massing"].as_array().unwrap().iter().any(|m|
+                            m["volumes"].as_array().unwrap().iter().any(|v|v["stilts_m"].as_f64().is_some_and(|h|h>0.))),
+                            "a tidal house over water needs stilts");
+                    }
+                }
+            }
+            if offset == page.total || page.requests.is_empty() { break; }
+        }
+        let built_share = over_water as f64 / built.max(1) as f64;
+        println!("TIDAL {population}: actual footprints over water {over_water}/{built} = {built_share:.3}");
+        footprint_shares.push((population,built_share));
+        assert!(lots.iter().all(|p| p.access.as_ref().is_some_and(|a| a.kind != "unserved")), "occupied tidal lots need access");
+        assert!(layouts[0].streets.iter().any(|s| s.role == "pier" && s.path.windows(2).any(|w|
+            surface.wet(Point { x:(w[0].x+w[1].x)*0.5, y:(w[0].y+w[1].y)*0.5 }))), "waterfront homes need boardwalks");
+        shares.push((population,share));
+    }
+    assert!(shares.iter().all(|(_,s)| (0.30..=0.55).contains(s)), "over-water shares {shares:?}");
+    assert!(footprint_shares.iter().all(|(_,s)| (0.30..=0.55).contains(s)), "actual over-water shares {footprint_shares:?}");
 }

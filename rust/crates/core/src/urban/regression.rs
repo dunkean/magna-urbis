@@ -490,8 +490,16 @@ fn seeded_river_town_preserves_the_only_bridge_and_connected_banks() {
         .iter()
         .find(|s| s.role == "bridge")
         .expect("regional bridge must survive");
-    assert!((bridge.path.first().unwrap().x - 248.0).abs() < 1e-6);
-    assert!((bridge.path.last().unwrap().x - 280.0).abs() < 1e-6);
+    // Deck normalization moves the abutments onto dry, level bank land.
+    let (a, b) = (*bridge.path.first().unwrap(), *bridge.path.last().unwrap());
+    assert!(a.x.min(b.x) < 256.0 && a.x.max(b.x) > 272.0);
+    assert!(!surface.wet(a) && !surface.wet(b));
+    assert!((a.y - b.y).abs() < 1e-6);
+    for end in [a, b] {
+        assert!(layout.streets.iter().filter(|s| s.role != "bridge").any(|s|
+            s.path.windows(2).any(|w| g::distance(end, w[0], w[1]).0 < 0.01)),
+            "bridge bank must connect to the street network");
+    }
     assert!(
         layout
             .blocks

@@ -50,7 +50,7 @@ fn captured_inuit_public_parcel_chain_preserves_partition_paths_and_original_dem
     let expected_programme=serde_json::to_value(layout.programme.as_ref().unwrap()).unwrap();
     let result=generate_parcels("camp-consumer-synthetic-v2",std::slice::from_ref(&layout),&ParcelConfig::default()).unwrap();
     let result=&result[0];
-    assert_eq!(result.parcels.len(),baseline.parcels.len(),"no extra property for the discarded cap");
+    assert!(result.parcels.len()<=baseline.parcels.len(),"yard consolidation can remove properties, never add one for the discarded cap");
     let paths=|p:&Partition|p.parcels.iter().filter(|p|p.use_kind=="court" && p.reason=="shared-footpath").count();
     assert_eq!(paths(result),paths(&baseline),"the retained route parcels are not removed or multiplied");
     for (bi,b) in layout.blocks.iter().enumerate() {
@@ -90,9 +90,10 @@ fn captured_inuit_public_parcel_chain_preserves_partition_paths_and_original_dem
     let garden_area:f64=result.parcels.iter().filter(|p|allocations.iter().any(|a|a["demandId"]==garden["id"] && a["parcelId"]==p.id)).map(|p|area(&p.shape)).sum();
     assert_eq!(garden["requested"].as_f64().unwrap(),garden_area,"same programme::allocate sum of actual garden land");
     assert_eq!(garden["targetArea"],garden["requested"]);
-    let restored_area=result.parcels.iter().map(|p|area(&p.shape)).sum::<f64>()-baseline.parcels.iter().map(|p|area(&p.shape)).sum::<f64>();
-    let derived_growth=garden["requested"].as_f64().unwrap()-old_garden["requested"].as_f64().unwrap();
-    assert!(derived_growth>0.,"restored land is accounted as derived garden, not housing");
-    assert!((derived_growth-restored_area).abs()<0.01,"garden delta follows the actual restored land, same geometric conservation bound");
+    // Infill may now house former garden plots, within the population margin;
+    // exact land conservation and the actual garden sum are checked above.
+    let requested:f64=originals.iter().filter(|d|d["unit"]=="domesticUnits").map(|d|d["requested"].as_f64().unwrap()).sum();
+    let allocated:f64=allocations.iter().map(|a|a["households"].as_f64().unwrap()).sum();
+    assert!(allocated<=(1.3*requested).floor().max(requested.ceil()));
     for demand in after { assert_eq!(demand["builtCapacity"],serde_json::json!(0.0),"no built credit for original or derived land"); }
 }
