@@ -15,7 +15,8 @@ nav a { color: var(--muted); text-decoration: none; text-transform: capitalize; 
 section { padding: 28px 0 8px; border-bottom: 1px solid var(--line); }
 h2 { font-size: 24px; margin: 0 0 10px; text-transform: capitalize; }
 h3 { font: 600 12px/1 system-ui, sans-serif; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 14px 0 8px; }
-.row { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 600px) { .row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 figure { margin: 0; background: var(--card); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
 figure img { display: block; width: 100%; height: auto; aspect-ratio: 816 / 925; object-fit: cover; }
 figcaption { font: 12px/1 system-ui, sans-serif; color: var(--muted); padding: 7px 9px; }
