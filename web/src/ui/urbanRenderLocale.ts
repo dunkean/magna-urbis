@@ -1,4 +1,5 @@
 import { LOCALE_KEY, savedLocale, type Locale } from './shellLocale';
+import { GROUND_BLEND_LABEL, GROUND_BLEND_TITLE } from '../render/groundBlend';
 
 type Words = readonly [string, string, string, string, string];
 const languages: Locale[] = ['fr', 'en', 'zh', 'es', 'pt'];
@@ -18,7 +19,7 @@ const controls: Record<string, Words> = {
   axes:['Axes des parcelles','Parcel axes','地块轴线','Ejes de parcelas','Eixos dos lotes'],
   access:['Statut de desserte des parcelles','Parcel access status','地块通达状态','Estado de acceso a las parcelas','Estado de acesso aos lotes'],
   textured:['Matières texturées','Textured materials','纹理材质','Materiales con textura','Materiais texturizados'],
-  palette:['Palette','Palette','调色板','Paleta','Paleta'], opacity:['Opacité','Opacity','不透明度','Opacidad','Opacidade'],
+  groundBlend:GROUND_BLEND_TITLE, palette:['Palette','Palette','调色板','Paleta','Paleta'], opacity:['Opacité','Opacity','不透明度','Opacidad','Opacidade'],
   width:['Épaisseur des traits (px)','Line width (px)','线宽（像素）','Grosor de línea (px)','Espessura da linha (px)'],
 };
 const choices: Record<string, Words> = {
@@ -44,6 +45,7 @@ export function setupUrbanRenderLocale(panel: HTMLElement): void {
       const option = panel.querySelector<HTMLOptionElement>(`[data-render="palette"] option[value="${value}"]`);
       if (option) option.textContent = words[index];
     }
+    for (const [value, words] of Object.entries(GROUND_BLEND_LABEL)) { const option = panel.querySelector<HTMLOptionElement>(`[data-render="groundBlend"] option[value="${value}"]`); if (option) option.textContent = words[index]; }
   }
   apply();
   window.addEventListener('magna-locale-change', apply);

@@ -10,6 +10,7 @@ import { roleLabel } from './cityRoles';
 import { MATERIALS, coverLayer, layerExtent, layerPattern, materialImagesNow, placeLayer, streetLayer, wallStoneLayer, type MaterialImages } from './buildingMaterials';
 import { planBuildingColors, planRoofColor } from './cityBuildingPalette';
 import { cityWallDetails, drawCityWallGround, drawCityWalls } from './cityWalls'; // walls hook (cityWalls.ts)
+import { STRUCTURE_ROLES, blendLine, blendTone, blendsGround, groundWash, isBlended, softStreet, type WashKind } from './groundBlend';
 import { CityGround, boardwalkWidth, isBoardwalk, type CityGroundRaster } from './cityGround';
 import { buildingRoof, pieceShadows, pieceVolumes, readMassing, stiltDeck, stiltSupports, roofLight as roofLight3 } from './cityMassing';
 
@@ -300,6 +301,8 @@ export interface CityDrawOptions {
   selectedBuilding?: string; selectedParcel?: number; refusedParcels?: ReadonlySet<string>;
   /** Textured materials (PBR patterns in world metres) on roofs, streets, plazas and walls; `onTexturesReady` asks for a redraw once the atlases are loaded. */
   textured?: boolean; onTexturesReady?: () => void;
+  /** Blended ground and streets (groundBlend.ts): translucent washes, no outlines or casings. Default: the shared setting. */
+  groundBlend?: boolean;
 }
 export interface CityFrameStats { lod: CityLod; blocks: number; parcels: number; streets: number; buildings: number; ms: number; pending: boolean }
 
@@ -451,9 +454,11 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
   const growthColor = (zone: string): string => ZONE_COLORS[zone] ?? ZONE_COLORS.core;
 
   // Far: the urban footprint as one tint, main roads and walls.
+  const blend = (o.groundBlend ?? isBlended()) && blendsGround(view, palette), tone = blendTone(palette), softLine = blendLine(tone);
   if (lod === 'far') {
-    if (layers.blocks) for (const shape of scene.footprint) if (overlaps(shapeBox(shape), viewport)) batch.add({ fill: palette === 'terrain' ? undefined : parchment ? PARCH.footprint : '#cfb589', stroke: parchment ? PARCH.ink : '#7b6446', width: px(1), alpha: 0.9 }, shapePath(shape));
-    if (parchment && layers.blocks) { const hatch = hatchPattern(ctx, mpp); if (hatch) for (const shape of scene.footprint) if (overlaps(shapeBox(shape), viewport)) batch.add({ fill: hatch }, shapePath(shape)); }
+    if (blend && layers.blocks) { const w = groundWash('footprint', tone); for (const shape of scene.footprint) if (overlaps(shapeBox(shape), viewport)) batch.add({ fill: w.color, alpha: w.alpha }, shapePath(shape)); }
+    else if (layers.blocks) for (const shape of scene.footprint) if (overlaps(shapeBox(shape), viewport)) batch.add({ fill: palette === 'terrain' ? undefined : parchment ? PARCH.footprint : '#cfb589', stroke: parchment ? PARCH.ink : '#7b6446', width: px(1), alpha: 0.9 }, shapePath(shape));
+    if (parchment && layers.blocks && !blend) { const hatch = hatchPattern(ctx, mpp); if (hatch) for (const shape of scene.footprint) if (overlaps(shapeBox(shape), viewport)) batch.add({ fill: hatch }, shapePath(shape)); }
     batch.flush(ctx);
   } else {
     // Blocks: palette, district role, or the ground under buildings.
@@ -472,9 +477,17 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
       else if (parchment) fill = PARCH.block;
       else fill = palette === 'atlas' ? ATLAS[b.quarter % ATLAS.length] : growthColor(b.zone);
       const stroke = view === 'buildings' && lod !== 'close' ? undefined : outline;
+      if (blend && fill) {
+        // Blended: one translucent wash (a wider low-alpha stroke of the same colour feathers the edge), faint lot lines only up close.
+        const w = groundWash(reserve ? 'reserve' : b.kind === 'common' ? 'common' : b.kind === 'place' ? 'place' : 'block', tone), a = w.alpha * (b.peripheral && view !== 'buildings' ? 0.7 : 1);
+        if (!tex || !(b.kind === 'place' || b.kind === 'market')) batch.add({ stroke: w.color, width: px(2.2), alpha: a * 0.4, cap: 'round' }, pathOf(b));
+        batch.add({ fill: plaza(b.kind, w.color), alpha: a }, pathOf(b));
+        if (lod === 'close') batch.add({ stroke: softLine.color, width: px(0.5), alpha: softLine.alpha }, pathOf(b));
+        continue;
+      }
       batch.add({ fill: plaza(b.kind, fill), stroke, width: lineW, alpha: b.peripheral && view !== 'buildings' ? 0.6 : 1, dash: reserve ? [px(3), px(2)] : undefined }, pathOf(b));
       // Parchment: built blocks hatched in ink, as on the engraved plans.
-      if (parchment && !reserve && b.kind !== 'common' && b.kind !== 'place' && view !== 'roles') { const hatch = hatchPattern(ctx, mpp); if (hatch) batch.add({ fill: hatch, alpha: view === 'buildings' ? 0.5 : 1 }, pathOf(b)); }
+      if (parchment && !blend && !reserve && b.kind !== 'common' && b.kind !== 'place' && view !== 'roles') { const hatch = hatchPattern(ctx, mpp); if (hatch) batch.add({ fill: hatch, alpha: view === 'buildings' ? 0.5 : 1 }, pathOf(b)); }
     }
     batch.flush(ctx);
     // Parcels: cadastral detail from near; uses and roles from mid.
@@ -486,7 +499,13 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
       stats.parcels++;
       const openFill = parchment ? (use === 'garden' ? PARCH.garden : use === 'reserve' ? PARCH.reserve : use === 'common' ? PARCH.common : use === 'market' ? PARCH.market : use === 'place' ? PARCH.place : undefined)
         : use === 'garden' ? '#a8bc89' : use === 'reserve' ? '#cbc2a8' : use === 'common' ? '#adc5bf' : use === 'market' ? '#ead39a' : use === 'place' ? '#e6d1a5' : undefined;
-      if (view === 'parcels') {
+      if (blend && (view === 'parcels' || view === 'buildings')) {
+        const kind: WashKind = use === 'garden' ? 'garden' : use === 'reserve' ? 'reserve' : use === 'common' ? 'common' : use === 'market' ? 'market' : use === 'place' ? 'place' : 'parcel';
+        const w = groundWash(kind, tone), a = w.alpha * (p.peripheral ? 0.7 : 1), ground = kind === 'parcel' || kind === 'reserve';
+        // Plain lots add no wash over the block's (the buildings stand on it); gardens, commons and squares stack theirs.
+        if (!(view === 'buildings' && ground)) batch.add({ fill: plaza(use, w.color), alpha: a }, pathOf(p));
+        if (lod === 'close') batch.add({ stroke: softLine.color, width: px(0.5), alpha: softLine.alpha * (ground ? 0.8 : 1) }, pathOf(p));
+      } else if (view === 'parcels') {
         const fill = palette === 'terrain' ? undefined : palette === 'ink' ? '#eee0c9' : parchment ? openFill ?? PARCH.lot : openFill ?? (palette === 'atlas' ? ATLAS[p.index % ATLAS.length] : growthColor(p.zone));
         batch.add({ fill: plaza(use, fill), stroke: atLeast(lod, 'near') ? outline : undefined, width: lineW, alpha: p.peripheral ? 0.65 : 1 }, pathOf(p));
       } else if (view === 'uses') {
@@ -519,11 +538,18 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
     const visible = scene.bins.streets.query(viewport).map(i => scene.streets[i]).filter(s => s.rank <= maxRank || CROSSINGS.has(s.role));
     const order = (s: CityStreet): number => CROSSINGS.has(s.role) ? -1 : s.rank;
     visible.sort((a, b) => order(b) - order(a));
-    const casing = new Batches(), fill = new Batches(), marks = new Batches();
+    const casing = new Batches(), fill = new Batches(), marks = new Batches(), softStreets = (o.groundBlend ?? isBlended()) && !tex;
     for (const s of visible) {
       stats.streets++;
       const paint = streetPaint(s.role, s.rank, palette), path = s.path ??= linePath(s.street.path);
       const w = Math.max(s.width, px(isBoardwalk(s.role) ? 0.8 : STREET_MIN_PX[Math.min(4, Math.max(0, s.rank))])), w2 = Math.round(w * 4) / 4;
+      if (softStreets && !STRUCTURE_ROLES.has(s.role)) {
+        // Blended: earth wash at rank-decaying opacity and a faint soft edge instead of the dark casing.
+        const soft = softStreet(s.role, s.rank, tone);
+        if (lod !== 'far') casing.add({ stroke: soft.edge, width: w2 + 2 * px(lod === 'mid' ? 0.8 : 1.1), alpha: soft.edgeAlpha, cap: 'round' }, path);
+        fill.add({ stroke: soft.fill, width: w2, alpha: soft.alpha, cap: 'round' }, path);
+        continue;
+      }
       const edge = s.role === 'bridge' || s.role === 'quay' ? Math.max(1.2, px(1.4)) : lod === 'far' ? 0 : px(lod === 'mid' ? 0.7 : 0.9);
       const cap = s.role === 'bridge' || s.role === 'quay' ? 'butt' : 'round';
       if (edge > 0) casing.add({ stroke: paint.casing, width: w2 + 2 * edge, dash: paint.dash ? [px(4), px(2)] : undefined, cap }, path);

@@ -21,6 +21,7 @@ import {
   type CityGlFillMesh, type CityGlFillSource, type CityGlStrokes, type CityGlTriangulation,
 } from './cityGlBuild';
 import { buildingColors, DEFAULT_LAYERS, PAINTED_SHADOW, planColors, planMaterialTable, rgba01, roofMaterialTable, streetColors, streetMaterialTable, wallColors, type CityGlDraws, type CityGlStyleState } from './cityGlStyle';
+import { isBlended } from './groundBlend';
 import { MATERIALS, loadMaterialImages, uploadMaterialArrays } from './buildingMaterials';
 import { cityLegacyWalls, cityWallColors, cityWallStrokes, createCityGlWalls, type CityGlWalls } from './cityWalls'; // walls hook (cityWalls.ts)
 
@@ -38,6 +39,8 @@ export interface CityGlDrawOptions {
   bridgeDeck?: boolean;
   /** Painted building silhouettes (tints, ground shadows, edges). Default: Render background. */
   paintedBuildings?: boolean;
+  /** Blended ground and streets (groundBlend.ts). Default: the shared setting. */
+  groundBlend?: boolean;
   /** Textured materials: roofs, streets and plazas sample the PBR albedo atlas in world metres. */
   textured?: boolean;
 }
@@ -575,13 +578,14 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
       if (!scene || !plan) return frame;
       const palette = o.palette ?? 'growth', layers = { ...DEFAULT_LAYERS, ...o.layers };
       const renderBackground = globalThis.document?.documentElement.dataset.cityBackground === 'render', painted = o.paintedBuildings ?? renderBackground;
-      const style: CityGlStyleState = { view: o.view, lod, palette, layers, buildingsVisible: o.buildingsVisible ?? true, diagnostic: o.diagnostic ?? 'none', refusedParcels: o.refusedParcels, painted };
+      const style: CityGlStyleState = { view: o.view, lod, palette, layers, buildingsVisible: o.buildingsVisible ?? true, diagnostic: o.diagnostic ?? 'none', refusedParcels: o.refusedParcels, painted, blended: o.groundBlend ?? isBlended() };
       // Colour tables: rebuilt only when the state changes.
-      const key = JSON.stringify([o.view, lod, palette, layers, style.buildingsVisible, refusedKey(o.refusedParcels), painted]);
+      const key = JSON.stringify([o.view, lod, palette, layers, style.buildingsVisible, refusedKey(o.refusedParcels), painted, style.blended]);
       if (key !== styleKey) { const pc = planColors(scene, plan.mesh, style); plan.colors(pc.fill, pc.line); draws = pc.draws; styleKey = key; }
-      if (palette !== streetKey) {
-        const sc = streetColors(scene, palette), wc = cityWallColors(scene, palette); // walls hook
-        streets?.colors(sc.outer, sc.inner); walls?.colors(wc.outer, wc.inner); towerColors = wc.tower; streetKey = palette;
+      const softStreets = !!style.blended && !(o.textured && palette !== 'parchment' && palette !== 'ink'), sKey = `${palette}|${softStreets}`;
+      if (sKey !== streetKey) {
+        const sc = streetColors(scene, palette, softStreets), wc = cityWallColors(scene, palette); // walls hook
+        streets?.colors(sc.outer, sc.inner); walls?.colors(wc.outer, wc.inner); towerColors = wc.tower; streetKey = sKey;
       }
       const bKey = `${o.view}|${palette}|${style.diagnostic}|${buildingGeneration}|${painted}`;
       if (built && bKey !== builtKey) { const bc = buildingColors(buildings, style, scene); built.colors(bc.fill, bc.line); builtKey = bKey; }
@@ -666,7 +670,7 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
         const maxRank = lod === 'far' ? 1 : lod === 'mid' ? 2 : 15, crossings = true;
         const first = Math.min(streets.strokes.firstWithRank[maxRank], crossings ? streets.strokes.firstWithRank[0] : Infinity);
         const s = { edgePx: lod === 'far' ? 0 : lod === 'mid' ? 0.7 : 0.9, inner: 1, minPx: 1, maxRank, crossings, dash: 1 };
-        const paintRoads = renderBackground && palette !== 'parchment' && palette !== 'ink';
+        const paintRoads = renderBackground && palette !== 'parchment' && palette !== 'ink' && !softStreets;
         if (paintRoads) useStroke(casingP);
         if (d.streetCasing) strokes(streets, first, 0, s);
         if (textured && streets.mats && palette !== 'parchment' && palette !== 'ink') { useStroke(texturedP); useTextured(texturedP, streets.mats, false); u = texturedP.u; }

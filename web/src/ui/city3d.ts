@@ -255,7 +255,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     if (city && city.extent.maxX >= tile.x && city.extent.minX <= tile.x + tile.width && city.extent.maxY >= tile.y && city.extent.minY <= tile.y + tile.width) {
       ctx.save(); ctx.setTransform(k, 0, 0, k, -tile.x * k, -tile.y * k);
       drawCity(ctx, city, { viewport: { minX: tile.x, minY: tile.y, maxX: tile.x + tile.width, maxY: tile.y + tile.width }, mpp, dpr: 1, lod: selectCityLod(mpp),
-        view: 'parcels', palette: 'terrain', width: 0.6, layers: PLAN_LAYERS, buildingsVisible: false, appearance: { style: 'cartographic', diagnostic: 'none' }, textured: textured(), onTexturesReady: () => terrain?.invalidateTiles() });
+        view: 'parcels', palette: 'terrain', width: 0.6, layers: PLAN_LAYERS, buildingsVisible: false, appearance: { style: 'cartographic', diagnostic: 'none' }, textured: textured(), groundBlend: false, onTexturesReady: () => terrain?.invalidateTiles() });
       ctx.restore();
     }
     return c;

@@ -7,6 +7,7 @@ import { urbanText } from './urbanPanelLocale';
 import { LOCALE_KEY } from './shellLocale';
 import { RENDER_ROAD_PX, ROAD_STROKE_LAYERS, renderCrossingStrokes, renderRoadStrokes, roadStrokeWidth, splitAtCrossings, type RoadStroke } from '../render/roadPaintRender';
 
+import { BLEND_ROAD_ALPHA, BLEND_ROAD_COLOR, BLEND_ROAD_PX, GROUND_BLEND_LABEL, GROUND_BLEND_TITLE, getGroundBlend, gradeFade, isBlended, onGroundBlend, setGroundBlend, type GroundBlend } from '../render/groundBlend';
 import { v1RoadPaint, type V1LandscapeStyle } from '../render/v1Landscape';
 const ns = 'http://www.w3.org/2000/svg';
 /** Screen widths (px): roads keep their weight at every zoom. */
@@ -159,6 +160,7 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
     </div></details>
     <label><input id="roadShow" type="checkbox">Show roads</label>
     <details class="advanced" id="roadRendering"><summary>Rendering</summary><div class="control-group">
+    <label title="Classic keeps today's drawing; Blended washes roads, city ground and river sources into the map">Roads &amp; ground <select id="roadBlend"><option value="classic">Classic</option><option value="blended">Blended</option></select></label>
     <label title="Colours, casings and dashes of the road classes">Style <select id="roadPreset">${PRESET_IDS.map(id => `<option value="${id}">${esc(PRESETS[id].label)}</option>`).join('')}</select></label>
     <label title="Multiplies the line widths">Width × <input data-road-style="width" type="range" min="0.4" max="3" step="0.1"><output id="roadWidthValue"></output></label>
     <label>Opacity <input data-road-style="opacity" type="range" min="0.2" max="1" step="0.05"><output id="roadOpacityValue"></output></label>
@@ -182,7 +184,7 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
       c.value = String(key === 'maxGrade' ? Math.round(value * 100) : value);
     }
     q('#roadDensityValue').textContent = config.density.toFixed(2);
-    select('roadPreset').value = style.preset;
+    select('roadPreset').value = style.preset; select('roadBlend').value = getGroundBlend();
     for (const c of Array.from(panel.querySelectorAll<HTMLInputElement>('[data-road-style]'))) {
       const value = style[c.dataset.roadStyle as keyof RoadStyle];
       if (c.type === 'checkbox') c.checked = value as boolean; else c.value = String(value);
@@ -197,6 +199,8 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
   input('roadShow').onchange = () => { show = input('roadShow').checked; draw(); options.onDisplayChange(); };
   /** Rendering settings redraw only; the URL follows on release of a slider. */
   function restyle(commit: boolean): void { controls(); legend(); draw(); if (commit) options.onDisplayChange(); }
+  select('roadBlend').onchange = () => setGroundBlend(select('roadBlend').value as GroundBlend);
+  onGroundBlend(() => { controls(); draw(); options.onDisplayChange(); });
   select('roadPreset').onchange = () => { style.preset = select('roadPreset').value as RoadPreset; restyle(true); };
   for (const c of Array.from(panel.querySelectorAll<HTMLInputElement>('[data-road-style]'))) {
     const key = c.dataset.roadStyle as keyof RoadStyle;
@@ -248,7 +252,7 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
     const box = options.map.viewBox.baseVal;
     if (box?.width) layer.style.setProperty('--road-k', String(+(options.map.clientWidth / box.width).toPrecision(5)));
     const scale = box?.width ? options.map.clientWidth / box.width : 1;
-    const state = `${enabled}|${show}|${JSON.stringify(style)}|${v1Style ?? ''}|${v1Style ? scale : ''}`;
+    const state = `${enabled}|${show}|${isBlended()}|${JSON.stringify(style)}|${v1Style ?? ''}|${v1Style ? scale : ''}`;
     if (layer === drawnLayer && drawn === output && state === drawnState && drawnOwnership === urbanOwnership) return;
     drawnLayer = layer; drawn = output; drawnState = state; drawnOwnership = urbanOwnership; layer.replaceChildren();
     if (!output || !show || !enabled) return;
@@ -284,6 +288,11 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
       if (curves) return entry.curved ??= entry.paths.map(curveData).join(' ');
       return entry.straight ??= entry.paths.map(pathData).join(' ');
     };
+    if (!v1Style && isBlended()) {
+      drawBlended(order, outsidePath, painted, hits);
+      layer.append(painted, hits);
+      return;
+    }
     if (!v1Style && style.preset === 'render') {
       drawRender(order, outsidePath, painted, hits);
       layer.append(painted, hits);
@@ -316,6 +325,48 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
     }
     painted.append(casings, fills, crossings);
     layer.append(painted, hits);
+  }
+  /** Roads & ground, Blended: one visual language for every class and preset. Earth / sepia wash at partial opacity,
+   * widths and opacities falling smoothly highway to trail, solid lines, a faint soft edge on the wider roads, and a
+   * fade with the steepest grade so the mountains stay quiet. One opacity group per (class, grade bucket, layer):
+   * roads of the same class never darken where they overlap. Crossings keep their structures, without halos. */
+  function drawBlended(order: RoadSegment[], outsidePath: (path: Point[], width: number, curves: boolean) => string, painted: SVGGElement, hits: SVGGElement): void {
+    const tone = style.preset === 'ink' ? 'sepia' : 'earth', color = BLEND_ROAD_COLOR[tone], edgeColor = tone === 'earth' ? '#4e3a24' : '#6b4e2e';
+    const groups = new Map<string, SVGGElement>(), crossings = document.createElementNS(ns, 'g'); crossings.style.pointerEvents = 'none';
+    const group = (key: string, opacity: number): SVGGElement => {
+      let g = groups.get(key);
+      if (!g) { g = document.createElementNS(ns, 'g'); g.style.pointerEvents = 'none'; g.setAttribute('opacity', String(+opacity.toFixed(3))); groups.set(key, g); }
+      return g;
+    };
+    const stroke = (d: string, c: string, width: string, cap: 'round' | 'butt' = 'round'): SVGPathElement => {
+      const p = document.createElementNS(ns, 'path'); p.setAttribute('d', d); p.setAttribute('fill', 'none'); p.setAttribute('stroke', c);
+      p.setAttribute('vector-effect', 'non-scaling-stroke'); p.setAttribute('stroke-linejoin', 'round'); p.setAttribute('stroke-linecap', cap); p.style.strokeWidth = width;
+      return p;
+    };
+    // Soft edges first, then surfaces, minor roads under major ones (order is already minor first).
+    const bodies: SVGGElement[] = [];
+    for (const s of order) {
+      const px = BLEND_ROAD_PX[s.class] * style.width, fade = Math.round(gradeFade(s.grade) * 10) / 10, alpha = BLEND_ROAD_ALPHA[s.class] * fade;
+      const d = outsidePath(s.path, s.width, style.curves);
+      if (d) {
+        if (s.class === 'highway' || s.class === 'main' || s.class === 'local') group(`edge|${s.class}|${fade}`, alpha * 0.22).append(stroke(d, edgeColor, roadStrokeWidth({ scale: 1, addPx: 1.6, addM: 1.4 }, px, s.width)));
+        const g = group(`body|${s.class}|${fade}`, alpha); if (!bodies.includes(g)) bodies.push(g);
+        g.append(stroke(d, color, roadStrokeWidth({ scale: 1, addPx: 0, addM: 0 }, px, s.width)));
+        const hit = stroke(d, 'transparent', String(Math.max(8, px + 6))); hit.style.strokeWidth = ''; hit.setAttribute('stroke-width', String(Math.max(8, px + 6)));
+        hit.style.pointerEvents = 'stroke'; hit.dataset.road = '';
+        const title = document.createElementNS(ns, 'title'); title.textContent = describe(s); hit.append(title); hits.append(hit);
+      }
+      if (style.crossings) for (const c of s.crossings) {
+        const cd = outsidePath(c.path, s.width, false);
+        if (!cd) continue;
+        const w = roadStrokeWidth({ scale: 1, addPx: 0, addM: 0 }, px, s.width);
+        if (c.kind === 'bridge') crossings.append(stroke(cd, '#4f3c2a', `calc(${w} + 3.4px)`, 'butt'), stroke(cd, '#e8d8b8', `calc(${w} + 1.2px)`, 'butt'));
+        else if (c.kind === 'causeway') crossings.append(stroke(cd, '#5d5446', `calc(${w} + 2.6px)`), stroke(cd, '#cfc3a5', `calc(${w} + 0.8px)`));
+        else { const f = stroke(cd, '#3f7fa6', `calc(${w} + 0.6px)`); f.setAttribute('stroke-dasharray', '1 2.5'); crossings.append(f); }
+      }
+    }
+    for (const [key, g] of groups) if (key.startsWith('edge|')) painted.append(g);
+    painted.append(...bodies, crossings);
   }
   /** The painted preset: global stroke layers (ditches, verges, shadows, casings, surfaces,
    * detail), one group per colour with the opacity on the group, so junctions merge without
@@ -398,7 +449,7 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
     for (const option of Array.from(select('roadPreset').options)) if (presets[option.value]) option.textContent=urbanText(presets[option.value]);
     const fields: Record<string,Words> = { gradeWeight:['Aversion aux pentes','Slope aversion','坡度回避','Evitar pendientes','Evitar declives'], maxGrade:['Pente maximale des routes principales (%)','Max grade of main roads (%)','主要道路最大坡度（%）','Pendiente máxima de caminos principales (%)','Inclinação máxima das estradas principais (%)'], crossingCost:['Coût de franchissement des rivières','River crossing cost','河流跨越成本','Coste de cruce de ríos','Custo de travessia de rios'], wobble:['Sinusité × culture','Winding × culture','弯曲度 × 文化','Sinuosidad × cultura','Sinuosidade × cultura'], sharing:['Partage des troncs','Trunk sharing','主干共享','Tramos compartidos','Compartilhamento de troncos'] };
     for (const [key,words] of Object.entries(fields)) text(`[data-road="${key}"]`,words);
-    text('#roadSurface',['Surfaces','Surfaces','路面','Superficies','Superfícies']); text('#roadCulture',['Culture routière','Road culture','道路文化','Cultura viaria','Cultura viária']); text('#roadPreset',['Style','Style','样式','Estilo','Estilo']); text('[data-road-style="width"]',['Largeur ×','Width ×','宽度 ×','Ancho ×','Largura ×']); text('[data-road-style="opacity"]',['Opacité','Opacity','不透明度','Opacidad','Opacidade']);
+    text('#roadSurface',['Surfaces','Surfaces','路面','Superficies','Superfícies']); text('#roadCulture',['Culture routière','Road culture','道路文化','Cultura viaria','Cultura viária']); text('#roadBlend',[...GROUND_BLEND_TITLE]); for (const option of Array.from(select('roadBlend').options)) option.textContent=urbanText(GROUND_BLEND_LABEL[option.value as GroundBlend]); text('#roadPreset',['Style','Style','样式','Estilo','Estilo']); text('[data-road-style="width"]',['Largeur ×','Width ×','宽度 ×','Ancho ×','Largura ×']); text('[data-road-style="opacity"]',['Opacité','Opacity','不透明度','Opacidad','Opacidade']);
     inputLabel('#roadEnabled',['Générer les routes','Generate roads','生成道路','Generar carreteras','Gerar estradas']);
     inputLabel('#roadShow',['Afficher les routes','Show roads','显示道路','Mostrar carreteras','Mostrar estradas']);
     inputLabel('[data-road-style="curves"]',['Courbes lissées','Smooth curves','平滑曲线','Curvas suaves','Curvas suaves']);

@@ -7,6 +7,8 @@ import { marchingSquares } from '../gen/terrain/contour';
 import { lakeField, lakeSample } from './lakeGeometry';
 import { hydrologyWaterColour, riverBank } from '../../../rust/bridge/hydrologyRender';
 import { lakeMaterialSvg } from '../render/terrainWater';
+import { headwaterGeometry, isHeadwater, type HeadwaterGeometry } from '../render/riverHeadwaters';
+import { isBlended } from '../render/groundBlend';
 
 export { VECTOR_OVERLAYS, VECTOR_LEGENDS } from '../render/displayDiagnostics';
 import type { VectorOverlay } from '../render/displayDiagnostics';
@@ -113,9 +115,8 @@ export function riverSegments(water: VectorWater, display: WaterDisplay): Float3
     out.push(x0, y0, x1, y1, w0, w1, r, g, b);
   };
   const line = (l: RiverLine, thinner: number): void => {
-    const { points, area, kind } = l;
-    const widths = riverWidths(water, l, thinner);
-    for (let i = 1; i < area.length; i++) {
+    const { points, widths, kind } = riverGeometry(water, l, thinner, display.riverArea);
+    for (let i = 1; i < widths.length; i++) {
       push(points[2 * i - 2], points[2 * i - 1], points[2 * i], points[2 * i + 1], widths[i - 1], widths[i], colourOf(kind[i - 1]));
     }
   };
@@ -133,6 +134,25 @@ export function riverSegments(water: VectorWater, display: WaterDisplay): Float3
     push((x + 0.5) * cell, (y + 0.5) * cell, (nx + 0.5) * cell, (ny + 0.5) * cell, channelWidth(a, water.widthScale ?? water.rivers?.widthScale ?? 1), channelWidth(h.accumulation[next], water.widthScale ?? water.rivers?.widthScale ?? 1), edge);
   }
   return Float32Array.from(out);
+}
+
+const headwaterMemo = new WeakMap<VectorWater, Map<number, Set<RiverLine>>>();
+/** Main rivers that are genuine headwaters at this display threshold (m²); cached per network. */
+function headwaterSet(water: VectorWater, threshold: number): Set<RiverLine> {
+  let byThreshold = headwaterMemo.get(water); if (!byThreshold) headwaterMemo.set(water, byThreshold = new Map());
+  let set = byThreshold.get(threshold);
+  if (!set) {
+    set = new Set();
+    const net = water.rivers;
+    if (net) { const ctx = { rivers: net.rivers, lakeLinks: net.lakeLinks, hydro: water.hydro, lake: water.lake }; for (const l of net.rivers) if (isHeadwater(l, ctx, threshold)) set.add(l); }
+    byThreshold.set(threshold, set);
+  }
+  return set;
+}
+/** River line geometry as drawn: in Blended mode a genuine headwater emerges from 0.6 m instead of starting as a full-width disc. */
+export function riverGeometry(water: VectorWater, line: RiverLine, thinner: number, riverAreaKm2: number): HeadwaterGeometry {
+  const widths = riverWidths(water, line, thinner);
+  return isBlended() && headwaterSet(water, riverAreaKm2 * 1e6).has(line) ? headwaterGeometry(line, widths) : { points: line.points, widths, level: line.level, kind: line.kind, reach: 0 };
 }
 
 /** Hydraulic geometry, shared by both renderers; tidal mouths widen gradually. */
@@ -171,13 +191,13 @@ export function vectorWaterSvg(water: VectorWater, display: WaterDisplay, materi
       ...(!display.showLakes ? (network.lakeLinks ?? []).map(l => [l, 0] as [RiverLine, number]) : []),
     ];
     for (const [line, thinner] of lines) {
-      const widths = riverWidths(water, line, thinner), packed = new Float32Array(widths.length * 4);
-      for (let k = 0; k < widths.length; k++) packed.set([line.points[2 * k], line.points[2 * k + 1], widths[k], line.level[k]], k * 4);
+      const geo = riverGeometry(water, line, thinner, display.riverArea), widths = geo.widths, packed = new Float32Array(widths.length * 4);
+      for (let k = 0; k < widths.length; k++) packed.set([geo.points[2 * k], geo.points[2 * k + 1], widths[k], geo.level[k]], k * 4);
       let start = 0;
       while (start + 1 < widths.length) {
-        const colour = colourOf(line.kind[start]);
+        const colour = colourOf(geo.kind[start]);
         let end = start + 1;
-        while (end + 1 < widths.length && colourOf(line.kind[end]) === colour) end++;
+        while (end + 1 < widths.length && colourOf(geo.kind[end]) === colour) end++;
         const group = groups.get(colour) ?? { banks: '', axes: '' };
         group.banks += riverBank(packed, start, end + 1);
         // Round terminal caps and incident bank joins, like the GPU capsules.
@@ -185,7 +205,7 @@ export function vectorWaterSvg(water: VectorWater, display: WaterDisplay, materi
           const x = packed[k * 4], y = packed[k * 4 + 1], r = widths[k] / 2;
           group.banks += `M${format(x + r)},${format(y)}a${format(r)},${format(r)} 0 1 0 ${format(-2 * r)},0a${format(r)},${format(r)} 0 1 0 ${format(2 * r)},0Z`;
         }
-        group.axes += `M${line.points.slice(2 * start, 2 * end + 2).map((v, k) => (k % 2 ? ',' : k ? 'L' : '') + format(v)).join('')}`;
+        group.axes += `M${geo.points.slice(2 * start, 2 * end + 2).map((v, k) => (k % 2 ? ',' : k ? 'L' : '') + format(v)).join('')}`;
         groups.set(colour, group); start = end;
       }
     }

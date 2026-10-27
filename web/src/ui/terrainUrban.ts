@@ -1,5 +1,6 @@
 import { growthPhaseCultureHtml, growthStepLabel } from './urbanGrowthEvidence';
 import { setupUrbanRenderLocale } from './urbanRenderLocale';
+import { getGroundBlend, onGroundBlend, setGroundBlend, type GroundBlend } from '../render/groundBlend';
 import { setupUrbanPanelLocale, urbanText } from './urbanPanelLocale';
 import { LOCALE_KEY } from './shellLocale';
 import { bindControlRelevance, controlRelevanceControlsHtml } from './urbanControlRelevance';
@@ -128,7 +129,7 @@ const mechanisms: Record<string, string> = { auto: 'Selon le relief et les accè
 const families: Record<string, string> = { auto: 'Selon culture, relief et accès', circle: 'Circulaire / ovalaire', rectangle: 'Carrée / rectangulaire', polygon: 'Polygonale', compact: 'Organique compacte', elongated: 'Allongée / fusiforme', linear: 'Linéaire / ruban', fan: 'Éventail / secteur', fingers: 'Radiale à bras', dendritic: 'Ramifiée / dendritique', lobed: 'Lobée / polynucléaire', archipelago: 'Discontinue / archipel', composite: 'Composite / asymétrique' };
 const tissues: Record<string, string> = { culture: 'Recettes culturelles par phase', grid: 'Grille orthogonale', organic: 'Organique', radial: 'Radial', terraces: 'Topographique / terrasses', dendritic: 'Ramifié', clusters: 'Groupes autour de communs' };
 const parcelOperators: Record<string, string> = { culture: 'Recettes culturelles par phase', strips: 'Bandes de façade', compact: 'Lots compacts', courtyard: 'Cours et enclos', inherited: 'Parcellaire hérité', oriented: 'Subdivision orientée', frontage: 'Territoires de façade', compound: 'Domaines / compounds', wholeBlock: 'Îlot entier', garden: 'Jardin' };
-interface Render { v1?: boolean; v1Style?: V1LandscapeStyle; view: 'tissue' | 'uses' | 'parcels' | 'buildings' | 'roles'; reserve: boolean; allocated: boolean; centers: boolean; domains: boolean; quarters: boolean; blocks: boolean; streets: boolean; enclosures: boolean; parcels: boolean; gardens: boolean; places: boolean; fronts: boolean; axes: boolean; access: boolean; opacity: number; width: number; palette: 'growth' | 'atlas' | 'ink' | 'terrain'; /** PBR textures on constructions (roofs, streets, plazas, bridges, walls). */ textured?: boolean }
+interface Render { v1?: boolean; v1Style?: V1LandscapeStyle; view: 'tissue' | 'uses' | 'parcels' | 'buildings' | 'roles'; reserve: boolean; allocated: boolean; centers: boolean; domains: boolean; quarters: boolean; blocks: boolean; streets: boolean; enclosures: boolean; parcels: boolean; gardens: boolean; places: boolean; fronts: boolean; axes: boolean; access: boolean; opacity: number; width: number; palette: 'growth' | 'atlas' | 'ink' | 'terrain'; /** PBR textures on constructions (roofs, streets, plazas, bridges, walls). */ textured?: boolean; /** Roads & ground: classic or blended (shared setting, groundBlend.ts). */ groundBlend?: GroundBlend }
 type Kind = 'quarters' | 'parcels';
 
 /** `getRaster` replaces `getTerrain` where the raster is already adapted (Urban Bench decors). */
@@ -204,6 +205,8 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   }
   restoreState(new URLSearchParams(location.search).get('urban'));
   const v1Query = new URLSearchParams(location.search).get('v1');
+  // Roads & ground: the saved URL wins over the stored setting; either way the shared store is the source.
+  if (render.groundBlend === 'classic' || render.groundBlend === 'blended') setGroundBlend(render.groundBlend); else render.groundBlend = getGroundBlend();
   if (v1Query === 'parchment' || v1Query === 'atlas') { render.v1 = true; render.v1Style = v1Query; render.view = 'buildings'; }
   // Missing profiles already default to 'site' in normalizeLayoutConfig.
   // CityBench enables its stages without changing an explicit restored override.
@@ -420,7 +423,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     mainPanel?.sync();
   }
   const rendering = document.createElement('details'); rendering.className = 'advanced';
-  rendering.innerHTML = `<summary>⚙ Rendu · couches, palette, opacité</summary><div class="control-group">${Object.entries({ reserve: 'Réserve de croissance', allocated: 'Terre urbaine attribuée', centers: 'Noyaux et identités de quartier', domains: 'Domaines réservés', quarters: 'Secteurs de calcul', blocks: 'Îlots', streets: 'Rues urbaines', enclosures: 'Enceintes et portes', parcels: 'Parcelles', gardens: 'Jardins', places: 'Places et communs', fronts: 'Façades accessibles', axes: 'Axes des parcelles', access: 'Statut de desserte des parcelles', textured: 'Matières texturées' }).map(([key, label]) => `<label><input data-render="${key}" type="checkbox">${label}</label>`).join('')}<label>Palette<select data-render="palette"><option value="growth">Phases de croissance</option><option value="atlas">Atlas · quartiers</option><option value="ink">Encre</option><option value="terrain">Terrain</option></select></label><label>Opacité<input data-render="opacity" type="number" min="0" max="1" step="0.05"></label><label>Épaisseur des traits (px)<input data-render="width" type="number" min="0" max="5" step="0.1"></label></div><small>Ces réglages redessinent les résultats conservés, sans appel de génération. La réserve, la terre attribuée et les enceintes sont trois objets différents.</small>`;
+  rendering.innerHTML = `<summary>⚙ Rendu · couches, palette, opacité</summary><div class="control-group">${Object.entries({ reserve: 'Réserve de croissance', allocated: 'Terre urbaine attribuée', centers: 'Noyaux et identités de quartier', domains: 'Domaines réservés', quarters: 'Secteurs de calcul', blocks: 'Îlots', streets: 'Rues urbaines', enclosures: 'Enceintes et portes', parcels: 'Parcelles', gardens: 'Jardins', places: 'Places et communs', fronts: 'Façades accessibles', axes: 'Axes des parcelles', access: 'Statut de desserte des parcelles', textured: 'Matières texturées' }).map(([key, label]) => `<label><input data-render="${key}" type="checkbox">${label}</label>`).join('')}<label>Palette<select data-render="palette"><option value="growth">Phases de croissance</option><option value="atlas">Atlas · quartiers</option><option value="ink">Encre</option><option value="terrain">Terrain</option></select></label><label>Voies et sols<select data-render="groundBlend"><option value="classic">Classique</option><option value="blended">Intégré</option></select></label><label>Opacité<input data-render="opacity" type="number" min="0" max="1" step="0.05"></label><label>Épaisseur des traits (px)<input data-render="width" type="number" min="0" max="5" step="0.1"></label></div><small>Ces réglages redessinent les résultats conservés, sans appel de génération. La réserve, la terre attribuée et les enceintes sont trois objets différents.</small>`;
   displayHost.append(rendering);
   setupUrbanRenderLocale(rendering);
   setupUrbanPanelLocale([...roots.quarters, ...roots.parcels, ...(displaySection ? [displaySection] : [])], !!options.city);
@@ -429,6 +432,9 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     if (e instanceof HTMLInputElement && e.type === 'checkbox') e.checked = Boolean(render[key]); else e.value = String(render[key]);
     e.onchange = () => { (render as unknown as Record<string, unknown>)[key] = e instanceof HTMLInputElement && e.type === 'checkbox' ? e.checked : e instanceof HTMLSelectElement ? e.value : Number(e.value); draw(); options.onChange(); };
   }
+  const blendSelect = rendering.querySelector<HTMLSelectElement>('[data-render="groundBlend"]')!;
+  blendSelect.onchange = () => setGroundBlend(blendSelect.value as GroundBlend);
+  onGroundBlend(() => { render.groundBlend = getGroundBlend(); blendSelect.value = render.groundBlend; draw(); options.onChange(); });
   let appliedLayout = clone(layoutConfig), appliedParcel = clone(parcelConfig), appliedQuarterSeed = quarterSeed, appliedParcelSeed = parcelSeed;
   let successfulLayout = clone(appliedLayout), successfulParcel = clone(appliedParcel), successfulQuarterSeed = appliedQuarterSeed, successfulParcelSeed = appliedParcelSeed;
   let citySettings: NonNullable<import('./testbenchUrban').WorkshopState['citySettings']> = {};

@@ -65,6 +65,7 @@ import { mountIllustration, captureViewport } from '../../../illustration/web/in
 import { illustrationContext } from './illustrationContext';
 import { installSurfaceLive } from './surfaceLive';
 import { createSurfaceBenchRevisionReader } from './surfaceBenchRevision';
+import { onGroundBlend } from '../render/groundBlend';
 
 const el = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const profileDefaults = executionProfiles[executionRuntime.profile];
@@ -1289,6 +1290,7 @@ function lakesOnlySvg(svg: string): string {
   }
   return host.innerHTML;
 }
+onGroundBlend(() => renderWater()); // Roads & ground: headwaters taper in Blended
 function renderWater(): void {
   schedule3dTexture();
   const layer = document.getElementById('hydrologyOverlay');
