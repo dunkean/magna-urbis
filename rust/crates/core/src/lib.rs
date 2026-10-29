@@ -9,6 +9,7 @@ mod hydrology;
 mod noise;
 mod rng;
 pub mod settlements;
+mod terrain_par;
 mod terrain_zones;
 pub mod urban;
 

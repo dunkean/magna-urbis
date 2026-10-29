@@ -124,23 +124,26 @@ impl TerrainPipeline {
             .collect()
     }
     fn initialize(&mut self) {
-        let p = &self.p;
-        let n = self.grid.n;
-        for y in 0..n {
+        let mut uplift = std::mem::take(&mut self.uplift);
+        let mut h = std::mem::take(&mut self.h);
+        let this = &*self;
+        let p = &this.p;
+        let n = this.grid.n;
+        crate::terrain_par::rows2(&mut uplift, &mut h, n, |y, uplift, h| {
             for x in 0..n {
                 let i = y * n + x;
                 let px = p[5] + (x as f64 + 0.5) * p[4];
                 let py = p[5] + (y as f64 + 0.5) * p[4];
-                let env = self.coarse_value(i,0,||self.noise.fbm(px / p[6] + 3.1, py / p[6] - 1.7, 3));
-                let d=self.coarse_value(i,1,||self.noise2.fbm(px/(2700.*p[3])+8.4,py/(2700.*p[3]),3));
-                let mountains = if self.flags[0] == 1 && p[32] > 0. {
+                let env = this.coarse_value(i,0,||this.noise.fbm(px / p[6] + 3.1, py / p[6] - 1.7, 3));
+                let d=this.coarse_value(i,1,||this.noise2.fbm(px/(2700.*p[3])+8.4,py/(2700.*p[3]),3));
+                let mountains = if this.flags[0] == 1 && p[32] > 0. {
                     let z = (d + (p[14] - 0.5) * 1.4) / 0.28;
                     0.5 + 0.5 * z / (1. + z * z).sqrt()
                 } else {
                     smooth((d + (p[14] - 0.5) * 1.4 + 0.28) / 0.56)
                 };
                 let ridge = if p[32] > 0. {
-                    self.coarse_value(i,3,||self.noise2.ridged(px / p[6] + 5.7, py / p[6] - 3.2, 3))
+                    this.coarse_value(i,3,||this.noise2.ridged(px / p[6] + 5.7, py / p[6] - 3.2, 3))
                 } else {
                     0.
                 };
@@ -149,14 +152,16 @@ impl TerrainPipeline {
                     * (0.20 + 0.80 * mountains)
                     * (1. + p[32] * mountains * (0.24 + 1.8 * ridge * ridge - 1.));
                 let edge = x.min(y).min(n - 1 - x).min(n - 1 - y) as f64 / (0.1 * n as f64);
-                self.uplift[i] = (u * (0.25 + 0.75 * smooth(edge))) as f32;
-                self.h[i] = if self.grid.borders[i] {
+                uplift[x] = (u * (0.25 + 0.75 * smooth(edge))) as f32;
+                h[x] = if this.grid.borders[i] {
                     0.
                 } else {
-                    (2.5 * u + 0.6 * self.coarse_value(i,2,||self.noise2.fbm(px / p[7], py / p[7], 3))) as f32
+                    (2.5 * u + 0.6 * this.coarse_value(i,2,||this.noise2.fbm(px / p[7], py / p[7], 3))) as f32
                 };
             }
-        }
+        });
+        self.uplift = uplift;
+        self.h = h;
     }
     fn regional(&mut self) {
         if self.flags[1] == 0 {
@@ -165,6 +170,8 @@ impl TerrainPipeline {
         let p = &self.p;
         let n = self.grid.n;
         let count = n * n;
+        let mut work = Work::default();
+        let cap = 4. * 0.004_f64.sqrt() * p[3] * 2400. / p[4];
         for _ in 0..p[13] as usize {
             for i in 0..count {
                 if !self.grid.borders[i] {
@@ -172,53 +179,18 @@ impl TerrainPipeline {
                 }
             }
             if p[18] > 0. {
-                let fl = flood(&self.h, &self.grid);
-                resolve_pits(&mut self.h, &fl, &self.grid, (p[33] * p[18] * 0.6).min(0.6));
-                carve_sills(&mut self.h, &fl, &self.grid, p[4], p[34]);
-                let flow = continuous_flow(&fl, &self.grid);
-                self.acc.fill(1.);
-                for &c in fl.order.iter().rev() {
-                    let r = flow.first[c];
-                    let s = flow.second[c];
-                    let t = flow.fraction[c] as f64;
-                    if r != usize::MAX {
-                        self.acc[r] = (self.acc[r] as f64 + self.acc[c] as f64 * (1. - t)) as f32;
-                    }
-                    if s != usize::MAX {
-                        self.acc[s] = (self.acc[s] as f64 + self.acc[c] as f64 * t) as f32;
-                    }
-                }
-                let base = self.h.clone();
-                let cap = 4. * 0.004_f64.sqrt() * p[3] * 2400. / p[4];
-                for &c in &fl.order {
-                    let r = flow.first[c];
-                    let s = flow.second[c];
-                    if r == usize::MAX {
-                        continue;
-                    }
-                    let t = flow.fraction[c] as f64;
-                    let lower = if s == usize::MAX {
-                        self.h[r] as f64
-                    } else {
-                        (1. - t) * self.h[r] as f64 + t * self.h[s] as f64
-                    };
-                    let original = if s == usize::MAX {
-                        base[r] as f64
-                    } else {
-                        (1. - t) * base[r] as f64 + t * base[s] as f64
-                    };
-                    let slope =
-                        ((base[c] as f64 - original) / (p[4] * flow.distance[c] as f64)).max(0.);
+                work.flood.compute(&self.h, &self.grid, Some(&mut work.flow));
+                let fl = &work.flood;
+                resolve_pits(&mut self.h, fl, &self.grid, (p[33] * p[18] * 0.6).min(0.6), &mut work.basins);
+                carve_sills(&mut self.h, fl, &self.grid, p[4], p[34], &mut work.basins);
+                accumulate_f64(&mut self.acc, &fl.order, &work.flow);
+                let acc = &self.acc;
+                incise(&mut self.h, &fl.order, &work.flow, &mut work.baseline, None, p[4], |c, slope, distance| {
                     let response = slope * slope / (slope * slope + p[36] * p[36]);
-                    let factor = (p[22] * (self.acc[c] as f64).sqrt().min(cap) * response
-                        / flow.distance[c] as f64)
-                        .min(6.);
-                    self.h[c] = (self.h[c] as f64)
-                        .min((self.h[c] as f64 + factor * lower) / (1. + factor))
-                        as f32;
-                }
+                    (p[22] * (acc[c] as f64).sqrt().min(cap) * response / distance).min(6.)
+                });
                 if self.flags[7] == 1 {
-                    thermal(&mut self.h, &self.grid, p[4], p[15], 3, p[37] * p[18] * 0.8);
+                    thermal(&mut self.h, &self.grid, p[4], p[15], 3, p[37] * p[18] * 0.8, &mut work.relax);
                 }
                 for i in 0..count {
                     self.channels[i] = self.acc[i] as f64 >= count as f64 * 0.001;
@@ -226,10 +198,10 @@ impl TerrainPipeline {
                 if self.flags[8] == 1 {
                     let dose = p[17] * 3. * p[18];
                     for _ in 0..dose.floor() as usize {
-                        diffuse(&mut self.h, n, &self.channels, 0.5);
+                        diffuse(&mut self.h, n, &self.channels, 0.5, &mut work.relax);
                     }
                     if dose.fract() > 0. {
-                        diffuse(&mut self.h, n, &self.channels, 0.5 * dose.fract());
+                        diffuse(&mut self.h, n, &self.channels, 0.5 * dose.fract(), &mut work.relax);
                     }
                 }
             }
@@ -248,6 +220,7 @@ impl TerrainPipeline {
             return;
         }
         let p = &self.p;
+        let mut work = Work::default();
         if self.flags[7] == 1 {
             thermal(
                 &mut self.h,
@@ -256,48 +229,50 @@ impl TerrainPipeline {
                 p[15] * 0.95,
                 4,
                 p[37] * p[18] * 0.8,
+                &mut work.relax,
             );
         }
         for _ in 0..2 {
-            let fl = flood(&self.h, &self.grid);
-            if resolve_pits(&mut self.h, &fl, &self.grid, p[33] * p[18] * 0.5) == 0 {
+            work.flood.compute(&self.h, &self.grid, None);
+            if resolve_pits(&mut self.h, &work.flood, &self.grid, p[33] * p[18] * 0.5, &mut work.basins) == 0 {
                 break;
             }
-            carve_sills(&mut self.h, &fl, &self.grid, p[4], p[35]);
+            carve_sills(&mut self.h, &work.flood, &self.grid, p[4], p[35], &mut work.basins);
         }
         if self.flags[8] == 1 {
-            diffuse(&mut self.h, self.grid.n, &self.channels, p[18] * 0.5);
+            diffuse(&mut self.h, self.grid.n, &self.channels, p[18] * 0.5, &mut work.relax);
         }
     }
     fn reconstruct(&mut self) {
-        let p = &self.p;
-        let n = self.grid.n;
-        self.raw = vec![0.; 1024 * 1024];
-        self.drainage = vec![0.; self.raw.len()];
-        let bspline = self.flags[9] == 2 || self.flags[9] == 0 && self.flags[0] == 1;
-        for y in 0usize..1024 {
+        let mut raw = vec![0.; 1024 * 1024];
+        let mut drainage = vec![0.; raw.len()];
+        let this = &*self;
+        let p = &this.p;
+        let n = this.grid.n;
+        let bspline = this.flags[9] == 2 || this.flags[9] == 0 && this.flags[0] == 1;
+        crate::terrain_par::rows2(&mut raw, &mut drainage, 1024, |y, raw, drainage_row| {
             for x in 0usize..1024 {
                 let i = y * 1024 + x;
                 let px = (x as f64 + 0.5) * p[11];
                 let py = (y as f64 + 0.5) * p[11];
                 let warp = p[38] * (16. * p[3]).min(p[4] * 0.9);
-                let wx = px + warp * self.fine_value(i,0,||self.noise2.fbm(px / p[8] + 11.3, py / p[8], 2));
-                let wy = py + warp * self.fine_value(i,1,||self.noise2.fbm(px / p[8] - 4.7, py / p[8] + 2.9, 2));
+                let wx = px + warp * this.fine_value(i,0,||this.noise2.fbm(px / p[8] + 11.3, py / p[8], 2));
+                let wy = py + warp * this.fine_value(i,1,||this.noise2.fbm(px / p[8] - 4.7, py / p[8] + 2.9, 2));
                 let fx = (wx - p[5]) / p[4] - 0.5;
                 let fy = (wy - p[5]) / p[4] - 0.5;
-                self.raw[i] = if bspline {
-                    sample_delta(&self.h, n, fx, fy)
+                raw[x] = if bspline {
+                    sample_delta(&this.h, n, fx, fy)
                 } else {
-                    sample(&self.h, n, fx, fy, true)
+                    sample(&this.h, n, fx, fy, true)
                 } as f32;
                 let drainage = sample(
-                    &self.acc,
+                    &this.acc,
                     n,
                     (px - p[5]) / p[4] - 0.5,
                     (py - p[5]) / p[4] - 0.5,
                     false,
                 );
-                self.drainage[i] = if self.flags[0] == 1 && self.flags[9] == 0 {
+                drainage_row[x] = if this.flags[0] == 1 && this.flags[9] == 0 {
                     1.
                 } else {
                     1. - 0.85
@@ -305,46 +280,51 @@ impl TerrainPipeline {
                         * smooth((drainage - 4.) / ((n * n) as f64 * 0.001 - 4.).max(12.))
                 };
             }
-        }
-        self.output = self.raw.clone();
+        });
+        self.output = raw.clone();
+        self.raw = raw;
+        self.drainage = drainage;
     }
     fn calibrate(&mut self) {
         if self.flags[3] == 1 {
-            let mut sorted = self.raw.clone();
-            let i = (sorted.len() as f64 * 0.99) as usize;
-            let p99 = *sorted.select_nth_unstable_by(i, f32::total_cmp).1;
+            let i = (self.raw.len() as f64 * 0.99) as usize;
+            let p99 = nth_smallest(&self.raw, i);
             self.scale = self.p[12] * (1. - 0.2 * self.p[18]) / (p99 as f64).max(0.0001);
         }
-        self.output = self
-            .raw
-            .iter()
-            .map(|&h| (h as f64 * self.scale).max(0.3) as f32)
-            .collect();
+        let (raw, scale) = (&self.raw, self.scale);
+        self.output.resize(raw.len(), 0.);
+        crate::terrain_par::cells(&mut self.output, |i, out| {
+            *out = (raw[i] as f64 * scale).max(0.3) as f32;
+        });
     }
     fn detail(&mut self) {
         if self.flags[4] == 0 {
             return;
         }
-        let p = &self.p;
+        let mut output = std::mem::take(&mut self.output);
+        let this = &*self;
+        let p = &this.p;
+        let raw = &this.raw;
         let amplitude = p[12] * (1. - 0.2 * p[18]);
-        for y in 0usize..1024 {
+        crate::terrain_par::rows(&mut output, 1024, |y, row| {
             for x in 0usize..1024 {
                 let i = y * 1024 + x;
-                let gx = self.raw[y * 1024 + (x + 1).min(1023)] as f64
-                    - self.raw[y * 1024 + x.saturating_sub(1)] as f64;
-                let gy = self.raw[(y + 1).min(1023) * 1024 + x] as f64
-                    - self.raw[y.saturating_sub(1) * 1024 + x] as f64;
-                let slope = gx.hypot(gy) * self.scale / (2. * p[11]);
-                let r=self.fine_value(i,2,||self.noise2.ridged((x as f64+0.5)*p[11]/p[9],(y as f64+0.5)*p[11]/p[9],p[10] as usize));
-                self.output[i] = (self.raw[i] as f64 * self.scale
+                let gx = raw[y * 1024 + (x + 1).min(1023)] as f64
+                    - raw[y * 1024 + x.saturating_sub(1)] as f64;
+                let gy = raw[(y + 1).min(1023) * 1024 + x] as f64
+                    - raw[y.saturating_sub(1) * 1024 + x] as f64;
+                let slope = gx.hypot(gy) * this.scale / (2. * p[11]);
+                let r=this.fine_value(i,2,||this.noise2.ridged((x as f64+0.5)*p[11]/p[9],(y as f64+0.5)*p[11]/p[9],p[10] as usize));
+                row[x] = (raw[i] as f64 * this.scale
                     + (r - 0.5)
                         * p[16]
                         * amplitude
                         * smooth((slope - 0.015) / 0.3)
-                        * self.drainage[i])
+                        * this.drainage[i])
                     .max(0.3) as f32;
             }
-        }
+        });
+        self.output = output;
     }
     fn surface(&mut self) {
         if self.flags[5] == 0 || self.p[23] <= 0. {
@@ -375,9 +355,8 @@ impl TerrainPipeline {
     }
     fn normalize(&mut self) {
         if self.flags[6] == 1 {
-            let mut sorted = self.output.clone();
-            let i = (sorted.len() as f64 * 0.01) as usize;
-            let p1 = *sorted.select_nth_unstable_by(i, f32::total_cmp).1;
+            let i = (self.output.len() as f64 * 0.01) as usize;
+            let p1 = nth_smallest(&self.output, i);
             for h in &mut self.output {
                 *h = (1. + *h - p1).max(0.3);
             }

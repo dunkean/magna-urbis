@@ -106,256 +106,406 @@ pub(crate) fn tuning(i: usize) -> f64 {
     tuned(i, TUNING_DEFAULTS[i])
 }
 
-// Reuse the same D8 topology through every erosion iteration. Sentinel edges
-// preserve visiting order while removing repeated divisions and bounds arithmetic.
+// Reuse the same D8 topology through every erosion iteration. Interior cells
+// address their neighbours by constant offsets; only the rim checks bounds.
+// Missing neighbours are `usize::MAX`, in the D8 visiting order.
 struct Grid {
     n: usize,
-    neighbors: Vec<[usize; 8]>,
     borders: Vec<bool>,
+    offsets: [isize; 8],
 }
 impl Grid {
     fn new(n: usize) -> Self {
-        let mut neighbors = vec![[usize::MAX; 8]; n * n];
         let mut borders = vec![false; n * n];
         for y in 0..n {
             for x in 0..n {
-                let i = y * n + x;
-                borders[i] = x == 0 || y == 0 || x == n - 1 || y == n - 1;
-                for (d, &(dx, dy)) in D8.iter().enumerate() {
-                    let nx = x as isize + dx;
-                    let ny = y as isize + dy;
-                    if nx >= 0 && ny >= 0 && nx < n as isize && ny < n as isize {
-                        neighbors[i][d] = ny as usize * n + nx as usize;
-                    }
-                }
+                borders[y * n + x] = x == 0 || y == 0 || x == n - 1 || y == n - 1;
             }
         }
         Self {
             n,
-            neighbors,
             borders,
+            offsets: D8.map(|(dx, dy)| dy * n as isize + dx),
         }
     }
-    fn neighbor(&self, i: usize, d: usize) -> Option<usize> {
-        let r = self.neighbors[i][d];
-        (r != usize::MAX).then_some(r)
+    #[inline(always)]
+    fn neighbors(&self, i: usize) -> [usize; 8] {
+        if !self.borders[i] {
+            return self.offsets.map(|o| i.wrapping_add_signed(o));
+        }
+        self.edge_neighbors(i)
+    }
+    #[inline(never)]
+    fn edge_neighbors(&self, i: usize) -> [usize; 8] {
+        let n = self.n as isize;
+        let (x, y) = ((i % self.n) as isize, (i / self.n) as isize);
+        D8.map(|(dx, dy)| {
+            let (nx, ny) = (x + dx, y + dy);
+            if nx >= 0 && ny >= 0 && nx < n && ny < n {
+                (ny * n + nx) as usize
+            } else {
+                usize::MAX
+            }
+        })
     }
 }
 
+/// No receiver / no cell.
+const NONE: u32 = u32::MAX;
+
+/// Priority-flood result and its reusable work buffers.
+#[derive(Default)]
 struct Flood {
     filled: Vec<f32>,
-    receiver: Vec<usize>,
-    order: Vec<usize>,
+    receiver: Vec<u32>,
+    order: Vec<u32>,
+    /// Position of each cell in `order` (strict-descent routing only).
+    rank: Vec<u32>,
+    /// Per cell, the directions (bit d) of the neighbours drained before it.
+    lower: Vec<u8>,
+    /// 0 unseen, 1 reached, 2 drained.
+    state: Vec<u8>,
+    sorted: Vec<u32>,
+    keys: Vec<(u32, u32)>,
+    spare: Vec<(u32, u32)>,
+    queue: std::collections::VecDeque<u32>,
 }
 
-// Equal-height heap insertion/removal uses the TS visiting order for stable drainage.
-struct MinHeap(Vec<(f32, usize)>);
-
-impl MinHeap {
-    fn push(&mut self, value: usize, key: f32) {
-        self.0.push((key, value));
-        let mut i = self.0.len() - 1;
-        while i > 0 {
-            let parent = (i - 1) / 2;
-            if self.0[parent].0 <= key {
-                break;
+impl Flood {
+    /// Priority flood from the border (Barnes et al. 2014) whose queue is the
+    /// cells presorted by height: a reached cell drains when the ascending
+    /// sweep meets it; a cell reached below the current level is a pit and
+    /// drains first, breadth-first from its spill. Levels drain in ascending
+    /// order; equal levels in height-then-index order, pits in BFS order.
+    /// With `flow`, also the split D-infinity drainage of every cell.
+    fn compute(&mut self, h: &[f32], grid: &Grid, flow: Option<&mut Vec<FlowCell>>) {
+        let len = h.len();
+        reset(&mut self.filled, len, 0.0);
+        reset(&mut self.receiver, len, NONE);
+        reset(&mut self.state, len, 0);
+        reset(&mut self.lower, len, 0);
+        self.order.clear();
+        self.order.reserve(len);
+        sort_by_height(h, &mut self.sorted, &mut self.keys, &mut self.spare);
+        let (filled, receiver, state, queue, order, lower) = (
+            &mut self.filled,
+            &mut self.receiver,
+            &mut self.state,
+            &mut self.queue,
+            &mut self.order,
+            &mut self.lower,
+        );
+        for i in 0..len {
+            if grid.borders[i] {
+                state[i] = 1;
+                filled[i] = h[i];
             }
-            self.0[i] = self.0[parent];
-            i = parent;
         }
-        self.0[i] = (key, value);
-    }
-
-    fn pop(&mut self) -> Option<usize> {
-        let result = self.0.first()?.1;
-        let last = self.0.pop().unwrap();
-        if !self.0.is_empty() {
-            let mut i = 0;
-            loop {
-                let mut child = i * 2 + 1;
-                if child >= self.0.len() {
-                    break;
-                }
-                if child + 1 < self.0.len() && self.0[child + 1].0 < self.0[child].0 {
-                    child += 1;
-                }
-                if self.0[child].0 >= last.0 {
-                    break;
-                }
-                self.0[i] = self.0[child];
-                i = child;
-            }
-            self.0[i] = last;
-        }
-        Some(result)
-    }
-}
-
-fn flood(h: &[f32], grid: &Grid) -> Flood {
-    let mut fl = Flood {
-        filled: vec![0.0; h.len()],
-        receiver: vec![usize::MAX; h.len()],
-        order: Vec::with_capacity(h.len()),
-    };
-    let mut closed = vec![false; h.len()];
-    let mut heap = MinHeap(Vec::with_capacity(h.len()));
-    for i in 0..h.len() {
-        if grid.borders[i] {
-            closed[i] = true;
-            fl.filled[i] = h[i];
-            heap.push(i, h[i]);
-        }
-    }
-    while let Some(c) = heap.pop() {
-        fl.order.push(c);
-        for d in 0..8 {
-            if let Some(r) = grid.neighbor(c, d) {
-                if closed[r] {
-                    continue;
-                }
-                closed[r] = true;
-                fl.filled[r] = if h[r] > fl.filled[c] {
-                    h[r]
-                } else {
+        queue.clear();
+        let mut drain =
+            |c: usize, state: &mut [u8], queue: &mut std::collections::VecDeque<u32>| {
+                order.push(c as u32);
+                state[c] = 2;
+                let level = filled[c];
+                let mut drained = 0;
+                for (d, r) in grid.neighbors(c).into_iter().enumerate() {
+                    if r == usize::MAX {
+                        continue;
+                    }
+                    if state[r] != 0 {
+                        drained |= ((state[r] == 2) as u8) << d;
+                        continue;
+                    }
+                    state[r] = 1;
+                    receiver[r] = c as u32;
                     // Topological rank already orders flats. A fixed 1 cm rise per cell
                     // creates artificial planar drainage on low-amplitude terrain.
-                    fl.filled[c]
-                };
-                fl.receiver[r] = c;
-                heap.push(r, fl.filled[r]);
+                    if h[r] > level {
+                        filled[r] = h[r];
+                    } else {
+                        filled[r] = level;
+                        queue.push_back(r as u32);
+                    }
+                }
+                lower[c] = drained;
+            };
+        for &c in &self.sorted {
+            if state[c as usize] != 1 {
+                continue;
+            }
+            drain(c as usize, state, queue);
+            while let Some(q) = queue.pop_front() {
+                drain(q as usize, state, queue);
             }
         }
-    }
-    let mut rank = vec![0; h.len()];
-    for (k, &c) in fl.order.iter().enumerate() {
-        rank[c] = k;
-    }
-    for (k, &c) in fl.order.iter().enumerate() {
-        if fl.receiver[c] == usize::MAX {
-            continue;
-        }
-        let mut gradient = 0.0;
-        for (d, &distance) in DIST.iter().enumerate() {
-            if let Some(r) = grid.neighbor(c, d) {
-                if rank[r] >= k {
-                    continue;
-                }
-                let drop = (fl.filled[c] as f64 - fl.filled[r] as f64) / distance;
+        let (filled, lower) = (&self.filled, &self.lower);
+        // The steepest already drained neighbour receives (D8), then the facets.
+        let steepest = |c: usize, receiver: &mut u32, neighbors: &[usize; 8], lower: u32| {
+            if *receiver == NONE {
+                return;
+            }
+            let mut gradient = 0.0;
+            for d in Bits(lower) {
+                let r = neighbors[d];
+                let fall = filled[c] as f64 - filled[r] as f64;
+                // Division by an orthogonal unit step is exact: skip it.
+                let drop = if d & 1 == 0 { fall } else { fall / SQRT_2 };
                 if drop > gradient {
                     gradient = drop;
-                    fl.receiver[c] = r;
+                    *receiver = r as u32;
                 }
             }
+        };
+        match flow {
+            None => crate::terrain_par::cells(&mut self.receiver, |c, receiver| {
+                steepest(c, receiver, &grid.neighbors(c), lower[c] as u32);
+            }),
+            Some(flow) => {
+                reset(flow, len, FlowCell::NONE);
+                crate::terrain_par::cells2(&mut self.receiver, flow, |c, receiver, out| {
+                    let neighbors = grid.neighbors(c);
+                    let lower = lower[c] as u32;
+                    steepest(c, receiver, &neighbors, lower);
+                    *out = flow_cell(c, *receiver, filled, &neighbors, lower, grid);
+                });
+            }
         }
     }
-    fl
-}
 
-struct Flow {
-    first: Vec<usize>,
-    second: Vec<usize>,
-    fraction: Vec<f32>,
-    distance: Vec<f32>,
-}
-
-fn continuous_flow(fl: &Flood, grid: &Grid) -> Flow {
-    let n = grid.n;
-    let size = fl.order.len();
-    let mut rank = vec![0; size];
-    for (k, &c) in fl.order.iter().enumerate() {
-        rank[c] = k;
+    fn rank_order(&mut self) {
+        reset(&mut self.rank, self.order.len(), 0);
+        for (k, &c) in self.order.iter().enumerate() {
+            self.rank[c as usize] = k as u32;
+        }
     }
-    let mut flow = Flow {
-        first: fl.receiver.clone(),
-        second: vec![usize::MAX; size],
-        fraction: vec![0.0; size],
-        distance: vec![1.0; size],
+}
+
+fn reset<T: Copy>(values: &mut Vec<T>, len: usize, value: T) {
+    values.clear();
+    values.resize(len, value);
+}
+
+/// `order` = cells by ascending height (total order), ties by index: the order of
+/// `sort_unstable_by(h total_cmp, then index)`, by a stable LSD radix sort.
+fn sort_by_height(
+    h: &[f32],
+    order: &mut Vec<u32>,
+    keys: &mut Vec<(u32, u32)>,
+    spare: &mut Vec<(u32, u32)>,
+) {
+    reset(keys, h.len(), (0, 0));
+    crate::terrain_par::cells(keys, |i, entry| {
+        let bits = h[i].to_bits();
+        let key = if bits & 0x8000_0000 != 0 {
+            !bits
+        } else {
+            bits | 0x8000_0000
+        };
+        *entry = (key, i as u32);
+    });
+    crate::terrain_par::radix_sort(keys, spare);
+    let sorted: &[(u32, u32)] = keys;
+    reset(order, h.len(), 0);
+    crate::terrain_par::cells(order, |k, cell| *cell = sorted[k].1);
+}
+
+#[derive(Clone, Copy)]
+struct FlowCell {
+    first: u32,
+    second: u32,
+    fraction: f32,
+    distance: f32,
+}
+
+impl FlowCell {
+    const NONE: Self = Self {
+        first: NONE,
+        second: NONE,
+        fraction: 0.0,
+        distance: 1.0,
     };
-    for (k, &c) in fl.order.iter().enumerate() {
-        let r = flow.first[c];
-        if r == usize::MAX {
-            continue;
-        }
-        let diagonal = (c % n).abs_diff(r % n) + (c / n).abs_diff(r / n) == 2;
-        let distance = if diagonal { SQRT_2 } else { 1.0 };
-        let mut best = (fl.filled[c] as f64 - fl.filled[r] as f64) / distance;
-        flow.distance[c] = distance as f32;
-        for d in 0..8 {
-            let Some(a) = grid.neighbor(c, d) else {
-                continue;
-            };
-            let Some(b) = grid.neighbor(c, (d + 1) & 7) else {
-                continue;
-            };
-            if rank[a] >= k || rank[b] >= k {
-                continue;
-            }
-            let (ux, uy) = (D8[d].0 as f64, D8[d].1 as f64);
-            let (vx, vy) = (D8[(d + 1) & 7].0 as f64, D8[(d + 1) & 7].1 as f64);
-            let da = fl.filled[c] as f64 - fl.filled[a] as f64;
-            let db = fl.filled[c] as f64 - fl.filled[b] as f64;
-            let det = ux * vy - uy * vx;
-            let gx = (da * vy - db * uy) / det;
-            let gy = (db * ux - da * vx) / det;
-            let ca = ux * gy - uy * gx;
-            let cb = gx * vy - gy * vx;
-            if ca < 0.0 || cb < 0.0 {
-                continue;
-            }
-            let slope = gx.hypot(gy);
-            if slope <= best {
-                continue;
-            }
-            let t = (ca.atan2(ux * gx + uy * gy) / FRAC_PI_4).clamp(0.0, 1.0);
-            best = slope;
-            flow.first[c] = a;
-            flow.second[c] = b;
-            flow.fraction[c] = t as f32;
-            flow.distance[c] = ((1.0 - t) * DIST[d] + t * DIST[(d + 1) & 7]) as f32;
-        }
-    }
-    flow
 }
 
-fn resolve_pits(h: &mut [f32], fl: &Flood, grid: &Grid, frac: f64) -> usize {
-    let mut component = vec![usize::MAX; h.len()];
-    let mut stack = Vec::new();
-    let mut cells = Vec::new();
-    let mut resolved = 0;
-    for start in 0..h.len() {
-        if component[start] != usize::MAX || fl.filled[start] - h[start] <= 0.05 {
+/// Ascending set bits of a direction mask.
+struct Bits(u32);
+impl Iterator for Bits {
+    type Item = usize;
+    #[inline(always)]
+    fn next(&mut self) -> Option<usize> {
+        (self.0 != 0).then(|| {
+            let d = self.0.trailing_zeros() as usize;
+            self.0 &= self.0 - 1;
+            d
+        })
+    }
+}
+
+/// Directions (bit `d`) of the neighbours drained before `c`.
+#[inline(always)]
+fn drained_before(c: usize, neighbors: &[usize; 8], rank: &[u32]) -> u32 {
+    let k = rank[c];
+    let mut lower = 0;
+    for (d, &r) in neighbors.iter().enumerate() {
+        if r != usize::MAX && rank[r] < k {
+            lower |= 1 << d;
+        }
+    }
+    lower
+}
+
+// D8 steps as f64 (the facet algebra multiplies by them exactly as before).
+const DX: [f64; 8] = [1.0, 1.0, 0.0, -1.0, -1.0, -1.0, 0.0, 1.0];
+const DY: [f64; 8] = [0.0, 1.0, 1.0, 1.0, 0.0, -1.0, -1.0, -1.0];
+
+/// D-infinity split of cell `c` towards the neighbours drained before it
+/// (`lower`): the steepest facet, else the D8 receiver `r`.
+#[inline]
+fn flow_cell(
+    c: usize,
+    r: u32,
+    filled: &[f32],
+    neighbors: &[usize; 8],
+    lower: u32,
+    grid: &Grid,
+) -> FlowCell {
+    let mut out = FlowCell::NONE;
+    out.first = r;
+    if r == NONE {
+        return out;
+    }
+    // Receivers are D8 neighbours: a diagonal one is neither ±1 nor ±n away.
+    let step = c.abs_diff(r as usize);
+    let distance = if step != 1 && step != grid.n {
+        SQRT_2
+    } else {
+        1.0
+    };
+    let level = filled[c] as f64;
+    let mut best = (level - filled[r as usize] as f64) / distance;
+    out.distance = distance as f32;
+    let mut pick = None;
+    // `best` is exact (`hypot`) unless `rough` holds the facet whose
+    // `sqrt(gx² + gy²)` estimate (≤ 2 ulp from `hypot`) it is.
+    let mut rough: Option<(f64, f64)> = None;
+    // Facet d spans directions d and d + 1, both drained before `c`.
+    for d in Bits(lower & (lower >> 1 | lower << 7)) {
+        let e = (d + 1) & 7;
+        let (a, b) = (neighbors[d], neighbors[e]);
+        let (ux, uy, vx, vy) = (DX[d], DY[d], DX[e], DY[e]);
+        let da = level - filled[a] as f64;
+        let db = level - filled[b] as f64;
+        // Consecutive D8 steps span a unit determinant: no division needed.
+        let gx = da * vy - db * uy;
+        let gy = db * ux - da * vx;
+        let ca = ux * gy - uy * gx;
+        let cb = gx * vy - gy * vx;
+        if ca < 0.0 || cb < 0.0 {
             continue;
         }
+        // `hypot` is costly; its order against `best` is decided by the
+        // estimate unless both lie within a relative 1e-12.
+        let estimate = (gx * gx + gy * gy).sqrt();
+        let (slope, exact) = if (estimate - best).abs() > 1e-12 * (estimate + best.abs()) {
+            (estimate, false)
+        } else {
+            if let Some((bx, by)) = rough.take() {
+                best = bx.hypot(by);
+            }
+            (gx.hypot(gy), true)
+        };
+        if slope <= best {
+            continue;
+        }
+        best = slope;
+        rough = (!exact).then_some((gx, gy));
+        pick = Some((d, a, b, ca, ux * gx + uy * gy));
+    }
+    // Only the steepest facet's split angle is needed.
+    if let Some((d, a, b, ca, along)) = pick {
+        let t = (ca.atan2(along) / FRAC_PI_4).clamp(0.0, 1.0);
+        out.first = a as u32;
+        out.second = b as u32;
+        out.fraction = t as f32;
+        out.distance = ((1.0 - t) * DIST[d] + t * DIST[(d + 1) & 7]) as f32;
+    }
+    out
+}
+
+/// Split drainage of a flood whose receivers are already final.
+fn continuous_flow(fl: &Flood, grid: &Grid, flow: &mut Vec<FlowCell>) {
+    let (filled, rank, receiver) = (&fl.filled, &fl.rank, &fl.receiver);
+    reset(flow, filled.len(), FlowCell::NONE);
+    crate::terrain_par::cells(flow, |c, out| {
+        let neighbors = grid.neighbors(c);
+        let lower = drained_before(c, &neighbors, rank);
+        *out = flow_cell(c, receiver[c], filled, &neighbors, lower, grid);
+    });
+}
+
+/// Work buffers of the depression passes.
+#[derive(Default)]
+struct Basins {
+    component: Vec<u32>,
+    stack: Vec<u32>,
+    cells: Vec<u32>,
+    target: Vec<f32>,
+}
+
+impl Basins {
+    /// Collects into `cells` (depth-first) the depression of `start`, when `start`
+    /// is a still unvisited cell more than 5 cm under the flood level.
+    fn collect(&mut self, start: usize, h: &[f32], fl: &Flood, grid: &Grid) -> bool {
+        if self.component[start] != NONE || fl.filled[start] - h[start] <= 0.05 {
+            return false;
+        }
+        let (component, stack, cells) = (&mut self.component, &mut self.stack, &mut self.cells);
+        let id = start as u32;
         cells.clear();
-        component[start] = start;
-        stack.push(start);
+        component[start] = id;
+        stack.push(id);
         while let Some(c) = stack.pop() {
             cells.push(c);
-            for d in 0..8 {
-                if let Some(r) = grid.neighbor(c, d)
-                    && component[r] == usize::MAX
-                    && fl.filled[r] - h[r] > 0.05
-                {
-                    component[r] = start;
-                    stack.push(r);
+            for r in grid.neighbors(c as usize) {
+                if r != usize::MAX && component[r] == NONE && fl.filled[r] - h[r] > 0.05 {
+                    component[r] = id;
+                    stack.push(r as u32);
                 }
             }
         }
+        true
+    }
+
+    /// The collected cell draining out of depression `start` at the lowest level.
+    fn pour(&self, start: usize, fl: &Flood) -> usize {
         let mut pour = usize::MAX;
-        for &c in &cells {
+        for &c in &self.cells {
+            let c = c as usize;
             let r = fl.receiver[c];
-            if r != usize::MAX
-                && component[r] != start
+            if r != NONE
+                && self.component[r as usize] != start as u32
                 && (pour == usize::MAX || fl.filled[c] < fl.filled[pour])
             {
                 pour = c;
             }
         }
+        pour
+    }
+}
+
+fn resolve_pits(h: &mut [f32], fl: &Flood, grid: &Grid, frac: f64, basins: &mut Basins) -> usize {
+    reset(&mut basins.component, h.len(), NONE);
+    let mut resolved = 0;
+    for start in 0..h.len() {
+        if !basins.collect(start, h, fl, grid) {
+            continue;
+        }
+        let pour = basins.pour(start, fl);
         if pour == usize::MAX {
             continue;
         }
         let spill = fl.filled[pour] as f64;
-        for &c in &cells {
+        for &c in &basins.cells {
+            let c = c as usize;
             if (h[c] as f64) < spill {
                 h[c] = (h[c] as f64 + frac * (spill - h[c] as f64)) as f32;
             }
@@ -372,46 +522,30 @@ fn resolve_pits(h: &mut [f32], fl: &Flood, grid: &Grid, frac: f64) -> usize {
 // to the depression floor. The lake floor itself is never trenched; repeated
 // over the evolution, incision, relaxation and diffusion widen the cut into a
 // valley. Mirrors the GPU `breach` kernel.
-fn carve_sills(h: &mut [f32], fl: &Flood, grid: &Grid, cell: f64, carve: f64) -> usize {
+fn carve_sills(
+    h: &mut [f32],
+    fl: &Flood,
+    grid: &Grid,
+    cell: f64,
+    carve: f64,
+    basins: &mut Basins,
+) -> usize {
     if carve <= 0.0 {
         return 0;
     }
-    let total = h.len();
-    let mut component = vec![usize::MAX; total];
-    let mut stack = Vec::new();
-    let mut cells = Vec::new();
-    let mut target = vec![f32::INFINITY; total];
+    reset(&mut basins.component, h.len(), NONE);
+    let mut target = std::mem::take(&mut basins.target);
+    reset(&mut target, h.len(), f32::INFINITY);
     let mut carved = 0;
-    for start in 0..total {
-        if component[start] != usize::MAX || fl.filled[start] - h[start] <= 0.05 {
+    for start in 0..h.len() {
+        if !basins.collect(start, h, fl, grid) {
             continue;
         }
-        cells.clear();
-        component[start] = start;
-        stack.push(start);
-        while let Some(c) = stack.pop() {
-            cells.push(c);
-            for d in 0..8 {
-                if let Some(r) = grid.neighbor(c, d)
-                    && component[r] == usize::MAX
-                    && fl.filled[r] - h[r] > 0.05
-                {
-                    component[r] = start;
-                    stack.push(r);
-                }
-            }
+        let mut bottom = f64::INFINITY;
+        for &c in &basins.cells {
+            bottom = bottom.min(h[c as usize] as f64);
         }
-        let (mut pour, mut bottom) = (usize::MAX, f64::INFINITY);
-        for &c in &cells {
-            bottom = bottom.min(h[c] as f64);
-            let r = fl.receiver[c];
-            if r != usize::MAX
-                && component[r] != start
-                && (pour == usize::MAX || fl.filled[c] < fl.filled[pour])
-            {
-                pour = c;
-            }
-        }
+        let pour = basins.pour(start, fl);
         if pour == usize::MAX {
             continue;
         }
@@ -420,65 +554,162 @@ fn carve_sills(h: &mut [f32], fl: &Flood, grid: &Grid, cell: f64, carve: f64) ->
         target[pour] = target[pour].min((h[pour] as f64 + carve * (level - h[pour] as f64)) as f32);
         let mut r = fl.receiver[pour];
         for _ in 0..400 {
-            if r == usize::MAX {
+            if r == NONE {
                 break;
             }
             level = (level - 0.01 * cell).max(0.5);
-            let old = h[r] as f64;
+            let old = h[r as usize] as f64;
             if old <= level {
                 break;
             }
-            target[r] = target[r].min((old + carve * (level - old)) as f32);
-            r = fl.receiver[r];
+            target[r as usize] = target[r as usize].min((old + carve * (level - old)) as f32);
+            r = fl.receiver[r as usize];
         }
         carved += 1;
     }
     for (value, &t) in h.iter_mut().zip(&target) {
         *value = value.min(t);
     }
+    basins.target = target;
     carved
 }
 
-fn thermal(h: &mut [f32], grid: &Grid, cell: f64, talus: f64, passes: usize, rate: f64) {
-    let mut delta = vec![0.0_f64; h.len()];
+/// Reusable buffers of the thermal and diffusion passes.
+#[derive(Default)]
+struct Relax {
+    /// Per donor: (movement, total excess); total 0 when the cell gives nothing.
+    donors: Vec<(f64, f64)>,
+    next: Vec<f32>,
+    delta: Vec<f64>,
+}
+
+// D8 directions by increasing neighbour index (-n-1, -n, -n+1, -1, +1, n-1, n, n+1),
+// split around the cell itself: the order in which a serial scatter over donors
+// in index order accumulates a cell's change.
+const BEFORE: [usize; 4] = [5, 6, 7, 4];
+const AFTER: [usize; 4] = [0, 3, 2, 1];
+
+fn thermal(
+    h: &mut [f32],
+    grid: &Grid,
+    cell: f64,
+    talus: f64,
+    passes: usize,
+    rate: f64,
+    work: &mut Relax,
+) {
+    if !crate::terrain_par::threaded() {
+        return thermal_scatter(h, grid, cell, talus, passes, rate, &mut work.delta);
+    }
+    let len = h.len();
     for _ in 0..passes {
-        delta.fill(0.0);
-        for i in 0..h.len() {
+        reset(&mut work.donors, len, (0.0, 0.0));
+        let heights: &[f32] = h;
+        crate::terrain_par::cells(&mut work.donors, |i, donor| {
             if grid.borders[i] {
-                continue;
+                return;
             }
-            let mut excess = [0.0_f64; 8];
+            let neighbors = grid.neighbors(i);
             let (mut total, mut maximum) = (0.0_f64, 0.0_f64);
             for (d, &step) in DIST.iter().enumerate() {
-                if let Some(r) = grid.neighbor(i, d) {
-                    let drop = h[i] as f64 - h[r] as f64;
-                    let ds = cell * step;
-                    excess[d] = (drop - talus * ds).max(0.0);
-                    total += excess[d];
-                    maximum = maximum.max(excess[d]);
-                }
+                let drop = heights[i] as f64 - heights[neighbors[d]] as f64;
+                let ds = cell * step;
+                let excess = (drop - talus * ds).max(0.0);
+                total += excess;
+                maximum = maximum.max(excess);
             }
             if total > 0.0 {
                 // Eight donors can meet at one cell; this bound avoids overshoot
                 // and the new pits produced by a steepest-neighbor transfer.
+                *donor = (rate * 0.125 * maximum, total);
+            }
+        });
+        // Gather each cell's change in the serial scatter order (bit-identical sums).
+        reset(&mut work.next, len, 0.0);
+        let donors = &work.donors;
+        crate::terrain_par::cells(&mut work.next, |i, out| {
+            let neighbors = grid.neighbors(i);
+            let mut delta = 0.0_f64;
+            let gather = |delta: &mut f64, d: usize| {
+                let j = neighbors[d];
+                if j == usize::MAX {
+                    return;
+                }
+                let (movement, total) = donors[j];
+                if total > 0.0 {
+                    let drop = heights[j] as f64 - heights[i] as f64;
+                    let ds = cell * DIST[d];
+                    let weight = (drop - talus * ds).max(0.0);
+                    if weight > 0.0 {
+                        *delta += movement * weight / total;
+                    }
+                }
+            };
+            for d in BEFORE {
+                gather(&mut delta, d);
+            }
+            if donors[i].1 > 0.0 {
+                delta -= donors[i].0;
+            }
+            for d in AFTER {
+                gather(&mut delta, d);
+            }
+            *out = (heights[i] as f64 + delta) as f32;
+        });
+        h.copy_from_slice(&work.next);
+    }
+}
+
+/// Serial formulation of [`thermal`]: each donor scatters its share in index order.
+fn thermal_scatter(
+    h: &mut [f32],
+    grid: &Grid,
+    cell: f64,
+    talus: f64,
+    passes: usize,
+    rate: f64,
+    delta: &mut Vec<f64>,
+) {
+    for _ in 0..passes {
+        reset(delta, h.len(), 0.0);
+        for i in 0..h.len() {
+            if grid.borders[i] {
+                continue;
+            }
+            let neighbors = grid.neighbors(i);
+            let mut excess = [0.0_f64; 8];
+            let (mut total, mut maximum) = (0.0_f64, 0.0_f64);
+            for (d, &step) in DIST.iter().enumerate() {
+                let drop = h[i] as f64 - h[neighbors[d]] as f64;
+                let ds = cell * step;
+                excess[d] = (drop - talus * ds).max(0.0);
+                total += excess[d];
+                maximum = maximum.max(excess[d]);
+            }
+            if total > 0.0 {
                 let movement = rate * 0.125 * maximum;
                 delta[i] -= movement;
                 for (d, &weight) in excess.iter().enumerate() {
                     if weight > 0.0 {
-                        delta[grid.neighbor(i, d).unwrap()] += movement * weight / total;
+                        delta[neighbors[d]] += movement * weight / total;
                     }
                 }
             }
         }
-        for (value, change) in h.iter_mut().zip(&delta) {
+        for (value, change) in h.iter_mut().zip(delta.iter()) {
             *value = (*value as f64 + change) as f32;
         }
     }
 }
 
-pub(crate) fn diffuse(h: &mut [f32], n: usize, channels: &[bool], strength: f64) {
-    let previous = h.to_vec();
-    for y in 1..n - 1 {
+fn diffuse(h: &mut [f32], n: usize, channels: &[bool], strength: f64, work: &mut Relax) {
+    work.next.clear();
+    work.next.extend_from_slice(h);
+    let previous = &work.next;
+    crate::terrain_par::rows(h, n, |y, row| {
+        if y == 0 || y == n - 1 {
+            return;
+        }
         for x in 1..n - 1 {
             let i = y * n + x;
             let weight = strength
@@ -497,9 +728,9 @@ pub(crate) fn diffuse(h: &mut [f32], n: usize, channels: &[bool], strength: f64)
                     + previous[i + n - 1] as f64
                     + previous[i + n + 1] as f64)
                     * 0.05;
-            h[i] = ((1.0 - weight) * previous[i] as f64 + weight * average) as f32;
+            row[x] = ((1.0 - weight) * previous[i] as f64 + weight * average) as f32;
         }
-    }
+    });
 }
 
 fn sample(h: &[f32], n: usize, fx: f64, fy: f64, cubic: bool) -> f64 {
@@ -507,27 +738,110 @@ fn sample(h: &[f32], n: usize, fx: f64, fy: f64, cubic: bool) -> f64 {
     let y = fy.floor() as isize;
     let tx = fx - x as f64;
     let ty = fy - y as f64;
-    let at = |dx: isize, dy: isize| {
-        h[(y + dy).clamp(0, n as isize - 1) as usize * n
-            + (x + dx).clamp(0, n as isize - 1) as usize] as f64
-    };
+    let last = n as isize - 1;
+    let col = |dx: isize| (x + dx).clamp(0, last) as usize;
+    let row = |dy: isize| (y + dy).clamp(0, last) as usize * n;
     if !cubic {
-        return (at(0, 0) * (1.0 - tx) + at(1, 0) * tx) * (1.0 - ty)
-            + (at(0, 1) * (1.0 - tx) + at(1, 1) * tx) * ty;
+        let (r0, r1, c0, c1) = (row(0), row(1), col(0), col(1));
+        return (h[r0 + c0] as f64 * (1.0 - tx) + h[r0 + c1] as f64 * tx) * (1.0 - ty)
+            + (h[r1 + c0] as f64 * (1.0 - tx) + h[r1 + c1] as f64 * tx) * ty;
     }
     let interpolate = |a: f64, b: f64, c: f64, d: f64, t: f64| {
         b + 0.5 * t * (c - a + t * (2.0 * a - 5.0 * b + 4.0 * c - d + t * (3.0 * (b - c) + d - a)))
     };
+    let cols = [col(-1), col(0), col(1), col(2)];
     let mut rows = [0.0; 4];
     let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
-    for dy in -1..=2 {
-        rows[(dy + 1) as usize] = interpolate(at(-1, dy), at(0, dy), at(1, dy), at(2, dy), tx);
-        for dx in -1..=2 {
-            lo = lo.min(at(dx, dy));
-            hi = hi.max(at(dx, dy));
+    for (k, dy) in (-1..=2).enumerate() {
+        let base = row(dy);
+        let v = cols.map(|c| h[base + c] as f64);
+        rows[k] = interpolate(v[0], v[1], v[2], v[3], tx);
+        for value in v {
+            lo = lo.min(value);
+            hi = hi.max(value);
         }
     }
     interpolate(rows[0], rows[1], rows[2], rows[3], ty).clamp(lo, hi)
+}
+
+/// Reusable buffers of one erosion run.
+#[derive(Default)]
+struct Work {
+    flood: Flood,
+    flow: Vec<FlowCell>,
+    basins: Basins,
+    relax: Relax,
+    baseline: Vec<f32>,
+}
+
+/// Split drainage area, downstream from the highest cell (f64 sums).
+fn accumulate_f64(acc: &mut [f32], order: &[u32], flow: &[FlowCell]) {
+    acc.fill(1.0);
+    for &c in order.iter().rev() {
+        let f = flow[c as usize];
+        let t = f.fraction as f64;
+        let value = acc[c as usize] as f64;
+        if f.first != NONE {
+            let r = f.first as usize;
+            acc[r] = (acc[r] as f64 + value * (1.0 - t)) as f32;
+        }
+        if f.second != NONE {
+            let s = f.second as usize;
+            acc[s] = (acc[s] as f64 + value * t) as f32;
+        }
+    }
+}
+
+/// Split drainage area, downstream from the highest cell (f32 sums).
+fn accumulate_f32(acc: &mut [f32], order: &[u32], flow: &[FlowCell]) {
+    acc.fill(1.0);
+    for &c in order.iter().rev() {
+        let f = flow[c as usize];
+        let value = acc[c as usize];
+        if f.first != NONE {
+            acc[f.first as usize] += value * (1.0 - f.fraction);
+        }
+        if f.second != NONE {
+            acc[f.second as usize] += value * f.fraction;
+        }
+    }
+}
+
+/// Implicit stream-power step along `order` (receivers first). The slope comes
+/// from the heights before the pass; `factor(cell, slope, distance)` is the
+/// relief's incision response.
+fn incise(
+    h: &mut [f32],
+    order: &[u32],
+    flow: &[FlowCell],
+    baseline: &mut Vec<f32>,
+    borders: Option<&[bool]>,
+    cell: f64,
+    factor: impl Fn(usize, f64, f64) -> f64,
+) {
+    baseline.clear();
+    baseline.extend_from_slice(h);
+    for &c in order {
+        let c = c as usize;
+        let f = flow[c];
+        if f.first == NONE || borders.is_some_and(|b| b[c]) {
+            continue;
+        }
+        let (r, t) = (f.first as usize, f.fraction as f64);
+        let (lower, original_lower) = if f.second == NONE {
+            (h[r] as f64, baseline[r] as f64)
+        } else {
+            let s = f.second as usize;
+            (
+                (1.0 - t) * h[r] as f64 + t * h[s] as f64,
+                (1.0 - t) * baseline[r] as f64 + t * baseline[s] as f64,
+            )
+        };
+        let distance = f.distance as f64;
+        let slope = ((baseline[c] as f64 - original_lower) / (cell * distance)).max(0.0);
+        let factor = factor(c, slope, distance);
+        h[c] = (h[c] as f64).min((h[c] as f64 + factor * lower) / (1.0 + factor)) as f32;
+    }
 }
 
 pub(crate) struct MountainCfg<'a> {
@@ -690,6 +1004,13 @@ pub(crate) fn mountain(cfg: &MountainCfg<'_>) -> Vec<f32> {
     let catchment_cap = 4.0 * 0.004_f64.sqrt() * cfg.k * 2400.0 / cc;
     let mut acc = vec![1.0_f32; count];
     let mut channels = vec![false; count];
+    let fill = (tuning(FILL) * strength * 0.6).min(0.6);
+    let (carve, final_fill, final_carve) = (
+        tuning(CARVE),
+        tuning(FILL) * strength * 0.5,
+        tuning(FINAL_CARVE),
+    );
+    let mut work = Work::default();
     for _ in 0..cfg.iterations {
         for i in 0..count {
             if !grid.borders[i] {
@@ -697,61 +1018,50 @@ pub(crate) fn mountain(cfg: &MountainCfg<'_>) -> Vec<f32> {
             }
         }
         if cfg.erosion > 0.0 {
-            let fl = flood(&h, &grid);
-            resolve_pits(&mut h, &fl, &grid, (tuning(FILL) * strength * 0.6).min(0.6));
-            carve_sills(&mut h, &fl, &grid, cc, tuning(CARVE));
-            let flow = continuous_flow(&fl, &grid);
-            acc.fill(1.0);
-            for &c in fl.order.iter().rev() {
-                let r = flow.first[c];
-                let s = flow.second[c];
-                let t = flow.fraction[c] as f64;
-                if r != usize::MAX {
-                    acc[r] = (acc[r] as f64 + acc[c] as f64 * (1.0 - t)) as f32;
-                }
-                if s != usize::MAX {
-                    acc[s] = (acc[s] as f64 + acc[c] as f64 * t) as f32;
-                }
-            }
-            let baseline = h.clone();
-            for &c in &fl.order {
-                let r = flow.first[c];
-                let s = flow.second[c];
-                let t = flow.fraction[c] as f64;
-                if r == usize::MAX {
-                    continue;
-                }
-                let lower = if s != usize::MAX {
-                    (1.0 - t) * h[r] as f64 + t * h[s] as f64
-                } else {
-                    h[r] as f64
-                };
-                let original_lower = if s == usize::MAX {
-                    baseline[r] as f64
-                } else {
-                    (1.0 - t) * baseline[r] as f64 + t * baseline[s] as f64
-                };
-                let slope = ((baseline[c] as f64 - original_lower)
-                    / (cc * flow.distance[c] as f64))
-                    .max(0.0);
-                // A flood potential routes water across sinks; it must not cut a
-                // physical channel across a flat or uphill saddle in that potential.
-                let response = slope * slope / (slope * slope + threshold);
-                let factor = (incision * (acc[c] as f64).sqrt().min(catchment_cap) * response
-                    / flow.distance[c] as f64)
-                    .min(6.0);
-                h[c] = (h[c] as f64).min((h[c] as f64 + factor * lower) / (1.0 + factor)) as f32;
-            }
-            thermal(&mut h, &grid, cc, cfg.talus, 3, thermal_rate);
+            work.flood.compute(&h, &grid, Some(&mut work.flow));
+            resolve_pits(&mut h, &work.flood, &grid, fill, &mut work.basins);
+            carve_sills(&mut h, &work.flood, &grid, cc, carve, &mut work.basins);
+            accumulate_f64(&mut acc, &work.flood.order, &work.flow);
+            let acc = &acc;
+            incise(
+                &mut h,
+                &work.flood.order,
+                &work.flow,
+                &mut work.baseline,
+                None,
+                cc,
+                |c, slope, distance| {
+                    // A flood potential routes water across sinks; it must not cut a
+                    // physical channel across a flat or uphill saddle in that potential.
+                    let response = slope * slope / (slope * slope + threshold);
+                    (incision * (acc[c] as f64).sqrt().min(catchment_cap) * response / distance)
+                        .min(6.0)
+                },
+            );
+            thermal(
+                &mut h,
+                &grid,
+                cc,
+                cfg.talus,
+                3,
+                thermal_rate,
+                &mut work.relax,
+            );
             for i in 0..count {
                 channels[i] = acc[i] as f64 >= count as f64 * 0.001;
             }
             let diffusion = cfg.diffusion * 3.0 * strength;
             for _ in 0..diffusion.floor() as usize {
-                diffuse(&mut h, nc, &channels, 0.5);
+                diffuse(&mut h, nc, &channels, 0.5, &mut work.relax);
             }
             if diffusion.fract() > 0.0 {
-                diffuse(&mut h, nc, &channels, 0.5 * diffusion.fract());
+                diffuse(
+                    &mut h,
+                    nc,
+                    &channels,
+                    0.5 * diffusion.fract(),
+                    &mut work.relax,
+                );
             }
         }
         for (i, value) in h.iter_mut().enumerate() {
@@ -764,15 +1074,30 @@ pub(crate) fn mountain(cfg: &MountainCfg<'_>) -> Vec<f32> {
         *value = value.max(0.0);
     }
     if cfg.erosion > 0.0 {
-        thermal(&mut h, &grid, cc, cfg.talus * 0.95, 4, thermal_rate);
+        thermal(
+            &mut h,
+            &grid,
+            cc,
+            cfg.talus * 0.95,
+            4,
+            thermal_rate,
+            &mut work.relax,
+        );
         for _ in 0..2 {
-            let fl = flood(&h, &grid);
-            if resolve_pits(&mut h, &fl, &grid, tuning(FILL) * strength * 0.5) == 0 {
+            work.flood.compute(&h, &grid, None);
+            if resolve_pits(&mut h, &work.flood, &grid, final_fill, &mut work.basins) == 0 {
                 break;
             }
-            carve_sills(&mut h, &fl, &grid, cc, tuning(FINAL_CARVE));
+            carve_sills(
+                &mut h,
+                &work.flood,
+                &grid,
+                cc,
+                final_carve,
+                &mut work.basins,
+            );
         }
-        diffuse(&mut h, nc, &channels, strength * 0.5);
+        diffuse(&mut h, nc, &channels, strength * 0.5, &mut work.relax);
     }
     let mut output = vec![0.0_f32; n * n];
     let mut drainage_weight = vec![0.0_f64; n * n];
@@ -884,24 +1209,42 @@ pub(crate) fn mountain(cfg: &MountainCfg<'_>) -> Vec<f32> {
 // Smooth positive cubic B-spline weights keep the erosion delta continuous,
 // including its derivatives. Clamped interpolating cubics can ring on flat terrain.
 fn sample_delta(h: &[f32], n: usize, fx: f64, fy: f64) -> f64 {
-    let x = fx.floor() as isize;
-    let y = fy.floor() as isize;
-    let weights = |t: f64| {
+    let (cols, wx) = bspline_axis(fx, n);
+    let (rows, wy) = bspline_axis(fy, n);
+    sample_delta_at(h, n, &cols, &wx, &rows, &wy)
+}
+
+/// Clamped taps and cubic B-spline weights of one axis at coordinate `f`.
+#[inline]
+fn bspline_axis(f: f64, n: usize) -> ([usize; 4], [f64; 4]) {
+    let x = f.floor() as isize;
+    let t = f - x as f64;
+    let last = n as isize - 1;
+    (
+        std::array::from_fn(|i| (x + i as isize - 1).clamp(0, last) as usize),
         [
             (1.0 - t).powi(3) / 6.0,
             (3.0 * t.powi(3) - 6.0 * t * t + 4.0) / 6.0,
             (-3.0 * t.powi(3) + 3.0 * t * t + 3.0 * t + 1.0) / 6.0,
             t.powi(3) / 6.0,
-        ]
-    };
-    let wx = weights(fx - x as f64);
-    let wy = weights(fy - y as f64);
+        ],
+    )
+}
+
+#[inline]
+fn sample_delta_at(
+    h: &[f32],
+    n: usize,
+    cols: &[usize; 4],
+    wx: &[f64; 4],
+    rows: &[usize; 4],
+    wy: &[f64; 4],
+) -> f64 {
     let mut result = 0.0;
-    for (j, &weight_y) in wy.iter().enumerate() {
-        let row = (y + j as isize - 1).clamp(0, n as isize - 1) as usize;
-        for (i, &weight_x) in wx.iter().enumerate() {
-            let col = (x + i as isize - 1).clamp(0, n as isize - 1) as usize;
-            result += h[row * n + col] as f64 * weight_x * weight_y;
+    for (&row, &weight_y) in rows.iter().zip(wy) {
+        let row = row * n;
+        for (&col, &weight_x) in cols.iter().zip(wx) {
+            result += h[row + col] as f64 * weight_x * weight_y;
         }
     }
     result
@@ -1011,39 +1354,54 @@ struct ShapeErosion {
 // Deep trunk-river erosion is deliberately separate from ordinary hillside
 // erosion. Accumulation selects the rivers; Euclidean bank profiles enlarge
 // their incision without reproducing grid-aligned basin-breach trenches.
-fn canyon_cut(h: &mut [f32], n: usize, cell: f64, erosion: f64, motif: f64, amplitude: f64) {
-    let grid = Grid::new(n);
-    let fl = flood(h, &grid);
-    let flow = continuous_flow(&fl, &grid);
-    let mut acc = vec![1.0_f32; h.len()];
-    for &c in fl.order.iter().rev() {
-        let value = acc[c];
-        let t = flow.fraction[c];
-        if flow.first[c] != usize::MAX {
-            acc[flow.first[c]] += value * (1.0 - t);
-        }
-        if flow.second[c] != usize::MAX {
-            acc[flow.second[c]] += value * t;
-        }
+fn canyon_cut(
+    h: &mut [f32],
+    n: usize,
+    cell: f64,
+    erosion: f64,
+    motif: f64,
+    amplitude: f64,
+    work: &mut Work,
+) {
+    #[derive(Clone, Copy, Default)]
+    struct Bank {
+        peak: f64,
+        width: f64,
+        x: u32,
+        y: u32,
+        river: bool,
     }
-    let importance: Vec<_> = acc
-        .iter()
-        .map(|&a| smooth(((a as f64 * cell * cell / (motif * motif)).sqrt() - 0.10) / 0.30))
-        .collect();
-    let mut seeds: Vec<_> = importance
+    let grid = Grid::new(n);
+    work.flood.compute(h, &grid, Some(&mut work.flow));
+    let mut acc = vec![1.0_f32; h.len()];
+    accumulate_f32(&mut acc, &work.flood.order, &work.flow);
+    // Each river cell's bank profile: its peak depth and half width.
+    let mut banks = vec![Bank::default(); h.len()];
+    crate::terrain_par::cells(&mut banks, |c, bank| {
+        let importance =
+            smooth(((acc[c] as f64 * cell * cell / (motif * motif)).sqrt() - 0.10) / 0.30);
+        *bank = Bank {
+            peak: amplitude * 0.90 * erosion * importance,
+            width: motif * (0.008 + 0.065 * importance.sqrt()) * erosion.sqrt(),
+            x: (c % n) as u32,
+            y: (c / n) as u32,
+            river: importance > 0.0,
+        };
+    });
+    let mut seeds: Vec<u32> = banks
         .iter()
         .enumerate()
-        .map(|(i, &a)| if a > 0.0 { i } else { usize::MAX })
+        .map(|(i, bank)| if bank.river { i as u32 } else { NONE })
         .collect();
     let mut next = seeds.clone();
-    let score = |c: usize, seed: usize| -> f64 {
-        if seed == usize::MAX {
+    let score = |x: usize, y: usize, seed: u32| -> f64 {
+        if seed == NONE {
             return 0.0;
         }
+        let bank = banks[seed as usize];
         let distance =
-            ((c % n).abs_diff(seed % n) as f64).hypot((c / n).abs_diff(seed / n) as f64) * cell;
-        let width = motif * (0.008 + 0.065 * importance[seed].sqrt()) * erosion.sqrt();
-        amplitude * 0.90 * erosion * importance[seed] * (1.0 - smooth(distance / width))
+            ((x as u32).abs_diff(bank.x) as f64).hypot((y as u32).abs_diff(bank.y) as f64) * cell;
+        bank.peak * (1.0 - smooth(distance / bank.width))
     };
     // Jump flooding propagates the strongest physical river-bank profile.
     // The same bounded schedule and Euclidean distance are used on the GPU.
@@ -1055,29 +1413,39 @@ fn canyon_cut(h: &mut [f32], n: usize, cell: f64, erosion: f64, motif: f64, ampl
     }
     steps.extend([1, 1]);
     for jump in steps {
-        for c in 0..h.len() {
-            let mut best = seeds[c];
-            let mut value = score(c, best);
-            for &(dx, dy) in &D8 {
-                let x = (c % n) as isize + dx * jump as isize;
-                let y = (c / n) as isize + dy * jump as isize;
-                if x < 0 || y < 0 || x >= n as isize || y >= n as isize {
-                    continue;
+        let current = &seeds;
+        crate::terrain_par::rows(&mut next, n, |y, row| {
+            for (x, out) in row.iter_mut().enumerate() {
+                let mut best = current[y * n + x];
+                let mut value = score(x, y, best);
+                for &(dx, dy) in &D8 {
+                    let sx = x as isize + dx * jump as isize;
+                    let sy = y as isize + dy * jump as isize;
+                    if sx < 0 || sy < 0 || sx >= n as isize || sy >= n as isize {
+                        continue;
+                    }
+                    let seed = current[sy as usize * n + sx as usize];
+                    // The current seed scores the same again; no seed scores 0,
+                    // never above a (non-negative) profile and last in ties.
+                    if seed == best || seed == NONE {
+                        continue;
+                    }
+                    let candidate = score(x, y, seed);
+                    if candidate > value || (candidate == value && seed < best) {
+                        value = candidate;
+                        best = seed;
+                    }
                 }
-                let seed = seeds[y as usize * n + x as usize];
-                let candidate = score(c, seed);
-                if candidate > value || (candidate == value && seed < best) {
-                    value = candidate;
-                    best = seed;
-                }
+                *out = best;
             }
-            next[c] = best;
-        }
+        });
         std::mem::swap(&mut seeds, &mut next);
     }
-    for (c, value) in h.iter_mut().enumerate() {
-        *value -= score(c, seeds[c]) as f32;
-    }
+    crate::terrain_par::rows(h, n, |y, row| {
+        for (x, value) in row.iter_mut().enumerate() {
+            *value -= score(x, y, seeds[y * n + x]) as f32;
+        }
+    });
 }
 
 fn erode_with(h: &mut [f32], n: usize, cell: f64, erosion: f64, talus: f64, shape: &ShapeErosion) {
@@ -1091,17 +1459,19 @@ fn erode_with(h: &mut [f32], n: usize, cell: f64, erosion: f64, talus: f64, shap
     let padded_n = coarse_n + padding * 2;
     let ratio = n as f64 / coarse_n as f64;
     let mut coarse = vec![0.0_f32; padded_n * padded_n];
-    for y in 0..padded_n {
-        for x in 0..padded_n {
-            coarse[y * padded_n + x] = sample_extended(
-                h,
+    let source: &[f32] = h;
+    crate::terrain_par::rows(&mut coarse, padded_n, |y, row| {
+        for (x, value) in row.iter_mut().enumerate() {
+            *value = sample_extended(
+                source,
                 n,
                 (x as f64 - padding as f64 + 0.5) * ratio - 0.5,
                 (y as f64 - padding as f64 + 0.5) * ratio - 0.5,
             ) as f32;
         }
-    }
+    });
     let original = coarse.clone();
+    let mut work = Work::default();
     if let Some(amplitude) = shape.canyon_amplitude {
         canyon_cut(
             &mut coarse,
@@ -1110,23 +1480,33 @@ fn erode_with(h: &mut [f32], n: usize, cell: f64, erosion: f64, talus: f64, shap
             erosion,
             shape.motif,
             amplitude,
+            &mut work,
         );
     }
-    erode_shape_coarse(&mut coarse, padded_n, cell * ratio, erosion, talus, shape);
+    erode_shape_coarse(
+        &mut coarse,
+        padded_n,
+        cell * ratio,
+        erosion,
+        talus,
+        shape,
+        &mut work,
+    );
     for (value, baseline) in coarse.iter_mut().zip(original) {
         *value -= baseline;
     }
-    for y in 0..n {
-        for x in 0..n {
-            let change = sample_delta(
-                &coarse,
-                padded_n,
-                (x as f64 + 0.5) / ratio - 0.5 + padding as f64,
-                (y as f64 + 0.5) / ratio - 0.5 + padding as f64,
-            );
-            h[y * n + x] = (h[y * n + x] as f64 + change) as f32;
+    let coarse = &coarse;
+    // The separable taps depend on the column or the row alone.
+    let axis: Vec<_> = (0..n)
+        .map(|x| bspline_axis((x as f64 + 0.5) / ratio - 0.5 + padding as f64, padded_n))
+        .collect();
+    crate::terrain_par::rows(h, n, |y, row| {
+        let (rows, wy) = &axis[y];
+        for (value, (cols, wx)) in row.iter_mut().zip(&axis) {
+            let change = sample_delta_at(coarse, padded_n, cols, wx, rows, wy);
+            *value = (*value as f64 + change) as f32;
         }
-    }
+    });
 }
 
 fn erode_shape_coarse(
@@ -1136,110 +1516,122 @@ fn erode_shape_coarse(
     erosion: f64,
     talus: f64,
     shape: &ShapeErosion,
+    work: &mut Work,
 ) {
     let grid = Grid::new(n);
     let strength = erosion * shape.gain;
-    let mut order: Vec<_> = (0..h.len()).collect();
+    let carve = tuning(SURFACE_CARVE);
+    let thermal_rate = (tuning(SURFACE_THERMAL) * erosion * 0.09).min(0.3);
+    let diffusion = (tuning(SURFACE_DIFFUSION) * erosion * 0.025).min(0.1);
+    // Catchment is physical and slope response follows the relief's talus.
+    // Gentle hills keep legible gullies without forced flat-basin trenches.
+    let threshold = talus * 0.10;
+    let channel_area = (n * n) as f32 * 0.001;
+    let (mut keys, mut spare) = (Vec::new(), Vec::new());
     let mut acc = vec![1.0_f32; h.len()];
+    let mut channels = vec![false; h.len()];
     for _ in 0..shape.iterations {
-        order.sort_unstable_by(|&a, &b| h[a].total_cmp(&h[b]).then(a.cmp(&b)));
-        let mut receiver = vec![usize::MAX; h.len()];
-        for c in 0..h.len() {
-            if grid.borders[c] {
-                continue;
-            }
-            let mut best = 0.0;
-            for (d, &distance) in DIST.iter().enumerate() {
-                let r = grid.neighbor(c, d).unwrap();
-                let slope = (h[c] as f64 - h[r] as f64) / distance;
-                if slope > best {
-                    best = slope;
-                    receiver[c] = r;
-                }
-            }
-        }
+        let fl = &mut work.flood;
         // Strict physical descent: closed bowls stay closed instead of acquiring
         // artificial breach trenches on hills. The same D-infinity split is used on GPU.
         // Routed: water crosses depressions to their spill, whose sill is carved.
-        let fl = if shape.routed {
-            let fl = flood(h, &grid);
-            carve_sills(h, &fl, &grid, cell, tuning(SURFACE_CARVE));
-            fl
+        if shape.routed {
+            fl.compute(h, &grid, Some(&mut work.flow));
+            carve_sills(h, fl, &grid, cell, carve, &mut work.basins);
         } else {
-            Flood {
-                filled: h.to_vec(),
-                receiver,
-                order: order.clone(),
-            }
-        };
-        let order = if shape.routed {
-            fl.order.clone()
-        } else {
-            order.clone()
-        };
-        let flow = continuous_flow(&fl, &grid);
-        acc.fill(1.0);
-        for &c in order.iter().rev() {
-            let r = flow.first[c];
-            let s = flow.second[c];
-            let t = flow.fraction[c];
-            if r != usize::MAX {
-                acc[r] += acc[c] * (1.0 - t);
-            }
-            if s != usize::MAX {
-                acc[s] += acc[c] * t;
-            }
+            sort_by_height(h, &mut fl.order, &mut keys, &mut spare);
+            fl.filled.clear();
+            fl.filled.extend_from_slice(h);
+            reset(&mut fl.receiver, h.len(), NONE);
+            let heights: &[f32] = h;
+            crate::terrain_par::cells(&mut fl.receiver, |c, receiver| {
+                if grid.borders[c] {
+                    return;
+                }
+                let neighbors = grid.neighbors(c);
+                let mut best = 0.0;
+                for (d, &distance) in DIST.iter().enumerate() {
+                    let slope = (heights[c] as f64 - heights[neighbors[d]] as f64) / distance;
+                    if slope > best {
+                        best = slope;
+                        *receiver = neighbors[d] as u32;
+                    }
+                }
+            });
+            fl.rank_order();
+            continuous_flow(fl, &grid, &mut work.flow);
         }
-        let baseline = h.to_vec();
-        for &c in &order {
-            let r = flow.first[c];
-            let s = flow.second[c];
-            let t = flow.fraction[c] as f64;
-            if r == usize::MAX || grid.borders[c] {
-                continue;
-            }
-            let lower = if s == usize::MAX {
-                h[r] as f64
-            } else {
-                (1.0 - t) * h[r] as f64 + t * h[s] as f64
-            };
-            let original_lower = if s == usize::MAX {
-                baseline[r] as f64
-            } else {
-                (1.0 - t) * baseline[r] as f64 + t * baseline[s] as f64
-            };
-            let distance = flow.distance[c] as f64;
-            let slope = ((baseline[c] as f64 - original_lower) / (cell * distance)).max(0.0);
-            // Catchment is physical and slope response follows the relief's talus.
-            // Gentle hills keep legible gullies without forced flat-basin trenches.
-            let threshold = talus * 0.10;
-            let response = 0.08 + 0.92 * slope * slope / (slope * slope + threshold * threshold);
-            let factor = (strength
-                * 0.40
-                * (acc[c] as f64 * cell * cell / (0.004 * shape.motif * shape.motif))
-                    .sqrt()
-                    .min(4.0)
-                * response
-                / distance)
-                .min(4.0);
-            h[c] = (h[c] as f64).min((h[c] as f64 + factor * lower) / (1.0 + factor)) as f32;
-        }
-        thermal(
+        let fl = &work.flood;
+        accumulate_f32(&mut acc, &fl.order, &work.flow);
+        let area = &acc;
+        incise(
             h,
-            &grid,
+            &fl.order,
+            &work.flow,
+            &mut work.baseline,
+            Some(&grid.borders),
             cell,
-            talus,
-            1,
-            (tuning(SURFACE_THERMAL) * erosion * 0.09).min(0.3),
+            |c, slope, distance| {
+                let response =
+                    0.08 + 0.92 * slope * slope / (slope * slope + threshold * threshold);
+                (strength
+                    * 0.40
+                    * (area[c] as f64 * cell * cell / (0.004 * shape.motif * shape.motif))
+                        .sqrt()
+                        .min(4.0)
+                    * response
+                    / distance)
+                    .min(4.0)
+            },
         );
-        let channels: Vec<_> = acc.iter().map(|&a| a > (n * n) as f32 * 0.001).collect();
-        diffuse(
-            h,
-            n,
-            &channels,
-            (tuning(SURFACE_DIFFUSION) * erosion * 0.025).min(0.1),
-        );
+        thermal(h, &grid, cell, talus, 1, thermal_rate, &mut work.relax);
+        for (channel, &a) in channels.iter_mut().zip(&acc) {
+            *channel = a > channel_area;
+        }
+        diffuse(h, n, &channels, diffusion, &mut work.relax);
     }
+}
+
+/// The `k`-th smallest value in `f32::total_cmp` order (what
+/// `select_nth_unstable_by(k, f32::total_cmp)` yields), by a two-pass radix
+/// selection that leaves `values` untouched.
+pub(crate) fn nth_smallest(values: &[f32], k: usize) -> f32 {
+    let key = |v: f32| {
+        let bits = v.to_bits();
+        if bits & 0x8000_0000 != 0 {
+            !bits
+        } else {
+            bits | 0x8000_0000
+        }
+    };
+    let select = |count: &[usize], k: &mut usize| {
+        for (bucket, &c) in count.iter().enumerate() {
+            if *k < c {
+                return bucket as u32;
+            }
+            *k -= c;
+        }
+        unreachable!("rank beyond the values")
+    };
+    let mut k = k;
+    let mut count = vec![0usize; 1 << 16];
+    for &v in values {
+        count[(key(v) >> 16) as usize] += 1;
+    }
+    let high = select(&count, &mut k);
+    count.fill(0);
+    for &v in values {
+        let kv = key(v);
+        if kv >> 16 == high {
+            count[(kv & 0xFFFF) as usize] += 1;
+        }
+    }
+    let kv = high << 16 | select(&count, &mut k);
+    f32::from_bits(if kv & 0x8000_0000 != 0 {
+        kv & 0x7FFF_FFFF
+    } else {
+        !kv
+    })
 }
 
 fn surface_resolution(width: f64, motif: f64) -> usize {
