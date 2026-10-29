@@ -1047,50 +1047,38 @@ fn port_quarters(layout: &mut Layout, env: &[BlockEnvironment]) {
         if chosen.is_empty() { continue; }
         // A quarter already made of waterfront blocks needs no refinement.
         if !layout.blocks.iter().enumerate().any(|(bi,b)|b.quarter==qi && !chosen.contains(&bi)) { continue; }
-        let mut rest = vec![parent.shape.clone()];
-        let mut children = vec![];
-        for &bi in &chosen {
-            let block=&layout.blocks[bi].shape;
-            let mut ring=block.outer.clone(); ring.push(ring[0]);
-            let margin=layout.streets.iter().filter(|s|s.role=="quay").flat_map(|s|&s.widths).copied().fold(6.0,f64::max)*3.0;
-            let mut padded=g::ribbon(&ring,&[margin*2.0]); padded.push(block.clone());
-            let masks=g::union(&padded);
-            let mut pieces:Vec<_>=masks.iter().flat_map(|s|g::intersection(&parent.shape,s)).collect();
-            let bb=g::bbox(block);
-            for (_,b) in layout.blocks.iter().enumerate().filter(|(other,b)|*other!=bi && b.quarter==qi) {
-                let ob=g::bbox(&b.shape);
-                if ob.2<bb.0-margin || ob.0>bb.2+margin || ob.3<bb.1-margin || ob.1>bb.3+margin {continue;}
-                pieces=pieces.into_iter().flat_map(|s|g::difference(&s,&b.shape)).collect();
+        let margin=layout.streets.iter().filter(|s|s.role=="quay").flat_map(|s|&s.widths).copied().fold(6.0,f64::max)*3.0;
+        // The refinement is a pure function of the parent outline, the
+        // quarter's blocks (and which are chosen), the centre and the margin:
+        // the repeated programme probes of one run share it (`probe_cache`).
+        let key = super::probe_cache::enabled().then(|| {
+            let mut k = super::probe_cache::Key::new("roles.port_quarter/v1");
+            k.shape(&parent.shape).point(layout.center).f64(margin);
+            for (bi, b) in layout.blocks.iter().enumerate().filter(|(_, b)| b.quarter == qi) {
+                k.usize(bi).shape(&b.shape).bool(chosen.contains(&bi));
             }
-            for (_,shape) in &children {pieces=pieces.into_iter().flat_map(|s|g::difference(&s,shape)).collect();}
-            let Some(shape)=pieces.into_iter().find(|s|g::contains(s,g::interior_point(block))) else {continue};
-            if g::contains(&shape,layout.center) || g::difference(block,&shape).iter().map(g::area).sum::<f64>()>0.1 {continue;}
-            rest = rest.into_iter().flat_map(|s|g::difference(&s,&shape)).collect();
-            children.push((bi,shape));
-        }
-        // Boolean clipping may leave disjoint bank remnants. Retain all of
-        // them, with the old index on the component containing the nucleus.
-        if children.is_empty() || rest.is_empty() { continue; }
-        let main=rest.iter().position(|s|g::contains(s,layout.center)).unwrap_or_else(||
-            (0..rest.len()).max_by(|&a,&b|g::area(&rest[a]).total_cmp(&g::area(&rest[b]))).unwrap());
-        layout.quarters[qi].shape = rest.remove(main);
+            k
+        });
+        let plan = match key.as_ref().and_then(|k| PORT_QUARTERS.get(k)) {
+            Some(plan) => plan,
+            None => {
+                let plan = std::sync::Arc::new(port_quarter_plan(layout, qi, &parent.shape, &chosen, margin));
+                if let Some(k) = key { PORT_QUARTERS.put(k, plan.clone()); }
+                plan
+            }
+        };
+        let Some(plan) = plan.as_ref() else { continue };
+        layout.quarters[qi].shape = plan.main.clone();
         let mut added = vec![];
-        for shape in rest {
-            if !layout.blocks.iter().enumerate().any(|(bi,b)|b.quarter==qi && !chosen.contains(&bi) && g::contains(&shape,g::interior_point(&b.shape))) {
-                if let Some((index,union))=children.iter().enumerate().find_map(|(i,(_,child))| {
-                    let mut union=g::union(&[child.clone(),shape.clone()]); (union.len()==1).then(||(i,union.remove(0)))
-                }) {children[index].1=union;continue;}
-            }
+        for (shape, moved) in &plan.extra {
             let q=layout.quarters.len();
-            for (_,b) in layout.blocks.iter_mut().enumerate().filter(|(bi,b)|b.quarter==qi && !chosen.contains(bi)) {
-                if g::contains(&shape,g::interior_point(&b.shape)) { b.quarter=q; }
-            }
-            layout.quarters.push(super::Quarter {shape,..parent.clone()}); added.push(q);
+            for &bi in moved { layout.blocks[bi].quarter = q; }
+            layout.quarters.push(super::Quarter {shape: shape.clone(),..parent.clone()}); added.push(q);
         }
-        for (bi,shape) in children {
+        for (bi,shape) in &plan.children {
             let q = layout.quarters.len();
-            layout.blocks[bi].quarter = q;
-            layout.quarters.push(super::Quarter { shape, ..parent.clone() });
+            layout.blocks[*bi].quarter = q;
+            layout.quarters.push(super::Quarter { shape: shape.clone(), ..parent.clone() });
             added.push(q);
         }
         if let Some(s) = layout.structure.as_mut() {
@@ -1100,6 +1088,64 @@ fn port_quarters(layout: &mut Layout, env: &[BlockEnvironment]) {
             }
         }
     }
+}
+
+/// Port refinement of one quarter, without touching the layout: the parent's
+/// remaining outline, the bank remnants that become quarters (with the
+/// blocks they take, in order), then one quarter per chosen waterfront block.
+struct PortQuarterPlan {
+    main: super::Shape,
+    extra: Vec<(super::Shape, Vec<usize>)>,
+    children: Vec<(usize, super::Shape)>,
+}
+static PORT_QUARTERS: super::probe_cache::Memo<std::sync::Arc<Option<PortQuarterPlan>>> =
+    super::probe_cache::Memo::new();
+pub(super) fn clear_probe_cache() {
+    PORT_QUARTERS.clear();
+}
+fn port_quarter_plan(layout: &Layout, qi: usize, parent: &super::Shape, chosen: &[usize], margin: f64) -> Option<PortQuarterPlan> {
+    let mut rest = vec![parent.clone()];
+    let mut children: Vec<(usize, super::Shape)> = vec![];
+    for &bi in chosen {
+        let block=&layout.blocks[bi].shape;
+        let mut ring=block.outer.clone(); ring.push(ring[0]);
+        let mut padded=g::ribbon(&ring,&[margin*2.0]); padded.push(block.clone());
+        let masks=g::union(&padded);
+        let mut pieces:Vec<_>=masks.iter().flat_map(|s|g::intersection(parent,s)).collect();
+        let bb=g::bbox(block);
+        for (_,b) in layout.blocks.iter().enumerate().filter(|(other,b)|*other!=bi && b.quarter==qi) {
+            let ob=g::bbox(&b.shape);
+            if ob.2<bb.0-margin || ob.0>bb.2+margin || ob.3<bb.1-margin || ob.1>bb.3+margin {continue;}
+            pieces=pieces.into_iter().flat_map(|s|g::difference(&s,&b.shape)).collect();
+        }
+        for (_,shape) in &children {pieces=pieces.into_iter().flat_map(|s|g::difference(&s,shape)).collect();}
+        let Some(shape)=pieces.into_iter().find(|s|g::contains(s,g::interior_point(block))) else {continue};
+        if g::contains(&shape,layout.center) || g::difference(block,&shape).iter().map(g::area).sum::<f64>()>0.1 {continue;}
+        rest = rest.into_iter().flat_map(|s|g::difference(&s,&shape)).collect();
+        children.push((bi,shape));
+    }
+    // Boolean clipping may leave disjoint bank remnants. Retain all of
+    // them, with the old index on the component containing the nucleus.
+    if children.is_empty() || rest.is_empty() { return None; }
+    let main=rest.iter().position(|s|g::contains(s,layout.center)).unwrap_or_else(||
+        (0..rest.len()).max_by(|&a,&b|g::area(&rest[a]).total_cmp(&g::area(&rest[b]))).unwrap());
+    let main_shape = rest.remove(main);
+    // Blocks of the quarter that are neither chosen nor moved yet.
+    let mut staying: Vec<usize> = layout.blocks.iter().enumerate()
+        .filter(|(bi,b)|b.quarter==qi && !chosen.contains(bi)).map(|(bi,_)|bi).collect();
+    let mut extra = vec![];
+    for shape in rest {
+        if !staying.iter().any(|&bi| g::contains(&shape,g::interior_point(&layout.blocks[bi].shape))) {
+            if let Some((index,union))=children.iter().enumerate().find_map(|(i,(_,child))| {
+                let mut union=g::union(&[child.clone(),shape.clone()]); (union.len()==1).then(||(i,union.remove(0)))
+            }) {children[index].1=union;continue;}
+        }
+        let moved: Vec<usize> = staying.iter().copied()
+            .filter(|&bi| g::contains(&shape,g::interior_point(&layout.blocks[bi].shape))).collect();
+        staying.retain(|bi| !moved.contains(bi));
+        extra.push((shape, moved));
+    }
+    Some(PortQuarterPlan { main: main_shape, extra, children })
 }
 
 /// Gather the quarters a quay serves into the port district(s), before roles

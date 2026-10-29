@@ -4,7 +4,7 @@ use super::geometry::interior_point;
 use super::{Layout, Parcel, Partition, Point, Surface};
 use serde::Serialize;
 use serde_json::{Value, json};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 fn access_segments(
     layout: &Layout,
@@ -2243,6 +2243,7 @@ mod tests {
 /// preview. `Err` when generating any of the requests would fail. Used by
 /// `trim::finish` (frontage of the occupied lots); keep it in step with
 /// `request_one`.
+#[cfg_attr(not(test), allow(dead_code))]
 pub(super) fn previewed_parcels(
     index: &BuildingSiteIndex,
     seed: &str,
@@ -2252,8 +2253,67 @@ pub(super) fn previewed_parcels(
 ) -> Result<Vec<String>, String> {
     // Test toggles are thread-local: read them on the calling thread.
     let topology = preview_topology_enabled();
+    super::par::range(index.sites.len(), |i| {
+        preview_site(index, seed, layouts, partitions, architecture_culture, topology, i, false)
+    })
+    .into_iter()
+    .filter_map(Result::transpose)
+    .collect()
+}
+
+/// `previewed_parcels` asked lot by lot, each site previewed at most once.
+/// Construction runs the failing part of every site (mappings, retained
+/// references), so it fails exactly when `previewed_parcels` would.
+pub(super) struct SitePreviews<'a> {
+    index: &'a BuildingSiteIndex,
+    seed: &'a str,
+    layouts: &'a [Layout],
+    partitions: &'a [Partition],
+    topology: bool,
+    by_parcel: HashMap<&'a str, Vec<usize>>,
+    memo: std::cell::RefCell<HashMap<usize, bool>>,
+}
+impl<'a> SitePreviews<'a> {
+    pub(super) fn new(index: &'a BuildingSiteIndex, seed: &'a str, layouts: &'a [Layout], partitions: &'a [Partition]) -> Result<Self, String> {
+        let topology = preview_topology_enabled();
+        let mut by_parcel: HashMap<&'a str, Vec<usize>> = HashMap::new();
+        for (i, site) in index.sites.iter().enumerate() {
+            preview_site(index, seed, layouts, partitions, None, topology, i, true)?;
+            let partition = &partitions[index.partitions[site.partition].partition];
+            by_parcel.entry(partition.parcels[site.parcel].id.as_str()).or_default().push(i);
+        }
+        Ok(Self { index, seed, layouts, partitions, topology, by_parcel, memo: Default::default() })
+    }
+    /// Whether some site on a lot with this id shows a silhouette.
+    pub(super) fn previewed(&self, id: &str) -> bool {
+        self.by_parcel.get(id).is_some_and(|sites| sites.iter().any(|&i| {
+            if let Some(&hit) = self.memo.borrow().get(&i) {
+                return hit;
+            }
+            let shown = preview_site(self.index, self.seed, self.layouts, self.partitions, None, self.topology, i, false)
+                .ok().flatten().is_some();
+            self.memo.borrow_mut().insert(i, shown);
+            shown
+        }))
+    }
+}
+
+/// One site of `previewed_parcels`: its parcel id when its building request
+/// would show a silhouette. With `check_only`, stops after the steps that can
+/// fail (none follows them) and answers `None`.
+#[allow(clippy::too_many_arguments)]
+fn preview_site(
+    index: &BuildingSiteIndex,
+    seed: &str,
+    layouts: &[Layout],
+    partitions: &[Partition],
+    architecture_culture: Option<&str>,
+    topology: bool,
+    i: usize,
+    check_only: bool,
+) -> Result<Option<String>, String> {
     let (sites, partition_indices, layout_indices) = (&index.sites, &index.partitions, &index.layouts);
-    let one = |i: usize| -> Result<Option<String>, String> {
+    {
         let site = &sites[i];
         let partition_index = &partition_indices[site.partition];
         let layout_index = &layout_indices[partition_index.layout];
@@ -2280,6 +2340,9 @@ pub(super) fn previewed_parcels(
                 .ok_or("No contextual native recipe")?,
             ),
         };
+        if check_only {
+            return Ok(None);
+        }
         let building_culture = building_culture.as_str();
         if !super::culture::functional_role_resolved(building_culture,&culture.architecture_pack,&allocation.role,&allocation.function)
             && let Some(small) = super::parcels::compact_fallback(&culture.architecture_pack, &pr.context.period, &culture.admissibility) {
@@ -2416,6 +2479,5 @@ pub(super) fn previewed_parcels(
         let form = if composition == "row" { super::parcels::OccupationKind::Row } else { super::parcels::OccupationKind::Detached };
         let parts = super::parcels::occupation_preview_resolved(parcel, &occupancy, Some(form)).0;
         Ok((!parts.is_empty()).then(|| parcel.id.clone()))
-    };
-    super::par::range(sites.len(), one).into_iter().filter_map(Result::transpose).collect()
+    }
 }

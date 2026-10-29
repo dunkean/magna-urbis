@@ -25,6 +25,7 @@ pub mod kinds;
 mod macroplan;
 mod network;
 mod par;
+mod probe_cache;
 mod parcels;
 mod profiles;
 mod quarters;
@@ -1225,6 +1226,8 @@ pub fn generate_quarters(
     {
         return Err("Configuration de quartiers invalide".into());
     }
+    // Repeated programme/cadastre probes share exact sub-results (`probe_cache`).
+    let _probe_scope = probe_cache::Scope::open();
     let mut crossing_roads = roads.to_vec();
     network::bridge_water(&mut crossing_roads, surface, config.max_street_grade);
     let roads = crossing_roads.as_slice();

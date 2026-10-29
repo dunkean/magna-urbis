@@ -341,8 +341,45 @@ pub(super) fn block_contacts_indexed(
         })
         .collect()
 }
+/// Network pressures, memoised across the probes of one quarters run: the
+/// programme and the cadastre of one probe ask for the same network.
+static PRESSURES: super::probe_cache::Memo<std::sync::Arc<Vec<f64>>> = super::probe_cache::Memo::new();
 pub(super) fn occupation_pressures(layout: &Layout) -> Vec<f64> {
-    pressure::for_layout(layout)
+    if !super::probe_cache::enabled() {
+        return pressure::for_layout(layout);
+    }
+    // `for_layout` reads the streets (geometry, widths, rank, role), the
+    // centres and the block outlines; nothing else of the layout.
+    let mut k = super::probe_cache::Key::new("parcels.pressures/v1");
+    k.usize(layout.streets.len());
+    for s in &layout.streets {
+        k.ring(&s.path).usize(s.widths.len());
+        for &w in &s.widths {
+            k.f64(w);
+        }
+        k.usize(s.rank).str(&s.role);
+    }
+    match layout.structure.as_ref() {
+        Some(st) => {
+            k.bool(true).usize(st.centers.len());
+            for c in &st.centers {
+                k.point(c.point);
+            }
+        }
+        None => {
+            k.bool(false);
+        }
+    }
+    k.point(layout.center).usize(layout.blocks.len());
+    for b in &layout.blocks {
+        k.shape(&b.shape);
+    }
+    if let Some(hit) = PRESSURES.get(&k) {
+        return hit.as_ref().clone();
+    }
+    let pressures = pressure::for_layout(layout);
+    PRESSURES.put(k, std::sync::Arc::new(pressures.clone()));
+    pressures
 }
 
 /// Provenance of a lot admitted by a witness at any orientation (odd ground).
@@ -435,6 +472,50 @@ pub(super) fn parcel_envelope_with(
             )
         })
     })
+}
+/// Memoised witnesses (`probe_cache`) shared by the allocation passes of one
+/// quarters run, per lot then per admission size.
+static ENVELOPES: super::probe_cache::Memo<std::sync::Arc<EnvelopeMemo>> = super::probe_cache::Memo::new();
+#[derive(Default)]
+pub(super) struct EnvelopeMemo(std::sync::Mutex<std::collections::HashMap<(u64, u64, u64), bool>>);
+/// The witness memo of one lot. The search (`parcel_envelope_with`) reads
+/// only the lot outline, its fronts (streets compared for identity only) and
+/// its degenerate/polygonal provenance, so those are the key. `None` when
+/// the probe memo is off.
+pub(super) fn envelope_memo(p: &Parcel, fronts: &[Front]) -> Option<std::sync::Arc<EnvelopeMemo>> {
+    if !super::probe_cache::enabled() {
+        return None;
+    }
+    let mut k = super::probe_cache::Key::new("parcels.envelope/v1");
+    k.shape(&p.shape)
+        .bool(p.provenance.iter().any(|x| x == DEGENERATE))
+        .bool(p.provenance.iter().any(|x| x == POLYGONAL));
+    let mut streets: Vec<usize> = fronts.iter().map(|f| f.street).collect();
+    streets.sort_unstable();
+    streets.dedup();
+    k.usize(fronts.len());
+    for f in fronts {
+        let local = streets.binary_search(&f.street).expect("listed street");
+        k.point(f.a).point(f.b).usize(f.rank).usize(local).bool(f.shared).bool(f.gate);
+    }
+    if let Some(hit) = ENVELOPES.get(&k) {
+        return Some(hit);
+    }
+    let memo = std::sync::Arc::new(EnvelopeMemo::default());
+    ENVELOPES.put(k, memo.clone());
+    Some(memo)
+}
+impl EnvelopeMemo {
+    /// `parcel_envelope_with(..).is_some()` for the lot this memo was made for.
+    pub(super) fn has(&self, p: &Parcel, fronts: &[Front], width: f64, depth: f64, access_width: f64) -> bool {
+        let key = (width.to_bits(), depth.to_bits(), access_width.to_bits());
+        if let Some(&hit) = self.0.lock().unwrap_or_else(|e| e.into_inner()).get(&key) {
+            return hit;
+        }
+        let ok = parcel_envelope_with(p, fronts, width, depth, access_width).is_some();
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).insert(key, ok);
+        ok
+    }
 }
 /// Uncut reserves use the same admission search without synthetic properties.
 pub(super) fn contact_envelope(
@@ -3382,11 +3463,137 @@ fn cultural_context<'a>(layout: &'a Layout, block: &super::Block, fallback: &'a 
 }
 
 /// One block's lots, warnings and area accounts, merged in block order.
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct BlockCut {
     parcels: Vec<Parcel>,
     warnings: Vec<String>,
     diagnostics: super::PartitionDiagnostics,
+}
+
+/// Memoised cuts of ordinary blocks across the probes of one quarters run.
+static BLOCK_CUTS: super::probe_cache::Memo<std::sync::Arc<StoredCut>> =
+    super::probe_cache::Memo::new();
+pub(super) fn clear_probe_cache() {
+    BLOCK_CUTS.clear();
+    ENVELOPES.clear();
+    PRESSURES.clear();
+}
+
+/// Everything the cut of an ordinary (non-camp) block reads, after its
+/// morphology has been resolved. The layout is only read through these: the
+/// block itself, its pressure, its wall faces, the organic budget, and its
+/// street contacts (`frontages` of the outline) with the roles of their
+/// streets (access kinds and gates read those roles).
+struct ProbeInputs<'a> {
+    seed: &'a str,
+    cfg: &'a ParcelConfig,
+    layout: &'a Layout,
+    fronts: &'a [Front],
+    bi: usize,
+    block: &'a super::Block,
+    block_id: &'a str,
+    fork_label: &'a str,
+    culture: &'a str,
+    block_culture: &'a str,
+    period: &'a str,
+    route_op: &'a str,
+    operator: &'a str,
+    zone: &'a str,
+    dense_souk: bool,
+    occupation: f64,
+    morph: &'a Morph,
+    faces: &'a [(Point, Point)],
+    plan: Option<&'a super::CapacityPlan>,
+    borrowed: bool,
+}
+impl ProbeInputs<'_> {
+    /// The exact key, and the global indices of the streets it names (sorted):
+    /// streets enter the key by their rank in that list, so a block whose
+    /// streets were renumbered by a pruning elsewhere still hits.
+    fn key(&self) -> (super::probe_cache::Key, Vec<usize>) {
+        let (layout, block) = (self.layout, self.block);
+        let mut k = super::probe_cache::Key::new("parcels.block/v1");
+        k.str(self.seed).str(&layout.key).json(self.cfg).f64(self.cfg.density).usize(self.bi);
+        k.shape(&block.shape).str(&block.kind).str(&block.zone).point(block.axis).usize(block.quarter);
+        match block.phase {
+            Some(p) => k.bool(true).usize(p),
+            None => k.bool(false),
+        };
+        k.str(self.block_id).str(self.fork_label).str(self.culture).str(self.block_culture)
+            .str(self.period).str(self.route_op).str(self.operator).str(self.zone)
+            .bool(self.dense_souk).f64(self.occupation).json(&self.morph.value);
+        k.usize(self.faces.len());
+        for &(a, b) in self.faces {
+            k.point(a).point(b);
+        }
+        match self.plan {
+            Some(c) => k.bool(true).f64(c.densify).f64(c.vacancy).f64(c.garden_share),
+            None => k.bool(false),
+        };
+        k.bool(self.borrowed);
+        match camp::organic_budget(layout, self.bi) {
+            Some(n) => k.bool(true).usize(n),
+            None => k.bool(false),
+        };
+        // The cut reads the network only through the block's street contacts
+        // and the roles of their streets (access kinds, gates).
+        let mut streets: Vec<usize> = self.fronts.iter().map(|f| f.street).collect();
+        streets.sort_unstable();
+        streets.dedup();
+        // A front without a recorded street falls back to street 0.
+        k.bool(streets.first() == Some(&0));
+        match layout.streets.first() {
+            Some(s) => k.bool(true).str(&s.role),
+            None => k.bool(false),
+        };
+        k.usize(streets.len());
+        for &si in &streets {
+            k.str(&layout.streets[si].role);
+        }
+        k.usize(self.fronts.len());
+        for f in self.fronts {
+            let local = streets.binary_search(&f.street).expect("listed street");
+            k.point(f.a).point(f.b).usize(f.rank).usize(local).bool(f.shared).bool(f.gate);
+        }
+        (k, streets)
+    }
+}
+
+/// A memoised cut with the street numbering it was computed under.
+struct StoredCut {
+    streets: Vec<usize>,
+    cut: BlockCut,
+}
+impl StoredCut {
+    fn indices(cut: &mut BlockCut) -> impl Iterator<Item = &mut usize> {
+        cut.parcels.iter_mut().flat_map(|p| {
+            p.contacts.iter_mut().map(|c| &mut c.street)
+                .chain(p.access.as_mut().and_then(|a| a.street.as_mut()))
+        })
+    }
+    fn store(key: super::probe_cache::Key, streets: Vec<usize>, cut: &BlockCut) {
+        let mut cut = cut.clone();
+        // Only streets of the key (or the literal fallback 0) may be named.
+        if !Self::indices(&mut cut).all(|s| *s == 0 || streets.binary_search(s).is_ok()) {
+            return;
+        }
+        BLOCK_CUTS.put(key, std::sync::Arc::new(StoredCut { streets, cut }));
+    }
+    /// The cut renumbered onto the current streets (same key, so same count).
+    fn replay(&self, streets: &[usize]) -> Option<BlockCut> {
+        if streets.len() != self.streets.len() {
+            return None;
+        }
+        let mut cut = self.cut.clone();
+        for s in Self::indices(&mut cut) {
+            if let Ok(r) = self.streets.binary_search(s) {
+                *s = streets[r];
+            } else if *s != 0 {
+                return None;
+            }
+        }
+        Some(cut)
+    }
 }
 
 pub(super) fn generate(
@@ -3635,11 +3842,12 @@ pub(super) fn generate(
             .programme
             .as_ref()
             .map_or("any", |p| p.context.period.as_str());
+        let route_op = local_morph.text("plotOp").to_owned();
         let route = super::culture::contextual_mapping(
             block_culture,
             period,
             &block.zone,
-            local_morph.text("plotOp"),
+            &route_op,
             "domestic",
         );
         let fallback = route
@@ -3702,7 +3910,28 @@ pub(super) fn generate(
             resolve_identity(out.parcels.last_mut().unwrap(), bi, &block_id);
             return out;
         }
-        let mut rng = root.fork(&super::edits::block_fork(&block_id, layout, block.quarter)); // edits hook (urban/edits.rs): salt
+        let fork_label = super::edits::block_fork(&block_id, layout, block.quarter); // edits hook (urban/edits.rs): salt
+        // Probe memo (`probe_cache`): the cut below reads exactly the inputs
+        // keyed here. Camps read the whole layout and are never memoised.
+        let block_fronts = frontages(&block.shape, layout, &index);
+        let probe = (super::probe_cache::enabled() && !(operator == "culture" && camp::enabled(morph)))
+            .then(|| {
+                let p = ProbeInputs {
+                    seed, cfg, layout, fronts: &block_fronts, bi, block, block_id: &block_id,
+                    fork_label: &fork_label, culture, block_culture, period, route_op: &route_op,
+                    operator, zone, dense_souk, occupation, morph, faces: &faces, plan, borrowed,
+                };
+                p.key()
+            });
+        if let Some((key, streets)) = &probe
+            && let Some(hit) = BLOCK_CUTS.get(key)
+            && let Some(cut) = hit.replay(streets)
+        {
+            return cut;
+        }
+        let cut = (|| -> BlockCut {
+        let mut out = BlockCut::default();
+        let mut rng = root.fork(&fork_label);
         let mut axis = unit(block.axis);
         if length(axis) < 0.5 {
             axis = Point { x: 1.0, y: 0.0 };
@@ -3715,7 +3944,7 @@ pub(super) fn generate(
                 y: axis.x * angle.sin() + axis.y * angle.cos(),
             };
         }
-        let mut fronts = frontages(&block.shape, layout, &index);
+        let mut fronts = block_fronts.clone();
         if admission.is_none() && super::culture::mapping(block_culture).is_some() {
             let mut retained = parcel(block.shape.clone(), bi, axis, &fronts, "residual");
             retained.reason = "unsupported-period-profile".into();
@@ -4175,6 +4404,11 @@ pub(super) fn generate(
         }
         out.parcels.extend(parcels);
         out
+        })();
+        if let Some((key, streets)) = probe {
+            StoredCut::store(key, streets, &cut);
+        }
+        cut
     });
     for cut in blocks {
         result.parcels.extend(cut.parcels);

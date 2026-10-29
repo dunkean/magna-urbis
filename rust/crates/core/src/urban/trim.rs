@@ -456,23 +456,43 @@ pub(super) fn finish(seed: &str, layout: &mut Layout, surface: Surface<'_>) {
         let Ok(index) = super::building_sites::BuildingSiteIndex::prepare(layouts,&parts,&[0]) else { break };
         // The lots whose building request would show a silhouette, without
         // generating the requests (a failing request leaves the streets as they are).
-        let Ok(previewed) = super::building_sites::previewed_parcels(&index,seed,layouts,&parts,None) else { return };
-        let mut active: HashSet<String> = previewed.into_iter().collect();
-        active.extend(part.programme.iter().flat_map(|p|&p.allocations).filter(|a|a.role != "open.garden"
+        // They are previewed lazily: a street needs one occupied lot in reach.
+        let Ok(previews) = super::building_sites::SitePreviews::new(&index,seed,layouts,&parts) else { return };
+        let explicit: HashSet<&str> = part.programme.iter().flat_map(|p|&p.allocations).filter(|a|a.role != "open.garden"
                 && matches!(a.function.as_str(),"market"|"common")
                 && part.parcels.iter().any(|p|p.id == a.parcel_id && street_use(p,&a.role,layout)))
-                .map(|a|a.parcel_id.clone()));
-        let lots: Vec<_> = part.parcels.iter().filter(|p|active.contains(p.id.as_str())
-            || urban(p,layout) && p.access.as_ref().is_some_and(|a|a.kind == "attached")
-                && p.parent_ids.iter().any(|id|active.contains(id.as_str()))).map(|p|p.shape.clone()).collect();
-        let hash = frontage_hash(&lots);
-        let mut changed = false;
-        for s in layout.streets.iter_mut().filter(|s|frontage_road(&s.role)) {
-            let reach = s.widths.iter().copied().fold(0.,f64::max)*0.5+3.5;
-            if !s.path.windows(2).any(|w|touches(&hash,w[0],w[1],reach)) {
-                super::network::downgrade_path(s);
-                changed = true;
+                .map(|a|a.parcel_id.as_str()).collect();
+        let active = |id: &str| explicit.contains(id) || previews.previewed(id);
+        let memo: Vec<std::cell::OnceCell<bool>> = part.parcels.iter().map(|_| std::cell::OnceCell::new()).collect();
+        let lot = |i: usize| *memo[i].get_or_init(|| {
+            let p = &part.parcels[i];
+            active(p.id.as_str())
+                || urban(p,layout) && p.access.as_ref().is_some_and(|a|a.kind == "attached")
+                    && p.parent_ids.iter().any(|id|active(id.as_str()))
+        });
+        // Outline points of every parcel; a point counts when its lot does.
+        let mut hash: HashMap<(i64, i64), Vec<(Point, usize)>> = HashMap::new();
+        let mut points = vec![];
+        for (i, p) in part.parcels.iter().enumerate() {
+            points.clear();
+            outline_points(&p.shape, &mut points);
+            for &q in &points {
+                hash.entry(cell(q)).or_default().push((q, i));
             }
+        }
+        let touches = |a: Point, b: Point, reach: f64| {
+            let (x0, y0) = cell(Point { x: a.x.min(b.x) - reach, y: a.y.min(b.y) - reach });
+            let (x1, y1) = cell(Point { x: a.x.max(b.x) + reach, y: a.y.max(b.y) + reach });
+            (x0..=x1).any(|cx| (y0..=y1).any(|cy| hash.get(&(cx, cy))
+                .is_some_and(|v| v.iter().any(|&(q, i)| g::distance(q, a, b).0 <= reach && lot(i)))))
+        };
+        let empty: Vec<bool> = layout.streets.iter().map(|s| frontage_road(&s.role) && {
+            let reach = s.widths.iter().copied().fold(0.,f64::max)*0.5+3.5;
+            !s.path.windows(2).any(|w|touches(w[0],w[1],reach))
+        }).collect();
+        let changed = empty.iter().any(|&e| e);
+        for (s, e) in layout.streets.iter_mut().zip(empty) {
+            if e { super::network::downgrade_path(s); }
         }
         if !changed { break; }
     }
@@ -626,6 +646,11 @@ mod tests {
                 .filter_map(|r| r["parcel_id"].as_str().map(str::to_owned)).collect();
             println!("{culture}: {} previews of {} requests", slow.len(), requests.len());
             assert_eq!(fast, slow, "{culture}");
+            // The lazy form used by `finish` answers the same, lot by lot.
+            let lazy = super::super::building_sites::SitePreviews::new(&index, "fill3", std::slice::from_ref(&l), std::slice::from_ref(&part)).unwrap();
+            for p in &part.parcels {
+                assert_eq!(lazy.previewed(&p.id), fast.contains(&p.id), "{culture}: {}", p.id);
+            }
         }
     }
 

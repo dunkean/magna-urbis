@@ -1244,6 +1244,8 @@ struct Memo {
     index: Option<super::parcels::FrontageIndex>,
     /// Per-parcel fronts shared by every envelope size tested on it.
     fronts: HashMap<usize, Vec<super::parcels::Front>>,
+    /// Per-parcel witnesses shared across allocation passes (`probe_cache`).
+    shared_envelopes: HashMap<usize, Option<std::sync::Arc<super::parcels::EnvelopeMemo>>>,
 }
 impl Memo {
     fn block_witness(&mut self, layout: &Layout, pi: usize, p: &Parcel, w: f64, d: f64) -> bool {
@@ -1307,7 +1309,14 @@ impl Memo {
                     .fronts
                     .entry(pi)
                     .or_insert_with(|| super::parcels::envelope_fronts(p));
-                super::parcels::parcel_envelope_with(p, fronts, width, depth, 0.8).is_some()
+                let shared = self
+                    .shared_envelopes
+                    .entry(pi)
+                    .or_insert_with(|| super::parcels::envelope_memo(p, fronts));
+                match shared {
+                    Some(m) => m.has(p, fronts, width, depth, 0.8),
+                    None => super::parcels::parcel_envelope_with(p, fronts, width, depth, 0.8).is_some(),
+                }
             }
         };
         self.envelopes.insert(key, ok);
