@@ -132,7 +132,7 @@ fn decode<T: for<'de> Deserialize<'de>>(bytes: &[u8]) -> ApiResult<T> {
     serde_json::from_slice(bytes).map_err(|e| e.to_string())
 }
 fn value<T: for<'de> Deserialize<'de>>(v: &Value) -> ApiResult<T> {
-    serde_json::from_value(v.clone()).map_err(|e| e.to_string())
+    T::deserialize(v).map_err(|e| e.to_string())
 }
 fn millis(start: Instant) -> f64 {
     start.elapsed().as_secs_f64() * 1000.0
@@ -569,24 +569,29 @@ fn urban_reply(input: Value, state: &mut Session, session: &str) -> ApiResult<Re
         let page = state.urban.page_building_sites(
             session, &source, source_id, terrain, offset, limit, max_bytes,
         )?;
-        #[derive(Serialize)]
-        #[serde(rename_all = "camelCase")]
-        struct PageReply {
-            placement_requests: Vec<Value>,
-            offset: usize,
-            next: usize,
-            total: usize,
-            #[serde(skip_serializing_if = "Option::is_none")]
-            required_bytes: Option<usize>,
-            ms: f64,
+        // Requests were serialised once while budgeting; splice those bytes.
+        let total_raw: usize = page.raw.iter().map(|r| r.len() + 1).sum();
+        let mut body = Vec::with_capacity(total_raw + 128);
+        body.extend_from_slice(b"{\"placementRequests\":[");
+        for (i, raw) in page.raw.iter().enumerate() {
+            if i > 0 {
+                body.push(b',');
+            }
+            body.extend_from_slice(raw);
         }
-        return json_reply(PageReply {
-            placement_requests: page.requests,
-            offset: page.offset,
-            next: page.next,
-            total: page.total,
-            required_bytes: page.required_bytes,
-            ms: millis(started),
+        body.extend_from_slice(format!(
+            "],\"offset\":{},\"next\":{},\"total\":{}",
+            page.offset, page.next, page.total
+        ).as_bytes());
+        if let Some(required) = page.required_bytes {
+            body.extend_from_slice(format!(",\"requiredBytes\":{required}").as_bytes());
+        }
+        body.extend_from_slice(b",\"ms\":");
+        serde_json::to_writer(&mut body, &millis(started)).map_err(|e| e.to_string())?;
+        body.push(b'}');
+        return Ok(Reply {
+            kind: "application/json",
+            body,
         });
     }
     if input["kind"] == "displayBuffers" {
@@ -654,15 +659,30 @@ fn urban_reply(input: Value, state: &mut Session, session: &str) -> ApiResult<Re
             .unwrap_or_default();
         let config: urban::LayoutConfig = value(&input["layoutConfig"])?;
         let layouts = terrain.urban_quarters(seed, &sites, &config, &roads)?;
-        let result = json!({"id": input["id"], "layouts": layouts, "ms": millis(started)});
+        let ms = millis(started);
+        let result = json!({"id": input["id"], "layouts": layouts, "ms": ms});
         // Reparse serialized decimal coordinates, as the WASM parcel boundary does.
         // Deserializing Value directly retains native f64 bits and can change cuts.
-        let retained = Arc::new(decode(
-            &serde_json::to_vec(&result["layouts"]).map_err(|e| e.to_string())?,
-        )?);
+        // One serialisation serves both the reparse and the reply: the layouts
+        // bytes sit between the id prefix and the ms suffix.
+        let body = serde_json::to_vec(&result).map_err(|e| e.to_string())?;
+        let mut prefix = b"{\"id\":".to_vec();
+        serde_json::to_writer(&mut prefix, &input["id"]).map_err(|e| e.to_string())?;
+        prefix.extend_from_slice(b",\"layouts\":");
+        let mut suffix = b",\"ms\":".to_vec();
+        serde_json::to_writer(&mut suffix, &ms).map_err(|e| e.to_string())?;
+        suffix.push(b'}');
+        if !body.starts_with(&prefix) || !body.ends_with(&suffix) || body.len() < prefix.len() + suffix.len() {
+            return Err("Layouts reply framing mismatch.".into());
+        }
+        let retained = Arc::new(decode(&body[prefix.len()..body.len() - suffix.len()])?);
+        drop(result);
         state.urban.retain_layouts(Arc::clone(&retained))?;
         state.layouts = Some((input["id"].as_u64().ok_or("ID invalide.")?, retained));
-        json_reply(result)
+        Ok(Reply {
+            kind: "application/json",
+            body,
+        })
     } else if input["kind"] == "parcels" {
         if state.settlements.is_none() {
             return Err("GÃƒÆ’Ã‚Â©nÃƒÆ’Ã‚Â©rez le terrain avant les quartiers.".into());
