@@ -222,6 +222,8 @@ pub(super) struct Input<'a> {
     pub pressure: f64,
     /// Selected ordinary fringe/poor home (same draw as its smaller preview).
     pub small_home: bool,
+    /// Settlement population (0 unknown): a market town builds lower than a city.
+    pub population: u32,
     /// Street frontage segments of the lot (public accesses).
     pub fronts: &'a [[Point; 2]],
     pub seed: &'a str,
@@ -318,13 +320,25 @@ fn small_home(m: &Input) -> bool {
 /// corner and a per-lot draw; roles pick their end of the range.
 fn lot_floors(m: &Input, tr: &Tradition, rng: &mut Rng) -> u32 {
     let [lo, hi] = tr.storeys;
-    let zone = match m.zone {
-        "core" => 0.75,
-        "middle" | "ring" => 0.5,
-        "edge" => 0.3,
-        "faubourg" => 0.25,
-        _ => 0.1,
-    };
+    // Invariant (« gradient régulier »): height follows the lot's access
+    // pressure along one curve in every zone (a core keeps a floor, as for
+    // lot sizes); villages and hamlets stay low.
+    let rural = matches!(m.zone, "village" | "hamlet" | "rural");
+    let urban = if rural { 0.3 * m.pressure.clamp(0.0, 1.0) }
+        else if m.zone == "core" { m.pressure.clamp(0.0, 1.0).max(0.65) } else { m.pressure.clamp(0.0, 1.0) };
+    // A market town's centre stands lower than a city's: the full storey
+    // range is reached from about 20 000 inhabitants (unknown: full range).
+    let size = if m.population == 0 { 1.0 }
+        else { ((m.population as f64).ln() - 500f64.ln()) / (20_000f64.ln() - 500f64.ln()) }.clamp(0.0, 1.0);
+    let urban = urban * (0.5 + 0.5 * size);
+    let hi = if size < 1.0 && hi > lo { lo + ((hi - lo) as f64 * (0.5 + 0.5 * size)).round() as u32 } else { hi };
+    // Away from the core more and more ordinary homes of a multi-storey
+    // tradition have one floor less: a mix of cottages and storeyed houses
+    // that thins out gradually, never a uniform lowering.
+    let home = !m.landmark && matches!(m.function, "domestic" | "mixed") && !m.role.contains("tower") && lo < 4;
+    let drop = ((0.6 - urban) / 0.45).clamp(0.0, 1.0) * 0.7;
+    let hi = if home && rural { hi.min(lo + 1) } else { hi };
+    let lo = if home && Rng::new(m.seed).fork("storey-drop").chance(drop) { lo.saturating_sub(1).max(1) } else { lo };
     let corner = m.fronts.len() >= 2 && {
         let d = |s: &[Point; 2]| {
             let l = (s[1].x - s[0].x).hypot(s[1].y - s[0].y).max(1e-9);
@@ -336,9 +350,9 @@ fn lot_floors(m: &Input, tr: &Tradition, rng: &mut Rng) -> u32 {
             (a.0 * b.0 + a.1 * b.1).abs() < 0.7
         })
     };
-    let mut x = 0.45 * zone + 0.35 * m.pressure.clamp(0.0, 1.0) + 0.25 * (m.wealth - 0.5)
-        + rng.range(-0.28, 0.28)
-        + if corner { 0.2 } else { 0.0 };
+    let mut x = 0.85 * urban - 0.05 + 0.25 * (m.wealth - 0.5)
+        + rng.range(-0.25, 0.25)
+        + if corner { 0.15 } else { 0.0 };
     let role = m.role;
     if role.contains("tenement") || role.contains("insula") || m.function == "collective" {
         x += 0.45;
@@ -1113,7 +1127,7 @@ mod tests {
     }
     fn input<'a>(parts: &'a [(Shape, &'static str)], arch: &'a Value, fronts: &'a [[Point; 2]], seed: &'a str) -> Input<'a> {
         Input { parts, arch, culture: "european-organic", zone: "core", role: "dwelling.row", function: "domestic",
-            landmark: false, wealth: 0.5, pressure: 0.8, small_home: false, fronts, seed }
+            landmark: false, wealth: 0.5, pressure: 0.8, small_home: false, population: 0, fronts, seed }
     }
 
     #[test]
@@ -1254,8 +1268,10 @@ mod tests {
         let low_wealth = share("middle", "commoner", 0.25, 0.4, false, false);
         let near = share("edge", "commoner", 0.5, 0.55, false, false);
         let far = share("edge", "commoner", 0.5, 1.0, false, false);
-        assert_eq!(core, 0.0); assert_eq!(middle, 0.0);
-        assert!((0.45..=0.55).contains(&poor), "poor: {poor}");
+        // A town-centre middle lot is rarely a one-storey house (a lowered
+        // storey range there is a gradual draw, not a rule).
+        assert_eq!(core, 0.0); assert!(middle < 0.02, "middle: {middle}");
+        assert!((0.45..=0.58).contains(&poor), "poor: {poor}");
         assert_eq!(poor, low_wealth);
         assert!(near > middle && far > near && far > poor, "{middle} {near} {far} {poor}");
         for (zone, district, outside, farm) in [

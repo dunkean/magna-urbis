@@ -359,6 +359,8 @@ pub struct SiteFacts {
     pub quay: bool,
     /// The town has quay streets: `quay` services then need `quay`.
     pub harbour: bool,
+    /// The block stands in the castle's bailey (`purpose: castle`).
+    pub castle: bool,
 }
 /// Lower is better. The district bonus is added by the caller. Water trades
 /// read the kind of water the block touches and the river's flow (its bed
@@ -384,6 +386,8 @@ pub fn site_cost(site: &str, f: &SiteFacts) -> f64 {
         "downstream" if f.river => f.downstream * 2.5 + (1.0 - f.core.min(1.0)) * 0.8,
         "downstream" if f.water => 1.5 + (1.0 - f.core.min(1.0)) * 0.8,
         "downstream" => 3.0 + f.high * 2.0 + (1.0 - f.core) * 1.5,
+        // A castle or keep stands in the bailey the town built for it.
+        "hill" if f.castle => -10.0 + f.core * 0.1,
         "hill" => (1.0 - f.high) * 3.0 + f.core * 0.8,
         "summit" => (1.0 - f.high) * 100.0 + f.core * 0.3,
         "edge" => (1.0 - f.core) * 3.0,
@@ -408,6 +412,8 @@ pub struct Frame {
     /// Quay frontage per block (m), from `quay_contacts`.
     pub quay: Vec<f64>,
     pub harbour: bool,
+    /// Castle baileys on the heights (`fortification::heights_castle`).
+    pub castles: Vec<super::Shape>,
 }
 impl Frame {
     pub fn new(layout: &Layout, env: &[BlockEnvironment]) -> Self {
@@ -438,6 +444,8 @@ impl Frame {
         Self {
             quay,
             harbour,
+            castles: layout.enclosures.iter().filter(|e| e.purpose == "castle")
+                .map(|e| super::Shape { outer: e.path.clone(), holes: vec![] }).collect(),
             river,
             center,
             radius,
@@ -504,6 +512,7 @@ impl Frame {
                 !e.wet && self.quay.get(e.block).copied().unwrap_or(0.0) >= QUAY_FRONT
             }),
             harbour: self.harbour,
+            castle: self.castles.iter().any(|c| g::contains(c, p)),
         }
     }
 }

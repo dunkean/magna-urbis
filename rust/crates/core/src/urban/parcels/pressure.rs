@@ -157,6 +157,25 @@ fn scale_point(p: Point, s: f64) -> Point {
     super::scale(p, s)
 }
 
+/// Invariant (« gradient régulier »): density follows the access pressure
+/// alone, the same curve in every zone, so no step appears where a core, a
+/// ring or a faubourg quarter meets the next. Only a distant but fully urban
+/// core (a metropolis, whose pedestrian normalizer is capped at 600 m) keeps
+/// a floor, met smoothly by the pressure of an ordinary town's core.
+pub(super) fn local(zone: &str, pressure: f64) -> f64 {
+    if zone == "core" { pressure.max(0.65) } else { pressure }
+}
+
+/// A zoned range read along the same gradient: the edge value at no
+/// pressure, the core value at full pressure (planned tissues and villages
+/// keep their zone's own range).
+pub(super) fn graded(morph: &Morph, key: &str, zone: &str, pressure: f64, planned: bool) -> Option<[f64; 2]> {
+    let has = |z: &str| morph.value[key][z].is_array();
+    if planned || zone == "village" || !has("core") || !has("edge") { return None; }
+    let (c, e, t) = (morph.range(key, "core"), morph.range(key, "edge"), local(zone, pressure));
+    Some([e[0] + (c[0] - e[0]) * t, e[1] + (c[1] - e[1]) * t])
+}
+
 pub(super) fn apply(
     morph: &Morph,
     pressure: f64,
@@ -178,14 +197,7 @@ pub(super) fn apply(
         let edge = morph.range(key, "edge");
         if let Some(zones) = result.value[key].as_object_mut() {
             for (zone, range) in zones.iter_mut() {
-                // Access modulates an applied growth phase. A distant but fully
-                // urban core must not turn into edge gardens merely because the
-                // pedestrian normalizer is capped at 600 m in a metropolis.
-                let local_pressure = match zone.as_str() {
-                    "core" => 0.65 + 0.35 * pressure,
-                    "middle" => 0.35 + 0.65 * pressure,
-                    _ => pressure,
-                };
+                let local_pressure = local(zone, pressure);
                 if let Some(values) = range.as_array_mut() {
                     for (i, value) in values.iter_mut().enumerate() {
                         let original = value.as_f64().unwrap_or(1.0);
@@ -233,11 +245,7 @@ pub(super) fn adjusted(
     hi: f64,
 ) -> [f64; 2] {
     let variation = if planned { 0.22 } else { 1.0 };
-    let local_pressure = match zone {
-        "core" => 0.65 + 0.35 * pressure,
-        "middle" => 0.35 + 0.65 * pressure,
-        _ => pressure,
-    };
+    let local_pressure = local(zone, pressure);
     let center = morph.range(key, "core");
     let edge = morph.range(key, "edge");
     let original = morph.range(key, zone);

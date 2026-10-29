@@ -2227,7 +2227,8 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
                 held,
                 land_areas[pi],
                 district.map(|x| (x.role.as_str(), x.wealth)),
-                pr.population < 500,
+                (pr.population < 500 || layout.blocks.get(p.block).is_some_and(|b| b.zone == "village"))
+                    .then(|| farm_share(pr.population, p.pressure, &p.id)),
             )
         } else {
             d.role.clone()
@@ -2451,13 +2452,22 @@ fn spread_households(caps: &[f64], pressure: &[f64], free: &[bool], wanted: f64)
     }
     out
 }
+/// Whether a village plot is a farmstead. Not every village household farms
+/// its own land with a barn (artisans, labourers, the priest): farms are the
+/// majority of a hamlet, fewer in a village, and fewer still near its centre,
+/// so large farm buildings stay a minority of the village's buildings.
+fn farm_share(population: u32, pressure: f64, id: &str) -> bool {
+    let base = if population < 150 { 0.7 } else { 0.45 };
+    let chance = base * (1.35 - 0.7 * pressure.clamp(0.0, 1.0));
+    crate::rng::Rng::new(id).fork("farmstead").chance(chance.clamp(0.0, 1.0))
+}
 /// Dwelling type from the native layout, its households and the district.
 fn dwelling_role(
     c: &CultureMapping,
     households: f64,
     area: f64,
     district: Option<(&str, f64)>,
-    village: bool,
+    village: Option<bool>,
 ) -> String {
     if let Some((role, wealth)) = district
         && role == "elite"
@@ -2473,8 +2483,8 @@ fn dwelling_role(
         return "dwelling.tenement".into();
     }
     let layout = c.admissibility.native_layout.as_str();
-    // A village house on a large plot is a farm: dwelling, barn and yard.
-    if village && area >= 500.0 && !matches!(layout, "hut_compound" | "kraal" | "platform") {
+    // A village house on a large plot may be a farm: dwelling, barn and yard.
+    if village == Some(true) && area >= 500.0 && !matches!(layout, "hut_compound" | "kraal" | "platform") {
         return "dwelling.farm".into();
     }
     match layout {

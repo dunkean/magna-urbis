@@ -319,7 +319,7 @@ const PAPER = '#f2ead8';
  * between dark ink casings, dark ink masses. */
 const PARCH = {
   ink: '#4e3b28', inkSoft: '#5a4530', block: '#e2cf9f', hatch: '#6b5236', lot: '#ece0bf', yard: '#e6d6a8',
-  garden: '#d3cf98', place: '#ece0bf', market: '#e8d6a6', common: '#cdd097', reserve: '#d8c79a', footprint: '#d9c393',
+  garden: '#d3cf98', place: '#d5cdb7', market: '#d9c9a1', common: '#cdd097', reserve: '#d8c79a', footprint: '#d9c393',
   street: '#f4ead0', streetEdge: '#3f2f1f', bridge: '#f6edd0', ford: '#bccbc8', quay: '#e9dfc4',
   mass: '#4a3826', landmark: '#7d5f40', wall: '#3b2c1c', wallFill: '#6b5540', tower: '#4e3b28',
 };
@@ -391,6 +391,7 @@ const STREET_MIN_PX = [3, 2.4, 1.6, 1.1, 0.8];
 const CROSSINGS = new Set(['bridge', 'causeway', 'ford', 'pier', 'boardwalk', 'walkway']);
 function streetPaint(role: string, rank: number, palette: CityPalette): { fill: string; casing: string; dash?: boolean } {
   if (role === 'track') { const ink = palette === 'ink' ? '#776348' : '#a58e65'; return { fill: ink, casing: ink }; }
+  if (role === 'mole') return { fill: '#d3cab0', casing: '#2b2015' };   // stone port works: dark outline, legible zoomed out
   if (palette === 'ink') return { fill: '#6b5640', casing: '#3c3024' };
   if (isBoardwalk(role)) return { fill: '#b49a6d', casing: '#514431' };
   if (palette === 'parchment') return role === 'ford' ? { fill: PARCH.ford, casing: PARCH.ink, dash: true }
@@ -490,7 +491,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
         if (lod === 'close') batch.add({ stroke: softLine.color, width: px(0.5), alpha: softLine.alpha }, pathOf(b));
         continue;
       }
-      batch.add({ fill: plaza(b.kind, fill), stroke, width: lineW, alpha: b.peripheral && view !== 'buildings' ? 0.6 : 1, dash: reserve ? [px(3), px(2)] : undefined }, pathOf(b));
+      batch.add({ fill: plaza(b.kind, fill), stroke: stroke ?? (parchment && b.kind === 'place' ? PARCH.inkSoft : undefined), width: lineW, alpha: b.peripheral && view !== 'buildings' ? 0.6 : 1, dash: reserve ? [px(3), px(2)] : undefined }, pathOf(b));
       // Parchment: built blocks hatched in ink, as on the engraved plans.
       if (parchment && !blend && !reserve && b.kind !== 'common' && b.kind !== 'place' && view !== 'roles') { const hatch = hatchPattern(ctx, mpp); if (hatch) batch.add({ fill: hatch, alpha: view === 'buildings' ? 0.5 : 1 }, pathOf(b)); }
     }
@@ -522,7 +523,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
         if (p.allocation?.landmark) batch.add({ stroke: BUILDING_FAMILIES[family ?? 'civic'].color, width: px(1.6) }, pathOf(p));
       } else {
         // Buildings view: paved places and gardens, faint lot lines when close.
-        if (openFill) batch.add({ fill: plaza(use, openFill), stroke: lod === 'close' ? parchment ? PARCH.inkSoft : '#b9a98d' : undefined, width: px(0.6), alpha: parchment && lod === 'close' ? 0.9 : 1 }, pathOf(p));
+        if (openFill) batch.add({ fill: plaza(use, openFill), stroke: lod === 'close' ? parchment ? PARCH.inkSoft : '#b9a98d' : parchment && (use === 'place' || use === 'market') ? PARCH.inkSoft : undefined, width: px(0.6), alpha: parchment && lod === 'close' ? 0.9 : 1 }, pathOf(p));
         else if (lod === 'close') batch.add({ stroke: parchment ? PARCH.inkSoft : '#c4b597', width: px(0.6), alpha: parchment ? 0.45 : 1 }, pathOf(p));
       }
     }
@@ -546,8 +547,8 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
   if (layers.streets) for (const q of scene.quays ?? []) {
     if (!overlaps(shapeBox(q.shape), viewport)) continue;
     const path = shapePath(q.shape);
-    ctx.fillStyle = q.material === 'timber' ? '#b49a6d' : '#c8c0a7'; ctx.fill(path);
-    ctx.strokeStyle = parchment ? PARCH.ink : '#57534b'; ctx.lineWidth = px(0.9); ctx.stroke(path);
+    ctx.fillStyle = q.material === 'timber' ? '#b49a6d' : '#d3cab0'; ctx.fill(path);
+    ctx.strokeStyle = q.kind === 'mole' ? '#2b2015' : parchment ? PARCH.ink : '#57534b'; ctx.lineWidth = px(q.kind === 'mole' ? 1.6 : 0.9); ctx.stroke(path);
   }
 
   if (layers.enclosures) drawCityWallGround(ctx, scene, { viewport, mpp, lod, palette }); // walls hook: ditches and glacis under the streets
@@ -561,7 +562,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
     for (const s of visible) {
       stats.streets++;
       const paint = streetPaint(s.role, s.rank, palette), path = s.path ??= linePath(s.street.path);
-      const w = Math.max(s.width, px(isBoardwalk(s.role) ? 0.8 : STREET_MIN_PX[Math.min(4, Math.max(0, s.rank))])), w2 = Math.round(w * 4) / 4;
+      const w = Math.max(s.width, px(isBoardwalk(s.role) ? 0.8 : s.role === 'mole' ? 3.4 : STREET_MIN_PX[Math.min(4, Math.max(0, s.rank))])), w2 = Math.round(w * 4) / 4;
       if (softStreets && !STRUCTURE_ROLES.has(s.role)) {
         // Blended: earth wash at rank-decaying opacity and a faint soft edge instead of the dark casing.
         const soft = softStreet(s.role, s.rank, tone);
@@ -569,8 +570,8 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
         fill.add({ stroke: soft.fill, width: w2, alpha: soft.alpha, cap: 'round' }, path);
         continue;
       }
-      const edge = s.role === 'bridge' || s.role === 'quay' ? Math.max(1.2, px(1.4)) : lod === 'far' ? 0 : px(lod === 'mid' ? 0.7 : 0.9);
-      const cap = s.role === 'bridge' || s.role === 'quay' ? 'butt' : 'round';
+      const edge = s.role === 'bridge' || s.role === 'quay' || s.role === 'mole' ? Math.max(1.2, px(1.4)) : lod === 'far' ? 0 : px(lod === 'mid' ? 0.7 : 0.9);
+      const cap = s.role === 'bridge' || s.role === 'quay' || s.role === 'mole' ? 'butt' : 'round';
       if (edge > 0) casing.add({ stroke: paint.casing, width: w2 + 2 * edge, dash: paint.dash ? [px(4), px(2)] : undefined, cap }, path);
       fill.add({ stroke: (tex && pat(streetLayer(s.role, s.rank))) || paint.fill, width: w2, cap }, path);
       if (s.role === 'bridge' && w2 > px(3.5)) {

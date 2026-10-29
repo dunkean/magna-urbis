@@ -278,9 +278,9 @@ export function buildStreetStrokes(scene: CityScene, origin: Point): CityGlStrok
   for (const i of order) {
     const s = scene.streets[i], k = key(i), rank = Math.min(15, Math.max(0, s.rank));
     for (let r = Math.max(0, k); r < 16; r++) if (firstWithRank[r] < 0) firstWithRank[r] = w.n;
-    const meta = rank | (CROSSINGS.has(s.role) ? META.crossing : 0) | (s.role === 'ford' ? META.dash : 0) | (s.role === 'bridge' || s.role === 'quay' ? META.solidEdge : 0);
+    const meta = rank | (CROSSINGS.has(s.role) ? META.crossing : 0) | (s.role === 'ford' ? META.dash : 0) | (s.role === 'bridge' || s.role === 'quay' || s.role === 'mole' ? META.solidEdge : 0);
     const ck = `${k}|${cells[i]}`, before = w.n;
-    putPolyline(w, s.street.path, origin, s.width, isBoardwalk(s.role) ? 0.8 : STREET_MIN_PX[Math.min(4, rank)], i, meta, s.role === 'bridge' || s.role === 'quay');
+    putPolyline(w, s.street.path, origin, s.width, isBoardwalk(s.role) ? 0.8 : s.role === 'mole' ? 3.4 : STREET_MIN_PX[Math.min(4, rank)], i, meta, s.role === 'bridge' || s.role === 'quay' || s.role === 'mole');
     if (w.n === before) continue;
     let chunk = chunks[chunks.length - 1];
     if (!chunk || ck !== chunkKey) { chunk = { box: [Infinity, Infinity, -Infinity, -Infinity], first: before, count: 0 }; chunks.push(chunk); chunkKey = ck; }

@@ -153,8 +153,10 @@ pub(in super::super) fn kind(o: &Occupancy) -> Kind {
     if court {
         return Kind::Court;
     }
+    // A village house that is not a farm (artisan, labourer, priest's house)
+    // is a detached cottage: farmsteads come from the programme's farm role.
     if o.zone == "village" {
-        return Kind::Farm;
+        return Kind::Detached;
     }
     Kind::Row
 }
@@ -1934,8 +1936,14 @@ fn preview_form(p: &Parcel, o: &Occupancy, resolved:Option<Kind>) -> (Vec<(Shape
     // Opposite (through-lot) or angled (corner) second frontage.
     let second_i = (1..frames.len()).find(|&i| dot(frames[i].n, main.n) < 0.82);
     let second = second_i.map(|i| frames[i]);
+    let planned = m.text("streetOp") == "grid";
+    // Setbacks, side gaps and range depths follow the same access gradient
+    // as lot sizes and coverage: attached rows thin out into detached houses
+    // with growing gaps and yards, never by zone steps.
+    let zoned = |m: &Morph, key: &str, zone: &str, fallback: [f64; 2]| {
+        super::pressure::graded(m, key, zone, pressure, planned).unwrap_or_else(|| zoned(m, key, zone, fallback))
+    };
     let coverage = {
-        let planned = m.text("streetOp") == "grid";
         let r = super::pressure::adjusted(m, "coverage", zone, pressure, planned, 0.62, 1.03);
         let r = if m.value["coverage"][zone].is_array() {
             r
@@ -2607,6 +2615,11 @@ fn preview_form(p: &Parcel, o: &Occupancy, resolved:Option<Kind>) -> (Vec<(Shape
             lay.body(s0, s1, tf, end, anchor);
         }
         Kind::Detached | Kind::Farm | Kind::Long => {
+            let urban = if zone == "village" { 0.4 * pressure } else { super::pressure::local(zone, pressure) };
+            // Its own stream: the size class never shifts the lot's other draws.
+            let mut sized = Rng::new(o.seed).fork("home-size");
+            let large = if kind == Kind::Farm { 0.12 + 0.25 * ((total - 1500.0) / 3000.0).clamp(0.0, 1.0) } else { 0.06 + 0.14 * o.wealth };
+            let big = if sized.chance(large) { sized.range(1.2, 1.45) } else { 1.0 };
             // On a lot leaning off its street the house and its outbuildings
             // stand square to the lot's sides (« alignées sur la parcelle »,
             // P03 21), the house's front corner at the street; unless the
@@ -2621,12 +2634,16 @@ fn preview_form(p: &Parcel, o: &Occupancy, resolved:Option<Kind>) -> (Vec<(Shape
                     f.range(&b)
                 };
                 let (width, plot_depth) = (s1 - s0, t1 - tf);
+                // Invariant (« petites maisons individuelles »): a home's size
+                // follows the access gradient, small cottages at the fringe and
+                // in villages, town houses near the core; a few larger houses
+                // (well-off households) stand anywhere.
                 let (house_w, house_d) = match kind {
                     Kind::Long => (rng.range(14.0, 28.0), rng.range(5.0, 7.5)),
-                    Kind::Farm => (rng.range(10.0, 16.0), rng.range(7.0, 10.0)),
+                    Kind::Farm => (rng.range(8.0, 12.5) * big, rng.range(6.0, 8.5) * big),
                     _ => (
-                        rng.range(7.0, 12.0) * (0.85 + 0.3 * o.wealth),
-                        depth.min(rng.range(8.0, 11.0)),
+                        rng.range(5.5 + 1.5 * urban, 8.5 + 3.5 * urban) * (0.9 + 0.2 * o.wealth) * big,
+                        depth.min(rng.range(5.5 + 2.5 * urban, 8.0 + 3.0 * urban) * big),
                     ),
                 };
                 let culture = o.morph.value["id"].as_str().unwrap_or("").split('/').next().unwrap_or("");
@@ -2721,14 +2738,16 @@ fn preview_form(p: &Parcel, o: &Occupancy, resolved:Option<Kind>) -> (Vec<(Shape
                 // Farmstead: house, barn and a yard. The barn closes the yard
                 // at the back (three-sided court) or runs along one side; on a
                 // shallow lot it stands beside the house across the yard.
-                let bw = rng.range(6.0, 9.0);
-                let bl = rng.range(9.0, 15.0);
+                // Barns as varied as their farms: mostly a modest barn or byre,
+                // the large grange only on a large farm.
+                let bw = rng.range(5.0, 7.5) * big.sqrt();
+                let bl = rng.range(7.0, 12.0) * big;
                 let mut barn = 0.0;
                 if tail > 8.0 && width > 9.0 {
                     if rng.chance(0.5) {
                         let yard = rng.range(6.0, 12.0).min(tail - 6.0).max(2.0);
                         let start = house_end + yard;
-                        let len = rng.range(10.0, 18.0).min(width);
+                        let len = (rng.range(8.0, 14.0) * big).min(width);
                         let x = s0 + (width - len) * rng.float();
                         barn = lay.put(
                             x,

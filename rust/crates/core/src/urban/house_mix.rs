@@ -36,12 +36,16 @@ impl HomeContext<'_> {
     pub fn area_scale(&self, seed: &str) -> f64 {
         if self.zone == "core" { return 1.0; }
         let p = self.pressure.clamp(0.0, 1.0);
-        let fringe = if self.outside || self.farm || self.district == "gardens"
-            || matches!(self.zone, "faubourg" | "fringe" | "rural" | "village" | "hamlet") {
+        // The fringe grows with distance and falling access pressure alike,
+        // inside or outside a wall (no zone step); farms, gardens and villages
+        // are fringe whole.
+        let fringe = if self.farm || self.district == "gardens"
+            || matches!(self.zone, "fringe" | "rural" | "village" | "hamlet") {
             1.0
-        } else if self.zone == "edge" {
-            ((self.distance - 0.45) / 0.55).clamp(0.0, 1.0)
-        } else { 0.0 };
+        } else {
+            ((self.distance - 0.45) / 0.55).max((0.5 - p) / 0.35).clamp(0.0, 1.0)
+                .max(if self.outside { 0.5 } else { 0.0 })
+        };
         let poor = if self.district == "poor" { 1.0 }
             else { ((0.5 - self.wealth) / 0.25).clamp(0.0, 1.0) };
         let chance = (fringe * (0.6 + 0.1 * (1.0 - p))).max(poor * (0.45 + 0.1 * (1.0 - p)));

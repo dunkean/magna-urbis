@@ -23,7 +23,7 @@
   },
   "wallStiffness": {"roman-core": 0.85, "dwarven": 0.85, "duergar-hold": 0.85, "byzantine-greek": 0.75, "russian-kremlin": 0.7, "giant-hold": 0.7, "japanese-jokamachi": 0.5, "wizard-city": 0.4, "elven": 0.2, "korean": 0.2},
   "groups": {
-    "european": { "wallStiffness": 0.6,
+    "european": { "heightsCastle": 0.8, "wallStiffness": 0.6,
       "cultures": ["european-organic", "bastide", "hanseatic", "flemish-cloth-town", "italian-comune", "rynek-town", "gnomish"],
       "styles": [
         {"style": "curtain", "weight": 1, "maxPop": 2999},
@@ -35,28 +35,28 @@
         {"style": "flanked", "weight": 3, "minPop": 50000}
       ]
     },
-    "islamic": { "wallStiffness": 0.5,
+    "islamic": { "heightsCastle": 0.6, "wallStiffness": 0.5,
       "innerEnclosure": "citadel",
       "cultures": ["medina", "persian", "mesopotamian", "levantine-tell", "al-andalus", "ksar-oasis", "oasis-caravan", "hausa-kano", "hadhrami-tower", "nubian-fortified"],
       "styles": [{"style": "rammed-earth", "weight": 1}]
     },
-    "sinic": { "wallStiffness": 0.0,
+    "sinic": { "heightsCastle": 0.0, "wallStiffness": 0.0,
       "cultures": ["chinese", "korean", "bagan", "vietnamese-citadel"],
       "styles": [{"style": "wengcheng", "weight": 1}]
     },
-    "planned": { "wallStiffness": 0.8,
+    "planned": { "heightsCastle": 0.0, "wallStiffness": 0.8,
       "cultures": ["indian-temple", "dravidian-temple", "javanese-courts", "aztec", "necropolis", "egyptian-planned"],
       "styles": [
         {"style": "curtain", "weight": 2},
         {"style": "flanked", "weight": 1, "minPop": 10000}
       ]
     },
-    "earthwork": { "wallStiffness": 0.25,
+    "earthwork": { "heightsCastle": 0.35, "wallStiffness": 0.25,
       "cultures": ["celtic-oppidum", "norse-ringfort", "barbarian", "barbarian-celtic", "barbarian-norse", "kraal", "native-iroquoian", "native-plains", "nomad-camp", "mongol-ordu", "siberian-camp", "guarani-village", "halfling"],
       "styles": [{"style": "curtain", "weight": 1}],
       "material": "earth-stone", "cornerTurn": null, "towerSpacing": null, "curtainWidthM": 6, "ditch": "dry"
     },
-    "default": { "wallStiffness": 0.6,
+    "default": { "heightsCastle": 0.5, "wallStiffness": 0.6,
       "cultures": [],
       "styles": [
         {"style": "curtain", "weight": 1, "maxPop": 2999},
@@ -70,7 +70,7 @@
     "hausa-kano": {"towerSpacing": null},
     "persian": {"towers": "round"},
     "vietnamese-citadel": {"styles": [{"style": "wengcheng", "weight": 1, "maxPop": 19999}, {"style": "bastioned", "weight": 1, "minPop": 20000}, {"style": "wengcheng", "weight": 1, "minPop": 20000}]},
-    "rajput-fort": {"styles": [{"style": "flanked", "weight": 1}], "towers": "round", "towerRadius": [6, 6], "towerSpacing": [45, 45], "gate": "bab"},
+    "rajput-fort": {"heightsCastle": 1.0, "styles": [{"style": "flanked", "weight": 1}], "towers": "round", "towerRadius": [6, 6], "towerSpacing": [45, 45], "gate": "bab"},
     "indus-planned": {"styles": [{"style": "flanked", "weight": 1}], "towers": "round", "towerRadius": [6, 6], "towerSpacing": [45, 45], "gate": "bab"},
     "dwarven": {"styles": [{"style": "curtain", "weight": 1}], "towers": "square", "curtainWidthM": 6, "heightM": 14},
     "duergar-hold": {"styles": [{"style": "curtain", "weight": 1}], "towers": "square", "curtainWidthM": 6, "heightM": 14},
@@ -87,13 +87,13 @@
     "swahili-stone-town": {"styles": [{"style": "curtain", "weight": 1}], "towers": "square"},
     "yoruba": {"styles": [{"style": "rammed-earth", "weight": 1}], "cornerTurn": null, "towerSpacing": null, "ditch": "dry", "gate": "tower"},
     "sahel": {"styles": [{"style": "rammed-earth", "weight": 1}], "towers": "round"},
-    "japanese-jokamachi": {"styles": [{"style": "curtain", "weight": 1}], "towers": "square", "ditch": "wet"},
-    "caucasian-highland": {"styles": [{"style": "flanked", "weight": 1}], "towers": "square"},
+    "japanese-jokamachi": {"heightsCastle": 1.0, "styles": [{"style": "curtain", "weight": 1}], "towers": "square", "ditch": "wet"},
+    "caucasian-highland": {"heightsCastle": 0.9, "styles": [{"style": "flanked", "weight": 1}], "towers": "square"},
     "ethiopian-highland": {"styles": [{"style": "curtain", "weight": 1}], "towers": "round", "gate": "bab"},
     "orcish": {"styles": [{"style": "flanked", "weight": 1}], "towers": "square", "towerSpacing": [30, 50]},
     "drow-enclave": {"styles": [{"style": "flanked", "weight": 1}], "towers": "square"},
 
-    "russian-kremlin": {"material": "timber-earth"},
+    "russian-kremlin": {"heightsCastle": 1.0, "material": "timber-earth"},
     "maori-pa": {"material": "timber-earth"},
     "mississippian": {"material": "timber-earth"}
   }

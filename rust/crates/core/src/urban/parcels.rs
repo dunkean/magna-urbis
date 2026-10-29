@@ -3396,6 +3396,18 @@ pub(super) fn generate(
     let road_pressures = super::composition::gate_pressures(layout, occupation_pressures(layout).into_iter()
         .enumerate().map(|(bi,p)|layout.programme.as_ref()
             .and_then(|pr|pr.environment.iter().find(|e|e.block==bi)).map_or(p,|e|e.pressure)).collect());
+    // Quarters and blocks have their own character around the access
+    // gradient (« des quartiers variables »): a denser, taller quarter here,
+    // a looser one there, never a uniform ring. One draw per quarter and per
+    // block, so lots, coverage, house sizes and floors all read the same.
+    let road_pressures: Vec<f64> = road_pressures.iter().enumerate().map(|(bi, &p)| {
+        let quarter = layout.blocks[bi].quarter;
+        let q = Rng::new(&layout.key).fork(&format!("quarter-character:{quarter}")).range(-0.12, 0.12);
+        // Keyed by place, not by index: redrawing one quarter leaves the others.
+        let c = super::geometry::centroid(&layout.blocks[bi].shape);
+        let b = Rng::new(&layout.key).fork(&format!("block-character:{:.0}:{:.0}", c.x, c.y)).range(-0.06, 0.06);
+        (p + q + b).clamp(0.05, 1.0)
+    }).collect();
     let culture = if cfg.culture == "site" {
         &layout.culture
     } else {

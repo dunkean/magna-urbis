@@ -130,7 +130,7 @@ function nativeLayoutConfig(config: LayoutConfig) {
     if (input[key] === false || input[key] === undefined) delete input[key];
   for (const key of ['wallStiffness', 'wallTerrain', 'wallRelief', 'wallTowerSpacing', 'ditchWetness'] as const)
     if (input[key] == null) delete input[key];
-  for (const key of ['riverControlMode', 'portEnclosure', 'plannedWall'] as const)
+  for (const key of ['riverControlMode', 'portEnclosure', 'plannedWall', 'heightsCastle'] as const)
     if (!input[key]) delete input[key];
   if (input.portDetachment === 1) delete input.portDetachment;
   if (input.portShelter === 0 && !input.shelteredHarbour) delete input.portShelter;

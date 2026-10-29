@@ -1570,6 +1570,11 @@ fn fortify(
     let walls = fortification::trace_enclosures(walls, &plan.quarters.iter()
         .map(|q| q.shape.clone()).collect::<Vec<_>>(), surface);
     let walls = walls.into_iter().map(|s| fortification::parameter_trace(s, surface, cfg, culture, style.curtain_width)).collect::<Vec<_>>();
+    // A knoll in or at the rim of the town carries its castle, in its own
+    // contour circuit; the town wall runs round it where it stands astride.
+    let occupied: Vec<Shape> = plan.quarters.iter().map(|q| q.shape.clone()).collect();
+    let castle = fortification::heights_castle(&walls, &occupied, &plan.streets, surface, cfg, culture, site.population, &base);
+    let walls = match &castle { Some(c) => fortification::wrap_castle(walls, c), None => walls };
     style.options(cfg);
     let mut inner_style = style.inner(culture, site.population);
     inner_style.options(cfg);
@@ -1630,6 +1635,9 @@ fn fortify(
     }
     if small { fit_enclosed_quarters(&mut plan.quarters, &walls, &plan.streets, surface); }
     partition(&mut plan.quarters, &walls);
+    if let Some(c) = &castle {
+        partition(&mut plan.quarters, std::slice::from_ref(c));
+    }
     let first = plan.enclosures.len();
     let outer = walls.len();
     // Gate passages and causeways are cut at the width the street hierarchy
@@ -1645,7 +1653,8 @@ fn fortify(
             [m.admissibility.min_frontage, m.admissibility.min_depth]
         }),
     };
-    for (i, wall) in walls.iter().chain(&inner_walls).enumerate() {
+    let castle_at = walls.len() + inner_walls.len();
+    for (i, wall) in walls.iter().chain(&inner_walls).chain(castle.iter()).enumerate() {
         let path = closed(&wall.outer);
         let mut gates = gates(&path, &plan.streets);
         let land = gates.len();
@@ -1659,7 +1668,7 @@ fn fortify(
         let mut enclosure = Enclosure {
             path,
             kind: kind.into(),
-            purpose: if citadel && i >= outer { "citadel".into() } else { String::new() },
+            purpose: if i >= castle_at { "castle".into() } else if citadel && i >= outer { "citadel".into() } else { String::new() },
             gates,
             ..Default::default()
         };
@@ -1672,7 +1681,7 @@ fn fortify(
             &banks,
             &plan.streets,
             surface,
-            if i < outer { &style } else { &inner_style },
+            if i < outer || i >= castle_at { &style } else { &inner_style },
             site.population,
             &predicted,
             &base.fork(&format!("enc:{i}")),

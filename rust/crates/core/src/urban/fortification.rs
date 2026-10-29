@@ -448,6 +448,10 @@ fn family_of_kind(kind: &str) -> &'static str {
 mod options;
 pub(super) use options::{option_trace, keeps_citadel, prepare_options, finish_options, gate_villages, service_cost};
 
+#[path = "fortification_heights.rs"]
+mod heights;
+pub(super) use heights::{heights_castle, wrap_castle};
+
 #[path = "fortification_params.rs"]
 mod parameters;
 pub(super) use parameters::{valid_parameters, parameter_trace, port_walls};

@@ -227,6 +227,15 @@ pub(super) fn river_works(layout:&mut Layout,surface:Surface<'_>) {
 /// Facility circuits are within their reserved estates, with the existing
 /// street passage; their interiors remain available to buildings and courtyards.
 pub(in super::super) fn finish_options(layout:&mut Layout,cfg:&LayoutConfig,surface:Surface<'_>) {
+    // The castle's bailey is the lord's garrison district, whatever the options.
+    let castles:Vec<_>=layout.enclosures.iter().filter(|e|e.purpose=="castle")
+        .map(|e|Shape {outer:e.path.clone(),holes:vec![]}).collect();
+    if let Some(s)=&mut layout.structure {for d in &mut s.districts {
+        if !d.quarters.is_empty() && d.quarters.iter().all(|&qi|layout.quarters.get(qi).is_some_and(|q|
+            castles.iter().any(|c|g::contains(c,g::centroid(&q.shape))))) {
+            d.role="garrison".into();d.label="Château".into();d.wealth=d.wealth.max(0.8);
+        }
+    }}
     if !cfg.old_enclosure_citadel {return;}
     let Some(pr)=&layout.programme else {return;};
     let estates:Vec<_>=pr.reservations.iter().filter_map(|r| {

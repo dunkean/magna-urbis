@@ -39,7 +39,7 @@ const ATLAS = ['#dfb973', '#90bdc7', '#c5a3ce', '#a0bc84', '#d29c8e', '#bdc4d5']
 const PAPER = '#f2ead8';
 const PARCH = {
   ink: '#4e3b28', inkSoft: '#5a4530', block: '#e2cf9f', lot: '#ece0bf', yard: '#e6d6a8',
-  garden: '#d3cf98', place: '#ece0bf', market: '#e8d6a6', common: '#cdd097', reserve: '#d8c79a', footprint: '#d9c393',
+  garden: '#d3cf98', place: '#d5cdb7', market: '#d9c9a1', common: '#cdd097', reserve: '#d8c79a', footprint: '#d9c393',
   street: '#f4ead0', streetEdge: '#3f2f1f', bridge: '#f6edd0', ford: '#bccbc8', quay: '#e9dfc4',
   mass: '#4a3826', landmark: '#7d5f40', wall: '#3b2c1c', wallFill: '#6b5540', tower: '#4e3b28',
 };
@@ -77,6 +77,7 @@ const YARD_EARTH = '#b3a27c';
 function paintedYard(d: CityDistrict | undefined, fallback: string): string { return mix(districtColor(d, fallback), YARD_EARTH, 0.45); }
 export function streetPaint(role: string, rank: number, palette: CityPalette): { fill: string; casing: string } {
   if (role === 'track') { const ink = palette === 'ink' ? '#776348' : '#a58e65'; return { fill: ink, casing: ink }; }
+  if (role === 'mole') return { fill: '#d3cab0', casing: '#2b2015' };   // stone port works: dark outline, legible zoomed out
   if (palette === 'ink') return { fill: '#6b5640', casing: '#3c3024' };
   if (isBoardwalk(role)) return { fill: '#b49a6d', casing: '#514431' };
   if (palette === 'parchment') return role === 'ford' ? { fill: PARCH.ford, casing: PARCH.ink } : role === 'bridge' ? { fill: PARCH.bridge, casing: PARCH.wall }
@@ -112,8 +113,8 @@ export function planColors(scene: CityScene, mesh: Pick<CityGlFillMesh, 'layers'
     buildings: false, buildingLines: false };
   if (layers.streets && mesh.layers.quays) (scene.quays ?? []).forEach((q, i) => {
     const f = mesh.layers.quays.features[0] + i;
-    put(fill, f, q.material === 'timber' ? '#b49a6d' : '#c8c0a7');
-    put(line, f, parchment ? PARCH.ink : '#57534b');
+    put(fill, f, q.material === 'timber' ? '#b49a6d' : '#d3cab0');
+    put(line, f, q.kind === 'mole' ? '#2b2015' : parchment ? PARCH.ink : '#57534b');
   });
   if (lod === 'far') {
     if (layers.blocks && blend) {
@@ -154,8 +155,9 @@ export function planColors(scene: CityScene, mesh: Pick<CityGlFillMesh, 'layers'
     const alpha = paved ? PAVED_ALPHA : b.peripheral && view !== 'buildings' ? 0.6 : 1;
     if (paved && color) draws.paved = true;
     put(fill, b0 + i, color, alpha);
-    if (blockStroke) put(line, b0 + i, outline, alpha);
-    draws.blocks ||= !!color; draws.blockLines ||= blockStroke;
+    const square = parchment && b.kind === 'place' && !blockStroke;   // V1 squares keep a thin edge at every zoom
+    if (blockStroke) put(line, b0 + i, outline, alpha); else if (square) put(line, b0 + i, PARCH.inkSoft, 0.7);
+    draws.blocks ||= !!color; draws.blockLines ||= blockStroke || square;
   });
   // Parcels.
   const p0 = mesh.layers.parcels.features[0], parcelLevel: CityLod = view === 'uses' || view === 'roles' ? 'mid' : 'near';
@@ -185,6 +187,7 @@ export function planColors(scene: CityScene, mesh: Pick<CityGlFillMesh, 'layers'
       if (openFill) put(fill, f, openFill, parchment && lod === 'close' ? 0.9 : paved ? PAVED_ALPHA : 1);
       if (paved) draws.paved = true;
       if (lod === 'close') { put(line, f, openFill ? (parchment ? PARCH.inkSoft : '#b9a98d') : parchment ? PARCH.inkSoft : '#c4b597', !parchment ? 1 : openFill ? 0.9 : 0.45); draws.parcelLines = true; }
+      else if (parchment && openFill && (use === 'place' || use === 'market')) { put(line, f, PARCH.inkSoft, 0.7); draws.parcelLines = true; }
     }
     draws.parcels = true;
   });

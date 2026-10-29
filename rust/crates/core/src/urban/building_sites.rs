@@ -1258,6 +1258,7 @@ impl BuildingSiteIndex {
             wealth,
             pressure: parcel.pressure,
             small_home: home_area < 1.0,
+            population: pr.population,
             fronts: &fronts,
             seed: &site_seed,
         });

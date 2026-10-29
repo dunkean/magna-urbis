@@ -571,6 +571,10 @@ pub struct LayoutConfig {
     /// allows it), "rect" always the plan's rectangle, "follow" the town's own trace.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub planned_wall: String,
+    /// Castle on the heights: "" auto (culture share, where a knoll rises in
+    /// or at the rim of the town), "none", "force" (the highest knoll).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub heights_castle: String,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub gate_villages: bool,
     /// Gate nucleus strength. Absent retains the legacy `gateVillages` meaning.
@@ -698,6 +702,7 @@ impl Default for LayoutConfig {
             river_control_mode: String::new(),
             port_enclosure: String::new(),
             planned_wall: String::new(),
+            heights_castle: String::new(),
             gate_villages: false,
             gate_village: None,
             max_street_grade: 0.12,

@@ -775,6 +775,49 @@ fn centers(
     result
 }
 
+/// Invariant (« rectangle sur terrain constructible »): a planned rectangle
+/// is laid where the land holds it. Its centre slides (up to 0.45 radius) and,
+/// unless the plan is cardinal, it turns (up to 16°) to the position whose
+/// rectangle is most buildable (dry, within the buildable grade); a small
+/// cost per metre moved keeps it at its site when the land is even.
+#[allow(clippy::too_many_arguments)]
+fn fit_rectangle(center: Point, target: f64, aspect: f64, angle: f64, cardinal: bool, grade: f64,
+    radius: f64, surface: Surface<'_>) -> (Point, f64, f64, f64) {
+    const K: usize = 14;
+    // Steep land is lost to the plan; a river crossing it is a town's river
+    // (water gates, quays), so water costs half.
+    let score = |c: Point, a: f64, aspect: f64| {
+        let (hx, hy) = ((target * aspect).sqrt() * 0.5, (target / aspect).sqrt() * 0.5);
+        let mut bad = 0.0;
+        for i in 0..K {
+            for j in 0..K {
+                let p = at(c, Point { x: hx * ((i as f64 + 0.5) / K as f64 * 2.0 - 1.0),
+                    y: hy * ((j as f64 + 0.5) / K as f64 * 2.0 - 1.0) }, a);
+                let (gx, gy) = slope(surface, p);
+                bad += if surface.wet(p) { 0.5 } else if gx.hypot(gy) > grade { 1.0 } else { 0.0 };
+            }
+        }
+        1.0 - bad / (K * K) as f64
+    };
+    let turns: &[f64] = if cardinal { &[0.0] } else { &[0.0, -0.14, 0.14, -0.28, 0.28] };
+    let mut best = (score(center, angle, aspect), center, angle, aspect);
+    if best.0 >= 0.92 { return (center, angle, best.0, aspect); }
+    // A valley town stretches along its valley: the plan may lengthen (the
+    // same area) as well as slide and turn.
+    for (&t, &k) in turns.iter().flat_map(|t| [1.0, 1.5, 1.0 / 1.5, 2.0, 0.5].iter().map(move |k| (t, k))) {
+        for i in -4..=4 {
+            for j in -4..=4 {
+                let c = Point { x: center.x + 0.45 * radius * i as f64 / 4.0, y: center.y + 0.45 * radius * j as f64 / 4.0 };
+                if surface.wet(c) { continue; }
+                let moved = (c.x - center.x).hypot(c.y - center.y) / radius;
+                let v = score(c, angle + t, aspect * k) - 0.15 * moved - 0.05 * t.abs() - 0.03 * f64::ln(k).abs();
+                if v > best.0 + 0.01 { best = (v, c, angle + t, aspect * k); }
+            }
+        }
+    }
+    (best.1, best.2, best.0, best.3)
+}
+
 fn template(
     center: Point,
     family: &str,
@@ -2209,6 +2252,20 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
     let radius = (target / PI).sqrt();
     let geography = geography(site, cfg, surface, radius);
     let family = family(site, cfg, geography, radius);
+    // A planned walled culture on uneven land keeps its rectangle wherever a
+    // rectangle, slid, turned or lengthened, still finds four fifths of
+    // buildable land;
+    // only then does the town fall back to an organic outline.
+    let family = if family != "rectangle" && cfg.footprint.family == "auto" && geometric_foundation(site, cfg) {
+        let culture = if cfg.culture == "site" { &site.culture } else { &cfg.culture };
+        let p = profiles::settlement_profile(culture, site.population, cfg.footprint.epochs);
+        let aspect = if p.enclosure == "square" { 1.0 } else { cfg.footprint.aspect };
+        let fitted = p.enclosure != "circle" && fit_rectangle(site.center, target, aspect, orientation(site, cfg, surface, roads),
+            p.orientation == "cardinal", buildable_grade(site, cfg), radius, surface).2 >= 0.8;
+        if fitted { "rectangle" } else { family }
+    } else {
+        family
+    };
     let mechanism = mechanism(cfg, family);
     let angle = if cfg.footprint.family == "auto" && family == "elongated" {
         geography.contour_angle + cfg.footprint.orientation.to_radians()
@@ -2220,6 +2277,19 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
         if let Some(c) = centers.first_mut() { c.point = summit; }
         access
     });
+    let mut fitted_aspect = None;
+    let angle = if mechanism == "planned" && family == "rectangle" && centers.len() == 1 && summit_access.is_none() {
+        let culture = if cfg.culture == "site" { &site.culture } else { &cfg.culture };
+        let p = profiles::settlement_profile(culture, site.population, cfg.footprint.epochs);
+        let aspect = if cfg.footprint.family == "auto" && p.enclosure == "square" { 1.0 } else { cfg.footprint.aspect };
+        let (c, a, _, k) = fit_rectangle(centers[0].point, target, aspect, angle, p.orientation == "cardinal",
+            buildable_grade(site, cfg), radius, surface);
+        centers[0].point = c;
+        fitted_aspect = Some(k);
+        a
+    } else {
+        angle
+    };
     // A town above a coastal escarpment keeps its civic nucleus. Seed its
     // lower port as well, only across a real dry route within configured grades.
     let port_access = if site.population >= 3000 && macroplan::harbour::port_town(cfg) {
@@ -2292,6 +2362,7 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
     {
         foundation_cfg.footprint.aspect = 1.0;
     }
+    if let Some(k) = fitted_aspect { foundation_cfg.footprint.aspect = k; }
     let mut ribbon_axes = vec![];
     let (reserve, mut phases, mut crossings) = if centers.is_empty() {
         (vec![], vec![vec![]; epochs], vec![])
