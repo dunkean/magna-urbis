@@ -20,7 +20,9 @@ export interface TerrainControlBindings {
   disabled?: () => boolean;
   context?: TerrainSketchContext;
 }
-export interface TerrainControls { sync(): void; dispose(): void; sketchHost: HTMLElement }
+export interface TerrainControls { sync(): void; dispose(): void; sketchHost: HTMLElement;
+  /** The same value model as the mounted forms (defaults, climate and preset side effects), for staged forms. */
+  access: { get(path: string): unknown; set(path: string, value: unknown): void } }
 
 const ui = {
   width: copy('Map width', 'Largeur de la carte'), auto: copy('Adapt size automatically', 'Adapter automatiquement la taille'),
@@ -294,5 +296,5 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
     for (const option of Array.from(reliefSelect.options)) option.disabled = isNeural && !['flat', 'hills', 'valley', 'mountains', 'mixed', 'plateau', 'high-mountains'].includes(option.value) || compact && !['flat','hills','valley','canyon','mountains','mixed','high-mountains'].includes(option.value);
   }
   sync();
-  return { sync, sketchHost, dispose: () => { cleanup.forEach(fn => fn()); forms.forEach(form => form.dispose()); sketchControls?.dispose(); root.replaceChildren(); } };
+  return { sync, sketchHost, access: { get, set }, dispose: () => { cleanup.forEach(fn => fn()); forms.forEach(form => form.dispose()); sketchControls?.dispose(); root.replaceChildren(); } };
 }

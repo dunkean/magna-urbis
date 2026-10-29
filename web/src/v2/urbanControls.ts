@@ -14,6 +14,9 @@ export type UrbanControlScope =
   | { kind: 'quarter' | 'parcel'; key: string; id: string; defaults?: Record<string, unknown> }
   | { kind: 'building'; key: string; id: string; defaults?: Partial<HouseConfig> };
 export interface UrbanControls { sync(): void; dispose(): void }
+export type UrbanControlExtra = 'header' | 'phases' | 'mixtures' | 'archetypes' | 'catalogue';
+/** A subset of the form, so the staged V2 chain can place each native section in its own stage row. */
+export interface UrbanControlParts { sections?: readonly string[]; extras?: readonly UrbanControlExtra[] }
 const clone = <T>(value: T): T => structuredClone(value);
 const isObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 export function mergeUrbanControlValues(...sources: unknown[]): Record<string, unknown> {
@@ -153,7 +156,8 @@ function localFields(scope: UrbanControlScope): UrbanParameterField[] {
 
 /** Shared native City Bench controls at world, settlement, quarter, lot and individual-house levels.
  * Deliberately returns a stable form: sync updates values and inheritance without replacing controls. */
-export function mountUrbanControls(root: HTMLElement, getSettings: () => V2Settings, changed: () => void, scope: UrbanControlScope = { kind: 'global' }): UrbanControls {
+export function mountUrbanControls(root: HTMLElement, getSettings: () => V2Settings, changed: () => void, scope: UrbanControlScope = { kind: 'global' }, parts?: UrbanControlParts): UrbanControls {
+  const extra = (name: UrbanControlExtra) => !parts?.extras || parts.extras.includes(name);
   root.classList.add('v2-urban-controls');
   const forms: ParameterForm[] = [], effects: (() => void)[] = [];
   const fields = localFields(scope), global = scope.kind === 'global' || scope.kind === 'settlement';
@@ -162,6 +166,7 @@ export function mountUrbanControls(root: HTMLElement, getSettings: () => V2Setti
   let effectiveCache: Record<string, unknown> | undefined;
   const effective = (path: string) => readSettingPath(effectiveCache ?? urbanEffectiveValues(getSettings(), scope), path);
   const set = (path: string, value: unknown) => { writeUrbanControl(getSettings(), scope, path, value); changed(); sync(); };
+  if (extra('header')) {
   message(root, scope.kind === 'settlement' ? 'Inherited from global settings. Every field can be overridden independently.' : global ? 'Empty fields inherit the cultural recipe. Changes apply on generation.' : 'Quarter and lot identifiers belong to this settlement. Native site constraints remain binding.');
   button(root, 'Reset this scope', () => {
     const settings = getSettings(), values = urbanScopeValues(settings, scope);
@@ -173,8 +178,10 @@ export function mountUrbanControls(root: HTMLElement, getSettings: () => V2Setti
     const stageRoot = document.createElement('div'); root.append(stageRoot);
     forms.push(mountParameterForm(stageRoot, [{ path: 'through', label: 'Generate through', type: 'select', optional: true, options: ['layout', 'parcels', 'programme', 'buildings'].map(value => ({ value, label: value[0].toUpperCase() + value.slice(1) })) }], { getValue: path => readSettingPath(own(), path), setValue: set }));
   }
+  }
   let modelEnabled: HTMLInputElement | undefined;
   for (const [key, names] of Object.entries(urbanSectionNames)) {
+    if (parts?.sections && !parts.sections.includes(key)) continue;
     const members = fields.filter(f => f.section === key); if (!members.length) continue;
     const details = section(root, names[0], !global || key === 'layout');
     if (key === 'house' && global) {
@@ -218,9 +225,9 @@ export function mountUrbanControls(root: HTMLElement, getSettings: () => V2Setti
     }
     if (key === 'programme') message(details, 'Names, roles, resources and lore are identifiers used by the generator; resource lists accept commas or line breaks.');
   }
-  if (global) { mountPhaseControls(); mountHouseMixtures(); mountSiteArchetypes(); }
+  if (global) { if (extra('phases')) mountPhaseControls(); if (extra('mixtures')) mountHouseMixtures(); if (extra('archetypes')) mountSiteArchetypes(); }
   if (scope.kind === 'quarter' || scope.kind === 'parcel') mountOutline();
-  if (global || scope.kind === 'building') mountCatalogue();
+  if ((global || scope.kind === 'building') && extra('catalogue')) mountCatalogue();
   function sync(): void { effectiveCache = urbanEffectiveValues(getSettings(), scope); effects.forEach(effect => effect()); forms.forEach(form => form.sync()); }
   function mountPhaseControls(): void {
     const box = section(root, 'Cultural rules by growth zone');

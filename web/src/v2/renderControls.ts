@@ -102,6 +102,19 @@ const perspectiveFields = [flag('city.plan', 'City plan in 3D', 'Plan de ville e
   choice('city.refinement', 'Surface refinement in 3D', 'Raffinement de surface en 3D', [['source', 'Source heights', 'Altitudes source'], ['noise', 'Multiscale detail', 'Détail multi-échelle']])];
 export const renderControlFields = [...styleFields, ...visibilityFields, ...commonFields, ...terrainFields, ...lightingFields, ...cityFields, ...cityLayerFields, ...perspectiveFields, ...fantasyFields, ...seasonFields, ...forestFields, ...diagnosticFields];
 
+/** Panel section of every appearance control (the staged Display rows place one or more sections each). */
+const strip = (fields: readonly ParameterField[]) => fields.map(field => field.path.replace('appearance.', ''));
+export const RENDER_SECTION_FIELDS: Record<RenderSection, readonly string[]> = {
+  general: ['renderer', 'labels', 'legend', 'cartouche', 'terrainLayers.frame'],
+  relief: [...strip(lightingFields), 'city.exaggeration', 'city.refinement'],
+  ground: ['terrainStyle', 'terrainLayers.relief', 'terrainLayers.hypsometry'],
+  cover: ['contours', 'landuse', 'painted', 'vegetation', ...strip(fantasyFields), ...strip(seasonFields), ...strip(forestFields)],
+  roads: ['roads', 'city.layers.streets', 'city.groundBlend'],
+  water: ['terrainLayers.water', 'lakes', 'oxbows'],
+  buildings: ['buildings', 'city.plan', 'city.colors', ...strip(cityFields).filter(path => path !== 'city.groundBlend'), ...strip(cityLayerFields).filter(path => path !== 'city.layers.streets')],
+  diagnostics: ['diagnostic'],
+};
+
 const defaultCityLayers = { reserve: false, allocated: false, centers: false, domains: true, quarters: false, blocks: true, streets: true, enclosures: true, parcels: true, gardens: true, places: true, fronts: false, axes: false, access: false };
 /** Defaults are read without expanding an older saved recipe. */
 export function renderControlValues(settings: V2Settings, world?: World): V2Appearance {
@@ -158,14 +171,12 @@ export function mountRenderControls(host: HTMLElement, bindings: RenderControlBi
     forms.push(mountParameterForm(body, fields, { getValue: path => readSettingPath({ appearance: renderControlValues(bindings.getSettings(), bindings.getWorld?.()) }, path),
       setValue: (path, value) => { writeAppearanceControl(bindings.getSettings(), path, value); bindings.onChange(); sync(); } }));
   };
-  const byPath = (...paths: string[]) => renderControlFields.filter(field => paths.includes(field.path.replace('appearance.', '')));
-  section('general', byPath('renderer', 'labels', 'legend', 'cartouche', 'terrainLayers.frame'));
-  section('relief', [...lightingFields, ...byPath('city.exaggeration', 'city.refinement')]);
-  section('ground', [...styleFields, ...byPath('terrainLayers.relief', 'terrainLayers.hypsometry')]);
-  section('cover', byPath('contours', 'landuse', 'painted', 'vegetation'));
-  section('roads', byPath('roads', 'city.layers.streets', 'city.groundBlend'));
-  section('water', byPath('terrainLayers.water', 'lakes', 'oxbows'));
-  section('buildings', [...byPath('buildings', 'city.plan', 'city.colors'), ...cityFields.filter(field => !field.path.endsWith('groundBlend')), ...cityLayerFields.filter(field => !field.path.endsWith('streets'))]);
+  // Keep the listed order: RENDER_SECTION_FIELDS is the single description of the panel layout.
+  const byPath = (...paths: readonly string[]) => paths.map(path => renderControlFields.find(field => field.path === `appearance.${path}`)!);
+  for (const key of ['general', 'relief', 'ground', 'cover', 'roads', 'water', 'buildings'] as const) {
+    const conditionalPaths = key === 'cover' ? strip([...fantasyFields, ...seasonFields, ...forestFields]) : [];
+    section(key, byPath(...RENDER_SECTION_FIELDS[key].filter(path => !conditionalPaths.includes(path))));
+  }
   const conditional = (label: string, fields: ParameterField[]) => {
     const group = document.createElement('details'), summary = document.createElement('summary'); setText(summary, label); group.append(summary);
     const body = document.createElement('div'); group.append(body); panel.bodies.cover.append(group);
@@ -183,6 +194,9 @@ export function mountRenderControls(host: HTMLElement, bindings: RenderControlBi
     getPalette: () => { const s = bindings.getSettings(), a = renderControlValues(s, bindings.getWorld?.()); return a.renderer === 'classic' ? biomePalette(a.style, s.options.biome) : terrainStyle(a.terrainStyle ?? a.style).palette; },
     setColor: (key, value) => { writeAppearanceControl(bindings.getSettings(), `appearance.colors.${key}`, value); bindings.onChange(); },
   });
+  // Captured once: the staged V2 chain relocates section bodies outside this panel.
+  const styleSelect = root.querySelector<HTMLSelectElement>('[data-setting-path="appearance.terrainStyle"]')!;
+  const diagnostic = root.querySelector<HTMLSelectElement>('[data-setting-path="appearance.diagnostic"]')!;
   bindTree(root);
   function sync(): void {
     for (const form of forms) form.sync();
@@ -190,14 +204,12 @@ export function mountRenderControls(host: HTMLElement, bindings: RenderControlBi
     const bench = a.renderer === 'bench', style = a.terrainStyle ?? a.style;
     colors.sync();
     const customized = appearanceCustomized(settings, world);
-    const styleSelect = root.querySelector<HTMLSelectElement>('[data-setting-path="appearance.terrainStyle"]')!;
     for (const select of [styleSelect, ...(bindings.getStyleSelectors?.() ?? [])]) markStyleCustomized(select, customized);
     fantasy.hidden = !bench || !style.startsWith('fantasy-'); season.hidden = !bench || !style.startsWith('render-v2');
     forest.hidden = !bench || !/^(render3d|render-v2)/.test(style);
     const source = world?.terrain as World['terrain'] & { v2NativeTerrain?: { water?: unknown; hydrology?: unknown } } | undefined;
     const waterEngine = source?.v2NativeTerrain?.water ? 'vector' : source?.v2NativeTerrain?.hydrology ? 'rust'
       : world ? 'none' : settings.terrain?.hydrology?.engine ?? 'rust';
-    const diagnostic = root.querySelector<HTMLSelectElement>('[data-setting-path="appearance.diagnostic"]')!;
     for (const option of Array.from(diagnostic.options)) option.disabled = !diagnosticAvailable(option.value, waterEngine);
     unavailable.hidden = diagnosticAvailable(a.diagnostic ?? 'none', waterEngine);
   }

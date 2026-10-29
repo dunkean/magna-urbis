@@ -6,7 +6,7 @@ import { defaultTerrainSettings, DEFAULT_HYDROLOGY, DEFAULT_NEURAL_TUNING, valid
 import { CLIMATE_VALUES } from '../../../rust/bridge/terrainClimate';
 import { DEFAULT_FRACTAL_DETAIL } from '../../../rust/bridge/terrainAdjust';
 import type { TerrainProgressCallback } from '../../../rust/bridge/terrainProgress';
-import { isCompactProcedural } from '../../../rust/bridge/terrainGenerationRecipe';
+import { isCompactProcedural, type GenerationControl } from '../../../rust/bridge/terrainGenerationRecipe';
 export type PlatformProgress = { phase: 'detecting' | 'loading' | 'ready' | 'unavailable'; message: string; source: 'browser' | 'rust' | 'python' };
 export interface PlatformCapabilities {
   cpu: true;
@@ -229,6 +229,13 @@ export async function generateEngineHeight(request: EngineHeightRequest, onProgr
     ? observePythonStatus(pythonServer, event => onProgress?.(event.message), signal)
     : usesNeural && request.source === 'neural' ? observeNativeNeuralStatus(neuralServer, event => onProgress?.(event.message), signal) : () => {};
   try {
+    // Stage timings for the V2 chain: the decomposed recipe already selects the staged CPU pipeline,
+    // so a preview-free control only reports stage boundaries (no readbacks, no extra copies).
+    const lab: GenerationControl | undefined = settings.procedural && !usesNeural && !custom.sketch && !custom.zones && !request.native ? {
+      previews: false,
+      before: async stage => { onProgress?.(`Procedural stage · ${stage}`, { stage: `pipeline:${stage}` }); },
+      after: async stage => { onProgress?.(`Procedural stage · ${stage} · done`, { stage: `pipeline:${stage}:done` }); },
+    } : undefined;
     const result = await sampleRustTerrain({
       id: 1, generation: 1, kind: 'overview',
       ...(request.native ? { runtime: { profile: 'local' as const, server: localServer } } : {}),
@@ -237,7 +244,7 @@ export async function generateEngineHeight(request: EngineHeightRequest, onProgr
       // SVG mode applies conditioning, hydrology carving and fractal detail to the retained height samples.
       display: 'svg',
       retainField: true,
-    }, undefined, onProgress);
+    }, undefined, onProgress, lab);
     signal?.throwIfAborted();
     if (request.compute === 'gpu' && request.source !== 'neural-python' && request.source !== 'neural' && result.backend !== 'gpu-f32') {
       throw new Error(`Le calcul GPU demandé a échoué : ${result.backendReason ?? result.generationReason ?? 'GPU indisponible'}. Choisissez CPU ou Automatique.`);

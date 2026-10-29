@@ -8,6 +8,11 @@ if an implementation discovers a stage is wrong or missing, update this file fir
 
 `when` = availability condition (source/backend). `opt` = can be toggled off.
 
+2026-10-29 (V2 staged UI): `relief-refine` added (the fractal refinement controls had no stage);
+`relief-conditioning`, `relief-aeolian` and `relief-coasts` narrowed to the sources where the
+engine applies them. `city-trim` and `city-houses` are optional in the contract, but the engine has
+no independent switch yet: the UI shows a locked switch with the reason.
+
 ## Relief
 | id | name | when | opt |
 | --- | --- | --- | --- |
@@ -27,9 +32,10 @@ if an implementation discovers a stage is wrong or missing, update this file fir
 | relief-neural-base | Neural base diffusion | neural | no |
 | relief-neural-decoder | Neural decoder / amplification | neural | no |
 | relief-heightmap-fit | Heightmap fit (resample, vertical scale, datum, crop) | heightmap / library | no |
-| relief-conditioning | Posterior fluvial conditioning | always | yes |
-| relief-aeolian | Aeolian transport | always | yes |
-| relief-coasts | Coasts (marine mask, coastal erosion) | always | yes |
+| relief-refine | Fractal refinement (slope-dependent detail below the source cell) | procedural / neural / heightmap (not classic) | yes |
+| relief-conditioning | Posterior fluvial conditioning | procedural (the posterior operators read the decomposed procedural recipe) | yes |
+| relief-aeolian | Aeolian transport | procedural (same recipe) | yes |
+| relief-coasts | Coasts (marine mask, coastal erosion) | procedural / neural (an imported surface keeps its own coastline) | yes |
 
 ## Water and natural cover
 | id | name | when | opt |

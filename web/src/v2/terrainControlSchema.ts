@@ -191,4 +191,28 @@ export const terrainForestFields: ParameterField[] = [
   { ...number('forest.density', 'Forest density (%)', 'Densité forestière (%)', 0, 200, 5), toInput: value => Number(value) * 100, fromInput: value => Number(value) / 100 },
   { ...number('forest.clearings', 'Natural clearings (%)', 'Clairières naturelles (%)', 0, 100, 5), toInput: value => Number(value) * 100, fromInput: value => Number(value) / 100 },
 ];
+/** Decomposed procedural recipe (`terrain.procedural`, rust/bridge/terrainGenerationRecipe.ts): the
+ * stage controls of the Rustbench procedural inspector. Empty values keep the engine / biome default. */
+const recipeNumber = (path: string, en: string, fr: string, min: number, max: number, step: number): ParameterField => ({ ...number(`procedural.${path}`, en, fr, min, max, step, undefined, true), placeholder: copy('Engine default', 'Défaut du moteur') });
+export const terrainProceduralStageFields: ParameterField[] = [
+  recipeNumber('regionalN', 'Regional grid (side)', 'Grille régionale (côté)', 64, 640, 1),
+  recipeNumber('surfaceN', 'Surface grid (without margin)', 'Grille de surface (hors marge)', 64, 1024, 1),
+  recipeNumber('noiseScale', 'Regional noise scale ×', 'Échelle du bruit régional ×', .25, 4, .05),
+  recipeNumber('crest', 'Crest strength', 'Force des crêtes', 0, 1.5, .05),
+  recipeNumber('uplift', 'Uplift ×', 'Soulèvement ×', 0, 4, .05),
+  { ...bool('procedural.regionalThermal', 'Thermal relaxation in the cycles', 'Relaxation thermique dans les cycles'), optional: true },
+  { ...bool('procedural.regionalDiffusion', 'Diffusion in the cycles', 'Diffusion dans les cycles'), optional: true },
+  { ...select('procedural.reconstruction', 'Reconstruction', 'Reconstruction', simple([['default', 'Engine reconstruction', 'Reconstruction du moteur'], ['cubic', 'Bounded bicubic', 'Bicubique bornée'], ['bspline', 'Positive B-spline', 'B-spline positive']])), optional: true },
+  { ...select('procedural.posterior.mode', 'Posterior conditioning', 'Conditionnement a posteriori', simple([['none', 'None', 'Aucun'], ['erosion', 'Fluvial erosion', 'Érosion fluviale'], ['breach', 'Open depressions', 'Ouverture des dépressions'], ['both', 'Erosion and opening', 'Érosion et ouverture']])), optional: true },
+  recipeNumber('posterior.strength', 'CPU fluvial strength', 'Force fluviale CPU', 0, 5, .1),
+  recipeNumber('posterior.maxDepth', 'Maximum opening depth (m)', 'Profondeur maximale d’ouverture (m)', 0, 100, 1),
+  recipeNumber('posterior.maxLength', 'Maximum opening length (m)', 'Longueur maximale d’ouverture (m)', 0, 2000, 10),
+  recipeNumber('wind.iterations', 'Aeolian passes', 'Passes éoliennes', 0, 100, 1),
+  recipeNumber('wind.azimuth', 'Wind blows towards (°)', 'Direction vers laquelle souffle le vent (°)', 0, 360, 5),
+  recipeNumber('wind.transport', 'Maximum transport (m / pass)', 'Transport maximal (m / passe)', 0, 5, .05),
+  recipeNumber('coastIterations', 'Coastal erosion cycles', 'Cycles d’érosion côtière', 0, 100, 1),
+  recipeNumber('coastIncision', 'Coastal incision ×', 'Incision côtière ×', 0, 10, .05),
+  recipeNumber('coastThermal', 'Coastal thermal ×', 'Thermique côtière ×', 0, 10, .05),
+  recipeNumber('coastDiffusion', 'Coastal diffusion ×', 'Diffusion côtière ×', 0, 10, .05),
+];
 export const allTerrainFields = [...terrainSourceFields, ...terrainBasicFields, ...terrainProceduralFields, ...terrainClimateFields, ...terrainNeuralFields, ...terrainModelFields, ...terrainErosionFields, ...terrainRefinementFields, ...terrainHydrologyFields, ...terrainRustHydrologyFields, ...terrainVectorHydrologyFields, ...terrainForestFields];

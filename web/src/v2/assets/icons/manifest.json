@@ -1,0 +1,890 @@
+{
+  "generated": "2026-10-29",
+  "method": "Built-in image_gen.imagegen with transparent_background=true; one initial generation and one corrective regeneration per atlas. Selected original PNGs copied byte-for-byte. Pillow: split equal 3x3 cells, clear only alpha=1 stray noise in derivatives, trim alpha bounds, fit within 112x112, center on 128x128 transparent canvas with at least 8px margin; lossless RGBA WebP.",
+  "atlases": [
+    {
+      "file": "atlas-stages.png",
+      "prompt": "Use case: stylized-concept.\nAsset type: square PNG sprite atlas of nine premium strategy-game inventory icons for the Magna Urbis medieval-fantasy cartography desktop application.\nStyle reference: the existing V2 icons have hand-painted watercolor/gouache parchment maps, dimensional stone towns with terracotta roofs, moss-green foliage and rich antique brass objects, softly shaded natural materials, gently dark painted contours, warm ivory highlights. Match that cohesive premium hand-painted style. Bold simple silhouettes readable at 28–40 pixels; reduce tiny detail. Slight 3/4 top view unless the specified object requires flat top-down.\nPalette: warm ivory parchment, antique brass/gold trim, moss green, slate-blue water, terracotta roofs. Soft natural lighting from upper left.\nCOMPOSITION IS CRITICAL: one square image, exactly THREE equal columns by THREE equal rows, exactly NINE isolated icons. Invisible regular 3x3 grid. Reading order is left to right, top to bottom. Center each entire icon at its cell center. Each icon including all shadows, glow, arrows and accessory parts fits within the central 50% of BOTH dimensions of its cell. Generous completely transparent gutters on every side. All nine icons have consistent visual scale. No parts touch a cell edge or cross into a neighboring cell. Do not draw the grid.\nBackground: genuine alpha transparency everywhere outside the nine objects, including gutters; no colored backdrop, no opaque ground plane, no checkerboard pattern. Object-specific terrain/map swatches are allowed ONLY where explicitly described below.\nAvoid: text, letters, numerals, logos, faces, UI frames, decorative background plates, borders, watermark. Dice may have simple round pips, never numerals. No labels or captions.\nExactly these nine subjects in this exact cell order:\nRow 1, column 1: A small block of mountainous terrain with two peaks (relief stage).\nRow 1, column 2: A river meeting a small lake with a few trees on its bank (water and natural cover).\nRow 1, column 3: Three tiny hamlets connected by a dirt road on a parchment patch (regional settlements and roads).\nRow 2, column 1: A compact walled town with terracotta roofs (one city).\nRow 2, column 2: An artist's brass-rimmed painting palette with a small brush (display/appearance).\nRow 2, column 3: A pair of brass dice resting on a terrain swatch (procedural generation).\nRow 3, column 1: A glowing faceted crystal over a terrain swatch, cool blue light (neural generation); glow must fade fully to alpha within its cell.\nRow 3, column 2: A single grayscale heightmap tile (soft white peaks on black) with a brass arrow entering it (import a heightmap); tile is grayscale, arrow is brass.\nRow 3, column 3: A small open wooden drawer holding three stacked grayscale heightmap tiles (heightmap library); tiles show soft white mountain shapes on black.\nSTRICT PRODUCTION CORRECTION: Make the objects SMALLER than a usual contact sheet. Every cell must have a broad completely empty transparent margin of at least 20% of the cell width and height on every side. Center all objects at the exact centers of the nine equal cells (one sixth, one half, five sixths of canvas dimensions). Object artwork occupies only about HALF its cell width/height. Do NOT fill the atlas tightly. All shadows and glow must end well before the generous cell margins. The gutter pixels must have alpha exactly ZERO, with no faint stray paint, specks, glows or invisible noise. For the webgpu gem use short contained rays; for the light icon keep the sun small and close to the hill. Never draw cell boundaries. Precisely nine compact icons in a uniform invisible 3x3 square lattice.",
+      "size": [
+        1254,
+        1254
+      ],
+      "sha256": "602a701ce320050facbc74d53a44ede7bc45d12399b6cdd262d4e82f1bcfabe7",
+      "cell_size": [
+        418,
+        418
+      ],
+      "generation_attempts": 2,
+      "alpha_one_gutter_artifacts": true
+    },
+    {
+      "file": "atlas-display.png",
+      "prompt": "Use case: stylized-concept.\nAsset type: square PNG sprite atlas of nine premium strategy-game inventory icons for the Magna Urbis medieval-fantasy cartography desktop application.\nStyle reference: the existing V2 icons have hand-painted watercolor/gouache parchment maps, dimensional stone towns with terracotta roofs, moss-green foliage and rich antique brass objects, softly shaded natural materials, gently dark painted contours, warm ivory highlights. Match that cohesive premium hand-painted style. Bold simple silhouettes readable at 28–40 pixels; reduce tiny detail. Slight 3/4 top view unless the specified object requires flat top-down.\nPalette: warm ivory parchment, antique brass/gold trim, moss green, slate-blue water, terracotta roofs. Soft natural lighting from upper left.\nCOMPOSITION IS CRITICAL: one square image, exactly THREE equal columns by THREE equal rows, exactly NINE isolated icons. Invisible regular 3x3 grid. Reading order is left to right, top to bottom. Center each entire icon at its cell center. Each icon including all shadows, glow, arrows and accessory parts fits within the central 50% of BOTH dimensions of its cell. Generous completely transparent gutters on every side. All nine icons have consistent visual scale. No parts touch a cell edge or cross into a neighboring cell. Do not draw the grid.\nBackground: genuine alpha transparency everywhere outside the nine objects, including gutters; no colored backdrop, no opaque ground plane, no checkerboard pattern. Object-specific terrain/map swatches are allowed ONLY where explicitly described below.\nAvoid: text, letters, numerals, logos, faces, UI frames, decorative background plates, borders, watermark. Dice may have simple round pips, never numerals. No labels or captions.\nExactly these nine subjects in this exact cell order:\nRow 1, column 1: Three overlapping colour swatches (ochre, green, blue) fanned out like cards.\nRow 1, column 2: Three stacked translucent parchment map sheets; no writing.\nRow 1, column 3: A flat top-down map sheet lying perfectly flat; no raised terrain and no writing.\nRow 2, column 1: An isometric terrain block with visible earth side walls.\nRow 2, column 2: Three small houses with differently coloured roofs: red, blue, ochre.\nRow 2, column 3: A paved stone road curving across grass.\nRow 3, column 1: A square of textured earth and grass ground material sample.\nRow 3, column 2: A small unrolled parchment banner/ribbon tag, completely blank with NO writing.\nRow 3, column 3: A brass sun disc casting a shadow over a small hill; disc and hill form one compact isolated icon.\nSTRICT PRODUCTION CORRECTION: Make the objects SMALLER than a usual contact sheet. Every cell must have a broad completely empty transparent margin of at least 20% of the cell width and height on every side. Center all objects at the exact centers of the nine equal cells (one sixth, one half, five sixths of canvas dimensions). Object artwork occupies only about HALF its cell width/height. Do NOT fill the atlas tightly. All shadows and glow must end well before the generous cell margins. The gutter pixels must have alpha exactly ZERO, with no faint stray paint, specks, glows or invisible noise. For the webgpu gem use short contained rays; for the light icon keep the sun small and close to the hill. Never draw cell boundaries. Precisely nine compact icons in a uniform invisible 3x3 square lattice.",
+      "size": [
+        1254,
+        1254
+      ],
+      "sha256": "61ad3f3e38e989d5fa4d395e86d12726710fe060f47ef062312af1693dd11233",
+      "cell_size": [
+        418,
+        418
+      ],
+      "generation_attempts": 2,
+      "alpha_one_gutter_artifacts": true
+    },
+    {
+      "file": "atlas-backends.png",
+      "prompt": "Use case: stylized-concept.\nAsset type: square PNG sprite atlas of nine premium strategy-game inventory icons for the Magna Urbis medieval-fantasy cartography desktop application.\nStyle reference: the existing V2 icons have hand-painted watercolor/gouache parchment maps, dimensional stone towns with terracotta roofs, moss-green foliage and rich antique brass objects, softly shaded natural materials, gently dark painted contours, warm ivory highlights. Match that cohesive premium hand-painted style. Bold simple silhouettes readable at 28–40 pixels; reduce tiny detail. Slight 3/4 top view unless the specified object requires flat top-down.\nPalette: warm ivory parchment, antique brass/gold trim, moss green, slate-blue water, terracotta roofs. Soft natural lighting from upper left.\nCOMPOSITION IS CRITICAL: one square image, exactly THREE equal columns by THREE equal rows, exactly NINE isolated icons. Invisible regular 3x3 grid. Reading order is left to right, top to bottom. Center each entire icon at its cell center. Each icon including all shadows, glow, arrows and accessory parts fits within the central 50% of BOTH dimensions of its cell. Generous completely transparent gutters on every side. All nine icons have consistent visual scale. No parts touch a cell edge or cross into a neighboring cell. Do not draw the grid.\nBackground: genuine alpha transparency everywhere outside the nine objects, including gutters; no colored backdrop, no opaque ground plane, no checkerboard pattern. Object-specific terrain/map swatches are allowed ONLY where explicitly described below.\nAvoid: text, letters, numerals, logos, faces, UI frames, decorative background plates, borders, watermark. Dice may have simple round pips, never numerals. No labels or captions.\nExactly these nine subjects in this exact cell order:\nRow 1, column 1: A brass and green circuit microchip.\nRow 1, column 2: A brass graphics card with a fan.\nRow 1, column 3: A single brass cogwheel.\nRow 2, column 1: Four small interlocking brass cogwheels, exactly four visible separate gear hubs.\nRow 2, column 2: A brass tray holding a neat row of small cogwheels (worker pool).\nRow 2, column 3: A blacksmith anvil with a glowing ember (native compiled engine).\nRow 3, column 1: A coiled green-and-gold serpent around a small glass flask (Python neural server); no human face, no cartoon facial features.\nRow 3, column 2: A faceted gem emitting a fan of light rays (WebGPU); rays fade fully to alpha inside cell.\nRow 3, column 3: A brass gear with a small spanner (settings).\nSTRICT PRODUCTION CORRECTION: Make the objects SMALLER than a usual contact sheet. Every cell must have a broad completely empty transparent margin of at least 20% of the cell width and height on every side. Center all objects at the exact centers of the nine equal cells (one sixth, one half, five sixths of canvas dimensions). Object artwork occupies only about HALF its cell width/height. Do NOT fill the atlas tightly. All shadows and glow must end well before the generous cell margins. The gutter pixels must have alpha exactly ZERO, with no faint stray paint, specks, glows or invisible noise. For the webgpu gem use short contained rays; for the light icon keep the sun small and close to the hill. Never draw cell boundaries. Precisely nine compact icons in a uniform invisible 3x3 square lattice.",
+      "size": [
+        1254,
+        1254
+      ],
+      "sha256": "7e05b49d06a2ce8ac7f51642318e06d030b9961f0bb26923631c7a8df8efe9f6",
+      "cell_size": [
+        418,
+        418
+      ],
+      "generation_attempts": 2,
+      "alpha_one_gutter_artifacts": true
+    }
+  ],
+  "icons": {
+    "family-relief": {
+      "file": "family-relief.webp",
+      "atlas": "atlas-stages.png",
+      "cell": [
+        0,
+        0
+      ],
+      "subject": "A small block of mountainous terrain with two peaks (relief stage).",
+      "validation": {
+        "size": [
+          128,
+          128
+        ],
+        "alpha_zero_pixels": 10322,
+        "alpha_zero_fraction": 0.630005,
+        "nonempty": true,
+        "source_alpha_bbox_after_alpha_one_cleanup": [
+          70,
+          111,
+          389,
+          369
+        ],
+        "source_alpha_one_pixels_cleared": 2133,
+        "export_alpha_bbox": [
+          8,
+          18,
+          120,
+          109
+        ]
+      }
+    },
+    "family-water": {
+      "file": "family-water.webp",
+      "atlas": "atlas-stages.png",
+      "cell": [
+        1,
+        0
+      ],
+      "subject": "A river meeting a small lake with a few trees on its bank (water and natural cover).",
+      "validation": {
+        "size": [
+          128,
+          128
+        ],
+        "alpha_zero_pixels": 8603,
+        "alpha_zero_fraction": 0.525085,
+        "nonempty": true,
+        "source_alpha_bbox_after_alpha_one_cleanup": [
+          64,
+          115,
+          355,
+          368
+        ],
+        "source_alpha_one_pixels_cleared": 4012,
+        "export_alpha_bbox": [
+          8,
+          16,
+          120,
+          112
+        ]
+      }
+    },
+    "family-settlements": {
+      "file": "family-settlements.webp",
+      "atlas": "atlas-stages.png",
+      "cell": [
+        2,
+        0
+      ],
+      "subject": "Three tiny hamlets connected by a dirt road on a parchment patch (regional settlements and roads).",
+      "validation": {
+        "size": [
+          128,
+          128
+        ],
+        "alpha_zero_pixels": 10435,
+        "alpha_zero_fraction": 0.636902,
+        "nonempty": true,
+        "source_alpha_bbox_after_alpha_one_cleanup": [
+          26,
+          105,
+          356,
+          364
+        ],
+        "source_alpha_one_pixels_cleared": 3114,
+        "export_alpha_bbox": [
+          8,
+          20,
+          120,
+          108
+        ]
+      }
+    },
+    "family-city": {
+      "file": "family-city.webp",
+      "atlas": "atlas-stages.png",
+      "cell": [
+        0,
+        1
+      ],
+      "subject": "A compact walled town with terracotta roofs (one city).",
+      "validation": {
+        "size": [
+          128,
+          128
+        ],
+        "alpha_zero_pixels": 8657,
+        "alpha_zero_fraction": 0.528381,
+        "nonempty": true,
+        "source_alpha_bbox_after_alpha_one_cleanup": [
+          72,
+          51,
+          390,
+          354
+        ],
+        "source_alpha_one_pixels_cleared": 3866,
+        "export_alpha_bbox": [
+          8,
+          11,
+          120,
+          117
+        ]
+      }
+    },
+    "family-display": {
+      "file": "family-display.webp",
+      "atlas": "atlas-stages.png",
+      "cell": [
+        1,
+        1
+      ],
+      "subject": "An artist's brass-rimmed painting palette with a small brush (display/appearance).",
+      "validation": {
+        "size": [
+          128,
+          128
+        ],
+        "alpha_zero_pixels": 8816,
+        "alpha_zero_fraction": 0.538086,
+        "nonempty": true,
+        "source_alpha_bbox_after_alpha_one_cleanup": [
+          66,
+          97,
+          353,
+          327
+        ],
+        "source_alpha_one_pixels_cleared": 1995,
+        "export_alpha_bbox": [
+          8,
+          19,
+          120,
+          109
+        ]
+      }
+    },
+    "source-procedural": {
+      "file": "source-procedural.webp",
+      "atlas": "atlas-stages.png",
+      "cell": [
+        2,
+        1
+      ],
+      "subject": "A pair of brass dice resting on a terrain swatch (procedural generation).",
+      "validation": {
+        "size": [
+          128,
+          128
+        ],
+        "alpha_zero_pixels": 10270,
+        "alpha_zero_fraction": 0.626831,
+        "nonempty": true,
+        "source_alpha_bbox_after_alpha_one_cleanup": [
+          26,
+          108,
+          359,
+          353
+        ],
+        "source_alpha_one_pixels_cleared": 2876,
+        "export_alpha_bbox": [
+          8,
+          23,
+          120,
+          105
+        ]
+      }
+    },
+    "source-neural": {
+      "file": "source-neural.webp",
+      "atlas": "atlas-stages.png",
+      "cell": [
+        0,
+        2
+      ],
+      "subject": "A glowing faceted crystal over a terrain swatch, cool blue light (neural generation); glow must fade fully to alpha within its cell.",
+      "validation": {
+        "size": [
+          128,
+          128
+        ],
+        "alpha_zero_pixels": 8556,
+        "alpha_zero_fraction": 0.522217,
+        "nonempty": true,
+        "source_alpha_bbox_after_alpha_one_cleanup": [
+          85,
+          47,
+          371,
+          310
+        ],
+        "source_alpha_one_pixels_cleared": 4161,
+        "export_alpha_bbox": [
+          8,
+          12,
+          120,
+          115
+        ]
+      }
+    },
+    "source-heightmap": {
+      "file": "source-heightmap.webp",
+      "atlas": "atlas-stages.png",
+      "cell": [
+        1,
+        2
+      ],
+      "subject": "A single grayscale heightmap tile (soft white peaks on black) with a brass arrow entering it (import a heightmap); tile is grayscale, arrow is brass.",
+      "validation": {
+        "size": [
+          128,
+          128
+        ],
+        "alpha_zero_pixels": 10914,
+        "alpha_zero_fraction": 0.666138,
+        "nonempty": true,
+        "source_alpha_bbox_after_alpha_one_cleanup": [
+          64,
+          51,
+          367,
+          303
+        ],
+        "source_alpha_one_pixels_cleared": 1900,
+        "export_alpha_bbox": [
+          8,
+          17,
+          120,
+          110
+        ]
+      }
+    },
+    "source-library": {
+      "file": "source-library.webp",
+      "atlas": "atlas-stages.png",
+      "cell": [
+        2,
+        2
+      ],
+      "subject": "A small open wooden drawer holding three stacked grayscale heightmap tiles (heightmap library); tiles show soft white mountain shapes on black.",
+      "validation": {
+        "size": [
+          128,
+          128
+        ],
+        "alpha_zero_pixels": 8252,
+        "alpha_zero_fraction": 0.503662,
+        "nonempty": true,
+        "source_alpha_bbox_after_alpha_one_cleanup": [
+          50,
+          46,
+          339,
+          313
+        ],
+        "source_alpha_one_pixels_cleared": 1098,
+        "export_alpha_bbox": [
+          8,
+          12,
+          120,
+          115
+        ]
+      }
+    },
+    "display-palette": {
+      "file": "display-palette.webp",
+      "atlas": "atlas-display.png",
+      "cell": [
+        0,
+        0
+      ],
+      "subject": "Three overlapping colour swatches (ochre, green, blue) fanned out like cards.",
+      "validation": {
+        "size": [
+          128,
+          128
+        ],
+        "alpha_zero_pixels": 9408,
+        "alpha_zero_fraction": 0.574219,
+        "nonempty": true,
+        "source_alpha_bbox_after_alpha_one_cleanup": [
+          80,
+          132,
+          384,
+          370
+        ],
+        "source_alpha_one_pixels_cleared": 6158,
+        "export_alpha_bbox": [
+          8,
+          20,
+          120,
+          108
+        ]
+      }
+    },
+    "display-layers": {
+      "file": "display-layers.webp",
+      "atlas": "atlas-display.png",
+      "cell": [
+        1,
+        0
+      ],
+      "subject": "Three stacked translucent parchment map sheets; no writing.",
+      "validation": {
+        "size": [
+          128,
+          128
+        ],
+        "alpha_zero_pixels": 9807,
+        "alpha_zero_fraction": 0.598572,
+        "nonempty": true,
+        "source_alpha_bbox_after_alpha_one_cleanup": [
+          48,
+          118,
+          372,
+          384
+        ],
+        "source_alpha_one_pixels_cleared": 7360,
+        "export_alpha_bbox": [
+          8,
+          18,
+          120,
+          110
+        ]
+      }
+    },
+    "display-2d": {
+      "file": "display-2d.webp",
+      "atlas": "atlas-display.png",
+      "cell": [
+        2,
+        0
+      ],
+      "subject": "A flat top-down map sheet lying perfectly flat; no raised terrain and no writing.",
+      "validation": {
+        "size": [
+          128,
+          128
+        ],
+        "alpha_zero_pixels": 8655,
+        "alpha_zero_fraction": 0.528259,
+        "nonempty": true,
+        "source_alpha_bbox_after_alpha_one_cleanup": [
+          49,
+          151,
+          358,
+          368
+        ],
+        "source_alpha_one_pixels_cleared": 6511,
+        "export_alpha_bbox": [
+          8,
+          24,
+          120,
+          103
+        ]
+      }
+    },
+    "display-3d": {
+      "file": "display-3d.webp",
+      "atlas": "atlas-display.png",
+      "cell": [
+        0,
+        1
+      ],
+      "subject": "An isometric terrain block with visible earth side walls.",
+      "validation": {
+        "size": [
+          128,
+          128
+        ],
+        "alpha_zero_pixels": 8863,
+        "alpha_zero_fraction": 0.540955,
+        "nonempty": true,
+        "source_alpha_bbox_after_alpha_one_cleanup": [
+          76,
+          65,
+          384,
+          354
+        ],
+        "source_alpha_one_pixels_cleared": 8192,
+        "export_alpha_bbox": [
+          8,
+          11,
+          120,
+          116
+        ]
+      }
+    },
+    "display-buildings": {
+      "file": "display-buildings.webp",
+      "atlas": "atlas-display.png",
+      "cell": [
+        1,
+        1
+      ],
+      "subject": "Three small houses with differently coloured roofs: red, blue, ochre.",
+      "validation": {
+        "size": [
+          128,
+          128
+        ],
+        "alpha_zero_pixels": 9382,
+        "alpha_zero_fraction": 0.572632,
+        "nonempty": true,
+        "source_alpha_bbox_after_alpha_one_cleanup": [
+          52,
+          78,
+          369,
+          338
+        ],
+        "source_alpha_one_pixels_cleared": 10378,
+        "export_alpha_bbox": [
+          8,
+          18,
+          120,
+          110
+        ]
+      }
+    },
+    "display-roads": {
+      "file": "display-roads.webp",
+      "atlas": "atlas-display.png",
+      "cell": [
+        2,
+        1
+      ],
+      "subject": "A paved stone road curving across grass.",
+      "validation": {
+        "size": [
+          128,
+          128
+        ],
+        "alpha_zero_pixels": 7394,
+        "alpha_zero_fraction": 0.451294,
+        "nonempty": true,
+        "source_alpha_bbox_after_alpha_one_cleanup": [
+          63,
+          95,
+          338,
+          353
+        ],
+        "source_alpha_one_pixels_cleared": 8355,
+        "export_alpha_bbox": [
+          8,
+          11,
+          120,
+          116
+        ]
+      }
+    },
+    "display-ground": {
+      "file": "display-ground.webp",
+      "atlas": "atlas-display.png",
+      "cell": [
+        0,
+        2
+      ],
+      "subject": "A square of textured earth and grass ground material sample.",
+      "validation": {
+        "size": [
+          128,
+          128
+        ],
+        "alpha_zero_pixels": 5377,
+        "alpha_zero_fraction": 0.328186,
+        "nonempty": true,
+        "source_alpha_bbox_after_alpha_one_cleanup": [
+          90,
+          55,
+          366,
+          324
+        ],
+        "source_alpha_one_pixels_cleared": 10741,
+        "export_alpha_bbox": [
+          8,
+          9,
+          120,
+          118
+        ]
+      }
+    },
+    "display-labels": {
+      "file": "display-labels.webp",
+      "atlas": "atlas-display.png",
+      "cell": [
+        1,
+        2
+      ],
+      "subject": "A small unrolled parchment banner/ribbon tag, completely blank with NO writing.",
+      "validation": {
+        "size": [
+          128,
+          128
+        ],
+        "alpha_zero_pixels": 11709,
+        "alpha_zero_fraction": 0.714661,
+        "nonempty": true,
+        "source_alpha_bbox_after_alpha_one_cleanup": [
+          72,
+          113,
+          345,
+          242
+        ],
+        "source_alpha_one_pixels_cleared": 12469,
+        "export_alpha_bbox": [
+          8,
+          37,
+          120,
+          90
+        ]
+      }
+    },
+    "display-light": {
+      "file": "display-light.webp",
+      "atlas": "atlas-display.png",
+      "cell": [
+        2,
+        2
+      ],
+      "subject": "A brass sun disc casting a shadow over a small hill; disc and hill form one compact isolated icon.",
+      "validation": {
+        "size": [
+          128,
+          128
+        ],
+        "alpha_zero_pixels": 9926,
+        "alpha_zero_fraction": 0.605835,
+        "nonempty": true,
+        "source_alpha_bbox_after_alpha_one_cleanup": [
+          47,
+          38,
+          348,
+          324
+        ],
+        "source_alpha_one_pixels_cleared": 11504,
+        "export_alpha_bbox": [
+          8,
+          12,
+          120,
+          117
+        ]
+      }
+    },
+    "backend-cpu": {
+      "file": "backend-cpu.webp",
+      "atlas": "atlas-backends.png",
+      "cell": [
+        0,
+        0
+      ],
+      "subject": "A brass and green circuit microchip.",
+      "validation": {
+        "size": [
+          128,
+          128
+        ],
+        "alpha_zero_pixels": 8765,
+        "alpha_zero_fraction": 0.534973,
+        "nonempty": true,
+        "source_alpha_bbox_after_alpha_one_cleanup": [
+          106,
+          130,
+          368,
+          363
+        ],
+        "source_alpha_one_pixels_cleared": 6671,
+        "export_alpha_bbox": [
+          8,
+          14,
+          120,
+          114
+        ]
+      }
+    },
+    "backend-gpu": {
+      "file": "backend-gpu.webp",
+      "atlas": "atlas-backends.png",
+      "cell": [
+        1,
+        0
+      ],
+      "subject": "A brass graphics card with a fan.",
+      "validation": {
+        "size": [
+          128,
+          128
+        ],
+        "alpha_zero_pixels": 10008,
+        "alpha_zero_fraction": 0.61084,
+        "nonempty": true,
+        "source_alpha_bbox_after_alpha_one_cleanup": [
+          64,
+          130,
+          368,
+          385
+        ],
+        "source_alpha_one_pixels_cleared": 6153,
+        "export_alpha_bbox": [
+          8,
+          17,
+          120,
+          111
+        ]
+      }
+    },
+    "backend-wasm-single": {
+      "file": "backend-wasm-single.webp",
+      "atlas": "atlas-backends.png",
+      "cell": [
+        2,
+        0
+      ],
+      "subject": "A single brass cogwheel.",
+      "validation": {
+        "size": [
+          128,
+          128
+        ],
+        "alpha_zero_pixels": 7694,
+        "alpha_zero_fraction": 0.469604,
+        "nonempty": true,
+        "source_alpha_bbox_after_alpha_one_cleanup": [
+          83,
+          148,
+          300,
+          363
+        ],
+        "source_alpha_one_pixels_cleared": 4960,
+        "export_alpha_bbox": [
+          8,
+          8,
+          120,
+          119
+        ]
+      }
+    },
+    "backend-wasm-threads": {
+      "file": "backend-wasm-threads.webp",
+      "atlas": "atlas-backends.png",
+      "cell": [
+        0,
+        1
+      ],
+      "subject": "Four small interlocking brass cogwheels, exactly four visible separate gear hubs.",
+      "validation": {
+        "size": [
+          128,
+          128
+        ],
+        "alpha_zero_pixels": 9184,
+        "alpha_zero_fraction": 0.560547,
+        "nonempty": true,
+        "source_alpha_bbox_after_alpha_one_cleanup": [
+          98,
+          90,
+          368,
+          340
+        ],
+        "source_alpha_one_pixels_cleared": 8601,
+        "export_alpha_bbox": [
+          8,
+          12,
+          120,
+          116
+        ]
+      }
+    },
+    "backend-pool": {
+      "file": "backend-pool.webp",
+      "atlas": "atlas-backends.png",
+      "cell": [
+        1,
+        1
+      ],
+      "subject": "A brass tray holding a neat row of small cogwheels (worker pool).",
+      "validation": {
+        "size": [
+          128,
+          128
+        ],
+        "alpha_zero_pixels": 11624,
+        "alpha_zero_fraction": 0.709473,
+        "nonempty": true,
+        "source_alpha_bbox_after_alpha_one_cleanup": [
+          58,
+          114,
+          376,
+          338
+        ],
+        "source_alpha_one_pixels_cleared": 8961,
+        "export_alpha_bbox": [
+          8,
+          24,
+          120,
+          103
+        ]
+      }
+    },
+    "backend-native": {
+      "file": "backend-native.webp",
+      "atlas": "atlas-backends.png",
+      "cell": [
+        2,
+        1
+      ],
+      "subject": "A blacksmith anvil with a glowing ember (native compiled engine).",
+      "validation": {
+        "size": [
+          128,
+          128
+        ],
+        "alpha_zero_pixels": 9408,
+        "alpha_zero_fraction": 0.574219,
+        "nonempty": true,
+        "source_alpha_bbox_after_alpha_one_cleanup": [
+          56,
+          79,
+          340,
+          347
+        ],
+        "source_alpha_one_pixels_cleared": 7463,
+        "export_alpha_bbox": [
+          8,
+          11,
+          120,
+          117
+        ]
+      }
+    },
+    "backend-python": {
+      "file": "backend-python.webp",
+      "atlas": "atlas-backends.png",
+      "cell": [
+        0,
+        2
+      ],
+      "subject": "A coiled green-and-gold serpent around a small glass flask (Python neural server); no human face, no cartoon facial features.",
+      "validation": {
+        "size": [
+          128,
+          128
+        ],
+        "alpha_zero_pixels": 9095,
+        "alpha_zero_fraction": 0.555115,
+        "nonempty": true,
+        "source_alpha_bbox_after_alpha_one_cleanup": [
+          113,
+          33,
+          354,
+          316
+        ],
+        "source_alpha_one_pixels_cleared": 5114,
+        "export_alpha_bbox": [
+          16,
+          8,
+          111,
+          120
+        ]
+      }
+    },
+    "backend-webgpu": {
+      "file": "backend-webgpu.webp",
+      "atlas": "atlas-backends.png",
+      "cell": [
+        1,
+        2
+      ],
+      "subject": "A faceted gem emitting a fan of light rays (WebGPU); rays fade fully to alpha inside cell.",
+      "validation": {
+        "size": [
+          128,
+          128
+        ],
+        "alpha_zero_pixels": 7262,
+        "alpha_zero_fraction": 0.443237,
+        "nonempty": true,
+        "source_alpha_bbox_after_alpha_one_cleanup": [
+          35,
+          25,
+          386,
+          346
+        ],
+        "source_alpha_one_pixels_cleared": 25449,
+        "export_alpha_bbox": [
+          8,
+          13,
+          120,
+          115
+        ]
+      }
+    },
+    "settings-gear": {
+      "file": "settings-gear.webp",
+      "atlas": "atlas-backends.png",
+      "cell": [
+        2,
+        2
+      ],
+      "subject": "A brass gear with a small spanner (settings).",
+      "validation": {
+        "size": [
+          128,
+          128
+        ],
+        "alpha_zero_pixels": 10534,
+        "alpha_zero_fraction": 0.642944,
+        "nonempty": true,
+        "source_alpha_bbox_after_alpha_one_cleanup": [
+          31,
+          50,
+          338,
+          311
+        ],
+        "source_alpha_one_pixels_cleared": 6724,
+        "export_alpha_bbox": [
+          20,
+          16,
+          120,
+          111
+        ]
+      }
+    }
+  }
+}

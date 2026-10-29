@@ -38,6 +38,43 @@ Les modèles du navigateur sont copiés depuis `rust/pkg/neural-web` lorsqu’il
 ont été préparés ; leur absence ne doit pas être confondue avec un modèle
 déjà chargé.
 
+## La chaîne d’étapes (interface)
+
+Le panneau de gauche présente toute la chaîne de génération en cinq familles
+peintes : **Relief → Eau & couvert → Peuplements → Ville → Affichage**. Les
+lignes viennent d’une source unique, `web/src/v2/stageRegistry.ts`, qui reprend
+exactement les identifiants de [`stage-registry-contract.md`](stage-registry-contract.md).
+Chaque ligne d’étape offre, sur une seule ligne :
+
+- le **nœud** sur le fil de laiton : un clic active ou désactive l’étape
+  (losange = étape obligatoire ; pointillé = pas d’interrupteur moteur, raison en info-bulle) ;
+- **▶** : régénère depuis cette étape (relief et eau : la topographie ; sites,
+  hiérarchie : les implantations ; routes : les routes seules ; ville : l’arrêt
+  Rust correspondant du lieu choisi ; affichage : le rendu) ;
+- la **durée** de la dernière exécution (verte = à jour, ambre = réglages modifiés
+  depuis ; vide = calculé à l’intérieur d’une étape voisine, sans temps inventé) ;
+- **?** : la section `#stage-<id>` de l’atlas scientifique, dans la langue de l’application ;
+- le chevron : toutes les options. Les réglages principaux restent accessibles
+  sur la ligne repliée.
+
+Les lignes sont conditionnelles : procédural, neuronal et heightmap n’ont pas les
+mêmes étapes. Importer une heightmap ou choisir une carte de la **bibliothèque de
+test** (six PNG 16 bits générés par notre moteur, `web/src/v2/assets/heightmaps/`,
+reconstruits par `node web/scripts/v2_heightmap_library.mjs`) est une alternative
+de la **source du relief** ; l’étape **Ajustement de la heightmap** règle échelle
+verticale, datum, recadrage et largeur sans perdre la source.
+
+Aucun contrôle n’a été recréé : les formulaires existants (terrain, région,
+recettes urbaines City Bench, apparence) sont déplacés dans l’étape qui les
+exécute ; un test (`web/tests/v2StageRegistry.test.ts`) vérifie que chaque
+contrôle appartient à exactement une étape. Les adresses des modèles et services
+sont dans **Réglages**, avec l’état des moteurs : WASM (un thread, threads,
+pool, selon l’isolation cross-origin), WebGPU, Rust natif, Python neuronal et
+chemin de rendu GPU/CPU. Un choix indisponible reste visible, désactivé, avec sa
+raison. Pour les villes, la génération est à gauche et le **choix du lieu** à
+droite (liste et réglages locaux). Les icônes sont générées par ImageGen
+(`web/src/v2/assets/icons/PROVENANCE.md`).
+
 ## Le parcours
 
 **Créer ma région** génère uniquement le relief, l’eau et le couvert naturel.
