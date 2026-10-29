@@ -105,6 +105,14 @@ impl TerrainPipeline {
     }
     fn coarse_value(&self,i:usize,k:usize,f:impl FnOnce()->f64)->f64{self.coarse_noise.get(i*4+k).map_or_else(f,|&v|v as f64)}
     fn fine_value(&self,i:usize,k:usize,f:impl FnOnce()->f64)->f64{self.fine_noise.get(i*4+k).map_or_else(f,|&v|v as f64)}
+    /// Final field without a copy: moves the retained output out (the pipeline
+    /// is done with it); before reconstruction, the same values as `height`.
+    pub fn take_height(&mut self) -> Vec<f32> {
+        if !self.output.is_empty() {
+            return std::mem::take(&mut self.output);
+        }
+        self.height()
+    }
     pub fn height(&self) -> Vec<f32> {
         if !self.output.is_empty() {
             return self.output.clone();

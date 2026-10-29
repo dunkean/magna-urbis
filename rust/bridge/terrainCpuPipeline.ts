@@ -27,7 +27,9 @@ export async function generateCpuTerrain(settings:TerrainSettings,control?:Gener
     for(const [index,stage] of stages.entries()){
       await control?.before(stage);
       if(runtime){const response=await native({command:'advance',stage:index,preview:control?.previews!==false&&!!control});const bytes=await response.arrayBuffer();if(bytes.byteLength)height=new Float32Array(bytes);}
-      else{if(index===0&&noise){const values=await noise();pipeline!.set_noise(values.coarse,values.fine);}pipeline!.advance(index);if(index===7||control&&control.previews!==false)height=pipeline!.height();}
+      else{if(index===0&&noise){const values=await noise();pipeline!.set_noise(values.coarse,values.fine);}pipeline!.advance(index);
+        // The final field moves out of Rust (one copy into JS); previews copy the retained one.
+        if(index===7)height=typeof pipeline!.take_height==='function'?pipeline!.take_height():pipeline!.height();else if(control&&control.previews!==false)height=pipeline!.height();}
       await control?.after(stage,control?.previews===false?undefined:height);
     }
     await control?.before('phasor');

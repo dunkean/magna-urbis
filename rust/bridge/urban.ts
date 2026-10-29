@@ -192,90 +192,164 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
   }
   const wasmInfo = (): WasmThreadsInfo => pool ? { ...wasmThreadsInfo(), threads: pool.size } : wasmThreadsInfo();
   let terrain: SettlementTerrain | undefined;
-  let retainedLayouts: { id: number; json: string; digest?: string } | undefined;
+  // Resident products: the Rust instance keeps the exact (decimal round-tripped)
+  // layouts and partitions of the last stage under ids. `items` are the JS objects
+  // handed to the caller; a later request carrying the same objects (or the
+  // layoutsId) reuses the Rust copy instead of re-sending ≈5 MB of JSON.
+  // `json` is the layouts text the UI received, kept only for cache digests.
+  let retainedLayouts: { id: number; items: Layout[]; json?: string; digest?: string; rust?: number; terrain?: SettlementTerrain } | undefined;
+  let retainedPartitions: { items: Partition[]; rust: number; terrain: SettlementTerrain } | undefined;
+  // Rust JSON text of every product array this engine returned (cache digests and sizes).
+  const texts = new WeakMap<object, string>(), digests = new WeakMap<object, Promise<string>>();
+  const parsed = <T extends object>(json: string): T => { const value = JSON.parse(json) as T; texts.set(value, json); return value; };
+  const textDigest = (value: object): Promise<string> | undefined => {
+    let digest = digests.get(value);
+    const text = texts.get(value);
+    if (!digest && text !== undefined) digests.set(value, digest = sha256([text]));
+    return digest;
+  };
   // Cache hits skip the raster upload; build the terrain lazily on the first miss.
   let pendingRaster: SettlementRaster | undefined, terrainRaster: SettlementRaster | undefined, pendingDigest: string | undefined;
   const rasterDigests = new WeakMap<object, Promise<string>>();
   const native = nativeRasterClient();
   type Requests = import('./urbanArchitecture').PlacementRequest[];
-  // Pool slices merged in input order; the serial call when the pool cannot help.
+  const sameItems = <T>(a: readonly T[], b: readonly T[]): boolean => a.length === b.length && a.every((x, i) => x === b[i]);
+  // Older generated packages lack the resident API: they keep the JSON path.
+  const resident = typeof (Terrain?.prototype as { urban_quarters_resident?: unknown } | undefined)?.urban_quarters_resident === 'function';
+  /** Rust id of `items` (default: the retained layouts), uploading them only when Rust no longer holds them. */
+  const layoutsHandle = (t: SettlementTerrain, items: Layout[]): number => {
+    const held = retainedLayouts?.terrain === t ? retainedLayouts.rust : undefined;
+    const same = !!retainedLayouts && (items === retainedLayouts.items || sameItems(items, retainedLayouts.items));
+    if (held && same && t.resident_layouts_id() === held) return held;
+    const rust = t.retain_layouts_json(JSON.stringify(nativeLayouts(items)));
+    retainedLayouts = same ? { ...retainedLayouts!, rust, terrain: t } : { id: -1, items, rust, terrain: t };
+    retainedPartitions = undefined;
+    return rust;
+  };
+  const partitionsHandle = (t: SettlementTerrain, items: Partition[]): number => {
+    const held = retainedPartitions?.terrain === t ? retainedPartitions.rust : undefined;
+    if (held && t.resident_partitions_id() === held && sameItems(items, retainedPartitions!.items)) return held;
+    const rust = t.retain_partitions_json(JSON.stringify(nativePartitions(items)));
+    retainedPartitions = { items, rust, terrain: t };
+    return rust;
+  };
+  /** Pool slices' JSON arrays joined as text: identical to concatenating the parsed arrays. */
+  const joinArrays = (parts: string[]): string => '[' + parts.map(p => p.trim().slice(1, -1)).filter(p => p.trim().length).join(',') + ']';
+  const quartersResident = async (t: SettlementTerrain, seed: string, sites: RoadSite[], config: string, roads: string): Promise<{ layouts: Layout[]; json: string }> => {
+    const serial = () => { const json = t.urban_quarters_resident(seed, JSON.stringify(sites), config, roads); return { layouts: parsed<Layout[]>(json), json }; };
+    if (!pool || pool.size < 2 || sites.length < 2 || new Set(sites.map(s => s.key)).size !== sites.length) return serial();
+    const jobs = ranges(sites.length, pool.size).map(([a, b]): PoolArgs => ({ seed, sites: JSON.stringify(sites.slice(a, b)), config, roads }));
+    let json: string;
+    try { json = joinArrays(await pool.run('quarters', jobs, undefined, a => t.urban_quarters(a.seed!, a.sites!, a.config!, a.roads!))); }
+    catch { return serial(); } // The exact serial error: validation order spans all sites.
+    // Rust reparses the joined text: the same decimal round trip as the serial call.
+    t.retain_layouts_json(json);
+    return { layouts: parsed<Layout[]>(json), json };
+  };
+  const parcelsResident = async (t: SettlementTerrain, seed: string, layoutsId: number, config: string): Promise<{ partitions: Partition[]; rust: number }> => {
+    const count = t.resident_layouts_len();
+    if (!pool || pool.size < 2 || count < 2) {
+      const partitions = parsed<Partition[]>(t.urban_parcels_resident(seed, layoutsId, config, 0, 0xffffffff));
+      return { partitions, rust: t.resident_partitions_id() };
+    }
+    // Helpers decode the binary layouts image once for this batch, then cut
+    // their layout ranges; the first error in order wins, as serially.
+    const image = t.export_resident(layoutsId, 0);
+    const jobs = ranges(count, pool.size).map(([a, b]): PoolArgs => ({ seed, config, start: String(a), end: String(b) }));
+    const json = joinArrays(await pool.run('parcels-resident', jobs, { image },
+      a => t.urban_parcels_resident(seed, layoutsId, config, Number(a.start), Number(a.end))));
+    const rust = t.retain_partitions_json(json);
+    return { partitions: parsed<Partition[]>(json), rust };
+  };
+  const sitesResident = async (t: SettlementTerrain, seed: string, layoutsId: number, partitionsId: number, culture: string | undefined): Promise<Requests> => {
+    const serial = () => parsed<Requests>(t.urban_building_sites_resident(seed, layoutsId, partitionsId, culture, 0, 0xffffffff));
+    if (!pool || pool.size < 2) return serial();
+    const total = t.urban_building_sites_total_resident(layoutsId, partitionsId);
+    if (total < 32) return serial();
+    // Several slices per participant: sites differ in cost, the queue balances them.
+    const jobs = ranges(total, Math.min(Math.ceil(total / 16), pool.size * 4)).map(([a, b]): PoolArgs => ({ start: String(a), end: String(b) }));
+    const parts = await pool.run('sites-resident', jobs, { seed, culture, image: t.export_resident(layoutsId, partitionsId) },
+      a => t.urban_building_sites_resident(seed, layoutsId, partitionsId, culture, Number(a.start), Number(a.end)));
+    return parsed<Requests>(joinArrays(parts));
+  };
+  // JSON path of packages without the resident API.
   const quartersJson = async (t: SettlementTerrain, seed: string, sites: RoadSite[], config: string, roads: string): Promise<Layout[]> => {
     const serial = () => JSON.parse(t.urban_quarters(seed, JSON.stringify(sites), config, roads)) as Layout[];
-    // Unique keys are checked across all sites: only split when no slice can miss a duplicate.
     if (!pool || pool.size < 2 || sites.length < 2 || new Set(sites.map(s => s.key)).size !== sites.length) return serial();
     const jobs = ranges(sites.length, pool.size).map(([a, b]): PoolArgs => ({ seed, sites: JSON.stringify(sites.slice(a, b)), config, roads }));
     try {
       return (await pool.run('quarters', jobs, undefined, a => t.urban_quarters(a.seed!, a.sites!, a.config!, a.roads!))).flatMap(json => JSON.parse(json) as Layout[]);
-    } catch { return serial(); } // The exact serial error: validation order spans all sites.
+    } catch { return serial(); }
   };
-  const parcelsJson = async (t: SettlementTerrain, seed: string, layoutsJson: string, config: string): Promise<Partition[]> => {
-    const layouts = pool && pool.size > 1 ? JSON.parse(layoutsJson) as unknown[] : [];
-    if (!pool || layouts.length < 2) return JSON.parse(t.urban_parcels(seed, layoutsJson, config)) as Partition[];
-    // Re-serialising parsed JSON is byte-stable: each slice sees the same numbers.
-    // Layouts are cut independently and the first error in order wins, as serially.
-    const jobs = ranges(layouts.length, pool.size).map(([a, b]): PoolArgs => ({ seed, layouts: JSON.stringify(layouts.slice(a, b)), config }));
-    return (await pool.run('parcels', jobs, undefined, a => t.urban_parcels(a.seed!, a.layouts!, a.config!))).flatMap(json => JSON.parse(json) as Partition[]);
-  };
-  const sitesJson = async (t: SettlementTerrain, seed: string, layoutsJson: string, partitionsJson: string, culture: string | undefined): Promise<Requests> => {
-    const serial = () => JSON.parse(t.urban_building_sites(seed, layoutsJson, partitionsJson, culture)) as Requests;
-    if (!pool || pool.size < 2 || typeof Terrain?.urban_building_sites_total !== 'function') return serial();
-    let total: number;
-    try { total = Terrain.urban_building_sites_total(layoutsJson, partitionsJson); } catch { return serial(); }
-    if (total < 32) return serial();
-    // Several slices per participant: sites differ in cost, the queue balances them.
-    const jobs = ranges(total, Math.min(Math.ceil(total / 16), pool.size * 4)).map(([a, b]): PoolArgs => ({ start: String(a), end: String(b) }));
-    const parts = await pool.run('sites', jobs, { seed, layouts: layoutsJson, partitions: partitionsJson, culture },
-      a => t.urban_building_sites_range(seed, layoutsJson, partitionsJson, culture, Number(a.start), Number(a.end)));
-    return parts.flatMap(json => JSON.parse(json) as Requests);
-  };
-  const runWasmUncached = async (request: UrbanRequest): Promise<UrbanResponse> => {
-    {
-      if (request.raster) {
-        const r = request.raster;
-        retainedLayouts = undefined;
-        terrain?.free();
-        terrain = undefined;
-        const next = new Terrain!(r.width, r.n, r.height, r.water, r.waterLevel, r.riverWidth, r.riverIds);
-        try { if (r.geometry) next.set_urban_geometry(JSON.stringify(r.geometry)); }
-        catch (error) { next.free(); throw error; }
-        terrain = next; terrainRaster = r;
-        pool?.setRaster(r);
-      }
-      if (!terrain) throw new Error('Générez le terrain avant les quartiers.');
-      const start = performance.now();
-      if (request.kind === 'quarters') {
-        retainedLayouts = undefined;
-        const layouts = await quartersJson(terrain, request.seed, request.sites ?? [], JSON.stringify(nativeLayoutConfig(normalizeLayoutConfig(request.layoutConfig, true))), JSON.stringify(request.roads ?? []));
-        // Preserve the existing JS number roundtrip before Rust parses parcels.
-        // Keeping native f64 layouts instead can subtly change polygon cuts.
-        retainedLayouts = { id: request.id, json: JSON.stringify(nativeLayouts(layouts)) };
+  /** `keepLayouts`: a lazily built terrain for a cache-hit plan keeps the layouts the caller refers to. */
+  const runWasmUncached = async (request: UrbanRequest, keepLayouts = false): Promise<UrbanResponse> => {
+    if (request.raster) {
+      const r = request.raster;
+      if (!keepLayouts) retainedLayouts = undefined;
+      retainedPartitions = undefined;
+      terrain?.free();
+      terrain = undefined;
+      const next = new Terrain!(r.width, r.n, r.height, r.water, r.waterLevel, r.riverWidth, r.riverIds);
+      try { if (r.geometry) next.set_urban_geometry(JSON.stringify(r.geometry)); }
+      catch (error) { next.free(); throw error; }
+      terrain = next; terrainRaster = r;
+      pool?.setRaster(r);
+    }
+    if (!terrain) throw new Error('Générez le terrain avant les quartiers.');
+    const t = terrain;
+    const start = performance.now();
+    if (request.kind === 'quarters') {
+      retainedLayouts = undefined; retainedPartitions = undefined;
+      const config = JSON.stringify(nativeLayoutConfig(normalizeLayoutConfig(request.layoutConfig, true))), roads = JSON.stringify(request.roads ?? []);
+      if (resident) {
+        const { layouts, json } = await quartersResident(t, request.seed, request.sites ?? [], config, roads);
+        retainedLayouts = { id: request.id, items: layouts, json, rust: t.resident_layouts_id(), terrain: t };
         return { id: request.id, layouts, ms: performance.now() - start };
       }
-      const layoutsJson = request.layouts ? JSON.stringify(nativeLayouts(request.layouts))
-        : request.layoutsId === undefined ? '[]'
-        : retainedLayouts?.id === request.layoutsId ? retainedLayouts.json : undefined;
-      if (layoutsJson === undefined) throw new Error('Le plan des quartiers a changé. Régénérez les quartiers avant les parcelles.');
-      if (request.kind === 'builtCapacity') {
-        const partitions = JSON.parse(terrain.urban_built_capacity(JSON.stringify(nativePartitions(request.partitions ?? [])), JSON.stringify(capacityInput(request.scene)))) as Partition[];
-        return { id: request.id, partitions, ms: performance.now() - start };
-      }
+      const layouts = await quartersJson(t, request.seed, request.sites ?? [], config, roads);
+      // Preserve the existing JS number roundtrip before Rust parses parcels.
+      // Keeping native f64 layouts instead can subtly change polygon cuts.
+      retainedLayouts = { id: request.id, items: layouts, json: JSON.stringify(nativeLayouts(layouts)) };
+      return { id: request.id, layouts, ms: performance.now() - start };
+    }
+    const items: Layout[] | undefined = request.layouts ?? (request.layoutsId === undefined ? [] : retainedLayouts?.id === request.layoutsId ? retainedLayouts.items : undefined);
+    if (items === undefined) throw new Error('Le plan des quartiers a changé. Régénérez les quartiers avant les parcelles.');
+    if (request.kind === 'builtCapacity') {
+      const partitions = JSON.parse(t.urban_built_capacity(JSON.stringify(nativePartitions(request.partitions ?? [])), JSON.stringify(capacityInput(request.scene)))) as Partition[];
+      return { id: request.id, partitions, ms: performance.now() - start };
+    }
+    if (resident) {
+      const layoutsId = layoutsHandle(t, items);
       if (request.kind === 'programme') {
-        const partitions = JSON.parse(terrain.urban_programme(layoutsJson, JSON.stringify(nativePartitions(request.partitions ?? [])))) as Partition[];
+        const partitions = parsed<Partition[]>(t.urban_programme_resident(layoutsId, partitionsHandle(t, request.partitions ?? [])));
+        retainedPartitions = { items: partitions, rust: t.resident_partitions_id(), terrain: t };
         return { id: request.id, partitions, ms: performance.now() - start };
       }
       if (request.kind === 'buildingSites') {
-        const placementRequests = await sitesJson(terrain, request.seed, layoutsJson, JSON.stringify(request.partitions ?? []), request.architectureCulture);
+        const placementRequests = await sitesResident(t, request.seed, layoutsId, partitionsHandle(t, request.partitions ?? []), request.architectureCulture);
         return { id: request.id, placementRequests, ms: performance.now() - start };
       }
-      const partitions = await parcelsJson(terrain, request.seed, layoutsJson, JSON.stringify(normalizeParcelConfig(request.parcelConfig)));
+      const { partitions, rust } = await parcelsResident(t, request.seed, layoutsId, JSON.stringify(normalizeParcelConfig(request.parcelConfig)));
+      retainedPartitions = { items: partitions, rust, terrain: t };
       return { id: request.id, partitions, ms: performance.now() - start };
     }
+    const layoutsJson = request.layouts || request.layoutsId === undefined ? JSON.stringify(nativeLayouts(items)) : retainedLayouts!.json!;
+    if (request.kind === 'programme') {
+      const partitions = JSON.parse(t.urban_programme(layoutsJson, JSON.stringify(nativePartitions(request.partitions ?? [])))) as Partition[];
+      return { id: request.id, partitions, ms: performance.now() - start };
+    }
+    if (request.kind === 'buildingSites') {
+      const placementRequests = JSON.parse(t.urban_building_sites(request.seed, layoutsJson, JSON.stringify(request.partitions ?? []), request.architectureCulture)) as Requests;
+      return { id: request.id, placementRequests, ms: performance.now() - start };
+    }
+    const partitions = JSON.parse(t.urban_parcels(request.seed, layoutsJson, JSON.stringify(normalizeParcelConfig(request.parcelConfig)))) as Partition[];
+    return { id: request.id, partitions, ms: performance.now() - start };
   };
   const engineId = (): string => { try { return String((Terrain as unknown as { urban_programme_functions_version?: () => number } | undefined)?.urban_programme_functions_version?.() ?? 0); } catch { return '0'; } };
-  const runWasm = async (request: UrbanRequest): Promise<UrbanResponse> => {
+  const runWasm = async (request: UrbanRequest, keepLayouts = false): Promise<UrbanResponse> => {
     try {
       if (requiresProgrammeFunctions(request)) requireWasmProgrammeFunctions(Terrain, request);
-      return { ...await runWasmUncached(request), wasm: wasmInfo() };
+      return { ...await runWasmUncached(request, keepLayouts), wasm: wasmInfo() };
     } catch (error) { return { id: request.id, error: String(error) }; }
   };
   const runCached = async (request: UrbanRequest): Promise<UrbanResponse> => {
@@ -289,22 +363,33 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
       let layoutsDigest: string | undefined;
       if (request.kind !== 'quarters' && !request.layouts && request.layoutsId !== undefined) {
         if (retainedLayouts?.id !== request.layoutsId) return runWasm(request);
-        retainedLayouts.digest ??= await sha256([retainedLayouts.json]); layoutsDigest = retainedLayouts.digest;
+        retainedLayouts.digest ??= await sha256([retainedLayouts.json ?? JSON.stringify(nativeLayouts(retainedLayouts.items))]); layoutsDigest = retainedLayouts.digest;
       }
-      if (pendingDigest) key = await urbanCacheKey(request as unknown as Record<string, unknown>, { engine: engineId(), terrain: pendingDigest, retainedLayouts: layoutsDigest });
+      // Products this engine returned are keyed by the digest of their Rust
+      // text, without re-serialising megabytes of geometry in JS.
+      const keyed: Record<string, unknown> = { ...request };
+      for (const name of ['layouts', 'partitions'] as const) {
+        const digest = request[name] && textDigest(request[name]!);
+        if (digest) keyed[name] = { $digest: await digest };
+      }
+      if (pendingDigest) key = await urbanCacheKey(keyed, { engine: engineId(), terrain: pendingDigest, retainedLayouts: layoutsDigest });
     } catch { key = undefined; }
     if (key) {
       const hit = await readUrbanCache<Pick<UrbanResponse, 'layouts' | 'partitions' | 'placementRequests'>>(key);
       if (hit && (hit.layouts || hit.partitions || hit.placementRequests)) {
-        if (request.kind === 'quarters' && hit.layouts) retainedLayouts = { id: request.id, json: JSON.stringify(nativeLayouts(hit.layouts)) };
+        if (request.kind === 'quarters' && hit.layouts) retainedLayouts = { id: request.id, items: hit.layouts };
         return { id: request.id, ...hit, ms: 0 };
       }
     }
     const lazy = !request.raster && !!pendingRaster && terrainRaster !== pendingRaster;
-    const keep = retainedLayouts;
-    const response = await runWasm(lazy ? { ...request, raster: pendingRaster } : request);
-    if (lazy && request.kind !== 'quarters') retainedLayouts = keep;
-    if (!response.error && key) { const { id: _id, ms: _ms, wasm: _wasm, ...value } = response; void writeUrbanCache(key, value); }
+    const response = await runWasm(lazy ? { ...request, raster: pendingRaster } : request, lazy && request.kind !== 'quarters');
+    if (!response.error && key) {
+      const { id: _id, ms: _ms, wasm: _wasm, ...value } = response;
+      // Byte size from the Rust texts when known: no JSON.stringify of the result.
+      const present = ([value.layouts, value.partitions, value.placementRequests] as (object | undefined)[]).filter((v): v is object => !!v);
+      const known = present.length && present.every(v => texts.has(v)) ? present.reduce((n, v) => n + texts.get(v)!.length, 0) : undefined;
+      void writeUrbanCache(key, value, known);
+    }
     return response;
   };
   return { run(request) {

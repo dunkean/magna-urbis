@@ -6,12 +6,16 @@
 // Any pool failure re-runs that slice locally, so errors are the serial errors.
 import type { SettlementRaster } from './settlements';
 
-export type PoolOp = 'quarters' | 'parcels' | 'sites';
+export type PoolOp = 'quarters' | 'parcels' | 'sites' | 'parcels-resident' | 'sites-resident';
 export type PoolArgs = Record<string, string | undefined>;
+/** Batch context, sent once per helper and batch. `image` is a binary
+ * (`export_resident`) image of the coordinator's resident products: decoded
+ * once by each helper, never re-parsed per slice. */
+export type PoolShared = Record<string, string | Uint8Array | undefined>;
 export type PoolMessage =
   | { type: 'init'; module: WebAssembly.Module }
   | { type: 'raster'; version: number; raster: SettlementRaster }
-  | { type: 'job'; id: number; version: number; batch: number; op: PoolOp; args: PoolArgs; shared?: PoolArgs };
+  | { type: 'job'; id: number; version: number; batch: number; op: PoolOp; args: PoolArgs; shared?: PoolShared };
 export type PoolReply = { id: number; json?: string; error?: string };
 
 interface Helper { worker: Worker; version: number; batch: number; busy: boolean; broken: boolean; pending?: (reply: PoolReply) => void }
@@ -24,7 +28,7 @@ export interface UrbanPool {
    * Runs `jobs` (same `op`, `shared` context) on the pool and locally, returns
    * the JSON results in job order. `local` must be the exact serial operation.
    */
-  run(op: PoolOp, jobs: PoolArgs[], shared: PoolArgs | undefined, local: (args: PoolArgs) => string): Promise<string[]>;
+  run(op: PoolOp, jobs: PoolArgs[], shared: PoolShared | undefined, local: (args: PoolArgs) => string): Promise<string[]>;
   dispose(): void;
 }
 
@@ -41,7 +45,7 @@ export function createUrbanPool(size: number, module: WebAssembly.Module): Urban
       helpers.push(helper);
     } catch { break; }
   }
-  const send = (helper: Helper, op: PoolOp, args: PoolArgs, shared: PoolArgs | undefined, current: number): Promise<PoolReply> =>
+  const send = (helper: Helper, op: PoolOp, args: PoolArgs, shared: PoolShared | undefined, current: number): Promise<PoolReply> =>
     new Promise(resolve => {
       if (helper.version !== version && raster) {
         // Structured clone (no transfer): the coordinator keeps its raster.

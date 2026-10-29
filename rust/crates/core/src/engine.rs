@@ -109,9 +109,10 @@ impl TerrainGenerator {
         erosion: f64,
         motif: f64,
         mountain_mix: f64,
-        source: &[f32],
+        source: Vec<f32>,
         environment: Option<&str>,
     ) -> Result<Self, String> {
+        // The engine takes ownership of the pipeline output: no copy of the field.
         Self::new_prepared(
             seed,
             map_width,
@@ -133,7 +134,7 @@ impl TerrainGenerator {
         motif: f64,
         mountain_mix: f64,
         generation_noise: Option<&crate::GenerationNoise<'_>>,
-        external_source: Option<&[f32]>,
+        external_source: Option<Vec<f32>>,
         environment: Option<&str>,
     ) -> Result<Self, String> {
         if seed.len() > 4096 {
@@ -200,7 +201,9 @@ impl TerrainGenerator {
         } else {
             None
         };
-        let prepared = if let Some(source) = external_source {
+        // Geological reliefs carry their background after the source field.
+        let mut external_background = None;
+        let prepared = if let Some(mut source) = external_source {
             if !matches!(
                 kind,
                 Relief::Hills
@@ -217,9 +220,10 @@ impl TerrainGenerator {
             {
                 return Err("Champ de relief externe invalide.".into());
             }
-            PreparedTerrain {
-                height: source[..SOURCE_N * SOURCE_N].to_vec(),
+            if kind.is_geological() {
+                external_background = Some(source.split_off(SOURCE_N * SOURCE_N));
             }
+            PreparedTerrain { height: source }
         } else if let Some(base) = &flat_base {
             let mut height = base.clone();
             crate::erosion::erode_shape(
@@ -250,10 +254,8 @@ impl TerrainGenerator {
             )?
         };
         let amp = kind.mixed_amplitude(motif, mountain_mix);
-        let background = if let Some(source) = external_source.filter(|_| kind.is_geological()) {
-            PreparedTerrain {
-                height: source[SOURCE_N * SOURCE_N..].to_vec(),
-            }
+        let background = if let Some(height) = external_background {
+            PreparedTerrain { height }
         } else if finite && kind != Relief::Cavern {
             let environment_motif = motif * kind.environment_scale();
             generate_motif(
@@ -367,6 +369,10 @@ impl TerrainGenerator {
     /// map, row-major from the north-west corner, sea level at zero. Sampling
     /// reads it as is; no procedural relief, coast cut or erosion is applied.
     pub fn with_surface(seed: &str, map_width: f64, heights: &[f32]) -> Result<Self, String> {
+        Self::with_surface_owned(seed, map_width, heights.to_vec())
+    }
+    /// `with_surface` taking ownership of the heights (no copy).
+    pub fn with_surface_owned(seed: &str, map_width: f64, heights: Vec<f32>) -> Result<Self, String> {
         if heights.len() != SOURCE_N * SOURCE_N || !heights.iter().all(|h| h.is_finite()) {
             return Err("Surface préparée invalide.".into());
         }
@@ -380,12 +386,12 @@ impl TerrainGenerator {
             map_width.clamp(250.0, 50000.0),
             0.5,
             None,
-            Some(&placeholder),
+            Some(placeholder),
             None,
         )?;
         let max = heights.iter().copied().fold(f32::MIN, f32::max) as f64;
         generator.max_height = max.max(1.0);
-        generator.coastal_surface = Surface::new(heights.to_vec());
+        generator.coastal_surface = Surface::new(heights);
         generator.prepared = true;
         Ok(generator)
     }

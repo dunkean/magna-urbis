@@ -1,12 +1,16 @@
+use crate::resident::Resident;
 use magna_urbis_core::settlements::{Raster, Terrain, roads};
 use wasm_bindgen::prelude::*;
 
 /// The adapted terrain and its derived fields, kept between calls: placement and routing are
 /// separate, so moving a settlement or changing a road option only reroutes.
 /// All placement, scoring and routing runs in Rust. JSON only carries editable properties.
+/// Urban products (layouts, partitions) stay resident here, addressed by ids
+/// (`resident.rs`): stages pass handles, not geometry.
 #[wasm_bindgen]
 pub struct SettlementTerrain {
-    inner: Terrain,
+    pub(crate) inner: Terrain,
+    pub(crate) resident: Resident,
 }
 
 #[wasm_bindgen]
@@ -187,7 +191,10 @@ impl SettlementTerrain {
             river_ids,
         };
         Terrain::new(raster)
-            .map(|inner| Self { inner })
+            .map(|inner| Self {
+                inner,
+                resident: Resident::default(),
+            })
             .map_err(|e| JsValue::from_str(&e))
     }
 

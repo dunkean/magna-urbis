@@ -77,10 +77,12 @@ export async function readUrbanCache<T>(key: string): Promise<T | undefined> {
   } catch { return undefined; }
 }
 
-export async function writeUrbanCache(key: string, value: unknown): Promise<void> {
+/** `knownBytes`: size of the value's JSON when the caller already has its text
+ * (Rust output), sparing a JSON.stringify of megabytes of geometry. */
+export async function writeUrbanCache(key: string, value: unknown, knownBytes?: number): Promise<void> {
   try {
     const db = await openDb(); if (!db) return;
-    const bytes = new TextEncoder().encode(JSON.stringify(value)).byteLength;
+    const bytes = knownBytes ?? new TextEncoder().encode(JSON.stringify(value)).byteLength;
     if (bytes > URBAN_CACHE_MAX_BYTES / 2) return;
     const all = (await wrap<StoredEntry[]>(db.transaction(STORE, 'readonly').objectStore(STORE).getAll())) ?? [];
     const drop = planEviction(all.filter(e => e.key !== key).map(({ key, bytes, time }) => ({ key, bytes, time })), bytes);

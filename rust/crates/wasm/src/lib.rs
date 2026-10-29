@@ -1,6 +1,7 @@
 use wasm_bindgen::prelude::*;
 
 mod flood;
+mod resident;
 mod settlements;
 pub use flood::{Flood, flood_hydrology};
 #[cfg(feature = "threads")]
@@ -429,7 +430,9 @@ impl TerrainEngine {
         erosion: f64,
         motif_size: f64,
         mountain_mix: f64,
-        source: &[f32],
+        // Owned: wasm-bindgen copies the Float32Array into WASM memory once and
+        // the engine keeps that buffer (no second copy of the 1024² field).
+        source: Vec<f32>,
         environment: Option<String>,
     ) -> Result<TerrainEngine, JsValue> {
         magna_urbis_core::TerrainGenerator::new_mixed_with_source(
@@ -446,8 +449,8 @@ impl TerrainEngine {
         .map_err(|e| JsValue::from_str(&e))
     }
     /// Prepared signed surface (neural relief), `1024²` metres over the map.
-    pub fn with_surface(seed: &str, width: f64, heights: &[f32]) -> Result<TerrainEngine, JsValue> {
-        magna_urbis_core::TerrainGenerator::with_surface(seed, width, heights)
+    pub fn with_surface(seed: &str, width: f64, heights: Vec<f32>) -> Result<TerrainEngine, JsValue> {
+        magna_urbis_core::TerrainGenerator::with_surface_owned(seed, width, heights)
             .map(|generator| TerrainEngine { generator })
             .map_err(|e| JsValue::from_str(&e))
     }
@@ -609,6 +612,8 @@ impl TerrainPipeline {
     pub fn advance(&mut self,stage:u32)->Result<(),JsValue>{self.pipeline.advance(stage).map_err(|e|JsValue::from_str(&e))}
     pub fn set_noise(&mut self,coarse:&[f32],fine:&[f32])->Result<(),JsValue>{self.pipeline.set_noise(coarse,fine).map_err(|e|JsValue::from_str(&e))}
     pub fn height(&self)->Vec<f32>{self.pipeline.height()}
+    /// Final field moved out of the pipeline (one copy into JS instead of two).
+    pub fn take_height(&mut self)->Vec<f32>{self.pipeline.take_height()}
 }
 
 #[wasm_bindgen]
