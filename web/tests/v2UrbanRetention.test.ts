@@ -3,7 +3,9 @@ import { makeOptions } from '../src/gen/options';
 import { generateRustTown, rustSettlementRaster } from '../src/v2/rustUrban';
 import type { World } from '../src/gen/types';
 import type { V2Settings } from '../src/v2/contracts';
-import type { PlacementBatch, PlacementBatchRequest, PlacedBuilding } from '../../rust/bridge/urbanArchitecture';
+import type { PlacementBatch, PlacementBatchRequest, PlacedBuilding, PlacementRequest } from '../../rust/bridge/urbanArchitecture';
+import type { Partition } from '../../rust/bridge/urban';
+import deficitFixture from './fixtures/open-deficit-roman04-bridge-native.json';
 
 const native = vi.hoisted(() => ({ run: vi.fn(), plan: vi.fn() }));
 vi.mock('../../rust/bridge/urban', () => ({ createUrbanEngine: async () => ({ run: native.run }) }));
@@ -74,6 +76,32 @@ describe('immutable retained native stages', () => {
     expect(rustSettlementRaster({ ...world, terrain: { ...world.terrain, rivers: [...world.terrain.rivers] } })).toBe(first);
     const sea = { ...world, terrain: { ...world.terrain, water: new Uint8Array([1, 0, 0, 0]), seaLevel: 6 } };
     const changed = rustSettlementRaster(sea); expect(changed).not.toBe(first); expect(changed.waterLevel[0]).toBe(6);
+  });
+  it('sends built capacity a scene whose deficit open spaces carry their actual Core declaration', async () => {
+    // Real native roman04 rows: two non-market parcels whose Core request is an
+    // open_space deficit declaration and whose Houses outcome is an open space.
+    const { partitions, requests, scene } = JSON.parse(JSON.stringify(deficitFixture)) as { partitions: Partition[]; requests: PlacementRequest[]; scene: PlacementBatch };
+    const run = native.run.getMockImplementation()!;
+    native.run.mockImplementation(async request => {
+      if (request.kind === 'parcels') return { partitions };
+      if (request.kind === 'programme') return { partitions: request.partitions };
+      if (request.kind === 'buildingSites') return { placementRequests: requests };
+      if (request.kind === 'builtCapacity') {
+        // Mirror of the Rust reconcile_built rule (programme.rs): an open space
+        // on a non market/common allocation must carry its architectural deficit.
+        const applied = new Map(request.partitions.flatMap((p: Partition) => p.programme!.allocations.map(a => [a.parcelId, a])));
+        for (const space of (request.scene as PlacementBatch).open_spaces) {
+          const allocation = applied.get(space.parcel_id) as { function: string } | undefined;
+          if (allocation && !['market', 'common'].includes(allocation.function) && !space.deficit) return { error: 'Open space does not match an applied open function' };
+        }
+      }
+      return run(request);
+    });
+    native.plan.mockImplementation(async () => structuredClone(scene));
+    const { world, settings } = fixture(), town = await generateRustTown(world, settings, 'main');
+    const sent = native.run.mock.calls.map(call => call[0]).find(request => request.kind === 'builtCapacity')!;
+    expect(sent.scene).toBe(town.snapshot.scene);
+    expect(town.snapshot.scene!.open_spaces.map(space => space.deficit?.request_id)).toEqual(scene.open_spaces.map(space => space.id));
   });
   it('does not alias editable input patches into retained house provenance', async () => {
     const { world, settings } = fixture();

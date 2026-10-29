@@ -5,6 +5,7 @@ import { defaultLayoutConfig, defaultParcelConfig, normalizeLayoutConfig, normal
 import type { SettlementRaster } from '../../../rust/bridge/settlements';
 import type { PlacementBatch, PlacementRequest, PlacementBatchSettings } from '../../../rust/bridge/urbanArchitecture';
 import type { HouseConfig } from '../../../rust/bridge/housesContract';
+import { carryUrbanOpenDeficits } from '../../../rust/bridge/urbanOpenDeficits';
 import type { V2Settings, V2TownStage, ProgressCallback, V2UrbanControls, V2UrbanSettings } from './contracts';
 import { forCellsNearPolyline } from '../gen/core/field';
 import { differenceS } from '../gen/geo/bool';
@@ -361,6 +362,11 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
       const order = new Map(snapshot.requests.map((request, index) => [request.parcel_id, index]));
       const byParcel = (a: { parcel_id: string }, b: { parcel_id: string }) => (order.get(a.parcel_id) ?? 0) - (order.get(b.parcel_id) ?? 0);
       snapshot.scene = { ...snapshot.scene, buildings: [...snapshot.scene.buildings].sort(byParcel), refusals: [...snapshot.scene.refusals].sort(byParcel), open_spaces: [...snapshot.scene.open_spaces].sort(byParcel) };
+      // Houses returns an open outcome; its architectural deficit is declared by
+      // the actual Core request. Join the two on the whole retained scene (as
+      // the CityBench scene stream does) so built capacity and every display
+      // read one attested outcome. Idempotent on already carried baselines.
+      snapshot.scene = carryUrbanOpenDeficits(snapshot.partitions!, snapshot.scene, snapshot.requests);
       for (const id of Object.keys(snapshot.houseBaseline!.originals)) if (!relevantOverrides[id]) delete snapshot.houseBaseline!.originals[id];
       if (snapshot.scene.plan_archives) {
         const retainedArchives = new Set<string>();
