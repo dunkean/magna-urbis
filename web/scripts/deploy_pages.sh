@@ -11,6 +11,8 @@ cp -r "$ROOT/web/node_modules" "$TMP/src/web/" 2>/dev/null || (cd "$TMP/src/web"
 mkdir -p "$TMP/site"
 cp "$TMP/src/web/dist/index.html" "$TMP/src/web/dist/testbench.html" "$TMP/site/"
 cp "$TMP/src/web/dist/visitor-counter.js" "$TMP/site/"
+# Cross-origin isolation for the WASM threads build (github.io sends no COOP/COEP headers).
+cp "$TMP/src/web/dist/coi-serviceworker.js" "$TMP/site/"
 touch "$TMP/site/.nojekyll"
 # Keep the preview gallery published separately by deploy_gallery.sh.
 git -C "$ROOT" fetch -q origin gh-pages && git -C "$ROOT" archive FETCH_HEAD gallery 2>/dev/null | tar -x -C "$TMP/site" || true

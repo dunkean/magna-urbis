@@ -8,6 +8,7 @@ import { bindControlRelevance, controlRelevanceControlsHtml } from './urbanContr
 import { retainSelectValue } from './retainedSelectValue';
 import { bindCityPlanCulture, withCityPlanCulture } from './cityPlanCulture';
 import UrbanWorker from './urbanWorker?worker&inline';
+import { publishWasmThreads, wasmWorkerOptions } from '../../../rust/bridge/wasmThreads';
 import catalogueJson from '../../../rust/crates/core/src/urban/catalogue.json';
 import { defaultLayoutConfig, defaultParcelConfig, layoutExtent, normalizeLayoutConfig, normalizeParcelConfig, regionalStreets, runUrbanRequest, type Layout, type LayoutConfig, type ParcelConfig, type Partition, type Point, type Shape, type Street, type UrbanRequest, type UrbanResponse } from '../../../rust/bridge/urban';
 import type { FortificationStyle } from '../../../rust/bridge/urbanConfig';
@@ -975,7 +976,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     // previous displayed plan survives a refusal. Do not keep its old handle.
     urbanSource.clear(); parcelSourceInput = undefined;
     if (!worker && !fallback) {
-      try { worker = new UrbanWorker(); worker.onmessage = (e: MessageEvent<UrbanResponse>) => receive(e.data); worker.onerror = e => { e.preventDefault(); useFallback(); }; }
+      try { worker = new UrbanWorker(wasmWorkerOptions('magna-urban')); worker.onmessage = (e: MessageEvent<UrbanResponse>) => { publishWasmThreads(e.data.wasm); receive(e.data); }; worker.onerror = e => { e.preventDefault(); useFallback(); }; }
       catch { fallback = true; }
     }
     const selected = settlements.settlements.filter(s => (target === 'all' || s.key === target) && (!only || only.has(s.key)));

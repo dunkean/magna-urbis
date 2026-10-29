@@ -20,6 +20,7 @@ import { decodeSketch, encodeSketch, decodeZones, encodeZones, sketchQuery, plac
 import type { TerrainZones } from '../../../rust/bridge/terrainZones';
 import type { TerrainSketch } from '../../../rust/bridge/terrainSketch';
 import TerrainWorker from './terrainWorker?worker&inline';
+import { wasmWorkerOptions } from '../../../rust/bridge/wasmThreads';
 import { reliefStatistics, sampleRustTerrain, EROSION_SETTINGS, type ErosionSetting, type ErosionTuning, RELIEFS, GEOLOGICAL_RELIEFS, ENVIRONMENT_RELIEFS, COMPUTE_MODES, type TerrainEnvironment, type TerrainCompute, type TerrainData, type TerrainSettings, type TerrainRequest, type TerrainResponse, type TerrainRelief, type TerrainRegion } from '../../../rust/bridge/terrain';
 import { renderRustTerrain, terrainContourWidths, type TerrainStyle, type TerrainScene } from '../../../rust/bridge/terrainRender';
 import { DEFAULT_HYDROLOGY, riverAreaFor, type HydrologySettings, type HydrologyOverlay } from '../../../rust/bridge/hydrology';
@@ -1683,7 +1684,7 @@ function dispatch(request: TerrainRequest): void {
   if (worker) worker.postMessage(request); else void runOnMain(request);
 }
 try {
-  worker = new TerrainWorker(); worker.onmessage = (event: MessageEvent<TerrainResponse>) => receive(event.data);
+  worker = new TerrainWorker(wasmWorkerOptions('magna-terrain')); worker.onmessage = (event: MessageEvent<TerrainResponse>) => receive(event.data);
   worker.onerror = event => {
     event.preventDefault(); worker?.terminate(); worker = undefined;
     const request = overviewPending ? overviewRequest : detailRequest;

@@ -258,6 +258,36 @@ impl Terrain {
             architecture_culture,
         )
     }
+    /// Sites `start..end` of `urban_building_sites_with_culture` (same order and
+    /// bytes): independent ranges can run on separate engines and be concatenated.
+    #[allow(clippy::too_many_arguments)]
+    pub fn urban_building_sites_range(
+        &self,
+        seed: &str,
+        layouts: &[crate::urban::Layout],
+        partitions: &[crate::urban::Partition],
+        architecture_culture: Option<&str>,
+        start: usize,
+        end: usize,
+    ) -> Result<Vec<serde_json::Value>, String> {
+        let r = &self.fields.r;
+        crate::urban::building_sites::requests_range(
+            seed,
+            layouts,
+            partitions,
+            crate::urban::Surface {
+                geometry: self.urban_geometry.as_ref(),
+                width: r.width,
+                n: r.n,
+                height: &r.height,
+                water: &r.water,
+            },
+            &r.water_level,
+            architecture_culture,
+            start,
+            end,
+        )
+    }
     /// A bounded page from immutable retained city inputs. Preparation lives in
     /// `BuildingSiteIndex`; the terrain and its raster are borrowed only here.
     #[allow(clippy::too_many_arguments)]

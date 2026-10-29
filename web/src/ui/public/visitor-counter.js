@@ -12,6 +12,10 @@
   };
   const tracking = document.createElement('script');
   tracking.async = true;
+  // CORS load (gc.zgo.at answers Access-Control-Allow-Origin: *): accepted
+  // by cross-origin-isolated pages under COEP require-corp (Safari) as well as
+  // credentialless. The hit itself is a sendBeacon, which COEP does not block.
+  tracking.crossOrigin = 'anonymous';
   tracking.src = 'https://gc.zgo.at/count.js';
   tracking.dataset.goatcounter = endpoint;
   document.head.append(tracking);

@@ -107,6 +107,10 @@ function rustBenchEntry(): Plugin {
   } };
 }
 
+/** COEP credentialless keeps no-cors cross-origin loads working without CORP
+ * (Chromium, Firefox); Safari ignores it and simply stays non-isolated. */
+const isolationHeaders = { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'credentialless' };
+
 export default defineConfig(({ mode: requested, command }) => {
   // `<bench>-offline` builds the same bench as one self-contained file.
   const offline = requested.endsWith('-offline') || process.env.MAGNA_SINGLE_FILE === '1', mode = requested.replace(/-offline$/, '');
@@ -120,7 +124,10 @@ export default defineConfig(({ mode: requested, command }) => {
   // Keep third-party notices inside the self-contained offline bundle.
   esbuild: { legalComments: 'inline' },
   optimizeDeps: mode === 'housebench' ? { entries: ['housebench.html'] } : mode === 'rustbench' ? { entries: ['rustbench.html', 'terrainbench.html', 'citybench.html', 'urbanbench.html', 'housebench.html'] } : undefined,
-  server: ['terrainbench', 'citybench', 'housebench', 'rustbench'].includes(mode) ? { fs: { allow: [fileURLToPath(new URL('..', import.meta.url))] } } : undefined,
+  // Cross-origin isolation (SharedArrayBuffer) for the WASM threads package. Static
+  // hosting (github.io) gets the same through public/coi-serviceworker.js.
+  server: { headers: isolationHeaders, ...(['terrainbench', 'citybench', 'housebench', 'rustbench'].includes(mode) ? { fs: { allow: [fileURLToPath(new URL('..', import.meta.url))] } } : {}) },
+  preview: { headers: isolationHeaders },
   build: {
     target: 'es2022',
     outDir: mode === 'rustbench' ? fileURLToPath(new URL('../rust/out/benches', import.meta.url)) : mode === 'housebench' ? fileURLToPath(new URL('../rust/out/houses', import.meta.url)) : mode === 'terrainbench' || mode === 'citybench' || mode === 'urbanbench' || mode === 'urbaneditor' ? fileURLToPath(new URL('../rust/out/browser', import.meta.url)) : '../../dist',

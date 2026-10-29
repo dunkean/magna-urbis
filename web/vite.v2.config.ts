@@ -90,7 +90,9 @@ export default defineConfig({
   cacheDir: resolve(web, 'out/.vite-v2'),
   plugins: [externalAssets(), v2Resources(), wasmReload()],
   esbuild: { legalComments: 'inline' },
-  server: { host: '127.0.0.1', port: 5174, strictPort: true, fs: { allow: [root] } },
+  // Cross-origin isolation for the WASM threads package (static hosting: public/coi-serviceworker.js).
+  server: { host: '127.0.0.1', port: 5174, strictPort: true, fs: { allow: [root] }, headers: { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'credentialless' } },
+  preview: { headers: { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'credentialless' } },
   build: {
     outDir: output, emptyOutDir: true, target: 'es2022', chunkSizeWarningLimit: 6000,
     rollupOptions: { input: resolve(web, 'src/ui/v2.html'), output: { banner: vendorNotice } },

@@ -3,11 +3,12 @@
 //! `map` returns its results in input order, so a caller that keeps every
 //! random stream forked per item (`rng.fork(&format!("quarter:{i}"))`) and
 //! merges the results serially gets bit-identical output whatever the number
-//! of threads. Native builds use rayon's global pool; wasm32 (and
-//! `URBAN_THREADS=1`) run the same closure serially.
+//! of threads. Native builds use rayon's global pool, as does wasm32 with the
+//! `threads` feature (pool started by wasm-bindgen-rayon's `initThreadPool`);
+//! plain wasm32 (and `URBAN_THREADS=1`) run the same closure serially.
 
 /// Whether the parallel path is disabled for this process (`URBAN_THREADS=1`).
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(not(target_arch = "wasm32"), feature = "threads"))]
 fn serial() -> bool {
     static SERIAL: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *SERIAL.get_or_init(|| std::env::var("URBAN_THREADS").is_ok_and(|v| v.trim() == "1"))
@@ -15,7 +16,7 @@ fn serial() -> bool {
 
 /// `items.iter().enumerate().map(f).collect()`, possibly in parallel, always
 /// in input order.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(not(target_arch = "wasm32"), feature = "threads"))]
 pub(crate) fn map<T, R, F>(items: &[T], f: F) -> Vec<R>
 where
     T: Sync,
@@ -29,7 +30,7 @@ where
     items.par_iter().enumerate().map(|(i, t)| f(i, t)).collect()
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", not(feature = "threads")))]
 pub(crate) fn map<T, R, F>(items: &[T], f: F) -> Vec<R>
 where
     F: Fn(usize, &T) -> R,
@@ -39,7 +40,7 @@ where
 
 /// Threads `map` uses here (1 when serial): a width for speculative rounds.
 /// Results never depend on it.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(not(target_arch = "wasm32"), feature = "threads"))]
 pub(crate) fn threads() -> usize {
     if serial() {
         1
@@ -48,7 +49,7 @@ pub(crate) fn threads() -> usize {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", not(feature = "threads")))]
 pub(crate) fn threads() -> usize {
     1
 }
@@ -65,7 +66,7 @@ where
 
 /// Runs `f` on a dedicated pool of `threads` threads (tests compare 1 against
 /// many). wasm32 runs it directly.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(not(target_arch = "wasm32"), feature = "threads"))]
 #[allow(dead_code)]
 pub(crate) fn with_threads<R: Send>(threads: usize, f: impl FnOnce() -> R + Send) -> R {
     rayon::ThreadPoolBuilder::new()
@@ -75,7 +76,7 @@ pub(crate) fn with_threads<R: Send>(threads: usize, f: impl FnOnce() -> R + Send
         .install(f)
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", not(feature = "threads")))]
 #[allow(dead_code)]
 pub(crate) fn with_threads<R>(_threads: usize, f: impl FnOnce() -> R) -> R {
     f()

@@ -1328,21 +1328,55 @@ pub fn requests(
     water_level: &[f32],
     architecture_culture: Option<&str>,
 ) -> Result<Vec<Value>, String> {
+    requests_range(
+        seed,
+        layouts,
+        partitions,
+        surface,
+        water_level,
+        architecture_culture,
+        0,
+        usize::MAX,
+    )
+}
+
+/// Number of building sites `requests` emits for these inputs.
+pub fn request_count(layouts: &[Layout], partitions: &[Partition]) -> Result<usize, String> {
+    let selected: Vec<_> = (0..partitions.len()).collect();
+    Ok(BuildingSiteIndex::prepare(layouts, partitions, &selected)?.total())
+}
+
+/// Sites `start..end` (clamped) of `requests`: pure per site, generated in
+/// parallel and returned in order, so concatenated ranges equal `requests`.
+/// As in a serial loop, the first error in site order wins.
+#[allow(clippy::too_many_arguments)]
+pub fn requests_range(
+    seed: &str,
+    layouts: &[Layout],
+    partitions: &[Partition],
+    surface: Surface<'_>,
+    water_level: &[f32],
+    architecture_culture: Option<&str>,
+    start: usize,
+    end: usize,
+) -> Result<Vec<Value>, String> {
     let selected: Vec<_> = (0..partitions.len()).collect();
     let index = BuildingSiteIndex::prepare(layouts, partitions, &selected)?;
-    (0..index.total())
-        .map(|i| {
-            index.request_one(
-                i,
-                seed,
-                layouts,
-                partitions,
-                surface,
-                water_level,
-                architecture_culture,
-            )
-        })
-        .collect()
+    let end = end.min(index.total());
+    let start = start.min(end);
+    super::par::range(end - start, |k| {
+        index.request_one(
+            start + k,
+            seed,
+            layouts,
+            partitions,
+            surface,
+            water_level,
+            architecture_culture,
+        )
+    })
+    .into_iter()
+    .collect()
 }
 
 fn ring_area(ring: &[Point]) -> f64 {

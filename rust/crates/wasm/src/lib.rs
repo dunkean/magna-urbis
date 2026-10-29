@@ -3,6 +3,21 @@ use wasm_bindgen::prelude::*;
 mod flood;
 mod settlements;
 pub use flood::{Flood, flood_hydrology};
+#[cfg(feature = "threads")]
+pub use wasm_bindgen_rayon::init_thread_pool;
+// Measured: a clear win with the rayon pool, neutral single-threaded.
+#[cfg(all(target_arch = "wasm32", feature = "threads"))]
+mod thread_alloc;
+#[cfg(all(target_arch = "wasm32", feature = "threads"))]
+#[global_allocator]
+static ALLOCATOR: thread_alloc::ThreadCachingAlloc = thread_alloc::ThreadCachingAlloc;
+
+/// Whether this build runs the urban stages on a rayon pool (`threads`
+/// feature, shared memory). The JS loader still has to call `initThreadPool`.
+#[wasm_bindgen]
+pub fn wasm_threads() -> bool {
+    cfg!(feature = "threads")
+}
 
 #[wasm_bindgen]
 extern "C" {
@@ -15,6 +30,11 @@ extern "C" {
 pub struct HydrologyEngine {
     engine: magna_urbis_core::HydrologyEngine,
 }
+// Unwinding builds (`-C panic=unwind`, pkg/wasm-threads) catch panics at the
+// export boundary and require this. The stage cache is a memo of pure results:
+// a panic mid-stage leaves at worst a missing entry, recomputed on next use.
+impl std::panic::UnwindSafe for HydrologyEngine {}
+impl std::panic::RefUnwindSafe for HydrologyEngine {}
 
 #[wasm_bindgen]
 impl HydrologyEngine {

@@ -29,6 +29,8 @@
     "check:houses": "node ../rust/scripts/houses.mjs check",
     "dev:terrain": "node ../rust/scripts/terrain.mjs dev",
     "wasm:terrain": "node ../rust/scripts/terrain.mjs wasm",
+    "wasm:terrain:release": "node ../rust/scripts/terrain.mjs wasm-release",
+    "wasm:terrain:threads": "node ../rust/scripts/terrain.mjs wasm-threads",
     "build:terrain": "node ../rust/scripts/terrain.mjs build",
     "check:terrain": "node ../rust/scripts/terrain.mjs check",
     "neural:serve": "node ../rust/scripts/terrain.mjs neural",

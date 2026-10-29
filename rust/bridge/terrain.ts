@@ -4,7 +4,8 @@ import { erodeWindGpu, erodeWindCpu } from './terrainWind';
 import { CLIMATE_VALUES, type ClimateValues } from './terrainClimate';
 export { CLIMATE_VALUES, type ClimateValues } from './terrainClimate';
 import type { TerrainLayers, TerrainLighting } from '../../web/src/render/terrainLighting';
-import init, { TerrainEngine, erosion_defaults, flood_hydrology, set_erosion_tuning } from '../pkg/wasm/magna_urbis_wasm.js';
+import init from '../pkg/wasm/magna_urbis_wasm.js';
+import { TerrainEngine, erosion_defaults, flood_hydrology, set_erosion_tuning, adoptSingleWasm, loadCoreWasm, wantsWasmThreads } from './wasmRuntime';
 import wasmUrl from '../pkg/wasm/magna_urbis_wasm_bg.wasm?url&inline';
 import { GpuTerrainSampler, prepareGpu, generateGpuNoise, GPU_RELIEFS, GPU_GENERATION_RELIEFS } from './terrainGpu';
 import { generateGpuTerrain, erodeGpuCoast, type ErosionProfile } from './terrainErosion';
@@ -268,7 +269,9 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
   // Vite embeds this asset in the standalone HTML (and in the inline worker).
   if(ready)progress?.('Réutilisation du moteur Rust/WASM chargé',{stage:'runtime-ready'});
   ready ??= (async () => {
-    await loadTerrainRuntime(wasmUrl,module=>init({module_or_path:module}),progress);
+    // Isolated worker with ?threads=auto|on: shared-memory package and rayon pool.
+    if(wantsWasmThreads()){progress?.('Chargement du moteur Rust/WASM (threads)…',{stage:'runtime-download'});await loadCoreWasm();progress?.('Moteur Rust/WASM prêt',{stage:'runtime-ready'});}
+    else await adoptSingleWasm(()=>loadTerrainRuntime(wasmUrl,module=>init({module_or_path:module}),progress));
     // The water chain's floods run compiled from now on (same results).
     setFloodKernel(flood_hydrology);
   })();

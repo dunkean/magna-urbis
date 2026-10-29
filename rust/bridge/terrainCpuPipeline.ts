@@ -1,4 +1,4 @@
-import { GenerationNoisePlan, TerrainPipeline } from '../pkg/wasm/magna_urbis_wasm.js';
+import { GenerationNoisePlan, TerrainPipeline } from './wasmRuntime';
 import { configureCompactPlan, applyPhasorCpu } from './terrainPhasor';
 import { configureProceduralPlan, isCompactProcedural, stageEnabled, type GenerationControl, type GenerationStage } from './terrainGenerationRecipe';
 import { nativeRequest, nativeSession } from './nativeEngine';

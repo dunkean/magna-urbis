@@ -17,6 +17,17 @@ npm run check:terrain  # Check rustfmt, Clippy and WASM compilation
 
 Generated modules are placed in `rust/pkg/wasm/`, which Git ignores. The TypeScript application keeps its own development and build commands without depending on Rust.
 
+`npm run wasm:terrain:release` (also run by `build:terrain`) builds the optimised
+browser packages: `pkg/wasm` (single thread, fat LTO) and `pkg/wasm-threads` (shared
+memory, rayon pool through wasm-bindgen-rayon, thread-caching allocator, `panic=unwind`;
+nightly flags on the pinned toolchain through `RUSTC_BOOTSTRAP=1` and `-Z build-std`,
+which needs `rustup component add rust-src`). SIMD and `wasm-opt` showed no speed-up
+(`MAGNA_WASM_OPT=1` still runs `wasm-opt -O3`, 9 % smaller).
+Pages choose at runtime with `?threads=auto|on|off|pool`: threads when the page is
+cross-origin isolated (Vite sends COOP/COEP; on github.io `coi-serviceworker.js`
+does it), otherwise single thread; `pool` spreads independent urban work over
+several single-thread workers. `window.magnaWasmThreads` shows the mode in use.
+
 Two execution profiles are available: **web** uses WASM/WebGPU, while **local**
 uses the optimized native Rust service with browser GPU stages. From `web/`, run
 `npm run start:local` on Windows or Linux. `npm run app:dev` opens the same

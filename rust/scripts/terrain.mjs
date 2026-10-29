@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { buildWasmVariant, buildWasmVariants } from './wasmVariants.mjs';
 
 const rustDir = fileURLToPath(new URL('..', import.meta.url));
 const webDir = resolve(rustDir, '../web');
@@ -42,6 +43,9 @@ async function neural() {
 
 async function main() {
   if (action === 'wasm') return wasm(false);
+  // Optimised browser packages: pkg/wasm (single thread) and pkg/wasm-threads.
+  if (action === 'wasm-release') return buildWasmVariants();
+  if (action === 'wasm-threads') return buildWasmVariant('threads');
   if (action === 'neural') return neural();
   if (action === 'neural-build') return run(executable('cargo'), ['build', '--release', '-p', 'magna-urbis-neural', '--bin', 'neural']);
   if (action === 'check') {
@@ -51,7 +55,7 @@ async function main() {
     return;
   }
   if (action === 'build') {
-    await wasm(true);
+    await buildWasmVariants();
     await vite('build', '--mode', 'terrainbench');
     await vite('build', '--mode', 'citybench');
     await vite('build', '--mode', 'urbanbench');
@@ -61,7 +65,7 @@ async function main() {
     console.log(`Urban bench: ${join(rustDir, 'out/browser/urbanbench.html')} (open .decor files from web/decors)`);
     return;
   }
-  if (action !== 'dev') throw new Error('Usage: terrain.mjs dev|wasm|build|check|neural|neural-build');
+  if (action !== 'dev') throw new Error('Usage: terrain.mjs dev|wasm|wasm-release|wasm-threads|build|check|neural|neural-build');
   await wasm(false);
   let timer, building = false, pending = false;
   async function rebuild() {

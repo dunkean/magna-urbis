@@ -1,7 +1,10 @@
 // Node WASM benchmark of the urban pipeline (quarters -> parcels -> building sites), no browser.
 // Usage: node web/scripts/bench_urban_wasm.mjs [--pkg rust/pkg/wasm] [--case web/out/perf-baseline/hanseatic-case.json]
+//        [--pool N  building sites over N single-thread workers, like ?threads=pool]
+//        pkg/wasm-threads needs a browser (Node cannot send a shared WebAssembly.Memory to
+//        worker_threads): node web/scripts/bench_urban_wasm_browser.mjs --pkg rust/pkg/wasm-threads
 //        [--baseline web/out/perf-baseline/hanseatic] [--save <dir>  write layouts/partitions/requests.json, usable as --baseline] [--river-id -1|0] [--culture <name>]
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -16,6 +19,7 @@ const now = () => performance.now();
 const kb = s => (s.length / 1024).toFixed(0) + ' KiB';
 const fmt = ms => ms.toFixed(1).padStart(9) + ' ms';
 
+if (existsSync(resolve(pkg, 'snippets'))) throw new Error('Threads package: use web/scripts/bench_urban_wasm_browser.mjs (Node cannot share WebAssembly.Memory with workers).');
 const mod = await import(pathToFileURL(resolve(pkg, 'magna_urbis_wasm.js')).href);
 const wasmBytes = readFileSync(resolve(pkg, 'magna_urbis_wasm_bg.wasm'));
 await mod.default({ module_or_path: wasmBytes });
@@ -52,8 +56,40 @@ const pOutStr = time('wasm.parcels', () => terrain.urban_parcels(c.seed, layouts
 const partitions = time('json.parse', () => JSON.parse(pOutStr));
 const partitionsJson = time('json.stringify', () => JSON.stringify(partitions));
 
-// building sites
-const sOutStr = time('wasm.sites', () => terrain.urban_building_sites(c.seed, layoutsJson, partitionsJson, culture));
+// building sites (--pool N: N-1 single-thread workers plus this thread share
+// contiguous site ranges, merged in order, like rust/bridge/urbanPool.ts)
+const poolSize = Number(arg('pool', '0'));
+let sOutStr;
+if (poolSize > 1) {
+  const { Worker } = await import('node:worker_threads');
+  const helpers = await Promise.all(Array.from({ length: poolSize - 1 }, () => new Promise(ok => {
+    const w = new Worker(new URL('./bench_urban_pool_worker.mjs', import.meta.url), { workerData: { pkg, casePath, riverFill } });
+    w.once('message', () => ok(w));
+  })));
+  const s = now();
+  const total = SettlementTerrain.urban_building_sites_total(layoutsJson, partitionsJson);
+  const parts = Math.min(Math.ceil(total / 16), poolSize * 4);
+  const jobs = Array.from({ length: parts }, (_, k) => [Math.floor(total * k / parts), Math.floor(total * (k + 1) / parts)]);
+  const results = new Array(jobs.length);
+  let next = 0, done = 0, id = 0;
+  const shared = { seed: c.seed, layouts: layoutsJson, partitions: partitionsJson, culture };
+  await new Promise(finish => {
+    const settle = () => { if (done === jobs.length) finish(); };
+    const give = (w, first) => {
+      if (next >= jobs.length) return;
+      const i = next++, [start, end] = jobs[i];
+      w.once('message', m => { results[i] = m.json ?? terrain.urban_building_sites_range(c.seed, layoutsJson, partitionsJson, culture, start, end); done++; give(w); settle(); });
+      w.postMessage({ id: id++, start, end, ...(first ? { shared } : {}) });
+    };
+    for (const w of helpers) give(w, true);
+    const step = () => { if (next < jobs.length) { const i = next++; results[i] = terrain.urban_building_sites_range(c.seed, layoutsJson, partitionsJson, culture, ...jobs[i]); done++; setImmediate(step); } settle(); };
+    step();
+  });
+  sOutStr = '[' + results.map(r => r.slice(1, -1)).filter(r => r.length).join(',') + ']';
+  timings['wasm.sites'] = now() - s;
+  console.log(`pool: ${poolSize} participants, ${jobs.length} site ranges`);
+  for (const w of helpers) void w.terminate();
+} else sOutStr = time('wasm.sites', () => terrain.urban_building_sites(c.seed, layoutsJson, partitionsJson, culture));
 const requests = time('json.parse', () => JSON.parse(sOutStr));
 
 console.log(`terrain new ${fmt(tNew)}   set_urban_geometry ${fmt(tGeo)}`);

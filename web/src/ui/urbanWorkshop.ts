@@ -1,5 +1,6 @@
 import catalogue from '../../../rust/crates/core/src/urban/catalogue.json';
 import UrbanWorker from './urbanWorker?worker&inline';
+import { publishWasmThreads, wasmWorkerOptions } from '../../../rust/bridge/wasmThreads';
 import { createUrbanEngine, normalizeLayoutConfig, normalizeParcelConfig, regionalStreets, type Layout, type Shape, type UrbanRequest, type UrbanResponse } from '../../../rust/bridge/urban';
 import type { RoadOutput, RoadSite, SettlementRaster } from '../../../rust/bridge/settlements';
 import { benchLayout, type BenchOptions } from '../gen/urban/testbench';
@@ -121,8 +122,8 @@ export function createUrbanWorkshop(options: {
     const message = { ...request, id: ++requestId, runtime: executionRuntime };
     if (!worker && !fallback) {
       try {
-        worker = new UrbanWorker();
-        worker.onmessage = event => { if (event.data.error) sentRaster = undefined; const item = pending.get(event.data.id); if (item) { pending.delete(event.data.id); item.resolve(event.data); } };
+        worker = new UrbanWorker(wasmWorkerOptions('magna-urban'));
+        worker.onmessage = event => { publishWasmThreads(event.data.wasm); if (event.data.error) sentRaster = undefined; const item = pending.get(event.data.id); if (item) { pending.delete(event.data.id); item.resolve(event.data); } };
         worker.onerror = event => {
           event.preventDefault(); useFallback();
         };

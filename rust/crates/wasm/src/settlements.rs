@@ -113,6 +113,48 @@ impl SettlementTerrain {
             .map_err(|e| JsValue::from_str(&e))?;
         serde_json::to_string(&result).map_err(decode)
     }
+    /// Number of building sites `urban_building_sites` emits for these inputs.
+    pub fn urban_building_sites_total(layouts: &str, partitions: &str) -> Result<u32, JsValue> {
+        let decode = |e: serde_json::Error| JsValue::from_str(&e.to_string());
+        let layouts = serde_json::from_str::<Vec<magna_urbis_core::urban::Layout>>(layouts)
+            .map_err(decode)?;
+        let partitions =
+            serde_json::from_str::<Vec<magna_urbis_core::urban::Partition>>(partitions)
+                .map_err(decode)?;
+        magna_urbis_core::urban::building_sites::request_count(&layouts, &partitions)
+            .map(|n| n as u32)
+            .map_err(|e| JsValue::from_str(&e))
+    }
+    /// Sites `start..end` of `urban_building_sites` as a JSON array: worker
+    /// pools split one city's sites and concatenate the ranges in order.
+    pub fn urban_building_sites_range(
+        &self,
+        seed: &str,
+        layouts: &str,
+        partitions: &str,
+        architecture_culture: Option<String>,
+        start: u32,
+        end: u32,
+    ) -> Result<String, JsValue> {
+        let decode = |e: serde_json::Error| JsValue::from_str(&e.to_string());
+        let layouts = serde_json::from_str::<Vec<magna_urbis_core::urban::Layout>>(layouts)
+            .map_err(decode)?;
+        let partitions =
+            serde_json::from_str::<Vec<magna_urbis_core::urban::Partition>>(partitions)
+                .map_err(decode)?;
+        let result = self
+            .inner
+            .urban_building_sites_range(
+                seed,
+                &layouts,
+                &partitions,
+                architecture_culture.as_deref(),
+                start as usize,
+                end as usize,
+            )
+            .map_err(|e| JsValue::from_str(&e))?;
+        serde_json::to_string(&result).map_err(decode)
+    }
     pub fn urban_built_capacity(&self, partitions: &str, scene: &str) -> Result<String, JsValue> {
         let decode = |e: serde_json::Error| JsValue::from_str(&e.to_string());
         let partitions =

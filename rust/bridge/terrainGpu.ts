@@ -3,8 +3,8 @@ import noiseShader from './terrainNoise.wgsl?raw';
 import generationShader from './terrainGeneration.wgsl?raw';
 import volcanicShader from './terrainFinite.wgsl?raw';
 import coastShader from './terrainCoast.wgsl?raw';
-import { GenerationNoisePlan } from '../pkg/wasm/magna_urbis_wasm.js';
-import type { TerrainEngine } from '../pkg/wasm/magna_urbis_wasm.js';
+import { GenerationNoisePlan } from './wasmRuntime';
+import type { TerrainEngine } from './wasmRuntime';
 import type { TerrainData, TerrainRegion, TerrainSettings, TerrainCompute } from './terrain';
 import { gpuSetupDeadline, type TerrainProgressCallback } from './terrainProgress';
 
