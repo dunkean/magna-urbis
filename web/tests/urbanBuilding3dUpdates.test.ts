@@ -15,7 +15,7 @@ it('keeps six-digit palette colours on walls and roofs in flat/textured batches 
   const source = plan('palette', 1000), slots = { frame: 'city3d:wall:stone@ccaa88', infill: 'city3d:wall:stone@ccaa88', coating: 'city3d:wall:stone@ccaa88', cladding: 'city3d:cover:slate@776655', base: 'city3d:wall:stone@ccaa88', roof_frame: 'city3d:wall:stone@ccaa88' };
   source.volumes = source.volumes.map(v => ({ ...v, materials: slots, levels: v.levels.map(l => ({ ...l, materials: slots })) }));
   const scene = batch([compactBuilding(source)]), { gl } = mockGl(), pass = new UrbanBuildingPass(gl), state = pass as unknown as Internals;
-  const colors = () => state.sectors.flatMap(s => (s.cached as { batches: { color: number[] }[] }).batches.map(b => b.color));
+  const colors = () => state.sectors.flatMap(s => (s.cached as { batches: { color: number[]; palette?: number[][] }[] }).batches.flatMap(b => b.palette ?? [b.color]));
   for (const textured of [false, true]) {
     pass.setScene(scene, { style: 'cartographic', diagnostic: 'none', textured });
     for (const sector of state.sectors) state.prepare(sector, false);

@@ -43,6 +43,8 @@ export interface CityGlDrawOptions {
   groundBlend?: boolean;
   /** Textured materials: roofs, streets and plazas sample the PBR albedo atlas in world metres. */
   textured?: boolean;
+  /** Custom display colours (road, roadEdge, track, building, buildingEdge). */
+  colors?: import('./customColors').RenderColors;
 }
 export interface CityGlFrame { lod: CityLod; drawCalls: number; instances: number; triangles: number; cpuMs: number }
 export interface CityGlBuildStats { packMs: number; triangulateMs: number; assembleMs: number; uploadMs: number; workers: number; totalMs: number }
@@ -578,16 +580,17 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
       if (!scene || !plan) return frame;
       const palette = o.palette ?? 'growth', layers = { ...DEFAULT_LAYERS, ...o.layers };
       const renderBackground = globalThis.document?.documentElement.dataset.cityBackground === 'render', painted = o.paintedBuildings ?? renderBackground;
-      const style: CityGlStyleState = { view: o.view, lod, palette, layers, buildingsVisible: o.buildingsVisible ?? true, diagnostic: o.diagnostic ?? 'none', refusedParcels: o.refusedParcels, painted, blended: o.groundBlend ?? isBlended() };
+      const style: CityGlStyleState = { view: o.view, lod, palette, layers, buildingsVisible: o.buildingsVisible ?? true, diagnostic: o.diagnostic ?? 'none', refusedParcels: o.refusedParcels, painted, blended: o.groundBlend ?? isBlended(), colors: o.colors };
+      const colorKey = o.colors ? JSON.stringify(o.colors) : '';
       // Colour tables: rebuilt only when the state changes.
       const key = JSON.stringify([o.view, lod, palette, layers, style.buildingsVisible, refusedKey(o.refusedParcels), painted, style.blended]);
       if (key !== styleKey) { const pc = planColors(scene, plan.mesh, style); plan.colors(pc.fill, pc.line); draws = pc.draws; styleKey = key; }
-      const softStreets = !!style.blended && !(o.textured && palette !== 'parchment' && palette !== 'ink'), sKey = `${palette}|${softStreets}`;
+      const softStreets = !!style.blended && !(o.textured && palette !== 'parchment' && palette !== 'ink'), sKey = `${palette}|${softStreets}|${colorKey}`;
       if (sKey !== streetKey) {
-        const sc = streetColors(scene, palette, softStreets), wc = cityWallColors(scene, palette); // walls hook
+        const sc = streetColors(scene, palette, softStreets, o.colors), wc = cityWallColors(scene, palette); // walls hook
         streets?.colors(sc.outer, sc.inner); walls?.colors(wc.outer, wc.inner); towerColors = wc.tower; streetKey = sKey;
       }
-      const bKey = `${o.view}|${palette}|${style.diagnostic}|${buildingGeneration}|${painted}`;
+      const bKey = `${o.view}|${palette}|${style.diagnostic}|${buildingGeneration}|${painted}|${colorKey}`;
       if (built && bKey !== builtKey) { const bc = buildingColors(buildings, style, scene); built.colors(bc.fill, bc.line); builtKey = bKey; }
       // Textured materials: albedo array loaded once (the plan is drawn flat until it arrives, then repainted).
       const textured = !!o.textured && !!albedoTex;
@@ -673,7 +676,7 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
         const paintRoads = renderBackground && palette !== 'parchment' && palette !== 'ink' && !softStreets;
         if (paintRoads) useStroke(casingP);
         if (d.streetCasing) strokes(streets, first, 0, s);
-        if (textured && streets.mats && palette !== 'parchment' && palette !== 'ink') { useStroke(texturedP); useTextured(texturedP, streets.mats, false); u = texturedP.u; }
+        if (textured && streets.mats && palette !== 'parchment' && palette !== 'ink' && !o.colors?.road) { useStroke(texturedP); useTextured(texturedP, streets.mats, false); u = texturedP.u; }
         else if (paintRoads) useStroke(surfaceP);
         gl.uniform1i(u.uBridgeDeck, (o.bridgeDeck ?? true) ? 1 : 0);
         strokes(streets, first, 1, s);

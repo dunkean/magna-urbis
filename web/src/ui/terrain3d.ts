@@ -10,6 +10,7 @@ import { terrainLights, type TerrainLighting } from '../render/terrainLighting';
 import { gridHeight, raycastGrid, type TerrainPickGrid } from './terrain3dPicking';
 import { stitchTerrainPieces, type TerrainStitchedPiece, type TerrainStitchPiece } from './terrain3dStitch';
 import { UrbanBuildingPass } from './urbanBuilding3d';
+import { reportRenderStats } from '../render/renderMode';
 import type { UrbanBuildingAppearance } from '../render/urbanBuildingStyle';
 import type { BuildingVector, Building3dVisual, Building3dScene } from '../render/urbanBuildingGeometry';
 import { withBuildingOccupation } from './forestOccupation';
@@ -1347,6 +1348,7 @@ export class Terrain3d {
     let finest = this.layer.width, texel = this.layer.width / this.fallbackPixels, ready = 0, level = 0;
     const buildingPreparing = this.buildings.draw({ matrix: frame.matrix, cameraX: this.camera.x, cameraY: this.camera.y, targetHeight: frame.targetHeight,
       exaggeration: this.camera.exaggeration, focal: frame.focal, distance: this.camera.distance });
+    reportRenderStats({ buildings3d: this.buildings.lastDraw });
     for (const patch of drawn) {
       const material = this.closestTexture(patch);
       finest = Math.min(finest, patch.tile.width / GRID); texel = Math.min(texel, material.texel);

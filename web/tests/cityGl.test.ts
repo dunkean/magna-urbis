@@ -5,7 +5,7 @@ import {
   buildFillMeshSync, buildStreetStrokes, CityGlPacker, mergeTriangulations, meshFeatureAt, META, packBuildings, slicePolygons, splitPolygons,
   STROKE_STRIDE, triangulatePolygons, visibleRanges,
 } from '../src/render/cityGlBuild';
-import { DEFAULT_LAYERS, planColors } from '../src/render/cityGlStyle';
+import { DEFAULT_LAYERS, buildingColors, planColors, streetColors } from '../src/render/cityGlStyle';
 import type { Layout, Partition, Shape } from '../../rust/bridge/urban';
 import type { PlacementBatch } from '../../rust/bridge/urbanArchitecture';
 
@@ -82,6 +82,17 @@ describe('cityGl scene, picking and styles', () => {
     expect(meshFeatureAt(mesh, 'blocks', { x: 1025, y: 1025 })).toBe(mesh.layers.blocks.features[0]);
     const bm = buildFillMeshSync(packBuildings(buildings, mesh.origin));
     expect(meshFeatureAt(bm, 'buildings', { x: 1005, y: 1005 })).toBe(0);
+  });
+
+  it('applies custom road and building colours to the GL colour tables', () => {
+    const colors = { road: '#112233', roadEdge: '#445566', track: '#778899', building: '#aabbcc', buildingEdge: '#ddeeff' };
+    const s = streetColors(scene, 'growth', false, colors), plain = streetColors(scene, 'growth', false);
+    expect(Array.from(s.inner.slice(0, 3))).toEqual([0x11, 0x22, 0x33]); expect(Array.from(s.outer.slice(0, 3))).toEqual([0x44, 0x55, 0x66]);
+    expect(Array.from(plain.inner.slice(0, 3))).not.toEqual([0x11, 0x22, 0x33]);
+    const state = { view: 'buildings' as const, lod: 'close' as const, palette: 'growth' as const, layers: DEFAULT_LAYERS, buildingsVisible: true, diagnostic: 'none', colors };
+    const b = buildingColors(buildings, state);
+    expect(Array.from(b.fill.slice(0, 3))).toEqual([0xaa, 0xbb, 0xcc]); expect(Array.from(b.line.slice(0, 3))).toEqual([0xdd, 0xee, 0xff]);
+    expect(Array.from(buildingColors(buildings, { ...state, diagnostic: 'uses' }).fill.slice(0, 3))).not.toEqual([0xaa, 0xbb, 0xcc]);
   });
 
   it('sorts street segments minor first, crossings last, with butt ends on bridges', () => {

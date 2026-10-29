@@ -47,6 +47,7 @@ import { siteVisualScene } from './urbanSilhouettes';
 import { createNativeSiteStore, createLegacySiteStore, createUnboundSiteStore, type UrbanSiteStore, type UrbanSiteVisual } from './urbanSiteStore';
 import { CityGlCanvasLayer, type CityGlHostFrame } from '../render/cityGlHost';
 import { cityGlOverlayLayers } from '../render/cityGl';
+import { cityGlBlocker, getRenderMode, onRenderMode, reportRenderStats, setRenderMode, type RenderMode } from '../render/renderMode';
 import { V1LandscapeLayer, type V1LandscapeStyle } from '../render/v1Landscape';
 import { cityWallSvg } from '../render/cityWalls'; // walls hook
 import { BUILDING_FAMILIES, CityCanvasLayer, DISTRICT_ROLES, districtRoleKey, buildCityBuildings, buildCityScene, drawCity, pickCity, selectCityLod, type CityBuildings, type CityFrameStats, type CityLod, type CityPick, type CityScene } from '../render/cityCanvas';
@@ -443,7 +444,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     mainPanel?.sync();
   }
   const rendering = document.createElement('details'); rendering.className = 'advanced'; rendering.dataset.renderSettingsCategory = 'buildings';
-  rendering.innerHTML = `<summary>⚙ Rendu · couches, palette, opacité</summary><div class="control-group">${Object.entries({ reserve: 'Réserve de croissance', allocated: 'Terre urbaine attribuée', centers: 'Noyaux et identités de quartier', domains: 'Domaines réservés', quarters: 'Secteurs de calcul', blocks: 'Îlots', streets: 'Rues urbaines', enclosures: 'Enceintes et portes', parcels: 'Parcelles', gardens: 'Jardins', places: 'Places et communs', fronts: 'Façades accessibles', axes: 'Axes des parcelles', access: 'Statut de desserte des parcelles', textured: 'Matières texturées' }).map(([key, label]) => `<label><input data-render="${key}" type="checkbox">${label}</label>`).join('')}<label>Palette<select data-render="palette"><option value="growth">Phases de croissance</option><option value="atlas">Atlas · quartiers</option><option value="ink">Encre</option><option value="terrain">Terrain</option></select></label><label>Voies et sols<select data-render="groundBlend"><option value="classic">Classique</option><option value="blended">Intégré</option></select></label><label>Opacité<input data-render="opacity" type="number" min="0" max="1" step="0.05"></label><label>Épaisseur des traits (px)<input data-render="width" type="number" min="0" max="5" step="0.1"></label></div><small>Ces réglages redessinent les résultats conservés, sans appel de génération. La réserve, la terre attribuée et les enceintes sont trois objets différents.</small>`;
+  rendering.innerHTML = `<summary>⚙ Rendu · couches, palette, opacité</summary><div class="control-group">${Object.entries({ reserve: 'Réserve de croissance', allocated: 'Terre urbaine attribuée', centers: 'Noyaux et identités de quartier', domains: 'Domaines réservés', quarters: 'Secteurs de calcul', blocks: 'Îlots', streets: 'Rues urbaines', enclosures: 'Enceintes et portes', parcels: 'Parcelles', gardens: 'Jardins', places: 'Places et communs', fronts: 'Façades accessibles', axes: 'Axes des parcelles', access: 'Statut de desserte des parcelles', textured: 'Matières texturées' }).map(([key, label]) => `<label><input data-render="${key}" type="checkbox">${label}</label>`).join('')}<label>Palette<select data-render="palette"><option value="growth">Phases de croissance</option><option value="atlas">Atlas · quartiers</option><option value="ink">Encre</option><option value="terrain">Terrain</option></select></label><label>Voies et sols<select data-render="groundBlend"><option value="classic">Classique</option><option value="blended">Intégré</option></select></label><label>Moteur de rendu<select data-render-mode><option value="auto">Auto</option><option value="gpu">GPU (WebGL2)</option><option value="cpu">CPU (Canvas 2D)</option></select></label><label>Opacité<input data-render="opacity" type="number" min="0" max="1" step="0.05"></label><label>Épaisseur des traits (px)<input data-render="width" type="number" min="0" max="5" step="0.1"></label></div><small>Ces réglages redessinent les résultats conservés, sans appel de génération. La réserve, la terre attribuée et les enceintes sont trois objets différents.</small>`;
   const renderInputs = Array.from(rendering.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-render]'));
   for (const key of ['streets', 'groundBlend']) rendering.querySelector<HTMLElement>(`[data-render="${key}"]`)!.closest<HTMLElement>('label')!.dataset.renderSettingsCategory = 'roads';
   displayHost.append(rendering);
@@ -458,6 +459,9 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   const blendSelect = rendering.querySelector<HTMLSelectElement>('[data-render="groundBlend"]')!;
   blendSelect.onchange = () => setGroundBlend(blendSelect.value as GroundBlend);
   onGroundBlend(() => { render.groundBlend = getGroundBlend(); blendSelect.value = render.groundBlend; draw(); options.onChange(); });
+  const modeSelect = rendering.querySelector<HTMLSelectElement>('[data-render-mode]')!;
+  modeSelect.value = getRenderMode(); modeSelect.onchange = () => setRenderMode(modeSelect.value as RenderMode);
+  onRenderMode(() => { modeSelect.value = getRenderMode(); draw(); options.onChange(); });
   window.addEventListener('bench-render-colors-change', () => { draw(); options.onChange(); });
   let appliedLayout = clone(layoutConfig), appliedParcel = clone(parcelConfig), appliedQuarterSeed = quarterSeed, appliedParcelSeed = parcelSeed;
   let successfulLayout = clone(appliedLayout), successfulParcel = clone(appliedParcel), successfulQuarterSeed = appliedQuarterSeed, successfulParcelSeed = appliedParcelSeed;
@@ -1433,10 +1437,12 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     const detail = viewport ? viewport.details?.stats : architectureView === '2d' ? cityDetails?.update({ viewport: frame.viewport, metresPerPixel: frame.mpp, selectedId: selected,
       enabled: !compare && architectureMode === 'detailed' && !!native }) : cityDetails?.stats;
     // WebGL once its upload is done; comparisons and the parchment ink (hatching) keep Canvas 2D.
-    const drawGl = !Object.keys(getBenchRenderColors()).some(key => ['road', 'roadEdge', 'track', 'building', 'buildingEdge'].includes(key)) && !compare && glReady === cityPlan && (render.palette as string) !== 'parchment' ? frame.drawGl : undefined;
+    // Custom colours are GL uniforms of the colour tables (CityGlStyleState.colors); render=cpu forces Canvas 2D.
+    const blocker = cityGlBlocker({ mode: getRenderMode(), compare: !!compare, parchment: (render.palette as string) === 'parchment', ready: glReady === cityPlan });
+    const drawGl = blocker ? undefined : frame.drawGl;
     const refused = appearance.diagnostic === 'access' ? refusedParcels : undefined;
     const glFrame = drawGl?.({ viewport: frame.viewport, metresPerPixel: frame.mpp, lod: cityLod, view, palette: render.palette, layers: render, selectedId: selected, selectedParcel,
-      buildingsVisible: buildingPanel.state.visible && !native && !parentOwned, diagnostic: appearance.diagnostic, refusedParcels: refused, textured: !!render.textured });
+      buildingsVisible: buildingPanel.state.visible && !native && !parentOwned, diagnostic: appearance.diagnostic, refusedParcels: refused, textured: !!render.textured, colors: getBenchRenderColors() });
     cityFrame = drawCity(ctx, cityPlan, { ...frame, colors: getBenchRenderColors(), labels: options.labels, lod: cityLod, view, palette: render.palette, width: render.width, layers: glFrame ? cityGlOverlayLayers(render) : render,
       buildings: compare ? (silhouetteCompare ? comparisonBuilt?.[2] : native ? landmarkOverlay() : cityBuilt) : native ? landmarkOverlay() : cityBuilt,
       buildingsVisible: !parentOwned && (compare ? view === 'buildings' : buildingPanel.state.visible && (!glFrame || !!native)), appearance,
@@ -1469,6 +1475,8 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     } else if (parentOwned) frameInfo.dataset.parentEvidence = JSON.stringify({ version: 'parent-city-viewport-evidence-1', phase: 'loading', active: false, complete: false });
     else delete frameInfo.dataset.parentEvidence;
     cityFrame.ms = performance.now() - start;
+    reportRenderStats({ path: glFrame ? 'gpu' : 'cpu', ms: cityFrame.ms, drawCalls: glFrame?.drawCalls ?? 0, reason: glFrame ? undefined : blocker ?? 'gl-unavailable',
+      canvas2dFills: cityFrame.blocks + cityFrame.parcels + cityFrame.streets + (glFrame && !native ? 0 : cityFrame.buildings) });
     comparison.painted(cityFrame.pending, { blocks: cityFrame.blocks, parcels: cityFrame.parcels, streets: cityFrame.streets, buildings: cityFrame.buildings });
     frameInfo.dataset.detailCached = String(detail?.cached ?? 0); frameInfo.dataset.detailInFlight = String(detail?.globalInFlight ?? 0);
     frameInfo.dataset.detailCacheBytes = String(detail?.cacheBytes ?? 0);

@@ -9,6 +9,7 @@ import { isBoardwalk } from './cityGround';
 import { STRUCTURE_ROLES, blendLine, blendTone, blendsGround, groundWash, softStreet, type WashKind } from './groundBlend';
 import { urbanFunctionColor } from './urbanBuildingStyle';
 import type { CityGlFillMesh } from './cityGlBuild';
+import type { RenderColors } from './customColors';
 import { MATERIALS, coverLayer, placeLayer, streetLayer } from './buildingMaterials';
 import { planBuildingColors, planRoofColor, planShade } from './cityBuildingPalette';
 
@@ -20,6 +21,8 @@ export interface CityGlStyleState {
   painted?: boolean;
   /** Blended ground and streets (groundBlend.ts). */
   blended?: boolean;
+  /** Custom display colours (road, roadEdge, track, building, buildingEdge), as in drawCity. */
+  colors?: RenderColors;
 }
 export const DEFAULT_LAYERS: CityLayers = { reserve: false, allocated: false, centers: false, domains: true, quarters: false, blocks: true, streets: true, enclosures: true, parcels: true, gardens: true, places: true, fronts: false, axes: false, access: false };
 
@@ -207,16 +210,16 @@ export function buildingColors(buildings: CityBuildings | undefined, s: CityGlSt
   items.forEach((b, i) => {
     const tint = planBuildingColors(b, s.palette);
     const color = s.view === 'roles' ? BUILDING_FAMILIES[b.family]?.color ?? '#5a4b3c' : s.diagnostic === 'uses' ? urbanFunctionColor(b.fn)
-      : roofs ? tint.wall : tint.roof;
+      : s.colors?.building ?? (roofs ? tint.wall : tint.roof);
     // Party walls: every roof keeps a dark edge, so adjoining houses of a row stay distinct.
-    put(fill, i, color); put(line, i, b.stilts ? '#514431' : painted ? b.landmark ? '#e2d3a6' : '#1f1811' : edge, painted && !b.landmark ? 0.8 : 1);
+    put(fill, i, color); put(line, i, b.stilts ? '#514431' : s.colors?.buildingEdge ? s.colors.buildingEdge : painted ? b.landmark ? '#e2d3a6' : '#1f1811' : edge, painted && !b.landmark ? 0.8 : 1);
     colors.push(color);
   });
   // Roof pans use the exact shared culture/material/tone, softened for ink maps.
   if (roofs) {
     for (let k = 0; k < roofs.shapes.length; k++) {
       const cover = roofs.cover[k], f = items.length + k;
-      const color = diagnostic ? planShade(colors[roofs.owner[k]], roofs.light[k] * 0.5) : planRoofColor(items[roofs.owner[k]], roofs, k, s.palette);
+      const color = diagnostic ? planShade(colors[roofs.owner[k]], roofs.light[k] * 0.5) : s.colors?.building ?? planRoofColor(items[roofs.owner[k]], roofs, k, s.palette);
       put(fill, f, color); put(line, f, planShade(color, -0.38), COVER_EDGE[cover] ?? 0.55);
     }
     // Shadow features are drawn with a tint; they only need to be shown.
@@ -259,11 +262,12 @@ export const PAINTED_BUILDINGS: Record<string, string> = {
 /** Ground shadow of painted silhouettes: straight RGBA and world offset (metres, south-east). */
 export const PAINTED_SHADOW: [number, number, number, number] = [22 / 255, 18 / 255, 10 / 255, 0.3];
 /** Street colours: outer = casing, inner = fill (feature = street index). */
-export function streetColors(scene: CityScene, palette: CityPalette, blended = false): { outer: Uint8Array; inner: Uint8Array } {
+export function streetColors(scene: CityScene, palette: CityPalette, blended = false, custom?: RenderColors): { outer: Uint8Array; inner: Uint8Array } {
   const n = Math.max(1, scene.streets.length), outer = new Uint8Array(n * 4), inner = new Uint8Array(n * 4), tone = blendTone(palette);
   scene.streets.forEach((s, i) => {
-    if (blended && !STRUCTURE_ROLES.has(s.role)) { const p = softStreet(s.role, s.rank, tone); put(outer, i, p.edge, p.edgeAlpha); put(inner, i, p.fill, p.alpha); return; }
-    const p = streetPaint(s.role, s.rank, palette); put(outer, i, p.casing); put(inner, i, p.fill);
+    const fillOf = (base: string): string => (s.role === 'track' ? custom?.track : custom?.road) ?? base, edgeOf = (base: string): string => custom?.roadEdge ?? base;
+    if (blended && !STRUCTURE_ROLES.has(s.role)) { const p = softStreet(s.role, s.rank, tone); put(outer, i, edgeOf(p.edge), p.edgeAlpha); put(inner, i, fillOf(p.fill), p.alpha); return; }
+    const p = streetPaint(s.role, s.rank, palette); put(outer, i, edgeOf(p.casing)); put(inner, i, fillOf(p.fill));
   });
   return { outer, inner };
 }
