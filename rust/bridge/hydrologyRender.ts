@@ -1,5 +1,6 @@
 import { encodePng, pngDataUrl } from '../../web/src/render/raster';
 import { waterShoreColor } from '../../web/src/render/terrainStyle';
+import type { RenderColors } from '../../web/src/render/customColors';
 import { lakeMaterialSvg } from '../../web/src/render/terrainWater';
 import type { HydrologyData, HydrologyOverlay } from './hydrology';
 import type { TerrainStyle } from './terrainRender';
@@ -85,8 +86,8 @@ function diagnosticImage(data: HydrologyData, overlay: HydrologyOverlay): string
 }
 
 /** Water colour of a display style, shared by lakes and rivers. */
-export function hydrologyWaterColour(style: TerrainStyle): string {
-  return waterShoreColor(style);
+export function hydrologyWaterColour(style: TerrainStyle, colors?: RenderColors): string {
+  return colors?.river ?? colors?.waterShore ?? waterShoreColor(style);
 }
 
 export function hydrologyLakePath(data: HydrologyData): string {
@@ -96,9 +97,9 @@ export function hydrologyLakePath(data: HydrologyData): string {
 }
 
 /** Shared lake material for live rendering and retained terrain exports. */
-export function hydrologyLakeMaterial(data: HydrologyData, style: TerrainStyle = 'render'): string {
+export function hydrologyLakeMaterial(data: HydrologyData, style: TerrainStyle = 'render', colors?: RenderColors): string {
   const lakes = hydrologyLakePath(data);
-  return lakes ? lakeMaterialSvg(data.waterField, data.resolution, data.width, lakes, 'hydrology-lake-material', style) : '';
+  return lakes ? lakeMaterialSvg(data.waterField, data.resolution, data.width, lakes, 'hydrology-lake-material', style, data.width, colors) : '';
 }
 
 /** River capsules for the GPU renderer: x0, y0, x1, y1, widths (m) at both ends, r, g, b. */
@@ -115,8 +116,8 @@ export function hydrologySegments(data: HydrologyData, colour: string): Float32A
 
 /** Display-only adapter: diagnostic rasters and full physical vector water are
  * retained in world coordinates, independently of camera-region terrain tiles. */
-export function renderHydrology(data: HydrologyData, overlay: HydrologyOverlay, showWater: boolean, style: TerrainStyle = 'parchment', material = true): string {
-  const waterFill = hydrologyWaterColour(style);
+export function renderHydrology(data: HydrologyData, overlay: HydrologyOverlay, showWater: boolean, style: TerrainStyle = 'parchment', material = true, colors?: RenderColors): string {
+  const waterFill = hydrologyWaterColour(style, colors);
   let svg = '';
   const diagnostic = ['basins', 'accumulation', 'depressions', 'lakes', 'raw-basins', 'raw-accumulation', 'raw-depressions', 'flats', 'flat-rank'].includes(overlay) ? diagnosticImage(data, overlay) : '';
   if (showWater) {
@@ -137,7 +138,7 @@ export function renderHydrology(data: HydrologyData, overlay: HydrologyOverlay, 
     for (let i = 0; i < junctionWidths.length; i++) if (data.nodeMeta[i * 3 + 2] === 1 && junctionWidths[i]) {
       svg += `<circle cx="${format(data.nodePoints[i * 2])}" cy="${format(data.nodePoints[i * 2 + 1])}" r="${format(junctionWidths[i] / 2)}"/>`;
     }
-    if (material && lakes) svg += hydrologyLakeMaterial(data, style);
+    if (material && lakes) svg += hydrologyLakeMaterial(data, style, colors);
     svg += '</g>';
   }
   svg += diagnostic;

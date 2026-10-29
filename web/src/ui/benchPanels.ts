@@ -1,4 +1,5 @@
 import { executionProfiles, executionRuntime } from './executionProfile';
+import { installBenchRenderSettings } from './benchRenderSettings';
 import { initialTerrainSource } from './terrainStartupState';
 import { urbanText } from './urbanPanelLocale';
 
@@ -297,6 +298,7 @@ function applyPanelLocale(): void {
 window.addEventListener('magna-locale-change', applyPanelLocale);
 
 const stages = document.querySelector('.stages');
+installBenchRenderSettings();
 if (stages) {
   organize();
   applyPanelLocale();

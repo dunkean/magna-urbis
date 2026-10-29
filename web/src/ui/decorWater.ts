@@ -1,3 +1,4 @@
+import type { RenderColors } from '../render/customColors';
 import { hydrologyWaterColour } from '../../../rust/bridge/hydrologyRender';
 import type { TerrainStyle } from '../../../rust/bridge/terrainRender';
 import { landPath, landRings } from '../../../rust/bridge/urbanGeography';
@@ -30,12 +31,12 @@ export function retainedWaterMaterial(decor: Decor): RetainedWaterMaterial {
 }
 
 /** Retained geometry uses the live style at every stage, including nested crops. */
-export function decorWaterSvg(decor: Decor, style: TerrainStyle, showLakes = true): string {
-  return waterAppearanceSvg(decor.meta.waterSvg, showLakes ? retainedWaterMaterial(decor) : undefined, style, showLakes);
+export function decorWaterSvg(decor: Decor, style: TerrainStyle, showLakes = true, colors?: RenderColors): string {
+  return waterAppearanceSvg(decor.meta.waterSvg, showLakes ? retainedWaterMaterial(decor) : undefined, style, showLakes, colors);
 }
 
-export function waterAppearanceSvg(geometry: string, source: RetainedWaterMaterial | undefined, style: TerrainStyle, showLakes = true): string {
-  const colour = hydrologyWaterColour(style);
+export function waterAppearanceSvg(geometry: string, source: RetainedWaterMaterial | undefined, style: TerrainStyle, showLakes = true, colors?: RenderColors): string {
+  const colour = hydrologyWaterColour(style, colors);
   // Water geometry is an appearance-neutral group. Explicit fills from older
   // exporters are normalized too, including non-atlas source colors.
   let svg = geometry.replace(/\b(fill|stroke)="#[a-fA-F0-9]{3,8}"/g, '$1="' + colour + '"');
@@ -45,7 +46,7 @@ export function waterAppearanceSvg(geometry: string, source: RetainedWaterMateri
   if (!source?.path) return svg;
   let field = fields.get(source);
   if (!field) { field = decodeWaterField(source.field); fields.set(source, field); }
-  const material = source.path ? lakeMaterialSvg(field, source.n, source.width, source.path, 'retained-lake-material', style, source.referenceWidth) : '';
+  const material = source.path ? lakeMaterialSvg(field, source.n, source.width, source.path, 'retained-lake-material', style, source.referenceWidth, colors) : '';
   return svg + (source.extent ? cropWaterSvg(material, source.x ?? 0, source.y ?? 0, source.extent) : material);
 }
 

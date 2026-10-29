@@ -1,0 +1,76 @@
+{
+  "time": "2026-10-28T13:47:49.113Z",
+  "checks": {
+    "terrainLog": "\n14:47:52  Début : terrain · graine v2-ui-evidence\n14:47:52  Recherche du relief et de l’hydrologie conservés…\n14:47:52  Calcul du relief, du drainage, des rivières et des lacs… · miss\n14:47:52  Enregistrement du relief et de l’hydrologie…\n14:47:53  Classification du biome et du couvert naturel…\n14:47:53  Topographie prête · miss\n14:47:53  Préparation de la scène et dessin dans le worker de rendu…\n14:47:53  Terminé en 1.16 s · CPU TypeScript",
+    "terrain": {
+      "hash": "a03e02124d289cc3487f9d65984de083ba837d39702cff52a83996dbd7444672",
+      "rivers": 3,
+      "grid": 465
+    },
+    "regionLog": "\n14:47:56  Début : region · graine v2-ui-evidence\n14:47:56  Recherche des sites habitables…\n14:47:56  Tracé des axes régionaux…\n14:47:56  Implantation de la hiérarchie des lieux…\n14:47:56  Connexion des lieux par le réseau routier…\n14:47:56  Implantations et routes prêtes\n14:47:57  Préparation de la scène et dessin dans le worker de rendu…\n14:47:57  Terminé en 0.95 s · CPU TypeScript",
+    "region": {
+      "settlements": 2,
+      "roads": 5,
+      "terrainRetained": true
+    },
+    "individualLog": "\n14:47:59  Début : town · graine v2-ui-evidence\n14:47:59  Plan → quartiers → rues → îlots → parcelles → bâtiments…\n14:48:00  Mise à jour des terres cultivées et des noms…\n14:48:01  Lieux générés\n14:48:01  Préparation de la scène et dessin dans le worker de rendu…\n14:48:01  Terminé en 2.10 s · CPU TypeScript",
+    "individual": {
+      "buildings": 108,
+      "neighborsUnbuilt": true,
+      "roadsRetained": true
+    },
+    "allTownsLog": "\n14:48:03  Début : towns · graine v2-ui-evidence\n14:48:03  Bourelles : plan, rues, parcelles et bâtiments…\n14:48:03  Basgué : plan, rues, parcelles et bâtiments…\n14:48:03  Mise à jour des terres cultivées et des noms…\n14:48:04  Lieux générés\n14:48:04  Préparation de la scène et dessin dans le worker de rendu…\n14:48:04  Terminé en 1.47 s · CPU TypeScript",
+    "rebuild": {
+      "neighborHash": "983a0fba9a905450351f280c5485d0c0620a57bf67142d8a2b7ac7b9a531fab3",
+      "terrainRetained": true,
+      "neighborsRetained": true
+    },
+    "house": {
+      "persisted": true,
+      "height": 9.5,
+      "storeys": 3
+    },
+    "styleAndSvg": {
+      "redrawn": true,
+      "bytes": 1762977
+    },
+    "croppedLayers": {
+      "width": 1600,
+      "height": 800,
+      "bytes": 53255
+    },
+    "projectImport": {
+      "terrainExact": true,
+      "modificationsRetained": true
+    },
+    "diskCacheLog": "\n14:48:21  Début : terrain · graine v2-ui-evidence\n14:48:21  Recherche du relief et de l’hydrologie conservés…\n14:48:21  Relief et hydrologie réutilisés · disk\n14:48:21  Classification du biome et du couvert naturel…\n14:48:21  Topographie prête · disk\n14:48:21  1 modification(s) ne correspondent plus à leur bâtiment d’origine.\n14:48:21  Préparation de la scène et dessin dans le worker de rendu…\n14:48:21  Terminé en 0.26 s · CPU TypeScript",
+    "diskCache": {
+      "sameTerrain": true,
+      "source": "disk"
+    },
+    "oneClickLog": "\n14:48:22  Début : all · graine v2-ui-evidence\n14:48:22  Recherche du relief et de l’hydrologie conservés…\n14:48:22  Relief et hydrologie réutilisés · memory\n14:48:22  Classification du biome et du couvert naturel…\n14:48:22  Topographie prête · memory\n14:48:22  Recherche des sites habitables…\n14:48:22  Tracé des axes régionaux…\n14:48:22  Implantation de la hiérarchie des lieux…\n14:48:22  Connexion des lieux par le réseau routier…\n14:48:23  Implantations et routes prêtes\n14:48:23  Bourelles : plan, rues, parcelles et bâtiments…\n14:48:23  Basgué : plan, rues, parcelles et bâtiments…\n14:48:23  Mise à jour des terres cultivées et des noms…\n14:48:24  Lieux générés\n14:48:24  Préparation de la scène et dessin dans le worker de rendu…\n14:48:24  Terminé en 1.95 s · CPU TypeScript",
+    "oneClick": {
+      "settlements": 2,
+      "buildings": 154
+    },
+    "heightmapImport": {
+      "dimensions": [
+        32,
+        32
+      ],
+      "replacedTerrain": true
+    },
+    "heightmapExport": {
+      "files": 2,
+      "minHeight": -17.933523178100586,
+      "maxHeight": 177.5797576904297
+    },
+    "mobile": {
+      "width": 390,
+      "noHorizontalOverflow": true,
+      "menuAccessible": true
+    }
+  },
+  "errors": [],
+  "ok": true
+}

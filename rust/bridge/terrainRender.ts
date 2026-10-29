@@ -1,3 +1,5 @@
+import type { RenderColors } from '../../web/src/render/customColors';
+import type { MaterialRasterContext } from './terrainMaterialContext';
 import { renderV2Number } from './terrainRenderV2';
 import { isFantasyStyle, renderFantasyTerrain, DEFAULT_FANTASY_OPTIONS, type FantasyOptions } from './fantasyTerrain';
 import { renderMaterialRaster, type ForestRaster } from './terrainMaterialRaster';
@@ -79,7 +81,7 @@ const elevationColors = [
   [128, 128, 128], [255, 255, 255],
 ] as const;
 
-function renderElevation(terrain: TerrainData, frame: boolean, clipNamespace: string, waterStyle: TerrainStyle, showWater = true, referenceWidth = terrain.width, showTerrain = true): TerrainScene {
+function renderElevation(terrain: TerrainData, frame: boolean, clipNamespace: string, waterStyle: TerrainStyle, showWater = true, referenceWidth = terrain.width, showTerrain = true, colors?: RenderColors): TerrainScene {
   const n = terrain.resolution, width = terrain.width;
   const rgb = new Uint8Array(n * n * 3);
   const coastal = terrain.globalMinHeight < 0;
@@ -100,7 +102,7 @@ function renderElevation(terrain: TerrainData, frame: boolean, clipNamespace: st
   }
   let sea = '';
   if (coastal) {
-    sea = showWater ? seaMaterialSvg(seaDistanceSurface(terrain, referenceWidth), terrain.x, terrain.y, waterStyle, terrain.width) : '';
+    sea = showWater ? seaMaterialSvg(seaDistanceSurface(terrain, referenceWidth), terrain.x, terrain.y, waterStyle, terrain.width, colors) : '';
     extendLandColors(rgb, terrain);
   }
   const imageUrl = pngDataUrl(encodePng(rgb, n, n, 3, 1));
@@ -112,10 +114,10 @@ function renderElevation(terrain: TerrainData, frame: boolean, clipNamespace: st
 
 /** Transitional renderer adapter. Rust never depends on the legacy World schema. */
 /** settings.forest: display-only Render3D forest raster input (field, occupation); absent keeps the legacy canopy. */
-export function renderRustTerrain(terrain: TerrainData, style: TerrainStyle, frame = true, settings: Pick<TerrainSettings, 'relief' | 'width'> & Partial<Pick<TerrainSettings, 'seed' | 'climate' | 'climateValues'>> & { forest?: Omit<ForestRaster, 'light'>; v2Season?: number } = { relief: 'mountains', width: terrain.width }, showContours = true, clipNamespace = 'main', lighting: TerrainLighting = DEFAULT_TERRAIN_LIGHTING, layers: TerrainLayers = DEFAULT_TERRAIN_LAYERS, fantasyOptions: FantasyOptions = DEFAULT_FANTASY_OPTIONS, paintBrushes = true, waterStyle: TerrainStyle = style): TerrainScene {
+export function renderRustTerrain(terrain: TerrainData, style: TerrainStyle, frame = true, settings: Pick<TerrainSettings, 'relief' | 'width'> & Partial<Pick<TerrainSettings, 'seed' | 'climate' | 'climateValues'>> & { forest?: Omit<ForestRaster, 'light'>; v2Season?: number } = { relief: 'mountains', width: terrain.width }, showContours = true, clipNamespace = 'main', lighting: TerrainLighting = DEFAULT_TERRAIN_LIGHTING, layers: TerrainLayers = DEFAULT_TERRAIN_LAYERS, fantasyOptions: FantasyOptions = DEFAULT_FANTASY_OPTIONS, paintBrushes = true, waterStyle: TerrainStyle = style, colors?: RenderColors, materialContext?: MaterialRasterContext): TerrainScene {
   frame &&= layers.frame;
   if (style === 'copernicus') {
-    const scene = renderElevation(terrain, frame, clipNamespace, waterStyle, layers.water !== false, settings.width, layers.relief);
+    const scene = renderElevation(terrain, frame, clipNamespace, waterStyle, layers.water !== false, settings.width, layers.relief, colors);
     return scene;
   }
   const started = performance.now();
@@ -123,8 +125,8 @@ export function renderRustTerrain(terrain: TerrainData, style: TerrainStyle, fra
   const cavern = terrain.caveMask.length > 0;
   const coastal = terrain.globalMinHeight < 0 && !cavern;
   // Stable continuous shading, without engraved bands or high-frequency paper grain.
-  const pal = { ...terrainStyle(style).palette, hatch: 0, grain: 0 };
-  if (isFantasyStyle(style)) { pal.paper = style === 'fantasy-ink' ? '#faf9f4' : '#eee6ce'; pal.hypso = [[0, pal.paper], [1, pal.paper]]; lighting = { ...lighting, strength: .12 }; pal.seaFill = style === 'fantasy-ink' ? '#e5e7e6' : '#b9ccd0'; }
+  const pal = { ...terrainStyle(style, colors).palette, hatch: 0, grain: 0 };
+  if (isFantasyStyle(style)) { pal.paper = colors?.paper ?? (style === 'fantasy-ink' ? '#faf9f4' : '#eee6ce'); pal.hypso = [[0, pal.paper], [1, pal.paper]]; lighting = { ...lighting, strength: .12 }; pal.seaFill = style === 'fantasy-ink' ? '#e5e7e6' : '#b9ccd0'; }
   if (!layers.hypsometry) pal.hypso = [[0, pal.paper], [1, pal.paper]];
   // The shared rasterizer only reads mapSize, terrain.height and terrain.water.
   const legacyRasterInput = {
@@ -141,7 +143,7 @@ export function renderRustTerrain(terrain: TerrainData, style: TerrainStyle, fra
   let canopyAlpha: Uint8Array | undefined;
   if ((style === 'render' || isRender3dStyle(style)) && layers.hypsometry) {
     const material = renderMaterialRaster(terrain, { seed: settings.seed ?? '42', climate: settings.climate, climateValues: settings.climateValues }, isRender3dStyle(style),
-      { ...settings.forest, renderV2:renderV2Number(style), v2Season:settings.v2Season, brushes: style === 'render3d-brush', light: terrainLights(lighting).primary, light2: terrainLights(lighting).secondary, lightingStrength: lighting.enabled ? lighting.strength : 0 });
+      { ...settings.forest, renderV2:renderV2Number(style), v2Season:settings.v2Season, brushes: style === 'render3d-brush', light: terrainLights(lighting).primary, light2: terrainLights(lighting).secondary, lightingStrength: lighting.enabled ? lighting.strength : 0 }, materialContext);
     if (isRender3dStyle(style) && settings.forest?.field) canopyAlpha = material.canopyAlpha;
     const neutral = renderTerrainPixels(legacyRasterInput, { ...pal, hypso: [[0, '#ffffff'], [1, '#ffffff']] }, {
       pixels: n, surface: terrain.height, normals: { x: terrain.normalX, y: terrain.normalY, z: terrain.normalZ }, lighting,
@@ -153,7 +155,7 @@ export function renderRustTerrain(terrain: TerrainData, style: TerrainStyle, fra
   }
   let sea = '';
   if (coastal) {
-    sea = style.startsWith('render-v2') ? '' : layers.water !== false ? seaMaterialSvg(seaDistanceSurface(terrain, settings.width), terrain.x, terrain.y, waterStyle, terrain.width) : '';
+    sea = style.startsWith('render-v2') ? '' : layers.water !== false ? seaMaterialSvg(seaDistanceSurface(terrain, settings.width), terrain.x, terrain.y, waterStyle, terrain.width, colors) : '';
   }
   if (coastal && !style.startsWith('render-v2')) extendLandColors(pixels.rgb, terrain);
   if (cavern) {

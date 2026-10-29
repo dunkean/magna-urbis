@@ -81,13 +81,13 @@ export function urbanBuildingsSvg(scene: PlacementBatch | undefined, appearance:
     if (detailed) {
       svg += `<path d="${surfacePath(b.courtyards)}" fill="${PAPER}" stroke="#a69b7e" stroke-width=".1"/><path d="${surfacePath(b.circulation)}" fill="#e5dbc1"/>`;
       const t=b.transform ?? {origin:{x:0,y:0},orientation_deg:0};
-      svg += `<g transform="translate(${t.origin.x} ${t.origin.y}) rotate(${t.orientation_deg})">${renderHouseExteriorSvg(buildingExterior(b), catalogue, prefix, t.orientation_deg, b.ground_z_m)}</g>`;
+      svg += `<g transform="translate(${t.origin.x} ${t.origin.y}) rotate(${t.orientation_deg})">${renderHouseExteriorSvg(buildingExterior(b), catalogue, prefix, t.orientation_deg, b.ground_z_m, appearance.diagnostic === 'none' ? { roof: appearance.colors?.building, edge: appearance.colors?.buildingEdge } : undefined)}</g>`;
     } else {
       const paint = buildingPaint(b.volumes[0]?.materials, b.function, buildingHeight(b), appearance, undefined, catalogue);
       svg += `<path data-building-lod="${lod === 'silhouette' ? 'silhouette' : 'cartographic'}" d="${surfacePath(roofSurface(b))}" fill="${paint.roof}" stroke="none"/>`;
       if (lod !== 'silhouette') for (const line of buildingRoofRidges(b)) {
         if (options.metresPerPixel && Math.hypot(line.b.x - line.a.x, line.b.y - line.a.y) / options.metresPerPixel < 1.5) continue;
-        svg += `<path data-roof-line="${line.kind}" d="M${line.a.x},${line.a.y}L${line.b.x},${line.b.y}" fill="none" stroke="${line.kind === 'valley' ? '#736e53' : '#393a31'}" stroke-width=".8" vector-effect="non-scaling-stroke"/>`;
+        svg += `<path data-roof-line="${line.kind}" d="M${line.a.x},${line.a.y}L${line.b.x},${line.b.y}" fill="none" stroke="${appearance.colors?.buildingEdge ?? (line.kind === 'valley' ? '#736e53' : '#393a31')}" stroke-width=".8" vector-effect="non-scaling-stroke"/>`;
       }
     }
     if (detailed && (appearance.diagnostic === 'uses' || appearance.diagnostic === 'height')) {
@@ -105,7 +105,7 @@ export function urbanBuildingsSvg(scene: PlacementBatch | undefined, appearance:
 function silhouettesSvg(buildings: PlacedBuilding[], scene: PlacementBatch, appearance: UrbanBuildingAppearance, selected?: string): string {
   const groups = new Map<string, string[]>();
   for (const b of buildings) {
-    const fill = appearance.diagnostic === 'uses' || appearance.diagnostic === 'height' ? buildingPaint(b.volumes[0]?.materials, b.function, buildingHeight(b), appearance, undefined, {materials: scene.materials ?? []}).roof : '#5a4b3c';
+    const fill = appearance.diagnostic === 'uses' || appearance.diagnostic === 'height' ? buildingPaint(b.volumes[0]?.materials, b.function, buildingHeight(b), appearance, undefined, {materials: scene.materials ?? []}).roof : appearance.colors?.building ?? '#5a4b3c';
     let list = groups.get(fill); if (!list) groups.set(fill, list = []);
     list.push(nonzeroSurfacePath(roofSurface(b)));
   }

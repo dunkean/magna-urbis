@@ -114,7 +114,7 @@ interface RingPath { points: readonly Point[]; reverse: boolean }
 interface GeometryPath { rings: RingPath[]; vertices: number; path?: Path2D }
 export interface BuildingRoofLine { a: Point; b: Point; kind: RoofEdgeKind }
 type Line = BuildingRoofLine;
-interface FacetLayer { groups: { color: string; geometry: GeometryPath }[]; z: number }
+interface FacetLayer { groups: { color: string; darkness: number; geometry: GeometryPath }[]; z: number }
 interface CachedGeometry {
   outline: GeometryPath;
   ridges?: Line[];
@@ -500,26 +500,26 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
     for (const volume of building.volumes ?? []) {
       const mesh = volume.roof_mesh; metrics.roofMeshesRead++;
       if (!mesh) continue;
-      const grouped = new Map<string, {surfaces: Map<string, Surface>; z: number}>();
+      const grouped = new Map<string, {surfaces: Map<string, Surface>; darkness: Map<string, number>; z: number}>();
       for (const face of mesh.faces) {
         if (face.normal[2] < 0 || face.vertices.length < 3) continue;
         const points = face.vertices.map(index => mesh.vertices[index]);
         if (points.some(point => !point || !validPoint(point))) continue;
         const key = face.roof_group ?? '';
         let group = grouped.get(key);
-        if (!group) { group = {surfaces: new Map(), z: -Infinity}; grouped.set(key, group); }
+        if (!group) { group = {surfaces: new Map(), darkness: new Map(), z: -Infinity}; grouped.set(key, group); }
         for (const point of points) group.z = Math.max(group.z, point.z);
         // Same world-space illumination as the existing native exterior SVG.
         const [nx, ny, nz] = face.normal;
         const darkness = Math.max(0, Math.min(.3, .16 - .18 * (-nx * .48 - ny * .64 + nz * .6)));
         const base = houseMaterialColor(catalogue, face.material || volume.materials.cladding);
-        const color = shadeMaterial(base, darkness);
+        const color = shadeMaterial(base, darkness); group.darkness.set(color, darkness);
         const surface = group.surfaces.get(color) ?? [];
         surface.push({outer: points, holes: []}); group.surfaces.set(color, surface);
       }
       for (const group of grouped.values()) {
         const groups = [...group.surfaces].map(([color, surface]) => {
-          const geometry = geometryPath(surface, metrics); vertices += geometry.vertices; return {color, geometry};
+          const geometry = geometryPath(surface, metrics); vertices += geometry.vertices; return {color, darkness: group.darkness.get(color)!, geometry};
         });
         layers.push({groups, z: group.z});
       }
@@ -560,7 +560,7 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
       metrics.lod[lod]++;
       const paint = buildingPaint(building.materials ?? building.volumes?.[0]?.materials, building.function, visualHeight(building), options.appearance, undefined, catalogue);
       const flat = options.appearance.style === 'silhouette' && options.appearance.diagnostic === 'none', landmark = painted && isLandmark(building);
-      const color = flat ? (painted ? PAINTED_SILHOUETTE[landmark ? 'landmark' : building.function] ?? PAINTED_SILHOUETTE.domestic : '#5a4b3c') : paint.roof;
+      const color = flat ? (options.appearance.colors?.building ?? (painted ? PAINTED_SILHOUETTE[landmark ? 'landmark' : building.function] ?? PAINTED_SILHOUETTE.domestic : '#5a4b3c')) : paint.roof;
       const group = fills.get(color) ?? []; group.push(geometry.outline); fills.set(color, group);
       if (painted) {
         const height = visualHeight(building);
@@ -594,9 +594,9 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
       // landmarks get a heavier, warmer one.
       if (painted && mpp < 2.5) {
         const all: GeometryPath[] = []; for (const paths of fills.values()) all.push(...paths);
-        ctx.strokeStyle = PAINTED_EDGE; ctx.globalAlpha = mpp < .4 ? .85 : .65; ctx.lineWidth = (mpp < .4 ? .8 : mpp < 1 ? .65 : .5) * mpp;
+        ctx.strokeStyle = options.appearance.colors?.buildingEdge ?? PAINTED_EDGE; ctx.globalAlpha = mpp < .4 ? .85 : .65; ctx.lineWidth = (mpp < .4 ? .8 : mpp < 1 ? .65 : .5) * mpp;
         strokeBatch(ctx, all, metrics);
-        if (landmarks.length) { ctx.strokeStyle = PAINTED_LANDMARK_EDGE; ctx.globalAlpha = .9; ctx.lineWidth = 1.4 * mpp; strokeBatch(ctx, landmarks, metrics); }
+        if (landmarks.length) { ctx.strokeStyle = options.appearance.colors?.buildingEdge ?? PAINTED_LANDMARK_EDGE; ctx.globalAlpha = .9; ctx.lineWidth = 1.4 * mpp; strokeBatch(ctx, landmarks, metrics); }
         ctx.globalAlpha = 1;
       }
       const lineGroups = new Map<string, Line[]>();
@@ -606,14 +606,14 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
           if (facets.length) {
             ctx.save(); clipGeometry(ctx, geometry.outline);
             for (const layer of facets) for (const group of layer.groups) {
-              ctx.fillStyle = group.color; paintGeometry(ctx, group.geometry, metrics);
+              ctx.fillStyle = options.appearance.colors?.building ? shadeMaterial(options.appearance.colors.building, group.darkness) : group.color; paintGeometry(ctx, group.geometry, metrics);
             }
             ctx.restore();
           }
         }
         for (const line of this.ridges(building, geometry, metrics)) {
           if (Math.hypot(line.b.x - line.a.x, line.b.y - line.a.y) / mpp < 1.5) continue;
-          const color = line.kind === 'valley' ? '#736e53' : '#393a31';
+          const color = options.appearance.colors?.buildingEdge ?? (line.kind === 'valley' ? '#736e53' : '#393a31');
           const lines = lineGroups.get(color) ?? []; lines.push(line); lineGroups.set(color, lines);
         }
       }
@@ -658,7 +658,7 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
     const tiles: {key: string; x: number; y: number; tile?: RasterTile}[] = [];
     const protectedKeys = new Set<string>();
     for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
-      const key = `${level}:${x}:${y}:${appearance.style}:${appearance.diagnostic}:${paintedBuildings(options) ? 'painted' : ''}`;
+      const key = `${level}:${x}:${y}:${appearance.style}:${appearance.diagnostic}:${JSON.stringify(appearance.colors ?? {})}:${paintedBuildings(options) ? 'painted' : ''}`;
       const tile = this.rasterCache.get(key); protectedKeys.add(key); tiles.push({key, x, y, tile});
       if (tile) { this.rasterCache.delete(key); this.rasterCache.set(key, tile); }
     }

@@ -1,3 +1,7 @@
+import phasorShader from './terrainPhasor.wgsl?raw';
+import { configureCompactPlan, phasorUniforms } from './terrainPhasor';
+import previewShader from './terrainGenerationPreview.wgsl?raw';
+import { configureProceduralPlan, isCompactProcedural, stageEnabled, type GenerationControl, type GenerationStage } from './terrainGenerationRecipe';
 import shader from './terrainErosion.wgsl?raw';
 import noiseShader from './terrainNoise.wgsl?raw';
 import volcanicShader from './terrainFinite.wgsl?raw';
@@ -6,7 +10,7 @@ import type { Context } from './terrainGpu';
 import type { TerrainSettings } from './terrain';
 import { gpuSetupDeadline, type TerrainProgressCallback } from './terrainProgress';
 
-const ENTRIES = ['initialize', 'uplift', 'start', 'clearNext', 'solveStats', 'floodInit', 'solveTile', 'receivers', 'flow', 'graphInit', 'graphFinish', 'floodCheck', 'pitInit', 'pitUnion', 'pitCompress', 'pitReduce', 'pitPour', 'pitFill', 'breachInit', 'breach', 'breachFinish', 'thermalFlux', 'thermalApply', 'copyHeight', 'bounds', 'diffuse', 'reconstruct', 'percentileInit', 'histogramClear', 'histogram', 'percentileSelect', 'detail', 'normalize', 'volcanicInitial', 'surfaceLoad', 'surfaceFlowInit', 'surfaceDelta', 'surfaceReconstruct', 'canyonSeed', 'canyonSpread', 'canyonApply', 'coastLoad', 'coastResult', 'packHeight'] as const;
+const ENTRIES = ['compactInitialize','compactReconstruct','generationUnitScale','generationKeepDatum','generationReconstruct','generationPreview', 'generationPlainPack', 'generationPhasorPack', 'initialize', 'uplift', 'start', 'clearNext', 'solveStats', 'floodInit', 'solveTile', 'receivers', 'flow', 'graphInit', 'graphFinish', 'floodCheck', 'pitInit', 'pitUnion', 'pitCompress', 'pitReduce', 'pitPour', 'pitFill', 'breachInit', 'breach', 'breachFinish', 'thermalFlux', 'thermalApply', 'copyHeight', 'bounds', 'diffuse', 'reconstruct', 'percentileInit', 'histogramClear', 'histogram', 'percentileSelect', 'detail', 'normalize', 'volcanicInitial', 'surfaceLoad', 'surfaceFlowInit', 'surfaceDelta', 'surfaceReconstruct', 'canyonSeed', 'canyonSpread', 'canyonApply', 'coastLoad', 'coastResult', 'packHeight'] as const;
 type Entry = typeof ENTRIES[number];
 interface Pipelines {
   layout: GPUBindGroupLayout; values: Map<string, GPUComputePipeline>;
@@ -19,7 +23,7 @@ const pending = new WeakMap<GPUDevice, Promise<unknown>>();
 const queries = new WeakMap<GPUDevice, GPUQuerySet>();
 function serialized<T>(state: Context, operation: () => Promise<T>): Promise<T> {
   const result = (pending.get(state.device) ?? Promise.resolve()).then(operation);
-  pending.set(state.device, result.catch(() => undefined));
+  pending.set(state.device, result.then(() => undefined, () => undefined));
   return result;
 }
 async function pipelines(device: GPUDevice, entries: Set<Entry>, modes: Set<number>,progress?:TerrainProgressCallback): Promise<Pipelines> {
@@ -31,7 +35,7 @@ async function pipelines(device: GPUDevice, entries: Set<Entry>, modes: Set<numb
         ...[1, 2].map(binding => ({ binding, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' as const } })),
         ...[3, 4, 5, 6, 7].map(binding => ({ binding, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' as const } })),
       ] });
-      const module = device.createShaderModule({ code: shader.replace('// NOISE_KERNEL', noiseShader).replace('// VOLCANIC_KERNEL', volcanicShader) });
+      const module = device.createShaderModule({ code: shader.replace('// NOISE_KERNEL', noiseShader).replace('// VOLCANIC_KERNEL', volcanicShader) + phasorShader + previewShader });
       const messages = await gpuSetupDeadline(module.getCompilationInfo());
       const errors = messages.messages.filter(message => message.type === 'error');
       if (errors.length) throw new Error(errors.map(error => `${error.lineNum}: ${error.message}`).join('\n'));
@@ -62,10 +66,10 @@ class ConvergenceError extends Error {}
 export interface ErosionProfile {
   factor: number; coarseSize: number; surfaceSize: number; pipelineMs: number;
   encodeMs: number; submitReadbackMs: number; unpackMs: number;
-  maxSolveSteps: number[];
+  maxSolveSteps: number[]; allocatedBytes?: number;
   gpuStagesMs?: { coarse: number; surface: number; normalization: number };
 }
-interface Timing { nativeEnvironmentMs: number; profiles?: ErosionProfile[] }
+interface Timing { nativeEnvironmentMs: number; profiles?: ErosionProfile[]; control?: GenerationControl }
 
 /** Cut/assembled coast -> the existing hydraulic/thermal surface pass, without normalization. */
 export async function erodeGpuCoast(state: Context, settings: TerrainSettings, source: GPUBuffer, tuning: Float32Array,progress?:TerrainProgressCallback): Promise<Float32Array> {
@@ -115,17 +119,24 @@ async function generateWithBudget(state: Context, settings: TerrainSettings, sha
 }
 
 async function generateOnce(state: Context, settings: TerrainSettings, factor: number, shape?: Float32Array, coast?: { source: GPUBuffer; tuning: Float32Array }, timing?: Timing,progress?:TerrainProgressCallback): Promise<Float32Array> {
-  const device = state.device;
-  const plan = GenerationNoisePlan.erosion(settings.seed, settings.width, coast ? 'hills' : shape ? 'mixed' : settings.relief, settings.erosion, settings.motifSize, settings.mountainMix);
+  const device = state.device, lab = coast ? undefined : timing?.control, compact = isCompactProcedural(settings);
+  const plan = GenerationNoisePlan.erosion(settings.seed, settings.width, coast || compact && settings.relief === 'flat' ? 'hills' : shape ? 'mixed' : settings.relief, settings.erosion, settings.motifSize, settings.mountainMix);
+  // Compact runs release allocations, including a previous classic scratch pool.
+  if(compact){scratch.get(device)?.forEach(buffer=>buffer.destroy());scratch.delete(device);}
   let buffers = scratch.get(device);
   if (!buffers) {
     buffers = []; scratch.set(device, buffers);
-    const owned = buffers;
-    void device.lost.then(() => owned.forEach(buffer => buffer.destroy()));
+    if(!lab&&!compact){const owned = buffers;
+      void device.lost.then(() => owned.forEach(buffer => buffer.destroy()));}
   }
   let bufferIndex = 0;
   try {
-    const parameters = plan.parameters(), base = parameters.slice(0, 24), tuning = coast?.tuning ?? parameters.slice(24, 32);
+    const originalParameters = plan.parameters();
+    const configured = compact ? configureCompactPlan(originalParameters, settings, coast?.tuning) : { parameters: originalParameters, surface: (coast?.tuning ?? originalParameters.slice(24,32)).slice() };
+    const parameters = configured.parameters, tuning = configured.surface;
+    configureProceduralPlan(parameters,tuning,settings,compact,!!coast);
+    if(compact && settings.procedural && stageEnabled(settings,'ridged',false) && settings.erosionTuning?.detail === undefined && settings.procedural.erosionTuning?.detail === undefined)parameters[16]=originalParameters[16];
+    const base = parameters.slice(0,24);
     const n = base[2], iterations = base[13], strength = base[18];
     // Overridable settings block (fill ×, carve, final carve, incision slope, thermal ×, warp ×, routed, surface carve).
     const block = coast ? [1, 0, 0, .2, 1, 1, 0, 0] : Array.from(parameters.slice(33, 41));
@@ -136,23 +147,28 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
     const surface = base.slice();
     surface[2] = tuning[0]; surface[4] = tuning[1]; surface[5] = tuning[2];
     surface[15] = shape && !coast ? shape[13] : tuning[4]; surface[18] = tuning[5]; surface[22] = tuning[6];
-    const entries = new Set<Entry>(['packHeight']), modes = new Set<number>();
+    const packEntry:Entry=!coast && stageEnabled(settings,'phasor',compact) ? 'generationPhasorPack' : 'packHeight';
+    const initializeEntry:Entry=compact?'compactInitialize':'initialize';
+    const surfaceEnabled=!!coast || stageEnabled(settings,'surface',!compact || settings.relief==='canyon') && (!compact || settings.relief==='canyon' || tuning[3]>0);
+    const reconstructEntry:Entry=settings.procedural?.reconstruction && settings.procedural.reconstruction!=='default' ? 'generationReconstruct':compact?'compactReconstruct':'reconstruct';
+    const entries = new Set<Entry>([packEntry,...(!stageEnabled(settings,'amplitude')?['generationUnitScale' as const]:[]),...(!stageEnabled(settings,'normalize')?['generationKeepDatum' as const]:[]), ...(lab ? ['generationPreview' as const] : [])]), modes = new Set<number>();
     const require = (...values: Entry[]) => values.forEach(value => entries.add(value));
     const graph = () => require('start', 'clearNext', 'solveStats', 'solveTile', 'receivers', 'flow', 'graphInit', 'graphFinish', 'thermalFlux', 'thermalApply', 'copyHeight', 'diffuse');
     if (coast) require('coastLoad', 'coastResult');
     else require('percentileInit', 'histogramClear', 'histogram', 'percentileSelect', 'normalize');
     if (!coast && !shape) {
-      require('initialize', 'uplift', 'bounds', 'reconstruct', 'detail');
+      require(initializeEntry,'uplift','bounds',reconstructEntry,'detail');
       if (strength > 0) {
         graph(); require('floodInit', 'floodCheck', 'pitInit', 'pitUnion', 'pitCompress', 'pitReduce', 'pitPour', 'pitFill', 'breachInit', 'breach', 'breachFinish');
         [0, 1, 2].forEach(mode => modes.add(mode));
       }
     } else if (shape && !coast) require('volcanicInitial');
-    if (settings.erosion > 0) {
+    if (settings.erosion > 0 && surfaceEnabled) {
       graph(); require('surfaceLoad', 'surfaceFlowInit', 'surfaceDelta', 'surfaceReconstruct'); modes.add(1); modes.add(3);
       if (settings.relief === 'canyon' && !coast) { require('floodInit', 'floodCheck', 'canyonSeed', 'canyonSpread', 'canyonApply'); modes.add(0); }
       if (routed) { require('floodInit', 'floodCheck', 'pitInit', 'pitUnion', 'pitCompress', 'pitReduce', 'pitPour', 'breachInit', 'breach', 'breachFinish'); modes.add(0); }
     }
+    if(lab)await lab.before('grids',`Budget ×${factor} · régional ${n}² · surface ${surface[2]}² · sortie 1024²`);
     const pipelineStarted = performance.now();
     const program = await pipelines(device, entries, modes,progress);
     const pipelineMs = performance.now() - pipelineStarted, encodeStarted = performance.now();
@@ -176,8 +192,8 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
     const output = create(1024 * 1024 * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC);
     const readback = create(1024 * 1024 * 4 + 1088, GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ);
     const tileFlags = create(Math.ceil(Math.max(n, surface[2]) / 16) ** 2 * 8, GPUBufferUsage.STORAGE);
-    let querySet = queries.get(device);
-    if (!querySet && device.features.has('timestamp-query')) {
+    let querySet = lab ? undefined : queries.get(device);
+    if (!lab && !querySet && device.features.has('timestamp-query')) {
       querySet = device.createQuerySet({ type: 'timestamp', count: 6 }); queries.set(device, querySet);
       const owned = querySet; void device.lost.then(() => owned.destroy());
     }
@@ -193,11 +209,11 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
       const key = [...config, ...extra, ...settingsBlock].join(','); let value = variants.get(key);
       if (value === undefined) {
         value = variants.size * 256; if (value + 224 > 65536) throw new Error('Too many GPU variants.');
-        variants.set(key, value); device.queue.writeBuffer(uniform, value, new Float32Array([...config, ...extra, ...(shape ?? new Float32Array(16)), ...settingsBlock]));
+        variants.set(key, value); device.queue.writeBuffer(uniform, value, new Float32Array([...config, ...extra, ...(compact ? phasorUniforms(settings,!!coast) : !shape && !coast && stageEnabled(settings,'phasor',false) ? phasorUniforms(settings) : shape ?? new Float32Array(16)), ...settingsBlock]));
       }
       return value;
     };
-    const encoder = device.createCommandEncoder();
+    let encoder = device.createCommandEncoder();
     encoder.clearBuffer(control);
     if (coast) encoder.copyBufferToBuffer(coast.source, 0, fine, 0, 1024 * 1024 * 16);
     const beginPass = (index: number) => encoder.beginComputePass(querySet ? { timestampWrites: { querySet, beginningOfPassWriteIndex: index, endOfPassWriteIndex: index + 1 } } : undefined);
@@ -236,9 +252,11 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
       dispatch('breachInit'); dispatch('breach', extras); dispatch('breachFinish');
     };
     const thermal = (passes: number, extra = normal) => {
+      if(config===base && settings.procedural?.regionalThermal===false)return;
       for (let k = 0; k < passes; k++) for (const entry of ['thermalFlux', 'thermalApply', 'copyHeight'] as const) dispatch(entry, extra);
     };
     const diffuse = (weight: number, extra = normal) => {
+      if(config===base && settings.procedural?.regionalDiffusion===false)return;
       const values = extra.slice(); values[3] = weight; dispatch('diffuse', values); dispatch('copyHeight', values);
     };
     const percentile = (source: number) => {
@@ -247,12 +265,25 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
         extras[5] = shift; dispatch('histogramClear', extras, 1); dispatch('histogram', extras, 4096); dispatch('percentileSelect', extras, 1);
       }
     };
+    const snapshot = async (stage:GenerationStage,kind:number,detail?:string) => {
+      if(!lab)return;
+      if(kind!==3){const extras=normal.slice();extras[7]=kind;dispatch('generationPreview',extras,4096);}
+      pass.end();encoder.copyBufferToBuffer(output,0,readback,0,1024*1024*4);
+      device.queue.submit([encoder.finish()]);await readback.mapAsync(GPUMapMode.READ);
+      const height=new Float32Array(readback.getMappedRange(),0,1024*1024).slice();readback.unmap();
+      await lab.after(stage,height,detail);
+      encoder=device.createCommandEncoder();pass=beginPass(0);
+    };
+    if(lab)await lab.after('grids',undefined,`Budget ×${factor} · régional ${n}² · surface ${surface[2]}² · ${(buffers.reduce((sum,b)=>sum+b.size,0)/1048576).toFixed(1)} Mio`);
     progress?.(`GPU · encodage de ${iterations} cycles de relief et ${tuning[3]} passes d’érosion…`,{stage:'gpu-erosion-encode'});
     if (coast) {
       config = surface; dispatch('coastLoad', normal, 4096);
     } else if (!shape) {
-      dispatch('initialize');
-      for (let iteration = 0; iteration < iterations; iteration++) {
+      if(lab)await lab.before('initialize');
+      dispatch(initializeEntry);
+      if(lab)await snapshot('initialize',0);
+      if(lab)await lab.before('regional',`${iterations} cycles`);
+      for (let iteration = 0; iteration < (stageEnabled(settings,'regional') ? iterations : 0); iteration++) {
         dispatch('uplift');
         if (strength > 0) {
           solve(0, 64 * coarseFactor); pits(); carve(block[1]); dispatch('flow'); solve(1, 128 * coarseFactor); solve(2, 128 * coarseFactor); thermal(3);
@@ -262,19 +293,33 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
         }
         dispatch('bounds');
       }
+      if(lab)await snapshot('regional',0);
+      if(lab)await lab.before('regionalFinish');
       const clamp = normal.slice(); clamp[7] = 1; dispatch('bounds', clamp);
-      if (strength > 0) {
+      if (strength > 0 && stageEnabled(settings,'regionalFinish')) {
         thermal(4, tail);
         for (let k = 0; k < 2; k++) { solve(0, 64 * coarseFactor); pits(tail); carve(block[2]); }
         diffuse(strength * .5, tail);
       }
-      dispatch('reconstruct', normal, 4096);
-      percentile(0); dispatch('detail', normal, 4096);
+      if(lab)await snapshot('regionalFinish',0);
+      if(lab)await lab.before('reconstruct');
+      const reconstructionParams=normal.slice();reconstructionParams[7]=settings.procedural?.reconstruction==='bspline'?1:0;
+      dispatch(reconstructEntry,reconstructionParams,4096);
+      if(lab)await snapshot('reconstruct',1);
+      if(lab)await lab.before('amplitude');
+      if(stageEnabled(settings,'amplitude'))percentile(0);else dispatch('generationUnitScale',normal,1);
+      if(lab)await snapshot('amplitude',4);
+      if(lab)await lab.before('ridged');
+      dispatch('detail',normal,4096);
+      if(lab)await snapshot('ridged',2);
     } else {
-      config = surface; dispatch('volcanicInitial', normal, 4096);
+      if(lab)await lab.before('initialize');
+      config=surface;dispatch('volcanicInitial',normal,4096);
+      if(lab)await snapshot('initialize',2);
     }
     pass.end(); pass = beginPass(2);
-    if (settings.erosion > 0) {
+    if(lab)await lab.before('surface');
+    if (settings.erosion > 0 && surfaceEnabled) {
       config = surface; settingsBlock = surfaceBlock; dispatch('surfaceLoad');
       if (settings.relief === 'canyon' && !coast) {
         // Basin routing supplies continuous trunk rivers. Only this relief
@@ -304,10 +349,14 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
       }
       dispatch('surfaceDelta'); dispatch('surfaceReconstruct', normal, 4096);
     }
+    if(lab)await snapshot('surface',2);
     pass.end(); pass = beginPass(4);
+    if(lab)await lab.before('normalize');
     if (coast) dispatch('coastResult', normal, 4096);
-    else { percentile(1); dispatch('normalize', normal, 4096); }
-    dispatch('packHeight', normal, 4096);
+    else if(stageEnabled(settings,'normalize')){percentile(1);dispatch('normalize',normal,4096);}else dispatch('generationKeepDatum',normal,4096);
+    if(lab)await snapshot('normalize',1);
+    if(lab)await lab.before('phasor');
+    dispatch(packEntry,normal,4096);
     pass.end();
     const bytes = 1024 * 1024 * 4;
     encoder.copyBufferToBuffer(output, 0, readback, 0, bytes); encoder.copyBufferToBuffer(control, 0, readback, bytes, 1088);
@@ -322,7 +371,7 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
     const submitReadbackMs = performance.now() - submitStarted, unpackStarted = performance.now();
     const mapped = readback.getMappedRange(); const status = new Uint32Array(mapped, bytes, 272);
     const maxSolveSteps = Array.from(status.slice(267, 271));
-    const profile: ErosionProfile = { factor, coarseSize: n, surfaceSize: surface[2], pipelineMs, encodeMs, submitReadbackMs, unpackMs: 0, maxSolveSteps };
+    const profile: ErosionProfile = { factor, coarseSize: n, surfaceSize: surface[2], pipelineMs, encodeMs, submitReadbackMs, unpackMs: 0, maxSolveSteps, allocatedBytes:buffers.reduce((sum,buffer)=>sum+buffer.size,0) };
     if (queryReadback) {
       const values = new BigUint64Array(queryReadback.getMappedRange());
       profile.gpuStagesMs = { coarse: Number(values[1] - values[0]) / 1e6, surface: Number(values[3] - values[2]) / 1e6, normalization: Number(values[5] - values[4]) / 1e6 };
@@ -334,10 +383,12 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
     readback.unmap();
     profile.unpackMs = performance.now() - unpackStarted;
     if (!height.every(value => Number.isFinite(value) && (coast || value >= .3 - 1e-7))) throw new Error('Champ GPU invalide.');
+    if(lab)await lab.after('phasor',height,'Sortie GPU lue et validée');
     return height;
   } finally {
     plan.free();
     // Also recover a mapped staging buffer if validation/readback failed.
-    buffers.forEach(buffer => { if (buffer.mapState !== 'unmapped') buffer.unmap(); });
+    buffers.forEach(buffer => { if (buffer.mapState !== 'unmapped') buffer.unmap(); if(lab||compact)buffer.destroy(); });
+    if(lab||compact)scratch.delete(device);
   }
 }

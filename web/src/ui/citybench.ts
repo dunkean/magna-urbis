@@ -13,6 +13,7 @@ import { clampView, fitView, panBy, zoomAt, type View } from '../render/view';
 import { CITY_LOD_OFF } from '../render/cityCanvas';
 import { cityContourPaths, type CityContourPaths } from '../render/cityContours';
 import { terrainContourWidths } from '../../../rust/bridge/terrainRender';
+import { getBenchRenderColors, writeRenderColorsQuery } from './benchRenderColors';
 import { terrainStyle } from '../render/terrainStyle';
 import { encodePng, pngDataUrl } from '../render/raster';
 import { applyExecutionProfile, installExecutionProfile } from './executionProfile';
@@ -90,7 +91,7 @@ function drawContours(): void {
   const paths = cityContourPaths(terrain, new URLSearchParams(decor.meta.query).get('relief') ?? 'flat', view.scale);
   const layer = contours.querySelector('g')!, [thin, index] = Array.from(layer.querySelectorAll('path'));
   if (shownContours !== paths) { thin.setAttribute('d', paths.thin); index.setAttribute('d', paths.index); shownContours = paths; }
-  const style = backgroundStyle === 'relief' ? 'atlas' : backgroundStyle, pal = terrainStyle(style).palette, widths = terrainContourWidths(style, view.scale);
+  const style = backgroundStyle === 'relief' ? 'atlas' : backgroundStyle, pal = terrainStyle(style, getBenchRenderColors()).palette, widths = terrainContourWidths(style, view.scale);
   layer.setAttribute('stroke', pal.contour); contours.dataset.step = String(paths.step);
   thin.setAttribute('stroke-width', String(widths.thin)); thin.setAttribute('opacity', '0.4');
   index.setAttribute('stroke-width', String(widths.index)); index.setAttribute('opacity', '0.5');
@@ -145,8 +146,9 @@ function hillshade(d: Decor): string {
   ctx.putImageData(pixels, 0, 0); return canvas.toDataURL();
 }
 
+window.addEventListener('bench-render-colors-change', () => { drawContours(); save(); city3d.refresh(); });
 function shareQuery(): string {
-  const params = new URLSearchParams(); if (decor) params.set('artifact', decor.meta.id);
+  const params = new URLSearchParams(); writeRenderColorsQuery(params, getBenchRenderColors()); if (decor) params.set('artifact', decor.meta.id);
   settlements.share(params);
   rpgPins?.share(params);
   if (backgroundStyle !== 'relief') params.set('fond', backgroundStyle);
@@ -187,7 +189,7 @@ const settlements = createTerrainSettlements({ map, viewport, city: true, active
 const city3d = mountCity3d({ host: viewport, labels, getDecor: () => decor, getScene: () => settlements.urban.buildingState.scene,
   getProjection: () => settlements.urban.buildingProjection,
   getLayouts: () => settlements.urban.layouts, getRegionalStreets: () => settlements.urban.regionalStreets, getPartitions: () => settlements.urban.partitions, getSelected: () => { const s = settlements.urban.buildingState; return s.parentSelected?.kind === 'member' ? s.parentSelected.member_id : s.selected; }, getTextured: () => settlements.urban.textured, setTextured: on => settlements.urban.setTextured(on),
-  details: settlements.urban.buildingDetails,
+  details: settlements.urban.buildingDetails, getBuildingAppearance: () => ({ ...settlements.urban.buildingState.appearance, colors: getBenchRenderColors() }),
   getBackground: () => background.querySelector('image')?.getAttribute('href') ?? undefined,
   onSelect: id => settlements.urban.selectBuilding(id) });
 const view3d = document.createElement('button'); view3d.type = 'button'; view3d.id = 'view3d'; view3d.setAttribute('aria-pressed', 'false');

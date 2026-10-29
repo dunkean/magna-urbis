@@ -17,6 +17,7 @@ try {
   });
   await page.goto(base + '/terrainbench.html?standalone=1&profile=local&stage=settlements&source=procedural&auto=0&render=svg&style=render-v2-snow&v2season=0.25');
   await page.waitForFunction(() => window.magnaBenchContext && document.body.dataset.terrainStartup === 'ready');
+  await page.locator('#bench-render-settings').evaluate(element => { element.open = true; element.querySelector('[data-render-section="cover"]').open = true; });
   assert.deepEqual(await page.locator('#style option').evaluateAll(options => options.filter(option => option.value.startsWith('render-v2')).map(option => [option.value, option.textContent])), [['render-v2', 'Render v2']]);
   assert.equal(await page.locator('#style').inputValue(), 'render-v2');
   assert.equal(await page.locator('#renderV2Diagnostic').inputValue(), 'render-v2-snow');

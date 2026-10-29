@@ -300,7 +300,12 @@ export function createUrbanBuildingsPanel(options: {
     <details class="advanced"><summary>Déficits architecturaux déclarés</summary><small>Déclarations conservées avec les issues ouvertes ; elles ne prouvent ni impossibilité physique ni capacité habitante.</small><ul data-building-open-deficits></ul></details>
   </div>`;
   options.host.append(programme, panel);
-  const $ = <T extends HTMLElement>(selector: string): T => panel.querySelector(selector) as T;
+  const renderControls = new Map(['visible', 'style', 'diagnostic'].map(key => {
+    const selector = `[data-building-${key}]`, control = panel.querySelector<HTMLElement>(selector)!;
+    control.closest<HTMLElement>('label')!.dataset.renderSettingsCategory = 'buildings';
+    return [selector, control] as const;
+  }));
+  const $ = <T extends HTMLElement>(selector: string): T => (renderControls.get(selector) ?? panel.querySelector(selector)) as T;
   const p$ = <T extends HTMLElement>(selector: string): T => programme.querySelector(selector) as T;
   // Mixed house styles (the « Maisons » column of the city panel); the single-culture select below is the older way to set the whole city.
   const houseMix = { value: undefined as HouseSettings | undefined, get(): HouseSettings | undefined { return hasHouseMix(this.value) ? this.value : undefined; },

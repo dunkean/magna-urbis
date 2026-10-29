@@ -1,0 +1,774 @@
+{
+  "schema": "magna-urbis-scientific-documentation-v1",
+  "recordedAt": "2026-10-28T14:31:24.675Z",
+  "documentationDate": "2026-10-28",
+  "sourceHead": "1eaab9095e0e9a2fac2dc4e0333d4aa36603a32e",
+  "sourceCaveat": "Active shared working tree, including pre-existing local changes. Hashes identify linked files as read at record time; HEAD alone does not identify those contents. No new full scientific benchmark is claimed.",
+  "figures": [
+    {
+      "file": "medieval-city.png",
+      "source": "docs/images/medieval-city.png",
+      "kind": "application-screenshot",
+      "engine": "TypeScript V1",
+      "recipe": {
+        "image": "medieval-city.png",
+        "implementation": "typescript",
+        "settings": {
+          "seed": "42",
+          "size": "city",
+          "population": "30000",
+          "culture": "european-organic",
+          "style": "parchment",
+          "biome": "temperate",
+          "relief": "flat",
+          "river": "river",
+          "coast": "none",
+          "labels": "0",
+          "legend": "0"
+        },
+        "view": {
+          "cx": 1756.6666666666667,
+          "cy": 1583.3333333333335,
+          "scale": 0.3333333333333333
+        },
+        "viewport": {
+          "width": 1600,
+          "height": 1000
+        },
+        "capture": "Application screenshot; no retouching"
+      },
+      "capturedAt": null,
+      "sourceCommit": null,
+      "sha256": "a396dec17c104fc345489b6f2510c9c24ef218e0321d10e40525d207ae0f5721",
+      "bytes": 1901253,
+      "transformation": "none; byte-for-byte copy"
+    },
+    {
+      "file": "desert-medina.png",
+      "source": "docs/images/desert-medina.png",
+      "kind": "application-screenshot",
+      "engine": "TypeScript V1",
+      "recipe": {
+        "image": "desert-medina.png",
+        "implementation": "typescript",
+        "settings": {
+          "seed": "73",
+          "size": "city",
+          "population": "30000",
+          "culture": "medina",
+          "style": "atlas",
+          "biome": "desert",
+          "relief": "flat",
+          "river": "none",
+          "coast": "none",
+          "labels": "0",
+          "legend": "0"
+        },
+        "view": {
+          "cx": 1876.6666666666667,
+          "cy": 2490,
+          "scale": 0.4166666666666667
+        },
+        "viewport": {
+          "width": 1600,
+          "height": 1000
+        },
+        "capture": "Application screenshot; no retouching"
+      },
+      "capturedAt": null,
+      "sourceCommit": null,
+      "sha256": "709c7f7f79a5a4996446339076409392f323beb8769ca27e8144516cfe8a7130",
+      "bytes": 1237315,
+      "transformation": "none; byte-for-byte copy"
+    },
+    {
+      "file": "island-tropical.jpg",
+      "source": "docs/rust_images/island-tropical.jpg",
+      "kind": "application-screenshot",
+      "engine": "Rust terrain/settlements prototype",
+      "recipe": null,
+      "capturedAt": null,
+      "sourceCommit": null,
+      "limitation": "Source folder supplies no exact recipe, date or source commit. Illustrative only.",
+      "sha256": "92132b9c3b58e58efc447fe700a67d0c23426c110b50bbedcef9a9d7a338caf0",
+      "bytes": 228369,
+      "transformation": "none; byte-for-byte copy"
+    },
+    {
+      "file": "norse-quarters.png",
+      "source": "web/out/city-visual-bench/03-validated/03-norse-hamlet.png",
+      "kind": "diagnostic-screenshot",
+      "engine": "City Bench + Rust native",
+      "capturedAt": "2026-10-22T16:12:36.757Z",
+      "sourceCommit": "ffa26377528841eebb00d4cdb2dbb0b08901c7b9",
+      "recipe": {
+        "id": "03-norse-hamlet",
+        "title": "Hameau boréal : groupes de maisons longues séparés et espace agricole.",
+        "population": 40,
+        "culture": "barbarian-norse",
+        "artifact": "city-09-boreal-river-s",
+        "architecture": "compact",
+        "gate": "p0",
+        "camera": {
+          "kind": "overview"
+        },
+        "visualVerdict": "needs_rework",
+        "status": "captured_review_required",
+        "limitations": [
+          "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+          "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+          "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés."
+        ]
+      },
+      "limitation": "Historical needs_rework verdict. No visually discernible house ensemble; this figure is not evidence of successful built occupation.",
+      "sha256": "c15fcf002363142083483fedec0a3da53aa6d33a2d9db1de4bc391c510178e29",
+      "bytes": 468291,
+      "transformation": "none; byte-for-byte copy"
+    },
+    {
+      "file": "canopy-640m.png",
+      "source": "docs/surface/evidence/canopy-v9/top-640m.png",
+      "kind": "diagnostic-screenshot",
+      "engine": "Local Godot surface viewer, canopy-v9 campaign",
+      "capturedAt": "2026-10-23T23:37:11.285423+00:00",
+      "sourceCommit": "65961e93899c448b55d1480046d87420928acd8f",
+      "recipe": {
+        "sourceScope": "Retained V8 original-teacher neural source plus retained fine source; only candidate pages regenerated by existing canonical population. No new neural request in these probes.",
+        "retainedInputSha256": "efe7581ea017d9407e7e8312144b0b81d93776a96f7105ab410fa2663b5940f6",
+        "view": "top 640 m",
+        "sourceManifest": "docs/surface/evidence/canopy-v9/manifest.json"
+      },
+      "limitation": "Retained source, no new neural generation. Different viewer from web Render3D.",
+      "sha256": "01223c7f9c3ac9ac11ddafad940b4c238be6e425fb39352c7f10ca9a1aa216ea",
+      "bytes": 833343,
+      "transformation": "none; byte-for-byte copy"
+    },
+    {
+      "file": "ground-overview.webp",
+      "source": "docs/methods/images/render3d-ground-overview.webp",
+      "kind": "application-screenshot",
+      "engine": "Render3D method note",
+      "recipe": null,
+      "capturedAt": null,
+      "sourceCommit": null,
+      "limitation": "Illustrative screenshot supplied by the ground method note; exact capture recipe not recorded beside the asset.",
+      "sha256": "b9a0c1d11f79219959a487221aa58dc173af5c746a697671438bfd66f4236dfb",
+      "bytes": 6130,
+      "transformation": "none; byte-for-byte copy"
+    },
+    {
+      "file": "v2-topography.png",
+      "source": "web/out/v2-browser/01-topography.png",
+      "kind": "application-screenshot",
+      "engine": "Atelier V2, CPU TypeScript",
+      "capturedAt": "2026-10-28T13:47:49.113Z",
+      "sourceCommit": null,
+      "recipe": {
+        "seed": "v2-ui-evidence",
+        "mapSize": 2400,
+        "relief": "flat",
+        "coast": "none",
+        "river": "stream",
+        "stage": "terrain",
+        "evidence": {
+          "hash": "a03e02124d289cc3487f9d65984de083ba837d39702cff52a83996dbd7444672",
+          "rivers": 3,
+          "grid": 465
+        }
+      },
+      "limitation": "New V2 UI integration replay, not a Rust urban benchmark. Source working tree in active development.",
+      "sha256": "0bc9b6567229001aa04706fc562c6bb4fdcfe6d0644e9c8cd5e363c65410853a",
+      "bytes": 950124,
+      "transformation": "none; byte-for-byte copy"
+    },
+    {
+      "file": "v2-placements.png",
+      "source": "web/out/v2-browser/02-placements.png",
+      "kind": "application-screenshot",
+      "engine": "Atelier V2, CPU TypeScript",
+      "capturedAt": "2026-10-28T13:47:49.113Z",
+      "sourceCommit": null,
+      "recipe": {
+        "seed": "v2-ui-evidence",
+        "mapSize": 2400,
+        "relief": "flat",
+        "coast": "none",
+        "river": "stream",
+        "stage": "region",
+        "settlementCount": 2,
+        "mainRequestedPopulation": 300,
+        "evidence": {
+          "settlements": 2,
+          "roads": 5,
+          "terrainRetained": true
+        }
+      },
+      "limitation": "Sites and regional routes only; no town plan built in this capture.",
+      "sha256": "4bdd1da4087844ad6537dd11b21f54fac1b7a5031f05f6eeb1f0fb3bcef14823",
+      "bytes": 971120,
+      "transformation": "none; byte-for-byte copy"
+    },
+    {
+      "file": "pipeline.svg",
+      "kind": "original-educational-vector-diagram",
+      "source": "docs/scientific/assets/pipeline.svg",
+      "sha256": "e62f0ffbd72d192ae3c52db54a10f0ceab70921a254115359e988e438eb02e01",
+      "bytes": 3107,
+      "limitation": "Schematic, not measured output; not to scale."
+    },
+    {
+      "file": "hydrology.svg",
+      "kind": "original-educational-vector-diagram",
+      "source": "docs/scientific/assets/hydrology.svg",
+      "sha256": "2af332ee66a2dbc048655ae103e1d1fe033dc27bc66772022a69c64a8bd2717e",
+      "bytes": 1795,
+      "limitation": "Schematic, not measured output; not to scale."
+    },
+    {
+      "file": "capacity.svg",
+      "kind": "original-educational-vector-diagram",
+      "source": "docs/scientific/assets/capacity.svg",
+      "sha256": "b3ec4bd2ce95edb33805d2e19b3e85ee031316b0c9415b2a28910a8c1f8ad751",
+      "bytes": 2063,
+      "limitation": "Schematic, not measured output; not to scale."
+    },
+    {
+      "file": "parcel.svg",
+      "kind": "original-educational-vector-diagram",
+      "source": "docs/scientific/assets/parcel.svg",
+      "sha256": "e4f8a3ca454ca5773ce95f7d546b7ac70f5c065c71f02d18af713e9c85ba3676",
+      "bytes": 2188,
+      "limitation": "Schematic, not measured output; not to scale."
+    },
+    {
+      "file": "pipeline-en.svg",
+      "kind": "original-educational-vector-diagram",
+      "language": "en",
+      "source": "docs/scientific/assets/pipeline-en.svg",
+      "translatedFrom": "pipeline.svg",
+      "transformation": "English labels and descriptions; vector geometry unchanged",
+      "sha256": "9d19f5bb4d5ee99549d0883ad80057bc3d317d8ddd960ab611c89a6d6d75218c",
+      "bytes": 3088,
+      "limitation": "Schematic, not measured output; not to scale."
+    },
+    {
+      "file": "hydrology-en.svg",
+      "kind": "original-educational-vector-diagram",
+      "language": "en",
+      "source": "docs/scientific/assets/hydrology-en.svg",
+      "translatedFrom": "hydrology.svg",
+      "transformation": "English labels and descriptions; vector geometry unchanged",
+      "sha256": "b033225f5607df02167881e5999b94bbf7196091bb42479fe8b09d67327407e9",
+      "bytes": 1788,
+      "limitation": "Schematic, not measured output; not to scale."
+    },
+    {
+      "file": "capacity-en.svg",
+      "kind": "original-educational-vector-diagram",
+      "language": "en",
+      "source": "docs/scientific/assets/capacity-en.svg",
+      "translatedFrom": "capacity.svg",
+      "transformation": "English labels and descriptions; vector geometry unchanged",
+      "sha256": "0bda3827f1f97f5f6ce00e734ac4db31746979f6c849b74939cf33958a8b1d12",
+      "bytes": 1997,
+      "limitation": "Schematic, not measured output; not to scale."
+    },
+    {
+      "file": "parcel-en.svg",
+      "kind": "original-educational-vector-diagram",
+      "language": "en",
+      "source": "docs/scientific/assets/parcel-en.svg",
+      "translatedFrom": "parcel.svg",
+      "transformation": "English labels and descriptions; vector geometry unchanged",
+      "sha256": "b6ab23c26d8bc6641dd9412adc769d5177853256fa0d86c49fae0739bd30e452",
+      "bytes": 2134,
+      "limitation": "Schematic, not measured output; not to scale."
+    }
+  ],
+  "linkedSources": [
+    {
+      "path": "docs/RUST_BENCH_PIPELINE_FR.md",
+      "sha256": "214aa4d8696552a41d2fd2531b9089115470479bb1afd1a9a3daec7e323ddaf7",
+      "bytes": 9720
+    },
+    {
+      "path": "docs/V2_ATELIER_FR.md",
+      "sha256": "98fb75f6569defce73019a27c4987eaf933f5dd401e0422eee32acdf47e18c7f",
+      "bytes": 9448
+    },
+    {
+      "path": "docs/catalogue_settlements_antiquite_moyen_age_rpg_FR.md",
+      "sha256": "6d962393466f82ca438f0ccc9f883e9315daa525c4221475415f2d043e4b1e70",
+      "bytes": 100605
+    },
+    {
+      "path": "docs/methods/fantasy-landuse.md",
+      "sha256": "ec54622e9598861370dad2d16108a354c03a08e75af6f26ef2dab3968f51b752",
+      "bytes": 4354
+    },
+    {
+      "path": "docs/methods/render-v2.md",
+      "sha256": "0d242e943e623ac651ebcc05bd8a5823ba6c86ac7830ce4f0b2fba075898c91b",
+      "bytes": 41842
+    },
+    {
+      "path": "docs/methods/render3d-ground.md",
+      "sha256": "db9a6b8b1f3541b01d115d11467ddcb83879cbd914be51d1ffe50280709eddc9",
+      "bytes": 10317
+    },
+    {
+      "path": "docs/methods/render3d-vegetation.md",
+      "sha256": "a0648689829f076a05e7331eb85ac4e8008a757cee0ceb6b588aeb4f6e1fca1d",
+      "bytes": 52183
+    },
+    {
+      "path": "docs/methods/urban-architecture-placement.md",
+      "sha256": "704d8e5108ba9f1316305d45a6f15e1e3b7729631c0839c52d0f6b93d5c47edf",
+      "bytes": 19749
+    },
+    {
+      "path": "docs/methods/urban-buildings-rendering.md",
+      "sha256": "2b296447261792c727e403664e43348e0de1eddcf6269752fec5561c01cef187",
+      "bytes": 11053
+    },
+    {
+      "path": "docs/methods/urban-parcels.md",
+      "sha256": "79e9eefde3d1764e806814829c6c80f1ee4c3e88c727525a1aff15f13b60b96b",
+      "bytes": 20650
+    },
+    {
+      "path": "docs/methods/urban-programme-allocation.md",
+      "sha256": "9f6dac674831f5e365ded31e8e23d58e7cfdf04f6a84303fc514b40cdd144753",
+      "bytes": 16929
+    },
+    {
+      "path": "docs/methods/urban-settlement-styles.md",
+      "sha256": "6ee55fcaa340e62d1927e07956ae9f1bcb30171c63ad9a9f01aa6170f2523dc8",
+      "bytes": 6247
+    },
+    {
+      "path": "docs/sources/javanese-domestic-architecture_FR.md",
+      "sha256": "a387908f0081f47248953f62306fdf163c72fb753fa0ef5f36d1ad770ba4aa05",
+      "bytes": 4670
+    },
+    {
+      "path": "docs/sources/roman-compact-domestic-architecture_FR.md",
+      "sha256": "8ba83ef5581403cf375340e4fca8e52a977e02f4897a237f2f84f142bc63bcd9",
+      "bytes": 6740
+    },
+    {
+      "path": "docs/styles_architecturaux_mondiaux_city_mapper_FR.md",
+      "sha256": "51ffec03a4f13c088e09b0351d22c4039f305dbd04fbd7d423108603e066faba",
+      "bytes": 181959
+    },
+    {
+      "path": "docs/surface/evidence/canopy-v9/README.md",
+      "sha256": "b21e54518161368a2b7407e8a83838bcccf99424a3b300ca2699db86720be7fd",
+      "bytes": 5078
+    },
+    {
+      "path": "rust/bridge/terrainErosion.wgsl",
+      "sha256": "d6e5c87a3266c52a5ed40a59c99c63a7c542fbeca56fb2f683bf354adb7e26e3",
+      "bytes": 29633
+    },
+    {
+      "path": "rust/bridge/terrainForest.ts",
+      "sha256": "e8ba7bf3bd709078df6ab4ded0ce6badb8afd04b307f46a3a926b5c713cc61be",
+      "bytes": 61272
+    },
+    {
+      "path": "rust/crates/core/src/coast.rs",
+      "sha256": "05fe6950e80be133c67c46722de8c7dbc34accfd36dbc32c2f6773eb0ca51063",
+      "bytes": 17375
+    },
+    {
+      "path": "rust/crates/core/src/engine.rs",
+      "sha256": "07802208e10a05381207bf6472ade02dd5eb3e00dfc28909fa3b3f2528fbb7a7",
+      "bytes": 39409
+    },
+    {
+      "path": "rust/crates/core/src/erosion.rs",
+      "sha256": "c6737d74f7b2c00a3bf1d6eaaf2017511a4e42351dff387132de4bf7b476c6ec",
+      "bytes": 46061
+    },
+    {
+      "path": "rust/crates/core/src/generation_noise.rs",
+      "sha256": "d94dbf945689933184077cb563bf055fec045d4de9f6c96aabaa2be96844ecbc",
+      "bytes": 7544
+    },
+    {
+      "path": "rust/crates/core/src/hydrology.rs",
+      "sha256": "ab198841108cdb3701810388cb8522358e7c4e8cf3a41904fee72f9e32d5adec",
+      "bytes": 204313
+    },
+    {
+      "path": "rust/crates/core/src/hydrology_balance.rs",
+      "sha256": "a91a0999c3ec4243b786190498a47aa7f06cc00ac8b51188c2b5f1d452ddd4ac",
+      "bytes": 11925
+    },
+    {
+      "path": "rust/crates/core/src/hydrology_flats.rs",
+      "sha256": "fb1938ede6cd96bff92a94e64c4ea105db0b4d61ec19b591bbf7839e62c16dae",
+      "bytes": 37561
+    },
+    {
+      "path": "rust/crates/core/src/hydrology_meanders.rs",
+      "sha256": "12cf28a9aa7dd7ba073f1657b1d41b8224d575857c8d89312c55f3a004883d78",
+      "bytes": 9980
+    },
+    {
+      "path": "rust/crates/core/src/lib.rs",
+      "sha256": "7251a1f506af784a8df50132abeb89922cfbaf5fd947e24f564b543cbd86c83d",
+      "bytes": 32411
+    },
+    {
+      "path": "rust/crates/core/src/noise.rs",
+      "sha256": "1b6791c0821afb9fabaa1bf21abc6579256b5709b4cd73e364210f44a8912746",
+      "bytes": 4301
+    },
+    {
+      "path": "rust/crates/core/src/settlements/mod.rs",
+      "sha256": "58690b76d7ddef961f1a4b3aa6eb34288bd3707e15d7eb340da1a58eadbc5815",
+      "bytes": 15416
+    },
+    {
+      "path": "rust/crates/core/src/settlements/placement.rs",
+      "sha256": "5fc63a97abc97060b16ea80571b8d27565e5d7b48a1f852934a1d5062a689dee",
+      "bytes": 25753
+    },
+    {
+      "path": "rust/crates/core/src/settlements/roads/mod.rs",
+      "sha256": "b0de00b76b8735e1e8b73bbdcf2ad87f85c7ccd5cee65a411feb53f444198c72",
+      "bytes": 38887
+    },
+    {
+      "path": "rust/crates/core/src/settlements/roads/search.rs",
+      "sha256": "96a39731ab136a1169459802c00915dbb18bf300d8829fe1db68659b58de0717",
+      "bytes": 21873
+    },
+    {
+      "path": "rust/crates/core/src/urban/building_sites.rs",
+      "sha256": "1839a20ba1408293af6629e0d1dbbf71edd76ef39a4dfae9c44890c773c84f63",
+      "bytes": 101604
+    },
+    {
+      "path": "rust/crates/core/src/urban/culture.rs",
+      "sha256": "b88dbb8e70a0f5033e590f65e20891ea0cd7567899128132f34da065a3fbe8d3",
+      "bytes": 60789
+    },
+    {
+      "path": "rust/crates/core/src/urban/footprint.rs",
+      "sha256": "4f4f083cc2df8a2bd311d99cb82fa4c5e04b0995850cacd0c1c8a8238118c908",
+      "bytes": 134662
+    },
+    {
+      "path": "rust/crates/core/src/urban/macroplan.rs",
+      "sha256": "9f63f0790a3d85c52bad89004820dcf73d29c529661db87397d77f3cf6832b11",
+      "bytes": 87126
+    },
+    {
+      "path": "rust/crates/core/src/urban/network.rs",
+      "sha256": "e235ff83bbae8b1dc9e25352faf875168a4922e31ed896a01f2e27ac1cfb1005",
+      "bytes": 178092
+    },
+    {
+      "path": "rust/crates/core/src/urban/parcels.rs",
+      "sha256": "f6a0d329b11812895ca1ac1b4785e8008c619f157d6ba694d72645575c8e4973",
+      "bytes": 200509
+    },
+    {
+      "path": "rust/crates/core/src/urban/parcels/contacts.rs",
+      "sha256": "12abdef1633e09bdde83eb8a721eb127f1291a3e664eab645d6c3df8f812a5f5",
+      "bytes": 9435
+    },
+    {
+      "path": "rust/crates/core/src/urban/programme.rs",
+      "sha256": "0e658dac108bea3e0bc85d3b75e591cf8775e9affb0924b7180a3382e477ab3f",
+      "bytes": 170066
+    },
+    {
+      "path": "rust/crates/core/src/urban/quarters.rs",
+      "sha256": "26ae919f5ef0245994e238424be887cea712727165330a029755515190dfec36",
+      "bytes": 197217
+    },
+    {
+      "path": "rust/crates/houses/data/recipes.json",
+      "sha256": "6847fd24db1a834c9e6c0af38b0a3b46d486a4ab12bded02bc948cc4178a489c",
+      "bytes": 3581573
+    },
+    {
+      "path": "rust/crates/houses/data/source-inventory.json",
+      "sha256": "22f106cbe7f9a16dc2c274f930ad1fee176f827a9274032b46bb8bdb98fae25c",
+      "bytes": 457273
+    },
+    {
+      "path": "rust/crates/houses/data/urban-admission.json",
+      "sha256": "73b1c08201c4ed37ad03544b0858ecf0007241b550ecec543f967d72a7a45833",
+      "bytes": 1903225
+    },
+    {
+      "path": "rust/crates/houses/src/engine.rs",
+      "sha256": "44ddb93c071d33b0cb6df3cc3eb7abe0daefe0acc2e5fdcb17cf90f38e64c239",
+      "bytes": 113620
+    },
+    {
+      "path": "rust/crates/houses/src/placement.rs",
+      "sha256": "5513358d8613d9ae8c8e2e4173f6729dc6c957133c8ac58b811baab31d5e07d4",
+      "bytes": 132400
+    },
+    {
+      "path": "rust/crates/local/src/main.rs",
+      "sha256": "d5e0065dd5a527ded216b5f043c44d10beb6490dc433497b177a26afb143d995",
+      "bytes": 56095
+    },
+    {
+      "path": "rust/crates/neural-wasm/src/lib.rs",
+      "sha256": "aefdf25664ea74876f01094dafb63fe324852fe8482d1f6f408f0a90e8e5d042",
+      "bytes": 9242
+    },
+    {
+      "path": "rust/crates/neural/src/pipeline.rs",
+      "sha256": "5ef194de4fb5796ea5a003a49dad7230d196a8e4b58a01ad0e08358171234dc6",
+      "bytes": 24522
+    },
+    {
+      "path": "rust/crates/neural/src/plan.rs",
+      "sha256": "3f201a464a339ab017120a8f42c428e3ff878a9f0d2ec96a29912c4b4b04e27b",
+      "bytes": 4898
+    },
+    {
+      "path": "rust/crates/neural/src/reconstruct.rs",
+      "sha256": "e63310c1cfa389c9574e5480572b947e9aac134babe48272872e53789b7ecd59",
+      "bytes": 8792
+    },
+    {
+      "path": "rust/crates/random/src/lib.rs",
+      "sha256": "f4dec52c3f067ae0a61b2c71444dba97d419c9c75b6bd425a78a945fa708fcf7",
+      "bytes": 3182
+    },
+    {
+      "path": "rust/desktop-v2/README.md",
+      "sha256": "b5701aa8fc2139f4fd18dacf2bb0260cbaf12512bbb3d7f40c22284489cedb0c",
+      "bytes": 4317
+    },
+    {
+      "path": "rust/desktop-v2/src/main.rs",
+      "sha256": "e65ecf16a1517e4901682b7877b916a0d4b5a5aab4d811f04c5b085103f6123f",
+      "bytes": 4419
+    },
+    {
+      "path": "rust/desktop-v2/tauri.conf.json",
+      "sha256": "42b0b493fec3ef78a37b65d33b39fc1510b230044f3aa4255f5922bd56a527b7",
+      "bytes": 693
+    },
+    {
+      "path": "rust/desktop/README.md",
+      "sha256": "2628d9222bf48d2ad1a0744fea99d51be9ad575e38149228011325db0083aafc",
+      "bytes": 4097
+    },
+    {
+      "path": "web/package.json",
+      "sha256": "c82403451c8ad86c37a4c5fb843aa99e40002220ec2322e41e5b9b3e93fd2269",
+      "bytes": 3366
+    },
+    {
+      "path": "web/scripts/neural_python.py",
+      "sha256": "194ba19d3e611d2ae7a8da5d85c8e2d55ecb84d2769c52633bdd2fce3329c093",
+      "bytes": 15582
+    },
+    {
+      "path": "web/scripts/urban_native_api_check.mjs",
+      "sha256": "395e84f9bd86c367a4bf4ed762fb984ba0fe6fa1c4661e2cca0cd682c06efaf3",
+      "bytes": 10814
+    },
+    {
+      "path": "web/scripts/v2_platform_check.mjs",
+      "sha256": "284e8938cc1e8557af9c9b3db673fe9e4b1bea6614937afee1add67ab4a9fdc2",
+      "bytes": 5875
+    },
+    {
+      "path": "web/src/gen/landuse/rural.ts",
+      "sha256": "99cddd538dab3ff6c0bcd82032db9c7c83602783d8f6bbe3d2d14ae4bbff1783",
+      "bytes": 58102
+    },
+    {
+      "path": "web/src/gen/pipeline.ts",
+      "sha256": "974baa829a5685c2f4bc1f8cbff8a2384e4e2fc9e275624ddf348a7fa47e2a09",
+      "bytes": 17281
+    },
+    {
+      "path": "web/src/gen/roads/regional.ts",
+      "sha256": "0d09a77caf9cc0187bcf5e2461f19923c6726f74346d06e75bb59c43eaf582b3",
+      "bytes": 30951
+    },
+    {
+      "path": "web/src/render/svg.ts",
+      "sha256": "a0b7359a6e81a099a1e689954187511f7c258f08878605868938e792dd6e106f",
+      "bytes": 10824
+    },
+    {
+      "path": "web/src/ui/urbanLanduse.ts",
+      "sha256": "d261879a5930b9b3b1fe7fad01ce94741a4e791428c0d6a6f581f11e05c2d30b",
+      "bytes": 25604
+    },
+    {
+      "path": "web/src/v2/compose.ts",
+      "sha256": "ecf80a861361f7fb32775ab83047a37bb330589d9652b2579e102914df22efa0",
+      "bytes": 8271
+    },
+    {
+      "path": "web/src/v2/compose.worker.ts",
+      "sha256": "6003d52d12e88dd509f0018ed5a084d2b0fcef75d386d3e0a2ddf5d6bd88a6f0",
+      "bytes": 1253
+    },
+    {
+      "path": "web/src/v2/engine.ts",
+      "sha256": "7a4a97f22be574cfc2de5bc83252edde1aa573a8ca6d9472b9d24443f144ac77",
+      "bytes": 21651
+    },
+    {
+      "path": "web/src/v2/platform.ts",
+      "sha256": "b121689f46d9cafa10a9e4b8d87a0541ea70f779dee0b1c06b4bd613e6c1fb31",
+      "bytes": 13429
+    },
+    {
+      "path": "web/src/v2/rustUrban.ts",
+      "sha256": "38aa73ec0f8eda42360331d0b607b01225db9dac66360815dc4e9170016724d7",
+      "bytes": 28071
+    },
+    {
+      "path": "web/tests/v2Compose.test.ts",
+      "sha256": "536ac6d3c023352f63cfd04e80bc646df1a3993af1fa141c9fd12813bc9eda3a",
+      "bytes": 10302
+    }
+  ],
+  "externalReferences": [
+    "https://webassembly.org/docs/high-level-goals/",
+    "https://www.w3.org/TR/WGSL/",
+    "https://mrl.cs.nyu.edu/~perlin/paper445.pdf",
+    "https://github.com/r-barnes/Barnes2013-Depressions",
+    "https://doi.org/10.1029/96WR03137",
+    "https://gfzpublic.gfz.de/pubman/faces/ViewItemFullPage.jsp?itemId=item_1945954_3",
+    "https://esurf.copernicus.org/articles/9/105/2021/",
+    "https://arxiv.org/abs/2512.08309v4",
+    "https://arxiv.org/abs/2206.00364",
+    "https://arxiv.org/abs/2312.02696",
+    "https://proceedings.mlr.press/v202/song23a.html",
+    "https://perso.liris.cnrs.fr/egalin/Articles/2010-roads.pdf",
+    "https://people.eecs.berkeley.edu/~sequin/CS285/PAPERS/Parish_Muller01.pdf",
+    "https://www2.cs.uh.edu/~chengu/Publications/streetModeling/street_sig08.pdf",
+    "https://twak.org/project/parcels/",
+    "https://github.com/watabou/TownGeneratorOS",
+    "https://github.com/xandergos/terrain-diffusion",
+    "https://github.com/dunkean/neural-earth",
+    "https://github.com/raguilar011095/planet_heightmap_generation"
+  ],
+  "integrationReports": {
+    "collectedAt": "2026-10-28T14:31:24.674Z",
+    "caveat": "Reports are bounded functional integration cases produced on a shared development machine. Collection time and source file modification time are not necessarily execution time. Source files may continue to evolve; these copies retain the exact report bytes collected.",
+    "reports": [
+      {
+        "file": "v2-rust-urban.json",
+        "source": "web/out/v2-rust-urban/results.json",
+        "bytes": 2330,
+        "sha256": "5a46f7ff245cb451952b0d18a5c6106538d994b63d8f0a27ab2d081870cca391",
+        "sourceFileModifiedAt": "2026-10-28T14:21:14.256Z",
+        "scope": "Four urban stages through Rust/WASM; local house invalidation, bounded to the recorded case.",
+        "transformation": "none; byte-for-byte copy"
+      },
+      {
+        "file": "v2-native-urban.json",
+        "source": "web/out/v2-native-urban/results.json",
+        "bytes": 2339,
+        "sha256": "5ce6554cfd935ed1b94f2a116c672e9b73a6d0fb630a58f9918e276f39c6e1ac",
+        "sourceFileModifiedAt": "2026-10-28T14:21:15.155Z",
+        "scope": "Four urban stages through the local Rust service; not a WASM/native numerical equivalence proof.",
+        "transformation": "none; byte-for-byte copy"
+      },
+      {
+        "file": "v2-compose-browser.json",
+        "source": "web/out/v2-compose-browser/results.json",
+        "bytes": 5002,
+        "sha256": "a3acb6a6a7f2eb6becc645ea18d7ace527ae216a911e9f7205ebecc5ccd9cc47",
+        "sourceFileModifiedAt": "2026-10-28T14:09:01.027Z",
+        "scope": "Browser replay of territory/urban-recipe composition, exact retained physical hash, cache and reconstruction.",
+        "transformation": "none; byte-for-byte copy"
+      },
+      {
+        "file": "v2-platform.json",
+        "source": "web/out/v2-platform-check.json",
+        "bytes": 4331,
+        "sha256": "4641e5c25b17f0a78fc4ec669881e0a5de02bb2fa11f8e53da4d616ad8224f39",
+        "sourceFileModifiedAt": "2026-10-28T13:52:20.053Z",
+        "scope": "Procedural CPU/GPU/native and neural WebGPU/Python-CUDA execution, with model identities.",
+        "transformation": "none; byte-for-byte copy"
+      },
+      {
+        "file": "v2-desktop-startup.json",
+        "source": "web/out/v2-desktop-startup.json",
+        "bytes": 205,
+        "sha256": "359862e3123d7d9ae656df55df10f2b0bb561bc873f03b593fee9aa7f4558d8f",
+        "sourceFileModifiedAt": "2026-10-28T13:54:30.706Z",
+        "scope": "Observed Windows app startup and its child Rust service on loopback, not cross-platform installation validation.",
+        "transformation": "none; byte-for-byte copy"
+      }
+    ]
+  },
+  "bibliographyReview": {
+    "reviewedOn": "2026-10-28",
+    "method": "Primary author, publisher or official project pages opened through web browsing; DOI failures handled explicitly.",
+    "braunWillett": "Publisher DOI could not be fetched. Bibliographic metadata verified against the author institutional record at https://gfzpublic.gfz.de/pubman/faces/ViewItemFullPage.jsp?itemId=item_1945954_3"
+  },
+  "localization": {
+    "defaultLanguage": "en",
+    "languages": [
+      "en",
+      "fr"
+    ],
+    "recordedAt": "2026-10-28T21:01:31.362Z",
+    "sourceLanguage": "fr",
+    "translatedContentFragments": 708,
+    "pages": {
+      "en": "index.html",
+      "fr": "fr.html"
+    },
+    "fingerprints": [
+      {
+        "file": "index.html",
+        "sha256": "7fd6fb99b6cb22308f4e54d6b3346800502b03abfc08379aba24454d65eb8a36",
+        "bytes": 80398
+      },
+      {
+        "file": "fr.html",
+        "sha256": "80d27594124b4541e5292b8083f017bff7c5d815738f134b563a9b00e06f8120",
+        "bytes": 87294
+      },
+      {
+        "file": "translation-source.json",
+        "sha256": "8db3ae9c56c2c8ffb6e4462b59002807b4e59ab86292354cc6c1ebbee0b9ccff",
+        "bytes": 62513
+      },
+      {
+        "file": "translations-en.tsv",
+        "sha256": "dcef95b9af9b2d745e36e0e8cb10724c8fc84feee93940daaae388bc87561562",
+        "bytes": 55634
+      },
+      {
+        "file": "translations-attributes-en.json",
+        "sha256": "cc114859dc445c1b6c98e17dac2ac661893543bd111980fba286f1066a9d9245",
+        "bytes": 4914
+      },
+      {
+        "file": "translations-code-en.json",
+        "sha256": "b0bc663c6de75fa1582a354a64b6e6038b6513dc030c52978f71bfebe6d063e2",
+        "bytes": 2837
+      },
+      {
+        "file": "translations-diagrams-en.json",
+        "sha256": "d93bbe5515aa117a5e8ba3504bb079c22b46cbaec3b4381f093933ee7245ca63",
+        "bytes": 5044
+      }
+    ],
+    "scope": "Complete chapter prose, navigation, tables, captions, accessibility text, explanatory equations and diagram labels. Code identifiers and cited publication titles remain intact. Screenshot pixels retain their original capture language."
+  }
+}

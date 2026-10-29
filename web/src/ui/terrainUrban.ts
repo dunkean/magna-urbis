@@ -1,5 +1,6 @@
 import { growthPhaseCultureHtml, growthStepLabel } from './urbanGrowthEvidence';
 import { setupUrbanRenderLocale } from './urbanRenderLocale';
+import { getBenchRenderColors } from './benchRenderColors';
 import { getGroundBlend, onGroundBlend, setGroundBlend, type GroundBlend } from '../render/groundBlend';
 import { setupUrbanPanelLocale, urbanText } from './urbanPanelLocale';
 import { LOCALE_KEY } from './shellLocale';
@@ -194,6 +195,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     return d;
   };
   let render: Render = { view: 'parcels', reserve: false, allocated: false, centers: false, domains: true, quarters: false, blocks: true, streets: true, enclosures: true, parcels: true, gardens: true, places: true, fronts: false, axes: false, access: false, opacity: 0.8, width: 0.6, palette: 'growth', textured: false, v1: false, v1Style: 'parchment' };
+  const renderDefaults = { ...render };
   function restoreState(saved: string | null): boolean {
     if (!saved) return false;
     try {
@@ -440,19 +442,23 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     }
     mainPanel?.sync();
   }
-  const rendering = document.createElement('details'); rendering.className = 'advanced';
+  const rendering = document.createElement('details'); rendering.className = 'advanced'; rendering.dataset.renderSettingsCategory = 'buildings';
   rendering.innerHTML = `<summary>⚙ Rendu · couches, palette, opacité</summary><div class="control-group">${Object.entries({ reserve: 'Réserve de croissance', allocated: 'Terre urbaine attribuée', centers: 'Noyaux et identités de quartier', domains: 'Domaines réservés', quarters: 'Secteurs de calcul', blocks: 'Îlots', streets: 'Rues urbaines', enclosures: 'Enceintes et portes', parcels: 'Parcelles', gardens: 'Jardins', places: 'Places et communs', fronts: 'Façades accessibles', axes: 'Axes des parcelles', access: 'Statut de desserte des parcelles', textured: 'Matières texturées' }).map(([key, label]) => `<label><input data-render="${key}" type="checkbox">${label}</label>`).join('')}<label>Palette<select data-render="palette"><option value="growth">Phases de croissance</option><option value="atlas">Atlas · quartiers</option><option value="ink">Encre</option><option value="terrain">Terrain</option></select></label><label>Voies et sols<select data-render="groundBlend"><option value="classic">Classique</option><option value="blended">Intégré</option></select></label><label>Opacité<input data-render="opacity" type="number" min="0" max="1" step="0.05"></label><label>Épaisseur des traits (px)<input data-render="width" type="number" min="0" max="5" step="0.1"></label></div><small>Ces réglages redessinent les résultats conservés, sans appel de génération. La réserve, la terre attribuée et les enceintes sont trois objets différents.</small>`;
+  const renderInputs = Array.from(rendering.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-render]'));
+  for (const key of ['streets', 'groundBlend']) rendering.querySelector<HTMLElement>(`[data-render="${key}"]`)!.closest<HTMLElement>('label')!.dataset.renderSettingsCategory = 'roads';
   displayHost.append(rendering);
   setupUrbanRenderLocale(rendering);
   setupUrbanPanelLocale([...roots.quarters, ...roots.parcels, ...(displaySection ? [displaySection] : [])], !!options.city);
-  for (const e of [...Array.from(rendering.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-render]')), ...Array.from(ruralReddit.querySelectorAll<HTMLInputElement>('[data-render]'))]) {
+  for (const e of [...renderInputs, ...Array.from(ruralReddit.querySelectorAll<HTMLInputElement>('[data-render]'))]) {
     const key = e.dataset.render as keyof Render;
+    e.dataset.renderDefault = String(renderDefaults[key] ?? (key === 'groundBlend' ? 'classic' : false));
     if (e instanceof HTMLInputElement && e.type === 'checkbox') e.checked = Boolean(render[key]); else e.value = String(render[key]);
     e.onchange = () => { (render as unknown as Record<string, unknown>)[key] = e instanceof HTMLInputElement && e.type === 'checkbox' ? e.checked : e instanceof HTMLSelectElement ? e.value : Number(e.value); draw(); options.onChange(); };
   }
   const blendSelect = rendering.querySelector<HTMLSelectElement>('[data-render="groundBlend"]')!;
   blendSelect.onchange = () => setGroundBlend(blendSelect.value as GroundBlend);
   onGroundBlend(() => { render.groundBlend = getGroundBlend(); blendSelect.value = render.groundBlend; draw(); options.onChange(); });
+  window.addEventListener('bench-render-colors-change', () => { draw(); options.onChange(); });
   let appliedLayout = clone(layoutConfig), appliedParcel = clone(parcelConfig), appliedQuarterSeed = quarterSeed, appliedParcelSeed = parcelSeed;
   let successfulLayout = clone(appliedLayout), successfulParcel = clone(appliedParcel), successfulQuarterSeed = appliedQuarterSeed, successfulParcelSeed = appliedParcelSeed;
   let citySettings: NonNullable<import('./testbenchUrban').WorkshopState['citySettings']> = {};
@@ -847,7 +853,8 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     resetBuildingDefaults = true;
     changed('quarters'); changed('parcels');
   }, generateAll);
-  const views = document.createElement('nav'); views.className = 'urban-view-tabs'; views.setAttribute('aria-label', 'Vue du plan urbain');
+  const views = document.createElement('nav'); views.className = 'urban-view-tabs'; views.dataset.renderSettingsCategory = 'buildings'; views.setAttribute('aria-label', 'Vue du plan urbain');
+  views.dataset.renderDefault = renderDefaults.view;
   for (const [view, label] of Object.entries({ tissue: 'Tissu', uses: 'Usages', parcels: 'Parcelles', buildings: 'Bâtiments', ...(cityView ? { roles: 'Rôles' } : {}) })) {
     const button = document.createElement('button'); button.type = 'button'; button.textContent = label; button.dataset.urbanView = view;
     button.onclick = () => { render.v1 = false; render.view = view as Render['view']; draw(); options.onChange(); options.onPlanChange?.(); }; views.append(button);
@@ -1095,6 +1102,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     for (const button of Array.from(views.querySelectorAll<HTMLButtonElement>('[data-urban-view]'))) button.setAttribute('aria-pressed', String(button.dataset.urbanView === (render.v1 ? 'v1' : render.view)));
     const terrainForV1 = options.getTerrain();
     if (render.v1 && !options.getRaster && v1TerrainOf !== terrainForV1) { v1TerrainOf = terrainForV1; v1Raster = terrainForV1 ? settlementRaster(terrainForV1, 512) : undefined; }
+    views.dataset.renderValue = render.v1 ? 'v1' : render.view;
     v1Landscape.draw(options.map, options.getRaster?.() ?? v1Raster, render.v1 ? render.v1Style ?? 'parchment' : undefined);
     v1Style.value = render.v1Style ?? 'parchment';
     const v1State = `${!!render.v1}:${render.v1Style ?? 'parchment'}`;
@@ -1170,7 +1178,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
         }
       }
       if (render.streets) for (const street of l.streets) {
-        const p = add(retainedPath(street, streetSurfacePath), render.palette === 'ink' ? '#6b5640' : street.role === 'collective' ? '#ccdacf' : street.role === 'private' ? '#d9cddf' : '#f3dfb3', 'none', 0, true);
+        const p = add(retainedPath(street, streetSurfacePath), getBenchRenderColors().road ?? (render.palette === 'ink' ? '#6b5640' : street.role === 'collective' ? '#ccdacf' : street.role === 'private' ? '#d9cddf' : '#f3dfb3'), 'none', 0, true);
         p.setAttribute('fill-rule', 'nonzero');
         p.dataset.streetRole = street.role;
         if (street.role === 'stairs') {
@@ -1207,7 +1215,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     if (render.view === 'uses') layer.insertAdjacentHTML('beforeend', programmeSvg(partitions));
     if (buildingPanel.state.appearance.diagnostic === 'access') layer.insertAdjacentHTML('beforeend', refusalSvg(partitions, buildingPanel.state.scene));
     if (render.view === 'buildings' && buildingPanel.state.visible) {
-      layer.insertAdjacentHTML('beforeend', urbanBuildingsSvg(buildingPanel.state.scene, buildingPanel.state.appearance));
+      layer.insertAdjacentHTML('beforeend', urbanBuildingsSvg(buildingPanel.state.scene, { ...buildingPanel.state.appearance, colors: getBenchRenderColors() }));
       for (const item of Array.from(layer.querySelectorAll<SVGElement>('[data-urban-building]'))) item.style.pointerEvents = 'all';
     }
     updateUrbanBuildingSelection(layer, buildingPanel.state.scene, buildingPanel.state.selected);
@@ -1405,7 +1413,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     const compare = comparison.state(), silhouetteCompare = compare?.architecture === 'silhouette';
     const view = compare ? compare.renderView : render.view;
     if (compare && silhouetteCompare && (comparisonBuilt?.[0] !== compare.silhouette || comparisonBuilt[1] !== cityPlan)) comparisonBuilt = [compare.silhouette, cityPlan, buildCityBuildings(compare.silhouette, cityPlan)];
-    const appearance = { style: (compare ? silhouetteCompare : architectureMode === 'silhouette') ? 'silhouette' as const : 'cartographic' as const, diagnostic: buildingPanel.state.appearance.diagnostic };
+    const appearance = { colors: getBenchRenderColors(), style: (compare ? silhouetteCompare : architectureMode === 'silhouette') ? 'silhouette' as const : 'cartographic' as const, diagnostic: buildingPanel.state.appearance.diagnostic };
     const viewport = !compare && !architecturePreview && architectureView === '2d' && view === 'buildings' && buildingPanel.state.visible ? boundedCold() : undefined;
     viewport?.ensureViewport([frame.viewport.minX, frame.viewport.minY, frame.viewport.maxX, frame.viewport.maxY]);
     const parent = !compare && !architecturePreview && architectureView === '2d' && view === 'buildings' && buildingPanel.state.visible ? boundedParent() : undefined;
@@ -1415,11 +1423,11 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     const detail = viewport ? viewport.details?.stats : architectureView === '2d' ? cityDetails?.update({ viewport: frame.viewport, metresPerPixel: frame.mpp, selectedId: selected,
       enabled: !compare && architectureMode === 'detailed' && !!native }) : cityDetails?.stats;
     // WebGL once its upload is done; comparisons and the parchment ink (hatching) keep Canvas 2D.
-    const drawGl = !compare && glReady === cityPlan && (render.palette as string) !== 'parchment' ? frame.drawGl : undefined;
+    const drawGl = !Object.keys(getBenchRenderColors()).some(key => ['road', 'roadEdge', 'track', 'building', 'buildingEdge'].includes(key)) && !compare && glReady === cityPlan && (render.palette as string) !== 'parchment' ? frame.drawGl : undefined;
     const refused = appearance.diagnostic === 'access' ? refusedParcels : undefined;
     const glFrame = drawGl?.({ viewport: frame.viewport, metresPerPixel: frame.mpp, lod: cityLod, view, palette: render.palette, layers: render, selectedId: selected, selectedParcel,
       buildingsVisible: buildingPanel.state.visible && !native && !parentOwned, diagnostic: appearance.diagnostic, refusedParcels: refused, textured: !!render.textured });
-    cityFrame = drawCity(ctx, cityPlan, { ...frame, labels: options.labels, lod: cityLod, view, palette: render.palette, width: render.width, layers: glFrame ? cityGlOverlayLayers(render) : render,
+    cityFrame = drawCity(ctx, cityPlan, { ...frame, colors: getBenchRenderColors(), labels: options.labels, lod: cityLod, view, palette: render.palette, width: render.width, layers: glFrame ? cityGlOverlayLayers(render) : render,
       buildings: compare ? (silhouetteCompare ? comparisonBuilt?.[2] : native ? landmarkOverlay() : cityBuilt) : native ? landmarkOverlay() : cityBuilt,
       buildingsVisible: !parentOwned && (compare ? view === 'buildings' : buildingPanel.state.visible && (!glFrame || !!native)), appearance,
       selectedBuilding: selected, selectedParcel, refusedParcels: refused, readableGardens: render.readableGardens && render.gardens, textured: !!render.textured, onTexturesReady: draw });
@@ -2070,7 +2078,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       if (visible === !planSaved) return;
       if (!visible) { planSaved = Object.fromEntries(PLAN_LAYERS.map(k => [k, render[k]])); for (const k of PLAN_LAYERS) render[k] = false; }
       else { for (const k of PLAN_LAYERS) render[k] = planSaved?.[k] ?? render[k]; planSaved = undefined; }
-      for (const e of [...Array.from(rendering.querySelectorAll<HTMLInputElement>('input[data-render]')), ...Array.from(ruralReddit.querySelectorAll<HTMLInputElement>('[data-render]'))]) if (e.type === 'checkbox') e.checked = Boolean(render[e.dataset.render as keyof Render]);
+      for (const e of [...renderInputs.filter((e): e is HTMLInputElement => e instanceof HTMLInputElement), ...Array.from(ruralReddit.querySelectorAll<HTMLInputElement>('[data-render]'))]) if (e.type === 'checkbox') e.checked = Boolean(render[e.dataset.render as keyof Render]);
       draw(); options.onChange();
     },
     captureContext: () => clone({ layoutConfig, parcelConfig, quarterSeed, parcelSeed, dirty }),
@@ -2121,7 +2129,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       for (const kind of ['quarters', 'parcels'] as const) {
         clearTimeout(draftTimers[kind]); dirty[kind] = false; one(kind, '[data-draft-state]').hidden = true; populate(kind);
       }
-      for (const e of [...Array.from(rendering.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-render]')), ...Array.from(ruralReddit.querySelectorAll<HTMLInputElement>('[data-render]'))]) {
+      for (const e of [...renderInputs, ...Array.from(ruralReddit.querySelectorAll<HTMLInputElement>('[data-render]'))]) {
         const value = render[e.dataset.render as keyof Render];
         if (e instanceof HTMLInputElement && e.type === 'checkbox') e.checked = Boolean(value); else e.value = String(value);
       }

@@ -90,7 +90,7 @@ function roofHeightAt(unit: HouseExterior, point: Point): number {
   }
   return height;
 }
-export function renderHouseExteriorSvg(unit: HouseExterior, catalogue: HouseMaterialCatalogue, prefix: string, orientationDeg = 0, groundZ = 0): string {
+export function renderHouseExteriorSvg(unit: HouseExterior, catalogue: HouseMaterialCatalogue, prefix: string, orientationDeg = 0, groundZ = 0, colors?: { roof?: string; edge?: string }): string {
   let drawing = '';
   drawing += unit.features.filter(f => !['roof_gable', 'roof_tympanum', 'stepped_gable', 'roof_riser', 'roof_pavilion', 'roof_drum', 'portal_lintel', 'floor_slab'].includes(f.kind)).map(feature => featureDraw(feature, catalogue, prefix)).join('');
     const mesh = unit.roofs;
@@ -108,7 +108,7 @@ export function renderHouseExteriorSvg(unit: HouseExterior, catalogue: HouseMate
         const rx = nx * Math.cos(angle) - ny * Math.sin(angle), ry = nx * Math.sin(angle) + ny * Math.cos(angle);
         const darkness = Math.max(0, Math.min(0.3, 0.16 - 0.18 * (-rx * 0.48 - ry * 0.64 + nz * 0.6)));
         const path = `M${points.map(point => `${n(point.x)},${n(point.y)}`).join('L')}Z`;
-        const fill = paint(catalogue, face.material, prefix), shade = n(darkness);
+        const fill = colors?.roof ?? paint(catalogue, face.material, prefix), shade = n(darkness);
         if (!fills.has(fill)) fills.set(fill, []);
         fills.get(fill)!.push(path);
         if (darkness > 0) { if (!shades.has(shade)) shades.set(shade, []); shades.get(shade)!.push(path); }
@@ -123,7 +123,7 @@ export function renderHouseExteriorSvg(unit: HouseExterior, catalogue: HouseMate
         const samePatch = related.length === 2 && related.every(face => (face.roof_group ?? 'exterior') === group.id && face.material === related[0].material && face.kind === related[0].kind);
         const smoothCurve = CURVED_RF.includes(group.rf) && (edge.kind === 'crease' || edge.kind === 'hip') && samePatch && related[0].normal.reduce((dot, value, index) => dot + value * related[1].normal[index], 0) > 0.94;
         const a = mesh.vertices[edge.vertices[0]], b = mesh.vertices[edge.vertices[1]];
-      drawing += `<path d="M${n(a.x)},${n(a.y)}L${n(b.x)},${n(b.y)}" fill="none" stroke="${edge.kind === 'valley' ? '#736e53' : INK}" stroke-width="${smoothCurve ? '.18' : edge.kind === 'ridge' ? '1.05' : edge.kind === 'eave' || edge.kind === 'verge' ? '.85' : '.65'}" opacity="${smoothCurve ? '.18' : '1'}" ${edge.kind === 'junction' ? 'stroke-dasharray="2 2"' : ''} vector-effect="non-scaling-stroke"/>`;
+      drawing += `<path d="M${n(a.x)},${n(a.y)}L${n(b.x)},${n(b.y)}" fill="none" stroke="${colors?.edge ?? (edge.kind === 'valley' ? '#736e53' : INK)}" stroke-width="${smoothCurve ? '.18' : edge.kind === 'ridge' ? '1.05' : edge.kind === 'eave' || edge.kind === 'verge' ? '.85' : '.65'}" opacity="${smoothCurve ? '.18' : '1'}" ${edge.kind === 'junction' ? 'stroke-dasharray="2 2"' : ''} vector-effect="non-scaling-stroke"/>`;
       }
     drawing += '</g>';
     }

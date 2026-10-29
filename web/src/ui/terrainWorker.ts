@@ -1,6 +1,7 @@
 import { seaDistanceSurface, type WaterSurface } from '../render/terrainWater';
 import { sampleRustTerrain, type TerrainData, type TerrainRequest, type TerrainResponse } from '../../../rust/bridge/terrain';
 import { renderRustTerrain } from '../../../rust/bridge/terrainRender';
+import { MaterialRasterUnavailableError } from '../../../rust/bridge/terrainMaterialContext';
 
 let latestGeneration = 0;
 const transfers = (t: TerrainData): ArrayBuffer[] => [...new Set([t.height.buffer, t.caveMask.buffer, t.normalX.buffer, t.normalY.buffer, t.normalZ.buffer,
@@ -33,7 +34,14 @@ async function drain(): Promise<void> {
         const started = performance.now();
         if (kind === 'overview') materialSurface = seaDistanceSurface(terrain, request.settings.width);
         const displayTerrain = { ...terrain, waterSurface: materialSurface };
-        const scene = request.scene ? renderRustTerrain(displayTerrain, request.scene.style, kind === 'overview', request.settings, request.scene.showContours, `worker-${generation}-${id}`, request.scene.lighting, request.scene.layers, undefined, true, request.scene.waterStyle) : undefined;
+        let scene: ReturnType<typeof renderRustTerrain> | undefined;
+        try {
+          scene = request.scene ? renderRustTerrain(displayTerrain, request.scene.style, kind === 'overview', request.settings, request.scene.showContours, `worker-${generation}-${id}`, request.scene.lighting, request.scene.layers, undefined, true, request.scene.waterStyle) : undefined;
+        } catch (error) {
+          // Keep the sampled terrain: the page may support HTMLCanvasElement
+          // WebGL2 even when this worker has no OffscreenCanvas WebGL2 context.
+          if (!(error instanceof MaterialRasterUnavailableError)) throw error;
+        }
         const scenePreparationMs = scene ? performance.now() - started : undefined;
         self.postMessage({ id, generation, kind, terrain, scene, scenePreparationMs } satisfies TerrainResponse, { transfer: transfers(terrain) });
       } catch (error) {

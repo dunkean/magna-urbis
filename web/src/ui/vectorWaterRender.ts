@@ -1,4 +1,5 @@
 /** SVG of the vector water chain and its diagnostics, in map metres. */
+import type { RenderColors } from '../render/customColors';
 import { encodePng, pngDataUrl } from '../render/raster';
 import type { TerrainStyle } from '../../../rust/bridge/terrainRender';
 import { channelWidth, type RiverLine } from './riverVectors';
@@ -82,20 +83,20 @@ export function lakeShores(water: VectorWater): string {
   return d;
 }
 
-export interface WaterDisplay { style: TerrainStyle; showLakes: boolean; showOxbows: boolean; riverArea: number; riverMode: 'vector' | 'grid'; overlay: VectorOverlay }
+export interface WaterDisplay { colors?: RenderColors; style: TerrainStyle; showLakes: boolean; showOxbows: boolean; riverArea: number; riverMode: 'vector' | 'grid'; overlay: VectorOverlay }
 
 /** Shared water colour and per-vertex diagnostic colours. */
-function waterInk(display: Pick<WaterDisplay, 'style' | 'riverArea' | 'overlay'>): { edge: string; colourOf: (kind: number) => string } {
+function waterInk(display: Pick<WaterDisplay, 'style' | 'riverArea' | 'overlay' | 'colors'>): { edge: string; colourOf: (kind: number) => string } {
   const s = display.style;
   // Lakes take the rivers' colour: a river runs into its lake without a seam.
-  const edge = hydrologyWaterColour(s);
+  const edge = hydrologyWaterColour(s, display.colors);
   const styled = display.overlay === 'v-styles';
   const colourOf = (kind: number): string => !styled ? edge : ['#2a6fc9', '#c62828', '#7b1fa2', '#ef6c00', '#d81b60', '#2e7d32'][kind] ?? edge;
   return { edge, colourOf };
 }
 
 /** Lake colour of a display style. */
-export const lakeColour = (display: Pick<WaterDisplay, 'style' | 'riverArea' | 'overlay'>): string => waterInk(display).edge;
+export const lakeColour = (display: Pick<WaterDisplay, 'style' | 'riverArea' | 'overlay' | 'colors'>): string => waterInk(display).edge;
 
 const rgb = (value: string): [number, number, number] => [parseInt(value.slice(1, 3), 16) / 255, parseInt(value.slice(3, 5), 16) / 255, parseInt(value.slice(5, 7), 16) / 255];
 
@@ -226,14 +227,14 @@ export function vectorWaterSvg(water: VectorWater, display: WaterDisplay, materi
       svg += `<path d="${d}" fill="none" stroke="${edge}" stroke-width="${width}" stroke-linecap="round"/>`;
     }
   }
-  if (material && display.showLakes) svg += vectorLakeMaterial(water, display.style);
+  if (material && display.showLakes) svg += vectorLakeMaterial(water, display.style, display.colors);
   return svg + '</g>';
 }
 
 /** Shared lake material for live rendering and retained terrain exports. */
-export function vectorLakeMaterial(water: VectorWater, style: TerrainStyle = 'render'): string {
+export function vectorLakeMaterial(water: VectorWater, style: TerrainStyle = 'render', colors?: RenderColors): string {
   const path = lakeShores(water);
-  return path ? lakeMaterialSvg(lakeField(water.lake, water.hydro.n).values, water.hydro.n, water.hydro.width, path, 'vector-lake-material', style) : '';
+  return path ? lakeMaterialSvg(lakeField(water.lake, water.hydro.n).values, water.hydro.n, water.hydro.width, path, 'vector-lake-material', style, water.hydro.width, colors) : '';
 }
 
 /** Raster diagnostics over the hydrology grid; `delta` is the conditioning's height change on its own grid. */

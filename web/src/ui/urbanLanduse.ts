@@ -7,6 +7,7 @@ import { LOCALE_KEY } from './shellLocale';
 import LanduseWorker from './urbanLanduseWorker?worker&inline';
 import { BIOME_NAMES, type BiomeName } from '../gen/biomes';
 import { SIZE_PRESETS } from '../gen/options';
+import { getBenchRenderColors } from './benchRenderColors';
 import { createCanvasRenderer, type CanvasRenderer } from '../render/canvas';
 import type { VegetationStyle } from '../render/canopy';
 import type { View } from '../render/view';
@@ -63,7 +64,7 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     <label title="Affiche ou masque la couche d’occupation du territoire sur la carte"><input id="showLanduse" type="checkbox" checked>Occupation du territoire visible</label>
     <label>Graine des paysages<input id="landuseSeed" type="text" placeholder="Graine du décor"></label>
     <label>Biome<select id="landuseBiome"></select></label>
-    <details class="advanced"><summary>Affichage</summary>
+    <details class="advanced" data-render-settings-category="cover"><summary>Occupation vectorielle · affichage</summary>
       <label hidden><input id="landuseVisible" type="checkbox">Afficher tous les objets d’occupation</label>
       <label>Style<select id="landuseStyle"></select></label>
       <label>Végétation<select id="landuseVegetation"><option value="canopy">Feuillages et canopée</option><option value="classic">Symboles classiques</option></select></label>
@@ -91,7 +92,9 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
   const style = q<HTMLSelectElement>('landuseStyle'), painted = q<HTMLInputElement>('landusePainted');
   const vegetation = q<HTMLSelectElement>('landuseVegetation');
   const opacity = q<HTMLInputElement>('landuseOpacity'), visible = q<HTMLInputElement>('showLanduse');
+  opacity.dataset.renderDefault = '1'; visible.dataset.renderDefault = 'true';
   const panelVisible = q<HTMLInputElement>('landuseVisible'), farms = q<HTMLInputElement>('landuseFarms');
+  panelVisible.dataset.renderDefault = 'true'; farms.dataset.renderDefault = 'true';
   const enabled = q<HTMLInputElement>('landuseEnabled');
   const button = q<HTMLButtonElement>('landuseGenerate'), status = q<HTMLElement>('landuseStatus');
   let layer = options.map.querySelector<SVGGElement>('#landuseLayer');
@@ -104,10 +107,12 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
   painted.checked = settings.painted; opacity.value = String(settings.opacity); visible.checked = settings.visible;
   enabled.checked = settings.enabled;
   panelVisible.checked = settings.visible; farms.checked = settings.showFarms;
-  for (const box of Array.from(panel.querySelectorAll<HTMLInputElement>('[data-land-kind]'))) {
+  const landKindInputs = Array.from(panel.querySelectorAll<HTMLInputElement>('[data-land-kind]'));
+  for (const box of landKindInputs) {
+    box.dataset.renderDefault = 'true';
     box.checked = !settings.hiddenKinds.includes(box.dataset.landKind as LandKind);
     box.onchange = () => {
-      settings.hiddenKinds = Array.from(panel.querySelectorAll<HTMLInputElement>('[data-land-kind]')).filter(b => !b.checked).map(b => b.dataset.landKind as LandKind);
+      settings.hiddenKinds = landKindInputs.filter(b => !b.checked).map(b => b.dataset.landKind as LandKind);
       renderWorld = undefined; renderScene = undefined; draw(); options.onChange();
     };
   }
@@ -168,7 +173,7 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     const pal = { ...biomePalette(v1Style ?? settings.style, scene.options.biome), frameKind: 'none' as const };
     const background = options.getBackground();
     rendererDpr = window.devicePixelRatio || 1;
-    renderer = createCanvasRenderer(canvas, renderWorld, pal, {
+    renderer = createCanvasRenderer(canvas, renderWorld, pal, { colors: getBenchRenderColors(),
       dpr: rendererDpr, scene: renderScene, transparentBackground: true, raster: false,
       vegetation: v1Style ? 'classic' : settings.vegetation, brushes: !v1Style && settings.painted ? brushImages : undefined,
       furrowReferenceSize: SIZE_PRESETS[scene.options.size].mapSize,
@@ -268,6 +273,7 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     settings.seed = seed.value.trim(); settings.biome = biome.value as BiomeName;
     manual = true; options.onChange(); generate();
   };
+  window.addEventListener('bench-render-colors-change', () => { draw(); });
   style.onchange = () => { settings.style = style.value as MapStyle; draw(); options.onChange(); };
   vegetation.onchange = () => { settings.vegetation = vegetation.value as VegetationStyle; draw(); options.onChange(); };
   painted.onchange = () => { settings.painted = painted.checked; vegetation.disabled = settings.painted; draw(); options.onChange(); };

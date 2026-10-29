@@ -2,6 +2,7 @@ import { coastDistances, SEA_BAND_WIDTH } from './terrainSea';
 import { encodePng, pngDataUrl, resampleTerrainSurface, toBase64 } from './raster';
 import type { World } from '../gen/types';
 import type { Palette } from './styles';
+import type { RenderColors } from './customColors';
 import { terrainStyle, type TerrainStyle } from './terrainStyle';
 import { waterSampler, waterFunctionGlsl, type WaterStyle } from './waterStyle';
 
@@ -64,8 +65,8 @@ export function waterMaterialUrl(distance: Float32Array, n: number, width: numbe
 }
 
 /** The vector outline clips the shared material raster, retaining islands. */
-export function lakeMaterialSvg(field: Float32Array, n: number, width: number, path: string, id: string, style: TerrainStyle = 'render', referenceWidth = width): string {
-  const url = waterMaterialUrl(lakeDistances(field, n, width, referenceWidth), n, width, terrainStyle(style).water, referenceWidth);
+export function lakeMaterialSvg(field: Float32Array, n: number, width: number, path: string, id: string, style: TerrainStyle = 'render', referenceWidth = width, colors?: RenderColors): string {
+  const url = waterMaterialUrl(lakeDistances(field, n, width, referenceWidth), n, width, terrainStyle(style, colors).water, referenceWidth);
   return `<defs><clipPath id="${id}"><path d="${path}" clip-rule="evenodd"/></clipPath></defs><image width="${width}" height="${width}" href="${url}" clip-path="url(#${id})"/>`;
 }
 
@@ -83,8 +84,8 @@ export function seaDistanceSurface(data: { height: Float32Array; resolution: num
   seaSurfaces.set(field.data, result);
   return result;
 }
-export function seaMaterialSvg(surface: WaterSurface, x: number, y: number, style: TerrainStyle, extent = surface.width): string {
-  const url = waterMaterialUrl(surface.distance, surface.n, surface.width, terrainStyle(style).water, surface.referenceWidth);
+export function seaMaterialSvg(surface: WaterSurface, x: number, y: number, style: TerrainStyle, extent = surface.width, colors?: RenderColors): string {
+  const url = waterMaterialUrl(surface.distance, surface.n, surface.width, terrainStyle(style, colors).water, surface.referenceWidth);
   return `<svg width="${extent}" height="${extent}" overflow="hidden"><image x="${surface.x - x}" y="${surface.y - y}" width="${surface.width}" height="${surface.width}" href="${url}"/></svg>`;
 }
 /** Binary FP32 in metadata avoids megabytes of JSON decimal text; outer .decor compression remains effective. */

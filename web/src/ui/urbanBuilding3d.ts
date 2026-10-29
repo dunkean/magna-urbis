@@ -209,9 +209,10 @@ export class UrbanBuildingPass {
               c = face.surface === 'roof' ? p.roof : p.wall;
             }
           }
+          if (face.surface === 'roof' && this.appearance.diagnostic === 'none' && this.appearance.colors?.building) c = rgb(this.appearance.colors.building);
           colors.set(key, c);
         }
-        const recolored = this.appearance.diagnostic === 'none' && (tm?.[1].length === 6 || !!culture && !building.id.startsWith('city3d-'));
+        const recolored = this.appearance.diagnostic === 'none' && (!!this.appearance.colors?.building && face.surface === 'roof' || tm?.[1].length === 6 || !!culture && !building.id.startsWith('city3d-'));
         const color = `${c.join(',')}|${layer}|${recolored}`, mean = MATERIALS.layers[layer]?.mean_rgb;
         const tint = mean && recolored ? c.map((v, i) => v / Math.max(0.04, mean[i] / 255)) as Vec3
           : tm?.[1].length === 3 ? [...tm[1]].map(v => parseInt(v, 16) / 8) as Vec3 : [1, 1, 1] as Vec3;

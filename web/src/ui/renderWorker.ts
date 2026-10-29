@@ -9,6 +9,8 @@
 import { createCanvasRenderer, CanvasRenderer, CanvasLike } from '../render/canvas';
 import { Scene } from '../render/scene';
 import { SceneBuilder } from '../render/sceneCache';
+import { displayWorld } from '../render/displayWorld';
+import { applyRenderColors } from '../render/customColors';
 import { biomePalette } from '../render/biomes';
 import type { World } from '../gen/types';
 import type { RRequest, RResponse, RView, DisplayOpts, WorldMsg, RAttach, PortMsg, SettlementMsg, QuarterMsg } from './protocol';
@@ -28,6 +30,7 @@ const closeBrushes = (images: BrushImages | null): void => { for (const key of [
 let disposed = false;
 let canvas: OffscreenCanvas | null = null;
 let miniCanvas: OffscreenCanvas | null = null;
+let rendererColors = '';
 let display: DisplayOpts = { style: 'parchment' };
 let gen = -1;
 /** The renderer can still hold the preceding run while the new generation is in progress. */
@@ -36,7 +39,7 @@ let port: MessagePort | null = null;
 let world: World | null = null;
 let metaCache: { world: World; meta: ReturnType<typeof worldMeta> } | null = null;
 let final = false;
-let sceneCache: { world: World; contours: boolean; scene: Scene } | null = null;
+let sceneCache: { world: World; contours: boolean; visibility: string; scene: Scene } | null = null;
 let sceneBuilder: SceneBuilder | null = null;
 let renderer: CanvasRenderer | null = null;
 let curDpr = 1;
@@ -60,16 +63,18 @@ function probe(): { ok: boolean; reason?: string } {
 function rebuild(): number {
   if (!world || !canvas) return 0;
   const t0 = performance.now();
-  const w: World = { ...world, options: { ...world.options, style: display.style as never, contours: !!display.contours, landuse: !!display.landuse, labels: display.labels, legend: display.legend } };
-  if (!sceneCache || sceneCache.world !== world || sceneCache.contours !== !!display.contours) {
+  const visibility = JSON.stringify([display.layers ?? {}, display.buildings]);
+  const w: World = { ...displayWorld(world, display.layers, display.buildings), options: { ...world.options, style: display.style as never, contours: !!display.contours, landuse: !!display.landuse, labels: display.labels, legend: display.legend } };
+  if (!sceneCache || sceneCache.world !== world || sceneCache.contours !== !!display.contours || sceneCache.visibility !== visibility) {
     sceneBuilder ??= new SceneBuilder();
-    sceneCache = { world, contours: !!display.contours, scene: sceneBuilder.update(w) };
+    sceneCache = { world, visibility, contours: !!display.contours, scene: sceneBuilder.update(w) };
   }
   // `dpr` stays a live getter: the page's devicePixelRatio can change between frames
   const activeBrushes = display.painted ? brushImages : null;
-  if (rendererBrushes !== activeBrushes || rendererVegetation!==display.vegetation || !renderer?.update?.(w, sceneCache.scene, display.style)) {
-    const next = createCanvasRenderer(canvas as unknown as CanvasLike, w, display.style, { scene: sceneCache.scene, brushes: activeBrushes ?? undefined,vegetation:display.vegetation, get dpr(): number { return curDpr; } });
-    renderer?.dispose(); renderer = next; rendererBrushes = activeBrushes;rendererVegetation=display.vegetation;
+  const colorKey = JSON.stringify(display.colors ?? {});
+  if (rendererColors !== colorKey || rendererBrushes !== activeBrushes || rendererVegetation!==display.vegetation || !renderer?.update?.(w, sceneCache.scene, display.style)) {
+    const next = createCanvasRenderer(canvas as unknown as CanvasLike, w, display.style, { colors: display.colors, scene: sceneCache.scene, brushes: activeBrushes ?? undefined,vegetation:display.vegetation, get dpr(): number { return curDpr; } });
+    renderer?.dispose(); renderer = next; rendererBrushes = activeBrushes;rendererVegetation=display.vegetation; rendererColors=colorKey;
   }
   renderer.setOverlays({ cartouche: display.cartouche ?? final,labels:display.labels??world.options.labels??true,legend:display.legend??world.options.legend??false });
   miniDirty = true; ver++;
@@ -78,7 +83,7 @@ function rebuild(): number {
 
 function announce(sceneMs: number): void {
   if (!world) return;
-  const pal = biomePalette(display.style, world.options.biome);
+  const pal = applyRenderColors(biomePalette(display.style, world.options.biome), display.colors);
   if (!metaCache || metaCache.world !== world) metaCache = { world, meta: worldMeta(world) };
   post({ type: 'content', gen: worldGen, ver, mapSize: world.mapSize, final, sceneMs, marker: pal.marker, paper: pal.paper, meta: { ...metaCache.meta, mapInfo: renderer?.getMapInfo() } });
 }

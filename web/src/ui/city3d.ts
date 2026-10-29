@@ -43,7 +43,7 @@ export interface City3dOptions {
   getHeightSampler?(): ((x: number, y: number, metresPerPixel: number) => number) | undefined;
   getViewSettings?(): Partial<City3dViewSettings>;
   onViewSettingsChange?(settings: City3dViewSettings): void;
-  getPlanOptions?(): Partial<Pick<CityDrawOptions, 'view' | 'palette' | 'width' | 'layers' | 'groundBlend' | 'labels'>> & { opacity?: number };
+  getPlanOptions?(): Partial<Pick<CityDrawOptions, 'colors' | 'view' | 'palette' | 'width' | 'layers' | 'groundBlend' | 'labels'>> & { opacity?: number };
   getBuildingAppearance?(): Partial<UrbanBuildingAppearance>;
   getBuildingsVisible?(): boolean;
   /** Map names, glyphs and pins (default: shown). */
@@ -327,7 +327,7 @@ export function mountCity3d(options: City3dOptions): City3d {
       ctx.save(); ctx.setTransform(k, 0, 0, k, -tile.x * k, -tile.y * k);
       const planOptions = options.getPlanOptions?.(); ctx.globalAlpha = planOptions?.opacity ?? 1;
       drawCity(ctx, city, { viewport: { minX: tile.x, minY: tile.y, maxX: tile.x + tile.width, maxY: tile.y + tile.width }, mpp, dpr: 1, lod: selectCityLod(mpp),
-        view: planOptions?.view ?? 'parcels', labels: planOptions?.labels ?? options.labels, palette: planOptions?.palette ?? 'terrain', width: planOptions?.width ?? 0.6, layers: planOptions?.layers ?? PLAN_LAYERS, buildingsVisible: false, appearance: { style: 'cartographic', diagnostic: 'none' }, textured: textured(), groundBlend: planOptions?.groundBlend ?? false, onTexturesReady: () => terrain?.invalidateTiles() });
+        colors: planOptions?.colors, view: planOptions?.view ?? 'parcels', labels: planOptions?.labels ?? options.labels, palette: planOptions?.palette ?? 'terrain', width: planOptions?.width ?? 0.6, layers: planOptions?.layers ?? PLAN_LAYERS, buildingsVisible: false, appearance: { style: 'cartographic', diagnostic: 'none' }, textured: textured(), groundBlend: planOptions?.groundBlend ?? false, onTexturesReady: () => terrain?.invalidateTiles() });
       ctx.restore();
     }
     return c;
@@ -379,7 +379,7 @@ export function mountCity3d(options: City3dOptions): City3d {
       displayMs = performance.now() - started;
     }
     const appearance = options.getBuildingAppearance?.(), diagnostic = colors === 'uses' ? 'uses' : appearance?.diagnostic === 'uses' ? 'none' : appearance?.diagnostic ?? 'none';
-    t.setBuildings(display, { style: appearance?.style ?? 'cartographic', diagnostic, textured: textured() && diagnostic !== 'uses' && diagnostic !== 'height' }, options.getBuildingsVisible?.() ?? true);
+    t.setBuildings(display, { colors: appearance?.colors, style: appearance?.style ?? 'cartographic', diagnostic, textured: textured() && diagnostic !== 'uses' && diagnostic !== 'height' }, options.getBuildingsVisible?.() ?? true);
     ($('[data-detail]') as HTMLButtonElement).disabled = !display?.kinds.compact || !!scene && 'projection' in scene && (!options.details || scene.projection === 'native-parent-window-3d-1');
     if (options.details) { applyServiceDetails(); driveDetails(); }
     placeMarker(); updateInfo();

@@ -22,6 +22,7 @@ import { DEFAULT_HYDROLOGY, riverAreaFor, type HydrologySettings, type Hydrology
 import { CLIMATE_VALUES, DEFAULT_NEURAL_TUNING, NEURAL_RELIEF_DEFAULTS, climateOf, type ClimateValues, type NeuralTuning } from '../../../rust/bridge/terrain';
 import { lakeColour, riverSegments, vectorOverlayPixels, vectorOverlaySvg, vectorWaterSvg, VECTOR_LEGENDS, VECTOR_OVERLAYS, type VectorOverlay } from './vectorWaterRender';
 import { lakeField } from './lakeGeometry';
+import { getBenchRenderColors, writeRenderColorsQuery } from './benchRenderColors';
 import { TerrainGl, type TerrainLook } from './terrainGl';
 import { Terrain3d, TERRAIN_3D_FOV, TERRAIN_GROUND_MAX_SCALE, type Terrain3dCamera, type Terrain3dTile } from './terrain3d';
 import { terrain3dTexture } from './terrain3dTexture';
@@ -144,6 +145,7 @@ for (const [key, label] of [['density', 'Densité'], ['size', 'Taille'], ['spaci
   const row = document.createElement('label'), slider = document.createElement('input');
   row.textContent = label; slider.type = 'range'; slider.min = key === 'size' ? '.1' : '.3'; slider.max = '2'; slider.step = '.05'; slider.value = String(fantasyOptions[key]); slider.id = `brush_${key}`;
   slider.oninput = () => { fantasyOptions[key] = Number(slider.value); render(); deferSave(); };
+  slider.dataset.renderDefault = String(DEFAULT_FANTASY_OPTIONS[key]);
   row.append(slider); brushPanel.append(row);
 }
 el('lightingControls').querySelector('.lighting-fields')!.append(brushPanel);
@@ -161,7 +163,7 @@ for (const format of ['svg', 'png'] as const) {
     if (!terrain || !isFantasyStyle(style)) return;
     button.disabled = true;
     try {
-      const scene = renderRustTerrain(terrain, style, true, { ...settings, v2Season, forest: forestRaster() }, false, 'export', lighting, layers, fantasyOptions, false, baseStyle);
+      const scene = renderRustTerrain(terrain, style, true, { ...settings, v2Season, forest: forestRaster() }, false, 'export', lighting, layers, fantasyOptions, false, baseStyle, getBenchRenderColors());
       const svg = map.cloneNode(true) as SVGSVGElement;
       for (const id of ['terrainOverview', 'terrainDetail', 'fantasyPainting']) svg.querySelector(`#${id}`)?.remove();
       svg.setAttribute('viewBox', `0 0 ${terrain.width} ${terrain.width}`); svg.setAttribute('width', '4096'); svg.setAttribute('height', '4096');
@@ -419,6 +421,7 @@ let refinementSession: TerrainRefinementSession | undefined, refinement2dTimer: 
 let refinementEpoch = 0, refinement2dWanted = '';
 let refinementError = '';
 el<HTMLSelectElement>('refinement3d').value = refinement3d;
+el('refinement3d').dataset.renderDefault = 'noise';
 // Render3D forest: display-only settings, outside TerrainSettings. One canonical
 // field per input set feeds the map and the perspective; edits never regenerate.
 let v2Season=bounded(finite(query.get('v2season'),.5),0,1);
@@ -797,15 +800,15 @@ async function refresh3dTexture(epoch: number): Promise<void> {
   try {
     const ground = ground3dEnabled();
     const buildings = settlements.urban.buildingState;
-    terrain3d.setBuildings(buildings3d(buildings.scene), { ...buildings.appearance, textured: settlements.urban.textured }, settlements.urban.buildingVisible);
+    terrain3d.setBuildings(buildings3d(buildings.scene), { ...buildings.appearance, colors: getBenchRenderColors(), textured: settlements.urban.textured }, settlements.urban.buildingVisible);
     // Establish the style's zoom range before restoring a shared camera.
     terrain3d.setGroundMaterial(ground ? {
       seed: seedHash(settings.seed), climate: climateOf(settings),
       sourceCell: retainedDecor?.meta.terrainDisplay?.sourceCell ?? settings.width / 1024,
       lighting, renderV2:renderV2Number(style),v2Season,waterVisible:input('showWater').checked, displacement: refinement3d !== 'source', forestBrushes: style === 'render3d-brush',
       contours: input('showContours').checked && contourInterval()>0 ? {
-        step: contourInterval(), color: terrainStyle(style).palette.contour,
-        opacity: terrainStyle(style).palette.contourOpacity, flat: settings.relief === 'flat',
+        step: contourInterval(), color: terrainStyle(style, getBenchRenderColors()).palette.contour,
+        opacity: terrainStyle(style, getBenchRenderColors()).palette.contourOpacity, flat: settings.relief === 'flat',
       } : undefined,
     } : undefined);
     const waterVisible = input('showWater').checked, lakesVisible = waterVisible && input('showLakes').checked;
@@ -1060,6 +1063,7 @@ function status(message: string, error = false): void {
 }
 function shareQuery(): string {
   const params = new URLSearchParams({ brush_density: String(fantasyOptions.density), brush_size: String(fantasyOptions.size), brush_spacing: String(fantasyOptions.spacing), engine: 'rust', v: '4', seed: settings.seed, width: String(settings.width), motif: String(settings.motifSize), relief: settings.relief, erosion: String(settings.erosion), style: baseStyle, auto: input('auto').checked ? '1' : '0' });
+  writeRenderColorsQuery(params, getBenchRenderColors());
   copySurfaceGeologyQuery(params, query.has('surface_geology') || query.has('surface_geology_descriptor') ? query : retainedDecor?.meta.query ?? query);
   if (!gpu) params.set('render', 'svg');
   params.set('brush_landuse', fantasyOptions.followLanduse ? '1' : '0');
@@ -1169,7 +1173,7 @@ const settlements = createTerrainSettlements({ map, viewport, getTerrain: () => 
     const b = settlements.urban.buildingState;
     appliedBuildingScene = b.scene;
     gpu?.setForest(forestShown?.field, displayedForestOccupation(forestShown?.occupation));
-    terrain3d?.setBuildings(buildings3d(b.scene), { ...b.appearance, textured: settlements.urban.textured }, settlements.urban.buildingVisible);
+    terrain3d?.setBuildings(buildings3d(b.scene), { ...b.appearance, colors: getBenchRenderColors(), textured: settlements.urban.textured }, settlements.urban.buildingVisible);
     refreshUrbanPainting();
     if (!gpu && terrain && isRender3dStyle(style)) render();
     if (perspective) schedule3dTexture();
@@ -1300,10 +1304,10 @@ function renderWater(): void {
 
   if (retainedDecor && layer) {
     gpu?.setWater(undefined); gpu?.setOverlay(undefined);
-    const retainedWater = (input('showWater').checked || style.startsWith('render-v2')) ? decorWaterSvg(retainedDecor, baseStyle, input('showLakes').checked) : '';
+    const retainedWater = (input('showWater').checked || style.startsWith('render-v2')) ? decorWaterSvg(retainedDecor, baseStyle, input('showLakes').checked, getBenchRenderColors()) : '';
     if (gpu && style === 'render') {
       // Render: the GPU paints the rivers (depth, banks); lakes keep their SVG material above.
-      gpu.setRetainedWater(input('showWater').checked ? decorWaterSvg(retainedDecor, baseStyle, false) : '', retainedDecor.raster.width);
+      gpu.setRetainedWater(input('showWater').checked ? decorWaterSvg(retainedDecor, baseStyle, false, getBenchRenderColors()) : '', retainedDecor.raster.width);
       layer.innerHTML = svgWaterLayer(lakesOnlySvg(retainedWater));
     } else if (gpu && isRender3dStyle(style)) {
       gpu.setRetainedWater(retainedWater, retainedDecor.raster.width); layer.innerHTML = '';
@@ -1319,12 +1323,12 @@ function renderWater(): void {
   if (gpu && !isFantasyStyle(style)) {
     const vectorOverlay = water && isVectorOverlay(hydroOverlay) ? hydroOverlay : 'none';
     const cond = terrain?.conditioning;
-    const display = { style: baseStyle, showLakes: input('showLakes').checked, showOxbows: input('showOxbows').checked, riverArea: riverAreaFor(settings.hydrology ?? DEFAULT_HYDROLOGY, settings.width), riverMode: settings.hydrology?.riverMode ?? 'vector', overlay: vectorOverlay };
+    const display = { style: baseStyle, colors: getBenchRenderColors(), showLakes: input('showLakes').checked, showOxbows: input('showOxbows').checked, riverArea: riverAreaFor(settings.hydrology ?? DEFAULT_HYDROLOGY, settings.width), riverMode: settings.hydrology?.riverMode ?? 'vector', overlay: vectorOverlay };
     const shown = input('showWater').checked, hydrology = !water && !terrain?.hydrologyError ? terrain?.hydrology : undefined;
     if (water && (shown||style.startsWith('render-v2'))) gpu.setWater({ lake: display.showLakes ? lakeField(water.lake, water.hydro.n).values : undefined, n: water.hydro.n, rivers: riverSegments(water, display) });
     else if (hydrology && (shown||style.startsWith('render-v2'))) {
       // The Rust network on the GPU: its lakes' shore field, as the SVG rings contour it.
-      const colour = hydrologyWaterColour(baseStyle);
+      const colour = hydrologyWaterColour(baseStyle, getBenchRenderColors());
       gpu.setWater({ lake: display.showLakes ? hydrology.waterField : undefined, shore: 'exact', n: hydrology.resolution, rivers: hydrologySegments(hydrology, colour) });
     } else gpu.setWater(undefined);
     gpu.setOverlay(water ? vectorOverlayPixels(water, vectorOverlay, cond ? { values: cond.delta, n: cond.n } : undefined) : undefined);
@@ -1332,9 +1336,9 @@ function renderWater(): void {
   } else if (water) {
     const vectorOverlay = isVectorOverlay(hydroOverlay) ? hydroOverlay : 'none';
     const cond = terrain?.conditioning;
-    layer.innerHTML = svgWaterLayer(input('showWater').checked ? vectorWaterSvg(water, { style: baseStyle, showLakes: input('showLakes').checked, showOxbows: input('showOxbows').checked, riverArea: riverAreaFor(settings.hydrology ?? DEFAULT_HYDROLOGY, settings.width), riverMode: settings.hydrology?.riverMode ?? 'vector', overlay: vectorOverlay }) : '',
+    layer.innerHTML = svgWaterLayer(input('showWater').checked ? vectorWaterSvg(water, { style: baseStyle, colors: getBenchRenderColors(), showLakes: input('showLakes').checked, showOxbows: input('showOxbows').checked, riverArea: riverAreaFor(settings.hydrology ?? DEFAULT_HYDROLOGY, settings.width), riverMode: settings.hydrology?.riverMode ?? 'vector', overlay: vectorOverlay }) : '',
       vectorOverlaySvg(water, vectorOverlay, cond ? { values: cond.delta, n: cond.n } : undefined));
-  } else layer.innerHTML = terrain?.hydrology && (hydroOverlay === 'none' || !isVectorOverlay(hydroOverlay)) ? svgWaterLayer(input('showWater').checked ? renderHydrology(terrain.hydrology, 'none', true, baseStyle) : '',
+  } else layer.innerHTML = terrain?.hydrology && (hydroOverlay === 'none' || !isVectorOverlay(hydroOverlay)) ? svgWaterLayer(input('showWater').checked ? renderHydrology(terrain.hydrology, 'none', true, baseStyle, true, getBenchRenderColors()) : '',
     hydroOverlay === 'none' ? '' : renderHydrology(terrain.hydrology, hydroOverlay, false, baseStyle)) : '';
   if(!gpu&&style.startsWith('render-v2')&&hydroOverlay==='none')layer.innerHTML='';
   const legend = el('hydrologyLegend');
@@ -1395,7 +1399,7 @@ function renderGpu(): void {
   }
   contourStep = contourInterval();
   const look: TerrainLook = {
-    refinement3d,v2Season,
+    refinement3d,v2Season, colors: getBenchRenderColors(),
     style, waterStyle: baseStyle, lighting: isFantasyStyle(style) ? { ...lighting, strength: .12 } : lighting, layers: isFantasyStyle(style) ? { ...layers, hypsometry: false } : layers, climate: climateOf(settings), mapWidth: terrain.width, globalMin: terrain.globalMinHeight, globalMax: terrain.globalMaxHeight,
     contours: layers.relief && !isFantasyStyle(style) && input('showContours').checked && contourStep > 0, contourStep, flatRelief: settings.relief === 'flat',
     refine: !!settings.refine && !terrain.caveMask.length, sourceCell: retainedDecor?.meta.terrainDisplay?.sourceCell ?? settings.width / 1024, seed: seedHash(settings.seed),
@@ -1421,7 +1425,7 @@ function render(preparedScene?: TerrainScene, preparationMs = 0): void {
   // Hide a stale stand before drawing; a new field redraws through showForest.
   forestRendering = true; try { scheduleForest(); } finally { forestRendering = false; }
   const forestScene = forestRaster();
-  const start = performance.now(), scene = (!isFantasyStyle(style) && !forestScene ? preparedScene : undefined) ?? renderRustTerrain(terrain, style, true, { ...settings, forest: forestScene, v2Season }, input('showContours').checked, 'main', lighting, layers, fantasyOptions, false, baseStyle);
+  const start = performance.now(), scene = (!isFantasyStyle(style) && !forestScene && !Object.keys(getBenchRenderColors()).length ? preparedScene : undefined) ?? renderRustTerrain(terrain, style, true, { ...settings, forest: forestScene, v2Season }, input('showContours').checked, 'main', lighting, layers, fantasyOptions, false, baseStyle, getBenchRenderColors());
   rasterWaterMask = scene.waterMask;
   map.innerHTML = `<g id="terrainOverview">${scene.svg}</g><g id="terrainDetail"></g><g id="hydrologyOverlay"></g>${isFantasyStyle(style) && layers.relief ? '<g id="fantasyPainting" pointer-events="none"></g>' : ''}`;
   refreshUrbanPainting();
@@ -1560,7 +1564,7 @@ function receive(response: TerrainResponse): void {
       if (terrain) data.waterSurface = seaDistanceSurface(terrain, settings.width);
       // Detail crops sample the same full-tile forest field; the worker scenes carry none.
       const forestScene = forestRaster(data);
-      const scene = prepared && response.scene && !forestScene ? response.scene : renderRustTerrain(data, style, false, { ...settings, forest: forestScene, v2Season }, input('showContours').checked, 'detail', lighting, layers, fantasyOptions, false, baseStyle), image = new Image();
+      const scene = prepared && response.scene && !forestScene && !Object.keys(getBenchRenderColors()).length ? response.scene : renderRustTerrain(data, style, false, { ...settings, forest: forestScene, v2Season }, input('showContours').checked, 'detail', lighting, layers, fantasyOptions, false, baseStyle, getBenchRenderColors()), image = new Image();
       image.src = scene.imageUrl;
       const tile: DetailTile = {
         terrain: { x: data.x, y: data.y, width: data.width, resolution: data.resolution, height: data.height, caveMask: data.caveMask, generationMs: data.generationMs, backend: data.backend, backendReason: data.backendReason, prepareMs: data.prepareMs, samplingMs: data.samplingMs, gpuSetupMs: data.gpuSetupMs },
@@ -1781,6 +1785,7 @@ function changeStyle(next: TerrainStyle): void {
   el('retryRefinement').hidden = !refinementError || refinement3d !== 'neural-earth' || (!perspective && !isRender3dStyle(style));
   updateForestControls(); settlements.refreshForestMaterial();
 }
+window.addEventListener('bench-render-colors-change', () => { displayedDetail = undefined; detailRequest = undefined; render(); save(); });
 el<HTMLSelectElement>('style').onchange = () => {
   const selected = el<HTMLSelectElement>('style').value as TerrainStyle;
   changeStyle(selected === 'render-v2' ? v2DiagnosticStyle : selected);

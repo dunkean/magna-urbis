@@ -1,0 +1,131 @@
+{
+  "time": "2026-10-28T13:51:42.536Z",
+  "checks": {
+    "ui": {
+      "title": "Magna Urbis · Atelier V2",
+      "errors": []
+    },
+    "cpu": {
+      "backend": "rust-wasm-cpu",
+      "generationBackend": "cpu",
+      "stats": {
+        "backend": "rust-wasm-cpu",
+        "generationBackend": "cpu",
+        "ms.reliefEngine": 8618,
+        "samplingBackend": "wasm"
+      },
+      "count": 4096,
+      "finite": true,
+      "min": -22,
+      "max": 68.60542297363281,
+      "events": [
+        "Initialisation du moteur Rust WASM…",
+        "Relief terminé · rust-wasm-cpu · hydrologie et biomes ensuite"
+      ]
+    },
+    "gpuCapability": {
+      "cpu": true,
+      "webgpu": true,
+      "desktop": false,
+      "local": {
+        "available": false,
+        "server": "http://127.0.0.1:8791",
+        "capabilities": []
+      },
+      "python": {
+        "available": false,
+        "server": "http://127.0.0.1:8793",
+        "loaded": false
+      },
+      "adapterName": "WebGPU"
+    },
+    "gpu": {
+      "backend": "rust-webgpu",
+      "generationBackend": "gpu-erosion-f32",
+      "stats": {
+        "backend": "rust-webgpu",
+        "generationBackend": "gpu-erosion-f32",
+        "ms.reliefEngine": 1746,
+        "samplingBackend": "gpu-f32"
+      },
+      "count": 4096,
+      "finite": true,
+      "min": -22.000003814697266,
+      "max": 67.44985961914062,
+      "events": [
+        "Initialisation du moteur Rust WASM…",
+        "Relief terminé · rust-webgpu · hydrologie et biomes ensuite"
+      ]
+    },
+    "native": {
+      "backend": "rust-native",
+      "generationBackend": "native",
+      "stats": {
+        "backend": "rust-native",
+        "generationBackend": "native",
+        "ms.reliefEngine": 7872,
+        "samplingBackend": "wasm",
+        "generationReason": "Relief et côtes calculés par le service Rust natif ; surface conservée pour le rendu GPU et l’eau."
+      },
+      "count": 4096,
+      "finite": true,
+      "min": -22,
+      "max": 68.60542297363281,
+      "events": [
+        "Initialisation du moteur Rust natif…",
+        "Relief · Rust natif",
+        "Relief terminé · rust-native · hydrologie et biomes ensuite"
+      ]
+    },
+    "neuralPython": {
+      "backend": "python-cuda",
+      "generationBackend": "neural",
+      "stats": {
+        "backend": "python-cuda",
+        "generationBackend": "neural",
+        "ms.reliefEngine": 1987,
+        "samplingBackend": "gpu-f32",
+        "modelIdentity": "a9288d7266cdde292e04b15619054476c04bcd17b06d646ba475381179547436:baseModel:original:9ef8030cb805b433b98ec25c5dddefbac07a9e26:ab2d35209656fb367e896d72d0d1642bfeaf0401bad92e42fe2d3f90d0ea3cf2",
+        "modelProfile": "coarse4-original-base-t1-decoder"
+      },
+      "count": 4096,
+      "finite": true,
+      "min": -385.5220031738281,
+      "max": 743.5350952148438,
+      "events": [
+        "Initialisation du modèle neuronal…",
+        "Python/CUDA pret",
+        "Neuronal Python · calcul PyTorch/CUDA",
+        "Python : coarse -> base -> decoder sur CUDA",
+        "Python : coarse -> base -> decoder sur CUDA",
+        "Relief terminé · python-cuda · hydrologie et biomes ensuite"
+      ]
+    },
+    "neuralWeb": {
+      "backend": "wasm-webgpu",
+      "generationBackend": "neural",
+      "stats": {
+        "backend": "wasm-webgpu",
+        "generationBackend": "neural",
+        "ms.reliefEngine": 8361,
+        "samplingBackend": "gpu-f32",
+        "modelIdentity": "b03013ff6de79b5a2a269db02b4bd2320b86e8c490e3f5b0d1523ccb4ae23f73:8000e86ed879bcfc1afdd0fc112b8dc882e4342004a39c11a43570bcc0b914da:a8458a80638761cf5336fe37e5eb228a65fbb02c15e9584cc81a2ca66dd49f34:38716e8538be1edd726c46517363a22048b8ee27479ee1df66bfb2cb80f0338a",
+        "modelProfile": "coarse4-nf4-b75-t2-decoder"
+      },
+      "count": 4096,
+      "finite": true,
+      "min": -474.4428405761719,
+      "max": 607.5765991210938,
+      "events": [
+        "Initialisation du modèle neuronal…",
+        "Neuronal WASM · coarse · 5.9 Mo",
+        "Neuronal WASM · base · 149.6 Mo",
+        "Neuronal WASM · decoder · 6.7 Mo",
+        "Neuronal WASM · transfert des poids vers le GPU",
+        "Neuronal WASM · calcul coarse → base → decoder",
+        "Relief terminé · wasm-webgpu · hydrologie et biomes ensuite"
+      ]
+    }
+  },
+  "ok": true
+}

@@ -1,5 +1,6 @@
 import { PALETTES, STYLE_LIST, isMapStyle, type MapStyle, type Palette } from './styles';
 import { waterRamp, type WaterStyle } from './waterStyle';
+import { applyRenderColors, type RenderColors } from './customColors';
 
 export type TerrainStyle = MapStyle | 'render' | 'render3d' | 'render3d-brush' | 'fantasy-ink' | 'fantasy-color' | 'render-v2' | 'render-v2-substrate' | 'render-v2-moisture' | 'render-v2-vegetation' | 'render-v2-snow' | 'copernicus';
 export const isRender3dStyle = (style: TerrainStyle): boolean => style === 'render3d' || style === 'render3d-brush' || style.startsWith('render-v2');
@@ -23,6 +24,11 @@ const definitions = new Map<TerrainStyle, TerrainStyleDefinition>([
 ]);
 
 export const TERRAIN_STYLE_LIST = [...definitions.values()].filter(style => style.kind !== 'diagnostic');
-export const terrainStyle = (id: TerrainStyle): TerrainStyleDefinition => definitions.get(id)!;
+export const terrainStyle = (id: TerrainStyle, colors?: RenderColors): TerrainStyleDefinition => {
+  const base = definitions.get(id)!;
+  if (!colors || !Object.keys(colors).length) return base;
+  const palette = applyRenderColors({ ...base.palette, water: base.water }, colors);
+  return { ...base, palette, water: palette.water };
+};
 export const isTerrainStyle = (id: string | null | undefined): id is TerrainStyle => !!id && (isMapStyle(id) || definitions.has(id as TerrainStyle));
 export const waterShoreColor = (id: TerrainStyle): string => terrainStyle(id).water.stops[0][1];

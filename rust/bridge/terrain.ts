@@ -1,3 +1,5 @@
+import { validateProceduralRecipe, erosionBiome, posteriorSettings, windSettings, stageEnabled, PROCEDURAL_RECIPE_VERSION, isCompactProcedural, type ProceduralRecipe, type GenerationControl } from './terrainGenerationRecipe';
+import { erodeWindGpu, erodeWindCpu } from './terrainWind';
 import { CLIMATE_VALUES, type ClimateValues } from './terrainClimate';
 export { CLIMATE_VALUES, type ClimateValues } from './terrainClimate';
 import type { TerrainLayers, TerrainLighting } from '../../web/src/render/terrainLighting';
@@ -5,6 +7,7 @@ import init, { TerrainEngine, erosion_defaults, flood_hydrology, set_erosion_tun
 import wasmUrl from '../pkg/wasm/magna_urbis_wasm_bg.wasm?url&inline';
 import { GpuTerrainSampler, prepareGpu, generateGpuNoise, GPU_RELIEFS, GPU_GENERATION_RELIEFS } from './terrainGpu';
 import { generateGpuTerrain, erodeGpuCoast, type ErosionProfile } from './terrainErosion';
+import { applyPhasorCpu, COMPACT_RELIEFS, compactBudget, compactProfile, COMPACT_VERSION, type PhasorSettings } from './terrainPhasor';
 import { PreparedHydrology, applyHydrologySurface, riverAreaFor, type HydrologyData, type HydrologySettings } from './hydrology';
 import { applyHydrologyHeight } from './hydrologySurface';
 import type { TerrainScene, TerrainStyle } from './terrainRender';
@@ -29,9 +32,9 @@ export type TerrainCompute = typeof COMPUTE_MODES[number];
 export const COAST_DIRECTIONS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'] as const;
 export const ISLAND_MODES = ['island', 'archipelago', 'random'] as const;
 export type IslandMode = typeof ISLAND_MODES[number];
-export const TERRAIN_SOURCES = ['procedural', 'neural-wasm', 'neural-python', 'neural'] as const;
+export const TERRAIN_SOURCES = ['procedural', 'procedural-phasor', 'neural-wasm', 'neural-python', 'neural'] as const;
 export type TerrainSource = typeof TERRAIN_SOURCES[number];
-export const isNeuralSource = (source?: TerrainSource): boolean => !!source && source !== 'procedural';
+export const isNeuralSource = (source?: TerrainSource): boolean => source === 'neural-wasm' || source === 'neural-python' || source === 'neural';
 /** Relief families sketched for the neural coarse network (7.68 km cells). */
 export const NEURAL_RELIEFS = ['flat', 'hills', 'valley', 'mountains', 'mixed', 'plateau', 'high-mountains'] as const;
 export const NEURAL_CLIMATES = ['temperate', 'oceanic', 'mediterranean', 'arid', 'cold', 'tropical'] as const;
@@ -99,6 +102,10 @@ export interface TerrainSettings {
   /** Shape of that refinement (defaults: `DEFAULT_FRACTAL_DETAIL`). */
   detailNoise?: FractalDetail;
   erosionTuning?: ErosionTuning;
+  /** Independent compact noise / erosion / Phasor source; legacy sources ignore this block. */
+  phasor?: PhasorSettings;
+  /** Bench recipe; absent preserves the historical generators. */
+  procedural?: ProceduralRecipe;
 }
 export const climateOf = (settings: TerrainSettings): ClimateValues => settings.climateValues ?? CLIMATE_VALUES[settings.climate ?? 'temperate'];
 export interface NeuralInfo { totalMs: number; coarseMs: number; baseMs: number; decoderMs: number; reconstructionMs: number; requestMs: number; evaluations: [number, number, number]; profile: string; land: number; backend?: string; precision?: string; modelIdentity?: string; neuralToken?: string; neuralSeed?: string }
@@ -111,7 +118,7 @@ export interface TerrainData {
   height: Float32Array; caveMask: Uint8Array;
   normalX: Float32Array; normalY: Float32Array; normalZ: Float32Array; generationMs: number;
   backend?: TerrainCompute | 'native'; backendReason?: string; prepareMs?: number; samplingMs?: number; gpuSetupMs?: number;
-  generationBackend?: 'cpu' | 'native' | 'gpu-noise-f32' | 'gpu-noise-all-f32' | 'gpu-erosion-f32' | 'neural'; generationReason?: string; noiseMs?: number; erosionMs?: number; gpuSimulationMs?: number; nativeEnvironmentMs?: number;
+  generationBackend?: 'cpu' | 'native' | 'gpu-noise-f32' | 'gpu-noise-all-f32' | 'gpu-erosion-f32' | 'compact-gpu-f32' | 'compact-cpu' | 'neural'; generationReason?: string; noiseMs?: number; erosionMs?: number; gpuSimulationMs?: number; nativeEnvironmentMs?: number;
   erosionProfile?: ErosionProfile[];
   coastBackend?: 'cpu' | 'gpu-f32'; coastMs?: number; coastReason?: string;
   hydrology?: HydrologyData;
@@ -155,6 +162,7 @@ export type TerrainResponse = Pick<TerrainRequest, 'id' | 'generation' | 'kind'>
 
 let ready: Promise<unknown> | undefined;
 let engine: TerrainEngine | undefined, engineKey = '';
+let engineRetainedCoasts=false;
 let engineCoastKey = '';
 let coastBackend: TerrainData['coastBackend'], coastReason: string | undefined;
 let sampler: GpuTerrainSampler | undefined, samplerMode: TerrainCompute | undefined;
@@ -230,21 +238,28 @@ async function fetchNeuralRelief(settings: TerrainSettings, coastMask: number, i
  * `onRelief`: GPU overviews whose waters must be computed first receive the
  * sampled relief at once (no water, no conditioning), then the full reply.
  */
-export function sampleRustTerrain(request: TerrainRequest, onRelief?: (relief: TerrainData) => void, progress?: TerrainProgressCallback): Promise<TerrainData> {
-  const result = queue.then(() => sampleTerrain(request, onRelief, progress));
+export function sampleRustTerrain(request: TerrainRequest, onRelief?: (relief: TerrainData) => void, progress?: TerrainProgressCallback, lab?: GenerationControl): Promise<TerrainData> {
+  const result = queue.then(() => sampleTerrain(request, onRelief, progress, lab));
   queue = result.catch(() => undefined);
   return result;
 }
-async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: TerrainData) => void, progress?: TerrainProgressCallback): Promise<TerrainData> {
+async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: TerrainData) => void, progress?: TerrainProgressCallback, lab?: GenerationControl): Promise<TerrainData> {
   const { settings, region, kind, display, runtime } = request;
+  validateProceduralRecipe(settings.procedural);
+  if(settings.procedural&&['plateau','volcano','caldera','cavern'].includes(settings.relief))throw new Error('La recette décomposée couvre les reliefs régionaux ; les formes finies et les cavernes gardent leur générateur normal.');
+  if(lab)await lab.before('prepare');
+  if(settings.procedural?.erosionTuning)settings.erosionTuning={...settings.erosionTuning,...settings.procedural.erosionTuning};
   const mode = settings.compute === 'wasm' ? 'wasm' : 'gpu-f32';
   const generationMode = settings.generationCompute ?? 'gpu-erosion';
+  const compact = isCompactProcedural(settings);
+  if (compact && generationMode === 'native') throw new Error('Procédural Phasor : choisir GPU ou CPU navigateur pour cette méthode.');
+  if (compact && !settings.sketch?.processing && (!(COMPACT_RELIEFS as readonly string[]).includes(settings.relief) || settings.zones || settings.sketch)) throw new Error('Procédural Phasor : choisir un relief automatique de plaine, collines, vallée, canyon ou montagnes. Les zones peintes et formes géologiques restent disponibles avec le procédural original.');
   const nativeGeneration = generationMode === 'native' && !isNeuralSource(settings.source);
   if (nativeGeneration && runtime?.profile !== 'local') throw new Error('Le moteur natif nécessite le profil Local et son service Rust.');
   if (nativeGeneration && settings.relief === 'cavern') return sampleNativeTerrain(request);
   const environment = (GEOLOGICAL_RELIEFS as readonly string[]).includes(settings.relief) ? settings.environment ?? 'mixed' : 'mixed';
   const surfaceInput = settings.sketch?.processing;
-  const coastMask = settings.relief === 'cavern' || surfaceInput ? 0 : settings.coastMask ?? 0;
+  const coastMask = !stageEnabled(settings,'coasts') ? 0 : settings.relief === 'cavern' || surfaceInput ? 0 : settings.coastMask ?? 0;
   const islandMode = settings.islandMode ?? 'island';
   const supported = GPU_RELIEFS.includes(settings.relief);
   const gpu = mode !== 'wasm' && supported ? prepareGpu(mode, settings.relief).catch(() => undefined) : undefined;
@@ -259,6 +274,18 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
   const started = performance.now();
   if(gpu)progress?.('Connexion au périphérique WebGPU…',{stage:'gpu-device'});
   const readyGpu = gpu ? await gpuSetupDeadline(gpu) : undefined;
+  if(lab&&!readyGpu)throw new Error('Le pas à pas requiert WebGPU.');
+  if(lab)await lab.after('prepare');
+  const finishSource = async (input:Float32Array,cpuDetail=false):Promise<Float32Array> => {
+    let height=cpuDetail && stageEnabled(settings,'phasor',false) ? applyPhasorCpu(input,settings) : input;const p=posteriorSettings(settings),w=windSettings(settings);
+    if(lab)await lab.before('posterior');
+    if(settings.procedural&&stageEnabled(settings,'posterior')&&p.mode!=='none'){height=conditionRelief(height,1024,settings.width,p).height;for(let i=0;i<height.length;i++)height[i]=input[i]>0?Math.max(.3,height[i]):height[i];}
+    if(lab)await lab.after('posterior',height,'Conditionnement CPU, érosion à 512² maximum');
+    if(lab)await lab.before('wind');
+    if(settings.procedural&&stageEnabled(settings,'wind')&&w.iterations&&w.transport){height=readyGpu?await erodeWindGpu(readyGpu.context,height,settings.width,w):erodeWindCpu(height,settings.width,w);}
+    if(lab)await lab.after('wind',height,`${w.iterations} passes · ${w.transport.toFixed(3)} m/passe · ${w.azimuth}°`);
+    return height;
+  };
   // Handle compilation failure immediately while preparation runs synchronously.
   const pipelineReady = readyGpu?gpuSetupDeadline(readyGpu.pipeline).then(pipeline=>({pipeline}),()=>undefined):undefined;
   const requestedGpuGeneration = !nativeGeneration && !settings.zones && !settings.sketch && generationMode !== 'cpu' && mode !== 'wasm' && GPU_GENERATION_RELIEFS.includes(settings.relief);
@@ -268,22 +295,27 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
   if (!neural) { await releaseNeuralBrowser(); await releasePythonNeural(); }
   const key = JSON.stringify([settings.zones, nativeGeneration ? [runtime!.server, coastMask, islandMode] : null]) + '|' + (neural
     ? JSON.stringify([settings.source, settings.seed, settings.relief, settings.relief === 'mixed' ? settings.mountainMix : 0.5, coastMask, coastMask === 255 ? islandMode : 'island', climateOf(settings), settings.fidelity ?? 0.05, settings.neuralServer ?? '', settings.sketch, settings.neuralTuning ?? DEFAULT_NEURAL_TUNING, settings.width, settings.neuralFit ?? 'crop', settings.neuralSlopes ?? true, settings.coarseModel, settings.baseModel, settings.decoderModel])
-    : JSON.stringify([settings.seed, settings.width, settings.relief, settings.relief === 'cavern' ? 0 : settings.erosion, settings.motifSize, settings.relief === 'mixed' ? settings.mountainMix : 0.5, nativeGeneration ? 'native' : requestedGpuGeneration ? generationMode : 'cpu', environment, settings.sketch, settings.erosionTuning ?? {}]));
+    : JSON.stringify([settings.seed, settings.width, settings.relief, settings.relief === 'cavern' ? 0 : settings.erosion, settings.motifSize, settings.relief === 'mixed' ? settings.mountainMix : 0.5, nativeGeneration ? 'native' : compact ? [generationMode,mode,!!readyGpu] : requestedGpuGeneration ? generationMode : 'cpu', environment, settings.sketch, settings.erosionTuning ?? {}, ...(settings.procedural ? [PROCEDURAL_RECIPE_VERSION,settings.procedural,settings.climate,settings.climateValues,!gpuGeneration?[coastMask,islandMode]:null] : []), ...(compact || settings.procedural?.enabled?.phasor ? [COMPACT_VERSION, settings.climate ?? 'temperate', settings.phasor ?? {}] : [])]));
   let prepareMs = 0, noiseMs = 0, erosionMs = 0, gpuSimulationMs = 0, nativeEnvironmentMs = 0;
   let erosionProfile: ErosionProfile[] | undefined;
-  if (!engine || engineKey !== key) {
+  if (lab || !engine || engineKey !== key) {
     sampler?.dispose(); sampler = undefined; samplerMode = undefined;
-    engine?.free(); engine = undefined; engineKey = ''; engineCoastKey = '';
+    engine?.free(); engine = undefined; engineRetainedCoasts=false; engineKey = ''; engineCoastKey = '';
     const prepareStarted = performance.now();
     generationBackend = 'cpu'; generationReason = undefined;
     const mix = settings.relief === 'mixed' ? settings.mountainMix : 0.5;
     neuralInfo = undefined;
     // Read by the CPU engine and the GPU erosion plan built below, and by later coasts.
-    set_erosion_tuning(Float64Array.from(EROSION_SETTINGS, name => settings.erosionTuning?.[name] ?? NaN));
+    set_erosion_tuning(Float64Array.from(EROSION_SETTINGS,name=>{
+      let value=compact&&!settings.procedural?NaN:settings.erosionTuning?.[name]??NaN;
+      if(settings.procedural?.biome&&!gpuGeneration&&(name==='incision'||name==='thermal'))value=(Number.isFinite(value)?value:1)*(name==='incision'?erosionBiome(settings).water:erosionBiome(settings).thermal);
+      return value;
+    }));
     if (nativeGeneration) {
       progress?.('Rust natif · génération du relief et érosion…',{stage:'terrain-generation',detail:'Service Rust local · calcul du champ physique 1024 × 1024'});
-      const result = await prepareNativeTerrain(settings.sketch && !surfaceInput ? { ...settings, sketch: undefined } : settings, runtime!);
-      engine = TerrainEngine.with_surface(settings.seed, settings.width, result.height);
+      const nativeSettings = settings.procedural?.biome ? { ...settings, coastMask, erosionTuning: { ...settings.erosionTuning, incision: (settings.erosionTuning?.incision ?? 1) * erosionBiome(settings).water, thermal: (settings.erosionTuning?.thermal ?? 1) * erosionBiome(settings).thermal } } : settings;
+      const result = await prepareNativeTerrain(nativeSettings.sketch && !surfaceInput ? { ...nativeSettings, sketch: undefined } : nativeSettings, runtime!);
+      engine = TerrainEngine.with_surface(settings.seed, settings.width, settings.procedural?await finishSource(result.height,true):result.height);
       generationBackend = 'native';
       generationReason = 'Relief et côtes calculés par le service Rust natif ; surface conservée pour le rendu GPU et l’eau.';
       nativeEnvironmentMs = result.prepareMs;
@@ -306,6 +338,35 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
       neuralInfo = result.info;
       generationBackend = 'neural';
       if (settings.zones) generationReason = 'Zones → conditionnement régional et relief local neuronal, puis opération mer.';
+    } else if (compact) {
+      if (readyGpu && mode !== 'wasm' && generationMode !== 'cpu') {
+        progress?.('GPU · relief compact, érosion régionale et Phasor…',{stage:'terrain-generation'});
+        const timing = { nativeEnvironmentMs: 0, profiles: [] as ErosionProfile[], control: lab };
+        const source = await finishSource(await generateGpuTerrain(readyGpu.context, settings, timing, progress));
+        if(lab)await lab.before('retain');
+        erosionProfile = timing.profiles;
+        // Retain the ordinary geographic sampler: it also shapes valleys and cuts coasts.
+        engine = TerrainEngine.with_source(settings.seed, settings.width, settings.relief === 'flat' ? 'hills' : settings.relief, settings.erosion, settings.motifSize, mix, source, environment);
+        if(lab)await lab.after('retain',source);
+        generationBackend = 'compact-gpu-f32';
+        generationReason = `${COMPACT_VERSION} · préréglage compact · grille ${settings.procedural?.regionalN??compactBudget(settings).n}² · ${settings.climate??'temperate'} · Phasor ${stageEnabled(settings,'phasor',true)?'actif':'désactivé'}.`;
+      } else {
+        progress?.('CPU · érosion régionale et Phasor…',{stage:'terrain-generation'});
+        const b=settings.procedural?.biome?erosionBiome(settings):undefined;
+        const profile = b?{incision:b.water,thermal:b.thermal}:settings.procedural?{incision:1,thermal:1}:compactProfile(settings), iterations = settings.procedural?.erosionTuning?.iterations??compactBudget(settings).steps;
+        const manual=settings.erosionTuning??{};
+        const tuning: ErosionTuning = { ...manual, iterations, surfaceIterations: stageEnabled(settings,'surface',false)?manual.surfaceIterations??12:0, detail: stageEnabled(settings,'ridged',false)?manual.detail:0, warp: manual.warp??0, incision: (manual.incision??1)*profile.incision, thermal: (manual.thermal??1)*profile.thermal };
+        set_erosion_tuning(Float64Array.from(EROSION_SETTINGS, name => tuning[name] ?? NaN));
+        let reference: TerrainEngine | undefined;
+        try {
+          reference = new TerrainEngine(settings.seed, settings.width, settings.relief, settings.erosion, settings.motifSize, mix, environment);
+          const sampled = reference.sample_region(0, 0, settings.width, 1024);
+          try { engine = TerrainEngine.with_source(settings.seed, settings.width, 'hills', settings.erosion, settings.motifSize, mix, (stageEnabled(settings,'phasor',true)?applyPhasorCpu(sampled.height, settings):sampled.height), environment); }
+          finally { sampled.free(); }
+        } finally { reference?.free(); set_erosion_tuning(new Float64Array(EROSION_SETTINGS.length).fill(NaN)); }
+        generationBackend = 'compact-cpu';
+        generationReason = `${COMPACT_VERSION} · Rust CPU + Phasor scalaire · ${settings.climate ?? 'temperate'} ; topographie indépendante du GPU.`;
+      }
     } else if (settings.zones) {
       progress?.('CPU · relief et érosion des zones peintes…',{stage:'terrain-generation',detail:'Rust/WASM · champ physique 1024 × 1024'});
       engine = TerrainEngine.with_zones(settings.seed, settings.width, settings.relief, settings.erosion, settings.motifSize, mix, environment, JSON.stringify(parseTerrainZones(settings.zones)));
@@ -313,12 +374,14 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
     } else if (gpuGeneration && readyGpu) {
       try {
         if (generationMode === 'gpu-erosion' || settings.relief === 'volcano' || settings.relief === 'caldera' || settings.relief === 'plateau' || settings.relief === 'canyon') {
-          const timing = { nativeEnvironmentMs: 0, profiles: [] as ErosionProfile[] };
-          const source = await generateGpuTerrain(readyGpu.context, settings, timing, progress);
+          const timing = { nativeEnvironmentMs: 0, profiles: [] as ErosionProfile[], control: lab };
+          const source = await finishSource(await generateGpuTerrain(readyGpu.context, settings, timing, progress));
+          if(lab)await lab.before('retain');
           nativeEnvironmentMs = timing.nativeEnvironmentMs;
           erosionProfile = timing.profiles;
           gpuSimulationMs = performance.now() - prepareStarted - nativeEnvironmentMs;
           engine = TerrainEngine.with_source(settings.seed, settings.width, settings.relief, settings.erosion, settings.motifSize, mix, source, environment);
+          if(lab)await lab.after('retain',source);
           generationBackend = 'gpu-erosion-f32';
         } else {
           const noise = await generateGpuNoise(readyGpu.context, settings, progress);
@@ -330,6 +393,7 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
           generationBackend = generationMode === 'gpu-all' ? 'gpu-noise-all-f32' : 'gpu-noise-f32';
         }
       } catch (error) {
+        if(lab||settings.procedural)throw error;
         generationReason = `GPU generation unavailable: ${error instanceof Error ? error.message : String(error)}`;
       }
     }
@@ -341,15 +405,24 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
       finally { sample.free(); }
       generationReason = 'Edited sketch + procedural detail and Rust erosion.';
     }
+    const posterior=posteriorSettings(settings),wind=windSettings(settings);
+    const hasCpuPost=stageEnabled(settings,'posterior')&&posterior.mode!=='none'||stageEnabled(settings,'wind')&&wind.iterations>0&&wind.transport>0;
+    if(settings.procedural&&(hasCpuPost||!compact&&stageEnabled(settings,'phasor',false))&&!['gpu-erosion-f32','compact-gpu-f32'].includes(generationBackend)&&!neural&&!surfaceInput&&!nativeGeneration&&!settings.zones){
+      engine!.set_coast(coastMask,islandMode);
+      const sampled=engine!.sample_region(0,0,settings.width,1024);
+      try{const height=await finishSource(sampled.height,!compact);engine!.free();engine=TerrainEngine.with_surface(settings.seed,settings.width,height);engineRetainedCoasts=true;}
+      finally{sampled.free();}
+    }
     prepareMs = performance.now() - prepareStarted;
     engineKey = key;
   }else progress?.('Réutilisation du relief déjà calculé',{stage:'terrain-generation'});
+  if(lab)await lab.before('coasts');
   // Reuse the underlying relief, then cut the coast before its physical erosion.
   const gpuCoast = !settings.zones && !settings.sketch && coastMask !== 0 && generationMode !== 'cpu' && mode !== 'wasm';
   const coastKey = neural ? 'neural' : JSON.stringify([coastMask, coastMask === 255 ? islandMode : 'island', coastMask ? gpuCoast : false]);
   let coastMs = 0;
-  if (neural || nativeGeneration) {
-    engineCoastKey = coastKey; coastBackend = undefined; coastReason = undefined;
+  if (neural || nativeGeneration || engineRetainedCoasts) {
+    engineCoastKey = coastKey; coastBackend = engineRetainedCoasts&&coastMask?'cpu':undefined; coastReason = undefined;
   } else if (engineCoastKey !== coastKey) {
     sampler?.dispose(); sampler = undefined; samplerMode = undefined;
     coastBackend = undefined; coastReason = undefined;
@@ -379,8 +452,11 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
     coastMs = coastMask ? performance.now() - coastStarted : 0;
     prepareMs += coastMs;
   }
+  if(lab)await lab.after('coasts',coastMask?engine!.sampling_field().slice(0,1024*1024):undefined);
   async function finish(data: TerrainData): Promise<TerrainData> {
-    const config = settings.hydrology;
+    if(lab)await lab.after('sampling',data.height);
+    if(lab)await lab.before('hydrology');
+    const config = stageEnabled(settings,'hydrology') ? settings.hydrology : undefined;
     data.neural = neuralInfo;
     if (kind === 'overview' && !neural && settings.relief !== 'cavern') {
       data.erosionDefaults = Array.from(erosion_defaults(settings.relief, settings.width, settings.motifSize, settings.mountainMix));
@@ -489,6 +565,7 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
     if (kind === 'overview') data.relief = reliefStatistics(data);
     if (settings.zones && data.neural && data.relief) data.neural = { ...data.neural, land: data.relief.land };
     data.generationMs = performance.now() - started;
+    if(lab)await lab.after('hydrology',data.height);
     return data;
   }
   /**
@@ -516,6 +593,7 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
     }
     return { n: data.resolution, data: data.height.slice(), exact: false, floor: 0, cave: data.caveMask.length ? data.caveMask.slice() : undefined };
   }
+  if(lab)await lab.before('sampling',`Borne du moteur ${engine!.max_height.toFixed(2)} m · aperçu ${region.resolution}²`);
   let backendReason: string | undefined;
   let gpuSetupMs = 0;
   let gpuSampled: TerrainData | undefined;

@@ -20,6 +20,7 @@ import { bridgeShapes, isKinded, type BridgeShapes } from './townbridges';
 import type { World, LandKind, Vec2 } from '../gen/types';
 import { Palette, MapStyle, ruralInk } from './styles';
 import { biomePalette } from './biomes';
+import { applyRenderColors, type RenderColors } from './customColors';
 import { fieldHedgeStyle } from './hedges';
 import { furrowLines, furrowSpacing } from './furrows';
 import { orientPos } from '../gen/geo/poly';
@@ -46,6 +47,7 @@ import { litDots } from './extras';
 export interface CanvasLike { width: number; height: number; getContext(id: '2d'): CanvasRenderingContext2D | null }
 
 export interface CanvasRendererDeps {
+  colors?: RenderColors;
   /** Path2D constructor (default: global). */
   Path2D?: new () => Path2D;
   /** Offscreen canvas factory (default: OffscreenCanvas / document canvas). Return null if unavailable. */
@@ -196,7 +198,7 @@ function defaultCreateCanvas(w: number, h: number): CanvasLike | null {
 export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: MapStyle | Palette, deps: CanvasRendererDeps = {}): CanvasRenderer {
   let sourceWorld = world0;
   let world = cavernDisplayWorld(deps.scene?.renderedWorld ? { ...deps.scene.renderedWorld, options: world0.options } : renderView(cavernDisplayWorld(world0)));
-  const pal = biomePalette(style, world.options.biome);
+  const basePalette = biomePalette(style, world.options.biome), pal = applyRenderColors(basePalette, deps.colors);
   let scene = deps.scene ?? buildScene(world0, deps.tileSize);
   const S = world.mapSize;
   const furrowSize = deps.furrowReferenceSize ?? S;
@@ -316,7 +318,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
 
   function update(nextSource: World, nextScene: Scene, nextStyle: MapStyle | Palette = style): boolean {
     if ((brushes || canopy) && nextSource.seed !== sourceWorld.seed) return false;
-    if (nextSource.mapSize !== S || biomePalette(nextStyle, nextSource.options.biome) !== pal) return false;
+    if (nextSource.mapSize !== S || biomePalette(nextStyle, nextSource.options.biome) !== basePalette) return false;
     // Prepare potentially fallible metadata before committing the replacement.
     const nextWorld = cavernDisplayWorld(nextScene.renderedWorld ? { ...nextScene.renderedWorld, options: nextSource.options } : renderView(cavernDisplayWorld(nextSource)));
     const nextLabels = buildMapLabels(nextWorld, pal.name, pal);
@@ -491,11 +493,16 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
         tiles.push({ image, x: request.x, y: request.y });
       }
       ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.imageSmoothingEnabled = true;
       for (const tile of tiles) {
-        const x = (tile.x * tileSize - rect.minX) * k - gutter, y = (tile.y * tileSize - rect.minY) * k - gutter;
-        // Overlapping identical gutters avoid antialias seams at fractional camera positions.
-        ctx.drawImage(tile.image, x, y);
+        const x = (tile.x * tileSize - rect.minX) * k, y = (tile.y * tileSize - rect.minY) * k;
+        // Gutters supply filtering samples, but each output pixel belongs to one
+        // tile only. Overpainting them darkens transparent land-use overlays.
+        // Integer device-pixel partitions also avoid fractional clipping seams.
+        const left = Math.round(x), top = Math.round(y);
+        ctx.save(); ctx.beginPath(); ctx.rect(left, top, Math.round(x + tilePx) - left, Math.round(y + tilePx) - top); ctx.clip();
+        ctx.drawImage(tile.image, x - gutter, y - gutter); ctx.restore();
       }
       const overlay = drawVector(view, canvas, 'overlays');
       stats = { ...(mapStats ?? overlay), ms: now() - start, band: selectLod(view.scale).band, scale: view.scale,

@@ -6,6 +6,7 @@ import { seedHash } from './terrainAdjust';
 import type { TerrainData, TerrainSettings } from './terrain';
 import { CLIMATE_VALUES } from './terrain';
 import { bindForestBrushes } from '../../web/src/render/forestBrushAtlas';
+import { createMaterialRasterContext, type MaterialRasterContext } from './terrainMaterialContext';
 
 /** Render3D forest for rasters: the live view's canonical field/occupation and
  * its sun direction (map x, map y, up; terrainLights().primary). */
@@ -13,8 +14,10 @@ export interface ForestWaterRaster { x: number; y: number; width: number; n: num
 export interface ForestRaster { field?: ForestField; occupation?: ForestOccupation; water?: ForestWaterRaster; light?: readonly number[]; light2?: readonly number[]; lightingStrength?: number; brushes?: boolean; renderV2?: number; v2Season?: number; waterVisible?: boolean }
 export interface MaterialRaster { rgb: Uint8Array; canopyAlpha: Uint8Array }
 interface Uploaded { key: string; texture: WebGLTexture }
-let renderer: { gl: WebGL2RenderingContext; canvas: OffscreenCanvas; program: WebGLProgram; texture: WebGLTexture; field?: Uploaded; bank?: Uploaded; occupation?: Uploaded; water?: Uploaded } | undefined;
+interface RasterRenderer extends MaterialRasterContext { program: WebGLProgram; texture: WebGLTexture; field?: Uploaded; bank?: Uploaded; occupation?: Uploaded; water?: Uploaded; target?: { n: number; texture: WebGLTexture; framebuffer: WebGLFramebuffer } }
+let renderer: RasterRenderer | undefined;
 let renderer3d: typeof renderer;
+const sharedRenderers = new WeakMap<WebGL2RenderingContext, { base?: RasterRenderer; enhanced?: RasterRenderer }>();
 /** Upload a forest raster once per key; clamp-to-edge, field with box mipmaps. */
 function forestTexture(gl: WebGL2RenderingContext, previous: Uploaded | undefined, raster: { n: number; rgba: Uint8Array; key: string }, mipmaps: boolean): Uploaded {
   if (previous?.key === raster.key) return previous;
@@ -30,12 +33,18 @@ function forestTexture(gl: WebGL2RenderingContext, previous: Uploaded | undefine
 /** Same material shader as the live view, for worker SVG rasters and exports.
  * Render3D rasters show the forest only when `forest.field` is given; callers
  * caching rasters must include field.key and occupation.key. */
-export function renderMaterialRaster(terrain: TerrainData, settings: Pick<TerrainSettings, 'seed' | 'climate' | 'climateValues'>, enhanced3d = false, forest?: ForestRaster): MaterialRaster {
-  let active = enhanced3d ? renderer3d : renderer;
+export function renderMaterialRaster(terrain: TerrainData, settings: Pick<TerrainSettings, 'seed' | 'climate' | 'climateValues'>, enhanced3d = false, forest?: ForestRaster, shared?: MaterialRasterContext): MaterialRaster {
+  const context = shared && !shared.gl.isContextLost() ? shared : undefined;
+  const gl = context?.gl, state = gl && saveContextState(gl);
+  try { return composeMaterialRaster(terrain, settings, enhanced3d, forest, context); }
+  finally { if (gl && state) restoreContextState(gl, state); }
+}
+function composeMaterialRaster(terrain: TerrainData, settings: Pick<TerrainSettings, 'seed' | 'climate' | 'climateValues'>, enhanced3d: boolean, forest?: ForestRaster, shared?: MaterialRasterContext): MaterialRaster {
+  const cached = shared && sharedRenderers.get(shared.gl);
+  let active = shared ? enhanced3d ? cached?.enhanced : cached?.base : enhanced3d ? renderer3d : renderer;
+  if (active?.gl.isContextLost()) active = undefined;
   if (!active) {
-    const canvas = new OffscreenCanvas(1, 1);
-    const gl = canvas.getContext('webgl2', { alpha: true, premultipliedAlpha: false, antialias: false });
-    if (!gl) throw new Error('Le style Render nécessite WebGL2 pour composer ses matériaux.');
+    const { canvas, gl } = shared ?? createMaterialRasterContext();
     const compile = (type: number, source: string): WebGLShader => {
       const shader = gl.createShader(type)!;
       gl.shaderSource(shader, source); gl.compileShader(shader);
@@ -107,10 +116,27 @@ export function renderMaterialRaster(terrain: TerrainData, settings: Pick<Terrai
     gl.deleteShader(vertex); gl.deleteShader(fragment);
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program) ?? 'Material program');
     active = { canvas, gl, program, texture: gl.createTexture()! };
-    if (enhanced3d) renderer3d = active; else renderer = active;
+    if (shared) {
+      const entries = cached ?? {}; if (enhanced3d) entries.enhanced = active; else entries.base = active;
+      sharedRenderers.set(gl, entries);
+    } else if (enhanced3d) renderer3d = active; else renderer = active;
   }
-  const { canvas, gl, program, texture } = active, n = terrain.resolution;
-  canvas.width = n; canvas.height = n;
+  const { gl, program, texture } = active, n = terrain.resolution;
+  // Render into RGBA even when the shared map canvas is opaque. This retains
+  // canopy coverage and leaves the map's drawing buffer and dimensions intact.
+  if (!active.target || active.target.n !== n) {
+    if (active.target) { gl.deleteTexture(active.target.texture); gl.deleteFramebuffer(active.target.framebuffer); }
+    const color = gl.createTexture()!, framebuffer = gl.createFramebuffer()!;
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, color);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, n, n, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, color, 0);
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error('Impossible de préparer le framebuffer des matériaux.');
+    active.target = { n, texture: color, framebuffer };
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, active.target.framebuffer); gl.bindVertexArray(null);
+  for (const capability of [gl.BLEND, gl.DEPTH_TEST, gl.SCISSOR_TEST, gl.CULL_FACE]) gl.disable(capability);
+  gl.colorMask(true, true, true, true); gl.enable(gl.DITHER);
   gl.viewport(0, 0, n, n); gl.useProgram(program);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, texture);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
@@ -163,6 +189,29 @@ export function renderMaterialRaster(terrain: TerrainData, settings: Pick<Terrai
     canopyAlpha[i] = rgba[j + 3];
   }
   return { rgb, canopyAlpha };
+}
+
+/** Borrow a live map context without altering its framebuffer, textures or draw state. */
+function saveContextState(gl: WebGL2RenderingContext) {
+  const activeTexture = gl.getParameter(gl.ACTIVE_TEXTURE) as number;
+  const textures = Array.from({ length: 6 }, (_, unit) => {
+    gl.activeTexture(gl.TEXTURE0 + unit);
+    return { image: gl.getParameter(gl.TEXTURE_BINDING_2D) as WebGLTexture | null, array: gl.getParameter(gl.TEXTURE_BINDING_2D_ARRAY) as WebGLTexture | null };
+  });
+  gl.activeTexture(activeTexture);
+  return { activeTexture, textures, framebuffer: gl.getParameter(gl.DRAW_FRAMEBUFFER_BINDING) as WebGLFramebuffer | null,
+    readFramebuffer: gl.getParameter(gl.READ_FRAMEBUFFER_BINDING) as WebGLFramebuffer | null,
+    viewport: gl.getParameter(gl.VIEWPORT) as Int32Array, program: gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null,
+    vao: gl.getParameter(gl.VERTEX_ARRAY_BINDING) as WebGLVertexArrayObject | null, unpack: gl.getParameter(gl.UNPACK_ALIGNMENT) as number,
+    mask: gl.getParameter(gl.COLOR_WRITEMASK) as boolean[], capabilities: [gl.BLEND, gl.DEPTH_TEST, gl.SCISSOR_TEST, gl.CULL_FACE, gl.DITHER].map(capability => ({ capability, enabled: gl.isEnabled(capability) })) };
+}
+function restoreContextState(gl: WebGL2RenderingContext, state: ReturnType<typeof saveContextState>): void {
+  gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, state.framebuffer); gl.bindFramebuffer(gl.READ_FRAMEBUFFER, state.readFramebuffer);
+  gl.viewport(state.viewport[0], state.viewport[1], state.viewport[2], state.viewport[3]); gl.useProgram(state.program); gl.bindVertexArray(state.vao);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, state.unpack); gl.colorMask(state.mask[0], state.mask[1], state.mask[2], state.mask[3]);
+  for (const { capability, enabled } of state.capabilities) if (enabled) gl.enable(capability); else gl.disable(capability);
+  state.textures.forEach((texture, unit) => { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, texture.image); gl.bindTexture(gl.TEXTURE_2D_ARRAY, texture.array); });
+  gl.activeTexture(state.activeTexture);
 }
 
 /** Compatibility API for callers which only need the opaque ground raster. */

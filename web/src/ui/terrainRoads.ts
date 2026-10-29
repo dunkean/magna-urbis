@@ -8,6 +8,7 @@ import { LOCALE_KEY } from './shellLocale';
 import { RENDER_ROAD_PX, ROAD_STROKE_LAYERS, renderCrossingStrokes, renderRoadStrokes, roadStrokeWidth, splitAtCrossings, type RoadStroke } from '../render/roadPaintRender';
 
 import { BLEND_ROAD_ALPHA, BLEND_ROAD_COLOR, BLEND_ROAD_PX, GROUND_BLEND_LABEL, GROUND_BLEND_TITLE, getGroundBlend, gradeFade, isBlended, onGroundBlend, setGroundBlend, type GroundBlend } from '../render/groundBlend';
+import { getBenchRenderColors } from './benchRenderColors';
 import { v1RoadPaint, type V1LandscapeStyle } from '../render/v1Landscape';
 const ns = 'http://www.w3.org/2000/svg';
 /** Screen widths (px): roads keep their weight at every zoom. */
@@ -173,9 +174,13 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
   bindGear(panel);
   const stages = document.querySelector('.stages')!;
   stages.insertBefore(panel, options.before);
-  const q = <T extends Element>(selector: string): T => panel.querySelector(selector) as T;
+  const rendering = panel.querySelector('#roadRendering')!;
+  const q = <T extends Element>(selector: string): T => (panel.querySelector(selector) ?? document.querySelector(selector)) as T;
   const select = (id: string): HTMLSelectElement => q<HTMLSelectElement>(`#${id}`);
   const input = (id: string): HTMLInputElement => q<HTMLInputElement>(`#${id}`);
+  input('roadShow').dataset.renderDefault = 'true';
+  for (const control of Array.from(rendering.querySelectorAll<HTMLInputElement>('[data-road-style]')))
+    control.dataset.renderDefault = String(defaultRoadStyle()[control.dataset.roadStyle as keyof RoadStyle]);
   function controls(): void {
     input('roadEnabled').checked = enabled; input('roadShow').checked = show;
     select('roadLevel').value = config.level; select('roadSurface').value = config.surface; select('roadCulture').value = config.culture;
@@ -185,7 +190,7 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
     }
     q('#roadDensityValue').textContent = config.density.toFixed(2);
     select('roadPreset').value = style.preset; select('roadBlend').value = getGroundBlend();
-    for (const c of Array.from(panel.querySelectorAll<HTMLInputElement>('[data-road-style]'))) {
+    for (const c of Array.from(rendering.querySelectorAll<HTMLInputElement>('[data-road-style]'))) {
       const value = style[c.dataset.roadStyle as keyof RoadStyle];
       if (c.type === 'checkbox') c.checked = value as boolean; else c.value = String(value);
     }
@@ -196,13 +201,14 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
   function changed(): void { controls(); options.onConfigChange(); }
   q<HTMLButtonElement>('#roadRecalculate').onclick = changed;
   input('roadEnabled').onchange = () => { enabled = input('roadEnabled').checked; changed(); };
+  window.addEventListener('bench-render-colors-change', () => { legend(); draw(); });
   input('roadShow').onchange = () => { show = input('roadShow').checked; draw(); options.onDisplayChange(); };
   /** Rendering settings redraw only; the URL follows on release of a slider. */
   function restyle(commit: boolean): void { controls(); legend(); draw(); if (commit) options.onDisplayChange(); }
   select('roadBlend').onchange = () => setGroundBlend(select('roadBlend').value as GroundBlend);
   onGroundBlend(() => { controls(); draw(); options.onDisplayChange(); });
   select('roadPreset').onchange = () => { style.preset = select('roadPreset').value as RoadPreset; restyle(true); };
-  for (const c of Array.from(panel.querySelectorAll<HTMLInputElement>('[data-road-style]'))) {
+  for (const c of Array.from(rendering.querySelectorAll<HTMLInputElement>('[data-road-style]'))) {
     const key = c.dataset.roadStyle as keyof RoadStyle;
     const apply = (commit: boolean): void => {
       (style as unknown as Record<string, unknown>)[key] = c.type === 'checkbox' ? c.checked : Number(c.value);
@@ -303,7 +309,8 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
       // exact attachment to the native street instead of moving it along a curve.
       const d = outsidePath(s.path, s.width, style.curves);
       const v1 = v1Style ? v1RoadPaint(s.class === 'track' || s.class === 'trail' ? 'track' : s.class === 'highway' || s.class === 'main' ? 'major' : 'minor', s.width, scale, v1Style) : undefined;
-      const { fill, casing, width: w, dash } = v1 ?? paintOf(style, s.class, s.surface);
+      const paint = v1 ?? paintOf(style, s.class, s.surface), colors = getBenchRenderColors();
+      const { width: w, dash } = paint, fill = (['track','trail'].includes(s.class) ? colors.track : colors.road) ?? paint.fill, casing = style.casing ? colors.roadEdge ?? paint.casing : null;
       const extra: Record<string, string> = dash ? { 'stroke-dasharray': dash } : {};
       if (d) {
         if (casing) casings.append(line(d, casing, v1?.casingWidth ?? w + 1.6, extra));
@@ -331,7 +338,7 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
    * fade with the steepest grade so the mountains stay quiet. One opacity group per (class, grade bucket, layer):
    * roads of the same class never darken where they overlap. Crossings keep their structures, without halos. */
   function drawBlended(order: RoadSegment[], outsidePath: (path: Point[], width: number, curves: boolean) => string, painted: SVGGElement, hits: SVGGElement): void {
-    const tone = style.preset === 'ink' ? 'sepia' : 'earth', color = BLEND_ROAD_COLOR[tone], edgeColor = tone === 'earth' ? '#4e3a24' : '#6b4e2e';
+    const tone = style.preset === 'ink' ? 'sepia' : 'earth', color = getBenchRenderColors().road ?? BLEND_ROAD_COLOR[tone], edgeColor = getBenchRenderColors().roadEdge ?? (tone === 'earth' ? '#4e3a24' : '#6b4e2e');
     const groups = new Map<string, SVGGElement>(), crossings = document.createElementNS(ns, 'g'); crossings.style.pointerEvents = 'none';
     const group = (key: string, opacity: number): SVGGElement => {
       let g = groups.get(key);
@@ -351,7 +358,7 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
       if (d) {
         if (s.class === 'highway' || s.class === 'main' || s.class === 'local') group(`edge|${s.class}|${fade}`, alpha * 0.22).append(stroke(d, edgeColor, roadStrokeWidth({ scale: 1, addPx: 1.6, addM: 1.4 }, px, s.width)));
         const g = group(`body|${s.class}|${fade}`, alpha); if (!bodies.includes(g)) bodies.push(g);
-        g.append(stroke(d, color, roadStrokeWidth({ scale: 1, addPx: 0, addM: 0 }, px, s.width)));
+        g.append(stroke(d, (s.class === 'track' || s.class === 'trail' ? getBenchRenderColors().track : undefined) ?? color, roadStrokeWidth({ scale: 1, addPx: 0, addM: 0 }, px, s.width)));
         const hit = stroke(d, 'transparent', String(Math.max(8, px + 6))); hit.style.strokeWidth = ''; hit.setAttribute('stroke-width', String(Math.max(8, px + 6)));
         hit.style.pointerEvents = 'stroke'; hit.dataset.road = '';
         const title = document.createElementNS(ns, 'title'); title.textContent = describe(s); hit.append(title); hits.append(hit);
@@ -400,7 +407,7 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
       for (const k of renderRoadStrokes(s.class, s.surface)) {
         const d = k.layer === 'ditch' || k.layer === 'verge' ? land : road;
         if (!d) continue;
-        group(layers.get(k.layer)!, k).append(stroke(d, k.color, roadStrokeWidth(k, px, metres), k));
+        group(layers.get(k.layer)!, k).append(stroke(d, (k.layer === 'fill' ? (s.class === 'track' || s.class === 'trail' ? getBenchRenderColors().track : getBenchRenderColors().road) : k.layer === 'casing' ? getBenchRenderColors().roadEdge : undefined) ?? k.color, roadStrokeWidth(k, px, metres), k));
         if (k.cut) {
           mask.append(stroke(d, '#fff', roadStrokeWidth(k, px, metres), k), stroke(d, '#000', roadStrokeWidth({ scale: k.scale, ...k.cut }, px, metres), k));
           for (const p of s.path) { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); }

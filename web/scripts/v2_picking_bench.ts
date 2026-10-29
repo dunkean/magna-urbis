@@ -1,0 +1,15 @@
+import {buildingAt} from '../src/v2/edits';
+import {pointInRing} from '../src/gen/geo/poly';
+import type {World,UrbanBuilding} from '../src/gen/types';
+import {writeFile,mkdir} from 'node:fs/promises';
+import assert from 'node:assert/strict';
+const buildings:UrbanBuilding[]=Array.from({length:100000},(_,i)=>{const x=i%400*12,y=Math.floor(i/400)*12;return{kind:'house',poly:[{x,y},{x:x+10,y},{x:x+10,y:y+10},{x,y:y+10}]};});
+const world={urban:{buildings}}as unknown as World;
+const points=Array.from({length:200},(_,i)=>({x:(i*37%400)*12+5,y:(i*73%250)*12+5}));
+const brute=(p:{x:number;y:number})=>{for(let i=buildings.length-1;i>=0;i--)if(pointInRing(buildings[i].poly,p))return i;return-1;};
+const t0=performance.now();buildingAt(world,points[0]);const cold=performance.now()-t0;
+const baseline=points.map(brute);const actual=points.map(p=>buildingAt(world,p)?.index??-1);assert.deepEqual(actual,baseline);
+const median=(fn:(p:{x:number;y:number})=>unknown)=>{const times=[];for(let j=0;j<5;j++){const t=performance.now();for(const point of points)fn(point);times.push(performance.now()-t);}times.sort((a,b)=>a-b);return times[2];};
+const before=median(brute),after=median(p=>buildingAt(world,p));
+const report={time:new Date().toISOString(),kind:'synthetic dense-city picking microbenchmark',buildings:buildings.length,queries:points.length,checks:{allHitsIdentical:true},coldIndexMs:Number(cold.toFixed(3)),beforeMedianMs:Number(before.toFixed(3)),afterMedianMs:Number(after.toFixed(3)),speedup:Number((before/after).toFixed(1)),limitations:['Warm queries exclude the one-time index construction shown separately.','Real scenes vary in density, overlap and vertex count. Indexing preserves reverse draw order and final exact polygon/hole tests.']};
+await mkdir('out/v2-optimization',{recursive:true});await writeFile('out/v2-optimization/picking.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));

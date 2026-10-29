@@ -72,6 +72,24 @@ class RecordingCanvas {
 }
 
 describe('scalable native building projection', () => {
+  it('recolours native roofs at close and overview scales without changing meshes or reusing stale tiles', () => {
+    const house = nativeHouse(), original = JSON.stringify(house), contexts: RecordingCanvas[] = [];
+    const renderer = new UrbanBuildingLodRenderer(batch([house]), { maxRasterBuildMs: 1000, rasterCanvasFactory: size => {
+      const context = new RecordingCanvas(); contexts.push(context);
+      return { width: size, height: size, getContext: () => context.asContext() } as unknown as HTMLCanvasElement;
+    } });
+    const camera = { minX: 0, minY: 0, maxX: 50, maxY: 50 };
+    const draw = (colors?: { building: string }) => renderer.draw(new RecordingCanvas().asContext(), { viewport: camera, metresPerPixel: 2, appearance: { ...appearance, colors } });
+    expect(draw().rasterTilesBuilt).toBe(1); expect(draw().rasterTilesBuilt).toBe(0);
+    expect(draw({ building: '#d02080' }).rasterTilesBuilt).toBe(1);
+    expect(contexts.at(-1)?.fills.some(fill => fill.color === '#d02080')).toBe(true);
+    expect(draw({ building: '#d02080' }).rasterTilesBuilt).toBe(0);
+    const close = new RecordingCanvas();
+    const metrics = renderer.draw(close.asContext(), { viewport: camera, metresPerPixel: .05, appearance: { ...appearance, colors: { building: '#d02080' } } });
+    expect(metrics.roofMeshesRead).toBeGreaterThan(0);
+    expect(close.fills.some(fill => fill.color.startsWith('rgb('))).toBe(true);
+    expect(JSON.stringify(house)).toBe(original);
+  });
   it('appends progressive chunks without reindexing old geometry or rebuilding unrelated overview tiles', () => {
     const source = batch([nativeHouse(0, 10, 10), nativeHouse(1, 700, 10)]);
     const renderer = new UrbanBuildingLodRenderer(source, {maxRasterBuildMs: 1000, rasterCanvasFactory: size => {

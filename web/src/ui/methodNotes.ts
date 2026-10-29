@@ -1,4 +1,7 @@
+import proceduralStagesNote from '../../../docs/methods/procedural-generation-stages.md?raw';
+import compactTerrainNote from '../../../docs/methods/compact-terrain-phasor.md?raw';
 import renderV2Note from '../../../docs/methods/render-v2.md?raw';
+import amplificationNote from '../../../docs/methods/neural-earth-amplification.md?raw';
 import groundNote from '../../../docs/methods/render3d-ground.md?raw';
 import fantasyNote from '../../../docs/methods/fantasy-landuse.md?raw';
 import vegetationNote from '../../../docs/methods/render3d-vegetation.md?raw';
@@ -16,8 +19,11 @@ const bundledFigures = import.meta.glob<string>('../../../docs/methods/images/*.
 });
 const figures = Object.fromEntries(Object.entries(bundledFigures).map(([path, image]) => [path.slice(path.indexOf('images/')), image]));
 
-export type MethodNoteId = 'render-v2' | 'render3d-ground' | 'fantasy-landuse' | 'render3d-vegetation' | 'render3d-brush' | 'urban-parcels' | 'urban-programme-allocation' | 'urban-architecture-placement' | 'urban-buildings-rendering' | 'urban-settlement-styles';
+export type MethodNoteId = 'procedural-generation-stages' | 'compact-terrain-phasor' | 'neural-earth-amplification' | 'render-v2' | 'render3d-ground' | 'fantasy-landuse' | 'render3d-vegetation' | 'render3d-brush' | 'urban-parcels' | 'urban-programme-allocation' | 'urban-architecture-placement' | 'urban-buildings-rendering' | 'urban-settlement-styles';
 const notes: Record<MethodNoteId, { title: string; markdown: string; images: Record<string, string> }> = {
+  'procedural-generation-stages': { title: 'Inspectable procedural terrain generation', markdown: proceduralStagesNote, images: figures },
+  'compact-terrain-phasor': { title: 'Compact regional erosion and Phasor terrain', markdown: compactTerrainNote, images: figures },
+  'neural-earth-amplification': { title: 'Neural Earth amplification on retained terrain', markdown: amplificationNote, images: {} },
   'render-v2': { title:'Render v2: procedural satellite environment',markdown:renderV2Note,images:{} },
   'urban-settlement-styles': { title: 'Settlement styles and independent stages', markdown: settlementStylesNote, images: {} },
   'urban-buildings-rendering': { title: 'Applied urban buildings in 2D and perspective', markdown: urbanRenderingNote, images: {} },
@@ -81,6 +87,9 @@ function renderMarkdown(markdown: string, images: Record<string, string>): strin
 let dialog: HTMLDialogElement | undefined;
 let currentNote: MethodNoteId | undefined;
 const noteTitles: Record<MethodNoteId, readonly [string,string,string,string,string]> = {
+  'procedural-generation-stages':['Étapes procédurales et érosion par biome','Procedural stages and biome erosion','程序步骤与生物群落侵蚀','Etapas procedurales y erosión por bioma','Etapas procedurais e erosão por bioma'],
+  'compact-terrain-phasor':['Relief compact : érosion et Phasor','Compact terrain: erosion and Phasor','紧凑地形：侵蚀与 Phasor','Relieve compacto: erosión y Phasor','Relevo compacto: erosão e Phasor'],
+  'neural-earth-amplification':['Amplification Neural Earth du relief conservé','Neural Earth amplification on retained terrain','Neural Earth 保留地形细化','Amplificación Neural Earth del relieve conservado','Amplificação Neural Earth do relevo mantido'],
   'render-v2':['Render v2 : paysage satellite procédural','Render v2: procedural satellite environment','Render v2：程序化卫星景观','Render v2: paisaje satelital procedural','Render v2: paisagem de satélite procedural'],
   'urban-settlement-styles':['Styles d’implantation et étapes indépendantes','Settlement styles and independent stages','聚落风格与独立阶段','Estilos de asentamiento y etapas independientes','Estilos de assentamento e etapas independentes'],
   'urban-buildings-rendering':['Bâtiments urbains appliqués en 2D et perspective','Applied urban buildings in 2D and perspective','二维及透视视图中的已应用城市建筑','Edificios urbanos aplicados en 2D y perspectiva','Edifícios urbanos aplicados em 2D e perspectiva'],

@@ -13,6 +13,8 @@ import { worldForestClearings } from './forestClearings';
 import { orientPos } from '../gen/geo/poly';
 import { Palette, MapStyle } from './styles';
 import { biomePalette } from './biomes';
+import { applyRenderColors, type RenderColors } from './customColors';
+import { displayWorld } from './displayWorld';
 import { worldWaterPixels } from './terrainWater';
 import { renderTerrainRaster, pngDataUrl, encodePng } from './raster';
 import { f1, pathD, seaWithIslands } from './util';
@@ -31,6 +33,8 @@ import type { ExportLayers } from './exportLayers';
 import type { VegetationStyle } from './canopy';
 
 export interface RenderOptions {
+  colors?: RenderColors;
+  buildings?: boolean;
   /** Independent export layers; omitted flags stay visible. */
   layers?: Partial<ExportLayers>;
   /** Actual export width in pixels; sets decorative hairline weight. Defaults to the 1600 px design size, matching the default bounded hairline scale. */
@@ -61,10 +65,10 @@ function decor(world: World, pal: Palette, u: number): string {
 }
 
 export function renderSvg(world0: World, opts: RenderOptions = {}): string {
-  world0 = cavernDisplayWorld(world0);
+  world0 = cavernDisplayWorld(displayWorld(world0, undefined, opts.buildings));
   const world = renderView(world0);
   const style = opts.style ?? world.options.style;
-  const pal = biomePalette(style, world.options.biome);
+  const pal = applyRenderColors(biomePalette(style, world.options.biome), opts.colors);
   const S = world.mapSize;
   const u = S / 1600;
   const width = opts.width !== undefined && Number.isFinite(opts.width) ? Math.max(1, opts.width) : 1600;

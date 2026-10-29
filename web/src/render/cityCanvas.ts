@@ -298,6 +298,7 @@ export function pickCity(scene: CityScene, buildings: CityBuildings | undefined,
 // ---------------------------------------------------------------- drawing
 export interface CityBuildingRenderer { draw(ctx: CanvasRenderingContext2D, options: { viewport: Box; metresPerPixel: number; appearance: UrbanBuildingAppearance; selectedId?: string }): { rasterTilesPending: number } }
 export interface CityDrawOptions {
+  colors?: import('./customColors').RenderColors;
   readableGardens?: boolean;
   /** Names, landmark glyphs and centre pins; omitted keeps the normal map. */
   labels?: boolean;
@@ -435,7 +436,7 @@ function drawPlanRoofs(ctx: CanvasRenderingContext2D, b: CityBuildings, o: CityD
   if (!index) { const byOwner: number[][] = b.items.map(() => []); roofs.owner.forEach((ow, k) => byOwner[ow]?.push(k)); roofIndex.set(roofs, index = { byOwner, paths: [] }); }
   for (const i of b.bins.query(o.viewport)) for (const k of index.byOwner[i] ?? []) {
     const path = index.paths[k] ??= shapePath(roofs.shapes[k]);
-    ctx.fillStyle = planRoofColor(b.items[i], roofs, k, o.palette); ctx.fill(path);
+    ctx.fillStyle = o.appearance.diagnostic === 'none' && o.colors?.building || planRoofColor(b.items[i], roofs, k, o.palette); ctx.fill(path);
     const layer = coverLayer(roofs.cover[k]), grain = images && layer >= 0 ? roofGrainPattern(ctx, images, layer, (roofs.dir[k] ?? 0) - Math.PI / 2) : undefined;
     if (grain) { ctx.save(); ctx.globalCompositeOperation = 'soft-light'; ctx.fillStyle = grain; ctx.fill(path); ctx.restore(); }
     if (o.lod === 'close') { ctx.strokeStyle = o.palette === 'parchment' ? 'rgba(63,47,31,0.35)' : 'rgba(31,24,17,0.5)'; ctx.lineWidth = (o.palette === 'parchment' ? 0.3 : 0.5) * o.mpp; ctx.stroke(path); }
@@ -561,11 +562,13 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
     const casing = new Batches(), fill = new Batches(), marks = new Batches(), softStreets = (o.groundBlend ?? isBlended()) && !tex;
     for (const s of visible) {
       stats.streets++;
-      const paint = streetPaint(s.role, s.rank, palette), path = s.path ??= linePath(s.street.path);
+      const paint = streetPaint(s.role, s.rank, palette);
+      paint.fill = (s.role === 'track' ? o.colors?.track : o.colors?.road) ?? paint.fill; paint.casing = o.colors?.roadEdge ?? paint.casing;
+      const path = s.path ??= linePath(s.street.path);
       const w = Math.max(s.width, px(isBoardwalk(s.role) ? 0.8 : s.role === 'mole' ? 3.4 : STREET_MIN_PX[Math.min(4, Math.max(0, s.rank))])), w2 = Math.round(w * 4) / 4;
       if (softStreets && !STRUCTURE_ROLES.has(s.role)) {
         // Blended: earth wash at rank-decaying opacity and a faint soft edge instead of the dark casing.
-        const soft = softStreet(s.role, s.rank, tone);
+        const soft = softStreet(s.role, s.rank, tone); soft.fill = (s.role === 'track' ? o.colors?.track : o.colors?.road) ?? soft.fill; soft.edge = o.colors?.roadEdge ?? soft.edge;
         if (lod !== 'far') casing.add({ stroke: soft.edge, width: w2 + 2 * px(lod === 'mid' ? 0.8 : 1.1), alpha: soft.edgeAlpha, cap: 'round' }, path);
         fill.add({ stroke: soft.fill, width: w2, alpha: soft.alpha, cap: 'round' }, path);
         continue;
@@ -573,7 +576,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
       const edge = s.role === 'bridge' || s.role === 'quay' || s.role === 'mole' ? Math.max(1.2, px(1.4)) : lod === 'far' ? 0 : px(lod === 'mid' ? 0.7 : 0.9);
       const cap = s.role === 'bridge' || s.role === 'quay' || s.role === 'mole' ? 'butt' : 'round';
       if (edge > 0) casing.add({ stroke: paint.casing, width: w2 + 2 * edge, dash: paint.dash ? [px(4), px(2)] : undefined, cap }, path);
-      fill.add({ stroke: (tex && pat(streetLayer(s.role, s.rank))) || paint.fill, width: w2, cap }, path);
+      fill.add({ stroke: (!(s.role === 'track' ? o.colors?.track : o.colors?.road) && tex && pat(streetLayer(s.role, s.rank))) || paint.fill, width: w2, cap }, path);
       if (s.role === 'bridge' && w2 > px(3.5)) {
         const rails = new Path2D(), offset = w2 / 2 - Math.max(0.4, px(0.8));
         for (let i = 1; i < s.street.path.length; i++) {
@@ -612,11 +615,11 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
     if (o.renderer && view === 'buildings') {
       stats.pending = o.renderer.draw(ctx, { viewport, metresPerPixel: mpp, appearance: o.appearance, selectedId: o.selectedBuilding }).rasterTilesPending > 0;
     } else {
-      const edge = lod === 'close' ? { stroke: parchment ? '#f1e5c6' : '#2e261d', width: px(parchment ? 0.3 : 0.5) } : {};
+      const edge = lod === 'close' ? { stroke: o.colors?.buildingEdge ?? (parchment ? '#f1e5c6' : '#2e261d'), width: px(parchment ? 0.3 : 0.5) } : {};
       for (const i of o.buildings.bins.query(viewport)) {
         const b = o.buildings.items[i]; stats.buildings++;
         const tint = planBuildingColors(b, palette);
-        const color = view === 'roles' ? BUILDING_FAMILIES[b.family]?.color ?? '#5a4b3c' : o.appearance.diagnostic === 'uses' ? urbanFunctionColor(b.fn) : o.buildings.roofs ? tint.wall : tint.roof;
+        const color = view === 'roles' ? BUILDING_FAMILIES[b.family]?.color ?? '#5a4b3c' : o.appearance.diagnostic === 'uses' ? urbanFunctionColor(b.fn) : o.colors?.building ?? (o.buildings.roofs ? tint.wall : tint.roof);
         if (!b.path) { b.path = new Path2D(); for (const s of b.surface) b.path.addPath(shapePath(s)); }
         batch.add({ fill: color, ...edge, ...(b.stilts ? { stroke: '#514431', width: px(0.6) } : {}) }, b.path);
       }

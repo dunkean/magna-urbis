@@ -1,0 +1,17 @@
+import { cp, mkdir, copyFile } from 'node:fs/promises';
+import { resolve, dirname, relative, isAbsolute } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { check } from './check.mjs';
+const dir = dirname(fileURLToPath(import.meta.url));
+const root = resolve(dir, '../..');
+const args = process.argv.slice(2);
+if (args.length && (args[0] !== '--out' || args.length !== 2)) throw new Error('Usage: node docs/scientific/build.mjs [--out destination]');
+const target = resolve(root, args[1] ?? 'web/out/scientific-site');
+const delta = relative(dir, target);
+if (!delta || (!delta.startsWith('..') && !isAbsolute(delta))) throw new Error('Destination must be outside the documentation source folder.');
+await check();
+await mkdir(target, { recursive: true });
+for (const file of ['index.html', 'fr.html', 'styles.css', 'reader.js', 'evidence.json', 'v2-browser-evidence.json']) await copyFile(resolve(dir, file), resolve(target, file));
+await cp(resolve(dir, 'assets'), resolve(target, 'assets'), { recursive: true });
+await cp(resolve(dir, 'evidence'), resolve(target, 'evidence'), { recursive: true });
+console.log(`Static documentation exported to ${target}. Open index.html directly, or serve the folder. No network required for reading.`);

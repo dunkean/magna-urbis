@@ -22,6 +22,7 @@ import { lakeDistances, seaDistanceSurface, type WaterSurface } from '../render/
  */
 import { RENDER_V2_GLSL, renderV2Number, renderV2GlacierSources } from '../../../rust/bridge/terrainRenderV2';
 import { isRender3dStyle, terrainStyle, type TerrainStyle } from '../render/terrainStyle';
+import type { RenderColors } from '../render/customColors';
 import { WATER_STYLE_GLSL, waterUniforms } from '../render/waterStyle';
 import { paintRetainedWater, retainedWaterPaths, type RetainedWaterPath } from '../render/retainedWaterGeometry';
 import { RENDER_WATER_FS, renderWaterRings } from '../render/renderWaterShader';
@@ -44,6 +45,7 @@ export interface HeightLayer {
 }
 
 export interface TerrainLook {
+  colors?: RenderColors;
   /** Explicit opt-in for perspective captures; ordinary 2D styles retain their surface. */
   mesh3d?: boolean;
   v2Season?: number;
@@ -781,7 +783,7 @@ export class TerrainGl {
     gl.viewport(0, 0, width, height);
     const { view } = state, px = 1 / (view.scale * dpr);
     const origin: [number, number] = [view.cx - state.width / (2 * view.scale), view.cy - state.height / (2 * view.scale)];
-    const definition = terrainStyle(look.style), pal = definition.palette, water = terrainStyle(look.waterStyle ?? look.style).water;
+    const definition = terrainStyle(look.style, look.colors), pal = definition.palette, water = terrainStyle(look.waterStyle ?? look.style, look.colors).water;
     const u = (name: string): WebGLUniformLocation | null => this.uniform(name);
     gl.useProgram(this.terrain);
     gl.uniform2f(u('uCanvas'), width, height);
@@ -968,7 +970,7 @@ export class TerrainGl {
     if (!this.renderWater) this.renderWater = { program: compile(gl, COMPOSITE_VS, RENDER_WATER_FS), u: new Map() };
     const { program, u: cache } = this.renderWater;
     const u = (name: string): WebGLUniformLocation | null => { if (!cache.has(name)) cache.set(name, gl.getUniformLocation(program, name)); return cache.get(name)!; };
-    const water = terrainStyle('render').water, palette = waterUniforms(water), rings = renderWaterRings(px, band);
+    const water = terrainStyle(this.look?.waterStyle ?? this.look?.style ?? 'render', this.look?.colors).water, palette = waterUniforms(water), rings = renderWaterRings(px, band);
     // Bilinear taps (the bound layer is only ever read with texelFetch elsewhere).
     gl.activeTexture(gl.TEXTURE0 + unit);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);

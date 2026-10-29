@@ -1,0 +1,10 @@
+# V2 iconography
+
+`icons-v2.png` was generated with the built-in ImageGen tool on 2026-10-28.
+The original transparent 1254 × 1254 atlas is preserved without pixel edits.
+CSS selects its four equal cells. The existing V1 atlas and logo are reused
+from `../ui/assets/`; see their `PROVENANCE.md`.
+
+Prompt:
+
+> Use case: stylized-concept. Production UI asset for Magna Urbis, medieval fantasy cartography desktop application. Create one square sprite atlas exactly TWO columns and TWO rows, four isolated icons, each centered in its own equal cell with generous transparent gutters. TOP LEFT: folded parchment topographic map with a pair of green mountain peaks and a small blue river. TOP RIGHT: small walled medieval town with terracotta roof houses and a tiny road leading out. BOTTOM LEFT: antique brass compass resting over a rolled map, for exploration. BOTTOM RIGHT: open illuminated scientific atlas book with a tiny map diagram, for documentation. Hand-painted premium strategy-game inventory icons, bold simple readable silhouettes at 44 pixels, restrained antique gold trim, warm ivory parchment, moss green and terracotta accents, soft natural shading. Match high quality painted fantasy iconography, no cartoons faces, no lettering, no text or numerals, no background plates or border, no elements touching the edges or crossing cells. Genuine transparent alpha background.

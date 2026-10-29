@@ -1,0 +1,22 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Magna Urbis V2",
+  "version": "0.2.2",
+  "identifier": "community.magna-urbis.v2.desktop",
+  "build": {
+    "devUrl": "http://127.0.0.1:5174",
+    "frontendDist": "../../web/dist-v2"
+  },
+  "app": {
+    "windows": [],
+    "security": { "csp": null }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "resources": ["resources/*", "resources/illustration/**/*", "resources/web/scripts/*.py"],
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
+    "category": "GraphicsAndDesign",
+    "shortDescription": "Cartographie et génération procédurale de villes"
+  }
+}

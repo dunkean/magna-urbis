@@ -1,0 +1,51 @@
+{
+  "collectedAt": "2026-10-28T14:31:24.674Z",
+  "caveat": "Reports are bounded functional integration cases produced on a shared development machine. Collection time and source file modification time are not necessarily execution time. Source files may continue to evolve; these copies retain the exact report bytes collected.",
+  "reports": [
+    {
+      "file": "v2-rust-urban.json",
+      "source": "web/out/v2-rust-urban/results.json",
+      "bytes": 2330,
+      "sha256": "5a46f7ff245cb451952b0d18a5c6106538d994b63d8f0a27ab2d081870cca391",
+      "sourceFileModifiedAt": "2026-10-28T14:21:14.256Z",
+      "scope": "Four urban stages through Rust/WASM; local house invalidation, bounded to the recorded case.",
+      "transformation": "none; byte-for-byte copy"
+    },
+    {
+      "file": "v2-native-urban.json",
+      "source": "web/out/v2-native-urban/results.json",
+      "bytes": 2339,
+      "sha256": "5ce6554cfd935ed1b94f2a116c672e9b73a6d0fb630a58f9918e276f39c6e1ac",
+      "sourceFileModifiedAt": "2026-10-28T14:21:15.155Z",
+      "scope": "Four urban stages through the local Rust service; not a WASM/native numerical equivalence proof.",
+      "transformation": "none; byte-for-byte copy"
+    },
+    {
+      "file": "v2-compose-browser.json",
+      "source": "web/out/v2-compose-browser/results.json",
+      "bytes": 5002,
+      "sha256": "a3acb6a6a7f2eb6becc645ea18d7ace527ae216a911e9f7205ebecc5ccd9cc47",
+      "sourceFileModifiedAt": "2026-10-28T14:09:01.027Z",
+      "scope": "Browser replay of territory/urban-recipe composition, exact retained physical hash, cache and reconstruction.",
+      "transformation": "none; byte-for-byte copy"
+    },
+    {
+      "file": "v2-platform.json",
+      "source": "web/out/v2-platform-check.json",
+      "bytes": 4331,
+      "sha256": "4641e5c25b17f0a78fc4ec669881e0a5de02bb2fa11f8e53da4d616ad8224f39",
+      "sourceFileModifiedAt": "2026-10-28T13:52:20.053Z",
+      "scope": "Procedural CPU/GPU/native and neural WebGPU/Python-CUDA execution, with model identities.",
+      "transformation": "none; byte-for-byte copy"
+    },
+    {
+      "file": "v2-desktop-startup.json",
+      "source": "web/out/v2-desktop-startup.json",
+      "bytes": 205,
+      "sha256": "359862e3123d7d9ae656df55df10f2b0bb561bc873f03b593fee9aa7f4558d8f",
+      "sourceFileModifiedAt": "2026-10-28T13:54:30.706Z",
+      "scope": "Observed Windows app startup and its child Rust service on loopback, not cross-platform installation validation.",
+      "transformation": "none; byte-for-byte copy"
+    }
+  ]
+}

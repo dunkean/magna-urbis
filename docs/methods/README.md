@@ -23,3 +23,8 @@ service.
 - [Fantasy brushes guided by territory occupation](fantasy-landuse.md)
 - [Render3D: forest field, crowns and applied occupation](render3d-vegetation.md)
 - [Render3DBrush: biome brushes in the forest material](render3d-brush.md)
+- [Neural Earth amplification on retained terrain](neural-earth-amplification.md)
+
+- [Compact regional erosion and Phasor terrain](compact-terrain-phasor.md)
+
+- [Inspectable procedural generation and biome erosion](procedural-generation-stages.md)
