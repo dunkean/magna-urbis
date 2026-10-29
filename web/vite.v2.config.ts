@@ -21,7 +21,7 @@ function externalAssets(): Plugin {
 
 /** Inline WASM outside Vite's root otherwise remains cached after prepare:v2. */
 function wasmReload(): Plugin {
-  const directories = ['wasm', 'houses'].map(name => normalizePath(resolve(root, `rust/pkg/${name}`)) + '/');
+  const directories = ['wasm', 'wasm-threads', 'houses'].map(name => normalizePath(resolve(root, `rust/pkg/${name}`)) + '/');
   let timer: ReturnType<typeof setTimeout> | undefined;
   return { name: 'v2-wasm-reload', apply: 'serve',
     configureServer(server) {

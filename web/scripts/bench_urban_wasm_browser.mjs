@@ -1,7 +1,7 @@
 // Browser WASM benchmark of the urban pipeline (same steps as bench_urban_wasm.mjs) in headless
 // Chromium: cross-origin-isolated page, module worker, wasm-bindgen-rayon pool for pkg/wasm-threads.
 // Compares the outputs byte-for-byte with a run saved by `bench_urban_wasm.mjs --save <dir>`.
-// Usage: node web/scripts/bench_urban_wasm_browser.mjs [--pkg rust/pkg/wasm-threads] [--threads 8 (0: none)]
+// Usage: node web/scripts/bench_urban_wasm_browser.mjs [--pkg rust/pkg/wasm-threads] [--threads 8 (0: none)] [--browser chromium|firefox]
 //        [--case web/out/perf-baseline/hanseatic-case.json] [--baseline <saved dir>] [--chrome <executable>]
 //        [--resident  products stay in WASM, stages pass ids (rust/crates/wasm/src/resident.rs)]
 //        [--pool N    building sites over N single-thread instances of --pkg (use rust/pkg/wasm), like ?threads=pool:
@@ -12,7 +12,7 @@ import { existsSync, readFileSync, statSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, extname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium } from 'playwright';
+import { chromium, firefox } from 'playwright';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const arg = (name, fallback) => { const i = process.argv.indexOf('--' + name); return i >= 0 ? process.argv[i + 1] : fallback; };
@@ -152,14 +152,16 @@ const server = createServer((req, res) => {
   res.writeHead(404); res.end();
 });
 await new Promise(ok => server.listen(0, '127.0.0.1', ok));
-const browser = await chromium.launch({ headless: true, ...(executablePath ? { executablePath } : {}) });
+const browserName = arg('browser', 'chromium');
+const browser = browserName === 'firefox' ? await firefox.launch({ headless: true })
+  : await chromium.launch({ headless: true, ...(executablePath ? { executablePath } : {}) });
 try {
   const tab = await browser.newPage();
   tab.on('pageerror', e => console.log('[pageerror]', e.message));
   await tab.goto(`http://127.0.0.1:${server.address().port}/`);
   const result = await tab.waitForFunction(() => window.benchResult, null, { timeout: 900000, polling: 250 }).then(h => h.jsonValue());
   if (result.error) throw new Error(result.error);
-  console.log(`${relative(root, pkg)}: crossOriginIsolated=${result.isolated}, rayon pool ${result.rayon || 'none'}, worker pool ${result.pool || 'none'}, mode ${resident ? 'resident' : 'json'}`);
+  console.log(`${browserName} ${relative(root, pkg)}: crossOriginIsolated=${result.isolated}, rayon pool ${result.rayon || 'none'}, worker pool ${result.pool || 'none'}, mode ${resident ? 'resident' : 'json'}`);
   const t = result.timings;
   for (const [k, v] of Object.entries(t)) console.log(`${k.padEnd(16)}${v.toFixed(1).padStart(9)} ms`);
   console.log(`total wasm calls ${(t['wasm.quarters'] + t['wasm.parcels'] + t['wasm.sites']).toFixed(1).padStart(9)} ms`);

@@ -7,18 +7,19 @@ import { surfaceLivePlugin } from './scripts/surface_live_plugin';
 const vendorNotice = '/*! polygon-clipping 0.15.7\n' + readFileSync(new URL('./src/vendor/polygonClipping.LICENSE.md', import.meta.url), 'utf8') + '\n*/';
 
 function terrainWasmReload(): Plugin {
-  const packageDir = normalizePath(fileURLToPath(new URL('../rust/pkg/wasm/', import.meta.url)));
+  // Both browser packages (rust/scripts/wasmVariants.mjs): single thread and shared memory.
+  const packageDirs = ['../rust/pkg/wasm/', '../rust/pkg/wasm-threads/'].map(path => normalizePath(fileURLToPath(new URL(path, import.meta.url))));
   let timer: ReturnType<typeof setTimeout> | undefined;
   return {
     name: 'terrain-wasm-reload',
     apply: 'serve',
     configureServer(server) {
       // Inline URL assets outside Vite's root are not automatically watched.
-      server.watcher.add(packageDir);
+      server.watcher.add(packageDirs);
       server.httpServer?.once('close', () => clearTimeout(timer));
     },
     handleHotUpdate({ file, server }) {
-      if (!normalizePath(file).startsWith(packageDir) || !/\.(js|wasm)$/.test(file)) return;
+      if (!packageDirs.some(dir => normalizePath(file).startsWith(dir)) || !/\.(js|wasm)$/.test(file)) return;
       // wasm-pack writes the binary and bindings separately. Reload the pair
       // together, including cached inline assets and the worker's imports.
       clearTimeout(timer);

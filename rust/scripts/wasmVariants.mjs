@@ -46,11 +46,13 @@ export const VARIANTS = {
     outDir: 'pkg/wasm-threads', targetDir: 'target/wasm-threads',
     // Atomics need std rebuilt with them. The target default is panic=abort:
     // unwind (catch_unwind in the urban kernels) needs wasm exception handling,
-    // emitted in the legacy encoding, which every threads-capable browser runs.
+    // in the standard exnref encoding (try_table: Chrome 137+, Firefox 131+,
+    // Safari 18.4+; Firefox warns the legacy try/catch is deprecated).
+    // MAGNA_WASM_LEGACY_EH=1 emits the legacy encoding for older browsers.
     // rustc does not link wasm32-unknown-unknown with shared memory by itself:
     // imported shared memory (max 4 GiB, the wasm32 limit) and the TLS exports
     // wasm-bindgen's thread start needs.
-    rustflags: ['-C panic=unwind -C llvm-args=-wasm-use-legacy-eh',
+    rustflags: [`-C panic=unwind -C llvm-args=-wasm-use-legacy-eh=${process.env.MAGNA_WASM_LEGACY_EH === '1'}`,
       '-C target-feature=+atomics,+bulk-memory,+mutable-globals,+exception-handling',
       ...['--shared-memory', '--import-memory', '--max-memory=4294967296',
         '--export=__wasm_init_tls', '--export=__tls_size', '--export=__tls_align', '--export=__tls_base'].map(a => `-C link-arg=${a}`)].join(' '),
@@ -75,6 +77,7 @@ export async function buildWasmVariant(name) {
   const started = performance.now();
   await run(executable('wasm-pack'), ['build', 'crates/wasm', '--target', 'web', '--out-dir', join('../..', variant.outDir),
     '--profile', 'wasm-release', '--no-opt', ...variant.cargo], {
+    CARGO_BUILD_JOBS: process.env.CARGO_BUILD_JOBS ?? '-2',
     ...variant.env,
     CARGO_TARGET_DIR: join(rustDir, variant.targetDir),
     CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS: variant.rustflags,

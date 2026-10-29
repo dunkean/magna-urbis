@@ -11,6 +11,7 @@ const entries: readonly (readonly [string, string])[] = [
   ['Chargement du module de génération du terrain…','Loading the terrain generation module…'],
   ['Compilation du moteur Rust/WASM…','Compiling the Rust/WASM engine…'],
   ['Moteur Rust/WASM prêt','Rust/WASM engine ready'],
+  ['Rust/WASM threads interrompu : reprise sur le moteur mono-thread…','Rust/WASM threads stopped: continuing on the single-thread engine…'],
   ['Réutilisation du moteur Rust/WASM chargé','Reusing the loaded Rust/WASM engine'],
   ['Connexion au périphérique WebGPU…','Connecting to the WebGPU device…'],
   ['La préparation WebGPU ne répond pas. Réessayez sur CPU ou en mode Automatique.','WebGPU preparation is not responding. Retry on CPU or in Automatic mode.'],

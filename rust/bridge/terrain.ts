@@ -5,7 +5,7 @@ import { CLIMATE_VALUES, type ClimateValues } from './terrainClimate';
 export { CLIMATE_VALUES, type ClimateValues } from './terrainClimate';
 import type { TerrainLayers, TerrainLighting } from '../../web/src/render/terrainLighting';
 import init from '../pkg/wasm/magna_urbis_wasm.js';
-import { TerrainEngine, erosion_defaults, flood_hydrology, erode_relief, set_erosion_tuning, adoptSingleWasm, loadCoreWasm, wantsWasmThreads } from './wasmRuntime';
+import { TerrainEngine, erosion_defaults, flood_hydrology, erode_relief, set_erosion_tuning, adoptSingleWasm, loadCoreWasm, onCoreWasmReset, recoverCoreWasm, wantsWasmThreads } from './wasmRuntime';
 import wasmUrl from '../pkg/wasm/magna_urbis_wasm_bg.wasm?url&inline';
 import { GpuTerrainSampler, prepareGpu, generateGpuNoise, gpuContext, GPU_RELIEFS, GPU_GENERATION_RELIEFS } from './terrainGpu';
 import { generateGpuTerrain, erodeGpuCoast, type ErosionProfile } from './terrainErosion';
@@ -258,8 +258,20 @@ export function prewarmTerrainRuntime(): void {
  * `onRelief`: GPU overviews whose waters must be computed first receive the
  * sampled relief at once (no water, no conditioning), then the full reply.
  */
+// A terminated threads instance (wasmRuntime.recoverCoreWasm): its objects can
+// neither be used nor freed; the next request rebuilds them on the single package.
+onCoreWasmReset(() => {
+  ready = undefined; engine = undefined; engineKey = ''; engineCoastKey = ''; engineRetainedCoasts = false;
+  preparedHydrology = undefined; hydrology = undefined; hydrologyKey = ''; hydrologyVectorKey = ''; hydrologyFailure = undefined;
+  conditioned = undefined; vectorWater = undefined;
+});
 export function sampleRustTerrain(request: TerrainRequest, onRelief?: (relief: TerrainData) => void, progress?: TerrainProgressCallback, lab?: GenerationControl): Promise<TerrainData> {
-  const result = queue.then(() => sampleTerrain(request, onRelief, progress, lab));
+  // Retried once when the failure terminated the threads instance.
+  const result = queue.then(() => sampleTerrain(request, onRelief, progress, lab).catch(async error => {
+    if (!await recoverCoreWasm(error)) throw error;
+    progress?.('Rust/WASM threads interrompu : reprise sur le moteur mono-thread…', { stage: 'runtime-download' });
+    return sampleTerrain(request, onRelief, progress, lab);
+  }));
   queue = result.catch(() => undefined);
   return result;
 }

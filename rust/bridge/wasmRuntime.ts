@@ -56,23 +56,68 @@ const singleInfo = () => {
  */
 export function loadCoreWasm(): Promise<CoreWasm> {
   return loading ??= (async () => {
-    if (wantsWasmThreads() && threadsJsLoad && threadsWasmLoad) {
+    if (!threadsFailure && wantsWasmThreads() && threadsJsLoad && threadsWasmLoad) {
       const expected = expectedWasmThreads();
       try {
         const [mod, url] = await Promise.all([threadsJsLoad() as Promise<ThreadsWasm>, threadsWasmLoad()]);
         await initWith(mod.default, await (await fetch(url)).arrayBuffer());
         await mod.initThreadPool!(expected.threads);
         setWasmThreadsInfo(expected);
+        threadsModule = mod;
         return select(mod);
       } catch (error) {
         console.warn('WASM threads unavailable, using the single-thread package:', error);
-        setWasmThreadsInfo({ ...expected, mode: 'single', threads: 1, reason: String(error) });
-        return loadSingleWasm();
+        threadsFailure = `threads package failed to start: ${errorText(error)}`;
+        setWasmThreadsInfo({ ...expected, mode: 'single', threads: 1, reason: threadsFailure });
+        return select(await loadSingleWasm());
       }
     }
-    setWasmThreadsInfo(singleInfo());
-    return loadSingleWasm();
+    if (threadsFailure) setWasmThreadsInfo({ ...expectedWasmThreads(), mode: 'single', threads: 1, reason: threadsFailure });
+    else setWasmThreadsInfo(singleInfo());
+    return select(await loadSingleWasm());
   })();
+}
+
+// The threads package unwinds (panic=unwind): a Rust panic reaches JS as a
+// PanicError and the instance stays usable, but any other exception escaping a
+// call (a trap: out of memory, `unreachable`, abort) marks the instance
+// terminated and every later call throws "Module terminated". A worker cannot
+// instantiate the same glue twice, so the realm moves to the single-thread package.
+let threadsModule: ThreadsWasm | undefined;
+let threadsFailure: string | undefined;
+const terminatedModules = new WeakSet<object>();
+const errorText = (error: unknown): string => error instanceof Error ? `${error.name === 'Error' ? '' : error.name + ': '}${error.message}` : String(error);
+/** Whether the threads instance of this realm is terminated (its guard refuses calls). */
+export function coreWasmTerminated(): boolean {
+  if (!threadsModule) return false;
+  try { threadsModule.wasm_threads(); return false; } catch (error) { return /Module terminated/.test(String(error)); }
+}
+const resetListeners = new Set<() => void>();
+/** Bridges drop their cached instances of the dead package (they cannot be freed). */
+export function onCoreWasmReset(listener: () => void): () => void {
+  resetListeners.add(listener);
+  return () => resetListeners.delete(listener);
+}
+/**
+ * After a failed call: when it terminated the threads instance, switch this
+ * realm to the single-thread package (recorded on `wasmThreadsInfo().reason`),
+ * reset the bridges and return true so the caller retries once. False when the
+ * error is an ordinary one (the instance is still usable). `used`: the package
+ * the caller holds, true when it is one an earlier recovery already replaced.
+ */
+export async function recoverCoreWasm(error: unknown, used?: CoreWasm): Promise<boolean> {
+  if (used && terminatedModules.has(used)) { await loadCoreWasm(); return true; }
+  if (!coreWasmTerminated()) return false;
+  terminatedModules.add(threadsModule!);
+  const expected = expectedWasmThreads();
+  threadsFailure = `threads module terminated: ${errorText(error)}`;
+  console.error(`WASM threads module terminated; continuing on the single-thread package. First error:`, error);
+  threadsModule = undefined;
+  loading = undefined;
+  setWasmThreadsInfo({ ...expected, mode: 'single', threads: 1, reason: threadsFailure });
+  await loadCoreWasm();
+  for (const listener of resetListeners) { try { listener(); } catch (reset) { console.warn('WASM reset listener failed:', reset); } }
+  return true;
 }
 /**
  * A caller that initialises the single-thread package itself (with download

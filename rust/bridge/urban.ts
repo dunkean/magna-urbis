@@ -2,7 +2,7 @@ import type { HousingFloorNeed } from './urbanArchitecture';
 import { normalizeLayoutConfig, normalizeParcelConfig, type LayoutConfig, type ParcelConfig, type ProgrammeContext } from './urbanConfig';
 export * from './urbanConfig';
 import type { SettlementTerrain } from '../pkg/wasm/magna_urbis_wasm.js';
-import { inWorker, loadCoreWasm, singleWasmModule, wasmThreadsInfo, type CoreWasm, type WasmThreadsInfo } from './wasmRuntime';
+import { inWorker, loadCoreWasm, recoverCoreWasm, singleWasmModule, wasmThreadsInfo, type CoreWasm, type WasmThreadsInfo } from './wasmRuntime';
 import { createUrbanPool, ranges, type PoolArgs, type UrbanPool } from './urbanPool';
 import type { Point, RoadOutput, RoadSite, SettlementRaster } from './settlements';
 import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
@@ -183,8 +183,8 @@ function capacityInput(scene: UrbanRequest['scene']) {
 
 /** Both calls run exclusively in Rust and keep their own immutable terrain handle. */
 export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<UrbanEngine> {
-  const core: CoreWasm | undefined = runtime?.profile !== 'local' ? await loadCoreWasm() : undefined;
-  const Terrain = core?.SettlementTerrain;
+  let core: CoreWasm | undefined = runtime?.profile !== 'local' ? await loadCoreWasm() : undefined;
+  let Terrain = core?.SettlementTerrain;
   // `?threads=pool`: independent single-thread workers (urbanPool.ts), worker realm only.
   let pool: UrbanPool | undefined;
   if (core && wasmThreadsInfo().mode === 'pool' && inWorker()) {
@@ -350,7 +350,19 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
     try {
       if (requiresProgrammeFunctions(request)) requireWasmProgrammeFunctions(Terrain, request);
       return { ...await runWasmUncached(request, keepLayouts), wasm: wasmInfo() };
-    } catch (error) { return { id: request.id, error: String(error) }; }
+    } catch (error) {
+      // The failure terminated the threads instance: rebuild the terrain on the
+      // single-thread package (layouts and partitions re-upload from their JS
+      // objects) and retry once.
+      if (!core || !await recoverCoreWasm(error, core)) return { id: request.id, error: String(error), wasm: wasmInfo() };
+      core = await loadCoreWasm(); Terrain = core.SettlementTerrain; terrain = undefined;
+      if (retainedLayouts) retainedLayouts = { ...retainedLayouts, rust: undefined, terrain: undefined };
+      retainedPartitions = undefined;
+      const raster = request.raster ?? terrainRaster;
+      try {
+        return { ...await runWasmUncached(raster ? { ...request, raster } : request, keepLayouts || !request.raster), wasm: wasmInfo() };
+      } catch (retry) { return { id: request.id, error: String(retry), wasm: wasmInfo() }; }
+    }
   };
   const runCached = async (request: UrbanRequest): Promise<UrbanResponse> => {
     let key: string | undefined;

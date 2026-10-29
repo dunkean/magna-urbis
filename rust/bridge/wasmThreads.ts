@@ -47,7 +47,20 @@ export function wasmThreadsSetting(): WasmThreadsSetting {
 }
 /** Options for `new Worker(...)` / Vite `?worker` constructors: carries the setting. */
 export function wasmWorkerOptions(name = 'magna-wasm'): WorkerOptions {
-  return { name: `${name} threads=${wasmThreadsSetting()}` };
+  return { name: `${name} threads=${workerFailure ? 'off' : wasmThreadsSetting()}` };
+}
+let workerFailure: string | undefined;
+/**
+ * Page side: a WASM worker died (uncaught error, crash, out of memory). Workers
+ * created afterwards with `wasmWorkerOptions()` load the single-thread package;
+ * the reason is recorded on `window.magnaWasmThreads`.
+ */
+export function wasmWorkerFailed(reason: string): void {
+  const setting = wasmThreadsSetting();
+  if (workerFailure || setting === 'off' || setting === 'pool') return;
+  workerFailure = `worker stopped (${reason}): single-thread package from now on`;
+  console.warn(`WASM ${workerFailure}`);
+  scope.magnaWasmThreads = { setting, mode: 'single', threads: 1, reason: workerFailure };
 }
 export const threadsIsolated = (): boolean => !!(globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated && typeof SharedArrayBuffer === 'function';
 export const threadsPackageBuilt = (): boolean => !!threadsJsLoad && !!threadsWasmLoad;
