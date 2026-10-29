@@ -20,6 +20,7 @@ mod ruins;
 pub(super) use admission::{compact_fallback, witnessed_by};
 pub(super) use occupation::{
     Kind as OccupationKind, Occupancy, kind as occupation_kind, preview_parts as occupation_preview,
+    preview_parts_resolved as occupation_preview_resolved,
 };
 
 #[derive(Clone, Copy)]
@@ -3392,7 +3393,9 @@ pub(super) fn generate(
     let mut diagnostics = super::PartitionDiagnostics::default();
     let root = Rng::new(seed).fork(&format!("parcels:{}", layout.key));
     let index = FrontageIndex::new(layout);
-    let road_pressures = occupation_pressures(layout);
+    let road_pressures = super::composition::gate_pressures(layout, occupation_pressures(layout).into_iter()
+        .enumerate().map(|(bi,p)|layout.programme.as_ref()
+            .and_then(|pr|pr.environment.iter().find(|e|e.block==bi)).map_or(p,|e|e.pressure)).collect());
     let culture = if cfg.culture == "site" {
         &layout.culture
     } else {
@@ -3547,6 +3550,9 @@ pub(super) fn generate(
             })
             .unwrap_or("culture");
         let mut local_morph = super::with_tissue(morph.clone(), tissue);
+        if layout.config.as_ref().is_some_and(|c| c.old_enclosure_citadel) {
+            local_morph.value["_innerWalls"] = serde_json::json!(true);
+        }
         let operator = cfg.zone_operators.get(&block.zone).unwrap_or(&cfg.operator);
         if operator != "culture" {
             local_morph.value["plotOp"] = serde_json::json!(match operator.as_str() {
@@ -3616,11 +3622,10 @@ pub(super) fn generate(
             .and_then(|c| compact_fallback(&c.architecture_pack, period, &c.admissibility));
         let pack = route.as_ref().map(|c| c.architecture_pack.clone());
         let admission = route.map(|c| c.admissibility);
-        let occupation = layout
-            .programme
-            .as_ref()
-            .and_then(|p| p.environment.iter().find(|e| e.block == bi))
-            .map_or(road_pressures[bi], |e| e.pressure);
+        if operator == "culture" && cfg.preset == "culture" && cfg.params.get("plotOp").is_none() {
+            super::composition::gate_morph(layout, bi, &mut local_morph);
+        }
+        let occupation = road_pressures[bi];
         // Lot sizes keep the culture's own ranges, floored by the smallest
         // native house that may occupy them (the compact tier when it exists),
         // not by a 30 m court house that only grand lots hold.
@@ -3740,7 +3745,7 @@ pub(super) fn generate(
         let mut parcels = match morph.text("plotOp") {
             _ if camp => camp::lots(&block.shape, bi, axis, &mut fronts, morph, layout),
             _ if organic => {
-                organic::lots(&block.shape, bi, axis, &mut fronts, morph, zone, &mut rng)
+                organic::lots(&block.shape, bi, axis, &mut fronts, morph, zone, &mut rng, camp::organic_budget(layout, bi))
             }
             "garden" => {
                 let mut p = parcel(block.shape.clone(), bi, axis, &fronts, "garden");
@@ -4139,6 +4144,9 @@ pub(super) fn generate(
         }
         for p in &mut parcels {
             resolve_identity(p, bi, &block_id);
+            if cfg.street_aligned_homes && !camp && p.use_kind == "plot" {
+                p.provenance.push("street-aligned-home".into());
+            }
         }
         out.parcels.extend(parcels);
         out

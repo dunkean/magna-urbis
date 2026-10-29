@@ -11,10 +11,16 @@ import type { Decor } from './decor';
 import { downloadDecorFile, readDecorFile } from './decorFile';
 import { clampView, fitView, panBy, zoomAt, type View } from '../render/view';
 import { CITY_LOD_OFF } from '../render/cityCanvas';
+import { cityContourPaths, type CityContourPaths } from '../render/cityContours';
+import { terrainContourWidths } from '../../../rust/bridge/terrainRender';
+import { terrainStyle } from '../render/terrainStyle';
+import { encodePng, pngDataUrl } from '../render/raster';
 import { applyExecutionProfile, installExecutionProfile } from './executionProfile';
 import type { TerrainData, TerrainSettings } from '../../../rust/bridge/terrain';
 import type {} from './benchContext';
 import { decodeSituation, encodeSituation, type SituationPin } from './citySituation';
+import { mountCityRpgPins, prepareCityMapExport } from './cityRpgPins';
+import { installUrbanMapExports } from './urbanMapExport';
 import { mountCity3d } from './city3d';
 import { urbanText } from './urbanPanelLocale';
 import { mountIllustration, captureViewport } from '../../../illustration/web/index.mjs';
@@ -23,27 +29,35 @@ import { illustrationContext, illustrationTerrainFromDecor } from './illustratio
 declare global { interface Window { magnaCityBackground?: { url(): string | undefined; style(): string } } }
 
 /**
- * City Bench: one city on a prebuilt map. The terrain is never generated or rendered live:
- * the map shows the image pre-rendered with its .decor (web/scripts/render_city_maps.mjs),
- * and the settlement, road and urban stages run on the decor raster, as in Settlements.
+ * City Bench: one city on a prebuilt map. Relief shading comes from the image
+ * pre-rendered with its .decor (web/scripts/render_city_maps.mjs); contours and
+ * the settlement, road and urban stages use the decor raster, as in Settlements.
  */
 installExecutionProfile(document.querySelector('header')!);
 const ns = 'http://www.w3.org/2000/svg';
 const query = new URLSearchParams(location.search);
+const labels = query.get('labels') !== '0';
 const el = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const map = document.getElementById('map') as unknown as SVGSVGElement, viewport = el('viewport'), stages = document.querySelector('.stages')!;
 let decor: Decor | undefined, terrain: TerrainData | undefined, ready = false, lastExport: Decor | undefined;
 let view: View = { cx: 0, cy: 0, scale: 1 };
+let rpgPins: ReturnType<typeof mountCityRpgPins> | undefined;
 const status = (text: string): void => { el('status').textContent = text; };
 
 // The background sits under every overlay the stages add to the map.
 const background = document.createElementNS(ns, 'g'); background.id = 'cityBackground'; map.append(background);
+const contours = document.createElementNS(ns, 'g'); contours.id = 'cityContours'; contours.setAttribute('pointer-events', 'none'); map.append(contours);
+let shownContours: CityContourPaths | undefined, contourTerrain: TerrainData | undefined;
+let contourScale = NaN, contourStyle = '';
+el<HTMLInputElement>('showContours').checked = query.get('contours') !== '0';
 // Situation pins stay above every stage overlay (re-appended after each view change).
 const pinLayer = document.createElementNS(ns, 'g'); pinLayer.id = 'cityPins';
 function showView(): void {
   const w = viewport.clientWidth, h = viewport.clientHeight;
   map.setAttribute('viewBox', `${view.cx - w / 2 / view.scale} ${view.cy - h / 2 / view.scale} ${w / view.scale} ${h / view.scale}`);
+  drawContours();
   settlements.updateView();
+  rpgPins?.draw();
   drawPins();
 }
 function setView(next: View): void { view = terrain ? clampView(next, terrain.width, viewport.clientWidth, viewport.clientHeight) : next; showView(); }
@@ -59,6 +73,29 @@ let backgroundTicket = 0;
 /** Current background image URL (pre-rendered PNG or computed hillshade data URL): what the 3D view drapes. */
 const backgroundUrl = (): string | undefined => background.querySelector('image')?.getAttribute('href') ?? undefined;
 window.magnaCityBackground = { url: backgroundUrl, style: () => backgroundStyle };
+
+function drawContours(): void {
+  const visible = el<HTMLInputElement>('showContours').checked;
+  contours.style.display = visible ? '' : 'none';
+  if (!visible || !terrain || !decor) return;
+  if (contourTerrain === terrain && contourScale === view.scale && contourStyle === backgroundStyle) return;
+  if (contourTerrain !== terrain) {
+    // The retained wet cells include rivers above sea level; contours stay on dry ground.
+    const { n, water, width } = decor.raster, pixels = new Uint8Array(n * n * 4).fill(255);
+    for (let i = 0; i < water.length; i++) pixels[i * 4 + 3] = water[i] ? 0 : 255;
+    const mask = pngDataUrl(encodePng(pixels, n, n, 4, 1));
+    contours.innerHTML = `<defs><mask id="cityContourLand" maskUnits="userSpaceOnUse" x="0" y="0" width="${width}" height="${width}" style="mask-type:alpha"><image width="${width}" height="${width}" href="${mask}"/></mask></defs><g class="layer-contours" mask="url(#cityContourLand)" fill="none" stroke-linejoin="round" stroke-linecap="round"><path vector-effect="non-scaling-stroke"/><path vector-effect="non-scaling-stroke"/></g>`;
+    contourTerrain = terrain; shownContours = undefined;
+  }
+  const paths = cityContourPaths(terrain, new URLSearchParams(decor.meta.query).get('relief') ?? 'flat', view.scale);
+  const layer = contours.querySelector('g')!, [thin, index] = Array.from(layer.querySelectorAll('path'));
+  if (shownContours !== paths) { thin.setAttribute('d', paths.thin); index.setAttribute('d', paths.index); shownContours = paths; }
+  const style = backgroundStyle === 'relief' ? 'atlas' : backgroundStyle, pal = terrainStyle(style).palette, widths = terrainContourWidths(style, view.scale);
+  layer.setAttribute('stroke', pal.contour); contours.dataset.step = String(paths.step);
+  thin.setAttribute('stroke-width', String(widths.thin)); thin.setAttribute('opacity', '0.4');
+  index.setAttribute('stroke-width', String(widths.index)); index.setAttribute('opacity', '0.5');
+  contourScale = view.scale; contourStyle = backgroundStyle;
+}
 
 /** Pre-rendered map image of the chosen style, else the relief image, else a quick
  * hillshade of the raster (imported decors without image). */
@@ -111,7 +148,10 @@ function hillshade(d: Decor): string {
 function shareQuery(): string {
   const params = new URLSearchParams(); if (decor) params.set('artifact', decor.meta.id);
   settlements.share(params);
+  rpgPins?.share(params);
   if (backgroundStyle !== 'relief') params.set('fond', backgroundStyle);
+  params.set('contours', el<HTMLInputElement>('showContours').checked ? '1' : '0');
+  if (!labels) params.set('labels', '0');
   return applyExecutionProfile(new URL(`?${params}`, location.href)).searchParams.toString();
 }
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -126,7 +166,7 @@ function save(): void {
 // Catalogue first, then the stages, then the local history of kept exports.
 const anchor = document.createElement('div'); stages.append(anchor);
 createTerrainDecorLibrary({ before: anchor, city: true, onOpen: d => openBench('city', new URLSearchParams({ artifact: d.meta.id })) });
-const settlements = createTerrainSettlements({ map, viewport, city: true, active: true, parcelDefault: false,
+const settlements = createTerrainSettlements({ map, viewport, city: true, active: true, parcelDefault: false, labels,
   getForestSource: () => {
     if (!decor) return undefined;
     const r = decor.raster, climate = decorClimate(decor.meta), q = new URLSearchParams(decor.meta.query);
@@ -139,14 +179,14 @@ const settlements = createTerrainSettlements({ map, viewport, city: true, active
   getTerrain: () => terrain,
   getSettings: () => ({ seed: decor?.meta.seed ?? '', width: decor?.raster.width ?? 0, relief: new URLSearchParams(decor?.meta.query).get('relief') ?? 'flat' }) as TerrainSettings,
   getRaster: () => decor?.raster, getDecor: () => decor, getView: () => view, getAuto: () => false, getQuery: shareQuery,
-  onChange: () => { save(); city3d.refresh(); }, onPicking: () => {},
+  onChange: () => { save(); city3d.refresh(); rpgPins?.draw(); }, onPicking: () => {},
   onFocus: (center, radius) => city3d.active ? city3d.focus(center, radius) : setView({ cx: center.x, cy: center.y, scale: Math.min(viewport.clientWidth, viewport.clientHeight) / Math.max(200, 2.4 * radius) }),
   onProjection: active => { setProjection(active); return city3d.active; },
 });
 // 3D view (city3d.ts): the decor relief draped with the map image, the plan and the buildings in volume.
-const city3d = mountCity3d({ host: viewport, getDecor: () => decor, getScene: () => settlements.urban.buildingState.scene,
+const city3d = mountCity3d({ host: viewport, labels, getDecor: () => decor, getScene: () => settlements.urban.buildingState.scene,
   getProjection: () => settlements.urban.buildingProjection,
-  getLayouts: () => settlements.urban.layouts, getRegionalStreets: () => settlements.urban.regionalStreets, getPartitions: () => settlements.urban.partitions, getSelected: () => settlements.urban.buildingState.selected, getTextured: () => settlements.urban.textured, setTextured: on => settlements.urban.setTextured(on),
+  getLayouts: () => settlements.urban.layouts, getRegionalStreets: () => settlements.urban.regionalStreets, getPartitions: () => settlements.urban.partitions, getSelected: () => { const s = settlements.urban.buildingState; return s.parentSelected?.kind === 'member' ? s.parentSelected.member_id : s.selected; }, getTextured: () => settlements.urban.textured, setTextured: on => settlements.urban.setTextured(on),
   details: settlements.urban.buildingDetails,
   getBackground: () => background.querySelector('image')?.getAttribute('href') ?? undefined,
   onSelect: id => settlements.urban.selectBuilding(id) });
@@ -188,6 +228,10 @@ document.querySelector('#benchHistory [data-import]')?.closest('label')?.setAttr
 const transfer = document.createElement('details'); transfer.className = 'stage'; transfer.id = 'pipelineTransfer'; transfer.open = true;
 transfer.innerHTML = '<summary>Conserver et partager</summary><div class="stage-controls"><button id="pipelineReturn" type="button" hidden>Renvoyer aux settlements</button><button id="pipelineSave" type="button">Conserver cet export</button><button id="pipelineDownload" type="button">Partager .decor</button><small id="pipelineStatus" role="status"></small></div>';
 stages.append(transfer);
+installUrbanMapExports(transfer.querySelector('.stage-controls')!, map, status, prepareCityMapExport);
+rpgPins = mountCityRpgPins({ map, viewport, query, labels, host: stages,
+  getView: () => view, getLayouts: () => settlements.urban.layouts, getPartitions: () => settlements.urban.partitions,
+  focus: setView, onChange: save, onPinning: () => { pinning = false; el('situationPin').setAttribute('aria-pressed', 'false'); } });
 async function keep(download: boolean): Promise<void> {
   try {
     if (settlements.urban.layoutPending || settlements.urban.generationPending) throw new Error('Attendez la fin du calcul du plan et des parcelles.');
@@ -235,6 +279,7 @@ situation.innerHTML = `<summary>Situation à signaler</summary><div class="stage
 stages.append(situation);
 const situationStatus = (text: string): void => { el('situationStatus').textContent = text; };
 function drawPins(): void {
+  if (!labels) { pinLayer.replaceChildren(); return; }
   const k = 1 / view.scale;
   pinLayer.replaceChildren(...pins.map((p, i) => {
     const g = document.createElementNS(ns, 'g'); g.setAttribute('transform', `translate(${p.x} ${p.y}) scale(${k})`);
@@ -278,7 +323,7 @@ async function copy(text: string, done: string): Promise<void> {
   catch { el<HTMLInputElement>('situationInput').value = text; situationStatus(urbanText(['Presse-papiers refusé : le code est dans le champ ci-dessous.','Clipboard denied: the code is in the field below.','剪贴板访问被拒绝：代码位于下方字段。','Acceso al portapapeles denegado: el código está en el campo inferior.','Acesso à área de transferência negado: o código está no campo abaixo.'])); }
 }
 const localMap = (): boolean => !!decor && !decor.meta.id.startsWith('city-');
-el('situationPin').onclick = () => { pinning = !pinning; el('situationPin').setAttribute('aria-pressed', String(pinning)); situationStatus(pinning ? urbanText(['Cliquez sur la carte pour poser l’épingle.','Click the map to place the pin.','点击地图放置图钉。','Haz clic en el mapa para colocar el marcador.','Clique no mapa para colocar o marcador.']) : ''); };
+el('situationPin').onclick = () => { rpgPins?.cancel(); pinning = !pinning; el('situationPin').setAttribute('aria-pressed', String(pinning)); situationStatus(pinning ? urbanText(['Cliquez sur la carte pour poser l’épingle.','Click the map to place the pin.','点击地图放置图钉。','Haz clic en el mapa para colocar el marcador.','Clique no mapa para colocar o marcador.']) : ''); };
 el('situationCopy').onclick = async () => copy(await situationCode(), localMap() ? urbanText(['Code copié. Carte locale : joignez aussi son .decor.','Code copied. For a local map, also attach its .decor file.','代码已复制。本地地图还需附上其 .decor 文件。','Código copiado. Para un mapa local, adjunta también su archivo .decor.','Código copiado. Para mapa local, anexe também o arquivo .decor.']) : urbanText(['Code copié.','Code copied.','代码已复制。','Código copiado.','Código copiado.']));
 el('situationLink').onclick = async () => {
   const url = new URL(location.pathname, location.href); url.searchParams.set('situation', await situationCode());
@@ -325,6 +370,7 @@ window.addEventListener('pointermove', event => {
 window.addEventListener('pointerup', event => { if (drag?.pointer !== event.pointerId) return; suppressClick = drag.moved; drag = undefined; map.classList.remove('drag'); });
 map.addEventListener('click', event => {
   if (suppressClick) { suppressClick = false; event.stopImmediatePropagation(); return; }
+  if (rpgPins?.click(event)) { event.stopImmediatePropagation(); return; }
   if (pinning) {
     const rect = viewport.getBoundingClientRect();
     pins.push({ x: view.cx + (event.clientX - rect.left - rect.width / 2) / view.scale, y: view.cy + (event.clientY - rect.top - rect.height / 2) / view.scale, note: '' });
@@ -336,13 +382,14 @@ map.addEventListener('click', event => {
 new ResizeObserver(() => showView()).observe(viewport);
 el('fit').onclick = fit;
 // The 2D frame is never wider than the near LOD (2.2 m/px): the buildings stay drawn on a big town.
-el('focusCity').onclick = () => { const e = settlements.urban.extent; if (e && city3d.active) city3d.focus(e.center, e.radius); else if (e) setView({ cx: e.center.x, cy: e.center.y, scale: Math.max(CITY_LOD_OFF ? 0 : 1 / 2.0, Math.min(viewport.clientWidth, viewport.clientHeight) / Math.max(200, 2.4 * e.radius)) }); else fit(); };
+el('focusCity').onclick = () => { const e = settlements.urban.extent; if (e && city3d.active) city3d.focus(e.center, e.radius); else if (e) setView({ cx: e.center.x, cy: e.center.y, scale: Math.min(viewport.clientWidth, viewport.clientHeight) / Math.max(200, 2.4 * e.radius) }); else fit(); };
 el<HTMLInputElement>('showBackground').onchange = event => { background.style.display = (event.target as HTMLInputElement).checked ? '' : 'none'; };
+el<HTMLInputElement>('showContours').onchange = () => { drawContours(); save(); };
 el<HTMLInputElement>('showPlan').onchange = event => settlements.urban.setPlanVisible((event.target as HTMLInputElement).checked);
 el<HTMLSelectElement>('backgroundStyle').value = backgroundStyle;
 el<HTMLSelectElement>('backgroundStyle').onchange = event => {
   const value = (event.target as HTMLSelectElement).value; if (!isBackgroundStyle(value)) return;
-  backgroundStyle = value; syncCityPalette(); syncRoadPreset(); save();
+  backgroundStyle = value; syncCityPalette(); syncRoadPreset(); drawContours(); save();
   // The city layer reads it for its bridges (stone decks on the Rendu background).
   document.documentElement.dataset.cityBackground = backgroundStyle; settlements.updateView();
   if (decor) void drawBackground(decor);

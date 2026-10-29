@@ -2,7 +2,7 @@
 
 `fantasy-ink` (black and white) and `fantasy-color` (ink/watercolor) are
 display-only styles in Rust Terrain Bench and Neural Earth (`../infinite_map`).
-Select **Fantasy Ã‚Â· Encre N&B / Aquarelle** in Magna Urbis or **Fantasy Ã‚Â· Ink /
+Select **Fantasy · Encre N&B / Aquarelle** in Magna Urbis or **Fantasy · Ink /
 Watercolor** in Neural Earth's layer menu. They use a gently oblique view of
 individual landmarks; geographic coordinates, coastlines and the camera stay
 unchanged. The legacy TypeScript settlement application is deferred.
@@ -12,12 +12,12 @@ prototypes. The active library is `families/`: thirteen original ImageGen PNG
 sheets, one each for pines, broadleaf trees, tropical vegetation, cypresses,
 hills, mountains, snow mountains, rocks, dunes, wetlands, crops, orchards and
 grasses. Every sheet has eight ink silhouettes and eight watercolor silhouettes
-in a 4Ãƒâ€”4 grid: **208 motifs**. Variants include different ages, proportions,
+in a 4×4 grid: **208 motifs**. Variants include different ages, proportions,
 branch shapes, single trees and stands; they are selected by an independent
 world-coordinate hash, preserving map placement when switching styles.
 
 `node scripts/pack_fantasy_brushes.mjs` reads transparent sprite bounds and
-renders alpha-preserving 768Ã‚Â² WebP runtime sheets (176 px maximum sprite size).
+renders alpha-preserving 768² WebP runtime sheets (176 px maximum sprite size).
 Original PNGs remain intact. Runtime files total about 4.6 MB versus about
 33 MB for the sources. The generated `runtime/manifest.json` owns dimensions
 and source rectangles. SVG embeds only used families and reusable variant
@@ -51,13 +51,13 @@ six style/settings variants per terrain and invalidates on water replacement.
 SVG embeds one atlas and sixteen reusable symbols. Changing density, size or
 spacing redraws without regenerating terrain or urban geometry. Urban Bench
 has a visible **Rendu** selector in the top toolbar, with sliders and exports
-in **Fantasy Ã‚Â· Brushes et export**. Brushes avoid actual quarter footprints,
+in **Fantasy · Brushes et export**. Brushes avoid actual quarter footprints,
 roads and retained water. The occupation overlay has global visibility and
 opacity controls, plus independent visibility by occupation type and for farm
 objects. These display filters do not change the polygons used by the painter.
 The parameters travel in URLs as `brush_density`, `brush_size`, `brush_spacing`,
 `brush_landuse`, and the `landuse` display settings. Exports: self-contained SVG and
-4096Ã‚Â² PNG, including displayed water and settlement overlays. Brush sliders
+4096² PNG, including displayed water and settlement overlays. Brush sliders
 and export buttons are in the **Layers** panel.
 
 Neural Earth paints cached, depth-sorted stamp lists onto the annotation canvas.

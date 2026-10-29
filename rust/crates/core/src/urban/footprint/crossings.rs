@@ -107,6 +107,15 @@ pub(in crate::urban) fn street_spacing(span: f64, population: u32) -> f64 {
     (80.0 + 4.0 * span + 60.0 * (population as f64 / 1000.0).sqrt()).clamp(100.0, 800.0)
 }
 
+/// Demand depends on the town and its occupied banks, not the number of roads
+/// that happened to hit water. Short frontages and villages need one crossing.
+pub(in crate::urban) fn street_count(population: u32, frontage: f64) -> usize {
+    let size = population as f64 / 1000.0;
+    (size.sqrt().round() + (frontage / 1500.0).floor())
+        .clamp(1.0, size.sqrt().ceil().max(1.0))
+        .min(1.0 + (frontage / 200.0).floor()) as usize
+}
+
 /// Widest span (m) a town of this culture and size builds, and the widest it
 /// fords. A village fords or bridges a stream; a 5 000-inhabitant town spans
 /// about 25 m; a large city builds multi-arch bridges over rivers of 100 m and more.
@@ -226,6 +235,12 @@ fn deck_at(surface: Surface<'_>, middle: Point, center_passes: u8) -> Option<[Po
         let u = (angle.cos(), angle.sin());
         banks(u).map(|(a, b)| (a + b, u))
     }).min_by(|a, b| a.0.total_cmp(&b.0))?;
+    let (a, b) = banks(normal)?;
+    let center = Point { x: middle.x + normal.0 * (b - a) * 0.5, y: middle.y + normal.1 * (b - a) * 0.5 };
+    // Establish the channel width at its centre before choosing a fit window.
+    // A chord grazing the inside of a bend must not shrink that window.
+    if center_passes > 0 && distance(middle, center) > cell.min(5.0) * 0.1 && surface.wet(center)
+        && let Some(ends) = deck_at(surface, center, center_passes - 1) { return Some(ends); }
     // A point beside a bend can have an arbitrarily short grazing chord.
     // Grow the fit until it sees an elongated channel, not just a shore cell.
     let (mut radius, mut best_fit) = ((shortest * 2.0).max(cell * 3.0).clamp(4.0, 600.0), 0.2);
@@ -247,6 +262,40 @@ fn deck_at(surface: Surface<'_>, middle: Point, center_passes: u8) -> Option<[Po
         }
         if best_fit >= 0.7 || radius >= 600.0 { break; }
         radius = (radius * 2.0).min(600.0);
+    }
+    // Fit the centreline across two widths upstream and downstream. Bank
+    // notches can rotate a local shore segment without changing this axis.
+    let (a, b) = banks(normal)?;
+    let width = (a + b).max(cell);
+    let mut centers = vec![];
+    for i in -4..=4 {
+        let t = i as f64 * width * 0.5;
+        let station = Point { x: middle.x - normal.1 * t, y: middle.y + normal.0 * t };
+        // Follow the same channel only; do not jump a dry gap into a tributary.
+        let step = (width / 48.0).clamp(0.5, 4.0);
+        let mut wet = vec![];
+        let mut d = -width * 2.0;
+        while d <= width * 2.0 {
+            let p = Point { x: station.x + normal.0 * d, y: station.y + normal.1 * d };
+            if surface.wet(p) { wet.push(d); }
+            d += step;
+        }
+        if wet.len() < 2 { continue; }
+        let lo = wet[0]; let hi = *wet.last().unwrap();
+        if lo <= -width * 2.0 + step || hi >= width * 2.0 - step { continue; }
+        if wet.windows(2).any(|w| w[1] - w[0] > step * 1.5) { continue; }
+        let d = (lo + hi) * 0.5;
+        centers.push((station.x + normal.0 * d, station.y + normal.1 * d));
+    }
+    if centers.len() >= 5 {
+        let n = centers.len() as f64;
+        let (sx, sy) = centers.iter().fold((0.0, 0.0), |(x, y), p| (x + p.0, y + p.1));
+        let (xx, xy, yy) = centers.iter().fold((0.0, 0.0, 0.0), |(xx, xy, yy), &(x, y)| {
+            let (x, y) = (x - sx / n, y - sy / n); (xx + x*x, xy + x*y, yy + y*y)
+        });
+        let flow = 0.5 * (2.0 * xy).atan2(xx - yy);
+        let u = (-flow.sin(), flow.cos());
+        if banks(u).is_some() { normal = u; }
     }
     let (a, b) = banks(normal)?;
     let center = Point { x: middle.x + normal.0 * (b - a) * 0.5, y: middle.y + normal.1 * (b - a) * 0.5 };
@@ -524,6 +573,49 @@ mod tests {
         }
     }
 
+    #[test]
+    fn deck_follows_long_channel_axis_across_short_bank_bends() {
+        let n = 400;
+        let height = vec![20.0; n*n];
+        // Local banks slope by up to 35 degrees. Measure the reference course
+        // independently on the analytic centreline over two widths each way.
+        let water: Vec<_> = (0..n*n).map(|i| {
+            let (x, y) = (((i % n) as f64 + 0.5) * 2.5, ((i / n) as f64 + 0.5) * 2.5);
+            u8::from((x - 500.0 - 35.0 * ((y - 500.0) / 50.0).sin()).abs() < 40.0)
+        }).collect();
+        let surface = Surface { geometry: None, width: 1000.0, n, height: &height, water: &water };
+        for y in [450.0, 500.0, 550.0] {
+            let x = 500.0 + 35.0 * ((y - 500.0) / 50.0_f64).sin();
+            let mut xy = 0.0; let mut yy = 0.0;
+            for i in -8..=8 {
+                let t = i as f64 * 20.0;
+                xy += t * 35.0 * ((y + t - 500.0) / 50.0).sin(); yy += t*t;
+            }
+            let slope = xy / yy;
+            for offset in [-25.0, 0.0, 25.0] {
+                let [a, b] = deck(surface, Point { x: x + offset, y }).unwrap();
+                let cosine = ((b.x - a.x) - slope * (b.y - a.y)).abs() / (distance(a, b) * 1.0_f64.hypot(slope));
+                assert!(cosine >= 15.0_f64.to_radians().cos(), "y={y}, offset={offset}, slope={slope}: {a:?}/{b:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn bastide_inside_bend_uses_the_overall_river_course() {
+        #[derive(serde::Deserialize)]
+        struct Fixture { width: f64, n: usize, geometry: crate::urban::VectorGeography }
+        let f: Fixture = serde_json::from_str(include_str!("../fixtures/panic20k.json")).unwrap();
+        let geography = crate::urban::Geography::new(f.geometry, f.width).unwrap();
+        let height = vec![20.0; f.n*f.n]; let water = vec![0; f.n*f.n];
+        let surface = Surface { geometry: Some(&geography), width: f.width, n: f.n, height: &height, water: &water };
+        // The reported skewed span grazed the west bank at this bend. The
+        // retained map's centreline runs about (90, 200) over the long window,
+        // independently measured at y=2000..2240, rather than along that bank.
+        let [a, b] = deck(surface, Point { x: 2893.7, y: 2127.2 }).unwrap();
+        let cosine = ((b.x - a.x) - 0.45 * (b.y - a.y)).abs() / (distance(a, b) * 1.0_f64.hypot(0.45));
+        assert!(cosine >= 15.0_f64.to_radians().cos(), "bastide deck follows local bank: {a:?}/{b:?}");
+    }
+
     fn layout(streets: Vec<Street>, bounds: &[(f64, f64, f64, f64)]) -> crate::urban::Layout {
         let mut l: crate::urban::Layout = serde_json::from_value(serde_json::json!({
             "key":"crossings", "culture":"bastide", "center":{"x":1000.0,"y":1000.0},
@@ -559,11 +651,11 @@ mod tests {
             let mut l = original.clone();
             network::select_bridges(&mut l, population, surface, &[]);
             let bridges: Vec<_> = l.streets.iter().filter(|s| s.role == "bridge").collect();
-            let limit = (1800.0 / street_spacing(40.0, population)).ceil() as usize + 1;
-            assert!(!bridges.is_empty() && bridges.len() <= limit, "pop={population}: {} > {limit}", bridges.len());
+            let limit = street_count(population, 1800.0);
+            assert_eq!(bridges.len(), limit, "pop={population}");
             assert!(bridges.iter().any(|s| s.rank == 0));
             for (i, a) in bridges.iter().enumerate() { for b in &bridges[i+1..] {
-                assert!((a.path[0].y - b.path[0].y).abs() >= street_spacing(40.0, population));
+                assert!((a.path[0].y - b.path[0].y).abs() >= 1800.0 / limit as f64 * 0.7);
             }}
             assert_served_ends(&l);
             let before = bridges.len();
@@ -572,8 +664,7 @@ mod tests {
             assert_eq!(l.streets.iter().filter(|s| s.role == "bridge").count(), before);
             counts.push(before);
         }
-        assert!(counts.windows(2).all(|p| p[1] <= p[0]), "{counts:?}");
-        assert!(counts[1] <= 5, "a 10k river town needs a few bridges: {counts:?}");
+        assert_eq!(counts, [1, 4, 8]);
     }
 
     fn assert_served_ends(l: &crate::urban::Layout) {
@@ -583,6 +674,74 @@ mod tests {
                     s.path.contains(&p)), "unconnected bridge end {p:?}");
             }
         }
+    }
+
+    fn assert_connected(l: &crate::urban::Layout, points: &[Point]) {
+        let mut reached = vec![points[0]];
+        loop {
+            let before = reached.len();
+            for s in &l.streets { if s.path.iter().any(|p| reached.contains(p)) {
+                for &p in &s.path { if !reached.contains(&p) { reached.push(p); } }
+            }}
+            if reached.len() == before { break; }
+        }
+        for p in points { assert!(reached.contains(p), "unreachable built part {p:?}"); }
+    }
+
+    #[test]
+    fn built_parts_get_bridges_even_without_an_original_crossing_road() {
+        let n = 320; let height = vec![20.0; n*n];
+        let water: Vec<_> = (0..n*n).map(|i| u8::from((118..122).contains(&(i % n)) || (198..202).contains(&(i % n)))).collect();
+        let surface = Surface { geometry: None, width: 1600.0, n, height: &height, water: &water };
+        for population in [500, 10000] {
+            for parts in [2, 3] {
+                let positions = [550.0, 800.0, 1050.0];
+                let streets = positions[..parts].iter().map(|&x| street(&[(x, 600.0), (x, 1000.0)], "street")).collect();
+                let blocks: Vec<_> = positions[..parts].iter().map(|&x| (x + 10.0, 600.0, x + 40.0, 1000.0)).collect();
+                let mut l = layout(streets, &blocks);
+                network::select_bridges(&mut l, population, surface, &[]);
+                let bridges = l.streets.iter().filter(|s| s.role == "bridge").count();
+                assert!(bridges >= parts - 1, "pop={population}, parts={parts}: {bridges}");
+                if population == 500 { assert_eq!(bridges, parts - 1); }
+                assert_served_ends(&l);
+                // All built parts belong to one street component.
+                assert_connected(&l, &positions[..parts].iter().map(|&x| Point { x, y: 600.0 }).collect::<Vec<_>>());
+            }
+        }
+    }
+
+    #[test]
+    fn a_nearby_bridge_cannot_hide_a_different_built_part() {
+        let n = 200; let height = vec![20.0; n*n];
+        let water: Vec<_> = (0..n*n).map(|i| u8::from((98..102).contains(&(i % n)))).collect();
+        let surface = Surface { geometry: None, width: 2000.0, n, height: &height, water: &water };
+        let streets = vec![street(&[(900.0, 100.0), (900.0, 300.0)], "street"),
+            street(&[(1100.0, 120.0), (1100.0, 140.0)], "street"),
+            street(&[(1100.0, 180.0), (1100.0, 200.0)], "street")];
+        let mut l = layout(streets, &[(810.0, 100.0, 890.0, 300.0),
+            (1110.0, 120.0, 1150.0, 140.0), (1110.0, 180.0, 1150.0, 200.0)]);
+        network::select_bridges(&mut l, 500, surface, &[]);
+        assert!(l.streets.iter().any(|s| s.role == "bridge"));
+        assert_connected(&l, &[Point { x: 900.0, y: 100.0 }, Point { x: 1100.0, y: 120.0 }, Point { x: 1100.0, y: 180.0 }]);
+        assert_served_ends(&l);
+    }
+
+    #[test]
+    fn bridge_junctions_preserve_reserved_blocks_street_references() {
+        let n = 200; let height = vec![20.0; n*n];
+        let water: Vec<_> = (0..n*n).map(|i| u8::from((98..102).contains(&(i % n)))).collect();
+        let surface = Surface { geometry: None, width: 2000.0, n, height: &height, water: &water };
+        let mut l = layout(vec![street(&[(900.0, 100.0), (900.0, 700.0)], "street"),
+            street(&[(1100.0, 100.0), (1100.0, 700.0)], "street")],
+            &[(810.0, 100.0, 890.0, 700.0), (1110.0, 100.0, 1200.0, 700.0)]);
+        l.programme = Some(serde_json::from_value(serde_json::json!({"version":1,"population":10000,
+            "context":{},"cultures":[],"demands":[],"allocations":[],"adjacency":[],"environment":[],
+            "reconciliationPasses":0,"warnings":[],"reservations":[{"id":"reserved","demandId":"test",
+            "block":1,"shape":l.blocks[1].shape,"street":1,"frontage":600.0}]})).unwrap());
+        network::select_bridges(&mut l, 10000, surface, &[]);
+        let r = &l.programme.as_ref().unwrap().reservations[0];
+        assert!(l.streets[r.street].path.iter().all(|p| (p.x - 1100.0).abs() < 0.01), "reservation lost its bank street");
+        assert!(l.streets.iter().any(|s| s.role == "bridge"));
     }
 
     #[test]
@@ -654,8 +813,8 @@ mod tests {
         ];
         let mut l = layout(streets, &[(410.0, 350.0, 440.0, 550.0), (550.0, 310.0, 650.0, 340.0)]);
         network::select_bridges(&mut l, 10000, surface, &[]);
-        assert_eq!(l.streets.iter().filter(|s| s.role == "bridge").count(), 1, "orthogonal decks still serve the same two banks");
-        assert_eq!(l.streets.iter().filter(|s| s.role != "bridge").count(), 2, "keep both bank streets");
+        assert_eq!(l.streets.iter().filter(|s| s.role == "bridge").count(), 2, "one size/frontage demand around the bend");
+        assert!(l.streets.iter().filter(|s| s.role != "bridge").count() >= 2, "keep both bank streets");
         assert_served_ends(&l);
     }
 
@@ -728,14 +887,18 @@ mod tests {
         let surface = Surface { geometry: None, width: 3000.0, n, height: &height, water: &water };
         let cfg = LayoutConfig { fortification: "none".into(), ..Default::default() };
         let roads = [street(&[(900.0, 1200.0), (2000.0, 1800.0)], "regional")];
+        let mut counts = vec![];
+        for seed in ["bridge-invariant", "bridge-invariant-2", "bridge-invariant-3"] {
         for culture in ["bagan", "bastide", "elven", "indus-planned", "necropolis", "orcish", "wizard-city", "venetian-lagoon", "stilt-town"] {
         let site = Site { key: "river-10k".into(), name: String::new(), population: 10000,
             culture: culture.into(), center: Point { x: 1380.0, y: 1500.0 }, radius: 450.0 };
         let ground = geography::stilt_ground(&site, culture, surface);
         let transport = ground.as_ref().map_or(surface, |g| g.surface(surface));
-        let layout = generate_quarters("bridge-invariant", &[site], &cfg, surface, &roads).unwrap().remove(0);
-        eprintln!("{culture}: {} streets, {} decks", layout.streets.len(), layout.streets.iter().filter(|s| s.role == "bridge").count());
-        assert!(layout.streets.iter().filter(|s| s.role == "bridge").count() <= 5, "too many river bridges for {culture}");
+        let layout = generate_quarters(seed, &[site], &cfg, surface, &roads).unwrap().remove(0);
+        let count = layout.streets.iter().filter(|s| s.role == "bridge").count();
+        eprintln!("{seed}/{culture}: {} streets, {count} decks", layout.streets.len());
+        assert!((2..=4).contains(&count), "{seed}/{culture}: {count} river bridges");
+        counts.push(count);
         coverage(&layout.streets, transport);
         assert!(layout.streets.iter().filter(|s| s.role == "bridge").any(|s|
             s.path.windows(2).any(|w| surface.wet(Point { x: (w[0].x + w[1].x) * 0.5, y: (w[0].y + w[1].y) * 0.5 }))), "no river deck for {culture}");
@@ -745,6 +908,8 @@ mod tests {
             assert!((z.y - a.y).abs() <= (z.x - a.x).abs() * 15.0_f64.to_radians().tan(), "oblique deck {b:?}");
         }
         }
+        }
+        assert!(counts.iter().max().unwrap() - counts.iter().min().unwrap() <= 1, "bridge count spread: {counts:?}");
     }
 
     #[test]

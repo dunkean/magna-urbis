@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Layout, Partition, Point, Shape } from '../../rust/bridge/urban';
 import type { PlacementBatch } from '../../rust/bridge/urbanArchitecture';
-import { buildCityBuildings, buildCityScene, districtRoleLabel, pickCity, roleFamily, selectCityLod } from '../src/render/cityCanvas';
+import { buildCityBuildings, buildCityScene, districtRoleLabel, drawCity, pickCity, roleFamily, selectCityLod, type CityDrawOptions, type CityLayers } from '../src/render/cityCanvas';
+import { cityGlOverlayLayers } from '../src/render/cityGl';
+import { mockCanvas, MockPath2D } from '../scripts/fakeworld';
 
 const square = (x: number, y: number, size: number): Shape => ({ outer: [{ x, y }, { x: x + size, y }, { x: x + size, y: y + size }, { x, y: y + size }], holes: [] });
 /** A 20 x 20 grid of 40 m blocks, each cut into four parcels; districts carry the stream B roles. */
@@ -30,6 +32,26 @@ function city(): { layout: Layout; partition: Partition } {
 }
 
 describe('City Bench canvas scene', () => {
+  it('hides names, glyphs and centre pins at every LOD in canvas and GL overlays without hiding geometry', () => {
+    const { layout, partition } = city(), scene = buildCityScene([layout], [partition]);
+    const layers: CityLayers = { reserve: false, allocated: false, centers: true, domains: false, quarters: false, blocks: true, streets: true, enclosures: false, parcels: true, gardens: false, places: false, fronts: false, axes: false, access: false };
+    class CityPath extends MockPath2D { addPath(path: MockPath2D): void { this.ops += path.ops; } }
+    vi.stubGlobal('Path2D', CityPath);
+    try {
+      for (const overlay of [false, true]) for (const lod of ['far', 'mid', 'near', 'close'] as const) {
+        const { canvas, log, reset } = mockCanvas(1000, 1000), ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
+        const options: CityDrawOptions = { viewport: { minX: 0, minY: 0, maxX: 1000, maxY: 1000 }, mpp: 1, dpr: 1, lod, view: 'roles', palette: 'atlas', width: 1,
+          layers: overlay ? cityGlOverlayLayers(layers) : layers, buildingsVisible: false, appearance: { style: 'cartographic', diagnostic: 'none' } };
+        const shown = drawCity(ctx, scene, options);
+        if (lod !== 'far') { expect(log.calls.fillText).toBeGreaterThan(0); expect(log.calls.arc).toBeGreaterThan(0); }
+        reset();
+        const hidden = drawCity(ctx, scene, { ...options, labels: false });
+        expect(log.calls.fillText ?? 0).toBe(0); expect(log.calls.strokeText ?? 0).toBe(0); expect(log.calls.arc ?? 0).toBe(0);
+        expect(hidden.blocks).toBe(shown.blocks); expect(hidden.parcels).toBe(shown.parcels); expect(hidden.streets).toBe(shown.streets);
+      }
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it('indexes the plan once, culls by viewport, picks by bins and reads optional role contracts', () => {
     const { layout, partition } = city();
     const scene = buildCityScene([layout], [partition]);

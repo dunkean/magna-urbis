@@ -4,6 +4,7 @@ import type { HouseMaterial, MaterialSlots, Surface } from '../../../rust/bridge
 import type { ArchitectureCulture, PlacementBatch, PlacedBuilding, PlacementRefusal } from '../../../rust/bridge/urbanArchitecture';
 import type { BuildingLodScene, CompactBuildingVisual } from '../render/urbanBuildingLod';
 import { retainedProgrammeOutcome, type RetainedProgrammeOutcome } from '../render/programmeOutcome';
+import type { ParentMember3dVisual } from './urbanParent3d';
 
 export interface NativeBuildingProjection extends CompactBuildingVisual {
   readonly projection: 'native-building-visual-1';
@@ -21,11 +22,11 @@ export interface NativeBuildingProjection extends CompactBuildingVisual {
   readonly volumes?: never; readonly resolved?: never; readonly plan_archives?: never; readonly structural_features?: never;
 }
 /** Preserve legacy terrain/forest inputs using only child surfaces/scalars. */
-export function buildingOccupationSurfaces(building: PlacedBuilding | NativeBuildingProjection): readonly Surface[] {
+export function buildingOccupationSurfaces(building: PlacedBuilding | NativeBuildingProjection | ParentMember3dVisual): readonly Surface[] {
   return 'projection' in building ? building.occupation_surfaces
     : [building.footprint, building.circulation, ...(building.structural_features ?? []).map(f => f.surface)];
 }
-export function buildingGroundConstraints(building: PlacedBuilding | NativeBuildingProjection): readonly { readonly footprint: Surface; readonly height_m: number }[] {
+export function buildingGroundConstraints(building: PlacedBuilding | NativeBuildingProjection | ParentMember3dVisual): readonly { readonly footprint: Surface; readonly height_m: number }[] {
   return 'projection' in building ? building.ground_constraints
     : [{ footprint: building.footprint, height_m: building.ground_z_m },
       ...(building.structural_foundations ?? []).map(f => ({ footprint: f.footprint, height_m: f.z_max_m }))];

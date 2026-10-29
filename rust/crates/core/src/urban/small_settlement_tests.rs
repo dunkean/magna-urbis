@@ -81,6 +81,12 @@ fn a_camp_lane_reaching_its_road_with_a_slanted_contact_serves_the_longhouses() 
     let layouts: Vec<Layout> = serde_json::from_str(include_str!("fixtures/pnw-road-notch-layouts.json")).unwrap();
     let cfg: ParcelConfig = serde_json::from_str(include_str!("fixtures/small-parcel-config.json")).unwrap();
     let parts = generate_parcels("pnw-notch", &layouts, &cfg).unwrap();
+    if let Ok(dir)=std::env::var("FILL2_OUT") {
+        std::fs::create_dir_all(&dir).unwrap();
+        let morph=resolve("pnw-plank-village","culture","auto","core",1.,&serde_json::json!({}),"parcels").unwrap();
+        let raw=parcels::generate("pnw-notch",&layouts[0],&cfg,&morph).unwrap();
+        std::fs::write(std::path::Path::new(&dir).join("plank-notch.json"),serde_json::to_vec(&serde_json::json!({"partition":parts[0],"raw":raw})).unwrap()).unwrap();
+    }
     let served = parts.iter().flat_map(|p| p.parcels.iter())
         .filter(|p| p.use_kind == "plot" && p.access.as_ref().is_some_and(|a| a.kind != "unserved")).count();
     assert!(served >= 10, "served plots {served}");
@@ -228,7 +234,7 @@ fn a_500_inhabitant_village_has_few_blocks_without_a_building() {
 
 #[test]
 fn unbuilt_blocks_are_given_back_to_the_fields() {
-    for culture in TRIM_CULTURES {
+    for culture in TRIM_CULTURES.into_iter().chain(["mongol-ordu", "guarani-village", "pnw-plank-village"]) {
         let (_, _, share) = empty_blocks(culture);
         assert!(share <= 0.05, "{culture}: {:.0} % of the block land has no building site", share * 100.0);
     }
@@ -353,7 +359,7 @@ fn an_overlarge_enclosure_replans_its_land_budget_before_filling() {
     assert!(pr.allocations.iter().map(|a|a.households).sum::<f64>() <= (1.3*wanted).floor());
 }
 
-const FILL2_CULTURES: &[&str] = &["barbarian-celtic", "celtic-oppidum", "himalayan-terraces", "indus-planned", "native-iroquoian", "norse-ringfort", "swahili-stone-town", "goblin-warren", "ksar-oasis", "medina", "roman-core", "kraal", "native-plains", "nomad-camp"];
+const FILL2_CULTURES: &[&str] = &["barbarian-celtic", "celtic-oppidum", "himalayan-terraces", "indus-planned", "native-iroquoian", "norse-ringfort", "swahili-stone-town", "goblin-warren", "ksar-oasis", "medina", "roman-core", "kraal", "native-plains", "nomad-camp", "mongol-ordu", "inuit-camp", "guarani-village", "pnw-plank-village"];
 
 #[test]
 fn village_open_uses_share_the_town_instead_of_emptying_whole_quarters() {
@@ -402,6 +408,10 @@ fn reviewed_villages_have_no_unoccupied_parcels() {
         let parts = generate_parcels("small-settlement", layouts, &ParcelConfig::default()).unwrap();
         let pr = parts[0].programme.as_ref().unwrap();
         let requests = building_sites::requests("small-settlement", layouts, &parts, surface, &level, None).unwrap();
+        if kinds::native_camp(&layout.culture, 500, layout.config.as_ref().unwrap()) {
+            assert!(!pr.allocations.iter().any(|a| a.role == "open.garden"), "{culture}: vacant cadastral garden");
+            assert!(!layout.streets.iter().any(|s| s.role == "outbound"), "{culture}: urban exit feeder in a camp");
+        }
         let mut bare = vec![];
         for p in &parts[0].parcels {
             let allocation = pr.allocations.iter().find(|a| a.parcel_id == p.id);
@@ -425,7 +435,8 @@ fn reviewed_villages_have_no_unoccupied_parcels() {
             std::fs::write(std::path::Path::new(&dir).join(format!("{culture}.json")),
                 serde_json::to_vec(&serde_json::json!({"layout":layout,"partition":parts[0],"requests":requests})).unwrap()).unwrap();
         }
-        if bare.len() as f64 > 0.01 * parts[0].parcels.len() as f64 { failures.push(format!("{culture}: {bare:?}")); }
+        let tolerance = if kinds::native_camp(&layout.culture, 500, layout.config.as_ref().unwrap()) { 0. } else { 0.01 };
+        if bare.len() as f64 > tolerance * parts[0].parcels.len() as f64 { failures.push(format!("{culture}: {bare:?}")); }
         for r in requests.iter().filter(|r| r["programme"]["role"].as_str().is_some_and(|s| s.starts_with("worship.mosque") || s.starts_with("worship.masjid"))) {
             assert!(r["preview_parts"].as_array().unwrap().iter().any(|p| p == "prayer-hall"), "{culture}: mosque without prayer hall: {r}");
         }
@@ -463,4 +474,67 @@ fn communal_longhouses_keep_their_family_capacity_and_served_rows() {
     let wanted: f64 = pr.demands.iter().filter(|d|d.unit == "domesticUnits").map(|d|d.requested).sum();
     assert!(pr.allocations.iter().any(|a| a.households > 1.), "a communal longhouse can hold several families");
     assert!(housed >= wanted*0.9, "only {housed}/{wanted} families: the rows must reach the entrance");
+}
+
+#[test]
+fn plank_house_count_follows_population_at_its_declared_metric_size() {
+    let mut previous = 0;
+    let mut failures = vec![];
+    for population in [200, 500, 1000] {
+        let layout = village_layout("pnw-plank-village", population);
+        let n = 64;
+        let height = vec![10.; n*n]; let water = vec![0; n*n]; let level = vec![0.; n*n];
+        let surface = Surface { geometry:None, width:4000., n, height:&height, water:&water };
+        let layouts = std::slice::from_ref(&layout);
+        let parts = generate_parcels("small-settlement", layouts, &ParcelConfig::default()).unwrap();
+        let requests = building_sites::requests("small-settlement", layouts, &parts, surface, &level, None).unwrap();
+        let pr = parts[0].programme.as_ref().unwrap();
+        let homes: Vec<_> = requests.iter().filter(|r| pr.allocations.iter().any(|a| r["parcel_id"] == a.parcel_id && a.households > 0.)
+            && r["preview"].as_array().is_some_and(|p| !p.is_empty())).collect();
+        let housed: f64 = pr.allocations.iter().map(|a| a.households).sum();
+        let wanted: f64 = pr.demands.iter().filter(|d|d.unit == "domesticUnits").map(|d|d.requested).sum();
+        eprintln!("PLANK {population}: homes={} households={housed}/{wanted}",homes.len());
+        if let Ok(dir) = std::env::var("FILL2_OUT") {
+            let morph = resolve("pnw-plank-village","culture","auto","core",1.,&serde_json::json!({}),"parcels").unwrap();
+            let raw = parcels::generate(&format!("small-settlement\u{1}settlement:{}",layout.key),&layout,&ParcelConfig::default(),&morph).unwrap();
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(std::path::Path::new(&dir).join(format!("plank-{population}.json")),
+                serde_json::to_vec(&serde_json::json!({"layout":layout,"partition":parts[0],"raw":raw,"requests":requests})).unwrap()).unwrap();
+        }
+        if homes.len() <= previous { failures.push(format!("{population}: {} homes after {previous}",homes.len())); }
+        if population == 500 && homes.len() < 15 { failures.push(format!("500 inhabitants: {} homes",homes.len())); }
+        if housed < wanted*0.9 { failures.push(format!("{population}: {housed}/{wanted} households")); }
+        assert!(pr.allocations.iter().filter(|a|a.unit == "domesticUnits").all(|a|a.households <= 4.));
+        for r in &homes {
+            let shapes: Vec<Shape> = serde_json::from_value(r["preview"].clone()).unwrap();
+            assert!(shapes.iter().all(|s| g::area(s) <= 9.144*15.24+0.1), "oversized plank house");
+        }
+        previous = homes.len();
+    }
+    assert!(failures.is_empty(),"{}",failures.join("\n"));
+}
+
+#[test]
+#[ignore = "Replays the five city-13 rasters captured by out/fix-v7/villages/capture.mjs"]
+fn reviewed_camps_real_map_geometry() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../web/out/fix-v7/villages");
+    for culture in ["mongol-ordu","inuit-camp","pnw-plank-village","guarani-village","kraal"] {
+        let f: serde_json::Value = serde_json::from_slice(&std::fs::read(root.join(format!("{culture}-fixture.json"))).unwrap()).unwrap();
+        let height:Vec<f32> = serde_json::from_value(f["height"].clone()).unwrap();
+        let water:Vec<u8> = serde_json::from_value(f["water"].clone()).unwrap();
+        let level:Vec<f32> = serde_json::from_value(f["waterLevel"].clone()).unwrap();
+        let surface = Surface { geometry:None,width:f["width"].as_f64().unwrap(),n:f["n"].as_u64().unwrap() as usize,height:&height,water:&water };
+        let seed = f["seed"].as_str().unwrap();
+        let sites:Vec<Site> = serde_json::from_value(f["sites"].clone()).unwrap();
+        let roads:Vec<Street> = serde_json::from_value(f["roads"].clone()).unwrap();
+        let cfg:LayoutConfig = serde_json::from_value(f["layoutConfig"].clone()).unwrap();
+        let layouts = generate_quarters(seed,&sites,&cfg,surface,&roads).unwrap();
+        let parts = generate_parcels(seed,&layouts,&ParcelConfig::default()).unwrap();
+        let requests = building_sites::requests(seed,&layouts,&parts,surface,&level,None).unwrap();
+        let out = root.join("after").join(culture); std::fs::create_dir_all(&out).unwrap();
+        for (name,value) in [("layouts.json",serde_json::to_value(&layouts).unwrap()),("partitions.json",serde_json::to_value(&parts).unwrap()),("requests.json",serde_json::to_value(&requests).unwrap())] {
+            std::fs::write(out.join(name),serde_json::to_vec(&value).unwrap()).unwrap();
+        }
+        eprintln!("CAMP_REVIEW {culture}: {} previews",requests.iter().filter(|r|r["preview"].as_array().is_some_and(|p|!p.is_empty())).count());
+    }
 }

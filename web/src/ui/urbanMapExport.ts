@@ -3,7 +3,7 @@ import { exportPng } from './pngExport';
 
 /** Export the retained 2D representation, including its current layers. The
  * crop changes only the SVG viewport; no geometry is recalculated. */
-export function installUrbanMapExports(host: Element, map: SVGSVGElement, onError: (message: string) => void): void {
+export function installUrbanMapExports(host: Element, map: SVGSVGElement, onError: (message: string) => void, prepare?: (copy: SVGSVGElement) => Promise<void>): void {
   const group = document.createElement('div'); group.className = 'urban-actions';
   for (const format of ['svg', 'png'] as const) {
     const button = document.createElement('button'); button.type = 'button'; button.dataset.urbanExport = format;
@@ -29,6 +29,7 @@ export function installUrbanMapExports(host: Element, map: SVGSVGElement, onErro
           for (const key of ['x', 'y', 'width', 'height']) image.setAttribute(key, node.getAttribute(key) ?? '0');
           image.setAttribute('href', canvas.toDataURL('image/png')); node.replaceWith(image);
         });
+        await prepare?.(copy);
         const captured = new Blob([new XMLSerializer().serializeToString(copy)], { type: 'image/svg+xml' });
         const crop = await chooseExportCrop(captured, 4096);
         if (!crop) return;

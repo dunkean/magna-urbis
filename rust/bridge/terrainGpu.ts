@@ -6,6 +6,7 @@ import coastShader from './terrainCoast.wgsl?raw';
 import { GenerationNoisePlan } from '../pkg/wasm/magna_urbis_wasm.js';
 import type { TerrainEngine } from '../pkg/wasm/magna_urbis_wasm.js';
 import type { TerrainData, TerrainRegion, TerrainSettings, TerrainCompute } from './terrain';
+import { gpuSetupDeadline, type TerrainProgressCallback } from './terrainProgress';
 
 export interface Context { device: GPUDevice; pipelines: Map<string, Promise<GPUComputePipeline>>; lost: boolean }
 let contextPromise: Promise<Context | undefined> | undefined;
@@ -36,6 +37,9 @@ export async function prepareGpu(mode: TerrainCompute, relief: string): Promise<
       const module = state.device.createShaderModule({ code });
       return state.device.createComputePipelineAsync({ layout: 'auto', compute: { module, entryPoint: 'main', constants: { FAMILY: family } } });
     })();
+    // Compilation overlaps WASM loading. Attach a rejection handler now so a
+    // driver failure cannot become an unhandled rejection before its consumer waits.
+    void pipeline.catch(() => undefined);
     state.pipelines.set(key, pipeline);
   }
   // Return after submitting compilation so Rust preparation can overlap it.
@@ -43,7 +47,7 @@ export async function prepareGpu(mode: TerrainCompute, relief: string): Promise<
 }
 
 export const GPU_GENERATION_RELIEFS = ['hills', 'mountains', 'mixed', 'high-mountains', 'valley', 'volcano', 'caldera', 'plateau', 'canyon'];
-export async function generateGpuNoise(state: Context, settings: TerrainSettings): Promise<{ coarse: Float32Array; fine: Float32Array }> {
+export async function generateGpuNoise(state: Context, settings: TerrainSettings,progress?:TerrainProgressCallback): Promise<{ coarse: Float32Array; fine: Float32Array }> {
   const device = state.device;
   // Both entry points share an explicit layout, so the seed buffers are uploaded once.
   const layout = device.createBindGroupLayout({ entries: [
@@ -73,7 +77,9 @@ export async function generateGpuNoise(state: Context, settings: TerrainSettings
       buffers.push(buffer); device.queue.writeBuffer(buffer, 0, data as GPUAllowSharedBufferSource); return buffer;
     };
     const inputs = [upload(params, GPUBufferUsage.UNIFORM), upload(plan.permutations(), GPUBufferUsage.STORAGE), upload(plan.gradients(), GPUBufferUsage.STORAGE)];
-    const resolved = await Promise.all(compiled);
+    progress?.('GPU · compilation des shaders de bruit…',{stage:'gpu-noise-compile'});
+    const resolved = await gpuSetupDeadline(Promise.all(compiled));
+    progress?.('GPU · calcul des bruits du relief…',{stage:'gpu-noise'});
     const sizes = stages.map(stage => stage === 'coarse' ? params[2] : params[1]);
     const readbacks = sizes.map((n, index) => {
       const bytes = n * n * 16;
@@ -86,10 +92,12 @@ export async function generateGpuNoise(state: Context, settings: TerrainSettings
       encoder.copyBufferToBuffer(output, 0, readback, 0, bytes); device.queue.submit([encoder.finish()]);
       return readback;
     });
+    const done=device.queue.onSubmittedWorkDone().then(()=>progress?.('GPU · lecture des bruits calculés…',{stage:'gpu-readback'}),()=>undefined);
     const values = await Promise.all(readbacks.map(async buffer => {
       await buffer.mapAsync(GPUMapMode.READ);
       const copy = new Float32Array(buffer.getMappedRange().slice(0)); buffer.unmap(); return copy;
     }));
+    await done;
     return { coarse: stages.length === 2 ? values[0] : new Float32Array(), fine: values[values.length - 1] };
   } finally { plan.free(); buffers.forEach(buffer => buffer.destroy()); }
 }

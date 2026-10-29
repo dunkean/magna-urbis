@@ -91,10 +91,10 @@ function samplingAxis(origin: number, cell: number, count: number, hydroCell: nu
 
 /** Sample the retained depression field and continuous vector bed at camera precision.
  * The core keeps its coarse physical grid for diagnostics; zoom never enlarges its incision pixels. */
-export function applyHydrologySurface(data: SurfaceData, hydro: HydrologyData): void {
+export function applyHydrologySurface(data: SurfaceData, hydro: HydrologyData, updateNormals = true): void {
   const n = data.resolution, cell = data.width / n, surface = prepare(hydro);
   if (!surface.hasDelta && !surface.segments.length && !surface.notches.length) return;
-  const changes = new Float32Array(n * n);
+  const changes = updateNormals ? new Float32Array(n * n) : undefined;
   if (surface.hasDelta) {
     const hn = hydro.resolution, hc = hydro.width / hn;
     const xs = samplingAxis(data.x, cell, n, hc, hn), ys = samplingAxis(data.y, cell, n, hc, hn);
@@ -124,7 +124,7 @@ export function applyHydrologySurface(data: SurfaceData, hydro: HydrologyData): 
         // Keep marine pixels marine; enclosed below-datum land basins can still fill.
         if (!hydro.basins[i] || hydro.baseHeight[i] >= 0) change = 0;
       }
-      changes[y * n + x] = change;
+      if (changes) changes[y * n + x] = change;
       data.height[y * n + x] += change;
     }
   }
@@ -207,11 +207,11 @@ export function applyHydrologySurface(data: SurfaceData, hydro: HydrologyData): 
   }
   let min = Infinity, max = -Infinity;
   for (let i = 0; i < n * n; i++) {
-    data.height[i] -= cuts[i]; changes[i] -= cuts[i];
+    data.height[i] -= cuts[i]; if (changes) changes[i] -= cuts[i];
     min = Math.min(min, data.height[i]); max = Math.max(max, data.height[i]);
   }
   // Preserve the terrain's detailed normals, adding only this surface's gradient.
-  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+  if (changes) for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
     const i = y * n + x, xl = Math.max(0, x - 1), xr = Math.min(n - 1, x + 1);
     const yt = Math.max(0, y - 1), yb = Math.min(n - 1, y + 1);
     const changeX = changes[y * n + xr] - changes[y * n + xl], changeY = changes[yb * n + x] - changes[yt * n + x];
@@ -223,4 +223,12 @@ export function applyHydrologySurface(data: SurfaceData, hydro: HydrologyData): 
     data.normalX[i] = -dx / length; data.normalY[i] = -dy / length; data.normalZ[i] = 1 / length;
   }
   data.minHeight = min; data.maxHeight = max;
+}
+
+/** Physical control fields have no stored normals; avoid allocating or differentiating discarded arrays. */
+const EMPTY_NORMALS = new Float32Array(0);
+export function applyHydrologyHeight(data: Omit<SurfaceData, 'normalX' | 'normalY' | 'normalZ'>, hydro: HydrologyData): void {
+  const surface = { ...data, normalX: EMPTY_NORMALS, normalY: EMPTY_NORMALS, normalZ: EMPTY_NORMALS };
+  applyHydrologySurface(surface, hydro, false);
+  data.minHeight = surface.minHeight; data.maxHeight = surface.maxHeight;
 }

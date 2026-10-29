@@ -1,5 +1,6 @@
 import { architectureProfile, type PlacementBatch, type PlacementBatchRequest, type PlacementRequest } from '../../../rust/bridge/urbanArchitecture';
 import { prepareUrbanOpenDeficits } from '../../../rust/bridge/urbanOpenDeficits';
+import type { Partition } from '../../../rust/bridge/urban';
 import SceneWorker from './urbanSceneWorker?worker&inline';
 import { createUrbanEngine } from '../../../rust/bridge/urban';
 import type { SettlementRaster } from '../../../rust/bridge/settlements';
@@ -24,6 +25,7 @@ export type UrbanColdSceneInput = Pick<UrbanSceneRequest, 'seed' | 'settings' | 
   runtime: NonNullable<UrbanSceneRequest['runtime']> & { profile: 'local' };
 };
 export interface UrbanColdSceneOptions {
+  partitions?: readonly Partition[];
   backend: BuildingChunkBackend; sourceFingerprint: string; sceneId?: string; expectedActive?: string | null;
   /** Default true: collect projected sites, never original constraints. */
   retainSites?: boolean;
@@ -55,6 +57,7 @@ export function createUrbanSceneClient() {
     backend: BuildingChunkBackend; sourceFingerprint: string; sceneId?: string; expectedActive: Promise<string | null>;
     stage?: ColdStage; work: Promise<void>; processing: boolean; stopping: boolean; abort: AbortController;
     receivedSites: number; sites?: UrbanSiteVisual[];
+    deficitJoin?: ReturnType<typeof prepareUrbanOpenDeficits>;
     onProjection?: UrbanColdSceneOptions['onProjection'];
   } };
   let current: Legacy | Cold | undefined;
@@ -109,7 +112,8 @@ export function createUrbanSceneClient() {
         if (!live(item, source)) return;
       }
       const projectedSites = sites.map(siteProjection);
-      await cold.stage.append(delta, progress, projectedSites); if (!live(item, source)) return;
+      const retainedDelta = cold.deficitJoin ? cold.deficitJoin(delta, sites) : delta;
+      await cold.stage.append(retainedDelta, progress, projectedSites); if (!live(item, source)) return;
       // Only child outlines/metadata can reach the preview consumer. No growing
       // PlacementBatch accumulator is constructed anywhere on this branch.
       if (cold.onProjection) await Promise.race([cold.onProjection(cold.stage.lastProjection ?? projectNativeBuildingChunk(delta), { ...progress }), item.superseded]);
@@ -312,6 +316,7 @@ export function createUrbanSceneClient() {
         const expectedActive = options.expectedActive === undefined ? options.backend.active().then(manifest => manifest?.sceneId ?? null) : Promise.resolve(options.expectedActive);
         current = { kind: 'cold', request, resolve, reject, progress: options.progress, published: false, superseded, releaseConsumer,
           cold: { backend: options.backend, sourceFingerprint: options.sourceFingerprint, sceneId: options.sceneId, expectedActive,
+            deficitJoin: options.partitions ? prepareUrbanOpenDeficits(options.partitions) : undefined,
             work: Promise.resolve(), processing: false, stopping: false, abort: new AbortController(), receivedSites: 0,
             sites: options.retainSites === false ? undefined : [], onProjection: options.onProjection } };
         dispatchWhenReady(current, replacing);

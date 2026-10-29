@@ -48,7 +48,7 @@ pub(super) fn lots(
     let frame = Frame::of(layout);
     let tiles = match morph.text("campLayout") {
         "rows" => rows(&frame, morph, layout),
-        _ if !morph.text("campForm").is_empty() => forms::tiles(&frame, morph, layout),
+        _ if !morph.text("campForm").is_empty() => admitted_form(&frame, morph, layout),
         _ => ring(&frame, morph, layout),
     };
     let index = FrontageIndex::new(layout);
@@ -57,6 +57,43 @@ pub(super) fn lots(
         contacts::street_contacts(path, layout, &index).into_iter()
             .filter(|f| reached.get(f.street).copied().unwrap_or(false)).collect()
     })
+}
+
+/// Clipped or inaccessible pitches do not house the population. Compare a
+/// bounded allowance of pitches on the SAME land, keeping only an improvement
+/// in actual culturally admissible, road-connected homes. Scoring all blocks
+/// together preserves one common figure on both sides of a regional road.
+fn admitted_form(frame:&Frame,morph:&Morph,layout:&Layout)->(Vec<Tile>,Vec<Shape>) {
+    let mut best=forms::tiles(frame,morph,layout);
+    let Some(pr)=&layout.programme else{return best;};
+    let wanted:f64=pr.demands.iter().filter(|d|d.unit=="domesticUnits").map(|d|d.requested).sum();
+    if wanted<=0.0{return best;}
+    let index=FrontageIndex::new(layout);let reached=regional_streets(layout);
+    let score=|plan:&(Vec<Tile>,Vec<Shape>)| {
+        let mut part=Partition{key:layout.key.clone(),config:Some(ParcelConfig::default()),programme:None,
+            parcels:vec![],warnings:vec![],diagnostics:None};
+        for (bi,b) in layout.blocks.iter().enumerate().filter(|(_,b)|b.kind=="block") {
+            let native=|p:&Shape|contacts::street_contacts(p,layout,&index).into_iter().filter(|f|reached[f.street]).collect::<Vec<_>>();
+            let mut fronts=native(&b.shape);
+            let mut cells=assemble_with_contacts(&b.shape,bi,b.axis,&mut fronts,morph,plan.clone(),native);
+            let Some(c)=super::super::culture::contextual_mapping(&layout.culture,&pr.context.period,&b.zone,morph.text("plotOp"),"domestic") else{continue;};
+            let fallback=compact_fallback(&c.architecture_pack,&pr.context.period,&c.admissibility);
+            let mut admission=c.admissibility;admission.shared_access=true;
+            let family=families::family(morph.text("plotOp"));
+            qualify(&mut cells,&fronts,layout,&admission,fallback.as_ref(),family=="courtyard",family,None,matches!(b.zone.as_str(),"core"|"middle"));
+            part.parcels.extend(cells);
+        }
+        super::super::programme::allocate(layout,&mut part);
+        part.programme.as_ref().map_or(0.0,|p|p.allocations.iter().map(|a|a.households).sum::<f64>())
+    };
+    let mut admitted=score(&best);
+    for allowance in [1.15,1.0/ADMITTED,1.5] {
+        if admitted>=wanted.ceil(){break;}
+        let candidate=forms::tiles_with_allowance(frame,morph,layout,allowance);
+        let n=score(&candidate);
+        if n>admitted {best=candidate;admitted=n;}
+    }
+    best
 }
 
 /// What a tile of the camp holds.
@@ -72,6 +109,7 @@ enum Hold {
     Open,
 }
 
+#[derive(Clone)]
 struct Tile {
     shape: Shape,
     hold: Hold,
@@ -205,6 +243,18 @@ impl Frame {
 /// kraal crossed by its road, measured on the s3 P01 replays).
 const ADMITTED: f64 = 0.8;
 
+/// Organic camps reserve only the household cells their programme can occupy.
+/// The rest remains navigable ground, not a cadastral target for new paths.
+pub(super) fn organic_budget(layout: &Layout, block: usize) -> Option<usize> {
+    let pr = layout.programme.as_ref()?;
+    let cfg = layout.config.as_ref()?;
+    if !super::super::kinds::native_camp(&layout.culture, pr.population, cfg) { return None; }
+    let total: f64 = layout.blocks.iter().filter(|b|b.kind == "block").map(|b|area(&b.shape)).sum();
+    let share = area(&layout.blocks[block].shape) / total.max(1.0);
+    let n: f64 = pr.demands.iter().filter(|d| d.unit == "domesticUnits").map(|d|d.requested).sum();
+    Some((n*share/ADMITTED).ceil().max(1.0) as usize)
+}
+
 /// Narrowest street contact (m) that anchors a camp lane to its road.
 const GATE_MIN: f64 = 2.0;
 
@@ -214,16 +264,18 @@ const GATE_MIN: f64 = 2.0;
 /// The camp lays out no more rows than this: the land beyond stays open
 /// ground, never rings of empty lots. `None` without a programme (a capacity
 /// probe): the land sets the rows.
-fn need(layout: &Layout, nominal: f64) -> Option<usize> {
+fn need(layout: &Layout, nominal: f64, morph: &Morph) -> Option<usize> {
     let programme = layout.programme.as_ref()?;
     let mut cells = 0.0;
     for d in &programme.demands {
         if d.unit == "domesticUnits" {
             if d.requested > 0.0 {
                 let per = (d.target_area / d.requested).max(1.0);
-                cells += (d.requested / (nominal / per).floor().max(1.0)).ceil();
+                let held = super::super::programme::camps::households_per_house(morph)
+                    .unwrap_or_else(|| (nominal / per).floor().max(1.0));
+                cells += (d.requested / held).ceil();
             }
-        } else if d.placement == "parcel" {
+        } else if d.placement == "parcel" && super::super::programme::camps::needs_cell(layout, d) {
             cells += d.sites.max(1) as f64;
         }
     }
@@ -298,7 +350,7 @@ fn ring(frame: &Frame, morph: &Morph, layout: &Layout) -> (Vec<Tile>, Vec<Shape>
     let span = TAU - gap;
     let gap1 = beta + 0.5 * gap;
     // Rows go out until they hold the programme's dwellings (cells on land).
-    let need = need(layout, depth * mean);
+    let need = need(layout, depth * mean, morph);
     let mut held = 0;
     let mut radii = vec![centre_r];
     let mut r = centre_r;
@@ -535,18 +587,84 @@ fn rows(frame: &Frame, morph: &Morph, layout: &Layout) -> (Vec<Tile>, Vec<Shape>
     // The lots nearest the centre hold the programme's dwellings; the rest
     // of the lattice is open ground (the fields inside the palisade).
     let mean = 0.5 * (len_lo + len_hi) * (across - path);
-    if let Some(n) = need(layout, mean) {
-        let mut lots: Vec<(f64, usize)> = tiles
-            .iter()
-            .enumerate()
-            .filter(|(_, t)| t.hold == Hold::Dwelling)
-            .map(|(i, t)| (super::super::geometry::centroid(&t.shape), i))
-            .filter(|&(c, _)| on_land(layout, c))
-            .map(|(c, i)| (length(sub(c, frame.centre)), i))
-            .collect();
+    if let Some(count) = need(layout, mean, morph) {
+        let index=FrontageIndex::new(layout);let reached=regional_streets(layout);
+        let all_paths=union(&paths);
+        let eligible: Vec<Front> = paths.iter().flat_map(|p| {
+            let r=super::super::geometry::normalized(p.clone()).outer;
+            (0..r.len()).map(move |i|Front{a:r[(i+1)%r.len()],b:r[i],street:0,rank:0,shared:true,gate:true})
+        }).collect();
+        let mut lots=vec![];
+        let period=layout.programme.as_ref().map_or("",|p|p.context.period.as_str());
+        for b in layout.blocks.iter().filter(|b|b.kind=="block") {
+            let native=|p:&Shape|contacts::street_contacts(p,layout,&index).into_iter().filter(|f|reached[f.street]).collect::<Vec<_>>();
+            let clipped: Vec<_> = all_paths.iter().flat_map(|p|intersection(p,&b.shape)).collect();
+            let mut fronts=native(&b.shape);
+            fronts.extend(connected_path_fronts(&b.shape,&clipped,&eligible,&native,path.min(GATE_MIN)));
+            let profile=super::super::culture::contextual_mapping(&layout.culture,period,&b.zone,morph.text("plotOp"),"domestic");
+            for (i,t) in tiles.iter().enumerate().filter(|(_,t)|t.hold==Hold::Dwelling && boxes_overlap(bbox(&t.shape),bbox(&b.shape))) {
+                for cell in intersection(&t.shape,&b.shape) {
+                    if !dwelling_fits(area(&cell),t.nominal) {continue;}
+                    // Budget only physically buildable cells. Access to these
+                    // potential banks is certified after entrance links exist.
+                    let mut potential=fronts.clone();potential.extend(contacts::boundary_contacts(&cell,&eligible));
+                    if profile.as_ref().is_some_and(|c| {
+                        let a=&c.admissibility;
+                        families::envelope(&cell,&potential,a.min_frontage,a.min_depth,a.min_access_width).is_none()
+                    }) {continue;}
+                    lots.push((length(sub(super::super::geometry::centroid(&cell),frame.centre)),i));
+                }
+            }
+        }
         lots.sort_by(|a, b| a.0.total_cmp(&b.0));
-        for &(_, i) in lots.iter().skip(n) {
-            tiles[i].hold = Hold::Open;
+        let kept: std::collections::BTreeSet<_> = lots.iter().take(count).map(|&(_,i)|i).collect();
+        // Clipped edge cells count too: an off-land centroid must not create
+        // an extra dwelling outside the population's selected cells.
+        for (i, tile) in tiles.iter_mut().enumerate() {
+            if tile.hold == Hold::Dwelling && !kept.contains(&i) { tile.hold = Hold::Open; }
+        }
+        // The lattice serves selected homes and its nearest real entrance;
+        // unused rows are ground, not a ghost cadastre of empty path cells.
+        let mut bounds = (f64::INFINITY,f64::NEG_INFINITY,f64::INFINITY,f64::NEG_INFINITY);
+        for t in tiles.iter().filter(|t|t.hold == Hold::Dwelling) {
+            for &p in &t.shape.outer {
+                let q=sub(p,frame.centre);let (s,t)=(dot(q,u),dot(q,n));
+                bounds=(bounds.0.min(s),bounds.1.max(s),bounds.2.min(t),bounds.3.max(t));
+            }
+        }
+        if bounds.0.is_finite() {
+            let entry=layout.streets.iter().enumerate().filter(|(i,_)|reached[*i])
+                .flat_map(|(_,s)|s.path.windows(2).map(move |w| {
+                    let (d,_,p)=super::super::geometry::distance(frame.centre,w[0],w[1]);
+                    (d,p,0.5*s.widths.iter().copied().fold(0.0,f64::max))
+                })).min_by(|a,b|a.0.total_cmp(&b.0));
+            let mut margin=path;
+            if let Some((_,p,half))=entry {
+                let q=sub(p,frame.centre);let (s,t)=(dot(q,u),dot(q,n));
+                bounds=(bounds.0.min(s),bounds.1.max(s),bounds.2.min(t),bounds.3.max(t));
+                margin+=half;
+            }
+            let window=rect(bounds.0-margin,bounds.1+margin,bounds.2-margin,bounds.3+margin);
+            let mut kept_paths=vec![];
+            let mut released=vec![];
+            for p in &all_paths {
+                kept_paths.extend(intersection(p,&window));
+                released.extend(difference(p,&window));
+            }
+            let safe=layout.blocks.iter().filter(|b|b.kind=="block").all(|b| {
+                let clipped=|ps:&[Shape]|ps.iter().flat_map(|p|intersection(p,&b.shape)).collect::<Vec<_>>();
+                let certify=|ps:&[Shape]|connected_path_fronts(&b.shape,ps,&eligible,|p|
+                    contacts::street_contacts(p,layout,&index).into_iter().filter(|f|reached[f.street]).collect(),path.min(GATE_MIN));
+                let old=certify(&clipped(&all_paths));let new=certify(&clipped(&kept_paths));
+                tiles.iter().filter(|t|t.hold==Hold::Dwelling).all(|t|intersection(&t.shape,&b.shape).iter().all(|cell|
+                    contacts::boundary_contacts(cell,&old).is_empty() || !contacts::boundary_contacts(cell,&new).is_empty()))
+            });
+            // A ragged shore may need a detour outside the compact window.
+            // Never prune a certified household's actual route to its road.
+            if safe {
+                tiles.extend(released.into_iter().map(|shape|Tile{shape,hold:Hold::Open,nominal:0.0,cut:false}));
+                paths=kept_paths;
+            }
         }
     }
     let (first, last) = (bounds[0], *bounds.last().unwrap());
@@ -580,10 +698,11 @@ fn regional_streets(layout: &Layout) -> Vec<bool> {
     }
     let mut reached=vec![false;layout.streets.len()];let mut queue=vec![];
     let explicit = layout.streets.iter().any(|s| matches!(s.role.as_str(), "regional" | "road" | "gate-street" | "outbound"));
-    let entrance = |s:&super::super::Street| !explicit && matches!(s.role.as_str(),"street"|"track") && s.rank <= 1
+    let entrance = |s:&super::super::Street| !explicit && matches!(s.role.as_str(),"street"|"lane"|"track") && s.rank <= 1
         && [s.path.first(),s.path.last()].into_iter().flatten().any(|&p| layout.blocks.iter().any(|b|
-            b.shape.outer.iter().zip(b.shape.outer.iter().cycle().skip(1)).take(b.shape.outer.len())
-                .any(|(&a,&b)| super::super::geometry::distance(p,a,b).0 <= s.widths.first().copied().unwrap_or(3.)*0.5+0.1)));
+            std::iter::once(&b.shape.outer).chain(&b.shape.holes).any(|ring|
+                ring.iter().zip(ring.iter().cycle().skip(1)).take(ring.len())
+                    .any(|(&a,&b)| super::super::geometry::distance(p,a,b).0 <= s.widths.first().copied().unwrap_or(3.)*0.5+0.1))));
     for (i,s) in layout.streets.iter().enumerate() {
         if s.path.len()>1 && (matches!(s.role.as_str(),"regional"|"road"|"gate-street"|"outbound") || entrance(s)) {
             reached[i]=true;queue.push(i);
@@ -610,8 +729,14 @@ fn connected_path_fronts(
     native_contacts:impl Fn(&Shape)->Vec<Front>, required_width:f64,
 )->Vec<Front> {
     let mut result=vec![];
+    // Eligibility retains the original global traces. Their overlay grid can
+    // be coarser than the clipped component's, especially on a narrow shore.
+    let bb=eligible.iter().flat_map(|f|[f.a,f.b]).fold((f64::INFINITY,f64::INFINITY,f64::NEG_INFINITY,f64::NEG_INFINITY),
+        |b,p|(b.0.min(p.x),b.1.min(p.y),b.2.max(p.x),b.3.max(p.y)));
+    let half=0.5*(bb.2-bb.0).max(bb.3-bb.1);
+    let unit=if half.is_finite()&&half>0.0 {(half.log2().floor()-29.0).exp2()}else{0.0};
     for p in paths {
-        if !difference(p,block).is_empty() {continue;}
+        if !super::organic::contained_path_at(p,block,unit) {continue;}
         let entries=native_contacts(p);
         let anchor=entries.iter().enumerate().filter(|(_,f)|!f.shared)
             .filter(|(i,_)| { let (lo,hi)=contacts::support_span(&entries,*i);hi-lo>=required_width
@@ -659,6 +784,10 @@ fn without_existing_paths(links:Vec<Shape>, paths:&[Shape])->Vec<Shape> {
         rest
     }).collect()
 }
+
+#[cfg(test)]
+#[path="camp_entrance_paths_tests.rs"]
+mod entrance_paths_tests;
 
 /// Existing construction classification, shared by final emission and the
 /// effective-open ownership check. No size threshold changes here.
@@ -753,10 +882,14 @@ fn assemble_with_contacts(
     // attach access to its unclipped global geometry or its nearest street.
     let eligible: Vec<Front> = paths.iter().filter(|p| boxes_overlap(bbox(p), b))
         .flat_map(|p| {
-            let ring=super::super::geometry::normalized(p.clone()).outer;
-            (0..ring.len()).filter_map(|k| {
-                let (a,q)=(ring[(k+1)%ring.len()],ring[k]);
-                near_block(a,q).then_some(Front{a,b:q,street:0,rank:0,shared:true,gate:true})
+            let p=super::super::geometry::normalized(p.clone());
+            // A unioned lane grid has holes: their banks serve the homes
+            // inside just as its outer banks serve the homes outside.
+            std::iter::once(&p.outer).chain(&p.holes).flat_map(|ring| {
+                (0..ring.len()).filter_map(|k| {
+                    let (a,q)=(ring[(k+1)%ring.len()],ring[k]);
+                    near_block(a,q).then_some(Front{a,b:q,street:0,rank:0,shared:true,gate:true})
+                }).collect::<Vec<_>>()
             }).collect::<Vec<_>>()
         }).collect();
     let (paths,rejected):(Vec<Shape>,Vec<Shape>) = union(&paths).iter()
@@ -766,7 +899,7 @@ fn assemble_with_contacts(
     // for the road, keeps less than its full width as contact: a gate needs
     // only a passage's width (2 m), not the lane's.
     let gate = morph.number_or("campPath", 3.0).clamp(1.2, 3.0).min(GATE_MIN);
-    let shared = connected_path_fronts(shape, &paths, &eligible, native_contacts, gate);
+    let shared = connected_path_fronts(shape, &paths, &eligible, &native_contacts, gate);
     let first_shared=fronts.len();
     fronts.extend(shared);
     let connected_shared: Vec<usize> = (first_shared..fronts.len()).collect();
@@ -832,6 +965,16 @@ fn assemble_with_contacts(
     // Cap-specific stage, exact validated assignment and hold-commit rules.
     // Restored ground is an existing non-built cell, never navigation land.
     let _unassigned_caps = assign_open_ground_caps(shape, &mut cells, &rejected);
+    // A discarded path is still real land. An isolated shore cap must stay
+    // open, without enlarging a dwelling or inventing a connection to it.
+    for cap in &rejected {
+        let mut ground=vec![cap.clone()];
+        for (cell,_,_) in &cells {
+            ground=ground.into_iter().flat_map(|p|difference(&p,cell)).collect();
+            if ground.is_empty(){break;}
+        }
+        cells.extend(ground.into_iter().map(|p|(p,Hold::Open,0.0)));
+    }
     // Cells reaching neither a street nor a camp path get a footpath along
     // the cell boundaries (organic's router).
     let width = morph.number_or("campPath", 3.0).clamp(1.2, 3.0);

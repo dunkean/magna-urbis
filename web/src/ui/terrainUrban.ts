@@ -20,6 +20,7 @@ import { createUrbanParentSceneClient } from './urbanParentScene';
 import { nativeParentApi, nativeParentSessionSupport } from '../../../rust/bridge/architecture';
 import { parentGenerationIdentity } from './urbanParentIdentity';
 import { openParentViewport } from './urbanParentViewport';
+import { parent3dWindow } from './urbanParent3d';
 import { sameParentBuildingState, type UrbanParentBuildingState } from './urbanParentState';
 import { createParentStreamWindow } from './urbanParentStreamWindow';
 import type { ParentMemberVisual, ParentVisualRecords } from './urbanParentVisual';
@@ -28,6 +29,8 @@ import { nativeParentInspectionHtml } from './urbanParentInspector';
 import { downloadParentBuildings, readParentBuildings } from './urbanParentFiles';
 import { createIndexedDbBuildingChunkBackend } from './urbanBuildingChunkIndexedDb';
 import { openColdCitySession, replaceColdProjection, type ColdCitySession, type ColdCityState } from './urbanColdCitySession';
+import { reconcileCompactBuiltBalance, reconcileColdBuiltBalance, reconcileParentBuiltBalance } from './urbanBuiltBalance';
+import { carryUrbanOpenDeficits } from '../../../rust/bridge/urbanOpenDeficits';
 import { coldCityFingerprint } from './urbanColdCityFingerprint';
 import { openColdCityViewport, type ColdCityViewport } from './urbanColdCityViewport';
 import { createColdStreamWindow } from './urbanColdStreamWindow';
@@ -87,7 +90,7 @@ const warningText = (lines: string[]): string => {
   for (const line of lines) counts.set(line, (counts.get(line) ?? 0) + 1);
   return Array.from(counts, ([line, n]) => n > 1 ? `${line} (×${n})` : line).join('\n');
 };
-const configValue = (input: HTMLInputElement | HTMLSelectElement): string | number | boolean => input instanceof HTMLInputElement ? input.type === 'checkbox' ? input.checked : input.type === 'number' ? Number(input.value) : input.value : input.value;
+const configValue = (input: HTMLInputElement | HTMLSelectElement): string | number | boolean | null => input instanceof HTMLInputElement ? input.type === 'checkbox' ? input.checked : ['number', 'range'].includes(input.type) ? input.value === '' && input.hasAttribute('data-auto') ? null : Number(input.value) : input.value : input.value;
 /** The wall stroke stops at each gate, so roads and terrain remain visible through it. */
 function enclosurePath(points: Point[], gates: Point[]): string {
   if (points.length < 2) return '';
@@ -129,7 +132,7 @@ const mechanisms: Record<string, string> = { auto: 'Selon le relief et les accè
 const families: Record<string, string> = { auto: 'Selon culture, relief et accès', circle: 'Circulaire / ovalaire', rectangle: 'Carrée / rectangulaire', polygon: 'Polygonale', compact: 'Organique compacte', elongated: 'Allongée / fusiforme', linear: 'Linéaire / ruban', fan: 'Éventail / secteur', fingers: 'Radiale à bras', dendritic: 'Ramifiée / dendritique', lobed: 'Lobée / polynucléaire', archipelago: 'Discontinue / archipel', composite: 'Composite / asymétrique' };
 const tissues: Record<string, string> = { culture: 'Recettes culturelles par phase', grid: 'Grille orthogonale', organic: 'Organique', radial: 'Radial', terraces: 'Topographique / terrasses', dendritic: 'Ramifié', clusters: 'Groupes autour de communs' };
 const parcelOperators: Record<string, string> = { culture: 'Recettes culturelles par phase', strips: 'Bandes de façade', compact: 'Lots compacts', courtyard: 'Cours et enclos', inherited: 'Parcellaire hérité', oriented: 'Subdivision orientée', frontage: 'Territoires de façade', compound: 'Domaines / compounds', wholeBlock: 'Îlot entier', garden: 'Jardin' };
-interface Render { v1?: boolean; v1Style?: V1LandscapeStyle; view: 'tissue' | 'uses' | 'parcels' | 'buildings' | 'roles'; reserve: boolean; allocated: boolean; centers: boolean; domains: boolean; quarters: boolean; blocks: boolean; streets: boolean; enclosures: boolean; parcels: boolean; gardens: boolean; places: boolean; fronts: boolean; axes: boolean; access: boolean; opacity: number; width: number; palette: 'growth' | 'atlas' | 'ink' | 'terrain'; /** PBR textures on constructions (roofs, streets, plazas, bridges, walls). */ textured?: boolean; /** Roads & ground: classic or blended (shared setting, groundBlend.ts). */ groundBlend?: GroundBlend }
+interface Render { readableGardens?: boolean; v1?: boolean; v1Style?: V1LandscapeStyle; view: 'tissue' | 'uses' | 'parcels' | 'buildings' | 'roles'; reserve: boolean; allocated: boolean; centers: boolean; domains: boolean; quarters: boolean; blocks: boolean; streets: boolean; enclosures: boolean; parcels: boolean; gardens: boolean; places: boolean; fronts: boolean; axes: boolean; access: boolean; opacity: number; width: number; palette: 'growth' | 'atlas' | 'ink' | 'terrain'; /** PBR textures on constructions (roofs, streets, plazas, bridges, walls). */ textured?: boolean; /** Roads & ground: classic or blended (shared setting, groundBlend.ts). */ groundBlend?: GroundBlend }
 type Kind = 'quarters' | 'parcels';
 
 /** `getRaster` replaces `getTerrain` where the raster is already adapted (Urban Bench decors). */
@@ -138,6 +141,8 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   city?: boolean;
   /** City Bench drawing (plan layer, roles, inspector) and building volumes, for every settlement shown. */
   cityView?: boolean;
+  /** Map names, glyphs and pins (default: shown). */
+  labels?: boolean;
   /** Upstream stages (placement, regional roads) still answering: buildings wait for them. */
   upstreamPending?(): boolean;
   /** The panel's single « Auto » switch changed (Settlements also follows it for settlements and routes). */
@@ -221,6 +226,15 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   const footprintControls = `<div class="urban-footprint-controls"><div class="control-group">${select('family', 'Forme de ville', families, true)}${select('mechanism', 'Croissance', mechanisms, true)}</div><details class="advanced"><summary>Dimensions et budget</summary><div class="control-group">${select('budget', 'Budget spatial', { population: 'Population / densité brute', radius: 'Rayon artistique' }, true)}${footprintNumber('grossDensity', 'Densité brute (hab./ha · 0 = culture)', 0, 1000, 1)}${footprintNumber('aspect', 'Allongement', 1, 6, 0.1)}${footprintNumber('orientation', 'Orientation (°)', -180, 180, 5)}${footprintNumber('nuclei', 'Noyaux de croissance', 1, 6)}${footprintNumber('irregularity', 'Irrégularité', 0, 1, 0.05)}${footprintNumber('anisotropy', 'Attraction des axes', 0, 1, 0.05)}${footprintNumber('separation', 'Écartement des noyaux', 0.4, 3, 0.1)}${footprintNumber('epochs', 'Étapes de croissance', 1, 5)}</div></details><details class="advanced" data-sparse-growth><summary>Dispersion et coupures</summary><div class="control-group">${footprintNumber('cohesion', 'Cohésion', 0, 1, 0.05)}${footprintNumber('satellites', 'Propension aux satellites', 0, 1, 0.05)}${footprintNumber('branchDepth', 'Profondeur des branches', 0, 1, 0.05)}${footprintNumber('gapSize', 'Taille des coupures (m)', 10, 500, 10)}</div><small>Baisser la cohésion laisse plus de terrain libre ; les chemins peuvent le traverser. Les formes géométriques imposées conservent leur contour.</small></details></div>`;
   const tissueControls = `<div class="urban-tissue-controls"><div class="control-group">${select('tissue', 'Maillage des rues', tissues)}${select('accessMode', 'Accessibilité des îlots', { adaptive: 'Adaptative selon le parcellaire', cultural: 'Dessertes culturelles', none: 'Conserver les accès existants' })}</div><details class="advanced"><summary>Réglages des accès</summary><div class="control-group">${number('accessDepth', 'Profondeur accessible (m · 0 = culture)', 0, 200, 5)}${number('accessBudget', 'Accès ajoutés au plus par îlot', 0, 12)}</div></details></div>`;
   const influenceControls = `<details class="advanced"><summary>Influences et sorties</summary><div class="control-group">${select('mixCulture', 'Seconde influence', { '': 'Aucune', ...Object.fromEntries(Object.entries(catalogue.cultures).map(([id, c]) => [id, c.label])) })}${select('mixMode', 'Répartition', { phases: 'Chronologique · extensions plus récentes', sectors: 'Géométrique · secteurs' })}${number('mixShare', 'Part de la seconde influence', 0, 1, 0.05)}${number('mixAngle', 'Orientation des secteurs (°)', -180, 180, 5)}${select('exitTreatment', 'Sorties de rues', { adaptive: 'Raccordements, chemins et impasses', closed: 'Impasses fermées', legacy: 'Ancien comportement' })}${select('peripheralRoad', 'Chemin périphérique', { auto: 'Selon les accès', none: 'Aucun', partial: 'Partiel', full: 'Complet si le terrain le permet' })}${select('axisAlignment', 'Orientation des axes urbains', { regional: 'Routes régionales principales', culture: 'Orientation culturelle' })}${number('siteAdaptation', 'Adaptation au relief et aux berges', 0, 2, 0.1)}</div><small>Les influences suivent les rues et les parcelles. Les sorties et le périphérique respectent l’eau et les pentes ; une enceinte conserve ses portes.</small></details>`;
+  const portControls = `<details class="advanced" data-port-parameters><summary>Port</summary><label title="0 : port attenant à la rive du tissu principal ; 1 : avant-poste possible sur une rive navigable, dans un rayon adapté à la population, relié par une route.">Détachement du port<input data-config="portDetachment" type="range" min="0" max="1" step="0.05"></label><label title="0 : priorité à la proximité ; 1 : priorité à un havre abrité, selon le fetch et la largeur navigable, avec des môles si nécessaire.">Recherche d’abri<input data-config="portShelter" type="range" min="0" max="1" step="0.05"></label></details>`;
+  const wallParameter = (key: string, label: string, title: string, max = 1, step = 0.05): string => `<label title="${title}">${label}<input data-config="${key}" data-auto type="${key === 'wallTerrain' ? 'range' : 'number'}" min="0" max="${max}" step="${step}" placeholder="Auto"></label>`;
+  const wallControls = `<details class="advanced" data-wall-parameters><summary>Enceinte</summary><div class="control-group">${wallParameter('wallStiffness', 'Rigidité du tracé', '0 : tracé souple, proche des quartiers ; 1 : longues courtines droites et angles vifs. Vide : valeur de la culture (0,6 en général ; plans carrés et chinois à part).')}${wallParameter('wallRelief', 'Franchissement du relief', 'Vide : 12 m de dénivelé admis sous une courtine droite ; 0 : la muraille contourne chaque butte ; 1 : les courtines droites franchissent tout relief praticable.')}${wallParameter('wallTerrain', 'Appui sur le relief', '0 : aucune attraction supplémentaire ; 1 : recherche des ruptures de pente et berges. Les franchissements impraticables restent interdits.')}${wallParameter('wallTowerSpacing', 'Espacement des tours (m)', 'Vide ou 0 : culture et époque ; une valeur positive impose la distance en mètres entre tours de flanquement.', 250, 5)}${wallParameter('ditchWetness', 'Mise en eau des fossés', 'Vide : choix culturel précédent ; 0 : toujours secs ; 1 : en eau partout où une alimentation locale est possible.')}<label title="Désactivé : traitement culturel précédent ; activé : ancienne enceinte en citadelle et enclos du château ou de la cathédrale."><input data-config="oldEnclosureCitadel" type="checkbox">Conserver une citadelle et des enclos intérieurs</label>${select('riverControlMode', 'Contrôle du fleuve', { '': 'Selon le réglage enregistré', none: 'Aucun', 'bank-walls': 'Murailles de rive', 'bank-walls-chain': 'Rives, tours de pont et chaîne' }).replace('<label>', '<label title="Aucun : pas de travaux fluviaux supplémentaires ; rives : courtines de berge ; complet : tours et chaîne sur un passage existant.">')}${select('plannedWall', 'Enceinte des plans carrés', { '': 'Automatique · rectangle si le terrain le permet', rect: 'Rectangle du plan', follow: 'Suit la ville' }).replace('<label>', '<label title="Cultures planifiées (chinoise, bagan, vietnamienne…) : rectangle du plan, même s’il enclôt des terres vides, ou tracé qui suit la ville ; automatique choisit le rectangle quand il reste serré.">')}${select('portEnclosure', 'Enceinte du port', { '': 'Automatique', auto: 'Automatique selon le terrain', inside: 'Port dans l’enceinte urbaine', separate: 'Enceinte portuaire séparée', outside: 'Port hors les murs, porte d’eau' }).replace('<label>', '<label title="Auto : choisit selon le relief ; dedans : rejoint tout le quartier par voie praticable ; séparée : circuit propre au port ; dehors : accès par une porte d’eau.">')}</div></details>`;
+  const wallRedditControls = `<details class="advanced" data-reddit-walls><summary>Options Reddit (27/10)</summary>${[
+    ['powerHighGround', 'Pouvoir sur les hauteurs', 'Place le château et le grand lieu de culte en hauteur ; dessert le sommet des villes de colline par une route praticable.'],
+    ['mergeParallelStreets', 'Fusionner les rues presque parallèles', 'Fusionne les portions séparées par moins de 4 m de terrain ; conserve les terrasses et les falaises.'],
+    ['regularGridOutline', 'Contour régulier des plans en grille', 'Aligne l’emprise des bastides et autres plans quadrillés sur leur grille, en respectant les rives.'],
+  ].map(([key, label, title]) => `<label title="${title}"><input data-config="${key}" type="checkbox">${label}</label>`).join('')}</details>`;
+  const faubourgControls = `<details class="advanced" data-faubourg-controls><summary>Faubourgs</summary><label title="0 : faubourgs anciens, emplacement et formes conservés. 1 : petits marchés de porte, auberges et ruelles courbes dans les mêmes faubourgs ; lieux de culte favorisés en haut de plage.">Force du village de porte<input data-config="gateVillage" type="range" min="0" max="1" step="0.05"></label></details>`;
   const enclosureControls = `<details class="advanced urban-enclosure-controls"><summary>Enceinte</summary><label>Enceinte du noyau<select data-config="fortification"><option value="culture">Selon la culture</option><option value="none">Sans enceinte</option><option value="wall">Muraille</option><option value="palisade">Palissade</option></select></label>${select('fortificationStyle', 'Style de l’enceinte', fortificationStyles)}<small data-enclosure-style-hint>Le style doit correspondre au type d’enceinte ; sinon le choix culturel est conservé.</small><button data-remove-enclosure type="button">Retirer l’enceinte</button><small>Retirer recalcule immédiatement le plan ouvert. Les autres choix s’appliquent avec « Régénérer la ville ».</small></details>`;
   function panel(kind: Kind, title: string): HTMLDetailsElement {
     const p = document.createElement('details'); p.className = 'stage urban-stage'; p.id = kind === 'quarters' ? 'urbanQuarterStage' : 'urbanParcelStage'; p.open = true;
@@ -230,7 +244,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       <label><input data-enabled type="checkbox">Générer ${kind === 'quarters' ? 'les quartiers' : 'les parcelles'}</label>
       ${kind === 'quarters' ? '<label>Settlement ciblé<select id="urbanTarget"></select></label><button type="button" id="urbanFocus">Centrer sur la sélection</button>' : '<small>Les parcelles utilisent les îlots du bloc 6, sans régénérer les rues.</small>'}
       <details class="advanced"><summary>Graine</summary><label>Graine ${kind === 'quarters' ? 'quartiers' : 'parcelles'}<input data-seed type="text" placeholder="Graine de la carte"></label></details>
-      ${kind === 'quarters' ? `<div class="urban-composition-controls"><label>Génération<select data-config="composition"><option value="settlement">Agglomération complète</option><option value="district">Secteur isolé · ancien banc</option></select></label><small data-mode-hint></small><div data-settlement-resolution aria-live="polite"></div><div data-settlement-settings><label>Grammaire morphologique<select data-config="settlementForm">${morphologyOptions()}</select></label><button type="button" data-morphology-auto>Grammaire automatique</button><small>${MORPHOLOGY_HINT}</small>${footprintControls}<details class="advanced" data-legacy-settings><summary>Composition historique</summary><label>Faubourgs<select data-config="suburbs"><option value="auto">Croissance variable</option><option value="none">Aucun</option><option value="few">Quelques faubourgs</option><option value="many">Faubourgs étendus</option></select></label>${number('phases', 'Phases du noyau (0 = culture)', 0, 5)}</details></div>${tissueControls}</div>${enclosureControls}${influenceControls}<details class="advanced"><summary>Diagnostic du plan</summary><div data-composition class="urban-composition" aria-live="polite"></div></details>` : `${select('operator', 'Opérateur parcellaire', parcelOperators)}<small>« Par phase » conserve les recettes du noyau, des extensions et des faubourgs du plan affiché.</small><div data-parcel-diagnostics class="urban-diagnostics" aria-live="polite"></div>`}
+      ${kind === 'quarters' ? `<div class="urban-composition-controls"><label>Génération<select data-config="composition"><option value="settlement">Agglomération complète</option><option value="district">Secteur isolé · ancien banc</option></select></label><small data-mode-hint></small><div data-settlement-resolution aria-live="polite"></div><div data-settlement-settings><label>Grammaire morphologique<select data-config="settlementForm">${morphologyOptions()}</select></label><button type="button" data-morphology-auto>Grammaire automatique</button><small>${MORPHOLOGY_HINT}</small>${footprintControls}<details class="advanced" data-legacy-settings><summary>Composition historique</summary><label>Faubourgs<select data-config="suburbs"><option value="auto">Croissance variable</option><option value="none">Aucun</option><option value="few">Quelques faubourgs</option><option value="many">Faubourgs étendus</option></select></label>${number('phases', 'Phases du noyau (0 = culture)', 0, 5)}</details></div>${tissueControls}</div>${enclosureControls}${portControls}${faubourgControls}${wallControls}${wallRedditControls}${influenceControls}<details class="advanced"><summary>Diagnostic du plan</summary><div data-composition class="urban-composition" aria-live="polite"></div></details>` : `${select('operator', 'Opérateur parcellaire', parcelOperators)}<small>« Par phase » conserve les recettes du noyau, des extensions et des faubourgs du plan affiché.</small><div data-parcel-diagnostics class="urban-diagnostics" aria-live="polite"></div>`}
       <details class="advanced"><summary>Recettes et dimensions avancées</summary><div class="control-group">${common(kind)}${kind === 'quarters' ? number('count', 'Secteurs de calcul visés', 3, 8) + `<div data-fixture-settings>${number('rings', 'Anneaux de la scène', 1, 2)}<label>Disposition<select data-config="placement"><option value="center">Plan culturel adapté au terrain</option><option value="rectangle">Rectangle</option><option value="skew">Oblique</option><option value="notched">Avec encoche</option></select></label></div>` + number('radius', 'Rayon d’emprise (m · 0 = lieu)', 0, 25000) + number('radiusScale', 'Échelle de l’emprise', 0.1, 5, 0.1) + '<label>Réservation monument<input data-config="monument" type="text" list="urbanMonuments"></label><datalist id="urbanMonuments"><option value="none"><option value="cathedral"><option value="great-mosque"><option value="temple"><option value="castle"><option value="palace"></datalist>' : ''}</div></details>
       ${kind === 'quarters' ? `<details class="advanced"><summary>Rues et relief</summary><div class="control-group">${number('maxStreetGrade', 'Pente maximale des rues (m/m)', 0.02, 0.3, 0.01)}${number('maxLaneGrade', 'Pente maximale des ruelles (m/m)', 0.02, 0.4, 0.01)}<label><input data-config="allowStairs" type="checkbox">Autoriser les escaliers piétons</label>${number('maxStairGrade', 'Pente maximale des escaliers (m/m)', 0.02, 1, 0.01)}</div><small>0,12 = 12 % : 12 m de montée pour 100 m au sol. Les rues cherchent un passage praticable ; les escaliers sont dessinés avec des marches. Les ponts régionaux conservent leur franchissement.</small></details>` : ''}
       <details class="advanced"><summary>Tous les paramètres natifs</summary><div data-fields class="urban-fields"></div><label>Overrides JSON<textarea data-json rows="4" spellcheck="false" placeholder="{}"></textarea></label><small>Les valeurs modifiées remplacent la recette. Les mesures géométriques sont en mètres (surfaces en m²).${kind === 'quarters' ? ' En progression automatique, les valeurs par zone affichées sont celles du cœur ; sélectionnez une zone pour modifier ses valeurs, puis revenez à la progression automatique.' : ''}</small><button data-reset type="button">Réinitialiser les paramètres</button></details>
@@ -239,6 +253,9 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     stages.insertBefore(p, options.before); return p;
   }
   const quarterPanel = panel('quarters', '6 · Empreinte, quartiers et îlots '), parcelPanel = panel('parcels', '7 · Parcelles ');
+  const ruralReddit = document.createElement('details'); ruralReddit.className = 'advanced'; ruralReddit.dataset.redditRural = '';
+  ruralReddit.innerHTML = `<summary>Options Reddit (27/10)</summary><label title="Oriente les maisons du tissu lâche sur leur façade de rue, avec un recul possible derrière un jardin."><input data-config="streetAlignedHomes" type="checkbox">Maisons alignées sur la rue</label><label title="Dessine des petites planches, une allée depuis la maison et une clôture ouverte à l’entrée."><input data-render="readableGardens" type="checkbox">Jardins lisibles</label><label title="Ajoute des candidats agricoles plus petits et plus rapprochés des accès du bourg, sur les terrains admissibles."><input data-config="denserSmallholdings" type="checkbox">Chaumières et petites exploitations près du bourg</label>`;
+  parcelPanel.querySelector('.stage-controls')!.append(ruralReddit);
   const targetSelect = quarterPanel.querySelector<HTMLSelectElement>('#urbanTarget')!;
   const getConfig = (kind: Kind): LayoutConfig | ParcelConfig => kind === 'quarters' ? layoutConfig : parcelConfig;
   // The controls of one calculation may span several themed sections (City Bench).
@@ -293,11 +310,12 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     // 5 · Streets and blocks: mesh, access, recipes, grades and the native street parameters.
     const natives = from('[data-fields]').closest('details')!; retitle(natives, 'Paramètres natifs des rues et îlots');
     const relief = from('[data-config="maxStreetGrade"]').closest('details')!; retitle(relief, 'Pentes et escaliers');
-    streets.controls.append(from('.urban-tissue-controls'),
+    streets.controls.append(from('.urban-tissue-controls'), from('[data-port-parameters]'),
       advanced('Recettes du plan', ['recipe', 'preset', 'zone', 'density'].map(key => label(`[data-config="${key}"]`)), true), relief, natives);
     composition.remove();
     // 6 · Enclosure, exits and a second influence.
     const monuments = from('#urbanMonuments');
+    edges.controls.append(from('[data-wall-parameters]'), from('[data-reddit-walls]'), from('[data-faubourg-controls]'));
     edges.controls.append(group(label('[data-config="fortification"]'), label('[data-config="fortificationStyle"]'), label('[data-config="monument"]'), monuments), from('[data-enclosure-style-hint]'),
       advanced('Sorties et axes', ['exitTreatment', 'peripheralRoad', 'axisAlignment', 'siteAdaptation'].map(key => label(`[data-config="${key}"]`)), true),
       advanced('Seconde influence', ['mixCulture', 'mixMode', 'mixShare', 'mixAngle'].map(key => label(`[data-config="${key}"]`)), true));
@@ -379,7 +397,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       const value = (config as unknown as Record<string, unknown>)[c.dataset.config!];
       if (c instanceof HTMLInputElement && c.type === 'checkbox') c.checked = Boolean(value);
       else if (c instanceof HTMLSelectElement) retainSelectValue(c, String(value ?? ''), urbanText(['Choix conservé hors du catalogue UI','Selection retained outside the UI catalog','保留界面目录以外的选择','Selección conservada fuera del catálogo de la interfaz','Seleção mantida fora do catálogo da interface']));
-      else c.value = String(value ?? '');
+      else c.value = c instanceof HTMLInputElement && c.type === 'range' && value == null ? '0' : String(value ?? '');
     }
     if (kind === 'quarters') {
       for (const c of Array.from(all<HTMLInputElement | HTMLSelectElement>(kind, '[data-footprint]'))) c.value = String(layoutConfig.footprint[c.dataset.footprint as keyof LayoutConfig['footprint']]);
@@ -427,7 +445,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   displayHost.append(rendering);
   setupUrbanRenderLocale(rendering);
   setupUrbanPanelLocale([...roots.quarters, ...roots.parcels, ...(displaySection ? [displaySection] : [])], !!options.city);
-  for (const e of Array.from(rendering.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-render]'))) {
+  for (const e of [...Array.from(rendering.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-render]')), ...Array.from(ruralReddit.querySelectorAll<HTMLInputElement>('[data-render]'))]) {
     const key = e.dataset.render as keyof Render;
     if (e instanceof HTMLInputElement && e.type === 'checkbox') e.checked = Boolean(render[key]); else e.value = String(render[key]);
     e.onchange = () => { (render as unknown as Record<string, unknown>)[key] = e instanceof HTMLInputElement && e.type === 'checkbox' ? e.checked : e instanceof HTMLSelectElement ? e.value : Number(e.value); draw(); options.onChange(); };
@@ -453,11 +471,12 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   const frameInfo = document.createElement('small'); frameInfo.className = 'city-frame'; frameInfo.dataset.cityFrame = '';
   let lastBuiltParent: UrbanParentBuildingState | undefined;
   type ParentView = Awaited<ReturnType<typeof openParentViewport>>;
+  const pendingParent3d = parent3dWindow();
   let parentView: ParentView | undefined, parentOpening: Promise<ParentView> | undefined, parentFailed = '', parentGenerationAbort: AbortController | undefined;
   const parentKey = (state: UrbanParentBuildingState) => JSON.stringify([state.store, state.cityKey, state.offset, executionRuntime]);
   const parentSlot = createColdViewportSlot<UrbanParentBuildingState, ParentView>(parentKey, async (state, signal) => {
     const backend = (await getColdBackend()).parents; signal.throwIfAborted();
-    return openParentViewport(backend, state, nativeParentApi(executionRuntime), { signal, changed: () => { cityLayer?.request(); buildingPanel.refreshReport(); } });
+    return openParentViewport(backend, state, nativeParentApi(executionRuntime), { signal, changed: () => { cityLayer?.request(); buildingPanel.refreshReport(); if (architectureView === '3d') options.onChange(); } });
   });
   const boundedParent = () => sameParentBuildingState(parentView?.state, buildingPanel.state.parent) ? parentView : undefined;
   function clearParentView() { parentSlot.clear(); parentView = undefined; parentOpening = undefined; parentFailed = ''; }
@@ -613,9 +632,12 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
                 } });
             if (!stillCurrent()) throw new DOMException('Plan remplacé', 'AbortError');
             const state: UrbanParentBuildingState = { store: response.store, counts: response.counts, generation: response.generation, cityKey: selectedLayouts[0].key, binding: 'generated' };
+            const balanced=await reconcileParentBuiltBalance(selectedPartitions,backend,state.store.sceneId,()=>!stillCurrent());
+            if (!stillCurrent()) throw new DOMException('Plan remplacé','AbortError');
             // Publication comes only after source/index/cache CAS and native release.
             await ensureParentView(state); if (!stillCurrent()) throw new DOMException('Plan remplacé', 'AbortError');
             sample.clear(); renderer.clearCaches(); architecturePreview = undefined; parentGenerationAbort = undefined;
+            partitions=replaceCities(selectedLayouts,balanced).partitions; urbanSource.clear();
             return { parent: state, timing: response.timing };
           }
         }
@@ -628,7 +650,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
           const streamWindow = createColdStreamWindow();
           const response = await sceneClient.runCold({ ...retained, seed: actualSeed, settings,
             runtime: { ...executionRuntime, profile: 'local' }, mode: architectureMode === 'detailed' ? 'detailed' : 'compact', buildingOverrides: edits.buildings },
-          { backend, sourceFingerprint: fingerprint, progress: onProgress, onProjection: (chunk, progress) => {
+          { backend, partitions: selectedPartitions, sourceFingerprint: fingerprint, progress: onProgress, onProjection: (chunk, progress) => {
             if (!stillCurrent()) throw new DOMException('Plan remplacé', 'AbortError');
             const box = options.map.viewBox.baseVal;
             preview.coldProjection = streamWindow.append(chunk, [box.x, box.y, box.x + box.width, box.y + box.height]);
@@ -636,6 +658,8 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
           } });
           if (!stillCurrent()) throw new DOMException('Plan remplacé', 'AbortError');
           const state: ColdCityState = { store: response.store, counts: response.counts, cityKey: selectedLayouts[0].key };
+          const balanced = await reconcileColdBuiltBalance(selectedPartitions, backend, state.store.sceneId, () => !stillCurrent());
+          if (!stillCurrent()) throw new DOMException('Plan remplacé', 'AbortError');
           const view = await ensureColdView(state);
           if (!stillCurrent()) { view.dispose(); throw new DOMException('Plan remplacé', 'AbortError'); }
           const nextSites = response.siteData.kind === 'native-sites'
@@ -644,6 +668,8 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
           sceneSites?.dispose(); sceneSites = nextSites; sceneRequestList = nextSites?.visuals ?? []; sceneRequestScene = state;
           streamWindow.clear(); cityRenderer?.clearCaches(); cityRenderer = undefined; cityProjectionOf = undefined;
           architecturePreview = undefined;
+          partitions = replaceCities(selectedLayouts, balanced).partitions;
+          urbanSource.clear();
           return { cold: state, timing: response.timing, generationNote };
         }
         const response = await sceneClient.run({ raster, layouts: selectedLayouts, partitions: selectedPartitions, ...retained, seed: seed || appliedParcelSeed || options.getSeed(), settings, runtime: executionRuntime, silhouettes: cityView, mode: cityView ? architectureMode : undefined, buildingOverrides: cityView ? edits.buildings : undefined }, onProgress,
@@ -653,6 +679,10 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
           } : undefined);
         if (!active() || layouts !== inputLayouts || partitions !== inputPartitions) throw new DOMException('Plan remplacé', 'AbortError');
         if (!response.scene) throw new Error(urbanText(['La scène bâtie est absente.','The building scene is missing.','缺少建筑场景。','Falta la escena construida.','A cena construída está ausente.']));
+        if (response.scene.generator_version.startsWith('architectural-plans-')) {
+          response.scene = carryUrbanOpenDeficits(selectedPartitions,response.scene,response.requests ?? response.sites ?? []);
+          response.partitions = reconcileCompactBuiltBalance(selectedPartitions, response.scene);
+        }
         const merged = replaceCities(selectedLayouts, response.partitions ?? selectedPartitions, response.scene), scene = merged.buildingState!.scene!;
         const nextSites = response.sites !== undefined
           ? createNativeSiteStore(response.sites, response.siteQuery!, executionRuntime)
@@ -699,7 +729,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     importParent: async file => { if (buildingPanel.busy) throw new Error(urbanText(['Attendez la génération en cours.','Wait for the current generation to finish.','请等待当前生成完成。','Espera a que termine la generación actual.','Aguarde a geração atual terminar.']));
       const state = await readParentBuildings(file, (await getColdBackend()).parents, nativeParentApi(executionRuntime), { expectedCityKey: target === 'all' ? undefined : target });
       invalidateArchitecture(); await ensureParentView(state); return state; },
-    onProjection: active => { if (active && buildingPanel.state.parent) { inspectorNote('La vue 3D des parents natifs n’est pas encore prise en charge.'); return; } const applied = options.onProjection?.(active, buildingPanel.state.camera); if (typeof applied === 'boolean') buildingPanel.state.projection = applied; },
+    onProjection: active => { const applied = options.onProjection?.(active, buildingPanel.state.camera); if (typeof applied === 'boolean') buildingPanel.state.projection = applied; },
   });
   if (options.before) options.before.before(buildingPanel.programme, buildingPanel.panel, ...(displaySection ? [displaySection] : []));
   // City Bench has no backend anchor: the display section follows the building panel.
@@ -865,6 +895,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       if (c.disabled) continue;
       if (!c.checkValidity()) { c.reportValidity(); throw new Error(urbanText(['Corrigez les paramètres signalés.','Correct the highlighted settings.','请修正标出的设置。','Corrige los ajustes indicados.','Corrija as configurações indicadas.'])); }
       (config as unknown as Record<string, unknown>)[c.dataset.config!] = configValue(c);
+      if (['streetAlignedHomes', 'denserSmallholdings'].includes(c.dataset.config!) && !configValue(c)) delete (config as unknown as Record<string, unknown>)[c.dataset.config!];
     }
     if (kind === 'quarters') for (const c of Array.from(all<HTMLInputElement | HTMLSelectElement>(kind, '[data-footprint]'))) {
       if (c.disabled) continue;
@@ -1388,10 +1419,10 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     const refused = appearance.diagnostic === 'access' ? refusedParcels : undefined;
     const glFrame = drawGl?.({ viewport: frame.viewport, metresPerPixel: frame.mpp, lod: cityLod, view, palette: render.palette, layers: render, selectedId: selected, selectedParcel,
       buildingsVisible: buildingPanel.state.visible && !native && !parentOwned, diagnostic: appearance.diagnostic, refusedParcels: refused, textured: !!render.textured });
-    cityFrame = drawCity(ctx, cityPlan, { ...frame, lod: cityLod, view, palette: render.palette, width: render.width, layers: glFrame ? cityGlOverlayLayers(render) : render,
+    cityFrame = drawCity(ctx, cityPlan, { ...frame, labels: options.labels, lod: cityLod, view, palette: render.palette, width: render.width, layers: glFrame ? cityGlOverlayLayers(render) : render,
       buildings: compare ? (silhouetteCompare ? comparisonBuilt?.[2] : native ? landmarkOverlay() : cityBuilt) : native ? landmarkOverlay() : cityBuilt,
       buildingsVisible: !parentOwned && (compare ? view === 'buildings' : buildingPanel.state.visible && (!glFrame || !!native)), appearance,
-      selectedBuilding: selected, selectedParcel, refusedParcels: refused, textured: !!render.textured, onTexturesReady: draw });
+      selectedBuilding: selected, selectedParcel, refusedParcels: refused, readableGardens: render.readableGardens && render.gardens, textured: !!render.textured, onTexturesReady: draw });
     // Native plans have their own screen-size LOD and bounded overview tiles.
     // They must remain visible while the first chunks arrive, even at city scale.
     if (native) {
@@ -1468,7 +1499,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   function cityLegend(): void {
     if (!cityView || legendOf[0] === render.view && legendOf[1] === cityPlan) return;
     legendOf = [render.view, cityPlan];
-    if (render.view !== 'roles') { legend.replaceChildren(); return; }
+    if (render.view !== 'roles' || options.labels === false) { legend.replaceChildren(); return; }
     const used = new Set(cityPlan?.districts.flatMap(d => d.role ? [districtRoleKey(d.role)] : []) ?? []);
     const swatch = (color: string, text: string): string => `<span><i class="urban-swatch" style="background:${color}"></i>${esc(text)}</span>`;
     const districtRoles = Object.entries(DISTRICT_ROLES).filter(([id]) => used.has(id));
@@ -1791,6 +1822,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     };
     for (const c of Array.from(all<HTMLInputElement | HTMLSelectElement>(kind, '[data-config]'))) c.onchange = () => {
       (getConfig(kind) as unknown as Record<string, unknown>)[c.dataset.config!] = configValue(c);
+      if (['streetAlignedHomes', 'denserSmallholdings'].includes(c.dataset.config!) && !configValue(c)) delete (getConfig(kind) as unknown as Record<string, unknown>)[c.dataset.config!];
       if (c.dataset.config === 'composition') {
         if (layoutConfig.composition === 'settlement') { layoutConfig.placement = 'center'; layoutConfig.recipe = 'auto'; layoutConfig.zone = 'auto'; }
         else if (layoutConfig.recipe === 'auto') layoutConfig.recipe = 'core';
@@ -2038,7 +2070,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       if (visible === !planSaved) return;
       if (!visible) { planSaved = Object.fromEntries(PLAN_LAYERS.map(k => [k, render[k]])); for (const k of PLAN_LAYERS) render[k] = false; }
       else { for (const k of PLAN_LAYERS) render[k] = planSaved?.[k] ?? render[k]; planSaved = undefined; }
-      for (const e of Array.from(rendering.querySelectorAll<HTMLInputElement>('input[data-render]'))) if (e.type === 'checkbox') e.checked = Boolean(render[e.dataset.render as keyof Render]);
+      for (const e of [...Array.from(rendering.querySelectorAll<HTMLInputElement>('input[data-render]')), ...Array.from(ruralReddit.querySelectorAll<HTMLInputElement>('[data-render]'))]) if (e.type === 'checkbox') e.checked = Boolean(render[e.dataset.render as keyof Render]);
       draw(); options.onChange();
     },
     captureContext: () => clone({ layoutConfig, parcelConfig, quarterSeed, parcelSeed, dirty }),
@@ -2089,7 +2121,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       for (const kind of ['quarters', 'parcels'] as const) {
         clearTimeout(draftTimers[kind]); dirty[kind] = false; one(kind, '[data-draft-state]').hidden = true; populate(kind);
       }
-      for (const e of Array.from(rendering.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-render]'))) {
+      for (const e of [...Array.from(rendering.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-render]')), ...Array.from(ruralReddit.querySelectorAll<HTMLInputElement>('[data-render]'))]) {
         const value = render[e.dataset.render as keyof Render];
         if (e instanceof HTMLInputElement && e.type === 'checkbox') e.checked = Boolean(value); else e.value = String(value);
       }
@@ -2108,7 +2140,8 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       const k = size / region.width, mpp = 1 / k;
       ctx.save(); ctx.setTransform(k, 0, 0, k, -region.x * k, -region.y * k); ctx.globalAlpha = render.opacity;
       drawCity(ctx, cityPlan, { viewport: { minX: region.x, minY: region.y, maxX: region.x + region.width, maxY: region.y + region.width }, mpp, dpr: 1, lod: selectCityLod(mpp),
-        view: render.view, palette: render.palette, width: render.width, layers: render, buildingsVisible: false, appearance: { style: 'cartographic', diagnostic: 'none' }, textured: !!render.textured, onTexturesReady });
+        view: render.view, labels: options.labels, palette: render.palette, width: render.width, layers: render, buildingsVisible: false, appearance: { style: 'cartographic', diagnostic: 'none' }, readableGardens: render.readableGardens && render.gardens, textured: !!render.textured, onTexturesReady });
+      if (buildingPanel.state.parent && buildingPanel.state.visible && render.view === 'buildings') boundedParent()?.drawContexts(ctx);
       ctx.restore();
     },
     /** Regional road pieces (with their bridge/ford/causeway roles), memoized per road output. */
@@ -2116,20 +2149,22 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     get buildingState() { return buildingPanel.state; },
     get parentViewportEvidence() { return architecturePreview?.parent ? { phase: 'staging', complete: false, source: architecturePreview.parent.source, counts: architecturePreview.parent.counts, durableCompleted: architecturePreview.parent.durableCompleted, nativeAckedCompleted: architecturePreview.parent.nativeAckedCompleted } : boundedParent()?.evidence(); },
     get coldViewportEvidence() { return boundedCold()?.evidence; },
-    get buildingProjection(): NativeBuildingProjectionScene | undefined {
+    get buildingProjection(): NativeBuildingProjectionScene | import('./urbanParent3d').Parent3dScene | undefined {
+      if (buildingPanel.state.parent) return boundedParent()?.projection3d ?? pendingParent3d;
       return sameCold(coldSession?.state, buildingPanel.state.cold) ? coldSession?.projection : undefined;
     },
     /** Both cameras share native work and the bounded exterior cache. Changing
      * the active camera prevents background 2D paints from replacing 3D demand. */
     buildingDetails: {
-      setActiveView(view: '2d' | '3d'): void { if (view === '3d' && buildingPanel.state.parent) throw new Error('La vue 3D des parents natifs n’est pas encore prise en charge.'); architectureView = view;
+      setActiveView(view: '2d' | '3d'): void { architectureView = view;
+        const parent = buildingPanel.state.parent; if (view === '3d' && parent) void ensureParentView(parent).then(() => { draw(); options.onChange(); }, e => inspectorNote(String(e)));
         const state = buildingPanel.state.cold; if (view === '3d' && state) void ensureColdSession(state).then(() => { draw(); options.onPlanChange?.(); }, e => inspectorNote(String(e)));
         cityLayer?.request(); },
       // A comparison never asks for native work, from either camera.
-      update(view: BuildingDetailView) { return architectureView === '3d' && !comparison.state() ? cityDetails?.update(view) : cityDetails?.stats; },
+      update(view: BuildingDetailView) { const parent = boundedParent(); if (architectureView === '3d' && buildingPanel.state.parent) { if (parent && !comparison.state()) { const v = view.viewport; parent.details.suspend(); parent.ensureViewport([v.minX, v.minY, v.maxX, v.maxY]); } return; } return architectureView === '3d' && !comparison.state() ? cityDetails?.update(view) : cityDetails?.stats; },
       getDetail(id: string) { return cityDetails?.getDetail(id); },
       status(id: string) { return cityDetails?.status(id); },
-      cached() { return cityDetails?.cachedDetails() ?? []; },
+      cached() { return buildingPanel.state.parent ? [] : cityDetails?.cachedDetails() ?? []; },
       subscribe(listener: () => void): () => void { detailListeners.add(listener); return () => { detailListeners.delete(listener); }; },
       get scene() { if (buildingPanel.state.parent) throw new Error('Le consommateur Single n’accepte pas les parents natifs.'); return displayedColdProjection() ?? cityBuiltOf ?? undefined; },
       get stats() { return cityDetails?.stats; },
@@ -2140,7 +2175,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     /** Map clicks belong to the inspector (City Bench roles view too), not to settlement markers. */
     get inspecting(): boolean { return render.view === 'buildings' || cityView && render.view === 'roles'; },
     get buildingVisible(): boolean { return buildingPanel.state.visible && render.view === 'buildings'; },
-    selectBuilding: (id: string): void => { if (buildingPanel.state.parent) throw new Error('Utilisez une sélection parent/membre explicite.'); buildingPanel.select(id); },
+    selectBuilding: (id: string): void => { if (buildingPanel.state.parent) { const parent = boundedParent(), member = parent?.projection3d.buildings.find(m => m.member_id === id); if (!member) return; const pick = { kind: 'member' as const, parent_id: member.parent_id, member_id: member.member_id, member_key: member.member_key }; parent?.select(pick); buildingPanel.selectParent(pick); return; } buildingPanel.select(id); },
     selectParent: (pick: import('./urbanParentColdWindow').ParentMapSelection): void => { boundedParent()?.select(pick); buildingPanel.selectParent(pick); },
     get extent() { return layoutExtent(layouts); },
     workshopDraft(): Omit<import('./testbenchUrban').WorkshopState, 'layouts' | 'partitions'> | undefined {

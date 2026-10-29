@@ -5,6 +5,33 @@
 //! spacings scale with the port's population and come from the culture's
 //! `plan.harbour` entry in the catalogue (defaults below).
 use super::super::{LayoutConfig, Point, Shape, Site, Street, Surface, geometry as g, routing};
+#[path = "harbour_shelter.rs"]
+mod shelter;
+#[path = "harbour_parameters.rs"]
+mod placement;
+pub(in super::super) use placement::{extend, blocks as port_blocks};
+
+pub(in super::super) fn shelter_weight(cfg: &LayoutConfig) -> f64 {
+    cfg.port_shelter.unwrap_or(f64::from(cfg.sheltered_harbour))
+}
+pub(in super::super) fn parameterized(cfg: &LayoutConfig) -> bool {
+    cfg.port_detachment < 1.0 || shelter_weight(cfg) > 0.0
+}
+
+// A navigable-water score alone also accepts lines entirely out at sea.
+fn shore_front(path:&[Point],surface:Surface<'_>)->bool {
+    if path.len()<2 {return false;}
+    let reach=20.0+2.0*surface.width/surface.n as f64;
+    [0.0,0.25,0.5,0.75,1.0].into_iter().all(|f| {
+        let at=sub_path(path,0.0,length(path)*f);
+        let p=*at.last().unwrap_or(&path[0]);
+        if surface.wet(p) {return false;}
+        let i=at.len().saturating_sub(2);
+        let t=if at.len()>1 {unit(at[i],p)} else {unit(path[0],path[1])};
+        [left(t),Point{x:t.y,y:-t.x}].into_iter().any(|n|
+            (1..=reach.ceil() as usize).any(|d|surface.wet(add(p,n,d as f64))))
+    })
+}
 
 fn dist(a: Point, b: Point) -> f64 {
     (a.x - b.x).hypot(a.y - b.y)
@@ -97,7 +124,7 @@ pub(in super::super) fn port_town(cfg: &LayoutConfig) -> bool {
 
 fn code(surface: Surface<'_>, p: Point) -> u8 {
     if p.x < 0.0 || p.y < 0.0 || p.x >= surface.width || p.y >= surface.width {
-        return 1;
+        return 0;
     }
     let x = (p.x / surface.width * surface.n as f64) as usize;
     let y = (p.y / surface.width * surface.n as f64) as usize;
@@ -134,7 +161,8 @@ pub(in super::super) fn sited(
     cfg: &LayoutConfig,
     surface: Surface<'_>,
 ) -> Option<Site> {
-    if !port_town(cfg) || surface.n < 2 || surface.wet(site.center) {
+    if !port_town(cfg) || surface.n < 2 || surface.wet(site.center)
+        || site.population >= 3000 && parameterized(cfg) {
         return None;
     }
     let n = surface.n as i64;
@@ -225,8 +253,12 @@ pub(in super::super) fn sited(
         });
     }
     let kind = if cfg.site_archetype == "bridge" && !banks[1].is_empty() { 1 } else { usize::from(banks[0].is_empty()) };
-    let mut banks = std::mem::take(&mut banks[kind]);
+    let mut chosen = std::mem::take(&mut banks[kind]);
+    if cfg.sheltered_harbour {chosen.extend(std::mem::take(&mut banks[1-kind]));}
+    let mut banks = chosen;
     banks.sort_by(|a, b| a.0.total_cmp(&b.0));
+    if cfg.sheltered_harbour {shelter::rank_banks(&mut banks,surface,site);}
+    if std::env::var("URBAN_PROFILE").is_ok() { eprintln!("harbour banks={} nearest={:?}", banks.len(), banks.first().map(|b|b.0)); }
     // Within about a block of the water the town already fronts it.
     if banks.first().is_none_or(|b| b.0 <= reach.max(120.0)) {
         return None;
@@ -300,7 +332,8 @@ pub(in super::super) fn sited(
         .1;
         found.push((land, center, water));
     }
-    let (_, center, _) = found.into_iter().max_by_key(|f| f.0)?;
+    let (_, center, _) = if cfg.sheltered_harbour {found.into_iter().next()}
+        else {found.into_iter().max_by_key(|f| f.0)}?;
     Some(Site {
         center,
         ..site.clone()
@@ -640,6 +673,11 @@ pub(in super::super) fn quays(
     _port: bool,
 ) {
     const MIN: f64 = 20.0;
+    let inherited: Vec<Street> = if parameterized(cfg) {
+        let quays = streets.iter().filter(|s|s.role=="quay").cloned().collect();
+        streets.retain(|s|s.role!="quay");
+        quays
+    } else {vec![]};
     let h = params(culture);
     let cell = surface.width / surface.n as f64;
     let width = if h.fondamenta {
@@ -651,6 +689,7 @@ pub(in super::super) fn quays(
     let probe = (cell * 2.0).clamp(6.0, 10.0);
     let grade = cfg.max_street_grade.min(0.05);
     let mut pieces: Vec<Piece> = vec![];
+    let mut rejected=[0usize;5];
     // Existing quays are served. An ordinary shoreline street still needs
     // a quay platform; long quay streets are binned once.
     let existing: Vec<Street> = streets.iter().filter(|s| s.role == "quay").cloned().collect();
@@ -678,7 +717,7 @@ pub(in super::super) fn quays(
                         let river = river_side(surface, &path);
                         // A brook or ditch is a bank, not a harbour front:
                         // no boat berths where the water is not navigable.
-                        if h.fondamenta || channel_width(surface, &path) >= NAVIGABLE {
+                        if channel_width(surface, &path) >= NAVIGABLE {
                             pieces.push(Piece { path, near, river });
                         }
                     } else {
@@ -715,6 +754,13 @@ pub(in super::super) fn quays(
                                         <= 12.0 * cfg.max_lane_grade
                             })
                         });
+                    if !ok && std::env::var_os("URBAN_PROFILE").is_some() {
+                        rejected[0]+=1;
+                        if !turn_ok {rejected[1]+=1;}
+                        if !routing::segment_clear(surface,a,b,grade) {rejected[2]+=1;}
+                        if !g::segment_within(region,a,b) {rejected[3]+=1;}
+                        if [a,b].iter().any(|&p|surface.wet(add(p,n,width*0.5))||surface.wet(add(p,n,-width*0.5))) {rejected[4]+=1;}
+                    }
                     if ok {
                         if piece.is_empty() {
                             piece.push(a);
@@ -729,6 +775,10 @@ pub(in super::super) fn quays(
         }
     }
     // The sea or lake front first, then river quays, nearest the centre.
+    if parameterized(cfg) {
+        pieces.extend(inherited.into_iter().map(|s|Piece {near:s.path.iter().map(|&p|dist(p,site.center)).fold(f64::INFINITY,f64::min),river:river_side(surface,&s.path),path:s.path}));
+        placement::select(&mut pieces,regions,streets,surface,site,cfg);
+    }
     pieces.sort_by(|a, b| a.river.cmp(&b.river).then(a.near.total_cmp(&b.near)));
     let population = f64::from(site.population.max(1));
     let mut budget = if h.fondamenta {
@@ -740,22 +790,13 @@ pub(in super::super) fn quays(
         .filter(|s| s.role == "quay")
         .map(|s| length(&s.path))
         .sum::<f64>();
-    // A sea or lake port keeps its quays on that front: its brooks and
-    // streams stay banks (a lagoon town lines every water).
-    let sea = pieces.iter().any(|p| !p.river)
-        || streets
-            .iter()
-            .any(|s| s.role == "quay" && !river_side(surface, &s.path))
-        || sea_near(regions, surface);
+    if std::env::var_os("URBAN_PROFILE").is_some() {eprintln!("harbour quay pieces={} rejected/turn/grade/domain/wet={rejected:?}",pieces.len());}
     for mut piece in pieces {
-        if budget < MIN && !piece.river {
-            continue;
-        }
-        if piece.river && sea && !h.fondamenta {
+        if budget < MIN {
             continue;
         }
         let l = length(&piece.path);
-        if l > budget && !piece.river {
+        if l > budget {
             piece.path = centred(&piece.path, site.center, budget);
         }
         let Some(links) = landing_streets(&mut piece.path, streets, surface, cfg) else {
@@ -769,6 +810,43 @@ pub(in super::super) fn quays(
             role: "quay".into(),
         });
         streets.extend(links);
+    }
+    join_fronts(streets,surface,grade);
+}
+
+/// Quarter seams must not interrupt the same bank. Join only short, dry,
+/// grade-safe gaps with navigable water beside them, never across a channel.
+fn join_fronts(streets: &mut Vec<Street>, surface: Surface<'_>, grade: f64) {
+    loop {
+        let mut joined=None;
+        'pairs: for i in 0..streets.len() {
+            if streets[i].role!="quay" {continue;}
+            for j in i+1..streets.len() {
+                if streets[j].role!="quay" {continue;}
+                for (a,b) in [(false,false),(false,true),(true,false),(true,true)] {
+                    let si=&streets[i]; let sj=&streets[j];
+                    let p=if a {si.path[0]} else {*si.path.last().unwrap()};
+                    let q=if b {*sj.path.last().unwrap()} else {sj.path[0]};
+                    let d=dist(p,q);
+                    if d>20.0 {continue;}
+                    let width=si.widths.iter().chain(&sj.widths).copied().fold(0.0,f64::max);
+                    let n=left(unit(p,q));
+                    let dry=d<0.01 || (routing::segment_clear(surface,p,q,grade)
+                        && (0..=(d/2.0).ceil() as usize).all(|k| {
+                            let x=super::point(p,q,k as f64/(d/2.0).ceil().max(1.0));
+                            !surface.wet(add(x,n,width*0.5)) && !surface.wet(add(x,n,-width*0.5))
+                        }) && channel_width(surface,&[p,q])>=NAVIGABLE);
+                    if dry {joined=Some((i,j,a,b,width));break 'pairs;}
+                }
+            }
+        }
+        let Some((i,j,a,b,width))=joined else {break};
+        let mut other=streets.remove(j);
+        if a {streets[i].path.reverse();}
+        if b {other.path.reverse();}
+        streets[i].path.extend(other.path);
+        streets[i].path.dedup_by(|a,b|dist(*a,*b)<0.01);
+        streets[i].widths=vec![width;streets[i].path.len()];
     }
 }
 
@@ -827,30 +905,6 @@ pub(in super::super) fn seaward(
         out.push((path, widths));
     }
     out
-}
-
-/// Whether sea or lake water lies within 30 m of a quarter edge (vertices
-/// sampled, at most 400 per ring, checked on a 10 m grid): the town has a
-/// harbour front somewhere.
-fn sea_near(regions: &[Shape], surface: Surface<'_>) -> bool {
-    regions.iter().any(|r| {
-        let step = (r.outer.len() / 400).max(1);
-        r.outer.iter().step_by(step).any(|&v| {
-            (-3..=3).any(|i| {
-                (-3..=3).any(|j| {
-                    let p = Point {
-                        x: v.x + 10.0 * i as f64,
-                        y: v.y + 10.0 * j as f64,
-                    };
-                    p.x >= 0.0
-                        && p.y >= 0.0
-                        && p.x < surface.width
-                        && p.y < surface.width
-                        && matches!(code(surface, p), 1 | 2)
-                })
-            })
-        })
-    })
 }
 
 /// Narrowest water a quay may front (m): two barges' beams and the way
@@ -916,6 +970,36 @@ pub(in super::super) fn front_water(surface: Surface<'_>, path: &[Point]) -> Opt
             3 => Some(("river", surface.height_at(q))),
             _ => None,
         })
+}
+
+pub(in super::super) fn navigable(layout: &super::super::Layout, surface: Surface<'_>) -> bool {
+    layout.streets.iter().any(|s| s.role == "quay" && channel_width(surface, &s.path) >= NAVIGABLE)
+}
+
+pub(in super::super) fn crosses_sea(surface: Surface<'_>, a: Point, b: Point) -> bool {
+    let steps=(dist(a,b)/2.0).ceil().max(1.0) as usize;
+    (0..=steps).any(|k| {let p=super::point(a,b,k as f64/steps as f64);surface.wet(p) && code(surface,p)==1})
+}
+
+/// New watercourse crossings cannot become bridges across a sea harbour.
+/// An explicitly imported marine span keeps its own regional provenance.
+pub(in super::super) fn keep_sea_access(streets: &mut Vec<Street>, surface: Surface<'_>, roads: &[Street]) {
+    streets.retain(|s| {
+        if !matches!(s.role.as_str(),"bridge"|"causeway"|"ford") || !s.path.windows(2).any(|w|crosses_sea(surface,w[0],w[1])) {return true;}
+        let p=super::point(s.path[0],*s.path.last().unwrap(),0.5);
+        roads.iter().filter(|r|matches!(r.role.as_str(),"bridge"|"causeway"))
+            .any(|r|r.path.windows(2).any(|w|g::distance(p,w[0],w[1]).0<2.0))
+    });
+}
+
+pub(in super::super) fn protect_navigation(layout: &mut super::super::Layout, surface: Surface<'_>, roads: &[Street]) {
+    let reserved:Vec<_>=layout.programme.iter().flat_map(|p|&p.reservations).map(|r|layout.streets.get(r.street).cloned()).collect();
+    keep_sea_access(&mut layout.streets,surface,roads);
+    if let Some(p)=&mut layout.programme {
+        for (r,old) in p.reservations.iter_mut().zip(reserved) {
+            if let Some(index)=old.and_then(|old|layout.streets.iter().position(|s|s.role==old.role && s.path==old.path)) {r.street=index;}
+        }
+    }
 }
 
 /// The `budget` metres of `path` centred on its point nearest `c`.
@@ -1036,6 +1120,10 @@ pub(in super::super) fn works(
     site: &Site,
     culture: &str,
 ) -> Vec<Street> {
+    works_with_minimum(streets,surface,site,culture,40.0)
+}
+
+fn works_with_minimum(streets: &[Street], surface: Surface<'_>, site: &Site, culture: &str, minimum: f64) -> Vec<Street> {
     let h = params(culture);
     let quays: Vec<&Street> = streets
         .iter()
@@ -1050,7 +1138,8 @@ pub(in super::super) fn works(
     let limit = ((population / 1500.0).ceil() as usize).clamp(1, 40);
     let segments: Vec<(Point, Point)> = streets
         .iter()
-        .flat_map(|s| s.path.windows(2).map(|w| (w[0], w[1])))
+        .flat_map(|s| s.path.windows(2).filter(|w| matches!(s.role.as_str(),"pier"|"mole"|"landing"|"bridge"|"causeway")
+            || surface.wet(super::point(w[0],w[1],0.5))).map(|w| (w[0], w[1])))
         .collect();
     let crosses = |a: Point, b: Point, own: &[(Point, Point)]| {
         segments
@@ -1071,11 +1160,12 @@ pub(in super::super) fn works(
     let mut own: Vec<(Point, Point)> = vec![];
     let mut roots: Vec<Point> = vec![];
     // Moles first: they claim the best front.
-    if h.basin && !small && population >= 6000.0 {
+    if (h.basin || !h.fondamenta) && !small && population >= 6000.0 {
         let best = quays
             .iter()
+            .filter(|q|front_water(surface,&q.path).is_some_and(|(kind,_)|kind=="sea"))
             .map(|q| (q, dist(q.path[0], *q.path.last().unwrap())))
-            .filter(|(q, chord)| *chord >= 100.0 && *chord >= 0.85 * length(&q.path))
+            .filter(|(q, chord)| *chord >= (population.sqrt()*0.5).clamp(40.0,100.0) && *chord >= 0.85 * length(&q.path))
             .max_by(|a, b| a.1.total_cmp(&b.1));
         if let Some((q, chord)) = best {
             let (a, b) = (q.path[0], *q.path.last().unwrap());
@@ -1083,12 +1173,17 @@ pub(in super::super) fn works(
             let t = unit(a, b);
             let n = [left(t), Point { x: t.y, y: -t.x }]
                 .into_iter()
-                .find(|&n| code(surface, add(super::point(a, b, 0.5), n, w + 3.0)) != 0);
+                .filter_map(|n| (0..=(2.0*surface.width/surface.n as f64+20.0).ceil() as usize)
+                    .map(|k|w+0.5+k as f64).find(|&d|code(surface,add(super::point(a,b,0.5),n,d))==1).map(|d|(d,n)))
+                .min_by(|a,b|a.0.total_cmp(&b.0)).map(|(_,n)|n);
             if let Some(n) = n {
                 let reach = (0.35 * chord).clamp(40.0, 160.0);
                 let arm = 0.3 * chord;
-                let a0 = add(a, n, w);
-                let b0 = add(b, n, w);
+                let start = |p| (0..=(2.0 * surface.width / surface.n as f64 + 20.0).ceil() as usize)
+                    .map(|k| w + 0.5 + k as f64).find(|&d| code(surface, add(p, n, d)) == 1);
+                if let (Some(da), Some(db)) = (start(a), start(b)) {
+                let a0 = add(a, n, da);
+                let b0 = add(b, n, db);
                 let a1 = add(a0, n, reach);
                 let b1 = add(b0, n, reach);
                 let a2 = add(a1, t, arm);
@@ -1108,12 +1203,13 @@ pub(in super::super) fn works(
                         own.extend(path.windows(2).map(|w| (w[0], w[1])));
                         roots.push(path[0]);
                         out.push(Street {
-                            widths: vec![8.0; path.len()],
+                            widths: vec![(population.sqrt() * 0.08).clamp(3.0, 12.0); path.len()],
                             path,
                             rank: 2,
                             role: "mole".into(),
                         });
                     }
+                }
                 }
             }
         }
@@ -1125,7 +1221,7 @@ pub(in super::super) fn works(
         // Every quay of 40 m or more has at least one pier or landing stage.
         let stations = (total / spacing)
             .floor()
-            .max(if total >= 40.0 { 1.0 } else { 0.0 }) as usize;
+            .max(if total >= minimum { 1.0 } else { 0.0 }) as usize;
         for k in 0..stations {
             if piers >= limit {
                 break;
@@ -1187,6 +1283,11 @@ pub(in super::super) fn works(
         }
     }
     out
+}
+
+pub(in super::super) fn configured_works(streets: &[Street], surface: Surface<'_>, site: &Site, culture: &str, cfg: &LayoutConfig) -> Vec<Street> {
+    if parameterized(cfg) {shelter::works(streets,surface,site,culture)}
+    else {works(streets,surface,site,culture)}
 }
 
 /// A platform is cadastral geometry, not the casing of a street.
@@ -1261,6 +1362,37 @@ mod tests {
     use super::*;
 
     #[test]
+    fn quay_frontage_and_landing_works_scale_with_population() {
+        let (height,water)=coast(256);
+        let surface=Surface {geometry:None,width:256.,n:256,height:&height,water:&water};
+        let domain=g::rectangle(128.,4.,254.,252.);
+        let cfg=LayoutConfig {site_archetype:"harbor".into(),..Default::default()};
+        let mut lengths=vec![];
+        let mut counts=vec![];
+        let mut building_need=vec![];
+        for pop in [500,10_000] {
+            let site=Site {key:"scale".into(),name:String::new(),population:pop,culture:"hanseatic".into(),center:Point{x:180.,y:128.},radius:120.};
+            let mut streets=vec![Street {path:vec![Point{x:180.,y:4.},Point{x:180.,y:252.}],widths:vec![5.;2],rank:1,role:"street".into()}];
+            quays(std::slice::from_ref(&domain),&mut streets,surface,&cfg,&site,"hanseatic",true);
+            let metres:f64=streets.iter().filter(|s|s.role=="quay").map(|s|length(&s.path)).sum();
+            assert!(metres>50.);
+            let works=works(&streets,surface,&site,"hanseatic");
+            assert!(!works.is_empty());
+            if pop==500 { assert!(works.iter().all(|s|s.role=="landing")); }
+            else { assert!(works.iter().any(|s|s.role=="pier"||s.role=="mole")); }
+            lengths.push(metres); counts.push(works.len());
+            let layout:super::super::super::Layout=serde_json::from_value(serde_json::json!({
+                "key":"scale","culture":"hanseatic","center":site.center,"quarters":[],"streets":streets,"blocks":[],"warnings":[]
+            })).unwrap();
+            let needs=super::super::super::roles::services_for_layout(&layout,pop,Default::default());
+            building_need.push(needs.iter().filter(|n|n.entry.site=="quay").map(|n|n.area*n.sites as f64).sum::<f64>());
+        }
+        assert!(lengths[1]>lengths[0]*1.3);
+        assert!(counts[1]>counts[0]);
+        assert!(building_need[1]>building_need[0]*2.0);
+    }
+
+    #[test]
     fn ten_thousand_coastal_and_river_towns_have_built_connected_quays() {
         use super::super::super::{generate_quarters, generate_parcels, ParcelConfig};
         for (culture, river) in [("celtic-oppidum", false), ("dwarven", false), ("indian-temple", true), ("swahili-stone-town", true)] {
@@ -1307,8 +1439,12 @@ mod tests {
             }
             let parts = generate_parcels("port-invariant", &layouts, &ParcelConfig::default()).unwrap();
             let programme = parts[0].programme.as_ref().unwrap();
-            for role in ["commerce.warehouse", "civic.harbour", "craft.boatshed"] {
+            let requests=super::super::super::building_sites::requests("port-invariant",&layouts,&parts,surface,&height,None).unwrap();
+            for role in ["commerce.warehouse", "civic.harbour", "craft.boatshed", "commerce.fishmarket"] {
                 assert!(programme.allocations.iter().any(|a| a.role == role), "{culture}: unplaced {role}");
+                assert!(requests.iter().any(|r|programme.allocations.iter().any(|a|a.role==role && r["parcel_id"]==a.parcel_id)
+                    && r["function"]!="open_space" && serde_json::from_value::<Vec<Shape>>(r["preview"].clone()).unwrap_or_default().iter().map(g::area).sum::<f64>()>20.0),
+                    "{culture}: {role} needs a real building footprint and function");
             }
         }
     }

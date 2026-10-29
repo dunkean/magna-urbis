@@ -115371,11 +115371,11 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 200,
-          "middle": 200,
-          "edge": 200,
-          "faubourg": 200,
-          "village": 200
+          "core": 125,
+          "middle": 125,
+          "edge": 125,
+          "faubourg": 125,
+          "village": 125
         },
         "arch": {
           "typology": "plank-house",
@@ -115387,16 +115387,17 @@
           "material": "cedar-plank"
         },
         "campLayout": "rows",
-        "campRow": 32.0,
+        "campRow": 18.0,
         "campRowLength": [
-          24.0,
+          26.0,
           30.0
         ],
         "campPath": 3.0,
-        "campRings": 2,
+        "campRings": 0,
+        "campHouseholds": 4.0,
         "campHouse": [
-          15.0,
-          20.0
+          9.144,
+          15.24
         ]
       }
     },
@@ -115664,11 +115665,11 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 200,
-          "middle": 200,
-          "edge": 200,
-          "faubourg": 200,
-          "village": 200
+          "core": 125,
+          "middle": 125,
+          "edge": 125,
+          "faubourg": 125,
+          "village": 125
         },
         "arch": {
           "typology": "plank-house",
@@ -115680,16 +115681,17 @@
           "material": "cedar-plank"
         },
         "campLayout": "rows",
-        "campRow": 32.0,
+        "campRow": 18.0,
         "campRowLength": [
-          24.0,
+          26.0,
           30.0
         ],
         "campPath": 3.0,
-        "campRings": 2,
+        "campRings": 0,
+        "campHouseholds": 4.0,
         "campHouse": [
-          15.0,
-          20.0
+          9.144,
+          15.24
         ]
       }
     },
@@ -115957,11 +115959,11 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 200,
-          "middle": 200,
-          "edge": 200,
-          "faubourg": 200,
-          "village": 200
+          "core": 125,
+          "middle": 125,
+          "edge": 125,
+          "faubourg": 125,
+          "village": 125
         },
         "arch": {
           "typology": "plank-house",
@@ -115973,16 +115975,17 @@
           "material": "cedar-plank"
         },
         "campLayout": "rows",
-        "campRow": 32.0,
+        "campRow": 18.0,
         "campRowLength": [
-          24.0,
+          26.0,
           30.0
         ],
         "campPath": 3.0,
-        "campRings": 2,
+        "campRings": 0,
+        "campHouseholds": 4.0,
         "campHouse": [
-          15.0,
-          20.0
+          9.144,
+          15.24
         ]
       }
     },

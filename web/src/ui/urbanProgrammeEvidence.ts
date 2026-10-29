@@ -1,8 +1,9 @@
 import type { UrbanProgramme } from '../../../rust/bridge/urban';
 import type { PlacementBatch } from '../../../rust/bridge/urbanArchitecture';
 import { surfaceArea } from '../../../rust/bridge/houseRender';
+import { builtOutcomeSource, hasBuiltOutcomeBalance } from '../../../rust/bridge/urbanBuiltBalance';
 
-export type ProgrammeBalanceEvidence = 'not_calculated' | 'unverified' | 'scene_consistent';
+export type ProgrammeBalanceEvidence = 'not_calculated' | 'unverified' | 'scene_consistent' | 'outcomes_reconciled';
 const same = (a: number | undefined, b: number): boolean => typeof a === 'number' && Number.isFinite(a)
   && a >= 0 && Math.abs(a - b) <= 1e-8 * Math.max(1, Math.abs(a), Math.abs(b));
 
@@ -15,7 +16,10 @@ const same = (a: number | undefined, b: number): boolean => typeof a === 'number
 export function programmeBalanceEvidence(scene?: PlacementBatch): (programme: UrbanProgramme) => ProgrammeBalanceEvidence {
   if (!scene) return programme => programme.demands.some(d => d.builtCapacity > 0 || (d.openCapacity ?? 0) > 0) ? 'unverified' : 'not_calculated';
   if (scene.generator_version === 'silhouette' || scene.generator_version.startsWith('architectural-plans-')
-    || scene.buildings.some(b => b.simplification !== 'recipe_volumes' || b.cartographic?.validation === 'plan_only')) return () => 'not_calculated';
+    || scene.buildings.some(b => b.simplification !== 'recipe_volumes' || b.cartographic?.validation === 'plan_only')) {
+    const source = builtOutcomeSource(scene);
+    return p => hasBuiltOutcomeBalance(p,source) ? 'outcomes_reconciled' : 'not_calculated';
+  }
   if (!['houses-2', 'houses-3'].includes(scene.generator_version)) return () => 'unverified';
   const outcomes = new Map<string, { kind: 'building' | 'refusal' | 'open'; function?: string; useful?: number; units?: number; area?: number }>();
   let duplicate = false;

@@ -27,6 +27,8 @@ export const FARM_SIZES: FarmSize[] = ['cottage', 'family', 'large', 'manor'];
 
 /** Context of a farm site (all world-derived). */
 export interface FarmContext {
+  /** Road takes precedence over sun/slope for the dwelling's front. */
+  streetAlignedHomes?: boolean;
   culture: string;
   biome?: BiomeName;
   /** Soil quality −1 … 1 (the land-use soil field). */
@@ -728,6 +730,7 @@ const NO_ORCHARD = new Set<FarmType>(['kraal', 'ail', 'sahel-compound', 'roundho
  * frame (u along the track, v inward).
  */
 export function layoutFarm(type: FarmType, size: FarmSize, c: FarmContext, frame: Frame, r: Rng): LocalFarm {
+  if (c.streetAlignedHomes) frame = { ...frame, south: [0, -1], down: null };
   const subterranean = c.biome === 'underdark' || type === 'fungal-farm' || type === 'spore-farm';
   const si = FARM_SIZES.indexOf(size);
   const x: Ctx = { c, f: frame, size, si, r, slopeF: clamp01(c.slope / 0.16) };

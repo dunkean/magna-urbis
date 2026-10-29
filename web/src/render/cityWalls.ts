@@ -16,13 +16,13 @@ import { earcut } from './cityGlEarcut';
 
 // ---------------------------------------------------------------- geometry
 type Family = 'stone' | 'earth' | 'brick' | 'rampart' | 'timber' | 'hedge';
-type Cat = 'ditchWet' | 'ditchDry' | 'glacis' | 'work' | 'bastion' | 'citadel' | 'tower' | 'gatehouse' | 'attached' | 'gateRoof';
+type Cat = 'ditchWet' | 'ditchDry' | 'glacis' | 'work' | 'chain' | 'bastion' | 'citadel' | 'tower' | 'gatehouse' | 'attached' | 'gateRoof';
 /** Draw order; ground categories go under the streets. */
-const CATS: Cat[] = ['ditchWet', 'ditchDry', 'glacis', 'citadel', 'bastion', 'work', 'tower', 'gatehouse', 'attached', 'gateRoof'];
+const CATS: Cat[] = ['ditchWet', 'ditchDry', 'glacis', 'citadel', 'bastion', 'work', 'chain', 'tower', 'gatehouse', 'attached', 'gateRoof'];
 const GROUND = new Set<Cat>(['ditchWet', 'ditchDry', 'glacis']);
 const CASTS = new Set<Cat>(['citadel', 'bastion', 'work', 'tower', 'gatehouse', 'attached']);
 // Bastions and the citadel are the trace itself: they show from the town view.
-const CAT_LOD: Record<Cat, CityLod> = { ditchWet: 'mid', ditchDry: 'mid', glacis: 'mid', citadel: 'far', bastion: 'far', work: 'mid', tower: 'mid', gatehouse: 'mid', attached: 'near', gateRoof: 'close' };
+const CAT_LOD: Record<Cat, CityLod> = { ditchWet: 'mid', ditchDry: 'mid', glacis: 'mid', citadel: 'far', bastion: 'far', work: 'mid', chain: 'mid', tower: 'mid', gatehouse: 'mid', attached: 'near', gateRoof: 'close' };
 const LOD_ORDER: CityLod[] = ['close', 'near', 'mid', 'far'];
 const shown = (cat: Cat, lod: CityLod): boolean => LOD_ORDER.indexOf(lod) <= LOD_ORDER.indexOf(CAT_LOD[cat]);
 
@@ -171,7 +171,9 @@ function buildDetail(e: Enclosure): WallDetail | undefined {
   }
   const polys: WallPoly[] = [], add = (cat: Cat, shape: Shape | undefined, fam: Family = family): void => { if ((shape?.outer?.length ?? 0) >= 3) polys.push({ cat, family: fam, shape: shape! }); };
   for (const d of e.ditch ?? []) add(d.kind === 'wet' ? 'ditchWet' : 'ditchDry', d.shape);
-  for (const w of e.outworks ?? []) add(w.kind === 'glacis' ? 'glacis' : w.kind === 'citadel' ? 'citadel' : 'work', w.shape);
+  for (const w of e.outworks ?? []) add(w.kind === 'glacis' ? 'glacis' : w.kind === 'citadel' ? 'citadel'
+    : w.kind === 'river-chain' ? 'chain' : ['bridge-tower', 'facing-tower'].includes(w.kind) ? 'tower'
+      : w.kind === 'bridge-gatehouse' ? 'gatehouse' : 'work', w.shape);
   for (const b of e.bastions ?? []) add('bastion', b.shape);
   const towerFamily: Family = family === 'hedge' ? 'timber' : family;
   for (const t of e.towers_detail ?? []) add('tower', t.footprint, towerFamily);
@@ -246,6 +248,7 @@ function polyInk(cat: Cat, family: Family, palette: CityPalette, painted: boolea
     case 'glacis': return parch ? ink('#efe4c4', 0.6, PARCH.edge, 0.3) : inkP ? ink('#e3d1b5', 0.4, INK.edge, 0.3) : ink('#d8ccb0', 0.35, '#8f8268', 0.35);
     case 'citadel': return ink(parch ? '#e6d6a8' : inkP ? INK.fill : '#d4c8a8', 1, t.edge);
     case 'work': case 'bastion': return ink(parch ? '#e6d6a8' : t.fill, 1, t.edge);
+    case 'chain': return ink(t.dark, 1, t.dark);
     case 'tower': return ink(t.tower, 1, t.dark);
     case 'gatehouse': return ink(t.gate, 1, t.dark);
     case 'attached': return parch ? ink('#4a3826', 1, PARCH.edge) : inkP ? ink('#6b5640', 1, INK.edge) : ink(painted ? '#8a5c45' : '#7a6a58', 1, '#2e261d', 0.8);

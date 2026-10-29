@@ -7,7 +7,8 @@
 export interface SituationPin { x: number; y: number; note: string }
 export interface CitySituation {
   v: 1;
-  /** Share query of the bench (artifact, settlements, roads, urban configs…). */
+  /** Share query of the bench (artifact, settlements, roads, urban configs,
+   * rpgLabels and rpgPins). Map annotations stay separate from bug-report pins. */
   q: string;
   view?: { cx: number; cy: number; scale: number };
   pins: SituationPin[];

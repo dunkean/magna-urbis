@@ -35,6 +35,8 @@ mod stilt_ground_tests;
 #[cfg(test)]
 mod small_settlement_tests;
 #[cfg(test)]
+mod site_options_tests;
+#[cfg(test)]
 mod regression;
 #[cfg(test)]
 mod panic20k_tests;
@@ -88,6 +90,8 @@ pub struct Enclosure {
     /// `palisade|gord|hedge|curtain|flanked|concentric|rammed-earth|wengcheng|bastioned`.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub style: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub purpose: String,
     /// `timber|timber-earth|thorn|stone|brick|rammed-earth|earth-stone`.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub material: String,
@@ -208,6 +212,12 @@ pub struct Layout {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct UrbanStructure {
+    /// Gate markets retained independently of street merging and deduplication.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub gate_village_centers: Vec<Point>,
+    /// Pending local cuts, applied after the inherited streets and trim.
+    #[serde(skip)]
+    pub gate_village_lanes: Vec<Street>,
     /// Built waterfront platforms, retained independently from street centrelines.
     pub quays: Vec<macroplan::harbour::Quay>,
     pub version: u32,
@@ -217,6 +227,9 @@ pub struct UrbanStructure {
     pub allocated: Vec<Shape>,
     pub centers: Vec<UrbanCenter>,
     pub districts: Vec<UrbanDistrict>,
+    /// Explicit port masks for enclosure decisions, after the nucleus carve.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub port_districts: Vec<PortDistrict>,
     pub history: Vec<UrbanEvent>,
     pub metrics: UrbanMetrics,
 }
@@ -243,6 +256,13 @@ pub struct UrbanDistrict {
     /// French label of the role for the UI (`Quartier des tanneurs`).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub label: String,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PortDistrict {
+    pub district: usize,
+    pub role: String,
+    pub quarters: Vec<usize>,
+    pub shapes: Vec<Shape>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UrbanEvent {
@@ -523,10 +543,56 @@ pub struct LayoutConfig {
     /// `auto` (cultural draw) or a style of `fortification::STYLES`, applied
     /// when it fits the fortification kind (« Style de l’enceinte »).
     pub fortification_style: String,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub old_enclosure_citadel: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub medieval_walls: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub river_control: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub dry_ditches: bool,
+    /// None retains the pre-parameter cultural/default draw.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wall_stiffness: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wall_terrain: Option<f64>,
+    /// 0 walls round every knoll, 1 lets straight runs cross any relief; None keeps maxCrestM.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wall_relief: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wall_tower_spacing: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ditch_wetness: Option<f64>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub river_control_mode: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub port_enclosure: String,
+    /// Wall of a planned (square/rect) culture: "" auto (rectangle where the land
+    /// allows it), "rect" always the plan's rectangle, "follow" the town's own trace.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub planned_wall: String,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub gate_villages: bool,
+    /// Gate nucleus strength. Absent retains the legacy `gateVillages` meaning.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gate_village: Option<f64>,
     pub max_street_grade: f64,
     pub max_lane_grade: f64,
     pub max_stair_grade: f64,
     pub allow_stairs: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub power_high_ground: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub sheltered_harbour: bool,
+    /// 0: waterfront of the main fabric; 1: allow a separate port quarter.
+    pub port_detachment: f64,
+    /// None preserves old shelteredHarbour links; explicit 0 overrides them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub port_shelter: Option<f64>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub merge_parallel_streets: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub regular_grid_outline: bool,
     pub params: Value,
     /// Per growth zone (`core`, `middle`, `edge`, `faubourg`, `village`): another culture,
     /// recipe or street tissue than the settlement's. Empty = the culture's own.
@@ -620,10 +686,30 @@ impl Default for LayoutConfig {
             monument: "none".into(),
             fortification: "culture".into(),
             fortification_style: "auto".into(),
+            old_enclosure_citadel: false,
+            medieval_walls: false,
+            river_control: false,
+            dry_ditches: false,
+            wall_stiffness: None,
+            wall_terrain: None,
+            wall_relief: None,
+            wall_tower_spacing: None,
+            ditch_wetness: None,
+            river_control_mode: String::new(),
+            port_enclosure: String::new(),
+            planned_wall: String::new(),
+            gate_villages: false,
+            gate_village: None,
             max_street_grade: 0.12,
             max_lane_grade: 0.18,
             max_stair_grade: 0.65,
             allow_stairs: true,
+            power_high_ground: false,
+            sheltered_harbour: false,
+            port_detachment: 1.0,
+            port_shelter: None,
+            merge_parallel_streets: false,
+            regular_grid_outline: false,
             params: json!({}),
             phase_overrides: Default::default(),
             overrides: UrbanOverrides::default(),
@@ -641,6 +727,12 @@ fn culture_axis() -> String {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct ParcelConfig {
+    /// Loose homes keep their main body square to their actual street frontage.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub street_aligned_homes: bool,
+    /// Applied rural-generation setting, consumed by the retained land-use stage.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub denser_smallholdings: bool,
     pub operator: String,
     pub culture: String,
     pub preset: String,
@@ -685,6 +777,8 @@ pub struct ParcelOverride {
 impl Default for ParcelConfig {
     fn default() -> Self {
         Self {
+            street_aligned_homes: false,
+            denser_smallholdings: false,
             operator: "culture".into(),
             culture: "site".into(),
             preset: "culture".into(),
@@ -997,6 +1091,11 @@ pub fn generate_quarters(
     surface: Surface<'_>,
     roads: &[Street],
 ) -> Result<Vec<Layout>, String> {
+    if !config.port_detachment.is_finite() || !(0.0..=1.0).contains(&config.port_detachment)
+        || config.port_shelter.is_some_and(|v| !v.is_finite() || !(0.0..=1.0).contains(&v))
+    {
+        return Err("Paramètres du port invalides : nombres finis entre 0 et 1 requis".into());
+    }
     if config.programme.functions.is_some_and(|f| !f.valid()) {
         return Err("Poids des fonctions urbaines invalides : nombres finis entre 0 et 1 requis".into());
     }
@@ -1111,6 +1210,7 @@ pub fn generate_quarters(
         || !["culture", "none", "wall", "palisade"].contains(&config.fortification.as_str())
         || !(config.fortification_style == "auto"
             || fortification::STYLES.contains(&config.fortification_style.as_str()))
+        || !fortification::valid_parameters(config)
         || !config.max_street_grade.is_finite()
         || !(0.02..=0.3).contains(&config.max_street_grade)
         || !config.max_lane_grade.is_finite()
@@ -1215,10 +1315,15 @@ pub fn generate_quarters(
             if let Some(ground) = &stilt { ground.walkways(&mut layout.streets, physical_surface); }
             network::bridge_water_on_ground(&mut layout.streets, surface, physical_surface, config.max_street_grade);
             access::summarize(layout, config);
+            fortification::prepare_options(layout, config, surface);
             programme::prepare(layout, site.population, &config.programme, surface)?;
+            fortification::finish_options(layout, config, surface);
             kinds::finish(layout, kind, original);
             if layout.structure.as_ref().is_some_and(|s|s.mechanism != "legacy") { trim::finish(seed,layout,physical_surface); }
             network::select_bridges(layout, site.population, physical_surface, roads);
+            if macroplan::harbour::port_town(config) {
+                macroplan::harbour::protect_navigation(layout, physical_surface, roads);
+            }
             trim::footprint(layout);
             macroplan::harbour::platforms(layout, surface);
             Ok(())
@@ -1282,10 +1387,12 @@ pub fn generate_parcels(
         let key_seed = format!("{seed}\u{1}settlement:{}", layout.key);
         let mut partition = parcels::generate(&key_seed, layout, config, &morph)?;
         programme::allocate(layout, &mut partition);
+        programme::camps::release_unbuilt(layout, &mut partition, false);
         programme::consolidate(&mut partition);
         // Edits address the occupied properties, including their merged yards.
         edits::apply_parcel_edits(layout, &mut partition);
         programme::allocate(layout, &mut partition);
+        programme::camps::release_unbuilt(layout, &mut partition, true);
         programme::finish_lots(layout, &mut partition);
         roles::face_quays(layout, &mut partition);
         out.push(partition);

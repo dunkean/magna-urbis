@@ -23,6 +23,9 @@ use std::collections::{BTreeMap, BTreeSet};
 // scene merging cannot mix legacy house archives and newly certified entries.
 pub const PLAN_VERSION: &str = "architectural-plans-2";
 
+#[path = "placed_budget_selection.rs"]
+mod placed_budget_selection;
+
 #[path = "native_assembly.rs"]
 pub mod assembly;
 
@@ -396,6 +399,9 @@ mod prepared_plan_tests;
 #[cfg(test)]
 #[path = "foundation_integration_tests.rs"]
 mod foundation_integration_tests;
+
+#[path = "functional_source_placement.rs"]
+mod functional_source_placement;
 
 #[cfg(test)]
 #[path = "native_plan_entry_tests.rs"]
@@ -1440,7 +1446,8 @@ fn visual_with_connection_prepared_reported(
             "Architectural bodies, courts or structures do not fit the supplied domain.".into(),
         );
     }
-    let native_foundation = if native_ground_preparation_allowed(r, programme_automatic) {
+    let native_foundation = if native_ground_preparation_allowed(r, programme_automatic)
+        || functional_hall && prepared.retain_native_entry {
         match prepared.foundation()? {
             crate::engine::FoundationPreparation::Supported(physical) => Some(physical),
             crate::engine::FoundationPreparation::Unsupported(_reason) => None,
@@ -2151,6 +2158,14 @@ fn plan_one_initial_pass(
     simple_fallback: Option<&mut bool>,
     recovery: &mut initial_terrain_recovery::Recovery,
 ) -> Result<PlanBuilding, String> {
+    plan_one_initial_pass_selected(r,occupied,target,exact,initial_programme_area,budget_attempted,simple_fallback,recovery,None)
+}
+
+fn plan_one_initial_pass_selected(
+    r:&PlacementRequest,occupied:&Surface,target:Option<&Surface>,exact:bool,
+    initial_programme_area:Option<f64>,budget_attempted:&mut bool,simple_fallback:Option<&mut bool>,
+    recovery:&mut initial_terrain_recovery::Recovery,source:Option<(&str,&str,Option<u32>)>,
+) -> Result<PlanBuilding,String> {
     validate_request(r)?;
     if target.is_some_and(|s| !valid_surface(s) || !contains(&r.buildable, s)) {
         return Err("Imposed footprint must fit the buildable domain.".into());
@@ -2251,7 +2266,9 @@ fn plan_one_initial_pass(
                 || p.frontage_continuity.is_some_and(|v| v >= 0.75)
         });
     let mut frontage_attempts = 0;
-    let recipes: Vec<_> = if !functional_candidates.is_empty() {
+    let recipes: Vec<_> = if let Some((recipe,variant,floor))=source {
+        vec![(Some(recipe.to_owned()),Some(variant.to_owned()),floor)]
+    } else if !functional_candidates.is_empty() {
         functional_candidates
             .iter()
             .map(|c| {
@@ -2341,14 +2358,15 @@ fn plan_one_initial_pass(
         // replace an admission pin or add non-residential sources to the palette.
         let functional_hall = !exact
             && config.workshop.is_none()
-            && r.function == ArchitectureFunction::Collective
+            && matches!(r.function, ArchitectureFunction::Collective | ArchitectureFunction::Warehouse)
             && r.programme.as_ref().is_some_and(|p| {
                 p.composition == Some(crate::programme::ProgrammeComposition::Hall)
             })
             && crate::functional_programmes::registry()?
                 .programmes
                 .iter()
-                .any(|p| p.pack_id == config.pack && Some(p.recipe_id) == config.recipe.as_deref());
+                .any(|p| p.pack_id == config.pack && p.function == r.function
+                    && Some(p.recipe_id) == config.recipe.as_deref());
         if functional_hall && target.is_some() {
             return Err("A registered functional hall has no declared imposed-footprint adapter; its source programme was not replaced.".into());
         }
@@ -2442,7 +2460,9 @@ fn plan_one_initial_pass(
         // Default native composition is tried first. Constrained synthesis is
         // opt-in and retains its resolved body/level decisions on success.
         if target.is_none() {
-            let prepared = PreparedPlan::new(&resolved);
+            let prepared = if functional_hall && resolved.parameters.layout == crate::catalogue::Layout::Parallel {
+                PreparedPlan::with_native_entry(&resolved)
+            } else { PreparedPlan::new(&resolved) };
             // The same lazy ticket serves existing frontage and native poses;
             // unsupported candidates and earlier successful poses create none.
             let recovery_ticket = OnceCell::new();
@@ -2504,6 +2524,7 @@ fn plan_one_initial_pass(
                         frontage_attempts,
                     ));
                 }
+
             }
             for align in [0.5, 0.1, 0.9] {
                 let offset = Point {
@@ -2540,6 +2561,23 @@ fn plan_one_initial_pass(
                         }
                         error = e;
                     }
+                }
+            }
+            // A functional loading front can use the same bounded rigid street
+            // poses as houses, after the old centred poses fail. No remorphing.
+            if functional_hall {
+                for (transform,access) in frontage_poses_prepared(r,&prepared,&domain) {
+                    match visual_with_front_access_prepared_reported(r,&prepared,transform,&neighbors,
+                        false,true,Some(access),false,None) {
+                        Ok(mut building) => {
+                            building.diagnostics.push("Registered functional source: retained assembly admitted on a declared loading front after centred poses failed.".into());
+                            return Ok(building);
+                        }
+                        Err(_) => {}
+                    }
+                }
+                match functional_source_placement::place(r,&prepared,&domain,&neighbors) {
+                    Ok(building)=>return Ok(building), Err(reason)=>error=reason,
                 }
             }
         }
@@ -2705,7 +2743,8 @@ fn plan_one_before_incumbent_growth(
             budget_selection::Selection::single(initial)
         };
     if native_ground_preparation_allowed(r, automatic) {
-        Ok(building.finalize(r, occupied))
+        let building=building.finalize(r, occupied);
+        Ok(if automatic { placed_budget_selection::improve(r,occupied,building) } else {building})
     } else {
         Ok(building.building)
     }
@@ -2775,6 +2814,9 @@ fn retain_final_native_entry_with_policy(
             }
         }).is_some_and(crate::engine::single_native_entry_parameters);
     if !strip && !single_source {
+        if !previous.resolved.has_retained_entrance() {
+            previous.diagnostics.push("Native planning entrance unsupported: retained source topology has no supported native foundation/entry preparation. Planning connector remains a proxy; interior access and household capacity are unknown. No structure, gate, roof detail or physical guard was omitted.".into());
+        }
         return previous;
     }
     let resolved = match previous.resolved.unpack() {

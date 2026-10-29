@@ -36,6 +36,8 @@ export interface VectorWater {
   rivers?: RiverNetwork;
   /** Hydraulic width multiplier, also retained when grid diagnostics are selected. */
   widthScale?: number;
+  /** Applied threshold, retained so grid-mode consumers reproduce the drawn D8 network. */
+  riverArea?: number;
   metrics: RiverMetrics;
   runoff: { r0: number; e0: number; aridity: number };
   confluenceAngle?: number;
@@ -120,7 +122,7 @@ export function computeVectorWater(height: Float32Array, n: number, width: numbe
   }) : undefined;
   const metrics = riverMetrics(hydro, lake, rivers, settings.riverArea, settings.widthScale);
   return {
-    hydro, lake, lakeLevel, lakeKind, lakes, closedLakes, lakeAreaKm2, riverCells, rivers, widthScale: settings.widthScale, metrics,
+    hydro, lake, lakeLevel, lakeKind, lakes, closedLakes, lakeAreaKm2, riverCells, rivers, widthScale: settings.widthScale, riverArea: settings.riverArea, metrics,
     runoff: { r0: runoff.r0, e0: runoff.e0, aridity: runoff.aridity }, confluenceAngle, hydrologyMs, balanceMs,
   };
 }

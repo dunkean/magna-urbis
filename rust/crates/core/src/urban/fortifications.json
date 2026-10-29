@@ -1,20 +1,29 @@
 {
   "version": 1,
+  "trace": {"maxDeviationM": 3, "stiffDeviationM": 36, "maxGrade": 0.9, "maxCrestM": 12, "terrainReachM": 32, "portJoinM": 80},
   "invaginations": {"maxDepthSpanRatio": 0.4, "minDepthM": 12, "foldGapM": 10},
   "notes": "Fortification styles (stream W). Artistic presets, not measured reconstructions. Every value can be overridden per culture here (cultures.*) or in catalogue.json cultures[c].fortification.",
   "styles": {
     "palisade": {"kind": "palisade", "material": "timber", "curtainWidthM": 1.5, "heightM": 3.5, "towerHeightM": 5, "towerShape": "square", "fixedTowers": true, "towerRadius": [2.5, 2.5], "towerSpacing": null, "cornerTurn": null, "gate": "timber", "minorGate": "opening", "gateMinPop": 600, "ditch": "dry", "ditchP": 0.6, "ditchWidthM": [4, 4], "bermM": 1.5, "outworks": [], "attached": 0},
     "gord": {"kind": "palisade", "material": "timber-earth", "curtainWidthM": 6, "heightM": 5, "towerHeightM": 7, "towerShape": "square", "fixedTowers": true, "towerRadius": [2.5, 2.5], "towerSpacing": null, "cornerTurn": 40, "salientsOnly": true, "gateTowers": true, "gate": "timber", "minorGate": "opening", "ditch": "auto", "ditchP": 1, "ditchWidthM": [6, 6], "bermM": 1.5, "outworks": [], "attached": 0},
     "hedge": {"kind": "hedge", "material": "thorn", "curtainWidthM": 1.5, "heightM": 2.5, "towerHeightM": 2.5, "towerShape": "round", "fixedTowers": true, "towerRadius": [1, 1], "towerSpacing": null, "cornerTurn": null, "gate": "opening", "minorGate": "opening", "ditch": "none", "outworks": [], "attached": 0},
-    "curtain": {"kind": "wall", "material": "stone", "curtainWidthM": 3, "heightM": 7, "towerHeightM": 10, "towerShape": "round", "towerRadius": [3, 3], "towerSpacing": null, "cornerTurn": 35, "gate": "tower", "minorGate": "postern", "ditch": "dry", "ditchP": 0.3, "ditchWidthM": [8, 8], "bermM": 2, "outworks": [], "attached": 0.5},
+    "curtain": {"kind": "wall", "material": "stone", "curtainWidthM": 3, "heightM": 7, "towerHeightM": 10, "towerShape": "round", "towerRadius": [3, 3], "towerSpacing": [25, 35], "legacyTowerSpacing": null, "cornerTurn": 35, "gate": "tower", "minorGate": "postern", "ditch": "dry", "ditchP": 0.3, "ditchWidthM": [8, 8], "bermM": 2, "outworks": [], "attached": 0.5},
     "flanked": {"kind": "wall", "material": "stone", "curtainWidthM": 3, "heightM": 9, "towerHeightM": 13, "towerShape": "round", "towerRadius": [3.5, 4.5], "towerSpacing": [40, 70], "cornerTurn": 28, "gate": "twin-tower", "minorGate": "tower", "ditch": "auto", "ditchP": 0.5, "ditchWidthM": [12, 12], "bermM": 2, "outworks": [], "attached": 0.5},
     "concentric": {"kind": "wall", "material": "stone", "curtainWidthM": 3.5, "heightM": 10, "towerHeightM": 14, "towerShape": "round", "towerRadius": [3.5, 4.5], "towerSpacing": [40, 70], "cornerTurn": 28, "gate": "twin-tower", "minorGate": "tower", "ditch": "auto", "ditchP": 1, "ditchWidthM": [15, 15], "bermM": 2, "outworks": ["outer-wall", "barbican"], "outerGapM": [10, 14], "outerWidthM": 2, "outerHeightM": 6, "attached": 0},
     "rammed-earth": {"kind": "wall", "material": "rammed-earth", "curtainWidthM": 4, "heightM": 8, "towerHeightM": 10, "towerShape": "square", "towerRadius": [3, 3], "towerSpacing": [25, 35], "cornerTurn": 28, "gate": "bab", "minorGate": "tower", "ditch": "dry", "ditchP": 0.5, "ditchWidthM": [8, 8], "bermM": 2, "outworks": ["antemural"], "outerGapM": [8, 8], "outerWidthM": 1.5, "outerHeightM": 4, "outworkMinPop": 30000, "attached": 0.6},
     "wengcheng": {"kind": "wall", "material": "brick", "curtainWidthM": 6, "heightM": 11, "towerHeightM": 15, "towerShape": "square", "towerRadius": [4, 6], "flankShape": "rect", "flankDepthM": 10, "towerSpacing": [60, 80], "cornerTurn": 28, "gate": "tower", "minorGate": "tower", "gateHeightM": 20, "ditch": "auto", "ditchP": 1, "ditchWidthM": [20, 30], "bermM": 10, "outworks": ["wengcheng"], "courtRadiusM": [18, 30], "attached": 0.4},
-    "bastioned": {"kind": "wall", "material": "earth-stone", "curtainWidthM": 12, "heightM": 7, "towerHeightM": 7, "towerShape": "square", "fixedTowers": true, "towerRadius": [3, 3], "towerSpacing": null, "cornerTurn": null, "gate": "ravelin", "minorGate": "postern", "ditch": "auto", "ditchP": 1, "ditchWidthM": [25, 25], "bermM": 2, "outworks": ["ravelin", "glacis", "citadel"], "outworkMinPop": 30000, "attached": 0}
+    "bastioned": {"kind": "wall", "material": "earth-stone", "curtainWidthM": 12, "heightM": 7, "towerHeightM": 7, "towerShape": "square", "fixedTowers": true, "towerRadius": [3, 3], "towerSpacing": [25, 35], "legacyTowerSpacing": null, "cornerTurn": null, "gate": "ravelin", "minorGate": "postern", "ditch": "auto", "ditchP": 1, "ditchWidthM": [25, 25], "bermM": 2, "outworks": ["ravelin", "glacis", "citadel"], "outworkMinPop": 30000, "attached": 0}
   },
+  "riverWorks": {
+    "bridge-tower": {"radiusM": 4, "heightM": 12},
+    "bridge-gatehouse": {"depthM": 8, "heightM": 10},
+    "facing-tower": {"radiusM": 4, "heightM": 12},
+    "river-chain": {"widthM": 1.2, "heightM": 0.3},
+    "bridgehead": {"radiusM": 20, "wallWidthM": 2, "heightM": 6}
+  },
+  "wallStiffness": {"roman-core": 0.85, "dwarven": 0.85, "duergar-hold": 0.85, "byzantine-greek": 0.75, "russian-kremlin": 0.7, "giant-hold": 0.7, "japanese-jokamachi": 0.5, "wizard-city": 0.4, "elven": 0.2, "korean": 0.2},
   "groups": {
-    "european": {
+    "european": { "wallStiffness": 0.6,
       "cultures": ["european-organic", "bastide", "hanseatic", "flemish-cloth-town", "italian-comune", "rynek-town", "gnomish"],
       "styles": [
         {"style": "curtain", "weight": 1, "maxPop": 2999},
@@ -26,27 +35,28 @@
         {"style": "flanked", "weight": 3, "minPop": 50000}
       ]
     },
-    "islamic": {
+    "islamic": { "wallStiffness": 0.5,
+      "innerEnclosure": "citadel",
       "cultures": ["medina", "persian", "mesopotamian", "levantine-tell", "al-andalus", "ksar-oasis", "oasis-caravan", "hausa-kano", "hadhrami-tower", "nubian-fortified"],
       "styles": [{"style": "rammed-earth", "weight": 1}]
     },
-    "sinic": {
+    "sinic": { "wallStiffness": 0.0,
       "cultures": ["chinese", "korean", "bagan", "vietnamese-citadel"],
       "styles": [{"style": "wengcheng", "weight": 1}]
     },
-    "planned": {
+    "planned": { "wallStiffness": 0.8,
       "cultures": ["indian-temple", "dravidian-temple", "javanese-courts", "aztec", "necropolis", "egyptian-planned"],
       "styles": [
         {"style": "curtain", "weight": 2},
         {"style": "flanked", "weight": 1, "minPop": 10000}
       ]
     },
-    "earthwork": {
+    "earthwork": { "wallStiffness": 0.25,
       "cultures": ["celtic-oppidum", "norse-ringfort", "barbarian", "barbarian-celtic", "barbarian-norse", "kraal", "native-iroquoian", "native-plains", "nomad-camp", "mongol-ordu", "siberian-camp", "guarani-village", "halfling"],
       "styles": [{"style": "curtain", "weight": 1}],
       "material": "earth-stone", "cornerTurn": null, "towerSpacing": null, "curtainWidthM": 6, "ditch": "dry"
     },
-    "default": {
+    "default": { "wallStiffness": 0.6,
       "cultures": [],
       "styles": [
         {"style": "curtain", "weight": 1, "maxPop": 2999},

@@ -490,17 +490,22 @@ pub(crate) fn resolve_registered_hall(
     };
     // A conflicting Fantasy override is refused, never silently replaced or
     // presented as a different functional programme under the same registry ID.
-    if parameters.layout != Layout::Single
-        || parameters.footprint_family != "FP-LONG"
+    let rows = recipe.component_kind.as_deref() == Some("storage_rows");
+    let programme_matches = if rows {
+        parameters.layout == Layout::Parallel && parameters.footprint_family == "FP-RECT"
+            && parameters.envelope == Envelope::Walled && parameters.bodies == [3,3]
+            && parameters.components.is_empty() && parameters.wall_thickness_m[0] >= 0.6
+    } else {
+        parameters.layout == Layout::Single && parameters.footprint_family == "FP-LONG"
+            && parameters.envelope == Envelope::Open && parameters.bodies == [1,1]
+            && parameters.components.len() == 1 && parameters.components[0].id == "main"
+    };
+    if !programme_matches
         || parameters.roof_system != "RF-GABLE"
-        || parameters.envelope != Envelope::Open
-        || parameters.bodies != [1, 1]
         || parameters.floors != [1, 1]
-        || parameters.components.len() != 1
-        || parameters.components[0].id != "main"
     {
         return Err(
-            "Explicit overrides no longer describe this registered single-storey open hall.".into(),
+            "Explicit overrides no longer describe this registered functional source.".into(),
         );
     }
     let bounds = data.resolve_variant_parameters(recipe, &config, &parameters.variant_id)?;
@@ -518,6 +523,10 @@ pub(crate) fn resolve_registered_hall(
             ));
         }
     }
+    // Parallel rows leave 0.7m between halls and a 1.4m loading apron.
+    // Solve the actual union area, not the nominal rectangular site envelope.
+    let offsets = if rows { [0.7 * parameters.bodies[0] as f64, 1.4] } else { [0.,0.] };
+    for axis in 0..2 { for bound in &mut ranges[axis] { *bound -= offsets[axis]; } }
     let [width, depth] = if let Some(target) = target_area_m2 {
         let fitted_area = target.clamp(ranges[0][0] * ranges[1][0], ranges[0][1] * ranges[1][1]);
         let aspect = parameters.width_m[0] / parameters.depth_m[0];
@@ -531,12 +540,12 @@ pub(crate) fn resolve_registered_hall(
         [w, d]
     } else {
         [
-            parameters.width_m[0].clamp(ranges[0][0], ranges[0][1]),
-            parameters.depth_m[0].clamp(ranges[1][0], ranges[1][1]),
+            (parameters.width_m[0]-offsets[0]).clamp(ranges[0][0], ranges[0][1]),
+            (parameters.depth_m[0]-offsets[1]).clamp(ranges[1][0], ranges[1][1]),
         ]
     };
-    parameters.width_m.fill(width);
-    parameters.depth_m.fill(depth);
+    parameters.width_m.fill(width + offsets[0]);
+    parameters.depth_m.fill(depth + offsets[1]);
     let mut plan = build_layout(recipe, &parameters, &seed)?;
     for body in &mut plan.bodies {
         body.role = Role::NonDomestic;
@@ -1193,7 +1202,7 @@ fn prepare_foundation(
         if p.layout == Layout::Single {
             return with_entry && single_native_entry_parameters(p);
         }
-        p.layout == Layout::Strip
+        (p.layout == Layout::Strip || with_entry && p.layout == Layout::Parallel)
             && matches!(p.footprint_family.as_str(), "FP-RECT" | "FP-LONG")
             && p.support.kind == SupportKind::Ground
             && p.envelope == Envelope::Walled

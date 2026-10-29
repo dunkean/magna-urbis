@@ -2,7 +2,7 @@
 export const TERRAIN_ZONE_KINDS = ['sea', 'flat', 'hills', 'mountains', 'high-mountains'] as const;
 export type TerrainZoneKind = typeof TERRAIN_ZONE_KINDS[number];
 export interface TerrainZones { version: 1; resolution: number; weights: number[] }
-export function parseTerrainZones(value: unknown): TerrainZones {
+export function parseTerrainZones(value: unknown, copy = true): TerrainZones {
   const z = value as TerrainZones;
   if (!z || z.version !== 1 || !Number.isInteger(z.resolution) || z.resolution < 8 || z.resolution > 128
     || !Array.isArray(z.weights) || z.weights.length !== z.resolution ** 2 * 5) throw new Error('Zones invalides : cinq masques carrés 8–128² attendus.');
@@ -15,5 +15,5 @@ export function parseTerrainZones(value: unknown): TerrainZones {
     }
     if (total > 255) throw new Error('Poids cumulés des zones supérieurs à 255.');
   }
-  return { version: 1, resolution: z.resolution, weights: [...z.weights] };
+  return { version: 1, resolution: z.resolution, weights: copy ? [...z.weights] : z.weights };
 }

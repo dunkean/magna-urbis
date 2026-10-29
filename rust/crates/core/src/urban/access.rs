@@ -340,12 +340,14 @@ pub(super) fn refine(layout: &mut Layout, cfg: &LayoutConfig, morph: &Morph, sur
             .as_ref()
             .map_or_else(Vec::new, |s| s.centers.iter().map(|c| c.point).collect());
         // Fortified=true suppresses ornamental tail trimming after cadastral land was carved.
-        layout.warnings.extend(network::clean_with_centers(
+        layout.warnings.extend(network::clean_options(
             &mut layout.streets,
             layout.center,
             100.0,
             true,
             &centers,
+            cfg,
+            surface,
         ));
     }
     if let Some(s) = layout.structure.as_mut() {

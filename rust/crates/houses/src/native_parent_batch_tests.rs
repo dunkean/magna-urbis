@@ -1,9 +1,27 @@
 //! Autonomous tests: real small native fixtures; synthetic sites are labeled.
 use super::*;
+#[path="native_parent_contexts22_tests.rs"]
+mod contexts22;
 fn pair()->super::assembly::AssemblePairRequest{
     super::assembly::transport::parse_pair_request(include_bytes!("../tests/fixtures/native-assembly-public-input.json")).unwrap()
 }
 fn empty()->PriorOccupation{PriorOccupation{land_parts:vec![],roof_parts:vec![]}}
+
+#[test]
+fn native_parent_choice_keeps_whole_assembly_when_local_single_loses_inventory(){
+    let input=pair();
+    let old=super::assembly::transport::parse_archive(include_bytes!("../tests/fixtures/native-assembly-public-archive.json")).unwrap().unpack().unwrap();
+    let parent=NativeParentPlan::Assembly{assembly:old};
+    let whole=serde_json::to_vec(&NativeParentArchive::pack(&parent).unwrap()).unwrap();
+    let single=NativeParentPlan::Single{programme:input.site.programme,building:input.incumbent};
+    assert!(choice::accepts(&parent,&single).unwrap_err().contains("whole-parent gross"));
+    assert_eq!(serde_json::to_vec(&NativeParentArchive::pack(&parent).unwrap()).unwrap(),whole);
+    assert!(choice::accepts(&single,&parent).is_ok(),"a native extension preserves the whole admitted incumbent and reduces necessary debt");
+    assert!(choice::accepts(&parent,&parent).is_err(),"ties retain the existing whole parent");
+    let mut wrong=parent.clone();
+    if let NativeParentPlan::Assembly{assembly}=&mut wrong{assembly.programme.wealth=Some(0.9);}
+    assert!(choice::accepts(&parent,&wrong).is_err());
+}
 fn request(site:PlacementRequest)->ParentPlanBatchRequest{
     ParentPlanBatchRequest{schema_version:PARENT_BATCH_SCHEMA.into(),batch:PlanBatchRequest{
         schema_version:"1".into(),requests:vec![site],settings:None,footprints:BTreeMap::new()},prior_occupation:empty()}

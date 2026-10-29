@@ -2,6 +2,19 @@ use super::*;
 use super::super::super::{geometry as g, generate_parcels};
 
 #[test]
+fn an_isolated_discarded_path_cap_remains_ground_without_building_credit() {
+    let house=g::rectangle(0.,0.,10.,10.);let cap=g::rectangle(10.,0.,10.5,0.5);
+    let block=union(&[house.clone(),cap.clone()]).remove(0);
+    let morph=Morph{value:serde_json::json!({"campLayout":"rows","campPath":3.})};
+    let lots=assemble(&block,0,Point{x:1.,y:0.},&mut vec![],&morph,
+        (vec![Tile{shape:house,hold:Hold::Dwelling,nominal:100.,cut:false}],vec![cap.clone()]));
+    assert!((lots.iter().map(|p|area(&p.shape)).sum::<f64>()-area(&block)).abs()<1e-5);
+    let open=lots.iter().find(|p|g::contains(&p.shape,Point{x:10.25,y:0.25})).unwrap();
+    assert_eq!(open.use_kind,"garden");assert_eq!(open.reason,"camp-open");
+    assert!(open.envelope.is_none());assert!(open.access.as_ref().is_none_or(|a|a.kind=="unserved"));
+}
+
+#[test]
 fn a_cap_can_only_extend_existing_contiguous_open_ground() {
     let open=g::rectangle(0.,0.,10.,10.);let dwelling=g::rectangle(20.,0.,30.,10.);
     let original_dwelling=dwelling.clone();

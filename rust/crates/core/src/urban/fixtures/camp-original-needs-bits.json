@@ -1,0 +1,390 @@
+{
+  "P01": [
+    {
+      "id": "city/demand/domestic",
+      "function": "domestic",
+      "role": "dwelling",
+      "unit": "domesticUnits",
+      "requestedBits": "4041400000000000",
+      "targetAreaBits": "40a2de0000000000",
+      "targetFrontageBits": "4010000000000000"
+    },
+    {
+      "id": "city/demand/mixed",
+      "function": "mixed",
+      "role": "dwelling.shop",
+      "unit": "domesticUnits",
+      "requestedBits": "4008000000000000",
+      "targetAreaBits": "406a400000000000",
+      "targetFrontageBits": "4010000000000000"
+    },
+    {
+      "id": "city/demand/common",
+      "function": "common",
+      "role": "open.common",
+      "unit": "usefulAreaM2",
+      "requestedBits": "4082c00000000000",
+      "targetAreaBits": "4082c00000000000",
+      "targetFrontageBits": "4010000000000000"
+    },
+    {
+      "id": "city/demand/civic.palace",
+      "function": "collective",
+      "role": "civic.palace",
+      "unit": "usefulAreaM2",
+      "requestedBits": "4089000000000000",
+      "targetAreaBits": "4089000000000000",
+      "targetFrontageBits": "4020000000000000"
+    },
+    {
+      "id": "city/demand/market",
+      "function": "market",
+      "role": "commerce.market",
+      "unit": "usefulAreaM2",
+      "requestedBits": "4079000000000000",
+      "targetAreaBits": "4079000000000000",
+      "targetFrontageBits": "4020000000000000"
+    },
+    {
+      "id": "city/demand/open.kraal",
+      "function": "common",
+      "role": "open.kraal",
+      "unit": "usefulAreaM2",
+      "requestedBits": "4099c80000000000",
+      "targetAreaBits": "4099c80000000000",
+      "targetFrontageBits": "4010000000000000"
+    },
+    {
+      "id": "city/demand/worship.shrine",
+      "function": "collective",
+      "role": "worship.shrine",
+      "unit": "usefulAreaM2",
+      "requestedBits": "4061a38a24e8820d",
+      "targetAreaBits": "4061a38a24e8820d",
+      "targetFrontageBits": "4014000000000000"
+    },
+    {
+      "id": "city/demand/craft.smithy",
+      "function": "workshop",
+      "role": "craft.smithy",
+      "unit": "usefulAreaM2",
+      "requestedBits": "40532ea285dc7223",
+      "targetAreaBits": "40532ea285dc7223",
+      "targetFrontageBits": "4010000000000000"
+    },
+    {
+      "id": "city/demand/storage.granary",
+      "function": "warehouse",
+      "role": "storage.granary",
+      "unit": "usefulAreaM2",
+      "requestedBits": "406809248ead758f",
+      "targetAreaBits": "405809248ead758f",
+      "targetFrontageBits": "4022000000000000"
+    },
+    {
+      "id": "city/demand/storage.barn",
+      "function": "warehouse",
+      "role": "storage.barn",
+      "unit": "usefulAreaM2",
+      "requestedBits": "407dabe148d110b8",
+      "targetAreaBits": "406dabe148d110b8",
+      "targetFrontageBits": "4022000000000000"
+    }
+  ],
+  "P03": [
+    {
+      "id": "city/demand/domestic",
+      "function": "domestic",
+      "role": "dwelling",
+      "unit": "domesticUnits",
+      "requestedBits": "4043b6db6db6db6e",
+      "targetAreaBits": "40a5900000000000",
+      "targetFrontageBits": "4010000000000000"
+    },
+    {
+      "id": "city/demand/mixed",
+      "function": "mixed",
+      "role": "dwelling.shop",
+      "unit": "domesticUnits",
+      "requestedBits": "400b6db6db6db6db",
+      "targetAreaBits": "406e000000000000",
+      "targetFrontageBits": "4010000000000000"
+    },
+    {
+      "id": "city/demand/common",
+      "function": "common",
+      "role": "open.common",
+      "unit": "usefulAreaM2",
+      "requestedBits": "4082c00000000000",
+      "targetAreaBits": "4082c00000000000",
+      "targetFrontageBits": "4010000000000000"
+    },
+    {
+      "id": "city/demand/civic.council-house",
+      "function": "collective",
+      "role": "civic.council-house",
+      "unit": "usefulAreaM2",
+      "requestedBits": "4081e8f66c70fe42",
+      "targetAreaBits": "4081e8f66c70fe42",
+      "targetFrontageBits": "4020000000000000"
+    },
+    {
+      "id": "city/demand/open.plaza",
+      "function": "common",
+      "role": "open.plaza",
+      "unit": "usefulAreaM2",
+      "requestedBits": "40981fa7eb4bf3ae",
+      "targetAreaBits": "40981fa7eb4bf3ae",
+      "targetFrontageBits": "4010000000000000"
+    },
+    {
+      "id": "city/demand/worship.kiva",
+      "function": "collective",
+      "role": "worship.kiva",
+      "unit": "usefulAreaM2",
+      "requestedBits": "405bcb34d389e704",
+      "targetAreaBits": "405bcb34d389e704",
+      "targetFrontageBits": "4014000000000000"
+    },
+    {
+      "id": "city/demand/storage.granary",
+      "function": "warehouse",
+      "role": "storage.granary",
+      "unit": "usefulAreaM2",
+      "requestedBits": "406809248ead758f",
+      "targetAreaBits": "405809248ead758f",
+      "targetFrontageBits": "4022000000000000"
+    },
+    {
+      "id": "city/demand/craft.workshop",
+      "function": "workshop",
+      "role": "craft.workshop",
+      "unit": "usefulAreaM2",
+      "requestedBits": "404e000000000000",
+      "targetAreaBits": "404e000000000000",
+      "targetFrontageBits": "4010000000000000"
+    },
+    {
+      "id": "city/demand/storage.barn",
+      "function": "warehouse",
+      "role": "storage.barn",
+      "unit": "usefulAreaM2",
+      "requestedBits": "407dabe148d110b8",
+      "targetAreaBits": "406dabe148d110b8",
+      "targetFrontageBits": "4022000000000000"
+    }
+  ],
+  "P05": [
+    {
+      "id": "city/demand/domestic",
+      "function": "domestic",
+      "role": "dwelling",
+      "unit": "domesticUnits",
+      "requestedBits": "4024000000000000",
+      "targetAreaBits": "4085e00000000000",
+      "targetFrontageBits": "4010000000000000"
+    },
+    {
+      "id": "city/demand/mixed",
+      "function": "mixed",
+      "role": "dwelling.shop",
+      "unit": "domesticUnits",
+      "requestedBits": "0000000000000000",
+      "targetAreaBits": "0000000000000000",
+      "targetFrontageBits": "4010000000000000"
+    },
+    {
+      "id": "city/demand/common",
+      "function": "common",
+      "role": "open.common",
+      "unit": "usefulAreaM2",
+      "requestedBits": "4064000000000000",
+      "targetAreaBits": "4064000000000000",
+      "targetFrontageBits": "4010000000000000"
+    },
+    {
+      "id": "city/demand/civic.council-house",
+      "function": "collective",
+      "role": "civic.council-house",
+      "unit": "usefulAreaM2",
+      "requestedBits": "407340a6e715c34c",
+      "targetAreaBits": "407340a6e715c34c",
+      "targetFrontageBits": "4020000000000000"
+    },
+    {
+      "id": "city/demand/storage.granary",
+      "function": "warehouse",
+      "role": "storage.granary",
+      "unit": "usefulAreaM2",
+      "requestedBits": "4054a6332bc3b360",
+      "targetAreaBits": "4044a6332bc3b360",
+      "targetFrontageBits": "4022000000000000"
+    },
+    {
+      "id": "city/demand/storage.barn",
+      "function": "warehouse",
+      "role": "storage.barn",
+      "unit": "usefulAreaM2",
+      "requestedBits": "4074b3c1442b60d3",
+      "targetAreaBits": "4064b3c1442b60d3",
+      "targetFrontageBits": "4022000000000000"
+    }
+  ],
+  "P06": [
+    {
+      "id": "city/demand/domestic",
+      "function": "domestic",
+      "role": "dwelling",
+      "unit": "domesticUnits",
+      "requestedBits": "406f5d1745d1745e",
+      "targetAreaBits": "40d126e8ba2e8ba3",
+      "targetFrontageBits": "4010000000000000"
+    },
+    {
+      "id": "city/demand/mixed",
+      "function": "mixed",
+      "role": "dwelling.shop",
+      "unit": "domesticUnits",
+      "requestedBits": "4035d1745d1745d2",
+      "targetAreaBits": "4097dd1745d1745e",
+      "targetFrontageBits": "4010000000000000"
+    },
+    {
+      "id": "city/demand/common",
+      "function": "common",
+      "role": "open.common",
+      "unit": "usefulAreaM2",
+      "requestedBits": "4087700000000000",
+      "targetAreaBits": "4087700000000000",
+      "targetFrontageBits": "4010000000000000"
+    },
+    {
+      "id": "city/demand/civic.khan-tent",
+      "function": "collective",
+      "role": "civic.khan-tent",
+      "unit": "usefulAreaM2",
+      "requestedBits": "409289174c84b1d8",
+      "targetAreaBits": "409289174c84b1d8",
+      "targetFrontageBits": "4020000000000000"
+    },
+    {
+      "id": "city/demand/market",
+      "function": "market",
+      "role": "commerce.market",
+      "unit": "usefulAreaM2",
+      "requestedBits": "4082c00000000000",
+      "targetAreaBits": "4082c00000000000",
+      "targetFrontageBits": "4020000000000000"
+    },
+    {
+      "id": "city/demand/open.corral",
+      "function": "common",
+      "role": "open.corral",
+      "unit": "usefulAreaM2",
+      "requestedBits": "40c954061570661a",
+      "targetAreaBits": "40a443381126b815",
+      "targetFrontageBits": "4010000000000000"
+    },
+    {
+      "id": "city/demand/worship.shrine",
+      "function": "collective",
+      "role": "worship.shrine",
+      "unit": "usefulAreaM2",
+      "requestedBits": "4067fab9f6ce29e0",
+      "targetAreaBits": "4067fab9f6ce29e0",
+      "targetFrontageBits": "4014000000000000"
+    },
+    {
+      "id": "city/demand/craft.smithy",
+      "function": "workshop",
+      "role": "craft.smithy",
+      "unit": "usefulAreaM2",
+      "requestedBits": "4060c2cb2ae38e60",
+      "targetAreaBits": "4060c2cb2ae38e60",
+      "targetFrontageBits": "4010000000000000"
+    }
+  ],
+  "P07": [
+    {
+      "id": "city/demand/domestic",
+      "function": "domestic",
+      "role": "dwelling",
+      "unit": "domesticUnits",
+      "requestedBits": "4047000000000000",
+      "targetAreaBits": "40a9280000000000",
+      "targetFrontageBits": "4010000000000000"
+    },
+    {
+      "id": "city/demand/mixed",
+      "function": "mixed",
+      "role": "dwelling.shop",
+      "unit": "domesticUnits",
+      "requestedBits": "4010000000000000",
+      "targetAreaBits": "4071800000000000",
+      "targetFrontageBits": "4010000000000000"
+    },
+    {
+      "id": "city/demand/common",
+      "function": "common",
+      "role": "open.common",
+      "unit": "usefulAreaM2",
+      "requestedBits": "4089000000000000",
+      "targetAreaBits": "4089000000000000",
+      "targetFrontageBits": "4010000000000000"
+    },
+    {
+      "id": "city/demand/civic.council-house",
+      "function": "collective",
+      "role": "civic.council-house",
+      "unit": "usefulAreaM2",
+      "requestedBits": "4085180000000000",
+      "targetAreaBits": "4085180000000000",
+      "targetFrontageBits": "4020000000000000"
+    },
+    {
+      "id": "city/demand/open.plaza",
+      "function": "common",
+      "role": "open.plaza",
+      "unit": "usefulAreaM2",
+      "requestedBits": "4093cd4d7ebc30fa",
+      "targetAreaBits": "4093cd4d7ebc30fa",
+      "targetFrontageBits": "4010000000000000"
+    },
+    {
+      "id": "city/demand/storage.granary",
+      "function": "warehouse",
+      "role": "storage.granary",
+      "unit": "usefulAreaM2",
+      "requestedBits": "40630fcdd022b3dc",
+      "targetAreaBits": "40530fcdd022b3dc",
+      "targetFrontageBits": "4022000000000000"
+    },
+    {
+      "id": "city/demand/craft.workshop",
+      "function": "workshop",
+      "role": "craft.workshop",
+      "unit": "usefulAreaM2",
+      "requestedBits": "405626432aeb2e46",
+      "targetAreaBits": "405626432aeb2e46",
+      "targetFrontageBits": "4010000000000000"
+    },
+    {
+      "id": "city/demand/worship.shrine",
+      "function": "collective",
+      "role": "worship.shrine",
+      "unit": "usefulAreaM2",
+      "requestedBits": "4057d80f527e6930",
+      "targetAreaBits": "4057d80f527e6930",
+      "targetFrontageBits": "4014000000000000"
+    },
+    {
+      "id": "city/demand/storage.barn",
+      "function": "warehouse",
+      "role": "storage.barn",
+      "unit": "usefulAreaM2",
+      "requestedBits": "407f9fa28cfc718a",
+      "targetAreaBits": "406f9fa28cfc718a",
+      "targetFrontageBits": "4022000000000000"
+    }
+  ]
+}

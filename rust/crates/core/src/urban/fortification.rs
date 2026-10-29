@@ -84,6 +84,9 @@ pub(super) struct Style {
     /// Hill town: the curtain follows the growth outline (contour trace).
     pub hill: bool,
     pub forced: bool,
+    pub medieval: bool,
+    pub dry_ditches: bool,
+    pub ditch_wetness: Option<f64>,
 }
 
 fn num(v: &Value, key: &str, default: f64) -> f64 {
@@ -125,7 +128,7 @@ impl Style {
             tower_shape: shape,
             tower_radius: pair(&v["towerRadius"], [3.0, 3.0]),
             flank_depth: num(v, "flankDepthM", 0.0),
-            tower_spacing: (!v["towerSpacing"].is_null())
+            tower_spacing: (!v.get("legacyTowerSpacing").unwrap_or(&v["towerSpacing"]).is_null())
                 .then(|| pair(&v["towerSpacing"], [55.0, 55.0])),
             corner_turn: v["cornerTurn"].as_f64(),
             salients_only: v["salientsOnly"].as_bool().unwrap_or(false),
@@ -153,7 +156,23 @@ impl Style {
             attached: num(v, "attached", 0.0),
             hill: false,
             forced: false,
+            medieval: false,
+            dry_ditches: false,
+            ditch_wetness: None,
         })
+    }
+    pub(super) fn options(&mut self, cfg: &super::LayoutConfig) {
+        self.medieval = cfg.medieval_walls && cfg.wall_tower_spacing.is_none() && self.kind == "wall";
+        self.dry_ditches = cfg.dry_ditches;
+        self.ditch_wetness = cfg.ditch_wetness;
+        if self.medieval {
+            self.tower_spacing = Some(pair(&data()["styles"][&self.id]["towerSpacing"], [25.0, 35.0])
+                .map(|v| v.clamp(20.0, 40.0)));
+        }
+        if let Some(spacing) = cfg.wall_tower_spacing.filter(|v| *v > 0.0) {
+            self.tower_spacing = Some([spacing; 2]);
+            self.medieval = true;
+        }
     }
     /// Culture overrides (`fortifications.json` then `catalogue.json`).
     fn apply(&mut self, o: &Value) {
@@ -424,6 +443,14 @@ fn family_of_kind(kind: &str) -> &'static str {
         _ => "wall",
     }
 }
+
+#[path = "fortification_options.rs"]
+mod options;
+pub(super) use options::{option_trace, keeps_citadel, prepare_options, finish_options, gate_villages, service_cost};
+
+#[path = "fortification_params.rs"]
+mod parameters;
+pub(super) use parameters::{valid_parameters, parameter_trace, port_walls};
 
 // ---------------------------------------------------------------- vectors
 
@@ -823,40 +850,102 @@ pub(super) fn trace_enclosures(shapes: Vec<Shape>, occupied: &[Shape], surface: 
 #[cfg(test)]
 thread_local! {
     static TRACE_PAIRS: std::cell::RefCell<Option<Vec<(Vec<Shape>, Vec<Shape>)>>> = const { std::cell::RefCell::new(None) };
+    static CONTOUR_PAIRS: std::cell::RefCell<Option<Vec<(Shape, Shape, usize)>>> = const { std::cell::RefCell::new(None) };
 }
 
-/// Contour trace of a hill town: one corner-cutting pass and a fine
-/// simplification, so the curtain follows the growth outline.
-pub(super) fn hill_trace(shape: &Shape, cell: f64) -> Shape {
-    let tolerance = (g::area(shape).sqrt() * 0.01)
-        .clamp(1.5, 5.0)
-        .max(cell * 0.5);
-    let n = shape.outer.len();
-    let mut ring: Vec<Point> = (0..n)
-        .flat_map(|i| {
-            let (a, b) = (shape.outer[i], shape.outer[(i + 1) % n]);
-            [
-                pt(a.x * 0.75 + b.x * 0.25, a.y * 0.75 + b.y * 0.25),
-                pt(a.x * 0.25 + b.x * 0.75, a.y * 0.25 + b.y * 0.75),
-            ]
-        })
-        .collect();
+/// Urban simplification error is metric, independent of area and raster size.
+/// The founding outline supplies the curves; no hull or minimum front length.
+fn contour_trace(shape: &Shape, passes: usize, tolerance: f64, refine: bool) -> Shape {
+    let mut ring = shape.outer.clone();
+    for _ in 0..passes {
+        let n = ring.len();
+        ring = (0..n).flat_map(|i| {
+            let (a, b) = (ring[i], ring[(i + 1) % n]);
+            [pt(a.x * 0.75 + b.x * 0.25, a.y * 0.75 + b.y * 0.25),
+                pt(a.x * 0.25 + b.x * 0.75, a.y * 0.25 + b.y * 0.75)]
+        }).collect();
+    }
     ring.push(ring[0]);
     let mut outer = g::simplify(&ring, tolerance, |_| false);
     outer.pop();
     if outer.len() < 3 {
         return shape.clone();
     }
-    g::normalized(Shape {
+    let mut trace = g::normalized(Shape {
         outer,
         holes: shape.holes.clone(),
-    })
+    });
+    let simple = |r: &[Point]| g::simple(&Shape { outer: r.to_vec(), holes: vec![] });
+    let fallback = refine && !simple(&trace.outer) && simple(&shape.outer);
+    if fallback {
+        // Corner cutting can cross a thin neck. Keep its founding contour
+        // and reduce simplification until that valid topology survives.
+        let mut ring = shape.outer.clone();
+        ring.push(ring[0]);
+        let mut epsilon = tolerance;
+        loop {
+            let mut outer = g::simplify(&ring, epsilon, |_| false);
+            outer.pop();
+            trace = g::normalized(Shape { outer, holes: shape.holes.clone() });
+            if trace.outer.len() >= 3 && simple(&trace.outer) { break; }
+            epsilon *= 0.5;
+            if epsilon < 0.01 { trace = shape.clone(); break; }
+        }
+    }
+    #[cfg(test)]
+    CONTOUR_PAIRS.with(|pairs| {
+        if refine && let Some(pairs) = &mut *pairs.borrow_mut() { pairs.push((shape.clone(), trace.clone(), if fallback { 0 } else { passes })); }
+    });
+    trace
+}
+/// HEAD's two corner-cutting passes, with bounded simplification afterwards.
+pub(super) fn curtain_trace(shape: &Shape) -> Shape {
+    contour_trace(shape, 2, num(&data()["trace"], "maxDeviationM", 3.0).clamp(0.1, 5.0), true)
+}
+/// Hill towns keep their single, closer contour pass.
+pub(super) fn hill_trace(shape: &Shape, _cell: f64) -> Shape {
+    contour_trace(shape, 1, num(&data()["trace"], "maxDeviationM", 3.0).clamp(0.1, 5.0), true)
+}
+/// A small settlement fits its quarters to its founding circuit. Keep that
+/// accepted nucleus grammar; the metric refinement is for urban circuits.
+pub(super) fn village_trace(shape: &Shape, cell: f64, hill: bool) -> Shape {
+    let tolerance = if hill { (g::area(shape).sqrt() * 0.01).clamp(1.5, 5.0).max(cell * 0.5) }
+        else { (g::area(shape).sqrt() * 0.02).clamp(2.0, 10.0).max(cell * 0.75) };
+    contour_trace(shape, if hill { 1 } else { 2 }, tolerance, false)
 }
 fn turn_at(ring: &[Point], i: usize) -> f64 {
     let n = ring.len();
     let (a, p, b) = (ring[(i + n - 1) % n], ring[i], ring[(i + 1) % n]);
     let (u, v) = (dir(a, p), dir(p, b));
     cross(u, v).atan2(dot(u, v)).abs()
+}
+/// Stations on each front between hard corners. Fine contour vertices must
+/// not restart the spacing; relief/water stretch the local metre by `factor`.
+fn flank_stations(path: &[Point], corners: &[bool], factors: &[f64], spacing: f64) -> Vec<(usize, f64)> {
+    let n = path.len() - 1;
+    let first = (0..n).find(|&i| corners[i]).unwrap_or(0);
+    let lengths: Vec<_> = (0..n).map(|i| dist(path[i], path[i + 1]) / factors[i]).collect();
+    let mut stations = vec![];
+    let mut run = vec![];
+    for k in 0..n {
+        let i = (first + k) % n;
+        run.push(i);
+        if !corners[(i + 1) % n] && k + 1 < n { continue; }
+        let total: f64 = run.iter().map(|&i| lengths[i]).sum();
+        let count = (total / spacing).floor() as usize;
+        let (mut segment, mut before) = (0, 0.0);
+        for j in 1..=count {
+            let at = j as f64 * total / (count + 1) as f64;
+            while segment + 1 < run.len() && before + lengths[run[segment]] < at {
+                before += lengths[run[segment]];
+                segment += 1;
+            }
+            let i = run[segment];
+            stations.push((i, ((at - before) / lengths[i].max(1e-12)).clamp(0.0, 1.0)));
+        }
+        run.clear();
+    }
+    stations
 }
 /// Length (m) of a closed ring that lies in water, sampled every 2 m.
 fn wet_length(ring: &[Point], surface: Surface<'_>) -> f64 {
@@ -937,17 +1026,58 @@ fn off_water(trace: Shape, base: &Shape, surface: Surface<'_>) -> Option<Shape> 
 /// Square trace of a planned (Chinese) city: the rectangle aligned on the map
 /// axes around the founding outline, kept when it encloses at most 1.5 times
 /// the founding land and stays out of the water (`off_water`).
-pub(super) fn square_trace(shape: &Shape, surface: Surface<'_>) -> Option<Shape> {
-    let (x0, y0, x1, y1) = g::bbox(shape);
-    let rect = g::normalized(g::rectangle(x0 - 2.0, y0 - 2.0, x1 + 2.0, y1 + 2.0));
+pub(super) fn square_trace(shape: &Shape, surface: Surface<'_>, cardinal: bool, force: bool) -> Option<Shape> {
+    use geo::MinimumRotatedRect;
     let plain = Shape {
         outer: shape.outer.clone(),
         holes: vec![],
     };
-    if g::area(&rect) > 1.5 * g::area(&plain) {
+    // The plan's own axes: a founding grid turned to the river or the road keeps
+    // its rectangle (an axis-aligned box of a turned plan encloses 1.5× its land).
+    // A cardinal culture keeps the compass while its box stays nearly as tight.
+    let turned = g::polygon(&plain).minimum_rotated_rect()?;
+    let (x0, y0, x1, y1) = g::bbox(&plain);
+    let c: Vec<Point> = if cardinal && (x1 - x0) * (y1 - y0) <= 1.15 * g::area(&g::shapes(geo::MultiPolygon(vec![turned.clone()]))[0]) {
+        vec![pt(x0, y0), pt(x1, y0), pt(x1, y1), pt(x0, y1)]
+    } else {
+        turned.exterior().0.iter().take(4).map(|p| pt(p.x, p.y)).collect()
+    };
+    if c.len() < 4 { return None; }
+    // 2 m of clearance along the rectangle's own axes, corners kept square.
+    let (u, v) = (unit(dir(c[0], c[1])), unit(dir(c[0], c[3])));
+    let grow = |p: Point, su: f64, sv: f64| add(add(p, u, 2.0 * su), v, 2.0 * sv);
+    let rect = g::normalized(Shape {
+        outer: vec![grow(c[0], -1.0, -1.0), grow(c[1], 1.0, -1.0), grow(c[2], 1.0, 1.0), grow(c[3], -1.0, 1.0)],
+        holes: vec![],
+    });
+    // `force` (plannedWall: rect) keeps the plan's rectangle even where it walls
+    // empty land; water corners are still given back below.
+    if !force && g::area(&rect) > 1.5 * g::area(&plain) {
         return None;
     }
-    off_water(rect, &plain, surface)
+    // Only the water the corners reach is given back: the front then follows the
+    // bank there. Against the bare outline the 2 m clearance joins every corner
+    // into one ring, and returning that wet ring returned the whole rectangle.
+    let corners = buffer(&plain, 3.0).first().map_or(vec![], |near| g::difference(&rect, near));
+    let wet: Vec<Shape> = corners.iter().flat_map(|b| {
+        let dry = g::dry_clip(&surface, b);
+        dry.iter().fold(vec![b.clone()], |left, d| left.iter().flat_map(|l| g::difference(l, d)).collect())
+    }).filter(|w| g::area(w) > 200.0).collect();
+    let trace = if wet.is_empty() { rect } else {
+        let kept = Cut::new(wet).from(vec![rect]);
+        let best = kept.into_iter().max_by(|x, y| g::area(x).total_cmp(&g::area(y)))?;
+        let mut ring = g::simplify(&closed(&best.outer), 2.0, |_| false);
+        ring.pop();
+        g::normalized(Shape { outer: ring, holes: vec![] })
+    };
+    // `off_water`'s final checks: a simple ring crossing hardly more water than
+    // the town (a straight front crosses a river at a slant: water gates).
+    let (wt, wb) = (wet_length(&trace.outer, surface), wet_length(&plain.outer, surface));
+    // A forced plan rectangle keeps its river crossings (water gates).
+    (trace.outer.len() >= 3 && g::simple(&trace) && (force || wt <= wb * 1.25 + 20.0)).then_some(trace)
+}
+fn closed(ring: &[Point]) -> Vec<Point> {
+    ring.iter().copied().chain(ring.first().copied()).collect()
 }
 /// Bastioned trace: long straight fronts between salients, at least 98 % of
 /// the founding land inside, never in water (`off_water`). `None` when the
@@ -1743,31 +1873,22 @@ pub(super) fn build(
         let mut tr = rng.fork("towers");
         let spacing = tr.range(sp[0], sp[1].max(sp[0]));
         let r = style.tower_radius[0];
-        for i in 0..n_seg {
+        let corners: Vec<_> = (0..n_seg).map(|i|
+            turn_at(&path[..n_seg], i).to_degrees() > style.corner_turn.unwrap_or(35.0)).collect();
+        let factors: Vec<_> = (0..n_seg).map(|i| if !style.medieval && (steep[i] || wet[i]) { 1.5 } else { 1.0 }).collect();
+        for (i, fraction) in flank_stations(&path, &corners, &factors, spacing) {
             let (a, b) = (path[i], path[i + 1]);
-            let l = dist(a, b);
-            let s = spacing * if steep[i] || wet[i] { 1.5 } else { 1.0 };
-            let count = (l / s).floor() as usize;
+            let s = spacing * factors[i];
             let (t, n) = (dir(a, b), ns[i]);
-            for k in 1..=count {
-                let p = add(a, t, k as f64 * l / (count + 1) as f64);
-                if near_gate(p, r) || near_tower(p, &towers, s * 0.5) {
-                    continue;
-                }
-                if let Some(tw) = tower_at(
-                    p,
-                    t,
-                    n,
-                    &style.flank_shape,
-                    r,
-                    style.flank_depth,
-                    "flank",
-                    tower_height,
-                ) && free(&occupied, &tw.footprint)
-                {
-                    occupied.add(tw.footprint.clone());
-                    towers.push(tw);
-                }
+            let p = add(a, t, fraction * dist(a, b));
+            if near_gate(p, r) || near_tower(p, &towers, s * 0.5) {
+                continue;
+            }
+            if let Some(tw) = tower_at(p, t, n, &style.flank_shape, r,
+                style.flank_depth, "flank", tower_height) && free(&occupied, &tw.footprint)
+            {
+                occupied.add(tw.footprint.clone());
+                towers.push(tw);
             }
         }
     }
@@ -2230,8 +2351,10 @@ pub(super) fn build(
     let berm = style.berm;
     let ditch_kind = match style.ditch.as_str() {
         "none" => None,
+        _ if style.ditch_wetness.is_some() => Some("dry"),
         "wet" => Some("wet"),
         "dry" => dr.chance(style.ditch_p).then_some("dry"),
+        _ if style.dry_ditches => Some("dry"),
         _ => {
             let near_water = wet.iter().any(|&w| w)
                 || (0..n_seg).any(|i| {
@@ -2356,11 +2479,16 @@ pub(super) fn build(
         let band = tiles(g::union(&band), TILE);
         let band = Cut::new(ravelin_cut.clone()).from(band);
         let band = g::union(&clear.from(no_ditch.from(inner_core.from(band))));
+        let band = if style.ditch_wetness.is_some() || (style.dry_ditches && style.ditch == "auto") { tiles(band, 24.0) } else { band };
         for p in band {
             for d in g::dry_clip(&surface, &p) {
                 if g::area(&d) > 20.0 && !severed(&d, &path, &street_lines) {
                     ditch.push(Work {
-                        kind: kind.into(),
+                        kind: if let Some(wetness) = style.ditch_wetness {
+                            parameters::ditch_kind(&d, surface, rng, wetness).into()
+                        } else if style.dry_ditches && style.ditch == "auto" {
+                            options::ditch_kind(&d, surface, rng).into()
+                        } else { kind.into() },
                         shape: d,
                         height_m: 0.0,
                         passage: None,
@@ -3000,11 +3128,17 @@ pub(super) fn settle(layout: &mut super::Layout, surface: Surface<'_>) {
         return;
     }
     // --- blocks give up the reserve
+    let walls: Vec<_> = layout.enclosures.iter().filter(|e| !e.style.is_empty() && e.path.len() >= 4)
+        .map(|e| (Near::new(&e.path, 30.0), e.curtain_width_m * 0.5 + 1.0)).collect();
     let reserve = Cut {
         shapes: reserve_all,
     };
     let blocks = std::mem::take(&mut layout.blocks);
     let out = super::par::map(&blocks, |_, b| {
+        // Quarter partitioning can leave a tiny piece just clear of the
+        // curtain. It follows the same rule as a piece cut by the reserve.
+        if b.kind == "block" && g::area(&b.shape) < MIN_BLOCK_PIECE && walls.iter().any(|(near, reach)|
+            b.shape.outer.iter().any(|&p| near.distance(p, p) <= *reach)) { return vec![]; }
         if reserve.hits(&b.shape) <= 0.5 {
             return vec![b.clone()];
         }
@@ -3098,6 +3232,62 @@ mod tests {
             pt(700.0, 700.0), pt(550.0 + width * 0.5, 700.0),
             pt(550.0 + width * 0.5, 700.0 - depth), pt(550.0 - width * 0.5, 700.0 - depth),
             pt(550.0 - width * 0.5, 700.0), pt(400.0, 700.0)], holes: vec![] })
+    }
+    fn boundary_gap(p: Point, shape: &Shape) -> f64 {
+        (0..shape.outer.len()).map(|i| g::distance(p, shape.outer[i],
+            shape.outer[(i + 1) % shape.outer.len()]).0).fold(f64::INFINITY, f64::min)
+    }
+    #[test]
+    fn flank_spacing_is_independent_of_front_subdivision() {
+        let coarse = octagon();
+        let fine: Vec<_> = coarse.windows(2).flat_map(|w| (0..40).map(move |i|
+            add(w[0], dir(w[0], w[1]), dist(w[0], w[1]) * i as f64 / 40.0)))
+            .chain(std::iter::once(coarse[0])).collect();
+        // Keep terrain constant on each founding front while subdividing it.
+        let positions = |path: &[Point], subdivisions: usize| {
+            let n = path.len() - 1;
+            let corners: Vec<_> = (0..n).map(|i| turn_at(&path[..n], i).to_degrees() > 28.0).collect();
+            let factors: Vec<_> = (0..n).map(|i| if i / subdivisions < 4 { 1.5 } else { 1.0 }).collect();
+            flank_stations(path, &corners, &factors, 55.0).iter().map(|&(i, t)|
+                add(path[i], dir(path[i], path[i + 1]), t * dist(path[i], path[i + 1]))).collect::<Vec<_>>()
+        };
+        let (a, b) = (positions(&coarse, 1), positions(&fine, 40));
+        assert!(a.len() > 20);
+        assert_eq!(a.len(), b.len());
+        assert!(a.iter().zip(&b).all(|(&a, &b)| dist(a, b) < 1e-6));
+    }
+    #[test]
+    fn curved_curtains_keep_metric_fit_at_giant_scale_and_coarse_rasters() {
+        for scale in [1.0, 2.5, 10.0] {
+            let radius = 250.0 * scale;
+            let base = disc(pt(5000.0, 5000.0), radius, 720, 0.0);
+            let trace = curtain_trace(&base);
+            assert!(g::simple(&trace));
+            // A smooth foundation must not turn into a coarse inscribed polygon.
+            assert!(base.outer.iter().all(|&p| boundary_gap(p, &trace) < 3.1), "scale {scale}");
+            assert!(g::area(&trace) > g::area(&base) * 0.99, "scale {scale}");
+            let hill = hill_trace(&base, 2.0);
+            for cell in [8.0, 32.0, 80.0] {
+                assert_eq!(hill_trace(&base, cell), hill, "raster cell {cell}");
+            }
+        }
+        // Long genuine fronts need no artificial vertices or culture override.
+        let rect = g::normalized(g::rectangle(100.0, 100.0, 1100.0, 600.0));
+        let trace = curtain_trace(&rect);
+        assert!(trace.outer.len() < 20);
+        assert!((0..trace.outer.len()).any(|i| dist(trace.outer[i],
+            trace.outer[(i + 1) % trace.outer.len()]) > 200.0));
+    }
+    #[test]
+    fn contour_rounding_keeps_thin_necks_simple() {
+        let base = g::normalized(Shape { outer: vec![pt(902.225, 280.018), pt(1008.195, 308.579),
+            pt(33.624, 46.017), pt(0.0, 0.0)], holes: vec![] });
+        assert!(g::simple(&base));
+        for trace in [curtain_trace(&base), hill_trace(&base, 8.0)] {
+            assert!(g::simple(&trace));
+        }
+        let trace = curtain_trace(&base);
+        assert!(base.outer.iter().all(|&p| boundary_gap(p, &trace) <= 3.0));
     }
     #[test]
     fn head_trace_is_exact_without_large_invaginations() {
@@ -3224,8 +3414,10 @@ mod tests {
                     let site = Site { key: "walls3-head".into(), name: String::new(), population: pop,
                         culture: culture.clone(), center: pt(1000.0, 1000.0), radius: if pop == 500 { 180.0 } else { 500.0 } };
                     TRACE_PAIRS.with(|p| *p.borrow_mut() = Some(vec![]));
+                    CONTOUR_PAIRS.with(|p| *p.borrow_mut() = Some(vec![]));
                     let c = composition::generate("walls3-head", &site, &cfg, s, &streets(), site.radius).unwrap();
                     let pairs = TRACE_PAIRS.with(|p| p.borrow_mut().take().unwrap());
+                    let contours = CONTOUR_PAIRS.with(|p| p.borrow_mut().take().unwrap());
                     let different = pairs.iter().any(|(a, b)| a != b);
                     if different { changed.insert(format!("{culture}/{pop}/{}", if river_site { "river" } else { "dry" })); }
                     for (before, after) in &pairs {
@@ -3239,13 +3431,49 @@ mod tests {
                         std::fs::create_dir_all(&out).unwrap();
                         let label = format!("{culture}-{pop}-{}", if river_site { "river" } else { "dry" });
                         std::fs::write(std::path::Path::new(&out).join(format!("{label}.json")),
-                            serde_json::to_vec(&serde_json::json!({"pairs": pairs, "quarters": c.plan.quarters,
+                            serde_json::to_vec(&serde_json::json!({"pairs": pairs, "contours": contours, "phases": c.phases, "quarters": c.plan.quarters,
                                 "enclosures": c.plan.enclosures})).unwrap()).unwrap();
                     }
                 }
             }
         }
         println!("WALLS3 changed versus HEAD traces: {}", changed.into_iter().collect::<Vec<_>>().join(", "));
+    }
+
+    #[test]
+    fn reviewed_wall_fixture() {
+        let Ok(path) = std::env::var("WALLS4_FIXTURE") else { return };
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Fixture { seed: String, n: usize, width: f64, height: Vec<f32>, water: Vec<u8>,
+            geometry: Option<super::super::VectorGeography>, sites: Vec<Site>, roads: Vec<Street>, layout_config: LayoutConfig }
+        let f: Fixture = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        let geography = f.geometry.map(|g| super::super::Geography::new(g, f.width).unwrap());
+        let s = Surface { geometry: geography.as_ref(), width: f.width, n: f.n, height: &f.height, water: &f.water };
+        for site in &f.sites {
+            TRACE_PAIRS.with(|p| *p.borrow_mut() = Some(vec![]));
+            CONTOUR_PAIRS.with(|p| *p.borrow_mut() = Some(vec![]));
+            let c = composition::generate(&f.seed, site, &f.layout_config, s, &f.roads, site.radius).unwrap();
+            let pairs = TRACE_PAIRS.with(|p| p.borrow_mut().take().unwrap());
+            let contours = CONTOUR_PAIRS.with(|p| p.borrow_mut().take().unwrap());
+            assert!(!c.plan.enclosures.is_empty());
+            assert!(!pairs.is_empty(), "fixture must exercise the current wall trace");
+            if let Ok(out) = std::env::var("WALLS3_PROBE_DIR") {
+                std::fs::create_dir_all(&out).unwrap();
+                std::fs::write(std::path::Path::new(&out).join(format!("{}-real-river.json", site.culture)),
+                    serde_json::to_vec(&serde_json::json!({"pairs": pairs, "contours": contours,
+                        "phases": c.phases, "quarters": c.plan.quarters, "enclosures": c.plan.enclosures})).unwrap()).unwrap();
+            }
+            for (before, after) in &pairs {
+                for trace in after {
+                    assert!(g::simple(&Shape { outer: trace.outer.clone(), holes: vec![] }),
+                        "{}: invalid outer circuit", site.culture);
+                    assert!(before.iter().any(|s| !g::simple(s)) || g::simple(trace),
+                        "{}: invalid circuit", site.culture);
+                    assert_eq!(without_invaginations(trace, s), *trace, "{}: residual pocket", site.culture);
+                }
+            }
+        }
     }
 
     #[test]
@@ -3659,6 +3887,28 @@ mod tests {
         generate_quarters("walls", &[site], &cfg, surface(&height, &water), &roads).unwrap()
     }
 
+    #[test]
+    fn tiny_wall_adjacent_blocks_follow_the_reserve_piece_limit() {
+        let mut layout = town("curtain").remove(0);
+        let template = layout.blocks[0].clone();
+        let path = vec![pt(100.0, 100.0), pt(500.0, 100.0), pt(500.0, 500.0),
+            pt(100.0, 500.0), pt(100.0, 100.0)];
+        layout.streets.clear();
+        layout.enclosures = vec![Enclosure { reserve: g::ribbon(&path, &[6.0; 5]), path,
+            kind: "wall".into(), style: "curtain".into(), curtain_width_m: 6.0, ..Default::default() }];
+        let near = g::rectangle(92.0, 200.0, 96.25, 206.0);
+        let far = g::rectangle(50.0, 200.0, 54.25, 206.0);
+        let large = g::rectangle(80.0, 300.0, 96.25, 310.0);
+        layout.blocks = [&near, &far, &large].iter().map(|s| super::super::Block {
+            shape: (*s).clone(), kind: "block".into(), ..template.clone() }).collect();
+        let height = vec![10.0; N * N];
+        let water = vec![0; N * N];
+        settle(&mut layout, surface(&height, &water));
+        assert_eq!(layout.blocks.len(), 2);
+        assert!(layout.blocks.iter().any(|b| b.shape == far));
+        assert!(layout.blocks.iter().any(|b| b.shape == large));
+    }
+
     /// I3 and I6: blocks and lots never enter the reserve or the curtain
     /// ribbon, and two runs give the same layout.
     #[test]
@@ -3819,13 +4069,13 @@ mod tests {
             );
             assert!(blocks.hits(&a.shape) < 0.5, "a block on a lean-to");
         }
-        let parts = generate_parcels(
-            "walls",
-            std::slice::from_ref(layout),
-            &ParcelConfig::default(),
-        )
-        .unwrap();
-        let lots: Vec<_> = parts[0]
+        // Check the cadastral contract before programme consolidation can
+        // merge neighbouring lots into one occupied property.
+        let cfg = ParcelConfig::default();
+        let morph = super::super::resolve(&layout.culture, &cfg.preset, &cfg.recipe,
+            "core", cfg.density, &cfg.params, "parcels").unwrap();
+        let part = super::super::parcels::generate("walls", layout, &cfg, &morph).unwrap();
+        let lots: Vec<_> = part
             .parcels
             .iter()
             .filter(|p| p.provenance.iter().any(|t| t.starts_with("lean-to:0:")))

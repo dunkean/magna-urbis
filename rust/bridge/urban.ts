@@ -17,6 +17,7 @@ export interface Quarter { shape: Shape; phase: number; zone?: string }
 export interface Block { shape: Shape; quarter: number; kind: string; axis: Point; zone?: string; phase?: number }
 export interface Enclosure {
   path: Point[]; kind: string; gates: Point[];
+  purpose?: 'citadel' | 'cathedral-close' | 'urban-castle' | string;
   /** Tower anchors on the curtain; towers[i] === towers_detail[i].anchor. */
   towers?: Point[];
   /** Fortification structures (Rust `urban::fortification`), all optional and snake_case. */
@@ -34,10 +35,12 @@ export interface Enclosure {
 export interface GrowthPhase { culture?: string; kind: string; zone: string; recipe: string; population: number; targetArea: number; shapes: Shape[] }
 export interface Quay { kind: string; shape: Shape; deck_z_m: number; material: string }
 export interface UrbanStructure {
+  gateVillageCenters?: Point[];
   quays?: Quay[];
+  portDistricts?: { district: number; role: 'port'; quarters: number[]; shapes: Shape[] }[];
   version: 1; mechanism: string; family: string; reserve: Shape[]; allocated: Shape[];
   centers: { id: number; point: Point; weight: number }[];
-  districts: { id: number; center: number; phase: number; tissue: string; quarters: number[] }[];
+  districts: { id: number; center: number; phase: number; tissue: string; quarters: number[]; role?: string; wealth?: number; label?: string }[];
   history: { epoch: number; kind: string; center: number; area: number }[];
   metrics: { targetArea: number; allocatedArea: number; streetArea: number; reservedArea: number; grossDensity: number; plannedPopulation: number; shortfallArea: number; components: number; accessAdded: number };
 }
@@ -50,6 +53,7 @@ export interface CultureMapping { culture: string; family: string; functionalPro
 export interface UrbanDemand { id: string; role?: string; function: string; unit: 'domesticUnits' | 'usefulAreaM2'; requested: number; targetArea: number; targetFrontage: number; provenance: string[]; requires: string[]; parcelCapacity: number; builtCapacity: number; openCapacity?: number; deficit: number; reasons: string[] }
 export interface UrbanAllocation { parcelId: string; demandId: string; role?: string; households?: number; function: string; culture: string; architecturePack: string; capacity: number; unit: 'domesticUnits' | 'usefulAreaM2'; score: number; reasons: string[]; housingFloorNeed?: HousingFloorNeed }
 export interface UrbanProgramme {
+  builtBalance?: import('./urbanBuiltBalance').BuiltOutcomeBalance;
   version: 1; population: number; context: import('./urbanConfig').ProgrammeContext; cultures: CultureMapping[]; demands: UrbanDemand[];
   reservations: { id: string; demandId: string; block: number; shape: Shape; street: number; frontage: number }[];
   allocations: UrbanAllocation[]; adjacency: { a: string; b: string; sharedLength: number }[];
@@ -58,8 +62,15 @@ export interface UrbanProgramme {
 /** Include outward growth when framing a completed settlement. */
 export function layoutExtent(layouts?: Layout[]): { center: Point; radius: number } | undefined {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const layout of layouts ?? []) for (const shape of layout.structure?.allocated ?? layout.quarters.map(q => q.shape)) for (const p of shape.outer) {
-    x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y);
+  const include = (p: Point, margin = 0): void => {
+    x0 = Math.min(x0, p.x - margin); y0 = Math.min(y0, p.y - margin); x1 = Math.max(x1, p.x + margin); y1 = Math.max(y1, p.y + margin);
+  };
+  for (const layout of layouts ?? []) {
+    const shapes = [...(layout.structure?.allocated ?? []), ...layout.quarters.map(q => q.shape),
+      ...(layout.structure?.portDistricts ?? []).flatMap(d => d.shapes), ...(layout.structure?.quays ?? []).map(q => q.shape)];
+    for (const shape of shapes) for (const p of shape.outer) include(p);
+    for (const street of layout.streets) if (['quay', 'mole', 'pier', 'landing', 'port-street', 'port-stairs', 'port-road'].includes(street.role))
+      for (const p of street.path) include(p, Math.max(...street.widths, 0) / 2);
   }
   return Number.isFinite(x0) ? { center: { x: (x0 + x1) / 2, y: (y0 + y1) / 2 }, radius: Math.max(x1 - x0, y1 - y0) / 2 } : undefined;
 }
@@ -108,14 +119,26 @@ export interface UrbanResponse { id: number; layouts?: Layout[]; partitions?: Pa
   urbanSource?: UrbanSourceHandle }
 export interface UrbanEngine { run(request: UrbanRequest): UrbanResponse | Promise<UrbanResponse> }
 
-/** The absent native field already means auto. Omit only that default so older
- * strict engines remain usable; explicit styles must still reach their validator.
+/** Absent native fields already mean auto/off. Omit those defaults so older
+ * strict engines remain usable; explicit choices must still reach their validator.
  * UI settings, saved links and returned layouts retain their original config. */
 function nativeLayoutConfig(config: LayoutConfig) {
+  // Absent is off; keep the payload of old strict engines unchanged.
+  const input: Partial<LayoutConfig> = { ...config };
+  if (input.gateVillage === 0 && !input.gateVillages) delete input.gateVillage;
+  for (const key of ['oldEnclosureCitadel', 'medievalWalls', 'riverControl', 'dryDitches', 'gateVillages', 'shelteredHarbour', 'powerHighGround', 'mergeParallelStreets', 'regularGridOutline'] as const)
+    if (input[key] === false || input[key] === undefined) delete input[key];
+  for (const key of ['wallStiffness', 'wallTerrain', 'wallRelief', 'wallTowerSpacing', 'ditchWetness'] as const)
+    if (input[key] == null) delete input[key];
+  for (const key of ['riverControlMode', 'portEnclosure', 'plannedWall'] as const)
+    if (!input[key]) delete input[key];
+  if (input.portDetachment === 1) delete input.portDetachment;
+  if (input.portShelter === 0 && !input.shelteredHarbour) delete input.portShelter;
+  config = input as LayoutConfig;
   const programme = nativeProgrammeContext(config.programme);
   if (config.fortificationStyle !== 'auto') return programme === config.programme ? config : { ...config, programme };
-  const { fortificationStyle: _automatic, ...input } = config;
-  return programme === config.programme ? input : { ...input, programme };
+  const { fortificationStyle: _automatic, ...automatic } = config;
+  return programme === config.programme ? automatic : { ...automatic, programme };
 }
 /** Null has the same automatic meaning as absence, including on older strict
  * decoders. Never omit an explicit object, even an empty/zero-valued one. */

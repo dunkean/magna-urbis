@@ -23,7 +23,9 @@ export function nativeParentInspectionRows(value: NativeParentRead, selection?: 
   rows.push(['Modèle de jeu conservé', need ? `${need.version} · ${need.model.family} · ${need.model.profile_provenance} · ${need.model.calibration}` : 'Inconnu (aucun modèle conservé)']);
   if (need) rows.push(['Convention utile du modèle', `${need.model.effective_floor_m2_per_household} m² utiles indicatifs par ménage · facteur de richesse ${need.model.wealth_factor}`]);
   if (p.kind === 'single') rows.push(...programmeOutcomeRows(p.building.programme_outcome));
-  else rows.push(['Surface brute mesurée des niveaux', p.assembly.outcome.gross_floor_m2 === null ? 'Inconnue' : `${p.assembly.outcome.gross_floor_m2} m²`],
+  else rows.push(['Souhait d’emprise conservé / emprise finale', `${text(p.assembly.outcome.body_footprint.requested_m2)} / ${p.assembly.outcome.body_footprint.actual_m2} m²`],
+    ['Priorité de l’extension', 'Réduire le manque utile nécessaire en conservant le membre admis ; le souhait d’emprise peut être dépassé, sans certification de capacité.'],
+    ['Surface brute mesurée des niveaux', p.assembly.outcome.gross_floor_m2 === null ? 'Inconnue' : `${p.assembly.outcome.gross_floor_m2} m²`],
     ['Besoin utile indicatif du modèle', p.assembly.outcome.requested_useful_m2 === null ? 'Inconnu' : `${p.assembly.outcome.requested_useful_m2} m²`],
     ['Manque utile nécessaire selon le modèle', p.assembly.outcome.useful_shortfall_lower_bound_m2 === null ? 'Inconnu' : `${p.assembly.outcome.useful_shortfall_lower_bound_m2} m² au minimum (aucun habitant non logé déduit)`],
     ['Certification fonctionnelle', p.assembly.outcome.functional_certification]);
@@ -36,5 +38,5 @@ export function nativeParentInspectionRows(value: NativeParentRead, selection?: 
 }
 export function nativeParentInspectionHtml(value: NativeParentRead, selection?: ParentMapSelection): string {
   const xml = (s: string) => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
-  return `<strong>Parent architectural archivé</strong><dl class="urban-inspection">${nativeParentInspectionRows(value, selection).map(([k, v]) => `<dt>${xml(k)}</dt><dd>${xml(v)}</dd>`).join('')}</dl><small>Le déficit de surface relève du modèle de jeu. Les membres, volumes ou pièces ne sont pas des ménages certifiés. Comparaison, édition, 3D et transfert Maisons de ce format ne sont pas encore pris en charge.</small>`;
+  return `<strong>Parent architectural archivé</strong><dl class="urban-inspection">${nativeParentInspectionRows(value, selection).map(([k, v]) => `<dt>${xml(k)}</dt><dd>${xml(v)}</dd>`).join('')}</dl><small>Le déficit de surface relève du modèle de jeu. Les membres, volumes ou pièces ne sont pas des ménages certifiés. La 3D montre une fenêtre de volumes cartographiques des membres natifs. Comparaison, édition partielle et transfert Maisons de ce format ne sont pas encore pris en charge.</small>`;
 }

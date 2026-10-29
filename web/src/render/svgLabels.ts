@@ -4,7 +4,7 @@
  */
 import type { World } from '../gen/types';
 import type { Palette } from './styles';
-import { buildMapLabels, placeMapLabels, estimateWidth, Measure, PlacedMapLabel } from './mapLabels';
+import { buildMapLabels, placeMapLabels, estimateWidth, Measure, PlacedMapLabel, type MapLabelWorld } from './mapLabels';
 import { FONT_STACKS } from './labelStyles';
 import { f1 } from './util';
 
@@ -15,7 +15,7 @@ export function exportScale(mapSize: number): number {
   return Math.max(0.3, Math.min(1.6, 1300 / mapSize));
 }
 
-export function placeForExport(world: World, pal: Palette, measure: Measure = (t, s, st) => estimateWidth(t, s, st), legend = false): { placed: PlacedMapLabel[]; scale: number } {
+export function placeForExport(world: World & MapLabelWorld, pal: Palette, measure: Measure = (t, s, st) => estimateWidth(t, s, st), legend = false): { placed: PlacedMapLabel[]; scale: number } {
   const S = world.mapSize;
   const sc = exportScale(S);
   const labels = buildMapLabels(world, pal.name, pal);
@@ -27,8 +27,8 @@ export function placeForExport(world: World, pal: Palette, measure: Measure = (t
   return { placed, scale: sc };
 }
 
-export function labelsSvg(world: World, pal: Palette, measure?: Measure, legend = false): string {
-  if (!world.names) return '';
+export function labelsSvg(world: World & MapLabelWorld, pal: Palette, measure?: Measure, legend = false): string {
+  if (!world.names && !world.mapAnnotations?.enabled) return '';
   const { placed, scale } = placeForExport(world, pal, measure, legend);
   return placedMapLabelsSvg(placed, pal, scale);
 }

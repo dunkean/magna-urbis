@@ -147,6 +147,15 @@ fn typical_floors(
 #[path = "feasibility.rs"]
 mod feasibility;
 use feasibility::Witness as NativeProfile;
+#[cfg(test)] std::thread_local! {static PREVIEW_TOPOLOGY:std::cell::Cell<bool>=const{std::cell::Cell::new(true)};}
+fn preview_topology_enabled()->bool {
+    #[cfg(test)] {PREVIEW_TOPOLOGY.with(std::cell::Cell::get)}
+    #[cfg(not(test))] {true}
+}
+pub(super) fn recipe_admission_witness(recipe:&str) -> Option<([f64;2],f64,String,[u32;2])> {
+    let w=feasibility::recipe_sources(recipe).into_iter().find(|w|w.supported)?;
+    Some((w.envelope,w.access,w.layout.clone(),w.floors))
+}
 
 /// `URBAN_FEASIBILITY=probe` (measurement only) writes the direct native
 /// poses of every eligible witness, whatever houses' wealth and built-target
@@ -687,19 +696,22 @@ impl BuildingSiteIndex {
             Some(d) => d,
             None => (
                 allocation.culture.clone(),
-                super::culture::parcel_mapping(
+                super::culture::functional_mapping(&allocation.culture,&allocation.role,&allocation.function,
+                    &pr.context.period,match pr.context.mode.as_str(){"strict"=>"historical_strict","fantasy"=>"fantasy_mix",_=>"historical_inspired"})
+                .or_else(|| super::culture::parcel_mapping(
                     layout,
                     parcel,
                     &allocation.culture,
                     &allocation.function,
-                )
+                ))
                 .ok_or("No contextual native recipe")?,
             ),
         };
         let building_culture = building_culture.as_str();
         // Lots admitted by the pack's compact house (courtyard cultures)
         // request that recipe, never the court house they cannot hold.
-        if let Some(small) = super::parcels::compact_fallback(
+        if !super::culture::functional_role_resolved(building_culture,&culture.architecture_pack,&allocation.role,&allocation.function)
+            && let Some(small) = super::parcels::compact_fallback(
             &culture.architecture_pack,
             &pr.context.period,
             &culture.admissibility,
@@ -973,8 +985,6 @@ impl BuildingSiteIndex {
         } else { 1.0 };
         super::house_mix::scale_home(&mut parts, parcel, home_area);
         let kind = realized.or_else(|| occupancy.as_ref().map(super::parcels::occupation_kind));
-        let preview: Vec<_> = parts.iter().map(|(s, _)| s).collect();
-        let preview_parts: Vec<_> = parts.iter().map(|(_, l)| *l).collect();
         // Programme → architecture preferences (contract agreed with Codex,
         // OPUS_CITY.md): wished composition, floors and street continuity; the
         // footprint target is the city occupation preview, omitted when empty.
@@ -1003,12 +1013,37 @@ impl BuildingSiteIndex {
         // brings more of them; floors among the levels those witnesses offer
         // (the insula levels already come from its witnesses).
         let wished = composition;
+        // Regenerating a display topology must not reduce the requested body
+        // budget or change the native source ranking through a smaller preview.
+        let requested_body_area: f64 = parts.iter().map(|(s, _)| super::geometry::area(s)).sum();
         // The typology follows the programme: the composition is the one whose
         // first shortlist group draws a source of the programme's own role
         // (Roman shop → dwelling over a shop, house → masonry house, tenement
         // → street block), among the sources the lot holds (`asked`).
-        let composition = if feasible { asked(composition) } else { composition };
+        let mut composition = if feasible { asked(composition) } else { composition };
+        // A pinned fallback can only preview the topology that its native
+        // variants declare. This does not certify its requested civic function.
+        if preview_topology_enabled() && !domestic && functional.is_none() && composition=="courtyard"
+            && !super::culture::functional_choice_registered(building_culture,&culture.architecture_pack,&role,
+                &allocation.function,composition,mode) {
+            let sources=feasibility::recipe_sources(&culture.admissibility.recipe_id);
+            if !sources.is_empty() && sources.iter().all(|p|p.layout=="single") {
+                composition="detached";
+                programme["preview_topology_resolution"]=json!({"from":"courtyard","to":"detached",
+                    "basis":"pinned native Single variants; requested function remains unverified"});
+            }
+        }
         programme["composition"] = json!(composition);
+        // A resolved simple source cannot inherit a closed ring from the old
+        // court wish. Re-run the constructor, preserving its geometric guards.
+        if preview_topology_enabled() && matches!(composition,"row"|"detached") && parts.iter().any(|(s,_)|!s.holes.is_empty())
+            && let Some(o)=&occupancy {
+            let form=if composition=="row" {super::parcels::OccupationKind::Row} else {super::parcels::OccupationKind::Detached};
+            parts=super::parcels::occupation_preview_resolved(parcel,o,Some(form)).0;
+            super::house_mix::scale_home(&mut parts,parcel,home_area);
+        }
+        let preview: Vec<_> = parts.iter().map(|(s, _)| s).collect();
+        let preview_parts: Vec<_> = parts.iter().map(|(_, l)| *l).collect();
         // The street wall stays the urban intent of the wished form.
         programme["frontage_continuity"] = json!(frontage_continuity(wished));
         if feasible
@@ -1019,7 +1054,7 @@ impl BuildingSiteIndex {
             programme["floors"] = json!(feasibility::feasible_floors(wish, composition, fits));
         }
         if home_area < 1.0 { programme["floors"] = json!([1, 1]); }
-        let built: f64 = parts.iter().map(|(s, _)| super::geometry::area(s)).sum();
+        let built = requested_body_area;
         if built.is_finite() && built > 1.0 {
             programme["built_area_m2"] = json!((built * 10.0).round() / 10.0);
         }
@@ -1945,6 +1980,9 @@ mod tests {
         lots: &[(&str, f64, f64, f64, &str, &str)],
         grade: f32,
     ) -> Vec<Value> {
+        lot_sites_context(culture,pack,lots,grade,"inspired")
+    }
+    fn lot_sites_context(culture:&str,pack:&str,lots:&[(&str,f64,f64,f64,&str,&str)],grade:f32,mode:&str) -> Vec<Value> {
         let y = 100.;
         let shape = |x: f64, w: f64, d: f64| json!({"outer":[{"x":x,"y":y},{"x":x+w,"y":y},{"x":x+w,"y":y+d},{"x":x,"y":y+d}],"holes":[]});
         let mapping = super::super::culture::mapping(culture).unwrap();
@@ -1961,7 +1999,7 @@ mod tests {
                 "unit":"domesticUnits","score":1.,"reasons":[],"role":role}),
             );
         }
-        let programme = json!({"version":1,"population":5000,"context":{},"cultures":[mapping],
+        let programme = json!({"version":1,"population":5000,"context":{"mode":mode},"cultures":[mapping],
             "demands":[],"reservations":[],"allocations":allocations,"adjacency":[],
             "environment":[],"reconciliationPasses":0,"warnings":[]});
         let layout: Layout = serde_json::from_value(json!({"key":"lots","culture":culture,
@@ -1994,6 +2032,37 @@ mod tests {
             .unwrap_or_else(|| panic!("{id} site"))
     }
 
+    #[test]
+    #[ignore = "Local frozen Roman replay; requires HOUSES_PIPE_ROMAN_CITY, HOUSES_PIPE_ROMAN_FIXTURE and HOUSES_PIPE_PROOF_DIR"]
+    fn frozen_roman_preview_keeps_the_current_native_request_budget() {
+        #[derive(serde::Deserialize)] #[serde(rename_all="camelCase")]
+        struct Fixture {seed:String,n:usize,width:f64,height:Vec<f32>,water:Vec<u8>,water_level:Vec<f32>,geometry:Option<super::super::VectorGeography>}
+        let path=|key|std::path::PathBuf::from(std::env::var_os(key).expect(key));
+        let city=path("HOUSES_PIPE_ROMAN_CITY");
+        let raw:Value=serde_json::from_slice(&std::fs::read(path("HOUSES_PIPE_ROMAN_FIXTURE")).unwrap()).unwrap();
+        let t:Fixture=serde_json::from_value(raw).unwrap();
+        let layouts:Vec<Layout>=serde_json::from_slice(&std::fs::read(city.join("layouts.json")).unwrap()).unwrap();
+        let partitions:Vec<Partition>=serde_json::from_slice(&std::fs::read(city.join("partitions.json")).unwrap()).unwrap();
+        let geo=t.geometry.map(|g|super::super::Geography::new(g,t.width).unwrap());
+        let surface=Surface{geometry:geo.as_ref(),width:t.width,n:t.n,height:&t.height,water:&t.water};
+        struct Mode(bool);
+        impl Mode {fn control()->Self{Self(PREVIEW_TOPOLOGY.with(|v|v.replace(false)))}}
+        impl Drop for Mode {fn drop(&mut self){PREVIEW_TOPOLOGY.with(|v|v.set(self.0));}}
+        let before={let _control=Mode::control();requests(&t.seed,&layouts,&partitions,surface,&t.water_level,None).unwrap()};
+        let after=requests(&t.seed,&layouts,&partitions,surface,&t.water_level,None).unwrap();
+        assert_eq!(before.len(),after.len());
+        for (old,new) in before.iter().zip(&after) {
+            assert_eq!(old["id"],new["id"]);
+            for field in ["households","housing_floor_need","built_area_m2","floors","role"] {
+                assert_eq!(old["programme"][field],new["programme"][field],"{}: {field}",old["id"]);
+            }
+        }
+        let out=path("HOUSES_PIPE_PROOF_DIR");std::fs::create_dir_all(&out).unwrap();
+        std::fs::write(out.join("roman-current-control-requests.json"),serde_json::to_vec(&before).unwrap()).unwrap();
+        std::fs::write(out.join("roman-requests.json"),serde_json::to_vec(&after).unwrap()).unwrap();
+        eprintln!("Roman current Core preview A/B: {} exact IDs; programme budgets, floors and household wishes unchanged",after.len());
+    }
+
     /// Invariant: a home's wished composition is one whose first houses
     /// shortlist group draws a source of the programme's own role among the
     /// sources the lot holds (a Roman shop or house never wishes the
@@ -2019,6 +2088,9 @@ mod tests {
         ] {
             let site = site_of(&sites, id);
             let composition = site["programme"]["composition"].as_str().unwrap();
+            if matches!(composition,"row"|"detached") {
+                assert!(site["preview"].as_array().unwrap().iter().all(|s|s["holes"].as_array().unwrap().is_empty()),"{id}: simple resolved preview kept a closed ring");
+            }
             let floors = wish_of(&site["programme"]["floors"]);
             let rank = |w: &NativeProfile| {
                 let f = floors.map_or(0, |[lo, hi]| {
@@ -2091,7 +2163,7 @@ mod tests {
     fn an_uncovered_facility_is_not_a_domestic_slope_or_shape_deficit() {
         let lots = [("horreum", 0., 45., 45., "warehouse", "storage.horreum")];
         for grade in [0.0,0.06] {
-            let sites=lot_sites("roman-core","MED-ANT",&lots,grade);
+            let sites=lot_sites_context("roman-core","MED-ANT",&lots,grade,"strict");
             let site=site_of(&sites,"horreum");
             assert_eq!(site["function"],"open_space");
             assert!(site["config"]["recipe"].is_null(),"{}",site["config"]);

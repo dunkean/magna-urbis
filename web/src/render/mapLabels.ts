@@ -1,5 +1,5 @@
 /**
- * Map label engine (M5a): labels come from `world.names`; point, area and curved path labels,
+ * Map label engine (M5a): names and opt-in RPG/landmark annotations; point, area and curved path labels,
  * greedy collision avoidance with priority by kind/rank and zoom. Pure: text widths come from
  * an injected `measure`, so it runs in Node (SVG export) and in the browser (canvas).
  */
@@ -7,6 +7,49 @@ import type { World, Vec2 } from '../gen/types';
 import type { MapStyle, Palette } from './styles';
 import { KindStyle, kindStyles, streetRankStyle } from './labelStyles';
 import { View, worldToScreen } from './view';
+import type { Layout, Partition } from '../../../rust/bridge/urban';
+import { roleLabel } from './cityRoles';
+
+export const RPG_PIN_KINDS = { stable: 'Écuries', cave: 'Entrée de grotte', inn: 'Auberge', quest: 'Quête', label: 'Étiquette' };
+export type RpgPinKind = keyof typeof RPG_PIN_KINDS;
+export interface RpgPin { id: string; kind: RpgPinKind; text: string; x: number; y: number }
+export interface LandmarkLabel { id: string; kind: 'castle' | 'church' | 'square' | 'gate'; text: string; x: number; y: number }
+export interface MapAnnotations { enabled: boolean; pins?: RpgPin[]; landmarks?: LandmarkLabel[] }
+export type MapLabelWorld = Pick<World, 'names'> & { mapAnnotations?: MapAnnotations; options?: { labels?: boolean } };
+
+/** Only placed programme features get labels: unmet demands have no map position. */
+export function nativeLandmarkLabels(layouts: Layout[] = [], partitions: Partition[] = []): LandmarkLabel[] {
+  const out: LandmarkLabel[] = [];
+  const add = (id: string, role: string | undefined, label: string | undefined, points: Vec2[], market = false): void => {
+    if (!points.length || points.some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y))) return;
+    let area = 0, x = 0, y = 0;
+    points.forEach((p, i) => { const q = points[(i + 1) % points.length], a = p.x * q.y - q.x * p.y; area += a; x += (p.x + q.x) * a; y += (p.y + q.y) * a; });
+    const anchor = Math.abs(area) > 1e-8 ? { x: x / (3 * area), y: y / (3 * area) }
+      : { x: points.reduce((n, p) => n + p.x, 0) / points.length, y: points.reduce((n, p) => n + p.y, 0) / points.length };
+    const kind = role?.startsWith('defence.') || role?.startsWith('elite.') ? 'castle' : role?.startsWith('worship.') ? 'church' : 'square';
+    out.push({ id, kind, text: label || (role ? roleLabel(role) : market ? 'Marché' : 'Monument'), ...anchor });
+  };
+  const major = (role?: string): boolean => !!role && /^(defence\.(keep|castle|kasbah|fort|fortress)|elite\.palace|worship\.(cathedral|temple\.major)|commerce\.market)(\.|$)/.test(role);
+  for (const l of layouts) {
+    l.enclosures?.forEach((e, ei) => e.gates.forEach((p, i) => {
+      if (Number.isFinite(p.x) && Number.isFinite(p.y)) out.push({ id: `${l.key}:gate:${ei}:${i}`, kind: 'gate', text: 'Porte', ...p });
+    }));
+    const partition = partitions.find(p => p.key === l.key), programme = partition?.programme ?? l.programme;
+    const allocations = new Map((programme?.allocations ?? []).map(a => [a.parcelId, a as typeof a & { label?: string; landmark?: boolean }]));
+    const placedDemands = new Set<string>();
+    for (const p of partition?.parcels ?? []) {
+      const a = p.id ? allocations.get(p.id) : undefined;
+      if (a) placedDemands.add(a.demandId);
+      if (p.use === 'market' || a?.landmark || major(a?.role)) add(`${l.key}:parcel:${p.id ?? partition!.parcels.indexOf(p)}`, a?.role, a?.label, p.shape.outer, p.use === 'market');
+    }
+    for (const r of programme?.reservations ?? []) {
+      if (placedDemands.has(r.demandId)) continue;
+      const d = programme?.demands.find(d => d.id === r.demandId) as (NonNullable<typeof programme>['demands'][number] & { label?: string; landmark?: boolean }) | undefined;
+      if (d?.landmark || major(d?.role) || d?.function === 'market') add(`${l.key}:reservation:${r.id}`, d?.role, d?.label, r.shape.outer, d?.function === 'market');
+    }
+  }
+  return out;
+}
 
 export interface MapLabel {
   id: string; kind: string; text: string; st: KindStyle;
@@ -17,16 +60,23 @@ export interface MapLabel {
 /** Text width in px of `text` at `size` px for the given style (italic/bold matter). */
 export type Measure = (text: string, size: number, st: KindStyle) => number;
 
-export function buildMapLabels(world: World, style: MapStyle, pal: Palette): MapLabel[] {
+export function buildMapLabels(world: MapLabelWorld, style: MapStyle, pal: Palette): MapLabel[] {
   const names = world.names;
-  if (!names) return [];
   const styles = kindStyles(style, pal);
   const out: MapLabel[] = [];
-  for (const e of names.entries) {
+  for (const e of names?.entries ?? []) {
     let st = styles[e.kind];
     if (!st) continue;
     if (e.kind === 'street') st = streetRankStyle(st, e.rank);
     out.push({ id: e.id, kind: e.kind, text: e.text, st, x: e.anchor.x, y: e.anchor.y, path: e.path, span: e.span, rank: e.rank });
+  }
+  if (world.options?.labels !== false && world.mapAnnotations?.enabled) {
+    for (const l of world.mapAnnotations.landmarks ?? []) if (l.text.trim()) out.push({ ...l, st: { ...styles[l.kind], minScale: 0, maxScale: Infinity } });
+    for (const p of world.mapAnnotations.pins ?? []) {
+      if (!p.text.trim()) continue;
+      const symbol = ({ stable: 'square', cave: 'tri', inn: 'ring', quest: 'cross', label: undefined } as const)[p.kind];
+      out.push({ ...p, id: `rpg:${p.id}`, kind: `rpg:${p.kind}`, st: { ...styles.gate, minScale: 0, maxScale: Infinity, priority: 110, italic: false, color: pal.ink, symbol } });
+    }
   }
   return out;
 }

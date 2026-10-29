@@ -24,7 +24,7 @@ type Ring = [number, number][];
 export interface FieldNetExtras { ways: Polyline[]; headlands: Polyline[] }
 
 /** A retained urban plan can reserve its real land before its buildings exist. */
-export interface RuralPlan { footprint: PolyH[]; population: number; farmsteads?: boolean; naturalForest?: Float32Array; settlementFootprints?: Record<string, PolyH[]> }
+export interface RuralPlan { footprint: PolyH[]; population: number; farmsteads?: boolean; naturalForest?: Float32Array; settlementFootprints?: Record<string, PolyH[]>; streetAlignedHomes?: boolean; denserSmallholdings?: boolean }
 
 /** Reserve a lazy roof's bounded outer collar for farm lots, accounting for raster and lot-sampling error. */
 export function farmGrowthReserve(base: Uint8Array, n: number, cell: number, openMacroFootprints: PolyH[][]): Uint8Array {
@@ -347,7 +347,8 @@ export function generateRural(world: World, root: Rng, mainRoads?: number, strip
   type Place = { o: Vec2; V: Vec2 };
   /** Plan the farm (type from the culture and the site, size from its wealth), shrinking it until its lot fits one of the placements. */
   const planOn = (ctx: FarmContext, fr: Rng, places: (D: number) => Place[]): { lf: LocalFarm; o: Vec2; V: Vec2 } | null => {
-    const size0 = farmSize(ctx, fr);
+    const size0 = plan?.denserSmallholdings && ctx.market < .45 ? 'cottage' : farmSize(ctx, fr);
+    if (plan?.streetAlignedHomes && nearestRoad(places(0)[0].o).d < 100) ctx = { ...ctx, streetAlignedHomes: true };
     const type = farmType(ctx, size0, fr);
     const dirs = places(0).map((p) => p.V);
     for (let s = FARM_SIZES.indexOf(size0); s >= 0; s--) {
@@ -398,7 +399,7 @@ export function generateRural(world: World, root: Rng, mainRoads?: number, strip
         out.push({ o: { x: nr.bp.x + V.x * (nr.w / 2 + 3), y: nr.bp.y + V.y * (nr.w / 2 + 3) }, V });
       }
       // in its fields, facing the track (then the other ways round)
-      for (const [cx, cy] of [[1, 0], [0, 1], [0, -1], [-1, 0]]) {
+      for (const [cx, cy] of plan?.streetAlignedHomes && nr.d < 100 ? [[1, 0]] : [[1, 0], [0, 1], [0, -1], [-1, 0]]) {
         const V = { x: d0.x * cx - d0.y * cy, y: d0.x * cy + d0.y * cx };
         out.push({ o: { x: st.center.x - (V.x * D) / 2, y: st.center.y - (V.y * D) / 2 }, V });
       }
@@ -410,7 +411,7 @@ export function generateRural(world: World, root: Rng, mainRoads?: number, strip
       // last resort: the smallest farm in the middle of its fields
       stats['farm.forced'] = (stats['farm.forced'] ?? 0) + 1;
       const forcedType = biome === 'underdark' ? (ctx.culture === 'myconid-colony' ? 'spore-farm' : 'fungal-farm') : 'l-yard';
-      const lf = layoutFarm(forcedType, 'cottage', ctx, frameOf(d0, ctx.downhill), fr.fork('forced'));
+      const lf = layoutFarm(forcedType, 'cottage', plan?.streetAlignedHomes && nr.d < 100 ? { ...ctx, streetAlignedHomes: true } : ctx, frameOf(d0, ctx.downhill), fr.fork('forced'));
       pl = { lf, o: { x: st.center.x - (d0.x * lf.D) / 2, y: st.center.y - (d0.y * lf.D) / 2 }, V: d0 };
     }
     accept(pl, st.culture, nr.d < 400 ? nr.bp : null);
@@ -418,11 +419,16 @@ export function generateRural(world: World, root: Rng, mainRoads?: number, strip
   // farmsteads along the roads: dispersed farms of the main town's farmland (and, on custom maps, of the whole country)
   if (plan?.farmsteads !== false) {
     const custom = world.options.mapSize !== undefined;
-    const farmCount = ({ hamlet: 0, village: 2, town: 4, city: 7, capital: 10 } as const)[world.options.size] + (custom ? Math.min(90, Math.round(0.2 * (S / 1000) ** 2)) : 0);
+    const farmCount = (({ hamlet: 0, village: 2, town: 4, city: 7, capital: 10 } as const)[world.options.size] + (custom ? Math.min(90, Math.round(0.2 * (S / 1000) ** 2)) : 0)) * (plan?.denserSmallholdings ? 3 : 1);
     const fr = rr.fork('farm');
     const cand: { o: Vec2; V: Vec2; score: number }[] = [];
     const rds = custom ? roads : mainRoads === undefined ? roads : roads.slice(0, mainRoads);
-    for (const rd of rds) {
+    const candidates = plan?.denserSmallholdings ? rds.map(rd => ({ ...rd, path: rd.path.flatMap((a, i) => {
+      if (!i) return [a];
+      const b = rd.path[i - 1], count = Math.max(1, Math.ceil(dist(a, b) / 45));
+      return Array.from({ length: count }, (_, j) => ({ x: b.x + (a.x - b.x) * (j + 1) / count, y: b.y + (a.y - b.y) * (j + 1) / count }));
+    }) })) : rds;
+    for (const rd of candidates) {
       if (rd.kind === 'track' && !custom) continue;
       let acc = 0;
       for (let i = 1; i < rd.path.length; i++) {
@@ -438,12 +444,12 @@ export function generateRural(world: World, root: Rng, mainRoads?: number, strip
         const p = { x: o.x + V.x * 25, y: o.y + V.y * 25 };
         if (p.x < 0.06 * S || p.y < 0.06 * S || p.x > 0.94 * S || p.y > 0.94 * S) continue;
         const idx = cellAt(p);
-        if (terrain.water[idx] || f.dWater[idx] < 40 || f.hab[idx] < 0.8 || slopeL[idx] > pastureMax || farmReserve[idx] || uDist[idx] < (custom ? 0.07 : 0.1) * Lm || uDist[idx] > 0.42 * Lm) continue;
-        cand.push({ o, V, score: fr.float() });
+        if (terrain.water[idx] || f.dWater[idx] < 40 || f.hab[idx] < 0.8 || slopeL[idx] > pastureMax || farmReserve[idx] || uDist[idx] < (plan?.denserSmallholdings ? .025 : custom ? 0.07 : 0.1) * Lm || uDist[idx] > 0.42 * Lm) continue;
+        cand.push({ o, V, score: fr.float() + (plan?.denserSmallholdings ? 2 * (1 - Math.min(1, uDist[idx] / (.42 * Lm))) : 0) });
       }
     }
     cand.sort((a, b) => b.score - a.score);
-    const minSp = custom ? Math.max(200, 0.09 * Lm) : 0.13 * Lm;
+    const minSp = plan?.denserSmallholdings ? Math.max(65, .035 * Lm) : custom ? Math.max(200, 0.09 * Lm) : 0.13 * Lm;
     let made = 0;
     for (const c of cand) {
       if (made >= farmCount) break;

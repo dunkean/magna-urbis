@@ -21,7 +21,7 @@ export function fitNeuralSketch(sketch: TerrainSketch, extent: number, window: N
   return { version: 1, resolution: n, heights };
 }
 
-export function parseTerrainSketch(value: unknown): TerrainSketch {
+export function parseTerrainSketch(value: unknown, copy = true): TerrainSketch {
   const s = value as TerrainSketch;
   if (!s || s.version !== 1 || (s.processing !== undefined && s.processing !== 'surface' && s.processing !== 'erosion')
     || !Number.isInteger(s.resolution) || s.resolution < 8 || s.resolution > (s.processing ? 1024 : 128)
@@ -34,7 +34,7 @@ export function parseTerrainSketch(value: unknown): TerrainSketch {
       throw new Error(`Esquisse invalide : altitude de la cellule ${i + 1}.`);
     }
   }
-  return { version: 1, resolution: s.resolution, heights: [...s.heights], ...(s.processing ? { processing: s.processing } : {}) };
+  return { version: 1, resolution: s.resolution, heights: copy ? [...s.heights] : s.heights, ...(s.processing ? { processing: s.processing } : {}) };
 }
 
 /** Resample cell-centred metre elevations without introducing generated detail. */

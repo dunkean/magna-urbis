@@ -394,6 +394,15 @@ export function generationUid(o: Options): string {
     const dimensions = `|height:${o.importedHeight.w}x${o.importedHeight.h}:`;
     for (let i = 0; i < dimensions.length; i++) mixByte(dimensions.charCodeAt(i));
     for (const byte of o.importedHeight.rgba) mixByte(byte);
+    if (o.importedHeight.elevations) {
+      // Canonical little-endian bytes keep FP32 source identity independent of host byte order.
+      const bytes = new DataView(new ArrayBuffer(4));
+      mixByte(0xff);
+      for (const height of o.importedHeight.elevations) {
+        bytes.setFloat32(0, height, true);
+        for (let i = 0; i < 4; i++) mixByte(bytes.getUint8(i));
+      }
+    }
   }
   return hash.toString(36).padStart(25, '0');
 }

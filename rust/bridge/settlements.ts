@@ -1,6 +1,7 @@
 import type { TerrainData } from './terrain';
 import { lakeField, lakeSample } from '../../web/src/ui/lakeGeometry';
 import { riverWidths } from '../../web/src/ui/vectorWaterRender';
+import { channelWidth } from '../../web/src/ui/riverVectors';
 import { createSettlementEngine, type SettlementEngine } from './settlementEngine';
 import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
 
@@ -133,6 +134,16 @@ export function settlementRaster(t: TerrainData, maxResolution = 512): Settlemen
         const k = j / 2, wd = Math.max(widths[k - 1], widths[k]);
         segment(line.points[j - 2], line.points[j - 1], line.points[j], line.points[j + 1], wd, line.level[k - 1], line.level[k], line.id ?? id);
       }
+    }
+  } else if (vector) {
+    const h = vector.hydro, hc = width / h.n;
+    const threshold = (vector.riverArea ?? Math.max(.02, .003 * (width / 1000) ** 2)) * 1e6;
+    for (let i = 0; i < h.n * h.n; i++) {
+      const r = h.receiver[i];
+      if (h.sea[i] || vector.lake[i] || h.accumulation[i] < threshold || r < 0 || r >= h.n * h.n || r === i) continue;
+      segment((i % h.n + .5) * hc, (Math.floor(i / h.n) + .5) * hc,
+        (r % h.n + .5) * hc, (Math.floor(r / h.n) + .5) * hc,
+        Math.max(channelWidth(h.accumulation[i], vector.widthScale ?? 1), channelWidth(h.accumulation[r], vector.widthScale ?? 1)), h.filled[i], h.filled[r], i);
     }
   } else if (hydro) for (let id = 0; id < hydro.riverOffsets.length - 1; id++) {
     for (let j = hydro.riverOffsets[id] + 1; j < hydro.riverOffsets[id + 1]; j++) {

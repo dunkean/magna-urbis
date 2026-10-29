@@ -34,16 +34,16 @@ const labels: Words[] = [
 const byFrench = new Map(labels.map(words => [words[0], words]));
 
 /** Translate existing text nodes without rebuilding controls or disturbing editor state. */
-export function localizeTerrainSketch(host: HTMLElement): void {
+export function localizeTerrainSketch(host: HTMLElement, text: (words: readonly [string, string, string, string, string]) => string = urbanText): void {
   const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
   let node: Node | null;
   while ((node = walker.nextNode())) {
     const original = node.textContent ?? '';
     // The last rendered language is also a valid lookup key on subsequent changes.
     const words = byFrench.get(original.trim()) ?? labels.find(entry => entry.includes(original.trim()));
-    if (words) node.textContent = original.replace(original.trim(), urbanText(words));
+    if (words) node.textContent = original.replace(original.trim(), text(words));
   }
 }
-export function terrainZoneName(index: number): string {
-  return urbanText([['Mer','Sea','海洋','Mar','Mar'], ['Plaine','Plain','平原','Llanura','Planície'], ['Collines','Hills','丘陵','Colinas','Colinas'], ['Montagnes','Mountains','山地','Montañas','Montanhas'], ['Hautes montagnes','High mountains','高山','Alta montaña','Altas montanhas']][index] as Words);
+export function terrainZoneName(index: number, text: (words: readonly [string, string, string, string, string]) => string = urbanText): string {
+  return text([['Mer','Sea','海洋','Mar','Mar'], ['Plaine','Plain','平原','Llanura','Planície'], ['Collines','Hills','丘陵','Colinas','Colinas'], ['Montagnes','Mountains','山地','Montañas','Montanhas'], ['Hautes montagnes','High mountains','高山','Alta montaña','Altas montanhas']][index] as Words);
 }

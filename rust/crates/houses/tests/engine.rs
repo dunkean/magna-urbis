@@ -3,7 +3,7 @@ use std::collections::{BTreeSet, VecDeque};
 
 fn config(id: &str) -> HouseConfig {
     HouseConfig {
-        pack: id.rsplit_once("-B").unwrap().0.into(),
+        pack: catalogue().unwrap().recipes.iter().find(|r|r.id==id).unwrap().pack_id.clone(),
         recipe: Some(id.into()),
         count: 1,
         variation: 0.0,

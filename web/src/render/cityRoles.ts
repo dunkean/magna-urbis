@@ -57,7 +57,7 @@ export function roleLabel(role?: string | null, label?: string | null): string {
 }
 /** Street roles of the plan (network.rs) in French. */
 export const STREET_LABELS: Record<string, string> = { street: 'rue', lane: 'ruelle', main: 'grand-rue', regional: 'route régionale', market: 'rue du marché', processional: 'voie processionnelle',
-  ring: 'boulevard de ceinture', 'gate-street': 'rue de la porte', quay: 'quai', 'wall-lane': 'chemin de ronde', collective: 'passage collectif', private: 'passage privé', stairs: 'escalier', bridge: 'pont', ford: 'gué', causeway: 'chaussée' };
+  ring: 'boulevard de ceinture', 'gate-street': 'rue de la porte', quay: 'quai', 'wall-lane': 'chemin de ronde', collective: 'passage collectif', private: 'passage privé', stairs: 'escalier', 'port-stairs': 'escalier du port', 'port-street': 'rue du port', bridge: 'pont', ford: 'gué', causeway: 'chaussée' };
 export const streetLabel = (role: string): string => STREET_LABELS[role] ?? role.replace(/[-_]/g, ' ');
 export const functionLabel = (fn?: string | null): string => FUNCTION_LABELS[fn ?? ''] ?? (fn ?? '');
 

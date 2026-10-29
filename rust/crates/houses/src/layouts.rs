@@ -1990,14 +1990,14 @@ pub(crate) fn build_layout(
                     ));
                 }
                 out.paths = rectangle(0.0, 0.0, w, corridor);
-                out.features.push(feature(
+                if p.details.iter().any(|d| matches!(d.as_str(),"connecting_corridor"|"connecting_tunnels")) { out.features.push(feature(
                     "connecting-corridor",
                     FeatureKind::Gallery,
                     out.paths.clone(),
                     -2.4,
                     2.6,
                     &p.materials.frame,
-                ));
+                )); }
             }
             Layout::Bridge => {
                 let bank = w * 0.29;

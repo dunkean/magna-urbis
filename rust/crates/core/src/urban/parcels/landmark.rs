@@ -145,6 +145,15 @@ pub(super) fn massing(
     if w < 8.0 || d < 8.0 {
         return None;
     }
+    if o.morph.value["_innerWalls"].as_bool().unwrap_or(false) {
+        if role == "defence.kasbah" && w.min(d) >= 30.0 {
+            kasbah(&mut x)?;
+            return Some(x.out);
+        }
+        if role == "worship.cathedral" && w.min(d) >= 28.0 {
+            x.s0+=4.0;x.s1-=4.0;x.ta+=5.0;x.t1-=4.0;
+        }
+    }
     let short = w.min(d);
     let is = |p: &str| role == p || role.starts_with(&format!("{p}."));
     if is("worship.parish") || is("worship.cathedral") || is("worship.church") {
@@ -542,6 +551,54 @@ fn temple(x: &mut Site, role: &str, style: &str, rng: &mut Rng) -> Option<()> {
         }
     }
     (!x.out.is_empty()).then_some(())
+}
+
+/// A kasbah is an inhabited compound: bent entry, ranges and several courts.
+/// The city's retained first circuit encloses the larger elite neighbourhood.
+fn kasbah(x:&mut Site)->Option<()> {
+    let (a,b,c,d)=(x.s0+0.5,x.s1-0.5,x.ta+0.5,x.t1-0.5);
+    let (w,h)=(b-a,d-c);
+    let range=(w.min(h)*0.13).clamp(4.0,8.0);
+    x.court([a,b,c,d],1.5,4.0,"wall");
+    x.rect(a+2.0,a+2.0+range,c+6.0,d-range-3.0,"barracks");
+    x.rect(b-range-2.0,b-2.0,c+6.0,d-range-3.0,"residence");
+    x.rect(a+range+3.0,b-range-3.0,d-range-2.0,d-2.0,"palace");
+    let middle=c+h*0.52;
+    x.rect(a+range+2.0,x.mid()-2.0,middle,middle+range,"arcade");
+    x.rect(x.mid()+2.0,b-range-2.0,middle,middle+range,"arcade");
+    x.rect(x.mid()+2.0,x.mid()+2.0+range,c+2.0,c+7.0,"gatehouse");
+    Some(())
+}
+
+#[cfg(test)]
+mod wall_options_tests {
+    use super::*;
+    #[test]
+    fn kasbah_option_is_an_inhabited_multi_court_compound() {
+        let b=vec![Point{x:0.0,y:0.0},Point{x:60.0,y:0.0},Point{x:60.0,y:80.0},Point{x:0.0,y:80.0}];
+        let f=Frame {u:Point{x:1.0,y:0.0},n:Point{x:0.0,y:1.0},t0:0.0};
+        let mut morph=super::super::super::resolve("medina","culture","auto","core",1.0,&serde_json::json!({}),"parcels").unwrap();
+        let preview=|morph:&Morph| {
+            let o=Occupancy {morph,zone:"core",function:"collective",role:"defence.kasbah",landmark:true,
+                party_walls:false,wealth:0.9,seed:"kasbah",pack:"AF-MAG",court_lot:false,court_kept:None};
+            massing(&o,&b,f,(0.0,60.0,0.0,80.0),&mut Rng::new("kasbah")).unwrap()
+        };
+        let before=preview(&morph);
+        assert!(before.iter().any(|p|p.2=="keep"));
+        morph.value["_innerWalls"]=serde_json::json!(true);
+        let after=preview(&morph);
+        for label in ["wall","palace","residence","barracks","arcade","gatehouse"] {
+            assert!(after.iter().any(|p|p.2==label),"{label}");
+        }
+        assert!(!after.iter().any(|p|p.2=="keep"));
+        for (i,(a,_,_)) in after.iter().enumerate() {
+            let sa=Shape {outer:a.clone(),holes:vec![]};assert!(super::super::super::geometry::simple(&sa));
+            for (b,_,_) in &after[i+1..] {
+                let overlap:f64=super::super::super::geometry::intersection(&sa,&Shape {outer:b.clone(),holes:vec![]})
+                    .iter().map(super::super::super::geometry::area).sum();assert!(overlap<0.01,"overlapping kasbah ranges");
+            }
+        }
+    }
 }
 
 fn castle(x: &mut Site, role: &str, style: &str) -> Option<()> {

@@ -1,0 +1,1202 @@
+{
+  "site": {
+    "id": "layout-f9dab5910f08a8a2/block-233d1dbe19dc1e17/parcel-fffa75b2a7597d80/building",
+    "parcel_id": "layout-f9dab5910f08a8a2/block-233d1dbe19dc1e17/parcel-fffa75b2a7597d80",
+    "cadastral": [
+      {
+        "outer": [
+          {
+            "x": 6723.115628874011,
+            "y": 8471.524363429775
+          },
+          {
+            "x": 6723.115628874011,
+            "y": 8428.227450282802
+          },
+          {
+            "x": 6751.181973790832,
+            "y": 8428.227450282802
+          },
+          {
+            "x": 6751.181973790832,
+            "y": 8471.838643939724
+          },
+          {
+            "x": 6750.01940832109,
+            "y": 8471.944342048397
+          },
+          {
+            "x": 6749.960756873794,
+            "y": 8471.94602099203
+          },
+          {
+            "x": 6749.951524352737,
+            "y": 8471.943547160854
+          },
+          {
+            "x": 6749.940082645126,
+            "y": 8471.946612985363
+          },
+          {
+            "x": 6748.96590629787,
+            "y": 8471.97450080656
+          },
+          {
+            "x": 6745.981948768802,
+            "y": 8472.059922607174
+          },
+          {
+            "x": 6734.680828487582,
+            "y": 8471.795235545864
+          }
+        ],
+        "holes": []
+      }
+    ],
+    "buildable": [
+      {
+        "outer": [
+          {
+            "x": 6723.115628874011,
+            "y": 8471.524363429775
+          },
+          {
+            "x": 6723.115628874011,
+            "y": 8428.227450282802
+          },
+          {
+            "x": 6751.181973790832,
+            "y": 8428.227450282802
+          },
+          {
+            "x": 6751.181973790832,
+            "y": 8471.838643939724
+          },
+          {
+            "x": 6750.01940832109,
+            "y": 8471.944342048397
+          },
+          {
+            "x": 6749.960756873794,
+            "y": 8471.94602099203
+          },
+          {
+            "x": 6749.951524352737,
+            "y": 8471.943547160854
+          },
+          {
+            "x": 6749.940082645126,
+            "y": 8471.946612985363
+          },
+          {
+            "x": 6748.96590629787,
+            "y": 8471.97450080656
+          },
+          {
+            "x": 6745.981948768802,
+            "y": 8472.059922607174
+          },
+          {
+            "x": 6734.680828487582,
+            "y": 8471.795235545864
+          }
+        ],
+        "holes": []
+      }
+    ],
+    "reserves": [],
+    "roof_domain": [
+      {
+        "outer": [
+          {
+            "x": 6723.115628874011,
+            "y": 8471.524363429775
+          },
+          {
+            "x": 6723.115628874011,
+            "y": 8428.227450282802
+          },
+          {
+            "x": 6751.181973790832,
+            "y": 8428.227450282802
+          },
+          {
+            "x": 6751.181973790832,
+            "y": 8471.838643939724
+          },
+          {
+            "x": 6750.01940832109,
+            "y": 8471.944342048397
+          },
+          {
+            "x": 6749.960756873794,
+            "y": 8471.94602099203
+          },
+          {
+            "x": 6749.951524352737,
+            "y": 8471.943547160854
+          },
+          {
+            "x": 6749.940082645126,
+            "y": 8471.946612985363
+          },
+          {
+            "x": 6748.96590629787,
+            "y": 8471.97450080656
+          },
+          {
+            "x": 6745.981948768802,
+            "y": 8472.059922607174
+          },
+          {
+            "x": 6734.680828487582,
+            "y": 8471.795235545864
+          }
+        ],
+        "holes": []
+      }
+    ],
+    "placement_hint": [
+      {
+        "outer": [
+          {
+            "x": 6723.11562887015,
+            "y": 8452.775906793642
+          },
+          {
+            "x": 6723.11562887015,
+            "y": 8446.975906793643
+          },
+          {
+            "x": 6730.415628870151,
+            "y": 8446.975906793643
+          },
+          {
+            "x": 6730.415628870151,
+            "y": 8452.775906793642
+          }
+        ],
+        "holes": []
+      }
+    ],
+    "accesses": [
+      {
+        "id": "layout-f9dab5910f08a8a2/block-233d1dbe19dc1e17/parcel-fffa75b2a7597d80/street/878",
+        "segment": [
+          {
+            "x": 6723.115628874011,
+            "y": 8471.524363304483
+          },
+          {
+            "x": 6723.115628874011,
+            "y": 8428.227450282802
+          }
+        ],
+        "kind": "public",
+        "width_m": 43.296913021680666
+      },
+      {
+        "id": "layout-f9dab5910f08a8a2/block-233d1dbe19dc1e17/parcel-fffa75b2a7597d80/street/877",
+        "segment": [
+          {
+            "x": 6745.981948679923,
+            "y": 8472.059922605093
+          },
+          {
+            "x": 6723.115628874011,
+            "y": 8471.524363429775
+          }
+        ],
+        "kind": "public",
+        "width_m": 22.872590694901945
+      },
+      {
+        "id": "layout-f9dab5910f08a8a2/block-233d1dbe19dc1e17/parcel-fffa75b2a7597d80/street/877",
+        "segment": [
+          {
+            "x": 6749.940082622343,
+            "y": 8471.946612986016
+          },
+          {
+            "x": 6745.981948768802,
+            "y": 8472.059922607174
+          }
+        ],
+        "kind": "public",
+        "width_m": 3.9597553804235366
+      },
+      {
+        "id": "layout-f9dab5910f08a8a2/block-233d1dbe19dc1e17/parcel-fffa75b2a7597d80/street/877",
+        "segment": [
+          {
+            "x": 6751.181973790832,
+            "y": 8471.838643939724
+          },
+          {
+            "x": 6750.01940832109,
+            "y": 8471.944342048397
+          }
+        ],
+        "kind": "public",
+        "width_m": 1.1673605105592235
+      }
+    ],
+    "party_boundaries": [],
+    "neighbors": [],
+    "culture": {
+      "culture": "javanese-courts",
+      "pack": "AS-ISL",
+      "mode": "historical_inspired",
+      "borrowing": null
+    },
+    "function": "domestic",
+    "typology": null,
+    "seed": "city-tropical-island-l/layout-f9dab5910f08a8a2/block-233d1dbe19dc1e17/parcel-fffa75b2a7597d80",
+    "terrain": {
+      "origin": {
+        "x": 6737.176521744177,
+        "y": 8450.02724722749
+      },
+      "ground_z_m": 141.89414436070467,
+      "gradient": [
+        0.051205924642891656,
+        -0.014853235488179052
+      ],
+      "water_z_m": null,
+      "max_foundation_step_m": 0.75,
+      "grid": {
+        "origin": {
+          "x": 6695.3125,
+          "y": 8398.4375
+        },
+        "step_m": 15.625,
+        "width": 6,
+        "height": 7,
+        "elevations_m": [
+          138.9150390625,
+          139.87062072753906,
+          141.36244201660156,
+          142.63758850097656,
+          143.49346923828125,
+          144.48081970214844,
+          139.7485809326172,
+          140.12937927246094,
+          141.74461364746094,
+          143.01699829101562,
+          144.17481994628906,
+          145.72744750976562,
+          140.4866943359375,
+          140.7157745361328,
+          141.83175659179688,
+          142.6343536376953,
+          144.07167053222656,
+          146.30142211914062,
+          140.80137634277344,
+          141.330810546875,
+          141.5675811767578,
+          142.0919189453125,
+          143.49891662597656,
+          145.38504028320312,
+          139.93179321289062,
+          140.9088897705078,
+          141.3617401123047,
+          142.0446014404297,
+          143.3315887451172,
+          144.74362182617188,
+          139.02911376953125,
+          140.09072875976562,
+          141.04869079589844,
+          141.9506072998047,
+          143.18402099609375,
+          143.8704376220703,
+          137.8914031982422,
+          138.77081298828125,
+          140.1937713623047,
+          141.50396728515625,
+          142.6406707763672,
+          143.78746032714844
+        ]
+      }
+    },
+    "config": {
+      "schema_version": "2",
+      "seed": "city-tropical-island-l/layout-f9dab5910f08a8a2/block-233d1dbe19dc1e17/parcel-fffa75b2a7597d80",
+      "pack": "AS-ISL",
+      "recipe": null,
+      "mode": "historical_inspired",
+      "era": "any",
+      "allow_late": false,
+      "count": 1,
+      "size": 1.0,
+      "variation": 0.65,
+      "wealth": 0.23,
+      "orientation_deg": 0.0,
+      "overrides": {
+        "variant": null,
+        "footprint": null,
+        "roof": null,
+        "frame": null,
+        "infill": null,
+        "coating": null,
+        "cladding": null,
+        "floors": null,
+        "bodies": null,
+        "courtyard_ratio": null,
+        "overhang_m": null,
+        "roof_pitch_deg": null,
+        "site_slope_deg": null
+      }
+    },
+    "occupation": {
+      "coverage": 0.35,
+      "depth_m": 11.0,
+      "frontage_m": 6.0
+    },
+    "parcel_fit": true,
+    "programme": {
+      "role": "dwelling.tenement",
+      "landmark": false,
+      "district_role": "craft:tanners",
+      "wealth": 0.23,
+      "households": 4.0,
+      "housing_floor_need": {
+        "version": "indicative-housing-floor-1",
+        "unit": "useful_floor_m2",
+        "scope": "housing_in_body_levels",
+        "requested_m2": 212.16,
+        "allocated_households": 4.0,
+        "basis": "allocation_households_times_wealth_scaled_floor_allowance",
+        "model": {
+          "family": "insular",
+          "profile_provenance": "generic-compatibility-defaults",
+          "calibration": "not-culture-calibrated",
+          "floor_m2_per_household": 60.0,
+          "wealth": 0.23,
+          "wealth_factor": 0.884,
+          "effective_floor_m2_per_household": 53.04,
+          "persons_per_household": 4.5
+        }
+      },
+      "composition": "compound",
+      "floors": [
+        1,
+        1
+      ],
+      "built_area_m2": 1215.8,
+      "frontage_continuity": 0.5,
+      "party_walls": false
+    }
+  },
+  "occupied_parts": [],
+  "occupied_roof_parts": [],
+  "incumbent": {
+    "id": "layout-f9dab5910f08a8a2/block-233d1dbe19dc1e17/parcel-fffa75b2a7597d80/building",
+    "parcel_id": "layout-f9dab5910f08a8a2/block-233d1dbe19dc1e17/parcel-fffa75b2a7597d80",
+    "function": "domestic",
+    "culture": {
+      "culture": "javanese-courts",
+      "pack": "AS-ISL",
+      "mode": "historical_inspired",
+      "borrowing": null
+    },
+    "recipe_id": "AS-ISL-B15",
+    "variant_id": "default",
+    "transform": {
+      "origin": {
+        "x": 6723.567000025511,
+        "y": 8453.412
+      },
+      "orientation_deg": 270.0
+    },
+    "ground_z_m": 142.08064473572793,
+    "footprint": [
+      {
+        "outer": [
+          {
+            "x": 6723.567000025869,
+            "y": 8453.41199999845
+          },
+          {
+            "x": 6723.567000025869,
+            "y": 8446.34000000155
+          },
+          {
+            "x": 6741.9490000251535,
+            "y": 8446.34000000155
+          },
+          {
+            "x": 6741.9490000251535,
+            "y": 8453.41199999845
+          }
+        ],
+        "holes": []
+      }
+    ],
+    "roof_footprint": [
+      {
+        "outer": [
+          {
+            "x": 6723.216,
+            "y": 8445.988999975682
+          },
+          {
+            "x": 6742.300000051022,
+            "y": 8445.988999975682
+          },
+          {
+            "x": 6742.300000051022,
+            "y": 8453.763000024319
+          },
+          {
+            "x": 6723.216,
+            "y": 8453.763000024319
+          }
+        ],
+        "holes": []
+      }
+    ],
+    "courtyards": [],
+    "circulation": [
+      {
+        "outer": [
+          {
+            "x": 6741.514691792191,
+            "y": 8471.955293594627
+          },
+          {
+            "x": 6741.961928583444,
+            "y": 8452.85999999824
+          },
+          {
+            "x": 6741.622000030936,
+            "y": 8452.85999999824
+          },
+          {
+            "x": 6741.622000030936,
+            "y": 8452.0100000042
+          },
+          {
+            "x": 6742.149000026048,
+            "y": 8452.0100000042
+          },
+          {
+            "x": 6742.149000026048,
+            "y": 8452.03499999526
+          },
+          {
+            "x": 6742.7814705593,
+            "y": 8452.03499999526
+          },
+          {
+            "x": 6742.314472459019,
+            "y": 8471.974025501637
+          }
+        ],
+        "holes": []
+      }
+    ],
+    "entrance": {
+      "x": 6741.949000025511,
+      "y": 8452.435000000001
+    },
+    "access_id": "layout-f9dab5910f08a8a2/block-233d1dbe19dc1e17/parcel-fffa75b2a7597d80/street/877",
+    "volumes": [
+      {
+        "id": "layout-f9dab5910f08a8a2/block-233d1dbe19dc1e17/parcel-fffa75b2a7597d80/building:body:0",
+        "footprint": [
+          {
+            "outer": [
+              {
+                "x": 6723.567000025511,
+                "y": 8453.412
+              },
+              {
+                "x": 6723.567000025511,
+                "y": 8446.34
+              },
+              {
+                "x": 6741.949000025511,
+                "y": 8446.34
+              },
+              {
+                "x": 6741.949000025511,
+                "y": 8453.412
+              }
+            ],
+            "holes": []
+          }
+        ],
+        "levels": [
+          {
+            "index": 0,
+            "footprint": [
+              {
+                "outer": [
+                  {
+                    "x": 6723.567000025511,
+                    "y": 8453.412
+                  },
+                  {
+                    "x": 6723.567000025511,
+                    "y": 8446.34
+                  },
+                  {
+                    "x": 6741.949000025511,
+                    "y": 8446.34
+                  },
+                  {
+                    "x": 6741.949000025511,
+                    "y": 8453.412
+                  }
+                ],
+                "holes": []
+              }
+            ],
+            "z_m": 142.08064473572793,
+            "height_m": 2.8,
+            "materials": null
+          }
+        ],
+        "z_m": 142.08064473572793,
+        "wall_height_m": 2.8,
+        "roof_height_m": 2.2953402094314015,
+        "roof_system": "RF-HIP",
+        "roof_pitch_deg": 32.989,
+        "overhang_m": 0.35000000000000003,
+        "roof_spec": {
+          "axis": "longitudinal",
+          "tiers": 3,
+          "tier_inset_ratio": 0.15,
+          "tier_rise_m": 1.0,
+          "drum_height_m": 0.7,
+          "gambrel_break_ratio": 0.55,
+          "gambrel_lower_pitch_deg": 55.0,
+          "saddle_rise_ratio": 0.18,
+          "step_count": 7,
+          "shell_sections": 12,
+          "parapet_height_m": 0.4,
+          "drainage_side": 2,
+          "dome_rise_ratio": 1.0,
+          "oculus_ratio": 0.0,
+          "curve_lift_ratio": 0.12,
+          "tent_crown_ratio": 0.08,
+          "shell_cross_rise_ratio": 0.7,
+          "shell_long_rise_ratio": 0.18,
+          "round_segments": 32,
+          "curve_sections": 12
+        },
+        "materials": {
+          "frame": "MAT-TIMBER-POST",
+          "infill": "MAT-BAMBOO",
+          "coating": "",
+          "cladding": "MAT-TILE-CLAY",
+          "base": "MAT-STONE-DRY",
+          "roof_frame": "MAT-TIMBER-POST"
+        },
+        "role": "dwelling",
+        "envelope": "walled",
+        "roof_mesh": {
+          "vertices": [],
+          "faces": [],
+          "edges": [],
+          "groups": []
+        },
+        "foundation": {
+          "footprint": [
+            {
+              "outer": [
+                {
+                  "x": 6723.567000025511,
+                  "y": 8453.412
+                },
+                {
+                  "x": 6723.567000025511,
+                  "y": 8446.34
+                },
+                {
+                  "x": 6741.949000025511,
+                  "y": 8446.34
+                },
+                {
+                  "x": 6741.949000025511,
+                  "y": 8453.412
+                }
+              ],
+              "holes": []
+            }
+          ],
+          "z_min_m": 141.24401455254355,
+          "z_max_m": 142.08064473572793
+        }
+      }
+    ],
+    "structural_features": [],
+    "useful_area_m2": 129.99750400000002,
+    "domestic_units": 0,
+    "programme_outcome": {
+      "version": "plan-programme-outcome-1",
+      "body_footprint": {
+        "requested_m2": 1215.8,
+        "actual_m2": 129.99750393796776,
+        "tolerance_fraction": 0.1,
+        "attainment": "deficit",
+        "deficit_m2": 1085.802496062032,
+        "excess_m2": 0.0
+      },
+      "households": {
+        "requested": 4.0,
+        "housed": null,
+        "capacity_status": "unknown"
+      },
+      "housing_floor": {
+        "version": "plan-housing-floor-outcome-1",
+        "scope": "housing_in_body_levels",
+        "need_model": {
+          "version": "indicative-housing-floor-1",
+          "unit": "useful_floor_m2",
+          "scope": "housing_in_body_levels",
+          "requested_m2": 212.16,
+          "allocated_households": 4.0,
+          "basis": "allocation_households_times_wealth_scaled_floor_allowance",
+          "model": {
+            "family": "insular",
+            "profile_provenance": "generic-compatibility-defaults",
+            "calibration": "not-culture-calibrated",
+            "floor_m2_per_household": 60.0,
+            "wealth": 0.23,
+            "wealth_factor": 0.884,
+            "effective_floor_m2_per_household": 53.04,
+            "persons_per_household": 4.5
+          }
+        },
+        "requested_useful_m2": 212.16,
+        "gross_floor_m2": 129.99750399999937,
+        "measurement": "retained_level_footprint_union_per_exact_elevation",
+        "inventory_status": "retained_plan_levels",
+        "necessary_area_status": "insufficient_gross",
+        "useful_shortfall_lower_bound_m2": 82.16249600000063,
+        "actual_useful_m2": null,
+        "functional_certification": "unknown"
+      }
+    },
+    "simplification": "architectural_plan",
+    "diagnostics": [
+      "Explicit urban lot fitting: eligible simple plans may extend width/depth to twice the source maxima; source minima, native layout, levels, roof and final site admission are retained. Artistic adaptation, not measured historical dimensions.",
+      "Initial native footprint budget: programme target=1215.800m2 replaces coarse lot coverage before first admission; requested source-bounded dimensions 8.000 x 13.000 m, native body area 104.000m2. Same source/variant/seed and native constructors, no additional placement search; intrinsic minima and physical site guards retained.",
+      "Declared domestic rectangle/strip budget: one rebuilt range; retained floors, materials, rear-court fraction, passage width and party-feature thickness; native declared gallery width, cover and support spacing retained where eligible; no inferred boundary rights.",
+      "Native ground-single foundation: the unchanged whole body determines the footing; the complete native passage and public connector retain cadastral, reserve, neighbour and support rights. Existing foundation-step, slope and roof limits are unchanged; household capacity remains unknown.",
+      "Native planning entrance: the structural body portal is retained in the compact archive; its whole site passage and public connector were checked against cadastral, reserve, neighbour and support rights. Interior room subdivision remains deferred and must preserve this portal.",
+      "Urban programme: composition=compound -> Single/FP-RECT (source/site fallback outside preferred family); main floors=[1,1] -> 1 (within preferred range); body footprint target=1215.80m2 actual=130.00m2; declared domestic rectangle/strip budget; final status follows; frontage is a placement preference; continuity and party-wall wishes are not certified; native boundary rights unchanged.",
+      "Retained architectural plan: no roof mesh or interior was generated. Native structural entrance retained for exact interior replay; eaves and roof height remain cartographic envelopes. Detailed realization certifies native construction separately. Household capacity is unknown.",
+      "Urban programme: composition=compound -> Single/FP-RECT (source/site fallback outside preferred family); main floors=[1,1] -> 1 (within preferred range); body footprint target=1215.80m2 actual=130.00m2; declared domestic rectangle/strip budget; final status follows; frontage is a placement preference; continuity and party-wall wishes are not certified; native boundary rights unchanged.",
+      "Domestic footprint budget: target=1215.800m2 actual=129.998m2 ratio=0.107 target_met=false tolerance=0.10; initial=104.000m2; 6/8 dimension pairs, 24/24 rigid poses, 10 admitted; chosen source, floors, court fraction and passage retained. Bounded search did not meet target; best validated plan retained, not a proof of impossibility.",
+      "Source aspect terrain guide: 8/8 exact rectangle terrain evaluations; 0/1 reduced dimension allocated within the same 8 dimension / 24 admission budget. Fixed facade centre and orientation; other full-size poses retained. Final site, roof, source and access guards unchanged; no optimality certificate.",
+      "Native planning entrance upgrade: final Single source, dimensions, floors and pose retained; 1/1 existing pose checked. No alternative door, rigid-pose retry, source selection or dimension search."
+    ],
+    "cartographic": {
+      "height_m": 5.095340209431401,
+      "ridges": [
+        [
+          {
+            "x": 6727.103000025511,
+            "y": 8449.876
+          },
+          {
+            "x": 6738.413000025511,
+            "y": 8449.876
+          }
+        ]
+      ],
+      "roof_system": "RF-HIP",
+      "validation": "plan_only"
+    },
+    "resolved": {
+      "bodies": [
+        {
+          "arms": [
+            {
+              "axis": [
+                {
+                  "$f64": "8000000000000000"
+                },
+                {
+                  "$f64": "3ff0000000000000"
+                }
+              ],
+              "domain": [
+                {
+                  "holes": [],
+                  "outer": [
+                    {
+                      "x": {
+                        "$f64": "0000000000000000"
+                      },
+                      "y": {
+                        "$f64": "0000000000000000"
+                      }
+                    },
+                    {
+                      "x": {
+                        "$f64": "401c49ba5e353f7d"
+                      },
+                      "y": {
+                        "$f64": "0000000000000000"
+                      }
+                    },
+                    {
+                      "x": {
+                        "$f64": "401c49ba5e353f7d"
+                      },
+                      "y": {
+                        "$f64": "403261cac083126f"
+                      }
+                    },
+                    {
+                      "x": {
+                        "$f64": "0000000000000000"
+                      },
+                      "y": {
+                        "$f64": "403261cac083126f"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "length_m": {
+                "$f64": "403261cac083126f"
+              },
+              "origin": {
+                "x": {
+                  "$f64": "401c49ba5e353f7d"
+                },
+                "y": {
+                  "$f64": "0000000000000000"
+                }
+              },
+              "width_m": {
+                "$f64": "401c49ba5e353f7d"
+              }
+            }
+          ],
+          "cells": [],
+          "component": null,
+          "footprint": 2,
+          "levels": [
+            2
+          ],
+          "parameters": 0,
+          "role": "dwelling",
+          "voids": [],
+          "z": {
+            "$f64": "0000000000000000"
+          }
+        }
+      ],
+      "catalogue_version": "atlas-houses-3",
+      "config": {
+        "allow_late": false,
+        "count": 1,
+        "era": "any",
+        "mode": "historical_inspired",
+        "orientation_deg": {
+          "$f64": "0000000000000000"
+        },
+        "overrides": {
+          "bodies": null,
+          "cladding": null,
+          "coating": null,
+          "courtyard_ratio": null,
+          "floors": 1,
+          "footprint": null,
+          "frame": null,
+          "infill": null,
+          "overhang_m": null,
+          "roof": null,
+          "roof_pitch_deg": null,
+          "site_slope_deg": null,
+          "variant": "default"
+        },
+        "pack": "AS-ISL",
+        "recipe": "AS-ISL-B15",
+        "schema_version": "2",
+        "seed": "city-tropical-island-l/layout-f9dab5910f08a8a2/block-233d1dbe19dc1e17/parcel-fffa75b2a7597d80",
+        "size": {
+          "$f64": "3ff0000000000000"
+        },
+        "variation": {
+          "$f64": "3fe4cccccccccccd"
+        },
+        "wealth": {
+          "$f64": "3fcd70a3d70a3d71"
+        }
+      },
+      "context": [],
+      "courts": 1,
+      "diagnostics": [
+        "Explicit urban lot fitting: eligible simple plans may extend width/depth to twice the source maxima; source minima, native layout, levels, roof and final site admission are retained. Artistic adaptation, not measured historical dimensions.",
+        "Initial native footprint budget: programme target=1215.800m2 replaces coarse lot coverage before first admission; requested source-bounded dimensions 8.000 x 13.000 m, native body area 104.000m2. Same source/variant/seed and native constructors, no additional placement search; intrinsic minima and physical site guards retained.",
+        "Declared domestic rectangle/strip budget: one rebuilt range; retained floors, materials, rear-court fraction, passage width and party-feature thickness; native declared gallery width, cover and support spacing retained where eligible; no inferred boundary rights."
+      ],
+      "entrance": {
+        "from_z_m": {
+          "$f64": "0000000000000000"
+        },
+        "opening": [
+          {
+            "x": {
+              "$f64": "3fe1a9fbe76c8b44"
+            },
+            "y": {
+              "$f64": "403261cac083126f"
+            }
+          },
+          {
+            "x": {
+              "$f64": "3ff66e978d4fdf3c"
+            },
+            "y": {
+              "$f64": "403261cac083126f"
+            }
+          }
+        ],
+        "passage": [
+          {
+            "holes": [],
+            "outer": [
+              {
+                "x": {
+                  "$f64": "3fe1a9fbe76c8b44"
+                },
+                "y": {
+                  "$f64": "40320e147ae147ae"
+                }
+              },
+              {
+                "x": {
+                  "$f64": "3ff66e978d4fdf3c"
+                },
+                "y": {
+                  "$f64": "40320e147ae147ae"
+                }
+              },
+              {
+                "x": {
+                  "$f64": "3ff66e978d4fdf3c"
+                },
+                "y": {
+                  "$f64": "403294fdf3b645a2"
+                }
+              },
+              {
+                "x": {
+                  "$f64": "3fe1a9fbe76c8b44"
+                },
+                "y": {
+                  "$f64": "403294fdf3b645a2"
+                }
+              }
+            ]
+          }
+        ],
+        "to_z_m": {
+          "$f64": "0000000000000000"
+        },
+        "width_m": {
+          "$f64": "3feb333333333333"
+        }
+      },
+      "features": [],
+      "format": "compact-plan-1",
+      "generator_version": "houses-3",
+      "lot": 0,
+      "parameters": [
+        {
+          "remove": [],
+          "set": {
+            "components": [
+              {
+                "count": [
+                  1,
+                  1
+                ],
+                "courtyard_ratio": [
+                  {
+                    "$f64": "3fd6666666666666"
+                  },
+                  {
+                    "$f64": "3fe199999999999a"
+                  }
+                ],
+                "depth_ratio": [
+                  {
+                    "$f64": "3ff0000000000000"
+                  },
+                  {
+                    "$f64": "3ff0000000000000"
+                  }
+                ],
+                "envelope": "walled",
+                "floors": [
+                  1,
+                  1
+                ],
+                "footprint_family": "FP-RECT",
+                "id": "main",
+                "level_height_m": {
+                  "$f64": "4006666666666666"
+                },
+                "level_materials": [],
+                "materials": {
+                  "base": "MAT-STONE-DRY",
+                  "cladding": "MAT-TILE-CLAY",
+                  "coating": "",
+                  "frame": "MAT-TIMBER-POST",
+                  "infill": "MAT-BAMBOO",
+                  "roof_frame": "MAT-TIMBER-POST"
+                },
+                "overhang_m": [
+                  {
+                    "$f64": "3fd6666666666667"
+                  },
+                  {
+                    "$f64": "3fd6666666666667"
+                  }
+                ],
+                "placement": "main",
+                "role": "dwelling",
+                "roof_pitch_deg": [
+                  {
+                    "$f64": "40419374bc6a7efa"
+                  },
+                  {
+                    "$f64": "40419374bc6a7efa"
+                  }
+                ],
+                "roof_spec": {
+                  "axis": "longitudinal",
+                  "curve_lift_ratio": {
+                    "$f64": "3fbeb851eb851eb8"
+                  },
+                  "curve_sections": 12,
+                  "dome_rise_ratio": {
+                    "$f64": "3ff0000000000000"
+                  },
+                  "drainage_side": 2,
+                  "drum_height_m": {
+                    "$f64": "3fe6666666666666"
+                  },
+                  "gambrel_break_ratio": {
+                    "$f64": "3fe199999999999a"
+                  },
+                  "gambrel_lower_pitch_deg": {
+                    "$f64": "404b800000000000"
+                  },
+                  "oculus_ratio": {
+                    "$f64": "0000000000000000"
+                  },
+                  "parapet_height_m": {
+                    "$f64": "3fd999999999999a"
+                  },
+                  "round_segments": 32,
+                  "saddle_rise_ratio": {
+                    "$f64": "3fc70a3d70a3d70a"
+                  },
+                  "shell_cross_rise_ratio": {
+                    "$f64": "3fe6666666666666"
+                  },
+                  "shell_long_rise_ratio": {
+                    "$f64": "3fc70a3d70a3d70a"
+                  },
+                  "shell_sections": 12,
+                  "step_count": 7,
+                  "tent_crown_ratio": {
+                    "$f64": "3fb47ae147ae147b"
+                  },
+                  "tier_inset_ratio": {
+                    "$f64": "3fc3333333333333"
+                  },
+                  "tier_rise_m": {
+                    "$f64": "3ff0000000000000"
+                  },
+                  "tiers": 3
+                },
+                "roof_system": "RF-HIP",
+                "rooms_per_body": [
+                  1,
+                  1
+                ],
+                "structure_system": "post_beam",
+                "support": {
+                  "height_m": [
+                    {
+                      "$f64": "0000000000000000"
+                    },
+                    {
+                      "$f64": "0000000000000000"
+                    }
+                  ],
+                  "kind": "ground",
+                  "material": null
+                },
+                "vertical_access": "none",
+                "vertical_routes": [],
+                "wall_thickness_m": [
+                  {
+                    "$f64": "3fc2f1a9fbe76c8b"
+                  },
+                  {
+                    "$f64": "3fc2f1a9fbe76c8b"
+                  }
+                ],
+                "width_ratio": [
+                  {
+                    "$f64": "3ff0000000000000"
+                  },
+                  {
+                    "$f64": "3ff0000000000000"
+                  }
+                ]
+              }
+            ],
+            "courtyard_ratio": [
+              {
+                "$f64": "3fda1cac083126ea"
+              },
+              {
+                "$f64": "3fda1cac083126ea"
+              }
+            ],
+            "depth_m": [
+              {
+                "$f64": "403261cac083126f"
+              },
+              {
+                "$f64": "403261cac083126f"
+              }
+            ],
+            "overhang_m": [
+              {
+                "$f64": "3fd6666666666667"
+              },
+              {
+                "$f64": "3fd6666666666667"
+              }
+            ],
+            "roof_pitch_deg": [
+              {
+                "$f64": "40407e978d4fdf3b"
+              },
+              {
+                "$f64": "40407e978d4fdf3b"
+              }
+            ],
+            "rooms_per_body": [
+              1,
+              1
+            ],
+            "wall_thickness_m": [
+              {
+                "$f64": "3fc04189374bc6a8"
+              },
+              {
+                "$f64": "3fc04189374bc6a8"
+              }
+            ],
+            "width_m": [
+              {
+                "$f64": "401c49ba5e353f7d"
+              },
+              {
+                "$f64": "401c49ba5e353f7d"
+              }
+            ]
+          }
+        }
+      ],
+      "paths": 1,
+      "recipe_id": "AS-ISL-B15",
+      "surfaces": [
+        [
+          {
+            "holes": [],
+            "outer": [
+              {
+                "x": {
+                  "$f64": "bfd6872b020c49ba"
+                },
+                "y": {
+                  "$f64": "bfd6872b020c49ba"
+                }
+              },
+              {
+                "x": {
+                  "$f64": "401db22d0e560419"
+                },
+                "y": {
+                  "$f64": "bfd6872b020c49ba"
+                }
+              },
+              {
+                "x": {
+                  "$f64": "401db22d0e560419"
+                },
+                "y": {
+                  "$f64": "4032bbe76c8b4396"
+                }
+              },
+              {
+                "x": {
+                  "$f64": "bfd6872b020c49ba"
+                },
+                "y": {
+                  "$f64": "4032bbe76c8b4396"
+                }
+              }
+            ]
+          }
+        ],
+        [],
+        [
+          {
+            "holes": [],
+            "outer": [
+              {
+                "x": {
+                  "$f64": "0000000000000000"
+                },
+                "y": {
+                  "$f64": "0000000000000000"
+                }
+              },
+              {
+                "x": {
+                  "$f64": "401c49ba5e353f7d"
+                },
+                "y": {
+                  "$f64": "0000000000000000"
+                }
+              },
+              {
+                "x": {
+                  "$f64": "401c49ba5e353f7d"
+                },
+                "y": {
+                  "$f64": "403261cac083126f"
+                }
+              },
+              {
+                "x": {
+                  "$f64": "0000000000000000"
+                },
+                "y": {
+                  "$f64": "403261cac083126f"
+                }
+              }
+            ]
+          }
+        ]
+      ],
+      "variant_id": "default"
+    }
+  }
+}

@@ -135,7 +135,7 @@ pub struct RetainedNativeAssembly {
 }
 
 impl NativeMemberPlan {
-    fn retain(b: &PlanBuilding) -> Self {
+    pub(super) fn retain(b: &PlanBuilding) -> Self {
         Self { id:b.id.clone(), parcel_id:b.parcel_id.clone(), function:b.function,
             culture:b.culture.clone(), recipe_id:b.recipe_id.clone(), variant_id:b.variant_id.clone(),
             transform:b.transform.clone(), ground_z_m:b.ground_z_m, footprint:b.footprint.clone(),
@@ -345,6 +345,11 @@ pub use archive::{NativeAssemblyArchive, RealizeAssemblyRequest, RealizedNativeA
 #[path = "native_assembly_builder.rs"]
 mod builder;
 pub use builder::{assemble_pair,MAX_ASSEMBLY_INPUT_BYTES,MAX_ASSEMBLY_PARTS,MAX_ASSEMBLY_VERTICES};
+
+#[cfg(test)]
+pub(super) fn with_street_context<R>(enabled:bool,f:impl FnOnce()->R)->R{
+    let _mode=builder::StreetContextMode::new(enabled);f()
+}
 
 #[cfg(test)]
 #[path = "native_assembly_tests.rs"]

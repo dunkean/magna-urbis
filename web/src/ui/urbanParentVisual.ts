@@ -7,7 +7,7 @@ import type { NativeMemberPlan, AssemblyProgrammeOutcome } from '../../../rust/b
 import type { HouseMaterial, Surface, Point } from '../../../rust/bridge/housesContract';
 import type { CompactBuildingVisual } from '../render/urbanBuildingLod';
 import { retainedProgrammeOutcome, type RetainedProgrammeOutcome } from '../render/programmeOutcome';
-export const PARENT_VISUAL_VERSION = 'native-parent-visual-1';
+export const PARENT_VISUAL_VERSION = 'native-parent-visual-2';
 export interface ParentMemberVisual extends CompactBuildingVisual {
   projection: typeof PARENT_VISUAL_VERSION; nativeRealization: false;
   parent_id: string; member_id: string; member_key: string | null; parcel_id: string;
@@ -16,7 +16,7 @@ export interface ParentMemberVisual extends CompactBuildingVisual {
   programme?: never; programme_outcome?: never; useful_area_m2?: never; domestic_units?: never; resolved?: never;
 }
 export interface ParentContextVisual { parent_id: string; key: string; native_id: string | null;
-  kind: 'legacy_circulation' | 'member_feature' | 'branch' | 'native_passage' | 'shared_context';
+  kind: 'legacy_circulation' | 'member_courtyard' | 'member_feature' | 'branch' | 'native_passage' | 'shared_context';
   surface: Surface; material?: string }
 export interface ParentVisualSummary { id: string; parcel_id: string; native_kind: NativeParentPlan['kind']; archive_sha256: string;
   programme: ArchitectureProgramme | null; programme_outcome: RetainedProgrammeOutcome | null;
@@ -46,6 +46,7 @@ export function projectParentRecords(records: readonly NativeParentRecord[], cat
     };
     const addMember = (key: string | null, member: NativeMemberPlan | PlacedBuilding) => {
       members.push(memberVisual(identity.id, key, member, record.archive.sha256));
+      addContext(`${key ?? 'legacy'}:courtyard`, 'member_courtyard', member.courtyards, member.id);
       member.structural_features.forEach((f, i) => addContext(`${key ?? 'legacy'}:feature:${i}`, 'member_feature', f.surface, f.id, f.material));
     };
     if (p.kind === 'single') { addMember(null, p.building); addContext('legacy:circulation', 'legacy_circulation', p.building.circulation, p.building.access_id); }

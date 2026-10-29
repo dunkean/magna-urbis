@@ -35,12 +35,20 @@ pub(super) fn prepare(layout: &mut Layout) {
     }
 }
 
-/// Sub-100 m² wall-clipping remnants are public verges, never field lots.
+/// Wall-clipping remnants and strips thinner than the network's minimum
+/// land beside a wall walk are public verges, never fictitious house lots.
 fn verges(layout: &mut Layout) {
     let rings: Vec<_> = layout.enclosures.iter().map(|e|Shape {outer:e.path.clone(),holes:vec![]}).collect();
+    let walks:Vec<_>=layout.streets.iter().filter(|s|s.role=="wall-lane").collect();
     for b in &mut layout.blocks {
-        if b.kind == "reserve" && g::area(&b.shape) < 100.
-            && rings.iter().any(|r|g::contains(r,g::interior_point(&b.shape))) {
+        let area=g::area(&b.shape);
+        let perimeter:f64=b.shape.outer.iter().zip(b.shape.outer.iter().cycle().skip(1)).take(b.shape.outer.len())
+            .map(|(a,b)|(a.x-b.x).hypot(a.y-b.y)).sum();
+        let c=g::interior_point(&b.shape);
+        let wall_strip=b.kind=="block" && 2.0*area<super::network::MIN_LAND*perimeter
+            && walks.iter().any(|s|s.path.windows(2).any(|w|g::distance(c,w[0],w[1]).0<=s.widths.iter().copied().fold(0.0,f64::max)*0.5+super::network::MIN_LAND));
+        if (b.kind == "reserve" && area < 100. || wall_strip)
+            && rings.iter().any(|r|g::contains(r,c)) {
             b.kind = "common:verge".into();
         }
     }

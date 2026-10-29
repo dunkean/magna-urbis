@@ -19,6 +19,7 @@ import { parentStateFromManifest } from '../src/ui/urbanParentState';
 import { createUrbanBuildingPanelState } from '../src/ui/urbanBuildingsPanel';
 import { nativeParentInspectionRows } from '../src/ui/urbanParentInspector';
 import { MemoryParents } from './support/urbanParentSessionProtocol';
+import { openParentViewport } from '../src/ui/urbanParentViewport';
 // Real native guest-Wasm SYNTHETIC SITE output, preserved byte-exact in fixture.
 // Native API calls below are explicitly transport mocks; no new admission claim.
 const batch: NativeParentBatch = JSON.parse(guest.data.batch_json);
@@ -64,6 +65,19 @@ it('durable cache HIT -> bounded actual member/context pick, no source archive r
   expect(view.pick(p)).toMatchObject({ status: 'exact', selection: { kind: 'member', parent_id: member.parent_id, member_id: member.member_id } });
   expect(view.pick({ x: 130, y: 130 })).toEqual({ status: 'exact' });
   expect(view.pick({ x: 20, y: 20 }).status).toBe('pending'); view.dispose();
+});
+it('3D window coverage becomes partial on camera change and stays partial after a failed cold query', async () => {
+  const { backend, manifest } = await saved(), native = api(), view = await openParentViewport(backend, parentStateFromManifest(manifest), native);
+  try {
+    view.ensureViewport([120, 120, 180, 180]);
+    await vi.waitFor(() => expect(view.stats.pending).toBe(false));
+    expect(view.projection3d.complete).toBe(true); expect(view.projection3d.buildings).toHaveLength(2);
+    vi.spyOn(backend, 'parentTile').mockRejectedValue(new Error('cold query unavailable'));
+    view.ensureViewport([121, 121, 181, 181]); expect(view.projection3d.complete).toBe(false);
+    await vi.waitFor(() => expect(view.stats.pending).toBe(false));
+    expect(view.projection3d.complete).toBe(false); expect(view.projection3d.reason).toContain('cold query unavailable');
+    expect(native.plan).not.toHaveBeenCalled(); expect(native.realize).not.toHaveBeenCalled(); expect(native.unpack).not.toHaveBeenCalled();
+  } finally { view.dispose(); }
 });
 it('cache MISS explicit, one archive chunk native repair, then HIT; source bits and counts unchanged', async () => {
   const { backend, manifest } = await saved(), before = backend.stages.get(manifest.sceneId)!.chunks[0].json;

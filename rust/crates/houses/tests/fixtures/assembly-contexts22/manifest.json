@@ -1,0 +1,229 @@
+{
+  "schema_version": "assembly-contexts22-1",
+  "selection": "web/out/java100k-compound-path-readonly-audit/cohort-selection.json",
+  "selection_sha256": "d430eb82ce669dbca064f70c3af94ba5d43d129db9ed89ab54c65a2af837cbc1",
+  "scope": "22 fixed historical contexts, independent component attempts; no city replay or cumulative gain",
+  "source": "web/out/native-assembly-cohort-proof-v5/unit/plans__assembly__tests__cohort__native_assembly_fixed_twenty_two_original_java_contexts",
+  "cases": [
+    {
+      "globalIndex": 41,
+      "id": "layout-f9dab5910f08a8a2/block-0f76c862292420bb/parcel-0f76c862292420bb/building",
+      "batch": "0000",
+      "source": "AS-ISL-B06",
+      "purpose": "16 fixed ID quantiles of all eligible baseline records",
+      "file": "case-41-native-input.json",
+      "sha256": "389f8323225c3bc4fd4799b89a21ed417033bb0dc44cf47b5def8e6a43e7dad7",
+      "bytes": 78565
+    },
+    {
+      "globalIndex": 373,
+      "id": "layout-f9dab5910f08a8a2/block-88043305e13818a0/parcel-329b808d7596b2ac/building",
+      "batch": "0005",
+      "source": "AS-ISL-B15",
+      "purpose": "16 fixed ID quantiles of all eligible baseline records",
+      "file": "case-373-native-input.json",
+      "sha256": "7a14ac1e366fa006ab0046bf92947a8c454c6e72f8a38ce68c240380caf2fbf5",
+      "bytes": 32514
+    },
+    {
+      "globalIndex": 912,
+      "id": "layout-f9dab5910f08a8a2/block-0019ea39026abd52/parcel-f84b8a33d803307e/building",
+      "batch": "0014",
+      "source": "AS-ISL-B06",
+      "purpose": "fixed diagnostic witness/control",
+      "file": "case-912-native-input.json",
+      "sha256": "ab46c0cb93d80bcf1f62256d005975745eead103aaba701ad628c6355876f67b",
+      "bytes": 55077
+    },
+    {
+      "globalIndex": 1532,
+      "id": "layout-f9dab5910f08a8a2/block-0015410cd5ddaa87/parcel-d7c50cc6430a9afc/building",
+      "batch": "0023",
+      "source": "AS-ISL-B14",
+      "purpose": "unknown inventory zero-attempt control",
+      "file": "case-1532-native-input.json",
+      "sha256": "5ea4042f4ff12e7197abbb1bc1548dde8c0cef85dd395c3005e312f2828f317e",
+      "bytes": 39927
+    },
+    {
+      "globalIndex": 1719,
+      "id": "layout-f9dab5910f08a8a2/block-bd8d178a901bcdda/parcel-b6872fa26cee2aac/building",
+      "batch": "0026",
+      "source": "AS-ISL-B06",
+      "purpose": "16 fixed ID quantiles of all eligible baseline records",
+      "file": "case-1719-native-input.json",
+      "sha256": "d4841117515bfb998a88fb086339cd266e4e26f302d4c708b1afbcb82f853bea",
+      "bytes": 70232
+    },
+    {
+      "globalIndex": 1985,
+      "id": "layout-f9dab5910f08a8a2/block-025d6f707ce72348/parcel-262fea85040b21bb/building",
+      "batch": "0031",
+      "source": "AS-ISL-B15",
+      "purpose": "fixed diagnostic witness/control",
+      "file": "case-1985-native-input.json",
+      "sha256": "42e322778578e420bb1b68b8dca9dda7d2a19d9ce3228b3cf2c79af3f3386e96",
+      "bytes": 49952
+    },
+    {
+      "globalIndex": 2271,
+      "id": "layout-f9dab5910f08a8a2/block-000557a3d31c2d30/parcel-8b554938f4ff70b3/building",
+      "batch": "0035",
+      "source": "AS-ISL-B15",
+      "purpose": "fixed diagnostic witness/control",
+      "file": "case-2271-native-input.json",
+      "sha256": "241a3553b39c53d8d7aba56b0d287332f6c931e3766aaddb83d80157caee6c3e",
+      "bytes": 33030
+    },
+    {
+      "globalIndex": 2273,
+      "id": "layout-f9dab5910f08a8a2/block-000557a3d31c2d30/parcel-561113bc8d009536/building",
+      "batch": "0035",
+      "source": "AS-ISL-B06",
+      "purpose": "16 fixed ID quantiles of all eligible baseline records",
+      "file": "case-2273-native-input.json",
+      "sha256": "6513fb2b4116c70aeac73017aabd1bed1c5ed8496f7765ac6a4d8edb3c4314bc",
+      "bytes": 52038
+    },
+    {
+      "globalIndex": 2275,
+      "id": "layout-f9dab5910f08a8a2/block-000557a3d31c2d30/parcel-082ee7ab1644ceb7/building",
+      "batch": "0035",
+      "source": "AS-ISL-B14",
+      "purpose": "fixed diagnostic witness/control",
+      "file": "case-2275-native-input.json",
+      "sha256": "abd4ab0e1e9b8e665b2f501f5ac3837a583dad12f7a192fcd530da659c6c93e9",
+      "bytes": 32370
+    },
+    {
+      "globalIndex": 2724,
+      "id": "layout-f9dab5910f08a8a2/block-67434f4c4d4f5b2c/parcel-a9b3bf5c397d0372/building",
+      "batch": "0042",
+      "source": "AS-ISL-B06",
+      "purpose": "16 fixed ID quantiles of all eligible baseline records",
+      "file": "case-2724-native-input.json",
+      "sha256": "281868c63adc7a27a850dc82f7e515d455d22ff80c8faedc6b87addab3703679",
+      "bytes": 53205
+    },
+    {
+      "globalIndex": 3284,
+      "id": "layout-f9dab5910f08a8a2/block-cd290ac2df230349/parcel-f5386c34575cdd98/building",
+      "batch": "0051",
+      "source": "AS-ISL-B15",
+      "purpose": "16 fixed ID quantiles of all eligible baseline records",
+      "file": "case-3284-native-input.json",
+      "sha256": "156a308db6ef62f5486b9eab140183e4529e3068acc8ec03caf5e42173d025cd",
+      "bytes": 35951
+    },
+    {
+      "globalIndex": 3691,
+      "id": "layout-f9dab5910f08a8a2/block-233d1dbe19dc1e17/parcel-fffa75b2a7597d80/building",
+      "batch": "0057",
+      "source": "AS-ISL-B15",
+      "purpose": "16 fixed ID quantiles of all eligible baseline records",
+      "file": "case-3691-native-input.json",
+      "sha256": "ede03fa8d50ffca49047ae95ac21ff2486630ed1bfda85496a419f4d2707de15",
+      "bytes": 35392
+    },
+    {
+      "globalIndex": 4940,
+      "id": "layout-f9dab5910f08a8a2/block-992fd96da0a7663a/parcel-11d091a86666b67f/building",
+      "batch": "0077",
+      "source": "AS-ISL-B06",
+      "purpose": "16 fixed ID quantiles of all eligible baseline records",
+      "file": "case-4940-native-input.json",
+      "sha256": "db54ecb01d8e161644d21cd0dbe34cf451b9b2da59ccd173ca8b9a918d91e23e",
+      "bytes": 54845
+    },
+    {
+      "globalIndex": 5142,
+      "id": "layout-f9dab5910f08a8a2/block-31745d27dc35f39a/parcel-ab938933ab55d65e/building",
+      "batch": "0080",
+      "source": "AS-ISL-B15",
+      "purpose": "16 fixed ID quantiles of all eligible baseline records",
+      "file": "case-5142-native-input.json",
+      "sha256": "2db4bc7f4ebf528b87b72b3124302f3c18eabf8ff248b249ecaf3a46fc9fff4b",
+      "bytes": 32913
+    },
+    {
+      "globalIndex": 5737,
+      "id": "layout-f9dab5910f08a8a2/block-dddce8aeb51d9118/parcel-9711e18a2cfb805e/building",
+      "batch": "0089",
+      "source": "AS-ISL-B14",
+      "purpose": "16 fixed ID quantiles of all eligible baseline records",
+      "file": "case-5737-native-input.json",
+      "sha256": "8b21ff92b3b3ae6d99633b1fd688acdd960969cfc26d171f34cb256390cb157b",
+      "bytes": 34415
+    },
+    {
+      "globalIndex": 5981,
+      "id": "layout-f9dab5910f08a8a2/block-7513157ffa31e6b6/parcel-dd03e786190ca62e/building",
+      "batch": "0093",
+      "source": "AS-ISL-B15",
+      "purpose": "16 fixed ID quantiles of all eligible baseline records",
+      "file": "case-5981-native-input.json",
+      "sha256": "e6bf7aca9327de31d44e8e571f0695595e063729fbce85d489a22d89bd5a3902",
+      "bytes": 38718
+    },
+    {
+      "globalIndex": 6119,
+      "id": "layout-f9dab5910f08a8a2/block-aa3db1962a119b9d/parcel-87ee8b514f7cea81/building",
+      "batch": "0095",
+      "source": "AS-ISL-B15",
+      "purpose": "16 fixed ID quantiles of all eligible baseline records",
+      "file": "case-6119-native-input.json",
+      "sha256": "a9d05417eec88b4af19fde59dde931ac94e5c8c30d4809f4eab1d5a17066edbd",
+      "bytes": 34287
+    },
+    {
+      "globalIndex": 6330,
+      "id": "layout-f9dab5910f08a8a2/block-ffaa643aebc7bc61/parcel-c0763d37e6afb991/building",
+      "batch": "0098",
+      "source": "AS-ISL-B06",
+      "purpose": "16 fixed ID quantiles of all eligible baseline records",
+      "file": "case-6330-native-input.json",
+      "sha256": "75f69e830f98af75718d2afb956093a31f28cc3b408b0eeee03b2ce2028afe90",
+      "bytes": 86517
+    },
+    {
+      "globalIndex": 7340,
+      "id": "layout-f9dab5910f08a8a2/block-0222270845506a5c/parcel-f137c80c5e1b0aaa/building",
+      "batch": "0114",
+      "source": "AS-ISL-B14",
+      "purpose": "fixed diagnostic witness/control",
+      "file": "case-7340-native-input.json",
+      "sha256": "777d1eab33dd73315fa6943b4aea417118c459ed88e36a136aac0a9d0c22f6f0",
+      "bytes": 35219
+    },
+    {
+      "globalIndex": 7423,
+      "id": "layout-f9dab5910f08a8a2/block-553eee9519794f11/parcel-c4efb94e5dd29a02/building",
+      "batch": "0115",
+      "source": "AS-ISL-B14",
+      "purpose": "16 fixed ID quantiles of all eligible baseline records",
+      "file": "case-7423-native-input.json",
+      "sha256": "8c4214ee464c8bad0b6fad1db12d54cdfd6ffce3c4875665caadf6cb1fd817c4",
+      "bytes": 34909
+    },
+    {
+      "globalIndex": 7523,
+      "id": "layout-f9dab5910f08a8a2/block-ee595dd6e865743b/parcel-d2b01de4c47fe5ea/building",
+      "batch": "0117",
+      "source": "AS-ISL-B06",
+      "purpose": "16 fixed ID quantiles of all eligible baseline records",
+      "file": "case-7523-native-input.json",
+      "sha256": "956d115aebe4fbeb31229fbca42d7cae07b1ff9c9f99ba581475fc8abd7574c2",
+      "bytes": 49506
+    },
+    {
+      "globalIndex": 7697,
+      "id": "layout-f9dab5910f08a8a2/block-4306b35496c77138/parcel-a247dee32c8c6413/building",
+      "batch": "0120",
+      "source": "AS-ISL-B06",
+      "purpose": "16 fixed ID quantiles of all eligible baseline records",
+      "file": "case-7697-native-input.json",
+      "sha256": "5e18bf6059ed5a9857862c4cc433357573f6d5a197349de03679be2acf0700fe",
+      "bytes": 60338
+    }
+  ]
+}

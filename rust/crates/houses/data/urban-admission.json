@@ -59424,6 +59424,128 @@
           "native_plan": true
         },
         "constrained_components": false,
+        "footprint_family": "FP-RECT",
+        "household_range": null,
+        "inspired_only": true,
+        "layout": "parallel",
+        "minimum_native": {
+          "access_width_m": 0.85,
+          "basis": "One native layout at frozen range minima, including body levels, courts, circulation, structural features/supports, roof projection and entrance passage; not a universal minimum or an envelope for all seeds and draws; no interiors.",
+          "envelope_m": [
+            18.149999994784594,
+            14.200000001490118
+          ],
+          "refusal": null,
+          "seed": "urban-admission-v1:MED-ANT-H01",
+          "status": "supported"
+        },
+        "morphology": "linear",
+        "nominal_depth_m": [
+          14.0,
+          36.0
+        ],
+        "nominal_width_m": [
+          18.0,
+          30.0
+        ],
+        "pack": "MED-ANT",
+        "party_wall_basis": "Explicit variant parameters.details declaration; does not authorize a supplied shared cadastral boundary.",
+        "party_walls_declared": false,
+        "placement_certified": false,
+        "primary_floors": [
+          1,
+          1
+        ],
+        "provenance": "Catalogue/style-index bundle and shared admission native skeleton; numeric bounds are preselection evidence only. Exact resolved placement remains mandatory.",
+        "recipe_id": "MED-ANT-H01",
+        "requires_access": true,
+        "role": "spatial_component",
+        "roof_system": "RF-GABLE",
+        "source_constraints": {
+          "allowed_footprints": [
+            "FP-RECT"
+          ],
+          "allowed_roofs": [
+            "RF-GABLE"
+          ],
+          "bodies": [
+            3,
+            3
+          ],
+          "cells": [
+            0,
+            0
+          ],
+          "components": [],
+          "courtyard_ratio": [
+            0.35,
+            0.55
+          ],
+          "floors": [
+            1,
+            1
+          ],
+          "nominal_depth_m": [
+            14.0,
+            36.0
+          ],
+          "nominal_width_m": [
+            18.0,
+            30.0
+          ],
+          "overhang_m": [
+            0.15,
+            0.25
+          ],
+          "roof_pitch_deg": [
+            20.0,
+            35.0
+          ],
+          "wall_thickness_m": [
+            0.6,
+            0.8
+          ]
+        },
+        "style_id": "MED-ANT-H01::default",
+        "support_height_m": [
+          0.0,
+          0.0
+        ],
+        "support_kind": "ground",
+        "temporal": {
+          "eras": [
+            "A"
+          ],
+          "from_year": null,
+          "late_only": false,
+          "to_year": null,
+          "tradition_long": false
+        },
+        "terrain": {
+          "exact_checks_required": [
+            "physical terrain samples and coverage",
+            "foundation level range against the request limit",
+            "cadastral/buildable polygons and holes",
+            "roof domain and overhangs",
+            "access and circulation",
+            "neighbours and structural supports",
+            "imposed footprint when supplied"
+          ],
+          "foundation_step_source": "request.terrain.max_foundation_step_m",
+          "max_foundation_step_m": null,
+          "max_level_foundation_slope_deg": 12.0
+        },
+        "tradition_id": "roman_urban",
+        "variant_id": "default"
+      },
+      {
+        "capabilities": {
+          "constrained_composition": false,
+          "imposed_orthogonal_footprint": false,
+          "imposed_polygon": false,
+          "native_plan": true
+        },
+        "constrained_components": false,
         "footprint_family": "FP-OVAL",
         "household_range": null,
         "inspired_only": false,
@@ -62484,6 +62606,45 @@
         ],
         "urban_roles": [
           "civic.kallanka"
+        ]
+      },
+      {
+        "component_kind": "storage_rows",
+        "composition": "hall",
+        "detailed_interior": false,
+        "eras": [
+          "A"
+        ],
+        "floors": [
+          1,
+          1
+        ],
+        "function": "warehouse",
+        "id": "storage-med-ant-h01-v1",
+        "late_only": false,
+        "modes": [
+          "historical_inspired",
+          "fantasy_mix"
+        ],
+        "nominal_depth_m": [
+          14.0,
+          36.0
+        ],
+        "nominal_width_m": [
+          18.0,
+          30.0
+        ],
+        "pack_id": "MED-ANT",
+        "recipe_id": "MED-ANT-H01",
+        "source_confidence": "stylized",
+        "sources": [
+          {
+            "line": 3,
+            "path": "rust/crates/houses/data/roman-horreum-source.md"
+          }
+        ],
+        "urban_roles": [
+          "storage.horreum"
         ]
       }
     ],
@@ -67400,5 +67561,5 @@
     }
   ],
   "schema_version": 1,
-  "source_sha256": "2bfac9ffe776e3284affce17afa1abf67eae9378b822125cd3c4764f44715aaa"
+  "source_sha256": "6847fd24db1a834c9e6c0af38b0a3b46d486a4ab12bded02bc948cc4178a489c"
 }

@@ -9,6 +9,7 @@ import type { ArchitectureVolume, PlacementBatch, PlacedBuilding } from '../../.
 import type { HouseMaterial, MaterialPattern, MaterialSlots, Point, Surface, Vertex3 } from '../../../rust/bridge/housesContract';
 import { isBuildingProjection, surfaceTriangles, type Building3dScene, type Building3dVisual } from './urbanBuildingGeometry';
 import type { NativeBuildingProjection, NativeBuildingProjectionScene } from '../ui/urbanBuildingProjection';
+import type { ParentMember3dVisual, Parent3dScene } from '../ui/urbanParent3d';
 import { roleFamily } from './cityCanvas';
 import type { Enclosure } from '../../../rust/bridge/urban';
 import { loftRidges, pieceVolumes, readMassing, scaledRing, stiltDeck, stiltSupports, volumeRoof, type ResolvedVolume } from './cityMassing';
@@ -465,14 +466,15 @@ export type City3dKind = 'silhouette' | 'compact' | 'detailed';
 export interface City3dDisplayScene extends Building3dScene { buildings: Building3dVisual[]; kinds: Record<City3dKind, number> }
 export const city3dDisplayKind = (building: Building3dVisual): City3dKind => isBuildingProjection(building) ? 'compact' : city3dKind(building);
 /** A shared exterior belongs to this exact indexed accepted-plan projection. */
-export function projectionDetailMatches(base: NativeBuildingProjection, detail: PlacedBuilding): boolean {
+export function projectionDetailMatches(base: NativeBuildingProjection | ParentMember3dVisual, detail: PlacedBuilding): boolean {
+  if (base.projection === 'native-parent-member-3d-1') return false;
   return detail.id === base.id && detail.parcel_id === base.parcel_id && detail.function === base.function
     && detail.recipe_id === base.recipe_id && detail.variant_id === base.variant_id
     && detail.ground_z_m === base.ground_z_m && detail.footprint === base.footprint && detail.roof_footprint === base.roof_footprint;
 }
 /** Cold accepted plans stay typed projections. Geometry/picking display their
  * exact contours and recorded height; no guessed roof/native record is made. */
-export function city3dProjectionScene(scene: NativeBuildingProjectionScene, options: { details?: ReadonlyMap<string, PlacedBuilding> } = {}): City3dDisplayScene {
+export function city3dProjectionScene(scene: NativeBuildingProjectionScene | Parent3dScene, options: { details?: ReadonlyMap<string, PlacedBuilding> } = {}): City3dDisplayScene {
   const kinds: Record<City3dKind, number> = { silhouette: 0, compact: 0, detailed: 0 };
   const buildings = scene.buildings.map(base => {
     const detail = options.details?.get(base.id);

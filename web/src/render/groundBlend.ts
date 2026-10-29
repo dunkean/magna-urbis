@@ -63,7 +63,7 @@ export function softStreet(role: string, rank: number, tone: BlendTone): SoftStr
   return tone === 'sepia' ? { fill: '#a07a4c', alpha: a, edge: '#6b4e2e', edgeAlpha: 0.1 } : { fill: '#a08a62', alpha: a, edge: '#5e4a30', edgeAlpha: 0.12 };
 }
 /** Roles drawn as structures, never washed. */
-export const STRUCTURE_ROLES = new Set(['bridge', 'causeway', 'ford', 'quay', 'stairs', 'pier', 'boardwalk', 'walkway']);
+export const STRUCTURE_ROLES = new Set(['bridge', 'causeway', 'ford', 'quay', 'stairs', 'port-stairs', 'pier', 'boardwalk', 'walkway']);
 
 /** Regional roads, blended: width floors (px) fall smoothly highway → trail, with the same opacity decay. */
 export const BLEND_ROAD_PX = { highway: 2.6, main: 2.1, local: 1.6, track: 1.2, trail: 0.9 } as const;

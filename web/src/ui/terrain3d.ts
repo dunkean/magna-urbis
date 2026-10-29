@@ -35,6 +35,11 @@ export interface Terrain3dGroundSettings {
   lighting: TerrainLighting; displacement: boolean; forestBrushes?: boolean; renderV2?: number; v2Season?: number; waterVisible?: boolean;
   contours?: { step: number; color: string; opacity: number; flat: boolean };
 }
+export interface Terrain3dOptions {
+  /** Compile the small draped-map shader first; procedural ground is compiled
+   * only when setGroundMaterial is actually requested. Existing benches opt in. */
+  fastMapShader?: boolean;
+}
 export const TERRAIN_3D_FOV = Math.PI / 3.7;
 export const TERRAIN_3D_MAX_SCALE = 8;
 export const TERRAIN_GROUND_MAX_SCALE = 128;
@@ -43,6 +48,34 @@ const FOV = TERRAIN_3D_FOV;
 const GRID = 64, TILE_PIXELS = 512, MAX_LEAVES = 64, MAX_CACHE = 192, CACHE_BYTES = 96 * 1024 * 1024;
 const SPLIT_ERROR = 2.4, MERGE_ERROR = 1.7, MORPH_MS = 220, TEXTURE_FADE_MS = 200;
 const clamp = (value: number, low: number, high: number): number => Math.max(low, Math.min(high, value));
+/** Same lighting, texture transitions, fog and tile diagnostics as the map branch
+ * of the full material shader, without compiling unused procedural material code. */
+export const TERRAIN_3D_MAP_FRAGMENT = `#version 300 es
+precision highp float;
+in vec2 texcoord;
+in vec3 normal;
+in vec3 world;
+uniform sampler2D material;
+uniform sampler2D previousMaterial;
+uniform vec4 textureRect;
+uniform vec4 previousRect;
+uniform float textureBlend;
+uniform vec3 eye;
+uniform float fogDistance;
+uniform int showTileBounds;
+out vec4 color;
+void main() {
+  vec3 base=mix(texture(previousMaterial,previousRect.xy+texcoord*previousRect.zw),texture(material,textureRect.xy+texcoord*textureRect.zw),textureBlend).rgb;
+  base*=.89+.11*max(0.,dot(normalize(normal),normalize(vec3(-.4,.8,-.3))));
+  float fog=1.-exp(-pow(length(world-eye)/fogDistance,2.)*.11);
+  base=mix(base,vec3(.77,.85,.88),min(.62,fog));
+  if(showTileBounds==1){
+    vec2 edge=min(texcoord,1.-texcoord)/max(fwidth(texcoord),vec2(1e-6));
+    float line=1.-smoothstep(.45,1.35,min(edge.x,edge.y));
+    base=mix(base,vec3(1.,.55,.12),line*.85);
+  }
+  color=vec4(base,1.);
+}`;
 const vertexShader = `#version 300 es
 precision highp float;
 layout(location=0) in vec3 position;
@@ -313,6 +346,9 @@ interface RenderPiece extends TerrainStitchPiece { patch: Patch; morph: number }
 export class Terrain3d {
   private gl: WebGL2RenderingContext;
   private terrainProgram!: WebGLProgram;
+  private mapProgram?: WebGLProgram;
+  private groundProgram?: WebGLProgram;
+  private uniformLocations = new WeakMap<WebGLProgram, Map<string, WebGLUniformLocation | null>>();
   private skyProgram!: WebGLProgram;
   private buildings!: UrbanBuildingPass;
   private buildingScene?: Building3dScene;
@@ -372,7 +408,7 @@ export class Terrain3d {
   private gesture?: { x: number; y: number; distance: number };
   private lod = { tiles: 0, ready: 0, pending: 0, level: 0, metresPerTexel: 0, metresPerVertex: 0, maxScale: TERRAIN_3D_MAX_SCALE, scale: 0 };
 
-  constructor(private canvas: HTMLCanvasElement, private onChange: () => void, private onRender?: () => void) {
+  constructor(private canvas: HTMLCanvasElement, private onChange: () => void, private onRender?: () => void, private options: Terrain3dOptions = {}) {
     const gl = canvas.getContext('webgl2', { alpha: false, antialias: true, depth: true, stencil: false, powerPreference: 'high-performance' });
     if (!gl) throw new Error('La vue 3D nécessite WebGL2.');
     this.gl = gl; this.initialize(); canvas.style.touchAction = 'none'; this.interactions();
@@ -390,8 +426,11 @@ export class Terrain3d {
 
   private initialize(): void {
     const gl = this.gl;
+    this.uniformLocations = new WeakMap();
     this.clippedIndices.clear();
-    this.terrainProgram = program(gl, vertexShader, fragmentShader); this.skyProgram = program(gl, skyVertex, skyFragment);
+    this.mapProgram = this.groundProgram = undefined;
+    this.selectTerrainProgram(!!this.groundSettings);
+    this.skyProgram = program(gl, skyVertex, skyFragment);
     this.buildings?.dispose(); this.buildings = new UrbanBuildingPass(gl, () => this.request());
     this.buildings.setScene(this.buildingsVisible ? this.buildingScene : undefined, this.buildingAppearance);
     const side = GRID + 1, surfaceVertices = side * side, count = GRID * GRID * 6 + GRID * 4 * 6;
@@ -416,6 +455,25 @@ export class Terrain3d {
     // A restored context comes back empty: re-upload the retained forest rasters.
     this.forest = this.occupation = undefined;
     this.setForest(this.forestField, this.forestOccupation);
+  }
+  private selectTerrainProgram(procedural: boolean): void {
+    if (this.options.fastMapShader && !procedural) {
+      this.mapProgram ??= program(this.gl, vertexShader, TERRAIN_3D_MAP_FRAGMENT);
+      this.terrainProgram = this.mapProgram;
+    } else {
+      this.groundProgram ??= program(this.gl, vertexShader, fragmentShader);
+      this.terrainProgram = this.groundProgram;
+    }
+    this.canvas.dataset.terrainShader = this.terrainProgram === this.mapProgram ? 'map' : 'procedural';
+  }
+  getShaderProfile(): 'map' | 'procedural' { return this.terrainProgram === this.mapProgram ? 'map' : 'procedural'; }
+  /** Uniform locations are constant for one linked program and GL context.
+   * Inactive uniforms (null in the map shader) are cached as well. */
+  private uniform(name: string, shader = this.terrainProgram): WebGLUniformLocation | null {
+    let locations = this.uniformLocations.get(shader);
+    if (!locations) { locations = new Map(); this.uniformLocations.set(shader, locations); }
+    if (!locations.has(name)) locations.set(name, this.gl.getUniformLocation(shader, name));
+    return locations.get(name)!;
   }
   private uploadMacroField(layer?:HeightLayer):WebGLTexture {
     const gl=this.gl,texture=gl.createTexture()!;
@@ -518,6 +576,9 @@ export class Terrain3d {
   }
   setGroundMaterial(settings: Terrain3dGroundSettings | undefined): void {
     const previous = this.groundSettings;
+    // Compile before committing the switch: a failed optional material keeps
+    // the current renderer and retained geometry usable.
+    this.selectTerrainProgram(!!settings);
     this.groundSettings = settings;
     if(settings?.renderV2 && !previous?.renderV2 && !this.textureSource){
       this.gl.deleteTexture(this.material);this.material=this.uploadTexture(new Uint8Array([0,0,0,0]));
@@ -1096,21 +1157,21 @@ export class Terrain3d {
     this.displayedGrids.push({ ...tile, clip, cells: GRID, height: (x, y) => {
       return stitched.vertex(x, y)[0] * c.exaggeration;
     } });
-    gl.uniform3f(gl.getUniformLocation(this.terrainProgram, 'patchOffset'), patch.tile.x - c.x, patch.heightOrigin * c.exaggeration - frame.targetHeight, patch.tile.y - c.y);
-    gl.uniform3f(gl.getUniformLocation(this.terrainProgram,'physicalOrigin'),patch.tile.x,patch.heightOrigin,patch.tile.y);
-    gl.uniform3f(gl.getUniformLocation(this.terrainProgram,'patchRect'),patch.tile.x,patch.tile.y,patch.tile.width);
-    gl.uniform1f(gl.getUniformLocation(this.terrainProgram, 'morph'), incomingMorph);
-    gl.uniform4fv(gl.getUniformLocation(this.terrainProgram, 'textureRect'), this.textureRect(material.to, patch.tile));
-    gl.uniform4fv(gl.getUniformLocation(this.terrainProgram, 'previousRect'), this.textureRect(material.from, patch.tile));
-    gl.uniform1f(gl.getUniformLocation(this.terrainProgram, 'textureBlend'), material.blend);
+    gl.uniform3f(this.uniform('patchOffset'), patch.tile.x - c.x, patch.heightOrigin * c.exaggeration - frame.targetHeight, patch.tile.y - c.y);
+    gl.uniform3f(this.uniform('physicalOrigin'),patch.tile.x,patch.heightOrigin,patch.tile.y);
+    gl.uniform3f(this.uniform('patchRect'),patch.tile.x,patch.tile.y,patch.tile.width);
+    gl.uniform1f(this.uniform('morph'), incomingMorph);
+    gl.uniform4fv(this.uniform('textureRect'), this.textureRect(material.to, patch.tile));
+    gl.uniform4fv(this.uniform('previousRect'), this.textureRect(material.from, patch.tile));
+    gl.uniform1f(this.uniform('textureBlend'), material.blend);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, material.to.texture);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, material.from.texture);
     for(const [ref,prefix,unit] of [[material.to,'',6],[material.from,'previous',7]] as const){
       const mask=this.waterMasks.get(ref.texture),name=prefix?'previousCanopyWater':'canopyWater';
       gl.activeTexture(gl.TEXTURE0+unit);gl.bindTexture(gl.TEXTURE_2D,mask?.texture??this.empty);
-      gl.uniform1i(gl.getUniformLocation(this.terrainProgram,name),unit);
-      gl.uniform1i(gl.getUniformLocation(this.terrainProgram,prefix?'hasPreviousCanopyWater':'hasCanopyWater'),mask?1:0);
-      gl.uniform3f(gl.getUniformLocation(this.terrainProgram,`${name}Rect`),mask?.rect[0]??0,mask?.rect[1]??0,mask?.rect[2]??1);
+      gl.uniform1i(this.uniform(name),unit);
+      gl.uniform1i(this.uniform(prefix?'hasPreviousCanopyWater':'hasCanopyWater'),mask?1:0);
+      gl.uniform3f(this.uniform(`${name}Rect`),mask?.rect[0]??0,mask?.rect[1]??0,mask?.rect[2]??1);
     }
     const side = GRID + 1, count = side * side, correction = new Float32Array((count + 4 * side) * 3);
     correction.set(stitched.correction);
@@ -1233,40 +1294,40 @@ export class Terrain3d {
     if (this.root) this.advanceMorphs(this.root);
     gl.viewport(0, 0, w, h); gl.clearDepth(1); gl.clear(gl.DEPTH_BUFFER_BIT);
     gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE); gl.bindVertexArray(null);
-    gl.useProgram(this.skyProgram); gl.uniform1f(gl.getUniformLocation(this.skyProgram, 'height'), h); gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.useProgram(this.skyProgram); gl.uniform1f(this.uniform('height', this.skyProgram), h); gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.useProgram(this.terrainProgram);
-    gl.uniformMatrix4fv(gl.getUniformLocation(this.terrainProgram, 'matrix'), false, frame.matrix);
-    gl.uniform1f(gl.getUniformLocation(this.terrainProgram, 'exaggeration'), this.camera.exaggeration);
-    gl.uniform3fv(gl.getUniformLocation(this.terrainProgram, 'eye'), frame.eye);
-    gl.uniform1f(gl.getUniformLocation(this.terrainProgram, 'fogDistance'), Math.max(this.camera.distance * 2, 100));
+    gl.uniformMatrix4fv(this.uniform('matrix'), false, frame.matrix);
+    gl.uniform1f(this.uniform('exaggeration'), this.camera.exaggeration);
+    gl.uniform3fv(this.uniform('eye'), frame.eye);
+    gl.uniform1f(this.uniform('fogDistance'), Math.max(this.camera.distance * 2, 100));
     const settings=this.groundSettings;
-    gl.uniform1i(gl.getUniformLocation(this.terrainProgram,'groundEnabled'),settings?1:0);
-    gl.uniform1i(gl.getUniformLocation(this.terrainProgram,'showTileBounds'),this.tileBounds?1:0);
+    gl.uniform1i(this.uniform('groundEnabled'),settings?1:0);
+    gl.uniform1i(this.uniform('showTileBounds'),this.tileBounds?1:0);
     if(settings){
       const lights=terrainLights(settings.lighting);
-      gl.uniform1i(gl.getUniformLocation(this.terrainProgram,'uRenderV2'),settings.renderV2??0);gl.uniform1i(gl.getUniformLocation(this.terrainProgram,'uV2WaterVisible'),settings.waterVisible===false?0:1);gl.uniform4fv(gl.getUniformLocation(this.terrainProgram,'uV2GlacierSources[0]'),renderV2GlacierSources(this.layer,settings.climate));gl.uniform1f(gl.getUniformLocation(this.terrainProgram,'uV2Season'),settings.v2Season??.5);
-      gl.uniform1ui(gl.getUniformLocation(this.terrainProgram,'uMaterialSeed'),settings.seed>>>0);
-      gl.uniform2f(gl.getUniformLocation(this.terrainProgram,'uMaterialClimate'),settings.climate.temperature,settings.climate.precipitation);
-      gl.uniform3f(gl.getUniformLocation(this.terrainProgram,'groundEye'),this.camera.x+frame.eye[0],(frame.targetHeight+frame.eye[1])/this.camera.exaggeration,this.camera.y+frame.eye[2]);
-      gl.uniform3f(gl.getUniformLocation(this.terrainProgram,'groundLight'),lights.primary[0],lights.primary[2],lights.primary[1]);
-      gl.uniform3f(gl.getUniformLocation(this.terrainProgram,'groundLight2'),lights.secondary[0],lights.secondary[2],lights.secondary[1]);
-      gl.uniform1f(gl.getUniformLocation(this.terrainProgram,'groundStrength'),settings.lighting.enabled?settings.lighting.strength:0);
-      gl.uniform3f(gl.getUniformLocation(this.terrainProgram,'macroRect'),this.layer.x,this.layer.y,this.layer.width);
-      gl.uniform1i(gl.getUniformLocation(this.terrainProgram,'macroN'),this.layer.n);
+      gl.uniform1i(this.uniform('uRenderV2'),settings.renderV2??0);gl.uniform1i(this.uniform('uV2WaterVisible'),settings.waterVisible===false?0:1);gl.uniform4fv(this.uniform('uV2GlacierSources[0]'),renderV2GlacierSources(this.layer,settings.climate));gl.uniform1f(this.uniform('uV2Season'),settings.v2Season??.5);
+      gl.uniform1ui(this.uniform('uMaterialSeed'),settings.seed>>>0);
+      gl.uniform2f(this.uniform('uMaterialClimate'),settings.climate.temperature,settings.climate.precipitation);
+      gl.uniform3f(this.uniform('groundEye'),this.camera.x+frame.eye[0],(frame.targetHeight+frame.eye[1])/this.camera.exaggeration,this.camera.y+frame.eye[2]);
+      gl.uniform3f(this.uniform('groundLight'),lights.primary[0],lights.primary[2],lights.primary[1]);
+      gl.uniform3f(this.uniform('groundLight2'),lights.secondary[0],lights.secondary[2],lights.secondary[1]);
+      gl.uniform1f(this.uniform('groundStrength'),settings.lighting.enabled?settings.lighting.strength:0);
+      gl.uniform3f(this.uniform('macroRect'),this.layer.x,this.layer.y,this.layer.width);
+      gl.uniform1i(this.uniform('macroN'),this.layer.n);
       gl.activeTexture(gl.TEXTURE2);gl.bindTexture(gl.TEXTURE_2D,this.macroTexture);
-      gl.uniform1i(gl.getUniformLocation(this.terrainProgram,'macroField'),2);
+      gl.uniform1i(this.uniform('macroField'),2);
       const contours=settings.contours;
-      gl.uniform1i(gl.getUniformLocation(this.terrainProgram,'groundContours'),contours?1:0);
-      gl.uniform1f(gl.getUniformLocation(this.terrainProgram,'groundContourStep'),contours?.step??1);
-      gl.uniform1f(gl.getUniformLocation(this.terrainProgram,'groundContourOpacity'),contours?.opacity??0);
-      gl.uniform1f(gl.getUniformLocation(this.terrainProgram,'groundFlatSlope'),contours?.flat ? .004 : .012);
-      if(contours){const value=contours.color.replace('#','');gl.uniform3f(gl.getUniformLocation(this.terrainProgram,'groundContourColor'),parseInt(value.slice(0,2),16)/255,parseInt(value.slice(2,4),16)/255,parseInt(value.slice(4,6),16)/255);}
+      gl.uniform1i(this.uniform('groundContours'),contours?1:0);
+      gl.uniform1f(this.uniform('groundContourStep'),contours?.step??1);
+      gl.uniform1f(this.uniform('groundContourOpacity'),contours?.opacity??0);
+      gl.uniform1f(this.uniform('groundFlatSlope'),contours?.flat ? .004 : .012);
+      if(contours){const value=contours.color.replace('#','');gl.uniform3f(this.uniform('groundContourColor'),parseInt(value.slice(0,2),16)/255,parseInt(value.slice(2,4),16)/255,parseInt(value.slice(4,6),16)/255);}
     }
     // Textures 3 forest field, 4 occupation, 8 bank envelope.
-    bindForest(gl, name => gl.getUniformLocation(this.terrainProgram, name), this.forest, this.occupation, this.empty, !!settings, 3, 4, 8);
-    bindForestBrushes(gl, name => gl.getUniformLocation(this.terrainProgram, name), !!settings?.forestBrushes, 5);
-    gl.activeTexture(gl.TEXTURE0); gl.uniform1i(gl.getUniformLocation(this.terrainProgram, 'material'), 0);
-    gl.uniform1i(gl.getUniformLocation(this.terrainProgram, 'previousMaterial'), 1);
+    bindForest(gl, name => this.uniform(name), this.forest, this.occupation, this.empty, !!settings, 3, 4, 8);
+    bindForestBrushes(gl, name => this.uniform(name), !!settings?.forestBrushes, 5);
+    gl.activeTexture(gl.TEXTURE0); gl.uniform1i(this.uniform('material'), 0);
+    gl.uniform1i(this.uniform('previousMaterial'), 1);
     const drawn: Patch[] = [];
     this.displayedGrids = [];
     const pieces: RenderPiece[] = [];
@@ -1368,7 +1429,8 @@ export class Terrain3d {
     const gl = this.gl;
     this.buildings.dispose(); this.buildingScene = undefined;
     this.buildingGround = new UrbanBuildingGround(); this.mergedOccupation = this.mergedOccupationSource = undefined; this.mergedOccupationScene = undefined;
-    gl.deleteBuffer(this.indices); gl.deleteBuffer(this.seams); gl.deleteTexture(this.material);gl.deleteTexture(this.macroTexture); gl.deleteTexture(this.empty); gl.deleteProgram(this.terrainProgram); gl.deleteProgram(this.skyProgram);
+    gl.deleteBuffer(this.indices); gl.deleteBuffer(this.seams); gl.deleteTexture(this.material);gl.deleteTexture(this.macroTexture); gl.deleteTexture(this.empty);
+    if (this.mapProgram) gl.deleteProgram(this.mapProgram); if (this.groundProgram) gl.deleteProgram(this.groundProgram); gl.deleteProgram(this.skyProgram);
     for (const geometry of this.clippedIndices.values()) gl.deleteBuffer(geometry.buffer);
     this.clippedIndices.clear();
     deleteForestTextures(gl, this.forest);

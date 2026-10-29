@@ -40,7 +40,29 @@ export function heightFromImage(rgba: Uint8ClampedArray | Uint8Array, w: number,
 }
 
 /** Pixels of an imported heightmap (RGBA, row-major). Serializable (structured clone) so it can cross into the worker. */
-export interface ImportedHeight { w: number; h: number; rgba: Uint8ClampedArray | Uint8Array; name?: string }
+export interface ImportedHeight {
+  w: number; h: number; rgba: Uint8ClampedArray | Uint8Array; name?: string;
+  /** Optional source heights in metres. V2 engine transfers retain FP32 precision; zero is sea level. */
+  elevations?: Float32Array;
+}
+
+/** Resample a metre raster without an intermediate eight-bit image or altered sea datum. */
+export function heightFromElevations(values: Float32Array, w: number, h: number, mapSize: number, n: number): Grid {
+  if (![w, h, n].every(v => Number.isInteger(v) && v > 0 && v <= 4096) || values.length !== w * h
+    || !Number.isFinite(mapSize) || mapSize <= 0 || values.some(v => !Number.isFinite(v))) throw new Error('Raster d’altitude FP32 invalide.');
+  const g = createGrid(n, n, mapSize / n);
+  if (w === n && h === n) { g.data.set(values); return g; }
+  const side = Math.min(w, h), ox = (w - side) / 2, oy = (h - side) / 2;
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const sx = Math.max(0, Math.min(w - 1, ox + (x + 0.5) * side / n - 0.5));
+    const sy = Math.max(0, Math.min(h - 1, oy + (y + 0.5) * side / n - 0.5));
+    const ax = Math.floor(sx), ay = Math.floor(sy), bx = Math.min(w - 1, ax + 1), by = Math.min(h - 1, ay + 1);
+    const tx = sx - ax, ty = sy - ay;
+    g.data[y * n + x] = (values[ay * w + ax] * (1 - tx) + values[ay * w + bx] * tx) * (1 - ty)
+      + (values[by * w + ax] * (1 - tx) + values[by * w + bx] * tx) * ty;
+  }
+  return g;
+}
 
 export interface ImportedPlan {
   downSide: 'N' | 'E' | 'S' | 'W';
@@ -57,12 +79,13 @@ export interface ImportedPlan {
  * Deterministic: no randomness involved.
  */
 export function importedHeightfield(img: ImportedHeight, mapSize: number, n: number, heightScale = 120, seaLevel = 0): { height: Grid; plan: ImportedPlan } {
-  const g = heightFromImage(img.rgba, img.w, img.h, { mapSize, gridSize: n, minHeight: 0, maxHeight: heightScale });
+  const g = img.elevations ? heightFromElevations(img.elevations, img.w, img.h, mapSize, n)
+    : heightFromImage(img.rgba, img.w, img.h, { mapSize, gridSize: n, minHeight: 0, maxHeight: heightScale });
   const N = n * n;
   // a coarse source is upsampled with nearest neighbour above: soften the steps
   const side = Math.min(img.w, img.h);
-  const H = side < n ? blurGrid(g, Math.max(1, Math.round(n / side)), 2).data : g.data;
-  for (let i = 0; i < N; i++) {
+  const H = !img.elevations && side < n ? blurGrid(g, Math.max(1, Math.round(n / side)), 2).data : g.data;
+  for (let i = 0; !img.elevations && i < N; i++) {
     const raw = H[i];
     g.data[i] = raw < seaLevel ? raw - seaLevel - 0.05 : Math.max(0.3, raw - seaLevel);
   }

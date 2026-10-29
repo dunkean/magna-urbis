@@ -14,13 +14,14 @@ import type { Scene } from '../render/scene';
 import type { World, LandKind } from '../gen/types';
 import { fantasyLanduseSample } from './fantasyLanduse';
 import { biomePalette } from '../render/biomes';
+import type { RuralRenderLayer } from '../render/ruralDetails';
 import { STYLE_LIST, isMapStyle, type MapStyle } from '../render/styles';
 import { decodeBrushes, type BrushImages } from '../render/brushes';
 import { BRUSH_SOURCES } from '../render/assets/brushAssets';
 import { generateUrbanLanduse, urbanLanduseRenderWorld, type UrbanLanduseInput, type UrbanLanduseResponse, type UrbanLanduseScene } from './urbanLanduseData';
 
 type Context = Omit<UrbanLanduseInput, 'biome'>;
-interface Settings { seed: string; biome: BiomeName; style: MapStyle; vegetation: VegetationStyle; painted: boolean; opacity: number; visible: boolean; enabled: boolean; hiddenKinds: LandKind[]; showFarms: boolean }
+interface Settings { seed: string; biome: BiomeName; style: MapStyle; vegetation: VegetationStyle; painted: boolean; opacity: number; visible: boolean; enabled: boolean; hiddenKinds: LandKind[]; showFarms: boolean; visiblePaddocks?: boolean; concreteFieldBoundaries?: boolean }
 const biomeLabels = ['Campagne tempérée', 'Forêt', 'Désert et oasis', 'Steppe', 'Forêt tropicale', 'Toundra', 'Outreterre', 'Cavernes'];
 const landKinds: [LandKind, string][] = [['forest', 'Forêts'], ['orchard', 'Vergers'], ['field', 'Champs et sillons'], ['garden', 'Jardins'], ['meadow', 'Prairies'], ['pasture', 'Pâturages'], ['marsh', 'Marais'], ['commons', 'Terrains communaux']];
 
@@ -47,6 +48,7 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
       if (typeof saved.enabled === 'boolean') settings.enabled = saved.enabled;
       if (Array.isArray(saved.hiddenKinds)) settings.hiddenKinds = landKinds.map(([kind]) => kind).filter(kind => saved.hiddenKinds.includes(kind));
       if (typeof saved.showFarms === 'boolean') settings.showFarms = saved.showFarms;
+      for (const key of ['visiblePaddocks', 'concreteFieldBoundaries'] as const) if (saved[key] === true) settings[key] = true;
       if (Number.isFinite(saved.opacity)) settings.opacity = Math.max(0, Math.min(1, saved.opacity));
     }
   } catch { /* Broken optional settings retain the defaults. */ }
@@ -78,6 +80,12 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
   bindGear(panel);
   localizeCityInspector(panel);
   options.before.parentElement!.insertBefore(panel, options.before);
+  let reddit = document.querySelector<HTMLElement>('[data-reddit-rural]');
+  if (!reddit) { reddit = document.createElement('details'); reddit.className = 'advanced'; reddit.innerHTML = '<summary>Options Reddit (27/10)</summary>'; panel.querySelector('.map-detail')!.append(reddit); }
+  reddit.insertAdjacentHTML('beforeend', [
+    ['visiblePaddocks', 'Enclos, pâtures et étables visibles', 'Dessine les clôtures à portail, le bétail et les travées des étables des fermes présentes.'],
+    ['concreteFieldBoundaries', 'Limites agricoles matérialisées', 'Porte les limites des champs par des haies ou fossés et souligne les chemins agricoles existants.'],
+  ].map(([key, label, title]) => `<label title="${title}"><input data-rural-option="${key}" type="checkbox">${label}</label>`).join(''));
   const q = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
   const seed = q<HTMLInputElement>('landuseSeed'), biome = q<HTMLSelectElement>('landuseBiome');
   const style = q<HTMLSelectElement>('landuseStyle'), painted = q<HTMLInputElement>('landusePainted');
@@ -133,8 +141,8 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
   refreshLocale();
   function visibility(): void {
     // Terrain redraws replace the SVG children. Restore this retained overlay
-    // above the terrain painting and below water, streets and city markers.
-    const anchor = options.map.querySelector('#hydrologyOverlay, #urbanOverlay, #roadOverlay, #settlementOverlay');
+    // above the terrain painting and below contours, water, streets and city markers.
+    const anchor = options.map.querySelector('#cityContours, #hydrologyOverlay, #urbanOverlay, #roadOverlay, #settlementOverlay');
     if (landuseLayer.parentNode !== options.map || landuseLayer.nextSibling !== anchor) options.map.insertBefore(landuseLayer, anchor);
     const painting = options.map.querySelector('#fantasyPainting');
     // The painting is lazily appended by the terrain renderer.
@@ -155,6 +163,8 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     renderWorld ??= urbanLanduseRenderWorld({ ...scene, landuse: scene.landuse && { ...scene.landuse,
       areas: scene.landuse.areas.filter(a => !settings.hiddenKinds.includes(a.kind) && !(withoutForest && a.kind === 'forest')),
       farmsteads: settings.showFarms ? scene.landuse.farmsteads : [] } }, context.raster);
+    if (renderWorld.landuse && (settings.visiblePaddocks || settings.concreteFieldBoundaries)) (renderWorld.landuse as RuralRenderLayer).ruralDetails = {
+      visiblePaddocks: settings.visiblePaddocks, concreteFieldBoundaries: settings.concreteFieldBoundaries };
     const pal = { ...biomePalette(v1Style ?? settings.style, scene.options.biome), frameKind: 'none' as const };
     const background = options.getBackground();
     rendererDpr = window.devicePixelRatio || 1;
@@ -208,7 +218,9 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     if (!active() || !context || waiting) return;
     scene = undefined;
     notify(); draw();
-    const request = { id, input: { ...context, seed: settings.seed || context.seed, biome: settings.biome } };
+    const streetAlignedHomes = context.ruralOptions?.streetAlignedHomes, denserSmallholdings = context.ruralOptions?.denserSmallholdings;
+    const request = { id, input: { ...context, seed: settings.seed || context.seed, biome: settings.biome,
+      ...((streetAlignedHomes || denserSmallholdings) ? { ruralOptions: { streetAlignedHomes, denserSmallholdings } } : {}) } };
     requested = !!request.input.city;
     state(urbanText(['Génération des champs et de la végétation…','Generating fields and vegetation…','正在生成田地和植被…','Generando campos y vegetación…','Gerando campos e vegetação…']), true);
     const runFallback = (): void => {
@@ -264,6 +276,15 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
   visible.onchange = () => setVisible(visible.checked);
   panelVisible.onchange = () => setVisible(panelVisible.checked);
   farms.onchange = () => { settings.showFarms = farms.checked; renderWorld = undefined; renderScene = undefined; draw(); options.onChange(); };
+  for (const box of Array.from(reddit.querySelectorAll<HTMLInputElement>('[data-rural-option]'))) {
+    const key = box.dataset.ruralOption as 'visiblePaddocks' | 'concreteFieldBoundaries';
+    box.checked = !!settings[key];
+    box.onchange = () => {
+      if (box.checked) settings[key] = true; else delete settings[key];
+      renderWorld = undefined; renderScene = undefined; draw();
+      options.onChange();
+    };
+  }
   options.map.addEventListener('urban:v1-style', event => {
     const detail = (event as CustomEvent<{ active: boolean; style: V1LandscapeStyle }>).detail;
     v1Style = detail.active ? detail.style : undefined;
@@ -282,7 +303,7 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     refreshForest(): void { if (withoutForest !== (!v1Style && !!options.forestMaterial?.())) draw(); },
     set(next?: Context, pending = false): void {
       context = next; waiting = pending;
-      const key = next ? JSON.stringify({ seed: next.seed, city: next.city, neighbours: next.neighbours, relief: next.relief,
+      const key = next ? JSON.stringify({ seed: next.seed, city: next.city, neighbours: next.neighbours, relief: next.relief, ruralOptions: next.ruralOptions,
         forest: next.forest?.key ?? (next.forest && { seed: next.forest.input?.seed,
           climate: next.forest.input?.climate, settings: next.forest.settings }) }) : '';
       if (next?.raster === previous?.raster && next?.layouts === previous?.layouts && next?.roads === previous?.roads && key === previousKey && pending === previousWaiting) return;

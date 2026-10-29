@@ -1,7 +1,7 @@
 import { parseTerrainSketch, type TerrainSketch } from '../../../rust/bridge/terrainSketch';
 import { parseTerrainZones, TERRAIN_ZONE_KINDS, type TerrainZones } from '../../../rust/bridge/terrainZones';
 import { heightmapPng, readHeightmap } from './terrainHeightmap';
-import { urbanText } from './urbanPanelLocale';
+import { urbanText as benchText } from './urbanPanelLocale';
 import { localizeTerrainSketch, terrainZoneName } from './terrainSketchLocale';
 
 interface MapEditing {
@@ -10,12 +10,18 @@ interface MapEditing {
   width: () => number; setWidth: (width: number) => void;
   onEnable: () => void; apply: () => void;
 }
+interface EditorLocale {
+  text: (words: readonly [string, string, string, string, string]) => string;
+  subscribe?: (changed: () => void) => () => void;
+  source?: () => string;
+}
 const names = ['Mer', 'Plaine', 'Collines', 'Montagnes', 'Hautes montagnes'];
 const colours = [[38, 123, 193], [124, 190, 111], [196, 171, 92], [161, 109, 73], [211, 211, 225]];
 
 export function createTerrainSketchEditor(host: HTMLElement, initial: TerrainSketch | undefined,
   surface: () => { height: Float32Array; resolution: number; width?: number } | undefined, changed: () => void,
-  initialError?: string, onStrokeStart?: () => void, map?: MapEditing, initialZones?: TerrainZones) {
+  initialError?: string, onStrokeStart?: () => void, map?: MapEditing, initialZones?: TerrainZones, locale?: EditorLocale) {
+  const urbanText = locale?.text ?? benchText;
   host.innerHTML = `<details class="sketch-editor" open><summary>Zones de génération</summary>
     <div class="sketch-tools"><label>Entrée <select data-id="input"><option value="generated">Relief automatique</option><option value="zones">Zones peintes → génération</option><option value="surface">Heightmap importée → conserver</option><option value="erosion">Heightmap importée → éroder</option>${initial && !initial.processing ? '<option value="sketch">Ancienne esquisse d’altitude</option>' : ''}</select></label>
     <p data-id="flow" class="terrain-flow"></p>
@@ -88,9 +94,9 @@ export function createTerrainSketchEditor(host: HTMLElement, initial: TerrainSke
     const pending = mode.value === 'zones' ? !cachedZones || cachedZones !== appliedZones : mode.value !== 'generated' && (!cachedHeightmap || cachedHeightmap !== appliedHeightmap);
     state.dataset.pending = String(pending);
     state.textContent = mode.value === 'zones'
-      ? `${coverage.map((w, i) => w > 0 ? `${terrainZoneName(i)} ${Math.round(w/(n*n*255)*100)} %` : '').filter(Boolean).join(' · ') || urbanText(['Aucune zone : relief automatique', 'No zones: automatic terrain', '没有区域：自动地形', 'Sin zonas: relieve automático', 'Sem zonas: relevo automático'])} · ${pending ? urbanText(['à générer','needs generation','待生成','pendiente de generar','a gerar']) : urbanText(['appliquées','applied','已应用','aplicadas','aplicadas'])}`
+      ? `${coverage.map((w, i) => w > 0 ? `${terrainZoneName(i, urbanText)} ${Math.round(w/(n*n*255)*100)} %` : '').filter(Boolean).join(' · ') || urbanText(['Aucune zone : relief automatique', 'No zones: automatic terrain', '没有区域：自动地形', 'Sin zonas: relieve automático', 'Sem zonas: relevo automático'])} · ${pending ? urbanText(['à générer','needs generation','待生成','pendiente de generar','a gerar']) : urbanText(['appliquées','applied','已应用','aplicadas','aplicadas'])}`
       : mode.value === 'generated' ? urbanText(['Relief automatique, sans masque manuel.', 'Automatic terrain, without a manual mask.', '自动地形，无手动遮罩。', 'Relieve automático, sin máscara manual.', 'Relevo automático, sem máscara manual.']) : `${heightmap?.resolution ?? '—'}² · ${pending ? urbanText(['à appliquer','needs applying','待应用','pendiente de aplicar','a aplicar']) : urbanText(['appliquée','applied','已应用','aplicada','aplicada'])}`;
-    const source = (document.getElementById('terrainSource') as HTMLSelectElement | null)?.value;
+    const source = locale?.source?.() ?? (document.getElementById('terrainSource') as HTMLSelectElement | null)?.value;
     get('flow').textContent = !available ? urbanText(['Les cavernes ne sont pas un relief de surface.','Caves are not surface terrain.','洞穴不是地表地形。','Las cavernas no son relieve de superficie.','Cavernas não são relevo de superfície.']) : mode.value === 'zones'
       ? source?.startsWith('neural') ? urbanText(['Zones → conditionnement régional + relief local → réseaux coarse / base / decoder. Dessinez de grandes régions : le réseau lit environ 5 cellules sur les 40 km.','Zones → regional conditioning + local terrain → coarse / base / decoder networks. Paint large regions: the network reads about five cells across 40 km.','区域 → 区域条件 + 局部地形 → coarse / base / decoder 网络。请绘制较大区域：网络在 40 公里范围读取约 5 个单元。','Zonas → condicionamiento regional + relieve local → redes coarse / base / decoder. Pinta regiones grandes: la red lee unas cinco celdas en 40 km.','Zonas → condicionamento regional + relevo local → redes coarse / base / decoder. Pinte regiões grandes: a rede lê cerca de cinco células em 40 km.']) : urbanText(['Zones → paramètres locaux des bruits, soulèvement et crêtes → érosion → côtes → eau. Les régions non peintes gardent le relief automatique.','Zones → local noise, uplift and ridge settings → erosion → coasts → water. Unpainted regions retain automatic terrain.','区域 → 局部噪声、隆升和山脊参数 → 侵蚀 → 海岸 → 水域。未绘制区域保留自动地形。','Zonas → parámetros locales de ruido, levantamiento y crestas → erosión → costas → agua. Las regiones sin pintar conservan el relieve automático.','Zonas → parâmetros locais de ruído, soerguimento e cristas → erosão → costas → água. As regiões não pintadas mantêm o relevo automático.'])
       : mode.value === 'surface' ? urbanText(['Heightmap importée → conserver ses altitudes → eau. Pour créer des reliefs par zones, choisissez « Zones peintes ».','Imported heightmap → preserve elevations → water. To create terrain by zone, choose “Painted zones”.','导入高程图 → 保留高程 → 水域。要按区域创建地形，请选择“绘制区域”。','Mapa de altura importado → conservar elevaciones → agua. Para crear relieve por zonas, elige «Zonas pintadas».','Mapa de altura importado → preservar altitudes → água. Para criar relevo por zona, escolha “Zonas pintadas”.'])
@@ -175,11 +181,13 @@ export function createTerrainSketchEditor(host: HTMLElement, initial: TerrainSke
   const exportHeightmap=(png:boolean):void=>{try{const fromDisplay=get<HTMLSelectElement>('exportSource').value==='displayed';const s=fromDisplay?displayed():heightmap;if(!s)throw Error(urbanText(['Aucune heightmap importée.','No heightmap imported.','尚未导入高程图。','No se ha importado ningún mapa de altura.','Nenhum mapa de altura importado.']));const width=fromDisplay?surface()?.width??map?.width():map?.width();if(png)download(new Uint8Array(heightmapPng(s,width??40000)).buffer,'image/png','terrain-heightmap.png');else download(JSON.stringify({...s,width,kind:s.processing?'heightmap':'sketch',units:'m',seaLevel:0}),'application/json','terrain-heightmap.json');}catch(error){state.textContent=String(error);}};
   get('export').onclick=()=>exportHeightmap(false);get('png').onclick=()=>exportHeightmap(true);get('exportSource').onchange=draw;
   const setAvailable=(value:boolean):void=>{if(value===available)return;available=value;if(!value)setEditing(false);for(const c of Array.from(host.querySelectorAll<HTMLInputElement|HTMLButtonElement|HTMLSelectElement>('[data-id]')))if(c.matches('button,input,select'))c.disabled=!value;draw();};
-  const applyLocale = (): void => { localizeTerrainSketch(host); canvas.setAttribute('aria-label', urbanText(['Dessiner les masques de génération du relief','Paint terrain generation masks','绘制地形生成遮罩','Pintar máscaras de generación del relieve','Pintar máscaras de geração do relevo'])); get('edit').textContent = editing ? urbanText(['Quitter les zones','Exit zone editing','退出区域编辑','Salir de la edición de zonas','Sair da edição de zonas']) : urbanText(['Dessiner les zones','Paint zones','绘制区域','Pintar zonas','Pintar zonas']); draw(); };
+  const applyLocale = (): void => { localizeTerrainSketch(host, urbanText); canvas.setAttribute('aria-label', urbanText(['Dessiner les masques de génération du relief','Paint terrain generation masks','绘制地形生成遮罩','Pintar máscaras de generación del relieve','Pintar máscaras de geração do relevo'])); get('edit').textContent = editing ? urbanText(['Quitter les zones','Exit zone editing','退出区域编辑','Salir de la edición de zonas','Sair da edição de zonas']) : urbanText(['Dessiner les zones','Paint zones','绘制区域','Pintar zonas','Pintar zonas']); draw(); };
   const onLocaleChange = (): void => { if (!host.isConnected) { window.removeEventListener('magna-locale-change', onLocaleChange); return; } applyLocale(); };
   window.addEventListener('magna-locale-change', onLocaleChange);
+  const unsubscribeLocale = locale?.subscribe?.(applyLocale);
   applyLocale();if(initialError)state.textContent=initialError;
   return {snapshot,zones,setEditing,updateView,setAvailable,
+    dispose:()=>{setEditing(false);window.removeEventListener('magna-locale-change',onLocaleChange);unsubscribeLocale?.();host.removeEventListener('keydown',keyboard);canvas.removeEventListener('keydown',keyboard);canvas.remove();brushCursor.remove();},
     captureContext:()=>({mask,heightmap,mode:mode.value,editing}),
     restoreContext:(saved:{mask:TerrainZones;heightmap?:TerrainSketch;mode:string;editing:boolean})=>{
       mask=parseTerrainZones(saved.mask);heightmap=saved.heightmap?parseTerrainSketch(saved.heightmap):undefined;

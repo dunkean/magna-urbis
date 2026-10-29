@@ -21,6 +21,7 @@ const post = (r: RResponse, transfer: Transferable[] = []): void => ctx.postMess
 
 let brushImages: BrushImages | null = null;
 let rendererBrushes: BrushImages | null = null;
+let rendererVegetation: DisplayOpts['vegetation'];
 let brushLoad = 0;
 let brushVersion = '';
 const closeBrushes = (images: BrushImages | null): void => { for (const key of ['vegetation', 'terrain'] as const) if (images && 'close' in images[key]) (images[key] as ImageBitmap).close(); };
@@ -66,11 +67,11 @@ function rebuild(): number {
   }
   // `dpr` stays a live getter: the page's devicePixelRatio can change between frames
   const activeBrushes = display.painted ? brushImages : null;
-  if (rendererBrushes !== activeBrushes || !renderer?.update?.(w, sceneCache.scene, display.style)) {
-    const next = createCanvasRenderer(canvas as unknown as CanvasLike, w, display.style, { scene: sceneCache.scene, brushes: activeBrushes ?? undefined, get dpr(): number { return curDpr; } });
-    renderer?.dispose(); renderer = next; rendererBrushes = activeBrushes;
+  if (rendererBrushes !== activeBrushes || rendererVegetation!==display.vegetation || !renderer?.update?.(w, sceneCache.scene, display.style)) {
+    const next = createCanvasRenderer(canvas as unknown as CanvasLike, w, display.style, { scene: sceneCache.scene, brushes: activeBrushes ?? undefined,vegetation:display.vegetation, get dpr(): number { return curDpr; } });
+    renderer?.dispose(); renderer = next; rendererBrushes = activeBrushes;rendererVegetation=display.vegetation;
   }
-  renderer.setOverlays({ cartouche: final });
+  renderer.setOverlays({ cartouche: display.cartouche ?? final,labels:display.labels??world.options.labels??true,legend:display.legend??world.options.legend??false });
   miniDirty = true; ver++;
   return performance.now() - t0;
 }

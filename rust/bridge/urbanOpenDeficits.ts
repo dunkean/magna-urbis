@@ -5,10 +5,11 @@ import type { Partition, UrbanAllocation, UrbanDemand } from './urban';
 import type { ArchitecturalDeficit, PlacementBatch, PlacementRequest } from './urbanArchitecture';
 const error = (message: string): never => { throw new Error('Déficit architectural : ' + message); };
 const buildingFunctions = new Set(['domestic', 'mixed', 'workshop', 'warehouse', 'collective']);
+type DeficitSource = Pick<PlacementRequest, 'id' | 'parcel_id' | 'function' | 'programme'>;
 /** One index per actual run, not once per page. Owns no geometry copies and
  * is never cached globally or shared with a replacement programme revision. */
 export function prepareUrbanOpenDeficits(partitions: readonly Partition[]):
-  (scene: PlacementBatch, requests: readonly PlacementRequest[]) => PlacementBatch {
+  (scene: PlacementBatch, requests: readonly DeficitSource[]) => PlacementBatch {
   const applied = new Map<string, { allocation: UrbanAllocation; demand?: UrbanDemand }>();
   for (const partition of partitions) if (partition.programme) {
     const parcels = new Set(partition.parcels.map(parcel => parcel.id));
@@ -22,7 +23,7 @@ export function prepareUrbanOpenDeficits(partitions: readonly Partition[]):
   return (scene, requests) => {
     if (!scene.open_spaces.length) return scene;
     // Only this page's actual requests are indexed for a bounded streamed join.
-    const sources = new Map<string, PlacementRequest>();
+    const sources = new Map<string, DeficitSource>();
     for (const request of requests) {
       if (!request || typeof request.parcel_id !== 'string' || sources.has(request.parcel_id)) error('requête source absente ou dupliquée.');
       sources.set(request.parcel_id, request);
@@ -66,6 +67,6 @@ export function prepareUrbanOpenDeficits(partitions: readonly Partition[]):
 /** Compatibility convenience for an already bounded one-shot caller. Real
  * worker/fallback streams retain prepareUrbanOpenDeficits once per run. */
 export function carryUrbanOpenDeficits(partitions: readonly Partition[], scene: PlacementBatch,
-  requests: readonly PlacementRequest[]): PlacementBatch {
+  requests: readonly DeficitSource[]): PlacementBatch {
   return scene.open_spaces.length ? prepareUrbanOpenDeficits(partitions)(scene, requests) : scene;
 }

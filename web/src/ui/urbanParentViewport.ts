@@ -14,6 +14,7 @@ import type { ParentChunkBackend } from './urbanParentChunkStore';
 import { copyParentBuildingState, type UrbanParentBuildingState } from './urbanParentState';
 import { currentParentDetailEvidence } from './urbanParentDrawEvidence';
 import { repairParentVisualChunk } from './urbanParentVisualRepair';
+import { parent3dWindow } from './urbanParent3d';
 export async function openParentViewport(backend: ParentChunkBackend, input: UrbanParentBuildingState, api: NativeParentApi,
   options: { signal?: AbortSignal; changed?(): void; yieldControl?(): Promise<void> } = {}) {
   const state = copyParentBuildingState(input), life = new AbortController(); let disposed = false;
@@ -36,6 +37,7 @@ export async function openParentViewport(backend: ParentChunkBackend, input: Urb
   let image: ImageBitmap | undefined, overview: ParentOverview | undefined, overviewEpoch = 0, overviewKey = '', overviewStatus = 'pending';
   let overviewAbort: AbortController | undefined, error = '', pending = false, boxKey = '', queryEpoch = 0, repairRunning = false;
   let displaySnapshot: ParentWindowSnapshot | undefined;
+  let projectionSnapshot: ParentWindowSnapshot | undefined, projectionStatus = '', projection3d = parent3dWindow();
   let currentMembers: ParentMemberVisual[] = [];
   let selected: ParentMapSelection | undefined, latestViewport: ParentBounds | undefined, worldToCanvas: number[] | undefined;
   const notify = () => { if (!disposed) options.changed?.(); };
@@ -125,6 +127,15 @@ export async function openParentViewport(backend: ParentChunkBackend, input: Urb
   }
   return { state, manifest: m, renderer, details,
     ensureViewport, draw,
+    get projection3d() {
+      const status = pending ? 'pending' : error || (!displaySnapshot ? 'pending' : JSON.stringify(displaySnapshot.viewport) !== boxKey ? 'stale-window' : '');
+      if (projectionSnapshot !== displaySnapshot || projectionStatus !== status) {
+        projectionSnapshot = displaySnapshot; projectionStatus = status; projection3d = parent3dWindow(displaySnapshot);
+        if (status) projection3d = { ...projection3d, complete: false, reason: status };
+      }
+      return projection3d;
+    },
+    drawContexts(ctx: CanvasRenderingContext2D) { if (displaySnapshot) paintParentContexts(ctx, displaySnapshot.contexts, displaySnapshot.materials); },
     select(value?: ParentMapSelection) { selected = value; notify(); },
     pick(point: Point): ParentMapPick { return pickParentSnapshot(displaySnapshot, point); },
     async pickAt(point: Point) { const found = await source.pickAt(point);

@@ -19,6 +19,32 @@ fn fixture() -> (Vec<Partition>, Vec<Value>, BuiltScene) {
 fn snapshot<T: Serialize>(v: &T) -> Vec<u8> { serde_json::to_vec(v).unwrap() }
 
 #[test]
+fn open_deficit_dwelling_subrole_keeps_its_parent_need_without_functional_role_substitution() {
+    let (partitions,_,_)=fixture();
+    let programme=partitions[0].programme.as_ref().unwrap();
+    let allocation=programme.allocations.iter().find(|a|a.function=="domestic"
+        && a.role.starts_with("dwelling.")).unwrap();
+    let demand=programme.demands.iter().find(|d|d.id==allocation.demand_id).unwrap();
+    assert_eq!(demand.role,"dwelling");
+    let parcel=partitions[0].parcels.iter().find(|p|p.id==allocation.parcel_id).unwrap();
+    let id=format!("{}/building",parcel.id);
+    let scene=BuiltScene{buildings:vec![],refusals:vec![],open_spaces:vec![BuiltOpenSpace{
+        id:Some(id.clone()),parcel_id:parcel.id.clone(),surface:vec![parcel.shape.clone()],deficit:None}]};
+    let requests=vec![json!({"id":id,"parcel_id":parcel.id,"function":"open_space",
+        "programme":{"role":allocation.role,"deficit":{"cause":"forme",
+            "households":allocation.households,"message":"Native geometry refused"}}})];
+    let carried=carry_open_deficits(&partitions,&scene,&requests).unwrap();
+    let result=reconcile_built(&partitions,&carried).unwrap();
+    let kept=result[0].programme.as_ref().unwrap().demands.iter().find(|d|d.id==demand.id).unwrap();
+    assert_eq!(kept.requested,demand.requested);
+    assert_eq!(kept.built_capacity,0.);assert_eq!(kept.open_capacity,0.);
+    assert_eq!(kept.deficit,demand.requested);
+    let mut wrong=partitions.clone();
+    wrong[0].programme.as_mut().unwrap().demands.iter_mut().find(|d|d.id==demand.id).unwrap().role="worship.temple".into();
+    assert!(carry_open_deficits(&wrong,&scene,&requests).is_err());
+}
+
+#[test]
 fn open_deficit_real_roman04_partial_chain_keeps_warehouse_and_collective_demand_with_zero_credit() {
     let (partitions,requests,scene) = fixture();
     assert!(reconcile_built(&partitions,&scene).is_err(),"legacy non-attested import remains rejected");

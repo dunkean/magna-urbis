@@ -434,18 +434,19 @@ fn join_crossing_approaches(
 /// way, from the fence nearest the regional network to the edge of its heart
 /// (half its radius from the centre), where the camp's paths take over; when
 /// no guide reaches the fence, its longest guide whole.
+/// Returns whether that generated entrance was retained.
 fn camp_entrance(
     streets: &mut Vec<Street>,
     envelope: &Shape,
     c: Point,
     radius: f64,
     roads: &[Street],
-) {
+) -> bool {
     let regional =
-        |s: &Street| s.rank == 0 || matches!(s.role.as_str(), "bridge" | "ford" | "causeway");
+        |s: &Street| s.rank == 0 || matches!(s.role.as_str(), "regional" | "bridge" | "ford" | "causeway" | "approach" | "outbound");
     if streets.iter().any(regional) {
         streets.retain(regional);
-        return;
+        return false;
     }
     let network: Vec<Street> = roads.iter().filter(|s| regional(s)).cloned().collect();
     let on_fence = |p: Point| {
@@ -516,6 +517,83 @@ fn camp_entrance(
         });
     streets.clear();
     streets.extend(entrance);
+    !streets.is_empty()
+}
+
+/// End each dry approach in the entrance belt. Both ends of a through road
+/// survive; crossings and wholly internal streets keep their physical access.
+/// Camp paths take over inside, rather than a cart road bisecting the centre.
+fn camp_approaches(streets: &mut Vec<Street>, envelope: &Shape, width: f64, kerb: bool) {
+    // Retain a usable kerb beside the road's half-width, not just its end cap.
+    let width=width+if kerb {0.5*streets.iter().flat_map(|s|&s.widths).copied().fold(0_f64,f64::max)}else{0.0};
+    let mut ring = envelope.outer.clone();
+    if let Some(&p) = ring.first() { ring.push(p); }
+    let belt: Vec<_> = g::ribbon(&ring, &[2.0 * width]).iter()
+        .flat_map(|b| g::intersection(envelope, b)).collect();
+    if belt.is_empty() { return; }
+    *streets = streets.iter().flat_map(|s| {
+        if matches!(s.role.as_str(), "bridge" | "ford" | "causeway") { return vec![s.clone()]; }
+        let parts: Vec<_> = belt.iter().flat_map(|b| clip(s, b)).collect();
+        if parts.is_empty() { vec![s.clone()] } else { parts }
+    }).collect();
+}
+
+#[cfg(test)]
+mod camp_approach_tests {
+    use super::*;
+    #[test]
+    fn both_ends_of_a_through_road_keep_access_at_the_camp_entrance() {
+        let envelope = g::rectangle(0., 0., 200., 200.);
+        let road = Street { path: vec![Point{x:0.,y:100.},Point{x:200.,y:100.}], widths:vec![6.,8.],rank:0,role:"regional".into() };
+        let mut streets = vec![road.clone()];
+        camp_approaches(&mut streets, &envelope, 3., true);
+        assert_eq!(streets.len(),2);
+        assert_eq!(streets[0].path[0], road.path[0]);
+        assert_eq!(streets[1].path.last(), road.path.last());
+        assert!(streets.iter().all(|s|s.path.windows(2).all(|w|g::distance(Point{x:100.,y:100.},w[0],w[1]).0>90.)));
+        assert_eq!(streets[0].widths[0],6.);
+        assert_eq!(*streets[1].widths.last().unwrap(),8.);
+    }
+    #[test]
+    fn an_existing_crossing_and_wholly_internal_access_are_never_dropped() {
+        let envelope = g::rectangle(0., 0., 200., 200.);
+        let make=|role:&str,path:Vec<Point>|Street{widths:vec![6.;path.len()],path,rank:0,role:role.into()};
+        let original=vec![make("bridge",vec![Point{x:0.,y:100.},Point{x:200.,y:100.}]),make("regional",vec![Point{x:80.,y:100.},Point{x:120.,y:100.}])];
+        let mut streets=original.clone();camp_approaches(&mut streets,&envelope,3.,true);
+        assert_eq!(serde_json::to_vec(&streets).unwrap(),serde_json::to_vec(&original).unwrap());
+    }
+    #[test]
+    fn a_generated_camp_entrance_keeps_the_relay_to_its_inner_paths() {
+        let envelope=g::rectangle(0.,0.,200.,200.);let c=Point{x:100.,y:100.};
+        let guide=Street{path:vec![Point{x:0.,y:100.},c],widths:vec![5.;2],rank:1,role:"street".into()};
+        let mut streets=vec![guide];
+        assert!(camp_entrance(&mut streets,&envelope,c,100.,&[]));
+        assert_eq!(streets.len(),1);
+        assert!(dist(*streets[0].path.last().unwrap(),c)<50.01);
+        let mut regional=streets.clone();regional[0].role="regional".into();
+        assert!(!camp_entrance(&mut regional,&envelope,c,100.,&[]));
+    }
+    #[test]
+    fn a_steep_discarded_drive_does_not_disqualify_two_dry_entrances() {
+        let envelope=g::rectangle(100.,100.,300.,300.);
+        let height=(0..64*64).map(|i|if (30..34).contains(&(i%64)){1000.}else{10.}).collect::<Vec<f32>>();
+        let water=vec![0;64*64];let surface=Surface{geometry:None,width:400.,n:64,height:&height,water:&water};
+        let road=Street{path:vec![Point{x:100.,y:200.},Point{x:300.,y:200.}],widths:vec![6.;2],rank:0,role:"regional".into()};
+        assert!(!routing::path_clear(surface,&road.path,0.12));
+        let mut entrances=vec![road];camp_approaches(&mut entrances,&envelope,3.,true);
+        assert_eq!(entrances.len(),2);
+        assert!(entrances.iter().all(|s|routing::path_clear(surface,&s.path,0.12)));
+    }
+    #[test]
+    fn regional_role_preserves_every_real_entrance_independently_of_rank() {
+        let envelope=g::rectangle(0.,0.,200.,200.);let c=Point{x:100.,y:100.};
+        let make=|a,b,rank|Street{path:vec![a,b],widths:vec![6.;2],rank,role:"regional".into()};
+        let mut roads=vec![make(Point{x:0.,y:100.},c,1),make(Point{x:100.,y:0.},c,2),make(c,Point{x:200.,y:100.},0)];
+        let original=serde_json::to_vec(&roads).unwrap();
+        camp_entrance(&mut roads,&envelope,c,100.,&[]);
+        assert_eq!(serde_json::to_vec(&roads).unwrap(),original,"A regional role is not a generated footprint guide");
+        camp_approaches(&mut roads,&envelope,3.,true);assert_eq!(roads.len(),3);
+    }
 }
 fn chord(s: &Shape, c: Point, angle: f64) -> Option<(Point, Point)> {
     let d = Point {
@@ -1020,6 +1098,14 @@ pub(super) fn generate_domain(
     radius: f64,
     domain: Option<&Shape>,
 ) -> Plan {
+    generate_oriented_domain(seed, site, cfg, m, surface, roads, radius, domain, None)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn generate_oriented_domain(
+    seed: &str, site: &Site, cfg: &LayoutConfig, m: &Morph, surface: Surface<'_>,
+    roads: &[Street], radius: f64, domain: Option<&Shape>, grid_angle: Option<f64>,
+) -> Plan {
     let mut rng = Rng::new(seed).fork("geographic-plan");
     let culture = if cfg.culture == "site" {
         &site.culture
@@ -1093,6 +1179,7 @@ pub(super) fn generate_domain(
     {
         angle = regional + cfg.footprint.orientation.to_radians();
     }
+    if pattern == "grid" && let Some(a) = grid_angle { angle = a; }
     let fortified = profiles::fortification(profile, &cfg.fortification, site.population);
     let closed = matches!(fortified, "wall" | "palisade" | "hedge");
     let rect = (!pattern_override
@@ -1156,10 +1243,16 @@ pub(super) fn generate_domain(
     let mut regions = g::dry_clip(&surface, &envelope);
     regions.retain(|s| g::area(s) > 25.0);
     let dry = regions.clone();
-    let camp = !m.text("campLayout").is_empty();
+    let camp = !m.text("campLayout").is_empty() || cfg.settlement_form == "camp";
     let mut streets: Vec<_> = roads.iter().flat_map(|s| clip(s, &envelope)).collect();
+    let mut camp_guide = false;
     if camp {
-        camp_entrance(&mut streets, &envelope, c, radius, roads);
+        camp_guide = camp_entrance(&mut streets, &envelope, c, radius, roads);
+        if !camp_guide && m.text("campLayout") != "rows" {
+            // Validate the entrance that will remain, not a discarded drive
+            // through a steep centre that the footpaths need not cross.
+            camp_approaches(&mut streets, &envelope, m.number_or("campPath", m.number_or("footpathWidth", 3.0)).max(2.0), true);
+        }
     }
     let mut warnings = vec![];
     let approach = nearest(c, roads).filter(|v| v.0 > radius * 0.7 && v.0 < radius * 2.5);
@@ -1206,6 +1299,12 @@ pub(super) fn generate_domain(
     }
     streets = retained;
     join_crossing_approaches(&mut streets, roads, surface, cfg.max_street_grade);
+    // The generated entrance already stops at the heart's edge. Clipping it
+    // to the outer belt loses the handover to camp paths and can leave it
+    // entirely outside the final hedge; keep its full, validated approach.
+    if camp && !camp_guide && m.text("campLayout") != "rows" {
+        camp_approaches(&mut streets, &envelope, m.number_or("campPath", m.number_or("footpathWidth", 3.0)).max(2.0), true);
+    }
     if !camp {
         trim_guide_tips(&mut streets, &envelope);
     }

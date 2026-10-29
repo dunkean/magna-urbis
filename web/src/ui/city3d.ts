@@ -8,12 +8,16 @@ import { cityBridgeStreets } from '../render/cityBridges';
  * data: the .decor raster as relief, the 2D map image (or the Render3D ground
  * material) as texture, the city plan drawn into close-up tiles, and every
  * architecture mode as display volumes (render/city3dMeshes.ts). */
-import { Terrain3d, TERRAIN_3D_FOV, type Terrain3dCamera, type Terrain3dTile } from './terrain3d';
+import { Terrain3d, TERRAIN_3D_FOV, type Terrain3dCamera, type Terrain3dTile, type Terrain3dGroundSettings } from './terrain3d';
+import type { HeightLayer } from './terrainGl';
+import type { ForestField, ForestOccupation } from '../../../rust/bridge/terrainForest';
+import type { UrbanBuildingAppearance } from '../render/urbanBuildingStyle';
 import { decorClimate } from './decorClimate';
 import { city3dBridges, city3dScene, city3dProjectionScene, city3dWalls, city3dDisplayKind, compactBuilding, projectionDetailMatches, rasterHeight, type City3dHeight, type City3dDisplayScene } from '../render/city3dMeshes';
 import { building3dHeight, isBuildingProjection, type Building3dVisual } from '../render/urbanBuildingGeometry';
 import type { NativeBuildingProjectionScene } from './urbanBuildingProjection';
-import { buildCityScene, drawCity, selectCityLod, type CityLayers, type CityScene } from '../render/cityCanvas';
+import type { Parent3dScene } from './urbanParent3d';
+import { buildCityScene, drawCity, selectCityLod, type CityDrawOptions, type CityLayers, type CityScene } from '../render/cityCanvas';
 import { DEFAULT_TERRAIN_LIGHTING } from '../render/terrainLighting';
 import type { PlacementBatch, PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
 import type { Layout, Partition, Street } from '../../../rust/bridge/urban';
@@ -25,11 +29,30 @@ import { urbanText } from './urbanPanelLocale';
 export interface City3dOptions {
   /** Positioned container (the bench viewport); the 3D view covers it when shown. */
   host: HTMLElement;
+  /** V2 opens the draped map immediately; expensive procedural material shader
+   * compilation is deferred until that ground mode is selected. */
+  fastTerrain?: boolean;
+  /** Optional workshop controls. Omitted keeps City Bench's original two ground modes. */
+  materialGrounds?: boolean;
+  /** Drape the exact raster material over real geometry on software WebGL. */
+  softwareMaterialFallback?: boolean;
+  getGroundSettings?(ground: City3dGround): Terrain3dGroundSettings | undefined;
+  getForest?(): { field?: ForestField; occupation?: ForestOccupation } | undefined;
+  getSurface?(): City3dSurface | undefined;
+  getWaterDisplay?(): City3dWaterDisplay | undefined;
+  getHeightSampler?(): ((x: number, y: number, metresPerPixel: number) => number) | undefined;
+  getViewSettings?(): Partial<City3dViewSettings>;
+  onViewSettingsChange?(settings: City3dViewSettings): void;
+  getPlanOptions?(): Partial<Pick<CityDrawOptions, 'view' | 'palette' | 'width' | 'layers' | 'groundBlend' | 'labels'>> & { opacity?: number };
+  getBuildingAppearance?(): Partial<UrbanBuildingAppearance>;
+  getBuildingsVisible?(): boolean;
+  /** Map names, glyphs and pins (default: shown). */
+  labels?: boolean;
   getDecor(): Decor | undefined;
   getScene(): PlacementBatch | undefined;
   /** Exact accepted-plan cartography with native records retained cold. Takes
    * precedence over the legacy scene, including an explicitly empty index. */
-  getProjection?(): NativeBuildingProjectionScene | undefined;
+  getProjection?(): NativeBuildingProjectionScene | Parent3dScene | undefined;
   getLayouts?(): readonly Layout[] | undefined;
   /** Regional roads crossing the map: their bridges are drawn too. */
   getRegionalStreets?(): readonly Street[] | undefined;
@@ -47,6 +70,11 @@ export interface City3dOptions {
    * bounded cache for 2D and 3D. When given, the 3D view never realizes on its own. */
   details?: City3dDetailService;
 }
+export const CITY_3D_MATERIAL_GROUNDS = ['render3d', 'render3d-brush', 'render-v2', 'render-v2-substrate', 'render-v2-moisture', 'render-v2-vegetation', 'render-v2-snow'] as const;
+export type City3dGround = 'map' | 'render' | typeof CITY_3D_MATERIAL_GROUNDS[number];
+export interface City3dViewSettings { ground: City3dGround; plan: boolean; colors: 'materials' | 'uses'; exaggeration: number; refinement: 'source' | 'noise' }
+export interface City3dSurface { height: HeightLayer; water?: { n: number; levels: Float32Array; mask: Float32Array }; waterVisible?: boolean }
+export interface City3dWaterDisplay { texture: HTMLCanvasElement; paths?: Path2D }
 export interface City3dDetailService {
   setActiveView(view: '2d' | '3d'): void;
   update(view: { viewport: { minX: number; minY: number; maxX: number; maxY: number }; metresPerPixel: number; selectedId?: string; enabled?: boolean }): unknown;
@@ -67,12 +95,12 @@ export interface City3d {
   stats(): City3dStats;
   dispose(): void;
 }
-export interface City3dStats { buildings: number; silhouette: number; compact: number; detailed: number; displayMs: number; timings: { engine?: number; surface?: number; plan?: number; buildings?: number }; realizing: number; realizeError?: string; bridges?: { count: number; first?: Point }; walls?: City3dWallStats; lod?: ReturnType<Terrain3d['getLodInfo']> }
+export interface City3dStats { buildings: number; silhouette: number; compact: number; detailed: number; displayMs: number; timings: { engine?: number; surface?: number; plan?: number; buildings?: number }; realizing: number; realizeError?: string; bridges?: { count: number; first?: Point }; walls?: City3dWallStats; lod?: ReturnType<Terrain3d['getLodInfo']>; parentWindow?: { complete: boolean; reason: string; parents: number; members: number } }
 
 /** Fortification display volumes: enclosures drawn, pieces (curtain chunks, towers, gates, works), triangles. */
 export interface City3dWallStats { count: number; pieces: number; triangles: number; ms: number; first?: Point; gate?: Point }
 
-type Ground = 'map' | 'render';
+type Ground = City3dGround;
 type Colors = 'materials' | 'uses';
 const seedHash = (text: string): number => { let h = 2166136261; for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619); return h | 0; };
 const PLAN_LAYERS: CityLayers = { reserve: false, allocated: false, centers: false, domains: false, quarters: false, blocks: true, streets: true, enclosures: true, parcels: true, gardens: true, places: true, fronts: false, axes: false, access: false };
@@ -109,7 +137,22 @@ export function mountCity3d(options: City3dOptions): City3d {
     <div class="city3d-info" role="status"></div>`;
   options.host.append(root);
   const canvas = root.querySelector('canvas')!, marker = root.querySelector<HTMLElement>('.city3d-marker')!, info = root.querySelector<HTMLElement>('.city3d-info')!;
+  info.hidden = options.labels === false;
   const $ = <T extends HTMLElement>(selector: string): T => root.querySelector(selector) as T;
+  const groundNames: Record<typeof CITY_3D_MATERIAL_GROUNDS[number], [string, string, string, string, string]> = {
+    render3d: ['Render3D · Multi-échelle', 'Render3D · Multiscale', 'Render3D · 多尺度', 'Render3D · Multiescala', 'Render3D · Multiescala'],
+    'render3d-brush': ['Render3D · Pinceaux', 'Render3D · Brushes', 'Render3D · 笔刷', 'Render3D · Pinceles', 'Render3D · Pincéis'],
+    'render-v2': ['Satellite · Render v2', 'Satellite · Render v2', '卫星 · Render v2', 'Satélite · Render v2', 'Satélite · Render v2'],
+    'render-v2-substrate': ['Satellite · Substrat', 'Satellite · Substrate', '卫星 · 基底', 'Satélite · Sustrato', 'Satélite · Substrato'],
+    'render-v2-moisture': ['Satellite · Humidité', 'Satellite · Moisture', '卫星 · 湿度', 'Satélite · Humedad', 'Satélite · Humidade'],
+    'render-v2-vegetation': ['Satellite · Végétation', 'Satellite · Vegetation', '卫星 · 植被', 'Satélite · Vegetación', 'Satélite · Vegetação'],
+    'render-v2-snow': ['Satellite · Neige / glace', 'Satellite · Snow / ice', '卫星 · 雪冰', 'Satélite · Nieve / hielo', 'Satélite · Neve / gelo'],
+  };
+  if (options.materialGrounds) {
+    for (const value of CITY_3D_MATERIAL_GROUNDS) $<HTMLSelectElement>('[data-ground]').append(new Option(urbanText(groundNames[value]), value));
+    const label = document.createElement('label'); label.innerHTML = 'Raffinement <select data-refinement><option value="source">Source</option><option value="noise">Bruit multi-échelle</option></select>';
+    $('.city3d-bar').append(label);
+  }
   const localizeControls = (): void => {
     canvas.setAttribute('aria-label', urbanText(['Vue 3D de la ville. Glisser : déplacer, clic droit ou Maj + glisser : orbiter, molette : zoom, clic : sélectionner.', '3D city view. Drag to pan, right-click or Shift-drag to orbit, wheel to zoom, click to select.', '城市三维视图。拖动平移，右键或 Shift 拖动环绕，滚轮缩放，点击选择。', 'Vista 3D de la ciudad. Arrastra para desplazar, clic derecho o Mayús y arrastrar para orbitar, rueda para zoom y clic para seleccionar.', 'Vista 3D da cidade. Arraste para mover, clique direito ou Shift e arraste para orbitar, roda para zoom e clique para selecionar.']));
     $('.city3d-bar').setAttribute('aria-label', urbanText(['Vue 3D','3D view','三维视图','Vista 3D','Vista 3D']));
@@ -120,6 +163,11 @@ export function mountCity3d(options: City3dOptions): City3d {
     label('[data-colors]', ['Couleurs','Colours','颜色','Colores','Cores']); label('[data-relief]', ['Relief','Terrain','地形','Relieve','Relevo'], ['Exagération du relief','Terrain exaggeration','地形夸张','Exageración del relieve','Exagero do relevo']);
     $<HTMLOptionElement>('[data-ground] option[value="map"]').textContent = urbanText(['Carte pré-rendue','Pre-rendered map','预渲染地图','Mapa prerenderizado','Mapa pré-renderizado']);
     $<HTMLOptionElement>('[data-ground] option[value="render"]').textContent = urbanText(['Rendu 3D (sol procédural)','3D render (procedural ground)','三维渲染（程序化地面）','Render 3D (suelo procedural)','Renderização 3D (solo procedural)']);
+    if (options.materialGrounds) {
+      for (const value of CITY_3D_MATERIAL_GROUNDS) $<HTMLOptionElement>(`[data-ground] option[value="${value}"]`).textContent = urbanText(groundNames[value]);
+      label('[data-refinement]', ['Raffinement', 'Refinement', '细化', 'Refinamiento', 'Refinamento']);
+      $<HTMLOptionElement>('[data-refinement] option[value="noise"]').textContent = urbanText(['Bruit multi-échelle', 'Multiscale noise', '多尺度噪声', 'Ruido multiescala', 'Ruído multiescala']);
+    }
     $<HTMLOptionElement>('[data-colors] option[value="materials"]').textContent = urbanText(['Matériaux','Materials','材料','Materiales','Materiais']);
     $<HTMLOptionElement>('[data-colors] option[value="uses"]').textContent = urbanText(['Usages','Uses','用途','Usos','Usos']);
     $('[data-north]').title = urbanText(['Nord en haut','North up','北朝上','Norte arriba','Norte para cima']);
@@ -128,18 +176,20 @@ export function mountCity3d(options: City3dOptions): City3d {
   };
   window.addEventListener('magna-locale-change', localizeControls);
   let terrain: Terrain3d | undefined, active = false, disposed = false, error = '';
-  localizeControls();
-  let ground: Ground = 'map', colors: Colors = 'materials', planOverlay = true;
-  let surfaceDecor: Decor | undefined, imageUrl: string | undefined, heightAt: City3dHeight | undefined, stiltWaterAt: City3dHeight | undefined, image: HTMLImageElement | HTMLCanvasElement | undefined, waterMask: HTMLCanvasElement | undefined, waterPaths: Path2D | undefined;
+  let ground: Ground = 'map', colors: Colors = 'materials', planOverlay = true, refinement: City3dViewSettings['refinement'] = 'noise';
+  let groundKey = '', planKey = '', proceduralGround = false, softwareMaterial = false;
+  let waterDisplay: City3dWaterDisplay | undefined;
+  let surfaceDecor: Decor | undefined, imageUrl: string | undefined, heightAt: City3dHeight | undefined, stiltWaterAt: City3dHeight | undefined, image: HTMLImageElement | HTMLCanvasElement | undefined, mapFallback: HTMLCanvasElement | undefined, waterMask: HTMLCanvasElement | undefined, waterPaths: Path2D | undefined, waterMaskVisible = true;
   let bridgeWaterAt: City3dHeight | undefined;
   const textured = (): boolean => options.getTextured?.() ?? false;
   let texturedSeen = false;
   let plan: CityScene | undefined, planOf: [unknown, unknown] | undefined;
-  let sceneOf: PlacementBatch | NativeBuildingProjectionScene | undefined, display: City3dDisplayScene | undefined, displayMs = 0, focused = false, sourceEpoch = 0;
+  let sceneOf: PlacementBatch | NativeBuildingProjectionScene | Parent3dScene | undefined, display: City3dDisplayScene | undefined, displayMs = 0, focused = false, sourceEpoch = 0;
   const details = new Map<string, PlacedBuilding>(), detailBases = new Map<string, Building3dVisual>(), converting = new Set<string>();
   let byId = new Map<string, Building3dVisual>(), bridgesOf: [readonly Layout[] | undefined, readonly Street[] | undefined] = [undefined, undefined], bridgeStats: { count: number; first?: Point } = { count: 0 };
   let quayCount = 0;
   let wallStats: City3dWallStats = { count: 0, pieces: 0, triangles: 0, ms: 0 };
+  let structureInputs: unknown[] = [], structureBuildings: Building3dVisual[] = [];
   const realized = new WeakSet<Building3dVisual>();
   let displayIndex = new Map<string, number>(), indexOf: unknown;
   const pendingSwaps = new Map<string, Building3dVisual>();
@@ -173,7 +223,13 @@ export function mountCity3d(options: City3dOptions): City3d {
     try { terrain = new Terrain3d(canvas, () => {
       updateInfo(); options.onCamera?.(terrain!.getCamera());
       if (options.details && !detailFrame) detailFrame = requestAnimationFrame(() => { detailFrame = 0; driveDetails(); });
-    }, () => placeMarker()); }
+    }, () => placeMarker(), { fastMapShader: options.fastTerrain });
+      if (options.softwareMaterialFallback) {
+        const gl = canvas.getContext('webgl2'), debug = gl?.getExtension('WEBGL_debug_renderer_info');
+        const renderer = gl && String(gl.getParameter(debug ? debug.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
+        softwareMaterial = !!renderer && /swiftshader|llvmpipe|softpipe|software|warp|microsoft basic render/i.test(renderer);
+      }
+    }
     catch (e) { error = e instanceof Error ? e.message : String(e); info.textContent = error; }
     return terrain;
   }
@@ -197,10 +253,10 @@ export function mountCity3d(options: City3dOptions): City3d {
     ctx.putImageData(pixels, 0, 0); return c;
   }
   /** Render3D mode: water only, land left transparent for the procedural ground. */
-  function water(d: Decor): HTMLCanvasElement {
+  function water(d: Decor, visible = true): HTMLCanvasElement {
     const { n, water } = d.raster, c = document.createElement('canvas'); c.width = c.height = n;
     const ctx = c.getContext('2d')!, pixels = ctx.createImageData(n, n);
-    for (let i = 0; i < n * n; i++) if (water[i]) pixels.data.set([...WATER, 255], i * 4);
+    if (visible) for (let i = 0; i < n * n; i++) if (water[i]) pixels.data.set([...WATER, 255], i * 4);
     ctx.putImageData(pixels, 0, 0); return c;
   }
   function waterPath(d: Decor): Path2D | undefined {
@@ -218,8 +274,9 @@ export function mountCity3d(options: City3dOptions): City3d {
     surfaceDecor = d; heightAt = rasterHeight(r.height, r.n, r.width); bridgeWaterAt = r.waterLevel ? rasterHeight(r.waterLevel, r.n, r.width) : undefined; sceneOf = undefined; sourceEpoch++; details.clear(); detailBases.clear();
     const physical = new CityGround(r), levels = bridgeWaterAt;
     stiltWaterAt = levels ? (x, y) => physical.waterAt({ x, y }) ? levels(x, y) : NaN : undefined;
-    waterMask = undefined; waterPaths = undefined; image = undefined; planOf = undefined;
-    t.setSurface({ x: 0, y: 0, width: r.width, n: r.n, data: r.height });
+    waterMask = undefined; waterPaths = undefined; image = undefined; mapFallback = undefined; planOf = undefined;
+    const surface = options.getSurface?.();
+    t.setSurface(surface?.height ?? { x: 0, y: 0, width: r.width, n: r.n, data: r.height }, surface?.water, surface?.waterVisible);
     imageUrl = undefined; syncImage(d);
     applyGround();
   }
@@ -231,15 +288,26 @@ export function mountCity3d(options: City3dOptions): City3d {
   }
   function applyGround(): void {
     const t = terrain, d = surfaceDecor; if (!t || !d) return;
-    if (ground === 'render') {
-      waterMask ??= water(d); waterPaths ??= waterPath(d);
+    const configured = options.getGroundSettings?.(ground);
+    const procedural = ground !== 'map' && !softwareMaterial && (!options.getGroundSettings || !!configured);
+    proceduralGround = procedural;
+    root.dataset.materialBackend = softwareMaterial && ground !== 'map' ? 'software-texture' : procedural ? 'gpu' : 'map';
+    if (procedural) {
+      const waterVisible = configured?.waterVisible !== false;
+      waterDisplay = options.getWaterDisplay?.();
+      if (waterDisplay) { waterMask = waterDisplay.texture; waterPaths = waterDisplay.paths; }
+      else { if (!waterMask || waterMaskVisible !== waterVisible) { waterMask = water(d, waterVisible); waterMaskVisible = waterVisible; } waterPaths ??= waterPath(d); }
       const climate = decorClimate(d.meta);
-      t.setGroundMaterial({ seed: seedHash(d.meta.seed), climate, sourceCell: d.meta.terrainDisplay?.sourceCell ?? d.raster.width / 1024, lighting: DEFAULT_TERRAIN_LIGHTING, displacement: false });
+      t.setGroundMaterial(configured ?? { seed: seedHash(d.meta.seed), climate, sourceCell: d.meta.terrainDisplay?.sourceCell ?? d.raster.width / 1024, lighting: DEFAULT_TERRAIN_LIGHTING, displacement: false });
       t.setTexture(waterMask);
     } else {
       t.setGroundMaterial(undefined);
-      t.setTexture(image ?? hillshade(d));
+      t.setTexture(image ?? (mapFallback ??= hillshade(d)));
     }
+    const forest = procedural ? options.getForest?.() : undefined;
+    t.setForest(forest?.field, forest?.occupation);
+    t.setHeightSampler(options.getHeightSampler?.());
+    groundKey = JSON.stringify([ground, refinement, configured]);
     t.setTileLoader(loadTile);
   }
   /** One material tile: the map image (or water) cropped, then the city plan when close. */
@@ -247,15 +315,19 @@ export function mountCity3d(options: City3dOptions): City3d {
     const d = surfaceDecor!, size = tile.pixels, c = document.createElement('canvas'); c.width = c.height = size;
     const ctx = c.getContext('2d')!, width = d.raster.width;
     ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
-    const source = ground === 'render' ? waterMask : image;
+    // V2 can supply a physical raster without a pre-rendered external PNG.
+    // Use the same hillshade for both the overview and close-up map tiles.
+    const source = proceduralGround ? waterMask : image ?? (mapFallback ??= hillshade(d));
     if (source) { const k = source.width / width; ctx.drawImage(source, tile.x * k, tile.y * k, tile.width * k, tile.width * k, 0, 0, size, size); }
     const k = size / tile.width, mpp = tile.width / size;
-    if (ground === 'render' && waterPaths) { ctx.save(); ctx.setTransform(k, 0, 0, k, -tile.x * k, -tile.y * k); ctx.fillStyle = `rgb(${WATER})`; ctx.fill(waterPaths, 'evenodd'); ctx.restore(); }
+    const waterVisible = options.getGroundSettings?.(ground)?.waterVisible !== false;
+    if (proceduralGround && waterPaths && waterVisible) { ctx.save(); ctx.setTransform(k, 0, 0, k, -tile.x * k, -tile.y * k); ctx.fillStyle = `rgb(${WATER})`; ctx.fill(waterPaths, 'evenodd'); ctx.restore(); }
     const city = planOverlay ? cityPlan() : undefined;
     if (city && city.extent.maxX >= tile.x && city.extent.minX <= tile.x + tile.width && city.extent.maxY >= tile.y && city.extent.minY <= tile.y + tile.width) {
       ctx.save(); ctx.setTransform(k, 0, 0, k, -tile.x * k, -tile.y * k);
+      const planOptions = options.getPlanOptions?.(); ctx.globalAlpha = planOptions?.opacity ?? 1;
       drawCity(ctx, city, { viewport: { minX: tile.x, minY: tile.y, maxX: tile.x + tile.width, maxY: tile.y + tile.width }, mpp, dpr: 1, lod: selectCityLod(mpp),
-        view: 'parcels', palette: 'terrain', width: 0.6, layers: PLAN_LAYERS, buildingsVisible: false, appearance: { style: 'cartographic', diagnostic: 'none' }, textured: textured(), groundBlend: false, onTexturesReady: () => terrain?.invalidateTiles() });
+        view: planOptions?.view ?? 'parcels', labels: planOptions?.labels ?? options.labels, palette: planOptions?.palette ?? 'terrain', width: planOptions?.width ?? 0.6, layers: planOptions?.layers ?? PLAN_LAYERS, buildingsVisible: false, appearance: { style: 'cartographic', diagnostic: 'none' }, textured: textured(), groundBlend: planOptions?.groundBlend ?? false, onTexturesReady: () => terrain?.invalidateTiles() });
       ctx.restore();
     }
     return c;
@@ -283,26 +355,32 @@ export function mountCity3d(options: City3dOptions): City3d {
       clearTimeout(detailTimer); pendingSwaps.clear();
       const started = performance.now();
       display = scene ? 'projection' in scene ? city3dProjectionScene(scene, { details }) : city3dScene(scene, { heightAt, waterAt: stiltWaterAt, details }) : undefined;
-      // Bridges stand over the water even before any building is placed.
-      const bridges = city3dBridges(cityBridgeStreets(layouts ?? [], regional ?? []), heightAt, bridgeWaterAt);
-      bridgeStats = { count: bridges.length, first: bridges[0] && center(bridges[0]) };
-      // Walls, towers and gates stand before any building is placed, like bridges.
-      const wallStarted = performance.now();
-      const walls = (layouts ?? []).flatMap((l, li) => city3dWalls(l.enclosures ?? [], heightAt, String(li), l.culture));
-      const enclosures = new Set(walls.map(w => w.id.split(':').slice(1, 3).join(':')));
-      const gate = walls.find(w => w.id.includes(':gate:') && !w.variant_id.endsWith(':water'));
-      wallStats = { count: enclosures.size, pieces: walls.length, ms: Math.round(performance.now() - wallStarted),
-        triangles: walls.reduce((n, w) => n + w.volumes.reduce((m, v) => m + v.roof_mesh.faces.reduce((k, f) => k + f.vertices.length - 2, 0), 0), 0),
-        first: walls[0] && center(walls[0]), gate: gate && center(gate) };
-      const quays = city3dQuays(layouts ?? []), boardwalks = city3dBoardwalks(cityBridgeStreets(layouts ?? [], regional ?? []), heightAt, bridgeWaterAt); quayCount = quays.length + boardwalks.length;
-      const extra = [...bridges, ...walls, ...quays, ...boardwalks];
+      const nextStructureInputs = [layouts, regional, heightAt, bridgeWaterAt];
+      if (nextStructureInputs.some((input, i) => input !== structureInputs[i])) {
+        structureInputs = nextStructureInputs;
+        // Architecture edits/colours do not change bridges, walls or quays.
+        // Retain these exact meshes until their actual terrain/network changes.
+        const bridgeStreets = cityBridgeStreets(layouts ?? [], regional ?? []);
+        const bridges = city3dBridges(bridgeStreets, heightAt, bridgeWaterAt);
+        bridgeStats = { count: bridges.length, first: bridges[0] && center(bridges[0]) };
+        const wallStarted = performance.now();
+        const walls = (layouts ?? []).flatMap((l, li) => city3dWalls(l.enclosures ?? [], heightAt, String(li), l.culture));
+        const enclosures = new Set(walls.map(w => w.id.split(':').slice(1, 3).join(':'))), gate = walls.find(w => w.id.includes(':gate:') && !w.variant_id.endsWith(':water'));
+        wallStats = { count: enclosures.size, pieces: walls.length, ms: Math.round(performance.now() - wallStarted),
+          triangles: walls.reduce((n, w) => n + w.volumes.reduce((m, v) => m + v.roof_mesh.faces.reduce((k, f) => k + f.vertices.length - 2, 0), 0), 0),
+          first: walls[0] && center(walls[0]), gate: gate && center(gate) };
+        const quays = city3dQuays(layouts ?? []), boardwalks = city3dBoardwalks(bridgeStreets, heightAt, bridgeWaterAt); quayCount = quays.length + boardwalks.length;
+        structureBuildings = [...bridges, ...walls, ...quays, ...boardwalks];
+      }
+      const extra = structureBuildings;
       if (extra.length) display = display ? { ...display, buildings: [...display.buildings, ...extra],
         ...(display.occupationBuildings ? { occupationBuildings: [...display.occupationBuildings, ...extra] } : {}) }
         : { materials: city3dScene({ schema_version: '1', generator_version: '', buildings: [], refusals: [], open_spaces: [] }).materials, buildings: extra, kinds: { silhouette: 0, compact: 0, detailed: 0 } };
       displayMs = performance.now() - started;
     }
-    t.setBuildings(display, { style: 'cartographic', diagnostic: colors === 'uses' ? 'uses' : 'none', textured: textured() && colors !== 'uses' }, true);
-    ($('[data-detail]') as HTMLButtonElement).disabled = !display?.kinds.compact || !!scene && 'projection' in scene && !options.details;
+    const appearance = options.getBuildingAppearance?.(), diagnostic = colors === 'uses' ? 'uses' : appearance?.diagnostic === 'uses' ? 'none' : appearance?.diagnostic ?? 'none';
+    t.setBuildings(display, { style: appearance?.style ?? 'cartographic', diagnostic, textured: textured() && diagnostic !== 'uses' && diagnostic !== 'height' }, options.getBuildingsVisible?.() ?? true);
+    ($('[data-detail]') as HTMLButtonElement).disabled = !display?.kinds.compact || !!scene && 'projection' in scene && (!options.details || scene.projection === 'native-parent-window-3d-1');
     if (options.details) { applyServiceDetails(); driveDetails(); }
     placeMarker(); updateInfo();
   }
@@ -390,17 +468,20 @@ export function mountCity3d(options: City3dOptions): City3d {
   function placeMarker(): void {
     const t = terrain, id = options.getSelected?.(), b = id ? display?.buildings.find(x => x.id === id) : undefined;
     const p = b && active && t ? t.worldToScreen(center(b).x, center(b).y) : null;
-    marker.hidden = !p; if (p) { marker.style.left = `${p[0]}px`; marker.style.top = `${p[1]}px`; }
+    marker.hidden = !p || options.labels === false; if (p) { marker.style.left = `${p[0]}px`; marker.style.top = `${p[1]}px`; }
   }
   function updateInfo(): void {
     if (!active || error) return;
     const t = terrain, c = t?.getCamera(), k = display?.kinds, id = options.getSelected?.(), b = id ? display?.buildings.find(x => x.id === id) : undefined;
     const height = b ? building3dHeight(b) : 0;
     info.innerHTML = [
+      softwareMaterial && ground !== 'map' ? urbanText(['Texture de terrain · WebGL logiciel, drapée sur le relief 3D.', 'Raster terrain texture · software WebGL, draped over the 3D terrain.', '地形纹理 · 软件 WebGL，覆盖在三维地形上。', 'Textura del terreno · WebGL por software, sobre el relieve 3D.', 'Textura do terreno · WebGL por software, sobre o relevo 3D.']) : '',
       display && display.buildings.length > bridgeStats.count + wallStats.pieces + quayCount ? `<b>${(display.buildings.length - bridgeStats.count - wallStats.pieces - quayCount).toLocaleString()}</b> ${urbanText(['bâtiments','buildings','栋建筑','edificios','edifícios'])}${bridgeStats.count ? ` · ${urbanText(['ponts','bridges','桥梁','puentes','pontes'])} ${bridgeStats.count}` : ''}${wallStats.count ? ` · ${urbanText(['enceintes','enclosures','围墙','recintos','muralhas'])} ${wallStats.count}` : ''} · ${urbanText(['silhouettes','silhouettes','轮廓','siluetas','silhuetas'])} ${k!.silhouette} · ${urbanText(['plans','plans','平面','planos','plantas'])} ${k!.compact} · ${urbanText(['détaillés','detailed','详细','detallados','detalhados'])} ${k!.detailed}${converting.size ? ` · ${urbanText(['réalisation','realizing','生成中','realizando','realizando'])} ${converting.size}…` : ''}` : urbanText(['Aucun bâtiment : tracez les silhouettes ou implantez les bâtiments.', 'No buildings: draw silhouettes or place buildings.', '没有建筑：请绘制轮廓或放置建筑。', 'Sin edificios: dibuja siluetas o coloca edificios.', 'Sem edifícios: desenhe silhuetas ou posicione edifícios.']),
       b ? `${urbanText(['Sélection','Selection','选择','Selección','Seleção'])} : ${b.id} · ${b.recipe_id} · ${height.toFixed(1)} m${isBuildingProjection(b) ? ` · ${urbanText(['volume cartographique','map volume','地图体量','volumen cartográfico','volume cartográfico'])}` : ''}` : '',
       c ? `${urbanText(['Distance','Distance','距离','Distancia','Distância'])} ${(c.distance).toFixed(0)} m · ${urbanText(['inclinaison','tilt','倾角','inclinación','inclinação'])} ${Math.round(c.pitch * 180 / Math.PI)}° · ${urbanText(['glisser : déplacer · clic droit / Maj : orbiter','drag: pan · right-click / Shift: orbit','拖动：平移 · 右键 / Shift：环绕','arrastrar: desplazar · clic derecho / Mayús: orbitar','arrastar: mover · clique direito / Shift: orbitar'])}` : '',
       info.dataset.detailError ? `${urbanText(['Réalisation','Realization','生成','Realización','Realização'])} : ${info.dataset.detailError}` : '',
+      sceneOf && 'projection' in sceneOf && sceneOf.projection === 'native-parent-window-3d-1'
+        ? `Fenêtre native : ${sceneOf.parents} parents · ${sceneOf.buildings.length} membres · ${sceneOf.complete ? 'complète' : `partielle (${sceneOf.reason})`} · volumes cartographiques · capacité inconnue` : '',
     ].filter(Boolean).join('<br>');
   }
   let down: [number, number] | undefined;
@@ -416,13 +497,45 @@ export function mountCity3d(options: City3dOptions): City3d {
   });
 
   // ------------------------------------------------------------ controls
-  $<HTMLSelectElement>('[data-ground]').onchange = event => { ground = (event.target as HTMLSelectElement).value as Ground; applyGround(); };
-  $<HTMLInputElement>('[data-plan]').onchange = event => { planOverlay = (event.target as HTMLInputElement).checked; terrain?.invalidateTiles(); };
+  function changedView(): void {
+    options.onViewSettingsChange?.({ ground, plan: planOverlay, colors, exaggeration: terrain?.getCamera().exaggeration ?? Number($<HTMLInputElement>('[data-relief]').value), refinement });
+  }
+  function syncView(): void {
+    const saved = options.getViewSettings?.(); if (!saved) return;
+    if (saved.ground && Array.from($<HTMLSelectElement>('[data-ground]').options).some(option => option.value === saved.ground)) ground = saved.ground;
+    if (saved.plan !== undefined) planOverlay = saved.plan;
+    if (saved.colors) colors = saved.colors;
+    if (saved.refinement) refinement = saved.refinement;
+    $<HTMLSelectElement>('[data-ground]').value = ground; $<HTMLInputElement>('[data-plan]').checked = planOverlay;
+    $<HTMLSelectElement>('[data-colors]').value = colors;
+    if (options.materialGrounds) $<HTMLSelectElement>('[data-refinement]').value = refinement;
+    const exaggeration = Math.max(1, Math.min(5, saved.exaggeration ?? terrain?.getCamera().exaggeration ?? 1));
+    $<HTMLInputElement>('[data-relief]').value = String(exaggeration);
+    if (terrain && terrain.getCamera().exaggeration !== exaggeration) terrain.setCamera({ ...terrain.getCamera(), exaggeration });
+  }
+  $<HTMLSelectElement>('[data-ground]').onchange = async event => {
+    const control = event.target as HTMLSelectElement, next = control.value as Ground;
+    const deferred = options.fastTerrain && !softwareMaterial && next !== 'map' && terrain?.getShaderProfile() === 'map';
+    if (deferred) {
+      control.disabled = true; root.setAttribute('aria-busy', 'true');
+      info.textContent = urbanText(['Préparation des matériaux du sol procédural…', 'Preparing procedural ground materials…', '正在准备程序化地面材质…', 'Preparando materiales del suelo procedural…', 'Preparando materiais do solo procedural…']);
+      // Paint the busy state before the optional driver shader compilation.
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    }
+    try {
+      if (disposed || !active) { control.value = ground; return; }
+      ground = next; changedView(); applyGround();
+    } catch (error) {
+      ground = 'map'; control.value = ground; changedView(); applyGround(); info.dataset.detailError = String(error);
+    } finally { control.disabled = false; root.removeAttribute('aria-busy'); updateInfo(); }
+  };
+  $<HTMLInputElement>('[data-plan]').onchange = event => { planOverlay = (event.target as HTMLInputElement).checked; changedView(); terrain?.invalidateTiles(); };
   const texturedBox = $<HTMLInputElement>('[data-textured]');
   texturedBox.closest('label')!.hidden = !options.setTextured;
   texturedBox.onchange = () => options.setTextured?.(texturedBox.checked);
-  $<HTMLSelectElement>('[data-colors]').onchange = event => { colors = (event.target as HTMLSelectElement).value as Colors; syncBuildings(); };
-  $<HTMLInputElement>('[data-relief]').oninput = event => { if (terrain) terrain.setCamera({ ...terrain.getCamera(), exaggeration: Number((event.target as HTMLInputElement).value) }); updateInfo(); };
+  $<HTMLSelectElement>('[data-colors]').onchange = event => { colors = (event.target as HTMLSelectElement).value as Colors; changedView(); syncBuildings(); };
+  $<HTMLInputElement>('[data-relief]').oninput = event => { if (terrain) terrain.setCamera({ ...terrain.getCamera(), exaggeration: Number((event.target as HTMLInputElement).value) }); changedView(); updateInfo(); };
+  if (options.materialGrounds) $<HTMLSelectElement>('[data-refinement]').onchange = event => { refinement = (event.target as HTMLSelectElement).value as City3dViewSettings['refinement']; changedView(); applyGround(); };
   $<HTMLButtonElement>('[data-north]').onclick = () => { terrain?.north(); };
   $<HTMLButtonElement>('[data-detail]').onclick = detailAround;
   const resize = new ResizeObserver(() => { if (active) terrain?.resize(root.clientWidth, root.clientHeight); });
@@ -430,9 +543,17 @@ export function mountCity3d(options: City3dOptions): City3d {
 
   function sync(): void {
     const t = terrain, d = options.getDecor(); if (!t || !d) return;
+    syncView();
     let at = performance.now();
     const lap = (key: keyof typeof timings): void => { const now = performance.now(); timings[key] = Math.round(now - at); at = now; };
     if (d !== surfaceDecor) { setSurface(d); lap('surface'); } else syncImage(d);
+    const surface = options.getSurface?.(); if (surface) t.setSurface(surface.height, surface.water, surface.waterVisible);
+    const configured = options.getGroundSettings?.(ground), procedural = ground !== 'map' && !softwareMaterial && (!options.getGroundSettings || !!configured);
+    if (groundKey !== JSON.stringify([ground, refinement, configured]) || procedural && waterDisplay !== options.getWaterDisplay?.()) applyGround();
+    t.setHeightSampler(options.getHeightSampler?.());
+    const forest = proceduralGround ? options.getForest?.() : undefined; t.setForest(forest?.field, forest?.occupation);
+    const nextPlanKey = JSON.stringify([planOverlay, options.getPlanOptions?.()]);
+    if (planKey !== nextPlanKey) { planKey = nextPlanKey; t.invalidateTiles(); }
     const layouts = options.getLayouts?.(), partitions = options.getPartitions?.();
     if (planOverlay && (!planOf ? layouts?.length : planOf[0] !== layouts || planOf[1] !== partitions)) { cityPlan(); t.invalidateTiles(); lap('plan'); }
     if (textured() !== texturedSeen) { texturedSeen = textured(); t.invalidateTiles(); } // the appearance below carries the flag
@@ -476,8 +597,11 @@ export function mountCity3d(options: City3dOptions): City3d {
     setCamera(camera: Terrain3dCamera): void { terrain?.setCamera(camera); focused = true; },
     capture: () => terrain ? terrain.capture() : Promise.reject(new Error('Vue 3D inactive.')),
     captureIllustration: () => terrain ? terrain.captureIllustration() : Promise.reject(new Error('Vue 3D inactive.')),
-    stats: () => ({ buildings: (display?.buildings.length ?? 0) - bridgeStats.count - wallStats.pieces - quayCount, ...(display?.kinds ?? { silhouette: 0, compact: 0, detailed: 0 }), displayMs, timings: { ...timings }, realizing: converting.size, realizeError: info.dataset.detailError || undefined, bridges: bridgeStats, walls: wallStats, lod: terrain?.getLodInfo() }),
+    stats: () => ({ buildings: (display?.buildings.length ?? 0) - bridgeStats.count - wallStats.pieces - quayCount, ...(display?.kinds ?? { silhouette: 0, compact: 0, detailed: 0 }), displayMs, timings: { ...timings }, realizing: converting.size, realizeError: info.dataset.detailError || undefined, bridges: bridgeStats, walls: wallStats, lod: terrain?.getLodInfo(), parentWindow: sceneOf && 'projection' in sceneOf && sceneOf.projection === 'native-parent-window-3d-1' ? { complete: sceneOf.complete, reason: sceneOf.reason, parents: sceneOf.parents, members: sceneOf.buildings.length } : undefined }),
     dispose(): void { disposed = true; active = false; sourceEpoch++; clearTimeout(detailTimer); cancelAnimationFrame(detailFrame); unsubscribeDetails?.(); unsubscribeDetails = undefined; options.details?.setActiveView('2d'); window.removeEventListener('magna-locale-change', localizeControls); resize.disconnect(); terrain?.dispose(); terrain = undefined; root.remove(); },
   };
+  // The initial status reads display/scene state declared above; initialise it
+  // after those bindings exist (also when mounted lazily from the V2 app).
+  localizeControls();
   return api;
 }

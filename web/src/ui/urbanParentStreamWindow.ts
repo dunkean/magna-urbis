@@ -1,11 +1,11 @@
 /** Provisional children from the SAME durably staged run, NEVER applied state.
  * Bounded viewport sample; moving elsewhere may remain partial until final CAS. */
-import { projectParentRecords, type ParentVisualRecords } from './urbanParentVisual';
+import { PARENT_VISUAL_VERSION, projectParentRecords, type ParentVisualRecords } from './urbanParentVisual';
 import type { NativeParentBatch } from '../../../rust/bridge/nativeParentContract';
 import { parentBoundsOverlap, surfaceBounds, type ParentBounds } from '../../../rust/bridge/nativeParentOccupation';
 import { coldVisualVertices } from './urbanColdVisualWindow';
 export function createParentStreamWindow() {
-  let value: ParentVisualRecords = { version: 'native-parent-visual-1', members: [], parents: [], contexts: [], materials: [] };
+  let value: ParentVisualRecords = { version: PARENT_VISUAL_VERSION, members: [], parents: [], contexts: [], materials: [] };
   return { get records() { return value; },
     append(batch: NativeParentBatch, bounds: ParentBounds) {
       const projected = projectParentRecords(batch.parents, batch.materials);
@@ -24,7 +24,7 @@ export function createParentStreamWindow() {
       const ids = new Set([...members.map(m => m.parent_id), ...contexts.map(c => c.parent_id)]);
       const parents = [...value.parents, ...projected.parents].filter(p => ids.has(p.id)).slice(-2048);
       const material = new Map([...value.materials, ...projected.materials].map(m => [m.id, m]));
-      value = { version: 'native-parent-visual-1', members, contexts, parents, materials: [...material.values()] }; return value;
-    }, clear() { value = { version: 'native-parent-visual-1', members: [], parents: [], contexts: [], materials: [] }; },
+      value = { version: PARENT_VISUAL_VERSION, members, contexts, parents, materials: [...material.values()] }; return value;
+    }, clear() { value = { version: PARENT_VISUAL_VERSION, members: [], parents: [], contexts: [], materials: [] }; },
   };
 }

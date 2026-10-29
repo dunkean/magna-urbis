@@ -2684,37 +2684,13 @@ fn generate_planned(
     let surface = shoreline.as_ref().map_or(surface, |s| s.surface(surface));
     // The common entry already owns the stilt site/surface. Preserve the
     // existing priority of that shore over a second harbour relocation.
-    let harboured = (!stilt_grounded)
+    let harboured = (!stilt_grounded && site.population < 3000)
         .then(|| macroplan::harbour::sited(site, cfg, surface))
         .flatten();
-    let unsited = site;
     let site = harboured.as_ref().unwrap_or(site);
     let first = generate_once(seed, site, cfg, m, surface, roads)?;
-    // A harbour site whose land cannot hold the town (half its households,
-    // 60 % of its planned land) is compared with the town's own place: the
-    // harbour is kept when it holds at least 60 % of that land.
-    let land = |l: &Layout| {
-        l.structure
-            .as_ref()
-            .map_or(0.0, |s| s.allocated.iter().map(g::area).sum::<f64>())
-    };
-    let short = |l: &Layout| capacity::of(l).is_some_and(|p| p.shortfall > 0.5 * p.required);
-    let cramped = harboured.is_some()
-        && (short(&first)
-            || first
-                .structure
-                .as_ref()
-                .is_some_and(|s| land(&first) < 0.6 * s.metrics.target_area));
-    let (site, first) = if cramped {
-        let home = generate_once(seed, unsited, cfg, m, surface, roads)?;
-        if !short(&first) && land(&first) >= 0.6 * land(&home) {
-            (site, first)
-        } else {
-            (unsited, home)
-        }
-    } else {
-        (site, first)
-    };
+    // Villages move to their landing; towns retain their nucleus and grow a
+    // connected waterfront nucleus (footprint), with the same total demand.
     let Some(p) = capacity::of(&first) else {
         return Ok(first);
     };
@@ -3465,24 +3441,11 @@ fn generate_once(
     let centers = structure
         .as_ref()
         .map_or_else(Vec::new, |s| s.centers.iter().map(|c| c.point).collect());
-    warnings.extend(if centers.is_empty() {
-        network::clean(
-            &mut streets,
-            center,
-            radius,
-            !enclosures.is_empty() || cfg.exit_treatment != "legacy",
-        )
-    } else {
-        network::clean_with_centers(
-            &mut streets,
-            center,
-            radius,
-            !enclosures.is_empty() || cfg.exit_treatment != "legacy",
-            &centers,
-        )
-    });
-    network::drop_narrow_doubles(&mut streets, &enclosures, radius);
-    if open_edge && cfg.exit_treatment != "legacy" {
+    warnings.extend(network::clean_options(&mut streets, center, radius,
+        !enclosures.is_empty() || cfg.exit_treatment != "legacy", &centers, cfg, surface));
+    network::narrow_options(&mut streets, &enclosures, radius, cfg, surface);
+    // Camp entrances hand over to their native paths, never urban bypass feeders.
+    if open_edge && cfg.exit_treatment != "legacy" && cfg.settlement_form != "camp" {
         network::resolve_exits(
             &mut streets,
             &quarters,
@@ -3492,13 +3455,7 @@ fn generate_once(
             cfg,
             &mut rng.fork("exit-destinations"),
         );
-        warnings.extend(network::clean_with_centers(
-            &mut streets,
-            center,
-            radius,
-            true,
-            &centers,
-        ));
+        warnings.extend(network::clean_options(&mut streets, center, radius, true, &centers, cfg, surface));
     }
     lap("clean+exits");
     {
@@ -3541,14 +3498,8 @@ fn generate_once(
     // copy, or outgrow a stub; a later clean (access lanes) would drop them
     // after the cut, leaving their ribbons as land with neither block nor
     // street and lots shaped by a street that is gone.
-    network::drop_narrow_doubles(&mut streets, &enclosures, radius);
-    warnings.extend(network::clean_with_centers(
-        &mut streets,
-        center,
-        radius,
-        true,
-        &centers,
-    ));
+    network::narrow_options(&mut streets, &enclosures, radius, cfg, surface);
+    warnings.extend(network::clean_options(&mut streets, center, radius, true, &centers, cfg, surface));
     if open_edge
         && cfg.composition == "settlement"
         && cfg.exit_treatment != "legacy"
@@ -3633,16 +3584,37 @@ fn generate_once(
         cfg.culture.as_str()
     };
     let port = macroplan::harbour::port_town(cfg);
-    if cfg.placement == "center" {
+    let shapes: Vec<Shape> = quarters.iter().map(|q| q.shape.clone()).collect();
+    // Dock access obeys the user's stair setting, including in non-terraced towns.
+    for shape in macroplan::harbour::extend(&shapes, &mut streets, surface, site, applied, culture) {
+        let phase=quarters.iter().min_by(|a,b| {
+            let p=g::interior_point(&shape);
+            let d=|q:&Quarter| (g::interior_point(&q.shape).x-p.x).hypot(g::interior_point(&q.shape).y-p.y);
+            d(a).total_cmp(&d(b))
+        }).map_or(0,|q|q.phase);
+        let qi=quarters.len();
+        quarters.push(Quarter{shape:shape.clone(),phase,zone:"edge".into()});
+        pieces.push(macroplan::harbour::port_blocks(&shape).into_iter().map(|shape|Piece{shape,level:0,kind:"block".into()}).collect());
+        if let Some(p)=phases.get_mut(phase) {p.shapes.push(shape.clone());}
+        if let Some(s)=&mut structure {
+            s.allocated.push(shape.clone());s.allocated=g::union(&s.allocated);
+            s.reserve.push(shape);s.reserve=g::union(&s.reserve);
+            s.metrics.allocated_area=s.allocated.iter().map(g::area).sum();
+            s.metrics.components=s.allocated.len();
+            s.districts.push(super::UrbanDistrict{id:s.districts.len(),center:0,phase,tissue:cfg.tissue.clone(),quarters:vec![qi],role:String::new(),wealth:0.5,label:String::new()});
+        }
+    }
+    if cfg.placement == "center" || macroplan::harbour::shelter_weight(cfg)>0.0 || cfg.port_detachment<1.0 {
         let shapes: Vec<Shape> = quarters.iter().map(|q| q.shape.clone()).collect();
         macroplan::harbour::quays(&shapes, &mut streets, surface, cfg, site, culture, port);
     }
     lap("harmonize+fringe");
-    if cfg.settlement_form == "camp" && !m.text("campLayout").is_empty() {
-        let width = m.number_or("campPath", 2.5).clamp(1.2, 3.0);
+    if cfg.settlement_form == "camp" {
+        let width = m.number_or("campPath", m.number_or("footpathWidth", 2.5)).clamp(1.2, 3.0);
         for s in streets.iter_mut().filter(|s| s.rank > 0 && matches!(s.role.as_str(), "street" | "lane" | "gate-street" | "wall-lane")) {
             for w in &mut s.widths { *w = w.min(width); }
-            if s.role == "street" { s.role = "track".into(); }
+            // A public footpath keeps frontage; rank-4 field tracks do not.
+            if s.role == "street" { s.role = "lane".into(); }
         }
     }
     let seaward = macroplan::harbour::seaward(&streets, surface);
@@ -4053,7 +4025,8 @@ fn generate_once(
     }
     // Piers, landing stages and moles stand on the finished quays, over the
     // water: they cut no block.
-    let works = macroplan::harbour::works(
+    if macroplan::harbour::port_town(cfg) {macroplan::harbour::keep_sea_access(&mut streets,surface,roads);}
+    let works = macroplan::harbour::configured_works(
         &streets,
         surface,
         site,
@@ -4062,6 +4035,7 @@ fn generate_once(
         } else {
             &cfg.culture
         },
+        cfg,
     );
     streets.extend(works);
     network::join_waterfront(&mut streets, radius);
@@ -4132,7 +4106,13 @@ pub(super) fn probe_quarter(
         morph.value["widthByRank"][rank].as_f64().unwrap_or(4.5)
             * morph.number_or("widthScale", 1.0).max(0.1)
     };
-    let (w, h) = if morph.text("streetOp") == "grid" {
+    let (w, h) = if !morph.text("campLayout").is_empty() {
+        // A camp is a whole figure, not ten urban blocks capped at 25 ha.
+        // Measure its own household cut at the requested demographic scale.
+        let density = morph.value["density"][zone].as_f64().unwrap_or(100.0).max(1.0);
+        let side = (population.max(1) as f64 * 10_000.0 / density).sqrt();
+        (side, side)
+    } else if morph.text("streetOp") == "grid" {
         let lanes = morph.pair("laneSpacing");
         let sp = if lanes[0] > 0.0 && lanes[1] > 0.0 {
             lanes
@@ -5176,7 +5156,9 @@ mod tests {
             off / (on + off).max(1.0)
         };
         let regional = off_axis(&|s: &Street| s.role == "regional");
-        let lanes = off_axis(&|s: &Street| s.rank >= 2 && s.role != "close");
+        // Wall walks follow the independently parameterized curtain; the
+        // compass invariant concerns the internal lattice and its approaches.
+        let lanes = off_axis(&|s: &Street| s.rank >= 2 && !matches!(s.role.as_str(), "close" | "wall-lane"));
         let share = core_street_share(&layout);
         let blocks = core_blocks(&layout);
         let mean =
@@ -5191,6 +5173,28 @@ mod tests {
         );
         assert!(lanes < 0.15, "lanes off the axes: {lanes:.2}");
         assert!(mean > 2500.0, "core blocks of {mean:.0} m²");
+    }
+
+    /// Invariant (planned walled culture): the walled city is the plan's
+    /// rectangle, every epoch inside, and the older circuit is a rectangle too;
+    /// the generic smoothed curtain never rounds it inside the town.
+    #[test]
+    fn a_chinese_city_is_walled_by_rectangles_around_the_whole_town() {
+        use geo::MinimumRotatedRect;
+        let layout = flat_town("chinese", 20_000, &[25.0, 118.0, 248.0]);
+        let ring = |e: &super::super::Enclosure| Shape { outer: e.path.clone(), holes: vec![] };
+        let squareness = |s: &Shape| g::area(s) / g::polygon(s).minimum_rotated_rect()
+            .map_or(f64::INFINITY, |r| g::area(&g::shapes(geo::MultiPolygon(vec![r]))[0]));
+        let walls: Vec<_> = layout.enclosures.iter().filter(|e| e.kind == "wall").map(ring).collect();
+        assert!(walls.len() >= 2, "{} circuits", walls.len());
+        for (i, w) in walls.iter().enumerate() {
+            assert!(squareness(w) > 0.97, "circuit {i}: {:.3} of its rectangle", squareness(w));
+        }
+        let outer = walls.iter().max_by(|a, b| g::area(a).total_cmp(&g::area(b))).unwrap();
+        let built: f64 = layout.blocks.iter().filter(|b| b.kind == "block").map(|b| g::area(&b.shape)).sum();
+        let inside: f64 = layout.blocks.iter().filter(|b| b.kind == "block")
+            .map(|b| g::intersection(&b.shape, outer).iter().map(g::area).sum::<f64>()).sum();
+        assert!(inside >= 0.95 * built, "{:.0} % of the blocks inside the wall", 100.0 * inside / built);
     }
 
     /// A 2 m strip left along a street by a dropped cut rejoins the block it

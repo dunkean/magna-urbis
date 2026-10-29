@@ -16,6 +16,7 @@ import { MAP_STROKES, svgMapStroke } from './strokes';
 import { underdarkPatterns, underdarkMarkSvg } from './underdark';
 import { canopyAreaMarks, canopySvg, type VegetationStyle } from './canopy';
 import { insideArea } from './scene';
+import { ruralDetailsSvg } from './ruralDetails';
 
 /** Land-use tints multiply over the hillshaded terrain so relief stays readable under them (browsers; resvg falls back to plain alpha). Dark styles blend normally. */
 const mul = (pal: Palette): string => (pal.landBlend === 'multiply' ? ' style="mix-blend-mode:multiply"' : '');
@@ -275,6 +276,7 @@ export function roadsLayer(world: World, pal: Palette, u: number, brushes?: SvgB
     }
     out += '</g>';
   }
+  if (world.landuse) out += ruralDetailsSvg(world.landuse, pal);
   for (const k of layers.roads ? kinds : []) {
     const d = by(k);
     if (!d) continue;
@@ -307,12 +309,13 @@ export function roadsLayer(world: World, pal: Palette, u: number, brushes?: SvgB
 }
 
 /** Placeholder for the town: reserve outline and center marker (M3 replaces this with the town). */
-export function siteLayer(world: World, pal: Palette, u: number, debug: boolean): string {
+export function siteLayer(world: World, pal: Palette, u: number, debug: boolean, labels = true): string {
   const site = world.site;
   if (!site) return '';
   const c = site.center;
   let out = `<g class="layer-site" fill="none">`;
   for (const p of world.landuse?.reserve ?? []) out += `<path d="${pathD(p, true)}" stroke="${pal.ink}" stroke-width="${f1(1.5 * u)}" stroke-dasharray="${f1(9 * u)} ${f1(6 * u)}" opacity="0.7"/>`;
+  if (!labels) return out + '</g>';
   out += `<circle cx="${f1(c.x)}" cy="${f1(c.y)}" r="${f1(9 * u)}" fill="none" stroke="${pal.ink}" stroke-width="${f1(1.6 * u)}"/>`;
   out += `<circle cx="${f1(c.x)}" cy="${f1(c.y)}" r="${f1(3.4 * u)}" fill="${pal.ink}"/>`;
   if (debug) {

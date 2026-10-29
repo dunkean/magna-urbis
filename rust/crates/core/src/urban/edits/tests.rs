@@ -33,10 +33,14 @@ fn town(cfg: &LayoutConfig) -> Layout {
         },
         radius: 220.0,
     };
+    // Edits are measured against the smooth curtain; a culture's straight-run
+    // default (wallStiffness) is the wall tests' business.
+    let mut cfg = cfg.clone();
+    cfg.wall_stiffness.get_or_insert(0.0);
     generate_quarters(
         "edits",
         &[site],
-        cfg,
+        &cfg,
         surface,
         &[
             road((50.0, 1000.0), (1950.0, 1010.0)),

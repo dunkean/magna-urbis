@@ -38,6 +38,18 @@ struct Plan {
     paths: Vec<Vec<Point>>,
     groups: usize,
 }
+
+pub(super) struct Entry { p:Point, normal:Point, half:f64 }
+pub(super) fn entries(layout:&Layout, c:Point)->Vec<Entry> {
+    let explicit=|s:&super::super::super::Street|matches!(s.role.as_str(),"regional"|"road"|"gate-street"|"approach"|"outbound");
+    let has_regional=layout.streets.iter().any(explicit);
+    layout.streets.iter().filter(|s|explicit(s)||!has_regional&&s.rank<=1&&matches!(s.role.as_str(),"street"|"lane"|"track"))
+        .filter_map(|s|s.path.windows(2).enumerate().filter(|(_,w)|length(sub(w[1],w[0]))>1e-6)
+            .min_by(|(_,a),(_,b)|crate::urban::geometry::distance(c,a[0],a[1]).0.total_cmp(&crate::urban::geometry::distance(c,b[0],b[1]).0))
+            .map(|(i,w)|{let d=unit(sub(w[1],w[0]));let a=s.widths.get(i).copied().unwrap_or(4.0);let b=s.widths.get(i+1).copied().unwrap_or(a);
+                Entry{p:scale(add(w[0],w[1]),0.5),normal:Point{x:-d.y,y:d.x},half:0.25*(a+b)}}))
+        .collect()
+}
 impl Plan {
     fn group(&mut self) -> usize {
         self.groups += 1;
@@ -138,7 +150,7 @@ fn households(layout: &Layout, per_house: f64) -> Option<usize> {
     for d in &programme.demands {
         if d.unit == "domesticUnits" && d.requested > 0.0 {
             n += (d.requested / per_house.max(1.0)).ceil();
-        } else if d.placement == "parcel" {
+        } else if d.placement == "parcel" && super::super::super::programme::camps::needs_cell(layout, d) {
             n += d.sites.max(1) as f64;
         }
     }
@@ -163,6 +175,7 @@ fn ring_unit(
     centre_frac: f64,
     room: f64,
     on: &dyn Fn(Point) -> bool,
+    entries: &[Entry],
 ) -> f64 {
     let span = TAU - gap;
     // Radius holding the row within the land (`room`), never smaller than a
@@ -241,7 +254,24 @@ fn ring_unit(
             plan.paths.push(fig.polyline(b0, bspan, dr - 0.5 * depth - 0.5 * path));
         }
     }
-    r + rows as f64 * (depth + path)
+    // Enter through the cultural opening, then walk outside the hut rows to
+    // actual regional kerbs. Each last leg meets the road across its width.
+    let outside=rows.max(1) as f64*(depth+path);
+    let gate=fig.at(beta,outside);
+    let mut approach=fig.polyline(beta,0.5*gap,-0.5*depth-0.5*path);
+    approach.reverse();approach.push(gate);plan.paths.push(approach);
+    for entry in entries {
+        let mut n=entry.normal;
+        if dot(sub(c,entry.p),n)<0. {n=scale(n,-1.);}
+        let mut landing=add(entry.p,scale(n,entry.half+path));
+        if !on(landing) {n=scale(n,-1.);landing=add(entry.p,scale(n,entry.half+path));}
+        if !on(landing) {continue;}
+        let a=(landing.y-c.y).atan2(landing.x-c.x);
+        let delta=(a-beta+PI).rem_euclid(TAU)-PI;
+        let mut way=if delta==0. {vec![gate]}else if delta>0. {fig.polyline(beta,delta,outside)}else{let mut p=fig.polyline(a,-delta,outside);p.reverse();p};
+        way.extend([landing,entry.p]);plan.paths.push(way);
+    }
+    r + outside
 }
 
 /// Mongol ordu: the head's tent at the back of the court, the senior tents in
@@ -481,6 +511,9 @@ fn near_polyline(p: Point, lines: &[Vec<Point>], r: f64) -> bool {
 
 /// The camp's tiles and paths for a `campForm` figure.
 pub(super) fn tiles(frame: &Frame, morph: &Morph, layout: &Layout) -> (Vec<Tile>, Vec<Shape>) {
+    tiles_with_allowance(frame,morph,layout,1.0)
+}
+pub(super) fn tiles_with_allowance(frame:&Frame,morph:&Morph,layout:&Layout,allowance:f64)->(Vec<Tile>,Vec<Shape>) {
     let form = morph.text("campForm");
     let mut rng = Rng::new(&format!("camp-form:{}:{form}", frame.key));
     let depth = morph.number_or("campRow", 10.0).max(4.0);
@@ -490,6 +523,7 @@ pub(super) fn tiles(frame: &Frame, morph: &Morph, layout: &Layout) -> (Vec<Tile>
     let gap = morph.number_or("campGap", 0.0).clamp(0.0, 150.0).to_radians();
     let unit_max = morph.number_or("campUnitMax", 0.0).max(0.0) as usize;
     let beta = opening(frame, morph, layout);
+    let entries=entries(layout,frame.centre);
     let on = |p: Point| on_land(layout, p);
     let mut plan = Plan { sites: vec![], paths: vec![], groups: 0 };
     let [house_w, house_l] = morph.pair("campHouse");
@@ -503,7 +537,7 @@ pub(super) fn tiles(frame: &Frame, morph: &Morph, layout: &Layout) -> (Vec<Tile>
     // (A real programme is lodged in full; only an open-ended probe demand,
     // far beyond the land, is cut to it.)
     let n = match households(layout, per_house) {
-        Some(h) if h <= 4 * land => h,
+        Some(h) if h <= 4 * land => (h as f64*allowance).ceil() as usize,
         Some(_) => land,
         None => land.min(400),
     }
@@ -517,11 +551,17 @@ pub(super) fn tiles(frame: &Frame, morph: &Morph, layout: &Layout) -> (Vec<Tile>
         }
         "plaza" => {
             let per = if unit_max > 0 { unit_max } else { 8 };
-            let units = n.div_ceil(per);
-            for u in 0..units {
-                let k = n.div_ceil(units).min(n - u * n.div_ceil(units));
-                let c = if u == 0 { frame.centre } else { add(frame.centre, scale(dir(beta + u as f64 * 2.4), 2.6 * house_l * (1.0 + (u / 3) as f64))) };
-                plaza(&mut plan, &mut rng, c, k.max(3), [house_w.max(6.0), house_l.max(12.0)], path, 0.8 * frame.equivalent, &on);
+            let mut centres = vec![frame.centre];
+            for u in 1..n.div_ceil(per) {
+                let c = add(frame.centre, scale(dir(beta + u as f64 * 2.4), 2.6 * house_l * (1.0 + (u / 3) as f64)));
+                if on(c) { centres.push(c); }
+            }
+            // A daughter plaza needs real land; otherwise the first figure
+            // holds the overflow, as the ring grammar already does.
+            let units = centres.len();
+            for (u, &c) in centres.iter().enumerate() {
+                let k = n / units + usize::from(u < n % units);
+                plaza(&mut plan, &mut rng, c, k.max(3), [house_w.max(6.0), house_l.max(12.0)], path, 0.8 * frame.equivalent / (units as f64).sqrt(), &on);
             }
         }
         _ => {
@@ -549,7 +589,7 @@ pub(super) fn tiles(frame: &Frame, morph: &Morph, layout: &Layout) -> (Vec<Tile>
                 if k == 0 {
                     break;
                 }
-                ring_unit(&mut plan, &mut rng, c, k, spacing, depth, path, gap, beta, head, centre_frac, frame.equivalent / (units as f64).sqrt(), &on);
+                ring_unit(&mut plan, &mut rng, c, k, spacing, depth, path, gap, beta, head, centre_frac, frame.equivalent / (units as f64).sqrt(), &on, if u==0 {entries.as_slice()}else{&[]});
                 if u > 0 {
                     plan.paths.push(vec![frame.centre, lerp(frame.centre, c, 0.5), c]);
                 }

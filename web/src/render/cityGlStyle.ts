@@ -86,7 +86,7 @@ export function streetPaint(role: string, rank: number, palette: CityPalette): {
     case 'causeway': return { fill: '#dccaa0', casing: '#76664f' };
     case 'ford': return { fill: '#b9d0d6', casing: '#6f8f9a' };
     case 'quay': return { fill: '#ddd4c2', casing: '#57534b' };
-    case 'stairs': return { fill: '#e6d5b2', casing: '#705d45' };
+    case 'port-stairs': case 'stairs': return { fill: '#e6d5b2', casing: '#705d45' };
     case 'market': return { fill: '#f5d98f', casing: '#9a7d4f' };
     case 'collective': return { fill: '#ccdacf', casing: '#8a9a8d' };
     case 'private': return { fill: '#d9cddf', casing: '#9a8ca1' };

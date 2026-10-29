@@ -5,6 +5,9 @@ use super::{
     UrbanCenter, UrbanEvent, catalogue, footprint, fortification, geometry as g, kinds::Kind,
     macroplan, profiles, resolve, routing,
 };
+#[path = "composition_faubourgs.rs"]
+mod faubourgs;
+pub(super) use faubourgs::{prepare_gate_villages, gate_service_cost, gate_demands, gate_morph, gate_activity, gate_pressures, grow_gate_villages};
 use crate::rng::Rng;
 use geo::algorithm::bool_ops::unary_union;
 
@@ -883,7 +886,7 @@ fn generate_modern(
             local_cfg.count = ((g::area(domain) / 40_000.0).round() as usize).clamp(1, 3);
         }
         local_cfg.rings = 1;
-        let mut part = macroplan::generate_domain(
+        let mut part = macroplan::generate_oriented_domain(
             &format!("{seed}\u{1}component:{component}"),
             &local,
             &local_cfg,
@@ -892,6 +895,7 @@ fn generate_modern(
             &growth_roads,
             local.radius,
             Some(domain),
+            cfg.regular_grid_outline.then(|| footprint::orientation(site, cfg, surface, roads)),
         );
         plan.quarters.append(&mut part.quarters);
         plan.streets.append(&mut part.streets);
@@ -959,7 +963,7 @@ fn generate_modern(
             shapes: shapes.clone(),
         });
     }
-    fortify(
+    let (gate_centers, gate_lanes) = fortify(
         &mut plan,
         &mut phases,
         culture,
@@ -1004,6 +1008,8 @@ fn generate_modern(
     plan.warnings.append(&mut footprint.warnings);
     footprint.structure.metrics.components = domains.len();
     let archetype = footprint.structure.family.clone();
+    footprint.structure.gate_village_centers = gate_centers;
+    footprint.structure.gate_village_lanes = gate_lanes;
     plan.structure = Some(footprint.structure);
     Ok(Composition {
         plan,
@@ -1242,41 +1248,9 @@ pub(super) fn water_gates(path: &[Point], surface: Surface<'_>) -> Vec<(Point, b
     }
     out
 }
-fn curtain(shape: &Shape, cell: f64) -> Shape {
-    let tolerance = (g::area(shape).sqrt() * 0.02)
-        .clamp(2.0, 10.0)
-        .max(cell * 0.75);
-    // Two corner-cutting passes turn growth-grid stair steps into slopes the
-    // simplification can straighten; the curtain then runs in long straight sides.
-    let mut ring = shape.outer.clone();
-    for _ in 0..2 {
-        let n = ring.len();
-        ring = (0..n)
-            .flat_map(|i| {
-                let (a, b) = (ring[i], ring[(i + 1) % n]);
-                [
-                    Point {
-                        x: a.x * 0.75 + b.x * 0.25,
-                        y: a.y * 0.75 + b.y * 0.25,
-                    },
-                    Point {
-                        x: a.x * 0.25 + b.x * 0.75,
-                        y: a.y * 0.25 + b.y * 0.75,
-                    },
-                ]
-            })
-            .collect();
-    }
-    ring.push(ring[0]);
-    let mut outer = g::simplify(&ring, tolerance, |_| false);
-    outer.pop();
-    if outer.len() < 3 {
-        return shape.clone();
-    }
-    g::normalized(Shape {
-        outer,
-        holes: shape.holes.clone(),
-    })
+fn curtain(shape: &Shape, cell: f64, small: bool) -> Shape {
+    if small { fortification::village_trace(shape, cell, false) }
+    else { fortification::curtain_trace(shape) }
 }
 /// Runs of a closed path that are dry and within street grade, at least 80 m
 /// long. A fully clear ring is returned whole.
@@ -1478,14 +1452,22 @@ fn fortify(
     morph: &Morph,
     small: bool,
     metropolis: bool,
-) {
+) -> (Vec<Point>, Vec<Street>) {
     let profile = profiles::settlement_profile(culture, site.population, cfg.phases);
     let kind = profiles::fortification(profile, &cfg.fortification, site.population);
     if !matches!(kind, "wall" | "palisade" | "hedge") || phases.is_empty() {
-        return;
+        return (vec![], vec![]);
     }
     let epochs = phases.len();
-    let walled = if small || epochs == 1 {
+    // A planned walled culture (square or rectangular founding plan, `wall`)
+    // supersedes the faubourg rule: its rectangle is the walled city, every
+    // epoch inside, each older epoch keeping its own circuit.
+    let enclosure = &culture_data(culture, site.population)["core"]["enclosure"];
+    let planned = matches!(enclosure["shape"].as_str(), Some("square" | "rect"))
+        && enclosure["wall"].as_str() == Some("wall");
+    let cardinal = enclosure["orientation"].as_str() == Some("cardinal");
+    let force_rect = cfg.planned_wall == "rect";
+    let walled = if small || epochs == 1 || planned {
         epochs
     } else {
         epochs - 1
@@ -1507,22 +1489,23 @@ fn fortify(
         // A hamlet-sized outlier gets no circuit of its own.
         .filter(|s| g::area(s) > 15_000.0)
         .map(|s| match trace {
-            "hill" => Some(fortification::hill_trace(s, cell)),
-            "bastioned" => fortification::bastioned_trace(&curtain(s, cell), surface),
+            "hill" => Some(if small { fortification::village_trace(s, cell, true) }
+                else { fortification::hill_trace(s, cell) }),
+            "bastioned" => fortification::bastioned_trace(&curtain(s, cell, small), surface),
             // A planned city's square circuit, where its land allows one.
             "square" => {
-                let base = curtain(s, cell);
-                Some(fortification::square_trace(&base, surface).unwrap_or(base))
+                let base = curtain(s, cell, small);
+                Some(fortification::square_trace(&base, surface, cardinal, force_rect).unwrap_or(base))
             }
-            _ => Some(curtain(s, cell)),
+            _ => Some(curtain(s, cell, small)),
         })
         .collect::<Option<Vec<_>>>()
     };
     let Some(walls) = enclosed(walled, "") else {
-        return;
+        return (vec![], vec![]);
     };
     if walls.is_empty() {
-        return;
+        return (vec![], vec![]);
     }
     // Style inside the kind: culture, population, period, site and relief
     // (`fortification::resolve`); the trace then follows the style.
@@ -1546,12 +1529,9 @@ fn fortify(
     );
     // Planned cultures (square or rectangular founding plan) on a regular
     // trace keep a square circuit.
-    let square = !style.hill
-        && style.id == "wengcheng"
-        && matches!(
-            culture_data(culture, site.population)["core"]["enclosure"]["shape"].as_str(),
-            Some("square" | "rect")
-        );
+    let square = cfg.planned_wall != "follow" && (force_rect || !style.hill)
+        && (planned || style.id == "wengcheng"
+            && matches!(enclosure["shape"].as_str(), Some("square" | "rect")));
     let walls = if style.hill {
         enclosed(walled, "hill").unwrap_or(walls)
     } else if square {
@@ -1589,7 +1569,10 @@ fn fortify(
     };
     let walls = fortification::trace_enclosures(walls, &plan.quarters.iter()
         .map(|q| q.shape.clone()).collect::<Vec<_>>(), surface);
-    let inner_style = style.inner(culture, site.population);
+    let walls = walls.into_iter().map(|s| fortification::parameter_trace(s, surface, cfg, culture, style.curtain_width)).collect::<Vec<_>>();
+    style.options(cfg);
+    let mut inner_style = style.inner(culture, site.population);
+    inner_style.options(cfg);
     let data = culture_data(culture, site.population);
     let fossil = data["core"]["enclosure"]["fossil"]
         .as_str()
@@ -1597,12 +1580,14 @@ fn fortify(
     let mut inner_walls = vec![];
     // A metropolis keeps every older circuit: each became a ring boulevard
     // when the next wall was built (unless the culture keeps inner walls).
-    let fossil = if metropolis && fossil != "wall" {
+    let citadel = cfg.old_enclosure_citadel && fortification::keeps_citadel(culture);
+    let fossil = if citadel { "wall" } else if metropolis && fossil != "wall" {
         "street"
     } else {
         fossil
     };
-    let circuits = if metropolis { walled } else { walled.min(2) };
+    // A large planned capital keeps one circuit per epoch (palace/inner/outer city).
+    let circuits = if metropolis || planned && site.population >= 100_000 { walled } else { walled.min(2) };
     for count in 1..circuits {
         let old = enclosed(count, "").unwrap_or_default();
         if fossil == "street" {
@@ -1640,7 +1625,7 @@ fn fortify(
             let old = fortification::trace_enclosures(old, &plan.quarters.iter()
                 .map(|q| q.shape.clone()).collect::<Vec<_>>(), surface);
             partition(&mut plan.quarters, &old);
-            inner_walls.extend(old);
+            inner_walls.extend(old.into_iter().map(|s| fortification::parameter_trace(s, surface, cfg, culture, inner_style.curtain_width)));
         }
     }
     if small { fit_enclosed_quarters(&mut plan.quarters, &walls, &plan.streets, surface); }
@@ -1674,6 +1659,7 @@ fn fortify(
         let mut enclosure = Enclosure {
             path,
             kind: kind.into(),
+            purpose: if citadel && i >= outer { "citadel".into() } else { String::new() },
             gates,
             ..Default::default()
         };
@@ -1710,4 +1696,5 @@ fn fortify(
             phase.recipe = recipe(culture, site.population, "faubourg");
         }
     }
+    faubourgs::grow_gate_villages(plan, cfg, surface)
 }

@@ -16,6 +16,8 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap};
 mod functions;
 #[path = "programme_lots.rs"]
 mod lots;
+#[path = "programme_camps.rs"]
+pub(in crate::urban) mod camps;
 pub use functions::{ProgrammeFunctions, PROGRAMME_FUNCTIONS_VERSION};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -260,11 +262,15 @@ fn function_class(function: &str) -> &'static str {
         _ => "other",
     }
 }
-pub fn prepare(
+pub fn prepare(layout: &mut Layout, population: u32, context: &ProgrammeContext, surface: Surface<'_>) -> Result<(), String> {
+    prepare_inner(layout, population, context, surface, true)
+}
+fn prepare_inner(
     layout: &mut Layout,
     population: u32,
     context: &ProgrammeContext,
     surface: Surface<'_>,
+    reconcile_walls: bool,
 ) -> Result<(), String> {
     if !([
         "auto",
@@ -473,6 +479,7 @@ pub fn prepare(
             demands.push(d);
         }
     }
+    super::composition::gate_demands(layout, &mut demands);
     if let Some(rule) = isolated_rule {
         // A named site is an intention for one native structure, not a town
         // whose household demand is inferred from its visitor/population field.
@@ -518,9 +525,11 @@ pub fn prepare(
         }
     }
     for d in &mut demands {
+        if d.requires.iter().any(|r| r == "navigableAccess") { d.site = "quay".into(); }
         if d.role.is_empty() {
             d.role = default_role(&d.function).into();
         }
+        camps::explain(layout, population, d, context);
         if context.functions.is_some() && !isolated {
             d.provenance.push(format!("Explicit combined functions:{}; non-isolated legacy role is not used as a specialization", serde_json::to_string(&functions).expect("validated finite function weights")));
         }
@@ -579,13 +588,20 @@ pub fn prepare(
         .collect::<Vec<_>>();
     // District roles read the same environment the services are sited with.
     // A sea or lake shore is a harbour; a river carries boats past a town.
-    let navigable = context.navigable_access
-        || environment
-            .iter()
-            .any(|e| matches!(e.water.as_str(), "sea" | "lake"))
-        || (population >= 3000 && environment.iter().any(|e| e.water == "river"));
+    let navigable = super::macroplan::harbour::navigable(layout, surface);
+    if !navigable {
+        for d in demands.iter_mut().filter(|d| d.site == "quay") {
+            d.reasons.push("No explicit navigable harbour frontage: no port may be inferred from a label or water proximity".into());
+        }
+    }
     lap("environment");
     let block_district = roles::assign(layout, population, navigable, &environment);
+    // Exact port quarters now exist; rebuild environment/reservations once if
+    // their enclosure changes the block reserve. No stale block indices survive.
+    if reconcile_walls && let Some(cfg) = layout.config.clone()
+        && super::fortification::port_walls(layout, &cfg, surface) {
+        return prepare_inner(layout, population, context, surface, false);
+    }
     lap("districts");
     for (e, d) in environment.iter_mut().zip(block_district) {
         e.district = d;
@@ -690,6 +706,7 @@ pub fn prepare(
         let (layout_ref, used_ref, demand) = (&*layout, &used, &*d);
         let mut options = super::par::map(&layout_ref.blocks, |bi, b| {
             let (layout, used, d) = (layout_ref, used_ref, demand);
+            if !camps::supported(layout, population, bi, d, context) { return None; }
             if missing_source.get(bi)==Some(&true) { return None; }
             if needs_water && !environment[bi].waterfront {
                 return None;
@@ -703,6 +720,8 @@ pub fn prepare(
                 return None;
             }
             let isolated_profile;
+            let functional_profile=super::culture::functional_mapping(block_culture(layout,bi),&d.role,&d.function,&context.period,
+                match context.mode.as_str(){"strict"=>"historical_strict","fantasy"=>"fantasy_mix",_=>"historical_inspired"});
             let profile = if isolated {
                 isolated_profile = super::culture::isolated_mapping(
                     block_culture(layout, bi),
@@ -711,7 +730,7 @@ pub fn prepare(
                 )?
                 .admissibility;
                 &isolated_profile
-            } else {
+            } else if let Some(ref functional) = functional_profile { &functional.admissibility } else {
                 admissions[bi][class_index(class)]
                     .get_or_init(|| {
                         super::culture::block_mapping(
@@ -864,7 +883,8 @@ pub fn prepare(
                 bi,
                 street,
                 front,
-                score + (d.target_frontage - front).max(0.0) / d.target_frontage.max(1.0),
+                score + super::fortification::service_cost(layout, d, c)
+                    + (d.target_frontage - front).max(0.0) / d.target_frontage.max(1.0),
             ))
         })
         .into_iter()
@@ -1075,16 +1095,8 @@ fn water_kind(surface: &Surface<'_>, p: Point) -> &'static str {
     }
 }
 /// Architecture pack of a block's contextual mapping for a function.
-fn profile_pack(layout: &Layout, block: usize, function: &str, period: &str) -> String {
-    super::culture::block_mapping(
-        layout,
-        block_culture(layout, block),
-        block,
-        function,
-        period,
-    )
-    .map(|c| c.architecture_pack)
-    .unwrap_or_default()
+fn profile_pack(layout: &Layout, block: usize, _function: &str, _period: &str) -> String {
+    super::culture::architecture_pack(block_culture(layout,block)).unwrap_or_default().into()
 }
 fn block_culture(layout: &Layout, index: usize) -> &str {
     layout
@@ -1222,6 +1234,7 @@ fn open_access_with(p: &Parcel, minimum: f64, public_frontage: f64) -> bool {
 /// were recomputed for every demand x parcel.
 #[derive(Default)]
 struct Memo {
+    camp_sources: HashMap<(usize, String, String), bool>,
     mappings: HashMap<(usize, String, &'static str), Option<CultureMapping>>,
     envelopes: HashMap<(usize, u64, u64), bool>,
     /// Continuous frontage per parcel: (all contacts, public contacts only).
@@ -1338,6 +1351,9 @@ fn eligible_memo(
     pr: &UrbanProgramme,
     memo: &mut Memo,
 ) -> bool {
+    if matches!(d.function.as_str(), "collective" | "warehouse" | "workshop")
+        && !*memo.camp_sources.entry((p.block, d.role.clone(), d.function.clone()))
+            .or_insert_with(|| camps::supported(layout, pr.population, p.block, d, &pr.context)) { return false; }
     let Some(c) = memo.mapping(layout, p, &d.function).map(Admit::of) else {
         return false;
     };
@@ -1526,7 +1542,8 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
         d.open_capacity = 0.0;
         d.deficit = d.requested;
         d.reasons
-            .retain(|r| !r.starts_with("Insufficient admissible") && !r.starts_with("Placed "));
+            .retain(|r| !r.starts_with("Insufficient admissible") && !r.starts_with("Placed ") && !r.starts_with("source_absente: camp need retained;"));
+        camps::explain(layout, pr.population, d, &pr.context);
     }
     let part: &Partition = partition;
     let parcels = &part.parcels;
@@ -1594,7 +1611,7 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
             }
             let key = (
                 d.function.clone(),
-                d.requires.join("|"),
+                if camps::camp(layout, pr.population) { format!("{}|{}", d.requires.join("|"), d.role) } else { d.requires.join("|") },
                 d.target_frontage.to_bits(),
             );
             if !classes.contains_key(&key) {
@@ -1758,6 +1775,7 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
                 (
                     pi,
                     roles::site_cost(&d.site, &facts[pi]) + size * 0.5
+                        + super::fortification::service_cost(layout, d, centroid(&parcels[pi].shape))
                         - if district { 1.0 } else { 0.0 }
                         + if open_front { 2.0 } else { 0.0 },
                 )
@@ -1809,9 +1827,9 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
     lap("bands");
     // Households per plot from floor area, floors and the cultural occupancy.
     let occupancy = roles::occupancy(&layout.culture);
-    let village = pr.population < 500
+    let village = pr.population < 500 || camps::camp(layout, pr.population)
         || mapping(&layout.culture).is_some_and(|m| m.functional_profile == "communal");
-    let mut morphs: HashMap<(usize, String), Option<(f64, [f64; 2], bool)>> = HashMap::new();
+    let mut morphs: HashMap<(usize, String), Option<(f64, [f64; 2], bool, Option<f64>)>> = HashMap::new();
     let dwelling = pr
         .demands
         .iter()
@@ -1845,11 +1863,12 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
                                 ((c[0] + c[1]) * 0.5).clamp(0.2, 0.95),
                                 [s[0].as_f64().unwrap_or(1.0), s[1].as_f64().unwrap_or(1.0)],
                                 matches!(m.value["arch"]["typology"].as_str().unwrap_or(""), "longhouse" | "maloca" | "plank-house"),
+                                camps::households_per_house(&m),
                             )
                         },
                     )
                 })
-                .unwrap_or((0.5, [1.0, 1.0], false));
+                .unwrap_or((0.5, [1.0, 1.0], false, None));
             let zone_village = layout
                 .blocks
                 .get(p.block)
@@ -1864,14 +1883,15 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
             let floors = (drawn + (top - drawn).max(0.0) * densify)
                 .round()
                 .clamp(f64::from(limits[0]), top);
-            household_capacity(
+            let capacity = household_capacity(
                 land_areas[pi],
                 tissue.0,
                 floors,
                 &occupancy,
                 district_of(p).map_or(0.5, |d| d.wealth),
                 (village || zone_village) && !tissue.2,
-            )
+            );
+            tissue.3.unwrap_or(capacity)
         })
         .collect::<Vec<_>>();
     // Forced dwellings hold their stated households (else the plot capacity).
@@ -1977,6 +1997,7 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
                     + quarter
                     + street
                     + if core { 2.0 * PRIME_TIER } else { 0.0 }
+                    + 2.4 * PRIME_TIER * super::composition::gate_activity(layout, centres[pi])
             })
             .collect::<Vec<_>>();
         let mut row = admission[di].clone();
@@ -2739,7 +2760,9 @@ fn validate_open_deficit(allocation: &Allocation, programme: &UrbanProgramme, sp
         || deficit.request_id.is_empty() || space.id.as_deref() != Some(deficit.request_id.as_str())
         || deficit.demand_id != allocation.demand_id || deficit.original_function != allocation.function
         || !matches!(allocation.function.as_str(), "domestic" | "mixed" | "workshop" | "warehouse" | "collective")
-        || deficit.role.is_empty() || deficit.role != allocation.role || demand.role != allocation.role
+        || deficit.role.is_empty() || deficit.role != allocation.role
+        || !(demand.role == allocation.role || demand.role == "dwelling"
+            && allocation.function == "domestic" && allocation.role.starts_with("dwelling."))
         || demand.function != allocation.function || demand.unit != allocation.unit
         || !matches!(deficit.cause.as_str(), "pente" | "forme" | "source_absente")
         || deficit.message.trim().is_empty() || !deficit.households.is_finite() || deficit.households < 0.

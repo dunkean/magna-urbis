@@ -5,7 +5,7 @@ export interface CroppedExport { blob: Blob; width: number; height: number }
 const ns = 'http://www.w3.org/2000/svg';
 
 /** Preview the captured SVG, then change only its viewport. The generated map stays intact. */
-export async function chooseExportCrop(blob: Blob, longestEdge: number): Promise<CroppedExport | null> {
+export async function chooseExportCrop(blob: Blob, longestEdge: number, localize?: (dialog:HTMLDialogElement)=>void): Promise<CroppedExport | null> {
   const doc = new DOMParser().parseFromString(await blob.text(), 'image/svg+xml');
   const svg = doc.documentElement;
   const values = (svg.getAttribute('viewBox') ?? '').trim().split(/[\s,]+/).map(Number);
@@ -84,6 +84,7 @@ export async function chooseExportCrop(blob: Blob, longestEdge: number): Promise
   dialog.querySelector<HTMLButtonElement>('[data-action="reset"]')!.onclick = () => { selection = { ...bounds }; refresh(); };
   refresh();
   document.body.append(dialog);
+  localize?.(dialog);
   return new Promise((resolve, reject) => {
     let result: CroppedExport | null = null;
     dialog.onclose = () => { URL.revokeObjectURL(url); dialog.remove(); resolve(result); };

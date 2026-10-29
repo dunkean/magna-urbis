@@ -136,14 +136,23 @@ fn camp_preset_params(culture: &str, population: u32, cfg: &LayoutConfig) -> &'s
     &super::catalogue()["presets"][preset]["params"]
 }
 
-fn native_camp(culture: &str, population: u32, cfg: &LayoutConfig) -> bool {
-    camp_preset_params(culture, population, cfg)["campLayout"]
-        .as_str().is_some_and(|layout| !layout.is_empty())
+pub(in crate::urban) fn native_camp(culture: &str, population: u32, cfg: &LayoutConfig) -> bool {
+    let params = camp_preset_params(culture, population, cfg);
+    params["campLayout"].as_str().is_some_and(|layout| !layout.is_empty())
+        || organic_camp(culture, population, params)
+}
+
+// A clustered footpath camp keeps its organic cut, including below the
+// hamlet threshold. The selected recipe must still declare that grammar.
+fn organic_camp(culture: &str, population: u32, params: &serde_json::Value) -> bool {
+    params["parcellation"] == "organic" && params["footpathWidth"].as_f64().is_some_and(|w| w > 0.0)
+        && composition::culture_data(culture, population)["village"]["form"] == "ring"
 }
 
 fn cultural_camp(culture: &str, population: u32, cfg: &LayoutConfig) -> bool {
     let params = camp_preset_params(culture, population, cfg);
     if !params.is_object() { return false; }
+    if organic_camp(culture, population, params) { return true; }
     if let Some(layout) = params.get("campLayout") {
         return layout.as_str().is_some_and(|s| !s.is_empty());
     }
@@ -778,7 +787,8 @@ pub(super) fn lay_out(
     // These camps already have the shared quarter + parcels/camp grammar.
     // Returning None delegates to the caller's existing quarter pipeline;
     // do not first replace its land with the legacy annular band below.
-    if kind == Kind::Camp && !morph.text("campLayout").is_empty()
+    if kind == Kind::Camp && (!morph.text("campLayout").is_empty()
+        || organic_camp(culture(site, cfg), site.population, &morph.value))
         && native_camp(culture(site, cfg), site.population, cfg)
     {
         return None;
@@ -870,7 +880,10 @@ pub(super) fn lay_out(
         })
         .collect();
     let structure = UrbanStructure {
+        gate_village_centers: vec![],
+        gate_village_lanes: vec![],
         quays: vec![],
+        port_districts: vec![],
         version: 1,
         mechanism: "kind".into(),
         family: kind.id().into(),
@@ -1601,3 +1614,6 @@ mod camp_kind_mapping_tests;
 #[cfg(test)]
 #[path = "kinds_camp_consumer_activation_tests.rs"]
 mod camp_consumer_tests;
+#[cfg(test)]
+#[path = "camps_pnw_replay_tests.rs"]
+mod camps_pnw_replay_tests;

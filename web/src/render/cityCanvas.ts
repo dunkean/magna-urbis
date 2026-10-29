@@ -13,6 +13,8 @@ import { cityWallDetails, drawCityWallGround, drawCityWalls } from './cityWalls'
 import { STRUCTURE_ROLES, blendLine, blendTone, blendsGround, groundWash, isBlended, softStreet, type WashKind } from './groundBlend';
 import { CityGround, boardwalkWidth, isBoardwalk, type CityGroundRaster } from './cityGround';
 import { buildingRoof, pieceShadows, pieceVolumes, readMassing, stiltDeck, stiltSupports, roofLight as roofLight3 } from './cityMassing';
+import { drawGardenDetails } from './readableGardens';
+import { polygonCentroid as shapeRingCenter } from '../gen/core/geom';
 
 export interface Box { minX: number; minY: number; maxX: number; maxY: number }
 export type CityView = 'tissue' | 'uses' | 'parcels' | 'buildings' | 'roles';
@@ -296,6 +298,9 @@ export function pickCity(scene: CityScene, buildings: CityBuildings | undefined,
 // ---------------------------------------------------------------- drawing
 export interface CityBuildingRenderer { draw(ctx: CanvasRenderingContext2D, options: { viewport: Box; metresPerPixel: number; appearance: UrbanBuildingAppearance; selectedId?: string }): { rasterTilesPending: number } }
 export interface CityDrawOptions {
+  readableGardens?: boolean;
+  /** Names, landmark glyphs and centre pins; omitted keeps the normal map. */
+  labels?: boolean;
   viewport: Box; mpp: number; dpr: number; lod: CityLod; view: CityView; palette: CityPalette; width: number; layers: CityLayers;
   buildings?: CityBuildings; buildingsVisible: boolean; renderer?: CityBuildingRenderer; appearance: UrbanBuildingAppearance;
   selectedBuilding?: string; selectedParcel?: number; refusedParcels?: ReadonlySet<string>;
@@ -396,7 +401,7 @@ function streetPaint(role: string, rank: number, palette: CityPalette): { fill: 
     case 'causeway': return { fill: '#dccaa0', casing: '#76664f' };
     case 'ford': return { fill: '#b9d0d6', casing: '#6f8f9a', dash: true };
     case 'quay': return { fill: '#ddd4c2', casing: '#57534b' };
-    case 'stairs': return { fill: '#e6d5b2', casing: '#705d45' };
+    case 'port-stairs': case 'stairs': return { fill: '#e6d5b2', casing: '#705d45' };
     case 'market': return { fill: '#f5d98f', casing: '#9a7d4f' };
     case 'collective': return { fill: '#ccdacf', casing: '#8a9a8d' };
     case 'private': return { fill: '#d9cddf', casing: '#9a8ca1' };
@@ -524,6 +529,20 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
     batch.flush(ctx);
   }
 
+  if (o.readableGardens && (lod === 'near' || lod === 'close') && view !== 'tissue') {
+    for (const i of scene.bins.parcels.query(viewport)) {
+      const garden = scene.parcels[i];
+      if (garden.use !== 'garden') continue;
+      const center = shapeRingCenter(garden.shape.outer);
+      const neighbours = scene.bins.parcels.query(shapeBox(garden.shape)).map(j => scene.parcels[j])
+        .filter(p => p.layout === garden.layout && p.block === garden.block && ['plot', 'compound', 'court'].includes(p.use));
+      const nearest = neighbours.sort((a, b) => {
+        const x = shapeRingCenter((a.source.envelope ?? a.shape).outer), y = shapeRingCenter((b.source.envelope ?? b.shape).outer);
+        return Math.hypot(x.x - center.x, x.y - center.y) - Math.hypot(y.x - center.x, y.y - center.y);
+      })[0];
+      if (nearest) drawGardenDetails(ctx, garden.shape, shapeRingCenter((nearest.source.envelope ?? nearest.shape).outer), mpp);
+    }
+  }
   if (layers.streets) for (const q of scene.quays ?? []) {
     if (!overlaps(shapeBox(q.shape), viewport)) continue;
     const path = shapePath(q.shape);
@@ -563,7 +582,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
         }
         marks.add({ stroke: paint.casing, width: Math.max(0.25, px(0.55)), cap: 'butt' }, rails);
       }
-      if (s.role === 'stairs' && lod === 'close') marks.add({ stroke: '#705d45', width: px(0.6) }, stairMarks(s.street.path, s.width));
+      if ((s.role === 'stairs' || s.role === 'port-stairs') && lod === 'close') marks.add({ stroke: '#705d45', width: px(0.6) }, stairMarks(s.street.path, s.width));
     }
     casing.flush(ctx); fill.flush(ctx); marks.flush(ctx);
   }
@@ -631,6 +650,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
   batch.flush(ctx);
 
   // Screen-space marks: landmarks, district names, centres.
+  if (o.labels === false) { stats.ms = performance.now() - start; return stats; }
   ctx.save(); ctx.setTransform(o.dpr, 0, 0, o.dpr, 0, 0);
   const screen = (p: Point): Point => ({ x: (p.x - viewport.minX) / mpp, y: (p.y - viewport.minY) / mpp });
   const label = (text: string, p: Point, size: number, color: string, weight = 600): void => {

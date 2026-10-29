@@ -1,0 +1,184 @@
+{
+  "id": "MED-ANT-H01",
+  "pack_id": "MED-ANT",
+  "label": "Horreum romain — rangées de magasins inspirées",
+  "priority": "P1",
+  "role": "spatial_component",
+  "profile": "roman_horreum_rows",
+  "parameters": {
+    "layout": "parallel",
+    "footprint_family": "FP-RECT",
+    "roof_system": "RF-GABLE",
+    "structure_system": "masonry",
+    "materials": {
+      "frame": "MAT-BURNT-BRICK",
+      "infill": "MAT-BURNT-BRICK",
+      "coating": "MAT-PLASTER-LIME",
+      "cladding": "MAT-TILE-CLAY",
+      "base": "MAT-STONE-DRY",
+      "roof_frame": "MAT-TIMBER-POST"
+    },
+    "width_m": [
+      18,
+      30
+    ],
+    "depth_m": [
+      14,
+      36
+    ],
+    "floors": [
+      1,
+      1
+    ],
+    "bodies": [
+      3,
+      3
+    ],
+    "rooms_per_body": [
+      0,
+      0
+    ],
+    "elevation_family": "ground",
+    "details": [
+      "masonry_joints"
+    ],
+    "roof_pitch_deg": [
+      20,
+      35
+    ],
+    "overhang_m": [
+      0.15,
+      0.25
+    ],
+    "wall_thickness_m": [
+      0.6,
+      0.8
+    ],
+    "courtyard_ratio": [
+      0.35,
+      0.55
+    ],
+    "allowed_roofs": [
+      "RF-GABLE"
+    ],
+    "allowed_footprints": [
+      "FP-RECT"
+    ],
+    "variant_id": "default",
+    "roof_spec": {
+      "axis": "longitudinal",
+      "tiers": 3,
+      "tier_inset_ratio": 0.15,
+      "tier_rise_m": 1.0,
+      "drum_height_m": 0.7,
+      "gambrel_break_ratio": 0.55,
+      "gambrel_lower_pitch_deg": 55.0,
+      "saddle_rise_ratio": 0.18,
+      "step_count": 7,
+      "shell_sections": 12,
+      "parapet_height_m": 0.4,
+      "drainage_side": 2,
+      "dome_rise_ratio": 1.0,
+      "oculus_ratio": 0.0,
+      "curve_lift_ratio": 0.12,
+      "tent_crown_ratio": 0.08,
+      "shell_cross_rise_ratio": 0.7,
+      "shell_long_rise_ratio": 0.18,
+      "round_segments": 32,
+      "curve_sections": 12
+    },
+    "gallery_cover": {
+      "enabled": false,
+      "rf": "RF-SHED",
+      "spec": {
+        "axis": "longitudinal",
+        "tiers": 3,
+        "tier_inset_ratio": 0.15,
+        "tier_rise_m": 1.0,
+        "drum_height_m": 0.7,
+        "gambrel_break_ratio": 0.55,
+        "gambrel_lower_pitch_deg": 55.0,
+        "saddle_rise_ratio": 0.18,
+        "step_count": 7,
+        "shell_sections": 12,
+        "parapet_height_m": 0.4,
+        "drainage_side": 2,
+        "dome_rise_ratio": 1.0,
+        "oculus_ratio": 0.0,
+        "curve_lift_ratio": 0.12,
+        "tent_crown_ratio": 0.08,
+        "shell_cross_rise_ratio": 0.7,
+        "shell_long_rise_ratio": 0.18,
+        "round_segments": 32,
+        "curve_sections": 12
+      },
+      "height_m": 2.2,
+      "width_m": 0.85,
+      "pitch_deg": 10.0,
+      "max_span_m": 3.0,
+      "support_spacing_m": 1.5
+    },
+    "level_height_m": 4.0,
+    "detail_spec": null,
+    "court_program": null,
+    "portal_profile": null,
+    "site_gate_profile": null,
+    "structural_spec": null,
+    "components": [],
+    "notes": [
+      "Inspired reuse of the native parallel-row grammar: three long masonry storage halls, ground bearing, timber gables and shared loading front. All dimensions, wall/eaves/roof ranges and hall count are artistic defaults. No grain tonnage, household or historical service capacity is certified. See roman-horreum-source.md."
+    ],
+    "enclosure_family": "none",
+    "envelope": "walled",
+    "support": {
+      "kind": "ground",
+      "material": null,
+      "height_m": [
+        0,
+        0
+      ]
+    },
+    "vertical_access": "none",
+    "level_materials": [],
+    "shell": null,
+    "cells": [
+      0,
+      0
+    ],
+    "vertical_routes": [],
+    "enclosures": []
+  },
+  "variants": [],
+  "component_kind": "storage_rows",
+  "temporal": {
+    "eras": [
+      "A"
+    ],
+    "tradition_long": false,
+    "late_only": false,
+    "from_year": null,
+    "to_year": null
+  },
+  "confidence": "stylized",
+  "roof_confidence": "uncertain",
+  "sources": [
+    {
+      "path": "rust/crates/houses/data/roman-horreum-source.md",
+      "line": 3
+    }
+  ],
+  "source_description": [
+    "Three long masonry storage halls with a shared loading apron; inspired reuse, not a surveyed reconstruction."
+  ],
+  "settlement_pattern": "SET-LINEAR",
+  "settlement_archetype": "MED-ANT-S04",
+  "subtradition": "Roman storage",
+  "context_note": "Quay or street-served storage apron",
+  "chronology_note": "Inspired Roman storage rows; no measured reconstruction or certified capacity.",
+  "chronology_confidence": "broad_tradition",
+  "compound_pattern": "LOT-COMPOUND",
+  "surface_language": "Masonry halls with timber gables and clay tiles",
+  "weight": 0,
+  "tradition_id": "roman_urban",
+  "inspired_only": true
+}

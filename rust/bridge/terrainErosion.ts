@@ -4,6 +4,7 @@ import volcanicShader from './terrainFinite.wgsl?raw';
 import { GenerationNoisePlan, TerrainEngine } from '../pkg/wasm/magna_urbis_wasm.js';
 import type { Context } from './terrainGpu';
 import type { TerrainSettings } from './terrain';
+import { gpuSetupDeadline, type TerrainProgressCallback } from './terrainProgress';
 
 const ENTRIES = ['initialize', 'uplift', 'start', 'clearNext', 'solveStats', 'floodInit', 'solveTile', 'receivers', 'flow', 'graphInit', 'graphFinish', 'floodCheck', 'pitInit', 'pitUnion', 'pitCompress', 'pitReduce', 'pitPour', 'pitFill', 'breachInit', 'breach', 'breachFinish', 'thermalFlux', 'thermalApply', 'copyHeight', 'bounds', 'diffuse', 'reconstruct', 'percentileInit', 'histogramClear', 'histogram', 'percentileSelect', 'detail', 'normalize', 'volcanicInitial', 'surfaceLoad', 'surfaceFlowInit', 'surfaceDelta', 'surfaceReconstruct', 'canyonSeed', 'canyonSpread', 'canyonApply', 'coastLoad', 'coastResult', 'packHeight'] as const;
 type Entry = typeof ENTRIES[number];
@@ -21,7 +22,7 @@ function serialized<T>(state: Context, operation: () => Promise<T>): Promise<T> 
   pending.set(state.device, result.catch(() => undefined));
   return result;
 }
-async function pipelines(device: GPUDevice, entries: Set<Entry>, modes: Set<number>): Promise<Pipelines> {
+async function pipelines(device: GPUDevice, entries: Set<Entry>, modes: Set<number>,progress?:TerrainProgressCallback): Promise<Pipelines> {
   let result = compiled.get(device);
   if (!result) {
     result = (async () => {
@@ -31,7 +32,7 @@ async function pipelines(device: GPUDevice, entries: Set<Entry>, modes: Set<numb
         ...[3, 4, 5, 6, 7].map(binding => ({ binding, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' as const } })),
       ] });
       const module = device.createShaderModule({ code: shader.replace('// NOISE_KERNEL', noiseShader).replace('// VOLCANIC_KERNEL', volcanicShader) });
-      const messages = await module.getCompilationInfo();
+      const messages = await gpuSetupDeadline(module.getCompilationInfo());
       const errors = messages.messages.filter(message => message.type === 'error');
       if (errors.length) throw new Error(errors.map(error => `${error.lineNum}: ${error.message}`).join('\n'));
       const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [layout] });
@@ -39,8 +40,10 @@ async function pipelines(device: GPUDevice, entries: Set<Entry>, modes: Set<numb
     })();
     compiled.set(device, result);
   }
-  const program = await result;
+  progress?.('GPU · préparation des shaders d’érosion…',{stage:'gpu-erosion-compile'});
+  const program = await gpuSetupDeadline(result);
   const ready: Promise<GPUComputePipeline>[] = [];
+  const total=[...entries].reduce((n,entry)=>n+(entry==='solveTile'?modes.size:1),0);let completed=0;
   for (const entryPoint of entries) for (const mode of entryPoint === 'solveTile' ? modes : [undefined]) {
     const key = mode === undefined ? entryPoint : `solveTile:${mode}`;
     let pipeline = program.pending.get(key);
@@ -49,9 +52,9 @@ async function pipelines(device: GPUDevice, entries: Set<Entry>, modes: Set<numb
       pipeline = pipeline.then(value => { program.values.set(key, value); return value; });
       program.pending.set(key, pipeline);
     }
-    ready.push(pipeline);
+    ready.push(pipeline.then(value=>{completed++;progress?.(`GPU · shaders d’érosion prêts ${completed}/${total}`,{stage:'gpu-erosion-compile',completed,total});return value;}));
   }
-  await Promise.all(ready);
+  await gpuSetupDeadline(Promise.all(ready));
   return program;
 }
 
@@ -65,22 +68,22 @@ export interface ErosionProfile {
 interface Timing { nativeEnvironmentMs: number; profiles?: ErosionProfile[] }
 
 /** Cut/assembled coast -> the existing hydraulic/thermal surface pass, without normalization. */
-export async function erodeGpuCoast(state: Context, settings: TerrainSettings, source: GPUBuffer, tuning: Float32Array): Promise<Float32Array> {
-  return serialized(state, () => erodeCoast(state, settings, source, tuning));
+export async function erodeGpuCoast(state: Context, settings: TerrainSettings, source: GPUBuffer, tuning: Float32Array,progress?:TerrainProgressCallback): Promise<Float32Array> {
+  return serialized(state, () => erodeCoast(state, settings, source, tuning,progress));
 }
-async function erodeCoast(state: Context, settings: TerrainSettings, source: GPUBuffer, tuning: Float32Array): Promise<Float32Array> {
+async function erodeCoast(state: Context, settings: TerrainSettings, source: GPUBuffer, tuning: Float32Array,progress?:TerrainProgressCallback): Promise<Float32Array> {
   for (const factor of [1, 2, 4, 8, 16]) {
-    try { return await generateOnce(state, settings, factor, undefined, { source, tuning }); }
+    try { return await generateOnce(state, settings, factor, undefined, { source, tuning },undefined,progress); }
     catch (error) { if (!(error instanceof ConvergenceError) || factor === 16) throw error; }
   }
   throw new Error('Érosion littorale GPU non convergée.');
 }
 
 /** All simulation state stays on the device; only the final physical raster is read. */
-export async function generateGpuTerrain(state: Context, settings: TerrainSettings, timing?: Timing): Promise<Float32Array> {
-  return serialized(state, () => generateTerrain(state, settings, timing));
+export async function generateGpuTerrain(state: Context, settings: TerrainSettings, timing?: Timing,progress?:TerrainProgressCallback): Promise<Float32Array> {
+  return serialized(state, () => generateTerrain(state, settings, timing,progress));
 }
-async function generateTerrain(state: Context, settings: TerrainSettings, timing?: Timing): Promise<Float32Array> {
+async function generateTerrain(state: Context, settings: TerrainSettings, timing?: Timing,progress?:TerrainProgressCallback): Promise<Float32Array> {
   if (settings.relief === 'volcano' || settings.relief === 'caldera' || settings.relief === 'plateau') {
     const plan = GenerationNoisePlan.finite_shape(settings.seed, settings.motifSize, settings.relief, settings.erosion);
     const shape = plan.parameters(); plan.free();
@@ -90,27 +93,28 @@ async function generateTerrain(state: Context, settings: TerrainSettings, timing
     let background: Float32Array;
     if (environment === 'flat') {
       const started = performance.now();
+      progress?.('CPU · préparation du relief environnant…',{stage:'terrain-environment'});
       background = TerrainEngine.prepare_environment(settings.seed, settings.width, environment, settings.erosion, motif);
       if (timing) timing.nativeEnvironmentMs = performance.now() - started;
     } else {
-      background = await generateWithBudget(state, { ...settings, motifSize: motif, relief: environment, mountainMix: .5 }, undefined, timing);
+      background = await generateWithBudget(state, { ...settings, motifSize: motif, relief: environment, mountainMix: .5 }, undefined, timing,progress);
     }
-    const local = await generateWithBudget(state, { ...settings, width: settings.motifSize }, shape, timing);
+    const local = await generateWithBudget(state, { ...settings, width: settings.motifSize }, shape, timing,progress);
     const fields = new Float32Array(local.length + background.length);
     fields.set(local); fields.set(background, local.length); return fields;
   }
-  return generateWithBudget(state, settings, undefined, timing);
+  return generateWithBudget(state, settings, undefined, timing,progress);
 }
-async function generateWithBudget(state: Context, settings: TerrainSettings, shape?: Float32Array, timing?: Timing): Promise<Float32Array> {
+async function generateWithBudget(state: Context, settings: TerrainSettings, shape?: Float32Array, timing?: Timing,progress?:TerrainProgressCallback): Promise<Float32Array> {
   // A difficult drainage network gets more GPU passes, rather than truncated erosion.
   for (const factor of [1, 2, 4, 8, 16]) {
-    try { return await generateOnce(state, settings, factor, shape, undefined, timing); }
+    try { return await generateOnce(state, settings, factor, shape, undefined, timing,progress); }
     catch (error) { if (!(error instanceof ConvergenceError) || factor === 16) throw error; }
   }
   throw new Error('Érosion GPU non convergée.');
 }
 
-async function generateOnce(state: Context, settings: TerrainSettings, factor: number, shape?: Float32Array, coast?: { source: GPUBuffer; tuning: Float32Array }, timing?: Timing): Promise<Float32Array> {
+async function generateOnce(state: Context, settings: TerrainSettings, factor: number, shape?: Float32Array, coast?: { source: GPUBuffer; tuning: Float32Array }, timing?: Timing,progress?:TerrainProgressCallback): Promise<Float32Array> {
   const device = state.device;
   const plan = GenerationNoisePlan.erosion(settings.seed, settings.width, coast ? 'hills' : shape ? 'mixed' : settings.relief, settings.erosion, settings.motifSize, settings.mountainMix);
   let buffers = scratch.get(device);
@@ -150,8 +154,9 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
       if (routed) { require('floodInit', 'floodCheck', 'pitInit', 'pitUnion', 'pitCompress', 'pitReduce', 'pitPour', 'breachInit', 'breach', 'breachFinish'); modes.add(0); }
     }
     const pipelineStarted = performance.now();
-    const program = await pipelines(device, entries, modes);
+    const program = await pipelines(device, entries, modes,progress);
     const pipelineMs = performance.now() - pipelineStarted, encodeStarted = performance.now();
+    progress?.('GPU · préparation des buffers d’érosion…',{stage:'gpu-erosion-buffers'});
     const create = (size: number, usage: GPUBufferUsageFlags) => {
       const index = bufferIndex++;
       let buffer = buffers[index];
@@ -242,6 +247,7 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
         extras[5] = shift; dispatch('histogramClear', extras, 1); dispatch('histogram', extras, 4096); dispatch('percentileSelect', extras, 1);
       }
     };
+    progress?.(`GPU · encodage de ${iterations} cycles de relief et ${tuning[3]} passes d’érosion…`,{stage:'gpu-erosion-encode'});
     if (coast) {
       config = surface; dispatch('coastLoad', normal, 4096);
     } else if (!shape) {
@@ -309,8 +315,10 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
       encoder.resolveQuerySet(querySet, 0, 6, queryBuffer, 0); encoder.copyBufferToBuffer(queryBuffer, 0, queryReadback, 0, 48);
     }
     const command = encoder.finish(), encodeMs = performance.now() - encodeStarted;
+    progress?.(coast?'GPU · calcul de l’érosion côtière…':'GPU · calcul du relief et de l’érosion…',{stage:'gpu-erosion-run'});
     const submitStarted = performance.now(); device.queue.submit([command]);
-    await Promise.all([readback.mapAsync(GPUMapMode.READ), queryReadback?.mapAsync(GPUMapMode.READ)]);
+    const done=device.queue.onSubmittedWorkDone().then(()=>progress?.('GPU · lecture et validation des altitudes…',{stage:'gpu-readback'}));
+    await Promise.all([readback.mapAsync(GPUMapMode.READ), queryReadback?.mapAsync(GPUMapMode.READ),done]);
     const submitReadbackMs = performance.now() - submitStarted, unpackStarted = performance.now();
     const mapped = readback.getMappedRange(); const status = new Uint32Array(mapped, bytes, 272);
     const maxSolveSteps = Array.from(status.slice(267, 271));

@@ -1,6 +1,6 @@
-//! Opt-in native functional programmes backed by named atlas bundles.
-//! C1 deliberately declares only two existing halls, not civic or religious
-//! adaptations of domestic recipes. This resolver is not site admission.
+//! Opt-in native functional programmes backed by named source bundles.
+//! Halls and inspired storage rows retain their own grammar and bearing.
+//! This resolver is not site admission or historical capacity certification.
 use crate::catalogue::{Envelope, Layout, SourceReference, SupportKind, catalogue};
 use crate::engine::ResolvedArchitecture;
 use crate::geometry::{area, unite};
@@ -69,24 +69,35 @@ pub fn registry() -> Result<&'static FunctionalRegistry, String> {
         for (id, recipe_id, kind, urban_roles) in [
             ("hall-af-west-b03-v1", "AF-WEST-B03", "open_community_hall", &[][..]),
             ("hall-am-and-b04-v1", "AM-AND-B04", "assembly_hall", &["civic.kallanka"][..]),
+            ("storage-med-ant-h01-v1", "MED-ANT-H01", "storage_rows", &["storage.horreum"][..]),
         ] {
             let recipe = data.recipes.iter().find(|r| r.id == recipe_id)
                 .ok_or_else(|| format!("Missing declared functional source {recipe_id}."))?;
             let p = &recipe.parameters;
+            let storage = kind == "storage_rows";
+            let envelope = if storage {
+                p.layout == Layout::Parallel && p.footprint_family == "FP-RECT"
+                    && p.envelope == Envelope::Walled && p.bodies == [3,3]
+                    && p.components.is_empty() && p.wall_thickness_m[0] >= 0.6
+            } else {
+                p.layout == Layout::Single && p.footprint_family == "FP-LONG"
+                    && p.envelope == Envelope::Open && p.bodies == [1,1]
+                    && p.components.len() == 1 && p.components[0].id == "main"
+            };
             if recipe.role != Role::SpatialComponent || recipe.component_kind.as_deref() != Some(kind)
-                || p.layout != Layout::Single || p.footprint_family != "FP-LONG"
-                || p.roof_system != "RF-GABLE" || p.envelope != Envelope::Open
-                || p.support.kind != SupportKind::Ground || p.bodies != [1,1]
-                || p.floors != [1,1] || p.components.len() != 1 || p.components[0].id != "main"
+                || !envelope || p.roof_system != "RF-GABLE"
+                || p.support.kind != SupportKind::Ground || p.floors != [1,1]
                 || recipe.sources.is_empty()
             {
                 return Err(format!("Functional source {recipe_id} changed; its declared adapter must be reviewed."));
             }
             programmes.push(FunctionalProgramme {
-                id, composition: ProgrammeComposition::Hall, function: ArchitectureFunction::Collective,
+                id, composition: ProgrammeComposition::Hall,
+                function: if storage { ArchitectureFunction::Warehouse } else { ArchitectureFunction::Collective },
                 recipe_id: &recipe.id, pack_id: &recipe.pack_id, component_kind: kind,
                 urban_roles, eras: &recipe.temporal.eras, late_only: recipe.temporal.late_only,
-                modes: &[HistoricalMode::HistoricalStrict, HistoricalMode::HistoricalInspired, HistoricalMode::FantasyMix],
+                modes: if recipe.inspired_only { &[HistoricalMode::HistoricalInspired, HistoricalMode::FantasyMix] }
+                    else { &[HistoricalMode::HistoricalStrict, HistoricalMode::HistoricalInspired, HistoricalMode::FantasyMix] },
                 floors: p.floors,
                 source_confidence: &recipe.confidence, sources: &recipe.sources,
                 nominal_width_m: p.width_m, nominal_depth_m: p.depth_m, detailed_interior: false,
@@ -97,7 +108,7 @@ pub fn registry() -> Result<&'static FunctionalRegistry, String> {
     }).as_ref().map_err(Clone::clone)
 }
 
-/// Resolve a registered hall without the generic non-domestic simplification.
+/// Resolve a registered functional source without domestic simplification.
 /// A supplied recipe/variant/override is never replaced. An omitted recipe may
 /// select only the registered hall of this exact pack; no cultural substitution.
 /// `built_area_m2` guides dimensions inside source ranges scaled by config.size.
@@ -110,11 +121,11 @@ pub fn resolve_functional_architecture(
 ) -> Result<ResolvedFunctionalArchitecture, String> {
     programme.validate()?;
     if programme.composition != Some(ProgrammeComposition::Hall)
-        || function != ArchitectureFunction::Collective
+        || !matches!(function, ArchitectureFunction::Collective | ArchitectureFunction::Warehouse)
         || config.workshop.is_some()
     {
         return Err(
-            "C1 supports only registered collective halls, not another functional composition."
+            "Only registered hall compositions for collective or storage sources are supported."
                 .into(),
         );
     }
@@ -123,7 +134,9 @@ pub fn resolve_functional_architecture(
     }
     let registry = registry()?;
     let declared = registry.programmes.iter().find(|p|
-        p.pack_id == config.pack && config.recipe.as_deref().is_none_or(|id| id == p.recipe_id)
+        p.pack_id == config.pack && p.function == function
+            && p.modes.contains(&config.mode)
+            && config.recipe.as_deref().is_none_or(|id| id == p.recipe_id)
     ).ok_or("No declared functional hall matches this pack and explicit recipe; no pin was replaced.")?;
     config.recipe = Some(declared.recipe_id.into());
     let mut architecture =
@@ -209,6 +222,29 @@ mod tests {
         )
     }
 
+    #[test]
+    fn storage_rows_have_native_access_to_every_ground_bearing_hall() {
+        let mut cfg=config("MED-ANT","MED-ANT-H01",HistoricalMode::HistoricalInspired);
+        cfg.era="A".into();
+        let source=resolve_functional_architecture(cfg,&programme(352.1),ArchitectureFunction::Warehouse,
+            FunctionalSite{body_span_m:[50.,50.]}).unwrap().architecture;
+        let mut unit=crate::engine::structural_unit_for_entry_probe(&source).unwrap();
+        crate::access::structural_access(&mut unit,&source.plan.paths,&source.parameters).unwrap();
+        let mut reached=std::collections::BTreeSet::from([unit.access.root.clone()]);
+        loop {
+            let old=reached.len();
+            for p in &unit.access.portals {
+                if reached.contains(&p.from) {reached.insert(p.to.clone());}
+                if reached.contains(&p.to) {reached.insert(p.from.clone());}
+            }
+            if old==reached.len() {break;}
+        }
+        assert_eq!(unit.bodies.len(),3);
+        for body in &unit.bodies {
+            assert!(unit.access.nodes.iter().any(|n|reached.contains(&n.id)
+                && area(&crate::geometry::intersection(&n.floor,&body.levels[0].footprint))>0.1),"{}",body.id);
+        }
+    }
     #[test]
     fn functional_hall_600m2_ignores_extra_land_and_replays_the_exact_exterior() {
         let config = config("AM-AND", "AM-AND-B04", HistoricalMode::HistoricalInspired);
@@ -331,7 +367,7 @@ mod tests {
         );
         assert!(resolve(config, -1., [50., 90.]).is_err());
         let registry = registry().unwrap();
-        assert_eq!(registry.programmes.len(), 2);
+        assert_eq!(registry.programmes.len(), 3);
         assert!(
             registry
                 .programmes

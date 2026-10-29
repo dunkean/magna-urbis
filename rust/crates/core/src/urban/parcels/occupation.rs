@@ -1815,16 +1815,24 @@ pub(in super::super) fn preview_parts(
     p: &Parcel,
     o: &Occupancy,
 ) -> (Vec<(Shape, &'static str)>, Option<Kind>) {
-    let (mut parts, mut form) = preview_form(p, o);
+    preview_parts_resolved(p,o,None)
+}
+
+/// Regenerate with the final programme form; never fill or erase preview holes.
+pub(in super::super) fn preview_parts_resolved(p:&Parcel,o:&Occupancy,resolved:Option<Kind>)
+    -> (Vec<(Shape,&'static str)>,Option<Kind>) {
+    let (mut parts, mut form) = preview_form(p, o, resolved);
     let mosque = o.role.starts_with("worship.mosque") || o.role.starts_with("worship.masjid");
     if kind(o) != Kind::Open && (parts.is_empty() || mosque && !parts.iter().any(|(_,label)| *label == "prayer-hall")) {
         // Admission already proved a house fits. Decorative setbacks and wings
         // cannot turn that occupied property (or a reserved monument) vacant.
         let domain = p.envelope.as_ref().unwrap_or(&p.shape);
-        let u = unit(p.axis);
+        let aligned = p.provenance.iter().any(|s| s == "street-aligned-home") && p.front.is_some()
+            && !o.landmark && matches!(kind(o), Kind::Row | Kind::Detached | Kind::Farm | Kind::Long);
+        let u = unit(if aligned { let [a,b] = p.front.unwrap(); sub(b,a) } else { p.axis });
         let u = if length(u) > 0.5 { u } else { Point { x:1., y:0. } };
         let frames = std::iter::once(u).chain(domain.outer.iter().zip(domain.outer.iter().cycle().skip(1))
-            .take(domain.outer.len()).map(|(&a,&b)| unit(sub(b,a))));
+            .take(if aligned { 0 } else { domain.outer.len() }).map(|(&a,&b)| unit(sub(b,a))));
         let best = frames.filter(|u| length(*u) > 0.5).filter_map(|u| {
             let f = Frame { u, n:normal(u), t0:0. };
             let r = inscribed(&domain.outer, &f)?;
@@ -1855,9 +1863,9 @@ pub(in super::super) fn preview_parts(
     (parts, form)
 }
 
-fn preview_form(p: &Parcel, o: &Occupancy) -> (Vec<(Shape, &'static str)>, Kind) {
+fn preview_form(p: &Parcel, o: &Occupancy, resolved:Option<Kind>) -> (Vec<(Shape, &'static str)>, Kind) {
     let mut rng = Rng::new(o.seed).fork("occupation");
-    let kind = kind(o);
+    let kind = resolved.unwrap_or_else(||kind(o));
     // Invariant (preview = asked composition): a home's court is previewed
     // only on a lot that holds one of the pack's native court sources; else
     // `building_sites` (feasibility.rs) asks another composition, so the lot
@@ -2121,7 +2129,7 @@ fn preview_form(p: &Parcel, o: &Occupancy) -> (Vec<(Shape, &'static str)>, Kind)
         // light court, wherever every wing keeps the culture's width and the
         // court is at least 3 m wide and 12 m². One piece with its court as a
         // hole.
-        if second.is_none()
+        if !matches!(resolved,Some(Kind::Row|Kind::Detached)) && second.is_none()
             && (court_wish
                 || (coverage >= 0.6
                     && (zone == "core" || pressure >= 0.6)
@@ -2680,7 +2688,8 @@ fn preview_form(p: &Parcel, o: &Occupancy) -> (Vec<(Shape, &'static str)>, Kind)
             let size = |h: &Option<[f64; 4]>| h.map_or(0.0, |r| (r[1] - r[0]) * (r[3] - r[2]));
             let mut square = rng.clone();
             let street_site = site(&lay, main, &mut square);
-            let chosen = (dot(lf.n, main.n) < LEAN)
+            let aligned = p.provenance.iter().any(|s| s == "street-aligned-home");
+            let chosen = (!aligned && dot(lf.n, main.n) < LEAN)
                 .then(|| {
                     let mut leaning = rng.clone();
                     lay.f = lf;
@@ -3506,7 +3515,7 @@ mod tests {
                 continue;
             }
             n += 1;
-            let (parts, form) = preview_form(p, &o);
+            let (parts, form) = preview_form(p, &o, None);
             if parts.is_empty() {
                 empty += 1;
                 eprintln!("empty {} {} {:?}", p.id, a.role, form);
@@ -3533,6 +3542,50 @@ mod tests {
                 "setback":{"core":[0.0,0.3]},"sideGap":{"core":[0.0,0.0]},"roomDepth":[4.5,6.0],
                 "bigCourtChance":0.1,"courtyardMin":9,"openCourtChance":0.0}),
         }
+    }
+
+    #[test]
+    fn reddit_street_alignment_keeps_loose_homes_square_to_their_frontage() {
+        let mut morph = tissue("streetFrontRow", "gabled-row-house");
+        morph.value["sideGap"]["edge"] = json!([1.5, 2.5]);
+        let mut p = lot(Shape { outer: vec![
+            Point{x:0.,y:0.},Point{x:30.,y:0.},Point{x:48.,y:45.},Point{x:18.,y:45.}
+        ], holes:vec![] }, [Point{x:0.,y:0.},Point{x:30.,y:0.}], 0.2);
+        let mut oblique = 0;
+        let mut illustrated = false;
+        let mut svg = String::from("<svg xmlns='http://www.w3.org/2000/svg' viewBox='-8 -8 130 65'><rect x='-8' y='-8' width='130' height='65' fill='#eee5cc'/>");
+        for k in 0..20 {
+            let seed = format!("rural-opts-{k}");
+            let mut o = home(&morph, "dwelling.house", &seed); o.zone = "edge"; o.party_walls = false;
+            let before = preview(&p, &o);
+            assert_eq!(serde_json::to_vec(&before).unwrap(), serde_json::to_vec(&preview(&p, &o)).unwrap());
+            let leaning = before.iter().any(|s| s.outer.windows(2).any(|e| {
+                let d = sub(e[1],e[0]); d.x.abs() > 0.1 && d.y.abs() > 0.1
+            }));
+            if leaning { oblique += 1; }
+            p.provenance.push("street-aligned-home".into());
+            let after = preview(&p, &o); p.provenance.clear();
+            assert!(!after.is_empty());
+            for s in &after {
+                assert!(super::super::super::geometry::difference(s,&p.shape).iter().map(area).sum::<f64>() < 0.01);
+                for e in s.outer.iter().zip(s.outer.iter().cycle().skip(1)).take(s.outer.len()) {
+                    let d = sub(*e.1,*e.0);
+                    assert!(d.x.abs() < 1e-6 || d.y.abs() < 1e-6, "{seed}: {s:?}");
+                }
+            }
+            if leaning && !illustrated {
+                illustrated = true;
+                for (offset, pieces) in [(0., &before),(65., &after)] {
+                    let d = |r:&[Point]| r.iter().enumerate().map(|(i,q)|format!("{}{},{}",if i==0{"M"}else{"L"},q.x+offset,q.y)).collect::<String>()+"Z";
+                    svg += &format!("<path d='{}' fill='#d8cea7' stroke='#867655'/><path d='M{},-2h30' stroke='#bba47b' stroke-width='3'/>",d(&p.shape.outer),offset);
+                    for s in pieces { svg += &format!("<path d='{}' fill='#8c7051' stroke='#493f30' stroke-width='.3'/>",d(&s.outer)); }
+                }
+            }
+        }
+        assert!(oblique > 0, "the witness must expose the old lot-axis choice");
+        if let Ok(path) = std::env::var("RURAL_OPTS_SVG") { std::fs::write(path, svg+"</svg>").unwrap(); }
+        let off: super::super::super::ParcelConfig = serde_json::from_value(json!({"streetAlignedHomes":false,"denserSmallholdings":false})).unwrap();
+        assert_eq!(serde_json::to_vec(&off).unwrap(),serde_json::to_vec(&super::super::super::ParcelConfig::default()).unwrap());
     }
 
     #[test]

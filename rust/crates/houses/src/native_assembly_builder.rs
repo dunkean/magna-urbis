@@ -2,6 +2,20 @@
 use super::*;
 use crate::catalogue::Layout;
 
+// The native preparation already supports illustrative street context. Keep
+// every feature in the source archive/detail; it grants no urban access/land.
+fn supported_context(plan:&crate::layouts::LayoutPlan)->bool{
+    #[cfg(test)]
+    if !STREET_CONTEXT.with(std::cell::Cell::get){return plan.context.is_empty();}
+    plan.context.iter().all(|f|f.kind==FeatureKind::Street&&f.roof.is_none()
+        &&f.height_m==0.&&f.z_m==0.&&f.vertices3d.is_empty()
+        &&valid_surface(&f.surface)&&geo::algorithm::Validation::is_valid(&to_geo(&f.surface)))
+}
+#[cfg(test)]std::thread_local!{static STREET_CONTEXT:std::cell::Cell<bool>=const{std::cell::Cell::new(true)};}
+#[cfg(test)]pub(super) struct StreetContextMode(bool);
+#[cfg(test)]impl StreetContextMode{pub(super) fn new(value:bool)->Self{Self(STREET_CONTEXT.with(|s|s.replace(value)))}}
+#[cfg(test)]impl Drop for StreetContextMode{fn drop(&mut self){STREET_CONTEXT.with(|s|s.set(self.0));}}
+
 // Administrative request budgets, not geometric/source/physical minima.
 // Match the existing bridge's 24 MiB minified input envelope. Reject whole
 // input before to_geo/unions; never truncate a complete neighbor set.
@@ -34,7 +48,7 @@ impl Drop for OccupationUnionProbe{fn drop(&mut self){OCCUPATION_UNIONS.with(|n|
 fn owned_replay_dimensions(r:&PlacementRequest,owned:&ResolvedArchitecture,source:&crate::catalogue::Parameters,
     aspect:&source_aspect_budget::SourceAspectBudget)->Option<[f64;2]>{
     if !owned_replay_enabled()||owned.entrance.is_none()||owned.plan.bodies.len()!=1
-        ||owned.plan.bodies[0].levels.len()!=1||!owned.plan.context.is_empty(){return None;}
+        ||owned.plan.bodies[0].levels.len()!=1||!supported_context(&owned.plan){return None;}
     let body=&owned.plan.bodies[0];
     if body.parameters.support.kind!=SupportKind::Ground||body.parameters.support.height_m!=[0.;2]
         ||body.z!=0.||!body.cells.is_empty()||!crate::engine::single_native_entry_parameters(&owned.parameters){return None;}
@@ -218,7 +232,7 @@ fn build(r:&PlacementRequest,occupied_parts:&[Surface],occupied_roof_parts:&[Sur
     let mut source_member=retained.clone();source_member.entrance=None;
     if source_member.parameters.layout!=Layout::Single
         ||!crate::engine::single_native_entry_parameters(&source_member.parameters)
-        ||!source_member.plan.context.is_empty(){return Err("unsupported retained Single descriptor/context".into());}
+        ||!supported_context(&source_member.plan){return Err("unsupported retained Single descriptor/context; no context removed".into());}
     let shape=crate::morphology::domestic_budget_shape(&source_member.parameters,&source_member.plan).map_err(str::to_owned)?;
     if shape.passage_m!=0.||shape.court_fraction!=0.||source_member.plan.bodies[0].levels.len()!=1
         ||source_member.plan.bodies[0].z!=0.||source_member.plan.bodies[0].parameters.support.kind!=SupportKind::Ground{
@@ -327,10 +341,15 @@ fn build(r:&PlacementRequest,occupied_parts:&[Surface],occupied_roof_parts:&[Sur
         let transform=pose(old,b,dims,2.*eave,axis);
         let body=map_surface(&rectangle(0.,0.,dims[0],dims[1]),&transform);
         let roof=map_surface(&rectangle(-eave,-eave,dims[0]+2.*eave,dims[1]+2.*eave),&transform);
-        let failure=if !contains(&body_rights,&body)||!contains(&land_rights,&body)||!contains(&roof_rights,&roof)
-            ||area(&intersection(&body,&obstacles))>0.0001||area(&intersection(&roof,&obstacles))>0.0001
-            ||area(&intersection(&old.roof_footprint,&body))>0.0001||area(&intersection(&occupied_roofs,&body))>0.0001||super::super::parent_session::necessary_clear(&r.id,&body,&roof).is_err(){
-            Some("necessary real rights/old portal/occupation/roof guard".into())
+        let failure=if !contains(&body_rights,&body){Some("necessary body outside buildable rights".into())
+        }else if !contains(&land_rights,&body){Some("necessary body outside cadastral rights".into())
+        }else if !contains(&roof_rights,&roof){Some("necessary roof outside roof rights".into())
+        }else if area(&intersection(&body,&obstacles))>0.0001{Some("necessary body intersects retained land/portal or external occupation".into())
+        }else if area(&intersection(&roof,&obstacles))>0.0001{Some("necessary roof intersects retained land/portal or external occupation".into())
+        }else if area(&intersection(&old.roof_footprint,&body))>0.0001{Some("necessary body intersects incumbent roof".into())
+        }else if area(&intersection(&occupied_roofs,&body))>0.0001{Some("necessary body intersects another retained roof".into())
+        }else if let Err(error)=super::super::parent_session::necessary_clear(&r.id,&body,&roof){
+            Some(format!("necessary native prefix: {error}"))
         }else{
             report.necessary_terrain_checks+=1;
             match r.terrain.foundation_bounds(&body){
@@ -359,11 +378,15 @@ fn build(r:&PlacementRequest,occupied_parts:&[Surface],occupied_roof_parts:&[Sur
                 parts.extend(entry.retained_passages.iter().map(|p|map_surface(p,&transform)));
                 let occupation=unite(&parts);
                 let roof=unite(&old_prepared.roofs().iter().map(|p|map_surface(p,&transform)).collect::<Vec<_>>());
-                let failure=if !contains(&body_rights,&body)||!contains(&land_rights,&occupation)||!contains(&roof_rights,&roof)
-                    ||area(&intersection(&occupation,&obstacles))>0.0001||area(&intersection(&roof,&obstacles))>0.0001
-                    ||area(&intersection(&old.roof_footprint,&occupation))>0.0001||area(&intersection(&occupied_roofs,&occupation))>0.0001
-                    ||super::super::parent_session::necessary_clear(&r.id,&occupation,&roof).is_err(){
-                    Some("owned native descriptor real rights/old portal/occupation/roof guard".into())
+                let failure=if !contains(&body_rights,&body){Some("owned body outside buildable rights".into())
+                }else if !contains(&land_rights,&occupation){Some("owned complete occupation outside cadastral rights".into())
+                }else if !contains(&roof_rights,&roof){Some("owned roof outside roof rights".into())
+                }else if area(&intersection(&occupation,&obstacles))>0.0001{Some("owned occupation intersects retained land/portal or external occupation".into())
+                }else if area(&intersection(&roof,&obstacles))>0.0001{Some("owned roof intersects retained land/portal or external occupation".into())
+                }else if area(&intersection(&old.roof_footprint,&occupation))>0.0001{Some("owned occupation intersects incumbent roof".into())
+                }else if area(&intersection(&occupied_roofs,&occupation))>0.0001{Some("owned occupation intersects another retained roof".into())
+                }else if let Err(error)=super::super::parent_session::necessary_clear(&r.id,&occupation,&roof){
+                    Some(format!("owned native prefix: {error}"))
                 }else{
                     report.necessary_terrain_checks+=1;
                     let bearing=unite(&old_physical.bearing_parts.iter().map(|p|map_surface(p,&transform)).collect::<Vec<_>>());
@@ -395,6 +418,7 @@ fn build(r:&PlacementRequest,occupied_parts:&[Surface],occupied_roof_parts:&[Sur
     }else{
         report.new_body_rebuilds+=1;
         source_member.plan=crate::morphology::domestic_budget_plan(&source_member.parameters,&source_member.plan,&shape,dims[0],dims[1]).map_err(str::to_owned)?;
+        source_member.plan.context=retained.plan.context.clone();
         source_member.parameters.width_m=[dims[0];2];source_member.parameters.depth_m=[dims[1];2];
     }
     if nondim(&retained.parameters)!=nondim(&source_member.parameters)||retained.config!=source_member.config

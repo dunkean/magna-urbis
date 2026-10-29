@@ -285,6 +285,9 @@ pub fn services_with_functions(culture: &str, population: u32, functions: super:
 /// Quay services exist in every culture, but only a built port requests them.
 pub fn services_for_layout(layout: &Layout, population: u32, functions: super::programme::ProgrammeFunctions) -> Vec<ServiceNeed> {
     let mut needs = services_with_functions(&layout.culture, population, functions);
+    if layout.config.as_ref().is_some_and(|c| c.power_high_ground) {
+        high_ground_services(&mut needs);
+    }
     if !layout.streets.iter().any(|s| s.role == "quay") { return needs; }
     let mut entries: Vec<ServiceEntry> = needs.iter().map(|n| n.entry.clone()).collect();
     for e in &catalogue().harbour {
@@ -298,9 +301,20 @@ pub fn services_for_layout(layout: &Layout, population: u32, functions: super::p
         needs.push(ServiceNeed { sites: sites.min(e.max), area, entry: e });
     }
     for need in &mut needs {
-        if need.entry.role == "craft.boatshed" { need.entry.site = "quay".into(); need.entry.district = "port".into(); }
+        if need.entry.role == "craft.boatshed" { need.entry.site = "quay".into(); need.entry.district = "port".into(); need.entry.landmark = population >= 3000; }
     }
     needs
+}
+
+fn high_ground_services(needs: &mut [ServiceNeed]) {
+    for need in needs {
+        let e = &mut need.entry;
+        if e.landmark && (e.role.starts_with("worship.") && (e.site == "nucleus" || e.per == 0.0 && e.site != "edge")
+            || e.role.starts_with("defence.") && e.site == "hill"
+            || e.role.starts_with("elite.") && matches!(e.site.as_str(), "hill" | "nucleus")) {
+            e.site = "summit".into();
+        }
+    }
 }
 
 /// A port service with direct quay frontage opens onto that frontage, even
@@ -371,6 +385,7 @@ pub fn site_cost(site: &str, f: &SiteFacts) -> f64 {
         "downstream" if f.water => 1.5 + (1.0 - f.core.min(1.0)) * 0.8,
         "downstream" => 3.0 + f.high * 2.0 + (1.0 - f.core) * 1.5,
         "hill" => (1.0 - f.high) * 3.0 + f.core * 0.8,
+        "summit" => (1.0 - f.high) * 100.0 + f.core * 0.3,
         "edge" => (1.0 - f.core) * 3.0,
         _ => f.core * 0.4 - f.pressure * 0.3,
     }
@@ -509,10 +524,17 @@ pub const QUAY_MISS: f64 = 1000.0;
 /// blocks' vertices.
 pub fn quay_contacts(layout: &Layout) -> Vec<f64> {
     const SLACK: f64 = 1.5;
-    let quays: Vec<(&super::Street, (f64, f64, f64, f64), f64)> = layout
-        .streets
-        .iter()
-        .filter(|s| s.role == "quay" && s.path.len() >= 2)
+    let mut landings: Vec<_> = layout.streets.iter().filter(|s|s.role=="quay").collect();
+    // Stores above a steep bank are served by the dock's retained stair,
+    // just as stores on flat ground front its quay directly.
+    loop {
+        let added:Vec<_>=layout.streets.iter().filter(|s|s.path.len()>=2 && matches!(s.role.as_str(),"port-street"|"port-stairs"))
+            .filter(|s|!landings.iter().any(|q|std::ptr::eq(*q,*s)))
+            .filter(|s|landings.iter().any(|q|[s.path[0],*s.path.last().unwrap()].iter()
+                .any(|&p|q.path.windows(2).any(|w|g::distance(p,w[0],w[1]).0<0.1)))).collect();
+        if added.is_empty() {break;}landings.extend(added);
+    }
+    let quays: Vec<(&super::Street, (f64, f64, f64, f64), f64)> = landings.into_iter().filter(|s|s.path.len()>=2)
         .map(|s| {
             let reach = s.widths.iter().copied().fold(0.0, f64::max) * 0.5 + SLACK;
             let b = s.path.iter().fold(
@@ -594,7 +616,7 @@ pub(super) fn quay_water_fronts(layout: &Layout, surface: super::Surface<'_>) ->
 /// A `quay` service in a town with quays may only stand on a block that a
 /// quay serves; elsewhere (no quay planned) it keeps the natural shore.
 pub fn site_admissible(site: &str, f: &SiteFacts) -> bool {
-    site != "quay" || !f.harbour || f.quay
+    site != "quay" || f.quay
 }
 /// Enclosure gates; an open town uses the points where its regional roads leave
 /// the built area (vertex of each regional road closest to 0.9 R).
@@ -641,6 +663,8 @@ pub fn assign(
     navigable: bool,
     env: &[BlockEnvironment],
 ) -> Vec<Option<usize>> {
+    let sheltered = layout.config.as_ref().is_some_and(super::macroplan::harbour::parameterized);
+    if population >= 800 && navigable { port_quarters(layout, env); }
     let frame = Frame::new(layout, env);
     let Some(structure) = layout.structure.as_ref() else {
         return vec![None; layout.blocks.len()];
@@ -765,8 +789,7 @@ pub fn assign(
     let mut fixed_roles = fixed_roles;
     // A harbour's port district is the land its quays actually serve.
     let quay_front = served_quay_frontage(layout, &frame, env);
-    if population >= 800 && navigable {
-        let count = 1 + population as usize / 60_000;
+    if population >= 800 && navigable && (!sheltered || quay_front.iter().sum::<f64>() >= QUAY_FRONT) {
         // Without quays, the port is still the land along navigable water:
         // the quarters whose blocks front the sea, a lake or the river (side
         // length of those blocks), never a whole district reaching inland.
@@ -795,7 +818,6 @@ pub fn assign(
             layout,
             &frame,
             if quays < QUAY_FRONT { &shore_front } else { &quay_front },
-            count,
             &mut groups,
             &mut fixed,
             &mut fixed_roles,
@@ -971,6 +993,10 @@ pub fn assign(
                 d.center = c.id;
             }
         }
+        s.port_districts = groups.iter().filter(|d|d.role=="port").map(|d|super::PortDistrict {
+            district:d.id,role:d.role.clone(),quarters:d.quarters.clone(),
+            shapes:d.quarters.iter().filter_map(|&q|layout.quarters.get(q).map(|q|q.shape.clone())).collect(),
+        }).collect();
         s.districts = groups;
     }
     layout.warnings.extend(warnings);
@@ -989,6 +1015,84 @@ fn served_quay_frontage(layout: &Layout, frame: &Frame, env: &[BlockEnvironment]
     out
 }
 
+/// Refine an atomic waterfront quarter by whole served blocks. Keep its old
+/// index on the connected central remainder; appended children inherit its
+/// phase/tissue. Block IDs, footprints, streets and programme stay untouched.
+fn port_quarters(layout: &mut Layout, env: &[BlockEnvironment]) {
+    if layout.structure.is_none() { return; }
+    let contact = quay_contacts(layout);
+    let original = layout.quarters.len();
+    for qi in 0..original {
+        if layout.config.as_ref().is_some_and(|c| c.overrides.quarters.contains_key(&qi.to_string())) { continue; }
+        let parent = layout.quarters[qi].clone();
+        let protected: std::collections::BTreeSet<usize> = layout.programme.iter().flat_map(|pr| {
+            pr.reservations.iter().filter(|r| pr.demands.iter().any(|d| d.id == r.demand_id && d.site != "quay"))
+                .map(|r| r.block)
+        }).collect();
+        let reserved: std::collections::BTreeSet<usize> = layout.programme.iter().flat_map(|pr|
+            pr.reservations.iter().filter(|r| pr.demands.iter().any(|d| d.id == r.demand_id && d.site == "quay")).map(|r| r.block)).collect();
+        let chosen: Vec<usize> = layout.blocks.iter().enumerate().filter(|(bi,b)|
+            b.quarter == qi && (b.kind == "block" || reserved.contains(bi)) && contact[*bi] >= QUAY_FRONT
+            && !env.get(*bi).is_some_and(|e| e.wet) && !protected.contains(bi)
+            && !g::contains(&b.shape, layout.center)).map(|(bi,_)|bi).collect();
+        if chosen.is_empty() { continue; }
+        // A quarter already made of waterfront blocks needs no refinement.
+        if !layout.blocks.iter().enumerate().any(|(bi,b)|b.quarter==qi && !chosen.contains(&bi)) { continue; }
+        let mut rest = vec![parent.shape.clone()];
+        let mut children = vec![];
+        for &bi in &chosen {
+            let block=&layout.blocks[bi].shape;
+            let mut ring=block.outer.clone(); ring.push(ring[0]);
+            let margin=layout.streets.iter().filter(|s|s.role=="quay").flat_map(|s|&s.widths).copied().fold(6.0,f64::max)*3.0;
+            let mut padded=g::ribbon(&ring,&[margin*2.0]); padded.push(block.clone());
+            let masks=g::union(&padded);
+            let mut pieces:Vec<_>=masks.iter().flat_map(|s|g::intersection(&parent.shape,s)).collect();
+            let bb=g::bbox(block);
+            for (_,b) in layout.blocks.iter().enumerate().filter(|(other,b)|*other!=bi && b.quarter==qi) {
+                let ob=g::bbox(&b.shape);
+                if ob.2<bb.0-margin || ob.0>bb.2+margin || ob.3<bb.1-margin || ob.1>bb.3+margin {continue;}
+                pieces=pieces.into_iter().flat_map(|s|g::difference(&s,&b.shape)).collect();
+            }
+            for (_,shape) in &children {pieces=pieces.into_iter().flat_map(|s|g::difference(&s,shape)).collect();}
+            let Some(shape)=pieces.into_iter().find(|s|g::contains(s,g::interior_point(block))) else {continue};
+            if g::contains(&shape,layout.center) || g::difference(block,&shape).iter().map(g::area).sum::<f64>()>0.1 {continue;}
+            rest = rest.into_iter().flat_map(|s|g::difference(&s,&shape)).collect();
+            children.push((bi,shape));
+        }
+        // Boolean clipping may leave disjoint bank remnants. Retain all of
+        // them, with the old index on the component containing the nucleus.
+        if children.is_empty() || rest.is_empty() { continue; }
+        let main=rest.iter().position(|s|g::contains(s,layout.center)).unwrap_or_else(||
+            (0..rest.len()).max_by(|&a,&b|g::area(&rest[a]).total_cmp(&g::area(&rest[b]))).unwrap());
+        layout.quarters[qi].shape = rest.remove(main);
+        let mut added = vec![];
+        for shape in rest {
+            if !layout.blocks.iter().enumerate().any(|(bi,b)|b.quarter==qi && !chosen.contains(&bi) && g::contains(&shape,g::interior_point(&b.shape))) {
+                if let Some((index,union))=children.iter().enumerate().find_map(|(i,(_,child))| {
+                    let mut union=g::union(&[child.clone(),shape.clone()]); (union.len()==1).then(||(i,union.remove(0)))
+                }) {children[index].1=union;continue;}
+            }
+            let q=layout.quarters.len();
+            for (_,b) in layout.blocks.iter_mut().enumerate().filter(|(bi,b)|b.quarter==qi && !chosen.contains(bi)) {
+                if g::contains(&shape,g::interior_point(&b.shape)) { b.quarter=q; }
+            }
+            layout.quarters.push(super::Quarter {shape,..parent.clone()}); added.push(q);
+        }
+        for (bi,shape) in children {
+            let q = layout.quarters.len();
+            layout.blocks[bi].quarter = q;
+            layout.quarters.push(super::Quarter { shape, ..parent.clone() });
+            added.push(q);
+        }
+        if let Some(s) = layout.structure.as_mut() {
+            for d in &mut s.districts { if d.quarters.contains(&qi) { d.quarters.extend(&added); } }
+            if let Some(p)=&mut s.metrics.capacity {
+                if p.borrowed_quarters.contains(&qi) {p.borrowed_quarters.extend(&added);}
+            }
+        }
+    }
+}
+
 /// Gather the quarters a quay serves into the port district(s), before roles
 /// are scored: one district per connected cluster of quay quarters, the
 /// longest frontage first. The nucleus quarter and user-pinned quarters stay
@@ -998,7 +1102,6 @@ fn carve_port<'a>(
     layout: &Layout,
     frame: &Frame,
     front: &[f64],
-    count: usize,
     groups: &mut Vec<UrbanDistrict>,
     fixed: &mut Vec<Option<&'a QuarterOverride>>,
     fixed_roles: &mut Vec<Option<String>>,
@@ -1026,8 +1129,14 @@ fn carve_port<'a>(
             .position(|d| d.quarters.contains(&q))
             .is_none_or(|gi| fixed[gi].is_some())
     };
+    let local = layout.config.as_ref().is_some_and(super::macroplan::harbour::parameterized);
+    let contact = if local { quay_contacts(layout) } else { vec![] };
     let quay_quarters: Vec<usize> = (0..front.len())
         .filter(|&q| front[q] >= QUAY_FRONT && Some(q) != nucleus && !pinned(q))
+        // Refinement leaves inland blocks and protected institutions in the
+        // parent. A surviving waterfront block cannot turn that parent port.
+        .filter(|&q| !local || layout.blocks.iter().enumerate().filter(|(_,b)|b.quarter==q)
+            .all(|(bi,_)|contact[bi]>=QUAY_FRONT))
         .collect();
     // Clusters of quay quarters that touch (within a street and a quay).
     const TOUCH: f64 = 30.0;
@@ -1083,7 +1192,6 @@ fn carve_port<'a>(
         .map(|qs| (qs.iter().map(|&q| front[q]).sum(), qs))
         .collect();
     clusters.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
-    clusters.truncate(count);
     let mut served = 0.0;
     for (length, mut qs) in clusters {
         qs.sort_unstable();
@@ -1281,7 +1389,7 @@ fn district_roles(
     ];
     for (role, min_pop, count, cost) in specs {
         let mut count = count;
-        if pop < min_pop || (role == "port" && !navigable) {
+        if pop < min_pop || (role == "port" && (!navigable || layout.config.as_ref().is_some_and(super::macroplan::harbour::parameterized))) {
             continue;
         }
         count = count.saturating_sub(roles.iter().filter(|r| *r == role).count());
@@ -1932,6 +2040,10 @@ parcels {} demands {:?}; quarters {quarters_ms} ms, parcels+alloc {parcels_ms} m
 #[cfg(test)]
 #[path = "roles_occupancy_tests.rs"]
 mod occupancy_profile_tests;
+
+#[cfg(test)]
+#[path = "roles_port5_tests.rs"]
+mod port5_tests;
 
 #[path = "housing_floor_need.rs"]
 mod housing_floor_need;

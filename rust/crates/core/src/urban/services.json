@@ -23,6 +23,7 @@
   ],
   "_docHarbour": "Shared port roles, added only when actual quay streets exist; a family's own quay warehouse takes precedence. Buildings use the culture's normal architectural material mapping.",
   "harbour": [
+    { "role": "commerce.fishmarket", "function": "collective", "per": 0, "minPop": 800, "max": 1, "site": "quay", "area": [120, 600], "requires": "water", "district": "port" },
     { "role": "commerce.warehouse", "function": "warehouse", "per": 2500, "minPop": 500, "max": 20, "site": "quay", "area": [220, 800], "requires": "water", "district": "port" },
     { "role": "civic.harbour", "function": "collective", "per": 0, "minPop": 500, "max": 1, "site": "quay", "area": [120, 300], "requires": "water", "district": "port" },
     { "role": "craft.boatshed", "function": "workshop", "per": 5000, "minPop": 500, "max": 12, "site": "quay", "area": [120, 450], "requires": "water", "district": "port" }
@@ -152,7 +153,7 @@
   "families": {
     "european": [
       { "role": "commerce.warehouse", "function": "warehouse", "per": 4000, "minPop": 1500, "max": 20, "site": "quay", "area": [300, 1200], "requires": "water", "district": "port" },
-      { "role": "commerce.fishmarket", "function": "market", "per": 0, "minPop": 1500, "max": 1, "site": "quay", "area": [300, 1400], "requires": "water", "district": "port" },
+      { "role": "commerce.fishmarket", "function": "collective", "per": 0, "minPop": 1500, "max": 1, "site": "quay", "area": [300, 1400], "requires": "water", "district": "port" },
       { "role": "commerce.market", "function": "market", "per": 0, "minPop": 300, "max": 1, "site": "nucleus", "area": [200, 20000], "perCapita": 0.35, "landmark": true, "district": "market" },
       { "role": "civic.townhall", "function": "collective", "per": 0, "minPop": 2000, "max": 1, "site": "nucleus", "area": [400, 2400], "landmark": true, "district": "civic" },
       { "role": "worship.cathedral", "function": "collective", "per": 0, "minPop": 8000, "max": 1, "site": "nucleus", "area": [2500, 9000], "landmark": true, "district": "religious" },
@@ -177,7 +178,7 @@
     ],
     "islamic": [
       { "role": "commerce.warehouse", "function": "warehouse", "per": 5000, "minPop": 1500, "max": 20, "site": "quay", "area": [300, 1200], "requires": "water", "district": "port" },
-      { "role": "commerce.fishmarket", "function": "market", "per": 0, "minPop": 1500, "max": 1, "site": "quay", "area": [300, 1400], "requires": "water", "district": "port" },
+      { "role": "commerce.fishmarket", "function": "collective", "per": 0, "minPop": 1500, "max": 1, "site": "quay", "area": [300, 1400], "requires": "water", "district": "port" },
       { "role": "worship.mosque.friday", "function": "collective", "per": 40000, "minPop": 1500, "max": 6, "site": "nucleus", "area": [1500, 12000], "landmark": true, "district": "religious" },
       { "role": "commerce.souk", "function": "market", "per": 0, "minPop": 300, "max": 1, "site": "nucleus", "area": [400, 20000], "perCapita": 0.4, "landmark": true, "district": "market" },
       { "role": "defence.kasbah", "function": "collective", "per": 0, "minPop": 3000, "max": 1, "site": "hill", "area": [3000, 20000], "landmark": true, "district": "garrison" },
@@ -198,7 +199,7 @@
     ],
     "chinese": [
       { "role": "commerce.warehouse", "function": "warehouse", "per": 5000, "minPop": 2000, "max": 20, "site": "quay", "area": [300, 1200], "requires": "water", "district": "port" },
-      { "role": "commerce.fishmarket", "function": "market", "per": 0, "minPop": 1500, "max": 1, "site": "quay", "area": [300, 1400], "requires": "water", "district": "port" },
+      { "role": "commerce.fishmarket", "function": "collective", "per": 0, "minPop": 1500, "max": 1, "site": "quay", "area": [300, 1400], "requires": "water", "district": "port" },
       { "role": "civic.yamen", "function": "collective", "per": 0, "minPop": 2000, "max": 1, "site": "nucleus", "area": [2000, 9000], "landmark": true, "district": "civic" },
       { "role": "commerce.market", "function": "market", "per": 0, "minPop": 300, "max": 1, "site": "nucleus", "area": [300, 16000], "perCapita": 0.3, "landmark": true, "district": "market" },
       { "role": "worship.confucian-temple", "function": "collective", "per": 0, "minPop": 5000, "max": 1, "site": "spread", "area": [2000, 7000], "landmark": true, "district": "religious" },
@@ -216,7 +217,7 @@
     ],
     "japanese": [
       { "role": "commerce.warehouse", "function": "warehouse", "per": 5000, "minPop": 2000, "max": 20, "site": "quay", "area": [300, 1200], "requires": "water", "district": "port" },
-      { "role": "commerce.fishmarket", "function": "market", "per": 0, "minPop": 1500, "max": 1, "site": "quay", "area": [300, 1400], "requires": "water", "district": "port" },
+      { "role": "commerce.fishmarket", "function": "collective", "per": 0, "minPop": 1500, "max": 1, "site": "quay", "area": [300, 1400], "requires": "water", "district": "port" },
       { "role": "craft.mill", "function": "workshop", "per": 3000, "minPop": 300, "max": 10, "site": "river", "area": [120, 400], "requires": "water" },
       { "role": "craft.dyer", "function": "workshop", "per": 6000, "minPop": 3000, "max": 6, "site": "downstream", "area": [200, 700], "district": "craft:dyers" },
       { "role": "defence.castle", "function": "collective", "per": 0, "minPop": 1000, "max": 1, "site": "hill", "area": [6000, 60000], "landmark": true, "district": "garrison" },

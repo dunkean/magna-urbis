@@ -4,6 +4,9 @@ use serde_json::{Value,json};
 #[path="native_assembly_lazy_union_tests.rs"]
 mod lazy_union_tests;
 
+#[path="native_assembly_context_tests.rs"]
+mod context_tests;
+
 fn request_signature(v:&Value)->std::collections::BTreeMap<String,String>{
     fn walk(v:&Value,path:&str,out:&mut std::collections::BTreeMap<String,String>){
         let scalar=match v{

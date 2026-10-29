@@ -4,7 +4,7 @@ import type { RoadOutput, SettlementOutput, SettlementRequest, SettlementRespons
 import { nativeRasterClient } from './nativeEngine';
 import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
 
-export interface SettlementEngine { run(request: SettlementRequest): SettlementResponse | Promise<SettlementResponse> }
+export interface SettlementEngine { run(request: SettlementRequest): SettlementResponse | Promise<SettlementResponse>; dispose?(): void }
 
 /**
  * Runs placement and routing requests on one Rust terrain handle, kept until a new raster
@@ -15,6 +15,7 @@ export async function createSettlementEngine(runtime?: ExecutionRuntime): Promis
   let terrain: SettlementTerrain | undefined;
   const native = nativeRasterClient();
   return {
+    dispose() { terrain?.free(); terrain = undefined; },
     run(request) {
       if (request.runtime?.profile === 'local') {
         return native<SettlementResponse>('/settlements', { ...request, runtime: request.runtime })

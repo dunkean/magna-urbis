@@ -196,8 +196,8 @@ pub(in crate::urban) fn adapt(
     stage: &str,
 ) -> Morph {
     let Some(plan) = plan else { return morph };
-    let borrowed =
-        !plan.donor.is_empty() && quarter.is_some_and(|q| plan.borrowed_quarters.contains(&q));
+    let borrowed = morph.text("campLayout").is_empty()
+        && !plan.donor.is_empty() && quarter.is_some_and(|q| plan.borrowed_quarters.contains(&q));
     let mut morph = if borrowed {
         let donor_recipe = composition::recipe(&plan.donor, population, recipe_name(recipe));
         match composition::phase_morph(
@@ -655,6 +655,9 @@ fn reserved_land(
     epoch: &Epoch,
     block: f64,
 ) -> f64 {
+    // The camp's tessellation already owns its open centre and its fields.
+    // Reserving a whole probe block for a small common counts that land twice.
+    if super::super::kinds::native_camp(culture, population, cfg) { return 0.0; }
     let role = cfg.programme.role.as_str();
     let communal =
         super::super::culture::mapping(culture).is_some_and(|m| m.functional_profile == "communal");
@@ -696,6 +699,28 @@ fn reserved_land(
 /// Households of a settlement (domestic and mixed), as the programme counts them.
 pub(in crate::urban) fn households(culture: &str, population: u32) -> f64 {
     f64::from(population) / roles::occupancy(culture).household_size.max(0.1)
+}
+
+#[cfg(test)]
+mod camp_capacity_tests {
+    use super::*;
+    #[test]
+    fn camp_probe_uses_its_own_demographic_footprint_and_never_an_urban_donor() {
+        let cfg=LayoutConfig::default();
+        for culture in ["kraal","mongol-ordu","guarani-village","pnw-plank-village"] {
+            let morph=composition::phase_morph(culture,"core","core","culture","auto",1.,&serde_json::json!({}),"quarters").unwrap();
+            let density=morph.value["density"]["core"].as_f64().unwrap();
+            let (_,_,gross)=super::super::super::quarters::probe_quarter(&morph,&cfg,"core",300,0.,"camp-own-probe");
+            assert!((gross-300.*10000./density).abs()<0.01);
+            let before=morph.text("campLayout").to_string();
+            let plan=CapacityPlan{donor:"byzantine-greek".into(),borrowed_quarters:vec![0],..Default::default()};
+            let adapted=adapt(morph,Some(&plan),Some(0),"core","core",300,1.,"quarters");
+            assert_eq!(adapted.text("campLayout"),before);
+            assert!(adapted.value["_tissueDonor"].is_null());
+            let e=Epoch{zone:"core".into(),recipe:"core".into(),share:1.,pressure:1.,offset:0.,steep:0.,fields:0.};
+            assert_eq!(reserved_land(culture,300,&cfg,&e,gross),0.);
+        }
+    }
 }
 /// Probe the epochs of every (donor, t) pair at once, in parallel; the probes
 /// are deterministic and cached, so later reads are lookups.
@@ -889,6 +914,12 @@ fn plan_steps(
     // and the fringe of the measured blocks (quarter stage), not to a borrowed
     // tissue.
     if own * ha >= required * (1.0 - BORROW_GAP) {
+        plan.shortfall = (required - own * ha).max(0.0);
+        return Some(plan);
+    }
+    // A borrowed urban cut destroys the ring/row model being calibrated.
+    // Retain the unmet need after measuring the camp's own bounds instead.
+    if super::super::kinds::native_camp(culture, population, cfg) {
         plan.shortfall = (required - own * ha).max(0.0);
         return Some(plan);
     }

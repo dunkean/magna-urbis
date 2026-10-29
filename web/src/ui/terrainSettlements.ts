@@ -65,6 +65,8 @@ export function createTerrainSettlements(options: {
   onForestOccupation?(occupation: ForestOccupation | undefined): void;
   /** City Bench: one editable city (size, culture, position). */
   city?: boolean;
+  /** Map names and pins (default: shown). */
+  labels?: boolean;
 }) {
   const { map, viewport } = options;
   let restoringDecor = false;
@@ -140,7 +142,7 @@ export function createTerrainSettlements(options: {
     onDisplayChange: options.onChange,
   });
   const urban = createTerrainUrban({ map, before: backend, getTerrain: options.getTerrain,
-    getRaster: options.getRaster, city: options.city, cityView: true,
+    getRaster: options.getRaster, city: options.city, cityView: true, labels: options.labels,
     parcelDefault: options.parcelDefault ?? false,
     getSeed: () => options.getSettings().seed, getAuto: () => autoRefresh && !!options.getAuto?.(), upstreamPending: () => enabled && !decorReady(), onChange: () => { if (!restoringDecor) publishOptions(urban.workshopDraft() ?? urban.workshopSettings()); draw(); options.onChange(); }, onPlanChange: () => { if (!restoringDecor) publishOptions(urban.workshopDraft() ?? urban.workshopSettings()); syncLanduse(); options.onPlanChange?.(); }, onFocus: options.onFocus, onProjection: options.onProjection, onAutoChange: value => { const box = input('setAutoRefresh'); box.checked = value; box.onchange?.(new Event('change')); } });
   // One « Auto » switch in the city panel drives the settlements & roads auto-refresh too; only its manual button moves there.
@@ -196,6 +198,8 @@ export function createTerrainSettlements(options: {
     const relief = options.getSettings().relief;
     landuse?.set({ raster, seed: options.getSettings().seed, relief: (['flat', 'hills', 'valley'].includes(relief) ? relief : 'mountains') as Relief,
       city, neighbours: output.settlements.filter(s => s.key !== city?.key), roads: roads.output, layouts: urban.layouts,
+      ruralOptions: { streetAlignedHomes: urban.partitions?.find(p => p.key === city?.key)?.config?.streetAlignedHomes,
+        denserSmallholdings: urban.partitions?.find(p => p.key === city?.key)?.config?.denserSmallholdings },
       forest: options.getForestSource?.() });
   }
   let paintingContext: UrbanPaintingContext | undefined;
@@ -528,7 +532,7 @@ export function createTerrainSettlements(options: {
       return;
     }
     drawnLayer = layer; drawnOutput = output; drawnState = state;
-    layer.replaceChildren(); if (!enabled || !output || !showPoints) return;
+    layer.replaceChildren(); if (!enabled || !output || !showPoints || options.labels === false) return;
     const scale = options.getView().scale;
     const displayed = draft ? draft.flatMap(spec => {
       const placed = output?.settlements.find(s => s.key === spec.key), center = spec.position ?? placed?.center;

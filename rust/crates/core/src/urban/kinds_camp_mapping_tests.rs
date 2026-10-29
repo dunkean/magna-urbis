@@ -35,8 +35,19 @@ fn camp_mapping_native_property_and_legacy_nomad_are_data_driven(){
     assert!(declared>0);
     assert_eq!(super::super::catalogue()["cultures"]["nomad-camp"]["camp"]["layout"],"ring");
     assert_eq!(resolve(&site("nomad-camp",300),&cfg,&[]),Kind::Camp);
-    assert!(!cultural_camp("inuit-camp",80,&cfg),"organic winter camp has no native campLayout");
-    assert_eq!(resolve(&site("inuit-camp",80),&cfg,&[]),Kind::Hamlet,"remaining separate organic small-settlement issue");
+    assert!(cultural_camp("inuit-camp",80,&cfg),"organic winter camp keeps its declared footpath grammar");
+    assert_eq!(resolve(&site("inuit-camp",80),&cfg,&[]),Kind::Camp);
+}
+
+#[test]
+fn organic_footpath_camp_delegates_below_the_hamlet_threshold(){
+    let s=site("inuit-camp",80);let cfg=LayoutConfig::default();
+    let (applied,kind)=effective(&s,&cfg,&crossing(s.center));
+    assert_eq!(kind,Kind::Camp);
+    let m=super::super::resolve("inuit-camp","culture","auto","core",1.,&json!({}),"quarters").unwrap();
+    let height=vec![10.;64*64];let water=vec![0;64*64];
+    let surface=Surface{geometry:None,width:4000.,n:64,height:&height,water:&water};
+    assert!(lay_out("organic-camp",&s,&applied,kind,&m,surface,&[]).is_none(),"Use the declared organic cut, not roadside farms or a fabricated ring");
 }
 
 #[test]

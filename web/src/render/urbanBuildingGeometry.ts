@@ -2,12 +2,13 @@ import type { MaterialSlots, Point, Surface } from '../../../rust/bridge/housesC
 import type { PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
 import type { HouseMaterial } from '../../../rust/bridge/housesContract';
 import type { NativeBuildingProjection } from '../ui/urbanBuildingProjection';
+import type { ParentMember3dVisual } from '../ui/urbanParent3d';
 import { retainBuildingFeature, type BuildingFeatureLod } from './urbanBuildingFeatureLod';
 
 export type BuildingVector = [number, number, number];
 export interface BuildingTriangle { points: [BuildingVector, BuildingVector, BuildingVector]; normal: BuildingVector; surface: 'wall' | 'roof'; materials: MaterialSlots; material?: string }
 /** A cartographic projection is never a PlacedBuilding or a realization input. */
-export type Building3dVisual = PlacedBuilding | NativeBuildingProjection;
+export type Building3dVisual = PlacedBuilding | NativeBuildingProjection | ParentMember3dVisual;
 export interface Building3dScene {
   buildings: readonly Building3dVisual[];
   materials?: HouseMaterial[];
@@ -15,8 +16,8 @@ export interface Building3dScene {
    * purely visual exterior overlays. Omitted on legacy scenes. */
   occupationBuildings?: readonly Building3dVisual[];
 }
-export function isBuildingProjection(building: Building3dVisual): building is NativeBuildingProjection {
-  return 'projection' in building && building.projection === 'native-building-visual-1';
+export function isBuildingProjection(building: Building3dVisual): building is NativeBuildingProjection | ParentMember3dVisual {
+  return 'projection' in building && (building.projection === 'native-building-visual-1' || building.projection === 'native-parent-member-3d-1');
 }
 export function building3dHeight(building: Building3dVisual): number {
   if (isBuildingProjection(building)) return building.height_m;

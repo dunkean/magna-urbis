@@ -544,7 +544,9 @@ fn family<'a>(site: &Site, cfg: &'a LayoutConfig, geography: Geography, radius: 
         &cfg.culture
     };
     let p = profiles::settlement_profile(culture, site.population, cfg.footprint.epochs);
-    if p.enclosure == "square"
+    if cfg.regular_grid_outline && (p.pattern == "grid" || cfg.tissue == "grid") {
+        "rectangle"
+    } else if p.enclosure == "square"
         && p.pattern == "grid"
         && profiles::fortification(p, &cfg.fortification, site.population) != "none"
     {
@@ -581,7 +583,7 @@ fn mechanism<'a>(cfg: &'a LayoutConfig, family: &str) -> &'a str {
         _ => "accessibility",
     }
 }
-fn orientation(site: &Site, cfg: &LayoutConfig, surface: Surface<'_>, roads: &[Street]) -> f64 {
+pub(super) fn orientation(site: &Site, cfg: &LayoutConfig, surface: Surface<'_>, roads: &[Street]) -> f64 {
     let culture = if cfg.culture == "site" {
         &site.culture
     } else {
@@ -627,6 +629,7 @@ fn orientation(site: &Site, cfg: &LayoutConfig, surface: Surface<'_>, roads: &[S
     if cfg.axis_alignment == "regional"
         && cfg.params.get("orientation").is_none()
         && cfg.preset == "culture"
+        && !(cfg.regular_grid_outline && p.pattern == "grid" && p.orientation == "cardinal")
         && let Some(regional) = super::macroplan::regional_axis(
             site.center,
             site.radius * cfg.radius_scale * 1.5,
@@ -679,6 +682,37 @@ fn dry_center(p: Point, radius: f64, surface: Surface<'_>) -> Option<Point> {
         }
     }
     best
+}
+
+/// A hill nucleus moves only onto usable dry ground with a wheeled approach.
+fn summit_access(site: &Site, cfg: &LayoutConfig, surface: Surface<'_>, roads: &[Street], radius: f64) -> Option<(Point, Option<Street>)> {
+    if !cfg.power_high_ground || !matches!(cfg.site_archetype.as_str(), "hilltop" | "spur") {
+        return None;
+    }
+    let reach = radius * 0.75;
+    let step = (surface.width / surface.n as f64 * 0.5).max(reach / 24.0).max(2.0);
+    let count = (reach / step).ceil() as i32;
+    let mut candidates = vec![site.center];
+    for y in -count..=count {
+        for x in -count..=count {
+            if (x * x + y * y) as f64 * step * step > reach * reach { continue; }
+            candidates.push(Point { x: site.center.x + x as f64 * step, y: site.center.y + y as f64 * step });
+        }
+    }
+    candidates.retain(|&p| !surface.wet(p) && { let (x, y) = slope(surface, p); x.hypot(y) <= cfg.max_lane_grade });
+    candidates.sort_by(|&a, &b| surface.height_at(b).total_cmp(&surface.height_at(a))
+        .then_with(|| distance(a, site.center).total_cmp(&distance(b, site.center))));
+    let summit = *candidates.first()?;
+    let start = roads.iter().filter(|s| !matches!(s.role.as_str(), "bridge" | "ford" | "causeway"))
+        .flat_map(|s| s.path.windows(2)).map(|w| g::distance(summit, w[0], w[1]))
+        .filter(|(d, _, p)| *d <= radius * 2.0 && !surface.wet(*p))
+        .min_by(|a, b| a.0.total_cmp(&b.0)).map_or(site.center, |(_, _, p)| p);
+    if distance(start, summit) < 0.5 { return Some((summit, None)); }
+    let margin = radius.max(100.0);
+    let mut planner = routing::RoutePlanner::new(surface, (start.x.min(summit.x) - margin, start.y.min(summit.y) - margin,
+        start.x.max(summit.x) + margin, start.y.max(summit.y) + margin));
+    let path = planner.route(start, summit, cfg.max_street_grade)?;
+    Some((summit, Some(Street { widths: vec![5.0; path.len()], path, rank: 1, role: "street".into() })))
 }
 #[allow(clippy::too_many_arguments)]
 fn centers(
@@ -1710,7 +1744,10 @@ fn accessible(
         .filter(|r| matches!(r.role.as_str(), "bridge" | "ford" | "causeway"))
         .filter_map(|r| Some((*r.path.first()?, *r.path.last()?)))
         .collect::<Vec<_>>();
-    let urban = crossings::candidates(&grid, &dry_mask, surface, &service.crossing, &fixed);
+    // Automatic watercourse bridges must not close a sea harbour. Imported
+    // regional crossings keep their own evidence and are preserved above.
+    let urban:Vec<_> = crossings::candidates(&grid, &dry_mask, surface, &service.crossing, &fixed)
+        .into_iter().filter(|c|!macroplan::harbour::port_town(cfg) || !macroplan::harbour::crosses_sea(surface,c.entry,c.exit)).collect();
     for (id, c) in urban.iter().enumerate() {
         let cost = c.cost(&grid);
         crossings[c.from].push((c.to, cost, id));
@@ -2179,6 +2216,23 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
         orientation(site, cfg, surface, roads)
     };
     let mut centers = centers(site, cfg, family, mechanism, radius, angle, surface, &rng);
+    let summit_access = summit_access(site, cfg, surface, roads, radius).and_then(|(summit, access)| {
+        if let Some(c) = centers.first_mut() { c.point = summit; }
+        access
+    });
+    // A town above a coastal escarpment keeps its civic nucleus. Seed its
+    // lower port as well, only across a real dry route within configured grades.
+    let port_access = if site.population >= 3000 && macroplan::harbour::port_town(cfg) {
+        macroplan::harbour::sited(site,cfg,surface).and_then(|port| {
+            let (a,b)=(site.center,port.center);
+            let margin=radius.max(150.0);
+            let mut planner=routing::RoutePlanner::new(surface,(a.x.min(b.x)-margin,a.y.min(b.y)-margin,a.x.max(b.x)+margin,a.y.max(b.y)+margin));
+            let route=planner.route(a,b,cfg.max_street_grade).map(|p|(p,"street",5.0))
+                .or_else(||planner.route(a,b,cfg.max_lane_grade).map(|p|(p,"lane",3.0)))?;
+            centers.push(UrbanCenter {id:centers.len(),point:b,weight:0.65});
+            Some(Street {widths:vec![route.2;route.0.len()],path:route.0,rank:1,role:route.1.into()})
+        })
+    } else {None};
     // A port grows along its harbour shore.
     let water_affinity = morph.value["growth"]["water"].as_f64().unwrap_or(0.3);
     let water_affinity = if macroplan::harbour::port_town(cfg) {
@@ -2220,7 +2274,8 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
         .first()
         .map(|c| guides(guide_family, c.point, guide_radius, angle, &rng))
         .unwrap_or_default();
-    let growth_roads = [roads, guides.as_slice()].concat();
+    let port_roads:Vec<_>=port_access.iter().chain(summit_access.iter()).cloned().collect();
+    let growth_roads = [roads, guides.as_slice(),port_roads.as_slice()].concat();
     let mut warnings = vec![];
     if centers.is_empty() {
         warnings.push("Aucun noyau sec disponible : le budget urbain reste non attribué.".into());
@@ -2325,6 +2380,8 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
     } else {
         vec![]
     };
+    if let Some(access)=port_access {links.push(access);}
+    if let Some(access)=summit_access {links.push(access);}
     let allocated = union(&phases.iter().flatten().cloned().collect::<Vec<_>>());
     // An urban crossing survives only between two retained banks: its
     // approaches start and end on allocated land.
@@ -2435,7 +2492,10 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
     let reserve_area = area(&dry(surface, &reserve));
     let components = allocated.len();
     let structure = UrbanStructure {
+        gate_village_centers: vec![],
+        gate_village_lanes: vec![],
         quays: vec![],
+        port_districts: vec![],
         version: 1,
         mechanism: mechanism.into(),
         family: family.into(),
@@ -2479,6 +2539,81 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
 mod tests {
     use super::super::{FootprintConfig, resolve};
     use super::*;
+
+    #[test]
+    fn site_options_grid_outline_uses_the_grid_at_500_and_10000_and_keeps_water_out() {
+        let height=vec![20.;128*128];
+        let water=vec![0; height.len()];
+        let surface=Surface{geometry:None,width:3000.,n:128,height:&height,water:&water};
+        let mut cfg=LayoutConfig{fortification:"none".into(),regular_grid_outline:true,..Default::default()};
+        cfg.footprint.budget="radius".into();
+        cfg.footprint.epochs=1;
+        let mut site=Site{key:"grid".into(),name:String::new(),culture:"bastide".into(),population:500,center:Point{x:1500.,y:1500.},radius:250.};
+        let morph=resolve("bastide","culture","auto","village",1.,&serde_json::json!({}),"quarters").unwrap();
+        for (pop,radius) in [(500,150.),(10000,450.)] {
+            site.population=pop;
+            let off=LayoutConfig{regular_grid_outline:false,..cfg.clone()};
+            let a=generate("grid-witness",&site,&off,&morph,surface,&[],radius);
+            let b=generate("grid-witness",&site,&cfg,&morph,surface,&[],radius);
+            assert_eq!(b.structure.family,"rectangle");
+            assert!(b.structure.allocated.iter().flat_map(|s| s.outer.iter().zip(s.outer.iter().cycle().skip(1)).take(s.outer.len()))
+                .all(|(a,b)| (a.x-b.x).abs()<1e-5 || (a.y-b.y).abs()<1e-5));
+            assert!(area(&b.structure.allocated)>=b.structure.metrics.target_area*0.99);
+            if let Ok(out)=std::env::var("SITE_OPTS_WITNESSES") {
+                super::super::site_options_tests::svg(&out,&format!("bastide-{pop}-off"),&a.guides,&a.structure.allocated,3000.);
+                super::super::site_options_tests::svg(&out,&format!("bastide-{pop}-on"),&b.guides,&b.structure.allocated,3000.);
+            }
+        }
+        // With no regional road, the armature must use the outline's angle,
+        // rather than its independent random bearing. All components share it.
+        cfg.footprint.orientation=23.;
+        let plan=super::super::composition::generate("rotated-grid",&site,&cfg,surface,&[],450.).unwrap();
+        let angle=orientation(&site,&cfg,surface,&[]);
+        let major:Vec<_>=plan.plan.streets.iter().filter(|s|s.rank<=1).flat_map(|s|s.path.windows(2))
+            .filter(|w|distance(w[0],w[1])>20.).collect();
+        assert!(!major.is_empty());
+        assert!(major.iter().all(|w| (((w[1].y-w[0].y).atan2(w[1].x-w[0].x)-angle)*4.).cos()>0.999));
+        cfg.footprint.orientation=0.;
+        // An explicit artistic form still wins, and organic cultures keep their form.
+        cfg.footprint.family="circle".into();
+        assert_eq!(family(&site,&cfg,geography(&site,&cfg,surface,250.),250.),"circle");
+        cfg.footprint.family="auto".into();site.culture="european-organic".into();
+        assert_ne!(family(&site,&cfg,geography(&site,&cfg,surface,250.),250.),"rectangle");
+        site.culture="bastide".into();
+        let mut water=water.clone();
+        for y in 0..128 {for x in 65..128 {water[y*128+x]=1;}}
+        let surface=Surface{water:&water,..surface};
+        let result=generate("coastal-grid",&site,&cfg,&morph,surface,&[],450.);
+        assert!(result.structure.allocated.iter().all(|s| !surface.wet(g::interior_point(s))));
+    }
+
+    #[test]
+    fn site_options_hill_uses_a_reachable_summit_and_a_grade_limited_switchback() {
+        let n=128;
+        let height:Vec<f32>=(0..n*n).map(|i| {
+            let x=(i%n) as f64*1000./n as f64+500./n as f64;
+            let y=(i/n) as f64*1000./n as f64+500./n as f64;
+            (100.+45.*(-((x-600.).powi(2)+(y-500.).powi(2))/(2.*140_f64.powi(2))).exp()) as f32
+        }).collect();
+        let water=vec![0; height.len()];
+        let surface=Surface{geometry:None,width:1000.,n,height:&height,water:&water};
+        let site=Site{key:"hill".into(),name:String::new(),culture:"european-organic".into(),population:3000,center:Point{x:480.,y:500.},radius:300.};
+        let cfg=LayoutConfig{power_high_ground:true,site_archetype:"hilltop".into(),..Default::default()};
+        let roads=vec![Street{path:vec![Point{x:350.,y:250.},Point{x:350.,y:750.}],widths:vec![5.;2],rank:1,role:"regional".into()}];
+        assert!(summit_access(&site,&LayoutConfig{power_high_ground:false,..cfg.clone()},surface,&roads,300.).is_none());
+        let (summit,route)=summit_access(&site,&cfg,surface,&roads,300.).expect("reachable hilltop");
+        let route=route.expect("summit approach");
+        assert!(distance(summit,Point{x:600.,y:500.})<12.,"{summit:?}");
+        assert!(surface.height_at(summit)>surface.height_at(site.center)+10.);
+        assert!(routing::path_clear(surface,&route.path,cfg.max_street_grade));
+        let length:f64=route.path.windows(2).map(|w|distance(w[0],w[1])).sum();
+        assert!(length>distance(route.path[0],summit)*1.15,"{length}: {:?}",route.path);
+        if let Ok(out)=std::env::var("SITE_OPTS_WITNESSES") {
+            let contours:Vec<_>=[70.,140.,210.,280.].into_iter().map(|r| template(Point{x:600.,y:500.},"circle",r,1.,0.,0.,0.)).collect();
+            super::super::site_options_tests::svg(&out,"hill-off",&roads,&contours,1000.);
+            super::super::site_options_tests::svg(&out,"hill-on",&[roads,vec![route]].concat(),&contours,1000.);
+        }
+    }
 
     /// Invariant (adaptive capacity, step 4): a sparse tissue that its own
     /// densified cutting cannot house on bounded land borrows the cutting of a

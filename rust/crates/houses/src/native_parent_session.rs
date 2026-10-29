@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 pub const PARENT_SESSION_CAPABILITY:&str="houses.native-parent-session-1";
 pub const PARENT_SESSION_SCHEMA:&str="native-parent-session-1";
-pub const PARENT_SESSION_GENERATOR:&str="native-parent-session-1/exact-leaf-prefix64";
+pub const PARENT_SESSION_GENERATOR:&str="native-parent-session-1/exact-leaf-prefix64-context1-choice1";
 pub const PARENT_SESSION_PARTITION:&str="prefix64-input24MiB-std-v1";
 #[derive(Clone,Debug,Serialize,Deserialize,PartialEq,Eq)]
 #[serde(deny_unknown_fields)]

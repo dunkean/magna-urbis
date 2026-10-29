@@ -194,10 +194,10 @@ fn frozen_single_entries_use_one_existing_pose_and_replay_only_certified_portals
                 matches!(prepared, FoundationPreparation::Unsupported(_)),
                 "flat terrace/hearth requires its separate literal/invariant proof"
             );
-            assert_eq!(
-                serde_json::to_value(&after).unwrap(),
-                serde_json::to_value(&previous).unwrap()
-            );
+            unchanged_except_diagnostic(&previous, &after);
+            assert!(!after.resolved.has_retained_entrance());
+            assert_eq!(after.domestic_units,0);
+            assert!(realize_plan(RealizePlanRequest{building:after,interiors:true}).is_err(),"a proxy cannot certify the B01 interior");
             continue;
         }
         supported += 1;

@@ -49,3 +49,4 @@ __pycache__/
 .superpowers/
 .venv-illustration/
 illustration/output/
+web/dist-v2/

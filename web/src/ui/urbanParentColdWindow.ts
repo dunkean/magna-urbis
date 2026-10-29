@@ -1,4 +1,4 @@
-import { translateParentVisualRecords } from './urbanParentVisual';
+import { PARENT_VISUAL_VERSION, translateParentVisualRecords } from './urbanParentVisual';
 /** Child-only native parent window. Both parent/context AND member indexes are
  * queried. No native archive/full projection is read on a valid cache hit. */
 import type { Point, HouseMaterial } from '../../../rust/bridge/housesContract';
@@ -96,7 +96,7 @@ export async function openParentColdWindow(backend: ParentChunkBackend, sceneId:
         }
       }
     }
-    const display = translateParentVisualRecords({ version: 'native-parent-visual-1', members, contexts, parents, materials: [...materials.values()] }, dx, dy);
+    const display = translateParentVisualRecords({ version: PARENT_VISUAL_VERSION, members, contexts, parents, materials: [...materials.values()] }, dx, dy);
     const value: ParentWindowSnapshot = { ...display, sourceFingerprint: m.sourceFingerprint, manifestFingerprint: m.fingerprint,
       viewport: [...viewport], complete: reason === 'complete', reason, encodedBytes, vertices,
       candidates: memberCandidates.size + parentCandidates.size, chunks, maxDecodedChunkVertices };

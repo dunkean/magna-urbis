@@ -39,6 +39,9 @@ pub struct CultureMapping {
 fn one_floor() -> [u32; 2] {
     [1, 1]
 }
+pub(super) fn architecture_pack(culture:&str) -> Option<&'static str> {
+    MAPPINGS.iter().find(|m|m.0==culture).map(|m|m.2)
+}
 
 /// Metric house scale and exterior form, independent of the borrowed recipe.
 pub(super) fn house_parameters(culture: &str) -> (f64, &'static str) {
@@ -880,6 +883,17 @@ pub(super) fn functional_programme(
             && (period.is_empty() || period == "any" || p.eras.iter().any(|era| era == period))
     })
 }
+/// Declared functional sources carry their own native envelope. A residential
+/// default (even absent/refused/out of era) is never their admission witness.
+pub(super) fn functional_mapping(culture: &str, role: &str, function: &str, period: &str, mode: &str) -> Option<CultureMapping> {
+    let &(id,family,pack,borrowed,functions,architecture_family)=MAPPINGS.iter().find(|m|m.0==culture)?;
+    let programme=functional_programme(pack,role,function,period,mode)?;
+    let (envelope,access,layout,floors)=super::building_sites::recipe_admission_witness(&programme.recipe_id)?;
+    let profile=RecipeAdmission { id:programme.recipe_id.clone(),pack_id:pack.into(),layout,
+        min_envelope_m:envelope,min_access_width_m:access,status:"supported".into(),floors,
+        eras:programme.eras.clone(),tradition_id:None,inspired_only:mode!="historical_strict" };
+    Some(from_profile(id,family,pack,borrowed,functions,architecture_family,&profile))
+}
 fn admission_catalogue() -> &'static AdmissionCatalogue {
     static PROFILES: OnceLock<AdmissionCatalogue> = OnceLock::new();
     PROFILES.get_or_init(|| {
@@ -1212,7 +1226,8 @@ pub(super) fn block_morph<'a>(
         .as_ref()
         .and_then(|s| s.districts.iter().find(|d| d.quarters.contains(&b.quarter)))
         .map_or("culture", |d| d.tissue.as_str());
-    let morph = super::with_tissue(morph, tissue);
+    let mut morph = super::with_tissue(morph, tissue);
+    if cfg.old_enclosure_citadel { morph.value["_innerWalls"] = serde_json::json!(true); }
     Some((&b.zone, morph))
 }
 /// The adaptive-capacity tissue of a block (`footprint::capacity`): densified,
@@ -1427,7 +1442,7 @@ mod tests {
     #[test]
     fn functional_source_requirements_are_exact_and_registry_driven() {
         assert!(requires_functional_source("storage.horreum","warehouse"));
-        assert!(functional_source_gap("roman-core","MED-ANT","storage.horreum","warehouse","","historical_inspired").is_some());
+        assert!(functional_source_gap("roman-core","MED-ANT","storage.horreum","warehouse","","historical_inspired").is_none());
         assert!(functional_source_gap("roman-core","MED-ANT","storage.horreum","warehouse","A","historical_strict").is_some());
         for (culture,pack,role,function) in [
             ("roman-core","MED-ANT","dwelling.house","domestic"),

@@ -8,6 +8,10 @@ DEMO: https://dunkean.github.io/magna-urbis/
 
 PREVIEW Magna Urbis V2 (gallery of every culture, village and town, 2D and 3D): https://dunkean.github.io/magna-urbis/gallery/v2/
 
+**New V2 workshop:** a separate application at `web/src/ui/v2.html`, with a new interface inspired by V1. From `web/`, run `npm run dev:v2` and open **http://127.0.0.1:5174/v2.html**. It separates topography, regional sites/routes, and global or individual town construction. The Rust urban path exposes independent layout, cadastral, programme and architectural stages, with settings down to individual buildings. The classic engine remains selectable.
+
+`npm run build:v2` produces `web/dist-v2` for static hosting, including GitHub Pages subdirectories. `npm run app:v2:build` builds a separate desktop application and installer. A fresh checkout needs the Rust/WASM preparation described in the [V2 launch and packaging guide](rust/desktop-v2/README.md). The [V2 usage and verification guide](docs/V2_ATELIER_FR.md) describes project composition, exports, caching and current limits.
+
 **Magna Urbis is inspired by [TownGeneratorOS by Watabou (Oleg Dolya)](https://github.com/watabou/TownGeneratorOS) and his [Medieval Fantasy City Generator](https://watabou.itch.io/medieval-fantasy-city-generator).** The project began as a Python port of TownGeneratorOS; that prototype has since been retired, and the TypeScript and Rust implementations continue the exploration.
 
 **Work in progress. Alpha. Prototype.** Magna Urbis generates pre-modern settlements and their surrounding landscapes for maps and tabletop role-playing games. Its output, performance and interfaces are still evolving. This is an experimental project, not a finished application.
@@ -17,6 +21,8 @@ There are two implementations: **TypeScript**, currently the most complete, and 
 **The Rust version is actively being implemented.** Its dedicated benches already expose terrain, erosion, hydrology, settlement placement, regional roads, streets, blocks and parcels. A separate Rust house generator is also under development; assembling these stages into the complete application is ongoing.
 
 Read the [technical and scientific overview](docs/TECHNICAL_AND_SCIENTIFIC_OVERVIEW.md) for the generation pipeline, InfiniteDiffusion / Terrain Diffusion, erosion, rivers and lakes, urban plans, and the Rust / WASM / neural-network stack. It includes research citations, source-code links and the current implementation boundaries. A [French version](docs/TECHNICAL_AND_SCIENTIFIC_OVERVIEW_FR.md) is also available.
+
+The [illustrated methods atlas](docs/scientific/index.html) is available in English (default) and [French](docs/scientific/fr.html). It follows the full process from terrain to accepted buildings in 19 chapters, with primary references, explicit assumptions and limitations, real screenshots, diagrams and source provenance. The V2 application also defaults to English and provides a live language selector; both remember an explicit language choice. The atlas works offline.
 
 The long-term goal is to **integrate Magna Urbis into [Neural Earth](https://github.com/dunkean/neural-earth)**, the procedural world project developed in Infinite Map, placing cities and villages within a regional and planetary landscape. This integration is planned for the future and has not been delivered yet.
 
@@ -73,6 +79,8 @@ TypeScript explores organic street patterns, bastides, medinas, Chinese and Japa
 Rust is gradually taking over generation responsibilities. Performance and precision still depend on calculation grids, terrain and the browser's CPU/GPU capabilities. It is not yet a complete replacement for TypeScript.
 
 The current interface is intended to be retained. The existing renderer is a temporary integration aid; the future rendering engine remains to be developed.
+
+In the Rust benches, select **Carte V1** in the urban view tabs, then **V1 · Parchemin** or **V1 · Atlas**, for the original map's terrain colours, classic vegetation, field textures and regional road styling. The V2 houses keep their current renderer. This separate 2D display layer restyles the retained terrain and land use without regenerating them; land use must already have been generated. The diagnostic tabs restore the previous appearance. Capture links can select the layer with `v1=parchment` or `v1=atlas`.
 
 ## Run the TypeScript application
 

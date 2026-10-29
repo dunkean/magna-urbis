@@ -19,7 +19,7 @@ import { rasterizePolys } from '../geo/raster';
 import type { World, Settlement, SiteArchetype } from '../types';
 import {
   Options, SettlementClass, CountClass, COUNT_CLASSES, SettlementSpec, SettlementOverrides, SitePrefs,
-  classOfPop, mapSizeOf, SettlementCounts,
+  classOfPop, SettlementCounts,
 } from '../options';
 import { getCulture } from '../urban/culture';
 import { BIG_RIVER_W } from '../site/site';
@@ -163,7 +163,8 @@ export function voronoiRegions(centers: Vec2[], S: number): Polygon[] {
  */
 export function planSettlements(world: World, opts: Options, root: Rng, mainOptions: Options = opts, projectedPopulation = 100): PlanResult {
   const terrain = world.terrain, site = world.site!;
-  const S = mapSizeOf(opts);
+  // Retained worlds own their physical extent (V2 Rust terrains can exceed the legacy preset limit).
+  const S = world.mapSize;
   const { w: n, cell } = terrain.height;
   const N = n * n;
   const H = terrain.height.data, water = terrain.water, slope = terrain.slope.data;

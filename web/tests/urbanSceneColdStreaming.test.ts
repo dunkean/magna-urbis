@@ -1,9 +1,11 @@
 import { beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import fixture from './fixtures/urban-building-chunks-c.json';
 import siteFixture from './fixtures/urban-cold-sites-c.json';
+import deficitFixture from './fixtures/open-deficit-roman04-bridge-native.json';
+import type { Partition } from '../../rust/bridge/urban';
 import type { PlacementBatch, PlacementRequest } from '../../rust/bridge/urbanArchitecture';
 import { archivePlanBatch, resolveArchivedPlan } from '../../rust/bridge/compactPlanArchive';
-import { beginUrbanBuildingStage, openUrbanBuildingChunks } from '../src/ui/urbanBuildingChunkStore';
+import { beginUrbanBuildingStage, openUrbanBuildingChunks, iterateUrbanBuildingChunks } from '../src/ui/urbanBuildingChunkStore';
 import { projectUrbanSite } from '../src/ui/urbanSiteStore';
 import type { UrbanSceneResponse, UrbanSceneWorkerMessage } from '../src/ui/urbanSceneProtocol';
 import { ColdTestBackend, deferred } from './helpers/urbanBuildingColdTestBackend';
@@ -55,6 +57,24 @@ function hasNoNativeGraph(value: unknown): void {
     hasNoNativeGraph(child);
   }
 }
+
+it('persists the actual Core deficit declaration with the cold outcome before ACK', async () => {
+  const f=structuredClone(deficitFixture) as unknown as { partitions:Partition[]; requests:PlacementRequest[]; scene:PlacementBatch };
+  const backend=new ColdTestBackend(),client=createUrbanSceneClient();
+  const delta:PlacementBatch={schema_version:'1',generator_version:'architectural-plans-2',buildings:[],refusals:[],open_spaces:f.scene.open_spaces};
+  const sites=f.requests.filter(r=>delta.open_spaces.some(s=>s.id===r.id)),total=sites.length;
+  const result=client.runCold(input,{backend,partitions:f.partitions,sourceFingerprint:fixture.cliSha256,sceneId:'deficits'});
+  const worker=await workerStarted(1);
+  emit(worker,{id:1,batch:{delta,progress:{start:0,completed:total,total},requests:[],sites:sites.map(projectUrbanSite)}});
+  await vi.waitFor(()=>expect(worker.messages).toContainEqual({ack:{id:1,completed:total}}));
+  emit(worker,{id:1,complete:{schema_version:'1',generator_version:delta.generator_version,buildings:0,refusals:0,open_spaces:total},siteQuery:query()});
+  await result;
+  for await(const retained of iterateUrbanBuildingChunks(backend,'deficits')) for(const space of retained.open_spaces) {
+    expect(space.deficit?.version).toBe('architectural-deficit-1');
+    expect(space.deficit?.message).toBe(sites.find(r=>r.id===space.id)!.programme!.deficit!.message);
+  }
+  client.dispose();
+});
 
 it('persists before projection/ACK, avoids the native accumulator and returns an explicitly cold descriptor only after verified completion', async () => {
   const backend = new ColdTestBackend(); await previous(backend);

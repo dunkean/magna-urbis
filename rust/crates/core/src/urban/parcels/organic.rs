@@ -37,6 +37,7 @@ pub(super) fn lots(
     morph: &Morph,
     zone: &str,
     rng: &mut Rng,
+    budget: Option<usize>,
 ) -> Vec<Parcel> {
     let [lo, hi] = morph.range("houseArea", zone);
     let target = (lo + morph.number_or("organicLotMix", 0.4) * (hi - lo).max(0.0)).max(60.0);
@@ -76,13 +77,21 @@ pub(super) fn lots(
         .filter(|p| area(p) > 1e-6)
         .collect();
     let width = morph.number_or("footpathWidth", 1.8).clamp(1.2, 3.0);
-    let (paths, raw, path_fronts) = footpaths(shape, &cells, fronts, width);
+    let mut targets = vec![true; cells.len()];
+    if let Some(n) = budget {
+        let c = centroid(shape);
+        let mut order: Vec<_> = (0..cells.len()).collect();
+        order.sort_by(|&a,&b| length(sub(centroid(&cells[a]),c)).total_cmp(&length(sub(centroid(&cells[b]),c))).then(a.cmp(&b)));
+        for &i in order.iter().skip(n) { targets[i] = false; }
+    }
+    let (paths, raw, path_fronts) = footpaths_targets(shape, &cells, fronts, width, &[], &[], &[], Some(&targets));
     fronts.extend(path_fronts);
     let mut out = Vec::with_capacity(cells.len() + paths.len());
-    for cell in cells {
+    for (i, cell) in cells.into_iter().enumerate() {
         for piece in cut_out(cell, &raw).into_iter().filter(|p| area(p) > 1e-6) {
             let mut p = parcel(piece, block, axis, fronts, "plot");
             p.provenance = vec!["organic-cell".into()];
+            if !targets[i] { p.use_kind = "garden".into(); p.reason = "camp-open".into(); }
             out.push(p);
         }
     }
@@ -322,6 +331,26 @@ impl Nodes {
     }
 }
 
+/// Overlay coordinates are quantized at geometry::span's sub-micrometre unit.
+/// A second overlay must not disconnect a clipped path for its roundoff skin.
+/// Every outside vertex, edge midpoint and interior witness must stay within
+/// four such units of the actual boundary, including holes; real gaps fail.
+pub(super) fn contained_path(path: &Shape, block: &Shape) -> bool {
+    contained_path_at(path,block,0.0)
+}
+pub(super) fn contained_path_at(path: &Shape, block: &Shape, source_unit: f64) -> bool {
+    let b = bbox(block); let p = bbox(path);
+    let half = ((b.2.max(p.2)-b.0.min(p.0)).max(b.3.max(p.3)-b.1.min(p.1))*0.5).max(1.0);
+    let eps = 4.0*((half.log2().floor()-29.0).exp2()+source_unit);
+    let boundary: Vec<_> = std::iter::once(&block.outer).chain(&block.holes).flat_map(|r|
+        r.iter().zip(r.iter().cycle().skip(1)).take(r.len()).map(|(&a,&b)|(a,b))).collect();
+    let near = |p: Point| boundary.iter().any(|&(a,b)| super::super::geometry::distance(p,a,b).0 <= eps);
+    let outside = difference(path, block);
+    if outside.is_empty() { return true; }
+    outside.iter().all(|s| near(interior_point(s)) && std::iter::once(&s.outer).chain(&s.holes).all(|r|
+        r.iter().zip(r.iter().cycle().skip(1)).take(r.len()).all(|(&a,&b)| near(a) && near(scale(add(a,b),0.5)))))
+}
+
 /// Complete the EXISTING boundary graph with actual retained-path rings.
 /// Split T junctions only at real existing vertices using exactly Nodes' 2mm
 /// join policy. The 32m bins affect lookup cost only, never geometry/selection.
@@ -329,7 +358,7 @@ fn navigation_edges(
     block:&Shape,cells:&[Shape],navigation:&[Shape],nodes:&mut Nodes,
     edges:&mut BTreeMap<(usize,usize),Vec<usize>>,own:&mut [Vec<(usize,usize)>],
 )->BTreeSet<(usize,usize)> {
-    let valid:Vec<_>=navigation.iter().filter(|p|difference(p,block).is_empty()).collect();
+    let valid:Vec<_>=navigation.iter().filter(|p|contained_path(p,block)).collect();
     for p in cells.iter().chain(valid.iter().copied()) {
         for ring in std::iter::once(&p.outer).chain(p.holes.iter()) {
             for &v in ring {nodes.id(v);}
@@ -425,10 +454,17 @@ pub(super) fn footpaths_with_navigation(
     shape:&Shape, cells:&[Shape], fronts:&[Front], width:f64,
     connected_shared:&[usize], navigation:&[Shape], forbidden:&[Shape],
 )->(Vec<Shape>,Vec<(Shape,(f64,f64,f64,f64))>,Vec<Front>) {
+    footpaths_targets(shape, cells, fronts, width, connected_shared, navigation, forbidden, None)
+}
+fn footpaths_targets(
+    shape:&Shape, cells:&[Shape], fronts:&[Front], width:f64,
+    connected_shared:&[usize], navigation:&[Shape], forbidden:&[Shape], targets:Option<&[bool]>,
+)->(Vec<Shape>,Vec<(Shape,(f64,f64,f64,f64))>,Vec<Front>) {
     // Fronts near each cell only (a camp brings thousands of path fronts).
     let mut served: Vec<f64> = cells
         .iter()
-        .map(|c| {
+        .enumerate().map(|(i,c)| {
+            if targets.is_some_and(|t| !t[i]) { return f64::INFINITY; }
             let b = bbox(c);
             let near: Vec<Front> = fronts
                 .iter()
@@ -709,6 +745,7 @@ mod tests {
             &morph,
             "core",
             &mut Rng::new("organic-test"),
+            None,
         );
         let total: f64 = lots.iter().map(|p| area(&p.shape)).sum();
         assert!(

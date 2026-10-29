@@ -5,7 +5,7 @@ use sha2::{Digest,Sha256};
 
 pub const PARENT_BATCH_CAPABILITY:&str="houses.native-parent-batch-1";
 pub const PARENT_BATCH_SCHEMA:&str="native-parent-batch-1";
-pub const PARENT_BATCH_VERSION:&str="native-parent-batch-1/atomic-prefix64";
+pub const PARENT_BATCH_VERSION:&str="native-parent-batch-1/atomic-prefix64-context1-choice1";
 pub const MAX_PARENT_BATCH:usize=64;
 pub const MAX_PARENT_PARTS:usize=4096;
 pub const MAX_PARENT_VERTICES:usize=262144;
@@ -179,6 +179,9 @@ mod context;
 pub(crate) use context::{admission_guard,record_finalized};
 pub(super) use context::prior_land;
 
+#[path="native_parent_choice.rs"]
+mod choice;
+
 fn effective_request(r:&PlacementRequest,settings:Option<&PlacementBatchSettings>)->PlacementRequest{
     let mut r=r.clone();if let Some(s)=settings{
         if let Some(fit)=s.parcel_fit{r.parcel_fit=Some(fit);}if let Some(t)=s.typology{r.typology=Some(t);}
@@ -225,7 +228,14 @@ fn plan_parent_batch_impl(input:ParentPlanBatchRequest,attempt_compounds:bool)->
         for(j,p)in plans.iter().enumerate(){if j!=i{let(l,r)=p.occupation_parts();land.extend(l);roofs.extend(r);}}
         let attempt=super::assembly::assemble_pair(AssemblePairRequest{site:site.clone(),incumbent:building.clone(),occupied_parts:land,occupied_roof_parts:roofs});
         match attempt{
-            Ok(AssemblyDecision::Assembled{assembly,report,..})=>{plans[i]=NativeParentPlan::Assembly{assembly};attempts.push(Some(report));},
+            Ok(AssemblyDecision::Assembled{assembly,mut report,..})=>{
+                let candidate=NativeParentPlan::Assembly{assembly};
+                match choice::accepts(&plans[i],&candidate){
+                    Ok(())=>plans[i]=candidate,
+                    Err(reason)=>{report.reason=format!("Whole admitted parent retained: {reason}");report.errors.push(reason);},
+                }
+                attempts.push(Some(report));
+            },
             Ok(AssemblyDecision::Retained{building:retained,report})=>{
                 if serde_json::to_vec(&retained).map_err(|e|e.to_string())?!=serde_json::to_vec(building).map_err(|e|e.to_string())?{return Err("Assembly fallback did not preserve whole finalized Single".into());}
                 attempts.push(Some(report));

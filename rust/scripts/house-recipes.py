@@ -1564,6 +1564,8 @@ def build(source=None):
                 catalogue['recipes'][-1]['tradition_id'] = TRADITION_ASSIGNMENTS[identifier]
             if identifier in INSPIRED_ONLY_IDS:
                 catalogue['recipes'][-1]['inspired_only'] = True
+    # Supplemental functional source; never enters residential/atlas coverage.
+    catalogue['recipes'].append(json.loads((DATA / 'roman-horreum.json').read_text(encoding='utf-8')))
     source_buildings = {identifier for identifier in by_id if re.search(r'-B\d+$', identifier)}
     if mapped != source_buildings:
         raise ValueError(f'Catalogue/source mismatch: missing {source_buildings - mapped}, extra {mapped - source_buildings}')

@@ -1,4 +1,5 @@
 import { cavernDisplayWorld } from './cavernDisplay';
+import { drawRuralDetails } from './ruralDetails';
 import { cavernWallFill, cavernRockPixels, CAVERN_RIM } from './caverns';
 import { isUnderdarkBiome } from '../gen/biomes';
 /**
@@ -88,7 +89,7 @@ export interface CanvasRenderer {
   /** Reuse immutable scene tiles and resources after detail arrival. False requires a new renderer. */
   update(world: World, scene: Scene, style?: MapStyle | Palette): boolean;
   setLabels(labels: Label[]): void;
-  /** Toggle the name labels, the legend and the cartouche (defaults: labels per world.options.labels, legend per world.options.legend, cartouche on). */
+  /** Toggle names and site pins, the legend and the cartouche (defaults: labels per world.options.labels, legend per world.options.legend, cartouche on). */
   setOverlays(o: Partial<Overlays>): void;
   /** Labels placed in the last frame (debug / tests). */
   lastPlaced(): PlacedMapLabel[];
@@ -803,6 +804,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       strokePolys('farm-buildings', pal.farmInk, lw(0.5, 0.6));
       if (lod.band >= 2) strokeLines(linesOf((l) => l.name === 'farm-ridges'), pal.farmInk, () => lw(0.35, 0.4), 0.8, [], 'butt');
     }
+    if (luOn && lod.strips) drawRuralDetails(ctx, world, pal);
     // roads, tracks and the street strokes below never spill over the sea or the lakes (bridges come later)
     const land = landClip();
     ctx.save();
@@ -1215,7 +1217,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     // 6. bridges
     if (world.bridges?.length) drawBridges(ctx, world, pal, rect, sc);
     // site marker (placeholder until an urban layer exists)
-    if (!world.urban && world.site) drawSiteMarker(ctx, world, pal, u, sc);
+    if (!world.urban && world.site) drawSiteMarker(ctx, world, pal, u, sc, overlays.labels);
     if (cavernFloor) {
       if (luOn && world.options.biome === 'underdark-caverns' && world.terrain.caverns?.fungalRooms?.length) {
         const rooms = exactCavernPath('fungalRooms');
@@ -1255,7 +1257,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     }
 
     // 8. labels, cartouche, legend (screen space)
-    if (labels.length) {
+    if (overlays.labels && labels.length) {
       const measure = (text: string, size: number): number => {
         ctx.font = `${size}px ${pal.fontFamily}`;
         return ctx.measureText(text).width;
@@ -1590,7 +1592,7 @@ function drawBridges(ctx: CanvasRenderingContext2D, world: World, pal: Palette, 
   }
 }
 
-function drawSiteMarker(ctx: CanvasRenderingContext2D, world: World, pal: Palette, u: number, sc: number): void {
+function drawSiteMarker(ctx: CanvasRenderingContext2D, world: World, pal: Palette, u: number, sc: number, labels: boolean): void {
   const c = world.site!.center;
   ctx.setLineDash([Math.max(9 * u, 6 / sc), Math.max(6 * u, 4 / sc)]);
   ctx.strokeStyle = pal.ink; ctx.globalAlpha = 0.7; ctx.lineWidth = Math.max(1.5 * u, 1 / sc);
@@ -1601,6 +1603,7 @@ function drawSiteMarker(ctx: CanvasRenderingContext2D, world: World, pal: Palett
     ctx.closePath(); ctx.stroke();
   }
   ctx.setLineDash([]); ctx.globalAlpha = 1;
+  if (!labels) return;
   const r = Math.max(9 * u, 5 / sc);
   ctx.beginPath(); ctx.arc(c.x, c.y, r, 0, TAU);
   ctx.strokeStyle = pal.ink; ctx.lineWidth = Math.max(1.6 * u, 1.2 / sc); ctx.stroke();

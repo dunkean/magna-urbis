@@ -78,7 +78,8 @@ export function renderSvg(world0: World, opts: RenderOptions = {}): string {
   const parts: string[] = [];
   const clearings = opts.debug ? [] : worldForestClearings(world0);
   const forestMask = clearings.length ? ' mask="url(#forest-clearance)"' : '';
-  parts.push(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${S} ${S}" width="${width}" height="${width}" data-seed="${world.seed}" data-style="${style}">`);
+  const seedAttribute = world.seed.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  parts.push(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${S} ${S}" width="${width}" height="${width}" data-seed="${seedAttribute}" data-style="${style}">`);
   if (clearings.length) parts.push(`<defs><mask id="forest-clearance" maskUnits="userSpaceOnUse" x="0" y="0" width="${S}" height="${S}" style="mask-type:luminance"><rect width="${S}" height="${S}" fill="white"/>${clearings.map((p) => `<path d="${pathD(orientPos(p.outer), true) + p.holes.map((h) => pathD(orientPos(h).slice().reverse(), true)).join('')}" fill="black" fill-rule="nonzero"/>`).join('')}</mask></defs>`);
   parts.push(`<defs><clipPath id="mapclip"><rect x="0" y="0" width="${S}" height="${S}"/></clipPath></defs>`);
   if (painted) parts.push(painted.defs);
@@ -137,7 +138,7 @@ export function renderSvg(world0: World, opts: RenderOptions = {}): string {
     const landscape = world0.landuse?.landscapeGround !== undefined;
     parts.push(urbanLayer(world, pal, u, !!opts.debug, opts.debug || landscape ? { bands: [], ground: [], streets: [] } : countrysideFringe(world0), raster, landuse, opts.debug || landscape ? [] : (world0.landuse?.naturalGround ?? []), contours, opts.debug ? [] : currentLandscapeGround(world0, true), worldGroundAppearance(world0), opts.debug ? [] : worldCampCover(world0), painted?.brushes, forestMask, layers));
     if (!opts.debug && layers.city !== false) { parts.push(shadowSvg(world, pal, u)); parts.push(litSvg(world, pal, u)); }
-  } else if (layers.city !== false) parts.push(siteLayer(world, pal, u, !!opts.debug));
+  } else if (layers.city !== false) parts.push(siteLayer(world, pal, u, !!opts.debug, layers.labels !== false && (opts.labels ?? world.options.labels !== false)));
 
   if (t.caverns && landuse) parts.push(cavernFungalRoomsSvg(world, pal));
   if (t.caverns) { parts.push('</g>'); if (layers.terrain !== false) parts.push(cavernWallsSvg(world, pal, raster)); }

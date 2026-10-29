@@ -151,4 +151,21 @@ describe('Urban Bench countryside on retained plans', () => {
     }
   });
 
+  it('keeps Reddit options off byte-identical and adds admissible smallholdings by the town roads', () => {
+    const input = fixture();
+    input.layouts![0].streets = [{ path: Array.from({length:41},(_,i)=>({x:150+i*50,y:1150})), widths: Array(41).fill(4), rank:1,role:'regional' }];
+    input.city!.profile = { role:'agricultural',resources:['grain'],mode:'inspired',period:'',lore:[],navigableAccess:false };
+    const baseline = generateUrbanLanduse(input).landuse!;
+    input.ruralOptions = { streetAlignedHomes:false,denserSmallholdings:false };
+    expect(JSON.stringify(generateUrbanLanduse(input).landuse)).toBe(JSON.stringify(baseline));
+    input.ruralOptions = { streetAlignedHomes:true,denserSmallholdings:true };
+    const dense = generateUrbanLanduse(input).landuse!;
+    expect(dense.farmsteads.length).toBeGreaterThan(baseline.farmsteads.length);
+    expect(dense.farmsteads.some(f=>f.size==='cottage')).toBe(true);
+    for (const f of dense.farmsteads) {
+      expect(mpArea(intersectionS(f.lot!,input.layouts![0].quarters.map(q=>q.shape)))).toBeLessThan(.01);
+      expect(f.drive.length).toBeGreaterThanOrEqual(2);
+    }
+  });
+
 });

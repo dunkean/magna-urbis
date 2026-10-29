@@ -277,7 +277,7 @@ impl ResidentialIntent {
 /// The simple native strip reserves a 1.25m side passage and a quarter-depth
 /// court. No inferred infill, doubled adaptation bounds or footprint/household
 /// capacity enters this nominal preference. Other operators remain unknown.
-fn residential_nominal_body_area(entry: &StyleEntry, config: &HouseConfig) -> Option<[f64; 2]> {
+pub(crate) fn residential_nominal_body_area(entry: &StyleEntry, config: &HouseConfig) -> Option<[f64; 2]> {
     if let Some(range) = nominal_body_area_range(entry, config) {
         return Some(range);
     }
