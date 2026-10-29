@@ -19,6 +19,7 @@ import { encodePng, pngDataUrl } from '../render/raster';
 import { applyExecutionProfile, installExecutionProfile } from './executionProfile';
 import type { TerrainData, TerrainSettings } from '../../../rust/bridge/terrain';
 import type {} from './benchContext';
+import { installRecipeSharing, generationRecipe } from './recipeSharing';
 import { decodeSituation, encodeSituation, type SituationPin } from './citySituation';
 import { mountCityRpgPins, prepareCityMapExport } from './cityRpgPins';
 import { installUrbanMapExports } from './urbanMapExport';
@@ -275,7 +276,7 @@ situation.innerHTML = `<summary>Situation à signaler</summary><div class="stage
   <div class="settlement-actions"><button id="situationPin" type="button" aria-pressed="false" title="Puis cliquez sur la carte">Épingler un point</button><button id="situationCopy" type="button">Copier le code</button><button id="situationLink" type="button">Copier le lien</button></div>
   <label><span data-situation-label="note">Note générale</span> <textarea id="situationNote" rows="2" placeholder="Ce qui ne va pas…"></textarea></label>
   <ol id="situationPins"></ol>
-  <label><span data-situation-label="paste">Coller un code</span> <input id="situationInput" type="text" placeholder="MU1.…" spellcheck="false"></label>
+  <label><span data-situation-label="paste">Coller un code</span> <input id="situationInput" type="text" placeholder="MU2.…" spellcheck="false"></label>
   <div class="settlement-actions"><button id="situationOpen" type="button">Ouvrir ce code</button></div>
   <small id="situationStatus" role="status"></small></div>`;
 stages.append(situation);
@@ -318,7 +319,7 @@ window.addEventListener('magna-locale-change',localizeSituation); localizeSituat
 async function situationCode(): Promise<string> {
   // Execution belongs to whoever reopens the code: never carry a profile or a local port.
   const q = new URLSearchParams(shareQuery()); for (const key of ['profile', 'localServer', 'compute', 'generation']) q.delete(key);
-  return encodeSituation({ v: 1, q: q.toString(), view, pins, note: situationNote || undefined, created: new Date().toISOString() });
+  return encodeSituation({ v: 1, q: q.toString(), view, pins, note: situationNote || undefined });
 }
 async function copy(text: string, done: string): Promise<void> {
   try { await navigator.clipboard.writeText(text); situationStatus(done); }
@@ -347,6 +348,10 @@ async function openSituation(code: string): Promise<void> {
 function restoreSituation(): void {
   let saved: { view?: View; pins?: SituationPin[]; note?: string } | undefined;
   try { saved = JSON.parse(sessionStorage.getItem('magna-city-situation') ?? 'null') ?? undefined; sessionStorage.removeItem('magna-city-situation'); } catch { return; }
+  if (!saved && (query.has('situationView') || query.has('situationPins') || query.has('situationNote'))) {
+    try { saved = { view: JSON.parse(query.get('situationView') ?? 'null') ?? undefined,
+      pins: JSON.parse(query.get('situationPins') ?? '[]'), note: query.get('situationNote') ?? undefined }; } catch { return; }
+  }
   if (!saved) return;
   pins = saved.pins ?? []; situationNote = saved.note ?? ''; el<HTMLTextAreaElement>('situationNote').value = situationNote;
   listPins(); if (saved.view) setView(saved.view); drawPins();
@@ -422,5 +427,9 @@ else if (artifact) {
     save(); restoreSituation();
   }).catch(error => status(String(error))).finally(() => { ready = true; });
 } else { ready = true; showView(); }
+installRecipeSharing({ host: document.querySelector('header')!, capture: async () => {
+  if (!decor || !ready) throw new Error('Attendez le chargement du terrain.');
+  return generationRecipe('city', shareQuery(), decor);
+} });
 window.magnaBenchContext = { ready: () => ready, capture: () => ({ view }), restore: saved => { if (saved?.view) setView(saved.view); }, comparison: settlements.urban.comparison,
   coldViewport: () => settlements.urban.coldViewportEvidence };

@@ -1,4 +1,4 @@
-// From web/: node scripts/city_situation.mjs "<MU1.… code, or a link containing one>"
+// From web/: node scripts/city_situation.mjs "<MU2.… code, or a link containing one>"
 // Prints a City Bench situation (map, applied options, camera, pins, notes) as JSON,
 // with the bench link that reopens it. Reproduce with screenshots at each pin:
 //   node scripts/city_bench_check.mjs --situation "<code>" --out out/city-bench/<tag>

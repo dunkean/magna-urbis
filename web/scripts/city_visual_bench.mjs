@@ -6,7 +6,6 @@
 import { readFile, writeFile, mkdir, stat } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { deflateRawSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import os from 'node:os';
@@ -124,7 +123,14 @@ function merge(base, patch) {
   return result;
 }
 const stripRuntime = q => { for (const key of ['profile', 'localServer', 'compute', 'generation', 'neural', 'situation']) q.delete(key); return q; };
-const codeFor = (query, item, view) => 'MU1.' + deflateRawSync(Buffer.from(JSON.stringify({ v: 1, q: stripRuntime(new URLSearchParams(query)).toString(), ...(view ? { view } : {}), pins: [], note: `${item.id} · ${item.title}` }))).toString('base64url');
+const recipeModule = await tsImport('../src/ui/recipe.ts', import.meta.url);
+const { encodeRecipe } = recipeModule.encodeRecipe ? recipeModule : recipeModule.default;
+const codeFor = (query, item, view) => {
+  const params = stripRuntime(new URLSearchParams(query));
+  if (view) params.set('situationView', JSON.stringify(view));
+  params.set('situationNote', `${item.id} · ${item.title}`);
+  return encodeRecipe({ stage: 'city', query: params.toString() });
+};
 // The URL is debounced by the UI; build replay from the validated inputs and
 // explicit final options instead of racing history.replaceState(). MU1 is a
 // version-dependent regeneration recipe, not an archive of native geometry.

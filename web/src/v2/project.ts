@@ -7,6 +7,7 @@ import { validateRegionSettings } from './regionSettings';
 import { defaultSettings } from './settings';
 import { projectJsonChunks } from './projectJson';
 import { validateAppearance } from './appearance';
+import { NAME_FAMILIES } from '../gen/names/types';
 
 function isRecord(value: unknown): value is Record<string, unknown> { return !!value && typeof value === 'object' && !Array.isArray(value); }
 function checkEnum(value: unknown, values: readonly unknown[], name: string): void {
@@ -30,6 +31,7 @@ function validateOptions(o: unknown, partial = false): asserts o is Options {
   if (!partial || o.culture !== undefined) if (typeof o.culture !== 'string' || o.culture.length > 200) throw new Error('Culture invalide.');
   if (o.culture !== undefined && !CULTURES.includes(o.culture as string)) throw new Error('Culture inconnue.');
   checkEnum(o.siteType, ['auto', ...SITE_ARCHETYPES], 'type de site');
+  checkEnum(o.language, ['auto', ...NAME_FAMILIES], 'langue des noms');
   checkEnum(o.workflow, ['environment', 'automatic', 'list'], 'parcours');
   for (const key of ['moat', 'cathedral', 'palace', 'monasteries', 'port', 'arena', 'activities']) checkEnum(o[key], ['auto', 'yes', 'no'], key);
   for (const key of ['suburbs', 'shantytowns']) checkEnum(o[key], ['auto', 'none', 'some', 'many'], key);
@@ -77,6 +79,14 @@ export function validateSettings(value: unknown): asserts value is V2Settings {
     if (value.runtime.erosion !== undefined) finite(value.runtime.erosion, 'érosion moteur', 0, 10);
   }
   if (value.appearance !== undefined) validateAppearance(value.appearance);
+  if (value.naming !== undefined) {
+    if (!isRecord(value.naming)) throw new Error('Nommage invalide.');
+    if (value.naming.title !== undefined && (typeof value.naming.title !== 'string' || value.naming.title.length > 200)) throw new Error('Titre de carte invalide.');
+    if (value.naming.places !== undefined) {
+      if (!isRecord(value.naming.places) || Object.keys(value.naming.places).length > 2000) throw new Error('Noms des lieux invalides.');
+      for (const [key, name] of Object.entries(value.naming.places)) if (!/^[\w:-]{1,80}$/.test(key) || typeof name !== 'string' || name.length > 200) throw new Error('Nom de lieu invalide.');
+    }
+  }
   if (value.urban !== undefined) {
     if (!isRecord(value.urban) || !value.urban.backend) throw new Error('Moteur urbain invalide.');
     checkEnum(value.urban.backend, ['typescript', 'rust', 'native'], 'moteur urbain');

@@ -10,6 +10,7 @@ installExecutionProfile(document.querySelector('.shell-header')!);
 const benches = {
   terrain: { title: 'Terrain · 1–3', path: 'terrainbench.html', query: '' },
   settlements: { title: 'Settlements · 4–5', path: 'terrainbench.html', query: 'stage=settlements' },
+  urban: { title: 'Atelier urbain', path: 'urbanbench.html', query: '' },
   city: { title: 'Ville', path: 'citybench.html', query: '' },
   houses: { title: 'Maisons', path: 'housebench.html', query: '' },
 } as const;
@@ -127,13 +128,6 @@ function navigate(): void {
     if (!params.has('source')) params.set('source', 'neural');
     if (!params.has('width')) params.set('width', '40000');
     route = `terrain?${params}`;
-    history.replaceState(null, '', `#${route}`);
-  }
-  // The Urbanisme atelier became City Bench: its links open the same map there.
-  if (route === 'urban' || route.startsWith('urban?')) {
-    const params = new URLSearchParams(route.includes('?') ? route.slice(route.indexOf('?') + 1) : '');
-    const artifact = params.get('artifact') ?? params.get('decor');
-    route = `city${artifact ? `?${new URLSearchParams({ artifact })}` : ''}`;
     history.replaceState(null, '', `#${route}`);
   }
   const separator = route.indexOf('?');
@@ -259,8 +253,7 @@ installRecipeSharing({
     return hook.capture();
   },
   open: recipe => {
-    // An Urbanisme recipe opens its map in City Bench (navigate translates the route).
-    const stage = recipe.stage === 'urban' ? 'city' : recipe.stage;
+    const stage = recipe.stage;
     // An import must replay the recipe even when that atelier already has UI drafts.
     active = undefined;
     loaded.get(stage)?.remove(); loaded.delete(stage); loading.delete(stage); restoring.delete(stage);

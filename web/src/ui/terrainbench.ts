@@ -20,7 +20,7 @@ import { decodeSketch, encodeSketch, decodeZones, encodeZones, sketchQuery, plac
 import type { TerrainZones } from '../../../rust/bridge/terrainZones';
 import type { TerrainSketch } from '../../../rust/bridge/terrainSketch';
 import TerrainWorker from './terrainWorker?worker&inline';
-import { wasmWorkerOptions } from '../../../rust/bridge/wasmThreads';
+import { wasmWorkerFailed, wasmWorkerOptions } from '../../../rust/bridge/wasmThreads';
 import { reliefStatistics, sampleRustTerrain, EROSION_SETTINGS, type ErosionSetting, type ErosionTuning, RELIEFS, GEOLOGICAL_RELIEFS, ENVIRONMENT_RELIEFS, COMPUTE_MODES, type TerrainEnvironment, type TerrainCompute, type TerrainData, type TerrainSettings, type TerrainRequest, type TerrainResponse, type TerrainRelief, type TerrainRegion } from '../../../rust/bridge/terrain';
 import { renderRustTerrain, terrainContourWidths, type TerrainStyle, type TerrainScene } from '../../../rust/bridge/terrainRender';
 import { DEFAULT_HYDROLOGY, riverAreaFor, type HydrologySettings, type HydrologyOverlay } from '../../../rust/bridge/hydrology';
@@ -64,7 +64,7 @@ import { decorWaterSvg } from './decorWater';
 import { chooseExportCrop } from './exportCrop';
 import { exportPng } from './pngExport';
 import type {} from './benchContext';
-import { installRecipeSharing, portableRecipe } from './recipeSharing';
+import { installRecipeSharing, generationRecipe } from './recipeSharing';
 import { executionRuntime, executionProfiles, applyExecutionProfile, installExecutionProfile } from './executionProfile';
 import { initialTerrainSource } from './terrainStartupState';
 import { terrainLoading } from './terrainStartup';
@@ -1689,7 +1689,7 @@ function dispatch(request: TerrainRequest): void {
 try {
   worker = new TerrainWorker(wasmWorkerOptions('magna-terrain')); worker.onmessage = (event: MessageEvent<TerrainResponse>) => receive(event.data);
   worker.onerror = event => {
-    event.preventDefault(); worker?.terminate(); worker = undefined;
+    event.preventDefault(); worker?.terminate(); worker = undefined; wasmWorkerFailed(event.message || 'terrain worker error');
     const request = overviewPending ? overviewRequest : detailRequest;
     if (request) void runOnMain(request);
   };
@@ -2304,7 +2304,7 @@ installRecipeSharing({
     if (!terrain || overviewPending || generationError || terrain.hydrologyError || (pipelineStage === 'settlements' && !settlements.contextReady())) throw new Error(urbanText(['Attendez la fin de la génération avant d’exporter.','Wait for generation to finish before exporting.','请等待生成完成后再导出。','Espera a que termine la generación antes de exportar.','Aguarde a geração terminar antes de exportar.']));
     const applied = pipelineStage === 'settlements' && settlements.urban.layouts?.length
       ? settlements.captureData() : retainedDecor;
-    return portableRecipe(pipelineStage, shareQuery(), applied);
+    return generationRecipe(pipelineStage, shareQuery(), applied);
   },
 });
 

@@ -32,7 +32,7 @@ const generate = async (action, timeout = 240000) => {
   await page.waitForTimeout(800);
 };
 
-await shot('01-relief-procedural', async () => { await family('relief'); await open('relief-source'); await page.evaluate(() => document.querySelector('.chain-scroll')?.scrollTo(0, 0)); });
+await shot('01-relief-procedural', async () => { await family('region'); await open('relief-source'); await page.evaluate(() => document.querySelector('.chain-scroll')?.scrollTo(0, 0)); });
 await shot('02-relief-procedural-generated', async () => { await generate('#generate-region'); await page.click('#row-relief-source .stage-title'); await open('relief-regional'); await page.evaluate(() => document.querySelector('#row-relief-regional')?.scrollIntoView({ block: 'center' })); });
 await shot('03-relief-heightmap-source', async () => { await page.evaluate(() => document.querySelector('.chain-scroll')?.scrollTo(0, 0)); await page.click('#source-heightmap'); await page.waitForTimeout(300); await page.click('[data-heightmap="alpine-massif"]'); await page.waitForTimeout(1500); await open('relief-heightmap-fit'); await page.evaluate(() => document.querySelector('#row-relief-source')?.scrollIntoView({ block: 'start' })); });
 await shot('03b-relief-heightmap-generated', async () => { await generate('#generate-region'); await page.evaluate(() => document.querySelector('#row-relief-heightmap-fit')?.scrollIntoView({ block: 'start' })); });
@@ -41,10 +41,10 @@ await page.keyboard.press('Escape');
 await shot('05-city-left-right', async () => {
   await page.click('#source-procedural'); await generate('#generate-region');
   await family('settlements'); await generate('#generate-region');
-  await family('city');
+  await family('settlements');
   const first = await page.$('[data-town]'); if (first) await first.click();
   await page.waitForTimeout(600); await page.click('#fit-map'); await open('city-composition'); await open('city-quarters');
 });
-await shot('06-display-customisation', async () => { await family('display'); await open('display-buildings'); });
+await shot('06-display-customisation', async () => { await family('map'); await open('display-buildings'); });
 console.log(JSON.stringify(errors.slice(0, 30), null, 1));
 await browser.close();

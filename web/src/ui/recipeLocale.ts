@@ -4,7 +4,7 @@ const messages = {
   exportButton: {fr:'Copier code',en:'Copy code',zh:'复制代码',es:'Copiar código',pt:'Copiar código'},
   importButton: {fr:'Coller code',en:'Paste code',zh:'粘贴代码',es:'Pegar código',pt:'Colar código'},
   exportTitle: {fr:'Copier le code unique de cette carte',en:'Copy this map’s unique code',zh:'复制此地图的唯一代码',es:'Copiar el código único de este mapa',pt:'Copiar o código único deste mapa'},
-  titleExport: {fr:'Code unique de la carte',en:'Unique map code',zh:'地图唯一代码',es:'Código único del mapa',pt:'Código único do mapa'},
+  titleExport: {fr:'Code de génération',en:'Generation code',zh:'地图唯一代码',es:'Código único del mapa',pt:'Código único do mapa'},
   titleImport: {fr:'Coller le code d’une carte',en:'Paste a map code',zh:'粘贴地图代码',es:'Pegar el código de un mapa',pt:'Colar o código de um mapa'},
   close: {fr:'Fermer',en:'Close',zh:'关闭',es:'Cerrar',pt:'Fechar'},
   code: {fr:'Code de la recette',en:'Recipe code',zh:'配方代码',es:'Código de la receta',pt:'Código da receita'},
@@ -22,7 +22,8 @@ const messages = {
   reproducible: {fr:'terrain reproductible',en:'reproducible terrain',zh:'可重现地形',es:'terreno reproducible',pt:'terreno reproduzível'},
   settings: {fr:'réglages, pins et vue',en:'settings, pins and view',zh:'设置、标记和视图',es:'ajustes, marcadores y vista',pt:'configurações, marcadores e visualização'},
   characters: {fr:'caractères',en:'characters',zh:'字符',es:'caracteres',pt:'caracteres'},
-  tooLarge: {fr:'Carte trop volumineuse pour un code (format limité à 32 Mo). Utilisez le partage .decor avec enregistrement direct sur disque.',en:'Map too large for a code (format limit: 32 MB). Use .decor sharing with direct disk saving.',zh:'地图过大，无法生成代码（格式限制为 32 MB）。请使用 .decor 分享并直接保存到磁盘。',es:'Mapa demasiado grande para un código (límite: 32 MB). Usa .decor y guarda directamente en disco.',pt:'Mapa grande demais para um código (limite: 32 MB). Use o compartilhamento .decor com gravação direta em disco.'},
+  generationHint: {fr:'La ville sera recalculée. Pour conserver les résultats, utilisez l’export complet .decor.',en:'The city will be regenerated. Use the complete .decor export to preserve results.',zh:'城市将重新生成。请使用完整 .decor 导出以保留结果。',es:'La ciudad se regenerará. Usa la exportación completa .decor para conservar los resultados.',pt:'A cidade será regenerada. Use a exportação completa .decor para preservar os resultados.'},
+  tooLarge: {fr:'Carte trop volumineuse pour un code (format limité à 1 Mo). Utilisez le partage .decor avec enregistrement direct sur disque.',en:'Map too large for a code (format limit: 1 MB). Use .decor sharing with direct disk saving.',zh:'地图过大，无法生成代码（格式限制为 1 MB）。请使用 .decor 分享并直接保存到磁盘。',es:'Mapa demasiado grande para un código (límite: 1 MB). Usa .decor y guarda directamente en disco.',pt:'Mapa grande demais para um código (limite: 1 MB). Use o compartilhamento .decor com gravação direta em disco.'},
 } satisfies Record<string, Words>;
 export type RecipeMessage = keyof typeof messages;
 export function recipeText(key: RecipeMessage): string { return messages[key][savedLocale()]; }
@@ -30,8 +31,8 @@ export function recipeText(key: RecipeMessage): string { return messages[key][sa
 // Codec errors remain stable for callers; translate known messages at the UI boundary.
 const errors: Record<string, Words> = {
   'Atelier inconnu.': {fr:'Atelier inconnu.',en:'Unknown workshop.',zh:'未知工作坊。',es:'Taller desconocido.',pt:'Ateliê desconhecido.'},
-  'Recette trop volumineuse (32 Mo maximum).': {fr:'Recette trop volumineuse (32 Mo maximum).',en:'Recipe too large (32 MB maximum).',zh:'配方过大（最多 32 MB）。',es:'Receta demasiado grande (máximo 32 MB).',pt:'Receita grande demais (máximo de 32 MB).'},
-  'Code invalide : collez un code MU.…': {fr:'Code invalide : collez un code MU.…',en:'Invalid code: paste a MU.… code.',zh:'代码无效：请粘贴 MU.… 代码。',es:'Código no válido: pega un código MU.…',pt:'Código inválido: cole um código MU.…'},
+  'Recette trop volumineuse (1 Mo maximum).': {fr:'Recette trop volumineuse (1 Mo maximum).',en:'Recipe too large (1 MB maximum).',zh:'配方过大（最多 1 MB）。',es:'Receta demasiado grande (máximo 1 MB).',pt:'Receita grande demais (máximo de 1 MB).'},
+  'Code invalide : collez un code MU2.…': {fr:'Code invalide : collez un code MU2.…',en:'Invalid code: paste a MU2.… code.',zh:'代码无效：请粘贴 MU2.… 代码。',es:'Código no válido: pega un código MU2.…',pt:'Código inválido: cole um código MU2.…'},
   'Code trop volumineux.': {fr:'Code trop volumineux.',en:'Code is too large.',zh:'代码过大。',es:'El código es demasiado grande.',pt:'O código é grande demais.'},
   'Code incomplet, corrompu ou trop volumineux.': {fr:'Code incomplet, corrompu ou trop volumineux.',en:'Code is incomplete, corrupted or too large.',zh:'代码不完整、已损坏或过大。',es:'El código está incompleto, dañado o es demasiado grande.',pt:'O código está incompleto, corrompido ou é grande demais.'},
   'Attendez le chargement du terrain conservé.': {fr:'Attendez le chargement du terrain conservé.',en:'Wait for the retained terrain to load.',zh:'请等待保存的地形加载完成。',es:'Espera a que se cargue el terreno guardado.',pt:'Aguarde o carregamento do terreno salvo.'},

@@ -90,7 +90,7 @@ it('actual snapshot→MU→query→normalizers preserve explicit and missing pro
   const restored = JSON.parse(params.get('urban')!) as WorkshopState;
   expect(normalizeLayoutConfig(restored.layoutConfig, true).culture).toBe('roman-core');
   expect(normalizeParcelConfig(restored.parcelConfig)).toEqual(state.parcels); expect(restored.buildingState?.settings).toEqual(state.building.settings);
-  expect(restored.quarterSeed).toBe('Q-exact'); expect(restored.parcelSeed).toBe('P-exact'); expect(params.get('settlements')).toBe(query.get('settlements'));
+  expect(restored.quarterSeed).toBe('Q-exact'); expect(restored.parcelSeed).toBe('P-exact'); expect(JSON.parse(params.get('settlements')!)).toEqual(JSON.parse(query.get('settlements')!));
   expect(normalizeLayoutConfig().culture).toBe('site'); expect(normalizeLayoutConfig({ recipe: 'custom' }, true).culture).toBe('site');
   const choose = vi.fn(), ui = controls(choose); ui.binding.sync({ requested: restored.layoutConfig.culture, place: place.culture });
   ui.binding.sync({ requested: 'site', place: 'another-place' }); ui.binding.sync({ requested: restored.layoutConfig.culture, place: place.culture });

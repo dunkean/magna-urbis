@@ -2,6 +2,7 @@ import type { Options, World } from '../gen/types';
 import type { LayoutConfig, ParcelConfig } from '../../../rust/bridge/urbanConfig';
 import type { PlacementBatchSettings } from '../../../rust/bridge/urbanArchitecture';
 import type { HouseConfig } from '../../../rust/bridge/housesContract';
+import type { WasmThreadsInfo } from '../../../rust/bridge/wasmThreads';
 import type { MapStyle } from '../render/styles';
 import type { TerrainStyle } from '../render/terrainStyle';
 import type { TerrainLighting, TerrainLayers } from '../render/terrainLighting';
@@ -87,6 +88,8 @@ export interface V2Settings {
   region?: V2RegionSettings;
   urban?: V2UrbanSettings;
   appearance?: V2Appearance;
+  /** Cartographic names can be edited without regenerating terrain or buildings. */
+  naming?: { title?: string; places?: Record<string, string> };
   runtime?: {
     compute: 'auto' | 'cpu' | 'gpu';
     backend: 'typescript' | 'rust' | 'native';
@@ -106,12 +109,12 @@ export interface V2Progress {
   cache?: 'memory' | 'disk' | 'miss';
 }
 export type ProgressCallback = (progress: V2Progress) => void;
-export type V2Action = 'terrain' | 'region' | 'roads' | 'towns' | 'town' | 'all';
+export type V2Action = 'terrain' | 'region' | 'roads' | 'towns' | 'town' | 'settlements' | 'all';
 export interface V2WorkerRequest { id: number; action: V2Action; settings: V2Settings; world?: World; retainedWorldId?:number; key?: string; townStage?: V2TownStage; assetBase?: string }
 export type V2WorkerResponse =
   | { id: number; type: 'progress'; progress: V2Progress }
-  | { id: number; type: 'result'; world: World }
-  | { id: number; type: 'error'; error: string };
+  | { id: number; type: 'result'; world: World; wasm?: WasmThreadsInfo }
+  | { id: number; type: 'error'; error: string; wasm?: WasmThreadsInfo };
 
 export interface V2Project {
   format: 'magna-urbis-v2';

@@ -1,14 +1,9 @@
-/** The V2 generation chain as inspectable stages (relief → water/cover → settlements → city → display).
+/** The V2 generation chain as inspectable stages (Region → Settlements → Map).
  * Rows come from stageRegistry.ts. Existing live controls are moved into their stage, never rebuilt:
  * the mounted terrain/region/render forms keep their handlers, validation and sync. */
 import { FAMILIES, STAGES, stagesOf, stageForControl, stageForProgress, stageAnchor, type StageContext, type StageDef, type StageFamily, type Copy } from './stageRegistry';
-import { allTerrainFields, terrainProceduralStageFields, coastDirections } from './terrainControlSchema';
-import { regionControlFields } from './regionControls';
-import { effectiveRegion } from './regionSettings';
-import { urbanControlFields } from './urbanControlSchema';
-import { urbanScopeValues, writeUrbanControl } from './urbanControls';
-import { renderControlFields, renderControlValues, writeAppearanceControl } from './renderControls';
-import { mountParameterForm, readSettingPath, writeSettingPath, type ParameterField, type ParameterForm } from './parameterForm';
+import { terrainProceduralStageFields, terrainBasicFields } from './terrainControlSchema';
+import { mountParameterForm, readSettingPath, writeSettingPath, type ParameterForm } from './parameterForm';
 import { atlasUrl, bindTree, getLanguage, numberLocale, registerMessages, setDynamicText, setText, translate } from './i18n';
 import { iconImg, type IconId } from './stageIcons';
 import { isCompactProcedural } from '../../../rust/bridge/terrainGenerationRecipe';
@@ -21,13 +16,13 @@ const copy = (en: string, fr: string): string => { registerMessages({ [en]: { en
 const T = {
   run: copy('Run from this stage', 'Exécuter depuis cette étape'), required: copy('Required stage', 'Étape obligatoire'),
   enable: copy('Enable or disable this stage', 'Activer ou désactiver cette étape'), help: copy('Method in the scientific atlas', 'Méthode dans l’atlas scientifique'),
-  open: copy('Show all options', 'Afficher toutes les options'), stale: copy('Settings changed since the last run', 'Réglages modifiés depuis la dernière exécution'),
+  general: copy('General settings', 'Paramètres généraux'), method: copy('Method', 'Méthode'), size: copy('Size', 'Taille'), stale: copy('Settings changed since the last run', 'Réglages modifiés depuis la dernière exécution'),
   cached: copy('Kept from an earlier run', 'Conservé d’une exécution précédente'), running: copy('Running', 'En cours'),
   family: copy('Run the {family} stages', 'Exécuter les étapes : {family}'), place: copy('Place', 'Lieu'), noPlace: copy('Choose a place on the right', 'Choisissez un lieu à droite'),
   needTerrain: copy('Create the relief first', 'Créez d’abord le relief'), needRegion: copy('Place the settlements first', 'Implantez d’abord les peuplements'),
   needPlace: copy('Choose a place in the list on the right', 'Choisissez un lieu dans la liste à droite'), procedural: copy('Procedural', 'Procédural'), neural: copy('Neural', 'Neuronal'),
-  heightmap: copy('Heightmap', 'Heightmap'), source: copy('Relief source', 'Source du relief'), width: copy('Width (km)', 'Largeur (km)'), paint: copy('Paint the mask', 'Peindre le masque'),
-  view2d: copy('2D map', 'Carte 2D'), view3d: copy('3D view', 'Vue 3D'), style: copy('Map style', 'Style de carte'), inland: copy('Inland', 'Intérieur des terres'),
+  heightmap: copy('Heightmap', 'Heightmap'), source: copy('Relief source', 'Source du relief'),
+  view2d: copy('2D map', 'Carte 2D'), view3d: copy('3D view', 'Vue 3D'), style: copy('Map style', 'Style de carte'),
   noNeural: copy('Neural generation needs WebGPU in this browser, the Python/CUDA server or the native neural service. None is available (see Settings).', 'Le neuronal exige WebGPU dans ce navigateur, le serveur Python/CUDA ou le service neuronal natif. Aucun n’est disponible (voir Réglages).'),
   overrides: copy('Local settings of this place', 'Réglages locaux de ce lieu'),
   needGpu: copy('Needs WebGPU, which this browser does not provide (see Settings).', 'Nécessite WebGPU, absent de ce navigateur (voir Réglages).'),
@@ -36,7 +31,7 @@ const T = {
 };
 /** Relief-source fields that only apply to some sources. */
 const SOURCE_FIELDS: Record<string, readonly StageContext['relief'][]> = {
-  'runtime.source': ['procedural', 'neural'], 'terrain.relief': ['procedural', 'neural'], 'terrain.motifSize': ['procedural'], 'terrain.procedural.preset': ['procedural'],
+  'runtime.source': ['neural'], 'terrain.relief': ['procedural', 'neural'], 'terrain.motifSize': ['procedural'], 'terrain.procedural.preset': ['procedural'],
   'terrain.environment': ['procedural'], 'terrain.mountainMix': ['procedural', 'neural'], 'terrain.generationCompute': ['procedural'], 'terrain.erosion': ['procedural', 'heightmap'],
 };
 /** Choices that depend on a backend: [select, option value, requirement]. */
@@ -48,9 +43,15 @@ const BACKEND_CHOICES: readonly [string, string, 'webgpu' | 'native' | 'python']
 ];
 for (const family of FAMILIES) registerMessages({ [family.label.en]: family.label, [family.summary.en]: family.summary });
 for (const stage of STAGES) registerMessages({ [stage.label.en]: stage.label, [stage.summary.en]: stage.summary, ...(stage.toggle?.reason ? { [stage.toggle.reason.en]: stage.toggle.reason } : {}) });
-const familyIcon: Record<StageFamily, IconId> = { relief: 'family-relief', water: 'family-water', settlements: 'family-settlements', city: 'family-city', display: 'family-display' };
+const familyIcon: Record<StageFamily, IconId> = { region: 'family-relief', settlements: 'family-settlements', map: 'family-display' };
 const text = (value: Copy) => value.en;
-const toggleIcons: Record<string, IconId> = { 'lighting.enabled': 'display-light', 'terrainLayers.water': 'family-water', lakes: 'family-water', roads: 'display-roads', buildings: 'display-buildings', legend: 'display-labels' };
+/** Live controls promoted above the stage boxes, in display order. */
+const GENERAL_CONTROLS: Record<StageFamily, readonly string[]> = {
+  region: ['widget:extent', 'terrain.relief', 'options.relief', 'options.biome', 'terrain.climate', 'terrain.motifSize', 'widget:seed', 'widget:coasts'],
+  settlements: ['main:town-count', 'main:population', 'main:culture', 'main:urban-backend', 'main:sprawl', 'main:walls'],
+  map: ['widget:style', 'widget:view3d'],
+};
+const METHOD_CONTROLS = ['runtime.source', 'terrain.procedural.preset', 'runtime.backend', 'runtime.compute', 'terrain.generationCompute', 'terrain.compute'] as const;
 
 export interface StageChainBindings {
   root: HTMLElement; staging: HTMLElement; terrain: TerrainControls; regionRoot: HTMLElement; renderRoot: HTMLElement;
@@ -67,7 +68,7 @@ export interface StageChain {
   body(id: string): HTMLElement; sync(): void; family(): StageFamily; selectFamily(family: StageFamily): void;
   beginRun(stages: readonly string[]): void; progress(progress: V2Progress): void; endRun(ok: boolean): void; context(): StageContext;
 }
-interface Row { stage: StageDef; element: HTMLElement; node: HTMLButtonElement; time: HTMLOutputElement; run: HTMLButtonElement; body: HTMLElement; quick: HTMLElement; note: HTMLElement; title: HTMLButtonElement }
+interface Row { stage: StageDef; element: HTMLElement; node: HTMLButtonElement; time: HTMLOutputElement; run: HTMLButtonElement; body: HTMLElement; number: HTMLElement; note: HTMLElement; title: HTMLButtonElement }
 
 export function mountStageChain(b: StageChainBindings): StageChain {
   const { root } = b, get = b.getSettings;
@@ -77,7 +78,7 @@ export function mountStageChain(b: StageChainBindings): StageChain {
   const forms: ParameterForm[] = [], syncers: (() => void)[] = [];
   const rows = new Map<string, Row>();
   const stashes: { zones?: V2TerrainSettings['zones']; coastMask?: number; heightmap?: { sketch?: V2TerrainSettings['sketch']; image?: V2Settings['options']['importedHeight'] }; neural?: string } = {};
-  let pendingHeightmap = false, family: StageFamily = 'relief';
+  let pendingHeightmap = false, family: StageFamily = 'region';
   const timings = new Map<string, { ms: number; state: 'done' | 'cached' | 'stale' | 'running' | '' }>();
   let active: { id: string; started: number } | undefined, runScope = new Set<string>();
 
@@ -85,6 +86,10 @@ export function mountStageChain(b: StageChainBindings): StageChain {
   const nav = document.createElement('nav'); nav.className = 'chain-families'; nav.setAttribute('role', 'tablist'); nav.setAttribute('aria-label', translate('Generation chain'));
   copy('Generation chain', 'Chaîne de génération');
   const tabs = new Map<StageFamily, HTMLButtonElement>(), panels = new Map<StageFamily, HTMLElement>(), familyTimes = new Map<StageFamily, HTMLElement>();
+  const generalPanels = new Map<StageFamily, HTMLElement>();
+  const methodPanel = document.createElement('section'); methodPanel.className = 'family-method';
+  const methodTitle = document.createElement('h4'); methodTitle.id = 'terrain-method-title'; setText(methodTitle, T.method);
+  methodPanel.setAttribute('aria-labelledby', methodTitle.id); methodPanel.append(methodTitle, sourceSwitch());
   const scroller = document.createElement('div'); scroller.className = 'chain-scroll';
   for (const [index, f] of FAMILIES.entries()) {
     const tab = document.createElement('button'); tab.type = 'button'; tab.className = 'chain-family-tab'; tab.id = `family-tab-${f.id}`; tab.setAttribute('role', 'tab'); tab.setAttribute('aria-controls', `family-${f.id}`);
@@ -101,14 +106,16 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     setDynamicText(runFamily, () => translate(T.family).replace('{family}', translate(text(f.label)).toLocaleLowerCase(getLanguage() === 'fr' ? 'fr' : 'en')));
     runFamily.onclick = () => b.runFamily(f.id);
     head.append(titles, runFamily); panel.append(head);
-    if (f.id === 'city') {
+    if (f.id === 'settlements') {
       const place = document.createElement('div'); place.className = 'family-place'; place.id = 'chain-place';
       const caption = document.createElement('span'); caption.className = 'family-place-caption'; setText(caption, T.place);
       const name = document.createElement('strong'); name.id = 'chain-place-name';
       const open = document.createElement('button'); open.type = 'button'; open.className = 'small'; open.id = 'chain-place-open'; setText(open, T.overrides); open.onclick = b.openPlace;
       place.append(caption, name, open); panel.append(place);
-      syncers.push(() => { const current = b.getPlace(); open.disabled = !current; if (current) { name.dataset.l10nKeep = ''; name.removeAttribute('data-i18n'); name.textContent = current.name; } else setText(name, T.noPlace); });
+      syncers.push(() => { place.hidden = !b.getWorld()?.settlements?.length; const current = b.getPlace(); open.disabled = !current; if (current) { name.dataset.l10nKeep = ''; name.removeAttribute('data-i18n'); name.textContent = current.name; } else setText(name, T.noPlace); });
     }
+    const general = document.createElement('div'); general.className = 'family-general'; general.setAttribute('role', 'group'); general.setAttribute('aria-label', translate(T.general)); generalPanels.set(f.id, general); panel.append(general);
+    if (f.id === 'region') panel.append(methodPanel);
     const spine = document.createElement('div'); spine.className = 'chain-spine'; panel.append(spine);
     for (const stage of stagesOf(f.id)) spine.append(buildRow(stage).element);
     panels.set(f.id, panel); scroller.append(panel);
@@ -118,6 +125,7 @@ export function mountStageChain(b: StageChainBindings): StageChain {
   function buildRow(stage: StageDef): Row {
     const element = document.createElement('section'); element.className = 'stage-row'; element.id = `row-${stage.id}`; element.dataset.stage = stage.id;
     const head = document.createElement('div'); head.className = 'stage-head';
+    const number = document.createElement('span'); number.className = 'stage-number'; number.dataset.l10nKeep = '';
     const node = document.createElement('button'); node.type = 'button'; node.className = 'stage-node'; node.setAttribute('role', 'switch');
     if (!stage.optional) { node.disabled = true; node.title = translate(T.required); node.setAttribute('aria-checked', 'true'); node.dataset.required = ''; }
     else if (stage.toggle?.kind === 'unavailable') { node.disabled = true; node.title = translate(text(stage.toggle.reason!)); node.dataset.locked = ''; node.setAttribute('aria-checked', 'true'); }
@@ -130,22 +138,17 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     const run = document.createElement('button'); run.type = 'button'; run.className = 'stage-run'; run.title = translate(T.run); run.setAttribute('aria-label', `${translate(T.run)} · ${translate(text(stage.label))}`);
     run.innerHTML = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 1.8v8.4L10 6z" fill="currentColor"/></svg>'; run.onclick = () => b.run(stage);
     const help = document.createElement('a'); help.className = 'stage-help'; help.href = atlasUrl(`./scientific/index.html#${stageAnchor(stage.id)}`); help.target = '_blank'; help.rel = 'noopener';
-    help.textContent = '?'; help.title = translate(T.help); help.setAttribute('aria-label', `${translate(T.help)} · ${translate(text(stage.label))}`); help.dataset.l10nKeep = '';
-    const chevron = document.createElement('button'); chevron.type = 'button'; chevron.className = 'stage-open'; chevron.title = translate(T.open); chevron.setAttribute('aria-label', `${translate(T.open)} · ${translate(text(stage.label))}`);
-    chevron.setAttribute('aria-controls', `body-${stage.id}`); chevron.innerHTML = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>';
-    chevron.onclick = () => expand(stage.id, title.getAttribute('aria-expanded') !== 'true');
-    // One line per stage: the quick settings sit in the head, between the name and the actions.
-    const quick = document.createElement('div'); quick.className = 'stage-quick';
-    head.append(node, title, quick, time, run, help, chevron);
+    setText(help, T.help); help.title = translate(T.help); help.setAttribute('aria-label', `${translate(T.help)} · ${translate(text(stage.label))}`); help.dataset.l10nKeep = '';
+    head.append(number, title, node, run, time);
     const note = document.createElement('p'); note.className = 'stage-note'; note.hidden = true;
     const body = document.createElement('div'); body.className = 'stage-body'; body.id = `body-${stage.id}`; body.hidden = true;
-    const summary = document.createElement('p'); summary.className = 'stage-summary hint'; setText(summary, text(stage.summary)); body.append(summary);
+    const summary = document.createElement('p'); summary.className = 'stage-summary hint'; setText(summary, text(stage.summary)); body.append(summary, help);
     element.append(head, note, body);
-    const row = { stage, element, node, time, run, body, quick, note, title };
+    const row = { stage, element, node, time, run, body, number, note, title };
     rows.set(stage.id, row); return row;
   }
   function expand(id: string, open: boolean): void {
-    const row = rows.get(id)!; row.body.hidden = !open; row.title.setAttribute('aria-expanded', String(open)); row.element.querySelector('.stage-open')!.setAttribute('aria-expanded', String(open));
+    const row = rows.get(id)!; row.body.hidden = !open; row.title.setAttribute('aria-expanded', String(open));
     row.element.classList.toggle('is-open', open);
   }
   function selectFamily(next: StageFamily): void {
@@ -239,13 +242,16 @@ export function mountStageChain(b: StageChainBindings): StageChain {
 
   // ── Placing the existing controls ────────────────────────────────────────
   const owner = (id: string) => { const stage = stageForControl(id); if (!stage) console.warn(`[stage-chain] no stage owns control ${id}`); return stage; };
-  const place = (node: Element | null | undefined, stageId: string | undefined, where: 'body' | 'quick' = 'body') => {
+  const place = (node: Element | null | undefined, stageId: string | undefined) => {
     if (!node || !stageId) return; const row = rows.get(stageId); if (!row) return;
-    (where === 'quick' ? row.quick : row.body).append(node);
+    row.body.append(node);
   };
   const tRoot = leftovers, sketchHost = b.terrain.sketchHost;
   // Composite widgets first, so their fields stay together.
-  const coastPanel = tRoot.querySelector('#terrain-coast-panel'); place(coastPanel, 'relief-coasts');
+  const coastPanel = tRoot.querySelector<HTMLElement>('#terrain-coast-panel'); place(coastPanel, 'relief-source');
+  if (coastPanel) prepareCoastGrid(coastPanel);
+  // The checkable coast layouts edit this value directly, including random islands.
+  tRoot.querySelector<HTMLElement>('[data-field-path="terrain.islandMode"]')?.setAttribute('data-chain-hidden', '');
   tRoot.querySelector<HTMLElement>('#terrain-coast-toggle')?.setAttribute('aria-expanded', 'true');
   place(sketchHost, 'relief-mask');
   const hydrology = tRoot.querySelector('#terrain-hydrology-panel');
@@ -269,7 +275,7 @@ export function mountStageChain(b: StageChainBindings): StageChain {
   // Main-page controls (seed, places, city options) declare their owner with data-control.
   for (const element of Array.from(b.staging.querySelectorAll<HTMLElement>('[data-control]'))) {
     const id = element.dataset.control!, stage = owner(id); if (!stage || stage === 'settings') continue;
-    place(element, stage, rows.get(stage)!.stage.quick.includes(id) ? 'quick' : 'body');
+    place(element, stage);
   }
   // Region controls: every field by its path; the manual list as a block.
   const regionList = b.regionRoot.querySelector('#region-add-place')?.closest('details');
@@ -286,7 +292,6 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     const box = document.createElement('div'); box.className = 'stage-render-section'; box.dataset.renderSection = section; box.append(sectionBody); place(box, stageId);
   }
   // Procedural recipe controls are new staged forms over the same terrain value model.
-  const terrainFields = new Map([...allTerrainFields, ...terrainProceduralStageFields].map(field => [field.path, field]));
   for (const stage of STAGES) {
     const fields = terrainProceduralStageFields.filter(field => stageForControl(field.path) === stage.id);
     if (!fields.length) continue;
@@ -294,58 +299,90 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     forms.push(mountParameterForm(host, fields.map(field => ({ ...field, id: `stage-${field.path.replace(/[^a-z0-9]/gi, '-')}` })), { getValue: b.terrain.access.get, setValue: b.terrain.access.set, disabled: b.busy }));
   }
 
-  // ── Quick strips (collapsed rows) ────────────────────────────────────────
-  const urbanFields = new Map(urbanControlFields().map(field => [field.path, field]));
-  const regionFields = new Map(regionControlFields.map(field => [field.path, field]));
-  const quickForm = (row: Row, field: ParameterField, getValue: (path: string) => unknown, setValue: (path: string, value: unknown) => void) => {
-    const host = document.createElement('div'); host.className = 'quick-form'; row.quick.append(host);
-    forms.push(mountParameterForm(host, [{ ...field, help: undefined, ...(field.placeholder ? { placeholder: 'auto' } : {}), id: `quick-${row.stage.id}-${field.path.replace(/[^a-z0-9]/gi, '-')}` }], { getValue, setValue, disabled: b.busy }));
-    // A quick copy must not be mistaken for the live field by the forms that query their paths.
-    for (const element of Array.from(host.querySelectorAll<HTMLElement>('[data-field-path]'))) { element.dataset.quickPath = element.dataset.fieldPath; delete element.dataset.fieldPath; }
-    for (const element of Array.from(host.querySelectorAll<HTMLElement>('[data-setting-path]'))) { element.dataset.quickSetting = element.dataset.settingPath; delete element.dataset.settingPath; }
-  };
-  for (const row of rows.values()) for (const id of row.stage.quick) {
-    if (id.startsWith('main:') || id.startsWith('widget:layer-')) continue; // moved live controls (above)
-    if (terrainFields.has(id)) quickForm(row, terrainFields.get(id)!, b.terrain.access.get, b.terrain.access.set);
-    else if (id.startsWith('region.') && regionFields.has(id.slice(7))) quickForm(row, regionFields.get(id.slice(7))!, path => readSettingPath(effectiveRegion(get()), path), (path, value) => { const s = get(); s.region ??= {}; if (path.startsWith('roads.') && s.region.roads === null) s.region.roads = {}; writeSettingPath(s.region, path, value); b.onRegionChange(); });
-    else if (id.startsWith('urban.') && urbanFields.has(id.slice(6))) quickForm(row, urbanFields.get(id.slice(6))!, path => readSettingPath(urbanScopeValues(get()), path), (path, value) => { writeUrbanControl(get(), { kind: 'global' }, path, value); b.onChange(); });
-    else if (id === 'widget:source-mode') row.quick.append(sourceSwitch());
-    else if (id === 'widget:extent-km') row.quick.append(extentQuick());
-    else if (id === 'widget:paint') { const button = document.createElement('button'); button.type = 'button'; button.className = 'small quick-action'; setText(button, T.paint); button.onclick = () => paint(); row.quick.append(button); }
-    else if (id === 'widget:coast-summary') row.quick.append(coastSummary());
-    else if (id === 'widget:style') row.quick.append(styleQuick());
-    else if (id === 'widget:view3d') row.quick.append(viewQuick());
-    else if (id.startsWith('toggle:')) row.quick.append(appearanceToggle(id.slice(7).replace(/^appearance./, '')));
-    else if (id.startsWith('seg:')) row.quick.append(appearanceSegments(id.slice(4).replace(/^appearance./, '')));
-    else if (id === 'widget:heightmap-scale') { /* filled by the fit block below */ }
-    else console.warn(`[stage-chain] unknown quick control ${id}`);
+  // General settings use the mounted controls so all handlers and visibility stay in sync.
+  for (const f of FAMILIES) for (const id of GENERAL_CONTROLS[f.id]) {
+    let control: HTMLElement | null;
+    if (id === 'widget:extent') {
+      control = root.querySelector<HTMLElement>('.terrain-extent');
+      const legend = control?.querySelector('legend'); if (legend) setText(legend, T.size);
+    } else if (id === 'widget:coasts') control = coastPanel;
+    else if (id === 'widget:style') control = styleQuick();
+    else if (id === 'widget:view3d') control = viewQuick();
+    else if (id === 'widget:seed') control = root.querySelector<HTMLElement>('[data-control="widget:seed"]');
+    else control = root.querySelector<HTMLElement>(id.startsWith('main:') ? `[data-control="${id}"]` : `[data-field-path="${id}"]`);
+    if (!control) continue;
+    if (id === 'terrain.climate') prepareClimateStrip(control);
+    control.dataset.stageControl = stageForControl(id) ?? (f.id === 'map' ? 'display-terrain' : 'relief-source');
+    generalPanels.get(f.id)!.append(control);
   }
+  for (const path of METHOD_CONTROLS) {
+    const control = root.querySelector<HTMLElement>(`[data-field-path="${path}"]`);
+    if (!control) continue;
+    control.dataset.stageControl = 'relief-source'; methodPanel.append(control);
+  }
+  syncers.push(() => {
+    const classic = context().classicTerrain;
+    for (const path of ['terrain.procedural.preset', 'terrain.generationCompute', 'terrain.compute'])
+      methodPanel.querySelector<HTMLElement>(`[data-field-path="${path}"]`)?.toggleAttribute('data-general-hidden', classic);
+  });
   // Heightmap alternative inside Relief source; its fit stage.
   const library = document.createElement('div'); library.id = 'heightmap-library'; rows.get('relief-source')!.body.insertBefore(library, rows.get('relief-source')!.body.children[1] ?? null);
   const librarySync = b.heightmap.source(library); syncers.push(() => { library.hidden = reliefOf(get()) !== 'heightmap'; librarySync.sync(); });
   const fitHost = document.createElement('div'); rows.get('relief-heightmap-fit')!.body.insertBefore(fitHost, rows.get('relief-heightmap-fit')!.body.children[1] ?? null);
-  const fit = b.heightmap.fit(fitHost); rows.get('relief-heightmap-fit')!.quick.append(fit.quick); syncers.push(fit.sync);
-  // Seed and extent hint sit at the top of the source body.
-  const seed = rows.get('relief-source')!.body.querySelector('[data-control="widget:seed"]'); if (seed) rows.get('relief-source')!.body.insertBefore(seed, library);
+  const fit = b.heightmap.fit(fitHost); syncers.push(fit.sync);
 
-  function extentQuick(): HTMLElement {
-    const label = document.createElement('label'); label.className = 'parameter-field parameter-number quick-field';
-    const caption = document.createElement('span'); caption.className = 'parameter-caption'; setText(caption, T.width);
-    const input = document.createElement('input'); input.type = 'number'; input.id = 'quick-extent-km'; input.min = '.5'; input.max = '100'; input.step = '.1';
-    input.addEventListener('change', () => { const km = Number(input.value); if (!Number.isFinite(km) || km < .5 || km > 100) { input.setAttribute('aria-invalid', 'true'); return; } input.removeAttribute('aria-invalid'); get().extent = Math.round(km * 1000); b.onChange(); b.terrain.sync(); });
-    label.append(caption, input);
-    syncers.push(() => { const s = get(); input.disabled = b.busy() || s.extent === 'auto'; if (document.activeElement !== input) input.value = String((typeof s.extent === 'number' ? s.extent : b.getWorld()?.mapSize ?? 6000) / 1000); });
-    return label;
-  }
-  function coastSummary(): HTMLElement {
-    const out = document.createElement('output'); out.className = 'quick-summary';
+  function prepareCoastGrid(panel: HTMLElement): void {
+    panel.classList.add('coast-picker'); panel.dataset.stageControl = 'relief-source';
+    const compass = panel.querySelector<HTMLElement>('.terrain-coast-compass')!;
+    const presets = panel.querySelector<HTMLElement>('.coast-presets')!;
+    const grid = document.createElement('div'); grid.className = 'coast-grid';
+    grid.append(compass, presets); panel.append(grid);
+    grid.addEventListener('click', () => { markStale('relief-source'); sync(); });
     syncers.push(() => {
-      const mask = Number(b.terrain.access.get('terrain.coastMask') ?? 0), dirs = coastDirections.filter((_, i) => mask & 1 << i);
-      out.dataset.l10nKeep = '';
-      out.textContent = mask === 0 ? translate(T.inland) : mask === 255 ? `${translate(String(b.terrain.access.get('terrain.islandMode')) === 'archipelago' ? 'Archipelago' : 'Island')} · 8 / 8` : `${dirs.join(' · ')}`;
+      panel.toggleAttribute('data-chain-hidden', context().relief === 'heightmap' || context().finiteRelief && b.terrain.access.get('terrain.relief') === 'cavern');
     });
-    return out;
   }
+  function prepareClimateStrip(field: HTMLElement): void {
+    field.classList.add('climate-picker');
+    const select = field.querySelector<HTMLSelectElement>('select')!; select.hidden = true;
+    const strip = document.createElement('div'); strip.className = 'region-icon-strip climate-strip'; strip.setAttribute('role', 'radiogroup');
+    strip.setAttribute('aria-label', translate(copy('Climate', 'Climat')));
+    const drawings: Record<string, string> = {
+      temperate: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/>',
+      oceanic: '<path d="M5 14a4 4 0 0 1 1-8 5 5 0 0 1 9 1 3.5 3.5 0 1 1 3 7H5Zm2 4-1 3m6-3-1 3m6-3-1 3"/>',
+      mediterranean: '<circle cx="15" cy="7" r="3"/><path d="M15 1v1m6 5h1M4 15q3-3 6 0t6 0 6 0M2 20q3-3 6 0t6 0 6 0"/>',
+      arid: '<circle cx="17" cy="5" r="3"/><path d="M2 20q5-12 11-4m-6 4q6-10 15 0"/>',
+      cold: '<path d="M12 2v20M3.5 7l17 10M3.5 17l17-10M9 4l3 3 3-3M9 20l3-3 3 3M4 10l4-1-1-4m13 9-4 1 1 4M4 14l4 1-1 4m13-9-4-1 1-4"/>',
+      tropical: '<path d="M3 17q0-14 18-13 1 18-13 17M5 20 18 7m-8 8 1-6m2 3 5 1"/>',
+      custom: '<path d="M5 3v18m7-18v18m7-18v18M2 8h6m1 8h6m1-10h6"/>',
+    };
+    const buttons: HTMLButtonElement[] = [];
+    for (const option of Array.from(select.options)) {
+      const button = document.createElement('button'); button.type = 'button'; button.dataset.climate = option.value; button.setAttribute('role', 'radio');
+      button.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${drawings[option.value] ?? drawings.custom}</svg>`;
+      const caption = document.createElement('span'); caption.className = 'region-icon-caption';
+      const label = terrainBasicFields.find(f => f.path === 'terrain.climate')!.options!.find(o => o.value === option.value)!.label;
+      setText(caption, label); button.append(caption);
+      syncers.push(() => { button.title = translate(label); button.setAttribute('aria-label', translate(label)); });
+      button.onclick = () => { b.terrain.access.set('terrain.climate', option.value); markStale('relief-climate'); if (option.value === 'custom') expand('relief-climate', true); sync(); };
+      button.onkeydown = event => {
+        const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+        if (!step) return; event.preventDefault(); const next = buttons[(buttons.indexOf(button) + step + buttons.length) % buttons.length]; next.click(); next.focus();
+      };
+      buttons.push(button); strip.append(button);
+    }
+    field.append(strip);
+    const selected = document.createElement('output'); selected.className = 'climate-selected';
+    const caption = field.querySelector('.parameter-caption')!, head = document.createElement('div'); head.className = 'climate-caption';
+    field.prepend(head); head.append(caption, selected);
+    syncers.push(() => {
+      const value = b.terrain.access.get('terrain.climate');
+      const label = terrainBasicFields.find(f => f.path === 'terrain.climate')!.options!.find(o => o.value === value)?.label;
+      if (label) setText(selected, label);
+      for (const button of buttons) { const on = button.dataset.climate === value; button.setAttribute('aria-checked', String(on)); button.tabIndex = on ? 0 : -1; button.disabled = b.busy(); }
+    });
+  }
+
   function styleQuick(): HTMLElement {
     const label = document.createElement('label'); label.className = 'quick-style';
     label.append(iconImg('display-palette', 24));
@@ -367,36 +404,15 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     syncers.push(() => { const is3d = document.querySelector('#view3d')?.getAttribute('aria-pressed') === 'true'; flat.setAttribute('aria-pressed', String(!is3d)); relief.setAttribute('aria-pressed', String(is3d)); relief.disabled = !b.getWorld(); });
     return group;
   }
-  function appearanceToggle(path: string): HTMLElement {
-    const field = renderControlFields.find(f => f.path === `appearance.${path}`)!;
-    const button = document.createElement('button'); button.type = 'button'; button.className = 'icon-toggle'; button.dataset.appearance = path;
-    button.append(iconImg(toggleIcons[path] ?? 'display-layers', 24)); const caption = document.createElement('span'); setText(caption, field.label); button.append(caption);
-    const value = () => readSettingPath({ appearance: renderControlValues(get(), b.getWorld()) }, `appearance.${path}`) === true;
-    button.onclick = () => { writeAppearanceControl(get(), `appearance.${path}`, !value()); b.onAppearance(); sync(); };
-    syncers.push(() => button.setAttribute('aria-pressed', String(value())));
-    return button;
-  }
-  function appearanceSegments(path: string): HTMLElement {
-    const field = renderControlFields.find(f => f.path === `appearance.${path}`)!;
-    const group = document.createElement('div'); group.className = 'text-segments'; group.setAttribute('role', 'radiogroup'); group.setAttribute('aria-label', translate(field.label));
-    const buttons = (field.options ?? []).map(option => {
-      const button = document.createElement('button'); button.type = 'button'; button.setAttribute('role', 'radio'); setText(button, option.label);
-      button.onclick = () => { writeAppearanceControl(get(), `appearance.${path}`, option.value); b.onAppearance(); sync(); };
-      group.append(button); return [option.value, button] as const;
-    });
-    syncers.push(() => { const value = readSettingPath({ appearance: renderControlValues(get(), b.getWorld()) }, `appearance.${path}`); for (const [v, button] of buttons) button.setAttribute('aria-checked', String(v === value)); });
-    return group;
-  }
-
   // Leftover legacy wrappers stay hidden but mounted (their sync keeps working).
   bindTree(root);
-  // A change inside a row makes it, and every later generation stage, stale.
-  root.addEventListener('change', event => { const row = (event.target as Element).closest<HTMLElement>('.stage-row'); if (row) markStale(row.dataset.stage!); });
+  // General controls keep their stage ownership for invalidating later generation stages.
+  root.addEventListener('change', event => { const control = (event.target as Element).closest<HTMLElement>('[data-stage-control],.stage-row'); if (control) markStale(control.dataset.stageControl ?? control.dataset.stage!); });
   function markStale(id: string): void {
     const index = STAGES.findIndex(stage => stage.id === id), stage = STAGES[index];
-    if (!stage || stage.family === 'display') return;
+    if (!stage || stage.family === 'map') return;
     for (const later of STAGES.slice(index)) {
-      if (later.family === 'display') continue;
+      if (later.family === 'map') continue;
       const timing = timings.get(later.id); if (timing && timing.state !== 'running') timing.state = 'stale';
     }
     renderTimes();
@@ -406,8 +422,8 @@ export function mountStageChain(b: StageChainBindings): StageChain {
       const timing = timings.get(id);
       row.element.dataset.run = timing?.state ?? '';
       // Stages without their own progress events ran inside a neighbouring row: no invented time.
-      if (!timing || timing.state !== 'running' && timing.ms === 0) { row.time.textContent = ''; row.time.title = ''; continue; }
-      row.time.textContent = timing.state === 'running' ? '…' : timing.ms < 1000 ? `${Math.max(1, Math.round(timing.ms))} ms` : `${(timing.ms / 1000).toLocaleString(numberLocale(), { maximumFractionDigits: 2 })} s`;
+      if (!timing || timing.state !== 'running' && timing.ms === 0) { row.time.textContent = '— ms'; row.time.title = ''; continue; }
+      row.time.textContent = timing.state === 'running' ? '… ms' : `${Math.max(1, Math.round(timing.ms)).toLocaleString(numberLocale())} ms`;
       row.time.title = translate(timing.state === 'stale' ? T.stale : timing.state === 'cached' ? T.cached : timing.state === 'running' ? T.running : text(row.stage.label));
     }
     for (const f of FAMILIES) {
@@ -425,15 +441,17 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     for (const form of forms) form.sync();
     for (const syncer of syncers) syncer();
     // Source alternatives: fields that do not apply to the chosen relief source are set aside.
-    for (const [path, sources] of Object.entries(SOURCE_FIELDS)) for (const element of Array.from(root.querySelectorAll<HTMLElement>(`[data-field-path="${path}"],[data-quick-path="${path}"]`)))
+    for (const [path, sources] of Object.entries(SOURCE_FIELDS)) for (const element of Array.from(root.querySelectorAll<HTMLElement>(`[data-field-path="${path}"]`)))
       element.toggleAttribute('data-chain-hidden', !sources.includes(ctx.relief));
+    for (const [family, panel] of generalPanels) {
+      for (const control of Array.from(panel.children) as HTMLElement[]) {
+        const stage = rows.get(control.dataset.stageControl!)?.stage;
+        control.toggleAttribute('data-general-hidden', !!stage && !stage.when(ctx) || family === 'region' && ctx.classicTerrain && control.matches('.climate-picker,#terrain-coast-panel'));
+      }
+      panel.hidden = !Array.from(panel.children).some(control => !(control as HTMLElement).hidden && !control.hasAttribute('data-general-hidden') && !control.hasAttribute('data-chain-hidden'));
+    }
     // The 8-bit image scale and sea level only apply to an imported grayscale image.
     for (const path of ['options.heightScale', 'options.importSea']) root.querySelector<HTMLElement>(`[data-field-path="${path}"]`)?.toggleAttribute('data-chain-hidden', !get().options.importedHeight);
-    // Quick copies follow the visibility of their live field (relief family, compact preset…).
-    for (const quick of Array.from(root.querySelectorAll<HTMLElement>('.stage-quick [data-quick-path]'))) {
-      const live = root.querySelector<HTMLElement>(`.stage-body [data-field-path="${quick.dataset.quickPath}"]`);
-      if (live) quick.hidden = live.hidden;
-    }
     const caps = b.availability();
     for (const [selector, value, need] of BACKEND_CHOICES) for (const select of Array.from(root.querySelectorAll<HTMLSelectElement>(selector))) {
       const option = Array.from(select.options).find(o => o.value === value); if (!option) continue;
@@ -441,22 +459,23 @@ export function mountStageChain(b: StageChainBindings): StageChain {
       if (missing) { option.disabled = true; option.dataset.unavailable = ''; option.title = translate(need === 'webgpu' ? T.needGpu : need === 'native' ? T.needNative : T.needPython); }
       else if (option.dataset.unavailable !== undefined) { option.disabled = false; delete option.dataset.unavailable; option.title = ''; }
     }
+    const numbers = new Map<StageFamily, number>();
     for (const row of rows.values()) {
       const { stage } = row, visible = stage.when(ctx); row.element.hidden = !visible; if (!visible) continue;
+      const index = (numbers.get(stage.family) ?? 0) + 1; numbers.set(stage.family, index); row.number.textContent = String(index).padStart(2, '0');
       const reason = stage.unavailable?.(ctx);
       row.note.hidden = !reason; if (reason) setText(row.note, text(reason)); row.element.dataset.na = String(!!reason);
       const on = toggleState(stage); row.element.dataset.enabled = String(on);
       if (!stage.optional || stage.toggle?.kind === 'unavailable') row.node.disabled = true;
       if (stage.optional && stage.toggle && stage.toggle.kind !== 'unavailable') { row.node.setAttribute('aria-checked', String(on)); row.node.disabled = busy || !!reason; }
-      const prerequisite = stage.family === 'settlements' ? !ctx.hasTerrain && T.needTerrain : stage.family === 'city' ? !ctx.hasRegion ? T.needRegion : !ctx.place && T.needPlace : stage.family === 'display' ? !ctx.hasTerrain && T.needTerrain : false;
+      const prerequisite = stage.run.action === 'town' ? !ctx.hasRegion ? T.needRegion : !ctx.place && T.needPlace : stage.family !== 'region' && stage.id !== 'map-export' ? !ctx.hasTerrain && T.needTerrain : false;
       row.run.disabled = busy || !!reason || !!prerequisite || stage.optional && !on && stage.toggle?.kind !== 'unavailable';
       row.run.title = translate(prerequisite || (reason ? text(reason) : T.run));
-      if (!row.quick.childElementCount) row.quick.hidden = true;
     }
-    for (const f of FAMILIES) { const button = panels.get(f.id)!.querySelector<HTMLButtonElement>('.family-run')!; button.disabled = busy || (f.id !== 'relief' && f.id !== 'water' && !ctx.hasTerrain) || f.id === 'city' && !ctx.hasRegion; }
+    for (const f of FAMILIES) { const button = panels.get(f.id)!.querySelector<HTMLButtonElement>('.family-run')!; button.disabled = busy || (f.id !== 'region' && !ctx.hasTerrain); }
     renderTimes();
   }
-  selectFamily('relief'); sync();
+  selectFamily('region'); sync();
   return {
     body: id => rows.get(id)!.body, sync, family: () => family, selectFamily, context,
     beginRun(stages) {

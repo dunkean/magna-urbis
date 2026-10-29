@@ -20,6 +20,17 @@ describe('V2 generation stage registry', () => {
     expect(STAGES.map(stage => stage.id)).toEqual(ids);
     expect(new Set(STAGES.map(stage => stage.family))).toEqual(new Set(FAMILIES.map(family => family.id)));
   });
+  it('groups the complete workflow in Region, Settlements and Map', () => {
+    expect(FAMILIES.map(family => family.id)).toEqual(['region', 'settlements', 'map']);
+    expect(STAGES.filter(stage => stage.family === 'settlements').map(stage => stage.id)).toEqual(stagesForAction('settlements'));
+    expect(stagesForAction('region')).toEqual(['settle-sites', 'settle-hierarchy', 'settle-roads']);
+    expect(stagesForAction('terrain')).not.toContain('city-composition');
+    expect(STAGES.find(stage => stage.id === 'relief-climate')?.optional).toBe(false);
+    expect(stagesForControl('terrain.climate')).toEqual(['relief-climate']);
+    expect(stagesForControl('widget:coasts')).toEqual(['relief-source']);
+    expect(stagesForControl('options.biome')).toEqual(['relief-source']);
+    expect(STAGES.filter(stage => stage.family === 'map').map(stage => stage.id)).toEqual(expect.arrayContaining(['display-labels', 'map-naming', 'map-export']));
+  });
   it('assigns every existing control to exactly one stage (or the Settings panel)', () => {
     for (const field of [...allTerrainFields, ...terrainProceduralStageFields]) once(field.path);
     for (const field of regionControlFields) once(`region.${field.path}`);
@@ -47,10 +58,10 @@ describe('V2 generation stage registry', () => {
   });
   it('shows source-specific relief rows only for their source', () => {
     const ctx = (relief: StageContext['relief']): StageContext => ({ relief, classicTerrain: false, finiteRelief: false, urban: 'rust', hasTerrain: false, hasRegion: false });
-    const visible = (relief: StageContext['relief']) => STAGES.filter(stage => stage.family === 'relief' && stage.when(ctx(relief))).map(stage => stage.id);
-    expect(visible('neural')).toEqual(expect.arrayContaining(['relief-source', 'relief-neural-coarse', 'relief-neural-base', 'relief-neural-decoder', 'relief-coasts']));
+    const visible = (relief: StageContext['relief']) => STAGES.filter(stage => stage.id.startsWith('relief-') && stage.when(ctx(relief))).map(stage => stage.id);
+    expect(visible('neural')).toEqual(expect.arrayContaining(['relief-source', 'relief-neural-coarse', 'relief-neural-base', 'relief-neural-decoder', 'relief-climate']));
     expect(visible('neural')).not.toContain('relief-regional');
-    expect(visible('heightmap')).toEqual(['relief-source', 'relief-heightmap-fit', 'relief-refine']);
+    expect(visible('heightmap')).toEqual(['relief-source', 'relief-climate', 'relief-heightmap-fit', 'relief-refine']);
     expect(visible('procedural')).not.toContain('relief-heightmap-fit');
   });
   it('links each row to its atlas section in the app language and maps run actions', () => {

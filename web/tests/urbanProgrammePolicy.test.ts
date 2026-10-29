@@ -81,7 +81,7 @@ it('actual snapshot→MU→normalize roundtrip retains custom period, profile ID
   const query = new URLSearchParams({ urban: JSON.stringify(workshopSettings(state)), settlements: JSON.stringify({ config: { list: [{ key: 'city', culture: 'future-profile', population: 100000, position: { x: 2639.9315590685324, y: 2668.9433913724934 } }] } }) });
   const round = new URLSearchParams(decodeRecipe(encodeRecipe({ stage: 'urban', query: query.toString() })).query);
   const saved = JSON.parse(round.get('urban')!) as WorkshopState; expect(normalizeLayoutConfig(saved.layoutConfig).programme).toEqual(layout.programme); expect(saved.layoutConfig.culture).toBe('future-profile');
-  expect(saved.quarterSeed).toBe('Q-exact'); expect(saved.parcelSeed).toBe('P-exact'); expect(round.get('settlements')).toBe(query.get('settlements'));
+  expect(saved.quarterSeed).toBe('Q-exact'); expect(saved.parcelSeed).toBe('P-exact'); expect(JSON.parse(round.get('settlements')!)).toEqual(JSON.parse(query.get('settlements')!));
 });
 
 it('available era choices come from the same native profiles catalogue; auto is not fabricated as an era alias', () => {

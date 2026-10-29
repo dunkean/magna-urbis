@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { decodeRecipe, encodeRecipe, RECIPE_STAGES } from '../src/ui/recipe';
-import defaultQuery from '../src/ui/recipeDictionary.json';
+import defaults from '../src/ui/recipeDefaults.json';
+const defaultQuery = Object.fromEntries(Object.entries(defaults.query).map(([k,v]) => [k, k === 'workshop' || k === 'case' ? btoa(JSON.stringify((v as any).__base64json)).replaceAll('+','-').replaceAll('/','_').replace(/=+$/, '') : typeof v === 'string' ? v : JSON.stringify(v)]));
+const semantic = (q: string) => Object.fromEntries([...new URLSearchParams(q)].map(([k,v]) => { try { return [k, JSON.parse(v)]; } catch { return [k,v]; } }));
 
 const state = {
   seed: 'débug 🗺', width: '2400', relief: 'hills', compute: 'wasm', generation: 'cpu', auto: '0',
@@ -16,14 +18,14 @@ describe('portable map recipes', () => {
   it('keeps the ordinary default recipe extremely short without dropping any properties', () => {
     const code = encodeRecipe({ stage: 'terrain', query: new URLSearchParams(defaultQuery).toString() });
     expect(code.length).toBeLessThan(100);
-    expect(Object.fromEntries(new URLSearchParams(decodeRecipe(code).query))).toEqual(defaultQuery);
+    expect(semantic(decodeRecipe(code).query)).toEqual(semantic(new URLSearchParams(defaultQuery).toString()));
   });
   it.each(RECIPE_STAGES)('round-trips every property for %s, including Unicode and unknown properties', stage => {
     const code = encodeRecipe({ stage, query });
-    expect(code).toMatch(/^MU\.[\w-]+$/);
+    expect(code).toMatch(/^MU2\.[\w-]+$/);
     const decoded = decodeRecipe(code);
     expect(decoded.stage).toBe(stage);
-    expect(Object.fromEntries(new URLSearchParams(decoded.query))).toEqual(state);
+    expect(semantic(decoded.query)).toEqual(semantic(query));
     expect(decoded.decor).toBeUndefined();
     expect(code.length).toBeLessThan(query.length * .7);
   });
@@ -35,10 +37,9 @@ describe('portable map recipes', () => {
     expect(decodeRecipe(`\n ${a.match(/.{1,60}/g)!.join('\r\n')} \n`)).toEqual(decodeRecipe(a));
   });
 
-  it('carries retained binary terrain byte-for-byte, as well as duplicate query keys', () => {
-    const decor = Uint8Array.from({ length: 100000 }, (_, i) => (i * 137 + (i >>> 8)) % 256);
-    const decoded = decodeRecipe(encodeRecipe({ stage: 'settlements', query: 'a=1&a=2', decor }));
-    expect(decoded.decor).toEqual(decor);
+  it('keeps complete data out of codes, and preserves duplicate query keys', () => {
+    expect(() => encodeRecipe({ stage: 'city', query: '', decor: new Uint8Array(1000) })).toThrow('export complet');
+    const decoded = decodeRecipe(encodeRecipe({ stage: 'city', query: 'a=1&a=2' }));
     expect(new URLSearchParams(decoded.query).getAll('a')).toEqual(['1', '2']);
   });
 
@@ -51,7 +52,7 @@ describe('portable map recipes', () => {
 
   it('rejects malformed, truncated and damaged codes with a useful error', () => {
     const code = encodeRecipe({ stage: 'urban', query });
-    for (const bad of ['', 'https://example.com/', 'MU.!!!!', code.slice(0, -8), code.slice(0, -5) + 'AAAAA', 'MU.AAAA']) {
+    for (const bad of ['', 'https://example.com/', 'MU2.!!!!', code.slice(0, -8), code.slice(0, -5) + 'AAAAA', 'MU2.AAAA']) {
       expect(() => decodeRecipe(bad)).toThrow(/Code/);
     }
   });

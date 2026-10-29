@@ -8,6 +8,9 @@ import { cropTerrain } from './benchTerrainTransfer';
 import './recipeSharing.css';
 import { LOCALE_KEY } from './shellLocale';
 import { recipeText as t, translateRecipeError } from './recipeLocale';
+import recipeDefaults from './recipeDefaults.json';
+
+const catalogueTerrains = new Set(recipeDefaults.terrains);
 
 declare global { interface Window { magnaRecipe?: { capture(): Promise<MapRecipe>; terrain?(): Promise<Decor> } } }
 
@@ -18,6 +21,35 @@ async function portableQuery(query: string): Promise<URLSearchParams> {
     params.delete('heightmap');
   }
   return params;
+}
+
+/** A generation recipe never reads retained building chunks or embeds geometry. */
+export async function generationRecipe(stage: RecipeStage, query: string, decor?: Decor): Promise<MapRecipe> {
+  const params = await portableQuery(query);
+  for (const key of ['profile', 'localServer']) params.delete(key);
+  if (!params.has('artifact') && !params.has('decor')) return { stage, query: params.toString() };
+  if (!decor) throw new Error('Attendez le chargement du terrain conservé.');
+  // Catalogue terrain is already available on the receiving machine.
+  if (catalogueTerrains.has(decor.meta.id)) {
+    params.set('artifact', decor.meta.id); params.delete('decor');
+    return { stage: 'city', query: params.toString() };
+  }
+  const regeneration = decor.meta.regeneration;
+  if (!regeneration) throw new Error('Terrain importé sans recette : utilisez l’export complet .decor.');
+  const source = await portableQuery(regeneration.query);
+  for (const key of ['artifact', 'decor', 'stage', 'pipeline', 'settlements', 'roads', 'urban', 'profile', 'localServer']) source.delete(key);
+  source.set('auto', '0');
+  params.set('artifact', 'recipe'); params.delete('decor');
+  // Only reconstruction metadata. No sites, roads, cadastre, meshes or native frames.
+  const meta: RecipeTerrain['meta'] = {
+    format: 'magna-decor', version: 1, id: 'recipe', label: 'Recette', tags: {},
+    seed: decor.meta.seed, width: decor.meta.width, query: source.toString(), created: '',
+    settlements: [], roads: null, roadConfig: null,
+    stats: { land: 0, minHeight: 0, maxHeight: 0, riverKm: 0, roadKm: 0 },
+  };
+  // Recalculate placement before the urban stages when reconstructing local terrain.
+  return { stage: stage === 'city' || stage === 'urban' ? 'settlements' : stage, query: params.toString(),
+    terrain: { query: source.toString(), crops: regeneration.crops, meta } };
 }
 
 /** Resolve browser-local inputs so a code also works in another browser or machine. */
@@ -68,7 +100,9 @@ async function regenerateTerrain(source: RecipeTerrain, signal?: AbortSignal): P
       if (child?.magnaRecipe?.terrain && child.magnaBenchContext?.ready()) {
         let decor = await child.magnaRecipe.terrain();
         for (const crop of source.crops) decor = cropTerrain(decor, crop.x, crop.y, crop.width);
-        return { raster: decor.raster, meta: { ...decor.meta, ...source.meta, regeneration: { query: source.query, crops: source.crops } } };
+    return { raster: decor.raster, meta: { ...decor.meta, ...source.meta,
+      ...(source.meta.id === 'recipe' ? { stats: decor.meta.stats } : {}),
+      regeneration: { query: source.query, crops: source.crops } } };
       }
       const error = child?.document.querySelector<HTMLElement>('#status[data-error=true]')?.textContent;
       if (error) throw new Error(error);
@@ -93,12 +127,15 @@ export async function restoreRecipe(recipe: MapRecipe, signal?: AbortSignal, opt
     const saved = await saveHistory(decor, false);
     params.set('artifact', saved.meta.id); if (recipe.stage === 'urban') params.set('decor', saved.meta.id);
     return { ...recipe, query: params.toString() };
-  } else if (new URLSearchParams(recipe.query).has('artifact')) throw new Error('Terrain conservé absent du code.');
+  } else {
+    const id = new URLSearchParams(recipe.query).get('artifact');
+    if (id && !(recipe.stage === 'city' && catalogueTerrains.has(id))) throw new Error('Terrain conservé absent du code.');
+  }
   return recipe;
 }
 
 export function recipeUrl(recipe: MapRecipe): URL {
-  const page = recipe.stage === 'urban' ? 'urbanbench.html' : recipe.stage === 'houses' ? 'housebench.html' : 'terrainbench.html';
+  const page = recipe.stage === 'city' ? 'citybench.html' : recipe.stage === 'urban' ? 'urbanbench.html' : recipe.stage === 'houses' ? 'housebench.html' : 'terrainbench.html';
   const url = new URL(page, location.href); url.search = recipe.query;
   if (executionRuntime.profile === 'local' && url.searchParams.get('profile') === 'local') applyExecutionProfile(url);
   if (recipe.stage === 'settlements') url.searchParams.set('stage', 'settlements');
@@ -169,7 +206,7 @@ export function installRecipeSharing(options: {
       field.value = code; field.select(); copy.disabled = download.disabled = false;
       const seed = new URLSearchParams(recipe.query).get('seed') ?? 'carte';
       filename = `${recipe.stage}-${seed.replace(/[^\p{L}\p{N}_-]/gu, '_').slice(0, 60)}.murecipe`;
-      const description = `${code.length.toLocaleString()} ${t('characters')} · ${t('settings')}${recipe.decor ? ` · ${t('embedded')}` : recipe.terrain ? ` · ${t('reproducible')}` : ''}.`;
+      const description = `${code.length.toLocaleString()} ${t('characters')} · ${t('settings')}${recipe.terrain ? ` · ${t('reproducible')}` : ''}. ${t('generationHint')}`;
       try { await navigator.clipboard.writeText(code); note.textContent = `${t('copied')} ${description}`; }
       catch { note.textContent = `${t('copyManually')} ${description}`; }
     } catch (e) { error(e); }
@@ -194,7 +231,7 @@ export function installRecipeSharing(options: {
   file.onchange = async () => {
     const selected = file.files?.[0]; if (!selected) return;
     try {
-      if (selected.size > 45 * 1024 * 1024) throw new Error(t('fileTooLarge'));
+      if (selected.size > 1.5 * 1024 * 1024) throw new Error(t('fileTooLarge'));
       field.value = await selected.text(); load.click();
     } catch (e) { error(e); }
   };

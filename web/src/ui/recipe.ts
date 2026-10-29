@@ -1,8 +1,8 @@
-import { zlibSync, unzlibSync, strToU8, strFromU8 } from 'fflate';
-import defaultQuery from './recipeDictionary.json';
+import { encodeCompact, decodeCompact } from './recipeCodec';
+import defaults from './recipeDefaults.json';
 import type { DecorMeta } from './decor';
 
-export const RECIPE_STAGES = ['terrain', 'settlements', 'urban', 'houses'] as const;
+export const RECIPE_STAGES = ['terrain', 'settlements', 'urban', 'houses', 'city'] as const;
 export type RecipeStage = typeof RECIPE_STAGES[number];
 export interface RecipeTerrain {
   query: string;
@@ -11,87 +11,63 @@ export interface RecipeTerrain {
 }
 export interface MapRecipe { stage: RecipeStage; query: string; decor?: Uint8Array; terrain?: RecipeTerrain }
 
-// Shared vocabulary makes even small recipes compress well. No server or lookup table of maps.
-const dictionary = strToU8(JSON.stringify([0, packQuery(new URLSearchParams(defaultQuery).toString())]));
-const PREFIX = 'MU.';
-const MAX_BYTES = 32 * 1024 * 1024;
-
-function base64(bytes: Uint8Array): string {
-  let binary = '';
-  for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+// Frozen with MU2: changing the schema requires a new format prefix.
+const schema = { stage: 0, query: defaults.query, city: defaults.cityQuery,
+  terrain: { query: defaults.query, crops: [], meta: { query: defaults.query } } };
+function base64Json(value: unknown): string {
+  const bytes = new TextEncoder().encode(JSON.stringify(value));
+  let binary = ''; for (const b of bytes) binary += String.fromCharCode(b);
   return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '');
 }
-
-function adler32(data: Uint8Array): number {
-  let a = 1, b = 0;
-  for (let i = 0; i < data.length;) {
-    const end = Math.min(i + 5552, data.length);
-    for (; i < end; i++) { a += data[i]; b += a; }
-    a %= 65521; b %= 65521;
-  }
-  return ((b << 16) | a) >>> 0;
+function packQuery(query: string): unknown {
+  const params = new URLSearchParams(query);
+  if (new Set(params.keys()).size !== [...params].length) return [...params];
+  return Object.fromEntries([...params].map(([k, v]) => {
+    if (k === 'workshop' || k === 'case') {
+      try {
+        const parsed = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(v.replaceAll('-', '+').replaceAll('_', '/')), c => c.charCodeAt(0))));
+        if (base64Json(parsed) === v) return [k, { __base64json: parsed }];
+      } catch { /* Keep unrecognized cases verbatim. */ }
+      return [k, v];
+    }
+    try { const parsed = JSON.parse(v); if (typeof parsed !== 'string' && JSON.stringify(parsed) === v) return [k, parsed]; } catch { /* plain text */ }
+    return [k, v];
+  }));
 }
-
-function packQuery(query: string): unknown[][] {
-  const entries = [...new URLSearchParams(query)].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
-  return entries.map(([key, value]) => {
-    try {
-      const parsed: unknown = JSON.parse(value);
-      if (typeof parsed !== 'string' && JSON.stringify(parsed) === value) return [key, parsed];
-    } catch { /* Plain text is already compact. */ }
-    return [key, value];
-  });
-}
-
 function unpackQuery(packed: unknown): string {
-  if (!Array.isArray(packed)) throw new Error();
-  const params = new URLSearchParams();
-  for (const pair of packed) {
-    if (!Array.isArray(pair) || pair.length !== 2 || typeof pair[0] !== 'string') throw new Error();
-    params.append(pair[0], typeof pair[1] === 'string' ? pair[1] : JSON.stringify(pair[1]));
+  if (Array.isArray(packed)) {
+    if (!packed.every(p => Array.isArray(p) && p.length === 2 && p.every(v => typeof v === 'string'))) throw new Error();
+    return new URLSearchParams(packed as [string, string][]).toString();
   }
-  return params.toString();
+  if (!packed || typeof packed !== 'object') throw new Error();
+  return new URLSearchParams(Object.entries(packed).map(([k, v]) => {
+    if ((k === 'workshop' || k === 'case') && v && typeof v === 'object' && '__base64json' in v)
+      return [k, base64Json(v.__base64json)];
+    return [k, typeof v === 'string' ? v : JSON.stringify(v)];
+  })).toString();
 }
 
-/** All query properties, including unknown ones, survive without URL percent-encoding. */
+/** Settings only; retained worlds belong in the complete .decor export. */
 export function encodeRecipe(recipe: MapRecipe): string {
   if (!RECIPE_STAGES.includes(recipe.stage)) throw new Error('Atelier inconnu.');
+  if (recipe.decor) throw new Error('Utilisez l’export complet .decor pour les données calculées.');
   const terrain = recipe.terrain && { ...recipe.terrain, query: packQuery(recipe.terrain.query), meta: { ...recipe.terrain.meta, query: packQuery(recipe.terrain.meta.query) } };
-  const header = strToU8(JSON.stringify([RECIPE_STAGES.indexOf(recipe.stage), packQuery(recipe.query), ...(terrain ? [terrain] : [])]));
-  const length = 4 + header.length + (recipe.decor?.length ?? 0);
-  if (length > MAX_BYTES) throw new Error('Recette trop volumineuse (32 Mo maximum).');
-  const data = new Uint8Array(length);
-  new DataView(data.buffer).setUint32(0, header.length, true);
-  data.set(header, 4); if (recipe.decor) data.set(recipe.decor, 4 + header.length);
-  return PREFIX + base64(zlibSync(data, { level: 9, dictionary }));
+  return encodeCompact({ stage: RECIPE_STAGES.indexOf(recipe.stage),
+    [recipe.stage === 'city' ? 'city' : 'query']: packQuery(recipe.query), ...(terrain ? { terrain } : {}) }, schema, 'MU2.');
 }
-
-/** Whitespace may be added by email/chat wrapping. Reject corruption before changing any state. */
 export function decodeRecipe(text: string): MapRecipe {
-  const code = text.trim().replace(/\s/g, '');
-  if (!code.startsWith(PREFIX) || !/^[A-Za-z0-9_-]+$/.test(code.slice(PREFIX.length))) throw new Error('Code invalide : collez un code MU.…');
-  if (code.length > MAX_BYTES * 1.4) throw new Error('Code trop volumineux.');
+  const value = decodeCompact(text, schema, 'MU2.') as { stage: number; query?: unknown; city?: unknown; terrain?: Record<string, any> };
   try {
-    const bytes = Uint8Array.from(atob(code.slice(PREFIX.length).replaceAll('-', '+').replaceAll('_', '/')), c => c.charCodeAt(0));
-    const data = unzlibSync(bytes, { dictionary, out: new Uint8Array(MAX_BYTES + 1) });
-    if (data.length > MAX_BYTES || data.length < 4) throw new Error();
-    // fflate's decoder does not verify the zlib checksum itself.
-    if (new DataView(bytes.buffer).getUint32(bytes.length - 4) !== adler32(data)) throw new Error();
-    const length = new DataView(data.buffer, data.byteOffset, data.byteLength).getUint32(0, true);
-    if (length > data.length - 4) throw new Error();
-    const header = JSON.parse(strFromU8(data.subarray(4, 4 + length)));
-    if (!Array.isArray(header) || ![2, 3].includes(header.length) || !Number.isInteger(header[0]) || !RECIPE_STAGES[header[0]]) throw new Error();
+    if (!Number.isInteger(value.stage) || !RECIPE_STAGES[value.stage]) throw new Error();
     let terrain: RecipeTerrain | undefined;
-    if (header.length === 3) {
-      const source = header[2];
-      if (!source || !Array.isArray(source.crops) || !source.meta || typeof source.meta.id !== 'string') throw new Error();
-      for (const crop of source.crops) if (!crop || ![crop.x, crop.y, crop.width].every(Number.isFinite) || crop.width <= 0) throw new Error();
-      terrain = { query: unpackQuery(source.query), crops: source.crops, meta: { ...source.meta, query: unpackQuery(source.meta.query) } };
+    if (value.terrain) {
+      const t = value.terrain;
+      if (!Array.isArray(t.crops) || !t.meta || typeof t.meta.id !== 'string') throw new Error();
+      for (const c of t.crops) if (!c || ![c.x, c.y, c.width].every(Number.isFinite) || c.width <= 0) throw new Error();
+      terrain = { query: unpackQuery(t.query), crops: t.crops, meta: { ...t.meta, query: unpackQuery(t.meta.query) } } as RecipeTerrain;
     }
-    const decor = data.slice(4 + length);
-    if (terrain && decor.length) throw new Error();
-    return { stage: RECIPE_STAGES[header[0]], query: unpackQuery(header[1]), ...(decor.length ? { decor } : {}), ...(terrain ? { terrain } : {}) };
-  } catch {
-    throw new Error('Code incomplet, corrompu ou trop volumineux.');
-  }
+    const stage = RECIPE_STAGES[value.stage];
+    if (stage === 'city' ? value.query !== undefined : value.city !== undefined) throw new Error();
+    return { stage, query: unpackQuery(stage === 'city' ? value.city : value.query), ...(terrain ? { terrain } : {}) };
+  } catch { throw new Error('Code incomplet, corrompu ou trop volumineux.'); }
 }

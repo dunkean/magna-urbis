@@ -5,6 +5,7 @@ import { terrainCacheKey, retainedTerrainMatchesSettings, generateTerrain, planR
 import { parseProject, serializeProject } from '../src/v2/project';
 import type { V2Settings } from '../src/v2/contracts';
 import type { TerrainLayer } from '../src/gen/types';
+import { renameMap } from '../src/v2/mapNaming';
 
 class RetainedStore implements TerrainStore {
   readonly data = new Map<string, TerrainLayer>();
@@ -25,6 +26,24 @@ function settings(): V2Settings {
 const OLD_BENCH_KEY = '["mu-v2-bench-terrain-2026-10-28.2","procedural","magna-urbis-v2",1200,"flat","none","none",0,"auto",{"backend":"typescript","compute":"cpu","erosion":1,"resolution":512,"source":"procedural"},null,[8,8,"256:3226455237:1318026841",120,0]]';
 
 describe('V2 retained generation pipeline', () => {
+  it('edits and persists map names without changing retained terrain, roads or buildings', async () => {
+    const s = settings(), terrain = await generateTerrain(s, undefined, new TerrainCache(new RetainedStore()));
+    const region = await planRegion(terrain, s), town = await generateTown(region, s, 'main');
+    const originalNames = structuredClone(town.names), key = terrainCacheKey(s);
+    s.options.language = 'english'; s.naming = { title: 'The Copper Coast', places: { main: 'Valmont' } };
+    const named = renameMap(town, s);
+    expect(named.names?.town).toBe('The Copper Coast');
+    expect(named.names?.family).toBe('english');
+    expect(named.settlements?.find(place => place.main)?.name).toBe('Valmont');
+    expect(named.names?.entries.some(entry => entry.kind === 'town' && entry.text === 'Valmont')).toBe(true);
+    expect(named.terrain).toBe(town.terrain); expect(named.roads).toBe(town.roads); expect(named.urban).toBe(town.urban);
+    expect(town.names).toEqual(originalNames); expect(terrainCacheKey(s)).toBe(key);
+    const loaded = parseProject(serializeProject(s, named));
+    expect(loaded.settings.naming).toEqual(s.naming); expect(loaded.world?.names).toEqual(named.names);
+    const rebuilt = renameMap(await generateTown(named, s, 'main'), s);
+    expect(rebuilt.names?.town).toBe('The Copper Coast');
+    expect(rebuilt.settlements?.find(place => place.main)?.name).toBe('Valmont');
+  });
   it('starts with a 6 km region independent of later settlement settings and their terrain cache key', () => {
     const settings = defaultSettings(), originalKey = terrainCacheKey(settings);
     expect(settings.extent).toBe(6000);

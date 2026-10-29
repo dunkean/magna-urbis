@@ -6,7 +6,7 @@ import { readHistory, saveHistory, downloadHistory, openBench, syncBenchUrl } fr
 import { rasterStats, type Decor } from './decor';
 import { defaultSettlementSpec, type Settlement } from '../../../rust/bridge/settlements';
 import type { WorkshopState } from './testbenchUrban';
-import { installRecipeSharing, portableRecipe } from './recipeSharing';
+import { installRecipeSharing, generationRecipe } from './recipeSharing';
 import type {} from './benchContext';
 import { applyExecutionProfile, installExecutionProfile } from './executionProfile';
 import { applyWorkshopPopulation, appliedWorkshopSnapshot, mergeCityWorkshop, translateWorkshopState, workshopSettings } from './urbanSnapshot';
@@ -78,7 +78,6 @@ else ready = true;
 installRecipeSharing({ host: document.querySelector('header')!, capture: async () => {
   const state = workshop.currentState();
   if (!state) throw new Error('Attendez le chargement du plan appliqué avant de le partager.');
-  const applied = await snapshot(state);
-  return portableRecipe('urban', share(), applied);
+  return generationRecipe('urban', share(), decor);
 } });
 window.magnaBenchContext = { ready: () => ready, capture: () => ({ query: share() }), restore: () => {} };

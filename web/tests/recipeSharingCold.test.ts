@@ -7,7 +7,6 @@ import { decodeDecor, encodeDecor, type Decor } from '../src/ui/decor';
 import { readDecorFile } from '../src/ui/decorFile';
 import { encodeDecorFileBytes } from '../src/ui/decorFileBytes';
 import { createTerrainDecorExports } from '../src/ui/terrainDecorExport';
-import { decodeRecipe, encodeRecipe } from '../src/ui/recipe';
 import { portableRecipe, restoreRecipe } from '../src/ui/recipeSharing';
 import { readHistory } from '../src/ui/benchHistory';
 import { beginUrbanBuildingStage, type BuildingChunkManifest } from '../src/ui/urbanBuildingChunkStore';
@@ -49,13 +48,13 @@ function decor(manifest?: BuildingChunkManifest): Decor {
   return snapshot;
 }
 
-it('standalone MU code retains ALL real C chunks and crop offset through independent native storage and local history', async () => {
+it('complete export retains ALL real C chunks and crop offset through independent native storage and local history', async () => {
   const source = new ColdTestBackend(), manifest = await commit(source, 'source'), snapshot = decor(manifest);
   snapshot.meta.regeneration = { query: 'seed=would-regenerate', crops: [] };
   const portable = await portableRecipe('urban', 'artifact=cold-recipe-C&workshop=would-regenerate', snapshot, { backend: source });
   expect(portable.terrain).toBeUndefined(); expect(new URLSearchParams(portable.query).has('workshop')).toBe(false);
   expect(new TextDecoder().decode(portable.decor!.subarray(0, 45))).toContain('magna-cold-decor-1');
-  const wire = decodeRecipe(encodeRecipe(portable)), target = new ColdTestBackend();
+  const wire = portable, target = new ColdTestBackend();
   const restored = await restoreRecipe(wire, undefined, { backend: target });
   const saved = await readHistory(new URLSearchParams(restored.query).get('artifact')!), cold = saved.meta.pipeline!.urban!.buildingState!.cold!;
   expect(cold.store.sceneId).not.toBe('source'); expect(cold.store.fingerprint).toBe(manifest.fingerprint);
@@ -89,7 +88,7 @@ it('aborting a cold recipe import at its commit gate preserves the previous acti
 it('keeps legacy recipe gzip and synchronous automation identical, and offers complete async cold hooks', async () => {
   const legacy = decor(), old = encodeDecor(legacy), portable = await portableRecipe('urban', '', legacy);
   expect(portable.decor).toEqual(old);
-  const restored = await restoreRecipe(decodeRecipe(encodeRecipe(portable)));
+  const restored = await restoreRecipe(portable);
   expect((await readHistory(new URLSearchParams(restored.query).get('artifact')!)).meta).toEqual(legacy.meta);
   const legacyHooks = createTerrainDecorExports(() => legacy);
   expect(legacyHooks.capture().bytes).toEqual(old); expect((await legacyHooks.captureAsync()).bytes).toEqual(old);

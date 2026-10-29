@@ -1,7 +1,7 @@
 {
   "format": "native-admission-periods-1",
   "source": "rust/crates/houses/data/urban-admission.json",
-  "sourceSha256": "f9bbb5b4df9b18cf3a869cde96989075dce467a560c9e141a3b1363c362486ec",
+  "sourceSha256": "73b1c08201c4ed37ad03544b0858ecf0007241b550ecec543f967d72a7a45833",
   "schemaVersion": 1,
   "generatorVersion": "houses-3",
   "periods": [

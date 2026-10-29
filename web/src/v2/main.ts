@@ -33,13 +33,15 @@ import { mountHeightmapSource, mountHeightmapFit } from './heightmapLibrary';
 import { mountSettingsPanel, refreshBackends, backendStatus, backendCaption } from './settingsPanel';
 import { iconUrl, type IconId } from './stageIcons';
 import { mountRegionControls } from './regionControls';
+import { mountMapControls } from './mapControls';
+import { renameMap } from './mapNaming';
 import type { V2Urban3d } from './urban3d';
 
 const $ = <T extends HTMLElement = HTMLElement>(selector: string): T => document.querySelector<T>(selector)!;
 const esc = (value: unknown): string => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]!));
 registerMessages({'Cartographic maps':{en:'Cartographic maps',fr:'Cartes graphiques'},'Terrain materials':{en:'Terrain materials',fr:'Matériaux du terrain'},'Painted fantasy maps':{en:'Painted fantasy maps',fr:'Cartes fantasy peintes'},'Diagnostics':{en:'Diagnostics',fr:'Diagnostics'},'Fantasy · Encre N&B':{en:'Fantasy · Black & white ink',fr:'Fantasy · Encre N&B'},'Fantasy · Aquarelle':{en:'Fantasy · Watercolour',fr:'Fantasy · Aquarelle'},'Elevation · DEM':{en:'Elevation · DEM',fr:'Altitude · DEM'},'SVG · map / embedded render':{en:'SVG · map / embedded render',fr:'SVG · carte / rendu intégré'}});
 registerMessages({'Render3D · Multiscale':{en:'Render3D · Multiscale',fr:'Render3D · Multi-échelle'},'Render v2 - Satellite':{en:'Render v2 - Satellite',fr:'Render v2 - Satellite'},'Render v2 - Substrate':{en:'Render v2 - Substrate',fr:'Render v2 - Substrat'},'Render v2 - Moisture':{en:'Render v2 - Moisture',fr:'Render v2 - Humidité'},'Render v2 - Vegetation':{en:'Render v2 - Vegetation',fr:'Render v2 - Végétation'},'Render v2 - Snow / ice':{en:'Render v2 - Snow / ice',fr:'Render v2 - Neige / glace'}});
-registerMessages({'Réglages':{en:'Settings',fr:'Réglages'},'Réglages, moteurs et activité':{en:'Settings, engines and activity',fr:'Réglages, moteurs et activité'},'Toute la chaîne':{en:'Whole chain',fr:'Toute la chaîne'},'Générer toute la chaîne : relief, peuplements et villes':{en:'Generate the whole chain: relief, settlements and cities',fr:'Générer toute la chaîne : relief, peuplements et villes'},'Recette JSON':{en:'Recipe JSON',fr:'Recette JSON'},'Les lieux':{en:'Places',fr:'Les lieux'},'Replier la liste':{en:'Collapse the list',fr:'Replier la liste'},'Créer le relief':{en:'Create the relief',fr:'Créer le relief'},'Redessiner la carte':{en:'Redraw the map',fr:'Redessiner la carte'},'Implanter et relier':{en:'Place and connect',fr:'Implanter et relier'},'Construire tous les lieux':{en:'Build every place',fr:'Construire tous les lieux'},'Courbes':{en:'Contours',fr:'Courbes'},'Milieux':{en:'Land cover',fr:'Milieux'},'Noms':{en:'Names',fr:'Noms'},'Adresses des modèles et services':{en:'Model and service addresses',fr:'Adresses des modèles et services'},'Chaîne de génération':{en:'Generation chain',fr:'Chaîne de génération'},'Réglages & moteurs':{en:'Settings & engines',fr:'Réglages & moteurs'}});
+registerMessages({'Réglages':{en:'Settings',fr:'Réglages'},'Réglages, moteurs et activité':{en:'Settings, engines and activity',fr:'Réglages, moteurs et activité'},'Toute la chaîne':{en:'Whole chain',fr:'Toute la chaîne'},'Générer toute la chaîne : relief, peuplements et villes':{en:'Generate the whole chain: relief, settlements and cities',fr:'Générer toute la chaîne : relief, peuplements et villes'},'Implanter et construire':{en:'Place and build',fr:'Implanter et construire'},'Recette JSON':{en:'Recipe JSON',fr:'Recette JSON'},'Les lieux':{en:'Places',fr:'Les lieux'},'Replier la liste':{en:'Collapse the list',fr:'Replier la liste'},'Créer le relief':{en:'Create the relief',fr:'Créer le relief'},'Redessiner la carte':{en:'Redraw the map',fr:'Redessiner la carte'},'Implanter et relier':{en:'Place and connect',fr:'Implanter et relier'},'Construire tous les lieux':{en:'Build every place',fr:'Construire tous les lieux'},'Courbes':{en:'Contours',fr:'Courbes'},'Milieux':{en:'Land cover',fr:'Milieux'},'Noms':{en:'Names',fr:'Noms'},'Adresses des modèles et services':{en:'Model and service addresses',fr:'Adresses des modèles et services'},'Chaîne de génération':{en:'Generation chain',fr:'Chaîne de génération'},'Réglages & moteurs':{en:'Settings & engines',fr:'Réglages & moteurs'}});
 const icon = (id: IconId, size = 22): string => `<img class="v2-icon" src="${iconUrl(id) ?? ''}" alt="" width="${size}" height="${size}" aria-hidden="true">`;
 const renderStyles = [...TERRAIN_STYLE_LIST, { id: 'copernicus', label: 'Elevation · DEM' }];
 const renderStyleOptions = (): string => [['Cartographic maps',renderStyles.filter(style=>isMapStyle(style.id))],['Terrain materials',renderStyles.filter(style=>style.id.startsWith('render'))],['Painted fantasy maps',renderStyles.filter(style=>style.id.startsWith('fantasy'))],['Diagnostics',renderStyles.filter(style=>style.id==='copernicus')]].map(([label,styles])=>`<optgroup data-render-label="${label}" label="${translate(String(label))}">${(styles as typeof renderStyles).map(style=>`<option value="${style.id}">${esc(style.label)}</option>`).join('')}</optgroup>`).join('');
@@ -174,11 +176,14 @@ mountSettingsPanel($('#hardware-details'),backendBindings);
 let chainSyncFrame=0;
 function scheduleChainSync():void{if(chainSyncFrame)return;chainSyncFrame=requestAnimationFrame(()=>{chainSyncFrame=0;chain.sync();});}
 const familyActions:Record<StageFamily,[string,()=>void]>={
-  relief:['Créer le relief',()=>void generate('terrain')],water:['Créer le relief',()=>void generate('terrain')],
-  settlements:['Implanter et relier',()=>void generate('region')],city:['Construire tous les lieux',()=>void generate('towns')],display:['Redessiner la carte',()=>void refreshAppearance()],
+  region:['Créer le relief',()=>void generate('terrain')],
+  settlements:['Implanter et construire',()=>void generate('settlements')],
+  map:['Redessiner la carte',()=>void refreshAppearance()],
 };
 function runFamily(family:StageFamily):void{familyActions[family][1]();}
 function runStage(stage:StageDef):void{
+  if(stage.id==='map-export'){dialog('#export-dialog');return;}
+  if(stage.id==='map-naming'){void redrawNames();return;}
   const run=stage.run;
   if(run.action==='display'){void refreshAppearance();return;}
   if(run.action==='mask'){terrainControls.sketchHost.querySelector<HTMLButtonElement>('[data-id="edit"]')?.click();return;}
@@ -206,6 +211,25 @@ const chain:StageChain=mountStageChain({
   },
   onFamily:family=>{setText($('#generate-label'),familyActions[family][0]);syncPlacesPanel(family);},
 });
+const mapControls=mountMapControls(chain.body('map-naming'),chain.body('map-export'),{
+  getSettings:()=>settings,getWorld:()=>world,busy:()=>busy,
+  onNames:()=>{void redrawNames();},onExport:()=>dialog('#export-dialog'),
+});
+let namingRevision=0,namingWork:Promise<void>=Promise.resolve();
+function redrawNames():Promise<void>{
+  if(busy)return Promise.resolve();
+  const revision=++namingRevision;projectRevision++;
+  $('#map-names-apply').setAttribute('aria-busy','true');
+  namingWork=namingWork.catch(()=>{}).then(async()=>{
+    if(revision!==namingRevision||busy)return;
+    if(!world){mapControls.sync();return;}
+    pristine=renameMap(pristine??world,settings);
+    world=applyBuildingEdits(pristine,mods).world;
+    await client.show(world,true);
+    if(revision===namingRevision)updateWorld();
+  }).catch(reportAppearanceError).finally(()=>{if(revision===namingRevision)$('#map-names-apply').setAttribute('aria-busy','false');});
+  return namingWork;
+}
 const urbanParts:[string,UrbanControlParts][]=[
   ['city-composition',{sections:['layout','footprint','growth','fortifications','ports'],extras:['header','phases','archetypes']}],
   ['city-quarters',{sections:['streets'],extras:[]}],['city-parcels',{sections:['parcels'],extras:[]}],['city-programme',{sections:['programme'],extras:[]}],
@@ -217,7 +241,7 @@ const urbanParts:[string,UrbanControlParts][]=[
 }
 // Model and service URLs (terrain schema) belong to Settings, next to the service checks.
 $('#hardware-dialog .dialog-actions').before($('#settings-endpoints-box'));
-function syncPlacesPanel(family:StageFamily=chain.family()):void{$('#places-panel').hidden=!['settlements','city'].includes(family)&&$('#inspector').hidden;}
+function syncPlacesPanel(family:StageFamily=chain.family()):void{$('#places-panel').hidden=family!=='settlements'&&$('#inspector').hidden;}
 $('#places-collapse').onclick=()=>{const panel=$('#places-panel'),collapsed=panel.dataset.collapsed!=='true';panel.dataset.collapsed=String(collapsed);$('#places-collapse').setAttribute('aria-expanded',String(!collapsed));setText($('#places-collapse'),collapsed?'+':'–');};
 
 function disposeInspectorForms():void{inspectorForms.forEach(form=>form.dispose());inspectorForms=[];}
@@ -242,9 +266,9 @@ function syncControls(): Promise<void> {
   const appearance={style:settings.options.style,contours:settings.options.contours,landuse:settings.options.landuse,labels:settings.options.labels??true,...settings.appearance};
   $<HTMLSelectElement>('#map-style').value=appearance.terrainStyle??appearance.style;$<HTMLSelectElement>('#export-style').value=appearance.terrainStyle??appearance.style;
   for(const key of ['contours','landuse','labels'] as const)$<HTMLInputElement>(`#display-${key}`).checked=appearance[key]??true;
-  renderControls.sync();return client.setAppearance(settings).catch(reportAppearanceError);
+  renderControls.sync();mapControls.sync();return client.setAppearance(settings).catch(reportAppearanceError);
 }
-function selectTab(tab: string): void { currentTab = tab; chain.selectFamily(tab==='terrain'?'relief':tab==='city'?'city':'settlements'); }
+function selectTab(tab: string): void { currentTab = tab; chain.selectFamily(tab==='terrain'?'region':tab==='map'?'map':'settlements'); }
 function updateProgress(p: V2Progress): void {
   setText($('#progress-label'), p.label);
   const meter=$<HTMLProgressElement>('#progress');
@@ -263,7 +287,7 @@ function setBusy(value: boolean): void {
   if (!value && elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = undefined; }
   terrainControls.sync();regionControls.sync();urbanControls.sync();inspectorForms.forEach(form=>form.sync());if(!value)syncUrbanBackend();
   $<HTMLButtonElement>('#cancel-job').disabled=false;
-  chain.sync();
+  chain.sync();mapControls.sync();
 }
 async function generate(action: Action, key?: string, townStage?:V2TownStage): Promise<void> {
   if (busy) return; cancelled = false;
@@ -281,7 +305,7 @@ async function generate(action: Action, key?: string, townStage?:V2TownStage): P
     if (edited.skipped) log(`${edited.skipped} modification(s) ne correspondent plus à leur bâtiment d’origine.`);
     setText($('#progress-label'), 'Dessin de la carte…');$<HTMLButtonElement>('#cancel-job').disabled=true;log('Préparation de la scène et dessin dans le worker de rendu…');
     await client.show(world,action === 'town' || action === 'towns');canvas.hidden=false; $('#empty-map').hidden = true;
-    updateWorld(); if (action === 'region' && chain.family() !== 'settlements') selectTab('settlements'); else if ((action === 'all' || action === 'towns') && chain.family() !== 'city') selectTab('city');
+    updateWorld(); if (action === 'region' && chain.family() !== 'settlements') selectTab('settlements'); else if (['all','towns','settlements'].includes(action) && chain.family() !== 'settlements') selectTab('settlements');
     setText($('#footer-status'), `Carte prête · ${((performance.now()-started)/1000).toFixed(1)} s`);
     const completion = `Terminé en ${((performance.now()-started)/1000).toFixed(2)} s · relief ${String(world.stats.backend ?? 'typescript-cpu')}`;
     const hasBuiltTowns = !!world.urban || world.settlements?.some(place => !!place.urban);
@@ -296,6 +320,7 @@ async function generate(action: Action, key?: string, townStage?:V2TownStage): P
 }
 function updateWorld(): void {
   if (!world) return;
+  mapControls.sync();
   disposeInspectorForms();regionControls.sync();terrainControls.sync();city3d?.refresh();
   setUserText($('#map-name'), world.names?.town, 'Le territoire des possibles');
   const towns = world.settlements ?? [], detailed = towns.filter(s=>s.main ? !!world?.urban : !!s.urban).length;

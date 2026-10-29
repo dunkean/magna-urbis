@@ -31,6 +31,7 @@ const ui = {
   coasts: copy('Sea directions', 'Directions de la mer'),
   coastHelp: copy('Combine directions freely. All eight surround the map with sea.', 'Combinez les directions. Les huit entourent la carte de mer.'),
   none: copy('Inland', 'Intérieur des terres'), island: copy('Island', 'Île'), archipelago: copy('Archipelago', 'Archipel'),
+  randomIslands: copy('Random islands', 'Îles aléatoires'),
   all: copy('All', 'Toutes'), allCoasts: copy('All coasts', 'Toutes les côtes'),
   quick: copy('Create the terrain', 'Créer le terrain'), coastline: copy('Coasts', 'Côtes'),
   vector: copy('Vector', 'Vectoriel'), rust: copy('Rust', 'Rust'),
@@ -90,6 +91,7 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
   };
   const set = (path: string, value: unknown) => {
     const settings = bindings.getSettings();
+    if (path === 'terrain.coastMask' && Number(value) !== 0 && settings.terrain?.procedural?.enabled?.coasts === false) settings.terrain.procedural.enabled.coasts = true;
     if (path.startsWith('runtime.') && !settings.runtime) settings.runtime = { backend: 'rust', compute: 'auto', source: 'procedural' };
     if (path === 'terrain.climate') {
       if (value === 'custom') {
@@ -138,7 +140,7 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
     const result = document.createElement('button'); result.type = 'button'; if (id) result.id = id; setText(result, label);
     result.addEventListener('click', action); cleanup.push(() => result.removeEventListener('click', action)); host.append(result); return result;
   };
-  const coastArt=(control:HTMLButtonElement,kind:'cardinal'|'diagonal'|'island'|'inland'|'archipelago',angle=0,preset=false):void=>{
+  const coastArt=(control:HTMLElement,kind:'cardinal'|'diagonal'|'island'|'inland'|'archipelago',angle=0,preset=false):void=>{
     const label=control.getAttribute('data-i18n')??control.textContent??'';
     control.removeAttribute('data-i18n');control.classList.add(preset?'coast-preset':'coast-choice');
     const art=document.createElement('span');art.className=`coast-art coast-art-${kind}`;art.setAttribute('aria-hidden','true');art.style.setProperty('--coast-angle',`${angle}deg`);
@@ -196,9 +198,18 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
   coasts.append(compass);
   const coastHint = document.createElement('p'); coastHint.className = 'hint'; setText(coastHint, ui.coastHelp); coasts.append(coastHint);
   const coastPresets = document.createElement('div'); coastPresets.className = 'terrain-presets coast-presets';
-  coastArt(button(coastPresets, ui.none, () => set('terrain.coastMask', 0), 'terrain-coast-none'),'inland',0,true);
-  coastArt(button(coastPresets, ui.island, () => { writeSettingPath(bindings.getSettings(), 'terrain.islandMode', 'island'); set('terrain.coastMask', 255); }, 'terrain-coast-island'),'island',0,true);
-  coastArt(button(coastPresets, ui.archipelago, () => { writeSettingPath(bindings.getSettings(), 'terrain.islandMode', 'archipelago'); set('terrain.coastMask', 255); }, 'terrain-coast-archipelago'),'archipelago',0,true);
+  const coastChoices = new Map<string, HTMLInputElement>();
+  for (const [value, label, art] of [['none', ui.none, 'inland'], ['island', ui.island, 'island'], ['archipelago', ui.archipelago, 'archipelago'], ['random', ui.randomIslands, 'archipelago']] as const) {
+    const choice = document.createElement('label'); setText(choice, label); coastArt(choice, art, 0, true);
+    const input = document.createElement('input'); input.type = 'radio'; input.name = 'terrain-coast-layout'; input.value = value; input.id = `terrain-coast-${value}`;
+    choice.prepend(input); coastPresets.append(choice); coastChoices.set(value, input);
+    const onChoice = () => {
+      if (!input.checked) return;
+      if (value !== 'none') writeSettingPath(bindings.getSettings(), 'terrain.islandMode', value);
+      set('terrain.coastMask', value === 'none' ? 0 : 255);
+    };
+    input.addEventListener('change', onChoice); cleanup.push(() => input.removeEventListener('change', onChoice));
+  }
   coasts.append(coastPresets); coasts.id = 'terrain-coast-panel';
   const quickOptions = document.createElement('div'); quickOptions.className = 'terrain-quick-options'; root.append(quickOptions);
   const option = (label: string, id: string, panel: HTMLElement, artClass: string) => {
@@ -254,6 +265,11 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
     if (metres < min || metres > max) width.setAttribute('aria-invalid', 'true'); else width.removeAttribute('aria-invalid');
     for (const preset of Array.from(presetRow.querySelectorAll<HTMLButtonElement>('button'))) preset.disabled = Number(preset.dataset.extent) > max || (bindings.disabled?.() ?? false);
     for (const [direction, coast] of compassButtons) { const mask = Number(get('terrain.coastMask')); coast.setAttribute('aria-pressed', String(direction === 'all' ? mask === 255 : !!(mask & 1 << coastDirections.indexOf(direction as typeof coastDirections[number])))); coast.disabled = bindings.disabled?.() ?? false; }
+    for (const [value, input] of coastChoices) {
+      const mask = Number(get('terrain.coastMask'));
+      input.checked = value === 'none' ? mask === 0 : mask === 255 && get('terrain.islandMode') === value;
+      input.disabled = bindings.disabled?.() ?? false;
+    }
     const importedSurface = !!settings.terrain?.sketch?.processing;
     const isNeural = !['procedural', 'procedural-phasor'].includes(String(get('runtime.source'))) && !importedSurface, isClassic = get('runtime.backend') === 'typescript';
     importedNote.hidden = !importedSurface || isClassic;

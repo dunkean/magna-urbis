@@ -12,12 +12,14 @@ import { sameDisplay } from './displayState';
 import type { BenchRenderer } from './benchRenderer';
 import type { FrameRequest } from '../ui/viewer';
 import type { ExportLayers } from '../render/exportLayers';
+import { publishWasmThreads, wasmWorkerFailed, wasmWorkerOptions } from '../../../rust/bridge/wasmThreads';
 
-export type Action = 'terrain' | 'region' | 'roads' | 'towns' | 'town' | 'all';
+export type Action = 'terrain' | 'region' | 'roads' | 'towns' | 'town' | 'settlements' | 'all';
 
 /** Generation and drawing stay on separate workers; a failed job keeps the previous map. */
 export class StudioClient {
-  private engine = new EngineWorker();
+  // The worker name carries `?threads=`; after a worker death, the single-thread package.
+  private engine = new EngineWorker(wasmWorkerOptions('magna-v2'));
   private render: Worker | null = null;
   private syncRenderer: CanvasRenderer | null = null;
   private id = 0;
@@ -44,12 +46,13 @@ export class StudioClient {
   }
   private attachEngine(): void {
     this.engine.onmessage = ({ data: m }) => {
+      if (m.type !== 'progress') publishWasmThreads(m.wasm);
       if (m.id !== this.pending?.id) return;
       if (m.type === 'progress') this.onProgress(m.progress);
       else if (m.type === 'result') { const p = this.pending!; this.pending = null; this.retained={id:m.id,world:m.world};p.resolve(m.world); }
       else if (m.type === 'error') { const p = this.pending!; this.pending = null; p.reject(new Error(m.error)); }
     };
-    this.engine.onerror = e => { this.pending?.reject(new Error(e.message || 'Le moteur de génération a été interrompu.')); this.pending = null; this.retained=undefined;this.engine.terminate(); this.engine = new EngineWorker(); this.attachEngine(); };
+    this.engine.onerror = e => { wasmWorkerFailed(e.message || 'engine worker error'); this.pending?.reject(new Error(e.message || 'Le moteur de génération a été interrompu.')); this.pending = null; this.retained=undefined;this.engine.terminate(); this.engine = new EngineWorker(wasmWorkerOptions('magna-v2')); this.attachEngine(); };
   }
   async init(): Promise<void> {
     let render:Worker;
@@ -84,7 +87,7 @@ export class StudioClient {
   cancel(): void {
     if (!this.pending) return;
     this.pending.reject(new DOMException('Calcul annulé. La carte précédente est conservée.', 'AbortError'));
-    this.pending = null;this.retained=undefined; this.engine.terminate(); this.engine = new EngineWorker(); this.attachEngine();
+    this.pending = null;this.retained=undefined; this.engine.terminate(); this.engine = new EngineWorker(wasmWorkerOptions('magna-v2')); this.attachEngine();
   }
   /** Imported projects replace the old worker source; release its heavyweight archives. */
   invalidateRetained():void{this.retained=undefined;this.engine.postMessage({type:'release'});}

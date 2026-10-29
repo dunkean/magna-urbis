@@ -1,6 +1,6 @@
 import './housebench.css';
 import { executionRuntime, applyExecutionProfile, installExecutionProfile } from './executionProfile';
-import { installRecipeSharing, portableRecipe } from './recipeSharing';
+import { installRecipeSharing, generationRecipe } from './recipeSharing';
 import HouseWorker from './houseWorker?worker&inline';
 import { callHouses, compileHousesModule, defaultHouseConfig, decodeHouseReplay, encodeHouseReplay, parseHouseBatch, parseHouseCatalogue, parseHouseEnvelope, ROLE_LABELS, validateHouseConfig, wellFormedSeed, type CatalogueBundle, type HouseBatch, type HouseConfig, type HouseRequest, type HouseResponse, type HouseUnit, type HouseView, type Preflight, type Point } from '../../../rust/bridge/houses';
 import { commonHouseExtent, renderHouseSheet, renderHouseSvg, surfaceArea, unitBounds, xml } from '../../../rust/bridge/houseRender';
@@ -607,7 +607,7 @@ installRecipeSharing({
   host: button('copy-link').parentElement!, embedded: window.parent !== window,
   capture: async () => {
     if (!batch || busy || !updateReplay()) throw new Error('Générez un lot de maisons avant d’exporter.');
-    return portableRecipe('houses', new URL(location.href).searchParams.toString());
+    return generationRecipe('houses', new URL(location.href).searchParams.toString());
   },
 });
 void start();

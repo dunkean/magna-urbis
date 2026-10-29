@@ -118,7 +118,7 @@ export async function generateTerrain(settings: V2Settings, onProgress?: Progres
   cache: TerrainCache = terrainCache, assetBase?: string): Promise<World> {
   validateSettings(settings);
   if (settings.generation === 'neural' && !settings.options.importedHeight && (!settings.runtime || settings.runtime.source === 'procedural'))
-    throw new Error('Le modÃ¨le neuronal doit dâ€™abord fournir une heightmap. Aucun calcul procÃ©dural ne remplace silencieusement le modÃ¨le.');
+    throw new Error('Le modèle neuronal doit d’abord fournir une heightmap. Aucun calcul procédural ne remplace silencieusement le modèle.');
   const t0 = performance.now(), key = terrainCacheKey(settings), options = effectiveOptions(settings);
   const configuration = effectiveTerrainSettings(settings, options.mapSize!);
   const nativeEngine = !!settings.runtime && (settings.runtime.backend !== 'typescript' || settings.runtime.source !== 'procedural');
@@ -153,7 +153,7 @@ export async function generateTerrain(settings: V2Settings, onProgress?: Progres
       if (configuration.compute === 'wasm' && gpuGeneration) throw new Error('GPU terrain generation requires GPU sampling. Select GPU FP32 or reset generation compute.');
       if (configuration.compute === 'wasm' && !remoteNeural) compute = 'cpu';
       else if (configuration.compute === 'gpu-f32' || ['gpu', 'gpu-all', 'gpu-erosion'].includes(configuration.generationCompute ?? '')) compute = 'gpu';
-      if(softwareGpu&&compute==='cpu'&&['procedural','procedural-phasor'].includes(runtime!.source))report(onProgress,'compute','WebGPU logiciel dÃ©tectÃ© Â· sÃ©lection du CPU pour le procÃ©dural',0,0);
+      if(softwareGpu&&compute==='cpu'&&['procedural','procedural-phasor'].includes(runtime!.source))report(onProgress,'compute','WebGPU logiciel détecté · sélection du CPU pour le procédural',0,0);
       const { seed: _seed, width: _width, source: _source, neuralAssets: _assets, neuralServer: _server, forest: _forest, ...controls } = configuration;
       if (options.importedHeight) {
         const image = importedHeightfield(options.importedHeight, options.mapSize!, 1024, options.heightScale ?? 120, options.importSea ?? 0).height;

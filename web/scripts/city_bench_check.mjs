@@ -16,7 +16,7 @@ const bench = option('bench', 'http://127.0.0.1:5173/citybench.html');
 const position = option('position', '')?.split(',').map(Number);
 // --zoom cx,cy,metresPerPixel adds a close-up screenshot.
 const zoom = option('zoom', '')?.split(',').map(Number);
-// --situation <MU1.… code>: open that exact situation and add a close-up at each pin.
+// --situation <MU2.… code>: open that exact situation and add a close-up at each pin.
 const situation = option('situation', '');
 mkdirSync(out, { recursive: true });
 

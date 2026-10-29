@@ -13,10 +13,17 @@ if an implementation discovers a stage is wrong or missing, update this file fir
 engine applies them. `city-trim` and `city-houses` are optional in the contract, but the engine has
 no independent switch yet: the UI shows a locked switch with the reason.
 
-## Relief
+The V2 sidebar has three sections: **Region** (relief, water and natural cover),
+**Settlements** (placement, roads and city construction), and **Map** (appearance,
+naming and export). Climate and the land/sea mask are initial conditions in Region's
+top frame; biome remains a separate choice. The late coast row only exposes procedural
+coastal finishing. Stage ids remain stable for atlas links and progress attribution.
+
+## Region — initial conditions and relief
 | id | name | when | opt |
 | --- | --- | --- | --- |
 | relief-source | Source: procedural / neural (browser or Python) / imported heightmap / library heightmap; seed, width, scale, backend | always | no |
+| relief-climate | Input climate: preset, temperature, seasonality and precipitation | not classic | no |
 | relief-mask | Custom mask (zones, brushes, import/export) | procedural | yes |
 | relief-grids | Grids and buffers | procedural | no |
 | relief-noise | Initial noise and uplift | procedural | no |
@@ -35,13 +42,13 @@ no independent switch yet: the UI shows a locked switch with the reason.
 | relief-refine | Fractal refinement (slope-dependent detail below the source cell) | procedural / neural / heightmap (not classic) | yes |
 | relief-conditioning | Posterior fluvial conditioning | procedural (the posterior operators read the decomposed procedural recipe) | yes |
 | relief-aeolian | Aeolian transport | procedural (same recipe) | yes |
-| relief-coasts | Coasts (marine mask, coastal erosion) | procedural / neural (an imported surface keeps its own coastline) | yes |
+| relief-coasts | Coastal finishing (land/sea mask in the top frame; zero cycles disables coastal erosion) | procedural | no |
 
-## Water and natural cover
+## Region — water and natural cover
 | id | name | when | opt |
 | --- | --- | --- | --- |
 | water-hydrology | Hydrology: depressions, lakes water budget, drainage graph, rivers, riverbed cuts | always | yes |
-| cover-climate | Climate and biomes / natural cover (forest) | always | yes |
+| cover-climate | Natural cover: forest and clearings (reads the input climate) | always | yes |
 
 ## Settlements
 | id | name | when | opt |
@@ -50,7 +57,7 @@ no independent switch yet: the UI shows a locked switch with the reason.
 | settle-hierarchy | Place hierarchy | after sites | no |
 | settle-roads | Regional roads (cost fields, A*, bridges) | after sites | yes |
 
-## City (per selected place)
+## Settlements — city construction (per selected place)
 | id | name | when | opt |
 | --- | --- | --- | --- |
 | city-composition | Composition: footprint, macroplan, harbour, fortification | city | no |
@@ -61,7 +68,7 @@ no independent switch yet: the UI shows a locked switch with the reason.
 | city-buildings | Building sites and massing | city | no |
 | city-houses | Architecture / detailed houses | city | yes |
 
-## Display
+## Map — display, naming and export
 | id | name |
 | --- | --- |
 | display-terrain | Terrain shading and palette |
@@ -70,3 +77,5 @@ no independent switch yet: the UI shows a locked switch with the reason.
 | display-roads | Roads and ground |
 | display-buildings | Buildings (2D/3D, LOD, colours) |
 | display-labels | Labels and icons |
+| map-naming | Map title and toponyms |
+| map-export | Export the current map or project |

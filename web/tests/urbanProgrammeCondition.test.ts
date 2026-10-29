@@ -81,7 +81,7 @@ it('actual snapshot→MU→normalizer→binding roundtrip preserves optional/nul
     const params = new URLSearchParams(decodeRecipe(encodeRecipe({ stage: 'urban', query: query.toString() })).query);
     const restored: WorkshopState = JSON.parse(params.get('urban')!), normalized = normalizeLayoutConfig(restored.layoutConfig, true).programme;
     const ui = controls(); ui.binding.sync(normalized); expect(ui.binding.read(normalized)).toEqual(p);
-    expect(restored.quarterSeed).toBe('Q-exact'); expect(restored.parcelSeed).toBe('P-exact'); expect(params.get('settlements')).toBe(query.get('settlements'));
+    expect(restored.quarterSeed).toBe('Q-exact'); expect(restored.parcelSeed).toBe('P-exact'); expect(JSON.parse(params.get('settlements')!)).toEqual(JSON.parse(query.get('settlements')!));
   }
   const undefinedFields = { ...context(), state: undefined, decay: undefined }, normalized = normalizeLayoutConfig({ programme: undefinedFields }).programme;
   expect(normalized).not.toHaveProperty('state'); expect(normalized).not.toHaveProperty('decay'); expect(JSON.stringify(undefinedFields)).toBe(JSON.stringify(normalized));
