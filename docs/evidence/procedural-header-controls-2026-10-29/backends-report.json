@@ -1,0 +1,55 @@
+{
+  "cpu": {
+    "inline": true,
+    "terrainInStack": true,
+    "sizePresets": true,
+    "customSizeApplied": true,
+    "viewFitsNewSize": true,
+    "sourceRestoration": true,
+    "mainMapPreview": true,
+    "stepping": true,
+    "globalGenerate": true,
+    "backendPreserved": true
+  },
+  "gpu": {
+    "inline": true,
+    "terrainInStack": true,
+    "sizePresets": true,
+    "customSizeApplied": true,
+    "viewFitsNewSize": true,
+    "sourceRestoration": true,
+    "mainMapPreview": true,
+    "stepping": true,
+    "globalGenerate": true,
+    "backendPreserved": true
+  },
+  "hybrid": {
+    "inline": true,
+    "terrainInStack": true,
+    "sizePresets": true,
+    "customSizeApplied": true,
+    "viewFitsNewSize": true,
+    "sourceRestoration": true,
+    "mainMapPreview": true,
+    "stepping": true,
+    "globalGenerate": true,
+    "backendPreserved": true
+  },
+  "native": {
+    "inline": true,
+    "terrainInStack": true,
+    "sizePresets": true,
+    "customSizeApplied": true,
+    "viewFitsNewSize": true,
+    "sourceRestoration": true,
+    "mainMapPreview": true,
+    "stepping": true,
+    "globalGenerate": true,
+    "backendPreserved": true
+  },
+  "terrainbench": {
+    "terrainInStack": true,
+    "sizeVisible": true
+  },
+  "errors": []
+}

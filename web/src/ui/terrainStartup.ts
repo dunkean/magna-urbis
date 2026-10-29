@@ -39,7 +39,7 @@ if (source && overlay) {
     if (next.message?.includes('calcul coarse')) { modelsLoaded = true; showModels(); }
   }
   function showModels(): void {
-    const neural = source!.value !== 'procedural'; model.hidden = !neural;
+    const neural = !['procedural', 'procedural-phasor'].includes(source!.value); model.hidden = !neural;
     if (source!.value === 'neural-wasm') {
       model.textContent = t(modelsLoaded ? 'browserReady' : 'browserWaiting');
       model.dataset.state = modelsLoaded ? 'ready' : 'waiting';

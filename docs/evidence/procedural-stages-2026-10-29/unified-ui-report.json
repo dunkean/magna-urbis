@@ -1,0 +1,15 @@
+{
+  "v2": {
+    "source": "procedural",
+    "quality": "fast",
+    "intensity": "0.7"
+  },
+  "legacyCpu": true,
+  "v2Bridge": {
+    "backend": "compact-gpu-f32",
+    "finite": true
+  },
+  "terrainbench": true,
+  "rustbench": true,
+  "errors": []
+}

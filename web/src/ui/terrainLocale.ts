@@ -4,6 +4,10 @@ const locales: Locale[] = ['fr', 'en', 'zh', 'es', 'pt'];
 const fields: Record<string, Words> = {
   seed:['Graine','Seed','种子','Semilla','Semente'],
   terrainSource:['Source','Source','来源','Fuente','Origem'],
+  phasorQuality:['Grille compacte','Compact grid','紧凑网格','Malla compacta','Grade compacta'],
+  proceduralPreset:['Préréglage procédural','Procedural preset','程序预设','Preajuste procedural','Predefinição procedural'],
+  proceduralPhasor:['Détail Phasor','Phasor detail','Phasor 细节','Detalle Phasor','Detalhe Phasor'],
+  phasorIntensity:['Intensité Phasor','Phasor intensity','Phasor 强度','Intensidad Phasor','Intensidade Phasor'],
   motifSize:['Échelle du relief · m','Landform scale · m','地貌尺度 · 米','Escala del relieve · m','Escala do relevo · m'],
   relief:['Relief de fond','Background relief','背景地形','Relieve de fondo','Relevo de fundo'],
   neuralFit:['Étendue','Extent','范围','Extensión','Extensão'],
@@ -83,7 +87,17 @@ const buttons: Record<string, Words> = {
   generateHydrology:['Recalculer l’eau','Recalculate water','重新计算水系','Recalcular agua','Recalcular água'],
 };
 const choices: Record<string, Record<string, Words>> = {
+  refinement3d: {
+    source:['Source','Source','源地形','Fuente','Fonte'],
+    noise:['Noise multiscale','Multiscale noise','多尺度噪声','Ruido multiescala','Ruído multiescala'],
+    'neural-earth':['Neural Earth · Classique','Neural Earth · Classic','Neural Earth · 经典','Neural Earth · Clásico','Neural Earth · Clássico'],
+    'neural-earth-phasor':['Neural Earth · Phasor','Neural Earth · Phasor','Neural Earth · Phasor','Neural Earth · Phasor','Neural Earth · Phasor'],
+    'neural-earth-hybrid':['Neural Earth · Hybride','Neural Earth · Hybrid','Neural Earth · 混合','Neural Earth · Híbrido','Neural Earth · Híbrido'],
+    'neural-earth-mse':['Neural Earth · MSE (expérimental)','Neural Earth · MSE (experimental)','Neural Earth · MSE（实验）','Neural Earth · MSE (experimental)','Neural Earth · MSE (experimental)'],
+  },
+  phasorQuality: {fast:['Rapide','Fast','快速','Rápida','Rápida'],balanced:['Équilibrée','Balanced','均衡','Equilibrada','Equilibrada'],detailed:['Détaillée','Detailed','详细','Detallada','Detalhada']},
   terrainSource: {
+    'procedural-phasor':['Procédural Phasor · compact','Procedural Phasor · compact','程序化 Phasor · 紧凑','Procedural Phasor · compacto','Procedural Phasor · compacto'],
     procedural:['Procédural','Procedural','程序生成','Procedural','Procedural'],
     'neural-wasm':['Neuronal WASM · navigateur','Neural WASM · browser','神经 WASM · 浏览器','Neuronal WASM · navegador','Neural WASM · navegador'],
     'neural-python':['Neuronal Python · CUDA','Neural Python · CUDA','神经 Python · CUDA','Neuronal Python · CUDA','Neural Python · CUDA'],

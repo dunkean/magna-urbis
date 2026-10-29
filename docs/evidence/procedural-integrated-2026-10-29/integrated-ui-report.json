@@ -1,0 +1,31 @@
+{
+  "cpu": {
+    "inline": true,
+    "mainMapPreview": true,
+    "stepping": true,
+    "globalGenerate": true,
+    "backendPreserved": true
+  },
+  "gpu": {
+    "inline": true,
+    "mainMapPreview": true,
+    "stepping": true,
+    "globalGenerate": true,
+    "backendPreserved": true
+  },
+  "hybrid": {
+    "inline": true,
+    "mainMapPreview": true,
+    "stepping": true,
+    "globalGenerate": true,
+    "backendPreserved": true
+  },
+  "native": {
+    "inline": true,
+    "mainMapPreview": true,
+    "stepping": true,
+    "globalGenerate": true,
+    "backendPreserved": true
+  },
+  "errors": []
+}

@@ -1,3 +1,7 @@
+import { mountProceduralInspector, type ProceduralInspector } from './proceduralInspector';
+import { TerrainPipelineSession, pipelinePreview } from './terrainPipelineSession';
+import { compactBudget } from '../../../rust/bridge/terrainPhasor';
+import { validateProceduralRecipe, isCompactProcedural, type ProceduralRecipe } from '../../../rust/bridge/terrainGenerationRecipe';
 import { renderV2Number } from '../../../rust/bridge/terrainRenderV2';
 import { TERRAIN_LAYER_CONTROLS, DISPLAY_VOCABULARY } from '../render/displayLayers';
 import { seaDistanceSurface } from '../render/terrainWater';
@@ -29,7 +33,7 @@ import { terrain3dTexture } from './terrain3dTexture';
 import { withBuildingOccupation } from './forestOccupation';
 import type { PlacementBatch } from '../../../rust/bridge/urbanArchitecture';
 import { city3dScene, rasterHeight } from '../render/city3dMeshes';
-import { TerrainRefinementSession, type TerrainRefinement } from './terrainRefinement';
+import { TerrainRefinementSession, isNeuralRefinement, refinementAmplification, type TerrainRefinement } from './terrainRefinement';
 import neuralModels from '../../../rust/models/neural-earth/catalog.json';
 import { CONTOUR_INTERVAL } from '../render/contours';
 import { DEFAULT_FRACTAL_DETAIL, neuralWindow, seedHash, type FractalDetail } from '../../../rust/bridge/terrainAdjust';
@@ -101,6 +105,10 @@ else {
   });
 }
 const query = sketchQuery(new URL(location.href));
+let proceduralPanel:ProceduralInspector|undefined;
+let mainPipelineSession:TerrainPipelineSession|undefined;
+let proceduralRecipe:ProceduralRecipe={biome:true}, proceduralRecipeError='';
+try{if(query.has('procedural')){proceduralRecipe=JSON.parse(query.get('procedural')!);validateProceduralRecipe(proceduralRecipe);}}catch(error){proceduralRecipe={biome:true};proceduralRecipeError=String(error);}
 for (const [field, entries] of [['coarseModel', neuralModels.coarse], ['baseModel', neuralModels.base], ['decoderModel', neuralModels.decoder]] as const) {
   const control = el<HTMLSelectElement>(field);
   control.replaceChildren(...entries.map(entry => new Option(entry.label, entry.id)));
@@ -211,7 +219,9 @@ const initialRelief = query.get('relief') as TerrainRelief;
 const geological = (relief: string): boolean => (GEOLOGICAL_RELIEFS as readonly string[]).includes(relief);
 const initialEnvironment = query.get('environment') as TerrainEnvironment;
 // Bare legacy neural links follow Python/CUDA; an explicit endpoint retains native replay.
-const initialSource = initialTerrainSource(query, profileDefaults.neural);
+const savedSource = initialTerrainSource(query, profileDefaults.neural);
+if(savedSource==='procedural-phasor' && proceduralRecipe.preset===undefined)proceduralRecipe.preset='compact';
+const initialSource = savedSource === 'procedural-phasor' ? 'procedural' : savedSource;
 const neuralRelief = (relief: string): boolean => (NEURAL_RELIEFS as readonly string[]).includes(relief);
 // A custom endpoint belongs to the backend selected by the link, not subsequent modes.
 const neuralServerFor = (source?: TerrainSource): string => neuralServerForSource(source, source === initialSource ? query.get('neural') : undefined);
@@ -264,7 +274,8 @@ const readDetailNoise = (value: (key: keyof FractalDetail, id: string) => string
   (Object.entries(detailNoiseFields) as [keyof FractalDetail, readonly [string, number, number]][])
     .map(([key, [id, min, max]]) => [key, bounded(finite(value(key, id), DEFAULT_FRACTAL_DETAIL[key]), min, max)])) as unknown as FractalDetail;
 const initialClimate = query.get('climate') ?? 'temperate';
-const initialClimateValues: ClimateValues = { ...CLIMATE_VALUES[(NEURAL_CLIMATES as readonly string[]).includes(initialClimate) ? initialClimate as NeuralClimate : 'temperate'] };
+let selectedClimateBase:NeuralClimate=NEURAL_CLIMATES.includes(initialClimate as NeuralClimate)?initialClimate as NeuralClimate:NEURAL_CLIMATES.includes(query.get('climateBase') as NeuralClimate)?query.get('climateBase') as NeuralClimate:'temperate';
+const initialClimateValues: ClimateValues = { ...CLIMATE_VALUES[selectedClimateBase] };
 if (initialClimate === 'custom') for (const key of Object.keys(climateFields) as (keyof ClimateValues)[]) initialClimateValues[key] = finite(query.get(key), initialClimateValues[key]);
 const initialTuning: NeuralTuning = { ...DEFAULT_NEURAL_TUNING, histogram: [...DEFAULT_NEURAL_TUNING.histogram] };
 if (initialSource === 'neural-python' && !query.has('n_steps')) initialTuning.steps = neuralModels.coarse.find(model => model.id === el<HTMLSelectElement>('coarseModel').value)?.steps ?? initialTuning.steps;
@@ -296,7 +307,7 @@ let settings: TerrainSettings = {
   seed: query.get('seed')?.slice(0, 120) || '42',
   width: bounded(finite(query.get('width'), 2400), 500, 100000),
   // Version 1 links had no independent physical motif scale.
-  motifSize: bounded(finite(query.get('motif'), 3000), 250, 50000),
+  motifSize: bounded(finite(query.get('motif'), 10000), 250, 50000),
   relief: RELIEFS.includes(initialRelief) ? initialRelief : 'flat',
   environment: ENVIRONMENT_RELIEFS.includes(initialEnvironment) ? initialEnvironment : 'mixed',
   coastMask: (query.get('coasts') ?? '').split(',').reduce((mask, direction) => {
@@ -309,7 +320,8 @@ let settings: TerrainSettings = {
   compute: COMPUTE_MODES.includes(query.get('compute') as TerrainCompute) ? query.get('compute') as TerrainCompute : profileDefaults.compute as TerrainCompute,
   generationCompute: ['cpu', 'gpu', 'gpu-all', 'gpu-erosion', ...(executionRuntime.profile === 'local' ? ['native'] : [])].includes(query.get('generation') ?? '') ? query.get('generation') as TerrainSettings['generationCompute'] : profileDefaults.generation as TerrainSettings['generationCompute'],
   source: initialSource,
-  climate: NEURAL_CLIMATES.includes(query.get('climate') as NeuralClimate) ? query.get('climate') as NeuralClimate : 'temperate',
+  phasor: { quality: ['fast','balanced','detailed'].includes(query.get('phasorQuality') ?? '') ? query.get('phasorQuality') as 'fast' | 'balanced' | 'detailed' : 'balanced', intensity: bounded(finite(query.get('phasorIntensity'),1),0,2) },
+  climate: selectedClimateBase,
   climateValues: initialClimateValues,
   fidelity: initialFidelity,
   neuralServer: neuralServerFor(initialSource), neuralAssets,
@@ -397,10 +409,10 @@ diagnosticSelect.value = elevationDiagnostic ? 'elevation' : hydroOverlay;
 let view: View = viewFromString(query.get('view')) || fitView(settings.width, viewport.clientWidth, viewport.clientHeight);
 let terrain: TerrainData | undefined;
 let sketchEditor: ReturnType<typeof createTerrainSketchEditor> | undefined;
-let zoningWasActive = !!initialZones, zoningSource = initialSource;
+let zoningWasActive = !!initialZones, zoningSource:TerrainSource = initialSource;
 let pinMode = false, generation = 0, requestId = 0, terrainGeneration = 0;
 let overviewRequest: TerrainRequest | undefined, detailRequest: TerrainRequest | undefined;
-let overviewPending = false, generationError: string | undefined;
+let overviewPending = false, pipelinePaused = false, generationError: string | undefined;
 let generationTimer: ReturnType<typeof setTimeout> | undefined, detailTimer: ReturnType<typeof setTimeout> | undefined;
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 let renderingMs = 0, contourStep = 0, detailSamplingMs = 0;
@@ -415,7 +427,7 @@ const detailCache = new Map<string, DetailTile>();
 let displayedDetail: DetailTile | undefined;
 let cursor: [number, number] | undefined;
 let perspective = false, terrain3d: Terrain3d | undefined;
-let refinement3d: TerrainRefinement = query.get('refinement3d') === 'source' ? 'source' : query.get('refinement3d') === 'neural-earth' ? 'neural-earth' : 'noise';
+let refinement3d: TerrainRefinement = query.get('refinement3d') === 'source' ? 'source' : isNeuralRefinement(query.get('refinement3d') ?? '') ? query.get('refinement3d') as TerrainRefinement : 'noise';
 let refinementTerrain: TerrainData | undefined, refinementReady: Promise<TerrainRefinementSession> | undefined;
 let refinementSession: TerrainRefinementSession | undefined, refinement2dTimer: ReturnType<typeof setTimeout> | undefined, refinement2dKey = '';
 let refinementEpoch = 0, refinement2dWanted = '';
@@ -498,8 +510,8 @@ const perspectiveScale = (camera: Terrain3dCamera): number => viewport.clientHei
 
 function refinementStatus(message: string): void {
   el('refinement3dStatus').textContent = message;
-  el('refinement3dStatus').hidden = refinement3d !== 'neural-earth' || !(perspective || isRender3dStyle(style));
-  el('retryRefinement').hidden = !refinementError || refinement3d !== 'neural-earth' || !(perspective || isRender3dStyle(style));
+  el('refinement3dStatus').hidden = !isNeuralRefinement(refinement3d) || !(perspective || isRender3dStyle(style));
+  el('retryRefinement').hidden = !refinementError || !isNeuralRefinement(refinement3d) || !(perspective || isRender3dStyle(style));
 }
 
 function reportRefinementError(error: unknown): void {
@@ -517,12 +529,12 @@ function ensureRefinement(): Promise<TerrainRefinementSession> {
     refinementStatus(urbanText(['Neural Earth · préparation…','Neural Earth · preparing…','Neural Earth · 正在准备…','Neural Earth · preparando…','Neural Earth · preparando…']));
     const server = settings.source === 'neural-python' ? settings.neuralServer ?? DEFAULT_PYTHON_SERVER : DEFAULT_PYTHON_SERVER;
     refinementReady = TerrainRefinementSession.create(server, { x: 0, y: 0, width: retained.width, n: field?.n ?? retained.resolution, data: field?.data ?? retained.height }, {
-      seed: retained.neural?.neuralSeed ?? String(seedHash(settings.seed) >>> 0), source: settings.source, neuralToken: retained.neural?.neuralToken,
+      seed: retained.neural?.neuralSeed ?? String(seedHash(settings.seed) >>> 0), source: settings.source, amplification: refinementAmplification(refinement3d), neuralToken: retained.neural?.neuralToken,
       neuralWindow: isNeuralSource(settings.source) ? neuralWindow(NEURAL_EXTENT, retained.width, settings.neuralFit ?? 'crop', settings.neuralSlopes ?? true, settings.coastMask ?? 0) : undefined,
     }).then(session => {
       if (refinementTerrain !== retained || epoch !== refinementEpoch) { session.dispose(); throw new DOMException('Terrain remplacé', 'AbortError'); }
       refinementSession = session;
-      refinementStatus(`Neural Earth · ${session.registration.decoderUsed ? urbanText(['décodeur + noise','decoder + noise','解码器 + 噪声','decodificador + ruido','decodificador + ruído']) : urbanText(['noise sur relief retenu','noise on retained terrain','保留地形上的噪声','ruido sobre relieve conservado','ruído sobre relevo mantido'])} · ${urbanText(['jusqu’à','down to','最低','hasta','até'])} ${session.registration.minMpp.toLocaleString(undefined, { maximumFractionDigits: 3 })} m`);
+      refinementStatus(`Neural Earth · ${session.registration.amplification ?? 'classic'} · ${session.registration.decoderUsed ? urbanText(['décodeur + noise','decoder + noise','解码器 + 噪声','decodificador + ruido','decodificador + ruído']) : urbanText(['noise sur relief retenu','noise on retained terrain','保留地形上的噪声','ruido sobre relieve conservado','ruído sobre relevo mantido'])} · ${urbanText(['jusqu’à','down to','最低','hasta','até'])} ${session.registration.minMpp.toLocaleString(undefined, { maximumFractionDigits: 3 })} m`);
       return session;
     }).catch(error => {
       if (refinementTerrain === retained && epoch === refinementEpoch) { refinementError = error instanceof Error ? error.message : String(error); refinementStatus(refinementError); }
@@ -534,7 +546,7 @@ function ensureRefinement(): Promise<TerrainRefinementSession> {
 
 function schedule2dRefinement(): void {
   clearTimeout(refinement2dTimer);
-  if (perspective || !isRender3dStyle(style) || refinement3d !== 'neural-earth' || !terrain || !gpu || (refinementError && refinementTerrain === terrain)) return;
+  if (perspective || !isRender3dStyle(style) || !isNeuralRefinement(refinement3d) || !terrain || !gpu || (refinementError && refinementTerrain === terrain)) return;
   const currentTerrain = terrain, extent = Math.max(viewport.clientWidth, viewport.clientHeight) / view.scale * 1.5;
   const step = extent / 8, x = Math.floor((view.cx - extent / 2) / step) * step, y = Math.floor((view.cy - extent / 2) / step) * step;
   const key = `${generation}:${x}:${y}:${extent}`;
@@ -542,10 +554,10 @@ function schedule2dRefinement(): void {
   if (key === refinement2dKey) return;
   refinement2dTimer = setTimeout(() => {
     void ensureRefinement().then(session => session.tile({ x, y, width: extent }, 768)).then(height => {
-      if (terrain !== currentTerrain || perspective || !isRender3dStyle(style) || refinement3d !== 'neural-earth' || key !== refinement2dWanted) return;
+      if (terrain !== currentTerrain || perspective || !isRender3dStyle(style) || !isNeuralRefinement(refinement3d) || key !== refinement2dWanted) return;
       refinement2dKey = key; gpu?.setEnhancedDetail(height);
     }).catch(error => {
-      if (terrain === currentTerrain && !perspective && isRender3dStyle(style) && refinement3d === 'neural-earth' && key === refinement2dWanted) reportRefinementError(error);
+      if (terrain === currentTerrain && !perspective && isRender3dStyle(style) && isNeuralRefinement(refinement3d) && key === refinement2dWanted) reportRefinementError(error);
     });
   }, 160);
 }
@@ -590,7 +602,7 @@ async function load3dTile(tile: Terrain3dTile) {
   // The map canvas is hidden during flyover; restore it when returning to 2D,
   // rather than repainting the entire map after every small material tile.
   let height;
-  try { height = refinement3d === 'neural-earth' ? await (await ensureRefinement()).tile(tile, tile.pixels) : undefined; }
+  try { height = isNeuralRefinement(refinement3d) ? await (await ensureRefinement()).tile(tile, tile.pixels) : undefined; }
   catch (error) { if (epoch === texture3dEpoch) reportRefinementError(error); throw error; }
   if (!perspective || epoch !== texture3dEpoch) throw new DOMException('Tuile remplacée', 'AbortError');
   // Sample real neighbours into a gutter, rather than duplicating the edge
@@ -617,6 +629,7 @@ function ground3dEnabled(): boolean { return isRender3dStyle(style) && layers.re
 function forestActive(): boolean { return forest.enabled && ground3dEnabled(); }
 /** The shown canonical field for Render3D rasters (no TerrainGl); undefined keeps the legacy canopy. */
 function forestRaster(region = terrain): ForestRaster | undefined {
+  if(overviewPending&&overviewRequest?.inspection?.previews)return undefined;
   if (!isRender3dStyle(style) || (!forestShown&&!style.startsWith('render-v2')) || !terrain || !region) return undefined;
   return { waterVisible:input('showWater').checked,field: forestShown?.field, occupation: displayedForestOccupation(forestShown?.occupation), brushes: style === 'render3d-brush',
     water: !input('showWater').checked&&!style.startsWith('render-v2') ? undefined : retainedDecor ? forestRetainedWater(retainedDecor.meta.waterSvg, terrain.width, region, input('showLakes').checked)
@@ -712,6 +725,7 @@ function runForest(): void {
 /** Coalesced build in the forest worker; the key covers every input of the field. */
 function scheduleForest(delay = 0): void {
   clearTimeout(forestTimer);
+  if(overviewPending&&overviewRequest?.inspection?.previews){if(forestShown)showForest(undefined);return;}
   if (!terrain || !forestActive()) { forestWanted = ''; if (forestShown) showForest(undefined); return; }
   const data = terrain, field = data.field, n = field?.n ?? data.resolution;
   const height = { x: 0, y: 0, width: data.width, n, data: field?.data ?? data.height };
@@ -744,7 +758,7 @@ updateForestControls();
 function setPerspective(active: boolean): void {
   active &&= !legacyPipeline && !!gpu;
   if (active && !terrain3d) {
-    try { terrain3d = new Terrain3d(el<HTMLCanvasElement>('terrain3d'), camera3dChanged, () => ruler.update()); terrain3d.setTileLoader(load3dTile, refinement3d === 'neural-earth'); terrain3d.setForest(forestShown?.field, forestShown?.occupation); }
+    try { terrain3d = new Terrain3d(el<HTMLCanvasElement>('terrain3d'), camera3dChanged, () => ruler.update()); terrain3d.setTileLoader(load3dTile, isNeuralRefinement(refinement3d)); terrain3d.setForest(forestShown?.field, forestShown?.occupation); }
     catch (error) { status(`Vue 3D : ${error instanceof Error ? error.message : error}`, true); active = false; }
   }
   if (active) {
@@ -767,8 +781,8 @@ function setPerspective(active: boolean): void {
   el('projection3d').title = active ? urbanText(['Revenir à la carte 2D','Return to 2D map','返回二维地图','Volver al mapa 2D','Voltar ao mapa 2D']) : urbanText(['Survoler le relief en 3D','Fly over terrain in 3D','三维俯瞰地形','Sobrevolar el relieve en 3D','Sobrevoar o relevo em 3D']);
   el('perspectiveControls').hidden = !active;
   el('refinement3dControl').hidden = !active && !isRender3dStyle(style);
-  el('refinement3dStatus').hidden = refinement3d !== 'neural-earth' || (!active && !isRender3dStyle(style));
-  el('retryRefinement').hidden = !refinementError || refinement3d !== 'neural-earth' || (!active && !isRender3dStyle(style));
+  el('refinement3dStatus').hidden = !isNeuralRefinement(refinement3d) || (!active && !isRender3dStyle(style));
+  el('retryRefinement').hidden = !refinementError || !isNeuralRefinement(refinement3d) || (!active && !isRender3dStyle(style));
   el('terrain3d').setAttribute('aria-hidden', String(!active));
   el('terrain3d').tabIndex = active ? 0 : -1;
   terrain3d?.setActive(active);
@@ -908,6 +922,8 @@ el<HTMLSelectElement>('relief').value = settings.relief; el<HTMLSelectElement>('
 el<HTMLSelectElement>('environment').value = settings.environment!;
 el<HTMLSelectElement>('compute').value = settings.compute!;
 el<HTMLSelectElement>('generationCompute').value = settings.generationCompute!;
+el<HTMLSelectElement>('proceduralPreset').value = proceduralRecipe.preset ?? 'classic'; input('proceduralPhasor').checked = proceduralRecipe.enabled?.phasor ?? proceduralRecipe.preset==='compact';
+el<HTMLSelectElement>('phasorQuality').value = settings.phasor?.quality ?? 'balanced'; input('phasorIntensity').value = String(settings.phasor?.intensity ?? 1);
 if (settings.source === 'neural') {
   const legacy = document.createElement('option'); legacy.value = 'neural'; legacy.textContent = 'Rust natif · ancien lien'; el('terrainSource').append(legacy);
 }
@@ -973,9 +989,17 @@ const isNeural = (): boolean => !sketchEditor?.snapshot()?.processing && isNeura
 /** Neural relief: 40 km surface cropped or scaled to the map, regional families only, no procedural motif or erosion. */
 function updateSourceControl(): void {
   const inputProcessing = sketchEditor ? sketchEditor?.snapshot()?.processing : settings.sketch?.processing;
+  const compact = isCompactProcedural({source:el<HTMLSelectElement>('terrainSource').value as TerrainSource,procedural:proceduralRecipe});
+  el('compactControls').hidden = isNeural() || !!inputProcessing;
+  el('proceduralInspector').hidden = isNeural();
+  proceduralPanel?.syncSource(!isNeural());
+  const generationChoice = el<HTMLSelectElement>('generationCompute');
+  for (const option of Array.from(generationChoice.options)) option.disabled = compact && !['cpu','gpu-erosion','native'].includes(option.value);
+  if (compact && !['cpu','gpu-erosion','native'].includes(generationChoice.value)) generationChoice.value = 'gpu-erosion';
   const neural = isNeural() && !inputProcessing, relief = el<HTMLSelectElement>('relief');
   el<HTMLSelectElement>('terrainSource').disabled = !!inputProcessing;
-  for (const option of Array.from(relief.options)) option.disabled = neural && !neuralRelief(option.value);
+  for (const option of Array.from(relief.options)) option.disabled = neural && !neuralRelief(option.value) || compact && !['flat','hills','valley','canyon','mountains','mixed','high-mountains'].includes(option.value);
+  if (compact && ['plateau','volcano','caldera','cavern'].includes(relief.value)) relief.value = 'mixed';
   if (neural && !neuralRelief(relief.value)) relief.value = 'mixed';
   input('width').title = neural ? 'Map width: cropped window or scaled version of the 40 km neural surface' : '';
   el('motifControl').hidden = neural || inputProcessing === 'surface';
@@ -1063,6 +1087,8 @@ function status(message: string, error = false): void {
 }
 function shareQuery(): string {
   const params = new URLSearchParams({ brush_density: String(fantasyOptions.density), brush_size: String(fantasyOptions.size), brush_spacing: String(fantasyOptions.spacing), engine: 'rust', v: '4', seed: settings.seed, width: String(settings.width), motif: String(settings.motifSize), relief: settings.relief, erosion: String(settings.erosion), style: baseStyle, auto: input('auto').checked ? '1' : '0' });
+  params.set('source',settings.source??'procedural');
+  if(!isNeuralSource(settings.source))params.set('procedural',JSON.stringify(settings.procedural??proceduralRecipe));
   writeRenderColorsQuery(params, getBenchRenderColors());
   copySurfaceGeologyQuery(params, query.has('surface_geology') || query.has('surface_geology_descriptor') ? query : retainedDecor?.meta.query ?? query);
   if (!gpu) params.set('render', 'svg');
@@ -1079,9 +1105,11 @@ function shareQuery(): string {
   const climate = climateOf(settings), preset = CLIMATE_VALUES[settings.climate ?? 'temperate'];
   const custom = (Object.keys(preset) as (keyof ClimateValues)[]).some(key => preset[key] !== climate[key]);
   params.set('climate', custom ? 'custom' : settings.climate ?? 'temperate');
+  if(custom)params.set('climateBase',settings.climate??selectedClimateBase);
   if (custom) for (const [key, value] of Object.entries(climate)) params.set(key, String(value));
   params.set('refine', settings.refine ? '1' : '0');
   params.set('refinement3d', refinement3d);
+  params.set('phasorQuality', settings.phasor?.quality ?? 'balanced'); params.set('phasorIntensity', String(settings.phasor?.intensity ?? 1));
   params.set('v2season',String(v2Season));
   params.set('forest', forest.enabled ? '1' : '0');
   if (forest.density !== DEFAULT_FOREST_SETTINGS.density) params.set('forestDensity', String(forest.density));
@@ -1242,7 +1270,7 @@ function renderedStatus(): void {
   const detail = displayedDetail ? ` · detail ${displayedDetail.terrain.resolution}² (${(displayedDetail.terrain.width / displayedDetail.terrain.resolution).toFixed(2)} m) · sampling ${detailSamplingMs.toFixed(0)} ms` : '';
   const data = displayedDetail?.terrain ?? terrain;
   const backend = data.backend === 'native' ? 'Rust natif' : data.backend === 'wasm' ? `CPU Rust${data.backendReason ? ` (${data.backendReason})` : ''}` : 'GPU FP32';
-  const generationBackend = terrain.generationBackend === 'native' ? 'Rust natif' : terrain.generationBackend === 'gpu-erosion-f32' ? 'GPU FP32 erosion' : terrain.generationBackend === 'gpu-noise-all-f32' ? 'all GPU FP32 noise + CPU erosion' : terrain.generationBackend === 'gpu-noise-f32' ? 'fine GPU FP32 noise + CPU erosion' : 'CPU generation';
+  const generationBackend = terrain.generationBackend === 'compact-gpu-f32' ? 'GPU FP32 compact' : terrain.generationBackend === 'compact-cpu' ? 'CPU compact' : terrain.generationBackend === 'native' ? 'Rust natif' : terrain.generationBackend === 'gpu-erosion-f32' ? 'GPU FP32 erosion' : terrain.generationBackend === 'gpu-noise-all-f32' ? 'all GPU FP32 noise + CPU erosion' : terrain.generationBackend === 'gpu-noise-f32' ? 'fine GPU FP32 noise + CPU erosion' : 'CPU generation';
   const preparation = terrain.prepareMs === undefined ? '' : ` · preparation ${terrain.prepareMs.toFixed(0)} ms (${generationBackend}${terrain.gpuSimulationMs ? `, GPU simulation ${terrain.gpuSimulationMs.toFixed(0)} ms` : ''}${terrain.nativeEnvironmentMs ? `, CPU surroundings ${terrain.nativeEnvironmentMs.toFixed(0)} ms` : ''}${terrain.noiseMs ? `, noise ${terrain.noiseMs.toFixed(0)} ms, Rust remainder ${terrain.erosionMs!.toFixed(0)} ms` : ''})${terrain.generationReason ? ` · ${terrain.generationReason}` : ''}`;
   const setup = terrain.gpuSetupMs ? ` · GPU initialization ${terrain.gpuSetupMs.toFixed(0)} ms` : '';
   const coast = terrain.coastBackend ? ` · coast + erosion ${terrain.coastBackend === 'gpu-f32' ? 'GPU FP32' : 'Rust CPU'}${terrain.coastMs ? ` ${terrain.coastMs.toFixed(0)} ms` : ''}${terrain.coastReason ? ` (${terrain.coastReason})` : ''}` : '';
@@ -1511,7 +1539,7 @@ function cacheDetail(tile: DetailTile): void {
 }
 function scheduleDetail(): void {
   clearTimeout(detailTimer);
-  if (!terrain || terrainGeneration !== generation || !needsDetail()) return;
+  if (overviewPending || !terrain || terrainGeneration !== generation || !needsDetail()) return;
   const region = regionForView(), key = detailKey(region);
   if (displayedDetail?.key === key || (detailRequest && detailKey(detailRequest.region) === key)) return;
   detailTimer = setTimeout(() => requestDetail(), 120);
@@ -1536,10 +1564,24 @@ function localizeTerrainProgress(progress: string): string {
 }
 function receive(response: TerrainResponse): void {
   if (response.generation !== generation) return;
+  if('stage' in response){
+    proceduralPanel?.update(response.stage,response.preview?.field?.data);
+    if(response.stage.paused){pipelinePaused=true;el('generate').removeAttribute('aria-busy');terrainLoading('ready');}
+    else if(response.stage.status==='running'){pipelinePaused=false;if(overviewPending)el('generate').setAttribute('aria-busy','true');}
+    if(response.preview&&overviewRequest?.id===response.id){
+      const previousWidth=terrain?.width??settings.width;
+      viewport.dataset.pipelineStage=response.stage.stage;terrain=response.preview;settings=overviewRequest.settings;terrainGeneration=generation;
+      if(previousWidth!==terrain.width)view=fitView(terrain.width,viewport.clientWidth,viewport.clientHeight);
+      terrainLoading('ready');try{render();}catch(error){status(String(error),true);}
+    }
+    if(response.stage.paused)status('Calcul en pause · Étape suivante ou Tout calculer pour poursuivre.');
+    else if(response.stage.status==='waiting'||response.preview)status(`Pipeline · ${response.stage.stage} · ${response.stage.status==='waiting'?'en attente de l’étape suivante':'aperçu sur la carte'}`);
+    return;
+  }
   if ('progress' in response) {
     const progress = localizeTerrainProgress(response.progress);
     el('neuralState').textContent = progress; status(progress);
-    if (response.kind === 'overview' && overviewPending) terrainLoading('generation', progress);
+    if (response.kind === 'overview' && overviewPending && !pipelinePaused) terrainLoading('generation', progress);
     return;
   }
   if (response.kind === 'detail') {
@@ -1585,7 +1627,13 @@ function receive(response: TerrainResponse): void {
     return;
   }
   if ('error' in response) {
-    el('generate').removeAttribute('aria-busy'); overviewPending = false;
+    el('generate').removeAttribute('aria-busy'); overviewPending = false; pipelinePaused=false;
+    if(response.error==='Génération annulée.'){
+      generationError=undefined;proceduralPanel?.error('Génération annulée · la carte affichée est conservée.');
+      terrainLoading('ready');status('Génération annulée · vous pouvez modifier le masque ou relancer le calcul.');
+      return;
+    }
+    proceduralPanel?.error(response.error);
     generationError = response.error;
     settlements.terrainFailed(response.error);
     terrainLoading('error', response.error);
@@ -1594,6 +1642,7 @@ function receive(response: TerrainResponse): void {
   }
   const previousWidth = terrain?.width;
   terrain = response.terrain; settings = overviewRequest.settings; terrainGeneration = generation;
+  proceduralPanel?.complete(terrain);
   sketchEditor?.refresh(settings.sketch, settings.zones);
   if (previousWidth !== undefined && previousWidth !== terrain.width) view = fitView(terrain.width, viewport.clientWidth, viewport.clientHeight);
   if (terrain.erosionDefaults) showErosionDefaults(terrain.erosionDefaults);
@@ -1603,7 +1652,7 @@ function receive(response: TerrainResponse): void {
   terrainLoading('rendering', urbanText(['Le terrain est calculé. Préparation de la carte et des couches…','Terrain computed. Preparing the map and layers…','地形已计算完成。正在准备地图和图层…','Terreno calculado. Preparando el mapa y las capas…','Terreno calculado. Preparando o mapa e as camadas…']));
   requestAnimationFrame(() => requestAnimationFrame(() => {
     if (response.generation !== generation) return;
-    overviewPending = false;
+    overviewPending = false;pipelinePaused=false;
     try {
       render(prepared ? response.scene : undefined, prepared ? response.scenePreparationMs : 0); save();
       terrainLoading('ready');
@@ -1616,8 +1665,15 @@ function receive(response: TerrainResponse): void {
 let worker: Worker | undefined;
 async function runOnMain(request: TerrainRequest): Promise<void> {
   const meta = { id: request.id, generation: request.generation, kind: request.kind };
-  try { receive({ ...meta, terrain: await sampleRustTerrain(request, undefined, progress => receive({ ...meta, progress })) }); }
+  const session=request.inspection?new TerrainPipelineSession(request,stage=>{const preview=stage.height?pipelinePreview(stage.height,request):undefined;receive({...meta,stage,preview});}):undefined;
+  mainPipelineSession=session;
+  try {
+    const result=await sampleRustTerrain(request,undefined,progress=>receive({...meta,progress}),session?.control);
+    if(session){await session.control.before('render');await session.control.after('render');}
+    receive({...meta,terrain:result});
+  }
   catch (error) { receive({ ...meta, error: error instanceof Error ? error.message : String(error) }); }
+  finally{if(mainPipelineSession===session)mainPipelineSession=undefined;}
 }
 function dispatch(request: TerrainRequest): void {
   request.runtime = executionRuntime;
@@ -1646,6 +1702,7 @@ function readSettings(stage: GenerationStage = 'all', reportError = true): Terra
   if (!Number.isFinite(motifSize) || motifSize < 250 || motifSize > 50000) {
     if (reportError) status('Enter a landform scale between 250 and 50,000 m.', true); return;
   }
+  if(proceduralRecipeError){if(reportError)status(`Recette procédurale invalide : ${proceduralRecipeError}`,true);return;}
   const relief = el<HTMLSelectElement>('relief').value as TerrainRelief;
   if (!RELIEFS.includes(relief)) { if (reportError) status('Choose a terrain type from the menu.', true); return; }
   if (!sketchEditor?.snapshot()?.processing && isNeuralSource(source) && !neuralRelief(relief)) { if (reportError) status('This terrain type is unavailable with the neural source.', true); return; }
@@ -1653,11 +1710,12 @@ function readSettings(stage: GenerationStage = 'all', reportError = true): Terra
   if (!ENVIRONMENT_RELIEFS.includes(environment)) { if (reportError) status('Choose the surrounding terrain from the menu.', true); return; }
   return { zones: relief === 'cavern' ? undefined : sketchEditor?.zones(), sketch: relief === 'cavern' ? undefined : sketchEditor?.snapshot(), seed, width, motifSize, relief, environment, coastMask: relief === 'cavern' ? 0 : draftCoastMask, islandMode: el<HTMLSelectElement>('islandMode').value as IslandMode, erosion: Number(input('erosion').value), mountainMix: Number(input('mountainMix').value), resolution: 512, hydrology: readHydrology(), compute: el<HTMLSelectElement>('compute').value as TerrainCompute, generationCompute: el<HTMLSelectElement>('generationCompute').value as TerrainSettings['generationCompute'], source, climate: readClimate(), climateValues: readClimateValues(), fidelity: bounded(finite(input('fidelity').value, 0.05), 0.001, 2), neuralServer: neuralServerFor(source), neuralAssets,
     neuralTuning: readTuning(), coarseModel: el<HTMLSelectElement>('coarseModel').value, baseModel: el<HTMLSelectElement>('baseModel').value, decoderModel: el<HTMLSelectElement>('decoderModel').value, neuralFit: el<HTMLSelectElement>('neuralFit').value === 'scale' ? 'scale' : 'crop', neuralSlopes: input('neuralSlopes').checked, refine: input('refine').checked,
-    detailNoise: readDetailNoise((_, id) => input(id).value), erosionTuning: readErosionTuning(name => input(`er_${name}`).value) };
+    procedural: !isNeuralSource(source)&&!['plateau','volcano','caldera','cavern'].includes(relief)&&!sketchEditor?.snapshot()?.processing ? structuredClone(proceduralRecipe) : undefined,
+    phasor: { quality: el<HTMLSelectElement>('phasorQuality').value as 'fast' | 'balanced' | 'detailed', intensity: bounded(finite(input('phasorIntensity').value,1),0,2) }, detailNoise: readDetailNoise((_, id) => input(id).value), erosionTuning: readErosionTuning(name => input(`er_${name}`).value) };
 }
 function readClimate(): NeuralClimate {
   const value = el<HTMLSelectElement>('climate').value;
-  return NEURAL_CLIMATES.includes(value as NeuralClimate) ? value as NeuralClimate : settings.climate ?? 'temperate';
+  return NEURAL_CLIMATES.includes(value as NeuralClimate) ? value as NeuralClimate : selectedClimateBase;
 }
 function readClimateValues(): ClimateValues {
   return Object.fromEntries(Object.entries(climateFields).map(([key, id]) => [key, finite(input(id).value, CLIMATE_VALUES.temperate[key as keyof ClimateValues])])) as unknown as ClimateValues;
@@ -1670,7 +1728,7 @@ function readTuning(): NeuralTuning {
   return tuning;
 }
 type GenerationStage = 'all' | 'relief' | 'coasts' | 'hydrology';
-function generate(stage: GenerationStage = 'all'): void {
+function generate(stage: GenerationStage = 'all',inspection?:TerrainRequest['inspection']): void {
   clearTimeout(generationTimer);
   if (pipelineStage === 'settlements') { settlements.terrainReady(); return; }
   const draft = readSettings(stage); if (!draft) return;
@@ -1680,11 +1738,14 @@ function generate(stage: GenerationStage = 'all'): void {
   // The climate of a procedural relief only drives the water budget.
   const next = stage === 'hydrology' ? { ...settings, hydrology: draft.hydrology, ...(isNeuralSource(settings.source) ? {} : { climate: draft.climate, climateValues: draft.climateValues }) }
     : stage === 'coasts' ? { ...settings, coastMask: draft.coastMask, islandMode: draft.islandMode }
-    : stage === 'relief' ? { ...settings, seed: draft.seed, width: draft.width, motifSize: draft.motifSize, relief: draft.relief, environment: draft.environment, erosion: draft.erosion, mountainMix: draft.mountainMix, compute: draft.compute, generationCompute: draft.generationCompute, source: draft.source, climate: draft.climate, climateValues: draft.climateValues, fidelity: draft.fidelity, zones: draft.zones, sketch: draft.sketch, neuralTuning: draft.neuralTuning, coarseModel: draft.coarseModel, baseModel: draft.baseModel, decoderModel: draft.decoderModel, neuralFit: draft.neuralFit, neuralSlopes: draft.neuralSlopes, refine: draft.refine, detailNoise: draft.detailNoise, erosionTuning: draft.erosionTuning }
+    : stage === 'relief' ? { ...settings, seed: draft.seed, width: draft.width, motifSize: draft.motifSize, relief: draft.relief, environment: draft.environment, erosion: draft.erosion, mountainMix: draft.mountainMix, compute: draft.compute, generationCompute: draft.generationCompute, source: draft.source, climate: draft.climate, climateValues: draft.climateValues, fidelity: draft.fidelity, zones: draft.zones, sketch: draft.sketch, neuralTuning: draft.neuralTuning, coarseModel: draft.coarseModel, baseModel: draft.baseModel, decoderModel: draft.decoderModel, neuralFit: draft.neuralFit, neuralSlopes: draft.neuralSlopes, refine: draft.refine, detailNoise: draft.detailNoise, phasor: draft.phasor, procedural: draft.procedural, erosionTuning: draft.erosionTuning }
     : draft;
+  mainPipelineSession?.command('cancel');
   generation++; clearTimeout(detailTimer); detailRequest = undefined; detailCache.clear(); settlements.terrainPending();
-  overviewPending = true; generationError = undefined;
-  overviewRequest = { id: ++requestId, generation, kind: 'overview', settings: next, region: { x: 0, y: 0, extent: next.width, resolution: 512 } };
+  overviewPending = true; pipelinePaused=false; generationError = undefined;
+  const trace=inspection??(!isNeuralSource(next.source)&&next.procedural&& !next.sketch&&!next.zones?{step:false,previews:false}:undefined);
+  proceduralPanel?.begin(next,!!trace?.step);
+  overviewRequest = { id: ++requestId, generation, inspection:trace, kind: 'overview', settings: next, region: { x: 0, y: 0, extent: next.width, resolution: 512 } };
   el('generate').setAttribute('aria-busy', 'true');
   const neural = !next.sketch?.processing && isNeuralSource(next.source) && stage !== 'hydrology';
   status(neural ? 'Neural generation (coarse → base → decoder), then water…' : stage === 'hydrology' ? 'Recalculating water… terrain and coasts preserved.' : stage === 'coasts' ? 'Recalculating coasts and water… terrain preserved.' : 'Generating terrain and the water network in Rust…');
@@ -1705,6 +1766,8 @@ function updateStageStates(): void {
   const climateChanged = JSON.stringify(draft.climateValues) !== JSON.stringify(settings.climateValues);
   const reliefChanged = JSON.stringify(draft.zones) !== JSON.stringify(settings.zones) || (draft.sketch !== settings.sketch && JSON.stringify(draft.sketch) !== JSON.stringify(settings.sketch)) || JSON.stringify(draft.detailNoise) !== JSON.stringify(settings.detailNoise) || (neural && (climateChanged || JSON.stringify(draft.neuralTuning) !== JSON.stringify(settings.neuralTuning)))
     || (!neural && JSON.stringify(draft.erosionTuning) !== JSON.stringify(settings.erosionTuning ?? {}))
+    || JSON.stringify(draft.procedural) !== JSON.stringify(settings.procedural) || (draft.procedural?.biome && (draft.climate !== settings.climate || climateChanged))
+    || JSON.stringify(draft.phasor) !== JSON.stringify(settings.phasor) || (isCompactProcedural(draft) && draft.climate !== settings.climate)
     || ['seed', 'width', 'motifSize', 'relief', 'environment', 'mountainMix', 'erosion', 'compute', 'generationCompute', 'source', 'fidelity', 'neuralFit', 'neuralSlopes', 'refine', 'coarseModel', 'baseModel', 'decoderModel'].some(key => draft[key as keyof TerrainSettings] !== settings[key as keyof TerrainSettings]);
   const coastChanged = draft.coastMask !== settings.coastMask || draft.islandMode !== settings.islandMode;
   const hydroChanged = JSON.stringify(draft.hydrology) !== JSON.stringify(settings.hydrology) || (!neural && climateChanged);
@@ -1726,10 +1789,10 @@ for (const name of EROSION_SETTINGS) {
   input(`er_${name}`).value = value === undefined ? '' : String(value);
   el(`er_${name}`).addEventListener('input', parameterChanged);
 }
-el('erReset').onclick = () => { for (const name of EROSION_SETTINGS) input(`er_${name}`).value = ''; parameterChanged(); };
+el('erReset').onclick = () => { delete proceduralRecipe.erosionTuning; for (const name of EROSION_SETTINGS) input(`er_${name}`).value = ''; parameterChanged(); };
 /** Placeholders: the erosion settings of the displayed relief. */
 function showErosionDefaults(values: number[] | undefined): void {
-  EROSION_SETTINGS.forEach((name, i) => { input(`er_${name}`).placeholder = values ? String(Math.round(values[i] * 1000) / 1000) : ''; });
+  EROSION_SETTINGS.forEach((name, i) => { let v=values?.[i];if(isCompactProcedural(settings)){if(name==='iterations')v=compactBudget(settings).steps;if(name==='warp')v=0;if(name==='surfaceIterations')v=settings.procedural?.enabled?.surface?12:0;if(name==='detail'&&!settings.procedural?.enabled?.ridged)v=0;} input(`er_${name}`).placeholder = v===undefined?'':String(Math.round(v * 1000) / 1000); });
 }
 for (const id of ['width', 'motifSize', 'relief', 'environment', 'mountainMix', 'erosion', 'seed', 'islandMode', 'terrainSource', 'fidelity', 'neuralFit', 'neuralSlopes', 'refine', 'nReliefMode', ...Object.values(tuningFields), 'nH0', 'nH1', 'nH2', 'nH3', 'nH4']) el(id).addEventListener('input', parameterChanged);
 for (const id of ['coarseModel', 'baseModel', 'decoderModel']) el(id).addEventListener('change', () => {
@@ -1754,6 +1817,7 @@ el('dnReset').onclick = () => {
 };
 el('climate').addEventListener('input', () => {
   const preset = CLIMATE_VALUES[el<HTMLSelectElement>('climate').value as NeuralClimate];
+  if(preset)selectedClimateBase=el<HTMLSelectElement>('climate').value as NeuralClimate;
   if (preset) for (const [key, id] of Object.entries(climateFields)) input(id).value = String(preset[key as keyof ClimateValues]);
   parameterChanged();
 });
@@ -1766,12 +1830,32 @@ coastButtons.forEach(button => { button.onclick = () => {
   parameterChanged();
 }; });
 el('coastAll').onclick = () => { draftCoastMask = draftCoastMask === 255 ? 0 : 255; parameterChanged(); };
+proceduralPanel=mountProceduralInspector({
+  read:()=>readSettings('all',true),getRecipe:()=>proceduralRecipe,
+  setRecipe:recipe=>{proceduralRecipe=recipe;proceduralRecipeError='';parameterChanged();},
+  run:(until,all)=>{
+    const draft=readSettings('all',true);if(!draft)return;
+    if(all){input('auto').checked=false;generate('all');return;}
+    if(draft.sketch||draft.zones){status('Custom mask utilise un calcul groupé : cliquez sur « Tout calculer » ou « Générer tout ».');return;}
+    if(!['hills','valley','mountains','mixed','high-mountains','canyon'].includes(draft.relief)){status('Le pas à pas couvre les reliefs régionaux automatiques : collines, vallée, montagnes, mixte, hautes montagnes et canyon.',true);return;}
+    input('auto').checked=false;generate('all',{step:true,until,previews:true});
+  },
+  command:command=>{if(worker)worker.postMessage({kind:'pipeline',command,generation});else mainPipelineSession?.command(command);},
+  maskState:()=>({enabled:sketchEditor?.isEnabled()??!!(settings.zones||settings.sketch),editing:sketchEditor?.isEditing()??false,available:el<HTMLSelectElement>('relief').value!=='cavern'}),
+  editMask:()=>sketchEditor?.startEditing(),toggleMask:enabled=>sketchEditor?.setEnabled(enabled),
+  apply:(recipe,height)=>{const sketch={version:1 as const,resolution:Math.sqrt(height.length),heights:Array.from(height),processing:'surface' as const};input('hydroEnabled').checked=false;const editor=sketchEditor?.captureContext();if(editor)sketchEditor!.restoreContext({...editor,heightmap:sketch,mode:'surface',editing:false});settings={...recipe,sketch,zones:undefined};updateErosionControl();generate();}
+});
+proceduralPanel.syncSource(!isNeural());
+el('proceduralInspector').onclick=()=>proceduralPanel?.toggle();
 el('generate').onclick = () => generate();
 el('generateRelief').onclick = () => generate('relief');
 el('generateCoasts').onclick = () => generate('coasts');
 el('generateHydrology').onclick = () => generate('hydrology');
 el<HTMLSelectElement>('compute').onchange = parameterChanged;
 el<HTMLSelectElement>('generationCompute').onchange = parameterChanged;
+el<HTMLSelectElement>('proceduralPreset').onchange = () => { proceduralRecipe.preset=el<HTMLSelectElement>('proceduralPreset').value as 'classic'|'compact'; input('proceduralPhasor').checked=proceduralRecipe.enabled?.phasor??proceduralRecipe.preset==='compact';parameterChanged(); };
+input('proceduralPhasor').onchange = () => { proceduralRecipe.enabled??={};proceduralRecipe.enabled.phasor=input('proceduralPhasor').checked;parameterChanged(); };
+el<HTMLSelectElement>('phasorQuality').onchange = parameterChanged; input('phasorIntensity').onchange = parameterChanged;
 input('auto').onchange = () => { clearTimeout(generationTimer); save(); if (input('auto').checked) generate(); };
 el('randomSeed').onclick = () => { input('seed').value = crypto.getRandomValues(new Uint32Array(1))[0].toString(36); generate(); };
 function changeStyle(next: TerrainStyle): void {
@@ -1781,8 +1865,8 @@ function changeStyle(next: TerrainStyle): void {
   if (isRender3dStyle(style)) { gpu?.setDetail(undefined); displayedDetail = undefined; }
   detailRequest = undefined; render(); save();
   el('refinement3dControl').hidden = !perspective && !isRender3dStyle(style);
-  el('refinement3dStatus').hidden = refinement3d !== 'neural-earth' || (!perspective && !isRender3dStyle(style));
-  el('retryRefinement').hidden = !refinementError || refinement3d !== 'neural-earth' || (!perspective && !isRender3dStyle(style));
+  el('refinement3dStatus').hidden = !isNeuralRefinement(refinement3d) || (!perspective && !isRender3dStyle(style));
+  el('retryRefinement').hidden = !refinementError || !isNeuralRefinement(refinement3d) || (!perspective && !isRender3dStyle(style));
   updateForestControls(); settlements.refreshForestMaterial();
 }
 window.addEventListener('bench-render-colors-change', () => { displayedDetail = undefined; detailRequest = undefined; render(); save(); });
@@ -1798,9 +1882,9 @@ function changeRefinement(): void {
   refinement3d = el<HTMLSelectElement>('refinement3d').value as TerrainRefinement;
   ++refinementEpoch;
   refinementSession?.dispose(); refinementSession = undefined; refinementReady = undefined; refinementTerrain = undefined; refinementError = ''; refinement2dKey = '';
-  gpu?.setEnhancedDetail(undefined); terrain3d?.setTileLoader(load3dTile, refinement3d === 'neural-earth');
+  gpu?.setEnhancedDetail(undefined); terrain3d?.setTileLoader(load3dTile, isNeuralRefinement(refinement3d));
   render(); schedule3dTexture(); schedule2dRefinement(); deferSave();
-  el('refinement3dStatus').hidden = refinement3d !== 'neural-earth' || (!perspective && !isRender3dStyle(style));
+  el('refinement3dStatus').hidden = !isNeuralRefinement(refinement3d) || (!perspective && !isRender3dStyle(style));
   el('retryRefinement').hidden = true;
 }
 el<HTMLSelectElement>('refinement3d').onchange = changeRefinement;
@@ -1967,14 +2051,11 @@ sketchEditor = createTerrainSketchEditor(el('terrainSketchEditor'), settings.ske
   onEnable: () => { setPerspective(false); clearTimeout(generationTimer); ruler.setEnabled(false); settlements.cancelPicking(); pinMode = false; el('pinMode').setAttribute('aria-pressed', 'false'); viewport.classList.remove('pin-mode'); },
   apply: () => generate('relief'),
 }, initialZones);
-const editMapButton = document.createElement('button'); editMapButton.id = 'editTerrain'; editMapButton.textContent = 'Zones de relief'; editMapButton.style.width = 'auto'; editMapButton.style.flex = 'none';
+const editMapButton = document.createElement('button'); editMapButton.id = 'editTerrain'; editMapButton.textContent = 'Custom mask'; editMapButton.style.width = 'auto'; editMapButton.style.flex = 'none';
 editMapButton.hidden = pipelineStage !== 'terrain' && !legacyPipeline;
 document.querySelector('nav')!.append(editMapButton);
 editMapButton.onclick = () => {
-  const details = el('terrainSketchEditor').querySelector('details')!;
-  for (let parent = details.parentElement; parent; parent = parent.parentElement) if (parent instanceof HTMLDetailsElement) parent.open = true;
-  details.open = true; details.scrollIntoView({ block: 'nearest' });
-  el('terrainSketchEditor').querySelector<HTMLButtonElement>('[data-id=edit]')!.click();
+  if(sketchEditor?.isEditing())sketchEditor.setEditing(false);else proceduralPanel?.editMask();
 };
 installTerrainHelp();
 updateErosionControl();

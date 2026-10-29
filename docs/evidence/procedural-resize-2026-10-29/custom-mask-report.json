@@ -1,0 +1,37 @@
+{
+  "report": [
+    {
+      "layout": "rustbench",
+      "preset": "compact",
+      "interactiveInputStage": true,
+      "mainMapOverlay": true,
+      "transparent": true,
+      "brushAndEraser": true,
+      "undoRedo": true,
+      "fillAndClear": true,
+      "zoneImportExport": true,
+      "heightmapImportExport": true,
+      "zoomAligned": true,
+      "maskApplied": true,
+      "toggleRetainsDrawing": true,
+      "neuralCardRetained": true
+    },
+    {
+      "layout": "terrainbench",
+      "preset": "classic",
+      "interactiveInputStage": true,
+      "mainMapOverlay": true,
+      "transparent": true,
+      "brushAndEraser": true,
+      "undoRedo": true,
+      "fillAndClear": true,
+      "zoneImportExport": true,
+      "heightmapImportExport": true,
+      "zoomAligned": true,
+      "maskApplied": true,
+      "toggleRetainsDrawing": true,
+      "neuralCardRetained": true
+    }
+  ],
+  "errors": []
+}

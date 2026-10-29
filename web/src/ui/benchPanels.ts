@@ -14,7 +14,7 @@ type PanelSpec = {
 };
 
 const specs: Record<string, PanelSpec> = {
-  reliefStage: { main: '#width, #relief, #climate, #motifSize, #erosion, #environment, #mountainMix', method: '#terrainMethod', compute: '#terrainSource, #generationCompute, #compute', action: '#generateRelief' },
+  reliefStage: { main: '#width, #relief, #climate, #motifSize, #erosion, #environment, #mountainMix, #compactControls, #proceduralInspector', method: '#terrainMethod', compute: '#terrainSource, #generationCompute, #compute', action: '#generateRelief' },
   coastStage: { main: '#coastControl', methodText: 'Découpe du relief', computeText: 'Support du terrain · Rust / WebGPU', action: '#generateCoasts' },
   hydroStage: { main: '#hydroEnabled, #rustControls', method: '#hydroEngine', compute: '#hydroCompute', action: '#generateHydrology' },
   urbanQuarterStage: { main: '[data-enabled], #urbanTarget, [data-footprint="family"], [data-config="culture"]', method: '[data-config="composition"], [data-footprint="mechanism"], [data-config="tissue"]', computeText: 'CPU · Rust / WASM', action: '[data-apply]' },
@@ -66,7 +66,7 @@ function terrainMethod(): void {
   const source = document.querySelector<HTMLSelectElement>('#terrainSource');
   if (!source || document.getElementById('terrainMethod')) return;
   if (!source.dataset.sourceInitialized) {
-    source.value = initialTerrainSource(new URLSearchParams(location.search), executionProfiles[executionRuntime.profile].neural);
+    const initialSource=initialTerrainSource(new URLSearchParams(location.search), executionProfiles[executionRuntime.profile].neural);source.value=initialSource==='procedural-phasor'?'procedural':initialSource;
     source.dataset.sourceInitialized = 'true';
   }
   const method = document.createElement('select'); method.id = 'terrainMethod';
@@ -78,18 +78,18 @@ function terrainMethod(): void {
   for (const option of Array.from(source.options)) option.textContent = names[option.value] ?? option.textContent;
   let neuralSupport: string = executionProfiles[executionRuntime.profile].neural;
   const sync = (): void => {
-    method.value = source.value === 'procedural' ? 'procedural' : 'neural'; method.disabled = source.disabled;
+    method.value = ['procedural','procedural-phasor'].includes(source.value) ? source.value : 'neural'; method.disabled = source.disabled;
     if (method.value === 'neural') neuralSupport = source.value;
-    source.closest('label')!.hidden = method.value === 'procedural';
+    source.closest('label')!.hidden = method.value !== 'neural';
     const generation = document.getElementById('generationCompute');
     if (generation) generation.closest('label')!.hidden = method.value === 'neural';
     for (const option of Array.from(source.options)) {
-      option.hidden = (option.value === 'procedural') !== (method.value === 'procedural');
+      option.hidden = method.value === 'neural' ? ['procedural','procedural-phasor'].includes(option.value) : option.value !== method.value;
       option.disabled = option.hidden;
     }
   };
   method.addEventListener('change', () => {
-    source.value = method.value === 'procedural' ? 'procedural' : neuralSupport;
+    source.value = method.value === 'neural' ? neuralSupport : method.value;
     source.dispatchEvent(new Event('input', { bubbles: true }));
     source.dispatchEvent(new Event('change', { bubbles: true })); sync();
   });
@@ -105,8 +105,8 @@ function organizeStage(panel: HTMLDetailsElement, spec: PanelSpec): void {
   panel.dataset.panelLayout = 'true'; panel.open = true; panel.classList.add('parameter-stage');
   // Main blocks stay open. Submenus alone are collapsible.
   const heading = panel.querySelector('summary')!;
-  heading.addEventListener('click', event => { if (!(event.target as Element).closest('button, input, select, label')) event.preventDefault(); });
-  panel.addEventListener('toggle', () => { if (!panel.open) panel.open = true; });
+  heading.addEventListener('click', event => { if (!panel.dataset.stage && !(event.target as Element).closest('button, input, select, label')) event.preventDefault(); });
+  panel.addEventListener('toggle', () => { if (!panel.open && !panel.dataset.stage) panel.open = true; });
   const controls = panel.querySelector<HTMLElement>(':scope > .stage-controls')!;
   const main = group('Paramètres principaux', 'panel-main');
   const method = group('Méthode de calcul', 'panel-method');
@@ -143,7 +143,13 @@ function organizeStage(panel: HTMLDetailsElement, spec: PanelSpec): void {
     if (panel.id === 'reliefStage') {
       const generation = document.querySelector('.generation-actions');
       if (generation) {
-        const all = generation.querySelector<HTMLElement>('#generate'); if (all) all.hidden = true;
+        const all = generation.querySelector<HTMLElement>('#generate'); if (all) {
+          all.hidden = false;
+          all.textContent = urbanText(['Générer tout','Generate all','全部生成','Generar todo','Gerar tudo']);
+          all.title = urbanText(['Exécuter le pipeline complet avec tous les réglages actuels','Run the complete pipeline with the current settings','使用当前设置运行完整流水线','Ejecutar el proceso completo con los ajustes actuales','Executar o processo completo com os ajustes atuais']);
+          all.setAttribute('aria-label',all.textContent);
+          toolbar.append(all);
+        }
         generation.prepend(action); heading.append(generation);
       }
     }
@@ -201,7 +207,7 @@ function organize(): void {
     const panel = document.getElementById(id); if (panel instanceof HTMLDetailsElement) organizeStage(panel, spec);
   }
   const sketch = document.querySelector<HTMLDetailsElement>('#terrainSketchEditor > details');
-  if (sketch && !sketch.dataset.panelLayout) {
+  if (sketch && !sketch.dataset.panelLayout && !sketch.closest('[data-stage="customMask"]')) {
     const extra = relief?.querySelector<HTMLDetailsElement>(':scope > .stage-controls > .panel-advanced');
     if (extra) {
       sketch.dataset.panelLayout = 'true'; sketch.open = false;
@@ -275,6 +281,7 @@ function applyPanelLocale(): void {
   const method = document.querySelector<HTMLSelectElement>('#terrainMethod');
   if (method) {
     const label = method.closest('label'); if (label?.firstChild?.nodeType === Node.TEXT_NODE) label.firstChild.textContent = urbanText(['Méthode ','Method ','方法 ','Método ','Método ']);
+    const compact = method.querySelector<HTMLOptionElement>('[value="procedural-phasor"]'); if (compact) compact.textContent = urbanText(['Procédurale Phasor · compacte','Procedural Phasor · compact','程序化 Phasor · 紧凑','Procedural Phasor · compacto','Procedural Phasor · compacto']);
     const procedural = method.querySelector<HTMLOptionElement>('[value="procedural"]'); if (procedural) procedural.textContent = urbanText(['Procédurale','Procedural','程序生成','Procedural','Procedural']);
     const neural = method.querySelector<HTMLOptionElement>('[value="neural"]'); if (neural) neural.textContent = urbanText(['Neuronale','Neural','神经网络','Neuronal','Neural']);
   }

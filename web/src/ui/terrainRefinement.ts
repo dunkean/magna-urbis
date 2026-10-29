@@ -1,8 +1,16 @@
 import type { HeightLayer } from './terrainGl';
 
-export type TerrainRefinement = 'source' | 'noise' | 'neural-earth';
+export type TerrainAmplification = 'classic' | 'phasor' | 'mse' | 'hybrid';
+export type TerrainRefinement = 'source' | 'noise' | 'neural-earth' | 'neural-earth-phasor' | 'neural-earth-mse' | 'neural-earth-hybrid';
+export function isNeuralRefinement(value: string): boolean {
+  return ['neural-earth', 'neural-earth-phasor', 'neural-earth-mse', 'neural-earth-hybrid'].includes(value);
+}
+export function refinementAmplification(value: TerrainRefinement): TerrainAmplification {
+  return value === 'neural-earth-phasor' ? 'phasor' : value === 'neural-earth-mse' ? 'mse' : value === 'neural-earth-hybrid' ? 'hybrid' : 'classic';
+}
 export interface RefinementRegistration {
   id: string; version: string; minMpp: number; nativeMpp: number; decoderUsed: boolean;
+  amplification?: TerrainAmplification; methodVersion?: string;
 }
 interface RefinementMeta { x: number; y: number; width: number; n: number; sourceCell: number; lod: number; version: string; decoderUsed: boolean }
 export interface RefinedHeightLayer extends HeightLayer { refinement: RefinementMeta }
@@ -43,7 +51,7 @@ export class TerrainRefinementSession {
   private bytes = 0;
   private constructor(readonly server: string, public registration: RefinementRegistration, private reconnect: () => Promise<RefinementRegistration>) {}
 
-  static async create(server: string, field: HeightLayer, options: { seed: string; source?: string; neuralToken?: string; neuralWindow?: { x: number; y: number; width: number; heightScale: number } }): Promise<TerrainRefinementSession> {
+  static async create(server: string, field: HeightLayer, options: { seed: string; source?: string; amplification?: TerrainAmplification; intensity?: number; neuralToken?: string; neuralWindow?: { x: number; y: number; width: number; heightScale: number } }): Promise<TerrainRefinementSession> {
     const body = JSON.stringify({ ...options, width: field.width, n: field.n, heights: base64(field.data), interpolation: 'bspline' });
     const connect = async (): Promise<RefinementRegistration> => {
       let response: Response;
@@ -52,6 +60,7 @@ export class TerrainRefinementSession {
       if (!response.ok) throw new Error(`Neural Earth : ${await response.text()}`);
       const registration = await response.json() as RefinementRegistration;
       if (!registration.id || !Number.isFinite(registration.minMpp) || registration.minMpp <= 0) throw new Error('Service de raffinement incompatible : relancez npm run neural:python.');
+      if (options.amplification && options.amplification !== 'classic' && registration.amplification !== options.amplification) throw new Error('Ce service Neural Earth ne prend pas en charge la méthode demandée. Relancez npm run neural:python.');
       return registration;
     };
     return new TerrainRefinementSession(server, await connect(), connect);

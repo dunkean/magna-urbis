@@ -1,0 +1,22 @@
+[
+  {
+    "scenario": "cpu-switch",
+    "compute": "gpu-f32",
+    "generation": "gpu-erosion",
+    "status": "Montagnes · neural coarse4-nf4-b75-t2-decoder · evaluations 4/64/16 (coarse/base/decoder) · service 4924 ms (coarse 1592, base 2294, decoder 982, reconstruction 56) · request 13528 ms · land 100% · GPU FP32 · map 5 km window over 40 · overview 512² · contours 40 m · generation + overview 13795 ms · rendering 207 ms",
+    "loading": "\n        Terrain prêtL’affichage et les commandes peuvent rester figés pendant cette étape.13 s écoulées\n      ",
+    "hidden": true,
+    "ready": true,
+    "errors": []
+  },
+  {
+    "scenario": "gpu-switch",
+    "compute": "gpu-f32",
+    "generation": "gpu-erosion",
+    "status": "Montagnes · neural coarse4-nf4-b75-t2-decoder · evaluations 4/64/16 (coarse/base/decoder) · service 3327 ms (coarse 665, base 2055, decoder 574, reconstruction 33) · request 10663 ms · land 100% · GPU FP32 · map 5 km window over 40 · overview 512² · contours 40 m · generation + overview 10854 ms · rendering 129 ms",
+    "loading": "\n        Terrain prêtL’affichage et les commandes peuvent rester figés pendant cette étape.10 s écoulées\n      ",
+    "hidden": true,
+    "ready": true,
+    "errors": []
+  }
+]

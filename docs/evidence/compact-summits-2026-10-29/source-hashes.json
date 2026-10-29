@@ -1,0 +1,8 @@
+{
+  "rust/bridge/terrainPhasor.ts": "069db932780f37746274153dd6d83f1ee15fea891da02f13fab59b8b5824fba1",
+  "rust/bridge/terrainPhasor.wgsl": "e30d7d4596c9a0190fafe9470c1c8b2d6056dbaeb9484ccfa824f1bb14088ea7",
+  "rust/bridge/terrainCompactErosion.ts": "89648cccaacb92edb008626d45cc06e74277ab3f3e14a761d187445eb2372ac7",
+  "web/src/v2/engine.ts": "8bf8c09aef9fbb819d714d686633322250dbcdb8f88a0bf2148d7eced21c3b8d",
+  "web/scripts/check_compact_summits.mjs": "d9530fd91f339bf4cd5a2973bef89f99c551f1ba6299855f75661af601ed2f33",
+  "web/tests/terrainPhasor.test.ts": "b7fe8ee0aa3a3735f2996aa35446c1c50b6b501823fcff91f636de94f2a47a58"
+}

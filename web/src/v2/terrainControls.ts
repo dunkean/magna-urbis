@@ -108,7 +108,6 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
     if(path==='terrain.procedural.preset'){
       settings.terrain!.procedural!.biome??=true;
       if(value==='compact'){
-        if(settings.runtime?.backend==='native')settings.runtime.backend='rust';
         delete settings.terrain!.generationCompute;delete settings.terrain!.compute;
         if(['plateau','volcano','caldera','cavern'].includes(String(settings.terrain?.relief??settings.options.relief)))settings.terrain!.relief='mixed';
       }
@@ -267,7 +266,7 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
     setText(coastOption.badge, mask === 0 ? ui.none : mask === 255 ? get('terrain.islandMode') === 'archipelago' ? ui.archipelago : ui.island : `${coastDirections.filter((_, index) => mask & 1 << index).length} / 8`);
     const compact = !isNeural && get('terrain.procedural.preset') === 'compact';
     const generationCompute = root.querySelector<HTMLSelectElement>('[data-setting-path="terrain.generationCompute"]');
-    if (generationCompute) for (const option of Array.from(generationCompute.options)) option.disabled = compact && !!option.value && !['cpu','gpu-erosion'].includes(option.value);
+    if (generationCompute) for (const option of Array.from(generationCompute.options)) option.disabled = compact && !!option.value && !['cpu','gpu-erosion','native'].includes(option.value);
     procedural.hidden = isNeural || isClassic || settings.terrain?.sketch?.processing === 'surface';
     compactHelp.hidden = procedural.hidden;
     erosion.hidden = procedural.hidden;

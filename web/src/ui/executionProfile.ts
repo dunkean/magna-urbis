@@ -45,15 +45,11 @@ if (typeof window !== 'undefined') window.magnaExecutionRuntime = executionRunti
 
 /** Execution belongs to the host; geometry parameters and neural models stay explicit. */
 export function applyExecutionProfile(url: URL, runtime = executionRuntime): URL {
-  const previousProfile = url.searchParams.get('profile');
-  if (previousProfile && previousProfile !== runtime.profile) {
-    url.searchParams.delete('compute'); url.searchParams.delete('generation');
-  }
   url.searchParams.set('profile', runtime.profile);
   if (runtime.profile === 'local') url.searchParams.set('localServer', runtime.server);
   else {
     url.searchParams.delete('localServer');
-    if (url.searchParams.get('generation') === 'native') url.searchParams.delete('generation');
+    if (url.searchParams.get('generation') === 'native') url.searchParams.set('generation','cpu');
   }
   return url;
 }
@@ -62,13 +58,11 @@ function changeExecutionProfile(profile: ExecutionRuntime['profile']): void {
   const host = executionHost();
   const runtime = { ...readRuntime(), profile };
   const url = applyExecutionProfile(new URL(host.location.href), runtime);
-  // Normalize the embedded route too: links, reloads and standalone ateliers
-  // must all carry the same profile, without retaining the previous defaults.
-  url.searchParams.delete('compute'); url.searchParams.delete('generation');
+  // A profile selects where engines run; preserve the method and valid compute
+  // choices. Only the native service needs translation to browser CPU in Web.
   if (url.hash.includes('?')) {
     const separator = url.hash.indexOf('?');
     const route = applyExecutionProfile(new URL(`?${url.hash.slice(separator + 1)}`, url), runtime);
-    route.searchParams.delete('compute'); route.searchParams.delete('generation');
     url.hash = `${url.hash.slice(0, separator)}?${route.searchParams}`;
   }
   // Update every live picker before navigation, including retained hidden tabs.

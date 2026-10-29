@@ -1,0 +1,244 @@
+{
+  "rows": [
+    {
+      "seed": "magna-urbis-v2",
+      "width": 6000,
+      "motifSize": 10000,
+      "ms": 860,
+      "globalMax": 2190.1193193074014,
+      "raw": {
+        "lo": 0.30000001192092896,
+        "hi": 982.0828247070312,
+        "p80": 615.0106201171875,
+        "p99": 949.2227172851562,
+        "maxPlateauFraction": 9.5367431640625e-7,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.00736236572265625,
+        "upperMode": 941.54,
+        "upperModeFraction": 0.00010060121200507797
+      },
+      "overview": {
+        "lo": 0.30000001192092896,
+        "hi": 982.0443725585938,
+        "p80": 615.1035766601562,
+        "p99": 949.2040405273438,
+        "maxPlateauFraction": 0.000003814697265625,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.005786895751953125,
+        "upperMode": 899.46,
+        "upperModeFraction": 0.00017326351455413522
+      },
+      "v2": {
+        "lo": 0.30000001192092896,
+        "hi": 982.0443725585938,
+        "p80": 615.1035766601562,
+        "p99": 949.2040405273438,
+        "maxPlateauFraction": 0.000003814697265625,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.005786895751953125,
+        "upperMode": 899.46,
+        "upperModeFraction": 0.00017326351455413522
+      }
+    },
+    {
+      "seed": "42",
+      "width": 6000,
+      "motifSize": 10000,
+      "ms": 120.20000004768372,
+      "globalMax": 2168.787873994902,
+      "raw": {
+        "lo": 0.30000001192092896,
+        "hi": 968.7506713867188,
+        "p80": 590.677978515625,
+        "p99": 816.770263671875,
+        "maxPlateauFraction": 0,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.009336471557617188,
+        "upperMode": 653.1,
+        "upperModeFraction": 0.00012474271814382835
+      },
+      "overview": {
+        "lo": 0.30000001192092896,
+        "hi": 967.4644775390625,
+        "p80": 590.6685791015625,
+        "p99": 816.68115234375,
+        "maxPlateauFraction": 0,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.007915496826171875,
+        "upperMode": 619.06,
+        "upperModeFraction": 0.00023172285946008574
+      },
+      "v2": {
+        "lo": 0.30000001192092896,
+        "hi": 967.4644775390625,
+        "p80": 590.6685791015625,
+        "p99": 816.68115234375,
+        "maxPlateauFraction": 0,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.007915496826171875,
+        "upperMode": 619.06,
+        "upperModeFraction": 0.00023172285946008574
+      }
+    },
+    {
+      "seed": "compact-proof",
+      "width": 5000,
+      "motifSize": 3000,
+      "ms": 107.89999997615814,
+      "globalMax": 1078.6446743352697,
+      "raw": {
+        "lo": 0.30000001192092896,
+        "hi": 519.1382446289062,
+        "p80": 324.7047424316406,
+        "p99": 432.0976867675781,
+        "maxPlateauFraction": 0,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.009110450744628906,
+        "upperMode": 329.68,
+        "upperModeFraction": 0.0002488169233787424
+      },
+      "overview": {
+        "lo": 0.30000001192092896,
+        "hi": 517.9729614257812,
+        "p80": 324.68023681640625,
+        "p99": 431.99285888671875,
+        "maxPlateauFraction": 0,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.007053375244140625,
+        "upperMode": 331.07,
+        "upperModeFraction": 0.0003456951353012349
+      },
+      "v2": {
+        "lo": 0.30000001192092896,
+        "hi": 517.9729614257812,
+        "p80": 324.68023681640625,
+        "p99": 431.99285888671875,
+        "maxPlateauFraction": 0,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.007053375244140625,
+        "upperMode": 331.07,
+        "upperModeFraction": 0.0003456951353012349
+      }
+    },
+    {
+      "seed": "magna-urbis-v2",
+      "width": 10000,
+      "motifSize": 10000,
+      "ms": 138,
+      "globalMax": 2293.4225419636514,
+      "raw": {
+        "lo": 0.30000001192092896,
+        "hi": 1046.6473388671875,
+        "p80": 706.305908203125,
+        "p99": 974.3812866210938,
+        "maxPlateauFraction": 9.5367431640625e-7,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.009107589721679688,
+        "upperMode": 749.06,
+        "upperModeFraction": 0.00011945433260864371
+      },
+      "overview": {
+        "lo": 0.30000004172325134,
+        "hi": 1046.52587890625,
+        "p80": 706.26416015625,
+        "p99": 974.221923828125,
+        "maxPlateauFraction": 0.000003814697265625,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.0074310302734375,
+        "upperMode": 725.82,
+        "upperModeFraction": 0.00019153785745752648
+      },
+      "v2": {
+        "lo": 0.30000004172325134,
+        "hi": 1046.52587890625,
+        "p80": 706.26416015625,
+        "p99": 974.221923828125,
+        "maxPlateauFraction": 0.000003814697265625,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.0074310302734375,
+        "upperMode": 725.82,
+        "upperModeFraction": 0.00019153785745752648
+      }
+    },
+    {
+      "seed": "42",
+      "width": 5000,
+      "motifSize": 50000,
+      "ms": 158.30000007152557,
+      "globalMax": 3500,
+      "raw": {
+        "lo": 0.30000001192092896,
+        "hi": 1725.292724609375,
+        "p80": 1365.4068603515625,
+        "p99": 1659.2215576171875,
+        "maxPlateauFraction": 0,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.008701324462890625,
+        "upperMode": 1587.35,
+        "upperModeFraction": 0.00009125796706067694
+      },
+      "overview": {
+        "lo": 0.30000001192092896,
+        "hi": 1723.83740234375,
+        "p80": 1365.382080078125,
+        "p99": 1659.244140625,
+        "maxPlateauFraction": 0,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.00647735595703125,
+        "upperMode": 1556.28,
+        "upperModeFraction": 0.00019352840997058368
+      },
+      "v2": {
+        "lo": 0.30000001192092896,
+        "hi": 1723.83740234375,
+        "p80": 1365.382080078125,
+        "p99": 1659.244140625,
+        "maxPlateauFraction": 0,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.00647735595703125,
+        "upperMode": 1556.28,
+        "upperModeFraction": 0.00019352840997058368
+      }
+    },
+    {
+      "seed": "compact-proof",
+      "width": 10000,
+      "motifSize": 3000,
+      "ms": 171.5,
+      "globalMax": 918.7618618352697,
+      "raw": {
+        "lo": 0.30000001192092896,
+        "hi": 419.21148681640625,
+        "p80": 251.98046875,
+        "p99": 369.2881774902344,
+        "maxPlateauFraction": 9.5367431640625e-7,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.008453369140625,
+        "upperMode": 256.59,
+        "upperModeFraction": 0.00023456199138343706
+      },
+      "overview": {
+        "lo": 0.30000001192092896,
+        "hi": 418.34844970703125,
+        "p80": 251.9291534423828,
+        "p99": 369.1777648925781,
+        "maxPlateauFraction": 0.000003814697265625,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.005657196044921875,
+        "upperMode": 259.57,
+        "upperModeFraction": 0.0003652581798608174
+      },
+      "v2": {
+        "lo": 0.30000001192092896,
+        "hi": 418.34844970703125,
+        "p80": 251.9291534423828,
+        "p99": 369.1777648925781,
+        "maxPlateauFraction": 0.000003814697265625,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.005657196044921875,
+        "upperMode": 259.57,
+        "upperModeFraction": 0.0003652581798608174
+      }
+    }
+  ]
+}

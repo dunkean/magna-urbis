@@ -1,0 +1,21 @@
+{
+  "rust/bridge/terrain.ts": "4f84def54036a51d2cd3df61356effac40c40f7e549b463e34277abf98f4348f",
+  "rust/bridge/terrainErosion.ts": "2eea842a2cbe5e2705037dc467d735f8fbdfaf700674d45418bac52798cc953e",
+  "rust/bridge/terrainCompactErosion.ts": "1f509228a89d2268ac15b6de99e69cd19e269e7c5381840e543900da95751b81",
+  "rust/bridge/terrainGenerationRecipe.ts": "775e974094b09202116c8190eb5d624f97164a290346aa0a01caa9aca8d81b51",
+  "rust/bridge/terrainGenerationPreview.wgsl": "1364c39e86e47ffb437cbbc9f1077324fc99d4bd0618e58d5ece6698722202c4",
+  "rust/bridge/terrainPhasor.ts": "069db932780f37746274153dd6d83f1ee15fea891da02f13fab59b8b5824fba1",
+  "rust/bridge/terrainPhasor.wgsl": "d220aaf99e1cdc14423048c1a664d34891363899759c84fd1f9efec7f9d618e9",
+  "rust/bridge/terrainWind.ts": "3e415ce0dfb896b68de480489a7bc4b734b750c568c117cc1f71c6bd8e6bb175",
+  "web/src/ui/proceduralInspector.ts": "ce59d490b71ad96280873046a8c0088a38b79b6e06c8ddc231e9df1c08f14b25",
+  "web/src/ui/proceduralInspectorWorker.ts": "edbb483d3f286e0669716fc06b5674550fc27405049c8e6d722dbe17475912d7",
+  "web/src/ui/proceduralInspector.css": "3ae0488c8f26e9eb27a9c39155e73e04263d8520a794b2caa30c0a1b1f8fdfcb",
+  "web/src/ui/terrainbench.ts": "d806c87e3d223d9e528bcdceb240a0a3d737a34913a3a2e05310f4f19012a4ca",
+  "web/src/ui/terrainbench.html": "9eda69206c4051a53102e76e513b517b3d060763146fb22398bf0a4855c17eee",
+  "web/src/ui/benchPanels.ts": "2f21fa98590f9600b204d16bbf91d9183c50cd30372fc35c633f937b180e0f2c",
+  "web/src/v2/terrainControls.ts": "f04fd56a97a96c6a7a355c02823a61a13862e8ada0b8a27a13d456b9d7b5d5e8",
+  "web/src/v2/terrainControlSchema.ts": "ceed9d4a07d29e276e30b0032aea80627e5f7536a775b1d0da0710d1ef417586",
+  "web/src/v2/terrainSettings.ts": "0fd34d02a0c59c9b2c752f8f8341791ba6738aeedfb5f8e6bfad0431b2c62147",
+  "web/src/v2/platform.ts": "feaa95c8c265ccfe420b3687e09e2363ff788c96a20b3bd8d11cb6718f0e0b94",
+  "web/src/v2/engine.ts": "ea7ebde2d3711b8bfea6ea1a941773ca39748a30a7bc237c110442f69893e6cc"
+}

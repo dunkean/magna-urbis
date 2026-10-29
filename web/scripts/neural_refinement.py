@@ -17,6 +17,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import threading
 import uuid
+import importlib
 
 import numpy as np
 import torch
@@ -26,6 +27,9 @@ _EXPECTED = 'decoder-v12-nyquist-notch'
 _FINGERPRINT = hashlib.sha256(Path(reference.__file__).read_bytes()).hexdigest()[:12]
 _ADAPTER_FINGERPRINT = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()[:12]
 VERSION = f'{reference.VERSION}:magna-retained-v1:{_FINGERPRINT}:{_ADAPTER_FINGERPRINT}'
+AMPLIFICATION_MODULES = {'phasor': ('terrain_phasor', 'sample_phasor'),
+                         'mse': ('terrain_amplification', 'sample_amplified'),
+                         'hybrid': ('terrain_hybrid', 'sample_hybrid')}
 _LOCK = threading.RLock()
 _WORLDS = OrderedDict()
 _SOURCES = OrderedDict()
@@ -75,6 +79,15 @@ class _Source:
         self.n = int(body['n'])
         self.width = float(body['width'])
         self.seed = int(body['seed'])
+        self.amplification = body.get('amplification', 'classic')
+        self.intensity = float(body.get('intensity', 1))
+        self.sampler = None
+        self.method_version = reference.VERSION
+        if self.amplification != 'classic':
+            module_name, function_name = AMPLIFICATION_MODULES[self.amplification]
+            module = importlib.import_module(module_name)
+            self.sampler = getattr(module, function_name)
+            self.method_version = module.VERSION
         self.token = body.get('neuralToken')
         self.decoder = neural is not None
         original, self.origin = neural if neural is not None else (None, 0)
@@ -88,7 +101,7 @@ class _Source:
         self.native_cell = 30 * self.display_scale
         self.values = torch.from_numpy(values.copy()).to(self.device, dtype=torch.float64)
         self.cache = OrderedDict()
-        self.world = SimpleNamespace(device=self.device, seed=self.seed, get=self.get,
+        self.world = SimpleNamespace(device=self.device, seed=self.seed, get=self.get, tile_store=None,
                                      kwargs={'residual_std': 1.1678}, _terrain_refinement_fields={})
         if original is not None:
             self.world.kwargs = dict(original.kwargs)
@@ -133,7 +146,10 @@ class _Source:
         if key in self.cache:
             self.cache.move_to_end(key)
             return self.cache[key]
-        refined = reference.sample_refined(self.world, level, i1, j1, i2, j2)
+        if self.sampler is None:
+            refined = reference.sample_refined(self.world, level, i1, j1, i2, j2)
+        else:
+            refined, _surface = self.sampler(self.world, level, i1, j1, i2, j2, intensity=self.intensity)
         lo, left, hi, right = reference._base_bounds(level, i1, j1, i2, j2)
         margin = reference.SPLINE_RADIUS
         native = reference._NativeWindow(self.world, lo-margin, left-margin, hi+margin, right+margin)
@@ -173,6 +189,10 @@ class _Source:
 def register(body):
     if reference.VERSION != _EXPECTED:
         raise RuntimeError(f'Unsupported Neural Earth refinement version: {reference.VERSION}')
+    amplification = body.get('amplification', 'classic')
+    if amplification not in ('classic', *AMPLIFICATION_MODULES):
+        raise ValueError('Unknown terrain amplification method')
+    intensity = _finite(body.get('intensity', 1), 'intensity', 0, 2)
     n = int(body['n'])
     if not 8 <= n <= 4096 or n != body['n']:
         raise ValueError('Invalid refinement raster resolution')
@@ -185,7 +205,9 @@ def register(body):
     if values.size != n*n or not np.isfinite(values).all():
         raise ValueError('Invalid retained height values')
     values = np.ascontiguousarray(values.reshape(n, n), dtype='<f4')
-    identity = dict(seed=seed, n=n, width=float(body['width']), neuralToken=body.get('neuralToken'), neuralWindow=body.get('neuralWindow'), version=VERSION)
+    identity = dict(seed=seed, n=n, width=float(body['width']), neuralToken=body.get('neuralToken'), neuralWindow=body.get('neuralWindow'), version=VERSION,
+                    amplification=amplification, intensity=intensity,
+                    methodFingerprint=hashlib.sha256(Path(importlib.import_module(AMPLIFICATION_MODULES[amplification][0]).__file__).read_bytes()).hexdigest() if amplification != 'classic' else _FINGERPRINT)
     identifier = hashlib.sha256(json.dumps(identity, sort_keys=True).encode() + values.tobytes()).hexdigest()[:32]
     with _LOCK:
         token = body.get('neuralToken')
@@ -202,7 +224,8 @@ def register(body):
         while len(_SOURCES) > _MAX_SOURCES:
             _SOURCES.popitem(last=False)
         return dict(id=identifier, version=VERSION, minMpp=source.native_cell/64, nativeMpp=source.native_cell,
-                    retainedSourceCell=source.width/source.n, decoderUsed=source.decoder)
+                    retainedSourceCell=source.width/source.n, decoderUsed=source.decoder,
+                    amplification=source.amplification, intensity=source.intensity, methodVersion=source.method_version)
 
 
 @torch.inference_mode()
@@ -233,7 +256,8 @@ def tile(body):
         meta = dict(id=identifier, x=x, y=y, width=width, n=n, sourceCell=source.native_cell/2**level,
                     sampleCell=step, retainedSourceCell=source.width/source.n, version=VERSION, lod=-level,
                     decoderUsed=source.decoder and level > 0,
-                    method='decoder+sparse-convolution' if source.decoder else 'native-roughness+sparse-convolution')
+                    amplification=source.amplification, intensity=source.intensity, methodVersion=source.method_version,
+                    method=source.amplification if source.sampler else ('decoder+sparse-convolution' if source.decoder else 'native-roughness+sparse-convolution'))
         return result.cpu().numpy().astype('<f4', copy=False).tobytes(), meta
 
 

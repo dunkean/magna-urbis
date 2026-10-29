@@ -1,0 +1,13 @@
+{
+  "maxDifference": 0,
+  "settings": {
+    "source": "procedural",
+    "seed": "stages-parity",
+    "width": 5000,
+    "motifSize": 3000,
+    "relief": "mountains",
+    "erosion": 1,
+    "recipe": null
+  },
+  "archive": ".local-archive/procedural-stages-before-20261029/sources.zip"
+}

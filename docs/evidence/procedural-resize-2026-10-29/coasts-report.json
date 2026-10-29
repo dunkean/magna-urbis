@@ -1,0 +1,25 @@
+{
+  "report": [
+    {
+      "layout": "rustbench",
+      "headerActions": 19,
+      "closedStageToggle": true,
+      "closedStagePlay": true,
+      "coastShortcut": true,
+      "marinePreviewMinimum": -282.097,
+      "settingsApplied": true,
+      "controlsRestored": true
+    },
+    {
+      "layout": "terrainbench",
+      "headerActions": 19,
+      "closedStageToggle": true,
+      "closedStagePlay": true,
+      "coastShortcut": true,
+      "marinePreviewMinimum": -282.097,
+      "settingsApplied": true,
+      "controlsRestored": true
+    }
+  ],
+  "errors": []
+}

@@ -1,9 +1,9 @@
 import { CLIMATE_VALUES } from './terrainClimate';
 import { compactProfile } from './terrainPhasor';
 import type { TerrainSettings, ErosionTuning } from './terrain';
-export const PROCEDURAL_RECIPE_VERSION = 'procedural-stages-v1';
+export const PROCEDURAL_RECIPE_VERSION = 'procedural-stages-v3';
 export const GENERATION_STAGES = [
-    ['prepare', 'Préparation Rust / GPU', false], ['grids', 'Grilles et buffers', false],
+    ['prepare', 'Préparation du backend', false], ['grids', 'Grilles et buffers', false],
     ['initialize', 'Bruits et soulèvement initial', false], ['regional', 'Cycles d’érosion régionale', true],
     ['regionalFinish', 'Relaxation et drainage finaux', true], ['reconstruct', 'Reconstruction 1024²', false],
     ['amplitude', 'Calibration de l’amplitude (p99)', true], ['ridged', 'Détail ridgé classique', true],
@@ -46,6 +46,7 @@ export interface ProceduralRecipe {
 export interface GenerationStageInfo {
     stage: GenerationStage;
     status: 'waiting' | 'running' | 'done' | 'skipped';
+    paused?: boolean;
     detail?: string;
     elapsedMs?: number;
     n?: number;
@@ -54,6 +55,7 @@ export interface GenerationStageInfo {
 }
 /** Functions are passed within a worker, never serialized in the terrain recipe. */
 export interface GenerationControl {
+    previews?: boolean;
     before(stage: GenerationStage, detail?: string): Promise<void>;
     after(stage: GenerationStage, height?: Float32Array, detail?: string): Promise<void>;
 }

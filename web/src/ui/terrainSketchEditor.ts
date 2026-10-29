@@ -53,6 +53,7 @@ export function createTerrainSketchEditor(host: HTMLElement, initial: TerrainSke
   let cachedZones: TerrainZones | undefined, cachedHeightmap: TerrainSketch | undefined;
   let appliedZones = initialZones, appliedHeightmap = initial;
   mode.value = initialZones ? 'zones' : initial ? initial.processing ?? 'sketch' : 'generated';
+  let manualMode = mode.value === 'generated' ? 'zones' : mode.value;
   let previousMode = mode.value, available = true, editing = false, revision = 0;
   const canvas = document.createElement('canvas'), ctx = canvas.getContext('2d')!;
   canvas.width = canvas.height = 512; canvas.tabIndex = 0; canvas.className = 'terrain-paint-overlay'; canvas.hidden = true;
@@ -77,6 +78,7 @@ export function createTerrainSketchEditor(host: HTMLElement, initial: TerrainSke
     if (!editing) brushCursor.hidden = true;
     map?.viewport.classList.toggle('terrain-editing', editing);
     if (editing) map?.onEnable(); updateView();
+    host.dispatchEvent(new Event('terrain-mask-state',{bubbles:true}));
   }
   function draw(): void {
     const n = mask.resolution; small.width = small.height = n;
@@ -108,9 +110,14 @@ export function createTerrainSketchEditor(host: HTMLElement, initial: TerrainSke
   }
   const notify = (): void => { previousMode = mode.value; draw(); changed(); };
   const selectZones = (): void => { if (mode.value !== 'zones') { mode.value = 'zones'; mutated(); } };
-  get('edit').onclick = () => { if (!editing) { if (mode.value !== 'zones') { remember(); selectZones(); notify(); } setEditing(true); } else setEditing(false); };
+  function startEditing(): void { if (!available || editing) return; if (mode.value !== 'zones') { remember(); selectZones(); notify(); } setEditing(true); }
+  get('edit').onclick = () => { if (editing) setEditing(false); else startEditing(); };
   get('apply').onclick = () => { setEditing(false); map?.apply(); };
-  mode.onchange = () => { const next = mode.value; mode.value = previousMode; remember(); mode.value = next; mutated(); if (next !== 'zones') setEditing(false); notify(); };
+  mode.onchange = () => { const next = mode.value; mode.value = previousMode; remember(); if(previousMode!=='generated')manualMode=previousMode;mode.value = next; if(next!=='generated')manualMode=next;mutated(); if (next !== 'zones') setEditing(false); notify(); };
+  function setEnabled(enabled: boolean): void {
+    if(enabled === (mode.value !== 'generated'))return;
+    mode.value=enabled?manualMode:'generated';mode.dispatchEvent(new Event('change',{bubbles:true}));
+  }
   for (const input of [radiusInput, featherInput]) input.oninput = () => { brushCursor.hidden = true; };
   let pointer: number | undefined, previous: [number, number] | undefined;
   let radius = .16, feather = .4, selected = 3, distanceToDab = 0;
@@ -186,7 +193,7 @@ export function createTerrainSketchEditor(host: HTMLElement, initial: TerrainSke
   window.addEventListener('magna-locale-change', onLocaleChange);
   const unsubscribeLocale = locale?.subscribe?.(applyLocale);
   applyLocale();if(initialError)state.textContent=initialError;
-  return {snapshot,zones,setEditing,updateView,setAvailable,
+  return {snapshot,zones,setEditing,startEditing,setEnabled,isEnabled:()=>mode.value!=='generated',isEditing:()=>editing,updateView,setAvailable,
     dispose:()=>{setEditing(false);window.removeEventListener('magna-locale-change',onLocaleChange);unsubscribeLocale?.();host.removeEventListener('keydown',keyboard);canvas.removeEventListener('keydown',keyboard);canvas.remove();brushCursor.remove();},
     captureContext:()=>({mask,heightmap,mode:mode.value,editing}),
     restoreContext:(saved:{mask:TerrainZones;heightmap?:TerrainSketch;mode:string;editing:boolean})=>{

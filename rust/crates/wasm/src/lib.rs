@@ -579,6 +579,19 @@ pub struct GenerationNoisePlan {
 }
 
 #[wasm_bindgen]
+pub struct TerrainPipeline { pipeline: magna_urbis_core::TerrainPipeline }
+#[wasm_bindgen]
+impl TerrainPipeline {
+    #[wasm_bindgen(constructor)]
+    pub fn new(seed:&str,parameters:&[f32],surface:&[f32],flags:&[u32])->Result<TerrainPipeline,JsValue>{
+        magna_urbis_core::TerrainPipeline::new(seed,parameters,surface,flags).map(|pipeline|Self{pipeline}).map_err(|e|JsValue::from_str(&e))
+    }
+    pub fn advance(&mut self,stage:u32)->Result<(),JsValue>{self.pipeline.advance(stage).map_err(|e|JsValue::from_str(&e))}
+    pub fn set_noise(&mut self,coarse:&[f32],fine:&[f32])->Result<(),JsValue>{self.pipeline.set_noise(coarse,fine).map_err(|e|JsValue::from_str(&e))}
+    pub fn height(&self)->Vec<f32>{self.pipeline.height()}
+}
+
+#[wasm_bindgen]
 impl GenerationNoisePlan {
     pub fn generation(
         seed: &str,

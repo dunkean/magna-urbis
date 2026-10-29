@@ -1,0 +1,52 @@
+.procedural-inspector{margin:8px 0;padding:10px;border:1px solid #b1c6ba;border-radius:8px;background:#f8faf8;color:#213a34}.procedural-inspector[hidden]{display:none}.procedural-inspector header{display:flex;justify-content:space-between;align-items:center;gap:8px}.procedural-inspector .intro{font-size:12px;line-height:1.45}.inspector-actions{display:flex;flex-wrap:wrap;gap:6px;position:sticky;top:0;background:#f8faf8;padding:8px 0;z-index:2}.inspector-stages details{border:1px solid #c9d9d0;border-radius:6px;margin:5px 0;background:white;padding:8px}.inspector-stages summary{cursor:pointer;display:flex;flex-wrap:wrap;justify-content:space-between;gap:7px}.inspector-stages output{font-size:11px;max-width:100%;overflow-wrap:anywhere}.inspector-stages [data-state=waiting]{border:2px solid #b98e23}.inspector-stages [data-state=running]{border:2px solid #307d66}.inspector-stages [data-state=done]{border-left:4px solid #4b9276}.stage-parameters{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;font-size:12px}.stage-parameters label{display:inline-flex;gap:6px;align-items:center;max-width:100%}.stage-parameters input[type=number]{width:85px}.procedural-inspector [data-metrics]{display:block;font:11px monospace;overflow-wrap:anywhere}.procedural-inspector button{cursor:pointer;padding:5px 8px}.procedural-inspector [data-status]{font-size:12px}
+.procedural-inspector{width:100%;max-width:100%;min-width:0;flex:0 0 auto;overflow-wrap:anywhere}.procedural-inspector header{padding:0 0 6px;flex-wrap:wrap}.procedural-inspector header strong{min-width:0}.procedural-inspector header button{width:auto;flex:0 1 auto;height:auto;white-space:normal}.procedural-inspector button{max-width:100%;white-space:normal;height:auto;min-height:24px}.procedural-inspector .stage-parameters label{white-space:normal;flex-wrap:wrap;min-width:0}.procedural-inspector .terrain-help-row{min-width:0;max-width:100%}#proceduralInspector{max-width:100%;white-space:normal;height:auto;min-height:24px}
+
+@media(min-width:1100px){.terrain-left-panel:has(#proceduralPipeline:not([hidden])){width:360px;flex-basis:360px}}
+
+/* Terrain is the first pipeline stage; retain its legacy controls for restoration. */
+.procedural-inspector #reliefStage > summary > .generation-actions,
+.procedural-inspector #reliefStage > summary > #reliefState,
+.procedural-inspector #reliefStage > .stage-controls > :not(.panel-advanced) { display:none; }
+.procedural-inspector #reliefStage > summary { flex-wrap:wrap; }
+.procedural-inspector #reliefStage > .stage-parameters { display:flex;flex-direction:column;align-items:stretch; }
+.procedural-inspector .pipeline-map-settings { display:flex;flex-direction:column;gap:14px;width:100%;min-width:0; }
+.pipeline-map-size { display:flex;flex-direction:column;gap:8px;padding:10px;border:1px solid #c9d9d0;border-radius:5px;background:#f3f7f4; }
+.pipeline-map-size [data-map-size] { font-size:17px;font-weight:600;color:#285849; }
+.pipeline-map-size [data-size-input] label { display:flex;justify-content:space-between; }
+.pipeline-map-size small { color:#657670;font-size:11px;line-height:1.4; }
+.pipeline-size-presets { display:flex;flex-wrap:wrap;gap:5px; }
+.pipeline-size-presets button[aria-pressed=true] { background:#285849;color:white;border-color:#285849; }
+.pipeline-map-controls { display:flex;flex-direction:column;gap:8px;min-width:0; }
+.pipeline-map-controls > label,.pipeline-map-controls > .terrain-help-row > label { display:flex;justify-content:space-between; }
+.pipeline-map-controls select { max-width:100%; }
+.procedural-inspector .inspector-actions #generate { order:-1;flex:1 0 100%;width:100%; }
+.procedural-inspector #reliefStage .panel-advanced { margin:0;padding:0;border:0; }
+.procedural-inspector:not([hidden]) ~ #coastStage,
+.procedural-inspector:not([hidden]) ~ #hydroStage { display:none; }
+.procedural-inspector .pipeline-stage-title { flex:1;min-width:0; }
+.procedural-inspector .pipeline-stage-actions { display:inline-flex;align-items:center;gap:7px;margin-left:auto;flex:0 0 auto; }
+.procedural-inspector .pipeline-stage-toggle { display:inline-flex;align-items:center;cursor:pointer; }
+.procedural-inspector .pipeline-stage-toggle input { margin:0;width:15px;height:15px; }
+.procedural-inspector .pipeline-stage-actions button { display:inline-flex;align-items:center;justify-content:center;width:26px;min-height:24px;padding:3px; }
+.procedural-inspector [data-pipeline-time] { font-weight:400; }
+.procedural-inspector [data-pipeline-time]:empty { display:none; }
+.procedural-inspector [data-stage=coasts] > .stage-parameters { flex-direction:column;align-items:stretch; }
+.procedural-inspector [data-stage=coasts] #coastControl { flex:1;align-items:flex-start; }
+.procedural-inspector [data-stage=coasts] .coast-grid button { min-height:24px;padding:0; }
+.inspector-stages > details { scroll-margin-top:140px; }
+.custom-mask-step { width:100%;min-width:0;border:1px solid #c9d9d0;border-radius:6px;margin:5px 0;padding:8px;background:white;color:#213a34;scroll-margin-top:140px; }
+.custom-mask-step > summary { display:flex;flex-wrap:wrap;align-items:center;gap:7px;cursor:pointer; }
+.custom-mask-step .pipeline-stage-title { flex:1;min-width:0; }
+.custom-mask-step .pipeline-stage-actions { display:inline-flex;align-items:center;gap:7px;margin-left:auto; }
+.custom-mask-step .pipeline-stage-toggle { display:inline-flex;align-items:center; }
+.custom-mask-step .pipeline-stage-toggle input { margin:0;width:15px;height:15px; }
+.custom-mask-step .pipeline-stage-actions button { width:26px;min-height:24px;padding:3px; }
+.custom-mask-step [data-mask-state] { font-size:11px;font-weight:400; }
+.custom-mask-step > .stage-parameters { display:block; }
+.custom-mask-step #terrainSketchEditor > details { border:0;padding:0;margin:0; }
+.custom-mask-step #terrainSketchEditor > details > summary { display:none; }
+.custom-mask-step p { font-size:12px;line-height:1.45; }
+.inspector-stages > details > summary,.custom-mask-step > summary,.procedural-inspector #reliefStage > summary { display:flex;flex-wrap:nowrap;align-items:center;gap:6px;min-width:0;white-space:nowrap; }
+.inspector-stages > details > summary > .pipeline-stage-title,.custom-mask-step > summary > .pipeline-stage-title { flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis; }
+.inspector-stages > details > summary > [data-pipeline-time],.custom-mask-step > summary > [data-mask-state] { order:1;flex:0 0 auto;max-width:80px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-variant-numeric:tabular-nums; }
+.inspector-stages > details > summary > .pipeline-stage-actions,.custom-mask-step > summary > .pipeline-stage-actions { order:2;flex:0 0 auto;margin-left:0; }

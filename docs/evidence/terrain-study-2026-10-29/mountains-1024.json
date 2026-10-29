@@ -1,0 +1,51 @@
+{
+  "cases": [
+    {
+      "adjustedOver1cmFraction": 0.033267974853515625,
+      "adjustedSamples": 1048576,
+      "adjustmentRmsM": 2.2233925913211476,
+      "climate": "temperate",
+      "finite": true,
+      "lakes": 42,
+      "maxAdjustmentM": 104.63884735107422,
+      "ms": 2960.8208,
+      "precipitationMmYear": 1000.0,
+      "rivers": 996,
+      "temperatureC": 12.0
+    },
+    {
+      "adjustedOver1cmFraction": 0.060690879821777344,
+      "adjustedSamples": 1048576,
+      "adjustmentRmsM": 3.339111962892,
+      "climate": "arid",
+      "finite": true,
+      "lakes": 0,
+      "maxAdjustmentM": 104.63884735107422,
+      "ms": 1938.8844000000001,
+      "precipitationMmYear": 150.0,
+      "rivers": 991,
+      "temperatureC": 25.0
+    },
+    {
+      "adjustedOver1cmFraction": 0.033267974853515625,
+      "adjustedSamples": 1048576,
+      "adjustmentRmsM": 2.2233925913211476,
+      "climate": "humid",
+      "finite": true,
+      "lakes": 42,
+      "maxAdjustmentM": 104.63884735107422,
+      "ms": 1888.6055000000001,
+      "precipitationMmYear": 2200.0,
+      "rivers": 996,
+      "temperatureC": 24.0
+    }
+  ],
+  "format": "magna-terrain-literature-probe-v1",
+  "hydrologyPreparationMs": 281.5716,
+  "n": 1024,
+  "relief": "mountains",
+  "seed": "literature-2026-10-29",
+  "source": "Magna TerrainGenerator, erosion=1, motif=8000m",
+  "sourceMs": 10060.7182,
+  "widthM": 50000.0
+}

@@ -1,0 +1,58 @@
+{
+  "extraRows": [],
+  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+  "gpu": {
+    "vendor": "nvidia",
+    "architecture": "blackwell",
+    "device": "",
+    "description": "",
+    "isFallbackAdapter": false
+  },
+  "rows": [
+    {
+      "width": 5000,
+      "climate": "temperate",
+      "ms": 731.8999999761581,
+      "prepareMs": 189.40000009536743,
+      "backend": "compact-gpu-f32",
+      "sampling": "gpu-f32",
+      "n": 1024,
+      "lo": 0.30000001192092896,
+      "hi": 398.6413269042969,
+      "mean": 168.0285232482792,
+      "meanSlopeX": 0.1777584802958183,
+      "hash": "fb575848",
+      "profiles": [
+        {
+          "factor": 1,
+          "coarseSize": 112,
+          "surfaceSize": 136,
+          "pipelineMs": 123.60000002384186,
+          "encodeMs": 5.199999928474426,
+          "submitReadbackMs": 43.90000009536743,
+          "unpackMs": 1.6999999284744263,
+          "maxSolveSteps": [
+            12,
+            19,
+            19,
+            0
+          ],
+          "allocatedBytes": 27310440,
+          "gpuStagesMs": {
+            "coarse": 16.221152,
+            "surface": 0.000064,
+            "normalization": 0.38048
+          }
+        }
+      ]
+    }
+  ],
+  "proof": {
+    "deltaRmsM": 1.1656318296027415,
+    "deltaMaxM": 3.037506103515625,
+    "changedOver1mmFraction": 0.8662986755371094,
+    "repeatMaxM": 0,
+    "cpuGpuMaxM": 0.0001297840589415955
+  },
+  "waterRows": []
+}

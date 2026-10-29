@@ -27,6 +27,7 @@ type ApiResult<T> = Result<T, String>;
 
 #[derive(Default)]
 struct Session {
+    terrain_pipeline: Option<magna_urbis_core::TerrainPipeline>,
     terrain: Option<TerrainGenerator>,
     terrain_key: String,
     field: Vec<f32>,
@@ -965,6 +966,20 @@ fn dispatch(path: &str, body: &[u8], sessions: &Mutex<Sessions>) -> ApiResult<Re
     };
     let mut state = session.lock().map_err(|_| "Session indisponible.")?;
     match path {
+        "/terrain/stage" => {
+            if input["command"]=="cancel" {state.terrain_pipeline=None;return json_reply(json!({"released":true}));}
+            if input["command"]=="start" {
+                let parameters:Vec<f32>=value(&input["parameters"])?;let surface:Vec<f32>=value(&input["surface"])?;let flags:Vec<u32>=value(&input["flags"])?;
+                state.terrain_pipeline=Some(magna_urbis_core::TerrainPipeline::new(input["seed"].as_str().ok_or("Missing terrain seed")?,&parameters,&surface,&flags)?);
+                return json_reply(json!({"ready":true}));
+            }
+            let pipeline=state.terrain_pipeline.as_mut().ok_or("Missing retained terrain pipeline")?;
+            let stage=input["stage"].as_u64().filter(|&s|s<8).ok_or("Invalid terrain stage")? as u32;
+            pipeline.advance(stage)?;
+            let height=if input["preview"]==true || stage==7 {pipeline.height()}else{Vec::new()};
+            let body=height.iter().flat_map(|h|h.to_le_bytes()).collect();
+            Ok(Reply{kind:"application/octet-stream",body})
+        },
         "/terrain" => terrain_reply(value(&input)?, &mut state),
         "/settlements" => settlement_reply(input, &state),
         "/urban" => urban_guard(&mut state, |state| urban_reply(input, state, &id)),

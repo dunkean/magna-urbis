@@ -1,0 +1,17 @@
+{
+  "rust/bridge/terrain.ts": "b40b0963fa2502101cb445d87a4aae5396b946472292df3414c8497c34665f13",
+  "rust/bridge/terrainCompactErosion.ts": "5025d34a7bd3a3a620724abb93b6e7e13eae6ea28b7925fd38467e4c933facc1",
+  "rust/bridge/terrainPhasor.ts": "5926c4210fde9cedab5a82c06e503ead1c4c363fc36ab6229b39d9ebe680f0c0",
+  "rust/bridge/terrainPhasor.wgsl": "4ec76b3bcba69e0f8f1880828436b538274431a6d3227c872a9cf2f5bd26394f",
+  "web/scripts/benchmark_compact_terrain.mjs": "72d71510651d757ff4dbf8c8df0c1d82847f7b4b28fe16fa5296abe351afabd3",
+  "web/scripts/check_compact_terrain_ui.mjs": "466b8395713a7065cc8b58a80535592761d06901deb22083b87c819032a190c0",
+  "web/src/v2/terrainControlSchema.ts": "bba1950c9f77b2920ec3d2b5419be36e9037453ad60498262656205401bfa99b",
+  "web/src/v2/terrainControls.ts": "27aeee2777a8cb809f57ae41109ff281c1f2372166e83eaa144a7a0be91c7da4",
+  "web/src/v2/terrainSettings.ts": "0ab5957ea731980424f03d4eeb65582a0ac1ebffba6d07bb668ca4b795b01c11",
+  "web/src/v2/platform.ts": "f2735180ee49712db99523a3bd5fa8165474f4373fc8dcd61ba4b842ad56df32",
+  "web/src/v2/project.ts": "4399a7500eaa2b5963227d8ef4ad1c20abbe5f54d9541f1516884c2152af45df",
+  "web/src/v2/contracts.ts": "618eb8c1c6b637ebfe7e8471214a5338c3b230d94f3e26e2899e219b89335438",
+  "web/src/v2/engine.ts": "580137611857b0f182adba1470f9b9d326184e4507624d089eb3b919eecf918d",
+  "web/src/ui/terrainbench.ts": "10d1cabe299fcaad4dbd130efc5ae2823753ba915e9a1ebfaf29eee5d21e91cd",
+  "web/src/ui/benchPanels.ts": "80e8faf3b2b1ea4151a70d26476e66615ed7abb3939096a0937f73264434840d"
+}

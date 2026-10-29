@@ -1,0 +1,18 @@
+{
+  "scope": "single-run regional CPU and local retained-source CUDA experiments; timings are not browser benchmarks; no neural decoder or weights used",
+  "magnaHead": "0f517bff1e753b1f76a071fc817c3b01c9228672",
+  "workingTree": "Existing uncommitted user changes were present; measured current working tree, not a clean HEAD",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+  "files": {
+    "web/scripts/neural_refinement.py": "5389063c0b14d2970cf8d63766ce391b9d65aae1a471fa1cfebb56ff0a0e9053",
+    "web/scripts/benchmark_neural_amplification.py": "451e8d1da7aec2512f5d545a2895c36539290ffed4483af335adc26e81eed8df",
+    "rust/crates/core/examples/terrain_literature_probe.rs": "46a76400cb61a1e62e092d2e8d8f3929bdd880beab7febfca34daa7626d60a5c",
+    "rust/crates/core/src/erosion.rs": "c6737d74f7b2c00a3bf1d6eaaf2017511a4e42351dff387132de4bf7b476c6ec",
+    "rust/crates/core/src/hydrology.rs": "ab198841108cdb3701810388cb8522358e7c4e8cf3a41904fee72f9e32d5adec"
+  },
+  "sourceHeightSHA256": {
+    "mountains": "720063f3241c10dfa1f92c89df1049a8a69cbe0cc4743ece7b881173807a57fe",
+    "hills": "60a50dfe7612201fafca1366bd9a6d2fe2c9261f0fb1f6e2c7ccf8d828f1c21a",
+    "mountains-1024": "b99e6acc6ff54f66618c6157b671ef101a1b591e4f2a2ec3e05bb4afbc3fc767"
+  }
+}

@@ -1,0 +1,22 @@
+[
+  {
+    "Path": "D:\\workspace\\self\\magna-urbis\\web\\src\\ui\\proceduralInspector.ts",
+    "Hash": "FC2D2473307AD28A0983AE9F86191E3313B2162360994A6D11ADF144BA0953FE"
+  },
+  {
+    "Path": "D:\\workspace\\self\\magna-urbis\\web\\src\\ui\\proceduralInspector.css",
+    "Hash": "0F3D3E30426FD8997AC73383031E2D75A6F2B4214F8A635E39EC01E3CB75C61E"
+  },
+  {
+    "Path": "D:\\workspace\\self\\magna-urbis\\web\\src\\ui\\benchPanels.ts",
+    "Hash": "23F4A2559DFF1AAEFF6E7A199092DE7C9225DCF9B860C79D5F82116CABCC4D53"
+  },
+  {
+    "Path": "D:\\workspace\\self\\magna-urbis\\web\\scripts\\check_procedural_inspector_ui.mjs",
+    "Hash": "8AC52D2657FB7ECFD19EB3A5987F2D78CEF6D3B205C5CB98AC982518C772A5D1"
+  },
+  {
+    "Path": "D:\\workspace\\self\\magna-urbis\\web\\scripts\\check_procedural_coasts_ui.mjs",
+    "Hash": "9E4A5F6FD18F3DE91375E73E6EF01043083108D3635C1531C3543624B7118B74"
+  }
+]

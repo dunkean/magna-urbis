@@ -1,0 +1,305 @@
+{
+  "extraRows": [
+    {
+      "relief": "flat",
+      "totalMs": 2269.5,
+      "backend": "compact-gpu-f32",
+      "min": 31.813884735107422,
+      "max": 73.72459411621094
+    },
+    {
+      "relief": "valley",
+      "totalMs": 2646.100000023842,
+      "backend": "compact-gpu-f32",
+      "min": 7.103886127471924,
+      "max": 565.632568359375
+    },
+    {
+      "relief": "canyon",
+      "totalMs": 133.90000009536743,
+      "backend": "compact-gpu-f32",
+      "min": 0.790278434753418,
+      "max": 974.5698852539062
+    },
+    {
+      "relief": "mountains",
+      "coastMask": 255,
+      "totalMs": 112.60000002384186,
+      "backend": "compact-gpu-f32",
+      "coastBackend": "gpu-f32",
+      "min": -120.49565887451172,
+      "max": 269.0279235839844
+    },
+    {
+      "relief": "hills",
+      "cpu": true,
+      "totalMs": 5092.100000023842,
+      "backend": "compact-cpu",
+      "min": 1.6809840202331543,
+      "max": 153.50767517089844
+    }
+  ],
+  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+  "gpu": {
+    "vendor": "nvidia",
+    "architecture": "blackwell",
+    "device": "",
+    "description": "",
+    "isFallbackAdapter": false
+  },
+  "rows": [
+    {
+      "width": 5000,
+      "climate": "temperate",
+      "ms": 1854.3000000715256,
+      "prepareMs": 314.2999999523163,
+      "backend": "compact-gpu-f32",
+      "sampling": "gpu-f32",
+      "n": 1024,
+      "lo": 0.30000001192092896,
+      "hi": 398.6413269042969,
+      "mean": 168.0285232482792,
+      "meanSlopeX": 0.1777584802958183,
+      "hash": "fb575848",
+      "profiles": [
+        {
+          "factor": 1,
+          "coarseSize": 112,
+          "surfaceSize": 136,
+          "pipelineMs": 247,
+          "encodeMs": 5.100000023841858,
+          "submitReadbackMs": 45.10000002384186,
+          "unpackMs": 1.6999999284744263,
+          "maxSolveSteps": [
+            12,
+            19,
+            19,
+            0
+          ],
+          "allocatedBytes": 27310440,
+          "gpuStagesMs": {
+            "coarse": 16.15824,
+            "surface": 0.000064,
+            "normalization": 0.379648
+          }
+        }
+      ]
+    },
+    {
+      "width": 5000,
+      "climate": "arid",
+      "ms": 90.30000007152557,
+      "prepareMs": 51.699999928474426,
+      "backend": "compact-gpu-f32",
+      "sampling": "gpu-f32",
+      "n": 1024,
+      "lo": 0.30000001192092896,
+      "hi": 397.0189514160156,
+      "mean": 168.11795342666852,
+      "meanSlopeX": 0.17924237670064905,
+      "hash": "758805ed",
+      "profiles": [
+        {
+          "factor": 1,
+          "coarseSize": 112,
+          "surfaceSize": 136,
+          "pipelineMs": 0.3999999761581421,
+          "encodeMs": 5.900000095367432,
+          "submitReadbackMs": 35.5,
+          "unpackMs": 0.6999999284744263,
+          "maxSolveSteps": [
+            12,
+            19,
+            19,
+            0
+          ],
+          "allocatedBytes": 27310440,
+          "gpuStagesMs": {
+            "coarse": 16.183136,
+            "surface": 0.000064,
+            "normalization": 0.411104
+          }
+        }
+      ]
+    },
+    {
+      "width": 5000,
+      "climate": "tropical",
+      "ms": 85.69999992847443,
+      "prepareMs": 47.39999997615814,
+      "backend": "compact-gpu-f32",
+      "sampling": "gpu-f32",
+      "n": 1024,
+      "lo": 0.30000001192092896,
+      "hi": 400.24468994140625,
+      "mean": 166.88896274160152,
+      "meanSlopeX": 0.17872341302172282,
+      "hash": "b3471a37",
+      "profiles": [
+        {
+          "factor": 1,
+          "coarseSize": 112,
+          "surfaceSize": 136,
+          "pipelineMs": 0.2999999523162842,
+          "encodeMs": 2.399999976158142,
+          "submitReadbackMs": 34.89999997615814,
+          "unpackMs": 0.7000000476837158,
+          "maxSolveSteps": [
+            12,
+            19,
+            19,
+            0
+          ],
+          "allocatedBytes": 27310440,
+          "gpuStagesMs": {
+            "coarse": 16.077472,
+            "surface": 0.000064,
+            "normalization": 0.37744
+          }
+        }
+      ]
+    },
+    {
+      "width": 10000,
+      "climate": "temperate",
+      "ms": 93.39999997615814,
+      "prepareMs": 52.39999997615814,
+      "backend": "compact-gpu-f32",
+      "sampling": "gpu-f32",
+      "n": 1024,
+      "lo": 0.30000001192092896,
+      "hi": 431.3797912597656,
+      "mean": 164.5277819273834,
+      "meanSlopeX": 0.1701501557741256,
+      "hash": "59563da",
+      "profiles": [
+        {
+          "factor": 1,
+          "coarseSize": 224,
+          "surfaceSize": 248,
+          "pipelineMs": 0.40000009536743164,
+          "encodeMs": 2.1999999284744263,
+          "submitReadbackMs": 40.39999997615814,
+          "unpackMs": 0.7000000476837158,
+          "maxSolveSteps": [
+            18,
+            26,
+            26,
+            0
+          ],
+          "allocatedBytes": 32128736,
+          "gpuStagesMs": {
+            "coarse": 22.091296,
+            "surface": 0.000064,
+            "normalization": 0.436864
+          }
+        }
+      ]
+    },
+    {
+      "width": 10000,
+      "climate": "arid",
+      "ms": 94.60000002384186,
+      "prepareMs": 54.799999952316284,
+      "backend": "compact-gpu-f32",
+      "sampling": "gpu-f32",
+      "n": 1024,
+      "lo": 0.30000001192092896,
+      "hi": 430.1440124511719,
+      "mean": 165.048909770531,
+      "meanSlopeX": 0.17135750632403068,
+      "hash": "5c1a4821",
+      "profiles": [
+        {
+          "factor": 1,
+          "coarseSize": 224,
+          "surfaceSize": 248,
+          "pipelineMs": 0.2999999523162842,
+          "encodeMs": 2.200000047683716,
+          "submitReadbackMs": 42.40000009536743,
+          "unpackMs": 0.7999999523162842,
+          "maxSolveSteps": [
+            18,
+            26,
+            26,
+            0
+          ],
+          "allocatedBytes": 32128736,
+          "gpuStagesMs": {
+            "coarse": 22.041952,
+            "surface": 0.000032,
+            "normalization": 0.271072
+          }
+        }
+      ]
+    },
+    {
+      "width": 10000,
+      "climate": "tropical",
+      "ms": 91.29999995231628,
+      "prepareMs": 52.5,
+      "backend": "compact-gpu-f32",
+      "sampling": "gpu-f32",
+      "n": 1024,
+      "lo": 0.30000001192092896,
+      "hi": 433.27435302734375,
+      "mean": 164.7648448169324,
+      "meanSlopeX": 0.16974831281210062,
+      "hash": "d986f386",
+      "profiles": [
+        {
+          "factor": 1,
+          "coarseSize": 224,
+          "surfaceSize": 248,
+          "pipelineMs": 0.40000009536743164,
+          "encodeMs": 2,
+          "submitReadbackMs": 40.5,
+          "unpackMs": 0.6999999284744263,
+          "maxSolveSteps": [
+            18,
+            26,
+            26,
+            0
+          ],
+          "allocatedBytes": 32128736,
+          "gpuStagesMs": {
+            "coarse": 22.089888,
+            "surface": 0.000064,
+            "normalization": 0.247552
+          }
+        }
+      ]
+    }
+  ],
+  "proof": {
+    "deltaRmsM": 1.1656318296027415,
+    "deltaMaxM": 3.037506103515625,
+    "changedOver1mmFraction": 0.8662986755371094,
+    "repeatMaxM": 0,
+    "cpuGpuMaxM": 0.0001297840589415955
+  },
+  "waterRows": [
+    {
+      "width": 5000,
+      "totalMs": 446.5,
+      "prepareMs": 46.60000002384186,
+      "hydrologyMs": 293.6999999284744,
+      "rivers": 14,
+      "lakes": 5,
+      "adjustmentRmsM": 0.35846868663433534,
+      "maxAdjustmentM": 11.456192016601562,
+      "finite": true
+    },
+    {
+      "width": 10000,
+      "totalMs": 891.1000000238419,
+      "prepareMs": 59.5,
+      "hydrologyMs": 556.2000000476837,
+      "rivers": 59,
+      "lakes": 24,
+      "adjustmentRmsM": 0.5090736348629139,
+      "maxAdjustmentM": 19.22613525390625,
+      "finite": true
+    }
+  ]
+}

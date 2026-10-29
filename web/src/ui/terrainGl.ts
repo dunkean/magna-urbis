@@ -31,7 +31,7 @@ import type { View } from '../render/view';
 import { FRACTAL_ROTATIONS, type FractalDetail } from '../../../rust/bridge/terrainAdjust';
 import { createTerrainSurfaceSampler, heightPyramid } from './terrainSurface';
 import { TERRAIN_3D_NOISE_GLSL } from './terrain3dNoise';
-import type { TerrainRefinement } from './terrainRefinement';
+import { isNeuralRefinement, type TerrainRefinement } from './terrainRefinement';
 export { heightPyramid } from './terrainSurface';
 
 export type GlStyle = TerrainStyle;
@@ -801,7 +801,7 @@ export class TerrainGl {
     bindForestBrushes(gl, u, look.style === 'render3d-brush' && mode === 3, 9);
     gl.uniform1i(u('uRenderV2'),renderV2Number(look.style));gl.uniform1i(u('uV2WaterVisible'),look.layers.water===false?0:1);if(this.base&&look.climate)gl.uniform4fv(u('uV2GlacierSources[0]'),renderV2GlacierSources(this.base.layer,look.climate));gl.uniform1f(u('uV2Season'),look.v2Season??.5);
     gl.uniform1i(u('uEnhanced3d'), look.mesh3d || isRender3dStyle(look.style) ? 1 : 0);
-    gl.uniform1i(u('uRefinementMode'), look.refinement3d === 'source' ? 0 : look.refinement3d === 'neural-earth' ? 2 : 1);
+    gl.uniform1i(u('uRefinementMode'), look.refinement3d === 'source' ? 0 : isNeuralRefinement(look.refinement3d ?? 'noise') ? 2 : 1);
     const refined = this.enhanced.at(-1), previousRefined = this.enhanced.at(-2);
     for (const [layer, name, unit] of [[refined, 'Refined', 5], [previousRefined, 'PreviousRefined', 6]] as const) {
       gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, layer?.texture ?? this.empty);

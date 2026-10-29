@@ -72,6 +72,8 @@ export async function generateGpuNoise(state: Context, settings: TerrainSettings
   const buffers: GPUBuffer[] = [];
   try {
     const params = plan.parameters();
+    if(settings.procedural?.regionalN){params[2]=settings.procedural.regionalN;params[4]=settings.width*1.44/params[2];}
+    params[6]*=settings.procedural?.noiseScale??1;
     const upload = (data: Float32Array | Uint32Array, usage: GPUBufferUsageFlags) => {
       const buffer = device.createBuffer({ size: data.byteLength, usage: usage | GPUBufferUsage.COPY_DST });
       buffers.push(buffer); device.queue.writeBuffer(buffer, 0, data as GPUAllowSharedBufferSource); return buffer;

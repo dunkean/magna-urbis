@@ -1,0 +1,15 @@
+{
+  "rust/bridge/terrain.ts": "d6126b6111d8be9de3cdf1850ac0b5083f5ccbf66fc6b5b1c0e4b39a91e75418",
+  "rust/bridge/terrainCpuPipeline.ts": "3d44b504dfe078865f34c37808f274d2d12c28a424f3bb2dc5b54d34272bda05",
+  "rust/bridge/terrainErosion.ts": "a299f1d5fa89cea76c09b649d436269afb273e54e4eadc2092b100c1bf56a68f",
+  "rust/bridge/terrainGenerationRecipe.ts": "d4331d66d7f0814ff8f90a0df967db4dfd790c0b14ebc2aec4a5e575218af042",
+  "rust/bridge/terrainGpu.ts": "24293486d52e99f28a751610f7941cddc12ce6800b1bbd3111dd8481e71ed2e8",
+  "rust/crates/core/src/erosion/pipeline.rs": "50168fdcc71c4ffeefc5335c78c19fe5a66b7b4578d19ed6d7a979d125413c7f",
+  "rust/crates/wasm/src/lib.rs": "8876945b308d2c942fa788f2c205d1142967849622fbc77687d694f552124388",
+  "rust/crates/local/src/main.rs": "80742258fa737a2eee2b090f01fb8e201521cda746b15a28e991fbc9fe53e5b7",
+  "web/src/ui/terrainPipelineSession.ts": "0945e0d36048716fad2f8a987d48dd6fb9906329c69b5011acf8539b8558a09f",
+  "web/src/ui/proceduralInspector.ts": "5e886d1bc6c31ede0d9c8727447e2b14aca0307ef44828867bdb34812d76a770",
+  "web/src/ui/terrainWorker.ts": "fd12d9f9359fcb0c73affcdc174602928f629f94c866969afe2e9f73c6ec4996",
+  "web/src/ui/terrainbench.ts": "701166c91468ea3f2fad6ae4a55f8fedd92640cc64b65f3a73df5dfb4f403fdd",
+  "web/src/ui/benchPanels.ts": "53410cfa26fbd4bef7d51bf6ae067087609266181b4c128b105edc56495909c5"
+}

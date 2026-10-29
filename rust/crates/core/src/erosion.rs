@@ -3,6 +3,8 @@
 //! basin breaching, thermal relaxation, and bounded bicubic sampling.
 use crate::{noise::Noise, smooth};
 use std::f64::consts::{FRAC_PI_4, SQRT_2};
+mod pipeline;
+pub use pipeline::TerrainPipeline;
 
 const D8: [(isize, isize); 8] = [
     (1, 0),

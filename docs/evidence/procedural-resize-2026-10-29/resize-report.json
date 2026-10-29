@@ -1,0 +1,21 @@
+{
+  "report": {
+    "initial": "GPU · échantillonnage du relief 768 × 768…",
+    "resizeMs": 4775,
+    "result": {
+      "view": {
+        "cx": 5000,
+        "cy": 5000,
+        "scale": 0.0915
+      },
+      "status": "Montagnes · GPU FP32 · map 10,000 m · landform scale 12,000 m · overview 512² · contours 40 m · preparation 2148 ms (GPU FP32 erosion, GPU simulation 2145 ms) · GPU initialization 4 ms · generation + overview 3577 ms · rendering 336 ms",
+      "compute": "gpu-f32",
+      "generation": "gpu-erosion",
+      "motif": "12000"
+    },
+    "pauseVisibleWithoutSpinner": true,
+    "singleLineHeaders": true,
+    "defaultMotif": 10000
+  },
+  "errors": []
+}

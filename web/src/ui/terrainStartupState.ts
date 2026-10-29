@@ -5,7 +5,10 @@ import type { Locale } from './shellLocale';
 export function initialTerrainSource(params: URLSearchParams, neuralDefault: string): TerrainSource {
   const requested = params.get('source');
   if (requested === 'neural' && !params.has('neural')) return 'neural-python';
-  if (requested === 'procedural' || requested === 'neural' || requested === 'neural-wasm' || requested === 'neural-python') return requested;
+  if (requested === 'procedural' || requested === 'procedural-phasor' || requested === 'neural' || requested === 'neural-wasm' || requested === 'neural-python') return requested;
+  // Older saved procedural URLs omitted source; reloading under another profile
+  // must not turn those maps into the default neural generator.
+  if (!requested && (params.has('procedural') || params.get('engine') === 'rust' && params.has('v'))) return 'procedural';
   return neuralDefault === 'neural-python' ? 'neural-python' : 'neural-wasm';
 }
 

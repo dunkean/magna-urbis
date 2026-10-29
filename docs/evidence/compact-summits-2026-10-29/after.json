@@ -1,0 +1,299 @@
+{
+  "rows": [
+    {
+      "seed": "magna-urbis-v2",
+      "width": 6000,
+      "motifSize": 10000,
+      "ms": 791.2999999523163,
+      "globalMax": 2345.9502763386517,
+      "hydrology": false,
+      "vector": false,
+      "raw": {
+        "lo": 0.30000001192092896,
+        "hi": 1079.4771728515625,
+        "p80": 501.22442626953125,
+        "p99": 1012.1258544921875,
+        "maxPlateauFraction": 9.5367431640625e-7,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.008749961853027344,
+        "upperMode": 525.7,
+        "upperModeFraction": 0.00008127554801233475
+      },
+      "overview": {
+        "lo": 0.30000001192092896,
+        "hi": 1078.715576171875,
+        "p80": 501.35089111328125,
+        "p99": 1012.1035766601562,
+        "maxPlateauFraction": 0.000003814697265625,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.007579803466796875,
+        "upperMode": 634.59,
+        "upperModeFraction": 0.0001533830550069981
+      },
+      "v2": {
+        "lo": 0.30000001192092896,
+        "hi": 1078.715576171875,
+        "p80": 501.35089111328125,
+        "p99": 1012.1035766601562,
+        "maxPlateauFraction": 0.000003814697265625,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.007579803466796875,
+        "upperMode": 634.59,
+        "upperModeFraction": 0.0001533830550069981
+      }
+    },
+    {
+      "seed": "magna-urbis-v2",
+      "width": 6000,
+      "motifSize": 10000,
+      "v2Defaults": true,
+      "ms": 3124,
+      "globalMax": 2345.9502763386517,
+      "hydrology": false,
+      "vector": true,
+      "raw": {
+        "lo": -258.5643005371094,
+        "hi": 1078.703369140625,
+        "p80": 466.9153747558594,
+        "p99": 1011.3785400390625,
+        "maxPlateauFraction": 9.5367431640625e-7,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.008988380432128906,
+        "upperMode": 583.06,
+        "upperModeFraction": 0.00007652060795623022
+      },
+      "overview": {
+        "lo": -254.4442596435547,
+        "hi": 1078.2982177734375,
+        "p80": 466.8553466796875,
+        "p99": 1011.4000244140625,
+        "maxPlateauFraction": 0.000003814697265625,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.007495880126953125,
+        "upperMode": 522.78,
+        "upperModeFraction": 0.00013431317996047355
+      },
+      "v2": {
+        "lo": -254.4442596435547,
+        "hi": 1078.2982177734375,
+        "p80": 466.8553466796875,
+        "p99": 1011.4000244140625,
+        "maxPlateauFraction": 0.000003814697265625,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.007495880126953125,
+        "upperMode": 522.78,
+        "upperModeFraction": 0.00013431317996047355
+      }
+    },
+    {
+      "seed": "42",
+      "width": 6000,
+      "motifSize": 10000,
+      "ms": 284.5,
+      "globalMax": 2396.9559404011516,
+      "hydrology": false,
+      "vector": false,
+      "raw": {
+        "lo": 0.30000001192092896,
+        "hi": 1111.355712890625,
+        "p80": 544.0687255859375,
+        "p99": 890.6878662109375,
+        "maxPlateauFraction": 9.5367431640625e-7,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.009436607360839844,
+        "upperMode": 561.98,
+        "upperModeFraction": 0.00012915323313593616
+      },
+      "overview": {
+        "lo": 0.30000001192092896,
+        "hi": 1109.966796875,
+        "p80": 544.060302734375,
+        "p99": 890.2733154296875,
+        "maxPlateauFraction": 0.000003814697265625,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.00809478759765625,
+        "upperMode": 568.4,
+        "upperModeFraction": 0.00021113243761996161
+      },
+      "v2": {
+        "lo": 0.30000001192092896,
+        "hi": 1109.966796875,
+        "p80": 544.060302734375,
+        "p99": 890.2733154296875,
+        "maxPlateauFraction": 0.000003814697265625,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.00809478759765625,
+        "upperMode": 568.4,
+        "upperModeFraction": 0.00021113243761996161
+      }
+    },
+    {
+      "seed": "compact-proof",
+      "width": 5000,
+      "motifSize": 3000,
+      "ms": 242.5,
+      "globalMax": 1100.4340298040195,
+      "hydrology": false,
+      "vector": false,
+      "raw": {
+        "lo": 0.30000001192092896,
+        "hi": 532.756591796875,
+        "p80": 225.4322967529297,
+        "p99": 403.999267578125,
+        "maxPlateauFraction": 9.5367431640625e-7,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.0071735382080078125,
+        "upperMode": 225.45,
+        "upperModeFraction": 0.00022499126363710346
+      },
+      "overview": {
+        "lo": 0.30000001192092896,
+        "hi": 531.7899780273438,
+        "p80": 225.43760681152344,
+        "p99": 403.58819580078125,
+        "maxPlateauFraction": 0.000003814697265625,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.004268646240234375,
+        "upperMode": 238.87,
+        "upperModeFraction": 0.00028834509140539396
+      },
+      "v2": {
+        "lo": 0.30000001192092896,
+        "hi": 531.7899780273438,
+        "p80": 225.43760681152344,
+        "p99": 403.58819580078125,
+        "maxPlateauFraction": 0.000003814697265625,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.004268646240234375,
+        "upperMode": 238.87,
+        "upperModeFraction": 0.00028834509140539396
+      }
+    },
+    {
+      "seed": "magna-urbis-v2",
+      "width": 10000,
+      "motifSize": 10000,
+      "ms": 218.5,
+      "globalMax": 2410.8233232136517,
+      "hydrology": false,
+      "vector": false,
+      "raw": {
+        "lo": 0.30000001192092896,
+        "hi": 1120.0228271484375,
+        "p80": 470.8777770996094,
+        "p99": 950.0155639648438,
+        "maxPlateauFraction": 9.5367431640625e-7,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.0079498291015625,
+        "upperMode": 483.28,
+        "upperModeFraction": 0.0001292558691739114
+      },
+      "overview": {
+        "lo": 0.30000001192092896,
+        "hi": 1118.83056640625,
+        "p80": 470.9190979003906,
+        "p99": 949.782470703125,
+        "maxPlateauFraction": 0.000003814697265625,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.006038665771484375,
+        "upperMode": 497.29,
+        "upperModeFraction": 0.00019224484303208565
+      },
+      "v2": {
+        "lo": 0.30000001192092896,
+        "hi": 1118.83056640625,
+        "p80": 470.9190979003906,
+        "p99": 949.782470703125,
+        "maxPlateauFraction": 0.000003814697265625,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.006038665771484375,
+        "upperMode": 497.29,
+        "upperModeFraction": 0.00019224484303208565
+      }
+    },
+    {
+      "seed": "42",
+      "width": 5000,
+      "motifSize": 50000,
+      "ms": 174.69999992847443,
+      "globalMax": 3500,
+      "hydrology": false,
+      "vector": false,
+      "raw": {
+        "lo": 0.30000001192092896,
+        "hi": 2185.020751953125,
+        "p80": 1426.55908203125,
+        "p99": 2082.86181640625,
+        "maxPlateauFraction": 9.5367431640625e-7,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.009341239929199219,
+        "upperMode": 1468.45,
+        "upperModeFraction": 0.00009592924259066512
+      },
+      "overview": {
+        "lo": 0.30000004172325134,
+        "hi": 2184.713623046875,
+        "p80": 1426.5474853515625,
+        "p99": 2082.814208984375,
+        "maxPlateauFraction": 0.000003814697265625,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.0081024169921875,
+        "upperMode": 1437.11,
+        "upperModeFraction": 0.00015439842513606362
+      },
+      "v2": {
+        "lo": 0.30000004172325134,
+        "hi": 2184.713623046875,
+        "p80": 1426.5474853515625,
+        "p99": 2082.814208984375,
+        "maxPlateauFraction": 0.000003814697265625,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.0081024169921875,
+        "upperMode": 1437.11,
+        "upperModeFraction": 0.00015439842513606362
+      }
+    },
+    {
+      "seed": "compact-proof",
+      "width": 10000,
+      "motifSize": 3000,
+      "ms": 221.29999995231628,
+      "globalMax": 1153.5335415227696,
+      "hydrology": false,
+      "vector": false,
+      "raw": {
+        "lo": 0.30000001192092896,
+        "hi": 565.9437866210938,
+        "p80": 206.45240783691406,
+        "p99": 397.8821716308594,
+        "maxPlateauFraction": 9.5367431640625e-7,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.008661270141601562,
+        "upperMode": 215.53,
+        "upperModeFraction": 0.00021062608604075614
+      },
+      "overview": {
+        "lo": 0.30000001192092896,
+        "hi": 562.9249267578125,
+        "p80": 206.40708923339844,
+        "p99": 396.8642883300781,
+        "maxPlateauFraction": 0.000003814697265625,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.006092071533203125,
+        "upperMode": 214.79,
+        "upperModeFraction": 0.000326797385620915
+      },
+      "v2": {
+        "lo": 0.30000001192092896,
+        "hi": 562.9249267578125,
+        "p80": 206.40708923339844,
+        "p99": 396.8642883300781,
+        "maxPlateauFraction": 0.000003814697265625,
+        "flatUpperFraction": 0,
+        "exactFlatFraction": 0.006092071533203125,
+        "upperMode": 214.79,
+        "upperModeFraction": 0.000326797385620915
+      }
+    }
+  ]
+}

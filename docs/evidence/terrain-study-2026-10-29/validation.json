@@ -1,0 +1,14 @@
+{
+  "unitAndRegressionTests": {
+    "command": "npx vitest run tests/terrainRefinement.test.ts tests/erosion.quality.test.ts tests/hydro.test.ts",
+    "passed": 22,
+    "filesPassed": 3
+  },
+  "typescript": "npx tsc --noEmit --pretty false: passed",
+  "build": "npx vite build --mode terrainbench: passed; existing bundle-size and mixed static/dynamic import warnings",
+  "pythonSyntax": "py_compile: passed",
+  "http": "Actual local neural_python.py service: four modes, finite tiles, unchanged native level, distinct source identities, invalid mode/intensity rejected with HTTP 400",
+  "localAmplification": "8 method/LOD cases: finite, deterministic, exact quadrant mosaic",
+  "scope": "No browser speed measurements, decoder-backed refinement, or full-region fine hydrology validation. See study for limits.",
+  "browserSmoke": "Not validated: headless navigation/page initialization timed out on local development and static servers. API and build checks passed; generated comparison image was inspected separately."
+}

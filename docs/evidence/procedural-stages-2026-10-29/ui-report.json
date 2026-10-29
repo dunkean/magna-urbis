@@ -1,0 +1,12 @@
+{
+  "terrainbench": {
+    "stages": 18,
+    "stepping": true,
+    "biomeRainEdits": true,
+    "parameterInvalidation": true,
+    "runTo": true,
+    "keep": true
+  },
+  "rustbench": true,
+  "errors": []
+}

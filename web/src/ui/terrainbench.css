@@ -133,7 +133,7 @@ summary { cursor: pointer; font-size: 12px; font-weight: 600; }
 .sketch-actions { display: flex; flex-wrap: wrap; gap: 4px; }
 .sketch-actions button { height: auto; min-height: 25px; white-space: normal; }
 .sketch-editor .terrain-flow { margin: 0; padding: 6px; background: #eef4ef; border-left: 2px solid #75a48b; }
-#viewport .terrain-paint-overlay { position: absolute; z-index: 2; opacity: .86; border: 1px solid #75a48b; border-radius: 0; max-width: none; touch-action: none; cursor: crosshair; }
+#viewport .terrain-paint-overlay { position: absolute; z-index: 2; opacity: .86; background:transparent; border: 1px solid #75a48b; border-radius: 0; max-width: none; touch-action: none; cursor: crosshair; }
 .terrain-brush-cursor { position: absolute; z-index: 3; border: 1px solid white; outline: 1px solid #253b38; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; }
 .terrain-editing #pinLayer { visibility: hidden; }
 .terrain-help-row { display: flex; gap: 4px; align-items: center; min-width: 0; }

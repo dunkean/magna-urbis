@@ -9,8 +9,14 @@ describe('terrain startup', () => {
   });
   it('preserves intentional map sources and legacy neural endpoints', () => {
     expect(initialTerrainSource(new URLSearchParams('source=procedural'), 'neural-python')).toBe('procedural');
+    expect(initialTerrainSource(new URLSearchParams('source=procedural-phasor'), 'neural-python')).toBe('procedural-phasor');
     expect(initialTerrainSource(new URLSearchParams('source=neural'), 'neural-wasm')).toBe('neural-python');
     expect(initialTerrainSource(new URLSearchParams('source=neural&neural=http://127.0.0.1:8792'), 'neural-python')).toBe('neural');
+  });
+  it('recognizes saved procedural URLs which predate an explicit source', () => {
+    expect(initialTerrainSource(new URLSearchParams('procedural=%7B%22biome%22%3Atrue%7D'), 'neural-wasm')).toBe('procedural');
+    expect(initialTerrainSource(new URLSearchParams('engine=rust&v=4&compute=wasm&generation=cpu'), 'neural-wasm')).toBe('procedural');
+    expect(initialTerrainSource(new URLSearchParams('source=neural-wasm&engine=rust&v=4&procedural=%7B%7D'), 'neural-python')).toBe('neural-wasm');
   });
   it('distinguishes a ready service from models actually loaded on the GPU', () => {
     expect(neuralModelLabel({ state: 'ready', message: 'Service prêt', loaded: false })).toBe('Service prêt · modèles chargés au premier calcul');

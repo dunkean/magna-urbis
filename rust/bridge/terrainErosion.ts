@@ -126,7 +126,7 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
   let buffers = scratch.get(device);
   if (!buffers) {
     buffers = []; scratch.set(device, buffers);
-    if(!lab&&!compact){const owned = buffers;
+    if((!lab||lab.previews===false)&&!compact){const owned = buffers;
       void device.lost.then(() => owned.forEach(buffer => buffer.destroy()));}
   }
   let bufferIndex = 0;
@@ -192,8 +192,9 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
     const output = create(1024 * 1024 * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC);
     const readback = create(1024 * 1024 * 4 + 1088, GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ);
     const tileFlags = create(Math.ceil(Math.max(n, surface[2]) / 16) ** 2 * 8, GPUBufferUsage.STORAGE);
-    let querySet = lab ? undefined : queries.get(device);
-    if (!lab && !querySet && device.features.has('timestamp-query')) {
+    const inspect=!!lab&&lab.previews!==false;
+    let querySet = inspect ? undefined : queries.get(device);
+    if (!inspect && !querySet && device.features.has('timestamp-query')) {
       querySet = device.createQuerySet({ type: 'timestamp', count: 6 }); queries.set(device, querySet);
       const owned = querySet; void device.lost.then(() => owned.destroy());
     }
@@ -267,6 +268,7 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
     };
     const snapshot = async (stage:GenerationStage,kind:number,detail?:string) => {
       if(!lab)return;
+      if(lab.previews===false){await lab.after(stage,undefined,detail);return;}
       if(kind!==3){const extras=normal.slice();extras[7]=kind;dispatch('generationPreview',extras,4096);}
       pass.end();encoder.copyBufferToBuffer(output,0,readback,0,1024*1024*4);
       device.queue.submit([encoder.finish()]);await readback.mapAsync(GPUMapMode.READ);
@@ -388,7 +390,7 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
   } finally {
     plan.free();
     // Also recover a mapped staging buffer if validation/readback failed.
-    buffers.forEach(buffer => { if (buffer.mapState !== 'unmapped') buffer.unmap(); if(lab||compact)buffer.destroy(); });
-    if(lab||compact)scratch.delete(device);
+    buffers.forEach(buffer => { if (buffer.mapState !== 'unmapped') buffer.unmap(); if(lab&&lab.previews!==false||compact)buffer.destroy(); });
+    if(lab&&lab.previews!==false||compact)scratch.delete(device);
   }
 }

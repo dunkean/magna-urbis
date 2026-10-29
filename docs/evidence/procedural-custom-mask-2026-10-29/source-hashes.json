@@ -1,0 +1,30 @@
+[
+  {
+    "Path": "D:\\workspace\\self\\magna-urbis\\web\\src\\ui\\proceduralInspector.ts",
+    "Hash": "0B9616421A1C75EF3D08030296B7D5B4836F2A5F4A36AEF18649FE615B2707F4"
+  },
+  {
+    "Path": "D:\\workspace\\self\\magna-urbis\\web\\src\\ui\\proceduralInspector.css",
+    "Hash": "A077BA876D08493E9177DAD52969FC2EE744F99907965BC15300E887646EE472"
+  },
+  {
+    "Path": "D:\\workspace\\self\\magna-urbis\\web\\src\\ui\\terrainSketchEditor.ts",
+    "Hash": "ED6F15AEDA2F18C369689333D2B97F67ABEA173FBB0EE2F1CFA85C3B95557CDE"
+  },
+  {
+    "Path": "D:\\workspace\\self\\magna-urbis\\web\\src\\ui\\terrainbench.ts",
+    "Hash": "FB54209EBB2C3ED76643E2F66B1B95E34488534050C8D55F0B8EC1A2DEFB6424"
+  },
+  {
+    "Path": "D:\\workspace\\self\\magna-urbis\\web\\src\\ui\\benchPanels.ts",
+    "Hash": "BA696D8F473CB582CCD8C3E7FDCD74A332F46D10E34AE4DAB26B8B70857D2555"
+  },
+  {
+    "Path": "D:\\workspace\\self\\magna-urbis\\rust\\bridge\\terrain.ts",
+    "Hash": "D47071811C6E3A5A8DABCF7AB8E1D6E3743619D2D5D7BC748764F0F4D2A43D89"
+  },
+  {
+    "Path": "D:\\workspace\\self\\magna-urbis\\web\\scripts\\check_custom_mask_ui.mjs",
+    "Hash": "8713A19A27C65C374521CCC5272D9DA76CA9531FAC39B5C39B6A6A62848FF003"
+  }
+]

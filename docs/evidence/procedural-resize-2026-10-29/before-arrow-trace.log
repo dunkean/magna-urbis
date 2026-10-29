@@ -1,0 +1,9 @@
+adapter { info: {}, fallback: undefined }
+50km 4665 {"phase":"ready","status":"Montagnes · GPU FP32 · map 50,000 m · landform scale 12,000 m · overview 512² · contours 40 m · preparation 1777 ms (GPU FP32 erosion, GPU simulation 1771 ms) · GPU initialization 8 ms · generation + overview 4085 ms · rendering 541 ms","pipeline":"Pipeline terminé · résultat appliqué à la carte principale.","width":"50000"} []
+before-arrow
+after-arrow
+wait-state TimeoutError: locator.waitFor: Timeout 7000ms exceeded.
+Call log:
+[2m  - waiting for locator('#frames iframe').first().contentFrame().locator('[data-stage="grids"][data-state="waiting"]') to be visible[22m
+
+arrow10km {"trace":[{"event":"input","id":"width","busy":null},{"event":"input","id":"width","busy":null},{"message":"detail","width":50000},{"event":"change","id":"width","busy":null},{"event":"click","id":"reliefStage","busy":null}],"phase":"ready","loading":false,"status":"Montagnes · GPU FP32 · map 50,000 m · landform scale 12,000 m · overview 512² · contours 40 m · preparation 1777 ms (GPU FP32 erosion, GPU simulation 1771 ms) · GPU initialization 8 ms · generation + overview 4085 ms · detail 768² (65.10 m) · sampling 154 ms · rendering 447 ms","pipeline":"Paramètres modifiés : la prochaine exécution utilisera ces réglages.","width":"10000","view":{"cx":25000,"cy":25000,"scale":0.02068}}

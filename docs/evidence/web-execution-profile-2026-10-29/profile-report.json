@@ -1,0 +1,50 @@
+[
+  {
+    "scenario": "cpu-switch",
+    "source": "procedural",
+    "compute": "wasm",
+    "generation": "cpu",
+    "status": "Montagnes · CPU Rust · map 5,000 m · landform scale 3,000 m · overview 512² · contours 40 m · preparation 195 ms (CPU compact) · Pipeline procédural Rust WASM · étapes partagées avec la génération globale. · generation + overview 303 ms · rendering 173 ms",
+    "loading": "\n        Terrain prêtL’affichage et les commandes peuvent rester figés pendant cette étape.\n      ",
+    "hidden": true,
+    "ready": true,
+    "modelRequests": 0,
+    "errors": []
+  },
+  {
+    "scenario": "gpu-switch",
+    "source": "procedural",
+    "compute": "gpu-f32",
+    "generation": "gpu-erosion",
+    "status": "Montagnes · GPU FP32 · map 5,000 m · landform scale 3,000 m · overview 512² · contours 40 m · preparation 248 ms (GPU FP32 compact) · compact-erosion-phasor-v2-summits · préréglage compact · grille 64² · temperate · Phasor désactivé. · GPU initialization 888 ms · generation + overview 1349 ms · rendering 175 ms",
+    "loading": "\n        Terrain prêtL’affichage et les commandes peuvent rester figés pendant cette étape.0 s écoulées\n      ",
+    "hidden": true,
+    "ready": true,
+    "modelRequests": 0,
+    "errors": []
+  },
+  {
+    "scenario": "gpu-unavailable",
+    "source": "procedural",
+    "compute": "gpu-f32",
+    "generation": "gpu-erosion",
+    "status": "Montagnes · CPU Rust (WebGPU indisponible) · map 5,000 m · landform scale 3,000 m · overview 512² · contours 40 m · preparation 194 ms (CPU compact) · Pipeline procédural Rust WASM · étapes partagées avec la génération globale. · generation + overview 277 ms · rendering 109 ms",
+    "loading": "\n        Terrain prêtL’affichage et les commandes peuvent rester figés pendant cette étape.\n      ",
+    "hidden": true,
+    "ready": true,
+    "modelRequests": 0,
+    "errors": []
+  },
+  {
+    "scenario": "native-to-web",
+    "source": "procedural",
+    "compute": "wasm",
+    "generation": "cpu",
+    "status": "Montagnes · CPU Rust · map 5,000 m · landform scale 3,000 m · overview 512² · contours 40 m · preparation 170 ms (CPU compact) · Pipeline procédural Rust WASM · étapes partagées avec la génération globale. · generation + overview 248 ms · rendering 105 ms",
+    "loading": "\n        Terrain prêtL’affichage et les commandes peuvent rester figés pendant cette étape.\n      ",
+    "hidden": true,
+    "ready": true,
+    "modelRequests": 0,
+    "errors": []
+  }
+]
