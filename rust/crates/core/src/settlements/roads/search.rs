@@ -255,14 +255,18 @@ const LONG: usize = 8;
 pub(super) fn long_grades(f: &Fields) -> &[f32] {
     f.long_grades.get_or_init(|| {
         let n = f.r.n;
-        let mut out = vec![0.0_f32; n * n * (DIRS.len() - LONG)];
-        for i in 0..n * n {
-            let (x, y) = ((i % n) as isize, (i / n) as isize);
-            for (k, &(dx, dy)) in DIRS[LONG..].iter().enumerate() {
-                out[i * (DIRS.len() - LONG) + k] = line_grade(f, x, y, dx, dy) as f32;
+        let per = DIRS.len() - LONG;
+        // Rows in parallel, joined in row order.
+        let rows = crate::urban::par::range(n, |y| {
+            let mut row = vec![0.0_f32; n * per];
+            for x in 0..n {
+                for (k, &(dx, dy)) in DIRS[LONG..].iter().enumerate() {
+                    row[x * per + k] = line_grade(f, x as isize, y as isize, dx, dy) as f32;
+                }
             }
-        }
-        out
+            row
+        });
+        rows.concat()
     })
 }
 /// Steepest grade along a long move, sampled about once per cell: the two ends alone would let
@@ -468,7 +472,7 @@ impl Search {
                     let p = f.pos(j);
                     // Meandering fades on steep ground, where the grade rules the line: noise there
                     // would bunch switchbacks into its cheap patches.
-                    let flat = 1.0 - super::super::smooth(f64::from(f.slope_s[j]), 0.08, 0.3);
+                    let flat = f.flat[j];
                     let meander = (1.0 + wobble * flat * costs.noise[j] as f64).max(0.5);
                     let beside = if net.settled[j] || net.on_road(j) {
                         1.0
@@ -485,7 +489,7 @@ impl Search {
                     };
                     ground * meander * beside * straight
                 };
-                if f.r.water[j] == 3 {
+                if f.r.water[j] == 3 && !river_penalty.is_empty() {
                     m *= river_penalty.get(&f.r.river_ids[j]).copied().unwrap_or(1.0);
                 }
                 let cost = here + dist * slope * m + turn;

@@ -460,14 +460,11 @@ pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
                     population: [8, 40, 300, 3000, 30000][band],
                     ..s.clone()
                 };
-                let mut list: Vec<_> = candidates
-                    .iter()
-                    .map(|&i| {
-                        // Keep every dry candidate: the actual population, rather than a
-                        // class representative, determines whether the site is feasible.
-                        (i, score(f, i, &rep, cfg, &noise).0.total)
-                    })
-                    .collect();
+                let mut list: Vec<_> = crate::urban::par::map(&candidates, |_, &i| {
+                    // Keep every dry candidate: the actual population, rather than a
+                    // class representative, determines whether the site is feasible.
+                    (i, score(f, i, &rep, cfg, &noise).0.total)
+                });
                 list.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
                 list
             });

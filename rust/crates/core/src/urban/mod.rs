@@ -24,7 +24,7 @@ mod influences;
 pub mod kinds;
 mod macroplan;
 mod network;
-mod par;
+pub(crate) mod par;
 mod probe_cache;
 mod parcels;
 mod profiles;

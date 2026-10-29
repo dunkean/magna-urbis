@@ -253,9 +253,14 @@ impl Geography {
                 vec![shape.clone()]
             };
         }
+        // Land pieces whose boxes miss the shape intersect it in nothing.
         let mut land: Vec<_> = self
             .land
             .iter()
+            .filter(|s| {
+                let b = g::bbox(s);
+                !(b.2 < bb.0 || bb.2 < b.0 || b.3 < bb.1 || bb.3 < b.1)
+            })
             .flat_map(|s| g::intersection(shape, s))
             .collect();
         for i in self.water_near(bb) {

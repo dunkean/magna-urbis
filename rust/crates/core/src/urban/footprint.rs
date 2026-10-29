@@ -2024,9 +2024,20 @@ fn accessible(
             let mut anchors = grid.boundary_centers(&mask);
             anchors.extend(centers.iter().map(|c| c.point));
             let connected = smooth_growth(&land(&mask), step, surface, &anchors);
+            // Pairs with disjoint boxes intersect in nothing: skip them.
+            let final_boxes = final_land.iter().map(g::bbox).collect::<Vec<_>>();
             let clipped = connected
                 .iter()
-                .flat_map(|s| final_land.iter().flat_map(move |f| g::intersection(s, f)))
+                .flat_map(|s| {
+                    let a = g::bbox(s);
+                    final_land.iter().zip(&final_boxes).flat_map(move |(f, b)| {
+                        if a.2 < b.0 || b.2 < a.0 || a.3 < b.1 || b.3 < a.1 {
+                            Vec::new()
+                        } else {
+                            g::intersection(s, f)
+                        }
+                    })
+                })
                 .collect::<Vec<_>>();
             union(&[previous.clone(), clipped].concat())
         };

@@ -142,9 +142,12 @@ pub(in super::super) fn spans(culture: &str, population: u32) -> (f64, f64) {
 /// wet cell or a watercourse narrower than the lattice running between them.
 fn banks(grid: &Grid, dry: &[bool], surface: Surface<'_>) -> Vec<usize> {
     let n = grid.nx * grid.ny;
-    let mut bank = vec![false; n];
-    for i in 0..n {
+    // Each cell decides independently which of its two forward neighbours make a bank pair;
+    // the marks are merged afterwards (a set union, so order cannot matter).
+    let marks = super::super::par::range(n, |i| {
         let (x, y) = (i % grid.nx, i / grid.nx);
+        let mut out = [usize::MAX; 4];
+        let mut count = 0;
         for j in [
             (x + 1 < grid.nx).then_some(i + 1),
             (y + 1 < grid.ny).then_some(i + grid.nx),
@@ -156,14 +159,28 @@ fn banks(grid: &Grid, dry: &[bool], surface: Surface<'_>) -> Vec<usize> {
             match (dry[i], dry[j]) {
                 (true, true) => {
                     if !routing::segment_clear(surface, p, q, f64::INFINITY) {
-                        bank[i] = true;
-                        bank[j] = true;
+                        out[count] = i;
+                        out[count + 1] = j;
+                        count += 2;
                     }
                 }
-                (true, false) if surface.wet(q) => bank[i] = true,
-                (false, true) if surface.wet(p) => bank[j] = true,
+                (true, false) if surface.wet(q) => {
+                    out[count] = i;
+                    count += 1;
+                }
+                (false, true) if surface.wet(p) => {
+                    out[count] = j;
+                    count += 1;
+                }
                 _ => {}
             }
+        }
+        (out, count)
+    });
+    let mut bank = vec![false; n];
+    for (out, count) in marks {
+        for &c in &out[..count] {
+            bank[c] = true;
         }
     }
     (0..n).filter(|&i| bank[i]).collect()
@@ -230,11 +247,18 @@ fn deck_at(surface: Surface<'_>, middle: Point, center_passes: u8) -> Option<[Po
     let banks = |u: (f64, f64)| -> Option<(f64, f64)> {
         Some((bank((-u.0, -u.1))?, bank(u)?))
     };
-    let (shortest, mut normal) = (0..36).filter_map(|i| {
+    // The shortest chord wins, the first on ties. Both ends are positive, so once the
+    // first end alone is longer than the best chord the other cannot matter.
+    let mut best: Option<(f64, (f64, f64))> = None;
+    for i in 0..36 {
         let angle = i as f64 * std::f64::consts::PI / 36.0;
         let u = (angle.cos(), angle.sin());
-        banks(u).map(|(a, b)| (a + b, u))
-    }).min_by(|a, b| a.0.total_cmp(&b.0))?;
+        let Some(a) = bank((-u.0, -u.1)) else { continue; };
+        if best.is_some_and(|(sum, _)| a > sum) { continue; }
+        let Some(b) = bank(u) else { continue; };
+        if best.is_none_or(|(sum, _)| (a + b).total_cmp(&sum).is_lt()) { best = Some((a + b, u)); }
+    }
+    let (shortest, mut normal) = best?;
     let (a, b) = banks(normal)?;
     let center = Point { x: middle.x + normal.0 * (b - a) * 0.5, y: middle.y + normal.1 * (b - a) * 0.5 };
     // Establish the channel width at its centre before choosing a fit window.
@@ -438,9 +462,10 @@ pub(super) fn candidates(
     if rules.max_span <= 0.0 {
         return vec![];
     }
-    let all: Vec<Crossing> = banks(grid, dry, surface)
+    let cells = banks(grid, dry, surface);
+    let all: Vec<Crossing> = super::super::par::map(&cells, |_, &i| measure(grid, dry, surface, rules, i))
         .into_iter()
-        .filter_map(|i| measure(grid, dry, surface, rules, i))
+        .flatten()
         .collect();
     let parallel = |a: (f64, f64), b: (f64, f64)| (a.0 * b.0 + a.1 * b.1).abs() >= 0.5;
     let unit = |a: Point, b: Point| {

@@ -1894,8 +1894,10 @@ fn drop_shadowed_within(streets: &mut Vec<Street>, gap: f64, walls: &[(Point, Po
             }
         }
     }
+    // Streets are not mutated while shadows are searched: rank every one once.
+    let keys: Vec<_> = streets.iter().enumerate().map(|(i, s)| rank_key(i, s)).collect();
     let mut order: Vec<usize> = (0..streets.len()).collect();
-    order.sort_by_key(|&i| std::cmp::Reverse(rank_key(i, &streets[i])));
+    order.sort_by_key(|&i| std::cmp::Reverse(keys[i]));
     let mut removed = vec![false; streets.len()];
     // (removed street, survivor)
     let mut replaced: Vec<(usize, usize)> = vec![];
@@ -1908,9 +1910,10 @@ fn drop_shadowed_within(streets: &mut Vec<Street>, gap: f64, walls: &[(Point, Po
         if length < 8.0 {
             continue;
         }
-        let mine = rank_key(i, s);
+        let mine = keys[i];
         // Coverage by each dominating street, sampled along the path.
         let mut covered: BTreeMap<usize, f64> = BTreeMap::new();
+        let mut hit: Vec<usize> = Vec::new();
         let mut total = 0.0;
         for (m, w) in s.path.windows(2).enumerate() {
             let own = width(s, m).min(width(s, m + 1));
@@ -1921,13 +1924,13 @@ fn drop_shadowed_within(streets: &mut Vec<Street>, gap: f64, walls: &[(Point, Po
                 let step = l / n as f64;
                 total += step;
                 let cell = ((p.x / CELL).floor() as i64, (p.y / CELL).floor() as i64);
-                let mut hit = BTreeSet::new();
+                hit.clear();
                 for &(j, seg) in buckets.get(&cell).into_iter().flatten() {
                     if j == i || removed[j] || hit.contains(&j) {
                         continue;
                     }
                     let t = &streets[j];
-                    if rank_key(j, t) >= mine {
+                    if keys[j] >= mine {
                         continue;
                     }
                     // Ribbons that overlap leave no land between them.
@@ -1940,10 +1943,10 @@ fn drop_shadowed_within(streets: &mut Vec<Street>, gap: f64, walls: &[(Point, Po
                                 .iter()
                                 .any(|&(a, b)| super::geometry::segment_hit(p, q, a, b).is_some())
                     {
-                        hit.insert(j);
+                        hit.push(j);
                     }
                 }
-                for j in hit {
+                for &j in &hit {
                     *covered.entry(j).or_default() += step;
                 }
             }
@@ -1951,7 +1954,7 @@ fn drop_shadowed_within(streets: &mut Vec<Street>, gap: f64, walls: &[(Point, Po
         if let Some((&j, _)) = covered
             .iter()
             .filter(|&(_, &c)| c >= 0.9 * total)
-            .min_by_key(|&(&j, _)| rank_key(j, &streets[j]))
+            .min_by_key(|&(&j, _)| keys[j])
         {
             removed[i] = true;
             replaced.push((i, j));

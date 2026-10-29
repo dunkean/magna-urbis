@@ -282,11 +282,17 @@ struct Router<'a> {
     search: Search,
     /// Road cells in insertion order, with the site whose component each route joined.
     road_cells: Vec<(usize, usize)>,
+    /// The same cells grouped by the site they were tagged with (goal lists per component).
+    cells_of_site: Vec<Vec<usize>>,
     marked: Vec<bool>,
     uf: Union,
     routed: Vec<Routed>,
 }
 impl Router<'_> {
+    fn add_road_cell(&mut self, cell: usize, site: usize) {
+        self.road_cells.push((cell, site));
+        self.cells_of_site[site].push(cell);
+    }
     fn profile_of(&self, site: usize) -> usize {
         if self.cfg.culture == "auto" {
             profile_for(&self.sites[site].culture)
@@ -313,10 +319,15 @@ impl Router<'_> {
         let start_i = f.index(start);
         let reach = self.radius(to) + 200.0;
         let mut goals = vec![goal];
-        for &(cell, site) in &self.road_cells {
-            if self.uf.find(site) == comp && (!same || f.pos(cell).distance(target.center) < reach)
-            {
-                goals.push(cell);
+        // Goal order does not matter to the search (it only flags them and bounds them).
+        for site in 0..self.sites.len() {
+            if self.uf.find(site) != comp {
+                continue;
+            }
+            for &cell in &self.cells_of_site[site] {
+                if !same || f.pos(cell).distance(target.center) < reach {
+                    goals.push(cell);
+                }
             }
         }
         let profile = self.profile_of(to);
@@ -346,7 +357,7 @@ impl Router<'_> {
         for &c in &cells {
             if !self.marked[c] {
                 self.marked[c] = true;
-                self.road_cells.push((c, to));
+                self.add_road_cell(c, to);
             }
         }
         self.routed.push(Routed {
@@ -401,7 +412,7 @@ impl Router<'_> {
         for &cell in &cells {
             if !self.marked[cell] {
                 self.marked[cell] = true;
-                self.road_cells.push((cell, site));
+                self.add_road_cell(cell, site);
             }
         }
         self.routed.push(Routed {
@@ -551,7 +562,7 @@ impl Router<'_> {
         for &c in &cells {
             if !self.marked[c] {
                 self.marked[c] = true;
-                self.road_cells.push((c, site));
+                self.add_road_cell(c, site);
             }
         }
         self.routed.push(Routed {
@@ -661,6 +672,7 @@ pub(super) fn route(
         },
         search: Search::new(size),
         road_cells: vec![],
+        cells_of_site: vec![vec![]; k],
         marked: vec![false; size],
         uf: Union::new(k),
         routed: vec![],

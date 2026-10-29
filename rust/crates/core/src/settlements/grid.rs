@@ -33,15 +33,16 @@ impl Ord for Entry {
 
 pub(super) fn blur(values: &[f32], n: usize, radius: usize, rounds: usize) -> Vec<f32> {
     let mut a = values.to_vec();
-    let mut b = vec![0.0; n * n];
     for _ in 0..rounds {
         for vertical in [false, true] {
-            for line in 0..n {
+            // Each line is an independent running sum; lines run in parallel, results land by index.
+            let lines = crate::urban::par::range(n, |line| {
                 let index = |p: usize| if vertical { p * n + line } else { line * n + p };
+                let mut out = vec![0.0_f32; n];
                 let mut sum = 0.0_f64;
                 let mut left = 0;
                 let mut right = 0;
-                for p in 0..n {
+                for (p, o) in out.iter_mut().enumerate() {
                     let end = (p + radius + 1).min(n);
                     while right < end {
                         sum += a[index(right)] as f64;
@@ -52,10 +53,17 @@ pub(super) fn blur(values: &[f32], n: usize, radius: usize, rounds: usize) -> Ve
                         sum -= a[index(left)] as f64;
                         left += 1;
                     }
-                    b[index(p)] = (sum / (right - left) as f64) as f32;
+                    *o = (sum / (right - left) as f64) as f32;
+                }
+                out
+            });
+            let mut b = vec![0.0_f32; n * n];
+            for (line, out) in lines.iter().enumerate() {
+                for (p, &v) in out.iter().enumerate() {
+                    b[if vertical { p * n + line } else { line * n + p }] = v;
                 }
             }
-            std::mem::swap(&mut a, &mut b);
+            a = b;
         }
     }
     a
@@ -88,6 +96,8 @@ pub(super) struct Fields {
     pub slope: Vec<f32>,
     pub slope_s: Vec<f32>,
     pub hb: Vec<f32>,
+    /// `1 - smooth(slope_s)`: how much meandering noise still applies on this cell.
+    pub flat: Vec<f64>,
     pub route_height: Vec<f32>,
     pub dw: Vec<f64>,
     pub ds: Vec<f64>,
@@ -137,17 +147,38 @@ impl Fields {
                 slope[y * n + x] = dx.hypot(dy) as f32;
             }
         }
-        let slope_s = blur(&slope, n, (100.0 / cell).round().max(1.0) as usize, 2);
-        let hb = blur(&r.height, n, (300.0 / cell).round().max(2.0) as usize, 2);
+        let mut blurred = crate::urban::par::range(2, |k| {
+            if k == 0 {
+                blur(&slope, n, (100.0 / cell).round().max(1.0) as usize, 2)
+            } else {
+                blur(&r.height, n, (300.0 / cell).round().max(2.0) as usize, 2)
+            }
+        });
+        let hb = blurred.pop().unwrap();
+        let slope_s = blurred.pop().unwrap();
+        let flat: Vec<f64> = slope_s
+            .iter()
+            .map(|&v| 1.0 - super::smooth(f64::from(v), 0.08, 0.3))
+            .collect();
         let route_height = deck_height(&r);
         let dry_range = (0..n * n)
             .filter(|&i| r.water[i] == 0)
             .fold((f32::INFINITY, f32::NEG_INFINITY), |(lo, hi), i| {
                 (lo.min(r.height[i]), hi.max(r.height[i]))
             });
-        let (dw, nearest) = distance(n, cell, |i| r.water[i] != 0);
-        let ds = distance(n, cell, |i| r.water[i] == 1).0;
-        let db = distance(n, cell, |i| r.water[i] == 3 && r.river_width[i] >= 4.5).0;
+        // Four independent distance fields.
+        let mut fields = crate::urban::par::range(4, |k| match k {
+            0 => distance(n, cell, |i| r.water[i] != 0),
+            1 => distance(n, cell, |i| r.water[i] == 1),
+            2 => distance(n, cell, |i| r.water[i] == 3 && r.river_width[i] >= 4.5),
+            _ => distance(n, cell, |i| {
+                r.water[i] == 2 && r.water_level[i] > r.height[i]
+            }),
+        });
+        let dl = fields.pop().unwrap().0;
+        let db = fields.pop().unwrap().0;
+        let ds = fields.pop().unwrap().0;
+        let (dw, nearest) = fields.pop().unwrap();
         let hab: Vec<_> = (0..n * n)
             .map(|i| {
                 if nearest[i] == usize::MAX {
@@ -157,10 +188,6 @@ impl Fields {
                 }
             })
             .collect();
-        let dl = distance(n, cell, |i| {
-            r.water[i] == 2 && r.water_level[i] > r.height[i]
-        })
-        .0;
         let island = islands(n, &r.water);
         let mut sat = vec![0; (n + 1) * (n + 1)];
         for y in 0..n {
@@ -177,6 +204,7 @@ impl Fields {
             slope,
             slope_s,
             hb,
+            flat,
             route_height,
             dw,
             ds,

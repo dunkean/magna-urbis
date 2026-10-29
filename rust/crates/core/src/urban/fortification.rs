@@ -1165,7 +1165,7 @@ impl Near {
     /// crossing), in index order.
     pub(super) fn crossed(&self, a: Point, b: Point) -> Vec<usize> {
         let k = (dist(a, b) / self.cell).ceil().max(1.0) as usize;
-        let mut seen = std::collections::BTreeSet::new();
+        let mut seen = Vec::new();
         for j in 0..=k {
             let t = j as f64 / k as f64;
             let (cx, cy) = (
@@ -1178,14 +1178,16 @@ impl Near {
                 }
             }
         }
-        seen.into_iter().collect()
+        seen.sort_unstable();
+        seen.dedup();
+        seen
     }
     /// Distance from segment ab to the curtain (0 when it crosses it), or
     /// infinity beyond `cell`.
     pub(super) fn distance(&self, a: Point, b: Point) -> f64 {
         let mut best = f64::INFINITY;
         let k = (dist(a, b) / self.cell).ceil().max(1.0) as usize;
-        let mut seen = std::collections::BTreeSet::new();
+        let mut seen: Vec<usize> = Vec::new();
         for j in 0..=k {
             let t = j as f64 / k as f64;
             let (cx, cy) = (
@@ -1195,9 +1197,10 @@ impl Near {
             for dx in -1..=1 {
                 for dy in -1..=1 {
                     for &s in self.cells.get(&(cx + dx, cy + dy)).into_iter().flatten() {
-                        if !seen.insert(s) {
+                        if seen.contains(&s) {
                             continue;
                         }
+                        seen.push(s);
                         let (c, d) = self.segs[s];
                         let d = if g::segment_hit(a, b, c, d).is_some() {
                             0.0
