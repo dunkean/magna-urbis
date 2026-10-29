@@ -30,6 +30,7 @@ web/progress/
 # Internal working documents stay local; public documentation is in README files.
 /*.md
 !/README.md
+!/THIRD_PARTY_NOTICES.md
 web/*.md
 rust/docs/
 rust/benches/

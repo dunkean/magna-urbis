@@ -2,7 +2,7 @@
 name = "magna-urbis-v2-desktop"
 version = "0.2.2"
 edition = "2024"
-license = "GPL-3.0-only"
+license = "AGPL-3.0-only"
 publish = false
 
 [workspace]

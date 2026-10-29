@@ -16,6 +16,9 @@ training runtime is included.
 The adapters continue to use the installed sibling Terrain Diffusion architecture,
 noise, Laplacian reconstruction and solver. The upstream third-party attribution
 is retained in `THIRD_PARTY_NOTICES.md`; Terrain Diffusion's MIT text is in
-[LICENSE-TEACHER.txt](../../../rust/models/neural-earth/LICENSE-TEACHER.txt). This adaptation is distributed
-with Magna Urbis under the repository's GPL-3.0 license; third-party components
-retain their own terms.
+[LICENSE-TEACHER.txt](../../../rust/models/neural-earth/LICENSE-TEACHER.txt).
+This adaptation was previously distributed with Magna Urbis under GPL-3.0.
+From 2026-10-30 it is combined with the AGPL-3.0-only project; original GPL
+portions retain their terms under the GPL/AGPL section 13 combination provisions.
+Other third-party components retain their own terms. The original
+[GPL v3 text](../../../licenses/GPL-3.0.txt) remains available.

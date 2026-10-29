@@ -2,7 +2,7 @@
 name = "magna-urbis-neural-wasm"
 version = "0.1.0"
 edition = "2024"
-license = "GPL-3.0-only"
+license = "AGPL-3.0-only"
 publish = false
 
 [workspace]

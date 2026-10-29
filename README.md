@@ -208,8 +208,10 @@ local model stays in memory between generations, including after long pauses.
 Weights are released when switching model/checkpoint, recovering from GPU memory
 exhaustion, or stopping the connector. FLUX still stages modules between CPU
 and GPU to fit VRAM; this does not reload the model files from disk.
-Model licenses remain separate: Lightning
-is OpenRAIL++, while FLUX.2 Klein 4B and the selected ControlNets are Apache 2.0.
+Model licenses remain separate: SDXL base and Lightning use CreativeML Open
+RAIL++-M, while FLUX.2 Klein 4B (including the base variant) and the selected
+ControlNet Union use Apache 2.0. See the model sources and pinned revisions in
+[third-party notices](THIRD_PARTY_NOTICES.md#models-and-external-services).
 
 The build-free client in `illustration/web/` and the versioned Python job service
 are shared with Neural Earth. Verification: `npm run illustration:test`,
@@ -294,4 +296,27 @@ When reporting a problem, include the version, seed, settings and shared link, w
 
 Thank you to **Watabou** for TownGeneratorOS and Medieval Fantasy City Generator, the starting point for this project and an ongoing reference.
 
-Magna Urbis is distributed under the **GNU GPL v3**; see [LICENSE](LICENSE). The earlier Python port of TownGeneratorOS has been removed from the repository; it remains available in the Git history. Third-party resources and dependencies retain their own license and provenance notices.
+Magna Urbis code is distributed under **GNU Affero GPL v3 only** (`AGPL-3.0-only`); see
+[LICENSE](LICENSE). Third-party code, data, textures and model weights retain
+their respective terms. The earlier Python port of TownGeneratorOS has been
+removed from the working tree; its credits and license still matter when
+redistributing historical versions or any surviving adaptations.
+
+The AGPL provides strong copyleft, including an obligation to offer corresponding
+source to users interacting remotely with a modified version over a network
+(section 13). Commercial use remains allowed. The source is available in the
+[Magna Urbis repository](https://github.com/dunkean/magna-urbis); distributors and
+operators must provide the source corresponding to their actual version.
+Third-party GPL v3 portions retain their GPL terms and are combined under the
+GPL/AGPL section 13 provisions; the [GPL v3 text](licenses/GPL-3.0.txt) is retained.
+
+- [Third-party credits, licenses and scope](THIRD_PARTY_NOTICES.md): browser,
+  Rust/WASM, desktop, Python, textures, vegetation, models and external services.
+- [Exact locked dependency inventory](licenses/dependency-inventory.json) and
+  [retained upstream license texts](licenses/DEPENDENCY_LICENSES.txt), including
+  development, optional and other-platform packages.
+
+After changing dependency versions, regenerate the inventory from the repository
+root with `python scripts/license_inventory.py --refresh` (Python 3.11+; network
+access may be needed). Verify it offline with
+`python scripts/license_inventory.py --check`.

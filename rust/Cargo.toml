@@ -7,7 +7,7 @@ exclude = ["crates/neural-wasm"]
 
 [workspace.package]
 edition = "2024"
-license = "GPL-3.0-only"
+license = "AGPL-3.0-only"
 publish = false
 
 # Interactive prototype: optimize generated WASM even in the fast development build.
