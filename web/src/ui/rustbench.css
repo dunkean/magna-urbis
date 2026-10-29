@@ -4,7 +4,7 @@ body { margin: 0; height: 100dvh; display: grid; grid-template-rows: auto minmax
 [hidden] { display: none !important; }
 a { color: inherit; }
 a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid #a86632; outline-offset: 4px; }
-.shell-header { min-height: 58px; display: flex; align-items: center; gap: 26px; padding: 8px 24px; background: #233e32; color: #f7f3e8; border-bottom: 1px solid #132f22; }
+.shell-header { min-height: 58px; display: flex; flex-wrap: wrap; align-items: center; gap: 26px; padding: 8px 24px; background: #233e32; color: #f7f3e8; border-bottom: 1px solid #132f22; }
 .wordmark { flex-shrink: 0; text-decoration: none; font: 14px Georgia, serif; letter-spacing: .1em; }
 .wordmark span { display: block; margin-top: 4px; color: #bdcbbf; font: 8px system-ui, sans-serif; letter-spacing: .19em; }
 nav { display: flex; flex-wrap: wrap; gap: 4px; }

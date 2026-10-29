@@ -134,12 +134,13 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     const chevron = document.createElement('button'); chevron.type = 'button'; chevron.className = 'stage-open'; chevron.title = translate(T.open); chevron.setAttribute('aria-label', `${translate(T.open)} · ${translate(text(stage.label))}`);
     chevron.setAttribute('aria-controls', `body-${stage.id}`); chevron.innerHTML = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>';
     chevron.onclick = () => expand(stage.id, title.getAttribute('aria-expanded') !== 'true');
-    head.append(node, title, time, run, help, chevron);
+    // One line per stage: the quick settings sit in the head, between the name and the actions.
     const quick = document.createElement('div'); quick.className = 'stage-quick';
+    head.append(node, title, quick, time, run, help, chevron);
     const note = document.createElement('p'); note.className = 'stage-note'; note.hidden = true;
     const body = document.createElement('div'); body.className = 'stage-body'; body.id = `body-${stage.id}`; body.hidden = true;
     const summary = document.createElement('p'); summary.className = 'stage-summary hint'; setText(summary, text(stage.summary)); body.append(summary);
-    element.append(head, quick, note, body);
+    element.append(head, note, body);
     const row = { stage, element, node, time, run, body, quick, note, title };
     rows.set(stage.id, row); return row;
   }

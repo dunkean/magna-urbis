@@ -3,6 +3,7 @@ import { captureBenchUi, restoreBenchUi, type BenchUiContext } from './benchCont
 import { installRecipeSharing } from './recipeSharing';
 import { executionRuntime, applyExecutionProfile, installExecutionProfile } from './executionProfile';
 import { shellLabel } from './shellLocale';
+import { installBenchExecution, applyExecutionOptions } from './benchExecution';
 
 installExecutionProfile(document.querySelector('.shell-header')!);
 
@@ -152,7 +153,7 @@ function navigate(): void {
   const url = new URL(definition.path, location.href);
   url.hash = '';
   url.search = separator < 0 ? contexts.get(bench) ?? definition.query : route.slice(separator + 1);
-  applyExecutionProfile(url);
+  applyExecutionProfile(url); applyExecutionOptions(url);
   if (bench === 'settlements') url.searchParams.set('stage', 'settlements');
   if (definition.path === 'terrainbench.html') placeSketchInFragment(url);
   let frame = loaded.get(bench);
@@ -230,6 +231,24 @@ window.addEventListener('message', event => {
     history.pushState(null, '', `#${stage}?${query}`);
     navigate();
   }
+});
+function reloadActive(): void {
+  if (!active) return;
+  const bench = active, frame = loaded.get(bench);
+  if (!frame) return;
+  const url = applyExecutionOptions(new URL(currentUrl(bench)?.href ?? frame.src));
+  // An execution change restarts the atelier on the same map settings, as the profile picker does.
+  loading.add(bench); restoring.delete(bench); uiContexts.delete(bench); persistUi();
+  remember(bench, sketchQuery(url).toString());
+  frame.src = url.href;
+}
+installBenchExecution({
+  host: document.querySelector('.shell-header')!,
+  reload: reloadActive,
+  frames: () => {
+    const order = [...loaded].sort(([a], [b]) => Number(b === active) - Number(a === active));
+    return order.flatMap(([, frame]) => { try { return frame.contentWindow ? [frame.contentWindow] : []; } catch { return []; } });
+  },
 });
 installRecipeSharing({
   host: document.querySelector('.shell-header')!,

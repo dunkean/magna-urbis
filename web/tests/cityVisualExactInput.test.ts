@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 // @ts-expect-error Pure JavaScript bench tooling, no browser dependency.
 import { exactVisualInput, prepareExactVisualInput } from '../scripts/city_visual_exact_input.mjs';
-import proposed from '../../_agents_blackboard/CITY_VISUAL_BENCH_52_PROPOSED.json';
+import proposed from './fixtures/CITY_VISUAL_BENCH_52_PROPOSED.json';
 type ExactCase = { id: string; population: number; architecture: string; camera: { kind: string; cx: number; cy: number; mpp: number };
   settlement: { position: { x: number; y: number } }; exactInput: { path: string } };
 const exactCase = (id: string) => proposed.cases.find(row => row.id === id) as unknown as ExactCase;

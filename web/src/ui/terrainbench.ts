@@ -43,6 +43,7 @@ import { createPins } from './pins';
 import { createRuler } from './ruler';
 import { createTerrainSettlements } from './terrainSettlements';
 import { settlementRaster } from '../../../rust/bridge/settlements';
+import { recordStageMs, recordStageError, resetStageMs } from './benchTimings';
 import { buildForestField, DEFAULT_FOREST_SETTINGS, V2_FOREST_PROFILE_VERSION, type ForestField, type ForestFieldInput, type ForestOccupation, type ForestSettings } from '../../../rust/bridge/terrainForest';
 import { forestDisplayWater, forestRetainedWater, forestRiverSegments } from '../../../rust/bridge/terrainForestWater';
 import { forestRetainedRiverSegments } from '../../../rust/bridge/terrainForestRiparian';
@@ -1566,6 +1567,7 @@ function localizeTerrainProgress(progress: string): string {
 function receive(response: TerrainResponse): void {
   if (response.generation !== generation) return;
   if('stage' in response){
+    if(response.stage.status==='done')recordStageMs(`terrain.${response.stage.stage}`,response.stage.elapsedMs);
     proceduralPanel?.update(response.stage,response.preview?.field?.data);
     if(response.stage.paused){pipelinePaused=true;el('generate').removeAttribute('aria-busy');terrainLoading('ready');}
     else if(response.stage.status==='running'){pipelinePaused=false;if(overviewPending)el('generate').setAttribute('aria-busy','true');}
@@ -1635,7 +1637,7 @@ function receive(response: TerrainResponse): void {
       return;
     }
     proceduralPanel?.error(response.error);
-    generationError = response.error;
+    generationError = response.error; recordStageError('terrain', response.error);
     settlements.terrainFailed(response.error);
     terrainLoading('error', response.error);
     status(`Rust engine error: ${response.error}`, true);
@@ -1644,6 +1646,7 @@ function receive(response: TerrainResponse): void {
   const previousWidth = terrain?.width;
   terrain = response.terrain; settings = overviewRequest.settings; terrainGeneration = generation;
   proceduralPanel?.complete(terrain);
+  recordStageMs('terrain', terrain.generationMs); recordStageMs('hydrology', terrain.hydrology?.generationMs);
   sketchEditor?.refresh(settings.sketch, settings.zones);
   if (previousWidth !== undefined && previousWidth !== terrain.width) view = fitView(terrain.width, viewport.clientWidth, viewport.clientHeight);
   if (terrain.erosionDefaults) showErosionDefaults(terrain.erosionDefaults);
@@ -1744,6 +1747,7 @@ function generate(stage: GenerationStage = 'all',inspection?:TerrainRequest['ins
   mainPipelineSession?.command('cancel');
   generation++; clearTimeout(detailTimer); detailRequest = undefined; detailCache.clear(); settlements.terrainPending();
   overviewPending = true; pipelinePaused=false; generationError = undefined;
+  resetStageMs('terrain'); resetStageMs('hydrology');
   const trace=inspection??(!isNeuralSource(next.source)&&next.procedural&& !next.sketch&&!next.zones?{step:false,previews:false}:undefined);
   proceduralPanel?.begin(next,!!trace?.step);
   overviewRequest = { id: ++requestId, generation, inspection:trace, kind: 'overview', settings: next, region: { x: 0, y: 0, extent: next.width, resolution: 512 } };

@@ -1,3 +1,4 @@
+import { recordStageMs } from './benchTimings';
 import { bindProgrammeConditionControls, programmeConditionControlsHtml, programmeConditionEvidenceHtml } from './urbanProgrammeCondition';
 import { retainSelectValue } from './retainedSelectValue';
 import { bindProgrammePolicyControls, programmePolicyControlsHtml, programmePolicyEvidenceHtml } from './urbanProgrammePolicy';
@@ -475,6 +476,7 @@ export function createUrbanBuildingsPanel(options: {
     if (busy) return;
     const ticket = ++epoch, seed = applied ? applied.seed : $<HTMLInputElement>('[data-building-seed]').value;
     busy = true; $<HTMLButtonElement>('[data-buildings-generate]').setAttribute('aria-busy', 'true');
+    const buildingsStart = performance.now();
     $('[data-buildings-status]').textContent = urbanText(['Recherche d’implantations compatibles…','Finding compatible placements…','正在查找兼容的布局…','Buscando implantaciones compatibles…','Buscando implantações compatíveis…']);
     try {
       const floors = $<HTMLInputElement>('[data-building-floors]'), typology = $<HTMLSelectElement>('[data-building-typology]').value as PlacementBatchSettings['typology'];
@@ -486,6 +488,8 @@ export function createUrbanBuildingsPanel(options: {
       });
       if (ticket !== epoch) return;
       busy = false; model.applyGenerated(result, seed, settings); if (!applied) $('[data-building-draft]').hidden = true; options.onChange(state);
+      recordStageMs('buildings', performance.now() - buildingsStart);
+      if (result.timing) recordStageMs('buildings.placement', result.timing.placement);
       if (result.timing) $('[data-buildings-status]').textContent += ` · implantation ${result.timing.placement.toFixed(0)} ms`;
     } catch (error) { if (ticket === epoch) $('[data-buildings-status]').textContent = String(error); }
     finally { if (ticket === epoch) { busy = false; $<HTMLButtonElement>('[data-buildings-generate]').removeAttribute('aria-busy'); } }

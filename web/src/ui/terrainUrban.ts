@@ -1,3 +1,4 @@
+import { recordStageMs } from './benchTimings';
 import { growthPhaseCultureHtml, growthStepLabel } from './urbanGrowthEvidence';
 import { setupUrbanRenderLocale } from './urbanRenderLocale';
 import { getBenchRenderColors } from './benchRenderColors';
@@ -1032,6 +1033,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       rememberCities(response.layouts.map(layout => layout.key));
       populate('parcels'); syncCityPlanCulture();
       const count = (layouts ?? []).reduce((n, l) => n + l.blocks.length, 0);
+      recordStageMs('quarters', response.ms);
       status('quarters', `Rust · ${layouts?.length ?? 0} ${urbanText(['implantations','settlements','聚落','asentamientos','assentamentos'])} · ${count} ${urbanText(['îlots','blocks','街区','manzanas','quadras'])} · ${response.ms?.toFixed(0)} ms`);
       one('quarters', '[data-state]').textContent = `${count} îlots`;
       one('quarters', '[data-warnings]').textContent = warningText((layouts ?? []).flatMap(l => l.warnings.map(w => `${l.key} : ${w}`)));
@@ -1054,6 +1056,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       rememberCities(incoming.map(layout => layout.key));
       leaveAll();
       const count = (partitions ?? []).reduce((n, p) => n + p.parcels.length, 0);
+      recordStageMs('parcels', response.ms);
       status('parcels', `Rust · ${count} ${urbanText(['parcelles','parcels','地块','parcelas','lotes'])} · ${response.ms?.toFixed(0)} ms`);
       one('parcels', '[data-state]').textContent = `${count} parcelles`;
       one('parcels', '[data-warnings]').textContent = warningText((partitions ?? []).flatMap(p => p.warnings.map(w => `${p.key} : ${urbanCapacityWarningText(w)}`)));

@@ -1,3 +1,4 @@
+import { recordStageMs } from './benchTimings';
 import { retainCityPlacement } from './cityRetainedPlacement';
 import { setupSettlementLocale } from './settlementLocale';
 import { urbanText } from './urbanPanelLocale';
@@ -352,7 +353,7 @@ export function createTerrainSettlements(options: {
     answered = response.id;
     pending = false;
     if (response.settlements) {
-      output = response.settlements; needsPlacement = false; citySearchRequested = false; cityPlacementScoresStale = false;
+      output = response.settlements; recordStageMs('settlements', output.ms); needsPlacement = false; citySearchRequested = false; cityPlacementScoresStale = false;
       if (options.city) { el('setGenerate').dataset.placementAction = 'search'; el('setGenerate').textContent = urbanText(['Rechercher un nouvel emplacement','Search for a new location','搜索新位置','Buscar nueva ubicación','Buscar novo local']); }
       window.dispatchEvent(new CustomEvent('settlements:generated', { detail: output }));
       if (selection && !output.settlements.some(s => s.key === selection) && !config.list.some(s => s.key === selection)) selection = '';
@@ -364,7 +365,7 @@ export function createTerrainSettlements(options: {
       el('setStatus').textContent = `Rust · ${output.settlements.length}/${output.requested} ${urbanText(['lieux','places','个地点','lugares','locais'])} · ${urbanText(['routes recalculées','roads recalculated','道路已重新计算','carreteras recalculadas','estradas recalculadas'])}`;
       el('setState').textContent = `${output.settlements.length} ${urbanText(['lieux','places','个地点','lugares','locais'])}`;
     }
-    roads.set(response.roads ?? undefined);
+    roads.set(response.roads ?? undefined); recordStageMs('roads', response.roads?.ms);
     urban.setSettlements(output, response.roads ?? undefined);
     draw(); list(); editor(); options.onChange();
     syncLanduse(); options.onPlanChange?.();
