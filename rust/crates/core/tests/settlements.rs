@@ -459,6 +459,38 @@ fn manual_positions_route_every_class_and_a_move_only_reroutes() {
 }
 
 #[test]
+fn fine_rasters_route_on_the_pooled_grid_and_keep_narrow_rivers() {
+    // 640² with a one-cell river: the default grid pools it 2 × 2 (320²), the river stays a
+    // barrier bridged once; grid 0 routes on the raster itself.
+    let mut map = Map::sized(640);
+    for y in 0..map.n {
+        let i = y * map.n + 333;
+        map.water[i] = 3;
+        map.level[i] = 20.0;
+        map.widths[i] = 10.0;
+        map.ids[i] = 0;
+    }
+    let cfg = list(vec![
+        fixed("a", 300, 4000.0, 8000.0),
+        fixed("b", 300, 12000.0, 8000.0),
+    ]);
+    let t = map.terrain();
+    let placed = t.place("pooled", &cfg).unwrap();
+    for grid in [512, 0] {
+        let roads = t
+            .roads(
+                "pooled",
+                &sites(&placed),
+                &RoadConfig { grid, ..no_exits() },
+            )
+            .unwrap();
+        assert!(roads.unreachable.is_empty(), "grid {grid}");
+        let bridges: Vec<_> = roads.segments.iter().flat_map(|s| &s.crossings).collect();
+        assert_eq!(bridges.len(), 1, "grid {grid}");
+    }
+}
+
+#[test]
 fn rivers_are_bridged_once_and_a_lake_barrier_is_reported_unreachable() {
     let mut map = Map::new();
     let cfg = list(vec![

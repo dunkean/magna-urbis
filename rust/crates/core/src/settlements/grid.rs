@@ -80,6 +80,69 @@ pub(super) struct Land {
     pub river_ids: Vec<i32>,
 }
 impl Land {
+    /// The raster pooled by `k` × `k` blocks (`n` a multiple of `k`): mean ground; a block is sea or
+    /// lake/rock when at least half of it is, else river when any cell is (the widest one keeps its
+    /// width and id, so narrow channels stay continuous), else dry. Water levels average the
+    /// block's cells of the chosen class.
+    pub fn pooled(&self, k: usize) -> Land {
+        let (n, m) = (self.n, self.n / k);
+        let mut out = Land {
+            width: self.width * (m * k) as f64 / n as f64,
+            n: m,
+            height: vec![0.0; m * m],
+            water: vec![0; m * m],
+            water_level: vec![0.0; m * m],
+            river_width: vec![0.0; m * m],
+            river_ids: vec![-1; m * m],
+        };
+        let half = k * k;
+        for y in 0..m {
+            for x in 0..m {
+                let cells = || {
+                    (0..k).flat_map(move |dy| (0..k).map(move |dx| (y * k + dy) * n + x * k + dx))
+                };
+                let mut count = [0_usize; 4];
+                let mut ground = 0.0_f64;
+                let mut widest = None::<usize>;
+                for i in cells() {
+                    count[self.water[i] as usize] += 1;
+                    ground += self.height[i] as f64;
+                    if self.water[i] == 3
+                        && widest.is_none_or(|w| self.river_width[i] > self.river_width[w])
+                    {
+                        widest = Some(i);
+                    }
+                }
+                let class = if 2 * count[1] >= half {
+                    1
+                } else if 2 * count[2] >= half {
+                    2
+                } else if count[3] > 0 {
+                    3
+                } else {
+                    0
+                };
+                let c = y * m + x;
+                out.height[c] = (ground / half as f64) as f32;
+                out.water[c] = class;
+                out.water_level[c] = if class == 0 {
+                    out.height[c]
+                } else {
+                    let (sum, k) = cells()
+                        .filter(|&i| self.water[i] == class)
+                        .fold((0.0_f64, 0_usize), |(s, k), i| {
+                            (s + self.water_level[i] as f64, k + 1)
+                        });
+                    (sum / k as f64) as f32
+                };
+                if let (3, Some(w)) = (class, widest) {
+                    out.river_width[c] = self.river_width[w];
+                    out.river_ids[c] = self.river_ids[w];
+                }
+            }
+        }
+        out
+    }
     /// Lake water (not cavern rock, which is also class 2): a surface above the ground.
     pub fn lake_depth(&self, i: usize) -> f64 {
         if self.water[i] == 2 {

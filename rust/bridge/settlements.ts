@@ -40,6 +40,8 @@ export interface SettlementOutput { settlements: Settlement[]; warnings: string[
 export interface RoadConfig {
   level: RoadLevel; surface: 'auto' | RoadSurface; culture: string; density: number;
   gradeWeight: number; maxGrade: number; crossingCost: number; wobble: number; sharing: number; exits: number;
+  /** Largest routing grid side (Rust default 512): finer rasters are pooled before routing; 0 routes on the raster itself. */
+  grid?: number;
 }
 export const defaultRoadConfig = (): RoadConfig => ({ level: 'rural', surface: 'auto', culture: 'auto', density: 0.5, gradeWeight: 1, maxGrade: 0, crossingCost: 1, wobble: 1, sharing: 0.7, exits: 2 });
 export type RoadLevel = 'primitive' | 'rural' | 'developed' | 'imperial';

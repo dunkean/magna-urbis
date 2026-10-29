@@ -39,6 +39,10 @@ pub struct RoadConfig {
     /// 0 = every route on its own … 1 = strong trunk sharing.
     pub sharing: f64,
     pub exits: usize,
+    /// Largest routing grid side: a finer raster is pooled by whole blocks down to at most this
+    /// many cells per side before routing (0 routes on the raster itself). Search work grows
+    /// faster than the cell count, so a 1024² raster routes about ten times slower than 512².
+    pub grid: usize,
 }
 impl Default for RoadConfig {
     fn default() -> Self {
@@ -53,6 +57,7 @@ impl Default for RoadConfig {
             wobble: 1.0,
             sharing: 0.7,
             exits: 2,
+            grid: 512,
         }
     }
 }
@@ -249,6 +254,7 @@ fn validate(sites: &[RoadSite], cfg: &RoadConfig, width: f64) -> Result<(), Stri
         || !(0.05..=10.0).contains(&cfg.crossing_cost)
         || cfg.wobble > 5.0
         || cfg.exits > 16
+        || (cfg.grid != 0 && !(64..=1024).contains(&cfg.grid))
         || level_by_id(&cfg.level).is_none()
         || (cfg.surface != "auto" && !SURFACES.contains(&cfg.surface.as_str()))
         || (cfg.culture != "auto" && profile_by_id(&cfg.culture).is_none())

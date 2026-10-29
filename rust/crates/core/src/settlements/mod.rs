@@ -199,6 +199,8 @@ pub struct Output {
 pub struct Terrain {
     fields: grid::Fields,
     urban_geometry: Option<crate::urban::Geography>,
+    /// Pooled fields of the last coarser routing grid (block size, fields).
+    route_fields: std::sync::Mutex<Option<(usize, std::sync::Arc<grid::Fields>)>>,
 }
 impl Terrain {
     /// Uses the retained physical ground and wet/rock mask; no terrain regeneration.
@@ -348,6 +350,7 @@ impl Terrain {
         Ok(Self {
             fields: grid::Fields::new(raster),
             urban_geometry: None,
+            route_fields: Default::default(),
         })
     }
     pub fn set_urban_geometry(
@@ -367,7 +370,39 @@ impl Terrain {
         sites: &[roads::RoadSite],
         cfg: &roads::RoadConfig,
     ) -> Result<roads::RoadOutput, String> {
-        roads::route(seed, &self.fields, sites, cfg)
+        let n = self.fields.r.n;
+        // Smallest whole block bringing the grid within `cfg.grid` cells per side.
+        let k = match cfg.grid {
+            0 => 1,
+            grid => (n.div_ceil(grid)..=n).find(|k| n % k == 0).unwrap_or(1),
+        };
+        if k == 1 {
+            return roads::route(seed, &self.fields, sites, cfg);
+        }
+        let fields = {
+            let mut cached = self
+                .route_fields
+                .lock()
+                .map_err(|_| "Road grid unavailable")?;
+            match cached.as_ref() {
+                Some((size, fields)) if *size == k => fields.clone(),
+                _ => {
+                    let land = self.fields.r.pooled(k);
+                    let fields = std::sync::Arc::new(grid::Fields::new(Raster {
+                        width: land.width,
+                        n: land.n,
+                        height: &land.height,
+                        water: &land.water,
+                        water_level: &land.water_level,
+                        river_width: &land.river_width,
+                        river_ids: &land.river_ids,
+                    }));
+                    *cached = Some((k, fields.clone()));
+                    fields
+                }
+            }
+        };
+        roads::route(seed, &fields, sites, cfg)
     }
 }
 
