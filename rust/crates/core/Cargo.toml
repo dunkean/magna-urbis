@@ -20,12 +20,9 @@ rayon = "1.12"
 rayon = { version = "1.12", optional = true }
 
 [features]
-# Rayon on wasm32 (shared-memory build). Native builds always use rayon.
+# Rayon on wasm32 (shared-memory build) for urban and terrain kernels.
+# Native builds always use rayon.
 threads = ["dep:rayon"]
-
-[features]
-# Parallel terrain kernels on wasm32 (needs a rayon pool on wasm threads).
-threads = []
 
 [dev-dependencies]
 serde_json = "1"
