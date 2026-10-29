@@ -353,6 +353,24 @@ export const groups = [
         },
       },
       {
+        id: 'relief-refine', name: { en: 'Fractal refinement', fr: 'Raffinement fractal' },
+        when: 'always', opt: true, doc: 'proc',
+        en: {
+          what: 'Adds plausible detail below the source raster’s cell when the view zooms in, so close-ups do not show a smooth interpolated surface. It never changes the retained source used by hydrology.',
+          algo: 'Fractional Brownian detail summed over octaves: amplitude ∝ wavelength^H (Hurst exponent H), successive wavelengths divided by the lacunarity, starting at a wavelength given in source cells. The amplitude is modulated by the local slope, ∝ (slope + flat)^γ, so flats stay calm and steep ground gets rough.',
+          io: 'In: the retained height field and the camera region. Out: refined heights for that region only.',
+          ctl: 'Amplitude (source cells at a 45° slope), Hurst exponent, lacunarity, octaves, first wavelength, slope exponent γ.',
+          perf: 'Evaluated per displayed region, on the fly; cost scales with the visible samples, not the map size.',
+        },
+        fr: {
+          what: 'Ajoute un détail plausible sous la cellule du raster source quand la vue zoome, pour que les gros plans ne montrent pas une surface lisse interpolée. Il ne modifie jamais la source conservée utilisée par l’hydrologie.',
+          algo: 'Détail brownien fractionnaire sommé sur des octaves : amplitude ∝ longueur d’onde^H (exposant de Hurst H), longueurs d’onde successives divisées par la lacunarité, à partir d’une longueur d’onde donnée en cellules source. L’amplitude est modulée par la pente locale, ∝ (pente + plat)^γ : les replats restent calmes, les versants raides deviennent rugueux.',
+          io: 'Entrées : le champ d’altitude conservé et la région de caméra. Sortie : les altitudes raffinées de cette seule région.',
+          ctl: 'Amplitude (cellules source sur une pente à 45°), exposant de Hurst, lacunarité, octaves, première longueur d’onde, exposant de pente γ.',
+          perf: 'Évalué par région affichée, à la volée ; le coût dépend des échantillons visibles, pas de la taille de la carte.',
+        },
+      },
+      {
         id: 'relief-conditioning', name: { en: 'Posterior fluvial conditioning', fr: 'Conditionnement fluvial postérieur' },
         when: 'always', opt: true, doc: 'proc',
         en: {
