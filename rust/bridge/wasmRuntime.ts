@@ -20,9 +20,10 @@ export let GenerationNoisePlan = pick('GenerationNoisePlan'); export type Genera
 export let HydrologyEngine = pick('HydrologyEngine'); export type HydrologyEngine = single.HydrologyEngine;
 export let erosion_defaults = pick('erosion_defaults');
 export let flood_hydrology = pick('flood_hydrology');
+export let erode_relief = pick('erode_relief');
 export let set_erosion_tuning = pick('set_erosion_tuning');
 function select(mod: CoreWasm): CoreWasm {
-  ({ SettlementTerrain, TerrainEngine, TerrainPipeline, GenerationNoisePlan, HydrologyEngine, erosion_defaults, flood_hydrology, set_erosion_tuning } = mod);
+  ({ SettlementTerrain, TerrainEngine, TerrainPipeline, GenerationNoisePlan, HydrologyEngine, erosion_defaults, flood_hydrology, erode_relief, set_erosion_tuning } = mod);
   return mod;
 }
 

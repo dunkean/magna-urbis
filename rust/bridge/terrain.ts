@@ -5,9 +5,9 @@ import { CLIMATE_VALUES, type ClimateValues } from './terrainClimate';
 export { CLIMATE_VALUES, type ClimateValues } from './terrainClimate';
 import type { TerrainLayers, TerrainLighting } from '../../web/src/render/terrainLighting';
 import init from '../pkg/wasm/magna_urbis_wasm.js';
-import { TerrainEngine, erosion_defaults, flood_hydrology, set_erosion_tuning, adoptSingleWasm, loadCoreWasm, wantsWasmThreads } from './wasmRuntime';
+import { TerrainEngine, erosion_defaults, flood_hydrology, erode_relief, set_erosion_tuning, adoptSingleWasm, loadCoreWasm, wantsWasmThreads } from './wasmRuntime';
 import wasmUrl from '../pkg/wasm/magna_urbis_wasm_bg.wasm?url&inline';
-import { GpuTerrainSampler, prepareGpu, generateGpuNoise, GPU_RELIEFS, GPU_GENERATION_RELIEFS } from './terrainGpu';
+import { GpuTerrainSampler, prepareGpu, generateGpuNoise, gpuContext, GPU_RELIEFS, GPU_GENERATION_RELIEFS } from './terrainGpu';
 import { generateGpuTerrain, erodeGpuCoast, type ErosionProfile } from './terrainErosion';
 import { applyPhasorCpu, COMPACT_RELIEFS, compactBudget, compactProfile, COMPACT_VERSION, type PhasorSettings } from './terrainPhasor';
 import { PreparedHydrology, applyHydrologySurface, riverAreaFor, type HydrologyData, type HydrologySettings } from './hydrology';
@@ -19,6 +19,7 @@ import { applyDelta, applyFractalDetail, fitNeuralSurface, type FractalDetail, n
 import { conditionRelief, type ConditioningResult } from '../../web/src/ui/reliefConditioning';
 import { computeVectorWater, type VectorWater } from '../../web/src/ui/vectorWater';
 import { setFloodKernel } from '../../web/src/ui/simpleHydrology';
+import { setErodeKernel } from '../../web/src/ui/reliefConditioning';
 import { browserNeural, neuralModule, releaseNeuralBrowser } from './neuralBrowser';
 import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
 import { prepareNativeTerrain, sampleNativeTerrain } from './nativeTerrain';
@@ -238,6 +239,21 @@ async function fetchNeuralRelief(settings: TerrainSettings, coastMask: number, i
   return { heights, info: { ...meta, requestMs: performance.now() - started } as NeuralInfo };
 }
 
+function loadRuntime(progress?: TerrainProgressCallback): Promise<unknown> {
+  return ready ??= (async () => {
+    // Isolated worker with ?threads=auto|on: shared-memory package and rayon pool.
+    if(wantsWasmThreads()){progress?.('Chargement du moteur Rust/WASM (threads)…',{stage:'runtime-download'});await loadCoreWasm();progress?.('Moteur Rust/WASM prêt',{stage:'runtime-ready'});}
+    else await adoptSingleWasm(()=>loadTerrainRuntime(wasmUrl,module=>init({module_or_path:module}),progress));
+    // The water chain's floods run compiled from now on (same results).
+    setFloodKernel(flood_hydrology);
+    // Its stream-power pre-erosion too, in one call (same results).
+    if (typeof erode_relief === 'function') setErodeKernel(erode_relief);
+  })();
+}
+/** Start loading the Rust/WASM runtime (and its thread pool) before the first request needs it. */
+export function prewarmTerrainRuntime(): void {
+  loadRuntime().catch(() => { ready = undefined; });
+}
 /**
  * `onRelief`: GPU overviews whose waters must be computed first receive the
  * sampled relief at once (no water, no conditioning), then the full reply.
@@ -256,6 +272,11 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
   const mode = settings.compute === 'wasm' ? 'wasm' : 'gpu-f32';
   const generationMode = settings.generationCompute ?? 'gpu-erosion';
   const compact = isCompactProcedural(settings);
+  // CPU terrain execution keeps the water on the CPU too: the Rust drainage takes tens of ms at 512²,
+  // while a WebGPU adapter request can stall for seconds (no adapter, busy GPU process).
+  const hydrologyCompute: HydrologySettings['compute'] = settings.hydrology?.compute === 'auto' && (mode === 'wasm' || generationMode === 'cpu') ? 'cpu' : settings.hydrology?.compute ?? 'auto';
+  // Otherwise ask for the adapter now, so its latency overlaps the relief generation.
+  if (hydrologyCompute !== 'cpu' && settings.hydrology?.enabled && settings.hydrology.engine === 'rust') void gpuContext();
   if (compact && !settings.zones && !settings.sketch?.processing && (!(COMPACT_RELIEFS as readonly string[]).includes(settings.relief) || settings.sketch)) throw new Error('Procédural Phasor : choisir un relief de plaine, collines, vallée, canyon ou montagnes.');
   const nativeGeneration = generationMode === 'native' && !isNeuralSource(settings.source);
   if (nativeGeneration && runtime?.profile !== 'local') throw new Error('Le moteur natif nécessite le profil Local et son service Rust.');
@@ -268,14 +289,7 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
   const gpu = mode !== 'wasm' && supported ? prepareGpu(mode, settings.relief).catch(() => undefined) : undefined;
   // Vite embeds this asset in the standalone HTML (and in the inline worker).
   if(ready)progress?.('Réutilisation du moteur Rust/WASM chargé',{stage:'runtime-ready'});
-  ready ??= (async () => {
-    // Isolated worker with ?threads=auto|on: shared-memory package and rayon pool.
-    if(wantsWasmThreads()){progress?.('Chargement du moteur Rust/WASM (threads)…',{stage:'runtime-download'});await loadCoreWasm();progress?.('Moteur Rust/WASM prêt',{stage:'runtime-ready'});}
-    else await adoptSingleWasm(()=>loadTerrainRuntime(wasmUrl,module=>init({module_or_path:module}),progress));
-    // The water chain's floods run compiled from now on (same results).
-    setFloodKernel(flood_hydrology);
-  })();
-  try{await ready;}catch(error){ready=undefined;throw error;}
+  try{await loadRuntime(progress);}catch(error){ready=undefined;throw error;}
   const started = performance.now();
   if(gpu)progress?.('Connexion au périphérique WebGPU…',{stage:'gpu-device'});
   const readyGpu = gpu ? await gpuSetupDeadline(gpu) : undefined;
@@ -528,7 +542,7 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
           vectorWater = { key: waterKey, water: computeVectorWater(conditioned.height, n, settings.width, vs, climate, settings.seed, conditioned.drainage) };
         }
       } else {
-        const inputKey = JSON.stringify([condKey, config.compute]);
+        const inputKey = JSON.stringify([condKey, hydrologyCompute]);
         // Display choices never change the network or invalidate a failed calculation.
         const routingConfig: HydrologySettings = { ...config, showErosion: true, erosionEnabled,
           ...(!erosionEnabled ? { incision: 0, depressionPolicy: 'fill', maxBreachDepth: 0, maxBreachLength: 0 } : {}) };
@@ -539,7 +553,7 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
           if (!preparedHydrology || hydrologyKey !== inputKey) {
             progress?.('Hydrologie Rust · préparation du drainage…',{stage:'terrain-drainage'});
             preparedHydrology?.dispose(); preparedHydrology = undefined; hydrology = undefined; hydrologyVectorKey = '';
-            preparedHydrology = await PreparedHydrology.create(settings.seed, settings.width, n, conditioned.height.slice(), config.compute,
+            preparedHydrology = await PreparedHydrology.create(settings.seed, settings.width, n, conditioned.height.slice(), hydrologyCompute,
               settings.sketch || settings.zones ? engine!.min_height <= 0 : neural ? engine!.min_height < 0 : coastMask !== 0);
             hydrologyKey = inputKey;
           }

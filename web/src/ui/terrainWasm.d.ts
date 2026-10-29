@@ -45,6 +45,7 @@ declare module '*magna_urbis_wasm.js' {
     take_basin(): Int32Array; take_sea(): Uint8Array; readonly outlets: number; free(): void;
   }
   export function flood_hydrology(height: Float32Array, n: number, cellArea: number, weight: Float32Array, outlet: Uint8Array, loss: Float32Array): Flood;
+  export function erode_relief(height: Float32Array, n: number, cellArea: number, steps: number, deposit: number): void;
   export class TerrainEngine {
     set_edited_surface(heights: Float32Array): void;
     static with_surface(seed: string, width: number, heights: Float32Array): TerrainEngine;

@@ -1,10 +1,12 @@
 import { seaDistanceSurface, type WaterSurface } from '../render/terrainWater';
-import { sampleRustTerrain, type TerrainData, type TerrainRequest, type TerrainResponse, type TerrainPipelineCommand } from '../../../rust/bridge/terrain';
+import { sampleRustTerrain, prewarmTerrainRuntime, type TerrainData, type TerrainRequest, type TerrainResponse, type TerrainPipelineCommand } from '../../../rust/bridge/terrain';
 import { TerrainPipelineSession, pipelinePreview } from './terrainPipelineSession';
 import { renderRustTerrain } from '../../../rust/bridge/terrainRender';
 import { MaterialRasterUnavailableError } from '../../../rust/bridge/terrainMaterialContext';
 
 let latestGeneration = 0;
+// Compile the WASM module (and start the thread pool) while the page sets up its first request.
+prewarmTerrainRuntime();
 const transfers = (t: TerrainData): ArrayBuffer[] => [...new Set([t.height.buffer, t.caveMask.buffer, t.normalX.buffer, t.normalY.buffer, t.normalZ.buffer,
   ...(t.field ? [t.field.data.buffer, ...(t.field.cave ? [t.field.cave.buffer] : [])] : [])])] as ArrayBuffer[];
 let pending: TerrainRequest | undefined;

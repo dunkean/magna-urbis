@@ -136,6 +136,72 @@ pub fn flood_hydrology(
     let weight = (weight.len() == total).then_some(weight);
     let outlet = (outlet.len() == total).then_some(outlet);
     let loss = (loss.len() == total).then_some(loss);
+    Ok(flood(height, n, cell_area, weight, outlet, loss, true))
+}
+
+/// The pre-hydrology stream-power erosion of `web/src/ui/reliefConditioning.ts` (`erode`), bit for
+/// bit: `steps` floods, each followed by implicit incision in flood order towards the receiver's
+/// water surface, depressions rising `deposit` of their depth. Same float64 arithmetic stored as
+/// float32 as the TypeScript loop; one call instead of one flood copy-out per step.
+#[wasm_bindgen]
+pub fn erode_relief(
+    height: &mut [f32],
+    n: usize,
+    cell_area: f64,
+    steps: u32,
+    deposit: f64,
+) -> Result<(), JsValue> {
+    if n < 2 || height.len() != n * n {
+        return Err(JsValue::from_str("Grille hydrologique invalide."));
+    }
+    let diagonals = [n as i64 + 1, n as i64 - 1, -(n as i64) - 1, 1 - n as i64];
+    for _ in 0..steps {
+        let Flood {
+            filled,
+            receiver,
+            order,
+            accumulation,
+            sea,
+            ..
+        } = flood(height, n, cell_area, None, None, None, false);
+        for &c in &order {
+            let c = c as usize;
+            let r = receiver[c];
+            if r < 0 || sea[c] != 0 {
+                continue;
+            }
+            let r = r as usize;
+            let depth = filled[c] as f64 - height[c] as f64;
+            if depth > 0.01 {
+                height[c] = (height[c] as f64 + deposit * depth) as f32;
+                continue;
+            }
+            let diagonal = diagonals.contains(&(r as i64 - c as i64));
+            let f = 0.03 * (accumulation[c] as f64 / 1e6).sqrt()
+                / if diagonal {
+                    std::f64::consts::SQRT_2
+                } else {
+                    1.0
+                };
+            let base = (height[r] as f64).max(filled[r] as f64);
+            if height[c] as f64 > base {
+                height[c] = ((height[c] as f64 + f * base) / (1.0 + f)) as f32;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn flood(
+    height: &[f32],
+    n: usize,
+    cell_area: f64,
+    weight: Option<&[f32]>,
+    outlet: Option<&[u8]>,
+    loss: Option<&[f32]>,
+    basins: bool,
+) -> Flood {
+    let total = n * n;
     let mut filled = height.to_vec();
     let mut receiver = vec![-1_i32; total];
     let mut order = vec![0_i32; total];
@@ -300,6 +366,17 @@ pub fn flood_hydrology(
             accumulation[r] = (accumulation[r] as f64 + accumulation[c] as f64) as f32;
         }
     }
+    if !basins {
+        return Flood {
+            filled,
+            receiver,
+            order,
+            accumulation,
+            basin: Vec::new(),
+            sea,
+            outlets: 0,
+        };
+    }
     let mut basin = vec![0_i32; total];
     let mut ids = 0_i32;
     for &cell in order.iter().take(total) {
@@ -321,7 +398,7 @@ pub fn flood_hydrology(
             outlets += 1;
         }
     }
-    Ok(Flood {
+    Flood {
         filled,
         receiver,
         order,
@@ -329,5 +406,5 @@ pub fn flood_hydrology(
         basin,
         sea,
         outlets,
-    })
+    }
 }

@@ -80,8 +80,14 @@ function depressions(height: Float32Array, n: number, width: number, h = compute
   return { depressions: count, volume, hydrology: h };
 }
 
+/** The same erosion compiled (Rust `erode_relief` in WASM), bit-identical to `erode` below. */
+export type ErodeKernel = (height: Float32Array, n: number, cellArea: number, steps: number, deposit: number) => void;
+let erodeKernel: ErodeKernel | undefined;
+export function setErodeKernel(next: ErodeKernel | undefined): void { erodeKernel = next; }
+
 /** Implicit stream-power incision without uplift; depressions rise `deposit` of their depth per step. */
 function erode(height: Float32Array, n: number, width: number, steps: number, deposit: number): void {
+  if (erodeKernel) { const cell = width / n; erodeKernel(height, n, cell * cell, steps, deposit); return; }
   for (let step = 0; step < steps; step++) {
     const { order, receiver, accumulation, filled, sea } = computeHydrology(height, n, width);
     for (let k = 0; k < order.length; k++) {
