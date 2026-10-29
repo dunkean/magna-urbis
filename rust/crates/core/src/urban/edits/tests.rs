@@ -928,3 +928,14 @@ fn quarter_salt_keeps_its_services() {
         );
     }
 }
+
+/// The stripped and variant plans (and their finishes) run in parallel when
+/// threads are spare: the edited town is the serial one, byte for byte.
+#[test]
+fn quarter_edits_do_not_depend_on_the_thread_count() {
+    let k = busiest(&town(&LayoutConfig::default()));
+    let cfg = with_quarter(k, QuarterOverride { salt: Some(3), ..Default::default() });
+    let serial = super::super::par::with_threads(1, || json(&town(&cfg)));
+    let parallel = super::super::par::with_threads(4, || json(&town(&cfg)));
+    assert_eq!(serial, parallel);
+}

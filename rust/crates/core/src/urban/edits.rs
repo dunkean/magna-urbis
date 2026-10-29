@@ -185,8 +185,8 @@ struct QuarterEdit {
 /// Without any structural field this is exactly `plan(cfg)` then `finish`.
 pub(super) fn with_quarter_edits(
     cfg: &LayoutConfig,
-    plan: impl Fn(&LayoutConfig) -> Result<Layout, String>,
-    finish: impl Fn(&mut Layout) -> Result<(), String>,
+    plan: impl Fn(&LayoutConfig) -> Result<Layout, String> + Sync + Send,
+    finish: impl Fn(&mut Layout) -> Result<(), String> + Sync + Send,
 ) -> Result<Layout, String> {
     validate_quarters(cfg)?;
     if !cfg.overrides.quarters.values().any(structural) {
@@ -197,7 +197,20 @@ pub(super) fn with_quarter_edits(
     #[cfg(not(target_arch = "wasm32"))]
     let tick = std::time::Instant::now();
     let mut warnings = vec![];
-    let mut l0 = plan(&stripped(cfg))?;
+    // The variant plan does not read the stripped one: with spare threads both
+    // run at once, and an unneeded variant is dropped.
+    let speculate = super::par::threads() > 1
+        && cfg.overrides.quarters.values().any(|o| {
+            structural(o) && o.deleted != Some(true) && (salt_of(o).is_some() || o.shape.is_some())
+        });
+    let (l0, mut speculated) = if speculate {
+        let mut both = super::par::range(2, |i| plan(&if i == 0 { stripped(cfg) } else { variant(cfg) }));
+        let l1 = both.pop();
+        (both.pop().expect("stripped plan"), l1)
+    } else {
+        (plan(&stripped(cfg)), None)
+    };
+    let mut l0 = l0?;
     let mut edits: BTreeMap<usize, QuarterEdit> = BTreeMap::new();
     for (k, o) in cfg.overrides.quarters.iter().filter(|(_, o)| structural(o)) {
         match k.parse::<usize>() {
@@ -215,7 +228,10 @@ pub(super) fn with_quarter_edits(
         }
     }
     let l1 = if edits.values().any(|e| !e.deleted && (e.salt || e.shape)) {
-        Some(plan(&variant(cfg))?)
+        Some(match speculated.take() {
+            Some(l1) => l1?,
+            None => plan(&variant(cfg))?,
+        })
     } else {
         None
     };
@@ -236,8 +252,25 @@ pub(super) fn with_quarter_edits(
     } = splice(&l0, l1.as_ref(), &edits, &mut warnings);
     spliced.programme = None;
     let kinds: Vec<String> = spliced.blocks.iter().map(|b| b.kind.clone()).collect();
-    finish(&mut spliced)?;
-    finish(&mut l0)?;
+    // Both finishes are independent; errors keep the serial order.
+    let (spliced_done, l0_done) = if super::par::threads() > 1 {
+        let slots = [std::sync::Mutex::new(Some(spliced)), std::sync::Mutex::new(Some(l0))];
+        let mut done = super::par::range(2, |i| {
+            let mut l = slots[i].lock().expect("finish slot").take().expect("finish layout");
+            let r = finish(&mut l);
+            (l, r)
+        });
+        let second = done.pop().expect("finished stripped layout");
+        (done.pop().expect("finished spliced layout"), second)
+    } else {
+        finish(&mut spliced)?;
+        finish(&mut l0)?;
+        ((spliced, Ok(())), (l0, Ok(())))
+    };
+    let (mut spliced, r) = spliced_done;
+    r?;
+    let (l0, r0) = l0_done;
+    r0?;
     freeze(&mut spliced, &l0, &origin, &streets, &kinds, &mut warnings);
     spliced.warnings.extend(warnings);
     // The parcel stage reads the salts and deletions.

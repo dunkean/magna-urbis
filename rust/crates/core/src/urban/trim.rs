@@ -453,18 +453,11 @@ pub(super) fn finish(seed: &str, layout: &mut Layout, surface: Surface<'_>) {
         let Ok(parts) = super::generate_parcels(seed,std::slice::from_ref(layout),&ParcelConfig::default()) else { break };
         let Some(part) = parts.first() else { break };
         let layouts = std::slice::from_ref(&*layout);
-        let Ok(mut index) = super::building_sites::BuildingSiteIndex::prepare(layouts,&parts,&[0]) else { break };
-        let mut active: HashSet<String> = HashSet::new();
-        let mut offset = 0;
-        loop {
-            let Ok(page) = index.page(seed,layouts,&parts,surface,surface.height,None,offset,64,24*1024*1024) else { return };
-            if page.requests.is_empty() && offset < page.total { return; }
-            for r in &page.requests {
-                if r["preview"].as_array().is_some_and(|p|!p.is_empty()) && let Some(id) = r["parcel_id"].as_str() { active.insert(id.to_owned()); }
-            }
-            offset += page.requests.len();
-            if offset == page.total { break; }
-        }
+        let Ok(index) = super::building_sites::BuildingSiteIndex::prepare(layouts,&parts,&[0]) else { break };
+        // The lots whose building request would show a silhouette, without
+        // generating the requests (a failing request leaves the streets as they are).
+        let Ok(previewed) = super::building_sites::previewed_parcels(&index,seed,layouts,&parts,None) else { return };
+        let mut active: HashSet<String> = previewed.into_iter().collect();
         active.extend(part.programme.iter().flat_map(|p|&p.allocations).filter(|a|a.role != "open.garden"
                 && matches!(a.function.as_str(),"market"|"common")
                 && part.parcels.iter().any(|p|p.id == a.parcel_id && street_use(p,&a.role,layout)))
@@ -620,6 +613,20 @@ mod tests {
             println!("FILL3 {culture} {population} river={river}: {} silhouettes; fringe vacant {}/{}; empty streets {}",used.len(),bare.len(),rows.len(),empty.len());
         }
         assert!(failures.is_empty(),"{}",failures.join("\n"));
+    }
+
+    /// `trim::finish` reads the previewed lots without generating the requests.
+    #[test]
+    fn previewed_parcels_are_the_requests_with_a_preview() {
+        for (culture, population, river) in [("roman-core",500,false),("persian",500,false),("khmer",10000,true),("maya",10000,true)] {
+            let (l, part, requests) = audited(culture, population, river);
+            let index = super::super::building_sites::BuildingSiteIndex::prepare(std::slice::from_ref(&l), std::slice::from_ref(&part), &[0]).unwrap();
+            let fast = super::super::building_sites::previewed_parcels(&index, "fill3", std::slice::from_ref(&l), std::slice::from_ref(&part), None).unwrap();
+            let slow: Vec<String> = requests.iter().filter(|r| r["preview"].as_array().is_some_and(|p| !p.is_empty()))
+                .filter_map(|r| r["parcel_id"].as_str().map(str::to_owned)).collect();
+            println!("{culture}: {} previews of {} requests", slow.len(), requests.len());
+            assert_eq!(fast, slow, "{culture}");
+        }
     }
 
     fn layout(streets: serde_json::Value) -> Layout {

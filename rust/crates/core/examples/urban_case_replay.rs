@@ -45,6 +45,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let partitions = generate_parcels(&f.seed, &layouts, &f.parcel_config)?;
     let parcels_ms = start.elapsed().as_secs_f64() * 1000.;
     let selected: Vec<_> = (0..layouts.len()).collect();
+    let sites_start = Instant::now();
     let mut index = BuildingSiteIndex::prepare(&layouts, &partitions, &selected)?;
     let mut requests = Vec::new();
     loop {
@@ -55,6 +56,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         requests.extend(page.requests);
         if requests.len() == total { break; }
     }
+    let sites_ms = sites_start.elapsed().as_secs_f64() * 1000.;
     let out = PathBuf::from(&args[2]);
     std::fs::create_dir_all(&out)?;
     for (name, value) in [
@@ -62,7 +64,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ("partitions.json", serde_json::to_value(&partitions)?),
         ("requests.json", serde_json::to_value(&requests)?),
     ] { std::fs::write(out.join(name), serde_json::to_vec(&value)?)?; }
-    let metrics = serde_json::json!({"quartersMs":quarters_ms,"parcelsMs":parcels_ms,
+    let metrics = serde_json::json!({"quartersMs":quarters_ms,"parcelsMs":parcels_ms,"sitesMs":sites_ms,
         "sites":requests.len(),"blocks":layouts.iter().map(|l|l.blocks.len()).sum::<usize>(),
         "quays":layouts.iter().flat_map(|l|&l.streets).filter(|s|s.role=="quay").count()});
     std::fs::write(out.join("metrics.json"), serde_json::to_vec_pretty(&metrics)?)?;

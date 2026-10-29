@@ -1228,9 +1228,25 @@ pub fn generate_quarters(
     let mut crossing_roads = roads.to_vec();
     network::bridge_water(&mut crossing_roads, surface, config.max_street_grade);
     let roads = crossing_roads.as_slice();
+    // Sites are laid out independently (each from its own seeded streams), in
+    // parallel, and returned in input order. As in a serial loop, the first
+    // error in that order wins and an invalid site stops the sites after it.
     let mut keys = BTreeSet::new();
-    let mut out = vec![];
-    for site in sites {
+    let valid = sites
+        .iter()
+        .position(|site| {
+            !keys.insert(&site.key)
+                || site.key.is_empty()
+                || !site.radius.is_finite()
+                || site.radius <= 0.0
+                || site.radius > 25000.0
+                || !site.center.x.is_finite()
+                || !site.center.y.is_finite()
+                || !(0.0..=surface.width).contains(&site.center.x)
+                || !(0.0..=surface.width).contains(&site.center.y)
+        })
+        .unwrap_or(sites.len());
+    let laid = par::map(&sites[..valid], |_, site| -> Result<Layout, String> {
         let mut site_config;
         let config = if let Some(archetype) = config.site_archetypes.get(&site.key) {
             site_config = config.clone();
@@ -1238,18 +1254,6 @@ pub fn generate_quarters(
             site_config.site_archetypes.clear();
             &site_config
         } else { config };
-        if !keys.insert(&site.key)
-            || site.key.is_empty()
-            || !site.radius.is_finite()
-            || site.radius <= 0.0
-            || site.radius > 25000.0
-            || !site.center.x.is_finite()
-            || !site.center.y.is_finite()
-            || !(0.0..=surface.width).contains(&site.center.x)
-            || !(0.0..=surface.width).contains(&site.center.y)
-        {
-            return Err("Settlement urbain invalide".into());
-        }
         // The settlement kind sets the macro grammar; the layout keeps the
         // user's configuration (`kinds::finish`).
         let original = config;
@@ -1339,7 +1343,14 @@ pub fn generate_quarters(
                 ground.balance(seed, layout, physical_surface, |s| plan_at(config, s), |l| finish(l))
             } else { Ok(layout) }
         };
-        out.push(edits::with_quarter_edits(config, plan, finish)?);
+        edits::with_quarter_edits(config, plan, finish)
+    });
+    let mut out = Vec::with_capacity(laid.len());
+    for layout in laid {
+        out.push(layout?);
+    }
+    if valid < sites.len() {
+        return Err("Settlement urbain invalide".into());
     }
     Ok(out)
 }
@@ -1369,8 +1380,9 @@ pub fn generate_parcels(
         return Err("Opérateur de parcelles inconnu".into());
     }
     edits::validate_parcels(config)?;
-    let mut out = vec![];
-    for layout in layouts {
+    // Layouts are cut independently, in parallel; the first error in input
+    // order wins, as in a serial loop.
+    par::map(layouts, |_, layout| -> Result<Partition, String> {
         let culture = if config.culture == "site" {
             &layout.culture
         } else {
@@ -1400,7 +1412,8 @@ pub fn generate_parcels(
         programme::camps::release_unbuilt(layout, &mut partition, true);
         programme::finish_lots(layout, &mut partition);
         roles::face_quays(layout, &mut partition);
-        out.push(partition);
-    }
-    Ok(out)
+        Ok(partition)
+    })
+    .into_iter()
+    .collect()
 }

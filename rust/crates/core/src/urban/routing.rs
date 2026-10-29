@@ -220,35 +220,129 @@ pub(super) fn water_intervals(surface: Surface<'_>, a: Point, b: Point) -> Vec<(
 
 /// Closed polygon membership lets existing road ends lie exactly on a town edge.
 /// Intervals between crossings also catch thin holes and non-convex indentations.
-fn inside(shape: &Shape, a: Point, b: Point) -> bool {
-    let rings = || std::iter::once(&shape.outer).chain(shape.holes.iter());
-    let contains = |p| {
-        g::contains(shape, p)
-            || rings().any(|ring| {
+/// The ring edges are binned once per shape; every test visits nearby edges only.
+struct InsideIndex<'s> {
+    shape: &'s Shape,
+    /// Outer-ring edges, then each hole's, in ring order.
+    edges: Vec<(Point, Point)>,
+    x0: f64,
+    y0: f64,
+    cell: f64,
+    n: usize,
+    cells: Vec<Vec<u32>>,
+    /// Per-ring parity indexes (outer first, then holes), exact like `g::contains`.
+    rings: Vec<g::ContainmentIndex>,
+}
+impl<'s> InsideIndex<'s> {
+    const PAD: f64 = 1e-3;
+    fn new(shape: &'s Shape) -> Self {
+        let mut edges = vec![];
+        for ring in std::iter::once(&shape.outer).chain(shape.holes.iter()) {
+            edges.extend(
                 ring.iter()
                     .zip(ring.iter().cycle().skip(1))
                     .take(ring.len())
-                    .any(|(&a, &b)| g::distance(p, a, b).0 < 1e-6)
-            })
-    };
-    if !contains(a) || !contains(b) {
-        return false;
+                    .map(|(&a, &b)| (a, b)),
+            );
+        }
+        let (mut x0, mut y0, mut x1, mut y1) =
+            (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+        for &(a, b) in &edges {
+            x0 = x0.min(a.x.min(b.x));
+            y0 = y0.min(a.y.min(b.y));
+            x1 = x1.max(a.x.max(b.x));
+            y1 = y1.max(a.y.max(b.y));
+        }
+        if edges.is_empty() {
+            (x0, y0, x1, y1) = (0.0, 0.0, 0.0, 0.0);
+        }
+        let n = ((edges.len() as f64).sqrt() as usize).clamp(1, 48);
+        let (x0, y0) = (x0 - Self::PAD, y0 - Self::PAD);
+        let cell = ((x1 + Self::PAD - x0).max(y1 + Self::PAD - y0) / n as f64).max(1e-6);
+        let mut me = Self {
+            shape,
+            edges,
+            x0,
+            y0,
+            cell,
+            n,
+            cells: vec![vec![]; n * n],
+            rings: std::iter::once(&shape.outer)
+                .chain(shape.holes.iter())
+                .map(|r| {
+                    g::ContainmentIndex::new(&Shape {
+                        outer: r.clone(),
+                        holes: vec![],
+                    })
+                })
+                .collect(),
+        };
+        for i in 0..me.edges.len() {
+            let (a, b) = me.edges[i];
+            let (cx0, cx1, cy0, cy1) = me.range(a, b);
+            for cy in cy0..=cy1 {
+                for cx in cx0..=cx1 {
+                    me.cells[cy * n + cx].push(i as u32);
+                }
+            }
+        }
+        me
     }
-    let mut cuts = vec![0.0, 1.0];
-    for ring in rings() {
-        for (&c, &d) in ring
-            .iter()
-            .zip(ring.iter().cycle().skip(1))
-            .take(ring.len())
-        {
+    fn range(&self, a: Point, b: Point) -> (usize, usize, usize, usize) {
+        let c = |v: f64, o: f64| (((v - o) / self.cell).floor().max(0.0) as usize).min(self.n - 1);
+        (
+            c(a.x.min(b.x) - Self::PAD, self.x0),
+            c(a.x.max(b.x) + Self::PAD, self.x0),
+            c(a.y.min(b.y) - Self::PAD, self.y0),
+            c(a.y.max(b.y) + Self::PAD, self.y0),
+        )
+    }
+    fn near(&self, a: Point, b: Point, out: &mut Vec<u32>) {
+        out.clear();
+        let (cx0, cx1, cy0, cy1) = self.range(a, b);
+        for cy in cy0..=cy1 {
+            for cx in cx0..=cx1 {
+                out.extend_from_slice(&self.cells[cy * self.n + cx]);
+            }
+        }
+        out.sort_unstable();
+        out.dedup();
+    }
+    fn strictly(&self, p: Point) -> bool {
+        self.rings[0].contains(p) && !self.rings[1..].iter().any(|h| h.contains(p))
+    }
+    fn contains(&self, p: Point, scratch: &mut Vec<u32>) -> bool {
+        if self.strictly(p) {
+            return true;
+        }
+        self.near(p, p, scratch);
+        scratch.iter().any(|&i| {
+            let (a, b) = self.edges[i as usize];
+            g::distance(p, a, b).0 < 1e-6
+        })
+    }
+    fn inside(&self, a: Point, b: Point) -> bool {
+        let mut scratch = vec![];
+        if !self.contains(a, &mut scratch) || !self.contains(b, &mut scratch) {
+            return false;
+        }
+        let mut cuts = vec![0.0, 1.0];
+        self.near(a, b, &mut scratch);
+        for &i in &scratch {
+            let (c, d) = self.edges[i as usize];
             if let Some((t, _)) = g::segment_hit(a, b, c, d) {
                 cuts.push(t.clamp(0.0, 1.0));
             }
         }
+        cuts.sort_by(f64::total_cmp);
+        let mut scratch = scratch;
+        cuts.windows(2)
+            .all(|t| self.contains(lerp(a, b, (t[0] + t[1]) * 0.5), &mut scratch))
     }
-    cuts.sort_by(f64::total_cmp);
-    cuts.windows(2)
-        .all(|t| contains(lerp(a, b, (t[0] + t[1]) * 0.5)))
+}
+#[cfg(test)]
+fn inside(shape: &Shape, a: Point, b: Point) -> bool {
+    InsideIndex::new(shape).inside(a, b)
 }
 
 #[derive(Clone, Copy)]
@@ -399,7 +493,7 @@ impl<'a> RoutePlanner<'a> {
         false
     }
 
-    fn anchors(&self, point: Point, max_grade: f64, shape: Option<&Shape>) -> Vec<(usize, f64)> {
+    fn anchors(&self, point: Point, max_grade: f64, shape: Option<&InsideIndex<'_>>) -> Vec<(usize, f64)> {
         let x = ((point.x - self.x0) / self.step).round() as isize;
         let y = ((point.y - self.y0) / self.step).round() as isize;
         let mut out = vec![];
@@ -412,7 +506,7 @@ impl<'a> RoutePlanner<'a> {
                 }
                 let cell = yy as usize * self.nx + xx as usize;
                 let p = self.position(cell);
-                if shape.is_some_and(|shape| !inside(shape, point, p)) {
+                if shape.is_some_and(|shape| !shape.inside(point, p)) {
                     continue;
                 }
                 if let Some(grade) = self.inspect(point, p)
@@ -454,6 +548,8 @@ impl<'a> RoutePlanner<'a> {
         max_grade: f64,
         shape: Option<&Shape>,
     ) -> Option<Vec<Point>> {
+        let index = shape.map(InsideIndex::new);
+        let shape = index.as_ref();
         if !valid_surface(self.surface)
             || !on_map(self.surface, start)
             || !on_map(self.surface, end)
@@ -464,7 +560,7 @@ impl<'a> RoutePlanner<'a> {
         }
         if (self.adaptation == 0.0 || segment_grade(self.surface, start, end) < 0.015)
             && self.inspect(start, end).is_some_and(|g| g <= max_grade)
-            && shape.is_none_or(|shape| inside(shape, start, end))
+            && shape.is_none_or(|shape| shape.inside(start, end))
         {
             return Some(vec![start, end]);
         }
@@ -554,7 +650,7 @@ impl<'a> RoutePlanner<'a> {
                 let edge = cell * HEADINGS + dir;
                 if let (Some(shape), Some(valid)) = (shape, constraint_edges.as_mut()) {
                     if valid[edge] == 0 {
-                        let value = if inside(shape, self.position(cell), self.position(next)) {
+                        let value = if shape.inside(self.position(cell), self.position(next)) {
                             1
                         } else {
                             2
@@ -610,7 +706,7 @@ impl<'a> RoutePlanner<'a> {
             let mut j = (i + 24).min(path.len() - 1);
             while j > i + 1
                 && (!segment_clear(self.surface, path[i], path[j], max_grade)
-                    || shape.is_some_and(|shape| !inside(shape, path[i], path[j]))
+                    || shape.is_some_and(|shape| !shape.inside(path[i], path[j]))
                     || self.adaptation > 0.0
                         && self.cost(
                             distance(path[i], path[j]),
@@ -652,7 +748,7 @@ impl<'a> RoutePlanner<'a> {
                     && cut > 1.0
                     && [(last, p), (p, q), (q, b)].iter().all(|&(x, y)| {
                         segment_clear(self.surface, x, y, max_grade)
-                            && shape.is_none_or(|shape| inside(shape, x, y))
+                            && shape.is_none_or(|shape| shape.inside(x, y))
                     });
                 if valid {
                     rounded.push(p);
@@ -668,7 +764,7 @@ impl<'a> RoutePlanner<'a> {
         }
         debug_assert!(simplified.windows(2).all(|p| self.inspect(p[0], p[1]).is_some_and(|g| g <= max_grade + 1e-8)));
         debug_assert!(
-            shape.is_none_or(|shape| simplified.windows(2).all(|p| inside(shape, p[0], p[1])))
+            shape.is_none_or(|shape| simplified.windows(2).all(|p| shape.inside(p[0], p[1])))
         );
         Some(simplified)
     }

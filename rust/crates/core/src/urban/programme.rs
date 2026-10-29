@@ -1242,6 +1242,8 @@ struct Memo {
     /// Reserved-block witnesses per (parcel, width, depth), on one street index.
     witnesses: HashMap<(usize, u64, u64), bool>,
     index: Option<super::parcels::FrontageIndex>,
+    /// Per-parcel fronts shared by every envelope size tested on it.
+    fronts: HashMap<usize, Vec<super::parcels::Front>>,
 }
 impl Memo {
     fn block_witness(&mut self, layout: &Layout, pi: usize, p: &Parcel, w: f64, d: f64) -> bool {
@@ -1293,10 +1295,23 @@ impl Memo {
             .as_ref()
     }
     fn envelope(&mut self, pi: usize, p: &Parcel, width: f64, depth: f64) -> bool {
-        *self
-            .envelopes
-            .entry((pi, width.to_bits(), depth.to_bits()))
-            .or_insert_with(|| stored_witness(p, width, depth) || has_envelope(p, width, depth))
+        let key = (pi, width.to_bits(), depth.to_bits());
+        if let Some(&hit) = self.envelopes.get(&key) {
+            return hit;
+        }
+        let ok = stored_witness(p, width, depth) || {
+            if pi == usize::MAX {
+                has_envelope(p, width, depth)
+            } else {
+                let fronts = self
+                    .fronts
+                    .entry(pi)
+                    .or_insert_with(|| super::parcels::envelope_fronts(p));
+                super::parcels::parcel_envelope_with(p, fronts, width, depth, 0.8).is_some()
+            }
+        };
+        self.envelopes.insert(key, ok);
+        ok
     }
 }
 /// The cadastral witness is a frontage-anchored rectangle inside the plot, first
@@ -1566,6 +1581,18 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
         .map(|&c| dist(c, layout.center))
         .collect::<Vec<_>>();
     let prime = parcels.iter().map(prime_frontage).collect::<Vec<_>>();
+    // Whether a parcel centre lies inside an enclosure: evaluated lazily, once.
+    let enclosure_shapes: Vec<Shape> = layout
+        .enclosures
+        .iter()
+        .map(|e| Shape { outer: e.path.clone(), holes: vec![] })
+        .collect();
+    let mut enclosed_memo: Vec<Option<bool>> = vec![None; parcels.len()];
+    let mut enclosed_at = |pi: usize| -> bool {
+        *enclosed_memo[pi].get_or_insert_with(|| {
+            enclosure_shapes.iter().any(|s| super::geometry::contains(s, centres[pi]))
+        })
+    };
     let frame = Frame::new(layout, &pr.environment);
     let facts: Vec<SiteFacts> = parcels
         .iter()
@@ -1963,6 +1990,8 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
             pr.demands[di].id.clone(),
         )
     });
+    // `base` depends on the demand only through `commercial`: two variants.
+    let mut base_cache: [Option<Vec<f64>>; 2] = [None, None];
     for &di in &dwelling_order {
         let commercial = pr.demands[di].function == "mixed";
         let goal = if commercial {
@@ -1970,7 +1999,8 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
         } else {
             pr.demands[di].requested
         };
-        let base = parcels
+        let base_slot = usize::from(commercial);
+        if base_cache[base_slot].is_none() { base_cache[base_slot] = Some(parcels
             .iter()
             .enumerate()
             .map(|(pi, p)| {
@@ -1999,7 +2029,8 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
                     + if core { 2.0 * PRIME_TIER } else { 0.0 }
                     + 2.4 * PRIME_TIER * super::composition::gate_activity(layout, centres[pi])
             })
-            .collect::<Vec<_>>();
+            .collect::<Vec<_>>()); }
+        let base = base_cache[base_slot].as_ref().expect("base filled above");
         let mut row = admission[di].clone();
         if commercial {
             let mut ranked: Vec<usize> = (0..parcels.len())
@@ -2091,9 +2122,7 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
             if assignments[pi].is_some() || cohesion[pi] != version {
                 continue;
             }
-            let enclosed = layout.enclosures.iter().any(|e| super::geometry::contains(
-                &Shape { outer: e.path.clone(), holes: vec![] }, centres[pi]));
-            if !prime[pi] && !enclosed && !public_street(&parcels[pi]) { continue; }
+            if !prime[pi] && !enclosed_at(pi) && !public_street(&parcels[pi]) { continue; }
             let held: f64 = dwelling.iter().map(|&di| pr.demands[di].parcel_capacity).sum();
             if held + 1.0 > fill_limit { break; }
             take(&mut pr, &mut assignments, pi, di, 1.0);
@@ -2144,8 +2173,7 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
         }
     }
     for pi in 0..parcels.len() {
-        if assignments[pi].is_some() || !public_street(&parcels[pi]) && !layout.enclosures.iter().any(|e|
-            super::geometry::contains(&Shape { outer:e.path.clone(), holes:vec![] },centres[pi])) { continue; }
+        if assignments[pi].is_some() || !public_street(&parcels[pi]) && !enclosed_at(pi) { continue; }
         let Some(di) = dwelling.iter().copied().filter(|&di|admission[di][pi] && donors.get(&di).is_some_and(|h|!h.is_empty()))
             .max_by_key(|di|donors[di].peek().copied()) else { continue };
         let (_,Reverse(j)) = donors.get_mut(&di).unwrap().pop().unwrap();

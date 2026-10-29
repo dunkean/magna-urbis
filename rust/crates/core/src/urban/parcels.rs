@@ -24,7 +24,7 @@ pub(super) use occupation::{
 };
 
 #[derive(Clone, Copy)]
-struct Front {
+pub(super) struct Front {
     a: Point,
     b: Point,
     rank: usize,
@@ -394,15 +394,28 @@ pub(super) fn parcel_envelope(
     depth: f64,
     access_width: f64,
 ) -> Option<Shape> {
+    parcel_envelope_with(p, &envelope_fronts(p), width, depth, access_width)
+}
+/// The per-parcel part of `parcel_envelope` (fronts, contacts, support spans),
+/// computed once for every witness size tested on the same parcel.
+pub(super) fn envelope_fronts(p: &Parcel) -> Vec<Front> {
     let inward = p.family == "courtyard";
-    let fronts: Vec<_> = parcel_fronts(p)
+    parcel_fronts(p)
         .into_iter()
         .map(|f| Front {
             gate: f.gate || inward,
             ..f
         })
-        .collect();
-    families::envelope(&p.shape, &fronts, width, depth, access_width).or_else(|| {
+        .collect()
+}
+pub(super) fn parcel_envelope_with(
+    p: &Parcel,
+    fronts: &[Front],
+    width: f64,
+    depth: f64,
+    access_width: f64,
+) -> Option<Shape> {
+    families::envelope(&p.shape, fronts, width, depth, access_width).or_else(|| {
         // A lot of odd ground (`polygonal-lot`) was admitted by a rectangle at
         // any orientation; allocation and sites ask the same question.
         let degenerate = p.provenance.iter().any(|x| x == DEGENERATE);
@@ -414,7 +427,7 @@ pub(super) fn parcel_envelope(
         scales.iter().find_map(|k| {
             families::free_envelope(
                 &p.shape,
-                &fronts,
+                fronts,
                 width * k,
                 depth * k,
                 access_width,

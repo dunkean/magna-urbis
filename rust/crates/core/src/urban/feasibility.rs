@@ -253,20 +253,47 @@ pub(super) fn admissible(
     period: &str,
     strict: bool,
 ) -> Vec<&'static Witness> {
-    drawable(pack, culture, period, strict)
-        .filter(|p| p.supported)
-        .collect()
+    drawable_list(pack, culture, period, strict, true).to_vec()
 }
 /// Every source of the culture's automatic houses query, certified or not.
-pub(super) fn drawable<'a>(
-    pack: &'a str,
+pub(super) fn drawable(
+    pack: &str,
     culture: &str,
-    period: &'a str,
+    period: &str,
     strict: bool,
-) -> impl Iterator<Item = &'static Witness> + 'a {
+) -> impl Iterator<Item = &'static Witness> {
+    drawable_list(pack, culture, period, strict, false)
+        .to_vec()
+        .into_iter()
+}
+
+type WitnessList = std::sync::Arc<[&'static Witness]>;
+/// The filtered catalogue per (pack, tradition, period, strict, supported-only),
+/// computed once: the catalogue is immutable.
+fn drawable_list(
+    pack: &str,
+    culture: &str,
+    period: &str,
+    strict: bool,
+    supported_only: bool,
+) -> WitnessList {
+    use std::{collections::HashMap, sync::{OnceLock, RwLock}};
+    static MEMO: OnceLock<RwLock<HashMap<String, WitnessList>>> = OnceLock::new();
     let tradition = super::super::culture::palette_tradition(culture, pack);
-    witnesses().iter().filter(move |p| {
-        p.pack == pack
+    let key = format!(
+        "{pack}\u{1}{}\u{1}{period}\u{1}{}{}",
+        tradition.unwrap_or("\u{2}"),
+        u8::from(strict),
+        u8::from(supported_only)
+    );
+    let memo = MEMO.get_or_init(Default::default);
+    if let Some(list) = memo.read().unwrap_or_else(|e| e.into_inner()).get(&key) {
+        return list.clone();
+    }
+    let list: WitnessList = witnesses()
+        .iter()
+        .filter(|p| {
+            p.pack == pack
                 // Houses' automatic query draws residential roles only.
                 && matches!(
                     p.role.as_str(),
@@ -278,7 +305,13 @@ pub(super) fn drawable<'a>(
                     || period == "any"
                     || p.eras.iter().any(|e| e == period)
                     || (!strict && p.inspired_only && p.eras.is_empty()))
-    })
+                && (!supported_only || p.supported)
+        })
+        .collect();
+    memo.write()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(key, list.clone());
+    list
 }
 
 /// Every source of a pinned recipe (any variant, certified or not, late-only
@@ -313,6 +346,7 @@ pub(super) struct LotFit {
 pub(super) fn lot_fit(parcel: &Parcel, admissible: &[&'static Witness]) -> LotFit {
     let lot = geometry::area(&parcel.shape);
     let mut tested: Vec<([u64; 3], Option<Shape>)> = Vec::new();
+    let mut fronts: Option<Vec<_>> = None;
     let mut fits = Vec::new();
     let mut domain: Option<([f64; 2], Shape)> = None;
     for &w in admissible {
@@ -324,8 +358,15 @@ pub(super) fn lot_fit(parcel: &Parcel, admissible: &[&'static Witness]) -> LotFi
         let rect = match tested.iter().find(|(k, _)| *k == key) {
             Some((_, r)) => r.clone(),
             None => {
-                let r =
-                    super::super::parcels::parcel_envelope(parcel, width, depth, w.access.max(0.8));
+                let fronts = fronts
+                    .get_or_insert_with(|| super::super::parcels::envelope_fronts(parcel));
+                let r = super::super::parcels::parcel_envelope_with(
+                    parcel,
+                    fronts,
+                    width,
+                    depth,
+                    w.access.max(0.8),
+                );
                 tested.push((key, r.clone()));
                 r
             }
@@ -396,7 +437,9 @@ pub(super) fn shortlist_score(
     drawable: &[&'static Witness],
     fits: &[&'static Witness],
 ) -> usize {
-    let fitting = |w: &Witness| fits.iter().any(|f| std::ptr::eq(*f, w));
+    let held: std::collections::HashSet<*const Witness> =
+        fits.iter().map(|&f| f as *const Witness).collect();
+    let fitting = |w: &Witness| held.contains(&(w as *const Witness));
     let mut groups: std::collections::BTreeMap<(u8, u32), Vec<&Witness>> = Default::default();
     for &w in drawable {
         groups

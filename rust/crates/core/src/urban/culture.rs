@@ -988,20 +988,37 @@ pub fn mapping(culture: &str) -> Option<CultureMapping> {
     mapping_for(culture, "any")
 }
 /// Memo for pure catalogue lookups: (culture, period[, zone, plot op, class]).
-type MappingCache = Mutex<HashMap<[String; 5], Option<CultureMapping>>>;
+type MappingCache = std::sync::RwLock<HashMap<String, Option<CultureMapping>>>;
 fn memo(
     cache: &'static OnceLock<MappingCache>,
     key: [&str; 5],
     f: impl FnOnce() -> Option<CultureMapping>,
 ) -> Option<CultureMapping> {
+    thread_local! {
+        static KEY: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+    }
     let cache = cache.get_or_init(Default::default);
-    let key = key.map(str::to_string);
-    if let Some(hit) = cache.lock().ok().and_then(|c| c.get(&key).cloned()) {
+    // One reusable joined key per thread: a hit allocates only the clone.
+    let hit = KEY.with(|k| {
+        let mut k = k.borrow_mut();
+        k.clear();
+        for part in key {
+            k.push_str(part);
+            k.push('\u{1f}');
+        }
+        cache.read().ok().and_then(|c| c.get(k.as_str()).cloned())
+    });
+    if let Some(hit) = hit {
         return hit;
     }
     let value = f();
-    if let Ok(mut c) = cache.lock() {
-        c.insert(key, value.clone());
+    let mut joined = String::new();
+    for part in key {
+        joined.push_str(part);
+        joined.push('\u{1f}');
+    }
+    if let Ok(mut c) = cache.write() {
+        c.insert(joined, value.clone());
     }
     value
 }

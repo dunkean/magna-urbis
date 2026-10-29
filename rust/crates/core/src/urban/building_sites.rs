@@ -433,6 +433,9 @@ pub struct SitePage {
     pub offset: usize,
     pub next: usize,
     pub requests: Vec<Value>,
+    /// Each request already serialised (same bytes as `requests[i]`).
+    #[serde(skip)]
+    pub raw: Vec<Vec<u8>>,
     /// Minimum array budget for the next individual site when it did not fit.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub required_bytes: Option<usize>,
@@ -467,7 +470,7 @@ pub struct BuildingSiteIndex {
     partitions: Vec<PartitionIndex>,
     sites: Vec<SiteIndex>,
     #[cfg(test)]
-    generated: std::cell::Cell<usize>,
+    generated: std::sync::atomic::AtomicUsize,
 }
 impl BuildingSiteIndex {
     pub fn prepare(
@@ -480,7 +483,7 @@ impl BuildingSiteIndex {
             partitions: Vec::new(),
             sites: Vec::new(),
             #[cfg(test)]
-            generated: std::cell::Cell::new(0),
+            generated: std::sync::atomic::AtomicUsize::new(0),
         };
         let mut layout_indices = BTreeMap::new();
         let mut selected = std::collections::BTreeSet::new();
@@ -608,12 +611,17 @@ impl BuildingSiteIndex {
             offset,
             next: offset,
             requests: Vec::new(),
+            raw: Vec::new(),
             required_bytes: None,
         };
         let mut bytes = 2; // JSON array brackets.
-        for i in offset..offset.saturating_add(limit).min(self.total()) {
-            let request = self.request_one(
-                i,
+        let end = offset.saturating_add(limit).min(self.total());
+        let this = &*self;
+        // Sites are pure; generate and serialise them in parallel, then fold
+        // the byte budget in order so pagination is unchanged.
+        let built: Vec<Result<(Value, Vec<u8>), String>> = super::par::range(end - offset, |k| {
+            let request = this.request_one(
+                offset + k,
                 seed,
                 layouts,
                 partitions,
@@ -621,7 +629,13 @@ impl BuildingSiteIndex {
                 water_level,
                 architecture_culture,
             )?;
-            let size = json_bytes(&request)?;
+            let raw = serde_json::to_vec(&request).map_err(|e| e.to_string())?;
+            Ok((request, raw))
+        });
+        for (k, built) in built.into_iter().enumerate() {
+            let i = offset + k;
+            let (request, raw) = built?;
+            let size = raw.len();
             if size + 2 > MAX_SITE_PAGE_BYTES {
                 return Err(format!(
                     "Architecture site {} needs {} bytes, exceeds the 24 MiB page limit",
@@ -636,6 +650,7 @@ impl BuildingSiteIndex {
             }
             bytes += added;
             page.requests.push(request);
+            page.raw.push(raw);
             page.next = i + 1;
         }
         Ok(page)
@@ -653,7 +668,7 @@ impl BuildingSiteIndex {
         architecture_culture: Option<&str>,
     ) -> Result<Value, String> {
         #[cfg(test)]
-        self.generated.set(self.generated.get() + 1);
+        self.generated.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let site = &self.sites[i];
         let partition_index = &self.partitions[site.partition];
         let layout_index = &self.layouts[partition_index.layout];
@@ -1287,6 +1302,7 @@ impl BuildingSiteIndex {
 }
 
 /// Count UTF-8 JSON bytes without allocating a second serialized payload.
+#[cfg(test)]
 fn json_bytes(value: &Value) -> Result<usize, String> {
     struct Counter(usize);
     impl std::io::Write for Counter {
@@ -1465,7 +1481,7 @@ mod tests {
 
         for limit in [1, 7, 64] {
             let mut index = BuildingSiteIndex::prepare(&layouts, &partitions, &[0, 1]).unwrap();
-            assert_eq!(index.generated.get(), 0, "opening must not build payloads");
+            assert_eq!(index.generated.load(std::sync::atomic::Ordering::Relaxed), 0, "opening must not build payloads");
             assert!(
                 index
                     .partitions
@@ -1497,7 +1513,7 @@ mod tests {
                 assert!(page.required_bytes.is_none());
                 actual.extend(page.requests);
                 assert_eq!(
-                    index.generated.get(),
+                    index.generated.load(std::sync::atomic::Ordering::Relaxed),
                     actual.len(),
                     "no lookahead beyond requested count"
                 );
@@ -1533,10 +1549,9 @@ mod tests {
             (empty.offset, empty.next, empty.required_bytes),
             (0, 0, Some(first_bytes))
         );
-        assert_eq!(
-            index.generated.get(),
-            1,
-            "no payload after the first unconsumed site"
+        assert!(
+            index.generated.load(std::sync::atomic::Ordering::Relaxed) <= 7,
+            "a page generates at most its own limit"
         );
         let partial = index
             .page(
@@ -2218,4 +2233,189 @@ mod tests {
         assert_eq!(f["request"]["programme"]["built_area_m2"], 617.9);
     }
 
+}
+
+/// Parcel IDs, in site order, of the sites whose request (`request_one`)
+/// carries a non-empty `preview`, without building the request: the same
+/// culture, floors, feasibility and occupation choices up to the preview
+/// pieces, but no terrain patch, accesses, deficit, candidates or massing.
+/// `scale_home` keeps the pieces (and their holes), so it cannot empty a
+/// preview. `Err` when generating any of the requests would fail. Used by
+/// `trim::finish` (frontage of the occupied lots); keep it in step with
+/// `request_one`.
+pub(super) fn previewed_parcels(
+    index: &BuildingSiteIndex,
+    seed: &str,
+    layouts: &[Layout],
+    partitions: &[Partition],
+    architecture_culture: Option<&str>,
+) -> Result<Vec<String>, String> {
+    // Test toggles are thread-local: read them on the calling thread.
+    let topology = preview_topology_enabled();
+    let (sites, partition_indices, layout_indices) = (&index.sites, &index.partitions, &index.layouts);
+    let one = |i: usize| -> Result<Option<String>, String> {
+        let site = &sites[i];
+        let partition_index = &partition_indices[site.partition];
+        let layout_index = &layout_indices[partition_index.layout];
+        let layout = layouts.get(layout_index.layout).ok_or("Retained layout missing")?;
+        let partition = partitions.get(partition_index.partition).ok_or("Retained partition missing")?;
+        let pr = partition.programme.as_ref().ok_or("Retained programme missing")?;
+        let allocation = pr.allocations.get(site.allocation).ok_or("Retained allocation missing")?;
+        let parcel = partition.parcels.get(site.parcel).ok_or("Retained parcel missing")?;
+        let drawn = super::house_mix::HouseSettings::parse(architecture_culture).and_then(|h| {
+            let block = layout.blocks.get(parcel.block)?;
+            let drawn = h.pick(seed, &layout.key, &parcel.id, parcel.block, block.quarter, &block.zone)?;
+            (drawn != allocation.culture).then(|| {
+                super::culture::parcel_mapping(layout, parcel, drawn, &allocation.function)
+                    .map(|m| (drawn.to_owned(), m))
+            })?
+        });
+        let (building_culture, mut culture) = match drawn {
+            Some(d) => d,
+            None => (
+                allocation.culture.clone(),
+                super::culture::functional_mapping(&allocation.culture,&allocation.role,&allocation.function,
+                    &pr.context.period,match pr.context.mode.as_str(){"strict"=>"historical_strict","fantasy"=>"fantasy_mix",_=>"historical_inspired"})
+                .or_else(|| super::culture::parcel_mapping(layout, parcel, &allocation.culture, &allocation.function))
+                .ok_or("No contextual native recipe")?,
+            ),
+        };
+        let building_culture = building_culture.as_str();
+        if !super::culture::functional_role_resolved(building_culture,&culture.architecture_pack,&allocation.role,&allocation.function)
+            && let Some(small) = super::parcels::compact_fallback(&culture.architecture_pack, &pr.context.period, &culture.admissibility) {
+            let fits = |a: &super::culture::UrbanAdmissibility| {
+                parcel.envelope.as_ref().is_some_and(|e| super::parcels::witnessed_by(e, a))
+            };
+            if !fits(&culture.admissibility)
+                && (fits(&small)
+                    || super::parcels::parcel_envelope(parcel, culture.admissibility.min_frontage,
+                        culture.admissibility.min_depth, culture.admissibility.min_access_width).is_none())
+            {
+                culture.admissibility = small;
+            }
+        }
+        // Without a tissue there is no occupancy, hence no preview.
+        let tissue = partition_index.tissues[site.tissue].get_or_init(|| {
+            super::culture::parcel_morph(layout, partition, &allocation.culture, parcel.block)
+                .map(|(zone, morph)| (zone.to_owned(), morph))
+        });
+        let Some((zone, morph)) = tissue.as_ref() else { return Ok(None) };
+        let mode = match pr.context.mode.as_str() {
+            "strict" => "historical_strict",
+            "fantasy" => "fantasy_mix",
+            _ => "historical_inspired",
+        };
+        let floors = typical_floors(&culture, &allocation.function, pr.population, parcel.pressure);
+        let floors = if zone == "village"
+            || culture.functional_profile == "communal"
+            || !matches!(allocation.function.as_str(), "domestic" | "mixed")
+        {
+            floors
+        } else {
+            let levels = &morph.value["arch"]["storeys"];
+            let lo = levels[0].as_u64().unwrap_or(u64::from(floors)) as u32;
+            let hi = levels[1].as_u64().unwrap_or(u64::from(floors)) as u32;
+            (lo + ((hi.saturating_sub(lo)) as f64 * parcel.pressure).round() as u32)
+                .clamp(culture.admissibility.floors[0], culture.admissibility.floors[1])
+        };
+        let programme = programme_of(allocation, parcel, layout, &layout_index.districts);
+        let wealth = programme["wealth"].as_f64().unwrap_or(0.5);
+        let site_seed = super::edits::building_seed(seed, &parcel.id, partition);
+        let role = programme["role"].as_str().unwrap_or("").to_string();
+        let functional = super::culture::functional_programme(&culture.architecture_pack, &role,
+            &allocation.function, &pr.context.period, mode);
+        let domestic = matches!(allocation.function.as_str(), "domestic" | "mixed");
+        let collective_home = functional.is_none()
+            && domestic
+            && (role == "dwelling.tenement" || role.starts_with("dwelling.tenement."));
+        let feasible = functional.is_none() && domestic && feasibility_enabled();
+        let admissible = if collective_home || feasible {
+            feasibility::admissible(&culture.architecture_pack, building_culture, &pr.context.period, mode == "historical_strict")
+        } else {
+            Vec::new()
+        };
+        let fit = (collective_home || feasible).then(|| feasibility::lot_fit(parcel, &admissible));
+        let fits: &[&NativeProfile] = fit.as_ref().map_or(&[], |f| &f.fits);
+        let tall = if collective_home {
+            let tall: Vec<_> = fits.iter().copied().filter(|p| tall_collective(p)).collect();
+            collective_floors(&tall, parcel.pressure)
+        } else {
+            None
+        };
+        let floors_range = if let Some(range) = tall {
+            Some(range)
+        } else if collective_home {
+            let top = morph.value["arch"]["storeys"][1].as_u64().map_or(floors, |hi| hi as u32)
+                .clamp(culture.admissibility.floors[0], culture.admissibility.floors[1]);
+            Some([top, top])
+        } else if domestic || functional.is_some() {
+            Some([floors.saturating_sub(1).max(culture.admissibility.floors[0]).min(floors), floors])
+        } else {
+            None
+        };
+        let wish = floors_range.or_else(|| wish_of(&programme["floors"]));
+        let drawable: Vec<_> = if feasible {
+            feasibility::drawable(&culture.architecture_pack, building_culture, &pr.context.period, mode == "historical_strict").collect()
+        } else {
+            Vec::new()
+        };
+        let asked = |wished: &'static str| {
+            let c = feasibility::feasible_composition(wished, wish, &drawable, fits, culture.admissibility.party_walls)
+                .unwrap_or(wished);
+            if round7() {
+                feasibility::programme_composition(c, wish,
+                    feasibility::programme_source_role(&role, &allocation.function), fits)
+            } else {
+                c
+            }
+        };
+        let court_kept = feasible.then(|| asked("courtyard") == "courtyard");
+        let court_lot = collective_home && fits.iter().any(|p| court_layout(p)) && court_kept != Some(false);
+        let occupancy = super::parcels::Occupancy {
+            morph,
+            zone: zone.as_str(),
+            function: &allocation.function,
+            role: &role,
+            landmark: programme["landmark"].as_bool().unwrap_or(false),
+            party_walls: culture.admissibility.party_walls,
+            wealth,
+            seed: &site_seed,
+            pack: &culture.architecture_pack,
+            court_lot,
+            court_kept,
+        };
+        let (parts, realized) = super::parcels::occupation_preview(parcel, &occupancy);
+        if parts.is_empty() {
+            return Ok(None);
+        }
+        // Only a holed preview of a simple composition is rebuilt.
+        if !(topology && parts.iter().any(|(s, _)| !s.holes.is_empty())) {
+            return Ok(Some(parcel.id.clone()));
+        }
+        let kind = realized.or_else(|| Some(super::parcels::occupation_kind(&occupancy)));
+        let compound_tissue = morph.text("plotOp") == "compound";
+        let composition = functional.map_or_else(
+            || match composition_of(&role, kind) {
+                "row" | "detached" if compound_tissue => "compound",
+                c => c,
+            },
+            |p| p.composition.as_str(),
+        );
+        let mut composition = if feasible { asked(composition) } else { composition };
+        if !domestic && functional.is_none() && composition == "courtyard"
+            && !super::culture::functional_choice_registered(building_culture,&culture.architecture_pack,&role,
+                &allocation.function,composition,mode) {
+            let sources = feasibility::recipe_sources(&culture.admissibility.recipe_id);
+            if !sources.is_empty() && sources.iter().all(|p| p.layout == "single") {
+                composition = "detached";
+            }
+        }
+        if !matches!(composition, "row" | "detached") {
+            return Ok(Some(parcel.id.clone()));
+        }
+        let form = if composition == "row" { super::parcels::OccupationKind::Row } else { super::parcels::OccupationKind::Detached };
+        let parts = super::parcels::occupation_preview_resolved(parcel, &occupancy, Some(form)).0;
+        Ok((!parts.is_empty()).then(|| parcel.id.clone()))
+    };
+    super::par::range(sites.len(), one).into_iter().filter_map(Result::transpose).collect()
 }

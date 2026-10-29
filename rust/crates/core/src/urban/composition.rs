@@ -853,13 +853,15 @@ fn generate_modern(
         enclosures: vec![],
         warnings: vec![],
     };
-    for (component, domain) in domains.iter().enumerate() {
+    // The components are planned independently (each from its own seeded
+    // stream), in parallel, and merged in component order.
+    let grid_angle = cfg.regular_grid_outline.then(|| footprint::orientation(site, cfg, surface, roads));
+    let centers = &footprint.structure.centers;
+    let parts = super::par::map(&domains, |component, domain| {
         if g::area(domain) < 25.0 {
-            continue;
+            return None;
         }
-        let center = footprint
-            .structure
-            .centers
+        let center = centers
             .iter()
             .filter(|c| g::contains(domain, c.point))
             .max_by(|a, b| a.weight.total_cmp(&b.weight))
@@ -886,7 +888,7 @@ fn generate_modern(
             local_cfg.count = ((g::area(domain) / 40_000.0).round() as usize).clamp(1, 3);
         }
         local_cfg.rings = 1;
-        let mut part = macroplan::generate_oriented_domain(
+        Some(macroplan::generate_oriented_domain(
             &format!("{seed}\u{1}component:{component}"),
             &local,
             &local_cfg,
@@ -895,8 +897,10 @@ fn generate_modern(
             &growth_roads,
             local.radius,
             Some(domain),
-            cfg.regular_grid_outline.then(|| footprint::orientation(site, cfg, surface, roads)),
-        );
+            grid_angle,
+        ))
+    });
+    for mut part in parts.into_iter().flatten() {
         plan.quarters.append(&mut part.quarters);
         plan.streets.append(&mut part.streets);
         // Each component's full outline is not a wall; `fortify` draws the

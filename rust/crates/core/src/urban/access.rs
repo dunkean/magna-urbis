@@ -115,6 +115,9 @@ pub(super) fn refine(layout: &mut Layout, cfg: &LayoutConfig, morph: &Morph, sur
             }
         }
         let mut block_added = 0;
+        // Lattice grades are a pure function of the bounds: one planner serves
+        // every candidate routed in the same domain bounds.
+        let mut planner: Option<((f64, f64, f64, f64), routing::RoutePlanner)> = None;
         // Per block, the configured budget, more for a block whose land runs
         // many frontage depths deep (a lane serves about a 4-depth square).
         let deep = (g::area(&block.shape) / (4.0 * depth * depth)).ceil() as usize;
@@ -125,14 +128,14 @@ pub(super) fn refine(layout: &mut Layout, cfg: &LayoutConfig, morph: &Morph, sur
             }
             let mut targets = vec![];
             for (di, s) in domains.iter().enumerate() {
-                let fronts = parcels::access_fronts(s, layout, &index);
+                let fronts = std::rc::Rc::new(parcels::access_fronts(s, layout, &index));
                 if fronts.is_empty() {
                     continue;
                 }
                 for p in samples(s) {
                     let d = land_distance(p, &fronts);
                     if d > depth * 1.08 {
-                        targets.push((d, di, p, fronts.clone()));
+                        targets.push((d, di, p, std::rc::Rc::clone(&fronts)));
                     }
                 }
             }
@@ -143,7 +146,7 @@ pub(super) fn refine(layout: &mut Layout, cfg: &LayoutConfig, morph: &Morph, sur
                 None
             };
             if let Some(c) = forced_common {
-                targets.insert(0, (depth * 2.0, 0, c, initial_fronts.clone()));
+                targets.insert(0, (depth * 2.0, 0, c, std::rc::Rc::new(initial_fronts.clone())));
             }
             let mut accepted = None;
             for (_, di, target, fronts) in targets.into_iter().take(4) {
@@ -187,7 +190,11 @@ pub(super) fn refine(layout: &mut Layout, cfg: &LayoutConfig, morph: &Morph, sur
                     let mut path = if g::segment_within(shape, inner, end) {
                         vec![inner, end]
                     } else {
-                        let mut router = routing::RoutePlanner::new(surface, g::bbox(shape));
+                        let bounds = g::bbox(shape);
+                        if planner.as_ref().is_none_or(|(b, _)| *b != bounds) {
+                            planner = Some((bounds, routing::RoutePlanner::new(surface, bounds)));
+                        }
+                        let router = &mut planner.as_mut().unwrap().1;
                         let Some(path) = router.route_within(inner, end, cfg.max_lane_grade, shape)
                         else {
                             continue;
