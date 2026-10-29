@@ -7,6 +7,7 @@ import type { Point, RoadOutput, RoadSite, SettlementRaster } from './settlement
 import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
 import { nativeJson, nativeRasterClient } from './nativeEngine';
 import { validateUrbanSource, type UrbanSourceHandle } from './urbanSource';
+import { digestValue, urbanCacheKey, readUrbanCache, writeUrbanCache, sha256 } from './urbanResultCache';
 import { requiresProgrammeFunctions, requireLocalProgrammeFunctions, requireWasmProgrammeFunctions } from './urbanProgrammeSupport';
 export type { UrbanSourceHandle } from './urbanSource';
 export type { Point } from './settlements';
@@ -181,32 +182,13 @@ function capacityInput(scene: UrbanRequest['scene']) {
 export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<UrbanEngine> {
   if (runtime?.profile !== 'local') await init({ module_or_path: await (await fetch(wasmUrl)).arrayBuffer() });
   let terrain: SettlementTerrain | undefined;
-  let retainedLayouts: { id: number; json: string } | undefined;
+  let retainedLayouts: { id: number; json: string; digest?: string } | undefined;
+  // Cache hits skip the raster upload; build the terrain lazily on the first miss.
+  let pendingRaster: SettlementRaster | undefined, terrainRaster: SettlementRaster | undefined, pendingDigest: string | undefined;
+  const rasterDigests = new WeakMap<object, Promise<string>>();
   const native = nativeRasterClient();
-  return { run(request) {
-    if (request.source) {
-      try {
-        validateUrbanSource(request.source);
-        if (request.runtime?.profile !== 'local' || request.kind !== 'buildingSites'
-          || request.raster || request.layouts || request.partitions) throw new Error('Retained urban reads require a local source without uploaded geometry.');
-        const { runtime: _runtime, ...input } = nativeUrbanInput(request);
-        // The handle belongs to the urban worker's session, not this engine's
-        // private raster client. A missing/stale source must remain an error.
-        const read = () => nativeJson<UrbanResponse>(request.runtime!, '/urban', { ...input, session: request.source!.session });
-        return (requiresProgrammeFunctions(request) ? requireLocalProgrammeFunctions(request.runtime, request).then(read) : read())
-          .catch(error => ({ id: request.id, error: String(error) }));
-      } catch (error) { return { id: request.id, error: String(error) }; }
-    }
-    if (request.runtime?.profile === 'local') {
-      const run = () => native<UrbanResponse>('/urban', { ...nativeUrbanInput(request), runtime: request.runtime!,
-        ...(request.kind === 'builtCapacity' ? { scene: capacityInput(request.scene) } : {}),
-        ...(request.kind === 'quarters' ? { layoutConfig: nativeLayoutConfig(normalizeLayoutConfig(request.layoutConfig, true)) }
-          : { parcelConfig: normalizeParcelConfig(request.parcelConfig) }),
-      });
-      return (requiresProgrammeFunctions(request) ? requireLocalProgrammeFunctions(request.runtime, request).then(run) : run()).catch(error => ({ id: request.id, error: String(error) }));
-    }
-    try {
-      if (requiresProgrammeFunctions(request)) requireWasmProgrammeFunctions(SettlementTerrain, request);
+  const runWasmUncached = (request: UrbanRequest): UrbanResponse => {
+    {
       if (request.raster) {
         const r = request.raster;
         retainedLayouts = undefined;
@@ -215,7 +197,7 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
         const next = new SettlementTerrain(r.width, r.n, r.height, r.water, r.waterLevel, r.riverWidth, r.riverIds);
         try { if (r.geometry) next.set_urban_geometry(JSON.stringify(r.geometry)); }
         catch (error) { next.free(); throw error; }
-        terrain = next;
+        terrain = next; terrainRaster = r;
       }
       if (!terrain) throw new Error('Générez le terrain avant les quartiers.');
       const start = performance.now();
@@ -245,7 +227,67 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
       }
       const partitions = JSON.parse(terrain.urban_parcels(request.seed, layoutsJson, JSON.stringify(normalizeParcelConfig(request.parcelConfig)))) as Partition[];
       return { id: request.id, partitions, ms: performance.now() - start };
+    }
+  };
+  const engineId = (): string => { try { return String((SettlementTerrain as unknown as { urban_programme_functions_version?: () => number }).urban_programme_functions_version?.() ?? 0); } catch { return '0'; } };
+  const runWasm = (request: UrbanRequest): UrbanResponse => {
+    try {
+      if (requiresProgrammeFunctions(request)) requireWasmProgrammeFunctions(SettlementTerrain, request);
+      return runWasmUncached(request);
     } catch (error) { return { id: request.id, error: String(error) }; }
+  };
+  const runCached = async (request: UrbanRequest): Promise<UrbanResponse> => {
+    let key: string | undefined;
+    try {
+      if (request.raster) {
+        pendingRaster = request.raster;
+        let digest = rasterDigests.get(request.raster); if (!digest) rasterDigests.set(request.raster, digest = digestValue(request.raster));
+        pendingDigest = await digest;
+      }
+      let layoutsDigest: string | undefined;
+      if (request.kind !== 'quarters' && !request.layouts && request.layoutsId !== undefined) {
+        if (retainedLayouts?.id !== request.layoutsId) return runWasm(request);
+        retainedLayouts.digest ??= await sha256([retainedLayouts.json]); layoutsDigest = retainedLayouts.digest;
+      }
+      if (pendingDigest) key = await urbanCacheKey(request as unknown as Record<string, unknown>, { engine: engineId(), terrain: pendingDigest, retainedLayouts: layoutsDigest });
+    } catch { key = undefined; }
+    if (key) {
+      const hit = await readUrbanCache<Pick<UrbanResponse, 'layouts' | 'partitions' | 'placementRequests'>>(key);
+      if (hit && (hit.layouts || hit.partitions || hit.placementRequests)) {
+        if (request.kind === 'quarters' && hit.layouts) retainedLayouts = { id: request.id, json: JSON.stringify(nativeLayouts(hit.layouts)) };
+        return { id: request.id, ...hit, ms: 0 };
+      }
+    }
+    const lazy = !request.raster && !!pendingRaster && terrainRaster !== pendingRaster;
+    const keep = retainedLayouts;
+    const response = runWasm(lazy ? { ...request, raster: pendingRaster } : request);
+    if (lazy && request.kind !== 'quarters') retainedLayouts = keep;
+    if (!response.error && key) { const { id: _id, ms: _ms, ...value } = response; void writeUrbanCache(key, value); }
+    return response;
+  };
+  return { run(request) {
+    if (request.source) {
+      try {
+        validateUrbanSource(request.source);
+        if (request.runtime?.profile !== 'local' || request.kind !== 'buildingSites'
+          || request.raster || request.layouts || request.partitions) throw new Error('Retained urban reads require a local source without uploaded geometry.');
+        const { runtime: _runtime, ...input } = nativeUrbanInput(request);
+        // The handle belongs to the urban worker's session, not this engine's
+        // private raster client. A missing/stale source must remain an error.
+        const read = () => nativeJson<UrbanResponse>(request.runtime!, '/urban', { ...input, session: request.source!.session });
+        return (requiresProgrammeFunctions(request) ? requireLocalProgrammeFunctions(request.runtime, request).then(read) : read())
+          .catch(error => ({ id: request.id, error: String(error) }));
+      } catch (error) { return { id: request.id, error: String(error) }; }
+    }
+    if (request.runtime?.profile === 'local') {
+      const run = () => native<UrbanResponse>('/urban', { ...nativeUrbanInput(request), runtime: request.runtime!,
+        ...(request.kind === 'builtCapacity' ? { scene: capacityInput(request.scene) } : {}),
+        ...(request.kind === 'quarters' ? { layoutConfig: nativeLayoutConfig(normalizeLayoutConfig(request.layoutConfig, true)) }
+          : { parcelConfig: normalizeParcelConfig(request.parcelConfig) }),
+      });
+      return (requiresProgrammeFunctions(request) ? requireLocalProgrammeFunctions(request.runtime, request).then(run) : run()).catch(error => ({ id: request.id, error: String(error) }));
+    }
+    return runCached(request);
   } };
 }
 let fallback: Promise<UrbanEngine> | undefined;

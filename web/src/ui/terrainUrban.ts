@@ -479,7 +479,12 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   type ParentView = Awaited<ReturnType<typeof openParentViewport>>;
   const pendingParent3d = parent3dWindow();
   let parentView: ParentView | undefined, parentOpening: Promise<ParentView> | undefined, parentFailed = '', parentGenerationAbort: AbortController | undefined;
-  const parentKey = (state: UrbanParentBuildingState) => JSON.stringify([state.store, state.cityKey, state.offset, executionRuntime]);
+  // Keys are consulted per frame; states are immutable snapshots, so memoise on identity.
+  const parentKeys = new WeakMap<object, [unknown, string]>();
+  const parentKey = (state: UrbanParentBuildingState) => {
+    const hit = parentKeys.get(state); if (hit && hit[0] === executionRuntime) return hit[1];
+    const key = JSON.stringify([state.store, state.cityKey, state.offset, executionRuntime]); parentKeys.set(state, [executionRuntime, key]); return key;
+  };
   const parentSlot = createColdViewportSlot<UrbanParentBuildingState, ParentView>(parentKey, async (state, signal) => {
     const backend = (await getColdBackend()).parents; signal.throwIfAborted();
     return openParentViewport(backend, state, nativeParentApi(executionRuntime), { signal, changed: () => { cityLayer?.request(); buildingPanel.refreshReport(); if (architectureView === '3d') options.onChange(); } });
@@ -503,7 +508,12 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     && a.store.sceneId === b.store.sceneId && a.store.fingerprint === b.store.fingerprint && a.cityKey === b.cityKey
     && (a.offset?.x ?? 0) === (b.offset?.x ?? 0) && (a.offset?.y ?? 0) === (b.offset?.y ?? 0)
     && a.store.sourceFingerprint === b.store.sourceFingerprint && JSON.stringify(a.counts) === JSON.stringify(b.counts);
-  const coldKey = (state: ColdCityState) => JSON.stringify([state.store, state.counts, state.cityKey, state.offset?.x ?? 0, state.offset?.y ?? 0]);
+  const coldKeys = new WeakMap<object, string>();
+  const coldKey = (state: ColdCityState) => {
+    let key = coldKeys.get(state);
+    if (key === undefined) coldKeys.set(state, key = JSON.stringify([state.store, state.counts, state.cityKey, state.offset?.x ?? 0, state.offset?.y ?? 0]));
+    return key;
+  };
   let coldSession: ColdCitySession | undefined, coldLoadKey = '', coldFailedKey = '', coldLoadEpoch = 0;
   let coldView: ColdCityViewport | undefined, coldViewLoad: Promise<ColdCityViewport> | undefined, coldViewKey = '', coldViewEpoch = 0;
   let coldRepairAbort: AbortController | undefined, coldRepairState: ColdCityState | undefined;

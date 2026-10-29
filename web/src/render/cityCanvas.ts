@@ -556,9 +556,14 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
   // Streets: centrelines stroked by rank, casing first, majors and crossings on top.
   if (layers.streets) {
     const maxRank = lod === 'far' ? 1 : lod === 'mid' ? 2 : 9;
-    const visible = scene.bins.streets.query(viewport).map(i => scene.streets[i]).filter(s => s.rank <= maxRank || CROSSINGS.has(s.role));
+    // Stable order by descending rank (crossings last): bucket by rank, O(n) instead of a per-frame sort.
     const order = (s: CityStreet): number => CROSSINGS.has(s.role) ? -1 : s.rank;
-    visible.sort((a, b) => order(b) - order(a));
+    const buckets = new Map<number, CityStreet[]>();
+    for (const i of scene.bins.streets.query(viewport)) {
+      const s = scene.streets[i]; if (!(s.rank <= maxRank || CROSSINGS.has(s.role))) continue;
+      const k = order(s), list = buckets.get(k); if (list) list.push(s); else buckets.set(k, [s]);
+    }
+    const visible = [...buckets.keys()].sort((a, b) => b - a).flatMap(k => buckets.get(k)!);
     const casing = new Batches(), fill = new Batches(), marks = new Batches(), softStreets = (o.groundBlend ?? isBlended()) && !tex;
     for (const s of visible) {
       stats.streets++;

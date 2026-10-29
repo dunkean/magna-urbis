@@ -400,7 +400,7 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
 
   private candidates(viewport: BuildingViewport): {records: IndexedBuilding<B>[]; metrics: BuildingQueryMetrics} {
     if (!validViewport(viewport)) throw new Error('Building viewport must contain finite, ordered bounds.');
-    const start = performance.now(), records: IndexedBuilding<B>[] = [];
+    const start = performance.now(), hits: number[] = [];
     const metrics: BuildingQueryMetrics = {totalBuildings: this.scene.buildings.length, visitedSectors: 0, testedBuildings: 0, visibleBuildings: 0, queryMs: 0};
     this.stamp = (this.stamp + 1) >>> 0;
     if (this.stamp === 0) { this.seen.fill(0); this.stamp = 1; }
@@ -408,7 +408,7 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
       for (const index of indices) {
         if (this.seen[index] === this.stamp) continue;
         this.seen[index] = this.stamp; metrics.testedBuildings++;
-        const record = this.records[index]; if (overlaps(record.bounds, viewport)) records.push(record);
+        const record = this.records[index]; if (overlaps(record.bounds, viewport)) hits.push(index);
       }
     };
     const size = this.options.sectorSizeM;
@@ -427,7 +427,11 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
     }
     add(this.overflow);
     // Stable painter/picking order independent of the order sectors were visited.
-    records.sort((a, b) => a.order - b.order);
+    // `order` is the record index and every list is ascending, so a numeric
+    // typed-array sort (no comparator) gives the identical order.
+    const sorted = Uint32Array.from(hits).sort();
+    const records: IndexedBuilding<B>[] = new Array(sorted.length);
+    for (let i = 0; i < sorted.length; i++) records[i] = this.records[sorted[i]];
     metrics.visibleBuildings = records.length; metrics.queryMs = performance.now() - start;
     return {records, metrics};
   }
@@ -464,6 +468,13 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
       if (outline.path) ctx.stroke(outline.path); else { ctx.beginPath(); appendGeometry(ctx, outline); ctx.stroke(); }
     } finally { ctx.restore(); }
     return true;
+  }
+
+  private lastColors: object | undefined; private lastColorKey = '{}';
+  /** Colour cache key, recomputed only when the colours object changes. */
+  private colorKeyOf(colors: object | undefined): string {
+    if (colors !== this.lastColors || colors === undefined) { this.lastColors = colors; this.lastColorKey = JSON.stringify(colors ?? {}); }
+    return this.lastColorKey;
   }
 
   private geometry(building: CompactBuildingVisual, metrics: BuildingRenderMetrics): CachedGeometry {
@@ -655,15 +666,17 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
       indexBuildMs: this.indexBuildMs, drawMs: 0, drawCalls: 0, submittedVertices: 0, preparedVertices: 0, roofMeshesRead: 0, ridgeSegments: 0,
       cacheHits: 0, cacheMisses: 0, cachedBuildings: 0, cachedVertices: 0, lod: {silhouette: 0, ridges: 0, facets: 0},
       renderMode: 'raster', visibleBuildingsExact: false, rasterTiles: 0, rasterTilesBuilt: 0, rasterTilesPending: 0, rasterCacheBytes: 0, rasterDrawCalls: 0};
+    const colorKey = this.colorKeyOf(appearance.colors), paint = paintedBuildings(options) ? 'painted' : '';
     const tiles: {key: string; x: number; y: number; tile?: RasterTile}[] = [];
     const protectedKeys = new Set<string>();
     for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
-      const key = `${level}:${x}:${y}:${appearance.style}:${appearance.diagnostic}:${JSON.stringify(appearance.colors ?? {})}:${paintedBuildings(options) ? 'painted' : ''}`;
+      const key = `${level}:${x}:${y}:${appearance.style}:${appearance.diagnostic}:${colorKey}:${paint}`;
       const tile = this.rasterCache.get(key); protectedKeys.add(key); tiles.push({key, x, y, tile});
       if (tile) { this.rasterCache.delete(key); this.rasterCache.set(key, tile); }
     }
     const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
-    const missing = tiles.filter(tile => !tile.tile).sort((a, b) => (a.x - cx) ** 2 + (a.y - cy) ** 2 - (b.x - cx) ** 2 - (b.y - cy) ** 2);
+    const missing = tiles.filter(tile => !tile.tile);
+    if (missing.length > 1) missing.sort((a, b) => (a.x - cx) ** 2 + (a.y - cy) ** 2 - (b.x - cx) ** 2 - (b.y - cy) ** 2);
     for (const entry of missing) {
       if (metrics.rasterTilesBuilt >= this.options.maxRasterBuildsPerFrame || (metrics.rasterTilesBuilt > 0 && performance.now() - start >= this.options.maxRasterBuildMs)) break;
       const canvas = this.options.rasterCanvasFactory(padded);

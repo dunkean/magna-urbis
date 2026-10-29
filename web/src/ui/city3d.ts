@@ -457,8 +457,16 @@ export function mountCity3d(options: City3dOptions): City3d {
     if (options.details) { driveDetails(); return; }
     const t = terrain, scene = sceneOf; if (!t || !scene || 'projection' in scene) return;
     const c = t.getCamera(), radius = Math.max(60, Math.min(250, c.distance * 0.6));
-    const near = scene.buildings.filter(b => city3dDisplayKind(b) === 'compact' && !details.has(b.id)).map(b => ({ b, d: Math.hypot(center(b).x - c.x, center(b).y - c.y) }))
-      .filter(e => e.d < radius).sort((a, b) => a.d - b.d).slice(0, 24).map(e => e.b.id);
+    // Partial selection of the 24 nearest (earlier building wins ties, as with a stable sort).
+    const best: { id: string; d: number }[] = [];
+    for (const b of scene.buildings) {
+      if (city3dDisplayKind(b) !== 'compact' || details.has(b.id)) continue;
+      const p = center(b), d = Math.hypot(p.x - c.x, p.y - c.y);
+      if (!(d < radius) || (best.length === 24 && d >= best[23].d)) continue;
+      let at = best.length; while (at > 0 && best[at - 1].d > d) at--;
+      best.splice(at, 0, { id: b.id, d }); if (best.length > 24) best.pop();
+    }
+    const near = best.map(e => e.id);
     info.dataset.detailError = '';
     if (!near.length) { info.textContent = urbanText(['Aucun plan compact à détailler près du centre de la vue.', 'No compact plans to detail near the centre of the view.', '视图中心附近没有可细化的紧凑平面。', 'No hay planos compactos que detallar cerca del centro de la vista.', 'Não há plantas compactas para detalhar perto do centro da vista.']); return; }
     void realize(near);

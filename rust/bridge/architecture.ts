@@ -87,7 +87,7 @@ export async function requireNativeAssemblyCapability(runtime?: ExecutionRuntime
 export interface ArchitectureCallOptions { signal?: AbortSignal }
 export async function callArchitecture<T>(kind: ArchitectureCall, input: unknown, runtime?: ExecutionRuntime, options: ArchitectureCallOptions = {}): Promise<T> {
   options.signal?.throwIfAborted();
-  let parentJson: string | undefined;
+  let parentJson: string | undefined, inputJson: string | undefined;
   if (isParentCall(kind)) {
     await requireNativeAssemblyCapability(runtime, true); options.signal?.throwIfAborted();
     const wire = parentWire(input);
@@ -96,7 +96,8 @@ export async function callArchitecture<T>(kind: ArchitectureCall, input: unknown
     parentJson = wire.json;
   }
   if (isAssemblyCall(kind)) {
-    if (new TextEncoder().encode(JSON.stringify(input)).byteLength > 32 * 1024 * 1024) throw new Error('Native assembly input exceeds 32 MiB.');
+    inputJson = JSON.stringify(input);
+    if (new TextEncoder().encode(inputJson).byteLength > 32 * 1024 * 1024) throw new Error('Native assembly input exceeds 32 MiB.');
     await requireNativeAssemblyCapability(runtime); options.signal?.throwIfAborted();
   }
   if (kind === 'placement' && hasNativeMinimumCandidates(input)) throw new Error('Les poses natives précalculées nécessitent la route de plans architecturaux.');
@@ -106,7 +107,7 @@ export async function callArchitecture<T>(kind: ArchitectureCall, input: unknown
     // Closing fetch does not cancel native geometry. Let a dispatched call drain
     // before releasing its scheduler slot, then discard superseded output. This
     // bounds actual server work during rapid camera/selection changes.
-    const json = await (await nativeRequest(runtime, `/houses/${kind}`, parentJson ?? JSON.stringify(input))).text();
+    const json = await (await nativeRequest(runtime, `/houses/${kind}`, parentJson ?? inputJson ?? JSON.stringify(input))).text();
     options.signal?.throwIfAborted();
     return parseArchitectureResult<T>(json);
   }
@@ -127,7 +128,7 @@ export async function callArchitecture<T>(kind: ArchitectureCall, input: unknown
     : kind === 'plan-parent-batch' ? api.plan_parent_batch_json : kind === 'unpack-parent' ? api.unpack_parent_json
     : kind === 'unpack-parent-batch' ? api.unpack_parent_batch_json : kind === 'realize-parent' ? api.realize_parent_json : api.enrich_placement_json;
   if (typeof method !== 'function') throw new Error('Module d’architecture ancien. Reconstruisez le module maisons puis rechargez.');
-  return parseArchitectureResult<T>(method(parentJson ?? JSON.stringify(input)));
+  return parseArchitectureResult<T>(method(parentJson ?? inputJson ?? JSON.stringify(input)));
 }
 export const placeUrbanBuildings = (input: PlacementBatchRequest, runtime?: ExecutionRuntime,
   options?: Parameters<typeof placeArchitectureBatches>[2]): Promise<PlacementBatch> =>
