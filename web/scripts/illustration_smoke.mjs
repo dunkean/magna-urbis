@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
-const output = new URL('../../_agents_blackboard/illustration/', import.meta.url);
+const output = new URL('../../web/out/work/illustration/', import.meta.url);
 const bench = process.env.MAGNA_ILLUSTRATION_BENCH || 'http://127.0.0.1:5173';
 await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ channel: 'msedge', headless: true, args: ['--enable-unsafe-webgpu', '--ignore-gpu-blocklist'] });

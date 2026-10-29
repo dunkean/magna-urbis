@@ -14,10 +14,10 @@ def main():
     parser.add_argument('--variant', choices=['base', 'lightning', 'distilled'])
     parser.add_argument('--steps', type=int)
     parser.add_argument('--reference', choices=['source', 'source+edges', 'source+depth', 'edges'], default='source+edges')
-    parser.add_argument('--source', default='_agents_blackboard/illustration/source.png')
+    parser.add_argument('--source', default='web/out/work/illustration/source.png')
     parser.add_argument('--depth')
     parser.add_argument('--control', choices=['auto', 'edges', 'depth', 'both'], default='auto')
-    parser.add_argument('--output', default='_agents_blackboard/illustration')
+    parser.add_argument('--output', default='web/out/work/illustration')
     args = parser.parse_args()
     variant = args.variant or ('base' if args.mode == 'quality' else 'lightning')
     if (args.mode == 'fast' and variant == 'distilled') or (args.mode == 'quality' and variant == 'lightning'):

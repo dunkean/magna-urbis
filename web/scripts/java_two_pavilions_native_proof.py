@@ -6,7 +6,7 @@ import subprocess
 import time
 
 ROOT = Path(__file__).resolve().parents[2]
-SOURCE = ROOT / '_agents_blackboard/proposals/java_two_pavilions'
+SOURCE = ROOT / 'web/out/work/proposals/java_two_pavilions'
 OUT = ROOT / 'web/out/java-two-pavilions-native-proof'
 CLI = ROOT / 'web/out/houses-nominal-terrain-production-proof/plan_replay.exe'
 EXPECTED = 'ad10d1f7f41dcf407d4832039da147586d460b1d4e8cf201b3379cfb35e23077'

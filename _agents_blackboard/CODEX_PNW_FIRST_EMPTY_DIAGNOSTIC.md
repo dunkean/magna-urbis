@@ -1,7 +1,0 @@
-PNW — diagnostic isolé, première borne observée
-
-Le replay root exact de Core 14 + clock 8 conserve `structure.history[0].area = 23 960,899537 m²` avant une allocation finale vide. L’emprise a donc été construite puis retirée ; zéro quartier n’est pas expliqué par zéro demande. `capacity.reservedArea` prévisionnel 201 645,596 m² ne prouve pas une soustraction causale de ce terrain. Aucun modèle/quota/route/eau modifié.
-
-Lecture source : famille linear sans guides ; Camp sans armature ; service de quartier nécessitant une rue touchée ou cible de feeder, puis retrait complet si aucun accès. Transition pressentie, **pas encore observée par trace** : quartier créé dans le macroplan, puis supprimé par `serve_quarters` sans rue/cible. Root doit mesurer avant de conclure et décider ensuite du contrat culturel légitime, sans contourner la garde d’accès.
-
-Livraison et commande : `web/out/pnw-first-empty-diagnostic-workspace-v1/DELIVERY.md`. Manifest SHA `bf4caf43a3774226999b0d5d068c8c5a1ea547acc552aee5983e4632bd23ba15`. 426 sources originales copiées, 431 entrées diagnostiques ; seules deux copies reçoivent des observations cfg(test), avec récupération bit-exacte de la source originale en les retirant. Vrai pipeline public et comparaison des trois payloads enregistrés. Fixture exacte SHA 77c31c3159694f4c09e9a081c19d775dd9dac8f045d7409a6910d1f00c5d7ef9. City_quality coordonné, consolidation 14 et produit intacts. Aucun test, compilation, natif, serveur ou navigateur par lod. Créneau libéré.

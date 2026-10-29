@@ -6,7 +6,7 @@ const args = process.argv.slice(2);
 const option = (name, fallback) => { const i = args.indexOf(`--${name}`); return i < 0 ? fallback : args[i + 1]; };
 const server = option('server', 'http://127.0.0.1:8794');
 const source = option('source', 'out/city-bench/b');
-const out = option('out', '../_agents_blackboard/compact-refusals');
+const out = option('out', '../web/out/work/compact-refusals');
 const decor = 'city-01-river-plain-s';
 mkdirSync(out, { recursive: true });
 const post = async (path, input) => {

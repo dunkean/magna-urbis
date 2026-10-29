@@ -11,7 +11,7 @@ import subprocess
 import time
 
 REPO = Path(__file__).resolve().parents[2]
-SOURCE = REPO / "_agents_blackboard/city-visual-audit-p2/01-l/requests.json"
+SOURCE = REPO / "web/out/work/city-visual-audit-p2/01-l/requests.json"
 ROOT = REPO / "web/out/strip-initial-budget-proof"
 EXE = REPO / "rust/target/debug/examples/plan_replay.exe"
 

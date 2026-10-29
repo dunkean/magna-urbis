@@ -7,7 +7,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { chromium } from 'playwright';
 const runtime = process.argv[2] ?? 'http://127.0.0.1:8810', vite = process.argv[3] ?? 'http://127.0.0.1:5173';
-const output = resolve(process.argv[4] ?? '../_agents_blackboard/building-detail-smoke');
+const output = resolve(process.argv[4] ?? '../web/out/work/building-detail-smoke');
 await mkdir(output, { recursive: true });
 const requests = ['EUR-MED-B01', 'EUR-MED-B07'].map((recipe, index) => {
   const x = 100 + index * 80, y = 160, w = 48, h = 55;

@@ -5,9 +5,9 @@ import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 
 const out = resolve(process.argv[2] ?? 'out/roman-user-04-8791'); await mkdir(out, { recursive: true });
-const url = (await readFile('../_agents_blackboard/roman-user-url.txt', 'utf8')).trim();
-const report = { started: new Date().toISOString(), url, source: 'Parent transcription of exact user URL; no Pueblo settings', runtime: JSON.parse(await readFile('../_agents_blackboard/LOCAL_RUNTIME.json', 'utf8')), errors: [], warnings: [], network: [], captures: [] };
-await writeFile(resolve(out, 'url.txt'), url); await copyFile('../_agents_blackboard/roman-user-options.json', resolve(out, 'input-options.json'));
+const url = (await readFile('../web/out/work/roman-user-url.txt', 'utf8')).trim();
+const report = { started: new Date().toISOString(), url, source: 'Parent transcription of exact user URL; no Pueblo settings', runtime: JSON.parse(await readFile('../web/out/work/LOCAL_RUNTIME.json', 'utf8')), errors: [], warnings: [], network: [], captures: [] };
+await writeFile(resolve(out, 'url.txt'), url); await copyFile('../web/out/work/roman-user-options.json', resolve(out, 'input-options.json'));
 const pending = new Set(), responses = []; let serial = 0;
 const browser = await chromium.launch({ channel: 'msedge', headless: true }); let page;
 try {

@@ -1,7 +1,7 @@
 /** Manifest-driven CityBench captures. Existing runtime only; no server lifecycle.
  * From web/: node scripts/city_visual_bench.mjs --dry-run --gate all --limit 50
  * Live: --only 03-norse-hamlet --server http://127.0.0.1:8810
- * See _agents_blackboard/CITY_VISUAL_BENCH_50_README.md for gates and limitations.
+ * See web/out/work/CITY_VISUAL_BENCH_50_README.md for gates and limitations.
  */
 import { readFile, writeFile, mkdir, stat } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
@@ -46,7 +46,7 @@ const dry = has('dry-run'), requireComparisonDetail = has('require-comparison-de
 const architectureProof = option('architecture-proof', 'parent');
 if (!['parent', 'legacy'].includes(architectureProof)) throw new Error('--architecture-proof must be parent or legacy');
 const detailMemberBudget = positive('detail-member-budget', 64);
-const manifestPath = resolve(option('manifest', resolve(root, '_agents_blackboard/CITY_VISUAL_BENCH_50.json')));
+const manifestPath = resolve(option('manifest', resolve(root, 'web/out/work/CITY_VISUAL_BENCH_50.json')));
 const output = resolve(option('out', resolve(root, 'web/out/city-visual-bench')));
 const server = option('server', 'http://127.0.0.1:8810').replace(/\/$/, '');
 const bench = option('bench', 'http://127.0.0.1:5173/citybench.html');

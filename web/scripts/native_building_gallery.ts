@@ -13,7 +13,7 @@ import type { HouseConfig, HouseOverrides, Surface } from '../../rust/bridge/hou
 
 const executable = resolve(process.argv[2] ?? '../rust/target/debug/magna-urbis-local.exe');
 const vite = process.argv[3] ?? 'http://127.0.0.1:5173';
-const output = resolve(process.argv[4] ?? '../_agents_blackboard/native-building-gallery');
+const output = resolve(process.argv[4] ?? '../web/out/work/native-building-gallery');
 await mkdir(output, {recursive: true});
 const socket = createServer();
 await new Promise<void>(resolve => socket.listen(0, '127.0.0.1', resolve));

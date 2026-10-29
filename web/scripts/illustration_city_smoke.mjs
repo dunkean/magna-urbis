@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 import { chromium } from 'playwright';
 const base = process.env.MAGNA_ILLUSTRATION_BENCH || 'http://127.0.0.1:5173';
 const fixture = JSON.parse(await readFile('tests/fixtures/housing-floor-java-ui-native.json', 'utf8'));
-const output = resolve('../_agents_blackboard/illustration'); await mkdir(output, { recursive: true });
+const output = resolve('../web/out/work/illustration'); await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ channel: 'msedge', headless: true });
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });

@@ -8,7 +8,7 @@ import type { CompactBuildingVisual } from '../src/render/urbanBuildingLod';
 import type { Point, Surface } from '../../rust/bridge/housesContract';
 
 const baseUrl = process.argv[2] ?? 'http://127.0.0.1:5173';
-const reportPath = resolve(process.argv[3] ?? '../_agents_blackboard/CODEX_RENDER_BENCHMARK.json');
+const reportPath = resolve(process.argv[3] ?? '../web/out/work/CODEX_RENDER_BENCHMARK.json');
 const fixture = JSON.parse(await readFile(new URL('../../rust/fixtures/houses/batch-reference.json', import.meta.url), 'utf8'));
 const browser = await chromium.launch({headless: true, channel: process.env.BUILDING_BENCH_BROWSER_CHANNEL ?? (process.platform === 'win32' ? 'msedge' : undefined)});
 try {

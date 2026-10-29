@@ -11,7 +11,7 @@ from native_foundation_compare import surface, terrain_bounds
 
 ROOT = Path(__file__).resolve().parents[2]
 PROOF = ROOT / 'web/out/java-c-nominal-first-roundoff-proof'
-OUT = ROOT / '_agents_blackboard/proposals/java_two_pavilions'
+OUT = ROOT / 'web/out/work/proposals/java_two_pavilions'
 INDEX, BATCH, POSITION = 4792, 74, 56
 WALK_WIDTH, COURT_WIDTH = 1.2, 3.0  # Explicit pilot choices, not source minima.
 

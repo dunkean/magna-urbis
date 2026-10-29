@@ -1,9 +1,0 @@
-Core 14 V3 — staging isolé préparé, non promu
-
-`web/out/core14-wasm-staging-workspace-v1/DELIVERY.md`, source freeze SHA `e7833cc8514eac3794a805d369b3add94ddb688a56daf2e70f56ee2ef491aba9`. Snapshot frais : 1 283 sources/dépendances, overlay exact des seuls 14 proposés V3, 130 entrées Core complètes identiques à son candidat, 13 pkg Core/Houses actuels et 1 655 protégés. Core clock 8/d02b… et Houses 7/14535343… conservés ; UI actuelle incluse, aucune restauration/activation produit.
-
-Root seul construit Core web après Native vert, cached bindgen 0.2.129. Le même Wasm recoupera les 79 layouts bruts archivés sans les réencoder, via `urban_parcels` puis `urban_building_sites`. Iroquoian/Guarani/Byz réutilisent les fixtures exactes de city_quality, qui garde ses exemples natifs en alternative non exécutée. La recoupe porte explicitement un ancien layout figé ; une nouvelle chaîne complète utilise le driver antérieur inchangé, un autre dossier et un scope distinct. Pas de nouvelle campagne ni test natif d’exemple ajouté.
-
-PNW : sa trace native séparée est désormais root verte et prouve la perte au service sans rue/cible. Proposition constructive hors de ce staging : créer une vraie circulation interne au camp linéaire à partir du domaine/axe culturel réels, route et largeur contrôlées pour trous/grade/contact, sans inventer de connexion externe ni affaiblir `serve_quarters`. Cause locale lue : pas de growthRoads, Camp supprime cultural_spines et desired=1 supprime les coupures ; aucun quai/approach en entrée sèche sans route. Le mécanisme résolu ribbon en mode auto n’emprunte pas le `ribbon()` explicite de footprint. Aucun correctif PNW codé dans Core 14.
-
-Aucun produit, build, test, Node, Wasm, natif, serveur ou navigateur par lod. Native 308 et les futures recoupes API ne valent pas validation géométrique des 79 ; root doit les contrôler avant toute promotion. Créneau libéré.

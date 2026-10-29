@@ -12,7 +12,7 @@ import { chromium } from 'playwright';
 const option = (key, fallback) => process.argv.find(arg => arg.startsWith(`--${key}=`))?.slice(key.length + 3) ?? fallback;
 const executable = resolve(option('exe', '../rust/target/debug/magna-urbis-local.exe'));
 const vite = option('vite', 'http://127.0.0.1:5173');
-const output = resolve(option('out', '../_agents_blackboard/compact-city-smoke'));
+const output = resolve(option('out', '../web/out/work/compact-city-smoke'));
 await mkdir(output, { recursive: true });
 const executableStat = await stat(executable);
 const report = { executable, executableModified: executableStat.mtime.toISOString(), started: new Date().toISOString(), native: [], city: undefined, errors: [] };

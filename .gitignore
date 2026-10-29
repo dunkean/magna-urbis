@@ -43,10 +43,12 @@ web/decors/
 # Generated house-access observer output (not regression fixtures).
 rust/crates/houses/access-integration-cases/
 rust/crates/houses/access-integration-standard-cases/
-_agents_blackboard/*/
+_agents_blackboard/
 __pycache__/
 
 .superpowers/
 .venv-illustration/
 illustration/output/
 web/dist-v2/
+.tmp/
+.vite/

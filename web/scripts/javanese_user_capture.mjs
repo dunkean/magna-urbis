@@ -7,13 +7,13 @@ import { createArchitectureBenchEvidence, recordDetailHttpFailure } from './arch
 
 const out = resolve(process.argv[2] ?? 'out/javanese-user-10-8791');
 await mkdir(out, { recursive: true });
-const url = (await readFile('../_agents_blackboard/javanese-user-url.txt', 'utf8')).trim();
+const url = (await readFile('../web/out/work/javanese-user-url.txt', 'utf8')).trim();
 const started = Date.now(), elapsed = () => Date.now() - started;
-const report = { started: new Date(started).toISOString(), url, runtime: JSON.parse(await readFile('../_agents_blackboard/LOCAL_RUNTIME.json', 'utf8')),
+const report = { started: new Date(started).toISOString(), url, runtime: JSON.parse(await readFile('../web/out/work/LOCAL_RUNTIME.json', 'utf8')),
   source: 'Exact user URL, unchanged. Runtime8791 predates shore-safe, frontage and C1 programmes. One pipeline run; no comparison.',
   errors: [], warnings: [], network: [], captures: [], maxDetailConcurrency: 0 };
 await writeFile(resolve(out, 'url.txt'), url);
-await copyFile('../_agents_blackboard/javanese-user-options.json', resolve(out, 'input-options.json'));
+await copyFile('../web/out/work/javanese-user-options.json', resolve(out, 'input-options.json'));
 const pending = new Set(), active = new Map(), detailActive = new Set(); let serial = 0;
 const detailEvidence = createArchitectureBenchEvidence();
 const browser = await chromium.launch({ channel: 'msedge', headless: true }); let page;

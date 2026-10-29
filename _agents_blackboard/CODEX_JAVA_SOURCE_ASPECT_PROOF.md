@@ -1,9 +1,0 @@
-# Java128 — preuve native des proportions source
-
-Dossier figé : `web/out/java-source-aspect-proof/`. Synthèse complète : `RESULTS.md` ; tous les sites/refus dans `report.json` ; planche ouverte et vérifiée : `comparison-three-sites.png` (SHA256 `2cd7e65fc25f42b0beab8fc4abf2e5b4cb1032a69022024f734405882774d404`). Sources, demandes et caméras consignées dans les manifestes.
-
-Avant CLI `01148b07…6038f1`, après `cac76c96…98d777`. **64admis/60refus/4ouverts inchangés, zéro perte, zéro changement source/variante/étages ; droits GEOS128contrôles avant/après verts.** Neuf géométries changent, dix diagnostics seulement. Rapports source non conformes10→2, les deux restants sont des incumbents conservés.
-
-Le bilan est mixte : aire totale+28,764m², erreur absolue cumulée−28,764m², mais erreur logarithmique50,4662→50,5275 et cibles±10%27→26. Deux gains réels, deux pertes réelles, cinq écarts d'arrondi<0,008m². La principale perte `054a9cf4d19f0875` passe75,198→27,796m² pour cible75,2 : l'ancien12,533×6 est hors rapport source ; les7couples/24poses nouveaux n'apportent aucun plan amélioré admis. Le meilleur plan initial est conservé. Aucun détail des refus par pose ne permet de conclure que75m² conforme est impossible. L'autre perte `ae8bc393a4e151bc` vaut15,576m². La planche expose la perte054a, le gain2e8e et la correction d'aspect4100.
-
-Trois témoins natifs séparés4100/a416/a702, plans identiques à leurs résultats dans128 : extérieurs3/3 avant et après ; intérieurs0/3 avant et après, même garde d'entrée native. Le terrain GEOS générique ne couvre ici aucun site marqué `nativeFoundation` : aucune certification terrain globale ajoutée. Maxima8couples/24poses maintenus, totaux178→166 et580→574 ; aucun gain de temps revendiqué sous compilation/rejeux concurrents. Aucune capacité d'habitants déduite.

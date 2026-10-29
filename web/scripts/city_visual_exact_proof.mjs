@@ -6,7 +6,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { prepareExactVisualInput } from './city_visual_exact_input.mjs';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const manifestPath = resolve(process.argv[2] ?? resolve(root, '_agents_blackboard/CITY_VISUAL_BENCH_52_PROPOSED.json'));
+const manifestPath = resolve(process.argv[2] ?? resolve(root, 'web/out/work/CITY_VISUAL_BENCH_52_PROPOSED.json'));
 const rawManifest = await readFile(manifestPath), manifest = JSON.parse(rawManifest.toString('utf8').replace(/^\uFEFF/, ''));
 const cases = [];
 for (const item of manifest.cases.filter(item => item.exactInput)) {

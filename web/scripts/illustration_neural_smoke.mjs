@@ -4,7 +4,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 
 const base = process.env.NEURAL_EARTH_URL || 'http://127.0.0.1:8765';
-const output = new URL('../../_agents_blackboard/illustration/', import.meta.url);
+const output = new URL('../../web/out/work/illustration/', import.meta.url);
 await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ channel: 'msedge', headless: true });
 try {

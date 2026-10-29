@@ -1,6 +1,6 @@
 /** Real City Bench architecture smoke, 01-l / 100,000 inhabitants.
  * From web/: node scripts/city_architecture_progress_smoke.mjs [--server http://127.0.0.1:8810]
- *   [--bench http://127.0.0.1:5173/citybench.html] [--out ../_agents_blackboard/city-architecture-progress-smoke]
+ *   [--bench http://127.0.0.1:5173/citybench.html] [--out ../web/out/work/city-architecture-progress-smoke]
  *   [--complete] [--timeout-ms 300000] [--headed]
  * Replays ONLY frozen /urban quarters, parcels and buildingSites. The decor/raster
  * loads normally; all house plans and exterior details use the actual server.
@@ -22,8 +22,8 @@ const option = (key, fallback) => {
 };
 const server = option('server', 'http://127.0.0.1:8810').replace(/\/$/, '');
 const bench = option('bench', 'http://127.0.0.1:5173/citybench.html');
-const corpus = resolve(option('corpus', resolve(root, '_agents_blackboard/city-visual-audit/01-l')));
-const output = resolve(option('out', resolve(root, '_agents_blackboard/city-architecture-progress-smoke')));
+const corpus = resolve(option('corpus', resolve(root, 'web/out/work/city-visual-audit/01-l')));
+const output = resolve(option('out', resolve(root, 'web/out/work/city-architecture-progress-smoke')));
 const timeout = Number(option('timeout-ms', '300000')), complete = args.includes('--complete');
 await mkdir(output, { recursive: true });
 const [source, quarterRequest, layout, partition, requests] = await Promise.all(
