@@ -16,7 +16,7 @@
 <div class="layout">
 <aside class="sidebar">
   <strong>From seed to map</strong>
-  <details class="toc" open><summary>Contents · 19 chapters</summary><nav aria-label="Chapters"><ol>
+  <details class="toc" open><summary>Contents · 20 chapters</summary><nav aria-label="Chapters"><ol>
     <li><a href="#lire">00 · Read and verify</a></li>
     <li><a href="#contrats">01 · Architecture &amp; units</a></li>
     <li><a href="#relief">02 · Procedural terrain</a></li>
@@ -36,6 +36,7 @@
     <li><a href="#limites">16 · Open limitations</a></li>
     <li><a href="#glossaire">17 · Glossary</a></li>
     <li><a href="#references">18 · Bibliography &amp; projects</a></li>
+    <li><a href="#etapes">19 · Generation stages</a></li>
   </ol></nav></details>
   <label class="search-label" for="search">Filter chapters</label><input class="search" id="search" type="search" placeholder="E.g. slope, courtyard, GPU…" autocomplete="off" aria-describedby="search-status">
   <p class="search-status" id="search-status" role="status" aria-live="polite"></p><button type="button" id="show-all" hidden>Show all chapters</button>
@@ -121,7 +122,7 @@
 <p>The <a href="#ref-dinf">D∞ routing method of Tarboton [3]</a> evaluates triangular facets around a cell and distributes contributing area between two downstream neighbours. It reduces the bias of D8’s eight fixed directions. The final vector network has its own topology: the area partition used for incision is not the geometry of a drawn river.</p>
 <h3>The stream-power family of laws</h3>
 <pre><code>∂h/∂t = U − K Aᵐ Sⁿ
-h : altitude ; U : surrection ; A : aire contributive ; S : pente</code></pre>
+h: elevation; U: uplift; A: contributing area; S: slope</code></pre>
 <p>This equation places the incision model in context. The implicit solver of <a href="#ref-stream">Braun and Willett [4]</a> handles the downstream dependency of elevations. The local implementation adapts it for interactivity: capped contributing area, a weaker response on gentle slopes, and bounded incision and corrections. The erosion slider controls intensity, with no established conversion into thousands of years.</p>
 <p>The engine supplements incision with controlled threshold breaching, basin filling, thermal relaxation beyond the talus slope and hillslope diffusion. These passes modify different aspects of the terrain. Advanced settings expose iterations, incision, slope thresholds, filling, breaching, talus, diffusion and surface treatments. GPU paths use dedicated shaders; their presence does not guarantee bitwise identity with CPU results.</p>
 <div class="callout warning"><strong>What the computation does not retain as a complete simulation</strong>The project does not provide a generally calibrated sediment-mass balance, 2D/3D hydraulics, coupled tectonics or a physical geological duration here. Hillslope diffusion and the neural diffusion of the preceding chapter are distinct mechanisms.</div>
@@ -135,10 +136,10 @@ h : altitude ; U : surrection ; A : aire contributive ; S : pente</code></pre>
 <figure class="diagram"><img src="assets/hydrology-en.svg" width="1100" height="390" alt="Explanatory cross-section of a depression: ground, lake level and spill threshold. Catchment inflows balance evaporation; excess leaves the basin when the threshold is reached."><figcaption>Original conceptual cross-section, not to scale. The elevation required for drainage, the physical ground and the water surface are three distinct quantities.</figcaption></figure>
 <h3>The lake balance is simplified and explicit</h3>
 <p>The local module computes potential evaporation using elevation-adjusted temperature, followed by an empirical annual evapotranspiration:</p>
-<pre><code>Tz = T − 0,0065 · max(z, 0)
-L  = max(60, 300 + 25 Tz + 0,05 Tz³)       [mm/an]
-ET = P / √(0,9 + P²/L²)
-r  = max(P − ET, 0,02 P, 0,5)             [mm/an]</code></pre>
+<pre><code>Tz = T − 0.0065 · max(z, 0)
+L  = max(60, 300 + 25 Tz + 0.05 Tz³)       [mm/year]
+ET = P / √(0.9 + P²/L²)
+r  = max(P − ET, 0.02 P, 0.5)             [mm/year]</code></pre>
 <p>Runoff floors are generator choices, not natural laws. At equilibrium, catchment inflow approximately balances evaporation from the lake surface. If inflow exceeds evaporation from a full lake, it spills over the threshold and passes on the excess. The module draws inspiration from <a href="#ref-fsm">Fill–Spill–Merge [5]</a> ; it does not reproduce the paper’s entire dynamic hierarchy.</p>
 <h3>From raster to vector graph</h3>
 <p>Sources, reaches, confluences and outlets become connected objects. Shared nodes preserve junctions. Width, bed and water profiles are evaluated along centre lines with correction budgets. Meanders add deterministic, multiscale variations constrained by terrain; this is not a complete time-dependent simulation of lateral migration.</p>
@@ -159,8 +160,8 @@ r  = max(P − ET, 0,02 P, 0,5)             [mm/an]</code></pre>
 <div class="chapter-number">07 / Connecting places</div><h2>A network of links, then physical paths.</h2>
 <p>The engine selects links between settlements on a Delaunay graph, retains a spanning backbone and adds shortcuts. This demand graph states which places to connect; it is not yet the physical route geometry.</p>
 <p>Path search minimises a cost that depends on terrain, gradients, obstacles, turns and reuse of existing roads. State includes the arrival direction: a turn has a cost that depends on the preceding movement. A wider range of moves than the eight neighbouring cells limits rigid trajectories and allows switchbacks. Intersections are then assembled into a planar graph.</p>
-<pre><code>C(chemin) ≈ Σ [coût du sol + coût de pente + coût de virage
-                + coût des obstacles − avantage de réutilisation]</code></pre>
+<pre><code>C(path) ≈ Σ [ground cost + gradient cost + turn cost
+             + obstacle cost − reuse benefit]</code></pre>
 <p>This formulation is an explanatory breakdown, not a copy of the coefficients. <a href="#ref-roads">Galin et al. [10]</a> provides the reference for this family of anisotropic shortest paths. Magna Urbis road classes, thresholds and crossings are local adaptations. A low cost is not an earthworks, bridge-strength or traffic assessment.</p>
 <div class="callout"><strong>A crossing must be an accepted object</strong>Streets and roads must not cross water merely because a segment looks short. Bridges and other accepted crossings form part of the context passed to the town.</div>
 <p class="sources">Code: <a data-repo="rust/crates/core/src/settlements/roads/mod.rs" href="https://github.com/dunkean/magna-urbis/blob/main/rust/crates/core/src/settlements/roads/mod.rs">regional network</a> · <a data-repo="rust/crates/core/src/settlements/roads/search.rs" href="https://github.com/dunkean/magna-urbis/blob/main/rust/crates/core/src/settlements/roads/search.rs">direction-aware search</a> · <a data-repo="web/src/gen/roads/regional.ts" href="https://github.com/dunkean/magna-urbis/blob/main/web/src/gen/roads/regional.ts">V1 TypeScript path</a>.</p>
@@ -188,8 +189,8 @@ r  = max(P − ET, 0,02 P, 0,5)             [mm/an]</code></pre>
 <p>Before cadastral subdivision, the programme reserves existing, served blocks for demanding functions. Geometry and streets are retained. Selection examines dry land, gradients, access contacts and area suitability. Several blocks may contribute to an open-space intention; a single institution is not artificially multiplied to fill a shortfall.</p>
 <p>Neighbouring parcels are found through a spatial index, followed by actual collinear boundary overlap. Nearby centroids do not establish adjacency. Allocation ranks demands by candidate scarcity and applies a two-pass greedy heuristic. The second pass may reassign domestic surplus only if the displaced demand remains covered. This is not a global optimum.</p>
 <figure class="diagram"><img src="assets/capacity-en.svg" width="1100" height="320" alt="Three distinct counters: functional demand, land capacity of admissible parcels, and capacity actually produced by buildings or open spaces. Refusals do not increase realised capacity."><figcaption>Original balance diagram. Units are added only within the same function: market area is not a dwelling count.</figcaption></figure>
-<pre><code>déficit réalisé = max(0, demandé − capacité bâtie − capacité ouverte)
-déficit foncier = max(0, demandé − capacité foncière)</code></pre>
+<pre><code>actual deficit = max(0, demand − built capacity − open capacity)
+land deficit   = max(0, demand − land capacity)</code></pre>
 <p>Domestic land capacity retains one unit per eligible parcel in the current single-building path. A large parcel does not automatically represent several households. Markets and commons contribute to a separate open-space capacity. Architectural refusals leave real unmet demand; colouring an occupied area on the map does not replace an accepted building.</p>
 <p>The automatic density budget may be limited by the cadastral module size: average cultural module area, native minimum and phase shares. The residential-share coefficient (0.65) and shape margin (1.15) are prototype planning assumptions, without demographic certification. Explicit manual overrides retain their role.</p>
 <p class="sources">Code: <a data-repo="rust/crates/core/src/urban/programme.rs" href="https://github.com/dunkean/magna-urbis/blob/main/rust/crates/core/src/urban/programme.rs">programme and reconciliation</a> · <a data-repo="rust/crates/core/src/urban/culture.rs" href="https://github.com/dunkean/magna-urbis/blob/main/rust/crates/core/src/urban/culture.rs">explicit mappings</a> · <a data-repo="docs/methods/urban-programme-allocation.md" href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/urban-programme-allocation.md">assumptions and complete cultural catalogue</a>.</p>
@@ -275,9 +276,9 @@ déficit foncier = max(0, demandé − capacité foncière)</code></pre>
 <p>The <a href="evidence/v2-desktop-startup.json">desktop startup check</a> observed the “Magna Urbis V2” application and its native Rust child service on an available loopback port. The Tauri shell reuses WebView rendering; weights and Python/CUDA remain optional external dependencies. Installers are built for their target system. This Windows check does not certify Linux installation, every GPU driver or neural operation without those dependencies.</p>
 <p class="sources">Code: <a data-repo="rust/desktop-v2/src/main.rs" href="https://github.com/dunkean/magna-urbis/blob/main/rust/desktop-v2/src/main.rs">V2 startup and child-service lifecycle</a> · <a data-repo="rust/desktop-v2/tauri.conf.json" href="https://github.com/dunkean/magna-urbis/blob/main/rust/desktop-v2/tauri.conf.json">V2 resources and packaging</a> · <a data-repo="rust/desktop-v2/README.md" href="https://github.com/dunkean/magna-urbis/blob/main/rust/desktop-v2/README.md">V2 desktop configuration</a> · <a data-repo="web/scripts/v2_platform_check.mjs" href="https://github.com/dunkean/magna-urbis/blob/main/web/scripts/v2_platform_check.mjs">checks of executed backends</a>.</p>
 <h3>Measure a complete workflow</h3>
-<pre><code>latence ressentie = génération + sérialisation/transfert + adaptation
-                    + préparation de scène + premier affichage
-                    + éventuels chargements / enrichissements</code></pre>
+<pre><code>perceived latency = generation + serialisation/transfer + adaptation
+                    + scene preparation + first display
+                    + any loading / enrichment</code></pre>
 <p>A short native computation time is insufficient if transfer or browser preparation blocks. Distinguish cold/warm caches, work required before an image appears and background work. Loading weights, compiling shaders and the selected resolution strongly affect measurements. A small town that does not block does not establish metropolitan-scale performance.</p>
 <p class="sources">Code: <a data-repo="rust/crates/local/src/main.rs" href="https://github.com/dunkean/magna-urbis/blob/main/rust/crates/local/src/main.rs">local service</a> · <a data-repo="rust/desktop/README.md" href="https://github.com/dunkean/magna-urbis/blob/main/rust/desktop/README.md">desktop</a> · <a data-repo="web/package.json" href="https://github.com/dunkean/magna-urbis/blob/main/web/package.json">available commands</a>. Standards: <a href="https://webassembly.org/docs/high-level-goals/">WebAssembly</a> · <a href="https://www.w3.org/TR/WGSL/">WGSL</a>.</p>
 </section>
@@ -300,11 +301,11 @@ déficit foncier = max(0, demandé − capacité foncière)</code></pre>
 <p>The parcel note reports an initial retained medina with 74 blocks and 72 streets. Correcting a source increased accepted houses from 4 to 148, but built coverage in the core remained 15.9%. This improves recipe consistency; it does not establish a successful dense souk.</p>
 <p>An initial complete native case for 50,000 inhabitants produced 6,188 parcels and 5,336 indicative domestic sites for 11,111 requested units. This mismatch motivated recalibration of the automatic budget. A million-inhabitant probe exceeded 240 s and was stopped: no metropolitan performance result is claimed. These figures describe tests preceding later corrections, on the machine used for their review.</p>
 <h3>Useful commands, to run in their own context</h3>
-<pre><code># Depuis la racine du dépôt : documentation seule
+<pre><code># From the repository root: documentation only
 node docs/scientific/check.mjs
 node docs/scientific/build.mjs
 
-# Depuis web/ : application et tests ciblés (dépendances requises)
+# From web/: application and targeted tests (dependencies required)
 npm ci
 npm run dev
 npm run dev:terrain
@@ -312,7 +313,7 @@ npm run prepare:v2
 npm run dev:v2
 npx vitest run --project fast tests/urban.snapshot.test.ts tests/urban.landuse.test.ts
 
-# Depuis rust/ : exemples de familles de tests natives
+# From rust/: examples of native test families
 cargo test -p magna-urbis-core --lib urban::programme
 cargo test -p magna-urbis-core --lib urban::footprint</code></pre>
 <p>Rust commands require the repository’s toolchain and dependencies. Native replay scripts require a current executable build: an old binary cannot measure a recent source change. Directories such as <code>web/out/</code> are often ignored; a path mentioned in a note may be missing from another checkout.</p>
@@ -363,6 +364,443 @@ cargo test -p magna-urbis-core --lib urban::footprint</code></pre>
 <p>For architectural traditions and periods, consult recipe-specific sources and catalogue reviews; a general geometry bibliography cannot replace them. The repository includes sourced notes on <a data-repo="docs/sources/roman-compact-domestic-architecture_FR.md" href="https://github.com/dunkean/magna-urbis/blob/main/docs/sources/roman-compact-domestic-architecture_FR.md">compact Roman domestic architecture</a> and <a data-repo="docs/sources/javanese-domestic-architecture_FR.md" href="https://github.com/dunkean/magna-urbis/blob/main/docs/sources/javanese-domestic-architecture_FR.md">Javanese domestic architecture</a>. Source coverage is uneven; fantasy cultures declare their influences.</p>
 <p class="sources">Internal inventories: <a data-repo="docs/styles_architecturaux_mondiaux_city_mapper_FR.md" href="https://github.com/dunkean/magna-urbis/blob/main/docs/styles_architecturaux_mondiaux_city_mapper_FR.md">architectural styles</a> · <a data-repo="docs/catalogue_settlements_antiquite_moyen_age_rpg_FR.md" href="https://github.com/dunkean/magna-urbis/blob/main/docs/catalogue_settlements_antiquite_moyen_age_rpg_FR.md">settlements</a> · <a data-repo="rust/crates/houses/data/source-inventory.json" href="https://github.com/dunkean/magna-urbis/blob/main/rust/crates/houses/data/source-inventory.json">architectural inventory and fingerprints</a>.</p>
 </section>
+<!--STAGES:BEGIN-->
+<section class="chapter" id="etapes" data-title="Generation stages">
+<div class="chapter-number">19 / Stage by stage</div><h2>One section per generation stage.</h2>
+<p>Each stage listed in the V2 interface has a section here, opened by the “?” beside its row. A section says what the stage computes, the method used in the code, its inputs and outputs, the controls and their effect, when it is available, what it costs, and where to read more. Stage identifiers are stable and listed in the stage registry contract.</p>
+<h3 id="stages-overview">The pipeline</h3>
+<p>Relief comes from exactly one of three sources, then flows through the shared posterior operators. Water and natural cover, settlements, and the city read the retained surface. Display stages only consume. Optional stages can be switched off in the interface; a required stage has a locked checkbox.</p>
+<figure class="diagram sdiag" id="fig-pipeline"><svg class="dg" role="img" aria-labelledby="dg1-t" viewBox="0 0 880 310" xmlns="http://www.w3.org/2000/svg"><title id="dg1-t">Generation pipeline: relief sources, water and cover, settlements, city, display</title><defs><marker id="dg1-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="head"/></marker></defs><rect class="box proc" x="10" y="14" width="262" height="74" rx="6"/><text x="141" y="41" text-anchor="middle" class="b">Procedural</text><text x="141" y="55" text-anchor="middle">mask · grids · noise · regional cycle</text><text x="141" y="69" text-anchor="middle">reconstruct · detail · surface · datum · Phasor</text><rect class="box neu" x="10" y="104" width="262" height="62" rx="6"/><text x="141" y="132" text-anchor="middle" class="b">Neural</text><text x="141" y="146" text-anchor="middle">coarse · base · decoder / amplification</text><rect class="box hm" x="10" y="182" width="262" height="52" rx="6"/><text x="141" y="205" text-anchor="middle" class="b">Heightmap / library</text><text x="141" y="219" text-anchor="middle">fit: resample · scale · datum · crop</text><rect class="box core" x="300" y="74" width="130" height="90" rx="6"/><text x="365" y="109" text-anchor="middle" class="b">Retained relief</text><text x="365" y="123" text-anchor="middle">conditioning · aeolian</text><text x="365" y="137" text-anchor="middle">coasts</text><path class="ln br" d="M272 51 C286 51 286 100 300 108" fill="none" marker-end="url(#dg1-a)"/><path class="ln br" d="M272 135 L300 124" fill="none" marker-end="url(#dg1-a)"/><path class="ln br" d="M272 208 C286 208 286 140 300 134" fill="none" marker-end="url(#dg1-a)"/><rect class="box w" x="458" y="74" width="118" height="90" rx="6"/><text x="517" y="109" text-anchor="middle" class="b">Water &amp; cover</text><text x="517" y="123" text-anchor="middle">hydrology</text><text x="517" y="137" text-anchor="middle">climate · forest</text><rect class="box s" x="604" y="74" width="118" height="90" rx="6"/><text x="663" y="109" text-anchor="middle" class="b">Settlements</text><text x="663" y="123" text-anchor="middle">sites · hierarchy</text><text x="663" y="137" text-anchor="middle">regional roads</text><rect class="box c" x="750" y="74" width="120" height="90" rx="6"/><text x="810" y="102" text-anchor="middle" class="b">City (per place)</text><text x="810" y="116" text-anchor="middle">composition · quarters</text><text x="810" y="130" text-anchor="middle">trim · parcels · programme</text><text x="810" y="144" text-anchor="middle">buildings · houses</text><line class="ln " x1="430" y1="119" x2="458" y2="119" marker-end="url(#dg1-a)"/><line class="ln " x1="576" y1="119" x2="604" y2="119" marker-end="url(#dg1-a)"/><line class="ln " x1="722" y1="119" x2="750" y2="119" marker-end="url(#dg1-a)"/><rect class="box d" x="300" y="250" width="570" height="44" rx="6"/><text x="585" y="276" text-anchor="middle">Display (terrain · water · vegetation · roads · buildings · labels) reads every stage, writes none</text><line class="ln dash" x1="365" y1="164" x2="365" y2="250"/><line class="ln dash" x1="517" y1="164" x2="517" y2="250"/><line class="ln dash" x1="663" y1="164" x2="663" y2="250"/><line class="ln dash" x1="810" y1="164" x2="810" y2="250"/><text x="10" y="262" class="note">Solid arrows: data flow. Dashed: read-only use. Only one source branch runs per map.</text><text x="10" y="282" class="note">Regional road routing and city stages also read the water obstacle mask.</text></svg><figcaption>Original diagram, not to scale. The three relief sources converge on one retained surface; every later stage reads it.</figcaption></figure>
+<details class="stage-toc"><summary>Stage index</summary><ul><li><a href="#group-relief">Relief</a><ul class="stage-index"><li><a href="#stage-relief-source">Source: procedural, neural, imported or library heightmap</a></li><li><a href="#stage-relief-mask">Custom mask (zones, brushes, import/export)</a></li><li><a href="#stage-relief-grids">Grids and buffers</a></li><li><a href="#stage-relief-noise">Initial noise and uplift</a></li><li><a href="#stage-relief-regional">Regional evolution (uplift, drainage, incision, thermal, diffusion)</a></li><li><a href="#stage-relief-relax">Final regional relaxation</a></li><li><a href="#stage-relief-reconstruct">Reconstruction (bicubic / B-spline, domain warp)</a></li><li><a href="#stage-relief-calibrate">Amplitude calibration (p99)</a></li><li><a href="#stage-relief-detail">Ridged detail</a></li><li><a href="#stage-relief-surface">Surface erosion</a></li><li><a href="#stage-relief-datum">Datum normalisation (p1)</a></li><li><a href="#stage-relief-phasor">Phasor detail</a></li><li><a href="#stage-relief-neural-coarse">Neural coarse diffusion</a></li><li><a href="#stage-relief-neural-base">Neural base diffusion</a></li><li><a href="#stage-relief-neural-decoder">Neural decoder / amplification</a></li><li><a href="#stage-relief-heightmap-fit">Heightmap fit (resample, vertical scale, datum, crop)</a></li><li><a href="#stage-relief-conditioning">Posterior fluvial conditioning</a></li><li><a href="#stage-relief-aeolian">Aeolian transport</a></li><li><a href="#stage-relief-coasts">Coasts (marine mask, coastal erosion)</a></li></ul></li><li><a href="#group-water">Water and natural cover</a><ul class="stage-index"><li><a href="#stage-water-hydrology">Hydrology: depressions, lake water budget, drainage graph, rivers, riverbed cuts</a></li><li><a href="#stage-cover-climate">Climate and biomes / natural cover (forest)</a></li></ul></li><li><a href="#group-settle">Settlements</a><ul class="stage-index"><li><a href="#stage-settle-sites">Site placement and urban reserves</a></li><li><a href="#stage-settle-hierarchy">Place hierarchy</a></li><li><a href="#stage-settle-roads">Regional roads (cost fields, A*, bridges)</a></li></ul></li><li><a href="#group-city">City, per selected place</a><ul class="stage-index"><li><a href="#stage-city-composition">Composition: footprint, macroplan, harbour, fortification</a></li><li><a href="#stage-city-quarters">Quarters: streets, split, blocks, bridges</a></li><li><a href="#stage-city-trim">Trim of unbuilt blocks</a></li><li><a href="#stage-city-parcels">Parcels (cadastre)</a></li><li><a href="#stage-city-programme">Programme allocation (roles, demands)</a></li><li><a href="#stage-city-buildings">Building sites and massing</a></li><li><a href="#stage-city-houses">Architecture / detailed houses</a></li></ul></li><li><a href="#group-display">Display</a><ul class="stage-index"><li><a href="#stage-display-terrain">Terrain shading and palette</a></li><li><a href="#stage-display-water">Water</a></li><li><a href="#stage-display-vegetation">Vegetation</a></li><li><a href="#stage-display-roads">Roads and ground</a></li><li><a href="#stage-display-buildings">Buildings (2D/3D, LOD, colours)</a></li><li><a href="#stage-display-labels">Labels and icons</a></li></ul></li></ul></details>
+<div class="stage-group" id="group-relief">
+<h3>Relief</h3>
+<p>The relief stage produces one signed height field in metres (above sea level), retained at a fixed physical resolution. Three families of sources feed it; every later stage reads only that retained field, never the generator that made it. The posterior operators at the end apply to every source.</p>
+<section class="stage" id="stage-relief-source" data-stage="relief-source">
+<h4>Source: procedural, neural, imported or library heightmap <code class="stage-id">relief-source</code> <span class="tag">Always</span> <span class="tag own">required</span></h4>
+
+<p><b>What and why.</b> Chooses where the elevations come from and fixes the frame of the whole run: seed, square map width in metres, landform scale and compute backend. Everything downstream is deterministic given this recipe, so the source is the first line of the recipe and of the share link.</p>
+<p><b>Algorithm.</b> Procedural: coherent noise plus a bounded landscape-evolution simulation (stages below). Neural: a three-stage diffusion model (coarse, base, decoder) sampled on a finite window. Imported or library heightmap: a raster resampled into the frame. The three paths converge on the same retained surface.</p>
+<p><b>Inputs and outputs.</b> In: source kind, seed, width (m), landform scale (m), backend, optional file. Out: the recipe that selects which of the stages below run.</p>
+<p><b>Controls.</b> Source menu (Procedural with Classic or Compact preset, Neural, Heightmap, Library), seed, width presets (5, 10, 25, 50 km), landform scale, relief family, climate, master erosion dose, backend. The old name procedural-phasor survives only as a saved-recipe alias.</p>
+<p><b>Cost and backends.</b> Procedural runs on CPU (Rust compiled to WebAssembly, or the native service), on WebGPU, or hybrid (GPU noise, CPU erosion). Neural runs in the browser (Rust/WASM + WebGPU) or in the local Python/CUDA service. Heightmaps need no heavy compute. The backend belongs to the recipe: CPU and GPU solvers are not promised bit-identical.</p>
+
+<p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/procedural-generation-stages.md">procedural-generation-stages.md</a></p>
+</section>
+<section class="stage" id="stage-relief-mask" data-stage="relief-mask">
+<h4>Custom mask (zones, brushes, import/export) <code class="stage-id">relief-mask</code> <span class="tag">Procedural source</span> <span class="tag compare">can be switched off</span></h4>
+
+<p><b>What and why.</b> Lets the author impose where mountains, plains, valleys or coast go. It is an interactive input, not a GPU kernel: painted zones replace the automatic relief layout while the rest of the pipeline is unchanged.</p>
+<p><b>Algorithm.</b> A transparent overlay on the main map records zone labels with brush radius and falloff, with undo history. When the mask is active the grouped Rust zone generator evaluates each painted zone with the selected preset; unpainted ground stays transparent in the editor. Zone maps and heightmaps can be imported and exported.</p>
+<p><b>Inputs and outputs.</b> In: brush strokes, imported zone map or heightmap. Out: a zone field used as the structural layout for the next stage.</p>
+<p><b>Controls.</b> Zone brushes, eraser, size, falloff, history, import/export; the stage checkbox switches between automatic and manual layout while keeping the painted zones.</p>
+<p><b>Cost and backends.</b> Cheap: a raster edit plus one zone generation. Painted-zone terrain uses the original zone generator rather than the automatic CPU/GPU stage scheduler.</p>
+
+<p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/procedural-generation-stages.md">procedural-generation-stages.md</a></p>
+</section>
+<section class="stage" id="stage-relief-grids" data-stage="relief-grids">
+<h4>Grids and buffers <code class="stage-id">relief-grids</code> <span class="tag">Procedural source</span> <span class="tag own">required</span></h4>
+
+<p><b>What and why.</b> Allocates the two resolutions of the simulation: a coarse regional grid on which the landscape evolves, and the retained surface on which details are added. Resolution is a budget: finer grids resolve narrower valleys but cost more per evolution cycle.</p>
+<p><b>Algorithm.</b> The retained physical field is always 1024 by 1024, so a 5 km map has 4.88 m samples and a 50 km map 48.83 m. The compact preset simulates a padded domain 1.44 times the map width; its side is the target cell width (100, 65 or 40 m for fast, balanced, detailed), rounded up to a multiple of 16 and clamped to 64 to 384 cells. Per-cycle uplift and incision are rescaled so the cumulative dose stays comparable.</p>
+<p><b>Inputs and outputs.</b> In: width, landform scale, quality. Out: regional and surface dimensions, working buffers (destroyed after each run; compiled GPU pipelines stay cached).</p>
+<p><b>Controls.</b> Compact quality (Fast 8 cycles, Balanced 12, Detailed 20), explicit grid overrides in the procedural recipe block.</p>
+<p><b>Cost and backends.</b> Increasing the map width does not increase output resolution: this is not metre-scale terrain over 50 km. At large extents the 384-cell cap makes the regional cell wider than the target.</p>
+
+<p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/compact-terrain-phasor.md">compact-terrain-phasor.md</a></p>
+</section>
+<section class="stage" id="stage-relief-noise" data-stage="relief-noise">
+<h4>Initial noise and uplift <code class="stage-id">relief-noise</code> <span class="tag">Procedural source</span> <span class="tag own">required</span></h4>
+
+<p><b>What and why.</b> Builds the starting surface and the tectonic forcing U that the erosion cycle will carve. Mountains, hills, valleys, canyons, plains and high mountains differ by their uplift pattern and noise recipe. This is a landscape shape, not a plate-tectonic simulation.</p>
+<p><b>Algorithm.</b> Octaves of coherent simplex noise with domain warping, h = shape + sum a_k N(f_k (x + w)), where a_k and f_k are amplitude and frequency of octave k [1]. Mountain regimes get a continuous regional weight (no clamped band) that multiplies uplift along a ridge skeleton: uplift *= 1 + crest * weight * (0.24 + 1.8 ridge^2 - 1). Because the crests exist before erosion they join the drainage instead of being masked by late texture.</p>
+<p><b>Inputs and outputs.</b> In: seed, relief family, mountain mixture, noise scale, crest strength. Out: initial regional heights and uplift field.</p>
+<p><b>Controls.</b> Regional noise scale, structural crest strength, relief family, mountain mixture.</p>
+<p><b>Cost and backends.</b> One pass per grid cell; runs on GPU or CPU. The CPU reference keeps the original Rust regional generator, so the two shapes agree statistically, not bit for bit.</p>
+<p><b>References.</b> Noise: <a href="#ref-perlin">Perlin [1]</a>.</p>
+<p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/compact-terrain-phasor.md">compact-terrain-phasor.md</a></p>
+</section>
+<section class="stage" id="stage-relief-regional" data-stage="relief-regional">
+<h4>Regional evolution (uplift, drainage, incision, thermal, diffusion) <code class="stage-id">relief-regional</code> <span class="tag">Procedural source</span> <span class="tag own">required</span></h4>
+<figure class="diagram sdiag" id="fig-erosion-cycle"><svg class="dg" role="img" aria-labelledby="dg2-t" viewBox="0 0 900 240" xmlns="http://www.w3.org/2000/svg"><title id="dg2-t">Regional erosion cycle: uplift, drainage, accumulation, incision, thermal relaxation, diffusion, repeated N times</title><defs><marker id="dg2-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="head"/></marker></defs><rect class="box " x="20" y="20" width="200" height="56" rx="6"/><text x="120" y="45" text-anchor="middle" class="b">1 Uplift</text><text x="120" y="59" text-anchor="middle">U added to heights</text><rect class="box " x="250" y="20" width="200" height="56" rx="6"/><text x="350" y="45" text-anchor="middle" class="b">2 Basin drainage</text><text x="350" y="59" text-anchor="middle">Priority-Flood · sills · fill</text><rect class="box " x="480" y="20" width="200" height="56" rx="6"/><text x="580" y="45" text-anchor="middle" class="b">3 Accumulation</text><text x="580" y="59" text-anchor="middle">D-infinity two-way split</text><rect class="box core" x="480" y="130" width="200" height="56" rx="6"/><text x="580" y="155" text-anchor="middle" class="b">4 Implicit incision</text><text x="580" y="169" text-anchor="middle">dh/dt = U − K Aᵐ Sⁿ</text><rect class="box " x="250" y="130" width="200" height="56" rx="6"/><text x="350" y="155" text-anchor="middle" class="b">5 Thermal relaxation</text><text x="350" y="169" text-anchor="middle">slide beyond talus angle</text><rect class="box " x="20" y="130" width="200" height="56" rx="6"/><text x="120" y="155" text-anchor="middle" class="b">6 Diffusion</text><text x="120" y="169" text-anchor="middle">hillslope smoothing</text><line class="ln " x1="220" y1="48" x2="250" y2="48" marker-end="url(#dg2-a)"/><line class="ln " x1="450" y1="48" x2="480" y2="48" marker-end="url(#dg2-a)"/><line class="ln " x1="580" y1="76" x2="580" y2="130" marker-end="url(#dg2-a)"/><line class="ln " x1="480" y1="158" x2="450" y2="158" marker-end="url(#dg2-a)"/><line class="ln " x1="250" y1="158" x2="220" y2="158" marker-end="url(#dg2-a)"/><path class="ln loop" d="M120 130 L120 76" fill="none" marker-end="url(#dg2-a)"/><text x="132" y="108" class="note">× N cycles</text><rect class="box out" x="720" y="76" width="160" height="56" rx="6"/><text x="820" y="101" text-anchor="middle" class="b">Final relaxation</text><text x="820" y="115" text-anchor="middle">then reconstruction</text><path class="ln br" d="M680 48 C700 48 700 104 720 104" fill="none" marker-end="url(#dg2-a)"/><text x="20" y="226" class="note">Steps 2–4 form one dependency chain: incision reads the flow data, so drainage cannot be removed alone. Thermal and diffusion can be switched off separately.</text></svg><figcaption>Original diagram of one regional evolution cycle (stage relief-regional).</figcaption></figure>
+<p><b>What and why.</b> Lets rivers and slopes organise the surface: uplift raises ground, water routes along the steepest path and cuts valleys, hillsides slump, and diffusion softens what is left. After a few cycles the random noise has become a connected drainage with ridges, valleys and fans.</p>
+<p><b>Algorithm.</b> Each cycle is a dependent sequence. (1) Uplift. (2) Basin drainage: Priority-Flood [2] floods outward from the outlets in order of increasing height, giving every cell a drainage potential; sills of closed basins are carved by a fraction (0.1) of their depth per step while basins also fill with sediment (fill multiplier 3), so plains survive and drain instead of staying closed. (3) Accumulation: flow is split between two downhill neighbours on triangular facets (D-infinity [3]), reducing the eight-direction bias. (4) Implicit stream-power incision, dh/dt = U - K A^m S^n, solved downstream-first in the manner of Braun and Willett [4], with capped contribution and damped response on gentle slopes. (5) Thermal relaxation: material above the talus angle slides down. (6) Hillslope diffusion. Graph convergence is checked and retried rather than assumed after a fixed number of relaxations.</p>
+<p><b>Inputs and outputs.</b> In: initial heights and uplift. Out: evolved regional heights, drainage area and flow directions.</p>
+<p><b>Controls.</b> Cycle count, uplift multiplier, incision, onset slope, basin fill, sill carving, talus, thermal rate, diffusion; the climate preset scales water incision and thermal rates (for example tropical x1.8 incision, arid x0.35). Thermal relaxation and diffusion can be disabled separately; drainage and incision cannot be separated because incision reads the flow data.</p>
+<p><b>Cost and backends.</b> Dominates the procedural cost; cost scales with cycles times regional cells. GPU kernels (WGSL) and a CPU solver (priority flood) exist, so topologies of the two may differ. The erosion dose is an intensity, not a conversion to years; sediment mass is not conserved globally.</p>
+<p><b>References.</b> Also: Howard 1994 (detachment-limited stream-power incision); Musgrave, Kolb and Mace 1989 (thermal and hydraulic erosion for terrains). See <a href="#erosion">chapter 04</a>.</p>
+<p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/compact-terrain-phasor.md">compact-terrain-phasor.md</a></p>
+</section>
+<section class="stage" id="stage-relief-relax" data-stage="relief-relax">
+<h4>Final regional relaxation <code class="stage-id">relief-relax</code> <span class="tag">Procedural source</span> <span class="tag compare">can be switched off</span></h4>
+
+<p><b>What and why.</b> Removes the artefacts of the last evolution cycle (fresh pits, steep one-cell steps) without adding uplift, so reconstruction starts from a settled, drainable surface.</p>
+<p><b>Algorithm.</b> A last sill-carving and drainage pass followed by thermal relaxation, using the same kernels as the cycle but with no uplift term.</p>
+<p><b>Inputs and outputs.</b> In: evolved regional heights. Out: relaxed regional heights and drainage.</p>
+<p><b>Controls.</b> Final sill carving, thermal relaxation and drainage switches.</p>
+<p><b>Cost and backends.</b> One extra pass at regional resolution; negligible next to the cycles.</p>
+
+<p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/procedural-generation-stages.md">procedural-generation-stages.md</a></p>
+</section>
+<section class="stage" id="stage-relief-reconstruct" data-stage="relief-reconstruct">
+<h4>Reconstruction (bicubic / B-spline, domain warp) <code class="stage-id">relief-reconstruct</code> <span class="tag">Procedural source</span> <span class="tag own">required</span></h4>
+
+<p><b>What and why.</b> Resamples the coarse regional field onto the 1024-square retained surface. The interpolant matters: an interpolating spline can overshoot and invent pits or ridges, which would then misguide hydrology.</p>
+<p><b>Algorithm.</b> Either a bounded bicubic interpolation (cubic convolution) or a positive cubic B-spline; the compact preset uses the B-spline, whose non-negative weights cannot overshoot. A domain warp displaces the lookup coordinates so that valley lines do not follow grid axes; the warp multiplier sets its strength.</p>
+<p><b>Inputs and outputs.</b> In: relaxed regional heights. Out: full-resolution surface heights.</p>
+<p><b>Controls.</b> Engine default, bounded bicubic or positive B-spline; domain warp multiplier.</p>
+<p><b>Cost and backends.</b> Linear in output cells (about one million); fused with later passes on GPU.</p>
+
+<p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/compact-terrain-phasor.md">compact-terrain-phasor.md</a></p>
+</section>
+<section class="stage" id="stage-relief-calibrate" data-stage="relief-calibrate">
+<h4>Amplitude calibration (p99) <code class="stage-id">relief-calibrate</code> <span class="tag">Procedural source</span> <span class="tag compare">can be switched off</span></h4>
+
+<p><b>What and why.</b> Makes the relief amplitude predictable: after erosion the highest points depend strongly on the seed, so the field can be rescaled to a target relief.</p>
+<p><b>Algorithm.</b> The 99th percentile of heights is measured and the field is scaled so that it matches the target; a percentile ignores rare spikes that a maximum would obey. Off, the evolved physical amplitude is kept.</p>
+<p><b>Inputs and outputs.</b> In: surface heights. Out: rescaled heights (one multiplicative factor).</p>
+<p><b>Controls.</b> Switch and target amplitude.</p>
+<p><b>Cost and backends.</b> A histogram or sort of 1M values; the GPU path evaluates the calibrated height into a read-out buffer and the next detail kernel applies the same scale.</p>
+
+<p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/procedural-generation-stages.md">procedural-generation-stages.md</a></p>
+</section>
+<section class="stage" id="stage-relief-detail" data-stage="relief-detail">
+<h4>Ridged detail <code class="stage-id">relief-detail</code> <span class="tag">Procedural source</span> <span class="tag compare">can be switched off</span></h4>
+
+<p><b>What and why.</b> Adds fine rocky texture on slopes, which the coarse regional grid cannot carry. It precedes surface erosion so that the next stage can organise and soften it instead of leaving raw noise.</p>
+<p><b>Algorithm.</b> A ridged multifractal term (1 - |n| of coherent noise, summed over octaves) modulated by slope, added to the surface heights.</p>
+<p><b>Inputs and outputs.</b> In: calibrated heights. Out: heights with fine ridges.</p>
+<p><b>Controls.</b> Amplitude (default off in the compact preset, on in Classic).</p>
+<p><b>Cost and backends.</b> One pass per surface cell.</p>
+
+<p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/procedural-generation-stages.md">procedural-generation-stages.md</a></p>
+</section>
+<section class="stage" id="stage-relief-surface" data-stage="relief-surface">
+<h4>Surface erosion <code class="stage-id">relief-surface</code> <span class="tag">Procedural source</span> <span class="tag compare">can be switched off</span></h4>
+
+<p><b>What and why.</b> Runs the same erosion operators as the regional cycle, at the full 1024-square resolution and for a few cycles, to carve small gullies and soften the ridged detail. Disabled by default in the compact preset, which relies on the Phasor stage instead.</p>
+<p><b>Algorithm.</b> Priority-flood routing, D-infinity accumulation, implicit incision, thermal and diffusion passes, with a routed or strict flow mode for depressions and optional sill carving.</p>
+<p><b>Inputs and outputs.</b> In: detailed surface. Out: eroded surface and its drainage.</p>
+<p><b>Controls.</b> Cycles, incision, routed or strict flow, sill carving, thermal rate, diffusion.</p>
+<p><b>Cost and backends.</b> Linear in surface cells times cycles.</p>
+
+<p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/procedural-generation-stages.md">procedural-generation-stages.md</a></p>
+</section>
+<section class="stage" id="stage-relief-datum" data-stage="relief-datum">
+<h4>Datum normalisation (p1) <code class="stage-id">relief-datum</code> <span class="tag">Procedural source</span> <span class="tag compare">can be switched off</span></h4>
+
+<p><b>What and why.</b> Pins the lowest ground to a known height so the land floor is stable across seeds: sea level, coasts and lakes are defined relative to it.</p>
+<p><b>Algorithm.</b> The 1st percentile of heights is shifted to 1 m. Independently, the positive land-input floor of 0.3 m is always enforced for later stages.</p>
+<p><b>Inputs and outputs.</b> In: eroded heights. Out: shifted heights.</p>
+<p><b>Controls.</b> Switch (the 0.3 m floor stays required).</p>
+<p><b>Cost and backends.</b> A percentile and an addition.</p>
+
+<p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/procedural-generation-stages.md">procedural-generation-stages.md</a></p>
+</section>
+<section class="stage" id="stage-relief-phasor" data-stage="relief-phasor">
+<h4>Phasor detail <code class="stage-id">relief-phasor</code> <span class="tag">Procedural source</span> <span class="tag compare">can be switched off</span></h4>
+
+<p><b>What and why.</b> Adds sub-regional ridges and ravines whose crests follow the contour lines of the terrain, which plain noise does not do. It is an optional detail on either preset and changes the physical heights.</p>
+<p><b>Algorithm.</b> A GPU adaptation of phasor noise as used for terrain amplification (Tricard et al. 2019; Grenier et al. 2024): each octave sums jittered Gabor impulses, z = sum w_j exp(i phase_j), with carrier directions along the regional contour tangent, and a bounded triangle-like profile (2/pi) asin(Re z / sqrt(|z|^2 + eps)). At most three octaves, wavelength ratio 3, base wavelength clamp(scale/24, 48, 160) m; amplitude min(0.025 wavelength, 0.12 slope wavelength) fading on flat ground, valley floors and near sea level. Wavelengths below four output cells are suppressed.</p>
+<p><b>Inputs and outputs.</b> In: surface heights and slope. Out: heights plus detail.</p>
+<p><b>Controls.</b> Phasor intensity (zero turns it off).</p>
+<p><b>Cost and backends.</b> Fused into the final output-packing dispatch, so it needs no full-size intermediate texture. At 50 km most small octaves are absent because they fall below the cell size. The detail is not a drainage network that was physically evolved.</p>
+<p><b>References.</b> Method note on <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/compact-terrain-phasor.md">compact terrain and Phasor</a>; image below from that note.</p>
+<figure class="diagram"><img src="assets/compact-terrain-phasor.webp" width="1200" height="800" loading="lazy" alt="Same regional terrain with Phasor intensity zero and one, with a close crop below."><figcaption>Same seed, 5 km extent, balanced quality; Phasor intensity 0 and 1 (project capture, method note).</figcaption></figure><p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/compact-terrain-phasor.md">compact-terrain-phasor.md</a></p>
+</section>
+<section class="stage" id="stage-relief-neural-coarse" data-stage="relief-neural-coarse">
+<h4>Neural coarse diffusion <code class="stage-id">relief-neural-coarse</code> <span class="tag">Neural source</span> <span class="tag own">required</span></h4>
+<figure class="diagram sdiag" id="fig-neural"><svg class="dg" role="img" aria-labelledby="dg6-t" viewBox="0 0 760 140" xmlns="http://www.w3.org/2000/svg"><title id="dg6-t">Neural relief chain: coarse, base, decoder, amplification</title><defs><marker id="dg6-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="head"/></marker></defs><rect class="box neu" x="10" y="20" width="150" height="56" rx="6"/><text x="85" y="45" text-anchor="middle" class="b">Coarse</text><text x="85" y="59" text-anchor="middle">continental layout</text><rect class="box neu" x="200" y="20" width="150" height="56" rx="6"/><text x="275" y="45" text-anchor="middle" class="b">Base</text><text x="275" y="59" text-anchor="middle">valleys · ridges</text><rect class="box neu" x="390" y="20" width="150" height="56" rx="6"/><text x="465" y="45" text-anchor="middle" class="b">Decoder</text><text x="465" y="59" text-anchor="middle">metre-scale heights</text><rect class="box core" x="580" y="20" width="150" height="56" rx="6"/><text x="655" y="38" text-anchor="middle" class="b">Amplification</text><text x="655" y="52" text-anchor="middle">Classic · Phasor</text><text x="655" y="66" text-anchor="middle">Hybrid · MSE</text><line class="ln " x1="160" y1="48" x2="200" y2="48" marker-end="url(#dg6-a)"/><line class="ln " x1="350" y1="48" x2="390" y2="48" marker-end="url(#dg6-a)"/><line class="ln " x1="540" y1="48" x2="580" y2="48" marker-end="url(#dg6-a)"/><text x="10" y="108" class="note">Each stage is conditioned on the previous one and sampled in global tile coordinates with a halo (no seams).</text><text x="10" y="126" class="note">Amplification adds only a residual to the retained Magna spline; level 0 returns the spline unchanged.</text></svg><figcaption>Original diagram of the three learned stages and the amplification step.</figcaption></figure>
+<p><b>What and why.</b> First of three learned stages: it draws the continental-scale layout (land and sea, major mountain belts) of the finite window from noise, conditioned on seed and position.</p>
+<p><b>Algorithm.</b> A diffusion model in the family of the EDM formulation [7][8] with consistency-model style few-step sampling [9], used in the InfiniteDiffusion arrangement [6] where tiles are sampled in global coordinates so a window can be extended without a seam. The coarse stage works on a low-resolution grid of the window.</p>
+<p><b>Inputs and outputs.</b> In: seed, window position and size, model weights. Out: coarse height and the latents the next stage is conditioned on.</p>
+<p><b>Controls.</b> Seed, window; the model profile is part of the recipe identity.</p>
+<p><b>Cost and backends.</b> Inference in Rust/WASM + WebGPU in the browser, or PyTorch/CUDA in the local service; weights are external and loading is a notable part of the first call. The window is finite: the model does not tile an infinite world automatically here.</p>
+<p><b>References.</b> <a href="#ref-goslin">Goslin [6]</a>, <a href="#ref-edm">Karras et al. [7]</a>, <a href="#ref-edm2">[8]</a>, <a href="#ref-consistency">Song et al. [9]</a>; see <a href="#neural">chapter 03</a>.</p>
+<p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/neural-earth-amplification.md">neural-earth-amplification.md</a></p>
+</section>
+<section class="stage" id="stage-relief-neural-base" data-stage="relief-neural-base">
+<h4>Neural base diffusion <code class="stage-id">relief-neural-base</code> <span class="tag">Neural source</span> <span class="tag own">required</span></h4>
+
+<p><b>What and why.</b> Refines the coarse layout into a base terrain with coherent valleys and ridges at intermediate scale, still conditioned on the coarse result so that large features are not redrawn.</p>
+<p><b>Algorithm.</b> A second diffusion stage conditioned on the coarse output sampled at the matching coordinates; tiles carry a halo so neighbours agree on their overlap.</p>
+<p><b>Inputs and outputs.</b> In: coarse output, seed, position. Out: base-resolution heights.</p>
+<p><b>Controls.</b> Same recipe identity as the coarse stage.</p>
+<p><b>Cost and backends.</b> Same inference backends as the coarse stage; cost grows with the window area at base resolution.</p>
+
+<p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/neural-earth-amplification.md">neural-earth-amplification.md</a></p>
+</section>
+<section class="stage" id="stage-relief-neural-decoder" data-stage="relief-neural-decoder">
+<h4>Neural decoder / amplification <code class="stage-id">relief-neural-decoder</code> <span class="tag">Neural source</span> <span class="tag own">required</span></h4>
+
+<p><b>What and why.</b> Produces the final metre-scale heights from the base terrain (decoder) and, below the model’s own resolution, adds detail on the retained surface (amplification: Classic, Phasor, Hybrid or MSE modes).</p>
+<p><b>Algorithm.</b> The decoder turns base latents into heights. Amplification samples a reference on its native 30 m lattice, subtracts its coastal base and adds only the residual to the retained Magna spline, with a gain near zero elevation that preserves the land or sea sign. Levels 1 to 6 use cell = 30 * displayScale / 2^level. MSE is a windowed multiscale erosion after Schott et al.; Phasor and Hybrid follow Grenier et al.</p>
+<p><b>Inputs and outputs.</b> In: base latents or the retained height grid, width, seed, method. Out: refined heights; level 0 returns the retained spline unchanged.</p>
+<p><b>Controls.</b> Amplification method, intensity and level (these currently use the local Python service).</p>
+<p><b>Cost and backends.</b> A decoder-backed branch requires the original neural world; procedural and imported sources run amplification without weights (decoder octave zero). Local windows cannot supply their own upstream discharge, so hydrology on a window is a compatibility check, not globally correct catchments.</p>
+<p><b>References.</b> Method note: <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/neural-earth-amplification.md">neural-earth-amplification.md</a>.</p>
+<p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/neural-earth-amplification.md">neural-earth-amplification.md</a></p>
+</section>
+<section class="stage" id="stage-relief-heightmap-fit" data-stage="relief-heightmap-fit">
+<h4>Heightmap fit (resample, vertical scale, datum, crop) <code class="stage-id">relief-heightmap-fit</code> <span class="tag">Imported or library heightmap</span> <span class="tag own">required</span></h4>
+
+<p><b>What and why.</b> Brings an external raster into the same frame as generated terrain: physical width in metres, heights in metres above sea level, positive land floor. It is the only relief stage for an imported or library map.</p>
+<p><b>Algorithm.</b> Crop to the chosen window, resample to the retained grid (interpolated), apply a vertical scale and datum offset, enforce the land floor. No erosion is applied unless the posterior stages below are switched on.</p>
+<p><b>Inputs and outputs.</b> In: image or raster, crop rectangle, vertical scale, datum. Out: the retained height field.</p>
+<p><b>Controls.</b> Crop, vertical scale, datum, width.</p>
+<p><b>Cost and backends.</b> Cheap and CPU-only. A heightmap with a low native resolution is only upsampled: no geological detail is created.</p>
+
+<p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/procedural-generation-stages.md">procedural-generation-stages.md</a></p>
+</section>
+<section class="stage" id="stage-relief-conditioning" data-stage="relief-conditioning">
+<h4>Posterior fluvial conditioning <code class="stage-id">relief-conditioning</code> <span class="tag">Always</span> <span class="tag compare">can be switched off</span></h4>
+
+<p><b>What and why.</b> Gives any source, including imports and neural windows, a drainage that actually connects, by erosion and breaching applied after the source is final.</p>
+<p><b>Algorithm.</b> An existing CPU conditioner: stream-power erosion on the routed drainage, breaching of spurious depressions, or both. Breach depth and length are bounded so a pit is opened rather than a canyon.</p>
+<p><b>Inputs and outputs.</b> In: retained heights. Out: conditioned heights.</p>
+<p><b>Controls.</b> Mode (erosion, breaching, both), strength, maximum breach depth and length; climate presets set defaults (0 temperate, 0.7 Mediterranean, 1.5 tropical).</p>
+<p><b>Cost and backends.</b> CPU, linear in cells with the drainage solver. Presets are artistic regimes, not calibrated rainfall-driven evolution.</p>
+
+<p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/procedural-generation-stages.md">procedural-generation-stages.md</a></p>
+</section>
+<section class="stage" id="stage-relief-aeolian" data-stage="relief-aeolian">
+<h4>Aeolian transport <code class="stage-id">relief-aeolian</code> <span class="tag">Always</span> <span class="tag compare">can be switched off</span></h4>
+
+<p><b>What and why.</b> Shapes arid terrain by wind: dune-like erosion on windward ground and deposition in lee areas. It is a visual regime, not a dune-physics model.</p>
+<p><b>Algorithm.</b> A directional transport pass: along the wind direction, material is lifted from exposed cells and deposited downwind, capped per pass; iterated several times. GPU kernel with a CPU reference for CPU generation.</p>
+<p><b>Inputs and outputs.</b> In: heights. Out: heights with wind-redistributed material.</p>
+<p><b>Controls.</b> Iterations, wind direction, maximum transported metres per pass (arid default: 12 passes, 0.8 m).</p>
+<p><b>Cost and backends.</b> Passes are linear in cells; the arid preset is the main user of it. The cold preset does not simulate glaciers.</p>
+
+<p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/procedural-generation-stages.md">procedural-generation-stages.md</a></p>
+</section>
+<section class="stage" id="stage-relief-coasts" data-stage="relief-coasts">
+<h4>Coasts (marine mask, coastal erosion) <code class="stage-id">relief-coasts</code> <span class="tag">Always</span> <span class="tag compare">can be switched off</span></h4>
+
+<p><b>What and why.</b> Defines the sea: the marine directions and islands, a signed distance to the shore (positive inland), and a short coastal erosion that gives beaches, cliffs and coves.</p>
+<p><b>Algorithm.</b> A capsule-based coastline plan (broad mainland sectors, branched islands, offshore rocks) is shared by GPU and CPU in FP32. The signed distance modulates heights across the shore, and coastal cycles apply incision, thermal relaxation and diffusion with their own multipliers. The compact preset uses the marine mask with a compact surface erosion pass.</p>
+<p><b>Inputs and outputs.</b> In: heights, coast settings. Out: heights with a marine mask and shore distance.</p>
+<p><b>Controls.</b> Marine directions, island selector, coastal cycles and incision/thermal/diffusion multipliers.</p>
+<p><b>Cost and backends.</b> A distance computation and a few erosion passes near the shore only.</p>
+
+<p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/procedural-generation-stages.md">procedural-generation-stages.md</a></p>
+</section>
+</div>
+<div class="stage-group" id="group-water">
+<h3>Water and natural cover</h3>
+<p>These stages read the retained relief and add the water surfaces and vegetation climate that settlements and rendering consume.</p>
+<section class="stage" id="stage-water-hydrology" data-stage="water-hydrology">
+<h4>Hydrology: depressions, lake water budget, drainage graph, rivers, riverbed cuts <code class="stage-id">water-hydrology</code> <span class="tag">Always</span> <span class="tag compare">can be switched off</span></h4>
+<figure class="diagram sdiag" id="fig-hydrology"><svg class="dg" role="img" aria-labelledby="dg3-t" viewBox="0 0 880 235" xmlns="http://www.w3.org/2000/svg"><title id="dg3-t">Hydrology graph: drainage, depressions, lake budget, river graph and riverbed cuts</title><defs><marker id="dg3-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="head"/></marker></defs><rect class="box " x="10" y="20" width="130" height="70" rx="6"/><text x="75" y="52" text-anchor="middle" class="b">Retained heights</text><text x="75" y="66" text-anchor="middle">sea level · climate</text><rect class="box " x="160" y="20" width="150" height="70" rx="6"/><text x="235" y="45" text-anchor="middle" class="b">Drainage + flats</text><text x="235" y="59" text-anchor="middle">Priority-Flood rank</text><text x="235" y="73" text-anchor="middle">equal-level flats drain</text><rect class="box " x="330" y="20" width="150" height="70" rx="6"/><text x="405" y="45" text-anchor="middle" class="b">Depressions</text><text x="405" y="59" text-anchor="middle">whole spill basins</text><text x="405" y="73" text-anchor="middle">kept or breached</text><rect class="box " x="500" y="20" width="170" height="70" rx="6"/><text x="585" y="45" text-anchor="middle" class="b">Lake budget</text><text x="585" y="59" text-anchor="middle">r = max(P−ET, 0.02P, 0.5)</text><text x="585" y="73" text-anchor="middle">spill vs closed</text><line class="ln " x1="140" y1="55" x2="160" y2="55" marker-end="url(#dg3-a)"/><line class="ln " x1="310" y1="55" x2="330" y2="55" marker-end="url(#dg3-a)"/><line class="ln " x1="480" y1="55" x2="500" y2="55" marker-end="url(#dg3-a)"/><rect class="box core" x="160" y="130" width="180" height="70" rx="6"/><text x="250" y="162" text-anchor="middle" class="b">Drainage graph</text><text x="250" y="176" text-anchor="middle">nodes · reaches · confluences</text><rect class="box " x="370" y="130" width="170" height="70" rx="6"/><text x="455" y="162" text-anchor="middle" class="b">Rivers</text><text x="455" y="176" text-anchor="middle">width · bed · meanders</text><rect class="box out" x="570" y="130" width="170" height="70" rx="6"/><text x="655" y="162" text-anchor="middle" class="b">Riverbed cuts</text><text x="655" y="176" text-anchor="middle">budgeted carve into terrain</text><path class="ln br" d="M585 90 C585 110 250 110 250 130" fill="none" marker-end="url(#dg3-a)"/><line class="ln " x1="340" y1="165" x2="370" y2="165" marker-end="url(#dg3-a)"/><line class="ln " x1="540" y1="165" x2="570" y2="165" marker-end="url(#dg3-a)"/><g class="tree"><circle cx="800" cy="40" r="5"/><circle cx="780" cy="80" r="4"/><circle cx="830" cy="76" r="4"/><circle cx="800" cy="125" r="5"/><ellipse cx="800" cy="170" rx="34" ry="14" class="lake"/><line x1="800" y1="40" x2="780" y2="80"/><line x1="800" y1="40" x2="830" y2="76"/><line x1="780" y1="80" x2="800" y2="125"/><line x1="830" y1="76" x2="800" y2="125"/><line x1="800" y1="125" x2="800" y2="156"/></g><text x="800" y="205" text-anchor="middle" class="note">sources → confluences → lake → outlet</text><text x="10" y="222" class="note">Three distinct quantities: drainage level, physical ground, water surface. The routing obstacle mask is wider than the drawn bank.</text></svg><figcaption>Original diagram of the hydrology stage; the equations are in the text.</figcaption></figure>
+<p><b>What and why.</b> Turns elevation into water: which hollows hold lakes, which cells drain where, where rivers run and how wide, and how their beds are cut into the ground. Settlements, roads and rendering all rely on one shared definition of water.</p>
+<p><b>Algorithm.</b> (1) Drainage and flats: Priority-Flood [2] gives every cell a drainage rank; flat equal-spill-level components receive a convergent metric drainage so water does not stagnate. (2) Depressions: whole spill basins are retained or rejected, never a lowered level that would invent an outlet. (3) Lake water budget: temperature corrected by lapse rate Tz = T - 0.0065 max(z,0), annual potential evaporation L = max(60, 300 + 25 Tz + 0.05 Tz^3) mm, Turc-Pike evapotranspiration ET = P / sqrt(0.9 + P^2/L^2), runoff r = max(P - ET, 0.02 P, 0.5) mm per year. A depression whose inflow exceeds the evaporation of its full surface spills at its sill (open lake); otherwise its level rises until evaporation balances inflow and the basin closes. This is the equilibrium of Fill-Spill-Merge [5]. (4) Graph: sources, reaches, confluences and outlets become linked objects with shared nodes. (5) Rivers: width, bed and water profile along the axes with correction budgets, plus deterministic multi-scale meanders constrained by terrain. (6) Riverbed cuts: the bed is carved into the surface within the allowed budget.</p>
+<p><b>Inputs and outputs.</b> In: retained heights, sea level, resolution, temperature and rainfall, hydrology options. Out: water surfaces (lakes, rivers, sea), drainage graph, widths, a conservative obstacle mask for routing, optionally bed-cut heights.</p>
+<p><b>Controls.</b> Lake count and size, river density, river width, meander strength, bank budget, riverbed cuts, hydrology on/off (off keeps the altitudes untouched).</p>
+<p><b>Cost and backends.</b> Raster work at the retained resolution plus vector graph work; a WebGPU hydrology path exists beside the Rust one. The obstacle mask is wider than the drawn bank on purpose: it serves path search, not drawing.</p>
+<p><b>References.</b> <a href="#ref-flood">Barnes et al. [2]</a>, <a href="#ref-dinf">Tarboton [3]</a>, <a href="#ref-fsm">Barnes et al. [5]</a>; Turc 1954 and Pike 1964 for evapotranspiration. See <a href="#eau">chapter 05</a>.</p>
+<p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/procedural-generation-stages.md">procedural-generation-stages.md</a></p>
+</section>
+<section class="stage" id="stage-cover-climate" data-stage="cover-climate">
+<h4>Climate and biomes / natural cover (forest) <code class="stage-id">cover-climate</code> <span class="tag">Always</span> <span class="tag compare">can be switched off</span></h4>
+
+<p><b>What and why.</b> Estimates what grows where, from a temperature-and-rain regime and the shape of the ground, so forests, steppe and bare rock follow valleys, slopes and altitude rather than random patches.</p>
+<p><b>Algorithm.</b> Altitude-corrected temperature, rainfall and topographic position indices act as proxies for biome and moisture. A world-coordinate control field stores cover, potential height, conifer share and tone or disturbance; density is transformed by c_D = 1 - (1 - c)^D. Riparian galleries follow the visible banks, and tree centres avoid displayed water. Disturbance coefficients are bounded visual policies, not ecological succession.</p>
+<p><b>Inputs and outputs.</b> In: heights, slope, water surfaces, climate preset. Out: forest and cover control field used by the renderer and by land use.</p>
+<p><b>Controls.</b> Climate preset (temperate, oceanic, Mediterranean, arid, cold, tropical), forest density and disturbance, vegetation on/off.</p>
+<p><b>Cost and backends.</b> Cheap raster passes; trees are drawn as instances at close range and averaged as a material at distance.</p>
+<p><b>References.</b> See <a href="#paysage">chapter 12</a>; vegetation and land-use notes below.</p>
+<p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/render3d-vegetation.md">render3d-vegetation.md</a> · <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/fantasy-landuse.md">fantasy-landuse.md</a></p>
+</section>
+</div>
+<div class="stage-group" id="group-settle">
+<h3>Settlements</h3>
+<p>Settlement stages run once per map, after the relief and water are final. They decide where places are, how large and important they are, and how roads join them. The city stages then re-use their outputs for each selected place.</p>
+<section class="stage" id="stage-settle-sites" data-stage="settle-sites">
+<h4>Site placement and urban reserves <code class="stage-id">settle-sites</code> <span class="tag">After the relief</span> <span class="tag own">required</span></h4>
+
+<p><b>What and why.</b> Chooses dry, buildable locations for places and reserves the land a settlement of a given population will need. A good point is not enough: the population implies an area, and areas must respect exclusions and spacing.</p>
+<p><b>Algorithm.</b> Scoring of dry candidate cells by slope, fresh-water access, shore, defence, culture preferences (log-weighted: a x3 preference adds about 0.55, a x0 weight about -1.96, strongly avoided but still possible as a last resort), site type (river, coast, pass or saddle, hill) and available land. Small holdings get extra flexibility on slopes. A satellite bonus favours small places near an already placed large one. Greedy selection by score with minimum spacing; reserves are carved as areas. Candidate scores and ranks can be kept for inspection.</p>
+<p><b>Inputs and outputs.</b> In: relief, water surfaces, climate, culture and settlement specs. Out: placed settlements with coordinates, class, population and reserved footprint.</p>
+<p><b>Controls.</b> Number or density of places, site-type weights, culture preferences, minimum population, seed.</p>
+<p><b>Cost and backends.</b> Grid scan plus scoring; fast compared with relief. The result is a site, not an economy: a river site is not automatically a navigable port.</p>
+
+<p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/urban-settlement-styles.md">urban-settlement-styles.md</a></p>
+</section>
+<section class="stage" id="stage-settle-hierarchy" data-stage="settle-hierarchy">
+<h4>Place hierarchy <code class="stage-id">settle-hierarchy</code> <span class="tag">After the sites</span> <span class="tag own">required</span></h4>
+
+<p><b>What and why.</b> Gives each placed site a population and an importance rank, which later drive roads, programme demand and city size.</p>
+<p><b>Algorithm.</b> Either legacy class bands sized from usable land, or a rank-size law P_r = P_1 / r^q down to a minimum population, with as many ranks as the density of places per 100 km2 of usable land allows. The law is a distribution control; the engine does not show that Zipf behaviour emerges from trade [Zipf 1949].</p>
+<p><b>Inputs and outputs.</b> In: placed sites, usable land. Out: population and rank per settlement (shared demographic bands with the TypeScript side).</p>
+<p><b>Controls.</b> Main-place population, exponent q, minimum population, density of places, hierarchy mode.</p>
+<p><b>Cost and backends.</b> Negligible.</p>
+
+<p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/urban-settlement-styles.md">urban-settlement-styles.md</a></p>
+</section>
+<section class="stage" id="stage-settle-roads" data-stage="settle-roads">
+<h4>Regional roads (cost fields, A*, bridges) <code class="stage-id">settle-roads</code> <span class="tag">After the sites</span> <span class="tag compare">can be switched off</span></h4>
+<figure class="diagram sdiag" id="fig-roads"><svg class="dg" role="img" aria-labelledby="dg4-t" viewBox="0 0 900 260" xmlns="http://www.w3.org/2000/svg"><title id="dg4-t">Regional roads: Delaunay demand graph, 24-move least-cost search with heading state, merged road network</title><defs><marker id="dg4-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="head"/></marker></defs><line class="ln mst" x1="40" y1="150" x2="120" y2="60"/><line class="ln mst" x1="120" y1="60" x2="210" y2="130"/><line class="ln mst" x1="210" y1="130" x2="290" y2="50"/><line class="ln mst" x1="210" y1="130" x2="320" y2="160"/><line class="ln mst" x1="40" y1="150" x2="180" y2="200"/><line class="ln thin" x1="180" y1="200" x2="210" y2="130"/><line class="ln thin" x1="120" y1="60" x2="290" y2="50"/><line class="ln thin" x1="290" y1="50" x2="320" y2="160"/><line class="ln thin" x1="180" y1="200" x2="320" y2="160"/><line class="ln thin" x1="40" y1="150" x2="210" y2="130"/><circle class="pt" cx="40" cy="150" r="5"/><circle class="pt" cx="120" cy="60" r="5"/><circle class="pt" cx="210" cy="130" r="8"/><circle class="pt" cx="290" cy="50" r="5"/><circle class="pt" cx="320" cy="160" r="5"/><circle class="pt" cx="180" cy="200" r="5"/><text x="180" y="20" text-anchor="middle" class="b">1 Demand graph</text><text x="180" y="232" text-anchor="middle" class="note">Delaunay · bold: spanning tree</text><text x="180" y="246" text-anchor="middle" class="note">+ shortcuts where the tree detours</text><line class="ln mv" x1="540" y1="130" x2="562" y2="130"/><line class="ln mv" x1="540" y1="130" x2="518" y2="130"/><line class="ln mv" x1="540" y1="130" x2="540" y2="152"/><line class="ln mv" x1="540" y1="130" x2="540" y2="108"/><line class="ln mv" x1="540" y1="130" x2="562" y2="152"/><line class="ln mv" x1="540" y1="130" x2="562" y2="108"/><line class="ln mv" x1="540" y1="130" x2="518" y2="152"/><line class="ln mv" x1="540" y1="130" x2="518" y2="108"/><line class="ln mv far" x1="540" y1="130" x2="584" y2="152"/><line class="ln mv far" x1="540" y1="130" x2="584" y2="108"/><line class="ln mv far" x1="540" y1="130" x2="496" y2="152"/><line class="ln mv far" x1="540" y1="130" x2="496" y2="108"/><line class="ln mv far" x1="540" y1="130" x2="562" y2="174"/><line class="ln mv far" x1="540" y1="130" x2="562" y2="86"/><line class="ln mv far" x1="540" y1="130" x2="518" y2="174"/><line class="ln mv far" x1="540" y1="130" x2="518" y2="86"/><line class="ln mv far" x1="540" y1="130" x2="562" y2="196"/><line class="ln mv far" x1="540" y1="130" x2="562" y2="64"/><line class="ln mv far" x1="540" y1="130" x2="518" y2="196"/><line class="ln mv far" x1="540" y1="130" x2="518" y2="64"/><line class="ln mv far" x1="540" y1="130" x2="606" y2="152"/><line class="ln mv far" x1="540" y1="130" x2="606" y2="108"/><line class="ln mv far" x1="540" y1="130" x2="474" y2="152"/><line class="ln mv far" x1="540" y1="130" x2="474" y2="108"/><circle class="pt" cx="540" cy="130" r="5"/><text x="540" y="20" text-anchor="middle" class="b">2 Least-cost search</text><text x="540" y="232" text-anchor="middle" class="note">24 moves: 8 neighbours + knight + (1,3)</text><text x="540" y="246" text-anchor="middle" class="note">state = cell + arrival heading (8 sectors)</text><rect class="box core" x="700" y="36" width="180" height="64" rx="6"/><text x="790" y="58" text-anchor="middle" class="b">Cost per move</text><text x="790" y="72" text-anchor="middle">ground + slope + turn²</text><text x="790" y="86" text-anchor="middle">+ obstacles − road reuse</text><rect class="box " x="700" y="120" width="180" height="50" rx="6"/><text x="790" y="142" text-anchor="middle" class="b">Routed most important first</text><text x="790" y="156" text-anchor="middle">lesser roads join trunks</text><rect class="box out" x="700" y="190" width="180" height="50" rx="6"/><text x="790" y="212" text-anchor="middle" class="b">Merged planar network</text><text x="790" y="226" text-anchor="middle">classes · bridges</text><line class="ln " x1="790" y1="100" x2="790" y2="120" marker-end="url(#dg4-a)"/><line class="ln " x1="790" y1="170" x2="790" y2="190" marker-end="url(#dg4-a)"/><line class="ln br" x1="360" y1="130" x2="495" y2="130" marker-end="url(#dg4-a)"/><line class="ln br" x1="590" y1="130" x2="700" y2="130" marker-end="url(#dg4-a)"/><text x="700" y="20" class="b">3 Routing and merge</text></svg><figcaption>Original diagram of regional road construction; cell and move geometry is illustrative.</figcaption></figure>
+<p><b>What and why.</b> Links places by physical roads. The demand graph says which places should be connected; the least-cost search finds where the road can actually run on the terrain.</p>
+<p><b>Algorithm.</b> Demand graph: Delaunay triangulation of the places, its minimum spanning tree, plus shortcut edges where the tree detours too much. Routing: least-cost search (Dijkstra/A* family, Hart, Nilsson and Raphael 1968) on the terrain grid with 24 moves (the 8 neighbours, the knight moves and the (1,3) moves), so a road can climb at a third of the slope or less and form switchbacks. The state is a cell plus the arrival heading (one of eight sectors), turning is priced on the square of the angle and costs more on steep ground, and each class has a sharpest turn per move. Cost adds ground, slope, turns and obstacles, and reuse is per move, not per cell: following an existing road is cheap, cells beside a road cost more than the road itself, so routes either share or keep apart. Links are routed most important first, then merged into one planar network whose classes follow the traffic. Anisotropic path costs follow Galin et al. [10]. Crossings are accepted objects (bridges), never an artefact of a short segment.</p>
+<p><b>Inputs and outputs.</b> In: place hierarchy, terrain, water obstacle mask, culture road profile. Out: a merged road graph with classes, intersections, bridges and fords handed to the city stages as context.</p>
+<p><b>Controls.</b> Road density and class thresholds, maximum grade, turn penalties, bridge allowance, culture road profile.</p>
+<p><b>Cost and backends.</b> Search cost depends on grid size and number of links; a bounded priority queue explores a state space of cells times headings. A low cost is not an earthwork or traffic study.</p>
+<p><b>References.</b> <a href="#ref-roads">Galin et al. [10]</a>; see <a href="#routes">chapter 07</a>.</p>
+<p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/procedural-generation-stages.md">procedural-generation-stages.md</a></p>
+</section>
+</div>
+<div class="stage-group" id="group-city">
+<h3>City, per selected place</h3>
+<p>City stages are Rust stages that run for the selected place and are re-run when its recipe or edits change. They are deterministic: each quarter or building draws from a random stream forked by its own name, and parallel work is merged in input order, so thread count never changes the result. Repeated sub-computations are memoised and spatial indexes replace all-pairs searches; native builds use a thread pool, WebAssembly builds use WASM threads with a worker-pool fallback and a serial path.</p>
+<section class="stage" id="stage-city-composition" data-stage="city-composition">
+<h4>Composition: footprint, macroplan, harbour, fortification <code class="stage-id">city-composition</code> <span class="tag">Per selected place</span> <span class="tag own">required</span></h4>
+
+<p><b>What and why.</b> Decides the overall shape of a city before streets exist: how much land it covers, where it can grow, where the harbour and the walls go. The shape and the street fabric are separate decisions so a street pattern does not fix the geography.</p>
+<p><b>Algorithm.</b> Footprint: a land budget (area = population / gross density, converted to m2, or an artistic radius budget) is spent by one of four mechanisms - planned foundation from vector templates, accessibility-driven growth, network accretion along road bands, core merging. Accessible growth uses an anisotropic multi-source arrival field on a bounded local raster (at most 192 by 192 cells) whose cost combines relief, path slope, access and spatial noise; cohesion, satellites, branch depth and gap size control dispersion. Macroplan: geography first - regional corridors are preserved and the remaining dry land is partitioned. Harbour and fortification (wall, palisade, hedge; towers and gates) are resolved from the culture catalogue. Dry components and interior exclusions are preserved; cores separated by water do not create a bridge by themselves.</p>
+<p><b>Inputs and outputs.</b> In: population, culture, terrain, water, regional roads. Out: footprint, macroplan sectors, harbour and enclosure geometry.</p>
+<p><b>Controls.</b> Footprint family (twelve) and mechanism, density or radius budget, cohesion, satellite tendency, branch depth, gap size, culture, fortification and harbour options.</p>
+<p><b>Cost and backends.</b> Bounded local rasters; the budgeted growth is cheap relative to parcels and buildings.</p>
+<p><b>References.</b> <a href="#ref-city">Parish and Müller [11]</a> and <a href="#ref-tensor">Chen et al. [12]</a> are comparison points, not the exact solver. See <a href="#ville">chapter 08</a>.</p>
+<p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/urban-parcels.md">urban-parcels.md</a></p>
+</section>
+<section class="stage" id="stage-city-quarters" data-stage="city-quarters">
+<h4>Quarters: streets, split, blocks, bridges <code class="stage-id">city-quarters</code> <span class="tag">Per selected place</span> <span class="tag own">required</span></h4>
+<figure class="diagram sdiag" id="fig-city"><svg class="dg" role="img" aria-labelledby="dg5-t" viewBox="0 0 890 260" xmlns="http://www.w3.org/2000/svg"><title id="dg5-t">City generation: footprint, macroplan, quarters, blocks, trim, parcels, programme, building sites, massing, houses</title><defs><marker id="dg5-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="head"/></marker></defs><rect class="box " x="10" y="14" width="150" height="62" rx="6"/><text x="85" y="42" text-anchor="middle" class="b">Footprint</text><text x="85" y="56" text-anchor="middle">land budget · growth</text><rect class="box " x="190" y="14" width="150" height="62" rx="6"/><text x="265" y="42" text-anchor="middle" class="b">Macroplan</text><text x="265" y="56" text-anchor="middle">corridors · harbour · walls</text><rect class="box core" x="370" y="14" width="150" height="62" rx="6"/><text x="445" y="42" text-anchor="middle" class="b">Quarters</text><text x="445" y="56" text-anchor="middle">street cuts · ribbons</text><rect class="box " x="550" y="14" width="150" height="62" rx="6"/><text x="625" y="42" text-anchor="middle" class="b">Blocks</text><text x="625" y="56" text-anchor="middle">faces between streets</text><rect class="box " x="730" y="14" width="150" height="62" rx="6"/><text x="805" y="42" text-anchor="middle" class="b">Trim</text><text x="805" y="56" text-anchor="middle">drop unbuilt blocks</text><line class="ln " x1="160" y1="45" x2="190" y2="45" marker-end="url(#dg5-a)"/><line class="ln " x1="340" y1="45" x2="370" y2="45" marker-end="url(#dg5-a)"/><line class="ln " x1="520" y1="45" x2="550" y2="45" marker-end="url(#dg5-a)"/><line class="ln " x1="700" y1="45" x2="730" y2="45" marker-end="url(#dg5-a)"/><rect class="box core" x="10" y="124" width="170" height="62" rx="6"/><text x="95" y="152" text-anchor="middle" class="b">Parcels</text><text x="95" y="166" text-anchor="middle">four operators · contacts</text><rect class="box " x="210" y="124" width="170" height="62" rx="6"/><text x="295" y="152" text-anchor="middle" class="b">Programme</text><text x="295" y="166" text-anchor="middle">demand · reserve · allocate</text><rect class="box " x="410" y="124" width="170" height="62" rx="6"/><text x="495" y="152" text-anchor="middle" class="b">Building sites</text><text x="495" y="166" text-anchor="middle">neutral intents</text><rect class="box " x="610" y="124" width="120" height="62" rx="6"/><text x="670" y="152" text-anchor="middle" class="b">Massing</text><text x="670" y="166" text-anchor="middle">storeys · roofs</text><rect class="box out" x="750" y="124" width="130" height="62" rx="6"/><text x="815" y="152" text-anchor="middle" class="b">Houses</text><text x="815" y="166" text-anchor="middle">native plan · admission</text><path class="ln br" d="M805 76 C805 100 95 96 95 124" fill="none" marker-end="url(#dg5-a)"/><line class="ln " x1="180" y1="155" x2="210" y2="155" marker-end="url(#dg5-a)"/><line class="ln " x1="380" y1="155" x2="410" y2="155" marker-end="url(#dg5-a)"/><line class="ln " x1="580" y1="155" x2="610" y2="155" marker-end="url(#dg5-a)"/><line class="ln " x1="730" y1="155" x2="750" y2="155" marker-end="url(#dg5-a)"/><path class="ln loop" d="M295 186 C295 214 805 214 805 188" fill="none" marker-end="url(#dg5-a)"/><text x="550" y="226" text-anchor="middle" class="note">refusals and counted capacity return to the programme</text><path class="ln dash2" d="M295 124 C295 100 805 100 805 78" fill="none" marker-end="url(#dg5-a)"/><text x="10" y="248" class="note">Trim runs the programme and cadastre on a copy until a fixed point; a content-addressed memo avoids recomputing identical blocks.</text></svg><figcaption>Original diagram of the city chain, quarters to houses.</figcaption></figure>
+<p><b>What and why.</b> Builds the street network and the blocks between streets, quarter by quarter, with each quarter keeping its cultural recipe and phase (organic European, bastide, medina, Chinese or Japanese grids, communal and fantasy cultures).</p>
+<p><b>Algorithm.</b> A guidance field derived from regional access and the culture directs recursive street cuts; each cut becomes a metric ribbon (width in metres, not a line). Streets are routed locally on the physical surface by an anisotropic cost that enforces water obstacles and longitudinal grades (following Galin et al. [10]) without altering the terrain or creating bridges; regional crossings belong to the regional road network. The final network is planar: segments are split at junctions and connected components are checked. Blocks are the faces between streets. Adaptive servicing adds bounded access corridors when a block is too deep for its recipe, staying inside parent land and respecting grades. Each quarter draws from its own forked random stream and quarters are computed in parallel, merged in input order.</p>
+<p><b>Inputs and outputs.</b> In: footprint, macroplan, culture, terrain, regional crossings. Out: streets (ribbons with roles), planar network, blocks, bridges and quays.</p>
+<p><b>Controls.</b> Culture and phase mix per quarter, street widths, grade limits, adaptive access, bridge options.</p>
+<p><b>Cost and backends.</b> The route planner uses a spatial edge grid so each probe tests only nearby edges; probes are de-duplicated and the culture catalogue is memoised. Cost grows with quarters and street length rather than with all-pairs checks.</p>
+
+<p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/urban-parcels.md">urban-parcels.md</a></p>
+</section>
+<section class="stage" id="stage-city-trim" data-stage="city-trim">
+<h4>Trim of unbuilt blocks <code class="stage-id">city-trim</code> <span class="tag">Per selected place</span> <span class="tag compare">can be switched off</span></h4>
+
+<p><b>What and why.</b> Removes land that nobody builds on. The footprint is sized by a land budget, while the programme stops placing buildings once households and services are covered; without a trim, a settlement keeps whole blocks and the lanes serving them that stay empty. This is a post-hoc stopgap before growth by accretion.</p>
+<p><b>Algorithm.</b> After the quarter stage the programme and the lots run once on a copy of the layout; every ordinary block left without a building becomes open land (later fields) and streets that served only such blocks are pruned: a segment touching no occupied lot is dropped when it is a dead end or lies on a loop, and the removal repeats until dead ends created by earlier removals are gone. Necessary empty links become field paths; bridges, quays and gate connections remain. The pass repeats until a fixed point, then the footprint outline follows built blocks.</p>
+<p><b>Inputs and outputs.</b> In: laid-out quarters, programme. Out: trimmed layout with open land and a smaller network.</p>
+<p><b>Controls.</b> Trim switch; programme density indirectly sets what stays.</p>
+<p><b>Cost and backends.</b> The programme and the cadastre re-run several times on layouts that differ only locally. A content-addressed memo keyed by the exact bytes of its inputs (block lot cutting, quarter port refinement) returns the same value a recomputation would, lives only inside one request, and can be disabled for debugging.</p>
+
+<p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/urban-parcels.md">urban-parcels.md</a></p>
+</section>
+<section class="stage" id="stage-city-parcels" data-stage="city-parcels">
+<h4>Parcels (cadastre) <code class="stage-id">city-parcels</code> <span class="tag">Per selected place</span> <span class="tag own">required</span></h4>
+
+<p><b>What and why.</b> Cuts each block into lots that can be served by a street and built on. A parcel must have access and room for the smallest compatible building, so the cadastre is built with the architecture’s admission sizes in mind.</p>
+<p><b>Algorithm.</b> Four operators produce candidates - frontage bands, oriented cuts, competing frontage territories (a distance-based partition, not a straight skeleton) and organic subdivision - in the tradition of constrained frontage subdivision [13]. Contact with streets is a measured interval: block edges are projected on street segments, intervals are split by direction, width and distance and merged over successive pieces, so a discretised curve does not count as many independent accesses. Tolerances include a band max(0.8 m, 0.3 half-width), a distance limit of 14 m and an angle difference of 20 degrees. Neighbours are found by a spatial index and a true collinear overlap, never by centroid distance. Witness envelopes must stay contained, gardens, residues and reserves stay identified, and the union of parcels must equal the parent without overlap. Dimensions for admission come from a versioned table produced by the houses engine.</p>
+<p><b>Inputs and outputs.</b> In: blocks with holes, reservations, local recipe. Out: parcels with family (frontage, compact, court, collective, inherited land), contacts and occupation.</p>
+<p><b>Controls.</b> Parcel family mix and module sizes per culture, rural-urban pressure, parcel recomputation without moving streets.</p>
+<p><b>Cost and backends.</b> Lot cutting is memoised per block and runs in parallel across blocks; contacts use prepared directions and spatial lookup.</p>
+<p><b>References.</b> <a href="#ref-parcels">Vanegas et al. [13]</a>; method note <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/urban-parcels.md">urban-parcels.md</a>; see <a href="#parcelles">chapter 10</a>.</p>
+<p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/urban-parcels.md">urban-parcels.md</a></p>
+</section>
+<section class="stage" id="stage-city-programme" data-stage="city-programme">
+<h4>Programme allocation (roles, demands) <code class="stage-id">city-programme</code> <span class="tag">Per selected place</span> <span class="tag own">required</span></h4>
+
+<p><b>What and why.</b> Decides what each block and lot is for: housing, shops, crafts, markets, institutions, storage, gardens. Demand is stated first, then reserved and allocated, then the real built capacity is counted.</p>
+<p><b>Algorithm.</b> Demand comes from applied population, place role, known resources, culture, period and lore; a local hypothesis uses 4.5 persons per domestic unit (not a historical constant). Before cadastral cutting the programme reserves existing served blocks for demanding functions (landmarks and large programmes), after it small trades take plots, then shops, then housing, and every buildable plot left becomes an explicit garden or yard. Allocation ranks demands by scarcity of candidates and runs a two-pass greedy heuristic; the second pass may reassign a domestic excess only if the displaced demand stays covered. It is not a global optimum. Gaps are reported: realised deficit = max(0, demanded - built - open capacity) and land deficit = max(0, demanded - land capacity).</p>
+<p><b>Inputs and outputs.</b> In: lots, place data, culture and services catalogue. Out: role per lot, demand and capacity diagnostics, reserved blocks.</p>
+<p><b>Controls.</b> Population, place role, declared resources, density budget and manual overrides, service catalogue.</p>
+<p><b>Cost and backends.</b> Spatial index for adjacency; cost near-linear in lots. Architectural refusals leave real unmet demand; colours on the map do not replace accepted buildings.</p>
+
+<p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/urban-programme-allocation.md">urban-programme-allocation.md</a></p>
+</section>
+<section class="stage" id="stage-city-buildings" data-stage="city-buildings">
+<h4>Building sites and massing <code class="stage-id">city-buildings</code> <span class="tag">Per selected place</span> <span class="tag own">required</span></h4>
+
+<p><b>What and why.</b> Turns lot roles into coarse placement intents, then into volumes: every piece of the planned occupation (street body, rear wing, court range, nave, tower) gets its own floors, eave height and roof, so the displayed building is the planned silhouette raised in volume rather than a separate house standing inside it.</p>
+<p><b>Algorithm.</b> Building sites are neutral JSON intents (polygon, contacts, programme, pack, period, seed), with no dependency on the architectural engine. Massing reads the occupation preview of each lot and assigns storeys within the culture tissue’s range, eave heights and a roof (kind, pitch, ridge) following its roof tradition. Roof classes are projected into display categories (flat, dome, cone, hip, pagoda, gable) for the map.</p>
+<p><b>Inputs and outputs.</b> In: parcels with roles and occupation. Out: building sites and massing volumes with roofs.</p>
+<p><b>Controls.</b> Culture storey ranges and roof tradition, building density; per-building edits.</p>
+<p><b>Cost and backends.</b> Per-lot work; building pages are produced in parallel with deterministic merge and bit-identical results regardless of thread count. Display uses level of detail so a very small roof can be replaced by a coarse shape while the native plan stays authoritative.</p>
+
+<p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/urban-buildings-rendering.md">urban-buildings-rendering.md</a></p>
+</section>
+<section class="stage" id="stage-city-houses" data-stage="city-houses">
+<h4>Architecture / detailed houses <code class="stage-id">city-houses</code> <span class="tag">Per selected place</span> <span class="tag compare">can be switched off</span></h4>
+
+<p><b>What and why.</b> Resolves a native house recipe for each admitted building and enriches it with walls, openings and ornament. A refusal leaves an explicit deficit instead of cutting a house to fit.</p>
+<p><b>Algorithm.</b> The Rust houses engine resolves a recipe from its catalogue (body, levels, courts, circulations, supports, roofs, materials) into a LayoutPlan with true roof facets. The automatic search may try up to three recipes of the pack and target, intermediate and minimal plans; contacts, positions and setbacks are bounded (the note describes up to 324 transforms per parcel). A resolved plan is moved by a rigid transform, then admitted against containment, overhang rights, neighbours, access connection and ground adaptation. Ground comes from a physical raster, bilinear, not from the displayed texture. Detailed enrichment reuses the resolved plan rather than drawing a second house. Edits in V2 attach to the stable identity of the native request, with inheritance of place settings.</p>
+<p><b>Inputs and outputs.</b> In: building sites, culture pack, period, physical ground. Out: accepted houses (geometry, facets, supports) and refusals with reasons, counted back into the programme.</p>
+<p><b>Controls.</b> House model, floors, roof, materials per place or per house; strict, inspired or fantasy compatibility mode; the stage switch (off keeps massing only).</p>
+<p><b>Cost and backends.</b> Pages of buildings are processed in parallel with a deterministic merge and a serial fallback. The light path omits rooms and detailed wall operations. A successful bench run does not prove that every lot of a city accepts a house.</p>
+
+<p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/urban-architecture-placement.md">urban-architecture-placement.md</a></p>
+</section>
+</div>
+<div class="stage-group" id="group-display">
+<h3>Display</h3>
+<p>Display stages consume the generated world and never change it: toggling or restyling them re-draws, it does not recompute relief, water, settlements or the city. The renderer reads the retained data through adapters; appearance does not guarantee that two renderers show an equivalent scene.</p>
+<section class="stage" id="stage-display-terrain" data-stage="display-terrain">
+<h4>Terrain shading and palette <code class="stage-id">display-terrain</code> <span class="tag">Display</span> <span class="tag compare">can be switched off</span></h4>
+
+<p><b>What and why.</b> Turns heights into a readable relief: hillshade, slope and altitude tints, material blending and optional vertical exaggeration.</p>
+<p><b>Algorithm.</b> Hillshading from the normal map of the retained surface (slope-based, after Horn 1981) combined with hypsometric palettes; in perspective, ground materials have their own spatial scales and fine texture does not turn a coarse DEM into centimetre topography. Exaggeration is a camera effect and never changes physical dimensions.</p>
+<p><b>Inputs and outputs.</b> In: retained heights, palette and style. Out: pixels or terrain mesh.</p>
+<p><b>Controls.</b> Style (parchment, atlas, diagnostic), palette, light direction, exaggeration, 2D or 3D.</p>
+<p><b>Cost and backends.</b> GPU; cost tied to the screen, not to the generation.</p>
+
+<p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/render3d-ground.md">render3d-ground.md</a></p>
+</section>
+<section class="stage" id="stage-display-water" data-stage="display-water">
+<h4>Water <code class="stage-id">display-water</code> <span class="tag">Display</span> <span class="tag compare">can be switched off</span></h4>
+
+<p><b>What and why.</b> Draws the sea, lakes and rivers from the vector water surfaces computed by hydrology.</p>
+<p><b>Algorithm.</b> Polygons and river ribbons with width, depth tint and shore treatment. The drawn bank, the physical width and the widened routing mask are three different quantities; vegetation uses the displayed water surface so tree centres avoid water without stair-step clearings.</p>
+<p><b>Inputs and outputs.</b> In: hydrology output. Out: water layers.</p>
+<p><b>Controls.</b> Water style, opacity, shore and river rendering, water on/off.</p>
+<p><b>Cost and backends.</b> Vector geometry; cheap.</p>
+
+<p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/render-v2.md">render-v2.md</a></p>
+</section>
+<section class="stage" id="stage-display-vegetation" data-stage="display-vegetation">
+<h4>Vegetation <code class="stage-id">display-vegetation</code> <span class="tag">Display</span> <span class="tag compare">can be switched off</span></h4>
+
+<p><b>What and why.</b> Shows forests, fields and trees from the natural cover field and land use.</p>
+<p><b>Algorithm.</b> In 3D, crowns become distinguishable close up while unresolved cover turns into an averaged material at distance; luminance jumps across scale transitions are limited without touching the terrain. In 2D, hand-painted brushes are guided by occupation polygons (spatial index then exact point-in-polygon test) with deterministic hatching; no occupation invents no forest.</p>
+<p><b>Inputs and outputs.</b> In: cover field, land use. Out: vegetation layers and instances.</p>
+<p><b>Controls.</b> Density, season, brush style, vegetation on/off.</p>
+<p><b>Cost and backends.</b> Instanced drawing at close range; strongly resolution dependent.</p>
+
+<p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/render3d-vegetation.md">render3d-vegetation.md</a></p>
+</section>
+<section class="stage" id="stage-display-roads" data-stage="display-roads">
+<h4>Roads and ground <code class="stage-id">display-roads</code> <span class="tag">Display</span> <span class="tag compare">can be switched off</span></h4>
+
+<p><b>What and why.</b> Draws regional roads, city streets and the ground they sit on (paving, fields, courts).</p>
+<p><b>Algorithm.</b> Streets are metric ribbons draped on the terrain; the ground layer blends materials by land use. The drawing surface is not the foundation ground used by the architecture.</p>
+<p><b>Inputs and outputs.</b> In: road graph, streets, land use. Out: road and ground layers.</p>
+<p><b>Controls.</b> Road style and classes, ground materials, labels of streets.</p>
+<p><b>Cost and backends.</b> Vector plus material blending; cheap.</p>
+
+<p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/render3d-ground.md">render3d-ground.md</a></p>
+</section>
+<section class="stage" id="stage-display-buildings" data-stage="display-buildings">
+<h4>Buildings (2D/3D, LOD, colours) <code class="stage-id">display-buildings</code> <span class="tag">Display</span> <span class="tag compare">can be switched off</span></h4>
+
+<p><b>What and why.</b> Draws the accepted buildings in plan or perspective, with colours by role or material.</p>
+<p><b>Algorithm.</b> The native scene is kept in the snapshot; a projection classifies roofs into display categories, so the claim that native geometry is kept and the claim that it is fully drawn need separate evidence. LOD swaps tiny roofs for coarse shapes and culls objects outside the camera; picking uses a spatial index and exact tests.</p>
+<p><b>Inputs and outputs.</b> In: massing and houses. Out: building layers.</p>
+<p><b>Controls.</b> 2D or 3D, LOD, colouring (role, material, culture), selection.</p>
+<p><b>Cost and backends.</b> Static draw orders and memoised keys keep redraws cheap; urban results from WebAssembly are cached in IndexedDB so reopening a city does not recompute it.</p>
+
+<p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/urban-buildings-rendering.md">urban-buildings-rendering.md</a></p>
+</section>
+<section class="stage" id="stage-display-labels" data-stage="display-labels">
+<h4>Labels and icons <code class="stage-id">display-labels</code> <span class="tag">Display</span> <span class="tag compare">can be switched off</span></h4>
+
+<p><b>What and why.</b> Names places, districts and features and marks them with icons.</p>
+<p><b>Algorithm.</b> Labels are placed in screen space with priority by population or rank; the language of labels follows the locale. Names and roles come from the generated data and are not geographical facts.</p>
+<p><b>Inputs and outputs.</b> In: settlements, districts, features. Out: text and icon layers.</p>
+<p><b>Controls.</b> Label and icon visibility, language, size.</p>
+<p><b>Cost and backends.</b> Screen-space layout on each view change; cheap for map scales.</p>
+
+<p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/render-v2.md">render-v2.md</a></p>
+</section>
+</div>
+</section>
+<!--STAGES:END-->
 <noscript><p class="nojs">JavaScript is disabled: all chapters, diagrams and sources remain readable. Search and the print button require JavaScript; browser printing remains available.</p></noscript>
 </main></div>
 <footer class="footer">Magna Urbis · Atlas of Methods · Snapshot of 28 October 2026 · Local documentation and explanatory diagrams; project screenshots attributed in <a href="evidence.json">the provenance manifest</a>.</footer>

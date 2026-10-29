@@ -1,7 +1,7 @@
 # Magna Urbis Atlas of Methods
 
 Open [index.html](index.html?lang=en) for the English edition (the default),
-or [fr.html](fr.html?lang=fr) for the French edition. Both contain all 19
+or [fr.html](fr.html?lang=fr) for the French edition. Both contain all 20
 chapters, from terrain to houses, with an annotated bibliography, contracts,
 limitations, original SVG diagrams and attributed screenshots.
 The visible EN/FR links preserve the current chapter. They share the app's
@@ -66,3 +66,11 @@ generation, project composition, terrain platforms and Windows desktop startup.
 refreshing code fingerprints; `record-evidence.mjs` performs both inventories.
 A successful house regeneration case does not prove exact replay of every
 possible edited recipe.
+
+Chapter 19 (`#etapes`) has one section per generation stage, id `stage-<id>`,
+for every id of `docs/stage-registry-contract.md` (the V2 "?" links target them).
+Its text and inline SVG diagrams are authored in `stages-data.mjs` (EN and FR)
+and rendered by `node docs/scientific/stages.mjs` into `stages-en.html` /
+`stages-fr.html`, which `localize.mjs` injects between the `STAGES` markers of
+`fr.html` and `index.html`. `check.mjs` fails if a contract id is missing from
+either page or if the generated files are stale.

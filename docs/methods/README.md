@@ -28,3 +28,9 @@ service.
 - [Compact regional erosion and Phasor terrain](compact-terrain-phasor.md)
 
 - [Inspectable procedural generation and biome erosion](procedural-generation-stages.md)
+
+The stage-by-stage overview of the whole pipeline (one bilingual section per
+stage id of `docs/stage-registry-contract.md`, with diagrams) lives in the
+scientific atlas, `docs/scientific/index.html` (EN) and `fr.html` (FR); link
+each note from the matching `#stage-<id>` section by editing
+`docs/scientific/stages-data.mjs`.

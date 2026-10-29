@@ -212,8 +212,8 @@
       "file": "pipeline.svg",
       "kind": "original-educational-vector-diagram",
       "source": "docs/scientific/assets/pipeline.svg",
-      "sha256": "e62f0ffbd72d192ae3c52db54a10f0ceab70921a254115359e988e438eb02e01",
-      "bytes": 3107,
+      "sha256": "2b69d4a3c7e6ca236d1c8825b7ba08b6d1c5cc94094472627c66d228f420e747",
+      "bytes": 3101,
       "limitation": "Schematic, not measured output; not to scale."
     },
     {
@@ -247,8 +247,8 @@
       "source": "docs/scientific/assets/pipeline-en.svg",
       "translatedFrom": "pipeline.svg",
       "transformation": "English labels and descriptions; vector geometry unchanged",
-      "sha256": "9d19f5bb4d5ee99549d0883ad80057bc3d317d8ddd960ab611c89a6d6d75218c",
-      "bytes": 3088,
+      "sha256": "3957bb1e42a602e39ae978435c31483614bc7533d81b58cc5a2ed2fcc4f573ae",
+      "bytes": 3082,
       "limitation": "Schematic, not measured output; not to scale."
     },
     {

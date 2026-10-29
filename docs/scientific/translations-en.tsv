@@ -4,7 +4,7 @@
 3	Technical &amp; scientific documentation
 4	Print / PDF
 5	From seed to map
-6	Contents · 19 chapters
+6	Contents · 20 chapters
 7	00 · Read and verify
 8	01 · Architecture &amp; units
 9	02 · Procedural terrain
@@ -24,685 +24,686 @@
 23	16 · Open limitations
 24	17 · Glossary
 25	18 · Bibliography &amp; projects
-26	Filter chapters
-27	Show all chapters
-28	Documentation snapshot: 28 October 2026.
-29	Offline reading. No remote fonts, libraries or images.
-30	Figure provenance &amp; source-code fingerprints
-31	Landscapes · settlements · architecture
-32	How Magna Urbis
-33	is built.
-34	The complete journey, from elevation fields to streets, and from parcels to roofs. What the code computes, why it computes it, which sources inform it — and what its results do not establish.
-35	Pre-industrial cartography prototype / English documentation / repository inspected on 28 October 2026
-36	Actual capture of the TypeScript reference, seed 42, requested population 30,000, culture
-37	, Parchment style. This image illustrates V1; it is not a measurement of the Rust engine. The complete recipe is in
-38	the figure manifest
-39	.
-40	00 / How to use this atlas
-41	A traceable explanation, not a certification.
-42	Magna Urbis creates landscapes and settlements for maps and tabletop role-playing games. It combines established algorithms, numerical adaptations and artistic heuristics. A plausible-looking river is not a hydrological forecast; a medina plan is not an archaeological reconstruction; a requested population is not a population actually housed.
-43	This page connects the stages. Method notes and source code remain the detailed references. “Code” links point to the online repository; the paths and SHA-256 fingerprints recorded in the inspected checkout are retained in
-44	evidence.json
-45	. Online branches may change after this inspection. Screenshots are unretouched project files; their age and evidential scope are stated.
-46	Label
-47	Meaning in this atlas
-48	Implemented
-49	A function or execution path exists in the repository. This does not guarantee every configuration or exhaustive visual validation.
-50	Project-specific method
-51	A local design choice, parameter set or original combination. The algorithm and its assumptions are explained; no paper is cited as artificial authority.
-52	Comparison
-53	A publication that helps place the method in context, without claiming a complete reimplementation.
-54	V1, V2 and the workshops
-55	The TypeScript pipeline
-56	retains its world generation, cultures and rendering. The Rust pipeline separates retained terrain, settlement placement, roads and urban stages. Workshop interfaces and TypeScript bridges orchestrate these computations. The Rust house engine has its own catalogue and solver; urban placement now calls it. This connection is real, but individual houses may be refused, and large ensembles still require validation.
-57	In some files, “V2” also names a rendering style. A V2 visual option alone therefore does not establish that generation uses the complete new workflow. Evidence must identify the engine, backend and applied state.
-58	The V2 Studio workflow
-59	V2 Studio has two screens:
-60	Topography
-61	, followed by
-62	Settlements
-63	. The second screen separates placement and roads from individual or collective construction. The workflow can also run in one click. Retained terrain and hydrology are preserved while places are built or modified.
-64	In the browser replay illustrated below, computation explicitly uses
-65	TypeScript on CPU
-66	. These historical captures document the classic workflow. The current version starts with Rust: structured forms forward terrain, neural model, erosion, climate and hydrology settings to the selected engine. Native terrain, physical fields and the water network are retained together; they are no longer replaced with fresh TypeScript drainage. Rust settlement placement and roads reuse this territory, followed by staged urban generation. The classic engine remains separately selectable. Width and the eight sea directions can be configured before the first calculation, with Rust widths from 500 m to 100 km. Always record the backend actually applied at each stage.
-67	V2 Studio, 28 October 2026: topography only, seed
-68	, 2.4 km, flat relief, stream, no sea. Three watercourses; no places built.
-69	The same retained terrain after placing and connecting two places: roads appear before built plans. The report distinguishes this state from the individual construction that follows.
-70	V2 workflow:
-71	stage orchestration
-72	·
-73	backends actually executed
-74	·
-75	browser replay from 28 October
-76	. These screenshots were produced by that replay without retouching.
-77	For everyday use, commands and import/export scopes, also see the
-78	V2 Studio guide
-79	. The atlas explains methods and evidence; the guide describes interface operations.
-80	The V2 Rust urban integration provides four explicit stages:
-81	,
+26	19 · Generation stages
+27	Filter chapters
+28	Show all chapters
+29	Documentation snapshot: 28 October 2026.
+30	Offline reading. No remote fonts, libraries or images.
+31	Figure provenance &amp; source-code fingerprints
+32	Landscapes · settlements · architecture
+33	How Magna Urbis
+34	is built.
+35	The complete journey, from elevation fields to streets, and from parcels to roofs. What the code computes, why it computes it, which sources inform it — and what its results do not establish.
+36	Pre-industrial cartography prototype / English documentation / repository inspected on 28 October 2026
+37	Actual capture of the TypeScript reference, seed 42, requested population 30,000, culture
+38	, Parchment style. This image illustrates V1; it is not a measurement of the Rust engine. The complete recipe is in
+39	the figure manifest
+40	.
+41	00 / How to use this atlas
+42	A traceable explanation, not a certification.
+43	Magna Urbis creates landscapes and settlements for maps and tabletop role-playing games. It combines established algorithms, numerical adaptations and artistic heuristics. A plausible-looking river is not a hydrological forecast; a medina plan is not an archaeological reconstruction; a requested population is not a population actually housed.
+44	This page connects the stages. Method notes and source code remain the detailed references. “Code” links point to the online repository; the paths and SHA-256 fingerprints recorded in the inspected checkout are retained in
+45	evidence.json
+46	. Online branches may change after this inspection. Screenshots are unretouched project files; their age and evidential scope are stated.
+47	Label
+48	Meaning in this atlas
+49	Implemented
+50	A function or execution path exists in the repository. This does not guarantee every configuration or exhaustive visual validation.
+51	Project-specific method
+52	A local design choice, parameter set or original combination. The algorithm and its assumptions are explained; no paper is cited as artificial authority.
+53	Comparison
+54	A publication that helps place the method in context, without claiming a complete reimplementation.
+55	V1, V2 and the workshops
+56	The TypeScript pipeline
+57	retains its world generation, cultures and rendering. The Rust pipeline separates retained terrain, settlement placement, roads and urban stages. Workshop interfaces and TypeScript bridges orchestrate these computations. The Rust house engine has its own catalogue and solver; urban placement now calls it. This connection is real, but individual houses may be refused, and large ensembles still require validation.
+58	In some files, “V2” also names a rendering style. A V2 visual option alone therefore does not establish that generation uses the complete new workflow. Evidence must identify the engine, backend and applied state.
+59	The V2 Studio workflow
+60	V2 Studio has two screens:
+61	Topography
+62	, followed by
+63	Settlements
+64	. The second screen separates placement and roads from individual or collective construction. The workflow can also run in one click. Retained terrain and hydrology are preserved while places are built or modified.
+65	In the browser replay illustrated below, computation explicitly uses
+66	TypeScript on CPU
+67	. These historical captures document the classic workflow. The current version starts with Rust: structured forms forward terrain, neural model, erosion, climate and hydrology settings to the selected engine. Native terrain, physical fields and the water network are retained together; they are no longer replaced with fresh TypeScript drainage. Rust settlement placement and roads reuse this territory, followed by staged urban generation. The classic engine remains separately selectable. Width and the eight sea directions can be configured before the first calculation, with Rust widths from 500 m to 100 km. Always record the backend actually applied at each stage.
+68	V2 Studio, 28 October 2026: topography only, seed
+69	, 2.4 km, flat relief, stream, no sea. Three watercourses; no places built.
+70	The same retained terrain after placing and connecting two places: roads appear before built plans. The report distinguishes this state from the individual construction that follows.
+71	V2 workflow:
+72	stage orchestration
+73	·
+74	backends actually executed
+75	·
+76	browser replay from 28 October
+77	. These screenshots were produced by that replay without retouching.
+78	For everyday use, commands and import/export scopes, also see the
+79	V2 Studio guide
+80	. The atlas explains methods and evidence; the guide describes interface operations.
+81	The V2 Rust urban integration provides four explicit stages:
 82	,
-83	and
-84	, with retained native snapshots. Separate
-85	Rust/WASM
-86	and
-87	native Rust
-88	replays exercised all four stages through accepted houses. The TypeScript screenshots above remain attributed to their own workflow; they are not images of those Rust tests.
-89	Settings may be global or specific to a place, then target a quarter, parcel or identified house request. Reports expose warnings and refusals; refused requests can be retried with corrected configurations. Overrides remain subject to recipes and physical constraints. A local request counter allows checking that a house edit does not implicitly rerun terrain generation or the entire cadastre.
-90	Read:
-91	V1 pipeline
-92	·
-93	native urban placement
-94	·
-95	V2 rendering style
-96	.
-97	01 / Contracts
-98	A chain of retained states.
-99	The logical sequence is terrain → water → settlements → roads → town → programme and parcels → buildings → presentation. Feedback and local iterations also occur: the programme reserves land before subdivision; the built balance is reconciled after actual placements. Downstream stages consume applied data, including geometries, holes, identities and refusals.
-100	Original explanatory dependency diagram. Boxes describe responsibilities rather than the exact buttons of an interface.
-101	Physical inputs
-102	Coordinates and elevation: metres. Area: m². Slope: vertical rise / horizontal distance. Temperature: °C; rainfall: mm/year.
-103	Declared inputs
-104	Culture, period, population, function, known resources, navigability and lore are explicit intentions. Missing data does not become an established fact.
-105	Retained results
-106	Surfaces, graphs and scenes can be reused. Changing the camera or style need not rerun erosion or house solving.
-107	A slope of 0.12 means 12%, or approximately 6.84°. The conversion is
-108	. Gross density in inhabitants per hectare includes streets and open space; it is distinct from the density of residential parcels alone.
-109	Settings, drafts and applied state
-110	An edited interface field may be a draft. Exports and evidence must identify the configuration that actually produced the scene. Crops translate geometries into their new frame; physical elevations, normals and dimensions are not multiplied by the display’s vertical exaggeration.
-111	Combining projects: a territory or a recipe
-112	Full import preserves the supplied scene. Composition offers two narrower operations.
-113	Import a territory
-114	adopts its physical grids, sea, rivers and lakes without recomputing terrain or hydrology, while retaining the current urban recipe. Previous sites, roads, towns and geometric edits are discarded: they must be rebuilt on this territory.
-115	Import a settlement recipe
-116	instead retains the current territory and imports the other project’s intentions: population, cultures, placement, morphology and declared overrides. Foreign terrain and town geometries are not transplanted. Settings keyed by stable identities belong to the recipe; manual edits to an old building footprint do not have that scope and are not merged.
-117	If the file’s settings are a draft inconsistent with its displayed map, the retained surface becomes a portable FP32 input; the applied biome and computation provenance remain those of the territory. The operation rebuilds natural cover and layers that depended on the removed towns, without claiming to preserve previous agricultural occupation. Composition runs in a worker. The
-118	browser replay
-119	checks, among other things, the preserved physical fingerprint, removal of obsolete geometry, caching and rebuilding after composition; it does not prove that every recipe is automatically valid on every site.
-120	Code:
-121	composition scope and provenance
-122	·
-123	composition worker
-124	·
-125	composition regression cases
-126	.
-127	The TypeScript generator distributes randomness through named sub-seeds (
-128	). This separation allows terrain reuse when only urban options change. It does not imply that two engines, versions or GPU backends always produce identical bits.
-129	Code:
-130	TerrainGenerator and retained surface
-131	·
-132	shared randomness
-133	·
-134	workshop transfers
-135	.
-136	02 / The initial surface
-137	Coherent noise, motifs and coasts.
-138	Inputs
-139	Seed, map width, relief family, motif size, blending and erosion/coast settings.
-140	Construction
-141	2D simplex noise, octaves, domain warping, finite landforms and retained corrections.
-142	Output
-143	A signed elevation field in metric coordinates; a surface that subsequent stages can sample.
-144	Coherent noise varies continuously in space: nearby points generally receive similar values. The engine combines several frequencies and amplitudes, then warps the evaluation coordinates. An explanatory formulation is:
-145	is the noise,
-146	its amplitude at octave k,
-147	its frequency and
-148	the domain displacement. Long wavelengths structure the main landmasses; shorter wavelengths carry detail. The local code uses simplex noise:
-149	Perlin’s improved noise [1]
-150	places this family of constructions in context, but is not an exact description of the implementation.
-151	Map size and motif size have distinct roles. Plains, hills, valleys, mountains, plateaus, canyons, volcanoes and calderas add their own structures. Finite landforms have a position and spatial support; open terrain is evaluated in regional coordinates. Coastal environments produce elevations below and above sea level. This treatment constructs landscape forms; it does not simulate tectonic plates.
-152	The Rust source field uses, among other settings, an internal resolution of 1024². The retained surface and local treatments allow sampling a region without restarting erosion. Filtering excessively fine octaves limits aliasing; oversampling a coarse surface does not add geological observations.
-153	Interpretation limit
-154	“Fractal”, “geological” and “natural” describe constructions or visual families here. None of these labels establishes a measured stratigraphic history, lithology or geological age.
-155	Code:
-156	simplex noise and octaves
-157	·
-158	noise preparation
-159	·
-160	coasts
-161	·
-162	families and generation
-163	.
-164	03 / Another source of elevation
-165	Terrain Diffusion and the finite window.
-166	InfiniteDiffusion [6]
-167	, by Alexander Goslin, makes diffusion sampling lazy and unbounded. Terrain Diffusion applies the algorithm to terrain. Windows use spatially coherent noise and weighted overlaps; they are not independently generated tiles stitched together. The properties of the published algorithm do not automatically become properties of every application that uses its weights.
-168	In Magna Urbis, the documented workflow produces a
-169	finite 40 × 40 km window
-170	. The planner works backwards from the delivered region to determine the required windows:
-171	Stage
-172	Nominal scale
-173	Local role
-174	Coarse
-175	7,680 m
-176	Regional context, conditioned on a sketch and climate.
-177	Base
-178	240 m
-179	Latent field conditioned on the coarse stage.
-180	Decoder
-181	30 m
-182	Reconstruction of detail and elevation; resampling for the workshop.
-183	The profile
-184	→ original base in one evaluation → distilled student decoder is a local configuration, with backend variants. The sketch controls large landforms; a depression smaller than the coarse grid is not guaranteed to survive. The imported surface retains its provenance and is not subjected again to procedural erosion and coastal cutting. Hydrology follows.
-185	Model, sampler and distillation
-186	The network, its conditioning and the method that evolves it from noise are three distinct objects.
-187	EDM [7]
-188	organises their numerical choices;
-189	EDM2 [8]
-190	studies magnitude control during training.
-191	Consistency models [9]
-192	can learn generation with few evaluations. This does not justify arbitrarily turning a multistep model into a single-pass model.
-193	Browser mode uses Rust/WASM and WebGPU with external, cached weights; Python mode uses PyTorch/CUDA. Quantisation and precision may differ. Two visually similar outputs do not prove numerical equivalence. Replay evidence must fix the weights and backend.
-194	The current neural engines
-195	have no CPU inference path
-196	in V2: they require WebGPU in the browser or local Python/CUDA. Neural requests with CPU computation are explicitly refused; they are not silently replaced with procedural noise. CPU computation remains available for procedural terrain and Rust urban generation.
-197	Neural Earth is a separate project
-198	It connects Orogen’s planetary context to learned refinement. Adding Magna Urbis towns to that pipeline remains an integration goal. Sharing a neural engine does not establish that a town is already integrated into a planet.
-199	Code:
-200	planner
-201	·
-202	pipeline
-203	·
-204	reconstruction
-205	·
-206	WebGPU entry point
-207	·
-208	CUDA service
-209	.
-210	04 / Bounded terrain evolution
-211	Route, incise, redistribute.
-212	Procedural erosion combines several operations.
-213	Priority-Flood [2]
-214	constructs a drainage potential from outlets by processing cells in increasing elevation order. A depression’s spill elevation indicates how water could escape; it does not mean that the entire physical ground must be raised to that elevation.
-215	The
-216	D∞ routing method of Tarboton [3]
-217	evaluates triangular facets around a cell and distributes contributing area between two downstream neighbours. It reduces the bias of D8’s eight fixed directions. The final vector network has its own topology: the area partition used for incision is not the geometry of a drawn river.
-218	The stream-power family of laws
-219	This equation places the incision model in context. The implicit solver of
-220	Braun and Willett [4]
-221	handles the downstream dependency of elevations. The local implementation adapts it for interactivity: capped contributing area, a weaker response on gentle slopes, and bounded incision and corrections. The erosion slider controls intensity, with no established conversion into thousands of years.
-222	The engine supplements incision with controlled threshold breaching, basin filling, thermal relaxation beyond the talus slope and hillslope diffusion. These passes modify different aspects of the terrain. Advanced settings expose iterations, incision, slope thresholds, filling, breaching, talus, diffusion and surface treatments. GPU paths use dedicated shaders; their presence does not guarantee bitwise identity with CPU results.
-223	What the computation does not retain as a complete simulation
-224	The project does not provide a generally calibrated sediment-mass balance, 2D/3D hydraulics, coupled tectonics or a physical geological duration here. Hillslope diffusion and the neural diffusion of the preceding chapter are distinct mechanisms.
-225	Code:
-226	CPU erosion, parameters and solver
-227	·
-228	GPU passes
-229	.
-230	05 / Inland water
-231	Drainage, basins, then water surfaces.
-232	Inputs
-233	Retained elevations, sea, resolution, temperature, rainfall and hydrological constraints.
-234	Construction
-235	Drainage and flats → basins → lake balance → river graph and profiles → beds and surfaces.
-236	Expected invariants
-237	No downstream loops; connected confluences; water compatible with the ground and permitted corrections.
-238	Flow directions and contributing areas structure a network. Flat areas require a topological ordering, because slope alone does not define a downstream direction. Retained depressions become lakes; others may receive a breach or bounded correction. Initial diagnostics remain distinct from final corrections.
-239	Original conceptual cross-section, not to scale. The elevation required for drainage, the physical ground and the water surface are three distinct quantities.
-240	The lake balance is simplified and explicit
-241	The local module computes potential evaporation using elevation-adjusted temperature, followed by an empirical annual evapotranspiration:
-242	Runoff floors are generator choices, not natural laws. At equilibrium, catchment inflow approximately balances evaporation from the lake surface. If inflow exceeds evaporation from a full lake, it spills over the threshold and passes on the excess. The module draws inspiration from
-243	Fill–Spill–Merge [5]
-244	; it does not reproduce the paper’s entire dynamic hierarchy.
-245	From raster to vector graph
-246	Sources, reaches, confluences and outlets become connected objects. Shared nodes preserve junctions. Width, bed and water profiles are evaluated along centre lines with correction budgets. Meanders add deterministic, multiscale variations constrained by terrain; this is not a complete time-dependent simulation of lateral migration.
-247	A conservative obstacle mask may widen a river for route finding. It must not be mistaken for the drawn bank or physical width. Vegetation rendering therefore uses the displayed water surfaces. This distinction is decisive for narrow rivers and cropped regions.
-248	Code:
-249	orchestration
-250	·
-251	flat areas
-252	·
-253	the exact annual balance shown above
-254	·
-255	curves
-256	.
-257	06 / Choosing places
-258	Buildability comes before the town’s name.
-259	Settlement placement evaluates dry candidates using slope, freshwater access, coastline, defence, declared preferences and the space actually available. A favourable point is insufficient: population implies a usable footprint, and footprints must respect exclusions and spacing. Candidate ranks and scores can be retained for inspection.
-260	Rank–size mode distributes populations according to
-261	, with a minimum threshold and a settlement density over usable land. This is a demographic distribution control. The engine does not demonstrate the historical emergence of Zipf’s law from economic exchange.
-262	Rust screenshot already present in the repository: tropical island, settlement locations and regional network. Named points are not houses. The exact recipe and commit for this older screenshot are not supplied in its source folder; it illustrates the stage without establishing complete reproducibility.
-263	A riverside site is not automatically a navigable harbour. An unknown resource remains unknown. Site data subsequently informs the programme and countryside, without inventing an economy from a colour or cultural name.
-264	Code:
-265	candidates, scores, populations and ranks
-266	·
-267	regional contracts
-268	.
-269	07 / Connecting places
-270	A network of links, then physical paths.
-271	The engine selects links between settlements on a Delaunay graph, retains a spanning backbone and adds shortcuts. This demand graph states which places to connect; it is not yet the physical route geometry.
-272	Path search minimises a cost that depends on terrain, gradients, obstacles, turns and reuse of existing roads. State includes the arrival direction: a turn has a cost that depends on the preceding movement. A wider range of moves than the eight neighbouring cells limits rigid trajectories and allows switchbacks. Intersections are then assembled into a planar graph.
-273	This formulation is an explanatory breakdown, not a copy of the coefficients.
-274	Galin et al. [10]
-275	provides the reference for this family of anisotropic shortest paths. Magna Urbis road classes, thresholds and crossings are local adaptations. A low cost is not an earthworks, bridge-strength or traffic assessment.
-276	A crossing must be an accepted object
-277	Streets and roads must not cross water merely because a segment looks short. Bridges and other accepted crossings form part of the context passed to the town.
-278	Code:
-279	regional network
-280	·
-281	direction-aware search
-282	·
-283	V1 TypeScript path
-284	.
-285	08 / Constructing the plan
-286	A town’s shape and its tissue are separate.
-287	The engine distinguishes urban footprint, growth mechanism, local phases/cultures, and then the street network and blocks. An oval enclosure does not force a circular town; an organic footprint can contain a grid extension. This separation prevents a simple street pattern from determining the entire geography.
-288	Budgets and growth
-289	Project-specific method
-290	The demographic budget starts from
-291	, converting hectares into m². An artistic budget may instead start from a radius. In demographic mode, radius does not act as a second budget. Planned foundations use area-calibrated vector templates; accessibility-driven growth and organic nuclei use a local anisotropic arrival field bounded to 192².
-292	Cost combines relief, travel gradient, access and spatial noise. Cohesion, satellites, branch depth and gap scale control dispersion. A cell reached by propagation is not necessarily allocated to the town. Small pockets that cannot be served may be discarded, leaving the budget unmet. Nuclei separated by water do not implicitly create a bridge.
-293	Framework, quarters and blocks
-294	Regional approaches guide the macroplan. Quarters retain their identities, recipes and phases; computation sectors follow the framework rather than an arbitrary cut at every age boundary. Routing checks gradients along segments. Widths form metric ribbons, rather than merely visible strokes.
-295	Adaptive servicing adds bounded access where a block is too deep for its recipe: corridors must stay inside the parent land, avoid water and neighbours, and respect gradients. This stage belongs to the plan.
-296	Rebuilding parcels retains the streets and blocks
-297	; it must not repair a land deficit by silently moving the network.
-298	Cultures group intentions for morphology, access and architecture. European organic, bastide, medina, Chinese or Japanese plans, communal and fantasy cultures are not synonyms for a perturbed grid. Phase or quarter mixtures remain procedural recipes.
-299	Parish and Müller [11]
-300	and
-301	Chen et al. [12]
-302	are comparative references: the local code is not presented as their exact solver.
-303	Actual diagnostic from 22 October 2026, case
-304	, requested population 40, culture
-305	. This screenshot shows a framework and subdivisions; no group of houses is discernible at this scale. It is not evidence of successful built occupation. Provenance and recipe are retained in
-306	the manifest
-307	.
-308	Code:
-309	footprint
-310	·
-311	macroplan
-312	·
-313	quarters and blocks
-314	·
-315	network
-316	·
-317	detailed method
-318	.
-319	09 / Functions and budgets
-320	Request, reserve, allocate, then count actual results.
-321	The programme receives applied population, settlement role, known resources, cultural context, period, architectural compatibility and lore. It distinguishes domestic, mixed, craft, communal and storage functions, and open space.
-322	A local assumption uses
-323	4.5 people per domestic unit
-324	. This is not a historical constant. Roles and declarations modulate needs: a crossroads may request more market space; resource-dependent craft may reserve a domain; a harbour requires explicitly declared navigability. Visible water alone does not establish it.
-325	Reservations and allocation
-326	Project-specific method
-327	Before cadastral subdivision, the programme reserves existing, served blocks for demanding functions. Geometry and streets are retained. Selection examines dry land, gradients, access contacts and area suitability. Several blocks may contribute to an open-space intention; a single institution is not artificially multiplied to fill a shortfall.
-328	Neighbouring parcels are found through a spatial index, followed by actual collinear boundary overlap. Nearby centroids do not establish adjacency. Allocation ranks demands by candidate scarcity and applies a two-pass greedy heuristic. The second pass may reassign domestic surplus only if the displaced demand remains covered. This is not a global optimum.
-329	Original balance diagram. Units are added only within the same function: market area is not a dwelling count.
-330	Domestic land capacity retains one unit per eligible parcel in the current single-building path. A large parcel does not automatically represent several households. Markets and commons contribute to a separate open-space capacity. Architectural refusals leave real unmet demand; colouring an occupied area on the map does not replace an accepted building.
-331	The automatic density budget may be limited by the cadastral module size: average cultural module area, native minimum and phase shares. The residential-share coefficient (0.65) and shape margin (1.15) are prototype planning assumptions, without demographic certification. Explicit manual overrides retain their role.
-332	Code:
-333	programme and reconciliation
-334	·
-335	explicit mappings
-336	·
-337	assumptions and complete cultural catalogue
-338	.
-339	10 / Land
-340	A parcel must be accessible and buildable.
-341	Subdivision consumes retained blocks, their holes, reservations and the local recipe. Land-pattern families include frontage, compact tissue, courtyard, communal domain and inherited land. Architectural family is separate: a shared domain may hold individual houses; a stilt site requires native supports.
-342	Contact is a measured interval
-343	The engine projects block edges onto street segments. It splits intervals by direction, width and distance, then joins them across successive pieces. Qualification uses the parcel boundary
-344	and
-345	the block boundary. Duplicates must not artificially increase length. A curve discretised into small segments is not a set of independent accesses.
-346	Tolerances described in the note include a band
-347	, a 14 m distance limit and a 20° angular difference. These are numerical tolerances adapted to existing ribbons, not a cadastral standard.
-348	Original explanatory diagram. An interior centroid guarantees neither building containment nor authorised access.
-349	Subdivide and qualify
-350	Strips, oriented cuts and competing frontage territories produce candidates. Witness envelopes must remain contained, including when a hole lies entirely inside a rectangle. Gardens, remnants and reserves retain their identities. An area sum is insufficient: the union must cover the intended parent without overlap and with the same exclusions.
-351	Vanegas et al. [13]
-352	places frontage-constrained subdivision in context. The local competing frontage plans form an oriented-distance partition; they are neither a complete straight skeleton nor the published interactive persistence system.
-353	Admission dimensions come from a versioned table produced by the house engine using solved minimum plans. This boundary reduces inconsistencies between subdivision and architecture. A cadastral witness is nevertheless a search hint: actual placement must still check geometry, access and terrain.
-354	A concrete case: a complete courtyard house is not a shop
-355	The medina note records a souk frontage module of 4.6–6 m, whereas a complete native AF-MAG-B02 courtyard requires approximately 29.62 × 30.67 m before clearance. Imposing that courtyard on every shop creates a domain contradiction. Context selects compatible native sources; it does not illegally shrink a large recipe.
-356	Code:
-357	parcels
-358	·
-359	continuous contacts
-360	·
-361	admission table
-362	·
-363	method and experiments
-364	.
-365	11 / From lot to building
-366	A solved native plan, then physical admission.
-367	The Rust house engine solves a catalogue recipe: bodies, levels, courtyards, circulation, supports, roofs, materials and variants. Cultural mapping is explicit. Similar names do not select a pack at runtime. Strict, inspired and fantasy modes express compatibility policies; “strict” means compliance with the declared recipe ranges, not certification by a historical authority.
-368	Urban intention
-369	Cadastral/buildable polygons and holes, authorised contacts, programme, pack, period, seed and metric ground.
-370	Native solving
-371	Recipe → admissible parameters → LayoutPlan → volumes, access, levels, supports and actual roof facets.
-372	Admission
-373	Containment, overhang rights, neighbours, access connection and ground adaptation. A refusal leaves an explicit deficit.
-374	Search is bounded
-375	Project-specific method
-376	The automatic workflow may examine up to three pack recipes, with target, intermediate and minimum plans. For a given plan, contacts, positions and setbacks are bounded; the note describes up to 324 transformations per parcel for this path. A specific model chosen in Houses retains its own draw and is not replaced by these automatic alternatives.
-377	Once a plan is solved, candidates apply a rigid transformation. A house that does not fit is not clipped at the boundaries to hide failure. Requested coverage, frontage and depth remain bounded by the recipe and dimension policy. A doorway may be narrower than the body: access and built envelope are separate constraints.
-378	Ground and domain do not come from the image
-379	The supplied ground may be a physical raster with bilinear interpolation. Its origin denotes the centre of the first sample. A local plane
-380	remains a compatibility approximation when used. The displayed terrain texture is not a foundation. A separate domain may authorise roof overhangs; otherwise roofs remain within the cadastre.
-381	Volumes and enrichment share the same plan
-382	The lightweight path produces bodies, levels, supports, an access skeleton and native roof facets. It omits rooms, detailed wall/opening operations and ornament. Detailed enrichment reuses the solved plan instead of drawing a second house. Vertex and index compaction preserves facets without loss; it must not be confused with geometric simplification.
-383	Exterior access constraints and physical surfaces must remain consistent between volumes and detail. Accepted houses, refusals and built capacity are counted after admission, then passed to the programme. A recipe collection or a successful House Bench example does not establish that every town lot can accept a house.
-384	Editing a house in V2
-385	An override
-386	is attached to the stable identity of a native request, inheriting settlement settings for omitted values. Refusals remain visible and retryable. Current replays demonstrate local invalidation, a single house request in their controlled case, and preservation of other houses. Retaining a snapshot and rebuilding from an edited recipe are distinct contracts: these tests alone do not establish exact replay of every override across all backends and editing sequences. Retained neighbours and the reference scene used before overrides must be part of that verification.
-387	To stabilise edit replay, the adapter retains originals only for houses already touched. It restores a reference scene without duplicating the entire scene, then reapplies the current overrides in stable site order. Retained neighbouring buildings become binding occupations for subsequent requests. More local parameters take precedence; dimensions and storeys remain within source limits. This replay mechanism is a project-specific adaptation, distinct from a general proof of order independence for every possible operation.
-388	The final WASM and native audits exercise a specific case: two storeys globally, three for the settlement, then two for the house. The house setting correctly takes precedence; a four-storey request incompatible with the source is refused. The field
-389	records replay of that case’s interactive edits from its recipe, and
-390	checks that refusals belonging to a downstream product are not attributed to an earlier stopping stage. This targeted success does not generalise to every catalogue and editing sequence.
-391	Code:
-392	neutral intentions
-393	·
-394	placement
-395	·
-396	solving
-397	·
-398	recipes
-399	·
-400	detailed contract and limitations
-401	.
-402	12 / Inhabiting the landscape
-403	Land use and vegetation cover.
-404	The countryside retains a TypeScript path adapted to Rust site data. Geography, culture and applied context guide land use. Explicit agricultural profiles may request farms on actual rural access routes, outside the retained urban footprint. Programme reservations remain protected; an open growth reserve does not have the same status as a reserved institution.
-405	This pipeline does not compute agricultural yield, food rations or import capacity. A declared resource may have an identified effect in the programme; it does not invent a complete production chain in the countryside.
-406	Canopy and visible trees
-407	Render3D vegetation uses a control field in world coordinates: cover, potential height, conifer share and tone/disturbance. The field accounts for climate and topography. Density is transformed in particular by
-408	: this is a cover policy, not a leaf-area measurement.
-409	Riparian galleries have a dedicated envelope tied to visible banks. Tree centres avoid displayed water; crowns may overhang a bank. Using the widened routing mask would produce artificial stepped clearings. At a distance, unresolved cover becomes a material average; up close, crowns become distinguishable. Scale transitions must limit luminance jumps without modifying terrain.
-410	Actual screenshot retained in the documentation campaign
-411	, a 640 m top-down view in the local Godot viewer. This surface path is distinct from web Render3D; it is neither an ecological photograph nor a capture of the latest V2 style. Its original folder contains its manifest and reports.
-412	Biomes and seasons remain approximations
-413	Elevation-adjusted temperature, rainfall and topographic-position indices serve as proxies. Seasonality, annual snow and materials have their own documented rules. V2 disturbance coefficients are bounded visual policies. They do not describe ecological succession, stand age or observed snow stocks.
-414	Code:
-415	countryside
-416	·
-417	land-use adapter
-418	·
-419	forest field
-420	·
-421	equations and scales
-422	·
-423	figure evidence
-424	.
-425	13 / Making the world legible
-426	Presentation consumes the world.
-427	Rendering transforms retained data into shaded terrain, materials, water, vegetation, strokes, labels and built geometry. Parchment, Atlas, diagnostic views, Render3D and V2 do not constitute different physical models. Some paths use temporary adapters and rendering; appearance does not guarantee equivalence.
-428	V1: seed 73, requested population 30,000, medina, desert, Atlas. Comparing cultures and styles does not establish their historical fidelity.
-429	Screenshot from the Render3D ground note. The perspective view samples retained terrain; it does not recompute its geology.
-430	LOD, materials and geometry
-431	Display level of detail may replace a very small roof with a coarse shape and discard off-camera objects. This saves drawing work; the retained native plan remains the architectural authority. An image’s pixel count is neither drainage resolution nor elevation-field resolution.
-432	Materials and canopy have their own spatial scales. A fine texture does not turn a DEM with cells tens of metres wide into centimetre-level topographic measurements. A 3D drawing surface is not the foundation ground, and camera vertical exaggeration must not contaminate physical dimensions.
-433	In the inspected Rust urban V2 integration, the snapshot retains the native scene while its projection to
-434	classifies roofs into display categories such as flat, dome, conical, hip, pagoda and gable. This projection is not an exact rendering of every native facet on the map. “Native geometry retained” and “native geometry fully drawn” require different evidence.
-435	Fantasy cartography and illustration
-436	Brushes may be guided by land-use polygons and their holes, with world-anchored candidates and deterministic hashes. Classification uses a spatial index followed by an exact point-in-polygon test. Anchors are constrained; a painted motif’s edges may extend beyond them. Missing occupation data must not invent a forest.
-437	The illustration module transforms a screenshot using a local or external image model and retains a recipe. This image is an interpretation, distinct from the procedural world and its metrics. It must not be used as evidence of a roof, road or house absent from the retained scene.
-438	Export and replay
-439	SVG/PNG describe a view or visible layers; JSON, decors and snapshots may retain the scene and applied settings. Format and workflow determine what can actually be imported again. Parameter URLs do not necessarily replace an imported raster, an applied scene or neural weights. To archive evidence, retain the content, its fingerprints and the recipe, rather than a URL alone.
-440	Read:
-441	native urban rendering
-442	·
-443	ground, mesh and materials
-444	·
-445	brushes and land use
-446	.
-447	V2 integration:
-448	Rust urban snapshots and display projection
-449	.
-450	14 / Running the pipeline
-451	The backend is part of the recipe.
-452	Path
-453	Where does it run?
-454	Actual scope
-455	TypeScript
-456	Browser CPU, using workers where available.
-457	Reference pipeline and adapters; V1 development does not require Rust compilation.
-458	Rust → WASM
-459	Browser CPU.
-460	Compiled core exposed through numerical bridges and workers. WASM does not automatically enable the GPU.
-461	WebGPU compute
-462	Browser GPU, WGSL shaders.
-463	Selected terrain and drainage passes; adapter availability and limits must be checked.
-464	Browser neural
-465	Rust/WASM + WebGPU, external weights.
-466	Dedicated inference; allocation, transfers and precision contribute to the cost.
-467	Local native service
-468	Rust on the machine, with a computation API.
-469	Urban/house operations and other capabilities declared by the service. Inspect actual capabilities instead of assuming every endpoint exists.
-470	Python neural
-471	Local PyTorch/CUDA service.
-472	A separate path with its own models and GPU memory; no bitwise equivalence with the browser is promised.
-473	Desktop
-474	Local application and associated services, depending on configuration.
-475	A desktop shell alone does not change the core’s methods, precision or limitations.
-476	The Rust core is independent of the browser and renderer; WASM crates expose its functions; bridges and interfaces transport results. Procedural shaders are not neural networks. CPU and GPU may each accelerate one subproblem while another stage remains dominant.
-477	Paths actually exercised in V2
-478	The
-479	platform report
-480	from 28 October obtained finite heights with Rust/WASM CPU, procedural WebGPU terrain, native Rust, Python/CUDA neural generation and WASM/WebGPU neural generation. It retains the announced effective backend, computation provenance, model profiles and identities. These are functional checks of the script’s cases, without guarantees of performance across machines or numerical equivalence between paths.
-481	The
-482	desktop startup check
-483	observed the “Magna Urbis V2” application and its native Rust child service on an available loopback port. The Tauri shell reuses WebView rendering; weights and Python/CUDA remain optional external dependencies. Installers are built for their target system. This Windows check does not certify Linux installation, every GPU driver or neural operation without those dependencies.
-484	Code:
-485	V2 startup and child-service lifecycle
-486	·
-487	V2 resources and packaging
-488	·
-489	V2 desktop configuration
-490	·
-491	checks of executed backends
-492	.
-493	Measure a complete workflow
-494	A short native computation time is insufficient if transfer or browser preparation blocks. Distinguish cold/warm caches, work required before an image appears and background work. Loading weights, compiling shaders and the selected resolution strongly affect measurements. A small town that does not block does not establish metropolitan-scale performance.
-495	Code:
-496	local service
-497	·
-498	desktop
-499	·
-500	available commands
-501	. Standards:
-502	WebAssembly
-503	·
-504	WGSL
-505	.
-506	15 / Checking a claim
-507	Evidence must identify what it measures.
-508	This delivery checks the documentation page, internal links, local references, images and layout. It does not rerun every native campaign in the project. The measurements below are historical results from method notes, explicitly bounded to their cases; they are not presented as new benchmarks.
-509	V2 functional replays from 28 October 2026
-510	Retained evidence
-511	What it exercises
-512	What it does not establish
-513	Rust/WASM urban generation
-514	The four strict stages, native houses, invalidation of one house and preservation of the others in the controlled case.
-515	Historical quality, universal density or exact replay of every edited recipe.
-516	Native Rust urban generation
-517	The same family of stages through the local service, with a declared backend and distinct results.
-518	Bitwise identity with WASM; the reports produce different parcel and house counts.
-519	Project composition
-520	Preserved physical territory, a recipe with a distinct scope, cleanup, caching and actual rebuilding through the interface.
-521	Safe transplantation of old geometries onto another site; they are explicitly removed.
-522	Terrain platforms
-523	Actual computation on the report’s five paths and retained profiles, with finite values.
-524	CPU neural inference, model equivalence or an isolated benchmark.
-525	Windows desktop startup
-526	An open application and a declared Rust child engine on loopback.
-527	Validation of every installer, operating system or external model.
-528	These reports were produced by project integration checks and then copied into the documentation. The
-529	report manifest
-530	retains source paths, collection dates and SHA-256 hashes. Recorded timings are not latency guarantees: the development machine and its caches are shared.
-531	A minimum reproduction recipe
-532	Fix the commit and local changes, catalogue versions, schema and weights with SHA-256.
-533	Retain per-stage seeds, every
-534	applied
-535	setting, backend, precision, dimensions and any imported raster.
-536	Describe the machine, browser, GPU, caches and initial loading; time stages separately.
-537	Archive the snapshot or decor actually rendered, camera, viewport dimensions and raw screenshot.
-538	Report demand, admissible land, accepted placements, refusals, built/open capacity and deficit, using the units appropriate to each function.
-539	Define the expected criterion before concluding: geometric invariant, deterministic replay, visual quality or performance. None of these criteria replaces all the others.
-540	Two findings to retain, even when uncomfortable
-541	The parcel note reports an initial retained medina with 74 blocks and 72 streets. Correcting a source increased accepted houses from 4 to 148, but built coverage in the core remained 15.9%. This improves recipe consistency; it does not establish a successful dense souk.
-542	An initial complete native case for 50,000 inhabitants produced 6,188 parcels and 5,336 indicative domestic sites for 11,111 requested units. This mismatch motivated recalibration of the automatic budget. A million-inhabitant probe exceeded 240 s and was stopped: no metropolitan performance result is claimed. These figures describe tests preceding later corrections, on the machine used for their review.
-543	Useful commands, to run in their own context
-544	Rust commands require the repository’s toolchain and dependencies. Native replay scripts require a current executable build: an old binary cannot measure a recent source change. Directories such as
-545	are often ignored; a path mentioned in a note may be missing from another checkout.
-546	Which invariants should each stage test?
-547	Stage
-548	Meaningful checks
-549	Terrain
-550	Finite values, units, support and continuity; preservation when the camera changes.
-551	Water
-552	No loops, consistent levels, connected confluences, corrections within budget.
-553	Networks
-554	Connections, gradients, obstacles, authorised crossings and explicit intersections.
-555	Land
-556	Containment, holes, union/coverage, no overlaps, actual access, unchanged streets when recalculating.
-557	Houses
-558	Accepted recipe and period, consistent plan/volume/detail, contained roofs and access, physical ground.
-559	Programme
-560	Consistent units, refused requests not consumed, open capacity separate from built capacity, real deficits left visible.
-561	Image
-562	The scene actually applied, known camera and scale, no missing layer; explicit visual inspection.
-563	Measurement provenance:
-564	parcel methodology log
-565	. Native protocol:
-566	urban API replay
-567	.
-568	16 / Current boundaries
-569	What remains to be established.
-570	Domain
-571	Current limitation
-572	Evidence required to go further
-573	Geomorphology
-574	Artistic intensities and bounded corrections; no global geological calibration.
-575	Balances, time units, reference cases and documented sensitivity.
-576	Hydrology
-577	Simplified annual balance; no flood, tide or navigation forecast.
-578	Dedicated time-dependent data and physical validation.
-579	History and culture
-580	Declared catalogues and influences; parametric recipes rather than universal reconstruction.
-581	Sources contextualised by period/site, comparison with actual plans and specialist review.
-582	Demography
-583	Domestic assumptions and indicative densities; land and buildings may fall short.
-584	Counts of accepted buildings, explicit occupation and published deficits.
-585	Architecture
-586	Bounded placement search; a refusal may indicate search failure or a real incompatibility.
-587	Minimal cases, refusal diagnostics, comparison with a more complete search.
-588	Ecology and snow
-589	Climate proxies and cover policies; unobserved visual details.
-590	Separate calibration, seasonal variability and an independent corpus.
-591	Large scale
-592	CPU cost, transfers, memory and rendering not established for every population.
-593	Reproducible end-to-end campaigns, cold/warm caches and failed cases included.
-594	Portability
-595	Backend and precision affect outputs; GPU support varies.
-596	Replays across machines, defined tolerances and actual fallback tests.
-597	Documentation
-598	A snapshot of an active repository; some older screenshots have incomplete provenance.
-599	Revised fingerprints, new capture recipes, and links and claims updated together.
-600	A successful geometric test does not certify urban quality. An attractive screenshot does not certify housing capacity. A native timing does not certify application responsiveness. The project’s value rests on making these distinctions traceable all the way to source code and artifacts.
-601	17 / Shared vocabulary
-602	A few terms, each with one local definition.
-603	Retained surface
-604	Stored elevations and corrections, reused by subsequent stages and views.
-605	DEM / elevation raster
-606	Elevation samples on a grid; interpolation does not create newly observed data.
-607	Contributing area
-608	Upstream surface whose routed flow contributes to a cell or reach.
-609	Drainage potential
-610	The elevation and ordering required for routing; distinct from physically corrected ground.
-611	Anisotropic
-612	Having a cost or response that depends on direction.
-613	Urban footprint
-614	Land allocated to a settlement; distinct from the street pattern and individual building footprints.
-615	Block
-616	A land domain retained by the plan and its access network, before cadastral subdivision.
-617	Cadastre / buildable domain
-618	Retained property / the subdomain where construction is admitted. Holes and reserves remain exclusions.
-619	Frontage contact
-620	A boundary interval actually connected to an authorised access segment, measured in metres.
-621	Native admission witness
-622	An envelope from a solved minimum plan, useful for qualifying land; final placement retains authority.
-623	Programme
-624	Functional demands, reservations and allocation, followed by the actual balance after production.
-625	LayoutPlan
-626	A solved, retained native architectural plan shared by volumes and detailed enrichment.
-627	LOD
-628	Presentation level of detail. It does not, by itself, modify the retained physical scene.
-629	Backend
-630	The execution path and computation hardware; retain it with the recipe.
-631	18 / Primary sources
-632	Annotated bibliography and influences.
-633	References verified online on 28 October 2026 using author, publisher or project pages. The local contribution is identified to distinguish influence, adaptation and validation. The papers are not copied into this site.
-634	Perlin, K. (2002).
-635	Improving Noise.
-636	Context for coherent gradient noise. The project uses 2D simplex noise; this paper does not describe that code exactly.
-637	Barnes, R., Lehman, C. &amp; Mulla, D. (2014).
-638	Priority-Flood: An Optimal Depression-Filling and Watershed-Labeling Algorithm for Digital Elevation Models.
-639	Computers &amp; Geosciences 62, 117–127. DOI: 10.1016/j.cageo.2013.04.024.
-640	The authors’ reference and repository for depressions and basins; locally adapted in erosion and drainage.
-641	Tarboton, D. G. (1997).
-642	A New Method for the Determination of Flow Directions and Upslope Areas in Grid Digital Elevation Models.
-643	Water Resources Research 33(2), 309–319.
-644	Facet-based direction and D∞ area partitioning; distinct from the final vector graph.
-645	Braun, J. &amp; Willett, S. D. (2013).
-646	A Very Efficient O(n), Implicit and Parallel Method to Solve the Stream Power Equation Governing Fluvial Incision and Landscape Evolution.
-647	Geomorphology 180–181, 170–179. DOI: 10.1016/j.geomorph.2012.10.008.
-648	The family of implicit incision solvers. Magna Urbis bounds and interactive parameters remain local. Metadata verified in the author’s institutional GFZ repository; the publisher page was unavailable to the automated reader during that review.
-649	Barnes, R., Callaghan, K. L. &amp; Wickert, A. D. (2021).
-650	Computing Water Flow through Complex Landscapes — Part 3: Fill–Spill–Merge.
-651	Earth Surface Dynamics 9, 105–121.
-652	Filling, spilling and merging depressions. The local module uses a simplified equilibrium balance rather than the entire published dynamics.
-653	Goslin, A. (2025, revised 2026).
-654	InfiniteDiffusion: Bridging Learned Fidelity and Procedural Utility for Open-World Terrain Generation.
-655	arXiv:2512.08309v4, 3 May 2026.
-656	Lazy, unbounded algorithm and Terrain Diffusion application. Magna Urbis computes a finite window with its own planner.
-657	Karras, T., Aittala, M., Aila, T. &amp; Laine, S. (2022).
-658	Elucidating the Design Space of Diffusion-Based Generative Models.
-659	EDM: decomposition of choices in model design, preconditioning, training and sampling.
-660	Karras, T. et al. (2024).
-661	Analyzing and Improving the Training Dynamics of Diffusion Models.
-662	EDM2: magnitude control; context for network architecture, not evidence of urban quality.
-663	Song, Y., Dhariwal, P., Chen, M. &amp; Sutskever, I. (2023).
-664	Consistency Models.
-665	PMLR 202, 32211–32252.
-666	Generation in one or a few evaluations, trained directly or distilled.
-667	Galin, E., Peytavie, A., Maréchal, N. &amp; Guérin, E. (2010).
-668	Procedural Generation of Roads.
-669	Computer Graphics Forum 29(2), 429–438. DOI: 10.1111/j.1467-8659.2009.01612.x.
-670	The anisotropic shortest-path family; the project has its own costs, classes and limits.
-671	Parish, Y. I. H. &amp; Müller, P. (2001).
-672	Procedural Modeling of Cities.
-673	SIGGRAPH, 301–308.
-674	Comparative reference: global goals and local constraints for L-system urban growth.
-675	Chen, G., Esch, G., Wonka, P., Müller, P. &amp; Zhang, E. (2008).
-676	Interactive Procedural Street Modeling.
-677	ACM Transactions on Graphics 27(3), article 103.
-678	Comparative reference: tensor fields and street-graph editing. No complete implementation of the solver is claimed.
-679	Vanegas, C. A., Kelly, T., Weber, B., Halatsch, J., Aliaga, D. G. &amp; Müller, P. (2012).
-680	Procedural Generation of Parcels in Urban Modeling.
-681	Computer Graphics Forum 31(2pt3), 681–690.
-682	Reference for constrained urban subdivision; local cuts and frontage territories are a partial adaptation.
-683	Projects, heritage and architectural sources
-684	TownGeneratorOS — Oleg Dolya / Watabou
-685	: the initial influence explicitly acknowledged by Magna Urbis. The original Python port was retired; current implementations continue the exploration.
-686	Terrain Diffusion — author’s code
-687	: learned terrain models and infrastructure.
-688	Neural Earth
-689	: associated planetary project; complete urban integration remains to be done.
-690	World Orogen
-691	: Neural Earth’s planetary context, distinct from Magna Urbis local erosion.
-692	For architectural traditions and periods, consult recipe-specific sources and catalogue reviews; a general geometry bibliography cannot replace them. The repository includes sourced notes on
-693	compact Roman domestic architecture
-694	and
-695	Javanese domestic architecture
-696	. Source coverage is uneven; fantasy cultures declare their influences.
-697	Internal inventories:
-698	architectural styles
-699	·
-700	settlements
-701	·
-702	architectural inventory and fingerprints
-703	.
-704	JavaScript is disabled: all chapters, diagrams and sources remain readable. Search and the print button require JavaScript; browser printing remains available.
-705	Magna Urbis · Atlas of Methods · Snapshot of 28 October 2026 · Local documentation and explanatory diagrams; project screenshots attributed in
-706	the provenance manifest
-707	.
+83	,
+84	and
+85	, with retained native snapshots. Separate
+86	Rust/WASM
+87	and
+88	native Rust
+89	replays exercised all four stages through accepted houses. The TypeScript screenshots above remain attributed to their own workflow; they are not images of those Rust tests.
+90	Settings may be global or specific to a place, then target a quarter, parcel or identified house request. Reports expose warnings and refusals; refused requests can be retried with corrected configurations. Overrides remain subject to recipes and physical constraints. A local request counter allows checking that a house edit does not implicitly rerun terrain generation or the entire cadastre.
+91	Read:
+92	V1 pipeline
+93	·
+94	native urban placement
+95	·
+96	V2 rendering style
+97	.
+98	01 / Contracts
+99	A chain of retained states.
+100	The logical sequence is terrain → water → settlements → roads → town → programme and parcels → buildings → presentation. Feedback and local iterations also occur: the programme reserves land before subdivision; the built balance is reconciled after actual placements. Downstream stages consume applied data, including geometries, holes, identities and refusals.
+101	Original explanatory dependency diagram. Boxes describe responsibilities rather than the exact buttons of an interface.
+102	Physical inputs
+103	Coordinates and elevation: metres. Area: m². Slope: vertical rise / horizontal distance. Temperature: °C; rainfall: mm/year.
+104	Declared inputs
+105	Culture, period, population, function, known resources, navigability and lore are explicit intentions. Missing data does not become an established fact.
+106	Retained results
+107	Surfaces, graphs and scenes can be reused. Changing the camera or style need not rerun erosion or house solving.
+108	A slope of 0.12 means 12%, or approximately 6.84°. The conversion is
+109	. Gross density in inhabitants per hectare includes streets and open space; it is distinct from the density of residential parcels alone.
+110	Settings, drafts and applied state
+111	An edited interface field may be a draft. Exports and evidence must identify the configuration that actually produced the scene. Crops translate geometries into their new frame; physical elevations, normals and dimensions are not multiplied by the display’s vertical exaggeration.
+112	Combining projects: a territory or a recipe
+113	Full import preserves the supplied scene. Composition offers two narrower operations.
+114	Import a territory
+115	adopts its physical grids, sea, rivers and lakes without recomputing terrain or hydrology, while retaining the current urban recipe. Previous sites, roads, towns and geometric edits are discarded: they must be rebuilt on this territory.
+116	Import a settlement recipe
+117	instead retains the current territory and imports the other project’s intentions: population, cultures, placement, morphology and declared overrides. Foreign terrain and town geometries are not transplanted. Settings keyed by stable identities belong to the recipe; manual edits to an old building footprint do not have that scope and are not merged.
+118	If the file’s settings are a draft inconsistent with its displayed map, the retained surface becomes a portable FP32 input; the applied biome and computation provenance remain those of the territory. The operation rebuilds natural cover and layers that depended on the removed towns, without claiming to preserve previous agricultural occupation. Composition runs in a worker. The
+119	browser replay
+120	checks, among other things, the preserved physical fingerprint, removal of obsolete geometry, caching and rebuilding after composition; it does not prove that every recipe is automatically valid on every site.
+121	Code:
+122	composition scope and provenance
+123	·
+124	composition worker
+125	·
+126	composition regression cases
+127	.
+128	The TypeScript generator distributes randomness through named sub-seeds (
+129	). This separation allows terrain reuse when only urban options change. It does not imply that two engines, versions or GPU backends always produce identical bits.
+130	Code:
+131	TerrainGenerator and retained surface
+132	·
+133	shared randomness
+134	·
+135	workshop transfers
+136	.
+137	02 / The initial surface
+138	Coherent noise, motifs and coasts.
+139	Inputs
+140	Seed, map width, relief family, motif size, blending and erosion/coast settings.
+141	Construction
+142	2D simplex noise, octaves, domain warping, finite landforms and retained corrections.
+143	Output
+144	A signed elevation field in metric coordinates; a surface that subsequent stages can sample.
+145	Coherent noise varies continuously in space: nearby points generally receive similar values. The engine combines several frequencies and amplitudes, then warps the evaluation coordinates. An explanatory formulation is:
+146	is the noise,
+147	its amplitude at octave k,
+148	its frequency and
+149	the domain displacement. Long wavelengths structure the main landmasses; shorter wavelengths carry detail. The local code uses simplex noise:
+150	Perlin’s improved noise [1]
+151	places this family of constructions in context, but is not an exact description of the implementation.
+152	Map size and motif size have distinct roles. Plains, hills, valleys, mountains, plateaus, canyons, volcanoes and calderas add their own structures. Finite landforms have a position and spatial support; open terrain is evaluated in regional coordinates. Coastal environments produce elevations below and above sea level. This treatment constructs landscape forms; it does not simulate tectonic plates.
+153	The Rust source field uses, among other settings, an internal resolution of 1024². The retained surface and local treatments allow sampling a region without restarting erosion. Filtering excessively fine octaves limits aliasing; oversampling a coarse surface does not add geological observations.
+154	Interpretation limit
+155	“Fractal”, “geological” and “natural” describe constructions or visual families here. None of these labels establishes a measured stratigraphic history, lithology or geological age.
+156	Code:
+157	simplex noise and octaves
+158	·
+159	noise preparation
+160	·
+161	coasts
+162	·
+163	families and generation
+164	.
+165	03 / Another source of elevation
+166	Terrain Diffusion and the finite window.
+167	InfiniteDiffusion [6]
+168	, by Alexander Goslin, makes diffusion sampling lazy and unbounded. Terrain Diffusion applies the algorithm to terrain. Windows use spatially coherent noise and weighted overlaps; they are not independently generated tiles stitched together. The properties of the published algorithm do not automatically become properties of every application that uses its weights.
+169	In Magna Urbis, the documented workflow produces a
+170	finite 40 × 40 km window
+171	. The planner works backwards from the delivered region to determine the required windows:
+172	Stage
+173	Nominal scale
+174	Local role
+175	Coarse
+176	7,680 m
+177	Regional context, conditioned on a sketch and climate.
+178	Base
+179	240 m
+180	Latent field conditioned on the coarse stage.
+181	Decoder
+182	30 m
+183	Reconstruction of detail and elevation; resampling for the workshop.
+184	The profile
+185	→ original base in one evaluation → distilled student decoder is a local configuration, with backend variants. The sketch controls large landforms; a depression smaller than the coarse grid is not guaranteed to survive. The imported surface retains its provenance and is not subjected again to procedural erosion and coastal cutting. Hydrology follows.
+186	Model, sampler and distillation
+187	The network, its conditioning and the method that evolves it from noise are three distinct objects.
+188	EDM [7]
+189	organises their numerical choices;
+190	EDM2 [8]
+191	studies magnitude control during training.
+192	Consistency models [9]
+193	can learn generation with few evaluations. This does not justify arbitrarily turning a multistep model into a single-pass model.
+194	Browser mode uses Rust/WASM and WebGPU with external, cached weights; Python mode uses PyTorch/CUDA. Quantisation and precision may differ. Two visually similar outputs do not prove numerical equivalence. Replay evidence must fix the weights and backend.
+195	The current neural engines
+196	have no CPU inference path
+197	in V2: they require WebGPU in the browser or local Python/CUDA. Neural requests with CPU computation are explicitly refused; they are not silently replaced with procedural noise. CPU computation remains available for procedural terrain and Rust urban generation.
+198	Neural Earth is a separate project
+199	It connects Orogen’s planetary context to learned refinement. Adding Magna Urbis towns to that pipeline remains an integration goal. Sharing a neural engine does not establish that a town is already integrated into a planet.
+200	Code:
+201	planner
+202	·
+203	pipeline
+204	·
+205	reconstruction
+206	·
+207	WebGPU entry point
+208	·
+209	CUDA service
+210	.
+211	04 / Bounded terrain evolution
+212	Route, incise, redistribute.
+213	Procedural erosion combines several operations.
+214	Priority-Flood [2]
+215	constructs a drainage potential from outlets by processing cells in increasing elevation order. A depression’s spill elevation indicates how water could escape; it does not mean that the entire physical ground must be raised to that elevation.
+216	The
+217	D∞ routing method of Tarboton [3]
+218	evaluates triangular facets around a cell and distributes contributing area between two downstream neighbours. It reduces the bias of D8’s eight fixed directions. The final vector network has its own topology: the area partition used for incision is not the geometry of a drawn river.
+219	The stream-power family of laws
+220	This equation places the incision model in context. The implicit solver of
+221	Braun and Willett [4]
+222	handles the downstream dependency of elevations. The local implementation adapts it for interactivity: capped contributing area, a weaker response on gentle slopes, and bounded incision and corrections. The erosion slider controls intensity, with no established conversion into thousands of years.
+223	The engine supplements incision with controlled threshold breaching, basin filling, thermal relaxation beyond the talus slope and hillslope diffusion. These passes modify different aspects of the terrain. Advanced settings expose iterations, incision, slope thresholds, filling, breaching, talus, diffusion and surface treatments. GPU paths use dedicated shaders; their presence does not guarantee bitwise identity with CPU results.
+224	What the computation does not retain as a complete simulation
+225	The project does not provide a generally calibrated sediment-mass balance, 2D/3D hydraulics, coupled tectonics or a physical geological duration here. Hillslope diffusion and the neural diffusion of the preceding chapter are distinct mechanisms.
+226	Code:
+227	CPU erosion, parameters and solver
+228	·
+229	GPU passes
+230	.
+231	05 / Inland water
+232	Drainage, basins, then water surfaces.
+233	Inputs
+234	Retained elevations, sea, resolution, temperature, rainfall and hydrological constraints.
+235	Construction
+236	Drainage and flats → basins → lake balance → river graph and profiles → beds and surfaces.
+237	Expected invariants
+238	No downstream loops; connected confluences; water compatible with the ground and permitted corrections.
+239	Flow directions and contributing areas structure a network. Flat areas require a topological ordering, because slope alone does not define a downstream direction. Retained depressions become lakes; others may receive a breach or bounded correction. Initial diagnostics remain distinct from final corrections.
+240	Original conceptual cross-section, not to scale. The elevation required for drainage, the physical ground and the water surface are three distinct quantities.
+241	The lake balance is simplified and explicit
+242	The local module computes potential evaporation using elevation-adjusted temperature, followed by an empirical annual evapotranspiration:
+243	Runoff floors are generator choices, not natural laws. At equilibrium, catchment inflow approximately balances evaporation from the lake surface. If inflow exceeds evaporation from a full lake, it spills over the threshold and passes on the excess. The module draws inspiration from
+244	Fill–Spill–Merge [5]
+245	; it does not reproduce the paper’s entire dynamic hierarchy.
+246	From raster to vector graph
+247	Sources, reaches, confluences and outlets become connected objects. Shared nodes preserve junctions. Width, bed and water profiles are evaluated along centre lines with correction budgets. Meanders add deterministic, multiscale variations constrained by terrain; this is not a complete time-dependent simulation of lateral migration.
+248	A conservative obstacle mask may widen a river for route finding. It must not be mistaken for the drawn bank or physical width. Vegetation rendering therefore uses the displayed water surfaces. This distinction is decisive for narrow rivers and cropped regions.
+249	Code:
+250	orchestration
+251	·
+252	flat areas
+253	·
+254	the exact annual balance shown above
+255	·
+256	curves
+257	.
+258	06 / Choosing places
+259	Buildability comes before the town’s name.
+260	Settlement placement evaluates dry candidates using slope, freshwater access, coastline, defence, declared preferences and the space actually available. A favourable point is insufficient: population implies a usable footprint, and footprints must respect exclusions and spacing. Candidate ranks and scores can be retained for inspection.
+261	Rank–size mode distributes populations according to
+262	, with a minimum threshold and a settlement density over usable land. This is a demographic distribution control. The engine does not demonstrate the historical emergence of Zipf’s law from economic exchange.
+263	Rust screenshot already present in the repository: tropical island, settlement locations and regional network. Named points are not houses. The exact recipe and commit for this older screenshot are not supplied in its source folder; it illustrates the stage without establishing complete reproducibility.
+264	A riverside site is not automatically a navigable harbour. An unknown resource remains unknown. Site data subsequently informs the programme and countryside, without inventing an economy from a colour or cultural name.
+265	Code:
+266	candidates, scores, populations and ranks
+267	·
+268	regional contracts
+269	.
+270	07 / Connecting places
+271	A network of links, then physical paths.
+272	The engine selects links between settlements on a Delaunay graph, retains a spanning backbone and adds shortcuts. This demand graph states which places to connect; it is not yet the physical route geometry.
+273	Path search minimises a cost that depends on terrain, gradients, obstacles, turns and reuse of existing roads. State includes the arrival direction: a turn has a cost that depends on the preceding movement. A wider range of moves than the eight neighbouring cells limits rigid trajectories and allows switchbacks. Intersections are then assembled into a planar graph.
+274	This formulation is an explanatory breakdown, not a copy of the coefficients.
+275	Galin et al. [10]
+276	provides the reference for this family of anisotropic shortest paths. Magna Urbis road classes, thresholds and crossings are local adaptations. A low cost is not an earthworks, bridge-strength or traffic assessment.
+277	A crossing must be an accepted object
+278	Streets and roads must not cross water merely because a segment looks short. Bridges and other accepted crossings form part of the context passed to the town.
+279	Code:
+280	regional network
+281	·
+282	direction-aware search
+283	·
+284	V1 TypeScript path
+285	.
+286	08 / Constructing the plan
+287	A town’s shape and its tissue are separate.
+288	The engine distinguishes urban footprint, growth mechanism, local phases/cultures, and then the street network and blocks. An oval enclosure does not force a circular town; an organic footprint can contain a grid extension. This separation prevents a simple street pattern from determining the entire geography.
+289	Budgets and growth
+290	Project-specific method
+291	The demographic budget starts from
+292	, converting hectares into m². An artistic budget may instead start from a radius. In demographic mode, radius does not act as a second budget. Planned foundations use area-calibrated vector templates; accessibility-driven growth and organic nuclei use a local anisotropic arrival field bounded to 192².
+293	Cost combines relief, travel gradient, access and spatial noise. Cohesion, satellites, branch depth and gap scale control dispersion. A cell reached by propagation is not necessarily allocated to the town. Small pockets that cannot be served may be discarded, leaving the budget unmet. Nuclei separated by water do not implicitly create a bridge.
+294	Framework, quarters and blocks
+295	Regional approaches guide the macroplan. Quarters retain their identities, recipes and phases; computation sectors follow the framework rather than an arbitrary cut at every age boundary. Routing checks gradients along segments. Widths form metric ribbons, rather than merely visible strokes.
+296	Adaptive servicing adds bounded access where a block is too deep for its recipe: corridors must stay inside the parent land, avoid water and neighbours, and respect gradients. This stage belongs to the plan.
+297	Rebuilding parcels retains the streets and blocks
+298	; it must not repair a land deficit by silently moving the network.
+299	Cultures group intentions for morphology, access and architecture. European organic, bastide, medina, Chinese or Japanese plans, communal and fantasy cultures are not synonyms for a perturbed grid. Phase or quarter mixtures remain procedural recipes.
+300	Parish and Müller [11]
+301	and
+302	Chen et al. [12]
+303	are comparative references: the local code is not presented as their exact solver.
+304	Actual diagnostic from 22 October 2026, case
+305	, requested population 40, culture
+306	. This screenshot shows a framework and subdivisions; no group of houses is discernible at this scale. It is not evidence of successful built occupation. Provenance and recipe are retained in
+307	the manifest
+308	.
+309	Code:
+310	footprint
+311	·
+312	macroplan
+313	·
+314	quarters and blocks
+315	·
+316	network
+317	·
+318	detailed method
+319	.
+320	09 / Functions and budgets
+321	Request, reserve, allocate, then count actual results.
+322	The programme receives applied population, settlement role, known resources, cultural context, period, architectural compatibility and lore. It distinguishes domestic, mixed, craft, communal and storage functions, and open space.
+323	A local assumption uses
+324	4.5 people per domestic unit
+325	. This is not a historical constant. Roles and declarations modulate needs: a crossroads may request more market space; resource-dependent craft may reserve a domain; a harbour requires explicitly declared navigability. Visible water alone does not establish it.
+326	Reservations and allocation
+327	Project-specific method
+328	Before cadastral subdivision, the programme reserves existing, served blocks for demanding functions. Geometry and streets are retained. Selection examines dry land, gradients, access contacts and area suitability. Several blocks may contribute to an open-space intention; a single institution is not artificially multiplied to fill a shortfall.
+329	Neighbouring parcels are found through a spatial index, followed by actual collinear boundary overlap. Nearby centroids do not establish adjacency. Allocation ranks demands by candidate scarcity and applies a two-pass greedy heuristic. The second pass may reassign domestic surplus only if the displaced demand remains covered. This is not a global optimum.
+330	Original balance diagram. Units are added only within the same function: market area is not a dwelling count.
+331	Domestic land capacity retains one unit per eligible parcel in the current single-building path. A large parcel does not automatically represent several households. Markets and commons contribute to a separate open-space capacity. Architectural refusals leave real unmet demand; colouring an occupied area on the map does not replace an accepted building.
+332	The automatic density budget may be limited by the cadastral module size: average cultural module area, native minimum and phase shares. The residential-share coefficient (0.65) and shape margin (1.15) are prototype planning assumptions, without demographic certification. Explicit manual overrides retain their role.
+333	Code:
+334	programme and reconciliation
+335	·
+336	explicit mappings
+337	·
+338	assumptions and complete cultural catalogue
+339	.
+340	10 / Land
+341	A parcel must be accessible and buildable.
+342	Subdivision consumes retained blocks, their holes, reservations and the local recipe. Land-pattern families include frontage, compact tissue, courtyard, communal domain and inherited land. Architectural family is separate: a shared domain may hold individual houses; a stilt site requires native supports.
+343	Contact is a measured interval
+344	The engine projects block edges onto street segments. It splits intervals by direction, width and distance, then joins them across successive pieces. Qualification uses the parcel boundary
+345	and
+346	the block boundary. Duplicates must not artificially increase length. A curve discretised into small segments is not a set of independent accesses.
+347	Tolerances described in the note include a band
+348	, a 14 m distance limit and a 20° angular difference. These are numerical tolerances adapted to existing ribbons, not a cadastral standard.
+349	Original explanatory diagram. An interior centroid guarantees neither building containment nor authorised access.
+350	Subdivide and qualify
+351	Strips, oriented cuts and competing frontage territories produce candidates. Witness envelopes must remain contained, including when a hole lies entirely inside a rectangle. Gardens, remnants and reserves retain their identities. An area sum is insufficient: the union must cover the intended parent without overlap and with the same exclusions.
+352	Vanegas et al. [13]
+353	places frontage-constrained subdivision in context. The local competing frontage plans form an oriented-distance partition; they are neither a complete straight skeleton nor the published interactive persistence system.
+354	Admission dimensions come from a versioned table produced by the house engine using solved minimum plans. This boundary reduces inconsistencies between subdivision and architecture. A cadastral witness is nevertheless a search hint: actual placement must still check geometry, access and terrain.
+355	A concrete case: a complete courtyard house is not a shop
+356	The medina note records a souk frontage module of 4.6–6 m, whereas a complete native AF-MAG-B02 courtyard requires approximately 29.62 × 30.67 m before clearance. Imposing that courtyard on every shop creates a domain contradiction. Context selects compatible native sources; it does not illegally shrink a large recipe.
+357	Code:
+358	parcels
+359	·
+360	continuous contacts
+361	·
+362	admission table
+363	·
+364	method and experiments
+365	.
+366	11 / From lot to building
+367	A solved native plan, then physical admission.
+368	The Rust house engine solves a catalogue recipe: bodies, levels, courtyards, circulation, supports, roofs, materials and variants. Cultural mapping is explicit. Similar names do not select a pack at runtime. Strict, inspired and fantasy modes express compatibility policies; “strict” means compliance with the declared recipe ranges, not certification by a historical authority.
+369	Urban intention
+370	Cadastral/buildable polygons and holes, authorised contacts, programme, pack, period, seed and metric ground.
+371	Native solving
+372	Recipe → admissible parameters → LayoutPlan → volumes, access, levels, supports and actual roof facets.
+373	Admission
+374	Containment, overhang rights, neighbours, access connection and ground adaptation. A refusal leaves an explicit deficit.
+375	Search is bounded
+376	Project-specific method
+377	The automatic workflow may examine up to three pack recipes, with target, intermediate and minimum plans. For a given plan, contacts, positions and setbacks are bounded; the note describes up to 324 transformations per parcel for this path. A specific model chosen in Houses retains its own draw and is not replaced by these automatic alternatives.
+378	Once a plan is solved, candidates apply a rigid transformation. A house that does not fit is not clipped at the boundaries to hide failure. Requested coverage, frontage and depth remain bounded by the recipe and dimension policy. A doorway may be narrower than the body: access and built envelope are separate constraints.
+379	Ground and domain do not come from the image
+380	The supplied ground may be a physical raster with bilinear interpolation. Its origin denotes the centre of the first sample. A local plane
+381	remains a compatibility approximation when used. The displayed terrain texture is not a foundation. A separate domain may authorise roof overhangs; otherwise roofs remain within the cadastre.
+382	Volumes and enrichment share the same plan
+383	The lightweight path produces bodies, levels, supports, an access skeleton and native roof facets. It omits rooms, detailed wall/opening operations and ornament. Detailed enrichment reuses the solved plan instead of drawing a second house. Vertex and index compaction preserves facets without loss; it must not be confused with geometric simplification.
+384	Exterior access constraints and physical surfaces must remain consistent between volumes and detail. Accepted houses, refusals and built capacity are counted after admission, then passed to the programme. A recipe collection or a successful House Bench example does not establish that every town lot can accept a house.
+385	Editing a house in V2
+386	An override
+387	is attached to the stable identity of a native request, inheriting settlement settings for omitted values. Refusals remain visible and retryable. Current replays demonstrate local invalidation, a single house request in their controlled case, and preservation of other houses. Retaining a snapshot and rebuilding from an edited recipe are distinct contracts: these tests alone do not establish exact replay of every override across all backends and editing sequences. Retained neighbours and the reference scene used before overrides must be part of that verification.
+388	To stabilise edit replay, the adapter retains originals only for houses already touched. It restores a reference scene without duplicating the entire scene, then reapplies the current overrides in stable site order. Retained neighbouring buildings become binding occupations for subsequent requests. More local parameters take precedence; dimensions and storeys remain within source limits. This replay mechanism is a project-specific adaptation, distinct from a general proof of order independence for every possible operation.
+389	The final WASM and native audits exercise a specific case: two storeys globally, three for the settlement, then two for the house. The house setting correctly takes precedence; a four-storey request incompatible with the source is refused. The field
+390	records replay of that case’s interactive edits from its recipe, and
+391	checks that refusals belonging to a downstream product are not attributed to an earlier stopping stage. This targeted success does not generalise to every catalogue and editing sequence.
+392	Code:
+393	neutral intentions
+394	·
+395	placement
+396	·
+397	solving
+398	·
+399	recipes
+400	·
+401	detailed contract and limitations
+402	.
+403	12 / Inhabiting the landscape
+404	Land use and vegetation cover.
+405	The countryside retains a TypeScript path adapted to Rust site data. Geography, culture and applied context guide land use. Explicit agricultural profiles may request farms on actual rural access routes, outside the retained urban footprint. Programme reservations remain protected; an open growth reserve does not have the same status as a reserved institution.
+406	This pipeline does not compute agricultural yield, food rations or import capacity. A declared resource may have an identified effect in the programme; it does not invent a complete production chain in the countryside.
+407	Canopy and visible trees
+408	Render3D vegetation uses a control field in world coordinates: cover, potential height, conifer share and tone/disturbance. The field accounts for climate and topography. Density is transformed in particular by
+409	: this is a cover policy, not a leaf-area measurement.
+410	Riparian galleries have a dedicated envelope tied to visible banks. Tree centres avoid displayed water; crowns may overhang a bank. Using the widened routing mask would produce artificial stepped clearings. At a distance, unresolved cover becomes a material average; up close, crowns become distinguishable. Scale transitions must limit luminance jumps without modifying terrain.
+411	Actual screenshot retained in the documentation campaign
+412	, a 640 m top-down view in the local Godot viewer. This surface path is distinct from web Render3D; it is neither an ecological photograph nor a capture of the latest V2 style. Its original folder contains its manifest and reports.
+413	Biomes and seasons remain approximations
+414	Elevation-adjusted temperature, rainfall and topographic-position indices serve as proxies. Seasonality, annual snow and materials have their own documented rules. V2 disturbance coefficients are bounded visual policies. They do not describe ecological succession, stand age or observed snow stocks.
+415	Code:
+416	countryside
+417	·
+418	land-use adapter
+419	·
+420	forest field
+421	·
+422	equations and scales
+423	·
+424	figure evidence
+425	.
+426	13 / Making the world legible
+427	Presentation consumes the world.
+428	Rendering transforms retained data into shaded terrain, materials, water, vegetation, strokes, labels and built geometry. Parchment, Atlas, diagnostic views, Render3D and V2 do not constitute different physical models. Some paths use temporary adapters and rendering; appearance does not guarantee equivalence.
+429	V1: seed 73, requested population 30,000, medina, desert, Atlas. Comparing cultures and styles does not establish their historical fidelity.
+430	Screenshot from the Render3D ground note. The perspective view samples retained terrain; it does not recompute its geology.
+431	LOD, materials and geometry
+432	Display level of detail may replace a very small roof with a coarse shape and discard off-camera objects. This saves drawing work; the retained native plan remains the architectural authority. An image’s pixel count is neither drainage resolution nor elevation-field resolution.
+433	Materials and canopy have their own spatial scales. A fine texture does not turn a DEM with cells tens of metres wide into centimetre-level topographic measurements. A 3D drawing surface is not the foundation ground, and camera vertical exaggeration must not contaminate physical dimensions.
+434	In the inspected Rust urban V2 integration, the snapshot retains the native scene while its projection to
+435	classifies roofs into display categories such as flat, dome, conical, hip, pagoda and gable. This projection is not an exact rendering of every native facet on the map. “Native geometry retained” and “native geometry fully drawn” require different evidence.
+436	Fantasy cartography and illustration
+437	Brushes may be guided by land-use polygons and their holes, with world-anchored candidates and deterministic hashes. Classification uses a spatial index followed by an exact point-in-polygon test. Anchors are constrained; a painted motif’s edges may extend beyond them. Missing occupation data must not invent a forest.
+438	The illustration module transforms a screenshot using a local or external image model and retains a recipe. This image is an interpretation, distinct from the procedural world and its metrics. It must not be used as evidence of a roof, road or house absent from the retained scene.
+439	Export and replay
+440	SVG/PNG describe a view or visible layers; JSON, decors and snapshots may retain the scene and applied settings. Format and workflow determine what can actually be imported again. Parameter URLs do not necessarily replace an imported raster, an applied scene or neural weights. To archive evidence, retain the content, its fingerprints and the recipe, rather than a URL alone.
+441	Read:
+442	native urban rendering
+443	·
+444	ground, mesh and materials
+445	·
+446	brushes and land use
+447	.
+448	V2 integration:
+449	Rust urban snapshots and display projection
+450	.
+451	14 / Running the pipeline
+452	The backend is part of the recipe.
+453	Path
+454	Where does it run?
+455	Actual scope
+456	TypeScript
+457	Browser CPU, using workers where available.
+458	Reference pipeline and adapters; V1 development does not require Rust compilation.
+459	Rust → WASM
+460	Browser CPU.
+461	Compiled core exposed through numerical bridges and workers. WASM does not automatically enable the GPU.
+462	WebGPU compute
+463	Browser GPU, WGSL shaders.
+464	Selected terrain and drainage passes; adapter availability and limits must be checked.
+465	Browser neural
+466	Rust/WASM + WebGPU, external weights.
+467	Dedicated inference; allocation, transfers and precision contribute to the cost.
+468	Local native service
+469	Rust on the machine, with a computation API.
+470	Urban/house operations and other capabilities declared by the service. Inspect actual capabilities instead of assuming every endpoint exists.
+471	Python neural
+472	Local PyTorch/CUDA service.
+473	A separate path with its own models and GPU memory; no bitwise equivalence with the browser is promised.
+474	Desktop
+475	Local application and associated services, depending on configuration.
+476	A desktop shell alone does not change the core’s methods, precision or limitations.
+477	The Rust core is independent of the browser and renderer; WASM crates expose its functions; bridges and interfaces transport results. Procedural shaders are not neural networks. CPU and GPU may each accelerate one subproblem while another stage remains dominant.
+478	Paths actually exercised in V2
+479	The
+480	platform report
+481	from 28 October obtained finite heights with Rust/WASM CPU, procedural WebGPU terrain, native Rust, Python/CUDA neural generation and WASM/WebGPU neural generation. It retains the announced effective backend, computation provenance, model profiles and identities. These are functional checks of the script’s cases, without guarantees of performance across machines or numerical equivalence between paths.
+482	The
+483	desktop startup check
+484	observed the “Magna Urbis V2” application and its native Rust child service on an available loopback port. The Tauri shell reuses WebView rendering; weights and Python/CUDA remain optional external dependencies. Installers are built for their target system. This Windows check does not certify Linux installation, every GPU driver or neural operation without those dependencies.
+485	Code:
+486	V2 startup and child-service lifecycle
+487	·
+488	V2 resources and packaging
+489	·
+490	V2 desktop configuration
+491	·
+492	checks of executed backends
+493	.
+494	Measure a complete workflow
+495	A short native computation time is insufficient if transfer or browser preparation blocks. Distinguish cold/warm caches, work required before an image appears and background work. Loading weights, compiling shaders and the selected resolution strongly affect measurements. A small town that does not block does not establish metropolitan-scale performance.
+496	Code:
+497	local service
+498	·
+499	desktop
+500	·
+501	available commands
+502	. Standards:
+503	WebAssembly
+504	·
+505	WGSL
+506	.
+507	15 / Checking a claim
+508	Evidence must identify what it measures.
+509	This delivery checks the documentation page, internal links, local references, images and layout. It does not rerun every native campaign in the project. The measurements below are historical results from method notes, explicitly bounded to their cases; they are not presented as new benchmarks.
+510	V2 functional replays from 28 October 2026
+511	Retained evidence
+512	What it exercises
+513	What it does not establish
+514	Rust/WASM urban generation
+515	The four strict stages, native houses, invalidation of one house and preservation of the others in the controlled case.
+516	Historical quality, universal density or exact replay of every edited recipe.
+517	Native Rust urban generation
+518	The same family of stages through the local service, with a declared backend and distinct results.
+519	Bitwise identity with WASM; the reports produce different parcel and house counts.
+520	Project composition
+521	Preserved physical territory, a recipe with a distinct scope, cleanup, caching and actual rebuilding through the interface.
+522	Safe transplantation of old geometries onto another site; they are explicitly removed.
+523	Terrain platforms
+524	Actual computation on the report’s five paths and retained profiles, with finite values.
+525	CPU neural inference, model equivalence or an isolated benchmark.
+526	Windows desktop startup
+527	An open application and a declared Rust child engine on loopback.
+528	Validation of every installer, operating system or external model.
+529	These reports were produced by project integration checks and then copied into the documentation. The
+530	report manifest
+531	retains source paths, collection dates and SHA-256 hashes. Recorded timings are not latency guarantees: the development machine and its caches are shared.
+532	A minimum reproduction recipe
+533	Fix the commit and local changes, catalogue versions, schema and weights with SHA-256.
+534	Retain per-stage seeds, every
+535	applied
+536	setting, backend, precision, dimensions and any imported raster.
+537	Describe the machine, browser, GPU, caches and initial loading; time stages separately.
+538	Archive the snapshot or decor actually rendered, camera, viewport dimensions and raw screenshot.
+539	Report demand, admissible land, accepted placements, refusals, built/open capacity and deficit, using the units appropriate to each function.
+540	Define the expected criterion before concluding: geometric invariant, deterministic replay, visual quality or performance. None of these criteria replaces all the others.
+541	Two findings to retain, even when uncomfortable
+542	The parcel note reports an initial retained medina with 74 blocks and 72 streets. Correcting a source increased accepted houses from 4 to 148, but built coverage in the core remained 15.9%. This improves recipe consistency; it does not establish a successful dense souk.
+543	An initial complete native case for 50,000 inhabitants produced 6,188 parcels and 5,336 indicative domestic sites for 11,111 requested units. This mismatch motivated recalibration of the automatic budget. A million-inhabitant probe exceeded 240 s and was stopped: no metropolitan performance result is claimed. These figures describe tests preceding later corrections, on the machine used for their review.
+544	Useful commands, to run in their own context
+545	Rust commands require the repository’s toolchain and dependencies. Native replay scripts require a current executable build: an old binary cannot measure a recent source change. Directories such as
+546	are often ignored; a path mentioned in a note may be missing from another checkout.
+547	Which invariants should each stage test?
+548	Stage
+549	Meaningful checks
+550	Terrain
+551	Finite values, units, support and continuity; preservation when the camera changes.
+552	Water
+553	No loops, consistent levels, connected confluences, corrections within budget.
+554	Networks
+555	Connections, gradients, obstacles, authorised crossings and explicit intersections.
+556	Land
+557	Containment, holes, union/coverage, no overlaps, actual access, unchanged streets when recalculating.
+558	Houses
+559	Accepted recipe and period, consistent plan/volume/detail, contained roofs and access, physical ground.
+560	Programme
+561	Consistent units, refused requests not consumed, open capacity separate from built capacity, real deficits left visible.
+562	Image
+563	The scene actually applied, known camera and scale, no missing layer; explicit visual inspection.
+564	Measurement provenance:
+565	parcel methodology log
+566	. Native protocol:
+567	urban API replay
+568	.
+569	16 / Current boundaries
+570	What remains to be established.
+571	Domain
+572	Current limitation
+573	Evidence required to go further
+574	Geomorphology
+575	Artistic intensities and bounded corrections; no global geological calibration.
+576	Balances, time units, reference cases and documented sensitivity.
+577	Hydrology
+578	Simplified annual balance; no flood, tide or navigation forecast.
+579	Dedicated time-dependent data and physical validation.
+580	History and culture
+581	Declared catalogues and influences; parametric recipes rather than universal reconstruction.
+582	Sources contextualised by period/site, comparison with actual plans and specialist review.
+583	Demography
+584	Domestic assumptions and indicative densities; land and buildings may fall short.
+585	Counts of accepted buildings, explicit occupation and published deficits.
+586	Architecture
+587	Bounded placement search; a refusal may indicate search failure or a real incompatibility.
+588	Minimal cases, refusal diagnostics, comparison with a more complete search.
+589	Ecology and snow
+590	Climate proxies and cover policies; unobserved visual details.
+591	Separate calibration, seasonal variability and an independent corpus.
+592	Large scale
+593	CPU cost, transfers, memory and rendering not established for every population.
+594	Reproducible end-to-end campaigns, cold/warm caches and failed cases included.
+595	Portability
+596	Backend and precision affect outputs; GPU support varies.
+597	Replays across machines, defined tolerances and actual fallback tests.
+598	Documentation
+599	A snapshot of an active repository; some older screenshots have incomplete provenance.
+600	Revised fingerprints, new capture recipes, and links and claims updated together.
+601	A successful geometric test does not certify urban quality. An attractive screenshot does not certify housing capacity. A native timing does not certify application responsiveness. The project’s value rests on making these distinctions traceable all the way to source code and artifacts.
+602	17 / Shared vocabulary
+603	A few terms, each with one local definition.
+604	Retained surface
+605	Stored elevations and corrections, reused by subsequent stages and views.
+606	DEM / elevation raster
+607	Elevation samples on a grid; interpolation does not create newly observed data.
+608	Contributing area
+609	Upstream surface whose routed flow contributes to a cell or reach.
+610	Drainage potential
+611	The elevation and ordering required for routing; distinct from physically corrected ground.
+612	Anisotropic
+613	Having a cost or response that depends on direction.
+614	Urban footprint
+615	Land allocated to a settlement; distinct from the street pattern and individual building footprints.
+616	Block
+617	A land domain retained by the plan and its access network, before cadastral subdivision.
+618	Cadastre / buildable domain
+619	Retained property / the subdomain where construction is admitted. Holes and reserves remain exclusions.
+620	Frontage contact
+621	A boundary interval actually connected to an authorised access segment, measured in metres.
+622	Native admission witness
+623	An envelope from a solved minimum plan, useful for qualifying land; final placement retains authority.
+624	Programme
+625	Functional demands, reservations and allocation, followed by the actual balance after production.
+626	LayoutPlan
+627	A solved, retained native architectural plan shared by volumes and detailed enrichment.
+628	LOD
+629	Presentation level of detail. It does not, by itself, modify the retained physical scene.
+630	Backend
+631	The execution path and computation hardware; retain it with the recipe.
+632	18 / Primary sources
+633	Annotated bibliography and influences.
+634	References verified online on 28 October 2026 using author, publisher or project pages. The local contribution is identified to distinguish influence, adaptation and validation. The papers are not copied into this site.
+635	Perlin, K. (2002).
+636	Improving Noise.
+637	Context for coherent gradient noise. The project uses 2D simplex noise; this paper does not describe that code exactly.
+638	Barnes, R., Lehman, C. &amp; Mulla, D. (2014).
+639	Priority-Flood: An Optimal Depression-Filling and Watershed-Labeling Algorithm for Digital Elevation Models.
+640	Computers &amp; Geosciences 62, 117–127. DOI: 10.1016/j.cageo.2013.04.024.
+641	The authors’ reference and repository for depressions and basins; locally adapted in erosion and drainage.
+642	Tarboton, D. G. (1997).
+643	A New Method for the Determination of Flow Directions and Upslope Areas in Grid Digital Elevation Models.
+644	Water Resources Research 33(2), 309–319.
+645	Facet-based direction and D∞ area partitioning; distinct from the final vector graph.
+646	Braun, J. &amp; Willett, S. D. (2013).
+647	A Very Efficient O(n), Implicit and Parallel Method to Solve the Stream Power Equation Governing Fluvial Incision and Landscape Evolution.
+648	Geomorphology 180–181, 170–179. DOI: 10.1016/j.geomorph.2012.10.008.
+649	The family of implicit incision solvers. Magna Urbis bounds and interactive parameters remain local. Metadata verified in the author’s institutional GFZ repository; the publisher page was unavailable to the automated reader during that review.
+650	Barnes, R., Callaghan, K. L. &amp; Wickert, A. D. (2021).
+651	Computing Water Flow through Complex Landscapes — Part 3: Fill–Spill–Merge.
+652	Earth Surface Dynamics 9, 105–121.
+653	Filling, spilling and merging depressions. The local module uses a simplified equilibrium balance rather than the entire published dynamics.
+654	Goslin, A. (2025, revised 2026).
+655	InfiniteDiffusion: Bridging Learned Fidelity and Procedural Utility for Open-World Terrain Generation.
+656	arXiv:2512.08309v4, 3 May 2026.
+657	Lazy, unbounded algorithm and Terrain Diffusion application. Magna Urbis computes a finite window with its own planner.
+658	Karras, T., Aittala, M., Aila, T. &amp; Laine, S. (2022).
+659	Elucidating the Design Space of Diffusion-Based Generative Models.
+660	EDM: decomposition of choices in model design, preconditioning, training and sampling.
+661	Karras, T. et al. (2024).
+662	Analyzing and Improving the Training Dynamics of Diffusion Models.
+663	EDM2: magnitude control; context for network architecture, not evidence of urban quality.
+664	Song, Y., Dhariwal, P., Chen, M. &amp; Sutskever, I. (2023).
+665	Consistency Models.
+666	PMLR 202, 32211–32252.
+667	Generation in one or a few evaluations, trained directly or distilled.
+668	Galin, E., Peytavie, A., Maréchal, N. &amp; Guérin, E. (2010).
+669	Procedural Generation of Roads.
+670	Computer Graphics Forum 29(2), 429–438. DOI: 10.1111/j.1467-8659.2009.01612.x.
+671	The anisotropic shortest-path family; the project has its own costs, classes and limits.
+672	Parish, Y. I. H. &amp; Müller, P. (2001).
+673	Procedural Modeling of Cities.
+674	SIGGRAPH, 301–308.
+675	Comparative reference: global goals and local constraints for L-system urban growth.
+676	Chen, G., Esch, G., Wonka, P., Müller, P. &amp; Zhang, E. (2008).
+677	Interactive Procedural Street Modeling.
+678	ACM Transactions on Graphics 27(3), article 103.
+679	Comparative reference: tensor fields and street-graph editing. No complete implementation of the solver is claimed.
+680	Vanegas, C. A., Kelly, T., Weber, B., Halatsch, J., Aliaga, D. G. &amp; Müller, P. (2012).
+681	Procedural Generation of Parcels in Urban Modeling.
+682	Computer Graphics Forum 31(2pt3), 681–690.
+683	Reference for constrained urban subdivision; local cuts and frontage territories are a partial adaptation.
+684	Projects, heritage and architectural sources
+685	TownGeneratorOS — Oleg Dolya / Watabou
+686	: the initial influence explicitly acknowledged by Magna Urbis. The original Python port was retired; current implementations continue the exploration.
+687	Terrain Diffusion — author’s code
+688	: learned terrain models and infrastructure.
+689	Neural Earth
+690	: associated planetary project; complete urban integration remains to be done.
+691	World Orogen
+692	: Neural Earth’s planetary context, distinct from Magna Urbis local erosion.
+693	For architectural traditions and periods, consult recipe-specific sources and catalogue reviews; a general geometry bibliography cannot replace them. The repository includes sourced notes on
+694	compact Roman domestic architecture
+695	and
+696	Javanese domestic architecture
+697	. Source coverage is uneven; fantasy cultures declare their influences.
+698	Internal inventories:
+699	architectural styles
+700	·
+701	settlements
+702	·
+703	architectural inventory and fingerprints
+704	.
+705	JavaScript is disabled: all chapters, diagrams and sources remain readable. Search and the print button require JavaScript; browser printing remains available.
+706	Magna Urbis · Atlas of Methods · Snapshot of 28 October 2026 · Local documentation and explanatory diagrams; project screenshots attributed in
+707	the provenance manifest
+708	.

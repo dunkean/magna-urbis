@@ -5,9 +5,13 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 const dir=dirname(fileURLToPath(import.meta.url)),root=resolve(dir,'../..');
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
+// Text figures are hashed with LF endings so a Windows autocrlf checkout gives the recorded hash.
+const figureBytes=async file=>{const bytes=await readFile(resolve(dir,'assets',file));return /\.(svg|json)$/.test(file)?Buffer.from(bytes.toString('latin1').replace(/\r\n/g,'\n'),'latin1'):bytes;};
 const assert=(condition,message)=>{if(!condition)throw new Error(message);};
 export async function check(){
   execFileSync(process.execPath,[resolve(dir,'localize.mjs'),'--check'],{stdio:'inherit'});
+  execFileSync(process.execPath,[resolve(dir,'stages.mjs'),'--check'],{stdio:'inherit'});
+  const contract=await readFile(resolve(root,'docs/stage-registry-contract.md'),'utf8');
   const manifest=JSON.parse(await readFile(resolve(dir,'evidence.json'),'utf8'));
   const pages=[];
   for(const[file,lang]of [['index.html','en'],['fr.html','fr']]){
@@ -15,8 +19,11 @@ export async function check(){
     assert(new Set(ids).size===ids.length,file+': duplicate HTML ID');
     assert(html.includes('<html lang="'+lang+'">'),file+': incorrect language');
     for(const[,id]of html.matchAll(/href="#([^"]+)"/g))assert(ids.includes(id),file+': broken anchor #'+id);
+    const contractIds=[...contract.matchAll(/^\| ([a-z]+(?:-[a-z0-9]+)+) \|/gm)].map(x=>x[1]);
+    assert(contractIds.length>=35,'Stage registry contract unreadable: '+contractIds.length+' ids');
+    for(const id of contractIds)assert(html.includes('<section class="stage" id="stage-'+id+'"'),file+': missing stage section stage-'+id+' (docs/stage-registry-contract.md)');
     const chapters=[...html.matchAll(/<section class="chapter" id="([^"]+)"/g)].map(x=>x[1]);
-    assert(chapters.length===19,file+': expected 19 chapters');
+    assert(chapters.length===20,file+': expected 20 chapters');
     for(const id of chapters)assert(html.includes('href="#'+id+'"'),file+': missing navigation entry '+id);
     assert(html.includes('data-language="en"')&&html.includes('data-language="fr"'),file+': missing visible language choice');
     const assets=[...html.matchAll(/(?:src|href)="([^"#]+)"/g)].map(x=>x[1]).filter(x=>!/^(?:https?:|data:)/.test(x));
@@ -32,7 +39,7 @@ export async function check(){
   assert(JSON.stringify(pages[0].linkedPaths)===JSON.stringify(pages[1].linkedPaths),'Source references differ between languages');
   const external=html=>[...new Set([...html.matchAll(/href="(https?:[^"]+)"/g)].map(x=>x[1]))].sort();
   assert(JSON.stringify(external(pages[0].html))===JSON.stringify(external(pages[1].html)),'External references differ between languages');
-  for(const figure of manifest.figures)assert(hash(await readFile(resolve(dir,'assets',figure.file)))===figure.sha256,'Figure hash mismatch '+figure.file);
+  for(const figure of manifest.figures)assert(hash(await figureBytes(figure.file))===figure.sha256,'Figure hash mismatch '+figure.file);
   for(const name of ['pipeline','hydrology','capacity','parcel']){
     const fr=await readFile(resolve(dir,'assets',name+'.svg'),'utf8'),en=await readFile(resolve(dir,'assets',name+'-en.svg'),'utf8');
     const geometry=svg=>svg.replace(/>[^<>]*</g,'><');
@@ -40,12 +47,12 @@ export async function check(){
     assert(manifest.figures.some(figure=>figure.file===name+'-en.svg'),'English diagram missing provenance '+name);
   }
   const reports=JSON.parse(await readFile(resolve(dir,'evidence/report-provenance.json'),'utf8'));
-  for(const report of reports.reports)assert(hash(await readFile(resolve(dir,'evidence',report.file)))===report.sha256,'Integration report hash mismatch '+report.file);
+  for(const report of reports.reports)assert(hash(await figureBytes('../evidence/'+report.file))===report.sha256,'Integration report hash mismatch '+report.file);
   const drift=[];
   for(const source of manifest.linkedSources)if(hash(await readFile(resolve(root,source.path)))!==source.sha256)drift.push(source.path);
-  console.log('PASS: English and French, 19 matching chapters, '+pages[0].ids.length+' matching anchors, '+pages[0].linkedPaths.length+' local references, '+manifest.figures.length+' exact figure hashes, '+reports.reports.length+' integration reports. No remote reading dependency.');
+  console.log('PASS: English and French, 20 matching chapters, '+pages[0].ids.length+' matching anchors, '+pages[0].linkedPaths.length+' local references, '+manifest.figures.length+' exact figure hashes, '+reports.reports.length+' integration reports. No remote reading dependency.');
   if(drift.length)console.log('NOTICE: '+drift.length+' source files changed since the evidence snapshot:\n'+drift.join('\n'));
-  return{languages:['en','fr'],chapters:19,anchors:pages[0].ids.length,linkedSources:pages[0].linkedPaths.length,figures:manifest.figures.length,sourceDrift:drift};
+  return{languages:['en','fr'],chapters:20,anchors:pages[0].ids.length,linkedSources:pages[0].linkedPaths.length,figures:manifest.figures.length,sourceDrift:drift};
 }
 export async function browserCheck(){
   const{chromium}=await import(pathToFileURL(resolve(root,'web/node_modules/playwright/index.mjs')).href);
@@ -63,12 +70,12 @@ export async function browserCheck(){
       await page.locator('img').evaluateAll(images=>images.forEach(image=>{image.loading='eager';}));
       await page.waitForFunction(()=>[...document.images].every(image=>image.complete&&image.naturalWidth>0));
       assert(await page.locator('html').getAttribute('lang')===lang,'Wrong language '+lang);
-      assert(await page.locator('section.chapter:visible').count()===19,'Missing chapters '+lang);
+      assert(await page.locator('section.chapter:visible').count()===20,'Missing chapters '+lang);
       await page.screenshot({path:resolve(out,'desktop-'+lang+'.png')});
       await page.locator('#search').fill(needle);assert(await page.locator('#eau').isVisible(),'Search failed '+lang);
       await page.locator('#search').fill('zzzz-no-documentation');assert(await page.locator('section.chapter:visible').count()===0,'Empty search failed '+lang);
       assert((await page.locator('#search-status').textContent()).startsWith(empty),'Search status wrong language '+lang);
-      await page.getByRole('button',{name:resetName}).click();assert(await page.locator('section.chapter:visible').count()===19,'Reset failed '+lang);
+      await page.getByRole('button',{name:resetName}).click();assert(await page.locator('section.chapter:visible').count()===20,'Reset failed '+lang);
       await page.locator('#search').fill('zzzz');await page.locator('.sidebar a[href="#maisons"]').click();assert(await page.locator('#maisons').isVisible(),'Navigation failed '+lang);
       await page.locator('#maisons').screenshot({path:resolve(out,'architecture-'+lang+'.png')});
       const other=lang==='en'?'fr':'en';await page.locator('.atlas-language a[hreflang="'+other+'"]').click();
@@ -85,7 +92,7 @@ export async function browserCheck(){
     for(const[file,lang]of [['index.html','en'],['fr.html','fr']]){
       const staticPage=await nojs.newPage();await staticPage.goto(pathToFileURL(resolve(dir,file)).href);
       assert(await staticPage.locator('html').getAttribute('lang')===lang,'Static page language '+lang);
-      assert(await staticPage.locator('section.chapter:visible').count()===19,'No-JS content missing '+lang);await staticPage.close();
+      assert(await staticPage.locator('section.chapter:visible').count()===20,'No-JS content missing '+lang);await staticPage.close();
     }
     cases.push('Both complete static pages readable without JavaScript');
     assert(!errors.length,'Browser errors: '+errors.join('; '));assert(!remote.length,'Remote reading requests: '+remote.join('; '));

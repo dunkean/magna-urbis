@@ -42,7 +42,7 @@
       "file": "v2-desktop-startup.json",
       "source": "web/out/v2-desktop-startup.json",
       "bytes": 205,
-      "sha256": "359862e3123d7d9ae656df55df10f2b0bb561bc873f03b593fee9aa7f4558d8f",
+      "sha256": "3eafa4fb8a2f5fa5bce13ee9b1ffa329542c5949db59923f5a1683865e0e0be9",
       "sourceFileModifiedAt": "2026-10-28T13:54:30.706Z",
       "scope": "Observed Windows app startup and its child Rust service on loopback, not cross-platform installation validation.",
       "transformation": "none; byte-for-byte copy"

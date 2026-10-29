@@ -3,7 +3,12 @@ import { fileURLToPath } from 'node:url';
 import { resolve, dirname } from 'node:path';
 const dir=dirname(fileURLToPath(import.meta.url));
 const checking=process.argv.includes('--check');
-const source=(await readFile(resolve(dir,'fr.html'),'utf8')).replace(/<nav class="atlas-language"[\s\S]*?<\/nav>/g,'').replace(/\s*<link rel="alternate"[^>]*>/g,'');
+// The stage chapter (stages-fr.html / stages-en.html, built by stages.mjs) is injected between the
+// markers and is outside the fragment/translation mechanism: both languages are authored in stages-data.mjs.
+const REGION=/<!--STAGES:BEGIN-->[\s\S]*?<!--STAGES:END-->/;
+const frStages=(await readFile(resolve(dir,'stages-fr.html'),'utf8')).trim(),enStages=(await readFile(resolve(dir,'stages-en.html'),'utf8')).trim();
+const fullSource=(await readFile(resolve(dir,'fr.html'),'utf8')).replace(REGION,()=>frStages).replace(/<nav class="atlas-language"[\s\S]*?<\/nav>/g,'').replace(/\s*<link rel="alternate"[^>]*>/g,'');
+const source=fullSource.replace(REGION,'<!--STAGES-->');
 const excluded=new Set(['code','pre','script','style']);
 const stack=[];const fragments=[];
 const tokens=source.match(/<!--[\s\S]*?-->|<[^>]+>|[^<]+/g)??[];
@@ -41,6 +46,7 @@ if(process.argv.includes('--extract')){
   });
   const code=JSON.parse(await readFile(resolve(dir,'translations-code-en.json'),'utf8'));
   english=english.replace(/<code>([\s\S]*?)<\/code>/g,(match,value)=>value in code?'<code>'+code[value]+'</code>':match);
+  english=english.replace('<!--STAGES-->',()=>enStages);
   const diagrams=JSON.parse(await readFile(resolve(dir,'translations-diagrams-en.json'),'utf8'));
   for(const [name,messages]of Object.entries(diagrams)){
     const original=await readFile(resolve(dir,'assets',name+'.svg'),'utf8');
@@ -58,7 +64,7 @@ if(process.argv.includes('--extract')){
     const selector='<nav class="atlas-language" aria-label="'+(lang==='en'?'Documentation language':'Langue de la documentation')+'"><a href="index.html?lang=en" hreflang="en" lang="en" data-language="en"'+(lang==='en'?' aria-current="page"':'')+'>EN</a><a href="fr.html?lang=fr" hreflang="fr" lang="fr" data-language="fr"'+(lang==='fr'?' aria-current="page"':'')+'>FR</a></nav>';
     return html.replace('<link rel="stylesheet"',links+'\n  <link rel="stylesheet"').replace('<button id="print"',selector+'<button id="print"');
   }
-  for(const[file,html]of [['index.html',page(english,'en')],['fr.html',page(source,'fr')]]){
+  for(const[file,html]of [['index.html',page(english,'en')],['fr.html',page(fullSource,'fr')]]){
     if(checking){if(await readFile(resolve(dir,file),'utf8')!==html)throw new Error('Stale localized page: '+file);}else await writeFile(resolve(dir,file),html);
   }
   console.log(`${index} English content fragments ${checking?'verified':'generated'}.`);
