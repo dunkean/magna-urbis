@@ -38,23 +38,38 @@ const tGeo = now() - t1;
 const timings = {};
 const time = (name, f) => { const s = now(); const r = f(); timings[name] = (timings[name] ?? 0) + now() - s; return r; };
 
-// quarters
-const qIn = time('json.stringify', () => [JSON.stringify(c.sites ?? []), JSON.stringify(c.layoutConfig), JSON.stringify(c.roads ?? [])]);
-const qOutStr = time('wasm.quarters', () => terrain.urban_quarters(c.seed, qIn[0], qIn[1], qIn[2]));
-const layouts = time('json.parse', () => JSON.parse(qOutStr));
-const layoutsJson = time('json.stringify', () => JSON.stringify(layouts));
-
-// parcels
+// --resident: products stay in the WASM instance (rust/crates/wasm/src/resident.rs);
+// stages pass ids, pool helpers import one binary image per batch. Otherwise the
+// JSON path: every stage re-sends layouts/partitions as JSON text.
+const residentMode = process.argv.includes('--resident');
 let parcelConfig = c.parcelConfig;
 if (!parcelConfig) {
   // Same default the UI sends: taken from the native baseline partitions' config.
   const base = JSON.parse(readFileSync(resolve(baseDir, 'partitions.json'), 'utf8'));
   parcelConfig = base[0]?.config ?? {};
 }
+let qOutStr, pOutStr, layouts, partitions, layoutsJson, partitionsJson, lid = 0, pid = 0;
+// quarters
+const qIn = time('json.stringify', () => [JSON.stringify(c.sites ?? []), JSON.stringify(c.layoutConfig), JSON.stringify(c.roads ?? [])]);
 const pCfg = time('json.stringify', () => JSON.stringify(parcelConfig));
-const pOutStr = time('wasm.parcels', () => terrain.urban_parcels(c.seed, layoutsJson, pCfg));
-const partitions = time('json.parse', () => JSON.parse(pOutStr));
-const partitionsJson = time('json.stringify', () => JSON.stringify(partitions));
+if (residentMode) {
+  qOutStr = time('wasm.quarters', () => terrain.urban_quarters_resident(c.seed, qIn[0], qIn[1], qIn[2]));
+  layouts = time('json.parse', () => JSON.parse(qOutStr));
+  lid = terrain.resident_layouts_id();
+  pOutStr = time('wasm.parcels', () => terrain.urban_parcels_resident(c.seed, lid, pCfg, 0, 0xffffffff));
+  partitions = time('json.parse', () => JSON.parse(pOutStr));
+  pid = terrain.resident_partitions_id();
+} else {
+  qOutStr = time('wasm.quarters', () => terrain.urban_quarters(c.seed, qIn[0], qIn[1], qIn[2]));
+  layouts = time('json.parse', () => JSON.parse(qOutStr));
+  layoutsJson = time('json.stringify', () => JSON.stringify(layouts));
+  pOutStr = time('wasm.parcels', () => terrain.urban_parcels(c.seed, layoutsJson, pCfg));
+  partitions = time('json.parse', () => JSON.parse(pOutStr));
+  partitionsJson = time('json.stringify', () => JSON.stringify(partitions));
+}
+const sitesRange = (start, end) => residentMode
+  ? terrain.urban_building_sites_resident(c.seed, lid, pid, culture, start, end)
+  : terrain.urban_building_sites_range(c.seed, layoutsJson, partitionsJson, culture, start, end);
 
 // building sites (--pool N: N-1 single-thread workers plus this thread share
 // contiguous site ranges, merged in order, like rust/bridge/urbanPool.ts)
@@ -67,30 +82,34 @@ if (poolSize > 1) {
     w.once('message', () => ok(w));
   })));
   const s = now();
-  const total = SettlementTerrain.urban_building_sites_total(layoutsJson, partitionsJson);
+  const total = residentMode ? terrain.urban_building_sites_total_resident(lid, pid) : SettlementTerrain.urban_building_sites_total(layoutsJson, partitionsJson);
   const parts = Math.min(Math.ceil(total / 16), poolSize * 4);
   const jobs = Array.from({ length: parts }, (_, k) => [Math.floor(total * k / parts), Math.floor(total * (k + 1) / parts)]);
   const results = new Array(jobs.length);
   let next = 0, done = 0, id = 0;
-  const shared = { seed: c.seed, layouts: layoutsJson, partitions: partitionsJson, culture };
+  const shared = residentMode ? { seed: c.seed, culture, image: time('resident.export', () => terrain.export_resident(lid, pid)) }
+    : { seed: c.seed, layouts: layoutsJson, partitions: partitionsJson, culture };
   await new Promise(finish => {
     const settle = () => { if (done === jobs.length) finish(); };
     const give = (w, first) => {
       if (next >= jobs.length) return;
       const i = next++, [start, end] = jobs[i];
-      w.once('message', m => { results[i] = m.json ?? terrain.urban_building_sites_range(c.seed, layoutsJson, partitionsJson, culture, start, end); done++; give(w); settle(); });
+      w.once('message', m => { results[i] = m.json ?? sitesRange(start, end); done++; give(w); settle(); });
       w.postMessage({ id: id++, start, end, ...(first ? { shared } : {}) });
     };
     for (const w of helpers) give(w, true);
-    const step = () => { if (next < jobs.length) { const i = next++; results[i] = terrain.urban_building_sites_range(c.seed, layoutsJson, partitionsJson, culture, ...jobs[i]); done++; setImmediate(step); } settle(); };
+    const step = () => { if (next < jobs.length) { const i = next++; results[i] = sitesRange(...jobs[i]); done++; setImmediate(step); } settle(); };
     step();
   });
   sOutStr = '[' + results.map(r => r.slice(1, -1)).filter(r => r.length).join(',') + ']';
   timings['wasm.sites'] = now() - s;
-  console.log(`pool: ${poolSize} participants, ${jobs.length} site ranges`);
+  console.log(`pool: ${poolSize} participants, ${jobs.length} site ranges${residentMode ? `, binary image ${kb({ length: shared.image.byteLength })}` : ''}`);
   for (const w of helpers) void w.terminate();
-} else sOutStr = time('wasm.sites', () => terrain.urban_building_sites(c.seed, layoutsJson, partitionsJson, culture));
+} else sOutStr = time('wasm.sites', () => residentMode ? terrain.urban_building_sites_resident(c.seed, lid, pid, culture, 0, 0xffffffff)
+  : terrain.urban_building_sites(c.seed, layoutsJson, partitionsJson, culture));
 const requests = time('json.parse', () => JSON.parse(sOutStr));
+console.log(`mode: ${residentMode ? 'resident (ids, binary pool image)' : 'json (re-sent per stage)'}`);
+if (timings['resident.export']) console.log(`${'resident.export'.padEnd(16)}${fmt(timings['resident.export'])}`);
 
 console.log(`terrain new ${fmt(tNew)}   set_urban_geometry ${fmt(tGeo)}`);
 for (const k of ['wasm.quarters', 'wasm.parcels', 'wasm.sites']) console.log(`${k.padEnd(16)}${fmt(timings[k])}`);
@@ -124,14 +143,16 @@ function diff(a, b, path, out, tol) {
   }
   out.count++; out.big++; if (out.examples.length < 3) out.examples.push(`${path}: ${JSON.stringify(a)?.slice(0, 40)} vs ${JSON.stringify(b)?.slice(0, 40)}`);
 }
-console.log('equivalence vs native baseline:');
+console.log(`equivalence vs ${baseDir}:`);
 for (const [name, got] of [['layouts', layouts], ['partitions', partitions], ['requests', requests]]) {
   let want;
   try { want = JSON.parse(readFileSync(resolve(baseDir, name + '.json'), 'utf8')); } catch { console.log(`  ${name}: baseline missing`); continue; }
   const exact = JSON.stringify(canon(got)) === JSON.stringify(canon(want));
   const out = { count: 0, big: 0, small: 0, examples: [] };
   if (!exact) diff(got, want, '', out, 1e-9);
-  console.log(`  ${name}: ${exact ? 'IDENTICAL' : `DIFF ${out.count} values (${out.big} beyond 1e-9 rel, ${out.small} within)`}`);
+  const text = { layouts: qOutStr, partitions: pOutStr, requests: sOutStr }[name];
+  const bytes = text === readFileSync(resolve(baseDir, name + ".json"), "utf8");
+  console.log(`  ${name}: ${exact ? "IDENTICAL" : `DIFF ${out.count} values (${out.big} beyond 1e-9 rel, ${out.small} within)`}${bytes ? " (byte-identical JSON text)" : ""}`);
   for (const e of out.examples) console.log('     ' + e);
 }
 const save = arg('save', undefined);

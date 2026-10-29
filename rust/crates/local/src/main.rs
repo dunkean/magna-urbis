@@ -134,6 +134,38 @@ fn decode<T: for<'de> Deserialize<'de>>(bytes: &[u8]) -> ApiResult<T> {
 fn value<T: for<'de> Deserialize<'de>>(v: &Value) -> ApiResult<T> {
     T::deserialize(v).map_err(|e| e.to_string())
 }
+/// Append f32 values as little-endian bytes: one memcpy on little-endian hosts.
+fn extend_f32_le(body: &mut Vec<u8>, values: &[f32]) {
+    #[cfg(target_endian = "little")]
+    {
+        // SAFETY: f32 has no padding and every byte of it is initialised.
+        let bytes = unsafe {
+            std::slice::from_raw_parts(values.as_ptr().cast::<u8>(), std::mem::size_of_val(values))
+        };
+        body.extend_from_slice(bytes);
+    }
+    #[cfg(not(target_endian = "little"))]
+    for value in values {
+        body.extend_from_slice(&value.to_le_bytes());
+    }
+}
+
+/// `{"id":<id>,"<name>":<values>,"ms":<ms>}` written straight from the typed
+/// values: no intermediate `serde_json::Value` tree of the whole product.
+fn product_reply<T: Serialize>(id: &Value, name: &str, values: &T, started: Instant) -> ApiResult<Reply> {
+    let mut body = b"{\"id\":".to_vec();
+    serde_json::to_writer(&mut body, id).map_err(|e| e.to_string())?;
+    body.extend_from_slice(format!(",\"{name}\":").as_bytes());
+    serde_json::to_writer(&mut body, values).map_err(|e| e.to_string())?;
+    body.extend_from_slice(b",\"ms\":");
+    serde_json::to_writer(&mut body, &millis(started)).map_err(|e| e.to_string())?;
+    body.push(b'}');
+    Ok(Reply {
+        kind: "application/json",
+        body,
+    })
+}
+
 fn millis(start: Instant) -> f64 {
     start.elapsed().as_secs_f64() * 1000.0
 }
@@ -279,9 +311,7 @@ fn terrain_reply(input: TerrainRequest, state: &mut Session) -> ApiResult<Reply>
     body.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
     body.extend_from_slice(&encoded);
     for (_, array) in arrays {
-        for number in array {
-            body.extend_from_slice(&number.to_le_bytes());
-        }
+        extend_f32_le(&mut body, array);
     }
     body.extend_from_slice(&data.cave_mask);
     Ok(Reply {
@@ -660,23 +690,21 @@ fn urban_reply(input: Value, state: &mut Session, session: &str) -> ApiResult<Re
         let config: urban::LayoutConfig = value(&input["layoutConfig"])?;
         let layouts = terrain.urban_quarters(seed, &sites, &config, &roads)?;
         let ms = millis(started);
-        let result = json!({"id": input["id"], "layouts": layouts, "ms": ms});
         // Reparse serialized decimal coordinates, as the WASM parcel boundary does.
         // Deserializing Value directly retains native f64 bits and can change cuts.
-        // One serialisation serves both the reparse and the reply: the layouts
-        // bytes sit between the id prefix and the ms suffix.
-        let body = serde_json::to_vec(&result).map_err(|e| e.to_string())?;
-        let mut prefix = b"{\"id\":".to_vec();
-        serde_json::to_writer(&mut prefix, &input["id"]).map_err(|e| e.to_string())?;
-        prefix.extend_from_slice(b",\"layouts\":");
-        let mut suffix = b",\"ms\":".to_vec();
-        serde_json::to_writer(&mut suffix, &ms).map_err(|e| e.to_string())?;
-        suffix.push(b'}');
-        if !body.starts_with(&prefix) || !body.ends_with(&suffix) || body.len() < prefix.len() + suffix.len() {
-            return Err("Layouts reply framing mismatch.".into());
-        }
-        let retained = Arc::new(decode(&body[prefix.len()..body.len() - suffix.len()])?);
-        drop(result);
+        // One serialisation, written straight from the layouts (no Value tree),
+        // serves both the reparse and the reply.
+        let mut body = b"{\"id\":".to_vec();
+        serde_json::to_writer(&mut body, &input["id"]).map_err(|e| e.to_string())?;
+        body.extend_from_slice(b",\"layouts\":");
+        let begin = body.len();
+        serde_json::to_writer(&mut body, &layouts).map_err(|e| e.to_string())?;
+        let end = body.len();
+        drop(layouts);
+        body.extend_from_slice(b",\"ms\":");
+        serde_json::to_writer(&mut body, &ms).map_err(|e| e.to_string())?;
+        body.push(b'}');
+        let retained = Arc::new(decode(&body[begin..end])?);
         state.urban.retain_layouts(Arc::clone(&retained))?;
         state.layouts = Some((input["id"].as_u64().ok_or("ID invalide.")?, retained));
         Ok(Reply {
@@ -760,17 +788,17 @@ fn urban_reply(input: Value, state: &mut Session, session: &str) -> ApiResult<Re
             let partitions: Vec<urban::Partition> = value(&input["partitions"])?;
             terrain.urban_building_sites_with_culture(seed, &layouts, &partitions, culture)?
         };
-        json_reply(json!({"id":input["id"],"placementRequests":output,"ms":millis(started)}))
+        product_reply(&input["id"], "placementRequests", &output, started)
     } else if input["kind"] == "builtCapacity" {
         let partitions: Vec<urban::Partition> = value(&input["partitions"])?;
         let scene: urban::programme::BuiltScene = value(&input["scene"])?;
         let output = urban::programme::reconcile_built(&partitions, &scene)?;
-        json_reply(json!({"id":input["id"],"partitions":output,"ms":millis(started)}))
+        product_reply(&input["id"], "partitions", &output, started)
     } else if input["kind"] == "programme" {
         let layouts: Vec<urban::Layout> = value(&input["layouts"])?;
         let partitions: Vec<urban::Partition> = value(&input["partitions"])?;
         let output = urban::programme::reallocate(&layouts, &partitions)?;
-        json_reply(json!({"id": input["id"], "partitions": output, "ms": millis(started)}))
+        product_reply(&input["id"], "partitions", &output, started)
     } else {
         Err("ÃƒÆ’Ã¢â‚¬Â°tape urbaine inconnue.".into())
     }
@@ -996,8 +1024,8 @@ fn dispatch(path: &str, body: &[u8], sessions: &Mutex<Sessions>) -> ApiResult<Re
             let pipeline=state.terrain_pipeline.as_mut().ok_or("Missing retained terrain pipeline")?;
             let stage=input["stage"].as_u64().filter(|&s|s<8).ok_or("Invalid terrain stage")? as u32;
             pipeline.advance(stage)?;
-            let height=if input["preview"]==true || stage==7 {pipeline.height()}else{Vec::new()};
-            let body=height.iter().flat_map(|h|h.to_le_bytes()).collect();
+            let height=if stage==7 {pipeline.take_height()}else if input["preview"]==true {pipeline.height()}else{Vec::new()};
+            let mut body=Vec::with_capacity(height.len()*4);extend_f32_le(&mut body,&height);
             Ok(Reply{kind:"application/octet-stream",body})
         },
         "/terrain" => terrain_reply(value(&input)?, &mut state),
