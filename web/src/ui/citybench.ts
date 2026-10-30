@@ -68,8 +68,8 @@ const fit = (): void => { if (terrain) setView(fitView(terrain.width, viewport.c
 
 /** Map background style: Relief is `decors/<id>.png` (atlas), Rendu and Parchemin are
  * `decors/<id>-render.png` / `-parchment.png` (render_city_maps.mjs --style), same pixels. */
-type BackgroundStyle = 'relief' | 'render' | 'parchment';
-const BACKGROUND_LABELS: Record<BackgroundStyle, string> = { relief: 'Relief', render: 'Rendu', parchment: 'Parchemin' };
+type BackgroundStyle = 'relief' | 'render' | 'parchment' | 'cadastre';
+const BACKGROUND_LABELS: Record<BackgroundStyle, string> = { relief: 'Relief', render: 'Rendu', parchment: 'Parchemin', cadastre: 'Cadastre' };
 const isBackgroundStyle = (v: string | null): v is BackgroundStyle => !!v && v in BACKGROUND_LABELS;
 let backgroundStyle: BackgroundStyle = isBackgroundStyle(query.get('fond')) ? query.get('fond') as BackgroundStyle : 'relief';
 let backgroundTicket = 0;
@@ -117,22 +117,25 @@ async function drawBackground(d: Decor): Promise<void> {
   if (!url) status('Image pré-rendue absente pour cette carte : ombrage calculé depuis le relief.');
   else if (styled && url !== styled) status(`Fond « ${BACKGROUND_LABELS[backgroundStyle]} » absent pour cette carte : relief affiché (node scripts/render_city_maps.mjs --style ${backgroundStyle}).`);
 }
-/** Parchemin background ⇒ parchment city palette; leaving it gives the previous palette back. */
+/** Parchemin background ⇒ parchment city palette, Cadastre ⇒ ink; leaving them gives the previous palette back. */
 let paletteBeforeParchment = 'growth';
+const BACKGROUND_PALETTES: Partial<Record<BackgroundStyle, string>> = { parchment: 'parchment', cadastre: 'ink' };
 function syncCityPalette(): void {
   const select = document.querySelector<HTMLSelectElement>('select[data-render="palette"]'); if (!select) return;
   if (!select.querySelector('option[value="parchment"]')) select.append(new Option('Parchemin · encre', 'parchment'));
   const current = select.value, set = (value: string): void => { select.value = value; select.dispatchEvent(new Event('change')); };
-  if (backgroundStyle === 'parchment') { if (current !== 'parchment') { if (current) paletteBeforeParchment = current; set('parchment'); } }
-  else if (current === 'parchment' || !current) set(paletteBeforeParchment);
+  const wanted = BACKGROUND_PALETTES[backgroundStyle], forced = Object.values(BACKGROUND_PALETTES);
+  if (wanted) { if (current !== wanted) { if (current && !forced.includes(current)) paletteBeforeParchment = current; set(wanted); } }
+  else if (forced.includes(current) || !current) set(paletteBeforeParchment);
 }
 /** Rendu background ⇒ painted road preset (casings, surfaces, stone bridges); leaving it gives the previous preset back. */
 let presetBeforeRender = 'surface';
 function syncRoadPreset(): void {
   const select = document.querySelector<HTMLSelectElement>('#roadPreset'); if (!select) return;
   const current = select.value, set = (value: string): void => { select.value = value; select.dispatchEvent(new Event('change')); };
-  if (backgroundStyle === 'render') { if (current !== 'render') { presetBeforeRender = current || 'surface'; set('render'); } }
-  else if (current === 'render') set(presetBeforeRender);
+  const wanted = backgroundStyle === 'render' ? 'render' : backgroundStyle === 'cadastre' ? 'ink' : undefined;
+  if (wanted) { if (current !== wanted) { if (current !== 'render' && current !== 'ink') presetBeforeRender = current || 'surface'; set(wanted); } }
+  else if (current === 'render' || current === 'ink') set(presetBeforeRender);
 }
 function hillshade(d: Decor): string {
   const { n, height, water, width } = d.raster, cell = width / n, canvas = document.createElement('canvas'); canvas.width = canvas.height = n;
