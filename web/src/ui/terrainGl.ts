@@ -249,6 +249,15 @@ ${RENDER_3D_FOREST_GLSL}
 ${RENDER_V2_GLSL}
 
 ${WATER_STYLE_GLSL}
+// Variant constants (terrainFragment): NATURAL compiles the material path, uRenderV2/uForest
+// become constants when off, so ANGLE/D3D11 (FXC) only compiles what the look uses.
+V2Env v2Here;
+float naturalTpi(vec3 s, vec2 world) {
+  float r=max(300.,uFieldCell*2.);
+  float mean=(surface(world+vec2(r,0.)).x+surface(world-vec2(r,0.)).x+surface(world+vec2(0.,r)).x+surface(world-vec2(0.,r)).x)*.25;
+  return (s.x-mean)/(6.*r);
+}
+#if NATURAL
 vec3 naturalMaterial(vec3 s, vec2 world) {
   float r=max(300.,uFieldCell*2.);
   float mean=(surface(world+vec2(r,0.)).x+surface(world-vec2(r,0.)).x+surface(world+vec2(0.,r)).x+surface(world-vec2(0.,r)).x)*.25;
@@ -262,8 +271,8 @@ vec3 naturalMaterial(vec3 s, vec2 world) {
   if(uMode==3 || uRenderV2>0) {
     vec3 base=level(0,world);GroundMaterial m;
     vec3 macro=earthMaterial(base,world,max(uPx,1.),(base.x-mean)/(6.*r),shore,openness);
-    if(uRenderV2>1)return v2Diagnostic(s,world,(s.x-mean)/(6.*r),uPx);
-    if(uRenderV2>0)m=v2Ground(s,world,uPx,(s.x-mean)/(6.*r),uLight.xzy,uLight2.xzy,uRockStrength,renderGuideBaseOpen);
+    if(uRenderV2>1)return v2DiagnosticEnv(v2Here,uPx);
+    if(uRenderV2>0)m=v2GroundEnv(v2Here,s,world,uPx,uLight.xzy,uLight2.xzy,uRockStrength,renderGuideBaseOpen);
     else {
       m=terrainGroundMaterial(base,world,uPx,macro,uMaterialClimate,uMaterialSeed);
     }
@@ -273,9 +282,11 @@ vec3 naturalMaterial(vec3 s, vec2 world) {
   }
   return earthMaterial(s,world,max(uPx,1.),(s.x-mean)/(6.*r),shore,openness);
 }
+#endif
 vec3 land(vec3 s, vec2 world) {
-  if(uMode==3) return naturalMaterial(s,world);
-  if(uMode==2) return naturalMaterial(s,world)*hillshade(s.yz);
+#if NATURAL
+  if(uMode>=2){vec3 c=naturalMaterial(s,world);return uMode==2?c*hillshade(s.yz):c;}
+#endif
   if (uMode == 1) {
     float landMin = uCoastal == 1 ? 0.0 : uGlobalMin;
     float t = clamp((s.x - landMin) / max(1e-6, uMaxH - landMin), 0.0, 1.0);
@@ -342,7 +353,9 @@ void main() {
     // Hidden water keeps the cartographic paper over the submerged ground.
     // Its explicit coverage also prevents the physical material recolouring it.
     float coverage=1.-landCover;
-    vec3 landColor=uGroundCapture==1 ? vec3(0.) : land(vec3(max(s.x,1e-3),s.yz),world);
+    vec3 landS=vec3(max(s.x,1e-3),s.yz);
+    if(uRenderV2>0)v2Here=v2Local(landS,world,naturalTpi(landS,world),uPx);
+    vec3 landColor=uGroundCapture==1 ? vec3(0.) : land(landS,world);
     vec3 color = uGroundCapture==1 ? sea(world)*coverage : mix(sea(world),landColor,landCover);
     if (uRelief == 0) color = mix(sea(world), uPaper, landCover);
     if (uHasCave == 1 && uRelief == 1) {
@@ -353,10 +366,12 @@ void main() {
       color = mix(color, vec3(shade), rock);
       coverage=rock+coverage*(1.-rock);
     }
+    // One V2 water evaluation per fragment (the three cases below only choose its inputs).
+    bool v2w=false;vec3 wBase=color;float wCover=0.,wKind=1.,wDepth=0.;
     if (uUseWaterLayer==1) {
       vec4 water=texelFetch(uWaterLayer,ivec2(gl_FragCoord.xy),0);
       float under=uRenderV2>0?1.:1.-forestResolvedCover;
-      if(uRenderV2>0)color=v2WaterAt(color,s,world,uPx,water.a,s.x<0.?1.:3.,s.x<0.?-s.x:8.*water.a);
+      if(uRenderV2>0){v2w=true;wBase=color;wCover=water.a;wKind=s.x<0.?1.:3.;wDepth=s.x<0.?-s.x:8.*water.a;}
       else color=color*(1.-water.a*under)+water.rgb*under;
     } else if (uWaterVisible == 1 && uHasLake > 0) {
       float m = lakeShore(world, uHasLake == 1);
@@ -370,10 +385,11 @@ void main() {
         lakeColor = styledWater(max(distance, 0.) / uSeaBand);
       }
       float a=clamp(m/w+.5,0.,1.);
-      color = uRenderV2>0?v2WaterAt(color,s,world,uPx,a,2.,8.*a):mix(color,lakeColor,a);
+      if(uRenderV2>0){v2w=true;wBase=color;wCover=a;wKind=2.;wDepth=8.*a;}else color=mix(color,lakeColor,a);
       coverage=a+coverage*(1.-a);
     }
-    if(uRenderV2>0 && landCover<1.)color=v2WaterAt(landColor,s,world,uPx,1.-landCover,1.,max(-s.x,0.));
+    if(uRenderV2>0 && landCover<1.){v2w=true;wBase=landColor;wCover=1.-landCover;wKind=1.;wDepth=max(-s.x,0.);}
+    if(v2w)color=v2WaterAtEnv(v2Here,wBase,world,uPx,wCover,wKind,wDepth);
     if (uContours == 1 && s.x > 0.0 && uMode != 1) {
       float v = raster.x / uStep;
       float slope = length(raster.yz);
@@ -462,24 +478,57 @@ uniform sampler2D uLayer;
 out vec4 outColor;
 void main() { outColor = texelFetch(uLayer, ivec2(gl_FragCoord.xy), 0); }`;
 
-function compile(gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgram {
+/** Starts compiling and linking without reading any status, so KHR_parallel_shader_compile can work off the main thread. */
+function startCompile(gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgram {
   const program = gl.createProgram()!;
   for (const [type, source] of [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]] as const) {
     const shader = gl.createShader(type)!;
     gl.shaderSource(shader, source); gl.compileShader(shader);
-    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error(`Shader : ${gl.getShaderInfoLog(shader)}`);
     gl.attachShader(program, shader);
   }
   gl.linkProgram(program);
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(`Programme : ${gl.getProgramInfoLog(program)}`);
   return program;
 }
+/** Waits for the link (blocking) and reports the shader log on failure. */
+function finishCompile(gl: WebGL2RenderingContext, program: WebGLProgram): WebGLProgram {
+  if (gl.getProgramParameter(program, gl.LINK_STATUS)) return program;
+  const shaders = (gl.getAttachedShaders(program) ?? []).map(shader => gl.getShaderInfoLog(shader)).filter(Boolean).join('\n');
+  throw new Error(`Programme : ${shaders || gl.getProgramInfoLog(program)}`);
+}
+const compile = (gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgram => finishCompile(gl, startCompile(gl, vs, fs));
+
+/** Terrain program variant: the map shader holds every look, and ANGLE/D3D11 (FXC) needs minutes to compile
+ * all of it. Each variant fixes the look's mode, Render v2 number and forest as constants, so FXC drops the
+ * other looks, and keeps constant-bound loops as loops (a uniform zero in the bound): unrolling the forest
+ * crown loops alone cost it minutes. Measured with FXC (link + first draw): 1.5 s preview,
+ * about 7 s natural, 50 s Render v2, 2.5 min Render v2 with forest, against a page that never loaded. */
+interface TerrainVariant { mode: number; v2: number; forest: boolean }
+const PREVIEW_VARIANT: TerrainVariant = { mode: 0, v2: 0, forest: false };
+const variantKey = (v: TerrainVariant): string => `${v.mode}.${v.v2}.${+v.forest}`;
+function terrainFragment(v: TerrainVariant): string {
+  const swap = (fs: string, from: string, to: string): string => { if (fs.split(from).length !== 2) throw new Error(`Terrain shader: ${from} not found once`); return fs.replace(from, to); };
+  let fs = swap(TERRAIN_FS, '#version 300 es\n', `#version 300 es\n#define NATURAL ${v.mode >= 2 ? 1 : 0}\n`);
+  fs = swap(fs, 'uniform int uMode;', `const int uMode=${v.mode};`);
+  fs = swap(fs, 'uniform int uRenderV2;', `const int uRenderV2=${v.v2};`);
+  fs = swap(fs, 'uniform int uForest;', `const int uForest=${v.forest ? 1 : 0};`);
+  fs = swap(fs, 'out vec4 outColor;', 'out vec4 outColor;\nuniform int uLoopZero;');   // never set: always 0
+  // A loop writing an indexed array element (e.g. q.g[j*3+i]=…) must stay unrollable: FXC then refuses the pixel executable.
+  return fs.replace(/(for\s*\(\s*int\s+\w+\s*=\s*-?\d+\s*;\s*\w+\s*<=?\s*)(\d+)\s*;/g, (loop: string, head: string, bound: string, at: number, all: string) =>
+    /\]\s*=[^=]/.test(all.slice(at, all.indexOf('\n', at))) ? loop : `${head}${bound}+uLoopZero;`);
+}
+const lookMode = (look: TerrainLook): number => look.style === 'copernicus' ? 1 : look.layers.hypsometry && isRender3dStyle(look.style) ? 3 : look.style === 'render' && look.layers.hypsometry ? 2 : 0;
 
 interface GpuLayer { layer: HeightLayer; levels: Float32Array[]; texture: WebGLTexture; cave?: WebGLTexture; alpha: number; fadeStart: number }
 
 export class TerrainGl {
   readonly gl: WebGL2RenderingContext;
   private terrain: WebGLProgram; private river: WebGLProgram; private composite: WebGLProgram;
+  /** Terrain variants by key, linked or still linking; `linked` holds the ones whose status was read. */
+  private variants = new Map<string, WebGLProgram>();
+  private linked = new Set<WebGLProgram>();
+  private parallel: { COMPLETION_STATUS_KHR: number } | null = null;
+  private compilePoll = 0;
+  private capturing = false;
   /** Painted water of the `render` style (renderWaterShader.ts), compiled on first use. */
   private renderWater?: { program: WebGLProgram; u: Map<string, WebGLUniformLocation | null> };
   private riverTarget?: { framebuffer: WebGLFramebuffer; texture: WebGLTexture; width: number; height: number };
@@ -490,7 +539,7 @@ export class TerrainGl {
   private retainedWaterTexture?: WebGLTexture;
   private retainedWaterViewKey = '';
   private captureTarget?: { framebuffer: WebGLFramebuffer; texture: WebGLTexture; width: number; height: number };
-  private locations = new Map<string, WebGLUniformLocation | null>();
+  private locations = new Map<WebGLProgram, Map<string, WebGLUniformLocation | null>>();
   private riverLocations = new Map<string, WebGLUniformLocation | null>();
   private base?: GpuLayer; private details: GpuLayer[] = [];
   private enhanced: GpuLayer[] = [];
@@ -517,7 +566,8 @@ export class TerrainGl {
     const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, preserveDrawingBuffer: false, powerPreference: 'high-performance' });
     if (!gl) throw new Error('WebGL2 indisponible');
     this.gl = gl;
-    this.terrain = compile(gl, TERRAIN_VS, TERRAIN_FS);
+    this.parallel = gl.getExtension('KHR_parallel_shader_compile');
+    this.terrain = this.startVariant(PREVIEW_VARIANT);
     this.river = compile(gl, RIVER_VS, RIVER_FS);
     this.composite = compile(gl, COMPOSITE_VS, COMPOSITE_FS);
     this.riverBuffer = gl.createBuffer()!;
@@ -532,8 +582,31 @@ export class TerrainGl {
   }
 
   private uniform(name: string): WebGLUniformLocation | null {
-    if (!this.locations.has(name)) this.locations.set(name, this.gl.getUniformLocation(this.terrain, name));
-    return this.locations.get(name)!;
+    let cache = this.locations.get(this.terrain);
+    if (!cache) this.locations.set(this.terrain, cache = new Map());
+    if (!cache.has(name)) cache.set(name, this.gl.getUniformLocation(this.terrain, name));
+    return cache.get(name)!;
+  }
+  private startVariant(v: TerrainVariant): WebGLProgram {
+    const key = variantKey(v);
+    let program = this.variants.get(key);
+    if (!program) this.variants.set(key, program = startCompile(this.gl, TERRAIN_VS, terrainFragment(v)));
+    return program;
+  }
+  /** The look's variant once linked. While it links in parallel the preview variant stands in
+   * (undefined if that one is not ready either) and a redraw is polled; captures wait for the link. */
+  private terrainProgram(look: TerrainLook, wait: boolean): WebGLProgram | undefined {
+    const gl = this.gl, mode = lookMode(look);
+    const ready = (program: WebGLProgram, block: boolean): boolean => {
+      if (this.linked.has(program)) return true;
+      if (!block && this.parallel && !gl.getProgramParameter(program, this.parallel.COMPLETION_STATUS_KHR)) return false;
+      finishCompile(gl, program); this.linked.add(program); return true;
+    };
+    const target = this.startVariant({ mode, v2: renderV2Number(look.style), forest: mode === 3 && !!this.forest });
+    if (ready(target, wait)) return target;
+    if (!this.compilePoll) this.compilePoll = window.setTimeout(() => { this.compilePoll = 0; this.request(); }, 100);
+    const preview = this.startVariant(PREVIEW_VARIANT);
+    return ready(preview, false) ? preview : undefined;
   }
   private riverUniform(name: string): WebGLUniformLocation | null {
     if (!this.riverLocations.has(name)) this.riverLocations.set(name, this.gl.getUniformLocation(this.river, name));
@@ -679,7 +752,8 @@ export class TerrainGl {
   }
   redrawForCapture(): void {
     if (!this.base || !this.look || this.gl.isContextLost()) throw new Error('Le terrain est indisponible.');
-    this.draw();
+    this.capturing = true;
+    try { this.draw(); } finally { this.capturing = false; }
   }
 
   /** Render a world-space LOD tile with the same material and detail as the map. */
@@ -778,6 +852,9 @@ export class TerrainGl {
   private draw(pixelRatio = Math.min(2, window.devicePixelRatio || 1), stylePixelRatio = pixelRatio, framebuffer: WebGLFramebuffer | null = null): void {
     const gl = this.gl, look = this.look, state = this.view;
     if (this.disposed || !look || !state || !this.base || gl.isContextLost()) return;
+    const program = this.terrainProgram(look, this.capturing || framebuffer !== null);
+    if (!program) return;
+    this.terrain = program;
     gl.bindFramebuffer(gl.FRAMEBUFFER,framebuffer);
     const started = performance.now();
     // Two device pixels per CSS pixel at most: 4K stays cheap on modest GPUs.
@@ -798,7 +875,7 @@ export class TerrainGl {
     gl.uniform1i(u('uRelief'), look.layers.relief ? 1 : 0); gl.uniform1i(u('uWaterVisible'), look.layers.water !== false ? 1 : 0);
     gl.uniform1ui(u('uMaterialSeed'), look.seed >>> 0);
     gl.uniform2f(u('uMaterialClimate'), look.climate?.temperature ?? 18, look.climate?.precipitation ?? 1000);
-    const mode = look.style === 'copernicus' ? 1 : look.layers.hypsometry && isRender3dStyle(look.style) ? 3 : look.style === 'render' && look.layers.hypsometry ? 2 : 0;
+    const mode = lookMode(look);
     gl.uniform1i(u('uMode'), mode);
     // Textures 7 forest field, 8 occupation, 12 banks; 10/11 belong to water.
     bindForest(gl, u, this.forest, this.occupation, this.empty, mode === 3, 7, 8, 12);
@@ -1010,7 +1087,7 @@ export class TerrainGl {
 
   dispose(): void {
     if (this.disposed) return;
-    this.disposed = true; cancelAnimationFrame(this.frame); this.frame = 0;
+    this.disposed = true; cancelAnimationFrame(this.frame); this.frame = 0; clearTimeout(this.compilePoll);
     const gl = this.gl;
     this.release(this.base); this.details.forEach(d => this.release(d));
     this.enhanced.forEach(d => this.release(d));
@@ -1026,7 +1103,8 @@ export class TerrainGl {
     if (this.waterTarget) { gl.deleteFramebuffer(this.waterTarget.framebuffer); gl.deleteTexture(this.waterTarget.texture); }
     if (this.retainedWaterTexture) gl.deleteTexture(this.retainedWaterTexture);
     if (this.captureTarget) { gl.deleteFramebuffer(this.captureTarget.framebuffer); gl.deleteTexture(this.captureTarget.texture); }
-    gl.deleteProgram(this.terrain); gl.deleteProgram(this.river); gl.deleteProgram(this.composite);
+    for (const program of this.variants.values()) gl.deleteProgram(program);
+    gl.deleteProgram(this.river); gl.deleteProgram(this.composite);
     if (this.renderWater) gl.deleteProgram(this.renderWater.program);
   }
 }

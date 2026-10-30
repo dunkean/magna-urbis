@@ -95,11 +95,13 @@ V2Env v2Local(vec3 s,vec2 world,float tpi,float footprint){
   e.woody*=1.-beach;e.grass*=1.-beach;e.rock*=1.-beach;
   return e;
 }
-GroundMaterial v2Ground(vec3 s,vec2 world,float footprint,float tpi,vec3 light,vec3 light2,float strength,vec3 macroOpen){
+// The *Env forms take an environment the caller evaluated once: D3D11 (FXC) inlines every
+// call, and each v2Local copy costs it over a minute of shader compilation.
+GroundMaterial v2GroundEnv(V2Env local,vec3 s,vec2 world,float footprint,vec3 light,vec3 light2,float strength,vec3 macroOpen){
   float macroWoods=renderGuideWoods*(1.-clamp(renderGuideBeach/.8,0.,1.));
   vec3 baseClosed=renderGuideBaseClosed;
   if(v2Zoned()){macroWoods=min(macroWoods*V2_ZONE_FOREST[v2Zone()].x,1.);baseClosed*=V2_ZONE_CANOPY[v2Zone()].rgb;}
-  V2Env e=v2Appearance(v2Local(s,world,tpi,footprint),footprint);v2Foliage=e.leaf;v2GroundSnow=e.snow;
+  V2Env e=v2Appearance(local,footprint);v2Foliage=e.leaf;v2GroundSnow=e.snow;
   // Retained macro canopy is the occupation/gallery fallback. Natural stands
   // below use population-weighted open, litter and intrinsic crown responses.
   float woods=(uForest==1?macroWoods:e.woody)*e.leaf*(1.-v2ZoneBare);
@@ -180,9 +182,12 @@ vec3 v2ShadeGround(GroundMaterial resolved,vec3 view,vec3 light,vec3 light2,floa
   vec3 meanResponse=openResponse*v2MeanWeights.x+litterResponse*v2MeanWeights.y+crownResponse*v2MeanWeights.z;
   return groundToDisplay(mix(meanResponse,groundToLinear(nearColor),v2ForestReveal));
 }
-vec3 v2WaterAt(vec3 rgb,vec3 s,vec2 world,float footprint,float cover,float kind,float depth){
+GroundMaterial v2Ground(vec3 s,vec2 world,float footprint,float tpi,vec3 light,vec3 light2,float strength,vec3 macroOpen){
+  return v2GroundEnv(v2Local(s,world,tpi,footprint),s,world,footprint,light,light2,strength,macroOpen);
+}
+vec3 v2WaterAtEnv(V2Env local,vec3 rgb,vec2 world,float footprint,float cover,float kind,float depth){
   if(uV2WaterVisible==0||cover<=0.)return rgb;
-  V2Env e=v2Local(s,world,0.,footprint);
+  V2Env e=local;
   // Regional map has no calving/current model. Only a perennial-cold land
   // source near a shoreline enables this local coastal iceberg proxy.
   float amplitude=6.+.5*max(0.,10.-uMaterialClimate.x);
@@ -192,7 +197,12 @@ vec3 v2WaterAt(vec3 rgb,vec3 s,vec2 world,float footprint,float cover,float kind
   if(uRenderV2==4)water=vec3(0.,0.,.13);
   return mix(rgb,water,cover);
 }
-vec3 v2Diagnostic(vec3 s,vec2 world,float tpi,float fp){return v2Color(v2Appearance(v2Local(s,world,tpi,fp),fp),float(uRenderV2-1));}
+vec3 v2WaterAt(vec3 rgb,vec3 s,vec2 world,float footprint,float cover,float kind,float depth){
+  if(uV2WaterVisible==0||cover<=0.)return rgb;
+  return v2WaterAtEnv(v2Local(s,world,0.,footprint),rgb,world,footprint,cover,kind,depth);
+}
+vec3 v2DiagnosticEnv(V2Env local,float fp){return v2Color(v2Appearance(local,fp),float(uRenderV2-1));}
+vec3 v2Diagnostic(vec3 s,vec2 world,float tpi,float fp){return v2DiagnosticEnv(v2Local(s,world,tpi,fp),fp);}
 `;
 
 export const renderV2Number = (style: string): number => ({ 'render-v2': 1, 'render-v2-substrate': 2, 'render-v2-moisture': 3, 'render-v2-vegetation': 4, 'render-v2-snow': 5 }[style] ?? 0);

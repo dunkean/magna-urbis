@@ -482,16 +482,17 @@ float forestWoods(float c,float h){return max(c,.25*forestHeightGate(h));}
 // Render3D level of detail: 0 keeps Render's colour and macro woods (fully
 // unresolved, >= 32 m/px), 1 the canonical forest (<= 2 m/px), log-smooth between.
 float forestReveal(float fp){return 1.-groundSmooth(1.,5.,log2(max(fp,.001)));}
-// Shared corner gradients of the lattice noise around one 3×3 crown neighbourhood.
-struct ForestPatch{ivec2 base;vec2 g[9];};
+// Lattice noise cell around one 3×3 crown neighbourhood. Corner gradients are
+// hashed where they are read: a gradient table filled in a loop forces
+// ANGLE/D3D11 (FXC) to unroll every crown loop, minutes of shader compilation.
+struct ForestPatch{ivec2 base;};
 ForestPatch forestPatchAround(ivec2 cell,float s){
   ForestPatch q;q.base=ivec2(floor(vec2(cell-1)*s/FOREST_PATCH));
-  for(int j=0;j<3;j++)for(int i=0;i<3;i++)q.g[j*3+i]=forestGradient(q.base+ivec2(i,j));
   return q;
 }
 float forestPatchValue(ForestPatch q,vec2 p){
-  vec2 g=p/FOREST_PATCH-vec2(q.base);ivec2 c=clamp(ivec2(floor(g)),ivec2(0),ivec2(1));int k=c.y*3+c.x;
-  return clamp(forestPerlin(g-vec2(c),q.g[k],q.g[k+1],q.g[k+3],q.g[k+4]).x*.6+.5,0.,1.);
+  vec2 g=p/FOREST_PATCH-vec2(q.base);ivec2 c=clamp(ivec2(floor(g)),ivec2(0),ivec2(1)),b=q.base+c;
+  return clamp(forestPerlin(g-vec2(c),forestGradient(b),forestGradient(b+ivec2(1,0)),forestGradient(b+ivec2(0,1)),forestGradient(b+ivec2(1,1))).x*.6+.5,0.,1.);
 }
 // One crown: centre, mean radius, outline harmonics, height, crown depth.
 struct ForestCrown{vec2 c;float r;float h;float depth;bool needle;bool alive;bool riparian;float edge;uint id;};
@@ -796,8 +797,8 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
     float d0=1.-pow(1.-dl,1.-w),d1=1.-pow(1.-dl,w);
     float aa=fp*.75;
     ForestHit hit;hit.cover=0.;hit.top=-1e9;hit.second=-1e9;hit.slope=vec2(0.);hit.rel=1.;hit.local=vec2(0.);hit.r=1.;hit.needle=false;hit.riparian=false;hit.edge=0.;hit.id=0u;hit.level=-1;hit.near=9.;hit.ink=.5;
-    if(d0>.002)forestCrowns(hit,int(l0),s0,st,aa);
-    if(d1>.002)forestCrowns(hit,int(l0)+1,s1,st,aa);
+    // One call site per crown pass (a loop, not two calls): ANGLE/D3D11 (FXC) compiles each call's inlined copy.
+    for(int k=0;k<2;k++){if((k==0?d0:d1)>.002)forestCrowns(hit,int(l0)+k,k==0?s0:s1,st,aa);}
     // Water sees the crowns as displayed: resolved and revealed.
     forestResolvedCover=hit.cover*crownVis*(uRenderV2>0&&v2MeanEnabled>.5?v2ForestReveal:reveal);
     float zp=hit.cover>0.?hit.top:0.,shade=0.;
@@ -805,7 +806,7 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
     // contain an oblique painted contact shade: projecting that drawing again
     // creates detached copies of trees rather than a coherent ground shadow.
     if(uForestBrushes==0){
-      if(w<.5)shade=forestShadow(hit,int(l0),s0,st,aa,zp,sun,cot);else shade=forestShadow(hit,int(l0)+1,s1,st,aa,zp,sun,cot);
+      int dominant=w<.5?0:1;shade=forestShadow(hit,int(l0)+dominant,dominant==0?s0:s1,st,aa,zp,sun,cot);
     }
     // Crown surface: leaf clumps (broadleaf) or branch whorls (conifers), rim and trough occlusion.
     if(uRenderV2>0){hit.cover*=v2Foliage;shade*=v2Foliage;forestResolvedCover*=v2Foliage;}
