@@ -9,6 +9,7 @@
  * never feeds terrain. */
 
 import { RENDER_V2_ZONE_GLSL } from './terrainRenderV2Zones';
+import { forestBeachGrid } from './terrainForestBeach';
 import { FOREST_BANK_GLSL, forestBankDensity, forestBankField, forestLakeInterior, forestRoutingRiverSegments, forestSegmentsKey, type ForestBank } from './terrainForestRiparian';
 
 export interface ForestSettings { enabled: boolean; density: number; clearings: number }
@@ -32,7 +33,9 @@ export interface ForestOccupation { x: number; y: number; width: number; n: numb
  * is the narrow bank-envelope raster on the same texels (ForestBank.rgba).
  * bankDensity is the applied 0..2 density control for gallery candidates;
  * its area channel is already scaled, and its bank geometry stays unchanged. */
-export interface ForestField { x: number; y: number; width: number; n: number; rgba: Uint8Array; bank?: Uint8Array; bankDensity?: number; clearingProfile?: 'progressive'; key: string }
+export type ForestBeachGrid = ReturnType<typeof forestBeachGrid>;
+/** `beach`: V2 crown-root beach grid (0..255) over the height layer, read by the shaders as uForestBeach. */
+export interface ForestField { x: number; y: number; width: number; n: number; rgba: Uint8Array; bank?: Uint8Array; bankDensity?: number; clearingProfile?: 'progressive'; beach?: ForestBeachGrid; key: string }
 export interface ForestFieldInput {
   /** Material seed, the same uint as uMaterialSeed (seedHash(settings.seed)). */
   seed: number;
@@ -224,6 +227,7 @@ export function v2StandCoverage(cover: number, stand: number, disturbed: number,
 }
 
 let baseCache: { key: string; base: Float32Array; optical: Float32Array; eligible: Float32Array; bank?: ForestBank } | undefined;
+let beachCache: { key: string; beach: ForestBeachGrid } | undefined;
 /** Deterministic in (seed, climate, heights, water, rivers, settings); no Math.random.
  * Terrain/climate terms vary at the height grid's scale and are evaluated on a
  * half-resolution base grid; clearings stay at full resolution. */
@@ -389,7 +393,14 @@ export function buildForestField(input: ForestFieldInput, settings: ForestSettin
     const k = o * 4, base = forestBankDensity(bankRgba[k + 2] * .5);
     bankRgba[k + 3] = Math.min(255, Math.round(bankRgba[k + 3] * (1 - Math.pow(1 - base, density)) / base));
   }
-  return { x: layer.x, y: layer.y, width: layer.width, n: N, rgba, bank: bankRgba, bankDensity: density, clearingProfile: input.clearingProfile, key };
+  // Only V2 crowns avoid beaches; the grid is about 8 m (fp = 30 m in the beach width), once per terrain and seed.
+  let beach: ForestBeachGrid | undefined;
+  if (input.clearingProfile === 'progressive') {
+    const beachKey = `${terrainKey}:${input.seed >>> 0}`;
+    if (beachCache?.key !== beachKey) beachCache = { key: beachKey, beach: forestBeachGrid(input.height, input.seed >>> 0, Math.min(2048, Math.max(256, 2 ** Math.ceil(Math.log2(input.height.width / 8))))) };
+    beach = beachCache.beach;
+  }
+  return { x: layer.x, y: layer.y, width: layer.width, n: N, rgba, bank: bankRgba, bankDensity: density, clearingProfile: input.clearingProfile, beach, key };
 }
 
 /** Crown lattice: per-level coverage target d → control τ (Monte-Carlo
@@ -405,6 +416,16 @@ const list = (values: readonly number[]): string => values.map(v => Number.isInt
 
 /** Emitted before NEURAL_EARTH_MATERIAL_GLSL. Its colour is unchanged; it
  * additionally writes the Render guide below for applyForest. */
+/** Single-channel linear texture of the baked V2 crown-root beach. */
+export function forestBeachTexture(gl: WebGL2RenderingContext, beach: { n: number; data: Uint8Array }): WebGLTexture {
+  const texture = gl.createTexture()!;
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, beach.n, beach.n, 0, gl.RED, gl.UNSIGNED_BYTE, beach.data);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return texture;
+}
 export const FOREST_PRELUDE_GLSL = `
 #define RENDER3D_FOREST
 uniform int uForest;
@@ -420,10 +441,13 @@ uniform int uForestBrushes; uniform highp sampler2DArray uForestBrushAtlas;
 uniform sampler2D uForestField; uniform vec3 uForestRect;
 uniform int uHasForestBank; uniform sampler2D uForestBank; uniform float uForestBankDensity;
 uniform int uHasOccupation; uniform sampler2D uOccupation; uniform vec3 uOccupationRect; uniform float uOccupationN;
+// V2 crown-root beach (0..1), baked once per terrain on the CPU (terrainForestBeach.ts): evaluating it per
+// crown cost minutes of FXC compilation and dozens of height samples per pixel.
+uniform int uHasForestBeach; uniform sampler2D uForestBeach; uniform vec3 uForestBeachRect;
+float forestBeach(vec2 world){return uHasForestBeach==1?textureLod(uForestBeach,(world-uForestBeachRect.xy)/uForestBeachRect.z,0.).r:0.;}
 float forestWaterCoverage(vec2 world);
 vec3 forestRootSurface(vec2 world);
 float forestRootCell();
-float forestBeachCoverage(vec2 world);
 // Written by the last earthMaterial call (display RGB): Render's colour, the
 // same surface without and with full canopy, and its macro woods coverage.
 vec3 renderGuideColor=vec3(0.),renderGuideOpen=vec3(0.),renderGuideClosed=vec3(0.),renderGuideBaseOpen=vec3(0.),renderGuideBaseClosed=vec3(0.),renderGuideSediment=vec3(0.);float renderGuideWoods=0.,renderGuideBeach=0.,renderGuideFlats=0.;
@@ -545,7 +569,7 @@ ForestCrown forestCrown(ivec2 cell,int level,float s,ForestStand st,ForestPatch 
   if(occupied||(k.alive && forestWaterCoverage(k.c)>=(uRenderV2>0?.05:.5)))k.alive=false;
   if(uRenderV2>0&&k.alive){
     float beachChoice=forestU8(groundHash(ivec3(cell,level*2+37),seed),0u);
-    if(beachChoice<forestBeachCoverage(k.c))k.alive=false;
+    if(beachChoice<forestBeach(k.c))k.alive=false;
   }
   k.riparian=k.riparian&&k.alive;
   // Geometry only for live crowns. No early return: ANGLE/D3D11 miscompiled it here.
@@ -764,7 +788,7 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
     mask=mix(share,clamp((share-pv.x)/max(pv.y*fp,feather)+.5,0.,1.),patchVis);
     maskQ=mix(sq,clamp((sq-pq.x)/max(pq.y*fp,feather)+.5,0.,1.),patchVis);
   }
-  if(uRenderV2>0){mask*=1.-clamp(renderGuideBeach/.8,0.,1.);maskQ*=1.-forestBeachCoverage(q);}
+  if(uRenderV2>0){mask*=1.-clamp(renderGuideBeach/.8,0.,1.);maskQ*=1.-forestBeach(q);}
   // Sub-crown grain between the crown band and the mean: crown-scale noise whose amplitude fades
   // with spacing/footprint (≈ the variance of unresolved crowns), so the transition never aliases.
   float grainVis=(1.-crownVis)*groundSmooth(.35,1.2,radius/fp),grain=0.;

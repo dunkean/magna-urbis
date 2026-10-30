@@ -2,7 +2,7 @@ import { RENDER_V2_GLSL, renderV2GlacierSources } from './terrainRenderV2';
 import { renderV2ZoneUniform } from './terrainRenderV2Zones';
 import { NEURAL_EARTH_MATERIAL_GLSL } from './terrainMaterial';
 import { RENDER_3D_MATERIAL_GLSL } from './terrainMaterial3d';
-import { FOREST_PRELUDE_GLSL, type ForestField, type ForestOccupation } from './terrainForest';
+import { FOREST_PRELUDE_GLSL, forestBeachTexture, type ForestField, type ForestOccupation } from './terrainForest';
 import { seedHash } from './terrainAdjust';
 import type { TerrainData, TerrainSettings } from './terrain';
 import { CLIMATE_VALUES } from './terrain';
@@ -15,7 +15,7 @@ export interface ForestWaterRaster { x: number; y: number; width: number; n: num
 export interface ForestRaster { field?: ForestField; occupation?: ForestOccupation; water?: ForestWaterRaster; light?: readonly number[]; light2?: readonly number[]; lightingStrength?: number; brushes?: boolean; renderV2?: number; v2Season?: number; waterVisible?: boolean }
 export interface MaterialRaster { rgb: Uint8Array; canopyAlpha: Uint8Array }
 interface Uploaded { key: string; texture: WebGLTexture }
-interface RasterRenderer extends MaterialRasterContext { program: WebGLProgram; texture: WebGLTexture; field?: Uploaded; bank?: Uploaded; occupation?: Uploaded; water?: Uploaded; target?: { n: number; texture: WebGLTexture; framebuffer: WebGLFramebuffer } }
+interface RasterRenderer extends MaterialRasterContext { program: WebGLProgram; texture: WebGLTexture; field?: Uploaded; bank?: Uploaded; beach?: Uploaded; occupation?: Uploaded; water?: Uploaded; target?: { n: number; texture: WebGLTexture; framebuffer: WebGLFramebuffer } }
 let renderer: RasterRenderer | undefined;
 let renderer3d: typeof renderer;
 const sharedRenderers = new WeakMap<WebGL2RenderingContext, { base?: RasterRenderer; enhanced?: RasterRenderer }>();
@@ -153,6 +153,7 @@ function composeMaterialRaster(terrain: TerrainData, settings: Pick<TerrainSetti
     gl.activeTexture(gl.TEXTURE3); // upload unit: keep the heights bound on unit 0
     if (field) active.field = forestTexture(gl, active.field, field, true);
     if (field?.bank) active.bank = forestTexture(gl, active.bank, { n: field.n, rgba: field.bank, key: `${field.key}:bank` }, true);
+    if (field?.beach && active.beach?.key !== field.key) { if (active.beach) gl.deleteTexture(active.beach.texture); active.beach = { key: field.key, texture: forestBeachTexture(gl, field.beach) }; }
     if (occupation) active.occupation = forestTexture(gl, active.occupation, occupation, false);
     if (water && active.water?.key !== water.key) {
       if (active.water) gl.deleteTexture(active.water.texture);
@@ -178,6 +179,9 @@ function composeMaterialRaster(terrain: TerrainData, settings: Pick<TerrainSetti
     gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, field?.bank ? active.bank!.texture : texture);
     gl.uniform1i(u('uForestBank'), 5); gl.uniform1i(u('uHasForestBank'), field?.bank ? 1 : 0);
     gl.uniform1f(u('uForestBankDensity'), field?.bankDensity ?? 1);
+    gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D, field?.beach ? active.beach!.texture : texture);
+    gl.uniform1i(u('uForestBeach'), 6); gl.uniform1i(u('uHasForestBeach'), field?.beach ? 1 : 0);
+    gl.uniform3f(u('uForestBeachRect'), field?.beach?.x ?? 0, field?.beach?.y ?? 0, field?.beach?.width ?? 1);
     bindForestBrushes(gl, u, !!forest?.brushes, 3);
     gl.activeTexture(gl.TEXTURE0);
   }

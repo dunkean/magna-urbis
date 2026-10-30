@@ -2,7 +2,7 @@ import { ShaderVariants, finishProgram, isAngleD3D11, specializeShader, startPro
 import { showAngleD3D11Notice } from './angleNotice';
 import { NEURAL_EARTH_MATERIAL_GLSL } from '../../../rust/bridge/terrainMaterial';
 import { RENDER_3D_MATERIAL_GLSL } from '../../../rust/bridge/terrainMaterial3d';
-import { FOREST_GLSL, FOREST_PRELUDE_GLSL, type ForestField, type ForestOccupation } from '../../../rust/bridge/terrainForest';
+import { FOREST_GLSL, FOREST_PRELUDE_GLSL, forestBeachTexture, type ForestField, type ForestOccupation } from '../../../rust/bridge/terrainForest';
 import { bindForestBrushes, disposeForestBrushes } from '../render/forestBrushAtlas';
 import { createGroundDisplacementSampler } from '../../../rust/bridge/terrainGround';
 import { terrainLights, type TerrainLayers, type TerrainLighting } from '../render/terrainLighting';
@@ -860,7 +860,7 @@ export class TerrainGl {
     const mode = lookMode(look);
     gl.uniform1i(u('uMode'), mode);
     // Textures 7 forest field, 8 occupation, 12 banks; 10/11 belong to water.
-    bindForest(gl, u, this.forest, this.occupation, this.empty, mode === 3, 7, 8, 12);
+    bindForest(gl, u, this.forest, this.occupation, this.empty, mode === 3, 7, 8, 12, 13);
     bindForestBrushes(gl, u, look.style === 'render3d-brush' && mode === 3, 9);
     gl.uniform1i(u('uRenderV2'),renderV2Number(look.style));gl.uniform1i(u('uV2WaterVisible'),look.layers.water===false?0:1);if(this.base&&look.climate)gl.uniform4fv(u('uV2GlacierSources[0]'),renderV2GlacierSources(this.base.layer,look.climate));gl.uniform1f(u('uV2Season'),look.v2Season??.5);gl.uniform1i(u('uMaterialZone'),renderV2ZoneUniform(look.climateZone));
     gl.uniform1i(u('uEnhanced3d'), look.mesh3d || isRender3dStyle(look.style) ? 1 : 0);
@@ -1104,19 +1104,20 @@ export function forestTexture(gl: WebGL2RenderingContext, raster: { n: number; r
 }
 
 /** Canonical forest field and its riparian bank envelope (same grid), uploaded and released together. */
-export interface ForestTextures { field: ForestField; texture: WebGLTexture; bank?: WebGLTexture }
+export interface ForestTextures { field: ForestField; texture: WebGLTexture; bank?: WebGLTexture; beach?: WebGLTexture }
 export function forestTextures(gl: WebGL2RenderingContext, field: ForestField): ForestTextures {
-  return { field, texture: forestTexture(gl, field, true), bank: field.bank && forestTexture(gl, { n: field.n, rgba: field.bank }, true) };
+  return { field, texture: forestTexture(gl, field, true), bank: field.bank && forestTexture(gl, { n: field.n, rgba: field.bank }, true),
+    beach: field.beach && forestBeachTexture(gl, field.beach) };
 }
 export function deleteForestTextures(gl: WebGL2RenderingContext, textures: ForestTextures | undefined): void {
   if (!textures) return;
-  gl.deleteTexture(textures.texture); if (textures.bank) gl.deleteTexture(textures.bank);
+  gl.deleteTexture(textures.texture); if (textures.bank) gl.deleteTexture(textures.bank); if (textures.beach) gl.deleteTexture(textures.beach);
 }
 
 /** Forest uniforms shared by the map and perspective programs; units are owned by each caller. */
 export function bindForest(gl: WebGL2RenderingContext, u: (name: string) => WebGLUniformLocation | null,
   forest: ForestTextures | undefined, occupation: { data: ForestOccupation; texture: WebGLTexture } | undefined,
-  empty: WebGLTexture, enabled: boolean, fieldUnit: number, occupationUnit: number, bankUnit: number): void {
+  empty: WebGLTexture, enabled: boolean, fieldUnit: number, occupationUnit: number, bankUnit: number, beachUnit: number): void {
   const field = enabled ? forest : undefined, applied = field ? occupation : undefined;
   gl.uniform1i(u('uForest'), field ? 1 : 0);
   gl.activeTexture(gl.TEXTURE0 + fieldUnit); gl.bindTexture(gl.TEXTURE_2D, field?.texture ?? empty);
@@ -1125,6 +1126,10 @@ export function bindForest(gl: WebGL2RenderingContext, u: (name: string) => WebG
   gl.activeTexture(gl.TEXTURE0 + bankUnit); gl.bindTexture(gl.TEXTURE_2D, field?.bank ?? empty);
   gl.uniform1i(u('uForestBank'), bankUnit); gl.uniform1i(u('uHasForestBank'), field?.bank ? 1 : 0);
   gl.uniform1f(u('uForestBankDensity'), field?.field.bankDensity ?? 1);
+  const beach = field?.field.beach;
+  gl.activeTexture(gl.TEXTURE0 + beachUnit); gl.bindTexture(gl.TEXTURE_2D, field?.beach ?? empty);
+  gl.uniform1i(u('uForestBeach'), beachUnit); gl.uniform1i(u('uHasForestBeach'), field?.beach ? 1 : 0);
+  gl.uniform3f(u('uForestBeachRect'), beach?.x ?? 0, beach?.y ?? 0, beach?.width ?? 1);
   gl.activeTexture(gl.TEXTURE0 + occupationUnit); gl.bindTexture(gl.TEXTURE_2D, applied?.texture ?? empty);
   gl.uniform1i(u('uOccupation'), occupationUnit); gl.uniform1i(u('uHasOccupation'), applied ? 1 : 0);
   gl.uniform3f(u('uOccupationRect'), applied?.data.x ?? 0, applied?.data.y ?? 0, applied?.data.width ?? 1);

@@ -6,18 +6,6 @@ export const RENDER_V2_GLSL = `${RENDER_V2_ENVIRONMENT_GLSL}
 ${RENDER_V2_CANOPY_MEAN_GLSL}
 GroundMaterial v2MeanOpen,v2MeanLitter,v2MeanCrown;
 vec3 v2MeanWeights=vec3(1.,0.,0.);
-float forestBeachCoverage(vec2 world){
-  vec3 s=forestRootSurface(world);
-  if(s.x<0.||s.x>=12.||length(s.yz)>=.5)return 0.;
-  float r=max(300.,2.*forestRootCell()),shore=max(s.x,0.)/max(length(s.yz),.0001),openness=0.;
-  for(int i=0;i<12;i++){
-    vec2 d=vec2(cos(float(i)*.523598776),sin(float(i)*.523598776));
-    if(forestRootSurface(world+d*r).x<0.){shore=min(shore,r);openness+=1./12.;}
-    if(forestRootSurface(world+d*r*.5).x<0.)shore=min(shore,r*.5);
-  }
-  if(openness<=.15)return 0.;
-  return surfaceRootBeach(s,world,shore,openness);
-}
 float v2FlatSedimentExposure(float herbs,float shore,float openness){
   // Existing retained shore proxy, qualified by actual nearby seawater.
   // Keep coastal bars/islets bare; recolonize progressively inland.

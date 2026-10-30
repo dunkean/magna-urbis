@@ -1344,7 +1344,7 @@ export class Terrain3d {
       if(contours){const value=contours.color.replace('#','');gl.uniform3f(this.uniform('groundContourColor'),parseInt(value.slice(0,2),16)/255,parseInt(value.slice(2,4),16)/255,parseInt(value.slice(4,6),16)/255);}
     }
     // Textures 3 forest field, 4 occupation, 8 bank envelope.
-    bindForest(gl, name => this.uniform(name), this.forest, this.occupation, this.empty, !!settings, 3, 4, 8);
+    bindForest(gl, name => this.uniform(name), this.forest, this.occupation, this.empty, !!settings, 3, 4, 8, 9);
     bindForestBrushes(gl, name => this.uniform(name), !!settings?.forestBrushes, 5);
     gl.activeTexture(gl.TEXTURE0); gl.uniform1i(this.uniform('material'), 0);
     gl.uniform1i(this.uniform('previousMaterial'), 1);
