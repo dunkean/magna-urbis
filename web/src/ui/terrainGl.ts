@@ -1,4 +1,5 @@
-import { ShaderVariants, finishProgram, specializeShader, startProgram } from './glVariants';
+import { ShaderVariants, finishProgram, isAngleD3D11, specializeShader, startProgram } from './glVariants';
+import { showAngleD3D11Notice } from './angleNotice';
 import { NEURAL_EARTH_MATERIAL_GLSL } from '../../../rust/bridge/terrainMaterial';
 import { RENDER_3D_MATERIAL_GLSL } from '../../../rust/bridge/terrainMaterial3d';
 import { FOREST_GLSL, FOREST_PRELUDE_GLSL, type ForestField, type ForestOccupation } from '../../../rust/bridge/terrainForest';
@@ -481,14 +482,14 @@ void main() { outColor = texelFetch(uLayer, ivec2(gl_FragCoord.xy), 0); }`;
 
 const compile = (gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgram => finishProgram(gl, startProgram(gl, vs, fs));
 
-/** Map program variant (glVariants.ts): the look's mode, Render v2 number and forest data as constants.
- * Measured with FXC (link + first draw): 1.5 s preview, about 7 s natural, 50 s Render v2, 70 s with
- * forest; the full shader never loaded. */
-interface TerrainVariant { mode: number; v2: number; forest: boolean; brushes: boolean; occupation: boolean; bank: boolean }
-const PREVIEW_VARIANT: TerrainVariant = { mode: 0, v2: 0, forest: false, brushes: false, occupation: false, bank: false };
-const variantKey = (v: TerrainVariant): string => `${v.mode}.${v.v2}.${+v.forest}${+v.brushes}${+v.occupation}${+v.bank}`;
+/** Map program variant (glVariants.ts): the look's mode, Render v2 number, forest and brushes as constants.
+ * Measured with FXC (link + first draw): 1.5 s preview, about 7 s natural, 50 s Render v2, 90 s with
+ * forest; the full shader never loaded. On FXC the heavy ones link in the background from the start. */
+interface TerrainVariant { mode: number; v2: number; forest: boolean; brushes: boolean }
+const PREVIEW_VARIANT: TerrainVariant = { mode: 0, v2: 0, forest: false, brushes: false };
+const variantKey = (v: TerrainVariant): string => `${v.mode}.${v.v2}.${+v.forest}${+v.brushes}`;
 const terrainFragment = (v: TerrainVariant): string => specializeShader(TERRAIN_FS,
-  { uMode: v.mode, uRenderV2: v.v2, uForest: +v.forest, uForestBrushes: +v.brushes, uHasOccupation: +v.occupation, uHasForestBank: +v.bank },
+  { uMode: v.mode, uRenderV2: v.v2, uForest: +v.forest, uForestBrushes: +v.brushes },
   { NATURAL: v.mode >= 2 ? 1 : 0 });
 const lookMode = (look: TerrainLook): number => look.style === 'copernicus' ? 1 : look.layers.hypsometry && isRender3dStyle(look.style) ? 3 : look.style === 'render' && look.layers.hypsometry ? 2 : 0;
 
@@ -498,6 +499,8 @@ export class TerrainGl {
   readonly gl: WebGL2RenderingContext;
   private terrain!: WebGLProgram; private river: WebGLProgram; private composite: WebGLProgram;
   private variants: ShaderVariants;
+  /** ANGLE/D3D11: the heavy natural looks are linked in the background before they are chosen. */
+  private prewarm: boolean;
   /** Last terrain variant drawn: it stands in while the look's own variant links. */
   private lastTerrain?: WebGLProgram;
   private capturing = false;
@@ -540,6 +543,8 @@ export class TerrainGl {
     this.gl = gl;
     this.variants = new ShaderVariants(gl, () => this.request());
     this.terrainVariant(PREVIEW_VARIANT, false);   // starts linking the preview
+    this.prewarm = isAngleD3D11(gl);
+    if (this.prewarm) { showAngleD3D11Notice(); this.prewarmVariants(); }
     this.river = compile(gl, RIVER_VS, RIVER_FS);
     this.composite = compile(gl, COMPOSITE_VS, COMPOSITE_FS);
     this.riverBuffer = gl.createBuffer()!;
@@ -562,10 +567,16 @@ export class TerrainGl {
   private terrainVariant(v: TerrainVariant, wait: boolean): WebGLProgram | undefined {
     return this.variants.get(variantKey(v), () => [TERRAIN_VS, terrainFragment(v)], wait);
   }
+  /** Render v2 and Render3D (with and without forest) and Render: about a minute each on FXC, so they
+   * link from the start. Occupation and banks stay uniforms: the forest variants are known in advance. */
+  private prewarmVariants(): void {
+    if (!this.prewarm) return;
+    for (const v of [{ mode: 3, v2: 1, forest: true }, { mode: 3, v2: 0, forest: true }, { mode: 3, v2: 1, forest: false }, { mode: 2, v2: 0, forest: false }])
+      this.variants.start(variantKey({ ...v, brushes: false }), () => [TERRAIN_VS, terrainFragment({ ...v, brushes: false })]);
+  }
   private lookVariant(look: TerrainLook): TerrainVariant {
-    const mode = lookMode(look), forest = mode === 3 && !!this.forest;
-    return { mode, v2: renderV2Number(look.style), forest, brushes: look.style === 'render3d-brush' && mode === 3,
-      occupation: forest && !!this.occupation, bank: forest && !!this.forest?.bank };
+    const mode = lookMode(look);
+    return { mode, v2: renderV2Number(look.style), forest: mode === 3 && !!this.forest, brushes: look.style === 'render3d-brush' && mode === 3 };
   }
   /** The look's variant once linked; meanwhile the last drawn variant, or the preview, stands in
    * (undefined if none is linked yet). Captures wait for the link. */

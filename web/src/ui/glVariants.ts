@@ -36,6 +36,12 @@ export function specializeShader(source: string, constants: Record<string, numbe
     /\]\s*=[^=]/.test(all.slice(at, all.indexOf('\n', at))) ? loop : `${start}${bound}+uLoopZero;`);
 }
 
+/** Whether WebGL runs on ANGLE/D3D11, where FXC compiles the large variants in about a minute. */
+export function isAngleD3D11(gl: WebGL2RenderingContext): boolean {
+  const info = gl.getExtension('WEBGL_debug_renderer_info');
+  return /Direct3D11|D3D11/i.test(String(gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER)));
+}
+
 /** Linked programs by variant key. `get` returns a variant once linked, or undefined while it links
  * in parallel (a redraw is then polled) or after it failed (logged once). */
 export class ShaderVariants {
@@ -46,6 +52,10 @@ export class ShaderVariants {
   private poll = 0;
   constructor(private gl: WebGL2RenderingContext, private redraw: () => void) {
     this.parallel = gl.getExtension('KHR_parallel_shader_compile');
+  }
+  /** Starts linking a variant in the background (no redraw is polled for it). */
+  start(key: string, sources: () => [string, string]): void {
+    if (!this.programs.has(key) && !this.failed.has(key)) this.programs.set(key, startProgram(this.gl, ...sources()));
   }
   get(key: string, sources: () => [string, string], wait = false): WebGLProgram | undefined {
     if (this.failed.has(key)) return undefined;
