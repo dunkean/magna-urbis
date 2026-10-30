@@ -16,7 +16,7 @@ vi.mock('../src/ui/terrain3d', () => ({ TERRAIN_3D_FOV: Math.PI/3,
   Terrain3d: class {
     camera={x:0,y:0,distance:200,pitch:.8,yaw:0,exaggeration:1};
     constructor() {}
-    setSurface() {} setTexture() {} setGroundMaterial() {} setTileLoader() {} resize() {} setActive() {} fit() {} north() {} invalidateTiles() {}
+    setSurface() {} setTexture() {} setGroundMaterial() {} setForest() {} setHeightSampler() {} setTileLoader() {} resize() {} setActive() {} fit() {} north() {} invalidateTiles() {}
     getCamera() {return this.camera;} setCamera(c: typeof this.camera) {this.camera=c;}
     worldToScreen() {return [1,1];} setBuildings(scene: unknown) {spies.scenes.push(scene);}
     replaceBuildings() {return [];} getLodInfo() {return {};} dispose() {} pickBuilding() {return undefined;}

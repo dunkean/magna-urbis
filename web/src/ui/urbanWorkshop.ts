@@ -9,6 +9,7 @@ import { applyBenchConstraints } from '../gen/urban/testbenchConstraints';
 import type { World } from '../gen/types';
 import { createUrbanSceneClient } from './urbanScene';
 import { openBench } from './benchHistory';
+import { keepRendererOverride } from './rendererOverride';
 import { urbanDisplaySurface } from './urbanPerspective';
 import { cityWorkshopState, workshopSettings } from './urbanSnapshot';
 import { WORKSHOP_CHANNEL, normalizeWorkshopContext, workshopConfig, workshopFixtureFrame, type WorkshopRequest, type WorkshopResult, type WorkshopState } from './testbenchUrban';
@@ -71,7 +72,7 @@ export function createUrbanWorkshop(options: {
     mapButton.setAttribute('aria-pressed', String(space === 'map')); workshopButton.setAttribute('aria-pressed', String(space === 'workshop'));
     if (space === 'workshop' && !frame.hasAttribute('src')) {
       const params = new URLSearchParams({ engine: 'rust', embedded: '1', style: options.getStyle?.() ?? query.get('style') ?? 'parchment' }); if (caseState) params.set('case', caseState); else if (workshopSource === 'map') params.set('awaitImport', '1');
-      frame.src = `testbench.html?${params}`;
+      frame.src = `testbench.html?${keepRendererOverride(params)}`;
     }
     const url = new URL(location.href); url.searchParams.set('space', 'workshop'); if (caseState) url.searchParams.set('workshop', caseState); else url.searchParams.delete('workshop');
     section.querySelector<HTMLAnchorElement>('[data-standalone]')!.href = url.href;

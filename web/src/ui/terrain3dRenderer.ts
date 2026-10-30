@@ -117,7 +117,7 @@ class Terrain3dHost {
       const view = this.create('webgpu', this.element, false);
       if (view) return view;
     }
-    if (forced === 'webgpu') throw new Error(state === 'pending' ? 'WebGPU 3D en préparation : réessayez dans un instant.' : 'WebGPU indisponible pour la vue 3D (?renderer=webgpu).');
+    if (forced === 'webgpu' && state !== 'pending' && state !== 'ready') console.warn('WebGPU indisponible pour la vue 3D (?renderer=webgpu) : WebGL2.');
     const view = this.create('webgl', this.element, false)!;
     // Opened before the device (first preparation, or a new one after a loss elsewhere): upgrade when it is ready.
     if (forced !== 'webgl' && (state === 'pending' || state === 'ready')) {
