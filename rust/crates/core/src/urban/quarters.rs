@@ -3035,7 +3035,7 @@ fn generate_once(
     let mut nucleus_radius = radius;
     let mut archetype = "district".to_owned();
     let (mut quarters, mut streets, enclosures, mut warnings) = if cfg.placement == "center" {
-        let plan = if cfg.composition == "settlement" {
+        let plan = if cfg.scope == "settlement" {
             let result = composition::generate(seed, site, cfg, surface, roads, radius)?;
             phases = result.phases;
             archetype = result.archetype;
@@ -3619,7 +3619,7 @@ fn generate_once(
     network::narrow_options(&mut streets, &enclosures, radius, cfg, surface);
     warnings.extend(network::clean_options(&mut streets, center, radius, true, &centers, cfg, surface));
     if open_edge
-        && cfg.composition == "settlement"
+        && cfg.scope == "settlement"
         && cfg.exit_treatment != "legacy"
         && cfg.footprint.mechanism != "legacy"
     {

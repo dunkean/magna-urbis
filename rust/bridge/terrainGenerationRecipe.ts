@@ -56,6 +56,10 @@ export interface GenerationStageInfo {
 /** Functions are passed within a worker, never serialized in the terrain recipe. */
 export interface GenerationControl {
     previews?: boolean;
+    /** Requests an inspectable intermediate output rather than the grouped fast path. */
+    until?: GenerationStage;
+    /** The pipeline actually selected, including CPU fallback after GPU setup. */
+    backend?(backend: 'cpu' | 'gpu' | 'native'): void;
     before(stage: GenerationStage, detail?: string): Promise<void>;
     after(stage: GenerationStage, height?: Float32Array, detail?: string): Promise<void>;
 }

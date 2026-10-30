@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "resources": {
+    "timber": { "role": "craft.workshop", "effect": "workshop" },
+    "stone": { "role": "craft.workshop", "effect": "workshop" },
+    "ore": { "role": "craft.workshop", "effect": "workshop" },
+    "clay": { "role": "craft.workshop", "effect": "workshop" }
+  },
+  "lore": {
+    "temple": { "role": "lore.temple", "effect": "landmark" },
+    "palace": { "role": "lore.palace", "effect": "landmark" },
+    "necropolis": { "role": "lore.necropolis", "effect": "landmark" },
+    "magic": { "role": "lore.magic", "effect": "landmark" }
+  }
+}

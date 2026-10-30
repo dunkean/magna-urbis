@@ -27,12 +27,12 @@ describe('Rust urban configuration and framing boundary', () => {
   });
   it('retains legacy behaviour for old links while new scenes use the demographic budget', () => {
     const old = normalizeLayoutConfig({ count: 5, params: { fieldTwist: 0.4 } }, true);
-    expect(old.composition).toBe('district');
+    expect(old.scope).toBe('district');
     expect(old.footprint.mechanism).toBe('legacy');
     expect(old.footprint.budget).toBe('radius');
     expect(old.accessMode).toBe('cultural');
-    const composed = normalizeLayoutConfig({ composition: 'settlement' }, true);
-    expect(composed.composition).toBe('settlement');
+    const composed = normalizeLayoutConfig({ scope: 'settlement' }, true);
+    expect(composed.scope).toBe('settlement');
     expect(composed.footprint.mechanism).toBe('legacy');
     expect(defaultLayoutConfig().footprint.budget).toBe('population');
     expect(defaultLayoutConfig().accessMode).toBe('adaptive');
@@ -82,12 +82,12 @@ describe('Rust urban configuration and framing boundary', () => {
   it('keeps old workshop map behaviour through quarters, parcels and shared settings', () => {
     const options: BenchOptions = { culture: 'japanese-jokamachi', recipe: 'core', zone: 'core', density: 1, count: 7, radius: 160, monument: 'none', stages: {} };
     const context: WorkshopContext = { source: 'map', siteCulture: options.culture, radius: 160,
-      layoutConfig: { composition: 'settlement', culture: 'site', operator: 'culture', radius: 0 } as unknown as LayoutConfig,
+      layoutConfig: { scope: 'settlement', culture: 'site', operator: 'culture', radius: 0 } as unknown as LayoutConfig,
       parcelConfig: { ...defaultParcelConfig(), operator: 'compound' } };
     const quarters = workshopConfig(options, context, 'quarters');
     expect(quarters.footprint).toMatchObject({ mechanism: 'legacy', budget: 'radius' });
     expect(quarters.accessMode).toBe('cultural');
-    expect(quarters.composition).toBe('settlement');
+    expect(quarters.scope).toBe('settlement');
     expect(quarters.culture).toBe('site');
     expect(quarters.radius).toBe(0);
     expect(quarters).not.toHaveProperty('operator');
@@ -96,7 +96,7 @@ describe('Rust urban configuration and framing boundary', () => {
     expect(workshopConfig(options, parcelContext, 'parcels').operator).toBe('compound');
     expect(JSON.parse(JSON.stringify(parcelContext)).layoutConfig).not.toHaveProperty('operator');
     const fresh = workshopConfig(options, { source: 'fixture' }, 'quarters');
-    expect(fresh.composition).toBe('district');
+    expect(fresh.scope).toBe('district');
     expect(fresh.footprint.mechanism).toBe('auto');
     expect(fresh.footprint.budget).toBe('population');
     expect(fresh.accessMode).toBe('adaptive');
@@ -111,9 +111,9 @@ describe('Rust urban configuration and framing boundary', () => {
     for (const population of [1, 50_000, 300_000, 1_000_000, 5_000_000]) {
       expect(normalizeWorkshopPopulation(population)).toBe(population);
       const context = normalizeWorkshopContext({ source: 'fixture', population });
-      context.layoutConfig!.composition = 'settlement';
+      context.layoutConfig!.scope = 'settlement';
       const options: BenchOptions = { culture: 'european-organic', recipe: 'auto', zone: 'core', density: 1, count: 4, radius: 160, monument: 'none', stages: {} };
-      expect(workshopConfig(options, context, 'quarters').composition).toBe('settlement');
+      expect(workshopConfig(options, context, 'quarters').scope).toBe('settlement');
       expect(workshopConfig(options, context, 'quarters').footprint.budget).toBe('population');
     }
     expect(workshopFixtureFrame(1000, 160, false)).toEqual({ width: 2000, center: { x: 500, y: 500 } });

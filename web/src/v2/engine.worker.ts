@@ -17,7 +17,7 @@ scope.onmessage = ({ data: request }: MessageEvent<V2WorkerRequest|{type:'releas
     const progress: ProgressCallback = value => send({ id, type: 'progress', progress: value });
     try {
       let world = retained.resolve(request.retainedWorldId,request.world);
-      if (action === 'terrain' || action === 'all') world = await generateTerrain(settings, progress, undefined, request.assetBase);
+      if (action === 'terrain' || action === 'all') world = await generateTerrain(settings, progress, undefined, request.assetBase, request.terrainStage);
       if (!world) throw new Error('Aucune carte à traiter.');
       if (action === 'region' || action === 'settlements' || action === 'all') world = await planRegion(world, settings, progress);
       if (action === 'roads') world = await rerouteRegion(world, settings, progress);

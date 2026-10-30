@@ -23,7 +23,7 @@
   },
   "wallStiffness": {"roman-core": 0.85, "dwarven": 0.85, "duergar-hold": 0.85, "byzantine-greek": 0.75, "russian-kremlin": 0.7, "giant-hold": 0.7, "japanese-jokamachi": 0.5, "wizard-city": 0.4, "elven": 0.2, "korean": 0.2},
   "groups": {
-    "european": { "heightsCastle": 0.8, "wallStiffness": 0.6,
+    "european": { "heightsCastle": 0.8, "wallStiffness": 0.6, "wallExtension": "auto",
       "cultures": ["european-organic", "bastide", "hanseatic", "flemish-cloth-town", "italian-comune", "rynek-town", "gnomish"],
       "styles": [
         {"style": "curtain", "weight": 1, "maxPop": 2999},
@@ -56,7 +56,7 @@
       "styles": [{"style": "curtain", "weight": 1}],
       "material": "earth-stone", "cornerTurn": null, "towerSpacing": null, "curtainWidthM": 6, "ditch": "dry"
     },
-    "default": { "heightsCastle": 0.5, "wallStiffness": 0.6,
+    "default": { "heightsCastle": 0.5, "wallStiffness": 0.6, "wallExtension": "concentric",
       "cultures": [],
       "styles": [
         {"style": "curtain", "weight": 1, "maxPop": 2999},

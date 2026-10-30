@@ -223,9 +223,9 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     if (!active() || !context || waiting) return;
     scene = undefined;
     notify(); draw();
-    const streetAlignedHomes = context.ruralOptions?.streetAlignedHomes, denserSmallholdings = context.ruralOptions?.denserSmallholdings;
+    const streetAlignedHomes = context.ruralOptions?.streetAlignedHomes, denserSmallholdings = context.ruralOptions?.denserSmallholdings, fieldEnclosure = context.ruralOptions?.fieldEnclosure, fieldMaterial = context.ruralOptions?.fieldMaterial;
     const request = { id, input: { ...context, seed: settings.seed || context.seed, biome: settings.biome,
-      ...((streetAlignedHomes || denserSmallholdings) ? { ruralOptions: { streetAlignedHomes, denserSmallholdings } } : {}) } };
+      ...((streetAlignedHomes || denserSmallholdings || fieldEnclosure !== undefined) ? { ruralOptions: { streetAlignedHomes, denserSmallholdings, fieldEnclosure, fieldMaterial } } : {}) } };
     requested = !!request.input.city;
     state(urbanText(['Génération des champs et de la végétation…','Generating fields and vegetation…','正在生成田地和植被…','Generando campos y vegetación…','Gerando campos e vegetação…']), true);
     const runFallback = (): void => {

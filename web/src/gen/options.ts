@@ -1,4 +1,4 @@
-import { demographicClass, DEMOGRAPHIC_CLASS_FLOORS, type DemographicClass } from '../../../rust/bridge/settlementDemography';
+import { demographicClass, DEMOGRAPHIC_CLASSES, DEMOGRAPHIC_CLASS_FLOORS, type DemographicClass } from '../../../rust/bridge/settlementDemography';
 import type { NameFamily } from './names/types';
 import { expandMapQuery, encodeMapId } from './mapId';
 import { NAME_FAMILIES } from './names/types';
@@ -7,7 +7,9 @@ import type { ImportedHeight } from './terrain/import';
 import { CULTURE_IDS, CULTURES as CULTURE_REGISTRY, mixToString, mixFromString, planToString, planFromString } from './urban/culture';
 import type { CultureMix, PlanOverride } from './urban/culture';
 
-export type SizeName = 'hamlet' | 'village' | 'town' | 'city' | 'capital';
+/** Map/extent preset of the legacy stages: the demographic classes, farmstead folded into hamlet and
+ * megacity into metropolis. A size, never a political function (that is `programme.functions.capital`). */
+export type SizeName = 'hamlet' | 'village' | 'town' | 'city' | 'metropolis';
 export type Relief = 'flat' | 'hills' | 'valley' | 'mountains';
 export type CoastOpt = 'none' | 'N' | 'E' | 'S' | 'W' | 'random';
 export type RiverOpt = 'none' | 'stream' | 'river' | 'major';
@@ -171,10 +173,14 @@ export const POP_MIN = 10, POP_MAX = 5000000;
 /** Population thresholds of the classes (lower bounds). */
 export const CLASS_FLOOR: [SettlementClass, number][] = DEMOGRAPHIC_CLASS_FLOORS;
 export const classOfPop = demographicClass;
-/** Legacy size class used by the stages that are tuned per preset (site reserve, road count, tracks...). */
+/** Size preset of a population: its demographic class (same floors), for the stages tuned per preset (site reserve, road count, tracks...). */
 export function sizeForPop(pop: number): SizeName {
-  return pop < 200 ? 'hamlet' : pop < 1200 ? 'village' : pop < 8000 ? 'town' : pop < 30000 ? 'city' : 'capital';
+  const c = demographicClass(pop);
+  return c === 'farmstead' ? 'hamlet' : c === 'megacity' ? 'metropolis' : c;
 }
+/** Population filled in when a size is picked: the class shortcut (an example, never a threshold). */
+export const SIZE_SHORTCUT = Object.fromEntries((['hamlet', 'village', 'town', 'city', 'metropolis'] as SizeName[])
+  .map(size => [size, DEMOGRAPHIC_CLASSES.find(c => c.id === size)!.shortcut])) as Record<SizeName, number>;
 /** Map extent (m): the custom `mapSize` when set, else the preset's. */
 export function mapSizeOf(o: Pick<Options, 'size' | 'mapSize'>): number {
   return o.mapSize !== undefined && Number.isFinite(o.mapSize) ? Math.max(MAP_SIZE_MIN, Math.min(MAP_SIZE_MAX, Math.round(o.mapSize))) : SIZE_PRESETS[o.size].mapSize;
@@ -414,7 +420,7 @@ export const SIZE_PRESETS: Record<SizeName, SizePreset> = {
   village: { mapSize: 1600, grid: 400, label: 'Village' },
   town: { mapSize: 2400, grid: 480, label: 'Town' },
   city: { mapSize: 3600, grid: 450, label: 'City' },
-  capital: { mapSize: 5000, grid: 500, label: 'Capital' },
+  metropolis: { mapSize: 5000, grid: 500, label: 'Metropolis' },
 };
 
 export const DEFAULTS: Options = {
@@ -449,7 +455,7 @@ export const DEFAULTS: Options = {
 };
 
 /** Number of regional road exits when the `roads` option is 0 (auto). */
-export const DEFAULT_ROADS: Record<SizeName, number> = { hamlet: 2, village: 3, town: 4, city: 5, capital: 6 };
+export const DEFAULT_ROADS: Record<SizeName, number> = { hamlet: 2, village: 3, town: 4, city: 5, metropolis: 6 };
 export const roadCount = (o: Pick<Options, 'roads' | 'size'>): number => (o.roads > 0 ? o.roads : DEFAULT_ROADS[o.size]);
 
 const RELIEFS: Relief[] = ['flat', 'hills', 'valley', 'mountains'];

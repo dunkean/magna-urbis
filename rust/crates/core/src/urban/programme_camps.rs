@@ -3,7 +3,7 @@ use super::*;
 use super::super::Morph;
 
 pub(super) fn camp(layout: &Layout, population: u32) -> bool {
-    if let Some(cfg) = &layout.config { !roles::is_isolated(&cfg.programme.role)
+    if let Some(cfg) = &layout.config { !roles::is_isolated(&cfg.programme.intent)
         && super::super::kinds::native_camp(&layout.culture, population, cfg) }
     else { super::super::kinds::native_camp(&layout.culture, population, &Default::default()) }
 }
@@ -68,7 +68,7 @@ pub(in crate::urban) fn needs_cell(layout: &Layout, d: &Demand) -> bool {
 }
 
 pub(super) fn supported(layout: &Layout, population: u32, block: usize, d: &Demand, context: &ProgrammeContext) -> bool {
-    if roles::is_isolated(&context.role) || !matches!(d.function.as_str(), "collective" | "warehouse" | "workshop") || !camp(layout, population) { return true; }
+    if roles::is_isolated(&context.intent) || !matches!(d.function.as_str(), "collective" | "warehouse" | "workshop") || !camp(layout, population) { return true; }
     let culture = block_culture(layout, block);
     let pack = profile_pack(layout, block, &d.function, &context.period);
     let mode = match context.mode.as_str() { "strict" => "historical_strict", "fantasy" => "fantasy_mix", _ => "historical_inspired" };
@@ -80,7 +80,7 @@ pub(super) fn supported(layout: &Layout, population: u32, block: usize, d: &Dema
 }
 
 pub(super) fn explain(layout: &Layout, population: u32, d: &mut Demand, context: &ProgrammeContext) {
-    if !roles::is_isolated(&context.role) && matches!(d.function.as_str(), "collective" | "warehouse" | "workshop") && camp(layout, population)
+    if !roles::is_isolated(&context.intent) && matches!(d.function.as_str(), "collective" | "warehouse" | "workshop") && camp(layout, population)
         && !(0..layout.blocks.len()).any(|bi| supported(layout, population, bi, d, context)) {
         d.reasons.push("source_absente: camp need retained; no declared native functional source, no generic urban building allocated".into());
     }
@@ -125,7 +125,7 @@ mod tests {
             let d = demand("test", function, 42.0, function == "domestic", String::new());
             assert!(supported(&l, pr.population, 0, &d, &pr.context));
         }
-        let mut isolated=pr.context.clone();isolated.role="isolated-mill".into();
+        let mut isolated=pr.context.clone();isolated.intent="isolated-mill".into();
         for d in &pr.demands { assert!(supported(&l, pr.population, 0, d, &isolated)); }
         l.culture = "european-organic".into();
         for d in &pr.demands { assert!(supported(&l, pr.population, 0, d, &pr.context)); }

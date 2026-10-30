@@ -1112,7 +1112,7 @@ pub(super) fn generate_oriented_domain(
     } else {
         &cfg.culture
     };
-    let profile = if cfg.composition == "settlement" {
+    let profile = if cfg.scope == "settlement" {
         profiles::settlement_profile(culture, site.population, cfg.phases)
     } else {
         profiles::profile(culture)
@@ -1120,7 +1120,7 @@ pub(super) fn generate_oriented_domain(
     let pattern_override = cfg.tissue != "culture"
         || cfg.params.get("streetOp").is_some()
         || cfg.preset != "culture"
-        || cfg.composition == "settlement" && cfg.recipe != "auto";
+        || cfg.scope == "settlement" && cfg.recipe != "auto";
     let pattern = if cfg.tissue != "culture" {
         match cfg.tissue.as_str() {
             "grid" => "grid",

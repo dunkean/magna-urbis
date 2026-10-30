@@ -192,8 +192,8 @@ pub fn reserves_block(e: &ServiceEntry) -> bool {
 
 /// Services for a settlement, with the cultural nucleus promoted to the central
 /// landmark (`catalogue.json` cultures[c].nucleus.kind / area).
-pub fn services(culture: &str, population: u32, context_role: &str) -> Vec<ServiceNeed> {
-    services_with_functions(culture, population, super::programme::ProgrammeFunctions::from_legacy_role(context_role))
+pub fn services(culture: &str, population: u32) -> Vec<ServiceNeed> {
+    services_with_functions(culture, population, super::programme::ProgrammeFunctions::default())
 }
 /// Combinable effects are applied once per catalogue entry. Shared count
 /// effects use their maximum; no Cartesian duplicate service demands.
@@ -633,7 +633,7 @@ pub fn gates(layout: &Layout, center: Point, radius: f64) -> Vec<Point> {
     let mut out: Vec<Point> = layout
         .enclosures
         .iter()
-        .flat_map(|e| e.gates.iter().copied())
+        .flat_map(|e| e.gates.iter().enumerate().filter(|(i, _)| !e.inner_gates.contains(i)).map(|(_, &g)| g))
         .collect();
     if out.is_empty() {
         for s in layout
@@ -1500,12 +1500,12 @@ mod tests {
 
     #[test]
     fn service_counts_scale_with_population_and_culture() {
-        let small = services("european-organic", 120, "auto");
+        let small = services("european-organic", 120);
         assert!(
             small.iter().all(|s| s.entry.role == "storage.barn"),
             "a hamlet below 150 has no parish, only a shared barn"
         );
-        let town = services("european-organic", 5000, "auto");
+        let town = services("european-organic", 5000);
         let count = |s: &[ServiceNeed], r: &str| {
             s.iter()
                 .filter(|n| n.entry.role == r)
@@ -1514,10 +1514,10 @@ mod tests {
         };
         assert_eq!(count(&town, "worship.parish"), 2);
         assert_eq!(count(&town, "worship.cathedral"), 0);
-        let city = services("european-organic", 100_000, "auto");
+        let city = services("european-organic", 100_000);
         assert_eq!(count(&city, "worship.cathedral"), 1);
         assert!(count(&city, "commerce.market.gate") >= 8);
-        let medina = services("medina", 5000, "auto");
+        let medina = services("medina", 5000);
         let friday = medina
             .iter()
             .find(|n| n.entry.role == "worship.mosque.friday")
@@ -1723,9 +1723,9 @@ mod tests {
             .unwrap();
         assert_eq!(church.label, "Église paroissiale en ruine");
         // A hamlet of 30 is only farms; a village of 200 shares a barn.
-        assert!(services("european-organic", 30, "auto").is_empty());
+        assert!(services("european-organic", 30).is_empty());
         assert!(
-            services("european-organic", 200, "auto")
+            services("european-organic", 200)
                 .iter()
                 .any(|s| s.entry.role == "storage.barn")
         );

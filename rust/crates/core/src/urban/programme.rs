@@ -23,9 +23,11 @@ pub use functions::{ProgrammeFunctions, PROGRAMME_FUNCTIONS_VERSION};
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProgrammeContext {
-    pub role: String,
-    /// Optional explicit function weights. None = original exclusive role;
-    /// Some(empty) = no functional specialization, independently of old role.
+    /// Intent axis (`settlementAxes.ts`): `settlement`, or one isolated
+    /// establishment (`roles::isolated`). Never a specialisation.
+    pub intent: String,
+    /// Specialisation: weighted functions. None = automatic (population,
+    /// cultural profile, declared port siting); Some(empty) = none.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub functions: Option<ProgrammeFunctions>,
     pub resources: Vec<String>,
@@ -42,7 +44,7 @@ pub struct ProgrammeContext {
 impl Default for ProgrammeContext {
     fn default() -> Self {
         Self {
-            role: "auto".into(),
+            intent: "settlement".into(),
             functions: None,
             resources: vec![],
             period: String::new(),
@@ -179,6 +181,20 @@ pub struct UrbanProgramme {
     /// caps summed before allocation): the capacity the plan predicted.
     #[serde(default)]
     pub housing_capacity: f64,
+    /// Measured navigable quay frontage (`harbour::navigable`): the only
+    /// evidence port storage is allocated against. Never a declared label.
+    #[serde(default)]
+    pub navigable_frontage: bool,
+}
+/// Tokens with a real consumer (`programme_tokens.json`, shared with the UI
+/// suggestions). Any other imported string is kept in the context and has no
+/// effect: no economic need is invented for an unknown token. Lore applies
+/// only its first recognised entry.
+fn recognised_token(kind: &str, token: &str) -> bool {
+    static TOKENS: std::sync::OnceLock<serde_json::Value> = std::sync::OnceLock::new();
+    TOKENS.get_or_init(|| serde_json::from_str(include_str!("programme_tokens.json")).expect("programme tokens"))[kind]
+        .get(token)
+        .is_some()
 }
 fn demand(key: &str, function: &str, amount: f64, domestic: bool, why: String) -> Demand {
     Demand {
@@ -272,17 +288,7 @@ fn prepare_inner(
     surface: Surface<'_>,
     reconcile_walls: bool,
 ) -> Result<(), String> {
-    if !([
-        "auto",
-        "agricultural",
-        "crossroads",
-        "artisan",
-        "riverine",
-        "port",
-        "capital",
-    ]
-    .contains(&context.role.as_str())
-        || roles::is_isolated(&context.role))
+    if !(context.intent == "settlement" || roles::is_isolated(&context.intent))
         || roles::state(&context.state).is_none()
         || context.functions.is_some_and(|f| !f.valid())
         || context
@@ -308,7 +314,7 @@ fn prepare_inner(
     let cultures = ids
         .iter()
         .filter_map(|id| {
-            let selected = super::culture::isolated_mapping(id, &context.period, &context.role);
+            let selected = super::culture::isolated_mapping(id, &context.period, &context.intent);
             if selected.is_none() {
                 warnings.push(format!(
                     "No supported native recipe for culture:{id}; period:{}",
@@ -319,23 +325,10 @@ fn prepare_inner(
         })
         .collect::<Vec<_>>();
     let n = f64::from(population);
-    let role = if context.functions.is_some() && !roles::is_isolated(&context.role) {
-        "combined"
-    } else if context.role == "auto" {
-        if population < 500 || cultural_functions == "communal" {
-            "agricultural"
-        } else {
-            "auto"
-        }
-    } else {
-        &context.role
-    };
-    let functions = context.functions.unwrap_or_else(|| ProgrammeFunctions::from_legacy_role(role));
-    if context.functions.is_some_and(ProgrammeFunctions::active) && roles::is_isolated(&context.role) {
+    let role = if context.functions.is_some() { "explicit" } else { "automatic" };
+    let functions = context.functions.unwrap_or_else(|| ProgrammeFunctions::automatic(population, cultural_functions == "communal", context.navigable_access));
+    if context.functions.is_some_and(ProgrammeFunctions::active) && roles::is_isolated(&context.intent) {
         warnings.push("Les fonctions urbaines sont conservées mais non applicables à un établissement isolé ; seule son intention est appliquée.".into());
-    }
-    if context.functions.is_some() && functions.port > 0.0 && !context.navigable_access && !roles::is_isolated(&context.role) {
-        warnings.push("Fonction portuaire demandée sans accès navigable déclaré : le besoin de stockage reste demandé et ne peut pas être alloué. La fonction ne crée ni eau, ni chenal, ni quai.".into());
     }
     // A hamlet has no shop: its few households farm.
     let mixed_share = if population < 150 {
@@ -360,7 +353,7 @@ fn prepare_inner(
             "mixed",
             households * mixed_share,
             true,
-            format!("role:{role}; mixed household share:{mixed_share}"),
+            format!("functions:{role}; mixed household share:{mixed_share}"),
         ),
     ];
     demands.push(demand(
@@ -369,12 +362,12 @@ fn prepare_inner(
         (n * functions.commons_per_capita(cultural_functions == "communal"))
         .max(30.0),
         false,
-        format!("role:{role}; culture profile:{cultural_functions}; open common, no building"),
+        format!("functions:{role}; culture profile:{cultural_functions}; open common, no building"),
     ));
     let known_work = context
         .resources
         .iter()
-        .filter(|r| ["timber", "stone", "ore", "clay"].contains(&r.as_str()))
+        .filter(|r| recognised_token("resources", r))
         .cloned()
         .collect::<Vec<_>>();
     if let Some(work_area) = functions.workshop_area(population, !known_work.is_empty()) {
@@ -383,7 +376,7 @@ fn prepare_inner(
             "workshop",
             work_area,
             false,
-            format!("role:{role}; known resources:{}", known_work.join(",")),
+            format!("functions:{role}; known resources:{}", known_work.join(",")),
         );
         if !known_work.is_empty() {
             d.requires
@@ -392,11 +385,7 @@ fn prepare_inner(
         demands.push(d);
     }
     // A river or sea pixel never creates this demand or its access evidence.
-    // Legacy scenes kept the old navigation->warehouse implication. Explicit
-    // functions separate the requested port activity from this declared fact.
-    let warehouse_area = if context.functions.is_none() && context.navigable_access {
-        Some((n * 2.0).max(180.0))
-    } else { functions.warehouse_area(population) };
+    let warehouse_area = functions.warehouse_area(population);
     if let Some(warehouse_area) = warehouse_area {
         demands.push(demand(
             &layout.key,
@@ -404,7 +393,7 @@ fn prepare_inner(
             warehouse_area,
             false,
             format!(
-                "explicit navigableAccess:{}; role:{role}",
+                "declared port siting:{}; functions:{role}",
                 context.navigable_access
             ),
         ));
@@ -412,20 +401,20 @@ fn prepare_inner(
     if let Some(token) = context
         .lore
         .iter()
-        .find(|s| ["temple", "palace", "necropolis", "magic"].contains(&s.as_str()))
+        .find(|s| recognised_token("lore", s))
     {
         let mut d = demand(
             &layout.key,
             "collective",
             (n * 0.8).max(250.0),
             false,
-            format!("explicit lore:{}", context.lore.join(",")),
+            format!("explicit lore:{}; first recognised entry applied:{token}; other entries kept without effect", context.lore.join(",")),
         );
         d.role = format!("lore.{token}");
         d.landmark = true;
         demands.push(d);
     }
-    let isolated_rule = roles::isolated(&context.role);
+    let isolated_rule = roles::isolated(&context.intent);
     let isolated = isolated_rule.is_some();
     if !isolated {
         // Data-driven building roles, landmarks first so they win central land.
@@ -497,7 +486,7 @@ fn prepare_inner(
             farm,
             format!(
                 "Explicit isolated site:{}; one structure; population:{population} is not a housing target",
-                context.role
+                context.intent
             ),
         );
         d.target_area = if farm {
@@ -531,7 +520,7 @@ fn prepare_inner(
         }
         camps::explain(layout, population, d, context);
         if context.functions.is_some() && !isolated {
-            d.provenance.push(format!("Explicit combined functions:{}; non-isolated legacy role is not used as a specialization", serde_json::to_string(&functions).expect("validated finite function weights")));
+            d.provenance.push(format!("Explicit combined functions:{}", serde_json::to_string(&functions).expect("validated finite function weights")));
         }
     }
     #[cfg(not(target_arch = "wasm32"))]
@@ -588,7 +577,12 @@ fn prepare_inner(
         .collect::<Vec<_>>();
     // District roles read the same environment the services are sited with.
     // A sea or lake shore is a harbour; a river carries boats past a town.
+    // Measured fact, never the declared label: a quay on a channel at least
+    // NAVIGABLE wide. Port storage is allocated only against it.
     let navigable = super::macroplan::harbour::navigable(layout, surface);
+    if !navigable && functions.port > 0.0 && !isolated {
+        warnings.push("Fonction portuaire demandée sans rive navigable mesurée (quai sur un chenal assez large) : le stockage portuaire reste un déficit. La fonction ne crée ni eau, ni chenal, ni quai.".into());
+    }
     if !navigable {
         for d in demands.iter_mut().filter(|d| d.site == "quay") {
             d.reasons.push("No explicit navigable harbour frontage: no port may be inferred from a label or water proximity".into());
@@ -608,6 +602,10 @@ fn prepare_inner(
     }
     // Water-bound trades (mills, boat sheds) only exist where there is water.
     if !environment.iter().any(|e| e.waterfront) {
+        let dropped: BTreeSet<String> = demands.iter().filter(|d| d.requires.iter().any(|r| r == "waterfront")).map(|d| d.role.clone()).collect();
+        if !dropped.is_empty() {
+            warnings.push(format!("Besoins liés à l’eau retirés faute de rive mesurée : {}. Aucune rivière n’est créée.", dropped.into_iter().collect::<Vec<_>>().join(", ")));
+        }
         demands.retain(|d| !d.requires.iter().any(|r| r == "waterfront"));
     }
     let district_roles: Vec<String> = layout.structure.as_ref().map_or_else(Vec::new, |s| {
@@ -677,9 +675,9 @@ fn prepare_inner(
     let areas: Vec<f64> = super::par::map(&layout.blocks, |_, b| area(&b.shape));
     for di in reservation_order {
         let d = &mut demands[di];
-        if d.requires.iter().any(|r| r == "navigableAccess") && !context.navigable_access {
+        if d.requires.iter().any(|r| r == "navigableAccess") && !navigable {
             d.reasons
-                .push("No explicit navigable access; water proximity is insufficient".into());
+                .push("No measured navigable quay frontage; a declaration or water proximity is insufficient".into());
             continue;
         }
         let needs_water = d
@@ -726,7 +724,7 @@ fn prepare_inner(
                 isolated_profile = super::culture::isolated_mapping(
                     block_culture(layout, bi),
                     &context.period,
-                    &context.role,
+                    &context.intent,
                 )?
                 .admissibility;
                 &isolated_profile
@@ -981,6 +979,7 @@ fn prepare_inner(
         reconciliation_passes: 0,
         warnings,
         housing_capacity: 0.0,
+        navigable_frontage: navigable,
     });
     Ok(())
 }
@@ -1392,7 +1391,7 @@ fn eligible_memo(
         return false;
     }
     if d.requires.iter().any(|r| r == "navigableAccess")
-        && (!pr.context.navigable_access
+        && (!pr.navigable_frontage
             || !pr.environment.get(p.block).is_some_and(|e| e.waterfront))
     {
         return false;
@@ -1419,7 +1418,7 @@ fn eligible_memo(
         if d.landmark && has_envelope(p, 4.0, 4.0) { return true; }
         return envelope(memo) || memo.block_witness(layout, pi, p, c.min_frontage, c.min_depth);
     }
-    if roles::is_isolated(&pr.context.role) {
+    if roles::is_isolated(&pr.context.intent) {
         return false;
     }
     if matches!(d.function.as_str(), "market" | "common") {
@@ -1539,7 +1538,7 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
         .cultures
         .iter()
         .filter_map(|c| {
-            super::culture::isolated_mapping(&c.culture, &pr.context.period, &pr.context.role)
+            super::culture::isolated_mapping(&c.culture, &pr.context.period, &pr.context.intent)
         })
         .collect();
     if let Some(cfg) = &partition.config
@@ -1966,7 +1965,7 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
     let fill_limit = (requested * 1.3).floor().max(requested.ceil());
     // Seed every buildable block, core outward, before cohesion can consume
     // the programme on a handful of peripheral street fronts.
-    if !roles::is_isolated(&pr.context.role) {
+    if !roles::is_isolated(&pr.context.intent) {
         let mut built = vec![false; layout.blocks.len()];
         for (pi, assignment) in assignments.iter().enumerate() {
             if assignment.is_some_and(|di| !pr.demands[di].role.starts_with("open.")) {
@@ -2196,7 +2195,7 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
     if scattered > 0 { pr.warnings.push(format!("{scattered} ménage(s) réparti(s) sur des façades vacantes, sans population supplémentaire.")); }
     // Band 5: every plot left over is an explicit garden, orchard or yard.
     // An isolated site is one intention: its other land stays as it is.
-    let isolated = roles::is_isolated(&pr.context.role);
+    let isolated = roles::is_isolated(&pr.context.intent);
     let gardens: Vec<usize> = (0..parcels.len())
         .filter(|&pi| {
             !isolated
@@ -3056,6 +3055,18 @@ pub fn reconcile_built(
 
 #[cfg(test)]
 mod tests {
+    /// Test shorthand: an isolated intent, or one specialisation at full weight.
+    pub(super) fn context_for(label: &str) -> super::ProgrammeContext {
+        let mut c = super::ProgrammeContext::default();
+        if super::roles::is_isolated(label) { c.intent = label.into(); return c; }
+        let mut f = super::ProgrammeFunctions::default();
+        match label {
+            "agricultural" => f.agricultural = 1.0, "crossroads" => f.commerce = 1.0, "artisan" => f.artisan = 1.0,
+            "riverine" => f.riverine = 1.0, "port" => f.port = 1.0, "capital" => f.capital = 1.0, _ => return c,
+        }
+        c.functions = Some(f);
+        c
+    }
     use super::super::geometry::rectangle;
     use super::*;
     use serde_json::json;
@@ -3178,14 +3189,13 @@ mod tests {
             &mut l,
             600,
             &ProgrammeContext {
-                role: role.into(),
                 navigable_access: navigable,
                 resources: if role == "artisan" {
                     vec!["ore".into()]
                 } else {
                     vec![]
                 },
-                ..Default::default()
+                ..context_for(role)
             },
             Surface {
                 geometry: None,
@@ -3304,10 +3314,9 @@ mod tests {
                 &mut l,
                 50_000,
                 &ProgrammeContext {
-                    role: role.into(),
                     resources: vec!["timber".into()],
                     lore: vec!["temple".into()],
-                    ..Default::default()
+                    ..context_for(role)
                 },
                 Surface {
                     geometry: None,
@@ -3364,10 +3373,7 @@ mod tests {
         prepare(
             &mut l,
             5000,
-            &ProgrammeContext {
-                role: "capital".into(),
-                ..Default::default()
-            },
+            &context_for("capital"),
             Surface {
                 geometry: None,
                 width: 1000.0,
@@ -3430,6 +3436,20 @@ mod tests {
             before.admissibility.recipe_id
         );
         assert!(eligible(&l, &p, demand, pr));
+    }
+    #[test]
+    fn port_storage_is_admitted_on_measured_navigable_frontage_not_on_the_declared_label() {
+        let l = prepare_case("port", true, "european-organic");
+        let mut pr = l.programme.clone().unwrap();
+        assert!(!pr.navigable_frontage, "a dry test surface has no navigable quay");
+        pr.reservations.clear();
+        let d = pr.demands.iter().find(|d| d.function == "warehouse").unwrap().clone();
+        let p = partition(&l).parcels.into_iter().find(|p| p.use_kind == "plot").unwrap();
+        pr.environment[p.block].waterfront = true;
+        assert!(!eligible(&l, &p, &d, &pr), "the declaration alone never admits port storage");
+        pr.navigable_frontage = true;
+        pr.context.navigable_access = false;
+        assert!(eligible(&l, &p, &d, &pr), "measured navigable frontage admits it without a declaration");
     }
     #[test]
     fn private_attached_or_unserved_gardens_are_never_public_commons() {
@@ -3708,10 +3728,7 @@ mod tests {
         prepare(
             &mut l,
             14,
-            &ProgrammeContext {
-                role: "agricultural".into(),
-                ..Default::default()
-            },
+            &context_for("agricultural"),
             Surface {
                 geometry: None,
                 width: 1000.0,
@@ -3834,10 +3851,7 @@ mod tests {
             water: &water,
         };
         let mut diffuse = source.clone();
-        let mut context = ProgrammeContext {
-            role: "artisan".into(),
-            ..Default::default()
-        };
+        let mut context = context_for("artisan");
         prepare(&mut diffuse, 600, &context, surface).unwrap();
         assert!(
             diffuse

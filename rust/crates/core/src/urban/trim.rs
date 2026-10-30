@@ -448,7 +448,7 @@ pub(super) fn run(seed: &str, layout: &mut Layout, config: &LayoutConfig, origin
 /// Bridge/stilt finishing can change the last allocation after the main trim.
 pub(super) fn finish(seed: &str, layout: &mut Layout, surface: Surface<'_>) {
     if !surface.water.iter().any(|&w|w != 0) { return; }
-    if layout.programme.as_ref().is_none_or(|p| super::roles::is_isolated(&p.context.role)) { return; }
+    if layout.programme.as_ref().is_none_or(|p| super::roles::is_isolated(&p.context.intent)) { return; }
     loop {
         let Ok(parts) = super::generate_parcels(seed,std::slice::from_ref(layout),&ParcelConfig::default()) else { break };
         let Some(part) = parts.first() else { break };

@@ -4,7 +4,7 @@ import { normalizeLayoutConfig } from '../../rust/bridge/urbanConfig';
 
 describe('coherent settlement defaults and independent overrides', () => {
   it('clears stale overrides on a Chinese cultural reset while keeping the site programme', () => {
-    const previous = normalizeLayoutConfig({ culture: 'european-organic', preset: 'morph/grid', params: { gridSpacing: [80, 90] }, programme: { role: 'capital', resources: [], period: '', mode: 'inspired', navigableAccess: false, lore: [] } });
+    const previous = normalizeLayoutConfig({ culture: 'european-organic', preset: 'morph/grid', params: { gridSpacing: [80, 90] }, programme: { intent: 'settlement', functions: { capital: 1 }, resources: [], period: '', mode: 'inspired', navigableAccess: false, lore: [] } });
     const next = applySettlementStyle('culture', previous, 'chinese');
     expect(next.layout).toMatchObject({ culture: 'chinese', preset: 'culture', recipe: 'auto', params: {}, programme: previous.programme });
     expect(next.parcels).toMatchObject({ culture: 'site', preset: 'culture', recipe: 'auto', params: {} });

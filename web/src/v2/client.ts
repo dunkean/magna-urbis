@@ -76,12 +76,12 @@ export class StudioClient {
     render.postMessage({ type: 'display', display: this.display });
     if(this.display.painted){this.brushSourcesSent=true;const {BRUSH_SOURCES}=await import('../render/assets/brushAssets');render.postMessage({type:'brushes',sources:BRUSH_SOURCES});}
   }
-  run(action: Action, settings: V2Settings, world?: World, key?: string, townStage?:V2TownStage): Promise<World> {
+  run(action: Action, settings: V2Settings, world?: World, key?: string, townStage?:V2TownStage, terrainStage?: string): Promise<World> {
     if (this.pending) return Promise.reject(new Error('Un calcul est déjà en cours.'));
     const id = ++this.id;
     return new Promise((resolve, reject) => {
       this.pending = { id, resolve, reject };
-      try{this.engine.postMessage({ id, action, settings, ...generationWorldInput(action,world,this.retained),key, townStage,assetBase:document.baseURI });}catch(error){this.pending=null;reject(error instanceof Error?error:new Error(String(error)));}
+      try{this.engine.postMessage({ id, action, settings, ...generationWorldInput(action,world,this.retained),key, townStage,terrainStage,assetBase:document.baseURI });}catch(error){this.pending=null;reject(error instanceof Error?error:new Error(String(error)));}
     });
   }
   cancel(): void {
@@ -102,7 +102,13 @@ export class StudioClient {
     if(this.world!==world)this.benchMiniRevision=-1;
     this.world = world;
     this.syncRenderer?.dispose(); this.syncRenderer = null;
-    const settings=this.appearanceSettings;
+    // A metre-scale initial field can be invisible in a finished cartographic style.
+    // Inspect its own elevation range without changing the saved appearance.
+    const savedSettings=this.appearanceSettings;
+    const settings=savedSettings && world.stats['v2.previewStage'] ? { ...savedSettings, appearance: {
+      ...savedSettings.appearance, style: savedSettings.appearance?.style ?? savedSettings.options.style,
+      renderer: 'bench' as const, diagnostic: 'elevation' as const, labels: false,
+    } } : savedSettings;
     const useBench=settings && settings.appearance?.renderer!=='classic' && (settings.appearance?.renderer==='bench'||!!settings.appearance?.terrainStyle||!!world.debug?.v2RustCities);
     if(useBench){
       const {BenchRenderer}=await import('./benchRenderer');

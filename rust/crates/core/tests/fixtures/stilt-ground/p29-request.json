@@ -4,7 +4,7 @@
   "seed": "city-oceanic-archipelago-s-1",
   "layoutConfig": {
     "programme": {
-      "role": "auto",
+      "intent": "settlement",
       "resources": [],
       "period": "",
       "mode": "inspired",
@@ -19,7 +19,7 @@
     "exitTreatment": "adaptive",
     "peripheralRoad": "auto",
     "siteAdaptation": 1,
-    "composition": "settlement",
+    "scope": "settlement",
     "settlementForm": "auto",
     "suburbs": "auto",
     "phases": 0,

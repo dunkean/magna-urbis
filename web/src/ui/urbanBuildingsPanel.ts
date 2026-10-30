@@ -1,3 +1,4 @@
+import { bindProgrammeTokenControls } from './urbanProgrammeTokens';
 import { recordStageMs } from './benchTimings';
 import { bindProgrammeConditionControls, programmeConditionControlsHtml, programmeConditionEvidenceHtml } from './urbanProgrammeCondition';
 import { retainSelectValue } from './retainedSelectValue';
@@ -278,10 +279,10 @@ export function createUrbanBuildingsPanel(options: {
     ${programmeConditionControlsHtml()}
     <details class="advanced"><summary>Culture, époque et ressources</summary>
       ${programmePolicyControlsHtml()}
-      <label>Ressources connues<input data-programme="resources" placeholder="grain, timber, stone…"></label>
-      <label>Choix du lieu<input data-programme="lore" placeholder="temple, palace, magic…"></label>
-      <label><input type="checkbox" data-programme="navigableAccess">Accès navigable déclaré</label>
-      <small>Cette déclaration ne certifie pas un chenal navigable. L’allocation vérifie aussi la présence d’une rive. Une fonction portuaire ne crée ni eau ni quai. Laisser vide une ressource inconnue.</small>
+      <label>Ressources connues<input data-programme="resources"></label>
+      <label>Choix du lieu<input data-programme="lore"></label>
+      <label><input type="checkbox" data-programme="navigableAccess">Implanter comme port (quais sur l’eau réelle)</label>
+      <small>Le stockage portuaire n’est alloué que sur un quai mesuré au bord d’un chenal navigable ; ni la case ni la fonction portuaire ne créent d’eau, de chenal ou de route. Un mot inconnu est conservé sans effet.</small>
     </details>
     <button type="button" data-programme-apply>Appliquer le programme au plan</button><small data-programme-draft hidden>Modifications non appliquées.</small>
     <div data-programme-report aria-live="polite"></div></div>`;
@@ -446,6 +447,7 @@ export function createUrbanBuildingsPanel(options: {
   const functionControls = bindProgrammeFunctionControls(programme);
   const policyControls = bindProgrammePolicyControls(programme);
   const conditionControls = bindProgrammeConditionControls(programme);
+  const tokenControls = bindProgrammeTokenControls(programme);
   function syncProgramme(provided?: ProgrammeContext): void {
     const context = { ...defaultProgrammeContext(), ...(provided ?? options.getProgramme()) };
     for (const control of Array.from(programme.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-programme]'))) {
@@ -453,7 +455,7 @@ export function createUrbanBuildingsPanel(options: {
       if (control instanceof HTMLInputElement && control.type === 'checkbox') control.checked = Boolean(value);
       else control.value = Array.isArray(value) ? value.join(', ') : String(value);
     }
-    policyControls.sync(context); functionControls.sync(context); conditionControls.sync(context);
+    policyControls.sync(context); functionControls.sync(context); conditionControls.sync(context); tokenControls.refresh();
     p$('[data-programme-draft]').hidden = true;
   }
   programme.addEventListener('change', () => { p$('[data-programme-draft]').hidden = false; });

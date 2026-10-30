@@ -712,7 +712,7 @@ impl BuildingSiteIndex {
             None => (
                 allocation.culture.clone(),
                 super::culture::functional_mapping(&allocation.culture,&allocation.role,&allocation.function,
-                    &pr.context.period,match pr.context.mode.as_str(){"strict"=>"historical_strict","fantasy"=>"fantasy_mix",_=>"historical_inspired"})
+                    &pr.context.period,super::culture::houses_mode(&pr.context.mode))
                 .or_else(|| super::culture::parcel_mapping(
                     layout,
                     parcel,
@@ -793,11 +793,7 @@ impl BuildingSiteIndex {
         } else {
             None
         };
-        let mode = match pr.context.mode.as_str() {
-            "strict" => "historical_strict",
-            "fantasy" => "fantasy_mix",
-            _ => "historical_inspired",
-        };
+        let mode = super::culture::houses_mode(&pr.context.mode);
         let function = match allocation.function.as_str() {
             "market" | "common" => "open_space",
             f => f,
@@ -2369,7 +2365,7 @@ fn preview_site(
             None => (
                 allocation.culture.clone(),
                 super::culture::functional_mapping(&allocation.culture,&allocation.role,&allocation.function,
-                    &pr.context.period,match pr.context.mode.as_str(){"strict"=>"historical_strict","fantasy"=>"fantasy_mix",_=>"historical_inspired"})
+                    &pr.context.period,super::culture::houses_mode(&pr.context.mode))
                 .or_else(|| super::culture::parcel_mapping(layout, parcel, &allocation.culture, &allocation.function))
                 .ok_or("No contextual native recipe")?,
             ),
@@ -2397,11 +2393,7 @@ fn preview_site(
                 .map(|(zone, morph)| (zone.to_owned(), morph))
         });
         let Some((zone, morph)) = tissue.as_ref() else { return Ok(None) };
-        let mode = match pr.context.mode.as_str() {
-            "strict" => "historical_strict",
-            "fantasy" => "fantasy_mix",
-            _ => "historical_inspired",
-        };
+        let mode = super::culture::houses_mode(&pr.context.mode);
         let floors = typical_floors(&culture, &allocation.function, pr.population, parcel.pressure);
         let floors = if zone == "village"
             || culture.functional_profile == "communal"

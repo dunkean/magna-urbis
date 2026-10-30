@@ -8,27 +8,24 @@ Repository state reviewed October 24, 2026. This inventory describes code behavi
 
 ### 1.1 What does “vocation” do?
 
-`programme.role` biases the functional program: it changes what the engine requests and reserves in blocks/parcels. It is not a complete city classification or economic simulation. The cultural services catalog already supplies many more building roles than the six proposed urban vocations.
+`programme.role` no longer exists. It mixed two axes, now separate fields:
 
-| Value | Effect actually observed in code |
+- `programme.intent` (intent axis, `rust/bridge/settlementAxes.ts`): `settlement`, or one isolated establishment — `isolated-farm` (domestic structure), `roadside-temple` (`worship.wayside`), `isolated-shrine` (`worship.shrine`), `isolated-mill` (`craft.mill`), `isolated-inn` (`commerce.inn`), `isolated-tower` (`defence.tower`). An isolated intent replaces the city demands.
+- `programme.functions` (specialisation axis): the weighted functions of 1.1 bis. Absent or `null` = automatic: `agricultural` 1 below 500 inhabitants or with the `communal` profile, `port` 1 when the place is sited as a port (`navigableAccess`), nothing else.
+
+Effects of each function at weight 1 (scaled by the weight; shared effects take the maximum):
+
+| Function | Effect actually observed in code |
 | --- | --- |
-| `auto` | Below 500 inhabitants, or for the `communal` functional profile, the program selects `agricultural`. Otherwise it retains the cultural program without explicit specialization. |
-| `agricultural` | Requests 2 m²/person of communal space versus 0.5 outside the communal profile; doubles catalog storage sites under its rules and ceilings. |
-| `crossroads` | Raises household shop-house share to 25% versus the usual 8%, except below 150 inhabitants where it is zero; doubles certain commercial establishments; triples the area coefficient for affected markets. |
-| `artisan` | Adds workshop demand of 3.5 m²/person, minimum 80 m², and doubles catalog craft sites. |
-| `riverine` | Doubles catalog mill sites. It does not create a river. |
-| `port` | Shop-house share of 25%; warehouse demand of 2 m²/person, minimum 180 m². This generic demand subsequently requires evidence of navigable access and a waterfront location; the value does not create that access. Waterfront services and works have their own logic. |
-| `capital` | Shop-house share of 25%; population thresholds for elite, civic, and defensive services divided by four. This is not simulated administration or economy. |
-| `isolated-farm` | Intention for an isolated domestic structure; replaces city demands. |
-| `roadside-temple` | One roadside temple, role `worship.wayside`. |
-| `isolated-shrine` | One isolated shrine, role `worship.shrine`. |
-| `isolated-mill` | One isolated mill, role `craft.mill`. |
-| `isolated-inn` | One isolated inn, role `commerce.inn`. |
-| `isolated-tower` | One isolated tower, role `defence.tower`. |
+| `agricultural` | 2 m²/person of communal space versus 0.5; catalogue storage sites ×(1+w). |
+| `commerce` | Shop-house share 8% + 17%·w (none below 150 inhabitants); commercial establishments ×(1+w); market area coefficient ×(1+2w). |
+| `artisan` | Workshop demand 3.5·w m²/person, minimum 80 m²; craft sites ×(1+w). |
+| `riverine` | Mill sites ×(1+w); needs a real waterfront, creates no river. |
+| `port` | Shop-house share as commerce; warehouse demand 2·w m²/person, minimum 180 m², allocated only on a measured navigable quay (`programme.navigableFrontage`). |
+| `capital` | Population thresholds of elite, civic and defensive services ×(1−0.75·w). Not a simulated administration. |
 
 For isolated intentions, population no longer requests housing for an entire city: it helps size the program. The macro type becomes an isolated building or farm; `ruined` state can yield an isolated ruin.
 
-**Critique of the retained exclusive contract:** the field mixes economic activity (craft), political function (capital), geographic situation (riverine), network function (crossroads), and single-building intention. These concepts are neither exclusive nor at the same level. A capital can also be a port, craft center, and religious center. Adding twenty exclusive values would preserve this flaw.
 
 **Still to extend:** the UI now separates intention and six combinable functions (1.1 bis); additional activities/resources and institutions still need an explicit model and consumers. Weights should produce verifiable needs, placements, and visual signs, not merely a category name. Examples currently difficult or impossible to express as distinct vocations include extraction/mining, fishing, pilgrimage, monastery, garrison, caravan stop, river transit, livestock, royal residence, and shipyard. These are model directions, not claims of existing functionality.
 
@@ -36,7 +33,7 @@ For isolated intentions, population no longer requests housing for an entire cit
 
 The six biases `agricultural`, `commerce`, `artisan`, `riverine`, `port`, and `capital` can now be combined in `programme.functions` with finite weights from 0 to 1. The UI displays them separately from settlement or isolated-establishment intention. These are six existing functional biases, not a complete economy. Shared effects use the maximum and are not counted twice; service counts remain integers rounded down, and generic workshop/warehouse minima remain 80/180 m² when positive demand is created. Resources can still add their own needs.
 
-Absent or `null` field: exact old exclusive-role behavior. Explicit `{}`: no specialization, without reactivating the previous role. An isolated intention retains weights but makes them inapplicable; it remains carried in legacy role IDs for compatibility. An older engine must reject an unsupported explicit field. General economic/institutional taxonomy and checking real navigation remain separate work.
+Absent or `null` field: automatic specialisation (see 1.1). Explicit `{}`: no specialisation. An isolated intent keeps the weights but makes them inapplicable.
 
 ### 1.2 Do hamlet / village / town / metropolis classes still exist?
 
@@ -46,9 +43,10 @@ Absent or `null` field: exact old exclusive-role behavior. Explicit `{}`: no spe
 | --- | --- | --- |
 | Displayed demographic class, TS and Rust placement | `farmstead` < 15; `hamlet` 15–149; `village` 150–999; `town` 1,000–19,999; `city` 20,000–99,999; `metropolis` 100,000–999,999; `megacity` ≥ 1,000,000 | Population classification and selection shortcuts. This alone does not choose native form. |
 | UI population shortcuts | Farm 10; hamlet 40; village 300; market town 3,000; city 30,000; metropolis 250,000; megacity 1,500,000 | Fill in a population; do not define thresholds. |
-| Legacy `SizeName` | `hamlet`, `village`, `town`, `city`, `capital`; `sizeForPop` switches at 200, 1,200, 8,000, and 30,000 | Legacy area presets and settings for some stages; `capital` is a size name here, not political vocation. |
-| Legacy cultural `ScaleClass` | `hamlet` < 200; `village` < 1,200; `town` < 20,000; `city` < 100,000; `metropolis` < 1,000,000; `megacity` above | Historical TS `scale.min/max` metadata independent of the new native grammar. |
-| Native morphological `Kind` | 11 types detailed below; metropolis from 200,000 in automatic resolution | Chooses plan grammar: one site, farms along a road, street village, districts, phases, or multiple centers. |
+| Legacy `SizeName` (map/extent preset) | `hamlet`, `village`, `town`, `city`, `metropolis`; `sizeForPop` = the demographic class (farmstead → hamlet, megacity → metropolis) | Extent presets of the legacy stages. `capital` is gone as a size: capital is only the political function `programme.functions.capital`. |
+| Native morphological `Kind` | 11 types; the automatic choice follows the demographic class (below) | Chooses plan grammar: one site, farms along a road, street village, districts, phases, or multiple centers. |
+
+The legacy cultural `ScaleClass` (`Culture.scale`, bands 200/1,200/…) was removed: every culture declared hamlet…megacity, so its cap never applied.
 
 Native automatic resolution after explicit values are considered:
 
@@ -57,17 +55,18 @@ Native automatic resolution after explicit values are considered:
 | `settlementForm` directly names one of the 11 types | Takes priority over the following deductions. |
 | Isolated intention | `single`, `farmstead`, or `ruin` depending on intention and state. |
 | `nomad-camp` or `native-plains`, population < 5,000 | `camp`. This rule does not automatically include every other camp-themed preset. |
-| Population ≤ 12 | `farmstead`, or `ruin` if state requires it. |
-| 13–149 | `hamlet`. |
-| 150–1,199 | `street-village` or `nucleated-village`, depending on explicit `ribbon/nucleated` choice, culture, site, and nearby road. |
-| 1,200–4,999 | `market-town`, or `walled-town` if culture fortifies and population reaches 2,500 or the site is defensive. |
-| 5,000–29,999 | `walled-town` if fortified; otherwise `city`. |
-| 30,000–199,999 | `city`. |
-| ≥ 200,000 | `metropolis`. |
+| Class Farmstead (< 15) | `farmstead`, or `ruin` if state requires it. |
+| Class Hamlet (15–149) | `hamlet`. |
+| Class Village (150–999) | `street-village` or `nucleated-village`, depending on explicit `ribbon/nucleated` choice, culture, site, and nearby road. |
+| Class Town (1,000–19,999) | below 5,000: `market-town`, or `walled-town` if culture fortifies and population reaches 2,500 or the site is defensive; from 5,000: `walled-town` if fortified, otherwise `city`. |
+| Class City (20,000–99,999) | `city`. |
+| Classes Metropolis and Megacity (≥ 100,000) | `metropolis`. |
+
+The floors are read from `demographic_classes.json` (`settlements::demographics::floor/below`); the village/town switches of composition and footprint use the same floors.
 
 Form differences still exist: small types bypass district grammar; a farm is a parcel with access, a hamlet follows a road, and a street village creates roadside strips. Small settlements normally have one phase, without suburbs or ring road; a small market town can have two phases; a metropolis favors four phases and many suburbs. Metropolitan composition adds multiple centers and attaches districts to them. The catalog also distinguishes cultural hamlet/village forms and, for some cultures, a city recipe above a threshold.
 
-**Explicit separation:** demographic classes now come from shared `rust/crates/core/src/settlements/demographic_classes.json`, read by TS, Rust placement, and UI shortcuts. Shortcut populations are not class thresholds. Morphological thresholds above remain unchanged: at 100,000 inhabitants, the class is Metropolis while the grammar remains district-based City; at 200,000, automatic grammar becomes multicenter. At 13–14 inhabitants, class remains Farm but grammar is a road-following Hamlet. CityBench displays these axes separately, not as one enum. Legacy `SizeName` and `ScaleClass` remain historical dimension and recipe settings, not demographic classes; `capital` size code confers no political status. A demographic megacity extends metropolitan grammar, without a distinct native `megacity` category.
+**One classification:** demographic classes come from shared `rust/crates/core/src/settlements/demographic_classes.json`, read by TS, Rust placement, native grammar resolution and UI shortcuts. Shortcut populations are not class thresholds. The former contradictions (13–14 inhabitants = class Farm but grammar Hamlet; 100,000–199,999 = class Metropolis but grammar City) are resolved: the automatic grammar changes exactly on the class floors. CityBench displays these axes separately, not as one enum. Legacy `SizeName` and `ScaleClass` remain historical dimension and recipe settings, not demographic classes; `capital` size code confers no political status. A demographic megacity extends metropolitan grammar, without a distinct native `megacity` category.
 
 The UI exposes all eleven native grammars, the two historical village preferences, and automatic choice. An explicit return to automatic changes no other parameters. The report reads only program population, configuration, and archetype returned with the plan; missing evidence in an old import remains unknown. Forced forms retain native priority even for an isolated intention, and this priority is indicated. Cultural/historical suitability of a forced form is not certified by this work.
 
@@ -179,7 +178,7 @@ These vary the scene or generation path, but are not all scenario axes to multip
 | Field | Domain | Effect and status |
 | --- | --- | --- |
 | UI settlement style | `culture`, `walled-core`, `dense-core`, `growing-town`, `village` | Macro presets replacing several plan/parcel settings. Composite axis, redundant with its settings. |
-| `composition` | `settlement`, `district` | Complete composition or isolated district. A fabric sample is not a city. |
+| `scope` (was `composition`) | `settlement`, `district` | Generation scope: complete place or isolated district sample. A fabric sample is not a city. Distinct from the architectural programme `composition` (row, courtyard…). |
 | `settlementForm` | `auto`, `nucleated`, `ribbon`, then the 11 `Kind` | Form request; `nucleated/ribbon` guide villages while a type ID forces the type. |
 | `footprint.mechanism` | `auto`, `legacy`, `planned`, `accessibility`, `ribbon`, `fusion` | Footprint construction algorithm. `legacy` preserves old behavior. Web normalization replaces saved `planned` with `auto`; native code also resolves it and forces `planned` for a rectangle family. Do not count six equally accessible independent modes. |
 | `footprint.budget` | `population`, `radius` | Derives land from population or radius. Not built-capacity validation. |
@@ -198,12 +197,12 @@ These vary the scene or generation path, but are not all scenario axes to multip
 | `closeOp` | Menu: `closes`, `culDeSacTree`, `hutong`, `roji`, `none`; native dendritic fabric can write `derbs` | Secondary access. Preserve menu/internal-value difference in combination analysis. |
 | Morphological `orientation` | `road`, `cardinal`, `terrain`, `water` | Preferred orientation relative to roads, cardinal directions, slope, or water. |
 | Historical menu `plotOp` | `burgage`, `courtyard`, `siheyuan`, `machiya`, `compound`, `garden`, `wholeBlock` | Historical parcel methods/aliases. Native code can reroute according to cultural admission family (`compact`, `inherited`, etc.). |
-| `fortificationStyle` | `auto`, `palisade`, `gord`, `hedge`, `curtain`, `flanked`, `concentric`, `rammed-earth`, `wengcheng`, `bastioned` | Fortification subtypes: earth/wood, hedge, curtain wall, towers, concentric walls, rammed earth, courtyard gates, bastions. A style incompatible with type may be replaced by cultural style. |
+| `fortificationStyle` | `auto`, `palisade`, `gord`, `hedge`, `curtain`, `flanked`, `concentric`, `rammed-earth`, `wengcheng`, `bastioned` | Fortification subtypes. Precedence (`kinds::requested_enclosure`, `fortification::resolve`): explicit type (`fortification` wall/palisade/none) > explicit style, whose family sets the type when the type is `culture` > profile fortification > grammar default (no wall for small kinds and market towns). An explicit style of another family than an explicit type is reported and the cultural style kept. City Bench shows « By culture → type · style » from the built main enclosure. |
 | `monument` | Free string; default `none` | In district grammar, can mark the largest block `compound:<name>`. Not a closed enumeration of actually built monuments. |
-| `programme.resources` | Free list; explicitly read triggers: `timber`, `stone`, `ore`, `clay` | Adds workshop needs; other words do not guarantee a specialized industry. |
-| `programme.lore` | Free list; explicit triggers: `temple`, `palace`, `necropolis`, `magic` | Creates collective demand bearing the first recognized token. Not a complete narrative ontology. |
+| `programme.resources` | Free list; recognised tokens in `urban/programme_tokens.json` (`timber`, `stone`, `ore`, `clay`), also the UI suggestions | One shared workshop need; other words are kept with no effect (no need invented). |
+| `programme.lore` | Free list; recognised tokens in `urban/programme_tokens.json` (`temple`, `palace`, `necropolis`, `magic`) | First recognised entry only creates a `lore.<token>` landmark; later recognised entries are shown as ignored, unknown ones kept with no effect. |
 | `programme.period` | Free string; empty and `any` disable some filters; otherwise periods present in architectural admission | Recipe filter, not a global period list homogeneous across 79 cultures. |
-| `programme.navigableAccess` | `false`, `true` | Explicit navigation declaration used by some demands; independent of mere water presence. |
+| `programme.navigableAccess` | `false`, `true` | Sites the place as a port (quays only on real water). No longer an allocation proof: port storage needs the measured navigable quay. |
 | Historical site preferences | `waterSide`, `hillSide`: `N`, `E`, `S`, `W`; quantitative weights and preferences | Historical contract adds `flatness`, `margin`, `centerInset` to archetype weights, `mountainFace`, and `woodland`. Native placement bridge directly exposes mainly `weights`, `mountainFace`, `woodland`; do not assume all historical preferences transfer. Historical comment marks `woodland` reserved on this path. |
 | Cultural construction on water | Legacy `Culture.waterBuild` boolean; platforms/stilts according to native admission | A stilt tradition is not merely a land house. Conditional cultural/architectural capability, not global permission to build on all water or an attested universal CityBench button. |
 
@@ -248,7 +247,6 @@ These variables are upstream of the city. A CityBench scenario on fixed scenery 
 | Produced crossings | `bridge`, `ford`, `causeway` | Bridge, ford, or causeway according to network constraints. |
 | Regional generation mode | `auto`, `counts`, `list` | Automatic placement, counts by class, or explicit settlement list. |
 | Regional size distribution | `classes`, `zipf` | Population distribution across settlements. |
-| Historical `SettlementSpec.kind` intention | String field, default `settlement` | Do not equate with native type resolved by `LayoutConfig.settlementForm`. |
 
 ### Quantitative or free variation, not enumerable without chosen steps
 
@@ -258,7 +256,7 @@ These variables are upstream of the city. A CityBench scenario on fixed scenery 
 | Size and map | Population, map width, radius and radius factor | Volume of demand and working space; must be explicit in benchmarks. |
 | Footprint | `grossDensity`, `aspect`, `orientation`, `nuclei`, `irregularity`, `anisotropy`, `separation`, `epochs`, `cohesion`, `satellites`, `branchDepth`, `gapSize` | Gross density, proportions, nuclei, growth, continuity and discontinuities. |
 | Plan | `density`, `count`, `rings`, `phases`, `siteAdaptation`, `maxStreetGrade`, `maxLaneGrade`, `maxStairGrade`, `accessDepth`, `accessBudget` | Intensity, element counts, adaptation/accessibility. Some are bounded integers but remain internal settings of these modes. |
-| Mix | `mixShare`, `mixAngle` | Share and orientation of second influence; historical TS also knows `blend`, which native `mixMode` does not accept. |
+| Mix | `mixShare`, `mixAngle` | Share and orientation of second influence; `mixMode` is `phases` or `sectors` everywhere (the TS-only `blend` was removed). |
 | Program | `decay`, free resources, free period, free lore | Vacancy and special demands; unrecognized words have no guaranteed effect. |
 | Street morphology | `laneSpacing`, `wardArea`, `accessDepth`, `fieldTwist`, `curvature`, `fieldNoise`, `fieldWavelength`, `fieldRandom`, `gridSpacing`, `gridSkew`, `blockSize`, `minBlock`, `minWidth`, `widthByRank`, `widthScale`, `widthJitter`, `placeThreshold`, `deadEndRatio`, `slitDepth`, `plotDepth`, `contourFollow`, `contourBlend`, `longCut` | Spacings, angles, areas, widths, places, and terrain following. Native district catalog fields, excluding operators already listed. |
 | Parcel morphology | `houseArea`, `coverage`, `frontage`, `plotDepth`, `plotTilt`, `wideLotChance`, `deepFill` | Areas, coverage, frontage, depth, bias, and filling. `deepFill` is boolean. |
@@ -282,6 +280,8 @@ These variables are upstream of the city. A CityBench scenario on fixed scenery 
 | Terrain/hydrology computation | WASM/CPU, GPU depending on stage; native modes depending on runtime | Execution and reproducibility variable; should not inflate urban style counts. |
 
 ## 6. General critique and proposed combination model
+
+**Shared axis model (30/10):** `rust/bridge/settlementAxes.ts` lists the axes (population, intent, scope, grammar, named profile, plan/mesh, era, functions, policy, enclosure, footprint, growth, phases, suburbs, mix, parcelling), their request field, the values that defer to the profile or to the automatic resolution (`axisSource`: override > profile > auto), and whether only the district grammar reads them (`axisApplies`). City Bench hides or disables footprint shape and second influence when the expected grammar is a direct small one, shows « Auto → … » for grammar and footprint, and names the components of the selected profile (`profileComponents`: catalogue plan pattern and fortification, plus explicit components for composites such as bastide, maori-pa, japanese-jokamachi, necropolis). The free-text `SettlementSpec.kind` label was removed; the urban policy → Houses mode mapping lives once in `urban/culture.rs::houses_mode`.
 
 1. **The matrix is conditional.** An isolated farm does not have the same active axes as a metropolis. Available recipes depend on culture. Footprint shape is not a parcel subdivision, roof type, or demographic class.
 2. **Culture currently bundles too much.** `bastide` is a plan principle, `maori-pa` a culturally situated settlement type, `japanese-jokamachi` a castle town, and `necropolis` a program/theme. This heterogeneity makes comparisons difficult. Keep IDs for compatibility, but separately describe architectural tradition, urban organization, period, and institutions.

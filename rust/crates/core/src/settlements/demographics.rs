@@ -22,6 +22,15 @@ fn catalogue() -> &'static Catalogue {
         data
     })
 }
+/// Lowest population of a class (`"town"` → 1000). Panics on an unknown id:
+/// every caller names a class of the shared catalogue.
+pub fn floor(class: &str) -> u32 {
+    catalogue().classes.get(class).unwrap_or_else(|| panic!("unknown demographic class {class}")).minimum
+}
+/// `population` lies below the floor of `class` (e.g. `below(p, "town")` = village or smaller).
+pub fn below(population: u32, class: &str) -> bool {
+    population < floor(class)
+}
 pub fn class_of(population: u32) -> &'static str {
     catalogue().classes.iter().filter(|(_, c)| population >= c.minimum)
         .max_by_key(|(_, c)| c.minimum).map(|(id, _)| id.as_str()).expect("zero demographic floor")

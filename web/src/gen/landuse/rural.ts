@@ -24,7 +24,7 @@ type Ring = [number, number][];
 export interface FieldNetExtras { ways: Polyline[]; headlands: Polyline[] }
 
 /** A retained urban plan can reserve its real land before its buildings exist. */
-export interface RuralPlan { footprint: PolyH[]; population: number; farmsteads?: boolean; naturalForest?: Float32Array; settlementFootprints?: Record<string, PolyH[]>; streetAlignedHomes?: boolean; denserSmallholdings?: boolean }
+export interface RuralPlan { footprint: PolyH[]; population: number; farmsteads?: boolean; naturalForest?: Float32Array; settlementFootprints?: Record<string, PolyH[]>; streetAlignedHomes?: boolean; denserSmallholdings?: boolean; /** 0 openfield .. 1 bocage; 0.4 is the historical draw. */ fieldEnclosure?: number; fieldMaterial?: 'hedge' | 'wall' | 'fence' }
 
 /** Reserve a lazy roof's bounded outer collar for farm lots, accounting for raster and lot-sampling error. */
 export function farmGrowthReserve(base: Uint8Array, n: number, cell: number, openMacroFootprints: PolyH[][]): Uint8Array {
@@ -120,7 +120,7 @@ function circleRing(c: Vec2, r: number): Polygon {
   return out;
 }
 
-/** Scale (m) of a settlement's rural rings: the preset map extents for the legacy sizes (hamlet 1.2 km … capital 5 km). */
+/** Scale (m) of a settlement's rural rings: the preset map extents for the legacy sizes (hamlet 1.2 km … metropolis 5 km). */
 export function ringScale(pop: number): number {
   return pop < 15 ? 450 : 1200 * Math.pow(Math.max(15, pop) / 100, 0.23);
 }
@@ -419,7 +419,7 @@ export function generateRural(world: World, root: Rng, mainRoads?: number, strip
   // farmsteads along the roads: dispersed farms of the main town's farmland (and, on custom maps, of the whole country)
   if (plan?.farmsteads !== false) {
     const custom = world.options.mapSize !== undefined;
-    const farmCount = (({ hamlet: 0, village: 2, town: 4, city: 7, capital: 10 } as const)[world.options.size] + (custom ? Math.min(90, Math.round(0.2 * (S / 1000) ** 2)) : 0)) * (plan?.denserSmallholdings ? 3 : 1);
+    const farmCount = (({ hamlet: 0, village: 2, town: 4, city: 7, metropolis: 10 } as const)[world.options.size] + (custom ? Math.min(90, Math.round(0.2 * (S / 1000) ** 2)) : 0)) * (plan?.denserSmallholdings ? 3 : 1);
     const fr = rr.fork('farm');
     const cand: { o: Vec2; V: Vec2; score: number }[] = [];
     const rds = custom ? roads : mainRoads === undefined ? roads : roads.slice(0, mainRoads);
@@ -555,7 +555,10 @@ export function generateRural(world: World, root: Rng, mainRoads?: number, strip
     }
     // enclosed ground: closes around the farmsteads and the village edge, bocage in the wet and western country
     if (k === C.FIELD) {
-      const cl = (dFarm[i] < 190 && dFarm[i] < 115 + 75 * gC()) || (u < 0.17 * Lm && gB() > -0.3) || bocage(wx, wy, dW) > 0.4;
+      // fieldEnclosure e: 0.4 is the historical draw; below it closes shrink to nothing (openfield), above it bocage spreads.
+      const e = plan?.fieldEnclosure, g = e === undefined ? 1 : Math.min(3, e / 0.4);
+      const cl = e !== undefined && e <= 0.02 ? false
+        : (dFarm[i] < 190 * g && dFarm[i] < (115 + 75 * gC()) * g) || (u < 0.17 * Lm * g && gB() > -0.3) || bocage(wx, wy, dW) > (e === undefined ? 0.4 : 0.4 + 1.5 * (0.4 - e));
       if (cl) k = C.CLOSE;
     }
     // The coarse road mask protects cultivation, not uncultivated vegetation. Its cells can
@@ -909,11 +912,12 @@ export function generateRural(world: World, root: Rng, mainRoads?: number, strip
       const center = polygonCentroid(fl.outer), ci = idxAt(center.x, center.y);
       const pasture = plan ? slopeL[ci] > fieldMax * .9 || soilAt(center.x / cell - .5, center.y / cell - .5) < -.2
         || f.hab[ci] < 3 && f.dWater[ci] < 200 : ftRng.chance(.42);
-      const ar: LandArea & { enclosed?: boolean } = pasture
+      const ar: LandArea & { enclosed?: boolean; enclosure?: 'hedge' | 'wall' | 'fence' } = pasture
         ? { kind: 'pasture', poly: fl.outer, holes: fl.holes.length ? fl.holes : undefined }
         : { kind: 'field', poly: fl.outer, holes: fl.holes.length ? fl.holes : undefined, stripAngle: fl.angle,
           fieldLayout: fl.layout, strips: undefined };
       ar.enclosed = true;
+      if (plan?.fieldMaterial && plan.fieldMaterial !== 'hedge') ar.enclosure = plan.fieldMaterial;
       areas.push(ar);
       continue;
     }

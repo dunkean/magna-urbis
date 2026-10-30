@@ -20,7 +20,7 @@ function finite(value: unknown, name: string, lo: number, hi: number): void {
 function validateOptions(o: unknown, partial = false): asserts o is Options {
   if (!isRecord(o)) throw new Error('Paramètres de génération invalides.');
   if (!partial || o.seed !== undefined) if (typeof o.seed !== 'string' || o.seed.length > 1000) throw new Error('Graine invalide.');
-  for (const [key, values] of Object.entries({ size: ['hamlet', 'village', 'town', 'city', 'capital'], relief: ['flat', 'hills', 'valley', 'mountains'],
+  for (const [key, values] of Object.entries({ size: ['hamlet', 'village', 'town', 'city', 'metropolis'], relief: ['flat', 'hills', 'valley', 'mountains'],
     coast: ['none', 'N', 'E', 'S', 'W', 'random'], river: ['none', 'stream', 'river', 'major'], style: ['parchment', 'atlas'],
     walls: ['auto', 'yes', 'no', 'none', 'single', 'double'], castle: ['auto', 'yes', 'no'],
     biome: ['temperate', 'forest', 'desert', 'steppe', 'tropical', 'tundra', 'underdark', 'underdark-caverns'] })) {

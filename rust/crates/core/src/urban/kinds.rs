@@ -18,6 +18,7 @@ use super::{
     geometry as g, macroplan, profiles, roles, routing,
 };
 use crate::rng::Rng;
+use crate::settlements::demographics;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
@@ -167,7 +168,7 @@ pub(super) fn resolve(site: &Site, cfg: &LayoutConfig, roads: &[Street]) -> Kind
     let culture = culture(site, cfg);
     let pop = site.population;
     let state = cfg.programme.state.as_str();
-    let role = cfg.programme.role.as_str();
+    let role = cfg.programme.intent.as_str();
     if roles::is_isolated(role) {
         return if state == "ruined" {
             Kind::Ruin
@@ -177,7 +178,12 @@ pub(super) fn resolve(site: &Site, cfg: &LayoutConfig, roads: &[Street]) -> Kind
             Kind::Single
         };
     }
-    if pop <= 12 {
+    // The automatic grammar follows the shared demographic class
+    // (settlements/demographic_classes.json): one classification, no second set
+    // of population bands. Only the town class keeps grammar sub-steps (walls,
+    // district city) that depend on culture and site, not on a new class.
+    let class = demographics::class_of(pop);
+    if class == "farmstead" {
         return if state == "ruined" {
             Kind::Ruin
         } else {
@@ -187,19 +193,22 @@ pub(super) fn resolve(site: &Site, cfg: &LayoutConfig, roads: &[Street]) -> Kind
     if cfg.settlement_form == "auto" && pop < 5000 && cultural_camp(culture, pop, cfg) {
         return Kind::Camp;
     }
-    if pop < 150 {
-        return Kind::Hamlet;
-    }
-    if pop < 1200 {
-        return match cfg.settlement_form.as_str() {
-            "ribbon" => Kind::StreetVillage,
-            "nucleated" => Kind::NucleatedVillage,
-            _ => village_form(site, cfg, culture, roads),
-        };
+    match class {
+        "hamlet" => return Kind::Hamlet,
+        "village" => {
+            return match cfg.settlement_form.as_str() {
+                "ribbon" => Kind::StreetVillage,
+                "nucleated" => Kind::NucleatedVillage,
+                _ => village_form(site, cfg, culture, roads),
+            };
+        }
+        "city" => return Kind::City,
+        "metropolis" | "megacity" => return Kind::Metropolis,
+        _ => {}
     }
     let fortifies = profiles::fortification(
         profiles::settlement_profile(culture, pop, 3),
-        &cfg.fortification,
+        requested_enclosure(cfg),
         pop,
     ) != "none";
     let defensive = DEFENSIVE.contains(&cfg.site_archetype.as_str());
@@ -209,18 +218,26 @@ pub(super) fn resolve(site: &Site, cfg: &LayoutConfig, roads: &[Street]) -> Kind
         } else {
             Kind::MarketTown
         }
-    } else if pop < 30_000 {
-        if fortifies {
-            Kind::WalledTown
-        } else {
-            Kind::City
-        }
-    } else if pop < 200_000 {
-        Kind::City
+    } else if fortifies {
+        Kind::WalledTown
     } else {
-        Kind::Metropolis
+        Kind::City
     }
 }
+/// Enclosure type precedence: explicit type (`wall`, `palisade`, `none`) >
+/// explicit style (its family: a bastioned style asks for a wall) > named
+/// profile (`culture`, resolved by `profiles::fortification`) > grammar default
+/// (`effective`: no enclosure for small kinds and market towns). Style
+/// precedence is in `fortification::resolve`: explicit style of the same family
+/// > the culture's style table (population, period, prosperity).
+pub(in crate::urban) fn requested_enclosure(cfg: &LayoutConfig) -> &str {
+    if cfg.fortification == "culture" && cfg.fortification_style != "auto" {
+        super::fortification::family(&cfg.fortification_style)
+    } else {
+        &cfg.fortification
+    }
+}
+
 /// Street village where a through road carries the place (bridge, pass,
 /// valley floor) and the culture has no clustered village form; clustered on
 /// heights, islands and shores; otherwise a deterministic draw per site.
@@ -255,7 +272,7 @@ fn village_form(site: &Site, cfg: &LayoutConfig, culture: &str, roads: &[Street]
 
 /// The configuration the kind applies: only fields left on their automatic
 /// value change (`suburbs: auto`, `peripheralRoad: auto`, `fortification:
-/// culture`, the default three epochs, `programme.role: auto`). The kind id is
+/// culture`, the default three epochs, `programme.intent: settlement`). The kind id is
 /// written to `settlement_form`, so resolving the effective config again gives
 /// the same kind.
 pub(super) fn effective(site: &Site, cfg: &LayoutConfig, roads: &[Street]) -> (LayoutConfig, Kind) {
@@ -265,6 +282,9 @@ pub(super) fn effective(site: &Site, cfg: &LayoutConfig, roads: &[Street]) -> (L
     if cfg.footprint.mechanism == "legacy" {
         return (c, kind);
     }
+    // An explicit style is an override: it fixes the enclosure type before the
+    // grammar's « no wall below a market town » default (which only replaces `culture`).
+    c.fortification = requested_enclosure(cfg).into();
     c.settlement_form = kind.id().into();
     let default_epochs = cfg.footprint.epochs == super::FootprintConfig::default().epochs;
     let set = |field: &mut String, when: &str, value: &str| {
@@ -286,8 +306,8 @@ pub(super) fn effective(site: &Site, cfg: &LayoutConfig, roads: &[Street]) -> (L
             if default_epochs {
                 c.footprint.epochs = 1;
             }
-            if matches!(kind, Kind::Farmstead | Kind::Ruin) && c.programme.role == "auto" {
-                c.programme.role = "isolated-farm".into();
+            if matches!(kind, Kind::Farmstead | Kind::Ruin) && c.programme.intent == "settlement" {
+                c.programme.intent = "isolated-farm".into();
             }
         }
         Kind::StreetVillage | Kind::NucleatedVillage => {
@@ -958,10 +978,10 @@ fn homestead(
     surface: Surface<'_>,
     rng: &mut Rng,
 ) -> Option<Plan> {
-    let (w, d) = plot_size(kind, &cfg.programme.role, rng);
+    let (w, d) = plot_size(kind, &cfg.programme.intent, rng);
     // A mill stands on its race: on the nearest bank within reach, its plot
     // backing onto the water (dry-clipped to the bank by `settle`).
-    let bank = (cfg.programme.role == "isolated-mill")
+    let bank = (cfg.programme.intent == "isolated-mill")
         .then(|| bank(&surface, site.center, MILL_REACH))
         .flatten();
     let c = bank.map_or(site.center, |(q, inland)| at(q, inland, d * 0.5 - 3.0));
@@ -1457,7 +1477,7 @@ mod tests {
             ("isolated-mill", 30.0 * 40.0),
         ] {
             let mut cfg = LayoutConfig::default();
-            cfg.programme.role = role.into();
+            cfg.programme.intent = role.into();
             let l = &generate_quarters(
                 "isolated",
                 std::slice::from_ref(&site),
@@ -1538,7 +1558,7 @@ mod tests {
         assert!((1..=3).contains(&built.len()), "{built:?}");
         assert!(built.iter().any(|a| a.role.starts_with("dwelling.farm")));
         // The user's configuration is kept on the layout.
-        assert_eq!(l.config.as_ref().unwrap().programme.role, "auto");
+        assert_eq!(l.config.as_ref().unwrap().programme.intent, "settlement");
 
         let (m, _) = run(300_000, &LayoutConfig::default());
         assert_eq!(m.archetype, "metropolis");
@@ -1568,7 +1588,8 @@ mod demographic_morphology_tests {
     #[test]
     fn demographic_morphology_boundaries_are_distinct_without_changing_population() {
         let cfg = LayoutConfig::default();
-        for (population, class, kind) in [(12,"farmstead",Kind::Farmstead),(13,"farmstead",Kind::Hamlet),(14,"farmstead",Kind::Hamlet),(15,"hamlet",Kind::Hamlet),(149,"hamlet",Kind::Hamlet),(150,"village",Kind::NucleatedVillage),(100000,"metropolis",Kind::City),(199999,"metropolis",Kind::City),(200000,"metropolis",Kind::Metropolis),(1000000,"megacity",Kind::Metropolis)] {
+        // The automatic grammar changes exactly on the demographic class floors.
+        for (population, class, kind) in [(12,"farmstead",Kind::Farmstead),(14,"farmstead",Kind::Farmstead),(15,"hamlet",Kind::Hamlet),(149,"hamlet",Kind::Hamlet),(150,"village",Kind::NucleatedVillage),(999,"village",Kind::NucleatedVillage),(1000,"town",Kind::MarketTown),(19999,"town",Kind::WalledTown),(20000,"city",Kind::City),(99999,"city",Kind::City),(100000,"metropolis",Kind::Metropolis),(1000000,"megacity",Kind::Metropolis)] {
             let s = site(population);
             assert_eq!(crate::settlements::demographics::class_of(s.population), class);
             assert_eq!(resolve(&s, &cfg, &[]), kind, "{population}");
@@ -1585,10 +1606,10 @@ mod demographic_morphology_tests {
         let mut s = site(300); s.culture = "nomad-camp".into();
         assert_eq!(resolve(&s, &cfg, &[]), Kind::Camp);
         for role in ["isolated-mill","isolated-inn","isolated-tower","isolated-shrine","roadside-temple"] {
-            cfg.programme.role = role.into();
+            cfg.programme.intent = role.into();
             assert_eq!(resolve(&site(100000), &cfg, &[]), Kind::Single);
         }
-        cfg.programme.role = "isolated-farm".into();
+        cfg.programme.intent = "isolated-farm".into();
         assert_eq!(resolve(&s, &cfg, &[]), Kind::Farmstead);
         cfg.programme.state = "ruined".into();
         assert_eq!(resolve(&s, &cfg, &[]), Kind::Ruin);
@@ -1597,15 +1618,19 @@ mod demographic_morphology_tests {
     fn demographic_morphology_all_explicit_ids_and_old_village_preferences_keep_their_meaning() {
         let s = site(300);
         for expected in ALL {
-            let mut cfg = LayoutConfig::default(); cfg.settlement_form = expected.id().into(); cfg.programme.role = "isolated-mill".into();
+            let mut cfg = LayoutConfig::default(); cfg.settlement_form = expected.id().into(); cfg.programme.intent = "isolated-mill".into();
             assert_eq!(resolve(&s, &cfg, &[]), expected);
         }
         let mut cfg = LayoutConfig::default(); cfg.settlement_form = "ribbon".into();
         assert_eq!(resolve(&s, &cfg, &[]), Kind::StreetVillage);
         cfg.settlement_form = "nucleated".into(); assert_eq!(resolve(&s, &cfg, &[]), Kind::NucleatedVillage);
-        cfg.settlement_form = "ribbon".into(); assert_eq!(resolve(&site(100000), &cfg, &[]), Kind::City);
+        cfg.settlement_form = "ribbon".into(); assert_eq!(resolve(&site(100000), &cfg, &[]), Kind::Metropolis);
     }
 }
+
+#[cfg(test)]
+#[path = "scenario_matrix_tests.rs"]
+mod scenario_matrix_tests;
 
 #[cfg(test)]
 #[path = "kinds_camp_mapping_tests.rs"]

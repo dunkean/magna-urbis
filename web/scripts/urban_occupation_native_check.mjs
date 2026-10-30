@@ -12,7 +12,7 @@ const executable = args[0];
 assert.ok(executable, 'Pass the current native release executable');
 const executableSha256 = createHash('sha256').update(readFileSync(executable)).digest('hex');
 const population = args.includes('--population') ? Number(args[args.indexOf('--population') + 1]) : undefined;
-const role = args.includes('--role') ? args[args.indexOf('--role') + 1] : 'crossroads';
+const fn = args.includes('--function') ? args[args.indexOf('--function') + 1] : 'commerce';
 assert.ok(population === undefined || Number.isSafeInteger(population) && population > 0);
 const placements = args.includes('--placements');
 const reference = population === undefined ? JSON.parse(readFileSync('out/urban-buildings/courtyard.inputs.json', 'utf8')) : undefined;
@@ -97,10 +97,10 @@ try {
   let layouts = reference?.layouts;
   if (!layouts) ({ layouts } = await urban('quarters', {
     sites: [{ key: 'native-metropolis', name: 'Native metropolis', population, culture: 'european-organic', center: { x: width * .5, y: width * .5 }, radius: 160 }], roads: [],
-    layoutConfig: { composition: 'settlement', count: 12, fortification: 'none', programme: { role }, footprint: { mechanism: 'accessibility', budget: 'population' } },
+    layoutConfig: { scope: 'settlement', count: 12, fortification: 'none', programme: { intent: 'settlement', functions: { [fn]: 1 } }, footprint: { mechanism: 'accessibility', budget: 'population' } },
   }));
   if (args.includes('--quarters-only')) {
-    const report = { executable, executableSha256, seed, population, role, width, timings, stage: 'quarters-only',
+    const report = { executable, executableSha256, seed, population, functions: fn, width, timings, stage: 'quarters-only',
       structure: layouts.map(l => l.structure?.metrics), blocks: layouts.reduce((n, l) => n + l.blocks.length, 0),
       streets: layouts.reduce((n, l) => n + l.streets.length, 0),
       reservations: layouts.flatMap(l => l.programme.reservations),
@@ -114,7 +114,7 @@ try {
   const { placementRequests } = await urban('buildingSites', { layouts, partitions });
   const recipes = {};
   for (const r of placementRequests) recipes[r.config.recipe] = (recipes[r.config.recipe] ?? 0) + 1;
-  const report = { executable, executableSha256, seed, population: population ?? layouts[0].programme.population, role: reference?.layouts[0].programme.context.role ?? role, stage: placements ? 'built' : 'placement-requests', retainedGeometry: !!reference, width, timings, baseline: reference && describe(reference.partitions, reference.layouts), current: describe(partitions, layouts), requests: placementRequests.length, recipes,
+  const report = { executable, executableSha256, seed, population: population ?? layouts[0].programme.population, functions: reference?.layouts[0].programme.context.functions ?? { [fn]: 1 }, stage: placements ? 'built' : 'placement-requests', retainedGeometry: !!reference, width, timings, baseline: reference && describe(reference.partitions, reference.layouts), current: describe(partitions, layouts), requests: placementRequests.length, recipes,
     structure: layouts.map(l => l.structure?.metrics), blocks: layouts.reduce((n, l) => n + l.blocks.length, 0), streets: layouts.reduce((n, l) => n + l.streets.length, 0) };
   let scene;
   if (placements) {

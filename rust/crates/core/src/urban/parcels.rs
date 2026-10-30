@@ -323,6 +323,8 @@ pub(super) fn network_contacts(
         .collect()
 }
 
+/// The wall walk (`wall-lane`, inside the curtain) is a street like another:
+/// a block backed on the wall reaches the town by it, as its lots do.
 pub(super) fn block_contacts(shape: &Shape, layout: &Layout) -> Vec<super::ParcelContact> {
     block_contacts_indexed(shape, layout, &FrontageIndex::new(layout))
 }
@@ -336,7 +338,7 @@ pub(super) fn block_contacts_indexed(
         .filter(|c| {
             !matches!(
                 layout.streets[c.street].role.as_str(),
-                "boundary" | "wall-lane" | "bridge"
+                "boundary" | "bridge"
             )
         })
         .collect()
@@ -3609,6 +3611,8 @@ pub(super) fn generate(
         parcels: Vec::new(),
         warnings: Vec::new(),
         diagnostics: None,
+        enclosure: None,
+        lot_enclosures: Vec::new(),
     };
     let mut diagnostics = super::PartitionDiagnostics::default();
     let root = Rng::new(seed).fork(&format!("parcels:{}", layout.key));

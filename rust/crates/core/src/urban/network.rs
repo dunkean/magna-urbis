@@ -2383,6 +2383,28 @@ pub(super) fn bridge_water(streets: &mut Vec<Street>, surface: super::Surface<'_
 pub(super) fn bridge_water_on_ground<'a>(streets: &mut Vec<Street>, surface: super::Surface<'a>, physical: super::Surface<'a>, max_grade: f64) {
     bridge_water_inner(streets, surface, Some(physical), max_grade);
 }
+/// Steepest grade over the dry stretches of a deck (its two landing ramps).
+fn deck_landing_grade(surface: super::Surface<'_>, ends: [Point; 2]) -> f64 {
+    let steps = (distance(ends[0], ends[1]) / 2.0).ceil().max(1.0) as usize;
+    let at = |i: usize| lerp(ends[0], ends[1], i as f64 / steps as f64);
+    (0..steps).filter(|&i| !surface.wet(at(i)) && !surface.wet(at(i + 1)))
+        .map(|i| (surface.height_at(at(i + 1)) - surface.height_at(at(i))).abs() / distance(at(i), at(i + 1)).max(1e-9))
+        .fold(0.0, f64::max)
+}
+/// A deck at `middle`, moved along the channel when its landing ramps exceed the
+/// street grade limit; the original when no admissible site lies within 150 m.
+fn deck_on_grade(surface: super::Surface<'_>, middle: Point, max_grade: f64) -> Option<[Point; 2]> {
+    let first = super::footprint::crossings::deck(surface, middle)?;
+    if deck_landing_grade(surface, first) <= max_grade + 1e-6 { return Some(first); }
+    let len = distance(first[0], first[1]).max(1e-9);
+    let u = ((first[1].x - first[0].x) / len, (first[1].y - first[0].y) / len);
+    for offset in [12.0, -12.0, 24.0, -24.0, 48.0, -48.0, 72.0, -72.0, 96.0, -96.0, 144.0, -144.0] {
+        let p = Point { x: middle.x - u.1 * offset, y: middle.y + u.0 * offset };
+        if let Some(c) = super::footprint::crossings::deck(surface, p)
+            && deck_landing_grade(surface, c) <= max_grade + 1e-6 { return Some(c); }
+    }
+    Some(first)
+}
 fn bridge_water_inner<'a>(streets: &mut Vec<Street>, surface: super::Surface<'a>, physical: Option<super::Surface<'a>>, max_grade: f64) {
     let _profile = super::routing::Profile::new("bridge_water");
     #[cfg(test)]
@@ -2661,22 +2683,31 @@ fn bridge_water_inner<'a>(streets: &mut Vec<Street>, surface: super::Surface<'a>
             }
             continue;
         }
-        let mut own_paths = ramps(&r, ends);
+        // A landing ramp steeper than the street grade limit is not a site: look
+        // along the channel for one whose two ramps respect it.
+        let steep = |e: [Point; 2]| deck_landing_grade(channel_surface, e) > max_grade + 1e-6;
+        let mut own_paths = if steep(ends) { None } else { ramps(&r, ends) };
         if own_paths.is_none() {
-            ends.swap(0, 1); own_paths = ramps(&r, ends);
+            ends.swap(0, 1); own_paths = if steep(ends) { None } else { ramps(&r, ends) };
             if own_paths.is_none() { ends.swap(0, 1); }
         }
         if own_paths.is_none() {
             // Move a perpendicular span along the channel until both landings
             // admit ramps. The road turns on land, never on the deck.
-            for offset in [12.0, -12.0, 24.0, -24.0, 48.0, -48.0, 96.0, -96.0] {
+            for offset in [12.0, -12.0, 24.0, -24.0, 48.0, -48.0, 72.0, -72.0, 96.0, -96.0, 144.0, -144.0] {
                 let p = Point { x: middle.x - u.1 * offset, y: middle.y + u.0 * offset };
                 let Some(mut candidate) = crossings::deck(channel_surface, p) else { continue; };
+                if steep(candidate) { continue; }
                 if distance(r.a, candidate[0]) > distance(r.a, candidate[1]) { candidate.swap(0, 1); }
                 let mut paths = ramps(&r, candidate);
                 if paths.is_none() { candidate.swap(0, 1); paths = ramps(&r, candidate); }
                 if let Some(paths) = paths { ends = candidate; own_paths = Some(paths); break; }
             }
+        }
+        // No admissible site nearby: keep the original crossing, however steep.
+        if own_paths.is_none() && steep(ends) {
+            own_paths = ramps(&r, ends);
+            if own_paths.is_none() { ends.swap(0, 1); own_paths = ramps(&r, ends); if own_paths.is_none() { ends.swap(0, 1); } }
         }
         let length = distance(ends[0], ends[1]);
         let u = ((ends[1].x - ends[0].x) / length, (ends[1].y - ends[0].y) / length);
@@ -2724,7 +2755,7 @@ fn bridge_water_inner<'a>(streets: &mut Vec<Street>, surface: super::Surface<'a>
 /// Supply missing crossings from occupied bank streets, including towns whose
 /// original roads never crossed water. Both ramps must reach existing streets
 /// entirely on land; no routing search or isolated landing is introduced.
-fn built_bank_crossings(streets: &mut Vec<Street>, land: &[Street], banks: &Graph, served: &[bool], surface: super::Surface<'_>) -> bool {
+fn built_bank_crossings(streets: &mut Vec<Street>, land: &[Street], banks: &Graph, served: &[bool], surface: super::Surface<'_>, max_grade: f64) -> bool {
     use super::{footprint::crossings, geometry as g, routing};
     struct Sample { p: Point, a: Point, b: Point, rank: usize, width: f64, bank: usize }
     let mut samples = vec![];
@@ -2793,7 +2824,7 @@ fn built_bank_crossings(streets: &mut Vec<Street>, land: &[Street], banks: &Grap
         let (a, b) = (&samples[i], &samples[j]);
         let bank_pair = pair(a.bank, b.bank);
         if middles.iter().any(|&(m, p)| p == bank_pair && distance(m, middle) < 90.0) { continue; }
-        let Some(mut ends) = crossings::deck(surface, middle) else { continue; };
+        let Some(mut ends) = deck_on_grade(surface, middle, max_grade) else { continue; };
         if distance(a.p, ends[0]) > distance(a.p, ends[1]) { ends.swap(0, 1); }
         // Project onto the street so each new ramp shares a real junction.
         let joints = [g::distance(ends[0], a.a, a.b).2, g::distance(ends[1], b.a, b.b).2];
@@ -2820,11 +2851,14 @@ fn built_bank_crossings(streets: &mut Vec<Street>, land: &[Street], banks: &Grap
 /// Preserve connections between built parts, then fill a stable size/frontage
 /// demand with through routes first and well-separated secondary crossings.
 pub(super) fn select_bridges(layout: &mut super::Layout, population: u32, surface: super::Surface<'_>, roads: &[Street]) {
+    select_bridges_graded(layout, population, surface, roads, 0.12);
+}
+pub(super) fn select_bridges_graded(layout: &mut super::Layout, population: u32, surface: super::Surface<'_>, roads: &[Street], max_grade: f64) {
     let _profile = super::routing::Profile::new("bridge_select");
     if surface.geometry.is_none() && !surface.water.iter().any(|&w| w != 0) { return; }
     let reserved: Vec<_> = layout.programme.iter().flat_map(|p| &p.reservations)
         .map(|r| layout.streets.get(r.street).cloned()).collect();
-    select_bridges_inner(layout, population, surface, roads, true);
+    select_bridges_inner(layout, population, surface, roads, true, max_grade);
     // Junction insertion and rejected decks change street indices, not the
     // road serving an already reserved block. Carry those witnesses forward.
     let remap: Vec<_> = reserved.iter().map(|old| old.as_ref().and_then(|old| {
@@ -2839,7 +2873,7 @@ pub(super) fn select_bridges(layout: &mut super::Layout, population: u32, surfac
         for (r, i) in p.reservations.iter_mut().zip(remap) { if let Some(i) = i { r.street = i; } }
     }
 }
-fn select_bridges_inner(layout: &mut super::Layout, population: u32, surface: super::Surface<'_>, roads: &[Street], supply: bool) {
+fn select_bridges_inner(layout: &mut super::Layout, population: u32, surface: super::Surface<'_>, roads: &[Street], supply: bool, max_grade: f64) {
     use super::{footprint::crossings, geometry as g, routing};
     let streets = &mut layout.streets;
     let land: Vec<_> = streets.iter().filter(|s| s.role != "bridge").cloned().collect();
@@ -2871,8 +2905,8 @@ fn select_bridges_inner(layout: &mut super::Layout, population: u32, surface: su
         }
         served[c] |= frontage[c] >= 12.0;
     }
-    if supply && built_bank_crossings(streets, &land, &banks, &served, surface) {
-        select_bridges_inner(layout, population, surface, roads, false);
+    if supply && built_bank_crossings(streets, &land, &banks, &served, surface, max_grade) {
+        select_bridges_inner(layout, population, surface, roads, false, max_grade);
         return;
     }
     // A regional bridge can land just outside the clipped town. Carry its
@@ -2897,7 +2931,7 @@ fn select_bridges_inner(layout: &mut super::Layout, population: u32, surface: su
     }
     if !outward.is_empty() {
         streets.extend(outward);
-        select_bridges_inner(layout, population, surface, &[], false);
+        select_bridges_inner(layout, population, surface, &[], false, max_grade);
         return;
     }
     struct Candidate { parts: Vec<usize>, banks: BTreeSet<usize>, middle: Point, direction: (f64, f64), span: f64, rank: usize, width: f64, valid: bool }

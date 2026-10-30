@@ -14,7 +14,6 @@ import { planSettlements } from './settlements/planner';
 import { routeNetwork } from './settlements/network';
 import { generateSettlementUrban } from './settlements/urban';
 import { choosePopulation } from './urban/phases';
-import { scaleMinPop, scaleMaxPop } from './urban/culture';
 import { generateMega, megaRadius } from './urban/mega/plan';
 import { EAGER_MAIN_POP } from './urban/mega/types';
 import { requiredMegaExtent } from './urban/mega/extent';
@@ -25,11 +24,10 @@ export const EAGER_POP = 50000;
 export const MAIN_POP_CAP = 250000;
 export { EAGER_MAIN_POP };
 
-/** The main settlement's population as the urban stage draws it (size preset range, culture scale bounds). */
+/** The main settlement's population as the urban stage draws it (explicit, else drawn in the size preset range). No cultural cap. */
 export function mainPopulation(o: Options, root: Rng): number {
   const culture = getCulture(o.culture);
   let pop = choosePopulation(o.size, o.population, root.fork('urban').fork('pop'));
-  if (culture.scale) pop = Math.round(Math.max(scaleMinPop(culture.scale.min), Math.min(pop, scaleMaxPop(culture.scale.max) * 1.5)));
   return pop;
 }
 

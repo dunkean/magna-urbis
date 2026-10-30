@@ -12,7 +12,7 @@
         "archetype": "camp",
         "config": {
           "programme": {
-            "role": "auto",
+            "intent": "settlement",
             "resources": [],
             "period": "",
             "mode": "inspired",
@@ -50,7 +50,7 @@
           "accessMode": "adaptive",
           "accessDepth": 0.0,
           "accessBudget": 4,
-          "composition": "settlement",
+          "scope": "settlement",
           "settlementForm": "auto",
           "siteArchetype": "",
           "suburbs": "auto",
@@ -94,7 +94,7 @@
         "archetype": "nucleated-village",
         "config": {
           "programme": {
-            "role": "auto",
+            "intent": "settlement",
             "resources": [],
             "period": "",
             "mode": "inspired",
@@ -132,7 +132,7 @@
           "accessMode": "adaptive",
           "accessDepth": 0.0,
           "accessBudget": 4,
-          "composition": "settlement",
+          "scope": "settlement",
           "settlementForm": "auto",
           "siteArchetype": "",
           "suburbs": "auto",
@@ -176,7 +176,7 @@
         "archetype": "nucleated-village",
         "config": {
           "programme": {
-            "role": "auto",
+            "intent": "settlement",
             "resources": [],
             "period": "",
             "mode": "inspired",
@@ -214,7 +214,7 @@
           "accessMode": "adaptive",
           "accessDepth": 0.0,
           "accessBudget": 4,
-          "composition": "settlement",
+          "scope": "settlement",
           "settlementForm": "auto",
           "siteArchetype": "",
           "suburbs": "auto",

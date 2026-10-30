@@ -18,7 +18,7 @@ export const BIOME_CULTURES: Record<BiomeName, readonly string[]> = {
 const BIOME_WEIGHTS: [BiomeName, number][] = [
   ['temperate', 5], ['forest', 4], ['desert', 4], ['steppe', 3], ['tropical', 3], ['tundra', 3], ['underdark', 1], ['underdark-caverns', 1],
 ];
-const SIZE_WEIGHTS: [SizeName, number][] = [['hamlet', 1], ['village', 3], ['town', 4], ['city', 3], ['capital', 1]];
+const SIZE_WEIGHTS: [SizeName, number][] = [['hamlet', 1], ['village', 3], ['town', 4], ['city', 3], ['metropolis', 1]];
 const RELIEFS: Options['relief'][] = ['flat', 'hills', 'valley', 'mountains'];
 const COASTS: Options['coast'][] = ['none', 'none', 'random', 'N', 'E', 'S', 'W'];
 const RIVERS: Options['river'][] = ['none', 'stream', 'river', 'river', 'major'];

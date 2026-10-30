@@ -109,7 +109,7 @@ pub(in crate::urban) fn enabled(cfg: &LayoutConfig) -> bool {
         && cfg.preset == "culture"
         && cfg.recipe == "auto"
         && cfg.tissue == "culture"
-        && cfg.composition == "settlement"
+        && cfg.scope == "settlement"
         && cfg.placement == "center"
         && cfg.params.as_object().is_none_or(|p| p.is_empty())
 }
@@ -292,6 +292,7 @@ fn run(
         reconciliation_passes: 0,
         warnings: vec![],
         housing_capacity: 0.0,
+        navigable_frontage: false,
     });
     let parcel_cfg = ParcelConfig {
         density: cfg.density,
@@ -658,17 +659,11 @@ fn reserved_land(
     // The camp's tessellation already owns its open centre and its fields.
     // Reserving a whole probe block for a small common counts that land twice.
     if super::super::kinds::native_camp(culture, population, cfg) { return 0.0; }
-    let role = cfg.programme.role.as_str();
     let communal =
         super::super::culture::mapping(culture).is_some_and(|m| m.functional_profile == "communal");
-    let functions = cfg.programme.functions.unwrap_or_else(|| super::super::programme::ProgrammeFunctions::from_legacy_role(role));
-    let commons_rate = if cfg.programme.functions.is_some() {
-        functions.commons_per_capita(communal)
-    } else { if communal || role == "agricultural" || population < 500 {
-            2.0
-        } else {
-            0.5
-        } };
+    let functions = cfg.programme.functions.unwrap_or_else(||
+        super::super::programme::ProgrammeFunctions::automatic(population, communal, cfg.programme.navigable_access));
+    let commons_rate = functions.commons_per_capita(communal);
     let commons = (f64::from(population) * commons_rate)
     .max(30.0);
     let module = composition::phase_morph(

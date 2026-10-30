@@ -27,7 +27,7 @@ describe('compact reproducible map IDs', () => {
       + '&culture=russian-kremlin&population=3000&biome=underdark-caverns&moat=yes&cathedral=no&palace=yes'
       + '&monasteries=no&port=yes&arena=yes&activities=yes&suburbs=many&castles=3&shanty=many&site=auto'
       + '&center=123.456,789.1&seaLevel=-0.123456&contours=0&landuse=0&lang=english&labels=0&legend=1'
-      + '&sprawl=1.2345&mix=wizard-city:0.5:blend&plan=' + planToString(plan as never)
+      + '&sprawl=1.2345&mix=wizard-city:0.5:sectors&plan=' + planToString(plan as never)
       + '&map=2500&settl=L300&eager=20000&hm=custom&hscale=145&hsea=-5';
     for (const mode of ['', '&mode=a', '&mode=l', '&mode=e&compose=l']) {
       const original = fromQuery(query + mode + '&set2=' + encodeURIComponent(JSON.stringify([
@@ -43,12 +43,12 @@ describe('compact reproducible map IDs', () => {
 
   it('preserves the reported plan and compresses it substantially', () => {
     const o = fromQuery('seed=owrcg3&relief=mountains&walls=none&culture=russian-kremlin&population=3000'
-      + '&port=yes&activities=yes&suburbs=many&shanty=many&seaLevel=0&mix=wizard-city:0.5:blend'
+      + '&port=yes&activities=yes&suburbs=many&shanty=many&seaLevel=0&mix=wizard-city:0.5:sectors'
       + '&plan=' + planToString(plan as never) + '&map=2500&mode=a');
     const id = mapId(o);
     expect(id.startsWith('1z')).toBe(true);
     // Frozen compressed fixture guards the v1 vocabulary/dictionary against incompatible edits.
-    expect(id).toBe('1zwgNj4M0vL0pON2bSYOXjlEdzKRcnKPkIcAlxCQuJCkkwyGsjOR0Yg6ZWYDMUnrNW48wr4FDGlVMQaRaaVWAxRmR20UGzDEsk4rQamGzIyqLodkIto01hgLt0qlXkNDI1MFAJAAA');
+    expect(id).toBe('1zxANj4M0vL0pON2bSYOXjlEdzKRcnKPkIcAlxCQuJCkkwyOsjOR0Yg6ZWMLOes1bjzC3gcMaVVxCpFppZYHFGZIbRQbMMSzTitBqYcMjKpOh2Qi2jTXGAu3yqVeQ0MjUwUAkAAA');
     expect(toQuery(fromQuery('id=' + id))).toBe(toQuery(o));
     expect(id.length).toBeLessThan(toQuery(o).length * 0.5);
     expect(mapId(o)).toBe(mapId(o));

@@ -47,7 +47,7 @@ try {
   const context = { role: 'artisan', resources: ['timber', 'clay'], period: '', mode: 'inspired', navigableAccess: false, lore: ['temple'] };
   const { layouts } = await urban('quarters', {
     sites: [{ key: 'review', name: 'Review', population: 300, culture: 'european-organic', center: { x: 500, y: 500 }, radius: 140 }], roads: [],
-    layoutConfig: { composition: 'district', count: 4, radius: 140, culture: 'site', programme: context, footprint: { mechanism: 'legacy', budget: 'radius' } },
+    layoutConfig: { scope: 'district', count: 4, radius: 140, culture: 'site', programme: context, footprint: { mechanism: 'legacy', budget: 'radius' } },
   });
   let { partitions } = await urban('parcels', { layouts, parcelConfig: {} });
   const before = partitions.map(p => p.parcels);

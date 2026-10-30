@@ -7,7 +7,7 @@ const KEYS = ['seed', 'size', 'relief', 'coast', 'river', 'walls', 'castle', 'ro
   'legend', 'sprawl', 'mix', 'plan', 'map', 'settl', 'eager', 'mode', 'compose', 'set2', 'prefs',
   'hm', 'hscale', 'hsea'];
 const VALUES = ['0', '1', '2', '3', 'auto', 'yes', 'no', 'none', 'some', 'many', 'single', 'double',
-  'hamlet', 'village', 'town', 'city', 'capital', 'flat', 'hills', 'valley', 'mountains',
+  'hamlet', 'village', 'town', 'city', 'metropolis', 'flat', 'hills', 'valley', 'mountains',
   'N', 'E', 'S', 'W', 'random', 'stream', 'river', 'major', 'parchment', 'atlas',
   'temperate', 'forest', 'desert', 'steppe', 'tropical', 'tundra', 'underdark', 'underdark-caverns',
   'e', 'a', 'l', 'custom', 'european-organic'];

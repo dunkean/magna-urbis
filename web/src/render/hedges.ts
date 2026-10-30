@@ -1,6 +1,12 @@
 import type { LandArea, Polyline, Vec2 } from '../gen/types';
 import { hexToRgb, type Palette } from './styles';
 
+/** Dry-stone walls and fences of the closes: same ink family as the hedge, drier and darker. */
+export function fieldBoundaryStyle(pal: Palette, u: number, material: 'wall' | 'fence'): { color: string; width: number; alpha: number; dash: number[] } {
+  const s = Math.pow(Math.max(1, u), 0.55);
+  return material === 'wall' ? { color: '#6f6254', width: 0.7 * s, alpha: 0.75, dash: [] } : { color: '#8a6a43', width: 0.5 * s, alpha: 0.7, dash: [2.5 * s, 1.2 * s] };
+}
+
 /** Field boundaries sit below roads and forest edges in both renderers. */
 export function fieldHedgeStyle(pal: Palette, u: number): { color: string; width: number; alpha: number } {
   const green = hexToRgb(pal.hedge), earth = hexToRgb(pal.furrow);
@@ -14,24 +20,29 @@ const hash2 = (x: number, y: number): number => {
   return ((h ^ (h >>> 12)) >>> 0) / 4294967296;
 };
 
+/** Boundary material of an enclosed field (absent on an area = hedge). */
+export type FieldEnclosureMaterial = 'hedge' | 'wall' | 'fence';
 export interface HedgeTree { center: Vec2; radius: number }
 
 /** Shared geometry, including enclosed pasture: draw identical edges and their trees once. */
-export function fieldHedges(areas: LandArea[], u: number): { lines: Polyline[]; trees: HedgeTree[] } {
-  const edges = new Map<string, Polyline>();
+export function fieldHedges(areas: LandArea[], u: number): { lines: Polyline[]; trees: HedgeTree[]; walls: Polyline[]; fences: Polyline[] } {
+  const edges = new Map<string, Polyline>(), material = new Map<string, FieldEnclosureMaterial>();
   const key = (p: Vec2) => `${p.x},${p.y}`;
   for (const area of areas) {
     if (!(area as LandArea & { enclosed?: boolean }).enclosed) continue;
+    const kind = (area as LandArea & { enclosure?: FieldEnclosureMaterial }).enclosure ?? 'hedge';
     for (const ring of [area.poly, ...(area.holes ?? [])]) {
       for (let i = 0; i < ring.length; i++) {
         let a = ring[i], b = ring[(i + 1) % ring.length];
         if (a.x > b.x || (a.x === b.x && a.y > b.y)) [a, b] = [b, a];
         if (Math.hypot(b.x - a.x, b.y - a.y) < 0.001) continue;
-        edges.set(`${key(a)}|${key(b)}`, [a, b]);
+        edges.set(`${key(a)}|${key(b)}`, [a, b]); material.set(`${key(a)}|${key(b)}`, kind);
       }
     }
   }
-  const lines = [...edges.values()].sort((a, b) => a[0].x - b[0].x || a[0].y - b[0].y || a[1].x - b[1].x || a[1].y - b[1].y);
+  const order = (a: Polyline, b: Polyline): number => a[0].x - b[0].x || a[0].y - b[0].y || a[1].x - b[1].x || a[1].y - b[1].y;
+  const of = (m: FieldEnclosureMaterial): Polyline[] => [...edges].filter(([k]) => material.get(k) === m).map(([, v]) => v).sort(order);
+  const lines = of('hedge'), walls = of('wall'), fences = of('fence');
   const trees: HedgeTree[] = [];
   const s = Math.max(1, u), radius = 1.15 * Math.pow(s, 0.4), spacing = Math.pow(s, 0.55);
   for (const [a, b] of lines) {
@@ -44,5 +55,5 @@ export function fieldHedges(areas: LandArea[], u: number): { lines: Polyline[]; 
       t += (18 + 28 * hash2(y, x)) * spacing;
     }
   }
-  return { lines, trees };
+  return { lines, trees, walls, fences };
 }

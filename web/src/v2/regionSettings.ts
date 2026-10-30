@@ -1,6 +1,6 @@
 import type { RoadConfig, SettlementConfig, SettlementSpec } from '../../../rust/bridge/settlements';
 import type { V2Settings } from './contracts';
-import { CULTURES, SITE_ARCHETYPES } from '../gen/options';
+import { CULTURES, SITE_ARCHETYPES, SIZE_SHORTCUT } from '../gen/options';
 import { TERRAIN_RELIEFS } from './terrainSettings';
 
 export interface V2RegionSettings {
@@ -9,7 +9,7 @@ export interface V2RegionSettings {
   roads?: Partial<RoadConfig> | null;
   resolution?: number;
 }
-export const regionSpec = (key='main',population=300):SettlementSpec => ({key,name:'',population,culture:'european-organic',kind:'settlement',siteType:'auto',sitePrefs:{}});
+export const regionSpec = (key='main',population=300):SettlementSpec => ({key,name:'',population,culture:'european-organic',siteType:'auto',sitePrefs:{}});
 export function effectiveRegion(settings:V2Settings):{placement:SettlementConfig;roads:RoadConfig|null;resolution:number}{
   const o=settings.options, p=settings.region?.placement, local=settings.local.main??{};
   const secondary=Math.max(0,settings.settlementCount-1),village=Math.ceil(secondary*2/3);
@@ -19,7 +19,7 @@ export function effectiveRegion(settings:V2Settings):{placement:SettlementConfig
     density:1,zipfExponent:1.1,minPopulation:8,populationJitter:.25,spread:1.3,smallTop:.35,mainClear:2.5,clustering:0,edgeMargin:.03,
     flatnessWeight:1,buildableWeight:1,freshWaterWeight:1,riverWeight:1,coastWeight:1,floodWeight:1,defenseWeight:0,elevation:0,variationWeight:1,siteWeights:{},...p,
   };
-  const mainPopulation = local.population ?? (o.population > 0 ? o.population : { hamlet: 80, village: 500, town: 3000, city: 15000, capital: 40000 }[o.size]);
+  const mainPopulation = local.population ?? (o.population > 0 ? o.population : SIZE_SHORTCUT[o.size]);
   placement.main={...regionSpec('main',mainPopulation),culture:o.culture,siteType:o.siteType??'auto',position:o.center,sitePrefs:o.sitePrefs??{},...p?.main,key:'main'};
   if (local.population !== undefined) placement.main.population = local.population;
   if (local.culture !== undefined) placement.main.culture = local.culture;
@@ -59,10 +59,10 @@ export function validateRegionSettings(value: unknown, width = 100000): void {
     for (const [key, weight] of Object.entries(map)) number(weight, `${name}.${key}`, 0, max);
   };
   const spec = (entry: unknown, name: string, partial: boolean) => {
-    const s = object(entry, name); fields(s, ['key', 'name', 'population', 'culture', 'kind', 'siteType', 'position', 'sitePrefs'], name);
+    const s = object(entry, name); fields(s, ['key', 'name', 'population', 'culture', 'siteType', 'position', 'sitePrefs'], name);
     if (!partial || s.key !== undefined) if (typeof s.key !== 'string' || !/^[\w:-]{1,80}$/.test(s.key)) throw new Error('Place keys must be stable identifiers.');
     if (!partial || s.population !== undefined) number(s.population, `${name}.population`, 1, 5000000, true);
-    text(s.name, `${name}.name`); text(s.kind, `${name}.kind`);
+    text(s.name, `${name}.name`);
     enumeration(s.culture, [...CULTURES, 'medieval'], `${name} culture`);
     enumeration(s.siteType, ['auto', ...SITE_ARCHETYPES], `${name} site archetype`);
     if (s.position !== undefined) {

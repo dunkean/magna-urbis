@@ -31,7 +31,7 @@ function controls() {
   const binding = bindProgrammeConditionControls({ querySelector: (key: string) => values[key] } as unknown as ParentNode);
   return { binding, state, mode, decay, note, box };
 }
-const context = (): ProgrammeContext => ({ ...defaultProgrammeContext(), role: 'isolated-mill', functions: { capital: .5, port: 1 }, resources: ['grain'], lore: ['temple'], period: 'M', navigableAccess: true });
+const context = (): ProgrammeContext => ({ ...defaultProgrammeContext(), intent: 'isolated-mill', functions: { capital: .5, port: 1 }, resources: ['grain'], lore: ['temple'], period: 'M', navigableAccess: true });
 const imported = (fields: object): ProgrammeContext => JSON.parse(JSON.stringify({ ...context(), ...fields }));
 afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
 
@@ -41,7 +41,7 @@ it('actual condition binding distinguishes absent, undefined, explicit null and 
     const previous = { ...context(), ...fields }, ui = controls(); ui.binding.sync(previous);
     const result = ui.binding.read(previous); expect(JSON.stringify(result)).toBe(JSON.stringify(previous));
     expect(applyProgrammeAxesDraft(result, programmeAxesDraft(result))).toEqual(result);
-    expect(result.functions).toEqual(previous.functions); expect(result.role).toBe('isolated-mill'); expect(result.period).toBe('M');
+    expect(result.functions).toEqual(previous.functions); expect(result.intent).toBe('isolated-mill'); expect(result.period).toBe('M');
     expect(ui.decay.disabled).toBe(previous.decay === undefined || previous.decay === null);
   }
   const ui = controls(); ui.binding.sync(imported({ state: 'declining', decay: null }));

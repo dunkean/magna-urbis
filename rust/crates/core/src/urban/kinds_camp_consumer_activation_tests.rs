@@ -33,8 +33,8 @@ fn bytes<T: serde::Serialize>(value: &T) -> Vec<u8> { serde_json::to_vec(value).
 fn canonical_programme(cfg: &LayoutConfig, kind: Kind) -> super::super::ProgrammeContext {
     let mut expected = cfg.programme.clone();
     if cfg.footprint.mechanism != "legacy"
-        && matches!(kind, Kind::Farmstead | Kind::Ruin) && expected.role == "auto"
-    { expected.role = "isolated-farm".into(); }
+        && matches!(kind, Kind::Farmstead | Kind::Ruin) && expected.intent == "settlement"
+    { expected.intent = "isolated-farm".into(); }
     expected
 }
 
@@ -88,17 +88,17 @@ fn camp_consumer_programme_expectation_keeps_the_preexisting_isolated_farm_rule(
         cfg.programme.state = state.into();
         let (actual,kind) = effective(&site,&cfg,&roads);
         assert!(matches!(kind,Kind::Farmstead|Kind::Ruin));
-        assert_eq!(cfg.programme.role,"auto");
-        assert_eq!(actual.programme.role,"isolated-farm");
+        assert_eq!(cfg.programme.intent,"settlement");
+        assert_eq!(actual.programme.intent,"isolated-farm");
         assert_eq!(bytes(&actual.programme),bytes(&canonical_programme(&cfg,kind)));
     }
-    cfg.programme.role="isolated-mill".into();
+    cfg.programme.intent="isolated-mill".into();
     let (actual,kind)=effective(&site,&cfg,&roads);
-    assert_eq!(actual.programme.role,"isolated-mill");
+    assert_eq!(actual.programme.intent,"isolated-mill");
     assert_eq!(bytes(&actual.programme),bytes(&canonical_programme(&cfg,kind)));
-    cfg.footprint.mechanism="legacy".into();cfg.programme.role="auto".into();
+    cfg.footprint.mechanism="legacy".into();cfg.programme.intent="settlement".into();
     let (actual,kind)=effective(&site,&cfg,&roads);
-    assert_eq!(actual.programme.role,"auto");
+    assert_eq!(actual.programme.intent,"settlement");
     assert_eq!(bytes(&actual.programme),bytes(&canonical_programme(&cfg,kind)));
 }
 

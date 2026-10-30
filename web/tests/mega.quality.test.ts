@@ -238,14 +238,14 @@ describe('population-aware megacity extent', () => {
     // The historical concave Q13 fixture above remains an independent boundary case.
     // These integration goldens match the complete pre-optimization generated output.
     const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
-    expect(m.center).toEqual({ x: 2466.7149059334297, y: 4563.675832127352 });
-    expect(m.quarters).toHaveLength(88);
-    expect(hash(m.quarters[13])).toBe('9f200e27c2a6012581cc389defc89da9bf82e5fac8215be0c211934a25a05f81');
+    expect(m.center).toEqual({ x: 2973.2272069464543, y: 4442.112879884226 });
+    expect(m.quarters).toHaveLength(98);
+    expect(hash(m.quarters[13])).toBe('12cc69dfd178bb0b81337ad447d4fd0e9050c25cd2effb2b0276426e50f1404d');
     const u = megaQuarterDetail(w, 13)!;
     expect(u).not.toBeNull();
     expect({ blocks: u.blocks.length, buildings: u.buildings.length, parcels: u.parcels.length })
-      .toEqual({ blocks: 37, buildings: 261, parcels: 269 });
-    expect(hash(u)).toBe('a30d7b7c267579b85cdc72d9ea84ee631647c426b8874e3dcf2e814107daead7');
+      .toEqual({ blocks: 16, buildings: 305, parcels: 136 });
+    expect(hash(u)).toBe('f4761a7810c341031cc35e82c124a24e467db88182f3dddea170f7685ecb175c');
   }, 900000);
 
   it.each([[0, 'boundary', false], [0.37, 'boundary', false], [0.37, 'wall-lane', false], [0, 'boundary', true]] as const)('restores recursively rounded outer supports before shared face extraction (rotation %s, owner %s, preserveValid %s)', (angle, role, preserveValid) => {
@@ -294,7 +294,7 @@ describe('population-aware megacity extent', () => {
     expect(sharedPairs).toBe(4);
   });
   it('preserves automatic-population links in every size and culture, and the scale of imported heightmaps', () => {
-    for (const size of ['hamlet', 'village', 'town', 'city', 'capital'] as const) for (const culture of CULTURES) for (const seed of ['1', '4', '7']) {
+    for (const size of ['hamlet', 'village', 'town', 'city', 'metropolis'] as const) for (const culture of CULTURES) for (const seed of ['1', '4', '7']) {
       const o = makeOptions({ seed, size, culture, population: 0 });
       expect(generationMapSize(o), `${size}/${culture}/${seed}`).toBe(mapSizeOf(o));
     }

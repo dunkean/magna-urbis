@@ -6,7 +6,7 @@ export interface UrbanReferenceCase {
   id: string;
   label: string;
   population: number;
-  composition?: 'settlement' | 'district';
+  scope?: 'settlement' | 'district';
   quarterSeed: string;
   parcelSeed: string;
   buildingSeed: string;
@@ -40,21 +40,21 @@ function reference(
  * The 200/2500 cases are stable measurement inputs, not timing assertions. */
 export const cases: readonly UrbanReferenceCase[] = [
   reference('regular-town-2500', 'Ville régulière · 2 500 hab.', 2500, 'bastide',
-    { count: 6, radius: 330, placement: 'rectangle' }, { role: 'crossroads' }),
+    { count: 6, radius: 330, placement: 'rectangle' }, { functions: { commerce: 1 } }),
   reference('organic-suburb', 'Faubourg organique · 1 200 hab.', 1200, 'european-organic',
-    { count: 5, radius: 270, rings: 2, recipe: 'faubourg', zone: 'faubourg' }, { role: 'artisan', resources: ['timber', 'clay'] }),
+    { count: 5, radius: 270, rings: 2, recipe: 'faubourg', zone: 'faubourg' }, { functions: { artisan: 1 }, resources: ['timber', 'clay'] }),
   reference('courtyard', 'Cours et passages · 1 000 hab.', 1000, 'medina',
-    { radius: 240 }, { role: 'crossroads' }),
+    { radius: 240 }, { functions: { commerce: 1 } }),
   reference('compound', 'Enclos et domaines · 600 hab.', 600, 'sahel',
-    { radius: 210 }, { role: 'agricultural', resources: ['grain'] }),
+    { radius: 210 }, { functions: { agricultural: 1 }, resources: ['grain'] }),
   reference('riverbank', 'Rive habitée · 500 hab.', 500, 'stilt-town',
-    { radius: 220, river: 'vertical', riverWidth: 28 }, { role: 'riverine', mode: 'fantasy' }),
+    { radius: 220, river: 'vertical', riverWidth: 28 }, { functions: { riverine: 1 }, mode: 'fantasy' }),
   reference('slope', 'Quartier en pente · 900 hab.', 900, 'newar',
-    { radius: 240, relief: 'hill', reliefSlope: 22 }, { role: 'artisan', resources: ['stone'] }),
+    { radius: 240, relief: 'hill', reliefSlope: 22 }, { functions: { artisan: 1 }, resources: ['stone'] }),
   reference('rural-fantasy-200', 'Village fantasy · 200 hab.', 200, 'halfling',
     { count: 3, radius: 120, recipe: 'village', zone: 'village', relief: 'hill', reliefSlope: 8 },
-    { role: 'agricultural', mode: 'fantasy', resources: ['grain'] }),
-  { ...reference('metropolis-50000', 'Ville complète · 50 000 hab.', 50000, 'european-organic', { radius: 160, count: 12 }, { role: 'crossroads' }), composition: 'settlement' },
+    { functions: { agricultural: 1 }, mode: 'fantasy', resources: ['grain'] }),
+  { ...reference('metropolis-50000', 'Ville complète · 50 000 hab.', 50000, 'european-organic', { radius: 160, count: 12 }, { functions: { commerce: 1 } }), scope: 'settlement' },
 ];
 
 /** Loading is explicit and receives a fresh copy: editing a case cannot mutate

@@ -8,6 +8,7 @@ pub mod display;
 mod composition;
 // Structural user edits (shape, delete, reroll): urban/edits.rs.
 mod edits;
+mod enclosure;
 pub use edits::quarter_removed;
 pub mod culture;
 pub mod programme;
@@ -84,6 +85,10 @@ pub struct Enclosure {
     pub path: Vec<Point>,
     pub kind: String,
     pub gates: Vec<Point>,
+    /// Indices in `gates` of the gates that open on an attached extension
+    /// (between old and new town): not outer gates.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub inner_gates: Vec<usize>,
     /// Tower anchors on the curtain: `towers[i] == towers_detail[i].anchor`
     /// (gate towers, then corners, then flanks).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -420,6 +425,12 @@ pub struct Partition {
     pub warnings: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub diagnostics: Option<PartitionDiagnostics>,
+    /// Resolved enclosure values (culture defaults and overrides) of this city.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enclosure: Option<enclosure::Resolved>,
+    /// Closed lot boundaries (walls, hedges, fences) for the renderer.
+    #[serde(default, rename = "lotEnclosures", skip_serializing_if = "Vec::is_empty")]
+    pub lot_enclosures: Vec<enclosure::LotEnclosure>,
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -515,7 +526,8 @@ pub struct LayoutConfig {
     pub access_mode: String,
     pub access_depth: f64,
     pub access_budget: usize,
-    pub composition: String,
+    /// Generation scope: `settlement` (whole place) or `district` (one isolated district sample).
+    pub scope: String,
     /// `auto`, `nucleated`, `ribbon`, or a settlement kind id (`kinds::Kind`:
     /// `single`, `ruin`, `farmstead`, `camp`, `hamlet`, `street-village`,
     /// `nucleated-village`, `market-town`, `walled-town`, `city`, `metropolis`).
@@ -576,6 +588,11 @@ pub struct LayoutConfig {
     /// or at the rim of the town), "none", "force" (the highest knoll).
     #[serde(skip_serializing_if = "String::is_empty")]
     pub heights_castle: String,
+    /// Second enclosure: "" culture default (fortifications.json `wallExtension`),
+    /// "concentric", "attached" (grown on one side, sharing a stretch of the old
+    /// wall) or "auto" (attached when the growth is lopsided).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub wall_extension: String,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub gate_villages: bool,
     /// Gate nucleus strength. Absent retains the legacy `gateVillages` meaning.
@@ -672,7 +689,7 @@ impl Default for LayoutConfig {
             access_mode: "adaptive".into(),
             access_depth: 0.0,
             access_budget: 4,
-            composition: "settlement".into(),
+            scope: "settlement".into(),
             settlement_form: "auto".into(),
             site_archetype: String::new(),
             site_archetypes: std::collections::BTreeMap::new(),
@@ -704,6 +721,7 @@ impl Default for LayoutConfig {
             port_enclosure: String::new(),
             planned_wall: String::new(),
             heights_castle: String::new(),
+            wall_extension: String::new(),
             gate_villages: false,
             gate_village: None,
             max_street_grade: 0.12,
@@ -739,6 +757,15 @@ pub struct ParcelConfig {
     /// Applied rural-generation setting, consumed by the retained land-use stage.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub denser_smallholdings: bool,
+    /// Town lot enclosure 0..1 (0 open lots, 1 closed compounds); None = culture default (`enclosures.json`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plot_enclosure: Option<f64>,
+    /// Countryside field enclosure 0..1 (openfield to bocage); None = culture default.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub field_enclosure: Option<f64>,
+    /// `wall|hedge|fence`; empty or `auto` = culture default.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub enclosure_material: String,
     pub operator: String,
     pub culture: String,
     pub preset: String,
@@ -785,6 +812,9 @@ impl Default for ParcelConfig {
         Self {
             street_aligned_homes: false,
             denser_smallholdings: false,
+            plot_enclosure: None,
+            field_enclosure: None,
+            enclosure_material: String::new(),
             operator: "culture".into(),
             culture: "site".into(),
             preset: "culture".into(),
@@ -1199,7 +1229,7 @@ pub fn generate_quarters(
         return Err("Terrain ou routes urbaines invalides".into());
     }
     if sites.len() > 1000
-        || !["settlement", "district"].contains(&config.composition.as_str())
+        || !["settlement", "district"].contains(&config.scope.as_str())
         || !(["auto", "nucleated", "ribbon"].contains(&config.settlement_form.as_str())
             || kinds::Kind::from_id(&config.settlement_form).is_some())
         || config.site_archetype.len() > 32
@@ -1332,10 +1362,11 @@ pub fn generate_quarters(
             fortification::finish_options(layout, config, surface);
             kinds::finish(layout, kind, original);
             if layout.structure.as_ref().is_some_and(|s|s.mechanism != "legacy") { trim::finish(seed,layout,physical_surface); }
-            network::select_bridges(layout, site.population, physical_surface, roads);
+            network::select_bridges_graded(layout, site.population, physical_surface, roads, config.max_street_grade);
             if macroplan::harbour::port_town(config) {
                 macroplan::harbour::protect_navigation(layout, physical_surface, roads);
             }
+            fortification::sync_gates(layout, surface);
             trim::footprint(layout);
             macroplan::harbour::platforms(layout, surface);
             Ok(())
@@ -1383,6 +1414,9 @@ pub fn generate_parcels(
         return Err("Opérateur de parcelles inconnu".into());
     }
     edits::validate_parcels(config)?;
+    if !enclosure::valid(config) {
+        return Err("Enceinte des parcelles invalide".into());
+    }
     // Layouts are cut independently, in parallel; the first error in input
     // order wins, as in a serial loop.
     par::map(layouts, |_, layout| -> Result<Partition, String> {
@@ -1415,6 +1449,9 @@ pub fn generate_parcels(
         programme::camps::release_unbuilt(layout, &mut partition, true);
         programme::finish_lots(layout, &mut partition);
         roles::face_quays(layout, &mut partition);
+        let resolved = enclosure::resolve(culture, config);
+        partition.lot_enclosures = enclosure::lot_enclosures(&key_seed, &partition.parcels, &resolved);
+        partition.enclosure = Some(resolved);
         Ok(partition)
     })
     .into_iter()

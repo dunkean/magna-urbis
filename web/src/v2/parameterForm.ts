@@ -32,7 +32,7 @@ export function mountParameterForm(root: HTMLElement, fields: readonly Parameter
   root.classList.add('parameter-form');
   const namespace = root.id || `form-${++parameterFormSequence}`;
   const cleanups: (() => void)[] = [];
-  const controls: { field: ParameterField; input: HTMLInputElement | HTMLSelectElement }[] = [];
+  const controls: { field: ParameterField; input: HTMLInputElement | HTMLSelectElement; slider?: HTMLInputElement }[] = [];
   for (const field of fields) {
     const label = document.createElement('label'); label.className = `parameter-field parameter-${field.type}`;
     label.dataset.fieldPath = field.path;
@@ -59,6 +59,14 @@ export function mountParameterForm(root: HTMLElement, fields: readonly Parameter
     input.dataset.settingPath = field.path;
     input.setAttribute('aria-label', field.label);
     label.append(input);
+    let slider: HTMLInputElement | undefined;
+    if (field.type === 'number' && field.min !== undefined && field.max !== undefined) {
+      slider = document.createElement('input'); slider.type = 'range'; slider.className = 'parameter-slider';
+      slider.min = String(field.min); slider.max = String(field.max); slider.step = String(field.step ?? 'any');
+      slider.id = `${input.id}-slider`; slider.setAttribute('aria-label', field.label); slider.dataset.sliderPath = field.path;
+      if (field.help) slider.setAttribute('aria-describedby', `${input.id}-help`);
+      label.append(slider);
+    }
     if (field.unit) { const unit = document.createElement('span'); unit.className = 'parameter-unit'; setText(unit, field.unit); label.append(unit); }
     if (field.help) { const help = document.createElement('small'); help.className = 'parameter-help'; help.id = `${input.id}-help`; setText(help, field.help); input.setAttribute('aria-describedby', help.id); label.append(help); }
     const onInput = () => {
@@ -69,19 +77,29 @@ export function mountParameterForm(root: HTMLElement, fields: readonly Parameter
         else { value = input.value.trim() === '' ? NaN : Number(input.value); if (!Number.isFinite(value) || field.min !== undefined && (value as number) < field.min || field.max !== undefined && (value as number) > field.max) { input.setAttribute('aria-invalid', 'true'); return; } }
       } else value = field.optional && input.value === '' ? undefined : input.value;
       input.removeAttribute('aria-invalid');
+      if (slider && value !== undefined) slider.value = String(value);
       bindings.setValue(field.path, field.fromInput && value !== undefined ? field.fromInput(value) : value);
     };
     const event = field.type === 'boolean' || field.type === 'select' ? 'change' : 'input';
     input.addEventListener(event, onInput); cleanups.push(() => input.removeEventListener(event, onInput));
-    controls.push({ field, input }); root.append(label);
+    if (slider) {
+      const onSlide = () => { input.value = slider!.value; onInput(); };
+      slider.addEventListener('input', onSlide); cleanups.push(() => slider!.removeEventListener('input', onSlide));
+    }
+    controls.push({ field, input, slider }); root.append(label);
   }
   bindTree(root);
   const sync = () => {
-    for (const { field, input } of controls) {
+    for (const { field, input, slider } of controls) {
       input.disabled = bindings.disabled?.() ?? false;
+      const raw = bindings.getValue(field.path), value = raw !== undefined && field.toInput ? field.toInput(raw) : raw;
+      if (slider) {
+        slider.disabled = input.disabled;
+        if (slider !== document.activeElement) slider.value = String(value ?? field.min);
+        slider.setAttribute('aria-valuetext', value === undefined ? field.placeholder ?? '' : String(value));
+      }
       // Preserve partial numbers and the caret while the person edits a field.
       if (input === document.activeElement) continue;
-      const raw = bindings.getValue(field.path), value = raw !== undefined && field.toInput ? field.toInput(raw) : raw;
       if (field.type === 'boolean' && !field.optional) (input as HTMLInputElement).checked = value === true;
       else {
         const text = value === undefined || value === null ? '' : String(value);

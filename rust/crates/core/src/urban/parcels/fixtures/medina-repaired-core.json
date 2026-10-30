@@ -2127,7 +2127,7 @@
     "version": 1,
     "population": 1000,
     "context": {
-      "role": "auto",
+      "intent": "settlement",
       "resources": [],
       "period": "",
       "mode": "inspired",

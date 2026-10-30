@@ -64,7 +64,7 @@ pub(in super::super) fn grow_gate_villages(plan:&mut macroplan::Plan,cfg:&Layout
     let approaches=plan.streets.clone();
     let mut occupied=vec![];
     let mut lanes=vec![];
-    for gate in plan.enclosures.iter().filter(|e|e.purpose.is_empty()).flat_map(|e|&e.gates) {
+    for gate in plan.enclosures.iter().filter(|e|e.purpose.is_empty()).flat_map(|e|e.gates.iter().enumerate().filter(|(i,_)|!e.inner_gates.contains(i)).map(|(_,g)|g)) {
         if occupied.iter().any(|&p|dist(p,*gate)<100.0) {continue;}
         // Project onto the existing approach and preserve every bend outward.
         let mut candidates=vec![];

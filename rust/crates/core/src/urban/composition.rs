@@ -301,8 +301,9 @@ pub(super) fn generate(
     };
     let data = culture_data(culture, site.population);
     let rng = Rng::new(seed).fork("settlement-composition");
-    let small = site.population < 1200;
-    let rural = site.population < 200;
+    // Village-or-smaller and hamlet-or-smaller follow the shared demographic classes.
+    let small = crate::settlements::demographics::below(site.population, "town");
+    let rural = crate::settlements::demographics::below(site.population, "village");
     let form = data[if rural { "hamlet" } else { "village" }]["form"]
         .as_str()
         .unwrap_or("auto");
@@ -727,7 +728,7 @@ fn generate_modern(
     } else {
         &cfg.culture
     };
-    let small = site.population < 1200;
+    let small = crate::settlements::demographics::below(site.population, "town");
     let initial_recipe = recipe(
         culture,
         site.population,
@@ -1378,6 +1379,11 @@ fn enclosed_quarters_reach_the_ring_road_without_claiming_water() {
     assert!(g::difference(&quarters[0].shape,&wall).iter().map(g::area).sum::<f64>() < 0.01);
     assert!((g::area(&quarters[0].shape) - g::dry_clip(&surface,&quarters[0].shape).iter().map(g::area).sum::<f64>()).abs() < 0.01);
 }
+fn closed_shape(e: &Enclosure) -> Shape {
+    let mut outer = e.path.clone();
+    outer.pop();
+    Shape { outer, holes: vec![] }
+}
 fn closed(ring: &[Point]) -> Vec<Point> {
     let mut path = ring.to_vec();
     if let Some(&p) = path.first() {
@@ -1574,6 +1580,38 @@ fn fortify(
     let walls = fortification::trace_enclosures(walls, &plan.quarters.iter()
         .map(|q| q.shape.clone()).collect::<Vec<_>>(), surface);
     let walls = walls.into_iter().map(|s| fortification::parameter_trace(s, surface, cfg, culture, style.curtain_width)).collect::<Vec<_>>();
+    // Lopsided growth builds the second enclosure against the old one: the old
+    // circuit stays whole and the extension shares a stretch of it.
+    let trace = if style.hill { "hill" } else if square { "square" } else if style.id == "bastioned" { "bastioned" } else { "" };
+    let extension = fortification::wall_extension(cfg, culture);
+    let mut attached = false;
+    let walls = match (extension != "concentric" && walled >= 2 && walls.len() == 1)
+        .then(|| enclosed(walled - 1, trace).filter(|o| o.len() == 1)).flatten()
+    {
+        Some(old) => {
+            let quarters: Vec<Shape> = plan.quarters.iter().map(|q| q.shape.clone()).collect();
+            let old = fortification::trace_enclosures(old, &quarters, surface);
+            let old = old.first().map(|o| fortification::parameter_trace(o.clone(), surface, cfg, culture, style.curtain_width));
+            match old {
+                Some(o) if extension == "attached" || fortification::lopsided(&o, &walls[0]) => {
+                    match fortification::attach(&o, &walls[0]) {
+                        Some(e) => { attached = true; vec![o, e] }
+                        None => {
+                            plan.warnings.push("Enceinte accolée impossible sur ce contour, enceinte concentrique conservée.".into());
+                            walls
+                        }
+                    }
+                }
+                _ => walls,
+            }
+        }
+        None => {
+            if extension == "attached" && walled >= 2 {
+                plan.warnings.push("Enceinte accolée impossible sur ce contour, enceinte concentrique conservée.".into());
+            }
+            walls
+        }
+    };
     // A knoll in or at the rim of the town carries its castle, in its own
     // contour circuit; the town wall runs round it where it stands astride.
     let occupied: Vec<Shape> = plan.quarters.iter().map(|q| q.shape.clone()).collect();
@@ -1597,6 +1635,8 @@ fn fortify(
     };
     // A large planned capital keeps one circuit per epoch (palace/inner/outer city).
     let circuits = if metropolis || planned && site.population >= 100_000 { walled } else { walled.min(2) };
+    // The circuit the extension attaches to is one of the two walls, not a fossil.
+    let circuits = if attached { circuits.min(walled - 1) } else { circuits };
     for count in 1..circuits {
         let old = enclosed(count, "").unwrap_or_default();
         if fossil == "street" {
@@ -1692,6 +1732,14 @@ fn fortify(
         );
         plan.streets.extend(lanes);
         plan.enclosures.push(enclosure);
+    }
+    // The two attached circuits keep no ditch or outwork inside each other.
+    if attached && outer >= 2 {
+        let (a, b) = (closed_shape(&plan.enclosures[first]), closed_shape(&plan.enclosures[first + 1]));
+        fortification::trim_shared(&mut plan.enclosures[first], &b);
+        fortification::trim_shared(&mut plan.enclosures[first + 1], &a);
+        fortification::dedupe_shared(&mut plan.enclosures[first + 1], &a);
+        fortification::inner_gates(&mut plan.enclosures[first], &b);
     }
     // No quarter keeps land in a tower, a ditch or a glacis.
     fortification::yield_reserve(&mut plan.quarters, &plan.enclosures[first..]);

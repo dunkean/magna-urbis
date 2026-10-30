@@ -885,6 +885,17 @@ pub(super) fn functional_programme(
 }
 /// Declared functional sources carry their own native envelope. A residential
 /// default (even absent/refused/out of era) is never their admission witness.
+/// Houses historical mode of an urban admission policy (`programme.mode`):
+/// the one mapping strict/inspired/fantasy → historical_strict/historical_inspired/fantasy_mix
+/// (the TS copy `PROGRAMME_POLICY_HOUSES` is checked against this match by a parity test).
+/// The programme validation rejects any other policy before this runs.
+pub(super) fn houses_mode(policy: &str) -> &'static str {
+    match policy {
+        "strict" => "historical_strict",
+        "fantasy" => "fantasy_mix",
+        _ => "historical_inspired",
+    }
+}
 pub(super) fn functional_mapping(culture: &str, role: &str, function: &str, period: &str, mode: &str) -> Option<CultureMapping> {
     let &(id,family,pack,borrowed,functions,architecture_family)=MAPPINGS.iter().find(|m|m.0==culture)?;
     let programme=functional_programme(pack,role,function,period,mode)?;
@@ -1341,9 +1352,9 @@ pub(super) fn parcel_mapping(
     if layout
         .programme
         .as_ref()
-        .is_some_and(|pr| super::roles::is_isolated(&pr.context.role))
+        .is_some_and(|pr| super::roles::is_isolated(&pr.context.intent))
     {
-        return isolated_mapping(culture, period, &layout.programme.as_ref()?.context.role);
+        return isolated_mapping(culture, period, &layout.programme.as_ref()?.context.intent);
     }
     if p.family == "reserve" {
         return block_mapping(layout, culture, p.block, function, period);

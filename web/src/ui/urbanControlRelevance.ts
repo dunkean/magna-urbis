@@ -11,8 +11,8 @@ export const DIRECT_QUARTER_FIELDS = ['footprint.family', 'footprint.budget', 'f
   'footprint.irregularity', 'footprint.anisotropy', 'footprint.separation', 'footprint.cohesion', 'footprint.satellites', 'footprint.branchDepth', 'footprint.gapSize',
   'phases', 'suburbs', 'mixCulture', 'mixMode', 'mixShare', 'mixAngle'] as const;
 export interface RelevanceConfig {
-  settlementForm?: string; composition?: string; footprint?: { mechanism?: string };
-  programme?: { role?: string }; overrides?: { quarters?: object };
+  settlementForm?: string; scope?: string; footprint?: { mechanism?: string };
+  programme?: { intent?: string }; overrides?: { quarters?: object };
 }
 export interface RelevanceLayout {
   key: string; archetype?: string; config?: RelevanceConfig;
@@ -23,7 +23,7 @@ const knownForm = (form: string) => Object.hasOwn(MORPHOLOGY_LABELS, form);
 const formLabel = (form: string) => Object.entries(MORPHOLOGY_LABELS).find(([id]) => id === form)?.[1] ?? form;
 const xml = (text: string) => text.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 export function requestedControlRelevance(config: RelevanceConfig): string {
-  const form = config.settlementForm, role = config.programme?.role;
+  const form = config.settlementForm, role = config.programme?.intent;
   const forcedForm = form !== undefined && knownForm(form) ? form : undefined;
   const priority = forcedForm !== undefined ? `Forme imposée « ${formLabel(forcedForm)} » prioritaire${role && ISOLATED_INTENTS.includes(role) ? ` sur l’intention isolée ${role}` : ''}. ` : '';
   if (config.footprint?.mechanism === 'legacy') return `${priority}Mécanisme historique : le chemin direct des petites grammaires est désactivé dans le natif ; les réglages de quartiers restent éditables.`;

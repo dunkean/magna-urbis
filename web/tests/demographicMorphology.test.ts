@@ -2,7 +2,6 @@ import { expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { CLASS_FLOOR, classOfPop, sizeForPop } from '../src/gen/options';
-import { scaleOf } from '../src/gen/urban/culture';
 import { DEMOGRAPHIC_CLASSES } from '../../rust/bridge/settlementDemography';
 import { defaultLayoutConfig, defaultParcelConfig, normalizeLayoutConfig, type LayoutConfig, type SettlementKind } from '../../rust/bridge/urbanConfig';
 import type { Layout } from '../../rust/bridge/urban';
@@ -28,10 +27,9 @@ it('uses the canonical demographic bands on every boundary without interpreting 
   expect(SETTLEMENT_KINDS.map(c => c.population)).toEqual([10,40,300,3000,30000,250000,1500000]);
 });
 
-it('keeps demographic, old size-preset and cultural recipe bands distinct instead of silently changing their algorithms', () => {
-  expect(classOfPop(1000)).toBe('town'); expect(sizeForPop(1000)).toBe('village'); expect(scaleOf(1000)).toBe('village');
-  expect(classOfPop(100000)).toBe('metropolis'); expect(sizeForPop(100000)).toBe('capital');
-  expect(classOfPop(13)).toBe('farmstead'); expect(classOfPop(14)).toBe('farmstead');
+it('derives the legacy size preset from the demographic class (no second set of bands, no capital size)', () => {
+  for (const [population, size] of [[14,'hamlet'],[15,'hamlet'],[149,'hamlet'],[150,'village'],[999,'village'],[1000,'town'],[19999,'town'],[20000,'city'],[99999,'city'],[100000,'metropolis'],[2000000,'metropolis']] as const)
+    expect(sizeForPop(population), String(population)).toBe(size);
 });
 
 it('keeps a demographic class selectable when the map cap intersects it below the ordinary shortcut', () => {
@@ -58,7 +56,7 @@ it('offers every native grammar and preserves both old village preferences and u
 });
 
 it('renders demographic class and native grammar independently at100k/200k and13/14 without deriving geometry from the class', () => {
-  for (const [population, kind, label] of [[100000,'city','Cité à quartiers'],[200000,'metropolis','Métropole à plusieurs centres'],[13,'hamlet','Hameau le long d’un chemin'],[14,'hamlet','Hameau le long d’un chemin']] as const) {
+  for (const [population, kind, label] of [[100000,'metropolis','Métropole à plusieurs centres'],[200000,'metropolis','Métropole à plusieurs centres'],[13,'farmstead','Ferme isolée'],[14,'farmstead','Ferme isolée']] as const) {
     const rows = Object.fromEntries(morphologyEvidenceRows(native(population,kind)));
     expect(rows['Classe démographique']).toBe(population < 15 ? 'Ferme' : 'Métropole'); expect(rows['Grammaire retournée']).toBe(label);
     expect(rows['Grammaire demandée dans ce plan']).toContain('Automatique');
@@ -77,9 +75,9 @@ it('keeps absent imported evidence unknown rather than borrowing current populat
 
 it('explains out-of-range village preferences, forced grammar precedence and district scope using returned config', () => {
   expect(morphologyEvidenceRows(native(100000,'city','ribbon')).some(([k,v]) => k === 'Préférence de village' && v.includes('non imposée'))).toBe(true);
-  const forced = native(100000,'city','city'); forced.config!.programme.role = 'isolated-mill';
+  const forced = native(100000,'city','city'); forced.config!.programme.intent = 'isolated-mill';
   expect(morphologyEvidenceRows(forced).some(([k,v]) => k === 'Priorité' && v.includes('isolée'))).toBe(true);
-  forced.config!.composition = 'district'; expect(morphologyEvidenceRows(forced).some(([k,v]) => k === 'Périmètre' && v.includes('pas une agglomération'))).toBe(true);
+  forced.config!.scope = 'district'; expect(morphologyEvidenceRows(forced).some(([k,v]) => k === 'Périmètre' && v.includes('pas une agglomération'))).toBe(true);
 });
 
 it('preserves automatic, old preferences and every explicit form through normalization, snapshot, URL and shared MU codec', () => {

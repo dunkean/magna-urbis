@@ -200,7 +200,9 @@ export function createTerrainSettlements(options: {
     landuse?.set({ raster, seed: options.getSettings().seed, relief: (['flat', 'hills', 'valley'].includes(relief) ? relief : 'mountains') as Relief,
       city, neighbours: output.settlements.filter(s => s.key !== city?.key), roads: roads.output, layouts: urban.layouts,
       ruralOptions: { streetAlignedHomes: urban.partitions?.find(p => p.key === city?.key)?.config?.streetAlignedHomes,
-        denserSmallholdings: urban.partitions?.find(p => p.key === city?.key)?.config?.denserSmallholdings },
+        denserSmallholdings: urban.partitions?.find(p => p.key === city?.key)?.config?.denserSmallholdings,
+        fieldEnclosure: urban.partitions?.find(p => p.key === city?.key)?.enclosure?.field,
+        fieldMaterial: urban.partitions?.find(p => p.key === city?.key)?.enclosure?.fieldMaterial },
       forest: options.getForestSource?.() });
   }
   let paintingContext: UrbanPaintingContext | undefined;
@@ -277,7 +279,7 @@ export function createTerrainSettlements(options: {
   function adopt(): void {
     if (config.mode === 'list') return;
     if (!output?.settlements.length) return;
-    config.list = output.settlements.map(s => ({ key: s.key, name: s.name, population: s.population, culture: s.culture, kind: s.kind, siteType: s.siteType, sitePrefs: clone(s.sitePrefs), position: clone(s.center) }));
+    config.list = output.settlements.map(s => ({ key: s.key, name: s.name, population: s.population, culture: s.culture, siteType: s.siteType, sitePrefs: clone(s.sitePrefs), position: clone(s.center) }));
     config.mode = 'list'; controls();
   }
   /** A placement input changed: placement, then roads. */
@@ -421,7 +423,6 @@ export function createTerrainSettlements(options: {
       <div class="map-detail" hidden>
       <label>Culture du lieu <select id="setPlaceCulture">${options.city ? cityCultures.map(c => `<option value="${esc(c.id)}">${esc(c.label)}</option>`).join('') : culture.innerHTML}</select></label>${options.city ? '<div class="settlement-actions"><button id="setCulturePrevious" type="button" title="Profil précédent">◀ Profil</button><button id="setCultureNext" type="button" title="Profil suivant">Profil ▶</button></div>' : ''}
       ${options.city ? '<small data-profile-note>Les profils nommés combinent parfois tradition, organisation urbaine et thème. Leur présence au catalogue ne certifie pas une époque ni une taille historique. Les recettes appliquées se lisent dans le programme.</small>' : ''}
-      <label>Role (label) <input id="setKind" type="text" maxlength="60"></label>
       <label>Site preference <select id="setSite"><option value="auto">Automatic</option>${SITE_ARCHETYPES.map(s => `<option value="${s}">${s}</option>`).join('')}</select></label>
       <label>X (m) <input id="setX" type="number" min="0" step="1" placeholder="auto"></label><label>Y (m) <input id="setY" type="number" min="0" step="1" placeholder="auto"></label>
       <div class="settlement-actions"><button id="setMove" type="button">Place on map</button>${options.city ? '<button id="setCentre" type="button" title="Terre ferme la plus proche du centre de la carte">Centre de la carte</button>' : ''}<button id="setAutoPosition" type="button">Automatic position</button><button id="setRemove" type="button">Delete</button></div>
@@ -431,13 +432,12 @@ export function createTerrainSettlements(options: {
     bindGear(host, open => { editorOpen = open; });
     input('setName').value = spec.name; input('setPopulation').value = String(spec.population);
     el<HTMLSelectElement>('setClass').value = classOfPop(spec.population); retainSelectValue(el<HTMLSelectElement>('setPlaceCulture'), spec.culture, 'Profil importé hors catalogue UI');
-    input('setKind').value = spec.kind; el<HTMLSelectElement>('setSite').value = spec.siteType;
+    el<HTMLSelectElement>('setSite').value = spec.siteType;
     input('setX').value = spec.position ? String(Math.round(spec.position.x)) : ''; input('setY').value = spec.position ? String(Math.round(spec.position.y)) : '';
     input('setX').max = input('setY').max = String((options.getTerrain()?.width ?? 100000) - 1);
     const effective = prefs(spec).sitePrefs;
     input('setMountain').value = String(effective.mountainFace ?? 0); input('setWood').value = String(effective.woodland ?? 0); input('setHill').value = String(effective.weights?.hilltop ?? 1);
     input('setName').onchange = event => edit(s => { s.name = (event.target as HTMLInputElement).value.trim(); });
-    input('setKind').onchange = event => edit(s => { s.kind = (event.target as HTMLInputElement).value.trim(); });
     input('setPopulation').onchange = event => { const c = event.target as HTMLInputElement; if (c.reportValidity()) edit(s => { s.population = Math.round(Number(c.value)); }); };
     el<HTMLSelectElement>('setClass').onchange = event => edit(s => { const kind = settlementPopulationChoices(5000000).find(k => k.kind === (event.target as HTMLSelectElement).value); if (kind && classOfPop(s.population) !== kind.kind) s.population = kind.population; });
     el<HTMLSelectElement>('setPlaceCulture').onchange = event => edit(s => { s.culture = (event.target as HTMLSelectElement).value; s.sitePrefs = {}; });
@@ -455,7 +455,6 @@ export function createTerrainSettlements(options: {
     if (options.city) {
       el<HTMLSelectElement>('setClass').replaceChildren(...settlementPopulationChoices(5000000).map(k => new Option(k.label, k.kind)));
       el<HTMLSelectElement>('setClass').value = classOfPop(spec.population);
-      el('setKind').closest('label')!.hidden = true;
       // Implantation: a fixed position (map centre by default) or a site found by the placement strategy.
       const site = el<HTMLSelectElement>('setSite');
       site.closest('label')!.firstChild!.textContent = 'Implantation ';
@@ -494,7 +493,6 @@ export function createTerrainSettlements(options: {
       classSelect?.setAttribute('aria-label',urbanText(['Classe démographique','Demographic class','人口类别','Clase demográfica','Classe demográfica']));
       classSelect?.setAttribute('title',urbanText(['Classe démographique : raccourci de population. La classe est déduite de la population ; elle ne choisit pas une grammaire de plan.','Demographic class: population shortcut. Class is derived from population; it does not select a plan grammar.','人口类别是人口快捷值。类别根据人口推导，不选择规划规则。','Clase demográfica: valor rápido de población. La clase se deduce de la población y no elige la gramática del plano.','Classe demográfica: atalho de população. A classe é derivada da população e não escolhe a gramática do plano.']));
       setLabel('setPlaceCulture',urbanText(['Culture du lieu','Place culture','地点文化','Cultura del lugar','Cultura do local']));
-      setLabel('setKind',urbanText(['Rôle (libellé)','Role (label)','角色（标签）','Función (etiqueta)','Função (rótulo)']));
       setLabel('setSite',options.city ? urbanText(['Implantation','Placement','选址','Ubicación','Implantação']) : urbanText(['Préférence de site','Site preference','场地偏好','Preferencia de sitio','Preferência de local']));
       setLabel('setMountain',urbanText(['Versant de montagne','Mountain face','山坡','Ladera de montaña','Encosta de montanha'])); setLabel('setWood',urbanText(['Boisement','Woodland','林地','Arbolado','Área florestal'])); setLabel('setHill',urbanText(['Poids du sommet','Hilltop weight','山顶权重','Peso de la cima','Peso do topo']));
       const site = document.getElementById('setSite') as HTMLSelectElement | null; if (site) for (const option of Array.from(site.options)) option.textContent = siteLabel(option.value);

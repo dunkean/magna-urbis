@@ -168,7 +168,7 @@ try {
     const before = new Set(document.querySelectorAll('.urban-stage'));
     const sandbox = createTerrainUrban({ map, before: null, getTerrain: () => undefined, getSeed: () => 'workshop-shared', onChange: () => {} });
     const state = sandbox.workshopState();
-    sandbox.applyWorkshop({ layoutConfig: { ...state.layoutConfig, composition: 'settlement', footprint: { ...state.layoutConfig.footprint, mechanism: 'planned', family: 'rectangle' }, params: { fieldNoise: 0.4 } },
+    sandbox.applyWorkshop({ layoutConfig: { ...state.layoutConfig, scope: 'settlement', footprint: { ...state.layoutConfig.footprint, mechanism: 'planned', family: 'rectangle' }, params: { fieldNoise: 0.4 } },
       parcelConfig: { ...state.parcelConfig, params: { plotTilt: 0.2 } }, quarterSeed: 'workshop-shared' });
     const panels = [...document.querySelectorAll('.urban-stage')].filter(p => !before.has(p));
     const family = panels[0].querySelector('[data-footprint="family"]'); family.value = 'fan'; family.dispatchEvent(new Event('change'));

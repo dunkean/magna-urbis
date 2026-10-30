@@ -90,7 +90,7 @@ fn stilt_entry_keeps_stilt_bank_priority_over_a_second_port_relocation() {
     let mut site = site(2000);
     site.radius = 360.0; // 160 m stilt reach, further than the harbour's 90 m front.
     let mut cfg = LayoutConfig { fortification: "none".into(), ..Default::default() };
-    cfg.programme.role = "port".into();
+    cfg.programme.functions = Some(crate::urban::programme::ProgrammeFunctions { port: 1.0, ..Default::default() });
     let ground = geography::stilt_ground(&site, &site.culture, surface).unwrap();
     let effective_surface = ground.surface(surface);
     assert!(macroplan::harbour::sited(&ground.site, &cfg, effective_surface).is_some(),

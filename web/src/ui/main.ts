@@ -28,8 +28,6 @@ import { saveFile } from './download';
 import { worldToJson } from './exportWorld';
 import type { ImportedHeight } from '../gen/terrain/import';
 import { CULTURE_LIST } from '../gen/urban/cultures';
-import { scaleMaxPop } from '../gen/urban/culture';
-import { POP_RANGE } from '../gen/urban/phases';
 import { perf, rec, now as pnow } from './perf';
 import { OffscreenBackend, BackendEvents } from './backend';
 import type { DisplayOpts, GDone, GResponse, SettlementMeta } from './protocol';
@@ -159,7 +157,7 @@ fillSelect(riverEl, [['none', 'None'], ['stream', 'Stream'], ['river', 'River'],
 fillSelect(roadsEl, [['0', `Auto (${DEFAULT_ROADS[opts.size]})`], ...[1, 2, 3, 4, 5, 6, 7, 8].map((k) => [String(k), String(k)] as [string, string])], String(opts.roads));
 fillSelect(styleEl, STYLE_LIST.map((s) => [s.id, s.label] as [string, string]), opts.style);
 // Show caps only for cultures without population-driven urban growth.
-fillSelect(cultureEl, CULTURE_LIST.map((c) => [c.id, `${c.label}${!c.urbanGrowth && c.scale && c.scale.max !== 'megacity' ? ` (up to ${c.scale.max})` : ''}${c.fantasy ? ' (fantasy)' : ''}`] as [string, string]), opts.culture);
+fillSelect(cultureEl, CULTURE_LIST.map((c) => [c.id, `${c.label}${c.fantasy ? ' (fantasy)' : ''}`] as [string, string]), opts.culture);
 fillSelect(languageEl, [['auto', 'Auto (from plan)'], ...NAME_FAMILIES.map((f) => [f, f[0].toUpperCase() + f.slice(1)] as [string, string])], opts.language ?? 'auto');
 document.dispatchEvent(new Event('magna-main-options-ready'));
 
@@ -250,7 +248,7 @@ registry.add(checkControl($<HTMLInputElement>('legend'), 'legend', true));
 initPlanEditor(registry);
 const layoutFlyout = initLayoutFlyout();
 registry.writeAll(settlUI.editorOptions(draft));
-// ---------- Plan section: population-driven growth or the culture's scale cap
+// ---------- Plan section: population-driven growth
 {
   const note = document.createElement('div');
   note.className = 'note';
@@ -258,13 +256,8 @@ registry.writeAll(settlUI.editorOptions(draft));
   cultureEl.insertAdjacentElement('afterend', note);
   const update = (): void => {
     const c = CULTURE_LIST.find((x) => x.id === cultureEl.value);
-    const pop = Number(($<HTMLInputElement>('population')).value) || POP_RANGE[sizeEl.value as Options['size']]?.[0] || 0;
-    const max = c?.scale?.max;
     note.textContent = c?.urbanGrowth
-      ? `Village layout below ${c.urbanGrowth.minPop.toLocaleString('en-US')} inhabitants; larger populations form a connected town.`
-      : max && max !== 'megacity' && pop > scaleMaxPop(max) * 1.5
-      ? `Above ${max} size this plan becomes a cluster of ${max}s (or one large ${max}).`
-      : max && max !== 'megacity' ? `Settlements up to ${max} size.` : '';
+      ? `Village layout below ${c.urbanGrowth.minPop.toLocaleString('en-US')} inhabitants; larger populations form a connected town.` : '';
   };
   for (const el of [cultureEl, sizeEl, $<HTMLInputElement>('population')]) { el.addEventListener('change', update); el.addEventListener('input', update); }
   update();

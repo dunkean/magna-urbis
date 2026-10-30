@@ -9,6 +9,7 @@ const stages:GenerationStage[]=['initialize','regional','regionalFinish','recons
 const nativeSessions=new Map<string,string>();
 /** The same retained Rust phases drive grouped generation and interactive stepping. */
 export async function generateCpuTerrain(settings:TerrainSettings,control?:GenerationControl,runtime?:ExecutionRuntime,noise?:()=>Promise<{coarse:Float32Array;fine:Float32Array}>):Promise<Float32Array>{
+  control?.backend?.(runtime ? 'native' : 'cpu');
   const compact=isCompactProcedural(settings),plan=GenerationNoisePlan.erosion(settings.seed,settings.width,settings.relief,settings.erosion,settings.motifSize,settings.mountainMix);
   const original=plan.parameters();plan.free();
   const configured=compact?configureCompactPlan(original,settings):{parameters:original,surface:original.slice(24,32)};

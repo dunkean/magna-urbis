@@ -28,7 +28,7 @@ import type { RustTownSnapshot } from './rustUrban';
 import { mountTerrainControls } from './terrainControls';
 import { mountUrbanControls, type UrbanControls, type UrbanControlParts } from './urbanControls';
 import { mountStageChain, type StageChain } from './stageChain';
-import { stagesForAction, type StageDef, type StageFamily } from './stageRegistry';
+import { stagesForAction, stageById, type StageDef, type StageFamily } from './stageRegistry';
 import { mountHeightmapSource, mountHeightmapFit } from './heightmapLibrary';
 import { mountSettingsPanel, refreshBackends, backendStatus, backendCaption } from './settingsPanel';
 import { iconUrl, type IconId } from './stageIcons';
@@ -54,6 +54,12 @@ const layerNames: Record<keyof ExportLayers,string> = { background:'Fond de cart
 let settings: V2Settings = defaultSettings();
 let world: World | undefined;
 let pristine: World | undefined;
+/** Inspection can replace the display without discarding the completed project. */
+let previewBase: { world?: World; pristine?: World } | undefined;
+registerMessages({
+  'Stage output': { en: 'Stage output', fr: 'Sortie de l’étape' },
+  'Elevations from this stage. Later stages remain to be run.': { en: 'Elevations from this stage. Later stages remain to be run.', fr: 'Altitudes de cette étape. Les étapes suivantes restent à exécuter.' },
+});
 let mods: unknown[] = [];
 let selectedTown = 'main';
 let selectedBuilding: { settlement: string; index: number; building: UrbanBuilding } | null = null;
@@ -150,6 +156,13 @@ function reportAppearanceError(error:unknown):void{
 for(const selector of ['#map-style','#export-style'])setHTML($(selector),renderStyleOptions());
 setText($('#export-format option[value="svg"]'),'SVG · map / embedded render');
 insertHTML($('.style-control'),'beforeend','<button id="view3d" type="button" aria-pressed="false">3D</button><button id="capture3d" type="button" hidden>PNG 3D ↗</button>');
+insertHTML($('.map-title'),'beforeend','<button id="preview-close" type="button" class="quiet small" hidden></button>');
+setDynamicText($('#preview-close'), () => getLanguage() === 'fr' ? 'Fermer l’aperçu' : 'Close preview');
+$('#preview-close').onclick = async () => {
+  if (!previewBase?.world || busy) return;
+  world = previewBase.world; pristine = previewBase.pristine; previewBase = undefined;
+  await client.show(world, true); updateWorld();
+};
 $('#view3d').onclick=async()=>{
   if(!world){toast(getLanguage()==='fr'?'Créez d’abord le territoire.':'Create the terrain first.');return;}
   if(city3d?.active){city3d.hide();setText($('#view3d'),'3D');$('#view3d').setAttribute('aria-pressed','false');$('#capture3d').hidden=true;return;}
@@ -191,7 +204,7 @@ function runStage(stage:StageDef):void{
     const backend=settings.urban?.backend??settings.runtime?.backend??'typescript';
     void generate('town',place.key,backend==='typescript'?undefined:run.townStage);return;
   }
-  void generate(run.action);
+  void generate(run.action, undefined, undefined, run.action === 'terrain' ? stage.id : undefined);
 }
 const chain:StageChain=mountStageChain({
   root:$('#terrain-controls'),staging:$('#stage-staging'),terrain:terrainControls,regionRoot:$('#region-controls'),renderRoot:$('#render-controls'),
@@ -257,6 +270,7 @@ function dialog(id: string): void { $<HTMLDialogElement>(id).showModal(); }
 function touchRecipe(): void { projectRevision++; updateExtent(); scheduleChainSync(); setText($('#footer-status'), world ? 'Réglages modifiés · prêts à générer' : 'Relief et eau, en un clic'); }
 function updateExtent(): void { setDynamicText($('#extent-hint'), ()=>`${(adaptedExtent(settings)/1000).toLocaleString(numberLocale())} km de côté · ${settings.extent === 'auto' ? settings.generation==='neural'?'fenêtre native du modèle':'selon les peuplements demandés' : 'étendue imposée'}`); }
 function syncControls(): Promise<void> {
+  if (!world?.stats['v2.previewStage']) previewBase = undefined;
   document.querySelectorAll<HTMLInputElement|HTMLSelectElement>('[data-option]').forEach(input => { const key = input.dataset.option!; const value = key.startsWith('center.') ? settings.options.center?.[key.endsWith('x') ? 'x' : 'y'] : (settings.options as unknown as Record<string,unknown>)[key]; input.value = String(value ?? (input.tagName === 'SELECT' ? 'auto' : '')); });
   $<HTMLInputElement>('#town-count').value=String(settings.settlementCount);
   $<HTMLInputElement>('#rust-server').value=settings.runtime?.localServer??bootRuntime.localServer??'';
@@ -280,7 +294,7 @@ function updateProgress(p: V2Progress): void {
 function setBusy(value: boolean): void {
   busy = value; $('#progress-card').hidden = !value; $('#hardware-led').classList.toggle('busy-led',value); $('#app').setAttribute('aria-busy',String(value));
   for(const selector of ['#terrain-controls .chain-scroll','#urban-settings-panel','#inspector'])$(selector).inert=value;
-  for (const id of ['generate-region','terrain-only','region-only','towns-only','random-seed','expert-apply','export-go','clear-heightmap']) $<HTMLButtonElement>(`#${id}`).disabled = value;
+  for (const id of ['generate-region','terrain-only','region-only','towns-only','random-seed','expert-apply','export-go','clear-heightmap','preview-close']) $<HTMLButtonElement>(`#${id}`).disabled = value;
   document.querySelectorAll<HTMLInputElement|HTMLSelectElement>('[data-option],#town-count,#project-file,#heightmap-file,#terrain-controls .chain-scroll input,#terrain-controls .chain-scroll select,#terrain-controls .chain-scroll button,#urban-settings-panel input,#urban-settings-panel select,#urban-settings-panel button').forEach(e=>e.disabled=value);
   document.querySelectorAll<HTMLButtonElement>('[data-relief],#inspector button').forEach(e=>e.disabled=value);
   if (!value && elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = undefined; }
@@ -288,17 +302,20 @@ function setBusy(value: boolean): void {
   $<HTMLButtonElement>('#cancel-job').disabled=false;
   chain.sync();mapControls.sync();
 }
-async function generate(action: Action, key?: string, townStage?:V2TownStage): Promise<void> {
+async function generate(action: Action, key?: string, townStage?:V2TownStage, terrainStage?: string): Promise<void> {
   if (busy) return; cancelled = false;
   if (action !== 'terrain' && action !== 'all' && !world) { toast('Créez d’abord le territoire.'); selectTab('terrain'); return; }
   setBusy(true); const started = performance.now(); const revision = projectRevision; let completed = false;
-  chain.beginRun(stagesForAction(action, townStage));
+  chain.beginRun(stagesForAction(action, townStage, terrainStage));
   setText($('#progress-label'), 'Préparation du calcul…'); setText($('#progress-time'), '0 s');
   elapsedTimer = setInterval(()=>{ setText($('#progress-time'), `${Math.round((performance.now()-started)/1000)} s`); },500);
   log(`Début : ${action} · graine ${settings.options.seed}`);
   try {
-    const result = await client.run(action,settings, pristine ?? world,key,townStage);
+    const result = await client.run(action,settings, previewBase?.pristine ?? previewBase?.world ?? pristine ?? world,key,townStage,terrainStage);
     if (cancelled) return;
+    if (terrainStage && terrainStage !== 'cover-climate') {
+      if (!world?.stats['v2.previewStage']) previewBase = { world, pristine };
+    } else previewBase = undefined;
     pristine = result;
     const edited = applyBuildingEdits(result, mods); world = edited.world;
     if (edited.skipped) log(`${edited.skipped} modification(s) ne correspondent plus à leur bâtiment d’origine.`);
@@ -328,6 +345,13 @@ function updateWorld(): void {
   setText($('#map-metrics'), `${world.terrain.rivers.length} cours d’eau\n${towns.length} peuplements`);
   setText($('#caption-title'), towns.length ? 'Du territoire à ses habitants' : 'La région avant les villes');
   setText($('#caption-text'), towns.length ? 'Sélectionnez un lieu pour le construire ou affiner ses paramètres. Activez l’inspection et zoomez pour choisir une maison.' : 'Le paysage est prêt. Passez aux peuplements pour implanter les lieux et tracer leurs routes.');
+  const preview = stageById.get(String(world.stats['v2.previewStage'] ?? ''));
+  $('#preview-close').hidden = !preview || !previewBase?.world;
+  if (preview) {
+    setText($('#map-subtitle'), preview.label.en);
+    setText($('#caption-title'), 'Stage output');
+    setText($('#caption-text'), 'Elevations from this stage. Later stages remain to be run.');
+  }
   setText($('#towns-count'), String(towns.length));
   setHTML($('#settlement-list'), towns.length ? towns.map(s=>`<button class="settlement-item" data-town="${esc(s.key)}" aria-pressed="${selectedTown===s.key}"><span class="settlement-dot ${(s.main ? world?.urban : s.urban)?'ready':''}"></span><span class="grow"><strong>${nameHTML(s.name,s.main?'Ville principale':s.key)}</strong><small>${numberHTML(s.population)} hab. · <span>${esc(s.archetype)}</span></small></span><span class="count-badge">${(s.main ? world?.urban : s.urban)?'↗':'＋'}</span></button>`).join('') : '<p class="hint">Créez les implantations pour sélectionner un lieu.</p>');
   document.querySelectorAll<HTMLButtonElement>('[data-town]').forEach(b=>b.onclick=()=>showInspector(b.dataset.town!,true));
@@ -457,7 +481,7 @@ $<HTMLInputElement>('#project-file').onchange=async e=>{
   try{
     if(file.size>200*1024*1024)throw new Error('Projet trop volumineux (maximum 200 Mio).');
     const text=await file.text(),scope=$<HTMLSelectElement>('#import-scope').value;
-    const project=scope==='complete'?await projectJob<{settings:V2Settings;world?:World;mods:unknown[]}>({action:'parse',text}):await composeJob({scope,text,current:settings,world:pristine??world,mods});
+    const project=scope==='complete'?await projectJob<{settings:V2Settings;world?:World;mods:unknown[]}>({action:'parse',text}):await composeJob({scope,text,current:settings,world:previewBase?.pristine??previewBase?.world??pristine??world,mods});
     const connections={localServer:settings.runtime?.localServer??bootRuntime.localServer,pythonServer:settings.runtime?.pythonServer??bootRuntime.pythonServer};
     if(connectLocal&&project.settings.runtime)project.settings.runtime={...project.settings.runtime,...connections};
     client.invalidateRetained();settings=project.settings;mods=project.mods;pristine=project.world;world=pristine?applyBuildingEdits(pristine,mods).world:undefined;
@@ -501,7 +525,7 @@ $('#export-go').onclick=async()=>{
   $<HTMLButtonElement>('#export-go').disabled=true;
   try {
     const name=`magna-urbis-${settings.options.seed.replace(/[^\w-]/g,'_').slice(0,45)}`;
-    if(format==='project'||format==='recipe'){download(await projectJob<Blob>({action:'serialize',settings:format==='recipe'&&world?{...settings,extent:world.mapSize,options:{...settings.options,mapSize:world.mapSize}}:settings,world:format==='project'?(pristine??world):undefined,mods}),`${name}.${format}.json`);}
+    if(format==='project'||format==='recipe'){download(await projectJob<Blob>({action:'serialize',settings:format==='recipe'&&world?{...settings,extent:world.mapSize,options:{...settings.options,mapSize:world.mapSize}}:settings,world:format==='project'?(previewBase?.pristine??previewBase?.world??pristine??world):undefined,mods}),`${name}.${format}.json`);}
     else if(format==='seed'){download(new Blob([JSON.stringify({format:'magna-urbis-v2-seed',version:1,seed:settings.options.seed})],{type:'application/json'}),`${name}.seed.json`);}
     else if(format==='heightmap')download(await heightmapBlob(),`${name}.heightmap.png`);
     else {toast('Préparation des couches de la carte…');let blob=await svgExport();let dimensions:{width:number;height:number}|number=Number($<HTMLSelectElement>('#export-resolution').value);if($<HTMLInputElement>('#export-crop').checked){const cropped=await chooseExportCrop(blob,Number(dimensions),bindTree);if(!cropped)return;blob=cropped.blob;dimensions={width:cropped.width,height:cropped.height};}if(format==='png')blob=await exportPng(blob,dimensions,phase=>log(`Export PNG : ${phase}`));download(blob,`${name}.${format}`);}

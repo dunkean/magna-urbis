@@ -4,7 +4,7 @@ use super::super::geometry as g;
 
 pub(super) fn consolidate(layout: Option<&Layout>, part: &mut Partition) {
     let Some(mut pr) = part.programme.take() else { return };
-    if roles::is_isolated(&pr.context.role) {
+    if roles::is_isolated(&pr.context.intent) {
         part.programme = Some(pr);
         return;
     }

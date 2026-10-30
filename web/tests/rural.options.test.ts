@@ -42,7 +42,8 @@ describe('Reddit rural options', () => {
     const landuse={visiblePaddocks:true,concreteFieldBoundaries:true};
     const q=new URLSearchParams({urban:JSON.stringify(urban),landuse:JSON.stringify(landuse)}).toString();
     const decoded=await decodeSituation(await encodeSituation({v:1,q,pins:[]}));
-    expect(decoded.q).toBe(q);
+    const parsed=(query:string)=>Object.fromEntries([...new URLSearchParams(query)].map(([k,v])=>[k,JSON.parse(v)]));
+    expect(parsed(decoded.q)).toEqual(parsed(q));
     expect(normalizeParcelConfig(JSON.parse(new URLSearchParams(decoded.q).get('urban')!).parcelConfig).streetAlignedHomes).toBe(true);
     expect(normalizeParcelConfig(JSON.parse(new URLSearchParams(decoded.q).get('urban')!).parcelConfig).denserSmallholdings).toBe(true);
     expect(normalizeParcelConfig({streetAlignedHomes:false,denserSmallholdings:false})).toEqual(normalizeParcelConfig());

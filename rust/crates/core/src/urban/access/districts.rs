@@ -32,7 +32,7 @@ fn number(culture: &str, key: &str) -> Option<f64> {
 /// `quartersPer` quarters each.
 pub(in crate::urban) fn target(culture: &str, population: u32, quarters: usize) -> usize {
     let by_anchor = text(culture, "anchor").and_then(|role| {
-        roles::services(culture, population, "auto")
+        roles::services(culture, population)
             .iter()
             .find(|n| n.entry.role == role)
             .map(|n| n.sites as f64 / number(culture, "per").unwrap_or(1.0).max(0.1))

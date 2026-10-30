@@ -3,6 +3,7 @@ import type { HouseMix, HouseSettings } from '../../../rust/bridge/urbanArchitec
 import { cityUiText, localizeCityInspector } from './cityInspectorLocale';
 import { urbanText } from './urbanPanelLocale';
 import { LOCALE_KEY } from './shellLocale';
+import { axisApplies, profileSummary } from '../../../rust/bridge/settlementAxes';
 
 const esc = (s: string): string => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 export const ZONES: Record<string, string> = { core: 'Cœur', middle: 'Extension', edge: 'Périphérie', faubourg: 'Faubourgs', village: 'Village' };
@@ -27,6 +28,10 @@ export interface UrbanMainHost {
     zones?: Set<string>;
     /** Resolved settlement grammar of the plan on screen, and whether it is a village or smaller (phases do not apply). */
     resolved?: string; small: boolean; roads: number;
+    /** Grammar the request leads to when known (settlementAxes.expectedGrammar), and the footprint family returned with the plan. */
+    grammar?: string; resolvedFamily?: string;
+    /** « type · style » of the main enclosure of the plan on screen, `none` without one. */
+    resolvedEnclosure?: string;
     /** Effective mixed house styles: the older single culture reads as the city line. */
     houses: HouseSettings;
     quarter?: { key: string; zone: string; culture: string; tissue: string; edit?: QuarterOverride };
@@ -74,6 +79,7 @@ export function createUrbanMainPanel(host: UrbanMainHost) {
       <button type="button" class="um-link" data-um-apply-all hidden title="Copier les réglages urbains de ce settlement vers tous les autres et régénérer">Appliquer à tous les settlements</button>
     </div>
     <div class="um-line">${mirror('culture', '🎨', 'Culture du plan')}</div>
+    <small class="um-note" data-um-profile></small>
     <div class="um-line">${mirror('fortification', '🧱', 'Enceinte')}${mirror('settlementForm', '🏘', 'Type de ville')}</div>
     <div class="um-line">${mirror('footprint.family', '⬠', 'Forme de la ville')}${mirror('footprint.mechanism', '🌱', 'Génération : comment la ville croît')}</div>
     <div class="um-line"><label class="um-f" title="Opérateur parcellaire de toute la ville (une phase peut le changer dans la grille, ligne ▤)"><span>▤</span><select data-um-op></select></label><label class="um-f" title="Silhouettes : culture des maisons de toute la ville (un mélange se règle dans la grille, ligne ⌂)"><span>⌂</span><select data-um-house></select></label></div>
@@ -290,6 +296,8 @@ export function createUrbanMainPanel(host: UrbanMainHost) {
         fill(control, [['site', `du lieu (${label(s.siteCulture)})`], ...host.cultures]); set(control, String(value || 'site')); continue;
       }
       const entries = host.options(key).map(([id, text]): [string, string] => key === 'settlementForm' && id === 'auto' ? [id, `Auto → ${s.resolved ?? 'selon la population'}`]
+        : key === 'footprint.family' && id === 'auto' && s.resolvedFamily ? [id, `Auto → ${s.resolvedFamily}`]
+        : key === 'fortification' && id === 'culture' && s.resolvedEnclosure ? [id, `${text.replace(/ → .*$/, '')} → ${s.resolvedEnclosure}`]
         : key === 'mixCulture' && id === '' ? [id, 'Aucune'] : [id, text]);
       fill(control, entries); set(control, String(value ?? ''));
       control.title = control.selectedOptions[0]?.textContent ?? '';
@@ -301,6 +309,11 @@ export function createUrbanMainPanel(host: UrbanMainHost) {
     set(cityHouse, styles.length > 1 ? 'mix' : styles[0]?.culture ?? '');
     cityHouse.title = `Silhouettes : ${cityHouse.selectedOptions[0]?.textContent ?? ''}`;
     q('[data-um-simple]').toggleAttribute('hidden', !s.small);
+    // Named profile components, and the axes the expected grammar does not read (hidden, not merely greyed).
+    const profileId = layout.culture && layout.culture !== 'site' ? layout.culture : s.siteCulture;
+    const profileLine = q<HTMLElement>('[data-um-profile]'); profileLine.textContent = profileSummary(profileId); profileLine.hidden = !profileLine.textContent;
+    q<HTMLElement>('[data-um-cfg="footprint.family"]').closest('label')!.hidden = !axisApplies('footprint', s.grammar);
+    q<HTMLElement>('[data-um-infl]').hidden = !axisApplies('mix', s.grammar);
     const infl = q<HTMLDetailsElement>('[data-um-infl]');
     q('[data-um-infl-sum]').textContent = layout.mixCulture ? `· ${label(layout.mixCulture)} ${Math.round(layout.mixShare * 100)} %` : ''; if (layout.mixCulture) infl.open = true;
     // Grid: absent phases are greyed, the village column only exists for small types or when used.

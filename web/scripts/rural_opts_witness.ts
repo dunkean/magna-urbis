@@ -17,7 +17,7 @@ const out=resolve('out/rural-opts'); mkdirSync(out,{recursive:true});
 const n=96,width=2400,height=new Float32Array(n*n).fill(24),water=new Uint8Array(n*n),waterLevel=height.slice();
 const box=(x:number,y:number,w:number,h=w)=>({outer:[{x,y},{x:x+w,y},{x:x+w,y:y+h},{x,y:y+h}],holes:[]});
 const input:UrbanLanduseInput={raster:{n,width,height,water,waterLevel,riverWidth:new Float32Array(n*n),riverIds:new Int32Array(n*n).fill(-1)},seed:'42',biome:'temperate',relief:'flat',
-  city:{key:'city',center:{x:1150,y:1150},population:3000,culture:'hanseatic',radius:380,profile:{role:'agricultural',resources:['grain'],mode:'inspired',period:'',lore:[],navigableAccess:false}},neighbours:[],
+  city:{key:'city',center:{x:1150,y:1150},population:3000,culture:'hanseatic',radius:380,profile:{intent:'settlement',functions:{agricultural:1},resources:['grain'],mode:'inspired',period:'',lore:[],navigableAccess:false}},neighbours:[],
   layouts:[{key:'city',center:{x:1150,y:1150},culture:'hanseatic',warnings:[],blocks:[],streets:[{path:Array.from({length:41},(_,i)=>({x:150+i*50,y:1150})),widths:Array(41).fill(4),rank:1,role:'regional'}],quarters:[{shape:box(1000,1000,350,550),phase:0},{shape:box(1350,1250,450,300),phase:0}]}]};
 const pal=PALETTES.parchment, report:Record<string,unknown>={};
 const save=(name:string,body:string,viewBox:string,w=1100)=>{

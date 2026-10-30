@@ -6,7 +6,7 @@ import { NATURAL_LAND_KINDS } from './countryside';
 import { isKinded } from './townbridges';
 import type { World, LandArea, LandKind, Farmstead, PolyH } from '../gen/types';
 import { farmRidges } from './farms';
-import { fieldHedges, fieldHedgeStyle } from './hedges';
+import { fieldBoundaryStyle, fieldHedges, fieldHedgeStyle } from './hedges';
 import { furrowDegrees, furrowOffset, furrowSpacing, holdingTone } from './furrows';
 import type { Vec2 } from '../gen/core/geom';
 import { type Palette, ruralInk } from './styles';
@@ -211,6 +211,11 @@ function fieldNetwork(world: Pick<World, 'landuse'>, pal: Palette, s: number, sc
     const hedges = fieldHedges(lu.areas, s), style = fieldHedgeStyle(pal, s);
     const d = hedges.lines.map((line) => pathD(line, false)).join('');
     const trees = hedges.trees.map(({ center: p, radius }) => brushes ? brushes.tree(p.x, p.y, radius) : `<circle cx="${f1(p.x)}" cy="${f1(p.y)}" r="${f1(radius)}"/>`).join('');
+    for (const [lines, material] of [[hedges.walls, 'wall'], [hedges.fences, 'fence']] as const) {
+      if (!lines.length) continue;
+      const k = fieldBoundaryStyle(pal, s, material);
+      out += `<path class="lu-${material}s" d="${lines.map((line) => pathD(line, false)).join('')}" fill="none" stroke="${k.color}" stroke-width="${f1(k.width)}" stroke-opacity="${k.alpha}"${k.dash.length ? ` stroke-dasharray="${k.dash.map(f1).join(' ')}"` : ''}/>`;
+    }
     out += `<g class="lu-hedges"><path d="${d}" fill="none" stroke="${style.color}" stroke-width="${f1(style.width)}" stroke-opacity="${style.alpha}" stroke-linecap="round"/>` +
       `<g fill="${pal.treeFill}" fill-opacity="0.75" stroke="${pal.treeInk}" stroke-width="${f1(0.3 * s)}" stroke-opacity="0.5">${trees}</g></g>`;
   }

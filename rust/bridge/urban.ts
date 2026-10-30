@@ -48,7 +48,9 @@ export interface UrbanStructure {
 }
 export interface Layout { config?: LayoutConfig; programme?: UrbanProgramme; key: string; culture: string; center: Point; quarters: Quarter[]; streets: Street[]; blocks: Block[]; enclosures?: Enclosure[]; phases?: GrowthPhase[]; archetype?: string; structure?: UrbanStructure; warnings: string[] }
 export interface Parcel { pressure?: number; id?: string; parentIds?: string[]; provenance?: string[]; family?: string; reason?: string; contacts?: ParcelContact[]; envelope?: Shape; shape: Shape; block: number; use: 'plot' | 'garden' | 'place' | 'compound' | 'market' | 'reserve' | 'common' | 'residual' | 'court'; front: [Point, Point] | null; axis: Point; rank: number; access?: { kind: 'public' | 'collective' | 'private' | 'unserved' | 'reserved' | 'attached'; street: number | null; frontLength: number } }
-export interface Partition { config?: ParcelConfig; programme?: UrbanProgramme; key: string; parcels: Parcel[]; warnings: string[]; diagnostics?: { coveredArea: number; residualArea: number; overlapArea: number; unservedArea: number } }
+export interface LotEnclosure { path: Point[]; material: 'wall' | 'hedge' | 'fence'; side: 'front' | 'side' | 'back' }
+export interface ResolvedEnclosure { plot: number; field: number; material: 'wall' | 'hedge' | 'fence'; fieldMaterial: 'wall' | 'hedge' | 'fence'; front: number; side: number; back: number }
+export interface Partition { enclosure?: ResolvedEnclosure; lotEnclosures?: LotEnclosure[]; config?: ParcelConfig; programme?: UrbanProgramme; key: string; parcels: Parcel[]; warnings: string[]; diagnostics?: { coveredArea: number; residualArea: number; overlapArea: number; unservedArea: number } }
 export interface ParcelContact { a: Point; b: Point; street: number; rank: number; length: number; kind: string }
 export interface UrbanAdmissibility { recipeId: string; nativeLayout: string; floors: [number, number]; eras: string[]; minFrontage: number; minAccessWidth: number; minArea: number; minDepth: number; maxSlope: number; sharedAccess: boolean; partyWalls: boolean }
 export interface CultureMapping { culture: string; family: string; functionalProfile: string; architectureFamily: string; architecturePack: string; coverage: string; borrowing: string; admissibility: UrbanAdmissibility }
@@ -60,6 +62,10 @@ export interface UrbanProgramme {
   reservations: { id: string; demandId: string; block: number; shape: Shape; street: number; frontage: number }[];
   allocations: UrbanAllocation[]; adjacency: { a: string; b: string; sharedLength: number }[];
   environment: { block: number; slope: number; wet: boolean; waterfront: boolean; pressure?: number }[]; reconciliationPasses: number; warnings: string[];
+  /** Households the domestic-admissible plots could hold (land capacity, before allocation). */
+  housingCapacity?: number;
+  /** Measured navigable quay frontage: the only evidence port storage is allocated against. */
+  navigableFrontage?: boolean;
 }
 /** Include outward growth when framing a completed settlement. */
 export function layoutExtent(layouts?: Layout[]): { center: Point; radius: number } | undefined {
@@ -134,7 +140,7 @@ function nativeLayoutConfig(config: LayoutConfig) {
     if (input[key] === false || input[key] === undefined) delete input[key];
   for (const key of ['wallStiffness', 'wallTerrain', 'wallRelief', 'wallTowerSpacing', 'ditchWetness'] as const)
     if (input[key] == null) delete input[key];
-  for (const key of ['riverControlMode', 'portEnclosure', 'plannedWall', 'heightsCastle'] as const)
+  for (const key of ['riverControlMode', 'portEnclosure', 'plannedWall', 'heightsCastle', 'wallExtension'] as const)
     if (!input[key]) delete input[key];
   if (input.portDetachment === 1) delete input.portDetachment;
   if (input.portShelter === 0 && !input.shelteredHarbour) delete input.portShelter;

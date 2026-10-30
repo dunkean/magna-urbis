@@ -277,6 +277,8 @@ export function buildScene(world0: World, tileSize = TILE_SIZE, build: SceneBuil
     const hedges = fieldHedges(lu.areas, S / 1600);
     addPoly('hedge-trees', hedges.trees.map((t) => ngon(t.center, t.radius)));
     addLines('hedges', 'field', 'hedge', 1, hedges.lines);
+    addLines('hedge-walls', 'field', 'hedge', 1, hedges.walls);
+    addLines('hedge-fences', 'field', 'hedge', 1, hedges.fences);
     // farmsteads: lot pieces, hedged lot, yard, pens and ponds, walls, trees, buildings and their roof ridges
     const fms = lu.farmsteads;
     const fungalFarm = (f: typeof fms[number]): boolean => f.cultivation === 'fungal' || isUnderdarkBiome(world.options.biome);

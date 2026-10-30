@@ -15,7 +15,7 @@ import { runtimeSummary } from './runtimeChoices';
 
 const copy = (en: string, fr: string): string => { registerMessages({ [en]: { en, fr } }); return en; };
 const T = {
-  run: copy('Run from this stage', 'Exécuter depuis cette étape'), required: copy('Required stage', 'Étape obligatoire'),
+  run: copy('Show this stage’s output', 'Afficher la sortie de cette étape'), required: copy('Required stage', 'Étape obligatoire'),
   enable: copy('Enable or disable this stage', 'Activer ou désactiver cette étape'), help: copy('Method in the scientific atlas', 'Méthode dans l’atlas scientifique'),
   general: copy('General settings', 'Paramètres généraux'), method: copy('Method', 'Méthode'), size: copy('Size', 'Taille'), stale: copy('Settings changed since the last run', 'Réglages modifiés depuis la dernière exécution'),
   cached: copy('Kept from an earlier run', 'Conservé d’une exécution précédente'), running: copy('Running', 'En cours'),
@@ -73,6 +73,7 @@ export function mountStageChain(b: StageChainBindings): StageChain {
   const leftovers = document.createElement('div'); leftovers.className = 'stage-leftovers'; leftovers.hidden = true;
   leftovers.append(...Array.from(root.childNodes)); root.append(leftovers);
   const forms: ParameterForm[] = [], syncers: (() => void)[] = [];
+  root.addEventListener('terrain-defaults-ready', () => { forms.forEach(form => form.sync()); });
   const rows = new Map<string, Row>();
   const stashes: { zones?: V2TerrainSettings['zones']; coastMask?: number; heightmap?: { sketch?: V2TerrainSettings['sketch']; image?: V2Settings['options']['importedHeight'] }; neural?: string } = {};
   let pendingHeightmap = false, family: StageFamily = 'region';
@@ -111,8 +112,8 @@ export function mountStageChain(b: StageChainBindings): StageChain {
       place.append(caption, name, open); panel.append(place);
       syncers.push(() => { place.hidden = !b.getWorld()?.settlements?.length; const current = b.getPlace(); open.disabled = !current; if (current) { name.dataset.l10nKeep = ''; name.removeAttribute('data-i18n'); name.textContent = current.name; } else setText(name, T.noPlace); });
     }
-    const general = document.createElement('div'); general.className = 'family-general'; general.setAttribute('role', 'group'); general.setAttribute('aria-label', translate(T.general)); generalPanels.set(f.id, general); panel.append(general);
     if (f.id === 'region') panel.append(methodPanel);
+    const general = document.createElement('div'); general.className = 'family-general'; general.setAttribute('role', 'group'); general.setAttribute('aria-label', translate(T.general)); generalPanels.set(f.id, general); panel.append(general);
     const spine = document.createElement('div'); spine.className = 'chain-spine'; panel.append(spine);
     for (const stage of stagesOf(f.id)) spine.append(buildRow(stage).element);
     panels.set(f.id, panel); scroller.append(panel);
@@ -162,7 +163,7 @@ export function mountStageChain(b: StageChainBindings): StageChain {
   };
   function context(): StageContext {
     const settings = get(), world = b.getWorld(), relief = String(b.terrain.access.get('terrain.relief') ?? settings.options.relief);
-    return { relief: reliefOf(settings), classicTerrain: settings.runtime?.backend === 'typescript', finiteRelief: ['plateau', 'volcano', 'caldera', 'cavern'].includes(relief),
+    return { relief: reliefOf(settings), classicTerrain: settings.runtime?.backend === 'typescript', finiteRelief: ['flat', 'plateau', 'volcano', 'caldera', 'cavern'].includes(relief),
       urban: settings.urban?.backend ?? settings.runtime?.backend ?? 'typescript', hasTerrain: !!world, hasRegion: !!world?.settlements?.length, place: b.getPlace()?.key };
   }
   const compact = () => { const s = get(); return isCompactProcedural({ source: s.runtime?.source, procedural: s.terrain?.procedural }); };
@@ -318,7 +319,7 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     else if (id === 'widget:seed') control = root.querySelector<HTMLElement>('[data-control="widget:seed"]');
     else control = root.querySelector<HTMLElement>(id.startsWith('main:') ? `[data-control="${id}"]` : `[data-field-path="${id}"]`);
     if (!control) continue;
-    if (id === 'terrain.climate') prepareClimateStrip(control);
+    if (id === 'terrain.climate' || id === 'terrain.relief') prepareLandscapeStrip(control, id === 'terrain.climate' ? 'climate' : 'relief');
     control.dataset.stageControl = stageForControl(id) ?? (f.id === 'map' ? 'display-terrain' : 'relief-source');
     generalPanels.get(f.id)!.append(control);
   }
@@ -349,42 +350,30 @@ export function mountStageChain(b: StageChainBindings): StageChain {
       panel.toggleAttribute('data-chain-hidden', context().relief === 'heightmap' || context().finiteRelief && b.terrain.access.get('terrain.relief') === 'cavern');
     });
   }
-  function prepareClimateStrip(field: HTMLElement): void {
-    field.classList.add('climate-picker');
+  function prepareLandscapeStrip(field: HTMLElement, kind: 'climate' | 'relief'): void {
+    field.classList.add('climate-picker', `${kind}-picker`);
     const select = field.querySelector<HTMLSelectElement>('select')!; select.hidden = true;
-    const strip = document.createElement('div'); strip.className = 'region-icon-strip climate-strip'; strip.setAttribute('role', 'radiogroup');
-    strip.setAttribute('aria-label', translate(copy('Climate', 'Climat')));
-    const drawings: Record<string, string> = {
-      temperate: '<path d="M12 21v-8m0 0c-4 0-6-3-6-6 3 0 6 2 6 6Zm0 0c4 0 6-3 6-6-3 0-6 2-6 6ZM12 13V4"/>',
-      mediterranean: '<circle cx="16" cy="7" r="3"/><path d="M16 1.5v1m5.5 4.5h-1M4 15q3-3 6 0t6 0 6 0M2 20q3-3 6 0t6 0 6 0"/>',
-      continental: '<path d="M12 3 7 11h3l-4 7h12l-4-7h3Zm0 15v3"/>',
-      nordic: '<path d="M12 2l-4 6h2.5L7 14h3.5L7 19h10l-3.5-5H17l-3.5-6H16Zm0 17v3"/>',
-      alpine: '<path d="M2 20 9 7l4 7 3-4 6 10Zm5.2-9.7 1.8 1.7 1.5-1.2"/>',
-      arctic: '<path d="M12 2v20M3.5 7l17 10M3.5 17l17-10M9 4l3 3 3-3M9 20l3-3 3 3"/>',
-      steppe: '<path d="M3 20h18M7 20c0-4 0-7-2-9m2 9c0-3 2-6 4-7m-2 7c0-2 1-4 3-5m1 5c0-4 0-8 2-11m-2 11c0-2 2-5 5-6"/>',
-      desert: '<circle cx="17" cy="5" r="3"/><path d="M2 20q5-12 11-4m-6 4q6-10 15 0"/>',
-      savanna: '<path d="M12 21v-9m0 3-3-3m3 1 3-4M4 10q8-5 16 0M6 8q6-3 12 0M3 21h18"/>',
-      tropical: '<path d="M3 17q0-14 18-13 1 18-13 17M5 20 18 7m-8 8 1-6m2 3 5 1"/>',
-      wetland: '<path d="M6 15V6m0 0c-1 2-1 3 0 4m6 5V3m0 0c-1 2-1 4 0 6m6 6V8m0 0c-1 2-1 3 0 4M2 19q3-3 5 0t5 0 5 0 5 0M2 22q3-3 5 0t5 0 5 0 5 0"/>',
-      custom: '<path d="M5 3v18m7-18v18m7-18v18M2 8h6m1 8h6m1-10h6"/>',
-    };
+    const strip = document.createElement('div'); strip.className = `region-icon-strip climate-strip ${kind}-strip`; strip.setAttribute('role', 'radiogroup');
+    strip.setAttribute('aria-label', translate(kind === 'climate' ? copy('Climate', 'Climat') : copy('Relief type', 'Type de relief')));
     const buttons: HTMLButtonElement[] = [];
-    for (const option of Array.from(select.options)) {
-      const button = document.createElement('button'); button.type = 'button'; button.dataset.climate = option.value; button.setAttribute('role', 'radio');
-      button.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${drawings[option.value] ?? drawings.custom}</svg>`;
+    for (const [index, option] of Array.from(select.options).entries()) {
+      const button = document.createElement('button'); button.type = 'button'; button.dataset[kind] = option.value; button.setAttribute('role', 'radio');
+      const art = document.createElement('span'); art.className = `landscape-art ${kind}-art`; art.setAttribute('aria-hidden', 'true');
+      art.style.backgroundPosition = `${index % 4 / 3 * 100}% ${Math.floor(index / 4) / 2 * 100}%`; button.append(art);
       const caption = document.createElement('span'); caption.className = 'region-icon-caption';
-      const label = terrainBasicFields.find(f => f.path === 'terrain.climate')!.options!.find(o => o.value === option.value)!.label;
+      const label = terrainBasicFields.find(f => f.path === `terrain.${kind}`)!.options!.find(o => o.value === option.value)!.label;
       setText(caption, label); button.append(caption);
-      const help = climateZoneHelp[option.value];
+      const help = kind === 'climate' ? climateZoneHelp[option.value] : undefined;
       syncers.push(() => { button.title = help ? `${translate(label)} — ${translate(help)}` : translate(label); button.setAttribute('aria-label', translate(label)); });
       button.onclick = () => {
         const biome = b.terrain.access.get('options.biome');
-        b.terrain.access.set('terrain.climate', option.value);
-        markStale(b.terrain.access.get('options.biome') !== biome ? 'relief-source' : 'relief-climate'); if (option.value === 'custom') expand('relief-climate', true); sync();
+        select.value = option.value; select.dispatchEvent(new Event('change', { bubbles: true }));
+        markStale(kind === 'relief' || b.terrain.access.get('options.biome') !== biome ? 'relief-source' : 'relief-climate'); if (kind === 'climate' && option.value === 'custom') expand('relief-climate', true); sync();
       };
       button.onkeydown = event => {
         const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
-        if (!step) return; event.preventDefault(); const next = buttons[(buttons.indexOf(button) + step + buttons.length) % buttons.length]; next.click(); next.focus();
+        if (!step) return; event.preventDefault(); const available = buttons.filter(choice => !choice.hidden && !choice.disabled); if (!available.length) return;
+        const next = available[(available.indexOf(button) + step + available.length) % available.length]; next.click(); next.focus();
       };
       buttons.push(button); strip.append(button);
     }
@@ -393,10 +382,10 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     const caption = field.querySelector('.parameter-caption')!, head = document.createElement('div'); head.className = 'climate-caption';
     field.prepend(head); head.append(caption, selected);
     syncers.push(() => {
-      const value = b.terrain.access.get('terrain.climate');
-      const label = terrainBasicFields.find(f => f.path === 'terrain.climate')!.options!.find(o => o.value === value)?.label;
+      const value = b.terrain.access.get(`terrain.${kind}`);
+      const label = terrainBasicFields.find(f => f.path === `terrain.${kind}`)!.options!.find(o => o.value === value)?.label;
       if (label) setText(selected, label);
-      for (const button of buttons) { const on = button.dataset.climate === value; button.setAttribute('aria-checked', String(on)); button.tabIndex = on ? 0 : -1; button.disabled = b.busy(); }
+      for (const button of buttons) { button.hidden = !!select.querySelector<HTMLOptionElement>(`option[value="${button.dataset[kind]}"]`)?.disabled; const on = button.dataset[kind] === value; button.setAttribute('aria-checked', String(on)); button.tabIndex = on ? 0 : -1; button.disabled = b.busy(); }
     });
   }
 
@@ -474,7 +463,7 @@ export function mountStageChain(b: StageChainBindings): StageChain {
       const { stage } = row, visible = stage.when(ctx); row.element.hidden = !visible; if (!visible) continue;
       const index = (numbers.get(stage.family) ?? 0) + 1; numbers.set(stage.family, index); row.number.textContent = String(index).padStart(2, '0');
       const reason = stage.unavailable?.(ctx);
-      row.note.hidden = !reason; if (reason) setText(row.note, text(reason)); row.element.dataset.na = String(!!reason);
+      row.note.hidden = !reason; if (reason) { registerMessages({ [reason.en]: reason }); setText(row.note, text(reason)); } row.element.dataset.na = String(!!reason);
       const on = toggleState(stage); row.element.dataset.enabled = String(on);
       if (!stage.optional || stage.toggle?.kind === 'unavailable') row.node.disabled = true;
       if (stage.optional && stage.toggle && stage.toggle.kind !== 'unavailable') { row.node.setAttribute('aria-checked', String(on)); row.node.disabled = busy || !!reason; }

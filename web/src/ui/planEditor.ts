@@ -17,7 +17,7 @@ export function initPlanEditor(registry: ControlRegistry): void {
   const title = document.createElement('h4'); title.textContent = 'Mix two styles'; box.append(title);
   const hint = document.createElement('p'); hint.className = 'hint'; hint.textContent = 'Blend a second culture into this place’s growth phases or neighbourhoods, or design its growth plan yourself.'; box.append(hint);
   const secondary = field('Second culture', 'mixCulture', [['', 'No cultural mix'], ...CULTURE_LIST.map((c): [string, string] => [c.id, c.label])]);
-  const mixMode = field('How cultures combine', 'mixMode', [['phases', 'Growth phases'], ['sectors', 'Neighbourhoods'], ['blend', 'Blend']]);
+  const mixMode = field('How cultures combine', 'mixMode', [['phases', 'Growth phases'], ['sectors', 'Neighbourhoods']]);
   chipify(mixMode);
   const weightLabel = document.createElement('label'); weightLabel.htmlFor = 'mixWeight'; weightLabel.textContent = 'Second culture share';
   const weight = document.createElement('input'); weight.type = 'range'; weight.id = 'mixWeight'; weight.min = '0'; weight.max = '1'; weight.step = '0.05'; box.append(weightLabel, weight);
@@ -57,7 +57,7 @@ export function initPlanEditor(registry: ControlRegistry): void {
       if (o.culture !== writtenCulture) {
         writtenCulture = o.culture; secondary.value = ''; enabled.checked = false; plan = null; phases = []; phaseEdited = false; nucleus.value = ''; weight.value = '0.5'; render();
       }
-      const cultureMix = secondary.value ? { id: secondary.value, t: Number(weight.value), mode: mixMode.value as 'phases' | 'sectors' | 'blend' } : null;
+      const cultureMix = secondary.value ? { id: secondary.value, t: Number(weight.value), mode: mixMode.value as 'phases' | 'sectors' } : null;
       let next = plan ? structuredClone(plan) : {};
       if (nucleus.value) next.nucleus = { ...next.nucleus, kind: nucleus.value as NucleusKind };
       else if (next.nucleus) { delete next.nucleus.kind; if (!Object.keys(next.nucleus).length) delete next.nucleus; }

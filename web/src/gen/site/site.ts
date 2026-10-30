@@ -10,7 +10,7 @@ import type { Options, SizeName, SiteArchetype } from '../options';
 import type { TerrainLayer, SiteLayer, SiteFields, River } from '../types';
 import { resolvePosition } from './position';
 
-export const RESERVE_RADIUS: Record<SizeName, number> = { hamlet: 90, village: 170, town: 380, city: 700, capital: 1150 };
+export const RESERVE_RADIUS: Record<SizeName, number> = { hamlet: 90, village: 170, town: 380, city: 700, metropolis: 1150 };
 /** Channels at least this wide (m) count as real rivers (bridged, fronted by towns); narrower ones are brooks. */
 export const BIG_RIVER_W = 4.5;
 
@@ -59,7 +59,7 @@ const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v);
 const SIDE: Record<'N' | 'E' | 'S' | 'W', Vec2> = { N: { x: 0, y: -1 }, S: { x: 0, y: 1 }, E: { x: 1, y: 0 }, W: { x: -1, y: 0 } };
 
 /** Base probability weight of each archetype by settlement size (hilltop rarer for big cities). */
-const SIZE_IDX: Record<SizeName, number> = { hamlet: 0, village: 1, town: 2, city: 3, capital: 4 };
+const SIZE_IDX: Record<SizeName, number> = { hamlet: 0, village: 1, town: 2, city: 3, metropolis: 4 };
 const HILLTOP_BY_SIZE = [1.5, 1.15, 0.7, 0.28, 0.1];
 const RELIEF_HILL = { flat: 0.3, hills: 1, valley: 0.85, mountains: 1.5 } as const;
 

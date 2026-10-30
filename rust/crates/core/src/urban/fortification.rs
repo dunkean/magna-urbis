@@ -245,7 +245,8 @@ impl Style {
     }
 }
 
-fn family(style: &str) -> &'static str {
+/// Enclosure type a style belongs to (`wall`, `palisade`, `hedge`).
+pub(super) fn family(style: &str) -> &'static str {
     match style {
         "palisade" | "gord" => "palisade",
         "hedge" => "hedge",
@@ -454,7 +455,11 @@ pub(super) use heights::{heights_castle, wrap_castle};
 
 #[path = "fortification_params.rs"]
 mod parameters;
-pub(super) use parameters::{valid_parameters, parameter_trace, port_walls};
+pub(super) use parameters::{valid_parameters, parameter_trace, port_walls, wall_extension};
+
+#[path = "fortification_extension.rs"]
+mod extension;
+pub(super) use extension::{attach, lopsided, trim_shared, dedupe_shared, inner_gates};
 
 // ---------------------------------------------------------------- vectors
 
@@ -2930,6 +2935,67 @@ fn stop_at_curtains(streets: &mut Vec<Street>, enclosures: &mut [Enclosure]) {
     }
 }
 
+/// Invariant (a curtain is crossed by a street only at a gate): the gates
+/// are the real crossings of `streets` with the curtain, plus the water
+/// gates and the gates on a bank. A gate no street crosses any more closes, a
+/// crossing without a gate opens a plain one. Returns the old gate index ->
+/// new index map (for the gatehouses).
+fn reconcile_gates(e: &mut Enclosure, streets: &[Street], surface: Surface<'_>) -> Vec<Option<usize>> {
+    let crossings = super::composition::gates(&e.path, streets);
+    let water_ends: Vec<Point> = e
+        .gatehouses
+        .iter()
+        .filter(|gh| gh.kind == "water")
+        .flat_map(|gh| gh.passage)
+        .collect();
+    let bank = |p: Point| {
+        water_ends.iter().any(|&q| dist(p, q) < 1.0)
+            || (0..8).any(|k| {
+                let a = k as f64 * std::f64::consts::FRAC_PI_4;
+                surface.wet(pt(p.x + 4.0 * a.cos(), p.y + 4.0 * a.sin()))
+            })
+    };
+    let mut remap: Vec<Option<usize>> = vec![None; e.gates.len()];
+    let mut gates: Vec<Point> = vec![];
+    let referenced: Vec<usize> = e
+        .gatehouses
+        .iter()
+        .filter(|gh| gh.kind == "water")
+        .map(|gh| gh.gate)
+        .collect();
+    for (i, &q) in e.gates.iter().enumerate() {
+        if crossings.iter().any(|&c| dist(c, q) < 2.0) || referenced.contains(&i) || bank(q) {
+            remap[i] = Some(gates.len());
+            gates.push(q);
+        }
+    }
+    for c in crossings {
+        if !gates.iter().any(|&q| dist(c, q) < 8.0) {
+            gates.push(c);
+        }
+    }
+    e.gates = gates;
+    remap
+}
+
+/// Last word on the gates, once every later stage has moved streets
+/// (bridges, walkways, trims): `settle`'s rule against the final network.
+/// A gatehouse whose gate closed goes with it.
+pub(super) fn sync_gates(layout: &mut super::Layout, surface: Surface<'_>) {
+    let streets = std::mem::take(&mut layout.streets);
+    for e in layout.enclosures.iter_mut().filter(|e| !e.style.is_empty() && e.path.len() >= 4) {
+        let remap = reconcile_gates(e, &streets, surface);
+        e.gatehouses = std::mem::take(&mut e.gatehouses)
+            .into_iter()
+            .filter_map(|mut gh| {
+                gh.gate = remap.get(gh.gate).copied().flatten()?;
+                Some(gh)
+            })
+            .collect();
+    }
+    layout.streets = streets;
+}
+
 /// Final pass, once streets, blocks and access lanes are final
 /// (`generate_quarters`): `build`'s rules against the final town, so they
 /// hold on the layout that is drawn, whatever later stages added or pruned.
@@ -3007,40 +3073,7 @@ pub(super) fn settle(layout: &mut super::Layout, surface: Surface<'_>) {
                 .any(|&(a, b, hw)| g::distance(p, a, b).0 < hw + slack)
         };
         // --- gates
-        let crossings = super::composition::gates(&e.path, &layout.streets);
-        let water_ends: Vec<Point> = e
-            .gatehouses
-            .iter()
-            .filter(|gh| gh.kind == "water")
-            .flat_map(|gh| gh.passage)
-            .collect();
-        let bank = |p: Point| {
-            water_ends.iter().any(|&q| dist(p, q) < 1.0)
-                || (0..8).any(|k| {
-                    let a = k as f64 * std::f64::consts::FRAC_PI_4;
-                    surface.wet(pt(p.x + 4.0 * a.cos(), p.y + 4.0 * a.sin()))
-                })
-        };
-        let mut remap: Vec<Option<usize>> = vec![None; e.gates.len()];
-        let mut gates: Vec<Point> = vec![];
-        let referenced: Vec<usize> = e
-            .gatehouses
-            .iter()
-            .filter(|gh| gh.kind == "water")
-            .map(|gh| gh.gate)
-            .collect();
-        for (i, &q) in e.gates.iter().enumerate() {
-            if crossings.iter().any(|&c| dist(c, q) < 2.0) || referenced.contains(&i) || bank(q) {
-                remap[i] = Some(gates.len());
-                gates.push(q);
-            }
-        }
-        for c in crossings {
-            if !gates.iter().any(|&q| dist(c, q) < 8.0) {
-                gates.push(c);
-            }
-        }
-        e.gates = gates;
+        let remap = reconcile_gates(e, &layout.streets, surface);
         // --- structures
         let keep_most = |s: &Shape| -> Option<Shape> {
             let full = g::area(s);
@@ -3861,8 +3894,11 @@ mod tests {
     }
 
     fn town(style: &str) -> Vec<super::super::Layout> {
+        town_on(style, vec![0u8; N * N])
+    }
+
+    fn town_on(style: &str, water: Vec<u8>) -> Vec<super::super::Layout> {
         let height = vec![10.0f32; N * N];
-        let water = vec![0u8; N * N];
         let roads: Vec<Street> = [
             [(100.0, 1030.0), (1950.0, 1010.0)],
             [(1020.0, 100.0), (1030.0, 1950.0)],
@@ -3892,6 +3928,61 @@ mod tests {
             radius: 420.0,
         };
         generate_quarters("walls", &[site], &cfg, surface(&height, &water), &roads).unwrap()
+    }
+
+    /// Invariant (curtains meet the network and the water on its terms): in
+    /// the final layout a street crosses a curtain only at a gate, and the
+    /// curtain runs in water only along a water gate's passage.
+    #[test]
+    fn final_streets_cross_curtains_only_at_gates_and_water_only_at_water_gates() {
+        let water = river(1150.0, 1190.0);
+        let height = vec![10.0f32; N * N];
+        let s = surface(&height, &water);
+        let mut crossings = 0;
+        for style in ["curtain", "flanked"] {
+            for layout in town_on(style, water.clone()) {
+                for e in layout.enclosures.iter().filter(|e| !e.style.is_empty() && e.path.len() >= 4) {
+                    for st in layout.streets.iter().filter(|st| {
+                        !matches!(st.role.as_str(), "wall-lane" | "bridge" | "ford" | "causeway" | "quay" | "pier" | "landing" | "mole")
+                    }) {
+                        for w in st.path.windows(2) {
+                            for c in e.path.windows(2) {
+                                let Some((t, x)) = g::segment_hit(w[0], w[1], c[0], c[1]) else { continue };
+                                // A street end resting on the curtain is no crossing.
+                                if t * dist(w[0], w[1]) < 0.6 || (1.0 - t) * dist(w[0], w[1]) < 0.6 {
+                                    continue;
+                                }
+                                crossings += 1;
+                                let gate = e.gates.iter().map(|&q| dist(q, x)).fold(f64::MAX, f64::min);
+                                assert!(gate <= 8.0, "{style}: {} crosses the curtain {gate:.0} m from a gate", st.role);
+                            }
+                        }
+                    }
+                    let mut wet = 0.0;
+                    for c in e.path.windows(2) {
+                        let k = (dist(c[0], c[1]) / 2.0).ceil().max(1.0) as usize;
+                        for j in 0..k {
+                            let t = (j as f64 + 0.5) / k as f64;
+                            let p = pt(c[0].x + t * (c[1].x - c[0].x), c[0].y + t * (c[1].y - c[0].y));
+                            let passage = e.gatehouses.iter().filter(|gh| gh.kind == "water").any(|gh| {
+                                g::distance(p, gh.passage[0], gh.passage[1]).0 <= 25.0
+                            });
+                            // Water a full raster cell deep: the curtain hugs a bank within one cell.
+                            let cell = W / N as f64;
+                            let deep = (0..8).all(|k| {
+                                let a = k as f64 * std::f64::consts::FRAC_PI_4;
+                                s.wet(pt(p.x + cell * a.cos(), p.y + cell * a.sin()))
+                            });
+                            if s.wet(p) && deep && !passage {
+                                wet += dist(c[0], c[1]) / k as f64;
+                            }
+                        }
+                    }
+                    assert!(wet <= 10.0, "{style}: {wet:.0} m of curtain in water away from a water gate");
+                }
+            }
+        }
+        assert!(crossings > 0, "the town must exercise street crossings");
     }
 
     #[test]

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import * as ts from 'typescript';
 import fixture from './fixtures/city-retained-placement.json';
 import { retainCityPlacement } from '../src/ui/cityRetainedPlacement';
+import { urbanText } from '../src/ui/urbanPanelLocale';
 import { demographicClass } from '../../rust/bridge/settlementDemography';
 import { defaultSettlementConfig, defaultRoadConfig, type Settlement, type SettlementSpec, type SettlementOutput, type SettlementConfig, type SettlementRequest, type SettlementResponse } from '../../rust/bridge/settlements';
 const source = readFileSync(new URL('../src/ui/terrainSettlements.ts', import.meta.url), 'utf8');
@@ -23,20 +24,20 @@ function harness(city = true, initialOutput: SettlementOutput | null = retained(
     ts.forEachChild(n, visit);
   } visit(tree);
   if (functions.size !== names.length || methods.size !== 2) throw new Error('Missing production placement control flow');
-  const requests: SettlementRequest[] = [], nodes = new Map<string, { textContent: string; hidden: boolean; setAttribute: ReturnType<typeof vi.fn>; removeAttribute: ReturnType<typeof vi.fn> }>();
-  const el = (name: string) => { let node = nodes.get(name); if (!node) { node = { textContent: '', hidden: false, setAttribute: vi.fn(), removeAttribute: vi.fn() }; nodes.set(name, node); } return node; };
+  const requests: SettlementRequest[] = [], nodes = new Map<string, { textContent: string; hidden: boolean; dataset: Record<string, string>; setAttribute: ReturnType<typeof vi.fn>; removeAttribute: ReturnType<typeof vi.fn> }>();
+  const el = (name: string) => { let node = nodes.get(name); if (!node) { node = { textContent: '', hidden: false, dataset: {} as Record<string, string>, setAttribute: vi.fn(), removeAttribute: vi.fn() }; nodes.set(name, node); } return node; };
   const terrain = { width: 8000 }, raster = { width: 8000, n: 2, height: new Float32Array(4), water: new Uint8Array(4), waterLevel: new Float32Array(4), riverWidth: new Float32Array(4), riverIds: new Int32Array(4) };
   const urban = { setSettlements: vi.fn(), restoreSnapshot: vi.fn(), applyWorkshopDraft: vi.fn(), workshopDraft: () => undefined, workshopSettings: () => ({}) };
   const roads = { enabled: true, config: defaultRoadConfig(), output: undefined as unknown, pending: vi.fn(), error: vi.fn(), setConfig: vi.fn(), set(value?: unknown) { this.output = value; } };
   const clone = <T>(value: T) => structuredClone(value);
   const worker = { postMessage(request: SettlementRequest) { requests.push(clone(request)); }, terminate: vi.fn() };
   const options = { city, active: true, getTerrain: () => terrain, getSettings: () => ({ seed: 'same-seed', relief: 'mountains' }), getRaster: () => raster, onChange: vi.fn(), onPlanChange: vi.fn() };
-  const env = { options, config: clone(initialConfig), output: clone(initialOutput ?? undefined), worker, roads, urban, el, clone, retainCityPlacement,
+  const env = { urbanText, recordStageMs: () => undefined, options, config: clone(initialConfig), output: clone(initialOutput ?? undefined), worker, roads, urban, el, clone, retainCityPlacement,
     sites: (out: SettlementOutput) => out.settlements.map(s => ({ key: s.key, center: s.center, population: s.population, culture: s.culture, radius: s.radius })), prefs: (s: SettlementSpec) => s,
     runSettlementRequest: vi.fn(async (request: SettlementRequest): Promise<SettlementResponse> => { requests.push(clone(request)); return { id: request.id, roads: null }; }),
     window: { dispatchEvent: vi.fn() }, CustomEvent: class { constructor(readonly type: string, readonly init: unknown) {} } };
   const body = `function create(env) {
-    const { options, roads, urban, el, clone, retainCityPlacement, sites, prefs, runSettlementRequest, window, CustomEvent } = env;
+    const { options, roads, urban, el, clone, retainCityPlacement, sites, prefs, runSettlementRequest, window, CustomEvent, urbanText, recordStageMs } = env;
     const executionRuntime = { profile: 'local', server: 'http://placement-ui-transport-mock.test' };
     const controls = () => {}, list = () => {}, editor = () => {}, draw = () => {}, syncLanduse = () => {}, publishOptions = () => {};
     let config=env.config, output=env.output, worker=env.worker, selection=config.list[0]?.key ?? '', enabled=true, showPoints=true;

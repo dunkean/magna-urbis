@@ -77,7 +77,7 @@ try {
       center: { x: 1600, y: 1600 }, radius: 400, site: '', roads: 'decor' }));
     url.searchParams.set('landuse', '{"enabled":false}');
     url.searchParams.set('urban', JSON.stringify({ target: 'perf-city', quarterSeed: 'quarters-42', parcelSeed: 'parcels-42',
-      layoutConfig: { composition: 'settlement', culture, tissue, fortification: 'none',
+      layoutConfig: { scope: 'settlement', culture, tissue, fortification: 'none',
         footprint: { mechanism: 'auto', family: 'compact', budget: 'population' } } }));
     await page.goto(url.href); await ready(0);
     const runs = [];

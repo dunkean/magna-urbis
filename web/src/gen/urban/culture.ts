@@ -6,25 +6,12 @@
  * continuous blend of the numeric dials) or replaced by an explicit `plan` override object.
  */
 import type { MorphologyParams, MorphRef, Range, Zone } from './morphology';
-import { resolveMorph, blendParams } from './morphology';
+import { resolveMorph } from './morphology';
 import { CULTURE_LIST } from './cultures';
 import type { SitePrefs } from '../options';
 import type { M4Catalogue } from './m4/index';
 import type { CampSpec } from './camps/index';
 
-/**
- * Settlement classes on the scale ladder (URBAN_MORPHOLOGY.md §3d), by population. The archetype thresholds of
- * the urban stage (hamlet < 200, village < 1 200) bound the first two; a market town is a small town.
- */
-export type ScaleClass = 'hamlet' | 'village' | 'town' | 'city' | 'metropolis' | 'megacity';
-export const SCALE_CLASSES: ScaleClass[] = ['hamlet', 'village', 'town', 'city', 'metropolis', 'megacity'];
-const SCALE_BOUND: Record<ScaleClass, number> = { hamlet: 200, village: 1200, town: 20000, city: 100000, metropolis: 1000000, megacity: Infinity };
-/** Upper population bound of a class (exclusive). */
-export const scaleMaxPop = (c: ScaleClass): number => SCALE_BOUND[c];
-/** Lower population bound of a class. */
-export const scaleMinPop = (c: ScaleClass): number => { const i = SCALE_CLASSES.indexOf(c); return i <= 0 ? 0 : SCALE_BOUND[SCALE_CLASSES[i - 1]]; };
-export const scaleOf = (pop: number): ScaleClass => SCALE_CLASSES.find((c) => pop < SCALE_BOUND[c]) ?? 'megacity';
-export interface ScaleRange { min: ScaleClass; max: ScaleClass }
 
 export type EnclosureShape = 'organic' | 'rect' | 'rounded-rect' | 'square' | 'oval' | 'circle' | 'terraces';
 export interface EnclosureSpec {
@@ -144,8 +131,6 @@ export interface Culture {
   sitePrefs?: SitePrefs;
   /** M4 landmark catalogue (castle variant, cathedral, palace, monasteries, port, shanty flavour). */
   m4?: M4Catalogue;
-  /** Settlement classes the culture produces (default hamlet … megacity). Above `max` it degrades gracefully. */
-  scale?: ScaleRange;
   /** Planned without streets (camps, kraals, barbarian and native villages, pueblos): camps/index.ts. */
   camp?: CampSpec;
   /** A village/camp becomes one connected town above this population, retaining its cultural architecture. */
@@ -160,7 +145,8 @@ export interface Culture {
 }
 export type UrbanGrowthRecipe = Pick<Culture, 'nucleus' | 'core' | 'ring' | 'phaseCount' | 'faubourg' | 'faubShare' | 'render'>
   & Partial<Pick<Culture, 'm4' | 'landmarks' | 'waterBuild'>>;
-export interface CultureMix { id: string; t: number; mode: 'phases' | 'sectors' | 'blend' }
+/** Second culture distributed by growth phases or by sectors: the two modes the native engine also takes. */
+export interface CultureMix { id: string; t: number; mode: 'phases' | 'sectors' }
 export interface PlanOverride {
   nucleus?: Partial<NucleusSpec>;
   phases?: PhaseSpec[];
@@ -255,20 +241,15 @@ export function resolvePlan(cultureId: string, pop: number, mix?: CultureMix | n
   }
   if (override && override.faubourg !== undefined) faubRef = override.faubourg;
   const phases: ResolvedPhase[] = specs.map((sp, k) => {
-    let morph = resolveMorph(sp.morphology);
+    const morph = resolveMorph(sp.morphology);
     const pc = CULTURES[sp.culture ?? c.id] ?? c;
     let sectors: ResolvedSector[] = (sp.sectors ?? []).map((s) => ({ morph: resolveMorph(s.morphology), share: s.share, culture: s.culture ?? pc.id }));
-    if (m && mix!.mode === 'blend') {
-      const other = resolveMorph((k === 0 ? m.core : m.ring ?? m.core).morphology);
-      morph = blendParams(morph, other, mix!.t);
-    }
     if (m && mix!.mode === 'sectors' && (k > 0 || specs.length === 1)) {
       sectors = [...sectors, { morph: resolveMorph((m.ring ?? m.core).morphology), share: mix!.t, culture: m.id }];
     }
     return { morph, enc: sp.enclosure, culture: pc.id, share: shares[k] ?? 1 / specs.length, sectors };
   });
-  let faubourg = resolveMorph(faubRef ?? phases[phases.length - 1].morph.id);
-  if (m && mix!.mode === 'blend') faubourg = blendParams(faubourg, resolveMorph(m.faubourg ?? m.core.morphology), mix!.t);
+  const faubourg = resolveMorph(faubRef ?? phases[phases.length - 1].morph.id);
   const cultures = [c, ...(m ? [m] : [])];
   // landmarks: one per role and culture present (deduplicated by role + kind)
   const landmarks: ResolvedPlan['landmarks'] = [];
@@ -288,7 +269,7 @@ export function mixFromString(s: string | null | undefined): CultureMix | null {
   const [id, t, mode] = s.split(':');
   if (!CULTURES[id]) return null;
   const tt = Number(t);
-  return { id, t: Number.isFinite(tt) ? Math.max(0, Math.min(1, tt)) : 0.5, mode: mode === 'sectors' || mode === 'blend' ? mode : 'phases' };
+  return { id, t: Number.isFinite(tt) ? Math.max(0, Math.min(1, tt)) : 0.5, mode: mode === 'sectors' ? mode : 'phases' };
 }
 const b64e = (s: string): string => {
   const bytes = new TextEncoder().encode(s);

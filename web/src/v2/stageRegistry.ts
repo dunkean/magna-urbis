@@ -23,7 +23,7 @@ export interface StageContext {
   relief: ReliefSource;
   /** Classic TypeScript terrain engine: only its original parameters apply. */
   classicTerrain: boolean;
-  /** Plateau, volcano, caldera and cavern keep their finite generator (no decomposed recipe). */
+  /** Plain, plateau, volcano, caldera and cavern have no decomposed erosion output. */
   finiteRelief: boolean;
   urban: 'typescript' | 'rust' | 'native';
   hasTerrain: boolean;
@@ -70,11 +70,12 @@ const procedural = (c: StageContext) => c.relief === 'procedural' && !c.classicT
 const neural = (c: StageContext) => c.relief === 'neural' && !c.classicTerrain;
 const always = () => true;
 const finite = (c: StageContext): Copy | undefined => c.finiteRelief
-  ? { en: 'Plateau, volcano, caldera and cavern keep their own generator: this stage is not used.', fr: 'Plateau, volcan, caldeira et caverne gardent leur générateur : cette étape n’est pas utilisée.' } : undefined;
+  ? { en: 'This relief uses its own generator: this stage has no separate output.', fr: 'Ce relief utilise son propre générateur : cette étape n’a pas de sortie séparée.' } : undefined;
 const rustCity = (c: StageContext): Copy | undefined => c.urban === 'typescript'
   ? { en: 'Requires the Rust urban engine (classic TypeScript builds the whole plan at once).', fr: 'Requiert le moteur urbain Rust (le TypeScript classique construit tout le plan d’un coup).' } : undefined;
 const rustRegion = (c: StageContext): Copy | undefined => c.classicTerrain
   ? { en: 'Rust regional controls require the Rust terrain engine.', fr: 'Les réglages régionaux Rust exigent le moteur de relief Rust.' } : undefined;
+const neuralIntermediate = (): Copy => ({ en: 'This neural engine exposes its decoded terrain only. Preview it with Relief source or Neural decoder.', fr: 'Ce moteur neuronal expose uniquement le terrain décodé. Affichez-le avec Source du relief ou Décodeur neuronal.' });
 const enabled = (path: string, fallback: StageToggle['fallback'] = true): StageToggle => ({ kind: 'path', path, fallback });
 const U = (section: string) => `urban-section:${section}`;
 const R = (section: string) => `render-section:${section}`;
@@ -138,11 +139,11 @@ export const STAGES: readonly StageDef[] = [
     toggle: enabled('terrain.procedural.enabled.phasor', ({ compact }) => compact),
     label: { en: 'Phasor detail', fr: 'Détail Phasor' }, summary: { en: 'Oriented detail on either preset', fr: 'Détail orienté sur les deux préréglages' },
     controls: ['terrain.procedural.enabled.phasor', 'terrain.phasor.intensity'], quick: ['terrain.phasor.intensity'], progress: ['pipeline:phasor'] },
-  { id: 'relief-neural-coarse', family: 'region', optional: false, when: neural, run: terrainRun,
+  { id: 'relief-neural-coarse', family: 'region', optional: false, when: neural, unavailable: neuralIntermediate, run: terrainRun,
     label: { en: 'Neural coarse diffusion', fr: 'Diffusion neuronale grossière' }, summary: { en: 'Coarse climate and relief conditioning', fr: 'Conditionnement grossier du climat et du relief' },
     controls: ['terrain.coarseModel', 'terrain.fidelity', 'terrain.neuralTuning.landScale', 'terrain.neuralTuning.steps', 'terrain.neuralTuning.noiseTemperature', 'terrain.neuralTuning.noiseTemperatureStd', 'terrain.neuralTuning.noisePrecipitation', 'terrain.neuralTuning.noisePrecipitationCv'],
     quick: ['terrain.neuralTuning.steps'] },
-  { id: 'relief-neural-base', family: 'region', optional: false, when: neural, run: terrainRun,
+  { id: 'relief-neural-base', family: 'region', optional: false, when: neural, unavailable: neuralIntermediate, run: terrainRun,
     label: { en: 'Neural base diffusion', fr: 'Diffusion neuronale de base' }, summary: { en: 'Local relief conditioning and histogram', fr: 'Conditionnement du relief local et histogramme' },
     controls: ['terrain.baseModel', 'terrain.neuralTuning.reliefMode', 'terrain.neuralTuning.reliefScale', 'terrain.neuralTuning.reliefFixed', ...[0, 1, 2, 3, 4].map(i => `terrain.neuralTuning.histogram.${i}`), 'widget:histogram-presets'],
     quick: ['terrain.neuralTuning.reliefMode'] },
@@ -207,7 +208,7 @@ export const STAGES: readonly StageDef[] = [
     controls: [U('parcels')], quick: ['urban.parcels.operator'], progress: ['urban-parcels'] },
   { id: 'city-programme', family: 'settlements', optional: false, when: always, unavailable: rustCity, run: town('programme'),
     label: { en: 'Programme', fr: 'Programme' }, summary: { en: 'Roles, functions, demands and capacities', fr: 'Rôles, fonctions, besoins et capacités' },
-    controls: [U('programme')], quick: ['urban.layout.programme.role'], progress: ['urban-programme'] },
+    controls: [U('programme')], quick: ['urban.layout.programme.intent'], progress: ['urban-programme'] },
   { id: 'city-buildings', family: 'settlements', optional: false, when: always, unavailable: rustCity, run: town('buildings'),
     label: { en: 'Building sites and massing', fr: 'Emprises et volumes bâtis' }, summary: { en: 'One house request per lot, floors, typology', fr: 'Une demande de maison par lot, étages, typologie' },
     controls: [U('placement')], quick: ['urban.houses.floors'], progress: ['urban-building-sites', 'urban-built-capacity'] },
@@ -283,9 +284,9 @@ export const GENERATION_STAGE_ROWS: Record<string, string> = {
 };
 
 /** Rows recomputed by a generation action (timings and staleness of the last run). */
-export function stagesForAction(action: string, townStage?: V2TownStage): string[] {
+export function stagesForAction(action: string, townStage?: V2TownStage, terrainStage?: string): string[] {
   const of = (family: StageFamily) => stagesOf(family).map(stage => stage.id);
-  if (action === 'terrain') return of('region');
+  if (action === 'terrain') { const ids = of('region'); return terrainStage ? ids.slice(0, ids.indexOf(terrainStage) + 1) : ids; }
   if (action === 'settlements') return of('settlements');
   if (action === 'region') return STAGES.filter(stage => stage.run.action === 'region' || stage.run.action === 'roads').map(stage => stage.id);
   if (action === 'roads') return ['settle-roads'];

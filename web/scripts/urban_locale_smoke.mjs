@@ -12,7 +12,7 @@ try {
   await page.goto(`http://127.0.0.1:${address.port}/`);
   const results = await page.evaluate(async () => {
     document.body.innerHTML = `<details id="urbanQuarterStage"><summary>Plan <span data-state>9</span></summary>
-      <button data-apply>Régénérer</button><label>Génération<select data-config="composition"><option value="settlement">Ville</option><option value="district" selected>Secteur</option></select></label>
+      <button data-apply>Régénérer</button><label>Génération<select data-config="scope"><option value="settlement">Ville</option><option value="district" selected>Secteur</option></select></label>
       <details><summary>Dimensions et budget</summary><label>Aspect<input data-footprint="aspect" value="2.5"></label></details></details>
       <details id="urbanParcelStage"><summary>Parcelles <span>12</span></summary><button data-apply>Régénérer</button></details>
       <details id="rendering"><summary>Rendu</summary><div><label><input data-render="blocks" type="checkbox" checked>Îlots</label>

@@ -67,7 +67,7 @@ const layerLabels: Record<typeof CITY_LAYER_NAMES[number], readonly [string, str
   reserve: ['Growth reserves', 'Réserves de croissance'], allocated: ['Allocated urban land', 'Terre urbaine attribuée'], centers: ['District centres', 'Noyaux de quartier'],
   domains: ['Reserved domains', 'Domaines réservés'], quarters: ['Computational districts', 'Secteurs de calcul'], blocks: ['Blocks', 'Îlots'], streets: ['Urban streets', 'Rues urbaines'],
   enclosures: ['Walls and gates', 'Enceintes et portes'], parcels: ['Parcels', 'Parcelles'], gardens: ['Gardens', 'Jardins'], places: ['Squares and commons', 'Places et communs'],
-  fronts: ['Accessible frontages', 'Façades accessibles'], axes: ['Parcel axes', 'Axes des parcelles'], access: ['Parcel access status', 'Statut de desserte des parcelles'],
+  lotEnclosures: ['Plot enclosures', 'Clôtures des parcelles'], fronts: ['Accessible frontages', 'Façades accessibles'], axes: ['Parcel axes', 'Axes des parcelles'], access: ['Parcel access status', 'Statut de desserte des parcelles'],
 };
 const cityLayerFields = CITY_LAYER_NAMES.map(layer => flag(`city.layers.${layer}`, ...layerLabels[layer]));
 const fantasyFields: ParameterField[] = [number('fantasy.density', 'Brush density', 'Densité des pinceaux', .3, 2, .05),
@@ -115,7 +115,7 @@ export const RENDER_SECTION_FIELDS: Record<RenderSection, readonly string[]> = {
   diagnostics: ['diagnostic'],
 };
 
-const defaultCityLayers = { reserve: false, allocated: false, centers: false, domains: true, quarters: false, blocks: true, streets: true, enclosures: true, parcels: true, gardens: true, places: true, fronts: false, axes: false, access: false };
+const defaultCityLayers = { reserve: false, allocated: false, centers: false, domains: true, quarters: false, blocks: true, streets: true, enclosures: true, lotEnclosures: true, parcels: true, gardens: true, places: true, fronts: false, axes: false, access: false };
 /** Defaults are read without expanding an older saved recipe. */
 export function renderControlValues(settings: V2Settings, world?: World): V2Appearance {
   const a = settings.appearance, style = a?.terrainStyle ?? a?.style ?? settings.options.style;

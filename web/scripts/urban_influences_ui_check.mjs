@@ -83,7 +83,7 @@ try {
   url.searchParams.set('landuse', JSON.stringify({ enabled: false }));
   // This suite exercises the original core/faubourg composer; refactor controls
   // are verified separately by urban_refactor_ui_check.mjs.
-  url.searchParams.set('urban', JSON.stringify({ layoutConfig: { composition: 'settlement', footprint: { mechanism: terrainCase ? 'accessibility' : 'planned', family: terrainCase ? 'compact' : 'circle', budget: 'radius' }, fortification: 'none', accessMode: 'adaptive', exitTreatment: 'adaptive', axisAlignment: 'regional', siteAdaptation: 1 } }));
+  url.searchParams.set('urban', JSON.stringify({ layoutConfig: { scope: 'settlement', footprint: { mechanism: terrainCase ? 'accessibility' : 'planned', family: terrainCase ? 'compact' : 'circle', budget: 'radius' }, fortification: 'none', accessMode: 'adaptive', exitTreatment: 'adaptive', axisAlignment: 'regional', siteAdaptation: 1 } }));
   await page.goto(url.href); await ready();
   await config('mixCulture').selectOption('roman-core');
   await config('mixShare').fill('0.4');

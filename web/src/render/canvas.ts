@@ -21,7 +21,7 @@ import type { World, LandKind, Vec2 } from '../gen/types';
 import { Palette, MapStyle, ruralInk } from './styles';
 import { biomePalette } from './biomes';
 import { applyRenderColors, type RenderColors } from './customColors';
-import { fieldHedgeStyle } from './hedges';
+import { fieldBoundaryStyle, fieldHedgeStyle } from './hedges';
 import { furrowLines, furrowSpacing } from './furrows';
 import { orientPos } from '../gen/geo/poly';
 import { unionMany } from '../gen/geo/bool';
@@ -731,6 +731,10 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       if (pal.hedgeOn) {
         const hedge = fieldHedgeStyle(pal, u);
         strokeLines(linesOf((l) => l.name === 'hedges'), hedge.color, () => lw(hedge.width, 0.35), hedge.alpha * Math.min(1, sc / 0.3));
+        for (const [name, material] of [['hedge-walls', 'wall'], ['hedge-fences', 'fence']] as const) {
+          const k = fieldBoundaryStyle(pal, u, material);
+          strokeLines(linesOf((l) => l.name === name), k.color, () => lw(k.width, 0.35), k.alpha * Math.min(1, sc / 0.3), k.dash.map(px), 'butt');
+        }
         if (lod.band >= 2 && polyL('hedge-trees')) {
           if (brushes) brushTrees('hedge-trees'); else {
           fillPolys('hedge-trees', pal.treeFill, 0.75);

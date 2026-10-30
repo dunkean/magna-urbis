@@ -239,7 +239,7 @@ fn isolated_scene_and_village_ribbon_remain_separate_from_full_town_composition(
         "isolated-composition",
         &village,
         &LayoutConfig {
-            composition: "district".into(),
+            scope: "district".into(),
             placement: "rectangle".into(),
             ..legacy_config()
         },
@@ -583,7 +583,7 @@ fn seeded_open_fringe_leaves_reserves_while_wall_town_keeps_a_defined_edge() {
     let roads = [street(&[(20.0, 220.0), (490.0, 290.0)], "regional")];
     let mut cfg = LayoutConfig {
         // This seed pins the original single-envelope edge treatment.
-        composition: "district".into(),
+        scope: "district".into(),
         fortification: "none".into(),
         ..legacy_config()
     };
@@ -633,4 +633,78 @@ fn legacy_config() -> LayoutConfig {
         access_mode: "cultural".into(),
         ..LayoutConfig::default()
     }
+}
+
+/// Every bridge of a town split by an oblique river: spans the water, lands dry on both
+/// banks and joins the street network there, stays within the road grade on dry ground,
+/// crosses at a real angle, and no two bridges run side by side.
+#[test]
+fn oblique_river_town_bridges_span_land_connect_and_do_not_pair_up() {
+    oblique_river_town(|_| 0.05);
+}
+
+/// Steep banks where the road meets the river: the bridge moves along the river to a
+/// site whose ramps respect the street grade limit.
+#[test]
+fn bridge_moves_off_steep_banks_to_a_site_within_the_grade_limit() {
+    oblique_river_town(|s| if (300.0..420.0).contains(&s) { 0.16 } else { 0.04 });
+}
+
+fn oblique_river_town(bank_slope: impl Fn(f64) -> f32) {
+    let n = 128;
+    let cell = 4.0;
+    let mut height = vec![0.0f32; n * n];
+    let mut water = vec![0u8; n * n];
+    for y in 0..n {
+        for x in 0..n {
+            // River axis x - y = 0 (diagonal), 16 m wide; banks rise 5% away from it.
+            let d = ((x as f64 - y as f64) * cell) / std::f64::consts::SQRT_2;
+            if d.abs() < 8.0 { water[y * n + x] = 3; }
+            let along = (x as f64 + y as f64) * cell / std::f64::consts::SQRT_2;
+            height[y * n + x] = 3.0 + (d.abs() - 8.0).min(60.0) as f32 * bank_slope(along);
+        }
+    }
+    let surface = Surface { geometry: None, width: n as f64 * cell, n, height: &height, water: &water };
+    let mut site = site("european-organic");
+    site.population = 5000;
+    let cfg = LayoutConfig { fortification: "none".into(), ..legacy_config() };
+    let roads = [street(&[(20.0, 150.0), (256.0, 256.0), (492.0, 362.0)], "regional")];
+    let layout = run("urban-oblique-river-20261030", &site, &cfg, surface, &roads);
+    assert_connected(&layout);
+    let bridges: Vec<_> = layout.streets.iter().filter(|s| s.role == "bridge").collect();
+    assert!(!bridges.is_empty(), "a town split by a river needs a bridge");
+    let mut mids = vec![];
+    for (i, b) in bridges.iter().enumerate() {
+        let (a, e) = (b.path[0], *b.path.last().unwrap());
+        let len = ((a.x-e.x).powi(2)+(a.y-e.y).powi(2)).sqrt();
+        assert!(!surface.wet(a) && !surface.wet(e), "bridge {i} landing is wet: {a:?} {e:?}");
+        let steps = len.ceil() as usize * 2;
+        let at = |t: f64| Point { x: a.x + (e.x - a.x) * t, y: a.y + (e.y - a.y) * t };
+        assert!((0..=steps).any(|k| surface.wet(at(k as f64 / steps as f64))), "bridge {i} crosses no water");
+        let mut worst = 0.0f64;
+        for k in 0..steps {
+            let (p, q) = (at(k as f64 / steps as f64), at((k + 1) as f64 / steps as f64));
+            if !surface.wet(p) && !surface.wet(q) {
+                worst = worst.max((surface.height_at(q) - surface.height_at(p)).abs() / (len / steps as f64));
+            }
+        }
+        assert!(worst <= cfg.max_street_grade + 1e-6, "bridge {i} ramp grade {worst:.3} > {}", cfg.max_street_grade);
+        for end in [a, e] {
+            assert!(layout.streets.iter().filter(|s| s.role != "bridge").any(|s|
+                s.path.windows(2).any(|w| g::distance(end, w[0], w[1]).0 < 0.5)),
+                "bridge {i} end {end:?} is not connected");
+        }
+        // Deck against the river axis (direction (1,1)): perpendicular is 90 degrees.
+        let ang = ((e.y - a.y).atan2(e.x - a.x) - std::f64::consts::FRAC_PI_4).abs().to_degrees() % 180.0;
+        let ang = if ang > 90.0 { 180.0 - ang } else { ang };
+        println!("bridge {i}: len {len:.0} angle to flow {ang:.0} grade {worst:.3} at {:?}", at(0.5));
+        assert!(ang >= 55.0, "bridge {i} is nearly parallel to the river: {ang:.0} deg");
+        mids.push((at(0.5), (e.y - a.y).atan2(e.x - a.x)));
+    }
+    for i in 0..mids.len() { for j in i + 1..mids.len() {
+        let d = ((mids[i].0.x - mids[j].0.x).powi(2) + (mids[i].0.y - mids[j].0.y).powi(2)).sqrt();
+        let mut da = (mids[i].1 - mids[j].1).abs().to_degrees() % 180.0;
+        if da > 90.0 { da = 180.0 - da; }
+        assert!(!(d < 60.0 && da < 25.0), "bridges {i} and {j} run side by side: {d:.0} m apart, {da:.0} deg");
+    }}
 }

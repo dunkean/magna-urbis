@@ -38,5 +38,4 @@ export const SWAHILI_CULTURE: Culture = {
   hamlet: { form: 'auto', morphology: 'swahili-stone' },
   m4: { castle: 'none', cathedral: null, palace: null, monastery: null, marketHall: false, arena: 0, port: true, activities: false },
   sitePrefs: { waterSide: 'S', flatness: 1.3, weights: { harbor: 3, estuary: 2, bridge: 1.2, plain: 0.5, hilltop: 0.2 } },
-  render: { towerShape: 'square', carvedDoors: true }, scale: { min: 'hamlet', max: 'megacity' },
-};
+  render: { towerShape: 'square', carvedDoors: true },};

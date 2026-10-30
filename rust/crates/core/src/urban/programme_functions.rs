@@ -1,5 +1,5 @@
-//! Optional combinable programme functions. Missing weights retain the legacy
-//! role path; explicit empty weights never resurrect that exclusive role.
+//! Combinable programme functions: the specialisation axis, separate from the
+//! intent. Missing weights resolve automatically; explicit empty weights mean none.
 use serde::{Deserialize, Serialize};
 pub const PROGRAMME_FUNCTIONS_VERSION: u32 = 1;
 
@@ -34,19 +34,14 @@ impl ProgrammeFunctions {
     pub fn active(self) -> bool {
         self.values().iter().any(|w| *w > 0.0)
     }
-    /// Already-resolved legacy role; no new automatic/default resolution here.
-    pub fn from_legacy_role(role: &str) -> Self {
-        let mut w = Self::default();
-        match role {
-            "agricultural" => w.agricultural = 1.0,
-            "crossroads" => w.commerce = 1.0,
-            "artisan" => w.artisan = 1.0,
-            "riverine" => w.riverine = 1.0,
-            "port" => w.port = 1.0,
-            "capital" => w.capital = 1.0,
-            _ => {}
+    /// Automatic specialisation when no weights are given: a hamlet or a
+    /// communal profile farms; a place declared as a port sites port storage.
+    pub fn automatic(population: u32, communal: bool, declared_port: bool) -> Self {
+        Self {
+            agricultural: if population < 500 || communal { 1.0 } else { 0.0 },
+            port: if declared_port { 1.0 } else { 0.0 },
+            ..Self::default()
         }
-        w
     }
     pub fn mixed_share(self, population: u32) -> f64 {
         if population < 150 { return 0.0; }

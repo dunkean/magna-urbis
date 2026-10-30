@@ -10,8 +10,8 @@ export function retainCityPlacement(current: SettlementOutput | undefined, specs
   const settlements = specs.map(spec => {
     const actual = retained.find(s => s.key === spec.key)!;
     const center = spec.position ?? actual.center;
-    const before = [actual.name, actual.population, actual.culture, actual.kind, actual.siteType, actual.sitePrefs, actual.center, actual.position];
-    const after = [spec.name, spec.population, spec.culture, spec.kind, spec.siteType, spec.sitePrefs, center, spec.position];
+    const before = [actual.name, actual.population, actual.culture, actual.siteType, actual.sitePrefs, actual.center, actual.position];
+    const after = [spec.name, spec.population, spec.culture, spec.siteType, spec.sitePrefs, center, spec.position];
     if (JSON.stringify(before) !== JSON.stringify(after)) changed = true;
     return { ...actual, ...spec, center: { ...center }, cls: demographicClass(spec.population) };
   });

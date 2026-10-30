@@ -202,7 +202,7 @@ function pointAtLength(pl: Polyline, s: number): Vec2 {
   return pl[pl.length - 1];
 }
 
-const TRACKS: Record<SizeName, number> = { hamlet: 1, village: 1, town: 2, city: 3, capital: 3 };
+const TRACKS: Record<SizeName, number> = { hamlet: 1, village: 1, town: 2, city: 3, metropolis: 3 };
 
 /**
  * Rivers whose bounding box comes within `margin` of the polyline's bounding box, in their original order: a superset

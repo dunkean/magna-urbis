@@ -134,7 +134,7 @@ describe('generation workflow output', () => {
   });
 
   it('keeps the planned reserve of a real macro settlement before its quarters are detailed', () => {
-    const world = generate(makeOptions({ seed: 'macro-reserve', mapSize: 10000, size: 'capital', population: 41000,
+    const world = generate(makeOptions({ seed: 'macro-reserve', mapSize: 10000, size: 'city', population: 41000,
       relief: 'flat', river: 'none', settlements: 'none' }));
     expect(world.urban?.buildings).toHaveLength(0);
     expect(world.urban?.macro?.quarters.length).toBeGreaterThan(0);
@@ -165,7 +165,7 @@ describe('generation workflow output', () => {
     expect(optionsForSettlement(theme, list[0]).walls).toBe('none');
     expect(optionsForSettlement(theme, list[1]).walls).toBe('single');
     expect(optionsForSettlement(theme, list[1]).culture).toBe('barbarian');
-    expect(optionsForSettlement({ ...theme, cultureMix: { id: 'dwarven', t: 0.4, mode: 'blend' } }, list[0]).cultureMix).toBeUndefined();
+    expect(optionsForSettlement({ ...theme, cultureMix: { id: 'dwarven', t: 0.4, mode: 'sectors' } }, list[0]).cultureMix).toBeUndefined();
     const eager = generate(theme, undefined, { lazy: false });
     const lazy = generate(theme, undefined, { lazy: true });
     expect(eager.options.culture).toBe('elven');

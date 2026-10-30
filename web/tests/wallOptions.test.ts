@@ -27,11 +27,11 @@ describe('Reddit wall options', () => {
     expect([changed.wallStiffness, changed.wallTerrain, changed.wallTowerSpacing, changed.ditchWetness, changed.riverControlMode]).toEqual([0, 0.5, 90, 0, 'none']);
   });
   it('preserves numeric parameters and port/river enums in MU1 codes', async () => {
-    const layoutConfig = normalizeLayoutConfig({ wallStiffness: 0, wallTerrain: 0.5, wallTowerSpacing: 80, ditchWetness: 1, riverControlMode: 'bank-walls', portEnclosure: 'separate', plannedWall: 'follow', heightsCastle: 'force' });
+    const layoutConfig = normalizeLayoutConfig({ wallStiffness: 0, wallTerrain: 0.5, wallTowerSpacing: 80, ditchWetness: 1, riverControlMode: 'bank-walls', portEnclosure: 'separate', plannedWall: 'follow', heightsCastle: 'force', wallExtension: 'attached' });
     const q = new URLSearchParams({ urban: JSON.stringify({ layoutConfig }) }).toString();
     const saved = await decodeSituation(await encodeSituation({ v: 1, q, pins: [] }));
     const actual = normalizeLayoutConfig(JSON.parse(new URLSearchParams(saved.q).get('urban')!).layoutConfig);
-    for (const key of ['wallStiffness', 'wallTerrain', 'wallTowerSpacing', 'ditchWetness', 'riverControlMode', 'portEnclosure', 'plannedWall', 'heightsCastle'] as const) expect(actual[key]).toEqual(layoutConfig[key]);
+    for (const key of ['wallStiffness', 'wallTerrain', 'wallTowerSpacing', 'ditchWetness', 'riverControlMode', 'portEnclosure', 'plannedWall', 'heightsCastle', 'wallExtension'] as const) expect(actual[key]).toEqual(layoutConfig[key]);
   });
   it('paints river towers like curtain towers and keeps a chain distinct from earthworks', () => {
     const rect = (x: number, y: number, w: number, h: number): Shape => ({ outer: [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }], holes: [] });

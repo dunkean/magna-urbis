@@ -14,6 +14,7 @@ import {
 import './terrainControls.css';
 import { applyRuntimePath, normalizeRuntime } from './runtimeChoices';
 import { mountTerrainSketchControls, type TerrainSketchContext } from './terrainSketchControls';
+import { loadTerrainControlDefaults } from './terrainControlDefaults';
 
 export interface TerrainControlBindings {
   getSettings(): V2Settings;
@@ -26,8 +27,8 @@ export interface TerrainControls { sync(): void; dispose(): void; sketchHost: HT
   access: { get(path: string): unknown; set(path: string, value: unknown): void } }
 
 const ui = {
-  width: copy('Map width', 'Largeur de la carte'), auto: copy('Adapt size automatically', 'Adapter automatiquement la taille'),
-  extentHelp: copy('Square map. Type any size, choose a preset or keep automatic sizing.', 'Carte carrée. Saisissez une taille, choisissez un préréglage ou gardez la taille automatique.'),
+  width: copy('Map width', 'Largeur de la carte'),
+  extentHelp: copy('Square map. Set its width here; settlements are configured later.', 'Carte carrée. Fixez sa largeur ici ; les peuplements se règlent ensuite.'),
   unit: copy('Map distance unit', 'Unité de distance de la carte'),
   coasts: copy('Sea directions', 'Directions de la mer'),
   coastHelp: copy('Combine directions freely. All eight surround the map with sea.', 'Combinez les directions. Les huit entourent la carte de mer.'),
@@ -70,6 +71,7 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
   registerMessages(terrainControlMessages);
   root.classList.add('terrain-controls'); root.replaceChildren();
   const forms: ParameterForm[] = [], cleanup: (() => void)[] = [];
+  let defaultValues: Awaited<ReturnType<typeof loadTerrainControlDefaults>> | undefined, disposed = false;
   let sketchControls: ReturnType<typeof mountTerrainSketchControls> | undefined;
   const change = () => { bindings.onChange(); sync(); };
   const get = (path: string): unknown => {
@@ -80,11 +82,10 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
     if (path==='terrain.phasor.quality')return settings.terrain?.phasor?.quality??'balanced';
     if (path==='terrain.phasor.intensity')return settings.terrain?.phasor?.intensity??1;
     if (path.startsWith('terrain.')) {
-      if (path.startsWith('terrain.erosionTuning.')) return readSettingPath(settings, path);
       if (path === 'terrain.climate' && settings.terrain?.climateValues) return 'custom';
       const effective = effectiveTerrainSettings(settings, adaptedExtent(settings));
       if (path === 'terrain.climate') return effective.climateZone;
-      return readSettingPath(effective, path.slice(8));
+      return readSettingPath(effective, path.slice(8)) ?? defaultValues?.(effective)[path];
     }
     if (path === 'runtime.source') return settings.runtime?.source ?? (settings.generation === 'neural' ? 'neural-wasm' : 'procedural');
     if (path === 'runtime.compute') return settings.runtime?.compute ?? 'auto';
@@ -145,15 +146,14 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
   button(inputActions, ui.paint, () => { sketchHost.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); sketchHost.querySelector<HTMLButtonElement>('[data-id="edit"]')?.click(); }, 'terrain-paint-regions');
   const extent = document.createElement('fieldset'); extent.className = 'terrain-extent';
   const extentLegend = document.createElement('legend'); setText(extentLegend, ui.width); extent.append(extentLegend);
-  const autoLabel = document.createElement('label'); autoLabel.className = 'checkline';
-  const auto = document.createElement('input'); auto.type = 'checkbox'; auto.id = 'terrain-extent-auto'; auto.dataset.settingPath = 'extent';
-  const autoText = document.createElement('span'); setText(autoText, ui.auto); autoLabel.append(auto, autoText); extent.append(autoLabel);
   const extentRow = document.createElement('div'); extentRow.className = 'terrain-width-row';
   const width = document.createElement('input'); width.type = 'number'; width.id = 'terrain-width'; width.dataset.settingPath = 'extent'; width.setAttribute('aria-label', ui.width); width.step = '0.1';
   const unit = document.createElement('select'); unit.id = 'terrain-width-unit'; unit.setAttribute('aria-label', ui.unit);
   for (const value of ['km', 'm']) { const option = document.createElement('option'); option.value = value; option.textContent = value; option.dataset.l10nKeep = ''; unit.append(option); }
   extentRow.append(width, unit); extent.append(extentRow);
-  const extentHint = document.createElement('p'); extentHint.id = 'terrain-width-help'; extentHint.className = 'hint sr-only'; setText(extentHint, ui.extentHelp); width.setAttribute('aria-describedby', extentHint.id); extent.append(extentHint);
+  const widthSlider = document.createElement('input'); widthSlider.type = 'range'; widthSlider.id = 'terrain-width-slider'; widthSlider.className = 'parameter-slider';
+  widthSlider.dataset.sliderPath = 'extent'; widthSlider.setAttribute('aria-label', ui.width); extent.append(widthSlider);
+  const extentHint = document.createElement('p'); extentHint.id = 'terrain-width-help'; extentHint.className = 'hint'; setText(extentHint, ui.extentHelp); width.setAttribute('aria-describedby', extentHint.id); extent.append(extentHint);
   const presetRow = document.createElement('div'); presetRow.className = 'terrain-presets';
   for (const metres of [2400, 10000, 40000, 100000]) { const preset = button(presetRow, `${metres / 1000} km`, () => { bindings.getSettings().extent = metres; change(); }); preset.dataset.extent = String(metres); preset.dataset.l10nKeep = ''; }
   extent.append(presetRow); quick.append(extent);
@@ -167,10 +167,11 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
     if (!width.value.trim() || !Number.isFinite(metres) || metres < min || metres > max) { width.setAttribute('aria-invalid', 'true'); return; }
     width.removeAttribute('aria-invalid'); bindings.getSettings().extent = metres; change();
   };
-  const onAuto = () => { bindings.getSettings().extent = auto.checked ? 'auto' : adaptedExtent(bindings.getSettings()); change(); };
   const onUnit = () => { width.value = String(adaptedExtent(bindings.getSettings()) / (unit.value === 'km' ? 1000 : 1)); sync(); };
-  width.addEventListener('input', onWidth); auto.addEventListener('change', onAuto); unit.addEventListener('change', onUnit);
-  cleanup.push(() => width.removeEventListener('input', onWidth), () => auto.removeEventListener('change', onAuto), () => unit.removeEventListener('change', onUnit));
+  const onWidthSlide = () => { bindings.getSettings().extent = Number(widthSlider.value); width.value = String(Number(widthSlider.value) / (unit.value === 'km' ? 1000 : 1)); change(); };
+  width.addEventListener('input', onWidth); unit.addEventListener('change', onUnit);
+  widthSlider.addEventListener('input', onWidthSlide);
+  cleanup.push(() => width.removeEventListener('input', onWidth), () => unit.removeEventListener('change', onUnit), () => widthSlider.removeEventListener('input', onWidthSlide));
   const coasts = document.createElement('fieldset'); coasts.className = 'terrain-coasts';
   const coastLegend = document.createElement('legend'); setText(coastLegend, ui.coasts); coasts.append(coastLegend);
   const compass = document.createElement('div'); compass.className = 'terrain-coast-compass'; compass.setAttribute('role', 'group'); compass.setAttribute('aria-label', ui.coasts);
@@ -244,12 +245,16 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
   function sync(): void {
     for (const mounted of forms) mounted.sync();
     sketchControls?.sync();
-    const settings = bindings.getSettings(), metres = adaptedExtent(settings), factor = unit.value === 'km' ? 1000 : 1;
-    auto.checked = settings.extent === 'auto';
+    const settings = bindings.getSettings();
+    // Historical recipes may still recommend an extent. Freeze it when opened in the editor.
+    if (settings.extent === 'auto') settings.extent = adaptedExtent(settings);
+    const metres = adaptedExtent(settings), factor = unit.value === 'km' ? 1000 : 1;
     const isClassicEngine = settings.runtime?.backend === 'typescript', min = isClassicEngine ? 600 : TERRAIN_EXTENT_MIN, max = isClassicEngine ? 40000 : TERRAIN_EXTENT_MAX;
     width.min = String(min / factor); width.max = String(max / factor); width.step = unit.value === 'km' ? '.1' : '100';
+    widthSlider.min = String(min); widthSlider.max = String(max); widthSlider.step = '100'; widthSlider.disabled = bindings.disabled?.() ?? false;
+    if (document.activeElement !== widthSlider) widthSlider.value = String(metres);
     if (document.activeElement !== width) width.value = String(metres / factor);
-    width.disabled = auto.disabled = unit.disabled = bindings.disabled?.() ?? false;
+    width.disabled = unit.disabled = bindings.disabled?.() ?? false;
     if (metres < min || metres > max) width.setAttribute('aria-invalid', 'true'); else width.removeAttribute('aria-invalid');
     for (const preset of Array.from(presetRow.querySelectorAll<HTMLButtonElement>('button'))) preset.disabled = Number(preset.dataset.extent) > max || (bindings.disabled?.() ?? false);
     for (const [direction, coast] of compassButtons) { const mask = Number(get('terrain.coastMask')); coast.setAttribute('aria-pressed', String(direction === 'all' ? mask === 255 : !!(mask & 1 << coastDirections.indexOf(direction as typeof coastDirections[number])))); coast.disabled = bindings.disabled?.() ?? false; }
@@ -297,8 +302,10 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
     scale.closest<HTMLElement>('[data-field-path]')!.hidden = isNeural || importedSurface || isClassic;
     root.querySelector<HTMLElement>('[data-field-path="terrain.islandMode"]')!.hidden = importedSurface || isClassic;
     root.querySelector<HTMLElement>('[data-field-path="terrain.climate"]')!.hidden = isClassic;
+    root.querySelector<HTMLElement>('[data-field-path="options.biome"]')!.hidden = !isClassic && settings.options.biome !== 'underdark' && settings.options.biome !== 'underdark-caverns';
     for (const option of Array.from(reliefSelect.options)) option.disabled = isNeural && !['flat', 'hills', 'valley', 'mountains', 'mixed', 'plateau', 'high-mountains'].includes(option.value) || compact && !['flat','hills','valley','canyon','mountains','mixed','high-mountains'].includes(option.value);
   }
+  void loadTerrainControlDefaults().then(reader => { if (disposed) return; defaultValues = reader; sync(); root.dispatchEvent(new Event('terrain-defaults-ready')); }).catch(error => { console.error('Terrain control defaults unavailable', error); });
   sync();
-  return { sync, sketchHost, access: { get, set }, dispose: () => { cleanup.forEach(fn => fn()); forms.forEach(form => form.dispose()); sketchControls?.dispose(); root.replaceChildren(); } };
+  return { sync, sketchHost, access: { get, set }, dispose: () => { disposed = true; cleanup.forEach(fn => fn()); forms.forEach(form => form.dispose()); sketchControls?.dispose(); root.replaceChildren(); } };
 }

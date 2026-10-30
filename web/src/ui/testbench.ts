@@ -104,7 +104,7 @@ function cultureMenus(): void {
 let nativeResult: WorkshopResult | undefined;
 let inheritedWater: { geometry: string; material: RetainedWaterMaterial } | undefined;
 const nativeControls = document.createElement('fieldset'); nativeControls.hidden = true;
-nativeControls.innerHTML = '<legend>Plan urbain · Rust</legend><label>Population <input id="urbanPopulation" type="number" min="1" max="5000000" step="1" title="Population de planification appliquée avec les quartiers"></label><label>Génération <select data-native="composition"><option value="settlement">Agglomération complète</option><option value="district">Secteur isolé</option></select></label><label>Enceinte <select data-native="fortification"><option value="culture">Selon la culture</option><option value="none">Sans enceinte</option><option value="wall">Muraille</option><option value="palisade">Palissade</option></select></label><button data-remove-enclosure type="button">Retirer l’enceinte</button><label><input data-native="autoQuarterZones" type="checkbox">Progression des quartiers</label><label><input data-native="autoParcelZones" type="checkbox">Parcelles selon leur quartier</label><label>Pente maximale des rues <input data-native="maxStreetGrade" type="number" min="0.01" max="1" step="0.01"></label><label>Pente des ruelles <input data-native="maxLaneGrade" type="number" min="0.01" max="1" step="0.01"></label><label><input data-native="allowStairs" type="checkbox">Escaliers piétons</label><label>Pente des escaliers <input data-native="maxStairGrade" type="number" min="0.01" max="1" step="0.01"></label><small>0,12 = 12 %. La progression utilise les zones du plan ; décochez-la pour appliquer la zone sélectionnée partout.</small>';
+nativeControls.innerHTML = '<legend>Plan urbain · Rust</legend><label>Population <input id="urbanPopulation" type="number" min="1" max="5000000" step="1" title="Population de planification appliquée avec les quartiers"></label><label>Génération <select data-native="scope"><option value="settlement">Agglomération complète</option><option value="district">Secteur isolé</option></select></label><label>Enceinte <select data-native="fortification"><option value="culture">Selon la culture</option><option value="none">Sans enceinte</option><option value="wall">Muraille</option><option value="palisade">Palissade</option></select></label><button data-remove-enclosure type="button">Retirer l’enceinte</button><label><input data-native="autoQuarterZones" type="checkbox">Progression des quartiers</label><label><input data-native="autoParcelZones" type="checkbox">Parcelles selon leur quartier</label><label>Pente maximale des rues <input data-native="maxStreetGrade" type="number" min="0.01" max="1" step="0.01"></label><label>Pente des ruelles <input data-native="maxLaneGrade" type="number" min="0.01" max="1" step="0.01"></label><label><input data-native="allowStairs" type="checkbox">Escaliers piétons</label><label>Pente des escaliers <input data-native="maxStairGrade" type="number" min="0.01" max="1" step="0.01"></label><small>0,12 = 12 %. La progression utilise les zones du plan ; décochez-la pour appliquer la zone sélectionnée partout.</small>';
 nativeControls.style.cssText = 'margin:8px 12px;gap:12px;flex-direction:row;flex-wrap:wrap;align-items:center';
 document.querySelector('header')!.after(nativeControls);
 nativeControls.addEventListener('change', changed);
@@ -128,7 +128,7 @@ function cityFootprint(config: LayoutConfig): LayoutConfig['footprint'] {
 // Population is a primary city control. The remaining native options stay in
 // the existing collapsible context panel.
 const populationLabel = input('urbanPopulation').closest('label')!;
-const compositionControl = nativeControls.querySelector<HTMLSelectElement>('[data-native="composition"]')!;
+const compositionControl = nativeControls.querySelector<HTMLSelectElement>('[data-native="scope"]')!;
 const compositionLabel = compositionControl.closest('label')!;
 document.querySelector('.workshop-primary-controls')?.prepend(populationLabel, compositionLabel);
 input('urbanPopulation').addEventListener('change', () => { if (input('urbanPopulation').checkValidity()) compositionControl.value = 'settlement'; changed(); });
@@ -284,7 +284,7 @@ function restoreControls(): void {
   settlementStyleControls.element.hidden = !rustMode;
   const engineBadge = document.querySelector('.workshop-engine'); if (engineBadge) engineBadge.textContent = rustMode ? (hosted ? window.parent.magnaExecutionRuntime ?? executionRuntime : executionRuntime).profile === 'local' ? 'RUST · LOCAL' : 'RUST · WASM' : 'TYPESCRIPT';
   input('urbanPopulation').value = String(normalizeWorkshopContext(state.urban ?? { source: 'fixture' }).population);
-  const native = { composition: normalizeWorkshopContext(state.urban ?? { source: 'fixture' }).layoutConfig!.composition, fortification: 'culture', maxStreetGrade: 0.12, maxLaneGrade: 0.18, maxStairGrade: 0.65, allowStairs: true, ...state.urban?.layoutConfig,
+  const native = { scope: normalizeWorkshopContext(state.urban ?? { source: 'fixture' }).layoutConfig!.scope, fortification: 'culture', maxStreetGrade: 0.12, maxLaneGrade: 0.18, maxStairGrade: 0.65, allowStairs: true, ...state.urban?.layoutConfig,
     ...settlementDraft?.layoutConfig,
     autoQuarterZones: (settlementDraft?.layoutConfig ?? state.urban?.layoutConfig)?.zone === 'auto', autoParcelZones: (settlementDraft?.parcelConfig ?? state.urban?.parcelConfig)?.zone === 'auto' };
   for (const control of Array.from(document.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-native]'))) {
@@ -652,7 +652,7 @@ async function generate(action: 'layout' | 'parcels' | 'houses' | 'replay' | 'ra
     settlementDraft = undefined;
     synchronizedDraft = undefined;
     rustMode = true; inheritedWater = undefined;
-    state = { ...state, options: structuredClone(reference.options), plotOptions: structuredClone(reference.options), houseOptions: structuredClone(reference.options), settings: structuredClone(reference.options), layoutSeed: reference.quarterSeed, plotSeed: reference.parcelSeed, houseSeed: reference.buildingSeed, stage: 2, pins: [], selectedParcel: undefined, selectedParcelId: undefined, urban: { source: 'fixture', population: reference.population, layoutConfig: { ...normalizeLayoutConfig(undefined), composition: reference.composition ?? 'district', programme: reference.programme }, parcelConfig: normalizeParcelConfig(undefined) }, buildingSettings: { seed: reference.buildingSeed, visible: true, appearance: { style: 'cartographic', diagnostic: 'none' }, generated: true }, urbanView: 'buildings' };
+    state = { ...state, options: structuredClone(reference.options), plotOptions: structuredClone(reference.options), houseOptions: structuredClone(reference.options), settings: structuredClone(reference.options), layoutSeed: reference.quarterSeed, plotSeed: reference.parcelSeed, houseSeed: reference.buildingSeed, stage: 2, pins: [], selectedParcel: undefined, selectedParcelId: undefined, urban: { source: 'fixture', population: reference.population, layoutConfig: { ...normalizeLayoutConfig(undefined), scope: reference.scope ?? 'district', programme: reference.programme }, parcelConfig: normalizeParcelConfig(undefined) }, buildingSettings: { seed: reference.buildingSeed, visible: true, appearance: { style: 'cartographic', diagnostic: 'none' }, generated: true }, urbanView: 'buildings' };
     restoreControls();
   }
   const programmeCandidate = pendingProgramme; pendingProgramme = undefined;
@@ -707,7 +707,7 @@ async function generate(action: 'layout' | 'parcels' | 'houses' | 'replay' | 'ra
         if (['layout', 'replay', 'random'].includes(action)) {
           if (!input('urbanPopulation').reportValidity()) throw new Error('Corrigez la population.');
           const population = Math.round(Number(input('urbanPopulation').value));
-          if (population !== state.urban.population && native.composition === 'settlement') {
+          if (population !== state.urban.population && native.scope === 'settlement') {
             const config = state.urban.layoutConfig!;
             state.urban.layoutConfig = { ...config, footprint: { ...config.footprint, budget: 'population', mechanism: config.footprint.mechanism === 'legacy' ? 'auto' : config.footprint.mechanism } };
           }

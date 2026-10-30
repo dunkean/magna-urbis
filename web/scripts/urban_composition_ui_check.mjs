@@ -66,9 +66,9 @@ try {
   url.searchParams.set('landuse', JSON.stringify({ enabled: false }));
   // This suite exercises the original core/faubourg composer; refactor controls
   // are verified separately by urban_refactor_ui_check.mjs.
-  url.searchParams.set('urban', JSON.stringify({ layoutConfig: { composition: 'settlement', footprint: { mechanism: 'legacy', budget: 'radius' }, accessMode: 'cultural' } }));
+  url.searchParams.set('urban', JSON.stringify({ layoutConfig: { scope: 'settlement', footprint: { mechanism: 'legacy', budget: 'radius' }, accessMode: 'cultural' } }));
   await page.goto(url.href); await ready();
-  assert.equal(await config('composition').inputValue(), 'settlement');
+  assert.equal(await config('scope').inputValue(), 'settlement');
   await config('settlementForm').selectOption('nucleated'); await config('suburbs').selectOption('few'); await apply();
   const village = await page.evaluate(() => window.urbanLayouts[0]);
   assert.equal(village.archetype, 'nucleated-village');
@@ -114,15 +114,15 @@ try {
   await page.goto(page.url()); await ready();
   assert.ok(await geometry() === openSnapshot, 'Open town must replay exactly');
   // The isolated scene still has its own controls and no settlement phases.
-  await config('composition').selectOption('district');
+  await config('scope').selectOption('district');
   assert.equal(await config('placement').isVisible(), true);
   await config('placement').selectOption('rectangle'); await apply();
   assert.equal(await page.evaluate(() => window.urbanLayouts[0].phases.length), 0);
   // Older links keep the original single-envelope bench.
   const old = new URL(page.url()), saved = JSON.parse(old.searchParams.get('urban'));
-  delete saved.layoutConfig.composition; old.searchParams.set('urban', JSON.stringify(saved));
+  delete saved.layoutConfig.scope; old.searchParams.set('urban', JSON.stringify(saved));
   await page.goto(old.href); await ready();
-  assert.equal(await config('composition').inputValue(), 'district');
+  assert.equal(await config('scope').inputValue(), 'district');
   results.push({ village: village.phases.map(p => ({ kind: p.kind, population: p.population, shapes: p.shapes.length })),
     town: town.phases.map(p => ({ kind: p.kind, recipe: p.recipe, shapes: p.shapes.length })), checked: ['complete default', 'village core and faubourgs', 'none/few/many', 'three town phases', 'wall', 'wall removal and open shape', 'removal preserves seed and drafts', 'exact replay', 'unapplied drafts', 'isolated scene', 'old link'] });
   assert.deepEqual(errors, []);

@@ -1,7 +1,8 @@
 export interface ProgrammeContext {
-  role: 'auto' | ProgrammeIsolatedRole | 'agricultural' | 'crossroads' | 'artisan' | 'riverine' | 'port' | 'capital';
-  /** Missing/null retains the exact legacy role behaviour. An explicit empty
-   * object means no specialization; non-isolated legacy role is then ignored. */
+  /** Intent axis (settlementAxes.ts): a settlement, or one isolated establishment. Never a specialisation. */
+  intent: ProgrammeIntent;
+  /** Specialisation axis. Missing/null: automatic (population, cultural profile, declared port siting).
+   * An explicit empty object means no specialisation. */
   functions?: ProgrammeFunctionWeights | null;
   resources: string[]; period: string; mode: 'strict' | 'inspired' | 'fantasy';
   /** Explicit navigable access, never derived from visible water. */
@@ -12,7 +13,8 @@ export interface ProgrammeContext {
   decay?: number | null;
 }
 /** A single structure without a town: one intent on one unsubdivided domain. */
-export type ProgrammeIsolatedRole = 'isolated-farm' | 'roadside-temple' | 'isolated-shrine' | 'isolated-mill' | 'isolated-inn' | 'isolated-tower';
+export type ProgrammeIsolatedIntent = 'isolated-farm' | 'roadside-temple' | 'isolated-shrine' | 'isolated-mill' | 'isolated-inn' | 'isolated-tower';
+export type ProgrammeIntent = 'settlement' | ProgrammeIsolatedIntent;
 export type ProgrammeState = 'thriving' | 'declining' | 'abandoned' | 'ruined';
 export const PROGRAMME_FUNCTIONS = ['agricultural', 'commerce', 'artisan', 'riverine', 'port', 'capital'] as const;
 export type ProgrammeFunction = typeof PROGRAMME_FUNCTIONS[number];
@@ -29,11 +31,17 @@ export function normalizeProgrammeFunctions(value: unknown): ProgrammeFunctionWe
   }
   return result;
 }
-export const defaultProgrammeContext = (): ProgrammeContext => ({ role: 'auto', resources: [], period: '', mode: 'inspired', navigableAccess: false, lore: [] });
+export const defaultProgrammeContext = (): ProgrammeContext => ({ intent: 'settlement', resources: [], period: '', mode: 'inspired', navigableAccess: false, lore: [] });
 /** Pure configuration boundary; the legacy web editor must not load Rust/WASM. */
 export interface ParcelConfig { preset: string; culture?: string; recipe: string; zone: string; density: number; params: Record<string, unknown>; operator: 'culture' | 'strips' | 'oriented' | 'compact' | 'inherited' | 'courtyard' | 'frontage' | 'compound' | 'wholeBlock' | 'garden';
   streetAlignedHomes?: boolean;
   denserSmallholdings?: boolean;
+  /** Town lot enclosure 0..1 (absent = culture default, see urban/enclosures.json). */
+  plotEnclosure?: number;
+  /** Countryside field enclosure 0..1, openfield to bocage (absent = culture default). */
+  fieldEnclosure?: number;
+  /** '' or 'auto' = culture default. */
+  enclosureMaterial?: '' | 'auto' | 'wall' | 'hedge' | 'fence';
   /** User edits; the layout stage reads `quarters`, the parcel stage `parcels`. */
   overrides?: UrbanEdits;
   /** Parcel operator per growth zone (`core`, `middle`, `edge`, `faubourg`, `village`); absent = `operator`. */
@@ -77,15 +85,15 @@ export interface FootprintConfig {
  * retains the cultural style when an explicit style does not fit the kind. */
 export const FORTIFICATION_STYLES = ['auto', 'palisade', 'gord', 'hedge', 'curtain', 'flanked', 'concentric', 'rammed-earth', 'wengcheng', 'bastioned'] as const;
 export type FortificationStyle = typeof FORTIFICATION_STYLES[number];
-export interface LayoutConfig extends Omit<ParcelConfig, 'operator' | 'zoneOperators' | 'streetAlignedHomes' | 'denserSmallholdings'> {
+export interface LayoutConfig extends Omit<ParcelConfig, 'operator' | 'zoneOperators' | 'streetAlignedHomes' | 'denserSmallholdings' | 'plotEnclosure' | 'fieldEnclosure' | 'enclosureMaterial'> {
   phaseOverrides?: Record<string, PhaseOverride>;
   programme: ProgrammeContext;
   axisAlignment: 'regional' | 'culture'; mixCulture: string; mixMode: 'phases' | 'sectors'; mixShare: number; mixAngle: number; exitTreatment: 'legacy' | 'adaptive' | 'closed'; peripheralRoad: 'auto' | 'none' | 'partial' | 'full'; siteAdaptation: number;
-  composition: 'settlement' | 'district'; settlementForm: 'auto' | 'nucleated' | 'ribbon' | SettlementKind; suburbs: 'auto' | 'none' | 'few' | 'many'; phases: number;
+  scope: 'settlement' | 'district'; settlementForm: 'auto' | 'nucleated' | 'ribbon' | SettlementKind; suburbs: 'auto' | 'none' | 'few' | 'many'; phases: number;
   count: number; rings: number; radius: number; radiusScale: number; placement: 'center' | 'rectangle' | 'skew' | 'notched'; monument: string;
   fortification: 'culture' | 'none' | 'wall' | 'palisade'; fortificationStyle: FortificationStyle;
   wallStiffness: number | null; wallTerrain: number | null; wallRelief: number | null; wallTowerSpacing: number | null; ditchWetness: number | null;
-  riverControlMode: '' | 'none' | 'bank-walls' | 'bank-walls-chain'; portEnclosure: '' | 'auto' | 'inside' | 'separate' | 'outside'; plannedWall: '' | 'rect' | 'follow'; heightsCastle: '' | 'none' | 'force';
+  riverControlMode: '' | 'none' | 'bank-walls' | 'bank-walls-chain'; portEnclosure: '' | 'auto' | 'inside' | 'separate' | 'outside'; plannedWall: '' | 'rect' | 'follow'; heightsCastle: '' | 'none' | 'force'; wallExtension: '' | 'auto' | 'concentric' | 'attached';
   oldEnclosureCitadel: boolean; medievalWalls: boolean; riverControl: boolean; dryDitches: boolean; gateVillages: boolean;
   /** 0: inherited ribbons; 1: organic gate markets and branching lanes. */
   gateVillage: number;
@@ -102,7 +110,7 @@ export interface LayoutConfig extends Omit<ParcelConfig, 'operator' | 'zoneOpera
 /** Native plan grammars (Rust `urban::kinds::Kind`), distinct from demographic classes. */
 export type SettlementKind = 'single' | 'ruin' | 'farmstead' | 'camp' | 'hamlet' | 'street-village' | 'nucleated-village' | 'market-town' | 'walled-town' | 'city' | 'metropolis';
 export const defaultFootprintConfig = (): FootprintConfig => ({ mechanism: 'auto', family: 'auto', budget: 'population', grossDensity: 0, aspect: 1.4, orientation: 0, nuclei: 3, irregularity: 0.2, anisotropy: 0.65, separation: 1.3, epochs: 3, cohesion: 0.85, satellites: 0.15, branchDepth: 0.2, gapSize: 60 });
-export const defaultLayoutConfig = (): LayoutConfig => ({ programme: defaultProgrammeContext(), axisAlignment: 'regional', mixCulture: '', mixMode: 'phases', mixShare: 0.5, mixAngle: 0, exitTreatment: 'adaptive', peripheralRoad: 'auto', siteAdaptation: 1, composition: 'settlement', settlementForm: 'auto', suburbs: 'auto', phases: 0, preset: 'culture', culture: 'site', recipe: 'auto', zone: 'auto', density: 1, count: 4, rings: 1, radius: 0, radiusScale: 1, placement: 'center', params: {}, monument: 'none', fortification: 'culture', fortificationStyle: 'auto', wallStiffness: null, wallTerrain: null, wallRelief: null, wallTowerSpacing: null, ditchWetness: null, riverControlMode: '', portEnclosure: '', plannedWall: '', heightsCastle: '', oldEnclosureCitadel: false, medievalWalls: false, riverControl: false, dryDitches: false, gateVillages: false, gateVillage: 0, maxStreetGrade: 0.12, maxLaneGrade: 0.18, maxStairGrade: 0.65, allowStairs: true, shelteredHarbour: false, portDetachment: 1, portShelter: 0, powerHighGround: false, mergeParallelStreets: false, regularGridOutline: false, footprint: defaultFootprintConfig(), tissue: 'culture', accessMode: 'adaptive', accessDepth: 0, accessBudget: 4 });
+export const defaultLayoutConfig = (): LayoutConfig => ({ programme: defaultProgrammeContext(), axisAlignment: 'regional', mixCulture: '', mixMode: 'phases', mixShare: 0.5, mixAngle: 0, exitTreatment: 'adaptive', peripheralRoad: 'auto', siteAdaptation: 1, scope: 'settlement', settlementForm: 'auto', suburbs: 'auto', phases: 0, preset: 'culture', culture: 'site', recipe: 'auto', zone: 'auto', density: 1, count: 4, rings: 1, radius: 0, radiusScale: 1, placement: 'center', params: {}, monument: 'none', fortification: 'culture', fortificationStyle: 'auto', wallStiffness: null, wallTerrain: null, wallRelief: null, wallTowerSpacing: null, ditchWetness: null, riverControlMode: '', portEnclosure: '', plannedWall: '', heightsCastle: '', wallExtension: '', oldEnclosureCitadel: false, medievalWalls: false, riverControl: false, dryDitches: false, gateVillages: false, gateVillage: 0, maxStreetGrade: 0.12, maxLaneGrade: 0.18, maxStairGrade: 0.65, allowStairs: true, shelteredHarbour: false, portDetachment: 1, portShelter: 0, powerHighGround: false, mergeParallelStreets: false, regularGridOutline: false, footprint: defaultFootprintConfig(), tissue: 'culture', accessMode: 'adaptive', accessDepth: 0, accessBudget: 4 });
 export const defaultParcelConfig = (): ParcelConfig => ({ preset: 'culture', culture: 'site', recipe: 'auto', zone: 'auto', density: 1, params: {}, operator: 'culture' });
 
 /** Keep the Rust contract strict while discarding fields leaked by older UI versions. */
@@ -150,7 +158,7 @@ export function normalizeLayoutConfig(saved?: Partial<Omit<LayoutConfig, 'footpr
   if (legacy && saved && config.footprint.mechanism === 'legacy' && saved.axisAlignment === undefined) config.axisAlignment = 'culture';
   if (legacy && saved && config.footprint.mechanism === 'legacy' && saved.exitTreatment === undefined) config.exitTreatment = 'legacy';
   if (legacy && saved && config.footprint.mechanism === 'legacy' && saved.siteAdaptation === undefined) config.siteAdaptation = 0;
-  if (legacy && saved && !saved.composition) config.composition = 'district';
+  if (legacy && saved && !saved.scope) config.scope = 'district';
   // Edits are not part of the defaults: carried through only when present.
   if (saved?.overrides) config.overrides = saved.overrides;
   if (saved?.phaseOverrides && Object.keys(saved.phaseOverrides).length) config.phaseOverrides = saved.phaseOverrides;
@@ -161,6 +169,8 @@ export function normalizeParcelConfig(saved?: Partial<ParcelConfig>): ParcelConf
   const config: ParcelConfig = { ...contractFields(defaultParcelConfig(), saved), params: { ...saved?.params } };
   if (saved?.streetAlignedHomes === true) config.streetAlignedHomes = true;
   if (saved?.denserSmallholdings === true) config.denserSmallholdings = true;
+  for (const key of ['plotEnclosure', 'fieldEnclosure'] as const) if (typeof saved?.[key] === 'number' && Number.isFinite(saved[key])) config[key] = Math.max(0, Math.min(1, saved[key]!));
+  if (saved?.enclosureMaterial && saved.enclosureMaterial !== 'auto') config.enclosureMaterial = saved.enclosureMaterial;
   if (saved?.overrides) config.overrides = saved.overrides;
   if (saved?.zoneOperators && Object.keys(saved.zoneOperators).length) config.zoneOperators = saved.zoneOperators;
   return config;

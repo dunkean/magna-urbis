@@ -1,12 +1,12 @@
 /** Programme intent and composable functional specialization. These controls
  * edit the real ProgrammeContext consumed by native demand/allocation. */
 import { PROGRAMME_FUNCTIONS, normalizeProgrammeFunctions, type ProgrammeContext, type ProgrammeFunctionWeights,
-  type ProgrammeFunction, type ProgrammeIsolatedRole } from '../../../rust/bridge/urbanConfig';
+  type ProgrammeFunction, type ProgrammeIntent } from '../../../rust/bridge/urbanConfig';
 import { urbanText } from './urbanPanelLocale';
 import { urbanProgrammeLabel } from './urbanBuildingLocale';
 import { LOCALE_KEY, savedLocale } from './shellLocale';
 
-export const PROGRAMME_INTENTS: Readonly<Record<'settlement' | ProgrammeIsolatedRole, string>> = {
+export const PROGRAMME_INTENTS: Readonly<Record<ProgrammeIntent, string>> = {
   settlement: 'Agglomération · selon population et culture',
   'isolated-farm': 'Ferme isolée', 'roadside-temple': 'Temple de bord de route',
   'isolated-shrine': 'Sanctuaire isolé', 'isolated-mill': 'Moulin isolé', 'isolated-inn': 'Auberge isolée', 'isolated-tower': 'Tour isolée',
@@ -15,29 +15,20 @@ export const PROGRAMME_FUNCTION_LABELS: Readonly<Record<ProgrammeFunction, strin
   agricultural: 'Espaces communs et stockage rural', commerce: 'Commerce et marchés', artisan: 'Artisanat',
   riverine: 'Moulins hydrauliques', port: 'Activité portuaire', capital: 'Capitale · équipements institutionnels',
 };
-const LEGACY_FUNCTION: Readonly<Partial<Record<ProgrammeContext['role'], ProgrammeFunction>>> = {
-  agricultural: 'agricultural', crossroads: 'commerce', artisan: 'artisan', riverine: 'riverine', port: 'port', capital: 'capital',
-};
-export type ProgrammeIntent = keyof typeof PROGRAMME_INTENTS;
+export type { ProgrammeIntent };
 export interface ProgrammeAxesDraft { intent: ProgrammeIntent; custom: boolean; weights: ProgrammeFunctionWeights; resetAutomatic?: boolean }
-const isolated = (role: string): role is ProgrammeIsolatedRole => role !== 'settlement' && role !== 'auto' && Object.hasOwn(PROGRAMME_INTENTS, role);
 const xml = (s: string) => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 
 export function programmeAxesDraft(context: ProgrammeContext): ProgrammeAxesDraft {
-  const weights = context.functions == null ? LEGACY_FUNCTION[context.role] ? { [LEGACY_FUNCTION[context.role]!]: 1 } : {} : normalizeProgrammeFunctions(context.functions);
-  return { intent: isolated(context.role) ? context.role : 'settlement', custom: context.functions != null, weights };
+  const weights = context.functions == null ? {} : normalizeProgrammeFunctions(context.functions);
+  return { intent: context.intent, custom: context.functions != null, weights };
 }
 export function applyProgrammeAxesDraft(previous: ProgrammeContext, draft: ProgrammeAxesDraft): ProgrammeContext {
   if (!Object.hasOwn(PROGRAMME_INTENTS, draft.intent)) throw new Error('Intention d’implantation inconnue.');
   const next: ProgrammeContext = { ...previous };
-  next.role = draft.intent === 'settlement' ? isolated(previous.role) ? 'auto' : previous.role : draft.intent;
-  if (draft.custom) {
-    next.functions = normalizeProgrammeFunctions(draft.weights);
-    if (draft.intent === 'settlement') next.role = 'auto';
-  } else if (previous.functions != null || draft.resetAutomatic) {
-    delete next.functions;
-    if (draft.intent === 'settlement') next.role = 'auto';
-  }
+  next.intent = draft.intent;
+  if (draft.custom) next.functions = normalizeProgrammeFunctions(draft.weights);
+  else if (previous.functions != null || draft.resetAutomatic) delete next.functions;
   return next;
 }
 
@@ -53,21 +44,23 @@ export function programmeFunctionEffects(value: ProgrammeFunctionWeights): strin
   if (get('commerce') > 0) { const services=amount(1+get('commerce')), markets=amount(1+2*get('commerce')); rows.push(urbanText([`Services commerciaux ×${services} ; coefficient des marchés ×${markets}.`,`Commercial services ×${services}; market coefficient ×${markets}.`,`商业服务 ×${services}；市场系数 ×${markets}。`,`Servicios comerciales ×${services}; coeficiente de mercados ×${markets}.`,`Serviços comerciais ×${services}; coeficiente de mercados ×${markets}.`])); }
   if (get('artisan') > 0) { const area=amount(3.5*get('artisan')), multiplier=amount(1+get('artisan')); rows.push(urbanText([`Ateliers : ${area} m²/hab., minimum 80 m² ; services d’artisanat ×${multiplier}.`,`Workshops: ${area} m²/person, minimum 80 m²; craft services ×${multiplier}.`,`作坊：${area} 平方米/人，至少 80 平方米；手工业服务 ×${multiplier}。`,`Talleres: ${area} m²/hab., mínimo 80 m²; servicios artesanales ×${multiplier}.`,`Oficinas: ${area} m²/hab., mínimo 80 m²; serviços artesanais ×${multiplier}.`])); }
   if (get('riverine') > 0) { const n=amount(1+get('riverine')); rows.push(urbanText([`Moulins ×${n}, sans créer de rivière. Les mêmes moulins ne sont pas multipliés une seconde fois par l’artisanat.`,`Mills ×${n}, without creating a river. Craft does not multiply the same mills a second time.`,`磨坊 ×${n}，不会创建河流。手工业不会再次增加同一批磨坊。`,`Molinos ×${n}, sin crear un río. La artesanía no multiplica los mismos molinos una segunda vez.`,`Moinhos ×${n}, sem criar um rio. O artesanato não multiplica os mesmos moinhos uma segunda vez.`])); }
-  if (get('port') > 0) { const area=amount(2*get('port')); rows.push(urbanText([`Stockage portuaire : ${area} m²/hab., minimum 180 m² ; accès navigable déclaré et rive réelle nécessaires à l’allocation.`,`Port storage: ${area} m²/person, minimum 180 m²; allocation requires declared navigable access and an actual shore.`,`港口储存：${area} 平方米/人，至少 180 平方米；分配需要已声明的通航入口和真实岸线。`,`Almacenamiento portuario: ${area} m²/hab., mínimo 180 m²; la asignación requiere acceso navegable declarado y una orilla real.`,`Armazenamento portuário: ${area} m²/hab., mínimo 180 m²; a alocação exige acesso navegável declarado e margem real.`])); }
+  if (get('port') > 0) { const area=amount(2*get('port')); rows.push(urbanText([`Stockage portuaire : ${area} m²/hab., minimum 180 m² ; alloué seulement sur un quai mesuré au bord d’un chenal navigable.`,`Port storage: ${area} m²/person, minimum 180 m²; allocated only on a measured quay beside a navigable channel.`,`港口储存：${area} 平方米/人，至少 180 平方米；仅分配在可通航水道旁实测的码头上。`,`Almacenamiento portuario: ${area} m²/hab., mínimo 180 m²; solo se asigna en un muelle medido junto a un canal navegable.`,`Armazenamento portuário: ${area} m²/hab., mínimo 180 m²; só é alocado num cais medido junto a um canal navegável.`])); }
   if (get('capital') > 0) { const n=amount(1-.75*get('capital')); rows.push(urbanText([`Seuils de population des équipements politiques, d’élite et défensifs ×${n}.`,`Population thresholds for political, elite and defensive facilities ×${n}.`,`政治、精英和防御设施的人口门槛 ×${n}。`,`Umbrales de población de equipamientos políticos, de élite y defensivos ×${n}.`,`Limiares populacionais de instalações políticas, de elite e defensivas ×${n}.`])); }
   rows.push(urbanText(['Les nombres de services sont entiers, arrondis vers le bas après pondération : ×1,5 peut conserver un seul service. Les limites du catalogue restent appliquées.','Service counts are integers rounded down after weighting: ×1.5 can retain a single service. Catalogue limits still apply.','服务数量为整数，加权后向下取整：×1.5 可能仍只有一个服务。目录限制仍然适用。','Los servicios son enteros redondeados hacia abajo tras la ponderación: ×1,5 puede conservar un solo servicio. Se mantienen los límites del catálogo.','Os serviços são inteiros arredondados para baixo após a ponderação: ×1,5 pode manter um único serviço. Os limites do catálogo continuam aplicáveis.']));
   return rows;
 }
 export function programmeFunctionsSummary(context?: ProgrammeContext): string {
   if (!context) return urbanText(['Spécialisation fonctionnelle inconnue : contexte absent de cette scène.','Functional specialization unknown: context missing from this scene.','功能专业化未知：此场景缺少上下文。','Especialización funcional desconocida: falta el contexto de esta escena.','Especialização funcional desconhecida: contexto ausente desta cena.']);
-  const draft = programmeAxesDraft(context), intent = urbanProgrammeLabel('intent', draft.intent, PROGRAMME_INTENTS[draft.intent]);
-  if (draft.intent !== 'settlement') return `${intent} ; ${urbanText(['fonctions urbaines non applicables','urban functions not applicable','城市功能不适用','funciones urbanas no aplicables','funções urbanas não aplicáveis'])}.`;
-  if (!draft.custom) {
-    const key = LEGACY_FUNCTION[context.role];
-    return context.role === 'auto' ? `${intent} ; ${urbanText(['fonctions selon le lieu et le profil culturel','functions follow place and cultural profile','功能根据地点和文化配置确定','funciones según el lugar y el perfil cultural','funções conforme o local e o perfil cultural'])}.` : `${intent} ; ${urbanText(['ancien profil conservé','legacy profile retained','保留旧配置','perfil anterior conservado','perfil anterior mantido'])} : ${key ? urbanProgrammeLabel('function', key, PROGRAMME_FUNCTION_LABELS[key]) : context.role}.`;
-  }
+  return `${programmeIntentLabel(context)} ; ${programmeSpecialisationSummary(context)}.`;
+}
+export const programmeIntentLabel = (context: ProgrammeContext): string => urbanProgrammeLabel('intent', context.intent, PROGRAMME_INTENTS[context.intent] ?? context.intent);
+/** The specialisation axis alone: explicit weights, automatic resolution, or not applicable (isolated intent). */
+export function programmeSpecialisationSummary(context: ProgrammeContext): string {
+  const draft = programmeAxesDraft(context);
+  if (draft.intent !== 'settlement') return urbanText(['fonctions urbaines non applicables','urban functions not applicable','城市功能不适用','funciones urbanas no aplicables','funções urbanas não aplicáveis']);
+  if (!draft.custom) return urbanText(['fonctions automatiques : agriculture sous 500 hab. ou profil communal, port si implanté comme port','automatic functions: farming below 500 inhabitants or with a communal profile, port when sited as a port','自动功能：500 人以下或公共配置为农业，按港口布局时为港口','funciones automáticas: agricultura por debajo de 500 hab. o con perfil comunal, puerto si se implanta como puerto','funções automáticas: agricultura abaixo de 500 hab. ou com perfil comunal, porto se implantado como porto']);
   const active = PROGRAMME_FUNCTIONS.filter(key => (draft.weights[key] ?? 0) > 0).map(key => `${urbanProgrammeLabel('function', key, PROGRAMME_FUNCTION_LABELS[key])} ${draft.weights[key]}`);
-  return `${intent} ; ${active.length ? active.join(' · ') : urbanText(['aucune spécialisation fonctionnelle imposée','no functional specialization imposed','未强制功能专业化','sin especialización funcional obligatoria','nenhuma especialização funcional imposta'])}.`;
+  return active.length ? active.join(' · ') : urbanText(['aucune spécialisation fonctionnelle imposée','no functional specialization imposed','未强制功能专业化','sin especialización funcional obligatoria','nenhuma especialização funcional imposta']);
 }
 
 export function programmeFunctionControlsHtml(): string {

@@ -6,7 +6,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 const base = new URL(process.argv[2] ?? 'http://localhost:5173/terrainbench.html?seed=42&width=40000&source=neural&relief=valley&coasts=N&climate=mediterranean&auto=0');
 base.searchParams.set('pipeline', 'legacy');
 if (!base.searchParams.has('settlements')) base.searchParams.set('settlements', JSON.stringify({ config: { mode: 'counts', distribution: 'classes', main: { key: 'main', population: 3000, culture: 'european-organic' }, counts: { village: 9, hamlet: 12, farmstead: 25 } } }));
-if (!base.searchParams.has('urban')) base.searchParams.set('urban', JSON.stringify({ target: 'main', layoutConfig: { composition: 'settlement', culture: 'european-organic', preset: 'culture', recipe: 'auto', zone: 'auto', tissue: 'organic', footprint: { mechanism: 'auto', family: 'composite', budget: 'population' }, fortification: 'none' } }));
+if (!base.searchParams.has('urban')) base.searchParams.set('urban', JSON.stringify({ target: 'main', layoutConfig: { scope: 'settlement', culture: 'european-organic', preset: 'culture', recipe: 'auto', zone: 'auto', tissue: 'organic', footprint: { mechanism: 'auto', family: 'composite', budget: 'population' }, fortification: 'none' } }));
 const out = 'out/urban-styles'; mkdirSync(out, { recursive: true });
 const browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL ?? 'msedge', headless: true, args: ['--enable-unsafe-webgpu', '--ignore-gpu-blocklist'] });
 const errors = [], reports = [];
@@ -74,7 +74,7 @@ try {
     await styles(page, '#style', fallback ? 'terrain-svg' : 'terrain-webgl'); await page.close();
   }
   const urbanUrl = new URL('/urbanbench.html?decor=d070-flat-bay-SW-town&landuse=' + encodeURIComponent(JSON.stringify({ enabled: false })), base);
-  urbanUrl.searchParams.set('urban', JSON.stringify({ layoutConfig: { composition: 'settlement', culture: 'site', mixCulture: 'korean', tissue: 'organic', fortification: 'none', footprint: { mechanism: 'accessibility', family: 'composite', budget: 'population' } } }));
+  urbanUrl.searchParams.set('urban', JSON.stringify({ layoutConfig: { scope: 'settlement', culture: 'site', mixCulture: 'korean', tissue: 'organic', fortification: 'none', footprint: { mechanism: 'accessibility', family: 'composite', budget: 'population' } } }));
   const urban = await open(urbanUrl.href); await urban.locator('#focusSeed').click(); await styles(urban, '#mapStyle', 'urban');
   assert.deepEqual(errors, []); writeFileSync(`${out}/report.json`, JSON.stringify({ reports, errors }, null, 2));
   console.log(JSON.stringify({ reports, errors }));

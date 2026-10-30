@@ -11,7 +11,7 @@ const T = 600000;
 
 describe('culture switch', () => {
   it('drops the plan override, the mix and the site preferences of the previous culture', () => {
-    const o = makeOptions({ seed: '3', culture: 'medina', cultureMix: { id: 'persian', t: 0.4, mode: 'blend' }, plan: { nucleus: { kind: 'castle' } }, sitePrefs: { margin: 0.2 } });
+    const o = makeOptions({ seed: '3', culture: 'medina', cultureMix: { id: 'persian', t: 0.4, mode: 'sectors' }, plan: { nucleus: { kind: 'castle' } }, sitePrefs: { margin: 0.2 } });
     const b = withCulture(o, 'european-organic');
     expect(b.culture).toBe('european-organic');
     expect(b.plan).toBeUndefined();

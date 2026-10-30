@@ -71,7 +71,7 @@ fn admitted_form(frame:&Frame,morph:&Morph,layout:&Layout)->(Vec<Tile>,Vec<Shape
     let index=FrontageIndex::new(layout);let reached=regional_streets(layout);
     let score=|plan:&(Vec<Tile>,Vec<Shape>)| {
         let mut part=Partition{key:layout.key.clone(),config:Some(ParcelConfig::default()),programme:None,
-            parcels:vec![],warnings:vec![],diagnostics:None};
+            parcels:vec![],warnings:vec![],diagnostics:None,enclosure:None,lot_enclosures:vec![]};
         for (bi,b) in layout.blocks.iter().enumerate().filter(|(_,b)|b.kind=="block") {
             let native=|p:&Shape|contacts::street_contacts(p,layout,&index).into_iter().filter(|f|reached[f.street]).collect::<Vec<_>>();
             let mut fronts=native(&b.shape);

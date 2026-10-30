@@ -87,7 +87,7 @@ async function frameCity() {
 
 function configuration(scene) {
   return { enabled: true, parcelEnabled: true, target: 'natural-city', quarterSeed: '', parcelSeed: '',
-    layoutConfig: { composition: 'settlement', settlementForm: 'auto', suburbs: 'auto', phases: 0, preset: 'culture', culture: 'site', recipe: 'auto', zone: 'auto', density: 1, count: 4, rings: 1, radius: 0, radiusScale: 1, placement: 'center', params: {}, monument: 'none', fortification: 'culture', maxStreetGrade: 0.12, maxLaneGrade: 0.18, maxStairGrade: 0.65, allowStairs: true,
+    layoutConfig: { scope: 'settlement', settlementForm: 'auto', suburbs: 'auto', phases: 0, preset: 'culture', culture: 'site', recipe: 'auto', zone: 'auto', density: 1, count: 4, rings: 1, radius: 0, radiusScale: 1, placement: 'center', params: {}, monument: 'none', fortification: 'culture', maxStreetGrade: 0.12, maxLaneGrade: 0.18, maxStairGrade: 0.65, allowStairs: true,
       footprint: { mechanism: scene.mechanism ?? 'auto', family: scene.family ?? 'auto', budget: 'population', grossDensity: 100, aspect: 1.4, orientation: 0, nuclei: 3, irregularity: 0.2, anisotropy: 0.65, separation: 1.3, epochs: scene.epochs }, tissue: 'culture', accessMode: 'adaptive', accessDepth: 0, accessBudget: 4 },
     parcelConfig: { preset: 'culture', culture: 'site', recipe: 'auto', zone: 'auto', density: 1, params: {}, operator: 'culture' },
     render: { reserve: false, allocated: true, centers: false, domains: true, quarters: false, blocks: true, streets: true, enclosures: true, parcels: true, gardens: true, places: true, fronts: false, axes: false, access: false, opacity: 0.8, width: 0.6, palette: 'growth' } };

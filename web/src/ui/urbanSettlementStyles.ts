@@ -14,7 +14,7 @@ export type SettlementStyleId = typeof settlementStyles[number]['id'];
  * programme, spatial budget and physical constraints. Seeds live outside it. */
 export function applySettlementStyle(id: SettlementStyleId, current: LayoutConfig, culture = current.culture) {
   const layout: LayoutConfig = { ...current, preset: 'culture', culture, recipe: 'auto', zone: 'auto', density: 1, params: {},
-    composition: 'settlement', placement: 'center', settlementForm: 'auto', suburbs: 'auto', phases: 0,
+    scope: 'settlement', placement: 'center', settlementForm: 'auto', suburbs: 'auto', phases: 0,
     fortification: 'culture', tissue: 'culture', mixCulture: '',
     footprint: { ...defaultLayoutConfig().footprint, budget: current.footprint.budget } };
   const parcels: ParcelConfig = { ...defaultParcelConfig(), culture: 'site' };

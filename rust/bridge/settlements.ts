@@ -8,7 +8,7 @@ import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
 export interface Point { x: number; y: number }
 export interface SitePrefs { mountainFace?: number; woodland?: number; weights?: Record<string, number> }
 export interface SettlementSpec {
-  key: string; name: string; population: number; culture: string; kind: string;
+  key: string; name: string; population: number; culture: string;
   siteType: string; position?: Point; sitePrefs: SitePrefs;
 }
 /** Placement only (Rust `settlements::Config`); roads have their own {@link RoadConfig}. */
@@ -21,7 +21,7 @@ export interface SettlementConfig {
   floodWeight: number; defenseWeight: number; elevation: number; variationWeight: number;
   siteWeights: Record<string, number>;
 }
-export const defaultSettlementSpec = (key = 'main', population = 300): SettlementSpec => ({ key, name: '', population, culture: 'european-organic', kind: 'settlement', siteType: 'auto', sitePrefs: {} });
+export const defaultSettlementSpec = (key = 'main', population = 300): SettlementSpec => ({ key, name: '', population, culture: 'european-organic', siteType: 'auto', sitePrefs: {} });
 export const defaultSettlementConfig = (): SettlementConfig => ({
   mode: 'auto', distribution: 'classes', main: defaultSettlementSpec(), counts: { city: 0, town: 0, village: 3, hamlet: 3, farmstead: 2 }, list: [], relief: 'flat',
   density: 1, zipfExponent: 1.1, minPopulation: 8, populationJitter: 0.25,

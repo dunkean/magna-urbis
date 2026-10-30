@@ -152,12 +152,12 @@ export function createUrbanWorkshop(options: {
     if (request.context.source === 'fixture') {
       // These are the only inputs read by fixtureTerrain/applyBenchConstraints.
       // Parcel and building options must not rebuild the 256² terrain raster.
-      const o = request.options, frame = workshopFixtureFrame(request.context.population!, o.radius, request.context.layoutConfig?.composition === 'settlement'), key = JSON.stringify([frame.width, o.radius, o.relief, o.reliefSlope, o.river, o.riverWidth]);
+      const o = request.options, frame = workshopFixtureFrame(request.context.population!, o.radius, request.context.layoutConfig?.scope === 'settlement'), key = JSON.stringify([frame.width, o.radius, o.relief, o.reliefSlope, o.river, o.riverWidth]);
       if (fixtureCache?.key !== key) fixtureCache = { key, value: fixtureTerrain(o, frame) };
       fixture = fixtureCache.value;
     }
     const raster = fixture?.raster ?? context!.raster;
-    const frame = workshopFixtureFrame(request.context.population!, request.options.radius, request.context.layoutConfig?.composition === 'settlement');
+    const frame = workshopFixtureFrame(request.context.population!, request.options.radius, request.context.layoutConfig?.scope === 'settlement');
     const siteKey = request.context.siteKey ?? context?.sites[0]?.key;
     const sites = fixture ? [{ key: 'workshop', population: request.context.population!, culture: request.options.culture, center: frame.center, radius: request.options.radius }] : context!.sites.filter(site => !request.context.siteKey || site.key === request.context.siteKey).map(site => site.key === siteKey ? { ...site, population: request.context.population! } : site);
     let layouts = request.layouts;

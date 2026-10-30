@@ -10,6 +10,7 @@ const climatePresetValues = (zone: string | undefined, name: string): ClimateVal
 import { DEFAULT_FRACTAL_DETAIL } from '../../../rust/bridge/terrainAdjust';
 import type { TerrainProgressCallback } from '../../../rust/bridge/terrainProgress';
 import { isCompactProcedural, type GenerationControl } from '../../../rust/bridge/terrainGenerationRecipe';
+import { TERRAIN_STAGE_OUTPUTS, TerrainStageOutput, previewTerrainData } from './terrainStagePreview';
 export type PlatformProgress = { phase: 'detecting' | 'loading' | 'ready' | 'unavailable'; message: string; source: 'browser' | 'rust' | 'python' };
 export interface PlatformCapabilities {
   cpu: true;
@@ -158,6 +159,8 @@ export function observeNativeNeuralStatus(server: string, onProgress: (event: Pl
 }
 
 export interface EngineHeightRequest {
+  /** Transient inspection request, never stored as part of the terrain recipe. */
+  terrainStage?: string;
   seed: string; width: number; relief: TerrainRelief;
   coast?: 'none' | 'N' | 'E' | 'S' | 'W' | 'random';
   climate?: NeuralClimate; compute: 'cpu' | 'gpu';
@@ -232,13 +235,25 @@ export async function generateEngineHeight(request: EngineHeightRequest, onProgr
     ? observePythonStatus(pythonServer, event => onProgress?.(event.message), signal)
     : usesNeural && request.source === 'neural' ? observeNativeNeuralStatus(neuralServer, event => onProgress?.(event.message), signal) : () => {};
   try {
+    const until = request.terrainStage ? TERRAIN_STAGE_OUTPUTS[request.terrainStage] : undefined;
+    const intermediate = until && settings.procedural && ['hills', 'valley', 'mountains', 'mixed', 'high-mountains', 'canyon'].includes(settings.relief) && !usesNeural && !custom.sketch && !custom.zones;
+    let lastHeight: Float32Array | undefined;
+    let executedBackend: 'cpu' | 'gpu' | 'native' = 'cpu';
     // Stage timings for the V2 chain: the decomposed recipe already selects the staged CPU pipeline,
     // so a preview-free control only reports stage boundaries (no readbacks, no extra copies).
-    const lab: GenerationControl | undefined = settings.procedural && !usesNeural && !custom.sketch && !custom.zones && !request.native ? {
-      previews: false,
+    const lab: GenerationControl | undefined = settings.procedural && !usesNeural && !custom.sketch && !custom.zones && (!request.native || !!intermediate) ? {
+      previews: !!intermediate,
+      backend: backend => { executedBackend = backend; },
+      ...(intermediate ? { until } : {}),
       before: async stage => { onProgress?.(`Procedural stage · ${stage}`, { stage: `pipeline:${stage}` }); },
-      after: async stage => { onProgress?.(`Procedural stage · ${stage} · done`, { stage: `pipeline:${stage}:done` }); },
+      after: async (stage, height) => {
+        if (height) lastHeight = height;
+        onProgress?.(`Procedural stage · ${stage} · done`, { stage: `pipeline:${stage}:done` });
+        if (intermediate && stage === until) throw new TerrainStageOutput(height ?? lastHeight ?? new Float32Array(n * n), stage);
+      },
     } : undefined;
+    const started = performance.now();
+    let snapshot = false;
     const result = await sampleRustTerrain({
       id: 1, generation: 1, kind: 'overview',
       ...(request.native ? { runtime: { profile: 'local' as const, server: localServer } } : {}),
@@ -247,7 +262,14 @@ export async function generateEngineHeight(request: EngineHeightRequest, onProgr
       // SVG mode applies conditioning, hydrology carving and fractal detail to the retained height samples.
       display: 'svg',
       retainField: true,
-    }, undefined, onProgress, lab);
+    }, undefined, onProgress, lab).catch(error => {
+      if (!(error instanceof TerrainStageOutput)) throw error;
+      snapshot = true;
+      const data = previewTerrainData(error.height, settings, n, performance.now() - started);
+      if (executedBackend === 'native') { data.backend = 'native'; data.generationBackend = 'native'; }
+      else if (executedBackend === 'gpu') { data.backend = 'gpu-f32'; data.generationBackend = isCompactProcedural(settings) ? 'compact-gpu-f32' : 'gpu-erosion-f32'; }
+      return data;
+    });
     signal?.throwIfAborted();
     if (request.compute === 'gpu' && request.source !== 'neural-python' && request.source !== 'neural' && result.backend !== 'gpu-f32') {
       throw new Error(`Le calcul GPU demandé a échoué : ${result.backendReason ?? result.generationReason ?? 'GPU indisponible'}. Choisissez CPU ou Automatique.`);
@@ -255,13 +277,14 @@ export async function generateEngineHeight(request: EngineHeightRequest, onProgr
     if(!usesNeural&&!settings.sketch&&!settings.zones&&['gpu','gpu-all','gpu-erosion'].includes(custom.generationCompute??'')&&(result.generationBackend??'cpu')==='cpu'&&result.generationReason?.startsWith('GPU generation unavailable: ')){
       throw new Error(`La génération GPU demandée a échoué : ${result.generationReason??'GPU indisponible'}. Choisissez CPU ou Automatique.`);
     }
-    if (isCompactProcedural(settings) && request.compute === 'gpu' && result.generationBackend !== 'compact-gpu-f32') throw new Error('Compact procedural GPU generation was requested but not used.');
+    if (!snapshot && isCompactProcedural(settings) && request.compute === 'gpu' && result.generationBackend !== 'compact-gpu-f32') throw new Error('Compact procedural GPU generation was requested but not used.');
     if (result.height.length !== n * n || result.height.some(v => !Number.isFinite(v))) throw new Error('Sortie moteur incomplète ou invalide.');
     const backend = result.neural?.backend ?? (result.generationBackend === 'native' ? 'rust-native' : result.backend === 'gpu-f32' ? 'rust-webgpu' : 'rust-wasm-cpu');
     const generationBackend = result.generationBackend ?? 'cpu';
     if (result.hydrologyError) throw new Error(`Hydrology failed: ${result.hydrologyError}. Change the water settings or disable hydrology explicitly.`);
     if (settings.hydrology?.compute === 'gpu' && result.hydrology && result.hydrology.backend !== 'gpu-f32') throw new Error(`Hydrology GPU request could not be fulfilled: ${result.hydrology.backendReason ?? 'CPU result'}.`);
-    onProgress?.(`Relief et eau terminés · ${backend} · biomes ensuite`);
+    if (snapshot) onProgress?.(`Sortie intermédiaire · ${request.terrainStage} · ${backend}`);
+    else onProgress?.(`Relief et eau terminés · ${backend} · biomes ensuite`);
     return {
       importedHeight: { w: n, h: n, rgba: new Uint8Array(0), elevations: result.height.slice(), name: `${backend}-${request.seed}` },
       heightScale: Math.max(1, result.maxHeight), importSeaLevel: 0, backend, generationBackend, terrain: result,

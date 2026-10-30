@@ -185,7 +185,7 @@ pub(super) fn epoch_zone<'a>(
     population: u32,
     epoch: usize,
 ) -> (&'a str, &'static str) {
-    let small = population < 1200;
+    let small = crate::settlements::demographics::below(population, "town");
     let zone = if cfg.zone != "auto" {
         cfg.zone.as_str()
     } else if small && enclosed(cfg, culture, population) {
@@ -220,7 +220,7 @@ pub(super) fn epoch_densities(site: &Site, cfg: &LayoutConfig, morph: &Morph) ->
         &cfg.culture
     };
     let boost = (1.0 + 0.25 * (site.population as f64 / 5000.0).max(1.0).log10()).min(1.5);
-    let inside_wall = site.population < 1200 && enclosed(cfg, culture, site.population);
+    let inside_wall = crate::settlements::demographics::below(site.population, "town") && enclosed(cfg, culture, site.population);
     (0..epochs)
         .map(|epoch| {
             let (zone, name) = epoch_zone(cfg, culture, site.population, epoch);
@@ -389,7 +389,7 @@ fn enclosed_floor(site: &Site, cfg: &LayoutConfig, morph: &Morph, target: f64) -
         &cfg.culture
     };
     if cfg.footprint.budget == "radius"
-        || site.population >= 1200
+        || !crate::settlements::demographics::below(site.population, "town")
         || !enclosed(cfg, culture, site.population)
     {
         return target;
@@ -2417,7 +2417,7 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
                 cfg.max_street_grade
             },
             min_gap: if block > 0.0 { block } else { 2500.0 },
-            suburb_band: if site.population >= 1200
+            suburb_band: if !crate::settlements::demographics::below(site.population, "town")
                 && cfg.suburbs != "none"
                 && (epochs >= 3 || walled && epochs >= 2)
             {

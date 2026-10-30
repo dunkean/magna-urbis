@@ -103,7 +103,7 @@ async function citySmoke() {
     counts: { city: 0, town: 0, village: 0, hamlet: 0, farmstead: 0 },
     list: [{ key: 'city', name: 'Compact smoke · 300 habitants', population: 300, culture: 'european-organic', kind: 'settlement', siteType: 'auto', sitePrefs: {}, position: { x: 8000, y: 8000 } }], relief: 'flat', density: 1 } };
   const urban = { enabled: true, parcelEnabled: true, target: 'city', quarterSeed: 'compact-smoke', parcelSeed: 'compact-smoke',
-    layoutConfig: { composition: 'settlement', culture: 'site', preset: 'culture', recipe: 'auto', zone: 'auto', density: 1 },
+    layoutConfig: { scope: 'settlement', culture: 'site', preset: 'culture', recipe: 'auto', zone: 'auto', density: 1 },
     parcelConfig: { preset: 'culture', culture: 'site', recipe: 'auto', zone: 'auto', density: 1 }, render: { view: 'parcels' },
     buildingState: { visible: true, generated: false, seed: 'compact-smoke', appearance: { style: 'cartographic', diagnostic: 'none' } }, architecture: 'silhouette' };
   for (const [key, value] of Object.entries({ artifact: 'city-01-river-plain-l', settlements: JSON.stringify(settlements), urban: JSON.stringify(urban), profile: 'local', localServer: base, standalone: '1' })) url.searchParams.set(key, value);

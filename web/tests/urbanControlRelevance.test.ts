@@ -23,22 +23,22 @@ it('direct-small and isolated lists match the real native consumers; fallback is
 });
 it('explicit kinds take priority over an isolated intent, while nucleated-village is correctly a quarter grammar', () => {
   for (const form of ['city', 'metropolis', 'market-town', 'walled-town', 'nucleated-village'] as const) {
-    const config = defaultLayoutConfig(); config.settlementForm = form; config.programme.role = 'isolated-mill';
+    const config = defaultLayoutConfig(); config.settlementForm = form; config.programme.intent = 'isolated-mill';
     const text = requestedControlRelevance(config);
     expect(text).toContain('prioritaire sur l’intention isolée'); expect(text).toContain('grammaire de quartiers'); expect(text).not.toContain('directe demandée');
   }
   for (const form of DIRECT_SMALL_KINDS) {
-    const text = requestedControlRelevance({ settlementForm: form, footprint: { mechanism: 'auto' }, programme: { role: 'isolated-mill' } });
+    const text = requestedControlRelevance({ settlementForm: form, footprint: { mechanism: 'auto' }, programme: { intent: 'isolated-mill' } });
     expect(text).toContain('prioritaire sur l’intention isolée'); expect(text).toContain('repli en quartiers'); expect(text).toContain('conservées et éditables');
   }
 });
 it('auto+isolated exposes only a direct-path expectation; legacy, aliases, unknowns and site-dependent auto are not guessed', () => {
   for (const role of ISOLATED_INTENTS) {
-    const text = requestedControlRelevance({ settlementForm: 'auto', footprint: { mechanism: 'auto' }, programme: { role } });
+    const text = requestedControlRelevance({ settlementForm: 'auto', footprint: { mechanism: 'auto' }, programme: { intent: role } });
     expect(text).toContain('intention isolée'); expect(text).toContain('attendue sous réserve'); expect(text).toContain('repli');
   }
-  expect(requestedControlRelevance({ settlementForm: 'single', programme: { role: 'isolated-mill' }, footprint: { mechanism: 'legacy' } })).toContain('chemin direct des petites grammaires est désactivé');
-  for (const form of ['auto', 'nucleated', 'ribbon']) expect(requestedControlRelevance({ settlementForm: form, programme: { role: 'auto' }, footprint: { mechanism: 'auto' } })).toContain('Cette UI ne le prédit pas');
+  expect(requestedControlRelevance({ settlementForm: 'single', programme: { intent: 'isolated-mill' }, footprint: { mechanism: 'legacy' } })).toContain('chemin direct des petites grammaires est désactivé');
+  for (const form of ['auto', 'nucleated', 'ribbon']) expect(requestedControlRelevance({ settlementForm: form, programme: { intent: 'settlement' }, footprint: { mechanism: 'auto' } })).toContain('Cette UI ne le prédit pas');
   expect(requestedControlRelevance({ settlementForm: 'unknown<&>', footprint: { mechanism: 'auto' } })).toContain('Forme importée inconnue');
   expect(requestedControlRelevance({ settlementForm: 'single' })).toContain('Mécanisme non conservé');
 });
@@ -67,7 +67,7 @@ it('the actual binding updates requested reason independently of applied metadat
   const requested = { textContent: '' }, retained = { innerHTML: '' }, selectors: string[] = [];
   const host = { querySelector(key: string) { selectors.push(key); return key === '[data-control-relevance-requested]' ? requested : retained; } };
   const binding = bindControlRelevance(host as unknown as ParentNode), config = defaultLayoutConfig();
-  config.programme.role = 'isolated-mill'; config.footprint.family = 'fingers'; config.suburbs = 'many'; config.phases = 4; config.mixCulture = 'roman-core';
+  config.programme.intent = 'isolated-mill'; config.footprint.family = 'fingers'; config.suburbs = 'many'; config.phases = 4; config.mixCulture = 'roman-core';
   const source = JSON.stringify(config), applied = fixture.cases.map(row => row.layout);
   binding.sync(config, applied); const report = retained.innerHTML; expect(requested.textContent).toContain('intention isolée');
   config.settlementForm = 'city'; binding.sync(config, applied);
@@ -78,7 +78,7 @@ it('the actual binding updates requested reason independently of applied metadat
   expect(controlRelevanceControlsHtml()).not.toContain('data-config'); expect(controlRelevanceControlsHtml()).not.toContain('disabled');
 });
 it('actual snapshot/MU/import/normalization and request-config preparation keep every inactive-or-fallback value, seed and exact source position', () => {
-  const config = defaultLayoutConfig(); config.programme.role = 'isolated-mill'; config.footprint.family = 'fingers'; config.footprint.nuclei = 5; config.suburbs = 'many'; config.phases = 4;
+  const config = defaultLayoutConfig(); config.programme.intent = 'isolated-mill'; config.footprint.family = 'fingers'; config.footprint.nuclei = 5; config.suburbs = 'many'; config.phases = 4;
   config.mixCulture = 'roman-core'; config.mixMode = 'sectors'; config.mixShare = .35;
   const state: WorkshopState = { layoutConfig: config, parcelConfig: defaultParcelConfig(), quarterSeed: 'Q-exact', parcelSeed: 'P-exact', population: 100000, siteKey: 'city' };
   const places = JSON.stringify({ list: [{ population: 100000, position: { x: 2639.9315590685324, y: 2668.9433913724934 } }] });
@@ -93,7 +93,7 @@ it('production themed roots bind refresh for actual draft read, programme apply 
   const source = readFileSync(new URL('../src/ui/terrainUrban.ts', import.meta.url), 'utf8');
   expect(source).toContain("plan.controls.insertAdjacentHTML('beforeend', controlRelevanceControlsHtml())");
   expect(source).toContain("controlRelevance = bindControlRelevance(one<HTMLElement>('quarters', '[data-control-relevance]'))");
-  expect(source).toContain("if (kind === 'quarters') controlRelevance?.sync(layoutConfig, layouts)");
+  expect(source).toContain("if (kind === 'quarters') { controlRelevance?.sync(layoutConfig, layouts); generationControls(); }");
   expect(source).toContain('layoutConfig.programme = clone(programme); controlRelevance?.sync(layoutConfig, layouts)');
   expect(source).toContain('compositionReport(); parcelReport(); controlRelevance?.sync(layoutConfig, layouts)');
 });

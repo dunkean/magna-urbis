@@ -74,7 +74,7 @@ function circleRing(c: Vec2, r: number): Polygon {
   return out;
 }
 
-/** Scale (m) of a settlement's rural rings: the preset map extents for the legacy sizes (hamlet 1.2 km … capital 5 km). */
+/** Scale (m) of a settlement's rural rings: the preset map extents for the legacy sizes (hamlet 1.2 km … metropolis 5 km). */
 export function ringScale(pop: number): number {
   return pop < 15 ? 450 : 1200 * Math.pow(Math.max(15, pop) / 100, 0.23);
 }
@@ -187,7 +187,7 @@ export function generateRural(world: World, root: Rng, mainRoads?: number, strip
   stats['fieldMaxSlope'] = Math.round(fieldMax * 1000) / 1000;
 
   // ---- farmsteads along roads
-  const farmCount = ({ hamlet: 0, village: 2, town: 4, city: 7, capital: 10 } as const)[world.options.size];
+  const farmCount = ({ hamlet: 0, village: 2, town: 4, city: 7, metropolis: 10 } as const)[world.options.size];
   const farmsteads: Farmstead[] = [];
   const farmR = 30;
   const farmMask = new Uint8Array(N); // 1 = exclusion, 2 = garden/orchard halo

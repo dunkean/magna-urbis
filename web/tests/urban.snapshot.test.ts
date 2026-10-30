@@ -228,11 +228,11 @@ describe('applied urban scene transfers', () => {
     const snapshot = appliedWorkshopSnapshot(original);
     expect(snapshot.layouts![0]).toBe(original.layouts![0]); expect(snapshot.partitions![0]).toBe(original.partitions![0]);
     expect(snapshot.buildingState!.scene).toBe(original.buildingState!.scene);
-    snapshot.layoutConfig.programme.role = 'artisan'; snapshot.buildingState!.settings!.floors = 4;
+    snapshot.layoutConfig.programme.intent = 'isolated-mill'; snapshot.buildingState!.settings!.floors = 4;
     snapshot.citySettings!.city.building!.settings!.floors = 3;
     snapshot.layouts!.pop(); snapshot.partitions!.pop();
     expect(original.layouts).toHaveLength(2); expect(original.partitions).toHaveLength(2);
-    expect(original.layoutConfig.programme.role).toBe('auto'); expect(original.buildingState!.settings!.floors).toBe(2);
+    expect(original.layoutConfig.programme.intent).toBe('settlement'); expect(original.buildingState!.settings!.floors).toBe(2);
     expect(original.citySettings.city.building!.settings!.floors).toBe(2);
   });
   it('keeps isolated fixtures from replacing a different applied city', () => {

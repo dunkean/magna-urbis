@@ -55,7 +55,7 @@ export function workshopFixtureFrame(population: number, radius: number, fullSet
 }
 export function normalizeWorkshopContext(context: WorkshopContext): WorkshopContext {
   const layoutConfig = normalizeLayoutConfig(context.layoutConfig, true);
-  if (!context.layoutConfig && context.source === 'fixture') layoutConfig.composition = 'district';
+  if (!context.layoutConfig && context.source === 'fixture') layoutConfig.scope = 'district';
   return { ...context, population: normalizeWorkshopPopulation(context.population), layoutConfig, parcelConfig: normalizeParcelConfig(context.parcelConfig) };
 }
 export function workshopConfig(options: BenchOptions, context: WorkshopContext, kind: 'quarters'): LayoutConfig;
@@ -68,7 +68,7 @@ export function workshopConfig(options: BenchOptions, context: WorkshopContext, 
   const inheritParcelCulture = kind === 'parcels' && retained?.culture === 'site' && options.culture === (appliedCulture ?? options.culture);
   const config = { ...retained, culture: inheritParcelCulture || context.source === 'map' && retained?.culture === 'site' && options.culture === context.siteCulture ? 'site' : options.culture, recipe: options.recipe ?? 'core', zone: retained?.zone === 'auto' ? 'auto' : options.zone,
     density: options.density, preset: stage?.preset ?? 'culture', params: stage?.params ?? {},
-    ...(kind === 'quarters' ? { composition: context.layoutConfig?.composition ?? (context.source === 'fixture' ? 'district' : 'settlement'), count: options.count, rings: options.rings ?? 1, radius: context.source === 'map' && context.layoutConfig?.radius === 0 && options.radius === context.radius ? 0 : options.radius,
+    ...(kind === 'quarters' ? { scope: context.layoutConfig?.scope ?? (context.source === 'fixture' ? 'district' : 'settlement'), count: options.count, rings: options.rings ?? 1, radius: context.source === 'map' && context.layoutConfig?.radius === 0 && options.radius === context.radius ? 0 : options.radius,
       placement: options.placement === 'lateral' ? 'rectangle' : options.placement ?? 'center', monument: options.monument } : {}) };
   return kind === 'quarters' ? normalizeLayoutConfig(config) : normalizeParcelConfig(config);
 }

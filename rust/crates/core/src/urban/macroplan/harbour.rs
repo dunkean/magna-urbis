@@ -109,11 +109,10 @@ pub(in super::super) fn params(culture: &str) -> Harbour {
     }
 }
 
-/// A port: its role, its archetype, declared navigable access or a port
-/// function. Waterfront cultures (`plan.waterfront`) build quays as well.
+/// A port: its site archetype, declared port siting or a port function.
+/// Waterfront cultures (`plan.waterfront`) build quays as well.
 pub(in super::super) fn port_town(cfg: &LayoutConfig) -> bool {
-    cfg.programme.role == "port"
-        || matches!(cfg.site_archetype.as_str(), "harbor" | "lakeshore" | "bridge")
+    matches!(cfg.site_archetype.as_str(), "harbor" | "lakeshore" | "bridge")
         || cfg.programme.navigable_access
         || cfg
             .programme
@@ -656,6 +655,17 @@ fn shore_runs(
         .collect()
 }
 
+/// The 60 m of land behind a quay point climbs at most a street grade per
+/// 12 m, so the town reaches its quay on a gentle slope (the same strip `sited`
+/// requires of an inland port's bank).
+fn gentle_behind(surface: Surface<'_>, p: Point, n: Point, side: f64, grade: f64) -> bool {
+    (0..5).all(|k| {
+        let a = add(p, n, side * 12.0 * k as f64);
+        let b = add(p, n, side * 12.0 * (k + 1) as f64);
+        surface.wet(b) || (surface.height_at(b) - surface.height_at(a)).abs() <= 12.0 * grade
+    })
+}
+
 /// Continuous quays along the waterfront of `regions`: each shore run, moved
 /// inland so the whole platform is dry, split where it leaves its quarter,
 /// turns sharply, climbs or stands at a cliff foot. The harbour front nearest
@@ -752,6 +762,7 @@ pub(in super::super) fn quays(
                                 surface.wet(q)
                                     || (surface.height_at(q) - surface.height_at(p)).abs()
                                         <= 12.0 * cfg.max_lane_grade
+                                        && gentle_behind(surface, p, n, s, cfg.max_street_grade)
                             })
                         });
                     if !ok && std::env::var_os("URBAN_PROFILE").is_some() {
@@ -1500,7 +1511,7 @@ mod tests {
             role: "street".into(),
         };
         let mut cfg = LayoutConfig::default();
-        cfg.programme.role = "port".into();
+        cfg.programme.functions = Some(crate::urban::programme::ProgrammeFunctions { port: 1.0, ..Default::default() });
         let site = Site {
             key: "port".into(),
             name: String::new(),
@@ -1591,7 +1602,7 @@ mod tests {
             radius: 200.0,
         };
         let mut cfg = LayoutConfig::default();
-        cfg.programme.role = "port".into();
+        cfg.programme.functions = Some(crate::urban::programme::ProgrammeFunctions { port: 1.0, ..Default::default() });
         let road = Street {
             path: vec![Point { x: 175.0, y: 42.0 }, Point { x: 175.0, y: 214.0 }],
             widths: vec![5.0; 2],
@@ -1685,7 +1696,7 @@ mod tests {
             water: &water,
         };
         let mut cfg = LayoutConfig::default();
-        cfg.programme.role = "port".into();
+        cfg.programme.functions = Some(crate::urban::programme::ProgrammeFunctions { port: 1.0, ..Default::default() });
         let site = Site {
             key: "p".into(),
             name: String::new(),
@@ -1727,5 +1738,26 @@ mod tests {
             ..surface
         };
         assert!(sited(&site, &cfg, steep).is_none());
+    }
+
+    /// A quay never stands where the land behind it climbs faster than a
+    /// street over its 60 m: a ramp-then-cliff shore gets none, a gentle one does.
+    #[test]
+    fn a_quay_needs_gentle_land_behind_it() {
+        let n = 64;
+        let (_, water) = coast(n);
+        let cfg = LayoutConfig::default();
+        let shelf = |rise: f32| -> Vec<f32> {
+            (0..n * n).map(|i| {
+                let x = ((i % n) as f64 + 0.5) * 4.0 - 128.0;
+                if x < 24.0 { 1.0 } else { 1.0 + rise * ((x - 24.0) / 12.0) as f32 }
+            }).collect()
+        };
+        let at = |height: &[f32]| {
+            let surface = Surface { geometry: None, width: 256.0, n, height, water: &water };
+            gentle_behind(surface, Point { x: 130.0, y: 128.0 }, Point { x: 1.0, y: 0.0 }, 1.0, cfg.max_street_grade)
+        };
+        assert!(at(&shelf(0.5)));
+        assert!(!at(&shelf(3.0)));
     }
 }

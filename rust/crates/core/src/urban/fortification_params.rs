@@ -19,6 +19,11 @@ fn culture_stiffness(cfg: &LayoutConfig, culture: &str) -> f64 {
 fn crest_limit(cfg: &LayoutConfig) -> f64 {
     match cfg.wall_relief { Some(r) if r>=1.0 => f64::INFINITY, Some(r) => 2.0+38.0*r.max(0.0), None => num(&data()["trace"],"maxCrestM",12.0) }
 }
+/// How a second enclosure relates to the first: the parameter, else the culture's default.
+pub(in super::super) fn wall_extension(cfg: &LayoutConfig, culture: &str) -> String {
+    if !cfg.wall_extension.is_empty() { return cfg.wall_extension.clone(); }
+    text(group(culture),"wallExtension",&text(&data()["groups"]["default"],"wallExtension","concentric"))
+}
 fn adherence(cfg: &LayoutConfig) -> f64 { cfg.wall_terrain.unwrap_or(f64::from(cfg.medieval_walls)) }
 fn grade() -> f64 { num(&data()["trace"],"maxGrade",0.9) }
 pub(in super::super) fn valid_parameters(cfg: &LayoutConfig) -> bool {
@@ -27,6 +32,7 @@ pub(in super::super) fn valid_parameters(cfg: &LayoutConfig) -> bool {
         && cfg.wall_tower_spacing.is_none_or(|v|v.is_finite() && (v==0.0 || (5.0..=250.0).contains(&v)))
         && ["","none","bank-walls","bank-walls-chain"].contains(&cfg.river_control_mode.as_str())
         && ["","auto","inside","separate","outside"].contains(&cfg.port_enclosure.as_str())
+        && ["","auto","concentric","attached"].contains(&cfg.wall_extension.as_str())
 }
 
 /// Simplification is metric; steep shortcuts are never accepted. Endpoints of

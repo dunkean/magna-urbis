@@ -22,7 +22,7 @@ export interface UrbanLanduseSite extends RoadSite {
 }
 /** Temporary compatibility input; the retained Rust terrain and plans remain authoritative. */
 export interface UrbanLanduseInput {
-  ruralOptions?: { streetAlignedHomes?: boolean; denserSmallholdings?: boolean };
+  ruralOptions?: { streetAlignedHomes?: boolean; denserSmallholdings?: boolean; fieldEnclosure?: number; fieldMaterial?: 'hedge' | 'wall' | 'fence' };
   raster: SettlementRaster;
   seed: string;
   biome: BiomeName;
@@ -169,8 +169,8 @@ export function generateUrbanLanduse(input: UrbanLanduseInput): UrbanLanduseScen
     const generated = generateRural(world, root, undefined, undefined,
       { footprint, population: input.city.population,
         // Existing TS rural buildings remain opt-in through an explicit agricultural
-        // role; the retained urban footprint excludes their lots without cropping roofs.
-        farmsteads: profile?.role === 'agricultural' || !!input.ruralOptions?.denserSmallholdings, naturalForest, settlementFootprints, ...input.ruralOptions });
+        // function; the retained urban footprint excludes their lots without cropping roofs.
+        farmsteads: (profile?.functions?.agricultural ?? 0) > 0 || !!input.ruralOptions?.denserSmallholdings, naturalForest, settlementFootprints, ...input.ruralOptions });
     world.landuse = generated.layer; world.stats = generated.stats;
   } else {
     world.landuse = generateNaturalCover(world.terrain, input.biome, root, naturalForest);

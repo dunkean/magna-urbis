@@ -98,7 +98,6 @@ export function rustSettlementRaster(world: World): SettlementRaster {
 export function resolveRustUrbanControls(settings: V2Settings, key: string, options: Options): { layout: LayoutConfig; parcels: ParcelConfig; houses: PlacementBatchSettings } {
   const base: Partial<V2UrbanSettings> = settings.urban ?? {}, local: V2UrbanControls = base.local?.[key] ?? {};
   if (options.plan) throw new Error('Le plan personnalisé TypeScript ne peut pas être traduit fidèlement vers Rust. Utilisez les paramètres Rust layout.phaseOverrides, ou le moteur urbain TypeScript.');
-  if (options.cultureMix?.mode === 'blend') throw new Error('Le mélange continu TypeScript ne correspond pas aux phases ou secteurs Rust. Choisissez phases ou secteurs.');
   const layout = normalizeLayoutConfig(merge<LayoutConfig>(defaultLayoutConfig(), {
     culture: options.culture, density: 1 / (options.sprawl ?? 1), radiusScale: Math.sqrt(options.sprawl ?? 1),
     fortification: options.walls === 'none' || options.walls === 'no' ? 'none' : options.walls === 'auto' ? 'culture' : 'wall',

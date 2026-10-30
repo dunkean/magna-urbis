@@ -9,6 +9,7 @@ import { urbanFunctionColor, type UrbanBuildingAppearance } from './urbanBuildin
 import { roleLabel } from './cityRoles';
 import { MATERIALS, coverLayer, layerExtent, layerPattern, materialImagesNow, placeLayer, streetLayer, wallStoneLayer, type MaterialImages } from './buildingMaterials';
 import { planBuildingColors, planRoofColor } from './cityBuildingPalette';
+import { drawLotEnclosures } from './cityLotEnclosures'; // enclosures hook (cityLotEnclosures.ts)
 import { cityWallDetails, drawCityWallGround, drawCityWalls } from './cityWalls'; // walls hook (cityWalls.ts)
 import { STRUCTURE_ROLES, blendLine, blendTone, blendsGround, groundWash, isBlended, softStreet, type WashKind } from './groundBlend';
 import { CityGround, boardwalkWidth, isBoardwalk, type CityGroundRaster } from './cityGround';
@@ -20,7 +21,7 @@ export interface Box { minX: number; minY: number; maxX: number; maxY: number }
 export type CityView = 'tissue' | 'uses' | 'parcels' | 'buildings' | 'roles';
 export type CityLod = 'far' | 'mid' | 'near' | 'close';
 export type CityPalette = 'growth' | 'atlas' | 'ink' | 'terrain' | 'parchment';
-export interface CityLayers { reserve: boolean; allocated: boolean; centers: boolean; domains: boolean; quarters: boolean; blocks: boolean; streets: boolean; enclosures: boolean; parcels: boolean; gardens: boolean; places: boolean; fronts: boolean; axes: boolean; access: boolean }
+export interface CityLayers { reserve: boolean; allocated: boolean; centers: boolean; domains: boolean; quarters: boolean; blocks: boolean; streets: boolean; enclosures: boolean; /** Walls, hedges and fences of the lots; absent = shown. */ lotEnclosures?: boolean; parcels: boolean; gardens: boolean; places: boolean; fronts: boolean; axes: boolean; access: boolean }
 
 // ---------------------------------------------------------------- levels of detail
 const LOD_ORDER: CityLod[] = ['close', 'near', 'mid', 'far'];
@@ -144,6 +145,8 @@ export interface CityLandmark { point: Point; family: string; label: string; par
 export interface CityScene {
   layouts: readonly Layout[]; blocks: CityBlock[]; parcels: CityParcel[]; streets: CityStreet[]; walls: CityWall[]; districts: CityDistrict[];
   landmarks: CityLandmark[]; footprint: Shape[]; ground?: CityGround; extent: Box; quays?: Quay[];
+  /** Walls, hedges and fences round the lots (enclosures hook). */
+  lotEnclosures?: import('../../../rust/bridge/urban').LotEnclosure[];
   bins: { blocks: SpatialBins; parcels: SpatialBins; streets: SpatialBins; landmarks: SpatialBins };
   parcelById: Map<string, number>;
 }
@@ -246,7 +249,8 @@ export function buildCityScene(layouts: readonly Layout[], partitions: readonly 
       }
     });
   });
-  return { layouts, blocks, parcels, streets, walls, districts, landmarks, footprint, extent, parcelById, quays, ground,
+  const lotEnclosures = partitions.flatMap(p => p.lotEnclosures ?? []);
+  return { layouts, blocks, parcels, streets, walls, districts, landmarks, footprint, extent, parcelById, quays, ground, lotEnclosures,
     bins: { blocks: new SpatialBins(blocks.map(b => shapeBox(b.shape)), 128), parcels: new SpatialBins(parcels.map(p => shapeBox(p.shape)), 64),
       streets: new SpatialBins(streets.map(s => grow({ ...EMPTY }, s.street.path, s.width)), 128), landmarks: new SpatialBins(landmarks.map(l => l.box), 128) } };
 }
@@ -595,6 +599,8 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
     }
     casing.flush(ctx); fill.flush(ctx); marks.flush(ctx);
   }
+
+  if (layers.lotEnclosures !== false) drawLotEnclosures(ctx, scene, { mpp, lod, palette }); // enclosures hook
 
   // Walls: thick line broken at gates, gate and wall towers.
   if (layers.enclosures) {

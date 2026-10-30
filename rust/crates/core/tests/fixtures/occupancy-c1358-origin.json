@@ -1898,7 +1898,7 @@
     "navigableAccess": false,
     "period": "",
     "resources": [],
-    "role": "auto",
+    "intent": "settlement",
     "state": "thriving"
   },
   "demands": [

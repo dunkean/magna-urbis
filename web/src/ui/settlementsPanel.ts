@@ -9,7 +9,7 @@
  * The single shared editor is moved into the selected card, so what it edits is always visible.
  */
 import type { Options, SettlementSpec, SettlementOverrides } from '../gen/options';
-import { SETTLEMENT_OVERRIDE_KEYS, optionsForSettlement, mapSizeOf, MAP_SIZE_MIN, MAP_SIZE_MAX, POP_MIN, POP_MAX, sizeForPop, cleanSettlementName } from '../gen/options';
+import { SETTLEMENT_OVERRIDE_KEYS, optionsForSettlement, mapSizeOf, MAP_SIZE_MIN, MAP_SIZE_MAX, POP_MIN, POP_MAX, sizeForPop, SIZE_SHORTCUT, cleanSettlementName } from '../gen/options';
 import { CULTURE_LIST } from '../gen/urban/cultures';
 import type { ControlRegistry } from './controls';
 import { appendSettlementDraft, generatedSettlementSize, regionAsList, settlementComposition, type GeneratedPlace } from './workflowDraft';
@@ -96,10 +96,9 @@ export function initSettlementsUI(registry: ControlRegistry, getOpts: () => Opti
     write: (o) => { if (document.activeElement !== msEl) msEl.value = String(mapSizeOf(o)); },
   });
   // Type shortcuts adjust population; a custom extent does not silently override the visible type.
-  const populations: Record<Options['size'], number> = { hamlet: 80, village: 300, town: 3000, city: 20000, capital: 60000 };
   sizeEl.addEventListener('change', () => {
     const value = Number(popEl.value);
-    if (!(value > 0) || sizeForPop(value) !== sizeEl.value) popEl.value = String(populations[sizeEl.value as Options['size']]);
+    if (!(value > 0) || sizeForPop(value) !== sizeEl.value) popEl.value = String(SIZE_SHORTCUT[sizeEl.value as Options['size']]);
   });
   popEl.addEventListener('change', () => { if (Number(popEl.value) > 0) sizeEl.value = sizeForPop(Number(popEl.value)); });
   popEl.placeholder = 'auto';

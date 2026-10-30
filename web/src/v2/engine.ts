@@ -115,17 +115,25 @@ export function resolveModelAssets(value: string | undefined, assetBase?: string
 }
 
 export async function generateTerrain(settings: V2Settings, onProgress?: ProgressCallback,
-  cache: TerrainCache = terrainCache, assetBase?: string): Promise<World> {
+  cache: TerrainCache = terrainCache, assetBase?: string, terrainStage?: string): Promise<World> {
   validateSettings(settings);
   if (settings.generation === 'neural' && !settings.options.importedHeight && (!settings.runtime || settings.runtime.source === 'procedural'))
     throw new Error('Le modèle neuronal doit d’abord fournir une heightmap. Aucun calcul procédural ne remplace silencieusement le modèle.');
-  const t0 = performance.now(), key = terrainCacheKey(settings), options = effectiveOptions(settings);
+  const t0 = performance.now(), key = terrainCacheKey(settings) + (terrainStage && terrainStage !== 'cover-climate' ? `|preview:${terrainStage}` : ''), options = effectiveOptions(settings);
   const configuration = effectiveTerrainSettings(settings, options.mapSize!);
+  const includeCover = !terrainStage || terrainStage === 'cover-climate';
+  if (!includeCover) {
+    configuration.hydrology = { ...configuration.hydrology!, enabled: terrainStage === 'water-hydrology' && configuration.hydrology?.enabled !== false };
+    if (!['relief-refine', 'water-hydrology'].includes(terrainStage!)) configuration.refine = false;
+    if (terrainStage === 'relief-refine' && configuration.procedural) configuration.procedural = {
+      ...configuration.procedural, enabled: { ...configuration.procedural.enabled, posterior: false, wind: false, coasts: false },
+    };
+  }
   const nativeEngine = !!settings.runtime && (settings.runtime.backend !== 'typescript' || settings.runtime.source !== 'procedural');
   if (!nativeEngine && (options.mapSize! < 600 || options.mapSize! > 40000)) throw new Error('The classic TypeScript engine supports 600â€“40,000 m. Select the Rust engine for 500â€“100,000 m.');
   // The classic engine keeps the dormant Rust recipe so switching engines never erases the user's draft.
   report(onProgress, 'terrain-cache', 'Recherche du relief et de lâ€™hydrologie conservÃ©sâ€¦', 0, 3);
-  const hit = await cache.get(key);
+  const hit = terrainStage && !includeCover ? undefined : await cache.get(key);
   let terrain: TerrainLayer, persisted = false;
   if (hit) {
     terrain = hit.terrain;
@@ -165,7 +173,7 @@ export async function generateTerrain(settings: V2Settings, onProgress?: Progres
         compute, source: runtime!.source, native: runtime!.backend === 'native',
         localServer: runtime!.localServer, pythonServer: runtime!.pythonServer, neuralServer: runtime!.neuralServer,
         neuralAssets: ['procedural', 'procedural-phasor'].includes(runtime!.source) || controls.sketch?.processing ? undefined : resolveModelAssets(runtime!.neuralAssets, assetBase),
-        resolution: controls.resolution, erosion: controls.erosion, terrain: controls }, (message,work) => onProgress?.({stage:work?.stage??'relief-engine',label:message,completed:work?.completed??0,total:work?.total??0,...(work?.detail?{detail:work.detail}:{})}));
+        resolution: controls.resolution, erosion: controls.erosion, terrain: controls, terrainStage }, (message,work) => onProgress?.({stage:work?.stage??'relief-engine',label:message,completed:work?.completed??0,total:work?.total??0,...(work?.detail?{detail:work.detail}:{})}));
       let generated;
       try { generated = await execute(); } catch (error) {
         if (runtime!.compute !== 'auto' || compute !== 'gpu' || !['procedural', 'procedural-phasor'].includes(runtime!.source) || configuration.compute === 'gpu-f32' || ['gpu', 'gpu-all', 'gpu-erosion'].includes(configuration.generationCompute ?? '')) throw error;
@@ -184,7 +192,13 @@ export async function generateTerrain(settings: V2Settings, onProgress?: Progres
     // Rust results retain their own hydrology; only the explicitly selected classic engine runs TS drainage.
     (terrain as TerrainLayer & { v2EngineStats?: Record<string, string | number> }).v2EngineStats = engineStats;
     report(onProgress, 'terrain-cache', 'Enregistrement du relief et de lâ€™hydrologieâ€¦', 1, 3);
-    persisted = await cache.put(key, terrain);
+    if (!terrainStage || includeCover) persisted = await cache.put(key, terrain);
+  }
+  if (!includeCover) {
+    return { seed: options.seed, options: { ...options, workflow: 'environment' }, mapSize: options.mapSize!, terrain,
+      landuse: { areas: [], farmsteads: [], reserve: [] },
+      stats: { 'v2.stage': 'terrain', 'v2.previewStage': terrainStage!, 'v2.engine': V2_ENGINE_VERSION, 'v2.terrainKey': key,
+        ...((terrain as V2TerrainLayer).v2EngineStats ?? {}), 'v2.cache': 'miss', 'v2.persisted': 0, 'ms.total': Math.round(performance.now() - t0) } };
   }
   report(onProgress, 'biome', 'Classification du biome et du couvert naturelâ€¦', 2, 3);
   const retained = terrain as V2TerrainLayer;

@@ -10,7 +10,7 @@ import type { Rng } from '../core/rng';
 import type { World, UrbanLayer, UrbanStreet, PolyH as PolyHT, UrbanLine, UrbanTree } from '../types';
 import type { MorphologyParams, Zone } from './morphology';
 import { resolveMorph, applySprawl } from './morphology';
-import { resolvePlan, populationCulture, ResolvedPlan, EnclosureSpec, NucleusSpec, scaleMinPop, scaleMaxPop } from './culture';
+import { resolvePlan, populationCulture, ResolvedPlan, EnclosureSpec, NucleusSpec } from './culture';
 import { generateCamp } from './camps/index';
 import { planRibbonVillage } from './villages';
 import { makeCtx } from './context';
@@ -175,8 +175,6 @@ export function generateUrban(world: World, root: Rng): UrbanResult {
     const cr = generateCamp(world, rng, culture, pop);
     return { layer: cr.layer, stats: cr.stats, debug: { quarters: [] } };
   }
-  // the culture's settlement classes: below its minimum it is raised to it, above its maximum capped (1.5 ×)
-  if (culture.scale) pop = Math.round(Math.max(scaleMinPop(culture.scale.min), Math.min(pop, scaleMaxPop(culture.scale.max) * 1.5)));
   let roads = (world.roads ?? []).filter((r) => r.kind !== 'track').map((r) => ({ path: r.path, major: r.kind === 'major', width: r.width }));
   const reaching = roads.filter((r) => dist(r.path[r.path.length - 1], world.site!.center) < 10).length;
   let archetype = chooseArchetype(pop, reaching, rng.fork('arch'));
@@ -410,7 +408,7 @@ export function generateUrban(world: World, root: Rng): UrbanResult {
       for (const c of castlesAll) ci.avoid.push(c.lot);
       if (flags.port && archetype === 'town') tm('port', () => { for (const l of reservePort(st, api, { avoid: ci.avoid.slice(), nucleus: ci.nucleus, harbor: world.site!.harbor, roads: nonTrack, bridges: world.bridges ?? [] })) push(l); });
       quays.push(...(st.quays ?? []));
-      if (villages.length) for (const l of reserveVillages(st, api, villages, ci.avoid, world.options.size === 'city' || world.options.size === 'capital')) push(l);
+      if (villages.length) for (const l of reserveVillages(st, api, villages, ci.avoid, world.options.size === 'city' || world.options.size === 'metropolis')) push(l);
       // town bridges every 250–500 m of river course, joined to the streets on both banks
       if (archetype === 'town') tm('bridges', () => {
         const br = reserveBridges(st, api, ci.avoid.slice(), world.bridges ?? []);

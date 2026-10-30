@@ -17,7 +17,7 @@ const specs: Record<string, PanelSpec> = {
   reliefStage: { main: '#width, #relief, #climate, #motifSize, #erosion, #environment, #mountainMix, #compactControls, #proceduralInspector', method: '#terrainMethod', compute: '#terrainSource, #generationCompute, #compute', action: '#generateRelief' },
   coastStage: { main: '#coastControl', methodText: 'Découpe du relief', computeText: 'Support du terrain · Rust / WebGPU', action: '#generateCoasts' },
   hydroStage: { main: '#hydroEnabled, #rustControls', method: '#hydroEngine', compute: '#hydroCompute', action: '#generateHydrology' },
-  urbanQuarterStage: { main: '[data-enabled], #urbanTarget, [data-footprint="family"], [data-config="culture"]', method: '[data-config="composition"], [data-footprint="mechanism"], [data-config="tissue"]', computeText: 'CPU · Rust / WASM', action: '[data-apply]' },
+  urbanQuarterStage: { main: '[data-enabled], #urbanTarget, [data-footprint="family"], [data-config="culture"]', method: '[data-config="scope"], [data-footprint="mechanism"], [data-config="tissue"]', computeText: 'CPU · Rust / WASM', action: '[data-apply]' },
   urbanParcelStage: { main: '[data-enabled], [data-config="culture"]', method: '[data-config="operator"]', computeText: 'CPU · Rust / WASM', action: '[data-apply]' },
   seedStage: { main: '#seedName, #seedPopulation, #seedCulture, #seedSite, .settlement-actions', method: '#seedRoads', computeText: 'Placement sur la carte' },
   decorStage: { main: '#decorList, #decorInfo', methodText: 'Décor conservé', computeText: 'Import local', },
@@ -25,7 +25,7 @@ const specs: Record<string, PanelSpec> = {
 
 /** City Bench (citybench.html): one city, its editor, the exploration tools and the seeds stay in view. */
 const citySpecs: Record<string, PanelSpec> = {
-  urbanQuarterStage: { main: '[data-enabled], .settlement-style-controls, .urban-explorer, [data-seed], [data-warnings]', method: '[data-config="composition"]', computeText: 'CPU · Rust / WASM', action: '[data-apply]' },
+  urbanQuarterStage: { main: '[data-enabled], .settlement-style-controls, .urban-explorer, [data-seed], [data-warnings]', method: '[data-config="scope"]', computeText: 'CPU · Rust / WASM', action: '[data-apply]' },
   urbanParcelStage: { main: '[data-enabled], [data-config="operator"], [data-seed]', computeText: 'CPU · Rust / WASM', action: '[data-apply]' },
 };
 const stageSpecs = document.body.dataset.bench === 'city' ? { ...specs, ...citySpecs } : specs;

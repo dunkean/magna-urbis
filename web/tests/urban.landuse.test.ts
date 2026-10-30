@@ -117,11 +117,11 @@ describe('Urban Bench countryside on retained plans', () => {
   it('retains supplied site geography and known programme context', () => {
     const input = fixture();
     input.city = { ...input.city!, archetype: 'valley', offers: { valley: 0.8 }, resources: ['ore'],
-      profile: { role: 'artisan', resources: ['ore'], mode: 'inspired', period: 'medieval', lore: [], navigableAccess: false } };
+      profile: { intent: 'settlement', functions: { artisan: 1 }, resources: ['ore'], mode: 'inspired', period: 'medieval', lore: [], navigableAccess: false } };
     const world = urbanLanduseWorld(input);
     expect(world.site!.archetype).toBe('valley');
     expect(world.site!.offers).toEqual({ valley: 0.8 });
-    expect(generateUrbanLanduse(input).context).toMatchObject({ archetype: 'valley', resources: ['ore'], profile: { role: 'artisan' } });
+    expect(generateUrbanLanduse(input).context).toMatchObject({ archetype: 'valley', resources: ['ore'], profile: { intent: 'settlement', functions: { artisan: 1 } } });
   });
 
   it('keeps modern functional reservations protected while allowing countryside in open reserves', () => {
@@ -131,7 +131,7 @@ describe('Urban Bench countryside on retained plans', () => {
     layout.structure = { version: 1, mechanism: 'accessibility', family: 'compact', reserve: [], allocated: layout.quarters.map(q => q.shape),
       centers: [], districts: [], history: [], metrics: { targetArea: 0, allocatedArea: 0, streetArea: 0, reservedArea: 0, grossDensity: 0,
         plannedPopulation: 3000, shortfallArea: 0, components: 1, accessAdded: 0 } };
-    layout.programme = { version: 1, population: 3000, context: { role: 'crossroads', resources: [], period: '', mode: 'inspired', navigableAccess: false, lore: [] },
+    layout.programme = { version: 1, population: 3000, context: { intent: 'settlement', functions: { commerce: 1 }, resources: [], period: '', mode: 'inspired', navigableAccess: false, lore: [] },
       cultures: [], demands: [], allocations: [], adjacency: [], environment: [], reconciliationPasses: 0, warnings: [],
       reservations: [{ id: 'market', demandId: 'market', block: 1, shape: functional, street: 0, frontage: 120 }] };
     const scene = generateUrbanLanduse(input);
@@ -143,7 +143,7 @@ describe('Urban Bench countryside on retained plans', () => {
   it('keeps rural farmsteads outside retained urban land when agricultural use is explicit', () => {
     const input = fixture();
     input.layouts![0].streets = [{ path: [{ x: 150, y: 1150 }, { x: 2200, y: 1150 }], widths: [4, 4], rank: 1, role: 'regional' }];
-    input.city!.profile = { role: 'agricultural', resources: ['grain'], mode: 'inspired', period: '', lore: [], navigableAccess: false };
+    input.city!.profile = { intent: 'settlement', functions: { agricultural: 1 }, resources: ['grain'], mode: 'inspired', period: '', lore: [], navigableAccess: false };
     const scene = generateUrbanLanduse(input), quarters = input.layouts![0].quarters.map(q => q.shape);
     expect(scene.landuse!.farmsteads.length).toBeGreaterThan(0);
     for (const farm of scene.landuse!.farmsteads) for (const footprint of farm.buildings) {
@@ -154,7 +154,7 @@ describe('Urban Bench countryside on retained plans', () => {
   it('keeps Reddit options off byte-identical and adds admissible smallholdings by the town roads', () => {
     const input = fixture();
     input.layouts![0].streets = [{ path: Array.from({length:41},(_,i)=>({x:150+i*50,y:1150})), widths: Array(41).fill(4), rank:1,role:'regional' }];
-    input.city!.profile = { role:'agricultural',resources:['grain'],mode:'inspired',period:'',lore:[],navigableAccess:false };
+    input.city!.profile = { intent:'settlement',functions:{agricultural:1},resources:['grain'],mode:'inspired',period:'',lore:[],navigableAccess:false };
     const baseline = generateUrbanLanduse(input).landuse!;
     input.ruralOptions = { streetAlignedHomes:false,denserSmallholdings:false };
     expect(JSON.stringify(generateUrbanLanduse(input).landuse)).toBe(JSON.stringify(baseline));

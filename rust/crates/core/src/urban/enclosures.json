@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "notes": "Enclosure of plots (town) and fields (countryside) per culture. plot/field 0..1 = default plotEnclosure/fieldEnclosure (0 open lots / openfield, 1 closed compounds / bocage); material wall|hedge|fence (plots), fieldMaterial (field boundaries: hedge, wall = dry stone, fence); front/side/back 0..1 scale how readily that side of a lot is closed (an edge closes when plotEnclosure*weight exceeds its per-edge draw). Groups list cultures; cultures.* overrides single keys. Unknown cultures use default.",
+  "default": {"plot": 0.4, "field": 0.4, "material": "fence", "fieldMaterial": "hedge", "front": 0.1, "side": 0.8, "back": 1.0},
+  "groups": {
+    "walledCourt": {"plot": 0.95, "field": 0.3, "material": "wall", "fieldMaterial": "wall", "front": 1, "side": 1, "back": 1,
+      "cultures": ["medina", "persian", "mesopotamian", "levantine-tell", "al-andalus", "ksar-oasis", "oasis-caravan", "hausa-kano", "hadhrami-tower", "nubian-fortified", "ottoman", "sahel", "yoruba", "swahili-stone-town", "egyptian-planned", "indus-planned", "rajput-fort", "roman-core", "byzantine-greek", "chinese", "korean", "japanese-jokamachi", "bagan", "vietnamese-citadel", "indian-temple", "dravidian-temple", "newar", "tibetan-monastery", "great-zimbabwe", "inca", "caucasian-highland"]},
+    "fencedCompound": {"plot": 0.75, "field": 0.45, "material": "fence", "fieldMaterial": "fence", "front": 0.7, "side": 1, "back": 1,
+      "cultures": ["javanese-courts", "maya", "khmer", "aztec", "guarani-village", "maori-pa", "pnw-plank-village", "mississippian", "himalayan-terraces", "native-iroquoian", "kraal", "stilt-town", "slavic-gord", "norse-ringfort", "celtic-oppidum", "barbarian", "barbarian-celtic", "barbarian-norse", "ethiopian-highland"]},
+    "openStreetClosedBack": {"plot": 0.55, "field": 0.3, "material": "hedge", "fieldMaterial": "hedge", "front": 0, "side": 0.6, "back": 1,
+      "cultures": ["european-organic", "bastide", "hanseatic", "flemish-cloth-town", "italian-comune", "rynek-town", "venetian-lagoon"]},
+    "fantasyWalled": {"plot": 0.8, "field": 0.2, "material": "wall", "fieldMaterial": "wall", "front": 0.8, "side": 1, "back": 1,
+      "cultures": ["dwarven", "duergar-hold", "giant-hold", "gnomish", "wizard-city", "necropolis", "russian-kremlin", "drow-enclave"]},
+    "fantasyWild": {"plot": 0.5, "field": 0.6, "material": "hedge", "fieldMaterial": "hedge", "front": 0.2, "side": 0.8, "back": 1,
+      "cultures": ["elven", "halfling", "orcish", "goblin-warren", "lizardfolk-swamp", "merfolk-tidal", "myconid-colony"]},
+    "camps": {"plot": 0.05, "field": 0.05, "material": "fence", "fieldMaterial": "fence", "front": 0, "side": 0.5, "back": 0.5,
+      "cultures": ["native-pueblo", "native-plains", "nomad-camp", "mongol-ordu", "siberian-camp", "inuit-camp", "budj-bim"]}
+  },
+  "cultures": {
+    "european-organic": {"field": 0.8, "material": "hedge"},
+    "flemish-cloth-town": {"field": 0.6, "material": "hedge"},
+    "hanseatic": {"field": 0.2, "material": "wall", "fieldMaterial": "hedge"},
+    "italian-comune": {"field": 0.45, "material": "wall", "fieldMaterial": "wall"},
+    "rynek-town": {"field": 0.1, "material": "fence", "fieldMaterial": "fence"},
+    "bastide": {"material": "wall"},
+    "venetian-lagoon": {"material": "wall", "field": 0.15},
+    "chinese": {"field": 0.15, "fieldMaterial": "fence"},
+    "korean": {"field": 0.15, "fieldMaterial": "fence"},
+    "javanese-courts": {"field": 0.3},
+    "celtic-oppidum": {"field": 0.7, "material": "hedge", "fieldMaterial": "hedge"},
+    "norse-ringfort": {"field": 0.5, "material": "hedge", "fieldMaterial": "wall"},
+    "roman-core": {"field": 0.2}
+  }
+}

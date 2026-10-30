@@ -59,8 +59,10 @@ it('binding applies the existing native UTF8 period limit and keeps empty and an
   ui.binder.sync({ ...c, period: '' }); expect(ui.binder.read(c).period).toBe('');
 });
 it('programme policy→Houses mapping matches the actual current native consumer, not an invented enum', () => {
-  const code = readFileSync(new URL('../../rust/crates/core/src/urban/building_sites.rs', import.meta.url), 'utf8');
-  const body = code.match(/let mode = match pr\.context\.mode\.as_str\(\)\s*\{([\s\S]*?)\};/)?.[1]; expect(body).toBeDefined();
+  // The single native mapping (urban/culture.rs houses_mode); building_sites.rs only calls it.
+  const code = readFileSync(new URL('../../rust/crates/core/src/urban/culture.rs', import.meta.url), 'utf8');
+  const body = code.match(/fn houses_mode\(policy: &str\) -> &'static str \{\s*match policy \{([\s\S]*?)\}/)?.[1]; expect(body).toBeDefined();
+  expect(readFileSync(new URL('../../rust/crates/core/src/urban/building_sites.rs', import.meta.url), 'utf8')).not.toMatch(/"strict"\s*=>\s*"historical_strict"/);
   const pairs = [...body!.matchAll(/("[^"]+"|_)\s*=>\s*"([^"]+)"/g)].map(m => [m[1],m[2]]);
   const lookup = (mode: string) => pairs.find(([k]) => k === JSON.stringify(mode))?.[1] ?? pairs.find(([k]) => k === '_')?.[1];
   for (const [mode, houses] of Object.entries(PROGRAMME_POLICY_HOUSES)) expect(lookup(mode)).toBe(houses);

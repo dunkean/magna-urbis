@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import * as ts from 'typescript';
 import catalogue from '../../../rust/crates/core/src/urban/catalogue.json';
 import { retainSelectValue } from '../../src/ui/retainedSelectValue';
+import { urbanText } from '../../src/ui/urbanPanelLocale';
 import { readUrbanHouseModel, urbanHouseModelCode } from '../../src/ui/urbanHouseModel';
 import { defaultProgrammeContext } from '../../../rust/bridge/urbanConfig';
 import type { UrbanBuildingDraft, UrbanBuildingState, UrbanBuildingGenerateResult } from '../../src/ui/urbanBuildingsPanel';
@@ -58,7 +59,7 @@ function productionFactory() {
   if (generators.length !== 1 || names.some(name => methods.get(name)?.length !== 1)) throw new Error('Expected exact unique production methods.');
   const declarations = names.map(name => methods.get(name)![0].getText(tree));
   const compiled = ts.transpileModule(`function create(env) {
-    const { $, architectureCulture, retainSelectValue, readUrbanHouseModel, urbanHouseModelCode, options, model, state, syncProgramme, report, buildingStyle, houseMix } = env;
+    const { $, architectureCulture, retainSelectValue, readUrbanHouseModel, urbanHouseModelCode, options, model, state, syncProgramme, report, buildingStyle, houseMix, urbanText } = env;
     let epoch = 0, busy = false;
     ${generators[0].getText(tree)}
     return { ${declarations.join(',')} , generate };
@@ -85,7 +86,7 @@ export function buildingDraftHarness(reject?: string) {
   } };
   const model = { restore(next: UrbanBuildingState) { for (const key of Object.keys(state)) Reflect.deleteProperty(state, key); Object.assign(state, next); },
     applyGenerated(...args: unknown[]) { applied.push(args); } };
-  const api: Api = production.create({ $, architectureCulture, retainSelectValue, readUrbanHouseModel, urbanHouseModelCode, options, model, state,
+  const api: Api = production.create({ urbanText, $, architectureCulture, retainSelectValue, readUrbanHouseModel, urbanHouseModelCode, options, model, state,
     syncProgramme() {}, report() {}, buildingStyle: 'cartographic',
     houseMix: { value: undefined as unknown, get() { return this.value; }, set(next: unknown) { this.value = next; } } });
   return { api, architectureCulture, typology, generated, applied, node: $, source: production.source };

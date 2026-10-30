@@ -46,7 +46,7 @@ try {
   url.searchParams.set('decor', 'sparse-valley');
   url.searchParams.set('city', JSON.stringify({ key: 'sparse-city', name: 'Vallée', population: 1200, culture: 'european-organic', center: { x: 1500, y: 1500 }, radius: 300, site: '', roads: 'decor' }));
   url.searchParams.set('landuse', JSON.stringify({ enabled: false }));
-  url.searchParams.set('urban', JSON.stringify({ enabled: true, parcelEnabled: true, target: 'sparse-city', layoutConfig: { composition: 'settlement', fortification: 'none',
+  url.searchParams.set('urban', JSON.stringify({ enabled: true, parcelEnabled: true, target: 'sparse-city', layoutConfig: { scope: 'settlement', fortification: 'none',
     footprint: { family: 'dendritic', grossDensity: 70, cohesion: 0.85, satellites: 0.15, branchDepth: 0.2, gapSize: 60 } }, render: { allocated: true } }));
   await page.goto(url.href); await ready();
   for (const [key, value] of Object.entries({ cohesion: 0.85, satellites: 0.15, branchDepth: 0.2, gapSize: 60 })) {

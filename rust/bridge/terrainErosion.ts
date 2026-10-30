@@ -85,6 +85,7 @@ async function erodeCoast(state: Context, settings: TerrainSettings, source: GPU
 
 /** All simulation state stays on the device; only the final physical raster is read. */
 export async function generateGpuTerrain(state: Context, settings: TerrainSettings, timing?: Timing,progress?:TerrainProgressCallback): Promise<Float32Array> {
+  timing?.control?.backend?.('gpu');
   return serialized(state, () => generateTerrain(state, settings, timing,progress));
 }
 async function generateTerrain(state: Context, settings: TerrainSettings, timing?: Timing,progress?:TerrainProgressCallback): Promise<Float32Array> {

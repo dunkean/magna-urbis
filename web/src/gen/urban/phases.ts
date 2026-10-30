@@ -24,7 +24,8 @@ import { D8 } from '../core/grid';
 import { dryPieces } from './waterland';
 
 export const POP_RANGE: Record<SizeName, [number, number]> = {
-  hamlet: [40, 150], village: [320, 900], town: [2200, 5000], city: [11000, 24000], capital: [40000, 60000],
+  // Inside each demographic band (sizeForPop): a drawn population never lands in another class.
+  hamlet: [40, 140], village: [320, 900], town: [2200, 5000], city: [20000, 30000], metropolis: [100000, 150000],
 };
 
 export function choosePopulation(size: SizeName, override: number, rng: Rng): number {

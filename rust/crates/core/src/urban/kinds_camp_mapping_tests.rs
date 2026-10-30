@@ -53,13 +53,13 @@ fn organic_footpath_camp_delegates_below_the_hamlet_threshold(){
 #[test]
 fn camp_mapping_tiny_ruin_farmstead_and_explicit_camp_precedence_is_unambiguous(){
     for culture in ["kraal","native-plains","nomad-camp","guarani-village"]{
-        for population in [0,8,12]{
+        for population in [0,8,14]{
             let s=site(culture,population);let cfg=LayoutConfig::default();
             assert_eq!(resolve(&s,&cfg,&[]),Kind::Farmstead);
             let mut ruined=cfg.clone();ruined.programme.state="ruined".into();assert_eq!(resolve(&s,&ruined,&[]),Kind::Ruin);
             for mut explicit in [cfg,ruined]{explicit.settlement_form="camp".into();assert_eq!(resolve(&s,&explicit,&[]),Kind::Camp);}
         }
-        assert_eq!(resolve(&site(culture,13),&LayoutConfig::default(),&[]),Kind::Camp);
+        assert_eq!(resolve(&site(culture,15),&LayoutConfig::default(),&[]),Kind::Camp);
     }
 }
 
@@ -67,15 +67,15 @@ fn camp_mapping_tiny_ruin_farmstead_and_explicit_camp_precedence_is_unambiguous(
 fn camp_mapping_explicit_types_isolated_intent_and_legacy_village_preferences_win(){
     let s=site("kraal",300);
     for kind in ALL{
-        let mut c=LayoutConfig::default();c.settlement_form=kind.id().into();c.programme.role="isolated-mill".into();
+        let mut c=LayoutConfig::default();c.settlement_form=kind.id().into();c.programme.intent="isolated-mill".into();
         assert_eq!(resolve(&s,&c,&[]),kind);
     }
     for role in ["isolated-mill","isolated-inn","isolated-tower","isolated-shrine","roadside-temple"]{
-        let mut c=LayoutConfig::default();c.programme.role=role.into();assert_eq!(resolve(&s,&c,&[]),Kind::Single);
+        let mut c=LayoutConfig::default();c.programme.intent=role.into();assert_eq!(resolve(&s,&c,&[]),Kind::Single);
         c.programme.state="ruined".into();assert_eq!(resolve(&s,&c,&[]),Kind::Ruin);
     }
-    let mut c=LayoutConfig::default();c.programme.role="isolated-farm".into();assert_eq!(resolve(&s,&c,&[]),Kind::Farmstead);
-    c.programme.role="auto".into();c.settlement_form="ribbon".into();assert_eq!(resolve(&s,&c,&[]),Kind::StreetVillage);
+    let mut c=LayoutConfig::default();c.programme.intent="isolated-farm".into();assert_eq!(resolve(&s,&c,&[]),Kind::Farmstead);
+    c.programme.intent="settlement".into();c.settlement_form="ribbon".into();assert_eq!(resolve(&s,&c,&[]),Kind::StreetVillage);
     c.settlement_form="nucleated".into();assert_eq!(resolve(&s,&c,&[]),Kind::NucleatedVillage);
 }
 
@@ -97,7 +97,7 @@ fn camp_mapping_actual_preset_culture_override_and_native_growth_transition_are_
 #[test]
 fn camp_mapping_canonical_noncamp_thresholds_and_programme_functions_stay_intact(){
     let cfg=LayoutConfig::default();
-    for (population,expected) in [(12,Kind::Farmstead),(13,Kind::Hamlet),(149,Kind::Hamlet),(150,Kind::NucleatedVillage),(1199,Kind::NucleatedVillage),(1200,Kind::MarketTown),(4999,Kind::WalledTown),(5000,Kind::WalledTown),(30000,Kind::City),(200000,Kind::Metropolis)]{
+    for (population,expected) in [(14,Kind::Farmstead),(15,Kind::Hamlet),(149,Kind::Hamlet),(150,Kind::NucleatedVillage),(999,Kind::NucleatedVillage),(1000,Kind::MarketTown),(4999,Kind::WalledTown),(5000,Kind::WalledTown),(20000,Kind::City),(99999,Kind::City),(100000,Kind::Metropolis)]{
         assert_eq!(resolve(&site("european-organic",population),&cfg,&[]),expected);
     }
     let mut c=cfg;c.programme.functions=Some(super::super::programme::ProgrammeFunctions{artisan:0.7,port:0.2,..Default::default()});c.programme.resources=vec!["fish".into()];
