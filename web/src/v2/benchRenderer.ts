@@ -19,7 +19,7 @@ import { renderSvg } from '../render/svg';
 import { DEFAULT_FRACTAL_DETAIL, seedHash } from '../../../rust/bridge/terrainAdjust';
 import { climateOf, type TerrainData, type TerrainSettings } from '../../../rust/bridge/terrain';
 import { effectiveTerrainSettings } from './terrainSettings';
-import { TerrainGl } from '../ui/terrainGl';
+import { createTerrainRenderer, terrainRendererCanvas, type TerrainRenderer } from '../ui/terrainRenderer';
 import { lakeField } from '../ui/lakeGeometry';
 import { riverSegments, vectorWaterSvg, vectorOverlaySvg, vectorOverlayPixels, type WaterDisplay, type VectorOverlay } from '../ui/vectorWaterRender';
 import { renderHydrology, hydrologySegments, hydrologyWaterColour } from '../../../rust/bridge/hydrologyRender';
@@ -48,7 +48,7 @@ export class BenchRenderer {
   private surface = document.createElement('canvas');
   private overlay = document.createElement('canvas');
   private gpuCanvas = document.createElement('canvas');
-  private gpu?: TerrainGl;
+  private gpu?: TerrainRenderer;
   private gpuUnavailable = false;
   private world?: World;
   private settings?: V2Settings;
@@ -141,7 +141,7 @@ export class BenchRenderer {
           this.materialContext = { canvas: this.gpuCanvas, gl };
           if (/swiftshader|llvmpipe|software/i.test(name)) {
             this.gpuUnavailable = true; this.stats.gpuFallback = 'Software WebGL material raster on the map context';
-          } else this.gpu = new TerrainGl(this.gpuCanvas);
+          } else this.gpu = await createTerrainRenderer(this.gpuCanvas, document.createElement('canvas'));
         }
         if (this.gpu) {
         if(this.uploaded!==t){this.gpu.setBase({ x: 0, y: 0, width: t.width, n: source.n, data: source.data, cave: source.cave, waterSurface: t.waterSurface });this.uploaded=t;}
@@ -191,7 +191,7 @@ export class BenchRenderer {
     ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,canvas.width,canvas.height);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (this.exportLayers.background !== false) { ctx.fillStyle = terrainStyle(a.terrainStyle ?? a.style,a.colors).palette.paper; ctx.fillRect(0, 0, w, h); }
-    if (this.gpuActive) { this.gpu!.setView(view, w, h); this.gpu!.redrawForCapture(); ctx.drawImage(this.gpuCanvas, 0, 0, w, h); }
+    if (this.gpuActive) { this.gpu!.setView(view, w, h); this.gpu!.redrawForCapture(); ctx.drawImage(terrainRendererCanvas(this.gpu!, this.gpuCanvas), 0, 0, w, h); }
     ctx.save(); ctx.translate(w / 2 - view.cx * view.scale, h / 2 - view.cy * view.scale); ctx.scale(view.scale, view.scale);
     if (this.base) ctx.drawImage(this.base, 0, 0, size, size); ctx.restore();
     if(this.exportOverlay){ctx.save();ctx.translate(w/2-view.cx*view.scale,h/2-view.cy*view.scale);ctx.scale(view.scale,view.scale);ctx.drawImage(this.exportOverlay,0,0,size,size);ctx.restore();}

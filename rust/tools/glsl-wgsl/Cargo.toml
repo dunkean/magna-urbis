@@ -1,0 +1,13 @@
+# GLSL 450 -> WGSL translator for the WebGPU map renderer (web/scripts/wgsl_shaders.ts).
+# Standalone: not a member of the engine workspace, so its naga features never reach the engine build.
+[package]
+name = "glsl-wgsl"
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-only"
+publish = false
+
+[dependencies]
+naga = { version = "=30.0.1", features = ["glsl-in", "wgsl-in", "wgsl-out"] }
+
+[workspace]

@@ -50,6 +50,8 @@
     "test:fast": "vitest run --project fast",
     "test:slow": "vitest run --project slow",
     "typecheck": "tsc --noEmit",
+    "shaders:wgsl": "tsx scripts/wgsl_shaders.ts",
+    "shaders:wgsl:check": "tsx scripts/wgsl_shaders_check.ts",
     "preview:png": "tsx scripts/preview.ts",
     "surface:assets": "node scripts/surface_assets.mjs",
     "surface:export": "tsx scripts/export_surface_world.ts",

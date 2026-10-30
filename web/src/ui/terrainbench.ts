@@ -29,6 +29,7 @@ import { lakeColour, riverSegments, vectorOverlayPixels, vectorOverlaySvg, vecto
 import { lakeField } from './lakeGeometry';
 import { getBenchRenderColors, writeRenderColorsQuery } from './benchRenderColors';
 import { TerrainGl, type TerrainLook } from './terrainGl';
+import { createTerrainRenderer, type TerrainRenderer } from './terrainRenderer';
 import { Terrain3d, TERRAIN_3D_FOV, TERRAIN_GROUND_MAX_SCALE, type Terrain3dCamera, type Terrain3dTile } from './terrain3d';
 import { terrain3dTexture } from './terrain3dTexture';
 import { withBuildingOccupation } from './forestOccupation';
@@ -85,7 +86,7 @@ const input = (id: string): HTMLInputElement => el<HTMLInputElement>(id);
 const map = document.getElementById('map') as unknown as SVGSVGElement;
 const viewport = el('viewport');
 // GPU renderer; the SVG keeps the legacy Rust hydrology diagnostics and serves as the event surface.
-let gpu: TerrainGl | undefined;
+let gpu: TerrainRenderer | undefined;
 const fantasyTiles = createFantasyTerrainLayer(error => status(`Brushes: ${error instanceof Error ? error.message : error}`, true));
 const fantasyOptions = { ...DEFAULT_FANTASY_OPTIONS };
 for (const key of ['density', 'size', 'spacing'] as const) {
@@ -94,7 +95,7 @@ for (const key of ['density', 'size', 'spacing'] as const) {
 }
 fantasyOptions.followLanduse = new URLSearchParams(location.search).get('brush_landuse') === '1';
 if (new URLSearchParams(location.search).get('render') !== 'svg') {
-  try { gpu = new TerrainGl(el<HTMLCanvasElement>('gl')); viewport.classList.add('gl'); }
+  try { gpu = await createTerrainRenderer(el<HTMLCanvasElement>('gl')); viewport.classList.add('gl'); }
   catch (error) { console.warn('WebGL2 rendering unavailable, falling back to SVG:', error); }
 }
 if (!gpu) el('gl').remove();
