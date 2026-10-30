@@ -1,4 +1,5 @@
 import { bindForest, deleteForestTextures, forestTexture, forestTextures, RENDER_3D_FOREST_GLSL, type ForestTextures, type HeightLayer } from './terrainGl';
+import { shoreRingFor, shoreRingTexture } from '../../../rust/bridge/terrainForestBeach';
 import { captureWebGlFrame } from './illustrationDepth';
 import { FOREST_PRELUDE_GLSL, type ForestField, type ForestOccupation } from '../../../rust/bridge/terrainForest';
 import { bindForestBrushes, disposeForestBrushes } from '../render/forestBrushAtlas';
@@ -127,6 +128,7 @@ uniform vec3 groundLight,groundLight2;
 uniform float groundStrength;
 uniform sampler2D macroField;
 uniform vec3 macroRect;
+uniform sampler2D uShoreRing;uniform vec3 uShoreRingRect;
 uniform int macroN;
 uniform vec3 patchRect;
 uniform int groundContours; uniform vec3 groundContourColor;
@@ -184,12 +186,8 @@ void main() {
     float shore=max(s.x,0.)/max(length(s.yz),.0001);
     float openness=0.;
     if(uRenderV2>0&&s.x>=0.&&s.x<12.&&length(s.yz)<.5){
-      float r=max(300.,2.*macroRect.z/float(macroN));
-      for(int i=0;i<12;i++){
-        vec2 d=vec2(cos(float(i)*.523598776),sin(float(i)*.523598776));
-        if(groundMacroHeight(physical.xz+d*r)<0.){shore=min(shore,r);openness+=1./12.;}
-        if(groundMacroHeight(physical.xz+d*r*.5)<0.)shore=min(shore,r*.5);
-      }
+      vec2 ring=textureLod(uShoreRing,(physical.xz-uShoreRingRect.xy)/uShoreRingRect.z,0.).rg;
+      shore=min(shore,ring.x);openness=ring.y;
     }
     GroundMaterial m;
     vec3 macro=earthMaterial(s,physical.xz,max(footprint,1.),0.,shore,openness);
@@ -373,6 +371,7 @@ export class Terrain3d {
   private clippedIndices = new Map<string, { buffer: WebGLBuffer; count: number }>();
   private material!: WebGLTexture;
   private macroTexture!: WebGLTexture;
+  private shoreRing?: { layer: object; texture: WebGLTexture };
   private empty!: WebGLTexture;
   private waterMasks = new Map<WebGLTexture, { texture: WebGLTexture; rect: readonly [number, number, number]; bytes: number }>();
   private forestField?: ForestField;
@@ -462,6 +461,7 @@ export class Terrain3d {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.seams); gl.bufferData(gl.ARRAY_BUFFER, (surfaceVertices + 4 * side) * 3 * 4, gl.DYNAMIC_DRAW);
     this.material = this.uploadTexture(new Uint8Array([203, 211, 182, 255]));
     this.macroTexture=this.uploadMacroField(this.layer);
+    this.shoreRing = undefined;
     this.empty = this.uploadMacroField();
     // A restored context comes back empty: re-upload the retained forest rasters.
     this.forest = this.occupation = undefined;
@@ -1336,6 +1336,13 @@ export class Terrain3d {
       gl.uniform1i(this.uniform('macroN'),this.layer.n);
       gl.activeTexture(gl.TEXTURE2);gl.bindTexture(gl.TEXTURE_2D,this.macroTexture);
       gl.uniform1i(this.uniform('macroField'),2);
+      if((settings.renderV2??0)>0&&this.shoreRing?.layer!==this.layer){
+        if(this.shoreRing)gl.deleteTexture(this.shoreRing.texture);
+        this.shoreRing={layer:this.layer,texture:shoreRingTexture(gl,shoreRingFor(this.layer))};
+      }
+      const ring=this.layer&&(settings.renderV2??0)>0?shoreRingFor(this.layer):undefined;
+      gl.activeTexture(gl.TEXTURE10);gl.bindTexture(gl.TEXTURE_2D,this.shoreRing?.texture??this.empty);
+      gl.uniform1i(this.uniform('uShoreRing'),10);gl.uniform3f(this.uniform('uShoreRingRect'),ring?.x??0,ring?.y??0,ring?.width??1);
       const contours=settings.contours;
       gl.uniform1i(this.uniform('groundContours'),contours?1:0);
       gl.uniform1f(this.uniform('groundContourStep'),contours?.step??1);
@@ -1450,7 +1457,7 @@ export class Terrain3d {
     const gl = this.gl;
     this.buildings.dispose(); this.buildingScene = undefined;
     this.buildingGround = new UrbanBuildingGround(); this.mergedOccupation = this.mergedOccupationSource = undefined; this.mergedOccupationScene = undefined;
-    gl.deleteBuffer(this.indices); gl.deleteBuffer(this.seams); gl.deleteTexture(this.material);gl.deleteTexture(this.macroTexture); gl.deleteTexture(this.empty);
+    gl.deleteBuffer(this.indices); gl.deleteBuffer(this.seams); gl.deleteTexture(this.material);gl.deleteTexture(this.macroTexture); gl.deleteTexture(this.empty);if(this.shoreRing)gl.deleteTexture(this.shoreRing.texture);
     if (this.mapProgram) gl.deleteProgram(this.mapProgram); this.groundVariants.reset(true); gl.deleteProgram(this.skyProgram);
     for (const geometry of this.clippedIndices.values()) gl.deleteBuffer(geometry.buffer);
     this.clippedIndices.clear();

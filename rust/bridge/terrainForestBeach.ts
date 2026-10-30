@@ -118,3 +118,62 @@ export function forestBeachGrid(layer: ForestBeachLayer, seed: number, resolutio
   }
   return { x: layer.x, y: layer.y, width: layer.width, n: resolution, data };
 }
+
+export interface ShoreRingGrid { x: number; y: number; width: number; n: number; data: Float32Array }
+
+/** Resolution used by the callers: about 16 m texels, 128..2048. */
+export const shoreRingResolution = (width: number): number => Math.min(2048, Math.max(128, 2 ** Math.ceil(Math.log2(width / 16))));
+
+/** Ring of 12 directions x 2 radii (r, r/2) of the shaders' `shore`/`openness`, per texel centre (RG interleaved:
+ * shore = smallest ring distance with height < 0 or 65000, openness = share of the r-ring below 0). Only
+ * evaluated where the base height is < 40 m; the shader keeps its own per-pixel condition. */
+export function shoreRingGrid(layer: ForestBeachLayer, resolution: number): ShoreRingGrid {
+  const data = new Float32Array(resolution * resolution * 2), c = layer.width / resolution, cell = layer.width / layer.n;
+  const r = Math.max(300, 2 * cell), r2 = r * .5, none = 65000;
+  const dx = DIRS.map(d => d[0]), dy = DIRS.map(d => d[1]);
+  for (let j = 0; j < resolution; j++) {
+    const wy0 = layer.y + (j + .5) * c;
+    for (let i = 0; i < resolution; i++) {
+      const o = (j * resolution + i) * 2, wx0 = layer.x + (i + .5) * c;
+      surface(layer, cell, wx0, wy0);
+      if (sh >= 40) { data[o] = none; continue; }
+      let shore = none, open = 0;
+      for (let k = 0; k < 12; k++) {
+        surface(layer, cell, wx0 + dx[k] * r, wy0 + dy[k] * r);
+        if (sh < 0) { shore = r; open++; }
+        surface(layer, cell, wx0 + dx[k] * r2, wy0 + dy[k] * r2);
+        if (sh < 0 && r2 < shore) shore = r2;
+      }
+      data[o] = shore; data[o + 1] = open / 12;
+    }
+  }
+  return { x: layer.x, y: layer.y, width: layer.width, n: resolution, data };
+}
+
+const shoreCache = new WeakMap<object, ShoreRingGrid>();
+/** shoreRingGrid cached per layer object (2D and 3D share it). */
+export function shoreRingFor(layer: ForestBeachLayer): ShoreRingGrid {
+  let g = shoreCache.get(layer);
+  if (!g) shoreCache.set(layer, g = shoreRingGrid(layer, shoreRingResolution(layer.width)));
+  return g;
+}
+
+const f32 = new Float32Array(1), u32 = new Uint32Array(f32.buffer);
+function toHalf(v: number): number {
+  f32[0] = v; const x = u32[0], s = (x >>> 16) & 0x8000, e = ((x >>> 23) & 0xff) - 112, m = x & 0x7fffff;
+  if (e <= 0) return e < -10 ? s : s | ((m | 0x800000) >> (14 - e));
+  return e >= 31 ? s | 0x7bff : s | (e << 10) | (m >> 13);
+}
+
+/** RG16F linear clamp texture of a ShoreRingGrid. */
+export function shoreRingTexture(gl: WebGL2RenderingContext, grid: ShoreRingGrid): WebGLTexture {
+  const half = new Uint16Array(grid.data.length);
+  for (let i = 0; i < half.length; i++) half[i] = toHalf(grid.data[i]);
+  const texture = gl.createTexture()!;
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG16F, grid.n, grid.n, 0, gl.RG, gl.HALF_FLOAT, half);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return texture;
+}

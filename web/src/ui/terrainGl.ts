@@ -2,6 +2,7 @@ import { ShaderVariants, finishProgram, isAngleD3D11, specializeShader, startPro
 import { showAngleD3D11Notice } from './angleNotice';
 import { NEURAL_EARTH_MATERIAL_GLSL } from '../../../rust/bridge/terrainMaterial';
 import { RENDER_3D_MATERIAL_GLSL } from '../../../rust/bridge/terrainMaterial3d';
+import { shoreRingFor, shoreRingTexture } from '../../../rust/bridge/terrainForestBeach';
 import { FOREST_GLSL, FOREST_PRELUDE_GLSL, forestBeachTexture, type ForestField, type ForestOccupation } from '../../../rust/bridge/terrainForest';
 import { bindForestBrushes, disposeForestBrushes } from '../render/forestBrushAtlas';
 import { createGroundDisplacementSampler } from '../../../rust/bridge/terrainGround';
@@ -259,15 +260,15 @@ float naturalTpi(vec3 s, vec2 world) {
   float mean=(surface(world+vec2(r,0.)).x+surface(world-vec2(r,0.)).x+surface(world+vec2(0.,r)).x+surface(world-vec2(0.,r)).x)*.25;
   return (s.x-mean)/(6.*r);
 }
+uniform sampler2D uShoreRing; uniform vec3 uShoreRingRect;
 #if NATURAL
 vec3 naturalMaterial(vec3 s, vec2 world) {
   float r=max(300.,uFieldCell*2.);
   float mean=(surface(world+vec2(r,0.)).x+surface(world-vec2(r,0.)).x+surface(world+vec2(0.,r)).x+surface(world-vec2(0.,r)).x)*.25;
   float shore=1e9, openness=0.;
-  if(s.x<12. && length(s.yz)<.5) for(int i=0;i<12;i++) {
-    vec2 d=vec2(cos(float(i)*.523598776),sin(float(i)*.523598776));
-    if(surface(world+d*r).x<0.) {shore=min(shore,r);openness+=1./12.;}
-    if(surface(world+d*r*.5).x<0.) shore=min(shore,r*.5);
+  if(s.x<12. && length(s.yz)<.5) {
+    vec2 ring=textureLod(uShoreRing,(world-uShoreRingRect.xy)/uShoreRingRect.z,0.).rg;
+    shore=ring.x;openness=ring.y;
   }
   shore=min(shore,max(s.x,0.)/max(length(s.yz),.0001));
   if(uMode==3 || uRenderV2>0) {
@@ -523,6 +524,7 @@ export class TerrainGl {
   private lake?: WebGLTexture; private lakeMode = 0; private lakeN = 0;
   private overlay?: WebGLTexture;
   private coastDistance?: WebGLTexture;
+  private shoreRing?: { layer: object; texture: WebGLTexture; x: number; y: number; width: number };
   /** Canonical Render3D forest field and applied occupation, sampled by world coordinates. */
   private forest?: ForestTextures;
   private occupation?: { data: ForestOccupation; texture: WebGLTexture };
@@ -861,6 +863,14 @@ export class TerrainGl {
     gl.uniform1i(u('uMode'), mode);
     // Textures 7 forest field, 8 occupation, 12 banks; 10/11 belong to water.
     bindForest(gl, u, this.forest, this.occupation, this.empty, mode === 3, 7, 8, 12, 13);
+    // Texture 14: baked shore ring (CPU, shared with the 3D view), only for the natural looks.
+    if (mode >= 2 && this.base && this.shoreRing?.layer !== this.base.layer) {
+      if (this.shoreRing) gl.deleteTexture(this.shoreRing.texture);
+      const grid = shoreRingFor(this.base.layer);
+      this.shoreRing = { layer: this.base.layer, texture: shoreRingTexture(gl, grid), x: grid.x, y: grid.y, width: grid.width };
+    }
+    gl.activeTexture(gl.TEXTURE14); gl.bindTexture(gl.TEXTURE_2D, this.shoreRing?.texture ?? this.empty);
+    gl.uniform1i(u('uShoreRing'), 14); gl.uniform3f(u('uShoreRingRect'), this.shoreRing?.x ?? 0, this.shoreRing?.y ?? 0, this.shoreRing?.width ?? 1);
     bindForestBrushes(gl, u, look.style === 'render3d-brush' && mode === 3, 9);
     gl.uniform1i(u('uRenderV2'),renderV2Number(look.style));gl.uniform1i(u('uV2WaterVisible'),look.layers.water===false?0:1);if(this.base&&look.climate)gl.uniform4fv(u('uV2GlacierSources[0]'),renderV2GlacierSources(this.base.layer,look.climate));gl.uniform1f(u('uV2Season'),look.v2Season??.5);gl.uniform1i(u('uMaterialZone'),renderV2ZoneUniform(look.climateZone));
     gl.uniform1i(u('uEnhanced3d'), look.mesh3d || isRender3dStyle(look.style) ? 1 : 0);
