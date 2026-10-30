@@ -81,13 +81,13 @@ export interface WaterLayer {
 
 export interface OverlayLayer { rgba: Uint8Array; n: number }
 
-const hex = (value: string): [number, number, number] => {
+export const hex = (value: string): [number, number, number] => {
   const v = value.replace('#', '');
   const full = v.length === 3 ? v.split('').map(c => c + c).join('') : v;
   return [parseInt(full.slice(0, 2), 16) / 255, parseInt(full.slice(2, 4), 16) / 255, parseInt(full.slice(4, 6), 16) / 255];
 };
 
-const TERRAIN_VS = `#version 300 es
+export const TERRAIN_VS = `#version 300 es
 precision highp float;
 uniform vec4 uQuad; // device-pixel rectangle x0, y0, x1, y1 (y down)
 uniform vec2 uCanvas;
@@ -100,7 +100,7 @@ void main() {
 /** The ground GLSL may already carry the forest functions; never declare them twice. */
 export const RENDER_3D_FOREST_GLSL = RENDER_3D_MATERIAL_GLSL.includes('applyForest(') ? '' : FOREST_GLSL;
 
-const TERRAIN_FS = `#version 300 es
+export const TERRAIN_FS = `#version 300 es
 precision highp float; precision highp int; precision highp sampler2D;
 #ifdef AUX_PASS
 layout(location=0) out highp uvec4 outAux;
@@ -449,7 +449,7 @@ void main() {
   }
 }`;
 
-const RIVER_VS = `#version 300 es
+export const RIVER_VS = `#version 300 es
 precision highp float;
 layout(location = 0) in vec4 aSeg;
 layout(location = 1) in vec2 aWidth;
@@ -472,7 +472,7 @@ void main() {
   gl_Position = vec4(p.x / uCanvas.x * 2.0 - 1.0, 1.0 - p.y / uCanvas.y * 2.0, 0.0, 1.0);
 }`;
 
-const RIVER_FS = `#version 300 es
+export const RIVER_FS = `#version 300 es
 precision highp float; precision highp int; precision highp sampler2D;
 in vec2 vP; flat in vec4 vSeg; flat in vec2 vHalf; flat in vec3 vColor;
 out vec4 outColor;
@@ -497,9 +497,9 @@ void main() {
   outColor = vec4(color * alpha, alpha);
 }`;
 
-const COMPOSITE_VS = `#version 300 es
+export const COMPOSITE_VS = `#version 300 es
 void main() { vec2 p = vec2(gl_VertexID & 1, gl_VertexID >> 1) * 2.0 - 1.0; gl_Position = vec4(p, 0.0, 1.0); }`;
-const COMPOSITE_FS = `#version 300 es
+export const COMPOSITE_FS = `#version 300 es
 precision highp float;
 uniform sampler2D uLayer;
 out vec4 outColor;
@@ -508,11 +508,11 @@ void main() { outColor = texelFetch(uLayer, ivec2(gl_FragCoord.xy), 0); }`;
 const compile = (gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgram => finishProgram(gl, startProgram(gl, vs, fs));
 
 /** Map program variant (glVariants.ts): the look's mode, Render v2 number, forest and brushes as constants.
- * Forest looks draw their near crowns in a separate canopy pass (mapPasses). Measured alone with FXC:
- * preview 4 s, natural 5 s, Render3D with forest 10 s, Render v2 21 s, Render v2 with forest 35 s plus a
- * 4 s canopy pass linking in parallel; the full shader never loaded. On FXC they link in the background. */
-interface TerrainVariant { mode: number; v2: number; forest: boolean; brushes: boolean }
-const PREVIEW_VARIANT: TerrainVariant = { mode: 0, v2: 0, forest: false, brushes: false };
+ * Forest crowns and Render v2 water come from an auxiliary pass (mapPasses). Measured alone with FXC:
+ * Render v2 with forest 22 s for the map and 21 s for its auxiliary pass (linking in parallel), Render v2
+ * 19 s + 12 s, natural 5 s; the full shader never loaded. On FXC they link in the background. */
+export interface TerrainVariant { mode: number; v2: number; forest: boolean; brushes: boolean }
+export const PREVIEW_VARIANT: TerrainVariant = { mode: 0, v2: 0, forest: false, brushes: false };
 const variantKey = (v: TerrainVariant): string => `${v.mode}.${v.v2}.${+v.forest}${+v.brushes}`;
 /** Map passes of a look: forest crowns and Render v2 water are rendered first by an auxiliary pass
  * (one RGBA32UI texture: crowns in three words, the water colour in the fourth), then read by the map. */
@@ -523,7 +523,7 @@ const terrainFragment = (v: TerrainVariant): string => specializeShader(TERRAIN_
 const auxKey = (v: TerrainVariant): string => `aux.${v.mode}.${v.v2}.${+v.forest}${+v.brushes}`;
 const auxFragment = (v: TerrainVariant): string => specializeShader(TERRAIN_FS,
   { uMode: v.mode, uRenderV2: v.v2, uForest: +v.forest, uForestBrushes: +v.brushes }, { NATURAL: 0, AUX_PASS: 1 });
-const lookMode = (look: TerrainLook): number => look.style === 'copernicus' ? 1 : look.layers.hypsometry && isRender3dStyle(look.style) ? 3 : look.style === 'render' && look.layers.hypsometry ? 2 : 0;
+export const lookMode = (look: TerrainLook): number => look.style === 'copernicus' ? 1 : look.layers.hypsometry && isRender3dStyle(look.style) ? 3 : look.style === 'render' && look.layers.hypsometry ? 2 : 0;
 
 interface GpuLayer { layer: HeightLayer; levels: Float32Array[]; texture: WebGLTexture; cave?: WebGLTexture; alpha: number; fadeStart: number }
 
