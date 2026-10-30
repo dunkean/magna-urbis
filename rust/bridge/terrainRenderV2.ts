@@ -173,8 +173,7 @@ vec3 v2ShadeGround(GroundMaterial resolved,vec3 view,vec3 light,vec3 light2,floa
 GroundMaterial v2Ground(vec3 s,vec2 world,float footprint,float tpi,vec3 light,vec3 light2,float strength,vec3 macroOpen){
   return v2GroundEnv(v2Local(s,world,tpi,footprint),s,world,footprint,light,light2,strength,macroOpen);
 }
-vec3 v2WaterAtEnv(V2Env local,vec3 rgb,vec2 world,float footprint,float cover,float kind,float depth){
-  if(uV2WaterVisible==0||cover<=0.)return rgb;
+vec3 v2WaterColor(V2Env local,vec2 world,float footprint,float cover,float kind,float depth){
   V2Env e=local;
   // Regional map has no calving/current model. Only a perennial-cold land
   // source near a shoreline enables this local coastal iceberg proxy.
@@ -183,7 +182,11 @@ vec3 v2WaterAtEnv(V2Env local,vec3 rgb,vec2 world,float footprint,float cover,fl
   vec3 water=v2Water(depth,kind,cover,e,vec3(world,0.),footprint,uMaterialSeed);
   if(uRenderV2==5)water=mix(vec3(.08,.17,.24),vec3(.85,.94,1.),v2Ice(depth,kind,e,vec3(world,0.),footprint,uMaterialSeed).x);
   if(uRenderV2==4)water=vec3(0.,0.,.13);
-  return mix(rgb,water,cover);
+  return water;
+}
+vec3 v2WaterAtEnv(V2Env local,vec3 rgb,vec2 world,float footprint,float cover,float kind,float depth){
+  if(uV2WaterVisible==0||cover<=0.)return rgb;
+  return mix(rgb,v2WaterColor(local,world,footprint,cover,kind,depth),cover);
 }
 vec3 v2WaterAt(vec3 rgb,vec3 s,vec2 world,float footprint,float cover,float kind,float depth){
   if(uV2WaterVisible==0||cover<=0.)return rgb;

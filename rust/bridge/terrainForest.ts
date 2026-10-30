@@ -444,6 +444,9 @@ uniform int uHasOccupation; uniform sampler2D uOccupation; uniform vec3 uOccupat
 // V2 crown-root beach (0..1), baked once per terrain on the CPU (terrainForestBeach.ts): evaluating it per
 // crown cost minutes of FXC compilation and dozens of height samples per pixel.
 uniform int uHasForestBeach; uniform sampler2D uForestBeach; uniform vec3 uForestBeachRect;
+// GLSL ES 3.00 has no packUnorm4x8: four bytes in one uint (auxiliary pass texels).
+uint auxPack4x8(vec4 v){uvec4 b=uvec4(clamp(v,0.,1.)*255.+.5);return b.x|(b.y<<8)|(b.z<<16)|(b.w<<24);}
+vec4 auxUnpack4x8(uint u){return vec4(float(u&255u),float((u>>8)&255u),float((u>>16)&255u),float(u>>24))/255.;}
 float forestBeach(vec2 world){return uHasForestBeach==1?textureLod(uForestBeach,(world-uForestBeachRect.xy)/uForestBeachRect.z,0.).r:0.;}
 float forestWaterCoverage(vec2 world);
 vec3 forestRootSurface(vec2 world);
@@ -761,26 +764,27 @@ ForestCanopy forestCanopyNear(ForestPrep p,vec3 l){
   c.tint=forestU8(hit.id*0x9e3779b9u,0u);
   return c;
 }
-#ifdef FOREST_CANOPY_TEXTURES
-// Map: the canopy pass wrote forestCanopyNear for this pixel (forestCanopyPack layout).
-uniform int uHasCanopy;uniform highp usampler2D uCanopy;
+#ifdef AUX_TEXTURE
+// Map: the auxiliary pass wrote forestCanopyNear for this pixel (forestCanopyPack layout, words xyz of uAux).
+uniform int uHasAux;uniform highp usampler2D uAux;
 ForestCanopy forestCanopyAt(ForestPrep p,vec3 l){
   ForestCanopy c;c.cover=0.;c.shade=0.;c.near=9.;c.rel=1.;c.slope=vec2(0.);c.edge=0.;c.tint=.5;c.ink=.5;c.needle=false;c.riparian=false;
-  if(uHasCanopy==0)return c;
-  uvec4 t=texelFetch(uCanopy,ivec2(gl_FragCoord.xy),0);
-  vec2 a=unpackHalf2x16(t.x),b=unpackHalf2x16(t.y),e=unpackHalf2x16(t.z),f=unpackHalf2x16(t.w);
-  c.cover=a.x;c.shade=a.y;c.near=b.x;c.rel=b.y;c.slope=e;c.edge=f.x;
-  float flags=floor(f.y);c.tint=fract(f.y);c.ink=c.tint;c.needle=mod(flags,2.)>.5;c.riparian=mod(floor(flags*.5),2.)>.5;
+  if(uHasAux==0)return c;
+  uvec4 t=texelFetch(uAux,ivec2(gl_FragCoord.xy),0);
+  vec2 a=unpackHalf2x16(t.x);vec4 b=auxUnpack4x8(t.z);
+  c.cover=a.x;c.shade=a.y;c.slope=unpackHalf2x16(t.y);c.near=b.x*9.;c.rel=b.y;c.edge=b.z;
+  float packed=b.w*4.+.002,flags=floor(packed);c.tint=packed-flags;c.ink=c.tint;c.needle=mod(flags,2.)>.5;c.riparian=mod(floor(flags*.5),2.)>.5;
   return c;
 }
 #else
 ForestCanopy forestCanopyAt(ForestPrep p,vec3 l){return forestCanopyNear(p,l);}
 #endif
-// Canopy pass output: eight halves in one RGBA32UI texel; brushes store their ink in place of the tint.
-uvec4 forestCanopyPack(ForestCanopy c){
+// Auxiliary pass words xyz: cover/shade and slope as halves, near/rel/edge/flags+tint as bytes;
+// brushes store their ink in place of the tint.
+uvec3 forestCanopyPack(ForestCanopy c){
   float tint=min(uForestBrushes==1?c.ink:c.tint,.99);
-  return uvec4(packHalf2x16(vec2(c.cover,c.shade)),packHalf2x16(vec2(min(c.near,9.),c.rel)),packHalf2x16(c.slope),
-    packHalf2x16(vec2(c.edge,(c.needle?1.:0.)+(c.riparian?2.:0.)+tint)));
+  return uvec3(packHalf2x16(vec2(c.cover,c.shade)),packHalf2x16(c.slope),
+    auxPack4x8(vec4(min(c.near,9.)/9.,c.rel,c.edge,((c.needle?1.:0.)+(c.riparian?2.:0.)+tint)/4.)));
 }
 void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
   forestResolvedCover=0.;
