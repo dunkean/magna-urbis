@@ -202,6 +202,7 @@ export class BenchRenderer {
   backgroundUrl(): string | undefined { if(!this.backgroundHref&&this.gpuActive)this.backgroundHref=this.gpu!.captureMap(1024).toDataURL('image/png');return this.backgroundHref; }
   async capture(size: number, layers?: Partial<ExportLayers>): Promise<HTMLCanvasElement> {
     if (layers) await this.set(this.world!, this.settings!, layers);
+    if (this.gpuActive) await this.gpu!.variantReady();   // draw() is synchronous: it would create a missing pipeline in place
     return this.draw({ cx: this.world!.mapSize / 2, cy: this.world!.mapSize / 2, scale: size / this.world!.mapSize }, size, size, 1);
   }
   dispose(): void { this.disposed = true; this.gpu?.dispose(); this.cartography?.dispose(); this.city?.dispose(); if(this.ownsMaterialContext)this.materialContext?.gl.getExtension('WEBGL_lose_context')?.loseContext();this.materialContext=undefined;this.world = undefined; }

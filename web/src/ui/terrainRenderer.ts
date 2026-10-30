@@ -4,6 +4,8 @@
  * ANGLE/D3D11, whose HLSL compiler takes 10 to 40 s on the natural looks; WGSL skips that step.
  * `?renderer=webgl` forces WebGL2, `?renderer=webgpu` forces WebGPU (an error if it is unavailable).
  * The decision is taken before any context is created on the canvas: a canvas keeps its first context.
+ * A lost WebGPU device is recreated by the renderer itself; if that fails it continues on WebGL2
+ * (terrainGpu.ts).
  */
 import { TerrainGl } from './terrainGl';
 
@@ -28,7 +30,7 @@ export async function createTerrainRenderer(canvas: HTMLCanvasElement, webgpuCan
   if (requested !== 'webgl' && typeof navigator !== 'undefined' && navigator.gpu) {
     try {
       const { createTerrainGpu } = await import('./terrainGpu');
-      const renderer = await createTerrainGpu(webgpuCanvas, requested === 'webgpu');
+      const renderer = await createTerrainGpu(webgpuCanvas, requested === 'webgpu', canvas);
       if (renderer) return renderer;
     } catch (error) {
       if (requested === 'webgpu') throw error;
@@ -44,7 +46,8 @@ export function terrainRendererCanvas(renderer: TerrainRenderer, glCanvas: HTMLC
   return renderer instanceof TerrainGl ? glCanvas : (renderer as { canvas?: HTMLCanvasElement }).canvas ?? glCanvas;
 }
 
-/** Which backend a renderer uses (for status lines). */
+/** Which backend a renderer uses (for status lines); a WebGPU renderer reports WebGL2 after a definitive
+ * device loss, when it forwards to a TerrainGl. */
 export function terrainRendererBackend(renderer: TerrainRenderer): TerrainBackend {
-  return renderer instanceof TerrainGl ? 'webgl' : 'webgpu';
+  return renderer instanceof TerrainGl ? 'webgl' : (renderer as { backend?: TerrainBackend }).backend ?? 'webgpu';
 }

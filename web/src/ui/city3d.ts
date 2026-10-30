@@ -8,7 +8,8 @@ import { cityBridgeStreets } from '../render/cityBridges';
  * data: the .decor raster as relief, the 2D map image (or the Render3D ground
  * material) as texture, the city plan drawn into close-up tiles, and every
  * architecture mode as display volumes (render/city3dMeshes.ts). */
-import { Terrain3d, TERRAIN_3D_FOV, type Terrain3dCamera, type Terrain3dTile, type Terrain3dGroundSettings } from './terrain3d';
+import { TERRAIN_3D_FOV, type Terrain3d, type Terrain3dCamera, type Terrain3dTile, type Terrain3dGroundSettings } from './terrain3d';
+import { createTerrain3d } from './terrain3dRenderer';
 import type { HeightLayer } from './terrainGl';
 import type { ForestField, ForestOccupation } from '../../../rust/bridge/terrainForest';
 import type { UrbanBuildingAppearance } from '../render/urbanBuildingStyle';
@@ -220,7 +221,7 @@ export function mountCity3d(options: City3dOptions): City3d {
 
   function ensureTerrain(): Terrain3d | undefined {
     if (terrain || error) return terrain;
-    try { terrain = new Terrain3d(canvas, () => {
+    try { terrain = createTerrain3d(canvas, () => {
       updateInfo(); options.onCamera?.(terrain!.getCamera());
       if (options.details && !detailFrame) detailFrame = requestAnimationFrame(() => { detailFrame = 0; driveDetails(); });
     }, () => placeMarker(), { fastMapShader: options.fastTerrain });

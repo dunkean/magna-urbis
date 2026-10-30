@@ -9,9 +9,16 @@
  *   an offscreen RGBA8 target and flipped once onto the canvas;
  * - uniforms live in one storage block per program, written per draw into a frame buffer slot;
  * - look switches are pipeline overrides; pipelines are created with createRenderPipelineAsync, the last
- *   drawn (or the preview) pipeline stands in meanwhile. Captures that TerrainGl makes wait for the link
- *   create the missing pipeline synchronously instead (their readback then waits for it, as GL does);
- * - captures read a separate WebGPU canvas through drawImage, in the same task (no async readback).
+ *   drawn (or the preview) pipeline stands in meanwhile. The heavy looks (Render v2, Render3D with and
+ *   without forest, Render, their auxiliary passes) are created in the background from device creation
+ *   (GpuShared.prewarm), as TerrainGl.prewarmVariants does on ANGLE/D3D11;
+ * - captures read a separate WebGPU canvas through drawImage, in the same task (no async readback). The
+ *   capture methods stay synchronous: a pipeline still missing then is created synchronously, and the
+ *   drawImage readback waits for its compilation (about 3-4 s for Render v2 on D3D12). Async callers await
+ *   variantReady() first, which resolves once the look's pipelines exist, without blocking;
+ * - a lost device (driver reset, GPU switch, device.destroy() from outside) is recreated with its pipelines
+ *   and every GPU resource re-uploaded from the retained CPU inputs; if that fails, the renderer continues
+ *   as a TerrainGl on a WebGL2 canvas when one can be had, otherwise captures throw a clear error.
  */
 import { unzlibSync } from 'fflate';
 import atlas from '../render/assets/fantasy/forest-brushes.json';
@@ -31,7 +38,7 @@ import { CANVAS_MAP_STROKES, mapStrokeWidth } from '../render/strokes';
 import type { View } from '../render/view';
 import { createTerrainSurfaceSampler, heightPyramid } from './terrainSurface';
 import { isNeuralRefinement } from './terrainRefinement';
-import { PREVIEW_VARIANT, hex, lookMode, mapPasses, type HeightLayer, type OverlayLayer, type TerrainLook, type TerrainVariant, type WaterLayer } from './terrainGl';
+import { PREVIEW_VARIANT, TerrainGl, hex, lookMode, mapPasses, type HeightLayer, type OverlayLayer, type TerrainLook, type TerrainVariant, type WaterLayer } from './terrainGl';
 import type { TerrainRenderer } from './terrainRenderer';
 import * as WGSL from './terrainWgsl.generated';
 
@@ -121,6 +128,8 @@ class GpuShared {
   private pipelines = new Map<string, Pipeline>();
   /** Redraw requests of the live renderers, called when a pipeline becomes ready. */
   readonly listeners = new Set<() => void>();
+  /** Recovery of the live renderers, called when the device is lost (not destroyed by this module). */
+  readonly lostListeners = new Set<() => void>();
   lost = false;
   constructor(readonly device: GPUDevice) {
     for (const key of ['terrainVs', 'terrainFs', 'terrainAuxTextureFs', 'auxFs', 'riverVs', 'riverFs', 'compositeVs', 'compositeFs', 'waterFs'] as const)
@@ -158,6 +167,15 @@ class GpuShared {
     return entry.pipeline = this.device.createRenderPipeline(descriptor());
   }
   adopt(key: string, pipeline: GPURenderPipeline): void { this.pipelines.set(key, { pipeline }); }
+  /** Render v2 and Render3D (with and without forest), Render, and their auxiliary passes: 3-4 s each on
+   * D3D12, so they are created in the background from device creation, as TerrainGl.prewarmVariants on
+   * ANGLE/D3D11. Detail layers (alpha-blended map) only appear on the 2D looks: Render3D looks drop them. */
+  prewarm(): void {
+    const variants: TerrainVariant[] = [{ mode: 3, v2: 1, forest: true }, { mode: 3, v2: 1, forest: false }, { mode: 3, v2: 0, forest: true },
+      { mode: 3, v2: 0, forest: false }, { mode: 2, v2: 0, forest: false }].map(v => ({ ...v, brushes: false }));
+    for (const v of variants) for (const pass of mapPasses(v)) this.pipeline(this.terrainKey(v, pass, 'none'), () => this.terrainDescriptor(v, pass, 'none'));
+    for (const v of [variants[4], PREVIEW_VARIANT]) this.pipeline(this.terrainKey(v, 'map', 'alpha'), () => this.terrainDescriptor(v, 'map', 'alpha'));
+  }
   /** Resolves once a pipeline is created (or failed). */
   async settled(key: string): Promise<boolean> {
     for (;;) {
@@ -195,16 +213,25 @@ class GpuShared {
 }
 
 let shared: Promise<GpuShared | undefined> | undefined;
-/** The device and its shared objects, once per page; undefined without a usable (hardware) adapter
- * unless `forced`. The preview pipeline is created before anything is returned: a failure here keeps
- * the WebGL2 path available (no canvas context has been taken yet). */
+/** The device of `shared` once prepared: a later loss of an older device does not reset `shared`. */
+let current: GpuShared | undefined;
+/** Devices this module destroyed itself (a refused probe): their loss is expected. */
+const destroyedHere = new WeakSet<GPUDevice>();
+/** The device and its shared objects, once per page (again after a device loss); undefined without a
+ * usable (hardware) adapter unless `forced`. The preview pipeline is created before anything is returned:
+ * a failure here keeps the WebGL2 path available (no canvas context has been taken yet). */
 function sharedGpu(forced: boolean): Promise<GpuShared | undefined> {
   return shared ??= (async () => {
     if (!navigator.gpu) return undefined;
     const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
     if (!adapter || (adapter.info?.isFallbackAdapter && !forced)) return undefined;
     const device = await adapter.requestDevice({ label: 'terrain map', requiredLimits: { maxTextureDimension2D: adapter.limits.maxTextureDimension2D } });
-    try { return await prepare(device); } catch (error) { device.destroy(); throw error; }
+    let gpu: GpuShared;
+    try { gpu = await prepare(device); } catch (error) { destroyedHere.add(device); device.destroy(); throw error; }
+    if (gpu.lost) throw new Error('WebGPU : appareil perdu pendant la préparation de la carte.');
+    current = gpu;
+    gpu.prewarm();
+    return gpu;
   })().catch(error => { shared = undefined; throw error; });
 }
 /** Shared objects of a new device; throws if a module or the preview pipeline is refused. */
@@ -212,9 +239,10 @@ async function prepare(device: GPUDevice): Promise<GpuShared> {
   const gpu = new GpuShared(device);
   device.lost.then(info => {
     gpu.lost = true;
-    if (info.reason === 'destroyed') return;   // a refused probe
-    shared = undefined; console.warn('WebGPU map device lost:', info.message);
-    for (const listener of gpu.listeners) listener();
+    if (destroyedHere.has(device)) return;   // a refused probe
+    if (current === gpu) { shared = undefined; current = undefined; }
+    console.warn(`WebGPU map device lost (${info.reason}): ${info.message}`);
+    for (const listener of [...gpu.lostListeners]) listener();
   });
   device.addEventListener('uncapturederror', event => console.error('WebGPU map:', (event as GPUUncapturedErrorEvent).error.message));
   for (const [key, module] of Object.entries(gpu.modules)) {
@@ -233,9 +261,11 @@ async function prepare(device: GPUDevice): Promise<GpuShared> {
 }
 
 /** A WebGPU map renderer on `canvas`, or undefined when WebGPU is not usable (see sharedGpu). */
-export async function createTerrainGpu(canvas: HTMLCanvasElement, forced: boolean): Promise<TerrainGpu | undefined> {
+/** `glCanvas`: the factory's WebGL2 canvas, used if the device is lost for good (when it differs from
+ * `canvas`, which keeps its WebGPU context). */
+export async function createTerrainGpu(canvas: HTMLCanvasElement, forced: boolean, glCanvas?: HTMLCanvasElement): Promise<TerrainGpu | undefined> {
   const gpu = await sharedGpu(forced);
-  return gpu && new TerrainGpu(canvas, gpu);
+  return gpu && new TerrainGpu(canvas, gpu, forced, glCanvas !== canvas ? glCanvas : undefined);
 }
 
 interface GpuLayer { layer: HeightLayer; levels: Float32Array[]; texture: GPUTexture; view: GPUTextureView; cave?: GPUTexture; caveView?: GPUTextureView; alpha: number; fadeStart: number }
@@ -245,8 +275,14 @@ interface ForestImages { field: ForestField; texture: GpuImage; bank?: GpuImage;
 /** Where a frame ends: the display canvas, or the capture canvas (opaque or premultiplied). */
 interface Surface { canvas: HTMLCanvasElement; context: GPUCanvasContext; opaque: boolean }
 
+/** CPU inputs retained to rebuild the GPU state after a device loss (or to hand it to a TerrainGl). */
+interface RendererInputs {
+  look?: TerrainLook; view?: { view: View; width: number; height: number }; base?: HeightLayer; details: HeightLayer[]; enhanced: HeightLayer[];
+  retainedWater?: { svg: string; width: number }; water?: WaterLayer; overlay?: OverlayLayer; forest?: ForestField; occupation?: ForestOccupation;
+}
+
 export class TerrainGpu implements TerrainRenderer {
-  private readonly device: GPUDevice;
+  private device: GPUDevice;
   private readonly context: GPUCanvasContext;
   private capture?: { canvas: HTMLCanvasElement; context: GPUCanvasContext; opaque?: boolean };
   /** Last map variant drawn: it stands in while the look's own pipeline is created. */
@@ -271,7 +307,7 @@ export class TerrainGpu implements TerrainRenderer {
   private shoreRing?: { layer: object; image: GpuImage; x: number; y: number; width: number };
   private forest?: ForestImages;
   private occupation?: { data: ForestOccupation; image: GpuImage };
-  private brushes: { image: GpuImage; full: boolean };
+  private brushes!: { image: GpuImage; full: boolean };
   private lakeInput?: Float32Array;
   private lakeWidth = 0;
   private seaSurface?: WaterSurface;
@@ -279,23 +315,45 @@ export class TerrainGpu implements TerrainRenderer {
   private view?: { view: View; width: number; height: number };
   private frame = 0;
   private disposed = false;
-  private readonly empty: GpuImage; private readonly emptyUint: GpuImage;
+  private empty!: GpuImage; private emptyUint!: GpuImage;
   private readonly terrainParams = new Params(WGSL.WGSL_PARAMS.terrain);
   private readonly riverParams = new Params(WGSL.WGSL_PARAMS.river);
   private readonly waterParams = new Params(WGSL.WGSL_PARAMS.water);
   /** Per-frame storage slots of the draws' parameters (written once before the frame's submit). */
-  private slots: { buffer: GPUBuffer; staging: Uint8Array<ArrayBuffer>; used: number; align: number; slotSize: number };
+  private slots!: { buffer: GPUBuffer; staging: Uint8Array<ArrayBuffer>; used: number; align: number; slotSize: number };
   private readonly redraw = (): void => this.request();
+  /** Inputs kept only to rebuild the GPU state (setWater, setOverlay, setRetainedWater). */
+  private waterInput?: WaterLayer; private overlayInput?: OverlayLayer; private retainedWaterInput?: { svg: string; width: number };
+  /** Device recovery in progress, recent losses (a device lost again and again falls back to WebGL2). */
+  private recovering?: Promise<void>;
+  private losses: number[] = [];
+  /** After a definitive loss: the WebGL2 renderer everything is forwarded to, or the error captures throw. */
+  private fallback?: TerrainGl;
+  private failure?: Error;
+  private readonly onLost = (): void => {
+    if (this.disposed || this.recovering) return;
+    this.recovering = this.recover().finally(() => { this.recovering = undefined; });
+  };
+  private gpuDrawMs = 0;
   /** Last frame's GPU submission time, ms (CPU side). */
-  drawMs = 0;
+  get drawMs(): number { return this.fallback?.drawMs ?? this.gpuDrawMs; }
+  /** The backend actually drawing (WebGL2 after a definitive device loss). */
+  get backend(): 'webgpu' | 'webgl' { return this.fallback ? 'webgl' : 'webgpu'; }
 
-  constructor(readonly canvas: HTMLCanvasElement, private gpu: GpuShared) {
+  /** `canvas` changes only on a fall back to WebGL2 (terrainRendererCanvas reads it). */
+  constructor(public canvas: HTMLCanvasElement, private gpu: GpuShared, private readonly forced = false, private readonly glCanvas?: HTMLCanvasElement) {
     this.device = gpu.device;
     const context = canvas.getContext('webgpu');
     if (!context) throw new Error('WebGPU indisponible sur ce canevas');
     this.context = context;
-    context.configure({ device: this.device, format: gpu.canvasFormat, alphaMode: 'opaque' });
-    gpu.listeners.add(this.redraw);
+    this.attach(gpu);
+  }
+
+  /** Binds the renderer to a (new) device: canvas configuration, listeners and the device-wide images. */
+  private attach(gpu: GpuShared): void {
+    this.gpu = gpu; this.device = gpu.device;
+    this.context.configure({ device: this.device, format: gpu.canvasFormat, alphaMode: 'opaque' });
+    gpu.listeners.add(this.redraw); gpu.lostListeners.add(this.onLost);
     this.empty = this.image(1, 1, 'r8unorm', new Uint8Array(1), 1);
     this.emptyUint = this.image(1, 1, 'rgba32uint', new Uint32Array(4), 16);
     this.brushes = { image: this.arrayImage(1, 1, 1, [new Uint8Array([255, 128])]), full: false };
@@ -304,6 +362,84 @@ export class TerrainGpu implements TerrainRenderer {
     this.slots = { buffer: this.device.createBuffer({ label: 'map parameters', size: slotSize * count, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST }),
       staging: new Uint8Array(slotSize * count), used: 0, align, slotSize };
   }
+
+  private inputs(): RendererInputs {
+    return { look: this.look, view: this.view, base: this.base?.layer, details: this.details.map(d => d.layer), enhanced: this.enhanced.map(d => d.layer),
+      retainedWater: this.retainedWaterInput, water: this.waterInput, overlay: this.overlayInput, forest: this.forest?.field, occupation: this.occupation?.data };
+  }
+  /** Replays retained inputs through the public setters (look first: setWater reads its map width). */
+  private static restore(target: TerrainRenderer, inputs: RendererInputs): void {
+    if (inputs.look) target.setLook(inputs.look);
+    if (inputs.base) target.setBase(inputs.base);
+    for (const layer of inputs.details) target.setDetail(layer);
+    for (const layer of inputs.enhanced) target.setEnhancedDetail(layer);
+    target.setRetainedWater(inputs.retainedWater?.svg, inputs.retainedWater?.width);
+    target.setWater(inputs.water);
+    target.setOverlay(inputs.overlay);
+    target.setForest(inputs.forest, inputs.occupation);
+    if (inputs.view) target.setView(inputs.view.view, inputs.view.width, inputs.view.height);
+  }
+
+  /** After a device loss: a new device (shared with the other renderers), its pipelines and every resource
+   * re-uploaded; after three failures, or a fourth loss within a minute, the WebGL2 fall back. */
+  private async recover(): Promise<void> {
+    const now = performance.now();
+    this.losses = [...this.losses.filter(t => now - t < 60_000), now];
+    let error: unknown = new Error('WebGPU : l’appareil est perdu à répétition.');
+    for (let attempt = 0; attempt < 3 && this.losses.length <= 3; attempt++) {
+      if (attempt) await new Promise(resolve => setTimeout(resolve, 500 * attempt));
+      if (this.disposed) return;
+      try {
+        const gpu = await sharedGpu(this.forced);
+        if (!gpu) throw new Error('WebGPU : plus d’adaptateur matériel.');
+        if (this.disposed) return;
+        if (gpu.lost) throw new Error('WebGPU : le nouvel appareil est déjà perdu.');
+        this.rebuild(gpu);
+        console.info('WebGPU map: device recreated, resources re-uploaded.');
+        return;
+      } catch (caught) { error = caught; console.warn('WebGPU map: device recreation failed:', caught); }
+    }
+    if (!this.disposed) this.fallBack(error);
+  }
+  /** Re-creates every GPU resource on `gpu` from the retained inputs (the old device's objects are dropped). */
+  private rebuild(gpu: GpuShared): void {
+    const inputs = this.inputs();
+    this.gpu.listeners.delete(this.redraw); this.gpu.lostListeners.delete(this.onLost);
+    this.attach(gpu);
+    if (this.capture) this.capture.opaque = undefined;   // reconfigured on the new device at next use
+    this.lastVariant = PREVIEW_VARIANT;
+    this.auxTarget = this.mapTarget = this.riverTarget = this.waterTarget = undefined; this.auxKey = '';
+    this.retainedWater = undefined; this.retainedWaterViewKey = ''; this.retainedWaterKey = '';
+    this.base = undefined; this.details = []; this.enhanced = [];
+    this.lake = undefined; this.lakeInput = undefined; this.overlay = undefined; this.coastDistance = undefined; this.shoreRing = undefined;
+    this.forest = undefined; this.occupation = undefined;
+    this.riverBuffer = undefined; this.riverCount = 0;
+    TerrainGpu.restore(this, inputs);
+  }
+  /** Definitive loss: a TerrainGl on the factory's WebGL2 canvas, or on a fresh canvas put in place of this
+   * one (a canvas keeps its first context type); otherwise captures throw `failure`. */
+  private fallBack(error: unknown): void {
+    const inputs = this.inputs(), reason = error instanceof Error ? error.message : String(error);
+    this.gpu.listeners.delete(this.redraw); this.gpu.lostListeners.delete(this.onLost);
+    cancelAnimationFrame(this.frame); this.frame = 0;
+    let canvas = this.glCanvas;
+    if (!canvas && this.canvas.isConnected) {
+      canvas = this.canvas.cloneNode(false) as HTMLCanvasElement;
+      this.canvas.replaceWith(canvas);
+    }
+    try {
+      if (!canvas) throw new Error('aucun canevas WebGL2 disponible');
+      const gl = new TerrainGl(canvas);
+      TerrainGpu.restore(gl, inputs);
+      this.fallback = gl; this.canvas = canvas;
+      console.warn(`WebGPU map: device lost for good (${reason}); continuing with WebGL2.`);
+    } catch (glError) {
+      this.failure = new Error(`WebGPU indisponible pour la carte : appareil perdu (${reason}) et WebGL2 impossible (${glError instanceof Error ? glError.message : glError}).`);
+      console.error(this.failure);
+    }
+  }
+  /** The error a capture throws while the device is lost or after a failed recovery. */
+  private unavailable(): Error { return this.failure ?? new Error('Le terrain est indisponible.'); }
 
   private image(width: number, height: number, format: GPUTextureFormat, data: ArrayBufferView, bytesPerTexel: number, mips?: ArrayBufferView[]): GpuImage {
     const levels = mips ?? [data];
@@ -353,6 +489,7 @@ export class TerrainGpu implements TerrainRenderer {
 
   /** The whole map's control grid; drops detail layers. */
   setBase(layer: HeightLayer): void {
+    if (this.fallback) return this.fallback.setBase(layer);
     this.enhanced.forEach(d => this.release(d)); this.enhanced = [];
     this.release(this.base); this.details.forEach(d => this.release(d)); this.details = [];
     this.base = this.upload(layer, true);
@@ -368,6 +505,7 @@ export class TerrainGpu implements TerrainRenderer {
 
   /** A finer square region drawn over the base, cross-faded in; keeps at most two. */
   setDetail(layer: HeightLayer | undefined): void {
+    if (this.fallback) return this.fallback.setDetail(layer);
     if (!layer) { this.details.forEach(d => this.release(d)); this.details = []; this.request(); return; }
     const next = this.upload(layer, false);
     next.alpha = 0; next.fadeStart = performance.now();
@@ -376,11 +514,12 @@ export class TerrainGpu implements TerrainRenderer {
     this.request();
   }
 
-  setRenderV2Season(season: number): void { if (this.look) { this.look = { ...this.look, v2Season: season }; this.request(); } }
-  setLook(look: TerrainLook): void { this.look = look; this.request(); }
+  setRenderV2Season(season: number): void { if (this.fallback) return this.fallback.setRenderV2Season(season); if (this.look) { this.look = { ...this.look, v2Season: season }; this.request(); } }
+  setLook(look: TerrainLook): void { if (this.fallback) return this.fallback.setLook(look); this.look = look; this.request(); }
 
   /** Explicit Render3D refinement only; ordinary 2D layers never consume it. */
   setEnhancedDetail(layer: HeightLayer | undefined): void {
+    if (this.fallback) return this.fallback.setEnhancedDetail(layer);
     if (!layer) { this.enhanced.forEach(d => this.release(d)); this.enhanced = []; this.request(); return; }
     if (this.enhanced.at(-1)?.layer === layer) return;
     const next = this.upload(layer, false); next.fadeStart = performance.now();
@@ -390,6 +529,8 @@ export class TerrainGpu implements TerrainRenderer {
   }
 
   setRetainedWater(svg: string | undefined, width = 1): void {
+    if (this.fallback) return this.fallback.setRetainedWater(svg, width);
+    this.retainedWaterInput = svg ? { svg, width } : undefined;
     const key = svg ? `${width}:${svg}` : '';
     if (key === this.retainedWaterKey) return;
     this.retainedWaterKey = key;
@@ -399,6 +540,8 @@ export class TerrainGpu implements TerrainRenderer {
   }
 
   setWater(water: WaterLayer | undefined): void {
+    if (this.fallback) return this.fallback.setWater(water);
+    this.waterInput = water;
     const width = this.look?.mapWidth ?? this.base?.layer.width ?? 0;
     if (water?.lake !== this.lakeInput || (water?.lake && (this.lakeN !== water.n || this.lakeWidth !== width))) {
       this.releaseImage(this.lake);
@@ -424,15 +567,18 @@ export class TerrainGpu implements TerrainRenderer {
   }
 
   setOverlay(overlay: OverlayLayer | undefined): void {
+    if (this.fallback) return this.fallback.setOverlay(overlay);
+    this.overlayInput = overlay;
     this.releaseImage(this.overlay);
     this.overlay = overlay ? this.image(overlay.n, overlay.n, 'rgba8unorm', overlay.rgba, 4) : undefined;
     this.request();
   }
 
-  setView(view: View, width: number, height: number): void { this.view = { view, width, height }; this.request(); }
+  setView(view: View, width: number, height: number): void { if (this.fallback) return this.fallback.setView(view, width, height); this.view = { view, width, height }; this.request(); }
 
   /** Render3D forest: texture uploads only. `undefined` restores the legacy macro canopy exactly. */
   setForest(field: ForestField | undefined, occupation?: ForestOccupation): void {
+    if (this.fallback) return this.fallback.setForest(field, occupation);
     occupation = field ? occupation : undefined;
     if (field !== this.forest?.field) {
       this.releaseForest();
@@ -452,12 +598,18 @@ export class TerrainGpu implements TerrainRenderer {
     this.forest = undefined;
   }
 
+  /** Synchronous, as the captures below: await variantReady() first where the caller can wait, otherwise a
+   * missing pipeline is created synchronously and the readback waits for it (3-4 s for Render v2). */
   captureMap(size = 2048, groundOverlay = false): HTMLCanvasElement {
-    if (!this.look) throw new Error('Le terrain est indisponible.');
+    if (this.fallback) return this.fallback.captureMap(size, groundOverlay);
+    if (!this.look) throw this.unavailable();
     return this.captureRegion({ x: 0, y: 0, width: this.look.mapWidth }, size, false, true, undefined, groundOverlay);
   }
+  /** Draws the final look now (a missing pipeline is created synchronously: the next readback of the canvas
+   * waits for it). Async callers await variantReady() first. */
   redrawForCapture(): void {
-    if (!this.base || !this.look || this.gpu.lost) throw new Error('Le terrain est indisponible.');
+    if (this.fallback) return this.fallback.redrawForCapture();
+    if (!this.base || !this.look || this.gpu.lost) throw this.unavailable();
     this.capturing = true;
     try { this.draw(); } finally { this.capturing = false; }
   }
@@ -478,7 +630,8 @@ export class TerrainGpu implements TerrainRenderer {
 
   /** Render a world-space LOD tile with the same material and detail as the map. */
   captureRegion(region: { x: number; y: number; width: number }, size = 512, includeDetails = true, restoreDisplay = true, height?: HeightLayer, groundOverlay = false, alphaOnly?: Uint8Array): HTMLCanvasElement {
-    if (!this.base || !this.look || this.gpu.lost) throw new Error('Le terrain est indisponible.');
+    if (this.fallback) return this.fallback.captureRegion(region, size, includeDetails, restoreDisplay, height, groundOverlay, alphaOnly);
+    if (!this.base || !this.look || this.gpu.lost) throw this.unavailable();
     const previous = this.view, details = this.details, look = this.look, enhanced = this.enhanced;
     const capturedHeight = height ? this.upload(height, false) : undefined;
     const output = document.createElement('canvas'); output.width = output.height = size;
@@ -508,6 +661,7 @@ export class TerrainGpu implements TerrainRenderer {
 
   /** Canonical 1 m water samples with a caller-supplied world-space halo. */
   captureWaterMask(region: { x: number; y: number; width: number }): Uint8Array {
+    if (this.fallback) return this.fallback.captureWaterMask(region);
     const n = Math.round(region.width), alpha = new Uint8Array(n * n);
     const look = this.look; if (look?.style.startsWith('render-v2')) this.look = { ...look, layers: { ...look.layers, water: true } };
     try { this.captureRegion(region, n, false, false, undefined, true, alpha); } finally { this.look = look; }
@@ -515,6 +669,7 @@ export class TerrainGpu implements TerrainRenderer {
   }
 
   createSurfaceSampler(): ((x: number, y: number, metresPerPixel?: number) => number) | undefined {
+    if (this.fallback) return this.fallback.createSurfaceSampler();
     if (!this.base || !this.look) return undefined;
     const base = this.base.layer, detail = this.details[this.details.length - 1]?.layer, look = this.look;
     const refine = (look.refinement3d ?? 'noise') === 'noise';
@@ -530,6 +685,7 @@ export class TerrainGpu implements TerrainRenderer {
 
   /** Height (metres) the renderer shows at a world point, from the finest layer covering it. */
   heightAt(x: number, y: number): number | undefined {
+    if (this.fallback) return this.fallback.heightAt(x, y);
     const layers = [...this.details].reverse().concat(this.base ? [this.base] : []);
     for (const l of layers) {
       const { layer } = l, cell = layer.width / layer.n;
@@ -564,18 +720,24 @@ export class TerrainGpu implements TerrainRenderer {
     }
     return undefined;
   }
-  /** Pipeline keys of a look (map, and auxiliary pass if any); starts creating them. */
+  /** Pipeline keys of a look (map, auxiliary pass if any, blended map if detail layers are shown); starts
+   * creating them. */
   private lookKeys(look: TerrainLook): string[] {
-    const v = this.lookVariant(look), passes: ('map' | 'aux')[] = mapPasses(v).includes('aux') ? ['map', 'aux'] : ['map'];
-    return passes.map(pass => { this.terrainPipeline(v, pass, 'none', false); return this.gpu.terrainKey(v, pass, 'none'); });
+    const v = this.lookVariant(look), passes: ['map' | 'aux', 'none' | 'alpha'][] = mapPasses(v).includes('aux') ? [['map', 'none'], ['aux', 'none']] : [['map', 'none']];
+    if (this.details.length) passes.push(['map', 'alpha']);
+    return passes.map(([pass, blend]) => { this.terrainPipeline(v, pass, blend, false); return this.gpu.terrainKey(v, pass, blend); });
   }
   /** Resolves once the current look's pipelines are created, without blocking: callers that can wait
-   * (3D material tiles) capture after it. */
+   * (3D material tiles, illustration and export captures) capture after it, so the synchronous capture
+   * finds every pipeline. Also waits for a device recovery in progress. */
   async variantReady(): Promise<void> {
     for (;;) {
+      if (this.recovering) await this.recovering;
+      if (this.fallback) return this.fallback.variantReady();
       if (!this.look || this.disposed || this.gpu.lost) return;
-      const keys = this.lookKeys(this.look);
-      const ready = await Promise.all(keys.map(key => this.gpu.settled(key)));
+      const gpu = this.gpu, keys = this.lookKeys(this.look);
+      const ready = await Promise.all(keys.map(key => gpu.settled(key)));
+      if (gpu !== this.gpu || gpu.lost) continue;   // device lost or recreated meanwhile
       if (!this.look || this.lookKeys(this.look).join() === keys.join()) {
         if (!ready.every(Boolean)) console.warn('WebGPU map: a pipeline of the look failed; the stand-in stays.');
         return;
@@ -584,7 +746,7 @@ export class TerrainGpu implements TerrainRenderer {
   }
 
   private request(): void {
-    if (this.disposed || this.frame) return;
+    if (this.disposed || this.frame || this.fallback) return;
     this.frame = requestAnimationFrame(() => { this.frame = 0; this.draw(); });
   }
 
@@ -842,7 +1004,7 @@ export class TerrainGpu implements TerrainRenderer {
     presentPass.draw(4); presentPass.end();
     device.queue.writeBuffer(this.slots.buffer, 0, this.slots.staging, 0, Math.max(4, this.slots.used));
     device.queue.submit([encoder.finish()]);
-    this.drawMs = performance.now() - started;
+    this.gpuDrawMs = performance.now() - started;
     if (animating) this.request();
   }
 
@@ -877,7 +1039,8 @@ export class TerrainGpu implements TerrainRenderer {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true; cancelAnimationFrame(this.frame); this.frame = 0;
-    this.gpu.listeners.delete(this.redraw);
+    this.gpu.listeners.delete(this.redraw); this.gpu.lostListeners.delete(this.onLost);
+    if (this.fallback) { this.fallback.dispose(); return; }
     for (const target of [this.auxTarget, this.mapTarget, this.riverTarget, this.waterTarget]) target?.texture.destroy();
     this.release(this.base); this.details.forEach(d => this.release(d)); this.enhanced.forEach(d => this.release(d));
     for (const image of [this.lake, this.overlay, this.coastDistance, this.shoreRing?.image, this.occupation?.image, this.retainedWater, this.brushes.image, this.empty, this.emptyUint]) this.releaseImage(image);

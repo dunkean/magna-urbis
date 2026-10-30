@@ -1,4 +1,5 @@
-import { Terrain3d, type Terrain3dCamera } from './terrain3d';
+import type { Terrain3d, Terrain3dCamera } from './terrain3d';
+import { createTerrain3d } from './terrain3dRenderer';
 import type { SettlementRaster } from '../../../rust/bridge/settlements';
 import type { PlacementBatch } from '../../../rust/bridge/urbanArchitecture';
 import type { UrbanBuildingAppearance } from '../render/urbanBuildingStyle';
@@ -55,7 +56,7 @@ export class UrbanPerspective {
     if (active === this.active) return active;
     if (active && !this.surface) { this.onError('Générez un plan sur son terrain avant d’ouvrir la perspective.'); return false; }
     if (active && !this.viewer) {
-      try { this.viewer = new Terrain3d(this.canvas, () => this.changed()); }
+      try { this.viewer = createTerrain3d(this.canvas, () => this.changed()); }
       catch (error) { this.onError(String(error)); return false; }
       this.syncSurface();
       if (camera) this.viewer.setCamera(camera);

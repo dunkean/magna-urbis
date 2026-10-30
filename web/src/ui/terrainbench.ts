@@ -30,7 +30,8 @@ import { lakeField } from './lakeGeometry';
 import { getBenchRenderColors, writeRenderColorsQuery } from './benchRenderColors';
 import { TerrainGl, type TerrainLook } from './terrainGl';
 import { createTerrainRenderer, type TerrainRenderer } from './terrainRenderer';
-import { Terrain3d, TERRAIN_3D_FOV, TERRAIN_GROUND_MAX_SCALE, type Terrain3dCamera, type Terrain3dTile } from './terrain3d';
+import { TERRAIN_3D_FOV, TERRAIN_GROUND_MAX_SCALE, type Terrain3d, type Terrain3dCamera, type Terrain3dTile } from './terrain3d';
+import { createTerrain3d } from './terrain3dRenderer';
 import { terrain3dTexture } from './terrain3dTexture';
 import { withBuildingOccupation } from './forestOccupation';
 import type { PlacementBatch } from '../../../rust/bridge/urbanArchitecture';
@@ -764,7 +765,7 @@ updateForestControls();
 function setPerspective(active: boolean): void {
   active &&= !legacyPipeline && !!gpu;
   if (active && !terrain3d) {
-    try { terrain3d = new Terrain3d(el<HTMLCanvasElement>('terrain3d'), camera3dChanged, () => ruler.update()); terrain3d.setTileLoader(load3dTile, isNeuralRefinement(refinement3d)); terrain3d.setForest(forestShown?.field, forestShown?.occupation); }
+    try { terrain3d = createTerrain3d(el<HTMLCanvasElement>('terrain3d'), camera3dChanged, () => ruler.update()); terrain3d.setTileLoader(load3dTile, isNeuralRefinement(refinement3d)); terrain3d.setForest(forestShown?.field, forestShown?.occupation); }
     catch (error) { status(`Vue 3D : ${error instanceof Error ? error.message : error}`, true); active = false; }
   }
   if (active) {
@@ -2326,6 +2327,8 @@ mountIllustration({ host: document.querySelector('header')!, capture: async () =
   if (captured) {
     return { image: captured.image, guides: { depth: captured.depth }, context };
   }
+  // Wait for the look's pipeline (WebGPU) or program (ANGLE/D3D11) rather than stall the page in the redraw.
+  await gpu?.variantReady();
   gpu?.redrawForCapture();
   const image = captureViewport(viewport, { exclude: ['#mini', '#ruler', '#pins', '#marks', '#terrain3d'] });
   const edges = captureViewport(viewport, { structural: true, exclude: ['#mini', '#ruler', '#pins', '#marks', '#terrain3d'] });

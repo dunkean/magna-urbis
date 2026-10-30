@@ -1,26 +1,17 @@
 import { buildingPaint, type UrbanBuildingAppearance } from '../render/urbanBuildingStyle';
 import { building3dHeight, isBuildingProjection, buildingRayDistance, eachBuildingTriangle, type BuildingVector, type Building3dVisual, type Building3dScene } from '../render/urbanBuildingGeometry';
-import { layerExtent, loadMaterialImages, uploadMaterialArrays, coverLayer, wallLayer, MATERIALS } from '../render/buildingMaterials';
+import { layerExtent, loadMaterialImages, uploadMaterialArrays, coverLayer, wallLayer, MATERIALS, type MaterialImages } from '../render/buildingMaterials';
 import { buildingFeatureLod, buildingFeatureMetresPerPixel, hasBuildingFeatureLod, sameBuildingFeatureLod, type BuildingFeatureLod } from '../render/urbanBuildingFeatureLod';
 import { buildingTint } from '../render/buildingPalette';
 
 type Vec3 = [number, number, number];
 type Bounds = [number, number, number, number, number, number];
-interface BuildingFrame { matrix: Float32Array; cameraX: number; cameraY: number; targetHeight: number; exaggeration: number; focal: number; distance: number }
+export interface BuildingFrame { matrix: Float32Array; cameraX: number; cameraY: number; targetHeight: number; exaggeration: number; focal: number; distance: number }
 /** `stride`: floats per vertex, 6 (position, normal) or 9 (+ uv in tiles, material layer) for textured materials. */
-interface Batch { color: Vec3; tint: Vec3; recolored: boolean; values: number[]; buffer?: WebGLBuffer; vao?: WebGLVertexArrayObject; count: number; stride: number; /** Untextured batches carry the colour per vertex (one batch, one draw per sector). */ vcolor?: boolean; /** Distinct vertex colours of a vcolor batch (inspection). */ palette?: Vec3[] }
+export interface Batch { color: Vec3; tint: Vec3; recolored: boolean; values: number[]; buffer?: WebGLBuffer; vao?: WebGLVertexArrayObject; /** WebGPU backend's vertex buffer. */ gpu?: GPUBuffer; count: number; stride: number; /** Untextured batches carry the colour per vertex (one batch, one draw per sector). */ vcolor?: boolean; /** Distinct vertex colours of a vcolor batch (inspection). */ palette?: Vec3[] }
 interface Entry { building: Building3dVisual; bounds: Bounds }
-interface Sector { origin: [number, number]; entries: Entry[]; bounds: Bounds; width: number; featureLodEligible: boolean; overview: boolean; shown: boolean; cached?: { overview: boolean; featureLod?: BuildingFeatureLod; batches: Batch[]; used: number } }
+export interface Sector { origin: [number, number]; entries: Entry[]; bounds: Bounds; width: number; featureLodEligible: boolean; overview: boolean; shown: boolean; cached?: { overview: boolean; featureLod?: BuildingFeatureLod; batches: Batch[]; used: number } }
 const SECTOR = 256, MAX_CACHE_BYTES = 96 * 1024 * 1024;
-const vertex = `#version 300 es
-precision highp float;
-layout(location=0) in vec3 position;
-layout(location=1) in vec3 normal;
-uniform mat4 matrix;
-uniform vec3 offset;
-uniform float exaggeration;
-out vec3 n;
-void main(){n=normalize(vec3(normal.x,normal.y/exaggeration,normal.z));gl_Position=matrix*vec4(vec3(position.x,position.y*exaggeration,position.z)+offset,1.);}`;
 const vertexColor = `#version 300 es
 precision highp float;
 layout(location=0) in vec3 position;
@@ -36,12 +27,6 @@ precision highp float;
 in vec3 n; in vec3 base;
 out vec4 color;
 void main(){float light=.55+.45*abs(dot(normalize(n),normalize(vec3(-.4,.85,.3))));color=vec4(base*light,1.);}`;
-const fragment = `#version 300 es
-precision highp float;
-in vec3 n;
-uniform vec3 material;
-out vec4 color;
-void main(){float light=.55+.45*abs(dot(normalize(n),normalize(vec3(-.4,.85,.3))));color=vec4(material*light,1.);}`;
 
 /** Textured variant: per-vertex uv (metres on the face: walls along the face and down, roofs along the ridge and down
  * the slope) and material layer; albedo + normal map arrays; same lighting model. Layer < 0 keeps the flat colour. */
@@ -82,7 +67,9 @@ void main(){
   }
   float light=.55+.45*abs(dot(N,normalize(vec3(-.4,.85,.3))));color=vec4(base*light,1.);
 }`;
-function program(gl: WebGL2RenderingContext, vs = vertex, fs = fragment): WebGLProgram {
+/** GLSL sources translated to WGSL for the WebGPU backend (web/scripts/wgsl_shaders_3d.ts). */
+export const BUILDING_3D_GLSL = { colorVertex: vertexColor, colorFragment: fragmentColor, texVertex, texFragment };
+function program(gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgram {
   const p = gl.createProgram()!;
   for (const [kind, source] of [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]] as const) {
     const shader = gl.createShader(kind)!; gl.shaderSource(shader, source); gl.compileShader(shader);
@@ -140,14 +127,13 @@ function faceUv(p: readonly number[], normal: readonly number[], layer: number):
  * Off-screen sectors require no roof traversal or GPU buffers. Plan (x,y),
  * altitude z become GL (x,z,y), before display exaggeration. */
 export class UrbanBuildingPass {
-  private sectors: Sector[] = [];
-  private program: WebGLProgram;
+  protected sectors: Sector[] = [];
   private colorProgram?: WebGLProgram;
   /** Draw calls and sectors of the last draw (render stats). */
   lastDraw = { drawCalls: 0, sectors: 0, triangles: 0 };
   private texProgram?: WebGLProgram;
   private textures?: { albedo: WebGLTexture; normal: WebGLTexture };
-  private texturesRequested = false;
+  protected texturesRequested = false;
   private source?: Building3dScene;
   private appearance: UrbanBuildingAppearance = { style: 'cartographic', diagnostic: 'none' };
   private appearanceKey = '';
@@ -155,7 +141,8 @@ export class UrbanBuildingPass {
   /** Building id → its sector, for targeted replacements. */
   private index = new Map<string, Sector>();
   /** `onTexturesReady`: asks the host for a frame once the material atlases are on the GPU. */
-  constructor(private gl: WebGL2RenderingContext, private onTexturesReady?: () => void) { this.program = program(gl); }
+  /** `gl` is undefined for the WebGPU backend (terrain3dGpu.ts), which overrides the GPU hooks. */
+  constructor(private gl: WebGL2RenderingContext | undefined, protected onTexturesReady?: () => void) {}
 
   setScene(scene: Building3dScene | undefined, appearance: UrbanBuildingAppearance): void {
     const key = JSON.stringify(appearance);
@@ -242,41 +229,38 @@ export class UrbanBuildingPass {
         }
       }, overview, featureLod);
     }
-    const gl = this.gl, batches: Batch[] = [];
+    const batches: Batch[] = [];
     for (const batch of groups.values()) {
       if (!batch.values.length) continue;
-      batch.vao = gl.createVertexArray()!; batch.buffer = gl.createBuffer()!;
-      gl.bindVertexArray(batch.vao); gl.bindBuffer(gl.ARRAY_BUFFER, batch.buffer); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(batch.values), gl.STATIC_DRAW);
-      gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, batch.stride * 4, 0);
-      gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, batch.stride * 4, 12);
-      if (batch.vcolor) { gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 36, 24); }
-      else { gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 36, 24); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 1, gl.FLOAT, false, 36, 32); }
+      this.upload(batch, new Float32Array(batch.values));
       batch.count = batch.values.length / batch.stride; batch.values = []; batches.push(batch);
     }
-    sector.cached = { overview, featureLod, batches, used: this.tick }; gl.bindVertexArray(null);
+    sector.cached = { overview, featureLod, batches, used: this.tick };
   }
+  /** Vertex buffer of a batch (9 floats per vertex). */
+  protected upload(batch: Batch, values: Float32Array): void {
+    const gl = this.gl!;
+    batch.vao = gl.createVertexArray()!; batch.buffer = gl.createBuffer()!;
+    gl.bindVertexArray(batch.vao); gl.bindBuffer(gl.ARRAY_BUFFER, batch.buffer); gl.bufferData(gl.ARRAY_BUFFER, values, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, batch.stride * 4, 0);
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, batch.stride * 4, 12);
+    if (batch.vcolor) { gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 36, 24); }
+    else { gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 36, 24); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 1, gl.FLOAT, false, 36, 32); }
+    gl.bindVertexArray(null);
+  }
+  /** Material atlases on the GPU (textured appearance). */
+  protected uploadTextures(images: MaterialImages): void { this.textures = uploadMaterialArrays(this.gl!, images, false); }
   draw(frame: BuildingFrame): boolean {
-    const gl = this.gl, started = performance.now(); let pending = false, prepared = 0;
-    let p = this.program;
+    const started = performance.now(); let pending = false, prepared = 0;
     if (!this.sectors.length) return false;
     ++this.tick;
     // Textured materials: the atlases load once (the flat colours show until they arrive).
     const wantTex = !!this.appearance.textured;
     if (wantTex && !this.texturesRequested) {
       this.texturesRequested = true;
-      loadMaterialImages().then(images => { if (!this.sectors.length) return; this.textures = uploadMaterialArrays(this.gl, images, false); this.onTexturesReady?.(); }, e => { this.texturesRequested = false; console.warn('Matières texturées indisponibles', e); });
+      loadMaterialImages().then(images => { if (!this.sectors.length) return; this.uploadTextures(images); this.onTexturesReady?.(); }, e => { this.texturesRequested = false; console.warn('Matières texturées indisponibles', e); });
     }
-    const texProgram = wantTex ? (this.texProgram ??= program(gl, texVertex, texFragment)) : undefined;
-    p = texProgram ?? (this.colorProgram ??= program(gl, vertexColor, fragmentColor)); gl.useProgram(p);
-    const stats = { drawCalls: 0, sectors: 0, triangles: 0 }; gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
-    if (texProgram) {
-      gl.uniform1i(gl.getUniformLocation(p, 'useTex'), this.textures ? 1 : 0);
-      gl.uniform1i(gl.getUniformLocation(p, 'albedoTex'), 10); gl.uniform1i(gl.getUniformLocation(p, 'normalTex'), 11);
-      gl.activeTexture(gl.TEXTURE0 + 10); gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.textures?.albedo ?? null);
-      gl.activeTexture(gl.TEXTURE0 + 11); gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.textures?.normal ?? null);
-      gl.activeTexture(gl.TEXTURE0);
-    }
-    gl.uniformMatrix4fv(gl.getUniformLocation(p, 'matrix'), false, frame.matrix); gl.uniform1f(gl.getUniformLocation(p, 'exaggeration'), frame.exaggeration);
+    const stats = { drawCalls: 0, sectors: 0, triangles: 0 }, shown: Sector[] = [];
     for (const sector of this.sectors) {
       sector.shown = false;
       const b = sector.bounds, point = [(b[0] + b[3]) / 2 - frame.cameraX, (b[2] + b[5]) / 2 * frame.exaggeration - frame.targetHeight, (b[1] + b[4]) / 2 - frame.cameraY];
@@ -297,22 +281,42 @@ export class UrbanBuildingPass {
         else { this.prepare(sector, overview, featureLod); ++prepared; }
       }
       sector.shown = true; sector.overview = sector.cached!.overview; sector.cached!.used = this.tick;
+      for (const batch of sector.cached!.batches) { stats.drawCalls++; stats.triangles += batch.count / 3; }
+      stats.sectors++; shown.push(sector);
+    }
+    this.render(frame, shown, wantTex);
+    this.lastDraw = stats;
+    let bytes = this.sectors.reduce((total, sector) => total + (sector.cached?.batches.reduce((n, batch) => n + batch.count * batch.stride * 4, 0) ?? 0), 0);
+    if (bytes > MAX_CACHE_BYTES) for (const sector of this.sectors.filter(s => s.cached && !s.shown).sort((a, b) => a.cached!.used - b.cached!.used)) {
+      bytes -= sector.cached!.batches.reduce((n, batch) => n + batch.count * batch.stride * 4, 0); this.release(sector); if (bytes <= MAX_CACHE_BYTES) break;
+    }
+    return pending;
+  }
+  /** Draws the batches of the shown sectors (flat or textured program). */
+  protected render(frame: BuildingFrame, shown: readonly Sector[], textured: boolean): void {
+    const gl = this.gl!;
+    const texProgram = textured ? (this.texProgram ??= program(gl, texVertex, texFragment)) : undefined;
+    const p = texProgram ?? (this.colorProgram ??= program(gl, vertexColor, fragmentColor)); gl.useProgram(p);
+    gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
+    if (texProgram) {
+      gl.uniform1i(gl.getUniformLocation(p, 'useTex'), this.textures ? 1 : 0);
+      gl.uniform1i(gl.getUniformLocation(p, 'albedoTex'), 10); gl.uniform1i(gl.getUniformLocation(p, 'normalTex'), 11);
+      gl.activeTexture(gl.TEXTURE0 + 10); gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.textures?.albedo ?? null);
+      gl.activeTexture(gl.TEXTURE0 + 11); gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.textures?.normal ?? null);
+      gl.activeTexture(gl.TEXTURE0);
+    }
+    gl.uniformMatrix4fv(gl.getUniformLocation(p, 'matrix'), false, frame.matrix); gl.uniform1f(gl.getUniformLocation(p, 'exaggeration'), frame.exaggeration);
+    for (const sector of shown) {
       gl.uniform3f(gl.getUniformLocation(p, 'offset'), sector.origin[0] - frame.cameraX, -frame.targetHeight, sector.origin[1] - frame.cameraY);
       for (const batch of sector.cached!.batches) {
         if (texProgram) {
           gl.uniform3fv(gl.getUniformLocation(p, 'material'), batch.color); gl.uniform3fv(gl.getUniformLocation(p, 'tint'), batch.tint);
           gl.uniform1i(gl.getUniformLocation(p, 'recolored'), batch.recolored ? 1 : 0);
         }
-        gl.bindVertexArray(batch.vao!); gl.drawArrays(gl.TRIANGLES, 0, batch.count); stats.drawCalls++; stats.triangles += batch.count / 3;
+        gl.bindVertexArray(batch.vao!); gl.drawArrays(gl.TRIANGLES, 0, batch.count);
       }
-      stats.sectors++;
     }
-    gl.bindVertexArray(null); this.lastDraw = stats;
-    let bytes = this.sectors.reduce((total, sector) => total + (sector.cached?.batches.reduce((n, batch) => n + batch.count * batch.stride * 4, 0) ?? 0), 0);
-    if (bytes > MAX_CACHE_BYTES) for (const sector of this.sectors.filter(s => s.cached && !s.shown).sort((a, b) => a.cached!.used - b.cached!.used)) {
-      bytes -= sector.cached!.batches.reduce((n, batch) => n + batch.count * batch.stride * 4, 0); this.release(sector); if (bytes <= MAX_CACHE_BYTES) break;
-    }
-    return pending;
+    gl.bindVertexArray(null);
   }
   pick(origin: BuildingVector, direction: BuildingVector): { id?: string; distance: number } {
     let distance = Infinity, id: string | undefined;
@@ -322,7 +326,12 @@ export class UrbanBuildingPass {
     }
     return { id, distance };
   }
-  private release(sector: Sector): void { for (const batch of sector.cached?.batches ?? []) { this.gl.deleteBuffer(batch.buffer!); this.gl.deleteVertexArray(batch.vao!); } sector.cached = undefined; }
+  private release(sector: Sector): void { for (const batch of sector.cached?.batches ?? []) this.releaseBatch(batch); sector.cached = undefined; }
+  protected releaseBatch(batch: Batch): void { this.gl!.deleteBuffer(batch.buffer!); this.gl!.deleteVertexArray(batch.vao!); }
   private clear(): void { for (const sector of this.sectors) this.release(sector); this.sectors = []; this.index.clear(); }
-  dispose(): void { this.clear(); this.gl.deleteProgram(this.program); if (this.colorProgram) this.gl.deleteProgram(this.colorProgram); if (this.texProgram) this.gl.deleteProgram(this.texProgram); if (this.textures) { this.gl.deleteTexture(this.textures.albedo); this.gl.deleteTexture(this.textures.normal); } this.source = undefined; }
+  dispose(): void { this.clear(); this.disposeBackend(); this.source = undefined; }
+  protected disposeBackend(): void {
+    const gl = this.gl!;
+    if (this.colorProgram) gl.deleteProgram(this.colorProgram); if (this.texProgram) gl.deleteProgram(this.texProgram); if (this.textures) { gl.deleteTexture(this.textures.albedo); gl.deleteTexture(this.textures.normal); }
+  }
 }
