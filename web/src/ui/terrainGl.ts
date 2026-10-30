@@ -102,7 +102,12 @@ export const RENDER_3D_FOREST_GLSL = RENDER_3D_MATERIAL_GLSL.includes('applyFore
 
 const TERRAIN_FS = `#version 300 es
 precision highp float; precision highp int; precision highp sampler2D;
-out vec4 outColor;
+#ifdef CANOPY_PASS
+layout(location=0) out highp uvec4 outCanopy;
+layout(location=1) out vec4 outColor;
+#else
+layout(location=0) out vec4 outColor;
+#endif
 uniform vec2 uCanvas;          // device pixels
 uniform vec2 uOrigin;          // world position of the canvas' top-left corner
 uniform float uPx;             // metres per device pixel
@@ -330,6 +335,10 @@ float refinedCoverage(vec4 rect,int n,vec2 world) {
 void main() {
   vec2 px = vec2(gl_FragCoord.x, uCanvas.y - gl_FragCoord.y);
   vec2 world = uOrigin + px * uPx;
+#ifdef CANOPY_PASS
+  // Canopy pass: the near crowns of this pixel, read back by the map pass (forestCanopyAt).
+  outCanopy = forestCanopyPack(forestCanopyNear(forestPrep(world, uPx), normalize(uLight.xzy))); return;
+#endif
   bool inside = world.x >= 0.0 && world.y >= 0.0 && world.x <= uMapW && world.y <= uMapW;
   if (!inside) {
     if (uBase == 0) discard;
@@ -484,14 +493,20 @@ void main() { outColor = texelFetch(uLayer, ivec2(gl_FragCoord.xy), 0); }`;
 const compile = (gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgram => finishProgram(gl, startProgram(gl, vs, fs));
 
 /** Map program variant (glVariants.ts): the look's mode, Render v2 number, forest and brushes as constants.
- * Measured with FXC (link + first draw): 1.5 s preview, about 7 s natural, 50 s Render v2, 90 s with
- * forest; the full shader never loaded. On FXC the heavy ones link in the background from the start. */
+ * Forest looks draw their near crowns in a separate canopy pass (mapPasses). Measured alone with FXC:
+ * preview 4 s, natural 5 s, Render3D with forest 10 s, Render v2 21 s, Render v2 with forest 35 s plus a
+ * 4 s canopy pass linking in parallel; the full shader never loaded. On FXC they link in the background. */
 interface TerrainVariant { mode: number; v2: number; forest: boolean; brushes: boolean }
 const PREVIEW_VARIANT: TerrainVariant = { mode: 0, v2: 0, forest: false, brushes: false };
 const variantKey = (v: TerrainVariant): string => `${v.mode}.${v.v2}.${+v.forest}${+v.brushes}`;
+/** Map passes of a look: a forest look first renders its near crowns (canopy pass) into a texture. */
+export const mapPasses = (v: TerrainVariant): ('canopy' | 'map')[] => v.forest ? ['canopy', 'map'] : ['map'];
 const terrainFragment = (v: TerrainVariant): string => specializeShader(TERRAIN_FS,
   { uMode: v.mode, uRenderV2: v.v2, uForest: +v.forest, uForestBrushes: +v.brushes },
-  { NATURAL: v.mode >= 2 ? 1 : 0 });
+  { NATURAL: v.mode >= 2 ? 1 : 0, ...(mapPasses(v).includes('canopy') ? { FOREST_CANOPY_TEXTURES: 1 } : {}) });
+const canopyKey = (v: TerrainVariant): string => `canopy.${v.v2}.${+v.brushes}`;
+const canopyFragment = (v: TerrainVariant): string => specializeShader(TERRAIN_FS,
+  { uMode: 3, uRenderV2: v.v2, uForest: 1, uForestBrushes: +v.brushes }, { NATURAL: 0, CANOPY_PASS: 1 });
 const lookMode = (look: TerrainLook): number => look.style === 'copernicus' ? 1 : look.layers.hypsometry && isRender3dStyle(look.style) ? 3 : look.style === 'render' && look.layers.hypsometry ? 2 : 0;
 
 interface GpuLayer { layer: HeightLayer; levels: Float32Array[]; texture: WebGLTexture; cave?: WebGLTexture; alpha: number; fadeStart: number }
@@ -504,6 +519,12 @@ export class TerrainGl {
   private prewarm: boolean;
   /** Last terrain variant drawn: it stands in while the look's own variant links. */
   private lastTerrain?: WebGLProgram;
+  /** Canopy pass output (RGBA32UI, eight halves per pixel) and the inputs it was rendered for. */
+  private canopyTarget?: { framebuffer: WebGLFramebuffer; texture: WebGLTexture; width: number; height: number };
+  private canopyKey = '';
+  private emptyCanopy?: WebGLTexture;
+  /** Bumped by setForest: the canopy pass depends on the forest field and the applied occupation. */
+  private forestVersion = 0;
   private capturing = false;
   /** Painted water of the `render` style (renderWaterShader.ts), compiled on first use. */
   private renderWater?: { program: WebGLProgram; u: Map<string, WebGLUniformLocation | null> };
@@ -573,8 +594,58 @@ export class TerrainGl {
    * link from the start. Occupation and banks stay uniforms: the forest variants are known in advance. */
   private prewarmVariants(): void {
     if (!this.prewarm) return;
-    for (const v of [{ mode: 3, v2: 1, forest: true }, { mode: 3, v2: 0, forest: true }, { mode: 3, v2: 1, forest: false }, { mode: 2, v2: 0, forest: false }])
-      this.variants.start(variantKey({ ...v, brushes: false }), () => [TERRAIN_VS, terrainFragment({ ...v, brushes: false })]);
+    for (const v of [{ mode: 3, v2: 1, forest: true }, { mode: 3, v2: 0, forest: true }, { mode: 3, v2: 1, forest: false }, { mode: 2, v2: 0, forest: false }]) {
+      const variant = { ...v, brushes: false };
+      this.variants.start(variantKey(variant), () => [TERRAIN_VS, terrainFragment(variant)]);
+      if (variant.forest) this.variants.start(canopyKey(variant), () => [TERRAIN_VS, canopyFragment(variant)]);
+    }
+  }
+  /** Canopy pass of a forest look into canopyTarget, skipped when its inputs did not change;
+   * the map program then reads it on unit 15 (uHasCanopy 0 while the pass is still linking). */
+  private renderCanopy(look: TerrainLook, setup: () => void, width: number, height: number, origin: [number, number], px: number, separateWater: boolean, framebuffer: WebGLFramebuffer | null): void {
+    const gl = this.gl, v = this.lookVariant(look);
+    if (!mapPasses(v).includes('canopy')) return;
+    const main = this.terrain, canopy = this.variants.get(canopyKey(v), () => [TERRAIN_VS, canopyFragment(v)], this.capturing || framebuffer !== null);
+    const key = canopy && JSON.stringify([width, height, origin, px, look.seed, look.climate, look.lighting, v.v2, v.brushes, this.forestVersion,
+      this.riverCount, this.retainedWaterKey, this.lakeN, separateWater, look.layers.water]);
+    if (canopy && key !== this.canopyKey) {
+      this.canopyTarget = this.uintTarget(width, height, this.canopyTarget);
+      this.terrain = canopy; gl.useProgram(canopy); setup();
+      const u = (name: string): WebGLUniformLocation | null => this.uniform(name);
+      // The crowns avoid the same water as the map pass.
+      gl.uniform1i(u('uWaterLayer'), 10); gl.uniform1i(u('uUseWaterLayer'), separateWater ? 1 : 0);
+      gl.uniform4f(u('uQuad'), 0, 0, width, height);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.canopyTarget.framebuffer); gl.disable(gl.BLEND);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+      this.terrain = main; gl.useProgram(main);
+      this.canopyKey = key!;
+    }
+    gl.activeTexture(gl.TEXTURE15); gl.bindTexture(gl.TEXTURE_2D, canopy && this.canopyTarget ? this.canopyTarget.texture : this.emptyUint());
+    gl.uniform1i(this.uniform('uCanopy'), 15); gl.uniform1i(this.uniform('uHasCanopy'), canopy ? 1 : 0);
+  }
+  private emptyUint(): WebGLTexture {
+    if (this.emptyCanopy) return this.emptyCanopy;
+    const gl = this.gl, texture = this.emptyCanopy = gl.createTexture()!;
+    gl.activeTexture(gl.TEXTURE15); gl.bindTexture(gl.TEXTURE_2D, texture);   // the canopy unit: never another sampler's
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32UI, 1, 1, 0, gl.RGBA_INTEGER, gl.UNSIGNED_INT, new Uint32Array(4));
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    return texture;
+  }
+  private uintTarget(width: number, height: number, previous?: { framebuffer: WebGLFramebuffer; texture: WebGLTexture; width: number; height: number }): { framebuffer: WebGLFramebuffer; texture: WebGLTexture; width: number; height: number } {
+    const gl = this.gl;
+    if (previous?.width === width && previous.height === height) return previous;
+    if (previous) { gl.deleteFramebuffer(previous.framebuffer); gl.deleteTexture(previous.texture); }
+    const texture = gl.createTexture()!;
+    gl.activeTexture(gl.TEXTURE15); gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32UI, width, height);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    const framebuffer = gl.createFramebuffer()!;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    this.canopyKey = '';
+    return { framebuffer, texture, width, height };
   }
   private lookVariant(look: TerrainLook): TerrainVariant {
     const mode = lookMode(look);
@@ -726,6 +797,7 @@ export class TerrainGl {
       if (this.occupation) gl.deleteTexture(this.occupation.texture);
       this.occupation = occupation && { data: occupation, texture: forestTexture(gl, occupation, false) };
     }
+    this.forestVersion++;
     this.request();
   }
 
@@ -850,7 +922,9 @@ export class TerrainGl {
     const origin: [number, number] = [view.cx - state.width / (2 * view.scale), view.cy - state.height / (2 * view.scale)];
     const definition = terrainStyle(look.style, look.colors), pal = definition.palette, water = terrainStyle(look.waterStyle ?? look.style, look.colors).water;
     const u = (name: string): WebGLUniformLocation | null => this.uniform(name);
-    gl.useProgram(this.terrain);
+    let enhancedAlpha = 1;
+    // Every uniform of the look; replayed on the canopy program (same names, same values).
+    const setup = (): void => {
     gl.uniform2f(u('uCanvas'), width, height);
     gl.uniform2f(u('uOrigin'), origin[0], origin[1]);
     gl.uniform1f(u('uPx'), px); gl.uniform1f(u('uDpr'), stylePixelRatio);
@@ -881,7 +955,7 @@ export class TerrainGl {
       gl.uniform1i(u(`u${name}`), unit); gl.uniform1i(u(`u${name}N`), layer?.layer.n ?? 0);
       gl.uniform4f(u(`u${name}Rect`), layer?.layer.x ?? 0, layer?.layer.y ?? 0, layer?.layer.width ?? 1, 0);
     }
-    const enhancedAlpha = refined ? Math.min(1, (performance.now() - refined.fadeStart) / 240) : 1;
+    enhancedAlpha = refined ? Math.min(1, (performance.now() - refined.fadeStart) / 240) : 1;
     gl.uniform1f(u('uRefinedAlpha'), enhancedAlpha);
     gl.uniform3fv(u('uPaper'), hex(pal.paper)); gl.uniform3fv(u('uSea'), hex(pal.seaFill));
     gl.uniform3fv(u('uShore'), hex(water.stops[0][1])); gl.uniform1i(u('uCoastalSea'), this.coastDistance ? 1 : 0);
@@ -925,6 +999,11 @@ export class TerrainGl {
     gl.uniform1i(u('uHasLake'), this.lake ? this.lakeMode : 0); gl.uniform1f(u('uLakeN'), this.lakeN);
     gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, this.overlay ?? this.empty);
     gl.uniform1i(u('uHasOverlay'), this.overlay ? 1 : 0);
+    // Canopy texture unit: empty (integer) until the canopy pass binds its result, never its own render target.
+    gl.activeTexture(gl.TEXTURE15); gl.bindTexture(gl.TEXTURE_2D, this.emptyUint());
+    gl.uniform1i(u('uCanopy'), 15); gl.uniform1i(u('uHasCanopy'), 0);
+    };
+    gl.useProgram(this.terrain); setup();
     let animating = enhancedAlpha < 1;
     const now = performance.now();
     const drawLayer = (layer: GpuLayer, base: boolean): void => {
@@ -1025,6 +1104,7 @@ export class TerrainGl {
       gl.activeTexture(gl.TEXTURE10); gl.bindTexture(gl.TEXTURE_2D, this.waterTarget.texture);
       gl.uniform1i(u('uUseWaterLayer'), 1);
     }
+    this.renderCanopy(look, setup, width, height, origin, px, separateWater, framebuffer);
     drawLayer(this.base, true);
     for (const detail of this.details) drawLayer(detail, false);
     // A detail fully faded in hides the older ones beneath it.
@@ -1080,6 +1160,8 @@ export class TerrainGl {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true; cancelAnimationFrame(this.frame); this.frame = 0; this.variants.reset(true);
+    if (this.canopyTarget) { this.gl.deleteFramebuffer(this.canopyTarget.framebuffer); this.gl.deleteTexture(this.canopyTarget.texture); }
+    if (this.emptyCanopy) this.gl.deleteTexture(this.emptyCanopy);
     const gl = this.gl;
     this.release(this.base); this.details.forEach(d => this.release(d));
     this.enhanced.forEach(d => this.release(d));
