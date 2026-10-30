@@ -1,6 +1,7 @@
 import { decodeDecorAsync, decorEntry, encodeDecorAsync, type Decor, type DecorEntry } from './decor';
 import { downloadDecorFile, readDecorFile } from './decorFile';
 import { placeSketchInFragment, sketchQuery } from './terrainSketchSharing';
+import { keepRendererOverride } from './rendererOverride';
 import { savedLocale, type Locale } from './shellLocale';
 
 type HistoryWords = readonly [string, string, string, string, string];
@@ -90,7 +91,7 @@ export async function saveHistory(decor: Decor, fresh = true, sourceBytes?: Uint
 
 /** Links identify an immutable local export; the .decor file is the portable payload. */
 export function openBench(stage: 'terrain' | 'settlements' | 'city' | 'urban' | 'houses', params: URLSearchParams): void {
-  const runtimeUrl = applyExecutionProfile(new URL(`?${params}`, location.href));
+  const runtimeUrl = applyExecutionProfile(new URL(`?${keepRendererOverride(params)}`, location.href));
   params = runtimeUrl.searchParams;
   if (window.parent !== window) {
     window.parent.postMessage({ channel: 'magna-bench-pipeline', stage, query: params.toString() }, location.protocol === 'file:' ? '*' : location.origin);

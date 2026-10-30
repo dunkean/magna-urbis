@@ -27,6 +27,7 @@ import { mountCity3d } from './city3d';
 import { urbanText } from './urbanPanelLocale';
 import { mountIllustration, captureViewport } from '../../../illustration/web/index.mjs';
 import { illustrationContext, illustrationTerrainFromDecor } from './illustrationContext';
+import { keepRendererOverride } from './rendererOverride';
 
 declare global { interface Window { magnaCityBackground?: { url(): string | undefined; style(): string } } }
 
@@ -162,6 +163,7 @@ function save(): void {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     const url = new URL(location.href); url.search = shareQuery(); if (query.get('standalone') === '1') url.searchParams.set('standalone', '1');
+    keepRendererOverride(url.searchParams);
     try { history.replaceState(null, '', url); syncBenchUrl(); } catch { /* file:// may refuse replaceState. */ }
   }, 150);
 }
@@ -343,6 +345,7 @@ async function openSituation(code: string): Promise<void> {
   try { sessionStorage.setItem('magna-city-situation', JSON.stringify({ view: s.view, pins: s.pins, note: s.note })); } catch { /* Private mode: the options still open. */ }
   const url = new URL(location.pathname, location.href); url.search = s.q;
   if (query.get('standalone') === '1') url.searchParams.set('standalone', '1');
+  keepRendererOverride(url.searchParams);
   location.replace(url.href);
 }
 function restoreSituation(): void {

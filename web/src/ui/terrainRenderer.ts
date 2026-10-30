@@ -8,6 +8,7 @@
  * (terrainGpu.ts).
  */
 import { TerrainGl } from './terrainGl';
+import { rendererOverride } from './rendererOverride';
 
 /** Public surface shared by both map renderers (TerrainGl's). */
 export type TerrainRenderer = Pick<TerrainGl,
@@ -17,11 +18,8 @@ export type TerrainRenderer = Pick<TerrainGl,
 
 export type TerrainBackend = 'webgl' | 'webgpu';
 
-/** The backend forced by the page URL, if any. */
-export function requestedTerrainBackend(): TerrainBackend | undefined {
-  const value = typeof location === 'undefined' ? null : new URLSearchParams(location.search).get('renderer');
-  return value === 'webgl' || value === 'webgpu' ? value : undefined;
-}
+/** The backend forced by the page URL, if any (read at page load, rendererOverride.ts). */
+export function requestedTerrainBackend(): TerrainBackend | undefined { return rendererOverride(); }
 
 /** A map renderer drawing into `canvas`. When `canvas` already carries a WebGL2 context (shared with
  * another user), pass a fresh `webgpuCanvas`: the WebGPU renderer then draws there (terrainRendererCanvas). */

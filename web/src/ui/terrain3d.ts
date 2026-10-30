@@ -47,7 +47,14 @@ export interface Terrain3dOptions {
   /** Compile the small draped-map shader first; procedural ground is compiled
    * only when setGroundMaterial is actually requested. Existing benches opt in. */
   fastMapShader?: boolean;
+  /** Set by terrain3dRenderer.ts when the view draws into its own canvas laid over the owner's (a backend
+   * switch): the owner's element, which keeps receiving the input and carries the status attributes. */
+  element?: HTMLElement;
+  /** A view being prepared behind the displayed one: no status attributes until showStatus(). */
+  silent?: boolean;
 }
+/** Status attributes of a view (data-renderer, data-terrain-shader, data-ground-variant on its element). */
+export type Terrain3dStatus = 'renderer' | 'terrainShader' | 'groundVariant';
 export const TERRAIN_3D_FOV = Math.PI / 3.7;
 export const TERRAIN_3D_MAX_SCALE = 8;
 export const TERRAIN_GROUND_MAX_SCALE = 128;
@@ -508,9 +515,27 @@ export class Terrain3d {
   private pointers = new Map<number, { x: number; y: number; orbit: boolean }>();
   private gesture?: { x: number; y: number; distance: number };
   private lod = { tiles: 0, ready: 0, pending: 0, level: 0, metresPerTexel: 0, metresPerVertex: 0, maxScale: TERRAIN_3D_MAX_SCALE, scale: 0 };
+  /** The owner's element: input, focus and status attributes (the canvas itself unless options.element). */
+  protected element!: HTMLElement;
+  private status: Partial<Record<Terrain3dStatus, string>> = {};
+  private silent = false;
 
   constructor(protected canvas: HTMLCanvasElement, private onChange: () => void, private onRender?: () => void, protected options: Terrain3dOptions = {}) {
-    this.attach(); canvas.style.touchAction = 'none'; this.interactions();
+    this.element = options.element ?? canvas; this.silent = !!options.silent;
+    this.attach(); this.element.style.touchAction = 'none'; this.interactions();
+  }
+  /** Records a status attribute, shown on the element unless the view is silent. */
+  protected mark(key: Terrain3dStatus, value: string): void {
+    this.status[key] = value;
+    if (!this.silent) this.element.dataset[key] = value;
+  }
+  getStatus(key: Terrain3dStatus): string | undefined { return this.status[key]; }
+  /** A silent view becomes the displayed one: its status attributes replace the previous view's. */
+  showStatus(): void {
+    this.silent = false;
+    for (const key of ['renderer', 'terrainShader', 'groundVariant'] as const) {
+      if (this.status[key] === undefined) delete this.element.dataset[key]; else this.element.dataset[key] = this.status[key];
+    }
   }
 
   /** Takes the canvas context and creates the GPU objects (called by the constructor, before any
@@ -519,7 +544,7 @@ export class Terrain3d {
     const canvas = this.canvas;
     const gl = canvas.getContext('webgl2', { alpha: false, antialias: true, depth: true, stencil: false, powerPreference: 'high-performance' });
     if (!gl) throw new Error('La vue 3D nécessite WebGL2.');
-    this.gl = gl; this.initialize();
+    this.gl = gl; this.initialize(); this.mark('renderer', 'webgl');
     canvas.addEventListener('webglcontextlost', event => {
       event.preventDefault(); cancelAnimationFrame(this.frame); this.frame = 0;
       ++this.epoch; this.patches.clear(); this.root = undefined;
@@ -558,7 +583,7 @@ export class Terrain3d {
   protected selectTerrainProgram(procedural: boolean): void {
     this.useMapShader = !!this.options.fastMapShader && !procedural;
     if (this.useMapShader) this.prepareMapShader();
-    this.canvas.dataset.terrainShader = this.useMapShader ? 'map' : 'procedural';
+    this.mark('terrainShader', this.useMapShader ? 'map' : 'procedural');
   }
   protected prepareMapShader(): void { this.mapProgram ??= program(this.gl, vertexShader, TERRAIN_3D_MAP_FRAGMENT); }
   getShaderProfile(): 'map' | 'procedural' { return this.useMapShader ? 'map' : 'procedural'; }
@@ -570,7 +595,7 @@ export class Terrain3d {
       uHasOccupation: +(forest && !!this.occupation), uHasForestBank: +(forest && !!this.forest?.bank) };
     const variant = (constants: typeof v, wait: boolean) => this.groundVariants.get(Object.values(constants).join('.'), () => [vertexShader, specializeShader(fragmentShader, constants)], wait);
     const target = variant(v, false);
-    this.canvas.dataset.groundVariant = target ? 'ready' : 'pending';
+    this.mark('groundVariant', target ? 'ready' : 'pending');
     if (target) return this.lastGround = target;
     const preview = variant({ groundEnabled: 0, uRenderV2: 0, uForest: 0, uForestBrushes: 0, uHasOccupation: 0, uHasForestBank: 0 }, true);
     if (!this.lastGround && !preview) throw new Error('Shader terrain 3D indisponible.');
@@ -1340,7 +1365,7 @@ export class Terrain3d {
   setActive(active: boolean): void {
     this.active = active;
     if (active) this.request();
-    else { cancelAnimationFrame(this.frame); this.frame = 0; this.pointers.clear(); this.gesture = undefined; this.canvas.classList.remove('drag'); }
+    else { cancelAnimationFrame(this.frame); this.frame = 0; this.pointers.clear(); this.gesture = undefined; this.element.classList.remove('drag'); }
   }
   resize(width: number, height: number): void {
     this.width = Math.max(1, width); this.height = Math.max(1, height); this.limitCamera(); this.request();
@@ -1478,7 +1503,7 @@ export class Terrain3d {
     return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, distance: Math.hypot(a.x - b.x, a.y - b.y) };
   }
   private interactions(): void {
-    const canvas = this.canvas, signal = this.events.signal;
+    const canvas = this.element, signal = this.events.signal;
     canvas.addEventListener('contextmenu', event => { if (this.active) event.preventDefault(); }, { signal });
     canvas.addEventListener('pointerdown', event => {
       if (!this.active || (event.button !== 0 && event.button !== 2)) return;
@@ -1531,6 +1556,34 @@ export class Terrain3d {
       this.changed();
     }, { signal });
   }
+
+  /** Replays the retained CPU-side inputs on another view (backend switch, device recovery): relief, water,
+   * height sampler, ground settings, buildings (with their swapped exteriors), forest, tile loader, map
+   * texture, size, camera and activity. GPU objects are not shared: the target re-uploads, and its tiles
+   * load again through the same loader. */
+  transferTo(target: Terrain3d): void {
+    target.setGroundMaterial(this.groundSettings);
+    if (this.layer) target.setSurface(this.layer, this.water, this.waterVisible);
+    target.setHeightSampler(this.heightSampler);
+    target.setTileBoundaries(this.tileBounds);
+    target.setBuildings(this.buildingScene, this.buildingAppearance, this.buildingsVisible);
+    const replaced = this.buildings.replacedBuildings();
+    if (replaced.length) target.replaceBuildings(replaced);
+    target.setForest(this.forestField, this.forestOccupation);
+    target.setTileLoader(this.tileLoader, this.requireHeights);
+    if (this.textureSource) target.setTexture(this.textureSource);
+    target.resize(this.width, this.height);
+    target.setCamera(this.camera);
+    target.setActive(this.active);
+  }
+  /** Whether the displayed frame is complete: every drawn tile has its own material and the ground
+   * variant is ready (a backend switch waits for it before showing the new view). */
+  isSettled(): boolean {
+    const lod = this.getLodInfo();
+    return !!this.layer && lod.tiles > 0 && lod.pending === 0 && lod.ready === lod.tiles
+      && (this.useMapShader || this.status.groundVariant !== 'pending');
+  }
+  get isActive(): boolean { return this.active; }
 
   dispose(): void {
     this.disposed = true; this.active = false; cancelAnimationFrame(this.frame); this.events.abort(); this.clearPatches();

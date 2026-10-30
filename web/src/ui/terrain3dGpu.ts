@@ -161,6 +161,8 @@ class Gpu3d {
   readonly mip: GPUShaderModule; readonly depth: GPUShaderModule;
   private pipelines = new Map<string, Entry>();
   readonly listeners = new Set<() => void>();
+  /** Views to recover when the device is lost (not destroyed by this module). */
+  readonly lostListeners = new Set<() => void>();
   lost = false;
   constructor(readonly device: GPUDevice) {
     for (const key of ['terrainVs', 'groundFs', 'mapFs', 'skyVs', 'skyFs', 'buildingColorVs', 'buildingColorFs', 'buildingTexVs', 'buildingTexFs'] as const)
@@ -197,7 +199,7 @@ class Gpu3d {
       this.device.createRenderPipelineAsync(this.descriptor(key)).then(pipeline => {
         console.debug(`WebGPU 3D pipeline ${key}: ${Math.round(performance.now() - started)} ms`);
         created.pipeline = pipeline; for (const listener of this.listeners) listener();
-      }, error => { created.failed = true; console.error(`WebGPU 3D pipeline ${key}:`, error); });
+      }, error => { created.failed = true; if (!this.lost) console.error(`WebGPU 3D pipeline ${key}:`, error); });
     }
     return entry.pipeline;
   }
@@ -246,8 +248,10 @@ class Gpu3d {
 
 let shared: Promise<Gpu3d | undefined> | undefined;
 let ready: Gpu3d | undefined;
-/** Prepares the device, the modules and the stand-in pipelines once per page; resolves whether the WebGPU
- * 3D view is usable (no context is taken: a failure keeps the WebGL2 path available). */
+/** Devices this module destroyed itself (refused during preparation): their loss is expected. */
+const destroyedHere = new WeakSet<GPUDevice>();
+/** Prepares the device, the modules and the stand-in pipelines once per page, and again after a device loss;
+ * resolves whether the WebGPU 3D view is usable (no context is taken: a failure keeps the WebGL2 path). */
 export function prepareTerrain3dGpu(forced: boolean): Promise<boolean> {
   shared ??= (async () => {
     if (!navigator.gpu) return undefined;
@@ -256,11 +260,14 @@ export function prepareTerrain3dGpu(forced: boolean): Promise<boolean> {
     const device = await adapter.requestDevice({ label: 'terrain 3d', requiredLimits: { maxTextureDimension2D: adapter.limits.maxTextureDimension2D } });
     try {
       const gpu = new Gpu3d(device);
+      // Any other loss (driver reset, device.destroy() from outside) is recovered by the views
+      // (terrain3dRenderer.ts): the next preparation creates a new device.
       device.lost.then(info => {
-        gpu.lost = true; if (ready === gpu) ready = undefined;
-        if (info.reason === 'destroyed') return;
-        shared = undefined; console.warn('WebGPU 3D device lost:', info.message);
-        for (const listener of gpu.listeners) listener();
+        gpu.lost = true;
+        if (destroyedHere.has(device)) return;
+        if (ready === gpu) { ready = undefined; shared = undefined; }
+        console.warn(`WebGPU 3D device lost (${info.reason}): ${info.message}`);
+        for (const listener of [...gpu.lostListeners]) listener();
       });
       device.addEventListener('uncapturederror', event => console.error('WebGPU 3D:', (event as GPUUncapturedErrorEvent).error.message));
       for (const [key, module] of Object.entries(gpu.modules)) {
@@ -269,15 +276,17 @@ export function prepareTerrain3dGpu(forced: boolean): Promise<boolean> {
       }
       // Throws (GPUPipelineError) if the translated shaders or the layouts are refused.
       await Promise.all(['sky', 'map', PREVIEW_GROUND, 'buildingColor', 'buildingTex'].map(key => gpu.adopt(key)));
+      if (gpu.lost) throw new Error('WebGPU : appareil perdu pendant la préparation de la vue 3D.');
       return ready = gpu;
-    } catch (error) { device.destroy(); throw error; }
+    } catch (error) { destroyedHere.add(device); device.destroy(); throw error; }
   })().catch(error => { shared = undefined; throw error; });
   return shared.then(gpu => !!gpu);
 }
 
-/** The WebGPU 3D view on `canvas`, or undefined while (or when) prepareTerrain3dGpu has no device. */
-export function createTerrain3dGpu(canvas: HTMLCanvasElement, onChange: () => void, onRender?: () => void, options: Terrain3dOptions = {}): Terrain3d | undefined {
-  return ready && !ready.lost ? new Terrain3dGpu(canvas, ready, onChange, onRender, options) : undefined;
+/** The WebGPU 3D view on `canvas`, or undefined while (or when) prepareTerrain3dGpu has no device.
+ * `onDeviceLost` is called once if its device is lost (the view then stops drawing). */
+export function createTerrain3dGpu(canvas: HTMLCanvasElement, onChange: () => void, onRender?: () => void, options: Terrain3dOptions = {}, onDeviceLost?: () => void): Terrain3d | undefined {
+  return ready && !ready.lost ? new Terrain3dGpu(canvas, ready, onChange, onRender, options, onDeviceLost) : undefined;
 }
 
 class Terrain3dGpu extends Terrain3d {
@@ -298,14 +307,17 @@ class Terrain3dGpu extends Terrain3d {
   private ring?: { layer: object; image: GpuImage; x: number; y: number; width: number };
   private lastGroundPipeline?: GPURenderPipeline;
   private readonly redraw = (): void => this.request();
+  private onDeviceLost?: () => void;
+  private readonly deviceLost = (): void => { const callback = this.onDeviceLost; this.onDeviceLost = undefined; if (!this.disposed) callback?.(); };
 
-  constructor(canvas: HTMLCanvasElement, gpu: Gpu3d, onChange: () => void, onRender?: () => void, options: Terrain3dOptions = {}) {
+  constructor(canvas: HTMLCanvasElement, gpu: Gpu3d, onChange: () => void, onRender?: () => void, options: Terrain3dOptions = {}, onDeviceLost?: () => void) {
     super(canvas, onChange, onRender, options);
+    this.onDeviceLost = onDeviceLost;
     const context = canvas.getContext('webgpu');
     if (!context) throw new Error('WebGPU indisponible sur ce canevas.');
     this.gpu = gpu; this.device = gpu.device; this.context = context;
     context.configure({ device: this.device, format: gpu.format, alphaMode: 'opaque' });
-    gpu.listeners.add(this.redraw);
+    gpu.listeners.add(this.redraw); gpu.lostListeners.add(this.deviceLost);
     this.params = new Pool(this.device, GPUBufferUsage.STORAGE, 256 * 1024, this.device.limits.minStorageBufferOffsetAlignment, '3d parameters');
     this.seamPool = new Pool(this.device, GPUBufferUsage.VERTEX, 4 * 1024 * 1024, 4, '3d seams');
     this.fullIndices = this.indexBuffer(fullPatchIndices());
@@ -317,7 +329,7 @@ class Terrain3dGpu extends Terrain3d {
     this.buildings = new UrbanBuildingPassGpu(gpu, () => this.request());
     this.buildings.setScene(this.buildingsVisible ? this.buildingScene : undefined, this.buildingAppearance);
     this.selectTerrainProgram(false);
-    canvas.dataset.renderer = 'webgpu';
+    this.mark('renderer', 'webgpu');
   }
   /** The context is taken by the constructor, once the subclass fields exist. */
   protected override attach(): void {}
@@ -411,7 +423,7 @@ class Terrain3dGpu extends Terrain3d {
     if (this.useMapShader) return this.gpu.pipeline('map');
     const settings = this.groundSettings, forest = !!settings && !!this.forest;
     const target = this.gpu.pipeline(groundKey(+!!settings, settings?.renderV2 ?? 0, +forest, +!!settings?.forestBrushes));
-    this.canvas.dataset.groundVariant = target ? 'ready' : 'pending';
+    this.mark('groundVariant', target ? 'ready' : 'pending');
     if (target) return this.lastGroundPipeline = target;
     return this.lastGroundPipeline ?? this.gpu.pipeline(PREVIEW_GROUND);
   }
@@ -558,7 +570,7 @@ class Terrain3dGpu extends Terrain3d {
   }
 
   protected override disposeBackend(): void {
-    this.gpu.listeners.delete(this.redraw);
+    this.gpu.listeners.delete(this.redraw); this.gpu.lostListeners.delete(this.deviceLost);
     this.releaseForest(this.forest);
     if (this.occupation) this.deleteTexture(this.occupation.texture);
     for (const texture of [this.material, this.macroTexture, this.blank, this.emptyUnfilterable, this.brushes.image, this.ring?.image]) if (texture) this.deleteTexture(texture);

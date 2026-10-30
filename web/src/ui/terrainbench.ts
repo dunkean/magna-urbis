@@ -32,6 +32,7 @@ import { TerrainGl, type TerrainLook } from './terrainGl';
 import { createTerrainRenderer, type TerrainRenderer } from './terrainRenderer';
 import { TERRAIN_3D_FOV, TERRAIN_GROUND_MAX_SCALE, type Terrain3d, type Terrain3dCamera, type Terrain3dTile } from './terrain3d';
 import { createTerrain3d } from './terrain3dRenderer';
+import { keepRendererOverride } from './rendererOverride';
 import { terrain3dTexture } from './terrain3dTexture';
 import { withBuildingOccupation } from './forestOccupation';
 import type { PlacementBatch } from '../../../rust/bridge/urbanArchitecture';
@@ -1167,7 +1168,7 @@ function save(): void {
   if (settings.sketch && appliedSketchRef?.sketch !== settings.sketch && encodeSketch(settings.sketch).length > INLINE_SKETCH_LIMIT) {
     void retainAppliedSketch().then(save).catch(error => status(String(error), true)); return;
   }
-  try { const url = new URL(location.href); url.search = shareQuery(); if (query.get('standalone') === '1') url.searchParams.set('standalone', '1'); url.hash = ''; history.replaceState(null, '', placeSketchInFragment(url)); syncBenchUrl(); } catch { /* file:// may reject replaceState; copied links still carry all inputs. */ }
+  try { const url = new URL(location.href); url.search = shareQuery(); if (query.get('standalone') === '1') url.searchParams.set('standalone', '1'); keepRendererOverride(url.searchParams); url.hash = ''; history.replaceState(null, '', placeSketchInFragment(url)); syncBenchUrl(); } catch { /* file:// may reject replaceState; copied links still carry all inputs. */ }
 }
 function deferSave(): void { clearTimeout(saveTimer); saveTimer = setTimeout(save, 150); }
 const pins = createPins({

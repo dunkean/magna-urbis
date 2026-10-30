@@ -186,6 +186,11 @@ export class UrbanBuildingPass {
     }
     return missing;
   }
+  /** The buildings replaceBuildings put in place of the scene's own (to replay them on another pass). */
+  replacedBuildings(): Building3dVisual[] {
+    const original = new Map(this.source?.buildings.map(b => [b.id, b]));
+    return this.sectors.flatMap(sector => sector.entries.filter(e => e.building !== original.get(e.building.id)).map(e => e.building));
+  }
   private prepare(sector: Sector, overview: boolean, featureLod?: BuildingFeatureLod): void {
     this.release(sector);
     const groups = new Map<string, Batch>(), textured = !!this.appearance.textured, stride = 9;
