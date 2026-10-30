@@ -9,6 +9,8 @@
 //   node scripts/export_decors.mjs --index   (rebuild decors/index.json only)
 //   node scripts/export_decors.mjs --set city   (City Bench: 15 environments × 2 sizes,
 //        one city at the map centre, neural relief from the Python/CUDA service on :8793)
+//   node scripts/export_decors.mjs --set biome  (City Bench: 11 climate zones × coast/river × 2 sizes,
+//        ids city-<zone>-<coast|river>-<s|l>; --only takes a comma list of id prefixes)
 //
 // Decors land in web/decors/ (ignored by git) with an index.json read by urbanbench.html.
 // The variation list is deterministic: the same --count gives the same decors.
@@ -24,9 +26,9 @@ const option = (name, fallback) => { const i = args.indexOf(`--${name}`); return
 const web = fileURLToPath(new URL('..', import.meta.url));
 const out = resolve(web, option('out', 'decors'));
 const base = option('url', 'http://127.0.0.1:5173').replace(/\/$/, '');
-const set = option('set', 'urban'), city = set === 'city';
+const set = option('set', 'urban'), biome = set === 'biome', city = set === 'city' || biome;
 const neural = option('neural', city ? 'http://127.0.0.1:8793' : 'http://127.0.0.1:8792').replace(/\/$/, '');
-const count = Number(option('count', city ? 30 : 100)), from = Number(option('from', 0)), only = option('only', '');
+const count = Number(option('count', biome ? 44 : city ? 30 : 100)), from = Number(option('from', 0)), only = option('only', '');
 const neuralSource = city ? 'neural-python' : 'neural';
 mkdirSync(out, { recursive: true });
 
@@ -108,24 +110,58 @@ const ENVIRONMENTS = [
   { id: 'oceanic-archipelago', label: 'Archipel océanique', climate: 'oceanic', relief: 'mixed', coast: 'archipelago', river: 'auto', lakes: 'none', culture: 'japanese-jokamachi', level: 'rural' },
   { id: 'lake-plateau', label: 'Haut plateau lacustre', climate: 'temperate', relief: 'plateau', coast: 'inland', river: 'auto', lakes: 'some', culture: 'aztec', level: 'developed' },
 ];
+// Biome set: every V2 climate zone with a coast and a river site (sent as custom climate values;
+// the zone name stays in the tags). Values mirror CLIMATE_ZONE_VALUES in rust/bridge/terrainClimate.ts.
+const ZONE_CLIMATE = {
+  temperate: [11, 520, 800, 18, 'oceanic'], mediterranean: [15.5, 620, 620, 55, 'mediterranean'], continental: [8, 850, 620, 32, 'cold'],
+  nordic: [4.5, 720, 850, 22, 'cold'], alpine: [9, 650, 1500, 20, 'oceanic'], arctic: [-2, 850, 550, 25, 'cold'], steppe: [9.5, 1050, 380, 42, 'arid'],
+  desert: [24, 780, 70, 95, 'arid'], savanna: [28, 380, 600, 115, 'arid'], tropical: [27, 130, 2500, 55, 'tropical'], wetland: [10.5, 560, 750, 16, 'oceanic'],
+};
+const BIOMES = [
+  ['temperate', 'coast', 'Côte tempérée vallonnée', 'hills', 'coast-W', 'river', 'auto', 'hanseatic', 'developed'],
+  ['temperate', 'river', 'Plaine fluviale tempérée', 'flat', 'inland', 'major', 'auto', 'european-organic', 'rural'],
+  ['mediterranean', 'coast', 'Collines méditerranéennes littorales', 'hills', 'coast-S', 'stream', 'none', 'byzantine-greek', 'developed'],
+  ['mediterranean', 'river', 'Vallée méditerranéenne', 'valley', 'inland', 'river', 'none', 'roman-core', 'imperial'],
+  ['continental', 'coast', 'Littoral continental plat', 'flat', 'coast-N', 'river', 'some', 'rynek-town', 'developed'],
+  ['continental', 'river', 'Plaine continentale et grand fleuve', 'mixed', 'inland', 'major', 'some', 'russian-kremlin', 'rural'],
+  ['nordic', 'coast', 'Fjord nordique', 'mountains', 'coast-W', 'stream', 'auto', 'barbarian-norse', 'primitive'],
+  ['nordic', 'river', 'Collines boréales et rivière', 'hills', 'inland', 'river', 'some', 'slavic-gord', 'rural'],
+  ['alpine', 'coast', 'Baie montagneuse alpine', 'mixed', 'bay-NE', 'auto', 'auto', 'dwarven', 'rural'],
+  ['alpine', 'river', 'Haute vallée alpine', 'valley', 'inland', 'river', 'auto', 'himalayan-terraces', 'primitive'],
+  ['arctic', 'coast', 'Côte arctique', 'flat', 'coast-N', 'stream', 'some', 'inuit-camp', 'primitive'],
+  ['arctic', 'river', 'Toundra et rivière', 'hills', 'inland', 'river', 'some', 'siberian-camp', 'primitive'],
+  ['steppe', 'coast', 'Rivage de steppe', 'flat', 'coast-E', 'stream', 'none', 'nomad-camp', 'rural'],
+  ['steppe', 'river', 'Steppe et grand fleuve', 'flat', 'inland', 'major', 'auto', 'mongol-ordu', 'primitive'],
+  ['desert', 'coast', 'Littoral désertique', 'flat', 'coast-E', 'none', 'none', 'hadhrami-tower', 'rural'],
+  ['desert', 'river', 'Vallée fluviale désertique', 'valley', 'inland', 'major', 'none', 'egyptian-planned', 'developed'],
+  ['savanna', 'coast', 'Côte de savane', 'hills', 'coast-S', 'river', 'none', 'swahili-stone-town', 'rural'],
+  ['savanna', 'river', 'Savane et fleuve', 'flat', 'inland', 'major', 'auto', 'sahel', 'rural'],
+  ['tropical', 'coast', 'Île tropicale', 'hills', 'island', 'auto', 'none', 'javanese-courts', 'rural'],
+  ['tropical', 'river', 'Plaine tropicale humide', 'flat', 'inland', 'major', 'some', 'khmer', 'developed'],
+  ['wetland', 'coast', 'Lagune et marais littoraux', 'flat', 'corner-SE', 'river', 'some', 'venetian-lagoon', 'rural'],
+  ['wetland', 'river', 'Delta et marais', 'flat', 'inland', 'major', 'some', 'mississippian', 'rural'],
+].map(([zone, site, label, relief, coast, river, lakes, culture, level]) => ({ id: `${zone}-${site}`, zone, label, climate: zone, relief, coast, river, lakes, culture, level }));
 const CITY_SIZES = [
   { id: 's', size: 'small', label: 'petite carte', width: 4000, population: 5000, exits: 3 },
   { id: 'l', size: 'large', label: 'grande carte', width: 16000, population: 100000, exits: 4 },
 ];
 /** `central`: the exact centre is too steep or wet; placement picks the best site of the central area instead. */
 function cityVariation(i, attempt = 0, central = false) {
-  const env = ENVIRONMENTS[i % ENVIRONMENTS.length], size = CITY_SIZES[Math.floor(i / ENVIRONMENTS.length) % CITY_SIZES.length];
+  const ENVS = biome ? BIOMES : ENVIRONMENTS;
+  const env = ENVS[i % ENVS.length], size = CITY_SIZES[Math.floor(i / ENVS.length) % CITY_SIZES.length];
   const coast = COASTS.find(c => c.id === env.coast);
   // Retries change the neural seed; the last one lets placement choose the best site of the central area.
   const seed = attempt ? `city-${env.id}-${size.id}-${attempt}` : `city-${env.id}-${size.id}`, width = size.width, centred = attempt < 3 && !central;
   const params = new URLSearchParams({
-    engine: 'rust', profile: 'web', source: neuralSource, neural, v: '4', seed, width: String(width), relief: env.relief, climate: env.climate, erosion: '1',
+    // Biome set on the fastest engines: neural relief on the CUDA service, hydrology and settlements on the native Rust engine.
+    engine: 'rust', profile: biome ? 'local' : 'web', source: neuralSource, neural, v: '4', seed, width: String(width), relief: env.relief, climate: env.zone ? 'custom' : env.climate, erosion: '1',
     auto: '1', style: 'atlas', hydro_main: env.river, hydro_meanders: 'natural', hydro_lakes: env.lakes,
     compute: flag('cpu') ? 'wasm' : 'gpu-f32', generation: flag('cpu') ? 'cpu' : 'gpu-erosion',
     hydro_engine: 'rust', hydro_enabled: '1', hydro_compute: flag('cpu') ? 'cpu' : 'auto',
     fit: 'scale', slopes: '1',
   });
   if (env.relief === 'mixed') params.set('mix', '0.5');
+  if (env.zone) { const [temperature, temperatureStd, precipitation, precipitationCv, base] = ZONE_CLIMATE[env.zone]; for (const [k, v] of Object.entries({ temperature, temperatureStd, precipitation, precipitationCv, climateBase: base })) params.set(k, String(v)); }
   if (coast.coasts === 'all') { params.set('coasts', 'N,NE,E,SE,S,SW,W,NW'); params.set('islands', coast.islands); }
   else if (coast.coasts.length) { params.set('coasts', coast.coasts.join(',')); params.set('islands', 'island'); }
   const place = { key: 'city', name: env.label, population: size.population, culture: env.culture, kind: 'settlement', siteType: 'auto', sitePrefs: {}, ...(centred ? { position: { x: width / 2, y: width / 2 } } : {}) };
@@ -134,9 +170,9 @@ function cityVariation(i, attempt = 0, central = false) {
   params.set('settlements', JSON.stringify({ config: { mode: 'list', list: [place], edgeMargin: centred || attempt >= 3 ? 0.03 : 0.2, counts: { city: 0, town: 0, village: 0, hamlet: 0, farmstead: 0 }, main: { population: size.population, culture: env.culture } }, enabled: true, showPoints: true }));
   params.set('roads', JSON.stringify({ config: { level: env.level, culture: 'auto', density: 0.6, exits: size.exits }, enabled: true, show: true }));
   params.set('urban', JSON.stringify({ enabled: false, parcelEnabled: false }));
-  const n = String(i % ENVIRONMENTS.length + 1).padStart(2, '0');
-  const id = `city-${n}-${env.id}-${size.id}`;
-  const label = `${n} · ${env.label} · ${size.label}`;
+  const n = String(i % ENVS.length + 1).padStart(2, '0');
+  const id = biome ? `city-${env.id}-${size.id}` : `city-${n}-${env.id}-${size.id}`;
+  const label = biome ? `${env.zone} · ${env.label} · ${size.label}` : `${n} · ${env.label} · ${size.label}`;
   const tags = { kit: 'city', environment: env.id, size: size.size, climate: env.climate, relief: env.relief, coast: coast.id, river: env.river, lakes: env.lakes, culture: env.culture, roads: env.level, placement: centred ? 'centre' : 'central-best', source: neuralSource, hydrology: 'rust', seed };
   return { id, label, tags, query: params.toString() };
 }
@@ -166,14 +202,14 @@ const service = await fetch(`${neural}/status`, { signal: AbortSignal.timeout(10
 if (!service.ok) throw new Error(`Neural service: HTTP ${service.status}. Run npm run neural:serve.`);
 
 // ---------------------------------------------------------------- export
-const browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL ?? 'msedge', headless: !flag('headed'), args: ['--enable-unsafe-webgpu', '--enable-gpu', '--ignore-gpu-blocklist', '--use-angle=d3d11'] });
+const browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL ?? 'msedge', headless: !flag('headed'), args: ['--enable-unsafe-webgpu', '--enable-gpu', '--ignore-gpu-blocklist', `--use-angle=${process.env.ANGLE ?? 'd3d11'}`] });
 const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
 page.on('pageerror', error => console.warn(`  page error: ${error.message}`));
 let done = 0, failed = 0;
 for (let i = from; i < from + count; i++) {
   const make = city ? cityVariation : variation;
   const first = make(i), file = `${first.id}.decor`;
-  if (only && !first.id.startsWith(only)) continue;
+  if (only && !only.split(',').some(o => first.id.startsWith(o))) continue;
   if (!flag('force') && existsSync(join(out, file))) {
     const previous = readHeader(join(out, file));
     if (previous.tags?.source?.startsWith('neural') && previous.tags?.hydrology === 'rust') { console.log(`${first.id}: exists (neural + Rust)`); continue; }

@@ -63,7 +63,7 @@ async function renderMap(page, entry) {
   // A decor brings its own display style back on load: force the requested one (the load
   // may re-apply its style once more, hence the second look).
   for (let attempt = 0; attempt < 3 && await page.inputValue('#style') !== mapStyle; attempt++) {
-    await page.selectOption('#style', mapStyle);
+    await page.evaluate(style => { const s = document.getElementById('style'); if (![...s.options].some(o => o.value === style)) s.append(new Option(style, style)); s.value = style; s.dispatchEvent(new Event('change', { bubbles: true })); }, mapStyle);   // #style can be hidden: set it directly
     await page.waitForFunction(() => window.magnaBenchContext?.ready(), null, { timeout: 180000 });
     await page.waitForTimeout(1500);
   }
@@ -111,7 +111,7 @@ async function renderMap(page, entry) {
 }
 
 // SwiftShader keeps every GPU free (the bench's WebGL2 terrain runs fine in software, only slower).
-const gpuArgs = software ? ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] : ['--enable-unsafe-webgpu', '--ignore-gpu-blocklist'];
+const gpuArgs = software ? ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] : ['--enable-unsafe-webgpu', '--ignore-gpu-blocklist', ...(process.env.ANGLE ? [`--use-angle=${process.env.ANGLE}`] : [])];
 const browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL ?? 'msedge', headless: !flag('headed'), args: gpuArgs });
 console.log(`style ${mapStyle} → decors/${outputName('<id>')} · ${software ? 'SwiftShader' : 'hardware GPU'}`);
 const context = await browser.newContext({ viewport: { width: size, height: size }, deviceScaleFactor: 1 });
