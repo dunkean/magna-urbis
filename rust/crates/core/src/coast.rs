@@ -3,6 +3,11 @@
 use crate::{Noise, Rng, smooth};
 use std::f64::consts::TAU;
 
+/// Header floats before the capsules: profile, per-direction reach, character, bumps.
+const HEADER: usize = 56;
+const BUMPS: usize = 32;
+const MAX_BUMPS: usize = 6;
+
 pub(crate) struct Coast {
     rng: Rng,
     pub noise: Noise,
@@ -31,10 +36,11 @@ impl Coast {
         if mask > 255 {
             return Err("Les côtes doivent être un masque de huit directions (0 à 255).".into());
         }
-        if !matches!(mode, "island" | "archipelago" | "random") {
-            return Err("Choisissez île, archipel ou aléatoire.".into());
+        if !matches!(mode, "island" | "archipelago" | "random" | "peninsula") {
+            return Err("Choisissez île, archipel, presqu’île ou aléatoire.".into());
         }
         self.parameters.truncate(8);
+        self.parameters.resize(HEADER, 0.0);
         self.parameters[0] = mask as f32;
         self.parameters[1] = 0.0;
         let mut profile = self.rng.fork("mainland-profile");
@@ -42,13 +48,41 @@ impl Coast {
         self.parameters[4] = profile.range(2.5, 4.5) as f32;
         self.parameters[5] = turn.cos() as f32;
         self.parameters[6] = turn.sin() as f32;
+        // Seeded coast character: uneven sea reach per direction, a broad warp
+        // and noise amplitudes from smooth sandy bights to ragged rocky shores.
+        let mut character = self.rng.fork("coast-character");
+        for i in 0..8 {
+            // Shore offset from the centre along direction i, and a turn of its shoreline.
+            let diagonal = i % 2 == 1;
+            self.parameters[8 + i] = if diagonal {
+                character.range(0.26, 0.40)
+            } else {
+                character.range(0.14, 0.34)
+            } as f32;
+            self.parameters[16 + i] = character.range(-0.30, 0.30) as f32;
+        }
+        let rugged = character.float();
+        let header = [
+            character.range(0.03, 0.14),
+            character.range(0.25, 0.55),
+            0.035 + 0.085 * rugged * character.range(0.6, 1.0),
+            character.range(0.16, 0.36),
+            0.008 + 0.026 * rugged * character.range(0.5, 1.0),
+            character.range(0.035, 0.075),
+        ];
+        for (i, value) in header.into_iter().enumerate() {
+            self.parameters[24 + i] = value as f32;
+        }
         if mask == 0 {
             return Ok(());
         }
         let mut rng = self.rng.fork("shape-v2");
-        let archipelago =
-            mode == "archipelago" || (mode == "random" && self.rng.fork("mode").float() < 0.5);
-        if mask == 255 {
+        let peninsula = mode == "peninsula";
+        let archipelago = !peninsula
+            && (mode == "archipelago" || (mode == "random" && self.rng.fork("mode").float() < 0.5));
+        if mask == 255 && peninsula {
+            self.peninsula(&mut rng);
+        } else if mask == 255 {
             let count = if archipelago {
                 3 + (rng.float() * 5.0) as usize
             } else {
@@ -79,7 +113,7 @@ impl Coast {
                         .collect();
                 }
             } else {
-                centers.push((rng.range(0.475, 0.525), rng.range(0.475, 0.525)));
+                centers.push((rng.range(0.44, 0.56), rng.range(0.44, 0.56)));
             }
             for (i, &(cx, cy)) in centers.iter().enumerate() {
                 let radius = if archipelago {
@@ -93,41 +127,19 @@ impl Coast {
                         .min(0.17)
                         .min(cx.min(cy).min(1.0 - cx).min(1.0 - cy) * 0.85)
                 } else {
-                    rng.range(0.35, 0.40)
+                    rng.range(0.30, 0.40)
                 };
-                let turn = rng.range(0.0, TAU);
-                let point = |x: f64, y: f64| {
-                    (
-                        cx + radius * (x * turn.cos() - y * turn.sin()),
-                        cy + radius * (x * turn.sin() + y * turn.cos()),
-                    )
+                let arms = if archipelago {
+                    1
+                } else {
+                    1 + (rng.float() * 2.5) as usize
                 };
-                let phase = rng.range(0.0, 100.0);
-                let segments = 3 + (rng.float() * 3.0) as usize;
-                let mut last = point(-0.5, rng.range(-0.16, 0.16));
-                let mut last_radius = radius * rng.range(0.21, 0.31);
-                for j in 1..=segments {
-                    let next = point(-0.5 + j as f64 / segments as f64, rng.range(-0.19, 0.19));
-                    let next_radius = radius
-                        * if j == segments {
-                            rng.range(0.18, 0.30)
-                        } else {
-                            rng.range(0.28, 0.40)
-                        };
-                    self.capsule(last, next, last_radius, next_radius, radius, phase);
-                    last = next;
-                    last_radius = next_radius;
-                }
-                let side = if rng.float() < 0.5 { -1.0 } else { 1.0 };
-                self.capsule(
-                    point(0.0, 0.0),
-                    point(rng.range(-0.15, 0.15), side * rng.range(0.40, 0.52)),
-                    radius * 0.32,
-                    radius * rng.range(0.17, 0.25),
-                    radius,
-                    phase,
-                );
+                self.body(&mut rng, cx, cy, radius, arms);
             }
+        }
+        // Bays could sever an isthmus; islands only take small coves and points.
+        if !archipelago && !(mask == 255 && peninsula) {
+            self.shore_features(&mut rng, mask != 255);
         }
         // Detached rocks near the actual shore, including beside peninsulas.
         let wanted = if mask == 255 && archipelago {
@@ -191,6 +203,137 @@ impl Coast {
             target_attempts = 0;
         }
         Ok(())
+    }
+
+    /// One branched landmass: a crooked spine of capsules and `arms` side lobes.
+    fn body(&mut self, rng: &mut Rng, cx: f64, cy: f64, radius: f64, arms: usize) {
+        let turn = rng.range(0.0, TAU);
+        let point = |x: f64, y: f64| {
+            (
+                cx + radius * (x * turn.cos() - y * turn.sin()),
+                cy + radius * (x * turn.sin() + y * turn.cos()),
+            )
+        };
+        let phase = rng.range(0.0, 100.0);
+        let segments = 3 + (rng.float() * 3.0) as usize;
+        let mut last = point(-0.5, rng.range(-0.16, 0.16));
+        let mut last_radius = radius * rng.range(0.21, 0.31);
+        for j in 1..=segments {
+            let next = point(-0.5 + j as f64 / segments as f64, rng.range(-0.19, 0.19));
+            let next_radius = radius
+                * if j == segments {
+                    rng.range(0.18, 0.30)
+                } else {
+                    rng.range(0.28, 0.40)
+                };
+            self.capsule(last, next, last_radius, next_radius, radius, phase);
+            last = next;
+            last_radius = next_radius;
+        }
+        for _ in 0..arms {
+            let side = if rng.float() < 0.5 { -1.0 } else { 1.0 };
+            let root = rng.range(-0.35, 0.35);
+            self.capsule(
+                point(root, 0.0),
+                point(root + rng.range(-0.25, 0.25), side * rng.range(0.38, 0.58)),
+                radius * rng.range(0.24, 0.34),
+                radius * rng.range(0.13, 0.25),
+                radius,
+                phase,
+            );
+        }
+    }
+
+    /// A landmass joined to one map edge by a narrow, crooked isthmus that
+    /// lands on a sliver of continental shore: little access by land.
+    fn peninsula(&mut self, rng: &mut Rng) {
+        let side = (rng.float() * 4.0) as usize % 4;
+        let (nx, ny) = [(0.0, -1.0), (1.0, 0.0), (0.0, 1.0), (-1.0, 0.0)][side];
+        let (tx, ty) = (-ny, nx);
+        let along = rng.range(-0.22, 0.22);
+        let radius = rng.range(0.27, 0.34);
+        let push = rng.range(0.04, 0.10);
+        let (cx, cy) = (
+            0.5 - nx * push + tx * along * 0.4,
+            0.5 - ny * push + ty * along * 0.4,
+        );
+        let arms = 1 + (rng.float() * 2.0) as usize;
+        self.body(rng, cx, cy, radius, arms);
+        let neck = rng.range(0.026, 0.04);
+        let phase = rng.range(0.0, 100.0);
+        let shore = (0.5 + tx * along + nx * 0.5, 0.5 + ty * along + ny * 0.5);
+        let start = (cx + nx * radius * 0.45, cy + ny * radius * 0.45);
+        let mut last = start;
+        let steps = 3;
+        for j in 1..=steps {
+            let t = j as f64 / steps as f64;
+            let bend = if j == steps {
+                0.0
+            } else {
+                rng.range(-0.07, 0.07)
+            };
+            let next = (
+                start.0 + (shore.0 + nx * 0.06 - start.0) * t + tx * bend,
+                start.1 + (shore.1 + ny * 0.06 - start.1) * t + ty * bend,
+            );
+            let ra = if j == 1 { neck * 1.5 } else { neck };
+            let rb = if j == steps { neck * 1.7 } else { neck };
+            self.capsule(last, next, ra, rb, neck * 3.0, phase);
+            last = next;
+        }
+        // The continent itself mostly lies beyond the frame.
+        let reach = rng.range(0.14, 0.30);
+        let (ox, oy) = (shore.0 + nx * 0.10, shore.1 + ny * 0.10);
+        let (a, b) = (rng.range(0.6, 1.2), rng.range(0.6, 1.2));
+        self.capsule(
+            (ox - tx * reach * a, oy - ty * reach * a),
+            (ox + tx * reach * b, oy + ty * reach * b),
+            0.14,
+            0.14,
+            0.22,
+            phase + 7.0,
+        );
+    }
+
+    /// Seeded bays (negative) and headlands (positive) centred on the shore
+    /// drawn so far, so that no two seeds share one caricatural outline.
+    fn shore_features(&mut self, rng: &mut Rng, mainland: bool) {
+        let count = 2 + (rng.float() * 5.0) as usize;
+        let inside = self.distance(0.5, 0.5, 0.0).0 > 0.0;
+        let mut placed = 0;
+        for _ in 0..count * 6 {
+            if placed == count {
+                break;
+            }
+            let angle = rng.range(0.0, TAU);
+            // One broad gulf or cape, then smaller coves and points.
+            let (radius, depth) = if !mainland {
+                (rng.range(0.04, 0.12), rng.range(0.35, 0.8))
+            } else if placed == 0 {
+                (rng.range(0.22, 0.42), rng.range(0.25, 0.5))
+            } else {
+                (rng.range(0.05, 0.18), rng.range(0.35, 0.8))
+            };
+            let depth = depth * if rng.float() < 0.55 { -1.0 } else { 1.0 };
+            let (dx, dy) = (angle.cos(), angle.sin());
+            let Some(r) = (2..72).map(|k| k as f64 * 0.01).find(|&r| {
+                let (x, y) = (0.5 + dx * r, 0.5 + dy * r);
+                (0.0..=1.0).contains(&x)
+                    && (0.0..=1.0).contains(&y)
+                    && (self.distance(x, y, 0.0).0 > 0.0) != inside
+            }) else {
+                continue;
+            };
+            let j = BUMPS + placed * 4;
+            self.parameters[j..j + 4].copy_from_slice(&[
+                (0.5 + dx * r) as f32,
+                (0.5 + dy * r) as f32,
+                radius as f32,
+                (radius * depth) as f32,
+            ]);
+            placed += 1;
+        }
+        self.parameters[30] = placed as f32;
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -302,40 +445,45 @@ impl Coast {
         let mut islet_height = 0.0;
         let mut apron = 1.0;
         if mask != 255 {
-            let (dx, dy) = (x - 0.5, y - 0.5);
-            let r = dx.hypot(dy);
-            let angle = (dx.atan2(-dy) / TAU * 8.0).rem_euclid(8.0);
-            let a = angle.floor() as u32;
-            let t = smooth(angle.fract());
-            let reach = |i: u32| {
-                if mask & (1 << (i & 7)) == 0 {
-                    1.50
-                } else {
-                    0.64
+            // A broad seeded warp bends the straight shorelines into bights and capes.
+            let (warp, ws) = (at(24), at(25));
+            let (wx, wy) = (
+                x + warp
+                    * self
+                        .noise
+                        .fbm_filtered(x / ws + 5.2, y / ws + 1.3, 3, 0.5, footprint / ws),
+                y + warp
+                    * self
+                        .noise
+                        .fbm_filtered(x / ws - 7.7, y / ws + 9.1, 3, 0.5, footprint / ws),
+            );
+            // Each sea direction is a seeded shoreline (offset and turn); smooth
+            // union of the seas, so corners between two coasts stay rounded.
+            let mut shore = 10.0_f64;
+            for i in 0..8 {
+                if mask & (1 << i) == 0 {
+                    continue;
                 }
-            };
-            let edge = if r > 0.0 {
-                let u = dx * at(5) + dy * at(6);
-                let v = -dx * at(6) + dy * at(5);
-                0.5 * r / (u.abs().powf(at(4)) + v.abs().powf(at(4))).powf(1.0 / at(4))
-            } else {
-                0.5
-            };
-            // Mainland sectors extend past the frame, instead of being clipped by other seas.
-            distance = edge * (reach(a) * (1.0 - t) + reach(a + 1) * t) - r
-                + 0.070
+                let angle = i as f64 * TAU / 8.0 + at(16 + i);
+                let d = at(8 + i) - ((wx - 0.5) * angle.sin() - (wy - 0.5) * angle.cos());
+                let h = (0.12 - (shore - d).abs()).max(0.0) / 0.12;
+                shore = shore.min(d) - h * h * 0.03;
+            }
+            let (large, ls, fine, fs) = (at(26), at(27), at(28), at(29));
+            distance = shore
+                + large
                     * self
                         .noise
-                        .fbm_filtered(x / 0.26, y / 0.26, 7, 0.56, footprint / 0.26)
-                + 0.020
+                        .fbm_filtered(x / ls, y / ls, 7, 0.56, footprint / ls)
+                + fine
                     * self
                         .noise
-                        .fbm_filtered(x / 0.055, y / 0.055, 5, 0.55, footprint / 0.055);
+                        .fbm_filtered(x / fs, y / fs, 5, 0.55, footprint / fs);
         }
         let mut cached_phase = f64::NAN;
         let mut detail = 0.0;
         for i in 0..at(1) as usize {
-            let j = 8 + i * 12;
+            let j = HEADER + i * 12;
             let (ax, ay, bx, by) = (at(j), at(j + 1), at(j + 2), at(j + 3));
             let (dx, dy) = (bx - ax, by - ay);
             let t =
@@ -379,6 +527,16 @@ impl Coast {
                     let radial = (x - at(j + 9)).hypot(y - at(j + 10)) / (s * 0.6);
                     let rise = 8.0 * (0.75 + 0.25 * phase.cos());
                     islet_height += rise * size * (1.0 - smooth(radial));
+                }
+            }
+        }
+        // Seeded bays and headlands; islets keep their own outline.
+        if islet_height == 0.0 {
+            for k in 0..(at(30) as usize).min(MAX_BUMPS) {
+                let j = BUMPS + k * 4;
+                let d2 = ((x - at(j)).powi(2) + (y - at(j + 1)).powi(2)) / at(j + 2).powi(2);
+                if d2 < 1.0 {
+                    distance += at(j + 3) * (1.0 - d2) * (1.0 - d2);
                 }
             }
         }

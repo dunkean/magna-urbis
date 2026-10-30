@@ -123,10 +123,15 @@ export const RENDER_V2_ENVIRONMENT_GLSL = `
       return mix(c,vec3(.72,.79,.77),e.snow*.62);
     }
     vec3 v2Color(V2Env e,float channel){
-      if(channel==1.){return mix(mix(v2Mineral(e),vec3(.80,.70,.49),e.sand),vec3(.22,.18,.13),e.organic);}
-      if(channel==2.){return mix(vec3(.66,.37,.14),vec3(.08,.40,.52),sstep(0.,2.4,e.moisture));}
+      // Diagnostic ramps span every climate zone: desert to peat, tropics to ice.
+      if(channel==1.){vec3 c=mix(mix(v2Mineral(e),vec3(.80,.70,.49),e.sand),vec3(.22,.18,.13),e.organic);
+        c=mix(c,vec3(.62,.38,.26),.45*sstep(.35,.7,e.clay));return mix(c,vec3(.52,.52,.55),.7*clamp(e.rock,0.,1.));}
+      if(channel==2.){float m=e.moisture;vec3 c=mix(vec3(.72,.42,.12),vec3(.86,.72,.44),sstep(0.,.5,m));
+        c=mix(c,vec3(.45,.62,.30),sstep(.5,1.2,m));c=mix(c,vec3(.10,.48,.52),sstep(1.2,2.2,m));return mix(c,vec3(.05,.22,.50),sstep(2.2,3.4,m));}
       if(channel==3.){return vec3(e.grass*.55,e.woody*e.leaf,.16+e.needle*.6);}
-      if(channel==4.){return mix(vec3(.13,.20,.22),vec3(.90,.96,1.),e.snow);}
+      if(channel==4.){float t=e.temperature;vec3 g=mix(vec3(.30,.36,.46),vec3(.20,.26,.30),sstep(-10.,0.,t));
+        g=mix(g,vec3(.30,.34,.26),sstep(0.,10.,t));g=mix(g,vec3(.55,.38,.22),sstep(10.,25.,t));
+        g=mix(g,vec3(.62,.86,.96),clamp(max(e.glacier,.5*e.ice),0.,1.));return mix(g,vec3(.90,.96,1.),e.snow);}
       return mix(v2Open(e),v2Canopy(e),e.woody*e.leaf);
     }
     float v2Freeze(float kind,V2Env e){return kind<1.5?sstep(-2.,-9.,e.temperature):kind>2.5?sstep(-5.,-13.,e.temperature):e.ice;}

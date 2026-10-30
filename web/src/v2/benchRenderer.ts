@@ -145,7 +145,7 @@ export class BenchRenderer {
         }
         if (this.gpu) {
         if(this.uploaded!==t){this.gpu.setBase({ x: 0, y: 0, width: t.width, n: source.n, data: source.data, cave: source.cave, waterSurface: t.waterSurface });this.uploaded=t;}
-        this.gpu.setLook({ style, colors: a.colors, lighting, layers, mapWidth: t.width, climate: climateOf(effective as TerrainSettings), v2Season: a.season ?? .5,
+        this.gpu.setLook({ style, colors: a.colors, lighting, layers, mapWidth: t.width, climate: climateOf(effective as TerrainSettings), climateZone: effective.climateZone, v2Season: a.season ?? .5,
           globalMin: t.globalMinHeight, globalMax: t.globalMaxHeight, contours: (a.contours ?? true) && layers.relief, contourStep: effective.relief === 'mountains' ? 40 : effective.relief === 'flat' ? 2 : 10,
           flatRelief: effective.relief === 'flat', refine: effective.refine??true, sourceCell: t.width / source.n, seed: seedHash(world.seed), detail: effective.detailNoise ?? DEFAULT_FRACTAL_DETAIL,
           floor: source.floor ?? 0, frame: layers.frame, background: terrainStyle(style,a.colors).palette.paper });

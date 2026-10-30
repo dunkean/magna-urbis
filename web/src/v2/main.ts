@@ -85,7 +85,6 @@ setHTML($('#app'), `
     <div class="stage-field" data-control="main:population">${field('Population principale','population',undefined,'type="number" min="10" max="5000000" step="100"')}</div>
     <div class="stage-field" data-control="main:culture">${field('Culture commune','culture',CULTURE_LABELS)}</div>
     <div id="region-controls"></div>
-    <div class="stage-field" data-control="main:urban-backend"><label class="label" for="urban-backend">Construction des villes</label><select id="urban-backend"><option value="typescript">Classique · TypeScript</option><option value="rust">Rust · navigateur WASM</option><option value="native">Rust · natif local</option></select></div>
     <div id="urban-settings-panel"><div id="urban-controls"></div></div>
     <div class="stage-field" data-control="main:sprawl">${field('Étalement · 0,5 compact / 2 diffus','sprawl',undefined,'type="number" min="0.5" max="2" step="0.1"')}</div>
     <div class="stage-field" data-control="main:walls">${field('Enceinte','walls',[['auto','Automatique'],['none','Ville ouverte'],['single','Simple enceinte'],['double','Double enceinte']])}</div>
@@ -171,7 +170,7 @@ let pendingRegionPosition:string|undefined;
 const regionControls=mountRegionControls($('#region-controls'),{getSettings:()=>settings,onChange:touchRecipe,getWorld:()=>world,disabled:()=>busy,onReroute:()=>void generate('roads'),onPickPosition:key=>{pendingRegionPosition=key;toast(translate('Choose a position on the map'));}});
 let inspectorForms:UrbanControls[]=[];
 /* The staged chain takes over the sidebar: the forms above are moved into their stage rows. */
-const backendBindings={localServer:()=>settings.runtime?.localServer??bootRuntime.localServer??'http://127.0.0.1:8791',pythonServer:()=>settings.runtime?.pythonServer??bootRuntime.pythonServer??'http://127.0.0.1:8793',log};
+const backendBindings={localServer:()=>settings.runtime?.localServer??bootRuntime.localServer??'http://127.0.0.1:8791',pythonServer:()=>settings.runtime?.pythonServer??bootRuntime.pythonServer??'http://127.0.0.1:8793',log,getSettings:()=>settings,busy:()=>busy,onRuntimeChange:()=>{touchRecipe();terrainControls.sync();regionControls?.sync();syncUrbanBackend();scheduleChainSync();}};
 mountSettingsPanel($('#hardware-details'),backendBindings);
 let chainSyncFrame=0;
 function scheduleChainSync():void{if(chainSyncFrame)return;chainSyncFrame=requestAnimationFrame(()=>{chainSyncFrame=0;chain.sync();});}
@@ -203,6 +202,7 @@ const chain:StageChain=mountStageChain({
   onRegionChange:()=>{touchRecipe();regionControls.sync();},
   onAppearance:()=>{projectRevision++;clearTimeout(renderTimer);renderTimer=setTimeout(()=>void refreshAppearance(),120);},
   run:runStage,runFamily,openPlace:()=>{if(world&&selectedTown){$('#places-panel').hidden=false;showInspector(selectedTown);}},
+  openExecution:()=>{dialog('#hardware-dialog');void inspectHardware();requestAnimationFrame(()=>document.getElementById('settings-execution')?.scrollIntoView({block:'start'}));},
   availability:()=>{const s=backendStatus();return{checked:s.checked,webgpu:s.webgpu,native:s.native.available,python:s.python.available};},
   heightmap:{
     source:host=>mountHeightmapSource(host,{getSettings:()=>settings,onLoaded:()=>{touchRecipe();terrainControls.sync();chain.sync();toast(getLanguage()==='fr'?'Heightmap chargée. Créez le relief pour l’utiliser.':'Heightmap loaded. Create the relief to use it.');},
@@ -245,8 +245,7 @@ function syncPlacesPanel(family:StageFamily=chain.family()):void{$('#places-pane
 $('#places-collapse').onclick=()=>{const panel=$('#places-panel'),collapsed=panel.dataset.collapsed!=='true';panel.dataset.collapsed=String(collapsed);$('#places-collapse').setAttribute('aria-expanded',String(!collapsed));setText($('#places-collapse'),collapsed?'+':'–');};
 
 function disposeInspectorForms():void{inspectorForms.forEach(form=>form.dispose());inspectorForms=[];}
-function syncUrbanBackend():void{const backend=settings.urban?.backend??settings.runtime?.backend??'typescript';$<HTMLSelectElement>('#urban-backend').value=backend;$('#urban-controls').hidden=backend==='typescript';}
-$<HTMLSelectElement>('#urban-backend').onchange=()=>{settings.urban={...settings.urban,backend:$<HTMLSelectElement>('#urban-backend').value as 'typescript'|'rust'|'native'};touchRecipe();syncUrbanBackend();urbanControls.sync();};
+function syncUrbanBackend():void{const backend=settings.urban?.backend??settings.runtime?.backend??'typescript';$('#urban-controls').hidden=backend==='typescript';}
 insertHTML($('#inspect-mode').parentElement!, 'beforeend', `<select id="inspect-target" aria-label="Niveau à inspecter" style="width:90px;padding:3px 5px;font-size:10px"><option value="auto">Auto</option><option value="quarter">Quartier</option><option value="parcel">Parcelle</option><option value="house">Maison</option></select>`);
 // Layer toggles live in the Display stages (widget:layer-*).
 insertHTML($('#hardware-details'), 'afterend', `<details class="section"><summary>Adresses des services locaux</summary><p class="hint">L’édition installable lance Rust automatiquement. Python peut utiliser le service local existant. Les adresses restent sur votre machine.</p><label class="label" for="rust-server">Rust natif</label><input id="rust-server" type="url" value="${esc(bootRuntime.localServer)}"><label class="label" for="python-server">Python neuronal</label><input id="python-server" type="url" value="${esc(bootRuntime.pythonServer)}"><button id="services-apply" class="small" style="margin-top:12px">Enregistrer & vérifier</button><p class="hint">Configuration de Python et des modèles : <a href="./scientific/index.html#calcul" target="_blank" rel="noopener">lire l’atlas ↗</a></p></details>`);

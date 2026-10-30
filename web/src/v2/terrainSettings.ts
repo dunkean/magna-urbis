@@ -1,9 +1,10 @@
 import { validateProceduralRecipe } from '../../../rust/bridge/terrainGenerationRecipe';
 /** V2 recipes use the bench's names and units. This module never loads WASM. */
-import type { TerrainSettings, NeuralTuning } from '../../../rust/bridge/terrain';
+import type { TerrainSettings, NeuralTuning, NeuralClimate } from '../../../rust/bridge/terrain';
 import type { HydrologySettings } from '../../../rust/bridge/hydrology';
 import type { ForestSettings } from '../../../rust/bridge/terrainForest';
-import { CLIMATE_VALUES } from '../../../rust/bridge/terrainClimate';
+import { CLIMATE_ZONES, CLIMATE_ZONE_VALUES, CLIMATE_ZONE_BASE, LEGACY_CLIMATE_ZONES, climateZoneOf } from '../../../rust/bridge/terrainClimate';
+import type { ClimateZone } from '../../../rust/bridge/terrainClimate';
 import { DEFAULT_FRACTAL_DETAIL } from '../../../rust/bridge/terrainAdjust';
 import type { FractalDetail } from '../../../rust/bridge/terrainAdjust';
 import type { ClimateValues } from '../../../rust/bridge/terrainClimate';
@@ -12,17 +13,25 @@ import { parseTerrainZones } from '../../../rust/bridge/terrainZones';
 import type { V2Settings } from './contracts';
 
 export type V2TerrainSettings = Partial<Omit<TerrainSettings,
-  'seed' | 'width' | 'source' | 'neuralAssets' | 'neuralServer' | 'hydrology' | 'neuralTuning' | 'climateValues' | 'detailNoise'>> & {
+  'seed' | 'width' | 'source' | 'climate' | 'neuralAssets' | 'neuralServer' | 'hydrology' | 'neuralTuning' | 'climateValues' | 'detailNoise'>> & {
   hydrology?: Partial<HydrologySettings>;
   neuralTuning?: Partial<NeuralTuning>;
   forest?: Partial<ForestSettings>;
+  /** A climate zone; legacy preset names (oceanic, arid, cold) are accepted on load and migrated. */
+  climate?: ClimateZone | NeuralClimate;
   climateValues?: Partial<ClimateValues>;
   detailNoise?: Partial<FractalDetail>;
 };
 export const TERRAIN_RELIEFS = ['flat', 'hills', 'valley', 'canyon', 'mountains', 'mixed', 'plateau', 'high-mountains', 'volcano', 'caldera', 'cavern'] as const;
 export const TERRAIN_ENVIRONMENTS = ['flat', 'hills', 'mixed', 'mountains', 'high-mountains'] as const;
 export const TERRAIN_COAST_DIRECTIONS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'] as const;
-export const TERRAIN_CLIMATES = ['temperate', 'oceanic', 'mediterranean', 'arid', 'cold', 'tropical'] as const;
+export const TERRAIN_CLIMATES = CLIMATE_ZONES;
+const BIOME_CLIMATE_ZONE: Record<string, ClimateZone> = { desert: 'desert', tropical: 'tropical', tundra: 'arctic', steppe: 'steppe', forest: 'continental' };
+/** Rewrite a former preset name (oceanic, arid, cold) to its closest zone. */
+export function migrateTerrainClimate(terrain: { climate?: unknown } | undefined): void {
+  const zone = terrain && typeof terrain.climate === 'string' ? LEGACY_CLIMATE_ZONES[terrain.climate] : undefined;
+  if (terrain && zone) terrain.climate = zone;
+}
 export const TERRAIN_EXTENT_MIN = 500, TERRAIN_EXTENT_MAX = 100000;
 export const DEFAULT_NEURAL_TUNING: NeuralTuning = {
   landScale: 1, steps: 4, noiseTemperature: .5, noiseTemperatureStd: .5, noisePrecipitation: .5, noisePrecipitationCv: .5,
@@ -49,16 +58,18 @@ export type EffectiveTerrainSettings = TerrainSettings & { forest: ForestSetting
 /** Defaults merge nested knobs. Runtime selection owns source, endpoints and auto compute. */
 export function effectiveTerrainSettings(settings: V2Settings, width: number): EffectiveTerrainSettings {
   const t = settings.terrain ?? {}, runtime = settings.runtime;
-  const climate = t.climate ?? (settings.options.biome === 'desert' ? 'arid' : settings.options.biome === 'tropical' ? 'tropical' : settings.options.biome === 'tundra' ? 'cold' : 'temperate');
+  const zone: ClimateZone = climateZoneOf(t.climate) ?? BIOME_CLIMATE_ZONE[String(settings.options.biome)] ?? 'temperate';
   const masks = { none: 0, N: 1, E: 4, S: 16, W: 64, random: 255 };
   return { ...defaultTerrainSettings(), ...t,
+    // Climate-driven landform shaping is on unless the recipe turns it off.
+    procedural: { biome: true, ...t.procedural },
     ...(runtime?.source === 'procedural-phasor' || t.procedural?.preset==='compact' || t.procedural?.enabled?.phasor ? { phasor: { quality: 'balanced' as const, intensity: 1, ...t.phasor } } : {}),
     ...(!['procedural','procedural-phasor'].includes(runtime?.source??'procedural') || ['plateau','volcano','caldera','cavern'].includes(t.relief??settings.options.relief) ? {procedural:undefined} : {}),
     seed: settings.options.seed, width, source: runtime?.source ?? 'procedural',
     motifSize: t.motifSize ?? 3000, relief: t.relief ?? settings.options.relief, mountainMix: t.mountainMix ?? .5,
     coastMask: t.coastMask ?? masks[settings.options.coast], erosion: t.erosion ?? runtime?.erosion ?? 1,
     resolution: t.resolution ?? runtime?.resolution ?? 512,
-    climate, climateValues: { ...CLIMATE_VALUES[climate], ...t.climateValues },
+    climateZone: zone, climate: CLIMATE_ZONE_BASE[zone], climateValues: { ...CLIMATE_ZONE_VALUES[zone], ...t.climateValues },
     detailNoise: { ...DEFAULT_FRACTAL_DETAIL, ...t.detailNoise },
     neuralTuning: { ...DEFAULT_NEURAL_TUNING, ...t.neuralTuning, histogram: [...(t.neuralTuning?.histogram ?? DEFAULT_NEURAL_TUNING.histogram)] },
     hydrology: { ...DEFAULT_HYDROLOGY, main: settings.options.river, lakes: (settings.options as typeof settings.options & { lakes?: HydrologySettings['lakes'] }).lakes ?? 'auto', ...t.hydrology },
@@ -80,7 +91,7 @@ function enumeration(value: unknown, values: readonly unknown[], name: string): 
 /** Reject typos and out-of-range recipes instead of silently dropping customisation. */
 export function validateTerrainSettings(value: unknown): asserts value is V2TerrainSettings {
   if (!record(value)) throw new Error('Invalid terrain settings.');
-  const allowed = ['zones', 'motifSize', 'relief', 'environment', 'coastMask', 'islandMode', 'erosion', 'mountainMix', 'resolution', 'compute', 'generationCompute', 'hydrology', 'climate', 'fidelity', 'sketch', 'climateValues', 'neuralTuning', 'coarseModel', 'baseModel', 'decoderModel', 'neuralFit', 'neuralSlopes', 'refine', 'detailNoise', 'erosionTuning', 'forest', 'phasor', 'procedural'];
+  const allowed = ['zones', 'motifSize', 'relief', 'environment', 'coastMask', 'islandMode', 'erosion', 'mountainMix', 'resolution', 'compute', 'generationCompute', 'hydrology', 'climate', 'climateZone', 'fidelity', 'sketch', 'climateValues', 'neuralTuning', 'coarseModel', 'baseModel', 'decoderModel', 'neuralFit', 'neuralSlopes', 'refine', 'detailNoise', 'erosionTuning', 'forest', 'phasor', 'procedural'];
   if(value.procedural!==undefined)validateProceduralRecipe(value.procedural as import('../../../rust/bridge/terrainGenerationRecipe').ProceduralRecipe);
   if (value.phasor !== undefined) {
     if (!record(value.phasor) || Object.keys(value.phasor).some(key => !['quality', 'intensity'].includes(key))) throw new Error('Invalid compact Phasor settings.');
@@ -89,7 +100,7 @@ export function validateTerrainSettings(value: unknown): asserts value is V2Terr
   }
   for (const key of Object.keys(value)) if (!allowed.includes(key)) throw new Error(`Unknown terrain parameter: ${key}.`);
   enumeration(value.relief, TERRAIN_RELIEFS, 'relief'); enumeration(value.environment, TERRAIN_ENVIRONMENTS, 'environment');
-  enumeration(value.islandMode, ['island', 'archipelago', 'random'], 'islandMode'); enumeration(value.climate, TERRAIN_CLIMATES, 'climate');
+  enumeration(value.islandMode, ['island', 'archipelago', 'peninsula', 'random'], 'islandMode'); enumeration(value.climate, [...CLIMATE_ZONES, ...Object.keys(LEGACY_CLIMATE_ZONES)], 'climate');
   enumeration(value.compute, ['wasm', 'gpu-f32'], 'compute'); enumeration(value.generationCompute, ['cpu', 'gpu', 'gpu-all', 'gpu-erosion', 'native'], 'generationCompute');
   enumeration(value.neuralFit, ['crop', 'scale'], 'neuralFit');
   for (const key of ['neuralSlopes', 'refine']) enumeration(value[key], [true, false], key);

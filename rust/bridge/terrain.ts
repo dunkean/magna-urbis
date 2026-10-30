@@ -1,7 +1,7 @@
 import { validateProceduralRecipe, erosionBiome, posteriorSettings, windSettings, stageEnabled, PROCEDURAL_RECIPE_VERSION, isCompactProcedural, type ProceduralRecipe, type GenerationControl } from './terrainGenerationRecipe';
 import { generateCpuTerrain } from './terrainCpuPipeline';
 import { erodeWindGpu, erodeWindCpu } from './terrainWind';
-import { CLIMATE_VALUES, type ClimateValues } from './terrainClimate';
+import { CLIMATE_VALUES, type ClimateValues, type ClimateZone } from './terrainClimate';
 export { CLIMATE_VALUES, type ClimateValues } from './terrainClimate';
 import type { TerrainLayers, TerrainLighting } from '../../web/src/render/terrainLighting';
 import init from '../pkg/wasm/magna_urbis_wasm.js';
@@ -33,7 +33,8 @@ export type TerrainEnvironment = typeof ENVIRONMENT_RELIEFS[number];
 export const COMPUTE_MODES = ['wasm', 'gpu-f32'] as const;
 export type TerrainCompute = typeof COMPUTE_MODES[number];
 export const COAST_DIRECTIONS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'] as const;
-export const ISLAND_MODES = ['island', 'archipelago', 'random'] as const;
+/** `random` is kept for saved recipes; `peninsula` ties one body to a single map edge. */
+export const ISLAND_MODES = ['island', 'archipelago', 'random', 'peninsula'] as const;
 export type IslandMode = typeof ISLAND_MODES[number];
 export const TERRAIN_SOURCES = ['procedural', 'procedural-phasor', 'neural-wasm', 'neural-python', 'neural'] as const;
 export type TerrainSource = typeof TERRAIN_SOURCES[number];
@@ -90,7 +91,9 @@ export type ErosionTuning = Partial<Record<ErosionSetting, number>>;
 export interface TerrainSettings {
   zones?: TerrainZones;
   seed: string; width: number; motifSize: number; relief: TerrainRelief; environment?: TerrainEnvironment; coastMask?: number; islandMode?: IslandMode; erosion: number; mountainMix: number; resolution: number;
-  compute?: TerrainCompute; generationCompute?: 'cpu' | 'gpu' | 'gpu-all' | 'gpu-erosion' | 'native'; hydrology?: HydrologySettings; source?: TerrainSource; climate?: NeuralClimate; fidelity?: number; neuralServer?: string; sketch?: TerrainSketch;
+  compute?: TerrainCompute; generationCompute?: 'cpu' | 'gpu' | 'gpu-all' | 'gpu-erosion' | 'native'; hydrology?: HydrologySettings; source?: TerrainSource; climate?: NeuralClimate;
+  /** V2 climate zone: shapes erosion, cover and rendering; `climate`/`climateValues` carry its legacy name and values. */
+  climateZone?: ClimateZone; fidelity?: number; neuralServer?: string; sketch?: TerrainSketch;
   /** Absolute runtime URL supplied by the page; inline worker URLs are blob URLs. */
   neuralAssets?: string;
   /** Climate values (preset or custom): neural sketch and water budget. */
@@ -189,6 +192,8 @@ let vectorWater: { key: string; water: VectorWater } | undefined;
 /** Heights of the local Rust neural service: `1024²` FP32 metres over 40 km, sea at zero. */
 async function fetchNeuralRelief(settings: TerrainSettings, coastMask: number, islandMode: IslandMode, progress?: (text: string) => void): Promise<{ heights: Float32Array; info: NeuralInfo }> {
   const server = neuralServerForSource(settings.source, settings.neuralServer);
+  // The browser neural engine is a pinned build without the peninsula sketch (infinite_map/native/neural-earth).
+  if (settings.source === 'neural-wasm' && islandMode === 'peninsula') { progress?.('Presqu’île indisponible dans le neuronal navigateur : île unique.'); islandMode = 'island'; }
   const params = new URLSearchParams({
     seed: settings.seed, relief: settings.relief, mix: String(settings.relief === 'mixed' ? settings.mountainMix : 0.5),
     coasts: String(coastMask), islands: islandMode, climate: settings.climate ?? 'temperate', noise: String(settings.fidelity ?? 0.05),
@@ -326,7 +331,7 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
   if (!neural) { await releaseNeuralBrowser(); await releasePythonNeural(); }
   const key = JSON.stringify([settings.zones, nativeGeneration ? [runtime!.server, coastMask, islandMode] : null]) + '|' + (neural
     ? JSON.stringify([settings.source, settings.seed, settings.relief, settings.relief === 'mixed' ? settings.mountainMix : 0.5, coastMask, coastMask === 255 ? islandMode : 'island', climateOf(settings), settings.fidelity ?? 0.05, settings.neuralServer ?? '', settings.sketch, settings.neuralTuning ?? DEFAULT_NEURAL_TUNING, settings.width, settings.neuralFit ?? 'crop', settings.neuralSlopes ?? true, settings.coarseModel, settings.baseModel, settings.decoderModel])
-    : JSON.stringify([settings.seed, settings.width, settings.relief, settings.relief === 'cavern' ? 0 : settings.erosion, settings.motifSize, settings.relief === 'mixed' ? settings.mountainMix : 0.5, nativeGeneration ? 'native' : compact ? [generationMode,mode,!!readyGpu] : requestedGpuGeneration ? generationMode : 'cpu', environment, settings.sketch, settings.erosionTuning ?? {}, ...(settings.procedural ? [PROCEDURAL_RECIPE_VERSION,settings.procedural,settings.climate,settings.climateValues,!gpuGeneration?[coastMask,islandMode]:null] : []), ...(compact || settings.procedural?.enabled?.phasor ? [COMPACT_VERSION, settings.climate ?? 'temperate', settings.phasor ?? {}] : [])]));
+    : JSON.stringify([settings.seed, settings.width, settings.relief, settings.relief === 'cavern' ? 0 : settings.erosion, settings.motifSize, settings.relief === 'mixed' ? settings.mountainMix : 0.5, nativeGeneration ? 'native' : compact ? [generationMode,mode,!!readyGpu] : requestedGpuGeneration ? generationMode : 'cpu', environment, settings.sketch, settings.erosionTuning ?? {}, ...(settings.procedural ? [PROCEDURAL_RECIPE_VERSION,settings.procedural,settings.climate,settings.climateValues,settings.climateZone,!gpuGeneration?[coastMask,islandMode]:null] : []), ...(compact || settings.procedural?.enabled?.phasor ? [COMPACT_VERSION, settings.climate ?? 'temperate', settings.phasor ?? {}] : [])]));
   let prepareMs = 0, noiseMs = 0, erosionMs = 0, gpuSimulationMs = 0, nativeEnvironmentMs = 0;
   let erosionProfile: ErosionProfile[] | undefined;
   if (lab&&lab.previews!==false || !engine || engineKey !== key) {

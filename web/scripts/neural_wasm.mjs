@@ -4,7 +4,6 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { installZoneRuntime } from './neural_zone_runtime.mjs';
 
 const rust = fileURLToPath(new URL('../../rust/', import.meta.url));
 const earth = fileURLToPath(new URL('../../../infinite_map/', import.meta.url));
@@ -15,7 +14,6 @@ const run = (command, args, cwd) => new Promise((resolve, reject) => {
 });
 await access(join(earth, 'native/neural-earth/Cargo.toml'));
 await run(process.execPath, ['tools/wasm/prepare-engine.mjs'], earth);
-await installZoneRuntime(earth, rust);
 await mkdir(output, { recursive: true });
 await run(join(homedir(), '.cargo/bin/wasm-pack' + (process.platform === 'win32' ? '.exe' : '')),
   ['build', 'crates/neural-wasm', '--target', 'web', '--out-dir', '../../pkg/neural-web', '--release', '--no-opt'], rust);

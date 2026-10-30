@@ -96,7 +96,7 @@ export function v2Terrain3dGround(world: World, settings: V2Settings, ground: Ci
   const style = terrainStyle(ground === 'render' ? 'render3d' : ground, appearance?.colors), relief = config.relief === 'flat' || config.relief === 'hills' || config.relief === 'valley' ? config.relief : 'mountains';
   const layers = { ...DEFAULT_TERRAIN_LAYERS, ...appearance?.terrainLayers };
   if (!layers.relief || !layers.hypsometry) return;
-  return { seed: seedHash(world.seed), climate: { temperature: config.climateValues!.temperature, precipitation: config.climateValues!.precipitation },
+  return { seed: seedHash(world.seed), climate: { temperature: config.climateValues!.temperature, precipitation: config.climateValues!.precipitation }, climateZone: config.climateZone,
     sourceCell: native ? native.width / (native.field?.n ?? native.resolution) : world.terrain.height.cell,
     lighting: { ...DEFAULT_TERRAIN_LIGHTING, ...appearance?.lighting }, renderV2: renderV2Number(style.id), v2Season: appearance?.season ?? .5,
     waterVisible: layers.water !== false, displacement: v2Terrain3dView(settings).refinement !== 'source', forestBrushes: ground === 'render3d-brush',
@@ -124,9 +124,10 @@ export function v2WorldDecor(world: World, settings: V2Settings): Decor {
     metrics = { minHeight, maxHeight, land: 1 - wet / heights.length }; rasterMetrics.set(raster, metrics);
   }
   const { minHeight, maxHeight, land } = metrics, native = (world.terrain as V2TerrainLayer).v2NativeTerrain, configuration = effectiveTerrainSettings(settings, world.mapSize);
-  const climate = settings.terrain?.climate ?? (world.options.biome === 'desert' ? 'arid' : world.options.biome === 'tropical' ? 'tropical' : world.options.biome === 'tundra' ? 'cold' : 'temperate');
+  // The zone names the decor; its effective values travel with it.
+  const climate = configuration.climateZone ?? configuration.climate ?? 'temperate';
   const query = new URLSearchParams({ climate });
-  for (const [key, value] of Object.entries(settings.terrain?.climateValues ?? {})) query.set(key, String(value));
+  for (const [key, value] of Object.entries(configuration.climateValues ?? {})) query.set(key, String(value));
   return { raster, meta: { format: 'magna-decor', version: 1, id: `v2-${world.seed}`, label: 'Magna Urbis V2', tags: { climate }, seed: world.seed, width: world.mapSize,
     query: query.toString(), created: '', settlements: [], roadConfig: null, roads: null, waterSvg: '',
     terrainDisplay: { floor: native?.field?.floor ?? minHeight, sourceCell: native ? native.width / (native.field?.n ?? native.resolution) : world.terrain.height.cell, refine: configuration.refine !== false && configuration.relief !== 'cavern', globalMinHeight: native?.globalMinHeight ?? minHeight, globalMaxHeight: native?.globalMaxHeight ?? maxHeight, motifSize: native?.motifSize ?? configuration.motifSize },

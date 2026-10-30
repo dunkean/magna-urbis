@@ -1,4 +1,5 @@
 import { RENDER_V2_GLSL, renderV2GlacierSources } from './terrainRenderV2';
+import { renderV2ZoneUniform } from './terrainRenderV2Zones';
 import { NEURAL_EARTH_MATERIAL_GLSL } from './terrainMaterial';
 import { RENDER_3D_MATERIAL_GLSL } from './terrainMaterial3d';
 import { FOREST_PRELUDE_GLSL, type ForestField, type ForestOccupation } from './terrainForest';
@@ -33,13 +34,13 @@ function forestTexture(gl: WebGL2RenderingContext, previous: Uploaded | undefine
 /** Same material shader as the live view, for worker SVG rasters and exports.
  * Render3D rasters show the forest only when `forest.field` is given; callers
  * caching rasters must include field.key and occupation.key. */
-export function renderMaterialRaster(terrain: TerrainData, settings: Pick<TerrainSettings, 'seed' | 'climate' | 'climateValues'>, enhanced3d = false, forest?: ForestRaster, shared?: MaterialRasterContext): MaterialRaster {
+export function renderMaterialRaster(terrain: TerrainData, settings: Pick<TerrainSettings, 'seed' | 'climate' | 'climateValues' | 'climateZone'>, enhanced3d = false, forest?: ForestRaster, shared?: MaterialRasterContext): MaterialRaster {
   const context = shared && !shared.gl.isContextLost() ? shared : undefined;
   const gl = context?.gl, state = gl && saveContextState(gl);
   try { return composeMaterialRaster(terrain, settings, enhanced3d, forest, context); }
   finally { if (gl && state) restoreContextState(gl, state); }
 }
-function composeMaterialRaster(terrain: TerrainData, settings: Pick<TerrainSettings, 'seed' | 'climate' | 'climateValues'>, enhanced3d: boolean, forest?: ForestRaster, shared?: MaterialRasterContext): MaterialRaster {
+function composeMaterialRaster(terrain: TerrainData, settings: Pick<TerrainSettings, 'seed' | 'climate' | 'climateValues' | 'climateZone'>, enhanced3d: boolean, forest?: ForestRaster, shared?: MaterialRasterContext): MaterialRaster {
   const cached = shared && sharedRenderers.get(shared.gl);
   let active = shared ? enhanced3d ? cached?.enhanced : cached?.base : enhanced3d ? renderer3d : renderer;
   if (active?.gl.isContextLost()) active = undefined;
@@ -147,7 +148,7 @@ function composeMaterialRaster(terrain: TerrainData, settings: Pick<TerrainSetti
   gl.uniform2f(u('uMaterialClimate'), climate.temperature, climate.precipitation); gl.uniform1ui(u('uMaterialSeed'), seedHash(settings.seed));
   if (enhanced3d) {
     // Units 1 field, 2 occupation, 4 water, 5 bank envelope; undefined keeps the legacy macro canopy exactly.
-    gl.uniform1i(u('uRenderV2'),forest?.renderV2??0);gl.uniform1i(u('uV2WaterVisible'),forest?.waterVisible===false?0:1);gl.uniform4fv(u('uV2GlacierSources[0]'),renderV2GlacierSources({x:terrain.x,y:terrain.y,width:terrain.width,n,data:terrain.height},climate));gl.uniform1f(u('uV2Season'),forest?.v2Season??.5);
+    gl.uniform1i(u('uRenderV2'),forest?.renderV2??0);gl.uniform1i(u('uV2WaterVisible'),forest?.waterVisible===false?0:1);gl.uniform4fv(u('uV2GlacierSources[0]'),renderV2GlacierSources({x:terrain.x,y:terrain.y,width:terrain.width,n,data:terrain.height},climate));gl.uniform1f(u('uV2Season'),forest?.v2Season??.5);gl.uniform1i(u('uMaterialZone'),renderV2ZoneUniform(settings.climateZone));
     const field = forest?.field, occupation = field ? forest?.occupation : undefined, water = (field||forest?.renderV2) ? forest?.water : undefined, light = forest?.light ?? [-.5, -.5, .7071];
     gl.activeTexture(gl.TEXTURE3); // upload unit: keep the heights bound on unit 0
     if (field) active.field = forestTexture(gl, active.field, field, true);
@@ -215,6 +216,6 @@ function restoreContextState(gl: WebGL2RenderingContext, state: ReturnType<typeo
 }
 
 /** Compatibility API for callers which only need the opaque ground raster. */
-export function renderMaterialPixels(terrain: TerrainData, settings: Pick<TerrainSettings, 'seed' | 'climate' | 'climateValues'>, enhanced3d = false, forest?: ForestRaster): Uint8Array {
+export function renderMaterialPixels(terrain: TerrainData, settings: Pick<TerrainSettings, 'seed' | 'climate' | 'climateValues' | 'climateZone'>, enhanced3d = false, forest?: ForestRaster): Uint8Array {
   return renderMaterialRaster(terrain, settings, enhanced3d, forest).rgb;
 }

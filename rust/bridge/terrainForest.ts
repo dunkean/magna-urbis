@@ -8,6 +8,7 @@
  * shader keeps Render's colour as the unresolved reference. Display only:
  * never feeds terrain. */
 
+import { RENDER_V2_ZONE_GLSL } from './terrainRenderV2Zones';
 import { FOREST_BANK_GLSL, forestBankDensity, forestBankField, forestLakeInterior, forestRoutingRiverSegments, forestSegmentsKey, type ForestBank } from './terrainForestRiparian';
 
 export interface ForestSettings { enabled: boolean; density: number; clearings: number }
@@ -408,6 +409,7 @@ export const FOREST_PRELUDE_GLSL = `
 #define RENDER3D_FOREST
 uniform int uForest;
 uniform int uRenderV2;uniform float uV2Season;uniform int uV2WaterVisible;
+${RENDER_V2_ZONE_GLSL}
 float v2Foliage=1.;
 float v2FloorModulation=1.;
 vec3 v2MacroNormal=vec3(0.,1.,0.);
@@ -461,7 +463,9 @@ vec2 forestPatchThreshold(vec2 p){
   return vec2(forestLookup17(u,0),(forestPatchCdf[k+1]-forestPatchCdf[k])*16.*.6*length(n.yz)/FOREST_PATCH);
 }
 // Explicit LOD: no implicit derivatives after non-uniform returns.
-vec4 forestField(vec2 world,float lod){return textureLod(uForestField,(world-uForestRect.xy)/uForestRect.z,lod);}
+// V2 climate zones reweight cover and needle share of the canonical field
+// at its single read point, so stands, crowns and diagnostics agree.
+vec4 forestField(vec2 world,float lod){return v2ZoneForest(textureLod(uForestField,(world-uForestRect.xy)/uForestRect.z,lod));}
 ${FOREST_BANK_GLSL}
 // Filtered per-fragment state for the far material. Resolved crowns sample
 // their fixed world centres so every pixel takes the same candidate decision.

@@ -1,9 +1,8 @@
 // The dedicated third simplex stream matches Rust's shore-noise fork.
-// Each capsule is three vec4s: endpoints; radii/scale/phase; islet height/center/apron.
+// Fourteen header vec4s (profile, shore offsets, shore turns, character, six bumps), then
+// each capsule is three vec4s: endpoints; radii/scale/phase; islet height/center/apron.
 @group(0) @binding(6) var<storage, read> coast: array<vec4<f32>>;
-fn mainlandReach(mask:u32, direction:u32)->f32 {
-  return select(0.64,1.50,(mask&(1u<<(direction&7u)))==0u);
-}
+fn headerValue(i:u32)->f32 {return coast[i/4u][i%4u];}
 fn coastalHeight(xy:vec2<f32>, terrainHeight:f32)->f32 {
   let config=coast[0];let mask=u32(config.x);
   if(mask==0u){return terrainHeight;}
@@ -14,22 +13,25 @@ fn coastalHeight(xy:vec2<f32>, terrainHeight:f32)->f32 {
   let uv=xy/p.values[0].x;let footprint=p.values[2].w/p.values[0].x;
   var distance=-2.0;var scale=0.2;var isletHeight=0.0;var apron=1.0;
   if(mask!=255u){
-    let delta=uv-0.5;let r=length(delta);
-    var angle=0.0;var edge=0.5;
-    if(r>0.0){
-      let turns=atan2(delta.x,-delta.y)/6.283185307179586;
-      angle=fract(turns+1.0)*8.0;
-      let profile=coast[1];let rotated=vec2<f32>(dot(delta,profile.yz),dot(delta,vec2<f32>(-profile.z,profile.y)));
-      edge=0.5*r/pow(pow(abs(rotated.x),profile.x)+pow(abs(rotated.y),profile.x),1.0/profile.x);
+    let character=coast[6];let fine=coast[7];
+    let warped=uv+character.x*vec2<f32>(fbm(uv/character.y+vec2<f32>(5.2,1.3),2u,3u,0.5,footprint/character.y),
+      fbm(uv/character.y+vec2<f32>(-7.7,9.1),2u,3u,0.5,footprint/character.y));
+    // Seeded shoreline per sea direction, smoothly united as in Rust.
+    var shore=10.0;
+    for(var i=0u;i<8u;i++){
+      if((mask&(1u<<i))==0u){continue;}
+      let angle=f32(i)*0.7853981633974483+headerValue(16u+i);
+      let d=headerValue(8u+i)-((warped.x-0.5)*sin(angle)-(warped.y-0.5)*cos(angle));
+      let h=max(0.12-abs(shore-d),0.0)/0.12;
+      shore=min(shore,d)-h*h*0.03;
     }
-    let a=u32(floor(angle));let t=smooth01(fract(angle));
-    distance=edge*mix(mainlandReach(mask,a),mainlandReach(mask,a+1u),t)-r
-      +0.070*fbm(uv/0.26,2u,7u,0.56,footprint/0.26)
-      +0.020*fbm(uv/0.055,2u,5u,0.55,footprint/0.055);
+    distance=shore
+      +character.z*fbm(uv/character.w,2u,7u,0.56,footprint/character.w)
+      +fine.x*fbm(uv/fine.y,2u,5u,0.55,footprint/fine.y);
   }
   var cachedPhase=-1.0;var detail=0.0;
   for(var i=0u;i<u32(config.y);i++){
-    let ends=coast[2u+i*3u];let shape=coast[3u+i*3u];let geology=coast[4u+i*3u];let delta=ends.zw-ends.xy;
+    let ends=coast[14u+i*3u];let shape=coast[15u+i*3u];let geology=coast[16u+i*3u];let delta=ends.zw-ends.xy;
     let t=clamp(dot(uv-ends.xy,delta)/max(dot(delta,delta),1e-12),0.0,1.0);
     let base=mix(shape.x,shape.y,t)-length(uv-ends.xy-t*delta);let s=shape.z;
     if(base+s*0.165<=distance){continue;}
@@ -48,6 +50,13 @@ fn coastalHeight(xy:vec2<f32>, terrainHeight:f32)->f32 {
         let rise=8.0*(0.75+0.25*cos(shape.w));
         isletHeight+=rise*size*(1.0-smooth01(radial));
       }
+    }
+  }
+  // Seeded bays and headlands, as in Rust; islets keep their own outline.
+  if(isletHeight==0.0){
+    for(var k=0u;k<min(u32(coast[7].z),6u);k++){
+      let bump=coast[8u+k];let d2=dot(uv-bump.xy,uv-bump.xy)/(bump.z*bump.z);
+      if(d2<1.0){distance+=bump.w*(1.0-d2)*(1.0-d2);}
     }
   }
   if(isletHeight>0.0){height=isletHeight;}

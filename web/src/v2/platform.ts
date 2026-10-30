@@ -3,7 +3,10 @@ export type ComputePreference = 'auto' | 'cpu' | 'gpu';
 import type { ImportedHeight } from '../gen/terrain/import';
 import type { NeuralClimate, TerrainRelief, TerrainData, TerrainSettings } from '../../../rust/bridge/terrain';
 import { defaultTerrainSettings, DEFAULT_HYDROLOGY, DEFAULT_NEURAL_TUNING, validateTerrainSettings, type V2TerrainSettings } from './terrainSettings';
-import { CLIMATE_VALUES } from '../../../rust/bridge/terrainClimate';
+import { CLIMATE_VALUES, CLIMATE_ZONE_VALUES } from '../../../rust/bridge/terrainClimate';
+import type { ClimateValues } from '../../../rust/bridge/terrainClimate';
+/** A zone's values, or a legacy preset's when the name is one of the V1 presets. */
+const climatePresetValues = (zone: string | undefined, name: string): ClimateValues => (zone && (CLIMATE_ZONE_VALUES as Record<string, ClimateValues>)[zone]) || (CLIMATE_VALUES as Record<string, ClimateValues>)[name] || (CLIMATE_ZONE_VALUES as Record<string, ClimateValues>)[name] || CLIMATE_ZONE_VALUES.temperate;
 import { DEFAULT_FRACTAL_DETAIL } from '../../../rust/bridge/terrainAdjust';
 import type { TerrainProgressCallback } from '../../../rust/bridge/terrainProgress';
 import { isCompactProcedural, type GenerationControl } from '../../../rust/bridge/terrainGenerationRecipe';
@@ -216,7 +219,7 @@ export async function generateEngineHeight(request: EngineHeightRequest, onProgr
     neuralServer: request.source === 'neural-python' ? pythonServer : request.source === 'neural' ? neuralServer : undefined,
     hydrology: { ...DEFAULT_HYDROLOGY, ...custom.hydrology },
     neuralTuning: { ...DEFAULT_NEURAL_TUNING, ...custom.neuralTuning },
-    climateValues: { ...CLIMATE_VALUES[custom.climate ?? request.climate ?? 'temperate'], ...custom.climateValues },
+    climateValues: { ...climatePresetValues(custom.climateZone, custom.climate ?? request.climate ?? 'temperate'), ...custom.climateValues },
     detailNoise: { ...DEFAULT_FRACTAL_DETAIL, ...custom.detailNoise },
   } as TerrainSettings;
   // These are forest display controls, not inputs understood by the Rust terrain bridge.

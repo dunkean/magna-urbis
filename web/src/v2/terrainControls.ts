@@ -9,9 +9,10 @@ import {
   terrainCopy as copy, terrainControlMessages, terrainSourceFields, terrainBasicFields, terrainProceduralFields,
   terrainClimateFields, terrainNeuralFields, terrainModelFields, terrainErosionFields, terrainRefinementFields, terrainClassicFields,
   terrainHydrologyFields, terrainRustHydrologyFields, terrainVectorHydrologyFields, terrainForestFields,
-  coastDirections, toggleCoastDirection,
+  coastDirections, toggleCoastDirection, climateZoneBiome,
 } from './terrainControlSchema';
 import './terrainControls.css';
+import { applyRuntimePath, normalizeRuntime } from './runtimeChoices';
 import { mountTerrainSketchControls, type TerrainSketchContext } from './terrainSketchControls';
 
 export interface TerrainControlBindings {
@@ -31,7 +32,7 @@ const ui = {
   coasts: copy('Sea directions', 'Directions de la mer'),
   coastHelp: copy('Combine directions freely. All eight surround the map with sea.', 'Combinez les directions. Les huit entourent la carte de mer.'),
   none: copy('Inland', 'Intérieur des terres'), island: copy('Island', 'Île'), archipelago: copy('Archipelago', 'Archipel'),
-  randomIslands: copy('Random islands', 'Îles aléatoires'),
+  peninsula: copy('Peninsula', 'Presqu’île'),
   all: copy('All', 'Toutes'), allCoasts: copy('All coasts', 'Toutes les côtes'),
   quick: copy('Create the terrain', 'Créer le terrain'), coastline: copy('Coasts', 'Côtes'),
   vector: copy('Vector', 'Vectoriel'), rust: copy('Rust', 'Rust'),
@@ -65,7 +66,7 @@ for (const pair of Object.values(seaNames)) copy(...pair);
 /** Structured access to the real Terrainbench recipe; hidden groups retain their settings. */
 export function mountTerrainControls(root: HTMLElement, bindings: TerrainControlBindings): TerrainControls {
   const initial = bindings.getSettings();
-  if(initial.runtime?.source==='procedural-phasor'){initial.terrain??={};initial.terrain.procedural={...initial.terrain.procedural,preset:initial.terrain.procedural?.preset??'compact'};initial.runtime.source='procedural';}
+  normalizeRuntime(initial);
   registerMessages(terrainControlMessages);
   root.classList.add('terrain-controls'); root.replaceChildren();
   const forms: ParameterForm[] = [], cleanup: (() => void)[] = [];
@@ -75,13 +76,14 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
     const settings = bindings.getSettings();
     if (path==='terrain.procedural.preset')return settings.terrain?.procedural?.preset??'classic';
     if (path==='terrain.procedural.enabled.phasor')return settings.terrain?.procedural?.enabled?.phasor??isCompactProcedural({source:settings.runtime?.source,procedural:settings.terrain?.procedural});
-    if (path==='terrain.procedural.biome')return settings.terrain?.procedural?.biome??false;
+    if (path==='terrain.procedural.biome')return settings.terrain?.procedural?.biome??true;
     if (path==='terrain.phasor.quality')return settings.terrain?.phasor?.quality??'balanced';
     if (path==='terrain.phasor.intensity')return settings.terrain?.phasor?.intensity??1;
     if (path.startsWith('terrain.')) {
       if (path.startsWith('terrain.erosionTuning.')) return readSettingPath(settings, path);
       if (path === 'terrain.climate' && settings.terrain?.climateValues) return 'custom';
       const effective = effectiveTerrainSettings(settings, adaptedExtent(settings));
+      if (path === 'terrain.climate') return effective.climateZone;
       return readSettingPath(effective, path.slice(8));
     }
     if (path === 'runtime.source') return settings.runtime?.source ?? (settings.generation === 'neural' ? 'neural-wasm' : 'procedural');
@@ -99,6 +101,8 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
         settings.terrain.climateValues = { ...effectiveTerrainSettings(settings, adaptedExtent(settings)).climateValues! };
       } else {
         writeSettingPath(settings, path, value); delete settings.terrain!.climateValues;
+        const biome = climateZoneBiome[String(value)];
+        if (biome && settings.options.biome !== 'underdark' && settings.options.biome !== 'underdark-caverns') settings.options.biome = biome as typeof settings.options.biome;
       }
     } else {
       if (path.startsWith('terrain.climateValues.') && !settings.terrain?.climateValues) {
@@ -109,25 +113,9 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
       }
       writeSettingPath(settings, path, value);
     }
-    if(path==='terrain.procedural.preset'){
-      settings.terrain!.procedural!.biome??=true;
-      if(value==='compact'){
-        delete settings.terrain!.generationCompute;delete settings.terrain!.compute;
-        if(['plateau','volcano','caldera','cavern'].includes(String(settings.terrain?.relief??settings.options.relief)))settings.terrain!.relief='mixed';
-      }
-    }
-    if (path === 'runtime.source') {
-      const wasClassic = settings.runtime?.backend === 'typescript';
-      settings.generation = value === 'procedural' || value === 'procedural-phasor' ? 'procedural' : 'neural';
-      if (value === 'procedural-phasor') {
-        settings.runtime!.backend = 'rust'; delete settings.terrain?.generationCompute; delete settings.terrain?.compute;
-        if (['plateau','volcano','caldera','cavern'].includes(String(settings.terrain?.relief ?? settings.options.relief))) { settings.terrain ??= {}; settings.terrain.relief = 'mixed'; }
-      }
-      settings.runtime!.backend = wasClassic ? 'rust' : settings.runtime!.backend;
-      if (wasClassic && value !== 'procedural') settings.runtime!.compute = 'auto';
-    }
-    if (path === 'runtime.backend' && value === 'typescript') { settings.runtime!.source = 'procedural'; settings.runtime!.compute = 'cpu'; settings.generation = 'procedural'; }
-    if (path === 'terrain.generationCompute' && value === 'native') { settings.runtime ??= { backend: 'rust', compute: 'auto', source: 'procedural' }; settings.runtime.backend = 'native'; }
+    if(path==='terrain.procedural.preset')settings.terrain!.procedural!.biome??=true;
+    applyRuntimePath(settings,path,value);
+    normalizeRuntime(settings);
     change();
   };
   const form = (host: HTMLElement, fields: readonly ParameterField[]) => { const mounted = mountParameterForm(host, fields, { getValue: get, setValue: set, disabled: bindings.disabled }); forms.push(mounted); return mounted; };
@@ -140,7 +128,7 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
     const result = document.createElement('button'); result.type = 'button'; if (id) result.id = id; setText(result, label);
     result.addEventListener('click', action); cleanup.push(() => result.removeEventListener('click', action)); host.append(result); return result;
   };
-  const coastArt=(control:HTMLElement,kind:'cardinal'|'diagonal'|'island'|'inland'|'archipelago',angle=0,preset=false):void=>{
+  const coastArt=(control:HTMLElement,kind:'cardinal'|'diagonal'|'island'|'inland'|'archipelago'|'peninsula',angle=0,preset=false):void=>{
     const label=control.getAttribute('data-i18n')??control.textContent??'';
     control.removeAttribute('data-i18n');control.classList.add(preset?'coast-preset':'coast-choice');
     const art=document.createElement('span');art.className=`coast-art coast-art-${kind}`;art.setAttribute('aria-hidden','true');art.style.setProperty('--coast-angle',`${angle}deg`);
@@ -199,7 +187,7 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
   const coastHint = document.createElement('p'); coastHint.className = 'hint'; setText(coastHint, ui.coastHelp); coasts.append(coastHint);
   const coastPresets = document.createElement('div'); coastPresets.className = 'terrain-presets coast-presets';
   const coastChoices = new Map<string, HTMLInputElement>();
-  for (const [value, label, art] of [['none', ui.none, 'inland'], ['island', ui.island, 'island'], ['archipelago', ui.archipelago, 'archipelago'], ['random', ui.randomIslands, 'archipelago']] as const) {
+  for (const [value, label, art] of [['none', ui.none, 'inland'], ['island', ui.island, 'island'], ['archipelago', ui.archipelago, 'archipelago'], ['peninsula', ui.peninsula, 'peninsula']] as const) {
     const choice = document.createElement('label'); setText(choice, label); coastArt(choice, art, 0, true);
     const input = document.createElement('input'); input.type = 'radio'; input.name = 'terrain-coast-layout'; input.value = value; input.id = `terrain-coast-${value}`;
     choice.prepend(input); coastPresets.append(choice); coastChoices.set(value, input);

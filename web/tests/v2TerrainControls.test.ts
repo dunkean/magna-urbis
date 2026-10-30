@@ -1,9 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { allTerrainFields, coastDirections, terrainControlMessages, toggleCoastDirection } from '../src/v2/terrainControlSchema';
 import { readSettingPath, writeSettingPath } from '../src/v2/parameterForm';
-import { defaultTerrainSettings, DEFAULT_HYDROLOGY, DEFAULT_NEURAL_TUNING, validateTerrainSettings } from '../src/v2/terrainSettings';
+import { effectiveTerrainSettings, migrateTerrainClimate, defaultTerrainSettings, DEFAULT_HYDROLOGY, DEFAULT_NEURAL_TUNING, validateTerrainSettings } from '../src/v2/terrainSettings';
 import { DEFAULT_FRACTAL_DETAIL } from '../../rust/bridge/terrainAdjust';
 
+describe('V2 climate zones', () => {
+  const settings = (biome: string, terrain: object = {}) => ({ options: { seed: 's', biome, coast: 'none', river: 'none', relief: 'hills' }, terrain } as never);
+  it('derives the zone from the biome, honours an explicit zone and migrates legacy names', () => {
+    expect(effectiveTerrainSettings(settings('desert'), 5000).climateZone).toBe('desert');
+    const wet = effectiveTerrainSettings(settings('forest', { climate: 'wetland' }), 5000);
+    expect(wet.climateZone).toBe('wetland'); expect(wet.climate).toBe('oceanic'); expect(wet.climateValues!.precipitation).toBe(750);
+    const legacy = { climate: 'arid' }; migrateTerrainClimate(legacy); expect(legacy.climate).toBe('desert');
+    expect(() => validateTerrainSettings({ climate: 'cold', islandMode: 'peninsula' })).not.toThrow();
+    expect(() => validateTerrainSettings({ climate: 'moist' })).toThrow();
+  });
+});
 describe('V2 Terrainbench control parity', () => {
   const paths = new Set(allTerrainFields.map(field => field.path));
   it('exposes every hydrology, neural tuning and fractal core setting as an editable field', () => {

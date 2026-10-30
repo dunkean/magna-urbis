@@ -44,10 +44,12 @@ pub(crate) fn apply(request: &mut Request, value: &Value) -> Result<(), String> 
                 family,
                 base.mix,
                 base.coast_mask,
-                if base.islands == crate::sketch::Islands::Archipelago {
-                    "archipelago"
-                } else {
-                    "island"
+                // By name: the browser build compiles this file against
+                // neural-earth's sketch, whose island modes may differ.
+                match format!("{:?}", base.islands).as_str() {
+                    "Archipelago" => "archipelago",
+                    "Peninsula" => "peninsula",
+                    _ => "island",
                 },
                 base.climate,
                 base.extent,

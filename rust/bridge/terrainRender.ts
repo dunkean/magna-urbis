@@ -114,7 +114,7 @@ function renderElevation(terrain: TerrainData, frame: boolean, clipNamespace: st
 
 /** Transitional renderer adapter. Rust never depends on the legacy World schema. */
 /** settings.forest: display-only Render3D forest raster input (field, occupation); absent keeps the legacy canopy. */
-export function renderRustTerrain(terrain: TerrainData, style: TerrainStyle, frame = true, settings: Pick<TerrainSettings, 'relief' | 'width'> & Partial<Pick<TerrainSettings, 'seed' | 'climate' | 'climateValues'>> & { forest?: Omit<ForestRaster, 'light'>; v2Season?: number } = { relief: 'mountains', width: terrain.width }, showContours = true, clipNamespace = 'main', lighting: TerrainLighting = DEFAULT_TERRAIN_LIGHTING, layers: TerrainLayers = DEFAULT_TERRAIN_LAYERS, fantasyOptions: FantasyOptions = DEFAULT_FANTASY_OPTIONS, paintBrushes = true, waterStyle: TerrainStyle = style, colors?: RenderColors, materialContext?: MaterialRasterContext): TerrainScene {
+export function renderRustTerrain(terrain: TerrainData, style: TerrainStyle, frame = true, settings: Pick<TerrainSettings, 'relief' | 'width'> & Partial<Pick<TerrainSettings, 'seed' | 'climate' | 'climateValues' | 'climateZone'>> & { forest?: Omit<ForestRaster, 'light'>; v2Season?: number } = { relief: 'mountains', width: terrain.width }, showContours = true, clipNamespace = 'main', lighting: TerrainLighting = DEFAULT_TERRAIN_LIGHTING, layers: TerrainLayers = DEFAULT_TERRAIN_LAYERS, fantasyOptions: FantasyOptions = DEFAULT_FANTASY_OPTIONS, paintBrushes = true, waterStyle: TerrainStyle = style, colors?: RenderColors, materialContext?: MaterialRasterContext): TerrainScene {
   frame &&= layers.frame;
   if (style === 'copernicus') {
     const scene = renderElevation(terrain, frame, clipNamespace, waterStyle, layers.water !== false, settings.width, layers.relief, colors);
@@ -142,7 +142,7 @@ export function renderRustTerrain(terrain: TerrainData, style: TerrainStyle, fra
   });
   let canopyAlpha: Uint8Array | undefined;
   if ((style === 'render' || isRender3dStyle(style)) && layers.hypsometry) {
-    const material = renderMaterialRaster(terrain, { seed: settings.seed ?? '42', climate: settings.climate, climateValues: settings.climateValues }, isRender3dStyle(style),
+    const material = renderMaterialRaster(terrain, { seed: settings.seed ?? '42', climate: settings.climate, climateValues: settings.climateValues, climateZone: settings.climateZone }, isRender3dStyle(style),
       { ...settings.forest, renderV2:renderV2Number(style), v2Season:settings.v2Season, brushes: style === 'render3d-brush', light: terrainLights(lighting).primary, light2: terrainLights(lighting).secondary, lightingStrength: lighting.enabled ? lighting.strength : 0 }, materialContext);
     if (isRender3dStyle(style) && settings.forest?.field) canopyAlpha = material.canopyAlpha;
     const neutral = renderTerrainPixels(legacyRasterInput, { ...pal, hypso: [[0, '#ffffff'], [1, '#ffffff']] }, {

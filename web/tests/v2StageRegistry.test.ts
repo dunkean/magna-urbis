@@ -10,7 +10,7 @@ import { writeSettingPath } from '../src/v2/parameterForm';
 import { HEIGHTMAP_LIBRARY } from '../src/v2/heightmapLibrary';
 
 const once = (id: string) => expect(stagesForControl(id), id).toHaveLength(1);
-const MAIN_CONTROLS = ['town-count', 'population', 'culture', 'urban-backend', 'sprawl', 'walls', 'moat', 'castle', 'cathedral', 'palace', 'monasteries', 'port', 'arena', 'activities', 'suburbs'];
+const MAIN_CONTROLS = ['town-count', 'population', 'culture', 'sprawl', 'walls', 'moat', 'castle', 'cathedral', 'palace', 'monasteries', 'port', 'arena', 'activities', 'suburbs'];
 const URBAN_EXTRAS = ['header', 'phases', 'archetypes', 'mixtures', 'catalogue'];
 
 describe('V2 generation stage registry', () => {

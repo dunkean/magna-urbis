@@ -33,17 +33,38 @@ export const reliefChoices = simple([
   ['mountains', 'Mountains', 'Montagnes'], ['mixed', 'Hills and mountains', 'Collines et montagnes'], ['plateau', 'Plateau', 'Plateau'],
   ['high-mountains', 'High mountains', 'Hautes montagnes'], ['volcano', 'Volcano', 'Volcan'], ['caldera', 'Caldera', 'Caldeira'], ['cavern', 'Cavern', 'Caverne'],
 ]);
+/** One-line landscape help per climate zone, shown as the climate strip tooltip. */
+export const climateZoneHelp: Record<string, string> = {
+  temperate: copy('France, England — broadleaf woods, bocage, fields', 'France, Angleterre — bois feuillus, bocage, champs'),
+  mediterranean: copy('Provence, Italy, Greece — olive groves, vines, garrigue', 'Provence, Italie, Grèce — oliveraies, vignes, garrigue'),
+  continental: copy('Central Europe, Bohemia — mixed forests, snowy winters', 'Europe centrale, Bohême — forêts mixtes, hivers enneigés'),
+  nordic: copy('Scandinavia — conifers, lakes', 'Scandinavie — conifères, lacs'),
+  alpine: copy('Alps, Pyrenees — alpine pastures, scree', 'Alpes, Pyrénées — alpages, éboulis'),
+  arctic: copy('Iceland, Greenland — tundra, almost treeless', 'Islande, Groenland — toundra, presque sans arbres'),
+  steppe: copy('Hungary, Central Asia — short grass, rare groves', 'Hongrie, Asie centrale — herbe rase, rares bosquets'),
+  desert: copy('Maghreb, Middle East — sand and rock, palm groves by water', 'Maghreb, Moyen-Orient — sable et roche, palmeraies près de l’eau'),
+  savanna: copy('Sahel — acacias, tall grass', 'Sahel — acacias, hautes herbes'),
+  tropical: copy('Southeast Asia — jungle, rice terraces', 'Asie du Sud-Est — jungle, rizières en terrasses'),
+  wetland: copy('Venice, Netherlands, Fens — reeds, canals, peat bogs', 'Venise, Pays-Bas, Fens — roseaux, canaux, tourbières'),
+};
+/** Classic biome that goes with each climate zone (underdark biomes are never replaced). */
+export const climateZoneBiome: Record<string, string> = {
+  temperate: 'temperate', mediterranean: 'temperate', continental: 'forest', nordic: 'forest', alpine: 'forest', arctic: 'tundra',
+  steppe: 'steppe', desert: 'desert', savanna: 'steppe', tropical: 'tropical', wetland: 'temperate',
+};
 export const terrainBasicFields: ParameterField[] = [
   { ...select('relief', 'Relief type', 'Type de relief', reliefChoices), id: 'terrain-relief' },
-  select('climate', 'Climate preset', 'Climat prédéfini', simple([
-    ['temperate', 'Warm temperate', 'Tempéré chaud'], ['oceanic', 'Oceanic', 'Océanique'], ['mediterranean', 'Mediterranean', 'Méditerranéen'],
-    ['arid', 'Arid', 'Aride'], ['cold', 'Cold', 'Froid'], ['tropical', 'Humid tropical', 'Tropical humide'], ['custom', 'Custom climate', 'Climat personnalisé'],
+  select('climate', 'Climate zone', 'Zone climatique', simple([
+    ['temperate', 'Temperate', 'Tempéré'], ['mediterranean', 'Mediterranean', 'Méditerranéen'], ['continental', 'Continental', 'Continental'],
+    ['nordic', 'Nordic', 'Nordique'], ['alpine', 'Alpine', 'Alpin'], ['arctic', 'Arctic', 'Arctique'], ['steppe', 'Steppe', 'Steppe'],
+    ['desert', 'Desert', 'Désert'], ['savanna', 'Savanna', 'Savane'], ['tropical', 'Humid tropical', 'Tropical humide'], ['wetland', 'Wetlands', 'Zones humides'],
+    ['custom', 'Custom climate', 'Climat personnalisé'],
   ])),
   { path: 'options.biome', id: 'terrain-biome', type: 'select', label: copy('Region biome', 'Biome de la région'), options: simple([
     ['temperate', 'Temperate countryside', 'Campagne tempérée'], ['forest', 'Woodland', 'Forêt'], ['desert', 'Desert and oases', 'Désert et oasis'], ['steppe', 'Steppe', 'Steppe'], ['tropical', 'Tropical forest', 'Forêt tropicale'], ['tundra', 'Tundra', 'Toundra'], ['underdark', 'Underdark', 'Outreterre'], ['underdark-caverns', 'Underdark with caverns', 'Outreterre avec cavernes'],
   ]) },
   select('islandMode', 'Island layout', 'Organisation des îles', simple([
-    ['island', 'Single island', 'Île unique'], ['archipelago', 'Archipelago', 'Archipel'], ['random', 'Random islands', 'Îles aléatoires'],
+    ['island', 'Single island', 'Île unique'], ['archipelago', 'Archipelago', 'Archipel'], ['peninsula', 'Peninsula', 'Presqu’île'],
   ]), ['Used when all eight sea directions are selected.', 'Utilisé lorsque les huit directions maritimes sont sélectionnées.']),
 ];
 export const terrainProceduralFields: ParameterField[] = [
@@ -59,7 +80,7 @@ export const terrainProceduralFields: ParameterField[] = [
   number('resolution', 'Terrain grid resolution', 'Résolution de grille du relief', 64, 2048, 1),
   { ...select('compute', 'Terrain sampling', 'Échantillonnage du relief', simple([['wasm', 'CPU · Rust reference', 'CPU · référence Rust'], ['gpu-f32', 'GPU · FP32', 'GPU · FP32']])), optional: true },
   { ...select('generationCompute', 'Procedural generation compute', 'Calcul de génération procédurale', simple([
-    ['cpu', 'CPU · reference', 'CPU · référence'], ['gpu', 'GPU · fine noise FP32', 'GPU · bruit fin FP32'], ['gpu-all', 'GPU · all noise FP32', 'GPU · tous les bruits FP32'], ['gpu-erosion', 'GPU · erosion FP32', 'GPU · érosion FP32'], ['native', 'Native Rust service', 'Service Rust natif'],
+    ['cpu', 'CPU · reference', 'CPU · référence'], ['gpu', 'GPU · fine noise FP32', 'GPU · bruit fin FP32'], ['gpu-all', 'GPU · all noise FP32', 'GPU · tous les bruits FP32'], ['gpu-erosion', 'GPU · erosion FP32', 'GPU · érosion FP32'],
   ])), optional: true },
 ];
 export const terrainClassicFields: ParameterField[] = [

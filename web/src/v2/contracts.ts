@@ -24,7 +24,8 @@ export interface V2UrbanControls {
   houses?: PlacementBatchSettings;
 }
 export interface V2UrbanSettings extends V2UrbanControls {
-  backend: 'typescript' | 'rust' | 'native';
+  /** Absent = follows the terrain engine (`runtime.backend`). */
+  backend?: 'typescript' | 'rust' | 'native';
   local?: Record<string, V2UrbanControls>;
   /** `${settlementKey}/${nativeRequestId}` (shown by the inspector); bare request ids are a global fallback. */
   buildings?: Record<string, Partial<HouseConfig>>;

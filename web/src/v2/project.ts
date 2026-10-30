@@ -2,7 +2,8 @@ import type { Options, World } from '../gen/types';
 import type { V2Settings, V2Project } from './contracts';
 import { V2_ENGINE_VERSION } from './cache';
 import { CULTURES, SITE_ARCHETYPES } from '../gen/options';
-import { validateTerrainSettings, TERRAIN_EXTENT_MIN, TERRAIN_EXTENT_MAX } from './terrainSettings';
+import { normalizeRuntime } from './runtimeChoices';
+import { validateTerrainSettings, migrateTerrainClimate, TERRAIN_EXTENT_MIN, TERRAIN_EXTENT_MAX } from './terrainSettings';
 import { validateRegionSettings } from './regionSettings';
 import { defaultSettings } from './settings';
 import { projectJsonChunks } from './projectJson';
@@ -88,8 +89,8 @@ export function validateSettings(value: unknown): asserts value is V2Settings {
     }
   }
   if (value.urban !== undefined) {
-    if (!isRecord(value.urban) || !value.urban.backend) throw new Error('Moteur urbain invalide.');
-    checkEnum(value.urban.backend, ['typescript', 'rust', 'native'], 'moteur urbain');
+    if (!isRecord(value.urban)) throw new Error('Moteur urbain invalide.');
+    if (value.urban.backend !== undefined) checkEnum(value.urban.backend, ['typescript', 'rust', 'native'], 'moteur urbain');
     const stages = ['layout', 'parcels', 'programme', 'buildings'];
     checkEnum(value.urban.through, stages, 'étape urbaine');
     if (value.urban.local !== undefined) {
@@ -209,6 +210,9 @@ export function parseProjectInput(text:string):V2Project{
 function parsedProject(project:unknown):V2Project{
   if (!isRecord(project) || project.format !== 'magna-urbis-v2' || project.version !== 1 || typeof project.engine !== 'string') throw new Error('Format de projet V2 inconnu.');
   validateSettings(project.settings);
+  migrateTerrainClimate((project.settings as { terrain?: { climate?: unknown } }).terrain);
+  // Hand-edited or older recipes reach the engine with one coherent backend combination.
+  if ((project.settings as V2Settings).runtime) normalizeRuntime(project.settings as V2Settings);
   if (project.world !== undefined) validateWorld(project.world);
   if (!Array.isArray(project.mods) || project.mods.length > 100000) throw new Error('Historique de modifications invalide.');
   checkTree(project.mods, false);

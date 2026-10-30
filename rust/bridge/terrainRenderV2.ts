@@ -24,6 +24,57 @@ float v2FlatSedimentExposure(float herbs,float shore,float openness){
   float coastal=(1.-groundSmooth(160.,400.,shore))*groundSmooth(0.,.15,openness);
   return 1.-herbs*(1.-coastal);
 }
+// Climate zone reweighting of the shared fields (see terrainRenderV2Zones).
+// Low flat ground of wet zones holds a water table: a mottled mosaic of wet
+// meadow, bog or paddy, never a uniform sheet. Diagnostics see the same fields.
+float v2ZoneWet=0.,v2ZoneBare=0.;
+void v2ZoneEnv(inout V2Env e,vec3 s,vec2 world,float tpi,float fp){
+  int z=v2Zone();vec4 F=V2_ZONE_FOREST[z],S=V2_ZONE_SOIL[z];
+  float slope=length(s.yz),level=1.-sstep(.012,.06,slope);
+  float low=max(sstep(0.,-.05,tpi),sstep(35.,6.,s.x));
+  float mottle=v2Pattern(vec3(world,0.),900.,fp,uMaterialSeed+701u);
+  v2ZoneWet=F.w*level*low*(.35+.65*sstep(-.6,.5,mottle))*step(0.,s.x)*(1.-e.snow);
+  e.moisture=clamp(e.moisture+1.6*v2ZoneWet,0.,4.);
+  e.sand=clamp(e.sand+S.y*(1.-sstep(.1,.5,slope))*(1.-v2ZoneWet),0.,1.);
+  // Exposed rock: steep slopes, and knobs/ridges broken by the same mottle
+  // (glaciated outcrops, scree, limestone pavements). Stands open over it.
+  float knob=sstep(0.,.08,tpi)*sstep(-.1,.5,mottle);
+  float rock=clamp(S.x*max(sstep(.05,.35,slope),.75*knob)*(1.-v2ZoneWet),-e.rock,1.-e.rock);
+  v2ZoneBare=clamp(max(rock,0.)+.7*v2ZoneWet,0.,1.);
+  // Zone treeline: an open herbaceous belt (alpine pasture, tundra) below the
+  // climatic tree limit, from the same warm-season lapse proxy as the field.
+  float shift=V2_ZONE_WET[z].a;
+  if(shift>0.){
+    float warm=uMaterialClimate.x-.0065*max(s.x,0.)+6.+.5*max(0.,10.-uMaterialClimate.x);
+    float above=1.-sstep(6.+shift,8.+shift,warm);
+    v2ZoneBare=max(v2ZoneBare,above);
+    e.grass=max(e.grass,above*sstep(-1.,3.,warm)*(1.-e.rock)*(1.-e.snow));
+  }
+  e.rock+=rock;e.grass=clamp(e.grass*S.w*(1.-max(rock,0.)),0.,1.);
+  e.organic=clamp(e.organic+S.z*(.4+.6*v2ZoneWet),0.,max(1.-e.sand-e.clay,0.));
+  if(uForest==0){e.woody*=F.x;e.needle=mix(e.needle,F.y,F.z);}
+}
+// Zone substrate and herbaceous classes over the retained climate material.
+vec3 v2ZoneOpen(vec3 c,V2Env e,vec2 world,float fp){
+  int z=v2Zone();vec4 sw=V2_ZONE_SWARD[z],bare=V2_ZONE_BARE[z],can=V2_ZONE_CANOPY[z];
+  float cover=e.grass*(1.-e.rock);
+  // Stand tone also varies the substrate (gravel plains, pale pavements).
+  c=mix(c,mix(bare.rgb*(.86+.28*e.tone),sw.rgb,cover),mix(bare.a,sw.a,cover));
+  // Scrub/grove patches (garrigue, acacia parkland); the unresolved pattern
+  // converges to its mean.
+  vec3 p=vec3(world,0.);
+  float speck=.45*v2Pattern(p,1600.,fp,uMaterialSeed+711u)+.35*v2Pattern(p,220.,fp,uMaterialSeed+713u)+.2*v2Pattern(p,60.,fp,uMaterialSeed+717u);
+  c=mix(c,vec3(.27,.30,.20)*can.rgb,can.a*cover*(.3+.5*sstep(-.4,.6,speck)));
+  // Wet parcels (polder strips, paddies, bog pools): one hash per rotated
+  // cell, faded to its mean once a parcel is below about two pixels.
+  vec2 q=mat2(.94,.34,-.34,.94)*world/vec2(170.,75.);
+  uint h=groundHash(ivec3(ivec2(floor(q)),709),uMaterialSeed);
+  float u1=float(h&255u)/255.,u2=float((h>>8u)&255u)/255.,keep=1.-sstep(60.,170.,fp);
+  vec3 wet=V2_ZONE_WET[z].rgb;
+  vec3 parcel=mix(wet*(.82+.36*u1),u2>.7?vec3(.49,.46,.32):u2<.1?vec3(.20,.27,.28):wet,.55);
+  wet=mix(wet,parcel,keep);
+  return mix(c,wet,.8*v2ZoneWet);
+}
 uniform vec4 uV2GlacierSources[8];
 float v2GlacierProximity(vec2 world){float source=0.;for(int i=0;i<8;i++)source=max(source,uV2GlacierSources[i].z*(1.-sstep(0.,80000.,distance(world,uV2GlacierSources[i].xy))));return source;}
 V2Env v2Local(vec3 s,vec2 world,float tpi,float footprint){
@@ -35,6 +86,7 @@ V2Env v2Local(vec3 s,vec2 world,float tpi,float footprint){
   float bank=uForest==1?forestBankCover(world,max(1.,footprint)):0.;
   V2Env e=v2Evaluate(vec3(world,0.),s.x,s.yz,tpi,annual+amplitude,annual-amplitude,rain*.5,rain*.5,.15+.50*arid,bank,uV2Season,footprint,uMaterialSeed);
   if(uForest==1){vec4 f=forestField(world,0.);e.woody=f.r;e.height=f.g*50.;e.needle=f.b;e.leaf=mix(e.leaf,1.,e.needle);}
+  v2ZoneWet=0.;v2ZoneBare=0.;if(v2Zoned())v2ZoneEnv(e,s,world,tpi,footprint);
   if(uHasOccupation==1){vec2 uv=(world-uOccupationRect.xy)/uOccupationRect.z;if(all(greaterThanEqual(uv,vec2(0.)))&&all(lessThanEqual(uv,vec2(1.)))){int cls=int(textureLod(uOccupation,uv,0.).b*255.+.5);if(cls==8){e.woody=0.;e.grass=0.;}}}
   float water=forestWaterCoverage(world);e.woody*=1.-water;e.grass*=1.-water;
   // Preserve the retained physical beach footprint at every detail level.
@@ -45,13 +97,16 @@ V2Env v2Local(vec3 s,vec2 world,float tpi,float footprint){
 }
 GroundMaterial v2Ground(vec3 s,vec2 world,float footprint,float tpi,vec3 light,vec3 light2,float strength,vec3 macroOpen){
   float macroWoods=renderGuideWoods*(1.-clamp(renderGuideBeach/.8,0.,1.));
+  vec3 baseClosed=renderGuideBaseClosed;
+  if(v2Zoned()){macroWoods=min(macroWoods*V2_ZONE_FOREST[v2Zone()].x,1.);baseClosed*=V2_ZONE_CANOPY[v2Zone()].rgb;}
   V2Env e=v2Appearance(v2Local(s,world,tpi,footprint),footprint);v2Foliage=e.leaf;v2GroundSnow=e.snow;
   // Retained macro canopy is the occupation/gallery fallback. Natural stands
   // below use population-weighted open, litter and intrinsic crown responses.
-  float woods=(uForest==1?macroWoods:e.woody)*e.leaf;
+  float woods=(uForest==1?macroWoods:e.woody)*e.leaf*(1.-v2ZoneBare);
   // One retained material mean at every footprint. Resolution reveals only
   // surface detail; it must not replace the soil with another palette.
   vec3 opened=v2GroundTint(macroOpen,e);
+  if(v2Zoned())opened=v2ZoneOpen(opened,e,world,footprint);
   // A low alluvial plain is not necessarily exposed sediment. Potential
   // herbaceous cover recolonizes it; the physical beach remains separate.
   opened=mix(opened,renderGuideSediment*.9,renderGuideFlats*v2FlatSedimentExposure(e.grass,renderGuideShore,renderGuideOpenness));
@@ -61,7 +116,7 @@ GroundMaterial v2Ground(vec3 s,vec2 world,float footprint,float tpi,vec3 light,v
   V2Env leafOn=canopyPhase;leafOn.leaf=1.;
   // Retain Render's canopy mean. V2 supplies the seasonal change rather than
   // a second absolute palette with a different exposure in the same biome.
-  vec3 closed=renderGuideBaseClosed*v2Canopy(canopyPhase)/max(v2Canopy(leafOn),vec3(.02));
+  vec3 closed=baseClosed*v2Canopy(canopyPhase)/max(v2Canopy(leafOn),vec3(.02));
   // Integrate the intrinsic normals/AO of unresolved crowns. The guide for
   // actual resolved crowns below retains its original material, not this mean.
   vec3 meanClosed=closed*mix(vec3(1.),v2CanopyMeanRatio(closed,e.needle,light,light2,strength),1.-e.snow);
@@ -100,12 +155,12 @@ GroundMaterial v2Ground(vec3 s,vec2 world,float footprint,float tpi,vec3 light,v
     st.kappa=mix(.25,.78,groundSmooth(.9,1.8,humid))*mix(.55,1.,groundSmooth(3.,10.,st.height))*mix(1.,.6,st.needle)*(1.-.6*st.trop);
     st.open=-1e3;st.forced=-1e3;st.allow=0.;st.hedge=0.;
     float d=forestDensity(st.cover,st.kappa),share=st.cover/max(d,1e-3);
-    float available=(1.-clamp(renderGuideBeach/.8,0.,1.))*(1.-forestWaterCoverage(world));
+    float available=(1.-clamp(renderGuideBeach/.8,0.,1.))*(1.-forestWaterCoverage(world))*(1.-v2ZoneBare);
     float canopy=st.cover*e.leaf*available;share*=available;
     v2MeanWeights=vec3(1.-share,max(share-canopy,0.),canopy);
     v2MeanLitter.albedo=forestFloorAlbedo(forestFloor(opened,st,1.-groundSmooth(8.,16.,T+6.)));
     v2MeanLitter.occlusion*=.72;
-    vec3 bareGuide=renderGuideBaseClosed*v2Canopy(canopyPhase)/max(v2Canopy(leafOn),vec3(.02));
+    vec3 bareGuide=baseClosed*v2Canopy(canopyPhase)/max(v2Canopy(leafOn),vec3(.02));
     vec3 crownBare=forestCrownColor(st,bareGuide,st.needle,vec2(0.),0.);
     vec3 crownSnow=forestCrownColor(st,vec3(.72,.79,.77),st.needle,vec2(0.),0.);
     vec3 crownMean=crownBare*mix(vec3(1.),v2CanopyMeanRatio(crownBare,st.needle,light,light2,strength),1.-e.snow);

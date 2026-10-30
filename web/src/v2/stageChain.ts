@@ -1,8 +1,8 @@
 /** The V2 generation chain as inspectable stages (Region → Settlements → Map).
  * Rows come from stageRegistry.ts. Existing live controls are moved into their stage, never rebuilt:
  * the mounted terrain/region/render forms keep their handlers, validation and sync. */
-import { FAMILIES, STAGES, stagesOf, stageForControl, stageForProgress, stageAnchor, type StageContext, type StageDef, type StageFamily, type Copy } from './stageRegistry';
-import { terrainProceduralStageFields, terrainBasicFields } from './terrainControlSchema';
+import { SETTINGS_PANEL_CONTROLS, FAMILIES, STAGES, stagesOf, stageForControl, stageForProgress, stageAnchor, type StageContext, type StageDef, type StageFamily, type Copy } from './stageRegistry';
+import { terrainProceduralStageFields, terrainBasicFields, climateZoneHelp } from './terrainControlSchema';
 import { mountParameterForm, readSettingPath, writeSettingPath, type ParameterForm } from './parameterForm';
 import { atlasUrl, bindTree, getLanguage, numberLocale, registerMessages, setDynamicText, setText, translate } from './i18n';
 import { iconImg, type IconId } from './stageIcons';
@@ -11,6 +11,7 @@ import type { TerrainControls } from './terrainControls';
 import type { V2Progress, V2Settings, V2TerrainSettings } from './contracts';
 import type { World } from '../gen/types';
 import './stageChain.css';
+import { runtimeSummary } from './runtimeChoices';
 
 const copy = (en: string, fr: string): string => { registerMessages({ [en]: { en, fr } }); return en; };
 const T = {
@@ -25,22 +26,16 @@ const T = {
   view2d: copy('2D map', 'Carte 2D'), view3d: copy('3D view', 'Vue 3D'), style: copy('Map style', 'Style de carte'),
   noNeural: copy('Neural generation needs WebGPU in this browser, the Python/CUDA server or the native neural service. None is available (see Settings).', 'Le neuronal exige WebGPU dans ce navigateur, le serveur Python/CUDA ou le service neuronal natif. Aucun n’est disponible (voir Réglages).'),
   overrides: copy('Local settings of this place', 'Réglages locaux de ce lieu'),
+  execution: copy('Execution…', 'Exécution…'),
   needGpu: copy('Needs WebGPU, which this browser does not provide (see Settings).', 'Nécessite WebGPU, absent de ce navigateur (voir Réglages).'),
   needNative: copy('Needs the native Rust service, which is offline (see Settings).', 'Nécessite le service Rust natif, hors ligne (voir Réglages).'),
   needPython: copy('Needs the Python/CUDA neural server, which is offline (see Settings).', 'Nécessite le serveur neuronal Python/CUDA, hors ligne (voir Réglages).'),
 };
 /** Relief-source fields that only apply to some sources. */
 const SOURCE_FIELDS: Record<string, readonly StageContext['relief'][]> = {
-  'runtime.source': ['neural'], 'terrain.relief': ['procedural', 'neural'], 'terrain.motifSize': ['procedural'], 'terrain.procedural.preset': ['procedural'],
-  'terrain.environment': ['procedural'], 'terrain.mountainMix': ['procedural', 'neural'], 'terrain.generationCompute': ['procedural'], 'terrain.erosion': ['procedural', 'heightmap'],
+  'terrain.relief': ['procedural', 'neural'], 'terrain.motifSize': ['procedural'], 'terrain.procedural.preset': ['procedural'],
+  'terrain.environment': ['procedural'], 'terrain.mountainMix': ['procedural', 'neural'], 'terrain.erosion': ['procedural', 'heightmap'],
 };
-/** Choices that depend on a backend: [select, option value, requirement]. */
-const BACKEND_CHOICES: readonly [string, string, 'webgpu' | 'native' | 'python'][] = [
-  ['[data-setting-path="runtime.source"]', 'neural-wasm', 'webgpu'], ['[data-setting-path="runtime.source"]', 'neural-python', 'python'], ['[data-setting-path="runtime.source"]', 'neural', 'native'],
-  ['[data-setting-path="runtime.backend"]', 'native', 'native'], ['[data-setting-path="runtime.compute"]', 'gpu', 'webgpu'],
-  ['[data-setting-path="terrain.generationCompute"]', 'gpu', 'webgpu'], ['[data-setting-path="terrain.generationCompute"]', 'gpu-all', 'webgpu'], ['[data-setting-path="terrain.generationCompute"]', 'gpu-erosion', 'webgpu'], ['[data-setting-path="terrain.generationCompute"]', 'native', 'native'],
-  ['[data-setting-path="terrain.compute"]', 'gpu-f32', 'webgpu'], ['[data-setting-path="terrain.hydrology.compute"]', 'gpu', 'webgpu'], ['#urban-backend', 'native', 'native'],
-];
 for (const family of FAMILIES) registerMessages({ [family.label.en]: family.label, [family.summary.en]: family.summary });
 for (const stage of STAGES) registerMessages({ [stage.label.en]: stage.label, [stage.summary.en]: stage.summary, ...(stage.toggle?.reason ? { [stage.toggle.reason.en]: stage.toggle.reason } : {}) });
 const familyIcon: Record<StageFamily, IconId> = { region: 'family-relief', settlements: 'family-settlements', map: 'family-display' };
@@ -48,10 +43,10 @@ const text = (value: Copy) => value.en;
 /** Live controls promoted above the stage boxes, in display order. */
 const GENERAL_CONTROLS: Record<StageFamily, readonly string[]> = {
   region: ['widget:extent', 'terrain.relief', 'options.relief', 'options.biome', 'terrain.climate', 'terrain.motifSize', 'widget:seed', 'widget:coasts'],
-  settlements: ['main:town-count', 'main:population', 'main:culture', 'main:urban-backend', 'main:sprawl', 'main:walls'],
+  settlements: ['main:town-count', 'main:population', 'main:culture', 'main:sprawl', 'main:walls'],
   map: ['widget:style', 'widget:view3d'],
 };
-const METHOD_CONTROLS = ['runtime.source', 'terrain.procedural.preset', 'runtime.backend', 'runtime.compute', 'terrain.generationCompute', 'terrain.compute'] as const;
+const METHOD_CONTROLS = ['terrain.procedural.preset'] as const;
 
 export interface StageChainBindings {
   root: HTMLElement; staging: HTMLElement; terrain: TerrainControls; regionRoot: HTMLElement; renderRoot: HTMLElement;
@@ -60,6 +55,8 @@ export interface StageChainBindings {
   onChange(): void; onAppearance(): void; onRegionChange(): void;
   run(stage: StageDef): void; runFamily(family: StageFamily): void; openPlace(): void;
   /** Detected backends (Settings); unavailable choices are disabled with their reason. */
+  /** Opens Settings on the Execution block. */
+  openExecution(): void;
   availability(): { checked: boolean; webgpu: boolean; native: boolean; python: boolean };
   heightmap: { source(host: HTMLElement): { sync(): void }; fit(host: HTMLElement): { sync(): void; quick: HTMLElement } };
   onFamily?(family: StageFamily): void;
@@ -89,7 +86,7 @@ export function mountStageChain(b: StageChainBindings): StageChain {
   const generalPanels = new Map<StageFamily, HTMLElement>();
   const methodPanel = document.createElement('section'); methodPanel.className = 'family-method';
   const methodTitle = document.createElement('h4'); methodTitle.id = 'terrain-method-title'; setText(methodTitle, T.method);
-  methodPanel.setAttribute('aria-labelledby', methodTitle.id); methodPanel.append(methodTitle, sourceSwitch());
+  methodPanel.setAttribute('aria-labelledby', methodTitle.id); methodPanel.append(methodTitle, sourceSwitch(), executionChip());
   const scroller = document.createElement('div'); scroller.className = 'chain-scroll';
   for (const [index, f] of FAMILIES.entries()) {
     const tab = document.createElement('button'); tab.type = 'button'; tab.className = 'chain-family-tab'; tab.id = `family-tab-${f.id}`; tab.setAttribute('role', 'tab'); tab.setAttribute('aria-controls', `family-${f.id}`);
@@ -221,6 +218,14 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     }
     b.onChange(); b.terrain.sync(); markStale('relief-source'); sync();
   }
+  function executionChip(): HTMLElement {
+    const chip = document.createElement('div'); chip.className = 'execution-chip'; chip.dataset.stageControl = 'relief-source';
+    const label = document.createElement('span'); label.className = 'execution-chip-label'; label.dataset.l10nKeep = '';
+    const open = document.createElement('button'); open.type = 'button'; open.className = 'small'; setText(open, T.execution); open.onclick = b.openExecution;
+    chip.append(label, open);
+    syncers.push(() => { label.textContent = runtimeSummary(get()); });
+    return chip;
+  }
   function sourceSwitch(): HTMLElement {
     const group = document.createElement('div'); group.className = 'source-switch'; group.setAttribute('role', 'radiogroup'); group.setAttribute('aria-label', translate(T.source));
     const buttons: [StageContext['relief'], HTMLButtonElement][] = [];
@@ -266,9 +271,11 @@ export function mountStageChain(b: StageChainBindings): StageChain {
   for (const field of Array.from(tRoot.querySelectorAll<HTMLElement>('[data-field-path]'))) {
     if (field.closest('.stage-row')) continue;
     const id = field.dataset.fieldPath!, stage = owner(id);
-    if (stage === 'settings') { b.staging.querySelector('#settings-endpoints')?.append(field); continue; }
+    if (stage === 'settings') { if (/^runtime\.(neuralAssets|localServer|neuralServer|pythonServer)$/.test(id)) b.staging.querySelector('#settings-endpoints')?.append(field); continue; }
     place(field, stage);
   }
+  // Execution choices are edited in Settings; the mounted fields only keep the terrain form state consistent.
+  for (const id of SETTINGS_PANEL_CONTROLS) tRoot.querySelector<HTMLElement>(`[data-field-path="${id}"]`)?.setAttribute('hidden', '');
   place(histogram, 'relief-neural-base'); place(neuralNote, 'relief-source'); place(modelNote, 'relief-neural-coarse');
   place(tRoot.querySelector('#terrain-erosion-reset'), 'relief-regional'); place(tRoot.querySelector('#terrain-detail-reset'), 'relief-refine');
   place(tRoot.querySelector('#terrain-phasor-method'), 'relief-phasor');
@@ -322,7 +329,7 @@ export function mountStageChain(b: StageChainBindings): StageChain {
   }
   syncers.push(() => {
     const classic = context().classicTerrain;
-    for (const path of ['terrain.procedural.preset', 'terrain.generationCompute', 'terrain.compute'])
+    for (const path of ['terrain.procedural.preset'])
       methodPanel.querySelector<HTMLElement>(`[data-field-path="${path}"]`)?.toggleAttribute('data-general-hidden', classic);
   });
   // Heightmap alternative inside Relief source; its fit stage.
@@ -348,12 +355,17 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     const strip = document.createElement('div'); strip.className = 'region-icon-strip climate-strip'; strip.setAttribute('role', 'radiogroup');
     strip.setAttribute('aria-label', translate(copy('Climate', 'Climat')));
     const drawings: Record<string, string> = {
-      temperate: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/>',
-      oceanic: '<path d="M5 14a4 4 0 0 1 1-8 5 5 0 0 1 9 1 3.5 3.5 0 1 1 3 7H5Zm2 4-1 3m6-3-1 3m6-3-1 3"/>',
-      mediterranean: '<circle cx="15" cy="7" r="3"/><path d="M15 1v1m6 5h1M4 15q3-3 6 0t6 0 6 0M2 20q3-3 6 0t6 0 6 0"/>',
-      arid: '<circle cx="17" cy="5" r="3"/><path d="M2 20q5-12 11-4m-6 4q6-10 15 0"/>',
-      cold: '<path d="M12 2v20M3.5 7l17 10M3.5 17l17-10M9 4l3 3 3-3M9 20l3-3 3 3M4 10l4-1-1-4m13 9-4 1 1 4M4 14l4 1-1 4m13-9-4-1 1-4"/>',
+      temperate: '<path d="M12 21v-8m0 0c-4 0-6-3-6-6 3 0 6 2 6 6Zm0 0c4 0 6-3 6-6-3 0-6 2-6 6ZM12 13V4"/>',
+      mediterranean: '<circle cx="16" cy="7" r="3"/><path d="M16 1.5v1m5.5 4.5h-1M4 15q3-3 6 0t6 0 6 0M2 20q3-3 6 0t6 0 6 0"/>',
+      continental: '<path d="M12 3 7 11h3l-4 7h12l-4-7h3Zm0 15v3"/>',
+      nordic: '<path d="M12 2l-4 6h2.5L7 14h3.5L7 19h10l-3.5-5H17l-3.5-6H16Zm0 17v3"/>',
+      alpine: '<path d="M2 20 9 7l4 7 3-4 6 10Zm5.2-9.7 1.8 1.7 1.5-1.2"/>',
+      arctic: '<path d="M12 2v20M3.5 7l17 10M3.5 17l17-10M9 4l3 3 3-3M9 20l3-3 3 3"/>',
+      steppe: '<path d="M3 20h18M7 20c0-4 0-7-2-9m2 9c0-3 2-6 4-7m-2 7c0-2 1-4 3-5m1 5c0-4 0-8 2-11m-2 11c0-2 2-5 5-6"/>',
+      desert: '<circle cx="17" cy="5" r="3"/><path d="M2 20q5-12 11-4m-6 4q6-10 15 0"/>',
+      savanna: '<path d="M12 21v-9m0 3-3-3m3 1 3-4M4 10q8-5 16 0M6 8q6-3 12 0M3 21h18"/>',
       tropical: '<path d="M3 17q0-14 18-13 1 18-13 17M5 20 18 7m-8 8 1-6m2 3 5 1"/>',
+      wetland: '<path d="M6 15V6m0 0c-1 2-1 3 0 4m6 5V3m0 0c-1 2-1 4 0 6m6 6V8m0 0c-1 2-1 3 0 4M2 19q3-3 5 0t5 0 5 0 5 0M2 22q3-3 5 0t5 0 5 0 5 0"/>',
       custom: '<path d="M5 3v18m7-18v18m7-18v18M2 8h6m1 8h6m1-10h6"/>',
     };
     const buttons: HTMLButtonElement[] = [];
@@ -363,8 +375,13 @@ export function mountStageChain(b: StageChainBindings): StageChain {
       const caption = document.createElement('span'); caption.className = 'region-icon-caption';
       const label = terrainBasicFields.find(f => f.path === 'terrain.climate')!.options!.find(o => o.value === option.value)!.label;
       setText(caption, label); button.append(caption);
-      syncers.push(() => { button.title = translate(label); button.setAttribute('aria-label', translate(label)); });
-      button.onclick = () => { b.terrain.access.set('terrain.climate', option.value); markStale('relief-climate'); if (option.value === 'custom') expand('relief-climate', true); sync(); };
+      const help = climateZoneHelp[option.value];
+      syncers.push(() => { button.title = help ? `${translate(label)} — ${translate(help)}` : translate(label); button.setAttribute('aria-label', translate(label)); });
+      button.onclick = () => {
+        const biome = b.terrain.access.get('options.biome');
+        b.terrain.access.set('terrain.climate', option.value);
+        markStale(b.terrain.access.get('options.biome') !== biome ? 'relief-source' : 'relief-climate'); if (option.value === 'custom') expand('relief-climate', true); sync();
+      };
       button.onkeydown = event => {
         const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
         if (!step) return; event.preventDefault(); const next = buttons[(buttons.indexOf(button) + step + buttons.length) % buttons.length]; next.click(); next.focus();
@@ -452,13 +469,6 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     }
     // The 8-bit image scale and sea level only apply to an imported grayscale image.
     for (const path of ['options.heightScale', 'options.importSea']) root.querySelector<HTMLElement>(`[data-field-path="${path}"]`)?.toggleAttribute('data-chain-hidden', !get().options.importedHeight);
-    const caps = b.availability();
-    for (const [selector, value, need] of BACKEND_CHOICES) for (const select of Array.from(root.querySelectorAll<HTMLSelectElement>(selector))) {
-      const option = Array.from(select.options).find(o => o.value === value); if (!option) continue;
-      const missing = caps.checked && !caps[need];
-      if (missing) { option.disabled = true; option.dataset.unavailable = ''; option.title = translate(need === 'webgpu' ? T.needGpu : need === 'native' ? T.needNative : T.needPython); }
-      else if (option.dataset.unavailable !== undefined) { option.disabled = false; delete option.dataset.unavailable; option.title = ''; }
-    }
     const numbers = new Map<StageFamily, number>();
     for (const row of rows.values()) {
       const { stage } = row, visible = stage.when(ctx); row.element.hidden = !visible; if (!visible) continue;

@@ -67,7 +67,7 @@ describe('V2 City Bench 3D retained-scene boundary', () => {
     const settings: V2Settings = { options, extent: 1000, settlementCount: 0, local: {}, generation: 'procedural', terrain: { climate: 'arid' }, appearance: {
       style: 'parchment', terrainStyle: 'render-v2-snow', season: .125, lighting: { enabled: true, azimuth: 90, elevation: 15, strength: 2, exaggeration: 1 }, terrainLayers: { relief: true, hypsometry: true, frame: false, water: false }, city: { refinement: 'source' } } };
     expect(v2Terrain3dView(settings).ground).toBe('render-v2-snow');
-    expect(v2Terrain3dGround(world, settings, 'render-v2-snow')).toMatchObject({ renderV2: 5, v2Season: .125, lighting: settings.appearance!.lighting, waterVisible: false, displacement: false, climate: { temperature: 23, precipitation: 150 } });
+    expect(v2Terrain3dGround(world, settings, 'render-v2-snow')).toMatchObject({ renderV2: 5, v2Season: .125, lighting: settings.appearance!.lighting, waterVisible: false, displacement: false, climate: { temperature: 24, precipitation: 70 } });
     expect(v2Terrain3dGround(world, settings, 'render3d-brush')?.forestBrushes).toBe(true);
     settings.appearance!.city = { ground: 'map', refinement: 'noise' };
     expect(v2Terrain3dView(settings).ground).toBe('map'); expect(v2Terrain3dGround(world, settings, 'map')).toBeUndefined();

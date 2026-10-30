@@ -89,8 +89,8 @@ export const STAGES: readonly StageDef[] = [
   { id: 'relief-source', family: 'region', optional: false, when: always, run: terrainRun,
     label: { en: 'Relief source', fr: 'Source du relief' },
     summary: { en: 'Source preparation and terrain adjustments', fr: 'Préparation de la source et ajustements du relief' },
-    controls: ['widget:source-mode', 'widget:seed', 'widget:extent', 'widget:heightmap-library', 'widget:heightmap-import', 'runtime.source', 'runtime.backend', 'runtime.compute',
-      'terrain.relief', 'terrain.motifSize', 'terrain.procedural.preset', 'terrain.environment', 'terrain.mountainMix', 'terrain.erosion', 'terrain.compute', 'terrain.generationCompute',
+    controls: ['widget:source-mode', 'widget:seed', 'widget:extent', 'widget:heightmap-library', 'widget:heightmap-import',
+      'terrain.relief', 'terrain.motifSize', 'terrain.procedural.preset', 'terrain.environment', 'terrain.mountainMix', 'terrain.erosion',
       'options.relief', 'options.coast', 'options.river', 'options.seaLevel', 'options.biome', 'widget:coasts', 'terrain.islandMode'],
     quick: ['widget:source-mode', 'widget:extent-km', 'options.biome', 'terrain.relief'],
     progress: ['compute', 'runtime-download', 'runtime-compile', 'runtime-ready', 'gpu-device', 'terrain-module', 'relief-engine', 'terrain-generation', 'terrain-import', 'pipeline:prepare', 'terrain-cache', 'terrain-projection', 'terrain-retain', 'terrain-sampling', 'gpu-sampling-compile', 'pipeline:retain', 'pipeline:sampling'] },
@@ -192,9 +192,9 @@ export const STAGES: readonly StageDef[] = [
   // ── City (selected place) ────────────────────────────────────────────────
   { id: 'city-composition', family: 'settlements', optional: false, when: always, run: town('layout'),
     label: { en: 'Composition', fr: 'Composition' }, summary: { en: 'Footprint, macroplan, harbour, fortification', fr: 'Emprise, macroplan, port, fortification' },
-    controls: ['main:urban-backend', 'main:sprawl', 'main:walls', 'main:moat', 'main:castle', 'main:cathedral', 'main:palace', 'main:monasteries', 'main:port', 'main:arena', 'main:activities', 'main:suburbs',
+    controls: ['main:sprawl', 'main:walls', 'main:moat', 'main:castle', 'main:cathedral', 'main:palace', 'main:monasteries', 'main:port', 'main:arena', 'main:activities', 'main:suburbs',
       U('layout'), U('footprint'), U('growth'), U('fortifications'), U('ports'), 'urban-extra:header', 'urban-extra:phases', 'urban-extra:archetypes'],
-    quick: ['main:urban-backend', 'main:walls'], progress: ['urban-engine', 'town'] },
+    quick: ['main:walls'], progress: ['urban-engine', 'town'] },
   { id: 'city-quarters', family: 'settlements', optional: false, when: always, unavailable: rustCity, run: town('layout'),
     label: { en: 'Quarters and streets', fr: 'Quartiers et rues' }, summary: { en: 'Streets, split, blocks, bridges', fr: 'Rues, découpage, îlots, ponts' },
     controls: [U('streets')], quick: ['urban.layout.tissue'], progress: ['urban-layout', 'layout'] },
@@ -243,7 +243,8 @@ export const STAGES: readonly StageDef[] = [
 ];
 
 /** Controls that belong to the Settings panel (machine-level endpoints), not to a stage row. */
-export const SETTINGS_PANEL_CONTROLS = ['runtime.neuralAssets', 'runtime.localServer', 'runtime.neuralServer', 'runtime.pythonServer'] as const;
+/** Execution block of the Settings dialog (see runtimeChoices.ts) plus service addresses. */
+export const SETTINGS_PANEL_CONTROLS = ['runtime.source', 'runtime.backend', 'runtime.compute', 'terrain.compute', 'terrain.generationCompute', 'terrain.hydrology.compute', 'main:urban-backend', 'runtime.neuralAssets', 'runtime.localServer', 'runtime.neuralServer', 'runtime.pythonServer'] as const;
 
 export const stageById = new Map(STAGES.map(stage => [stage.id, stage]));
 export const stagesOf = (family: StageFamily): StageDef[] => STAGES.filter(stage => stage.family === family);
@@ -261,8 +262,8 @@ function matches(pattern: string, id: string): boolean {
 }
 /** Every stage claiming a control id; the UI and the parity test require exactly one. */
 export function stagesForControl(id: string): string[] {
+  if ((SETTINGS_PANEL_CONTROLS as readonly string[]).includes(id)) return ['settings'];
   const owners = STAGES.filter(stage => stage.controls.some(pattern => matches(pattern, id))).map(stage => stage.id);
-  if ((SETTINGS_PANEL_CONTROLS as readonly string[]).includes(id)) owners.push('settings');
   return owners;
 }
 export const stageForControl = (id: string): string | undefined => { const owners = stagesForControl(id); return owners.length === 1 ? owners[0] : undefined; };

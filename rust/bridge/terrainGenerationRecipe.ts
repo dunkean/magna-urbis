@@ -1,4 +1,4 @@
-import { CLIMATE_VALUES } from './terrainClimate';
+import { CLIMATE_VALUES, CLIMATE_ZONE_VALUES, type ClimateZone } from './terrainClimate';
 import { compactProfile } from './terrainPhasor';
 import type { TerrainSettings, ErosionTuning } from './terrain';
 export const PROCEDURAL_RECIPE_VERSION = 'procedural-stages-v3';
@@ -60,15 +60,51 @@ export interface GenerationControl {
     after(stage: GenerationStage, height?: Float32Array, detail?: string): Promise<void>;
 }
 export const EROSION_BIOMES = {
-    temperate: { water: 1, thermal: 1, posterior: 0, wind: 0, transport: .2 },
+    temperate: { water: 1, thermal: 1, posterior: 0, wind: 0, transport: .2, amplitude: 1 },
     oceanic: { water: 1.35, thermal: 1.25, posterior: 1, wind: 0, transport: .2 },
-    mediterranean: { water: 1.05, thermal: .85, posterior: .7, wind: 2, transport: .12 },
+    mediterranean: { water: 1.05, thermal: .85, posterior: .7, wind: 2, transport: .12, amplitude: 1 },
     arid: { water: .35, thermal: .65, posterior: 0, wind: 12, transport: .8 },
     cold: { water: .65, thermal: 1.6, posterior: 0, wind: 3, transport: .15 },
-    tropical: { water: 1.8, thermal: 1.15, posterior: 1.5, wind: 0, transport: .1 },
+    tropical: { water: 1.8, thermal: 1.15, posterior: 1.5, wind: 0, transport: .1, amplitude: 1.05 },
 } as const;
-export const erosionBiome = (s: TerrainSettings) => {
-    const climate = s.climate ?? 'temperate', b = EROSION_BIOMES[climate], ratio = (s.climateValues?.precipitation ?? CLIMATE_VALUES[climate].precipitation) / Math.max(1, CLIMATE_VALUES[climate].precipitation);
+/** Landform shaping of each V2 climate zone, as multipliers of the relief's own
+ *  settings: calibrated relief `amplitude` (low wetlands, high alpine ranges), fluvial `water` (incision, carving), frost/scree `thermal`, the
+ *  stable `talus` slope (cliffs and escarpments above 1), hillslope `diffusion`
+ *  (rounded soil-mantled hills above 1), ridged `detail`, `uplift` against
+ *  erosion, depression `fill` (below 1 leaves glacial and peat hollows to lakes),
+ *  regional noise wavelength `noise` (broader landforms above 1) and an optional
+ *  `crest` strength replacing the relief's (arêtes, or none for ice-rounded forms). `posterior`, `wind` and `transport` as above. */
+export interface ErosionZone { amplitude: number; water: number; thermal: number; talus: number; diffusion: number; detail: number; uplift: number; fill: number; noise: number; crest?: number; posterior: number; wind: number; transport: number }
+export const EROSION_ZONES: Record<ClimateZone, ErosionZone> = {
+    // Soil-mantled rounded hills, dense dendritic valleys.
+    temperate: { water: 1, thermal: 1, talus: 1, diffusion: 1.2, detail: 1, uplift: 1, fill: 1, noise: 1, posterior: .5, wind: 0, transport: .2, amplitude: 1 },
+    // Flash-flood gullies, bare limestone scarps, thin soils.
+    mediterranean: { water: 1.15, thermal: .8, talus: 1.25, diffusion: .75, detail: 1.2, uplift: 1, fill: 1, noise: .95, posterior: .8, wind: 2, transport: .12, amplitude: 1 },
+    // Periglacial smoothing of broad uplands.
+    continental: { water: .9, thermal: 1.15, talus: .95, diffusion: 1.3, detail: .9, uplift: 1, fill: .9, noise: 1.1, posterior: .4, wind: 1, transport: .15, amplitude: .95 },
+    // Ice-scoured knobs, U-shaped troughs and rock basins left to lakes.
+    nordic: { water: .7, thermal: 1.3, talus: .85, diffusion: 1.6, detail: .7, uplift: .9, fill: .35, noise: 1, crest: 0, posterior: 0, wind: 0, transport: .1, amplitude: .9 },
+    // Sharp arêtes, deep incision, scree aprons below steep walls.
+    alpine: { water: 1.25, thermal: 1.6, talus: 1.35, diffusion: .55, detail: 1.45, uplift: 1.15, fill: 1, noise: .9, crest: .75, posterior: .3, wind: 0, transport: .1, amplitude: 1.3 },
+    // Frost-shattered, solifluction-smoothed low relief with hollows.
+    arctic: { water: .45, thermal: 1.9, talus: .8, diffusion: 1.7, detail: .75, uplift: .9, fill: .5, noise: 1.1, posterior: 0, wind: 3, transport: .2, amplitude: .85 },
+    // Broad, smooth plains and wide shallow valleys.
+    steppe: { water: .55, thermal: .9, talus: .8, diffusion: 1.8, detail: .55, uplift: .85, fill: 1, noise: 1.3, posterior: 0, wind: 5, transport: .3, amplitude: .65 },
+    // Mesas, escarpments and wind-swept flats.
+    desert: { water: .3, thermal: .5, talus: 1.9, diffusion: .25, detail: 1.35, uplift: 1, fill: 1, noise: 1, posterior: 0, wind: 12, transport: .8, amplitude: 1 },
+    // Inselbergs rising from wide pediments.
+    savanna: { water: .8, thermal: .75, talus: 1.45, diffusion: .8, detail: .85, uplift: .95, fill: 1, noise: 1.2, posterior: .3, wind: 3, transport: .25, amplitude: .75 },
+    // Deeply weathered, densely dissected steep hills.
+    tropical: { water: 1.8, thermal: 1.15, talus: 1.15, diffusion: 1.35, detail: 1, uplift: 1, fill: 1, noise: .85, posterior: 1.5, wind: 0, transport: .1, amplitude: 1 },
+    // Low, flat, peaty lowlands with shallow hollows.
+    wetland: { water: .6, thermal: .7, talus: .7, diffusion: 2.2, detail: .4, uplift: .7, fill: .6, noise: 1.4, posterior: 1, wind: 0, transport: .1, amplitude: .4 },
+};
+const NEUTRAL_SHAPE = { amplitude: 1, talus: 1, diffusion: 1, detail: 1, uplift: 1, fill: 1, noise: 1 } as const;
+export const erosionBiome = (s: TerrainSettings): ErosionZone => {
+    const zone = s.climateZone, climate = s.climate ?? 'temperate';
+    const b: ErosionZone = zone ? EROSION_ZONES[zone] : { ...EROSION_BIOMES[climate], ...NEUTRAL_SHAPE };
+    const base = zone ? CLIMATE_ZONE_VALUES[zone].precipitation : CLIMATE_VALUES[climate].precipitation;
+    const ratio = (s.climateValues?.precipitation ?? base) / Math.max(1, base);
     return { ...b, water: b.water * Math.max(0, Math.min(2, ratio)), posterior: b.posterior * Math.max(0, Math.min(2, ratio)), transport: b.transport * Math.max(.05, Math.min(1.5, 1 - (ratio - 1) * .5)) };
 };
 export const stageEnabled = (s: TerrainSettings, id: GenerationStage, fallback = true) => s.procedural?.enabled?.[id] ?? fallback;
@@ -79,7 +115,7 @@ export function posteriorSettings(s: TerrainSettings) {
     return { mode: p?.mode ?? (dose ? 'erosion' : 'none'), strength: p?.strength ?? (p?.mode && p.mode !== 'none' ? (dose || 1) : dose) * s.erosion, maxDepth: p?.maxDepth ?? 12, maxLength: p?.maxLength ?? 150 } as const;
 }
 export function windSettings(s: TerrainSettings) {
-    const b = s.procedural?.biome ? erosionBiome(s) : EROSION_BIOMES.temperate, p = s.procedural?.wind;
+    const b = s.procedural?.biome ? erosionBiome(s) : { ...EROSION_BIOMES.temperate, ...NEUTRAL_SHAPE }, p = s.procedural?.wind;
     return { iterations: p?.iterations ?? (s.procedural?.biome ? b.wind : 0), azimuth: p?.azimuth ?? 270, transport: p?.transport ?? b.transport * s.erosion };
 }
 export const PROCEDURAL_TUNING_LIMITS: Record<string, readonly [
@@ -209,6 +245,18 @@ export function configureProceduralPlan(parameters: Float32Array, surface: Float
         parameters[40] = Math.min(1, parameters[40] * b.water);
         parameters[37] *= b.thermal;
         surface[5] *= b.thermal;
+        // Zone landform shaping; neutral (1) for the legacy presets.
+        parameters[12] *= b.amplitude;
+        parameters[15] *= b.talus;
+        parameters[17] = Math.min(3, parameters[17] * b.diffusion);
+        surface[7] *= b.diffusion;
+        parameters[16] *= b.detail;
+        parameters[19] *= b.uplift;
+        parameters[33] *= b.fill;
+        if (r.noiseScale === undefined)
+            parameters[6] *= b.noise;
+        if (b.crest !== undefined && r.crest === undefined)
+            parameters[32] = b.crest;
     }
     if (!stageEnabled(s, 'ridged', !compact))
         parameters[16] = 0;

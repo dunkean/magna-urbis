@@ -21,6 +21,8 @@ import { lakeDistances, seaDistanceSurface, type WaterSurface } from '../render/
  * Heights in metres, coordinates in metres from the map's north-west corner.
  */
 import { RENDER_V2_GLSL, renderV2Number, renderV2GlacierSources } from '../../../rust/bridge/terrainRenderV2';
+import { renderV2ZoneUniform } from '../../../rust/bridge/terrainRenderV2Zones';
+import type { ClimateZone } from '../../../rust/bridge/terrainClimate';
 import { isRender3dStyle, terrainStyle, type TerrainStyle } from '../render/terrainStyle';
 import type { RenderColors } from '../render/customColors';
 import { WATER_STYLE_GLSL, waterUniforms } from '../render/waterStyle';
@@ -53,6 +55,8 @@ export interface TerrainLook {
   groundCapture?: boolean;
   refinement3d?: TerrainRefinement;
   climate?: { temperature: number; precipitation: number };
+  /** V2 climate zone (Render v2 styles); absent keeps the climate-only look. */
+  climateZone?: ClimateZone;
   style: GlStyle; waterStyle?: TerrainStyle; mapWidth: number; lighting: TerrainLighting; layers: TerrainLayers;
   globalMin: number; globalMax: number;
   contours: boolean; contourStep: number; flatRelief: boolean;
@@ -799,7 +803,7 @@ export class TerrainGl {
     // Textures 7 forest field, 8 occupation, 12 banks; 10/11 belong to water.
     bindForest(gl, u, this.forest, this.occupation, this.empty, mode === 3, 7, 8, 12);
     bindForestBrushes(gl, u, look.style === 'render3d-brush' && mode === 3, 9);
-    gl.uniform1i(u('uRenderV2'),renderV2Number(look.style));gl.uniform1i(u('uV2WaterVisible'),look.layers.water===false?0:1);if(this.base&&look.climate)gl.uniform4fv(u('uV2GlacierSources[0]'),renderV2GlacierSources(this.base.layer,look.climate));gl.uniform1f(u('uV2Season'),look.v2Season??.5);
+    gl.uniform1i(u('uRenderV2'),renderV2Number(look.style));gl.uniform1i(u('uV2WaterVisible'),look.layers.water===false?0:1);if(this.base&&look.climate)gl.uniform4fv(u('uV2GlacierSources[0]'),renderV2GlacierSources(this.base.layer,look.climate));gl.uniform1f(u('uV2Season'),look.v2Season??.5);gl.uniform1i(u('uMaterialZone'),renderV2ZoneUniform(look.climateZone));
     gl.uniform1i(u('uEnhanced3d'), look.mesh3d || isRender3dStyle(look.style) ? 1 : 0);
     gl.uniform1i(u('uRefinementMode'), look.refinement3d === 'source' ? 0 : isNeuralRefinement(look.refinement3d ?? 'noise') ? 2 : 1);
     const refined = this.enhanced.at(-1), previousRefined = this.enhanced.at(-2);

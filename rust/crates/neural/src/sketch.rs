@@ -101,6 +101,8 @@ impl Family {
 pub enum Islands {
     Island,
     Archipelago,
+    /// One landmass tied to a single map edge by a narrow isthmus.
+    Peninsula,
 }
 
 /// Seeded regional sketch of a square map of `extent` metres.
@@ -119,6 +121,13 @@ pub struct Regional {
     offset: f64,
     shore: [f64; 8],
     isles: Vec<(f64, f64, f64)>,
+    /// Seeded shoreline offset factor and turn (radians) per sea direction.
+    reach: [(f64, f64); 8],
+    /// Bays (negative) and capes (positive): centre, radius, amplitude in metres.
+    gulfs: Vec<(f64, f64, f64, f64)>,
+    /// Peninsula body (centre, radius) and isthmus (end on the edge, half-width).
+    body: (f64, f64, f64),
+    neck: (f64, f64, f64),
 }
 
 #[derive(Clone, Debug)]
@@ -190,6 +199,7 @@ impl Regional {
         let islands = match islands {
             "island" => Islands::Island,
             "archipelago" => Islands::Archipelago,
+            "peninsula" => Islands::Peninsula,
             "random" => {
                 if p.next() < 0.5 {
                     Islands::Island
@@ -214,6 +224,42 @@ impl Regional {
                 )
             })
             .collect();
+        // A separate stream keeps the former draws (waves, axis, isles) per seed.
+        let mut q = Params(seed ^ 0x636F_6173_7473_7632);
+        let reach = std::array::from_fn(|_| (q.range(0.7, 1.5), q.range(-0.3, 0.3)));
+        let gulfs = (0..2 + (q.next() * 4.0) as usize)
+            .map(|k| {
+                let a = q.range(0.0, std::f64::consts::TAU);
+                let r = q.range(0.25, 0.5) * extent;
+                let radius = if k == 0 {
+                    q.range(7000.0, 14000.0)
+                } else {
+                    q.range(2500.0, 6000.0)
+                };
+                let sign = if q.next() < 0.55 { -1.0 } else { 1.0 };
+                (
+                    extent * 0.5 + r * a.cos(),
+                    extent * 0.5 + r * a.sin(),
+                    radius,
+                    sign * radius * q.range(0.3, 0.6),
+                )
+            })
+            .collect();
+        let side = (q.next() * 4.0) as usize % 4;
+        let (nx, ny) = [(0.0, -1.0), (1.0, 0.0), (0.0, 1.0), (-1.0, 0.0)][side];
+        let along = q.range(-0.2, 0.2) * extent;
+        let body_r = q.range(0.26, 0.33) * extent;
+        let push = q.range(0.04, 0.1) * extent;
+        let body = (
+            extent * 0.5 - nx * push - ny * along * 0.4,
+            extent * 0.5 - ny * push + nx * along * 0.4,
+            body_r,
+        );
+        let neck = (
+            extent * 0.5 + nx * extent * 0.6 - ny * along,
+            extent * 0.5 + ny * extent * 0.6 + nx * along,
+            q.range(3000.0, 4200.0),
+        );
         Ok(Self {
             family,
             mix: mix.clamp(0.0, 1.0),
@@ -227,6 +273,10 @@ impl Regional {
             offset,
             shore,
             isles,
+            reach,
+            gulfs,
+            body,
+            neck,
         })
     }
 
@@ -295,17 +345,40 @@ impl Regional {
                     .fold(f64::NEG_INFINITY, f64::max),
             );
         }
+        if self.coast_mask == 255 && self.islands == Islands::Peninsula {
+            let (bx, by, br) = self.body;
+            let (ex, ey, half) = self.neck;
+            let (sx, sy) = (ex - bx, ey - by);
+            let t = (((x - bx) * sx + (y - by) * sy) / (sx * sx + sy * sy)).clamp(0.0, 1.0);
+            let bend = 1500.0 * self.undulation(x * 3.1, y * 3.1);
+            let isthmus =
+                half + bend * 0.5 - ((x - bx - t * sx).powi(2) + (y - by - t * sy).powi(2)).sqrt();
+            let land = br + 2200.0 * self.undulation(x * 2.3, y * 2.3)
+                - ((x - bx).powi(2) + (y - by).powi(2)).sqrt();
+            return Some(land.max(isthmus));
+        }
         let mut distance = f64::INFINITY;
         for k in 0..8 {
             if self.coast_mask & (1 << k) == 0 {
                 continue;
             }
-            // N, NE, E, SE, S, SW, W, NW with y pointing south.
-            let a = (k as f64) * std::f64::consts::FRAC_PI_4 - std::f64::consts::FRAC_PI_2;
+            // N, NE, E, SE, S, SW, W, NW with y pointing south; seeded offset and turn.
+            let (scale, turn) = self.reach[k];
+            let a = (k as f64) * std::f64::consts::FRAC_PI_4 - std::f64::consts::FRAC_PI_2 + turn;
             let (nx, ny) = (a.cos(), a.sin());
-            let reach = if k % 2 == 0 { 0.2 } else { 0.32 } * self.extent;
-            let wobble = 2500.0 * ((-dx * ny + dy * nx) / 13000.0 + self.shore[k]).sin();
-            distance = distance.min(reach + wobble - (dx * nx + dy * ny));
+            let reach = if k % 2 == 0 { 0.2 } else { 0.32 } * self.extent * scale;
+            let wobble = 2500.0 * ((-dx * ny + dy * nx) / 13000.0 + self.shore[k]).sin()
+                + 2000.0 * self.undulation(x * 1.7 + 913.0, y * 1.7 - 377.0);
+            let d = reach + wobble - (dx * nx + dy * ny);
+            // Smooth union of the seas: rounded corners between two coasts.
+            let h = (6000.0 - (distance - d).abs()).max(0.0) / 6000.0;
+            distance = distance.min(d) - h * h * 1500.0;
+        }
+        for &(gx, gy, radius, amplitude) in &self.gulfs {
+            let d2 = ((x - gx).powi(2) + (y - gy).powi(2)) / (radius * radius);
+            if d2 < 1.0 {
+                distance += amplitude * (1.0 - d2) * (1.0 - d2);
+            }
         }
         Some(distance)
     }

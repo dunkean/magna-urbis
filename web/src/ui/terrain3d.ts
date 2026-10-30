@@ -4,6 +4,8 @@ import { FOREST_PRELUDE_GLSL, type ForestField, type ForestOccupation } from '..
 import { bindForestBrushes, disposeForestBrushes } from '../render/forestBrushAtlas';
 import { NEURAL_EARTH_MATERIAL_GLSL } from '../../../rust/bridge/terrainMaterial';
 import { RENDER_V2_GLSL, renderV2GlacierSources } from '../../../rust/bridge/terrainRenderV2';
+import { renderV2ZoneUniform } from '../../../rust/bridge/terrainRenderV2Zones';
+import type { ClimateZone } from '../../../rust/bridge/terrainClimate';
 import { RENDER_3D_MATERIAL_GLSL } from '../../../rust/bridge/terrainMaterial3d';
 import { createGroundDisplacementSampler } from '../../../rust/bridge/terrainGround';
 import { terrainLights, type TerrainLighting } from '../render/terrainLighting';
@@ -33,6 +35,8 @@ export interface Terrain3dTileContent {
 }
 export interface Terrain3dGroundSettings {
   seed: number; climate: { temperature: number; precipitation: number }; sourceCell: number;
+  /** V2 climate zone (Render v2 styles); absent keeps the climate-only look. */
+  climateZone?: ClimateZone;
   lighting: TerrainLighting; displacement: boolean; forestBrushes?: boolean; renderV2?: number; v2Season?: number; waterVisible?: boolean;
   contours?: { step: number; color: string; opacity: number; flat: boolean };
 }
@@ -1306,7 +1310,7 @@ export class Terrain3d {
     gl.uniform1i(this.uniform('showTileBounds'),this.tileBounds?1:0);
     if(settings){
       const lights=terrainLights(settings.lighting);
-      gl.uniform1i(this.uniform('uRenderV2'),settings.renderV2??0);gl.uniform1i(this.uniform('uV2WaterVisible'),settings.waterVisible===false?0:1);gl.uniform4fv(this.uniform('uV2GlacierSources[0]'),renderV2GlacierSources(this.layer,settings.climate));gl.uniform1f(this.uniform('uV2Season'),settings.v2Season??.5);
+      gl.uniform1i(this.uniform('uRenderV2'),settings.renderV2??0);gl.uniform1i(this.uniform('uV2WaterVisible'),settings.waterVisible===false?0:1);gl.uniform4fv(this.uniform('uV2GlacierSources[0]'),renderV2GlacierSources(this.layer,settings.climate));gl.uniform1f(this.uniform('uV2Season'),settings.v2Season??.5);gl.uniform1i(this.uniform('uMaterialZone'),renderV2ZoneUniform(settings.climateZone));
       gl.uniform1ui(this.uniform('uMaterialSeed'),settings.seed>>>0);
       gl.uniform2f(this.uniform('uMaterialClimate'),settings.climate.temperature,settings.climate.precipitation);
       gl.uniform3f(this.uniform('groundEye'),this.camera.x+frame.eye[0],(frame.targetHeight+frame.eye[1])/this.camera.exaggeration,this.camera.y+frame.eye[2]);
