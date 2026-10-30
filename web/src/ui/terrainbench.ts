@@ -607,6 +607,9 @@ async function load3dTile(tile: Terrain3dTile) {
   try { height = isNeuralRefinement(refinement3d) ? await (await ensureRefinement()).tile(tile, tile.pixels) : undefined; }
   catch (error) { if (epoch === texture3dEpoch) reportRefinementError(error); throw error; }
   if (!perspective || epoch !== texture3dEpoch) throw new DOMException('Tuile remplacée', 'AbortError');
+  // The map variant can still be linking (ANGLE/D3D11): wait for it here rather than stall the page in the capture.
+  await gpu.variantReady();
+  if (!perspective || !gpu || epoch !== texture3dEpoch) throw new DOMException('Tuile remplacée', 'AbortError');
   // Sample real neighbours into a gutter, rather than duplicating the edge
   // texel. Adjacent tiles then interpolate the same world-space samples.
   const gutter = 2, pad = tile.width / tile.pixels * gutter;
@@ -849,6 +852,9 @@ async function refresh3dTexture(epoch: number): Promise<void> {
       surface3d = terrain; surface3dWater = waterSource; surface3dVisibility = visibility;
       camera3dChanged();
     }
+    // Same as the tiles: wait for the map variant to link instead of stalling the page in the capture.
+    await gpu.variantReady();
+    if (!perspective || !terrain || !gpu || epoch !== texture3dEpoch) return;
     const canvas = gpu.captureMap(2048, ground);
     const texture = await terrain3dTexture(canvas, terrain, style, settings, fantasyOptions, layers.relief, appliedGroundOverlay(), undefined, settlements.paintingContext);
     if (perspective && epoch === texture3dEpoch) {

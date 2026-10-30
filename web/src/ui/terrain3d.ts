@@ -2,6 +2,7 @@ import { bindForest, deleteForestTextures, forestTexture, forestTextures, RENDER
 import { captureWebGlFrame } from './illustrationDepth';
 import { FOREST_PRELUDE_GLSL, type ForestField, type ForestOccupation } from '../../../rust/bridge/terrainForest';
 import { bindForestBrushes, disposeForestBrushes } from '../render/forestBrushAtlas';
+import { ShaderVariants, specializeShader } from './glVariants';
 import { NEURAL_EARTH_MATERIAL_GLSL } from '../../../rust/bridge/terrainMaterial';
 import { RENDER_V2_GLSL, renderV2GlacierSources } from '../../../rust/bridge/terrainRenderV2';
 import { renderV2ZoneUniform } from '../../../rust/bridge/terrainRenderV2Zones';
@@ -352,7 +353,11 @@ export class Terrain3d {
   private gl: WebGL2RenderingContext;
   private terrainProgram!: WebGLProgram;
   private mapProgram?: WebGLProgram;
-  private groundProgram?: WebGLProgram;
+  /** Ground material variants (glVariants.ts): settings switches as constants, linked in parallel. */
+  private groundVariants!: ShaderVariants;
+  /** Last ground variant drawn: it stands in while the settings' own variant links. */
+  private lastGround?: WebGLProgram;
+  private useMapShader = false;
   private uniformLocations = new WeakMap<WebGLProgram, Map<string, WebGLUniformLocation | null>>();
   private skyProgram!: WebGLProgram;
   private buildings!: UrbanBuildingPass;
@@ -433,7 +438,8 @@ export class Terrain3d {
     const gl = this.gl;
     this.uniformLocations = new WeakMap();
     this.clippedIndices.clear();
-    this.mapProgram = this.groundProgram = undefined;
+    this.mapProgram = this.lastGround = undefined;
+    this.groundVariants?.reset(); this.groundVariants = new ShaderVariants(gl, () => this.request());
     this.selectTerrainProgram(!!this.groundSettings);
     this.skyProgram = program(gl, skyVertex, skyFragment);
     this.buildings?.dispose(); this.buildings = new UrbanBuildingPass(gl, () => this.request());
@@ -462,16 +468,24 @@ export class Terrain3d {
     this.setForest(this.forestField, this.forestOccupation);
   }
   private selectTerrainProgram(procedural: boolean): void {
-    if (this.options.fastMapShader && !procedural) {
-      this.mapProgram ??= program(this.gl, vertexShader, TERRAIN_3D_MAP_FRAGMENT);
-      this.terrainProgram = this.mapProgram;
-    } else {
-      this.groundProgram ??= program(this.gl, vertexShader, fragmentShader);
-      this.terrainProgram = this.groundProgram;
-    }
-    this.canvas.dataset.terrainShader = this.terrainProgram === this.mapProgram ? 'map' : 'procedural';
+    this.useMapShader = !!this.options.fastMapShader && !procedural;
+    if (this.useMapShader) this.mapProgram ??= program(this.gl, vertexShader, TERRAIN_3D_MAP_FRAGMENT);
+    this.canvas.dataset.terrainShader = this.useMapShader ? 'map' : 'procedural';
   }
-  getShaderProfile(): 'map' | 'procedural' { return this.terrainProgram === this.mapProgram ? 'map' : 'procedural'; }
+  getShaderProfile(): 'map' | 'procedural' { return this.useMapShader ? 'map' : 'procedural'; }
+  /** The settings' ground variant once linked; meanwhile the last drawn one, or the variant without
+   * ground material (the projected map, quick to compile), stands in. */
+  private groundShader(settings: Terrain3dGroundSettings | undefined): WebGLProgram {
+    const forest = !!settings && !!this.forest;
+    const v = { groundEnabled: +!!settings, uRenderV2: settings?.renderV2 ?? 0, uForest: +forest, uForestBrushes: +!!settings?.forestBrushes,
+      uHasOccupation: +(forest && !!this.occupation), uHasForestBank: +(forest && !!this.forest?.bank) };
+    const variant = (constants: typeof v, wait: boolean) => this.groundVariants.get(Object.values(constants).join('.'), () => [vertexShader, specializeShader(fragmentShader, constants)], wait);
+    const target = variant(v, false);
+    if (target) return this.lastGround = target;
+    const preview = variant({ groundEnabled: 0, uRenderV2: 0, uForest: 0, uForestBrushes: 0, uHasOccupation: 0, uHasForestBank: 0 }, true);
+    if (!this.lastGround && !preview) throw new Error('Shader terrain 3D indisponible.');
+    return this.lastGround ?? preview!;
+  }
   /** Uniform locations are constant for one linked program and GL context.
    * Inactive uniforms (null in the map shader) are cached as well. */
   private uniform(name: string, shader = this.terrainProgram): WebGLUniformLocation | null {
@@ -1300,6 +1314,7 @@ export class Terrain3d {
     gl.viewport(0, 0, w, h); gl.clearDepth(1); gl.clear(gl.DEPTH_BUFFER_BIT);
     gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE); gl.bindVertexArray(null);
     gl.useProgram(this.skyProgram); gl.uniform1f(this.uniform('height', this.skyProgram), h); gl.drawArrays(gl.TRIANGLES, 0, 3);
+    this.terrainProgram = this.useMapShader ? this.mapProgram! : this.groundShader(this.groundSettings);
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.useProgram(this.terrainProgram);
     gl.uniformMatrix4fv(this.uniform('matrix'), false, frame.matrix);
     gl.uniform1f(this.uniform('exaggeration'), this.camera.exaggeration);
@@ -1436,7 +1451,7 @@ export class Terrain3d {
     this.buildings.dispose(); this.buildingScene = undefined;
     this.buildingGround = new UrbanBuildingGround(); this.mergedOccupation = this.mergedOccupationSource = undefined; this.mergedOccupationScene = undefined;
     gl.deleteBuffer(this.indices); gl.deleteBuffer(this.seams); gl.deleteTexture(this.material);gl.deleteTexture(this.macroTexture); gl.deleteTexture(this.empty);
-    if (this.mapProgram) gl.deleteProgram(this.mapProgram); if (this.groundProgram) gl.deleteProgram(this.groundProgram); gl.deleteProgram(this.skyProgram);
+    if (this.mapProgram) gl.deleteProgram(this.mapProgram); this.groundVariants.reset(true); gl.deleteProgram(this.skyProgram);
     for (const geometry of this.clippedIndices.values()) gl.deleteBuffer(geometry.buffer);
     this.clippedIndices.clear();
     deleteForestTextures(gl, this.forest);

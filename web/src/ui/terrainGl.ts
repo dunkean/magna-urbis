@@ -1,3 +1,4 @@
+import { ShaderVariants, finishProgram, specializeShader, startProgram } from './glVariants';
 import { NEURAL_EARTH_MATERIAL_GLSL } from '../../../rust/bridge/terrainMaterial';
 import { RENDER_3D_MATERIAL_GLSL } from '../../../rust/bridge/terrainMaterial3d';
 import { FOREST_GLSL, FOREST_PRELUDE_GLSL, type ForestField, type ForestOccupation } from '../../../rust/bridge/terrainForest';
@@ -478,56 +479,27 @@ uniform sampler2D uLayer;
 out vec4 outColor;
 void main() { outColor = texelFetch(uLayer, ivec2(gl_FragCoord.xy), 0); }`;
 
-/** Starts compiling and linking without reading any status, so KHR_parallel_shader_compile can work off the main thread. */
-function startCompile(gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgram {
-  const program = gl.createProgram()!;
-  for (const [type, source] of [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]] as const) {
-    const shader = gl.createShader(type)!;
-    gl.shaderSource(shader, source); gl.compileShader(shader);
-    gl.attachShader(program, shader);
-  }
-  gl.linkProgram(program);
-  return program;
-}
-/** Waits for the link (blocking) and reports the shader log on failure. */
-function finishCompile(gl: WebGL2RenderingContext, program: WebGLProgram): WebGLProgram {
-  if (gl.getProgramParameter(program, gl.LINK_STATUS)) return program;
-  const shaders = (gl.getAttachedShaders(program) ?? []).map(shader => gl.getShaderInfoLog(shader)).filter(Boolean).join('\n');
-  throw new Error(`Programme : ${shaders || gl.getProgramInfoLog(program)}`);
-}
-const compile = (gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgram => finishCompile(gl, startCompile(gl, vs, fs));
+const compile = (gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgram => finishProgram(gl, startProgram(gl, vs, fs));
 
-/** Terrain program variant: the map shader holds every look, and ANGLE/D3D11 (FXC) needs minutes to compile
- * all of it. Each variant fixes the look's mode, Render v2 number and forest as constants, so FXC drops the
- * other looks, and keeps constant-bound loops as loops (a uniform zero in the bound): unrolling the forest
- * crown loops alone cost it minutes. Measured with FXC (link + first draw): 1.5 s preview,
- * about 7 s natural, 50 s Render v2, 2.5 min Render v2 with forest, against a page that never loaded. */
-interface TerrainVariant { mode: number; v2: number; forest: boolean }
-const PREVIEW_VARIANT: TerrainVariant = { mode: 0, v2: 0, forest: false };
-const variantKey = (v: TerrainVariant): string => `${v.mode}.${v.v2}.${+v.forest}`;
-function terrainFragment(v: TerrainVariant): string {
-  const swap = (fs: string, from: string, to: string): string => { if (fs.split(from).length !== 2) throw new Error(`Terrain shader: ${from} not found once`); return fs.replace(from, to); };
-  let fs = swap(TERRAIN_FS, '#version 300 es\n', `#version 300 es\n#define NATURAL ${v.mode >= 2 ? 1 : 0}\n`);
-  fs = swap(fs, 'uniform int uMode;', `const int uMode=${v.mode};`);
-  fs = swap(fs, 'uniform int uRenderV2;', `const int uRenderV2=${v.v2};`);
-  fs = swap(fs, 'uniform int uForest;', `const int uForest=${v.forest ? 1 : 0};`);
-  fs = swap(fs, 'out vec4 outColor;', 'out vec4 outColor;\nuniform int uLoopZero;');   // never set: always 0
-  // A loop writing an indexed array element (e.g. q.g[j*3+i]=…) must stay unrollable: FXC then refuses the pixel executable.
-  return fs.replace(/(for\s*\(\s*int\s+\w+\s*=\s*-?\d+\s*;\s*\w+\s*<=?\s*)(\d+)\s*;/g, (loop: string, head: string, bound: string, at: number, all: string) =>
-    /\]\s*=[^=]/.test(all.slice(at, all.indexOf('\n', at))) ? loop : `${head}${bound}+uLoopZero;`);
-}
+/** Map program variant (glVariants.ts): the look's mode, Render v2 number and forest data as constants.
+ * Measured with FXC (link + first draw): 1.5 s preview, about 7 s natural, 50 s Render v2, 70 s with
+ * forest; the full shader never loaded. */
+interface TerrainVariant { mode: number; v2: number; forest: boolean; brushes: boolean; occupation: boolean; bank: boolean }
+const PREVIEW_VARIANT: TerrainVariant = { mode: 0, v2: 0, forest: false, brushes: false, occupation: false, bank: false };
+const variantKey = (v: TerrainVariant): string => `${v.mode}.${v.v2}.${+v.forest}${+v.brushes}${+v.occupation}${+v.bank}`;
+const terrainFragment = (v: TerrainVariant): string => specializeShader(TERRAIN_FS,
+  { uMode: v.mode, uRenderV2: v.v2, uForest: +v.forest, uForestBrushes: +v.brushes, uHasOccupation: +v.occupation, uHasForestBank: +v.bank },
+  { NATURAL: v.mode >= 2 ? 1 : 0 });
 const lookMode = (look: TerrainLook): number => look.style === 'copernicus' ? 1 : look.layers.hypsometry && isRender3dStyle(look.style) ? 3 : look.style === 'render' && look.layers.hypsometry ? 2 : 0;
 
 interface GpuLayer { layer: HeightLayer; levels: Float32Array[]; texture: WebGLTexture; cave?: WebGLTexture; alpha: number; fadeStart: number }
 
 export class TerrainGl {
   readonly gl: WebGL2RenderingContext;
-  private terrain: WebGLProgram; private river: WebGLProgram; private composite: WebGLProgram;
-  /** Terrain variants by key, linked or still linking; `linked` holds the ones whose status was read. */
-  private variants = new Map<string, WebGLProgram>();
-  private linked = new Set<WebGLProgram>();
-  private parallel: { COMPLETION_STATUS_KHR: number } | null = null;
-  private compilePoll = 0;
+  private terrain!: WebGLProgram; private river: WebGLProgram; private composite: WebGLProgram;
+  private variants: ShaderVariants;
+  /** Last terrain variant drawn: it stands in while the look's own variant links. */
+  private lastTerrain?: WebGLProgram;
   private capturing = false;
   /** Painted water of the `render` style (renderWaterShader.ts), compiled on first use. */
   private renderWater?: { program: WebGLProgram; u: Map<string, WebGLUniformLocation | null> };
@@ -566,8 +538,8 @@ export class TerrainGl {
     const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, preserveDrawingBuffer: false, powerPreference: 'high-performance' });
     if (!gl) throw new Error('WebGL2 indisponible');
     this.gl = gl;
-    this.parallel = gl.getExtension('KHR_parallel_shader_compile');
-    this.terrain = this.startVariant(PREVIEW_VARIANT);
+    this.variants = new ShaderVariants(gl, () => this.request());
+    this.terrainVariant(PREVIEW_VARIANT, false);   // starts linking the preview
     this.river = compile(gl, RIVER_VS, RIVER_FS);
     this.composite = compile(gl, COMPOSITE_VS, COMPOSITE_FS);
     this.riverBuffer = gl.createBuffer()!;
@@ -587,26 +559,25 @@ export class TerrainGl {
     if (!cache.has(name)) cache.set(name, this.gl.getUniformLocation(this.terrain, name));
     return cache.get(name)!;
   }
-  private startVariant(v: TerrainVariant): WebGLProgram {
-    const key = variantKey(v);
-    let program = this.variants.get(key);
-    if (!program) this.variants.set(key, program = startCompile(this.gl, TERRAIN_VS, terrainFragment(v)));
-    return program;
+  private terrainVariant(v: TerrainVariant, wait: boolean): WebGLProgram | undefined {
+    return this.variants.get(variantKey(v), () => [TERRAIN_VS, terrainFragment(v)], wait);
   }
-  /** The look's variant once linked. While it links in parallel the preview variant stands in
-   * (undefined if that one is not ready either) and a redraw is polled; captures wait for the link. */
+  private lookVariant(look: TerrainLook): TerrainVariant {
+    const mode = lookMode(look), forest = mode === 3 && !!this.forest;
+    return { mode, v2: renderV2Number(look.style), forest, brushes: look.style === 'render3d-brush' && mode === 3,
+      occupation: forest && !!this.occupation, bank: forest && !!this.forest?.bank };
+  }
+  /** The look's variant once linked; meanwhile the last drawn variant, or the preview, stands in
+   * (undefined if none is linked yet). Captures wait for the link. */
   private terrainProgram(look: TerrainLook, wait: boolean): WebGLProgram | undefined {
-    const gl = this.gl, mode = lookMode(look);
-    const ready = (program: WebGLProgram, block: boolean): boolean => {
-      if (this.linked.has(program)) return true;
-      if (!block && this.parallel && !gl.getProgramParameter(program, this.parallel.COMPLETION_STATUS_KHR)) return false;
-      finishCompile(gl, program); this.linked.add(program); return true;
-    };
-    const target = this.startVariant({ mode, v2: renderV2Number(look.style), forest: mode === 3 && !!this.forest });
-    if (ready(target, wait)) return target;
-    if (!this.compilePoll) this.compilePoll = window.setTimeout(() => { this.compilePoll = 0; this.request(); }, 100);
-    const preview = this.startVariant(PREVIEW_VARIANT);
-    return ready(preview, false) ? preview : undefined;
+    const target = this.terrainVariant(this.lookVariant(look), wait);
+    if (target) return this.lastTerrain = target;
+    return this.lastTerrain ?? this.terrainVariant(PREVIEW_VARIANT, false);
+  }
+  /** Resolves once the current look's variant is linked, without blocking: callers that can wait
+   * (3D material tiles) capture after it instead of stalling the page on the link. */
+  async variantReady(): Promise<void> {
+    while (this.look && !this.disposed && !this.terrainVariant(this.lookVariant(this.look), false)) await new Promise(resolve => setTimeout(resolve, 100));
   }
   private riverUniform(name: string): WebGLUniformLocation | null {
     if (!this.riverLocations.has(name)) this.riverLocations.set(name, this.gl.getUniformLocation(this.river, name));
@@ -1087,7 +1058,7 @@ export class TerrainGl {
 
   dispose(): void {
     if (this.disposed) return;
-    this.disposed = true; cancelAnimationFrame(this.frame); this.frame = 0; clearTimeout(this.compilePoll);
+    this.disposed = true; cancelAnimationFrame(this.frame); this.frame = 0; this.variants.reset(true);
     const gl = this.gl;
     this.release(this.base); this.details.forEach(d => this.release(d));
     this.enhanced.forEach(d => this.release(d));
@@ -1103,7 +1074,6 @@ export class TerrainGl {
     if (this.waterTarget) { gl.deleteFramebuffer(this.waterTarget.framebuffer); gl.deleteTexture(this.waterTarget.texture); }
     if (this.retainedWaterTexture) gl.deleteTexture(this.retainedWaterTexture);
     if (this.captureTarget) { gl.deleteFramebuffer(this.captureTarget.framebuffer); gl.deleteTexture(this.captureTarget.texture); }
-    for (const program of this.variants.values()) gl.deleteProgram(program);
     gl.deleteProgram(this.river); gl.deleteProgram(this.composite);
     if (this.renderWater) gl.deleteProgram(this.renderWater.program);
   }
