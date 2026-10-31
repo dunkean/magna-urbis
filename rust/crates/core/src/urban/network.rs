@@ -9,6 +9,8 @@ pub(super) use site_options::{clean_options, narrow_options};
 
 type Key = (i64, i64);
 const EPS: f64 = 1e-6;
+/// Ways whose ends are structures (decks, quays, stairs, wall lanes), never trimmed as loose ends.
+const CROSSINGS: [&str; 12] = ["bridge", "ford", "causeway", "quay", "pier", "mole", "landing", "boardwalk", "walkway", "stairs", "port-stairs", "wall-lane"];
 
 /// A retained connection without built frontage is a field/access path.
 pub(super) fn downgrade_path(s: &mut Street) {
@@ -1314,12 +1316,22 @@ fn width(s: &Street, i: usize) -> f64 {
 pub(super) fn rank_widths(base: [f64; 5], population: u32) -> [f64; 5] {
     let size = (population as f64 / 5000.0).max(1.0).log10();
     let lift = [0.45, 0.35, 0.15, 0.0, 0.0];
-    let mut table: [f64; 5] = std::array::from_fn(|r| base[r] * (1.0 + lift[r] * size));
+    // Below 5 000 inhabitants the major ranks narrow along the same log
+    // curve (a 500-soul village's main street is a lane widened, not a town
+    // arterial): 0 at 5 000, full at 200; lanes and paths barely change.
+    let small = ((5000.0 / (population.max(1) as f64)).ln() / 25f64.ln()).clamp(0.0, 1.0);
+    let shrink = [0.36, 0.36, 0.28, 0.12, 0.0];
+    let mut table: [f64; 5] = std::array::from_fn(|r| base[r] * (1.0 + lift[r] * size) * (1.0 - shrink[r] * small));
     for r in (0..4).rev() {
         table[r] = table[r].max(table[r + 1]);
     }
     table[0] = table[0].min(20.0);
     table
+}
+/// The rank widths of a tissue (`widthByRank` × `widthScale`) for a settlement of this size.
+pub(super) fn town_table(m: &super::Morph, population: u32) -> [f64; 5] {
+    let base: [f64; 5] = std::array::from_fn(|r| m.value["widthByRank"][r].as_f64().unwrap_or(3.0) * m.number_or("widthScale", 1.0));
+    rank_widths(base, population)
 }
 /// Street land of a semantic role, relative to its rank width: the full
 /// extra (a market street half again as wide, a processional way) belongs to a
@@ -1361,6 +1373,7 @@ pub(super) fn hierarchy(
     population: u32,
     base: [f64; 5],
     axis: bool,
+    built: &[super::Shape],
 ) {
     use std::cmp::Reverse;
     use std::collections::BinaryHeap;
@@ -1555,6 +1568,91 @@ pub(super) fn hierarchy(
         flush(run.take(), &mut result);
     }
     *streets = result;
+    town_roads(streets, built, table[arterial]);
+}
+
+/// Invariant (« dosage »): inside the settlement a regional road (or a
+/// bridge approach) is its through street, never narrower than the town's
+/// arterial rank, so no lane is wider than the road it leaves; in the fields it
+/// keeps its own class width, the one the regional layer draws. The change is a
+/// taper of at most 1 m per 8 m on the narrow side, ending at the first block.
+pub(super) fn town_roads(streets: &mut [Street], built: &[super::Shape], arterial: f64) {
+    const SLOPE: f64 = 1.0 / 8.0;
+    const STEP: f64 = 4.0;
+    if built.is_empty() {
+        return;
+    }
+    let boxes: Vec<(f64, f64, f64, f64)> = built
+        .iter()
+        .map(|s| {
+            s.outer.iter().fold((f64::MAX, f64::MAX, f64::MIN, f64::MIN), |b, p| {
+                (b.0.min(p.x), b.1.min(p.y), b.2.max(p.x), b.3.max(p.y))
+            })
+        })
+        .collect();
+    // A vertex is in town inside a block or within its half street of one.
+    let in_town = |p: Point, reach: f64| {
+        built.iter().zip(&boxes).any(|(s, b)| {
+            p.x >= b.0 - reach && p.x <= b.2 + reach && p.y >= b.1 - reach && p.y <= b.3 + reach
+                && (super::geometry::contains(s, p)
+                    || (0..s.outer.len()).any(|i| {
+                        super::geometry::distance(p, s.outer[i], s.outer[(i + 1) % s.outer.len()]).0 <= reach
+                    }))
+        })
+    };
+    for s in streets.iter_mut().filter(|s| matches!(s.role.as_str(), "regional" | "approach")) {
+        if s.path.len() < 2 || s.widths.iter().all(|&w| w >= arterial - 0.05) {
+            continue;
+        }
+        // Dense stations (original vertices kept) so the taper is metric.
+        let mut path = vec![s.path[0]];
+        let mut own = vec![width(s, 0)];
+        let mut original = vec![true];
+        for i in 1..s.path.len() {
+            let (a, b) = (s.path[i - 1], s.path[i]);
+            let n = (distance(a, b) / STEP).ceil().max(1.0) as usize;
+            for k in 1..=n {
+                let t = k as f64 / n as f64;
+                path.push(lerp(a, b, t));
+                own.push(width(s, i - 1) * (1.0 - t) + width(s, i) * t);
+                original.push(k == n);
+            }
+        }
+        let mut target: Vec<f64> = path
+            .iter()
+            .zip(&own)
+            .map(|(&p, &w)| if in_town(p, arterial * 0.5 + 3.0) { w.max(arterial) } else { w })
+            .collect();
+        if target.iter().zip(&own).all(|(t, w)| (t - w).abs() < 0.05) {
+            continue;
+        }
+        let stations: Vec<f64> = std::iter::once(0.0)
+            .chain(path.windows(2).scan(0.0, |d, p| {
+                *d += distance(p[0], p[1]);
+                Some(*d)
+            }))
+            .collect();
+        for i in 1..target.len() {
+            target[i] = target[i].max(target[i - 1] - SLOPE * (stations[i] - stations[i - 1]));
+        }
+        for i in (0..target.len() - 1).rev() {
+            target[i] = target[i].max(target[i + 1] - SLOPE * (stations[i + 1] - stations[i]));
+        }
+        // Keep the original vertices and the taper's breaks only.
+        let mut keep = vec![];
+        for i in 0..path.len() {
+            let last = keep.last().copied();
+            let kink = i > 0 && i + 1 < path.len() && {
+                let (a, b) = (stations[i] - stations[i - 1], stations[i + 1] - stations[i]);
+                ((target[i] - target[i - 1]) / a.max(1e-9) - (target[i + 1] - target[i]) / b.max(1e-9)).abs() > 1e-3
+            };
+            if original[i] || i == 0 || kink || last.is_none() {
+                keep.push(i);
+            }
+        }
+        s.path = keep.iter().map(|&i| path[i]).collect();
+        s.widths = keep.iter().map(|&i| (target[i] * 100.0).round() / 100.0).collect();
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -2154,6 +2252,82 @@ fn drop_stubs(streets: &mut Vec<Street>) {
             break;
         }
     }
+}
+
+/// Invariant (clean ends), asserted on the final network once every stage that
+/// adds or trims streets (access lanes, trim, walls, regional spans) has run.
+/// It only shortens or removes (the blocks are cut): a loose tail running past its last junction by no
+/// more than it takes to leave that junction's widest road (half its width,
+/// half its own, 1.5 m) is cut back to the junction; a spur that never leaves
+/// its host road that way is removed. Protected roads, crossings, private
+/// access ways and gate passages (`keep`) keep their ends. Returns whether
+/// anything changed.
+pub(super) fn polish_ends(streets: &mut Vec<Street>, keep: &[Point]) -> bool {
+    let mut changed = false;
+    let kept = |p: Point| keep.iter().any(|&g| distance(g, p) < 1.0);
+    for _ in 0..3 {
+        let graph = Graph::new(streets);
+        let mut wide: BTreeMap<Key, f64> = BTreeMap::new();
+        for s in streets.iter() {
+            for (i, &p) in s.path.iter().enumerate() {
+                let w = wide.entry(key(p)).or_insert(0.0);
+                *w = w.max(width(s, i));
+            }
+        }
+        let mut pass = false;
+        // A bridge approach is protected, but one left with a loose end is the
+        // remnant of a deck moved to its abutments (`snap_to_abutments`).
+        let fixed = |s: &Street| (protected(s) && s.role != "approach") || private(s) || CROSSINGS.contains(&s.role.as_str()) || s.path.len() < 2;
+        for s in streets.iter_mut().filter(|s| !fixed(s)) {
+            for last in [false, true] {
+                if last {
+                    s.path.reverse();
+                    s.widths.reverse();
+                }
+                // From the loose end (index 0) to the first junction.
+                if graph.degree(s.path[0]) == 1
+                    && !kept(s.path[0])
+                    && let Some(j) = (1..s.path.len()).find(|&i| graph.degree(s.path[i]) >= 3)
+                    && j + 1 < s.path.len()
+                {
+                    let tail: f64 = s.path[..=j].windows(2).map(|p| distance(p[0], p[1])).sum();
+                    if tail <= 0.5 * wide[&key(s.path[j])] + 0.5 * width(s, j) + 1.5 {
+                        s.path.drain(..j);
+                        let n = s.widths.len().min(j);
+                        s.widths.drain(..n);
+                        pass = true;
+                    }
+                }
+                if last {
+                    s.path.reverse();
+                    s.widths.reverse();
+                }
+            }
+        }
+        let graph = Graph::new(streets);
+        let before = streets.len();
+        streets.retain(|s| {
+            if fixed(s) || s.path.iter().any(|&p| kept(p)) {
+                return true;
+            }
+            let n = s.path.len();
+            let length: f64 = s.path.windows(2).map(|p| distance(p[0], p[1])).sum();
+            let (a, b) = (graph.degree(s.path[0]), graph.degree(s.path[n - 1]));
+            let host = match (a, b) {
+                (1, 1) => return length >= width(s, 0),
+                (1, _) => wide.get(&key(s.path[n - 1])).copied().unwrap_or(0.0),
+                (_, 1) => wide.get(&key(s.path[0])).copied().unwrap_or(0.0),
+                _ => return true,
+            };
+            length > 0.5 * host + 0.5 * width(s, 0) + 1.5 && !(s.role == "approach" && length < 8.0)
+        });
+        pass |= streets.len() != before;
+        changed |= pass;
+        if !pass {
+            break;
+        }
+    }
+    changed
 }
 
 /// Shorten a loose outer end to a useful 16 m access spur after its last real

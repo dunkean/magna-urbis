@@ -6,14 +6,19 @@ pub(super) fn different_level(surface: Surface<'_>, a: Point, b: Point) -> bool 
         || !routing::segment_clear(surface, a, b, 0.3)
 }
 
+/// Share of the sustained parallel runs collapsed (`parallelMerge`, the old toggle forcing all).
+fn merge_share(cfg: &LayoutConfig) -> f64 {
+    if cfg.merge_parallel_streets { 1.0 } else { cfg.parallel_merge.clamp(0.0, 1.0) }
+}
+
 pub(in crate::urban) fn clean_options(streets: &mut Vec<Street>, center: Point, radius: f64,
     fortified: bool, centers: &[Point], cfg: &LayoutConfig, surface: Surface<'_>) -> Vec<String> {
-    clean_terrain(streets, center, radius, fortified, centers, cfg.merge_parallel_streets.then_some(surface))
+    clean_terrain(streets, center, radius, fortified, centers, (merge_share(cfg) > 0.0).then_some(surface))
 }
 
 pub(in crate::urban) fn narrow_options(streets: &mut Vec<Street>, enclosures: &[Enclosure], radius: f64,
     cfg: &LayoutConfig, surface: Surface<'_>) -> bool {
-    if !cfg.merge_parallel_streets { return drop_narrow_doubles(streets, enclosures, radius); }
+    if merge_share(cfg) <= 0.0 { return drop_narrow_doubles(streets, enclosures, radius); }
     let walls: Vec<_> = enclosures.iter().flat_map(|e| e.path.windows(2).map(|w| (w[0], w[1]))).collect();
     let moved = merge_partial(streets, &walls, surface, cfg);
     if moved { planarize(streets, radius); }
@@ -30,6 +35,10 @@ fn merge_partial(streets: &mut [Street], walls: &[(Point, Point)], surface: Surf
     const CELL: f64 = 32.0;
     let original = streets.to_vec();
     let priority = |i: usize| (original[i].rank, std::cmp::Reverse((original[i].widths.iter().copied().fold(0.0, f64::max) * 1000.0) as i64), i);
+    // Dosage: a street's runs are collapsed when its own draw falls under the share,
+    // so the same street keeps or loses its doubles whatever else changes.
+    let share = merge_share(cfg);
+    let drawn = |s: &Street| share >= 1.0 || s.path.first().is_some_and(|p| crate::rng::Rng::new(&format!("parallel:{:.1},{:.1}", p.x, p.y)).float() < share);
     let mut buckets: BTreeMap<(i64, i64), Vec<(usize, usize)>> = BTreeMap::new();
     let mut joints: BTreeMap<Key, Vec<usize>> = BTreeMap::new();
     for (i, s) in original.iter().enumerate() {
@@ -50,7 +59,7 @@ fn merge_partial(streets: &mut [Street], walls: &[(Point, Point)], surface: Surf
     let mut altered = BTreeSet::new();
     for i in order {
         let s = &original[i];
-        if protected(s) || private(s) || matches!(s.role.as_str(), "quay" | "stairs") || altered.contains(&i) { continue; }
+        if protected(s) || private(s) || matches!(s.role.as_str(), "quay" | "stairs") || altered.contains(&i) || !drawn(s) { continue; }
         // (position, width, original vertex, projected point, survivor).
         let mut samples = vec![];
         for (k, w) in s.path.windows(2).enumerate() {

@@ -827,6 +827,10 @@ pub(super) fn lay_out(
         })
         .flat_map(|r| g::ribbon(&r.path, &r.widths))
         .collect();
+    // A road through a village or hamlet is its street: never narrower than
+    // the place's through rank (`network::town_roads` widens it the same way).
+    let table = super::network::town_table(morph, site.population);
+    let through = if kind == Kind::StreetVillage { table[1] } else { table[2] };
     let road_half = |n: &Near| {
         roads[n.road]
             .widths
@@ -834,6 +838,7 @@ pub(super) fn lay_out(
             .copied()
             .fold(0.0_f64, f64::max)
             .max(3.0)
+            .max(if matches!(kind, Kind::Hamlet | Kind::StreetVillage) { through } else { 0.0 })
             * 0.5
             + 0.05
     };
@@ -863,6 +868,9 @@ pub(super) fn lay_out(
         .flat_map(|r| macroplan::clip(r, &window))
         .collect();
     streets.extend(plan.streets);
+    if matches!(kind, Kind::Hamlet | Kind::StreetVillage) {
+        super::network::town_roads(&mut streets, &shapes, through);
+    }
     let area: f64 = shapes.iter().map(g::area).sum();
     let zone = "village".to_string();
     let recipe = if cfg.recipe != "auto" {
@@ -1131,7 +1139,8 @@ fn linear(
                 .map_or(Point { x: 1.0, y: 0.0 }, |n| n.tangent);
             let a = at(c, along, -length * 0.5);
             let b = at(c, along, length * 0.5);
-            let width: f64 = if village { 5.0 } else { 3.5 };
+            let table = super::network::town_table(morph, site.population);
+            let width: f64 = if village { table[1] } else { table[3] };
             let mut path = match near {
                 Some(n) => {
                     let start = if dist(n.point, a) < dist(n.point, b) {
@@ -1170,6 +1179,7 @@ fn linear(
     let mut blocks: Vec<(Shape, &'static str)> = vec![];
     if village {
         // Cross-lanes every 110-200 m lead from the street to the fields.
+        let lane = super::network::town_table(morph, site.population)[3];
         let mut cuts = vec![];
         let mut s = rng.range(90.0, 160.0);
         while s < total - 60.0 {
@@ -1177,7 +1187,7 @@ fn linear(
             let n = perp(d);
             for sign in [-1.0, 1.0] {
                 let end = at(p, n, sign * (half + depth + 10.0));
-                cuts.push(street(vec![p, end], 3.5, 3, "lane"));
+                cuts.push(street(vec![p, end], lane, 3, "lane"));
             }
             s += rng.range(110.0, 200.0);
         }

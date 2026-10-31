@@ -16,6 +16,7 @@ import { CityGround, boardwalkWidth, isBoardwalk, type CityGroundRaster } from '
 import { buildingRoof, pieceShadows, pieceVolumes, readMassing, stiltDeck, stiltSupports, roofLight as roofLight3 } from './cityMassing';
 import { drawGardenDetails } from './readableGardens';
 import { polygonCentroid as shapeRingCenter } from '../gen/core/geom';
+import { roadSurface } from './roadSurface';
 
 export interface Box { minX: number; minY: number; maxX: number; maxY: number }
 export type CityView = 'tissue' | 'uses' | 'parcels' | 'buildings' | 'roles';
@@ -394,6 +395,10 @@ class Batches {
 }
 const STREET_MIN_PX = [3, 2.4, 1.6, 1.1, 0.8];
 const CROSSINGS = new Set(['bridge', 'causeway', 'ford', 'pier', 'boardwalk', 'walkway']);
+/** Street surface rings per scene, by streets, widths and edges drawn (a few camera steps). */
+const SURFACE_CACHE = new WeakMap<object, Map<string, { casing: { street: number; path: Path2D }[]; fill: { street: number; path: Path2D }[] }>>();
+/** Stroked even near and close: square-ended structures and stepped ways. */
+const SURFACE_SKIP = new Set(['quay', 'mole', 'stairs', 'port-stairs', 'landing']);
 function streetPaint(role: string, rank: number, palette: CityPalette): { fill: string; casing: string; dash?: boolean } {
   if (role === 'track') { const ink = palette === 'ink' ? '#776348' : '#a58e65'; return { fill: ink, casing: ink }; }
   if (role === 'mole') return { fill: '#d3cab0', casing: '#2b2015' };   // stone port works: dark outline, legible zoomed out
@@ -568,9 +573,16 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
       const k = order(s), list = buckets.get(k); if (list) list.push(s); else buckets.set(k, [s]);
     }
     const visible = [...buckets.keys()].sort((a, b) => b - a).flatMap(k => buckets.get(k)!);
-    const casing = new Batches(), fill = new Batches(), marks = new Batches(), softStreets = (o.groundBlend ?? isBlended()) && !tex;
+    const casing = new Batches(), under = new Batches(), surface = new Batches(), over = new Batches(), marks = new Batches(), softStreets = (o.groundBlend ?? isBlended()) && !tex;
+    // Near and close: streets are their ground surface (roadSurface.ts) — square ends at
+    // junctions, curb returns, tapers — filled once per style, so nothing shows twice.
+    // Decks, quays, fords, dashed tracks and stairs keep their stroked art.
+    const surfaced: { s: CityStreet; w: number; edge: number; casing?: Style; fill: Style }[] = [];
+    const surfaceOk = (s: CityStreet, dash?: boolean): boolean => atLeast(lod, 'near') && !dash && !CROSSINGS.has(s.role) && !SURFACE_SKIP.has(s.role);
     for (const s of visible) {
       stats.streets++;
+      // Stroked ways under the surfaced streets, crossings over them.
+      const fill = CROSSINGS.has(s.role) ? over : under;
       const paint = streetPaint(s.role, s.rank, palette);
       paint.fill = (s.role === 'track' ? o.colors?.track : o.colors?.road) ?? paint.fill; paint.casing = o.colors?.roadEdge ?? paint.casing;
       const path = s.path ??= linePath(s.street.path);
@@ -578,14 +590,18 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
       if (softStreets && !STRUCTURE_ROLES.has(s.role)) {
         // Blended: earth wash at rank-decaying opacity and a faint soft edge instead of the dark casing.
         const soft = softStreet(s.role, s.rank, tone); soft.fill = (s.role === 'track' ? o.colors?.track : o.colors?.road) ?? soft.fill; soft.edge = o.colors?.roadEdge ?? soft.edge;
-        if (lod !== 'far') casing.add({ stroke: soft.edge, width: w2 + 2 * px(lod === 'mid' ? 0.8 : 1.1), alpha: soft.edgeAlpha, cap: 'round' }, path);
+        const edge = px(lod === 'mid' ? 0.8 : 1.1);
+        if (surfaceOk(s)) { surfaced.push({ s, w, edge, casing: lod !== 'far' ? { fill: soft.edge, alpha: soft.edgeAlpha } : undefined, fill: { fill: soft.fill, alpha: soft.alpha } }); continue; }
+        if (lod !== 'far') casing.add({ stroke: soft.edge, width: w2 + 2 * edge, alpha: soft.edgeAlpha, cap: 'round' }, path);
         fill.add({ stroke: soft.fill, width: w2, alpha: soft.alpha, cap: 'round' }, path);
         continue;
       }
       const edge = s.role === 'bridge' || s.role === 'quay' || s.role === 'mole' ? Math.max(1.2, px(1.4)) : lod === 'far' ? 0 : px(lod === 'mid' ? 0.7 : 0.9);
       const cap = s.role === 'bridge' || s.role === 'quay' || s.role === 'mole' ? 'butt' : 'round';
+      const body = (!(s.role === 'track' ? o.colors?.track : o.colors?.road) && tex && pat(streetLayer(s.role, s.rank))) || paint.fill;
+      if (surfaceOk(s, paint.dash)) { surfaced.push({ s, w, edge, casing: edge > 0 ? { fill: paint.casing } : undefined, fill: { fill: body } }); continue; }
       if (edge > 0) casing.add({ stroke: paint.casing, width: w2 + 2 * edge, dash: paint.dash ? [px(4), px(2)] : undefined, cap }, path);
-      fill.add({ stroke: (!(s.role === 'track' ? o.colors?.track : o.colors?.road) && tex && pat(streetLayer(s.role, s.rank))) || paint.fill, width: w2, cap }, path);
+      fill.add({ stroke: body, width: w2, cap }, path);
       if (s.role === 'bridge' && w2 > px(3.5)) {
         const rails = new Path2D(), offset = w2 / 2 - Math.max(0.4, px(0.8));
         for (let i = 1; i < s.street.path.length; i++) {
@@ -597,7 +613,23 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
       }
       if ((s.role === 'stairs' || s.role === 'port-stairs') && lod === 'close') marks.add({ stroke: '#705d45', width: px(0.6) }, stairMarks(s.street.path, s.width));
     }
-    casing.flush(ctx); fill.flush(ctx); marks.flush(ctx);
+    if (surfaced.length) {
+      const streets = surfaced.map(x => x.s.street), ring = (r: readonly Point[]): Path2D => { const p = new Path2D(); p.moveTo(r[0].x, r[0].y); for (let i = 1; i < r.length; i++) p.lineTo(r[i].x, r[i].y); p.closePath(); return p; };
+      const tolerance = Math.max(0.05, 0.35 * px(1)), minWidth = (i: number): number => surfaced[i].w;
+      // Same streets, widths and edges (a camera move within one zoom step): same rings.
+      const key = `${tolerance.toFixed(3)}|${surfaced.map(x => `${x.s.layout}.${x.s.index}:${x.w.toFixed(2)}:${x.casing ? x.edge.toFixed(2) : '-'}`).join(',')}`;
+      let rings = SURFACE_CACHE.get(scene)?.get(key);
+      if (!rings) {
+        const cas = surfaced.some(x => x.casing) ? roadSurface(streets, { extra: i => surfaced[i].casing ? surfaced[i].edge : 0, minWidth, tolerance }) : [];
+        rings = { casing: cas.map(p => ({ street: p.street, path: ring(p.ring) })), fill: roadSurface(streets, { minWidth, tolerance }).map(p => ({ street: p.street, path: ring(p.ring) })) };
+        let memo = SURFACE_CACHE.get(scene); if (!memo) SURFACE_CACHE.set(scene, memo = new Map());
+        if (memo.size >= 8) memo.delete(memo.keys().next().value!);
+        memo.set(key, rings);
+      }
+      for (const p of rings.casing) { const st = surfaced[p.street].casing; if (st) casing.add(st, p.path); }
+      for (const p of rings.fill) surface.add(surfaced[p.street].fill, p.path);
+    }
+    casing.flush(ctx); under.flush(ctx); surface.flush(ctx); over.flush(ctx); marks.flush(ctx);
   }
 
   if (layers.lotEnclosures !== false) drawLotEnclosures(ctx, scene, { mpp, lod, palette }); // enclosures hook

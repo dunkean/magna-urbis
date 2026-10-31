@@ -196,7 +196,7 @@ uniform highp sampler2DArray uAlbedo;
 uniform float uExt[32];
 #endif
 uniform float uMpp, uDevPx;
-uniform int uPass, uDashKind, uBridgeDeck;
+uniform int uPass, uDashKind, uBridgeDeck, uSingle;
 out vec4 outColor;
 float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 float vnoise(vec2 p) {
@@ -284,6 +284,9 @@ void main() {
     float on = uDashKind == 2 ? max(1.3, 2.0 * uMpp) : 4.0 * uMpp, off = uDashKind == 2 ? max(0.5, uMpp) : 2.0 * uMpp;
     if (mod(vAlong, on + off) > on) a = 0.0;
   }
+  // Single coverage (translucent streets under a stencil): a fragment claims its samples
+  // whole, so overlapping segments of one class never blend twice; MSAA smooths the edge.
+  if (uSingle == 1) a = a < 0.5 ? 0.0 : 1.0;
   if (a <= 0.0) discard;
   outColor = vec4(color, 1.0) * (vColor.a * a * cover);
 }`;
@@ -468,7 +471,7 @@ export interface CityGlCreateOptions {
   onInvalidate?: () => void;
 }
 export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas, create: CityGlCreateOptions = {}): CityGlRenderer {
-  const maybe = canvas.getContext('webgl2', { antialias: create.antialias ?? true, premultipliedAlpha: true, alpha: true, depth: false, stencil: false, preserveDrawingBuffer: false,
+  const maybe = canvas.getContext('webgl2', { antialias: create.antialias ?? true, premultipliedAlpha: true, alpha: true, depth: false, stencil: true, preserveDrawingBuffer: false,
     failIfMajorPerformanceCaveat: !create.allowSoftware }) as WebGL2RenderingContext | null;
   if (!maybe) throw new Error(create.allowSoftware ? 'WebGL2 indisponible' : 'WebGL2 matériel indisponible');
   const gl: WebGL2RenderingContext = maybe;
@@ -660,14 +663,33 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
         gl.uniform4fv(u.uView, view); gl.uniform1i(u.uColors, 0); gl.uniform1f(u.uMpp, mpp); gl.uniform1f(u.uDevPx, devPx); gl.uniform4f(u.uOverride, 0, 0, 0, 0);
       };
       useStroke(strokeP);
-      const strokes = (pack: StrokePack | undefined, first: number, pass: 0 | 1, p: { edgePx: number; inner: number; minPx: number; maxRank: number; crossings: boolean; dash: number }): void => {
+      const strokes = (pack: StrokePack | undefined, first: number, pass: 0 | 1, p: { edgePx: number; inner: number; minPx: number; maxRank: number; crossings: boolean; dash: number }, single = false): void => {
         if (!pack || pack.strokes.count - first <= 0) return;
         const ranges = pack.strokes.chunks ? visibleRanges(pack.strokes.chunks, v, c => ({ start: c.first, count: c.count }), 8 * mpp, first) : [[first, pack.strokes.count - first]];
         if (!ranges.length) return;
         gl.bindTexture(gl.TEXTURE_2D, pass === 1 ? pack.inner : pack.outer);
         gl.uniform1i(u.uPass, pass); gl.uniform1f(u.uEdgePx, p.edgePx); gl.uniform1f(u.uInnerScale, p.inner); gl.uniform1f(u.uMinPxScale, p.minPx);
         gl.uniform1i(u.uMaxRank, p.maxRank); gl.uniform1i(u.uCrossings, p.crossings ? 1 : 0); gl.uniform1i(u.uDashKind, p.dash);
-        for (const [start, count] of ranges) { pack.bind(start); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count); frame.drawCalls++; frame.instances += count; }
+        gl.uniform1i(u.uSingle, single ? 1 : 0);
+        if (!single) {
+          for (const [start, count] of ranges) { pack.bind(start); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count); frame.drawCalls++; frame.instances += count; }
+          return;
+        }
+        // Translucent streets: each rank class covers a sample once (stencil ref rises with the
+        // class, minor → major), a major still laid over a minor as before.
+        const bounds = pack.strokes.firstWithRank;
+        const rankOf = (i: number): number => { let r = 0; while (r < 15 && bounds[r] > i) r++; return r; };
+        gl.enable(gl.STENCIL_TEST); gl.clearStencil(0); gl.clear(gl.STENCIL_BUFFER_BIT); gl.stencilOp(gl.KEEP, gl.KEEP, gl.REPLACE);
+        for (const [start, count] of ranges) {
+          for (let i = start, end = start + count; i < end;) {
+            const r = rankOf(i), stop = Math.min(end, r > 0 ? bounds[r - 1] : end);
+            const next = stop > i ? stop : end;
+            gl.stencilFunc(gl.GREATER, 16 - r, 0xff);
+            pack.bind(i); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, next - i); frame.drawCalls++; frame.instances += next - i;
+            i = next;
+          }
+        }
+        gl.disable(gl.STENCIL_TEST); gl.uniform1i(u.uSingle, 0);
       };
       if (d.streets && streets) {
         const maxRank = lod === 'far' ? 1 : lod === 'mid' ? 2 : 15, crossings = true;
@@ -675,11 +697,11 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
         const s = { edgePx: lod === 'far' ? 0 : lod === 'mid' ? 0.7 : 0.9, inner: 1, minPx: 1, maxRank, crossings, dash: 1 };
         const paintRoads = renderBackground && palette !== 'parchment' && palette !== 'ink' && !softStreets;
         if (paintRoads) useStroke(casingP);
-        if (d.streetCasing) strokes(streets, first, 0, s);
+        if (d.streetCasing) strokes(streets, first, 0, s, softStreets);
         if (textured && streets.mats && palette !== 'parchment' && palette !== 'ink' && !o.colors?.road) { useStroke(texturedP); useTextured(texturedP, streets.mats, false); u = texturedP.u; }
         else if (paintRoads) useStroke(surfaceP);
         gl.uniform1i(u.uBridgeDeck, (o.bridgeDeck ?? true) ? 1 : 0);
-        strokes(streets, first, 1, s);
+        strokes(streets, first, 1, s, softStreets);
         gl.uniform1i(u.uBridgeDeck, 0);
       }
       frame.drawCalls += wallGl.draw('shadow', wallDraw); useStroke(strokeP); // walls hook: painted wall shadows

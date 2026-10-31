@@ -1532,8 +1532,10 @@ pub(super) fn apply_parcel_edits(layout: &Layout, partition: &mut Partition) {
             ignore("contour invalide", &mut warnings);
             continue;
         }
+        // Needles narrower than the tolerance (the lot's own zero-width ones,
+        // rounded by the inspector) would cross and flip the fill.
         let Some(valid) = largest(g::union(&[g::normalized(Shape {
-            outer: user.outer.clone(),
+            outer: g::unneedled(&user.outer, LOT_TOLERANCE.1),
             holes: vec![],
         })])) else {
             ignore("contour dégénéré", &mut warnings);

@@ -852,9 +852,12 @@ fn prepare_inner(
             if !isolated && !existing_open && a > target * 4.0 {
                 return None;
             }
-            // A small common or cemetery takes a parcel, not a whole ward.
+            // A small common or cemetery takes a parcel, not a whole ward. A
+            // remnant block under half the tissue's module is no ward: it may
+            // hold a common up to two and a half times its size.
+            let slack = if d.role == "open.common" && a < module * 0.5 { 2.5 } else { 1.5 };
             if !isolated && !existing_open && !layout.enclosures.is_empty()
-                && d.function == "common" && a > d.target_area.max(30.0) * 1.5 {
+                && d.function == "common" && a > d.target_area.max(30.0) * slack {
                 return None;
             }
             let c = centroids[bi];

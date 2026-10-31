@@ -3605,6 +3605,7 @@ fn generate_once(
             site.population,
             base,
             axis,
+            &quarters.iter().map(|q| q.shape.clone()).collect::<Vec<_>>(),
         );
     }
     lap("hierarchy");

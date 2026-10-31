@@ -613,6 +613,10 @@ pub struct LayoutConfig {
     pub port_shelter: Option<f64>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub merge_parallel_streets: bool,
+    /// Share (0..1) of sustained parallel street runs (less than 4 m of land
+    /// between them) collapsed onto the more important road; the rest stay, as
+    /// such doubles sometimes do. `mergeParallelStreets` forces 1.
+    pub parallel_merge: f64,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub regular_grid_outline: bool,
     pub params: Value,
@@ -733,6 +737,7 @@ impl Default for LayoutConfig {
             port_detachment: 1.0,
             port_shelter: None,
             merge_parallel_streets: false,
+            parallel_merge: 0.0,
             regular_grid_outline: false,
             params: json!({}),
             phase_overrides: Default::default(),
@@ -1147,6 +1152,8 @@ pub fn generate_quarters(
             && !catalogue()["cultures"][&config.mix_culture].is_object())
         || !["legacy", "adaptive", "closed"].contains(&config.exit_treatment.as_str())
         || !["auto", "none", "partial", "full"].contains(&config.peripheral_road.as_str())
+        || !config.parallel_merge.is_finite()
+        || !(0.0..=1.0).contains(&config.parallel_merge)
     {
         return Err("Configuration des influences ou des sorties invalide".into());
     }
@@ -1356,6 +1363,8 @@ pub fn generate_quarters(
             }).cloned());
             if let Some(ground) = &stilt { ground.walkways(&mut layout.streets, physical_surface); }
             network::bridge_water_on_ground(&mut layout.streets, surface, physical_surface, config.max_street_grade);
+            let gates: Vec<Point> = layout.enclosures.iter().flat_map(|e| e.gates.iter().copied()).collect();
+            network::polish_ends(&mut layout.streets, &gates);
             access::summarize(layout, config);
             fortification::prepare_options(layout, config, surface);
             programme::prepare(layout, site.population, &config.programme, surface)?;

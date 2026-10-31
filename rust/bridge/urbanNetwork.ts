@@ -29,10 +29,23 @@ export function urbanRoadOwnership(layouts: Layout[]): Shape[] {
     for (const shape of allocated) if (shape.outer.length >= 3) {
       shapes.push({ outer: oriented(shape.outer, true), holes: shape.holes.map(hole => oriented(hole, false)) });
     }
+    // The regional road through the built land runs between the blocks, outside every
+    // allocated shape: the town draws it there (its width, junctions and surface), so
+    // its span within half a road and 3 m of a block is owned too; in the fields the
+    // regional layer keeps it.
+    const blocks = layout.blocks.map(b => ({ ring: b.shape.outer, box: bounds(b.shape.outer) }));
+    const nearBlock = (p: Point, reach: number): boolean => blocks.some(({ ring, box }) =>
+      p.x >= box[0] - reach && p.x <= box[2] + reach && p.y >= box[1] - reach && p.y <= box[3] + reach
+      && ring.some((q, j) => segmentDistance(p, ring[(j + 1) % ring.length], q) <= reach));
     for (const street of layout.streets) {
-      if (!['bridge', 'ford', 'causeway'].includes(street.role)) continue;
+      const regional = street.role === 'regional' || street.role === 'approach';
+      if (!regional && !['bridge', 'ford', 'causeway'].includes(street.role)) continue;
       for (let i = 1; i < street.path.length; i++) {
         const a = street.path[i - 1], b = street.path[i];
+        if (regional) {
+          const w = Math.max(street.widths[i - 1] ?? 0, street.widths[i] ?? 0) * 0.5 + 3;
+          if (!nearBlock(a, w) && !nearBlock(b, w) && !nearBlock(interpolate(a, b, 0.5), w)) continue;
+        }
         const dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy);
         if (length <= EPS) continue;
         const wa = street.widths[i - 1] ?? street.widths.at(-1) ?? 3, wb = street.widths[i] ?? wa;
@@ -48,6 +61,12 @@ export function urbanRoadOwnership(layouts: Layout[]): Shape[] {
     }
   }
   return shapes;
+}
+
+function segmentDistance(p: Point, a: Point, b: Point): number {
+  const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy;
+  const t = l2 > EPS ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2)) : 0;
+  return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
 }
 
 /** Boundary is zero, interior one, exterior minus one. */

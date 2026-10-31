@@ -401,6 +401,29 @@ pub(super) fn cleaned(s: &Shape) -> Shape {
     }
     Shape { outer, holes }
 }
+/// The ring without its needle tips: a vertex where the outline turns back
+/// within `eps` metres of its own line. Straight continuations stay.
+pub(super) fn unneedled(r: &[Point], eps: f64) -> Vec<Point> {
+    let mut q: Vec<Point> = r.to_vec();
+    let mut changed = true;
+    while changed && q.len() > 3 {
+        changed = false;
+        let mut i = 0;
+        while i < q.len() && q.len() > 3 {
+            let n = q.len();
+            let (a, b, c) = (q[(i + n - 1) % n], q[i], q[(i + 1) % n]);
+            let (u, v) = ((b.x - a.x, b.y - a.y), (c.x - b.x, c.y - b.y));
+            let back = u.0 * v.0 + u.1 * v.1 < 0.0;
+            if u.0.hypot(u.1) < 1e-9 || back &&(u.0 * v.1 - u.1 * v.0).abs() <= eps * u.0.hypot(u.1).max(v.0.hypot(v.1)) {
+                q.remove(i);
+                changed = true;
+            } else {
+                i += 1;
+            }
+        }
+    }
+    q
+}
 /// The reduced overlay operand of a shape (holes clockwise); `None` without area.
 fn operand(s: &Shape, reduce: Reduce) -> Option<Polygon<f64>> {
     let line = |mut c: Vec<Coord<f64>>, hole: bool| {
