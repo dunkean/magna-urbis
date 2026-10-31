@@ -50,7 +50,8 @@ pub(super) fn resolve(culture: &str, cfg: &ParcelConfig) -> Resolved {
         else { entry(culture, "material").and_then(Value::as_str).unwrap_or("fence").to_string() };
     Resolved {
         plot: cfg.plot_enclosure.unwrap_or_else(|| num(culture, "plot")).clamp(0.0, 1.0),
-        field: cfg.field_enclosure.unwrap_or_else(|| num(culture, "field")).clamp(0.0, 1.0),
+        // Field hedges are off unless the user asks for them (`fieldEnclosure`).
+        field: cfg.field_enclosure.unwrap_or(0.0).clamp(0.0, 1.0),
         field_material: if material_forced(cfg) { cfg.enclosure_material.clone() } else { entry(culture, "fieldMaterial").and_then(Value::as_str).unwrap_or("hedge").to_string() },
         material, front: num(culture, "front"), side: num(culture, "side"), back: num(culture, "back"),
     }

@@ -2269,7 +2269,7 @@ fn drop_stubs(streets: &mut Vec<Street>) {
 pub(super) fn polish_ends(streets: &mut Vec<Street>, keep: &[Point]) -> bool {
     let mut changed = false;
     let kept = |p: Point| keep.iter().any(|&g| distance(g, p) < 1.0);
-    for _ in 0..3 {
+    for _ in 0..6 {
         let graph = Graph::new(streets);
         let mut wide: BTreeMap<Key, f64> = BTreeMap::new();
         for s in streets.iter() {
@@ -2310,11 +2310,61 @@ pub(super) fn polish_ends(streets: &mut Vec<Street>, keep: &[Point]) -> bool {
         }
         let graph = Graph::new(streets);
         let before = streets.len();
-        streets.retain(|s| {
-            if fixed(s) || s.path.iter().any(|&p| kept(p)) {
-                return true;
+        // A spur lying within another street's ribbon all along (the remnant of a
+        // moved crossing beside the road) adds no access.
+        let shadowed = |s: &Street| {
+            let samples: Vec<(Point, f64)> = s.path.windows(2).enumerate().flat_map(|(k, w)| {
+                let n = (distance(w[0], w[1]) / 2.0).ceil().max(1.0) as usize;
+                (0..=n).map(move |t| (lerp(w[0], w[1], t as f64 / n as f64), k))
+            }).map(|(p, k)| (p, width(s, k))).collect();
+            let bbox = |s: &Street, pad: f64| s.path.iter().fold((f64::MAX, f64::MAX, f64::MIN, f64::MIN), |b, p|
+                (b.0.min(p.x - pad), b.1.min(p.y - pad), b.2.max(p.x + pad), b.3.max(p.y + pad)));
+            let own = bbox(s, 0.0);
+            streets.iter().filter(|h| !std::ptr::eq(*h, s) && !private(h) && h.path.len() >= 2).filter(|h| {
+                // The host's box must hold the whole spur (its ribbon reaches at most ~15 m).
+                let b = bbox(h, 15.0);
+                b.0 <= own.0 && b.1 <= own.1 && b.2 >= own.2 && b.3 >= own.3
+            }).any(|h| {
+                samples.iter().all(|&(p, own)| h.path.windows(2).enumerate().any(|(k, w)| {
+                    let (d, t, _) = super::geometry::distance(p, w[0], w[1]);
+                    d <= 0.5 * (width(h, k) + (width(h, k + 1) - width(h, k)) * t) + 0.5 * own + 0.5
+                }))
+            })
+        };
+        // Two short streets joining the same two points: the less important goes.
+        let ends = |s: &Street| { let (a, b) = (key(s.path[0]), key(s.path[s.path.len() - 1])); if a <= b { (a, b) } else { (b, a) } };
+        let doubled: BTreeSet<usize> = {
+            let mut by: BTreeMap<(Key, Key), Vec<usize>> = BTreeMap::new();
+            for (i, s) in streets.iter().enumerate().filter(|(_, s)| s.path.len() >= 2 && key(s.path[0]) != key(s.path[s.path.len() - 1])
+                && s.path.windows(2).map(|p| distance(p[0], p[1])).sum::<f64>() < 12.0) {
+                by.entry(ends(s)).or_default().push(i);
+            }
+            by.values().filter(|v| v.len() >= 2).flat_map(|v| {
+                let best = *v.iter().min_by_key(|&&i| (streets[i].rank, i)).unwrap();
+                v.iter().copied().filter(move |&i| i != best).collect::<Vec<_>>()
+            }).collect()
+        };
+        let keep: Vec<bool> = streets.iter().enumerate().map(|(index, s)| {
+            if doubled.contains(&index) && !s.path.iter().any(|&p| kept(p)) {
+                return false;
             }
             let n = s.path.len();
+            let loose = n >= 2 && (graph.degree(s.path[0]) == 1 || graph.degree(s.path[n - 1]) == 1);
+            if s.path.iter().any(|&p| kept(p)) {
+                return true;
+            }
+            // A ford or causeway stub shorter than its width with a loose end crosses nothing.
+            if matches!(s.role.as_str(), "ford" | "causeway") && loose
+                && s.path.windows(2).map(|p| distance(p[0], p[1])).sum::<f64>() < width(s, 0) {
+                return false;
+            }
+            if fixed(s) {
+                return true;
+            }
+            // An approach whose loose end reaches no crossing (the crossing moved) leads nowhere.
+            if loose && !(graph.degree(s.path[0]) == 1 && graph.degree(s.path[n - 1]) == 1) && shadowed(s) {
+                return false;
+            }
             let length: f64 = s.path.windows(2).map(|p| distance(p[0], p[1])).sum();
             let (a, b) = (graph.degree(s.path[0]), graph.degree(s.path[n - 1]));
             let host = match (a, b) {
@@ -2324,7 +2374,9 @@ pub(super) fn polish_ends(streets: &mut Vec<Street>, keep: &[Point]) -> bool {
                 _ => return true,
             };
             length > 0.5 * host + 0.5 * width(s, 0) + 1.5 && !(s.role == "approach" && length < 8.0)
-        });
+        }).collect();
+        let mut keep = keep.into_iter();
+        streets.retain(|_| keep.next().unwrap_or(true));
         pass |= streets.len() != before;
         changed |= pass;
         if !pass {
@@ -2332,6 +2384,95 @@ pub(super) fn polish_ends(streets: &mut Vec<Street>, keep: &[Point]) -> bool {
         }
     }
     changed
+}
+
+/// Invariant (seated mouths): an access way (close, derb, hutong…) whose loose
+/// end lies inside a street's ribbon starts on that street's axis, so the two
+/// meet at a junction instead of a cap floating in the road. Only the access
+/// way's own end vertex moves, within the street's land (the blocks are cut);
+/// a way that then does not leave its street by its own width is removed.
+/// Returns how many mouths were seated.
+pub(super) fn seat_mouths(streets: &mut Vec<Street>) -> usize {
+    use super::geometry as g;
+    // Ends shared only by access ways (several derbs from one root) still float.
+    let public: Vec<Street> = streets.iter().filter(|s| !private(s)).cloned().collect();
+    let graph = Graph::new(&public);
+    let mut seated = 0;
+    for i in 0..streets.len() {
+        if !private(&streets[i]) || streets[i].path.len() < 2 {
+            continue;
+        }
+        for last in [false, true] {
+            let mut s = streets[i].clone();
+            if last {
+                s.path.reverse();
+                s.widths.reverse();
+            }
+            let p = s.path[0];
+            if graph.degree(p) != 0 {
+                continue;
+            }
+            // The nearest street segment whose ribbon holds the end.
+            let inside = |q: Point, h: &Street, k: usize| {
+                let (d, t, _) = g::distance(q, h.path[k], h.path[k + 1]);
+                d <= 0.5 * (width(h, k) + (width(h, k + 1) - width(h, k)) * t) + 0.25
+            };
+            let Some((_, h, k)) = public.iter()
+                .filter(|h| !CROSSINGS.contains(&h.role.as_str()))
+                .flat_map(|h| (0..h.path.len().saturating_sub(1)).map(move |k| (h, k)))
+                .filter(|&(h, k)| inside(p, h, k))
+                .map(|(h, k)| (g::distance(p, h.path[k], h.path[k + 1]).0, h, k))
+                .min_by(|a, b| a.0.total_cmp(&b.0))
+            else {
+                continue;
+            };
+            let (a, b) = (h.path[k], h.path[k + 1]);
+            // Crossing the axis from inside the ribbon: the part past the axis goes.
+            let crossing = (0..s.path.len() - 1)
+                .take_while(|&j| inside(s.path[j], h, k))
+                .find_map(|j| g::segment_hit(s.path[j], s.path[j + 1], a, b).map(|(_, x)| (j, x)));
+            let (_, _, q) = g::distance(p, a, b);
+            let inner = s.path[1];
+            if let Some((j, x)) = crossing {
+                if distance(x, s.path[j + 1]) < 0.05 {
+                    s.path.drain(..=j);
+                    s.widths.drain(..(j + 1).min(s.widths.len()));
+                    s.path[0] = x;
+                } else {
+                    s.path.drain(..j);
+                    s.widths.drain(..j.min(s.widths.len()));
+                    s.path[0] = x;
+                }
+            } else if distance(p, q) > 1e-6 && (inner.x - q.x) * (inner.x - p.x) + (inner.y - q.y) * (inner.y - p.y) > 0.0 {
+                s.path[0] = q;
+            } else {
+                continue;
+            }
+            if s.path.len() < 2 || s.path.windows(2).map(|w| distance(w[0], w[1])).sum::<f64>() < 1.0 {
+                continue;
+            }
+            if last {
+                s.path.reverse();
+                s.widths.reverse();
+            }
+            streets[i] = s;
+            seated += 1;
+        }
+    }
+    // A seated way that does not leave its street by its own width is a nub.
+    streets.retain(|s| {
+        if !private(s) || s.path.len() < 2 {
+            return true;
+        }
+        let length: f64 = s.path.windows(2).map(|w| distance(w[0], w[1])).sum();
+        let host = [s.path[0], s.path[s.path.len() - 1]].into_iter().filter_map(|p| public.iter()
+            .flat_map(|h| (0..h.path.len().saturating_sub(1)).map(move |k| (h, k)))
+            .filter(|&(h, k)| g::distance(p, h.path[k], h.path[k + 1]).0 < 0.05)
+            .map(|(h, k)| width(h, k))
+            .reduce(f64::max)).reduce(f64::max);
+        host.is_none_or(|w| length > 0.5 * w + width(s, 0) + 0.5)
+    });
+    seated
 }
 
 /// Shorten a loose outer end to a useful 16 m access spur after its last real

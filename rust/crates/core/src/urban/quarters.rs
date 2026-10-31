@@ -1786,11 +1786,9 @@ fn closes(
             x: s.x + n.x * length,
             y: s.y + n.y * length,
         };
-        let start = Point {
-            x: s.x - n.x * 2.0,
-            y: s.y - n.y * 2.0,
-        };
-        add(streets, vec![start, end], 4, "close", m, rng);
+        // The mouth sits on the street's axis: a start past it would notch the
+        // opposite block of a street narrower than 4 m and overshoot its far edge.
+        add(streets, vec![s, end], 4, "close", m, rng);
     }
 }
 

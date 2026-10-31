@@ -1380,7 +1380,10 @@ pub fn generate_quarters(
             if let Some(ground) = &stilt { ground.walkways(&mut layout.streets, physical_surface); }
             network::bridge_water_on_ground(&mut layout.streets, surface, physical_surface, config.max_street_grade);
             let gates: Vec<Point> = layout.enclosures.iter().flat_map(|e| e.gates.iter().copied()).collect();
-            if config.polish_road_ends { network::polish_ends(&mut layout.streets, &gates); }
+            if config.polish_road_ends {
+                network::polish_ends(&mut layout.streets, &gates);
+                network::seat_mouths(&mut layout.streets);
+            }
             access::summarize(layout, config);
             fortification::prepare_options(layout, config, surface);
             programme::prepare(layout, site.population, &config.programme, surface)?;
@@ -1475,7 +1478,11 @@ pub fn generate_parcels(
         programme::finish_lots(layout, &mut partition);
         roles::face_quays(layout, &mut partition);
         let resolved = enclosure::resolve(culture, config);
-        partition.lot_enclosures = enclosure::lot_enclosures(&key_seed, &partition.parcels, &resolved);
+        // Countryside lots (village, hamlet, rural) stay open unless the user sets `plotEnclosure`.
+        let enclosed: Vec<Parcel> = if config.plot_enclosure.is_some() { partition.parcels.clone() } else {
+            partition.parcels.iter().filter(|p| !layout.blocks.get(p.block).is_some_and(|b| matches!(b.zone.as_str(), "village" | "hamlet" | "rural"))).cloned().collect()
+        };
+        partition.lot_enclosures = enclosure::lot_enclosures(&key_seed, &enclosed, &resolved);
         partition.enclosure = Some(resolved);
         Ok(partition)
     })
