@@ -1786,9 +1786,10 @@ fn closes(
             x: s.x + n.x * length,
             y: s.y + n.y * length,
         };
-        // The mouth sits on the street's axis: a start past it would notch the
-        // opposite block of a street narrower than 4 m and overshoot its far edge.
-        add(streets, vec![s, end], 4, "close", m, rng);
+        // `roadMouths`: the mouth sits on the street's axis; a start 2 m past it
+        // notches the opposite block of a street narrower than 4 m.
+        let start = if cfg.road_mouths { s } else { Point { x: s.x - n.x * 2.0, y: s.y - n.y * 2.0 } };
+        add(streets, vec![start, end], 4, "close", m, rng);
     }
 }
 
@@ -2812,7 +2813,7 @@ fn generate_planned(
     };
     if cfg.capacity_yield > 0.0
         || p.forecast <= 0.0
-        || p.shortfall <= 0.05 * p.required
+        || p.shortfall <= (0.05 * p.required).max(if cfg.small_place_capacity { 8.0 } else { 0.0 })
         || p.measured_plan <= 0.0
     {
         return Ok(first);
@@ -3726,6 +3727,9 @@ fn generate_once(
     if cfg.placement == "center" || macroplan::harbour::shelter_weight(cfg)>0.0 || cfg.port_detachment<1.0 {
         let shapes: Vec<Shape> = quarters.iter().map(|q| q.shape.clone()).collect();
         macroplan::harbour::quays(&shapes, &mut streets, surface, cfg, site, culture, port);
+    }
+    if cfg.road_end_joins {
+        network::weld_ends(&mut streets, surface);
     }
     lap("harmonize+fringe");
     if cfg.settlement_form == "camp" {

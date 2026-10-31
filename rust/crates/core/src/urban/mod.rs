@@ -629,6 +629,14 @@ pub struct LayoutConfig {
     /// Village, hamlet and rural homes are low (two storeys under the
     /// tradition) and mostly small; faubourg homes one storey lower.
     pub low_rural_houses: bool,
+    /// Access ways (closes, derbs) start on their street's axis and nubs go (off: 2 m past it, as drawn).
+    pub road_mouths: bool,
+    /// Remnants of moved crossings, spurs inside another street's ribbon and short doubled links go.
+    pub road_remnants: bool,
+    /// A loose street end whose ribbon reaches another street joins it, before the blocks are cut.
+    pub road_end_joins: bool,
+    /// Small places (under ~650 inhabitants) redraw for capacity only past 8 missing households.
+    pub small_place_capacity: bool,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub regular_grid_outline: bool,
     pub params: Value,
@@ -754,6 +762,10 @@ impl Default for LayoutConfig {
             town_main_road: true,
             polish_road_ends: true,
             low_rural_houses: true,
+            road_mouths: false,
+            road_remnants: false,
+            road_end_joins: false,
+            small_place_capacity: false,
             regular_grid_outline: false,
             params: json!({}),
             phase_overrides: Default::default(),
@@ -784,6 +796,9 @@ pub struct ParcelConfig {
     /// Countryside field enclosure 0..1 (openfield to bocage); None = culture default.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub field_enclosure: Option<f64>,
+    /// Village, hamlet and rural lots and the fields keep their culture's enclosures (off: open unless set).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub countryside_enclosures: bool,
     /// `wall|hedge|fence`; empty or `auto` = culture default.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub enclosure_material: String,
@@ -835,6 +850,7 @@ impl Default for ParcelConfig {
             denser_smallholdings: false,
             plot_enclosure: None,
             field_enclosure: None,
+            countryside_enclosures: false,
             enclosure_material: String::new(),
             operator: "culture".into(),
             culture: "site".into(),
@@ -1380,10 +1396,8 @@ pub fn generate_quarters(
             if let Some(ground) = &stilt { ground.walkways(&mut layout.streets, physical_surface); }
             network::bridge_water_on_ground(&mut layout.streets, surface, physical_surface, config.max_street_grade);
             let gates: Vec<Point> = layout.enclosures.iter().flat_map(|e| e.gates.iter().copied()).collect();
-            if config.polish_road_ends {
-                network::polish_ends(&mut layout.streets, &gates);
-                network::seat_mouths(&mut layout.streets);
-            }
+            if config.polish_road_ends { network::polish_ends(&mut layout.streets, &gates, config.road_remnants); }
+            if config.road_mouths { network::seat_mouths(&mut layout.streets); }
             access::summarize(layout, config);
             fortification::prepare_options(layout, config, surface);
             programme::prepare(layout, site.population, &config.programme, surface)?;
@@ -1479,7 +1493,7 @@ pub fn generate_parcels(
         roles::face_quays(layout, &mut partition);
         let resolved = enclosure::resolve(culture, config);
         // Countryside lots (village, hamlet, rural) stay open unless the user sets `plotEnclosure`.
-        let enclosed: Vec<Parcel> = if config.plot_enclosure.is_some() { partition.parcels.clone() } else {
+        let enclosed: Vec<Parcel> = if config.plot_enclosure.is_some() || config.countryside_enclosures { partition.parcels.clone() } else {
             partition.parcels.iter().filter(|p| !layout.blocks.get(p.block).is_some_and(|b| matches!(b.zone.as_str(), "village" | "hamlet" | "rural"))).cloned().collect()
         };
         partition.lot_enclosures = enclosure::lot_enclosures(&key_seed, &enclosed, &resolved);

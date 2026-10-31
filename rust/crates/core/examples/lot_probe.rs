@@ -19,6 +19,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if has("main") { c.town_main_road = false; }
     if has("polish") { c.polish_road_ends = false; }
     if has("houses") { c.low_rural_houses = false; }
+    // NEW=1: the switches still under test (off by default).
+    if std::env::var("NEW").is_ok() { c.road_mouths = true; c.road_remnants = true; c.road_end_joins = true; c.small_place_capacity = true; }
     if let Some(v) = std::env::var("PM").ok().and_then(|v| v.parse().ok()) { c.parallel_merge = v; }
     let geography = f.geometry.map(|g| Geography::new(g, f.width)).transpose()?;
     let surface = Surface { geometry: geography.as_ref(), width: f.width, n: f.n, height: &f.height, water: &f.water };

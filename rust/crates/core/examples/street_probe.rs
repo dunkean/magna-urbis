@@ -23,6 +23,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut f: Fixture = serde_json::from_slice(&std::fs::read(&args[1])?)?;
     if let Some(v) = std::env::var("PM").ok().and_then(|v| v.parse().ok()) { f.layout_config.parallel_merge = v; }
     // OFF=1: every switch of the 2026-10-31 roads round off (the previous behaviour).
+    // NEW=1: the switches still under test (off by default).
+    if std::env::var("NEW").is_ok() { let c = &mut f.layout_config; c.road_mouths = true; c.road_remnants = true; c.road_end_joins = true; c.small_place_capacity = true; }
     if std::env::var("OFF").is_ok() { let c = &mut f.layout_config; c.road_width_by_size = false; c.town_main_road = false; c.polish_road_ends = false; c.low_rural_houses = false; }
     let geography = f.geometry.map(|g| Geography::new(g, f.width)).transpose()?;
     let surface = Surface { geometry: geography.as_ref(), width: f.width, n: f.n, height: &f.height, water: &f.water };
