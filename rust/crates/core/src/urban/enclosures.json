@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "notes": "Enclosure of plots (town) and fields (countryside) per culture. plot/field 0..1 = default plotEnclosure/fieldEnclosure (0 open lots / openfield, 1 closed compounds / bocage); material wall|hedge|fence (plots), fieldMaterial (field boundaries: hedge, wall = dry stone, fence); front/side/back 0..1 scale how readily that side of a lot is closed (an edge closes when plotEnclosure*weight exceeds its per-edge draw). Groups list cultures; cultures.* overrides single keys. Unknown cultures use default.",
+  "notes": "Enclosure of plots (town) and fields (countryside) per culture. plot/field 0..1 = default plotEnclosure/fieldEnclosure (0 open lots / openfield, 1 closed compounds / bocage); material wall|hedge|fence (plots), fieldMaterial (field boundaries: hedge, wall = dry stone, fence); a lot is enclosed with probability plotEnclosure (one draw per lot) and then gets a closed ring; front 0..1 = share of enclosed lots whose street front is closed too (with a door or cart gate), else the whole front stays open; side/back 0 leave that side open, any other value closes it. Groups list cultures; cultures.* overrides single keys. Unknown cultures use default.",
   "default": {"plot": 0.4, "field": 0.4, "material": "fence", "fieldMaterial": "hedge", "front": 0.1, "side": 0.8, "back": 1.0},
   "groups": {
     "walledCourt": {"plot": 0.95, "field": 0.3, "material": "wall", "fieldMaterial": "wall", "front": 1, "side": 1, "back": 1,

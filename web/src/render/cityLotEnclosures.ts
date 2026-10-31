@@ -26,14 +26,14 @@ export function drawLotEnclosures(ctx: CanvasRenderingContext2D, scene: CityScen
   if (!scene.lotEnclosures?.length || o.lod === 'far') return;
   const px = o.mpp, paths = pathsOf(scene), mono = o.palette === 'parchment' || o.palette === 'ink';
   ctx.save(); ctx.lineJoin = 'round'; ctx.setLineDash([]);
+  // Continuous thin strokes (a dash pattern reads as broken fences at village scale), in the same ink family as the field hedges.
   for (const material of MATERIALS) {
     const path = paths.get(material);
     if (!path) continue;
-    if (material === 'wall') { ctx.strokeStyle = mono ? '#4b3f30' : '#6f6254'; ctx.lineWidth = Math.max(0.5, px * 0.9); ctx.lineCap = 'butt'; ctx.globalAlpha = 0.9; }
-    else if (material === 'hedge') { ctx.strokeStyle = mono ? '#5d6b3a' : '#5f7a3c'; ctx.lineWidth = Math.max(0.9, px * 1.3); ctx.lineCap = 'round'; ctx.globalAlpha = 0.85; }
-    else { ctx.strokeStyle = mono ? '#6a5236' : '#8a6a43'; ctx.lineWidth = Math.max(0.3, px * 0.7); ctx.lineCap = 'butt'; ctx.globalAlpha = 0.9; ctx.setLineDash([Math.max(1.2, px * 2.5), Math.max(0.6, px * 1.2)]); }
+    if (material === 'wall') { ctx.strokeStyle = mono ? '#4b3f30' : '#6f6254'; ctx.lineWidth = Math.max(0.5, px * 0.9); ctx.lineCap = 'butt'; ctx.globalAlpha = 0.85; }
+    else if (material === 'hedge') { ctx.strokeStyle = mono ? '#5d6b3a' : '#5f7a3c'; ctx.lineWidth = Math.max(0.6, px * 0.9); ctx.lineCap = 'butt'; ctx.globalAlpha = 0.75; }
+    else { ctx.strokeStyle = mono ? '#6a5236' : '#8a6a43'; ctx.lineWidth = Math.max(0.25, px * 0.6); ctx.lineCap = 'butt'; ctx.globalAlpha = 0.8; }
     ctx.stroke(path);
-    ctx.setLineDash([]);
   }
   ctx.restore();
 }

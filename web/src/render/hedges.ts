@@ -1,10 +1,10 @@
 import type { LandArea, Polyline, Vec2 } from '../gen/types';
 import { hexToRgb, type Palette } from './styles';
 
-/** Dry-stone walls and fences of the closes: same ink family as the hedge, drier and darker. */
+/** Dry-stone walls and fences of the closes: same ink family as the hedge, drier and darker; continuous strokes. */
 export function fieldBoundaryStyle(pal: Palette, u: number, material: 'wall' | 'fence'): { color: string; width: number; alpha: number; dash: number[] } {
   const s = Math.pow(Math.max(1, u), 0.55);
-  return material === 'wall' ? { color: '#6f6254', width: 0.7 * s, alpha: 0.75, dash: [] } : { color: '#8a6a43', width: 0.5 * s, alpha: 0.7, dash: [2.5 * s, 1.2 * s] };
+  return material === 'wall' ? { color: '#6f6254', width: 0.7 * s, alpha: 0.75, dash: [] } : { color: '#8a6a43', width: 0.5 * s, alpha: 0.7, dash: [] };
 }
 
 /** Field boundaries sit below roads and forest edges in both renderers. */

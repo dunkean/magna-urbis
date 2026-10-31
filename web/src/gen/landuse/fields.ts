@@ -213,6 +213,23 @@ export function clipToRings(pl: Polyline, rings: Ring[]): Polyline[] {
   return out;
 }
 
+/** True when p lies on one of the rings (the exact crossings computed by clipToRings). */
+function onRings(p: Vec2, rings: Ring[], tol = 0.01): boolean {
+  for (const r of rings) for (let i = 1; i < r.length; i++) {
+    const ax = r[i - 1][0], ay = r[i - 1][1], dx = r[i][0] - ax, dy = r[i][1] - ay, l2 = dx * dx + dy * dy || 1;
+    const t = Math.max(0, Math.min(1, ((p.x - ax) * dx + (p.y - ay) * dy) / l2));
+    if (Math.hypot(p.x - ax - t * dx, p.y - ay - t * dy) <= tol) return true;
+  }
+  return false;
+}
+/** The polyline prolonged by `d` m at both ends, so that its ribbon cuts cleanly through an oblique border. */
+function extendEnds(pl: Polyline, d: number): Polyline {
+  const out = pl.slice(), n = out.length;
+  const push = (a: Vec2, b: Vec2): Vec2 => { const l = Math.hypot(a.x - b.x, a.y - b.y) || 1; return { x: a.x + (a.x - b.x) / l * d, y: a.y + (a.y - b.y) / l * d }; };
+  out[0] = push(pl[0], pl[1]); out[n - 1] = push(pl[n - 1], pl[n - 2]);
+  return out;
+}
+
 const extents = (outer: Ring, ca: number, sa: number) => {
   let umin = Infinity, umax = -Infinity, vmin = Infinity, vmax = -Infinity;
   for (const [x, y] of outer) {
@@ -289,13 +306,18 @@ export function partitionRegion(outer: Polygon, holes: Polygon[], ctx: FieldCtx,
     let line = trace(mid, angFn, { x0: bx0, y0: by0, x1: bx1, y1: by1 }, 10, 1.15 * Math.hypot(bx1 - bx0, by1 - by0), wob);
     if (jitter) line = line.map((p, i) => (i % 3 === 0 ? { x: p.x + ctx.noise.noise(p.x / 28, p.y / 28) * 3, y: p.y + ctx.noise.noise(p.x / 28 + 9, p.y / 28) * 3 } : p));
     line = simplify(line, 0.9);
+    // Only the parts of the streamline that cross the ground from border to border cut it: a part that
+    // stops short inside (a curling streamline) would leave a headland ending in the middle of a field.
+    const crossing = clipToRings(line, rings).filter((seg) => onRings(seg[0], rings) && onRings(seg[seg.length - 1], rings));
+    if (!crossing.length) return null;
     let pieces: Ring[][];
     try {
-      pieces = polygonClipping.difference([rings as unknown as [number, number][][]], [[toRing(offsetRibbon(line, gap))]]).map((pg) => pg as unknown as Ring[]);
+      pieces = polygonClipping.difference([rings as unknown as [number, number][][]], ...crossing.map((seg) => [[toRing(offsetRibbon(extendEnds(seg, gap + 1), gap))]] as [number, number][][][]))
+        .map((pg) => pg as unknown as Ring[]);
     } catch { return null; }
     const real = pieces.filter((pg) => ringArea(pg[0]) > 300);
     if (real.length < 2) return null;
-    for (const seg of clipToRings(line, rings)) bucket.push(seg);
+    for (const seg of crossing) bucket.push(seg);
     return real;
   };
   /** A cut that does not split (degenerate geometry) is retried at other positions. */

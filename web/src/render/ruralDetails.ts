@@ -80,7 +80,7 @@ const styles = (pal: Palette) => ({ fence: [pal.farmInk, .6], stock: [pal.farmIn
 export function ruralDetailsSvg(lu: LandUseLayer, pal: Palette): string {
   const marks = ruralDetails(lu); if (!marks.length) return '';
   const style = styles(pal);
-  return '<g class="rural-details" fill="none" stroke-linejoin="round">' + marks.map(m => `<path d="${pathD(m.line, !!m.closed)}" stroke="${style[m.kind][0]}" stroke-width="${style[m.kind][1]}"${m.kind === 'hedge' ? ' stroke-dasharray="2.4 1"' : ''}/>`).join('') + '</g>';
+  return '<g class="rural-details" fill="none" stroke-linejoin="round">' + marks.map(m => `<path d="${pathD(m.line, !!m.closed)}" stroke="${style[m.kind][0]}" stroke-width="${style[m.kind][1]}"/>`).join('') + '</g>';
 }
 export function drawRuralDetails(ctx: CanvasRenderingContext2D, world: Pick<World, 'landuse'>, pal: Palette): void {
   if (!world.landuse) return;
@@ -88,7 +88,7 @@ export function drawRuralDetails(ctx: CanvasRenderingContext2D, world: Pick<Worl
   const style = styles(pal); ctx.save(); ctx.globalAlpha = .9; ctx.lineJoin = 'round';
   for (const m of marks) {
     ctx.beginPath(); m.line.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); if (m.closed) ctx.closePath();
-    ctx.strokeStyle = style[m.kind][0]; ctx.lineWidth = style[m.kind][1]; ctx.setLineDash(m.kind === 'hedge' ? [2.4, 1] : []); ctx.stroke();
+    ctx.strokeStyle = style[m.kind][0]; ctx.lineWidth = style[m.kind][1]; ctx.stroke();
   }
   ctx.restore();
 }

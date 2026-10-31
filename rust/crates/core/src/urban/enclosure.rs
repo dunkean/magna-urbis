@@ -1,5 +1,5 @@
 //! Enclosure of lots (town) and fields (countryside), per culture (`enclosures.json`).
-//! `plotEnclosure` 0 leaves every lot open, 1 closes the sides the culture closes;
+//! `plotEnclosure` is the share of lots enclosed by a closed ring (0 all open, 1 all enclosed);
 //! `fieldEnclosure` is resolved here and consumed by the land-use stage.
 use super::{Parcel, ParcelConfig, Point};
 use serde::{Deserialize, Serialize};
@@ -69,11 +69,11 @@ fn key(a: Point, b: Point) -> (i64, i64, i64, i64) {
     let (a, b) = (q(a), q(b));
     if a <= b { (a.0, a.1, b.0, b.1) } else { (b.0, b.1, a.0, a.1) }
 }
-/// Deterministic draw in [0, 1) of one boundary edge (shared edges agree).
-fn draw(seed: u64, k: (i64, i64, i64, i64)) -> f64 {
-    let mut h = seed ^ 0x9e37_79b9_7f4a_7c15;
-    for v in [k.0, k.1, k.2, k.3] {
-        h = (h ^ (v as u64)).wrapping_mul(0xff51_afd7_ed55_8ccd);
+/// Deterministic draw in [0, 1) of one lot and one question about it.
+fn draw(seed: u64, id: &str, salt: u64) -> f64 {
+    let mut h = seed ^ 0x9e37_79b9_7f4a_7c15 ^ salt.wrapping_mul(0xc2b2_ae3d_27d4_eb4f);
+    for b in id.bytes() {
+        h = (h ^ u64::from(b)).wrapping_mul(0xff51_afd7_ed55_8ccd);
         h ^= h >> 32;
     }
     (h >> 11) as f64 / (1u64 << 53) as f64
@@ -84,21 +84,22 @@ fn on_segment(p: Point, a: Point, b: Point, tol: f64) -> bool {
     let t = (((p.x - a.x) * dx + (p.y - a.y) * dy) / l2).clamp(0.0, 1.0);
     (p.x - (a.x + t * dx)).hypot(p.y - (a.y + t * dy)) <= tol
 }
+fn mid(a: Point, b: Point) -> Point { Point { x: (a.x + b.x) / 2.0, y: (a.y + b.y) / 2.0 } }
 
-/// Closed boundary runs of the built lots. Street fronts, sides and backs are
-/// closed with probability `plot * weight`; an edge shared by two lots is drawn once.
+/// Boundary runs of the built lots. The decision is taken once per lot: an enclosed lot
+/// (probability `plot`) gets a closed ring, open only at its gate. Its street front is closed
+/// with probability `front` (one draw per lot) and then carries a door or cart gate at the
+/// street contact; otherwise the whole street front stays open and is the gate side. Sides
+/// and backs close unless the culture weight is 0. An edge shared by two lots is drawn once.
 pub(super) fn lot_enclosures(seed: &str, parcels: &[Parcel], r: &Resolved) -> Vec<LotEnclosure> {
     let mut out = Vec::new();
     if r.plot <= 0.0 { return out; }
     let seed = seed.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ u64::from(b)).wrapping_mul(0x100_0000_01b3));
     let mut seen = HashSet::new();
-    let push = |path: Vec<Point>, side: &str, out: &mut Vec<LotEnclosure>| {
-        out.push(LotEnclosure { path, material: r.material.clone(), side: side.into() });
-    };
     for p in parcels.iter().filter(|p| matches!(p.use_kind.as_str(), "plot" | "compound" | "garden")) {
         let ring = &p.shape.outer;
         let n = ring.len();
-        if n < 3 { continue; }
+        if n < 3 || draw(seed, &p.id, 1) >= r.plot { continue; }
         let fronts: Vec<[Point; 2]> = p.front.iter().copied()
             .chain(p.contacts.iter().map(|c| [c.a, c.b])).collect();
         let fdir = fronts.first().map(|f| {
@@ -108,43 +109,77 @@ pub(super) fn lot_enclosures(seed: &str, parcels: &[Parcel], r: &Resolved) -> Ve
         });
         let area = (0..n).map(|i| ring[i].x * ring[(i + 1) % n].y - ring[(i + 1) % n].x * ring[i].y).sum::<f64>().abs() / 2.0;
         let gate = if p.use_kind == "compound" || area > 600.0 { CART_GATE_M } else { DOOR_M };
+        // Side of every edge: a front lies along a street front/contact segment and parallel to it.
+        let sides: Vec<&str> = (0..n).map(|i| {
+            let (a, b) = (ring[i], ring[(i + 1) % n]);
+            let (dx, dy) = (b.x - a.x, b.y - a.y);
+            let len = dx.hypot(dy).max(1e-9);
+            let par = |f: &[Point; 2]| {
+                let (fx, fy) = (f[1].x - f[0].x, f[1].y - f[0].y);
+                ((dx * fx + dy * fy) / (len * fx.hypot(fy).max(1e-9))).abs()
+            };
+            if fronts.iter().any(|f| par(f) > 0.9 && on_segment(mid(a, b), f[0], f[1], 1.0)) { "front" }
+            else if fdir.is_none_or(|d| ((dx * d.0 + dy * d.1) / len).abs() > 0.8) { "back" } else { "side" }
+        }).collect();
+        let front_closed = r.front > 0.0 && draw(seed, &p.id, 2) < r.front;
+        let closes = |side: &str| match side { "front" => front_closed, "side" => r.side > 0.0, _ => r.back > 0.0 };
+        // The gate: on the closed front edge holding the longest street contact (else the longest
+        // front edge); a lot without a street front opens on its longest closed edge.
+        let gate_edge = {
+            let len = |i: usize| { let (a, b) = (ring[i], ring[(i + 1) % n]); (b.x - a.x).hypot(b.y - a.y) };
+            let contact_len = |i: usize| p.contacts.iter().filter(|c| on_segment(mid(c.a, c.b), ring[i], ring[(i + 1) % n], 1.0)).map(|c| c.length).fold(0.0, f64::max);
+            let has_front = sides.contains(&"front");
+            if has_front && !front_closed { None }
+            else {
+                (0..n).filter(|&i| closes(sides[i]) && (!has_front || sides[i] == "front") && len(i) > gate + 1.0)
+                    .max_by(|&x, &y| contact_len(x).total_cmp(&contact_len(y)).then(len(x).total_cmp(&len(y))))
+            }
+        };
+        // Start the walk just after an open edge (or the gate) so that a run never wraps over the seam.
+        let start = (0..n).find(|&i| !closes(sides[i]) || Some(i) == gate_edge).map_or(0, |i| (i + 1) % n);
+        let first = out.len();
         let mut run: Vec<Point> = Vec::new();
         let mut run_side = "side";
-        for i in 0..n {
+        let flush = |run: &mut Vec<Point>, side: &str, out: &mut Vec<LotEnclosure>| {
+            if run.len() > 1 { out.push(LotEnclosure { path: std::mem::take(run), material: r.material.clone(), side: side.into() }); } else { run.clear(); }
+        };
+        for j in 0..n {
+            let i = (start + j) % n;
             let (a, b) = (ring[i], ring[(i + 1) % n]);
             let (dx, dy) = (b.x - a.x, b.y - a.y);
             let len = dx.hypot(dy);
-            if len < 0.5 { continue; }
-            let mid = Point { x: (a.x + b.x) / 2.0, y: (a.y + b.y) / 2.0 };
-            let par = |d: (f64, f64)| ((dx * d.0 + dy * d.1) / len).abs();
-            let is_front = fdir.is_some_and(|d| par(d) > 0.9) && fronts.iter().any(|f| on_segment(mid, f[0], f[1], 1.0));
-            let side = if is_front { "front" } else if fdir.is_none_or(|d| par(d) > 0.8) { "back" } else { "side" };
-            let k = key(a, b);
-            let weight = match side { "front" => r.front, "side" => r.side, _ => r.back };
-            let closed = seen.insert(k) && draw(seed, k) < r.plot * weight;
-            if closed && side == "front" && len > gate + 1.0 {
-                // Opening where the lot is entered: a door (town lot) or a cart gate (farm compound).
-                if run.len() > 1 { push(std::mem::take(&mut run), run_side, &mut out); } else { run.clear(); }
+            if len < 1e-6 { continue; }
+            let side = sides[i];
+            // Drawn already by the neighbouring lot, or left open by the culture.
+            if !closes(side) || !seen.insert(key(a, b)) { flush(&mut run, run_side, &mut out); continue; }
+            if run.is_empty() || run_side != side { flush(&mut run, run_side, &mut out); run_side = side; run.push(a); }
+            if Some(i) == gate_edge {
+                // Opening where the lot is entered: a door (town lot) or a cart gate (farm compound),
+                // centred on the street contact of the lot (its real access); the middle when it has none.
                 let at = |t: f64| Point { x: a.x + dx * t, y: a.y + dy * t };
-                // Centre on the street contact of the lot (its real access); the middle when it has none.
-                let contact = p.contacts.iter().filter(|c| on_segment(Point { x: (c.a.x + c.b.x) / 2.0, y: (c.a.y + c.b.y) / 2.0 }, a, b, 1.0))
+                let contact = p.contacts.iter().filter(|c| on_segment(mid(c.a, c.b), a, b, 1.0))
                     .max_by(|x, y| x.length.total_cmp(&y.length));
                 let centre = contact.map_or(0.5, |c| {
-                    let m = Point { x: (c.a.x + c.b.x) / 2.0, y: (c.a.y + c.b.y) / 2.0 };
+                    let m = mid(c.a, c.b);
                     ((m.x - a.x) * dx + (m.y - a.y) * dy) / (len * len)
                 });
                 let half = gate / (2.0 * len);
                 let centre = centre.clamp(half, 1.0 - half);
-                let (t0, t1) = (centre - half, centre + half);
-                push(vec![a, at(t0)], "front", &mut out);
-                run_side = "front"; run = vec![at(t1), b];
-            } else if closed && !run.is_empty() && run_side == side { run.push(b); }
-            else {
-                if run.len() > 1 { push(std::mem::take(&mut run), run_side, &mut out); } else { run.clear(); }
-                if closed { run_side = side; run = vec![a, b]; }
+                run.push(at(centre - half));
+                flush(&mut run, run_side, &mut out);
+                run.push(at(centre + half));
+            }
+            run.push(b);
+        }
+        flush(&mut run, run_side, &mut out);
+        // The walk may start inside a run (behind the gate): join its two halves.
+        if out.len() >= first + 2 {
+            let (head, tail) = (&out[first], &out[out.len() - 1]);
+            if head.side == tail.side && head.path[0] == *tail.path.last().unwrap() {
+                let head = out.remove(first);
+                out.last_mut().unwrap().path.extend_from_slice(&head.path[1..]);
             }
         }
-        if run.len() > 1 { push(run, run_side, &mut out); }
     }
     out
 }
@@ -164,6 +199,36 @@ mod tests {
     }
     fn edges(v: &[LotEnclosure], side: Option<&str>) -> usize {
         v.iter().filter(|e| side.is_none_or(|s| e.side == s)).map(|e| e.path.len() - 1).sum()
+    }
+    /// Ends of the runs that no other run continues (a closed ring has none, a gate leaves two).
+    fn loose_ends(v: &[LotEnclosure]) -> Vec<Point> {
+        let ends: Vec<Point> = v.iter().flat_map(|e| [e.path[0], *e.path.last().unwrap()]).collect();
+        ends.iter().copied().filter(|p| ends.iter().filter(|q| (q.x - p.x).hypot(q.y - p.y) < 1e-6).count() == 1).collect()
+    }
+    #[test]
+    fn an_enclosed_lot_is_a_closed_ring_open_only_at_its_gate() {
+        let lots: Vec<Parcel> = (0..8).map(lot).collect();
+        let mut cfg = ParcelConfig::default();
+        cfg.plot_enclosure = Some(1.0);
+        // walled culture: every edge closed, one door per lot on its street front
+        let all = lot_enclosures("s", &lots, &resolve("chinese", &cfg));
+        let loose = loose_ends(&all);
+        assert_eq!(loose.len(), 16, "two door jambs per lot, nothing else dangles");
+        assert!(loose.iter().all(|p| p.y == 0.0), "only the street front is opened");
+        // a culture that leaves street fronts open: the ring is closed except the whole front
+        let open = lot_enclosures("s", &lots, &resolve("hanseatic", &cfg));
+        assert!(loose_ends(&open).iter().all(|p| p.y == 0.0 && (p.x / 20.0).fract().abs() < 1e-9));
+        // a partial plotEnclosure encloses whole lots, never single edges
+        cfg.plot_enclosure = Some(0.5);
+        let some = lot_enclosures("s", &(0..40).map(lot).collect::<Vec<_>>(), &resolve("chinese", &cfg));
+        assert!(!some.is_empty());
+        let backs: Vec<f64> = some.iter().filter(|e| e.side == "back").map(|e| e.path[0].x.min(e.path[1].x)).collect();
+        for x in backs {
+            // the lot whose back this is has both its sides drawn (by itself or its neighbour)
+            for sx in [x, x + 20.0] {
+                assert!(some.iter().any(|e| e.side == "side" && e.path.iter().all(|p| (p.x - sx).abs() < 1e-9)), "lot at {x}: side {sx} missing");
+            }
+        }
     }
     #[test]
     fn closed_front_opens_a_door_at_the_entrance() {
