@@ -271,7 +271,8 @@ function putPolyline(w: ReturnType<typeof strokeWriter>, path: readonly Point[],
   if (end && last >= 0) w.u[last * STROKE_STRIDE + 8] |= META.buttEnd;
 }
 /** Streets: feature = street index in the scene. Minor ranks first, crossings last. */
-export function buildStreetStrokes(scene: CityScene, origin: Point): CityGlStrokes {
+/** `surface` (layer `roadSurface`): per-vertex widths and square covered ends; off, one width and round caps. */
+export function buildStreetStrokes(scene: CityScene, origin: Point, surface = true): CityGlStrokes {
   const key = (i: number): number => { const s = scene.streets[i]; return CROSSINGS.has(s.role) ? -1 : Math.min(15, Math.max(0, s.rank)); };
   // Rank first (draw order, level-of-detail suffix), then grid cell (culling).
   const boxes = scene.streets.map(s => { const b = shapesBox([{ outer: s.street.path, holes: [] }]); return [b[0] - s.width, b[1] - s.width, b[2] + s.width, b[3] + s.width] as CityGlBox4; });
@@ -282,14 +283,14 @@ export function buildStreetStrokes(scene: CityScene, origin: Point): CityGlStrok
   const w = strokeWriter(scene.streets.reduce((s, x) => s + Math.max(0, x.street.path.length - 1), 0));
   const firstWithRank = new Array(16).fill(-1);
   // Ends a street at least as wide covers stop square: no round cap past the road joined.
-  const covered = coveredEnds(scene.streets.map(s => s.street));
+  const covered = surface ? coveredEnds(scene.streets.map(s => s.street)) : scene.streets.map(() => false);
   for (const i of order) {
     const s = scene.streets[i], k = key(i), rank = Math.min(15, Math.max(0, s.rank));
     for (let r = Math.max(0, k); r < 16; r++) if (firstWithRank[r] < 0) firstWithRank[r] = w.n;
     const meta = rank | (CROSSINGS.has(s.role) ? META.crossing : 0) | (s.role === 'ford' ? META.dash : 0) | (s.role === 'bridge' || s.role === 'quay' || s.role === 'mole' ? META.solidEdge : 0);
     const ck = `${k}|${cells[i]}`, before = w.n;
     const deck = s.role === 'bridge' || s.role === 'quay' || s.role === 'mole';
-    putPolyline(w, s.street.path, origin, isBoardwalk(s.role) || !s.street.widths.length ? s.width : s.street.widths.map(x => Number.isFinite(x) && x > 0 ? x : s.width), isBoardwalk(s.role) ? 0.8 : s.role === 'mole' ? 3.4 : STREET_MIN_PX[Math.min(4, rank)], i, meta, deck || covered[i]);
+    putPolyline(w, s.street.path, origin, !surface || isBoardwalk(s.role) || !s.street.widths.length ? s.width : s.street.widths.map(x => Number.isFinite(x) && x > 0 ? x : s.width), isBoardwalk(s.role) ? 0.8 : s.role === 'mole' ? 3.4 : STREET_MIN_PX[Math.min(4, rank)], i, meta, deck || covered[i]);
     if (w.n === before) continue;
     let chunk = chunks[chunks.length - 1];
     if (!chunk || ck !== chunkKey) { chunk = { box: [Infinity, Infinity, -Infinity, -Infinity], first: before, count: 0 }; chunks.push(chunk); chunkKey = ck; }

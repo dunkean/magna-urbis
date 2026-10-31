@@ -29,6 +29,8 @@ pub(super) struct HomeContext<'a> {
     pub distance: f64,
     pub outside: bool,
     pub farm: bool,
+    /// `lowRuralHouses`: countryside homes mostly small, faubourg fringe from its first lot.
+    pub low_rural: bool,
 }
 
 impl HomeContext<'_> {
@@ -39,14 +41,15 @@ impl HomeContext<'_> {
         // The fringe grows with distance and falling access pressure alike,
         // inside or outside a wall (no zone step); farms, gardens and villages
         // are fringe whole.
-        let countryside = matches!(self.zone, "rural" | "village" | "hamlet");
-        let fringe = if self.farm || self.district == "gardens" || self.zone == "fringe" || countryside {
+        let rural = matches!(self.zone, "rural" | "village" | "hamlet");
+        let countryside = self.low_rural && rural;
+        let fringe = if self.farm || self.district == "gardens" || self.zone == "fringe" || rural {
             1.0
         } else {
             // A faubourg is fringe from its first lot (between village and ring).
             ((self.distance - 0.45) / 0.55).max((0.5 - p) / 0.35).clamp(0.0, 1.0)
                 .max(if self.outside { 0.5 } else { 0.0 })
-                .max(if self.zone == "faubourg" { 0.6 } else { 0.0 })
+                .max(if self.low_rural && self.zone == "faubourg" { 0.6 } else { 0.0 })
         };
         let poor = if self.district == "poor" { 1.0 }
             else { ((0.5 - self.wealth) / 0.25).clamp(0.0, 1.0) };

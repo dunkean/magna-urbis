@@ -22,7 +22,7 @@ export interface Box { minX: number; minY: number; maxX: number; maxY: number }
 export type CityView = 'tissue' | 'uses' | 'parcels' | 'buildings' | 'roles';
 export type CityLod = 'far' | 'mid' | 'near' | 'close';
 export type CityPalette = 'growth' | 'atlas' | 'ink' | 'terrain' | 'parchment';
-export interface CityLayers { reserve: boolean; allocated: boolean; centers: boolean; domains: boolean; quarters: boolean; blocks: boolean; streets: boolean; enclosures: boolean; /** Walls, hedges and fences of the lots; absent = shown. */ lotEnclosures?: boolean; parcels: boolean; gardens: boolean; places: boolean; fronts: boolean; axes: boolean; access: boolean }
+export interface CityLayers { reserve: boolean; allocated: boolean; centers: boolean; domains: boolean; quarters: boolean; blocks: boolean; streets: boolean; enclosures: boolean; /** Walls, hedges and fences of the lots; absent = shown. */ lotEnclosures?: boolean; /** Streets as a ground surface (square junctions, curb returns, tapers); absent = on, off = round-capped strokes. */ roadSurface?: boolean; parcels: boolean; gardens: boolean; places: boolean; fronts: boolean; axes: boolean; access: boolean }
 
 // ---------------------------------------------------------------- levels of detail
 const LOD_ORDER: CityLod[] = ['close', 'near', 'mid', 'far'];
@@ -578,7 +578,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
     // junctions, curb returns, tapers — filled once per style, so nothing shows twice.
     // Decks, quays, fords, dashed tracks and stairs keep their stroked art.
     const surfaced: { s: CityStreet; w: number; edge: number; casing?: Style; fill: Style }[] = [];
-    const surfaceOk = (s: CityStreet, dash?: boolean): boolean => atLeast(lod, 'near') && !dash && !CROSSINGS.has(s.role) && !SURFACE_SKIP.has(s.role);
+    const surfaceOk = (s: CityStreet, dash?: boolean): boolean => layers.roadSurface !== false && atLeast(lod, 'near') && !dash && !CROSSINGS.has(s.role) && !SURFACE_SKIP.has(s.role);
     for (const s of visible) {
       stats.streets++;
       // Stroked ways under the surfaced streets, crossings over them.

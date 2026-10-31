@@ -485,6 +485,7 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
   let plan: FillPack | undefined, built: FillPack | undefined, streets: StrokePack | undefined, walls: StrokePack | undefined, selection: StrokePack | undefined;
   let towers: { vbo: WebGLBuffer; vao: WebGLVertexArrayObject; count: number } | undefined;
   let scene: CityScene | undefined, buildings: CityBuildings | undefined, origin: Point = { x: 0, y: 0 };
+  let streetSurface = true;
   let planMesh: CityGlFillMesh | undefined, builtMesh: CityGlFillMesh | undefined, streetData: CityGlStrokes | undefined, wallData: CityGlStrokes | undefined, towerData: Float32Array | undefined;
   let styleKey = '', streetKey = '', builtKey = '', draws: CityGlDraws | undefined, towerColors: [string, string] = ['#5a5248', '#2f2a24'];
   let selectionKey = '', lastLod: CityLod | undefined, generation = 0, buildingGeneration = 0, lost = false, disposed = false, lastFrame: CityGlFrame | undefined;
@@ -546,7 +547,7 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
     async setScene(next, nextBuildings, options = {}) {
       const gen = ++generation, start = performance.now(), workers = options.workers ?? defaultWorkers();
       let t = performance.now();
-      const o = cityOrigin(next), planSource = packPlan(next, o), sd = buildStreetStrokes(next, o), wd = cityWallStrokes(next, o), td = buildTowers(cityLegacyWalls(next), o); // walls hook
+      const o = cityOrigin(next), planSource = packPlan(next, o), sd = buildStreetStrokes(next, o, streetSurface), wd = cityWallStrokes(next, o), td = buildTowers(cityLegacyWalls(next), o); // walls hook
       const builtSource = nextBuildings ? packBuildings(nextBuildings, o) : undefined;
       const packMs = performance.now() - t;
       const [p, b] = await Promise.all([buildFill(planSource, workers), builtSource && buildFill(builtSource, workers)]);
@@ -582,6 +583,12 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
       gl.clearColor(c[0] * c[3], c[1] * c[3], c[2] * c[3], c[3]); gl.clear(gl.COLOR_BUFFER_BIT);
       if (!scene || !plan) return frame;
       const palette = o.palette ?? 'growth', layers = { ...DEFAULT_LAYERS, ...o.layers };
+      // Road surface layer toggled: rebuild the street strokes (round caps, one width when off).
+      const surface = layers.roadSurface !== false;
+      if (surface !== streetSurface) {
+        streetSurface = surface;
+        if (scene && origin && !lost && !gl.isContextLost()) { streetData = buildStreetStrokes(scene, origin, surface); streets?.dispose(); streets = new StrokePack(gl, streetData); streetKey = ''; }
+      }
       const renderBackground = globalThis.document?.documentElement.dataset.cityBackground === 'render', painted = o.paintedBuildings ?? renderBackground;
       const style: CityGlStyleState = { view: o.view, lod, palette, layers, buildingsVisible: o.buildingsVisible ?? true, diagnostic: o.diagnostic ?? 'none', refusedParcels: o.refusedParcels, painted, blended: o.groundBlend ?? isBlended(), colors: o.colors };
       const colorKey = o.colors ? JSON.stringify(o.colors) : '';
@@ -697,11 +704,11 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
         const s = { edgePx: lod === 'far' ? 0 : lod === 'mid' ? 0.7 : 0.9, inner: 1, minPx: 1, maxRank, crossings, dash: 1 };
         const paintRoads = renderBackground && palette !== 'parchment' && palette !== 'ink' && !softStreets;
         if (paintRoads) useStroke(casingP);
-        if (d.streetCasing) strokes(streets, first, 0, s, softStreets);
+        if (d.streetCasing) strokes(streets, first, 0, s, softStreets && streetSurface);
         if (textured && streets.mats && palette !== 'parchment' && palette !== 'ink' && !o.colors?.road) { useStroke(texturedP); useTextured(texturedP, streets.mats, false); u = texturedP.u; }
         else if (paintRoads) useStroke(surfaceP);
         gl.uniform1i(u.uBridgeDeck, (o.bridgeDeck ?? true) ? 1 : 0);
-        strokes(streets, first, 1, s, softStreets);
+        strokes(streets, first, 1, s, softStreets && streetSurface);
         gl.uniform1i(u.uBridgeDeck, 0);
       }
       frame.drawCalls += wallGl.draw('shadow', wallDraw); useStroke(strokeP); // walls hook: painted wall shadows

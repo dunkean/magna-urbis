@@ -992,6 +992,7 @@ impl BuildingSiteIndex {
                 district:programme["district_role"].as_str().unwrap_or(""), wealth, pressure:parcel.pressure,
                 distance:(center.x-layout.center.x).hypot(center.y-layout.center.y)/radius,
                 outside, farm:role.starts_with("dwelling.farm"),
+                low_rural: layout.config.as_ref().is_none_or(|c| c.low_rural_houses),
             }.area_scale(&site_seed)
         } else { 1.0 };
         super::house_mix::scale_home(&mut parts, parcel, home_area);
@@ -1272,6 +1273,7 @@ impl BuildingSiteIndex {
             population: pr.population,
             fronts: &fronts,
             seed: &site_seed,
+            low_rural: layout.config.as_ref().is_none_or(|c| c.low_rural_houses),
         });
         if !massing.is_null() {
             programme["massing"] = massing;
@@ -1685,7 +1687,7 @@ mod tests {
         layout.blocks[0].zone = "faubourg".into(); layout.quarters[0].zone = "faubourg".into();
         partitions[0].config.as_mut().unwrap().zone = "auto".into();
         let context = super::super::house_mix::HomeContext {
-            zone:"faubourg", district:"elite", wealth:0.9, pressure:0.85, distance:1.0, outside:false, farm:false,
+            zone:"faubourg", district:"elite", wealth:0.9, pressure:0.85, distance:1.0, outside:false, farm:false, low_rural:true,
         };
         let seed = (0..100).map(|k| format!("houses2-request-{k}")).find(|s|
             context.area_scale(&format!("{s}/démo-a/lot-0")) < 1.0).unwrap();

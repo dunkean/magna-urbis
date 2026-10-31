@@ -11,6 +11,7 @@ const controls: Record<string, Words> = {
   quarters:['Secteurs de calcul','Calculation sectors','计算分区','Sectores de cálculo','Setores de cálculo'],
   blocks:['Îlots','Blocks','街区','Manzanas','Quadras'],
   streets:['Rues urbaines','Urban streets','城市街道','Calles urbanas','Ruas urbanas'],
+  roadSurface:['Surface des routes (carrefours, congés)','Road surface (junctions, curb returns)','路面（路口、路缘转角）','Superficie de calzada (cruces, bordillos)','Superfície das vias (cruzamentos, meios-fios)'],
   enclosures:['Enceintes et portes','Walls and gates','城墙与城门','Murallas y puertas','Muralhas e portões'],
   parcels:['Parcelles','Parcels','地块','Parcelas','Lotes'],
   gardens:['Jardins','Gardens','花园','Jardines','Jardins'],

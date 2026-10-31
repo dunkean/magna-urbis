@@ -617,6 +617,18 @@ pub struct LayoutConfig {
     /// between them) collapsed onto the more important road; the rest stay, as
     /// such doubles sometimes do. `mergeParallelStreets` forces 1.
     pub parallel_merge: f64,
+    /// Major street ranks narrow below 5 000 inhabitants (off: the culture's
+    /// widths whatever the size; hamlets keep their fixed 5 m / 3.5 m).
+    pub road_width_by_size: bool,
+    /// A regional road takes the town's main-street width inside the built
+    /// land and tapers back outside.
+    pub town_main_road: bool,
+    /// Final pass trimming tails that overshoot a junction and spurs that
+    /// never leave their host road.
+    pub polish_road_ends: bool,
+    /// Village, hamlet and rural homes are low (two storeys under the
+    /// tradition) and mostly small; faubourg homes one storey lower.
+    pub low_rural_houses: bool,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub regular_grid_outline: bool,
     pub params: Value,
@@ -738,6 +750,10 @@ impl Default for LayoutConfig {
             port_shelter: None,
             merge_parallel_streets: false,
             parallel_merge: 0.0,
+            road_width_by_size: true,
+            town_main_road: true,
+            polish_road_ends: true,
+            low_rural_houses: true,
             regular_grid_outline: false,
             params: json!({}),
             phase_overrides: Default::default(),
@@ -1364,7 +1380,7 @@ pub fn generate_quarters(
             if let Some(ground) = &stilt { ground.walkways(&mut layout.streets, physical_surface); }
             network::bridge_water_on_ground(&mut layout.streets, surface, physical_surface, config.max_street_grade);
             let gates: Vec<Point> = layout.enclosures.iter().flat_map(|e| e.gates.iter().copied()).collect();
-            network::polish_ends(&mut layout.streets, &gates);
+            if config.polish_road_ends { network::polish_ends(&mut layout.streets, &gates); }
             access::summarize(layout, config);
             fortification::prepare_options(layout, config, surface);
             programme::prepare(layout, site.population, &config.programme, surface)?;

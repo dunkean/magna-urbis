@@ -13,6 +13,11 @@ const labels: Record<string, Words> = {
   settlementForm:['Grammaire morphologique','Morphological grammar','形态语法','Gramática morfológica','Gramática morfológica'],
   suburbs:['Faubourgs','Suburbs','郊区','Arrabales','Subúrbios'],
   phases:['Phases du noyau (0 = culture)','Core phases (0 = culture)','核心阶段（0 = 文化）','Fases del núcleo (0 = cultura)','Fases do núcleo (0 = cultura)'],
+  roadWidthBySize:['Largeurs selon la taille','Widths by settlement size','按聚落规模定宽','Anchos según el tamaño','Larguras conforme o tamanho'],
+  townMainRoad:['Grand-rue dans le bâti','Main street through the built area','建成区内的主街','Calle mayor en lo construido','Rua principal na área construída'],
+  polishRoadEnds:['Nettoyer les bouts de rue','Clean street ends','清理街道端头','Limpiar los extremos de calle','Limpar as pontas das ruas'],
+  lowRuralHouses:['Maisons basses en campagne','Low houses in the countryside','乡村低矮房屋','Casas bajas en el campo','Casas baixas no campo'],
+  parallelMerge:['Fusion des rues parallèles','Parallel street merge','合并平行街道','Fusión de calles paralelas','Fusão de ruas paralelas'],
   tissue:['Maillage des rues','Street network','街道网络','Red de calles','Rede de ruas'],
   accessMode:['Accessibilité des îlots','Block accessibility','街区通达性','Accesibilidad de las manzanas','Acessibilidade das quadras'],
   accessDepth:['Profondeur accessible (m · 0 = culture)','Accessible depth (m · 0 = culture)','可达深度（米 · 0 = 文化）','Profundidad accesible (m · 0 = cultura)','Profundidade acessível (m · 0 = cultura)'],
@@ -95,6 +100,7 @@ const seedText: Words[] = [
 ];
 const summaries: Record<string, Words> = {
   'Graine':['Graine','Seed','种子','Semilla','Semente'],
+  'Routes et maisons (31/10)':['Routes et maisons (31/10)','Roads and houses (31/10)','道路与房屋（10/31）','Calles y casas (31/10)','Ruas e casas (31/10)'],
   'Dimensions et budget':['Dimensions et budget','Dimensions and budget','尺寸与预算','Dimensiones y presupuesto','Dimensões e orçamento'],
   'Dispersion et coupures':['Dispersion et coupures','Dispersion and gaps','分散与间隙','Dispersión e interrupciones','Dispersão e lacunas'],
   'Réglages des accès':['Réglages des accès','Access settings','通道设置','Ajustes de acceso','Configurações de acesso'],
@@ -132,6 +138,7 @@ export function setupUrbanPanelLocale(roots: HTMLElement[], city: boolean): void
           for (const control of Array.from(root.querySelectorAll<HTMLElement>(`[data-${attribute}="${key}"]`))) {
             const first = control.closest('label')?.firstChild;
             if (first?.nodeType === Node.TEXT_NODE) first.textContent = words[i];
+            else if (first === control && control.nextSibling?.nodeType === Node.TEXT_NODE) control.nextSibling.textContent = words[i];
             const choices = options[key];
             if (choices && control instanceof HTMLSelectElement) for (const option of Array.from(control.options)) {
               if (choices[option.value]) option.textContent = choices[option.value][i];

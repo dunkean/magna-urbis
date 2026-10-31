@@ -1689,7 +1689,7 @@ fn fortify(
     let rank_base: [f64; 5] = std::array::from_fn(|r| {
         morph.value["widthByRank"][r].as_f64().unwrap_or(3.0) * morph.number_or("widthScale", 1.0)
     });
-    let table = super::network::rank_widths(rank_base, site.population);
+    let table = super::network::rank_widths(rank_base, site.population, cfg.road_width_by_size);
     let predicted = fortification::Predicted {
         widths: table.map(|w| w * 1.1),
         arterial: if site.population >= 20_000 { 0 } else { 1 },

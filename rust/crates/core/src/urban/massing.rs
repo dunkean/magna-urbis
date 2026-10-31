@@ -226,6 +226,8 @@ pub(super) struct Input<'a> {
     pub population: u32,
     /// Street frontage segments of the lot (public accesses).
     pub fronts: &'a [[Point; 2]],
+    /// `lowRuralHouses`: village homes two storeys under the tradition, faubourg one.
+    pub low_rural: bool,
     pub seed: &'a str,
 }
 
@@ -340,14 +342,17 @@ fn lot_floors(m: &Input, tr: &Tradition, rng: &mut Rng) -> u32 {
     // Gradient core > ring > faubourg > village: a village's storeys are the
     // tradition's range lowered by two (floor 1, cap two floors, a notable
     // house in ten reaches a third); a faubourg lowers it by one.
-    let (lo, hi) = if home && rural {
+    let low = m.low_rural;
+    let (lo, hi) = if home && rural && low {
         let l = lo.saturating_sub(2).max(1);
         let notable = hi > l + 1 && Rng::new(m.seed).fork("storey-notable").chance(0.06 + 0.3 * (m.wealth - 0.6).max(0.0));
         (l, if notable { l + 2 } else { (l + 1).min(hi) })
-    } else if home && m.zone == "faubourg" {
+    } else if home && rural {
+        (lo, hi.min(lo + 1))
+    } else if home && low && m.zone == "faubourg" {
         (lo.saturating_sub(1).max(1), hi.saturating_sub(1).max(lo.saturating_sub(1).max(1)))
     } else { (lo, hi) };
-    let lo = if home && !rural && m.zone != "faubourg" && Rng::new(m.seed).fork("storey-drop").chance(drop) { lo.saturating_sub(1).max(1) } else { lo };
+    let lo = if home && !(low && (rural || m.zone == "faubourg")) && Rng::new(m.seed).fork("storey-drop").chance(drop) { lo.saturating_sub(1).max(1) } else { lo };
     let corner = m.fronts.len() >= 2 && {
         let d = |s: &[Point; 2]| {
             let l = (s[1].x - s[0].x).hypot(s[1].y - s[0].y).max(1e-9);
@@ -360,7 +365,7 @@ fn lot_floors(m: &Input, tr: &Tradition, rng: &mut Rng) -> u32 {
         })
     };
     let mut x = 0.85 * urban - 0.05 + 0.25 * (m.wealth - 0.5)
-        + rng.range(-0.25, 0.25) + if rural { 0.3 } else { 0.0 }
+        + rng.range(-0.25, 0.25) + if rural && low { 0.3 } else { 0.0 }
         + if corner { 0.15 } else { 0.0 };
     let role = m.role;
     if role.contains("tenement") || role.contains("insula") || m.function == "collective" {
@@ -1136,7 +1141,7 @@ mod tests {
     }
     fn input<'a>(parts: &'a [(Shape, &'static str)], arch: &'a Value, fronts: &'a [[Point; 2]], seed: &'a str) -> Input<'a> {
         Input { parts, arch, culture: "european-organic", zone: "core", role: "dwelling.row", function: "domestic",
-            landmark: false, wealth: 0.5, pressure: 0.8, small_home: false, population: 0, fronts, seed }
+            landmark: false, wealth: 0.5, pressure: 0.8, small_home: false, population: 0, fronts, seed, low_rural: true }
     }
 
     #[test]
@@ -1262,6 +1267,13 @@ mod tests {
             assert!(massing(&i)[0]["floors"].as_u64().unwrap() >= 3);
         }
         assert!(high < 90 && tall < 30, "{high} {tall}");
+        // `lowRuralHouses` off: the tradition's own range (3–4 floors here).
+        for k in 0..50 {
+            let seed = format!("village-{k}");
+            let mut i = input(&parts, &arch, &fronts, &seed);
+            i.zone = "village"; i.population = 500; i.pressure = 0.3; i.low_rural = false;
+            assert!(massing(&i)[0]["floors"].as_u64().unwrap() >= 2);
+        }
     }
 
     #[test]
@@ -1276,7 +1288,7 @@ mod tests {
                 m.zone = zone; m.wealth = wealth; m.pressure = 0.5;
                 let old = massing(&m);
                 let area = super::super::house_mix::HomeContext {
-                    zone, district, wealth, pressure:m.pressure, distance, outside, farm,
+                    zone, district, wealth, pressure:m.pressure, distance, outside, farm, low_rural: true,
                 }.area_scale(&seed);
                 m.small_home = area < 1.0;
                 let new = massing(&m);

@@ -3606,6 +3606,8 @@ fn generate_once(
             base,
             axis,
             &quarters.iter().map(|q| q.shape.clone()).collect::<Vec<_>>(),
+            cfg.road_width_by_size,
+            cfg.town_main_road,
         );
     }
     lap("hierarchy");

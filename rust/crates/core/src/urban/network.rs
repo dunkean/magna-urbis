@@ -1313,13 +1313,13 @@ fn width(s: &Street, i: usize) -> f64 {
 /// Width of each rank for a city of this size: the cultural `widthByRank`
 /// scaled up for major ranks of larger cities (metropolis arterials 12-20 m),
 /// lanes and closes unchanged, then made monotone so no lower rank is wider.
-pub(super) fn rank_widths(base: [f64; 5], population: u32) -> [f64; 5] {
+pub(super) fn rank_widths(base: [f64; 5], population: u32, by_size: bool) -> [f64; 5] {
     let size = (population as f64 / 5000.0).max(1.0).log10();
     let lift = [0.45, 0.35, 0.15, 0.0, 0.0];
     // Below 5 000 inhabitants the major ranks narrow along the same log
     // curve (a 500-soul village's main street is a lane widened, not a town
     // arterial): 0 at 5 000, full at 200; lanes and paths barely change.
-    let small = ((5000.0 / (population.max(1) as f64)).ln() / 25f64.ln()).clamp(0.0, 1.0);
+    let small = if by_size { ((5000.0 / (population.max(1) as f64)).ln() / 25f64.ln()).clamp(0.0, 1.0) } else { 0.0 };
     let shrink = [0.36, 0.36, 0.28, 0.12, 0.0];
     let mut table: [f64; 5] = std::array::from_fn(|r| base[r] * (1.0 + lift[r] * size) * (1.0 - shrink[r] * small));
     for r in (0..4).rev() {
@@ -1329,9 +1329,9 @@ pub(super) fn rank_widths(base: [f64; 5], population: u32) -> [f64; 5] {
     table
 }
 /// The rank widths of a tissue (`widthByRank` × `widthScale`) for a settlement of this size.
-pub(super) fn town_table(m: &super::Morph, population: u32) -> [f64; 5] {
+pub(super) fn town_table(m: &super::Morph, population: u32, by_size: bool) -> [f64; 5] {
     let base: [f64; 5] = std::array::from_fn(|r| m.value["widthByRank"][r].as_f64().unwrap_or(3.0) * m.number_or("widthScale", 1.0));
-    rank_widths(base, population)
+    rank_widths(base, population, by_size)
 }
 /// Street land of a semantic role, relative to its rank width: the full
 /// extra (a market street half again as wide, a processional way) belongs to a
@@ -1374,6 +1374,8 @@ pub(super) fn hierarchy(
     base: [f64; 5],
     axis: bool,
     built: &[super::Shape],
+    by_size: bool,
+    town_main: bool,
 ) {
     use std::cmp::Reverse;
     use std::collections::BinaryHeap;
@@ -1494,7 +1496,7 @@ pub(super) fn hierarchy(
     let busiest = through.iter().copied().max().unwrap_or(0);
     let market_reach = 25.0 + 0.25 * (population as f64).sqrt();
     let main_centre = centres[0];
-    let table = rank_widths(base, population);
+    let table = rank_widths(base, population, by_size);
     let edge_of: BTreeMap<(usize, usize), usize> = edges
         .iter()
         .enumerate()
@@ -1568,7 +1570,9 @@ pub(super) fn hierarchy(
         flush(run.take(), &mut result);
     }
     *streets = result;
-    town_roads(streets, built, table[arterial]);
+    if town_main {
+        town_roads(streets, built, table[arterial]);
+    }
 }
 
 /// Invariant (« dosage »): inside the settlement a regional road (or a
