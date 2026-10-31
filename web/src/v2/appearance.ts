@@ -92,7 +92,7 @@ export function appearanceDisplayOptions(settings: V2Settings): V2ExportDisplay 
     ...(a?.roads !== undefined ? { layers: { roads: a.roads } } : {}), style: a?.style ?? o.style, contours: a?.contours ?? o.contours ?? true,
     landuse: a?.landuse ?? o.landuse ?? true, labels: a?.labels ?? o.labels ?? true,
     legend: a?.legend ?? o.legend ?? false, cartouche: a?.cartouche ?? false,
-    painted: a?.painted ?? false, vegetation: a?.vegetation ?? 'classic' };
+    painted: a?.painted ?? false, vegetation: a?.vegetation ?? 'canopy' };
 }
 /** Keep the legacy RenderOptions request valid while accepting an explicit display snapshot. */
 export function svgOptionsForDisplay(options: RenderOptions, display?: Partial<V2ExportDisplay>, brushes?: BrushSources): RenderOptions {

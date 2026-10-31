@@ -188,7 +188,7 @@ export class StudioClient {
     if(this.classicBackground?.world===this.world&&this.classicBackground.key===key)return;
     const {renderSvg}=await import('../render/svg');
     const brushes=this.display.painted?(await import('../render/assets/brushAssets')).BRUSH_SOURCES:undefined;
-    const svg=renderSvg(this.world,{...this.display,brushes,width:2048,labels:false,legend:false,cartouche:false,layers:{city:false,streets:false,labels:false,decor:false}});
+    const svg=renderSvg(this.world,{...this.display,brushes,width:2048,labels:false,legend:false,cartouche:false,layers:{city:false,streets:false,roads:false,labels:false,decor:false}}); // roads: vectors per 3D tile (city3d), not this map raster
     this.classicBackground={world:this.world,key,url:`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`};
   }
   backgroundUrl():string|undefined{return this.benchActive?this.bench?.backgroundUrl():this.classicBackground?.url;}

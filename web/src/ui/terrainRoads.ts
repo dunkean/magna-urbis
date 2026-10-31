@@ -263,10 +263,13 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
     drawnLayer = layer; drawn = output; drawnState = state; drawnOwnership = urbanOwnership; layer.replaceChildren();
     if (!output || !show || !enabled) return;
     const order = [...output.segments].sort((a, b) => ROAD_CLASSES.indexOf(b.class) - ROAD_CLASSES.indexOf(a.class));
-    const line = (d: string, stroke: string, width: number, extra: Record<string, string> = {}): SVGPathElement => {
+    // A number is a screen width in px; a string is a CSS width (roadStrokeWidth: metric with a px floor, following --road-k).
+    const line = (d: string, stroke: string, width: number | string, extra: Record<string, string> = {}): SVGPathElement => {
       const p = document.createElementNS(ns, 'path'); p.setAttribute('d', d); p.setAttribute('fill', 'none'); p.setAttribute('stroke', stroke);
-      p.setAttribute('stroke-width', String(+width.toFixed(2))); p.setAttribute('vector-effect', 'non-scaling-stroke'); p.setAttribute('stroke-linejoin', 'round'); p.setAttribute('stroke-linecap', 'round');
+      p.setAttribute('vector-effect', 'non-scaling-stroke'); p.setAttribute('stroke-linejoin', 'round'); p.setAttribute('stroke-linecap', 'round');
       for (const [k, v] of Object.entries(extra)) p.setAttribute(k, v);
+      // After the extras: a `style` extra (metric dashes) must not drop the CSS width.
+      if (typeof width === 'number') p.setAttribute('stroke-width', String(+width.toFixed(2))); else p.style.strokeWidth = width;
       return p;
     };
     const casings = document.createElementNS(ns, 'g'), fills = document.createElementNS(ns, 'g'), crossings = document.createElementNS(ns, 'g'), hits = document.createElementNS(ns, 'g');
@@ -312,18 +315,22 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
       const paint = v1 ?? paintOf(style, s.class, s.surface), colors = getBenchRenderColors();
       const { width: w, dash } = paint, fill = (['track','trail'].includes(s.class) ? colors.track : colors.road) ?? paint.fill, casing = style.casing ? colors.roadEdge ?? paint.casing : null;
       const extra: Record<string, string> = dash ? { 'stroke-dasharray': dash } : {};
+      // World-size feature: the preset width is a screen floor under the road's metric width (V1 paints are metric already).
+      const body = v1 ? w : roadStrokeWidth({ scale: 1, addPx: 0, addM: 0 }, w, s.width), plus = (px: number): number | string => v1 ? w + px : `calc(${body} + ${px}px)`;
       if (d) {
-        if (casing) casings.append(line(d, casing, v1?.casingWidth ?? w + 1.6, extra));
-        const road = line(d, fill, w, extra); if (v1) road.setAttribute('opacity', String(v1.opacity)); fills.append(road);
+        if (casing) casings.append(line(d, casing, v1?.casingWidth ?? plus(1.6), extra));
+        // A dashed track: its metric width as a continuous earth band, the dashed symbol at its preset width on top.
+        if (dash && !v1) fills.append(line(d, fill, body, { opacity: '0.35', 'stroke-linecap': 'butt' }), line(d, fill, w, extra));
+        else { const road = line(d, fill, body, extra); if (v1) road.setAttribute('opacity', String(v1.opacity)); fills.append(road); }
       }
       // A crossing can extend beyond the main segment's visible pieces. Clip it
       // independently once, including its casing, rather than repeating its art.
       if (style.crossings) for (const c of s.crossings) {
         const cd = outsidePath(c.path, s.width, false);
         if (!cd) continue;
-        if (c.kind === 'bridge') { crossings.append(line(cd, '#4f3c2a', w + 3.4, { 'stroke-linecap': 'butt' }), line(cd, '#e8d8b8', w + 1.2, { 'stroke-linecap': 'butt' })); }
-        else if (c.kind === 'causeway') { crossings.append(line(cd, '#5d5446', w + 2.6), line(cd, '#cfc3a5', w + 0.8)); }
-        else crossings.append(line(cd, '#3f7fa6', w + 0.6, { 'stroke-dasharray': '1 2.5' }));
+        if (c.kind === 'bridge') { crossings.append(line(cd, '#4f3c2a', plus(3.4), { 'stroke-linecap': 'butt' }), line(cd, '#e8d8b8', plus(1.2), { 'stroke-linecap': 'butt' })); }
+        else if (c.kind === 'causeway') { crossings.append(line(cd, '#5d5446', plus(2.6)), line(cd, '#cfc3a5', plus(0.8))); }
+        else crossings.append(line(cd, '#3f7fa6', plus(0.6), { 'stroke-dasharray': '1 2.5' }));
       }
       if (d) {
         const hit = line(d, 'transparent', Math.max(8, w + 6)); hit.style.pointerEvents = 'stroke'; hit.dataset.road = '';

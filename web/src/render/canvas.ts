@@ -661,7 +661,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     const multiply = (on: boolean): void => { ctx.globalCompositeOperation = on && pal.landBlend === 'multiply' ? 'multiply' : 'source-over'; };
     if (pal.grid && sc * pal.grid.step > 7) {
       const g = pal.grid;
-      ctx.strokeStyle = g.color; ctx.globalAlpha = g.opacity; ctx.lineWidth = Math.max(0.6 * u, 0.8 / sc);
+      ctx.strokeStyle = g.color; ctx.globalAlpha = g.opacity; ctx.lineWidth = 0.8 / sc; // graticule: a screen-size line
       ctx.beginPath();
       for (let v = Math.max(g.step, Math.ceil(rect.minX / g.step) * g.step); v < Math.min(S, rect.maxX); v += g.step) { ctx.moveTo(v, Math.max(0, rect.minY)); ctx.lineTo(v, Math.min(S, rect.maxY)); }
       for (let v = Math.max(g.step, Math.ceil(rect.minY / g.step) * g.step); v < Math.min(S, rect.maxY); v += g.step) { ctx.moveTo(Math.max(0, rect.minX), v); ctx.lineTo(Math.min(S, rect.maxX), v); }
@@ -1228,7 +1228,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     // 6. bridges
     if (world.bridges?.length) drawBridges(ctx, world, pal, rect, sc);
     // site marker (placeholder until an urban layer exists)
-    if (!world.urban && world.site) drawSiteMarker(ctx, world, pal, u, sc, overlays.labels);
+    if (!world.urban && world.site) drawSiteMarker(ctx, world, pal, sc, overlays.labels);
     if (cavernFloor) {
       if (luOn && world.options.biome === 'underdark-caverns' && world.terrain.caverns?.fungalRooms?.length) {
         const rooms = exactCavernPath('fungalRooms');
@@ -1603,10 +1603,11 @@ function drawBridges(ctx: CanvasRenderingContext2D, world: World, pal: Palette, 
   }
 }
 
-function drawSiteMarker(ctx: CanvasRenderingContext2D, world: World, pal: Palette, u: number, sc: number, labels: boolean): void {
-  const c = world.site!.center;
-  ctx.setLineDash([Math.max(9 * u, 6 / sc), Math.max(6 * u, 4 / sc)]);
-  ctx.strokeStyle = pal.ink; ctx.globalAlpha = 0.7; ctx.lineWidth = Math.max(1.5 * u, 1 / sc);
+/** The site marker is a screen-size symbol: constant pixels at any zoom (never metres that grow with the map). */
+function drawSiteMarker(ctx: CanvasRenderingContext2D, world: World, pal: Palette, sc: number, labels: boolean): void {
+  const c = world.site!.center, px = (v: number): number => v / sc;
+  ctx.setLineDash([px(7), px(4.5)]);
+  ctx.strokeStyle = pal.ink; ctx.globalAlpha = 0.7; ctx.lineWidth = px(1.2);
   for (const poly of world.landuse?.reserve ?? []) {
     if (poly.length < 3) continue;
     ctx.beginPath(); ctx.moveTo(poly[0].x, poly[0].y);
@@ -1615,9 +1616,9 @@ function drawSiteMarker(ctx: CanvasRenderingContext2D, world: World, pal: Palett
   }
   ctx.setLineDash([]); ctx.globalAlpha = 1;
   if (!labels) return;
-  const r = Math.max(9 * u, 5 / sc);
+  const r = px(7);
   ctx.beginPath(); ctx.arc(c.x, c.y, r, 0, TAU);
-  ctx.strokeStyle = pal.ink; ctx.lineWidth = Math.max(1.6 * u, 1.2 / sc); ctx.stroke();
+  ctx.strokeStyle = pal.ink; ctx.lineWidth = px(1.3); ctx.stroke();
   ctx.beginPath(); ctx.arc(c.x, c.y, r * 0.38, 0, TAU); ctx.fillStyle = pal.ink; ctx.fill();
 }
 

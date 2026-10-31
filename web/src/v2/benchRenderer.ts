@@ -29,6 +29,8 @@ import { decodeBrushes, type BrushImages } from '../render/brushes';
 import { terrainFromDecor } from '../ui/benchTerrainTransfer';
 import { v2WorldDecor } from './urban3d';
 import { createNativeCityMap } from './nativeCityMap';
+import { viewRect } from '../render/view';
+import { viewRasterFits, viewRasterRegion, type ViewRasterRegion } from '../render/viewRaster';
 
 export function usesBenchRenderer(world: World | undefined, settings: V2Settings): boolean {
   if (settings.appearance?.renderer === 'classic') return false;
@@ -44,6 +46,11 @@ let brushes: Promise<BrushImages | null> | undefined;
 export async function paintedBrushes(): Promise<BrushImages | null> {
   return brushes ??= import('../render/assets/brushAssets').then(({ BRUSH_SOURCES }) => decodeBrushes(BRUSH_SOURCES));
 }
+/** A world-coordinate SVG body as a document rasterizing `region` at its density. */
+const svgOf = (body: string, region: ViewRasterRegion): string =>
+  `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.max(1, Math.round(region.width * region.density))}" height="${Math.max(1, Math.round(region.height * region.density))}" viewBox="${region.x} ${region.y} ${region.width} ${region.height}" preserveAspectRatio="none">${body}</svg>`;
+/** Pixel width of the whole-map renderSvg overlay of exports. */
+const EXPORT_OVERLAY_PX = 4096;
 export class BenchRenderer {
   private surface = document.createElement('canvas');
   private overlay = document.createElement('canvas');
@@ -55,8 +62,15 @@ export class BenchRenderer {
   private native?: TerrainData;
   private city?: ReturnType<typeof createNativeCityMap>;
   private cartography?: CanvasRenderer;
+  /** renderSvg overlay of an export (explicit layers), whole map at EXPORT_OVERLAY_PX: used only where it is not stretched. */
   private exportOverlay?:HTMLImageElement;
+  /** Terrain raster (CPU relief, sea): natural content, whole map. */
   private base?: HTMLImageElement;
+  /** Vector water, hydrology and frame (world-coordinate SVG body), rasterized per view (render/viewRaster). */
+  private vectors = '';
+  private vectorBase?: { image: HTMLImageElement; region: ViewRasterRegion };
+  private vectorView?: { image: HTMLImageElement; region: ViewRasterRegion };
+  private vectorRequest?: Promise<void>;
   private backgroundHref?: string;
   private uploaded?:TerrainData;
   private baseKey = '';
@@ -70,7 +84,7 @@ export class BenchRenderer {
   private ownsMaterialContext: boolean;
   rasterContext(): MaterialRasterContext | undefined { return this.materialContext?.gl.isContextLost() ? undefined : this.materialContext; }
   async set(world: World, settings: V2Settings, layers: Partial<ExportLayers> = {}): Promise<void> {
-    const changed = this.world !== world;
+    const changed = this.world !== world, exporting = Object.keys(layers).length > 0;
     const previous = { settings: this.settings, layers: this.exportLayers, gpuActive: this.gpuActive };
     this.settings = settings; layers = { ...(settings.appearance?.roads === false ? { roads: false } : {}), ...layers }; this.exportLayers = layers;
     if (changed) {
@@ -106,12 +120,12 @@ export class BenchRenderer {
       const state=this;
       const palette={...biomePalette(a.style,world.options.biome),frameKind:'none' as const,...(layers.decor===false?{grid:null}:{})};
       this.cartography = createCanvasRenderer(this.overlay, shown, palette, { colors: a.colors, transparentBackground: true, terrain: () => null,
-        brushes: a.painted ? await paintedBrushes() ?? undefined : undefined, vegetation: a.vegetation, get dpr() { return state.dpr; } });
+        brushes: a.painted ? await paintedBrushes() ?? undefined : undefined, vegetation: a.vegetation ?? 'canopy', get dpr() { return state.dpr; } });
       this.cartography.setOverlays({ labels: layers.labels !== false && (a.labels ?? true), legend: layers.decor !== false && (a.legend ?? false), cartouche: layers.decor !== false && (a.cartouche ?? false) });
       this.exportOverlay=undefined;
-      if(Object.keys(layers).length){
+      if(exporting){
         const sources=a.painted?(await import('../render/assets/brushAssets')).BRUSH_SOURCES:undefined;
-        const svg=renderSvg({...shown,terrain:world.terrain},{width:4096,style:a.style,colors:a.colors,buildings:a.buildings,layers:{...layers,background:false,terrain:false,water:false},contours:false,landuse:a.landuse??true,labels:a.labels??true,legend:a.legend??false,cartouche:a.cartouche??false,brushes:sources,vegetation:a.vegetation});
+        const svg=renderSvg({...shown,terrain:world.terrain},{width:EXPORT_OVERLAY_PX,style:a.style,colors:a.colors,buildings:a.buildings,layers:{...layers,background:false,terrain:false,water:false},contours:false,landuse:a.landuse??true,labels:a.labels??true,legend:a.legend??false,cartouche:a.cartouche??false,brushes:sources,vegetation:a.vegetation});
         const document=new DOMParser().parseFromString(svg,'image/svg+xml');document.querySelectorAll('.layer-decor').forEach(frame=>frame.remove());
         this.exportOverlay=await imageOf(new XMLSerializer().serializeToString(document.documentElement));
       }
@@ -170,6 +184,8 @@ export class BenchRenderer {
       const sea=seaMaterialSvg(seaDistanceSurface(t,t.width),t.x,t.y,style,t.width,a.colors);
       svg+=`<defs><mask id="v2-water-only"><rect width="${t.width}" height="${t.width}" fill="white"/><path d="${terrainLandClip(t)}" fill="black" fill-rule="evenodd"/></mask></defs><g mask="url(#v2-water-only)">${sea}</g>`;
     }
+    // Everything below is vector content: it is rasterized for the view, never stretched from one map raster.
+    const terrain = svg; svg = '';
     if (t.water && layers.water) {
       if (!this.gpuActive || isFantasyStyle(style)) svg += vectorWaterSvg(t.water, water);
       if (!this.gpuActive&&water.overlay !== 'none') svg += vectorOverlaySvg(t.water, water.overlay, t.conditioning?.delta ? { values: t.conditioning.delta, n: t.conditioning.n } : undefined);
@@ -180,9 +196,12 @@ export class BenchRenderer {
       svg += renderHydrology(hydrology, diagnostic, !this.gpuActive && layers.water, style, true, a.colors);
     }
     if(!layers.relief&&layers.frame)svg+=`<rect width="${t.width}" height="${t.width}" fill="none" stroke="${terrainStyle(style,a.colors).palette.frame}" stroke-width="1.2" vector-effect="non-scaling-stroke"/>`;
-    const documentSvg=`<svg xmlns="http://www.w3.org/2000/svg" width="2048" height="2048" viewBox="0 0 ${t.width} ${t.width}">${svg}</svg>`;
-    this.base = svg ? await imageOf(documentSvg) : undefined;
-    this.backgroundHref=!this.gpuActive&&svg?`data:image/svg+xml;charset=utf-8,${encodeURIComponent(documentSvg)}`:undefined;
+    const whole:ViewRasterRegion={x:0,y:0,width:t.width,height:t.width,density:2048/t.width};
+    this.base = terrain ? await imageOf(svgOf(terrain,whole)) : undefined;
+    this.vectors = svg; this.vectorView = undefined; this.vectorRequest = undefined;
+    this.vectorBase = svg ? { image: await imageOf(svgOf(svg,whole)), region: whole } : undefined;
+    const documentSvg=svgOf(terrain+svg,whole);
+    this.backgroundHref=!this.gpuActive&&(terrain||svg)?`data:image/svg+xml;charset=utf-8,${encodeURIComponent(documentSvg)}`:undefined;
   }
   draw(view: View, w: number, h: number, dpr: number): HTMLCanvasElement {
     const canvas = this.surface, a = this.settings!.appearance ?? { style: this.settings!.options.style }, size = this.world!.mapSize;
@@ -193,17 +212,47 @@ export class BenchRenderer {
     if (this.exportLayers.background !== false) { ctx.fillStyle = terrainStyle(a.terrainStyle ?? a.style,a.colors).palette.paper; ctx.fillRect(0, 0, w, h); }
     if (this.gpuActive) { this.gpu!.setView(view, w, h); this.gpu!.redrawForCapture(); ctx.drawImage(terrainRendererCanvas(this.gpu!, this.gpuCanvas), 0, 0, w, h); }
     ctx.save(); ctx.translate(w / 2 - view.cx * view.scale, h / 2 - view.cy * view.scale); ctx.scale(view.scale, view.scale);
-    if (this.base) ctx.drawImage(this.base, 0, 0, size, size); ctx.restore();
-    if(this.exportOverlay){ctx.save();ctx.translate(w/2-view.cx*view.scale,h/2-view.cy*view.scale);ctx.scale(view.scale,view.scale);ctx.drawImage(this.exportOverlay,0,0,size,size);ctx.restore();}
-    else if (this.cartography) { this.overlay.width = canvas.width; this.overlay.height = canvas.height; this.cartography.draw(view); ctx.drawImage(this.overlay, 0, 0, w, h); }
+    if (this.base) ctx.drawImage(this.base, 0, 0, size, size);
+    const vectors = this.vectorRaster(view, w, h, dpr);
+    if (vectors) ctx.drawImage(vectors.image, vectors.region.x, vectors.region.y, vectors.region.width, vectors.region.height);
+    // The export overlay is one whole-map raster: only where it is at least as fine as the frame.
+    const overlay = this.exportOverlay && view.scale * dpr * size <= this.exportOverlay.naturalWidth * 1.01 ? this.exportOverlay : undefined;
+    if (overlay) ctx.drawImage(overlay, 0, 0, size, size);
+    ctx.restore();
+    if (!overlay && this.cartography) { this.overlay.width = canvas.width; this.overlay.height = canvas.height; this.cartography.draw(view); ctx.drawImage(this.overlay, 0, 0, w, h); }
     if (this.exportLayers.city !== false||this.exportLayers.streets!==false) this.stats.city = this.city?.draw(ctx, view, w, h, dpr, a,this.exportLayers);
     return canvas;
+  }
+  /** The vector raster for this frame: the view raster when it fits, else the whole-map one while a
+   * view raster at the frame's density is prepared (the frame is redrawn when it is ready). */
+  private vectorRaster(view: View, w: number, h: number, dpr: number): { image: HTMLImageElement; region: ViewRasterRegion } | undefined {
+    if (!this.vectors) return undefined;
+    const size = this.world!.mapSize, rect = viewRect(view, w, h), density = view.scale * dpr;
+    if (viewRasterFits(this.vectorView?.region, rect, density, size)) return this.vectorView;
+    if (viewRasterFits(this.vectorBase?.region, rect, density, size, Infinity)) return this.vectorBase;
+    void this.requestVectors(viewRasterRegion(rect, density, size));
+    return this.vectorView && viewRasterFits({ ...this.vectorView.region, density }, rect, density, size) ? this.vectorView : this.vectorBase;
+  }
+  private requestVectors(region: ViewRasterRegion): Promise<void> {
+    if (this.vectorRequest) return this.vectorRequest;
+    const vectors = this.vectors;
+    const request: Promise<void> = imageOf(svgOf(vectors, region)).then(image => {
+      if (this.disposed || this.vectors !== vectors) return;
+      this.vectorView = { image, region }; this.invalidate();
+    }, () => undefined).finally(() => { if (this.vectorRequest === request) this.vectorRequest = undefined; });
+    return this.vectorRequest = request;
   }
   backgroundUrl(): string | undefined { if(!this.backgroundHref&&this.gpuActive)this.backgroundHref=this.gpu!.captureMap(1024).toDataURL('image/png');return this.backgroundHref; }
   async capture(size: number, layers?: Partial<ExportLayers>): Promise<HTMLCanvasElement> {
     if (layers) await this.set(this.world!, this.settings!, layers);
     if (this.gpuActive) await this.gpu!.variantReady();   // draw() is synchronous: it would create a missing pipeline in place
-    return this.draw({ cx: this.world!.mapSize / 2, cy: this.world!.mapSize / 2, scale: size / this.world!.mapSize }, size, size, 1);
+    const view = { cx: this.world!.mapSize / 2, cy: this.world!.mapSize / 2, scale: size / this.world!.mapSize };
+    // Vectors at the export density before the synchronous draw.
+    if (this.vectors && !viewRasterFits(this.vectorView?.region, viewRect(view, size, size), view.scale, this.world!.mapSize)
+      && !viewRasterFits(this.vectorBase?.region, viewRect(view, size, size), view.scale, this.world!.mapSize, Infinity)) {
+      await this.vectorRequest; await this.requestVectors(viewRasterRegion(viewRect(view, size, size), view.scale, this.world!.mapSize));
+    }
+    return this.draw(view, size, size, 1);
   }
   dispose(): void { this.disposed = true; this.gpu?.dispose(); this.cartography?.dispose(); this.city?.dispose(); if(this.ownsMaterialContext)this.materialContext?.gl.getExtension('WEBGL_lose_context')?.loseContext();this.materialContext=undefined;this.world = undefined; }
 }

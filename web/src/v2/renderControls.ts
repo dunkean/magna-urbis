@@ -122,12 +122,12 @@ export function renderControlValues(settings: V2Settings, world?: World): V2Appe
   const nativeCity = !!Object.keys(world?.debug?.v2RustCities ?? {}).length;
   return { style: settings.options.style, contours: settings.options.contours ?? true, landuse: settings.options.landuse ?? true,
     labels: settings.options.labels ?? true, legend: settings.options.legend ?? false, cartouche: false,
-    renderer: a?.terrainStyle || nativeCity ? 'bench' : 'classic', painted: false, textured: true, vegetation: 'classic', season: .5,
+    renderer: a?.terrainStyle || nativeCity ? 'bench' : 'classic', painted: false, textured: false, vegetation: 'canopy', season: .5,
     diagnostic: 'none', lakes: true, oxbows: true, roads: true, buildings: true, terrainStyle: style, ...a,
     lighting: { ...DEFAULT_TERRAIN_LIGHTING, ...a?.lighting }, terrainLayers: { ...DEFAULT_TERRAIN_LAYERS, ...a?.terrainLayers },
     fantasy: { ...DEFAULT_FANTASY_OPTIONS, followLanduse: false, ...a?.fantasy },
     forest: { ...DEFAULT_FOREST_SETTINGS, ...settings.terrain?.forest, ...a?.forest },
-    city: { view: 'buildings', palette: 'growth', buildingStyle: 'cartographic', diagnostic: 'none', opacity: 1, width: .6, plan: true, colors: 'materials', exaggeration: 1, refinement: 'noise',
+    city: { view: 'buildings', palette: 'parchment', buildingStyle: 'cartographic', diagnostic: 'none', opacity: .8, width: .6, plan: true, colors: 'materials', exaggeration: 1, refinement: 'noise',
       groundBlend: 'classic', painted: style.startsWith('render') || (a?.city?.ground ?? '').startsWith('render'), ...a?.city, layers: { ...defaultCityLayers, ...a?.city?.layers } } };
 }
 /** A selected preset alone is unchanged. Compare display values with that preset's inherited defaults. */

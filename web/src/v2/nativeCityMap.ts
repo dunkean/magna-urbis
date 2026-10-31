@@ -154,7 +154,7 @@ export function createNativeCityMap(world: World, onInvalidate: () => void): Nat
       const stats: NativeCityMapStats = { native: entries.length > 0, cities: entries.length, layouts, buildings,
         visibleBuildings: 0, renderer: 'canvas2d', pending: false, ms: 0, materialFaces: 0, frames: [], houses: [] };
       if (disposed || !entries.length || !(view.scale > 0) || !(w > 0) || !(h > 0) || !(dpr > 0)) return stats;
-      const city = appearance.city ?? {}, opacity = finite(city.opacity, 1, 0, 1);
+      const city = appearance.city ?? {}, opacity = finite(city.opacity, .8, 0, 1);
       if (!opacity) return stats;
       const pixelsW = Math.max(1, Math.ceil(w * dpr)), pixelsH = Math.max(1, Math.ceil(h * dpr));
       if (opacity < 1) {
@@ -171,12 +171,12 @@ export function createNativeCityMap(world: World, onInvalidate: () => void): Nat
       }
       const viewport = viewRect(view, w, h), mpp = 1 / view.scale;
       lod = selectCityLod(mpp, lod); stats.lod = lod;
-      const palette = city.palette ?? 'growth', buildingAppearance: UrbanBuildingAppearance = {
+      const palette = city.palette ?? 'parchment', buildingAppearance: UrbanBuildingAppearance = {
         colors: appearance.colors, style: city.buildingStyle ?? 'cartographic', diagnostic: city.diagnostic ?? 'none' };
       const requestedLayers = { ...(city.plan === false ? EMPTY_LAYERS : DEFAULT_LAYERS), ...(city.plan === false ? {} : city.layers) };
       const layers = { ...(visibility.city === false ? EMPTY_LAYERS : requestedLayers),
         streets: visibility.streets !== false && requestedLayers.streets };
-      const painted = city.painted ?? paintedByDefault(appearance), textured = appearance.textured ?? true;
+      const painted = city.painted ?? paintedByDefault(appearance), textured = appearance.textured ?? false;
       const images = textured && palette !== 'parchment' && palette !== 'ink' ? materialImagesNow(invalidate) : undefined;
       ctx.save();
       try {

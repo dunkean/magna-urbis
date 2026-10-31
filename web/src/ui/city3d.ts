@@ -104,6 +104,26 @@ export interface City3dWallStats { count: number; pieces: number; triangles: num
 type Ground = City3dGround;
 type Colors = 'materials' | 'uses';
 const seedHash = (text: string): number => { let h = 2166136261; for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619); return h | 0; };
+/** Regional roads in one material tile (world transform set): casing then fill, metric width with a floor in tile pixels. */
+function drawTileRoads(ctx: CanvasRenderingContext2D, roads: readonly Street[], box: { minX: number; minY: number; maxX: number; maxY: number }, mpp: number, colors?: CityDrawOptions['colors']): void {
+  const visible = roads.filter(road => {
+    const pad = Math.max(...road.widths, 1) + 4 * mpp;
+    return road.path.some(p => p.x >= box.minX - pad && p.x <= box.maxX + pad && p.y >= box.minY - pad && p.y <= box.maxY + pad);
+  }).sort((a, b) => b.rank - a.rank);
+  if (!visible.length) return;
+  const floor = (rank: number): number => (rank <= 1 ? 2.2 : rank === 2 ? 1.6 : 1.1) * mpp;
+  const width = (road: Street): number => Math.max(road.widths.reduce((sum, w) => sum + w, 0) / Math.max(1, road.widths.length), floor(road.rank));
+  const trace = (road: Street): void => { ctx.beginPath(); road.path.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); };
+  ctx.lineJoin = ctx.lineCap = 'round';
+  for (const pass of ['casing', 'fill'] as const) for (const road of visible) {
+    const track = road.rank >= 3;
+    if (pass === 'casing' && track) continue;
+    trace(road);
+    ctx.strokeStyle = pass === 'casing' ? colors?.roadEdge ?? '#8b7c63' : (track ? colors?.track : colors?.road) ?? (track ? '#b39a72' : '#dccba5');
+    ctx.lineWidth = width(road) + (pass === 'casing' ? 1.4 * mpp : 0);
+    ctx.stroke();
+  }
+}
 const PLAN_LAYERS: CityLayers = { reserve: false, allocated: false, centers: false, domains: false, quarters: false, blocks: true, streets: true, enclosures: true, parcels: true, gardens: true, places: true, fronts: false, axes: false, access: false };
 const WATER = [74, 134, 179];
 const STYLE = `
@@ -177,6 +197,7 @@ export function mountCity3d(options: City3dOptions): City3d {
   };
   window.addEventListener('magna-locale-change', localizeControls);
   let terrain: Terrain3d | undefined, active = false, disposed = false, error = '';
+  let tileRoadsOf: readonly Street[] | undefined;
   let ground: Ground = 'map', colors: Colors = 'materials', planOverlay = true, refinement: City3dViewSettings['refinement'] = 'noise';
   let groundKey = '', planKey = '', proceduralGround = false, softwareMaterial = false;
   let waterDisplay: City3dWaterDisplay | undefined;
@@ -323,6 +344,13 @@ export function mountCity3d(options: City3dOptions): City3d {
     const k = size / tile.width, mpp = tile.width / size;
     const waterVisible = options.getGroundSettings?.(ground)?.waterVisible !== false;
     if (proceduralGround && waterPaths && waterVisible) { ctx.save(); ctx.setTransform(k, 0, 0, k, -tile.x * k, -tile.y * k); ctx.fillStyle = `rgb(${WATER})`; ctx.fill(waterPaths, 'evenodd'); ctx.restore(); }
+    // Regional roads: vectors drawn into each tile at its own resolution (metric width, pixel floor), under the plan.
+    const roads = planOverlay ? options.getRegionalStreets?.() : undefined;
+    if (roads?.length) {
+      ctx.save(); ctx.setTransform(k, 0, 0, k, -tile.x * k, -tile.y * k);
+      drawTileRoads(ctx, roads, { minX: tile.x, minY: tile.y, maxX: tile.x + tile.width, maxY: tile.y + tile.width }, mpp, options.getPlanOptions?.()?.colors);
+      ctx.restore();
+    }
     const city = planOverlay ? cityPlan() : undefined;
     if (city && city.extent.maxX >= tile.x && city.extent.minX <= tile.x + tile.width && city.extent.maxY >= tile.y && city.extent.minY <= tile.y + tile.width) {
       ctx.save(); ctx.setTransform(k, 0, 0, k, -tile.x * k, -tile.y * k);
@@ -563,6 +591,8 @@ export function mountCity3d(options: City3dOptions): City3d {
     const forest = proceduralGround ? options.getForest?.() : undefined; t.setForest(forest?.field, forest?.occupation);
     const nextPlanKey = JSON.stringify([planOverlay, options.getPlanOptions?.()]);
     if (planKey !== nextPlanKey) { planKey = nextPlanKey; t.invalidateTiles(); }
+    const regional = options.getRegionalStreets?.();
+    if (regional !== tileRoadsOf) { tileRoadsOf = regional; t.invalidateTiles(); }
     const layouts = options.getLayouts?.(), partitions = options.getPartitions?.();
     if (planOverlay && (!planOf ? layouts?.length : planOf[0] !== layouts || planOf[1] !== partitions)) { cityPlan(); t.invalidateTiles(); lap('plan'); }
     if (textured() !== texturedSeen) { texturedSeen = textured(); t.invalidateTiles(); } // the appearance below carries the flag
