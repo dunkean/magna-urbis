@@ -36,6 +36,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let l = &layouts[0];
     let streets = &l.streets;
     println!("population {} · quarters stage {:.0} ms (median of {runs}) · {} streets", f.sites[0].population, times[runs / 2], streets.len());
+    for w in l.warnings.iter().filter(|w| w.starts_with("Emprise")) { println!("warning: {w}"); }
     // Widths by role/rank.
     let mut table: BTreeMap<String, (usize, f64, f64, f64)> = BTreeMap::new();
     for s in streets {

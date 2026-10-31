@@ -29,8 +29,10 @@ pub(in crate::urban) fn narrow_options(streets: &mut Vec<Street>, enclosures: &[
 }
 
 /// Collapse only sustained parallel runs; the independent tails and every
-/// existing junction follow the survivor. Projected geometry must stay dry
-/// and within its original grade class. A curtain or a terrace keeps both.
+/// existing junction follow the survivor, except a third main street's: such a
+/// run stays, so no merge ever moves a main street it does not involve.
+/// Projected geometry must stay dry and within its original grade class. A
+/// curtain or a terrace keeps both.
 fn merge_partial(streets: &mut [Street], walls: &[(Point, Point)], surface: Surface<'_>, cfg: &LayoutConfig) -> bool {
     const CELL: f64 = 32.0;
     let original = streets.to_vec();
@@ -97,7 +99,7 @@ fn merge_partial(streets: &mut [Street], walls: &[(Point, Point)], surface: Surf
             while end < samples.len() && samples[end].3.is_some_and(|b| b.0 == j) { end += 1; }
             let length: f64 = samples[begin..end].windows(2).map(|w| distance(w[0].0, w[1].0)).sum();
             let blocked = samples[begin..end].iter().any(|p| joints.get(&key(p.0)).into_iter().flatten()
-                .any(|&u| u != j && protected(&original[u])));
+                .any(|&u| u != j && u != i && (protected(&original[u]) || original[u].rank <= 1)));
             if !blocked && length >= 12.0_f64.max(samples[begin].1 * 2.0) {
                 for k in begin..end { result[k] = samples[k].3.unwrap().1; }
             }
@@ -183,12 +185,13 @@ mod tests {
     fn disabled_option_is_the_legacy_narrow_pass_byte_for_byte() {
         let h=vec![20.;10000];let water=vec![0;h.len()];
         let surface=Surface{geometry:None,width:200.,n:100,height:&h,water:&water};
+        let off=LayoutConfig{parallel_merge:0.,..Default::default()};
         let mut a=fixture();let mut b=a.clone();
-        assert_eq!(drop_narrow_doubles(&mut a,&[],200.),narrow_options(&mut b,&[],200.,&Default::default(),surface));
+        assert_eq!(drop_narrow_doubles(&mut a,&[],200.),narrow_options(&mut b,&[],200.,&off,surface));
         assert_eq!(serde_json::to_vec(&a).unwrap(),serde_json::to_vec(&b).unwrap());
         let mut a=fixture();let mut b=a.clone();
         assert_eq!(clean_with_centers(&mut a,Point{x:90.,y:50.},200.,true,&[]),
-            clean_options(&mut b,Point{x:90.,y:50.},200.,true,&[],&Default::default(),surface));
+            clean_options(&mut b,Point{x:90.,y:50.},200.,true,&[],&off,surface));
         assert_eq!(serde_json::to_vec(&a).unwrap(),serde_json::to_vec(&b).unwrap());
     }
     fn witness(name:&str, roads:&[Street], shapes:&[super::super::super::Shape]) {
