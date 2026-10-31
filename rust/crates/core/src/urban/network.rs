@@ -2505,7 +2505,7 @@ pub(super) fn seat_mouths(streets: &mut Vec<Street>) -> usize {
 /// the blocks are cut, so they follow. Regional roads, crossings and access
 /// ways keep their ends; one join per street. Returns how many ends joined.
 pub(super) fn weld_ends(streets: &mut Vec<Street>, surface: super::Surface<'_>) -> usize {
-    let mut total = 0;
+    let mut total = node_ends(streets);
     // A street moves or hosts once per round; a few rounds join the rest.
     for _ in 0..4 {
         let joined = weld_round(streets, surface);
@@ -2515,6 +2515,49 @@ pub(super) fn weld_ends(streets: &mut Vec<Street>, surface: super::Surface<'_>) 
         }
     }
     total
+}
+/// Street ends lying on another street's segment (a T without a shared
+/// vertex): that street takes them as vertices, so the junction is one.
+fn node_ends(streets: &mut [Street]) -> usize {
+    use super::geometry as g;
+    const CELL: f64 = 16.0;
+    let cell = |p: Point| ((p.x / CELL).floor() as i64, (p.y / CELL).floor() as i64);
+    let mut grid: BTreeMap<(i64, i64), Vec<(usize, usize)>> = BTreeMap::new();
+    for (j, h) in streets.iter().enumerate().filter(|(_, h)| !private(h)) {
+        for (k, w) in h.path.windows(2).enumerate() {
+            let (a, b) = (cell(Point { x: w[0].x.min(w[1].x), y: w[0].y.min(w[1].y) }), cell(Point { x: w[0].x.max(w[1].x), y: w[0].y.max(w[1].y) }));
+            for x in a.0..=b.0 { for y in a.1..=b.1 { grid.entry((x, y)).or_default().push((j, k)); } }
+        }
+    }
+    // (host, segment, point), inserted back to front per host.
+    let mut cuts: Vec<(usize, usize, Point)> = vec![];
+    for (i, s) in streets.iter().enumerate().filter(|(_, s)| !private(s) && s.path.len() >= 2) {
+        for p in [s.path[0], s.path[s.path.len() - 1]] {
+            for &(j, k) in grid.get(&cell(p)).into_iter().flatten() {
+                let h = &streets[j];
+                if j == i || CROSSINGS.contains(&h.role.as_str()) && h.role != "wall-lane" {
+                    continue;
+                }
+                let (a, b) = (h.path[k], h.path[k + 1]);
+                if g::distance(p, a, b).0 <= 0.05 && distance(p, a) > 0.05 && distance(p, b) > 0.05
+                    && !cuts.iter().any(|&(jj, _, q)| jj == j && distance(q, p) <= 0.05) {
+                    cuts.push((j, k, p));
+                }
+            }
+        }
+    }
+    cuts.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.cmp(&a.1)).then_with(|| {
+        // Within one segment, farther from its start first.
+        let (s, k) = (&streets[a.0], a.1);
+        distance(b.2, s.path[k]).total_cmp(&distance(a.2, s.path[k]))
+    }));
+    for &(j, k, p) in &cuts {
+        let h = &mut streets[j];
+        let w = 0.5 * (width(h, k) + width(h, k + 1));
+        h.path.insert(k + 1, p);
+        if h.widths.len() > k + 1 { h.widths.insert(k + 1, w); }
+    }
+    cuts.len()
 }
 fn weld_round(streets: &mut [Street], surface: super::Surface<'_>) -> usize {
     use super::geometry as g;
@@ -2541,7 +2584,7 @@ fn weld_round(streets: &mut [Street], surface: super::Surface<'_>) -> usize {
                 .filter_map(|(j, h, k, a, b)| {
                     let (d, t, q) = g::distance(p, a, b);
                     let half = 0.5 * (width(h, k) + (width(h, k + 1) - width(h, k)) * t);
-                    (d > 0.05 && d <= half + 0.5 * own + 1.0).then_some((d, half, j, k, q))
+                    (d <= half + 0.5 * own + 1.0).then_some((d, half, j, k, q))
                 })
                 .min_by(|a, b| a.0.total_cmp(&b.0));
             let Some((d, half, j, k, q)) = best else { continue };
@@ -2551,6 +2594,16 @@ fn weld_round(streets: &mut [Street], surface: super::Surface<'_>) -> usize {
             // A regional road only closes a gap of a metre (two pieces of one road).
             if s.role == "regional" && d > 1.0 {
                 continue;
+            }
+            // On the other street already: it takes the junction as a vertex.
+            if d <= 0.05 {
+                let h = &streets[j];
+                if distance(h.path[k], q) > 0.05 && distance(h.path[k + 1], q) > 0.05 {
+                    joins.push((i, last, j, k, q, true));
+                    used.insert(i);
+                    used.insert(j);
+                }
+                break;
             }
             let (u, v) = ((p.x - inner.x, p.y - inner.y), (q.x - p.x, q.y - p.y));
             let lu = u.0.hypot(u.1).max(1e-9);
