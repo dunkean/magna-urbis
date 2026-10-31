@@ -216,6 +216,11 @@ export const terrainForestFields: ParameterField[] = [
  * stage controls of the Rustbench procedural inspector. Empty values keep the engine / biome default. */
 const recipeNumber = (path: string, en: string, fr: string, min: number, max: number, step: number): ParameterField => ({ ...number(`procedural.${path}`, en, fr, min, max, step, undefined, true), placeholder: copy('Engine default', 'Défaut du moteur') });
 export const terrainProceduralStageFields: ParameterField[] = [
+  { ...select('procedural.coastAfter', 'Coast formation after', 'Former les côtes après', simple([
+    ['initialize', 'Initial noise', 'Bruit initial'], ['regionalFinish', 'Regional erosion', 'Érosion régionale'],
+    ['amplitude', 'Amplitude calibration', 'Calibration de l’amplitude'], ['ridged', 'Ridged detail', 'Détail ridgé'],
+    ['surface', 'Surface erosion', 'Érosion de surface'], ['normalize', 'Datum normalisation', 'Normalisation du datum'],
+  ])), optional: true },
   recipeNumber('regionalN', 'Regional grid (side)', 'Grille régionale (côté)', 64, 640, 1),
   recipeNumber('surfaceN', 'Surface grid (without margin)', 'Grille de surface (hors marge)', 64, 1024, 1),
   recipeNumber('noiseScale', 'Regional noise scale ×', 'Échelle du bruit régional ×', .25, 4, .05),

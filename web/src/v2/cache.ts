@@ -1,7 +1,7 @@
 import type { TerrainLayer } from '../gen/types';
 
 /** Bump when terrain semantics change: saved worlds remain importable, cached computations expire. */
-export const V2_ENGINE_VERSION = 'mu-v2-bench-terrain-2026-10-28.3';
+export const V2_ENGINE_VERSION = 'mu-v2-bench-terrain-2026-10-31.1';
 export interface TerrainStore {
   get(key: string): Promise<TerrainLayer | undefined>;
   put(key: string, value: TerrainLayer): Promise<void>;

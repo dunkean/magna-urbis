@@ -20,6 +20,7 @@ use std::f64::consts::{PI, TAU};
 
 pub use engine::TerrainGenerator;
 pub use erosion::{EROSION_TUNING, set_erosion_tuning, TerrainPipeline};
+pub use erosion::cut_coast_field;
 pub use generation_noise::{GenerationNoise, GenerationNoisePlan};
 pub use hydrology::{HydrologyConfig, HydrologyEngine, HydrologyOutput};
 pub use terrain_zones::{TerrainZones, ZONE_CHANNELS};

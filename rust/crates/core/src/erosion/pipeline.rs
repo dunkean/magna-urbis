@@ -2,7 +2,26 @@
 use super::*;
 use crate::{Noise, Rng};
 
+#[allow(clippy::too_many_arguments)]
+pub fn cut_coast_field(seed: &str, width: f64, motif: f64, amplitude: f64, mask: u32, mode: &str,
+    n: usize, origin: f64, cell: f64, field: &mut [f32]) -> Result<(), String> {
+    if n < 2 || field.len()!=n*n || !width.is_finite() || width<=0. || !motif.is_finite() || motif<=0.
+        || !amplitude.is_finite() || amplitude<0. || !origin.is_finite() || !cell.is_finite() || cell<=0.
+        || field.iter().any(|v|!v.is_finite()) { return Err("Invalid coast field".into()); }
+    let root=Rng::new(&format!("magna-urbis:{seed}")).fork("terrain");
+    let mut coast=crate::coast::Coast::new(root.fork("coast"),width,motif,amplitude,0.);
+    coast.configure(mask,mode)?;
+    crate::terrain_par::rows(field,n,|y,row| {
+        for (x,h) in row.iter_mut().enumerate() {
+            *h=coast.apply(origin+(x as f64+0.5)*cell,origin+(y as f64+0.5)*cell,width,*h as f64,cell) as f32;
+        }
+    });
+    Ok(())
+}
+
 pub struct TerrainPipeline {
+    seed: String,
+    checkpoints: Vec<Checkpoint>,
     p: Vec<f64>,
     s: Vec<f64>,
     flags: Vec<u32>,
@@ -21,6 +40,13 @@ pub struct TerrainPipeline {
     drainage: Vec<f64>,
     scale: f64,
     tuning: [f64; 17],
+}
+/// Only retain fields which a later phase still reads. Noise and topology are
+/// deterministic and stay on the live pipeline rather than in every checkpoint.
+struct Checkpoint {
+    next: u32,
+    h: Vec<f32>, uplift: Vec<f32>, acc: Vec<f32>, channels: Vec<bool>,
+    raw: Vec<f32>, output: Vec<f32>, drainage: Vec<f64>, scale: f64,
 }
 impl TerrainPipeline {
     pub fn new(
@@ -57,6 +83,7 @@ impl TerrainPipeline {
         let n = parameters[2] as usize;
         let count = n * n;
         Ok(Self {
+            seed: seed.to_owned(), checkpoints: Vec::new(),
             p: parameters.iter().map(|&v| v as f64).collect(),
             s: surface.iter().map(|&v| v as f64).collect(),
             flags: flags.to_vec(),
@@ -75,6 +102,52 @@ impl TerrainPipeline {
             scale: 1.,
             tuning: TUNING.with(|v| v.get()),
         })
+    }
+    pub fn checkpoint(&mut self, slot: usize) -> Result<(), String> {
+        if slot > self.checkpoints.len() || slot > 8 { return Err("Invalid terrain checkpoint".into()); }
+        self.checkpoints.truncate(slot);
+        self.checkpoints.push(Checkpoint {
+            next: self.next,
+            h: if self.next <= 3 { self.h.clone() } else { Vec::new() },
+            uplift: if self.next <= 1 { self.uplift.clone() } else { Vec::new() },
+            acc: if self.next <= 3 { self.acc.clone() } else { Vec::new() },
+            channels: if self.next <= 2 { self.channels.clone() } else { Vec::new() },
+            raw: if (4..=5).contains(&self.next) { self.raw.clone() } else { Vec::new() },
+            output: self.output.clone(),
+            drainage: if (4..=5).contains(&self.next) { self.drainage.clone() } else { Vec::new() },
+            scale: self.scale,
+        });
+        Ok(())
+    }
+    pub fn restore(&mut self, slot: usize, parameters: &[f32], surface: &[f32], flags: &[u32]) -> Result<(), String> {
+        // Revalidate new controls; the caller identifies the unchanged prefix.
+        let configured = Self::new(&self.seed, parameters, surface, flags)?;
+        if configured.grid.n != self.grid.n { return Err("Terrain checkpoint grid changed".into()); }
+        let c = self.checkpoints.get(slot).ok_or("Missing terrain checkpoint")?;
+        self.next=c.next; self.h=c.h.clone(); self.uplift=c.uplift.clone(); self.acc=c.acc.clone();
+        self.channels=c.channels.clone(); self.raw=c.raw.clone(); self.output=c.output.clone();
+        self.drainage=c.drainage.clone(); self.scale=c.scale;
+        self.p=configured.p; self.s=configured.s; self.flags=configured.flags; self.tuning=configured.tuning;
+        self.checkpoints.truncate(slot+1);
+        Ok(())
+    }
+    pub fn checkpoint_height(&self, slot: usize) -> Result<Vec<f32>, String> {
+        let c = self.checkpoints.get(slot).ok_or("Missing terrain checkpoint")?;
+        Ok(if !c.output.is_empty() { c.output.clone() } else { self.sample_height(&c.h) })
+    }
+    /// An early coast is allowed to evolve in subsequent erosion/normalization.
+    /// The geographic cut is applied again at finishing to keep a marine coast.
+    pub fn cut_coast(&mut self, mask: u32, mode: &str) -> Result<(), String> {
+        if mask == 0 { return Ok(()); }
+        let p=&self.p;
+        let (n, origin, cell, field) = if self.next <= 3 {
+            (self.grid.n, p[5], p[4], &mut self.h)
+        } else { (1024, 0., p[11], &mut self.output) };
+        cut_coast_field(&self.seed,p[0],p[3]*2400.,p[12],mask,mode,n,origin,cell,field)?;
+        if (4..=5).contains(&self.next) {
+            self.raw=self.output.iter().map(|&h|(h as f64/self.scale.max(1e-12)) as f32).collect();
+        }
+        Ok(())
     }
     pub fn advance(&mut self, stage: u32) -> Result<(), String> {
         if stage != self.next || stage > 7 {
@@ -117,12 +190,15 @@ impl TerrainPipeline {
         if !self.output.is_empty() {
             return self.output.clone();
         }
+        self.sample_height(&self.h)
+    }
+    fn sample_height(&self, h: &[f32]) -> Vec<f32> {
         let p = &self.p;
         let nc = self.grid.n;
         (0..1024 * 1024)
             .map(|i| {
                 sample(
-                    &self.h,
+                    h,
                     nc,
                     (((i % 1024) as f64 + 0.5) * p[11] - p[5]) / p[4] - 0.5,
                     (((i / 1024) as f64 + 0.5) * p[11] - p[5]) / p[4] - 0.5,
@@ -373,5 +449,53 @@ impl TerrainPipeline {
                 *h = h.max(0.3);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod checkpoint_tests {
+    use super::*;
+    fn configuration() -> (Vec<f32>, Vec<f32>, Vec<u32>) {
+        let plan=crate::GenerationNoisePlan::erosion("resume",2400.,"hills",0.3,2400.,0.5).unwrap();
+        let mut p=plan.parameters; p[2]=64.;p[4]=2400.*1.44/64.;p[13]=1.;
+        let mut s=p[24..32].to_vec();s[0]=88.;s[1]=2400./64.;s[2]=-12.*s[1];s[3]=1.;
+        (p,s,vec![0,1,1,1,1,1,1,1,1,0,0])
+    }
+    fn pipeline(p:&[f32],s:&[f32],f:&[u32])->TerrainPipeline {
+        let mut pipeline=TerrainPipeline::new("resume",p,s,f).unwrap();
+        let coarse=vec![0.;64*64*4];
+        let fine:Vec<f32>=(0..1024*1024*4).map(|i|if i%4==2 {(i as f32*0.0001).sin().abs()}else{0.}).collect();
+        pipeline.set_noise(&coarse,&fine).unwrap();pipeline
+    }
+    #[test]
+    fn changed_late_controls_resume_to_the_exact_fresh_result() {
+        let(p,s,f)=configuration();let mut retained=pipeline(&p,&s,&f);
+        for stage in 0..8 {retained.advance(stage).unwrap();retained.checkpoint(stage as usize).unwrap();}
+        let mut changed=p.clone();changed[16]*=2.;
+        retained.restore(2,&changed,&s,&f).unwrap();
+        for stage in 3..8 {retained.advance(stage).unwrap();}
+        let mut fresh=pipeline(&changed,&s,&f);for stage in 0..8 {fresh.advance(stage).unwrap();}
+        assert_eq!(retained.height(),fresh.height());
+    }
+    #[test]
+    fn every_checkpoint_restores_internal_fields_without_resampling() {
+        let(p,s,f)=configuration();let mut retained=pipeline(&p,&s,&f);
+        for stage in 0..8 {retained.advance(stage).unwrap();retained.checkpoint(stage as usize).unwrap();}
+        let expected=retained.height();
+        for boundary in (0..7).rev() {
+            retained.restore(boundary,&p,&s,&f).unwrap();
+            for stage in boundary as u32+1..8 {retained.advance(stage).unwrap();}
+            assert_eq!(retained.height(),expected,"checkpoint {boundary}");
+        }
+    }
+    #[test]
+    fn coast_deforms_the_initial_field_and_can_be_replayed_from_its_input() {
+        let(p,s,f)=configuration();let mut retained=pipeline(&p,&s,&f);
+        retained.advance(0).unwrap();retained.checkpoint(0).unwrap();
+        let initial=retained.height();retained.cut_coast(255,"island").unwrap();retained.checkpoint(1).unwrap();
+        let cut=retained.height();assert!(cut.iter().any(|&h|h<0.));assert_ne!(initial,cut);
+        retained.restore(0,&p,&s,&f).unwrap();retained.cut_coast(255,"island").unwrap();assert_eq!(retained.height(),cut);
+        assert_eq!(retained.checkpoint_height(0).unwrap(),initial);
+        let mut changed=p.clone();changed[2]=128.;assert!(retained.restore(0,&changed,&s,&f).is_err());
     }
 }

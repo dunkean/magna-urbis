@@ -1,12 +1,15 @@
 /** The V2 generation chain as inspectable stages (Region → Settlements → Map).
  * Rows come from stageRegistry.ts. Existing live controls are moved into their stage, never rebuilt:
  * the mounted terrain/region/render forms keep their handlers, validation and sync. */
-import { SETTINGS_PANEL_CONTROLS, FAMILIES, STAGES, stagesOf, stageForControl, stageForProgress, stageAnchor, type StageContext, type StageDef, type StageFamily, type Copy } from './stageRegistry';
+import { SETTINGS_PANEL_CONTROLS, FAMILIES, STAGES, GENERATION_STAGE_ROWS, stagesOf, stageForControl, stageForProgress, stageAnchor, type StageContext, type StageDef, type StageFamily, type Copy } from './stageRegistry';
 import { terrainProceduralStageFields, terrainBasicFields, climateZoneHelp } from './terrainControlSchema';
 import { mountParameterForm, readSettingPath, writeSettingPath, type ParameterForm } from './parameterForm';
 import { atlasUrl, bindTree, getLanguage, numberLocale, registerMessages, setDynamicText, setText, translate } from './i18n';
 import { iconImg, type IconId } from './stageIcons';
-import { isCompactProcedural } from '../../../rust/bridge/terrainGenerationRecipe';
+import { isCompactProcedural, generationStageActive, type GenerationStage } from '../../../rust/bridge/terrainGenerationRecipe';
+import { effectiveTerrainSettings } from './terrainSettings';
+import { adaptedExtent } from './settings';
+import { stageLed, terrainStageValidityKeys, settlementStageValidityKeys, cityStageValidityKeys } from './stageValidity';
 import type { TerrainControls } from './terrainControls';
 import type { V2Progress, V2Settings, V2TerrainSettings } from './contracts';
 import type { World } from '../gen/types';
@@ -19,6 +22,8 @@ const T = {
   enable: copy('Enable or disable this stage', 'Activer ou désactiver cette étape'), help: copy('Method in the scientific atlas', 'Méthode dans l’atlas scientifique'),
   general: copy('General settings', 'Paramètres généraux'), method: copy('Method', 'Méthode'), size: copy('Size', 'Taille'), stale: copy('Settings changed since the last run', 'Réglages modifiés depuis la dernière exécution'),
   cached: copy('Kept from an earlier run', 'Conservé d’une exécution précédente'), running: copy('Running', 'En cours'),
+  disabled: copy('Disabled · never run', 'Désactivée · ne jamais lancer'), valid: copy('Calculated · result available', 'Calculée · résultat disponible'),
+  pending: copy('To calculate · missing or outdated result', 'À calculer · résultat absent ou périmé'),
   family: copy('Run the {family} stages', 'Exécuter les étapes : {family}'), place: copy('Place', 'Lieu'), noPlace: copy('Choose a place on the right', 'Choisissez un lieu à droite'),
   needTerrain: copy('Create the relief first', 'Créez d’abord le relief'), needRegion: copy('Place the settlements first', 'Implantez d’abord les peuplements'),
   needPlace: copy('Choose a place in the list on the right', 'Choisissez un lieu dans la liste à droite'), procedural: copy('Procedural', 'Procédural'), neural: copy('Neural', 'Neuronal'),
@@ -26,6 +31,8 @@ const T = {
   view2d: copy('2D map', 'Carte 2D'), view3d: copy('3D view', 'Vue 3D'), style: copy('Map style', 'Style de carte'),
   noNeural: copy('Neural generation needs WebGPU in this browser, the Python/CUDA server or the native neural service. None is available (see Settings).', 'Le neuronal exige WebGPU dans ce navigateur, le serveur Python/CUDA ou le service neuronal natif. Aucun n’est disponible (voir Réglages).'),
   overrides: copy('Local settings of this place', 'Réglages locaux de ce lieu'),
+  scope: copy('Cities to generate', 'Villes à générer'), allCities: copy('All cities', 'Toutes les villes'), selection: copy('Selection on the right', 'Sélection à droite'),
+  targets: copy('{count} / {total} cities · roads → quarters → parcels → houses', '{count} / {total} villes · routes → quartiers → parcelles → maisons'),
   execution: copy('Execution…', 'Exécution…'),
   needGpu: copy('Needs WebGPU, which this browser does not provide (see Settings).', 'Nécessite WebGPU, absent de ce navigateur (voir Réglages).'),
   needNative: copy('Needs the native Rust service, which is offline (see Settings).', 'Nécessite le service Rust natif, hors ligne (voir Réglages).'),
@@ -38,12 +45,13 @@ const SOURCE_FIELDS: Record<string, readonly StageContext['relief'][]> = {
 };
 for (const family of FAMILIES) registerMessages({ [family.label.en]: family.label, [family.summary.en]: family.summary });
 for (const stage of STAGES) registerMessages({ [stage.label.en]: stage.label, [stage.summary.en]: stage.summary, ...(stage.toggle?.reason ? { [stage.toggle.reason.en]: stage.toggle.reason } : {}) });
-const familyIcon: Record<StageFamily, IconId> = { region: 'family-relief', settlements: 'family-settlements', map: 'family-display' };
+const familyIcon: Record<StageFamily, IconId> = { region: 'family-relief', settlements: 'family-settlements', cities: 'family-city', map: 'family-display' };
 const text = (value: Copy) => value.en;
 /** Live controls promoted above the stage boxes, in display order. */
 const GENERAL_CONTROLS: Record<StageFamily, readonly string[]> = {
   region: ['widget:extent', 'terrain.relief', 'options.relief', 'options.biome', 'terrain.climate', 'terrain.motifSize', 'widget:seed', 'widget:coasts'],
-  settlements: ['main:town-count', 'main:population', 'main:culture', 'main:sprawl', 'main:walls'],
+  settlements: ['main:town-count', 'main:population', 'main:culture'],
+  cities: ['main:sprawl', 'main:walls'],
   map: ['widget:style', 'widget:view3d'],
 };
 const METHOD_CONTROLS = ['terrain.procedural.preset'] as const;
@@ -52,6 +60,8 @@ export interface StageChainBindings {
   root: HTMLElement; staging: HTMLElement; terrain: TerrainControls; regionRoot: HTMLElement; renderRoot: HTMLElement;
   getSettings(): V2Settings; getWorld(): World | undefined; getPlace(): { key: string; name: string } | undefined;
   busy(): boolean;
+  cityScope(): { mode: 'all' | 'selection'; count: number; total: number; key: string };
+  onCityScope(mode: 'all' | 'selection'): void;
   onChange(): void; onAppearance(): void; onRegionChange(): void;
   run(stage: StageDef): void; runFamily(family: StageFamily): void; openPlace(): void;
   /** Detected backends (Settings); unavailable choices are disabled with their reason. */
@@ -62,6 +72,8 @@ export interface StageChainBindings {
   onFamily?(family: StageFamily): void;
 }
 export interface StageChain {
+  clearResults(): void;
+  clearCityResults(): void;
   body(id: string): HTMLElement; sync(): void; family(): StageFamily; selectFamily(family: StageFamily): void;
   beginRun(stages: readonly string[]): void; progress(progress: V2Progress): void; endRun(ok: boolean): void; context(): StageContext;
 }
@@ -78,6 +90,8 @@ export function mountStageChain(b: StageChainBindings): StageChain {
   const stashes: { zones?: V2TerrainSettings['zones']; coastMask?: number; heightmap?: { sketch?: V2TerrainSettings['sketch']; image?: V2Settings['options']['importedHeight'] }; neural?: string } = {};
   let pendingHeightmap = false, family: StageFamily = 'region';
   const timings = new Map<string, { ms: number; state: 'done' | 'cached' | 'stale' | 'running' | '' }>();
+  const savedKeys = new Map<string, string>();
+  let runKeys = new Map<string, string>();
   let active: { id: string; started: number } | undefined, runScope = new Set<string>();
 
   // ── Family navigation (the chain overview) ───────────────────────────────
@@ -104,7 +118,15 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     setDynamicText(runFamily, () => translate(T.family).replace('{family}', translate(text(f.label)).toLocaleLowerCase(getLanguage() === 'fr' ? 'fr' : 'en')));
     runFamily.onclick = () => b.runFamily(f.id);
     head.append(titles, runFamily); panel.append(head);
-    if (f.id === 'settlements') {
+    if (f.id === 'cities') {
+      const scope = document.createElement('div'); scope.className = 'family-city-scope';
+      const scopeCaption = document.createElement('label'); scopeCaption.htmlFor = 'city-scope'; setText(scopeCaption, T.scope);
+      const select = document.createElement('select'); select.id = 'city-scope';
+      for (const [value, label] of [['all', T.allCities], ['selection', T.selection]]) { const option = document.createElement('option'); option.value = value; setText(option, label); select.append(option); }
+      select.onchange = () => b.onCityScope(select.value as 'all' | 'selection');
+      const count = document.createElement('p'); count.className = 'hint'; count.id = 'city-scope-count'; count.setAttribute('aria-live', 'polite');
+      scope.append(scopeCaption, select, count); panel.append(scope);
+      syncers.push(() => { const current = b.cityScope(); select.value = current.mode; select.disabled = b.busy(); setDynamicText(count, () => translate(T.targets).replace('{count}', String(b.cityScope().count)).replace('{total}', String(b.cityScope().total))); });
       const place = document.createElement('div'); place.className = 'family-place'; place.id = 'chain-place';
       const caption = document.createElement('span'); caption.className = 'family-place-caption'; setText(caption, T.place);
       const name = document.createElement('strong'); name.id = 'chain-place-name';
@@ -415,18 +437,34 @@ export function mountStageChain(b: StageChainBindings): StageChain {
   // General controls keep their stage ownership for invalidating later generation stages.
   root.addEventListener('change', event => { const control = (event.target as Element).closest<HTMLElement>('[data-stage-control],.stage-row'); if (control) markStale(control.dataset.stageControl ?? control.dataset.stage!); });
   function markStale(id: string): void {
-    const index = STAGES.findIndex(stage => stage.id === id), stage = STAGES[index];
+    const ordered = [...stagesOf('region', get().terrain?.procedural?.coastAfter), ...stagesOf('settlements'), ...stagesOf('cities'), ...stagesOf('map')];
+    const index = ordered.findIndex(stage => stage.id === id), stage = ordered[index];
     if (!stage || stage.family === 'map') return;
-    for (const later of STAGES.slice(index)) {
+    for (const later of ordered.slice(index)) {
       if (later.family === 'map') continue;
       const timing = timings.get(later.id); if (timing && timing.state !== 'running') timing.state = 'stale';
     }
     renderTimes();
   }
+  function validityKeys(): Map<string, string> {
+    const terrain = terrainStageValidityKeys(get());
+    const physicalKey = terrain.get('water-hydrology');
+    return new Map([...terrain, ...settlementStageValidityKeys(get(), physicalKey), ...cityStageValidityKeys(get(), b.getWorld(), b.cityScope().key, physicalKey)]);
+  }
+  function clearCityResults(): void { for (const stage of stagesOf('cities')) { timings.delete(stage.id); savedKeys.delete(stage.id); } }
   function renderTimes(): void {
+    const keys = validityKeys();
+    const terrain = effectiveTerrainSettings(get(), adaptedExtent(get()));
     for (const [id, row] of rows) {
       const timing = timings.get(id);
       row.element.dataset.run = timing?.state ?? '';
+      const phase = Object.entries(GENERATION_STAGE_ROWS).find(([phase, row]) => row === id && !['prepare','retain','sampling','render'].includes(phase))?.[0] as GenerationStage | undefined;
+      const on = toggleState(row.stage) && (!phase || generationStageActive(terrain, phase)) && !row.stage.unavailable?.(context());
+      const led = stageLed(on, active?.id === id, savedKeys.get(id), keys.get(id));
+      row.element.dataset.led = row.stage.family !== 'map' ? led : !on ? 'disabled' : active?.id === id ? 'running' : timing?.state === 'done' || timing?.state === 'cached' ? 'valid' : 'pending';
+      if(row.stage.family!=='map')row.element.dataset.run=led==='running'?'running':led==='valid'?(timing?.state==='cached'?'cached':'done'):timing&&led==='pending'?'stale':'';
+      const status = row.element.dataset.led;
+      row.node.title = translate(status === 'disabled' ? T.disabled : status === 'valid' ? T.valid : status === 'running' ? T.running : T.pending);
       // Stages without their own progress events ran inside a neighbouring row: no invented time.
       if (!timing || timing.state !== 'running' && timing.ms === 0) { row.time.textContent = '— ms'; row.time.title = ''; continue; }
       row.time.textContent = timing.state === 'running' ? '… ms' : `${Math.max(1, Math.round(timing.ms)).toLocaleString(numberLocale())} ms`;
@@ -435,14 +473,25 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     for (const f of FAMILIES) {
       const total = stagesOf(f.id).reduce((sum, stage) => sum + (timings.get(stage.id)?.ms ?? 0), 0), label = familyTimes.get(f.id)!;
       label.textContent = total ? total < 1000 ? `${Math.round(total)} ms` : `${(total / 1000).toLocaleString(numberLocale(), { maximumFractionDigits: 1 })} s` : '';
-      tabs.get(f.id)!.dataset.stale = String(stagesOf(f.id).some(stage => timings.get(stage.id)?.state === 'stale'));
+      tabs.get(f.id)!.dataset.stale = String(stagesOf(f.id).some(stage => rows.get(stage.id)?.element.dataset.led === 'pending'));
     }
   }
   const close = (now = performance.now()) => {
     if (!active) return; const timing = timings.get(active.id) ?? { ms: 0, state: 'running' as const };
     timing.ms += now - active.started; timings.set(active.id, timing); active = undefined;
   };
+  function complete(id: string, cached = false): void {
+    const timing = timings.get(id) ?? { ms: 0, state: '' as const };
+    timing.state = cached ? 'cached' : 'done'; timings.set(id, timing);
+    const key = runKeys.get(id); if (key !== undefined) savedKeys.set(id, key);
+    if (id === 'relief-noise') for (const alias of ['relief-source', 'relief-climate']) {
+      const initial = runKeys.get(alias); if (initial !== undefined) savedKeys.set(alias, initial);
+    }
+  }
+  let cityScopeKey = '';
   function sync(): void {
+    const nextScope = b.cityScope().key;
+    if (cityScopeKey !== nextScope) { clearCityResults(); cityScopeKey = nextScope; }
     const ctx = context(), busy = b.busy();
     for (const form of forms) form.sync();
     for (const syncer of syncers) syncer();
@@ -458,8 +507,13 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     }
     // The 8-bit image scale and sea level only apply to an imported grayscale image.
     for (const path of ['options.heightScale', 'options.importSea']) root.querySelector<HTMLElement>(`[data-field-path="${path}"]`)?.toggleAttribute('data-chain-hidden', !get().options.importedHeight);
+    const ordered = [...stagesOf('region', get().terrain?.procedural?.coastAfter), ...stagesOf('settlements'), ...stagesOf('cities'), ...stagesOf('map')];
+    const regionOrder = ordered.filter(stage => stage.family === 'region');
+    const cut = rows.get('relief-coast-cut')!.element, previous = rows.get(regionOrder[regionOrder.findIndex(stage => stage.id === 'relief-coast-cut') - 1].id)!.element;
+    if (cut.previousElementSibling !== previous) previous.after(cut);
     const numbers = new Map<StageFamily, number>();
-    for (const row of rows.values()) {
+    for (const definition of ordered) {
+      const row = rows.get(definition.id)!;
       const { stage } = row, visible = stage.when(ctx); row.element.hidden = !visible; if (!visible) continue;
       const index = (numbers.get(stage.family) ?? 0) + 1; numbers.set(stage.family, index); row.number.textContent = String(index).padStart(2, '0');
       const reason = stage.unavailable?.(ctx);
@@ -467,29 +521,49 @@ export function mountStageChain(b: StageChainBindings): StageChain {
       const on = toggleState(stage); row.element.dataset.enabled = String(on);
       if (!stage.optional || stage.toggle?.kind === 'unavailable') row.node.disabled = true;
       if (stage.optional && stage.toggle && stage.toggle.kind !== 'unavailable') { row.node.setAttribute('aria-checked', String(on)); row.node.disabled = busy || !!reason; }
-      const prerequisite = stage.run.action === 'town' ? !ctx.hasRegion ? T.needRegion : !ctx.place && T.needPlace : stage.family !== 'region' && stage.id !== 'map-export' ? !ctx.hasTerrain && T.needTerrain : false;
+      const prerequisite = stage.run.action === 'town' ? !ctx.hasRegion ? T.needRegion : !b.cityScope().count && T.needPlace : stage.family !== 'region' && stage.id !== 'map-export' ? !ctx.hasTerrain && T.needTerrain : false;
       row.run.disabled = busy || !!reason || !!prerequisite || stage.optional && !on && stage.toggle?.kind !== 'unavailable';
       row.run.title = translate(prerequisite || (reason ? text(reason) : T.run));
     }
-    for (const f of FAMILIES) { const button = panels.get(f.id)!.querySelector<HTMLButtonElement>('.family-run')!; button.disabled = busy || (f.id !== 'region' && !ctx.hasTerrain); }
+    for (const f of FAMILIES) { const button = panels.get(f.id)!.querySelector<HTMLButtonElement>('.family-run')!; button.disabled = busy || (f.id !== 'region' && !ctx.hasTerrain) || (f.id === 'cities' && (!ctx.hasRegion || !b.cityScope().count)); }
     renderTimes();
   }
   selectFamily('region'); sync();
   return {
+    clearResults() { timings.clear(); savedKeys.clear(); active=undefined; runScope.clear(); renderTimes(); },
+    clearCityResults,
     body: id => rows.get(id)!.body, sync, family: () => family, selectFamily, context,
     beginRun(stages) {
       runScope = new Set(stages);
-      for (const id of stages) timings.set(id, { ms: 0, state: 'running' }); active = undefined; renderTimes();
+      if (stages.some(id => rows.get(id)?.stage.family === 'cities')) {
+        for (const stage of stagesOf('cities')) if (!runScope.has(stage.id)) savedKeys.delete(stage.id);
+      }
+      runKeys = validityKeys(); active = undefined; renderTimes();
     },
     progress(progress) {
       const id = stageForProgress(progress.stage);
-      if (progress.stage.startsWith('pipeline:') && progress.stage.endsWith(':done')) { close(); renderTimes(); return; }
+      if (progress.stage.startsWith('pipeline:') && /:(done|cached)$/.test(progress.stage)) {
+        close(); if (id) complete(id, progress.stage.endsWith(':cached')); renderTimes(); return;
+      }
       if (!id || !runScope.has(id) || id === active?.id) return;
-      close(); active = { id, started: performance.now() }; const timing = timings.get(id); if (timing) timing.state = 'running'; renderTimes();
+      if (active && !progress.stage.startsWith('pipeline:')) complete(active.id);
+      close(); active = { id, started: performance.now() }; timings.set(id, { ms: 0, state: 'running' }); renderTimes();
     },
     endRun(ok) {
+      if (ok && active) complete(active.id);
       close();
-      for (const id of runScope) { const timing = timings.get(id); if (!timing) continue; timing.state = ok ? 'done' : 'stale'; }
+      if (ok) for (const id of runScope) if (rows.get(id)?.stage.family === 'settlements') complete(id);
+      // Urban rows share native output boundaries; validate the whole requested
+      // prefix only after every targeted city has completed successfully.
+      const finalKeys = validityKeys();
+      const [, targets] = JSON.parse(b.cityScope().key) as [string, string[]];
+      const order = ['layout', 'parcels', 'programme', 'buildings'];
+      for (const id of runScope) if (rows.get(id)?.stage.family === 'cities') {
+        const run = rows.get(id)!.stage.run;
+        const available = run.action === 'town' && targets.every(key => order.indexOf(String(b.getWorld()?.stats[`v2.urbanStage:${key}`] ?? 'buildings')) >= order.indexOf(run.townStage));
+        if (ok && available) { runKeys.set(id, finalKeys.get(id)!); complete(id); } else savedKeys.delete(id);
+      }
+      for (const id of runScope) { const timing = timings.get(id); if (timing?.state === 'running') timing.state = 'stale'; }
       runScope = new Set(); renderTimes(); sync();
     },
   };

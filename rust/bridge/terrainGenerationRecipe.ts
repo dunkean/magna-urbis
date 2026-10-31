@@ -1,10 +1,10 @@
 import { CLIMATE_VALUES, CLIMATE_ZONE_VALUES, type ClimateZone } from './terrainClimate';
 import { compactProfile } from './terrainPhasor';
 import type { TerrainSettings, ErosionTuning } from './terrain';
-export const PROCEDURAL_RECIPE_VERSION = 'procedural-stages-v3';
+export const PROCEDURAL_RECIPE_VERSION = 'procedural-stages-v4-checkpoints';
 export const GENERATION_STAGES = [
     ['prepare', 'Préparation du backend', false], ['grids', 'Grilles et buffers', false],
-    ['initialize', 'Bruits et soulèvement initial', false], ['regional', 'Cycles d’érosion régionale', true],
+    ['initialize', 'Bruits et soulèvement initial', false], ['coastCut', 'Formation des côtes', true], ['regional', 'Cycles d’érosion régionale', true],
     ['regionalFinish', 'Relaxation et drainage finaux', true], ['reconstruct', 'Reconstruction 1024²', false],
     ['amplitude', 'Calibration de l’amplitude (p99)', true], ['ridged', 'Détail ridgé classique', true],
     ['surface', 'Érosion de surface après détail', true], ['normalize', 'Datum et plancher (p1)', true],
@@ -15,6 +15,7 @@ export const GENERATION_STAGES = [
 ] as const;
 export type GenerationStage = typeof GENERATION_STAGES[number][0];
 export interface ProceduralRecipe {
+    coastAfter?: 'initialize' | 'regionalFinish' | 'amplitude' | 'ridged' | 'surface' | 'normalize';
     preset?: 'classic' | 'compact';
     biome?: boolean;
     enabled?: Partial<Record<GenerationStage, boolean>>;
@@ -55,6 +56,8 @@ export interface GenerationStageInfo {
 }
 /** Functions are passed within a worker, never serialized in the terrain recipe. */
 export interface GenerationControl {
+    /** Restored output, without executing a kernel. */
+    cached?(stage: GenerationStage, height?: Float32Array): Promise<void>;
     previews?: boolean;
     /** Requests an inspectable intermediate output rather than the grouped fast path. */
     until?: GenerationStage;
@@ -138,7 +141,7 @@ export function generationStageActive(s: TerrainSettings, id: GenerationStage): 
         const w = windSettings(s);
         return w.iterations > 0 && w.transport > 0;
     }
-    if (id === 'coasts')
+    if (id === 'coasts' || id === 'coastCut')
         return !!s.coastMask;
     if (id === 'hydrology')
         return !!s.hydrology?.enabled;
@@ -149,7 +152,7 @@ export function validateProceduralRecipe(r?: ProceduralRecipe): void {
         return;
     if (!r || typeof r !== 'object' || Array.isArray(r))
         throw new Error('Recette procédurale invalide.');
-    const allowed = ['preset', 'coastIterations', 'coastIncision', 'coastThermal', 'coastDiffusion', 'reconstruction', 'biome', 'enabled', 'regionalN', 'surfaceN', 'uplift', 'crest', 'noiseScale', 'erosionTuning', 'regionalThermal', 'regionalDiffusion', 'posterior', 'wind'];
+    const allowed = ['coastAfter', 'preset', 'coastIterations', 'coastIncision', 'coastThermal', 'coastDiffusion', 'reconstruction', 'biome', 'enabled', 'regionalN', 'surfaceN', 'uplift', 'crest', 'noiseScale', 'erosionTuning', 'regionalThermal', 'regionalDiffusion', 'posterior', 'wind'];
     for (const key of Object.keys(r))
         if (!allowed.includes(key))
             throw new Error(`Paramètre procédural inconnu : ${key}`);
@@ -186,6 +189,7 @@ export function validateProceduralRecipe(r?: ProceduralRecipe): void {
     for (const [key, v] of Object.entries(r.enabled ?? {}))
         if (!GENERATION_STAGES.some(([id, _, optional]) => id === key && optional) || typeof v !== 'boolean')
             throw new Error(`Étape non désactivable : ${key}`);
+    if (r.coastAfter !== undefined && !['initialize','regionalFinish','amplitude','ridged','surface','normalize'].includes(r.coastAfter)) throw new Error('Position de la découpe côtière invalide.');
     if(r.preset !== undefined && !['classic','compact'].includes(r.preset))throw new Error('Préréglage procédural invalide.');
     if (r.biome !== undefined && typeof r.biome !== 'boolean')
         throw new Error('Influence du biome invalide.');

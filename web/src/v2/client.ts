@@ -18,6 +18,7 @@ export type Action = 'terrain' | 'region' | 'roads' | 'towns' | 'town' | 'settle
 
 /** Generation and drawing stay on separate workers; a failed job keeps the previous map. */
 export class StudioClient {
+  onEngineReset?: () => void;
   // The worker name carries `?threads=`; after a worker death, the single-thread package.
   private engine = new EngineWorker(wasmWorkerOptions('magna-v2'));
   private render: Worker | null = null;
@@ -52,7 +53,7 @@ export class StudioClient {
       else if (m.type === 'result') { const p = this.pending!; this.pending = null; this.retained={id:m.id,world:m.world};p.resolve(m.world); }
       else if (m.type === 'error') { const p = this.pending!; this.pending = null; p.reject(new Error(m.error)); }
     };
-    this.engine.onerror = e => { wasmWorkerFailed(e.message || 'engine worker error'); this.pending?.reject(new Error(e.message || 'Le moteur de génération a été interrompu.')); this.pending = null; this.retained=undefined;this.engine.terminate(); this.engine = new EngineWorker(wasmWorkerOptions('magna-v2')); this.attachEngine(); };
+    this.engine.onerror = e => { wasmWorkerFailed(e.message || 'engine worker error'); this.pending?.reject(new Error(e.message || 'Le moteur de génération a été interrompu.')); this.pending = null; this.retained=undefined;this.engine.terminate(); this.engine = new EngineWorker(wasmWorkerOptions('magna-v2')); this.attachEngine(); this.onEngineReset?.(); };
   }
   async init(): Promise<void> {
     let render:Worker;
@@ -76,18 +77,19 @@ export class StudioClient {
     render.postMessage({ type: 'display', display: this.display });
     if(this.display.painted){this.brushSourcesSent=true;const {BRUSH_SOURCES}=await import('../render/assets/brushAssets');render.postMessage({type:'brushes',sources:BRUSH_SOURCES});}
   }
-  run(action: Action, settings: V2Settings, world?: World, key?: string, townStage?:V2TownStage, terrainStage?: string): Promise<World> {
+  run(action: Action, settings: V2Settings, world?: World, key?: string, townStage?:V2TownStage, terrainStage?: string, keys?: string[]): Promise<World> {
     if (this.pending) return Promise.reject(new Error('Un calcul est déjà en cours.'));
     const id = ++this.id;
     return new Promise((resolve, reject) => {
       this.pending = { id, resolve, reject };
-      try{this.engine.postMessage({ id, action, settings, ...generationWorldInput(action,world,this.retained),key, townStage,terrainStage,assetBase:document.baseURI });}catch(error){this.pending=null;reject(error instanceof Error?error:new Error(String(error)));}
+      try{this.engine.postMessage({ id, action, settings, ...generationWorldInput(action,world,this.retained),key, keys, townStage,terrainStage,assetBase:document.baseURI });}catch(error){this.pending=null;reject(error instanceof Error?error:new Error(String(error)));}
     });
   }
   cancel(): void {
     if (!this.pending) return;
     this.pending.reject(new DOMException('Calcul annulé. La carte précédente est conservée.', 'AbortError'));
     this.pending = null;this.retained=undefined; this.engine.terminate(); this.engine = new EngineWorker(wasmWorkerOptions('magna-v2')); this.attachEngine();
+    this.onEngineReset?.();
   }
   /** Imported projects replace the old worker source; release its heavyweight archives. */
   invalidateRetained():void{this.retained=undefined;this.engine.postMessage({type:'release'});}

@@ -79,6 +79,7 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
     if (path==='terrain.procedural.preset')return settings.terrain?.procedural?.preset??'classic';
     if (path==='terrain.procedural.enabled.phasor')return settings.terrain?.procedural?.enabled?.phasor??isCompactProcedural({source:settings.runtime?.source,procedural:settings.terrain?.procedural});
     if (path==='terrain.procedural.biome')return settings.terrain?.procedural?.biome??true;
+    if (path==='terrain.procedural.coastAfter')return settings.terrain?.procedural?.coastAfter??'initialize';
     if (path==='terrain.phasor.quality')return settings.terrain?.phasor?.quality??'balanced';
     if (path==='terrain.phasor.intensity')return settings.terrain?.phasor?.intensity??1;
     if (path.startsWith('terrain.')) {

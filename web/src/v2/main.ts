@@ -31,6 +31,7 @@ import { mountStageChain, type StageChain } from './stageChain';
 import { stagesForAction, stageById, type StageDef, type StageFamily } from './stageRegistry';
 import { mountHeightmapSource, mountHeightmapFit } from './heightmapLibrary';
 import { mountSettingsPanel, refreshBackends, backendStatus, backendCaption } from './settingsPanel';
+import { mountNeuralModelManager } from './neuralModelManager';
 import { iconUrl, type IconId } from './stageIcons';
 import { mountRegionControls } from './regionControls';
 import { mountMapControls } from './mapControls';
@@ -62,6 +63,40 @@ registerMessages({
 });
 let mods: unknown[] = [];
 let selectedTown = 'main';
+let cityScope: 'all' | 'selection' = 'all';
+const selectedCities = new Set<string>();
+registerMessages({
+  'Build targeted cities': { en: 'Build targeted cities', fr: 'Construire les villes ciblées' },
+  'Select all': { en: 'Select all', fr: 'Tout sélectionner' },
+  'Clear selection': { en: 'Clear selection', fr: 'Vider la sélection' },
+  '{count} selected': { en: '{count} selected', fr: '{count} sélectionnées' },
+  'Select {name} for generation': { en: 'Select {name} for generation', fr: 'Sélectionner {name} pour la génération' },
+  'Select at least one city in the list on the right.': { en: 'Select at least one city in the list on the right.', fr: 'Sélectionnez au moins une ville dans la liste à droite.' },
+  'Placed · no urban plan': { en: 'Placed · no urban plan', fr: 'Implantée · sans plan urbain' },
+  'Stage: roads & quarters': { en: 'Stage: roads & quarters', fr: 'Étape : routes et quartiers' },
+  'Stage: parcels': { en: 'Stage: parcels', fr: 'Étape : parcelles' },
+  'Stage: programme': { en: 'Stage: programme', fr: 'Étape : programme' },
+  'Stage: houses': { en: 'Stage: houses', fr: 'Étape : maisons' },
+});
+function cityTargets(): string[] | undefined { return cityScope === 'all' ? undefined : [...selectedCities]; }
+function syncCitySelection(): void {
+  const valid = new Set(world?.settlements?.map(place => place.key) ?? []);
+  for (const key of selectedCities) if (!valid.has(key)) selectedCities.delete(key);
+  document.querySelectorAll<HTMLInputElement>('[data-city-select]').forEach(input => { input.checked = selectedCities.has(input.dataset.citySelect!); input.disabled = busy; });
+  $<HTMLButtonElement>('#towns-only').disabled = busy || !valid.size || cityScope === 'selection' && !selectedCities.size;
+  setDynamicText($('#cities-selected-count'), () => translate('{count} selected').replace('{count}', String(selectedCities.size)));
+  chain.sync();
+}
+function cityStageLabel(key: string): string {
+  if (!world || !townUrban(world, key)) return 'Placed · no urban plan';
+  const stage = world.stats[`v2.urbanStage:${key}`];
+  return stage === 'layout' ? 'Stage: roads & quarters' : stage === 'parcels' ? 'Stage: parcels' : stage === 'programme' ? 'Stage: programme' : 'Stage: houses';
+}
+function runCities(stage?: V2TownStage): void {
+  const keys = cityTargets();
+  if (keys && !keys.length) { toast(translate('Select at least one city in the list on the right.')); return; }
+  void generate('towns', undefined, stage, undefined, keys);
+}
 let selectedBuilding: { settlement: string; index: number; building: UrbanBuilding } | null = null;
 let busy = false, cancelled = false, currentTab = 'terrain', toastTimer: ReturnType<typeof setTimeout>;
 let elapsedTimer: ReturnType<typeof setInterval> | undefined;
@@ -109,7 +144,7 @@ setHTML($('#app'), `
     <div class="map-compass" aria-hidden="true"><small>N</small><b>✧</b></div>
     <label class="glass inspector-mode"><input id="inspect-mode" type="checkbox"> Inspecter une ville ou une maison</label>
     <div class="glass map-tools"><button id="zoom-in" aria-label="Zoom avant">+</button><button id="zoom-out" aria-label="Zoom arrière">−</button><button id="fit-map" aria-label="Recentrer la carte" title="Recentrer">⛶</button></div>
-    <aside class="glass places-panel" id="places-panel" hidden aria-labelledby="places-title"><header><h2 class="serif" id="places-title">Les lieux</h2><span class="count-badge" id="towns-count">0</span><button id="towns-only">Construire tous les lieux</button><button id="places-collapse" class="quiet small" aria-expanded="true" aria-controls="settlement-list" title="Replier la liste">–</button></header><div class="settlement-list" id="settlement-list"><p class="hint">Créez les implantations pour sélectionner un lieu.</p></div><aside id="inspector" class="inspector" hidden aria-label="Inspecteur du lieu"></aside></aside>
+    <aside class="glass places-panel" id="places-panel" hidden aria-labelledby="places-title"><header><h2 class="serif" id="places-title">Les lieux</h2><span class="count-badge" id="towns-count">0</span><button id="towns-only">Build targeted cities</button><button id="places-collapse" class="quiet small" aria-expanded="true" aria-controls="settlement-list" title="Replier la liste">–</button></header><div class="places-selection"><button id="cities-select-all" class="small">Select all</button><button id="cities-select-none" class="small">Clear selection</button><output id="cities-selected-count" aria-live="polite"></output></div><div class="settlement-list" id="settlement-list"><p class="hint">Créez les implantations pour sélectionner un lieu.</p></div><aside id="inspector" class="inspector" hidden aria-label="Inspecteur du lieu"></aside></aside>
     <div class="map-hint" id="map-hint">Glissez pour explorer · Molette pour zoomer</div>
     <div class="glass progress-card" id="progress-card" hidden role="status" aria-live="polite"><div class="row"><i class="spinner"></i><strong class="grow small" id="progress-label">Préparation de la région…</strong><button id="cancel-job" class="quiet small">Annuler</button></div><progress id="progress" max="100" value="0"></progress><div class="row spread"><p id="progress-detail">CPU · worker de génération</p><p id="progress-time">0 s</p></div></div>
     <div class="map-bottom"><div class="glass map-caption"><span class="eyebrow" id="caption-title">La région avant les villes</span><p id="caption-text">Dessinez d’abord le paysage. Les routes et les villes viendront s’y inscrire, sans effacer votre terrain.</p></div><div class="glass mini-card"><canvas id="minimap" aria-label="Vue d’ensemble"></canvas><div class="map-scale"><span id="scale-label">—</span><div class="scale-line"></div><p id="map-metrics">Aucune carte</p></div></div></div><div class="legend-strip"></div>
@@ -189,7 +224,8 @@ let chainSyncFrame=0;
 function scheduleChainSync():void{if(chainSyncFrame)return;chainSyncFrame=requestAnimationFrame(()=>{chainSyncFrame=0;chain.sync();});}
 const familyActions:Record<StageFamily,[string,()=>void]>={
   region:['Créer le relief',()=>void generate('terrain')],
-  settlements:['Implanter et construire',()=>void generate('settlements')],
+  settlements:['Implanter et relier',()=>void generate('region')],
+  cities:['Build targeted cities',()=>runCities()],
   map:['Redessiner la carte',()=>void refreshAppearance()],
 };
 function runFamily(family:StageFamily):void{familyActions[family][1]();}
@@ -200,9 +236,8 @@ function runStage(stage:StageDef):void{
   if(run.action==='display'){void refreshAppearance();return;}
   if(run.action==='mask'){terrainControls.sketchHost.querySelector<HTMLButtonElement>('[data-id="edit"]')?.click();return;}
   if(run.action==='town'){
-    const place=world?.settlements?.find(s=>s.key===selectedTown);if(!place){toast(translate('Choose a place in the list on the right'));return;}
     const backend=settings.urban?.backend??settings.runtime?.backend??'typescript';
-    void generate('town',place.key,backend==='typescript'?undefined:run.townStage);return;
+    runCities(backend==='typescript'?undefined:run.townStage);return;
   }
   void generate(run.action, undefined, undefined, run.action === 'terrain' ? stage.id : undefined);
 }
@@ -211,6 +246,8 @@ const chain:StageChain=mountStageChain({
   getSettings:()=>settings,getWorld:()=>world,
   getPlace:()=>{const place=world?.settlements?.find(s=>s.key===selectedTown);return place?{key:place.key,name:place.name??(place.main?translate('Ville principale'):place.key)}:undefined;},
   busy:()=>busy,
+  cityScope:()=>{const keys=(world?.settlements??[]).filter(place=>cityScope==='all'||selectedCities.has(place.key)).map(place=>place.key).sort();return{mode:cityScope,count:keys.length,total:world?.settlements?.length??0,key:JSON.stringify([cityScope,keys])};},
+  onCityScope:mode=>{cityScope=mode;syncCitySelection();},
   onChange:()=>{touchRecipe();regionControls.sync();syncUrbanBackend();},
   onRegionChange:()=>{touchRecipe();regionControls.sync();},
   onAppearance:()=>{projectRevision++;clearTimeout(renderTimer);renderTimer=setTimeout(()=>void refreshAppearance(),120);},
@@ -245,7 +282,7 @@ function redrawNames():Promise<void>{
 }
 const urbanParts:[string,UrbanControlParts][]=[
   ['city-composition',{sections:['layout','footprint','growth','fortifications','ports'],extras:['header','phases','archetypes']}],
-  ['city-quarters',{sections:['streets'],extras:[]}],['city-parcels',{sections:['parcels'],extras:[]}],['city-programme',{sections:['programme'],extras:[]}],
+  ['city-roads',{sections:['streets'],extras:[]}],['city-parcels',{sections:['parcels'],extras:[]}],['city-programme',{sections:['programme'],extras:[]}],
   ['city-buildings',{sections:['placement'],extras:[]}],['city-houses',{sections:['house','workshop'],extras:['mixtures','catalogue']}],
 ];
 {
@@ -254,7 +291,15 @@ const urbanParts:[string,UrbanControlParts][]=[
 }
 // Model and service URLs (terrain schema) belong to Settings, next to the service checks.
 $('#hardware-dialog .dialog-actions').before($('#settings-endpoints-box'));
-function syncPlacesPanel(family:StageFamily=chain.family()):void{$('#places-panel').hidden=family!=='settlements'&&$('#inspector').hidden;}
+const neuralModelHost = document.createElement('div');
+$('#hardware-dialog > h3').before(neuralModelHost);
+const neuralModelManager = mountNeuralModelManager(neuralModelHost, () => new URL(settings.runtime?.neuralAssets ?? './neural/', location.href).href);
+const modelShortcut = document.createElement('button'); modelShortcut.type = 'button'; modelShortcut.className = 'small'; modelShortcut.id = 'neural-models-open';
+setText(modelShortcut, 'Downloaded neural models'); chain.body('relief-neural-base').append(modelShortcut);
+modelShortcut.onclick = () => { dialog('#hardware-dialog'); requestAnimationFrame(() => $('#neural-model-manager').scrollIntoView({ block: 'start' })); };
+function syncPlacesPanel(family:StageFamily=chain.family()):void{$('#places-panel').hidden=!['settlements','cities'].includes(family)&&$('#inspector').hidden;}
+$('#cities-select-all').onclick=()=>{for(const place of world?.settlements??[])selectedCities.add(place.key);cityScope='selection';syncCitySelection();};
+$('#cities-select-none').onclick=()=>{selectedCities.clear();cityScope='selection';syncCitySelection();};
 $('#places-collapse').onclick=()=>{const panel=$('#places-panel'),collapsed=panel.dataset.collapsed!=='true';panel.dataset.collapsed=String(collapsed);$('#places-collapse').setAttribute('aria-expanded',String(!collapsed));setText($('#places-collapse'),collapsed?'+':'–');};
 
 function disposeInspectorForms():void{inspectorForms.forEach(form=>form.dispose());inspectorForms=[];}
@@ -267,6 +312,7 @@ function toast(message: string, error = false): void { clearTimeout(toastTimer);
 function renderLog():void{$('#job-log').textContent=logs.map(entry=>`${entry.time.toLocaleTimeString(numberLocale())}  ${translate(entry.message)}`).join('\n');$('#job-log').scrollTop=$('#job-log').scrollHeight;}
 function log(message: string): void {logs.push({time:new Date(),message});if(logs.length>150)logs.shift();renderLog();}
 function dialog(id: string): void { $<HTMLDialogElement>(id).showModal(); }
+client.onEngineReset=()=>chain.clearResults();
 function touchRecipe(): void { projectRevision++; updateExtent(); scheduleChainSync(); setText($('#footer-status'), world ? 'Réglages modifiés · prêts à générer' : 'Relief et eau, en un clic'); }
 function updateExtent(): void { setDynamicText($('#extent-hint'), ()=>`${(adaptedExtent(settings)/1000).toLocaleString(numberLocale())} km de côté · ${settings.extent === 'auto' ? settings.generation==='neural'?'fenêtre native du modèle':'selon les peuplements demandés' : 'étendue imposée'}`); }
 function syncControls(): Promise<void> {
@@ -281,7 +327,7 @@ function syncControls(): Promise<void> {
   for(const key of ['contours','landuse','labels'] as const)$<HTMLInputElement>(`#display-${key}`).checked=appearance[key]??true;
   renderControls.sync();mapControls.sync();return client.setAppearance(settings).catch(reportAppearanceError);
 }
-function selectTab(tab: string): void { currentTab = tab; chain.selectFamily(tab==='terrain'?'region':tab==='map'?'map':'settlements'); }
+function selectTab(tab: string): void { currentTab = tab; chain.selectFamily(tab==='terrain'?'region':tab==='map'?'map':tab==='cities'?'cities':'settlements'); }
 function updateProgress(p: V2Progress): void {
   setText($('#progress-label'), p.label);
   const meter=$<HTMLProgressElement>('#progress');
@@ -294,24 +340,25 @@ function updateProgress(p: V2Progress): void {
 function setBusy(value: boolean): void {
   busy = value; $('#progress-card').hidden = !value; $('#hardware-led').classList.toggle('busy-led',value); $('#app').setAttribute('aria-busy',String(value));
   for(const selector of ['#terrain-controls .chain-scroll','#urban-settings-panel','#inspector'])$(selector).inert=value;
-  for (const id of ['generate-region','terrain-only','region-only','towns-only','random-seed','expert-apply','export-go','clear-heightmap','preview-close']) $<HTMLButtonElement>(`#${id}`).disabled = value;
+  for (const id of ['generate-region','terrain-only','region-only','towns-only','cities-select-all','cities-select-none','random-seed','expert-apply','export-go','clear-heightmap','preview-close']) $<HTMLButtonElement>(`#${id}`).disabled = value;
   document.querySelectorAll<HTMLInputElement|HTMLSelectElement>('[data-option],#town-count,#project-file,#heightmap-file,#terrain-controls .chain-scroll input,#terrain-controls .chain-scroll select,#terrain-controls .chain-scroll button,#urban-settings-panel input,#urban-settings-panel select,#urban-settings-panel button').forEach(e=>e.disabled=value);
   document.querySelectorAll<HTMLButtonElement>('[data-relief],#inspector button').forEach(e=>e.disabled=value);
   if (!value && elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = undefined; }
   terrainControls.sync();regionControls.sync();urbanControls.sync();inspectorForms.forEach(form=>form.sync());if(!value)syncUrbanBackend();
   $<HTMLButtonElement>('#cancel-job').disabled=false;
-  chain.sync();mapControls.sync();
+  syncCitySelection();mapControls.sync();
 }
-async function generate(action: Action, key?: string, townStage?:V2TownStage, terrainStage?: string): Promise<void> {
+async function generate(action: Action, key?: string, townStage?:V2TownStage, terrainStage?: string, keys?: string[]): Promise<void> {
   if (busy) return; cancelled = false;
   if (action !== 'terrain' && action !== 'all' && !world) { toast('Créez d’abord le territoire.'); selectTab('terrain'); return; }
   setBusy(true); const started = performance.now(); const revision = projectRevision; let completed = false;
-  chain.beginRun(stagesForAction(action, townStage, terrainStage));
+  if (['terrain','region','settlements','town'].includes(action)) chain.clearCityResults();
+  chain.beginRun(action === 'town' ? [] : stagesForAction(action, townStage, terrainStage, settings.terrain?.procedural?.coastAfter));
   setText($('#progress-label'), 'Préparation du calcul…'); setText($('#progress-time'), '0 s');
   elapsedTimer = setInterval(()=>{ setText($('#progress-time'), `${Math.round((performance.now()-started)/1000)} s`); },500);
   log(`Début : ${action} · graine ${settings.options.seed}`);
   try {
-    const result = await client.run(action,settings, previewBase?.pristine ?? previewBase?.world ?? pristine ?? world,key,townStage,terrainStage);
+    const result = await client.run(action,settings, previewBase?.pristine ?? previewBase?.world ?? pristine ?? world,key,townStage,terrainStage,keys);
     if (cancelled) return;
     if (terrainStage && terrainStage !== 'cover-climate') {
       if (!world?.stats['v2.previewStage']) previewBase = { world, pristine };
@@ -321,7 +368,7 @@ async function generate(action: Action, key?: string, townStage?:V2TownStage, te
     if (edited.skipped) log(`${edited.skipped} modification(s) ne correspondent plus à leur bâtiment d’origine.`);
     setText($('#progress-label'), 'Dessin de la carte…');$<HTMLButtonElement>('#cancel-job').disabled=true;log('Préparation de la scène et dessin dans le worker de rendu…');
     await client.show(world,action === 'town' || action === 'towns');canvas.hidden=false; $('#empty-map').hidden = true;
-    updateWorld(); if (action === 'region' && chain.family() !== 'settlements') selectTab('settlements'); else if (['all','towns','settlements'].includes(action) && chain.family() !== 'settlements') selectTab('settlements');
+    updateWorld(); if (['region','settlements'].includes(action)) selectTab('settlements'); else if (['all','towns'].includes(action)) selectTab('cities');
     setText($('#footer-status'), `Carte prête · ${((performance.now()-started)/1000).toFixed(1)} s`);
     const completion = `Terminé en ${((performance.now()-started)/1000).toFixed(2)} s · relief ${String(world.stats.backend ?? 'typescript-cpu')}`;
     const hasBuiltTowns = !!world.urban || world.settlements?.some(place => !!place.urban);
@@ -353,8 +400,10 @@ function updateWorld(): void {
     setText($('#caption-text'), 'Elevations from this stage. Later stages remain to be run.');
   }
   setText($('#towns-count'), String(towns.length));
-  setHTML($('#settlement-list'), towns.length ? towns.map(s=>`<button class="settlement-item" data-town="${esc(s.key)}" aria-pressed="${selectedTown===s.key}"><span class="settlement-dot ${(s.main ? world?.urban : s.urban)?'ready':''}"></span><span class="grow"><strong>${nameHTML(s.name,s.main?'Ville principale':s.key)}</strong><small>${numberHTML(s.population)} hab. · <span>${esc(s.archetype)}</span></small></span><span class="count-badge">${(s.main ? world?.urban : s.urban)?'↗':'＋'}</span></button>`).join('') : '<p class="hint">Créez les implantations pour sélectionner un lieu.</p>');
+  setHTML($('#settlement-list'), towns.length ? towns.map(s=>`<div class="settlement-choice"><input type="checkbox" data-city-select="${esc(s.key)}" aria-label="${esc(translate('Select {name} for generation').replace('{name}',s.name??s.key))}" ${selectedCities.has(s.key)?'checked':''}><button class="settlement-item" data-town="${esc(s.key)}" aria-pressed="${selectedTown===s.key}"><span class="settlement-dot ${(s.main ? world?.urban : s.urban)?'ready':''}"></span><span class="grow"><strong>${nameHTML(s.name,s.main?'Ville principale':s.key)}</strong><small>${numberHTML(s.population)} hab. · <span>${esc(s.archetype)}</span></small><small class="settlement-stage">${cityStageLabel(s.key)}</small></span><span class="count-badge">${(s.main ? world?.urban : s.urban)?'↗':'＋'}</span></button></div>`).join('') : '<p class="hint">Créez les implantations pour sélectionner un lieu.</p>');
   document.querySelectorAll<HTMLButtonElement>('[data-town]').forEach(b=>b.onclick=()=>showInspector(b.dataset.town!,true));
+  document.querySelectorAll<HTMLInputElement>('[data-city-select]').forEach(input=>input.onchange=()=>{const key=input.dataset.citySelect!;if(input.checked)selectedCities.add(key);else selectedCities.delete(key);cityScope='selection';syncCitySelection();});
+  syncCitySelection();
   $('#inspector').hidden = true; selectedBuilding = null;
   syncPlacesPanel(); chain.sync();
 }
@@ -456,7 +505,7 @@ document.querySelectorAll<HTMLInputElement|HTMLSelectElement>('[data-option]').f
 }));
 $('#random-seed').onclick=()=>{settings.options.seed=Array.from(crypto.getRandomValues(new Uint32Array(2)),n=>n.toString(36)).join('-');mods=[];touchRecipe();syncControls();};
 $<HTMLInputElement>('#town-count').onchange=e=>{settings.settlementCount=Number((e.target as HTMLInputElement).value);if(settings.region?.placement){delete settings.region.placement.counts;settings.region.placement.mode='counts';}touchRecipe();regionControls.sync();};
-$('#generate-region').onclick=()=>runFamily(chain.family());$('#run-chain').onclick=()=>void generate('all');$('#terrain-only').onclick=()=>void generate('terrain');$('#region-only').onclick=()=>void generate('region');$('#towns-only').onclick=()=>void generate('towns');
+$('#generate-region').onclick=()=>runFamily(chain.family());$('#run-chain').onclick=()=>void generate('all');$('#terrain-only').onclick=()=>void generate('terrain');$('#region-only').onclick=()=>void generate('region');$('#towns-only').onclick=()=>runCities();
 $('#cancel-job').onclick=()=>{cancelled=true;client.cancel();const local=settings.runtime?.backend==='native'||settings.runtime?.source==='neural-python'||settings.urban?.backend==='native';const message=local?'Attente annulée. La carte précédente est conservée ; le service local peut terminer son calcul en arrière-plan.':'Calcul annulé. La carte précédente est conservée.';log(message);setBusy(false);toast(message);};
 $('#zoom-in').onclick=()=>client.viewer.zoomBy(1.5);$('#zoom-out').onclick=()=>client.viewer.zoomBy(1/1.5);$('#fit-map').onclick=()=>client.viewer.fit();
 $<HTMLSelectElement>('#map-style').onchange=e=>{const style=(e.target as HTMLSelectElement).value as TerrainStyle;settings.appearance={...settings.appearance,style:isMapStyle(style)?style:settings.appearance?.style??settings.options.style,terrainStyle:style,...(!isMapStyle(style)?{renderer:'bench' as const}:{})};if(settings.appearance.city)delete settings.appearance.city.ground;projectRevision++;$<HTMLSelectElement>('#export-style').value=style;void refreshAppearance();};
@@ -484,7 +533,7 @@ $<HTMLInputElement>('#project-file').onchange=async e=>{
     const project=scope==='complete'?await projectJob<{settings:V2Settings;world?:World;mods:unknown[]}>({action:'parse',text}):await composeJob({scope,text,current:settings,world:previewBase?.pristine??previewBase?.world??pristine??world,mods});
     const connections={localServer:settings.runtime?.localServer??bootRuntime.localServer,pythonServer:settings.runtime?.pythonServer??bootRuntime.pythonServer};
     if(connectLocal&&project.settings.runtime)project.settings.runtime={...project.settings.runtime,...connections};
-    client.invalidateRetained();settings=project.settings;mods=project.mods;pristine=project.world;world=pristine?applyBuildingEdits(pristine,mods).world:undefined;
+    client.invalidateRetained();chain.clearResults();settings=project.settings;mods=project.mods;pristine=project.world;world=pristine?applyBuildingEdits(pristine,mods).world:undefined;
     touchRecipe();await syncControls();
     if(world){await client.show(world);canvas.hidden=false;$('#empty-map').hidden=true;updateWorld();const notice=world.stats['v2.compositionNotice'];if(notice)toast(String(notice));}
     else {await client.clear();city3d?.dispose();city3d=undefined;setText($('#view3d'),'3D');$('#view3d').setAttribute('aria-pressed','false');$('#capture3d').hidden=true;canvas.hidden=true;$('#empty-map').hidden=false;setText($('#map-name'), 'Une nouvelle recette');setText($('#map-subtitle'), 'Génération du territoire à lancer');setText($('#map-size'), '—');setHTML($('#settlement-list'), '<p class="hint">Créez la région pour retrouver les lieux de cette recette.</p>');$('#inspector').hidden=true;toast('Recette chargée. Créez la région pour la reconstruire.');}
@@ -538,7 +587,7 @@ async function inspectHardware():Promise<void>{
 }
 $('#hardware-open').onclick=()=>{dialog('#hardware-dialog');void inspectHardware();};$('#hardware-refresh').onclick=()=>void inspectHardware();
 $('#services-apply').onclick=()=>{try{const localServer=loopbackServer($<HTMLInputElement>('#rust-server').value),pythonServer=loopbackServer($<HTMLInputElement>('#python-server').value);settings.runtime={compute:'auto',backend:'rust',source:'procedural',...settings.runtime,localServer,pythonServer};connectLocal=true;touchRecipe();syncControls();void inspectHardware();}catch(e){toast(String(e),true);}};
-window.addEventListener('beforeunload',()=>{clearTimeout(renderTimer);renderControls.dispose();city3d?.dispose();terrainControls.dispose();urbanControls.dispose();regionControls.dispose();disposeInspectorForms();client.destroy();});
+window.addEventListener('beforeunload',()=>{clearTimeout(renderTimer);renderControls.dispose();city3d?.dispose();terrainControls.dispose();urbanControls.dispose();regionControls.dispose();neuralModelManager.dispose();disposeInspectorForms();client.destroy();});
 insertHTML($('.header-tools'),'afterbegin',`<label class="language-control"><span class="sr-only">Language</span><select id="language-select" aria-label="Language"><option value="en">English</option><option value="fr">Français</option></select></label>`);
 $<HTMLSelectElement>('#language-select').onchange=event=>setLanguage((event.target as HTMLSelectElement).value as 'en'|'fr');
 onLanguageChange(()=>{renderLog();document.querySelectorAll<HTMLOptGroupElement>('optgroup[data-render-label]').forEach(group=>group.label=translate(group.dataset.renderLabel!));renderControls.sync();});

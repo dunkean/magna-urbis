@@ -1,5 +1,5 @@
 /**
- * Single source of the V2 generation chain: Region → Settlements → Map.
+ * Single source of the V2 generation chain: Region → Settlements → Cities → Map.
  * Stage ids are the public contract of docs/stage-registry-contract.md and of the scientific
  * atlas anchors (`scientific/index.html#stage-<id>`, `scientific/fr.html#stage-<id>`).
  * This module is pure data: no DOM, no WASM. The UI (stageChain.ts) and the tests read it.
@@ -16,7 +16,7 @@
  */
 import type { V2TownStage } from './contracts';
 
-export type StageFamily = 'region' | 'settlements' | 'map';
+export type StageFamily = 'region' | 'settlements' | 'cities' | 'map';
 export type ReliefSource = 'procedural' | 'neural' | 'heightmap';
 export interface Copy { en: string; fr: string }
 export interface StageContext {
@@ -62,7 +62,8 @@ export interface StageDef {
 }
 export const FAMILIES: readonly { id: StageFamily; label: Copy; summary: Copy }[] = [
   { id: 'region', label: { en: 'Region', fr: 'Région' }, summary: { en: 'Climate, relief, coasts, water and natural cover', fr: 'Climat, relief, côtes, eau et couvert naturel' } },
-  { id: 'settlements', label: { en: 'Settlements', fr: 'Peuplements' }, summary: { en: 'From settlement sites and roads to individual houses', fr: 'Des implantations et routes aux maisons' } },
+  { id: 'settlements', label: { en: 'Settlements', fr: 'Peuplements' }, summary: { en: 'Settlement placement, hierarchy and regional roads', fr: 'Implantation, hiérarchie et routes régionales' } },
+  { id: 'cities', label: { en: 'Cities', fr: 'Villes' }, summary: { en: 'Urban roads, quarters, parcels and houses · all cities or a selection', fr: 'Routes urbaines, quartiers, parcelles et maisons · toutes les villes ou une sélection' } },
   { id: 'map', label: { en: 'Map', fr: 'Carte' }, summary: { en: 'Appearance, names and export', fr: 'Affichage, nommage et export' } },
 ];
 
@@ -110,6 +111,9 @@ export const STAGES: readonly StageDef[] = [
   { id: 'relief-noise', family: 'region', optional: false, when: procedural, unavailable: finite, run: terrainRun,
     label: { en: 'Initial noise and uplift', fr: 'Bruit initial et soulèvement' }, summary: { en: 'Regional noise scale and crest strength', fr: 'Échelle du bruit régional et force des crêtes' },
     controls: ['terrain.procedural.noiseScale', 'terrain.procedural.crest'], quick: ['terrain.procedural.noiseScale'], progress: ['pipeline:initialize'] },
+  { id: 'relief-coast-cut', family: 'region', optional: true, toggle: enabled('terrain.procedural.enabled.coastCut'), when: procedural, unavailable: finite, run: terrainRun,
+    label: { en: 'Coast formation', fr: 'Formation des côtes' }, summary: { en: 'Movable land/sea deformation; the final cut preserves a coast after later erosion', fr: 'Déformation terre/mer déplaçable ; la découpe finale conserve une côte après les érosions suivantes' },
+    controls: ['terrain.procedural.coastAfter'], quick: ['terrain.procedural.coastAfter'], progress: ['pipeline:coastCut'] },
   { id: 'relief-regional', family: 'region', optional: false, when: procedural, unavailable: finite, run: terrainRun,
     label: { en: 'Regional evolution', fr: 'Évolution régionale' }, summary: { en: 'Uplift, drainage, incision, thermal, diffusion', fr: 'Soulèvement, drainage, incision, thermique, diffusion' },
     controls: ['terrain.procedural.uplift', 'terrain.procedural.regionalThermal', 'terrain.procedural.regionalDiffusion', 'terrain.procedural.biome',
@@ -190,29 +194,32 @@ export const STAGES: readonly StageDef[] = [
   { id: 'settle-roads', family: 'settlements', optional: true, toggle: { kind: 'roads' }, when: always, unavailable: rustRegion, run: { action: 'roads' },
     label: { en: 'Regional roads', fr: 'Routes régionales' }, summary: { en: 'Cost fields, A*, crossings and bridges', fr: 'Champs de coût, A*, franchissements et ponts' },
     controls: ['region.roads.*'], quick: ['region.roads.level', 'region.roads.surface'], progress: ['roads', 'network'] },
-  // ── City (selected place) ────────────────────────────────────────────────
-  { id: 'city-composition', family: 'settlements', optional: false, when: always, run: town('layout'),
+  // ── Cities (all places or selected subset) ────────────────────────────────────────────────
+  { id: 'city-composition', family: 'cities', optional: false, when: always, run: town('layout'),
     label: { en: 'Composition', fr: 'Composition' }, summary: { en: 'Footprint, macroplan, harbour, fortification', fr: 'Emprise, macroplan, port, fortification' },
     controls: ['main:sprawl', 'main:walls', 'main:moat', 'main:castle', 'main:cathedral', 'main:palace', 'main:monasteries', 'main:port', 'main:arena', 'main:activities', 'main:suburbs',
       U('layout'), U('footprint'), U('growth'), U('fortifications'), U('ports'), 'urban-extra:header', 'urban-extra:phases', 'urban-extra:archetypes'],
     quick: ['main:walls'], progress: ['urban-engine', 'town'] },
-  { id: 'city-quarters', family: 'settlements', optional: false, when: always, unavailable: rustCity, run: town('layout'),
-    label: { en: 'Quarters and streets', fr: 'Quartiers et rues' }, summary: { en: 'Streets, split, blocks, bridges', fr: 'Rues, découpage, îlots, ponts' },
+  { id: 'city-roads', family: 'cities', optional: false, when: always, unavailable: rustCity, run: town('layout'),
+    label: { en: 'Urban roads and streets', fr: 'Routes et rues urbaines' }, summary: { en: 'Local street network and bridges, computed together with quarters by the layout stage', fr: 'Réseau de rues local et ponts, calculés avec les quartiers par l’étape de plan' },
     controls: [U('streets')], quick: ['urban.layout.tissue'], progress: ['urban-layout', 'layout'] },
-  { id: 'city-trim', family: 'settlements', optional: true, when: always, unavailable: rustCity, run: town('layout'),
+  { id: 'city-quarters', family: 'cities', optional: false, when: always, unavailable: rustCity, run: town('layout'),
+    label: { en: 'Quarters and blocks', fr: 'Quartiers et îlots' }, summary: { en: 'Quarter shapes and block subdivision, computed together with urban streets by the layout stage', fr: 'Formes des quartiers et découpage en îlots, calculés avec les rues urbaines par l’étape de plan' },
+    controls: [], quick: [] },
+  { id: 'city-trim', family: 'cities', optional: true, when: always, unavailable: rustCity, run: town('layout'),
     toggle: { kind: 'unavailable', reason: { en: 'No independent switch: the engine trims unbuilt blocks unless the growth mechanism is Legacy (Composition).', fr: 'Pas d’interrupteur indépendant : le moteur retire les îlots non bâtis sauf avec le mécanisme de croissance Legacy (Composition).' } },
     label: { en: 'Trim unbuilt blocks', fr: 'Retrait des îlots non bâtis' }, summary: { en: 'Blocks nobody builds on return to the fields', fr: 'Les îlots que personne ne bâtit retournent aux champs' },
     controls: [], quick: [] },
-  { id: 'city-parcels', family: 'settlements', optional: false, when: always, unavailable: rustCity, run: town('parcels'),
+  { id: 'city-parcels', family: 'cities', optional: false, when: always, unavailable: rustCity, run: town('parcels'),
     label: { en: 'Parcels', fr: 'Parcelles' }, summary: { en: 'Cadastre operators, lot shapes and access', fr: 'Opérateurs cadastraux, formes de lots et desserte' },
     controls: [U('parcels')], quick: ['urban.parcels.operator'], progress: ['urban-parcels'] },
-  { id: 'city-programme', family: 'settlements', optional: false, when: always, unavailable: rustCity, run: town('programme'),
+  { id: 'city-programme', family: 'cities', optional: false, when: always, unavailable: rustCity, run: town('programme'),
     label: { en: 'Programme', fr: 'Programme' }, summary: { en: 'Roles, functions, demands and capacities', fr: 'Rôles, fonctions, besoins et capacités' },
     controls: [U('programme')], quick: ['urban.layout.programme.intent'], progress: ['urban-programme'] },
-  { id: 'city-buildings', family: 'settlements', optional: false, when: always, unavailable: rustCity, run: town('buildings'),
+  { id: 'city-buildings', family: 'cities', optional: false, when: always, unavailable: rustCity, run: town('buildings'),
     label: { en: 'Building sites and massing', fr: 'Emprises et volumes bâtis' }, summary: { en: 'One house request per lot, floors, typology', fr: 'Une demande de maison par lot, étages, typologie' },
     controls: [U('placement')], quick: ['urban.houses.floors'], progress: ['urban-building-sites', 'urban-built-capacity'] },
-  { id: 'city-houses', family: 'settlements', optional: true, when: always, unavailable: rustCity, run: town('buildings'),
+  { id: 'city-houses', family: 'cities', optional: true, when: always, unavailable: rustCity, run: town('buildings'),
     toggle: { kind: 'unavailable', reason: { en: 'Houses are produced by the buildings stage; use “Generate through” to stop before them.', fr: 'Les maisons sont produites par l’étape des bâtiments ; « Générer jusqu’à » permet de s’arrêter avant.' } },
     label: { en: 'Architecture and houses', fr: 'Architecture et maisons' }, summary: { en: 'Recipes, materials, roofs, mixed styles, workshop', fr: 'Recettes, matériaux, toits, styles mélangés, atelier' },
     controls: [U('house'), U('workshop'), 'urban-extra:mixtures', 'urban-extra:catalogue'], quick: [], progress: ['urban-buildings', 'urban-complete'] },
@@ -248,7 +255,15 @@ export const STAGES: readonly StageDef[] = [
 export const SETTINGS_PANEL_CONTROLS = ['runtime.source', 'runtime.backend', 'runtime.compute', 'terrain.compute', 'terrain.generationCompute', 'terrain.hydrology.compute', 'main:urban-backend', 'runtime.neuralAssets', 'runtime.localServer', 'runtime.neuralServer', 'runtime.pythonServer'] as const;
 
 export const stageById = new Map(STAGES.map(stage => [stage.id, stage]));
-export const stagesOf = (family: StageFamily): StageDef[] => STAGES.filter(stage => stage.family === family);
+export function stagesOf(family: StageFamily, coastAfter = 'initialize'): StageDef[] {
+  const stages = STAGES.filter(stage => stage.family === family);
+  if (family === 'region') {
+    const cut = stages.splice(stages.findIndex(stage => stage.id === 'relief-coast-cut'), 1)[0];
+    const anchor = { initialize: 'relief-noise', regionalFinish: 'relief-relax', amplitude: 'relief-calibrate', ridged: 'relief-detail', surface: 'relief-surface', normalize: 'relief-datum' }[coastAfter];
+    stages.splice(stages.findIndex(stage => stage.id === anchor) + 1, 0, cut);
+  }
+  return stages;
+}
 export const stageAnchor = (id: string): string => `stage-${id}`;
 /** Atlas section for a stage, following the app language (EN index.html, FR fr.html). */
 export function stageDocUrl(id: string, language: 'en' | 'fr', base = './scientific/'): string {
@@ -271,21 +286,22 @@ export const stageForControl = (id: string): string | undefined => { const owner
 
 /** Engine/worker progress ids → registry stage, for per-stage timings of the last run. */
 export function stageForProgress(progressStage: string): string | undefined {
+  progressStage = progressStage.replace(/:(done|cached)$/, '');
   for (const stage of STAGES) if (stage.progress?.includes(progressStage)) return stage.id;
   return undefined;
 }
 
 /** Procedural generator stages (rust/bridge/terrainGenerationRecipe.ts) → registry rows. */
 export const GENERATION_STAGE_ROWS: Record<string, string> = {
-  prepare: 'relief-source', grids: 'relief-grids', initialize: 'relief-noise', regional: 'relief-regional', regionalFinish: 'relief-relax',
+  prepare: 'relief-source', grids: 'relief-grids', initialize: 'relief-noise', coastCut: 'relief-coast-cut', regional: 'relief-regional', regionalFinish: 'relief-relax',
   reconstruct: 'relief-reconstruct', amplitude: 'relief-calibrate', ridged: 'relief-detail', surface: 'relief-surface', normalize: 'relief-datum',
   phasor: 'relief-phasor', posterior: 'relief-conditioning', wind: 'relief-aeolian', retain: 'relief-source', coasts: 'relief-coasts',
   sampling: 'relief-source', hydrology: 'water-hydrology', render: 'display-terrain',
 };
 
 /** Rows recomputed by a generation action (timings and staleness of the last run). */
-export function stagesForAction(action: string, townStage?: V2TownStage, terrainStage?: string): string[] {
-  const of = (family: StageFamily) => stagesOf(family).map(stage => stage.id);
+export function stagesForAction(action: string, townStage?: V2TownStage, terrainStage?: string, coastAfter?: string): string[] {
+  const of = (family: StageFamily) => stagesOf(family, coastAfter).map(stage => stage.id);
   if (action === 'terrain') { const ids = of('region'); return terrainStage ? ids.slice(0, ids.indexOf(terrainStage) + 1) : ids; }
   if (action === 'settlements') return of('settlements');
   if (action === 'region') return STAGES.filter(stage => stage.run.action === 'region' || stage.run.action === 'roads').map(stage => stage.id);
@@ -294,6 +310,6 @@ export function stagesForAction(action: string, townStage?: V2TownStage, terrain
     const order: V2TownStage[] = ['layout', 'parcels', 'programme', 'buildings'], last = order.indexOf(townStage ?? 'buildings');
     return STAGES.filter(stage => stage.run.action === 'town' && order.indexOf(stage.run.townStage) <= last).map(stage => stage.id);
   }
-  if (action === 'all') return STAGES.filter(stage => stage.family !== 'map').map(stage => stage.id);
+  if (action === 'all') return [...of('region'), ...of('settlements'), ...of('cities')];
   return [];
 }

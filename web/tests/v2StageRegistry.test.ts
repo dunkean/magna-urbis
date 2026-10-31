@@ -20,11 +20,14 @@ describe('V2 generation stage registry', () => {
     expect(STAGES.map(stage => stage.id)).toEqual(ids);
     expect(new Set(STAGES.map(stage => stage.family))).toEqual(new Set(FAMILIES.map(family => family.id)));
   });
-  it('groups the complete workflow in Region, Settlements and Map', () => {
-    expect(FAMILIES.map(family => family.id)).toEqual(['region', 'settlements', 'map']);
+  it('separates Region, Settlements, Cities and Map', () => {
+    expect(FAMILIES.map(family => family.id)).toEqual(['region', 'settlements', 'cities', 'map']);
     expect(STAGES.filter(stage => stage.family === 'settlements').map(stage => stage.id)).toEqual(stagesForAction('settlements'));
     expect(stagesForAction('region')).toEqual(['settle-sites', 'settle-hierarchy', 'settle-roads']);
     expect(stagesForAction('terrain')).not.toContain('city-composition');
+    expect(stagesForAction('settlements')).not.toContain('city-composition');
+    expect(stagesForAction('towns')).not.toContain('settle-roads');
+    expect(stagesForAction('all')).toEqual([...stagesForAction('terrain'), ...stagesForAction('settlements'), ...stagesForAction('towns')]);
     expect(STAGES.find(stage => stage.id === 'relief-climate')?.optional).toBe(false);
     expect(stagesForControl('terrain.climate')).toEqual(['relief-climate']);
     expect(stagesForControl('widget:coasts')).toEqual(['relief-source']);
@@ -69,7 +72,7 @@ describe('V2 generation stage registry', () => {
     expect(stageDocUrl('relief-regional', 'fr')).toBe('./scientific/fr.html#stage-relief-regional');
     expect(stageForProgress('terrain-water')).toBe('water-hydrology');
     expect(stageForProgress('pipeline:regional')).toBe('relief-regional');
-    expect(stagesForAction('town', 'parcels')).toEqual(['city-composition', 'city-quarters', 'city-trim', 'city-parcels']);
+    expect(stagesForAction('town', 'parcels')).toEqual(['city-composition', 'city-roads', 'city-quarters', 'city-trim', 'city-parcels']);
     expect(stagesForAction('roads')).toEqual(['settle-roads']);
   });
   it('accepts every procedural stage bound in the recipe validator', () => {

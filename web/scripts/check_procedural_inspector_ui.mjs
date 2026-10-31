@@ -21,10 +21,10 @@ try{
   const profile=name==='native'?'local':'web',query=`profile=${profile}&compute=${compute}&generation=${generation}&${name==='hybrid'?common.replace('procedural='+recipe,'procedural='+encodeURIComponent(JSON.stringify({preset:'classic',biome:true,regionalN:64,surfaceN:64,erosionTuning:{iterations:3},wind:{iterations:2,transport:.2}}))):common}`;
   const url=`${origin}/rustbench.html?profile=${profile}${serverUrl?'&localServer='+encodeURIComponent(serverUrl):''}#terrain?${query}`;
   await page.goto(url);const frame=page.frameLocator('#frames iframe').first(),panel=frame.locator('#proceduralPipeline');
-  await panel.waitFor();assert.equal(await panel.locator('[data-stage]').count(),19);assert.equal(await panel.locator('canvas').count(),0);assert.equal(await frame.locator('dialog.procedural-inspector').count(),0);
+  await panel.waitFor();assert.equal(await panel.locator('[data-stage]').count(),20);assert.equal(await panel.locator('canvas').count(),0);assert.equal(await frame.locator('dialog.procedural-inspector').count(),0);
   await page.waitForFunction(()=>{const f=document.querySelector('#frames iframe');return f?.contentWindow?.magnaBenchContext?.ready()&&f.contentDocument.querySelector('#terrainLoading')?.hidden;});
   const helpRows=await panel.locator('.pipeline-map-controls > .terrain-help-row').count();
-  assert.equal(await panel.locator('[data-stage] > summary .pipeline-stage-toggle input').count(),19);assert.equal(await panel.locator('[data-stage] > summary [data-run-stage]').count(),19);
+  assert.equal(await panel.locator('[data-stage] > summary .pipeline-stage-toggle input').count(),20);assert.equal(await panel.locator('[data-stage] > summary [data-run-stage]').count(),20);
   assert(await panel.locator('[data-stage="prepare"] > summary input[type="checkbox"]').isChecked());assert(await panel.locator('[data-stage="prepare"] > summary input[type="checkbox"]').isDisabled());
   const phasorStage=panel.locator('[data-stage="phasor"]'),phasorToggle=phasorStage.locator('summary input[type="checkbox"]'),initialPhasor=await phasorToggle.isChecked();
   await phasorToggle.click();assert.equal(await phasorStage.evaluate(e=>e.open),false);assert.equal(await phasorToggle.isChecked(),!initialPhasor);await phasorToggle.click();assert.equal(await phasorStage.evaluate(e=>e.open),false);

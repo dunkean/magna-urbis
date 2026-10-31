@@ -15,8 +15,8 @@ try {
     const frame=layout==='rustbench'?page.frameLocator('#frames iframe').first():page;
     await page.waitForFunction(embedded=>{const w=embedded?document.querySelector('#frames iframe')?.contentWindow:window;return w?.magnaBenchContext?.ready()&&w.document.querySelector('#terrainLoading')?.hidden;},layout==='rustbench');
     const panel=frame.locator('#proceduralPipeline'),coasts=panel.locator('[data-stage="coasts"]');
-    assert.equal(await panel.locator('[data-stage] > summary .pipeline-stage-toggle input').count(),19);
-    assert.equal(await panel.locator('[data-stage] > summary [data-run-stage]').count(),19);
+    assert.equal(await panel.locator('[data-stage] > summary .pipeline-stage-toggle input').count(),20);
+    assert.equal(await panel.locator('[data-stage] > summary [data-run-stage]').count(),20);
     assert.equal(await frame.locator('#coastStage').isVisible(),false);assert.equal(await frame.locator('#hydroStage').isVisible(),false);
     await panel.locator('#reliefStage > summary').click({position:{x:25,y:12}});assert.equal(await panel.locator('#reliefStage').evaluate(e=>e.open),false);
     await panel.locator('[data-open-coasts]').click();assert.equal(await coasts.evaluate(e=>e.open),true);

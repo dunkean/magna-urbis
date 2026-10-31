@@ -111,7 +111,7 @@ export interface V2Progress {
 }
 export type ProgressCallback = (progress: V2Progress) => void;
 export type V2Action = 'terrain' | 'region' | 'roads' | 'towns' | 'town' | 'settlements' | 'all';
-export interface V2WorkerRequest { id: number; action: V2Action; settings: V2Settings; world?: World; retainedWorldId?:number; key?: string; townStage?: V2TownStage; terrainStage?: string; assetBase?: string }
+export interface V2WorkerRequest { id: number; action: V2Action; settings: V2Settings; world?: World; retainedWorldId?:number; key?: string; keys?: string[]; townStage?: V2TownStage; terrainStage?: string; assetBase?: string }
 export type V2WorkerResponse =
   | { id: number; type: 'progress'; progress: V2Progress }
   | { id: number; type: 'result'; world: World; wasm?: WasmThreadsInfo }

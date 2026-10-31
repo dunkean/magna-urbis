@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-import { generateTerrain, planRegion, rerouteRegion, generateTowns, generateTown, generateTownStage } from './engine';
+import { generateTerrain, planRegion, rerouteRegion, generateTowns, generateTown, generateTownStage, clearTerrainPreviews } from './engine';
 import type { V2WorkerRequest, V2WorkerResponse, ProgressCallback } from './contracts';
 import { WorkerWorld } from './workerWorld';
 import { renameMap } from './mapNaming';
@@ -10,7 +10,7 @@ const scope = self as unknown as DedicatedWorkerGlobalScope;
 let queue = Promise.resolve();
 const retained=new WorkerWorld();
 scope.onmessage = ({ data: request }: MessageEvent<V2WorkerRequest|{type:'release'}>) => {
-  if('type'in request){queue=queue.then(()=>retained.clear());return;}
+  if('type'in request){queue=queue.then(async()=>{retained.clear();clearTerrainPreviews();const {releaseTerrainCheckpoints}=await import('../../../rust/bridge/terrain');releaseTerrainCheckpoints();});return;}
   queue = queue.then(async () => {
     const { id, action, settings } = request;
     const send = (message: V2WorkerResponse): void => scope.postMessage(message);
@@ -21,7 +21,7 @@ scope.onmessage = ({ data: request }: MessageEvent<V2WorkerRequest|{type:'releas
       if (!world) throw new Error('Aucune carte à traiter.');
       if (action === 'region' || action === 'settlements' || action === 'all') world = await planRegion(world, settings, progress);
       if (action === 'roads') world = await rerouteRegion(world, settings, progress);
-      if (action === 'towns' || action === 'settlements' || action === 'all') world = await generateTowns(world, settings, progress);
+      if (action === 'towns' || action === 'all') world = await generateTowns(world, settings, progress, action === 'towns' ? request.keys : undefined, action === 'towns' ? request.townStage : undefined);
       if (action === 'town') {
         if (!request.key) throw new Error('Choisissez un lieu.');
         world = request.townStage ? await generateTownStage(world, settings, request.key, request.townStage, progress)

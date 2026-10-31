@@ -1,5 +1,7 @@
 import { validateProceduralRecipe, erosionBiome, posteriorSettings, windSettings, stageEnabled, PROCEDURAL_RECIPE_VERSION, isCompactProcedural, type ProceduralRecipe, type GenerationControl } from './terrainGenerationRecipe';
-import { generateCpuTerrain } from './terrainCpuPipeline';
+import { generateCpuTerrain, releaseCpuCheckpoints } from './terrainCpuPipeline';
+import { coreOperations, proceduralSignatures, TerrainFieldCheckpoints } from './terrainCheckpoints';
+import { fingerprintBytes } from '../../web/src/v2/terrainFingerprint';
 import { erodeWindGpu, erodeWindCpu } from './terrainWind';
 import { CLIMATE_VALUES, type ClimateValues, type ClimateZone } from './terrainClimate';
 export { CLIMATE_VALUES, type ClimateValues } from './terrainClimate';
@@ -8,7 +10,7 @@ import init from '../pkg/wasm/magna_urbis_wasm.js';
 import { TerrainEngine, erosion_defaults, flood_hydrology, erode_relief, set_erosion_tuning, adoptSingleWasm, loadCoreWasm, onCoreWasmReset, recoverCoreWasm, wantsWasmThreads } from './wasmRuntime';
 import wasmUrl from '../pkg/wasm/magna_urbis_wasm_bg.wasm?url&inline';
 import { GpuTerrainSampler, prepareGpu, generateGpuNoise, gpuContext, GPU_RELIEFS, GPU_GENERATION_RELIEFS } from './terrainGpu';
-import { generateGpuTerrain, erodeGpuCoast, type ErosionProfile } from './terrainErosion';
+import { generateGpuTerrain, erodeGpuCoast, releaseGpuTerrainCheckpoints, type ErosionProfile } from './terrainErosion';
 import { applyPhasorCpu, COMPACT_RELIEFS, compactBudget, compactProfile, COMPACT_VERSION, type PhasorSettings } from './terrainPhasor';
 import { PreparedHydrology, applyHydrologySurface, riverAreaFor, type HydrologyData, type HydrologySettings } from './hydrology';
 import { applyHydrologyHeight } from './hydrologySurface';
@@ -188,6 +190,15 @@ async function releasePythonNeural(): Promise<void> {
 let hydrologyFailure: { key: string; message: string } | undefined;
 let conditioned: { key: string; n: number; height: Float32Array; delta?: Float32Array; m: number; stats?: Omit<ConditioningResult, 'height' | 'delta' | 'hydrology'>; drainage?: ConditioningResult['hydrology'] } | undefined;
 let vectorWater: { key: string; water: VectorWater } | undefined;
+const postCheckpoints = new TerrainFieldCheckpoints();
+/** A project replacement releases session-local outputs, independently of WASM loading. */
+export function releaseTerrainCheckpoints(): void {
+  releaseCpuCheckpoints();releaseGpuTerrainCheckpoints();postCheckpoints.clear();
+  sampler?.dispose();sampler=undefined;samplerMode=undefined;
+  engine?.free();engine=undefined;engineKey='';engineCoastKey='';engineRetainedCoasts=false;
+  preparedHydrology?.dispose();preparedHydrology=undefined;conditioned=undefined;vectorWater=undefined;
+  hydrology=undefined;hydrologyKey='';hydrologyVectorKey='';hydrologyFailure=undefined;
+}
 
 /** Heights of the local Rust neural service: `1024²` FP32 metres over 40 km, sea at zero. */
 async function fetchNeuralRelief(settings: TerrainSettings, coastMask: number, islandMode: IslandMode, progress?: (text: string) => void): Promise<{ heights: Float32Array; info: NeuralInfo }> {
@@ -266,6 +277,7 @@ export function prewarmTerrainRuntime(): void {
 // A terminated threads instance (wasmRuntime.recoverCoreWasm): its objects can
 // neither be used nor freed; the next request rebuilds them on the single package.
 onCoreWasmReset(() => {
+  postCheckpoints.clear();
   ready = undefined; engine = undefined; engineKey = ''; engineCoastKey = ''; engineRetainedCoasts = false;
   preparedHydrology = undefined; hydrology = undefined; hydrologyKey = ''; hydrologyVectorKey = ''; hydrologyFailure = undefined;
   conditioned = undefined; vectorWater = undefined;
@@ -313,13 +325,24 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
   if(lab)await lab.after('prepare');
   const finishSource = async (input:Float32Array,cpuDetail=false):Promise<Float32Array> => {
     let height=cpuDetail && stageEnabled(settings,'phasor',false) ? applyPhasorCpu(input,settings) : input;const p=posteriorSettings(settings),w=windSettings(settings);
-    if(lab)await lab.before('posterior');
-    if(settings.procedural&&stageEnabled(settings,'posterior')&&p.mode!=='none'){height=conditionRelief(height,1024,settings.width,p).height;for(let i=0;i<height.length;i++)height[i]=input[i]>0?Math.max(.3,height[i]):height[i];}
-    if(lab)await lab.after('posterior',height,'Conditionnement CPU, érosion à 512² maximum');
-    if(lab)await lab.before('wind');
-    if(settings.procedural&&stageEnabled(settings,'wind')&&w.iterations&&w.transport){height=readyGpu?await erodeWindGpu(readyGpu.context,height,settings.width,w):erodeWindCpu(height,settings.width,w);}
-    if(lab)await lab.after('wind',height,`${w.iterations} passes · ${w.transport.toFixed(3)} m/passe · ${w.azimuth}°`);
-    return height;
+    const signatures=proceduralSignatures(settings);
+    for(const stage of ['posterior','wind'] as const){
+      const fieldKey=JSON.stringify([signatures.get(stage),runtime?.server,!!readyGpu,fingerprintBytes(new Uint8Array(height.buffer,height.byteOffset,height.byteLength))]);
+      const saved=settings.procedural?postCheckpoints.get(stage,fieldKey):undefined;
+      if(saved){height=saved;if(lab?.cached)await lab.cached(stage,lab.previews===false?undefined:height);else{await lab?.before(stage);await lab?.after(stage,lab.previews===false?undefined:height);}continue;}
+      await lab?.before(stage);
+      if(stage==='posterior'&&settings.procedural&&stageEnabled(settings,stage)&&p.mode!=='none'){
+        const previous=height;height=conditionRelief(height,1024,settings.width,p).height;
+        for(let i=0;i<height.length;i++)height[i]=previous[i]>0?Math.max(.3,height[i]):height[i];
+      }
+      if(stage==='wind'&&settings.procedural&&stageEnabled(settings,stage)&&w.iterations&&w.transport)height=readyGpu?await erodeWindGpu(readyGpu.context,height,settings.width,w):erodeWindCpu(height,settings.width,w);
+      if(settings.procedural)postCheckpoints.put(stage,fieldKey,height);
+      await lab?.after(stage,lab.previews===false?undefined:height);
+    }
+    // The geographic sampler expects a positive inland source. A cut placed
+    // after normalization may still be signed: keep its land deformation and
+    // let coastal finishing restore the selected sea, as for earlier cuts.
+    return settings.procedural&&height.some(h=>h<.3)?height.map(h=>Math.max(.3,h)):height;
   };
   // Handle compilation failure immediately while preparation runs synchronously.
   const pipelineReady = readyGpu?gpuSetupDeadline(readyGpu.pipeline).then(pipeline=>({pipeline}),()=>undefined):undefined;
@@ -343,7 +366,7 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
     neuralInfo = undefined;
     // Read by the CPU engine and the GPU erosion plan built below, and by later coasts.
     set_erosion_tuning(Float64Array.from(EROSION_SETTINGS,name=>{
-      let value=compact&&!settings.procedural?NaN:settings.erosionTuning?.[name]??NaN;
+      let value=compact&&!settings.procedural?NaN:settings.procedural?.erosionTuning?.[name]??settings.erosionTuning?.[name]??NaN;
       if(settings.procedural?.biome&&!gpuGeneration&&!cpuPipeline&&(name==='incision'||name==='thermal'))value=(Number.isFinite(value)?value:1)*(name==='incision'?erosionBiome(settings).water:erosionBiome(settings).thermal);
       return value;
     }));
@@ -459,8 +482,15 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
     }
     prepareMs = performance.now() - prepareStarted;
     engineKey = key;
-  }else progress?.('Réutilisation du relief déjà calculé',{stage:'terrain-generation'});
-  if(lab)await lab.before('coasts');
+  }else {
+    progress?.('Réutilisation du relief déjà calculé',{stage:'terrain-generation'});
+    if(lab?.cached&&settings.procedural&&['hills','valley','mountains','mixed','high-mountains','canyon'].includes(settings.relief)){
+      for(const stage of ['grids',...coreOperations(settings),'phasor','posterior','wind'] as const)await lab.cached(stage);
+    }
+  }
+  const coastCheckpointKey=JSON.stringify([proceduralSignatures(settings).get('coasts'),generationBackend,runtime?.server]);
+  const savedCoast=settings.procedural&&coastMask&&!neural&&!engineRetainedCoasts?postCheckpoints.get('coasts',coastCheckpointKey):undefined;
+  if(!savedCoast&&lab)await lab.before('coasts');
   // Reuse the underlying relief, then cut the coast before its physical erosion.
   const gpuCoast = !settings.zones && !settings.sketch && coastMask !== 0 && generationMode !== 'cpu' && mode !== 'wasm';
   const coastKey = neural ? 'neural' : JSON.stringify([coastMask, coastMask === 255 ? islandMode : 'island', coastMask ? gpuCoast : false]);
@@ -472,7 +502,8 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
     coastBackend = undefined; coastReason = undefined;
     const coastStarted = performance.now();
     progress?.('Découpe des côtes et des îles…',{stage:'terrain-coast'});
-    if (gpuCoast && readyGpu) {
+    if(savedCoast){engine.configure_coast(coastMask,islandMode);engine.set_coast_surface(savedCoast);coastBackend='cpu';}
+    if (!savedCoast && gpuCoast && readyGpu) {
       let coastSampler: GpuTerrainSampler | undefined;
       try {
         const compiled = await pipelineReady;
@@ -488,7 +519,9 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
       } finally { coastSampler?.dispose(); }
     }
     if (!coastBackend) {
-      engine.set_coast(coastMask, islandMode);
+      const recipe=settings.procedural,tuning={...settings.erosionTuning,...recipe?.erosionTuning};
+      if(recipe&&coastMask)set_erosion_tuning(Float64Array.from(EROSION_SETTINGS,name=>name==='surfaceIterations'?recipe.coastIterations??(compact?2:12):name==='surfaceIncision'?(tuning[name]??1)*(recipe.coastIncision??1):name==='surfaceThermal'?(tuning[name]??1)*(recipe.coastThermal??1):name==='surfaceDiffusion'?(tuning[name]??1)*(recipe.coastDiffusion??1):tuning[name]??NaN));
+      try{engine.set_coast(coastMask, islandMode);}finally{if(recipe&&coastMask)set_erosion_tuning(Float64Array.from(EROSION_SETTINGS,name=>tuning[name]??NaN));}
       if (coastMask) coastBackend = 'cpu';
       if (gpuCoast && !readyGpu) coastReason = 'WebGPU indisponible';
     }
@@ -496,7 +529,10 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
     coastMs = coastMask ? performance.now() - coastStarted : 0;
     prepareMs += coastMs;
   }
-  if(lab)await lab.after('coasts',lab.previews!==false&&coastMask?engine!.sampling_field().slice(0,1024*1024):undefined);
+  const coastHeight=coastMask&&settings.procedural?engine!.sampling_field().slice(0,1024*1024):undefined;
+  if(coastHeight&&!savedCoast)postCheckpoints.put('coasts',coastCheckpointKey,coastHeight);
+  if(savedCoast&&lab?.cached)await lab.cached('coasts',lab.previews===false?undefined:savedCoast);
+  else if(lab)await lab.after('coasts',lab.previews===false?undefined:coastHeight);
   async function finish(data: TerrainData): Promise<TerrainData> {
     if(lab)await lab.after('sampling',data.height);
     if(lab)await lab.before('hydrology');

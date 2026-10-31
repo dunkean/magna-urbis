@@ -1,0 +1,13 @@
+.neural-model-content{display:flex;flex-direction:column;gap:12px;margin-top:14px;min-width:0}
+.neural-model-content .hint{margin:0;line-height:1.6}
+.neural-model-address{overflow-wrap:anywhere;font-size:10px}
+.neural-model-list{display:grid;gap:8px}
+.neural-model-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;border:1px solid var(--line,#ffffff17);border-radius:7px;background:#ffffff03;min-width:0}
+.neural-model-row>div:first-child{min-width:0}.neural-model-row strong{font-size:12px}.neural-model-row .hint{font-size:11px;overflow-wrap:anywhere}
+.neural-model-state{color:var(--muted)}.neural-model-row[data-stored=true] .neural-model-state{color:var(--green,#a9bc8b)}
+.neural-model-actions{display:flex;flex-wrap:wrap;gap:6px}.neural-model-row .neural-model-actions{flex-shrink:0}
+.neural-model-content>button{align-self:flex-start}.neural-model-content [hidden]{display:none!important}
+.neural-model-transfer progress{width:100%;height:10px;accent-color:var(--gold,#dcb86f)}
+.neural-model-explanation{font-size:11px;border-left:2px solid var(--gold,#dcb86f);padding-left:12px}.neural-model-explanation summary{cursor:pointer}.neural-model-explanation .hint{margin:10px 0}.neural-model-explanation a{font-size:11px}
+#neural-model-message[data-error=true]{color:#e4a48c}.neural-model-other h4{font-size:12px;margin:0 0 6px}.neural-model-other .neural-model-row{margin-top:8px;font-size:11px}
+@media(max-width:560px){.neural-model-row{align-items:flex-start;flex-direction:column}.neural-model-content{gap:14px}}

@@ -1,4 +1,5 @@
 import { GENERATION_STAGES, generationStageActive, type GenerationControl, type GenerationStageInfo } from '../../../rust/bridge/terrainGenerationRecipe';
+import { coreOperations } from '../../../rust/bridge/terrainCheckpoints';
 import type { TerrainData, TerrainRequest } from '../../../rust/bridge/terrain';
 
 export class TerrainPipelineSession {
@@ -7,10 +8,12 @@ export class TerrainPipelineSession {
   readonly control:GenerationControl;
   constructor(readonly request:TerrainRequest,emit:(stage:GenerationStageInfo)=>void){
     this.all=!request.inspection?.step;
-    this.until=GENERATION_STAGES.findIndex(([id])=>id===request.inspection?.until);
+    const order=GENERATION_STAGES.map(([id])=>id),core=coreOperations(request.settings),cut=core.indexOf('coastCut');
+    order.splice(order.indexOf('coastCut'),1);order.splice(order.indexOf(core[cut-1])+1,0,'coastCut');
+    this.until=order.findIndex(id=>id===request.inspection?.until);
     this.control={previews:request.inspection?.previews??true,
       before:async(stage,detail)=>{
-        this.check();const active=generationStageActive(request.settings,stage),index=GENERATION_STAGES.findIndex(([id])=>id===stage);
+        this.check();const active=generationStageActive(request.settings,stage),index=order.indexOf(stage);
         const paused=active&&!this.all&&index>this.until&&this.credits<=0;
         emit({stage,status:'waiting',detail,paused});
         if(paused)await new Promise<void>(resolve=>this.release=resolve);

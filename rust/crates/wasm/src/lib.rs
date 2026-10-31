@@ -611,6 +611,14 @@ impl TerrainPipeline {
     }
     pub fn advance(&mut self,stage:u32)->Result<(),JsValue>{self.pipeline.advance(stage).map_err(|e|JsValue::from_str(&e))}
     pub fn set_noise(&mut self,coarse:&[f32],fine:&[f32])->Result<(),JsValue>{self.pipeline.set_noise(coarse,fine).map_err(|e|JsValue::from_str(&e))}
+    pub fn checkpoint(&mut self,slot:usize)->Result<(),JsValue>{self.pipeline.checkpoint(slot).map_err(|e|JsValue::from_str(&e))}
+    pub fn restore(&mut self,slot:usize,parameters:&[f32],surface:&[f32],flags:&[u32])->Result<(),JsValue>{self.pipeline.restore(slot,parameters,surface,flags).map_err(|e|JsValue::from_str(&e))}
+    pub fn checkpoint_height(&self,slot:usize)->Result<Vec<f32>,JsValue>{self.pipeline.checkpoint_height(slot).map_err(|e|JsValue::from_str(&e))}
+    pub fn cut_coast(&mut self,mask:u32,mode:&str)->Result<(),JsValue>{self.pipeline.cut_coast(mask,mode).map_err(|e|JsValue::from_str(&e))}
+    #[allow(clippy::too_many_arguments)]
+    pub fn cut_field(seed:&str,width:f64,motif:f64,amplitude:f64,mask:u32,mode:&str,n:usize,origin:f64,cell:f64,mut heights:Vec<f32>)->Result<Vec<f32>,JsValue>{
+        magna_urbis_core::cut_coast_field(seed,width,motif,amplitude,mask,mode,n,origin,cell,&mut heights).map_err(|e|JsValue::from_str(&e))?;Ok(heights)
+    }
     pub fn height(&self)->Vec<f32>{self.pipeline.height()}
     /// Final field moved out of the pipeline (one copy into JS instead of two).
     pub fn take_height(&mut self)->Vec<f32>{self.pipeline.take_height()}

@@ -23,7 +23,7 @@ kernel timings.
 ## Ordered operations
 
 The comparison's sixteen explanatory rows included infrastructure as well as
-terrain operations. The inspector has nineteen rows: eighteen computation stages
+terrain operations. The inspector has twenty rows: nineteen computation stages
 and the interactive Custom mask input before the grids and initial noise.
 
 | Order | Stage | Controls / dependency |
@@ -32,21 +32,22 @@ and the interactive Custom mask input before the grids and initial noise.
 | 2 | Custom mask | Interactive input: transparent overlay on the main map; zone brushes, eraser, falloff, history and zone/heightmap import/export |
 | 3 | Grids and buffers | Regional and surface dimensions; compact quality; output fixed at 1024² |
 | 4 | Initial noise and uplift | Regional noise scale, structural crest strength, relief family and mountain mixture |
-| 5 | Regional evolution | Cycle count, uplift multiplier, incision, onset slope, basin fill, sill carving, talus, thermal rate and diffusion |
-| 6 | Final regional relaxation | Final sill carving, thermal relaxation and drainage |
-| 7 | Reconstruction | Engine default, bounded bicubic or positive B-spline; domain warp multiplier |
-| 8 | Amplitude calibration | Optional p99 rescaling; off retains the evolved physical amplitude |
-| 9 | Classical ridged detail | Optional amplitude; before surface erosion |
-| 10 | Surface erosion | Optional cycles, incision, routed/strict flow, sill carving, thermal rate and diffusion |
-| 11 | Datum normalization | Optional p1 shift to 1 m; the positive land-input floor of 0.3 m remains required |
-| 12 | Phasor and output | Optional detail on either preset; GPU output is read and validated, CPU retains its physical field |
-| 13 | Posterior fluvial conditioning | Optional existing CPU conditioner: erosion, breaching or both; strength, maximum breach depth and length |
-| 14 | Aeolian transport | Optional GPU (CPU reference for CPU generation): iterations, direction, maximum transported metres per pass |
-| 15 | Retained source | Rust surface/pyramid construction after posterior operators; required |
-| 16 | Coasts | Optional marine mask; separate coastal cycles, incision, thermal and diffusion multipliers |
-| 17 | Overview sampling | Required; the inspector reports the engine's height bound and output resolution |
-| 18 | Hydrology | Optional existing water pipeline, conditioning and riverbed cuts; its existing controls are moved into this row |
-| 19 | Display | Normal map renderer; the completed pipeline becomes the applied terrain automatically |
+| 5 | Coast formation | Movable land/sea deformation; after initial noise by default |
+| 6 | Regional evolution | Cycle count, uplift multiplier, incision, onset slope, basin fill, sill carving, talus, thermal rate and diffusion |
+| 7 | Final regional relaxation | Final sill carving, thermal relaxation and drainage |
+| 8 | Reconstruction | Engine default, bounded bicubic or positive B-spline; domain warp multiplier |
+| 9 | Amplitude calibration | Optional p99 rescaling; off retains the evolved physical amplitude |
+| 10 | Classical ridged detail | Optional amplitude; before surface erosion |
+| 11 | Surface erosion | Optional cycles, incision, routed/strict flow, sill carving, thermal rate and diffusion |
+| 12 | Datum normalization | Optional p1 shift to 1 m; the positive land-input floor of 0.3 m remains required |
+| 13 | Phasor and output | Optional detail on either preset; GPU output is read and validated, CPU retains its physical field |
+| 14 | Posterior fluvial conditioning | Optional existing CPU conditioner: erosion, breaching or both; strength, maximum breach depth and length |
+| 15 | Aeolian transport | Optional GPU (CPU reference for CPU generation): iterations, direction, maximum transported metres per pass |
+| 16 | Retained source | Rust surface/pyramid construction after posterior operators; required |
+| 17 | Coasts | Optional marine mask; separate coastal cycles, incision, thermal and diffusion multipliers |
+| 18 | Overview sampling | Required; the inspector reports the engine's height bound and output resolution |
+| 19 | Hydrology | Optional existing water pipeline, conditioning and riverbed cuts; its existing controls are moved into this row |
+| 20 | Display | Normal map renderer; the completed pipeline becomes the applied terrain automatically |
 
 The regional cycle remains a dependent sequence: uplift → basin drainage and
 sill handling → accumulation → implicit incision → thermal relaxation →
@@ -134,7 +135,7 @@ wind mobility around the selected climate's reference rainfall.
 | Temperate | 1 | 1 | 0 | 0 | 0.2 |
 | Oceanic | 1.35 | 1.25 | 1 | 0 | 0.2 |
 | Mediterranean | 1.05 | 0.85 | 0.7 | 2 | 0.12 |
-| Arid | 0.35 | 0.65 | 0 | 12 | 0.8 |
+| Arid | 0.35 | 0.65 | 0 | 13 | 0.8 |
 | Cold | 0.65 | 1.6 | 0 | 3 | 0.15 |
 | Tropical | 1.8 | 1.15 | 1.5 | 0 | 0.1 |
 
@@ -176,6 +177,25 @@ at most 512² and its delta is interpolated; breaching runs on the source grid.
 It therefore costs CPU time even for GPU-generated terrain. Hydrology still
 handles remaining depressions; these operators do not guarantee drainage.
 
+## Retained outputs and coastal placement (V2)
+
+The procedural pipeline retains one active recipe's internal checkpoints in
+WASM/native memory or device buffers. A request restores its unchanged prefix
+and computes only the missing suffix up to the requested output. Changing a
+surface parameter does not replay regional erosion; changing the seed expires
+the whole prefix. Display buffers are copies and cannot accumulate erosion.
+Checkpoints are session-local and disappear when the worker/device is released.
+
+`procedural.coastAfter` inserts `coastCut` after `initialize` (default),
+`regionalFinish`, `amplitude`, `ridged`, `surface` or `normalize`. This operation
+deforms the physical field independently of the final coastal erosion. Later
+positive-floor operations are allowed to change that deformation. Final coastal
+finishing reapplies the chosen geographic cut so a sea/coast remains present.
+
+The LED shows disabled (grey), valid output (green), or missing/outdated output
+(orange); only the executing stage pulses. Validity uses computational parameter
+signatures, including the input identity, rather than a history of control clicks.
+
 ## Reproduction
 
 From `web/`, under PowerShell:
@@ -184,6 +204,8 @@ From `web/`, under PowerShell:
 $env:MAGNA_BROWSER_CHANNEL='chrome'
 node scripts/check_procedural_stages.mjs
 node scripts/check_procedural_inspector_ui.mjs
+node scripts/check_v2_relief_checkpoints.mjs
+node scripts/check_v2_relief_ui.mjs
 node node_modules/vitest/vitest.mjs run tests/proceduralStages.test.ts
 ```
 

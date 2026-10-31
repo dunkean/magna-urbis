@@ -4,12 +4,13 @@ import type { GenerationStage } from '../../../rust/bridge/terrainGenerationReci
 export const TERRAIN_STAGE_OUTPUTS: Record<string, GenerationStage> = {
   'relief-source': 'initialize', 'relief-climate': 'initialize', 'relief-grids': 'grids',
   'relief-noise': 'initialize', 'relief-regional': 'regional', 'relief-relax': 'regionalFinish',
+  'relief-coast-cut': 'coastCut',
   'relief-reconstruct': 'reconstruct', 'relief-calibrate': 'amplitude', 'relief-detail': 'ridged',
   'relief-surface': 'surface', 'relief-datum': 'normalize', 'relief-phasor': 'phasor',
   'relief-conditioning': 'posterior', 'relief-aeolian': 'wind', 'relief-coasts': 'coasts',
 };
 
-/** Control flow confined to a generation call; the bridge releases its pipeline in finally. */
+/** Stops inspection at an output while the bridge retains its resumable checkpoints. */
 export class TerrainStageOutput {
   constructor(readonly height: Float32Array, readonly stage: GenerationStage) {}
 }

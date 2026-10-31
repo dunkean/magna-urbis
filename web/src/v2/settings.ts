@@ -4,10 +4,10 @@ import { TERRAIN_EXTENT_MIN, TERRAIN_EXTENT_MAX } from './terrainSettings';
 
 export function defaultSettings(): V2Settings {
   return { options: makeOptions({ seed: 'magna-urbis-v2', population: 2500, biome: 'temperate', relief: 'valley', coast: 'S' }),
-    extent: 6000, settlementCount: 4, local: {}, generation: 'procedural',
+    extent: 6000, settlementCount: 4, local: {}, generation: 'neural',
     // Explicit defaults belong to new recipes; absent fields in saved recipes keep their historical defaults.
-    terrain: { motifSize: 10000, hydrology: { engine: 'vector' } },
-    runtime: { backend: 'rust', compute: 'auto', source: 'procedural' } };
+    terrain: { motifSize: 3000, hydrology: { engine: 'vector' } },
+    runtime: { backend: 'rust', compute: 'auto', source: 'neural-wasm' } };
 }
 
 /** Preserve the optional automatic countryside recommendation used by historical recipes. */

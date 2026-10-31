@@ -7,6 +7,7 @@
 export type RuntimeLanguage = 'en' | 'fr';
 
 const entries: readonly (readonly [string, string])[] = [
+  ['Stockage des modèles neuronaux indisponible ; les poids devront être téléchargés à nouveau.', 'Neural model storage unavailable; weights will need to be downloaded again.'],
   ['Chargement du moteur Rust/WASM…','Loading the Rust/WASM engine…'],
   ['Chargement du module de génération du terrain…','Loading the terrain generation module…'],
   ['Compilation du moteur Rust/WASM…','Compiling the Rust/WASM engine…'],

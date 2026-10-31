@@ -13,11 +13,20 @@ if an implementation discovers a stage is wrong or missing, update this file fir
 engine applies them. `city-trim` and `city-houses` are optional in the contract, but the engine has
 no independent switch yet: the UI shows a locked switch with the reason.
 
-The V2 sidebar has three sections: **Region** (relief, water and natural cover),
-**Settlements** (placement, roads and city construction), and **Map** (appearance,
+The V2 sidebar has four sections: **Region** (relief, water and natural cover),
+**Settlements** (placement and regional roads), **Cities** (urban construction for all
+places or a checked subset in the right-hand list), and **Map** (appearance,
 naming and export). Climate and the land/sea mask are initial conditions in Region's
 top frame; biome remains a separate choice. The late coast row only exposes procedural
 coastal finishing. Stage ids remain stable for atlas links and progress attribution.
+
+2026-10-31: `relief-coast-cut` separates the initial land/sea deformation from
+coastal finishing. It follows initial noise by default and can move after regional
+relaxation, amplitude calibration, ridged detail, surface erosion or normalization.
+The final geographic cut remains in coastal finishing to preserve a coast.
+Retained checkpoints expire from the first changed computational dependency.
+The stage LED is grey when disabled, green for an available valid output, orange
+when an output is missing or outdated, and pulses while that stage executes.
 
 ## Region — initial conditions and relief
 | id | name | when | opt |
@@ -27,6 +36,7 @@ coastal finishing. Stage ids remain stable for atlas links and progress attribut
 | relief-mask | Custom mask (zones, brushes, import/export) | procedural | yes |
 | relief-grids | Grids and buffers | procedural | no |
 | relief-noise | Initial noise and uplift | procedural | no |
+| relief-coast-cut | Coast formation (movable; after initial noise by default) | procedural | yes |
 | relief-regional | Regional evolution (uplift, drainage, incision, thermal, diffusion) | procedural | no |
 | relief-relax | Final regional relaxation | procedural | yes |
 | relief-reconstruct | Reconstruction (bicubic / B-spline, domain warp) | procedural | no |
@@ -57,11 +67,12 @@ coastal finishing. Stage ids remain stable for atlas links and progress attribut
 | settle-hierarchy | Place hierarchy | after sites | no |
 | settle-roads | Regional roads (cost fields, A*, bridges) | after sites | yes |
 
-## Settlements — city construction (per selected place)
+## Cities — city construction (all places or a selected subset)
 | id | name | when | opt |
 | --- | --- | --- | --- |
 | city-composition | Composition: footprint, macroplan, harbour, fortification | city | no |
-| city-quarters | Quarters: streets, split, blocks, bridges | city | no |
+| city-roads | Urban roads and streets (shares the native layout output with quarters) | city | no |
+| city-quarters | Quarters and block subdivision (shares the native layout output with streets) | city | no |
 | city-trim | Trim of unbuilt blocks | city | yes |
 | city-parcels | Parcels (cadastre) | city | no |
 | city-programme | Programme allocation (roles, demands) | city | no |

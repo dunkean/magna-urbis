@@ -241,11 +241,16 @@ export async function generateEngineHeight(request: EngineHeightRequest, onProgr
     let executedBackend: 'cpu' | 'gpu' | 'native' = 'cpu';
     // Stage timings for the V2 chain: the decomposed recipe already selects the staged CPU pipeline,
     // so a preview-free control only reports stage boundaries (no readbacks, no extra copies).
-    const lab: GenerationControl | undefined = settings.procedural && !usesNeural && !custom.sketch && !custom.zones && (!request.native || !!intermediate) ? {
+    const lab: GenerationControl | undefined = settings.procedural && !usesNeural && !custom.sketch && !custom.zones ? {
       previews: !!intermediate,
       backend: backend => { executedBackend = backend; },
       ...(intermediate ? { until } : {}),
       before: async stage => { onProgress?.(`Procedural stage · ${stage}`, { stage: `pipeline:${stage}` }); },
+      cached: async (stage, height) => {
+        if (height) lastHeight = height;
+        onProgress?.(`Procedural stage · ${stage} · cached`, { stage: `pipeline:${stage}:cached` });
+        if (intermediate && stage === until) throw new TerrainStageOutput(height ?? lastHeight ?? new Float32Array(n * n), stage);
+      },
       after: async (stage, height) => {
         if (height) lastHeight = height;
         onProgress?.(`Procedural stage · ${stage} · done`, { stage: `pipeline:${stage}:done` });

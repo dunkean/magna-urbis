@@ -1022,9 +1022,27 @@ fn dispatch(path: &str, body: &[u8], sessions: &Mutex<Sessions>) -> ApiResult<Re
                 return json_reply(json!({"ready":true}));
             }
             let pipeline=state.terrain_pipeline.as_mut().ok_or("Missing retained terrain pipeline")?;
+            let checkpoint=input["checkpoint"].as_u64().or_else(||input["stage"].as_u64()).filter(|&s|s<=8).ok_or("Invalid terrain checkpoint")? as usize;
+            if input["command"]=="restore" {
+                let parameters:Vec<f32>=value(&input["parameters"])?;let surface:Vec<f32>=value(&input["surface"])?;let flags:Vec<u32>=value(&input["flags"])?;
+                pipeline.restore(checkpoint,&parameters,&surface,&flags)?;return json_reply(json!({"ready":true}));
+            }
+            if input["command"]=="preview" {
+                let height=pipeline.checkpoint_height(checkpoint)?;
+                let mut body=Vec::with_capacity(height.len()*4);extend_f32_le(&mut body,&height);
+                return Ok(Reply{kind:"application/octet-stream",body});
+            }
+            if input["command"]=="coast" {
+                pipeline.cut_coast(input["mask"].as_u64().filter(|&m|m<=255).ok_or("Invalid coast mask")? as u32,input["mode"].as_str().ok_or("Missing coast mode")?)?;
+                pipeline.checkpoint(checkpoint)?;
+                let height=if input["preview"]==true {pipeline.height()}else{Vec::new()};
+                let mut body=Vec::with_capacity(height.len()*4);extend_f32_le(&mut body,&height);
+                return Ok(Reply{kind:"application/octet-stream",body});
+            }
             let stage=input["stage"].as_u64().filter(|&s|s<8).ok_or("Invalid terrain stage")? as u32;
             pipeline.advance(stage)?;
-            let height=if stage==7 {pipeline.take_height()}else if input["preview"]==true {pipeline.height()}else{Vec::new()};
+            pipeline.checkpoint(checkpoint)?;
+            let height=if input["preview"]==true {pipeline.height()}else{Vec::new()};
             let mut body=Vec::with_capacity(height.len()*4);extend_f32_le(&mut body,&height);
             Ok(Reply{kind:"application/octet-stream",body})
         },

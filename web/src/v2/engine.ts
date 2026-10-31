@@ -30,10 +30,14 @@ import { seedHash } from '../../../rust/bridge/terrainAdjust';
 import { gpuSetupDeadline } from '../../../rust/bridge/terrainProgress';
 import { fingerprintBytes, fingerprintNumbers } from './terrainFingerprint';
 import { cloneV2TerrainForStage, cloneV2WorldForGeneration } from './worldState';
+import { proceduralSignatures, stableKey } from '../../../rust/bridge/terrainCheckpoints';
+import { TERRAIN_STAGE_OUTPUTS } from './terrainStagePreview';
 export { defaultSettings, adaptedExtent } from './settings';
 export type { V2Settings, V2Progress, ProgressCallback, V2Project } from './contracts';
 const forestFields = new Map<string, { field: ForestField; cover: Float32Array }>();
 const naturalCovers = new Map<string, LandUseLayer>();
+const stagePreviews = new Map<string, TerrainLayer>();
+export function clearTerrainPreviews(): void { stagePreviews.clear(); }
 
 function effectiveOptions(settings: V2Settings, mapSize = adaptedExtent(settings)): Options {
   return { ...settings.options, mapSize };
@@ -122,6 +126,9 @@ export async function generateTerrain(settings: V2Settings, onProgress?: Progres
   const t0 = performance.now(), key = terrainCacheKey(settings) + (terrainStage && terrainStage !== 'cover-climate' ? `|preview:${terrainStage}` : ''), options = effectiveOptions(settings);
   const configuration = effectiveTerrainSettings(settings, options.mapSize!);
   const includeCover = !terrainStage || terrainStage === 'cover-climate';
+  const output = terrainStage ? TERRAIN_STAGE_OUTPUTS[terrainStage] ?? (terrainStage === 'water-hydrology' ? 'hydrology' : 'sampling') : undefined;
+  const previewKey = !includeCover ? stableKey([V2_ENGINE_VERSION,settings.runtime,terrainStage,configuration.resolution,
+    configuration.procedural && !configuration.sketch && !configuration.zones && !options.importedHeight ? proceduralSignatures(configuration).get(output!) : key]) : undefined;
   if (!includeCover) {
     configuration.hydrology = { ...configuration.hydrology!, enabled: terrainStage === 'water-hydrology' && configuration.hydrology?.enabled !== false };
     if (!['relief-refine', 'water-hydrology'].includes(terrainStage!)) configuration.refine = false;
@@ -133,11 +140,13 @@ export async function generateTerrain(settings: V2Settings, onProgress?: Progres
   if (!nativeEngine && (options.mapSize! < 600 || options.mapSize! > 40000)) throw new Error('The classic TypeScript engine supports 600â€“40,000 m. Select the Rust engine for 500â€“100,000 m.');
   // The classic engine keeps the dormant Rust recipe so switching engines never erases the user's draft.
   report(onProgress, 'terrain-cache', 'Recherche du relief et de lâ€™hydrologie conservÃ©sâ€¦', 0, 3);
-  const hit = terrainStage && !includeCover ? undefined : await cache.get(key);
+  const preview = previewKey && stagePreviews.get(previewKey);
+  const hit = preview ? {terrain:structuredClone(preview),source:'memory' as const} : terrainStage && !includeCover ? undefined : await cache.get(key);
   let terrain: TerrainLayer, persisted = false;
   if (hit) {
     terrain = hit.terrain;
     report(onProgress, 'terrain', 'Relief et hydrologie rÃ©utilisÃ©s', 1, 3, hit.source);
+    if(preview&&output)report(onProgress,`pipeline:${output}:cached`,'Sortie intermédiaire conservée',1,1,'memory');
   } else {
     report(onProgress, 'terrain', 'Calcul du relief, du drainage, des riviÃ¨res et des lacsâ€¦', 0, 3, 'miss');
     let engineStats: Record<string, string | number> = { backend: 'typescript-cpu' };
@@ -195,10 +204,11 @@ export async function generateTerrain(settings: V2Settings, onProgress?: Progres
     if (!terrainStage || includeCover) persisted = await cache.put(key, terrain);
   }
   if (!includeCover) {
+    if(previewKey){stagePreviews.delete(previewKey);stagePreviews.set(previewKey,structuredClone(terrain));if(stagePreviews.size>4)stagePreviews.delete(stagePreviews.keys().next().value!);}
     return { seed: options.seed, options: { ...options, workflow: 'environment' }, mapSize: options.mapSize!, terrain,
       landuse: { areas: [], farmsteads: [], reserve: [] },
       stats: { 'v2.stage': 'terrain', 'v2.previewStage': terrainStage!, 'v2.engine': V2_ENGINE_VERSION, 'v2.terrainKey': key,
-        ...((terrain as V2TerrainLayer).v2EngineStats ?? {}), 'v2.cache': 'miss', 'v2.persisted': 0, 'ms.total': Math.round(performance.now() - t0) } };
+        ...((terrain as V2TerrainLayer).v2EngineStats ?? {}), 'v2.cache': hit?.source ?? 'miss', 'v2.persisted': 0, 'ms.total': Math.round(performance.now() - t0) } };
   }
   report(onProgress, 'biome', 'Classification du biome et du couvert naturelâ€¦', 2, 3);
   const retained = terrain as V2TerrainLayer;
@@ -445,13 +455,18 @@ export async function generateTown(regionWorld: World, settings: V2Settings, key
   world.stats['ms.towns'] = Math.round(performance.now() - t0);
   return world;
 }
-export async function generateTowns(regionWorld: World, settings: V2Settings, onProgress?: ProgressCallback): Promise<World> {
+export async function generateTowns(regionWorld: World, settings: V2Settings, onProgress?: ProgressCallback, keys?: readonly string[], through?: V2TownStage): Promise<World> {
   validateSettings(settings); assertRegion(regionWorld, settings);
+  if (keys) {
+    if (!keys.length) throw new Error('Select at least one city in the list on the right.');
+    for (const key of keys) if (!regionWorld.settlements!.some(place => place.key === key)) throw new Error(`Unknown settlement: ${key}`);
+  }
+  const selected = keys ? new Set(keys) : undefined;
   const backend = settings.urban?.backend ?? settings.runtime?.backend ?? 'typescript';
-  const world = cloneV2WorldForGeneration(regionWorld), t0 = performance.now(), places = world.settlements!.filter(s => backend !== 'typescript' || s.detail !== 'farmstead');
+  const world = cloneV2WorldForGeneration(regionWorld), t0 = performance.now(), places = world.settlements!.filter(s => (!selected || selected.has(s.key)) && (backend !== 'typescript' || s.detail !== 'farmstead'));
   for (let i = 0; i < places.length; i++) {
     report(onProgress, 'town', `${places[i].name ?? places[i].key} : plan, rues, parcelles et bÃ¢timentsâ€¦`, i, places.length);
-    await buildTown(world, settings, places[i].key, onProgress);
+    await buildTown(world, settings, places[i].key, onProgress, through);
   }
   finishTowns(world, settings, onProgress);
   world.stats['ms.towns'] = Math.round(performance.now() - t0);

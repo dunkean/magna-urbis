@@ -5,13 +5,24 @@ import { configureProceduralPlan, isCompactProcedural, stageEnabled, type Genera
 import shader from './terrainErosion.wgsl?raw';
 import noiseShader from './terrainNoise.wgsl?raw';
 import volcanicShader from './terrainFinite.wgsl?raw';
-import { GenerationNoisePlan, TerrainEngine } from './wasmRuntime';
+import { GenerationNoisePlan, TerrainEngine, TerrainPipeline } from './wasmRuntime';
+import { coreOperations, proceduralSignatures, TerrainFieldCheckpoints } from './terrainCheckpoints';
+import { generationStageActive } from './terrainGenerationRecipe';
 import type { Context } from './terrainGpu';
 import type { TerrainSettings } from './terrain';
 import { gpuSetupDeadline, type TerrainProgressCallback } from './terrainProgress';
 
 const ENTRIES = ['compactInitialize','compactReconstruct','generationUnitScale','generationKeepDatum','generationReconstruct','generationPreview', 'generationPlainPack', 'generationPhasorPack', 'initialize', 'uplift', 'start', 'clearNext', 'solveStats', 'floodInit', 'solveTile', 'receivers', 'flow', 'graphInit', 'graphFinish', 'floodCheck', 'pitInit', 'pitUnion', 'pitCompress', 'pitReduce', 'pitPour', 'pitFill', 'breachInit', 'breach', 'breachFinish', 'thermalFlux', 'thermalApply', 'copyHeight', 'bounds', 'diffuse', 'reconstruct', 'percentileInit', 'histogramClear', 'histogram', 'percentileSelect', 'detail', 'normalize', 'volcanicInitial', 'surfaceLoad', 'surfaceFlowInit', 'surfaceDelta', 'surfaceReconstruct', 'canyonSeed', 'canyonSpread', 'canyonApply', 'coastLoad', 'coastResult', 'packHeight'] as const;
-type Entry = typeof ENTRIES[number];
+type Entry = typeof ENTRIES[number] | 'generationCut' | 'generationRegionalRead';
+interface GpuCheckpoint { key: string; kind: number; nodes?: GPUBuffer; fine?: GPUBuffer; control: GPUBuffer }
+const retainedStages = new WeakMap<GPUDevice, Map<GenerationStage, GpuCheckpoint>>();
+const packedFields = new WeakMap<GPUDevice, TerrainFieldCheckpoints>();
+const checkpointDevices = new Set<GPUDevice>();
+function freeCheckpoint(value: GpuCheckpoint): void { value.nodes?.destroy(); value.fine?.destroy(); value.control.destroy(); }
+export function releaseGpuTerrainCheckpoints(): void {
+  for(const device of checkpointDevices){retainedStages.get(device)?.forEach(freeCheckpoint);retainedStages.delete(device);packedFields.delete(device);}
+  checkpointDevices.clear();
+}
 interface Pipelines {
   layout: GPUBindGroupLayout; values: Map<string, GPUComputePipeline>;
   module: GPUShaderModule; pipelineLayout: GPUPipelineLayout;
@@ -152,7 +163,7 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
     const initializeEntry:Entry=compact?'compactInitialize':'initialize';
     const surfaceEnabled=!!coast || stageEnabled(settings,'surface',!compact || settings.relief==='canyon') && (!compact || settings.relief==='canyon' || tuning[3]>0);
     const reconstructEntry:Entry=settings.procedural?.reconstruction && settings.procedural.reconstruction!=='default' ? 'generationReconstruct':compact?'compactReconstruct':'reconstruct';
-    const entries = new Set<Entry>([packEntry,...(!stageEnabled(settings,'amplitude')?['generationUnitScale' as const]:[]),...(!stageEnabled(settings,'normalize')?['generationKeepDatum' as const]:[]), ...(lab ? ['generationPreview' as const] : [])]), modes = new Set<number>();
+    const entries = new Set<Entry>([packEntry,...(!stageEnabled(settings,'amplitude')?['generationUnitScale' as const]:[]),...(!stageEnabled(settings,'normalize')?['generationKeepDatum' as const]:[]), ...(lab ? ['generationPreview' as const] : []), ...(!coast && !shape && settings.procedural ? ['generationCut','generationRegionalRead','generationPreview'] as const : [])]), modes = new Set<number>();
     const require = (...values: Entry[]) => values.forEach(value => entries.add(value));
     const graph = () => require('start', 'clearNext', 'solveStats', 'solveTile', 'receivers', 'flow', 'graphInit', 'graphFinish', 'thermalFlux', 'thermalApply', 'copyHeight', 'diffuse');
     if (coast) require('coastLoad', 'coastResult');
@@ -187,13 +198,14 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
       device.queue.writeBuffer(buffer, 0, data as GPUAllowSharedBufferSource); return buffer;
     };
     const uniform = create(65536, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST);
-    const nodes = create(Math.max(n, surface[2]) ** 2 * 112, GPUBufferUsage.STORAGE);
+    const nodes = create(Math.max(n, surface[2]) ** 2 * 112, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST);
     const fine = create(1024 * 1024 * 16, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST);
     const control = create(1088, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST);
-    const output = create(1024 * 1024 * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC);
+    const output = create(1024 * 1024 * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST);
     const readback = create(1024 * 1024 * 4 + 1088, GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ);
     const tileFlags = create(Math.ceil(Math.max(n, surface[2]) / 16) ** 2 * 8, GPUBufferUsage.STORAGE);
-    const inspect=!!lab&&lab.previews!==false;
+    const resumable = !coast && !shape && !!settings.procedural;
+    const inspect=!!lab&&lab.previews!==false || resumable;
     let querySet = inspect ? undefined : queries.get(device);
     if (!inspect && !querySet && device.features.has('timestamp-query')) {
       querySet = device.createQuerySet({ type: 'timestamp', count: 6 }); queries.set(device, querySet);
@@ -271,21 +283,77 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
       if(!lab)return;
       if(lab.previews===false){await lab.after(stage,undefined,detail);return;}
       if(kind!==3){const extras=normal.slice();extras[7]=kind;dispatch('generationPreview',extras,4096);}
+      pass.end();encoder.copyBufferToBuffer(output,0,readback,0,1024*1024*4);encoder.copyBufferToBuffer(control,0,readback,1024*1024*4,1088);
+      device.queue.submit([encoder.finish()]);await readback.mapAsync(GPUMapMode.READ);
+      const mapped=readback.getMappedRange(),errors=new Uint32Array(mapped,1024*1024*4,272)[2];
+      const height=new Float32Array(mapped,0,1024*1024).slice();readback.unmap();
+      if(errors)throw new ConvergenceError('Érosion GPU non convergée pendant une étape.');
+      if(!height.every(Number.isFinite))throw new Error('Champ GPU intermédiaire invalide.');
+      await lab.after(stage,height,detail);
+      encoder=device.createCommandEncoder();pass=beginPass(0);
+    };
+    const operations=coreOperations(settings), signatures=proceduralSignatures(settings);
+    let saved=resumable?retainedStages.get(device):undefined;
+    if(resumable&&!saved){saved=new Map();retainedStages.set(device,saved);checkpointDevices.add(device);const owned=saved;void device.lost.then(()=>{owned.forEach(freeCheckpoint);owned.clear();checkpointDevices.delete(device);});}
+    const stageKey=(stage:GenerationStage)=>`${factor}|${signatures.get(stage)}`;
+    let first=0;
+    while(saved&&first<operations.length&&saved.get(operations[first])?.key===stageKey(operations[first]))first++;
+    if(saved)for(const stage of [...operations.slice(first),'phasor'] as GenerationStage[]){const previous=saved.get(stage);if(previous&&(stage!=='phasor'||previous.key!==stageKey(stage)||first<operations.length)){freeCheckpoint(previous);saved.delete(stage);}}
+    const restore=(value:GpuCheckpoint)=>{
+      pass.end();
+      if(value.nodes)encoder.copyBufferToBuffer(value.nodes,0,nodes,0,value.nodes.size);
+      if(value.fine)encoder.copyBufferToBuffer(value.fine,0,fine,0,value.fine.size);
+      encoder.copyBufferToBuffer(value.control,0,control,0,1088);pass=beginPass(0);
+    };
+    const save=(stage:GenerationStage,kind:number)=>{
+      if(!saved)return;
+      pass.end();
+      const copy=(source:GPUBuffer,size=source.size)=>{const target=device.createBuffer({size,usage:GPUBufferUsage.COPY_SRC|GPUBufferUsage.COPY_DST});encoder.copyBufferToBuffer(source,0,target,0,size);return target;};
+      const previous=saved.get(stage);if(previous)freeCheckpoint(previous);
+      saved.set(stage,{key:stageKey(stage),kind,...(kind===0?{nodes:copy(nodes,n*n*112)}:{fine:copy(fine)}),control:copy(control)});
+      device.queue.submit([encoder.finish()]);encoder=device.createCommandEncoder();pass=beginPass(0);
+    };
+    const reportCached=async(stage:GenerationStage,value:GpuCheckpoint)=>{
+      if(!lab)return;
+      if(lab.previews===false){if(lab.cached)await lab.cached(stage);else{await lab.before(stage);await lab.after(stage);}return;}
+      const extras=normal.slice();extras[7]=value.kind;dispatch('generationPreview',extras,4096);
       pass.end();encoder.copyBufferToBuffer(output,0,readback,0,1024*1024*4);
       device.queue.submit([encoder.finish()]);await readback.mapAsync(GPUMapMode.READ);
       const height=new Float32Array(readback.getMappedRange(),0,1024*1024).slice();readback.unmap();
-      await lab.after(stage,height,detail);
+      if(lab.cached)await lab.cached(stage,height);else{await lab.before(stage);await lab.after(stage,height);}
       encoder=device.createCommandEncoder();pass=beginPass(0);
+    };
+    const runStage=async(stage:GenerationStage,kind:number,operation:()=>void|Promise<void>)=>{
+      const index=operations.indexOf(stage),cached=saved?.get(stage);
+      if(cached&&index>=0&&index<first){
+        if((lab&&lab.previews!==false)||index===first-1)restore(cached);
+        await reportCached(stage,cached);return;
+      }
+      await lab?.before(stage);await operation();save(stage,kind);await snapshot(stage,kind);
+    };
+    const coastAfter=settings.procedural?.coastAfter??'initialize';
+    const earlyCoast=async(stage:GenerationStage,kind:number)=>{
+      if(!resumable||stage!==coastAfter)return;
+      await runStage('coastCut',kind===4?5:kind,async()=>{
+        if(!generationStageActive(settings,'coastCut'))return;
+        const extras=normal.slice();extras[7]=kind;
+        if(kind===0)dispatch('generationRegionalRead',extras,Math.ceil(n*n/256));else dispatch('generationPreview',extras,4096);
+        pass.end();const count=kind===0?n*n:1024*1024;
+        encoder.copyBufferToBuffer(output,0,readback,0,count*4);device.queue.submit([encoder.finish()]);
+        await readback.mapAsync(GPUMapMode.READ);const source=new Float32Array(readback.getMappedRange(),0,count).slice();readback.unmap();
+        const cut=TerrainPipeline.cut_field(settings.seed,settings.width,parameters[3]*2400,parameters[12],settings.coastMask!,settings.islandMode??'island',kind===0?n:1024,kind===0?base[5]:0,kind===0?base[4]:base[11],source);
+        device.queue.writeBuffer(output,0,cut as GPUAllowSharedBufferSource);
+        encoder=device.createCommandEncoder();pass=beginPass(0);dispatch('generationCut',extras,kind===0?Math.ceil(n*n/256):4096);
+      });
     };
     if(lab)await lab.after('grids',undefined,`Budget ×${factor} · régional ${n}² · surface ${surface[2]}² · ${(buffers.reduce((sum,b)=>sum+b.size,0)/1048576).toFixed(1)} Mio`);
     progress?.(`GPU · encodage de ${iterations} cycles de relief et ${tuning[3]} passes d’érosion…`,{stage:'gpu-erosion-encode'});
     if (coast) {
       config = surface; dispatch('coastLoad', normal, 4096);
     } else if (!shape) {
-      if(lab)await lab.before('initialize');
-      dispatch(initializeEntry);
-      if(lab)await snapshot('initialize',0);
-      if(lab)await lab.before('regional',`${iterations} cycles`);
+      await runStage('initialize',0,()=>{dispatch(initializeEntry);});
+      await earlyCoast('initialize',0);
+      await runStage('regional',0,()=>{
       for (let iteration = 0; iteration < (stageEnabled(settings,'regional') ? iterations : 0); iteration++) {
         dispatch('uplift');
         if (strength > 0) {
@@ -296,32 +364,35 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
         }
         dispatch('bounds');
       }
-      if(lab)await snapshot('regional',0);
-      if(lab)await lab.before('regionalFinish');
+      });
+      await runStage('regionalFinish',0,()=>{
       const clamp = normal.slice(); clamp[7] = 1; dispatch('bounds', clamp);
       if (strength > 0 && stageEnabled(settings,'regionalFinish')) {
         thermal(4, tail);
         for (let k = 0; k < 2; k++) { solve(0, 64 * coarseFactor); pits(tail); carve(block[2]); }
         diffuse(strength * .5, tail);
       }
-      if(lab)await snapshot('regionalFinish',0);
-      if(lab)await lab.before('reconstruct');
+      });
+      await earlyCoast('regionalFinish',0);
+      await runStage('reconstruct',1,()=>{
       const reconstructionParams=normal.slice();reconstructionParams[7]=settings.procedural?.reconstruction==='bspline'?1:0;
       dispatch(reconstructEntry,reconstructionParams,4096);
-      if(lab)await snapshot('reconstruct',1);
-      if(lab)await lab.before('amplitude');
+      });
+      await runStage('amplitude',4,()=>{
       if(stageEnabled(settings,'amplitude'))percentile(0);else dispatch('generationUnitScale',normal,1);
-      if(lab)await snapshot('amplitude',4);
-      if(lab)await lab.before('ridged');
+      });
+      await earlyCoast('amplitude',4);
+      await runStage('ridged',2,()=>{
       dispatch('detail',normal,4096);
-      if(lab)await snapshot('ridged',2);
+      });
+      await earlyCoast('ridged',2);
     } else {
       if(lab)await lab.before('initialize');
       config=surface;dispatch('volcanicInitial',normal,4096);
       if(lab)await snapshot('initialize',2);
     }
     pass.end(); pass = beginPass(2);
-    if(lab)await lab.before('surface');
+    await runStage('surface',2,()=>{
     if (settings.erosion > 0 && surfaceEnabled) {
       config = surface; settingsBlock = surfaceBlock; dispatch('surfaceLoad');
       if (settings.relief === 'canyon' && !coast) {
@@ -352,13 +423,23 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
       }
       dispatch('surfaceDelta'); dispatch('surfaceReconstruct', normal, 4096);
     }
-    if(lab)await snapshot('surface',2);
+    });
+    await earlyCoast('surface',2);
     pass.end(); pass = beginPass(4);
-    if(lab)await lab.before('normalize');
+    await runStage('normalize',1,()=>{
     if (coast) dispatch('coastResult', normal, 4096);
     else if(stageEnabled(settings,'normalize')){percentile(1);dispatch('normalize',normal,4096);}else dispatch('generationKeepDatum',normal,4096);
-    if(lab)await snapshot('normalize',1);
-    if(lab)await lab.before('phasor');
+    });
+    await earlyCoast('normalize',1);
+    let packed=packedFields.get(device);if(!packed){packed=new TerrainFieldCheckpoints();packedFields.set(device,packed);}
+    const cachedPhasor=resumable?packed.get('phasor',stageKey('phasor')):undefined;
+    if(cachedPhasor){
+      pass.end();device.queue.submit([encoder.finish()]);
+      if(lab?.cached)await lab.cached('phasor',lab.previews===false?undefined:cachedPhasor);
+      else{await lab?.before('phasor');await lab?.after('phasor',cachedPhasor);}
+      return cachedPhasor;
+    }
+    if(!cachedPhasor)await lab?.before('phasor');
     dispatch(packEntry,normal,4096);
     pass.end();
     const bytes = 1024 * 1024 * 4;
@@ -385,9 +466,14 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
     const height = new Float32Array(mapped, 0, 1024 * 1024).slice();
     readback.unmap();
     profile.unpackMs = performance.now() - unpackStarted;
-    if (!height.every(value => Number.isFinite(value) && (coast || value >= .3 - 1e-7))) throw new Error('Champ GPU invalide.');
+    if (!height.every(value => Number.isFinite(value) && (coast || resumable && generationStageActive(settings,'coastCut') || value >= .3 - 1e-7))) throw new Error('Champ GPU invalide.');
+    // Core snapshots are independent of the phasor pack, which reads the same fine field.
+    if(resumable)packed.put('phasor',stageKey('phasor'),height);
     if(lab)await lab.after('phasor',height,'Sortie GPU lue et validée');
     return height;
+  } catch(error) {
+    if(error instanceof ConvergenceError){retainedStages.get(device)?.forEach(freeCheckpoint);retainedStages.get(device)?.clear();packedFields.delete(device);}
+    throw error;
   } finally {
     plan.free();
     // Also recover a mapped staging buffer if validation/readback failed.
