@@ -337,8 +337,17 @@ fn lot_floors(m: &Input, tr: &Tradition, rng: &mut Rng) -> u32 {
     // that thins out gradually, never a uniform lowering.
     let home = !m.landmark && matches!(m.function, "domestic" | "mixed") && !m.role.contains("tower") && lo < 4;
     let drop = ((0.6 - urban) / 0.45).clamp(0.0, 1.0) * 0.7;
-    let hi = if home && rural { hi.min(lo + 1) } else { hi };
-    let lo = if home && Rng::new(m.seed).fork("storey-drop").chance(drop) { lo.saturating_sub(1).max(1) } else { lo };
+    // Gradient core > ring > faubourg > village: a village's storeys are the
+    // tradition's range lowered by two (floor 1, cap two floors, a notable
+    // house in ten reaches a third); a faubourg lowers it by one.
+    let (lo, hi) = if home && rural {
+        let l = lo.saturating_sub(2).max(1);
+        let notable = hi > l + 1 && Rng::new(m.seed).fork("storey-notable").chance(0.06 + 0.3 * (m.wealth - 0.6).max(0.0));
+        (l, if notable { l + 2 } else { (l + 1).min(hi) })
+    } else if home && m.zone == "faubourg" {
+        (lo.saturating_sub(1).max(1), hi.saturating_sub(1).max(lo.saturating_sub(1).max(1)))
+    } else { (lo, hi) };
+    let lo = if home && !rural && m.zone != "faubourg" && Rng::new(m.seed).fork("storey-drop").chance(drop) { lo.saturating_sub(1).max(1) } else { lo };
     let corner = m.fronts.len() >= 2 && {
         let d = |s: &[Point; 2]| {
             let l = (s[1].x - s[0].x).hypot(s[1].y - s[0].y).max(1e-9);
@@ -351,7 +360,7 @@ fn lot_floors(m: &Input, tr: &Tradition, rng: &mut Rng) -> u32 {
         })
     };
     let mut x = 0.85 * urban - 0.05 + 0.25 * (m.wealth - 0.5)
-        + rng.range(-0.25, 0.25)
+        + rng.range(-0.25, 0.25) + if rural { 0.3 } else { 0.0 }
         + if corner { 0.15 } else { 0.0 };
     let role = m.role;
     if role.contains("tenement") || role.contains("insula") || m.function == "collective" {
@@ -1237,6 +1246,25 @@ mod tests {
     }
 
     #[test]
+    fn village_homes_are_low_even_in_a_multi_storey_tradition() {
+        let parts = [(rect(0.0, 0.0, 7.0, 10.0), "building")];
+        let arch = json!({"roof":"gable","typology":"giebelhaus","storeys":[3,5],"material":"timber"});
+        let fronts = [[Point { x: 0.0, y: 0.0 }, Point { x: 7.0, y: 0.0 }]];
+        let (mut high, mut tall) = (0, 0);
+        for k in 0..200 {
+            let seed = format!("village-{k}");
+            let mut i = input(&parts, &arch, &fronts, &seed);
+            i.zone = "village"; i.population = 500; i.pressure = 0.3;
+            let f = massing(&i)[0]["floors"].as_u64().unwrap();
+            assert!(f <= 3, "{f}");
+            high += (f >= 2) as u32; tall += (f == 3) as u32;
+            i.zone = "core"; i.population = 50_000;
+            assert!(massing(&i)[0]["floors"].as_u64().unwrap() >= 3);
+        }
+        assert!(high < 90 && tall < 30, "{high} {tall}");
+    }
+
+    #[test]
     fn small_homes_follow_distance_and_poverty_without_changing_the_core() {
         let parts = [(rect(0.0, 0.0, 24.0, 12.0), "building")];
         let arch = json!({"roof":"gable","storeys":[2,4],"material":"timber"});
@@ -1275,13 +1303,16 @@ mod tests {
         assert_eq!(poor, low_wealth);
         assert!(near > middle && far > near && far > poor, "{middle} {near} {far} {poor}");
         for (zone, district, outside, farm) in [
-            ("faubourg", "commoner", false, false), ("village", "commoner", false, false),
+            ("faubourg", "commoner", false, false),
             ("middle", "commoner", true, false), ("middle", "commoner", false, true),
             ("edge", "gardens", false, false), ("edge", "poor", true, false),
         ] {
             let fringe = share(zone, district, 0.5, 1.0, outside, farm);
             assert!((0.6..=0.7).contains(&fringe), "{zone}/{district}: {fringe}");
         }
+        // The countryside is small houses: more of them shrink than at the fringe.
+        let village = share("village", "commoner", 0.5, 1.0, false, false);
+        assert!((0.7..=0.8).contains(&village), "village: {village}");
         eprintln!("houses2 single-storey shares: core={core:.3}, middle={middle:.3}, near={near:.3}, fringe={far:.3}, poor={poor:.3}");
     }
 

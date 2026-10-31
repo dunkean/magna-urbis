@@ -39,19 +39,23 @@ impl HomeContext<'_> {
         // The fringe grows with distance and falling access pressure alike,
         // inside or outside a wall (no zone step); farms, gardens and villages
         // are fringe whole.
-        let fringe = if self.farm || self.district == "gardens"
-            || matches!(self.zone, "fringe" | "rural" | "village" | "hamlet") {
+        let countryside = matches!(self.zone, "rural" | "village" | "hamlet");
+        let fringe = if self.farm || self.district == "gardens" || self.zone == "fringe" || countryside {
             1.0
         } else {
+            // A faubourg is fringe from its first lot (between village and ring).
             ((self.distance - 0.45) / 0.55).max((0.5 - p) / 0.35).clamp(0.0, 1.0)
                 .max(if self.outside { 0.5 } else { 0.0 })
+                .max(if self.zone == "faubourg" { 0.6 } else { 0.0 })
         };
         let poor = if self.district == "poor" { 1.0 }
             else { ((0.5 - self.wealth) / 0.25).clamp(0.0, 1.0) };
-        let chance = (fringe * (0.6 + 0.1 * (1.0 - p))).max(poor * (0.45 + 0.1 * (1.0 - p)));
+        // The countryside is small houses: most homes shrink, a few notable ones keep the lot's size.
+        let chance = if countryside { 0.7 } else { (fringe * (0.6 + 0.1 * (1.0 - p))).max(poor * (0.45 + 0.1 * (1.0 - p))) };
         if Rng::new(seed).fork("small-home").float() >= chance { return 1.0; }
-        // 15–22 % less area at the fringe, 7–12 % in poor urban quarters.
-        1.0 - (fringe * (0.22 - 0.07 * p)).max(poor * (0.12 - 0.05 * p))
+        // 15–22 % less area at the fringe (faubourg), 25–30 % in the countryside, 7–12 % in poor urban quarters.
+        let cut = if countryside { 0.3 - 0.05 * p } else { fringe * (0.22 - 0.07 * p) };
+        1.0 - cut.max(poor * (0.12 - 0.05 * p))
     }
 }
 
