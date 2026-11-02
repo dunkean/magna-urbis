@@ -20,6 +20,7 @@ const labels: Record<string, Words> = {
   roadMouths:['À tester · Entrées d’impasses sur l’axe','Testing · Access-way mouths on the axis','测试 · 巷口位于街道中线','En prueba · Bocas de callejón en el eje','Em teste · Entradas de becos no eixo'],
   roadRemnants:['À tester · Retirer les restes de routes','Testing · Remove road remnants','测试 · 移除道路残段','En prueba · Quitar restos de calles','Em teste · Remover restos de ruas'],
   roadEndJoins:['À tester · Raccorder les bouts de rue','Testing · Join street ends','测试 · 连接街道端头','En prueba · Unir extremos de calle','Em teste · Unir pontas de ruas'],
+  campGrowth:['Grands camps','Large camps','大型营地','Campamentos grandes','Acampamentos grandes'],
   smallPlaceCapacity:['À tester · Tolérance de capacité des petits lieux','Testing · Small-place capacity tolerance','测试 · 小聚落容量容差','En prueba · Tolerancia de capacidad de lugares pequeños','Em teste · Tolerância de capacidade de lugares pequenos'],
   countrysideEnclosures:['Clôtures à la campagne','Countryside enclosures','乡村围栏','Cercados en el campo','Cercas no campo'],
   parallelMerge:['Fusion des rues parallèles','Parallel street merge','合并平行街道','Fusión de calles paralelas','Fusão de ruas paralelas'],
@@ -65,6 +66,7 @@ const footprint: Record<string, Words> = {
 };
 const options: Record<string, Record<string, Words>> = {
   composition:{settlement:['Agglomération complète','Complete settlement','完整聚落','Asentamiento completo','Povoado completo'], district:['Secteur isolé · ancien banc','Single sector · legacy bench','单个分区 · 旧工作台','Sector aislado · banco antiguo','Setor isolado · bancada antiga']},
+  campGrowth:{ring:['Un anneau','One ring','单环','Un anillo','Um anel'], concentric:['Anneaux concentriques','Concentric rings','同心环','Anillos concéntricos','Anéis concêntricos'], clusters:['Plusieurs camps','Several camps','多个营地','Varios campamentos','Vários acampamentos']},
   accessMode:{adaptive:['Adaptative selon le parcellaire','Adapt to parcels','根据地块自适应','Adaptativa según parcelas','Adaptativa conforme os lotes'], cultural:['Dessertes culturelles','Cultural access patterns','文化通达方式','Accesos culturales','Acessos culturais'], none:['Conserver les accès existants','Keep existing access','保留现有通道','Conservar accesos existentes','Manter acessos existentes']},
   fortification:{culture:['Selon la culture','According to culture','按文化','Según la cultura','Conforme a cultura'],none:['Sans enceinte','No enclosure','无围墙','Sin recinto','Sem recinto'],wall:['Muraille','Wall','城墙','Muralla','Muralha'],palisade:['Palissade','Palisade','栅栏','Empalizada','Paliçada']},
   mixMode:{phases:['Chronologique · extensions plus récentes','Chronological · newer extensions','按时间 · 较新的扩展','Cronológico · extensiones más recientes','Cronológico · expansões mais recentes'],sectors:['Géométrique · secteurs','Geometric · sectors','按几何 · 分区','Geométrico · sectores','Geométrico · setores']},
