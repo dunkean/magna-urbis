@@ -45,18 +45,46 @@ pub(super) fn lots(
     morph: &Morph,
     layout: &Layout,
 ) -> Vec<Parcel> {
-    let frame = Frame::of(layout);
-    let tiles = match morph.text("campLayout") {
-        "rows" => rows(&frame, morph, layout),
-        _ if !morph.text("campForm").is_empty() => admitted_form(&frame, morph, layout),
-        _ => ring(&frame, morph, layout),
-    };
+    let tiles = shared_plan(layout, morph, || {
+        let frame = Frame::of(layout);
+        match morph.text("campLayout") {
+            "rows" => rows(&frame, morph, layout),
+            _ if !morph.text("campForm").is_empty() => admitted_form(&frame, morph, layout),
+            _ => ring(&frame, morph, layout),
+        }
+    });
     let index = FrontageIndex::new(layout);
     let reached = regional_streets(layout);
     assemble_with_contacts(shape, block, axis, fronts, morph, tiles, |path| {
         contacts::street_contacts(path, layout, &index).into_iter()
             .filter(|f| reached.get(f.street).copied().unwrap_or(false)).collect()
     })
+}
+
+type Plan = (Vec<Tile>, Vec<Shape>);
+/// Whole-settlement plans laid out in the current probe scope
+/// (`probe_cache`): every camp block of a layout lays out the same figure, and
+/// the quarters run asks again on unchanged layouts. Keyed by the exact layout
+/// and morph bytes (a hit is the value a recomputation gives); blocks asking
+/// at the same time wait for the first instead of laying it out again.
+static PLANS: std::sync::Mutex<Option<std::collections::HashMap<Vec<u8>, std::sync::Arc<std::sync::OnceLock<Plan>>>>> =
+    std::sync::Mutex::new(None);
+pub(super) fn clear_probe_cache() {
+    *PLANS.lock().unwrap_or_else(|e| e.into_inner()) = None;
+}
+fn shared_plan(layout: &Layout, morph: &Morph, make: impl FnOnce() -> Plan) -> Plan {
+    if !super::super::probe_cache::enabled() {
+        return make();
+    }
+    let (Ok(mut key), Ok(lanes)) = (serde_json::to_vec(layout),
+        serde_json::to_vec(&layout.structure.as_ref().map(|s| &s.gate_village_lanes))) else { return make() };
+    key.push(0);
+    key.extend(lanes);
+    key.push(0);
+    key.extend(morph.value.to_string().bytes());
+    let cell = PLANS.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(Default::default)
+        .entry(key).or_default().clone();
+    cell.get_or_init(make).clone()
 }
 
 /// Clipped or inaccessible pitches do not house the population. Compare a
@@ -86,11 +114,19 @@ fn admitted_form(frame:&Frame,morph:&Morph,layout:&Layout)->(Vec<Tile>,Vec<Shape
         super::super::programme::allocate(layout,&mut part);
         part.programme.as_ref().map_or(0.0,|p|p.allocations.iter().map(|a|a.households).sum::<f64>())
     };
-    let mut admitted=score(&best);
-    for allowance in [1.15,1.0/ADMITTED,1.5] {
+    // The first figure and its larger allowances are laid out and scored at
+    // once (each a few seconds on a large camp); the choice reads them in the
+    // same order as one after the other.
+    let allowances=[1.15,1.0/ADMITTED,1.5];
+    let mut scored=super::super::par::map(&[None,Some(allowances[0]),Some(allowances[1]),Some(allowances[2])],|_,a:&Option<f64>| {
+        let plan=match a { None=>best.clone(), Some(a)=>forms::tiles_with_allowance(frame,morph,layout,*a) };
+        let n=score(&plan);
+        (plan,n)
+    }).into_iter();
+    let Some((first,mut admitted))=scored.next() else{return best;};
+    best=first;
+    for (candidate,n) in scored {
         if admitted>=wanted.ceil(){break;}
-        let candidate=forms::tiles_with_allowance(frame,morph,layout,allowance);
-        let n=score(&candidate);
         if n>admitted {best=candidate;admitted=n;}
     }
     best

@@ -180,10 +180,19 @@ pub(super) fn street_contacts(shape: &Shape, layout: &Layout, index: &FrontageIn
 
 /// Intersect both boundary interval sets, allowing either side to be split.
 pub(super) fn boundary_contacts(shape: &Shape, fronts: &[Front]) -> Vec<Front> {
+    // A front kept below lies within 0.025 m of a side over part of the side's
+    // extent, so it meets the shape's box grown by 0.025 m: fronts outside the
+    // box grown by 0.05 m are dropped first, the others keep their order.
+    let (x0, y0, x1, y1) = super::super::geometry::bbox(shape);
+    let near: Vec<Front> = fronts.iter().filter(|f| {
+        f.a.x.max(f.b.x) >= x0 - 0.05 && f.a.x.min(f.b.x) <= x1 + 0.05
+            && f.a.y.max(f.b.y) >= y0 - 0.05 && f.a.y.min(f.b.y) <= y1 + 0.05
+    }).copied().collect();
+    let fronts = near.as_slice();
     // Front geometry is immutable for this call. Evaluate the ORIGINAL
     // unit(sub(b,a)) once per front, lazily at the first nondegenerate edge,
-    // rather than once for each (ring edge, front) pair. No spatial rejection,
-    // candidate reordering, predicate/tolerance or arithmetic formula changes.
+    // rather than once for each (ring edge, front) pair. No candidate
+    // reordering, predicate/tolerance or arithmetic formula changes.
     let directions=std::cell::OnceCell::<Vec<Point>>::new();
     let mut result = Vec::new();
     for ring in std::iter::once(&shape.outer).chain(shape.holes.iter()) {

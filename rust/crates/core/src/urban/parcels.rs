@@ -2596,28 +2596,34 @@ fn qualify(
     depth_limit: Option<f64>,
     dense: bool,
 ) {
-    let tier = |shape: &Shape, a: &super::culture::UrbanAdmissibility, gated: bool| {
-        if area(shape) + 1e-6 < a.min_area {
-            return None;
-        }
-        let allowed: Vec<_> = fronts
+    // The fronts a profile admits do not depend on the lot: built once.
+    let admitted = |a: &super::culture::UrbanAdmissibility, gated: bool| -> Vec<Front> {
+        fronts
             .iter()
             .filter(|f| !f.shared || a.shared_access)
             .map(|f| Front {
                 gate: f.gate || gated,
                 ..*f
             })
-            .collect();
+            .collect()
+    };
+    let primary = admitted(profile, inward);
+    let secondary = fallback.map(|f| admitted(f, false));
+    let tier = |shape: &Shape, a: &super::culture::UrbanAdmissibility, allowed: &[Front]| {
+        if area(shape) + 1e-6 < a.min_area {
+            return None;
+        }
         families::envelope(
             shape,
-            &allowed,
+            allowed,
             a.min_frontage,
             a.min_depth,
             a.min_access_width,
         )
     };
     let witness = |shape: &Shape| {
-        tier(shape, profile, inward).or_else(|| fallback.and_then(|f| tier(shape, f, false)))
+        tier(shape, profile, &primary)
+            .or_else(|| fallback.zip(secondary.as_deref()).and_then(|(f, allowed)| tier(shape, f, allowed)))
     };
     for p in cells.iter_mut().filter(|p| p.use_kind == "plot") {
         p.envelope = witness(&p.shape);
@@ -3477,6 +3483,7 @@ static BLOCK_CUTS: super::probe_cache::Memo<std::sync::Arc<StoredCut>> =
     super::probe_cache::Memo::new();
 pub(super) fn clear_probe_cache() {
     BLOCK_CUTS.clear();
+    camp::clear_probe_cache();
     ENVELOPES.clear();
     PRESSURES.clear();
 }
