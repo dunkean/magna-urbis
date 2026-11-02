@@ -26,6 +26,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let surface = Surface { geometry: geography.as_ref(), width: f.width, n: f.n, height: &f.height, water: &f.water };
     let layouts = generate_quarters(&f.seed, &f.sites, &f.layout_config, surface, &f.roads)?;
     if std::env::var("WARN").is_ok() { for w in &layouts[0].warnings { eprintln!("warning: {w}"); } }
+    if std::env::var("DUMP").is_ok() { if let serde_json::Value::Object(m) = serde_json::to_value(&layouts[0])? { for (k, v) in &m { let n = match v { serde_json::Value::Array(a) => format!("[{}]", a.len()), serde_json::Value::Object(o) => format!("{{{}}}", o.keys().cloned().collect::<Vec<_>>().join(",")), x => x.to_string().chars().take(80).collect() }; eprintln!("layout.{k} = {n}"); } let st = &m["structure"]; eprintln!("metrics {}", st["metrics"]); eprintln!("allocated {} mech {} family {}", st["allocated"].as_array().map_or(0, |a| a.len()), st["mechanism"], st["family"]); eprintln!("quarters {}", m["quarters"].as_array().map(|q| q.iter().map(|x| format!("{}:{}", x["kind"], x["area"])).collect::<Vec<_>>().join(" ")).unwrap_or_default()); } }
     let partitions = generate_parcels(&f.seed, &layouts, &f.parcel_config)?;
     let level = if f.water_level.is_empty() { vec![0.0; f.height.len()] } else { f.water_level.clone() };
     let requests = building_sites::requests(&f.seed, &layouts, &partitions, surface, &level, None)?;

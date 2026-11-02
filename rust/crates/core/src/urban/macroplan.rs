@@ -1352,136 +1352,150 @@ pub(super) fn generate_oriented_domain(
     } else {
         (cfg.count * cfg.rings).min(256)
     };
-    let mut attempts = 0;
-    let mut rejected = vec![];
-    while regions.len() < desired && attempts < desired * 5 {
-        attempts += 1;
-        let Some((index, _)) = regions
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| !rejected.contains(i))
-            .max_by(|(_, a), (_, b)| g::area(a).total_cmp(&g::area(b)))
-        else {
+    // Quarter streets follow the street grade. A steep domain where not one of them
+    // can be traced would stay a single unserved quarter: a culture that builds
+    // stairs then cuts its quarters by stairs.
+    let stairs = profiles::stairs_allowed(cfg, culture) && domain.is_some();
+    let mut cut_any = false;
+    for cut_grade in [cfg.max_street_grade, cfg.max_stair_grade] {
+        if cut_grade != cfg.max_street_grade && (!stairs || cut_any || regions.len() >= desired) {
             break;
-        };
-        let shape = &regions[index];
-        let center = g::interior_point(shape);
-        let mut selected = None;
-        // A planned grid divides its quarters along its own lattice: one town
-        // orientation and ward lines at the culture's spacing through the centre,
-        // straight wherever the slope allows, so the quarter streets are the
-        // lines the blocks continue and junctions are crossroads.
-        let lattice = pattern == "grid";
-        let local_angle = if lattice {
-            angle
-        } else if cfg.axis_alignment == "regional"
-            && !orientation_override
-            && let Some(regional) = regional_axis(center, radius * 1.5, roads)
-        {
-            regional + cfg.footprint.orientation.to_radians()
-        } else if pattern == "terraces" || profile.stairs {
-            let dx = surface.height_at(Point {
-                x: center.x + step,
-                y: center.y,
-            }) - surface.height_at(Point {
-                x: center.x - step,
-                y: center.y,
-            });
-            let dy = surface.height_at(Point {
-                x: center.x,
-                y: center.y + step,
-            }) - surface.height_at(Point {
-                x: center.x,
-                y: center.y - step,
-            });
-            if dx.hypot(dy) > 0.1 {
-                dy.atan2(dx) + PI * 0.5
-            } else {
+        }
+        let mut attempts = 0;
+        let mut rejected = vec![];
+        while regions.len() < desired && attempts < desired * 5 {
+            attempts += 1;
+            let Some((index, _)) = regions
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| !rejected.contains(i))
+                .max_by(|(_, a), (_, b)| g::area(a).total_cmp(&g::area(b)))
+            else {
+                break;
+            };
+            let shape = &regions[index];
+            let center = g::interior_point(shape);
+            let mut selected = None;
+            // A planned grid divides its quarters along its own lattice: one town
+            // orientation and ward lines at the culture's spacing through the centre,
+            // straight wherever the slope allows, so the quarter streets are the
+            // lines the blocks continue and junctions are crossroads.
+            let lattice = pattern == "grid";
+            let local_angle = if lattice {
                 angle
-            }
-        } else {
-            angle
-        };
-        let spacing = m.pair("gridSpacing");
-        let mut cuts = vec![];
-        for turn in [0.0, PI * 0.5, PI * 0.25, -PI * 0.25] {
-            if rect && turn.abs() == PI * 0.25 {
-                continue;
-            }
-            let heading = local_angle + turn;
-            let mut sp = spacing[usize::from(turn != 0.0)];
-            // A small settlement's ward lines keep the module of its own land: a 240 m
-            // lattice cannot cross a 160 m walled core, so the grid scales down with it.
-            if site.population < 1200 {
-                sp = sp.min(0.55 * g::area(shape).sqrt());
-            }
-            if lattice && sp > 0.0 {
-                let n = Point {
-                    x: -heading.sin(),
-                    y: heading.cos(),
-                };
-                let offset = (center.x - c.x) * n.x + (center.y - c.y) * n.y;
-                let k = (offset / sp).round();
-                for line in [k, k - 1.0, k + 1.0] {
-                    let shift = line * sp - offset;
-                    cuts.push((
-                        heading,
-                        Point {
-                            x: center.x + n.x * shift,
-                            y: center.y + n.y * shift,
-                        },
-                    ));
+            } else if cfg.axis_alignment == "regional"
+                && !orientation_override
+                && let Some(regional) = regional_axis(center, radius * 1.5, roads)
+            {
+                regional + cfg.footprint.orientation.to_radians()
+            } else if pattern == "terraces" || profile.stairs {
+                let dx = surface.height_at(Point {
+                    x: center.x + step,
+                    y: center.y,
+                }) - surface.height_at(Point {
+                    x: center.x - step,
+                    y: center.y,
+                });
+                let dy = surface.height_at(Point {
+                    x: center.x,
+                    y: center.y + step,
+                }) - surface.height_at(Point {
+                    x: center.x,
+                    y: center.y - step,
+                });
+                if dx.hypot(dy) > 0.1 {
+                    dy.atan2(dx) + PI * 0.5
+                } else {
+                    angle
                 }
             } else {
-                cuts.push((heading, center));
-            }
-        }
-        for (heading, through) in cuts {
-            let Some((a, b)) = chord(shape, through, heading) else {
-                continue;
+                angle
             };
-            let inset = (1e-7 / dist(a, b).max(0.1)).min(0.1);
-            let start = point(a, b, inset);
-            let end = point(b, a, inset);
-            let straight =
-                lattice && routing::path_clear(surface, &[start, end], cfg.max_street_grade);
-            let Some(path) = (if straight {
-                Some(vec![start, end])
+            let spacing = m.pair("gridSpacing");
+            let mut cuts = vec![];
+            for turn in [0.0, PI * 0.5, PI * 0.25, -PI * 0.25] {
+                if rect && turn.abs() == PI * 0.25 {
+                    continue;
+                }
+                let heading = local_angle + turn;
+                let mut sp = spacing[usize::from(turn != 0.0)];
+                // A small settlement's ward lines keep the module of its own land: a 240 m
+                // lattice cannot cross a 160 m walled core, so the grid scales down with it.
+                if site.population < 1200 {
+                    sp = sp.min(0.55 * g::area(shape).sqrt());
+                }
+                if lattice && sp > 0.0 {
+                    let n = Point {
+                        x: -heading.sin(),
+                        y: heading.cos(),
+                    };
+                    let offset = (center.x - c.x) * n.x + (center.y - c.y) * n.y;
+                    let k = (offset / sp).round();
+                    for line in [k, k - 1.0, k + 1.0] {
+                        let shift = line * sp - offset;
+                        cuts.push((
+                            heading,
+                            Point {
+                                x: center.x + n.x * shift,
+                                y: center.y + n.y * shift,
+                            },
+                        ));
+                    }
+                } else {
+                    cuts.push((heading, center));
+                }
+            }
+            for (heading, through) in cuts {
+                let Some((a, b)) = chord(shape, through, heading) else {
+                    continue;
+                };
+                let inset = (1e-7 / dist(a, b).max(0.1)).min(0.1);
+                let start = point(a, b, inset);
+                let end = point(b, a, inset);
+                let straight =
+                    lattice && routing::path_clear(surface, &[start, end], cfg.max_street_grade);
+                let Some(path) = (if straight {
+                    Some(vec![start, end])
+                } else {
+                    planner.route(start, end, cut_grade)
+                }) else {
+                    continue;
+                };
+                if !inside_path(shape, &path) {
+                    continue;
+                }
+                let Some((left, right)) = g::split(shape, &path) else {
+                    continue;
+                };
+                if g::area(&left).min(g::area(&right)) < g::area(shape) * 0.12 {
+                    continue;
+                }
+                let balance = (g::area(&left) - g::area(&right)).abs() / g::area(shape);
+                if selected
+                    .as_ref()
+                    .is_none_or(|(cost, _, _, _)| balance < *cost)
+                {
+                    selected = Some((balance, left, right, path));
+                }
+            }
+            if let Some((_, a, b, path)) = selected {
+                let width = m.width(if streets.is_empty() { 0 } else { 1 }, &mut rng);
+                streets.push(Street {
+                    widths: vec![width; path.len()],
+                    path,
+                    rank: 1,
+                    role: "street".into(),
+                });
+                regions[index] = a;
+                regions.push(b);
+                rejected.clear();
+                cut_any = true;
+                if cut_grade != cfg.max_street_grade && !warnings.iter().any(|w: &String| w.starts_with("Pente trop forte pour les rues de quartier")) {
+                    warnings.push("Pente trop forte pour les rues de quartier : les quartiers sont découpés par escaliers.".into());
+                }
             } else {
-                planner.route(start, end, cfg.max_street_grade)
-            }) else {
-                continue;
-            };
-            if !inside_path(shape, &path) {
-                continue;
+                rejected.push(index);
             }
-            let Some((left, right)) = g::split(shape, &path) else {
-                continue;
-            };
-            if g::area(&left).min(g::area(&right)) < g::area(shape) * 0.12 {
-                continue;
-            }
-            let balance = (g::area(&left) - g::area(&right)).abs() / g::area(shape);
-            if selected
-                .as_ref()
-                .is_none_or(|(cost, _, _, _)| balance < *cost)
-            {
-                selected = Some((balance, left, right, path));
-            }
-        }
-        if let Some((_, a, b, path)) = selected {
-            let width = m.width(if streets.is_empty() { 0 } else { 1 }, &mut rng);
-            streets.push(Street {
-                widths: vec![width; path.len()],
-                path,
-                rank: 1,
-                role: "street".into(),
-            });
-            regions[index] = a;
-            regions.push(b);
-            rejected.clear();
-        } else {
-            rejected.push(index);
         }
     }
     // Connect a town placed beside a regional route, without moving that route.
