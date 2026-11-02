@@ -2378,6 +2378,7 @@ fn serve_quarters(
     cfg: &LayoutConfig,
     m: &Morph,
     surface: Surface<'_>,
+    roads: &[Street],
     rng: &mut Rng,
 ) -> Option<String> {
     #[cfg(not(target_arch = "wasm32"))]
@@ -2473,6 +2474,12 @@ fn serve_quarters(
         targets.sort_by(|a, b| a.0.total_cmp(&b.0));
         targets
     };
+    // A plan without a single street (a lone quarter on a cramped site) is
+    // fed from the regional roads rather than returned to the countryside.
+    let targets_or_roads = |start: Point, side: usize, net: &[Street]| {
+        let t = targets_from(start, side, net);
+        if t.is_empty() { targets_from(start, side, roads) } else { t }
+    };
     // Feeder route from `start` to the first reachable of the 4 nearest
     // targets: street grade, then lane, then stairs where allowed.
     let route_feeder = |start: Point, targets: &[(f64, Point)]| {
@@ -2516,7 +2523,7 @@ fn serve_quarters(
         .zip(super::par::map(&unserved, |_, &i| {
             let start = g::interior_point(&quarters[i].shape);
             let side = inside(start);
-            let targets = targets_from(start, side, streets);
+            let targets = targets_or_roads(start, side, streets);
             let feeder = route_feeder(start, &targets);
             (start, side, targets, feeder)
         }))
@@ -2537,7 +2544,7 @@ fn serve_quarters(
             .iter()
             .any(|st| nearest_on(start, st).is_some_and(|(d, p)| d <= cutoff && inside(p) == side));
         let feeder = if stale {
-            route_feeder(start, &targets_from(start, side, streets))
+            route_feeder(start, &targets_or_roads(start, side, streets))
         } else {
             plan
         };
@@ -2801,11 +2808,31 @@ fn generate_planned(
     let surface = shoreline.as_ref().map_or(surface, |s| s.surface(surface));
     // The common entry already owns the stilt site/surface. Preserve the
     // existing priority of that shore over a second harbour relocation.
-    let harboured = (!stilt_grounded && site.population < 3000)
+    // A ring camp (tents, huts round a byre) has no quay: it keeps its own ground.
+    let culture = if cfg.culture == "site" { &site.culture } else { &cfg.culture };
+    let camp = super::kinds::ring_camp(culture, site.population, cfg);
+    let harboured = (!stilt_grounded && site.population < 3000 && !camp)
         .then(|| macroplan::harbour::sited(site, cfg, surface))
         .flatten();
-    let site = harboured.as_ref().unwrap_or(site);
-    let first = generate_once(seed, site, cfg, m, surface, roads)?;
+    // The landing is a move for the better only: a relocation that leaves no
+    // block (a bank no street reaches) keeps the settlement on its own site.
+    let (first, site) = match &harboured {
+        Some(moved) => {
+            let there = generate_once(seed, moved, cfg, m, surface, roads)?;
+            // Households the plan can lodge (blocks when no capacity plan).
+            let housed = |l: &Layout| if l.blocks.is_empty() { 0.0 } else { capacity::of(l).map_or(1.0, |p| p.predicted) };
+            let poor = there.blocks.is_empty() || capacity::of(&there).is_some_and(|p| p.predicted < 0.25 * p.required);
+            let here = if poor { Some(generate_once(seed, site, cfg, m, surface, roads)?) } else { None };
+            match here {
+                Some(mut here) if housed(&here) > housed(&there) => {
+                    here.warnings.push("Débarcadère abandonné : la berge retenue loge moins de ménages que le site d’origine, le lieu y reste.".into());
+                    (here, site)
+                }
+                _ => (there, moved),
+            }
+        }
+        None => (generate_once(seed, site, cfg, m, surface, roads)?, site),
+    };
     // Villages move to their landing; towns retain their nucleus and grow a
     // connected waterfront nucleus (footprint), with the same total demand.
     let Some(p) = capacity::of(&first) else {
@@ -3072,6 +3099,7 @@ fn generate_once(
             cfg,
             m,
             surface,
+            roads,
             &mut rng.fork("quarter-service"),
         )
     {

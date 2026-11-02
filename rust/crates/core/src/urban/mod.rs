@@ -1491,6 +1491,10 @@ pub fn generate_parcels(
         programme::camps::release_unbuilt(layout, &mut partition, true);
         programme::finish_lots(layout, &mut partition);
         roles::face_quays(layout, &mut partition);
+        // A populated place never ends without a dwelling silently.
+        if layout.programme.as_ref().is_some_and(|p| p.population > 0) && !partition.parcels.iter().any(|p| matches!(p.use_kind.as_str(), "plot" | "compound")) {
+            partition.warnings.push("Aucune habitation : le site ou la grammaire de la culture ne laisse aucune parcelle bâtissable — essayer un autre site, un rayon plus grand ou une autre culture.".into());
+        }
         let resolved = enclosure::resolve(culture, config);
         // Countryside lots (village, hamlet, rural) stay open unless the user sets `plotEnclosure`.
         let enclosed: Vec<Parcel> = if config.plot_enclosure.is_some() || config.countryside_enclosures { partition.parcels.clone() } else {

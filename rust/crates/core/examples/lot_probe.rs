@@ -25,10 +25,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let geography = f.geometry.map(|g| Geography::new(g, f.width)).transpose()?;
     let surface = Surface { geometry: geography.as_ref(), width: f.width, n: f.n, height: &f.height, water: &f.water };
     let layouts = generate_quarters(&f.seed, &f.sites, &f.layout_config, surface, &f.roads)?;
+    if std::env::var("WARN").is_ok() { for w in &layouts[0].warnings { eprintln!("warning: {w}"); } }
     let partitions = generate_parcels(&f.seed, &layouts, &f.parcel_config)?;
     let level = if f.water_level.is_empty() { vec![0.0; f.height.len()] } else { f.water_level.clone() };
     let requests = building_sites::requests(&f.seed, &layouts, &partitions, surface, &level, None)?;
     let built: HashSet<&str> = requests.iter().filter(|r| r["preview"].as_array().is_some_and(|p| !p.is_empty())).filter_map(|r| r["parcel_id"].as_str()).collect();
+    if std::env::var("WARN").is_ok() { let mut k = std::collections::BTreeMap::new(); for p in &partitions[0].parcels { *k.entry(p.use_kind.as_str()).or_insert(0) += 1; } eprintln!("uses {k:?} · requests {} · with preview {} · blocks kinds {:?}", requests.len(), requests.iter().filter(|r| r["preview"].as_array().is_some_and(|p| !p.is_empty())).count(), layouts[0].blocks.iter().map(|b| b.kind.as_str()).collect::<Vec<_>>()); for w in &partitions[0].warnings { eprintln!("pwarn: {w}"); } }
     let lots: Vec<_> = partitions[0].parcels.iter().filter(|p| matches!(p.use_kind.as_str(), "plot" | "compound")).collect();
     let empty: Vec<_> = lots.iter().filter(|p| !built.contains(p.id.as_str())).collect();
     println!("lots {} · built {} · empty {} · blocks {} · streets {}", lots.len(), lots.len() - empty.len(), empty.len(), layouts[0].blocks.len(), layouts[0].streets.len());

@@ -478,7 +478,7 @@ pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
             let mut draw = root
                 .fork(&format!("settlement:{}", s.key))
                 .fork("placement");
-            'search: for relax in relaxations {
+            'search: for &relax in &relaxations {
                 // Built only once the cheap exact check has rejected many candidates.
                 let mut mask: Option<Vec<bool>> = None;
                 let mut rejected = 0;
@@ -536,6 +536,24 @@ pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
                         ranking = Some((rank + 1, ranking_score, [8, 40, 300, 3000, 30000][band]));
                         break 'search;
                     }
+                }
+            }
+            // No land meets the slope and buildable limits of this class: the
+            // settlement still goes on the best-ranked free dry land, said so,
+            // rather than vanishing from the map.
+            if chosen.is_none() {
+                let relax = *relaxations.last().unwrap_or(&1.0);
+                if let Some((rank, &(i, ranking_score))) = ranked
+                    .iter()
+                    .enumerate()
+                    .find(|(_, (i, _))| f.r.water[*i] == 0 && clear(f.pos(*i), relax))
+                {
+                    out.warnings.push(format!(
+                        "{} ({} inhabitants): no site meets the slope and buildable-land limits; the best available land is used",
+                        s.key, pop
+                    ));
+                    chosen = Some((i, f.pos(i), relax));
+                    ranking = Some((rank + 1, ranking_score, [8, 40, 300, 3000, 30000][band]));
                 }
             }
         }

@@ -143,6 +143,12 @@ pub(in crate::urban) fn native_camp(culture: &str, population: u32, cfg: &Layout
         || organic_camp(culture, population, params)
 }
 
+/// A camp laid out as a ring round its centre (kraal, tipis, yurts, guarani
+/// plaza): no quay or landing row belongs to it.
+pub(in crate::urban) fn ring_camp(culture: &str, population: u32, cfg: &LayoutConfig) -> bool {
+    camp_preset_params(culture, population, cfg)["campLayout"] == "ring"
+}
+
 // A clustered footpath camp keeps its organic cut, including below the
 // hamlet threshold. The selected recipe must still declare that grammar.
 fn organic_camp(culture: &str, population: u32, params: &serde_json::Value) -> bool {
