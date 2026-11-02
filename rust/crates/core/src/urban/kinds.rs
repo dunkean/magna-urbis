@@ -167,6 +167,102 @@ fn cultural_camp(culture: &str, population: u32, cfg: &LayoutConfig) -> bool {
         && composition::culture_data(culture, population)["camp"]["layout"].as_str() == Some("ring")
 }
 
+/// Ring geometry of a figure camp (catalogue `camp*` fields) as the parcels'
+/// camp forms read it; a court camp grown into rings (`campGrowth`) pitches
+/// its tents closer, around a court open to its bearing.
+pub(in crate::urban) struct RingGeometry {
+    pub spacing: f64,
+    pub depth: f64,
+    pub path: f64,
+    pub gap: f64,
+    pub centre: f64,
+}
+pub(in crate::urban) fn ring_geometry(morph: &Morph) -> RingGeometry {
+    let [lo, hi] = morph.pair("campArc");
+    let mut g = RingGeometry {
+        spacing: 0.5 * (lo.max(4.0) + hi.max(lo.max(4.0))),
+        depth: morph.number_or("campRow", 10.0).max(4.0),
+        path: morph.number_or("campPath", 3.0).clamp(1.2, 8.0),
+        gap: morph.number_or("campGap", 0.0).clamp(0.0, 150.0).to_radians(),
+        centre: morph.number_or("campCentre", 0.3),
+    };
+    if morph.text("campForm") == "court" {
+        g.spacing = (0.6 * g.spacing).max(g.depth);
+        g.gap = g.gap.max(30f64.to_radians());
+        g.centre = g.centre.max(0.3);
+    }
+    g
+}
+/// Dwellings of the first ring of a concentric camp (`campRingMax`, else
+/// by figure): the rest stands on full rows around it.
+pub(in crate::urban) fn camp_ring_max(morph: &Morph) -> usize {
+    let d = match morph.text("campForm") {
+        "horseshoe" => 40.0,
+        "court" => 50.0,
+        _ => 60.0,
+    };
+    morph.number_or("campRingMax", d).max(8.0) as usize
+}
+/// Dwellings of one figure before a clustered camp founds a daughter camp
+/// (`campUnitMax`, else by figure).
+pub(in crate::urban) fn camp_unit_max(morph: &Morph) -> usize {
+    let u = morph.number_or("campUnitMax", 0.0);
+    if u >= 3.0 {
+        u as usize
+    } else if morph.text("campForm") == "court" {
+        80
+    } else {
+        60
+    }
+}
+/// Outer radius (circle estimate) of a ring figure of `k` dwellings whose
+/// first row holds at most `cap`, the next rows full.
+pub(in crate::urban) fn ring_extent(k: usize, cap: usize, g: &RingGeometry) -> f64 {
+    let span = std::f64::consts::TAU - g.gap;
+    let r = (k.min(cap) as f64 * g.spacing / span).max(g.depth * (1.0 + 2.0 * g.centre)).max(12.0);
+    let (mut left, mut rows) = (k, 0usize);
+    while left > 0 && rows < 16 {
+        let c = (((r + rows as f64 * (g.depth + g.path)) * span / g.spacing).floor() as usize).max(1);
+        left = left.saturating_sub(c);
+        rows += 1;
+    }
+    r + rows.max(1) as f64 * (g.depth + g.path)
+}
+/// Outer radius of a Mongol ordu of `k` tents at `spacing`: its court, then
+/// family groups (ails) on about 2.6 spacing² of ground per tent.
+pub(in crate::urban) fn court_extent(k: usize, spacing: f64) -> f64 {
+    let rc = (2.5 * spacing).max(30.0).max((2.0 * spacing).max(26.0)) + spacing;
+    (rc * rc + k as f64 * 2.6 * spacing * spacing / std::f64::consts::PI).sqrt() * 1.15
+}
+/// Land (m²) a figure camp grown past one figure (`campGrowth` concentric or
+/// clusters) needs: its rows or its daughter camps, deformed and spaced.
+/// `None` for the default single figure, whose land is left as sized.
+pub(in crate::urban) fn camp_growth_land(site: &Site, cfg: &LayoutConfig, morph: &Morph) -> Option<f64> {
+    let form = morph.text("campForm");
+    if cfg.camp_growth == "ring" || morph.text("campLayout").is_empty() || !matches!(form, "circle" | "horseshoe" | "court") {
+        return None;
+    }
+    let culture = culture(site, cfg);
+    if !native_camp(culture, site.population, cfg) {
+        return None;
+    }
+    let n = (super::footprint::capacity::households(culture, site.population) * 1.2).ceil().max(3.0) as usize;
+    let g = ring_geometry(morph);
+    let pi = std::f64::consts::PI;
+    if cfg.camp_growth == "clusters" {
+        let units = n.div_ceil(camp_unit_max(morph)).max(1);
+        let k = n.div_ceil(units);
+        let cap = camp_ring_max(morph).min(k.div_ceil(2)).max(12);
+        let r = if form == "court" { court_extent(k, g.spacing) } else { 1.2 * ring_extent(k, cap, &g) };
+        // Radius of the circle enclosing `units` equal discs, with slack
+        // for an irregular land.
+        let enclose = match units { 1 => 1.0, 2 => 2.0, 3 => 2.155, 4 => 2.414, 5 => 2.701, 6 | 7 => 3.0, u => (u as f64 / 0.7).sqrt() };
+        return Some(pi * (1.35 * enclose * (r + g.depth + g.path)).powi(2));
+    }
+    let r = 1.2 * ring_extent(n, camp_ring_max(morph), &g);
+    Some(pi * (r + 2.0 * g.depth).powi(2))
+}
+
 pub(super) fn resolve(site: &Site, cfg: &LayoutConfig, roads: &[Street]) -> Kind {
     if let Some(kind) = Kind::from_id(&cfg.settlement_form) {
         return kind;
@@ -1303,6 +1399,9 @@ fn camp(
     surface: Surface<'_>,
     rng: &mut Rng,
 ) -> Option<Plan> {
+    if cfg.camp_growth != "ring" {
+        return grown_camp(site, cfg, near, obstacles, surface);
+    }
     let tents = (f64::from(site.population) / 6.0).ceil().max(2.0);
     let depth = 14.0;
     let half = 1.5;
@@ -1399,6 +1498,144 @@ fn camp(
         center: c,
         axis: Point { x: 1.0, y: 0.0 },
     })
+}
+
+/// A large nomad camp grown past one ring (`campGrowth`): one tent piece per
+/// tent on both sides of each ring track. `concentric`: full rings around a
+/// first ring of about 60 tents, joined by four radial tracks; `clusters`:
+/// camps of at most 40 tents around the first one, each its own ring and
+/// common, joined to it by a track.
+fn grown_camp(
+    site: &Site,
+    cfg: &LayoutConfig,
+    near: &Option<Near>,
+    obstacles: &[Shape],
+    surface: Surface<'_>,
+) -> Option<Plan> {
+    use std::f64::consts::{PI, TAU};
+    // One piece per household, and a tenth more for the camp's own uses.
+    let tents = (super::footprint::capacity::households(culture(site, cfg), site.population) * 1.1).ceil().max(2.0) as usize;
+    let (pitch, depth, half, strip) = (8.0, 12.0, 1.5, 4.0);
+    let step = 2.0 * (half + depth) + strip;
+    let first = depth + half + 8.0;
+    let c = site.center;
+    let entry_dir = near.as_ref().map_or(0.0, |n| (n.point.y - c.y).atan2(n.point.x - c.x));
+    let dirv = |a: f64| Point { x: a.cos(), y: a.sin() };
+    let sectors = |r: f64| ((TAU * r / pitch).floor() as usize).max(3);
+    // Units: (centre, ring radii, tents).
+    let mut units: Vec<(Point, Vec<f64>, usize)> = vec![];
+    if cfg.camp_growth == "clusters" {
+        let per = 40;
+        let disc = |o: Point, r: f64| Shape {
+            outer: (0..32).map(|i| at(o, dirv(i as f64 * TAU / 32.0), r)).collect(),
+            holes: vec![],
+        };
+        for count in (1..=tents.div_ceil(per).max(1)).rev() {
+            let k = tents.div_ceil(count);
+            let r = (k.div_ceil(2) as f64 * pitch / TAU).max(first);
+            let reach = r + half + depth;
+            let mut centres = vec![c];
+            'unit: for _ in 1..count {
+                for ring in 0..30 {
+                    let d = 2.0 * reach + 12.0 + ring as f64 * 0.25 * reach;
+                    for t in 0..24 {
+                        let side = if t % 2 == 0 { 1.0 } else { -1.0 };
+                        let a = entry_dir + PI + side * ((t + 1) / 2) as f64 * TAU / 24.0;
+                        let o = at(c, dirv(a), d);
+                        if centres.iter().any(|&q| dist(q, o) < 2.0 * reach + 12.0) {
+                            continue;
+                        }
+                        if settle(&g::normalized(disc(o, reach)), obstacles, &surface, 0.95).is_some() {
+                            centres.push(o);
+                            continue 'unit;
+                        }
+                    }
+                }
+                break;
+            }
+            if centres.len() == count || count == 1 {
+                let n = centres.len();
+                units = centres.iter().enumerate().map(|(u, &o)| (o, vec![r], tents / n + usize::from(u < tents % n))).collect();
+                break;
+            }
+        }
+    } else {
+        let r0 = (60.0 * pitch / (2.0 * TAU)).max(first);
+        let (mut radii, mut held) = (vec![], 0);
+        while held < tents && radii.len() < 12 {
+            let r = r0 + radii.len() as f64 * step;
+            held += sectors(r) * 2;
+            radii.push(r);
+        }
+        units.push((c, radii, tents));
+    }
+    let outer = units[0].1.last().copied().unwrap_or(first);
+    let mut streets = vec![];
+    // Tracks crossing the tent rows: radial spokes, the links between camps.
+    let mut cuts: Vec<Vec<Point>> = vec![];
+    if units.len() == 1 && units[0].1.len() > 1 {
+        let r0 = units[0].1[0];
+        for j in 0..4 {
+            let d = dirv(entry_dir + j as f64 * 0.5 * PI);
+            cuts.push(vec![at(c, d, r0), at(c, d, outer)]);
+        }
+    }
+    for (o, radii, _) in units.iter().skip(1) {
+        cuts.push(vec![at(*o, unit(*o, c), radii[0]), at(c, unit(c, *o), outer)]);
+    }
+    let all: Vec<Shape> = obstacles.iter().cloned().chain(cuts.iter().flat_map(|p| g::ribbon(p, &[2.0 * half + 1.0]))).collect();
+    let mut blocks: Vec<(Shape, &'static str)> = vec![];
+    for (o, radii, k) in &units {
+        let o = *o;
+        let back = if dist(o, c) > 1.0 { (o.y - c.y).atan2(o.x - c.x) } else { entry_dir + PI };
+        let mut left = *k;
+        for &r in radii {
+            let n = sectors(r);
+            let m = ((TAU * r / 4.0).ceil() as usize).max(24);
+            let mut ring: Vec<Point> = (0..=m).map(|i| at(o, dirv(i as f64 * TAU / m as f64), r)).collect();
+            ring[m] = ring[0];
+            streets.push(street(ring, half * 2.0, 3, "track"));
+            // Sectors from the back (away from the entry) toward the front,
+            // both sides of the track: a partial ring stays behind.
+            let mid = |i: usize| (i as f64 + 0.5) * TAU / n as f64;
+            let off = |a: f64| (a - back).rem_euclid(TAU).min(TAU - (a - back).rem_euclid(TAU));
+            let mut order: Vec<usize> = (0..n).collect();
+            order.sort_by(|&a, &b| off(mid(a)).total_cmp(&off(mid(b))).then(a.cmp(&b)));
+            for i in order {
+                let gap = 0.5 / r;
+                let (a0, a1) = (i as f64 * TAU / n as f64 + gap, (i + 1) as f64 * TAU / n as f64 - gap);
+                for (r_in, r_out) in [(r + half, r + half + depth), (r - half - depth, r - half)] {
+                    if left == 0 || r_in <= 1.0 {
+                        continue;
+                    }
+                    let arc = |rr: f64| (0..=4).map(move |s| (s, rr));
+                    let mut outline: Vec<Point> = arc(r_out).map(|(s, rr)| at(o, dirv(a0 + (a1 - a0) * s as f64 / 4.0), rr)).collect();
+                    outline.extend(arc(r_in).collect::<Vec<_>>().into_iter().rev().map(|(s, rr)| at(o, dirv(a0 + (a1 - a0) * s as f64 / 4.0), rr)));
+                    let piece = g::normalized(Shape { outer: outline, holes: vec![] });
+                    if let Some(p) = settle(&piece, &all, &surface, 0.5) {
+                        blocks.push((p, "block"));
+                        left -= 1;
+                    }
+                }
+            }
+        }
+        // The open centre: a common for herds, fires and gatherings.
+        let cr = radii[0] - half - depth - 2.0;
+        if cr > 6.0 {
+            let disc = Shape { outer: (0..24).map(|i| at(o, dirv(i as f64 * TAU / 24.0), cr)).collect(), holes: vec![] };
+            if let Some(d) = settle(&g::normalized(disc), obstacles, &surface, 0.5) {
+                blocks.push((d, "place"));
+            }
+        }
+    }
+    for p in cuts {
+        streets.push(street(p, half * 2.0, 3, "track"));
+    }
+    if let Some(n) = near.as_ref().filter(|n| n.distance > outer) {
+        let entry = at(c, unit(c, n.point), outer);
+        streets.push(street(track(surface, n.point, entry, cfg.max_lane_grade), half * 2.0, 3, "track"));
+    }
+    Some(Plan { blocks, streets, center: c, axis: Point { x: 1.0, y: 0.0 } })
 }
 
 #[cfg(test)]

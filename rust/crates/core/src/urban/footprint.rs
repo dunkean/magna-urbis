@@ -2259,6 +2259,9 @@ pub(super) fn generate(
         );
     }
 let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
+    // A camp grown past one figure (`campGrowth`) takes the land its rows
+    // or its daughter camps need; the default figure keeps the sized land.
+    let target = super::kinds::camp_growth_land(site, cfg, morph).map_or(target, |land| target.max(land));
     let density = density * nominal / target;
     let radius = (target / PI).sqrt();
     let geography = geography(site, cfg, surface, radius);

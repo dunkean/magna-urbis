@@ -125,6 +125,9 @@ pub struct Enclosure {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub reserve: Vec<Shape>,
 }
+fn is_ring_growth(v: &str) -> bool {
+    v == "ring"
+}
 fn is_zero(v: &f64) -> bool {
     *v == 0.0
 }
@@ -637,6 +640,12 @@ pub struct LayoutConfig {
     pub road_end_joins: bool,
     /// Small places (under ~650 inhabitants) redraw for capacity only past 8 missing households.
     pub small_place_capacity: bool,
+    /// How a large camp grows past one figure (ring and court camps, the
+    /// legacy nomad ring): `ring` one figure with overflow rows (as drawn),
+    /// `concentric` full concentric rows past a capped first ring,
+    /// `clusters` several figures (daughter camps) linked by footpaths.
+    #[serde(skip_serializing_if = "is_ring_growth")]
+    pub camp_growth: String,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub regular_grid_outline: bool,
     pub params: Value,
@@ -766,6 +775,7 @@ impl Default for LayoutConfig {
             road_remnants: false,
             road_end_joins: false,
             small_place_capacity: false,
+            camp_growth: "ring".into(),
             regular_grid_outline: false,
             params: json!({}),
             phase_overrides: Default::default(),

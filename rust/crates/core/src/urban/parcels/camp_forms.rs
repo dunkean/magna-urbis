@@ -176,11 +176,12 @@ fn ring_unit(
     room: f64,
     on: &dyn Fn(Point) -> bool,
     entries: &[Entry],
-) -> f64 {
+    row_cap: Option<usize>,
+) -> (Figure, f64) {
     let span = TAU - gap;
     // Radius holding the row within the land (`room`), never smaller than a
     // sensible centre ground; what one row cannot hold goes to outer rows.
-    let r = (n as f64 * spacing / span).min(0.62 * room).max(depth * (1.0 + 2.0 * centre_frac)).max(12.0);
+    let r = (row_cap.map_or(n, |cap| n.min(cap)) as f64 * spacing / span).min(0.62 * room).max(depth * (1.0 + 2.0 * centre_frac)).max(12.0);
     let fig = Figure::new(c, r, rng, 1.0);
     let a0 = beta + 0.5 * gap;
     // Centre ground: a few sites inside the inner path, one group.
@@ -205,7 +206,8 @@ fn ring_unit(
     // the head's hut at the back, opposite the opening.
     let mut placed = 0;
     let mut rows = 0;
-    for row in 0..4 {
+    // A capped first ring (`campGrowth` concentric) grows by full rows.
+    for row in 0..row_cap.map_or(4, |_| 16) {
         let dr = row as f64 * (depth + path);
         let left = n - placed;
         let cap = (fig.length(a0, span, dr) / spacing).floor() as usize;
@@ -271,7 +273,164 @@ fn ring_unit(
         let mut way=if delta==0. {vec![gate]}else if delta>0. {fig.polyline(beta,delta,outside)}else{let mut p=fig.polyline(a,-delta,outside);p.reverse();p};
         way.extend([landing,entry.p]);plan.paths.push(way);
     }
-    r + outside
+    (fig, outside)
+}
+
+/// Centres of `units` figures of outer radius `r` on the camp's land: the
+/// first at the camp's centre, daughters as close around it as the land
+/// holds them whole, clear of the roads, first away from the opening. Fewer when the land holds
+/// fewer.
+fn daughters(frame: &Frame, units: usize, r: f64, beta: f64, clear: f64, on: &dyn Fn(Point) -> bool, roads: &[(Point, Point)]) -> Vec<Point> {
+    let mut centres = vec![frame.centre];
+    // Clear of the roads first; else a road may cross the rows, not the
+    // centre ground.
+    'unit: for _ in 1..units {
+        for clearance in [1.0, 0.45] {
+        for ring in 0..40 {
+            let d = 2.0 * r + clear + ring as f64 * 0.2 * r;
+            if d > frame.reach + r {
+                break;
+            }
+            for t in 0..24 {
+                let side = if t % 2 == 0 { 1.0 } else { -1.0 };
+                let c = add(frame.centre, scale(dir(beta + PI + side * ((t + 1) / 2) as f64 * TAU / 24.0), d));
+                if centres.iter().any(|&o| length(sub(o, c)) < 2.0 * r + clear) {
+                    continue;
+                }
+                if roads.iter().any(|&(a, b)| crate::urban::geometry::distance(c, a, b).0 < clearance * r) {
+                    continue;
+                }
+                if on(c) && (0..24).all(|i| on(add(c, scale(dir(i as f64 * TAU / 24.0), r)))) {
+                    centres.push(c);
+                    continue 'unit;
+                }
+            }
+        }
+        }
+        break;
+    }
+    centres
+}
+
+/// Segments of the roads through a camp's land (regional and main ways).
+fn roads(layout: &Layout) -> Vec<(Point, Point)> {
+    layout.streets.iter().filter(|s| s.rank <= 1 || s.role == "regional").flat_map(|s| s.path.windows(2).map(|w| (w[0], w[1]))).collect()
+}
+
+/// The figure's outside from bearing `from` to `to`, the shorter way.
+fn around(fig: &Figure, dr: f64, from: f64, to: f64) -> Vec<Point> {
+    let delta = (to - from + PI).rem_euclid(TAU) - PI;
+    if delta.abs() < 1e-3 {
+        vec![fig.at(from, dr)]
+    } else if delta > 0.0 {
+        fig.polyline(from, delta, dr)
+    } else {
+        let mut p = fig.polyline(to, -delta, dr);
+        p.reverse();
+        p
+    }
+}
+
+/// Ring figures grown past one figure (`campGrowth`): `concentric` caps the
+/// first row (`campRingMax`) and lays the rest on full rows around it;
+/// `clusters` founds daughter camps of at most `campUnitMax` dwellings
+/// around the first, each a capped figure with its centre ground and its
+/// opening, joined by a footpath outside the rows to the first camp's gate.
+#[allow(clippy::too_many_arguments)]
+fn grown_rings(plan: &mut Plan, rng: &mut Rng, frame: &Frame, morph: &Morph, n: usize, beta: f64, clusters: bool, allowance: f64, on: &dyn Fn(Point) -> bool, entries: &[Entry], roads: &[(Point, Point)]) -> Vec<(Point, f64)> {
+    use super::super::super::kinds;
+    let g = kinds::ring_geometry(morph);
+    let cap = kinds::camp_ring_max(morph);
+    let head = morph.text("campHead") == "back";
+    // A compass opening is cultural (the tipi circle opens east): daughter
+    // camps keep it; a road opening turns each daughter toward the first.
+    let compass = matches!(morph.text("campOpening"), "east" | "south" | "west" | "north");
+    // The camps are sited for its households; a larger allowance of
+    // pitches (`admitted_form`) only deepens their rows, it never moves them.
+    let households = ((n as f64 / allowance).ceil() as usize).max(1);
+    let wanted = if clusters { households.div_ceil(kinds::camp_unit_max(morph)).max(1) } else { 1 };
+    // A daughter camp keeps two rows: its first ring holds half of it.
+    let unit_cap = |k: usize| if clusters { cap.min(k.div_ceil(2)).max(12) } else { cap };
+    let mut centres = vec![frame.centre];
+    for units in (1..=wanted).rev() {
+        let k = households.div_ceil(units);
+        let found = daughters(frame, units, 1.2 * kinds::ring_extent(k, unit_cap(k), &g), beta, 2.0 * g.path + g.depth, on, roads);
+        if found.len() == units {
+            centres = found;
+            break;
+        }
+    }
+    let units = centres.len();
+    let room = if units > 1 { f64::INFINITY } else { frame.equivalent };
+    let mut first: Option<(Figure, f64, f64)> = None;
+    let mut figures = vec![];
+    for (u, &c) in centres.iter().enumerate() {
+        let k = n / units + usize::from(u < n % units);
+        let toward = (frame.centre.y - c.y).atan2(frame.centre.x - c.x);
+        let b = if u == 0 || compass { beta } else { toward };
+        let cap_k = unit_cap(households / units + usize::from(u < households % units));
+        let (fig, outside) = ring_unit(plan, rng, c, k, g.spacing, g.depth, g.path, g.gap, b, head, g.centre, room, on, if u == 0 { entries } else { &[] }, Some(cap_k));
+        figures.push((c, (0..32).map(|i| length(sub(fig.at(i as f64 * TAU / 32.0, outside), c))).fold(0.0, f64::max)));
+        match &first {
+            None => first = Some((fig, outside, b)),
+            Some((f0, o0, b0)) => {
+                // Out of the daughter's gate round its rows to the side facing
+                // the first camp, across, round the first camp to its gate.
+                let mut way = around(&fig, outside, b, toward);
+                way.extend(around(f0, *o0, toward + PI, *b0));
+                plan.paths.push(way);
+            }
+        }
+    }
+    figures
+}
+
+/// Mongol camps grown past one ordu (`campGrowth`): `concentric` pitches the
+/// tents in full rings around the court (the küriyen), the head's tent at its
+/// back facing the opening; `clusters` founds ordus of at most `campUnitMax`
+/// tents (else 80) around the first, each its court, head and ails, joined
+/// court to court by a track.
+#[allow(clippy::too_many_arguments)]
+fn grown_court(plan: &mut Plan, rng: &mut Rng, frame: &Frame, morph: &Morph, n: usize, depth: f64, path: f64, beta: f64, clusters: bool, allowance: f64, on: &dyn Fn(Point) -> bool, entries: &[Entry], roads: &[(Point, Point)]) -> Vec<(Point, f64)> {
+    use super::super::super::kinds;
+    let g = kinds::ring_geometry(morph);
+    if !clusters {
+        let from = plan.sites.len();
+        let (fig, outside) = ring_unit(plan, rng, frame.centre, n, g.spacing, depth, path, g.gap, beta, true, g.centre, frame.equivalent, on, entries, Some(kinds::camp_ring_max(morph)));
+        // The court inside the rings is open ground, not the culture's
+        // court-yard plot.
+        for site in &mut plan.sites[from..] {
+            if site.hold == Hold::Centre {
+                site.hold = Hold::Open;
+            }
+        }
+        let c = frame.centre;
+        return vec![(c, (0..32).map(|i| length(sub(fig.at(i as f64 * TAU / 32.0, outside), c))).fold(0.0, f64::max))];
+    }
+    let s = g.spacing;
+    let households = ((n as f64 / allowance).ceil() as usize).max(1);
+    let wanted = households.div_ceil(kinds::camp_unit_max(morph)).max(1);
+    let (mut centres, mut r) = (vec![frame.centre], kinds::court_extent(households, s));
+    for units in (1..=wanted).rev() {
+        r = kinds::court_extent(households.div_ceil(units), s);
+        let found = daughters(frame, units, r, beta, 2.0 * path + depth, on, roads);
+        if found.len() == units {
+            centres = found;
+            break;
+        }
+    }
+    let units = centres.len();
+    let front = scale(dir(beta), 0.5 * (2.0 * s).max(26.0));
+    for (u, &c) in centres.iter().enumerate() {
+        let k = n / units + usize::from(u < n % units);
+        let bound = |p: Point| on(p) && length(sub(p, c)) <= r;
+        court(plan, rng, c, k.max(3), s, depth, path, beta, &bound);
+        if u > 0 {
+            let (a, b) = (add(c, front), add(frame.centre, front));
+            plan.paths.push(vec![a, lerp(a, b, 0.5), b]);
+        }
+    }
+    centres.into_iter().map(|c| (c, r)).collect()
 }
 
 /// Mongol ordu: the head's tent at the back of the court, the senior tents in
@@ -542,7 +701,15 @@ pub(super) fn tiles_with_allowance(frame:&Frame,morph:&Morph,layout:&Layout,allo
         None => land.min(400),
     }
     .max(3);
+    // A large camp grown past one figure (`campGrowth`, never in a capacity
+    // probe, which has no programme): concentric rows or daughter camps.
+    // Figures (centre, outer radius) of a grown camp: the fine open ground
+    // stays around them, the land between them is far ground.
+    let mut figures: Vec<(Point, f64)> = vec![];
+    let growth = if layout.programme.is_some() { layout.config.as_ref().map_or("ring", |c| c.camp_growth.as_str()) } else { "ring" };
     match form {
+        "court" if growth != "ring" => figures = grown_court(&mut plan, &mut rng, frame, morph, n, depth, path, beta, growth == "clusters", allowance, &on, &entries, &roads(layout)),
+        "circle" | "horseshoe" if growth != "ring" => figures = grown_rings(&mut plan, &mut rng, frame, morph, n, beta, growth == "clusters", allowance, &on, &entries, &roads(layout)),
         "court" => {
             // Nomad spacing shrinks to what the camp's land offers per tent.
             let per_tent = (PI * frame.equivalent * frame.equivalent / n as f64).sqrt();
@@ -589,7 +756,7 @@ pub(super) fn tiles_with_allowance(frame:&Frame,morph:&Morph,layout:&Layout,allo
                 if k == 0 {
                     break;
                 }
-                ring_unit(&mut plan, &mut rng, c, k, spacing, depth, path, gap, beta, head, centre_frac, frame.equivalent / (units as f64).sqrt(), &on, if u==0 {entries.as_slice()}else{&[]});
+                ring_unit(&mut plan, &mut rng, c, k, spacing, depth, path, gap, beta, head, centre_frac, frame.equivalent / (units as f64).sqrt(), &on, if u==0 {entries.as_slice()}else{&[]}, None);
                 if u > 0 {
                     plan.paths.push(vec![frame.centre, lerp(frame.centre, c, 0.5), c]);
                 }
@@ -622,6 +789,10 @@ pub(super) fn tiles_with_allowance(frame:&Frame,morph:&Morph,layout:&Layout,allo
         let mut x = minx - margin;
         while x <= maxx + margin {
             let q = Point { x: x + rng.range(-0.3, 0.3) * g, y: y + rng.range(-0.3, 0.3) * g };
+            if !figures.is_empty() && !figures.iter().any(|&(c, r)| length(sub(q, c)) <= r + margin) {
+                x += g;
+                continue;
+            }
             if !filled.iter().any(|&o| length(sub(o, q)) < 0.85 * g) && !near_polyline(q, &plan.paths, clear) {
                 open_site(&mut plan, q, chunk);
             }
@@ -638,8 +809,12 @@ pub(super) fn tiles_with_allowance(frame:&Frame,morph:&Morph,layout:&Layout,allo
         let mut x = frame.centre.x - reach;
         while x <= frame.centre.x + reach {
             let q = Point { x, y };
-            if q.x < minx - margin - 0.5 * g || q.x > maxx + margin + 0.5 * g || q.y < miny - margin - 0.5 * g || q.y > maxy + margin + 0.5 * g {
-                open_site(&mut plan, q, 4.0 * far_step);
+            if figures.is_empty() {
+                if q.x < minx - margin - 0.5 * g || q.x > maxx + margin + 0.5 * g || q.y < miny - margin - 0.5 * g || q.y > maxy + margin + 0.5 * g {
+                    open_site(&mut plan, q, 4.0 * far_step);
+                }
+            } else if !figures.iter().any(|&(c, r)| length(sub(q, c)) <= r + margin + 0.5 * g) {
+                open_site(&mut plan, q, 12.0 * far_step);
             }
             x += far_step;
         }
@@ -714,5 +889,92 @@ mod tests {
         let huts: Vec<_> = lots.iter().filter(|p| p.use_kind == "plot").collect();
         assert!(huts.len() >= 20, "{}", huts.len());
         assert!(ms < 3000, "{ms} ms");
+    }
+
+    fn grown(form: &str, clusters: bool, n: usize, extra: serde_json::Value) -> (Plan, Vec<(Point, f64)>, Frame, Layout) {
+        let shape = rectangle(-700.0, -700.0, 700.0, 700.0);
+        let l = layout(&shape);
+        let frame = Frame::of(&l);
+        let mut value = serde_json::json!({"campLayout":"ring","campForm":form,"campRow":9.5,"campArc":[9.0,10.5],
+            "campPath":2.5,"campGap":50.0,"campCentre":0.3,"campHead":"back","campOpening":"road"});
+        for (k, v) in extra.as_object().unwrap() {
+            value[k] = v.clone();
+        }
+        let morph = Morph { value };
+        let mut plan = Plan { sites: vec![], paths: vec![], groups: 0 };
+        let mut rng = Rng::new("grown-camp-test");
+        let on = |p: Point| on_land(&l, p);
+        let roads = roads(&l);
+        let beta = opening(&frame, &morph, &l);
+        let figures = if form == "court" {
+            grown_court(&mut plan, &mut rng, &frame, &morph, n, 10.5, 3.5, beta, clusters, 1.0, &on, &[], &roads)
+        } else {
+            grown_rings(&mut plan, &mut rng, &frame, &morph, n, beta, clusters, 1.0, &on, &[], &roads)
+        };
+        (plan, figures, frame, l)
+    }
+    fn homes(plan: &Plan) -> Vec<Point> {
+        plan.sites.iter().filter(|s| matches!(s.hold, Hold::Dwelling | Hold::Head)).map(|s| s.p).collect()
+    }
+
+    /// Invariant (`campGrowth` concentric): every household lodged, the first
+    /// ring capped, the rest on several full rows around it.
+    #[test]
+    fn a_concentric_camp_lodges_everyone_on_capped_rows() {
+        let (plan, figures, frame, _) = grown("horseshoe", false, 200, serde_json::json!({}));
+        let homes = homes(&plan);
+        assert_eq!(homes.len(), 200);
+        assert_eq!(figures.len(), 1);
+        let d: Vec<f64> = homes.iter().map(|&p| length(sub(p, frame.centre))).collect();
+        let inner = d.iter().copied().fold(f64::MAX, f64::min);
+        let outer = d.iter().copied().fold(0.0, f64::max);
+        // The default figure would lay one ring of radius ~360 m.
+        assert!(outer < 200.0, "outer {outer}");
+        assert!((outer - inner) / (9.5 + 2.5) >= 2.0, "rows {inner}..{outer}");
+    }
+
+    /// Invariant (`campGrowth` clusters): daughter camps of at most
+    /// `campUnitMax` dwellings, on the land, clear of each other and of the
+    /// road, each joined by a footpath to the first camp; every household lodged.
+    #[test]
+    fn a_clustered_camp_founds_daughters_on_land_linked_by_paths() {
+        let (plan, figures, _, l) = grown("horseshoe", true, 200, serde_json::json!({"campUnitMax": 60}));
+        assert_eq!(homes(&plan).len(), 200);
+        assert_eq!(figures.len(), 4, "{figures:?}");
+        for (i, &(a, ra)) in figures.iter().enumerate() {
+            assert!(on_land(&l, a));
+            for &(b, rb) in &figures[i + 1..] {
+                assert!(length(sub(a, b)) >= ra + rb, "figures overlap");
+            }
+            if i > 0 {
+                let (c0, r0) = figures[0];
+                let linked = plan.paths.iter().any(|w| w.iter().any(|&p| length(sub(p, a)) <= ra + 1.0)
+                    && w.iter().any(|&p| length(sub(p, c0)) <= r0 + 1.0));
+                assert!(linked, "daughter {i} not linked");
+                assert!(!roads(&l).iter().any(|&(p, q)| crate::urban::geometry::distance(a, p, q).0 < ra));
+            }
+        }
+    }
+
+    /// Invariant (`campGrowth` clusters, court): several ordus, each with its
+    /// head's compound, lodging the camp's tents.
+    #[test]
+    fn a_clustered_ordu_has_one_head_per_court() {
+        let (plan, figures, _, _) = grown("court", true, 240,
+            serde_json::json!({"campArc":[15.0,21.0],"campRow":10.5,"campGap":0.0,"campOpening":"south"}));
+        assert!(figures.len() >= 2, "{}", figures.len());
+        let heads = plan.sites.iter().filter(|s| s.hold == Hold::Head).map(|s| s.group).collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(heads.len(), figures.len());
+        assert!(homes(&plan).len() >= 228, "{}", homes(&plan).len());
+    }
+
+    /// The default growth stays out of a serialized configuration (saved
+    /// scenes and memo keys unchanged); a chosen one round-trips.
+    #[test]
+    fn camp_growth_is_absent_from_a_default_config() {
+        let v = serde_json::to_value(crate::urban::LayoutConfig::default()).unwrap();
+        assert!(v.get("campGrowth").is_none());
+        let c: crate::urban::LayoutConfig = serde_json::from_value(serde_json::json!({"campGrowth": "clusters"})).unwrap();
+        assert_eq!(c.camp_growth, "clusters");
     }
 }
