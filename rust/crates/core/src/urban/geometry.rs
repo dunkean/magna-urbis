@@ -523,32 +523,34 @@ pub(super) fn simplify(path: &[Point], tolerance: f64, keep: impl Fn(Point) -> b
         .filter_map(|(&p, r)| r.then_some(p))
         .collect()
 }
+/// Whether two sides touch or cross (1e-9 tolerance).
+fn sides_touch(a: Point, b: Point, c: Point, d: Point) -> bool {
+    fn cross(o: Point, a: Point, b: Point) -> f64 {
+        (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x)
+    }
+    let eps = 1e-9;
+    let (d1, d2) = (cross(c, d, a), cross(c, d, b));
+    let (d3, d4) = (cross(a, b, c), cross(a, b, d));
+    if ((d1 > eps && d2 < -eps) || (d1 < -eps && d2 > eps))
+        && ((d3 > eps && d4 < -eps) || (d3 < -eps && d4 > eps))
+    {
+        return true;
+    }
+    let on = |p: Point, q: Point, r: Point, v: f64| {
+        v.abs() <= eps
+            && r.x >= p.x.min(q.x) - eps
+            && r.x <= p.x.max(q.x) + eps
+            && r.y >= p.y.min(q.y) - eps
+            && r.y <= p.y.max(q.y) + eps
+    };
+    on(c, d, a, d1) || on(c, d, b, d2) || on(a, b, c, d3) || on(a, b, d, d4)
+}
 /// Whether every ring of `s` is simple: no two non-adjacent sides touch or
 /// cross. Boolean operations need simple input (a folded ring, such as a
 /// sliver whose vertices were snapped back over each other, can abort the
 /// overlay solver). Quadratic in the ring size, which is a lot's, not a city's.
 pub(super) fn simple(s: &Shape) -> bool {
-    fn cross(o: Point, a: Point, b: Point) -> f64 {
-        (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x)
-    }
-    fn touch(a: Point, b: Point, c: Point, d: Point) -> bool {
-        let eps = 1e-9;
-        let (d1, d2) = (cross(c, d, a), cross(c, d, b));
-        let (d3, d4) = (cross(a, b, c), cross(a, b, d));
-        if ((d1 > eps && d2 < -eps) || (d1 < -eps && d2 > eps))
-            && ((d3 > eps && d4 < -eps) || (d3 < -eps && d4 > eps))
-        {
-            return true;
-        }
-        let on = |p: Point, q: Point, r: Point, v: f64| {
-            v.abs() <= eps
-                && r.x >= p.x.min(q.x) - eps
-                && r.x <= p.x.max(q.x) + eps
-                && r.y >= p.y.min(q.y) - eps
-                && r.y <= p.y.max(q.y) + eps
-        };
-        on(c, d, a, d1) || on(c, d, b, d2) || on(a, b, c, d3) || on(a, b, d, d4)
-    }
+    let touch = sides_touch;
     std::iter::once(&s.outer).chain(&s.holes).all(|r| {
         let n = r.len();
         if n < 3 {
@@ -563,6 +565,19 @@ pub(super) fn simple(s: &Shape) -> bool {
                 !touch(a, b, r[j], r[(j + 1) % n])
             })
         })
+    })
+}
+/// `simple` for a ring that is simple apart from the sides listed in `fresh`
+/// (side `i` runs from `r[i]` to `r[i + 1]`): only those sides are tested,
+/// against every other side, with the same rule. Linear per fresh side.
+pub(super) fn simple_around(r: &[Point], fresh: &[usize]) -> bool {
+    let n = r.len();
+    if n < 3 {
+        return false;
+    }
+    fresh.iter().all(|&i| {
+        let (a, b) = (r[i], r[(i + 1) % n]);
+        (0..n).all(|j| j == i || (j + 1) % n == i || (i + 1) % n == j || !sides_touch(a, b, r[j], r[(j + 1) % n]))
     })
 }
 pub(super) fn segment_hit(a: Point, b: Point, c: Point, d: Point) -> Option<(f64, Point)> {

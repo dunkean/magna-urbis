@@ -763,7 +763,20 @@ impl Pocket {
         Shape { outer, holes: shape.holes.clone() }
     }
 }
-fn pocket(shape: &Shape, start: usize, end: usize, a: Point, b: Point, limits: PocketLimits, fold: bool) -> Option<Pocket> {
+/// Sides of a simple ring, by exact coordinates: a bridged ring is simple when
+/// its new sides are (`g::simple_around`), which is linear instead of quadratic.
+type Sides = std::collections::HashSet<[u64; 4]>;
+fn side_key(p: Point, q: Point) -> [u64; 4] { [p.x.to_bits(), p.y.to_bits(), q.x.to_bits(), q.y.to_bits()] }
+fn sides(r: &[Point]) -> Sides { (0..r.len()).map(|i| side_key(r[i], r[(i + 1) % r.len()])).collect() }
+fn bridged_simple(next: &Shape, base: Option<&Sides>) -> bool {
+    let Some(base) = base else { return g::simple(next) };
+    let r = &next.outer;
+    let fresh: Vec<usize> = (0..r.len()).filter(|&i| !base.contains(&side_key(r[i], r[(i + 1) % r.len()]))).collect();
+    g::simple_around(r, &fresh)
+}
+/// The shape test of a pocket: a re-entrant chain, no occupied salient cut
+/// off, deep enough (or a narrow fold). Cheap: no bridge is built.
+fn pocket_candidate(shape: &Shape, start: usize, end: usize, a: Point, b: Point, limits: PocketLimits, fold: bool) -> Option<Pocket> {
     let mut p = Pocket { start, end, a, b, length: 0.0 };
     let chain = p.chain(&shape.outer);
     let span = dist(a, b);
@@ -776,34 +789,69 @@ fn pocket(shape: &Shape, start: usize, end: usize, a: Point, b: Point, limits: P
     if depth <= limits.min_depth || if fold {
         span >= limits.fold_gap || p.length <= span * 4.0
     } else { depth <= span * limits.depth_span } { return None; }
-    let next = p.bridge(shape);
-    (next.outer.len() >= 3 && g::simple(&next) && g::area(&next) > g::area(shape)).then_some(p)
+    Some(p)
 }
+/// The bridged shape when it is a valid repair: simple and larger.
+fn bridged(shape: &Shape, p: &Pocket, base: Option<&Sides>) -> Option<Shape> {
+    let next = p.bridge(shape);
+    (next.outer.len() >= 3 && bridged_simple(&next, base) && g::area(&next) > g::area(shape)).then_some(next)
+}
+#[cfg(test)]
 fn pockets(shape: &Shape, limits: PocketLimits) -> Vec<Pocket> {
+    let base = g::simple(shape).then(|| sides(&shape.outer));
+    candidates(shape, limits).into_iter().filter(|p| bridged(shape, p, base.as_ref()).is_some()).collect()
+}
+/// Every pocket candidate in discovery order (corner pairs, then folds).
+fn candidates(shape: &Shape, limits: PocketLimits) -> Vec<Pocket> {
     let r = &shape.outer;
     if r.len() < 4 { return vec![]; }
     let mut found = vec![];
-    let corners: Vec<_> = (0..r.len()).filter(|&i|
-        cross(dir(r[(i + r.len() - 1) % r.len()], r[i]), dir(r[i], r[(i + 1) % r.len()])) >= -1e-8).collect();
+    let n = r.len();
+    // Twice-around prefix of the shoelace terms: the signed area of the chain
+    // r[i..=j] closed by its chord in O(1). A chain clearly positive (> 1 m²)
+    // is no pocket (it must be below -1e-6): skipped before building it.
+    let mut prefix = vec![0.0; 2 * n + 1];
+    for k in 0..2 * n {
+        let (p, q) = (r[k % n], r[(k + 1) % n]);
+        prefix[k + 1] = prefix[k] + (p.x * q.y - q.x * p.y);
+    }
+    let corners: Vec<_> = (0..n).filter(|&i|
+        cross(dir(r[(i + n - 1) % n], r[i]), dir(r[i], r[(i + 1) % n])) >= -1e-8).collect();
     for &i in &corners {
         for &j in &corners {
-            if (j + r.len() - i) % r.len() < 2 { continue; }
-            let end = (j + r.len() - 1) % r.len();
-            if let Some(p) = pocket(shape, i, end, r[i], r[j], limits, false) { found.push(p); }
+            let span = (j + n - i) % n;
+            if span < 2 { continue; }
+            let end = (j + n - 1) % n;
+            if 0.5 * (prefix[i + span] - prefix[i] + (r[j].x * r[i].y - r[i].x * r[j].y)) > 1.0 {
+                continue;
+            }
+            // A vertex clearly right of the chord (an occupied salient) rejects
+            // the pair before its chain is built; `pocket_candidate` decides the rest.
+            let u = dir(r[i], r[j]);
+            if (1..span).any(|k| { let q = r[(i + k) % n]; cross(u, (q.x - r[i].x, q.y - r[i].y)) < -1e-3 }) {
+                continue;
+            }
+            if let Some(p) = pocket_candidate(shape, i, end, r[i], r[j], limits, false) { found.push(p); }
         }
     }
     // Opposing stretches can fold inside a broad, otherwise shallow bay.
     // Use their closest endpoint/projection, rather than moving either stretch.
+    // Sides whose boxes lie more than the fold gap apart have no point pair
+    // closer than it: skipped.
+    let boxes: Vec<[f64; 4]> = (0..n).map(|i| { let (a, b) = (r[i], r[(i + 1) % n]);
+        [a.x.min(b.x), a.y.min(b.y), a.x.max(b.x), a.y.max(b.y)] }).collect();
     for i in 0..r.len() {
         for j in 0..r.len() {
             if i == j || (i + 1) % r.len() == j || (j + 1) % r.len() == i { continue; }
+            let (p, q) = (boxes[i], boxes[j]);
+            if (p[0] - q[2]).max(q[0] - p[2]).max(p[1] - q[3]).max(q[1] - p[3]) > limits.fold_gap { continue; }
             let (a, b) = (r[i], r[(i + 1) % r.len()]);
             let (c, d) = (r[j], r[(j + 1) % r.len()]);
             let candidates = [(a, g::distance(a, c, d).2), (b, g::distance(b, c, d).2),
                 (g::distance(c, a, b).2, c), (g::distance(d, a, b).2, d)];
             for (a, b) in candidates {
                 if dist(a, b) >= limits.fold_gap { continue; }
-                if let Some(p) = pocket(shape, i, j, a, b, limits, true) { found.push(p); }
+                if let Some(p) = pocket_candidate(shape, i, j, a, b, limits, true) { found.push(p); }
             }
         }
     }
@@ -811,14 +859,19 @@ fn pockets(shape: &Shape, limits: PocketLimits) -> Vec<Pocket> {
 }
 /// HEAD's trace is unchanged except for a deep re-entrant bay or a narrow fold.
 /// No resampling, global simplification, setback or minimum front length.
+/// Each round repairs the shortest valid pocket: candidates are sorted by
+/// length (stable, discovery order on ties) and only validated in that order,
+/// up to the first that passes.
 fn without_invaginations(shape: &Shape, surface: Surface<'_>) -> Shape {
     if !g::simple(shape) { return shape.clone(); }
     let limits = PocketLimits::read();
     let mut trace = shape.clone();
     loop {
-        let mut repairs = pockets(&trace, limits);
+        let mut repairs = candidates(&trace, limits);
         repairs.sort_by(|a, b| a.length.total_cmp(&b.length));
-        let Some(next) = repairs.into_iter().map(|p| p.bridge(&trace)).find(|next| {
+        // The trace is simple (checked above, then kept by every repair).
+        let base = sides(&trace.outer);
+        let Some(next) = repairs.iter().filter_map(|p| bridged(&trace, p, Some(&base))).find(|next| {
             // A pocket cut never creates an empty corner across a river.
             g::difference(next, &trace).iter().all(|s|
                 g::area(s) - area(&g::dry_clip(&surface, s)) < 1.0)
