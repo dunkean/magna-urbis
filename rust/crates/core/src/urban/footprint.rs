@@ -2435,26 +2435,34 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
                 }
             },
         };
-        accessible(
-            site.population,
-            target,
-            family,
-            cfg,
-            &mut centers,
-            radius,
-            angle,
-            &fractions,
-            surface,
-            &growth_roads,
-            &rng,
-            if cfg.tissue == "terraces" {
-                0.5
-            } else {
-                buildable_grade(site, cfg)
-            },
-            water_affinity,
-            service,
-        )
+        let grade = if cfg.tissue == "terraces" { 0.5 } else { buildable_grade(site, cfg) };
+        let grow = |centers: &mut Vec<UrbanCenter>, grade: f64, service: Service| {
+            accessible(site.population, target, family, cfg, centers, radius, angle, &fractions, surface, &growth_roads, &rng, grade, water_affinity, service)
+        };
+        let before = centers.clone();
+        let first = grow(&mut centers, grade, service);
+        // A site whose streets cannot climb out of the core would leave the place almost
+        // without land (under a quarter of its budget): it then grows by stairs and
+        // terraces, on steeper ground step by step, and says so.
+        let got = |r: &(Vec<Shape>, Vec<Vec<Shape>>, Vec<Street>)| area(&union(&r.1.iter().flatten().cloned().collect::<Vec<_>>()));
+        let first_area = got(&first);
+        let mut best = first;
+        for steep_grade in [grade.max(0.5), 0.75] {
+            if got(&best) >= 0.25 * target {
+                break;
+            }
+            let mut again = before.clone();
+            let steep = Service { grade: service.grade.max(cfg.max_stair_grade).max(steep_grade), ..service };
+            let second = grow(&mut again, steep_grade, steep);
+            if got(&second) > 2.0 * got(&best) {
+                centers = again;
+                best = second;
+            }
+        }
+        if got(&best) > first_area {
+            warnings.push("Pente trop forte pour des rues : la ville gagne son terrain par escaliers et terrasses.".into());
+        }
+        best
     };
     let mut links = if natural && sparse::enabled(cfg) {
         let served = [roads, crossings.as_slice()].concat();
