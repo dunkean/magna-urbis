@@ -28,6 +28,8 @@ import { executionRuntime } from './executionProfile';
 import { urbanText } from './urbanPanelLocale';
 
 export interface City3dOptions {
+  /** Walking plus altitude-sensitive zoom, pan and orbit controls. */
+  navigation?: boolean;
   /** Positioned container (the bench viewport); the 3D view covers it when shown. */
   host: HTMLElement;
   /** V2 opens the draped map immediately; expensive procedural material shader
@@ -131,6 +133,7 @@ const STYLE = `
 .city3d[hidden]{display:none}
 .city3d canvas{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab;touch-action:none}
 .city3d canvas.drag{cursor:grabbing}
+.city3d[data-navigation-mode=walk] canvas{cursor:crosshair}
 .city3d-bar{position:absolute;top:8px;right:8px;display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;max-width:calc(100% - 16px);padding:6px 9px;background:#fffffff0;border:1px solid #d3ddd7;border-radius:4px;font-size:12px;color:#253b38}
 .city3d-bar label{display:inline-flex;gap:4px;align-items:center}
 .city3d-bar input[type=range]{width:70px}
@@ -146,6 +149,7 @@ export function mountCity3d(options: City3dOptions): City3d {
   const root = document.createElement('div'); root.className = 'city3d'; root.hidden = true;
   root.innerHTML = `<canvas tabindex="0" aria-label="Vue 3D de la ville. Glisser : déplacer, clic droit ou Maj + glisser : orbiter, molette : zoom, clic : sélectionner."></canvas>
     <div class="city3d-bar" role="group" aria-label="Vue 3D">
+      <label data-navigation-label>Navigation <select data-navigation><option value="orbit">Orbite</option><option value="walk">Marche</option></select></label>
       <label title="Fond drapé sur le relief">Sol <select data-ground><option value="map">Carte pré-rendue</option><option value="render">Rendu 3D (sol procédural)</option></select></label>
       <label title="Rues, îlots et parcelles dessinés sur le sol en vue rapprochée"><input type="checkbox" data-plan checked>Plan</label>
       <label title="Textures des toits, murs, rues et places (bâtiments et constructions seulement)"><input type="checkbox" data-textured>Textures</label>
@@ -160,6 +164,7 @@ export function mountCity3d(options: City3dOptions): City3d {
   const canvas = root.querySelector('canvas')!, marker = root.querySelector<HTMLElement>('.city3d-marker')!, info = root.querySelector<HTMLElement>('.city3d-info')!;
   info.hidden = options.labels === false;
   const $ = <T extends HTMLElement>(selector: string): T => root.querySelector(selector) as T;
+  $('[data-navigation-label]').hidden = !options.navigation;
   const groundNames: Record<typeof CITY_3D_MATERIAL_GROUNDS[number], [string, string, string, string, string]> = {
     render3d: ['Render3D · Multi-échelle', 'Render3D · Multiscale', 'Render3D · 多尺度', 'Render3D · Multiescala', 'Render3D · Multiescala'],
     'render3d-brush': ['Render3D · Pinceaux', 'Render3D · Brushes', 'Render3D · 笔刷', 'Render3D · Pinceles', 'Render3D · Pincéis'],
@@ -174,11 +179,15 @@ export function mountCity3d(options: City3dOptions): City3d {
     const label = document.createElement('label'); label.innerHTML = 'Raffinement <select data-refinement><option value="source">Source</option><option value="noise">Bruit multi-échelle</option></select>';
     $('.city3d-bar').append(label);
   }
+  const orbitHelp = (): string => urbanText(['Vue 3D de la ville. Glisser : déplacer, clic droit ou Maj + glisser : orbiter, molette : zoom, clic : sélectionner.', '3D city view. Drag to pan, right-click or Shift-drag to orbit, wheel to zoom, click to select.', '城市三维视图。拖动平移，右键或 Shift 拖动环绕，滚轮缩放，点击选择。', 'Vista 3D de la ciudad. Arrastra para desplazar, clic derecho o Mayús y arrastrar para orbitar, rueda para zoom y clic para seleccionar.', 'Vista 3D da cidade. Arraste para mover, clique direito ou Shift e arraste para orbitar, roda para zoom e clique para selecionar.']);
   const localizeControls = (): void => {
-    canvas.setAttribute('aria-label', urbanText(['Vue 3D de la ville. Glisser : déplacer, clic droit ou Maj + glisser : orbiter, molette : zoom, clic : sélectionner.', '3D city view. Drag to pan, right-click or Shift-drag to orbit, wheel to zoom, click to select.', '城市三维视图。拖动平移，右键或 Shift 拖动环绕，滚轮缩放，点击选择。', 'Vista 3D de la ciudad. Arrastra para desplazar, clic derecho o Mayús y arrastrar para orbitar, rueda para zoom y clic para seleccionar.', 'Vista 3D da cidade. Arraste para mover, clique direito ou Shift e arraste para orbitar, roda para zoom e clique para selecionar.']));
+    canvas.setAttribute('aria-label', orbitHelp());
     $('.city3d-bar').setAttribute('aria-label', urbanText(['Vue 3D','3D view','三维视图','Vista 3D','Vista 3D']));
     const label = (selector: string, words: [string, string, string, string, string], title?: [string, string, string, string, string]) => { const parent = $(selector).closest('label'); if (!parent) return; const node = Array.from(parent.childNodes).find(n => n.nodeType === Node.TEXT_NODE); if (node) node.textContent = urbanText(words); if (title) parent.title = urbanText(title); };
     label('[data-ground]', ['Sol','Ground','地面','Suelo','Solo'], ['Fond drapé sur le relief','Background draped over terrain','覆盖在地形上的背景','Fondo ajustado al relieve','Fundo sobre o relevo']);
+    label('[data-navigation]', ['Navigation', 'Navigation', '导航', 'Navegación', 'Navegação']);
+    $<HTMLOptionElement>('[data-navigation] option[value="orbit"]').textContent = urbanText(['Orbite', 'Orbit', '环绕', 'Órbita', 'Órbita']);
+    $<HTMLOptionElement>('[data-navigation] option[value="walk"]').textContent = urbanText(['Marche', 'Walk', '行走', 'Caminar', 'Caminhar']);
     label('[data-plan]', ['Plan','Plan','平面','Plano','Planta'], ['Rues, îlots et parcelles dessinés sur le sol en vue rapprochée','Streets, blocks and parcels drawn on the ground in close view','近景中绘制在地面的街道、街区与地块','Calles, manzanas y parcelas dibujadas en el suelo de cerca','Ruas, quadras e parcelas desenhadas no solo de perto']);
     label('[data-textured]', ['Textures','Textures','纹理','Texturas','Texturas'], ['Textures des toits, murs, rues et places (bâtiments et constructions seulement)','Roof, wall, street and square textures (buildings and structures only)','屋顶、墙壁、街道和广场纹理（仅建筑与构筑物）','Texturas de tejados, muros, calles y plazas (solo edificios y construcciones)','Texturas de telhados, paredes, ruas e praças (somente edifícios e construções)']);
     label('[data-colors]', ['Couleurs','Colours','颜色','Colores','Cores']); label('[data-relief]', ['Relief','Terrain','地形','Relieve','Relevo'], ['Exagération du relief','Terrain exaggeration','地形夸张','Exageración del relieve','Exagero do relevo']);
@@ -245,7 +254,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     try { terrain = createTerrain3d(canvas, () => {
       updateInfo(); options.onCamera?.(terrain!.getCamera());
       if (options.details && !detailFrame) detailFrame = requestAnimationFrame(() => { detailFrame = 0; driveDetails(); });
-    }, () => placeMarker(), { fastMapShader: options.fastTerrain });
+    }, () => placeMarker(), { fastMapShader: options.fastTerrain, navigation: options.navigation });
       if (options.softwareMaterialFallback) {
         const gl = canvas.getContext('webgl2'), debug = gl?.getExtension('WEBGL_debug_renderer_info');
         const renderer = gl && String(gl.getParameter(debug ? debug.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
@@ -511,11 +520,16 @@ export function mountCity3d(options: City3dOptions): City3d {
     if (!active || error) return;
     const t = terrain, c = t?.getCamera(), k = display?.kinds, id = options.getSelected?.(), b = id ? display?.buildings.find(x => x.id === id) : undefined;
     const height = b ? building3dHeight(b) : 0;
+    const walking = c?.navigation === 'walk';
+    $<HTMLSelectElement>('[data-navigation]').value = walking ? 'walk' : 'orbit';
+    root.dataset.navigationMode = walking ? 'walk' : 'orbit';
+    const walkHelp = urbanText(['Marche · ZQSD / WASD / flèches : marcher · glisser : regarder · Maj : accélérer · Échap : orbite', 'Walk · WASD / ZQSD / arrows: move · drag: look · Shift: faster · Esc: orbit', '行走 · WASD / ZQSD / 方向键：移动 · 拖动：环视 · Shift：加速 · Esc：环绕', 'Caminar · WASD / ZQSD / flechas: moverse · arrastrar: mirar · Mayús: acelerar · Esc: órbita', 'Caminhar · WASD / ZQSD / setas: mover · arrastar: olhar · Shift: acelerar · Esc: órbita']);
+    canvas.setAttribute('aria-label', walking ? walkHelp : orbitHelp());
     info.innerHTML = [
       softwareMaterial && ground !== 'map' ? urbanText(['Texture de terrain · WebGL logiciel, drapée sur le relief 3D.', 'Raster terrain texture · software WebGL, draped over the 3D terrain.', '地形纹理 · 软件 WebGL，覆盖在三维地形上。', 'Textura del terreno · WebGL por software, sobre el relieve 3D.', 'Textura do terreno · WebGL por software, sobre o relevo 3D.']) : '',
       display && display.buildings.length > bridgeStats.count + wallStats.pieces + quayCount ? `<b>${(display.buildings.length - bridgeStats.count - wallStats.pieces - quayCount).toLocaleString()}</b> ${urbanText(['bâtiments','buildings','栋建筑','edificios','edifícios'])}${bridgeStats.count ? ` · ${urbanText(['ponts','bridges','桥梁','puentes','pontes'])} ${bridgeStats.count}` : ''}${wallStats.count ? ` · ${urbanText(['enceintes','enclosures','围墙','recintos','muralhas'])} ${wallStats.count}` : ''} · ${urbanText(['silhouettes','silhouettes','轮廓','siluetas','silhuetas'])} ${k!.silhouette} · ${urbanText(['plans','plans','平面','planos','plantas'])} ${k!.compact} · ${urbanText(['détaillés','detailed','详细','detallados','detalhados'])} ${k!.detailed}${converting.size ? ` · ${urbanText(['réalisation','realizing','生成中','realizando','realizando'])} ${converting.size}…` : ''}` : urbanText(['Aucun bâtiment : tracez les silhouettes ou implantez les bâtiments.', 'No buildings: draw silhouettes or place buildings.', '没有建筑：请绘制轮廓或放置建筑。', 'Sin edificios: dibuja siluetas o coloca edificios.', 'Sem edifícios: desenhe silhuetas ou posicione edifícios.']),
       b ? `${urbanText(['Sélection','Selection','选择','Selección','Seleção'])} : ${b.id} · ${b.recipe_id} · ${height.toFixed(1)} m${isBuildingProjection(b) ? ` · ${urbanText(['volume cartographique','map volume','地图体量','volumen cartográfico','volume cartográfico'])}` : ''}` : '',
-      c ? `${urbanText(['Distance','Distance','距离','Distancia','Distância'])} ${(c.distance).toFixed(0)} m · ${urbanText(['inclinaison','tilt','倾角','inclinación','inclinação'])} ${Math.round(c.pitch * 180 / Math.PI)}° · ${urbanText(['glisser : déplacer · clic droit / Maj : orbiter','drag: pan · right-click / Shift: orbit','拖动：平移 · 右键 / Shift：环绕','arrastrar: desplazar · clic derecho / Mayús: orbitar','arrastar: mover · clique direito / Shift: orbitar'])}` : '',
+      walking ? walkHelp : c ? `${urbanText(['Distance','Distance','距离','Distancia','Distância'])} ${(c.distance).toFixed(1)} m · ${urbanText(['inclinaison','tilt','倾角','inclinación','inclinação'])} ${Math.round(c.pitch * 180 / Math.PI)}° · ${urbanText(['glisser : déplacer · clic droit / Maj : orbiter','drag: pan · right-click / Shift: orbit','拖动：平移 · 右键 / Shift：环绕','arrastrar: desplazar · clic derecho / Mayús: orbitar','arrastar: mover · clique direito / Shift: orbitar'])}` : '',
       info.dataset.detailError ? `${urbanText(['Réalisation','Realization','生成','Realización','Realização'])} : ${info.dataset.detailError}` : '',
       sceneOf && 'projection' in sceneOf && sceneOf.projection === 'native-parent-window-3d-1'
         ? `Fenêtre native : ${sceneOf.parents} parents · ${sceneOf.buildings.length} membres · ${sceneOf.complete ? 'complète' : `partielle (${sceneOf.reason})`} · volumes cartographiques · capacité inconnue` : '',
@@ -524,6 +538,7 @@ export function mountCity3d(options: City3dOptions): City3d {
   let down: [number, number] | undefined;
   canvas.addEventListener('pointerdown', event => { down = event.button === 0 ? [event.clientX, event.clientY] : undefined; });
   canvas.addEventListener('pointerup', event => {
+    if (terrain?.getCamera().navigation === 'walk') { down = undefined; return; }
     if (!down || !terrain || Math.hypot(event.clientX - down[0], event.clientY - down[1]) > 4) { down = undefined; return; }
     down = undefined;
     const rect = canvas.getBoundingClientRect(), id = terrain.pickBuilding(event.clientX - rect.left, event.clientY - rect.top);
@@ -534,6 +549,10 @@ export function mountCity3d(options: City3dOptions): City3d {
   });
 
   // ------------------------------------------------------------ controls
+  $<HTMLSelectElement>('[data-navigation]').onchange = event => {
+    terrain?.setNavigation((event.target as HTMLSelectElement).value as 'orbit' | 'walk');
+    canvas.focus({ preventScroll: true });
+  };
   function changedView(): void {
     options.onViewSettingsChange?.({ ground, plan: planOverlay, colors, exaggeration: terrain?.getCamera().exaggeration ?? Number($<HTMLInputElement>('[data-relief]').value), refinement });
   }
@@ -630,10 +649,10 @@ export function mountCity3d(options: City3dOptions): City3d {
     focus(point: Point, radius = 150): void {
       const t = terrain; if (!t) return;
       const span = Math.max(120, 2.4 * radius), distance = span / (2 * Math.tan(TERRAIN_3D_FOV / 2));
-      t.setCamera({ ...t.getCamera(), x: point.x, y: point.y, distance, pitch: 0.82 }); updateInfo();
+      t.setCamera({ ...t.getCamera(), navigation: 'orbit', x: point.x, y: point.y, distance, pitch: 0.82 }); updateInfo();
     },
     getCamera: () => terrain?.getCamera(),
-    setCamera(camera: Terrain3dCamera): void { terrain?.setCamera(camera); focused = true; },
+    setCamera(camera: Terrain3dCamera): void { terrain?.setCamera(camera); focused = true; updateInfo(); },
     capture: () => terrain ? terrain.capture() : Promise.reject(new Error('Vue 3D inactive.')),
     captureIllustration: () => terrain ? terrain.captureIllustration() : Promise.reject(new Error('Vue 3D inactive.')),
     stats: () => ({ buildings: (display?.buildings.length ?? 0) - bridgeStats.count - wallStats.pieces - quayCount, ...(display?.kinds ?? { silhouette: 0, compact: 0, detailed: 0 }), displayMs, timings: { ...timings }, realizing: converting.size, realizeError: info.dataset.detailError || undefined, bridges: bridgeStats, walls: wallStats, lod: terrain?.getLodInfo(), parentWindow: sceneOf && 'projection' in sceneOf && sceneOf.projection === 'native-parent-window-3d-1' ? { complete: sceneOf.complete, reason: sceneOf.reason, parents: sceneOf.parents, members: sceneOf.buildings.length } : undefined }),

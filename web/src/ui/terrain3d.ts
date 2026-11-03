@@ -20,10 +20,13 @@ import type { BuildingVector, Building3dVisual, Building3dScene } from '../rende
 import type { BuildingFrame } from './urbanBuilding3d';
 import { withBuildingOccupation } from './forestOccupation';
 import { UrbanBuildingGround } from './urbanBuildingGround';
+import { groundNavigationScale, walkDisplacement, WALK_EYE_HEIGHT } from './terrain3dNavigation';
 
 /** Target and orbit distance in world metres; yaw/pitch in radians. */
 export interface Terrain3dCamera {
   x: number; y: number; distance: number; yaw: number; pitch: number; exaggeration: number;
+  /** In walk mode x/y locate the walker; pitch is the downward viewing angle. */
+  navigation?: 'orbit' | 'walk';
   /** Capture-only measurements from the actual eye, including terrain clearance. */
   heightAboveTargetMetres?: number; altitudeMetres?: number; viewAngleDegrees?: number; azimuthDegrees?: number; verticalFovDegrees?: number;
 }
@@ -44,6 +47,8 @@ export interface Terrain3dGroundSettings {
   contours?: { step: number; color: string; opacity: number; flat: boolean };
 }
 export interface Terrain3dOptions {
+  /** Ground-level walking and altitude-sensitive orbit controls (V2). */
+  navigation?: boolean;
   /** Compile the small draped-map shader first; procedural ground is compiled
    * only when setGroundMaterial is actually requested. Existing benches opt in. */
   fastMapShader?: boolean;
@@ -514,6 +519,10 @@ export class Terrain3d {
   private events = new AbortController();
   private pointers = new Map<number, { x: number; y: number; orbit: boolean }>();
   private gesture?: { x: number; y: number; distance: number };
+  private walkKeys = new Set<string>();
+  private walkFrame = 0;
+  private walkTime = 0;
+  private orbitBeforeWalk?: Pick<Terrain3dCamera, 'distance' | 'pitch'>;
   private lod = { tiles: 0, ready: 0, pending: 0, level: 0, metresPerTexel: 0, metresPerVertex: 0, maxScale: TERRAIN_3D_MAX_SCALE, scale: 0 };
   /** The owner's element: input, focus and status attributes (the canvas itself unless options.element). */
   protected element!: HTMLElement;
@@ -860,6 +869,15 @@ export class Terrain3d {
   }
   private frameGeometry(): FrameGeometry {
     const c = this.camera, targetHeight = this.heightAt(c.x, c.y)! * c.exaggeration;
+    if (c.navigation === 'walk') {
+      const eye: Vec3 = [0, WALK_EYE_HEIGHT, 0];
+      const forward: Vec3 = [-Math.sin(c.yaw) * Math.cos(c.pitch), -Math.sin(c.pitch), -Math.cos(c.yaw) * Math.cos(c.pitch)];
+      const right = normalize(cross(forward, [0, 1, 0])), up = cross(right, forward);
+      const view = lookAt(eye, [forward[0], eye[1] + forward[1], forward[2]]);
+      const far = Math.max(c.distance * 4, this.layer!.width * 2 + this.heightRange * c.exaggeration * 2);
+      return { eye, targetHeight, matrix: multiply(perspective(this.width / this.height, .02, far), view),
+        focal: this.height / (2 * Math.tan(FOV / 2)), right, up, forward };
+    }
     const eye: Vec3 = [Math.sin(c.yaw) * Math.cos(c.pitch) * c.distance, Math.sin(c.pitch) * c.distance, Math.cos(c.yaw) * Math.cos(c.pitch) * c.distance];
     const ex = c.x + eye[0], ey = c.y + eye[2];
     const clearance = Math.max(.15, c.distance * .0015);
@@ -1333,8 +1351,20 @@ export class Terrain3d {
     if (this.contextLost()) return;
     this.deleteTexture(this.material); this.material = this.uploadTexture(source); this.request();
   }
-  setCamera(camera: Terrain3dCamera): void { this.camera = { ...camera }; this.limitCamera(); this.request(); }
+  setCamera(camera: Terrain3dCamera): void { this.stopWalking(); this.camera = { ...camera }; this.limitCamera(); this.request(); }
   getCamera(): Terrain3dCamera { return { ...this.camera }; }
+  setNavigation(navigation: 'orbit' | 'walk'): void {
+    if (!this.options.navigation || (this.camera.navigation ?? 'orbit') === navigation) return;
+    this.stopWalking(); this.pointers.clear(); this.gesture = undefined; this.element.classList.remove('drag');
+    if (navigation === 'walk') {
+      this.orbitBeforeWalk = { distance: this.camera.distance, pitch: this.camera.pitch };
+      // Enter at the point being inspected, on its physical surface.
+      this.camera = { ...this.camera, navigation, distance: 20, pitch: .08 };
+    } else {
+      this.camera = { ...this.camera, navigation, distance: this.orbitBeforeWalk?.distance ?? 120, pitch: this.orbitBeforeWalk?.pitch ?? .8 };
+    }
+    this.changed();
+  }
   /** Draw and read in the same task: no permanent drawing-buffer retention. */
   capture(): Promise<Blob> {
     if (!this.active || !this.layer || this.contextLost()) return Promise.reject(new Error('Ouvrez la vue 3D avant de la capturer.'));
@@ -1346,7 +1376,7 @@ export class Terrain3d {
     this.draw();
     const camera = this.getCamera(), geometry = this.frameGeometry();
     camera.heightAboveTargetMetres = geometry.eye[1];
-    camera.viewAngleDegrees = Math.atan2(geometry.eye[1], Math.hypot(geometry.eye[0], geometry.eye[2])) * 180 / Math.PI;
+    camera.viewAngleDegrees = Math.atan2(-geometry.forward[1], Math.hypot(geometry.forward[0], geometry.forward[2])) * 180 / Math.PI;
     // Map north is decreasing world y; yaw=0 puts the eye south of the target.
     camera.azimuthDegrees = ((-camera.yaw * 180 / Math.PI) % 360 + 360) % 360;
     camera.verticalFovDegrees = FOV * 180 / Math.PI;
@@ -1365,21 +1395,23 @@ export class Terrain3d {
   setActive(active: boolean): void {
     this.active = active;
     if (active) this.request();
-    else { cancelAnimationFrame(this.frame); this.frame = 0; this.pointers.clear(); this.gesture = undefined; this.element.classList.remove('drag'); }
+    else { this.stopWalking(); cancelAnimationFrame(this.frame); this.frame = 0; this.pointers.clear(); this.gesture = undefined; this.element.classList.remove('drag'); }
   }
   resize(width: number, height: number): void {
     this.width = Math.max(1, width); this.height = Math.max(1, height); this.limitCamera(); this.request();
   }
   fit(x?: number, y?: number, visibleWidth?: number): void {
     if (!this.layer) return;
+    this.stopWalking();
     const layer = this.layer, span = visibleWidth ?? layer.width;
-    this.camera = { ...this.camera, x: x ?? layer.x + layer.width / 2, y: y ?? layer.y + layer.width / 2,
+    this.camera = { ...this.camera, navigation: 'orbit', x: x ?? layer.x + layer.width / 2, y: y ?? layer.y + layer.width / 2,
       distance: Math.max(span, this.heightRange * this.camera.exaggeration) / (2 * Math.tan(FOV / 2)) * Math.max(1, this.height / this.width) * 1.18, yaw: 0, pitch: .88 };
     this.changed();
   }
   zoom(factor: number): void {
     if (!Number.isFinite(factor) || factor <= 0) return;
-    this.camera.distance /= factor; this.changed();
+    if (this.camera.navigation === 'walk') return;
+    this.camera.distance /= factor ** this.navigationScale(); this.changed();
   }
   north(): void { this.camera.yaw = 0; this.changed(); }
   private dpr(): number { return Math.min(2, window.devicePixelRatio || 1); }
@@ -1388,9 +1420,10 @@ export class Terrain3d {
     const width = this.layer?.width ?? 1000, c = this.camera;
     c.x = clamp(Number.isFinite(c.x) ? c.x : width / 2, this.layer?.x ?? 0, (this.layer?.x ?? 0) + width);
     c.y = clamp(Number.isFinite(c.y) ? c.y : width / 2, this.layer?.y ?? 0, (this.layer?.y ?? 0) + width);
-    const minimumDistance = this.height / (2 * Math.tan(FOV / 2) * this.maxScale());
+    const minimumDistance = this.options.navigation ? 2.5 : this.height / (2 * Math.tan(FOV / 2) * this.maxScale());
     c.distance = clamp(Number.isFinite(c.distance) ? c.distance : width, minimumDistance, Math.max(width * 5, minimumDistance));
-    c.pitch = clamp(Number.isFinite(c.pitch) ? c.pitch : .8, .14, 1.48);
+    if (!this.options.navigation) c.navigation = 'orbit';
+    c.pitch = clamp(Number.isFinite(c.pitch) ? c.pitch : .8, c.navigation === 'walk' ? -1.45 : .14, c.navigation === 'walk' ? 1.45 : 1.48);
     c.yaw = Number.isFinite(c.yaw) ? ((c.yaw + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI : 0;
     c.exaggeration = clamp(Number.isFinite(c.exaggeration) ? c.exaggeration : 1, 1, 5);
   }
@@ -1491,11 +1524,55 @@ export class Terrain3d {
     return { matrix: frame.matrix, cameraX: this.camera.x, cameraY: this.camera.y, targetHeight: frame.targetHeight,
       exaggeration: this.camera.exaggeration, focal: frame.focal, distance: this.camera.distance };
   }
+  private navigationDistance(): number {
+    const c = this.camera;
+    if (!this.options.navigation || !this.layer) return c.distance;
+    const frame = this.frameGeometry();
+    const ground = this.heightAt(c.x + frame.eye[0], c.y + frame.eye[2])! * c.exaggeration;
+    const clearance = frame.targetHeight + frame.eye[1] - ground;
+    return Math.min(c.distance, Math.max(2, clearance * 2));
+  }
+  private navigationScale(): number {
+    if (!this.options.navigation) return 1;
+    const distance = this.navigationDistance();
+    return groundNavigationScale(this.camera.distance, distance / 2) * distance / this.camera.distance;
+  }
+  private orbit(dx: number, dy: number): void {
+    const distance = this.navigationDistance();
+    // A distant pivot must not sweep the eye across metres of ground per pixel.
+    const scale = this.options.navigation
+      ? Math.sqrt(groundNavigationScale(this.camera.distance, distance / 2)) * distance / this.camera.distance : 1;
+    this.camera.yaw -= dx * .006 * scale; this.camera.pitch += dy * .005 * scale;
+  }
   private pan(dx: number, dy: number): void {
-    const c = this.camera, metres = 2 * c.distance * Math.tan(FOV / 2) / this.height;
+    const c = this.camera, metres = 2 * this.navigationDistance() * Math.tan(FOV / 2) / this.height;
     const vertical = dy * metres / Math.max(.25, Math.sin(c.pitch)), horizontal = dx * metres;
     c.x -= horizontal * Math.cos(c.yaw) + vertical * Math.sin(c.yaw);
     c.y += horizontal * Math.sin(c.yaw) - vertical * Math.cos(c.yaw);
+  }
+  private walk(forward: number, right: number, seconds: number, fast = false): void {
+    const [dx, dy] = walkDisplacement(this.camera.yaw, forward, right, seconds, fast);
+    this.camera.x += dx; this.camera.y += dy;
+  }
+  private stopWalking(): void {
+    this.walkKeys.clear(); cancelAnimationFrame(this.walkFrame); this.walkFrame = 0; this.walkTime = 0;
+  }
+  private startWalking(): void {
+    if (this.walkFrame) return;
+    this.walkTime = performance.now();
+    const step = (now: number): void => {
+      this.walkFrame = 0;
+      if (!this.active || this.camera.navigation !== 'walk' || !this.walkKeys.size) return;
+      const held = (...keys: string[]): number => keys.some(key => this.walkKeys.has(key)) ? 1 : 0;
+      const forward = held('KeyW', 'KeyZ', 'ArrowUp') - held('KeyS', 'ArrowDown');
+      const right = held('KeyD', 'ArrowRight') - held('KeyA', 'KeyQ', 'ArrowLeft');
+      // Bound catch-up after a stalled or backgrounded frame.
+      this.walk(forward, right, Math.min(.05, Math.max(0, (now - this.walkTime) / 1000)), !!held('ShiftLeft', 'ShiftRight'));
+      this.walkTime = now;
+      if (forward || right) this.changed();
+      this.walkFrame = requestAnimationFrame(step);
+    };
+    this.walkFrame = requestAnimationFrame(step);
   }
   private touchGesture(): { x: number; y: number; distance: number } | undefined {
     if (this.pointers.size !== 2) return undefined;
@@ -1518,11 +1595,14 @@ export class Terrain3d {
       const dx = event.clientX - previous.x, dy = event.clientY - previous.y;
       this.pointers.set(event.pointerId, { ...previous, x: event.clientX, y: event.clientY });
       const gesture = this.touchGesture();
-      if (gesture && this.gesture) {
+      if (this.camera.navigation === 'walk') {
+        if (gesture && this.gesture) this.walk((gesture.y - this.gesture.y) * .04, (this.gesture.x - gesture.x) * .04, .12);
+        else if (this.pointers.size === 1) { this.camera.yaw -= dx * .003; this.camera.pitch += dy * .003; }
+      } else if (gesture && this.gesture) {
         this.pan(gesture.x - this.gesture.x, gesture.y - this.gesture.y);
-        if (gesture.distance > 0 && this.gesture.distance > 0) this.camera.distance *= this.gesture.distance / gesture.distance;
+        if (gesture.distance > 0 && this.gesture.distance > 0) this.camera.distance *= (this.gesture.distance / gesture.distance) ** this.navigationScale();
       } else if (this.pointers.size === 1) {
-        if (previous.orbit || event.shiftKey) { this.camera.yaw -= dx * .006; this.camera.pitch += dy * .005; }
+        if (previous.orbit || event.shiftKey) this.orbit(dx, dy);
         else this.pan(dx, dy);
       }
       this.gesture = gesture; this.changed();
@@ -1536,25 +1616,37 @@ export class Terrain3d {
       if (!this.active) return;
       event.preventDefault(); event.stopPropagation();
       const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? this.height : 1);
-      this.zoom(Math.exp(-clamp(delta, -1000, 1000) * .0015));
+      if (this.camera.navigation === 'walk') { this.walk(-clamp(delta, -200, 200) / 100, 0, .25, event.shiftKey); this.changed(); }
+      else this.zoom(Math.exp(-clamp(delta, -1000, 1000) * .0015));
     }, { passive: false, signal });
     canvas.addEventListener('dblclick', event => {
       if (!this.active) return; event.preventDefault(); event.stopPropagation(); this.zoom(event.shiftKey ? .5 : 2);
     }, { signal });
     canvas.addEventListener('keydown', event => {
+      if (this.active && this.camera.navigation === 'walk') {
+        if (event.code === 'Escape') { event.preventDefault(); event.stopPropagation(); this.setNavigation('orbit'); return; }
+        if (!['KeyW', 'KeyZ', 'KeyS', 'KeyA', 'KeyQ', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ShiftLeft', 'ShiftRight'].includes(event.code)) return;
+        event.preventDefault(); event.stopPropagation(); this.walkKeys.add(event.code); this.startWalking(); return;
+      }
       if (!this.active || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
       event.preventDefault(); event.stopPropagation();
       if (event.shiftKey) {
-        if (event.key === 'ArrowLeft') this.camera.yaw -= .08;
-        else if (event.key === 'ArrowRight') this.camera.yaw += .08;
-        else if (event.key === 'ArrowUp') this.camera.pitch += .06;
-        else this.camera.pitch -= .06;
+        this.orbit(event.key === 'ArrowLeft' ? 13 : event.key === 'ArrowRight' ? -13 : 0,
+          event.key === 'ArrowUp' ? 12 : event.key === 'ArrowDown' ? -12 : 0);
       } else {
         this.pan(event.key === 'ArrowLeft' ? 40 : event.key === 'ArrowRight' ? -40 : 0,
           event.key === 'ArrowUp' ? 40 : event.key === 'ArrowDown' ? -40 : 0);
       }
       this.changed();
     }, { signal });
+    canvas.addEventListener('keyup', event => {
+      if (!this.walkKeys.delete(event.code)) return;
+      event.preventDefault(); event.stopPropagation();
+      if (![...this.walkKeys].some(key => !key.startsWith('Shift'))) this.stopWalking();
+    }, { signal });
+    canvas.addEventListener('blur', () => this.stopWalking(), { signal });
+    window.addEventListener('blur', () => this.stopWalking(), { signal });
+    document.addEventListener('visibilitychange', () => { if (document.hidden) this.stopWalking(); }, { signal });
   }
 
   /** Replays the retained CPU-side inputs on another view (backend switch, device recovery): relief, water,
@@ -1574,6 +1666,7 @@ export class Terrain3d {
     if (this.textureSource) target.setTexture(this.textureSource);
     target.resize(this.width, this.height);
     target.setCamera(this.camera);
+    target.orbitBeforeWalk = this.orbitBeforeWalk && { ...this.orbitBeforeWalk };
     target.setActive(this.active);
   }
   /** Whether the displayed frame is complete: every drawn tile has its own material and the ground
@@ -1586,7 +1679,7 @@ export class Terrain3d {
   get isActive(): boolean { return this.active; }
 
   dispose(): void {
-    this.disposed = true; this.active = false; cancelAnimationFrame(this.frame); this.events.abort(); this.clearPatches();
+    this.disposed = true; this.active = false; this.stopWalking(); cancelAnimationFrame(this.frame); this.events.abort(); this.clearPatches();
     this.buildings.dispose(); this.buildingScene = undefined;
     this.buildingGround = new UrbanBuildingGround(); this.mergedOccupation = this.mergedOccupationSource = undefined; this.mergedOccupationScene = undefined;
     this.disposeBackend();

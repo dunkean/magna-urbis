@@ -196,7 +196,7 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
     subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener); },
   };
   update();
-  const view = mountCity3d({ host: options.host, fastTerrain: true, materialGrounds: true, softwareMaterialFallback: !!options.getBackground, getDecor: () => decor, getLayouts: () => layouts, getPartitions: () => partitions, getRegionalStreets: () => options.getSettings().appearance?.roads === false ? [] : roads,
+  const view = mountCity3d({ host: options.host, navigation: true, fastTerrain: true, materialGrounds: true, softwareMaterialFallback: !!options.getBackground, getDecor: () => decor, getLayouts: () => layouts, getPartitions: () => partitions, getRegionalStreets: () => options.getSettings().appearance?.roads === false ? [] : roads,
     getBuildingsVisible: () => options.getSettings().appearance?.buildings !== false, getScene: () => scene, getSelected: options.getSelected, onSelect: options.onSelect, getBackground: options.getBackground,
     getGroundSettings: ground => { const world = options.getWorld(); return world && v2Terrain3dGround(world, options.getSettings(), ground); },
     getWaterDisplay: () => { const world = options.getWorld(); return world && v2WaterDisplay(world, options.getSettings()); },
