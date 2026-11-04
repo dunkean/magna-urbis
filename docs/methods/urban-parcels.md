@@ -62,6 +62,16 @@ useful-area intention determine suitability. Surface shortfalls remain deficits;
 additional temples are not invented to fill them. Rear land remains within the
 retained property, and this programme step never changes streets.
 
+A built facility (warehouse, collective, workshop) reserves only land it can use,
+since what it leaves stays bare among the houses. A block whose inscribed square
+is under 30% of its area (a crescent, a strip) holds houses along its street, not
+a compound. An ordinary facility also refuses a block over twice or under half
+its land, and falls to a plot of the tissue; only a landmark holds a larger
+precinct. These are artistic prototype bounds. A fortress never keeps its massing
+cut by the lot: it stands whole in the squarest precinct of the lot (at most half
+as long again), keep and full circuit. Open uses (market, common, cemetery) are
+unaffected: they are empty on purpose and declared by the programme.
+
 Open commons use this same pre-subdivision reservation mechanism after markets
 and constrained built facilities. Several remaining, actually public/collective
 street-accessible blocks may supply the existing programme's 0.5 m²/person

@@ -32,6 +32,25 @@ fn edges(s: &Shape) -> impl Iterator<Item = (Point, Point)> + '_ {
 fn edge_distance(s: &Shape, p: Point) -> f64 {
     edges(s).map(|(a, b)| g::distance(p, a, b).0).fold(f64::MAX, f64::min)
 }
+/// Radius (m) of about the largest circle inside `s`, on a grid.
+pub(super) fn inscribed_radius(s: &Shape) -> f64 {
+    let (x0, y0, x1, y1) = g::bbox(s);
+    let grid = (g::area(s).sqrt() / 40.0).clamp(2.0, 8.0);
+    let mut best = 0.0_f64;
+    let mut y = y0 + grid * 0.5;
+    while y < y1 {
+        let mut x = x0 + grid * 0.5;
+        while x < x1 {
+            let p = Point { x, y };
+            if g::contains(s, p) {
+                best = best.max(edge_distance(s, p));
+            }
+            x += grid;
+        }
+        y += grid;
+    }
+    best
+}
 /// Distance along `d` from `p` to the first boundary crossing, within `reach`.
 fn ray(s: &Shape, p: Point, d: Point, reach: f64) -> Option<f64> {
     let far = Point { x: p.x + d.x * reach, y: p.y + d.y * reach };

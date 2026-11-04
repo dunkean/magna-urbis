@@ -662,6 +662,7 @@ fn prepare_inner(
         .iter()
         .map(|_| std::array::from_fn(|_| OnceLock::new()))
         .collect();
+    let radii: Vec<OnceLock<f64>> = layout.blocks.iter().map(|_| OnceLock::new()).collect();
     let centroids: Vec<Point> = super::par::map(&layout.blocks, |_, b| centroid(&b.shape));
     let areas: Vec<f64> = super::par::map(&layout.blocks, |_, b| area(&b.shape));
     for di in reservation_order {
@@ -843,6 +844,18 @@ fn prepare_inner(
             // retain their real geometry independently of this heuristic.
             if !isolated && !existing_open && a > target * 4.0 {
                 return None;
+            }
+            // A built facility stands whole on land it uses; the rest of a
+            // reserved block stays bare among the houses. A crescent or a strip
+            // (inscribed square under 30 % of the block) holds houses along its
+            // street, not a compound. An ordinary facility takes neither twice
+            // its land nor under half of it (a shrunken building): it then falls
+            // to a plot of the tissue. Only a landmark holds a larger precinct.
+            if !isolated && matches!(d.function.as_str(), "warehouse" | "collective" | "workshop") {
+                let radius = *radii[bi].get_or_init(|| super::deep_blocks::inscribed_radius(&b.shape));
+                if 4.0 * radius * radius < 0.3 * a || (!d.landmark && (a > 2.0 * target || a < 0.5 * target)) {
+                    return None;
+                }
             }
             // A small common or cemetery takes a parcel, not a whole ward. A
             // remnant block under half the tissue's module is no ward: it may

@@ -23,3 +23,10 @@ Several Claude/Codex sessions and their agents work on this tree at the same tim
 - **Crate layout.** `magna-urbis-terrain` (terrain, erosion, hydrology, noise; leaf crate, opt 3) <- `magna-urbis-core` (facade that re-exports terrain, plus resources, settlements, urban; opt 1). `urban` is one strongly connected block of ~67k lines (parcels, culture, composition, footprint, kinds, network, fortification, programme, roles, quarters, macroplan, building_sites, edits...), so it is not split further: see `web/out/fix-v7/round11/split/plan.md`. Test a terrain module with `-p magna-urbis-terrain --lib <module>::`, an urban/settlements/resources module with `-p magna-urbis-core --lib urban::<module>::`.
 - **Dev profile = fast rebuilds.** `dev` is opt-level 1, `debug = line-tables-only`, incremental, 256 codegen units; third-party deps and the terrain crate stay at opt 3 (compiled once); `houses` stays at opt 2 for its slow test suites and never rebuilds on an urban edit. Edit one urban file then `cargo-sync build -p magna-urbis-local` takes ~9 s (binary in `rust/target/debug/`); the same edit rebuilds `cargo test --lib` in ~11 s, about 2 min after a batch of edits across modules. The whole `-p magna-urbis-core --lib` suite then runs in ~6 min. Use the default dev profile for iteration; `release`/`wasm-release` remain for deploy; the `fast` profile (release-like, slower to build) is only for timing-sensitive benches.
 - **Time-box agents.** Give each agent about 45 min. When the time is up, it finishes with what it has, or reverts to a clean state and reports the root cause.
+
+## Fixes: fix, compile, test, done
+A fix is: change the code, compile once, run the test that covers it, report. That is the whole job.
+- No sweeps across cultures or cases, no proving that a test fails without the fix, no test rewrites, no extra analysis, unless the user asks.
+- If it does not pass: one correction, then report the root cause instead of iterating.
+- Report remaining doubts in one line; the user decides on the images.
+- Supervisors do not ask agents for wider checks either, and stop an agent that keeps looping.

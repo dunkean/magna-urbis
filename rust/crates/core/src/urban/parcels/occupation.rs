@@ -1100,6 +1100,10 @@ fn lot_frame(b: &[Point], main: &Frame, fronts: &[Front]) -> Frame {
 /// Largest frame rectangle `[s0, s1, t0, t1]` inside `ring`, over bands between
 /// twelve levels of its depth (`fit` exact for each band).
 fn inscribed(ring: &[Point], f: &Frame) -> Option<[f64; 4]> {
+    inscribed_by(ring, f, |w, d| w * d)
+}
+/// `inscribed` for the best `score` of a rectangle's width and depth.
+fn inscribed_by(ring: &[Point], f: &Frame, score: impl Fn(f64, f64) -> f64) -> Option<[f64; 4]> {
     let (s0, s1, t0, t1) = f.range(ring);
     let levels: Vec<f64> = (0..=11).map(|i| t0 + (t1 - t0) * i as f64 / 11.0).collect();
     let mut best: Option<([f64; 4], f64)> = None;
@@ -1107,7 +1111,7 @@ fn inscribed(ring: &[Point], f: &Frame) -> Option<[f64; 4]> {
         for j in i + 1..levels.len() {
             let (a, b) = (levels[i], levels[j]);
             if let Some((l, r)) = fit_any(ring, f, a, b, 0.5 * (s0 + s1)) {
-                let v = (r - l) * (b - a);
+                let v = score(r - l, b - a);
                 if best.is_none_or(|(_, x)| v > x) {
                     best = Some(([l, r, a, b], v));
                 }
@@ -2074,6 +2078,10 @@ fn preview_form(p: &Parcel, o: &Occupancy, resolved:Option<Kind>) -> (Vec<(Shape
     // or a range obliquely. A programme scaled to its lot (a Friday mosque,
     // a cloister) that the precinct would shrink below three fifths keeps its
     // massing in the lot itself: odd-shaped precincts are common in towns.
+    // A fortress is a closed circuit and never does: cut by the lot it keeps a
+    // few stretches of wall around nothing. Its precinct is the squarest one
+    // (a long strip would hold only a lone keep), at most half as long again.
+    let circuit = o.role.starts_with("defence.");
     let mut probe = rng.clone();
     if let Some(in_lot) = super::landmark::massing(o, &b, main, (s0, s1, ta, t1), &mut probe) {
         let mosque = o.role.starts_with("worship.mosque") || o.role.starts_with("worship.masjid");
@@ -2089,8 +2097,10 @@ fn preview_form(p: &Parcel, o: &Occupancy, resolved:Option<Kind>) -> (Vec<(Shape
             .chain(frames.iter().copied())
             .enumerate()
             .filter_map(|(i, f)| {
-                let r = inscribed(&b, &f)?;
-                let v = (r[1] - r[0]) * (r[3] - r[2]) * if i <= 1 { 1.1 } else { 1.0 };
+                let squarest = |w: f64, d: f64| w.min(d) * w.max(d).min(1.5 * w.min(d));
+                let r = if circuit { inscribed_by(&b, &f, squarest)? } else { inscribed(&b, &f)? };
+                let v = if circuit { squarest(r[1] - r[0], r[3] - r[2]) } else { (r[1] - r[0]) * (r[3] - r[2]) }
+                    * if i <= 1 { 1.1 } else { 1.0 };
                 Some((f, r, v))
             })
             .max_by(|x, y| x.2.total_cmp(&y.2));
@@ -2107,7 +2117,7 @@ fn preview_form(p: &Parcel, o: &Occupancy, resolved:Option<Kind>) -> (Vec<(Shape
         });
         // The precinct holds no such monument: the ordinary occupation.
         let done = match parts {
-            Some(parts) if built(&parts) >= 4.0 && built(&parts) >= 0.6 * built(&in_lot) => {
+            Some(parts) if built(&parts) >= 4.0 && (circuit || built(&parts) >= 0.6 * built(&in_lot)) => {
                 finish(&shape, ruined(o, parts, &mut whole), wing)
             }
             Some(parts) if built(&in_lot) < 4.0 => finish(&shape, ruined(o, parts, &mut whole), wing),

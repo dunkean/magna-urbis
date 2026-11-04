@@ -644,3 +644,46 @@ fn outbuildings_share_thins_village_house_dependencies() {
     assert_eq!(farms(0.0), 0);
     assert!(farms(1.0) > 0);
 }
+
+/// A town is lived in: land out of reach of every building is a use its
+/// programme declares (place, market, common, cemetery), never a bare quarter.
+/// Replays the shape of the 10k medina's east quarter: a crescent along a curved
+/// street, which a reserved kasbah left empty but for stretches of wall.
+#[test]
+#[ignore = "fails: the hand-built crescent gets no houses once unreserved, cause not established"]
+fn no_quarter_of_a_town_stands_empty() {
+    const REACH: f64 = 25.0;
+    let arc = |r: f64, from: f64, to: f64| -> Vec<Point> {
+        (0..=24).map(|i| {
+            let a = (from + (to - from) * f64::from(i) / 24.0).to_radians();
+            Point { x: 390.0 + r * a.cos(), y: 450.0 + r * a.sin() }
+        }).collect()
+    };
+    let block = |shape: Shape, kind: &str| serde_json::json!({"shape":shape,"quarter":0,"kind":kind,"axis":{"x":1.0,"y":0.0}});
+    let crescent = Shape { outer: arc(95.0, 45.0, 135.0).into_iter().chain(arc(130.0, 135.0, 45.0)).collect(), holes: vec![] };
+    let street = |path: Vec<Point>| serde_json::json!({"widths":vec![8.0; path.len()],"path":path,"rank":2,"role":"street"});
+    let mut layout: Layout = serde_json::from_value(serde_json::json!({"key":"lived","culture":"medina","center":{"x":300.0,"y":450.0},"quarters":[],
+        "blocks":[block(g::rectangle(120.0, 385.0, 190.0, 445.0), "place"), block(g::rectangle(200.0, 385.0, 290.0, 445.0), "place"),
+            block(g::rectangle(300.0, 385.0, 370.0, 445.0), "block"), block(crescent, "block")],
+        "streets":[street(vec![Point { x: 100.0, y: 450.0 }, Point { x: 500.0, y: 450.0 }]), street(arc(90.0, 0.0, 180.0))],"warnings":[]})).unwrap();
+    let (h, w, level) = (vec![6.0_f32; 1024], vec![0_u8; 1024], vec![0.0_f32; 1024]);
+    let s = Surface { geometry: None, width: 1000.0, n: 32, height: &h, water: &w };
+    programme::prepare(&mut layout, 10_000, &programme::ProgrammeContext::default(), s).unwrap();
+    let layouts = [layout];
+    let parts = generate_parcels("lived", &layouts, &ParcelConfig::default()).unwrap();
+    let requests = building_sites::requests("lived", &layouts, &parts, s, &level, None).unwrap();
+    let built: Vec<Shape> = requests.iter().filter_map(|r| r["preview"].as_array()).flatten()
+        .map(|p| serde_json::from_value(p.clone()).unwrap()).collect();
+    let lived = |p: Point| built.iter().any(|s: &Shape| g::contains(s, p)
+        || (0..s.outer.len()).any(|i| g::distance(p, s.outer[i], s.outer[(i + 1) % s.outer.len()]).0 <= REACH));
+    let programme = layouts[0].programme.as_ref().unwrap();
+    for (bi, b) in layouts[0].blocks.iter().enumerate() {
+        let role = programme.reservations.iter().find(|r| r.block == bi)
+            .and_then(|r| programme.demands.iter().find(|d| d.id == r.demand_id));
+        if b.kind == "place" || role.is_some_and(|d| matches!(d.function.as_str(), "market" | "common")) { continue; }
+        let (x0, y0, x1, y1) = g::bbox(&b.shape);
+        let bare = (0..((x1 - x0) / 5.0) as usize).flat_map(|i| (0..((y1 - y0) / 5.0) as usize).map(move |j| Point { x: x0 + 5.0 * i as f64, y: y0 + 5.0 * j as f64 }))
+            .filter(|&p| g::contains(&b.shape, p) && !lived(p)).count();
+        assert_eq!(bare, 0, "block {bi} ({:?}): {} m2 out of reach of {} buildings", role.map(|d| &d.role), bare * 25, built.len());
+    }
+}
