@@ -7,6 +7,7 @@ publish.workspace = true
 
 [dependencies]
 magna-urbis-random = { path = "../random" }
+magna-urbis-terrain = { path = "../terrain" }
 serde = { version = "1", features = ["derive"] }
 delaunator = "1"
 geo = { version = "=0.33.1", default-features = false, features = ["earcut"] }
@@ -22,7 +23,7 @@ rayon = { version = "1.12", optional = true }
 [features]
 # Rayon on wasm32 (shared-memory build) for urban and terrain kernels.
 # Native builds always use rayon.
-threads = ["dep:rayon"]
+threads = ["dep:rayon", "magna-urbis-terrain/threads"]
 
 [dev-dependencies]
 serde_json = "1"

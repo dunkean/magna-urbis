@@ -4104,6 +4104,7 @@ dependencies = [
  "delaunator",
  "geo",
  "magna-urbis-random",
+ "magna-urbis-terrain",
  "rayon",
  "serde",
  "serde_json",
@@ -4163,6 +4164,16 @@ dependencies = [
 name = "magna-urbis-random"
 version = "0.1.0"
 dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "magna-urbis-terrain"
+version = "0.1.0"
+dependencies = [
+ "magna-urbis-random",
+ "rayon",
  "serde",
  "serde_json",
 ]

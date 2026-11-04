@@ -21,6 +21,7 @@ pub fn cut_coast_field(seed: &str, width: f64, motif: f64, amplitude: f64, mask:
 
 pub struct TerrainPipeline {
     seed: String,
+    step_seeds: std::collections::BTreeMap<String, String>,
     checkpoints: Vec<Checkpoint>,
     p: Vec<f64>,
     s: Vec<f64>,
@@ -28,6 +29,7 @@ pub struct TerrainPipeline {
     next: u32,
     noise: Noise,
     noise2: Noise,
+    fine_override: bool,
     coarse_noise: Vec<f32>,
     fine_noise: Vec<f32>,
     grid: Grid,
@@ -83,13 +85,14 @@ impl TerrainPipeline {
         let n = parameters[2] as usize;
         let count = n * n;
         Ok(Self {
-            seed: seed.to_owned(), checkpoints: Vec::new(),
+            seed: seed.to_owned(), step_seeds: Default::default(), checkpoints: Vec::new(),
             p: parameters.iter().map(|&v| v as f64).collect(),
             s: surface.iter().map(|&v| v as f64).collect(),
             flags: flags.to_vec(),
             next: 0,
             noise: Noise::new(root.fork("noise")),
             noise2: Noise::new(root.fork("noise2")),
+            fine_override: false,
             coarse_noise:Vec::new(),fine_noise:Vec::new(),
             grid: Grid::new(n),
             h: vec![0.; count],
@@ -119,6 +122,15 @@ impl TerrainPipeline {
         });
         Ok(())
     }
+    /// Random choices can change independently of retained upstream fields.
+    pub fn set_step_seeds(&mut self, json: &str) -> Result<(), String> {
+        let seeds: std::collections::BTreeMap<String, String> = serde_json::from_str(json).map_err(|e| e.to_string())?;
+        if seeds.iter().any(|(key, seed)| !matches!(key.as_str(), "initialize" | "coastCut" | "reconstruct" | "ridged") || seed.len() > 4096) {
+            return Err("Invalid terrain stage seeds".into());
+        }
+        self.step_seeds = seeds;
+        Ok(())
+    }
     pub fn restore(&mut self, slot: usize, parameters: &[f32], surface: &[f32], flags: &[u32]) -> Result<(), String> {
         // Revalidate new controls; the caller identifies the unchanged prefix.
         let configured = Self::new(&self.seed, parameters, surface, flags)?;
@@ -143,7 +155,7 @@ impl TerrainPipeline {
         let (n, origin, cell, field) = if self.next <= 3 {
             (self.grid.n, p[5], p[4], &mut self.h)
         } else { (1024, 0., p[11], &mut self.output) };
-        cut_coast_field(&self.seed,p[0],p[3]*2400.,p[12],mask,mode,n,origin,cell,field)?;
+        cut_coast_field(self.step_seeds.get("coastCut").unwrap_or(&self.seed),p[0],p[3]*2400.,p[12],mask,mode,n,origin,cell,field)?;
         if (4..=5).contains(&self.next) {
             self.raw=self.output.iter().map(|&h|(h as f64/self.scale.max(1e-12)) as f32).collect();
         }
@@ -154,6 +166,11 @@ impl TerrainPipeline {
             return Err(format!("Expected CPU stage {}, got {stage}", self.next));
         }
         let previous = TUNING.with(|v| v.replace(self.tuning));
+        if matches!(stage, 3 | 5) {
+            let seed = self.step_seeds.get(if stage == 3 { "reconstruct" } else { "ridged" }).unwrap_or(&self.seed);
+            self.noise2 = Noise::new(Rng::new(&format!("magna-urbis:{seed}")).fork("terrain").fork("noise2"));
+            self.fine_override = seed != &self.seed;
+        }
         match stage {
             0 => self.initialize(),
             1 => self.regional(),
@@ -177,7 +194,7 @@ impl TerrainPipeline {
         self.coarse_noise=coarse.to_vec();self.fine_noise=fine.to_vec();Ok(())
     }
     fn coarse_value(&self,i:usize,k:usize,f:impl FnOnce()->f64)->f64{self.coarse_noise.get(i*4+k).map_or_else(f,|&v|v as f64)}
-    fn fine_value(&self,i:usize,k:usize,f:impl FnOnce()->f64)->f64{self.fine_noise.get(i*4+k).map_or_else(f,|&v|v as f64)}
+    fn fine_value(&self,i:usize,k:usize,f:impl FnOnce()->f64)->f64{if self.fine_override {f()} else {self.fine_noise.get(i*4+k).map_or_else(f,|&v|v as f64)}}
     /// Final field without a copy: moves the retained output out (the pipeline
     /// is done with it); before reconstruction, the same values as `height`.
     pub fn take_height(&mut self) -> Vec<f32> {
@@ -466,6 +483,24 @@ mod checkpoint_tests {
         let coarse=vec![0.;64*64*4];
         let fine:Vec<f32>=(0..1024*1024*4).map(|i|if i%4==2 {(i as f32*0.0001).sin().abs()}else{0.}).collect();
         pipeline.set_noise(&coarse,&fine).unwrap();pipeline
+    }
+    #[test]
+    fn late_random_draw_preserves_checkpoints_and_replays_from_the_general_recipe() {
+        let(p,s,f)=configuration();
+        let mut retained=TerrainPipeline::new("resume",&p,&s,&f).unwrap();
+        for stage in 0..6 {retained.advance(stage).unwrap();retained.checkpoint(stage as usize).unwrap();}
+        let original=retained.height();let upstream=retained.checkpoint_height(4).unwrap();
+        retained.restore(4,&p,&s,&f).unwrap();
+        retained.set_step_seeds(r#"{"ridged":"another-detail"}"#).unwrap();
+        retained.advance(5).unwrap();let changed=retained.height();
+        assert_eq!(retained.checkpoint_height(4).unwrap(),upstream);
+        assert_ne!(changed,original);
+        let mut fresh=TerrainPipeline::new("resume",&p,&s,&f).unwrap();
+        fresh.set_step_seeds(r#"{"ridged":"another-detail"}"#).unwrap();
+        for stage in 0..6 {fresh.advance(stage).unwrap();}
+        assert_eq!(fresh.height(),changed);
+        retained.restore(4,&p,&s,&f).unwrap();retained.set_step_seeds("{}").unwrap();retained.advance(5).unwrap();
+        assert_eq!(retained.height(),original);
     }
     #[test]
     fn changed_late_controls_resume_to_the_exact_fresh_result() {
