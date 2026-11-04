@@ -6,6 +6,8 @@ export interface TreePlatform { height: number; radius: number; angle: number; s
 export interface TreeDwelling {
   family: typeof TREE_FAMILIES[number]; center: Point; radius: number; height: number; scale: number; trunkRadius: number; lean: Point;
   crowns: TreeCrown[]; platforms: TreePlatform[]; outline: Point[];
+  /** Town of many tree dwellings: same silhouette, about a seventh of the faces. */
+  light?: boolean;
 }
 function hash(seed: string): number { let h = 2166136261; for (let i = 0; i < seed.length; i++) h = Math.imul(h ^ seed.charCodeAt(i), 16777619); return h >>> 0; }
 /** One lot seed drives both renderers; no dependence on scene order or reload. */
@@ -40,9 +42,10 @@ export function treeDwelling(ring: readonly Point[], eave: number, rise: number,
 }
 /** Rounded shoulders and a broad top on every family, including the tall oval. */
 export function treeCrownFaces(tree: TreeDwelling): Vertex3[][] {
-  const faces: Vertex3[][] = [], n = 16;
+  const faces: Vertex3[][] = [], n = tree.light ? 8 : 16;
   for (const c of tree.crowns) {
-    const levels = [[0.78, -c.skirt * c.height], [1, 0], [0.91, c.height * 0.48], [0.63, c.height * 0.85], [0.23, c.height]];
+    const all = [[0.78, -c.skirt * c.height], [1, 0], [0.91, c.height * 0.48], [0.63, c.height * 0.85], [0.23, c.height]];
+    const levels = tree.light ? [all[0], all[2], all[3], all[4]] : all;
     const at = (i: number, k: number, z: number): Vertex3 => {
       const a = i / n * Math.PI * 2, lobe = 1 + 0.045 * Math.cos(c.lobes * a + c.phase), droop = c.skirt > 0.5 && z < 0 ? 0.72 + 0.28 * Math.cos(c.lobes * a + c.phase) : 1;
       return { x: c.x + Math.cos(a) * c.rx * k * lobe, y: c.y + Math.sin(a) * c.ry * k * lobe, z: c.z + z * droop };

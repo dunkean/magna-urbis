@@ -248,7 +248,7 @@ function featureDome(roof: RoofBuilder, x: number, y: number, r: number, h: numb
 }
 /** All tree parts enter the existing sector/material batches, including rails. */
 function treeDetails(roof: RoofBuilder, tree: TreeDwelling, base: number, wood: string, canopy: string): Point[] {
-  const { center: c, radius: r, trunkRadius: tr, height: h, lean } = tree, n = 12;
+  const { center: c, radius: r, trunkRadius: tr, height: h, lean } = tree, n = tree.light ? 6 : 12;
   const trunk = (t: number, k: number): Vertex3[] => Array.from({ length: n }, (_, i) => {
     const a = i / n * Math.PI * 2 + t * 0.18, root = t === 0 ? 1 + 0.32 * Math.cos(a * 4) : 1;
     return { x: c.x + lean.x * t + Math.cos(a) * tr * k * root, y: c.y + lean.y * t + Math.sin(a) * tr * k * root, z: base + h * t };
@@ -257,7 +257,15 @@ function treeDetails(roof: RoofBuilder, tree: TreeDwelling, base: number, wood: 
   const loft = (a: Vertex3[], b: Vertex3[], material: string): void => { for (let i = 0; i < a.length; i++) { const j = (i + 1) % a.length; roof.face([a[i], a[j], b[j], b[i]], material); } };
   for (let i = 1; i < rings.length; i++) loft(rings[i - 1], rings[i], wood);
   for (const p of tree.platforms) {
-    const z = base + p.height, pc = { x: c.x + lean.x * p.height / h, y: c.y + lean.y * p.height / h }, count = p.shape === 'polygon' ? 6 : 12;
+    const z = base + p.height, pc = { x: c.x + lean.x * p.height / h, y: c.y + lean.y * p.height / h }, count = p.shape === 'polygon' || tree.light ? 6 : 12;
+    if (tree.light) {   // a plain disc and its pod: rails and domes cannot be seen at this scale
+      const disc = Array.from({ length: count }, (_, i) => { const a = p.angle + i / count * Math.PI * 2; return { x: pc.x + Math.cos(a) * p.radius, y: pc.y + Math.sin(a) * p.radius }; });
+      roof.face(disc.map(q => ({ ...q, z: z + 0.22 })), wood);
+      loft(disc.map(q => ({ ...q, z })), disc.map(q => ({ ...q, z: z + 0.22 })), wood);
+      const a = p.angle + Math.PI * 0.7, offset = (tr + p.radius) * 0.5, size = Math.max(0.65, Math.min(r * 0.43, (p.radius - tr) * 1.1));
+      featureBox(roof, pc.x + Math.cos(a) * offset, pc.y + Math.sin(a) * offset, size, size * 0.85, Math.max(1.2, Math.min(2.2, r * 0.5)), a, z + 0.22, wood);
+      continue;
+    }
     const arc = p.shape === 'partial' ? Math.PI * 1.5 : Math.PI * 2, steps = p.shape === 'partial' ? count + 1 : count;
     const ring = (radius: number): Point[] => Array.from({ length: steps }, (_, i) => { const a = p.angle + i / count * arc; return { x: pc.x + Math.cos(a) * radius, y: pc.y + Math.sin(a) * radius }; });
     const outer = ring(p.radius), inner = ring(tr * 1.15), shape = p.shape === 'partial' ? { outer: outer.concat([...inner].reverse()), holes: [] } : { outer, holes: [[...inner].reverse()] };
@@ -393,7 +401,7 @@ function baseVolume(id: string, footprint: Surface, z: number, wall: number, ris
 /** Extruded silhouette: walls of `floors × 3 m`, a gable or hip roof on
  * rectangular shapes, a pitched border elsewhere, a foundation down to the lowest
  * terrain sample so no wall floats above a slope. */
-export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHeight, waterAt?: City3dHeight): PlacedBuilding {
+export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHeight, waterAt?: City3dHeight, lightTrees = false): PlacedBuilding {
   const footprint = building.footprint, area = surfaceArea(footprint), m = silhouetteMassing(building, area);
   const culture = building.culture.culture, programme = (building as PlacedBuilding & { programme?: Programme }).programme;
   const role = `${programme?.role ?? ''} ${m.family}${programme?.landmark ? ' monument' : ''}`;
@@ -415,8 +423,9 @@ export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHe
         const plain = massingSlots(v.wall, v.cover, WALLS[v.wall] ?? m.wall, COVERS[v.cover] ?? m.roof), roof = new RoofBuilder();
         const materials = paletteSlots(plain, culture, v.wall, v.cover, v.tone, role + (v.wall === 'stone' ? ' monument' : '')), wallId = materials.coating;
         if (v.tree) {
-          for (const face of volumeRoof(v, i, j)) roof.face(face.points.map(p => ({ ...p, z: p.z + ground })), 'city3d:tree:crown@5f8247');
-          const trunk = treeDetails(roof, v.tree, ground, 'city3d:tree:trunk@4b5a36', 'city3d:tree:crown@5f8247'), bodyShape = { outer: trunk, holes: [] };
+          const tree = lightTrees ? { ...v.tree, light: true } : v.tree;
+          for (const face of volumeRoof({ ...v, tree }, i, j)) roof.face(face.points.map(p => ({ ...p, z: p.z + ground })), 'city3d:tree:crown@5f8247');
+          const trunk = treeDetails(roof, tree, ground, 'city3d:tree:trunk@4b5a36', 'city3d:tree:crown@5f8247'), bodyShape = { outer: trunk, holes: [] };
           const volume = baseVolume(`${building.id}:city3d:${i}:${j}`, [v.shape], ground, v.eave_m, v.rise_m, materials, roof.mesh(), 'RF-DOME',
             { ...foundation, footprint: [bodyShape] }, [{ index: 0, footprint: [{ outer: scaledRing(v.shape.outer, v.tree.trunkRadius / v.tree.radius), holes: [] }], z_m: ground, height_m: v.eave_m }]);
           volume.envelope = 'open'; return volume;
@@ -516,15 +525,23 @@ export const city3dKind = (building: PlacedBuilding): City3dKind =>
   building.recipe_id === 'silhouette' || !building.volumes.length ? 'silhouette'
     : building.volumes.some(v => v.roof_mesh?.faces.length) ? 'detailed' : 'compact';
 
+/** Above this many tree dwellings in a town, each one uses its light mesh. */
+const LIGHT_TREES_FROM = 400;
+const hasTreeDwelling = (b: PlacedBuilding): boolean => {
+  const massing = (b as PlacedBuilding & { programme?: { massing?: { volumes?: { form?: string }[] }[] } }).programme?.massing;
+  return Array.isArray(massing) && massing.some(m => m?.volumes?.some(v => v.form === 'tree'));
+};
 /** Display batch for the 3D pass. `details` replaces buildings by their realized
  * native exterior (same id). Ids, parcels and functions are those of the scene. */
 export function city3dScene(scene: PlacementBatch, options: { heightAt?: City3dHeight; waterAt?: City3dHeight; details?: ReadonlyMap<string, PlacedBuilding> } = {}): PlacementBatch & { kinds: Record<City3dKind, number> } {
   const kinds: Record<City3dKind, number> = { silhouette: 0, compact: 0, detailed: 0 };
+  // Thousands of full tree meshes exceed the page's 4 GB and kill it (elven 10k).
+  const lightTrees = scene.buildings.filter(hasTreeDwelling).length > LIGHT_TREES_FROM;
   const buildings = scene.buildings.map(source => {
     const detail = options.details?.get(source.id);
     if (detail) { kinds.detailed++; return detail; }
     const kind = city3dKind(source); kinds[kind]++;
-    return kind === 'silhouette' ? silhouetteBuilding(source, options.heightAt, options.waterAt) : kind === 'compact' ? compactBuilding(source) : source;
+    return kind === 'silhouette' ? silhouetteBuilding(source, options.heightAt, options.waterAt, lightTrees) : kind === 'compact' ? compactBuilding(source) : source;
   });
   return { ...scene, materials: [...(scene.materials ?? []), ...CITY3D_MATERIALS], buildings, kinds };
 }
