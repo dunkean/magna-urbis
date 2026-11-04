@@ -33,6 +33,7 @@ const labels: Record<string, Words> = {
   campGrowth:['Grands camps','Large camps','大型营地','Campamentos grandes','Acampamentos grandes'],
   smallPlaceCapacity:['À tester · Tolérance de capacité des petits lieux','Testing · Small-place capacity tolerance','测试 · 小聚落容量容差','En prueba · Tolerancia de capacidad de lugares pequeños','Em teste · Tolerância de capacidade de lugares pequenos'],
   countrysideEnclosures:['Clôtures à la campagne','Countryside enclosures','乡村围栏','Cercados en el campo','Cercas no campo'],
+  outbuildings:['Dépendances des maisons','House outbuildings','房屋附属建筑','Dependencias de las casas','Dependências das casas'],
   parallelMerge:['Fusion des rues parallèles','Parallel street merge','合并平行街道','Fusión de calles paralelas','Fusão de ruas paralelas'],
   tissue:['Maillage des rues','Street network','街道网络','Red de calles','Rede de ruas'],
   accessMode:['Accessibilité des îlots','Block accessibility','街区通达性','Accesibilidad de las manzanas','Acessibilidade das quadras'],

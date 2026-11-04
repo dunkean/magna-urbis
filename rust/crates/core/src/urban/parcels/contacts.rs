@@ -40,6 +40,58 @@ pub(super) fn support_span(fronts: &[Front], anchor: usize) -> (f64, f64) {
     (lo, hi)
 }
 
+/// `support_span` of every contact. The touching contacts are found once, so a
+/// chain of `k` contacts costs its own length per anchor, not `k` squared.
+pub(super) fn support_spans(fronts: &[Front]) -> Vec<(f64, f64)> {
+    let mut starts: Vec<usize> = (0..fronts.len()).collect();
+    starts.sort_by(|&i, &j| fronts[i].a.x.total_cmp(&fronts[j].a.x).then(i.cmp(&j)));
+    let mut links: Vec<Vec<usize>> = vec![Vec::new(); fronts.len()];
+    for (i, f) in fronts.iter().enumerate() {
+        let from = starts.partition_point(|&j| fronts[j].a.x < f.b.x - 1e-5);
+        for &j in starts[from..]
+            .iter()
+            .take_while(|&&j| fronts[j].a.x <= f.b.x + 1e-5)
+        {
+            if j != i && length(sub(f.b, fronts[j].a)) <= 1e-5 {
+                links[i].push(j);
+                links[j].push(i);
+            }
+        }
+    }
+    (0..fronts.len())
+        .map(|anchor| {
+            let f = fronts[anchor];
+            let u = unit(sub(f.b, f.a));
+            let compatible = |g: &Front| {
+                g.street == f.street
+                    && g.rank == f.rank
+                    && g.gate == f.gate
+                    && g.shared == f.shared
+                    && dot(unit(sub(g.b, g.a)), u) >= 20.0_f64.to_radians().cos()
+            };
+            let mut selected = vec![false; fronts.len()];
+            selected[anchor] = true;
+            let mut queue = vec![anchor];
+            let (mut lo, mut hi) = (0.0_f64, length(sub(f.b, f.a)));
+            while let Some(i) = queue.pop() {
+                for &j in &links[i] {
+                    if selected[j] || !compatible(&fronts[j]) {
+                        continue;
+                    }
+                    selected[j] = true;
+                    queue.push(j);
+                    for p in [fronts[j].a, fronts[j].b] {
+                        let projected = dot(sub(p, f.a), u);
+                        lo = lo.min(projected);
+                        hi = hi.max(projected);
+                    }
+                }
+            }
+            (lo, hi)
+        })
+        .collect()
+}
+
 fn clip(interval: &mut (f64, f64), a: f64, b: f64) -> bool {
     // a + b*t >= 0
     if b.abs() < 1e-12 {

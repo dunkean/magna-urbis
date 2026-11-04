@@ -1069,6 +1069,7 @@ fn court_tissues_pair_small_lots_into_court_house_lots() {
         "frontage",
         None,
         false,
+        tidy::LOT_SOLIDITY,
     );
     assert!(
         cells
@@ -1155,7 +1156,7 @@ fn an_unbalanced_pair_is_redrawn_part_way_when_the_full_move_is_too_deep() {
     };
     let street = |s: &Shape| bounds(s, Point { x: 0.0, y: 1.0 }).0 < 0.5;
     let too_deep = |s: &Shape| reach(s) > if street(s) { 40.01 } else { 22.01 };
-    balance_neighbours(&mut cells, &fronts, &witness, &too_deep);
+    balance_neighbours(&mut cells, &fronts, &witness, &too_deep, tidy::LOT_SOLIDITY);
     let (a, b) = (area(&cells[0].shape), area(&cells[1].shape));
     assert!((a + b - 500.0).abs() < 1e-6, "exact partition: {}", a + b);
     assert!(
@@ -1233,6 +1234,7 @@ fn a_court_pair_that_would_dwarf_its_rear_neighbours_is_not_made() {
         "frontage",
         None,
         false,
+        tidy::LOT_SOLIDITY,
     );
     assert_eq!(cells.len(), 20);
     assert!(cells.iter().all(|c| c.envelope.is_some()));
@@ -1292,7 +1294,7 @@ fn dense_leftovers_are_joined_or_admitted_by_a_free_witness() {
         .collect();
     let before: f64 = cells.iter().map(|c| area(&c.shape)).sum();
     qualify(
-        &mut cells, &fronts, &layout, &small, None, false, "frontage", None, true,
+        &mut cells, &fronts, &layout, &small, None, false, "frontage", None, true, tidy::LOT_SOLIDITY,
     );
     assert!(
         cells
@@ -1314,12 +1316,12 @@ fn dense_leftovers_are_joined_or_admitted_by_a_free_witness() {
     let make = || vec![parcel(slanted.clone(), 0, axis, &fronts, "plot")];
     let mut cells = make();
     qualify(
-        &mut cells, &fronts, &layout, &small, None, false, "frontage", None, false,
+        &mut cells, &fronts, &layout, &small, None, false, "frontage", None, false, tidy::LOT_SOLIDITY,
     );
     assert!(cells[0].envelope.is_none(), "no aligned house fits");
     let mut cells = make();
     qualify(
-        &mut cells, &fronts, &layout, &small, None, false, "frontage", None, true,
+        &mut cells, &fronts, &layout, &small, None, false, "frontage", None, true, tidy::LOT_SOLIDITY,
     );
     let lot = &cells[0];
     assert!(lot.use_kind == "plot" && lot.provenance.iter().any(|p| p == "polygonal-lot"));
@@ -1400,7 +1402,18 @@ fn needle_tips_and_slivers_are_given_to_the_lot_beside() {
         lot(tip, "garden"),
     ];
     let before: f64 = cells.iter().map(|c| area(&c.shape)).sum();
-    tidy::tidy(&mut cells, &fronts, &layout, None, false, false);
+    tidy::tidy(
+        &mut cells,
+        &fronts,
+        None,
+        false,
+        false,
+        &tidy::Rules {
+            floor: tidy::LOT_SOLIDITY,
+            admits: &|_, _| true,
+            reseat: &|p| tidy::refresh(p, &fronts, &layout),
+        },
+    );
     let after: f64 = cells.iter().map(|c| area(&c.shape)).sum();
     assert!((before - after).abs() < 1e-6, "{before} {after}");
     for c in &cells {
@@ -1422,7 +1435,18 @@ fn needle_tips_and_slivers_are_given_to_the_lot_beside() {
         lot(rectangle(0.0, 0.0, 30.0, 30.0), "plot"),
         lot(rectangle(30.0, 0.0, 33.5, 40.0), "plot"),
     ];
-    tidy::tidy(&mut cells, &fronts, &layout, None, false, false);
+    tidy::tidy(
+        &mut cells,
+        &fronts,
+        None,
+        false,
+        false,
+        &tidy::Rules {
+            floor: tidy::LOT_SOLIDITY,
+            admits: &|_, _| true,
+            reseat: &|p| tidy::refresh(p, &fronts, &layout),
+        },
+    );
     assert_eq!(cells.len(), 1);
     assert!((area(&cells[0].shape) - (900.0 + 140.0)).abs() < 1e-6);
     assert!(cells[0].provenance.iter().any(|x| x == "sliver-merged"));

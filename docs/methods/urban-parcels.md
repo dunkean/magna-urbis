@@ -248,6 +248,48 @@ geometry namespace parcel IDs and RNG; the array index remains a lookup only.
 Editing a block's geometry changes its identity and descendants deliberately.
 Historical ancestors may no longer be emitted as active parcels.
 
+### Lot shape (solidity floor)
+
+Solidity is lot area over convex-hull area. The floor is catalogue data
+(`lotSolidity`): by culture, then by tissue (court and compound lots are meant to
+be irregular), then 0.8. These are artistic prototype values, not measured laws.
+
+- **Runs.** For block cuts, one street is one frontage across its ribbon's
+  corner jogs: a gap under 1.5 m within 20 degrees and specks under 5 cm do not
+  end a run. A run broken every 12 m drew its own depth and lateral bound, so rear
+  lines stepped and the land between the steps wrapped around the lots behind.
+  House frames still read a lot's straight sides (`runs`). Depth counts from the
+  street's mean line, so an oblique run does not deepen all its lots to its
+  farthest point. Merchant lots scale with pressure squared: on whole runs a
+  village street would otherwise draw them, and they were never meant for it.
+- **Constrained ground.** `bisect` (the compact and court operator) judges every
+  child before drawing it; a frontage cut used to be judged only afterwards, by
+  `qualify`, and repaired by merges. `strips` now judges each lot as it is cut,
+  with the same witness (`_witness`, the lenient admission tier): a cut leaving an
+  unsound lot gives way to one square to the street or parallel to the previous
+  cut, no lot falls under the frontage its house needs, and two rows back to back
+  each keep a house's depth (shallower ground is one row of through lots). A
+  stretch still unsound (area, width, corner, solidity, street, witness, or 1.5x
+  the area drawn) is cut again by `bisect`, kept only with as many lots, fewer
+  unsound.
+- **Territories.** A run does not claim a long thin arm it reaches only through
+  its own end; the arm stays available for the next run or as rear land.
+- **Merges.** Sliver merges, repairs, absorption, shares, redraws, tip and wedge
+  transfers refuse a union under the floor that is clearly less solid than its
+  parts. An admitted lot takes the next neighbour; two leftovers may still pool,
+  since the union can admit a house, so no built lot is lost.
+- **Final pass (`tidy::cut_arms`).** What remains under the floor is cut at a
+  neck or along the prolongation of one of its sides, anywhere on the opposite
+  side, off the witness; the part kept must still answer the lot's tier (surface
+  and one continuous entry), or the lot stays whole. The arm is sliced along the
+  prolongation of the neighbours' party walls; each slice joins the neighbour it
+  faces if that lot stays solid and within its depth bound, else it becomes an
+  attached garden. A garden's arm stays rear land: it is sliced, or joins another
+  garden, never a built lot. Wider arms are real L lots and stay. Organic tissue
+  and camps are exempt, in the cut as in the plan's score. Every outline change
+  rebuilds front, rank, street, access and contacts with `qualify`'s own rule. The
+  search is bounded per ring and per block; past the budget lots stay as they are.
+
 Reasons distinguish intentional gardens, retained back land, rear land attached
 to an accessible property's ID, unserved blocks and failed envelopes. An
 attachment is ownership metadata, not a fabricated street facade. A failed

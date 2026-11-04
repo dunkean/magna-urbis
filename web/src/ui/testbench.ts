@@ -27,6 +27,7 @@ import { buildingSettings } from './urbanSnapshot';
 import { programmeSvg, refusalSvg } from '../render/urbanProgramme';
 import { installUrbanReferenceCases, type UrbanReferenceCase } from './urbanReferenceCases';
 import { openMethodNote } from './methodNotes';
+import { benchEnclosureLayers, benchEnclosureStatsHtml, type BenchEnclosureLayers } from './testbenchEnclosures';
 import { installUrbanMapExports } from './urbanMapExport';
 import { applySettlementStyle, installSettlementStyles } from './urbanSettlementStyles';
 
@@ -289,7 +290,7 @@ function restoreControls(): void {
     autoQuarterZones: (settlementDraft?.layoutConfig ?? state.urban?.layoutConfig)?.zone === 'auto', autoParcelZones: (settlementDraft?.parcelConfig ?? state.urban?.parcelConfig)?.zone === 'auto' };
   for (const control of Array.from(document.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-native]'))) {
     const value = native[control.dataset.native! as keyof typeof native];
-    if (control instanceof HTMLInputElement && control.type === 'checkbox') control.checked = Boolean(value); else control.value = String(value);
+    if (control instanceof HTMLInputElement && control.type === 'checkbox') control.checked = Boolean(value); else { control.value = String(value); if (control instanceof HTMLSelectElement && control.selectedIndex < 0) control.selectedIndex = 0; } // a scene without this setting takes the control's first choice
   }
   const footprint = normalizeLayoutConfig(settlementDraft?.layoutConfig ?? state.urban?.layoutConfig).footprint;
   for (const control of Array.from(cityShapeControls.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-city-footprint]'))) control.value = String(footprint[control.dataset.cityFootprint as keyof typeof footprint]);
@@ -515,6 +516,7 @@ function save(): void {
 function path(poly: Polygon): string { return poly.length ? 'M' + poly.map(p => `${p.x},${p.y}`).join('L') + 'Z' : ''; }
 function escape(text: string): string { return text.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!)); }
 function render(): void {
+  if (!layout) return; // the first plan is still on its way: nothing to draw yet
   references.element.hidden = !rustMode;
   buildingPanel.panel.hidden = !rustMode; buildingPanel.programme.hidden = !rustMode;
   buildingPanel.updateProgrammes((nativeResult?.partitions ?? []).flatMap(p => p.programme ? [p.programme] : []));
@@ -591,6 +593,12 @@ function render(): void {
     svg += '</g>';
   }
   if (nativeResult) svg += workshopEnclosureSvg(nativeResult.layouts);
+  let benchLayers: BenchEnclosureLayers | undefined;
+  if (rustMode && nativeResult?.partitions && (input('fenceLayer').checked || input('lotLayer').checked)) {
+    benchLayers = benchEnclosureLayers(nativeResult.layouts, nativeResult.partitions, buildingPanel.state.scene?.buildings, { fences: input('fenceLayer').checked, lots: input('lotLayer').checked });
+    svg += benchLayers.svg;
+  }
+  el('fenceStats').innerHTML = benchEnclosureStatsHtml(benchLayers);
   if (rustMode && urbanView === 'uses') svg += programmeSvg(nativeResult?.partitions);
   if (rustMode && urbanView === 'buildings' && buildingPanel.state.visible) svg += urbanBuildingsSvg(buildingPanel.state.scene, buildingPanel.state.appearance);
   if (rustMode && buildingPanel.state.appearance.diagnostic === 'access') svg += refusalSvg(nativeResult?.partitions, buildingPanel.state.scene);
@@ -838,6 +846,8 @@ el('randomAll').onclick = () => {
 el('fit').onclick = () => { fit(); render(); save(); };
 input('plots').onchange = () => { state.showPlots = input('plots').checked; render(); save(); };
 input('showOrientation').onchange = () => { state.showOrientation = input('showOrientation').checked; render(); save(); };
+input('fenceLayer').onchange = () => render();
+input('lotLayer').onchange = () => render();
 input('blocks').onchange = () => { state.showBlocks = input('blocks').checked; render(); save(); };
 input('showHouses').onchange = () => { state.showHouses = input('showHouses').checked; render(); save(); };
 input('realPlan').onchange = () => { state.realPlan = input('realPlan').checked; select('planDiagnostic').value = state.realPlan ? 'none' : 'quarters'; render(); save(); };

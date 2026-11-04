@@ -42,6 +42,9 @@
     </fieldset>
     <fieldset><legend>2 · Parcelles</legend>
       <label><input id="plots" type="checkbox" checked>Afficher les contours de parcelles</label>
+      <label><input id="lotLayer" type="checkbox">Calque Parcelles (pointillés, solidité &lt; 0,8 en rose)</label>
+      <label><input id="fenceLayer" type="checkbox">Calque Clôtures (traceur réel, nécessite les maisons)</label>
+      <div id="fenceStats" role="status"></div>
       <label><input id="showOrientation" type="checkbox" checked>Afficher l’orientation des quartiers</label>
       <label>Préréglage <select id="plotsPreset"></select></label>
       <label>Découpage <select id="plotOp"></select></label>

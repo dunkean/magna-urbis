@@ -285,6 +285,32 @@ fn adjacent_lots(p: &Partition) -> (usize, String, String) {
     }
     panic!("no block with three adjacent plots");
 }
+/// Two plain neighbours of one street row: sliding one along the street keeps
+/// it served and whole (a corner lot wrapped around a block does neither: its
+/// gain comes loose from it, and `redraw` rightly leaves that gain out).
+fn row_lots(p: &Partition) -> (usize, String, String) {
+    use geo::{Area, ConvexHull};
+    let plain = |x: &super::super::Parcel| {
+        x.use_kind == "plot"
+            && x.provenance == ["frontage-partition"]
+            && g::area(&x.shape) >= 0.95 * g::polygon(&x.shape).convex_hull().unsigned_area()
+    };
+    let street = |x: &super::super::Parcel| x.access.as_ref().and_then(|a| a.street);
+    let lots: Vec<_> = p.parcels.iter().filter(|x| plain(x)).collect();
+    for a in &lots {
+        for c in &lots {
+            if a.id < c.id
+                && a.block == c.block
+                && street(a).is_some()
+                && street(a) == street(c)
+                && super::shared_length(&a.shape, &c.shape) > 4.0
+            {
+                return (a.block, a.id.clone(), c.id.clone());
+            }
+        }
+    }
+    panic!("no two plain neighbours on one street");
+}
 fn block_lots(p: &Partition, b: usize) -> Vec<&super::super::Parcel> {
     p.parcels.iter().filter(|x| x.block == b).collect()
 }
@@ -307,7 +333,7 @@ fn pairwise_overlap(lots: &[&super::super::Parcel]) -> f64 {
 fn lot_reshape_keeps_the_partition_and_gives_the_remainder_to_a_neighbour() {
     let layout = town(&LayoutConfig::default());
     let base = lots(&layout, &ParcelConfig::default());
-    let (b, a, c) = adjacent_lots(&base);
+    let (b, a, c) = row_lots(&base);
     let lot = |p: &Partition, id: &str| p.parcels.iter().find(|x| x.id == id).cloned().unwrap();
     let (la, lc) = (lot(&base, &a), lot(&base, &c));
     // The user outline: A slid 2 m towards C. A takes a strip of C and leaves

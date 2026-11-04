@@ -24,7 +24,7 @@ type Ring = [number, number][];
 export interface FieldNetExtras { ways: Polyline[]; headlands: Polyline[] }
 
 /** A retained urban plan can reserve its real land before its buildings exist. */
-export interface RuralPlan { footprint: PolyH[]; population: number; farmsteads?: boolean; naturalForest?: Float32Array; settlementFootprints?: Record<string, PolyH[]>; streetAlignedHomes?: boolean; denserSmallholdings?: boolean; /** 0 openfield .. 1 bocage; 0.4 is the historical draw. */ fieldEnclosure?: number; fieldMaterial?: 'hedge' | 'wall' | 'fence' }
+export interface RuralPlan { footprint: PolyH[]; population: number; farmsteads?: boolean; naturalForest?: Float32Array; settlementFootprints?: Record<string, PolyH[]>; streetAlignedHomes?: boolean; denserSmallholdings?: boolean; /** 0 openfield .. 1 bocage; 0.4 is the historical draw. */ fieldEnclosure?: number; fieldMaterial?: 'hedge' | 'wall' | 'fence'; /** 0..1 share of farms keeping their outbuildings (Rust `outbuildings`); default 0.5. */ outbuildings?: number }
 
 /** Reserve a lazy roof's bounded outer collar for farm lots, accounting for raster and lot-sampling error. */
 export function farmGrowthReserve(base: Uint8Array, n: number, cell: number, openMacroFootprints: PolyH[][]): Uint8Array {
@@ -401,6 +401,13 @@ export function generateRural(world: World, root: Rng, mainRoads?: number, strip
   const accept = (pl: { lf: LocalFarm; o: Vec2; V: Vec2 }, culture: string, bp: Vec2 | null) => {
     const g = placeFarm(pl.lf, pl.lf.type, pl.o, pl.V);
     const c = { x: pl.o.x + (pl.V.x * pl.lf.D) / 2, y: pl.o.y + (pl.V.y * pl.lf.D) / 2 };
+    // `outbuildings`: a farm drawn without keeps its dwelling alone (else its largest body: longhouse, einhaus…), never zero buildings.
+    if (!root.fork('outbuildings').fork(Math.round(c.x) + ',' + Math.round(c.y)).chance(plan?.outbuildings ?? 0.5) && g.parts.length > 1) {
+      const area = (poly: Vec2[]) => Math.abs(poly.reduce((s, p, i) => { const q = poly[(i + 1) % poly.length]; return s + p.x * q.y - q.x * p.y; }, 0)) / 2;
+      const main = g.parts.reduce((a, b) => (area(b.poly) > area(a.poly) ? b : a));
+      const houses = g.parts.filter((p) => p.use === 'house');
+      g.parts = houses.length ? houses : [main];
+    }
     lotsC.push({ c, r: 0.5 * Math.hypot(pl.lf.W, pl.lf.D) });
     farmsteads.push({
       pos: c, angle: g.angle, buildings: g.parts.map((p) => p.poly), yard: g.yard, drive: bp ? [bp, g.gate] : [g.gate, g.gate],

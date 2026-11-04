@@ -6,7 +6,9 @@ import type { ParentMember3dVisual } from '../ui/urbanParent3d';
 import { retainBuildingFeature, type BuildingFeatureLod } from './urbanBuildingFeatureLod';
 
 export type BuildingVector = [number, number, number];
-export interface BuildingTriangle { points: [BuildingVector, BuildingVector, BuildingVector]; normal: BuildingVector; surface: 'wall' | 'roof'; materials: MaterialSlots; material?: string }
+/** `yard`: a lot boundary, its own class: the building colours never reach it. `ground`: the ground under each point, when the
+ * mesh does not stand on one level. */
+export interface BuildingTriangle { points: [BuildingVector, BuildingVector, BuildingVector]; normal: BuildingVector; surface: 'wall' | 'roof' | 'yard'; materials: MaterialSlots; material?: string; ground?: [number, number, number] }
 /** A cartographic projection is never a PlacedBuilding or a realization input. */
 export type Building3dVisual = PlacedBuilding | NativeBuildingProjection | ParentMember3dVisual;
 export interface Building3dScene {
@@ -23,6 +25,43 @@ export function building3dHeight(building: Building3dVisual): number {
   if (isBuildingProjection(building)) return building.height_m;
   return building.cartographic?.height_m ?? building.volumes.reduce((height, v) =>
     Math.max(height, v.z_m + v.wall_height_m + v.roof_height_m - building.ground_z_m), 0);
+}
+/** A point of a lot boundary: `mx, my` is its left offset (mitred on the vertices), `s` its arc length, `g` the ground under it. */
+export interface YardStation { x: number; y: number; mx: number; my: number; s: number; g: number }
+/** A run of lot boundary for the ribbon levels: its line, height above the ground, real half width and two materials. */
+export interface YardLine { stations: YardStation[]; closed: boolean; height: number; half: number; side: string; top: string }
+/** What a lot boundary batch adds to its near mesh (the volume's `roof_mesh`): the ground of each mesh vertex and the ribbons. */
+export interface YardMesh { ground: number[]; lines: YardLine[] }
+/** Levels of a lot boundary: 0 the full mesh; then a plain ribbon. Pixels per metre below which each level starts, and the
+ * ribbon's smallest half width there, which keeps the fence on screen once a post or a sheet is well under a pixel. */
+const YARD_LEVELS = [{ pixels: Infinity, half: 0 }, { pixels: 3.3, half: .16 }, { pixels: .8, half: .5 }];
+export function yardLod(pixels: number, previous = 0): number {
+  let lod = 0;
+  for (let i = 1; i < YARD_LEVELS.length; i++) if (pixels < YARD_LEVELS[i].pixels * (i <= previous ? 1.15 : 1)) lod = i;
+  return lod;
+}
+export const isYardMesh = (building: Building3dVisual): boolean => 'yard' in building;
+/** Quads of the ribbon: both sides and the top per stretch, caps at the free ends. */
+function yardRibbon(line: YardLine, lod: number, materials: MaterialSlots, emit: (triangle: BuildingTriangle) => void): void {
+  const half = Math.max(line.half, YARD_LEVELS[lod].half), S = line.stations;
+  const quad = (a: BuildingVector, b: BuildingVector, c: BuildingVector, d: BuildingVector, ga: number, gb: number, normal: BuildingVector, material: string): void => {
+    emit({ points: [a, b, c], normal, materials, material, surface: 'yard', ground: [ga, gb, gb] });
+    emit({ points: [a, c, d], normal, materials, material, surface: 'yard', ground: [ga, gb, ga] });
+  };
+  const side = (p: YardStation, q: YardStation, o: number, normal: BuildingVector, material: string): void => {
+    const px = p.x + p.mx * o, py = p.y + p.my * o, qx = q.x + q.mx * o, qy = q.y + q.my * o;
+    quad([px, py, p.g - .15], [qx, qy, q.g - .15], [qx, qy, q.g + line.height], [px, py, p.g + line.height], p.g, q.g, normal, material);
+  };
+  for (let j = 1; j < S.length; j++) {
+    const p = S[j - 1], q = S[j], l = Math.hypot(q.x - p.x, q.y - p.y) || 1, nx = -(q.y - p.y) / l, ny = (q.x - p.x) / l;
+    side(p, q, half, [nx, ny, 0], line.side); side(p, q, -half, [-nx, -ny, 0], line.side);
+    const z0 = p.g + line.height, z1 = q.g + line.height;
+    quad([p.x + p.mx * half, p.y + p.my * half, z0], [q.x + q.mx * half, q.y + q.my * half, z1], [q.x - q.mx * half, q.y - q.my * half, z1], [p.x - p.mx * half, p.y - p.my * half, z0], p.g, q.g, [0, 0, 1], line.top);
+  }
+  if (!line.closed) for (const [p, sign] of [[S[0], -1], [S[S.length - 1], 1]] as const) {
+    const a: BuildingVector = [p.x + p.mx * half, p.y + p.my * half, p.g - .15], b: BuildingVector = [p.x - p.mx * half, p.y - p.my * half, p.g - .15];
+    quad(a, b, [b[0], b[1], p.g + line.height], [a[0], a[1], p.g + line.height], p.g, p.g, [sign * p.my, -sign * p.mx, 0], line.side);
+  }
 }
 const PROXY_MATERIALS: MaterialSlots = { frame: '', infill: '', coating: '', cladding: '', base: '', roof_frame: '' };
 
@@ -54,7 +93,16 @@ export function surfaceTriangles(surface: Surface): [Point, Point, Point][] {
 
 /** One display mesh iterator shared by GPU preparation and picking. All z are
  * absolute physical metres; roof faces are copied from native geometry. */
-export function eachBuildingTriangle(building: Building3dVisual, emit: (triangle: BuildingTriangle) => void, overview = false, featureLod?: BuildingFeatureLod): void {
+export function eachBuildingTriangle(building: Building3dVisual, emit: (triangle: BuildingTriangle) => void, overview = false, featureLod?: BuildingFeatureLod, yardLevel = overview ? 1 : 0): void {
+  if (isYardMesh(building)) {
+    const { yard, volumes: [{ roof_mesh: mesh, materials }] } = building as PlacedBuilding & { yard: YardMesh };
+    if (yardLevel > 0) { for (const line of yard.lines) yardRibbon(line, yardLevel, materials, emit); return; }
+    for (const face of mesh.faces) for (let i = 1; i + 1 < face.vertices.length; i++) {
+      const v = [face.vertices[0], face.vertices[i], face.vertices[i + 1]];
+      emit({ points: v.map(k => [mesh.vertices[k].x, mesh.vertices[k].y, mesh.vertices[k].z]) as BuildingTriangle['points'], normal: face.normal, materials, material: face.material, surface: 'yard', ground: v.map(k => yard.ground[k]) as [number, number, number] });
+    }
+    return;
+  }
   const extrude = (surface: Surface, z: number, height: number, materials: MaterialSlots, cap: boolean, material?: string): void => {
     if (height <= 1e-8) return;
     for (const shape of surface) for (const [ri, ring] of [shape.outer, ...shape.holes].entries()) {

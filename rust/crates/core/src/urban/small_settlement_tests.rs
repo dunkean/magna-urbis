@@ -623,3 +623,24 @@ fn review12_a_longhouse_village_on_trail_ends_builds_its_longhouses() {
         assert!(lots >= 15 && empty == 0 && housed >= 0.9 * wanted, "{name}: {lots} lots, {empty} unbuilt, {housed}/{wanted} households");
     }
 }
+
+/// `outbuildings` (0 none .. 1 all): a 500-inhabitant village keeps no house outbuilding at 0, and some at 1.
+#[test]
+fn outbuildings_share_thins_village_house_dependencies() {
+    let n = 16;
+    let (h, w, level) = (vec![10.0_f32; n * n], vec![0_u8; n * n], vec![0.0_f32; n * n]);
+    let s = Surface { geometry: None, width: 4000.0, n, height: &h, water: &w };
+    let base: LayoutConfig = serde_json::from_str(include_str!("fixtures/small-layout-config.json")).unwrap();
+    let seed = "city-temperate-coast-s-1";
+    let farms = |outbuildings: f64| {
+        let cfg = LayoutConfig { outbuildings, ..base.clone() };
+        let site = Site { key: "city".into(), name: String::new(), population: 500, culture: "european-organic".into(),
+            center: Point { x: 2000., y: 2000. }, radius: 561.79 };
+        let layouts = generate_quarters(seed, &[site], &cfg, s, &[]).unwrap();
+        let parts = generate_parcels(seed, &layouts, &ParcelConfig::default()).unwrap();
+        let requests = building_sites::requests(seed, &layouts, &parts, s, &level, None).unwrap();
+        requests.iter().filter(|r| r["programme"]["farmstead"].is_object()).count()
+    };
+    assert_eq!(farms(0.0), 0);
+    assert!(farms(1.0) > 0);
+}

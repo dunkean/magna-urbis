@@ -51,7 +51,7 @@ export interface Layout { config?: LayoutConfig; programme?: UrbanProgramme; key
 export interface Parcel { pressure?: number; id?: string; parentIds?: string[]; provenance?: string[]; family?: string; reason?: string; contacts?: ParcelContact[]; envelope?: Shape; shape: Shape; block: number; use: 'plot' | 'garden' | 'place' | 'compound' | 'market' | 'reserve' | 'common' | 'residual' | 'court'; front: [Point, Point] | null; axis: Point; rank: number; access?: { kind: 'public' | 'collective' | 'private' | 'unserved' | 'reserved' | 'attached'; street: number | null; frontLength: number } }
 export interface LotEnclosure { path: Point[]; material: 'wall' | 'hedge' | 'fence'; side: 'front' | 'side' | 'back' }
 export interface ResolvedEnclosure { plot: number; field: number; material: 'wall' | 'hedge' | 'fence'; fieldMaterial: 'wall' | 'hedge' | 'fence'; front: number; side: number; back: number }
-export interface Partition { enclosure?: ResolvedEnclosure; lotEnclosures?: LotEnclosure[]; config?: ParcelConfig; programme?: UrbanProgramme; key: string; parcels: Parcel[]; warnings: string[]; diagnostics?: { coveredArea: number; residualArea: number; overlapArea: number; unservedArea: number } }
+export interface Partition { enclosure?: ResolvedEnclosure; config?: ParcelConfig; programme?: UrbanProgramme; key: string; parcels: Parcel[]; warnings: string[]; diagnostics?: { coveredArea: number; residualArea: number; overlapArea: number; unservedArea: number } }
 export interface ParcelContact { a: Point; b: Point; street: number; rank: number; length: number; kind: string }
 export interface UrbanAdmissibility { recipeId: string; nativeLayout: string; floors: [number, number]; eras: string[]; minFrontage: number; minAccessWidth: number; minArea: number; minDepth: number; maxSlope: number; sharedAccess: boolean; partyWalls: boolean }
 export interface CultureMapping { culture: string; family: string; functionalProfile: string; architectureFamily: string; architecturePack: string; coverage: string; borrowing: string; admissibility: UrbanAdmissibility }
@@ -147,6 +147,7 @@ function nativeLayoutConfig(config: LayoutConfig) {
     if (input[key] === true || input[key] === undefined) delete input[key];
   if (input.campGrowth === 'ring' || !input.campGrowth) delete input.campGrowth;
   if (!input.parallelMerge) delete input.parallelMerge;
+  if (input.outbuildings === 0.5 || input.outbuildings === undefined) delete input.outbuildings;
   if (!input.organicBranchVariation) delete input.organicBranchVariation;
   if (!input.ribbonWidthVariation) delete input.ribbonWidthVariation;
   if (input.portDetachment === 1) delete input.portDetachment;

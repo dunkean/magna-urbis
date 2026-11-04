@@ -2,9 +2,11 @@ import type { LandArea, Polyline, Vec2 } from '../gen/types';
 import { hexToRgb, type Palette } from './styles';
 import enclosures from '../../../rust/crates/core/src/urban/enclosures.json';
 
-/** Culture yard profile: who fences (`plot`, 0 = no yards), with what, and how the yards are sized (cityLotEnclosures.ts). */
+/** Culture yard profile: who fences (`plot`, 0 = no yards), with what, and how the yards are drawn (cityLotEnclosures.ts). */
 export interface CultureEnclosure { plot: number; material: 'wall' | 'hedge' | 'fence'; fenceStyle?: 'plank' | 'wattle'; front: number; side: number; back: number
-  yardDepth: number; yardSide: number; yardSpread: number; yardMerge: number; yardLong: number; wallHeight: number }
+  yardMerge: number; wallHeight: number
+  /** Metres between the fence and the lot limit: 0 on the limit, shared with the neighbour; above, each lot has its own inner ring. */
+  inset: number }
 /** Same culture table as Rust; no renderer-specific list of fenced cultures. */
 export function cultureEnclosure(culture: string): CultureEnclosure {
   const table = enclosures as unknown as { default: CultureEnclosure; groups: Record<string, Partial<CultureEnclosure> & { cultures: string[] }>; cultures: Record<string, Partial<CultureEnclosure>> };

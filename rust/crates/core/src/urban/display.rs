@@ -388,7 +388,6 @@ mod tests {
             warnings: vec![],
             diagnostics: None,
             enclosure: None,
-            lot_enclosures: Vec::new(),
         };
         quay_water_levels(std::slice::from_mut(&mut layout), 200.0, 4, &[1; 16], &[7.0; 16]);
         let blob = display_buffers(&[layout], &[partition], true);

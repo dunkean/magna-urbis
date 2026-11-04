@@ -80,11 +80,8 @@ pub(super) fn envelope(
     let contacts = contacts::boundary_contacts(shape, fronts);
     let mut candidates: Vec<_> = contacts
         .iter()
-        .enumerate()
-        .map(|(i, f)| {
-            let (lo, hi) = contacts::support_span(&contacts, i);
-            (*f, lo, hi)
-        })
+        .zip(contacts::support_spans(&contacts))
+        .map(|(f, (lo, hi))| (*f, lo, hi))
         .filter(|(f, lo, hi)| hi - lo + 1e-6 >= if f.gate { access_width } else { width })
         .collect();
     // Bound useful candidates, rather than hiding the only long frontage
@@ -294,6 +291,7 @@ pub(super) fn courts(
         fronts,
         f.rank,
         f64::INFINITY,
+        0.0,
     );
     let depth = morph.range("plotDepth", zone)[0].max(8.0).min(cap * 0.6);
     let court_size = (morph.range("houseArea", zone)[0].sqrt().clamp(6.0, 16.0)

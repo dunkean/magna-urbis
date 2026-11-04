@@ -1086,6 +1086,8 @@ impl BuildingSiteIndex {
         if !parts.is_empty() && !role.ends_with(".ruin") && !super::massing::pile_house(building_culture, arch)
             && let Some(farm) = super::farmsteads::rural(tissue.as_ref().map_or("", |(zone, _)| zone.as_str()), &role,
                 programme["landmark"].as_bool().unwrap_or(false), tissue.as_ref().is_some_and(|(_, m)| !m.text("campLayout").is_empty()), ring_area(&lot.outer), pr.population)
+            // `outbuildings` (0..1): share of rural dwellings (farms included) that keep their outbuildings.
+            && crate::rng::Rng::new(&site_seed).fork("outbuildings").chance(layout.config.as_ref().map_or(0.5, |c| c.outbuildings))
             && let Some(cluster) = super::farmsteads::build(&mut parts, &lot, building_culture, farm, role.starts_with("dwelling.farm"), wealth, &site_seed) {
             programme["farmstead"] = cluster;
         }

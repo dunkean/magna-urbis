@@ -2533,6 +2533,11 @@
       2
     ]
   },
+  "lotSolidity": {
+    "default": 0.8,
+    "tissues": { "courtyard": 0.65, "compound": 0.65 },
+    "cultures": { "medina": 0.62, "roman-core": 0.8, "chinese": 0.8 }
+  },
   "version": 2,
   "fields": {
     "quarters": [

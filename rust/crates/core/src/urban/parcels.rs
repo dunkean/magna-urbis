@@ -720,7 +720,16 @@ fn resolve_identity(parcel: &mut Parcel, block: usize, owner: &str) {
     parcel.parent_ids = parcel.parent_ids.iter().map(|id| map(id)).collect();
 }
 
-fn ray_limit(shape: &Shape, p: Point, d: Point, fronts: &[Front], rank: usize, target: f64) -> f64 {
+#[allow(clippy::too_many_arguments)]
+fn ray_limit(
+    shape: &Shape,
+    p: Point,
+    d: Point,
+    fronts: &[Front],
+    rank: usize,
+    target: f64,
+    row: f64,
+) -> f64 {
     let mut hit = f64::INFINITY;
     let mut far_rank = None;
     for ring in std::iter::once(&shape.outer).chain(shape.holes.iter()) {
@@ -748,8 +757,15 @@ fn ray_limit(shape: &Shape, p: Point, d: Point, fronts: &[Front], rank: usize, t
     // Rank buys depth only up to the culture's wished lot depth: once half
     // the block already holds it, the two rows back to back share it evenly
     // instead of the main street taking an oversized lot.
+    // Invariant (a row holds a house): two rows back to back each keep the depth
+    // of the smallest house. Ground too shallow for two is one row of through
+    // lots: two rows there are all refused, then repaired into odd shapes.
     far_rank.map_or(hit, |other| {
-        (hit * depth_share(rank, other)).min((0.5 * hit).max(target)) + 1.2
+        if hit < 2.0 * row {
+            return hit + 1.2;
+        }
+        ((hit * depth_share(rank, other)).min((0.5 * hit).max(target)) + 1.2)
+            .min((hit - row).max(row))
     })
 }
 
@@ -763,12 +779,32 @@ fn depth_share(rank: usize, other: usize) -> f64 {
 }
 const MAX_DEPTH_SHARE: f64 = 0.55;
 
+/// Invariant (one street, one frontage): a street ribbon leaves, at every vertex
+/// of its path, a jog of 5 to 80 cm in the block outline and specks of contact
+/// with no direction of their own. For cutting a block neither ends a frontage:
+/// a run cut there has its own depth draw, depth plane and lateral bound, so the
+/// rear line steps every 12 m and the land left between the steps wraps around
+/// the lots behind them (`RUN_GAP` covers 99.9 % of the jogs measured on 18
+/// towns). A house reads its lot's own sides instead: `runs` keeps them apart.
+const RUN_GAP: f64 = 1.5;
+const RUN_SPECK: f64 = 0.05;
+
+/// The straight sides of a lot's frontage, for the frame of its house.
 fn runs(fronts: &[Front]) -> Vec<Vec<Front>> {
+    runs_within(fronts, 0.03, 0.0)
+}
+
+/// The frontages of a block, for its cuts.
+fn street_runs(fronts: &[Front]) -> Vec<Vec<Front>> {
+    runs_within(fronts, RUN_GAP, RUN_SPECK)
+}
+
+fn runs_within(fronts: &[Front], gap: f64, speck: f64) -> Vec<Vec<Front>> {
     let mut result: Vec<Vec<Front>> = Vec::new();
-    for f in fronts {
+    for f in fronts.iter().filter(|f| length(sub(f.b, f.a)) >= speck) {
         let joins = result.last().and_then(|r| r.last()).is_some_and(|old| {
             old.street == f.street
-                && length(sub(old.b, f.a)) < 0.03
+                && length(sub(old.b, f.a)) < gap
                 && dot(unit(sub(old.b, old.a)), unit(sub(f.b, f.a))) > 20.0_f64.to_radians().cos()
         });
         if joins {
@@ -781,7 +817,7 @@ fn runs(fronts: &[Front]) -> Vec<Vec<Front>> {
         let a = result.last().unwrap().last().unwrap();
         let b = result[0][0];
         if a.street == b.street
-            && length(sub(a.b, b.a)) < 0.03
+            && length(sub(a.b, b.a)) < gap
             && dot(unit(sub(a.b, a.a)), unit(sub(b.b, b.a))) > 20.0_f64.to_radians().cos()
         {
             let mut last = result.pop().unwrap();
@@ -827,7 +863,7 @@ struct Bend {
 /// longer curve. Straight runs are never split, whatever their segmentation.
 fn bend_runs(fronts: &[Front]) -> Vec<Bend> {
     let mut out = Vec::new();
-    for run in runs(fronts) {
+    for run in street_runs(fronts) {
         let mut parts: Vec<Vec<Front>> = vec![vec![run[0]]];
         for f in run.into_iter().skip(1) {
             let current = parts.last().unwrap();
@@ -971,6 +1007,8 @@ fn strips(
         ((coverage - 0.4) / 0.55).clamp(0.0, 1.0)
     };
     let maximum_depth = maximum_plot_depth(morph, zone);
+    let floor = tidy::floor_of(morph);
+    let row = morph.value["_witness"][1].as_f64().unwrap_or(0.0);
     let faces = morph_faces(morph);
     let mut available = vec![shape.clone()];
     let mut plots = Vec::new();
@@ -1007,11 +1045,19 @@ fn strips(
         let mut limit = f64::NEG_INFINITY;
         let mut frontage_level = f64::INFINITY;
         let mut walled = false;
+        // Depth counts from the street's mean line: on an oblique or curved
+        // run one plane from its farthest point would deepen every other lot.
+        let reach_of = |f: &Front| length(sub(f.b, f.a));
+        let level = run
+            .iter()
+            .map(|f| reach_of(f) * dot(add(f.a, f.b), inward) * 0.5)
+            .sum::<f64>()
+            / run.iter().map(reach_of).sum::<f64>().max(1e-9);
         for f in &run {
             for p in [f.a, add(f.a, scale(sub(f.b, f.a), 0.5)), f.b] {
                 frontage_level = frontage_level.min(dot(p, inward));
                 let start = add(p, scale(inward, 0.05));
-                let cap = ray_limit(shape, start, inward, fronts, f.rank, target);
+                let cap = ray_limit(shape, start, inward, fronts, f.rank, target, row);
                 let cap = if cap.is_finite() { cap } else { target };
                 // Invariant (houses against the wall): a lot whose depth ray
                 // ends on the inner face of the town wall, within 1.25x the
@@ -1029,7 +1075,7 @@ fn strips(
                 let closure = (1.0 - (spare / 7.0).clamp(0.0, 1.0)).powi(2);
                 let depth =
                     target.min(cap) + spare * (depth_pressure + (1.0 - depth_pressure) * closure);
-                limit = limit.max(dot(p, inward) + depth);
+                limit = limit.max(level + depth);
             }
         }
         // This also bounds curved frontage runs, whose points do not all lie on
@@ -1094,9 +1140,11 @@ fn strips(
                     .flat_map(|t| half(t, m, dot(p, m), true))
                     .collect();
             }
+            // A front serves the land it faces: a long thin arm reached only
+            // through its last lot stays available (next run, or rear land).
             for t in pieces {
                 if frontage(&t, &run).0 >= 3.0 {
-                    territories.push(t);
+                    territories.push(tidy::without_arms(t, &run, floor));
                 }
             }
         }
@@ -1122,9 +1170,10 @@ fn strips(
             let module = (((lo + hi) * 0.5) * rr.range(0.94, 1.06)).clamp(lo, hi);
             let mut rhythm = 1.0;
             // Heavier tail: occasional merchant lots of two or three modules,
-            // likelier on busy, high-rank frontage.
+            // on busy, high-rank frontage: a village street has no merchants.
             let merge = morph.number("wideLotChance").clamp(0.0, 1.0)
-                * (0.3 + 0.7 * pressure)
+                * pressure
+                * pressure
                 * if rank <= 1 { 1.0 } else { 0.4 };
             while total < extent && widths.len() < 4096 {
                 rhythm = (0.7 * rhythm + 0.3 * rr.range(0.8, 1.25)).clamp(0.8, 1.25);
@@ -1152,6 +1201,14 @@ fn strips(
                     }
                 }
             }
+            // Fitted to the street, no lot falls under the frontage its smallest
+            // house needs: it would fail its witness and be repaired by a merge.
+            let house = morph.value["_witness"][0].as_f64().unwrap_or(0.0);
+            while widths.len() > 1
+                && widths.iter().copied().fold(f64::MAX, f64::min) * extent / total < house
+            {
+                total -= widths.pop().unwrap();
+            }
             let lots: Vec<f64> = widths.iter().map(|w| w * extent / total).collect();
             let count = lots.len();
             let nominal: Vec<f64> = lots
@@ -1173,29 +1230,140 @@ fn strips(
             } else {
                 vec![cut_axis; nominal.len()]
             };
-            let narrowest = lo.min(extent / count as f64) * 0.75;
-            let mut best = cut_strip(&territory, &stations, &lots, &normal_cuts, narrowest);
+            let narrowest = (lo.min(extent / count as f64) * 0.75).max(house.min(extent / count as f64));
+            let least = 0.55 * morph.range("houseArea", zone)[0].max(20.0);
+            // The lot is judged as `qualify` will judge it: the same witness.
+            let witness = morph.value["_witness"].as_array().map(|w| {
+                let at = |i: usize| w[i].as_f64().unwrap_or(0.0);
+                [at(0), at(1), at(2), at(3)]
+            });
+            let sound = |s: &Shape| {
+                area(s) >= least
+                    && tidy::oriented(s).0 >= 0.75 * lo
+                    && tidy::pointed(s) >= SOUND_ANGLE
+                    && tidy::solidity(s) >= floor
+                    && frontage(s, fronts).0 >= 3.0
+                    && witness.is_none_or(|[f, d, a, m]| {
+                        area(s) >= m && families::envelope(s, fronts, f, d, a).is_some()
+                    })
+            };
+            let mut best =
+                cut_strip(&territory, &stations, &lots, &normal_cuts, narrowest, &sound);
             if let Some(sided) = side_directions(&territory, &stations, &nominal, cut_axis)
                 && sided
                     .iter()
                     .zip(&normal_cuts)
                     .any(|(a, b)| dot(*a, *b) < 10.0_f64.to_radians().cos())
             {
-                let other = cut_strip(&territory, &stations, &lots, &sided, narrowest);
+                let other = cut_strip(&territory, &stations, &lots, &sided, narrowest, &sound);
                 if balance(&other) < 0.85 * balance(&best) {
                     best = other;
                 }
             }
-            for (piece, _, _) in best {
-                plots.push(parcel(piece, block, axis, fronts, "plot"));
+            let depth = (limit - frontage_level).max(1.0);
+            let drawn: Vec<(Shape, f64)> = best
+                .into_iter()
+                .map(|(piece, k, _)| {
+                    let wished = lots[k.min(count - 1)] * depth;
+                    (piece, wished)
+                })
+                .collect();
+            for (piece, recut) in recut_unsound(drawn, &sound, &mut |ground, at| {
+                let mut stream = rr.fork(&format!("recut:{at}"));
+                bisect(ground, axis, fronts, morph, zone, &mut stream)
+            }) {
+                let mut lot = parcel(piece, block, axis, fronts, "plot");
+                if recut {
+                    lot.provenance.push("constrained-recut".into());
+                }
+                plots.push(lot);
             }
         }
     }
     for cell in available {
         plots.push(parcel(cell, block, axis, &[], "garden"));
     }
-    merge_slivers(&mut plots, fronts, Some(maximum_depth));
+    merge_slivers(&mut plots, fronts, Some(maximum_depth), floor);
     plots
+}
+
+/// A lot corner sharper than this (radians) is a fan blade, as in `bisect`.
+const SOUND_ANGLE: f64 = 0.35;
+/// A lot over this multiple of the area it was drawn for is oversized.
+const OVERSIZE: f64 = 1.5;
+
+/// Invariant (constrained ground): a frontage cut cannot see the ground it cuts,
+/// so on a narrow, triangular or curved territory some of its lots are unsound
+/// before any repair. Each stretch of unsound lots, with one neighbour on each
+/// side, is cut again by `bisect`, which judges every child before drawing it.
+/// A lot holding far more ground than the frontage and depth it was drawn for
+/// (a corner of the territory fell to it) counts as unsound too: constrained
+/// ground never pays for its shape with bigger lots.
+/// The new cut is kept only if it has as many lots, fewer of them unsound, and
+/// leaves no lot under a third of the largest around it.
+/// Sound stretches keep the culture's frontage rhythm. `drawn` follow the street
+/// with the area each was drawn for.
+fn recut_unsound(
+    drawn: Vec<(Shape, f64)>,
+    sound: &dyn Fn(&Shape) -> bool,
+    cut: &mut dyn FnMut(&Shape, usize) -> Vec<Shape>,
+) -> Vec<(Shape, bool)> {
+    let good: Vec<bool> = drawn
+        .iter()
+        .map(|(s, wished)| sound(s) && area(s) <= OVERSIZE * wished)
+        .collect();
+    let lots: Vec<Shape> = drawn.into_iter().map(|(s, _)| s).collect();
+    let mut out: Vec<(Shape, bool)> = Vec::with_capacity(lots.len());
+    let mut i = 0;
+    while i < lots.len() {
+        if good[i] {
+            out.push((lots[i].clone(), false));
+            i += 1;
+            continue;
+        }
+        let mut j = i;
+        while j + 1 < lots.len() && !good[j + 1] {
+            j += 1;
+        }
+        // The neighbour before is the last lot kept, unless it was recut.
+        let before = i > 0 && out.last().is_some_and(|l| !l.1);
+        let first = if before { i - 1 } else { i };
+        let last = (j + 1).min(lots.len() - 1);
+        let ground = lots[first + 1..=last]
+            .iter()
+            .try_fold(lots[first].clone(), |u, s| joined(&u, s));
+        let fresh = ground
+            .filter(|g| g.holes.is_empty())
+            .map(|g| cut(&g, i))
+            .filter(|new| {
+                let count = last - first + 1;
+                let old = good[first..=last].iter().filter(|g| !**g).count();
+                // No new small lot beside a big one (the 3x of `balance_neighbours`).
+                let around = lots[first.saturating_sub(1)..=(last + 1).min(lots.len() - 1)]
+                    .iter()
+                    .chain(new.iter())
+                    .map(area)
+                    .fold(0.0, f64::max);
+                let smallest = new.iter().map(area).fold(f64::INFINITY, f64::min);
+                new.len() >= count
+                    && around < 3.0 * smallest
+                    && new.iter().filter(|s| !sound(s)).count() < old
+            });
+        match fresh {
+            Some(new) => {
+                if before {
+                    out.pop();
+                }
+                out.extend(new.into_iter().map(|s| (s, true)));
+                i = last + 1;
+            }
+            None => {
+                out.extend(lots[i..=j].iter().map(|s| (s.clone(), false)));
+                i = j + 1;
+            }
+        }
+    }
+    out
 }
 
 /// Field plots: the shape cut by a grid of `w` × `d` m cells along `axis`.
@@ -1238,6 +1406,7 @@ fn cut_strip(
     lots: &[f64],
     directions: &[Point],
     narrowest: f64,
+    sound: &dyn Fn(&Shape) -> bool,
 ) -> Vec<(Shape, usize, f64)> {
     let count = lots.len();
     let extent = stations.total;
@@ -1245,56 +1414,94 @@ fn cut_strip(
     let mut out = vec![];
     let mut rem = vec![territory.clone()];
     let (mut assigned, mut previous, mut nominal) = (0.0, 0.0, 0.0);
+    let mut last_cut: Option<Point> = None;
     for k in 0..count {
         if k + 1 == count {
             out.extend(rem.drain(..).map(|c| (c, k, extent - previous)));
             break;
         }
         nominal += lots[k];
-        let direction = directions[k];
-        let level_at = |s: f64| dot(stations.at(s).0, direction);
-        let below = |s: f64| {
-            rem.iter()
-                .map(|c| half_area(c, direction, level_at(s)))
-                .sum::<f64>()
-        };
         let want = whole * nominal / extent - assigned;
         let reach = 0.35 * lots[k].min(lots[k + 1]);
         let lo_s = (nominal - reach).max(previous + narrowest);
         let hi_s = (nominal + reach)
             .min(extent - narrowest * (count - 1 - k) as f64)
             .max(lo_s);
-        let station = if below(lo_s) >= want {
-            lo_s
-        } else if below(hi_s) <= want {
-            hi_s
-        } else {
-            let (mut a, mut b) = (lo_s, hi_s);
-            for _ in 0..16 {
-                let m = 0.5 * (a + b);
-                if below(m) < want {
-                    a = m;
-                } else {
-                    b = m;
+        // One cut in `direction`, at the station that gives the lot its area.
+        let cut = |direction: Point| {
+            let level_at = |s: f64| dot(stations.at(s).0, direction);
+            let below = |s: f64| {
+                rem.iter()
+                    .map(|c| half_area(c, direction, level_at(s)))
+                    .sum::<f64>()
+            };
+            let station = if below(lo_s) >= want {
+                lo_s
+            } else if below(hi_s) <= want {
+                hi_s
+            } else {
+                let (mut a, mut b) = (lo_s, hi_s);
+                for _ in 0..16 {
+                    let m = 0.5 * (a + b);
+                    if below(m) < want {
+                        a = m;
+                    } else {
+                        b = m;
+                    }
+                    if b - a < 0.02 {
+                        break;
+                    }
                 }
-                if b - a < 0.02 {
-                    break;
+                0.5 * (a + b)
+            };
+            let level = level_at(station);
+            let lot: Vec<Shape> = rem
+                .iter()
+                .flat_map(|c| half(c, direction, level, true))
+                .collect();
+            let rest: Vec<Shape> = rem
+                .iter()
+                .flat_map(|c| half(c, direction, level, false))
+                .collect();
+            (direction, station, lot, rest)
+        };
+        // The lot is judged before it is drawn, as `bisect` does: a cut that
+        // leaves an unsound lot (or last lot) gives way to one square to the
+        // street here, or parallel to the previous cut, if that is sounder.
+        let closing = k + 2 == count;
+        let faults = |lot: &[Shape], rest: &[Shape]| {
+            lot.iter().filter(|s| !sound(s)).count()
+                + if closing {
+                    rest.iter().filter(|s| !sound(s)).count()
+                } else {
+                    0
+                }
+        };
+        let mut chosen = cut(directions[k]);
+        let mut worst = faults(&chosen.2, &chosen.3);
+        if worst > 0 {
+            let square = stations.at(nominal.min(extent)).1;
+            for direction in [Some(square), last_cut].into_iter().flatten() {
+                if dot(direction, directions[k]).abs() > 0.9995 {
+                    continue;
+                }
+                let other = cut(direction);
+                let found = faults(&other.2, &other.3);
+                if !other.2.is_empty() && !other.3.is_empty() && found < worst {
+                    worst = found;
+                    chosen = other;
                 }
             }
-            0.5 * (a + b)
-        };
+        }
+        let (direction, station, lot, rest) = chosen;
         let span = station - previous;
         previous = station;
-        let level = level_at(station);
-        let mut next = Vec::new();
-        for cell in rem {
-            for piece in half(&cell, direction, level, true) {
-                assigned += area(&piece);
-                out.push((piece, k, span));
-            }
-            next.extend(half(&cell, direction, level, false));
+        last_cut = Some(direction);
+        for piece in lot {
+            assigned += area(&piece);
+            out.push((piece, k, span));
         }
-        rem = next;
+        rem = rest;
     }
     out
 }
@@ -1416,7 +1623,7 @@ fn frontage_territories(
     zone: &str,
     rng: &mut Rng,
 ) -> Vec<Parcel> {
-    let rs = runs(fronts);
+    let rs = street_runs(fronts);
     let planes: Vec<_> = rs
         .iter()
         .filter_map(|run| {
@@ -1484,19 +1691,27 @@ fn frontage_territories(
             .into_iter()
             .map(|s| parcel(s, block, axis, &[], "garden")),
     );
-    merge_slivers(&mut plots, fronts, Some(maximum_plot_depth(morph, zone)));
+    merge_slivers(
+        &mut plots,
+        fronts,
+        Some(maximum_plot_depth(morph, zone)),
+        tidy::floor_of(morph),
+    );
     plots
 }
 
-fn courtyards(
+/// Recursive area bisection: each cut tries both axes and several area shares,
+/// and is kept only when every child is a sound lot (area, width, aspect, angle,
+/// its own street). A cell no cut can divide stays whole. Nothing is left over
+/// and no bad child is ever drawn, whatever the shape of the ground.
+fn bisect(
     shape: &Shape,
-    block: usize,
     axis: Point,
     fronts: &[Front],
     morph: &Morph,
     zone: &str,
     rng: &mut Rng,
-) -> Vec<Parcel> {
+) -> Vec<Shape> {
     let [amin, amax] = morph.range("houseArea", zone);
     let amin = amin.max(20.0);
     let amax = amax.max(amin);
@@ -1602,6 +1817,20 @@ fn courtyards(
             done.push(cell);
         }
     }
+    done
+}
+
+fn courtyards(
+    shape: &Shape,
+    block: usize,
+    axis: Point,
+    fronts: &[Front],
+    morph: &Morph,
+    zone: &str,
+    rng: &mut Rng,
+) -> Vec<Parcel> {
+    let amax = morph.range("houseArea", zone)[1].max(morph.range("houseArea", zone)[0].max(20.0));
+    let done = bisect(shape, axis, fronts, morph, zone, rng);
     let mut result: Vec<Parcel> = done
         .into_iter()
         .enumerate()
@@ -1632,6 +1861,7 @@ fn courtyards(
         &mut result,
         fronts,
         (morph.text("plotOp") != "compound").then(|| maximum_plot_depth(morph, zone)),
+        tidy::floor_of(morph),
     );
     result
 }
@@ -1788,7 +2018,12 @@ fn snap_onto(shape: &Shape, onto: &Shape, tolerance: f64) -> Shape {
     }
 }
 
-fn merge_slivers(cells: &mut Vec<Parcel>, fronts: &[Front], maximum_depth: Option<f64>) {
+fn merge_slivers(
+    cells: &mut Vec<Parcel>,
+    fronts: &[Front],
+    maximum_depth: Option<f64>,
+    floor: f64,
+) {
     for _ in 0..3 {
         let mut i = 0;
         while i < cells.len() {
@@ -1806,29 +2041,42 @@ fn merge_slivers(cells: &mut Vec<Parcel>, fronts: &[Front], maximum_depth: Optio
                 i += 1;
                 continue;
             }
-            let mut best = None;
-            let mut score = 0.01;
-            for (j, other) in cells.iter().enumerate() {
-                if i == j {
+            let mut options: Vec<(usize, f64)> = cells
+                .iter()
+                .enumerate()
+                .filter(|(j, _)| i != *j)
+                .map(|(j, other)| {
+                    let s = shared(&cell.shape, &other.shape)
+                        * (if other.front.is_some() { 1.5 } else { 1.0 });
+                    (j, s)
+                })
+                .filter(|&(_, s)| s > 0.01)
+                .collect();
+            options.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+            // The longest contact first, passing over a neighbour the sliver
+            // would only hang from as an arm.
+            let mut refused = false;
+            let mut chosen = None;
+            for &(j, _) in options.iter().take(4) {
+                let Some(shape) = joined(&cells[j].shape, &cells[i].shape) else {
                     continue;
-                }
-                let s = shared(&cell.shape, &other.shape)
-                    * (if other.front.is_some() { 1.5 } else { 1.0 });
-                if s > score {
-                    score = s;
-                    best = Some(j);
-                }
-            }
-            if let Some(j) = best
-                && let Some(shape) = joined(&cells[j].shape, &cells[i].shape)
-            {
-                if maximum_depth.is_some_and(|limit| {
+                };
+                let deep = maximum_depth.is_some_and(|limit| {
                     plot_depth(&shape, cells[j].axis, fronts)
                         .is_some_and(|depth| depth > limit + 0.01)
-                }) {
-                    i += 1;
+                });
+                if deep || tidy::concave_join(&shape, &cells[i].shape, &cells[j].shape, floor) {
+                    refused = true;
                     continue;
                 }
+                chosen = Some((j, shape));
+                break;
+            }
+            if chosen.is_none() && refused {
+                i += 1;
+                continue;
+            }
+            if let Some((j, shape)) = chosen {
                 let mut merged = parcel(shape, cells[j].block, cells[j].axis, fronts, "plot");
                 merged.parent_ids = vec![cells[j].id.clone(), cells[i].id.clone()];
                 merged.provenance = cells[j].provenance.clone();
@@ -2235,6 +2483,7 @@ fn redraw_pair(
     fronts: &[Front],
     witness: &dyn Fn(&Shape) -> Option<Shape>,
     too_deep: &dyn Fn(&Shape) -> bool,
+    floor: f64,
 ) -> Option<(Shape, Shape, Shape, Shape)> {
     let n = normal(common_side(&a.shape, &b.shape)?);
     let fa = frontage(&a.shape, fronts).0.max(1.0);
@@ -2254,6 +2503,12 @@ fn redraw_pair(
         let (na, nb) = if a_below { (x, y) } else { (y, x) };
         let after = area(&na).max(area(&nb)) / area(&na).min(area(&nb)).max(1e-6);
         if after > 0.8 * ratio || too_deep(&na) || too_deep(&nb) {
+            continue;
+        }
+        // A redraw through a concave union must not hand either lot its arm.
+        if tidy::solidity(&na) < floor.min(tidy::solidity(&a.shape))
+            || tidy::solidity(&nb) < floor.min(tidy::solidity(&b.shape))
+        {
             continue;
         }
         if let (Some(ea), Some(eb)) = (witness(&na), witness(&nb)) {
@@ -2385,6 +2640,7 @@ fn balance_neighbours(
     fronts: &[Front],
     witness: &dyn Fn(&Shape) -> Option<Shape>,
     too_deep: &dyn Fn(&Shape) -> bool,
+    floor: f64,
 ) {
     for _ in 0..2 {
         let lots: Vec<usize> = (0..cells.len())
@@ -2424,7 +2680,7 @@ fn balance_neighbours(
                 continue;
             };
             let Some((na, nb, ea, eb)) = redraw_pair(
-                &union, &cells[a], &cells[b], ratio, fronts, witness, too_deep,
+                &union, &cells[a], &cells[b], ratio, fronts, witness, too_deep, floor,
             ) else {
                 continue;
             };
@@ -2455,8 +2711,11 @@ fn balance_neighbours(
 /// left open. The union must be one ring, stay within the through-lot depth,
 /// within `cap` and within `balance` times its smallest neighbour (the
 /// 2.5x of the strict repairs is relaxed), and the smallest union is taken so
-/// the receivers stay balanced. Passes repeat: a leftover that gained a
-/// neighbour's frontage may serve the next one.
+/// the receivers stay balanced. An admitted lot refuses a union that would hang
+/// the leftover from it as an arm (the leftover stays land of its own, no house
+/// is lost); two leftovers may still pool, since that can admit a house. Passes
+/// repeat: a leftover that gained a neighbour's frontage may serve the next one.
+#[allow(clippy::too_many_arguments)]
 fn absorb(
     cells: &mut Vec<Parcel>,
     fronts: &[Front],
@@ -2464,6 +2723,7 @@ fn absorb(
     too_deep: &dyn Fn(&Shape) -> bool,
     cap: f64,
     balance: f64,
+    floor: f64,
 ) {
     let leftover = |p: &Parcel| {
         (p.use_kind == "plot" && p.envelope.is_none())
@@ -2501,6 +2761,11 @@ fn absorb(
                     continue;
                 };
                 if too_deep(&union) || area(&union) > cap {
+                    continue;
+                }
+                if cells[j].envelope.is_some()
+                    && tidy::concave_join(&union, &cells[i].shape, &cells[j].shape, floor)
+                {
                     continue;
                 }
                 let ub = super::geometry::bbox(&union);
@@ -2578,6 +2843,134 @@ fn absorb(
     }
 }
 
+/// The tier that admits a lot (the lenient one for refusals) and whether it is
+/// entered by a gate rather than a frontage.
+fn rule_of<'a>(
+    p: &Parcel,
+    spans: &[(f64, f64)],
+    profile: &'a super::culture::UrbanAdmissibility,
+    fallback: Option<&'a super::culture::UrbanAdmissibility>,
+    inward: bool,
+) -> (&'a super::culture::UrbanAdmissibility, bool) {
+    let primary = p
+        .envelope
+        .as_ref()
+        .is_some_and(|e| witnessed_by(e, profile));
+    let rule = if primary || fallback.is_none() {
+        profile
+    } else {
+        fallback.unwrap_or(profile)
+    };
+    let polygonal = p
+        .provenance
+        .iter()
+        .any(|x| x == POLYGONAL || x == DEGENERATE);
+    // A lot of odd ground whose street contact is shorter than the
+    // frontage rule is entered by a passage (the access width rule).
+    let narrow = polygonal && !spans.iter().any(|(lo, hi)| hi - lo + 1e-6 >= rule.min_frontage);
+    (rule, (inward && primary) || narrow)
+}
+
+/// A lot's front, rank, street, access kind, front length, corner mark and
+/// contacts, all read together from its outline's `contacts`.
+fn seat(
+    p: &mut Parcel,
+    contacts: &[Front],
+    spans: &[(f64, f64)],
+    rule: &super::culture::UrbanAdmissibility,
+    gated: bool,
+    layout: &Layout,
+) {
+    let minimum = if p.use_kind == "court" {
+        1.2
+    } else {
+        rule.min_frontage
+    };
+    let best = contacts
+        .iter()
+        .zip(spans)
+        .map(|(f, (lo, hi))| (f, hi - lo))
+        .filter(|(f, span)| {
+            *span + 1e-6
+                >= if f.gate || gated {
+                    rule.min_access_width
+                } else {
+                    minimum
+                }
+                && (!f.shared || rule.shared_access || p.use_kind == "court")
+        })
+        .min_by(|(a, sa), (b, sb)| {
+            a.rank
+                .cmp(&b.rank)
+                .then(a.shared.cmp(&b.shared))
+                .then_with(|| sb.total_cmp(sa))
+        });
+    let support = best.map_or(0.0, |(_, span)| span);
+    let best = best.map(|(f, _)| f);
+    p.front = best.map(|f| [f.a, f.b]);
+    p.rank = best.map_or(99, |f| f.rank);
+    p.access = Some(super::ParcelAccess {
+        // A court house is entered through its own gate, not a shop front.
+        kind: best
+            .map_or("unserved", |f| match access_kind(f, layout) {
+                "public" if gated => "private",
+                kind => kind,
+            })
+            .into(),
+        street: best.map(|f| f.street),
+        front_length: support,
+    });
+    if p.use_kind == "plot"
+        && !p.provenance.iter().any(|x| x == "corner-lot")
+        && contacts.iter().enumerate().any(|(i, f)| {
+            contacts.iter().skip(i + 1).any(|g| {
+                length(sub(f.b, f.a)) >= 3.0
+                    && length(sub(g.b, g.a)) >= 3.0
+                    && dot(unit(sub(f.b, f.a)), unit(sub(g.b, g.a))).abs()
+                        < 45.0_f64.to_radians().cos()
+            })
+        })
+    {
+        p.provenance.push("corner-lot".into());
+    }
+    p.contacts = contacts
+        .iter()
+        .map(|f| super::ParcelContact {
+            a: f.a,
+            b: f.b,
+            street: f.street,
+            rank: f.rank,
+            length: length(sub(f.b, f.a)),
+            kind: access_kind(f, layout).into(),
+        })
+        .collect();
+}
+
+/// `shape` still answers its lot's tier: its surface, and an entry the tier
+/// admits on one continuous support (the witness is checked by the caller).
+fn answers_tier(
+    p: &Parcel,
+    shape: &Shape,
+    fronts: &[Front],
+    profile: &super::culture::UrbanAdmissibility,
+    fallback: Option<&super::culture::UrbanAdmissibility>,
+    inward: bool,
+) -> bool {
+    let contacts = contacts::boundary_contacts(shape, fronts);
+    let spans = contacts::support_spans(&contacts);
+    let (rule, gated) = rule_of(p, &spans, profile, fallback, inward);
+    area(shape) + 1e-6 >= rule.min_area
+        && contacts.iter().zip(&spans).any(|(f, (lo, hi))| {
+            hi - lo + 1e-6
+                >= if f.gate || gated {
+                    rule.min_access_width
+                } else {
+                    rule.min_frontage
+                }
+                && (!f.shared || rule.shared_access)
+        })
+}
+
 fn access_kind(front: &Front, layout: &Layout) -> &'static str {
     if front.shared {
         return "collective";
@@ -2605,6 +2998,7 @@ fn qualify(
     family: &str,
     depth_limit: Option<f64>,
     dense: bool,
+    floor: f64,
 ) {
     // The fronts a profile admits do not depend on the lot: built once.
     let admitted = |a: &super::culture::UrbanAdmissibility, gated: bool| -> Vec<Front> {
@@ -2688,6 +3082,14 @@ fn qualify(
                 if deep(&shape) || area(&shape) > cap {
                     return None;
                 }
+                // Next neighbour rather than a concave union with an admitted
+                // lot: the merge would only move an arm onto it. Two refused
+                // lots may still join, the union can admit a house.
+                if cells[j].envelope.is_some()
+                    && tidy::concave_join(&shape, &cells[i].shape, &cells[j].shape, floor)
+                {
+                    return None;
+                }
                 let merged = area(&shape);
                 let sb = super::geometry::bbox(&shape);
                 let smallest = cells
@@ -2742,11 +3144,12 @@ fn qualify(
     // contact is a street, not back land.
     let through_deep =
         |s: &Shape| depth_limit.is_some_and(|limit| lot_depth(s, fronts) > 1.25 * limit + 0.01);
+    let unshared = |s: &Shape| through_deep(s) || tidy::solidity(s) < floor;
     let mut i = 0;
     while i < cells.len() {
         let leftover = (cells[i].use_kind == "plot" && cells[i].envelope.is_none())
             || (cells[i].use_kind == "residual" && cells[i].reason == "insufficient-frontage");
-        if leftover && share_out(cells, i, fronts, &witness, &through_deep, cap) {
+        if leftover && share_out(cells, i, fronts, &witness, &unshared, cap) {
             continue;
         }
         i += 1;
@@ -2754,7 +3157,7 @@ fn qualify(
     let strict_deep =
         |s: &Shape| depth_limit.is_some_and(|limit| lot_depth(s, fronts) > limit + 0.01);
     if dense {
-        absorb(cells, fronts, &witness, &through_deep, 1.5 * cap, 3.5);
+        absorb(cells, fronts, &witness, &through_deep, 1.5 * cap, 3.5, floor);
         // Odd ground that holds the admission rectangle only slanted is still
         // a house lot: the leftover is admitted by a free witness, never
         // before a join was tried.
@@ -2822,39 +3225,19 @@ fn qualify(
             p.provenance.push("dense-leftover".into());
         }
     }
-    balance_neighbours(cells, fronts, &witness, &strict_deep);
+    balance_neighbours(cells, fronts, &witness, &strict_deep, floor);
     split_corners(cells, fronts, &witness, &strict_deep);
     // Frontage rule of the tier that admitted the lot (the lenient one for refusals).
     let lenient = fallback.unwrap_or(profile);
     for p in cells.iter_mut() {
         p.family = family.into();
         let contacts = contacts::boundary_contacts(&p.shape, fronts);
-        let primary = p
-            .envelope
-            .as_ref()
-            .is_some_and(|e| witnessed_by(e, profile));
-        let rule = if primary || fallback.is_none() {
-            profile
-        } else {
-            lenient
-        };
-        let polygonal = p
-            .provenance
-            .iter()
-            .any(|x| x == POLYGONAL || x == DEGENERATE);
-        // A lot of odd ground whose street contact is shorter than the
-        // frontage rule is entered by a passage (the access width rule).
-        let narrow = polygonal
-            && !contacts.iter().enumerate().any(|(i, _)| {
-                let (lo, hi) = contacts::support_span(&contacts, i);
-                hi - lo + 1e-6 >= rule.min_frontage
-            });
-        let gated = (inward && primary) || narrow;
+        let spans = contacts::support_spans(&contacts);
+        let (rule, gated) = rule_of(p, &spans, profile, fallback, inward);
         if p.use_kind == "plot" {
             if p.envelope.is_none() {
                 p.use_kind = "residual".into();
-                p.reason = if !contacts.iter().enumerate().any(|(i, f)| {
-                    let (lo, hi) = contacts::support_span(&contacts, i);
+                p.reason = if !contacts.iter().zip(&spans).any(|(f, (lo, hi))| {
                     hi - lo + 1e-6
                         >= if f.gate {
                             lenient.min_access_width
@@ -2873,72 +3256,7 @@ fn qualify(
         } else if p.reason == "insufficient-frontage" {
             p.use_kind = "residual".into();
         }
-        let minimum = if p.use_kind == "court" {
-            1.2
-        } else {
-            rule.min_frontage
-        };
-        let best = contacts
-            .iter()
-            .enumerate()
-            .map(|(i, f)| {
-                let (lo, hi) = contacts::support_span(&contacts, i);
-                (f, hi - lo)
-            })
-            .filter(|(f, span)| {
-                *span + 1e-6
-                    >= if f.gate || gated {
-                        rule.min_access_width
-                    } else {
-                        minimum
-                    }
-                    && (!f.shared || rule.shared_access || p.use_kind == "court")
-            })
-            .min_by(|(a, sa), (b, sb)| {
-                a.rank
-                    .cmp(&b.rank)
-                    .then(a.shared.cmp(&b.shared))
-                    .then_with(|| sb.total_cmp(sa))
-            });
-        let support = best.map_or(0.0, |(_, span)| span);
-        let best = best.map(|(f, _)| f);
-        p.front = best.map(|f| [f.a, f.b]);
-        p.rank = best.map_or(99, |f| f.rank);
-        p.access = Some(super::ParcelAccess {
-            // A court house is entered through its own gate, not a shop front.
-            kind: best
-                .map_or("unserved", |f| match access_kind(f, layout) {
-                    "public" if gated => "private",
-                    kind => kind,
-                })
-                .into(),
-            street: best.map(|f| f.street),
-            front_length: support,
-        });
-        if p.use_kind == "plot"
-            && !p.provenance.iter().any(|x| x == "corner-lot")
-            && contacts.iter().enumerate().any(|(i, f)| {
-                contacts.iter().skip(i + 1).any(|g| {
-                    length(sub(f.b, f.a)) >= 3.0
-                        && length(sub(g.b, g.a)) >= 3.0
-                        && dot(unit(sub(f.b, f.a)), unit(sub(g.b, g.a))).abs()
-                            < 45.0_f64.to_radians().cos()
-                })
-            })
-        {
-            p.provenance.push("corner-lot".into());
-        }
-        p.contacts = contacts
-            .iter()
-            .map(|f| super::ParcelContact {
-                a: f.a,
-                b: f.b,
-                street: f.street,
-                rank: f.rank,
-                length: length(sub(f.b, f.a)),
-                kind: access_kind(f, layout).into(),
-            })
-            .collect();
+        seat(p, &contacts, &spans, rule, gated, layout);
     }
     // Back land larger than a few crofts (a deep block no lane could reach:
     // slope, water) is not one lot's garden of hectares: it is fenced into
@@ -3133,6 +3451,7 @@ fn pair_courts(
                 family,
                 depth_limit,
                 false,
+                0.0,
             );
             one.pop()
         })
@@ -3629,7 +3948,6 @@ pub(super) fn generate(
         warnings: Vec::new(),
         diagnostics: None,
         enclosure: None,
-        lot_enclosures: Vec::new(),
     };
     let mut diagnostics = super::PartitionDiagnostics::default();
     let root = Rng::new(seed).fork(&format!("parcels:{}", layout.key));
@@ -3894,6 +4212,12 @@ pub(super) fn generate(
             local_morph.value["plotDepth"][zone] =
                 serde_json::json!(local_depth.map(|d| d.max(minimum)));
         }
+        local_morph.value["_lotSolidity"] =
+            serde_json::json!(tidy::solidity_floor(block_culture, local_morph.text("plotOp")));
+        if let Some(a) = fallback.as_ref().or(admission.as_ref()) {
+            local_morph.value["_witness"] =
+                serde_json::json!([a.min_frontage, a.min_depth, a.min_access_width, a.min_area]);
+        }
         let faces = wall_faces(&block.shape, layout);
         if !faces.is_empty() {
             local_morph.value["_wallFace"] = serde_json::json!(
@@ -4145,6 +4469,9 @@ pub(super) fn generate(
             admission.shared_access = true;
         }
         let family = families::family(morph.text("plotOp"));
+        // Organic tissue and camps have no solidity rule, in the cut as in the
+        // plan's score (`camp::admitted_form` passes the same 0).
+        let floor = if organic { 0.0 } else { tidy::floor_of(morph) };
         // Dense zones leave no empty land: leftovers are joined (`absorb`).
         let dense = matches!(zone.as_str(), "core" | "middle");
         let depth_limit = (!organic && !matches!(morph.text("plotOp"), "compound" | "wholeBlock"))
@@ -4159,6 +4486,7 @@ pub(super) fn generate(
             family,
             depth_limit,
             dense,
+            floor,
         );
         // Invariant (bug 2b): no admitted lot reaches deeper than the culture's
         // lot depth from its best access; the land behind becomes its garden.
@@ -4187,6 +4515,7 @@ pub(super) fn generate(
                 family,
                 depth_limit,
                 dense,
+                floor,
             );
             parcels.extend(bounded);
         }
@@ -4263,6 +4592,7 @@ pub(super) fn generate(
                     family,
                     depth_limit,
                     dense,
+                    floor,
                 );
                 let admitted = children.len() >= 2
                     && children.iter().all(|p| {
@@ -4333,13 +4663,45 @@ pub(super) fn generate(
                             family,
                             depth_limit,
                             false,
+                            floor,
                         )
                     },
                     &mut rng.fork("lot-merge"),
                 );
             }
         }
-        tidy::tidy(&mut parcels, &fronts, layout, depth_limit, organic, dense);
+        {
+            let inward = family == "courtyard";
+            let admits = |p: &Parcel, s: &Shape| {
+                answers_tier(p, s, &fronts, &admission, fallback.as_ref(), inward)
+            };
+            let reseat = |p: &mut Parcel| {
+                let contacts = contacts::boundary_contacts(&p.shape, &fronts);
+                let spans = contacts::support_spans(&contacts);
+                let (rule, gated) = rule_of(p, &spans, &admission, fallback.as_ref(), inward);
+                // Attached land keeps its owner's access: only its front moves.
+                let owned = (p.use_kind != "plot").then(|| p.access.clone());
+                seat(p, &contacts, &spans, rule, gated, layout);
+                if let Some(access) = owned {
+                    p.access = access;
+                }
+                let turns = |a: &Front, b: &Front| {
+                    length(sub(a.b, a.a)) >= 3.0
+                        && length(sub(b.b, b.a)) >= 3.0
+                        && dot(unit(sub(a.b, a.a)), unit(sub(b.b, b.a))).abs()
+                            < 45.0_f64.to_radians().cos()
+                };
+                if !contacts.iter().any(|a| contacts.iter().any(|b| turns(a, b))) {
+                    p.provenance.retain(|x| x != "corner-lot");
+                }
+            };
+            let rules = tidy::Rules {
+                floor,
+                admits: &admits,
+                reseat: &reseat,
+            };
+            tidy::tidy(&mut parcels, &fronts, depth_limit, organic, dense, &rules);
+        }
         // A failed cut cannot turn a served block wholly into gardens when
         // the unsplit frontage still admits a native house. Keep its rear land.
         if morph.text("plotOp") != "garden" && !camp
@@ -4350,7 +4712,7 @@ pub(super) fn generate(
                 Some(limit) => bound_frontage_depth(whole, limit),
                 None => vec![whole],
             };
-            qualify(&mut retry, &fronts, layout, &admission, fallback.as_ref(), family == "courtyard", family, depth_limit, dense);
+            qualify(&mut retry, &fronts, layout, &admission, fallback.as_ref(), family == "courtyard", family, depth_limit, dense, floor);
             if retry.iter().any(|p| p.use_kind == "plot" && p.envelope.is_some()) {
                 for p in &mut retry { p.provenance.push("served-block-infill".into()); }
                 parcels = retry;

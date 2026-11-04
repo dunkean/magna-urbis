@@ -8,16 +8,17 @@ import { wetBridgeSpans } from './cityBridges';
  * Native buildings pass through unchanged; no native geometry is modified. */
 import type { ArchitectureVolume, PlacementBatch, PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
 import type { HouseMaterial, MaterialPattern, MaterialSlots, Point, Surface, Vertex3 } from '../../../rust/bridge/housesContract';
-import { isBuildingProjection, surfaceTriangles, type Building3dScene, type Building3dVisual } from './urbanBuildingGeometry';
+import { isBuildingProjection, surfaceTriangles, type Building3dScene, type Building3dVisual, type YardLine, type YardMesh, type YardStation } from './urbanBuildingGeometry';
 import type { NativeBuildingProjection, NativeBuildingProjectionScene } from '../ui/urbanBuildingProjection';
 import type { ParentMember3dVisual, Parent3dScene } from '../ui/urbanParent3d';
-import { roleFamily } from './cityCanvas';
+import { roleFamily, type CityPalette } from './cityCanvas';
 import type { Enclosure } from '../../../rust/bridge/urban';
 import { loftRidges, pieceVolumes, readMassing, scaledRing, stiltDeck, stiltSupports, volumeRoof, type ResolvedVolume } from './cityMassing';
 import { buildingTint } from './buildingPalette';
 import type { TreeDwelling } from './cityTrees';
 import type { LotEnclosure } from '../../../rust/bridge/urban';
 import type { YardBoundary } from './cityLotEnclosures';
+import { TOP_LIGHT, yardMeshTint, yardRuns, yardStyle } from './yardStyle';
 
 type RoofMesh = ArchitectureVolume['roof_mesh'];
 type RoofMeshFace = RoofMesh['faces'][number];
@@ -764,85 +765,133 @@ function wallPiece(id: string, variant: string, mesh: WallMesh, pattern: Materia
     volumes: [volume], useful_area_m2: 0, domestic_units: 0, structural_features: [], simplification: 'recipe_volumes', diagnostics: ['city3d fortification (display only)'], resolved: null };
 }
 
-/** Low yard boundaries on exactly the 2D runs and gate gaps, built as a few long bands per run
- * (no per-post prisms through the generic prism path): terrain is sampled once per station (<= 6 m) and
- * interpolated, so cost and triangles stay linear in fence length (a 10k town: well under 1 s / 300k triangles).
- * Looks: plank fence = posts every 3 m and two rails; wattle = a woven band zig-zagging between stakes;
- * hedge = a two-tier volume with a bulging side and an irregular top; wall = a body under a wider coping.
- * Walls and copings take the culture's wall / roof tints. Everything starts below the ground: no z-fighting.
+/** Low yard boundaries on exactly the 2D runs and gate gaps. Each run is one polyline with mitred joints; terrain is sampled
+ * once per station (<= 6 m) and every vertex keeps the ground under it, so the display exaggeration lifts the fence with the
+ * relief and never stretches it. Cost and triangles stay linear in fence length.
+ * Looks: plank fence = a sheet of boards between posts; wattle = a woven sheet zig-zagging between stakes, two tones;
+ * hedge = a two-tier volume with a bulging side and an irregular top; wall = a body under a wider coping. Sheets are single faces
+ * (the pass draws both sides) and posts two crossed quads: a tenth of a metre needs no box. Gates get a jamb on each side.
+ * Colours come from yardStyle, shared with the plan. Everything starts below the ground: no z-fighting.
  * Batched per 128 m cell, material and culture. The batch footprint is a zero-area diagonal of its box: it gives the
  * renderer its bounds but never constrains the terrain (no trench to the batch's lowest point), excludes trees or
- * draws an overview cap; fences are seen through their own faces only. */
-const YARD_MESHES = new WeakMap<readonly LotEnclosure[], { heightAt?: City3dHeight; buildings: PlacedBuilding[] }>();
-const YARD_STATION_M = 6, POST_M = 3;
-/** Muted yard materials (final sRGB tints): weathered wood, grey wattle, a soft hedge green close to the ground. */
-const YARD_WOOD = 'city3d:wall:timber@8a8070', YARD_WATTLE = 'city3d:wall:wattle@918a72', YARD_HEDGE = 'city3d:yard:hedge@6f7d57';
+ * draws an overview cap; beyond the near level the pass draws `yard.lines`, a plain ribbon (eachBuildingTriangle). */
+const YARD_MESHES = new WeakMap<readonly LotEnclosure[], { heightAt?: City3dHeight; palette: CityPalette; buildings: PlacedBuilding[] }>();
+const YARD_STATION_M = 6, POST_M = 3, PANEL_M = 1.5, YARD_MITER = 2.5;
 const noise = (x: number, y: number, salt: number): number => { let h = Math.imul(Math.round(x * 4) ^ 0x9e3779b1, 0x85ebca6b) ^ Math.imul(Math.round(y * 4) + salt, 0xc2b2ae35); h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d); return ((h ^ (h >>> 12)) >>> 0) / 4294967296; };
-export function city3dLotEnclosures(enclosures: readonly LotEnclosure[], heightAt?: City3dHeight): PlacedBuilding[] {
-  const cached = YARD_MESHES.get(enclosures); if (cached && cached.heightAt === heightAt) return cached.buildings;
-  const batches = new Map<string, { roof: RoofBuilder; material: LotEnclosure['material']; bottom: number; top: number; minX: number; minY: number; maxX: number; maxY: number }>();
-  const tints = new Map<string, { body: string; coping: string }>();
-  const tint = (culture: string): { body: string; coping: string } => {
-    let t = tints.get(culture);
-    if (!t) {
-      const p = culture ? buildingTint(culture, 'stone', 'tile', 0.5, 'dwelling') : undefined, ground = [.64, .61, .55], soft = (c: readonly number[], k: number) => hex6(c.map((v, i) => v * (1 - k) + ground[i] * k));
-      t = { body: tinted(mat('stone'), soft(p?.wall ?? ground, .45)), coping: tinted(roofMat('stone'), soft(p?.roof ?? ground, .5)) }; tints.set(culture, t);
-    }
-    return t;
+/** Stations of a run, at most YARD_STATION_M apart, with the ground under each; `mx, my` is the left offset, mitred on the vertices. */
+function yardStations(path: readonly Point[], closed: boolean, heightAt?: City3dHeight): YardStation[] {
+  const last = path.length - 1, normals: Point[] = [], out: YardStation[] = [];
+  for (let i = 0; i < last; i++) { const a = path[i], b = path[i + 1], l = Math.hypot(b.x - a.x, b.y - a.y); normals.push({ x: -(b.y - a.y) / l, y: (b.x - a.x) / l }); }
+  const miter = (i: number): Point => {
+    const p = i > 0 ? normals[i - 1] : closed ? normals[last - 1] : normals[0], q = i < last ? normals[i] : closed ? normals[0] : normals[last - 1];
+    const bx = p.x + q.x, by = p.y + q.y, bl = Math.hypot(bx, by); if (bl < 1e-6) return q;
+    const k = Math.min(YARD_MITER, 1 / Math.max(.4, (bx * q.x + by * q.y) / bl)) / bl;
+    return { x: bx * k, y: by * k };
   };
-  for (const e of enclosures as readonly YardBoundary[]) for (let i = 1; i < e.path.length; i++) {
-    // A yard side is metres long: a non-finite or km-long side (bad input point) would loop and allocate without end.
-    const a = e.path[i - 1], b = e.path[i], len = Math.hypot(b.x - a.x, b.y - a.y); if (!(len >= .08 && len <= 2000)) continue;
-    const u = { x: (b.x - a.x) / len, y: (b.y - a.y) / len }, n = { x: -u.y, y: u.x };
-    const c = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, culture = e.culture ?? '';
-    const key = `${Math.floor(c.x / 128)}/${Math.floor(c.y / 128)}/${e.material}/${e.fenceStyle ?? ''}/${culture}`;
-    const batch = batches.get(key) ?? { roof: new RoofBuilder(), material: e.material, bottom: Infinity, top: -Infinity, minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }; batches.set(key, batch);
-    const k = Math.max(1, Math.ceil(len / YARD_STATION_M)), zs: number[] = [];
-    for (let j = 0; j <= k; j++) zs.push(heightAt?.(a.x + u.x * len * j / k, a.y + u.y * len * j / k) || 0);
-    const ground = (s: number): number => { const f = Math.max(0, Math.min(k, s / len * k)), j = Math.min(k - 1, Math.floor(f)); return zs[j] + (zs[j + 1] - zs[j]) * (f - j); };
-    const at = (s: number, o: number, z: number): Vertex3 => ({ x: a.x + u.x * s + n.x * o, y: a.y + u.y * s + n.y * o, z });
-    const face = (pts: Vertex3[], m: string): void => { for (const p of pts) { batch.bottom = Math.min(batch.bottom, p.z); batch.top = Math.max(batch.top, p.z); } batch.roof.face(pts, m); };
-    type F = (s: number, j: number) => number;
-    /** A band over stations `ss`: bottom/top heights and left/right offsets per station; two sides, an optional top and end caps. */
-    const band = (ss: number[], lo: F, hi: F, o0: F, o1: F, m: string, top = true, ends = true): void => {
-      const P = ss.map((s, j) => ({ s, b: lo(s, j), t: hi(s, j), l: o0(s, j), r: o1(s, j) }));
-      for (let j = 1; j < P.length; j++) {
-        const p = P[j - 1], q = P[j];
-        face([at(p.s, p.l, p.b), at(q.s, q.l, q.b), at(q.s, q.l, q.t), at(p.s, p.l, p.t)], m);
-        face([at(q.s, q.r, q.b), at(p.s, p.r, p.b), at(p.s, p.r, p.t), at(q.s, q.r, q.t)], m);
-        if (top) face([at(p.s, p.l, p.t), at(q.s, q.l, q.t), at(q.s, q.r, q.t), at(p.s, p.r, p.t)], m);
-      }
-      if (ends) for (const p of [P[0], P[P.length - 1]]) face([at(p.s, p.l, p.b), at(p.s, p.r, p.b), at(p.s, p.r, p.t), at(p.s, p.l, p.t)], m);
+  let s = 0;
+  const push = (x: number, y: number, m: Point): void => { out.push({ x, y, mx: m.x, my: m.y, s, g: heightAt?.(x, y) || 0 }); };
+  for (let i = 0; i < last; i++) {
+    const a = path[i], b = path[i + 1], l = Math.hypot(b.x - a.x, b.y - a.y), k = Math.max(1, Math.ceil(l / YARD_STATION_M));
+    for (let j = 0; j < k; j++) { push(a.x + (b.x - a.x) * j / k, a.y + (b.y - a.y) * j / k, j ? normals[i] : miter(i)); s += l / k; }
+  }
+  push(path[last].x, path[last].y, miter(last));
+  return out;
+}
+/** The same line with stations at most `step` apart. */
+function yardFiner(line: readonly YardStation[], step: number): YardStation[] {
+  const out: YardStation[] = [];
+  for (let i = 1; i < line.length; i++) {
+    const a = line[i - 1], b = line[i], k = Math.max(1, Math.ceil((b.s - a.s) / step)), at = (u: number, v: number, t: number): number => u + (v - u) * t;
+    for (let j = 0; j < k; j++) { const t = j / k; out.push({ x: at(a.x, b.x, t), y: at(a.y, b.y, t), mx: at(a.mx, b.mx, t), my: at(a.my, b.my, t), s: at(a.s, b.s, t), g: at(a.g, b.g, t) }); }
+  }
+  out.push(line[line.length - 1]);
+  return out;
+}
+interface YardBatch { roof: RoofBuilder; ground: number[]; lines: YardLine[]; material: LotEnclosure['material']; bottom: number; top: number; minX: number; minY: number; maxX: number; maxY: number }
+export function city3dLotEnclosures(enclosures: readonly LotEnclosure[], heightAt?: City3dHeight, palette: CityPalette = 'terrain'): PlacedBuilding[] {
+  const cached = YARD_MESHES.get(enclosures); if (cached && cached.heightAt === heightAt && cached.palette === palette) return cached.buildings;
+  const batches = new Map<string, YardBatch>(), { runs, gates } = yardRuns(enclosures as readonly YardBoundary[]);
+  const batchAt = (e: YardBoundary, p: Point): YardBatch => {
+    const key = `${Math.floor(p.x / 128)}/${Math.floor(p.y / 128)}/${e.material}/${e.fenceStyle ?? ''}/${e.culture ?? ''}`;
+    let batch = batches.get(key);
+    if (!batch) batches.set(key, batch = { roof: new RoofBuilder(), ground: [], lines: [], material: e.material, bottom: Infinity, top: -Infinity, minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
+    return batch;
+  };
+  const tints = (e: YardBoundary): { body: string; alt: string; top: string; wood: string } => {
+    const look = yardStyle(e.material, e.culture, palette, e.fenceStyle);
+    const id = e.material === 'hedge' ? 'city3d:yard:hedge' : e.material === 'wall' ? mat('stone') : e.fenceStyle === 'plank' ? 'city3d:wall:timber' : 'city3d:wall:wattle';
+    return { body: tinted(id, yardMeshTint(look.color)), alt: tinted(id, yardMeshTint(look.accent)), top: tinted(e.material === 'wall' ? roofMat('stone') : id, yardMeshTint(e.material === 'fence' ? look.color : look.accent, TOP_LIGHT)), wood: tinted('city3d:wall:timber', yardMeshTint(look.jamb)) };
+  };
+  type F = (st: YardStation, j: number) => number;
+  const painter = (batch: YardBatch) => {
+    const at = (st: YardStation, o: number, z: number): Vertex3 => ({ x: st.x + st.mx * o, y: st.y + st.my * o, z });
+    const face = (pts: Vertex3[], grounds: number[], m: string): void => {
+      const before = batch.roof.vertices.length; batch.roof.face(pts, m); if (batch.roof.vertices.length === before) return;
+      batch.ground.push(...grounds); for (const p of pts) { batch.bottom = Math.min(batch.bottom, p.z); batch.top = Math.max(batch.top, p.z); }
     };
-    const stations = (step: number): number[] => { const m = Math.max(1, Math.ceil(len / step)); return Array.from({ length: m + 1 }, (_, j) => len * j / m); };
-    const post = (s: number, half: number, h: number, m: string): void => band([s - half, s + half], x => ground(x) - .2, x => ground(x) + h, () => -half, () => half, m);
-    let width: number;
-    // Discreet: thin members, muted materials close to the ground tones (the culture tints the walls, mixed toward ground grey-beige).
+    /** A band over stations: bottom/top heights and left/right offsets per station; two sides, an optional top, optional end caps. */
+    const band = (ss: readonly YardStation[], lo: F, hi: F, o0: F, o1: F, m: string, top = true, ends = true, cap = m): void => {
+      const P = ss.map((st, j) => ({ st, b: lo(st, j), t: hi(st, j), l: o0(st, j), r: o1(st, j) }));
+      for (let j = 1; j < P.length; j++) {
+        const p = P[j - 1], q = P[j], g = [p.st.g, q.st.g, q.st.g, p.st.g];
+        face([at(p.st, p.l, p.b), at(q.st, q.l, q.b), at(q.st, q.l, q.t), at(p.st, p.l, p.t)], g, m);
+        face([at(p.st, p.r, p.b), at(q.st, q.r, q.b), at(q.st, q.r, q.t), at(p.st, p.r, p.t)], g, m);
+        if (top) face([at(p.st, p.l, p.t), at(q.st, q.l, q.t), at(q.st, q.r, q.t), at(p.st, p.r, p.t)], g, cap);
+      }
+      if (ends) for (const p of [P[0], P[P.length - 1]]) face([at(p.st, p.l, p.b), at(p.st, p.r, p.b), at(p.st, p.r, p.t), at(p.st, p.l, p.t)], [p.st.g, p.st.g, p.st.g, p.st.g], m);
+    };
+    /** A single face along the line, `off` from it, two tones alternating panel by panel. */
+    const sheet = (ss: readonly YardStation[], hi: F, off: F, even: string, odd: string): void => {
+      for (let j = 1; j < ss.length; j++) { const p = ss[j - 1], q = ss[j]; face([at(p, off(p, j - 1), p.g - .12), at(q, off(q, j), q.g - .12), at(q, off(q, j), q.g + hi(q, j)), at(p, off(p, j - 1), p.g + hi(p, j - 1))], [p.g, q.g, q.g, p.g], j % 2 ? odd : even); }
+    };
+    const post = (p: Point, g: number, h: number, half: number, m: string): void => {
+      for (const [dx, dy] of [[half, half], [half, -half]]) face([{ x: p.x - dx, y: p.y - dy, z: g - .15 }, { x: p.x + dx, y: p.y + dy, z: g - .15 }, { x: p.x + dx, y: p.y + dy, z: g + h }, { x: p.x - dx, y: p.y - dy, z: g + h }], [g, g, g, g], m);
+    };
+    return { band, sheet, post };
+  };
+  const extend = (batch: YardBatch, p: Point, h: number): void => { batch.minX = Math.min(batch.minX, p.x - h); batch.minY = Math.min(batch.minY, p.y - h); batch.maxX = Math.max(batch.maxX, p.x + h); batch.maxY = Math.max(batch.maxY, p.y + h); };
+  for (const run of runs) {
+    const e = run.source, batch = batchAt(e, run.path[run.path.length >> 1]), line = yardStations(run.path, run.closed, heightAt), { band, sheet, post } = painter(batch), t = tints(e);
+    const ends = !run.closed;
+    let half: number, height: number;
     if (e.material === 'wall') {
-      const t = tint(culture), H = Math.max(.8, e.height ?? 1.3), half = H > 2 ? .22 : .18, ss = stations(YARD_STATION_M);
-      band(ss, s => ground(s) - .3, s => ground(s) + H, () => -half, () => half, t.body, false);
-      band(ss, s => ground(s) + H, s => ground(s) + H + .1, () => -half - .04, () => half + .04, t.coping);
-      width = 2 * half + .08;
+      const H = Math.max(.8, e.height ?? 1.3); half = H > 2 ? .22 : .18; height = H + .1;
+      band(line, st => st.g - .3, st => st.g + H, () => -half, () => half, t.body, false, ends);
+      band(line, st => st.g + H, st => st.g + H + .1, () => -half - .04, () => half + .04, t.top, true, ends);
     } else if (e.material === 'hedge') {
       // A base under a narrower crown (0.5-0.6 m wide): the crown bulges and its top undulates every 3 m.
-      const H = 1.1 + .25 * (noise(a.x, a.y, 7) - .5), base = stations(YARD_STATION_M), ss = stations(3), m = YARD_HEDGE;
-      const w = ss.map(s => { const p = at(s, 0, 0); return .2 + .06 * noise(p.x, p.y, 3); }), crown = ss.map(s => { const p = at(s, 0, 0); return H + .2 * (noise(p.x, p.y, 5) - .5); });
-      band(base, s => ground(s) - .2, s => ground(s) + .65 * H, () => -.28, () => .28, m);
-      band(ss, s => ground(s) + .65 * H, (s, j) => ground(s) + crown[j], (_, j) => -w[j], (_, j) => w[j], m, true, len > 4);
-      width = .56;
+      const H = 1.1 + .25 * (noise(line[0].x, line[0].y, 7) - .5), ss = yardFiner(line, POST_M);
+      const w = ss.map(st => .2 + .06 * noise(st.x, st.y, 3)), crown = ss.map(st => H + .2 * (noise(st.x, st.y, 5) - .5));
+      half = .28; height = H;
+      band(line, st => st.g - .2, st => st.g + .65 * H, () => -half, () => half, t.body, true, ends);
+      band(ss, st => st.g + .65 * H, (st, j) => st.g + crown[j], (_, j) => -w[j], (_, j) => w[j], t.body, true, ends, t.top);
     } else if (e.fenceStyle === 'wattle') {
-      const ss = stations(2);
-      band(ss, s => ground(s) - .1, s => { const p = at(s, 0, 0); return ground(s) + .8 + .06 * noise(p.x, p.y, 9); }, (_, j) => (j % 2 ? .02 : -.02) - .04, (_, j) => (j % 2 ? .02 : -.02) + .04, YARD_WATTLE);
-      for (const s of stations(POST_M)) post(Math.max(.03, Math.min(len - .03, s)), .025, .92, YARD_WOOD);
-      width = .08;
+      const ss = yardFiner(line, PANEL_M), top = ss.map(st => .8 + .06 * noise(st.x, st.y, 9));
+      half = .05; height = .85;
+      sheet(ss, (_, j) => top[j], (_, j) => j % 2 ? .05 : -.05, t.body, t.alt);
+      for (const st of yardFiner(line, POST_M)) post(st, st.g, .95, .035, t.wood);
     } else {
-      const ss = stations(YARD_STATION_M);
-      for (const [z0, z1] of [[.34, .4], [.76, .82]]) band(ss, s => ground(s) + z0, s => ground(s) + z1, () => -.025, () => .025, YARD_WOOD, true, false);
-      for (const s of stations(POST_M)) post(Math.max(.05, Math.min(len - .05, s)), .05, 1, YARD_WOOD);
-      width = .1;
+      const ss = yardFiner(line, PANEL_M), top = ss.map(st => .98 + .05 * noise(st.x, st.y, 11));
+      half = .05; height = 1;
+      sheet(ss, (_, j) => top[j], () => 0, t.body, t.alt);
+      for (const st of yardFiner(line, POST_M)) post(st, st.g, 1.12, .05, t.wood);
     }
-    const h = width / 2;
-    for (const p of [a, b]) { batch.minX = Math.min(batch.minX, p.x - h); batch.minY = Math.min(batch.minY, p.y - h); batch.maxX = Math.max(batch.maxX, p.x + h); batch.maxY = Math.max(batch.maxY, p.y + h); }
+    batch.lines.push({ stations: line, closed: run.closed, height, half, side: t.body, top: t.top });
+    for (const p of run.path) extend(batch, p, half + .1);
+  }
+  // Jambs: a post either side of a gate, a pier in a wall.
+  for (const g of gates) {
+    const e = g.source, batch = batchAt(e, g.a), { band, post } = painter(batch), t = tints(e);
+    for (const p of [g.a, g.b]) {
+      const ground = heightAt?.(p.x, p.y) || 0;
+      if (e.material === 'wall') {
+        const H = Math.max(.8, e.height ?? 1.3) + .3, l = Math.hypot(g.b.x - g.a.x, g.b.y - g.a.y), ux = (g.b.x - g.a.x) / l, uy = (g.b.y - g.a.y) / l, out = p === g.a ? -.6 : .6;
+        const st: YardStation = { x: p.x, y: p.y, mx: -uy, my: ux, s: 0, g: ground };
+        band([st, { ...st, x: p.x + ux * out, y: p.y + uy * out }], () => ground - .3, () => ground + H, () => -.31, () => .31, t.body, true, true, t.top);
+      }
+      else post(p, ground, e.material === 'hedge' ? 1.45 : 1.3, .09, t.wood);
+      extend(batch, p, .4);
+    }
   }
   const buildings: PlacedBuilding[] = [];
   for (const [key, b] of batches) {
@@ -851,12 +900,14 @@ export function city3dLotEnclosures(enclosures: readonly LotEnclosure[], heightA
     const pattern: MaterialPattern = b.material === 'wall' ? 'stone' : 'wood', origin = { x: (lo.x + hi.x) / 2, y: (lo.y + hi.y) / 2 };
     const volume = baseVolume(`yard:${key}:v`, footprint, b.bottom, b.top - b.bottom, 0, slots(pattern, pattern), b.roof.mesh(), 'RF-FLAT', { footprint: [], z_min_m: b.bottom, z_max_m: b.bottom }, []);
     volume.envelope = 'open';
-    buildings.push({ id: `yard:${key}`, parcel_id: '', function: 'collective', culture: { culture: '', pack: '', mode: 'inspired', borrowing: null } as unknown as PlacedBuilding['culture'],
+    const building: PlacedBuilding & { yard: YardMesh } = { id: `yard:${key}`, parcel_id: '', function: 'collective', culture: { culture: '', pack: '', mode: 'inspired', borrowing: null } as unknown as PlacedBuilding['culture'],
       recipe_id: 'city3d-yard', variant_id: `yard:${b.material}`, transform: { origin, orientation_deg: 0 }, ground_z_m: b.bottom,
       footprint, roof_footprint: footprint, courtyards: [], circulation: [], entrance: origin, access_id: '',
-      volumes: [volume], useful_area_m2: 0, domestic_units: 0, structural_features: [], simplification: 'recipe_volumes', diagnostics: ['city3d yard enclosure'], resolved: null });
+      volumes: [volume], useful_area_m2: 0, domestic_units: 0, structural_features: [], simplification: 'recipe_volumes', diagnostics: ['city3d yard enclosure'], resolved: null,
+      yard: { ground: b.ground, lines: b.lines } };
+    buildings.push(building);
   }
-  YARD_MESHES.set(enclosures, { heightAt, buildings }); return buildings;
+  YARD_MESHES.set(enclosures, { heightAt, palette, buildings }); return buildings;
 }
 CITY3D_MATERIALS.push({ id: 'city3d:yard:hedge', label: 'hedge', roles: [], pattern: 'plain', origin: 'city3d', source_ref: null } as HouseMaterial);
 

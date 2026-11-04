@@ -99,7 +99,7 @@ fn admitted_form(frame:&Frame,morph:&Morph,layout:&Layout)->(Vec<Tile>,Vec<Shape
     let index=FrontageIndex::new(layout);let reached=regional_streets(layout);
     let score=|plan:&(Vec<Tile>,Vec<Shape>)| {
         let mut part=Partition{key:layout.key.clone(),config:Some(ParcelConfig::default()),programme:None,
-            parcels:vec![],warnings:vec![],diagnostics:None,enclosure:None,lot_enclosures:vec![]};
+            parcels:vec![],warnings:vec![],diagnostics:None,enclosure:None};
         for (bi,b) in layout.blocks.iter().enumerate().filter(|(_,b)|b.kind=="block") {
             let native=|p:&Shape|contacts::street_contacts(p,layout,&index).into_iter().filter(|f|reached[f.street]).collect::<Vec<_>>();
             let mut fronts=native(&b.shape);
@@ -108,7 +108,7 @@ fn admitted_form(frame:&Frame,morph:&Morph,layout:&Layout)->(Vec<Tile>,Vec<Shape
             let fallback=compact_fallback(&c.architecture_pack,&pr.context.period,&c.admissibility);
             let mut admission=c.admissibility;admission.shared_access=true;
             let family=families::family(morph.text("plotOp"));
-            qualify(&mut cells,&fronts,layout,&admission,fallback.as_ref(),family=="courtyard",family,None,matches!(b.zone.as_str(),"core"|"middle"));
+            qualify(&mut cells,&fronts,layout,&admission,fallback.as_ref(),family=="courtyard",family,None,matches!(b.zone.as_str(),"core"|"middle"),0.0);
             part.parcels.extend(cells);
         }
         super::super::programme::allocate(layout,&mut part);

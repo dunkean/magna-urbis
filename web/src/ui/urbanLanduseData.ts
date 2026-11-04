@@ -171,7 +171,8 @@ export function generateUrbanLanduse(input: UrbanLanduseInput): UrbanLanduseScen
       { footprint, population: input.city.population,
         // Existing TS rural buildings remain opt-in through an explicit agricultural
         // function; the retained urban footprint excludes their lots without cropping roofs.
-        farmsteads: (profile?.functions?.agricultural ?? 0) > 0 || !!input.ruralOptions?.denserSmallholdings, naturalForest, settlementFootprints, ...input.ruralOptions });
+        farmsteads: (profile?.functions?.agricultural ?? 0) > 0 || !!input.ruralOptions?.denserSmallholdings, naturalForest, settlementFootprints,
+        outbuildings: input.layouts?.find(layout => layout.key === input.city?.key)?.config?.outbuildings, ...input.ruralOptions });
     world.landuse = generated.layer; world.stats = generated.stats;
     world.landuse.areas = world.landuse.areas.map(a => {
       if (a.kind !== 'field' || (a as { enclosed?: boolean }).enclosed) return a;

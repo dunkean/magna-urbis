@@ -25,7 +25,7 @@ export interface Box { minX: number; minY: number; maxX: number; maxY: number }
 export type CityView = 'tissue' | 'uses' | 'parcels' | 'buildings' | 'roles';
 export type CityLod = 'far' | 'mid' | 'near' | 'close';
 export type CityPalette = 'growth' | 'atlas' | 'ink' | 'terrain' | 'parchment';
-export interface CityLayers { waterways?: boolean; reserve: boolean; allocated: boolean; centers: boolean; domains: boolean; quarters: boolean; blocks: boolean; streets: boolean; enclosures: boolean; /** Walls, hedges and fences of the lots; absent = shown. */ lotEnclosures?: boolean; /** Streets as a ground surface (square junctions, curb returns, tapers); absent = on, off = round-capped strokes. */ roadSurface?: boolean; parcels: boolean; gardens: boolean; places: boolean; fronts: boolean; axes: boolean; access: boolean }
+export interface CityLayers { waterways?: boolean; reserve: boolean; allocated: boolean; centers: boolean; domains: boolean; quarters: boolean; blocks: boolean; streets: boolean; enclosures: boolean; /** Walls, hedges and fences of the lots; absent = shown. */ lotEnclosures?: boolean; /** The fences stand as 3D meshes: the plan paints the yard ground only. */ lotEnclosureMeshes?: boolean; /** Streets as a ground surface (square junctions, curb returns, tapers); absent = on, off = round-capped strokes. */ roadSurface?: boolean; parcels: boolean; gardens: boolean; places: boolean; fronts: boolean; axes: boolean; access: boolean }
 
 // ---------------------------------------------------------------- levels of detail
 const LOD_ORDER: CityLod[] = ['close', 'near', 'mid', 'far'];
@@ -647,7 +647,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
     casing.flush(ctx); under.flush(ctx); surface.flush(ctx); over.flush(ctx); marks.flush(ctx);
   }
 
-  if (layers.lotEnclosures !== false) drawLotEnclosures(ctx, scene, { mpp, lod, palette }); // enclosures hook
+  if (layers.lotEnclosures !== false) drawLotEnclosures(ctx, scene, { mpp, lod, palette, groundOnly: layers.lotEnclosureMeshes }); // enclosures hook
 
   // Walls: thick line broken at gates, gate and wall towers.
   if (layers.enclosures) {

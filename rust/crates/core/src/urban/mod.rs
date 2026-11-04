@@ -438,9 +438,6 @@ pub struct Partition {
     /// Resolved enclosure values (culture defaults and overrides) of this city.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enclosure: Option<enclosure::Resolved>,
-    /// Closed lot boundaries (walls, hedges, fences) for the renderer.
-    #[serde(default, rename = "lotEnclosures", skip_serializing_if = "Vec::is_empty")]
-    pub lot_enclosures: Vec<enclosure::LotEnclosure>,
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -642,6 +639,9 @@ pub struct LayoutConfig {
     /// Village, hamlet and rural homes are low (two storeys under the
     /// tradition) and mostly small; faubourg homes one storey lower.
     pub low_rural_houses: bool,
+    /// Share (0..1) of rural homes, farms included, that keep their outbuildings
+    /// (0 none, 1 all); isolated farms included.
+    pub outbuildings: f64,
     /// Access ways (closes, derbs) start on their street's axis and nubs go (off: 2 m past it, as drawn).
     pub road_mouths: bool,
     /// Remnants of moved crossings, spurs inside another street's ribbon and short doubled links go.
@@ -811,6 +811,7 @@ impl Default for LayoutConfig {
             town_main_road: true,
             polish_road_ends: true,
             low_rural_houses: true,
+            outbuildings: 0.5,
             road_mouths: false,
             road_remnants: false,
             road_end_joins: false,
@@ -1250,6 +1251,8 @@ pub fn generate_quarters(
             && !catalogue()["cultures"][&config.mix_culture].is_object())
         || !["legacy", "adaptive", "closed"].contains(&config.exit_treatment.as_str())
         || !["auto", "none", "partial", "full"].contains(&config.peripheral_road.as_str())
+        || !config.outbuildings.is_finite()
+        || !(0.0..=1.0).contains(&config.outbuildings)
         || !config.organic_branch_variation.is_finite()
         || config.camp_ring_wobble.is_some_and(|v| !v.is_finite() || !(0.0..=0.4).contains(&v))
         || !(0.0..=1.0).contains(&config.organic_branch_variation)
@@ -1590,13 +1593,7 @@ pub fn generate_parcels(
         if layout.programme.as_ref().is_some_and(|p| p.population > 0) && !partition.parcels.iter().any(|p| matches!(p.use_kind.as_str(), "plot" | "compound")) {
             partition.warnings.push("Aucune habitation : le site ou la grammaire de la culture ne laisse aucune parcelle bâtissable — essayer un autre site, un rayon plus grand ou une autre culture.".into());
         }
-        let resolved = enclosure::resolve(culture, config);
-        // Countryside lots (village, hamlet, rural) stay open unless the user sets `plotEnclosure`.
-        let enclosed: Vec<Parcel> = if config.plot_enclosure.is_some() || config.countryside_enclosures { partition.parcels.clone() } else {
-            partition.parcels.iter().filter(|p| !layout.blocks.get(p.block).is_some_and(|b| matches!(b.zone.as_str(), "village" | "hamlet" | "rural"))).cloned().collect()
-        };
-        partition.lot_enclosures = enclosure::lot_enclosures(&key_seed, &enclosed, &resolved);
-        partition.enclosure = Some(resolved);
+        partition.enclosure = Some(enclosure::resolve(culture, config));
         Ok(partition)
     })
     .into_iter()

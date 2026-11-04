@@ -1,5 +1,5 @@
 import { buildingPaint, type UrbanBuildingAppearance } from '../render/urbanBuildingStyle';
-import { building3dHeight, isBuildingProjection, buildingRayDistance, eachBuildingTriangle, type BuildingVector, type Building3dVisual, type Building3dScene } from '../render/urbanBuildingGeometry';
+import { building3dHeight, isBuildingProjection, isYardMesh, yardLod, buildingRayDistance, eachBuildingTriangle, type BuildingVector, type Building3dVisual, type Building3dScene } from '../render/urbanBuildingGeometry';
 import { layerExtent, loadMaterialImages, uploadMaterialArrays, coverLayer, wallLayer, MATERIALS, type MaterialImages } from '../render/buildingMaterials';
 import { buildingFeatureLod, buildingFeatureMetresPerPixel, hasBuildingFeatureLod, sameBuildingFeatureLod, type BuildingFeatureLod } from '../render/urbanBuildingFeatureLod';
 import { buildingTint } from '../render/buildingPalette';
@@ -11,7 +11,8 @@ export interface BuildingFrame { matrix: Float32Array; cameraX: number; cameraY:
  * vertex's ground: the display exaggeration lifts a building's base with the relief, never its own height. */
 export interface Batch { color: Vec3; tint: Vec3; recolored: boolean; values: number[]; buffer?: WebGLBuffer; vao?: WebGLVertexArrayObject; /** WebGPU backend's vertex buffer. */ gpu?: GPUBuffer; count: number; stride: number; /** Untextured batches carry the colour per vertex (one batch, one draw per sector). */ vcolor?: boolean; /** Distinct vertex colours of a vcolor batch (inspection). */ palette?: Vec3[] }
 interface Entry { building: Building3dVisual; bounds: Bounds }
-export interface Sector { origin: [number, number]; entries: Entry[]; bounds: Bounds; width: number; featureLodEligible: boolean; overview: boolean; shown: boolean; cached?: { overview: boolean; featureLod?: BuildingFeatureLod; batches: Batch[]; used: number } }
+/** `yard`: lot boundaries only, in a sector of their own: they change level far earlier than buildings and for a fraction of the cost. */
+export interface Sector { origin: [number, number]; entries: Entry[]; bounds: Bounds; width: number; featureLodEligible: boolean; overview: boolean; shown: boolean; yard?: boolean; cached?: { overview: boolean; featureLod?: BuildingFeatureLod; yardLevel?: number; batches: Batch[]; used: number } }
 const SECTOR = 256, MAX_CACHE_BYTES = 96 * 1024 * 1024;
 const vertexColor = `#version 300 es
 precision highp float;
@@ -169,12 +170,12 @@ export class UrbanBuildingPass {
     for (const building of scene?.buildings ?? []) {
       const box = bounds(building);
       const p = isBuildingProjection(building) ? { x: (box[0] + box[3]) / 2, y: (box[1] + box[4]) / 2 } : building.transform.origin;
-      const origin: [number, number] = [Math.floor(p.x / SECTOR) * SECTOR, Math.floor(p.y / SECTOR) * SECTOR], key = String(origin);
+      const yard = isYardMesh(building), origin: [number, number] = [Math.floor(p.x / SECTOR) * SECTOR, Math.floor(p.y / SECTOR) * SECTOR], key = `${origin}${yard ? '/yard' : ''}`;
       let sector = sectors.get(key);
-      if (!sector) { sector = { origin, entries: [], bounds: [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity], width: 0, featureLodEligible: false, overview: false, shown: false }; sectors.set(key, sector); }
+      if (!sector) { sector = { origin, entries: [], bounds: [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity], width: 0, featureLodEligible: false, overview: false, shown: false, yard }; sectors.set(key, sector); }
       sector.entries.push({ building, bounds: box });
       sector.featureLodEligible ||= !isBuildingProjection(building) && hasBuildingFeatureLod(building.structural_features);
-      sector.width += Math.max(1, Math.min(box[3] - box[0], box[4] - box[1]));
+      sector.width += yard ? 1 : Math.max(1, Math.min(box[3] - box[0], box[4] - box[1])); // a yard sector's `pixels` are pixels per metre
       for (let i = 0; i < 3; i++) { sector.bounds[i] = Math.min(sector.bounds[i], box[i]); sector.bounds[i + 3] = Math.max(sector.bounds[i + 3], box[i + 3]); }
     }
     this.sectors = [...sectors.values()];
@@ -208,7 +209,7 @@ export class UrbanBuildingPass {
     const original = new Map(this.source?.buildings.map(b => [b.id, b]));
     return this.sectors.flatMap(sector => sector.entries.filter(e => e.building !== original.get(e.building.id)).map(e => e.building));
   }
-  private prepare(sector: Sector, overview: boolean, featureLod?: BuildingFeatureLod): void {
+  private prepare(sector: Sector, overview: boolean, featureLod?: BuildingFeatureLod, yardLevel?: number): void {
     this.release(sector);
     const groups = new Map<string, Batch>(), textured = !!this.appearance.textured;
     for (const { building } of sector.entries) {
@@ -228,7 +229,7 @@ export class UrbanBuildingPass {
         let c = colors.get(key);
         if (!c) {
           c = rgb(base);
-          if (this.appearance.diagnostic === 'none') {
+          if (this.appearance.diagnostic === 'none' || face.surface === 'yard') {
             if (tm?.[1].length === 6) c = rgb(`#${tm[1]}`);
             else if (tm) c = c.map((v, i) => Math.min(1, v * parseInt(tm[1][i], 16) / 8)) as Vec3;
             else if (culture && !building.id.startsWith('city3d-')) {
@@ -241,7 +242,6 @@ export class UrbanBuildingPass {
           if (face.surface === 'roof' && this.appearance.diagnostic === 'none' && this.appearance.colors?.building) c = rgb(this.appearance.colors.building);
           const tree = /^city3d:tree:(crown|trunk)$/.exec(id ?? '');   // switch treeHouseGreens: forest greens, whatever the colour mode
           if (tree) c = rgb(tree[1] === 'crown' ? '#5f8247' : '#4b5a36');
-          if (id === 'city3d:yard:hedge' && !tm) c = rgb('#5f7a3c'); // a tinted yard hedge keeps its own (muted) green
           if (id === 'city3d:water') c = rgb('#' + (tm?.[1] ?? '8aaeb8'));
           colors.set(key, c);
         }
@@ -251,12 +251,12 @@ export class UrbanBuildingPass {
           : tm?.[1].length === 3 ? [...tm[1]].map(v => parseInt(v, 16) / 8) as Vec3 : [1, 1, 1] as Vec3;
         let batch = groups.get(color); if (!batch) { batch = { color: textured ? c : [1, 1, 1], tint, recolored, values: [], count: 0, stride: 10, vcolor: !textured, palette: [] }; groups.set(color, batch); }
         if (batch.palette && !batch.palette.some(q => q[0] === c[0] && q[1] === c[1] && q[2] === c[2])) batch.palette.push(c);
-        for (const p of face.points) {
+        for (const [i, p] of face.points.entries()) {
           batch.values.push(p[0] - sector.origin[0], p[2], p[1] - sector.origin[1], face.normal[0], face.normal[2], face.normal[1]);
           if (textured) { const [u, v] = faceUv(p, face.normal, layer); batch.values.push(u, v, layer); } else batch.values.push(c[0], c[1], c[2]);
-          batch.values.push(Math.min(p[2], ground));
+          batch.values.push(face.ground?.[i] ?? Math.min(p[2], ground));
         }
-      }, overview, featureLod);
+      }, overview, featureLod, yardLevel);
     }
     const batches: Batch[] = [];
     for (const batch of groups.values()) {
@@ -264,7 +264,7 @@ export class UrbanBuildingPass {
       this.upload(batch, new Float32Array(batch.values));
       batch.count = batch.values.length / batch.stride; batch.values = []; batches.push(batch);
     }
-    sector.cached = { overview, featureLod, batches, used: this.tick };
+    sector.cached = { overview, featureLod, yardLevel, batches, used: this.tick };
   }
   /** Vertex buffer of a batch (10 floats per vertex). */
   protected upload(batch: Batch, values: Float32Array): void {
@@ -303,12 +303,13 @@ export class UrbanBuildingPass {
         if (plane[0] * point[0] + plane[1] * point[1] + plane[2] * point[2] + plane[3] < -radius * Math.hypot(plane[0], plane[1], plane[2])) outside = true;
       }
       if (outside) continue;
-      const pixels = sector.width * frame.focal / Math.max(1, depth - radius), overview = sector.cached?.overview ? pixels < 10 : pixels < 7;
+      const pixels = sector.width * frame.focal / Math.max(1, depth - radius), yardLevel = sector.yard ? yardLod(pixels, sector.cached?.yardLevel) : undefined;
+      const overview = yardLevel !== undefined ? yardLevel > 0 : sector.cached?.overview ? pixels < 10 : pixels < 7;
       const featureMpp = overview && sector.featureLodEligible ? buildingFeatureMetresPerPixel(m, point, radius, frame.focal) : undefined;
       const featureLod = featureMpp === undefined ? undefined : buildingFeatureLod(featureMpp, frame.exaggeration, sector.cached?.featureLod);
-      if (!sector.cached || sector.cached.overview !== overview || !sameBuildingFeatureLod(sector.cached.featureLod, featureLod)) {
+      if (!sector.cached || sector.cached.overview !== overview || sector.cached.yardLevel !== yardLevel || !sameBuildingFeatureLod(sector.cached.featureLod, featureLod)) {
         if (prepared && performance.now() - started > 8) { pending = true; if (!sector.cached) continue; }
-        else { this.prepare(sector, overview, featureLod); ++prepared; }
+        else { this.prepare(sector, overview, featureLod, yardLevel); ++prepared; }
       }
       sector.shown = true; sector.overview = sector.cached!.overview; sector.cached!.used = this.tick;
       for (const batch of sector.cached!.batches) { stats.drawCalls++; stats.triangles += batch.count / 3; }
@@ -353,7 +354,7 @@ export class UrbanBuildingPass {
     let distance = Infinity, id: string | undefined;
     for (const sector of this.sectors) if (sector.shown && rayBox(origin, direction, sector.bounds, distance)) for (const entry of sector.entries) {
       if (!rayBox(origin, direction, entry.bounds, distance)) continue;
-      eachBuildingTriangle(entry.building, face => { const hit = buildingRayDistance(origin, direction, face.points); if (hit !== null && hit < distance) { distance = hit; id = entry.building.id; } }, sector.overview, sector.cached?.featureLod);
+      eachBuildingTriangle(entry.building, face => { const hit = buildingRayDistance(origin, direction, face.points); if (hit !== null && hit < distance) { distance = hit; id = entry.building.id; } }, sector.overview, sector.cached?.featureLod, sector.cached?.yardLevel);
     }
     return { id, distance };
   }

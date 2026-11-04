@@ -370,7 +370,7 @@ export function mountCity3d(options: City3dOptions): City3d {
       ctx.save(); ctx.setTransform(k, 0, 0, k, -tile.x * k, -tile.y * k);
       const planOptions = options.getPlanOptions?.(); ctx.globalAlpha = planOptions?.opacity ?? 1;
       drawCity(ctx, city, { viewport: { minX: tile.x, minY: tile.y, maxX: tile.x + tile.width, maxY: tile.y + tile.width }, mpp, dpr: 1, lod: selectCityLod(mpp),
-        colors: planOptions?.colors, view: planOptions?.view ?? 'parcels', labels: planOptions?.labels ?? options.labels, palette: planOptions?.palette ?? 'terrain', width: planOptions?.width ?? 0.6, layers: planOptions?.layers ?? PLAN_LAYERS, buildingsVisible: false, appearance: { style: 'cartographic', diagnostic: 'none' }, textured: textured(), groundBlend: planOptions?.groundBlend ?? false, onTexturesReady: () => terrain?.invalidateTiles() });
+        colors: planOptions?.colors, view: planOptions?.view ?? 'parcels', labels: planOptions?.labels ?? options.labels, palette: planOptions?.palette ?? 'terrain', width: planOptions?.width ?? 0.6, layers: { ...planOptions?.layers ?? PLAN_LAYERS, lotEnclosureMeshes: true }, buildingsVisible: false, appearance: { style: 'cartographic', diagnostic: 'none' }, textured: textured(), groundBlend: planOptions?.groundBlend ?? false, onTexturesReady: () => terrain?.invalidateTiles() });
       ctx.restore();
     }
     return c;
@@ -421,7 +421,7 @@ export function mountCity3d(options: City3dOptions): City3d {
       const sharedYards = options.getLotEnclosures?.();
       if (yardPlan && sharedYards) yardPlan.lotEnclosures = sharedYards as import('../../../rust/bridge/urban').LotEnclosure[];
       else if (yardPlan && scene) updateYardEnclosures(yardPlan, scene.buildings, () => scene.buildings);
-      const yardMeshes = yardPlan ? city3dLotEnclosures(yardPlan.lotEnclosures ?? [], heightAt) : [];
+      const yardMeshes = yardPlan ? city3dLotEnclosures(yardPlan.lotEnclosures ?? [], heightAt, options.getPlanOptions?.()?.palette) : [];
       const extra = [...structureBuildings, ...yardMeshes];
       if (extra.length) display = display ? { ...display, buildings: [...display.buildings, ...extra],
         ...(display.occupationBuildings ? { occupationBuildings: [...display.occupationBuildings, ...extra] } : {}) }

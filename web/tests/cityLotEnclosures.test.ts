@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { buildCityScene } from '../src/render/cityCanvas';
 import { buildYardEnclosures, type YardHouse } from '../src/render/cityLotEnclosures';
 import { city3dLotEnclosures } from '../src/render/city3dMeshes';
+import { yardRuns, yardStyle } from '../src/render/yardStyle';
+import { UrbanBuildingPass, type Batch } from '../src/ui/urbanBuilding3d';
 import type { Layout, Partition, Point, Shape } from '../../rust/bridge/urban';
 import { polygonContains } from '../src/gen/core/geom';
 import { softenRuralGround } from '../src/render/countryside';
@@ -54,31 +56,65 @@ describe('house yards', () => {
     const gaps = fronts.map(([a, b]) => [Math.min(a.x, b.x), Math.max(a.x, b.x)]).sort((a, b) => a[0] - b[0]);
     expect(gaps.slice(1).filter((s, i) => s[0] - gaps[i][1] > 1).length).toBeGreaterThanOrEqual(4);
   });
-  it('sizes yards by house and seed: lone houses differ, shared yards and open fronts appear', () => {
-    // sparse houses (every other plot): yards are not all the same box
-    const f = fixture('european-organic', [0, 2, 4]); f.scene.enclosureProfiles![0]!.plot = 1;
-    const sizes = buildYardEnclosures(f.scene, f.houses).yards.map(y => { const xs = y.shape.outer.map(p => p.x), ys = y.shape.outer.map(p => p.y); return (Math.max(...xs) - Math.min(...xs)) * (Math.max(...ys) - Math.min(...ys)); });
-    expect(new Set(sizes.map(s => Math.round(s / 10))).size).toBeGreaterThan(1);
-    // culture yardMerge = 1: neighbours share a yard
+  it('yards follow the lots: merged neighbours lose their common chain, the culture decides the street front', () => {
+    const sides = (r: ReturnType<typeof buildYardEnclosures>): number => edges(r).filter(([a, b]) => Math.abs(a.x - b.x) < .01 && a.x > 1 && a.x < 79).length;
+    const f = fixture(), r = buildYardEnclosures(f.scene, f.houses);
+    for (let i = 0; i < 4; i++) expect(r.yards.some(y => inside(y.shape, { x: 20 * i + 10, y: 40 }))).toBe(true); // the yard is the lot, to its back limit
+    // culture yardMerge = 1: neighbours share a yard, their common chain is gone
     const m = fixture(); Object.assign(m.scene.enclosureProfiles![0]!, { yardMerge: 1 });
-    expect(owners(buildYardEnclosures(m.scene, m.houses))).toBeLessThan(4);
-    // front 0 (open street fronts): the front is still fenced, with wide cart gates rather than an unclosed loop
+    const shared = buildYardEnclosures(m.scene, m.houses);
+    expect(owners(shared)).toBeLessThan(4); expect(sides(shared)).toBeLessThan(sides(r));
+    // front 0 in town: no fence on the street, the whole front is an opening and the sides stop on it
     const o = fixture(); o.scene.enclosureProfiles![0]!.front = 0;
     const open = buildYardEnclosures(o.scene, o.houses);
-    expect(edges(open).some(([a, b]) => a.y < .05 && b.y < .05)).toBe(true);
-    expect(open.gates.every(g => Math.abs(Math.hypot(g.b.x - g.a.x, g.b.y - g.a.y) - 2.6) < .01)).toBe(true);
+    expect(edges(open).some(([a, b]) => a.y < .05 && b.y < .05)).toBe(false);
+    expect(open.gates.length).toBeGreaterThan(0); expect(open.gates.every(g => g.open)).toBe(true);
+    // front 0 in the country: every yard stays closed, with a wide cart gate
+    const v = fixture(); v.scene.parcels.forEach(p => { p.zone = 'village'; }); v.scene.enclosureProfiles![0]!.front = 0;
+    const country = buildYardEnclosures(v.scene, v.houses);
+    expect(edges(country).some(([a, b]) => a.y < .05 && b.y < .05)).toBe(true);
+    expect(country.gates.length).toBeGreaterThan(0);
+    expect(country.gates.every(g => !g.open && Math.abs(Math.hypot(g.b.x - g.a.x, g.b.y - g.a.y) - 2.6) < .01)).toBe(true);
   });
-  it('open ground: scattered houses still meet along one line, a lone house gets an organic yard', () => {
-    // two houses 30 m apart in a deep 100 x 50 m block (plots 0 and 2 of 5 only built, every fringe house fenced)
+  it('decides by row of lots, not lot by lot: no checkerboard', () => {
+    for (let seed = 0; seed < 12; seed++) {
+      const f = fixture('european-organic', [0, 1, 2, 3, 4]); f.scene.enclosureProfiles![0]!.plot = .5;
+      f.scene.layouts = [{ ...f.scene.layouts[0], key: `row-${seed}` }]; f.scene.parcels.forEach(p => { p.zone = 'core'; p.peripheral = false; });
+      expect([0, 5]).toContain(new Set(buildYardEnclosures(f.scene, f.houses).yards.map(y => y.parcel)).size);
+    }
+  });
+  it('gardens and unbuilt plots join the built lot beside them', () => {
     const f = fixture('european-organic', [0, 3]); f.scene.enclosureProfiles![0]!.plot = 1;
     const r = buildYardEnclosures(f.scene, f.houses);
     expect(owners(r)).toBe(2);
-    for (let x = 16.5; x < 64; x += 1) expect(r.yards.some(y => inside(y.shape, { x, y: 8 }))).toBe(true); // no strip between them
-    const lone = fixture('european-organic', [2]); lone.scene.enclosureProfiles![0]!.plot = 1;
-    const yard = buildYardEnclosures(lone.scene, lone.houses).yards.map(y => y.shape.outer);
-    expect(yard.length).toBeGreaterThan(0);
-    const right = (r: Point[]) => r.length === 4 && r.every((b, i) => { const a = r[(i + 3) % 4], c = r[(i + 1) % 4]; return Math.abs((a.x - b.x) * (c.x - b.x) + (a.y - b.y) * (c.y - b.y)) < 1e-3 * Math.hypot(a.x - b.x, a.y - b.y) * Math.hypot(c.x - b.x, c.y - b.y); });
-    expect(yard.some(r => !right(r))).toBe(true);
+    for (let x = 1; x < 99; x += 1) expect(r.yards.some(y => inside(y.shape, { x, y: 8 }))).toBe(true); // no strip left between them
+  });
+  it('a limit on a carriageway comes out to its edge: the outline stays closed, nothing is cut', () => {
+    const f = fixture(); f.scene.parcels[1].shape.outer[0] = { x: 20, y: -1.6 }; // a corner of p1 stands on the street
+    const b = f.scene.parcels[0].shape.outer; b[1] = { x: 20, y: -1.6 };
+    const r = buildYardEnclosures(f.scene, f.houses), runs = edges(r);
+    for (const [a, c] of runs) for (const t of [.25, .5, .75]) expect(a.y + (c.y - a.y) * t).toBeGreaterThan(-.7); // street edge at -0.5, carriageway from -0.7
+    for (const s of runs) for (const p of s) expect(runs.some(o => o !== s && o.some(q => Math.hypot(q.x - p.x, q.y - p.y) < .3)) || r.gates.some(g => [g.a, g.b].some(q => Math.hypot(q.x - p.x, q.y - p.y) < .3))).toBe(true);
+  });
+  it('inset cultures: each lot has its own closed ring with its gate, a gap between neighbours, clear of the houses', () => {
+    expect(cultureEnclosure('mongol-ordu').inset).toBeGreaterThan(0);
+    for (const c of ['medina', 'european-organic', 'hanseatic']) expect(cultureEnclosure(c).inset).toBe(0);
+    const f = fixture('mongol-ordu'); f.scene.enclosureProfiles![0]!.plot = 1; Object.assign(f.scene.enclosureProfiles![0]!, { inset: 1.5 });
+    const r = buildYardEnclosures(f.scene, f.houses), runs = edges(r);
+    expect(r.enclosures).toHaveLength(4); expect(r.gates).toHaveLength(4);
+    for (const e of r.enclosures) { // from one jamb round to the other
+      const a = e.path[0], b = e.path[e.path.length - 1], gate = r.gates.find(g => [g.a, g.b].some(q => Math.hypot(q.x - a.x, q.y - a.y) < .01));
+      expect(gate).toBeDefined(); expect([gate!.a, gate!.b].some(q => Math.hypot(q.x - b.x, q.y - b.y) < .01)).toBe(true);
+    }
+    for (const [a, b] of runs) for (const t of [.1, .5, .9]) {
+      const p = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+      for (let i = 1; i < 5; i++) expect(Math.abs(p.x - 20 * i)).toBeGreaterThan(1.4); // never on a limit: two rings, a gap between them
+      for (const h of f.houses) expect(inside(h.footprint[0], p)).toBe(false);
+    }
+    // a lot too narrow for a ring of its own stays unfenced
+    const n = fixture('mongol-ordu', [0]); Object.assign(n.scene.enclosureProfiles![0]!, { plot: 1, inset: 1.5 }); n.scene.parcels[0].shape = rect(0, 0, 2.2, 50);
+    n.houses[0] = { parcel_id: 'p0', footprint: [rect(.5, 3, 1.2, 4)] };
+    expect(buildYardEnclosures(n.scene, n.houses).enclosures).toHaveLength(0);
   });
   it('every yard is a closed loop (gates and house walls only), with no doubled or crossing runs', () => {
     for (const f of [fixture(), fixture('european-organic', [0, 2, 3]), fixture('chinese', [0, 1, 2, 3], 0)]) {
@@ -120,7 +156,7 @@ describe('house yards', () => {
     expect(t1 - t0).toBeLessThan(1000);
     expect(t2 - t1).toBeLessThan(1000);
     const tris = meshes.reduce((n, b) => n + b.volumes.reduce((m, v) => m + v.roof_mesh.faces.reduce((k, f) => k + f.vertices.length - 2, 0), 0), 0);
-    const metres = r.enclosures.reduce((n, e) => n + Math.hypot(e.path[1].x - e.path[0].x, e.path[1].y - e.path[0].y), 0);
+    const metres = edges(r).reduce((n, [a, b]) => n + Math.hypot(b.x - a.x, b.y - a.y), 0);
     expect(tris / metres).toBeLessThan(5); // a few triangles per metre of hedge: a 10k town stays under ~300k
   });
   it('wraps a whole cluster in one yard and honours the farmstead hints', () => {
@@ -136,7 +172,7 @@ describe('house yards', () => {
     expect(hedge.enclosures.length).toBeGreaterThan(0); expect(hedge.enclosures.every(e => e.material === 'hedge')).toBe(true);
   });
   it('culture data decides who fences: waterborne, elven and camp cultures have no yards', () => {
-    for (const c of ['stilt-town', 'merfolk-tidal', 'lizardfolk-swamp', 'venetian-lagoon', 'pnw-plank-village', 'elven', 'mongol-ordu']) {
+    for (const c of ['stilt-town', 'merfolk-tidal', 'lizardfolk-swamp', 'venetian-lagoon', 'pnw-plank-village', 'elven', 'nomad-camp']) {
       expect(cultureEnclosure(c).plot).toBe(0);
       expect(buildYardEnclosures(fixture(c).scene, fixture(c).houses).enclosures).toHaveLength(0);
     }
@@ -162,6 +198,39 @@ describe('house yards', () => {
     expect(fenced.some(m => m.line.length === 2 && m.line.every(p => p.y === 0) && Math.min(...m.line.map(p => p.x)) < 10 && Math.max(...m.line.map(p => p.x)) > 10)).toBe(false);
     expect(ruralDetails(lu, 'elven').some(m => ['wall', 'hedge', 'fence'].includes(m.kind))).toBe(false);
     expect(ruralDetails(lu, 'stilt-town').some(m => ['wall', 'hedge', 'fence'].includes(m.kind))).toBe(false);
+  });
+  it('3D: a fence follows the slope under exaggeration, joins its corners, keeps a ribbon far away and its own colours', () => {
+    class Capture extends UrbanBuildingPass {
+      uploaded: Float32Array[] = [];
+      constructor() { super(undefined); }
+      protected upload(_b: Batch, v: Float32Array): void { this.uploaded.push(v); }
+      protected releaseBatch(): void {}
+      all(overview = false): void { for (const s of this.sectors) (this as unknown as { prepare(s: unknown, o: boolean): void }).prepare(s, overview); }
+    }
+    const enclosures = [{ path: [{ x: 0, y: 0 }, { x: 30, y: 0 }], material: 'wall', side: 'front', culture: 'chinese', height: 2.2 }, { path: [{ x: 30, y: 0 }, { x: 60, y: 0 }, { x: 60, y: 30 }], material: 'wall', side: 'side', culture: 'chinese', height: 2.2 }] as unknown as Parameters<typeof city3dLotEnclosures>[0];
+    const relief = (x: number): number => 20 + x / 10, buildings = city3dLotEnclosures(enclosures, relief), E = 2;
+    const scene = { buildings, materials: [] }, near = new Capture(), far = new Capture(), red = new Capture();
+    near.setScene(scene, { style: 'cartographic', diagnostic: 'none' }); near.all();
+    let worst = 0;
+    for (const v of near.uploaded) for (let i = 0; i < v.length; i += 10) worst = Math.max(worst, Math.abs(v[i + 9] - relief(v[i]))); // the ground of each vertex is the terrain under it
+    expect(worst).toBeLessThan(.05 * E);
+    far.setScene(scene, { style: 'cartographic', diagnostic: 'none' }); far.all(true);
+    const count = (c: Capture): number => c.uploaded.reduce((n, v) => n + v.length / 30, 0);
+    expect(count(far)).toBeGreaterThan(0); expect(count(far)).toBeLessThanOrEqual(count(near));
+    for (const v of far.uploaded) for (let i = 0; i < v.length; i += 10) expect(Math.abs(v[i + 9] - relief(v[i]))).toBeLessThan(.05 * E);
+    red.setScene(scene, { style: 'cartographic', diagnostic: 'none', colors: { building: '#ff0000' } }); red.all();
+    for (const v of red.uploaded) for (let i = 0; i < v.length; i += 10) expect(v[i + 6] > .9 && v[i + 7] < .1).toBe(false);
+    // one run: the pieces of a corner are welded, the 90-degree turn is mitred and its two sides share their corner
+    const { runs } = yardRuns(enclosures as never); expect(runs).toHaveLength(1); expect(runs[0].path).toHaveLength(4);
+    const corner = buildings[0].volumes[0].roof_mesh.vertices.filter(p => Math.abs(p.x - 60) < .5 && Math.abs(p.y) < .5);
+    expect(new Set(corner.map(p => `${p.x.toFixed(3)},${p.y.toFixed(3)}`)).size).toBeLessThanOrEqual(4);
+  });
+  it('one style for both renderers: culture tints, gates found between free ends', () => {
+    expect(yardStyle('hedge', 'medina').color).not.toBe(yardStyle('hedge', 'european-organic').color);
+    expect(yardStyle('wall', 'chinese').color).not.toBe(yardStyle('wall', 'medina').color);
+    expect(yardStyle('fence', 'medina', 'parchment', 'wattle').color).not.toBe(yardStyle('fence', 'medina', 'terrain', 'wattle').color);
+    const gap = [{ path: [{ x: 0, y: 0 }, { x: 10, y: 0 }], material: 'hedge', side: 'front' }, { path: [{ x: 11.3, y: 0 }, { x: 20, y: 0 }], material: 'hedge', side: 'front' }] as never;
+    expect(yardRuns(gap).gates).toHaveLength(1); expect(yardRuns(gap).runs).toHaveLength(2);
   });
   it('3D: same gate gaps, low relief-following bands, few triangles per metre', () => {
     const enclosures = [{ path: [{ x: 0, y: 0 }, { x: 8, y: 0 }], material: 'fence', fenceStyle: 'plank', side: 'front' },
