@@ -7,10 +7,11 @@ import type { Point, Surface, Vertex3 } from '../../../rust/bridge/housesContrac
 import { treeDwelling, treeCrownFaces, type TreeDwelling } from './cityTrees';
 type Shape = Surface[number];
 
-/** Roof-top feature of a flat roof (massing.rs `flat_details`): plan centre, footprint w × d turned by `angle`, height h. */
-export interface MassingFeature { kind: 'stair' | 'dome' | 'windcatcher'; x: number; y: number; w: number; d: number; h: number; angle: number }
+/** Roof-top feature of a flat roof (massing.rs `flat_details`): plan centre, footprint w × d turned by `angle`, height h.
+ * `sails` (wind mill, cone roof): hub at (x, y) h above the eave, blades of length w and width d in the vertical plane facing `angle`, cross turned by `turn`. */
+export interface MassingFeature { kind: 'stair' | 'dome' | 'windcatcher' | 'sails'; x: number; y: number; w: number; d: number; h: number; angle: number; turn?: number }
 /** Detail of a volume decided in Rust: parapet above a flat eave, roof-top features, hut roof overhang, trim colour. */
-export interface VolumeDetail { parapet_m?: number; features?: MassingFeature[]; overhang_m?: number; trim?: string; form?: 'yurt' | 'tipi' | 'tree' | 'mushroom' | 'longhouse' | 'tower' | 'battered'; stilts_m?: number; tree_seed?: string }
+export interface VolumeDetail { openings?: 'none' | 'door'; parapet_m?: number; features?: MassingFeature[]; overhang_m?: number; trim?: string; form?: 'yurt' | 'tipi' | 'tree' | 'mushroom' | 'longhouse' | 'tower' | 'battered'; stilts_m?: number; tree_seed?: string; /** Inhabitants' size against a human (doors, windows). */ body_scale?: number; /** Facade openness 0..1 (massive warm-climate walls open less: fewer, smaller windows). */ openness?: number }
 export type MassingRoof = 'gable' | 'hip' | 'shed' | 'pyramid' | 'cone' | 'dome' | 'barrel' | 'ring' | 'tent' | 'flat';
 /** One sub-volume partitioning a preview piece: own ring, heights, roof and (optionally) materials. */
 export interface MassingVolume extends VolumeDetail {
@@ -18,6 +19,7 @@ export interface MassingVolume extends VolumeDetail {
   ridges: [number, number, number, number][]; cover?: string; wall?: string; tone?: number;
 }
 export interface MassingPiece {
+  openings?: 'none' | 'door';
   floors: number; eave_m: number; rise_m: number; roof: MassingRoof;
   ridges: [number, number, number, number][]; cover: string; wall: string; tone?: number;
   volumes?: MassingVolume[];
@@ -38,8 +40,8 @@ export function pieceVolumes(shape: Shape, m: MassingPiece): ResolvedVolume[] {
     out.push({ shape: { outer: v.ring.map(([x, y]) => ({ x, y })), holes: [] }, floors: finite(v.floors) ? v.floors : m.floors, eave_m: v.eave_m, rise_m: finite(v.rise_m) ? v.rise_m : 0, roof: v.roof,
       ridges: Array.isArray(v.ridges) ? v.ridges.filter(r => Array.isArray(r) && r.length === 4 && r.every(finite)) : [],
       cover: v.cover ?? m.cover, wall: v.wall ?? m.wall, tone: clamp01(v.tone, clamp01(m.tone)),
-      detail: { tree_seed: typeof v.tree_seed === 'string' ? v.tree_seed : undefined, parapet_m: finite(v.parapet_m) ? v.parapet_m : undefined, overhang_m: finite(v.overhang_m) ? v.overhang_m : undefined, trim: v.trim,
-        form: v.form && ['yurt', 'tipi', 'tree', 'mushroom', 'longhouse', 'tower', 'battered'].includes(v.form) ? v.form : undefined, stilts_m: finite(v.stilts_m) && v.stilts_m > 0 ? Math.min(v.stilts_m, 4) : undefined,
+      detail: { openings: v.openings, tree_seed: typeof v.tree_seed === 'string' ? v.tree_seed : undefined, parapet_m: finite(v.parapet_m) ? v.parapet_m : undefined, overhang_m: finite(v.overhang_m) ? v.overhang_m : undefined, trim: v.trim,
+        form: v.form && ['yurt', 'tipi', 'tree', 'mushroom', 'longhouse', 'tower', 'battered'].includes(v.form) ? v.form : undefined, stilts_m: finite(v.stilts_m) && v.stilts_m > 0 ? Math.min(v.stilts_m, 4) : undefined, body_scale: finite(v.body_scale) && v.body_scale > 0 ? v.body_scale : undefined, openness: finite(v.openness) && v.openness > 0 && v.openness < 1 ? v.openness : undefined,
         features: Array.isArray(v.features) ? v.features.filter(f => f && ['x', 'y', 'w', 'd', 'h', 'angle'].every(k => finite((f as unknown as Record<string, unknown>)[k]))) : undefined } });
   }
   if (out.length) return out.map(v => {
@@ -47,7 +49,7 @@ export function pieceVolumes(shape: Shape, m: MassingPiece): ResolvedVolume[] {
     const tree = treeDwelling(v.shape.outer, v.eave_m, v.rise_m, v.detail.tree_seed ?? JSON.stringify(v.shape.outer));
     return { ...v, tree, shape: { outer: tree.outline, holes: [] }, eave_m: tree.height, rise_m: Math.max(...tree.crowns.map(c => c.z + c.height)) - tree.height };
   });
-  return [{ shape, floors: m.floors, eave_m: m.eave_m, rise_m: m.rise_m, roof: m.roof, ridges: m.ridges ?? [], cover: m.cover, wall: m.wall, tone: clamp01(m.tone) }];
+  return [{ shape, floors: m.floors, eave_m: m.eave_m, rise_m: m.rise_m, roof: m.roof, ridges: m.ridges ?? [], cover: m.cover, wall: m.wall, tone: clamp01(m.tone), ...(m.openings ? { detail: { openings: m.openings } } : {}) }];
 }
 
 /** Massing of a building's preview pieces, when the city sent one aligned with its footprint. */

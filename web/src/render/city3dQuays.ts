@@ -22,7 +22,7 @@ function slab(id: string, shape: Shape, bottom: number, top: number, timber: boo
 export function city3dQuays(layouts: readonly Layout[]): PlacedBuilding[] {
   return layouts.flatMap((layout, li) => (layout.structure?.quays ?? []).map((q: Quay, qi) => {
     const id = `city3d-quay:${li}:${qi}`, timber = q.material === 'timber', top = q.deck_z_m;
-    const thickness = timber ? 0.5 : 1.8, volumes = [slab(`${id}:deck`, q.shape, top - thickness, top, timber)];
+    const thickness = timber ? 0.5 : 0.8, volumes = [slab(`${id}:deck`, q.shape, top - thickness, top, timber)];
     if (timber) for (let i = 0; i < q.shape.outer.length; i++) {
       const a = q.shape.outer[i], b = q.shape.outer[(i + 1) % q.shape.outer.length], length = Math.hypot(b.x - a.x, b.y - a.y);
       for (let d = 1; d < length; d += 8) {
@@ -36,4 +36,19 @@ export function city3dQuays(layouts: readonly Layout[]): PlacedBuilding[] {
       footprint, roof_footprint: footprint, courtyards: [], circulation: [], entrance: origin, access_id: '', volumes,
       useful_area_m2: 0, domestic_units: 0, structural_features: [], simplification: 'recipe_volumes', diagnostics: [], resolved: null } as PlacedBuilding;
   }));
+}
+
+/** Lagoon channels are water surfaces above the bed, with small dry crossings. */
+export function city3dWaterways(layouts: readonly Layout[]): PlacedBuilding[] {
+  return layouts.flatMap((layout, li) => (layout.structure?.waterways ?? []).flatMap((w, wi) => [
+    { shape: w.shape, water: true }, ...w.crossings.map(shape => ({ shape, water: false })),
+  ].map(({ shape, water }, si) => {
+    const id = `city3d-canal:${li}:${wi}:${si}`, top = w.levelM + (water ? 0 : 0.25), v = slab(id, shape, top - 0.03, top, false);
+    if (water) { v.materials.cladding = 'city3d:water@8aaeb8'; for (const f of v.roof_mesh.faces) f.material = v.materials.cladding; }
+    const footprint = [shape], origin = shape.outer[0];
+    return { id, parcel_id: '', function: 'open_space', culture: { culture: layout.culture, pack: '', mode: 'inspired', borrowing: null },
+      recipe_id: 'city3d-canal', variant_id: water ? 'water' : 'crossing', transform: { origin, orientation_deg: 0 }, ground_z_m: top,
+      footprint, roof_footprint: footprint, courtyards: [], circulation: [], entrance: origin, access_id: '', volumes: [v],
+      useful_area_m2: 0, domestic_units: 0, structural_features: [], simplification: 'recipe_volumes', diagnostics: [], resolved: null } as unknown as PlacedBuilding;
+  })));
 }

@@ -146,7 +146,7 @@ fn basin(surface: Surface<'_>, path: &[Point], population:u32) -> Option<Vec<Str
 fn safe_basin(surface:Surface<'_>, path:&[Point], population:u32, streets:&[Street])->Option<Vec<Street>> {
     let moles=basin(surface,path,population)?;
     let obstructed=moles.iter().flat_map(|s|s.path.windows(2)).any(|w| {
-        streets.iter().filter(|s|matches!(s.role.as_str(),"bridge"|"causeway"|"pier"|"mole"|"landing"))
+        streets.iter().filter(|s|matches!(s.role.as_str(),"bridge"|"causeway"|"pier"|"boardwalk"|"mole"|"landing"))
             .flat_map(|s|s.path.windows(2)).any(|v|g::segment_hit(w[0],w[1],v[0],v[1]).is_some_and(|(t,_)|t>0.05))
     });
     (!obstructed).then_some(moles)

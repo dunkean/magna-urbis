@@ -25,12 +25,12 @@ import atlas from '../render/assets/fantasy/forest-brushes.json';
 import { shoreRingFor } from '../../../rust/bridge/terrainForestBeach';
 import type { ForestField, ForestOccupation } from '../../../rust/bridge/terrainForest';
 import { createGroundDisplacementSampler } from '../../../rust/bridge/terrainGround';
-import { renderV2Number, renderV2GlacierSources } from '../../../rust/bridge/terrainRenderV2';
+import { renderV2GlacierSources } from '../../../rust/bridge/terrainRenderV2';
 import { renderV2ZoneUniform } from '../../../rust/bridge/terrainRenderV2Zones';
 import { FRACTAL_ROTATIONS } from '../../../rust/bridge/terrainAdjust';
 import { terrainLights } from '../render/terrainLighting';
 import { lakeDistances, seaDistanceSurface, type WaterSurface } from '../render/terrainWater';
-import { isRender3dStyle, terrainStyle } from '../render/terrainStyle';
+import { styleTraits, terrainStyle } from '../render/terrainStyle';
 import { waterUniforms } from '../render/waterStyle';
 import { paintRetainedWater, retainedWaterPaths, type RetainedWaterPath } from '../render/retainedWaterGeometry';
 import { renderWaterRings } from '../render/renderWaterShader';
@@ -663,7 +663,7 @@ export class TerrainGpu implements TerrainRenderer {
   captureWaterMask(region: { x: number; y: number; width: number }): Uint8Array {
     if (this.fallback) return this.fallback.captureWaterMask(region);
     const n = Math.round(region.width), alpha = new Uint8Array(n * n);
-    const look = this.look; if (look?.style.startsWith('render-v2')) this.look = { ...look, layers: { ...look.layers, water: true } };
+    const look = this.look; if ((look && styleTraits(look.style).waterAlwaysDrawn)) this.look = { ...look, layers: { ...look.layers, water: true } };
     try { this.captureRegion(region, n, false, false, undefined, true, alpha); } finally { this.look = look; }
     return alpha;
   }
@@ -673,7 +673,7 @@ export class TerrainGpu implements TerrainRenderer {
     if (!this.base || !this.look) return undefined;
     const base = this.base.layer, detail = this.details[this.details.length - 1]?.layer, look = this.look;
     const refine = (look.refinement3d ?? 'noise') === 'noise';
-    const ground = isRender3dStyle(look.style) && (look.refinement3d ?? 'noise') !== 'source';
+    const ground = styleTraits(look.style).ground3d && (look.refinement3d ?? 'noise') !== 'source';
     const key = JSON.stringify([refine, ground, look.climate, look.floor, look.sourceCell, look.seed, look.detail]);
     if (!this.surfaceCache || this.surfaceCache.base !== base || this.surfaceCache.detail !== detail || this.surfaceCache.key !== key) {
       const sample = createTerrainSurfaceSampler(base, { ...look, refine }, detail ? [detail] : [], true);
@@ -705,7 +705,7 @@ export class TerrainGpu implements TerrainRenderer {
 
   private lookVariant(look: TerrainLook): TerrainVariant {
     const mode = lookMode(look);
-    return { mode, v2: renderV2Number(look.style), forest: mode === 3 && !!this.forest, brushes: look.style === 'render3d-brush' && mode === 3 };
+    return { mode, v2: styleTraits(look.style).satelliteVariant, forest: mode === 3 && !!this.forest, brushes: styleTraits(look.style).forestBrushes && mode === 3 };
   }
   private terrainPipeline(v: TerrainVariant, pass: 'map' | 'aux', blend: 'none' | 'alpha', wait: boolean): GPURenderPipeline | undefined {
     return this.gpu.pipeline(this.gpu.terrainKey(v, pass, blend), () => this.gpu.terrainDescriptor(v, pass, blend), wait);
@@ -803,11 +803,11 @@ export class TerrainGpu implements TerrainRenderer {
       }
       textures.uShoreRing = this.shoreRing?.image.view ?? empty;
       p.set('uShoreRingRect', this.shoreRing?.x ?? 0, this.shoreRing?.y ?? 0, this.shoreRing?.width ?? 1);
-      this.bindBrushes(textures, look.style === 'render3d-brush' && mode === 3);
+      this.bindBrushes(textures, styleTraits(look.style).forestBrushes && mode === 3);
       p.set('uV2WaterVisible', look.layers.water === false ? 0 : 1);
       if (this.base && look.climate) p.setArray('uV2GlacierSources', renderV2GlacierSources(this.base.layer, look.climate));
       p.set('uV2Season', look.v2Season ?? .5); p.set('uMaterialZone', renderV2ZoneUniform(look.climateZone));
-      p.set('uEnhanced3d', look.mesh3d || isRender3dStyle(look.style) ? 1 : 0);
+      p.set('uEnhanced3d', look.mesh3d || styleTraits(look.style).ground3d ? 1 : 0);
       p.set('uRefinementMode', look.refinement3d === 'source' ? 0 : isNeuralRefinement(look.refinement3d ?? 'noise') ? 2 : 1);
       const refined = this.enhanced.at(-1), previousRefined = this.enhanced.at(-2);
       for (const [layer, name] of [[refined, 'Refined'], [previousRefined, 'PreviousRefined']] as const) {
@@ -824,9 +824,9 @@ export class TerrainGpu implements TerrainRenderer {
       p.set('uWaterStopCount', water.stops.length);
       p.set('uSeaBand', (this.seaSurface?.referenceWidth ?? look.mapWidth) * water.bandFraction);
       p.set('uCoastOrigin', this.seaSurface?.x ?? 0, this.seaSurface?.y ?? 0); p.set('uCoastWidth', this.seaSurface?.width ?? look.mapWidth); p.set('uCoastN', this.seaSurface?.n ?? 1);
-      p.setArray('uBackground', hex(look.background)); p.setArray('uFrameColor', hex(look.style === 'copernicus' ? '#333333' : pal.frame));
+      p.setArray('uBackground', hex(look.background)); p.setArray('uFrameColor', hex(styleTraits(look.style).elevation ? '#333333' : pal.frame));
       p.setArray('uContourColor', hex(pal.contour));
-      const stops = look.layers.hypsometry || look.style === 'copernicus' ? pal.hypso.slice(0, 8) : [[0, pal.paper], [1, pal.paper]] as [number, string][];
+      const stops = look.layers.hypsometry || styleTraits(look.style).elevation ? pal.hypso.slice(0, 8) : [[0, pal.paper], [1, pal.paper]] as [number, string][];
       p.setArray('uStops', Array.from({ length: 8 }, (_, i) => hex(stops[Math.min(i, stops.length - 1)][1])).flat());
       p.setArray('uStopT', Array.from({ length: 8 }, (_, i) => stops[Math.min(i, stops.length - 1)][0]));
       p.set('uStopCount', stops.length);
@@ -887,7 +887,7 @@ export class TerrainGpu implements TerrainRenderer {
       if (!pipeline) return;
       encoderPass.setPipeline(pipeline); encoderPass.setBindGroup(0, terrainBindGroup()); encoderPass.draw(4);
     };
-    const paintedWater = look.style === 'render' && !look.groundCapture;
+    const paintedWater = styleTraits(look.style).neuralEarth && !look.groundCapture;
     const waterBand = (this.seaSurface?.referenceWidth ?? look.mapWidth) * water.bandFraction;
     /** Premultiplied layer `source` over `destination`: plain copy, or the render style's painted water. */
     const composite = (source: GPUTextureView, destination: Target, painted: boolean): void => {
@@ -909,13 +909,13 @@ export class TerrainGpu implements TerrainRenderer {
       encoderPass.setPipeline(pipeline); encoderPass.setBindGroup(0, bindGroup); encoderPass.draw(4); encoderPass.end();
     };
     const renderRivers = (destination: Target): void => {
-      if (!this.riverCount || !this.riverBuffer || (look.layers.water === false && !look.style.startsWith('render-v2'))) return;
+      if (!this.riverCount || !this.riverBuffer || (look.layers.water === false && !styleTraits(look.style).waterAlwaysDrawn)) return;
       const pipeline = this.gpu.pipeline('river', () => this.gpu.simpleDescriptor('river', 'max'), wait);
       if (!pipeline) return;
       const target = this.riverTarget = this.renderTarget(width, height, MAP_FORMAT, this.riverTarget);
       const r = this.riverParams;
       r.set('uCanvas', width, height); r.set('uOrigin', origin[0], origin[1]);
-      r.set('uPx', px); r.set('uDpr', stylePixelRatio); r.set('uPhysicalWidth', look.style.startsWith('render-v2') ? 1 : 0);
+      r.set('uPx', px); r.set('uDpr', stylePixelRatio); r.set('uPhysicalWidth', styleTraits(look.style).physicalRiverWidth ? 1 : 0);
       r.set('uMapW', look.mapWidth); r.set('uHasOverlay', this.overlay ? 1 : 0);
       r.set('uHasLake', this.lake ? this.lakeMode : 0); r.set('uLakeN', this.lakeN);
       const bindGroup = device.createBindGroup({ layout: this.gpu.layouts.river, entries: [{ binding: 0, resource: this.slot(r) }, { binding: 1, resource: this.gpu.nearest },
@@ -927,7 +927,7 @@ export class TerrainGpu implements TerrainRenderer {
       composite(target.view, destination, paintedWater && !this.overlay);
     };
     const renderRetainedWater = (destination: Target): void => {
-      if (!this.retainedWaterPaths.length || (look.layers.water === false && !look.style.startsWith('render-v2'))) return;
+      if (!this.retainedWaterPaths.length || (look.layers.water === false && !styleTraits(look.style).waterAlwaysDrawn)) return;
       const canvas = this.retainedWaterCanvas ??= document.createElement('canvas');
       const key = `${origin[0]},${origin[1]},${px},${width},${height},${water.stops[0][1]}`;
       if (key !== this.retainedWaterViewKey || this.retainedWater?.width !== width || this.retainedWater.height !== height) {
@@ -946,7 +946,7 @@ export class TerrainGpu implements TerrainRenderer {
       }
       composite(this.retainedWater.view, destination, paintedWater);
     };
-    const separateWater = isRender3dStyle(look.style) && look.layers.relief && look.layers.hypsometry && (look.layers.water !== false || look.style.startsWith('render-v2')) && !look.groundCapture;
+    const separateWater = styleTraits(look.style).ground3d && look.layers.relief && look.layers.hypsometry && (look.layers.water !== false || styleTraits(look.style).waterAlwaysDrawn) && !look.groundCapture;
     p.set('uUseWaterLayer', 0);
     if (separateWater) {
       const waterTarget = this.waterTarget = this.renderTarget(width, height, MAP_FORMAT, this.waterTarget);

@@ -325,7 +325,7 @@ fn capacity_epochs(
     // divides it by 1 + 3 × slope): the median slope of that land.
     let median = slopes.get(slopes.len() / 2).copied().unwrap_or(0.0);
     let max_slope = super::culture::mapping_for(culture, &cfg.programme.period)
-        .map_or(0.15, |m| m.admissibility.max_slope);
+        .map_or(0.15, |m| super::profiles::house_slope(culture, m.admissibility.max_slope));
     let steep =
         slopes.iter().filter(|&&s| s > max_slope).count() as f64 / slopes.len().max(1) as f64;
     let access: Vec<(f64, f64)> = capacity::epoch_access(&fractions, area)
@@ -884,6 +884,7 @@ fn planned(
     cfg: &LayoutConfig,
     centers: &[UrbanCenter],
     angle: f64,
+    secondary: Option<f64>,
     fractions: &[f64],
     surface: Surface<'_>,
     rng: &Rng,
@@ -901,6 +902,8 @@ fn planned(
             };
             let a = if family == "composite" && c.id > 0 {
                 angle + PI * 0.18
+            } else if c.id > 0 && let Some(a) = secondary {
+                a
             } else {
                 angle
             };
@@ -2306,7 +2309,12 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
     };
     // A town above a coastal escarpment keeps its civic nucleus. Seed its
     // lower port as well, only across a real dry route within configured grades.
-    let port_access = if site.population >= 3000 && macroplan::harbour::port_town(cfg) {
+    // Culture data `plan.secondCore` (default 1): the chance that this lower port
+    // becomes a second nucleus of its own (rare for a planned Chinese city).
+    let culture = if cfg.culture == "site" { site.culture.as_str() } else { cfg.culture.as_str() };
+    let second_core = super::composition::culture_data(culture, site.population)["plan"]["secondCore"].as_f64()
+        .is_none_or(|p| Rng::new(&format!("second-core:{}", site.key)).float() < p);
+    let port_access = if second_core && site.population >= 3000 && macroplan::harbour::port_town(cfg) {
         macroplan::harbour::sited(site,cfg,surface).and_then(|port| {
             let (a,b)=(site.center,port.center);
             let margin=radius.max(150.0);
@@ -2381,12 +2389,17 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
     let (reserve, mut phases, mut crossings) = if centers.is_empty() {
         (vec![], vec![vec![]; epochs], vec![])
     } else if mechanism == "planned" {
+        // `alignEnclosedGrid`: a secondary core of a cardinal culture takes the
+        // cardinal frame its own walls are drawn in, not the first core's turn.
+        let cardinal = profiles::settlement_profile(culture, site.population, cfg.footprint.epochs).orientation == "cardinal";
+        let secondary = (cfg.align_enclosed_grid && cardinal).then_some(0.0);
         let (r, p) = planned(
             target,
             family,
             &foundation_cfg,
             &centers,
             angle,
+            secondary,
             &fractions,
             surface,
             &rng,
@@ -2588,6 +2601,7 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
         gate_village_centers: vec![],
         gate_village_lanes: vec![],
         quays: vec![],
+        waterways: vec![],
         port_districts: vec![],
         version: 1,
         mechanism: mechanism.into(),
@@ -2632,6 +2646,22 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
 mod tests {
     use super::super::{FootprintConfig, resolve};
     use super::*;
+
+    #[test]
+    fn v7_a_secondary_planned_core_takes_the_given_frame() {
+        let n = 64; let height = vec![10.0; n * n]; let water = vec![0u8; n * n];
+        let surface = Surface { geometry: None, width: 4000., n, height: &height, water: &water };
+        let centers = vec![UrbanCenter { id: 0, point: Point { x: 1000., y: 1000. }, weight: 0.6 },
+            UrbanCenter { id: 1, point: Point { x: 3000., y: 3000. }, weight: 0.4 }];
+        let cfg = LayoutConfig { footprint: FootprintConfig { irregularity: 0.0, ..Default::default() }, ..Default::default() };
+        let frame = |secondary: Option<f64>, c: Point| {
+            let (_, phases) = planned(400_000., "rectangle", &cfg, &centers, PI / 4., secondary, &[1.0], surface, &Rng::new("v7"));
+            super::super::quarters::outline_frame(phases[0].iter().find(|s| g::contains(s, c)).unwrap())
+        };
+        assert!((2. * frame(Some(0.0), centers[1].point)).sin().abs() < 0.05, "second core cardinal");
+        assert!((2. * frame(Some(0.0), centers[0].point)).cos().abs() < 0.05, "first core keeps its turn");
+        assert!((2. * frame(None, centers[1].point)).cos().abs() < 0.05, "off: second core follows the first");
+    }
 
     #[test]
     fn site_options_grid_outline_uses_the_grid_at_500_and_10000_and_keeps_water_out() {
@@ -2708,12 +2738,11 @@ mod tests {
         }
     }
 
-    /// Invariant (adaptive capacity, step 4): a sparse tissue that its own
-    /// densified cutting cannot house on bounded land borrows the cutting of a
-    /// compact tissue on a share of its quarters (never its houses), and the
-    /// plan states it with its numbers.
+    /// Invariant (adaptive capacity, user rule 03/11): a sparse tissue that its
+    /// own densified cutting cannot house on bounded land keeps its own cutting
+    /// (never another culture's) and states its deficit.
     #[test]
-    fn a_bounded_sparse_tissue_borrows_a_compact_cutting_and_says_so() {
+    fn a_bounded_sparse_tissue_keeps_its_own_cutting_and_states_its_deficit() {
         let h = vec![10.0; 128 * 128];
         let w = vec![0; h.len()];
         let surface = Surface {
@@ -2755,9 +2784,31 @@ mod tests {
         let text = capacity::describe("halfling", &plan).join(", ");
         eprintln!("{text}; {plan:?}");
         assert!(plan.extension <= 1.0 && plan.densify >= 1.0);
-        assert!(!plan.donor.is_empty() && plan.borrowed_share > 0.0 && plan.borrowed_share <= 1.0);
-        assert!(plan.donor_yield > plan.planned_yield);
-        assert!(text.contains("découpe empruntée à"), "{text}");
+        assert!(plan.donor.is_empty() && plan.borrowed_share == 0.0, "{plan:?}");
+        assert!(plan.shortfall > 0.0 && !text.contains("découpe empruntée"), "{text}");
+    }
+
+    /// Review 03/11 (ville-10k giant-hold): the giants' town kept the
+    /// Caucasus cutting on most of its quarters. A culture short of land
+    /// widens its own footprint instead, and never names a donor.
+    #[test]
+    fn review12_a_giant_town_widens_its_own_tissue_instead_of_borrowing() {
+        let h = vec![10.0; 128 * 128];
+        let w = vec![0; h.len()];
+        let surface = Surface { geometry: None, width: 8000.0, n: 128, height: &h, water: &w };
+        let site = Site { key: "capacity".into(), name: String::new(), population: 10_000, culture: "giant-hold".into(),
+            center: Point { x: 4000.0, y: 4000.0 }, radius: 735.0 };
+        let cfg = LayoutConfig { culture: "site".into(), ..LayoutConfig::default() };
+        let morph = resolve("giant-hold", "culture", "auto", "core", 1.0, &serde_json::json!({}), "quarters").unwrap();
+        let (nominal, _) = budget(&site, &cfg, &morph, 735.0);
+        let epochs = capacity_epochs(&site, &cfg, &morph, nominal, surface);
+        for yield_ratio in [0.0, 0.4] {
+            let cfg = LayoutConfig { capacity_yield: yield_ratio, ..cfg.clone() };
+            let plan = capacity::plan(&site, &cfg, &epochs, nominal, None).unwrap();
+            let text = capacity::describe("giant-hold", &plan).join(", ");
+            assert!(plan.donor.is_empty() && plan.borrowed_share == 0.0 && !text.contains("découpe empruntée"), "{text}");
+            if plan.densify >= 1.0 { assert!(plan.extension > 1.0, "{text}"); }
+        }
     }
     fn input() -> (Site, Morph) {
         (

@@ -81,6 +81,8 @@ struct Catalogue {
     district_labels: BTreeMap<String, String>,
     #[serde(default)]
     family_district_labels: BTreeMap<String, BTreeMap<String, String>>,
+    #[serde(default)]
+    ruin_share: BTreeMap<String, serde_json::Value>,
 }
 fn catalogue() -> &'static Catalogue {
     static CATALOGUE: OnceLock<Catalogue> = OnceLock::new();
@@ -94,6 +96,11 @@ pub fn family(culture: &str) -> &'static str {
         .cultures
         .get(culture)
         .map_or("fantasy", String::as_str)
+}
+/// Share of a culture's buildings standing in ruins at a demographic class
+/// (`services.json` ruinShare), whatever the settlement state.
+pub fn ruin_share(culture: &str, class: &str) -> f64 {
+    catalogue().ruin_share.get(culture).and_then(|c| c[class].as_f64()).unwrap_or(0.0).clamp(0.0, 1.0)
 }
 pub fn state(name: &str) -> Option<&'static StateRule> {
     catalogue().states.get(name)

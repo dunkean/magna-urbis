@@ -5,14 +5,16 @@ import { adaptedExtent } from './settings';
 import type { V2Settings } from './contracts';
 import { fingerprintBytes, fingerprintNumbers } from './terrainFingerprint';
 import type { World } from '../gen/types';
+import { urbanSeed } from './urbanSeeds';
+import { seedRoot, stepSeed } from '../../../rust/bridge/generationSeed';
 
 export function settlementStageValidityKeys(settings: V2Settings, terrainKey?: string): Map<string, string> {
   const o = settings.options;
-  const sites = stableKey([terrainKey, o.seed, settings.runtime?.backend, o.population, o.culture, o.siteType, o.sitePrefs, o.center,
+  const sites = stableKey([terrainKey, stepSeed(o.seed, 'settle-sites'), settings.runtime?.backend, o.population, o.culture, o.siteType, o.sitePrefs, o.center,
     o.settlements, o.workflow, settings.settlementCount, settings.region?.placement, settings.region?.resolution,
     Object.entries(settings.local).map(([key, local]) => [key, local.center, local.siteType, local.sitePrefs])]);
   return new Map([['settle-sites', sites], ['settle-hierarchy', sites],
-    ['settle-roads', stableKey([sites, o.roads, settings.region?.roads, settings.local.main?.roads])]]);
+    ['settle-roads', stableKey([sites, stepSeed(o.seed, 'settle-roads'), o.roads, settings.region?.roads, settings.local.main?.roads])]]);
 }
 
 /** Conservative UI dependencies for a batch. A house edit preserves the
@@ -20,18 +22,22 @@ export function settlementStageValidityKeys(settings: V2Settings, terrainKey?: s
 export function cityStageValidityKeys(settings: V2Settings, world: World | undefined, scope: string, terrainKey?: string): Map<string, string> {
   const [mode, selected] = JSON.parse(scope) as [string, string[]];
   const keys = mode === 'all' ? world?.settlements?.map(place => place.key) ?? [] : selected;
-  const { importedHeight, style, contours, landuse, labels, ...options } = settings.options;
+  const { importedHeight, style, contours, landuse, labels, ...restOptions } = settings.options;
+  const options = { ...restOptions, seed: seedRoot(settings.options.seed) };
   const local = keys.map(key => [key, settings.local[key]]);
   const urban = settings.urban;
-  const layout = stableKey([scope, terrainKey, world?.stats['v2.terrainKey'], world?.stats['v2.planKey'], settings.region, settings.settlementCount,
+  const composition = stableKey([scope, terrainKey, world?.stats['v2.terrainKey'], world?.stats['v2.planKey'], settings.region, settings.settlementCount,
     options, local, urban?.backend ?? settings.runtime?.backend, urban?.layout,
-    keys.map(key => urban?.local?.[key]?.layout)]);
-  const parcels = stableKey([layout, urban?.parcels, keys.map(key => urban?.local?.[key]?.parcels)]);
-  const houses = stableKey([parcels, urban?.houses, keys.map(key => urban?.local?.[key]?.houses),
+    keys.map(key => [urbanSeed(settings, key, 'composition'), urban?.local?.[key]?.layout])]);
+  const layout = stableKey([composition, keys.map(key => urbanSeed(settings, key, 'streets'))]);
+  const parcels = stableKey([layout, urban?.parcels, keys.map(key => [urbanSeed(settings, key, 'parcels'), urban?.local?.[key]?.parcels])]);
+  const programme = stableKey([parcels, keys.map(key => urbanSeed(settings, key, 'programme'))]);
+  const buildings = stableKey([programme, urban?.houses, keys.map(key => [urbanSeed(settings, key, 'buildings'), urban?.local?.[key]?.houses])]);
+  const houses = stableKey([buildings, keys.map(key => urbanSeed(settings, key, 'houses')),
     Object.entries(urban?.buildings ?? {}).filter(([key]) => !key.includes('/') || keys.some(place => key.startsWith(place + '/')))]);
   return new Map([
-    ['city-composition', layout], ['city-roads', layout], ['city-quarters', layout], ['city-trim', layout],
-    ['city-parcels', parcels], ['city-programme', parcels], ['city-buildings', houses], ['city-houses', houses],
+    ['city-composition', composition], ['city-roads', layout], ['city-quarters', layout], ['city-trim', layout],
+    ['city-parcels', parcels], ['city-programme', programme], ['city-buildings', buildings], ['city-houses', houses],
   ]);
 }
 
@@ -49,7 +55,7 @@ export function terrainStageValidityKeys(settings: V2Settings): Map<string, stri
   keys.set('relief-source', initial);
   keys.set('relief-climate', stableKey([terrain.climate, terrain.climateZone, terrain.climateValues]));
   keys.set('relief-refine', `${backend}|${signatures.get('sampling')}`);
-  keys.set('cover-climate', stableKey([backend, signatures.get('hydrology'), terrain.forest]));
+  keys.set('cover-climate', stableKey([backend, signatures.get('hydrology'), terrain.forest, stepSeed(settings.options.seed, 'cover-climate')]));
   if (!terrain.procedural || settings.options.importedHeight || terrain.sketch || terrain.zones) {
     const { forest, hydrology, sketch, zones, ...relief } = terrain;
     const image=settings.options.importedHeight;
@@ -59,7 +65,7 @@ export function terrainStageValidityKeys(settings: V2Settings): Map<string, stri
       image && [image.w,image.h,image.elevations?fingerprintBytes(new Uint8Array(image.elevations.buffer,image.elevations.byteOffset,image.elevations.byteLength)):fingerprintBytes(image.rgba),settings.options.heightScale,settings.options.importSea]]);
     for (const id of keys.keys()) if (id.startsWith('relief-')) keys.set(id, root);
     keys.set('water-hydrology', stableKey([root, hydrology]));
-    keys.set('cover-climate', stableKey([root, hydrology, forest]));
+    keys.set('cover-climate', stableKey([root, hydrology, forest, stepSeed(settings.options.seed, 'cover-climate')]));
   }
   return keys;
 }

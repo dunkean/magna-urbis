@@ -15,6 +15,7 @@ import { generateNaturalCover } from '../gen/landuse/natural';
 import { buildForestField, type ForestField, type ForestFieldInput, type ForestSettings } from '../../../rust/bridge/terrainForest';
 import { CLIMATE_VALUES } from '../../../rust/bridge/terrainClimate';
 import { seedHash } from '../../../rust/bridge/terrainAdjust';
+import { softenRuralGround } from '../render/countryside';
 
 export interface UrbanLanduseSite extends RoadSite {
   archetype?: string; siteType?: string; offers?: Partial<Record<SiteArchetype, number>>;
@@ -172,6 +173,11 @@ export function generateUrbanLanduse(input: UrbanLanduseInput): UrbanLanduseScen
         // function; the retained urban footprint excludes their lots without cropping roofs.
         farmsteads: (profile?.functions?.agricultural ?? 0) > 0 || !!input.ruralOptions?.denserSmallholdings, naturalForest, settlementFootprints, ...input.ruralOptions });
     world.landuse = generated.layer; world.stats = generated.stats;
+    world.landuse.areas = world.landuse.areas.map(a => {
+      if (a.kind !== 'field' || (a as { enclosed?: boolean }).enclosed) return a;
+      const shape = softenRuralGround({ outer: a.poly, holes: a.holes ?? [] });
+      return { ...a, poly: shape.outer, holes: shape.holes };
+    });
   } else {
     world.landuse = generateNaturalCover(world.terrain, input.biome, root, naturalForest);
   }

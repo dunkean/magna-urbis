@@ -1,5 +1,17 @@
 import type { LandArea, Polyline, Vec2 } from '../gen/types';
 import { hexToRgb, type Palette } from './styles';
+import enclosures from '../../../rust/crates/core/src/urban/enclosures.json';
+
+/** Culture yard profile: who fences (`plot`, 0 = no yards), with what, and how the yards are sized (cityLotEnclosures.ts). */
+export interface CultureEnclosure { plot: number; material: 'wall' | 'hedge' | 'fence'; fenceStyle?: 'plank' | 'wattle'; front: number; side: number; back: number
+  yardDepth: number; yardSide: number; yardSpread: number; yardMerge: number; yardLong: number; wallHeight: number }
+/** Same culture table as Rust; no renderer-specific list of fenced cultures. */
+export function cultureEnclosure(culture: string): CultureEnclosure {
+  const table = enclosures as unknown as { default: CultureEnclosure; groups: Record<string, Partial<CultureEnclosure> & { cultures: string[] }>; cultures: Record<string, Partial<CultureEnclosure>> };
+  const group = Object.values(table.groups).find(g => g.cultures.includes(culture));
+  const { cultures: _, ...grouped } = group ?? { cultures: [] };
+  return { ...table.default, ...grouped, ...table.cultures[culture] };
+}
 
 /** Dry-stone walls and fences of the closes: same ink family as the hedge, drier and darker; continuous strokes. */
 export function fieldBoundaryStyle(pal: Palette, u: number, material: 'wall' | 'fence'): { color: string; width: number; alpha: number; dash: number[] } {

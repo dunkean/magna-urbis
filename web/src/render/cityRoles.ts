@@ -41,7 +41,13 @@ export const ROLE_LABELS: Record<string, string> = {
   'storage': 'Stockage', 'storage.granary': 'Grenier', 'storage.horreum': 'Horreum (grenier)', 'storage.qollqa': 'Qollqa (entrepôt)', 'storage.barn': 'Grange',
   'open': 'Espace ouvert', 'open.garden': 'Jardin', 'open.common': 'Commun', 'open.cemetery': 'Cimetière', 'open.necropolis': 'Nécropole',
   'open.plaza': 'Place', 'open.corral': 'Corral', 'open.kraal': 'Kraal', 'open.thing': 'Lieu d’assemblée (thing)', 'open.fallow': 'Friche',
+  'funerary': 'Monument funéraire', 'funerary.mausoleum': 'Mausolée', 'funerary.mausoleum.ruin': 'Mausolée en ruine',
+  'worship.mortuary-temple.ruin': 'Temple funéraire en ruine',
 };
+/** Burial grounds have mineral soil; their low tombs come from programme geometry. */
+export function funeraryLandFill(role?: string): string | undefined {
+  return role === 'open.cemetery' || role === 'open.necropolis' ? '#b6b2a0' : undefined;
+}
 export const FUNCTION_LABELS: Record<string, string> = { domestic: 'habitat', mixed: 'mixte (boutique et habitat)', workshop: 'atelier', warehouse: 'entrepôt',
   collective: 'équipement collectif', open_space: 'espace ouvert', market: 'marché', common: 'commun' };
 

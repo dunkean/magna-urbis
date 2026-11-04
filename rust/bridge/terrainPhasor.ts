@@ -1,6 +1,7 @@
 /** Compact procedural source policy and scalar Phasor reference. No WASM/GPU imports. */
 import type { TerrainSettings } from './terrain';
 import { seedHash } from './terrainAdjust';
+import { stepSeed } from './generationSeed';
 
 export const COMPACT_RELIEFS = ['flat', 'hills', 'valley', 'canyon', 'mountains', 'mixed', 'high-mountains'] as const;
 export type PhasorQuality = 'fast' | 'balanced' | 'detailed';
@@ -54,7 +55,7 @@ export function configureCompactPlan(original: Float32Array, settings: TerrainSe
 export function phasorUniforms(settings: TerrainSettings, coast = false): Float32Array {
   validatePhasorSettings(settings.phasor);
   const profile = compactProfile(settings);
-  return new Float32Array([settings.width / 1024, seedHash(settings.seed) & 65535,
+  return new Float32Array([settings.width / 1024, seedHash(stepSeed(settings.generalSeed ?? settings.seed, 'relief-phasor')) & 65535,
     coast ? 0 : (settings.phasor?.intensity ?? 1) * profile.amplitude,
     Math.max(48, Math.min(160, settings.motifSize / 24)) * profile.wavelength, ...new Array(12).fill(0)]);
 }

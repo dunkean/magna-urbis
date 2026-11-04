@@ -547,10 +547,52 @@ fn rows(frame: &Frame, morph: &Morph, layout: &Layout) -> (Vec<Tile>, Vec<Shape>
     let path = morph.number_or("campPath", 3.0).clamp(1.2, 8.0);
     let max_rows = morph.number_or("campRings", 0.0).max(0.0) as usize;
     let reach = frame.reach + 10.0;
-    let to = |s: f64, t: f64| add(frame.centre, add(scale(u, s), scale(n, t)));
-    let rect = |s0: f64, s1: f64, t0: f64, t1: f64| Shape {
-        outer: vec![to(s0, t0), to(s1, t0), to(s1, t1), to(s0, t1)],
-        holes: vec![],
+    let meander = morph.number("campRowMeander").clamp(0.0, 0.5);
+    let bend = |s: f64| {
+        let k = (s / 8.0).floor(); let f = s / 8.0 - k;
+        meander * across * ((1.0-f)*(k*8.0/(2.0*across)).sin()+f*((k+1.0)*8.0/(2.0*across)).sin())
+    };
+    // `campRowWarp` (metres): a smooth two-dimensional warp of the whole
+    // lattice (wavelength `campRowWarpScale`). Rows keep their order and the
+    // partition stays exact, but their orientation and spacing now drift from
+    // group to group, the way longhouses follow the ground.
+    let warp_amp = morph.number("campRowWarp").clamp(0.0, 14.0);
+    let warp_len = morph.number_or("campRowWarpScale", 80.0).clamp(30.0, 300.0);
+    let waves: Vec<(f64, f64, f64, f64)> = (0..4).map(|k| {
+        let r = rng.fork(&format!("warp{k}"));
+        let a = r.fork("a").range(0.0, std::f64::consts::TAU);
+        let w = std::f64::consts::TAU / (warp_len * r.fork("l").range(0.8, 1.25));
+        (w * a.cos(), w * a.sin(), r.fork("p").range(0.0, std::f64::consts::TAU), if k < 2 { 1.0 } else { 0.6 })
+    }).collect();
+    let warp = |s: f64, t: f64| {
+        if warp_amp <= 0.0 { return (0.0, 0.0); }
+        let f = |k: usize| { let (a, b, p, g) = waves[k]; g * (a * s + b * t + p).sin() };
+        (0.6 * warp_amp * 0.5 * (f(2) + f(3)), warp_amp * 0.5 * (f(0) + f(1)))
+    };
+    let to = |s: f64, t: f64| {
+        let (ws, wt) = warp(s, t);
+        add(frame.centre, add(scale(u, s + ws), scale(n, t + wt + bend(s))))
+    };
+    let rect = |s0: f64, s1: f64, t0: f64, t1: f64| {
+        let mut outer = vec![to(s0, t0), to(s1, t0), to(s1, t1), to(s0, t1)];
+        if meander > 0.0 || warp_amp > 0.0 {
+            // Every side is cut into short runs (1 m under a warp, so the pieces
+            // sharing a curved border agree to the millimetre).
+            let step = if warp_amp > 0.0 { 1.0 } else { 8.0 };
+            let cuts = |a: f64, b: f64| -> Vec<f64> {
+                let mut v = vec![a];
+                for k in (a/step).floor() as i64 + 1..(b/step).ceil() as i64 { let x = k as f64*step; if x > a + 1e-9 && x < b - 1e-9 { v.push(x); } }
+                v.push(b);
+                v
+            };
+            let (xs, ys) = (cuts(s0, s1), if warp_amp > 0.0 { cuts(t0, t1) } else { vec![t0, t1] });
+            outer.clear();
+            for &s in &xs { outer.push(to(s, t0)); }
+            for &t in ys.iter().skip(1) { outer.push(to(s1, t)); }
+            for &s in xs.iter().rev().skip(1) { outer.push(to(s, t1)); }
+            for &t in ys.iter().rev().skip(1).take(ys.len().saturating_sub(2)) { outer.push(to(s0, t)); }
+        }
+        Shape { outer, holes: vec![] }
     };
     // Column bounds along the axis, from the centre outward both ways; each
     // column has its own house length (a path at every bound).
@@ -582,19 +624,68 @@ fn rows(frame: &Frame, morph: &Morph, layout: &Layout) -> (Vec<Tile>, Vec<Shape>
             (half_rows as f64 - 0.5) * across,
         )
     };
+    // Row edges: a uniform lattice, or (`campRowVary`) rows of different widths,
+    // so the houses are neither equally spaced nor equally wide.
+    let vary = morph.number("campRowVary").clamp(0.0, 0.6);
+    let mut edges: Vec<f64> = vec![t_lo];
+    if vary > 0.0 {
+        while *edges.last().unwrap() < t_hi - 1e-9 {
+            let j = edges.len();
+            let w = across * (1.0 + vary * rng.fork(&format!("row{j}")).range(0.0, 1.3));
+            let next = edges.last().unwrap() + w;
+            edges.push(next);
+        }
+    } else {
+        let rows = ((t_hi - t_lo) / across).round() as usize;
+        edges.extend((1..=rows).map(|j| t_lo + j as f64 * across));
+    }
+    let rows = edges.len() - 1;
+    let t_hi = edges[rows];
+    let (first, last) = (bounds[0], *bounds.last().unwrap());
+    // `campRowStagger`: every row cuts its own columns (its own house lengths,
+    // its own cross paths): the houses of neighbouring rows no longer line up.
+    let stagger = morph.number("campRowStagger") > 0.0;
     let mut tiles = vec![];
     let mut paths = vec![];
+    if stagger {
+        for j in 0..rows {
+            let (t0, t1) = (edges[j], edges[j + 1]);
+            let r = rng.fork(&format!("stagger{j}"));
+            let mut b = vec![first];
+            let mut k = 0;
+            loop {
+                let at = *b.last().unwrap();
+                let step = path + r.fork(&format!("c{k}")).range(len_lo, len_hi) * if k == 0 { r.fork("head").range(0.45, 1.0) } else { 1.0 };
+                k += 1;
+                if at + step > last - path - 0.6 * len_lo { break; }
+                b.push(at + step);
+            }
+            b.push(last);
+            for w in b.windows(2) {
+                paths.push(rect(w[0], w[0] + path, t0 + path, t1));
+                let (s0, s1) = (w[0] + path, w[1]);
+                tiles.push(Tile {
+                    shape: rect(s0, s1, t0 + path, t1),
+                    hold: Hold::Dwelling,
+                    nominal: (s1 - s0) * (t1 - t0 - path),
+                    cut: false,
+                });
+            }
+        }
+        for (t0, t1) in [(-reach, t_lo), (t_hi + path, reach)] {
+            tiles.push(Tile { shape: rect(first, last, t0, t1), hold: Hold::Open, nominal: 0.0, cut: false });
+        }
+    } else {
     for w in bounds.windows(2) {
         // The path at the column's start, then its lots.
         paths.push(rect(w[0], w[0] + path, -reach, reach));
         let (s0, s1) = (w[0] + path, w[1]);
-        let rows = ((t_hi - t_lo) / across).round() as usize;
         for j in 0..rows {
-            let t0 = t_lo + j as f64 * across;
+            let t0 = edges[j];
             tiles.push(Tile {
-                shape: rect(s0, s1, t0 + path, t0 + across),
+                shape: rect(s0, s1, t0 + path, edges[j + 1]),
                 hold: Hold::Dwelling,
-                nominal: (s1 - s0) * (across - path),
+                nominal: (s1 - s0) * (edges[j + 1] - t0 - path),
                 cut: false,
             });
         }
@@ -612,17 +703,18 @@ fn rows(frame: &Frame, morph: &Morph, layout: &Layout) -> (Vec<Tile>, Vec<Shape>
             cut: false,
         });
     }
+    }
     // An alley along every row (the houses' long sides), the last one
     // closing the rows: with the cross paths, one grid reaching every side of
     // the block, so every lot's path leads to the block's streets.
-    let rows = ((t_hi - t_lo) / across).round() as usize;
     for j in 0..=rows {
-        let t0 = t_lo + j as f64 * across;
+        let t0 = edges[j];
         paths.push(rect(-reach - path, reach + path, t0, t0 + path));
     }
     // The lots nearest the centre hold the programme's dwellings; the rest
     // of the lattice is open ground (the fields inside the palisade).
     let mean = 0.5 * (len_lo + len_hi) * (across - path);
+    let fringe = morph.number("campFringe").clamp(0.0, 60.0);
     if let Some(count) = need(layout, mean, morph) {
         let index=FrontageIndex::new(layout);let reached=regional_streets(layout);
         let all_paths=union(&paths);
@@ -648,7 +740,10 @@ fn rows(frame: &Frame, morph: &Morph, layout: &Layout) -> (Vec<Tile>, Vec<Shape>
                         let a=&c.admissibility;
                         families::envelope(&cell,&potential,a.min_frontage,a.min_depth,a.min_access_width).is_none()
                     }) {continue;}
-                    lots.push((length(sub(super::super::geometry::centroid(&cell),frame.centre)),i));
+                    // `campFringe` (metres): a ragged edge, so the houses form an irregular oval
+                    // with open ground inside, not a disc cut along the lattice.
+                    let ragged = if fringe > 0.0 { rng.fork(&format!("pick{i}")).range(-fringe, fringe) } else { 0.0 };
+                    lots.push((length(sub(super::super::geometry::centroid(&cell),frame.centre)) + ragged,i));
                 }
             }
         }
@@ -703,7 +798,6 @@ fn rows(frame: &Frame, morph: &Morph, layout: &Layout) -> (Vec<Tile>, Vec<Shape>
             }
         }
     }
-    let (first, last) = (bounds[0], *bounds.last().unwrap());
     tiles.push(Tile {
         shape: rect(first - reach, first, -reach, reach),
         hold: Hold::Open,
@@ -734,13 +828,19 @@ fn regional_streets(layout: &Layout) -> Vec<bool> {
     }
     let mut reached=vec![false;layout.streets.len()];let mut queue=vec![];
     let explicit = layout.streets.iter().any(|s| matches!(s.role.as_str(), "regional" | "road" | "gate-street" | "outbound"));
+    // The macroplan and the bridge pass re-role regional roads that reach the
+    // settlement as "approach": they are regional access too (the camp forms'
+    // own entrances, `camp_forms::entries`, already count them), seeded
+    // whether or not another explicit road exists. They do not switch off the
+    // entrance fallback below, which a camp without any road relies on.
+    let regional = |s: &super::super::Street| s.role == "approach" || matches!(s.role.as_str(), "regional" | "road" | "gate-street" | "outbound");
     let entrance = |s:&super::super::Street| !explicit && matches!(s.role.as_str(),"street"|"lane"|"track") && s.rank <= 1
         && [s.path.first(),s.path.last()].into_iter().flatten().any(|&p| layout.blocks.iter().any(|b|
             std::iter::once(&b.shape.outer).chain(&b.shape.holes).any(|ring|
                 ring.iter().zip(ring.iter().cycle().skip(1)).take(ring.len())
                     .any(|(&a,&b)| super::super::geometry::distance(p,a,b).0 <= s.widths.first().copied().unwrap_or(3.)*0.5+0.1))));
     for (i,s) in layout.streets.iter().enumerate() {
-        if s.path.len()>1 && (matches!(s.role.as_str(),"regional"|"road"|"gate-street"|"outbound") || entrance(s)) {
+        if s.path.len()>1 && (regional(s) || entrance(s)) {
             reached[i]=true;queue.push(i);
         }
     }
@@ -1199,6 +1299,33 @@ mod tests {
         assert!(open > 0.4 * area(&shape), "{open}");
     }
 
+    /// Invariant: a regional road that reaches the settlement as an "approach"
+    /// (the macroplan and bridge passes re-role it) is the camp's regional
+    /// access like any "regional" road: a camp whose only road is an approach
+    /// still holds its dwellings (the PNW plank village had none: 0 houses).
+    #[test]
+    fn an_approach_road_is_the_camps_regional_access() {
+        let shape = rectangle(-75.0, -78.0, 75.0, 75.0);
+        let morph = Morph {
+            value: serde_json::json!({"campLayout":"rows","campRow":18.0,"campRowLength":[26.0,30.0],
+                "campPath":3.0,"campRings":0}),
+        };
+        let huts = |role: &str| {
+            let mut l = layout(&shape);
+            l.streets[0].role = role.into();
+            assert!(regional_streets(&l)[0] == (role != "ford"), "{role}");
+            let r = &shape.outer;
+            let mut fronts: Vec<Front> = vec![Front { a: r[0], b: r[1], rank: 0, street: 0, shared: false, gate: false }];
+            lots(&shape, 0, Point { x: 1.0, y: 0.0 }, &mut fronts, &morph, &l)
+                .iter().filter(|p| p.provenance[0] == "camp-dwelling").count()
+        };
+        let regional = huts("regional");
+        assert!(regional > 0, "control: {regional}");
+        assert_eq!(huts("approach"), regional);
+        // `regional_streets` itself refuses a lone ford (asserted in `huts`).
+        huts("ford");
+    }
+
     /// Invariant: a road through the camp's middle is no open centre ringed
     /// by its land: the byre keeps its share of the camp across the road,
     /// not the 6 m disc a band camp's empty middle would leave it.
@@ -1253,3 +1380,43 @@ mod connected_fronts_tests;
 #[cfg(test)]
 #[path = "camp_cap_ground_tests.rs"]
 mod cap_ground_tests;
+
+#[cfg(test)]
+mod meander_tests {
+    use super::*;
+    #[test]
+    fn v7_culture_curved_rows_tile_the_ground_without_overlaps() {
+        let layout:Layout=serde_json::from_value(serde_json::json!({"key":"curved-rows","culture":"native-iroquoian","center":{"x":0.,"y":0.},"quarters":[],"blocks":[],"streets":[],"warnings":[]})).unwrap();
+        let frame=Frame{centre:Point{x:0.,y:0.},reach:100.,inner:0.,equivalent:100.,key:"curved-rows".into()};
+        let morph=Morph{value:serde_json::json!({"campRowMeander":0.32,"campRow":12.,"campPath":3.5,"campRowLength":[26.,52.]})};
+        let (tiles,paths)=rows(&frame,&morph,&layout);
+        let window=super::super::super::geometry::rectangle(-70.,-70.,70.,70.);
+        let paths=union(&paths);
+        let pieces:Vec<_>=tiles.iter().flat_map(|t|intersection(&t.shape,&window)).chain(paths.iter().flat_map(|p|intersection(p,&window))).collect();
+        let total=pieces.iter().map(area).sum::<f64>();
+        let merged=union(&pieces).iter().map(area).sum::<f64>();
+        assert!((total-area(&window)).abs()<0.05,"{total}");
+        assert!((total-merged).abs()<0.05,"overlap {}",total-merged);
+        assert!(tiles.iter().any(|t|t.shape.outer.len()>4));
+    }
+
+    #[test]
+    fn warped_staggered_rows_of_unequal_width_still_tile_the_ground_exactly() {
+        let layout:Layout=serde_json::from_value(serde_json::json!({"key":"warped-rows","culture":"native-iroquoian","center":{"x":0.,"y":0.},"quarters":[],"blocks":[],"streets":[],"warnings":[]})).unwrap();
+        let frame=Frame{centre:Point{x:0.,y:0.},reach:100.,inner:0.,equivalent:100.,key:"warped-rows".into()};
+        let morph=Morph{value:serde_json::json!({"campRowWarp":9.,"campRowWarpScale":75.,"campRowVary":0.35,"campRowStagger":1.,"campRow":12.,"campPath":3.5,"campRowLength":[26.,52.]})};
+        let (tiles,paths)=rows(&frame,&morph,&layout);
+        let again=rows(&frame,&morph,&layout);
+        assert_eq!(serde_json::to_string(&tiles.iter().map(|t|&t.shape).collect::<Vec<_>>()).unwrap(),serde_json::to_string(&again.0.iter().map(|t|&t.shape).collect::<Vec<_>>()).unwrap(),"deterministic");
+        let window=super::super::super::geometry::rectangle(-70.,-70.,70.,70.);
+        let paths=union(&paths);
+        let pieces:Vec<_>=tiles.iter().flat_map(|t|intersection(&t.shape,&window)).chain(paths.iter().flat_map(|p|intersection(p,&window))).collect();
+        let total=pieces.iter().map(area).sum::<f64>();
+        let merged=union(&pieces).iter().map(area).sum::<f64>();
+        assert!((total-area(&window)).abs()<0.5,"{total}");
+        assert!((total-merged).abs()<0.5,"overlap {}",total-merged);
+        // Neighbouring rows do not share their column bounds (a stagger).
+        let lens:std::collections::BTreeSet<i64>=tiles.iter().filter(|t|t.hold==Hold::Dwelling).map(|t|(area(&t.shape)*10.) as i64).collect();
+        assert!(lens.len()>20,"{}",lens.len());
+    }
+}

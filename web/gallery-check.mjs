@@ -1,0 +1,27 @@
+import { chromium } from 'playwright';
+import http from 'http'; import fs from 'fs'; import path from 'path';
+const root = path.resolve('out/gallery-v2');
+const srv = http.createServer((q, r) => { const f = path.join(root, decodeURIComponent(q.url.split('?')[0]).replace(/\/$/, '/index.html')); fs.readFile(f, (e, d) => { if (e) { r.statusCode = 404; r.end(); } else { r.setHeader('content-type', f.endsWith('.jpg') ? 'image/jpeg' : 'text/html'); r.end(d); } }); }).listen(0);
+const port = srv.address().port;
+const b = await chromium.launch({ channel: 'chrome' }); const p = await b.newPage({ viewport: { width: 1400, height: 900 } });
+const errs = [], bad = [], reqs = [];
+p.on('pageerror', e => errs.push(e.message)); p.on('console', m => m.type() === 'error' && errs.push(m.text()));
+p.on('requestfailed', r => bad.push(r.url())); p.on('response', r => { reqs.push(r.url()); if (r.status() >= 400) bad.push(r.status() + ' ' + r.url()); });
+await p.goto(`http://localhost:${port}/`); await p.waitForTimeout(500);
+const vis = () => p.evaluate(() => [...document.querySelectorAll('.scale')].filter(r => !r.hidden).map(r => [r.dataset.culture, r.querySelector('h3')?.textContent, r.querySelectorAll('figure:not([hidden])').length]));
+console.log('rows total', (await vis()).length);
+await p.click('.seg[data-key=size] button[data-v=camps]'); await p.waitForTimeout(800);
+let v = await vis(); const cu = new Set(v.map(x => x[0]));
+console.log('camps rows', v.length, 'cultures', cu.size, [...cu].join(','), v.map(x => x[1]).slice(0, 3), 'figs', v.map(x => x[2]).join(''));
+console.log('camp caption', await p.$eval('.scale:not([hidden]) figcaption', e => e.textContent));
+await p.screenshot({ path: 'gallery-check.png' });
+await p.selectOption('#culture', 'kraal'); v = await vis(); console.log('kraal+camps rows', v.length);
+await p.click('.seg[data-key=size] button[data-v=all]'); v = await vis(); console.log('kraal all rows', v.length, v.map(x => x[1]).join(' | '));
+await p.selectOption('#culture', 'all'); await p.click('.seg[data-key=dim] button[data-v="3d"]'); await p.click('.seg[data-key=size] button[data-v=camps]');
+console.log('3d camps figs', (await vis()).map(x => x[2]).join(''));
+await p.click('.seg[data-key=dim] button[data-v=all]');
+await p.click('.scale:not([hidden]) .im'); console.log('lightbox', await p.$eval('#lb', e => !e.hidden && e.textContent)); await p.screenshot({ path: 'gallery-lb.png' }); await p.keyboard.press('Escape');
+// load every row to catch bad sprites
+await p.selectOption('#culture', 'all'); await p.evaluate(async () => { for (const i of document.querySelectorAll('.im')) { const u = i.style.backgroundImage.slice(5, -2); await fetch(u).then(r => { if (!r.ok) throw u; }); } });
+console.log('errors', errs, 'bad', bad, 'requests', reqs.length);
+await b.close(); srv.close();

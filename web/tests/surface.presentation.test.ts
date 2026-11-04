@@ -12,7 +12,7 @@ describe('renderer-neutral mapper presentation', () => {
   it('preserves Render, Render3D and brush-style identities and their actual water tokens', () => {
     for (const { id } of TERRAIN_STYLE_LIST) {
       const p = magnaSurfacePresentation(`style=${id}`), source = terrainStyle(id);
-      expect(p.terrainStyleId).toBe(id); expect(p.terrainStyleKind).toBe(source.kind);
+      expect(p.terrainStyleId).toBe(id); expect(p.terrainStyleFamily).toBe(source.traits.family);
       expect(p.palette).toEqual(source.palette); expect(p.water).toEqual(source.water); expect(p.sourceStyleExplicit).toBe(true);
     }
   });

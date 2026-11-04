@@ -2,11 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Layout, Street } from '../../rust/bridge/urban';
 import type { RoadOutput } from '../../rust/bridge/settlements';
 import { outsideUrbanStreets } from '../../rust/bridge/urbanNetwork';
-import { bridgeRoadOwnership, cityBridgeStreets, urbanReplacesCrossing } from '../src/render/cityBridges';
+import { bridgeRoadOwnership, bridgeWaterHeight, cityBridgeStreets, urbanReplacesCrossing } from '../src/render/cityBridges';
 import { buildCityScene, drawCity } from '../src/render/cityCanvas';
 import { buildFillMeshSync, buildStreetStrokes, META, packPlan, STROKE_STRIDE } from '../src/render/cityGlBuild';
 import { DEFAULT_LAYERS, planColors } from '../src/render/cityGlStyle';
-import { city3dBridges } from '../src/render/city3dMeshes';
+import { city3dBridges, city3dWalls } from '../src/render/city3dMeshes';
+import { wallDetail } from '../src/render/cityWalls';
 import { eachBuildingTriangle } from '../src/render/urbanBuildingGeometry';
 
 const street = (path: [number, number][], width = 3, role = 'bridge'): Street => ({ path: path.map(([x, y]) => ({ x, y })), widths: path.map(() => width), rank: 4, role });
@@ -52,11 +53,69 @@ describe('bridge visibility and ownership', () => {
     expect(deck.z_m + deck.wall_height_m).toBeGreaterThan(10);
     const rails = b.volumes.filter(v => v.id.includes(':parapet:'));
     expect(rails).toHaveLength(2); expect(b.volumes.some(v => v.id.includes(':pier:'))).toBe(true);
-    expect(rails.every(v => v.z_m >= deck.z_m + deck.wall_height_m && v.wall_height_m >= 1)).toBe(true);
+    expect(rails.every(v => Math.abs(v.z_m-deck.z_m-0.9) < 0.01 && Math.abs(v.z_m+v.wall_height_m-deck.z_m-deck.wall_height_m-1.05) < 0.01)).toBe(true);
     let triangles = 0, top = -Infinity;
     eachBuildingTriangle(b, t => { triangles++; top = Math.max(top, ...t.points.map(p => p[2])); });
     expect(triangles).toBeGreaterThan(30); expect(top).toBeGreaterThan(deck.z_m + deck.wall_height_m + 1);
     const raised = city3dBridges([street([[0, 0], [80, 0]], 6, 'causeway')], x => x >= 79 ? 8 : 0);
     expect(raised[0].volumes.some(v => v.id.includes(':pier:'))).toBe(true);
+  });
+
+  it('keeps a dry hillside approach from raising the river deck', () => {
+    const bridges = city3dBridges([street([[-200, 0], [0, 0], [40, 0], [200, 0]], 6)],
+      x => Math.max(0, -x / 2), x => x >= 0 && x <= 40 ? 0 : NaN);
+    expect(bridges).toHaveLength(1);
+    const deck = bridges[0].volumes.find(v => v.id.endsWith(':deck'))!;
+    expect(deck.z_m + deck.wall_height_m).toBeLessThan(4);
+    expect(bridges[0].footprint.flatMap(s => s.outer).every(p => p.x >= -2.1 && p.x <= 42.1)).toBe(true);
+  });
+
+  it('reads water levels without mixing in dry cliff heights', () => {
+    const water = new Uint8Array(25), waterLevel = new Float32Array(25).fill(80);
+    for (let y = 0; y < 5; y++) { water[y*5+2] = 3; waterLevel[y*5+2] = 2; }
+    const level = bridgeWaterHeight({n:5,width:50,water,waterLevel}, x => x >= 20 && x <= 30);
+    expect(level(20.01,25)).toBe(2);
+    expect(Number.isNaN(level(19.99,25))).toBe(true);
+  });
+
+  it('joins unequal banks independently and keeps the deck and parapets continuous', () => {
+    const bridges = city3dBridges([street([[0,0],[80,0]],6)], x => x >= 79 ? 8 : 0, () => 0);
+    const deck = bridges[0].volumes.find(v => v.id.endsWith(':deck'))!;
+    const vertices = deck.roof_mesh.vertices;
+    const topAt = (x: number) => Math.max(...vertices.filter(p => Math.abs(p.x-x)<1e-6).map(p=>p.z));
+    expect(topAt(0)).toBeCloseTo(0.12);
+    expect(topAt(80)).toBeCloseTo(8.12);
+    expect(topAt(40)).toBeCloseTo(5.12);
+    for (const v of bridges[0].volumes.filter(v=>v.id.includes(':parapet:'))) {
+      const top = (x: number) => Math.max(...v.roof_mesh.vertices.filter(p=>Math.abs(p.x-x)<1e-6).map(p=>p.z));
+      expect(top(0)-topAt(0)).toBeCloseTo(1.05);
+      expect(top(80)-topAt(80)).toBeCloseTo(1.05);
+    }
+    expect(city3dBridges([street([[-200,0],[200,0]],6)],()=>0,()=>NaN)).toEqual([]);
+  });
+
+  it('retires a regional deck only when its road was rejected by the town', () => {
+    const old = street([[0,0],[100,0]]), far = street([[1000,0],[1100,0]]), city = layout([]);
+    // Next to the town but on land the regional road still crosses: kept.
+    city.quarters = [{phase:0,shape:{outer:[{x:0,y:10},{x:100,y:10},{x:100,y:100},{x:0,y:100}],holes:[]}}];
+    expect(cityBridgeStreets([city],[old,far])).toEqual([old,far]);
+    // Both banks in town land where no town street reaches it: an orphan deck.
+    city.quarters = [{phase:0,shape:{outer:[{x:-500,y:-500},{x:500,y:-500},{x:500,y:500},{x:-500,y:500}],holes:[]}}];
+    expect(cityBridgeStreets([city],[old,far])).toEqual([far]);
+    // The town's streets meet both banks: the road still uses the deck.
+    const served = layout([street([[-60,0],[-2,0]],5,'street'), street([[102,0],[160,0]],5,'street')]);
+    served.quarters = city.quarters;
+    expect(cityBridgeStreets([served],[old,far])).toEqual([...served.streets,old,far]);
+  });
+
+  it('opens a marine wall at the shore and keeps a river water gate as one span', () => {
+    const enclosure = { path: [{x:0,y:0},{x:100,y:0},{x:100,y:100},{x:0,y:100},{x:0,y:0}],
+      kind:'wall',style:'curtain',material:'stone',height_m:7,curtain_width_m:3,
+      gates:[{x:20,y:0},{x:80,y:0}],gatehouses:[{gate:0,kind:'shore',passage:[{x:20,y:0},{x:80,y:0}],passage_width_m:60,height_m:7,masses:[],shape:{outer:[],holes:[]}}] } as Parameters<typeof wallDetail>[0];
+    expect(wallDetail(enclosure)!.pieces.every(p => !p.water)).toBe(true);
+    expect(city3dWalls([enclosure], () => 0).some(b => b.id.includes(':gate:'))).toBe(false);
+    const river = { ...enclosure, gatehouses: enclosure.gatehouses!.map(g => ({ ...g, kind:'water' })) };
+    expect(wallDetail(river)!.pieces.filter(p => p.water)).toHaveLength(1);
+    expect(city3dWalls([river], () => 0).filter(b => b.variant_id.endsWith(':water'))).toHaveLength(1);
   });
 });

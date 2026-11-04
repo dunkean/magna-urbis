@@ -1,10 +1,11 @@
 /** V2 launch/build entry. All outputs are isolated from the V1 application. */
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { chmod, copyFile, cp, mkdir } from 'node:fs/promises';
+import { chmod, copyFile, cp, lstat, mkdir, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { stageUv } from './v2_uv.mjs';
 
 const web = fileURLToPath(new URL('..', import.meta.url));
 const root = resolve(web, '..'), rust = join(root, 'rust'), desktop = join(rust, 'desktop-v2');
@@ -61,6 +62,19 @@ async function prepare() {
   }
 }
 
+async function requireConditioning() {
+  const output = join(rust, 'pkg/neural-web');
+  const required = ['magna_urbis_neural_wasm.js', 'magna_urbis_neural_wasm_bg.wasm'];
+  if (required.every(file => existsSync(join(output, file)))) return;
+  const earth = resolve(root, '../infinite_map');
+  if (!existsSync(join(earth, 'native/neural-earth/Cargo.toml')) || !existsSync(join(earth, 'tools/wasm/prepare-engine.mjs'))) {
+    throw new Error('Conditionnement WASM nécessaire au terrain Python absent. Placez Neural Earth à ../infinite_map (native/neural-earth et tools/wasm), puis exécutez node scripts/neural_wasm.mjs --conditioning-only depuis web/. Aucun poids modèle n’est requis.');
+  }
+  console.log('Préparation V2 · conditionnement neuronal WASM (sans poids)…');
+  await run(process.execPath, [join(web, 'scripts/neural_wasm.mjs'), '--conditioning-only']);
+  if (!required.every(file => existsSync(join(output, file)))) throw new Error('La préparation du conditionnement WASM a échoué.');
+}
+
 async function stop() {
   if (stopping) return;
   stopping = true;
@@ -94,7 +108,7 @@ function localAddress() {
   return url;
 }
 async function nativeBinary() {
-  if (!flags.includes('--no-build')) await run(cargo, ['build', '--release', '-p', 'magna-urbis-local'], rust);
+  if (!flags.includes('--no-build')) await run(cargo, ['build', '--locked', '--release', '-p', 'magna-urbis-local'], rust);
   const metadata = JSON.parse(await start(cargo, ['metadata', '--format-version', '1', '--no-deps'], rust, true).done);
   const path = process.env.MAGNA_LOCAL_BIN ?? join(metadata.target_directory, 'release', `magna-urbis-local${windows ? '.exe' : ''}`);
   if (!existsSync(path)) throw new Error(`Moteur absent : ${path}`);
@@ -134,25 +148,43 @@ async function vite() {
 const buildWeb = () => { requireWasm(); return run(process.execPath, [join(web, 'node_modules/vite/bin/vite.js'), 'build', '--config', join(web, 'vite.v2.config.ts')]); };
 async function tauri(args) {
   if (!process.env.npm_execpath) throw new Error('Lancez la commande desktop via npm run app:v2:dev ou npm run app:v2:build.');
-  return run(process.execPath, [process.env.npm_execpath, 'exec', '--yes', '--package=@tauri-apps/cli@^2', '--', 'tauri', ...args], desktop);
+  return run(process.execPath, [process.env.npm_execpath, 'exec', '--yes', '--package=@tauri-apps/cli@2.11.4', '--', 'tauri', ...args], desktop);
 }
 async function resources() {
-  const dir = join(desktop, 'resources'); await mkdir(join(dir, 'web/scripts'), { recursive: true });
+  const dir = resolve(desktop, 'resources');
+  // This is a generated staging tree. Never follow a user-created junction.
+  if (dir !== resolve(root, 'rust/desktop-v2/resources')) throw Error('Unexpected resources directory');
+  const existing = await lstat(dir).catch(error => { if (error.code !== 'ENOENT') throw error; });
+  if (existing?.isSymbolicLink()) throw Error('The generated resources directory must not be a symlink or junction');
+  if (existing) await rm(dir, { recursive: true, force: true });
+  await mkdir(join(dir, 'web/scripts'), { recursive: true });
   const engine = join(dir, `magna-urbis-local${windows ? '.exe' : ''}`);
   await copyFile(await nativeBinary(), engine);
   if (!windows) await chmod(engine, 0o755);
   await cp(join(root, 'illustration'), join(dir, 'illustration'), { recursive: true,
     filter: source => !source.includes('__pycache__') && !source.endsWith('.pyc') && !source.includes('tests') && !source.includes('output') });
   for (const name of ['neural_python.py', 'neural_model_catalog.py', 'neural_refinement.py']) await copyFile(join(web, 'scripts', name), join(dir, 'web/scripts', name));
-  if (existsSync(join(rust, 'desktop/icons/icon.ico'))) await cp(join(rust, 'desktop/icons'), join(desktop, 'icons'), { recursive: true });
-  else await tauri(['icon', join(web, 'src/ui/assets/logo-magna-urbis.png'), '--output', join(desktop, 'icons')]);
+  await cp(join(web, 'scripts/neural_earth_tile40'), join(dir, 'web/scripts/neural_earth_tile40'), { recursive: true, filter: source => !source.includes('__pycache__') && !source.endsWith('.pyc') });
+  for (const folder of ['python_runtime', 'rust/models/neural-earth', 'docs/models-release']) {
+    await cp(join(root, folder), join(dir, folder), { recursive: true,
+      filter: source => !source.includes('__pycache__') && !source.endsWith('.pyc') && !/[/\\](?:test_|tests[/\\])/.test(source) && !/\.(?:pt|safetensors)$/.test(source) });
+  }
+  await mkdir(join(dir, 'scripts'), { recursive: true });
+  await copyFile(join(root, 'scripts/neural_release.py'), join(dir, 'scripts/neural_release.py'));
+  await copyFile(join(root, 'LICENSE'), join(dir, 'LICENSE'));
+  await copyFile(join(root, 'THIRD_PARTY_NOTICES.md'), join(dir, 'THIRD_PARTY_NOTICES.md'));
+  const uvCache = join(web, 'out/desktop-tools', process.platform);
+  await stageUv(uvCache);
+  await cp(uvCache, join(dir, 'bin'), { recursive: true });
+  await tauri(['icon', join(desktop, 'assets/app-icon-v2.png'), '--output', join(desktop, 'icons')]);
 }
 
 try {
   if (flags.includes('--help') || action === 'help') {
-    console.log('Magna Urbis V2 : node scripts/v2.mjs prepare|dev|build|local|desktop-dev|desktop-build\nprepare : compile terrain + maisons en WASM release; --neural ajoute le runtime et les modèles depuis ../infinite_map.\ndev/build : application Web autonome; local : Web + Rust natif + Python/CUDA optionnel.\ndesktop-dev/build : application et installateur Tauri séparés de la V1.\nOptions : --no-build (binaire Rust existant), --no-neural (lanceur local sans Python).\nPrérequis et déploiement : rust/desktop-v2/README.md');
+    console.log('Magna Urbis V2 : node scripts/v2.mjs prepare|dev|build|local|desktop-resources|desktop-dev|desktop-build\nprepare : compile terrain + maisons en WASM release; --neural ajoute le runtime et les modèles depuis ../infinite_map.\ndev/build : application Web autonome; local : Web + Rust natif + Python/CUDA optionnel.\ndesktop-resources : prépare le moteur Rust, uv et les scripts sans construire l’interface.\ndesktop-dev/build : application et installateur Tauri séparés de la V1.\nOptions : --no-build (binaire Rust existant), --no-neural (lanceur local sans Python).\nPrérequis et déploiement : rust/desktop-v2/README.md');
   } else if (action === 'prepare') await prepare();
   else if (action === 'build') await buildWeb();
+  else if (action === 'desktop-resources') { await requireConditioning(); await resources(); }
   else if (action === 'dev' || action === 'local') {
     requireWasm();
     const services = [];
@@ -164,6 +196,7 @@ try {
     await Promise.race(services.filter(Boolean).map(service => service.done));
   } else if (action === 'desktop-dev' || action === 'desktop-build') {
     requireWasm();
+    await requireConditioning();
     await resources();
     if (action === 'desktop-build') await buildWeb(); else { await vite(); await python(); }
     await tauri([action === 'desktop-build' ? 'build' : 'dev', ...flags.filter(arg => arg.startsWith('--') && !['--no-build', '--no-neural'].includes(arg))]);

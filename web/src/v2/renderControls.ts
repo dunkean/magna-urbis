@@ -1,22 +1,30 @@
 /** Display controls for retained terrain and native cities; none invokes a generation stage. */
 import type { World } from '../gen/types';
 import type { V2Appearance, V2Settings } from './contracts';
-import { DEFAULT_TERRAIN_LIGHTING, DEFAULT_TERRAIN_LAYERS } from '../render/terrainLighting';
-import { DIAGNOSTICS, diagnosticAvailable } from '../render/displayDiagnostics';
-import { DEFAULT_FANTASY_OPTIONS } from '../../../rust/bridge/fantasyPainting';
-import { CITY_LAYER_NAMES } from './appearance';
+import { DIAGNOSTICS, RESOURCE_LEGENDS, diagnosticAvailable, isResourceDiagnostic } from '../render/displayDiagnostics';
+import { POTENTIAL_IDS } from '../../../rust/bridge/resources';
+import type { ResolvedAppearance } from '../render/appearanceRecipe';
+import { CITY_LAYER_NAMES, resolveSettingsAppearance } from './appearance';
+import { resolvedValues } from '../render/appearanceRecipe';
 import { bindTree, registerMessages, setText } from './i18n';
 import { mountParameterForm, readSettingPath, writeSettingPath, type ParameterField, type ParameterForm } from './parameterForm';
 import { mountRenderSettingsPanel, mountRenderColorControls, type RenderSection } from '../ui/renderSettingsPanel';
-import { TERRAIN_STYLE_LIST, terrainStyle } from '../render/terrainStyle';
+import { TERRAIN_STYLE_LIST, styleTraits, terrainStyle } from '../render/terrainStyle';
 import { biomePalette } from '../render/biomes';
-import { DEFAULT_FOREST_SETTINGS } from '../../../rust/bridge/terrainForest';
 import { paletteColors, type RenderColorKey } from '../render/customColors';
+import { worldCapabilities } from './nativeProducts';
 import { markStyleCustomized } from '../ui/renderStyleCustomization';
 
 export interface RenderControlBindings { getSettings(): V2Settings; onChange(): void; getWorld?(): World | undefined; getStyleSelectors?(): readonly HTMLSelectElement[] }
 export interface RenderControls { sync(): void; dispose(): void }
 export const renderControlMessages: Record<string, { en: string; fr: string }> = {};
+const INCOMPATIBLE = (en: string, fr: string): string => copy(en, fr);
+const incompatibilityText: Record<string, string> = {
+  'This ground draws its water from its own material.': INCOMPATIBLE('This ground draws its water from its own material.', 'Ce sol dessine son eau avec son propre matériau.'),
+  'This ground colours itself from its material.': INCOMPATIBLE('This ground colours itself from its material.', 'Ce sol se colore avec son propre matériau.'),
+  'Painted textures are not available.': INCOMPATIBLE('Painted textures are not available.', 'Les textures peintes ne sont pas disponibles.'),
+  'Diagnostics need the composite renderer.': INCOMPATIBLE('Diagnostics need the composite renderer.', 'Les diagnostics demandent le rendu composite.'),
+};
 function copy(en: string, fr: string): string { renderControlMessages[en] = renderControlMessages[fr] = { en, fr }; return en; }
 const choices = (entries: readonly (readonly [string, string, string])[]) => entries.map(([value, en, fr]) => ({ value, label: copy(en, fr) }));
 const choice = (path: string, en: string, fr: string, entries: readonly (readonly [string, string, string])[]): ParameterField => ({ path: `appearance.${path}`, type: 'select', label: copy(en, fr), options: choices(entries) });
@@ -41,6 +49,7 @@ const commonFields: ParameterField[] = [
   flag('labels', 'Map labels', 'Toponymes'), flag('legend', 'Legend', 'Légende'), flag('cartouche', 'Title cartouche', 'Cartouche du titre'),
   flag('painted', 'Painted natural textures', 'Textures naturelles peintes'),
   choice('vegetation', 'Vector vegetation', 'Végétation vectorielle', [['classic', 'Classic symbols', 'Symboles classiques'], ['canopy', 'Foliage and canopy', 'Feuillages et canopée']]),
+  choice('landuseForestTone', 'Land-use forest colour', 'Couleur de la forêt (occupation du sol)', [['marked', 'Dark marked green (like the render)', 'Vert foncé marqué (comme le rendu)'], ['ground', 'Ground colour', 'Couleur du fond']]),
 ];
 const terrainFields: ParameterField[] = [
   flag('terrainLayers.relief', 'Terrain base', 'Fond du terrain'), flag('terrainLayers.hypsometry', 'Elevation colours', 'Couleurs hypsométriques'),
@@ -87,15 +96,26 @@ const diagnosticLabels: Record<string, readonly [string, string]> = {
   flats: ['Rust · flat areas', 'Rust · surfaces planes'], 'flat-rank': ['Rust · flat-area ranks', 'Rust · rangs des surfaces planes'],
   'raw-basins': ['Rust · raw watersheds', 'Rust · bassins bruts'], 'raw-accumulation': ['Rust · raw accumulation', 'Rust · accumulation brute'],
   'raw-flow': ['Rust · raw flow', 'Rust · écoulement brut'], 'raw-depressions': ['Rust · raw depressions', 'Rust · dépressions brutes'],
+  'res-geology': ['Geology · bedrock', 'Géologie · roche'], 'res-soil-depth': ['Soil · depth', 'Sol · profondeur'], 'res-moisture': ['Soil · moisture', 'Sol · humidité'],
+  'res-drainage': ['Soil · drainage', 'Sol · drainage'], 'res-alluvial': ['Soil · alluvium', 'Sol · alluvions'], 'res-potential': ['Resources · potential', 'Ressources · potentiel'],
+  'res-deposits': ['Deposits and anchors', 'Gisements et ancres'], 'res-sites': ['Activity sites', 'Sites d’activité'],
 };
-const diagnosticFields = [choice('diagnostic', 'Diagnostic overlay', 'Couche de diagnostic', DIAGNOSTICS.map(({ id }) => [id, ...diagnosticLabels[id]] as const))];
+const potentialLabels: Record<string, readonly [string, string]> = {
+  arable: ['Arable land', 'Terres arables'], pasture: ['Pasture', 'Pâturage'], upland_pasture: ['Upland pasture', 'Alpage'], wood: ['Firewood', 'Bois de chauffe'], timber: ['Timber', 'Bois d’œuvre'],
+  water_power: ['Water power', 'Force hydraulique'], wind_exposure: ['Wind exposure', 'Exposition au vent'], stone_ashlar: ['Building stone', 'Pierre de taille'], lime: ['Limestone for lime', 'Calcaire à chaux'],
+  slate: ['Slate', 'Ardoise'], clay: ['Clay', 'Argile'], sand: ['Sand', 'Sable'], fish_river: ['River fishing', 'Pêche fluviale'], fish_coast: ['Coastal fishing', 'Pêche côtière'],
+  peat: ['Peat', 'Tourbe'], bog_iron: ['Bog iron', 'Fer des marais'], salt_coast: ['Coastal salt', 'Sel marin'], game: ['Game', 'Gibier'], navigable: ['Navigable water', 'Eau navigable'], coast_shelter: ['Coastal shelter', 'Abri côtier'],
+};
+const diagnosticFields = [choice('diagnostic', 'Diagnostic overlay', 'Couche de diagnostic', DIAGNOSTICS.map(({ id }) => [id, ...diagnosticLabels[id]] as const)),
+  choice('resourcePotential', 'Resource shown', 'Ressource affichée', POTENTIAL_IDS.map(id => [id, ...potentialLabels[id]] as const))];
 const styleFrench: Record<string, string> = { parchment: 'Parchemin', watabou: 'Simple (classique)', engraving: 'Gravure', blueprint: 'Plan bleu', illuminated: 'Enluminure', topographic: 'Topographique', night: 'Nocturne',
   render3d: 'Render3D · Multi-échelle', 'fantasy-ink': 'Fantasy · Encre N&B', 'fantasy-color': 'Fantasy · Aquarelle',
   'render-v2-substrate': 'Render v2 - Substrat', 'render-v2-moisture': 'Render v2 - Humidité', 'render-v2-vegetation': 'Render v2 - Végétation', 'render-v2-snow': 'Render v2 - Neige / glace' };
 const styleFields = [choice('terrainStyle', 'Ground style', 'Style du sol', TERRAIN_STYLE_LIST.map(style => [style.id,
-  style.id === 'fantasy-ink' ? 'Fantasy · Black & white ink' : style.id === 'fantasy-color' ? 'Fantasy · Watercolour' : style.label,
+  style.traits.fantasy === 'ink' ? 'Fantasy · Black & white ink' : style.traits.fantasy === 'color' ? 'Fantasy · Watercolour' : style.label,
   styleFrench[style.id] ?? style.label] as const))];
-const visibilityFields = [flag('roads', 'Regional roads', 'Routes régionales'), flag('buildings', 'Show buildings', 'Afficher les bâtiments')];
+const visibilityFields = [flag('roads', 'Regional roads', 'Routes régionales'), flag('buildings', 'Show buildings', 'Afficher les bâtiments'),
+  flag('unifiedDefaults', 'To test · Same defaults in 2D, 3D and classic map', 'À tester · Mêmes valeurs par défaut en 2D, 3D et carte classique')];
 const perspectiveFields = [flag('city.plan', 'City plan in 3D', 'Plan de ville en 3D'),
   choice('city.colors', 'Building colours in 3D', 'Couleurs des bâtiments en 3D', [['materials', 'Materials', 'Matériaux'], ['uses', 'Uses', 'Usages']]),
   number('city.exaggeration', 'Vertical exaggeration in 3D', 'Exagération verticale en 3D', 1, 5, .1),
@@ -108,27 +128,16 @@ export const RENDER_SECTION_FIELDS: Record<RenderSection, readonly string[]> = {
   general: ['renderer', 'labels', 'legend', 'cartouche', 'terrainLayers.frame'],
   relief: [...strip(lightingFields), 'city.exaggeration', 'city.refinement'],
   ground: ['terrainStyle', 'terrainLayers.relief', 'terrainLayers.hypsometry'],
-  cover: ['contours', 'landuse', 'painted', 'vegetation', ...strip(fantasyFields), ...strip(seasonFields), ...strip(forestFields)],
+  cover: ['contours', 'landuse', 'painted', 'vegetation', 'landuseForestTone', ...strip(fantasyFields), ...strip(seasonFields), ...strip(forestFields)],
   roads: ['roads', 'city.layers.streets', 'city.groundBlend'],
   water: ['terrainLayers.water', 'lakes', 'oxbows'],
-  buildings: ['buildings', 'city.plan', 'city.colors', ...strip(cityFields).filter(path => path !== 'city.groundBlend'), ...strip(cityLayerFields).filter(path => path !== 'city.layers.streets')],
-  diagnostics: ['diagnostic'],
+  buildings: ['buildings', 'unifiedDefaults', 'city.plan', 'city.colors', ...strip(cityFields).filter(path => path !== 'city.groundBlend'), ...strip(cityLayerFields).filter(path => path !== 'city.layers.streets')],
+  diagnostics: ['diagnostic', 'resourcePotential'],
 };
 
-const defaultCityLayers = { reserve: false, allocated: false, centers: false, domains: true, quarters: false, blocks: true, streets: true, enclosures: true, lotEnclosures: true, parcels: true, gardens: true, places: true, fronts: false, axes: false, access: false };
-/** Defaults are read without expanding an older saved recipe. */
+/** Defaults come from the shared resolver (one table for 2D, 3D and export); a saved recipe is never expanded. */
 export function renderControlValues(settings: V2Settings, world?: World): V2Appearance {
-  const a = settings.appearance, style = a?.terrainStyle ?? a?.style ?? settings.options.style;
-  const nativeCity = !!Object.keys(world?.debug?.v2RustCities ?? {}).length;
-  return { style: settings.options.style, contours: settings.options.contours ?? true, landuse: settings.options.landuse ?? true,
-    labels: settings.options.labels ?? true, legend: settings.options.legend ?? false, cartouche: false,
-    renderer: a?.terrainStyle || nativeCity ? 'bench' : 'classic', painted: false, textured: false, vegetation: 'canopy', season: .5,
-    diagnostic: 'none', lakes: true, oxbows: true, roads: true, buildings: true, terrainStyle: style, ...a,
-    lighting: { ...DEFAULT_TERRAIN_LIGHTING, ...a?.lighting }, terrainLayers: { ...DEFAULT_TERRAIN_LAYERS, ...a?.terrainLayers },
-    fantasy: { ...DEFAULT_FANTASY_OPTIONS, followLanduse: false, ...a?.fantasy },
-    forest: { ...DEFAULT_FOREST_SETTINGS, ...settings.terrain?.forest, ...a?.forest },
-    city: { view: 'buildings', palette: 'parchment', buildingStyle: 'cartographic', diagnostic: 'none', opacity: .8, width: .6, plan: true, colors: 'materials', exaggeration: 1, refinement: 'noise',
-      groundBlend: 'classic', painted: style.startsWith('render') || (a?.city?.ground ?? '').startsWith('render'), ...a?.city, layers: { ...defaultCityLayers, ...a?.city?.layers } } };
+  return resolvedValues(resolveSettingsAppearance(settings, world, 'view2d')) as V2Appearance;
 }
 /** A selected preset alone is unchanged. Compare display values with that preset's inherited defaults. */
 export function appearanceCustomized(settings: V2Settings, world?: World): boolean {
@@ -155,6 +164,18 @@ export function writeAppearanceControl(settings: V2Settings, path: string, value
   if (path === 'appearance.terrainStyle') {
     settings.appearance.renderer = 'bench';
     delete settings.appearance.city?.ground;
+  }
+}
+
+/** A short muted note under each control the resolver declares incompatible with the current ground. */
+function showIncompatibilities(root: HTMLElement, resolved: ResolvedAppearance): void {
+  root.querySelectorAll('.v2-incompatible').forEach(note => note.remove());
+  for (const { field, reason } of resolved.incompatibilities) {
+    const target = field.startsWith('colors.') ? root.querySelector<HTMLElement>(`[data-color-key="${field.slice(7)}"]`)
+      : root.querySelector<HTMLElement>(`[data-setting-path="appearance.${field}"]`)?.closest<HTMLElement>('.parameter-field') ?? null;
+    if (!target) continue;
+    const note = document.createElement('small'); note.className = 'v2-incompatible'; note.style.cssText = 'display:block;grid-column:1/-1;font-size:10px;line-height:1.4;font-style:italic;opacity:.7;margin-top:3px'; setText(note, incompatibilityText[reason] ?? reason);
+    target.append(note);
   }
 }
 
@@ -188,6 +209,15 @@ export function mountRenderControls(host: HTMLElement, bindings: RenderControlBi
   const forest = conditional(forestLabel, forestFields);
   section('diagnostics', diagnosticFields);
   const unavailable = document.createElement('p'); unavailable.className = 'hint v2-render-unavailable'; setText(unavailable, ui.unavailable); panel.bodies.diagnostics.append(unavailable);
+  const legend = document.createElement('p'); legend.className = 'hint v2-diagnostic-legend'; panel.bodies.diagnostics.append(legend);
+  const legendFr: Record<string, string> = {
+    'res-geology': 'Roche : granite rose, calcaire crème, grès ocre, marne olive, basalte gris sombre, métamorphique violet, ultrabasique vert, évaporite blanc-bleu.',
+    'res-soil-depth': 'Profondeur du sol, de 0 à 3 m : sable clair → brun sombre.', 'res-moisture': 'Indice d’humidité du sol, de 0 à 1 : sable → bleu profond.',
+    'res-drainage': 'Classe de drainage : très mauvais (bleu sombre), mauvais, modéré, bien drainé (sable).', 'res-alluvial': 'Part d’alluvions du sol, de 0 à 1 : transparent → ocre.',
+    'res-potential': 'Potentiel de la ressource, de 0 à 1 (choisie ci-dessous) : transparent → jaune → vert sombre.',
+    'res-deposits': 'Petits gisements (disque = minerai récupérable) et ancres d’activité (losanges), colorés par famille ou type.',
+    'res-sites': 'Sites d’activité colorés par catégorie (extraction, énergie, eau, forêt, pastoral), reliés au lieu parent par un trait fin ; nœuds du réseau (péages, bacs, auberges, postes frontières) en cercles cramoisis ; installations (fronts de carrière, haldes, biefs, pontons, enclos…) tracées par type de sol.',
+  };
   const colors = mountRenderColorControls(panel, text, {
     getColors: () => bindings.getSettings().appearance?.colors,
     getStyle: () => { const a = renderControlValues(bindings.getSettings(), bindings.getWorld?.()); return a.renderer === 'classic' ? a.style : a.terrainStyle ?? a.style; },
@@ -197,21 +227,28 @@ export function mountRenderControls(host: HTMLElement, bindings: RenderControlBi
   // Captured once: the staged V2 chain relocates section bodies outside this panel.
   const styleSelect = root.querySelector<HTMLSelectElement>('[data-setting-path="appearance.terrainStyle"]')!;
   const diagnostic = root.querySelector<HTMLSelectElement>('[data-setting-path="appearance.diagnostic"]')!;
+  const potentialField = root.querySelector<HTMLElement>('[data-setting-path="appearance.resourcePotential"]')!.closest<HTMLElement>('.parameter-field')!;
   bindTree(root);
   function sync(): void {
     for (const form of forms) form.sync();
     const settings = bindings.getSettings(), world = bindings.getWorld?.(), a = renderControlValues(settings, world);
     const bench = a.renderer === 'bench', style = a.terrainStyle ?? a.style;
     colors.sync();
+    showIncompatibilities(root, resolveSettingsAppearance(settings, world, 'view2d'));
     const customized = appearanceCustomized(settings, world);
     for (const select of [styleSelect, ...(bindings.getStyleSelectors?.() ?? [])]) markStyleCustomized(select, customized);
-    fantasy.hidden = !bench || !style.startsWith('fantasy-'); season.hidden = !bench || !style.startsWith('render-v2');
-    forest.hidden = !bench || !/^(render3d|render-v2)/.test(style);
-    const source = world?.terrain as World['terrain'] & { v2NativeTerrain?: { water?: unknown; hydrology?: unknown } } | undefined;
-    const waterEngine = source?.v2NativeTerrain?.water ? 'vector' : source?.v2NativeTerrain?.hydrology ? 'rust'
+    const traits = styleTraits(style);
+    fantasy.hidden = !bench || !traits.fantasy; season.hidden = !bench || !traits.satelliteVariant;
+    forest.hidden = !bench || !traits.ground3d;
+    const capabilities = worldCapabilities(world);
+    const waterEngine = capabilities.vectorWater ? 'vector' : capabilities.hydrology ? 'rust'
       : world ? 'none' : settings.terrain?.hydrology?.engine ?? 'rust';
     for (const option of Array.from(diagnostic.options)) option.disabled = !diagnosticAvailable(option.value, waterEngine);
     unavailable.hidden = diagnosticAvailable(a.diagnostic ?? 'none', waterEngine);
+    const shown = a.diagnostic ?? 'none', resource = isResourceDiagnostic(shown);
+    potentialField.hidden = shown !== 'res-potential';
+    legend.hidden = !resource;
+    if (resource) text(legend, RESOURCE_LEGENDS[shown], legendFr[shown]);
   }
   sync(); return { sync, dispose: () => { forms.forEach(form => form.dispose()); panel.dispose(); } };
 }

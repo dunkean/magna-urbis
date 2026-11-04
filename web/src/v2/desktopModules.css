@@ -1,0 +1,9 @@
+.desktop-modules .desktop-module { border-top: 1px solid var(--line, #ddd); margin-top: 12px; padding-top: 10px; }
+.desktop-modules h4 { margin: 0 0 6px; }
+.desktop-module-field { display: grid; gap: 4px; margin: 8px 0; }
+.desktop-module-field input { width: 100%; box-sizing: border-box; }
+.desktop-module-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.desktop-module-dirs { display: grid; gap: 3px; font-size: .85em; }
+.desktop-module-dirs code { overflow-wrap: anywhere; }
+.desktop-module-result { overflow-wrap: anywhere; }
+.desktop-module-log { max-height: 180px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }

@@ -1859,10 +1859,41 @@ pub(in super::super) fn preview_parts_resolved(p:&Parcel,o:&Occupancy,resolved:O
             }
         }
     }
+    // `campHouseEnds` (0..1): a camp's long house has rounded gable ends (the
+    // Iroquoian barrel-roofed longhouse): the corners become arcs of that
+    // fraction of the half-width.
+    let ends = if kind(o) == Kind::Long && !o.morph.text("campLayout").is_empty() { o.morph.number("campHouseEnds").clamp(0.0, 1.0) } else { 0.0 };
+    if ends > 0.0 { for (shape, label) in parts.iter_mut() { if *label == "building" { if let Some(r) = rounded_ends(&shape.outer, ends) { shape.outer = r; } } } }
     // An empty building reads its settlement's decay (ruins.rs).
     let parts = super::ruins::decayed(p, o, parts);
     let form = (!parts.is_empty()).then_some(form);
     (parts, form)
+}
+
+/// A rectangle (4 corners, aspect >= 2.5) with its corners rounded to `frac`
+/// of the half-width: the plan of a long house with rounded ends.
+fn rounded_ends(ring: &[Point], frac: f64) -> Option<Vec<Point>> {
+    if ring.len() != 4 { return None; }
+    let (e0, e1) = (sub(ring[1], ring[0]), sub(ring[2], ring[1]));
+    let (l0, l1) = (length(e0), length(e1));
+    let (long, short, u) = if l0 >= l1 { (l0, l1, unit(e0)) } else { (l1, l0, unit(e1)) };
+    if short < 2.0 || long < 2.5 * short { return None; }
+    let n = normal(u);
+    let c = scale(add(add(ring[0], ring[1]), add(ring[2], ring[3])), 0.25);
+    let (hl, hw) = (long * 0.5, short * 0.5);
+    let r = (frac * hw).min(hw).max(0.3);
+    let mut out = vec![];
+    // Counter-clockwise corners of the local frame, each an arc of 6 steps.
+    for (cs, ct, a0) in [(hl - r, -(hw - r), -90.0_f64), (hl - r, hw - r, 0.0), (-(hl - r), hw - r, 90.0), (-(hl - r), -(hw - r), 180.0)] {
+        for k in 0..=6 {
+            let a = (a0 + 90.0 * k as f64 / 6.0).to_radians();
+            let (ls, lt) = (cs + r * a.cos(), ct + r * a.sin());
+            out.push(add(c, add(scale(u, ls), scale(n, lt))));
+        }
+    }
+    let signed = |q: &[Point]| (0..q.len()).map(|i| { let (a, b) = (q[i], q[(i + 1) % q.len()]); a.x * b.y - b.x * a.y }).sum::<f64>();
+    if signed(&out) * signed(ring) < 0.0 { out.reverse(); }
+    Some(out)
 }
 
 fn preview_form(p: &Parcel, o: &Occupancy, resolved:Option<Kind>) -> (Vec<(Shape, &'static str)>, Kind) {
@@ -1931,6 +1962,15 @@ fn preview_form(p: &Parcel, o: &Occupancy, resolved:Option<Kind>) -> (Vec<(Shape
         f.t0 = f.range(ring).2;
         frames.push(f);
     }
+    let disorder = m.number("disorder").clamp(0.0, 1.0);
+    if disorder > 0.0 && !o.landmark {
+        let a = rng.fork("disorder-angle").range(-0.38, 0.38) * disorder;
+        for f in &mut frames {
+            f.u = Point { x: f.u.x * a.cos() - f.u.y * a.sin(), y: f.u.x * a.sin() + f.u.y * a.cos() };
+            f.n = normal(f.u);
+            f.t0 = f.range(ring).2;
+        }
+    }
     let main = frames[0];
     let walled = p.provenance.iter().any(|x| x == "curtain-backed");
     // Opposite (through-lot) or angled (corner) second frontage.
@@ -1950,7 +1990,10 @@ fn preview_form(p: &Parcel, o: &Occupancy, resolved:Option<Kind>) -> (Vec<(Shape
         } else {
             [0.5, 0.7]
         };
-        mix(r, rng.float()).clamp(0.08, 0.97)
+        let coverage = mix(r, rng.float()).clamp(0.08, 0.97);
+        if disorder > 0.0 && !o.landmark {
+            (coverage * rng.fork("disorder-size").range(1.0-0.7*disorder,1.0+0.3*disorder)).clamp(0.08,0.97)
+        } else { coverage }
     };
     let setback = match kind {
         Kind::Row | Kind::Warehouse | Kind::Court | Kind::Insula | Kind::Pavilions => {
@@ -3235,43 +3278,21 @@ fn preview_form(p: &Parcel, o: &Occupancy, resolved:Option<Kind>) -> (Vec<(Shape
     (finish(&shape, ruined(o, parts, &mut rng), wing), form)
 }
 
-/// A ruin keeps broken stretches of its walls and no roofed body: every
-/// significant wall of every piece becomes a 0.6 m strip along 40-100 % of its
-/// length, some walls fallen entirely. Abandoned buildings stay whole (their
-/// role suffix flags them).
+/// A ruin keeps broken stretches of its walls and no roofed body: the walls
+/// of every piece break into stubs, corners and rubble (ruins.rs
+/// `broken_walls`, some walls fallen entirely). Abandoned buildings stay whole
+/// (their role suffix flags them).
 fn ruined(o: &Occupancy, pieces: Vec<Piece>, rng: &mut Rng) -> Vec<Piece> {
     if !o.role.ends_with(".ruin") {
         return pieces;
     }
-    let mut out = vec![];
+    let (mut out, mut budget) = (vec![], super::ruins::RUIN_BUDGET);
     for (outer, hole, _) in pieces {
-        for mut r in std::iter::once(outer).chain(hole) {
-            if ring_area(&r) < 0.0 {
-                r.reverse();
-            }
-            let n = r.len();
-            for i in 0..n {
-                let (a, b) = (r[i], r[(i + 1) % n]);
-                let len = length(sub(b, a));
-                if len < 2.0 || rng.chance(0.3) {
-                    continue;
-                }
-                let d = unit(sub(b, a));
-                let inward = normal(d);
-                let keep = rng.range(0.4, 1.0) * len;
-                let start = rng.range(0.0, len - keep);
-                let p = add(a, scale(d, start));
-                let q = add(a, scale(d, start + keep));
-                let k = 0.6_f64.min(len * 0.25);
-                out.push((
-                    vec![p, q, add(q, scale(inward, k)), add(p, scale(inward, k))],
-                    None,
-                    "ruin",
-                ));
-            }
+        for r in std::iter::once(outer).chain(hole) {
+            super::ruins::broken_walls(&r, None, 0.3, (0.4, 1.0), rng, &mut budget, &mut out);
         }
     }
-    out
+    out.into_iter().map(|(s, label)| (s.outer, None, label)).collect()
 }
 
 /// Clean pieces: keep valid simple rings only, orient them, drop any piece
@@ -3281,13 +3302,13 @@ fn ruined(o: &Occupancy, pieces: Vec<Piece>, rng: &mut Rng) -> Vec<Piece> {
 fn finish(shape: &Shape, pieces: Vec<Piece>, wing: f64) -> Vec<(Shape, &'static str)> {
     let minimum = |label: &str| match label {
         "building" | "range" => wing - 1e-6,
-        "ruin" => 0.3,
+        l if super::ruins::is_ruin(l) => 0.3,
         _ => 1.5,
     };
     // No needle: a built piece keeps every interior angle at 20 degrees or
     // more (walls, wheels and ruins are thin by nature).
     let blunt = |r: &[Point], label: &str| {
-        matches!(label, "ruin" | "wall" | "wheel")
+        super::ruins::is_ruin(label) || matches!(label, "wall" | "wheel")
             || (0..r.len()).all(|i| {
                 let n = r.len();
                 let (a, v, b) = (r[(i + n - 1) % n], r[i], r[(i + 1) % n]);
@@ -3300,7 +3321,7 @@ fn finish(shape: &Shape, pieces: Vec<Piece>, wing: f64) -> Vec<(Shape, &'static 
     };
     let valid = |s: &Shape, label: &str| {
         s.outer.len() >= 3
-            && area(s) >= if label == "ruin" { 0.5 } else { 4.0 }
+            && area(s) >= if super::ruins::is_ruin(label) { 0.5 } else { 4.0 }
             && blunt(&s.outer, label)
             && simple(&s.outer)
             && s.holes.iter().all(|h| h.len() >= 3 && simple(h))
@@ -4213,7 +4234,7 @@ mod tests {
                     !ruin.is_empty()
                         && ruin
                             .iter()
-                            .all(|(s, l)| *l == "ruin" && thickness(&s.outer, None) <= 0.61)
+                            .all(|(s, l)| *l == "rubble" || super::super::ruins::is_ruin(l) && thickness(&s.outer, None) <= 1.51)
                 );
                 let built: f64 = farm.iter().map(|(s, _)| area(s)).sum();
                 let walls: f64 = ruin.iter().map(|(s, _)| area(s)).sum();
@@ -4222,7 +4243,7 @@ mod tests {
                 let empty = preview_parts(&site, &o("dwelling.farm.abandoned", seed)).0;
                 let roofed: f64 = empty
                     .iter()
-                    .filter(|(_, l)| *l != "ruin")
+                    .filter(|(_, l)| !super::super::ruins::is_ruin(l))
                     .map(|(s, _)| area(s))
                     .sum();
                 assert!(!empty.is_empty() && roofed <= built + 1e-6);

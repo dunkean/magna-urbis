@@ -81,17 +81,7 @@ fn main() {
             &mut hash,
             serde_json::to_string(&placed).unwrap().as_bytes(),
         );
-        sites = placed
-            .settlements
-            .iter()
-            .map(|s| RoadSite {
-                key: s.spec.key.clone(),
-                population: s.spec.population,
-                culture: s.spec.culture.clone(),
-                center: s.center,
-                radius: s.radius,
-            })
-            .collect();
+        sites = placed.road_sites();
     }
     let cfg: RoadConfig = serde_json::from_value(request["roads"].clone()).unwrap();
     for _ in 0..repeats {

@@ -398,7 +398,12 @@ pub(super) fn raster_shoreline(surface: &super::Surface<'_>) -> Option<Geography
 pub(super) struct StiltGround {
     pub site: super::Site,
     water: Vec<u8>,
+    height: Vec<f32>,
     inland: Point,
+    reach: f64,
+    water_share: f64,
+    max_plans: usize,
+    shore: BTreeMap<usize, Point>,
 }
 impl StiltGround {
     /// A dry planning mask is permission to build, not proof of water occupation.
@@ -410,10 +415,26 @@ impl StiltGround {
         mut finish: impl FnMut(&mut super::Layout) -> Result<(),String>,
     ) -> Result<super::Layout,String> {
         let radius = (first.blocks.iter().filter(|b|b.kind == "block").map(|b|g::area(&b.shape)).sum::<f64>() / std::f64::consts::PI).sqrt().max(40.);
-        let (mut lo,mut hi,mut offset) = (-stilt_reach(self.site.radius).min(radius)*0.85, radius*1.5, 0.);
+        let (mut lo,mut hi,mut offset) = (-self.reach.min(radius)*0.85, radius*1.5, 0.);
         let mut current = first;
+        if self.max_plans == 1 {
+            // One drawing: no probe (a full finish and parcel cut), only the
+            // block-area share on the physical water for the shortfall note.
+            current.center = self.site.center;
+            let (mut area, mut wet) = (0., 0.);
+            for b in current.blocks.iter().filter(|b|b.kind == "block") {
+                let a = g::area(&b.shape);
+                area += a;
+                if physical.wet(g::interior_point(&b.shape)) { wet += a; }
+            }
+            let share = wet / area.max(1.);
+            if (share-self.water_share).abs() > 0.1 {
+                current.warnings.push(format!("Occupation sur pilotis : {:.0} % sur l’eau ; la rive et le terrain limitent l’objectif de {:.0} %.",share*100.,self.water_share*100.));
+            }
+            return Ok(current);
+        }
         let mut best: Option<(super::Layout,f64,f64)> = None;
-        for attempt in 0..8 {
+        for attempt in 0..self.max_plans {
             // The public centre stays at the bank, shared with the programme.
             current.center = self.site.center;
             let mut probe = current.clone();
@@ -432,20 +453,24 @@ impl StiltGround {
             let share = wet as f64 / lots.max(1) as f64;
             let wanted: f64 = pr.demands.iter().filter(|d|d.unit == "domesticUnits").map(|d|d.requested).sum();
             let held: f64 = pr.allocations.iter().map(|a|a.households).sum();
-            let score = (share-0.4).abs() + 2.*(0.9-held/wanted.max(1.)).max(0.);
+            let score = (share-self.water_share).abs() + 2.*(0.9-held/wanted.max(1.)).max(0.);
             if best.as_ref().is_none_or(|b|score < b.1) { best = Some((current.clone(),score,share)); }
-            if (0.3..=0.5).contains(&share) && held >= wanted*0.9 { break; }
-            if attempt == 7 { break; }
-            if share < 0.3 { hi = offset; } else { lo = offset; }
-            offset = (lo+hi)*0.5;
+            if (share-self.water_share).abs() <= 0.1 && held >= wanted*0.9 { break; }
+            if attempt+1 == self.max_plans { break; }
+            if share < self.water_share-0.1 { hi = offset; } else { lo = offset; }
+            offset = if share < self.water_share {lo} else {hi};
             let mut site = self.site.clone();
             site.center = Point { x:site.center.x+self.inland.x*offset, y:site.center.y+self.inland.y*offset };
-            if self.surface(physical).wet(site.center) { break; }
+            while self.surface(physical).wet(site.center) && offset.abs()>physical.width/physical.n as f64 {
+                offset *= 0.8;
+                site.center = Point{x:self.site.center.x+self.inland.x*offset,y:self.site.center.y+self.inland.y*offset};
+            }
+            if self.surface(physical).wet(site.center) {break;}
             current = plan(&site)?;
         }
         let (mut layout,_,share) = best.unwrap();
-        if !(0.3..=0.5).contains(&share) {
-            layout.warnings.push(format!("Occupation sur pilotis : {:.0} % sur l’eau ; la rive et le terrain limitent l’objectif de 30–50 %.",share*100.));
+        if (share-self.water_share).abs() > 0.1 {
+            layout.warnings.push(format!("Occupation sur pilotis : {:.0} % sur l’eau ; la rive et le terrain limitent l’objectif de {:.0} %.",share*100.,self.water_share*100.));
         }
         Ok(layout)
     }
@@ -456,6 +481,7 @@ impl StiltGround {
         super::Surface {
             geometry: None,
             water: &self.water,
+            height: &self.height,
             ..s
         }
     }
@@ -482,9 +508,9 @@ impl StiltGround {
                     let deck = physical.wet(mid) && !planning.wet(mid);
                     // A boardwalk is a timber pier platform, often with only
                     // one dry end. Bridge recovery requires two opposite banks.
-                    let role = if deck { "pier" } else { &s.role };
-                    let width = s.widths.get(i).or(s.widths.first()).copied().unwrap_or(3.);
                     let regional = s.rank == 0 || matches!(s.role.as_str(), "regional" | "road" | "outbound");
+                    let role = if deck && !regional { "boardwalk" } else if deck { "pier" } else { &s.role };
+                    let width = s.widths.get(i).or(s.widths.first()).copied().unwrap_or(3.);
                     let width = if deck && !regional { width.min(3.) } else { width };
                     let (a,b) = (at(w[0],w[1],t[0]),at(w[0],w[1],t[1]));
                     if let Some(run) = runs.last_mut().filter(|r| r.role == role) {
@@ -499,11 +525,56 @@ impl StiltGround {
             else { out.extend(runs); }
         }
         *streets = out;
+        self.land_links(streets,physical);
+    }
+    pub fn land_links(&self, streets:&mut Vec<super::Street>, physical:super::Surface<'_>) {
+        let cell = physical.width/physical.n as f64;
+        let key = |p:Point| ((p.x*10.).round() as i64,(p.y*10.).round() as i64);
+        let mut edges: BTreeMap<_,Vec<_>> = BTreeMap::new();
+        let mut points = BTreeMap::new();
+        for s in streets.iter() { for w in s.path.windows(2) {
+            let (a,b) = (key(w[0]),key(w[1]));
+            edges.entry(a).or_default().push(b); edges.entry(b).or_default().push(a);
+            points.insert(a,w[0]); points.insert(b,w[1]);
+        }}
+        let mut seen = BTreeSet::new();
+        for &root in edges.keys() {
+            if !seen.insert(root) { continue; }
+            let mut queue = vec![root]; let mut component = vec![]; let mut dry = false;
+            while let Some(k) = queue.pop() {
+                let p = points[&k]; dry |= !physical.wet(p); component.push(p);
+                for &q in &edges[&k] { if seen.insert(q) { queue.push(q); } }
+            }
+            if dry { continue; }
+            let planning = self.surface(physical);
+            let mut best: Option<(f64,Vec<Point>)> = None;
+            for p in component {
+                let mut path=vec![p];let mut at=p;let mut length=0.;
+                for _ in 0..=(self.reach/cell).ceil() as usize+2 {
+                    let i=(at.x/cell).floor() as usize;let j=(at.y/cell).floor() as usize;
+                    let Some(&next)=self.shore.get(&(j*physical.n+i)) else {break;};
+                    length+=(at.x-next.x).hypot(at.y-next.y);path.push(next);at=next;
+                    if !physical.wet(at) {break;}
+                }
+                if physical.wet(at) || planning.wet(p) || best.as_ref().is_some_and(|b|length>=b.0) {continue;}
+                best=Some((length,path));
+            }
+            if let Some((_,path)) = best {
+                let mut simple=vec![path[0]];
+                for w in path.windows(3) {
+                    let cross=(w[1].x-w[0].x)*(w[2].y-w[1].y)-(w[1].y-w[0].y)*(w[2].x-w[1].x);
+                    if cross.abs()>1e-6 {simple.push(w[1]);}
+                }
+                simple.push(*path.last().unwrap());
+                streets.push(super::Street{widths:vec![2.4;simple.len()],path:simple,rank:3,role:"pier".into()});
+            }
+        }
     }
 }
-/// A shore neighbourhood reaches onto the water at every settlement scale.
+/// Default retained by the synthetic shoreline contract.
+#[cfg(test)]
 fn stilt_reach(radius: f64) -> f64 {
-    (0.5 * radius).clamp(40.0, 800.0)
+    (0.5 * radius).clamp(40.0, 100.0)
 }
 pub(super) fn stilt_ground(
     site: &super::Site,
@@ -512,7 +583,6 @@ pub(super) fn stilt_ground(
 ) -> Option<StiltGround> {
     if super::catalogue()["cultures"][culture]["render"]["stilts"].as_bool() != Some(true)
         || surface.n < 2
-        || surface.wet(site.center)
     {
         return None;
     }
@@ -533,15 +603,16 @@ pub(super) fn stilt_ground(
         for i in (ci - r).max(0)..=(ci + r).min(n - 1) {
             let q = centre(i, j);
             let d = dist(q, site.center);
-            if d <= search && best.is_none_or(|b| d < b.0) && surface.wet(q) {
+            if d <= search && best.is_none_or(|b| d < b.0) && surface.wet(q) != surface.wet(site.center) {
                 best = Some((d, q));
             }
         }
     }
-    let (d, water) = best?;
+    let (d, other) = best?;
+    let (water, land) = if surface.wet(site.center) { (site.center,other) } else { (other,site.center) };
     let toward = Point {
-        x: (site.center.x - water.x) / d.max(1e-9),
-        y: (site.center.y - water.y) / d.max(1e-9),
+        x: (land.x - water.x) / d.max(1e-9),
+        y: (land.y - water.y) / d.max(1e-9),
     };
     let bank = (0..=(d / 0.5) as usize)
         .map(|k| Point {
@@ -551,70 +622,105 @@ pub(super) fn stilt_ground(
         .find(|&q| !surface.wet(q))?;
     // Wet cells within reach of a dry cell (8-neighbour rings, a window of
     // the town around the bank) become ground; the rest keeps its water.
-    let reach = stilt_reach(site.radius);
-    let steps = (reach / cell).ceil() as usize;
+    let model = &super::catalogue()["cultures"][culture]["render"]["stiltShore"];
+    let reach = (0.5*site.radius).clamp(40.,model["reachM"].as_f64().unwrap_or(100.));
+    let max_depth = model["maxDepthM"].as_f64().unwrap_or(4.);
+    let water_share = model["waterShare"].as_f64().unwrap_or(0.4).clamp(0.1,0.8);
+    let max_plans = model["plans"].as_u64().unwrap_or(1).clamp(1,2) as usize;
+    // Culture data `seaward` (0..0.9 of the band): the town is drawn around a
+    // centre this far out on the piles, so more of it stands over the water.
+    let seaward = model["seaward"].as_f64().unwrap_or(0.).clamp(0.,0.9);
     let (bi, bj) = at(bank);
-    let wr = ((1.5 * site.radius + reach) / cell).ceil() as i64;
+    // Growth can follow imported roads beyond the nearest tributary. The same
+    // shore rule must cover the complete settlement catchment, not one bank.
+    let wr = ((3.0 * site.radius + reach) / cell).ceil() as i64;
     let (i0, j0) = ((bi - wr).max(0), (bj - wr).max(0));
     let (i1, j1) = ((bi + wr).min(n - 1), (bj + wr).min(n - 1));
     let side = (i1 - i0 + 1) as usize;
     let rows = (j1 - j0 + 1) as usize;
     let mut wet = vec![false; side * rows];
-    let mut frontier = vec![];
+    let mut frontier = std::collections::BinaryHeap::new();
+    let mut distance = vec![f64::INFINITY; side*rows];
+    let mut bank_z = vec![0.; side*rows];
+    let mut roots = vec![0;side*rows];
     for j in 0..rows {
         for i in 0..side {
-            let w = surface.wet(centre(i0 + i as i64, j0 + j as i64));
-            wet[j * side + i] = w;
-            if !w {
-                frontier.push((i, j));
-            }
+            let k = j*side+i;
+            let p = centre(i0+i as i64,j0+j as i64);
+            wet[k] = surface.wet(p);
+        }
+    }
+    for j in 0..rows { for i in 0..side {
+        let k=j*side+i;
+        if wet[k] {continue;}
+        let boundary=(j.saturating_sub(1)..=(j+1).min(rows-1)).any(|y|
+            (i.saturating_sub(1)..=(i+1).min(side-1)).any(|x|wet[y*side+x]));
+        if boundary {
+            distance[k]=0.;bank_z[k]=surface.height_at(centre(i0+i as i64,j0+j as i64));roots[k]=k;
+            frontier.push(std::cmp::Reverse((0_u64,k)));
+        }
+    }}
+    // Metric distance, not square dilation; deep water stops propagation.
+    while let Some(std::cmp::Reverse((bits,k))) = frontier.pop() {
+        let d = f64::from_bits(bits);
+        if d > distance[k] { continue; }
+        let (i,j) = (k%side,k/side);
+        for (di,dj) in [(-1_i64,-1_i64),(0,-1),(1,-1),(-1,0),(1,0),(-1,1),(0,1),(1,1)] {
+            let (x,y) = (i as i64+di,j as i64+dj);
+            if x<0 || y<0 || x>=side as i64 || y>=rows as i64 { continue; }
+            let q = y as usize*side+x as usize;
+            let next = d+cell*if di!=0 && dj!=0 { std::f64::consts::SQRT_2 } else { 1. };
+            if !wet[q] || next>reach || next>=distance[q] { continue; }
+            let p = centre(i0+x,j0+y);
+            if bank_z[k]-surface.height_at(p)>max_depth { continue; }
+            distance[q] = next; bank_z[q] = bank_z[k];
+            roots[q] = k;
+            frontier.push(std::cmp::Reverse((next.to_bits(),q)));
         }
     }
     let mut water_mask = surface.water.to_vec();
-    let mut reached = vec![false; side * rows];
-    for _ in 0..steps {
-        let mut next = vec![];
-        for &(i, j) in &frontier {
-            for (di, dj) in [
-                (-1i64, -1i64),
-                (0, -1),
-                (1, -1),
-                (-1, 0),
-                (1, 0),
-                (-1, 1),
-                (0, 1),
-                (1, 1),
-            ] {
-                let (x, y) = (i as i64 + di, j as i64 + dj);
-                if x < 0 || y < 0 || x >= side as i64 || y >= rows as i64 {
-                    continue;
-                }
-                let k = y as usize * side + x as usize;
-                if wet[k] && !reached[k] {
-                    reached[k] = true;
-                    next.push((x as usize, y as usize));
-                }
-            }
-        }
-        frontier = next;
-    }
+    let mut height = surface.height.to_vec();
+    let mut shore = BTreeMap::new();
+    let mut bands=[(0_usize,0_usize);4];
     for j in 0..rows {
         for i in 0..side {
             let g = (j0 as usize + j) * surface.n + i0 as usize + i;
-            water_mask[g] = if wet[j * side + i] && !reached[j * side + i] {
+            let k = j*side+i;
+            let band=((j0 as usize+j)*4/surface.n).min(3);
+            bands[band].0+=usize::from(wet[k]);
+            if wet[k] && distance[k].is_finite() {
+                bands[band].1+=1;
+                shore.insert(g,centre(i0+(roots[k]%side) as i64,j0+(roots[k]/side) as i64));
+                // Walkways use the bank/deck grade, never the submerged bed.
+                // Exported building requests still receive the physical surface.
+                height[g]=bank_z[k] as f32;
+            }
+            water_mask[g] = if wet[j * side + i] && !distance[j * side + i].is_finite() {
                 water_mask[g].max(1)
             } else {
                 0
             };
         }
     }
+    if std::env::var_os("URBAN_PROFILE").is_some() {eprintln!("stilt.shore wet/admitted by latitude: {bands:?}");}
+    // The seaward centre must stay on admitted ground (dry in the planning mask).
+    let mut anchor = bank;
+    let mut out = seaward * reach;
+    while out > cell {
+        let q = Point { x: bank.x - toward.x * out, y: bank.y - toward.y * out };
+        let (qi, qj) = at(q);
+        if qi >= 0 && qj >= 0 && qi < n && qj < n && water_mask[(qj * n + qi) as usize] == 0 { anchor = q; break; }
+        out *= 0.8;
+    }
     Some(StiltGround {
         site: super::Site {
-            center: bank,
+            center: anchor,
             ..site.clone()
         },
         water: water_mask,
+        height,
         inland: toward,
+        reach, water_share, max_plans, shore,
     })
 }
 
@@ -622,6 +728,36 @@ pub(super) fn stilt_ground(
 mod tests {
     use super::*;
     use crate::urban::{Surface, routing};
+    #[test]
+    fn coast_review_shore_band_limits_distance_depth_and_reconnects_offshore_decks() {
+        let n=200;let width=1000.;let cell=width/n as f64;
+        let water=(0..n*n).map(|k|u8::from(k%n>=100)).collect::<Vec<_>>();
+        let height=(0..n*n).map(|k|if k%n>=112 {-20.} else {0.}).collect::<Vec<_>>();
+        let surface=Surface{geometry:None,width,n,height:&height,water:&water};
+        for culture in ["stilt-town","lizardfolk-swamp","merfolk-tidal"] {
+            let site=super::super::Site{key:"shore".into(),name:String::new(),population:10000,culture:culture.into(),center:Point{x:520.,y:500.},radius:700.};
+            let ground=stilt_ground(&site,culture,surface).unwrap();
+            let planning=ground.surface(surface);
+            assert!(!planning.wet(Point{x:530.,y:500.}));
+            assert!(planning.wet(Point{x:570.,y:500.}),"deep water stays unavailable");
+            for k in 0..n*n {if water[k]!=0 && ground.water[k]==0 {assert!((k%n) as f64*cell-500.<ground.reach+cell);}}
+            let mut streets=vec![super::super::Street{path:vec![Point{x:530.,y:490.},Point{x:530.,y:510.}],widths:vec![3.;2],rank:3,role:"street".into()}];
+            ground.walkways(&mut streets,surface);
+            assert!(streets.iter().any(|s|s.role=="pier" && s.path.iter().any(|&p|!surface.wet(p))),"offshore component needs a land landing");
+        }
+        let river=(0..n*n).map(|k|u8::from((100..112).contains(&(k%n)))).collect::<Vec<_>>();
+        let bed=river.iter().map(|&w|if w!=0 {-8.} else {0.}).collect::<Vec<_>>();
+        let surface=Surface{height:&bed,water:&river,..surface};
+        let site=super::super::Site{key:"river".into(),name:String::new(),population:10000,culture:"lizardfolk-swamp".into(),center:Point{x:490.,y:500.},radius:700.};
+        let swamp=stilt_ground(&site,&site.culture,surface).unwrap();
+        assert!(!swamp.surface(surface).wet(Point{x:530.,y:500.}),"a river inside the cultural distance/depth limits remains buildable across its channel");
+        assert_eq!(swamp.surface(surface).height_at(Point{x:530.,y:500.}),0.,"planning follows the deck, not the river bed");
+        assert_eq!(surface.height_at(Point{x:530.,y:500.}),-8.,"physical foundation evidence stays intact");
+        let mut streets=vec![super::super::Street{path:vec![Point{x:480.,y:500.},Point{x:580.,y:500.}],widths:vec![3.;2],rank:3,role:"street".into()}];
+        swamp.walkways(&mut streets,surface);
+        super::super::network::bridge_water_on_ground(&mut streets,swamp.surface(surface),surface,0.12);
+        assert!(streets.iter().any(|s|s.role=="boardwalk"),"an inhabited water neighbourhood is not a redundant bank-to-bank bridge");
+    }
     #[test]
     fn vector_coast_and_thin_river_override_coarse_cells_without_stair_steps() {
         let land = vec![

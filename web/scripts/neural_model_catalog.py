@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import time
 
@@ -11,13 +12,15 @@ ASSETS = ROOT / 'rust/models/neural-earth'
 TEACHER_REVISION = '9ef8030cb805b433b98ec25c5dddefbac07a9e26'
 _inventory = json.loads((ASSETS / 'model-inventory.json').read_text())
 _catalog = json.loads((ASSETS / 'catalog.json').read_text())
-_verified = set()
+_verified = {}
 _finite = None
 _finite_key = None
 
 
 def catalog():
-    return _catalog | {'inventory': _inventory, 'bundledBytes': sum(v['bytes'] for v in _inventory['models'].values())}
+    return _catalog | {'inventory': _inventory, 'bundledBytes': sum(
+        (ASSETS / v['file']).stat().st_size for v in _inventory['models'].values()
+        if (ASSETS / v['file']).is_file())}
 
 
 def selection(params):
@@ -33,13 +36,19 @@ def selection(params):
 
 def verified_model(key):
     entry = _inventory['models'][key]
-    path = ASSETS / entry['file']
-    if key not in _verified:
+    # The separately downloaded release contains the distilled files only.
+    weights = Path(os.environ.get('MAGNA_NEURAL_WEIGHTS_DIR', ASSETS)) if key != 'coarse_original' else ASSETS
+    path = weights / entry['file']
+    def identity():
+        stat = path.stat()
+        return (path.resolve(), stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+    current = identity()
+    if _verified.get(key) != current:
         with path.open('rb') as handle:
             digest = hashlib.file_digest(handle, 'sha256').hexdigest()
-        if path.stat().st_size != entry['bytes'] or entry['bytes'] >= 100000000 or digest != entry['sha256']:
+        if identity() != current or current[1] != entry['bytes'] or entry['bytes'] >= 100000000 or digest != entry['sha256']:
             raise RuntimeError(f'Neural model integrity failed: {key}')
-        _verified.add(key)
+        _verified[key] = current
     return path
 
 

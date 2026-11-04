@@ -36,9 +36,34 @@ export function v1LandscapePixels(r: SettlementRaster, style: V1LandscapeStyle, 
   }
   return pixels;
 }
+const rgbCanvas = (rgb: Uint8Array, w: number, h: number): HTMLCanvasElement => {
+  const canvas = Object.assign(document.createElement('canvas'), { width: w, height: h }), ctx = canvas.getContext('2d')!, image = ctx.createImageData(w, h);
+  for (let i = 0; i < w * h; i++) { image.data.set(rgb.subarray(i * 3, i * 3 + 3), i * 4); image.data[i * 4 + 3] = 255; }
+  ctx.putImageData(image, 0, 0); return canvas;
+};
+/** Terrain at 2048 px with the water drawn from the vector geometry (antialiased edges at any zoom) instead of the raster cells. */
+function smoothLandscape(r: SettlementRaster, geometry: { water: { x: number; y: number }[][][] }, style: V1LandscapeStyle, biome: BiomeName): HTMLCanvasElement {
+  const world = v1LandscapeWorld(r, biome), pal = biomePalette(style, biome), size = 2048, k = size / r.width;
+  // The land layer carries no raster water: cells of the 1024 px grid would peek out beyond the vector mask as a blocky blue fringe.
+  const dry: World = { ...world, terrain: { ...world.terrain, water: new Uint8Array(r.water.length) } };
+  const land = renderTerrainPixels(dry, pal, { pixels: Math.min(1024, r.n * 2) }), material = worldWaterPixels(world, pal);
+  const canvas = Object.assign(document.createElement('canvas'), { width: size, height: size }), ctx = canvas.getContext('2d')!;
+  ctx.imageSmoothingQuality = 'high'; ctx.drawImage(rgbCanvas(land.rgb, land.w, land.h), 0, 0, size, size);
+  const mask = Object.assign(document.createElement('canvas'), { width: size, height: size }), m = mask.getContext('2d')!;
+  m.fillStyle = '#fff';
+  for (const group of geometry.water) {
+    const path = new Path2D();
+    for (const ring of group) { if (ring.length < 3) continue; ring.forEach((p, i) => i ? path.lineTo(p.x * k, p.y * k) : path.moveTo(p.x * k, p.y * k)); path.closePath(); }
+    m.fill(path, 'evenodd');
+  }
+  m.globalCompositeOperation = 'source-in'; m.imageSmoothingQuality = 'high'; m.drawImage(rgbCanvas(material.rgb, material.n, material.n), 0, 0, size, size);
+  ctx.drawImage(mask, 0, 0);
+  return canvas;
+}
 export function v1LandscapeCanvas(r: SettlementRaster, style: V1LandscapeStyle, biome: BiomeName = 'temperate'): HTMLCanvasElement {
   let entries = cache.get(r); if (!entries) { entries = new Map(); cache.set(r, entries); }
-  const key = `${style}:${biome}`, found = entries.get(key); if (found) return found;
+  const smooth = !!r.geometry?.water?.length, key = `${style}:${biome}:${smooth}`, found = entries.get(key); if (found) return found;
+  if (smooth) { const canvas = smoothLandscape(r, r.geometry!, style, biome); entries.set(key, canvas); return canvas; }
   const pixels = v1LandscapePixels(r, style, biome), canvas = document.createElement('canvas');
   canvas.width = pixels.w; canvas.height = pixels.h;
   const ctx = canvas.getContext('2d')!, image = ctx.createImageData(pixels.w, pixels.h);

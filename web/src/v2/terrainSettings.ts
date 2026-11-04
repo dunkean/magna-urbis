@@ -1,4 +1,5 @@
 import { validateProceduralRecipe } from '../../../rust/bridge/terrainGenerationRecipe';
+import { seedRoot, seedSubset, stepSeed } from '../../../rust/bridge/generationSeed';
 /** V2 recipes use the bench's names and units. This module never loads WASM. */
 import type { TerrainSettings, NeuralTuning, NeuralClimate } from '../../../rust/bridge/terrain';
 import type { HydrologySettings } from '../../../rust/bridge/hydrology';
@@ -65,7 +66,10 @@ export function effectiveTerrainSettings(settings: V2Settings, width: number): E
     procedural: { biome: true, ...t.procedural },
     ...(runtime?.source === 'procedural-phasor' || t.procedural?.preset==='compact' || t.procedural?.enabled?.phasor ? { phasor: { quality: 'balanced' as const, intensity: 1, ...t.phasor } } : {}),
     ...(!['procedural','procedural-phasor'].includes(runtime?.source??'procedural') || ['plateau','volcano','caldera','cavern'].includes(t.relief??settings.options.relief) ? {procedural:undefined} : {}),
-    seed: settings.options.seed, width, source: runtime?.source ?? 'procedural',
+    seed: stepSeed(settings.options.seed, 'relief-noise'),
+    ...(seedSubset(settings.options.seed, key => /^(relief-|water-)/.test(key)) !== seedRoot(settings.options.seed)
+      ? { generalSeed: seedSubset(settings.options.seed, key => /^(relief-|water-)/.test(key)) } : {}),
+    width, source: runtime?.source ?? 'procedural',
     motifSize: t.motifSize ?? 3000, relief: t.relief ?? settings.options.relief, mountainMix: t.mountainMix ?? .5,
     coastMask: t.coastMask ?? masks[settings.options.coast], erosion: t.erosion ?? runtime?.erosion ?? 1,
     resolution: t.resolution ?? runtime?.resolution ?? 512,

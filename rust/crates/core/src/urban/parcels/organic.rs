@@ -49,13 +49,16 @@ pub(super) fn lots(
     if area(shape) < 1.6 * target {
         return whole(fronts);
     }
-    let spacing = (2.0 * target / 3f64.sqrt()).sqrt();
-    let mut seeds = lattice(shape, axis, spacing, &mut rng.fork("organic-seeds"));
+    let irregularity = morph.number_or("organicIrregularity", 0.0).clamp(0.0, 1.0);
+    let open_share = 0.14 * irregularity;
+    let spacing = (2.0 * target * (1.0 - open_share) / 3f64.sqrt()).sqrt();
+    let disorder = morph.number("disorder").clamp(0.0, 1.0);
+    let mut seeds = lattice_disorder(shape, axis, spacing, &mut rng.fork("organic-seeds"), disorder);
     if seeds.len() < 2 {
         return whole(fronts);
     }
     let window = frame(shape, spacing);
-    for _ in 0..LLOYD {
+    for _ in 0..if irregularity > 0.0 || disorder > 0.0 { 0 } else { LLOYD } {
         let cells = voronoi(&seeds, &window, spacing);
         for (s, cell) in seeds.iter_mut().zip(&cells) {
             let piece = intersection(&ring_shape(cell), shape)
@@ -78,11 +81,16 @@ pub(super) fn lots(
         .collect();
     let width = morph.number_or("footpathWidth", 1.8).clamp(1.2, 3.0);
     let mut targets = vec![true; cells.len()];
+    if irregularity > 0.0 {
+        let mut gaps = rng.fork("organic-open-ground");
+        for target in &mut targets { *target = gaps.float() >= open_share; }
+    }
     if let Some(n) = budget {
         let c = centroid(shape);
         let mut order: Vec<_> = (0..cells.len()).collect();
         order.sort_by(|&a,&b| length(sub(centroid(&cells[a]),c)).total_cmp(&length(sub(centroid(&cells[b]),c))).then(a.cmp(&b)));
-        for &i in order.iter().skip(n) { targets[i] = false; }
+        let mut admitted = 0;
+        for i in order { if targets[i] { admitted += 1; if admitted > n { targets[i] = false; } } }
     }
     let (paths, raw, path_fronts) = footpaths_targets(shape, &cells, fronts, width, &[], &[], &[], Some(&targets));
     fronts.extend(path_fronts);
@@ -195,7 +203,7 @@ fn frame(shape: &Shape, spacing: f64) -> Vec<Point> {
 }
 
 /// Jittered hexagonal lattice in the block frame (one point per lot area).
-fn lattice(shape: &Shape, axis: Point, spacing: f64, rng: &mut Rng) -> Vec<Point> {
+fn lattice_disorder(shape: &Shape, axis: Point, spacing: f64, rng: &mut Rng, disorder: f64) -> Vec<Point> {
     let (x0, y0, x1, y1) = bbox(shape);
     let c = Point {
         x: 0.5 * (x0 + x1),
@@ -216,8 +224,9 @@ fn lattice(shape: &Shape, axis: Point, spacing: f64, rng: &mut Rng) -> Vec<Point
             0.0
         };
         for i in -cols..=cols {
-            let ju = rng.range(-0.28, 0.28) * spacing;
-            let jv = rng.range(-0.28, 0.28) * spacing;
+            let jitter = 0.28 + 0.2 * disorder;
+            let ju = rng.range(-jitter, jitter) * spacing;
+            let jv = rng.range(-jitter, jitter) * spacing;
             let p = add(
                 c,
                 add(
@@ -400,6 +409,62 @@ fn navigation_edges(
     }
     nav
 }
+/// Invariant: every street touching the block is an entrance of its
+/// footpaths. A route starts only where a shared cell boundary meets a street
+/// front; a road ending at the block (a camp's track) touches it over a few
+/// metres, where no boundary may meet it, and that street served nothing (an
+/// inuit camp of one block was left with one lot). Such a street gets a door:
+/// the middle of its longest front, joined straight to the nearest boundary
+/// node it sees across the block. Returns the joining edges.
+fn doors(
+    shape: &Shape, fronts: &[Front], connected_shared: &[usize], nodes: &mut Nodes,
+    edges: &BTreeMap<(usize, usize), Vec<usize>>,
+) -> Vec<(usize, usize)> {
+    let mut linked = vec![false; nodes.points.len()];
+    for (&(a, b), list) in edges {
+        if list.len() >= 2 {
+            linked[a] = true;
+            linked[b] = true;
+        }
+    }
+    let entrance = |i: usize, f: &Front| !f.shared || connected_shared.contains(&i);
+    let mut streets: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    for (i, f) in fronts.iter().enumerate() {
+        if entrance(i, f) && length(sub(f.b, f.a)) > 0.5 {
+            streets.entry(f.street).or_default().push(i);
+        }
+    }
+    let mut out = vec![];
+    for list in streets.values() {
+        let open = nodes.points.iter().zip(&linked)
+            .any(|(&p, &l)| l && list.iter().any(|&i| distance(p, fronts[i].a, fronts[i].b) < 0.05));
+        if open {
+            continue;
+        }
+        let Some(&i) = list.iter().max_by(|&&a, &&b| length(sub(fronts[a].b, fronts[a].a)).total_cmp(&length(sub(fronts[b].b, fronts[b].a)))) else { continue };
+        let f = fronts[i];
+        let (m, d) = (scale(add(f.a, f.b), 0.5), unit(sub(f.b, f.a)));
+        // The nearest node whose straight join runs across the block, not
+        // along its edge.
+        let mut near: Vec<(f64, usize)> = nodes.points.iter().enumerate()
+            .filter(|&(v, _)| linked[v]).map(|(v, &p)| (length(sub(p, m)), v)).collect();
+        near.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        let seen = near.into_iter().take(24).find(|&(l, v)| {
+            let w = nodes.points[v];
+            l > 0.05 && dot(unit(sub(w, m)), d).abs() < 0.9
+                && [0.1, 0.5, 0.9].iter().all(|&t| contains(shape, add(m, scale(sub(w, m), t))))
+        });
+        if let Some((_, v)) = seen {
+            let door = nodes.id(m);
+            if door != v {
+                linked.resize(nodes.points.len(), false);
+                linked[door] = true;
+                out.push((door.min(v), door.max(v)));
+            }
+        }
+    }
+    out
+}
 fn painted_runs(route:&[usize],pts:&[Point],nav:&BTreeSet<(usize,usize)>)->Vec<Vec<Point>>{
     let mut out=vec![];let mut line=vec![];
     for w in route.windows(2){let(a,b)=(w[0],w[1]);
@@ -508,6 +573,13 @@ fn footpaths_targets(
         navigation_edges(shape, cells, navigation, &mut nodes, &mut edges, &mut own)
     };
     let blocked:Vec<bool>=cells.iter().map(|c|forbidden.iter().any(|f|f==c)).collect();
+    let mut nav_edges = nav_edges;
+    if navigation.is_empty() && forbidden.is_empty() {
+        for e in doors(shape, fronts, connected_shared, &mut nodes, &edges) {
+            edges.entry(e).or_default();
+            nav_edges.insert(e);
+        }
+    }
     let n = nodes.points.len();
     let pts = &nodes.points;
     let len = |e: (usize, usize)| length(sub(pts[e.0], pts[e.1]));
@@ -718,6 +790,55 @@ fn disc(c: Point, r: f64) -> Shape {
 mod tests {
     use super::super::super::geometry::rectangle;
     use super::*;
+
+    #[test]
+    fn camp_review_irregular_ground_keeps_a_complete_partition_and_served_homes() {
+        let shape = rectangle(0.0, 0.0, 240.0, 200.0);
+        let mut fronts: Vec<Front> = shape.outer.iter().enumerate().map(|(i, &a)| Front {
+            a, b: shape.outer[(i + 1) % 4], rank: 2, street: i, shared: false, gate: false,
+        }).collect();
+        let morph = Morph { value: serde_json::json!({"organicIrregularity":0.75,"houseArea":{"core":[100,200]}}) };
+        let lots = lots(&shape, 0, Point{x:1.0,y:0.0}, &mut fronts, &morph, "core", &mut Rng::new("inuit-ground"), None);
+        assert!((lots.iter().map(|p|area(&p.shape)).sum::<f64>() - area(&shape)).abs() < 0.01);
+        assert!(lots.iter().filter(|p|p.reason == "camp-open").count() >= 10);
+        let homes: Vec<_> = lots.iter().filter(|p|p.use_kind == "plot").collect();
+        assert!(homes.len() >= 250, "{}", homes.len());
+        assert!(homes.iter().all(|p|frontage(&p.shape,&fronts).0 >= MIN_FRONT - 0.5));
+    }
+
+    /// Invariant: a block reached only by a track's end (a 2 m street front)
+    /// opens onto its footpaths for every lattice draw, and its cells are
+    /// served homes (an inuit camp of one block was left with one lot).
+    #[test]
+    fn a_track_end_always_opens_the_footpaths() {
+        let shape = rectangle(0.0, 0.0, 240.0, 200.0);
+        let morph = Morph { value: serde_json::json!({"organicIrregularity":0.75,"houseArea":{"core":[80,200]},"footpathWidth":2.0}) };
+        for k in 0..12 {
+            let mut fronts = vec![Front { a: Point { x: 100.0 + k as f64, y: 0.0 }, b: Point { x: 102.1 + k as f64, y: 0.0 }, rank: 2, street: 0, shared: false, gate: false }];
+            let lots = lots(&shape, 0, Point { x: 1.0, y: 0.0 }, &mut fronts, &morph, "core", &mut Rng::new(&format!("track-end-{k}")), None);
+            assert!((lots.iter().map(|p| area(&p.shape)).sum::<f64>() - area(&shape)).abs() < 0.05, "{k}: partition");
+            assert!(lots.iter().any(|p| p.reason == "shared-footpath"), "{k}: no footpath from the track end");
+            let served = lots.iter().filter(|p| p.use_kind == "plot" && frontage(&p.shape, &fronts).0 >= MIN_FRONT - 0.5).count();
+            assert!(served >= 150, "{k}: {served} served homes");
+        }
+    }
+
+    #[test]
+    fn v7_culture_disordered_cells_keep_land_access_and_size_diversity() {
+        let shape = rectangle(0.0,0.0,240.0,200.0);
+        let mut fronts: Vec<_> = shape.outer.iter().enumerate().map(|(i,&a)| Front {
+            a,b:shape.outer[(i+1)%4],rank:2,street:i,shared:false,gate:false
+        }).collect();
+        let morph = Morph { value: serde_json::json!({"disorder":1.0,"houseArea":{"core":[200,500]}}) };
+        let cells = lots(&shape,0,Point{x:1.0,y:0.0},&mut fronts,&morph,"core",&mut Rng::new("warren"),None);
+        assert!((cells.iter().map(|p|area(&p.shape)).sum::<f64>()-area(&shape)).abs()<0.1);
+        let homes:Vec<_> = cells.iter().filter(|p|p.use_kind=="plot").collect();
+        assert!(homes.len()>80);
+        assert!(homes.iter().all(|p|frontage(&p.shape,&fronts).0>=MIN_FRONT-0.5));
+        let mean=homes.iter().map(|p|area(&p.shape)).sum::<f64>()/homes.len() as f64;
+        let variance=homes.iter().map(|p|(area(&p.shape)-mean).powi(2)).sum::<f64>()/homes.len() as f64;
+        assert!(variance.sqrt()/mean>0.25);
+    }
 
     #[test]
     fn organic_cells_partition_the_block_and_every_lot_is_served() {

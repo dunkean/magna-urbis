@@ -12,6 +12,16 @@ function settings(): V2Settings { return { options: makeOptions({ seed: 'city-pa
 const global = { kind: 'global' } as const;
 
 describe('V2 native city inspector parity and scoped persistence', () => {
+  it('shows actual site culture and options without materializing local changes when opening the editor', () => {
+    const config = settings(), before = structuredClone(config);
+    const scope = { kind: 'settlement', key: 'east', defaults: { culture: 'medina', sprawl: 1.5 } } as const;
+    const current = urbanEffectiveValues(config, scope) as any;
+    expect(current.layout.culture).toBe('medina'); expect(current.layout.density).toBeCloseTo(1 / 1.5);
+    expect(config).toEqual(before);
+    writeUrbanControl(config, scope, 'layout.density', 1.7);
+    expect((urbanEffectiveValues(config, scope) as any).layout.density).toBe(1.7);
+    expect((urbanEffectiveValues(config, global) as any).layout.density).toBe(1);
+  });
   it('represents every default layout/parcel leaf and every morphology field consumed by the native bench', () => {
     const fields = urbanControlFields(), paths = new Set(fields.map(field => field.path));
     expect(paths.size).toBe(fields.length);

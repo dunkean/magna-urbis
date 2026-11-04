@@ -1,0 +1,114 @@
+name: Desktop V2 release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'desktop-v*'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            platform: windows-x64
+            bundles: nsis
+          - os: ubuntu-22.04
+            platform: linux-x64
+            bundles: deb,appimage
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev patchelf fuse
+      - name: Install Rust toolchain and wasm-pack
+        working-directory: rust
+        run: cargo install wasm-pack --version 0.13.1 --locked
+      - name: Check release tag matches desktop version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          version=$(node -p "require('./rust/desktop-v2/tauri.conf.json').version")
+          test "$GITHUB_REF_NAME" = "desktop-v$version"
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+      # This runtime was introduced after the Python model's source revision.
+      # Fetch only the pinned build sources; model weights are not required.
+      - name: Fetch pinned Neural Earth WASM build source
+        shell: bash
+        run: |
+          git init ../infinite_map
+          git -C ../infinite_map remote add origin https://github.com/dunkean/neural-earth.git
+          git -C ../infinite_map sparse-checkout init --cone
+          git -C ../infinite_map sparse-checkout set native/neural-earth tools/wasm
+          git -C ../infinite_map fetch --depth 1 --filter=blob:none origin 1b44228f504f4d01ef396914b8debec56249ffc7
+          git -C ../infinite_map checkout --detach FETCH_HEAD
+      - name: Prepare WASM
+        working-directory: web
+        run: npm run prepare:v2
+      - name: Build desktop installers
+        working-directory: web
+        run: npm run app:v2:build -- --bundles=${{ matrix.bundles }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check optional runtime and model tooling
+        shell: bash
+        run: |
+          python -m unittest discover -s python_runtime -p "test_*.py"
+          python -m unittest discover -s docs/models-release -p "test_*.py"
+      - name: Typecheck and check V2 integrations
+        working-directory: web
+        shell: bash
+        run: |
+          node --test scripts/neural_manifest.test.mjs
+          npm run typecheck
+          npx vitest run tests/v2Illustration.test.ts tests/v2Platform.test.ts tests/v2PythonRuntimeSelection.test.ts tests/v2DesktopUpdates.test.ts
+      - name: Check portable archive creation
+        if: runner.os == 'Windows'
+        working-directory: web
+        run: node scripts/v2_portable_test.mjs
+      - name: Check resources and stage release assets
+        run: node web/scripts/v2_release_check.mjs --platform=${{ matrix.platform }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-v2-${{ matrix.platform }}
+          path: release-v2/${{ matrix.platform }}/
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-v2
+          merge-multiple: true
+      - name: Create prerelease with installers and checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          gh release create "$RELEASE_TAG" release-v2/* --verify-tag --prerelease \
+            --title "Magna Urbis V2 $RELEASE_TAG" \
+            --notes "Experimental unsigned Windows x64 and Linux x64 builds. Linux packages are built on Ubuntu 22.04 (glibc 2.35); compatibility depends on distribution libraries. Optional Python/CUDA models are not included."
+

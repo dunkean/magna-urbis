@@ -1,6 +1,6 @@
 /** Programme intent and composable functional specialization. These controls
  * edit the real ProgrammeContext consumed by native demand/allocation. */
-import { PROGRAMME_FUNCTIONS, normalizeProgrammeFunctions, type ProgrammeContext, type ProgrammeFunctionWeights,
+import { ACTIVITY_TEMPLATES, PROGRAMME_FUNCTIONS, normalizeProgrammeFunctions, type ProgrammeContext, type ProgrammeFunctionWeights,
   type ProgrammeFunction, type ProgrammeIntent } from '../../../rust/bridge/urbanConfig';
 import { urbanText } from './urbanPanelLocale';
 import { urbanProgrammeLabel } from './urbanBuildingLocale';
@@ -10,13 +10,14 @@ export const PROGRAMME_INTENTS: Readonly<Record<ProgrammeIntent, string>> = {
   settlement: 'Agglomération · selon population et culture',
   'isolated-farm': 'Ferme isolée', 'roadside-temple': 'Temple de bord de route',
   'isolated-shrine': 'Sanctuaire isolé', 'isolated-mill': 'Moulin isolé', 'isolated-inn': 'Auberge isolée', 'isolated-tower': 'Tour isolée',
+  activity: 'Site d’activité (moulin, carrière, mine…)',
 };
 export const PROGRAMME_FUNCTION_LABELS: Readonly<Record<ProgrammeFunction, string>> = {
   agricultural: 'Espaces communs et stockage rural', commerce: 'Commerce et marchés', artisan: 'Artisanat',
   riverine: 'Moulins hydrauliques', port: 'Activité portuaire', capital: 'Capitale · équipements institutionnels',
 };
 export type { ProgrammeIntent };
-export interface ProgrammeAxesDraft { intent: ProgrammeIntent; custom: boolean; weights: ProgrammeFunctionWeights; resetAutomatic?: boolean }
+export interface ProgrammeAxesDraft { intent: ProgrammeIntent; template?: string; custom: boolean; weights: ProgrammeFunctionWeights; resetAutomatic?: boolean }
 const xml = (s: string) => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 
 export function programmeAxesDraft(context: ProgrammeContext): ProgrammeAxesDraft {
@@ -27,6 +28,7 @@ export function applyProgrammeAxesDraft(previous: ProgrammeContext, draft: Progr
   if (!Object.hasOwn(PROGRAMME_INTENTS, draft.intent)) throw new Error('Intention d’implantation inconnue.');
   const next: ProgrammeContext = { ...previous };
   next.intent = draft.intent;
+  if (draft.intent === 'activity') next.template = draft.template || ACTIVITY_TEMPLATES[0]; else delete next.template;
   if (draft.custom) next.functions = normalizeProgrammeFunctions(draft.weights);
   else if (previous.functions != null || draft.resetAutomatic) delete next.functions;
   return next;
@@ -65,6 +67,7 @@ export function programmeSpecialisationSummary(context: ProgrammeContext): strin
 
 export function programmeFunctionControlsHtml(): string {
   return `<label>Intention d’implantation<select data-programme-intent>${Object.entries(PROGRAMME_INTENTS).map(([key, label]) => `<option value="${key}">${xml(label)}</option>`).join('')}</select></label>
+    <label data-programme-template-row>Site d’activité<select data-programme-template>${ACTIVITY_TEMPLATES.map(id => `<option value="${id}">${id}</option>`).join('')}</select></label>
     <label><input type="checkbox" data-programme-custom-functions>Combiner les fonctions du lieu</label>
     <fieldset data-programme-functions><legend>Intensité des fonctions · 0 = aucune, 1 = accentuée</legend>${PROGRAMME_FUNCTIONS.map(key => `<label>${xml(PROGRAMME_FUNCTION_LABELS[key])}<input data-programme-function="${key}" type="number" min="0" max="1" step="0.05" value="0"></label>`).join('')}</fieldset>
     <button type="button" data-programme-functions-auto>Revenir au profil culturel automatique</button>
@@ -75,12 +78,14 @@ export function programmeFunctionControlsHtml(): string {
 export function bindProgrammeFunctionControls(host: ParentNode & Pick<HTMLElement, 'addEventListener'>) {
   const get = <T extends Element>(selector: string): T => { const found = host.querySelector<T>(selector); if (!found) throw new Error(`Missing programme control ${selector}`); return found; };
   const intent = get<HTMLSelectElement>('[data-programme-intent]'), custom = get<HTMLInputElement>('[data-programme-custom-functions]');
+  const template = get<HTMLSelectElement>('[data-programme-template]'), templateRow = get<HTMLElement>('[data-programme-template-row]');
   const fieldset = get<HTMLFieldSetElement>('[data-programme-functions]'), note = get<HTMLElement>('[data-programme-function-note]'), effects = get<HTMLElement>('[data-programme-function-effects]');
   const inputs = new Map(PROGRAMME_FUNCTIONS.map(key => [key, get<HTMLInputElement>(`[data-programme-function="${key}"]`)]));
   let context: ProgrammeContext, resetAutomatic = false;
   const weights = (): ProgrammeFunctionWeights => normalizeProgrammeFunctions(Object.fromEntries([...inputs].map(([key, input]) => [key, Number(input.value)])));
   const refresh = () => {
     const isIsolated = intent.value !== 'settlement';
+    templateRow.hidden = intent.value !== 'activity';
     custom.disabled = isIsolated; fieldset.disabled = isIsolated || !custom.checked;
     fieldset.hidden = isIsolated || !custom.checked;
     note.textContent = isIsolated ? urbanText(['Cet établissement isolé applique seulement son intention. Les fonctions urbaines sont conservées mais non applicables.','This isolated place applies only its intent. Urban functions are retained but not applicable.','此孤立地点仅应用其意图。城市功能被保留但不适用。','Este lugar aislado solo aplica su intención. Las funciones urbanas se conservan, pero no son aplicables.','Este local isolado aplica apenas sua intenção. As funções urbanas são mantidas, mas não se aplicam.'])
@@ -100,12 +105,12 @@ export function bindProgrammeFunctionControls(host: ParentNode & Pick<HTMLElemen
   return {
     sync(next: ProgrammeContext): void {
       context = next; resetAutomatic = false;
-      const draft = programmeAxesDraft(next); intent.value = draft.intent; custom.checked = draft.custom;
+      const draft = programmeAxesDraft(next); intent.value = draft.intent; template.value = next.template || ACTIVITY_TEMPLATES[0]; custom.checked = draft.custom;
       for (const [key, input] of inputs) input.value = String(draft.weights[key] ?? 0);
       refresh();
     },
     read(previous: ProgrammeContext): ProgrammeContext {
-      return applyProgrammeAxesDraft(previous, { intent: intent.value as ProgrammeIntent, custom: custom.checked, weights: custom.checked ? weights() : {}, resetAutomatic });
+      return applyProgrammeAxesDraft(previous, { intent: intent.value as ProgrammeIntent, template: template.value, custom: custom.checked, weights: custom.checked ? weights() : {}, resetAutomatic });
     },
     useAutomatic(): void { resetAutomatic = true; custom.checked = false; for (const input of inputs.values()) input.value = '0'; refresh(); },
     refresh,

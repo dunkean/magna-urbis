@@ -6,6 +6,8 @@ import type { V2Settings } from '../src/v2/contracts';
 import type { PlacementBatch, PlacementBatchRequest, PlacedBuilding, PlacementRequest } from '../../rust/bridge/urbanArchitecture';
 import type { Partition } from '../../rust/bridge/urban';
 import deficitFixture from './fixtures/open-deficit-roman04-bridge-native.json';
+import { showCityStageOutput } from '../src/v2/cityStageOutput';
+import { nativeCitiesOf, nativeCityRecords } from '../src/v2/nativeProducts';
 
 const native = vi.hoisted(() => ({ run: vi.fn(), plan: vi.fn() }));
 vi.mock('../../rust/bridge/urban', () => ({ createUrbanEngine: async () => ({ run: native.run }) }));
@@ -39,6 +41,77 @@ beforeEach(() => {
   native.plan.mockReset().mockImplementation(async (batch: PlacementBatchRequest): Promise<PlacementBatch> => ({ schema_version: '1', generator_version: 'architectural-plans-2', buildings: batch.requests.map(request => building(request.parcel_id, batch.settings?.floors ?? request.config?.overrides.floors ?? 1)), refusals: [], open_spaces: [], plan_archives: { 'native-retained-plan': 'exact-retained-native-archive' } }));
 });
 describe('immutable retained native stages', () => {
+  it('shows the chosen city stage as layers without discarding native downstream products', async () => {
+    const { world, settings } = fixture(), first = await generateRustTown(world, settings, 'main');
+    const layout = first.snapshot.layouts[0];
+    layout.streets = [0, 2].map(rank => ({ rank, role: 'street', path: [{ x: 1, y: 1 }, { x: 7, y: 7 }], widths: [3, 3] }));
+    layout.blocks = [{ shape: square(), quarter: 0, kind: 'block', zone: 'core', axis: { x: 1, y: 0 } }];
+    world.debug = { v2RustCities: { main: freeze(first.snapshot) } };
+    world.settlements![0].main = true;
+    const source = structuredClone(world);
+    const composition = showCityStageOutput(world, 'city-composition', ['main']);
+    const streets = showCityStageOutput(world, 'city-roads', ['main']);
+    const blocks = showCityStageOutput(world, 'city-quarters', ['main']);
+    expect(composition.urban!.streets).toHaveLength(1); expect(composition.urban!.blocks).toHaveLength(0);
+    expect(streets.urban!.streets).toHaveLength(2); expect(streets.urban!.blocks).toHaveLength(0);
+    expect(blocks.urban!.blocks).toHaveLength(1);
+    expect(nativeCitiesOf(composition)[0].layouts[0].blocks).toHaveLength(0);
+    expect(nativeCitiesOf(composition)[0].layouts[0].streets).toHaveLength(1);
+    expect(nativeCitiesOf(streets)[0].partitions).toBeUndefined();
+    expect(nativeCitiesOf(blocks)[0].layouts[0].blocks).toHaveLength(1);
+    expect(nativeCityRecords(composition)!.main.scene).toBe(first.snapshot.scene);
+    expect(first.snapshot.scene!.buildings).toHaveLength(2); expect(world).toEqual(source);
+  });
+  it('rerolls internal streets with native quarter salts while retaining the exact composition snapshot and seed', async () => {
+    const { world, settings } = fixture(), first = await generateRustTown(world, settings, 'main');
+    world.debug = { v2RustCities: { main: freeze(first.snapshot) } };
+    native.run.mockClear();
+    settings.urban!.local = { main: { seeds: { streets: 'streets-only' } } };
+    const next = await generateRustTown(world, settings, 'main');
+    expect(next.snapshot.compositionLayouts).toBe(first.snapshot.compositionLayouts);
+    expect(next.snapshot.compositionKey).toBe(first.snapshot.compositionKey);
+    expect(next.snapshot.layoutKey).not.toBe(first.snapshot.layoutKey);
+    const redraw = native.run.mock.calls[0][0];
+    expect(redraw.kind).toBe('quarters'); expect(redraw.seed).toBe(settings.options.seed);
+    expect(redraw.layoutConfig.overrides.quarters['0'].salt).toBeGreaterThan(0);
+    expect(native.run.mock.calls.filter(([r]) => r.kind === 'quarters')).toHaveLength(1);
+  });
+  it.each(['parcels', 'programme', 'buildings', 'houses'] as const)('rerolls %s without touching earlier retained stages', async stage => {
+    const { world, settings } = fixture(), first = await generateRustTown(world, settings, 'main');
+    world.debug = { v2RustCities: { main: freeze(first.snapshot) } };
+    native.run.mockClear(); native.plan.mockClear();
+    settings.urban!.local = { main: { seeds: { [stage]: `${stage}-only` } } };
+    const next = await generateRustTown(world, settings, 'main');
+    expect(next.snapshot.layouts).toBe(first.snapshot.layouts);
+    const kinds = native.run.mock.calls.map(([r]) => r.kind);
+    expect(kinds).not.toContain('quarters');
+    if (stage !== 'parcels') { expect(kinds).not.toContain('parcels'); expect(next.snapshot.cadastralPartitions).toBe(first.snapshot.cadastralPartitions); }
+    if (stage === 'buildings' || stage === 'houses') { expect(kinds).not.toContain('programme'); expect(next.snapshot.programmePartitions).toBe(first.snapshot.programmePartitions); }
+    if (stage === 'houses') {
+      expect(kinds).not.toContain('buildingSites'); expect(next.snapshot.requests).toBe(first.snapshot.requests);
+      expect(native.plan.mock.calls[0][0].requests.every((r: PlacementRequest) => r.seed.startsWith('houses-only/'))).toBe(true);
+    } else expect(native.run.mock.calls.find(([r]) => r.kind === (stage === 'buildings' ? 'buildingSites' : stage))![0].seed).toBe(`${stage}-only`);
+  });
+  it('restarts the native urban chain with the city seed and reuses the exact regional inputs', async () => {
+    const { world, settings } = fixture();
+    world.roads = [{ path: [{ x: 0, y: 50 }, { x: 100, y: 50 }], width: 4, kind: 'major' }];
+    const original = structuredClone(world), first = await generateRustTown(world, settings, 'main');
+    world.debug = { v2RustCities: { main: freeze(first.snapshot) } };
+    native.run.mockClear(); native.plan.mockClear();
+    settings.urban!.local = { main: { seed: 'try-another-street-layout' } };
+    const next = await generateRustTown(world, settings, 'main');
+    expect(next.snapshot.layoutKey).not.toBe(first.snapshot.layoutKey);
+    expect(native.run.mock.calls.map(([request]) => request.kind)).toEqual(['quarters', 'parcels', 'programme', 'buildingSites', 'builtCapacity']);
+    expect(native.run.mock.calls.every(([request]) => request.seed === 'try-another-street-layout')).toBe(true);
+    const request = native.run.mock.calls[0][0];
+    expect(request.roads[0].path).toEqual(original.roads![0].path);
+    expect(request.sites[0].center).toEqual(original.settlements![0].center);
+    expect(world.terrain).toEqual(original.terrain); expect(world.roads).toEqual(original.roads);
+    world.debug.v2RustCities = { main: freeze(next.snapshot) };
+    const calls = native.run.mock.calls.length;
+    const again = await generateRustTown(world, settings, 'main');
+    expect(again.snapshot.layouts).toBe(next.snapshot.layouts); expect(native.run).toHaveBeenCalledTimes(calls);
+  });
   it('retains heavy scene/geometry/archives by identity on a cache hit without mutating the previous snapshot', async () => {
     const { world, settings } = fixture(), first = await generateRustTown(world, settings, 'main');
     const previous = freeze(first.snapshot), bytes = JSON.stringify(previous);

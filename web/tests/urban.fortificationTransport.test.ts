@@ -5,6 +5,8 @@ import type { SettlementRaster } from '../../rust/bridge/settlements';
 const wasm = vi.hoisted(() => ({ quarters: vi.fn(), parcels: vi.fn() }));
 vi.mock('../../rust/pkg/wasm/magna_urbis_wasm.js', () => ({
   default: vi.fn(),
+  TerrainEngine: vi.fn(), TerrainPipeline: vi.fn(), GenerationNoisePlan: vi.fn(), HydrologyEngine: vi.fn(),
+  erosion_defaults: vi.fn(), flood_hydrology: vi.fn(), erode_relief: vi.fn(), set_erosion_tuning: vi.fn(),
   SettlementTerrain: class {
     urban_quarters = wasm.quarters;
     urban_parcels = wasm.parcels;
@@ -14,7 +16,7 @@ vi.mock('../../rust/pkg/wasm/magna_urbis_wasm.js', () => ({
 import { createUrbanEngine, defaultLayoutConfig } from '../../rust/bridge/urban';
 
 const runtime = { profile: 'local' as const, server: 'http://127.0.0.1:8791' };
-const redditOptions = ['oldEnclosureCitadel', 'medievalWalls', 'riverControl', 'dryDitches', 'gateVillages', 'shelteredHarbour', 'powerHighGround', 'mergeParallelStreets', 'regularGridOutline'] as const;
+const redditOptions = ['oldEnclosureCitadel', 'medievalWalls', 'riverControl', 'dryDitches', 'gateVillages', 'shelteredHarbour', 'powerHighGround', 'mergeParallelStreets', 'regularGridOutline', 'naturalCampApproaches'] as const;
 const disabledOptions = Object.fromEntries(redditOptions.map(key => [key, false]));
 const layout = (): Layout => ({ key: 'town', culture: 'european-organic', center: { x: 1.2345678901234567, y: 2 },
   config: defaultLayoutConfig(), quarters: [], streets: [], blocks: [], warnings: [] });
@@ -35,11 +37,13 @@ describe('fortification style native transport compatibility', () => {
     const config = defaultLayoutConfig();
     expect((await engine.run({ id: 1, kind: 'quarters', seed: 'old', runtime, layoutConfig: config })).error).toBeUndefined();
     expect(sent[0].layoutConfig).not.toHaveProperty('fortificationStyle');
+    expect(sent[0].layoutConfig).not.toHaveProperty('campRingWobble');
     for (const key of redditOptions) expect(sent[0].layoutConfig).not.toHaveProperty(key);
     expect(config.fortificationStyle).toBe('auto');
-    const explicit = { ...config, fortificationStyle: 'bastioned' as const };
+    const explicit = { ...config, fortificationStyle: 'bastioned' as const, campRingWobble: 0.15 };
     const result = await engine.run({ id: 2, kind: 'quarters', seed: 'explicit', runtime, layoutConfig: explicit });
     expect(sent[1].layoutConfig.fortificationStyle).toBe('bastioned');
+    expect(sent[1].layoutConfig.campRingWobble).toBe(0.15);
     expect(result.error).toContain('unknown field `fortificationStyle`');
     expect(sent).toHaveLength(2); // No silent cultural retry after a rejected explicit style.
     expect(explicit.fortificationStyle).toBe('bastioned');

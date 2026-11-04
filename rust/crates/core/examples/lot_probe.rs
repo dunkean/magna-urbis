@@ -23,6 +23,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if std::env::var("NEW").is_ok() { c.road_mouths = true; c.road_remnants = true; c.road_end_joins = true; c.small_place_capacity = true; }
     if let Ok(v) = std::env::var("CAMPGROWTH") { c.camp_growth = v; }
     if let Some(v) = std::env::var("PM").ok().and_then(|v| v.parse().ok()) { c.parallel_merge = v; }
+    if let Some(v) = std::env::var("ROADSV7").ok().and_then(|v|v.parse::<f64>().ok()) {
+        let c = &mut f.layout_config;
+        c.street_frontage = v > 0.0; c.align_enclosed_grid = v > 0.0; c.hide_unused_quarters = v > 0.0;
+        c.organic_branch_variation = v; c.ribbon_width_variation = v;
+    }
+    // V7=sf,align,hide,vbb: one review switch at a time (vbb: villageBridgeBudget).
+    if let Ok(v) = std::env::var("V7") { let c = &mut f.layout_config; for k in v.split(',') { match k { "sf" => c.street_frontage = true, "align" => c.align_enclosed_grid = true, "hide" => c.hide_unused_quarters = true, "vbb" => c.village_bridge_budget = true, _ => {} } } }
     let geography = f.geometry.map(|g| Geography::new(g, f.width)).transpose()?;
     let surface = Surface { geometry: geography.as_ref(), width: f.width, n: f.n, height: &f.height, water: &f.water };
     // TIMING=1: seconds per stage on stderr.
@@ -39,6 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let level = if f.water_level.is_empty() { vec![0.0; f.height.len()] } else { f.water_level.clone() };
     let requests = building_sites::requests(&f.seed, &layouts, &partitions, surface, &level, None)?;
     lap("buildings");
+    if let Ok(out) = std::env::var("OUT_REQUESTS") { std::fs::write(out, serde_json::to_vec(&requests)?)?; }
     let built: HashSet<&str> = requests.iter().filter(|r| r["preview"].as_array().is_some_and(|p| !p.is_empty())).filter_map(|r| r["parcel_id"].as_str()).collect();
     if std::env::var("WARN").is_ok() { let mut k = std::collections::BTreeMap::new(); for p in &partitions[0].parcels { *k.entry(p.use_kind.as_str()).or_insert(0) += 1; } eprintln!("uses {k:?} · requests {} · with preview {} · blocks kinds {:?}", requests.len(), requests.iter().filter(|r| r["preview"].as_array().is_some_and(|p| !p.is_empty())).count(), layouts[0].blocks.iter().map(|b| b.kind.as_str()).collect::<Vec<_>>()); for w in &partitions[0].warnings { eprintln!("pwarn: {w}"); } }
     let lots: Vec<_> = partitions[0].parcels.iter().filter(|p| matches!(p.use_kind.as_str(), "plot" | "compound")).collect();

@@ -1,5 +1,5 @@
 import type { World, Settlement, Options, SiteArchetype } from '../gen/types';
-import type { SettlementOutput, RoadOutput, SettlementRaster } from '../../../rust/bridge/settlements';
+import type { SettlementOutput, RoadOutput, SettlementRaster, RoadSite } from '../../../rust/bridge/settlements';
 import type { TerrainData } from '../../../rust/bridge/terrain';
 import { Rng } from '../gen/core/rng';
 import { chooseSite } from '../gen/site/site';
@@ -10,8 +10,14 @@ import type { V2Settings,ProgressCallback } from './contracts';
 import type { SettlementEngine } from '../../../rust/bridge/settlementEngine';
 import { loopbackServer } from './platform';
 import { sampleGrid } from '../gen/core/grid';
+import { stepSeed } from '../../../rust/bridge/generationSeed';
+import { effectiveTerrainSettings } from './terrainSettings';
+import type { ResourcePayload } from '../../../rust/bridge/resources';
 
 export interface RustRegionSnapshot {placement:SettlementOutput;roads:RoadOutput|null}
+/** Road endpoints: settlements, then activity access points (settlements.ts roadSitesOf; not imported to keep that bundle lazy). */
+const roadSitesOf=(o:SettlementOutput):RoadSite[]=>[...o.settlements.map(s=>({key:s.key,population:s.population,culture:s.culture,center:s.center,radius:s.radius})),
+  ...(o.activities??[]).map(a=>({key:a.id,population:0,culture:a.culture,center:a.access,radius:0,access:a.accessClass,parent:a.parent}))];
 let retainedEngine: { runtimeKey: string; terrainKey: string; engine: SettlementEngine } | undefined;
 /** Routing resolution controls sampling, not the information content of an imported coarse heightmap. */
 export function resampleRegionalRaster(source: SettlementRaster, n: number): SettlementRaster {
@@ -27,28 +33,64 @@ export function resampleRegionalRaster(source: SettlementRaster, n: number): Set
   }
   return { ...source, n, height, waterLevel, riverWidth, water, riverIds };
 }
-async function regionalRaster(world:World,resolution:number):Promise<SettlementRaster>{
+async function regionalRaster(world:World,resolution:number,settings:V2Settings):Promise<SettlementRaster>{
   const native=(world.terrain as typeof world.terrain&{v2NativeTerrain?:TerrainData}).v2NativeTerrain;
   const raster = native ? (await import('../../../rust/bridge/settlements')).settlementRaster(native,resolution)
     : (await import('./rustUrban')).rustSettlementRaster(world);
+  // Resource-model inputs (Rust `resources::RegionInput`): geology, soil, potentials and activity anchors derive from them.
+  const effective=effectiveTerrainSettings(settings,world.mapSize),climate=effective.climateValues!;
+  raster.region??={seed:settings.options.seed,temperature:climate.temperature,precipitation:climate.precipitation,biome:effective.climateZone??'temperate',x:native?.x??0,y:native?.y??0};
   return resampleRegionalRaster(raster,resolution);
+}
+const runtimeOf=(settings:V2Settings)=>({profile:settings.runtime?.backend==='native'?'local':'web',server:settings.runtime?.backend==='native'?loopbackServer(settings.runtime.localServer??'http://127.0.0.1:8791'):'http://127.0.0.1:8791'} as const);
+async function engineFor(runtime:ReturnType<typeof runtimeOf>):Promise<NonNullable<typeof retainedEngine>>{
+  const runtimeKey=JSON.stringify(runtime);
+  if(!retainedEngine||retainedEngine.runtimeKey!==runtimeKey){
+    retainedEngine?.engine.dispose?.();retainedEngine=undefined;
+    retainedEngine={runtimeKey,terrainKey:'',engine:await(await import('../../../rust/bridge/settlementEngine')).createSettlementEngine(runtime)};
+  }
+  return retainedEngine;
+}
+/** Compact resource payload of the retained terrain (view layers, rural soil): once per terrain, undefined without a Rust region. */
+let retainedResources:{key:string;payload:ResourcePayload}|undefined;
+export async function regionResources(world:World,settings:V2Settings):Promise<ResourcePayload|undefined>{
+  if(!settings.runtime?.backend||settings.runtime.backend==='typescript')return undefined;
+  const {resolution}=effectiveRegion(settings),runtime=runtimeOf(settings);
+  const terrainKey=JSON.stringify([world.stats['v2.terrainKey']??null,world.mapSize,resolution]),key=JSON.stringify([runtime,terrainKey,settings.options.seed]);
+  if(retainedResources?.key===key)return retainedResources.payload;
+  const engine=await engineFor(runtime);
+  const raster=engine.terrainKey===terrainKey&&world.stats['v2.terrainKey']!==undefined?undefined:await regionalRaster(world,resolution,settings);
+  const response=await engine.engine.run({id:1,seed:stepSeed(settings.options.seed,'settle-sites'),...(raster?{raster}:{}),roads:null,resources:true,runtime});
+  if('error'in response)throw new Error(response.error);
+  engine.terrainKey=terrainKey;
+  if(!response.resources)throw new Error('The engine returned no resource payload.');
+  retainedResources={key,payload:response.resources};return response.resources;
 }
 export async function planRustRegion(world:World,settings:V2Settings,onProgress?:ProgressCallback,roadsOnly=false):Promise<World>{
   const t0=performance.now(),{placement,roads,resolution}=effectiveRegion(settings);
   validateRegionSettings({placement,roads,resolution},world.mapSize);
-  const runtime={profile:settings.runtime?.backend==='native'?'local':'web',server:settings.runtime?.backend==='native'?loopbackServer(settings.runtime.localServer??'http://127.0.0.1:8791'):'http://127.0.0.1:8791'} as const;
+  const runtime=runtimeOf(settings);
   onProgress?.({stage:'sites',label:roadsOnly?'Routing roads between retained sites…':'Rust · evaluating regional settlement sites…',completed:0,total:3});
   if(roadsOnly&&!world.settlements?.length)throw new Error('Place settlements before routing their roads.');
-  const runtimeKey = JSON.stringify(runtime), terrainKey = JSON.stringify([world.stats['v2.terrainKey'] ?? null, world.mapSize, resolution]);
-  if (!retainedEngine || retainedEngine.runtimeKey !== runtimeKey) {
-    retainedEngine?.engine.dispose?.(); retainedEngine = undefined;
-    retainedEngine = { runtimeKey, terrainKey: '', engine: await (await import('../../../rust/bridge/settlementEngine')).createSettlementEngine(runtime) };
-  }
+  const terrainKey = JSON.stringify([world.stats['v2.terrainKey'] ?? null, world.mapSize, resolution]);
+  const engine = await engineFor(runtime);
   // The worker serializes requests. A route-only change reuses both the sampled raster and the native/WASM handle.
-  const raster = retainedEngine.terrainKey === terrainKey && world.stats['v2.terrainKey'] !== undefined ? undefined : await regionalRaster(world, resolution);
-  const response=await retainedEngine.engine.run({id:1,seed:settings.options.seed,...(raster?{raster}:{}),...(roadsOnly?{sites:world.settlements!.map(s=>({key:s.key,population:s.population,culture:s.culture,center:s.center,radius:s.radius}))}:{place:placement}),roads,runtime});
+  const raster = engine.terrainKey === terrainKey && world.stats['v2.terrainKey'] !== undefined ? undefined : await regionalRaster(world, resolution, settings);
+  const placeSeed = stepSeed(settings.options.seed, 'settle-sites'), roadSeed = stepSeed(settings.options.seed, 'settle-roads');
+  // Reroute: the retained settlements, then the retained activity sites' access points.
+  const retainedActivities=(world.debug?.v2RustRegion as RustRegionSnapshot|undefined)?.placement.activities??[];
+  const retainedSites=():RoadSite[]=>[...world.settlements!.map(s=>({key:s.key,population:s.population,culture:s.culture,center:s.center,radius:s.radius})),...roadSitesOf({settlements:[],warnings:[],requested:0,usableKm2:0,ms:0,activities:retainedActivities})];
+  let response=await engine.engine.run({id:1,seed:roadsOnly?roadSeed:placeSeed,...(raster?{raster}:{}),...(roadsOnly?{sites:retainedSites()}:{place:placement}),roads:!roadsOnly&&placeSeed!==roadSeed?null:roads,runtime});
   if('error'in response)throw new Error(response.error);
-  retainedEngine.terrainKey = terrainKey;
+  if (!roadsOnly && placeSeed !== roadSeed) {
+    const placed = response.settlements;
+    if (!placed) throw new Error('Missing retained settlement placement.');
+    const routed = await engine.engine.run({ id: 2, seed: roadSeed,
+      sites: roadSitesOf(placed), roads, runtime });
+    if ('error' in routed) throw new Error(routed.error);
+    response = { ...routed, settlements: placed };
+  }
+  engine.terrainKey = terrainKey;
   const previous=world.debug?.v2RustRegion as RustRegionSnapshot|undefined;
   const output=response.settlements??previous?.placement;
   if(!output?.settlements.length)throw new Error('No settlement can be placed with this recipe. Adjust the constraints or use a manual list.');

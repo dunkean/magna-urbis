@@ -26,6 +26,9 @@ pub struct ProgrammeContext {
     /// Intent axis (`settlementAxes.ts`): `settlement`, or one isolated
     /// establishment (`roles::isolated`). Never a specialisation.
     pub intent: String,
+    /// `activity` intent: the `activities.json` site template standing as the place.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub template: String,
     /// Specialisation: weighted functions. None = automatic (population,
     /// cultural profile, declared port siting); Some(empty) = none.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -45,6 +48,7 @@ impl Default for ProgrammeContext {
     fn default() -> Self {
         Self {
             intent: "settlement".into(),
+            template: String::new(),
             functions: None,
             resources: vec![],
             period: String::new(),
@@ -498,21 +502,8 @@ fn prepare_inner(
         d.landmark = rule.landmark;
         demands = vec![d];
     }
-    // A declining town keeps more homes than households: the surplus stands
-    // empty (role suffix, no household) once allocated.
-    let decay = context
-        .decay
-        .or_else(|| roles::state(&context.state).map(|s| s.decay))
-        .unwrap_or(0.0);
-    if decay > 0.0 && decay < 0.95 {
-        for d in demands.iter_mut().filter(|d| d.unit == "domesticUnits") {
-            d.requested /= 1.0 - decay;
-            d.deficit = d.requested;
-            d.target_area /= 1.0 - decay;
-            d.provenance
-                .push(format!("state:{}; empty share:{decay:.2}", context.state));
-        }
-    }
+    // The population is the town's before its decay (user rule): the plan and
+    // its homes are the thriving town's; `decay` then empties a share of them.
     for d in &mut demands {
         if d.requires.iter().any(|r| r == "navigableAccess") { d.site = "quay".into(); }
         if d.role.is_empty() {
@@ -742,7 +733,8 @@ fn prepare_inner(
                     })
                     .as_ref()?
             };
-            if environment[bi].slope > profile.max_slope {
+            // An activity site stands where its resource is (a hill for a windmill): no house slope limit.
+            if context.intent != "activity" && environment[bi].slope > super::profiles::house_slope(block_culture(layout, bi), profile.max_slope) {
                 return None;
             }
             let filtered;
@@ -1389,7 +1381,7 @@ fn eligible_memo(
     if pr
         .environment
         .get(p.block)
-        .is_some_and(|e| e.wet || e.slope > c.max_slope)
+        .is_some_and(|e| e.wet || (pr.context.intent != "activity" && e.slope > super::profiles::house_slope(block_culture(layout, p.block), c.max_slope)))
     {
         return false;
     }
@@ -2307,6 +2299,7 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
     }
     lap("gardens");
     decay(&mut pr, parcels, &facts, &locked);
+    culture_ruins(&mut pr, parcels, &locked);
     for a in &mut pr.allocations {
         a.label = roles::label(&a.role, &a.culture);
     }
@@ -2674,6 +2667,42 @@ fn decay(pr: &mut UrbanProgramme, parcels: &[Parcel], facts: &[SiteFacts], locke
             .filter(|a| a.role == "open.garden")
         {
             a.role = "open.fallow".into();
+        }
+    }
+}
+/// Culture ruins (`roles::ruin_share` by demographic class): a share of the
+/// built lots of each culture stands in ruins, ranked by each lot's own seed
+/// so ruins scatter among the inhabited houses; landmarks and locked lots
+/// stand, and a lone building never falls. Like the state's decay, it empties
+/// homes of the plan sized for the whole population.
+fn culture_ruins(pr: &mut UrbanProgramme, parcels: &[Parcel], locked: &[bool]) {
+    // An explicit vacancy of 0 asks for no empty building at all (capacity probes).
+    if pr.context.decay == Some(0.0) {
+        return;
+    }
+    let class = crate::settlements::demographics::class_of(pr.population);
+    let index: HashMap<&str, usize> = parcels.iter().enumerate().map(|(i, p)| (p.id.as_str(), i)).collect();
+    let mut by_culture: BTreeMap<String, Vec<(f64, usize)>> = BTreeMap::new();
+    for (ai, a) in pr.allocations.iter().enumerate() {
+        let Some(&pi) = index.get(a.parcel_id.as_str()) else { continue };
+        if a.landmark || locked[pi] || a.role.ends_with(".ruin") || a.role.ends_with(".abandoned")
+            || !matches!(a.function.as_str(), "domestic" | "mixed" | "workshop" | "warehouse") || roles::ruin_share(&a.culture, class) <= 0.0 {
+            continue;
+        }
+        let rank = crate::rng::Rng::new(&a.parcel_id).fork("culture-ruin").float();
+        by_culture.entry(a.culture.clone()).or_default().push((rank, ai));
+    }
+    for (culture, mut lots) in by_culture {
+        lots.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        let count = (roles::ruin_share(&culture, class) * lots.len() as f64).floor() as usize;
+        for &(_, ai) in lots.iter().take(count) {
+            let a = &mut pr.allocations[ai];
+            a.role.push_str(".ruin");
+            a.households = 0.0;
+            a.housing_floor_need = None;
+            if a.unit == "domesticUnits" {
+                a.capacity = 0.0;
+            }
         }
     }
 }

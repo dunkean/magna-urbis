@@ -1013,6 +1013,7 @@ pub(super) fn lay_out(
         gate_village_centers: vec![],
         gate_village_lanes: vec![],
         quays: vec![],
+        waterways: vec![],
         port_districts: vec![],
         version: 1,
         mechanism: "kind".into(),
@@ -1074,6 +1075,127 @@ pub(super) fn lay_out(
     })
 }
 
+/// City Bench `activity` intent: one `activities.json` site as the whole place. Its
+/// buildings (laid again by `building_sites` from the centre and axis kept in the
+/// structure) stand in one plot hugging the yard, its installations around it as
+/// ground blocks, a track to the nearest road. A water-working template stands on a bank.
+fn activity_plot(site: &Site, cfg: &LayoutConfig, near: &Option<Near>, obstacles: &[Shape], surface: Surface<'_>) -> Option<Plan> {
+    // The site itself first, then rings of other centres round it: a road junction or a slope may refuse it.
+    let ring = (0..=32).map(|k| if k == 0 { (0.0, 0.0) } else { let (r, i) = ([70.0, 120.0, 180.0, 260.0][(k - 1) / 8], ((k - 1) % 8) as f64); (r, i * std::f64::consts::FRAC_PI_4) });
+    for (r, angle) in ring {
+        let origin = Point { x: site.center.x + r * angle.cos(), y: site.center.y + r * angle.sin() };
+        if let Some(plan) = activity_try(site, cfg, near, obstacles, surface, origin) {
+            return Some(plan);
+        }
+    }
+    eprintln!("activity_plot {}: no centre found round ({:.0},{:.0})", cfg.programme.template, site.center.x, site.center.y);
+    None
+}
+
+#[allow(clippy::too_many_arguments)]
+fn activity_try(site: &Site, cfg: &LayoutConfig, near: &Option<Near>, obstacles: &[Shape], surface: Surface<'_>, origin: Point) -> Option<Plan> {
+    use super::activities as act;
+    let template = cfg.programme.template.as_str();
+    let culture = culture(site, cfg);
+    let bank = act::site_wants_water(template).then(|| bank(&surface, origin, MILL_REACH)).flatten();
+    let mut c = bank.map_or(origin, |(q, inland)| at(q, inland, 36.0));
+    // Clear of the road (a site on the road itself steps aside, across it).
+    if bank.is_none()
+        && let Some(n) = near
+        && dist(c, n.point) < 55.0
+    {
+        let away = if dist(c, n.point) > 0.5 { unit(n.point, c) } else { perp(n.tangent) };
+        c = at(c, away, 55.0 - dist(c, n.point));
+    }
+    let toward = bank.map_or_else(|| near.as_ref().map_or(Point { x: 0.0, y: 1.0 }, |n| unit(c, n.point)), |(_, inland)| inland);
+    let u = perp(toward);
+    let v = perp(u);
+    let yard = act::site_yard(template, culture, &site.key, c, u.y.atan2(u.x), &surface);
+    if yard.is_empty() {
+        return None;
+    }
+    // Oriented rectangle over the yard, a margin round it.
+    let (mut s0, mut s1, mut t0, mut t1) = (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
+    for p in yard.iter().flat_map(|b| &b.ring) {
+        let (s, t) = ((p.x - c.x) * u.x + (p.y - c.y) * u.y, (p.x - c.x) * v.x + (p.y - c.y) * v.y);
+        (s0, s1, t0, t1) = (s0.min(s), s1.max(s), t0.min(t), t1.max(t));
+    }
+    // The plot holds at least the envelope the programme admits for an isolated lot of
+    // this culture (frontage along u, depth along v): a small yard (a shrine, a yard
+    // that lost a body on the shore) otherwise leaves no admissible block to reserve.
+    if let Some(m) = super::culture::isolated_mapping(culture, &cfg.programme.period, &cfg.programme.intent) {
+        let grow = |lo: &mut f64, hi: &mut f64, need: f64| {
+            let extra = (need - (*hi - *lo + 10.0)).max(0.0) * 0.5;
+            *lo -= extra;
+            *hi += extra;
+        };
+        grow(&mut s0, &mut s1, m.admissibility.min_frontage + 2.0 * m.admissibility.min_access_width + 1.0);
+        grow(&mut t0, &mut t1, m.admissibility.min_depth + 1.0);
+    }
+    let corner = |s: f64, t: f64| Point { x: c.x + u.x * s + v.x * t, y: c.y + u.y * s + v.y * t };
+    let plot = Shape { outer: vec![corner(s0 - 5.0, t0 - 5.0), corner(s1 + 5.0, t0 - 5.0), corner(s1 + 5.0, t1 + 5.0), corner(s0 - 5.0, t1 + 5.0)], holes: vec![] };
+    // The front edge faces the road (or inland): a track runs along it, joined to the road, so
+    // the plot has the street frontage the programme asks of an isolated lot.
+    let want = near.as_ref().filter(|n| dist(c, n.point) > 1.0).map_or(toward, |n| unit(c, n.point));
+    let mid = plot.outer.iter().fold(Point { x: 0.0, y: 0.0 }, |m, p| Point { x: m.x + p.x * 0.25, y: m.y + p.y * 0.25 });
+    let (a, b, out) = (0..4)
+        .map(|i| {
+            let (a, b) = (plot.outer[i], plot.outer[(i + 1) % 4]);
+            let n = unit(mid, Point { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 });
+            (a, b, n)
+        })
+        .max_by(|p, q| (p.2.x * want.x + p.2.y * want.y).total_cmp(&(q.2.x * want.x + q.2.y * want.y)))?;
+    let (a, b) = (at(a, out, 1.55), at(b, out, 1.55));
+    let mut blocked = obstacles.to_vec();
+    let mut path = match near {
+        Some(n) if dist(c, n.point) > 20.0 => {
+            let (start, end) = if dist(n.point, a) < dist(n.point, b) { (a, b) } else { (b, a) };
+            let mut p = track(surface, n.point, start, cfg.max_lane_grade);
+            p.push(end);
+            p
+        }
+        _ => vec![a, b],
+    };
+    path.dedup_by(|p, q| dist(*p, *q) < 1e-6);
+    if path.len() > 2 {
+        blocked.extend(g::ribbon(&path[..path.len() - 1], &[3.0]));
+    }
+    let streets = vec![street(path, 3.0, 3, "track")];
+    let Some(plot) = settle(&plot, &blocked, &surface, 0.5) else {
+        return None;
+    };
+    // Every body of the yard stands on its plot: a road or a bank cutting the plot through
+    // a building refuses this centre (the next one round the site is tried).
+    if !yard.iter().all(|b| b.ring.iter().all(|&p| g::contains(&plot, p))) {
+        return None;
+    }
+    let mut blocks = vec![(plot.clone(), "block")];
+    blocked.push(plot.clone());
+    let outside = |p: Point| g::contains(&plot, p);
+    for inst in act::site_installations(template, culture, &site.key, c, &yard, &surface, &outside) {
+        let kind = match inst.kind.as_str() {
+            "enclosure" | "water_structure" => "common",
+            "terrace" => "garden",
+            _ => "place",
+        };
+        let shapes = if inst.closed {
+            vec![g::normalized(Shape { outer: inst.points.clone(), holes: vec![] })]
+        } else {
+            g::ribbon(&inst.points, &vec![2.5; inst.points.len()])
+        };
+        for shape in shapes {
+            // The dry pieces of the installation clear of the plot and the roads (a weir or a
+            // pier crossing water keeps its shore ends).
+            let mut pieces = g::dry_clip(&surface, &shape);
+            for o in &blocked {
+                pieces = pieces.iter().flat_map(|s| g::difference(s, o)).collect();
+            }
+            blocks.extend(pieces.into_iter().filter(|s| g::area(s) > 6.0).map(|s| (s, kind)));
+        }
+    }
+    Some(Plan { center: c, blocks, streets, axis: u })
+}
+
 /// One plot: on the road when the site is beside it, otherwise at the site
 /// with a track along its front to the road.
 #[allow(clippy::too_many_arguments)]
@@ -1088,6 +1210,9 @@ fn homestead(
     surface: Surface<'_>,
     rng: &mut Rng,
 ) -> Option<Plan> {
+    if cfg.programme.intent == "activity" {
+        return activity_plot(site, cfg, near, obstacles, surface);
+    }
     let (w, d) = plot_size(kind, &cfg.programme.intent, rng);
     // A mill stands on its race: on the nearest bank within reach, its plot
     // backing onto the water (dry-clipped to the bank by `settle`).
@@ -1177,6 +1302,31 @@ fn homestead(
         streets: vec![street(path, half * 2.0, 3, "track")],
         axis: along,
     })
+}
+
+fn varied_side(path: &[Point], half: f64, depth: f64, left: bool, strength: f64, phase: f64) -> Option<Shape> {
+    if strength <= 0.0 { return side(path,half,depth,left); }
+    let total = *arc(path).last()?;
+    let n = (total/45.0).ceil().max(1.0) as usize;
+    let mut inner = vec![];
+    let mut outer = vec![];
+    let sign = if left {1.0} else {-1.0};
+    let mut stations = arc(path);
+    stations.extend((0..=n).map(|i|total*i as f64/n as f64));
+    stations.sort_by(f64::total_cmp);stations.dedup_by(|a,b|(*a-*b).abs()<1e-6);
+    for station in stations {
+        let (p,d) = point_at(path,station);
+        let normal = perp(d);
+        let variation = 0.22*(station/83.0+phase).sin()+0.12*(station/37.0+phase*1.7).sin();
+        inner.push(at(p,normal,sign*half));
+        outer.push(at(p,normal,sign*(half+depth*(1.0+strength*variation))));
+    }
+    outer.reverse();inner.extend(outer);
+    let mut pieces = vec![g::normalized(Shape {outer:inner,holes:vec![]})];
+    for road in g::ribbon(path,&[half*2.0]) {
+        pieces = pieces.iter().flat_map(|p|g::difference(p,&road)).collect();
+    }
+    pieces.into_iter().max_by(|a,b|g::area(a).total_cmp(&g::area(b)))
 }
 
 /// Farms or long plots along an axis: the passing road when it is near, else
@@ -1288,12 +1438,22 @@ fn linear(
         // Cross-lanes every 110-200 m lead from the street to the fields.
         let lane = if cfg.road_width_by_size { super::network::town_table(morph, site.population, true)[3] } else { 3.5 };
         let mut cuts = vec![];
+        let mut variation = rng.fork("v7-linear-variation");
         let mut s = rng.range(90.0, 160.0);
         while s < total - 60.0 {
             let (p, d) = point_at(&axis, s);
             let n = perp(d);
+            // A cross-lane always crosses its strip (`varied_side` deepens it up to 34 %),
+            // or the strip is left uncut around a blind lane.
+            let reach = half + depth * (1.0 + 0.34 * cfg.ribbon_width_variation) + 10.0;
             for sign in [-1.0, 1.0] {
-                let end = at(p, n, sign * (half + depth + 10.0));
+                let strength = cfg.organic_branch_variation;
+                let (normal, run) = if strength > 0.0 {
+                    let angle = variation.range(-0.20,0.20) * strength;
+                    (Point {x:n.x*angle.cos()-n.y*angle.sin(), y:n.x*angle.sin()+n.y*angle.cos()},
+                        (reach*(1.0+variation.range(-0.30,0.25)*strength)).max((reach-6.0)/angle.cos()))
+                } else { (n,reach) };
+                let end = at(p, normal, sign * run);
                 cuts.push(street(vec![p, end], lane, 3, "lane"));
             }
             s += rng.range(110.0, 200.0);
@@ -1311,7 +1471,8 @@ fn linear(
             true,
         );
         for left in [true, false] {
-            let Some(strip) = side(&axis, half, depth, left) else {
+            let phase = if cfg.ribbon_width_variation > 0.0 { variation.range(0.0,std::f64::consts::TAU) } else {0.0};
+            let Some(strip) = varied_side(&axis, half, depth, left, cfg.ribbon_width_variation, phase) else {
                 continue;
             };
             let mut pieces = vec![strip];
@@ -1400,41 +1561,43 @@ fn camp(
     rng: &mut Rng,
 ) -> Option<Plan> {
     if cfg.camp_growth != "ring" {
-        return grown_camp(site, cfg, near, obstacles, surface);
+        return grown_camp(site, cfg, near, obstacles, surface, rng);
     }
-    let tents = (f64::from(site.population) / 6.0).ceil().max(2.0);
+    // One tent per household, and a tenth more for the camp's own uses (as
+    // `grown_camp`): the ring is sized for the programme it must lodge.
+    let tents = (super::footprint::capacity::households(culture(site, cfg), site.population) * 1.1).ceil().max(2.0);
     let depth = 14.0;
     let half = 1.5;
     // Ring length ≈ tents along both sides at ~7 m each.
     let radius = (tents * 7.0 / 2.0 / std::f64::consts::TAU).clamp(14.0, 220.0);
     let c = site.center;
-    let n = 24;
+    // `ringWobble` (culture data, 0 = perfect circle): the contour swells and
+    // narrows by up to that share of the radius, smoothly, so it stays a camp circle.
+    let wobble = cfg.camp_ring_wobble.unwrap_or_else(|| super::catalogue()["cultures"][culture(site, cfg)]["camp"]["ringWobble"].as_f64().unwrap_or(0.0)).clamp(0.0, 0.4);
+    let phases = if wobble > 0.0 { let mut w = rng.fork("ring-wobble"); [w.range(0.0, std::f64::consts::TAU), w.range(0.0, std::f64::consts::TAU), w.range(0.0, std::f64::consts::TAU)] } else { [0.0; 3] };
+    let reach_at = |a: f64| radius * (1.0 + wobble * (0.5 * (2.0 * a + phases[0]).sin() + 0.3 * (3.0 * a + phases[1]).sin() + 0.2 * (5.0 * a + phases[2]).sin()));
+    let n = if wobble > 0.0 { 48 } else { 24 };
     let mut ring: Vec<Point> = (0..=n)
         .map(|i| {
             let a = i as f64 * std::f64::consts::TAU / n as f64;
-            at(
-                c,
-                Point {
-                    x: a.cos(),
-                    y: a.sin(),
-                },
-                radius,
-            )
+            at(c, Point { x: a.cos(), y: a.sin() }, reach_at(a))
         })
         .collect();
     ring[n] = ring[0];
     let sectors = ((tents / 4.0).ceil() as usize).clamp(4, 16);
+    let mut bearings = vec![];
     let gaps: Vec<Shape> = (0..sectors)
         .flat_map(|k| {
             let a = (k as f64 + rng.range(-0.1, 0.1)) * std::f64::consts::TAU / sectors as f64;
+            bearings.push(a);
             let d = Point {
                 x: a.cos(),
                 y: a.sin(),
             };
             g::ribbon(
                 &[
-                    at(c, d, radius - depth - 6.0),
-                    at(c, d, radius + depth + 6.0),
+                    at(c, d, reach_at(a) - depth - 6.0),
+                    at(c, d, reach_at(a) + depth + 6.0),
                 ],
                 &[2.5],
             )
@@ -1453,6 +1616,28 @@ fn camp(
     for gap in &gaps {
         pieces = pieces.iter().flat_map(|p| g::difference(p, gap)).collect();
     }
+    // Invariant: one piece per tent. Each sector is cut along the track into
+    // pitches of about 7 m (the ring's sizing), so a large camp never folds
+    // several households into one sector lot that houses one of them.
+    let pitch_cuts: Vec<Shape> = (0..sectors)
+        .flat_map(|k| {
+            let (a0, a1) = (bearings[k], if k + 1 < sectors { bearings[k + 1] } else { bearings[0] + std::f64::consts::TAU });
+            let mid = reach_at(0.5 * (a0 + a1));
+            let n = ((a1 - a0) * mid / 7.0).round().max(1.0) as usize;
+            (1..n).map(move |j| a0 + (a1 - a0) * j as f64 / n as f64).collect::<Vec<_>>()
+        })
+        .flat_map(|a| {
+            let d = Point { x: a.cos(), y: a.sin() };
+            g::ribbon(&[at(c, d, reach_at(a) - depth - 6.0), at(c, d, reach_at(a) + depth + 6.0)], &[1.0])
+        })
+        .collect();
+    for cut in &pitch_cuts {
+        let (x0, y0, x1, y1) = g::bbox(cut);
+        pieces = pieces.iter().flat_map(|p| {
+            let (a0, b0, a1, b1) = g::bbox(p);
+            if a0 > x1 || a1 < x0 || b0 > y1 || b1 < y0 { vec![p.clone()] } else { g::difference(p, cut) }
+        }).collect();
+    }
     let mut blocks: Vec<(Shape, &'static str)> = pieces
         .iter()
         .filter_map(|p| settle(p, obstacles, &surface, 0.5))
@@ -1460,20 +1645,13 @@ fn camp(
         .map(|p| (p, "block"))
         .collect();
     // The open centre: a common for herds, fires and gatherings.
-    let centre_radius = radius - half - depth - 2.0;
+    let centre_radius = radius * (1.0 - wobble) - half - depth - 2.0;
     if centre_radius > 6.0 {
         let disc = Shape {
             outer: (0..n)
                 .map(|i| {
                     let a = i as f64 * std::f64::consts::TAU / n as f64;
-                    at(
-                        c,
-                        Point {
-                            x: a.cos(),
-                            y: a.sin(),
-                        },
-                        centre_radius,
-                    )
+                    at(c, Point { x: a.cos(), y: a.sin() }, (reach_at(a) - half - depth - 2.0).max(6.0))
                 })
                 .collect(),
             holes: vec![],
@@ -1483,8 +1661,8 @@ fn camp(
         }
     }
     let mut streets = vec![street(ring.clone(), half * 2.0, 3, "track")];
-    if let Some(n) = near.as_ref().filter(|n| n.distance > radius) {
-        let entry = at(c, unit(c, n.point), radius);
+    if let Some(n) = near.as_ref().filter(|n| n.distance > radius * (1.0 + wobble)) {
+        let entry = at(c, unit(c, n.point), reach_at((n.point.y - c.y).atan2(n.point.x - c.x)));
         streets.push(street(
             track(surface, n.point, entry, cfg.max_lane_grade),
             half * 2.0,
@@ -1503,14 +1681,18 @@ fn camp(
 /// A large nomad camp grown past one ring (`campGrowth`): one tent piece per
 /// tent on both sides of each ring track. `concentric`: full rings around a
 /// first ring of about 60 tents, joined by four radial tracks; `clusters`:
-/// camps of at most 40 tents around the first one, each its own ring and
+/// camps of about 40 tents around the first one, each its own ring and
 /// common, joined to it by a track.
+#[path = "kinds_camp_variation.rs"]
+pub(in crate::urban) mod camp_variation;
+
 fn grown_camp(
     site: &Site,
     cfg: &LayoutConfig,
     near: &Option<Near>,
     obstacles: &[Shape],
     surface: Surface<'_>,
+    rng: &mut Rng,
 ) -> Option<Plan> {
     use std::f64::consts::{PI, TAU};
     // One piece per household, and a tenth more for the camp's own uses.
@@ -1525,14 +1707,20 @@ fn grown_camp(
     // Units: (centre, ring radii, tents).
     let mut units: Vec<(Point, Vec<f64>, usize)> = vec![];
     if cfg.camp_growth == "clusters" {
-        let per = 40;
+        let data = &super::catalogue()["cultures"][culture(site, cfg)]["camp"];
+        let spread = data["groupVariation"].as_f64().unwrap_or(0.0).clamp(0.0, 0.75);
+        let mut rng = rng.fork("camp-groups");
+        let per = (40.0 * rng.range(1.0 - 0.3 * spread, 1.0 + 0.3 * spread)).round() as usize;
         let disc = |o: Point, r: f64| Shape {
             outer: (0..32).map(|i| at(o, dirv(i as f64 * TAU / 32.0), r)).collect(),
             holes: vec![],
         };
         for count in (1..=tents.div_ceil(per).max(1)).rev() {
-            let k = tents.div_ceil(count);
-            let r = (k.div_ceil(2) as f64 * pitch / TAU).max(first);
+            let sizes = if spread > 0.0 { camp_variation::groups(tents, count, spread, &mut rng.fork(&count.to_string())) }
+                else { (0..count).map(|u|tents/count + usize::from(u<tents%count)).collect() };
+            let k = sizes.iter().copied().max().unwrap_or(tents);
+            let slack = if spread > 0.0 { 0.25 } else { 0.0 };
+            let r = ((k.div_ceil(2) as f64 + slack) * pitch / TAU).max(first);
             let reach = r + half + depth;
             let mut centres = vec![c];
             'unit: for _ in 1..count {
@@ -1554,8 +1742,7 @@ fn grown_camp(
                 break;
             }
             if centres.len() == count || count == 1 {
-                let n = centres.len();
-                units = centres.iter().enumerate().map(|(u, &o)| (o, vec![r], tents / n + usize::from(u < tents % n))).collect();
+                units = centres.iter().zip(sizes).map(|(&o, k)| (o, vec![if spread > 0.0 { ((k.div_ceil(2) as f64 + slack) * pitch / TAU).max(first) } else { r }], k)).collect();
                 break;
             }
         }
@@ -1752,6 +1939,32 @@ mod tests {
             );
             let near_water = plot.outer.iter().any(|q| (1290.0..1300.5).contains(&q.x));
             assert_eq!(near_water, role == "isolated-mill", "{role}");
+        }
+    }
+
+    /// The `activity` intent lays one template's yard: a plot hugging its buildings, a water
+    /// template on the bank, installations as ground blocks beside it.
+    #[test]
+    fn an_activity_site_is_a_yard_with_its_installations() {
+        let n = 256;
+        let height: Vec<f32> = (0..n * n).map(|k| 0.05 * (k % n) as f32).collect();
+        let cell = 2000.0 / n as f64;
+        let water: Vec<u8> = (0..n * n).map(|k| 3 * u8::from((1300.0..1340.0).contains(&(((k % n) as f64 + 0.5) * cell)))).collect();
+        let surface = Surface { geometry: None, width: 2000.0, n, height: &height, water: &water };
+        let site = Site { key: "activity".into(), name: String::new(), population: 12, culture: "european-organic".into(), center: Point { x: 1004.0, y: 1004.0 }, radius: 30.0 };
+        for template in ["river_watermill", "stone_quarry", "forest_logging"] {
+            let mut cfg = LayoutConfig::default();
+            cfg.programme.intent = "activity".into();
+            cfg.programme.template = template.into();
+            let l = &generate_quarters("activity", std::slice::from_ref(&site), &cfg, surface, &[]).unwrap()[0];
+            assert!(matches!(l.blocks[0].kind.as_str(), "block" | "reserve:programme"), "{template}: {}", l.blocks[0].kind);
+            let centre = l.structure.as_ref().unwrap().centers[0].point;
+            let yard = super::super::activities::site_yard(template, "european-organic", "activity", centre, l.blocks[0].axis.y.atan2(l.blocks[0].axis.x), &surface);
+            assert!(yard.len() >= 2, "{template}: {} buildings", yard.len());
+            assert!(l.blocks.len() > 1, "{template}: no installation block");
+            if template == "river_watermill" {
+                assert!(l.blocks[0].shape.outer.iter().any(|q| (1290.0..1400.0).contains(&q.x)), "mill not on the bank");
+            }
         }
     }
 

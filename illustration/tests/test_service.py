@@ -12,7 +12,7 @@ from http.server import ThreadingHTTPServer
 import urllib.error
 import urllib.request
 from PIL import Image
-from illustration.context import compile_prompt, dimensions
+from illustration.context import CULTURE_NAMES, MATERIAL_NAMES, compile_prompt, dimensions
 from illustration.images import png
 from illustration.service import IllustrationService
 from illustration.providers import generate
@@ -301,6 +301,37 @@ class AdapterTests(unittest.TestCase):
         context['environment'].pop('snowCover')
         self.assertNotIn('snow', compile_prompt(context, {})['description'])
         self.assertNotIn('Mediterranean', compile_prompt(context, {})['description'])
+
+    def test_generated_prompts_use_english_instead_of_french_catalogue_labels(self):
+        root = Path(__file__).resolve().parents[2]
+        catalogue = json.loads((root / 'rust/crates/houses/data/recipes.json').read_text(encoding='utf-8'))
+        materials = {material['id']: material for material in catalogue['materials']}
+        cultures = json.loads((root / 'rust/crates/core/src/urban/catalogue.json').read_text(encoding='utf-8'))['cultures']
+        # New catalogue entries must receive prompt vocabulary as well as UI copy.
+        self.assertFalse(materials.keys() - MATERIAL_NAMES.keys())
+        self.assertFalse(cultures.keys() - CULTURE_NAMES.keys())
+        compiled = compile_prompt({
+            'generation': {'culture': 'himalayan-terraces', 'cultureDescription': cultures['himalayan-terraces']['label'], 'population': 600},
+            'architecture': {'traditions': ['himalayan-terraces'],
+                             'materials': [materials['MAT-STONE-DRY'], materials['MAT-TIMBER-POST']]},
+        }, {})
+        for key in ('description', 'prompt', 'fastPrompt', 'localPrompt'):
+            with self.subTest(key=key):
+                self.assertIn('Tibetan and Ladakhi terraced', compiled[key])
+                self.assertIn('dry stone', compiled[key])
+                self.assertIn('timber posts and beams', compiled[key])
+                for french in ('habitat en terrasses', 'Pierre sèche', 'Poteaux/poutres bois'):
+                    self.assertNotIn(french, compiled[key])
+
+    def test_new_native_material_uses_english_pattern_and_custom_prompt_is_preserved(self):
+        context = {'architecture': {'materials': [{'id': 'MAT-FUTURE', 'label': 'Nouveau matériau', 'pattern': 'stone'}]}}
+        compiled = compile_prompt(context, {})
+        for key in ('description', 'prompt', 'fastPrompt', 'localPrompt'):
+            self.assertIn('stone', compiled[key])
+            self.assertNotIn('Nouveau matériau', compiled[key])
+        custom = 'Conserver les toits rouges.'
+        for key in ('prompt', 'fastPrompt', 'localPrompt'):
+            self.assertEqual(compile_prompt(context, {'promptOverride': custom})[key], custom)
 
     def test_every_model_receives_camera_population_culture_era_and_biome_up_front(self):
         context = {'projection': 'perspective', 'camera': {'pitch': .7853981633974483, 'distance': 1000,

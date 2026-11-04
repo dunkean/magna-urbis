@@ -1,6 +1,8 @@
 //! Temporary metric urban-stage contract for Terrain Bench. Geometry, cultural
 //! parameter application and deterministic partitioning execute only in Rust.
 //! Layouts are retained inputs to the parcel stage; this is not the future World model.
+#[allow(dead_code)] // data for later phases, partly consumed
+pub(crate) mod activities;
 mod access;
 pub mod building_sites;
 mod house_mix;
@@ -9,6 +11,7 @@ mod composition;
 // Structural user edits (shape, delete, reroll): urban/edits.rs.
 mod edits;
 mod enclosure;
+mod farmsteads;
 pub use edits::quarter_removed;
 pub mod culture;
 pub mod programme;
@@ -18,6 +21,7 @@ mod footprint;
 mod fortification;
 mod fringe;
 mod geography;
+mod lagoon;
 mod geometry;
 mod massing;
 pub use geography::{Geography, VectorGeography};
@@ -229,6 +233,8 @@ pub struct UrbanStructure {
     pub gate_village_lanes: Vec<Street>,
     /// Built waterfront platforms, retained independently from street centrelines.
     pub quays: Vec<macroplan::harbour::Quay>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub waterways: Vec<lagoon::Waterway>,
     pub version: u32,
     pub mechanism: String,
     pub family: String,
@@ -556,6 +562,9 @@ pub struct LayoutConfig {
     pub placement: String,
     pub monument: String,
     pub fortification: String,
+    /// None uses the culture's lagoon model; 0..1 selects its canal share.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lagoon_canals: Option<f64>,
     /// `auto` (cultural draw) or a style of `fortification::STYLES`, applied
     /// when it fits the fortification kind (« Style de l’enceinte »).
     pub fortification_style: String,
@@ -640,6 +649,32 @@ pub struct LayoutConfig {
     pub road_end_joins: bool,
     /// Small places (under ~650 inhabitants) redraw for capacity only past 8 missing households.
     pub small_place_capacity: bool,
+    /// V7: prune unused local paths as well as streets; retain necessary through routes.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub street_frontage: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub natural_camp_approaches: bool,
+    /// None keeps the culture's circle; 0..0.4 swells its circular track.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub camp_ring_wobble: Option<f64>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub align_enclosed_grid: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub hide_unused_quarters: bool,
+    /// V7: a village (one crossing's demand) builds the bridges its banks need,
+    /// counting bank networks already joined on land by the regional road as
+    /// one; its bridgeheads keep no approaches or stubs of dropped decks.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub village_bridge_budget: bool,
+    /// V7: a footprint patch beyond the first joins the nearest served road
+    /// when it is nearer than the kept land's nucleus: no parallel link
+    /// across a camp's tent rows to its centre.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub links_join_roads: bool,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub organic_branch_variation: f64,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub ribbon_width_variation: f64,
     /// How a large camp grows past one figure (ring and court camps, the
     /// legacy nomad ring): `ring` one figure with overflow rows (as drawn),
     /// `concentric` full concentric rows past a capped first ring,
@@ -740,6 +775,7 @@ impl Default for LayoutConfig {
             placement: "center".into(),
             monument: "none".into(),
             fortification: "culture".into(),
+            lagoon_canals: None,
             fortification_style: "auto".into(),
             old_enclosure_citadel: false,
             medieval_walls: false,
@@ -775,6 +811,15 @@ impl Default for LayoutConfig {
             road_remnants: false,
             road_end_joins: false,
             small_place_capacity: false,
+            street_frontage: false,
+            natural_camp_approaches: false,
+            camp_ring_wobble: None,
+            align_enclosed_grid: false,
+            hide_unused_quarters: false,
+            village_bridge_budget: false,
+            links_join_roads: false,
+            organic_branch_variation: 0.0,
+            ribbon_width_variation: 0.0,
             camp_growth: "ring".into(),
             regular_grid_outline: false,
             params: json!({}),
@@ -995,6 +1040,12 @@ pub fn culture_site_weight(culture: &str, site: &str) -> f64 {
         .as_f64()
         .unwrap_or(1.0)
 }
+/// Culture site preference by key with an explicit default (e.g. `mountainFace`, 0 = none).
+pub fn culture_site_pref(culture: &str, key: &str, default: f64) -> f64 {
+    catalogue()["cultures"][culture]["sitePrefs"][key]
+        .as_f64()
+        .unwrap_or(default)
+}
 fn catalogue() -> &'static Value {
     static CATALOGUE: OnceLock<Value> = OnceLock::new();
     CATALOGUE.get_or_init(|| {
@@ -1194,6 +1245,11 @@ pub fn generate_quarters(
             && !catalogue()["cultures"][&config.mix_culture].is_object())
         || !["legacy", "adaptive", "closed"].contains(&config.exit_treatment.as_str())
         || !["auto", "none", "partial", "full"].contains(&config.peripheral_road.as_str())
+        || !config.organic_branch_variation.is_finite()
+        || config.camp_ring_wobble.is_some_and(|v| !v.is_finite() || !(0.0..=0.4).contains(&v))
+        || !(0.0..=1.0).contains(&config.organic_branch_variation)
+        || !config.ribbon_width_variation.is_finite()
+        || !(0.0..=1.0).contains(&config.ribbon_width_variation)
         || !config.parallel_merge.is_finite()
         || !(0.0..=1.0).contains(&config.parallel_merge)
     {
@@ -1389,10 +1445,19 @@ pub fn generate_quarters(
             }
             // Fortifications follow the final streets and blocks.
             macroplan::harbour::open_gates(&mut layout);
+            composition::fit_enclosures(&mut layout, site.population, surface);
+            composition::join_side_by_side(&mut layout, surface);
             fortification::settle(&mut layout, surface);
             // Wall clipping can expose new terminal chains or change lot access.
             if !layout.enclosures.is_empty() && layout.structure.as_ref().is_some_and(|s| s.mechanism != "legacy") {
                 trim::run(seed, &mut layout, config, original, site.population, surface);
+                // The trim removed the streets of land nobody builds: a circuit that still
+                // holds a big piece of that land gives it back, and is rebuilt.
+                let before: Vec<_> = layout.enclosures.iter().map(|e| e.path.clone()).collect();
+                composition::fit_enclosures(&mut layout, site.population, surface);
+                if layout.enclosures.iter().map(|e| &e.path).ne(before.iter()) {
+                    fortification::settle(&mut layout, surface);
+                }
             }
             Ok(layout)
         };
@@ -1414,13 +1479,27 @@ pub fn generate_quarters(
             fortification::finish_options(layout, config, surface);
             kinds::finish(layout, kind, original);
             if layout.structure.as_ref().is_some_and(|s|s.mechanism != "legacy") { trim::finish(seed,layout,physical_surface); }
+            if config.street_frontage { network::join_bank_networks(layout, physical_surface); }
+            if config.village_bridge_budget && network::village_crossings(site.population) {
+                network::tie_banks_to_road(layout, roads, physical_surface, config);
+            }
             network::select_bridges_graded(layout, site.population, physical_surface, roads, config.max_street_grade);
+            if config.village_bridge_budget && network::village_crossings(site.population)
+                && layout.structure.as_ref().is_some_and(|s| s.mechanism != "legacy")
+                && layout.streets.iter().any(|s| matches!(s.role.as_str(), "bridge" | "approach")) {
+                let reserved = network::reserved_streets(layout);
+                trim::bridgeheads(seed, layout, physical_surface, roads);
+                network::remap_reservations(layout, &reserved);
+            }
             if macroplan::harbour::port_town(config) {
                 macroplan::harbour::protect_navigation(layout, physical_surface, roads);
             }
             fortification::sync_gates(layout, surface);
+            network::ensure_regional_access(layout, roads, physical_surface, config);
             trim::footprint(layout);
             macroplan::harbour::platforms(layout, surface);
+            if let Some(ground) = &stilt { ground.land_links(&mut layout.streets,physical_surface); }
+            lagoon::apply(layout,config,physical_surface);
             Ok(())
         };
         let plan = |config: &LayoutConfig| -> Result<Layout, String> {

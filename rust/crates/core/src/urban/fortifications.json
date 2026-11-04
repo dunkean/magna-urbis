@@ -51,7 +51,7 @@
         {"style": "flanked", "weight": 1, "minPop": 10000}
       ]
     },
-    "earthwork": { "heightsCastle": 0.35, "wallStiffness": 0.25,
+    "earthwork": { "timberRampart": true, "heightsCastle": 0.35, "wallStiffness": 0.25,
       "cultures": ["celtic-oppidum", "norse-ringfort", "barbarian", "barbarian-celtic", "barbarian-norse", "kraal", "native-iroquoian", "native-plains", "nomad-camp", "mongol-ordu", "siberian-camp", "guarani-village", "halfling"],
       "styles": [{"style": "curtain", "weight": 1}],
       "material": "earth-stone", "cornerTurn": null, "towerSpacing": null, "curtainWidthM": 6, "ditch": "dry"

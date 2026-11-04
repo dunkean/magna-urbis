@@ -2,8 +2,12 @@
 //! network between them. Placement and routing are separate calls on one [`Terrain`]:
 //! road options never move a settlement, and a moved settlement only reroutes.
 //! No buildings or urban geometry are generated.
+pub mod activities;
+mod countryside;
 pub mod demographics;
 mod grid;
+pub mod installations;
+pub mod nodes;
 mod placement;
 pub mod roads;
 
@@ -95,6 +99,8 @@ pub struct Config {
     pub variation_weight: f64,
     /// Global multipliers on site archetypes (harbor, bridge, hilltop…), on top of culture preferences.
     pub site_weights: BTreeMap<String, f64>,
+    /// Multiplies the dispersed farms of the countryside (1 ≈ 0.45 farms per km² of land, 0 = none).
+    pub farm_density: f64,
 }
 impl Default for Config {
     fn default() -> Self {
@@ -128,6 +134,7 @@ impl Default for Config {
             elevation: 0.0,
             variation_weight: 1.0,
             site_weights: BTreeMap::new(),
+            farm_density: 1.0,
         }
     }
 }
@@ -191,6 +198,32 @@ pub struct Output {
     pub warnings: Vec<String>,
     pub requested: usize,
     pub usable_km2: f64,
+    /// Territorial activity sites (mills, quarries…) tied to a parent settlement.
+    #[serde(default)]
+    pub activities: Vec<activities::ActivitySite>,
+}
+impl Output {
+    /// Road endpoints: the settlements, then the access points of the activity sites
+    /// (routed only with `RoadConfig::activity_access`).
+    pub fn road_sites(&self) -> Vec<roads::RoadSite> {
+        let places = self.settlements.iter().map(|s| roads::RoadSite {
+            key: s.spec.key.clone(),
+            population: s.spec.population,
+            culture: s.spec.culture.clone(),
+            center: s.center,
+            radius: s.radius,
+            ..Default::default()
+        });
+        let sites = self.activities.iter().map(|a| roads::RoadSite {
+            key: a.id.clone(),
+            culture: a.culture.clone(),
+            center: a.access,
+            access: Some(a.access_class.clone()),
+            parent: Some(a.parent.clone()),
+            ..Default::default()
+        });
+        places.chain(sites).collect()
+    }
 }
 
 /// The adapted terrain with its derived fields, computed once and shared by placement and routing.
@@ -199,6 +232,8 @@ pub struct Terrain {
     urban_geometry: Option<crate::urban::Geography>,
     /// Pooled fields of the last coarser routing grid (block size, fields).
     route_fields: std::sync::Mutex<Option<(usize, std::sync::Arc<grid::Fields>)>>,
+    region: crate::resources::RegionInput,
+    resources: std::sync::OnceLock<crate::resources::ResourceFields>,
 }
 impl Terrain {
     /// Uses the retained physical ground and wet/rock mask; no terrain regeneration.
@@ -349,6 +384,29 @@ impl Terrain {
             fields: grid::Fields::new(raster),
             urban_geometry: None,
             route_fields: Default::default(),
+            region: Default::default(),
+            resources: Default::default(),
+        })
+    }
+    /// Seed, climate, biome and world position of the map for the resource model.
+    pub fn set_region(&mut self, region: crate::resources::RegionInput) {
+        self.region = region;
+        self.resources = Default::default();
+    }
+    /// Resource fields (prior, geology, soil), computed on first use and kept with the terrain.
+    pub fn resources(&self) -> &crate::resources::ResourceFields {
+        self.resources.get_or_init(|| {
+            let r = &self.fields.r;
+            crate::resources::compute(
+                &self.region,
+                crate::resources::Surface {
+                    width: r.width,
+                    n: r.n,
+                    height: &r.height,
+                    water: &r.water,
+                    water_level: &r.water_level,
+                },
+            )
         })
     }
     pub fn set_urban_geometry(
@@ -360,7 +418,14 @@ impl Terrain {
     }
     pub fn place(&self, seed: &str, cfg: &Config) -> Result<Output, String> {
         validate(cfg, self.fields.r.width)?;
-        Ok(placement::place(seed, &self.fields, cfg))
+        let mut out = placement::place(seed, &self.fields, cfg);
+        out.activities = activities::place(&out.settlements, self.resources(), &self.fields);
+        // Rural places of worship, then the dispersed farms round every site already standing.
+        let worship = countryside::worship(&out.settlements, &self.fields, &out.activities);
+        out.activities.extend(worship);
+        let farms = countryside::farms(&out.settlements, self.resources(), &self.fields, &out.activities, cfg.farm_density);
+        out.activities.extend(farms);
+        Ok(out)
     }
     pub fn roads(
         &self,
@@ -374,9 +439,22 @@ impl Terrain {
             0 => 1,
             grid => (n.div_ceil(grid)..=n).find(|k| n % k == 0).unwrap_or(1),
         };
-        if k == 1 {
-            return roads::route(seed, &self.fields, sites, cfg);
+        let mut out = if k == 1 { roads::route(seed, &self.fields, sites, cfg)? } else { self.pooled_roads(k, seed, sites, cfg)? };
+        // Network nodes read the finished network on the full-resolution terrain.
+        if cfg.network_nodes {
+            out.nodes = nodes::place(seed, &self.fields, sites, &out);
+            let shrines = countryside::junctions(seed, &self.fields, sites, &out, &out.nodes);
+            out.nodes.extend(shrines);
         }
+        Ok(out)
+    }
+    fn pooled_roads(
+        &self,
+        k: usize,
+        seed: &str,
+        sites: &[roads::RoadSite],
+        cfg: &roads::RoadConfig,
+    ) -> Result<roads::RoadOutput, String> {
         let fields = {
             let mut cached = self
                 .route_fields
@@ -426,6 +504,7 @@ fn validate(cfg: &Config, width: f64) -> Result<(), String> {
         cfg.flood_weight,
         cfg.defense_weight,
         cfg.variation_weight,
+        cfg.farm_density,
     ];
     if weights
         .iter()
@@ -434,6 +513,7 @@ fn validate(cfg: &Config, width: f64) -> Result<(), String> {
         || cfg.spread < 0.1
         || cfg.small_top > 1.0
         || cfg.density > 10.0
+        || cfg.farm_density > 10.0
         || cfg.population_jitter > 1.0
         || cfg.edge_margin > 0.3
         || !cfg.elevation.is_finite()

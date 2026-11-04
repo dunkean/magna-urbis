@@ -1257,6 +1257,293 @@ fn curtain(shape: &Shape, cell: f64, small: bool) -> Shape {
     if small { fortification::village_trace(shape, cell, false) }
     else { fortification::curtain_trace(shape) }
 }
+
+/// A house stands within a few metres of a street, so only the strip of a block
+/// along a street is built land: the deep back of a big block (gardens, an empty
+/// field behind the first lots) is not.
+const FRONT_REACH: f64 = 35.0;
+/// Blocks smaller than this (m²) are built whole: their back is not worth a cut.
+const BIG_BLOCK: f64 = 2_500.0;
+
+/// Land within `FRONT_REACH` of a street, as shapes.
+fn street_reach(layout: &super::Layout) -> Vec<Shape> {
+    use geo::{Buffer, LineString, MultiLineString};
+    let lines = MultiLineString(layout.streets.iter().filter(|s| s.path.len() >= 2 && s.role != "bridge")
+        .map(|s| LineString::from(s.path.iter().map(|p| (p.x, p.y)).collect::<Vec<_>>())).collect());
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| g::shapes(lines.buffer(FRONT_REACH)))).unwrap_or_default()
+}
+
+/// The built part of a block of kind "block": whole when small or when no street
+/// is known, else its strip along the streets.
+fn built_part(shape: &Shape, reach: &[Shape]) -> Vec<Shape> {
+    if reach.is_empty() || g::area(shape) < BIG_BLOCK { return vec![shape.clone()]; }
+    let (x0, y0, x1, y1) = g::bbox(shape);
+    let part: Vec<Shape> = reach.iter().filter(|r| { let b = g::bbox(r); b.0 <= x1 && b.2 >= x0 && b.1 <= y1 && b.3 >= y0 })
+        .flat_map(|r| g::intersection(shape, r)).filter(|s| g::area(s) > 50.0).collect();
+    part
+}
+
+/// Share of a town circuit that may stay empty in one piece (no block, no
+/// declared open space) before the curtain is drawn back to the built town.
+const VOID_SHARE: f64 = 0.05;
+/// Smallest empty piece (m²) that moves a curtain, whatever the circuit size.
+const VOID_MIN: f64 = 15_000.0;
+/// Reach (m) of the built edge kept inside a refitted curtain: a street and the wall lane.
+const VOID_MARGIN: f64 = 30.0;
+
+/// Circuits follow the blocks that survived the occupancy trim: a broad land
+/// claim is not a defensive perimeter around an empty field or slope.
+/// Mountain (terrace) towns refit thin circuits to their blocks, then, like every
+/// other town circuit, give back the dry land the allocation left empty
+/// (`fit_to_built`). Degenerate circuits (no area) are dropped.
+pub(super) fn fit_enclosures(layout: &mut super::Layout, population: u32, surface: Surface<'_>) {
+    use geo::Buffer;
+    layout.enclosures.retain(|e| !e.purpose.is_empty() || e.path.len() < 4
+        || g::area(&Shape { outer: e.path.clone(), holes: vec![] }) >= 50.0);
+    let cfg = layout.config.clone().unwrap_or_default();
+    let profile = profiles::settlement_profile(&layout.culture,population,cfg.phases);
+    if !profile.stairs || profile.pattern != "terraces" { return fit_to_built(layout, surface); }
+    // Built land: ordinary blocks and programme reservations, not open commons or fields.
+    let reserved: std::collections::HashSet<_> = layout.programme.iter().flat_map(|p|p.reservations.iter()
+        .filter(|r|!p.demands.iter().any(|d|d.id==r.demand_id && d.role.starts_with("open.")))).map(|r|r.block).collect();
+    let reach = street_reach(layout);
+    let occupied: Vec<_> = layout.blocks.iter().enumerate()
+        .filter(|(i,b)|matches!(b.kind.as_str(),"block"|"place") || reserved.contains(i))
+        .flat_map(|(_,b)| if b.kind == "block" { built_part(&b.shape,&reach) } else { vec![b.shape.clone()] }).collect();
+    let mut result = vec![];
+    for e in &layout.enclosures {
+        if !e.purpose.is_empty() { result.push(e.clone());continue; }
+        let old = Shape {outer:e.path.clone(),holes:vec![]};
+        let land: Vec<_> = occupied.iter().flat_map(|s|g::intersection(s,&old)).filter(|s|g::area(s)>50.).collect();
+        // A circuit around no built land (an open field, a strip) is not raised.
+        if land.is_empty() { continue; }
+        if land.iter().map(g::area).sum::<f64>() >= g::area(&old)*0.35 {
+            result.push(e.clone());continue;
+        }
+        let margin: Vec<_> = land.iter().flat_map(|s|g::shapes(g::polygon(s).buffer(18.))).collect();
+        let fitted: Vec<_> = union(&margin).iter().flat_map(|s|g::intersection(s,&old))
+            .flat_map(|s|g::dry_clip(&surface,&s)).filter(|s|g::area(s)>5000.)
+            .filter(|s|land.iter().any(|b|g::contains(s,g::interior_point(b)))).collect();
+        if fitted.is_empty() { result.push(e.clone());continue; }
+        for shape in fitted {
+            let trace = fortification::hill_trace(&shape,surface.width/surface.n.max(1) as f64);
+            let mut path = trace.outer;
+            path.push(path[0]);
+            if result.iter().any(|e:&Enclosure| e.path==path) {continue;}
+            result.push(Enclosure {gates:gates(&path,&layout.streets),path,kind:e.kind.clone(),..Default::default()});
+        }
+    }
+    layout.enclosures = result;
+    // The same invariant as every town circuit: a big empty piece beside the town is given back.
+    fit_to_built(layout, surface);
+}
+
+/// A town circuit holds its town: dry land more than `VOID_MARGIN` from any
+/// built block, place or programme reservation (open spaces included) is
+/// empty; empty pieces of at least `max(VOID_SHARE × circuit, VOID_MIN)` are
+/// cut out and the curtain is retraced round what is left. Water is never
+/// empty land, so a circuit keeps its river crossings. The refitted circuit
+/// carries no works yet: `fortification::settle` builds it.
+fn fit_to_built(layout: &mut super::Layout, surface: Surface<'_>) {
+    use geo::{BooleanOps, Buffer, MultiPolygon};
+    if !layout.enclosures.iter().any(|e| e.purpose.is_empty() && e.path.len() >= 4) { return; }
+    let reserved: std::collections::HashSet<_> = layout.programme.iter().flat_map(|p| p.reservations.iter().map(|r| r.block)).collect();
+    let reach = street_reach(layout);
+    let occupied: Vec<(Shape, (f64, f64, f64, f64))> = layout.blocks.iter().enumerate()
+        .filter(|(i, b)| matches!(b.kind.as_str(), "block" | "place") || reserved.contains(i))
+        .flat_map(|(_, b)| if b.kind == "block" { built_part(&b.shape, &reach) } else { vec![b.shape.clone()] })
+        .map(|s| { let bb = g::bbox(&s); (s, bb) }).collect();
+    let safe = |f: &dyn Fn() -> MultiPolygon<f64>| std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).ok();
+    let mp = |v: &[Shape]| MultiPolygon(v.iter().map(g::polygon).collect());
+    let mut result = Vec::with_capacity(layout.enclosures.len());
+    for e in std::mem::take(&mut layout.enclosures) {
+        if !e.purpose.is_empty() || e.path.len() < 4 { result.push(e); continue; }
+        let old = g::normalized(Shape { outer: e.path[..e.path.len() - 1].to_vec(), holes: vec![] });
+        let (area, (x0, y0, x1, y1)) = (g::area(&old), g::bbox(&old));
+        let near: Vec<Shape> = occupied.iter().filter(|(_, b)| b.0 <= x1 && b.2 >= x0 && b.1 <= y1 && b.3 >= y0)
+            .map(|(s, _)| s.clone()).collect();
+        let Some(reach) = safe(&|| mp(&near).buffer(VOID_MARGIN)) else { result.push(e); continue; };
+        let dry = mp(&g::dry_clip(&surface, &old));
+        let Some(empty) = safe(&|| dry.difference(&reach)) else { result.push(e); continue; };
+        let floor = (VOID_SHARE * area).max(VOID_MIN);
+        // The new front runs in straight stretches (10 m tolerance, within the margin).
+        let void: Vec<Shape> = g::shapes(empty).into_iter().filter(|s| g::area(s) >= floor)
+            .map(|s| { let mut r = g::simplify(&closed(&s.outer), 10.0, |_| false); r.pop(); g::normalized(Shape { outer: r, holes: vec![] }) })
+            .filter(|s| s.outer.len() >= 3 && g::simple(s)).collect();
+            if void.is_empty() { result.push(e); continue; }
+        // A circuit round no built land at all is not raised.
+        if near.iter().all(|s| g::intersection(s, &old).is_empty()) { continue; }
+        let Some(kept) = safe(&|| g::polygon(&old).difference(&mp(&void))) else { result.push(e); continue; };
+        let mut refit = vec![];
+        for piece in g::shapes(kept) {
+            if g::area(&piece) < floor || !near.iter().any(|s| g::contains(&piece, g::interior_point(s))) { continue; }
+            // The kept curtain stays where it was; only the cut is new.
+            // Out-and-back runs of the old trace (along a bank) are dropped here.
+            let mut ring = g::simplify(&closed(&g::unneedled(&g::cleaned(&piece).outer, 0.5)), 1.0, |_| false);
+            ring.pop();
+            let plain = g::normalized(Shape { outer: g::unneedled(&ring, 0.5), holes: vec![] });
+            let trace = if g::simple(&plain) { plain } else { fortification::curtain_trace(&Shape { outer: piece.outer, holes: vec![] }) };
+            if trace.outer.len() < 3 || !g::simple(&trace) { refit.clear(); break; }
+            refit.push(closed(&trace.outer));
+        }
+        if refit.is_empty() { result.push(e); continue; }
+        for path in refit {
+            result.push(Enclosure { gates: gates(&path, &layout.streets), path, kind: e.kind.clone(), ..Default::default() });
+        }
+    }
+    layout.enclosures = result;
+}
+
+#[cfg(test)]
+mod built_fit_tests {
+    use super::*;
+    /// Review 03/11 (indus 10k river): a town circuit gives back the empty
+    /// slope beside its town; a circuit whose land is built stays as it is.
+    #[test]
+    fn review11_town_circuit_gives_back_its_empty_side() {
+        let layout = |blocks: serde_json::Value| -> crate::urban::Layout { serde_json::from_value(serde_json::json!({
+            "key":"built-fit","culture":"indus-planned","center":{"x":300.,"y":200.},"quarters":[],"streets":[],"warnings":[],
+            "blocks":blocks,
+            "enclosures":[{"kind":"wall","path":[{"x":0.,"y":0.},{"x":600.,"y":0.},{"x":600.,"y":400.},{"x":0.,"y":400.},{"x":0.,"y":0.}],"gates":[],"towers":[],"style":"flanked"}]
+        })).unwrap() };
+        let block = |x0: f64, x1: f64, kind: &str| serde_json::json!({"shape":g::rectangle(x0,10.,x1,390.),"quarter":0,"kind":kind,"axis":{"x":1.,"y":0.}});
+        let (h, w) = (vec![0.; 16 * 16], vec![0; 16 * 16]);
+        let surface = Surface { geometry: None, width: 1024., n: 16, height: &h, water: &w };
+        // Built east half, trimmed (reserve) west half: the curtain moves to the town.
+        let mut l = layout(serde_json::json!([block(310.,590.,"block"), block(10.,300.,"reserve")]));
+        fit_enclosures(&mut l, 10000, surface);
+        assert_eq!(l.enclosures.len(), 1);
+        let fitted = Shape { outer: l.enclosures[0].path.clone(), holes: vec![] };
+        assert!(g::contains(&fitted, Point { x: 450., y: 200. }) && !g::contains(&fitted, Point { x: 100., y: 200. }));
+        assert!(g::area(&fitted) < 0.65 * 240_000.0, "{}", g::area(&fitted));
+        assert!(l.enclosures[0].style.is_empty(), "the refitted circuit is rebuilt by settle");
+        // Built everywhere (a place counts): the circuit is untouched.
+        let mut l = layout(serde_json::json!([block(310.,590.,"block"), block(10.,300.,"place")]));
+        let before = l.enclosures[0].path.clone();
+        fit_enclosures(&mut l, 10000, surface);
+        assert_eq!(l.enclosures.len(), 1);
+        assert_eq!(l.enclosures[0].path, before);
+    }
+}
+
+#[cfg(test)]
+mod side_by_side_tests {
+    use super::*;
+    static FLAT: [f32; 256] = [0.0; 256];
+    static DRY: [u8; 256] = [0; 256];
+    fn surface() -> Surface<'static> { Surface { geometry: None, width: 2048., n: 16, height: &FLAT, water: &DRY } }
+    fn layout(rings: &[Shape]) -> crate::urban::Layout {
+        let mut l: crate::urban::Layout = serde_json::from_value(serde_json::json!({
+            "key":"side-by-side","culture":"dwarven","center":{"x":0.,"y":0.},"quarters":[],"streets":[],"warnings":[],"blocks":[],"enclosures":[]
+        })).unwrap();
+        l.enclosures = rings.iter().map(|r| Enclosure { path: closed(&r.outer), kind: "wall".into(), ..Default::default() }).collect();
+        l
+    }
+    /// Review 03/11 (dwarven town): two circuits running side by side are
+    /// joined into one; distant, nested and attached circuits stay apart.
+    #[test]
+    fn review11_side_by_side_circuits_become_one() {
+        let (town, annex) = (g::rectangle(0., 0., 400., 400.), g::rectangle(430., 60., 600., 300.));
+        let mut l = layout(&[town.clone(), annex.clone()]);
+        join_side_by_side(&mut l, surface());
+        assert_eq!(l.enclosures.len(), 1);
+        let one = closed_shape(&l.enclosures[0]);
+        for p in [Point { x: 200., y: 200. }, Point { x: 515., y: 180. }, Point { x: 415., y: 180. }] {
+            assert!(g::contains(&one, p), "{p:?} outside the joined circuit");
+        }
+        assert!(l.enclosures[0].style.is_empty(), "the joined circuit is rebuilt by settle");
+        // The joined circuit runs straight across a bend that turned into the town.
+        let dented = Shape { outer: vec![Point { x: 0., y: 0. }, Point { x: 400., y: 0. }, Point { x: 400., y: 400. }, Point { x: 250., y: 400. },
+            Point { x: 200., y: 330. }, Point { x: 150., y: 400. }, Point { x: 0., y: 400. }], holes: vec![] };
+        let mut l = layout(&[dented, annex.clone()]);
+        join_side_by_side(&mut l, surface());
+        assert_eq!(l.enclosures.len(), 1);
+        assert!(g::contains(&closed_shape(&l.enclosures[0]), Point { x: 200., y: 380. }), "inward bend kept");
+        // Two traces touching at a corner (a few metres of overlap) are side by side too.
+        let mut l = layout(&[town.clone(), g::rectangle(395., 60., 600., 300.)]);
+        join_side_by_side(&mut l, surface());
+        assert_eq!(l.enclosures.len(), 1);
+        let far = g::rectangle(700., 60., 900., 300.);
+        let inner = g::rectangle(100., 100., 300., 300.);
+        let attached = g::rectangle(400., 0., 600., 400.);
+        for rings in [vec![town.clone(), far], vec![town.clone(), inner], vec![town.clone(), attached]] {
+            let mut l = layout(&rings);
+            join_side_by_side(&mut l, surface());
+            assert_eq!(l.enclosures.len(), 2);
+        }
+    }
+}
+#[cfg(test)]
+mod wall_density_tests {
+    use super::*;
+    #[test]
+    fn terrace_perimeter_keeps_occupied_blocks_and_releases_empty_slope() {
+        let mut l: crate::urban::Layout = serde_json::from_value(serde_json::json!({
+            "key":"terrace-perimeter","culture":"dwarven","center":{"x":50.,"y":50.},"quarters":[],"streets":[],"warnings":[],
+            "blocks":[{"shape":g::rectangle(10.,10.,90.,90.),"quarter":0,"kind":"block","axis":{"x":1.,"y":0.}},
+                {"shape":g::rectangle(100.,0.,500.,500.),"quarter":0,"kind":"reserve","axis":{"x":1.,"y":0.}}],
+            "enclosures":[{"kind":"wall","path":[{"x":0.,"y":0.},{"x":500.,"y":0.},{"x":500.,"y":500.},{"x":0.,"y":500.},{"x":0.,"y":0.}],"gates":[],"towers":[]}]
+        })).unwrap();
+        let h = vec![0.;16*16];let w = vec![0;16*16];
+        fit_enclosures(&mut l,10000,Surface {geometry:None,width:512.,n:16,height:&h,water:&w});
+        assert_eq!(l.enclosures.len(),1);
+        let sh = Shape {outer:l.enclosures[0].path.clone(),holes:vec![]};
+        assert!(g::contains(&sh,Point {x:50.,y:50.}));
+        assert!(g::area(&sh)<25_000.);
+    }
+}
+/// Half the widest gap (m) between two town circuits that stand side by side.
+const JOIN_REACH: f64 = 40.0;
+/// Two town circuits side by side are one circuit. Where their rings run
+/// within `2 × JOIN_REACH` of each other (without overlapping, nesting or
+/// sharing a stretch, as an attached extension does), the land between them
+/// joins the enclosure and a single curtain runs round both. The joined
+/// circuit carries no works yet: `fortification::settle` builds it.
+pub(super) fn join_side_by_side(layout: &mut super::Layout, surface: Surface<'_>) {
+    use geo::{BooleanOps, Buffer, MultiPolygon};
+    let town = |e: &Enclosure| e.purpose.is_empty() && e.path.len() >= 4;
+    let grown = |s: &Shape, d: f64| std::panic::catch_unwind(std::panic::AssertUnwindSafe(||
+        g::shapes(g::polygon(s).buffer(d)))).unwrap_or_default();
+    loop {
+        let n = layout.enclosures.len();
+        let mut joined = None;
+        'pairs: for i in 0..n {
+            for j in i + 1..n {
+                let (a, b) = (&layout.enclosures[i], &layout.enclosures[j]);
+                if !town(a) || !town(b) { continue; }
+                let (sa, sb) = (closed_shape(a), closed_shape(b));
+                let ((ax0, ay0, ax1, ay1), (bx0, by0, bx1, by1)) = (g::bbox(&sa), g::bbox(&sb));
+                let reach = 2.0 * JOIN_REACH;
+                if ax0 > bx1 + reach || bx0 > ax1 + reach || ay0 > by1 + reach || by0 > ay1 + reach { continue; }
+                // Nested circuits (an older wall) or ones sharing a stretch stay apart;
+                // two that merely touch at a corner are side by side.
+                let overlap: f64 = g::intersection(&sa, &sb).iter().map(g::area).sum();
+                if overlap > 0.25 * g::area(&sa).min(g::area(&sb))
+                    || fortification::shared_length(&sa, &sb) >= 3.0 { continue; }
+                let pair = MultiPolygon(union(&[sa.clone(), sb.clone()]).iter().map(g::polygon).collect());
+                let Ok(closing) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(||
+                    pair.buffer(JOIN_REACH).buffer(-JOIN_REACH))) else { continue; };
+                let (na, nb) = (grown(&sa, 1.0), grown(&sb, 1.0));
+                let touches = |gap: &Shape, near: &[Shape]| near.iter().any(|s| !g::intersection(gap, s).is_empty());
+                let gaps: Vec<Shape> = g::shapes(closing.difference(&pair)).into_iter()
+                    .filter(|gap| g::area(gap) > 50.0 && touches(gap, &na) && touches(gap, &nb)).collect();
+                let merged = union(&[sa, sb].into_iter().chain(gaps).collect::<Vec<_>>());
+                let [one] = merged.as_slice() else { continue; };
+                let trace = fortification::straight_across(&fortification::curtain_trace(&Shape { outer: one.outer.clone(), holes: vec![] }), surface);
+                if trace.outer.len() < 3 || !g::simple(&trace) { continue; }
+                let kind = if g::area(&closed_shape(a)) >= g::area(&closed_shape(b)) { a.kind.clone() } else { b.kind.clone() };
+                joined = Some((i, j, trace, kind));
+                break 'pairs;
+            }
+        }
+        let Some((i, j, trace, kind)) = joined else { break; };
+        let path = closed(&trace.outer);
+        layout.enclosures.remove(j);
+        layout.enclosures.remove(i);
+        let gates = gates(&path, &layout.streets);
+        layout.enclosures.insert(i, Enclosure { gates, path, kind, ..Default::default() });
+    }
+}
 /// Runs of a closed path that are dry and within street grade, at least 80 m
 /// long. A fully clear ring is returned whole.
 fn dry_runs(path: &[Point], surface: Surface<'_>, grade: f64) -> Vec<Vec<Point>> {
@@ -1676,6 +1963,20 @@ fn fortify(
             partition(&mut plan.quarters, &old);
             inner_walls.extend(old.into_iter().map(|s| fortification::parameter_trace(s, surface, cfg, culture, inner_style.curtain_width)));
         }
+    }
+    // An older circuit lies inside the newer one, clear of its curtain: it is
+    // clipped to it, and dropped when under half of it would remain.
+    if !walls.is_empty() && !inner_walls.is_empty() {
+        use geo::Buffer;
+        let margin = style.curtain_width + 6.0;
+        let room: Vec<Shape> = walls.iter().flat_map(|w| std::panic::catch_unwind(std::panic::AssertUnwindSafe(||
+            g::shapes(g::polygon(w).buffer(-margin)))).unwrap_or_default()).collect();
+        inner_walls = inner_walls.into_iter().filter_map(|s| {
+            let area = g::area(&s);
+            room.iter().flat_map(|r| g::intersection(&s, r)).max_by(|a, b| g::area(a).total_cmp(&g::area(b)))
+                .filter(|k| g::area(k) >= 0.5 * area)
+                .map(|k| if g::area(&k) >= area - 1.0 { s } else { k })
+        }).collect();
     }
     if small { fit_enclosed_quarters(&mut plan.quarters, &walls, &plan.streets, surface); }
     partition(&mut plan.quarters, &walls);

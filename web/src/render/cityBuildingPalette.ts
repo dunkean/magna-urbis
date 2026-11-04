@@ -1,5 +1,7 @@
 /** Map treatment of the shared final sRGB colours; no independent lot jitter. */
 import { buildingTint, type PaletteRgb } from './buildingPalette';
+import { centreOf, groundAt, toneStamp } from './groundTone';
+import { roofAgainstGround, type Rgb01 } from './roofContrast';
 import type { CityBuilding, CityPalette, CityRoofs } from './cityCanvas';
 
 const hex = (c: PaletteRgb): string => `#${c.map(v => Math.max(0, Math.min(255, Math.round(v * 255))).toString(16).padStart(2, '0')).join('')}`;
@@ -18,11 +20,15 @@ function mapTint(c: PaletteRgb, palette: CityPalette): string {
 }
 export function planBuildingColors(b: CityBuilding, palette: CityPalette, cover = b.material?.cover ?? '', wall = b.material?.wall ?? '', tone = b.material?.tone ?? 0.5): { wall: string; roof: string } {
   const role = `${b.role ?? ''} ${b.family}${b.landmark || wall === 'stone' ? ' monument' : ''}`;
-  const key = `${palette}|${cover}|${wall}|${tone}|${role}`;
+  const key = `${toneStamp()}|${palette}|${cover}|${wall}|${tone}|${role}`;
   let cache = tints.get(b); if (!cache) tints.set(b, cache = new Map());
   const cached = cache.get(key); if (cached) return cached;
   const colors = buildingTint(b.material?.culture ?? b.building.culture?.culture ?? '', wall, cover, tone, role);
-  const mapped = { wall: mapTint(colors.wall, palette), roof: mapTint(colors.roof, palette) }; cache.set(key, mapped); return mapped;
+  const outer = b.surface[0]?.outer, c = outer?.length ? centreOf(outer) : undefined, g = c && groundAt(c.x, c.y, 2);
+  let roof = mapTint(colors.roof, palette);
+  // Roofs keep a minimum contrast against the map ground they stand on (rule, whatever the culture); applied on the displayed colour.
+  if (g) roof = hex(roofAgainstGround([1, 3, 5].map(i => parseInt(roof.slice(i, i + 2), 16) / 255) as Rgb01, [g[0] / 255, g[1] / 255, g[2] / 255]));
+  const mapped = { wall: mapTint(colors.wall, palette), roof }; cache.set(key, mapped); return mapped;
 }
 export function planShade(color: string, k: number): string {
   const v = parseInt(color.slice(1), 16), c = (s: number): number => Math.max(0, Math.min(255, Math.round(((v >> s) & 255) * (1 + k))));

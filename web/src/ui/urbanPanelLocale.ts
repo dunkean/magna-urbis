@@ -4,6 +4,8 @@ type Words = readonly [string, string, string, string, string];
 const languages: Locale[] = ['fr', 'en', 'zh', 'es', 'pt'];
 export function urbanText(words: Words): string { return words[languages.indexOf(typeof window === 'undefined' ? 'fr' : savedLocale())]; }
 const labels: Record<string, Words> = {
+  campRingWobble:['À tester · Irrégularité du cercle','Testing · Camp circle irregularity','测试 · 营地圆环不规则度','En prueba · Irregularidad del círculo','Em teste · Irregularidade do círculo'],
+  naturalCampApproaches:['À tester · Accès des villages à maisons longues','Testing · Longhouse village entrances','测试 · 长屋村落入口','En prueba · Accesos de aldeas de casas largas','Em teste · Acessos das aldeias de casas longas'],
   composition:['Génération','Generation','生成方式','Generación','Geração'],
   culture:['Profil culturel','Cultural profile','文化配置','Perfil cultural','Perfil cultural'],
   recipe:['Recette du plan / parcellaire','Plan / parcel recipe','规划 / 地块配方','Receta del plan / parcelario','Receita do plano / parcelamento'],
@@ -20,6 +22,13 @@ const labels: Record<string, Words> = {
   roadMouths:['À tester · Entrées d’impasses sur l’axe','Testing · Access-way mouths on the axis','测试 · 巷口位于街道中线','En prueba · Bocas de callejón en el eje','Em teste · Entradas de becos no eixo'],
   roadRemnants:['À tester · Retirer les restes de routes','Testing · Remove road remnants','测试 · 移除道路残段','En prueba · Quitar restos de calles','Em teste · Remover restos de ruas'],
   roadEndJoins:['À tester · Raccorder les bouts de rue','Testing · Join street ends','测试 · 连接街道端头','En prueba · Unir extremos de calle','Em teste · Unir pontas de ruas'],
+  streetFrontage:['À tester · Construire ou simplifier les rues','Testing · Build frontage or simplify streets','测试 · 建设临街地块或简化街道','En prueba · Ocupar frentes o simplificar calles','Em teste · Ocupar frentes ou simplificar ruas'],
+  alignEnclosedGrid:['À tester · Grille alignée sur son enceinte','Testing · Align grid to its enclosure','测试 · 网格对齐围墙','En prueba · Cuadrícula alineada con su recinto','Em teste · Grelha alinhada ao seu recinto'],
+  villageBridgeBudget:['À tester · Ponts selon le besoin (village)','Testing · Bridges by need (village)','测试 · 按需建桥（村庄）','En prueba · Puentes según la necesidad (aldea)','Em teste · Pontes conforme a necessidade (aldeia)'],
+  linksJoinRoads:['À tester · Liaisons vers la route','Testing · Links join the road','测试 · 连接到道路','En prueba · Enlaces hacia la carretera','Em teste · Ligações à estrada'],
+  hideUnusedQuarters:['À tester · Effacer les quartiers annulés','Testing · Hide cancelled quarters','测试 · 隐藏取消的街区','En prueba · Ocultar barrios cancelados','Em teste · Ocultar bairros cancelados'],
+  organicBranchVariation:['À tester · Variation des branches','Testing · Branch variation','测试 · 支路变化','En prueba · Variación de ramales','Em teste · Variação dos ramais'],
+  ribbonWidthVariation:['À tester · Variation de largeur des rubans','Testing · Ribbon width variation','测试 · 带状地块宽度变化','En prueba · Variación del ancho de franjas','Em teste · Variação da largura das faixas'],
   campGrowth:['Grands camps','Large camps','大型营地','Campamentos grandes','Acampamentos grandes'],
   smallPlaceCapacity:['À tester · Tolérance de capacité des petits lieux','Testing · Small-place capacity tolerance','测试 · 小聚落容量容差','En prueba · Tolerancia de capacidad de lugares pequeños','Em teste · Tolerância de capacidade de lugares pequenos'],
   countrysideEnclosures:['Clôtures à la campagne','Countryside enclosures','乡村围栏','Cercados en el campo','Cercas no campo'],
@@ -107,6 +116,7 @@ const seedText: Words[] = [
 ];
 const summaries: Record<string, Words> = {
   'Graine':['Graine','Seed','种子','Semilla','Semente'],
+  'Revue v7 (02/11)':['Revue v7 (02/11)','Review v7 (02/11)','v7 复核（11/02）','Revisión v7 (02/11)','Revisão v7 (02/11)'],
   'Routes et maisons (31/10)':['Routes et maisons (31/10)','Roads and houses (31/10)','道路与房屋（10/31）','Calles y casas (31/10)','Ruas e casas (31/10)'],
   'Dimensions et budget':['Dimensions et budget','Dimensions and budget','尺寸与预算','Dimensiones y presupuesto','Dimensões e orçamento'],
   'Dispersion et coupures':['Dispersion et coupures','Dispersion and gaps','分散与间隙','Dispersión e interrupciones','Dispersão e lacunas'],

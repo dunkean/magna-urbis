@@ -4,6 +4,8 @@ import type { PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
 import type { CityDrawOptions, CityScene } from '../../src/render/cityCanvas';
 import type { BuildingRenderMetrics } from '../../src/render/urbanBuildingLod';
 import { createNativeCityMap } from '../../src/v2/nativeCityMap';
+import { resolveAppearance, type AppearanceInput } from '../../src/render/appearanceRecipe';
+const resolved = (a: AppearanceInput) => resolveAppearance(a, { mapStyle: a.style }, { nativeCities: true }, 'view2d');
 
 const draw = vi.hoisted(() => vi.fn());
 const raster = vi.hoisted(() => vi.fn(() => undefined));
@@ -62,7 +64,7 @@ afterEach(() => { vi.unstubAllGlobals(); draw.mockReset(); raster.mockClear(); }
 describe('V2 retained native city map', () => {
   it('leaves legacy worlds to their original renderer without constructing a raster', () => {
     const map = createNativeCityMap({ options: {} } as World, vi.fn());
-    const stats = map.draw(new Context().asContext(), { cx: 0, cy: 0, scale: 1 }, 100, 100, 1, { style: 'atlas' });
+    const stats = map.draw(new Context().asContext(), { cx: 0, cy: 0, scale: 1 }, 100, 100, 1, resolved({ style: 'atlas' }));
     expect(stats.native).toBe(false); expect(raster).not.toHaveBeenCalled(); expect(draw).not.toHaveBeenCalled();
     map.dispose();
   });
@@ -72,7 +74,7 @@ describe('V2 retained native city map', () => {
     draw.mockImplementation(drawNative);
     const source = world(), before = JSON.stringify(source), map = createNativeCityMap(source, vi.fn()), ctx = new Context();
     const stats = map.draw(ctx.asContext(), { cx: 70, cy: 20, scale: 10 }, 1600, 400, 2,
-      { style: 'atlas', terrainStyle: 'render-v2', textured: false, city: { buildingStyle: 'cartographic', painted: true } });
+      resolved({ style: 'atlas', terrainStyle: 'render-v2', textured: false, city: { buildingStyle: 'cartographic', painted: true } }));
     expect(stats.visibleBuildings).toBe(2); expect(stats.houses).toHaveLength(2);
     expect(draw.mock.calls.map(([, plan]) => plan.parcels[0].shape.outer[0].x)).toEqual([10, 110]);
     expect(ctx.fills.some(fill => fill.rings.length === 2 && fill.rings[0].some(point => point.x === 10))).toBe(true);
@@ -96,7 +98,7 @@ describe('V2 retained native city map', () => {
     const target = new Context(); target.globalAlpha = .5; target.setTransform(2, 0, 0, 2, 0, 0);
     const map = createNativeCityMap(world(), vi.fn());
     map.draw(target.asContext(), { cx: 70, cy: 20, scale: 10 }, 1600, 400, 2,
-      { style: 'atlas', textured: false, city: { opacity: .25, plan: false, buildingStyle: 'silhouette' } });
+      resolved({ style: 'atlas', textured: false, city: { opacity: .25, plan: false, buildingStyle: 'silhouette' } }));
     expect(target.images).toHaveLength(1); expect(target.images[0].alpha).toBe(.125);
     expect(target.globalAlpha).toBe(.5); expect(target.transform).toEqual([2, 0, 0, 2, 0, 0]);
     expect(surface.transforms).toContainEqual([20, 0, 0, 20, 200, 0]);
@@ -109,7 +111,7 @@ describe('V2 retained native city map', () => {
     draw.mockImplementation(drawNative);
     const invalidated = vi.fn(), map = createNativeCityMap(world(), invalidated);
     map.draw(new Context().asContext(), { cx: 70, cy: 20, scale: 1 }, 300, 200, 1,
-      { style: 'parchment', textured: false, labels: false, city: { view: 'roles', palette: 'parchment', diagnostic: 'access', groundBlend: 'blended', layers: { axes: true } } });
+      resolved({ style: 'parchment', textured: false, labels: false, city: { view: 'roles', palette: 'parchment', diagnostic: 'access', groundBlend: 'blended', layers: { axes: true } } }));
     const options = draw.mock.calls[0][2];
     expect(options.refusedParcels.has('same-local-parcel')).toBe(true);
     expect(options.labels).toBe(false); expect(options.groundBlend).toBe(true); expect(options.layers.axes).toBe(true);
@@ -120,7 +122,7 @@ describe('V2 retained native city map', () => {
   it('exports urban streets independently from buildings and cadastral ground', () => {
     vi.stubGlobal('OffscreenCanvas', undefined); draw.mockImplementation(drawNative);
     const map = createNativeCityMap(world(), vi.fn()), ctx = new Context(), camera = { cx: 70, cy: 20, scale: 10 };
-    const appearance = { style: 'atlas', textured: false } as const;
+    const appearance = resolved({ style: 'atlas', textured: false });
     const streets = map.draw(ctx.asContext(), camera, 1600, 400, 2, appearance, { city: false, streets: true, labels: false });
     const streetOptions = draw.mock.calls[0][2];
     expect(streetOptions.buildingsVisible).toBe(false); expect(streets.visibleBuildings).toBe(0);

@@ -1,5 +1,6 @@
 import { generationStageActive, isCompactProcedural, posteriorSettings, windSettings, type GenerationStage } from './terrainGenerationRecipe';
 import type { TerrainSettings } from './terrain';
+import { stepSeed } from './generationSeed';
 
 export const CORE_STAGES = ['initialize', 'regional', 'regionalFinish', 'reconstruct', 'amplitude', 'ridged', 'surface', 'normalize'] as const;
 export const COAST_POSITIONS = ['initialize', 'regionalFinish', 'amplitude', 'ridged', 'surface', 'normalize'] as const;
@@ -35,6 +36,10 @@ export function proceduralSignatures(s: TerrainSettings): Map<GenerationStage, s
     sampling: [s.resolution, s.refine, s.detailNoise], hydrology: [s.hydrology, climate],
   };
   const keys = new Map<GenerationStage, string>(); const prefix: unknown[] = [];
+  if (s.generalSeed) for (const [stage, key] of [['coastCut','relief-coast-cut'],['reconstruct','relief-reconstruct'],['ridged','relief-detail'],['phasor','relief-phasor'],['hydrology','water-hydrology']] as const) {
+    const draw = stepSeed(s.generalSeed, key);
+    if (draw !== s.seed) own[stage] = [own[stage], draw];
+  }
   for (const stage of [...coreOperations(s), 'phasor', 'posterior', 'wind', 'coasts', 'sampling', 'hydrology'] as GenerationStage[]) {
     const active = generationStageActive(s, stage);
     prefix.push([stage, active, active ? own[stage] : null]);

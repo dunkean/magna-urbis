@@ -1,5 +1,10 @@
 {
   "schema": 1,
+  "distribution": {
+    "repo": "dunkean/neural-earth-distilled",
+    "revision": "b1782a3f80f5001de5ac701c1ff37128f128b9d7",
+    "url": "https://huggingface.co/dunkean/neural-earth-distilled"
+  },
   "sourceRepository": "https://github.com/dunkean/neural-earth",
   "sourceRevision": "919550498b3fd7c9d4c53e575f6a2d5475f9be2d",
   "byteLimit": 100000000,

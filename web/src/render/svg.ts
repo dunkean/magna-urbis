@@ -1,6 +1,6 @@
 import { cavernDisplayWorld } from './cavernDisplay';
 import { cavernPathD, cavernWallsSvg, cavernFungalRoomsSvg } from './caverns';
-import type { World } from '../gen/types';
+import type { World, LandKind } from '../gen/types';
 import { renderView } from '../gen/settlements/merge';
 import { Vec2, offsetRibbon } from '../gen/core/geom';
 import { contourSet, ContourSet } from './contours';
@@ -40,6 +40,8 @@ export interface RenderOptions {
   /** Actual export width in pixels; sets decorative hairline weight. Defaults to the 1600 px design size, matching the default bounded hairline scale. */
   width?: number;
   style?: MapStyle; contours?: boolean; raster?: boolean; landuse?: boolean; debug?: boolean;
+  /** Land-use kinds drawn (mask: the others belong to another layer, e.g. the ground material draws the forest). */
+  landuseKinds?: (kind: LandKind) => boolean;
   /** Name labels (default: world.options.labels !== false), legend (default: world.options.legend) and cartouche (default on). */
   labels?: boolean; legend?: boolean; cartouche?: boolean;
   /** Text width measurer for label placement (browser: canvas based; default: estimate). */
@@ -65,6 +67,7 @@ function decor(world: World, pal: Palette, u: number): string {
 }
 
 export function renderSvg(world0: World, opts: RenderOptions = {}): string {
+  if (opts.landuseKinds && world0.landuse) world0 = { ...world0, landuse: { ...world0.landuse, areas: world0.landuse.areas.filter(area => opts.landuseKinds!(area.kind)) } };
   world0 = cavernDisplayWorld(displayWorld(world0, undefined, opts.buildings));
   const world = renderView(world0);
   const style = opts.style ?? world.options.style;

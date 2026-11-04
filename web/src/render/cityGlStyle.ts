@@ -6,12 +6,14 @@
 import type { CityBuildings, CityLayers, CityLod, CityPalette, CityScene, CityView, CityDistrict } from './cityCanvas';
 import { BUILDING_FAMILIES, DISTRICT_ROLES, districtRoleKey, roleFamily } from './cityCanvas';
 import { isBoardwalk } from './cityGround';
-import { STRUCTURE_ROLES, blendLine, blendTone, blendsGround, groundWash, softStreet, type WashKind } from './groundBlend';
+import { STRUCTURE_ROLES, blendLine, blendTone, blendsGround, softStreet, type WashKind } from './groundBlend';
+import { streetToneAt, washAt } from './groundTone';
 import { urbanFunctionColor } from './urbanBuildingStyle';
 import type { CityGlFillMesh } from './cityGlBuild';
 import type { RenderColors } from './customColors';
 import { MATERIALS, coverLayer, placeLayer, streetLayer } from './buildingMaterials';
 import { planBuildingColors, planRoofColor, planShade } from './cityBuildingPalette';
+import { funeraryLandFill } from './cityRoles';
 
 export interface CityGlStyleState {
   view: CityView; lod: CityLod; palette: CityPalette; layers: CityLayers;
@@ -121,8 +123,8 @@ export function planColors(scene: CityScene, mesh: Pick<CityGlFillMesh, 'layers'
   });
   if (lod === 'far') {
     if (layers.blocks && blend) {
-      const f0 = mesh.layers.footprint.features[0], w = groundWash('footprint', tone);
-      for (let i = 0; i < scene.footprint.length; i++) put(fill, f0 + i, w.color, w.alpha);
+      const f0 = mesh.layers.footprint.features[0];
+      for (let i = 0; i < scene.footprint.length; i++) { const w = washAt('footprint', tone, scene.footprint[i]); put(fill, f0 + i, w.color, w.alpha); }
       draws.footprint = true;
     } else if (layers.blocks) {
       const f0 = mesh.layers.footprint.features[0];
@@ -148,7 +150,7 @@ export function planColors(scene: CityScene, mesh: Pick<CityGlFillMesh, 'layers'
     else if (parchment) color = PARCH.block;
     else color = palette === 'atlas' ? ATLAS[b.quarter % ATLAS.length] : growth(b.zone);
     if (blend && color) {
-      const w = groundWash(reserve ? 'reserve' : b.kind === 'common' ? 'common' : b.kind === 'place' ? 'place' : 'block', tone);
+      const w = washAt(reserve ? 'reserve' : b.kind === 'common' ? 'common' : b.kind === 'place' ? 'place' : 'block', tone, b.shape);
       put(fill, b0 + i, w.color, w.alpha * (b.peripheral && view !== 'buildings' ? 0.7 : 1));
       if (lod === 'close') { put(line, b0 + i, softLine.color, softLine.alpha); draws.blockLines = true; }
       draws.blocks = true;
@@ -167,12 +169,13 @@ export function planColors(scene: CityScene, mesh: Pick<CityGlFillMesh, 'layers'
   if (atLeast(lod, parcelLevel) && view !== 'tissue') scene.parcels.forEach((p, i) => {
     const use = p.use, built = BUILT.has(use), open = OPEN.has(use), f = p0 + i;
     if (!(built && layers.parcels || use === 'garden' && layers.gardens || open && layers.places || use === 'reserve' && layers.domains)) return;
-    const openFill = parchment ? (use === 'garden' ? PARCH.garden : use === 'reserve' ? PARCH.reserve : use === 'common' ? PARCH.common : use === 'market' ? PARCH.market : use === 'place' ? PARCH.place : undefined)
-      : use === 'garden' ? '#a8bc89' : use === 'reserve' ? '#cbc2a8' : use === 'common' ? '#adc5bf' : use === 'market' ? '#ead39a' : use === 'place' ? '#e6d1a5' : undefined;
+    const burialFill = funeraryLandFill(p.allocation?.role);
+    const openFill = burialFill ?? (parchment ? (use === 'garden' ? PARCH.garden : use === 'reserve' ? PARCH.reserve : use === 'common' ? PARCH.common : use === 'market' ? PARCH.market : use === 'place' ? PARCH.place : undefined)
+      : use === 'garden' ? '#a8bc89' : use === 'reserve' ? '#cbc2a8' : use === 'common' ? '#adc5bf' : use === 'market' ? '#ead39a' : use === 'place' ? '#e6d1a5' : undefined);
     if (blend && (view === 'parcels' || view === 'buildings')) {
       const kind: WashKind = use === 'garden' ? 'garden' : use === 'reserve' ? 'reserve' : use === 'common' ? 'common' : use === 'market' ? 'market' : use === 'place' ? 'place' : 'parcel';
-      const w = groundWash(kind, tone), ground = kind === 'parcel' || kind === 'reserve';
-      if (!(view === 'buildings' && ground)) put(fill, f, w.color, w.alpha * (p.peripheral ? 0.7 : 1));
+      const w = washAt(kind, tone, p.shape), ground = kind === 'parcel' || kind === 'reserve';
+      if (!(view === 'buildings' && ground)) put(fill, f, burialFill ?? w.color, burialFill ? 0.85 : w.alpha * (p.peripheral ? 0.7 : 1));
       if (lod === 'close') { put(line, f, softLine.color, softLine.alpha * (ground ? 0.8 : 1)); draws.parcelLines = true; }
     } else if (view === 'parcels') {
       const color = palette === 'terrain' ? undefined : palette === 'ink' ? '#eee0c9' : parchment ? openFill ?? PARCH.lot : openFill ?? (palette === 'atlas' ? ATLAS[p.index % ATLAS.length] : growth(p.zone));
@@ -266,6 +269,8 @@ export function streetColors(scene: CityScene, palette: CityPalette, blended = f
   const n = Math.max(1, scene.streets.length), outer = new Uint8Array(n * 4), inner = new Uint8Array(n * 4), tone = blendTone(palette);
   scene.streets.forEach((s, i) => {
     const fillOf = (base: string): string => (s.role === 'track' ? custom?.track : custom?.road) ?? base, edgeOf = (base: string): string => custom?.roadEdge ?? base;
+    const tinted = streetToneAt(s.street.path, s.role, s.rank);
+    if (tinted) { const p = tinted; put(outer, i, edgeOf(p.edge), p.edgeAlpha); put(inner, i, fillOf(p.fill), p.alpha); return; }
     if (blended && !STRUCTURE_ROLES.has(s.role)) { const p = softStreet(s.role, s.rank, tone); put(outer, i, edgeOf(p.edge), p.edgeAlpha); put(inner, i, fillOf(p.fill), p.alpha); return; }
     const p = streetPaint(s.role, s.rank, palette); put(outer, i, edgeOf(p.casing)); put(inner, i, fillOf(p.fill));
   });

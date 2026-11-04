@@ -166,7 +166,14 @@ export function buildDensity(world: World, cell = 60): DensityMap | null {
   return { w, h: w, cell, cov, max };
 }
 
+/** Which natural layers a map overlay draws: the rest belongs to another pass (GPU terrain, vector water...). Absent = drawn. */
+export interface SceneMask {
+  water?: boolean; contours?: boolean;
+  /** false: none; a predicate: only the land-use kinds it accepts. */
+  landuse?: boolean | ((kind: LandKind) => boolean);
+}
 export interface SceneBuildOptions {
+  mask?: SceneMask;
   /** Already merged input, used for stable independently prepared urban parts. */
   rendered?: World;
   scope?: 'static' | 'urban';
@@ -214,11 +221,12 @@ export function buildScene(world0: World, tileSize = TILE_SIZE, build: SceneBuil
     addPoly('cavern-solid', t.caverns.solid.map(p => p.outer), t.caverns.solid.map(p => p.holes));
     addPoly('cavern-fungal-rooms', (t.caverns.fungalRooms ?? []).map(p => p.outer), (t.caverns.fungalRooms ?? []).map(p => p.holes));
   }
+  const u16 = S / 1600;
+  if (build.mask?.water !== false) {
   const swi = seaWithIslands(t.coastline, t.islands);
   addPoly('sea', swi.sea, swi.holes.map((h) => (h.length ? h : undefined)));
   addPoly('lakes', t.lakes);
   // river ribbons (same taper rule as svg.ts)
-  const u16 = S / 1600;
   const minW = 1.1 * u16;
   const ribbons: Polygon[] = [];
   const centre: Polyline[] = [];
@@ -230,9 +238,10 @@ export function buildScene(world0: World, tileSize = TILE_SIZE, build: SceneBuil
   }
   addPoly('rivers', ribbons);
   addLines('river-centre', 'river', 'centre', 0, centre);
+  }
 
   // contours (closed loops get their first point repeated: the canvas draws them as plain polylines)
-  if (world.options.contours) {
+  if (world.options.contours && build.mask?.contours !== false) {
     const cs = contourSet(world, u16);
     const lp = (l: { pts: Polyline; closed: boolean }[]): Polyline[] => l.map((c) => (c.closed ? [...c.pts, c.pts[0]] : c.pts));
     addLines('contour-thin', 'contour', 'thin', 0, lp(cs.thin));
@@ -240,7 +249,8 @@ export function buildScene(world0: World, tileSize = TILE_SIZE, build: SceneBuil
   }
 
   // land use
-  const lu = world.landuse;
+  const kinds = build.mask?.landuse;
+  const lu = kinds === false ? undefined : typeof kinds === 'function' && world.landuse ? { ...world.landuse, areas: world.landuse.areas.filter(a => kinds(a.kind)) } : world.landuse;
   if (lu) {
     const tones: Polygon[][] = [[], [], [], []];
     const toneHoles: (Polygon[] | undefined)[][] = [[], [], [], []];

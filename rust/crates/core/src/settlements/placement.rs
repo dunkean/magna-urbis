@@ -134,7 +134,10 @@ fn score(f: &Fields, i: usize, s: &SettlementSpec, cfg: &Config, noise: &Noise) 
     let p = f.pos(i);
     let ext = extent_radius(pop);
     let prefs = &s.site_prefs;
-    let mountain = prefs.mountain_face;
+    // A hill culture (tibetan monastery) carries its own mountain-face preference in the catalogue.
+    let mountain = prefs
+        .mountain_face
+        .max(crate::urban::culture_site_pref(&s.culture, "mountainFace", 0.0));
     let wood = prefs.woodland;
     let rural = rural_flexibility(pop);
     let cap_s = 0.11 + 0.18 * mountain + 0.06 * wood + 0.18 * rural;
@@ -371,6 +374,7 @@ pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
         warnings: vec![],
         requested: requests.len(),
         usable_km2: usable,
+        activities: vec![],
     };
     // The legacy class budget: secondary places never outnumber the main population in total.
     let budget = cfg.mode == "auto" && cfg.distribution == "classes";

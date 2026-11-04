@@ -9,6 +9,8 @@ import { defaultSettings } from './settings';
 import { projectJsonChunks } from './projectJson';
 import { validateAppearance } from './appearance';
 import { NAME_FAMILIES } from '../gen/names/types';
+import { URBAN_SEED_STAGES } from './urbanSeeds';
+import { seedRoot } from '../../../rust/bridge/generationSeed';
 
 function isRecord(value: unknown): value is Record<string, unknown> { return !!value && typeof value === 'object' && !Array.isArray(value); }
 function checkEnum(value: unknown, values: readonly unknown[], name: string): void {
@@ -19,7 +21,7 @@ function finite(value: unknown, name: string, lo: number, hi: number): void {
 }
 function validateOptions(o: unknown, partial = false): asserts o is Options {
   if (!isRecord(o)) throw new Error('Paramètres de génération invalides.');
-  if (!partial || o.seed !== undefined) if (typeof o.seed !== 'string' || o.seed.length > 1000) throw new Error('Graine invalide.');
+  if (!partial || o.seed !== undefined) if (typeof o.seed !== 'string' || o.seed.length > 65536 || seedRoot(o.seed).length > 1000) throw new Error('Graine invalide.');
   for (const [key, values] of Object.entries({ size: ['hamlet', 'village', 'town', 'city', 'metropolis'], relief: ['flat', 'hills', 'valley', 'mountains'],
     coast: ['none', 'N', 'E', 'S', 'W', 'random'], river: ['none', 'stream', 'river', 'major'], style: ['parchment', 'atlas'],
     walls: ['auto', 'yes', 'no', 'none', 'single', 'double'], castle: ['auto', 'yes', 'no'],
@@ -92,11 +94,21 @@ export function validateSettings(value: unknown): asserts value is V2Settings {
     if (!isRecord(value.urban)) throw new Error('Moteur urbain invalide.');
     if (value.urban.backend !== undefined) checkEnum(value.urban.backend, ['typescript', 'rust', 'native'], 'moteur urbain');
     const stages = ['layout', 'parcels', 'programme', 'buildings'];
+    const validateUrbanSeed = (seed: unknown): void => { if (seed !== undefined && (typeof seed !== 'string' || seed.length > 1000)) throw new Error('Graine urbaine invalide.'); };
+    const validateStageSeeds = (seeds: unknown): void => {
+      if (seeds === undefined) return;
+      if (!isRecord(seeds) || Object.keys(seeds).some(key => !(URBAN_SEED_STAGES as readonly string[]).includes(key))) throw new Error('Graines des étapes urbaines invalides.');
+      Object.values(seeds).forEach(validateUrbanSeed);
+    };
+    validateUrbanSeed(value.urban.seed);
+    validateStageSeeds(value.urban.seeds);
     checkEnum(value.urban.through, stages, 'étape urbaine');
     if (value.urban.local !== undefined) {
       if (!isRecord(value.urban.local)) throw new Error('Contrôles urbains locaux invalides.');
       for (const local of Object.values(value.urban.local)) {
         if (!isRecord(local)) throw new Error('Contrôles urbains locaux invalides.');
+        validateUrbanSeed(local.seed);
+        validateStageSeeds(local.seeds);
         checkEnum(local.through, stages, 'étape urbaine locale');
       }
     }

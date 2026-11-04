@@ -17,7 +17,11 @@ import type { ForestSettings } from '../../../rust/bridge/terrainForest';
 export type { V2TerrainSettings } from './terrainSettings';
 
 export type V2TownStage = 'layout' | 'parcels' | 'programme' | 'buildings';
+export type UrbanSeedStage = 'composition' | 'streets' | 'parcels' | 'programme' | 'buildings' | 'houses';
 export interface V2UrbanControls {
+  /** Legacy imports only. New variation choices are encoded in options.seed. */
+  seed?: string;
+  seeds?: Partial<Record<UrbanSeedStage, string>>;
   through?: V2TownStage;
   layout?: Partial<LayoutConfig>;
   parcels?: Partial<ParcelConfig>;
@@ -65,14 +69,20 @@ export interface V2Appearance {
   textured?: boolean;
   painted?: boolean;
   vegetation?: 'classic' | 'canopy';
+  /** Forest class of the land-use plan: `marked` (dark green, default) or `ground` (background tone). */
+  landuseForestTone?: 'ground' | 'marked';
   lighting?: TerrainLighting;
   terrainLayers?: TerrainLayers;
   diagnostic?: DiagnosticId;
+  /** Resource shown by the `res-potential` diagnostic (rust/bridge/resources.ts POTENTIAL_IDS). */
+  resourcePotential?: string;
   lakes?: boolean;
   oxbows?: boolean;
   season?: number;
   fantasy?: FantasyOptions;
   city?: V2CityAppearance;
+  /** To test (31/10): one default table for 2D, 3D and the classic canvas (off = previous per-view defaults). */
+  unifiedDefaults?: boolean;
 }
 
 /** V2 owns orchestration, while geometry is still produced by the existing engines. */
@@ -111,9 +121,12 @@ export interface V2Progress {
 }
 export type ProgressCallback = (progress: V2Progress) => void;
 export type V2Action = 'terrain' | 'region' | 'roads' | 'towns' | 'town' | 'settlements' | 'all';
-export interface V2WorkerRequest { id: number; action: V2Action; settings: V2Settings; world?: World; retainedWorldId?:number; key?: string; keys?: string[]; townStage?: V2TownStage; terrainStage?: string; assetBase?: string }
+export interface V2WorkerRequest { id: number; action: V2Action; settings: V2Settings; world?: World; retainedWorldId?:number; key?: string; keys?: string[]; townStage?: V2TownStage; terrainStage?: string; cityOutput?: string; assetBase?: string }
+/** Lazy fetch of the resource payload of a world's terrain; never a generation (id shares the client's counter). */
+export interface V2ResourceRequest { type: 'resources'; id: number; settings: V2Settings; world?: World; retainedWorldId?: number }
 export type V2WorkerResponse =
   | { id: number; type: 'progress'; progress: V2Progress }
+  | { id: number; type: 'resources'; payload?: import('../../../rust/bridge/resources').ResourcePayload }
   | { id: number; type: 'result'; world: World; wasm?: WasmThreadsInfo }
   | { id: number; type: 'error'; error: string; wasm?: WasmThreadsInfo };
 

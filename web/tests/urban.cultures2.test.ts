@@ -163,7 +163,7 @@ const CONSTRAINED: Record<string, ConditionalFeatures & { hash: string }> = {
   'orcish/hamlet/2': { arena: false, hash: '3e4bfc67c9eeec6fa90db48e89ee3f614f605c385adfb61380b52e766275fc7a' },
   'halfling/hamlet/1': { trees: 2, hash: '4d3b8c4f400453f53a7416e437a87b71edfd42a22122cd6217283e8b31898367' },
   'stilt-town/hamlet/2': { stiltHouses: 1, hash: 'd04470956f9f379bf34471e3013c633328ad40d7de2a93c3d2229ad098e481db' },
-  'stilt-town/town/1': { hash: '2b377d2bd269ccb70c636c23aff8616a709f382201f5f471022b837fc9e0b2dc' },
+  'stilt-town/town/1': { hash: 'cbc99aba538f41b5b97e851c0433b84554463c873139f08528432ee34a8679fb' }, // render.stiltShore data only (geometry unchanged)
 };
 
 it('keeps shore reeds in the partition while enforcing habitable shape limits on plots and every building', () => {

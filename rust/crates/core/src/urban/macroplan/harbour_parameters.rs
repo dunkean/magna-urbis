@@ -51,7 +51,7 @@ fn score(path: &[Point], main: &[Shape], surface: Surface<'_>, site: &Site, cfg:
 // Reuse a real approach before searching a new road. A large search lattice
 // can miss a narrow pass that the existing road already traverses safely.
 fn approach(p: Point, streets: &[Street], main: &[Shape], surface: Surface<'_>, grade: f64) -> Option<(Vec<Point>,usize)> {
-    for (si,s) in streets.iter().enumerate().filter(|(_,s)|s.path.len()>2 && !matches!(s.role.as_str(),"quay"|"pier"|"mole"|"landing")) {
+    for (si,s) in streets.iter().enumerate().filter(|(_,s)|s.path.len()>2 && !matches!(s.role.as_str(),"quay"|"pier"|"boardwalk"|"mole"|"landing")) {
         if !s.path.iter().any(|&p|gap(p,main)<5.0) {continue;}
         let (segment,(_,_,q))=s.path.windows(2).enumerate().map(|(i,w)|(i,g::distance(p,w[0],w[1])))
             .min_by(|a,b|a.1.0.total_cmp(&b.1.0))?;
@@ -185,7 +185,7 @@ pub(in super::super::super) fn extend(regions: &[Shape], streets: &mut Vec<Stree
     for (value,path,region) in candidates.into_iter() {
         if value>=current {break;}
         let p=*sub_path(&path,0.0,length(&path)*0.5).last().unwrap();
-        let town:Vec<_>=streets.iter().filter(|s|!matches!(s.role.as_str(),"quay"|"pier"|"mole"|"landing"))
+        let town:Vec<_>=streets.iter().filter(|s|!matches!(s.role.as_str(),"quay"|"pier"|"boardwalk"|"mole"|"landing"))
             .flat_map(|s|main.iter().flat_map(|shape|super::super::clip(s,shape)).collect::<Vec<_>>()).collect();
         let Some((_,q,_))=super::super::nearest(p,&town) else {continue;};
         let connected=approach(p,streets,&main,surface,cfg.max_street_grade);

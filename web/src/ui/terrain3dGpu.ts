@@ -29,7 +29,7 @@ import { terrainLights } from '../render/terrainLighting';
 import { MATERIALS, type MaterialImages } from '../render/buildingMaterials';
 import { Terrain3d, paddedMaterial, fullPatchIndices, patchClipKey, clippedPatchIndices,
   type FrameGeometry, type Patch, type PatchDraw, type Terrain3dOptions, type Terrain3dTile, type Terrain3dTileContent } from './terrain3d';
-import { UrbanBuildingPass, type Batch, type BuildingFrame, type Sector } from './urbanBuilding3d';
+import { SOFT_LAYER_FROM, UrbanBuildingPass, type Batch, type BuildingFrame, type Sector } from './urbanBuilding3d';
 import type { ForestTextures, HeightLayer } from './terrainGl';
 import * as WGSL from './terrain3dWgsl.generated';
 
@@ -122,9 +122,10 @@ const PATCH_BUFFERS: GPUVertexBufferLayout[] = [
   { arrayStride: 12, attributes: [{ shaderLocation: 5, offset: 0, format: 'float32x3' }] },
 ];
 const BUILDING_BUFFERS: Record<'color' | 'tex', GPUVertexBufferLayout[]> = {
-  color: [{ arrayStride: 36, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }, { shaderLocation: 1, offset: 12, format: 'float32x3' }, { shaderLocation: 2, offset: 24, format: 'float32x3' }] }],
-  tex: [{ arrayStride: 36, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }, { shaderLocation: 1, offset: 12, format: 'float32x3' },
-    { shaderLocation: 2, offset: 24, format: 'float32x2' }, { shaderLocation: 3, offset: 32, format: 'float32' }] }],
+  color: [{ arrayStride: 40, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }, { shaderLocation: 1, offset: 12, format: 'float32x3' }, { shaderLocation: 2, offset: 24, format: 'float32x3' },
+    { shaderLocation: 4, offset: 36, format: 'float32' }] }],
+  tex: [{ arrayStride: 40, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }, { shaderLocation: 1, offset: 12, format: 'float32x3' },
+    { shaderLocation: 2, offset: 24, format: 'float32x2' }, { shaderLocation: 3, offset: 32, format: 'float32' }, { shaderLocation: 4, offset: 36, format: 'float32' }] }],
 };
 /** Mipmaps: each level is drawn from the previous one with bilinear taps at the 2×2 block centres. */
 const MIP_WGSL = `
@@ -621,7 +622,7 @@ class UrbanBuildingPassGpu extends UrbanBuildingPass {
     const { pass, params } = target, p = this.params, device = this.gpu.device;
     const albedo = (this.atlases?.albedo ?? this.placeholder).createView({ dimension: '2d-array' }), normal = (this.atlases?.normal ?? this.placeholder).createView({ dimension: '2d-array' });
     pass.setPipeline(pipeline);
-    p.setArray('matrix', frame.matrix); p.set('exaggeration', frame.exaggeration); p.set('useTex', this.atlases ? 1 : 0);
+    p.setArray('matrix', frame.matrix); p.set('exaggeration', frame.exaggeration); p.set('useTex', this.atlases ? 2 : 0); p.set('softFrom', SOFT_LAYER_FROM);
     let group: GPUBindGroup | undefined, groupBuffer: GPUBuffer | undefined;
     for (const sector of shown) {
       p.set('offset', sector.origin[0] - frame.cameraX, -frame.targetHeight, sector.origin[1] - frame.cameraY);

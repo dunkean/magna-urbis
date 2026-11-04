@@ -105,7 +105,7 @@ fn unbuilt(seed: &str, layout: &Layout, config: &LayoutConfig, original: &Layout
     let lots = part.parcels.iter().filter(|p| roles.get(p.id.as_str()).is_some_and(|role|street_use(p,role,layout))
         || urban(p,layout) && p.access.as_ref().is_some_and(|a|a.kind == "attached")
             && p.parent_ids.iter().any(|id|roles.get(id.as_str()).is_some_and(|role|!role.starts_with("open.")))).flat_map(|p| {
-        if urban(p,layout) { return vec![p.shape.clone()]; }
+        if urban(p,layout) && !config.street_frontage { return vec![p.shape.clone()]; }
         let fronts: Vec<_> = p.contacts.iter().map(|c| [c.a,c.b]).chain(p.front.filter(|_| p.contacts.is_empty())).collect();
         if fronts.is_empty() { vec![p.envelope.as_ref().unwrap_or(&p.shape).clone()] }
         else { fronts.into_iter().map(|f| Shape { outer:f.to_vec(), holes:vec![] }).collect() }
@@ -158,16 +158,42 @@ struct Seg {
     b: usize,
     prunable: bool,
     serves: bool,
+    /// Lined by an occupied lot (any side): enough to keep a loop link a street.
+    lined: bool,
     alive: bool,
 }
 
 /// Remove the street segments that serve nothing. `open` flags the blocks that are open land.
-fn prune(layout: &mut Layout, open: &[bool], lots: &[Shape]) {
+fn prune(layout: &mut Layout, open: &[bool], lots: &[Shape]) { prune_with(layout, open, lots, None, None) }
+
+/// `doors[street]`, `sides[street]`: the door fronts and all the fronts of the
+/// occupied lots on that street (indices of `layout.streets`). When given, a dead
+/// end must lead to a door on its own street (not to a crossing street's fronts
+/// within reach of a junction); a loop link stays while lots line it.
+type Fronts = Vec<Vec<[Point; 2]>>;
+/// `bridgeheads` (the imported roads): after the bridge stage, bank approaches
+/// must earn their place too, except the ramps of the roads' own crossings.
+fn prune_with(layout: &mut Layout, open: &[bool], lots: &[Shape], doors: Option<(&[Vec<[Point; 2]>], &[Vec<[Point; 2]>])>, bridgeheads: Option<&[Street]>) {
+    let road_ramp = |s: &Street| bridgeheads.is_some_and(|roads| s.path.windows(2).any(|w| { let m = Point { x: (w[0].x + w[1].x) * 0.5, y: (w[0].y + w[1].y) * 0.5 };
+        roads.iter().any(|r| r.path.windows(2).any(|v| g::distance(m, v[0], v[1]).0 < 1.0)) }));
+    let bridgeheads = bridgeheads.is_some();
+    // The bridgehead: within 80 m of a crossing's end. A longer approach is a
+    // road of its own (a rerouted regional link), not a ramp.
+    let crossing = |s: &Street| matches!(s.role.as_str(), "bridge" | "ford" | "causeway");
+    let deck_ends: Vec<Point> = if bridgeheads { layout.streets.iter().filter(|s| crossing(s) && s.path.len() >= 2)
+        .flat_map(|s| [s.path[0], *s.path.last().unwrap()]).collect() } else { vec![] };
+    let at_bridgehead = |s: &Street| s.path.iter().all(|&p| deck_ends.iter().any(|&q| (p.x - q.x).hypot(p.y - q.y) <= 80.0));
     // Access ways inside open blocks.
     let open_boxes: Vec<(usize, (f64, f64, f64, f64))> =
         (0..open.len()).filter(|&i| open[i]).map(|i| (i, g::bbox(&layout.blocks[i].shape))).collect();
+    let strict = layout.config.as_ref().is_some_and(|c| c.street_frontage);
+    // With doors, exits keep their rank whoever lives on them, and a link between
+    // served stretches stays a street (no mid-street downgrade to a field path).
+    let door_mode = doors.is_some();
+    let audited = |role: &str| frontage_road(role) && !(door_mode && matches!(role, "outbound" | "peripheral"))
+        || strict && matches!(role,"track"|"gate-street"|"processional");
     let blocks = &layout.blocks;
-    layout.streets.retain(|s| {
+    let keep: Vec<bool> = layout.streets.iter().map(|s| {
         if !interior(&s.role) || s.path.len() < 2 {
             return true;
         }
@@ -176,9 +202,14 @@ fn prune(layout: &mut Layout, open: &[bool], lots: &[Shape]) {
             y: (s.path[0].y + s.path[s.path.len() - 1].y) * 0.5,
         };
         !open_boxes.iter().any(|&(i, b)| m.x >= b.0 && m.x <= b.2 && m.y >= b.1 && m.y <= b.3 && g::contains(&blocks[i].shape, m))
-    });
+    }).collect();
+    // Fronts follow their street's new index.
+    let remap = |d: &[Vec<[Point; 2]>]| -> Fronts { (0..keep.len()).filter(|&i| keep[i]).map(|i| d.get(i).cloned().unwrap_or_default()).collect() };
+    let fronts: Option<(Fronts, Fronts)> = doors.map(|(d, s)| (remap(d), remap(s)));
+    let mut kept = keep.iter();
+    layout.streets.retain(|_| *kept.next().unwrap_or(&true));
     // Long segments are cut so that a street stops where its last frontage ends.
-    for s in layout.streets.iter_mut().filter(|s| frontage_road(&s.role) && s.path.len() >= 2) {
+    for s in layout.streets.iter_mut().filter(|s| audited(&s.role) && s.path.len() >= 2) {
         let (mut path, mut widths) = (vec![s.path[0]], vec![s.widths.first().copied().unwrap_or(4.0)]);
         for i in 1..s.path.len() {
             let (a, b) = (s.path[i - 1], s.path[i]);
@@ -209,12 +240,21 @@ fn prune(layout: &mut Layout, open: &[bool], lots: &[Shape]) {
     let mut ends: Vec<(usize, usize, usize)> = vec![];
     for (si, s) in layout.streets.iter().enumerate() {
         first_seg.push(segs.len());
-        let can = prunable(&s.role);
+        // Strict: field paths, gate streets and processional ways must earn their place too.
+        // Village exits (outbound, peripheral) never go.
+        let can = prunable(&s.role) || strict && matches!(s.role.as_str(), "track" | "gate-street" | "processional")
+            || bridgeheads && s.role == "approach" && at_bridgehead(s) && !road_ramp(s);
         for i in 1..s.path.len() {
             let (p, q) = (s.path[i - 1], s.path[i]);
             let w = s.widths.get(i - 1).or(s.widths.first()).copied().unwrap_or(4.0);
-            let serves = touches(&hash,p, q, w * 0.5 + 3.0);
-            segs.push(Seg { street: si, a: node(p), b: node(q), prunable: can, serves, alive: true });
+            let reach = w * 0.5 + 3.0;
+            let near = |list: &Fronts| list.get(si).is_some_and(|fronts| fronts.iter().any(|f| g::distance(f[0], p, q).0 <= reach
+                || g::distance(f[1], p, q).0 <= reach || g::distance(p, f[0], f[1]).0 <= reach || g::distance(q, f[0], f[1]).0 <= reach));
+            let (serves, lined) = match &fronts {
+                Some((d, sd)) => (near(d), near(sd)),
+                None => { let t = touches(&hash, p, q, reach); (t, t) }
+            };
+            segs.push(Seg { street: si, a: node(p), b: node(q), prunable: can, serves, lined, alive: true });
         }
         if s.path.len() >= 2 {
             ends.push((si, node(s.path[0]), node(s.path[s.path.len() - 1])));
@@ -279,9 +319,21 @@ fn prune(layout: &mut Layout, open: &[bool], lots: &[Shape]) {
             contacts[b].extend([v, to]);
         }
     }
+    // Strict: a field path (track) ending out in the open country (40 m from every
+    // block) is a way to the fields, not a stray end; a street stub there still goes.
+    let block_boxes: Vec<_> = if strict { layout.blocks.iter().map(|b| (g::bbox(&b.shape), &b.shape)).collect() } else { vec![] };
+    let country = |p: Point| strict && !block_boxes.iter().any(|&((x0, y0, x1, y1), shape)|
+        p.x >= x0 - 40. && p.x <= x1 + 40. && p.y >= y0 - 40. && p.y <= y1 + 40.
+        && (g::contains(shape, p) || shape.outer.iter().zip(shape.outer.iter().cycle().skip(1)).any(|(&a, &b)| g::distance(p, a, b).0 < 40.)));
+    let anchored: Vec<bool> = if strict { (0..n).map(|v| adj[v].len() == 1 && layout.streets[segs[adj[v][0]].street].role == "track" && country(pos[v])).collect() } else { vec![false; n] };
     // Dead ends that serve nothing, back to the last junction.
+    // Bridgeheads: a deck keeps its last link to the land, whatever it serves.
+    // Its abutments are the nodes within 1.5 m of a deck end (a ramp may stop
+    // a few decimetres off the deck's own vertex).
+    let deck: Vec<bool> = segs.iter().map(|sg| bridgeheads && crossing(&layout.streets[sg.street])).collect();
+    let abutment: Vec<bool> = pos.iter().map(|&p| deck_ends.iter().any(|&q| (p.x - q.x).hypot(p.y - q.y) <= 1.5)).collect();
     let dead_ends = |segs: &mut Vec<Seg>| {
-        let mut queue: Vec<usize> = (0..n).filter(|&v| degree(segs, v) <= 1).collect();
+        let mut queue: Vec<usize> = (0..n).filter(|&v| degree(segs, v) <= 1 && !anchored[v]).collect();
         while let Some(v) = queue.pop() {
             for &k in &adj[v] {
                 let sg = &segs[k];
@@ -289,6 +341,9 @@ fn prune(layout: &mut Layout, open: &[bool], lots: &[Shape]) {
                     continue;
                 }
                 let other = if sg.a == v { sg.b } else { sg.a };
+                if abutment[v] || abutment[other] && !adj[other].iter().any(|&j| j != k && segs[j].alive && !deck[j]) {
+                    continue;
+                }
                 segs[k].alive = false;
                 queue.push(other);
                 queue.extend(&contacts[k]);
@@ -297,7 +352,7 @@ fn prune(layout: &mut Layout, open: &[bool], lots: &[Shape]) {
     };
     dead_ends(&mut segs);
     // A segment on a loop that serves nothing: the network stays connected without it.
-    let mut loops: Vec<usize> = (0..segs.len()).filter(|&k| segs[k].alive && segs[k].prunable && !segs[k].serves).collect();
+    let mut loops: Vec<usize> = (0..segs.len()).filter(|&k| segs[k].alive && segs[k].prunable && !segs[k].lined).collect();
     let centre = layout.center;
     loops.sort_by(|&x, &y| {
         let far = |k: usize| {
@@ -315,7 +370,7 @@ fn prune(layout: &mut Layout, open: &[bool], lots: &[Shape]) {
             if v == to {
                 return (true, useful);
             }
-            useful |= adj[v].iter().any(|&k| segs[k].alive && (segs[k].serves || !segs[k].prunable));
+            useful |= anchored[v] || adj[v].iter().any(|&k| segs[k].alive && (segs[k].lined || !segs[k].prunable));
             let next = adj[v].iter().filter(|&&k| segs[k].alive).map(|&k| if segs[k].a == v { segs[k].b } else { segs[k].a })
                 .chain(link[v].iter().filter(|&&(_, a, b)| segs[a].alive && segs[b].alive).map(|&(to, _, _)| to));
             for w in next {
@@ -327,8 +382,11 @@ fn prune(layout: &mut Layout, open: &[bool], lots: &[Shape]) {
         }
         (false, useful)
     };
+    // A crossing's last link to the land is no loop link either.
+    let last_link = |segs: &[Seg], k: usize| [segs[k].a, segs[k].b].iter().any(|&v|
+        abutment[v] && !adj[v].iter().any(|&j| j != k && segs[j].alive && !deck[j]));
     for k in loops {
-        if !segs[k].alive {
+        if !segs[k].alive || last_link(&segs, k) {
             continue;
         }
         segs[k].alive = false;
@@ -348,7 +406,7 @@ fn prune(layout: &mut Layout, open: &[bool], lots: &[Shape]) {
     for (si, s) in old.into_iter().enumerate() {
         let range = first_seg[si]..first_seg[si + 1];
         let split = matches!(s.role.as_str(), "outbound" | "peripheral");
-        let any_front = range.clone().any(|k| segs[k].alive && segs[k].serves);
+        let any_front = range.clone().any(|k| segs[k].alive && segs[k].lined);
         let mut rural = vec![false; range.len()];
         let mut from = 0;
         while from < range.len() {
@@ -356,28 +414,28 @@ fn prune(layout: &mut Layout, open: &[bool], lots: &[Shape]) {
                 let sg = &segs[range.start+i];
                 let (a,b) = (pos[sg.a],pos[sg.b]);
                 let mid = Point { x:(a.x+b.x)*0.5, y:(a.y+b.y)*0.5 };
-                sg.alive && !sg.serves && (split || !walls.iter().any(|r|g::contains(r,mid)))
+                sg.alive && !sg.lined && (split || !walls.iter().any(|r|g::contains(r,mid)))
             };
             if !candidate(from) { from += 1; continue; }
             let mut to = from+1;
             while to < range.len() && candidate(to) { to += 1; }
             let length: f64 = (from..to).map(|i| { let sg=&segs[range.start+i]; (pos[sg.a].x-pos[sg.b].x).hypot(pos[sg.a].y-pos[sg.b].y) }).sum();
             // Keep short garden gaps continuous; a long empty fringe is a path.
-            if split || length >= 30. { rural[from..to].fill(true); }
+            if !door_mode && (split || length >= 30.) { rural[from..to].fill(true); }
             from = to;
         }
-        if !range.clone().any(|k| !segs[k].alive || frontage_road(&s.role) && (!any_front || rural[k-range.start])) {
+        if !range.clone().any(|k| !segs[k].alive || audited(&s.role) && (!any_front || rural[k-range.start])) {
             layout.streets.push(s);
             continue;
         }
         let mut start: Option<usize> = None;
         let mut track = false;
         let emit_run = |from: usize, to: usize, track: bool, out: &mut Vec<Street>| {
-            let empty = frontage_road(&s.role) && !(from..to).any(|i| segs[first_seg[si]+i].serves);
+            let empty = audited(&s.role) && !(from..to).any(|i| segs[first_seg[si]+i].lined);
             emit_kind(&s, from, to, track || empty, out);
         };
         for (i, k) in range.clone().enumerate() {
-            let next_track = frontage_road(&s.role) && (!any_front || rural[i]);
+            let next_track = audited(&s.role) && (!any_front || rural[i]);
             if let Some(from) = start && (!segs[k].alive || next_track != track) {
                 emit_run(from, i, track, &mut layout.streets);
                 start = None;
@@ -446,14 +504,67 @@ pub(super) fn run(seed: &str, layout: &mut Layout, config: &LayoutConfig, origin
 }
 
 /// Bridge/stilt finishing can change the last allocation after the main trim.
-pub(super) fn finish(seed: &str, layout: &mut Layout, surface: Surface<'_>) {
-    if !surface.water.iter().any(|&w|w != 0) { return; }
+pub(super) fn finish(seed: &str, layout: &mut Layout, surface: Surface<'_>) { finish_with(seed, layout, surface, None) }
+
+/// `villageBridgeBudget`, after the bridge stage: the door-based pass again, now
+/// with the decks settled, and the bank ramps within 80 m of a crossing must
+/// earn their place too (dead-end and doubled ramps go). A crossing keeps its
+/// last link to the land; the ramps of the imported roads (`roads`) stay.
+pub(super) fn bridgeheads(seed: &str, layout: &mut Layout, surface: Surface<'_>, roads: &[Street]) { finish_with(seed, layout, surface, Some(roads)) }
+
+fn finish_with(seed: &str, layout: &mut Layout, surface: Surface<'_>, roads: Option<&[Street]>) {
+    let bridgeheads = roads.is_some();
+    if !surface.water.iter().any(|&w|w != 0) && !layout.config.as_ref().is_some_and(|c| c.street_frontage) { return; }
     if layout.programme.as_ref().is_none_or(|p| super::roles::is_isolated(&p.context.intent)) { return; }
     loop {
         let Ok(parts) = super::generate_parcels(seed,std::slice::from_ref(layout),&ParcelConfig::default()) else { break };
         let Some(part) = parts.first() else { break };
         let layouts = std::slice::from_ref(&*layout);
         let Ok(index) = super::building_sites::BuildingSiteIndex::prepare(layouts,&parts,&[0]) else { break };
+        if bridgeheads || layout.config.as_ref().is_some_and(|c| c.street_frontage) {
+            // Every lot that would show a silhouette (or an explicit market or
+            // common) protects its own frontage: all of them, in parallel, so
+            // the result does not depend on the order streets are scanned in.
+            let by_id: HashMap<&str, &super::Parcel> = part.parcels.iter().map(|p| (p.id.as_str(), p)).collect();
+            let explicit: HashSet<&str> = part.programme.iter().flat_map(|p|&p.allocations).filter(|a|a.role != "open.garden"
+                    && matches!(a.function.as_str(),"market"|"common")
+                    && by_id.get(a.parcel_id.as_str()).is_some_and(|p| street_use(p,&a.role,layout)))
+                    .map(|a|a.parcel_id.as_str()).collect();
+            let Ok(shown) = super::building_sites::previewed_parcels(&index,seed,layouts,&parts,None) else { return };
+            let shown: HashSet<&str> = shown.iter().map(String::as_str).collect();
+            let active = |id: &str| explicit.contains(id) || shown.contains(id);
+            // A lot justifies the street its door is on, not every street along its
+            // sides; without a recorded door (a reserved compound), its main street.
+            let mut doors: Vec<Vec<[Point; 2]>> = vec![vec![]; layout.streets.len()];
+            let mut sides = doors.clone();
+            for p in part.parcels.iter().filter(|p| active(p.id.as_str())
+                    || urban(p,layout) && p.access.as_ref().is_some_and(|a|a.kind == "attached") && p.parent_ids.iter().any(|id|active(id.as_str()))) {
+                let door = p.access.as_ref().and_then(|a| a.street).or_else(|| p.contacts.iter()
+                    .min_by(|a, b| a.rank.cmp(&b.rank).then(b.length.total_cmp(&a.length))).map(|c| c.street));
+                // A loop link stays while ordinary lots line it (cutting such links thins
+                // grids and makes the bridge stage re-route its approaches); a reserved
+                // compound lines only its own door street.
+                let compound = p.access.as_ref().is_some_and(|a| a.kind == "reserved");
+                for c in &p.contacts {
+                    if (!compound || door == Some(c.street)) && let Some(d) = sides.get_mut(c.street) { d.push([c.a, c.b]); }
+                    if door == Some(c.street) && let Some(d) = doors.get_mut(c.street) { d.push([c.a, c.b]); }
+                }
+            }
+            let occupied: Vec<Shape> = vec![];
+            // A street entering the water is the bridge stage's to settle: cutting
+            // it into pieces multiplies the crossings that stage then re-routes.
+            for (i, s) in layout.streets.iter().enumerate() {
+                if s.path.windows(2).any(|w| !super::routing::water_intervals(surface, w[0], w[1]).is_empty()) {
+                    doors[i].extend(s.path.windows(2).map(|w| [w[0], w[1]]));
+                    sides[i].extend(s.path.windows(2).map(|w| [w[0], w[1]]));
+                }
+            }
+            if doors.iter().any(|d| !d.is_empty()) {
+                let open: Vec<_> = layout.blocks.iter().map(|b| b.kind == "reserve").collect();
+                prune_with(layout,&open,&occupied,Some((&doors,&sides)),roads);
+            }
+            return;
+        }
         // The lots whose building request would show a silhouette, without
         // generating the requests (a failing request leaves the streets as they are).
         // They are previewed lazily: a street needs one occupied lot in reach.
@@ -546,6 +657,19 @@ pub(super) fn footprint(layout: &mut Layout) {
     s.allocated = g::union(&kept);
     s.metrics.allocated_area = s.allocated.iter().map(g::area).sum();
     s.metrics.components = s.allocated.len();
+    if layout.config.as_ref().is_some_and(|c| c.hide_unused_quarters) {
+        let kept = &s.allocated;
+        for phase in &mut layout.phases {
+            phase.shapes = phase.shapes.iter().flat_map(|p| kept.iter().flat_map(move |k| g::intersection(p,k))).collect();
+        }
+        // Unused quarters retain their indices for edits and parcel provenance.
+        // Their outlines are display data after the final allocation.
+        for q in &mut layout.quarters {
+            let pieces: Vec<_> = kept.iter().flat_map(|k| g::intersection(&q.shape,k)).collect();
+            q.shape = pieces.into_iter().max_by(|a,b|g::area(a).total_cmp(&g::area(b)))
+                .unwrap_or(Shape {outer:vec![],holes:vec![]});
+        }
+    }
 }
 
 #[cfg(test)]
@@ -711,4 +835,28 @@ mod tests {
         prune(&mut l, &[], &[g::rectangle(-20., 1., -3., 20.)]);
         assert!(l.streets.iter().skip(1).flat_map(|s|&s.path).all(|p|p.y<=30.), "mutually supported empty ends: {:?}",l.streets);
     }
+    #[test]
+    fn v7_strict_prune_keeps_exits_and_country_paths_and_serves_only_own_doors() {
+        let streets = json!([
+            {"path":[{"x":0.,"y":0.},{"x":100.,"y":0.}],"widths":[4.],"rank":3,"role":"street"},
+            {"path":[{"x":100.,"y":0.},{"x":100.,"y":30.}],"widths":[2.],"rank":4,"role":"track"},
+            {"path":[{"x":0.,"y":0.},{"x":0.,"y":-200.}],"widths":[2.],"rank":4,"role":"track"},
+            {"path":[{"x":100.,"y":0.},{"x":300.,"y":0.}],"widths":[3.],"rank":3,"role":"outbound"},
+            {"path":[{"x":50.,"y":0.},{"x":50.,"y":8.}],"widths":[3.],"rank":3,"role":"street"}
+        ]);
+        let mut l = layout(streets);
+        l.config = Some(LayoutConfig {street_frontage:true,..Default::default()});
+        l.blocks = serde_json::from_value(json!([{"shape":{"outer":[{"x":5.,"y":3.},{"x":110.,"y":3.},{"x":110.,"y":40.},{"x":5.,"y":40.}],"holes":[]},"quarter":0,"kind":"block","axis":{"x":1.,"y":0.}}])).unwrap();
+        // Doors only on the first street, all along it (the stub at x=50 is within reach of them).
+        let mut doors = vec![vec![]; 5];
+        doors[0] = vec![[Point{x:5.,y:2.},Point{x:95.,y:2.}]];
+        prune_with(&mut l, &[false], &[], Some((&doors, &doors)), None);
+        let has = |role: &str, f: &dyn Fn(&Point)->bool| l.streets.iter().any(|s| s.role == role && s.path.iter().any(|p| f(p)));
+        assert!(has("street", &|p| p.x == 0.), "served street stays");
+        assert!(!has("track", &|p| p.y == 30.), "in-town stray track goes: {:?}", l.streets);
+        assert!(has("track", &|p| p.y == -200.), "a path into the open country stays");
+        assert!(has("outbound", &|p| p.x == 300.), "village exits never go");
+        assert!(!has("street", &|p| p.y == 8.), "a stub served only by the crossing street's doors goes");
+    }
+
 }

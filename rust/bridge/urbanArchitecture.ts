@@ -17,6 +17,8 @@ export type ProgrammeComposition = 'row' | 'detached' | 'courtyard' | 'farm' | '
 /** Urban preferences. Explicit house controls, source bounds and site rights win. */
 export interface ArchitectureProgramme {
   role?: string | null; label?: string | null; landmark?: boolean | null;
+  /** Activity archetype id (activities.json) of a specialised service lot. */
+  archetype?: string | null;
   district_role?: string | null; wealth?: number | null; households?: number | null; state?: string | null;
   composition?: ProgrammeComposition | null;
   /** Inclusive preferred range for the main inhabited body, not its towers. */

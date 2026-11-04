@@ -19,6 +19,7 @@ import { brushTextureOn, isBrushKind, supportsPaintedBiome, type BrushImages, ty
 import { bridgeShapes, isKinded, type BridgeShapes } from './townbridges';
 import type { World, LandKind, Vec2 } from '../gen/types';
 import { Palette, MapStyle, ruralInk } from './styles';
+import { forestLandPaint } from './landuseForestTone';
 import { biomePalette } from './biomes';
 import { applyRenderColors, type RenderColors } from './customColors';
 import { fieldBoundaryStyle, fieldHedgeStyle } from './hedges';
@@ -32,7 +33,7 @@ import { regionalBridgeSurface, regionalRoadSurface } from './roadSurfaces';
 import { worldWaterPixels } from './terrainWater';
 import { renderTerrainPixels } from './raster';
 import { RasterTileCache } from './rasterTiles';
-import { buildScene, Scene, PolyLayer, LineLayer, TextureLayer, textureMarks, pointInPoly, type Mark, LAND_ORDER, WALL_LINE_W, CAMP_FENCE_W, FENCE_STYLE } from './scene';
+import { buildScene, type SceneMask, Scene, PolyLayer, LineLayer, TextureLayer, textureMarks, pointInPoly, type Mark, LAND_ORDER, WALL_LINE_W, CAMP_FENCE_W, FENCE_STYLE } from './scene';
 import { renderView } from '../gen/settlements/merge';
 import { selectLod, lineWidth, Lod, BAND_MIN_EDGE, WAY_SCALE, FURROW_MIN_PX, FURROW_HOLDER_BUDGET } from './lod';
 import { View, viewRect, Rect4 } from './view';
@@ -70,6 +71,8 @@ export interface CanvasRendererDeps {
   vegetation?: VegetationStyle;
   /** Decorative field scale, independent of the retained terrain extent. */
   furrowReferenceSize?: number;
+  /** Natural layers owned by another pass (no fabricated world): they are neither built nor drawn. Absent = all. */
+  mask?: SceneMask;
 }
 
 export interface FrameStats {
@@ -199,7 +202,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
   let sourceWorld = world0;
   let world = cavernDisplayWorld(deps.scene?.renderedWorld ? { ...deps.scene.renderedWorld, options: world0.options } : renderView(cavernDisplayWorld(world0)));
   const basePalette = biomePalette(style, world.options.biome), pal = applyRenderColors(basePalette, deps.colors);
-  let scene = deps.scene ?? buildScene(world0, deps.tileSize);
+  let scene = deps.scene ?? buildScene(world0, deps.tileSize, { mask: deps.mask });
   const S = world.mapSize;
   const furrowSize = deps.furrowReferenceSize ?? S;
   const now = deps.now ?? (() => (typeof performance !== 'undefined' ? performance.now() : Date.now()));
@@ -656,8 +659,11 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       }
     };
     // 2. land use (tints multiply over the hillshade so relief reads through them); contours under it
-    const luOn = world.options.landuse;
+    const luOn = deps.mask?.landuse !== undefined ? deps.mask.landuse !== false : world.options.landuse;
     const luAlpha = pal.landOpacity;
+    // Forest class: tone chosen by the shared « forest land use » setting (landuseForestTone.ts).
+    const landFill = (kind: keyof Palette['land']): string => kind === 'forest' ? forestLandPaint(pal).color : pal.land[kind];
+    const landAlpha = (kind: keyof Palette['land']): number => kind === 'forest' ? forestLandPaint(pal).alpha : luAlpha;
     const multiply = (on: boolean): void => { ctx.globalCompositeOperation = on && pal.landBlend === 'multiply' ? 'multiply' : 'source-over'; };
     if (pal.grid && sc * pal.grid.step > 7) {
       const g = pal.grid;
@@ -679,7 +685,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       if (!polyL(name)) continue;
       if (kind === 'forest') { ctx.save(); const clip = forestClip(rect); if (clip) ctx.clip(clip, 'nonzero'); }
       multiply(true);
-      fillPolys(name, pal.land[kind], kind === 'forest' ? 0.7 : luAlpha);
+      fillPolys(name, landFill(kind), landAlpha(kind));
       multiply(false);
       // Actual parallel plough lines, anchored like the SVG pattern. Suppress subpixel moire at far zoom.
       if (kind === 'field' && !isUnderdarkBiome(world.options.biome) && lod.strips && pal.furrowAlpha > 0 && scene.furrows && furrowSpacing(furrowSize) * sc >= 1.5) {
@@ -798,7 +804,6 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
         if (pat && l) { ctx.fillStyle = pat; for (const p of polyPaths(l)) ctx.fill(p, 'evenodd'); }
       }
       strokePolys('farm-platforms', pal.farmInk, lw(0.5, 0.4), 0.7, [px(3), px(2)]);
-      strokePolys('farm-lots', pal.hedge, lw(0.9, 0.6), 0.85);
       fillPolys('farm-yards', pal.farmYard, 0.9);
       fillPolys('farm-pens', pal.farmYard);
       strokePolys('farm-pens', pal.farmInk, lw(0.3, 0.3));
@@ -994,8 +999,8 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
             for (const kind of NATURAL_LAND_KINDS) {
               const name = 'lu-' + kind;
               if (kind === 'forest') { ctx.save(); const clip = forestClip(rect); if (clip) ctx.clip(clip, 'nonzero'); }
-              multiply(true); fillPolys(name, pal.land[kind], kind === 'forest' ? 0.7 : luAlpha); multiply(false);
-              multiply(true); fillPolys('u-cover-' + kind, pal.land[kind], kind === 'forest' ? 0.7 : luAlpha); multiply(false);
+              multiply(true); fillPolys(name, landFill(kind), landAlpha(kind)); multiply(false);
+              multiply(true); fillPolys('u-cover-' + kind, landFill(kind), landAlpha(kind)); multiply(false);
               if (kind === 'forest' && lod.strips) strokePolys(name, pal.treeInk, lw(0.7, 0.8), pal.tex.forest ? 0.5 : 0.35);
               if (kind === 'forest') ctx.restore();
             }
@@ -1491,7 +1496,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     water('sea', pal.seaFill, 'evenodd'); water('lakes', pal.lakeFill); water('rivers', pal.riverFill);
     const d = getDensity();
     if (d) ctx.drawImage(d, 0, 0, S, S);
-    if (world.options.landuse && world.options.biome === 'underdark-caverns' && world.terrain.caverns?.fungalRooms?.length) {
+    if ((deps.mask?.landuse !== undefined ? deps.mask.landuse !== false : world.options.landuse) && world.options.biome === 'underdark-caverns' && world.terrain.caverns?.fungalRooms?.length) {
       const rooms = exactCavernPath('fungalRooms');
       if (rooms) { ctx.globalAlpha = pal.landOpacity; ctx.fillStyle = pal.land.garden; ctx.fill(rooms, 'nonzero'); ctx.globalAlpha = 1; }
     }

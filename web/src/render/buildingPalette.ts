@@ -66,7 +66,7 @@ const LOCAL: Record<string, Partial<Record<'wall' | 'roof' | 'stone' | 'accent',
   bagan: { wall: 'b39473', roof: 'a7775d' }, 'great-zimbabwe': { wall: 'aea58d', roof: 'aa956c' },
 };
 const WALL: Record<string, string> = { timber: '8c745a', wood: '8c745a', brick: 'ae7c65', stone: 'b9b3a2', earth: 'bba17b', plaster: 'dfd6c0', bamboo: 'aa986b', wattle: 'ad9670', hide: 'bbae94', coral: 'd5cbb3' };
-const ROOF: Record<string, string> = { tile: 'a77960', slate: '747c80', thatch: 'b3a077', reed: 'b3a077', palm: 'ac9870', bamboo: 'a0946d', shingle: '8e8069', bark: '81745f', turf: '85916b', hide: 'b6a78d', felt: 'a59c88', earth: 'b7a17f', plaster: 'd1c5a9', stone: 'a6a69a', snow: 'd9e0db', metal: '8d9996', lead: '828a8c' };
+const ROOF: Record<string, string> = { tile: 'a77960', slate: '747c80', thatch: 'b3a077', reed: 'b3a077', palm: 'ac9870', bamboo: 'a0946d', shingle: '8e8069', bark: '81745f', turf: '85916b', hide: 'b6a78d', felt: 'a59c88', earth: 'b7a17f', plaster: 'd1c5a9', stone: 'a6a69a', snow: 'd9e0db', metal: '8d9996', lead: '828a8c', ruin: 'd8d0bd' };
 // Repeated entries are weights: Europe remains mostly aged terracotta, with
 // occasional slate. These are related building colours, never random accents.
 const SWATCHES: Partial<Record<string, { wall: string[]; roof: string[] }>> = {
@@ -134,6 +134,8 @@ export function buildingTint(culture: string, wall: string, cover: string, tone:
     const organic = /^(thatch|reed|palm|turf|bark|bamboo|snow|metal|lead)$/.test(cover);
     r = mix(r, rgb(ROOF[cover] ?? ROOF.tile), organic ? 0.85 : 0.08);
     if (masonry) { w = mix(p.stone, p.wall, 0.45); if (/^(earth|plaster|stone)$/.test(cover)) r = mix(r, w, 0.45); }
+    // Ruin stubs (massing.rs `ruin_piece`): broken wall tops in pale weathered stone.
+    if (cover === 'ruin') r = mix(w, rgb(ROOF.ruin), 0.45);
   }
   const vary = (c: PaletteRgb, shift: number, drift: number): PaletteRgb => {
     const grey = c[0] * 0.3 + c[1] * 0.59 + c[2] * 0.11;

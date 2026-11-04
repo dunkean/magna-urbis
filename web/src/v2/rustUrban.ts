@@ -11,11 +11,14 @@ import { forCellsNearPolyline } from '../gen/core/field';
 import { differenceS } from '../gen/geo/bool';
 import { ribbon } from '../gen/geo/offset';
 import { pointInRing } from '../gen/geo/poly';
+import { streetSeedConfig, urbanSeed } from './urbanSeeds';
 
 export interface RustTownSnapshot {
   backend: 'rust-wasm-cpu' | 'rust-native-cpu';
   stage: V2TownStage;
   layoutKey: string;
+  compositionKey?: string;
+  compositionLayouts?: Layout[];
   parcelKey?: string;
   programmeKey?: string;
   requestKey?: string;
@@ -24,6 +27,8 @@ export interface RustTownSnapshot {
   capacityKey?: string;
   layouts: Layout[];
   partitions?: Partition[];
+  cadastralPartitions?: Partition[];
+  programmePartitions?: Partition[];
   requests?: PlacementRequest[];
   scene?: PlacementBatch;
   houseSettingsKey?: string;
@@ -240,9 +245,13 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
   const previous = (world.debug?.v2RustCities as Record<string, RustTownSnapshot> | undefined)?.[key];
   const roads: Street[] = (world.roads ?? []).map(road => ({ path: road.path, widths: road.path.map(() => road.width),
     rank: road.kind === 'major' ? 1 : road.kind === 'minor' ? 2 : 3, role: 'regional' }));
-  const seed = options.seed, layoutKey = fingerprint([world.stats['v2.terrainKey'], key, backend, seed, place.center, options.population, options.culture, config.layout, roads]);
+  const seed = urbanSeed(settings, key, 'composition'), streetSeed = urbanSeed(settings, key, 'streets');
+  const compositionKey = fingerprint([world.stats['v2.terrainKey'], key, backend, seed, place.center, options.population, options.culture, config.layout, roads]);
+  const layoutKey = streetSeed === seed ? compositionKey : fingerprint([compositionKey, streetSeed]);
+  const previousComposition = previous?.compositionKey === compositionKey ? previous.compositionLayouts
+    : !previous?.compositionKey && previous?.layoutKey === compositionKey ? previous.layouts : undefined;
   let snapshot: RustTownSnapshot = previous?.layoutKey === layoutKey ? cloneRustTownSnapshot(previous) : {
-    backend: backend === 'native' ? 'rust-native-cpu' : 'rust-wasm-cpu', stage: 'layout', layoutKey, layouts: [], buildingIds: [], warnings: [] };
+    backend: backend === 'native' ? 'rust-native-cpu' : 'rust-wasm-cpu', stage: 'layout', layoutKey, compositionKey, compositionLayouts: previousComposition, layouts: [], buildingIds: [], warnings: [] };
   // Reuse one terrain handle for this ordered request chain, not one copy for each urban step.
   let engine: UrbanEngine | undefined;
   const request = async (kind: 'quarters' | 'parcels' | 'programme' | 'buildingSites' | 'builtCapacity', extras: Record<string, unknown>): Promise<UrbanResponse> => {
@@ -262,39 +271,59 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
     return result;
   };
   if (!snapshot.layouts.length) {
-    report('urban-layout', 'Rust · emprise, phases, quartiers, rues et îlots…', 0);
-    snapshot.layouts = required<Layout[]>(await request('quarters', { sites: [{ key, name: place.name ?? '', population: options.population,
-      culture: options.culture, center: place.center, radius: place.radius }], roads, layoutConfig: config.layout }), 'layouts');
+    const inputs = { sites: [{ key, name: place.name ?? '', population: options.population,
+      culture: options.culture, center: place.center, radius: place.radius }], roads };
+    if (!snapshot.compositionLayouts) {
+      report('urban-layout', 'Rust · composition urbaine…', 0);
+      snapshot.compositionLayouts = required<Layout[]>(await request('quarters', { ...inputs, layoutConfig: config.layout }), 'layouts');
+    }
+    snapshot.compositionKey = compositionKey;
+    if (streetSeed === seed) snapshot.layouts = snapshot.compositionLayouts;
+    else {
+      report('urban-layout', 'Rust · nouveau tracé des rues internes, composition conservée…', 0);
+      snapshot.layouts = required<Layout[]>(await request('quarters', { ...inputs,
+        layoutConfig: streetSeedConfig(config.layout, snapshot.compositionLayouts, streetSeed) }), 'layouts');
+    }
     snapshot.warnings.push(...snapshot.layouts.flatMap(layout => layout.warnings));
   } else report('urban-layout', 'Rust · plan urbain réutilisé', 1);
-  const parcelKey = fingerprint([layoutKey, config.parcels]);
+  snapshot.compositionKey ??= compositionKey; snapshot.compositionLayouts ??= snapshot.layouts;
+  const parcelSeed = urbanSeed(settings, key, 'parcels'), programmeSeed = urbanSeed(settings, key, 'programme');
+  const buildingSeed = urbanSeed(settings, key, 'buildings'), houseSeed = urbanSeed(settings, key, 'houses');
+  const parcelKey = fingerprint(parcelSeed === seed ? [layoutKey, config.parcels] : [layoutKey, config.parcels, parcelSeed]);
   if (stageIndex >= 1 && (!snapshot.partitions || snapshot.parcelKey !== parcelKey)) {
     report('urban-parcels', 'Rust · découpage des parcelles et accès cadastraux…', 1);
-    snapshot.partitions = required<Partition[]>(await request('parcels', { layouts: snapshot.layouts, parcelConfig: config.parcels }), 'partitions');
+    snapshot.partitions = required<Partition[]>(await request('parcels', { seed: parcelSeed, layouts: snapshot.layouts, parcelConfig: config.parcels }), 'partitions');
+    snapshot.cadastralPartitions = snapshot.partitions; snapshot.programmePartitions = undefined;
     snapshot.parcelKey = parcelKey; snapshot.programmeKey = undefined; snapshot.requests = undefined; snapshot.scene = undefined;
   }
-  if (stageIndex >= 2 && snapshot.programmeKey !== parcelKey) {
+  const programmeKey = programmeSeed === seed ? parcelKey : fingerprint([parcelKey, programmeSeed]);
+  if (stageIndex >= 2 && snapshot.programmeKey !== programmeKey) {
     report('urban-programme', 'Rust · fonctions, besoins, capacités et affectation des parcelles…', 2);
-    snapshot.partitions = required<Partition[]>(await request('programme', { layouts: snapshot.layouts, partitions: snapshot.partitions, parcelConfig: config.parcels }), 'partitions');
-    snapshot.programmeKey = parcelKey;
+    snapshot.partitions = required<Partition[]>(await request('programme', { seed: programmeSeed, layouts: snapshot.layouts, partitions: snapshot.cadastralPartitions ?? snapshot.partitions, parcelConfig: config.parcels }), 'partitions');
+    snapshot.programmePartitions = snapshot.partitions;
+    snapshot.programmeKey = programmeKey; snapshot.requests = undefined; snapshot.scene = undefined; snapshot.capacityKey = undefined;
   }
   if (stageIndex >= 3) {
     const { architectureProfile } = await import('../../../rust/bridge/urbanArchitecture');
-    const profile = architectureProfile(config.houses), requestKey = fingerprint([parcelKey, profile]);
+    const profile = architectureProfile(config.houses), requestKey = fingerprint(buildingSeed === seed ? [programmeKey, profile] : [programmeKey, profile, buildingSeed]);
     if (!snapshot.requests || snapshot.requestKey !== requestKey) {
       report('urban-building-sites', 'Rust · domaines constructibles, accès et contraintes des maisons…', 3);
-      snapshot.requests = required<PlacementRequest[]>(await request('buildingSites', { layouts: snapshot.layouts, partitions: snapshot.partitions, architectureCulture: profile }), 'placementRequests');
+      snapshot.requests = required<PlacementRequest[]>(await request('buildingSites', { seed: buildingSeed, layouts: snapshot.layouts, partitions: snapshot.programmePartitions ?? snapshot.partitions, architectureCulture: profile }), 'placementRequests');
       snapshot.requestKey = requestKey; snapshot.scene = undefined;
     }
     const relevantOverrides = Object.fromEntries((snapshot.requests ?? []).flatMap(request => {
       const patch = settings.urban?.buildings?.[`${key}/${request.id}`] ?? settings.urban?.buildings?.[request.id];
       return patch ? [[request.id, patch]] : [];
     }));
-    const buildingKey = fingerprint([requestKey, config.houses, relevantOverrides]);
+    const buildingKey = fingerprint(houseSeed === seed ? [requestKey, config.houses, relevantOverrides] : [requestKey, config.houses, relevantOverrides, houseSeed]);
     if (!snapshot.scene || snapshot.buildingKey !== buildingKey) {
       report('urban-buildings', 'Chargement du moteur Rust des maisons…', 4);
       const { planUrbanBuildings } = await import('../../../rust/bridge/architecture');
-      const houseSettingsKey = fingerprint(config.houses), baselineKey = fingerprint([requestKey, houseSettingsKey]);
+      const houseSettingsKey = fingerprint(houseSeed === seed ? config.houses : [config.houses, houseSeed]), baselineKey = fingerprint([requestKey, houseSettingsKey]);
+      const sourceRequests = houseSeed === seed ? snapshot.requests : snapshot.requests.map(request => {
+        const draw = `${houseSeed}/${request.id}`;
+        return { ...request, seed: draw, ...(request.config ? { config: { ...request.config, seed: draw } } : {}) };
+      });
       let baseline: PlacementBatch, baselineRequests = 0;
       if (snapshot.scene && snapshot.houseBaseline?.key === baselineKey) {
         snapshot.houseBaseline = { ...snapshot.houseBaseline, originals: { ...snapshot.houseBaseline.originals } };
@@ -304,7 +333,7 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
           open_spaces: originals.flatMap(value => value.open_spaces) }, new Set(originals.map(value => value.parcelId))) : snapshot.scene;
       } else {
         report('urban-buildings', 'Rust · plans sources des maisons avant les modifications individuelles…', 0, snapshot.requests.length);
-        baseline = await planUrbanBuildings({ schema_version: '1', requests: snapshot.requests, settings: config.houses }, runtime, {
+        baseline = await planUrbanBuildings({ schema_version: '1', requests: sourceRequests, settings: config.houses }, runtime, {
           progress: (completed, total) => report('urban-buildings', `Rust · maisons sources ${completed}/${total}…`, completed, total),
         });
         baselineRequests = snapshot.requests.length;
@@ -313,7 +342,7 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
       // Canonical replay: restore only touched source houses, then apply the
       // current explicit house overrides in stable site order. A seed/recipe
       // import follows exactly the same path as an interactive local edit.
-      let requests = snapshot.requests.filter(request => relevantOverrides[request.id]);
+      let requests = sourceRequests.filter(request => relevantOverrides[request.id]);
       const changedParcels = new Set(requests.map(request => request.parcel_id));
       for (const request of requests) if (!snapshot.houseBaseline!.originals[request.id]) {
         snapshot.houseBaseline!.originals[request.id] = { parcelId: request.parcel_id,
@@ -403,7 +432,8 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
   snapshot.warnings = [...new Set([...snapshot.layouts.flatMap(layout => layout.warnings),
     ...(stageIndex >= 1 ? snapshot.partitions?.flatMap(partition => partition.warnings) ?? [] : []),
     ...(stageIndex >= 3 ? snapshot.scene?.refusals.map(refusal => `${refusal.code}: ${refusal.message}`) ?? [] : [])])];
-  const projection = stageIndex < 3 ? { ...snapshot, scene: undefined, ...(stageIndex === 0 ? { partitions: undefined } : {}) } : snapshot;
+  const projection = stageIndex < 3 ? { ...snapshot, scene: undefined,
+    partitions: stageIndex === 0 ? undefined : stageIndex === 1 ? snapshot.cadastralPartitions ?? snapshot.partitions : snapshot.programmePartitions ?? snapshot.partitions } : snapshot;
   const urban = projectRustTown(projection, options.population, options.culture);
   snapshot.buildingIds = projection.buildingIds;
   report('urban-complete', `Rust · ${target === 'buildings' ? 'maisons' : target === 'programme' ? 'programme' : target === 'parcels' ? 'parcelles' : 'plan'} prêt`, 5);

@@ -3,11 +3,37 @@ import { isUnderdarkBiome } from '../gen/biomes';
 import type { World, UrbanLayer, PolyH, Polygon, TerrainLayer } from '../gen/types';
 import polygonClipping from 'polygon-clipping';
 import { differenceSafeS, intersectionS, unionMany, mpArea, toGeom, fromGeom } from '../gen/geo/bool';
-import { offsetRibbon, simplify } from '../gen/core/geom';
+import { offsetRibbon, simplify, chaikin } from '../gen/core/geom';
 import { bboxOf, cleanRing, orientPos, isSimple } from '../gen/geo/poly';
 import { seaWithIslands, pathD } from './util';
 import type { Palette } from './styles';
 import { underdarkMarkSvg } from './underdark';
+
+const SOFT_GROUND = new WeakMap<PolyH, PolyH>();
+/** Raster stairs on vacant built-layer ground are display artefacts. Soften only
+ * predominantly axis-aligned contours; intersection keeps every road/water exclusion exact. */
+export function softenRuralGround(shape: PolyH): PolyH {
+  const saved = SOFT_GROUND.get(shape); if (saved) return saved;
+  const ring = shape.outer, lengths: number[] = [];
+  for (let i = 0; i < ring.length; i++) { const a = ring[i], b = ring[(i + 1) % ring.length], dx = Math.abs(b.x - a.x), dy = Math.abs(b.y - a.y);
+    if (Math.min(dx, dy) < .02 && Math.max(dx, dy) > .1) lengths.push(Math.max(dx, dy)); }
+  let result = shape;
+  if (ring.length >= 8 && lengths.length >= ring.length * .65) {
+    lengths.sort((a, b) => a - b);
+    const radius = Math.max(2, Math.min(24, lengths[Math.floor(lengths.length / 4)] * .45));
+    const simple = simplify([...ring, ring[0]], radius * .6).slice(0, -1);
+    if (simple.length >= 3) {
+      const dense: Polygon = [];
+      for (let i = 0; i < simple.length; i++) { const a = simple[i], b = simple[(i + 1) % simple.length], steps = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / (radius * 2)));
+        for (let j = 0; j < steps; j++) dense.push({ x: a.x + (b.x - a.x) * j / steps, y: a.y + (b.y - a.y) * j / steps }); }
+      const outer = chaikin(dense, 2, true);
+      if (isSimple(outer)) { const pieces = intersectionS([{ outer, holes: shape.holes }], [shape]);
+        // Never lose detached land while decorating an otherwise valid reserve.
+        if (pieces.length === 1) result = pieces[0]; }
+    }
+  }
+  SOFT_GROUND.set(shape, result); return result;
+}
 
 /** Actual terrain-derived cover to replay inside unoccupied residential land; no cultivation. */
 export const NATURAL_LAND_KINDS = ['meadow', 'marsh', 'pasture', 'commons', 'forest'] as const;

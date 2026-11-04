@@ -100,6 +100,9 @@ pub(super) fn lot_enclosures(seed: &str, parcels: &[Parcel], r: &Resolved) -> Ve
     for p in parcels.iter().filter(|p| matches!(p.use_kind.as_str(), "plot" | "compound" | "garden")) {
         let ring = &p.shape.outer;
         let n = ring.len();
+        // A garden with no street front lies behind other lots, far from any street and
+        // from any house: it stays open ground, no fence stands round it.
+        if p.use_kind == "garden" && p.front.is_none() && p.contacts.is_empty() { continue; }
         if n < 3 || draw(seed, &p.id, 1) >= r.plot { continue; }
         let fronts: Vec<[Point; 2]> = p.front.iter().copied()
             .chain(p.contacts.iter().map(|c| [c.a, c.b])).collect();
@@ -246,6 +249,22 @@ mod tests {
             assert!((20.0 - covered - DOOR_M).abs() < 1e-6, "lot {i}: gap {}", 20.0 - covered);
             assert!(!fronts.iter().flat_map(|e| e.path.windows(2)).any(|w| w[0].x.min(w[1].x) < cx - 0.1 && w[0].x.max(w[1].x) > cx + 0.1));
         }
+    }
+    #[test]
+    fn garden_without_street_front_stays_open_ground() {
+        let mut deep = lot(0);
+        deep.use_kind = "garden".into();
+        deep.front = None;
+        deep.contacts.clear();
+        let mut cfg = ParcelConfig::default();
+        cfg.plot_enclosure = Some(1.0);
+        let r = resolve("chinese", &cfg);
+        assert!(lot_enclosures("s", &[deep.clone()], &r).is_empty());
+        // The same garden on a street still gets its fence.
+        let on_street = lot(0);
+        let mut g = on_street.clone();
+        g.use_kind = "garden".into();
+        assert!(!lot_enclosures("s", &[g], &r).is_empty());
     }
     #[test]
     fn door_follows_the_street_contact() {

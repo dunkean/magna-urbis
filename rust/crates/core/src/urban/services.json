@@ -8,6 +8,8 @@
     "abandoned": { "decay": 1, "suffix": ".abandoned", "label": " à l’abandon" },
     "ruined": { "decay": 1, "suffix": ".ruin", "label": " en ruine" }
   },
+  "_docRuinShare": "Culture ruins by demographic class: a share of the built lots stands in ruins whatever the state (giants' villages keep their fallen halls; their towns are rebuilt).",
+  "ruinShare": { "giant-hold": { "hamlet": 0.3, "village": 0.3 } },
   "_docIsolated": "Programme context roles for a single structure (no town): one intent on one unsubdivided domain.",
   "isolated": {
     "isolated-farm": { "role": "dwelling.farm", "function": "domestic" },
@@ -15,7 +17,8 @@
     "isolated-shrine": { "role": "worship.shrine", "function": "collective", "landmark": true },
     "isolated-mill": { "role": "craft.mill", "function": "workshop" },
     "isolated-inn": { "role": "commerce.inn", "function": "collective" },
-    "isolated-tower": { "role": "defence.tower", "function": "collective", "landmark": true }
+    "isolated-tower": { "role": "defence.tower", "function": "collective", "landmark": true },
+    "activity": { "role": "craft.activity", "function": "workshop" }
   },
   "_docRural": "Added to every family below maxPop: the shared (tithe) barn of a village. Below it a hamlet is only farms: dwelling.farm = house, barn and yard on one lot.",
   "rural": [
@@ -39,6 +42,7 @@
     "worship.pyramid-precinct": "Enceinte de la pyramide", "worship.ushnu": "Ushnu (plate-forme cérémonielle)", "worship.huaca": "Huaca (lieu sacré)",
     "worship.hof": "Hof (temple)", "worship.kiva": "Kiva", "worship.capitolium": "Capitole", "worship.precinct": "Enceinte sacrée", "worship.grove": "Bois sacré",
     "worship.mortuary-temple": "Temple funéraire", "worship.wayside": "Oratoire",
+    "funerary": "Monument funéraire", "funerary.mausoleum": "Mausolée",
     "commerce": "Commerce", "commerce.market": "Place du marché", "commerce.market.gate": "Marché de porte", "commerce.market.ward": "Marché de quartier",
     "commerce.inn": "Auberge", "commerce.souk": "Souk", "commerce.caravanserai": "Caravansérail", "commerce.funduq": "Fondouk", "commerce.bazaar": "Bazar",
     "commerce.dharamshala": "Dharamshala (gîte des pèlerins)", "commerce.tianguis": "Tianguis (marché)", "commerce.macellum": "Macellum (marché couvert)",
@@ -54,7 +58,7 @@
     "defence": "Fortification", "defence.keep": "Donjon", "defence.barracks": "Caserne", "defence.kasbah": "Kasbah", "defence.castle": "Château", "defence.fort": "Fort",
     "defence.fortress": "Forteresse", "defence.tower": "Tour de guet",
     "elite": "Résidence noble", "elite.palace": "Palais", "elite.kancha-palace": "Palais (kancha)",
-    "craft": "Atelier", "craft.workshop": "Atelier", "craft.smithy": "Forge", "craft.tannery": "Tannerie", "craft.dyer": "Teinturerie", "craft.mill": "Moulin à eau",
+    "craft": "Atelier", "craft.workshop": "Atelier", "craft.smithy": "Forge", "craft.tannery": "Tannerie", "craft.dyer": "Teinturerie", "craft.mill": "Moulin à eau", "craft.activity": "Site d’activité",
     "craft.bakery": "Boulangerie", "craft.brewery": "Brasserie", "craft.obsidian": "Atelier d’obsidienne", "craft.weaver": "Atelier de tissage",
     "craft.boatshed": "Abri à bateaux", "craft.fullonica": "Foulerie", "craft.potter": "Poterie", "craft.alchemist": "Officine d’alchimiste",
     "storage": "Entrepôt", "storage.granary": "Grenier", "storage.qollqa": "Qollqa (grenier d’État)", "storage.horreum": "Horreum (entrepôt)", "storage.barn": "Grange commune",
@@ -129,7 +133,7 @@
     "egyptian-planned": "ancient", "nubian-fortified": "ancient", "mesopotamian": "ancient", "levantine-tell": "ancient",
     "indus-planned": "ancient",
     "elven": "fantasy", "dwarven": "fantasy", "wizard-city": "fantasy", "gnomish": "fantasy", "drow-enclave": "fantasy",
-    "duergar-hold": "fantasy", "myconid-colony": "fantasy", "necropolis": "fantasy", "stilt-town": "fantasy"
+    "duergar-hold": "fantasy", "myconid-colony": "fantasy", "necropolis": "necropolis", "stilt-town": "fantasy"
   },
   "occupancy": {
     "_doc": "householdSize = persons per domestic unit; floorPerHousehold = useful floor m2 per unit; maxPerPlot caps tenements.",
@@ -148,6 +152,7 @@
     "classical": { "householdSize": 5, "floorPerHousehold": 45, "maxPerPlot": 12 },
     "ancient": { "householdSize": 6, "floorPerHousehold": 50, "maxPerPlot": 4 },
     "fantasy": { "householdSize": 5, "floorPerHousehold": 60, "maxPerPlot": 6 },
+    "necropolis": { "householdSize": 5, "floorPerHousehold": 60, "maxPerPlot": 6 },
     "clan": { "householdSize": 8, "floorPerHousehold": 40, "maxPerPlot": 6 }
   },
   "families": {
@@ -338,6 +343,16 @@
       { "role": "storage.granary", "function": "warehouse", "per": 2000, "minPop": 300, "max": 20, "site": "spread", "area": [200, 1500] },
       { "role": "craft.potter", "function": "workshop", "per": 3000, "minPop": 800, "max": 15, "site": "edge", "area": [100, 500], "district": "craft:potters" },
       { "role": "craft.smithy", "function": "workshop", "per": 3000, "minPop": 500, "max": 15, "site": "gate", "area": [80, 300] }
+    ],
+    "necropolis": [
+      { "role": "worship.mortuary-temple", "function": "collective", "per": 0, "minPop": 150, "max": 1, "site": "nucleus", "area": [400, 4000], "landmark": true, "district": "religious" },
+      { "role": "open.necropolis", "function": "common", "per": 250, "minPop": 100, "max": 60, "site": "spread", "area": [400, 5000], "perCapita": 6, "district": "religious" },
+      { "role": "funerary.mausoleum", "function": "collective", "per": 400, "minPop": 100, "max": 40, "site": "spread", "area": [120, 450], "district": "religious" },
+      { "role": "funerary.mausoleum.ruin", "function": "collective", "per": 450, "minPop": 150, "max": 40, "site": "spread", "area": [150, 600] },
+      { "role": "worship.mortuary-temple.ruin", "function": "collective", "per": 2500, "minPop": 400, "max": 12, "site": "hill", "area": [450, 1800], "landmark": true },
+      { "role": "commerce.market", "function": "market", "per": 0, "minPop": 300, "max": 1, "site": "gate", "area": [200, 1200] },
+      { "role": "craft.smithy", "function": "workshop", "per": 2500, "minPop": 250, "max": 12, "site": "gate", "area": [80, 300] },
+      { "role": "storage.granary", "function": "warehouse", "per": 4000, "minPop": 1000, "max": 10, "site": "spread", "area": [300, 1500] }
     ],
     "fantasy": [
       { "role": "commerce.warehouse", "function": "warehouse", "per": 5000, "minPop": 2000, "max": 20, "site": "quay", "area": [300, 1200], "requires": "water", "district": "port" },

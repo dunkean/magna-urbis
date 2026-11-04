@@ -24,7 +24,7 @@ M['byzantine'] = morph('byzantine', EO_BASE, {
   coverage: { core: [0.82, 0.92], middle: [0.7, 0.82], edge: [0.55, 0.68], faubourg: [0.45, 0.58], village: [0.18, 0.32] },
   footprintConformity: { core: 0.8, middle: 0.65, edge: 0.5, faubourg: 0.35, village: 0.3 },
   density: { core: 200, middle: 150, edge: 110, faubourg: 70, village: 40 },
-  arch: { typology: 'byzantine-house', roof: 'tiled-hip', storeys: [2, 3], material: 'stone' },
+  arch: { typology: 'byzantine-house', roof: 'tiled-hip', storeys: [1, 3], material: 'stone' },
 });
 // ---------------------------------------------------------------- Venetian lagoon town
 M['venetian'] = morph('venetian', EO_BASE, {
@@ -194,7 +194,7 @@ export const MORE_CULTURES: Culture[] = [
     village: { form: 'auto', morphology: 'venetian' },
     hamlet: { form: 'auto', morphology: 'venetian' },
     m4: { castle: 'none', cathedral: null, palace: null, monastery: 'monastery', marketHall: false, arena: 0, shanty: 'riverbank', activities: false, arsenal: true },
-    render: { towerShape: 'round', lagoon: true },
+    render: { towerShape: 'round', lagoon: true, canalWaterReachM: 120 },
     sitePrefs: { flatness: 2.5, weights: { estuary: 3, harbor: 2.6, bridge: 1.4, meander: 1.2, plain: 0.8, hilltop: 0, valley: 0.3 } },
   },
   {
@@ -335,7 +335,7 @@ export const MORE_CULTURES: Culture[] = [
     village: { form: 'auto', morphology: 'gnomish' },
     hamlet: { form: 'auto', morphology: 'gnomish' },
     m4: { castle: 'none', cathedral: null, palace: null, monastery: null, marketHall: false, arena: 0, activities: false },
-    render: { towerShape: 'square', lagoon: true, locks: true },
+    render: { towerShape: 'square', lagoon: true, canalWaterReachM: 120, locks: true },
     sitePrefs: { flatness: 0.9, weights: { valley: 2, bridge: 1.6, confluence: 1.6, meander: 1.2, plain: 1, hilltop: 0.6 } },
   },
 ];

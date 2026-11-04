@@ -1,6 +1,7 @@
 import init, { SettlementTerrain } from '../pkg/wasm/magna_urbis_wasm.js';
 import wasmUrl from '../pkg/wasm/magna_urbis_wasm_bg.wasm?url&inline';
 import type { RoadOutput, SettlementOutput, SettlementRequest, SettlementResponse } from './settlements';
+import type { ResourcePayload } from './resources';
 import { nativeRasterClient } from './nativeEngine';
 import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
 
@@ -26,6 +27,7 @@ export async function createSettlementEngine(runtime?: ExecutionRuntime): Promis
           const r = request.raster;
           terrain?.free();
           terrain = new SettlementTerrain(r.width, r.n, r.height, r.water, r.waterLevel, r.riverWidth, r.riverIds);
+          if (r.region) terrain.set_region(r.region.seed, r.region.temperature, r.region.precipitation, r.region.biome, r.region.x, r.region.y);
         }
         if (!terrain) throw new Error('Generate a terrain first.');
         let settlements: SettlementOutput | undefined, sites = request.sites ?? [];
@@ -33,7 +35,9 @@ export async function createSettlementEngine(runtime?: ExecutionRuntime): Promis
           const start = performance.now();
           settlements = JSON.parse(terrain.place(request.seed, JSON.stringify(request.place))) as SettlementOutput;
           settlements.ms = performance.now() - start;
-          sites = settlements.settlements.map(s => ({ key: s.key, population: s.population, culture: s.culture, center: s.center, radius: s.radius }));
+          // Same as settlements.ts roadSitesOf (not imported: settlements.ts imports this module).
+          sites = [...settlements.settlements.map(s => ({ key: s.key, population: s.population, culture: s.culture, center: s.center, radius: s.radius })),
+            ...(settlements.activities ?? []).map(a => ({ key: a.id, population: 0, culture: a.culture, center: a.access, radius: 0, access: a.accessClass, parent: a.parent }))];
         }
         let roads: RoadOutput | null = null;
         if (request.roads) {
@@ -41,7 +45,8 @@ export async function createSettlementEngine(runtime?: ExecutionRuntime): Promis
           roads = JSON.parse(terrain.roads(request.seed, JSON.stringify(sites), JSON.stringify(request.roads))) as RoadOutput;
           roads.ms = performance.now() - start;
         }
-        return { id: request.id, settlements, roads };
+        const resources = request.resources ? JSON.parse(terrain.resources()) as ResourcePayload : undefined;
+        return { id: request.id, settlements, roads, ...(resources ? { resources } : {}) };
       } catch (error) { return { id: request.id, error: String(error) }; }
     },
   };

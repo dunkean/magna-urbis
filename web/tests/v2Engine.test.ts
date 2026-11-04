@@ -26,6 +26,21 @@ function settings(): V2Settings {
 const OLD_BENCH_KEY = '["mu-v2-bench-terrain-2026-10-28.2","procedural","magna-urbis-v2",1200,"flat","none","none",0,"auto",{"backend":"typescript","compute":"cpu","erosion":1,"resolution":512,"source":"procedural"},null,[8,8,"256:3226455237:1318026841",120,0]]';
 
 describe('V2 retained generation pipeline', () => {
+  it('replays an independent urban seed without changing the retained terrain, sites or regional roads', async () => {
+    const s = settings(), terrain = await generateTerrain(s, undefined, new TerrainCache(new RetainedStore()));
+    const region = await planRegion(terrain, s), original = structuredClone(region);
+    const first = await generateTown(region, s, 'main');
+    s.urban = { backend: 'typescript', local: { main: { seed: 'another-city-draw' } } };
+    const next = await generateTown(first, s, 'main');
+    const repeat = await generateTown(region, s, 'main');
+    expect(next.urban).not.toEqual(first.urban); expect(next.urban).toEqual(repeat.urban);
+    expect(next.seed).toBe(region.seed); expect(next.terrain.height.data).toBe(region.terrain.height.data);
+    expect(next.roads).toEqual(region.roads);
+    expect(next.settlements!.map(({ key, center, radius }) => ({ key, center, radius }))).toEqual(region.settlements!.map(({ key, center, radius }) => ({ key, center, radius })));
+    delete s.urban.local!.main.seed;
+    const restored = await generateTown(next, s, 'main');
+    expect(restored.urban).toEqual(first.urban); expect(region).toEqual(original);
+  });
   it('edits and persists map names without changing retained terrain, roads or buildings', async () => {
     const s = settings(), terrain = await generateTerrain(s, undefined, new TerrainCache(new RetainedStore()));
     const region = await planRegion(terrain, s), town = await generateTown(region, s, 'main');

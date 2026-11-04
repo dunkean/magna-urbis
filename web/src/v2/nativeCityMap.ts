@@ -10,9 +10,10 @@ import { coverLayer, layerPattern, materialImagesNow, type MaterialImages } from
 import type { UrbanBuildingAppearance } from '../render/urbanBuildingStyle';
 import type { HouseMaterial, Surface } from '../../../rust/bridge/housesContract';
 import type { PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
-import type { V2Appearance } from './contracts';
-import type { RustTownSnapshot } from './rustUrban';
+import type { ResolvedAppearance } from '../render/appearanceRecipe';
+import { nativeCitiesOf } from './nativeProducts';
 import { rustSettlementRaster } from './rustUrban';
+import { activityScene, activitySitesOf, drawInstallations } from './activitySites';
 
 export interface NativeCityMapStats {
   native: boolean;
@@ -29,7 +30,7 @@ export interface NativeCityMapStats {
   houses: BuildingRenderMetrics[];
 }
 export interface NativeCityMap {
-  draw(ctx: CanvasRenderingContext2D, view: View, w: number, h: number, dpr: number, appearance: V2Appearance, visibility?: Partial<ExportLayers>): NativeCityMapStats;
+  draw(ctx: CanvasRenderingContext2D, view: View, w: number, h: number, dpr: number, appearance: ResolvedAppearance, visibility?: Partial<ExportLayers>): NativeCityMapStats;
   dispose(): void;
 }
 interface Entry {
@@ -45,8 +46,6 @@ type LayerCanvas = HTMLCanvasElement | OffscreenCanvas;
 const EMPTY_LAYERS = Object.fromEntries(Object.keys(DEFAULT_LAYERS).map(key => [key, false])) as unknown as CityLayers;
 const finite = (value: number | undefined, fallback: number, min: number, max: number): number =>
   value !== undefined && Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback;
-const paintedByDefault = (appearance: V2Appearance): boolean =>
-  (appearance.terrainStyle ?? appearance.style).startsWith('render') || (appearance.city?.ground ?? '').startsWith('render');
 
 function canvas(width: number, height: number): LayerCanvas | undefined {
   if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(width, height);
@@ -96,7 +95,7 @@ function materialFaces(building: PlacedBuilding, materials: ReadonlyMap<string, 
 export function createNativeCityMap(world: World, onInvalidate: () => void): NativeCityMap {
   let disposed = false, queued = false, layer: LayerCanvas | undefined, context: CanvasRenderingContext2D | undefined;
   let lod: CityLod | undefined;
-  const cities = Object.values(world.debug?.v2RustCities as Record<string, RustTownSnapshot> ?? {}).filter(city => city.layouts?.length);
+  const cities = nativeCitiesOf(world);
   // Keep snapshots separate: older archives may reuse a layout/parcel id in
   // another settlement. Their exact native identities must not be renamed.
   const raster = cities.length ? rustSettlementRaster(world) : undefined;
@@ -106,7 +105,13 @@ export function createNativeCityMap(world: World, onInvalidate: () => void): Nat
       materials: new Map((city.scene?.materials ?? []).map(material => [material.id, material])),
       refused: new Set(city.scene?.refusals.map(refusal => refusal.parcel_id)) };
   });
-  const labels = world.options.labels ?? true;
+  // Activity sites (mills, quarries…) outside the towns: their buildings only, no plan.
+  const activities = activityScene(world), sites = activitySitesOf(world);
+  if (activities) {
+    const plan = buildCityScene([], []);
+    entries.push({ plan, buildings: buildCityBuildings(activities, plan), houses: new UrbanBuildingLodRenderer(activities),
+      materials: new Map((activities.materials ?? []).map(material => [material.id, material])), refused: new Set() });
+  }
   const layouts = entries.reduce((count, entry) => count + entry.plan.layouts.length, 0);
   const buildings = entries.reduce((count, entry) => count + entry.buildings.items.length, 0);
   // Bounded, display-only geometry. Retained native meshes and plan objects are
@@ -154,7 +159,7 @@ export function createNativeCityMap(world: World, onInvalidate: () => void): Nat
       const stats: NativeCityMapStats = { native: entries.length > 0, cities: entries.length, layouts, buildings,
         visibleBuildings: 0, renderer: 'canvas2d', pending: false, ms: 0, materialFaces: 0, frames: [], houses: [] };
       if (disposed || !entries.length || !(view.scale > 0) || !(w > 0) || !(h > 0) || !(dpr > 0)) return stats;
-      const city = appearance.city ?? {}, opacity = finite(city.opacity, .8, 0, 1);
+      const city = appearance.city, opacity = finite(city.opacity, .8, 0, 1);
       if (!opacity) return stats;
       const pixelsW = Math.max(1, Math.ceil(w * dpr)), pixelsH = Math.max(1, Math.ceil(h * dpr));
       if (opacity < 1) {
@@ -171,20 +176,22 @@ export function createNativeCityMap(world: World, onInvalidate: () => void): Nat
       }
       const viewport = viewRect(view, w, h), mpp = 1 / view.scale;
       lod = selectCityLod(mpp, lod); stats.lod = lod;
-      const palette = city.palette ?? 'parchment', buildingAppearance: UrbanBuildingAppearance = {
-        colors: appearance.colors, style: city.buildingStyle ?? 'cartographic', diagnostic: city.diagnostic ?? 'none' };
-      const requestedLayers = { ...(city.plan === false ? EMPTY_LAYERS : DEFAULT_LAYERS), ...(city.plan === false ? {} : city.layers) };
+      const palette = city.palette, colors = appearance.palette.colors, buildingAppearance: UrbanBuildingAppearance = {
+        colors, style: city.buildingStyle, diagnostic: city.diagnostic };
+      const requestedLayers = city.plan ? city.layers : EMPTY_LAYERS;
       const layers = { ...(visibility.city === false ? EMPTY_LAYERS : requestedLayers),
         streets: visibility.streets !== false && requestedLayers.streets };
-      const painted = city.painted ?? paintedByDefault(appearance), textured = appearance.textured ?? false;
+      const painted = city.painted, textured = city.textured;
       const images = textured && palette !== 'parchment' && palette !== 'ink' ? materialImagesNow(invalidate) : undefined;
       ctx.save();
       try {
         ctx.setTransform(view.scale * dpr, 0, 0, view.scale * dpr, (w / 2 - view.cx * view.scale) * dpr, (h / 2 - view.cy * view.scale) * dpr);
+        // Activity / node installations: flat ground under every building.
+        if (visibility.city !== false && city.visible) drawInstallations(ctx, sites, viewport, mpp);
         for (const entry of entries) {
-          const frame = drawCity(ctx, entry.plan, { colors: appearance.colors, viewport, mpp, dpr, lod, view: city.view ?? 'buildings', palette, layers,
-            width: finite(city.width, .6, 0, 5), labels: visibility.labels !== false && (appearance.labels ?? labels),
-            buildings: entry.buildings, buildingsVisible: visibility.city !== false && appearance.buildings !== false,
+          const frame = drawCity(ctx, entry.plan, { colors, viewport, mpp, dpr, lod, view: city.view, palette, layers,
+            width: finite(city.width, .6, 0, 5), labels: visibility.labels !== false && appearance.cartography.labels,
+            buildings: entry.buildings, buildingsVisible: visibility.city !== false && city.visible,
             appearance: buildingAppearance, textured, onTexturesReady: invalidate, groundBlend: city.groundBlend === 'blended',
             refusedParcels: buildingAppearance.diagnostic === 'access' ? entry.refused : undefined,
             renderer: { draw(houseCtx, options) {
@@ -194,7 +201,7 @@ export function createNativeCityMap(world: World, onInvalidate: () => void): Nat
               return metrics;
             } } });
           stats.frames.push(frame); stats.pending ||= frame.pending;
-          if ((city.view ?? 'buildings') !== 'buildings') stats.visibleBuildings += frame.buildings;
+          if (city.view !== 'buildings') stats.visibleBuildings += frame.buildings;
         }
       } finally { ctx.restore(); }
       if (isolated) {
@@ -210,7 +217,7 @@ export function createNativeCityMap(world: World, onInvalidate: () => void): Nat
       if (disposed) return;
       disposed = true;
       for (const entry of entries) entry.houses.replaceScene({ buildings: [] });
-      entries.length = 0; cities.length = 0; textures.clear();
+      entries.length = 0; textures.clear();
       if (layer) layer.width = layer.height = 1;
       layer = undefined; context = undefined;
     },

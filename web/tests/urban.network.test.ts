@@ -46,6 +46,17 @@ describe('regional geometry outside native urban quarters', () => {
     expect(JSON.stringify(town)).toBe(saved);
   });
 
+  it('hides a retired regional trace wholly inside the cadastre, not one reaching the fields', () => {
+    const town = layout();
+    town.structure = { mechanism: 'kind', allocated: [rectangle(0, 0, 3, 10), rectangle(10, 0, 13, 10)] } as unknown as Layout['structure'];
+    const block = (x0: number, x1: number) => ({ shape: rectangle(x0, 0, x1, 10), quarter: 0, kind: 'reserve', axis: { x: 1, y: 0 } });
+    const source = road(), saved = JSON.stringify(source);
+    expect(xPaths(outsideUrbanStreets([source], [town]))).toEqual([[-5, 0], [3, 10], [13, 15]]);
+    town.blocks = [block(3, 10), block(13, 14)];
+    expect(xPaths(outsideUrbanStreets([source], [town]))).toEqual([[-5, 0], [13, 15]]);
+    expect(JSON.stringify(source)).toBe(saved);
+  });
+
   it('normalizes winding for an SVG nonzero union without changing the input rings', () => {
     const shape = rectangle(0, 0, 10, 10);
     shape.outer.reverse();

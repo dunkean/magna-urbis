@@ -55,7 +55,6 @@ export function drawGardenDetails(ctx: CanvasRenderingContext2D, shape: Shape, h
   for (const p of details.paths) { path(p); ctx.stroke(); }
   ctx.fillStyle = '#7c9259'; ctx.strokeStyle = '#68694b'; ctx.lineWidth = Math.max(.15, .3 * mpp);
   for (const p of details.beds) { path(p, true); ctx.fill(); ctx.stroke(); }
-  ctx.strokeStyle = '#69664b'; ctx.lineWidth = Math.max(.35, .65 * mpp);
-  for (const p of details.fences) { path(p); ctx.stroke(); }
+  // The holding's culture-aware yard owns its enclosure; beds do not add a second cadastral fence.
   ctx.restore();
 }

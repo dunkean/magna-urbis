@@ -74,7 +74,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut wet_m = 0.0; let mut dry_gate_wet = 0.0;
         for c in e.path.windows(2) { let len = ((c[1].x - c[0].x).powi(2) + (c[1].y - c[0].y).powi(2)).sqrt(); let k = (len / 4.0).ceil().max(1.0) as usize;
             for j in 0..k { let t = (j as f64 + 0.5) / k as f64; let p = magna_urbis_core::urban::Point { x: c[0].x + t * (c[1].x - c[0].x), y: c[0].y + t * (c[1].y - c[0].y) };
-                if wet(p) { wet_m += len / k as f64; if e.gatehouses.iter().filter(|gh| gh.kind == "water").all(|gh| { let (a, b) = (gh.passage[0], gh.passage[1]); let (dx, dy) = (b.x - a.x, b.y - a.y); let t = (((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy).max(1e-9)).clamp(0.0, 1.0); ((a.x + t * dx - p.x).powi(2) + (a.y + t * dy - p.y).powi(2)).sqrt() > 25.0 }) { dry_gate_wet += len / k as f64; eprintln!("WET {:.0},{:.0}", p.x, p.y); } } } }
+                if wet(p) { wet_m += len / k as f64; if e.gatehouses.iter().filter(|gh| matches!(gh.kind.as_str(), "water" | "shore")).all(|gh| { let (a, b) = (gh.passage[0], gh.passage[1]); let (dx, dy) = (b.x - a.x, b.y - a.y); let t = (((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy).max(1e-9)).clamp(0.0, 1.0); ((a.x + t * dx - p.x).powi(2) + (a.y + t * dy - p.y).powi(2)).sqrt() > 25.0 }) { dry_gate_wet += len / k as f64; eprintln!("WET {:.0},{:.0}", p.x, p.y); } } } }
         let mut on_wall = 0.0;
         for st in l.streets.iter().filter(|s| !matches!(s.role.as_str(), "wall-lane" | "bridge" | "ford" | "causeway" | "quay" | "pier" | "landing" | "mole")) {
             for w in st.path.windows(2) { let len = ((w[1].x - w[0].x).powi(2) + (w[1].y - w[0].y).powi(2)).sqrt(); let k = (len / 2.0).ceil().max(1.0) as usize;

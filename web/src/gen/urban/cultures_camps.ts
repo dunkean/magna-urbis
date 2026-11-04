@@ -44,7 +44,7 @@ export const CAMP_CULTURES: Culture[] = [
   {
     ...campBase('stilt-town', 'Stilt town (marsh folk)', 'stilt-town'), fantasy: true,
     camp: { layout: 'stilts', variant: 'lagoon' }, waterBuild: true,
-    render: { towerShape: 'round', plotLines: true, stilts: true },
+    render: { towerShape: 'round', plotLines: true, stilts: true, stiltShore: { reachM: 100, maxDepthM: 4, waterShare: 0.4, plans: 1 } },
     sitePrefs: { flatness: 1.5, weights: { estuary: 3, harbor: 3, meander: 2, confluence: 2, bridge: 1, plain: 0.4, hilltop: 0, valley: 0.4 } },
   },
   {

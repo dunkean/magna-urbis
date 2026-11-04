@@ -13,6 +13,7 @@
  *   along the contour on slopes (bank barns), ranges follow the track or the slope.
  */
 import type { Rng } from '../core/rng';
+import catalogue from '../../../../rust/crates/core/src/urban/catalogue.json';
 import type { Vec2, Polygon, Polyline } from '../core/geom';
 import type { FarmBuilding, FarmPlot, FarmSize, RoofKind } from '../types';
 import type { BiomeName } from '../biomes';
@@ -73,45 +74,11 @@ const clamp01 = (x: number): number => (x < 0 ? 0 : x > 1 ? 1 : x);
 
 // ---------------------------------------------------------------- culture regimes
 
-const REGIMES: Record<string, [FarmType, number][]> = {
-  europe: [['vierkanthof', 1], ['u-yard', 1], ['l-yard', 1], ['haufenhof', 1], ['longere', 1], ['einhaus', 1]],
-  hanse: [['einhaus', 2.2], ['vierkanthof', 1], ['haufenhof', 0.8], ['l-yard', 0.6], ['u-yard', 0.6]],
-  bastide: [['longere', 1.5], ['masseria', 1], ['l-yard', 1], ['u-yard', 0.6], ['haufenhof', 0.5]],
-  med: [['masseria', 2], ['l-yard', 0.7], ['u-yard', 0.6], ['longere', 0.4]],
-  russia: [['dvor', 2.5], ['haufenhof', 0.6], ['u-yard', 0.3]],
-  germanic: [['einhaus', 1.6], ['haufenhof', 1], ['norse-longhouse', 0.3]],
-  norse: [['norse-longhouse', 2.5], ['haufenhof', 0.3]],
-  celtic: [['roundhouse', 2.5], ['haufenhof', 0.3]],
-  japan: [['minka', 1]],
-  korea: [['hanok', 1]],
-  china: [['chinese-court', 1]],
-  india: [['indian-court', 1]],
-  islam: [['ksar', 2], ['masseria', 0.3]],
-  ottoman: [['masseria', 1.2], ['ksar', 1]],
-  sahel: [['sahel-compound', 1]],
-  kraal: [['kraal', 1]],
-  steppe: [['ail', 1]],
-  iroquois: [['native-longhouse', 1]],
-  pueblo: [['pueblo-ranch', 1]],
-  meso: [['solar', 1]],
-  andes: [['kancha', 1]],
-  stilt: [['stilt', 1]],
-  underdark: [['fungal-farm', 1]],
-  myconid: [['spore-farm', 1]],
-};
-const CULTURE_REGIME: Record<string, string> = {
-  hanseatic: 'hanse', bastide: 'bastide', 'roman-core': 'med', 'byzantine-greek': 'med', 'venetian-lagoon': 'med',
-  'russian-kremlin': 'russia', barbarian: 'germanic', 'barbarian-norse': 'norse', 'norse-ringfort': 'norse',
-  'barbarian-celtic': 'celtic', 'celtic-oppidum': 'celtic', 'japanese-jokamachi': 'japan', korean: 'korea', chinese: 'china',
-  'indian-temple': 'india', medina: 'islam', persian: 'islam', ottoman: 'ottoman', sahel: 'sahel', kraal: 'kraal', orcish: 'kraal',
-  'nomad-camp': 'steppe', 'native-plains': 'steppe', 'native-iroquoian': 'iroquois', 'native-pueblo': 'pueblo', maya: 'meso', aztec: 'meso',
-  inca: 'andes', khmer: 'stilt', 'stilt-town': 'stilt', dwarven: 'europe', elven: 'europe', halfling: 'europe', gnomish: 'europe',
-  'drow-enclave': 'underdark', 'duergar-hold': 'underdark', 'myconid-colony': 'myconid',
-};
-/** Farm types the culture builds (its rural vernacular). */
-export function farmRegime(culture: string): [FarmType, number][] {
-  return REGIMES[CULTURE_REGIME[culture] ?? 'europe'];
-}
+interface FarmCulture { types: [FarmType, number][]; density: number; hamlet: [number, number]; enclosure?: string; jitter?: number }
+const FARMSTEAD = catalogue.farmstead as unknown as { types: Record<FarmType, Dress>; cultures: Record<string, FarmCulture>; default: string };
+export function farmCulture(culture: string): FarmCulture { return FARMSTEAD.cultures[culture] ?? FARMSTEAD.cultures[FARMSTEAD.default]; }
+/** Shared with the native rural-lot generator; no culture branches. */
+export function farmRegime(culture: string): [FarmType, number][] { return farmCulture(culture).types; }
 
 /** Wealth → size class (soil, slope, wetness, distance to market; planner farmsteads by their population). */
 export function farmSize(c: FarmContext, r: Rng): FarmSize {
@@ -151,33 +118,7 @@ export function farmType(c: FarmContext, size: FarmSize, r: Rng): FarmType {
 // ---------------------------------------------------------------- dress (arch + roof metadata)
 
 interface Dress { arch: string; roof: RoofKind; material: string; roofs?: Record<string, RoofKind>; names?: Record<string, string>; mats?: Record<string, string> }
-const DRESS: Record<FarmType, Dress> = {
-  vierkanthof: { arch: 'vierkanthof', roof: 'gable', material: 'brick', roofs: { house: 'hip' } },
-  'u-yard': { arch: 'dreiseithof', roof: 'gable', material: 'timber-frame' },
-  'l-yard': { arch: 'hakenhof', roof: 'gable', material: 'stone' },
-  haufenhof: { arch: 'haufenhof', roof: 'gable', material: 'timber-frame', roofs: { house: 'hip' } },
-  longere: { arch: 'longere', roof: 'gable', material: 'stone', roofs: { 'lean-to': 'flat' } },
-  einhaus: { arch: 'hallenhaus', roof: 'hip', material: 'timber-frame', names: { house: 'hall-house' } },
-  masseria: { arch: 'masseria', roof: 'flat', material: 'stone', roofs: { barn: 'gable', byre: 'gable' } },
-  dvor: { arch: 'izba', roof: 'gable', material: 'log', names: { house: 'izba', barn: 'ambar' } },
-  'norse-longhouse': { arch: 'norse', roof: 'gable', material: 'turf', roofs: { 'pit-house': 'gable' } },
-  roundhouse: { arch: 'celtic', roof: 'conical', material: 'wattle', roofs: { granary: 'pyramidal' } },
-  minka: { arch: 'minka', roof: 'hip', material: 'thatch', roofs: { storehouse: 'gable' }, names: { storehouse: 'kura', gatehouse: 'nagaya-mon' }, mats: { storehouse: 'plaster' } },
-  hanok: { arch: 'hanok', roof: 'tiled-hip', material: 'timber', roofs: { barn: 'gable', shed: 'gable' }, names: { house: 'anchae', byre: 'oeyanggan' } },
-  'chinese-court': { arch: 'siheyuan', roof: 'gable', material: 'brick', names: { house: 'zhengfang', byre: 'xiangfang', 'cart-shed': 'daozuofang' } },
-  'indian-court': { arch: 'indian-court', roof: 'flat', material: 'mudbrick', roofs: { byre: 'gable' } },
-  ksar: { arch: 'ksar', roof: 'flat', material: 'mudbrick', roofs: { tower: 'flat' } },
-  'sahel-compound': { arch: 'sahel', roof: 'conical', material: 'mudbrick', roofs: { house: 'flat' } },
-  kraal: { arch: 'kraal', roof: 'thatch-round', material: 'wattle' },
-  ail: { arch: 'ger', roof: 'dome', material: 'felt', roofs: { shed: 'gable' } },
-  'native-longhouse': { arch: 'iroquoian', roof: 'barrel', material: 'bark', roofs: { granary: 'gable' } },
-  'pueblo-ranch': { arch: 'pueblo', roof: 'flat', material: 'adobe', roofs: { shed: 'flat' } },
-  solar: { arch: 'solar', roof: 'hip', material: 'thatch', roofs: { granary: 'conical', bath: 'dome' } },
-  kancha: { arch: 'kancha', roof: 'gable', material: 'stone' },
-  stilt: { arch: 'stilt', roof: 'gable', material: 'bamboo' },
-  'fungal-farm': { arch: 'fungal-farm', roof: 'flat', material: 'dark-stone', names: { house: 'dwelling', barn: 'cultivation-hall', byre: 'spore-store', shed: 'store' } },
-  'spore-farm': { arch: 'spore-farm', roof: 'dome', material: 'fungal', names: { roundhouse: 'dwelling', hut: 'cultivation-pod', byre: 'cultivation-pod', granary: 'spore-store' } },
-};
+const DRESS = FARMSTEAD.types;
 
 function dress(t: FarmType, p: LPart, tags: string[]): Omit<FarmBuilding, 'poly'> {
   const d = DRESS[t];

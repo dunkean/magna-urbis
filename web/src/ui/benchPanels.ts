@@ -1,3 +1,4 @@
+import { styleTraits } from '../render/terrainStyle';
 import { executionProfiles, executionRuntime } from './executionProfile';
 import { installBenchRenderSettings } from './benchRenderSettings';
 import { initialTerrainSource } from './terrainStartupState';
@@ -244,7 +245,7 @@ function organize(): void {
     if (svg && png && !svg.closest('.footer-fantasy')) {
       const exports = document.createElement('div'); exports.className = 'footer-fantasy'; exports.append(svg, png); options.lastElementChild!.append(exports);
       const style = document.querySelector<HTMLSelectElement>('#style, #mapStyle')!;
-      const sync = (): void => { exports.hidden = !style.value.startsWith('fantasy-'); };
+      const sync = (): void => { exports.hidden = !styleTraits(style.value).fantasy; };
       style.addEventListener('input', sync); style.addEventListener('change', sync); sync();
       const stage = document.getElementById('fantasyStyleControls');
       if (stage) new MutationObserver(sync).observe(stage, { attributes: true, attributeFilter: ['hidden'] });

@@ -611,6 +611,7 @@ impl TerrainPipeline {
     }
     pub fn advance(&mut self,stage:u32)->Result<(),JsValue>{self.pipeline.advance(stage).map_err(|e|JsValue::from_str(&e))}
     pub fn set_noise(&mut self,coarse:&[f32],fine:&[f32])->Result<(),JsValue>{self.pipeline.set_noise(coarse,fine).map_err(|e|JsValue::from_str(&e))}
+    pub fn set_step_seeds(&mut self,json:&str)->Result<(),JsValue>{self.pipeline.set_step_seeds(json).map_err(|e|JsValue::from_str(&e))}
     pub fn checkpoint(&mut self,slot:usize)->Result<(),JsValue>{self.pipeline.checkpoint(slot).map_err(|e|JsValue::from_str(&e))}
     pub fn restore(&mut self,slot:usize,parameters:&[f32],surface:&[f32],flags:&[u32])->Result<(),JsValue>{self.pipeline.restore(slot,parameters,surface,flags).map_err(|e|JsValue::from_str(&e))}
     pub fn checkpoint_height(&self,slot:usize)->Result<Vec<f32>,JsValue>{self.pipeline.checkpoint_height(slot).map_err(|e|JsValue::from_str(&e))}

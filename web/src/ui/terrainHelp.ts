@@ -1,3 +1,4 @@
+import { styleTraits } from '../render/terrainStyle';
 import { openMethodNote, type MethodNoteId } from './methodNotes';
 import { savedLocale, LOCALE_KEY } from './shellLocale';
 import { urbanText } from './urbanPanelLocale';
@@ -43,7 +44,7 @@ export function installTerrainHelp(): void {
     islandMode: () => 'Quand tous les côtés sont marins, choisit une île, plusieurs îles ou un choix seedé. En mode heightmap, les altitudes négatives définissent directement la mer.',
     environment: () => 'Relief entourant les formes locales comme plateau, volcan ou caldeira, utilisé dans la génération procédurale.',
     mountainMix: () => 'Proportion de montagnes dans le relief mixte. L’esquisse peut ensuite imposer leur emplacement général.',
-    style: () => (document.getElementById('style') as HTMLSelectElement).value === 'render3d-brush'
+    style: () => styleTraits((document.getElementById('style') as HTMLSelectElement).value).forestBrushes
       ? 'Render3DBrush utilise les silhouettes Fantasy adaptées au biome dans le matériau forestier de Render3D : mêmes teintes, densité, clairières et niveaux de détail. Les couronnes débordent sur les rivières et les courbes de niveau restent au-dessus. Cliquez pour lire la méthode.'
       : 'Le style définit les couleurs et matériaux de la carte, dont un même dégradé pour toutes les mers et tous les lacs. Les couches choisissent les éléments visibles. Les brushes peuvent suivre l’occupation du territoire en option.',
     brush_landuse: () => 'Les arbres suivent les forêts générées et évitent les montagnes. Champs, vergers et marais reçoivent leurs motifs. Masquer l’occupation ne désactive pas son influence. Sans occupation générée, seuls les motifs de relief restent.',

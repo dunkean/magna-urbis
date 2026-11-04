@@ -116,6 +116,7 @@ const ZONE_CLIMATE = {
   temperate: [11, 520, 800, 18, 'oceanic'], mediterranean: [15.5, 620, 620, 55, 'mediterranean'], continental: [8, 850, 620, 32, 'cold'],
   nordic: [4.5, 720, 850, 22, 'cold'], alpine: [9, 650, 1500, 20, 'oceanic'], arctic: [-2, 850, 550, 25, 'cold'], steppe: [9.5, 1050, 380, 42, 'arid'],
   desert: [24, 780, 70, 95, 'arid'], savanna: [28, 380, 600, 115, 'arid'], tropical: [27, 130, 2500, 55, 'tropical'], wetland: [10.5, 560, 750, 16, 'oceanic'],
+  snow: [-2, 800, 1300, 22, 'cold'], swamp: [24, 150, 2000, 40, 'tropical'],   // snow: high mountains with snow (tibetan, aztec tests); swamp: lizardfolk site distinct from stilt-town
 };
 const BIOMES = [
   ['temperate', 'coast', 'Côte tempérée vallonnée', 'hills', 'coast-W', 'river', 'auto', 'hanseatic', 'developed'],
@@ -140,6 +141,10 @@ const BIOMES = [
   ['tropical', 'river', 'Plaine tropicale humide', 'flat', 'inland', 'major', 'some', 'khmer', 'developed'],
   ['wetland', 'coast', 'Lagune et marais littoraux', 'flat', 'corner-SE', 'river', 'some', 'venetian-lagoon', 'rural'],
   ['wetland', 'river', 'Delta et marais', 'flat', 'inland', 'major', 'some', 'mississippian', 'rural'],
+  ['snow', 'coast', 'Haute montagne enneigée et lac', 'high-mountains', 'coast-W', 'stream', 'some', 'tibetan-monastery', 'rural'],
+  ['snow', 'river', 'Vallée enneigée de haute montagne', 'high-mountains', 'inland', 'river', 'some', 'tibetan-monastery', 'rural'],
+  ['swamp', 'coast', 'Marécage côtier', 'flat', 'coast-E', 'river', 'some', 'lizardfolk-swamp', 'primitive'],
+  ['swamp', 'river', 'Marais fluvial', 'flat', 'inland', 'major', 'some', 'lizardfolk-swamp', 'primitive'],
 ].map(([zone, site, label, relief, coast, river, lakes, culture, level]) => ({ id: `${zone}-${site}`, zone, label, climate: zone, relief, coast, river, lakes, culture, level }));
 const CITY_SIZES = [
   { id: 's', size: 'small', label: 'petite carte', width: 4000, population: 5000, exits: 3 },

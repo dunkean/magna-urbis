@@ -1,4 +1,5 @@
 import { LOCALE_KEY, savedLocale, type Locale } from './shellLocale';
+import { LANDUSE_FOREST_TONE_LABEL, LANDUSE_FOREST_TONE_TITLE } from '../render/landuseForestTone';
 import { GROUND_BLEND_LABEL, GROUND_BLEND_TITLE } from '../render/groundBlend';
 
 type Words = readonly [string, string, string, string, string];
@@ -46,6 +47,9 @@ export function setupUrbanRenderLocale(panel: HTMLElement): void {
       const option = panel.querySelector<HTMLOptionElement>(`[data-render="palette"] option[value="${value}"]`);
       if (option) option.textContent = words[index];
     }
+    const forestTone = panel.querySelector<HTMLSelectElement>('[data-forest-tone]'), forestLabel = forestTone?.closest('label');
+    if (forestTone && forestLabel?.firstChild?.nodeType === Node.TEXT_NODE) forestLabel.firstChild.textContent = LANDUSE_FOREST_TONE_TITLE[index];
+    for (const [value, words] of Object.entries(LANDUSE_FOREST_TONE_LABEL)) { const option = forestTone?.querySelector<HTMLOptionElement>(`option[value="${value}"]`); if (option) option.textContent = words[index]; }
     for (const [value, words] of Object.entries(GROUND_BLEND_LABEL)) { const option = panel.querySelector<HTMLOptionElement>(`[data-render="groundBlend"] option[value="${value}"]`); if (option) option.textContent = words[index]; }
   }
   apply();

@@ -296,7 +296,8 @@ pub(super) fn courts(
         f64::INFINITY,
     );
     let depth = morph.range("plotDepth", zone)[0].max(8.0).min(cap * 0.6);
-    let court_size = morph.range("houseArea", zone)[0].sqrt().clamp(6.0, 16.0);
+    let court_size = (morph.range("houseArea", zone)[0].sqrt().clamp(6.0, 16.0)
+        * morph.value["sharedCourtScale"].as_f64().unwrap_or(1.0).clamp(0.0, 1.0)).max(width);
     // Small domains remain one enclos rather than being hollowed into slivers.
     if !depth.is_finite() || depth < court_size || length(sub(f.b, f.a)) < court_size * 2.0 {
         return courtyards(shape, block, axis, fronts, morph, zone, rng);
@@ -365,11 +366,30 @@ pub(super) fn courts(
         ));
     }
     let mut parcel = parcel(court.clone(), block, axis, fronts, "court");
-    parcel.use_kind = "court".into();
-    parcel.reason = "shared-court-and-passage".into();
+    let passage_only = court_size <= width + 1e-6;
+    parcel.use_kind = if passage_only { "path" } else { "court" }.into();
+    parcel.reason = if passage_only { "shared-passage" } else { "shared-court-and-passage" }.into();
     parcel.provenance = vec!["shared-access-reservation".into()];
     result.push(parcel);
     result
+}
+
+#[cfg(test)]
+mod compound_access_tests {
+    use super::*;
+    #[test]
+    fn passage_only_compounds_do_not_grow_a_square_head() {
+        let shape = super::super::super::geometry::rectangle(0.,0.,100.,100.);
+        let morph = Morph {value:serde_json::json!({"plotOp":"compound","sharedCourtScale":0.,
+            "houseArea":{"core":[900.,1800.]},"frontage":{"core":[28.,38.]},"plotDepth":{"core":[30.,42.]}})};
+        let mut fronts = vec![Front {a:Point {x:0.,y:0.},b:Point {x:100.,y:0.},rank:1,street:0,shared:false,gate:false}];
+        let parcels = courts(&shape,0,Point {x:1.,y:0.},&mut fronts,&morph,"core",&mut Rng::new("compound-access"));
+        let path = parcels.iter().find(|p|p.reason=="shared-passage").expect("shared access retained");
+        assert_eq!(path.use_kind,"path");
+        let (x0,_,x1,_) = super::super::super::geometry::bbox(&path.shape);
+        assert!((x1-x0-4.).abs()<1e-6,"the passage keeps its 4 m width");
+        assert!((parcels.iter().map(|p|area(&p.shape)).sum::<f64>()-area(&shape)).abs()<0.01);
+    }
 }
 
 /// Older frontage domains survive as explicit ancestors. Only bounded local

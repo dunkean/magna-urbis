@@ -28,9 +28,23 @@ export const HYDROLOGY_LEGENDS: Record<HydrologyOverlay, string> = {
   'flat-rank': 'Land rank before lake aggregation: blue near outlets, red at high ranks; no elevation added.',
 };
 
-export type DiagnosticId = HydrologyOverlay | VectorOverlay | 'elevation';
+/** Resource-model overlays (Rust `resources/`, activity sites): drawn from a lazily fetched payload, see render/resourceOverlay.ts. */
+export type ResourceOverlay = 'res-geology' | 'res-soil-depth' | 'res-moisture' | 'res-drainage' | 'res-alluvial' | 'res-potential' | 'res-deposits' | 'res-sites';
+export const RESOURCE_OVERLAYS: ResourceOverlay[] = ['res-geology', 'res-soil-depth', 'res-moisture', 'res-drainage', 'res-alluvial', 'res-potential', 'res-deposits', 'res-sites'];
+export const RESOURCE_LEGENDS: Record<ResourceOverlay, string> = {
+  'res-geology': 'Bedrock class: granite pink, limestone cream, sandstone ochre, marl olive, basalt dark grey, metamorphic violet, ultrabasic green, evaporite white-blue.',
+  'res-soil-depth': 'Soil depth, 0 to 3 m: pale sand → dark brown.',
+  'res-moisture': 'Soil moisture index, 0 to 1: sand → deep blue.',
+  'res-drainage': 'Drainage class: very poor (dark blue), poor, moderate, well drained (sand).',
+  'res-alluvial': 'Alluvial share of the soil, 0 to 1: transparent → ochre.',
+  'res-potential': 'Resource potential 0 to 1 (pick the resource below): transparent → yellow → dark green.',
+  'res-deposits': 'Small deposits (disc size = recoverable ore) and activity anchors (diamonds), coloured by family or kind.',
+  'res-sites': 'Activity sites, coloured by category (extraction, energy, water, forest, pastoral), with a thin line to the parent settlement; network nodes (tolls, ferries, inns, border posts) as crimson circles; installations (quarry faces, heaps, weirs, piers, corrals…) outlined by ground kind.',
+};
+export type DiagnosticId = HydrologyOverlay | VectorOverlay | ResourceOverlay | 'elevation';
+export const isResourceDiagnostic = (id: string | null | undefined): id is ResourceOverlay => !!id && id.startsWith('res-');
 export interface DiagnosticDefinition {
-  id: DiagnosticId; label: string; group: string; source: 'terrain' | 'rust' | 'vector' | 'none';
+  id: DiagnosticId; label: string; group: string; source: 'terrain' | 'rust' | 'vector' | 'resources' | 'none';
   composition: 'overlay' | 'replacement'; legend: string;
 }
 export const DIAGNOSTICS: DiagnosticDefinition[] = [
@@ -42,6 +56,14 @@ export const DIAGNOSTICS: DiagnosticDefinition[] = [
   { id: 'v-conditioning', label: 'Pre-hydrology conditioning', group: 'Vector pipeline', source: 'vector', composition: 'overlay', legend: VECTOR_LEGENDS['v-conditioning'] },
   { id: 'v-lakes', label: 'Lake water balance', group: 'Vector pipeline', source: 'vector', composition: 'overlay', legend: VECTOR_LEGENDS['v-lakes'] },
   { id: 'v-styles', label: 'Channel styles', group: 'Vector pipeline', source: 'vector', composition: 'overlay', legend: VECTOR_LEGENDS['v-styles'] },
+  { id: 'res-geology', label: 'Géologie · roche', group: 'Resources', source: 'resources', composition: 'overlay', legend: RESOURCE_LEGENDS['res-geology'] },
+  { id: 'res-soil-depth', label: 'Sol · profondeur', group: 'Resources', source: 'resources', composition: 'overlay', legend: RESOURCE_LEGENDS['res-soil-depth'] },
+  { id: 'res-moisture', label: 'Sol · humidité', group: 'Resources', source: 'resources', composition: 'overlay', legend: RESOURCE_LEGENDS['res-moisture'] },
+  { id: 'res-drainage', label: 'Sol · drainage', group: 'Resources', source: 'resources', composition: 'overlay', legend: RESOURCE_LEGENDS['res-drainage'] },
+  { id: 'res-alluvial', label: 'Sol · alluvions', group: 'Resources', source: 'resources', composition: 'overlay', legend: RESOURCE_LEGENDS['res-alluvial'] },
+  { id: 'res-potential', label: 'Ressources · potentiel', group: 'Resources', source: 'resources', composition: 'overlay', legend: RESOURCE_LEGENDS['res-potential'] },
+  { id: 'res-deposits', label: 'Gisements et ancres', group: 'Resources', source: 'resources', composition: 'overlay', legend: RESOURCE_LEGENDS['res-deposits'] },
+  { id: 'res-sites', label: 'Sites d’activité', group: 'Resources', source: 'resources', composition: 'overlay', legend: RESOURCE_LEGENDS['res-sites'] },
   { id: 'basins', label: 'Watersheds', group: 'Rust · final network', source: 'rust', composition: 'overlay', legend: HYDROLOGY_LEGENDS['basins'] },
   { id: 'accumulation', label: 'Accumulation', group: 'Rust · final network', source: 'rust', composition: 'overlay', legend: HYDROLOGY_LEGENDS['accumulation'] },
   { id: 'flow', label: 'Flow', group: 'Rust · final network', source: 'rust', composition: 'overlay', legend: HYDROLOGY_LEGENDS['flow'] },
@@ -58,5 +80,5 @@ export const DIAGNOSTICS: DiagnosticDefinition[] = [
 export const diagnosticDefinition = (id: string | null | undefined): DiagnosticDefinition => DIAGNOSTICS.find(d => d.id === id) ?? DIAGNOSTICS[0];
 export function diagnosticAvailable(id: string, source: 'rust' | 'vector' | 'none'): boolean {
   const diagnostic = diagnosticDefinition(id);
-  return diagnostic.source === 'none' || diagnostic.source === 'terrain' || diagnostic.source === source;
+  return diagnostic.source === 'none' || diagnostic.source === 'terrain' || diagnostic.source === 'resources' || diagnostic.source === source;
 }

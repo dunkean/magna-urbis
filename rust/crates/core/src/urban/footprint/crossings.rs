@@ -805,6 +805,39 @@ mod tests {
     }
 
     #[test]
+    fn v7_village_bridge_budget_counts_banks_the_regional_road_joins_as_one() {
+        // A river at x in [980, 1020). West bank: the village (y = 300) and a
+        // spur (y = 1500), not joined by streets but both on the regional road
+        // along x = 700; east bank: one network facing both.
+        let n = 200; let height = vec![20.0; n * n];
+        let water: Vec<_> = (0..n * n).map(|i| u8::from((98..102).contains(&(i % n)))).collect();
+        let surface = Surface { geometry: None, width: 2000.0, n, height: &height, water: &water };
+        let streets = vec![
+            street(&[(700.0, 300.0), (970.0, 300.0)], "street"),
+            street(&[(900.0, 1500.0), (970.0, 1500.0)], "street"),
+            street(&[(970.0, 300.0), (1030.0, 300.0)], "bridge"),
+            street(&[(970.0, 1500.0), (1030.0, 1500.0)], "bridge"),
+            street(&[(1030.0, 300.0), (1300.0, 300.0), (1300.0, 1500.0), (1030.0, 1500.0)], "street"),
+        ];
+        let original = layout(streets, &[(720.0, 310.0, 960.0, 360.0), (900.0, 1510.0, 960.0, 1550.0), (1040.0, 310.0, 1290.0, 1490.0)]);
+        let regional = [street(&[(700.0, 300.0), (700.0, 1500.0), (900.0, 1500.0)], "regional")];
+        let bridges = |budget: bool, population: u32, roads: &[Street]| {
+            let mut l = original.clone();
+            l.config = Some(LayoutConfig { village_bridge_budget: budget, ..Default::default() });
+            network::select_bridges(&mut l, population, surface, roads);
+            assert_served_ends(&l);
+            l.streets.iter().filter(|s| s.role == "bridge").count()
+        };
+        // Every served bank network has its own crossing without the budget.
+        assert_eq!(bridges(false, 500, &regional), 2);
+        // A village: the regional road joins the two west networks, one deck is enough.
+        assert_eq!(bridges(true, 500, &regional), 1);
+        // Without a land link both are still needed; a town keeps its demand model.
+        assert_eq!(bridges(true, 500, &[]), 2);
+        assert_eq!(bridges(true, 10000, &regional), 2);
+    }
+
+    #[test]
     fn regional_bridge_keeps_its_existing_outward_road_beyond_the_town_clip() {
         let n = 200; let height = vec![20.0; n*n];
         let water: Vec<_> = (0..n*n).map(|i| u8::from((98..102).contains(&(i % n)))).collect();

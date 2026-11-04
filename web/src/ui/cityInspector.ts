@@ -193,7 +193,7 @@ function houseSection(target: CityInspectorTarget, hooks: CityInspectorHooks): s
   const materials = Object.entries(info.materials.bySlot).filter(([, ids]) => ids.length).map(([slot, ids]) => `${SLOTS[slot] ?? slot} : ${ids.join(', ')}`).join(' · ');
   const capacity = info.capacity.status === 'native' ? `${info.capacity.domesticUnits} logement(s) · ${Math.round(info.capacity.usefulAreaM2 ?? 0)} m² utiles` : 'inconnue (plan sans intérieur)';
   const body = rows([
-    ['Rôle', programme?.role ? `${roleLabel(programme.role)}${programme.landmark ? ' · monument' : ''}` : functionLabel(info.function)],
+    ['Rôle', programme?.role ? `${roleLabel(programme.role)}${programme.archetype ? ` · ${programme.archetype.replace(/_/g, ' ')}` : ''}${programme.landmark ? ' · monument' : ''}` : functionLabel(info.function)],
     ['Validation', VALIDATION[info.validation] ?? info.validation],
     ['Modèle', info.validation === 'preview' ? undefined : `${info.label ?? info.recipeId}${info.variantLabel ? ` · ${info.variantLabel}` : info.variantId !== 'default' ? ` · ${info.variantId}` : ''}`],
     ['Culture / pack', `${hooks.cultures[info.culture.culture] ?? info.culture.culture} · ${info.culture.pack}`],

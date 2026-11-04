@@ -476,6 +476,7 @@ const specs = [
   {
     id: 'lizardfolk-swamp', dscale: 1.45, label: 'Hommes-lézards · cité lacustre sur pilotis', base: 'morph/stilt-town',
     plan: { pattern: 'dispersed', enclosure: 'organic', fortification: 'none', gates: 'roads', orientation: 'water', stairs: false, waterfront: true },
+    render: {"stiltShore": {"reachM": 140, "maxDepthM": 12, "waterShare": 0.5, "plans": 1}, "stilts": true, "plotLines": true},
     refs: ['AM-TROP-S05', 'AS-SEA-S05', 'OC-PAC-S03'], fantasy: true,
     nucleus: { kind: 'precinct', shape: 'circle', area: [800, 2500], compound: true, ring: 3 },
     phaseCount: [[0, 1], [4000, 2]], faubShare: [0.25, 0.25], ring: true,
@@ -495,6 +496,7 @@ const specs = [
   {
     id: 'merfolk-tidal', dscale: 1.6, label: 'Ondins · village de grève et de grottes marines', base: 'venetian-lagoon/core',
     plan: { pattern: 'organic', enclosure: 'organic', fortification: 'none', gates: 'roads', orientation: 'water', stairs: true, waterfront: true },
+    render: {"stiltShore": {"reachM": 300, "maxDepthM": 12, "waterShare": 0.65, "seaward": 0.6, "plans": 1}, "stilts": true, "plotLines": true},
     refs: ['OC-PAC-S03', 'OC-PAC-S10', 'AS-SEA-S05'], fantasy: true,
     nucleus: { kind: 'temple', shape: 'circle', area: [1000, 3000], compound: true, ring: 3 },
     phaseCount: [[0, 1], [4000, 2]], faubShare: [0.1, 0.1], ring: true,
@@ -602,7 +604,7 @@ for (const s of specs) {
     ring: s.ring ? { enclosure: enclosure(s.plan, s.walls) } : null,
     phaseCount: s.phaseCount, faubShare: s.faubShare,
     village, hamlet: { ...village },
-    ...(s.camp ? { render: { plotLines: false, openGround: true } } : {}),
+    ...(s.camp || s.render ? { render: { ...(s.camp ? { plotLines: false, openGround: true } : {}), ...s.render } } : {}),
     growth,
     scope: s.fantasy
       ? 'Fantasy settlement built on the cited real morphologies; numerical ranges are artistic.'

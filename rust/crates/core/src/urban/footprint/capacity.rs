@@ -14,10 +14,10 @@
 //! reported in French: (1) densify within the culture's own ranges (narrower
 //! lots and smaller blocks toward the preset minima, coverage and floors toward
 //! the upper bounds, fewer fringe fields); (2) extend the footprint up to
-//! `EXTENSION` times the nominal area; (3) borrow the street spacing and lot
-//! cutting of a compact tissue on a share of the quarters (`graft`): only the
-//! tissue, never the houses, floors or household figures of the receiving
-//! culture. Beyond that the shortfall stays explicit; no capacity is invented.
+//! `EXTENSION` times the nominal area; (3) densify to the culture's bounds and
+//! widen up to `OWN_REACH`. A culture never borrows another culture's cutting
+//! (user rule 03/11): beyond that the shortfall stays explicit; no capacity is
+//! invented.
 use super::super::geometry as g;
 use super::super::programme::{BlockEnvironment, Demand, UrbanProgramme};
 use super::super::{
@@ -32,6 +32,9 @@ use std::sync::{Mutex, OnceLock};
 pub(in crate::urban) const MARGIN: f64 = 1.12;
 /// Bound of the footprint extension over the catalogue area.
 pub(in crate::urban) const EXTENSION: f64 = 1.6;
+/// Bound of the extension of a tissue its own densest cutting cannot house
+/// within `EXTENSION`: it widens rather than borrow another culture's cut.
+const OWN_REACH: f64 = 2.2;
 /// Densification taken before any extension (« on la densifie un peu et on
 /// étend »): the rest of the culture's ranges is used only at full extension.
 const SOFT: f64 = 0.5;
@@ -40,8 +43,8 @@ const SOFT: f64 = 0.5;
 const BORROW_GAP: f64 = 0.08;
 /// Fewest blocks of a measured stratum (`measure`).
 const STRATUM: usize = 4;
-/// A donor must yield this much more than the densified own tissue: a small
-/// gain never justifies replacing a culture's network on most of its land.
+/// A compact cutting must yield this much more than the densified own tissue
+/// for the shortfall to be the tissue's, not the land's (then the culture widens).
 const DONOR_GAIN: f64 = 1.2;
 /// Land of a footprint outside ordinary blocks beyond the tissue streets of the
 /// probe and the reserved institutions: arterials, places, unserved strips.
@@ -55,9 +58,9 @@ pub(in crate::urban) const MEASURE_MARGIN: f64 = 1.05;
 /// Forecast over requirement beyond which the real blocks are not measured
 /// (the sweep's largest over-prediction is +80 %).
 pub(in crate::urban) const AMPLE: f64 = 2.0;
-/// Compact tissues with regular, subdividable blocks that may lend their
-/// cutting, by street pattern. A donor is chosen by its probed yield with the
-/// receiving culture's houses, never by its catalogue density.
+/// Compact tissues with regular, subdividable blocks: the yardstick of a tissue
+/// short by its own cutting (probed with the receiving culture's houses). They
+/// lend nothing (a culture never borrows another culture's cutting).
 const DONORS: &[(&str, &str)] = &[
     ("indus-planned", "grid"),
     ("bastide", "grid"),
@@ -280,7 +283,10 @@ fn run(
     layout.programme = Some(UrbanProgramme {
         version: 1,
         population: population.max(1),
-        context: cfg.programme.clone(),
+        // The given population is the town's before any decay: capacity is
+        // measured on the thriving town (no empty or ruined homes), and the
+        // state then only empties buildings of the same plan.
+        context: super::super::programme::ProgrammeContext { state: "thriving".into(), decay: Some(0.0), ..cfg.programme.clone() },
         cultures: super::super::culture::mapping_for(&layout.culture, &cfg.programme.period)
             .into_iter()
             .collect(),
@@ -902,51 +908,33 @@ fn plan_steps(
     }
     densified(&mut plan, 1.0);
     let own = plan.planned_yield.max(1e-9);
-    let ha = housing(area * plan.extension);
-    // Borrow: the compatible donor of the best probed yield, on the share of
-    // land that closes the gap (deficit / (area × yield difference)).
-    // A gap within the estimator's own error is left to the lot densification
-    // and the fringe of the measured blocks (quarter stage), not to a borrowed
-    // tissue.
-    if own * ha >= required * (1.0 - BORROW_GAP) {
-        plan.shortfall = (required - own * ha).max(0.0);
-        return Some(plan);
+    // A culture never borrows another culture's cutting (user rule, 03/11).
+    // Where a compact cutting would out-yield its densest own tissue (the
+    // shortfall is the tissue's, not the land's), its own tissue widens its
+    // footprint up to `OWN_REACH` times the nominal instead (not on fixed
+    // land); otherwise, or beyond, the deficit is stated, the culture's plan
+    // kept. A gap within the estimator's error is left to the lot
+    // densification and the fringe of the measured blocks; a camp keeps its
+    // own bounds (its ring or rows are the model).
+    if fixed.is_none() && !super::super::kinds::native_camp(culture, population, cfg)
+        && own * housing(area * plan.extension) < required * (1.0 - BORROW_GAP)
+        && tissue_short(culture, epochs, own, cfg, population) {
+        plan.extension = wanted(own).clamp(plan.extension, OWN_REACH);
     }
-    // A borrowed urban cut destroys the ring/row model being calibrated.
-    // Retain the unmet need after measuring the camp's own bounds instead.
-    if super::super::kinds::native_camp(culture, population, cfg) {
-        plan.shortfall = (required - own * ha).max(0.0);
-        return Some(plan);
-    }
-    let own_pattern = pattern(culture, &epochs[0], cfg);
-    let mut best: Option<(f64, &str)> = None;
-    for compatible in [true, false] {
-        let candidates: Vec<&str> = DONORS
-            .iter()
-            .filter(|&&(d, kind)| d != culture && (kind == own_pattern) == compatible)
-            .map(|d| d.0)
-            .collect();
-        prefetch(culture, &candidates, epochs, &[1.0], cfg, population);
-        for donor in candidates {
-            let y = gross(culture, donor, epochs, 1.0, cfg, population).0;
-            if y > own * DONOR_GAIN && best.is_none_or(|b| y > b.0) {
-                best = Some((y, donor));
-            }
-        }
-        if best.is_some() {
-            break;
-        }
-    }
-    if let Some((donor_yield, donor)) = best {
-        let share = ((required - own * ha) / (ha * (donor_yield - own))).clamp(0.0, 1.0);
-        plan.donor = donor.into();
-        plan.donor_yield = donor_yield;
-        plan.borrowed_share = share;
-        plan.shortfall = (required - ha * (own * (1.0 - share) + donor_yield * share)).max(0.0);
-    } else {
-        plan.shortfall = (required - own * ha).max(0.0);
-    }
+    plan.shortfall = (required - own * housing(area * plan.extension)).max(0.0);
     Some(plan)
+}
+
+/// Whether a compact cutting (`DONORS`, compatible patterns first) probed with
+/// the culture's houses yields `DONOR_GAIN` times its densest own tissue.
+fn tissue_short(culture: &str, epochs: &[Epoch], own: f64, cfg: &LayoutConfig, population: u32) -> bool {
+    let own_pattern = pattern(culture, &epochs[0], cfg);
+    [true, false].into_iter().any(|compatible| {
+        let candidates: Vec<&str> = DONORS.iter()
+            .filter(|&&(d, kind)| d != culture && (kind == own_pattern) == compatible).map(|d| d.0).collect();
+        prefetch(culture, &candidates, epochs, &[1.0], cfg, population);
+        candidates.into_iter().any(|d| gross(culture, d, epochs, 1.0, cfg, population).0 > own * DONOR_GAIN)
+    })
 }
 
 /// Measured capacity of the real blocks of a layout.
@@ -993,7 +981,7 @@ pub(in crate::urban) fn measure(
     // A block steeper than the culture's houses admit holds none
     // (`programme` admission): it is neither sampled nor extrapolated.
     let max_slope = super::super::culture::mapping_for(&layout.culture, &cfg.programme.period)
-        .map_or(f64::INFINITY, |m| m.admissibility.max_slope);
+        .map_or(f64::INFINITY, |m| super::super::profiles::house_slope(&layout.culture, m.admissibility.max_slope));
     let land: Vec<f64> = areas
         .iter()
         .zip(&reserved)

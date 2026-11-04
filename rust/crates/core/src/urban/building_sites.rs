@@ -6,6 +6,9 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap};
 
+#[path = "funerary.rs"]
+mod funerary;
+
 fn access_segments(
     layout: &Layout,
     p: &Parcel,
@@ -995,6 +998,30 @@ impl BuildingSiteIndex {
                 low_rural: layout.config.as_ref().is_none_or(|c| c.low_rural_houses),
             }.area_scale(&site_seed)
         } else { 1.0 };
+        // A pile house is small and light (a home about 36 m², any other lot 60 m²).
+        let home_area = if !parts.is_empty() && !programme["landmark"].as_bool().unwrap_or(false)
+            && super::massing::pile_house(building_culture, arch) {
+            let built: f64 = parts.iter().map(|(s, _)| super::geometry::area(s)).sum();
+            home_area.min((if domestic { 36.0 } else { 60.0 } / built.max(1.0)).min(1.0))
+        } else { home_area };
+        // Longhouse peoples (norse): a few full longhouses among many smaller
+        // houses and outbuildings (35–55 % of the area); the well-off keep theirs.
+        let home_area = if domestic && !parts.is_empty() && !programme["landmark"].as_bool().unwrap_or(false)
+            && arch["typology"].as_str() == Some("longhouse") && super::culture::house_parameters(building_culture).1 != "longhouse"
+            && wealth < 0.7 {
+            let zone = tissue.as_ref().map_or("", |(zone, _)| zone.as_str());
+            let mut r = crate::rng::Rng::new(&site_seed).fork("longhouse-mix");
+            let chance = if matches!(zone, "core" | "middle") { 0.35 } else { 0.6 };
+            if r.chance(chance) { home_area.min(r.range(0.35, 0.55)) } else { home_area }
+        } else { home_area };
+        // A main building scales with the population: a village's parish church
+        // or hall is about half a town's (never under 150 m²); 10 000 and more unchanged.
+        let home_area = if !parts.is_empty() && (programme["landmark"].as_bool().unwrap_or(false) || role.starts_with("worship") || role.starts_with("civic")) {
+            let size = (((pr.population.max(1) as f64).ln() - 500f64.ln()) / (10_000f64.ln() - 500f64.ln())).clamp(0.0, 1.0);
+            let built: f64 = parts.iter().map(|(s, _)| super::geometry::area(s)).sum();
+            if pr.population == 0 || size >= 1.0 || built <= 150.0 { home_area }
+            else { home_area.min((0.45 + 0.55 * size).max(150.0 / built)) }
+        } else { home_area };
         super::house_mix::scale_home(&mut parts, parcel, home_area);
         let kind = realized.or_else(|| occupancy.as_ref().map(super::parcels::occupation_kind));
         // Programme → architecture preferences (contract agreed with Codex,
@@ -1053,6 +1080,28 @@ impl BuildingSiteIndex {
             let form=if composition=="row" {super::parcels::OccupationKind::Row} else {super::parcels::OccupationKind::Detached};
             parts=super::parcels::occupation_preview_resolved(parcel,o,Some(form)).0;
             super::house_mix::scale_home(&mut parts,parcel,home_area);
+        }
+        // Every rural dwelling is a farmstead: its culture's outbuildings around a yard (farmsteads.rs);
+        // a ruin keeps only its broken walls.
+        if !parts.is_empty() && !role.ends_with(".ruin") && !super::massing::pile_house(building_culture, arch)
+            && let Some(farm) = super::farmsteads::rural(tissue.as_ref().map_or("", |(zone, _)| zone.as_str()), &role,
+                programme["landmark"].as_bool().unwrap_or(false), tissue.as_ref().is_some_and(|(_, m)| !m.text("campLayout").is_empty()), ring_area(&lot.outer), pr.population)
+            && let Some(cluster) = super::farmsteads::build(&mut parts, &lot, building_culture, farm, role.starts_with("dwelling.farm"), wealth, &site_seed) {
+            programme["farmstead"] = cluster;
+        }
+        // City Bench `activity` intent: the template's yard (laid again from the centre and
+        // axis kept by kinds.rs), one part per building, each with its archetype massing.
+        let mut activity_massing: Option<Vec<Value>> = None;
+        if pr.context.intent == "activity" && role == "craft.activity"
+            && let Some(centre) = layout.structure.as_ref().and_then(|s| s.centers.first()).map(|c| c.point)
+            && let Some(block) = layout.blocks.get(parcel.block)
+        {
+            let yard = super::activities::site_yard(&pr.context.template, &layout.culture, &layout.key, centre, block.axis.y.atan2(block.axis.x), &surface);
+            if !yard.is_empty() {
+                parts = yard.iter().map(|b| (super::Shape { outer: b.ring.clone(), holes: vec![] }, "building")).collect();
+                activity_massing = Some(yard.iter().flat_map(|b| b.massing.as_array().cloned().unwrap_or_default()).collect());
+                programme["activity"] = json!({"template": pr.context.template, "archetypes": yard.iter().map(|b| b.archetype.clone()).collect::<Vec<_>>()});
+            }
         }
         let preview: Vec<_> = parts.iter().map(|(s, _)| s).collect();
         let preview_parts: Vec<_> = parts.iter().map(|(_, l)| *l).collect();
@@ -1259,7 +1308,23 @@ impl BuildingSiteIndex {
             .filter(|a| a["kind"] == "public")
             .filter_map(|a| Some([point(&a["segment"][0])?, point(&a["segment"][1])?]))
             .collect();
+        // Activity archetype (activities.rs) of a specialised service role:
+        // water mill on a river lot, windmill on open ground…, by culture.
+        let zone = tissue.as_ref().map_or("", |(zone, _)| zone.as_str());
+        let archetype = {
+            let env = pr.environment.get(parcel.block).filter(|e| e.block == parcel.block);
+            let ctx = super::activities::LotContext {
+                river: env.is_some_and(|e| e.water == "river"),
+                shore: env.is_some_and(|e| matches!(e.water.as_str(), "sea" | "lake")),
+                open: !matches!(zone, "core" | "middle"),
+            };
+            super::activities::pick(&role, &allocation.culture, ctx, &site_seed).unwrap_or("")
+        };
+        if !archetype.is_empty() {
+            programme["archetype"] = json!(archetype);
+        }
         let massing = super::massing::massing(&super::massing::Input {
+            archetype,
             parts: &parts,
             arch,
             culture: building_culture,
@@ -1274,8 +1339,14 @@ impl BuildingSiteIndex {
             fronts: &fronts,
             seed: &site_seed,
             low_rural: layout.config.as_ref().is_none_or(|c| c.low_rural_houses),
+            distance: {
+                let radius = (layout.quarters.iter().map(|q| super::geometry::area(&q.shape)).sum::<f64>() / std::f64::consts::PI).sqrt().max(1.0);
+                (center.x - layout.center.x).hypot(center.y - layout.center.y) / radius
+            },
         });
-        if !massing.is_null() {
+        if let Some(m) = activity_massing {
+            programme["massing"] = Value::Array(m);
+        } else if !massing.is_null() {
             programme["massing"] = massing;
         }
         let mut request = json!({"id":format!("{}/building",parcel.id),"parcel_id":parcel.id,
@@ -1295,6 +1366,7 @@ impl BuildingSiteIndex {
                 "native_minimum_candidates"
             }] = json!(candidates);
         }
+        funerary::apply(&mut request, &parcel.shape, parcel.axis);
         Ok(request)
     }
 }
@@ -1326,7 +1398,9 @@ pub fn requests(
     water_level: &[f32],
     architecture_culture: Option<&str>,
 ) -> Result<Vec<Value>, String> {
-    requests_range(
+    #[cfg(not(target_arch = "wasm32"))]
+    let tick = std::time::Instant::now();
+    let out = requests_range(
         seed,
         layouts,
         partitions,
@@ -1335,7 +1409,12 @@ pub fn requests(
         architecture_culture,
         0,
         usize::MAX,
-    )
+    );
+    #[cfg(not(target_arch = "wasm32"))]
+    if std::env::var("URBAN_PROFILE").is_ok() {
+        eprintln!("  building_sites: {:.0} ms (farmsteads, all calls so far: {:?} ms cpu, calls)", tick.elapsed().as_secs_f64() * 1000.0, super::farmsteads::cpu_ms());
+    }
+    out
 }
 
 /// Number of building sites `requests` emits for these inputs.
@@ -2375,6 +2454,12 @@ fn preview_site(
         if check_only {
             return Ok(None);
         }
+        // Funerary land replaces any preview (`funerary::apply`, last step of `request_one`).
+        let programme = programme_of(allocation, parcel, layout, &layout_index.districts);
+        let site_seed = super::edits::building_seed(seed, &parcel.id, partition);
+        if let Some(shown) = funerary::shown(programme["role"].as_str().unwrap_or(""), &site_seed, &parcel.shape, parcel.axis) {
+            return Ok(shown.then(|| parcel.id.clone()));
+        }
         let building_culture = building_culture.as_str();
         if !super::culture::functional_role_resolved(building_culture,&culture.architecture_pack,&allocation.role,&allocation.function)
             && let Some(small) = super::parcels::compact_fallback(&culture.architecture_pack, &pr.context.period, &culture.admissibility) {
@@ -2409,9 +2494,7 @@ fn preview_site(
             (lo + ((hi.saturating_sub(lo)) as f64 * parcel.pressure).round() as u32)
                 .clamp(culture.admissibility.floors[0], culture.admissibility.floors[1])
         };
-        let programme = programme_of(allocation, parcel, layout, &layout_index.districts);
         let wealth = programme["wealth"].as_f64().unwrap_or(0.5);
-        let site_seed = super::edits::building_seed(seed, &parcel.id, partition);
         let role = programme["role"].as_str().unwrap_or("").to_string();
         let functional = super::culture::functional_programme(&culture.architecture_pack, &role,
             &allocation.function, &pr.context.period, mode);
@@ -2475,6 +2558,10 @@ fn preview_site(
             court_lot,
             court_kept,
         };
+        // `activity` intent: the whole yard stands in the lot (request_one builds it).
+        if pr.context.intent == "activity" && role == "craft.activity" {
+            return Ok(Some(parcel.id.clone()));
+        }
         let (parts, realized) = super::parcels::occupation_preview(parcel, &occupancy);
         if parts.is_empty() {
             return Ok(None);

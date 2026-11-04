@@ -617,11 +617,18 @@ fn seeded_open_fringe_leaves_reserves_while_wall_town_keeps_a_defined_edge() {
                     .windows(2)
                     .any(|e| g::distance(gate, e[0], e[1]).0 < 0.1)
             );
+            // A gate is on a street, or is where a regional road or approach
+            // stops at the curtain (`reconcile_gates` keeps that gate).
             assert!(walled.streets.iter().any(|s| {
                 s.path
                     .windows(2)
                     .any(|e| g::distance(gate, e[0], e[1]).0 < 0.1)
-            }));
+                    || matches!(s.role.as_str(), "regional" | "approach")
+                        && s.path.first().into_iter().chain(s.path.last()).any(|p| {
+                            (p.x - gate.x).hypot(p.y - gate.y)
+                                < s.widths.iter().copied().fold(0.0, f64::max) * 0.5 + 2.0
+                        })
+            }), "gate {gate:?} has no street");
         }
     }
     report_frontage("flat/walled", &walled);

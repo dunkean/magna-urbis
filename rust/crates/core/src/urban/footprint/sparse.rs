@@ -275,6 +275,20 @@ pub(super) fn serve(
                 targets.push(q);
             }
         }
+        // `linksJoinRoads`: the served roads are trunks too. A later patch
+        // they enter is served; another joins the nearest of them when it is
+        // nearer than the kept nucleus (no parallel link across a camp's rows).
+        if cfg.links_join_roads && !kept.is_empty() {
+            let (x0, y0, x1, y1) = g::bbox(&domain);
+            let enters = |r: &Street| r.path.iter().any(|&v| v.x >= x0 && v.x <= x1 && v.y >= y0 && v.y <= y1 && g::contains(&domain, v));
+            if roads.iter().any(enters) {
+                anchors.push(p);
+                kept.push(domain);
+                continue;
+            }
+            targets.extend(roads.iter().filter_map(|r| r.path.windows(2)
+                .map(|w| g::distance(p, w[0], w[1])).min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, _, q)| q)));
+        }
         targets.sort_by(|a, b| distance(*a, p).total_cmp(&distance(*b, p)));
         let connection = targets
             .into_iter()
@@ -311,6 +325,35 @@ pub(super) fn serve(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Review 03/11 (native-plains camp 1500, concentric): a patch at the camp
+    /// gate, on the regional road, was linked to the camp's centre by a street
+    /// running beside the road through the tent rows. Under `linksJoinRoads`
+    /// a patch the road enters needs no link, and a patch off the road joins
+    /// the road, never the far nucleus across the kept land.
+    #[test]
+    fn review12_a_gate_patch_on_the_road_gets_no_link_to_the_centre() {
+        let height = vec![0.0; 64 * 64];
+        let water = vec![0; height.len()];
+        let surface = Surface { geometry: None, width: 640.0, n: 64, height: &height, water: &water };
+        let centers = vec![UrbanCenter { id: 0, point: Point { x: 400.0, y: 300.0 }, weight: 1.0 }];
+        let road = |y: f64| Street { path: (0..=40).map(|i| Point { x: 10.0 * i as f64, y }).collect(), widths: vec![5.0; 41], rank: 1, role: "regional".into() };
+        let crosses_camp = |links: &[Street]| links.iter().any(|l| l.path.iter().any(|p| p.x > 330.0));
+        for (y, on_road) in [(300.0, true), (262.0, false)] {
+            let roads = [road(y)];
+            let run = |join: bool| {
+                let mut phases = vec![vec![g::rectangle(320.0, 200.0, 480.0, 400.0), g::rectangle(200.0, 270.0, 260.0, 330.0)]];
+                let cfg = LayoutConfig { links_join_roads: join, ..LayoutConfig::default() };
+                (serve(&mut phases, &centers, &cfg, surface, 120.0, 35000.0, &roads), phases)
+            };
+            let (before, _) = run(false);
+            assert!(crosses_camp(&before), "control: the old link runs to the centre");
+            let (links, phases) = run(true);
+            assert_eq!(phases[0].len(), 2, "both patches are kept");
+            assert!(!crosses_camp(&links), "{y}: a link crosses the camp: {links:?}");
+            assert_eq!(links.is_empty(), on_road, "{y}: {links:?}");
+        }
+    }
 
     #[test]
     fn access_crosses_open_land_without_assigning_it() {

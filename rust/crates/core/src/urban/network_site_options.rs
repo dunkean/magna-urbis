@@ -8,7 +8,8 @@ pub(super) fn different_level(surface: Surface<'_>, a: Point, b: Point) -> bool 
 
 /// Share of the sustained parallel runs collapsed (`parallelMerge`, the old toggle forcing all).
 fn merge_share(cfg: &LayoutConfig) -> f64 {
-    if cfg.merge_parallel_streets { 1.0 } else { cfg.parallel_merge.clamp(0.0, 1.0) }
+    // `streetFrontage`: no lot fits between such doubles, so all of them merge.
+    if cfg.merge_parallel_streets || cfg.street_frontage { 1.0 } else { cfg.parallel_merge.clamp(0.0, 1.0) }
 }
 
 pub(in crate::urban) fn clean_options(streets: &mut Vec<Street>, center: Point, radius: f64,

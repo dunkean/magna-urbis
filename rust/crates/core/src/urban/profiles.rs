@@ -70,6 +70,15 @@ pub(super) fn stairs_allowed(cfg: &super::LayoutConfig, culture: &str) -> bool {
     let p = profile(culture);
     cfg.allow_stairs && (p.stairs || p.pattern == "terraces" || cfg.tissue == "terraces")
 }
+/// Steepest block a terraced culture still houses: tan 30°.
+pub(super) const TERRACE_SLOPE: f64 = 0.577;
+/// Invariant: a culture that builds terraces (stairs or a terraces pattern) cuts
+/// its house platforms into the slope; its lots admit ground up to
+/// `TERRACE_SLOPE`, beyond the native houses' own limit.
+pub(super) fn house_slope(culture: &str, native: f64) -> f64 {
+    let p = profile(culture);
+    if p.stairs || p.pattern == "terraces" { native.max(TERRACE_SLOPE) } else { native }
+}
 pub(super) fn fortification(profile: UrbanProfile, selected: &str, population: u32) -> &str {
     let selected = if selected == "culture" {
         profile.fortification

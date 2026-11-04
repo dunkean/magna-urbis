@@ -20,6 +20,8 @@ export interface SettlementConfig {
   flatnessWeight: number; buildableWeight: number; freshWaterWeight: number; riverWeight: number; coastWeight: number;
   floodWeight: number; defenseWeight: number; elevation: number; variationWeight: number;
   siteWeights: Record<string, number>;
+  /** Multiplies the dispersed farms of the countryside (1 ≈ 0.45 per km² of land, 0 = none). */
+  farmDensity: number;
 }
 export const defaultSettlementSpec = (key = 'main', population = 300): SettlementSpec => ({ key, name: '', population, culture: 'european-organic', siteType: 'auto', sitePrefs: {} });
 export const defaultSettlementConfig = (): SettlementConfig => ({
@@ -27,14 +29,26 @@ export const defaultSettlementConfig = (): SettlementConfig => ({
   density: 1, zipfExponent: 1.1, minPopulation: 8, populationJitter: 0.25,
   spread: 1.3, smallTop: 0.35, mainClear: 2.5, clustering: 0, edgeMargin: 0.03,
   flatnessWeight: 1, buildableWeight: 1, freshWaterWeight: 1, riverWeight: 1, coastWeight: 1, floodWeight: 1, defenseWeight: 0, elevation: 0, variationWeight: 1,
-  siteWeights: {},
+  siteWeights: {}, farmDensity: 1,
 });
 export type ScoreTerm = 'flatness' | 'buildable' | 'freshWater' | 'river' | 'harbor' | 'flood' | 'culture' | 'site' | 'defense' | 'elevation' | 'cluster' | 'variation';
 export interface Settlement extends SettlementSpec {
   center: Point; cls: string; archetype: string; radius: number;
   scores: Record<'total' | ScoreTerm | 'buildableFraction' | 'waterDistance' | 'slope' | 'heightAboveWater' | 'spacingRelaxation', number> & { manual: boolean; rankingScore: number | null; candidateRank: number | null; rankingPopulation: number | null };
 }
-export interface SettlementOutput { settlements: Settlement[]; warnings: string[]; requested: number; usableKm2: number; ms: number }
+/** One building of an activity site: footprint ring and its `urban/massing.rs` pieces (archetype look). */
+export interface ActivityBuilding { archetype: string; look: string; ring: Point[]; massing: unknown }
+/** Ground installation of a site (Rust `settlements::installations::Installation`): `kind` = activities.json ground kind; ring when `closed`, else polyline. */
+export interface ActivityInstallation { archetype: string; kind: string; closed: boolean; points: Point[] }
+/** Territorial activity site (Rust `settlements::activities::ActivitySite`): no residents, tied to `parent`.
+ * Network nodes (`mode: 'network_node'`, Rust `settlements::nodes`) come with the road output; `resource` = road class there. */
+export interface ActivitySite {
+  id: string; template: string; mode: 'attached_external' | 'remote_seasonal' | 'network_node'; parent: string; anchor: string;
+  kind: string; resource: string; culture: string; x: number; y: number; ground: number;
+  access: Point; accessClass: 'track' | 'trail'; residents: number; seasonMask: number;
+  buildings: ActivityBuilding[]; installations: ActivityInstallation[];
+}
+export interface SettlementOutput { settlements: Settlement[]; warnings: string[]; requested: number; usableKm2: number; ms: number; activities?: ActivitySite[] }
 
 /** Road network options (Rust `settlements::roads::RoadConfig`). */
 export interface RoadConfig {
@@ -42,6 +56,10 @@ export interface RoadConfig {
   gradeWeight: number; maxGrade: number; crossingCost: number; wobble: number; sharing: number; exits: number;
   /** Largest routing grid side (Rust default 512): finer rasters are pooled before routing; 0 routes on the raster itself. */
   grid?: number;
+  /** Under test: route tracks/trails to the activity sites' access points (off: network unchanged). */
+  activityAccess?: boolean;
+  /** Network nodes (tolls, ferries, inns, border posts) along the finished network (Rust default on). */
+  networkNodes?: boolean;
 }
 export const defaultRoadConfig = (): RoadConfig => ({ level: 'rural', surface: 'auto', culture: 'auto', density: 0.5, gradeWeight: 1, maxGrade: 0, crossingCost: 1, wobble: 1, sharing: 0.7, exits: 2 });
 export type RoadLevel = 'primitive' | 'rural' | 'developed' | 'imperial';
@@ -59,7 +77,12 @@ export const ROAD_PROFILES: { id: string; label: string }[] = [
   { id: 'caravan', label: 'Caravan routes' }, { id: 'andean', label: 'Andean (stone stairs)' }, { id: 'mesoamerican', label: 'Mesoamerican causeways' },
   { id: 'tribal', label: 'Tribal paths' }, { id: 'elven', label: 'Elven (contour paths)' }, { id: 'dwarven', label: 'Dwarven (paved, steep)' },
 ];
-export interface RoadSite { key: string; population: number; culture: string; center: Point; radius: number }
+export interface RoadSite { key: string; population: number; culture: string; center: Point; radius: number; access?: 'track' | 'trail'; parent?: string }
+/** Road endpoints of a placement: settlements, then activity access points (Rust `Output::road_sites`). */
+export function roadSitesOf(output: SettlementOutput): RoadSite[] {
+  return [...output.settlements.map(s => ({ key: s.key, population: s.population, culture: s.culture, center: s.center, radius: s.radius })),
+    ...(output.activities ?? []).map(a => ({ key: a.id, population: 0, culture: a.culture, center: a.access, radius: 0, access: a.accessClass, parent: a.parent }))];
+}
 export interface RoadCrossing { kind: 'bridge' | 'ford' | 'causeway'; path: Point[] }
 export interface RoadSegment {
   class: RoadClass; surface: RoadSurface; profile: string; width: number; a: number; b: number;
@@ -69,15 +92,20 @@ export interface RoadJunction { point: Point; degree: number; site: string | nul
 export interface RoadOutput {
   segments: RoadSegment[]; junctions: RoadJunction[]; warnings: string[]; unreachable: string[]; routes: number;
   lengthByClass: Partial<Record<RoadClass, number>>; lengthBySurface: Partial<Record<RoadSurface, number>>; ms: number;
+  /** Network nodes placed on the finished network (catalogue P4). */
+  nodes?: ActivitySite[];
 }
 
-export interface SettlementRaster { geometry?: import('./urbanGeography').VectorGeography; width: number; n: number; height: Float32Array; water: Uint8Array; waterLevel: Float32Array; riverWidth: Float32Array; riverIds: Int32Array }
+/** Map inputs of the Rust resource model (seed, sea-level °C, annual mm, biome or climate zone, world corner). */
+export interface SettlementRegion { seed: string; temperature: number; precipitation: number; biome: string; x: number; y: number }
+export interface SettlementRaster { geometry?: import('./urbanGeography').VectorGeography; region?: SettlementRegion; width: number; n: number; height: Float32Array; water: Uint8Array; waterLevel: Float32Array; riverWidth: Float32Array; riverIds: Int32Array }
 /**
  * One worker request. `place` reruns placement (then routes the new places); without it the
  * roads are rerouted between `sites`. `roads: null` skips routing.
  */
-export interface SettlementRequest { id: number; seed: string; raster?: SettlementRaster; place?: SettlementConfig; sites?: RoadSite[]; roads: RoadConfig | null; runtime?: ExecutionRuntime }
-export type SettlementResponse = { id: number; settlements?: SettlementOutput; roads: RoadOutput | null } | { id: number; error: string };
+/** `resources`: also return the compact resource payload of the retained terrain (view layers, rural soil). */
+export interface SettlementRequest { id: number; seed: string; raster?: SettlementRaster; place?: SettlementConfig; sites?: RoadSite[]; roads: RoadConfig | null; resources?: boolean; runtime?: ExecutionRuntime }
+export type SettlementResponse = { id: number; settlements?: SettlementOutput; roads: RoadOutput | null; resources?: import('./resources').ResourcePayload } | { id: number; error: string };
 
 /** Fallback for browsers that refuse the inline worker in a standalone file. */
 let fallbackEngine: SettlementEngine | undefined;

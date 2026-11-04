@@ -48,6 +48,68 @@ fn isolated_establishments_build_their_one_structure() {
 }
 
 #[test]
+fn an_activity_intent_builds_its_yard_buildings() {
+    let n = 128;
+    let (height, water, level) = (vec![0.0; n * n], vec![0u8; n * n], vec![0.0; n * n]);
+    let surface = Surface { geometry: None, width: 9000.0, n, height: &height, water: &water };
+    let mut cfg = LayoutConfig::default();
+    cfg.programme.intent = "activity".into();
+    cfg.programme.template = "stone_quarry".into();
+    let (l, p) = run("european-organic", 40, &cfg);
+    let roles = built_roles(&p);
+    eprintln!("blocks {} parcels {} roles {roles:?} warnings {:?} demands {:?}", l.blocks.len(), p.parcels.len(), p.programme.as_ref().unwrap().warnings, p.programme.as_ref().unwrap().demands.iter().map(|d| (d.role.clone(), d.requested, d.target_area, d.deficit, d.parcel_capacity, d.reasons.clone())).collect::<Vec<_>>());
+    for b in &l.blocks { eprintln!("block {} area {:.0}", b.kind, super::super::geometry::area(&b.shape)); }
+    assert!(roles.iter().any(|r| r == "craft.activity"), "{roles:?}");
+    let requests = super::super::building_sites::requests("matrix", std::slice::from_ref(&l), std::slice::from_ref(&p), surface, &level, None).unwrap();
+    let shown: Vec<usize> = requests.iter().map(|r| r["preview"].as_array().map_or(0, |a| a.len())).collect();
+    assert!(shown.iter().any(|&k| k >= 2), "previews {shown:?}");
+    let m = requests.iter().find_map(|r| r["programme"]["massing"].as_array().filter(|a| a.len() >= 2)).expect("yard massing");
+    assert!(m.iter().all(|piece| !piece.is_null()));
+}
+
+#[test]
+fn an_activity_intent_far_from_any_road_still_builds() {
+    let n = 128;
+    let (height, water) = (vec![0.0; n * n], vec![0u8; n * n]);
+    let surface = Surface { geometry: None, width: 9000.0, n, height: &height, water: &water };
+    for (template, roads) in [("windmill_site", vec![]), ("hardrock_mine", vec![Street { path: vec![Point { x: 300.0, y: 4560.0 }, Point { x: 8700.0, y: 4560.0 }], widths: vec![6.0, 6.0], rank: 0, role: "regional".into() }])] {
+        let mut cfg = LayoutConfig::default();
+        cfg.programme.intent = "activity".into();
+        cfg.programme.template = template.into();
+        let site = Site { key: "far".into(), name: String::new(), population: 500, culture: "european-organic".into(), center: Point { x: 4500.0, y: 4560.0 }, radius: 300.0 };
+        let layouts = generate_quarters("far", &[site], &cfg, surface, &roads).expect("plan");
+        let partitions = generate_parcels("far", &layouts, &ParcelConfig::default()).expect("parcels");
+        let roles = built_roles(&partitions[0]);
+        assert_eq!(layouts[0].archetype, "single", "{template}");
+        assert!(roles.iter().any(|r| r == "craft.activity"), "{template}: {roles:?} {:?}", partitions[0].programme.as_ref().unwrap().demands.iter().map(|d| d.reasons.clone()).collect::<Vec<_>>());
+    }
+}
+
+#[test]
+fn every_utility_sheet_row_builds_its_yard() {
+    let n = 128;
+    let water = vec![0u8; n * n];
+    // Flat ground, then a 13 % slope (the shot map's 7.4 degrees): a site stands where its resource is.
+    let mut failures = vec![];
+    for grade in [0.0_f32, 0.13] {
+    let height: Vec<f32> = (0..n * n).map(|k| grade * 9000.0 / n as f32 * (k % n) as f32).collect();
+    let surface = Surface { geometry: None, width: 9000.0, n, height: &height, water: &water };
+    for (template, culture) in [("river_watermill", "european-organic"), ("windmill_site", "flemish-cloth-town"), ("stone_quarry", "italian-comune"), ("hardrock_mine", "dwarven"), ("smelter_cluster", "barbarian-norse"), ("coastal_fishing", "norse-ringfort"), ("detached_fishing_camp", "pnw-plank-village"), ("forest_logging", "slavic-gord"), ("saltworks", "venetian-lagoon"), ("caravan_waystation", "ksar-oasis"), ("monastic_farm", "european-organic"), ("pottery_cluster", "mesopotamian"), ("rice_terraces", "javanese-courts"), ("andean_storeway", "inca"), ("road_waystation", "hanseatic"), ("small_farm", "european-organic"), ("small_farm", "yoruba"), ("country_chapel", "european-organic"), ("country_temple", "japanese-jokamachi"), ("roadside_shrine", "chinese"), ("rural_monastery", "tibetan-monastery"), ("country_temple", "medina")] {
+        let mut cfg = LayoutConfig::default();
+        cfg.programme.intent = "activity".into();
+        cfg.programme.template = template.into();
+        let site = Site { key: "row".into(), name: String::new(), population: 500, culture: culture.into(), center: Point { x: 4500.0, y: 4560.0 }, radius: 300.0 };
+        let road = Street { path: vec![Point { x: 300.0, y: 4500.0 }, Point { x: 8700.0, y: 4300.0 }], widths: vec![6.0, 6.0], rank: 0, role: "regional".into() };
+        let layouts = generate_quarters("row", &[site], &cfg, surface, &[road]).expect("plan");
+        let partitions = generate_parcels("row", &layouts, &ParcelConfig::default()).expect("parcels");
+        let ok = built_roles(&partitions[0]).iter().any(|r| r == "craft.activity");
+        if !ok || layouts[0].archetype != "single" { failures.push(format!("{template}/{culture}@{grade}: {} {:?}", layouts[0].archetype, partitions[0].programme.as_ref().unwrap().demands.iter().map(|d| d.reasons.clone()).collect::<Vec<_>>())); }
+    }
+    }
+    assert!(failures.is_empty(), "{failures:#?}");
+}
+
+#[test]
 fn village_has_one_phase_no_suburb_and_no_wall() {
     let cfg = LayoutConfig::default();
     let (l, p) = run("european-organic", 300, &cfg);

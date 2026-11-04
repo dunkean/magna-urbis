@@ -326,6 +326,8 @@ struct RasterHeader {
     width: f64,
     n: usize,
     geometry: Option<urban::VectorGeography>,
+    #[serde(default)]
+    region: Option<magna_urbis_core::resources::RegionInput>,
 }
 fn raster_upload(body: &[u8], sessions: &Mutex<Sessions>) -> ApiResult<Reply> {
     let header_len = u32::from_le_bytes(
@@ -385,6 +387,9 @@ fn raster_upload(body: &[u8], sessions: &Mutex<Sessions>) -> ApiResult<Reply> {
     if let Some(geometry) = header.geometry {
         terrain.set_urban_geometry(geometry)?;
     }
+    if let Some(region) = header.region {
+        terrain.set_region(region);
+    }
     state.settlements = Some(terrain);
     state.urban.retain_terrain()?;
     json_reply(json!({"ok": true, "session": header.session}))
@@ -405,17 +410,7 @@ fn settlement_reply(input: Value, state: &Session) -> ApiResult<Reply> {
     if let Some(config) = input.get("place").filter(|config| !config.is_null()) {
         let started = Instant::now();
         let result = terrain.place(seed, &value(config)?)?;
-        sites = result
-            .settlements
-            .iter()
-            .map(|s| settlements::roads::RoadSite {
-                key: s.spec.key.clone(),
-                population: s.spec.population,
-                culture: s.spec.culture.clone(),
-                center: s.center,
-                radius: s.radius,
-            })
-            .collect();
+        sites = result.road_sites();
         placed = serde_json::to_value(result).map_err(|e| e.to_string())?;
         placed["ms"] = json!(millis(started));
     }
@@ -429,6 +424,10 @@ fn settlement_reply(input: Value, state: &Session) -> ApiResult<Reply> {
     let mut result = json!({"id": input["id"], "roads": roads});
     if !placed.is_null() {
         result["settlements"] = placed;
+    }
+    if input["resources"].as_bool() == Some(true) {
+        // Compact resource payload (resources/export.rs), computed once per terrain.
+        result["resources"] = serde_json::to_value(terrain.resources().payload()).map_err(|e| e.to_string())?;
     }
     json_reply(result)
 }
@@ -947,7 +946,7 @@ fn dispatch(path: &str, body: &[u8], sessions: &Mutex<Sessions>) -> ApiResult<Re
     let input: Value = decode(body)?;
     if path == "/urban" && input["kind"] != "quarters"
         && input.pointer("/layoutConfig/programme/functions").is_some_and(|value| !value.is_null()) {
-        return Err("Les fonctions du lieu se rÃƒÆ’Ã‚Â¨glent en rÃƒÆ’Ã‚Â©gÃƒÆ’Ã‚Â©nÃƒÆ’Ã‚Â©rant les quartiers ; cette ÃƒÆ’Ã‚Â©tape ne peut pas appliquer un nouveau programme de plan.".into());
+        return Err("Les fonctions du lieu se règlent en régénérant les quartiers ; cette étape ne peut pas appliquer un nouveau programme de plan.".into());
     }
     let source = input
         .get("source")
@@ -1019,13 +1018,16 @@ fn dispatch(path: &str, body: &[u8], sessions: &Mutex<Sessions>) -> ApiResult<Re
             if input["command"]=="start" {
                 let parameters:Vec<f32>=value(&input["parameters"])?;let surface:Vec<f32>=value(&input["surface"])?;let flags:Vec<u32>=value(&input["flags"])?;
                 state.terrain_pipeline=Some(magna_urbis_core::TerrainPipeline::new(input["seed"].as_str().ok_or("Missing terrain seed")?,&parameters,&surface,&flags)?);
-                return json_reply(json!({"ready":true}));
+                if input["stepSeeds"].is_object() { state.terrain_pipeline.as_mut().unwrap().set_step_seeds(&input["stepSeeds"].to_string())?; }
+                return json_reply(json!({"ready":true,"stepSeeds":true}));
             }
             let pipeline=state.terrain_pipeline.as_mut().ok_or("Missing retained terrain pipeline")?;
             let checkpoint=input["checkpoint"].as_u64().or_else(||input["stage"].as_u64()).filter(|&s|s<=8).ok_or("Invalid terrain checkpoint")? as usize;
             if input["command"]=="restore" {
                 let parameters:Vec<f32>=value(&input["parameters"])?;let surface:Vec<f32>=value(&input["surface"])?;let flags:Vec<u32>=value(&input["flags"])?;
-                pipeline.restore(checkpoint,&parameters,&surface,&flags)?;return json_reply(json!({"ready":true}));
+                pipeline.restore(checkpoint,&parameters,&surface,&flags)?;
+                if input["stepSeeds"].is_object() { pipeline.set_step_seeds(&input["stepSeeds"].to_string())?; }
+                return json_reply(json!({"ready":true,"stepSeeds":true}));
             }
             if input["command"]=="preview" {
                 let height=pipeline.checkpoint_height(checkpoint)?;
@@ -1234,9 +1236,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     let sessions = Arc::new(Mutex::new(Sessions::default()));
     let active = Arc::new(AtomicUsize::new(0));
-    let concurrency = std::thread::available_parallelism()
-        .map_or(2, |n| n.get())
-        .clamp(2, 8);
+    // Connection slots, not compute threads: browsers hold idle pre-connected sockets (up to the
+    // 120 s read timeout), so a low cap fills with idle sockets and answers 503 to real requests.
+    let concurrency = 64;
     for stream in listener.incoming() {
         let Ok(mut stream) = stream else {
             continue;

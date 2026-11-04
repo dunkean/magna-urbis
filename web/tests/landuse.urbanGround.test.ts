@@ -106,11 +106,12 @@ describe('shared natural ground permission', () => {
       center: { x: 1549, y: 2492 } }), (stage, current) => {
       if (stage !== 'fields & woods' || !current?.urban) return;
       const u = current.urban;
-      // The corrected cadastral frame's deep residential plot has a 17.47 m
-      // inscribed radius and 2,950 m² of owner land, clear of protected sites.
-      const selected = { p: u.parcels[943], i: 943 };
+      // The deepest residential plot of the cadastral frame: selected by its
+      // property, not by an index that moves whenever the parcels change.
+      const selected = u.parcels.map((p, i) => ({ p, i, r: p.use === 'plot' ? inscribed(p.poly, [], 0.5).r : 0 }))
+        .reduce((a, b) => b.r > a.r ? b : a);
       expect(selected.p.use).toBe('plot');
-      expect(inscribed(selected.p.poly, [], 0.5).r).toBeGreaterThan(17);
+      expect(selected.r).toBeGreaterThan(17);
       expect(selected).toBeDefined(); owner = selected.p;
       // Density repairs can legitimately occupy the former vacant pin. Keep
       // the real cadastral frame and create one explicit vacancy before rural

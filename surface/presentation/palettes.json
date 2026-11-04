@@ -5,7 +5,7 @@
   "sourceFilesSha256": {
     "web/src/render/styles.ts": "27a1f7c496ad739d2f762ae50b49c335c8cc535648acb5630ae5ebca87b5b440",
     "web/src/render/waterStyle.ts": "a78c387043d1aa63f7051794bf730d85b6c8f82628e86f1c7d457a83d83af898",
-    "web/src/render/terrainStyle.ts": "49475e1f0f810bb1fea766cb05573e01ae1237551ce5b293aa94b2e68a2fc5ca"
+    "web/src/render/terrainStyle.ts": "2ac3770b6af0abeb3d18f97bdef4d8e7635380c7fa6715ebd4af70d0feb70033"
   },
   "palettes": {
     "parchment": {
@@ -1596,7 +1596,22 @@
           "op": 0.9
         }
       },
-      "kind": "palette",
+      "traits": {
+        "family": "map",
+        "ground3d": false,
+        "neuralEarth": false,
+        "satelliteVariant": 0,
+        "forestBrushes": false,
+        "waterAlwaysDrawn": false,
+        "physicalRiverWidth": false,
+        "seaInMaterial": false,
+        "customWaterColors": true,
+        "elevation": false,
+        "contours": true,
+        "customGroundColors": true,
+        "cartographicVegetation": true,
+        "paintedCityByDefault": false
+      },
       "water": {
         "stops": [
           [
@@ -1782,7 +1797,22 @@
           "op": 0.9
         }
       },
-      "kind": "palette",
+      "traits": {
+        "family": "map",
+        "ground3d": false,
+        "neuralEarth": false,
+        "satelliteVariant": 0,
+        "forestBrushes": false,
+        "waterAlwaysDrawn": false,
+        "physicalRiverWidth": false,
+        "seaInMaterial": false,
+        "customWaterColors": true,
+        "elevation": false,
+        "contours": true,
+        "customGroundColors": true,
+        "cartographicVegetation": true,
+        "paintedCityByDefault": false
+      },
       "water": {
         "stops": [
           [
@@ -1948,7 +1978,22 @@
           "op": 0.95
         }
       },
-      "kind": "palette",
+      "traits": {
+        "family": "map",
+        "ground3d": false,
+        "neuralEarth": false,
+        "satelliteVariant": 0,
+        "forestBrushes": false,
+        "waterAlwaysDrawn": false,
+        "physicalRiverWidth": false,
+        "seaInMaterial": false,
+        "customWaterColors": true,
+        "elevation": false,
+        "contours": true,
+        "customGroundColors": true,
+        "cartographicVegetation": true,
+        "paintedCityByDefault": false
+      },
       "water": {
         "stops": [
           [
@@ -2129,7 +2174,22 @@
           "op": 0.94
         }
       },
-      "kind": "palette",
+      "traits": {
+        "family": "map",
+        "ground3d": false,
+        "neuralEarth": false,
+        "satelliteVariant": 0,
+        "forestBrushes": false,
+        "waterAlwaysDrawn": false,
+        "physicalRiverWidth": false,
+        "seaInMaterial": false,
+        "customWaterColors": true,
+        "elevation": false,
+        "contours": true,
+        "customGroundColors": true,
+        "cartographicVegetation": true,
+        "paintedCityByDefault": false
+      },
       "water": {
         "stops": [
           [
@@ -2300,7 +2360,22 @@
           "op": 0.96
         }
       },
-      "kind": "palette",
+      "traits": {
+        "family": "map",
+        "ground3d": false,
+        "neuralEarth": false,
+        "satelliteVariant": 0,
+        "forestBrushes": false,
+        "waterAlwaysDrawn": false,
+        "physicalRiverWidth": false,
+        "seaInMaterial": false,
+        "customWaterColors": true,
+        "elevation": false,
+        "contours": true,
+        "customGroundColors": true,
+        "cartographicVegetation": true,
+        "paintedCityByDefault": false
+      },
       "water": {
         "stops": [
           [
@@ -2479,7 +2554,22 @@
           "op": 0.94
         }
       },
-      "kind": "palette",
+      "traits": {
+        "family": "map",
+        "ground3d": false,
+        "neuralEarth": false,
+        "satelliteVariant": 0,
+        "forestBrushes": false,
+        "waterAlwaysDrawn": false,
+        "physicalRiverWidth": false,
+        "seaInMaterial": false,
+        "customWaterColors": true,
+        "elevation": false,
+        "contours": true,
+        "customGroundColors": true,
+        "cartographicVegetation": true,
+        "paintedCityByDefault": false
+      },
       "water": {
         "stops": [
           [
@@ -2658,7 +2748,22 @@
           "op": 0.97
         }
       },
-      "kind": "palette",
+      "traits": {
+        "family": "map",
+        "ground3d": false,
+        "neuralEarth": false,
+        "satelliteVariant": 0,
+        "forestBrushes": false,
+        "waterAlwaysDrawn": false,
+        "physicalRiverWidth": false,
+        "seaInMaterial": false,
+        "customWaterColors": true,
+        "elevation": false,
+        "contours": true,
+        "customGroundColors": true,
+        "cartographicVegetation": true,
+        "paintedCityByDefault": false
+      },
       "water": {
         "stops": [
           [
@@ -2832,7 +2937,22 @@
           "op": 0.96
         }
       },
-      "kind": "palette",
+      "traits": {
+        "family": "map",
+        "ground3d": false,
+        "neuralEarth": false,
+        "satelliteVariant": 0,
+        "forestBrushes": false,
+        "waterAlwaysDrawn": false,
+        "physicalRiverWidth": false,
+        "seaInMaterial": false,
+        "customWaterColors": true,
+        "elevation": false,
+        "contours": true,
+        "customGroundColors": true,
+        "cartographicVegetation": true,
+        "paintedCityByDefault": false
+      },
       "water": {
         "stops": [
           [
@@ -3011,7 +3131,22 @@
           "op": 0.94
         }
       },
-      "kind": "palette",
+      "traits": {
+        "family": "map",
+        "ground3d": false,
+        "neuralEarth": false,
+        "satelliteVariant": 0,
+        "forestBrushes": false,
+        "waterAlwaysDrawn": false,
+        "physicalRiverWidth": false,
+        "seaInMaterial": false,
+        "customWaterColors": true,
+        "elevation": false,
+        "contours": true,
+        "customGroundColors": true,
+        "cartographicVegetation": true,
+        "paintedCityByDefault": false
+      },
       "water": {
         "stops": [
           [
@@ -3185,7 +3320,22 @@
           "op": 0.9
         }
       },
-      "kind": "material",
+      "traits": {
+        "family": "material",
+        "ground3d": false,
+        "neuralEarth": true,
+        "satelliteVariant": 0,
+        "forestBrushes": false,
+        "waterAlwaysDrawn": false,
+        "physicalRiverWidth": false,
+        "seaInMaterial": false,
+        "customWaterColors": true,
+        "elevation": false,
+        "contours": true,
+        "customGroundColors": false,
+        "cartographicVegetation": false,
+        "paintedCityByDefault": true
+      },
       "water": {
         "stops": [
           [
@@ -3363,7 +3513,22 @@
           "op": 0.9
         }
       },
-      "kind": "material",
+      "traits": {
+        "family": "material",
+        "ground3d": true,
+        "neuralEarth": false,
+        "satelliteVariant": 0,
+        "forestBrushes": false,
+        "waterAlwaysDrawn": false,
+        "physicalRiverWidth": false,
+        "seaInMaterial": false,
+        "customWaterColors": true,
+        "elevation": false,
+        "contours": true,
+        "customGroundColors": false,
+        "cartographicVegetation": false,
+        "paintedCityByDefault": true
+      },
       "water": {
         "stops": [
           [
@@ -3541,7 +3706,22 @@
           "op": 0.9
         }
       },
-      "kind": "material",
+      "traits": {
+        "family": "material",
+        "ground3d": true,
+        "neuralEarth": false,
+        "satelliteVariant": 0,
+        "forestBrushes": true,
+        "waterAlwaysDrawn": false,
+        "physicalRiverWidth": false,
+        "seaInMaterial": false,
+        "customWaterColors": true,
+        "elevation": false,
+        "contours": true,
+        "customGroundColors": false,
+        "cartographicVegetation": false,
+        "paintedCityByDefault": true
+      },
       "water": {
         "stops": [
           [
@@ -3719,7 +3899,24 @@
           "op": 0.9
         }
       },
-      "kind": "material",
+      "traits": {
+        "family": "material",
+        "ground3d": true,
+        "neuralEarth": false,
+        "satelliteVariant": 1,
+        "forestBrushes": false,
+        "waterAlwaysDrawn": true,
+        "physicalRiverWidth": true,
+        "seaInMaterial": true,
+        "customWaterColors": false,
+        "elevation": false,
+        "contours": true,
+        "customGroundColors": false,
+        "cartographicVegetation": false,
+        "paintedCityByDefault": true,
+        "forestClearingProfile": "progressive",
+        "variantGroupLabel": "Render v2"
+      },
       "water": {
         "stops": [
           [
@@ -3893,7 +4090,24 @@
           "op": 0.9
         }
       },
-      "kind": "material",
+      "traits": {
+        "family": "material",
+        "ground3d": true,
+        "neuralEarth": false,
+        "satelliteVariant": 2,
+        "forestBrushes": false,
+        "waterAlwaysDrawn": true,
+        "physicalRiverWidth": true,
+        "seaInMaterial": true,
+        "customWaterColors": false,
+        "elevation": false,
+        "contours": true,
+        "customGroundColors": false,
+        "cartographicVegetation": false,
+        "paintedCityByDefault": true,
+        "forestClearingProfile": "progressive",
+        "variantOf": "render-v2"
+      },
       "water": {
         "stops": [
           [
@@ -4067,7 +4281,24 @@
           "op": 0.9
         }
       },
-      "kind": "material",
+      "traits": {
+        "family": "material",
+        "ground3d": true,
+        "neuralEarth": false,
+        "satelliteVariant": 3,
+        "forestBrushes": false,
+        "waterAlwaysDrawn": true,
+        "physicalRiverWidth": true,
+        "seaInMaterial": true,
+        "customWaterColors": false,
+        "elevation": false,
+        "contours": true,
+        "customGroundColors": false,
+        "cartographicVegetation": false,
+        "paintedCityByDefault": true,
+        "forestClearingProfile": "progressive",
+        "variantOf": "render-v2"
+      },
       "water": {
         "stops": [
           [
@@ -4241,7 +4472,24 @@
           "op": 0.9
         }
       },
-      "kind": "material",
+      "traits": {
+        "family": "material",
+        "ground3d": true,
+        "neuralEarth": false,
+        "satelliteVariant": 4,
+        "forestBrushes": false,
+        "waterAlwaysDrawn": true,
+        "physicalRiverWidth": true,
+        "seaInMaterial": true,
+        "customWaterColors": false,
+        "elevation": false,
+        "contours": true,
+        "customGroundColors": false,
+        "cartographicVegetation": false,
+        "paintedCityByDefault": true,
+        "forestClearingProfile": "progressive",
+        "variantOf": "render-v2"
+      },
       "water": {
         "stops": [
           [
@@ -4415,7 +4663,24 @@
           "op": 0.9
         }
       },
-      "kind": "material",
+      "traits": {
+        "family": "material",
+        "ground3d": true,
+        "neuralEarth": false,
+        "satelliteVariant": 5,
+        "forestBrushes": false,
+        "waterAlwaysDrawn": true,
+        "physicalRiverWidth": true,
+        "seaInMaterial": true,
+        "customWaterColors": false,
+        "elevation": false,
+        "contours": true,
+        "customGroundColors": false,
+        "cartographicVegetation": false,
+        "paintedCityByDefault": true,
+        "forestClearingProfile": "progressive",
+        "variantOf": "render-v2"
+      },
       "water": {
         "stops": [
           [
@@ -4589,7 +4854,23 @@
           "op": 0.9
         }
       },
-      "kind": "brush",
+      "traits": {
+        "family": "brush",
+        "ground3d": false,
+        "neuralEarth": false,
+        "satelliteVariant": 0,
+        "forestBrushes": false,
+        "waterAlwaysDrawn": false,
+        "physicalRiverWidth": false,
+        "seaInMaterial": false,
+        "customWaterColors": true,
+        "elevation": false,
+        "contours": false,
+        "customGroundColors": false,
+        "cartographicVegetation": false,
+        "paintedCityByDefault": false,
+        "fantasy": "ink"
+      },
       "water": {
         "stops": [
           [
@@ -4763,7 +5044,23 @@
           "op": 0.9
         }
       },
-      "kind": "brush",
+      "traits": {
+        "family": "brush",
+        "ground3d": false,
+        "neuralEarth": false,
+        "satelliteVariant": 0,
+        "forestBrushes": false,
+        "waterAlwaysDrawn": false,
+        "physicalRiverWidth": false,
+        "seaInMaterial": false,
+        "customWaterColors": true,
+        "elevation": false,
+        "contours": false,
+        "customGroundColors": false,
+        "cartographicVegetation": false,
+        "paintedCityByDefault": false,
+        "fantasy": "color"
+      },
       "water": {
         "stops": [
           [
@@ -4937,7 +5234,22 @@
           "op": 0.9
         }
       },
-      "kind": "diagnostic",
+      "traits": {
+        "family": "diagnostic",
+        "ground3d": false,
+        "neuralEarth": false,
+        "satelliteVariant": 0,
+        "forestBrushes": false,
+        "waterAlwaysDrawn": false,
+        "physicalRiverWidth": false,
+        "seaInMaterial": false,
+        "customWaterColors": true,
+        "elevation": true,
+        "contours": false,
+        "customGroundColors": false,
+        "cartographicVegetation": false,
+        "paintedCityByDefault": false
+      },
       "water": {
         "stops": [
           [

@@ -1,3 +1,4 @@
+import { feedLanduse } from '../render/groundTone';
 import { v1LandscapeCanvas, type V1LandscapeStyle } from '../render/v1Landscape';
 import { CityGround } from '../render/cityGround';
 import { bindGear, gearButton } from './mapGroup';
@@ -159,8 +160,15 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     renderer?.dispose(); renderer = undefined; cancelAnimationFrame(frame);
     if (!active() || !scene || !context) { landuseLayer.replaceChildren(); canvas = undefined; host = undefined; renderWorld = undefined; renderScene = undefined; return; }
     if (!canvas) {
-      const dry = new CityGround(context.raster).land().flatMap(s => [s.outer, ...s.holes]).map(r => r.map((p, i) => `${i ? 'L' : 'M'}${p.x},${p.y}`).join('') + 'Z').join('');
-      landuseLayer.innerHTML = `<defs><clipPath id="urban-landuse-clip"><path d="${dry}" clip-rule="evenodd"/></clipPath></defs><g clip-path="url(#urban-landuse-clip)"><foreignObject/></g>`;
+      const ring = (r: { x: number; y: number }[]): string => r.map((p, i) => `${i ? 'L' : 'M'}${p.x},${p.y}`).join('') + 'Z';
+      const water = context.raster.geometry?.water;
+      if (water?.length) {   // dry land = the world rectangle minus the vector water (evenodd): smooth edges, no raster staircase
+        const w = context.raster.width, rings = water.flatMap(g => g.filter(r => r.length >= 3)).map(ring).join('');
+        landuseLayer.innerHTML = `<defs><clipPath id="urban-landuse-clip"><path d="M0,0H${w}V${w}H0Z${rings}" clip-rule="evenodd"/></clipPath></defs><g clip-path="url(#urban-landuse-clip)"><foreignObject/></g>`;
+      } else {
+        const dry = new CityGround(context.raster).land().flatMap(s => [s.outer, ...s.holes]).map(r => ring(r)).join('');
+        landuseLayer.innerHTML = `<defs><clipPath id="urban-landuse-clip"><path d="${dry}" clip-rule="evenodd"/></clipPath></defs><g clip-path="url(#urban-landuse-clip)"><foreignObject/></g>`;
+      }
       host = landuseLayer.querySelector('foreignObject')!;
       canvas = document.createElement('canvas'); canvas.id = 'landuseCanvas'; canvas.style.display = 'block'; host.append(canvas);
     }
@@ -204,7 +212,7 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     const cw = Math.max(1, Math.round(width * rendererDpr)), ch = Math.max(1, Math.round(height * rendererDpr));
     if (canvas.width !== cw) canvas.width = cw;
     if (canvas.height !== ch) canvas.height = ch;
-    frame = requestAnimationFrame(() => { renderer?.draw(view); });
+    frame = requestAnimationFrame(() => { renderer?.draw(view); if (canvas && context) feedLanduse(canvas, view.cx - w / 2, view.cy - h / 2, w, h, context.raster.width); });
   }
   function cancel(): void {
     ++id; clearTimeout(timer); worker?.terminate(); worker = undefined;

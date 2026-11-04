@@ -37,6 +37,7 @@ export interface Enclosure {
 export interface GrowthPhase { culture?: string; kind: string; zone: string; recipe: string; population: number; targetArea: number; shapes: Shape[] }
 export interface Quay { kind: string; shape: Shape; deck_z_m: number; material: string }
 export interface UrbanStructure {
+  waterways?: { shape: Shape; levelM: number; crossings: Shape[] }[];
   gateVillageCenters?: Point[];
   quays?: Quay[];
   portDistricts?: { district: number; role: 'port'; quarters: number[]; shapes: Shape[] }[];
@@ -136,9 +137,9 @@ function nativeLayoutConfig(config: LayoutConfig) {
   // Absent is off; keep the payload of old strict engines unchanged.
   const input: Partial<LayoutConfig> = { ...config };
   if (input.gateVillage === 0 && !input.gateVillages) delete input.gateVillage;
-  for (const key of ['oldEnclosureCitadel', 'medievalWalls', 'riverControl', 'dryDitches', 'gateVillages', 'shelteredHarbour', 'powerHighGround', 'mergeParallelStreets', 'regularGridOutline', 'roadMouths', 'roadRemnants', 'roadEndJoins', 'smallPlaceCapacity'] as const)
+  for (const key of ['oldEnclosureCitadel', 'medievalWalls', 'riverControl', 'dryDitches', 'gateVillages', 'shelteredHarbour', 'powerHighGround', 'mergeParallelStreets', 'regularGridOutline', 'roadMouths', 'roadRemnants', 'roadEndJoins', 'smallPlaceCapacity', 'naturalCampApproaches', 'streetFrontage', 'alignEnclosedGrid', 'hideUnusedQuarters', 'villageBridgeBudget', 'linksJoinRoads'] as const)
     if (input[key] === false || input[key] === undefined) delete input[key];
-  for (const key of ['wallStiffness', 'wallTerrain', 'wallRelief', 'wallTowerSpacing', 'ditchWetness'] as const)
+  for (const key of ['wallStiffness', 'wallTerrain', 'wallRelief', 'wallTowerSpacing', 'ditchWetness', 'lagoonCanals', 'campRingWobble'] as const)
     if (input[key] == null) delete input[key];
   for (const key of ['riverControlMode', 'portEnclosure', 'plannedWall', 'heightsCastle', 'wallExtension'] as const)
     if (!input[key]) delete input[key];
@@ -146,6 +147,8 @@ function nativeLayoutConfig(config: LayoutConfig) {
     if (input[key] === true || input[key] === undefined) delete input[key];
   if (input.campGrowth === 'ring' || !input.campGrowth) delete input.campGrowth;
   if (!input.parallelMerge) delete input.parallelMerge;
+  if (!input.organicBranchVariation) delete input.organicBranchVariation;
+  if (!input.ribbonWidthVariation) delete input.ribbonWidthVariation;
   if (input.portDetachment === 1) delete input.portDetachment;
   if (input.portShelter === 0 && !input.shelteredHarbour) delete input.portShelter;
   config = input as LayoutConfig;

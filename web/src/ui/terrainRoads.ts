@@ -7,6 +7,7 @@ import { urbanText } from './urbanPanelLocale';
 import { LOCALE_KEY } from './shellLocale';
 import { RENDER_ROAD_PX, ROAD_STROKE_LAYERS, renderCrossingStrokes, renderRoadStrokes, roadStrokeWidth, splitAtCrossings, type RoadStroke } from '../render/roadPaintRender';
 
+import { groundAt, onToneReady, toneKey, toneStreet } from '../render/groundTone';
 import { BLEND_ROAD_ALPHA, BLEND_ROAD_COLOR, BLEND_ROAD_PX, GROUND_BLEND_LABEL, GROUND_BLEND_TITLE, getGroundBlend, gradeFade, isBlended, onGroundBlend, setGroundBlend, type GroundBlend } from '../render/groundBlend';
 import { getBenchRenderColors } from './benchRenderColors';
 import { v1RoadPaint, type V1LandscapeStyle } from '../render/v1Landscape';
@@ -21,7 +22,7 @@ const levelWords: Record<string,Words> = { primitive:['Primitif · pistes et sen
 const profileWords: Record<string,Words> = { medieval:['Europe médiévale','Medieval European','中世纪欧洲','Europa medieval','Europa medieval'], roman:['Romain / byzantin','Roman / Byzantine','罗马 / 拜占庭','Romano / bizantino','Romano / bizantino'], 'east-asian':['Routes postales est-asiatiques','East Asian post roads','东亚驿道','Rutas postales de Asia oriental','Estradas postais do Leste Asiático'], caravan:['Routes caravanières','Caravan routes','商队路线','Rutas de caravanas','Rotas de caravanas'], andean:['Andin · escaliers de pierre','Andean · stone stairs','安第斯 · 石阶','Andino · escaleras de piedra','Andino · escadas de pedra'], mesoamerican:['Chaussées mésoaméricaines','Mesoamerican causeways','中美洲堤道','Calzadas mesoamericanas','Calçadas mesoamericanas'], tribal:['Chemins tribaux','Tribal paths','部族小径','Caminos tribales','Caminhos tribais'], elven:['Elfe · chemins de contour','Elven · contour paths','精灵 · 等高小径','Élfico · caminos de contorno','Élfico · caminhos de contorno'], dwarven:['Nain · pavé et raide','Dwarven · paved and steep','矮人 · 铺装陡路','Enano · pavimentado y empinado','Anão · pavimentado e íngreme'] };
 /** Fill and casing; dirt has no casing. */
 const SURFACE_COLOR: Record<RoadSurface, [string, string | null]> = {
-  dirt: ['#8b6840', null], gravel: ['#f2ead6', '#8b7c63'], paved: ['#eeb465', '#6b4527'], flagstone: ['#d9c8a1', '#463729'],
+  dirt: ['#8b6840', null], gravel: ['#f2ead6', '#8b7c63'], paved: ['#c9b98f', '#5e4a34'], flagstone: ['#d9c8a1', '#463729'],
 };
 const DASH: Partial<Record<RoadClass, string>> = { track: '5 3', trail: '1.2 3' };
 
@@ -117,6 +118,9 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
     const detail = (event as CustomEvent<{ active: boolean; style: V1LandscapeStyle }>).detail;
     v1Style = detail.active ? detail.style : undefined; draw();
   });
+  // Once per sampled map: the roads drawn before the land use existed take its tone (deferred, never re-entrant).
+  let toned = '';
+  onToneReady(() => { const key = toneKey(); if (key === toned) return; toned = key; setTimeout(() => draw(), 400); });
   let config = defaultRoadConfig(), style = defaultRoadStyle(), enabled = true, show = true, output: RoadOutput | undefined;
   let drawnLayer: SVGGElement | undefined, drawnState = '', drawn: RoadOutput | undefined;
   let urbanOwnership: Layout[] | undefined, drawnOwnership: Layout[] | undefined;
@@ -313,7 +317,9 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
       const d = outsidePath(s.path, s.width, style.curves);
       const v1 = v1Style ? v1RoadPaint(s.class === 'track' || s.class === 'trail' ? 'track' : s.class === 'highway' || s.class === 'main' ? 'major' : 'minor', s.width, scale, v1Style) : undefined;
       const paint = v1 ?? paintOf(style, s.class, s.surface), colors = getBenchRenderColors();
-      const { width: w, dash } = paint, fill = (['track','trail'].includes(s.class) ? colors.track : colors.road) ?? paint.fill, casing = style.casing ? colors.roadEdge ?? paint.casing : null;
+      const mid = !v1 && s.path.length ? s.path[s.path.length >> 1] : undefined, ground = mid && groundAt(mid.x, mid.y, 2);
+      const tinted = ground ? toneStreet(ground, s.class === 'track' || s.class === 'trail' ? 'track' : 'road', { highway: 0, main: 1, local: 2, track: 3, trail: 4 }[s.class]) : undefined;
+      const { width: w, dash } = paint, fill = (['track','trail'].includes(s.class) ? colors.track : colors.road) ?? tinted?.fill ?? paint.fill, casing = style.casing ? colors.roadEdge ?? tinted?.edge ?? paint.casing : null;
       const extra: Record<string, string> = dash ? { 'stroke-dasharray': dash } : {};
       // World-size feature: the preset width is a screen floor under the road's metric width (V1 paints are metric already).
       const body = v1 ? w : roadStrokeWidth({ scale: 1, addPx: 0, addM: 0 }, w, s.width), plus = (px: number): number | string => v1 ? w + px : `calc(${body} + ${px}px)`;
@@ -329,7 +335,7 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
         const cd = outsidePath(c.path, s.width, false);
         if (!cd) continue;
         if (c.kind === 'bridge') { crossings.append(line(cd, '#4f3c2a', plus(3.4), { 'stroke-linecap': 'butt' }), line(cd, '#e8d8b8', plus(1.2), { 'stroke-linecap': 'butt' })); }
-        else if (c.kind === 'causeway') { crossings.append(line(cd, '#5d5446', plus(2.6)), line(cd, '#cfc3a5', plus(0.8))); }
+        else if (c.kind === 'causeway') { crossings.append(line(cd, tinted?.edge ?? '#5d5446', plus(2.6)), line(cd, tinted?.fill ?? '#cfc3a5', plus(0.8))); }
         else crossings.append(line(cd, '#3f7fa6', plus(0.6), { 'stroke-dasharray': '1 2.5' }));
       }
       if (d) {
@@ -361,11 +367,14 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
     const bodies: SVGGElement[] = [];
     for (const s of order) {
       const px = BLEND_ROAD_PX[s.class] * style.width, fade = Math.round(gradeFade(s.grade) * 10) / 10, alpha = BLEND_ROAD_ALPHA[s.class] * fade;
-      const d = outsidePath(s.path, s.width, style.curves);
+      const d = outsidePath(s.path, s.width, style.curves), mid = s.path.length ? s.path[s.path.length >> 1] : undefined, ground = mid && groundAt(mid.x, mid.y, 2);
+      const tint = ground ? toneStreet(ground, s.class === 'track' || s.class === 'trail' ? 'track' : 'road', { highway: 0, main: 1, local: 2, track: 3, trail: 4 }[s.class]) : undefined, tk = tint?.fill ?? '';
       if (d) {
-        if (s.class === 'highway' || s.class === 'main' || s.class === 'local') group(`edge|${s.class}|${fade}`, alpha * 0.22).append(stroke(d, edgeColor, roadStrokeWidth({ scale: 1, addPx: 1.6, addM: 1.4 }, px, s.width)));
-        const g = group(`body|${s.class}|${fade}`, alpha); if (!bodies.includes(g)) bodies.push(g);
-        g.append(stroke(d, (s.class === 'track' || s.class === 'trail' ? getBenchRenderColors().track : undefined) ?? color, roadStrokeWidth({ scale: 1, addPx: 0, addM: 0 }, px, s.width)));
+        // The land use leaves a corridor along every road (the darker decor shows there): an apron of the ground tone hides it.
+        if (tint && s.class !== 'track' && s.class !== 'trail') group(`apron|${tk}`, 0.5).append(stroke(d, tint.ground, roadStrokeWidth({ scale: 1, addPx: 9, addM: 4 }, px, s.width)));
+        if (s.class === 'highway' || s.class === 'main' || s.class === 'local') group(`edge|${s.class}|${fade}|${tk}`, alpha * 0.22).append(stroke(d, tint?.edge ?? edgeColor, roadStrokeWidth({ scale: 1, addPx: 1.6, addM: 1.4 }, px, s.width)));
+        const g = group(`body|${s.class}|${fade}|${tk}`, alpha); if (!bodies.includes(g)) bodies.push(g);
+        g.append(stroke(d, (s.class === 'track' || s.class === 'trail' ? getBenchRenderColors().track : undefined) ?? tint?.fill ?? color, roadStrokeWidth({ scale: 1, addPx: 0, addM: 0 }, px, s.width)));
         const hit = stroke(d, 'transparent', String(Math.max(8, px + 6))); hit.style.strokeWidth = ''; hit.setAttribute('stroke-width', String(Math.max(8, px + 6)));
         hit.style.pointerEvents = 'stroke'; hit.dataset.road = '';
         const title = document.createElementNS(ns, 'title'); title.textContent = describe(s); hit.append(title); hits.append(hit);
@@ -375,10 +384,11 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
         if (!cd) continue;
         const w = roadStrokeWidth({ scale: 1, addPx: 0, addM: 0 }, px, s.width);
         if (c.kind === 'bridge') crossings.append(stroke(cd, '#4f3c2a', `calc(${w} + 3.4px)`, 'butt'), stroke(cd, '#e8d8b8', `calc(${w} + 1.2px)`, 'butt'));
-        else if (c.kind === 'causeway') crossings.append(stroke(cd, '#5d5446', `calc(${w} + 2.6px)`), stroke(cd, '#cfc3a5', `calc(${w} + 0.8px)`));
+        else if (c.kind === 'causeway') crossings.append(stroke(cd, tint?.edge ?? '#5d5446', `calc(${w} + 2.6px)`), stroke(cd, tint?.fill ?? '#cfc3a5', `calc(${w} + 0.8px)`));
         else { const f = stroke(cd, '#3f7fa6', `calc(${w} + 0.6px)`); f.setAttribute('stroke-dasharray', '1 2.5'); crossings.append(f); }
       }
     }
+    for (const [key, g] of groups) if (key.startsWith('apron|')) painted.append(g);
     for (const [key, g] of groups) if (key.startsWith('edge|')) painted.append(g);
     painted.append(...bodies, crossings);
   }

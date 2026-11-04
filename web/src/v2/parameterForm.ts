@@ -1,4 +1,4 @@
-import { bindTree, setText } from './i18n';
+import { bindTree, setText, translate } from './i18n';
 
 export interface ParameterChoice { value: string; label: string }
 export interface ParameterField {
@@ -12,6 +12,8 @@ export interface ParameterField {
   step?: number | 'any';
   placeholder?: string;
   optional?: boolean;
+  /** Copy for an automatic native choice; callers need not expose override storage. */
+  emptyLabel?: string;
   unit?: string;
   id?: string;
   /** Display conversions (for example, fractions shown as percentages). */
@@ -23,6 +25,7 @@ export interface ParameterFormBindings {
   getValue(path: string): unknown;
   setValue(path: string, value: unknown): void;
   disabled?: () => boolean;
+  isMixed?(path: string): boolean;
 }
 export interface ParameterForm { sync(): void; dispose(): void }
 let parameterFormSequence = 0;
@@ -40,8 +43,8 @@ export function mountParameterForm(root: HTMLElement, fields: readonly Parameter
     let input: HTMLInputElement | HTMLSelectElement;
     if (field.type === 'select' || field.type === 'boolean' && field.optional) {
       input = document.createElement('select');
-      const choices = field.type === 'boolean' ? [{ value: '', label: 'Inherited default' }, { value: 'true', label: 'Enabled' }, { value: 'false', label: 'Disabled' }] : field.options ?? [];
-      if (field.type === 'select' && field.optional) { const option = document.createElement('option'); option.value = ''; setText(option, 'Inherited default'); input.append(option); }
+      const choices = field.type === 'boolean' ? [{ value: '', label: field.emptyLabel ?? 'Automatic' }, { value: 'true', label: 'Enabled' }, { value: 'false', label: 'Disabled' }] : field.options ?? [];
+      if (field.type === 'select' && field.optional) { const option = document.createElement('option'); option.value = ''; setText(option, field.emptyLabel ?? 'Automatic'); input.append(option); }
       for (const choice of choices) { const option = document.createElement('option'); option.value = choice.value; setText(option, choice.label); input.append(option); }
     } else {
       input = document.createElement('input'); input.type = field.type === 'boolean' ? 'checkbox' : field.type;
@@ -92,6 +95,18 @@ export function mountParameterForm(root: HTMLElement, fields: readonly Parameter
   const sync = () => {
     for (const { field, input, slider } of controls) {
       input.disabled = bindings.disabled?.() ?? false;
+      const mixed = bindings.isMixed?.(field.path) ?? false;
+      if (slider) slider.hidden = mixed;
+      input.dataset.mixed = String(mixed);
+      if (mixed && input !== document.activeElement) {
+        if (input instanceof HTMLSelectElement) {
+          let option = input.querySelector<HTMLOptionElement>('option[data-mixed]');
+          if (!option) { option = document.createElement('option'); option.value = '__mixed__'; option.dataset.mixed = ''; option.disabled = true; input.prepend(option); }
+          setText(option, 'Different values'); input.value = '__mixed__';
+        } else { input.value = ''; input.placeholder = translate('Different values'); }
+        continue;
+      }
+      if (input instanceof HTMLInputElement) input.placeholder = field.placeholder ?? '';
       const raw = bindings.getValue(field.path), value = raw !== undefined && field.toInput ? field.toInput(raw) : raw;
       if (slider) {
         slider.disabled = input.disabled;

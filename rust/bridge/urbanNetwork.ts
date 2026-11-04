@@ -153,7 +153,14 @@ export function outsideUrbanStreets(streets: Street[], layouts: Layout[]): Stree
  */
 export function prepareUrbanRoadClip(layouts: Layout[]): (streets: Street[]) => Street[] {
   const masks = urbanRoadOwnership(layouts).map(shape => ({ shape, bounds: bounds(shape.outer) }));
-  return streets => clipUrbanStreets(streets, masks);
+  // A regional piece lying wholly inside the cadastre's blocks is a retired
+  // trajectory (e.g. through plots released by the occupancy trim): the plan
+  // replaced it, so it is not drawn. A piece reaching the fields stays whole.
+  const blocks = layouts.filter(l => l.structure && l.structure.mechanism !== 'legacy')
+    .flatMap(l => l.blocks.filter(b => b.shape.outer.length >= 3).map(b => ({ shape: b.shape, bounds: bounds(b.shape.outer) })));
+  const inBlock = (p: Point): boolean => blocks.some(b => p.x >= b.bounds[0] && p.x <= b.bounds[2] && p.y >= b.bounds[1] && p.y <= b.bounds[3] && inShape(p, b.shape));
+  const retired = (s: Street): boolean => s.path.every((p, i) => i === 0 || [0.02, 0.5, 0.98].every(t => inBlock(interpolate(s.path[i - 1], p, t))));
+  return streets => clipUrbanStreets(streets, masks).filter(s => !blocks.length || !retired(s));
 }
 
 function clipUrbanStreets(streets: Street[], masks: { shape: Shape; bounds: Bounds }[]): Street[] {

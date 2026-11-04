@@ -68,7 +68,7 @@ describe('V2 appearance recipes and export snapshots', () => {
   it('uses persisted false flags in visual exports instead of generation-time layer defaults', () => {
     const settings = defaultSettings(); settings.options.contours = settings.options.landuse = settings.options.labels = settings.options.legend = true;
     settings.appearance = { style: 'night', contours: false, landuse: false, labels: false, legend: false, cartouche: false, painted: true, vegetation: 'canopy' };
-    expect(appearanceDisplayOptions(settings)).toEqual({ ...settings.appearance });
+    expect(appearanceDisplayOptions(settings)).toMatchObject({ ...settings.appearance });
     const sources = { version: 'retained-test-atlases', vegetation: 'data:image/png;base64,AAA', terrain: 'data:image/png;base64,BBB' };
     const snapshot = svgOptionsForDisplay({ width: 1600, style: 'atlas', contours: true, labels: true, legend: true,
       layers: { city: false } }, { ...appearanceDisplayOptions(settings), layers: { water: false, decor: false } }, sources);

@@ -5,6 +5,7 @@ import { defaultSettings } from '../src/v2/settings';
 import { effectiveRegion, regionSpec, validateRegionSettings } from '../src/v2/regionSettings';
 import { projectEngineTerrain } from '../src/v2/terrainProjection';
 import type { TerrainData } from '../../rust/bridge/terrain';
+import { rerollSeed, stepSeed } from '../../rust/bridge/generationSeed';
 
 const bridge = vi.hoisted(() => ({ create: vi.fn(), run: vi.fn(), dispose: vi.fn(), raster: vi.fn(), fallback: vi.fn() }));
 vi.mock('../../rust/bridge/settlementEngine', () => ({ createSettlementEngine: bridge.create }));
@@ -44,6 +45,22 @@ beforeEach(() => {
   bridge.raster.mockReset().mockReturnValue(raster()); bridge.fallback.mockReset().mockReturnValue(raster());
 });
 describe('V2 regional Rust forwarding and retained sessions', () => {
+  it('records regional-road variation in the general seed while preserving placed sites and their draw', async () => {
+    const { settings, world } = setup(), { planRustRegion } = await import('../src/v2/region');
+    await planRustRegion(world, settings); const placed = world.settlements;
+    const original = settings.options.seed;
+    settings.options.seed = rerollSeed(original, ['settle-roads']);
+    await planRustRegion(world, settings, undefined, true);
+    expect(world.settlements).toBe(placed);
+    expect(bridge.run.mock.calls[1][0].seed).toBe(stepSeed(settings.options.seed, 'settle-roads'));
+    expect(stepSeed(settings.options.seed, 'settle-sites')).toBe(original);
+    bridge.run.mockClear();
+    const fresh = setup().world; await planRustRegion(fresh, settings);
+    expect(bridge.run.mock.calls).toHaveLength(2);
+    expect(bridge.run.mock.calls[0][0]).toMatchObject({ seed: original, roads: null });
+    expect(bridge.run.mock.calls[1][0].sites).toEqual(placed!.map(s => ({ key: s.key, population: s.population, culture: s.culture, center: s.center, radius: s.radius })));
+    expect(fresh.roads).toEqual(world.roads);
+  });
   it('forwards the complete placement and road recipe and retains the native output and exact terrain input', async () => {
     const { settings, world } = setup(), { planRustRegion } = await import('../src/v2/region');
     await planRustRegion(world, settings);

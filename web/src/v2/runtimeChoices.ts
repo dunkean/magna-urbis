@@ -143,7 +143,10 @@ export function setRuntimeChoice(settings: V2Settings, key: RuntimeKey, value: s
   switch (key) {
     case 'engine': applyRuntimePath(settings, 'runtime.backend', value); runtime.backend = value as EngineChoice; break;
     case 'compute': runtime.compute = value as ComputeChoice; break;
-    case 'neural': if (isNeural(settings)) runtime.source = value === 'python' ? 'neural-python' : runtime.backend === 'native' ? 'neural' : 'neural-wasm'; break;
+    case 'neural':
+      if (value === 'python') { settings.generation = 'neural'; runtime.source = 'neural-python'; }
+      else if (isNeural(settings)) runtime.source = runtime.backend === 'native' ? 'neural' : 'neural-wasm';
+      break;
     case 'sampling': settings.terrain ??= {}; if (value) settings.terrain.compute = value as 'wasm' | 'gpu-f32'; else delete settings.terrain.compute; break;
     case 'generationCompute': settings.terrain ??= {}; if (value) settings.terrain.generationCompute = value as never; else delete settings.terrain.generationCompute; break;
     case 'hydrology': settings.terrain ??= {}; settings.terrain.hydrology = { ...settings.terrain.hydrology }; if (value === 'auto') delete settings.terrain.hydrology.compute; else settings.terrain.hydrology.compute = value as 'cpu' | 'gpu'; break;

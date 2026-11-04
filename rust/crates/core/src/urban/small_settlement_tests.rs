@@ -538,3 +538,88 @@ fn reviewed_camps_real_map_geometry() {
         eprintln!("CAMP_REVIEW {culture}: {} previews",requests.iter().filter(|r|r["preview"].as_array().is_some_and(|p|!p.is_empty())).count());
     }
 }
+
+/// Invariant (no empty camp): a 1500-inhabitant camp keeps a building site
+/// per household or so, whatever the lattice draws. The arctic-coast bench
+/// case: the camp is one block reached only by the ends of its tracks (a few
+/// metres of street front); the inuit footpaths must still start there (they
+/// started only where a cell boundary happened to meet that contact: one lot).
+/// The nomad ring, at its default growth, pitches one piece per tent (it
+/// folded eight tents into one sector lot: 22 homes for 273 households).
+#[test]
+fn large_camps_reached_by_track_ends_keep_their_homes() {
+    let n = 16;
+    let (h, w, level) = (vec![10.0_f32; n * n], vec![0_u8; n * n], vec![0.0_f32; n * n]);
+    let s = Surface { geometry: None, width: 4000.0, n, height: &h, water: &w };
+    let p = |x: f64, y: f64| Point { x, y };
+    let track = |a: Point, b: Point, width: f64| Street { path: vec![a, b], widths: vec![width; 2], rank: 2, role: "regional".into() };
+    let roads = [
+        track(p(0., 2043.), p(1762., 2004.), 2.1),
+        track(p(1762., 2004.), p(2000., 2000.), 2.1),
+        track(p(2000., 2000.), p(2887., 4000.), 2.1),
+        track(p(1762., 2004.), p(515., 3029.), 1.05),
+    ];
+    let cfg: LayoutConfig = serde_json::from_str(include_str!("fixtures/small-layout-config.json")).unwrap();
+    assert_eq!(cfg.camp_growth, "ring", "default growth");
+    let mut failures = vec![];
+    // Seeds 0, 3, 4 and 7 drew no inuit footpath before the fix.
+    for (culture, seeds) in [("inuit-camp", &[0, 3, 4, 7][..]), ("nomad-camp", &[0][..])] {
+        for &k in seeds {
+            // The bench site keeps its 5000-inhabitant radius (562 m).
+            let seed = format!("camp-roads-{k}");
+            let site = Site { key: "city".into(), name: String::new(), population: 1500, culture: culture.into(),
+                center: p(2000., 2000.), radius: 561.79 };
+            let layouts = generate_quarters(&seed, &[site], &cfg, s, &roads).unwrap();
+            let parts = generate_parcels(&seed, &layouts, &ParcelConfig::default()).unwrap();
+            let requests = building_sites::requests(&seed, &layouts, &parts, s, &level, None).unwrap();
+            let built = requests.iter().filter(|r| r["preview"].as_array().is_some_and(|p| !p.is_empty())).count();
+            let pr = parts[0].programme.as_ref().unwrap();
+            let housed: f64 = pr.allocations.iter().map(|a| a.households).sum();
+            let wanted: f64 = pr.demands.iter().filter(|d| d.unit == "domesticUnits").map(|d| d.requested).sum();
+            eprintln!("CAMP-ROADS {culture} {seed}: {built} building sites, {housed}/{wanted} households");
+            if built <= 120 || housed < 0.8 * wanted {
+                failures.push(format!("{culture} {seed}: {built} building sites, {housed}/{wanted} households"));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// Review 03/11 (village-500 native-iroquoian, sheet switches on): the
+/// longhouse village reached by trails ending at its centre showed one
+/// building in 45 parcels. Every longhouse row lot is built and the
+/// households are lodged, switches off or on (the City Bench roads of
+/// city-temperate-coast-s, simplified).
+#[test]
+fn review12_a_longhouse_village_on_trail_ends_builds_its_longhouses() {
+    let n = 16;
+    let (h, w, level) = (vec![10.0_f32; n * n], vec![0_u8; n * n], vec![0.0_f32; n * n]);
+    let s = Surface { geometry: None, width: 4000.0, n, height: &h, water: &w };
+    let trail = |pts: &[(f64, f64)]| Street { path: pts.iter().map(|&(x, y)| Point { x, y }).collect(), widths: vec![1.62; pts.len()], rank: 2, role: "regional".into() };
+    let roads = [
+        trail(&[(2261., 1141.), (2254., 1260.), (2220., 1413.), (2168., 1603.), (2164., 1716.), (2105., 1870.), (2020., 1996.)]),
+        trail(&[(2020., 1996.), (2000., 2000.)]),
+        trail(&[(2600., 2666.), (2474., 2543.), (2471., 2441.), (2373., 2330.), (2271., 2232.), (2174., 2135.), (2066., 2027.)]),
+        trail(&[(2020., 1996.), (2042., 2008.), (2066., 2027.)]),
+        trail(&[(2066., 2027.), (2098., 2182.), (2099., 2281.), (2121., 2416.), (2145., 2562.), (2123., 2710.), (2021., 2899.)]),
+    ];
+    let base: LayoutConfig = serde_json::from_str(include_str!("fixtures/small-layout-config.json")).unwrap();
+    let sheet = LayoutConfig { natural_camp_approaches: true, street_frontage: true, align_enclosed_grid: true, hide_unused_quarters: true,
+        organic_branch_variation: 0.5, ribbon_width_variation: 0.5, ..base.clone() };
+    for (name, cfg) in [("off", base), ("sheet", sheet)] {
+        let seed = "city-temperate-coast-s-1";
+        let site = Site { key: "city".into(), name: String::new(), population: 500, culture: "native-iroquoian".into(),
+            center: Point { x: 2000., y: 2000. }, radius: 561.79 };
+        let layouts = generate_quarters(seed, &[site], &cfg, s, &roads).unwrap();
+        let parts = generate_parcels(seed, &layouts, &ParcelConfig::default()).unwrap();
+        let requests = building_sites::requests(seed, &layouts, &parts, s, &level, None).unwrap();
+        let built: std::collections::HashSet<&str> = requests.iter().filter(|r| r["preview"].as_array().is_some_and(|p| !p.is_empty()))
+            .filter_map(|r| r["parcel_id"].as_str()).collect();
+        let lots = parts[0].parcels.iter().filter(|p| p.use_kind == "plot").count();
+        let empty = parts[0].parcels.iter().filter(|p| p.use_kind == "plot" && !built.contains(p.id.as_str())).count();
+        let pr = parts[0].programme.as_ref().unwrap();
+        let housed: f64 = pr.allocations.iter().map(|a| a.households).sum();
+        let wanted: f64 = pr.demands.iter().filter(|d| d.unit == "domesticUnits").map(|d| d.requested).sum();
+        assert!(lots >= 15 && empty == 0 && housed >= 0.9 * wanted, "{name}: {lots} lots, {empty} unbuilt, {housed}/{wanted} households");
+    }
+}

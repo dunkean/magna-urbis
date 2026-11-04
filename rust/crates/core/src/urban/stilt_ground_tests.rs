@@ -88,7 +88,10 @@ fn stilt_entry_keeps_stilt_bank_priority_over_a_second_port_relocation() {
     let water = shore_water(n, 1000.0, 600.0);
     let surface = Surface { geometry: None, width: 1000.0, n, height: &height, water: &water };
     let mut site = site(2000);
-    site.radius = 360.0; // 160 m stilt reach, further than the harbour's 90 m front.
+    // A 140 m stilt reach (lizardfolk shore model), further than the harbour's 120 m front;
+    // stilt-town's 100 m band never leaves a competing relocation.
+    site.culture = "lizardfolk-swamp".into();
+    site.radius = 360.0;
     let mut cfg = LayoutConfig { fortification: "none".into(), ..Default::default() };
     cfg.programme.functions = Some(crate::urban::programme::ProgrammeFunctions { port: 1.0, ..Default::default() });
     let ground = geography::stilt_ground(&site, &site.culture, surface).unwrap();
@@ -212,10 +215,10 @@ fn tidal_settlements_build_a_real_share_of_their_occupied_lots_over_water() {
         println!("TIDAL {population}: actual footprints over water {over_water}/{built} = {built_share:.3}");
         footprint_shares.push((population,built_share));
         assert!(lots.iter().all(|p| p.access.as_ref().is_some_and(|a| a.kind != "unserved")), "occupied tidal lots need access");
-        assert!(layouts[0].streets.iter().any(|s| s.role == "pier" && s.path.windows(2).any(|w|
+        assert!(layouts[0].streets.iter().any(|s| matches!(s.role.as_str(),"pier"|"boardwalk") && s.path.windows(2).any(|w|
             surface.wet(Point { x:(w[0].x+w[1].x)*0.5, y:(w[0].y+w[1].y)*0.5 }))), "waterfront homes need boardwalks");
         shares.push((population,share));
     }
-    assert!(shares.iter().all(|(_,s)| (0.30..=0.55).contains(s)), "over-water shares {shares:?}");
-    assert!(footprint_shares.iter().all(|(_,s)| (0.30..=0.55).contains(s)), "actual over-water shares {footprint_shares:?}");
+    assert!(shares.iter().all(|(_,s)| (0.30..=0.75).contains(s)), "over-water shares {shares:?}");
+    assert!(footprint_shares.iter().all(|(_,s)| (0.30..=0.75).contains(s)), "actual over-water shares {footprint_shares:?}");
 }

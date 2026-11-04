@@ -10,6 +10,7 @@ import type { Relief } from '../gen/options';
 import SettlementWorker from './settlementWorker?worker&inline';
 import { defaultSettlementConfig, defaultSettlementSpec, settlementRaster, runSettlementRequest, type Point, type RoadSite, type SettlementConfig, type SettlementOutput, type SettlementRequest, type SettlementResponse, type SettlementSpec } from '../../../rust/bridge/settlements';
 import type { TerrainData, TerrainSettings } from '../../../rust/bridge/terrain';
+import { CLIMATE_VALUES } from '../../../rust/bridge/terrainClimate';
 import type { View } from '../render/view';
 import { CULTURES, getCulture } from '../gen/urban/culture';
 import { SITE_ARCHETYPES, classOfPop } from '../gen/options';
@@ -333,6 +334,9 @@ export function createTerrainSettlements(options: {
     if (cachedTerrain !== t) {
       const retained = options.getRaster?.();
       request.raster = retained ? { ...retained, height: retained.height.slice(), water: retained.water.slice(), waterLevel: retained.waterLevel.slice(), riverWidth: retained.riverWidth.slice(), riverIds: retained.riverIds.slice() } : settlementRaster(t); cachedTerrain = t;
+      // Resource model inputs (Rust `resources::RegionInput`).
+      const s = options.getSettings(), climate = s.climateValues ?? CLIMATE_VALUES[s.climate ?? 'temperate'];
+      request.raster.region ??= { seed: s.seed, temperature: climate.temperature, precipitation: climate.precipitation, biome: s.climateZone ?? s.climate ?? 'temperate', x: t.x, y: t.y };
       validation = { width: request.raster.width, n: request.raster.n, water: request.raster.water.slice() };
     }
     if (place) { el('setGenerate').setAttribute('aria-busy', 'true'); el('setStatus').textContent = urbanText(['Placement des implantations avec Rust…','Placing settlements in Rust…','正在使用 Rust 放置聚落…','Situando asentamientos con Rust…','Posicionando assentamentos com Rust…']); }

@@ -4,9 +4,11 @@ import logo from '../ui/assets/logo-magna-urbis.png';
 import { CULTURE_LABELS, SITE_ARCHETYPES, type Options } from '../gen/options';
 import { STYLE_LIST, type MapStyle } from '../render/styles';
 import { isMapStyle } from '../render/styles';
-import { TERRAIN_STYLE_LIST, type TerrainStyle } from '../render/terrainStyle';
+import { TERRAIN_STYLE_LIST, styleTraits, type TerrainStyle } from '../render/terrainStyle';
 import { mountRenderControls } from './renderControls';
-import { appearanceDisplayOptions } from './appearance';
+import { resolveSettingsAppearance, resolvedDisplayOptions } from './appearance';
+import { applyAppearancePatch } from '../render/appearanceRecipe';
+import { nativeCityRecords } from './nativeProducts';
 import type { World, UrbanBuilding } from '../gen/types';
 import { screenToWorld } from '../render/view';
 import { EXPORT_LAYER_NAMES, type ExportLayers } from '../render/exportLayers';
@@ -32,11 +34,17 @@ import { stagesForAction, stageById, type StageDef, type StageFamily } from './s
 import { mountHeightmapSource, mountHeightmapFit } from './heightmapLibrary';
 import { mountSettingsPanel, refreshBackends, backendStatus, backendCaption } from './settingsPanel';
 import { mountNeuralModelManager } from './neuralModelManager';
+import { mountDesktopModules } from './desktopModules';
+import { mountDesktopUpdates } from './desktopUpdates';
+import { mountV2Illustration } from './illustration';
 import { iconUrl, type IconId } from './stageIcons';
 import { mountRegionControls } from './regionControls';
 import { mountMapControls } from './mapControls';
 import { renameMap } from './mapNaming';
 import type { V2Urban3d } from './urban3d';
+import { migrateUrbanSeeds, rerollUrbanSeeds } from './urbanSeeds';
+import type { UrbanSeedStage } from './contracts';
+import { rerollSeed } from '../../../rust/bridge/generationSeed';
 
 const $ = <T extends HTMLElement = HTMLElement>(selector: string): T => document.querySelector<T>(selector)!;
 const esc = (value: unknown): string => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]!));
@@ -44,8 +52,8 @@ registerMessages({'Cartographic maps':{en:'Cartographic maps',fr:'Cartes graphiq
 registerMessages({'Render3D · Multiscale':{en:'Render3D · Multiscale',fr:'Render3D · Multi-échelle'},'Render v2 - Satellite':{en:'Render v2 - Satellite',fr:'Render v2 - Satellite'},'Render v2 - Substrate':{en:'Render v2 - Substrate',fr:'Render v2 - Substrat'},'Render v2 - Moisture':{en:'Render v2 - Moisture',fr:'Render v2 - Humidité'},'Render v2 - Vegetation':{en:'Render v2 - Vegetation',fr:'Render v2 - Végétation'},'Render v2 - Snow / ice':{en:'Render v2 - Snow / ice',fr:'Render v2 - Neige / glace'}});
 registerMessages({'Réglages':{en:'Settings',fr:'Réglages'},'Réglages, moteurs et activité':{en:'Settings, engines and activity',fr:'Réglages, moteurs et activité'},'Toute la chaîne':{en:'Whole chain',fr:'Toute la chaîne'},'Générer toute la chaîne : relief, peuplements et villes':{en:'Generate the whole chain: relief, settlements and cities',fr:'Générer toute la chaîne : relief, peuplements et villes'},'Implanter et construire':{en:'Place and build',fr:'Implanter et construire'},'Recette JSON':{en:'Recipe JSON',fr:'Recette JSON'},'Les lieux':{en:'Places',fr:'Les lieux'},'Replier la liste':{en:'Collapse the list',fr:'Replier la liste'},'Créer le relief':{en:'Create the relief',fr:'Créer le relief'},'Redessiner la carte':{en:'Redraw the map',fr:'Redessiner la carte'},'Implanter et relier':{en:'Place and connect',fr:'Implanter et relier'},'Construire tous les lieux':{en:'Build every place',fr:'Construire tous les lieux'},'Courbes':{en:'Contours',fr:'Courbes'},'Milieux':{en:'Land cover',fr:'Milieux'},'Noms':{en:'Names',fr:'Noms'},'Adresses des modèles et services':{en:'Model and service addresses',fr:'Adresses des modèles et services'},'Chaîne de génération':{en:'Generation chain',fr:'Chaîne de génération'},'Réglages & moteurs':{en:'Settings & engines',fr:'Réglages & moteurs'}});
 const icon = (id: IconId, size = 22): string => `<img class="v2-icon" src="${iconUrl(id) ?? ''}" alt="" width="${size}" height="${size}" aria-hidden="true">`;
-const renderStyles = [...TERRAIN_STYLE_LIST, { id: 'copernicus', label: 'Elevation · DEM' }];
-const renderStyleOptions = (): string => [['Cartographic maps',renderStyles.filter(style=>isMapStyle(style.id))],['Terrain materials',renderStyles.filter(style=>style.id.startsWith('render'))],['Painted fantasy maps',renderStyles.filter(style=>style.id.startsWith('fantasy'))],['Diagnostics',renderStyles.filter(style=>style.id==='copernicus')]].map(([label,styles])=>`<optgroup data-render-label="${label}" label="${translate(String(label))}">${(styles as typeof renderStyles).map(style=>`<option value="${style.id}">${esc(style.label)}</option>`).join('')}</optgroup>`).join('');
+const renderStyles = [...TERRAIN_STYLE_LIST, { id: 'copernicus', label: 'Elevation · DEM', traits: styleTraits('copernicus') }];
+const renderStyleOptions = (): string => [['Cartographic maps',renderStyles.filter(style=>style.traits.family==='map')],['Terrain materials',renderStyles.filter(style=>style.traits.family==='material')],['Painted fantasy maps',renderStyles.filter(style=>style.traits.family==='brush')],['Diagnostics',renderStyles.filter(style=>style.traits.family==='diagnostic')]].map(([label,styles])=>`<optgroup data-render-label="${label}" label="${translate(String(label))}">${(styles as typeof renderStyles).map(style=>`<option value="${style.id}">${esc(style.label)}</option>`).join('')}</optgroup>`).join('');
 type Item = string | readonly [string, string];
 function options(items: readonly Item[]): string { return items.map(item => { const [value,label] = typeof item === 'string' ? [item,item] : item; return `<option value="${esc(value)}">${esc(label)}</option>`; }).join(''); }
 function field(label: string, key: string, items?: readonly Item[], attrs = ''): string { const id=`option-${key.replace(/\./g,'-')}`;return `<label class="label" for="${id}">${label}</label>${items ? `<select id="${id}" data-option="${key}">${options(items)}</select>` : `<input id="${id}" data-option="${key}" ${attrs || 'type="number"'}>`}`; }
@@ -85,6 +93,7 @@ function syncCitySelection(): void {
   document.querySelectorAll<HTMLInputElement>('[data-city-select]').forEach(input => { input.checked = selectedCities.has(input.dataset.citySelect!); input.disabled = busy; });
   $<HTMLButtonElement>('#towns-only').disabled = busy || !valid.size || cityScope === 'selection' && !selectedCities.size;
   setDynamicText($('#cities-selected-count'), () => translate('{count} selected').replace('{count}', String(selectedCities.size)));
+  urbanControls.sync();
   chain.sync();
 }
 function cityStageLabel(key: string): string {
@@ -92,10 +101,32 @@ function cityStageLabel(key: string): string {
   const stage = world.stats[`v2.urbanStage:${key}`];
   return stage === 'layout' ? 'Stage: roads & quarters' : stage === 'parcels' ? 'Stage: parcels' : stage === 'programme' ? 'Stage: programme' : 'Stage: houses';
 }
-function runCities(stage?: V2TownStage): void {
+function runCities(stage?: V2TownStage, output?: string): void {
   const keys = cityTargets();
   if (keys && !keys.length) { toast(translate('Select at least one city in the list on the right.')); return; }
-  void generate('towns', undefined, stage, undefined, keys);
+  void generate('towns', undefined, stage, undefined, keys, output);
+}
+function rerollCityStep(stage: UrbanSeedStage, keys: string[], output?: string): void {
+  if (busy) return;
+  if (!keys.length) return;
+  rerollUrbanSeeds(settings, keys, stage);
+  touchRecipe(); urbanControls.sync(); inspectorForms.forEach(form => form.sync());
+  $<HTMLInputElement>('#seed').value = settings.options.seed;
+  const order: V2TownStage[] = ['layout', 'parcels', 'programme', 'buildings'];
+  const minimum: V2TownStage = stage === 'composition' || stage === 'streets' ? 'layout' : stage === 'parcels' ? 'parcels' : stage === 'programme' ? 'programme' : 'buildings';
+  const target = order[Math.max(order.indexOf(minimum), ...keys.map(key => order.indexOf((world?.stats[`v2.urbanStage:${key}`] ?? 'buildings') as V2TownStage)))];
+  if (keys.length === 1) void generate('town', keys[0], target, undefined, undefined, output);
+  else void generate('towns', undefined, target, undefined, keys, output);
+}
+function rerollStage(stage: StageDef): void {
+  if (busy) return;
+  const variation = typeof stage.variation === 'function' ? stage.variation(chain.context()) : stage.variation;
+  if (!variation) return;
+  if (stage.family === 'cities') { rerollCityStep(variation as UrbanSeedStage, cityTargets() ?? world?.settlements?.map(place => place.key) ?? [], stage.id); return; }
+  migrateUrbanSeeds(settings);
+  settings.options.seed = rerollSeed(settings.options.seed, [variation]);
+  $<HTMLInputElement>('#seed').value = settings.options.seed; touchRecipe();
+  runStage(stage);
 }
 let selectedBuilding: { settlement: string; index: number; building: UrbanBuilding } | null = null;
 let busy = false, cancelled = false, currentTab = 'terrain', toastTimer: ReturnType<typeof setTimeout>;
@@ -106,7 +137,7 @@ const bootRuntime = runtimeOptions();
 const localEdition = bootRuntime.profile === 'local';
 let connectLocal = localEdition;
 // The installed launcher already owns a ready native service; avoid loading WASM for the same CPU work.
-if(localEdition)settings.runtime={...settings.runtime!,backend:'native',localServer:bootRuntime.localServer,pythonServer:bootRuntime.pythonServer};
+if(localEdition){settings.generation='procedural';settings.runtime={...settings.runtime!,backend:'native',source:'procedural',localServer:bootRuntime.localServer,pythonServer:bootRuntime.pythonServer};}
 
 setHTML($('#app'), `
 <header class="app-header">
@@ -204,7 +235,7 @@ $('#view3d').onclick=async()=>{
   $<HTMLButtonElement>('#view3d').disabled=true;
   try{
     await client.prepare3dBackground();
-    if(!city3d){toast(getLanguage()==='fr'?'Chargement de la vue 3D…':'Loading the 3D view…');city3d=await(await import('./urban3d')).mountV2Urban3d({host:$('.map-area'),getWorld:()=>world,getSettings:()=>settings,getBackground:()=>client.backgroundUrl(),onAppearanceChange:()=>{projectRevision++;void refreshAppearance();},getTextured:()=>settings.appearance?.textured??false,setTextured:value=>{settings.appearance={style:settings.options.style,...settings.appearance,textured:value};projectRevision++;void refreshAppearance();},getSelected:()=>selectedBuilding?(selectedBuilding.building as UrbanBuilding&{nativeId?:string}).nativeId:undefined,onSelect:id=>{
+    if(!city3d){toast(getLanguage()==='fr'?'Chargement de la vue 3D…':'Loading the 3D view…');city3d=await(await import('./urban3d')).mountV2Urban3d({host:$('.map-area'),getWorld:()=>world,getSettings:()=>settings,getBackground:()=>client.backgroundUrl(),onAppearancePatch:patch=>{settings.appearance=applyAppearancePatch(settings.appearance,settings.options.style,patch);projectRevision++;void refreshAppearance();},getTextured:()=>settings.appearance?.textured??false,setTextured:value=>{settings.appearance={style:settings.options.style,...settings.appearance,textured:value};projectRevision++;void refreshAppearance();},getSelected:()=>selectedBuilding?(selectedBuilding.building as UrbanBuilding&{nativeId?:string}).nativeId:undefined,onSelect:id=>{
       for(const settlement of world?.settlements??[]){const urban=townUrban(world!,settlement.key),index=urban?.buildings.findIndex(b=>(b as UrbanBuilding&{nativeId?:string}).nativeId===id)??-1;if(urban&&index>=0){showBuilding({settlement:settlement.key,index,building:urban.buildings[index]});break;}}
     }});}
     city3d.show();setText($('#view3d'),'2D');$('#view3d').setAttribute('aria-pressed','true');$('#capture3d').hidden=false;
@@ -220,6 +251,10 @@ let inspectorForms:UrbanControls[]=[];
 /* The staged chain takes over the sidebar: the forms above are moved into their stage rows. */
 const backendBindings={localServer:()=>settings.runtime?.localServer??bootRuntime.localServer??'http://127.0.0.1:8791',pythonServer:()=>settings.runtime?.pythonServer??bootRuntime.pythonServer??'http://127.0.0.1:8793',log,getSettings:()=>settings,busy:()=>busy,onRuntimeChange:()=>{touchRecipe();terrainControls.sync();regionControls?.sync();syncUrbanBackend();scheduleChainSync();}};
 mountSettingsPanel($('#hardware-details'),backendBindings);
+const desktopModulesHost=document.createElement('div');$('#hardware-details').after(desktopModulesHost);
+mountDesktopModules(desktopModulesHost,()=>void inspectHardware());
+mountDesktopUpdates($('.header-tools'),desktopModulesHost);
+mountV2Illustration({host:$('.header-tools'),getWorld:()=>world,getSettings:()=>settings,get3d:()=>city3d,getViewport:()=>({element:$('#map'),view:client.viewer.getView()})});
 let chainSyncFrame=0;
 function scheduleChainSync():void{if(chainSyncFrame)return;chainSyncFrame=requestAnimationFrame(()=>{chainSyncFrame=0;chain.sync();});}
 const familyActions:Record<StageFamily,[string,()=>void]>={
@@ -237,7 +272,7 @@ function runStage(stage:StageDef):void{
   if(run.action==='mask'){terrainControls.sketchHost.querySelector<HTMLButtonElement>('[data-id="edit"]')?.click();return;}
   if(run.action==='town'){
     const backend=settings.urban?.backend??settings.runtime?.backend??'typescript';
-    runCities(backend==='typescript'?undefined:run.townStage);return;
+    runCities(backend==='typescript'?undefined:run.townStage, stage.id);return;
   }
   void generate(run.action, undefined, undefined, run.action === 'terrain' ? stage.id : undefined);
 }
@@ -251,7 +286,7 @@ const chain:StageChain=mountStageChain({
   onChange:()=>{touchRecipe();regionControls.sync();syncUrbanBackend();},
   onRegionChange:()=>{touchRecipe();regionControls.sync();},
   onAppearance:()=>{projectRevision++;clearTimeout(renderTimer);renderTimer=setTimeout(()=>void refreshAppearance(),120);},
-  run:runStage,runFamily,openPlace:()=>{if(world&&selectedTown){$('#places-panel').hidden=false;showInspector(selectedTown);}},
+  run:runStage,reroll:rerollStage,runFamily,openPlace:()=>{if(world&&selectedTown){$('#places-panel').hidden=false;showInspector(selectedTown);}},
   openExecution:()=>{dialog('#hardware-dialog');void inspectHardware();requestAnimationFrame(()=>document.getElementById('settings-execution')?.scrollIntoView({block:'start'}));},
   availability:()=>{const s=backendStatus();return{checked:s.checked,webgpu:s.webgpu,native:s.native.available,python:s.python.available};},
   heightmap:{
@@ -280,13 +315,21 @@ function redrawNames():Promise<void>{
   }).catch(reportAppearanceError).finally(()=>{if(revision===namingRevision)$('#map-names-apply').setAttribute('aria-busy','false');});
   return namingWork;
 }
+function cityControlDefaults(key: string): Partial<Options> | undefined {
+  const source = world, place = source?.settlements?.find(place => place.key === key);
+  return source && place ? { ...place.options,
+    culture: String(source.stats[`v2.culture:${key}`] ?? place.culture),
+    population: Number(source.stats[`v2.population:${key}`] ?? place.population) } : undefined;
+}
 const urbanParts:[string,UrbanControlParts][]=[
   ['city-composition',{sections:['layout','footprint','growth','fortifications','ports'],extras:['header','phases','archetypes']}],
   ['city-roads',{sections:['streets'],extras:[]}],['city-parcels',{sections:['parcels'],extras:[]}],['city-programme',{sections:['programme'],extras:[]}],
   ['city-buildings',{sections:['placement'],extras:[]}],['city-houses',{sections:['house','workshop'],extras:['mixtures','catalogue']}],
 ];
 {
-  const forms=urbanParts.map(([stage,parts])=>{const host=document.createElement('div');chain.body(stage).append(host);return mountUrbanControls(host,()=>settings,()=>{touchRecipe();syncUrbanBackend();urbanControls.sync();},{kind:'global'},parts);});
+  const forms=urbanParts.map(([stage,parts])=>{const host=document.createElement('div');chain.body(stage).append(host);return mountUrbanControls(host,()=>settings,()=>{touchRecipe();syncUrbanBackend();urbanControls.sync();},{kind:'global'},{...parts,
+    targets:()=> (world?.settlements??[]).filter(place=>cityScope==='all'||selectedCities.has(place.key)).map(place=>place.key),
+    placeDefaults:cityControlDefaults, disabled:()=>busy||!!world?.settlements?.length&&cityScope==='selection'&&!selectedCities.size});});
   urbanControls={sync:()=>forms.forEach(form=>form.sync()),dispose:()=>forms.forEach(form=>form.dispose())};
 }
 // Model and service URLs (terrain schema) belong to Settings, next to the service checks.
@@ -348,8 +391,10 @@ function setBusy(value: boolean): void {
   $<HTMLButtonElement>('#cancel-job').disabled=false;
   syncCitySelection();mapControls.sync();
 }
-async function generate(action: Action, key?: string, townStage?:V2TownStage, terrainStage?: string, keys?: string[]): Promise<void> {
+async function generate(action: Action, key?: string, townStage?:V2TownStage, terrainStage?: string, keys?: string[], cityOutput?: string): Promise<void> {
   if (busy) return; cancelled = false;
+  const previousSeed = settings.options.seed; migrateUrbanSeeds(settings);
+  if (previousSeed !== settings.options.seed) { $<HTMLInputElement>('#seed').value = settings.options.seed; projectRevision++; }
   if (action !== 'terrain' && action !== 'all' && !world) { toast('Créez d’abord le territoire.'); selectTab('terrain'); return; }
   setBusy(true); const started = performance.now(); const revision = projectRevision; let completed = false;
   if (['terrain','region','settlements','town'].includes(action)) chain.clearCityResults();
@@ -358,7 +403,7 @@ async function generate(action: Action, key?: string, townStage?:V2TownStage, te
   elapsedTimer = setInterval(()=>{ setText($('#progress-time'), `${Math.round((performance.now()-started)/1000)} s`); },500);
   log(`Début : ${action} · graine ${settings.options.seed}`);
   try {
-    const result = await client.run(action,settings, previewBase?.pristine ?? previewBase?.world ?? pristine ?? world,key,townStage,terrainStage,keys);
+    const result = await client.run(action,settings, previewBase?.pristine ?? previewBase?.world ?? pristine ?? world,key,townStage,terrainStage,keys,cityOutput);
     if (cancelled) return;
     if (terrainStage && terrainStage !== 'cover-climate') {
       if (!world?.stats['v2.previewStage']) previewBase = { world, pristine };
@@ -393,6 +438,11 @@ function updateWorld(): void {
   setText($('#caption-title'), towns.length ? 'Du territoire à ses habitants' : 'La région avant les villes');
   setText($('#caption-text'), towns.length ? 'Sélectionnez un lieu pour le construire ou affiner ses paramètres. Activez l’inspection et zoomez pour choisir une maison.' : 'Le paysage est prêt. Passez aux peuplements pour implanter les lieux et tracer leurs routes.');
   const preview = stageById.get(String(world.stats['v2.previewStage'] ?? ''));
+  const cityPreview = stageById.get(String(world.stats['v2.cityOutput'] ?? ''));
+  if (cityPreview) {
+    setText($('#map-subtitle'), cityPreview.label.en);
+    setText($('#caption-title'), 'Stage output'); setText($('#caption-text'), cityPreview.summary.en);
+  }
   $('#preview-close').hidden = !preview || !previewBase?.world;
   if (preview) {
     setText($('#map-subtitle'), preview.label.en);
@@ -412,19 +462,20 @@ function showInspector(key: string, focus = false): void {
   disposeInspectorForms();selectedTown = key; selectedBuilding = null;
   document.querySelectorAll<HTMLButtonElement>('[data-town]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.town===key)));$('#places-panel').hidden=false;chain.sync();
   const urban = townUrban(world,key), local = settings.local[key] ?? {};
+  const current = { ...settings.options, sprawl: settings.options.sprawl ?? 1, population: s.population, culture: s.culture, ...local } as Record<string, unknown>;
   $('#inspector').hidden = false;
-  setHTML($('#inspector'), `<button class="close" aria-label="Fermer l’inspecteur">×</button><span class="eyebrow">Réglages locaux</span><h2>${nameHTML(s.name,s.main?'Ville principale':s.key)}</h2><p class="hint">${numberHTML(s.population)} habitants · <span>${esc(s.archetype)}</span></p><div class="breadcrumbs">Territoire › ${nameHTML(s.name,s.key)}</div><p class="inspect-note">Les valeurs vides héritent des paramètres globaux. Seul ce lieu est reconstruit ; son terrain et ses voisins sont conservés.</p><label class="label">Culture</label><select id="local-culture"><option value="">Hériter · ${esc(s.culture)}</option>${options(CULTURE_LABELS)}</select><div class="control-grid"><div><label class="label">Population</label><input id="local-population" type="number" min="10" max="5000000" placeholder="${s.population}"></div><div><label class="label">Étalement</label><input id="local-sprawl" type="number" min="0.5" max="2" step="0.1" placeholder="Hériter"></div></div><label class="label">Enceinte</label><select id="local-walls"><option value="">Hériter</option>${options([['none','Aucune'],['single','Simple'],['double','Double'],['auto','Automatique']])}</select><button class="primary" id="build-town">${urban?'Reconstruire ce lieu':'Construire ce lieu'}</button><p class="hint" style="margin-top:8px">${urban ? `${urban.quarters.length} quartiers · ${urban.parcels.length} parcelles · ${urban.buildings.length} bâtiments` : 'Implantation réservée · construction à la demande'}</p><details class="section"><summary>Étapes de cette ville</summary><ol class="pipeline-list"><li>Plan & emprise<span>Population, culture et site.</span></li><li>Quartiers & rues<span>Croissance, tracé, hiérarchie.</span></li><li>Îlots & parcelles<span>Foncier, accès et occupations.</span></li><li>Édifices & maisons<span>Typologies, enveloppes et monuments.</span></li></ol></details><details class="section"><summary>Recette locale complète</summary><p class="hint">Tous les paramètres urbains exposés : plan de croissance, monuments, défenses, préférences. Les paramètres de relief sont globaux.</p><textarea id="local-json" spellcheck="false">${esc(JSON.stringify(local,null,2))}</textarea><button id="local-apply" class="small">Appliquer</button><button id="local-reset" class="quiet small">Revenir à l’héritage</button></details><div class="section"><label class="checkline"><input type="checkbox" id="inspect-house" ${$<HTMLInputElement>('#inspect-mode').checked?'checked':''}>Choisir une maison sur la carte</label><p class="hint">Zoomez, puis cliquez sur une emprise de bâtiment pour éditer son toit, sa hauteur ou sa géométrie.</p></div><div id="building-inspector"></div>`);
+  setHTML($('#inspector'), `<button class="close" aria-label="Fermer l’inspecteur">×</button><span class="eyebrow">Réglages locaux</span><h2>${nameHTML(s.name,s.main?'Ville principale':s.key)}</h2><p class="hint">${numberHTML(s.population)} habitants · <span>${esc(s.archetype)}</span></p><div class="breadcrumbs">Territoire › ${nameHTML(s.name,s.key)}</div><p class="inspect-note">Les champs affichent les valeurs actuelles. Les étapes précédentes et les autres lieux sont conservés.</p><label class="label">Culture</label><select id="local-culture">${options(CULTURE_LABELS)}</select><div class="control-grid"><div><label class="label">Population</label><input id="local-population" type="number" min="10" max="5000000" value="${current.population}"></div><div><label class="label">Étalement</label><input id="local-sprawl" type="number" min="0.5" max="2" step="0.1" value="${current.sprawl ?? 1}"></div></div><label class="label">Enceinte</label><select id="local-walls">${options([['none','Aucune'],['single','Simple'],['double','Double'],['auto','Automatique']])}</select><button class="primary" id="build-town">${urban?'Reconstruire ce lieu':'Construire ce lieu'}</button><p class="hint" style="margin-top:8px">${urban ? `${urban.quarters.length} quartiers · ${urban.parcels.length} parcelles · ${urban.buildings.length} bâtiments` : 'Implantation réservée · construction à la demande'}</p><details class="section"><summary>Étapes de cette ville</summary><ol class="pipeline-list"><li>Plan & emprise<span>Population, culture et site.</span></li><li>Quartiers & rues<span>Croissance, tracé, hiérarchie.</span></li><li>Îlots & parcelles<span>Foncier, accès et occupations.</span></li><li>Édifices & maisons<span>Typologies, enveloppes et monuments.</span></li></ol></details><details class="section"><summary>Recette locale complète</summary><p class="hint">Tous les paramètres urbains exposés : plan de croissance, monuments, défenses, préférences. Les paramètres de relief sont globaux.</p><textarea id="local-json" spellcheck="false">${esc(JSON.stringify(local,null,2))}</textarea><button id="local-apply" class="small">Appliquer</button><button id="local-reset" class="quiet small">Rétablir les réglages par défaut</button></details><div class="section"><label class="checkline"><input type="checkbox" id="inspect-house" ${$<HTMLInputElement>('#inspect-mode').checked?'checked':''}>Choisir une maison sur la carte</label><p class="hint">Zoomez, puis cliquez sur une emprise de bâtiment pour éditer son toit, sa hauteur ou sa géométrie.</p></div><div id="building-inspector"></div>`);
   $('#inspector .close').onclick = ()=>{ $('#inspector').hidden=true; };
-  for (const name of ['culture','population','sprawl','walls']) { const input = $<HTMLInputElement|HTMLSelectElement>(`#local-${name}`); input.value = String((local as Record<string,unknown>)[name] ?? ''); input.onchange=()=>{ const next = { ...settings.local[key] } as Record<string,unknown>; if (input.value==='') delete next[name]; else next[name]=name==='population'||name==='sprawl'?Number(input.value):input.value; settings.local[key]=next; touchRecipe(); }; }
+  for (const name of ['culture','population','sprawl','walls']) { const input = $<HTMLInputElement|HTMLSelectElement>(`#local-${name}`); input.value = String(current[name] ?? ''); input.onchange=()=>{ const next = { ...settings.local[key] } as Record<string,unknown>; if (input.value==='') delete next[name]; else next[name]=name==='population'||name==='sprawl'?Number(input.value):input.value; settings.local[key]=next; touchRecipe(); }; }
   $('#build-town').onclick=()=>void generate('town',key);
   const backend=settings.urban?.backend??settings.runtime?.backend??'typescript';
   if(backend!=='typescript'){
-    insertHTML($('#build-town'), 'afterend', `<div class="section"><span class="eyebrow">Avancer étape par étape</span><div class="urban-stage-buttons">${[['layout','1 · Plan & quartiers'],['parcels','2 · Îlots & parcelles'],['programme','3 · Programme'],['buildings','4 · Maisons']].map(([stage,label])=>`<button class="small" data-town-stage="${stage}">${label}</button>`).join('')}</div><p class="hint">Les étapes sont de vrais arrêts du moteur Rust. La carte affiche seulement les couches déjà construites.</p></div><details class="section"><summary>Réglages Rust de ce lieu</summary><p class="hint">Héritage global, puis paramètres de ce lieu. Plan, parcellation et maisons ont chacun leur configuration.</p><textarea id="local-rust-json" spellcheck="false">${esc(JSON.stringify(settings.urban?.local?.[key]??{},null,2))}</textarea><button id="local-rust-apply" class="small">Appliquer au lieu</button></details>`);
+    insertHTML($('#build-town'), 'afterend', `<div class="section"><span class="eyebrow">Avancer étape par étape</span><div class="urban-stage-buttons">${[['layout','1 · Plan & quartiers'],['parcels','2 · Îlots & parcelles'],['programme','3 · Programme'],['buildings','4 · Maisons']].map(([stage,label])=>`<button class="small" data-town-stage="${stage}">${label}</button>`).join('')}</div><p class="hint">Les étapes sont de vrais arrêts du moteur Rust. La carte affiche seulement les couches déjà construites.</p></div><details class="section"><summary>Réglages Rust de ce lieu</summary><p class="hint">Valeurs actuelles de ce lieu. Plan, parcellation et maisons ont chacun leur configuration.</p><textarea id="local-rust-json" spellcheck="false">${esc(JSON.stringify(settings.urban?.local?.[key]??{},null,2))}</textarea><button id="local-rust-apply" class="small">Appliquer au lieu</button></details>`);
     document.querySelectorAll<HTMLButtonElement>('[data-town-stage]').forEach(button=>button.onclick=()=>void generate('town',key,button.dataset.townStage as V2TownStage));
     $('#local-rust-apply').onclick=()=>{try{const value=JSON.parse($<HTMLTextAreaElement>('#local-rust-json').value);const candidate={...settings,urban:{...settings.urban,backend,local:{...settings.urban?.local,[key]:value}}};validateSettings(candidate);settings=candidate;touchRecipe();toast('Paramètres Rust locaux enregistrés. Choisissez l’étape à reconstruire.');}catch(e){toast(String(e),true);}};
     insertHTML($('#build-town'),'afterend','<div class="section" id="local-urban-controls"></div>');
-    inspectorForms.push(mountUrbanControls($('#local-urban-controls'),()=>settings,()=>{touchRecipe();$<HTMLTextAreaElement>('#local-rust-json').value=JSON.stringify(settings.urban?.local?.[key]??{},null,2);},{kind:'settlement',key}));
-    const native=(world.debug?.v2RustCities as Record<string,RustTownSnapshot>|undefined)?.[key];
+    inspectorForms.push(mountUrbanControls($('#local-urban-controls'),()=>settings,()=>{touchRecipe();$<HTMLTextAreaElement>('#local-rust-json').value=JSON.stringify(settings.urban?.local?.[key]??{},null,2);},{kind:'settlement',key,defaults:cityControlDefaults(key)}));
+    const native=nativeCityRecords(world)?.[key];
     if(native){
       const refusals=native.stage==='buildings'?native.scene?.refusals??[]:[],warnings=native.warnings??[];
       insertHTML($('#inspector'), 'beforeend', `<details class="section" ${refusals.length?'open':''}><summary>Rapport du moteur · ${refusals.length} refus</summary><p class="hint">Étape : ${esc(native.stage)} · ${esc(native.backend)}. ${native.lastBuildingRequests??0} demande(s) de maison recalculée(s) au dernier passage.</p>${warnings.length?`<pre class="job-log">${esc(warnings.join('\n'))}</pre>`:'<p class="hint">Aucun avertissement de génération.</p>'}${refusals.slice(0,20).map(refusal=>{const id=native.requests?.find(r=>r.id===refusal.id||r.parcel_id===refusal.parcel_id)?.id??refusal.id;return `<details class="section"><summary>Maison ${esc(id)}</summary><p class="warning">${esc(refusal.message)}</p><textarea class="refusal-json" spellcheck="false">${esc(JSON.stringify(settings.urban?.buildings?.[`${key}/${id}`]??{},null,2))}</textarea><button class="small" data-retry-house="${esc(id)}">Réessayer avec ces paramètres</button><p class="hint">Saisir {} rétablit l’héritage du lieu. Les bornes des recettes restent celles du moteur.</p></details>`;}).join('')}</details>`);
@@ -460,7 +511,7 @@ function showBuilding(hit: NonNullable<ReturnType<typeof buildingAt>>): void {
     insertHTML($('#building-inspector'), 'beforeend', `<div class="edit-building"><span class="eyebrow">Générateur de maisons Rust</span><p class="hint">Identifiant : <code>${esc(requestId)}</code>. Réglez la recette, les matériaux, le toit, les étages, les pièces ou la variation. Les étapes du terrain et du cadastre sont conservées.</p><label class="label" for="house-native-json">Paramètres de génération de cette maison</label><textarea id="house-native-json" spellcheck="false">${esc(JSON.stringify(saved,null,2))}</textarea><p class="hint">HouseConfig : seed, recipe, pack, mode, era, size, variation, wealth, overrides (roof, floors, frame, infill, coating, cladding, courtyard_ratio, roof_pitch_deg…). Les valeurs absentes héritent de la recette du lieu. Le placement natif détermine son orientation depuis les accès de la parcelle.</p><button id="house-native-apply">Régénérer avec ces paramètres</button><button id="house-native-reset" class="quiet small">Hériter de la ville</button></div>`);
     const apply=(value:unknown)=>{const next={...settings,urban:{...settings.urban,backend:settings.urban?.backend??'rust' as const,buildings:{...settings.urban?.buildings,[scopedId]:value}}};validateSettings(next);settings=next;touchRecipe();void generate('town',hit.settlement,'buildings');};
     insertHTML($('#house-native-json'),'beforebegin','<div id="house-native-controls"></div>');
-    const nativeRequest=(world?.debug?.v2RustCities as Record<string,RustTownSnapshot>|undefined)?.[hit.settlement]?.requests?.find(request=>request.id===requestId);
+    const nativeRequest=nativeCityRecords(world??undefined)?.[hit.settlement]?.requests?.find(request=>request.id===requestId);
     inspectorForms.push(mountUrbanControls($('#house-native-controls'),()=>settings,()=>{touchRecipe();$<HTMLTextAreaElement>('#house-native-json').value=JSON.stringify(settings.urban?.buildings?.[scopedId]??{},null,2);},{kind:'building',key:hit.settlement,id:requestId,defaults:nativeRequest?.config}));
     $('#house-native-apply').onclick=()=>{try{apply(JSON.parse($<HTMLTextAreaElement>('#house-native-json').value));}catch(e){toast(String(e),true);}};
     $('#house-native-reset').onclick=()=>{try{const buildings={...settings.urban?.buildings};delete buildings[scopedId];settings.urban={...settings.urban,backend:settings.urban?.backend??'rust',buildings};touchRecipe();void generate('town',hit.settlement,'buildings');}catch(e){toast(String(e),true);}};
@@ -503,12 +554,12 @@ document.querySelectorAll<HTMLInputElement|HTMLSelectElement>('[data-option]').f
   else (settings.options as unknown as Record<string,unknown>)[key]=value;
   touchRecipe();
 }));
-$('#random-seed').onclick=()=>{settings.options.seed=Array.from(crypto.getRandomValues(new Uint32Array(2)),n=>n.toString(36)).join('-');mods=[];touchRecipe();syncControls();};
+$('#random-seed').onclick=()=>{migrateUrbanSeeds(settings);settings.options.seed=Array.from(crypto.getRandomValues(new Uint32Array(2)),n=>n.toString(36)).join('-');mods=[];touchRecipe();syncControls();};
 $<HTMLInputElement>('#town-count').onchange=e=>{settings.settlementCount=Number((e.target as HTMLInputElement).value);if(settings.region?.placement){delete settings.region.placement.counts;settings.region.placement.mode='counts';}touchRecipe();regionControls.sync();};
 $('#generate-region').onclick=()=>runFamily(chain.family());$('#run-chain').onclick=()=>void generate('all');$('#terrain-only').onclick=()=>void generate('terrain');$('#region-only').onclick=()=>void generate('region');$('#towns-only').onclick=()=>runCities();
 $('#cancel-job').onclick=()=>{cancelled=true;client.cancel();const local=settings.runtime?.backend==='native'||settings.runtime?.source==='neural-python'||settings.urban?.backend==='native';const message=local?'Attente annulée. La carte précédente est conservée ; le service local peut terminer son calcul en arrière-plan.':'Calcul annulé. La carte précédente est conservée.';log(message);setBusy(false);toast(message);};
 $('#zoom-in').onclick=()=>client.viewer.zoomBy(1.5);$('#zoom-out').onclick=()=>client.viewer.zoomBy(1/1.5);$('#fit-map').onclick=()=>client.viewer.fit();
-$<HTMLSelectElement>('#map-style').onchange=e=>{const style=(e.target as HTMLSelectElement).value as TerrainStyle;settings.appearance={...settings.appearance,style:isMapStyle(style)?style:settings.appearance?.style??settings.options.style,terrainStyle:style,...(!isMapStyle(style)?{renderer:'bench' as const}:{})};if(settings.appearance.city)delete settings.appearance.city.ground;projectRevision++;$<HTMLSelectElement>('#export-style').value=style;void refreshAppearance();};
+$<HTMLSelectElement>('#map-style').onchange=e=>{const style=(e.target as HTMLSelectElement).value as TerrainStyle;settings.appearance={...settings.appearance,style:isMapStyle(style)?style:settings.appearance?.style??settings.options.style,terrainStyle:style,...(styleTraits(style).family!=='map'?{renderer:'bench' as const}:{})};if(settings.appearance.city)delete settings.appearance.city.ground;projectRevision++;$<HTMLSelectElement>('#export-style').value=style;void refreshAppearance();};
 for(const key of ['contours','landuse','labels'] as const)$<HTMLInputElement>(`#display-${key}`).onchange=e=>{const value=(e.target as HTMLInputElement).checked;settings.appearance={style:settings.options.style,...settings.appearance,[key]:value};projectRevision++;void refreshAppearance();};
 $('#mobile-toggle').onclick=()=>{const closed=$('#sidebar').classList.toggle('mobile-closed');$('#mobile-toggle').setAttribute('aria-expanded',String(!closed));};
 let pointerStart={x:0,y:0};$('#map').addEventListener('pointerdown',e=>{pointerStart={x:e.clientX,y:e.clientY};});
@@ -551,12 +602,13 @@ async function svgExport(): Promise<Blob> {
   const style=$<HTMLSelectElement>('#export-style').value as TerrainStyle,width=Number($<HTMLSelectElement>('#export-resolution').value);
   const appearance={style:settings.options.style,...settings.appearance,terrainStyle:style};
   if(isMapStyle(style))appearance.style=style;
-  if(appearance.renderer!=='classic'&&(appearance.renderer==='bench'||!isMapStyle(style)||world?.debug?.v2RustCities)){
-    const image=await client.exportBench({...settings,appearance},width,layers);
+  const exported={...settings,appearance},resolved=resolveSettingsAppearance(exported,world??undefined,'export');
+  if(resolved.path==='composite'){
+    const image=await client.exportBench(exported,resolved,width,layers);
     return new Blob([`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${width}" viewBox="0 0 ${width} ${width}" data-style="${style}" data-rendering="embedded-raster"><image width="${width}" height="${width}" href="${image.toDataURL('image/png')}"/></svg>`],{type:'image/svg+xml'});
   }
-  const display=appearanceDisplayOptions({...settings,appearance});
-  const brushes=appearance.painted?(await import('../render/assets/brushAssets')).BRUSH_SOURCES:undefined;
+  const display=resolvedDisplayOptions(resolved);
+  const brushes=resolved.cartography.painted?(await import('../render/assets/brushAssets')).BRUSH_SOURCES:undefined;
   const worker=new ExportWorker();
   try { return await new Promise<Blob>((resolve,reject)=>{worker.onmessage=({data})=>data.error?reject(new Error(data.error)):resolve(data.blob);worker.onerror=e=>reject(new Error(e.message));worker.postMessage({id:1,world,options:{width,style:appearance.style,layers},display,brushes});}); }finally{worker.terminate();}
 }
@@ -570,6 +622,7 @@ function heightmapBlob(): Promise<Blob> {
 $<HTMLSelectElement>('#export-format').onchange=e=>{const format=(e.target as HTMLSelectElement).value;$('#export-map-options').hidden=!['png','svg'].includes(format);setText($('#export-note'), format==='heightmap'?'PNG en 256 niveaux, accompagné des altitudes min/max. Le projet JSON conserve les grilles FP32 exactes.':format==='recipe'?'La recette conserve paramètres et modifications. Même version du moteur nécessaire pour une reproduction fidèle.':format==='seed'?'La graine seule ne contient ni vos paramètres ni vos modifications.':'Les exports visuels utilisent la carte actuelle, sans relancer la génération.');};
 $('#export-go').onclick=async()=>{
   if(busy)return;const format=$<HTMLSelectElement>('#export-format').value;
+  migrateUrbanSeeds(settings); $<HTMLInputElement>('#seed').value = settings.options.seed;
   if(!world&&!['recipe','seed'].includes(format)){toast('Créez d’abord une carte.');return;}
   $<HTMLButtonElement>('#export-go').disabled=true;
   try {
@@ -591,8 +644,11 @@ window.addEventListener('beforeunload',()=>{clearTimeout(renderTimer);renderCont
 insertHTML($('.header-tools'),'afterbegin',`<label class="language-control"><span class="sr-only">Language</span><select id="language-select" aria-label="Language"><option value="en">English</option><option value="fr">Français</option></select></label>`);
 $<HTMLSelectElement>('#language-select').onchange=event=>setLanguage((event.target as HTMLSelectElement).value as 'en'|'fr');
 onLanguageChange(()=>{renderLog();document.querySelectorAll<HTMLOptGroupElement>('optgroup[data-render-label]').forEach(group=>group.label=translate(group.dataset.renderLabel!));renderControls.sync();});
+registerMessages({'General seed':{en:'General seed',fr:'Graine générale'}});
+setText($('label[for="seed"]'),'General seed');
+$<HTMLInputElement>('#seed').maxLength=65536;
 initializeLanguage();
 syncControls();
-await client.init();
+try{await client.init();}finally{document.getElementById('boot-splash')?.remove();}
 void inspectHardware();
 // Keep source, dimensions and coasts editable before the first generation.

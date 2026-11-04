@@ -43,6 +43,11 @@ pub struct RoadConfig {
     /// many cells per side before routing (0 routes on the raster itself). Search work grows
     /// faster than the cell count, so a 1024² raster routes about ten times slower than 512².
     pub grid: usize,
+    /// Under test: link the access points of activity sites (sites with `access`) to the
+    /// network as tracks/trails. Off: those sites are ignored and the network is unchanged.
+    pub activity_access: bool,
+    /// Place network nodes (tolls, ferries, inns, border posts) along the finished network.
+    pub network_nodes: bool,
 }
 impl Default for RoadConfig {
     fn default() -> Self {
@@ -58,6 +63,8 @@ impl Default for RoadConfig {
             sharing: 0.7,
             exits: 2,
             grid: 512,
+            activity_access: false,
+            network_nodes: true,
         }
     }
 }
@@ -72,6 +79,12 @@ pub struct RoadSite {
     pub center: Point,
     /// Settlement extent; 0 = from the population.
     pub radius: f64,
+    /// Access point of an activity site: `track` | `trail` (see `RoadConfig::activity_access`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub access: Option<String>,
+    /// Parent settlement key of an activity access point.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -118,6 +131,9 @@ pub struct RoadOutput {
     pub routes: usize,
     pub length_by_class: BTreeMap<String, f64>,
     pub length_by_surface: BTreeMap<String, f64>,
+    /// Network nodes (catalogue P4), placed after the network is built.
+    #[serde(default)]
+    pub nodes: Vec<super::activities::ActivitySite>,
 }
 
 struct Union(Vec<usize>);
@@ -513,6 +529,53 @@ impl Router<'_> {
         }
     }
 
+    /// Activity sites: a track or trail from each access point to the nearest road of its
+    /// parent's network (or the parent itself), after every settlement route.
+    fn activity_access(&mut self, points: &[&RoadSite]) {
+        let f = self.f;
+        for s in points {
+            let Some(parent) = self.sites.iter().position(|p| Some(&p.key) == s.parent.as_ref()) else {
+                continue;
+            };
+            let comp = self.uf.find(parent);
+            let mut goals = vec![f.index(self.sites[parent].center)];
+            for site in 0..self.sites.len() {
+                if self.uf.find(site) == comp {
+                    goals.extend(&self.cells_of_site[site]);
+                }
+            }
+            let start = f.index(s.center);
+            if goals.contains(&start) {
+                continue;
+            }
+            let importance = if s.access.as_deref() == Some("trail") { 8 } else { 15 };
+            let profile = self.profile_of(parent);
+            let query = Query {
+                start,
+                goals: &goals,
+                origin: s.center,
+                target: self.sites[parent].center,
+                profile: &PROFILES[profile],
+                class: class_index(importance, self.level),
+                tight: false,
+            };
+            let Some(cells) = self.search.few_crossings(f, &self.net, &self.costs, &query) else {
+                continue;
+            };
+            if cells.len() < 2 {
+                continue;
+            }
+            self.net.add_path(f.r.n, &cells);
+            for &c in &cells {
+                if !self.marked[c] {
+                    self.marked[c] = true;
+                    self.add_road_cell(c, parent);
+                }
+            }
+            self.routed.push(Routed { cells, importance, profile, start: (s.center, s.key.clone()), end: None });
+        }
+    }
+
     /// A road from `site` to the map border `side`, ending wherever along that border the route
     /// is cheapest. Returns the exit point.
     fn connect_exit(
@@ -604,7 +667,18 @@ pub(super) fn route(
     sites: &[RoadSite],
     cfg: &RoadConfig,
 ) -> Result<RoadOutput, String> {
+    // Activity access points never take part in the settlement network itself.
+    let places: Vec<RoadSite> = sites.iter().filter(|s| s.access.is_none()).cloned().collect();
+    let activity: Vec<&RoadSite> = if cfg.activity_access {
+        sites.iter().filter(|s| s.access.is_some()).collect()
+    } else {
+        vec![]
+    };
+    let sites = &places[..];
     validate(sites, cfg, f.r.width)?;
+    if activity.len() > 1000 || activity.iter().any(|s| !(0.0..f.r.width).contains(&s.center.x) || !(0.0..f.r.width).contains(&s.center.y)) {
+        return Err("Invalid road endpoints".into());
+    }
     let mut out = RoadOutput::default();
     let k = sites.len();
     if k == 0 {
@@ -817,7 +891,20 @@ pub(super) fn route(
         }
     }
     router.rural_access(seed, density);
+    let first_activity = router.routed.len();
+    router.activity_access(&activity);
     out.routes = router.routed.len();
+    // Cells of the settlement network, and of activity paths by class (track | trail):
+    // a link lying mostly off the former is an earthen way, whatever the development level.
+    let normal: BTreeSet<usize> = router.routed[..first_activity].iter().flat_map(|r| r.cells.iter().copied()).collect();
+    let mut earthen: BTreeMap<usize, usize> = BTreeMap::new();
+    for r in &router.routed[first_activity..] {
+        let class = if r.importance < 15 { 4 } else { 3 };
+        for &c in &r.cells {
+            let e = earthen.entry(c).or_insert(class);
+            *e = (*e).min(class);
+        }
+    }
 
     // One network from all routes.
     let mut graph = Graph::new();
@@ -871,8 +958,15 @@ pub(super) fn route(
     });
     for link in links {
         let p = &PROFILES[link.profile];
-        let class = class_index(link.importance, level);
-        let surface = surface_index(class, level, p, forced);
+        let cells: Vec<usize> = link.vertices.iter().map(|&v| f.index(graph.pos[v])).collect();
+        let off = cells.iter().filter(|c| !normal.contains(c)).count();
+        let earth = if !earthen.is_empty() && 2 * off > cells.len() {
+            cells.iter().filter_map(|c| earthen.get(c)).copied().min()
+        } else {
+            None
+        };
+        let class = earth.unwrap_or_else(|| class_index(link.importance, level));
+        let surface = if earth.is_some() { 0 } else { surface_index(class, level, p, forced) };
         let raw: Vec<_> = link.vertices.iter().map(|&v| graph.pos[v]).collect();
         let limit = if cfg.grade_weight > 0.0 {
             p.class_grade(class, cfg.max_grade)

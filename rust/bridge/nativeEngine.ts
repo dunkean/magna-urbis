@@ -23,7 +23,7 @@ export async function nativeRequest(runtime: ExecutionRuntime, path: string, bod
 
 /** Upload a terrain once: 17 bytes/cell, without JSON number arrays or base64. */
 export async function uploadNativeRaster(runtime: ExecutionRuntime, session: string, raster: SettlementRaster): Promise<void> {
-  const header = new TextEncoder().encode(JSON.stringify({ session, width: raster.width, n: raster.n, geometry: raster.geometry }));
+  const header = new TextEncoder().encode(JSON.stringify({ session, width: raster.width, n: raster.n, geometry: raster.geometry, region: raster.region }));
   const padded = new Uint8Array(Math.ceil(header.length / 4) * 4).fill(32); padded.set(header);
   const length = new Uint8Array(4); new DataView(length.buffer).setUint32(0, padded.length, true);
   const bytes = (array: ArrayBufferView): Uint8Array<ArrayBuffer> => new Uint8Array(array.buffer as ArrayBuffer, array.byteOffset, array.byteLength);

@@ -37,7 +37,8 @@
 .stage-row{padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:#ffffff02}
 .stage-row:hover{background:var(--row-hover)}
 .stage-row.is-open{background:var(--row-open)}
-.stage-head{display:grid;grid-template-columns:22px minmax(0,1fr) 22px 26px 68px;align-items:center;gap:6px;min-height:30px}
+.stage-head{display:grid;grid-template-columns:22px minmax(0,1fr) 22px auto 68px;align-items:center;gap:6px;min-height:30px}
+.stage-actions{display:flex;gap:4px;align-items:center}
 .stage-number{font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums}
 .stage-node{justify-self:center;width:16px;height:16px;padding:0;border-radius:50%;border:1.5px solid var(--spine);background:#24231e;transition:background .15s,box-shadow .15s}
 .stage-node[aria-checked=true]{background:radial-gradient(circle,#24231e 0 2.5px,var(--spine) 3px)}
@@ -59,9 +60,10 @@
 .stage-time{font-size:10.5px;color:#a7a28f;font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right;padding:0 2px}
 .stage-row[data-run=stale] .stage-time{color:var(--stale)}
 .stage-row[data-run=done] .stage-time{color:var(--ok)}
-.stage-run{display:grid;place-items:center;width:26px;height:24px;padding:0;border-radius:6px;color:var(--gold);border-color:#dcb86f40;background:#dcb86f0a}
+.stage-run,.stage-reroll{display:grid;place-items:center;width:26px;height:24px;padding:0;border-radius:6px;color:var(--gold);border-color:#dcb86f40;background:#dcb86f0a}
 .stage-run svg{width:11px;height:11px}
-.stage-run:hover:not(:disabled){background:#dcb86f22}
+.stage-reroll svg{width:15px;height:15px}
+.stage-run:hover:not(:disabled),.stage-reroll:hover:not(:disabled){background:#dcb86f22}
 .stage-help{display:inline-block;font-size:10.5px;color:var(--muted);text-decoration:underline;text-underline-offset:3px}
 .stage-help:hover{color:var(--gold)}
 .stage-note{margin:3px 0 2px;font-size:10.5px;line-height:1.45;color:#c9b48e}
@@ -143,7 +145,7 @@
 .stage-body .urban-control-section>summary{font-size:11px;font-weight:500;color:var(--gold);cursor:pointer;padding:5px 0}
 .stage-body .v2-urban-controls{gap:4px}
 
-@media(max-width:720px){.family-method .source-switch button{flex-direction:column;gap:3px;font-size:10px}.family-method .source-switch button .v2-icon{width:18px;height:18px}.stage-head{grid-template-columns:22px minmax(0,1fr) 22px 26px 64px}}
+@media(max-width:720px){.family-method .source-switch button{flex-direction:column;gap:3px;font-size:10px}.family-method .source-switch button .v2-icon{width:18px;height:18px}.stage-head{grid-template-columns:22px minmax(0,1fr) 22px auto 64px}}
 @media(max-width:720px){.stage-chain .chain-families{padding-top:46px}}
 
 /* Segmented controls */

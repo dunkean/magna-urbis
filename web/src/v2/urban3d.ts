@@ -7,12 +7,14 @@ import type { Decor } from '../ui/decor';
 import type { City3d, City3dDetailService, City3dOptions, City3dGround, City3dSurface, City3dViewSettings, City3dWaterDisplay } from '../ui/city3d';
 import type { Terrain3dGroundSettings } from '../ui/terrain3d';
 import type { TerrainLook } from '../ui/terrainGl';
-import type { V2TerrainLayer } from './terrainProjection';
+import { renderScene } from './renderScene';
+import { nativeCitiesOf, nativeTerrainOf } from './nativeProducts';
+import { resolveSettingsAppearance } from './appearance';
+import type { AppearancePatch, ResolvedAppearance } from '../render/appearanceRecipe';
 import { effectiveTerrainSettings } from './terrainSettings';
-import { DEFAULT_TERRAIN_LIGHTING, DEFAULT_TERRAIN_LAYERS } from '../render/terrainLighting';
-import { isRender3dStyle, terrainStyle } from '../render/terrainStyle';
+import { DEFAULT_TERRAIN_LIGHTING } from '../render/terrainLighting';
+import { terrainStyle } from '../render/terrainStyle';
 import { CONTOUR_INTERVAL } from '../render/contours';
-import { renderV2Number } from '../../../rust/bridge/terrainRenderV2';
 import { createTerrainSurfaceSampler } from '../ui/terrainSurface';
 import { createGroundDisplacementSampler } from '../../../rust/bridge/terrainGround';
 import { seedHash } from '../../../rust/bridge/terrainAdjust';
@@ -20,6 +22,7 @@ import type { V2Settings } from './contracts';
 import type { RustTownSnapshot } from './rustUrban';
 import { rustSettlementRaster } from './rustUrban';
 import { getLanguage, onLanguageChange } from './i18n';
+import { activityScene } from './activitySites';
 
 export interface V2Urban3dOptions {
   host: HTMLElement;
@@ -31,12 +34,19 @@ export interface V2Urban3dOptions {
   getTextured?(): boolean;
   setTextured?(value: boolean): void;
   onCamera?: City3dOptions['onCamera'];
-  onAppearanceChange?(): void;
+  /** 3D interactions request appearance changes; the orchestration applies them to the shared settings. */
+  onAppearancePatch(patch: AppearancePatch): void;
 }
 export interface V2Urban3d extends City3d { readonly detailStats: import('../render/urbanBuildingDetails').BuildingDetailStats | undefined }
 const stageIndex = (stage: RustTownSnapshot['stage']) => ['layout', 'parcels', 'programme', 'buildings'].indexOf(stage);
-export function v2NativeCities(world: World | undefined): RustTownSnapshot[] {
-  return Object.values(world?.debug?.v2RustCities as Record<string, RustTownSnapshot> ?? {}).filter(city => city.layouts?.length);
+export function v2NativeCities(world: World | undefined): readonly RustTownSnapshot[] { return nativeCitiesOf(world); }
+let resolution: { key: string; resolved: ResolvedAppearance } | undefined;
+/** The 3D view's resolved appearance (target 'view3d'). Memoized on the inputs it reads: callable from draw callbacks. */
+export function v2Resolved3d(settings: V2Settings, world?: World): ResolvedAppearance {
+  const o = settings.options, cities = world ? renderScene(world, settings).capabilities.nativeCities : false;
+  const key = JSON.stringify([settings.appearance, o.style, o.contours, o.landuse, o.labels, o.legend, settings.terrain?.forest, cities]);
+  if (resolution?.key !== key) resolution = { key, resolved: resolveSettingsAppearance(settings, world, 'view3d') };
+  return resolution.resolved;
 }
 /** A union of the same retained native snapshots. Archive identities stay untouched. */
 export function combineV2NativeScenes(cities: readonly RustTownSnapshot[]): PlacementBatch | undefined {
@@ -55,12 +65,18 @@ export function combineV2NativeScenes(cities: readonly RustTownSnapshot[]): Plac
   }
   return { schema_version: '1', generator_version: generator, materials: [...materials.values()], buildings: scenes.flatMap(scene => scene.buildings), refusals: scenes.flatMap(scene => scene.refusals), open_spaces: scenes.flatMap(scene => scene.open_spaces), plan_archives };
 }
+/** The towns' scene plus the activity sites (farms, mills, chapels…) of the region, drawn from their massing. */
+export function withV2ActivityScene(scene: PlacementBatch | undefined, activities: PlacementBatch | undefined): PlacementBatch | undefined {
+  if (!activities?.buildings.length) return scene;
+  if (!scene) return activities;
+  return { ...scene, materials: [...scene.materials ?? [], ...activities.materials ?? []], buildings: [...scene.buildings, ...activities.buildings] };
+}
 /** Physical raster reference is cached per terrain. Retained geographic domains are reused by 3D. */
 const rasterMetrics = new WeakMap<ReturnType<typeof rustSettlementRaster>, { minHeight: number; maxHeight: number; land: number }>();
 const rasterWater = new WeakMap<ReturnType<typeof rustSettlementRaster>, Float32Array>();
 const waterDisplays = new WeakMap<ReturnType<typeof rustSettlementRaster>, Map<string, City3dWaterDisplay>>();
 function v2WaterDisplay(world: World, settings: V2Settings): City3dWaterDisplay {
-  const raster = rustSettlementRaster(world), shown = settings.appearance?.terrainLayers?.water !== false, lakes = settings.appearance?.lakes !== false, key = `${shown}:${lakes}`;
+  const raster = rustSettlementRaster(world), r = v2Resolved3d(settings, world), shown = r.ground.layers.water, lakes = r.ground.lakes, key = `${shown}:${lakes}`;
   let cache = waterDisplays.get(raster); if (!cache) { cache = new Map(); waterDisplays.set(raster, cache); }
   const retained = cache.get(key); if (retained) return retained;
   const texture = document.createElement('canvas'); texture.width = texture.height = raster.n;
@@ -77,36 +93,35 @@ function v2WaterDisplay(world: World, settings: V2Settings): City3dWaterDisplay 
 }
 /** Preserve the native control grid and the applied lake levels; never resample the terrain. */
 export function v2Terrain3dSurface(world: World, settings: V2Settings): City3dSurface {
-  const raster = rustSettlementRaster(world), native = (world.terrain as V2TerrainLayer).v2NativeTerrain, field = native?.field;
+  const raster = rustSettlementRaster(world), native = renderScene(world, settings).nativeTerrain, field = native?.field, r = v2Resolved3d(settings, world);
   const valid = field && Number.isInteger(field.n) && field.n >= 2 && field.data instanceof Float32Array && field.data.length === field.n ** 2;
   let mask = rasterWater.get(raster);
   if (!mask) { mask = Float32Array.from(raster.water, value => value === 2 ? 1 : -1); rasterWater.set(raster, mask); }
   return { height: { x: 0, y: 0, width: raster.width, n: valid ? field.n : raster.n, data: valid ? field.data : raster.height, ...(valid && field.cave ? { cave: field.cave } : {}) },
-    water: settings.appearance?.lakes === false ? undefined : { n: raster.n, mask, levels: raster.waterLevel }, waterVisible: settings.appearance?.terrainLayers?.water !== false };
+    water: r.ground.lakes ? { n: raster.n, mask, levels: raster.waterLevel } : undefined, waterVisible: r.ground.layers.water };
 }
 export function v2Terrain3dView(settings: V2Settings): City3dViewSettings {
-  const appearance = settings.appearance, city = appearance?.city, style = appearance?.terrainStyle;
-  return { ground: city?.ground ?? (style && isRender3dStyle(style) ? style as City3dGround : 'map'), plan: city?.plan ?? true,
-    colors: city?.colors ?? (city?.diagnostic === 'uses' ? 'uses' : 'materials'), exaggeration: city?.exaggeration ?? 1, refinement: city?.refinement ?? 'noise' };
+  const city = v2Resolved3d(settings).city;
+  return { ground: city.ground as City3dGround, plan: city.plan, colors: city.colors, exaggeration: city.exaggeration, refinement: city.refinement };
 }
 /** All material modes consume one physical surface and the same display-only recipe. */
 export function v2Terrain3dGround(world: World, settings: V2Settings, ground: City3dGround): Terrain3dGroundSettings | undefined {
   if (ground === 'map') return;
-  const config = effectiveTerrainSettings(settings, world.mapSize), appearance = settings.appearance, native = (world.terrain as V2TerrainLayer).v2NativeTerrain;
-  const style = terrainStyle(ground === 'render' ? 'render3d' : ground, appearance?.colors), relief = config.relief === 'flat' || config.relief === 'hills' || config.relief === 'valley' ? config.relief : 'mountains';
-  const layers = { ...DEFAULT_TERRAIN_LAYERS, ...appearance?.terrainLayers };
+  const config = effectiveTerrainSettings(settings, world.mapSize), r = v2Resolved3d(settings, world), native = renderScene(world, settings).nativeTerrain;
+  const style = terrainStyle(ground === 'render' ? 'render3d' : ground, r.palette.colors), relief = config.relief === 'flat' || config.relief === 'hills' || config.relief === 'valley' ? config.relief : 'mountains';
+  const layers = r.ground.layers;
   if (!layers.relief || !layers.hypsometry) return;
   return { seed: seedHash(world.seed), climate: { temperature: config.climateValues!.temperature, precipitation: config.climateValues!.precipitation }, climateZone: config.climateZone,
     sourceCell: native ? native.width / (native.field?.n ?? native.resolution) : world.terrain.height.cell,
-    lighting: { ...DEFAULT_TERRAIN_LIGHTING, ...appearance?.lighting }, renderV2: renderV2Number(style.id), v2Season: appearance?.season ?? .5,
-    waterVisible: layers.water !== false, displacement: v2Terrain3dView(settings).refinement !== 'source', forestBrushes: ground === 'render3d-brush',
-    contours: appearance?.contours !== false && layers.relief && config.relief !== 'cavern' ? { step: CONTOUR_INTERVAL[relief] * (relief === 'mountains' ? 2 : 1), color: style.palette.contour, opacity: style.palette.contourOpacity, flat: relief === 'flat' } : undefined };
+    lighting: { ...r.ground.lighting }, renderV2: style.traits.satelliteVariant, v2Season: r.ground.season,
+    waterVisible: layers.water, displacement: r.city.refinement !== 'source', forestBrushes: style.traits.forestBrushes,
+    contours: r.ground.contours && layers.relief && config.relief !== 'cavern' ? { step: CONTOUR_INTERVAL[relief] * (relief === 'mountains' ? 2 : 1), color: style.palette.contour, opacity: style.palette.contourOpacity, flat: relief === 'flat' } : undefined };
 }
 export function createV2Terrain3dSampler(world: World, settings: V2Settings, ground: City3dGround): ReturnType<typeof createTerrainSurfaceSampler> {
-  const base = v2Terrain3dSurface(world, settings).height, config = effectiveTerrainSettings(settings, world.mapSize), native = (world.terrain as V2TerrainLayer).v2NativeTerrain;
-  const material = v2Terrain3dGround(world, settings, ground), refinement = v2Terrain3dView(settings).refinement;
-  const look: TerrainLook = { colors: settings.appearance?.colors, style: ground === 'map' ? settings.appearance?.terrainStyle ?? settings.appearance?.style ?? settings.options.style : ground === 'render' ? 'render3d' : ground,
-    mapWidth: world.mapSize, lighting: material?.lighting ?? DEFAULT_TERRAIN_LIGHTING, layers: { ...DEFAULT_TERRAIN_LAYERS, ...settings.appearance?.terrainLayers },
+  const base = v2Terrain3dSurface(world, settings).height, config = effectiveTerrainSettings(settings, world.mapSize), native = renderScene(world, settings).nativeTerrain;
+  const r = v2Resolved3d(settings, world), material = v2Terrain3dGround(world, settings, ground), refinement = r.city.refinement;
+  const look: TerrainLook = { colors: r.palette.colors, style: ground === 'map' ? r.styleId : ground === 'render' ? 'render3d' : ground,
+    mapWidth: world.mapSize, lighting: material?.lighting ?? DEFAULT_TERRAIN_LIGHTING, layers: { ...r.ground.layers },
     climate: { temperature: config.climateValues!.temperature, precipitation: config.climateValues!.precipitation }, seed: seedHash(world.seed),
     globalMin: native?.globalMinHeight ?? 0, globalMax: native?.globalMaxHeight ?? 0, refine: refinement === 'noise' && config.refine !== false && config.relief !== 'cavern',
     sourceCell: material?.sourceCell ?? (native ? native.width / (native.field?.n ?? native.resolution) : world.terrain.height.cell), detail: config.detailNoise!, floor: native?.field?.floor ?? 0,
@@ -123,7 +138,7 @@ export function v2WorldDecor(world: World, settings: V2Settings): Decor {
     for (let i = 0; i < heights.length; i++) { minHeight = Math.min(minHeight, heights[i]); maxHeight = Math.max(maxHeight, heights[i]); if (raster.water[i]) wet++; }
     metrics = { minHeight, maxHeight, land: 1 - wet / heights.length }; rasterMetrics.set(raster, metrics);
   }
-  const { minHeight, maxHeight, land } = metrics, native = (world.terrain as V2TerrainLayer).v2NativeTerrain, configuration = effectiveTerrainSettings(settings, world.mapSize);
+  const { minHeight, maxHeight, land } = metrics, native = nativeTerrainOf(world), configuration = effectiveTerrainSettings(settings, world.mapSize);
   // The zone names the decor; its effective values travel with it.
   const climate = configuration.climateZone ?? configuration.climate ?? 'temperate';
   const query = new URLSearchParams({ climate });
@@ -147,7 +162,7 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
     import('../ui/city3d'), import('../render/urbanBuildingDetails'), import('../render/urbanBuildingLod'),
   ]);
   let worldOf: World | undefined, terrainOf: World['terrain'] | undefined, decor: Decor | undefined, climateOf = '';
-  let nativeOf: RustTownSnapshot[] = [], scene: PlacementBatch | undefined, layouts: Layout[] = [], partitions: Partition[] = [], roads: Street[] = [];
+  let nativeOf: readonly RustTownSnapshot[] = [], activitiesOf: PlacementBatch | undefined, scene: PlacementBatch | undefined, layouts: Layout[] = [], partitions: Partition[] = [], roads: Street[] = [];
   let details: InstanceType<typeof UrbanBuildingDetailController> | undefined, renderer: InstanceType<typeof UrbanBuildingLodRenderer> | undefined, runtimeOf = '';
   let sampleOf: Float32Array | undefined, sampleKey = '', sampler: ReturnType<typeof createV2Terrain3dSampler> | undefined;
   const listeners = new Set<() => void>();
@@ -157,7 +172,7 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
   syncLocale(); const offLocale = onLanguageChange(syncLocale);
   const update = () => {
     const world = options.getWorld(), settings = options.getSettings();
-    if (!world) { if (worldOf) { worldOf = undefined; terrainOf = undefined; decor = undefined; nativeOf = []; scene = undefined; layouts = []; partitions = []; roads = []; details?.dispose(); details = undefined; renderer = undefined; } return; }
+    if (!world) { if (worldOf) { worldOf = undefined; terrainOf = undefined; decor = undefined; nativeOf = []; scene = undefined; layouts = []; partitions = []; roads = []; details?.dispose(); details = undefined; renderer = undefined; activitiesOf = undefined; } return; }
     const climate = JSON.stringify([settings.terrain?.climate, settings.terrain?.climateValues, settings.terrain?.motifSize, settings.terrain?.refine, settings.terrain?.relief]);
     if (world.terrain !== terrainOf) { terrainOf = world.terrain; decor = v2WorldDecor(world, settings); }
     else if (climate !== climateOf && decor) decor.meta = v2WorldDecor(world, settings).meta;
@@ -168,8 +183,9 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
     if (!sameV2NativeInputs(nativeOf, cities, 'partitions')) {
       const visible = cities.filter(city => stageIndex(city.stage) >= 1); partitions = visible.length === 1 ? visible[0].partitions ?? [] : visible.flatMap(city => city.partitions ?? []);
     }
-    const changedScene = !sameV2NativeInputs(nativeOf, cities, 'scene');
-    if (changedScene) scene = combineV2NativeScenes(cities);
+    const activities = activityScene(world);
+    const changedScene = !sameV2NativeInputs(nativeOf, cities, 'scene') || activities !== activitiesOf;
+    if (changedScene) { scene = withV2ActivityScene(combineV2NativeScenes(cities), activities); activitiesOf = activities; }
     if (runtimeKey !== runtimeOf || changedScene) {
       details?.dispose(); details = undefined; renderer = undefined; runtimeOf = runtimeKey;
       if (scene) {
@@ -196,28 +212,28 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
     subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener); },
   };
   update();
-  const view = mountCity3d({ host: options.host, navigation: true, fastTerrain: true, materialGrounds: true, softwareMaterialFallback: !!options.getBackground, getDecor: () => decor, getLayouts: () => layouts, getPartitions: () => partitions, getRegionalStreets: () => options.getSettings().appearance?.roads === false ? [] : roads,
-    getBuildingsVisible: () => options.getSettings().appearance?.buildings !== false, getScene: () => scene, getSelected: options.getSelected, onSelect: options.onSelect, getBackground: options.getBackground,
+  const view = mountCity3d({ host: options.host, navigation: true, fastTerrain: true, materialGrounds: true, softwareMaterialFallback: !!options.getBackground, getDecor: () => decor, getLayouts: () => layouts, getPartitions: () => partitions, getRegionalStreets: () => v2Resolved3d(options.getSettings()).cartography.roads ? roads : [],
+    getBuildingsVisible: () => v2Resolved3d(options.getSettings()).city.visible, getScene: () => scene, getSelected: options.getSelected, onSelect: options.onSelect, getBackground: options.getBackground,
     getGroundSettings: ground => { const world = options.getWorld(); return world && v2Terrain3dGround(world, options.getSettings(), ground); },
     getWaterDisplay: () => { const world = options.getWorld(); return world && v2WaterDisplay(world, options.getSettings()); },
     getSurface: () => { const world = options.getWorld(); return world && v2Terrain3dSurface(world, options.getSettings()); }, getHeightSampler: heightSampler,
     getForest: () => {
-      const settings = options.getSettings(), world = options.getWorld(), field = world && v2DisplayForest(world, settings);
+      const settings = options.getSettings(), world = options.getWorld(), field = world && v2DisplayForest(world, settings, v2Resolved3d(settings, world));
       return field && Number.isInteger(field.n) && field.n > 0 && Number.isFinite(field.width) && field.width > 0 && field.rgba instanceof Uint8Array && field.rgba.length === field.n ** 2 * 4 ? { field } : undefined;
     },
     getViewSettings: () => v2Terrain3dView(options.getSettings()),
+    // The view never writes the shared settings: it emits a patch, the orchestration applies it.
     onViewSettingsChange: value => {
-      const settings = options.getSettings(), previous = v2Terrain3dView(settings);
-      settings.appearance = { style: settings.options.style, ...settings.appearance, city: { ...settings.appearance?.city, ...value } };
-      if (value.ground !== 'map' && value.ground !== previous.ground) { settings.appearance.terrainStyle = value.ground === 'render' ? 'render3d' : value.ground; settings.appearance.renderer = 'bench'; }
-      options.onAppearanceChange?.();
+      const previous = v2Terrain3dView(options.getSettings());
+      const patch: AppearancePatch = { city: value };
+      if (value.ground !== 'map' && value.ground !== previous.ground) { patch.terrainStyle = value.ground === 'render' ? 'render3d' : value.ground; patch.renderer = 'bench'; }
+      options.onAppearancePatch(patch);
     },
     getPlanOptions: () => {
-      const appearance = options.getSettings().appearance, city = appearance?.city;
-      return { colors: appearance?.colors, view: city?.view ?? 'parcels', palette: city?.palette ?? 'terrain', width: city?.width ?? .6, opacity: city?.opacity ?? 1, labels: appearance?.labels,
-        layers: { reserve: false, allocated: false, centers: false, domains: false, quarters: false, blocks: true, streets: true, enclosures: true, parcels: true, gardens: true, places: true, fronts: false, axes: false, access: false, ...city?.layers }, groundBlend: city?.groundBlend === 'blended' };
+      const r = v2Resolved3d(options.getSettings()), city = r.city;
+      return { colors: r.palette.colors, view: city.view, palette: city.palette, width: city.width, opacity: city.opacity, labels: r.cartography.labels, layers: city.layers, groundBlend: city.groundBlend === 'blended' };
     },
-    getBuildingAppearance: () => { const city = options.getSettings().appearance?.city; return { colors: options.getSettings().appearance?.colors, style: city?.buildingStyle ?? 'cartographic', diagnostic: city?.diagnostic ?? 'none' }; },
+    getBuildingAppearance: () => { const r = v2Resolved3d(options.getSettings()); return { colors: r.palette.colors, style: r.city.buildingStyle, diagnostic: r.city.diagnostic }; },
     getTextured: options.getTextured, setTextured: options.setTextured, onCamera: options.onCamera, details: service });
   return { get active() { return view.active; }, get detailStats() { return details?.stats; },
     show: () => { update(); view.show(); }, hide: () => view.hide(), refresh: () => { update(); view.refresh(); },

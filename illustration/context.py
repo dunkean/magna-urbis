@@ -29,6 +29,63 @@ FIDELITY = {
     "balanced": "Keep the source framing, street topology, urban blocks, water courses and landmark positions. Freely reinterpret architecture, materials and small details within that plan, in the requested style.",
     "free": "Keep the source plan, street topology, water courses and framing. Freely redesign the visual details, architecture, materials and atmosphere in the requested style.",
 }
+# Prompt vocabulary is independent of the language used by catalogue/UI labels.
+MATERIAL_NAMES = {
+    "MAT-WATTLE-DAUB": "wattle and daub", "MAT-COB": "cob earth walls",
+    "MAT-ADOBE": "adobe bricks", "MAT-RAMMED-EARTH": "rammed earth",
+    "MAT-MUD-PLASTER": "mud plaster", "MAT-TIMBER-POST": "timber posts and beams",
+    "MAT-LOG": "stacked logs", "MAT-STONE-DRY": "dry stone",
+    "MAT-STONE-MORTAR": "rubble masonry", "MAT-STONE-ASHLAR": "ashlar stone",
+    "MAT-THATCH": "grass thatch", "MAT-REED": "reeds and rushes",
+    "MAT-TILE-CLAY": "fired clay tiles", "MAT-WOOD-SHINGLES": "wood shingles",
+    "MAT-SLATE": "slate and stone roofing slabs", "MAT-HALF-TIMBER": "exposed timber framing",
+    "MAT-BURNT-BRICK": "fired brick", "MAT-BAMBOO": "bamboo", "MAT-PALM": "palm leaves",
+    "MAT-RAISED-POST": "wooden piles and stilts", "MAT-PLASTER-LIME": "lime plaster and stucco",
+    "MAT-CORAL": "coral limestone", "MAT-BASALT": "basalt", "MAT-BARK": "bark",
+    "MAT-FELT": "felt", "MAT-HIDE": "animal hides", "MAT-TURF": "peat and turf",
+    "MAT-CHALK": "chalk", "MAT-SHELLSTONE": "shell limestone",
+    "MAT-CLINKER": "volcanic scoria", "MAT-ICE-SNOW": "compacted snow",
+    "MAT-MEGALITH": "megalithic monoliths", "MAT-WOOD-MORTISE": "timber with complex joinery",
+    "MAT-ROCKCUT": "rock-cut stone", "MAT-DRIFTWOOD": "driftwood",
+    "MAT-WOVEN-TEXTILE": "woven textile", "MAT-BONE": "structural bone",
+    "MAT-CORDAGE": "cordage of unspecified fibre", "MAT-LIMESTONE": "limestone",
+}
+CULTURE_NAMES = {
+    "roman-core": "Roman", "roman": "Roman", "inca": "Inca", "aztec": "Aztec",
+    "egyptian-planned": "Egyptian", "egyptian-organic": "Egyptian",
+    "european-organic": "European", "medieval": "European", "bastide": "European bastide",
+    "japanese": "Japanese", "japanese-jokamachi": "Japanese", "chinese": "Chinese",
+    "javanese-courts": "Javanese", "medina": "North African", "elven": "elven", "dwarven": "dwarven",
+    "indian-temple": "Indian temple", "necropolis": "necropolis", "russian-kremlin": "Russian kremlin and posad",
+    "byzantine-greek": "Byzantine", "venetian-lagoon": "Venetian lagoon", "persian": "Persian",
+    "ottoman": "Ottoman", "sahel": "Sahelian", "hanseatic": "Hanseatic", "korean": "Korean",
+    "wizard-city": "wizard", "gnomish": "gnomish", "stilt-town": "marsh-dwelling stilt-house",
+    "barbarian": "Germanic", "barbarian-celtic": "Celtic ringfort", "barbarian-norse": "Norse farmstead",
+    "norse-ringfort": "Norse ring fortress", "maya": "Maya", "khmer": "Khmer",
+    "celtic-oppidum": "Celtic oppidum", "orcish": "orcish", "halfling": "halfling",
+    "kraal": "African kraal", "native-iroquoian": "Iroquoian longhouse", "native-pueblo": "Pueblo",
+    "native-plains": "Plains Native American tipi", "nomad-camp": "steppe nomad",
+    "swahili-stone-town": "Swahili stone", "drow-enclave": "drow", "duergar-hold": "duergar",
+    "myconid-colony": "myconid", "nubian-fortified": "fortified Nubian",
+    "mesopotamian": "Mesopotamian courtyard", "levantine-tell": "fortified Levantine tell",
+    "oasis-caravan": "Central Asian caravan oasis", "ksar-oasis": "Maghrebi oasis ksar",
+    "yoruba": "Yoruba compound", "himalayan-terraces": "Tibetan and Ladakhi terraced",
+    "newar": "Nepalese Newar", "indus-planned": "planned Harappan",
+    "mississippian": "Mississippian", "al-andalus": "Andalusian courtyard",
+    "italian-comune": "Italian communal", "flemish-cloth-town": "Flemish cloth-trading",
+    "rynek-town": "Central European market-square", "slavic-gord": "Slavic fortified",
+    "caucasian-highland": "Georgian and Armenian fortified highland", "ethiopian-highland": "Ethiopian highland",
+    "great-zimbabwe": "Zimbabwean dry-stone", "hausa-kano": "Hausa earth-walled",
+    "hadhrami-tower": "Hadhrami tower-house", "rajput-fort": "Rajput fortress",
+    "dravidian-temple": "South Indian temple", "bagan": "Burmese royal",
+    "vietnamese-citadel": "Vietnamese citadel", "tibetan-monastery": "Tibetan monastic",
+    "mongol-ordu": "Mongol yurt", "maori-pa": "Maori fortified terraced",
+    "pnw-plank-village": "Pacific Northwest plank-house", "inuit-camp": "Inuit winter",
+    "siberian-camp": "Siberian reindeer-herder tent", "guarani-village": "Guarani longhouse",
+    "budj-bim": "Australian Budj Bim stone", "lizardfolk-swamp": "lizardfolk lakeside stilt-house",
+    "merfolk-tidal": "merfolk tidal shore and sea-cave", "giant-hold": "giant megalithic",
+    "goblin-warren": "goblin hillside warren",
+}
 
 
 def clean(value, depth=0):
@@ -81,11 +138,18 @@ def number(value):
 
 
 def culture_name(value, label=None):
-    names = {"roman-core": "Roman", "roman": "Roman", "inca": "Inca", "aztec": "Aztec", "egyptian-planned": "Egyptian", "egyptian-organic": "Egyptian", "european-organic": "European",
-             "medieval": "European", "japanese": "Japanese", "japanese-jokamachi": "Japanese", "bastide": "European bastide",
-             "chinese": "Chinese", "javanese-courts": "Javanese", "medina": "North African",
-             "elven": "elven", "dwarven": "dwarven"}
-    return names.get(value) or words(label or value)
+    return CULTURE_NAMES.get(value) or words(value or label)
+
+
+def material_name(material):
+    material_id = material.get("id", "")
+    if material_id in MATERIAL_NAMES:
+        return MATERIAL_NAMES[material_id]
+    # A new native material can still use its English pattern category without
+    # leaking a localized label. External contexts may supply their own captions.
+    if str(material_id).startswith("MAT-"):
+        return words(material.get("pattern"))
+    return words(material.get("label") or material.get("pattern"))
 
 
 def cultural_identity(value, label=None, era=None):
@@ -230,7 +294,7 @@ def describe_scene(context):
     roofs = [words(r) for r in architecture.get("roofSystems", []) if isinstance(r, str)]
     if roofs:
         sentences.append("Visible roof forms include " + ", ".join(roofs[:10]) + ".")
-    materials = [words(m.get("label") or m.get("pattern")) for m in architecture.get("materials", []) if isinstance(m, dict)]
+    materials = [name for m in architecture.get("materials", []) if isinstance(m, dict) and (name := material_name(m))]
     if materials:
         sentences.append("Construction materials identified on the visible buildings include " + ", ".join(dict.fromkeys(materials)) + ".")
     storeys = [n for n in architecture.get("storeys", []) if number(n) is not None]
@@ -276,7 +340,7 @@ def compile_prompt(context, settings):
     # CLIP in SDXL has a short context; prioritize the concrete subject and style.
     architecture = record(context.get("architecture"))
     roofs = ", ".join(words(r) for r in architecture.get("roofSystems", [])[:2])
-    materials = ", ".join(words(m.get("label") or m.get("pattern")) for m in architecture.get("materials", [])[:2] if isinstance(m, dict))
+    materials = ", ".join(name for m in architecture.get("materials", [])[:2] if isinstance(m, dict) and (name := material_name(m)))
     short_architecture = (f" Roof forms: {roofs}." if roofs else "") + (f" Materials: {materials}." if materials else "")
     fast_prompt = f"{summary} {STYLES[style]}.{short_architecture} Preserve the source layout, roads, rivers and buildings. No labels. {instruction}"
     generation = record(context.get("generation"))

@@ -1,3 +1,4 @@
+// buildspeed-bench 1793749855248848900
 //! Native quarter fixture, guidance field, recursive street cuts and ribbon carving.
 use super::footprint::capacity;
 use super::geometry as g;
@@ -73,6 +74,10 @@ fn frame(s: &Shape) -> Frame {
         hu: 0.0,
         hv: 0.0,
     })
+}
+pub(super) fn outline_frame(s: &Shape) -> f64 {
+    let f = frame(s);
+    f.u.y.atan2(f.u.x)
 }
 fn len(path: &[Point]) -> f64 {
     path.windows(2)
@@ -3406,7 +3411,10 @@ fn generate_once(
         // A planned grid is one lattice for the whole town: the same frame and
         // origin in every quarter, so its lines run on across the quarter
         // streets and meet them in crossroads rather than staggered tees.
-        let lattice = if local_morph.text("streetOp") == "grid" {
+        let enclosed = cfg.align_enclosed_grid && !walled.is_empty() && local_morph.text("streetOp") == "grid";
+        let enclosure = enclosed.then(|| walled.iter().filter(|s| g::contains(s, interior))
+            .min_by(|a,b| g::area(a).total_cmp(&g::area(b)))).flatten();
+        let lattice = if enclosure.is_some() { local_center } else if local_morph.text("streetOp") == "grid" {
             structure
                 .as_ref()
                 .and_then(|s| {
@@ -3419,7 +3427,9 @@ fn generate_once(
             local_center
         };
         let hint = local_field.grid_frame(lattice);
-        let frame = if local_morph.text("streetOp") == "grid" {
+        let frame = if let Some(enclosure) = enclosure {
+            outline_frame(enclosure)
+        } else if local_morph.text("streetOp") == "grid" {
             armature_frame(&base_streets, lattice, hint).unwrap_or(hint)
         } else {
             hint

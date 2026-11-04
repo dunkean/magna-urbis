@@ -22,6 +22,7 @@ import {
 } from './cityGlBuild';
 import { buildingColors, DEFAULT_LAYERS, PAINTED_SHADOW, planColors, planMaterialTable, rgba01, roofMaterialTable, streetColors, streetMaterialTable, wallColors, type CityGlDraws, type CityGlStyleState } from './cityGlStyle';
 import { isBlended } from './groundBlend';
+import { toneKey } from './groundTone';
 import { MATERIALS, loadMaterialImages, uploadMaterialArrays } from './buildingMaterials';
 import { cityLegacyWalls, cityWallColors, cityWallStrokes, createCityGlWalls, type CityGlWalls } from './cityWalls'; // walls hook (cityWalls.ts)
 
@@ -74,7 +75,7 @@ export interface CityGlRenderer {
 /** Layers left for the Canvas 2D overlay (drawCity) once the GPU draws the plan:
  * diagnostics, landmark glyphs, labels and district names only. */
 export function cityGlOverlayLayers(layers: CityLayers): CityLayers {
-  return { ...layers, blocks: false, domains: false, streets: false, enclosures: false, parcels: false, gardens: false, places: false };
+  return { ...layers, waterways: layers.streets, blocks: false, domains: false, streets: false, enclosures: false, parcels: false, gardens: false, places: false };
 }
 
 // ---------------------------------------------------------------- shaders
@@ -593,9 +594,9 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
       const style: CityGlStyleState = { view: o.view, lod, palette, layers, buildingsVisible: o.buildingsVisible ?? true, diagnostic: o.diagnostic ?? 'none', refusedParcels: o.refusedParcels, painted, blended: o.groundBlend ?? isBlended(), colors: o.colors };
       const colorKey = o.colors ? JSON.stringify(o.colors) : '';
       // Colour tables: rebuilt only when the state changes.
-      const key = JSON.stringify([o.view, lod, palette, layers, style.buildingsVisible, refusedKey(o.refusedParcels), painted, style.blended]);
+      const key = JSON.stringify([o.view, lod, palette, layers, style.buildingsVisible, refusedKey(o.refusedParcels), painted, style.blended, toneKey()]);
       if (key !== styleKey) { const pc = planColors(scene, plan.mesh, style); plan.colors(pc.fill, pc.line); draws = pc.draws; styleKey = key; }
-      const softStreets = !!style.blended && !(o.textured && palette !== 'parchment' && palette !== 'ink'), sKey = `${palette}|${softStreets}|${colorKey}`;
+      const softStreets = !!style.blended && !(o.textured && palette !== 'parchment' && palette !== 'ink'), sKey = `${palette}|${softStreets}|${colorKey}|${toneKey()}`;
       if (sKey !== streetKey) {
         const sc = streetColors(scene, palette, softStreets, o.colors), wc = cityWallColors(scene, palette); // walls hook
         streets?.colors(sc.outer, sc.inner); walls?.colors(wc.outer, wc.inner); towerColors = wc.tower; streetKey = sKey;

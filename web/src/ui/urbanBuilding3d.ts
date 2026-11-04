@@ -7,7 +7,8 @@ import { buildingTint } from '../render/buildingPalette';
 type Vec3 = [number, number, number];
 type Bounds = [number, number, number, number, number, number];
 export interface BuildingFrame { matrix: Float32Array; cameraX: number; cameraY: number; targetHeight: number; exaggeration: number; focal: number; distance: number }
-/** `stride`: floats per vertex, 6 (position, normal) or 9 (+ uv in tiles, material layer) for textured materials. */
+/** `stride`: floats per vertex, 10: position, normal, uv in tiles + material layer (textured) or colour, then the
+ * vertex's ground: the display exaggeration lifts a building's base with the relief, never its own height. */
 export interface Batch { color: Vec3; tint: Vec3; recolored: boolean; values: number[]; buffer?: WebGLBuffer; vao?: WebGLVertexArrayObject; /** WebGPU backend's vertex buffer. */ gpu?: GPUBuffer; count: number; stride: number; /** Untextured batches carry the colour per vertex (one batch, one draw per sector). */ vcolor?: boolean; /** Distinct vertex colours of a vcolor batch (inspection). */ palette?: Vec3[] }
 interface Entry { building: Building3dVisual; bounds: Bounds }
 export interface Sector { origin: [number, number]; entries: Entry[]; bounds: Bounds; width: number; featureLodEligible: boolean; overview: boolean; shown: boolean; cached?: { overview: boolean; featureLod?: BuildingFeatureLod; batches: Batch[]; used: number } }
@@ -20,8 +21,9 @@ layout(location=2) in vec3 albedo;
 uniform mat4 matrix;
 uniform vec3 offset;
 uniform float exaggeration;
+layout(location=4) in float groundIn;
 out vec3 n; out vec3 base;
-void main(){n=normalize(vec3(normal.x,normal.y/exaggeration,normal.z));base=albedo;gl_Position=matrix*vec4(vec3(position.x,position.y*exaggeration,position.z)+offset,1.);}`;
+void main(){float k=position.y>groundIn+.01?1.:exaggeration;n=normalize(vec3(normal.x,normal.y/k,normal.z));base=albedo;gl_Position=matrix*vec4(vec3(position.x,position.y+groundIn*(exaggeration-1.),position.z)+offset,1.);}`;
 const fragmentColor = `#version 300 es
 precision highp float;
 in vec3 n; in vec3 base;
@@ -39,8 +41,9 @@ layout(location=3) in float layerIn;
 uniform mat4 matrix;
 uniform vec3 offset;
 uniform float exaggeration;
+layout(location=4) in float groundIn;
 out vec3 n; out vec3 wp; out vec2 uv; flat out float layer;
-void main(){n=normalize(vec3(normal.x,normal.y/exaggeration,normal.z));vec3 p=vec3(position.x,position.y*exaggeration,position.z)+offset;wp=p;uv=uvIn;layer=layerIn;gl_Position=matrix*vec4(p,1.);}`;
+void main(){float k=position.y>groundIn+.01?1.:exaggeration;n=normalize(vec3(normal.x,normal.y/k,normal.z));vec3 p=vec3(position.x,position.y+groundIn*(exaggeration-1.),position.z)+offset;wp=p;uv=uvIn;layer=layerIn;gl_Position=matrix*vec4(p,1.);}`;
 const texFragment = `#version 300 es
 precision highp float;
 in vec3 n; in vec3 wp; in vec2 uv; flat in float layer;
@@ -48,6 +51,7 @@ uniform vec3 material;
 uniform vec3 tint;
 uniform int recolored;
 uniform int useTex;
+uniform float softFrom;
 uniform highp sampler2DArray albedoTex;
 uniform highp sampler2DArray normalTex;
 out vec4 color;
@@ -57,8 +61,19 @@ void main(){
   vec2 duv1=dFdx(uv), duv2=dFdy(uv);
   float l=max(layer,0.);
   vec3 albedo=texture(albedoTex,vec3(uv,l)).rgb, tn=texture(normalTex,vec3(uv,l)).xyz*2.-1.;
+  if(useTex==2&&layer>=0.){
+    // Natural: a second sample, rotated and rescaled, fades in over the first so the tile never repeats on a grid;
+    // roads and places (layers from softFrom) keep half their contrast; the mip mean takes over with distance.
+    vec2 uv2=vec2(uv.x*.8660254-uv.y*.5,uv.x*.5+uv.y*.8660254)*1.37+vec2(.37,.61);
+    float w=.5+.5*sin(dot(uv,vec2(.9,.55)))*sin(dot(uv,vec2(-.52,.95))+1.7);
+    vec3 a2=texture(albedoTex,vec3(uv2,l)).rgb, n2=texture(normalTex,vec3(uv2,l)).xyz*2.-1.;
+    n2.xy=vec2(.8660254*n2.x+.5*n2.y,-.5*n2.x+.8660254*n2.y);
+    float soft=layer>=softFrom?.5:.85;
+    albedo=mix(textureLod(albedoTex,vec3(uv,l),8.).rgb,mix(albedo,a2,w),soft);
+    tn=normalize(vec3(mix(tn.xy,n2.xy,w)*soft,mix(tn.z,n2.z,w)));
+  }
   vec3 base=material;
-  if(useTex==1&&layer>=0.){
+  if(useTex>=1&&layer>=0.){
     vec3 dp2perp=cross(dp2,N), dp1perp=cross(N,dp1);
     vec3 T=dp2perp*duv1.x+dp1perp*duv2.x, B=dp2perp*duv1.y+dp1perp*duv2.y;
     float invmax=inversesqrt(max(max(dot(T,T),dot(B,B)),1e-20));
@@ -67,6 +82,8 @@ void main(){
   }
   float light=.55+.45*abs(dot(N,normalize(vec3(-.4,.85,.3))));color=vec4(base*light,1.);
 }`;
+/** First material layer that keeps half its contrast in the natural texture mode (roads, places; not the stone wall layer). */
+export const SOFT_LAYER_FROM = Math.min(...Object.entries(MATERIALS.road).filter(([k]) => k !== 'wall').map(([, v]) => v));
 /** GLSL sources translated to WGSL for the WebGPU backend (web/scripts/wgsl_shaders_3d.ts). */
 export const BUILDING_3D_GLSL = { colorVertex: vertexColor, colorFragment: fragmentColor, texVertex, texFragment };
 function program(gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgram {
@@ -193,13 +210,15 @@ export class UrbanBuildingPass {
   }
   private prepare(sector: Sector, overview: boolean, featureLod?: BuildingFeatureLod): void {
     this.release(sector);
-    const groups = new Map<string, Batch>(), textured = !!this.appearance.textured, stride = 9;
+    const groups = new Map<string, Batch>(), textured = !!this.appearance.textured;
     for (const { building } of sector.entries) {
       const colors = new Map<string, Vec3>(), culture = building.culture?.culture ?? '';
       let h = 2166136261; for (let i = 0; i < building.id.length; i++) h = Math.imul(h ^ building.id.charCodeAt(i), 16777619);
       const tone = Math.round((h >>> 0) / 0xffffffff * 15) / 15;
       const programme = (building as unknown as { programme?: { role?: string; landmark?: boolean } }).programme;
       const role = `${programme?.role ?? ''}${programme?.landmark ? ' monument' : ''}`;
+      // Walls and bridges follow the relief whole; a building keeps its real height above its ground.
+      const ground = /^city3d-(wall|bridge)/.test(building.id) || !Number.isFinite(building.ground_z_m) ? Infinity : building.ground_z_m;
       eachBuildingTriangle(building, face => {
         const raw = face.material ?? (face.surface === 'roof' ? face.materials.cladding : face.materials.coating), tm = /@([0-9a-f]{6}|[0-9a-f]{3})$/.exec(raw ?? '');
         const id = tm ? raw.slice(0, tm.index) : raw;
@@ -220,17 +239,22 @@ export class UrbanBuildingPass {
             }
           }
           if (face.surface === 'roof' && this.appearance.diagnostic === 'none' && this.appearance.colors?.building) c = rgb(this.appearance.colors.building);
+          const tree = /^city3d:tree:(crown|trunk)$/.exec(id ?? '');   // switch treeHouseGreens: forest greens, whatever the colour mode
+          if (tree) c = rgb(tree[1] === 'crown' ? '#5f8247' : '#4b5a36');
+          if (id === 'city3d:yard:hedge' && !tm) c = rgb('#5f7a3c'); // a tinted yard hedge keeps its own (muted) green
+          if (id === 'city3d:water') c = rgb('#' + (tm?.[1] ?? '8aaeb8'));
           colors.set(key, c);
         }
         const recolored = this.appearance.diagnostic === 'none' && (!!this.appearance.colors?.building && face.surface === 'roof' || tm?.[1].length === 6 || !!culture && !building.id.startsWith('city3d-'));
         const color = textured ? `${c.join(',')}|${layer}|${recolored}` : 'vertex-colour', mean = MATERIALS.layers[layer]?.mean_rgb;
         const tint = mean && recolored ? c.map((v, i) => v / Math.max(0.04, mean[i] / 255)) as Vec3
           : tm?.[1].length === 3 ? [...tm[1]].map(v => parseInt(v, 16) / 8) as Vec3 : [1, 1, 1] as Vec3;
-        let batch = groups.get(color); if (!batch) { batch = { color: textured ? c : [1, 1, 1], tint, recolored, values: [], count: 0, stride: 9, vcolor: !textured, palette: [] }; groups.set(color, batch); }
+        let batch = groups.get(color); if (!batch) { batch = { color: textured ? c : [1, 1, 1], tint, recolored, values: [], count: 0, stride: 10, vcolor: !textured, palette: [] }; groups.set(color, batch); }
         if (batch.palette && !batch.palette.some(q => q[0] === c[0] && q[1] === c[1] && q[2] === c[2])) batch.palette.push(c);
         for (const p of face.points) {
           batch.values.push(p[0] - sector.origin[0], p[2], p[1] - sector.origin[1], face.normal[0], face.normal[2], face.normal[1]);
           if (textured) { const [u, v] = faceUv(p, face.normal, layer); batch.values.push(u, v, layer); } else batch.values.push(c[0], c[1], c[2]);
+          batch.values.push(Math.min(p[2], ground));
         }
       }, overview, featureLod);
     }
@@ -242,15 +266,16 @@ export class UrbanBuildingPass {
     }
     sector.cached = { overview, featureLod, batches, used: this.tick };
   }
-  /** Vertex buffer of a batch (9 floats per vertex). */
+  /** Vertex buffer of a batch (10 floats per vertex). */
   protected upload(batch: Batch, values: Float32Array): void {
     const gl = this.gl!;
     batch.vao = gl.createVertexArray()!; batch.buffer = gl.createBuffer()!;
     gl.bindVertexArray(batch.vao); gl.bindBuffer(gl.ARRAY_BUFFER, batch.buffer); gl.bufferData(gl.ARRAY_BUFFER, values, gl.STATIC_DRAW);
     gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, batch.stride * 4, 0);
     gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, batch.stride * 4, 12);
-    if (batch.vcolor) { gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 36, 24); }
-    else { gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 36, 24); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 1, gl.FLOAT, false, 36, 32); }
+    if (batch.vcolor) { gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 40, 24); }
+    else { gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 40, 24); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 1, gl.FLOAT, false, 40, 32); }
+    gl.enableVertexAttribArray(4); gl.vertexAttribPointer(4, 1, gl.FLOAT, false, 40, 36);
     gl.bindVertexArray(null);
   }
   /** Material atlases on the GPU (textured appearance). */
@@ -304,7 +329,8 @@ export class UrbanBuildingPass {
     const p = texProgram ?? (this.colorProgram ??= program(gl, vertexColor, fragmentColor)); gl.useProgram(p);
     gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
     if (texProgram) {
-      gl.uniform1i(gl.getUniformLocation(p, 'useTex'), this.textures ? 1 : 0);
+      gl.uniform1i(gl.getUniformLocation(p, 'useTex'), this.textures ? 2 : 0);
+      gl.uniform1f(gl.getUniformLocation(p, 'softFrom'), SOFT_LAYER_FROM);
       gl.uniform1i(gl.getUniformLocation(p, 'albedoTex'), 10); gl.uniform1i(gl.getUniformLocation(p, 'normalTex'), 11);
       gl.activeTexture(gl.TEXTURE0 + 10); gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.textures?.albedo ?? null);
       gl.activeTexture(gl.TEXTURE0 + 11); gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.textures?.normal ?? null);

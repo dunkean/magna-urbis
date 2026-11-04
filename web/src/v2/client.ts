@@ -5,11 +5,14 @@ import { createCanvasRenderer, type CanvasRenderer } from '../render/canvas';
 import { displayWorld } from '../render/displayWorld';
 import type { World } from '../gen/types';
 import type { V2Settings, V2Progress, V2TownStage } from './contracts';
+import type { ResourcePayload } from '../../../rust/bridge/resources';
 import type { DisplayOpts, RResponse } from '../ui/protocol';
 import { generationWorldInput } from './workerWorld';
 import { renderProjection } from './renderProjection';
 import { sameDisplay } from './displayState';
 import type { BenchRenderer } from './benchRenderer';
+import { resolveSettingsAppearance, resolvedDisplayOptions } from './appearance';
+import type { ResolvedAppearance } from '../render/appearanceRecipe';
 import type { FrameRequest } from '../ui/viewer';
 import type { ExportLayers } from '../render/exportLayers';
 import { publishWasmThreads, wasmWorkerFailed, wasmWorkerOptions } from '../../../rust/bridge/wasmThreads';
@@ -26,6 +29,9 @@ export class StudioClient {
   private id = 0;
   private drawingId = 0;
   private pending: { id: number; resolve: (world: World) => void; reject: (error: Error) => void } | null = null;
+  /** Lazy resource payload requests (worker message `resources`), and the payload of the last terrain. */
+  private resourceRequests = new Map<number, { resolve: (payload: ResourcePayload | undefined) => void; reject: (error: Error) => void }>();
+  private resourceCache?: { key: string; payload: Promise<ResourcePayload | undefined> };
   private world: World | null = null;
   private appearanceSettings?: V2Settings;
   private bench?: BenchRenderer;
@@ -35,6 +41,8 @@ export class StudioClient {
   private appearanceWork:Promise<void>=Promise.resolve();
   private appearanceRequest=0;
   private benchMiniRevision = -1;
+  /** One resolution per (settings, world, preview): show() and applyAppearance() share it. */
+  private resolutions: { settings: V2Settings; world: World | undefined; preview: boolean; resolved: ResolvedAppearance }[] = [];
   private benchMiniSize = 0;
   private classicBackground?:{world:World;key:string;url:string};
   private retained?:{id:number;world:World};
@@ -48,12 +56,14 @@ export class StudioClient {
   private attachEngine(): void {
     this.engine.onmessage = ({ data: m }) => {
       if (m.type !== 'progress') publishWasmThreads(m.wasm);
+      const lazy = this.resourceRequests.get(m.id);
+      if (lazy) { this.resourceRequests.delete(m.id); if (m.type === 'resources') lazy.resolve(m.payload); else if (m.type === 'error') lazy.reject(new Error(m.error)); return; }
       if (m.id !== this.pending?.id) return;
       if (m.type === 'progress') this.onProgress(m.progress);
       else if (m.type === 'result') { const p = this.pending!; this.pending = null; this.retained={id:m.id,world:m.world};p.resolve(m.world); }
       else if (m.type === 'error') { const p = this.pending!; this.pending = null; p.reject(new Error(m.error)); }
     };
-    this.engine.onerror = e => { wasmWorkerFailed(e.message || 'engine worker error'); this.pending?.reject(new Error(e.message || 'Le moteur de génération a été interrompu.')); this.pending = null; this.retained=undefined;this.engine.terminate(); this.engine = new EngineWorker(wasmWorkerOptions('magna-v2')); this.attachEngine(); this.onEngineReset?.(); };
+    this.engine.onerror = e => { this.failResources(new Error(e.message || 'engine worker error')); wasmWorkerFailed(e.message || 'engine worker error'); this.pending?.reject(new Error(e.message || 'Le moteur de génération a été interrompu.')); this.pending = null; this.retained=undefined;this.engine.terminate(); this.engine = new EngineWorker(wasmWorkerOptions('magna-v2')); this.attachEngine(); this.onEngineReset?.(); };
   }
   async init(): Promise<void> {
     let render:Worker;
@@ -77,12 +87,12 @@ export class StudioClient {
     render.postMessage({ type: 'display', display: this.display });
     if(this.display.painted){this.brushSourcesSent=true;const {BRUSH_SOURCES}=await import('../render/assets/brushAssets');render.postMessage({type:'brushes',sources:BRUSH_SOURCES});}
   }
-  run(action: Action, settings: V2Settings, world?: World, key?: string, townStage?:V2TownStage, terrainStage?: string, keys?: string[]): Promise<World> {
+  run(action: Action, settings: V2Settings, world?: World, key?: string, townStage?:V2TownStage, terrainStage?: string, keys?: string[], cityOutput?: string): Promise<World> {
     if (this.pending) return Promise.reject(new Error('Un calcul est déjà en cours.'));
     const id = ++this.id;
     return new Promise((resolve, reject) => {
       this.pending = { id, resolve, reject };
-      try{this.engine.postMessage({ id, action, settings, ...generationWorldInput(action,world,this.retained),key, keys, townStage,terrainStage,assetBase:document.baseURI });}catch(error){this.pending=null;reject(error instanceof Error?error:new Error(String(error)));}
+      try{this.engine.postMessage({ id, action, settings, ...generationWorldInput(action,world,this.retained),key, keys, townStage,terrainStage,cityOutput,assetBase:document.baseURI });}catch(error){this.pending=null;reject(error instanceof Error?error:new Error(String(error)));}
     });
   }
   cancel(): void {
@@ -90,6 +100,23 @@ export class StudioClient {
     this.pending.reject(new DOMException('Calcul annulé. La carte précédente est conservée.', 'AbortError'));
     this.pending = null;this.retained=undefined; this.engine.terminate(); this.engine = new EngineWorker(wasmWorkerOptions('magna-v2')); this.attachEngine();
     this.onEngineReset?.();
+  }
+  private failResources(error: Error): void { for (const request of this.resourceRequests.values()) request.reject(error); this.resourceRequests.clear(); this.resourceCache = undefined; }
+  /** Resource payload of the world's terrain, fetched once per terrain (lazily: only when a resource layer is drawn). */
+  resources(world: World): Promise<ResourcePayload | undefined> {
+    const settings = this.appearanceSettings;
+    if (!settings) return Promise.resolve(undefined);
+    const key = JSON.stringify([world.stats['v2.terrainKey'] ?? null, world.mapSize, world.seed, settings.runtime?.backend]);
+    if (this.resourceCache?.key === key) return this.resourceCache.payload;
+    const id = ++this.id;
+    const payload = new Promise<ResourcePayload | undefined>((resolve, reject) => {
+      this.resourceRequests.set(id, { resolve, reject });
+      try { this.engine.postMessage({ type: 'resources', id, settings, ...generationWorldInput('region', world, this.retained) }); }
+      catch (error) { this.resourceRequests.delete(id); reject(error instanceof Error ? error : new Error(String(error))); }
+    });
+    this.resourceCache = { key, payload };
+    payload.catch(() => { if (this.resourceCache?.payload === payload) this.resourceCache = undefined; });
+    return payload;
   }
   /** Imported projects replace the old worker source; release its heavyweight archives. */
   invalidateRetained():void{this.retained=undefined;this.engine.postMessage({type:'release'});}
@@ -104,18 +131,14 @@ export class StudioClient {
     if(this.world!==world)this.benchMiniRevision=-1;
     this.world = world;
     this.syncRenderer?.dispose(); this.syncRenderer = null;
-    // A metre-scale initial field can be invisible in a finished cartographic style.
-    // Inspect its own elevation range without changing the saved appearance.
-    const savedSettings=this.appearanceSettings;
-    const settings=savedSettings && world.stats['v2.previewStage'] ? { ...savedSettings, appearance: {
-      ...savedSettings.appearance, style: savedSettings.appearance?.style ?? savedSettings.options.style,
-      renderer: 'bench' as const, diagnostic: 'elevation' as const, labels: false,
-    } } : savedSettings;
-    const useBench=settings && settings.appearance?.renderer!=='classic' && (settings.appearance?.renderer==='bench'||!!settings.appearance?.terrainStyle||!!world.debug?.v2RustCities);
+    const settings=this.appearanceSettings;
+    const resolved=settings&&this.resolve(settings,world,true);
+    const useBench=!!settings&&resolved!.path==='composite';
     if(useBench){
       const {BenchRenderer}=await import('./benchRenderer');
       this.bench??=new BenchRenderer(()=>{if(this.benchActive&&this.world)this.viewer.contentChanged(this.world.mapSize,true);});
-      await this.bench.set(world,settings);
+      this.bench.resourceSource=w=>this.resources(w);
+      await this.bench.set(world,settings!,resolved!);
       this.benchActive=true;
       this.viewer.setSource({request:frame=>void this.drawBench(frame)});
       this.viewer.contentChanged(world.mapSize,keepView&&!mapChanged);
@@ -155,9 +178,17 @@ export class StudioClient {
       if(frame.mini&&this.world&&(this.benchMiniRevision!==revision||this.benchMiniSize!==frame.mini)){const size=this.world.mapSize;mini=await createImageBitmap(renderer.draw({cx:size/2,cy:size/2,scale:frame.mini/size},frame.mini,frame.mini,1));this.benchMiniRevision=revision;this.benchMiniSize=frame.mini;}
       if(!this.benchActive||revision!==this.appearanceRevision||this.bench!==renderer){this.viewer.present({...frame,bitmap,mini,ms:0,band:0,scale:frame.view.scale},false);return;}
       this.canvas.dataset.renderer=backend;this.canvas.dataset.renderStyle=style;
-      this.canvas.dataset.cityRender=cityStats;
+      this.canvas.dataset.cityRender=cityStats;this.canvas.dataset.renderPasses=JSON.stringify(renderer.stats.passes??[]);
       this.viewer.present({...frame,bitmap,mini,ms:0,band:0,scale:frame.view.scale},this.benchActive&&revision===this.appearanceRevision);
     }catch(error){this.onError(error instanceof Error?error:new Error(String(error)));this.viewer.present({...frame,mini:undefined,ms:0,band:0,scale:frame.view.scale},false);}
+  }
+  /** Resolve the appearance for the current products. `previewAware`: a stage-preview world is inspected through its elevation. */
+  private resolve(settings:V2Settings,world:World|undefined,previewAware:boolean):ResolvedAppearance{
+    const preview=previewAware&&!!world&&!!world.stats['v2.previewStage'];
+    const hit=this.resolutions.find(entry=>entry.settings===settings&&entry.world===world&&entry.preview===preview);
+    if(hit)return hit.resolved;
+    const resolved=resolveSettingsAppearance(settings,world,'view2d',{preview});
+    this.resolutions=[{settings,world,preview,resolved},...this.resolutions.slice(0,3)];return resolved;
   }
   /** Appearance changes redraw retained geometry. They never enter the generation worker. */
   setAppearance(settings:V2Settings):Promise<void>{
@@ -169,11 +200,11 @@ export class StudioClient {
     const previousSettings=this.appearanceSettings,previousDisplay=this.display;
     try {
     this.appearanceSettings=settings;this.appearanceRevision++;
-    const a=settings.appearance;
-    this.display={...this.display,colors:a?.colors,buildings:a?.buildings,layers:{roads:a?.roads??true},style:a?.style??settings.options.style,contours:a?.contours??settings.options.contours,landuse:a?.landuse??settings.options.landuse,labels:a?.labels??true,legend:a?.legend??false,cartouche:a?.cartouche??false,painted:a?.painted,vegetation:a?.vegetation};
-    if(this.render&&a?.painted&&!this.brushSourcesSent){const {BRUSH_SOURCES}=await import('../render/assets/brushAssets');this.render.postMessage({type:'brushes',sources:BRUSH_SOURCES});this.brushSourcesSent=true;}
+    const display=this.resolve(settings,this.world??undefined,false);
+    this.display={...this.display,...resolvedDisplayOptions(display),colors:display.palette.colors};
+    if(this.render&&display.cartography.painted&&!this.brushSourcesSent){const {BRUSH_SOURCES}=await import('../render/assets/brushAssets');this.render.postMessage({type:'brushes',sources:BRUSH_SOURCES});this.brushSourcesSent=true;}
     if(this.render)this.render.postMessage({type:'display',display:this.display});
-    const needsBench=a?.renderer!=='classic'&&(a?.renderer==='bench'||!!a?.terrainStyle||!!this.world?.debug?.v2RustCities);
+    const needsBench=this.resolve(settings,this.world??undefined,true).path==='composite';
     if(this.world&&(!this.render||this.benchActive||needsBench))await this.show(this.world,true);
     else if(this.world){this.canvas.dataset.renderer='Classic Canvas';this.canvas.dataset.renderStyle=this.display.style;this.canvas.dataset.cityRender='{}';this.viewer.invalidate();}
     else if(this.render)this.render.postMessage({type:'display',display:this.display});
@@ -194,12 +225,13 @@ export class StudioClient {
     this.classicBackground={world:this.world,key,url:`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`};
   }
   backgroundUrl():string|undefined{return this.benchActive?this.bench?.backgroundUrl():this.classicBackground?.url;}
-  async exportBench(settings:V2Settings,size:number,layers:Partial<ExportLayers>):Promise<HTMLCanvasElement>{
+  async exportBench(settings:V2Settings,resolved:ResolvedAppearance,size:number,layers:Partial<ExportLayers>):Promise<HTMLCanvasElement>{
     if(!this.world)throw new Error('Create a region first.');
     const {BenchRenderer}=await import('./benchRenderer');
-    const world=this.world,snapshot={...settings,appearance:settings.appearance?structuredClone(settings.appearance):undefined},renderer=new BenchRenderer(()=>{},true,this.bench?.rasterContext());
+    const world=this.world,snapshot={...settings,appearance:settings.appearance?structuredClone(settings.appearance):undefined},renderer=new BenchRenderer(()=>{},true,this.bench?.rasterContext(),this.bench?.sharedResources());
+    renderer.resourceSource=w=>this.resources(w);
     try{
-      await renderer.set(world,snapshot,layers);
+      await renderer.set(world,snapshot,resolved,layers);
       const rendered=await renderer.capture(size),copy=document.createElement('canvas');copy.width=copy.height=size;copy.getContext('2d')!.drawImage(rendered,0,0);return copy;
     }finally{renderer.dispose();}
   }

@@ -1,6 +1,8 @@
 export interface ProgrammeContext {
   /** Intent axis (settlementAxes.ts): a settlement, or one isolated establishment. Never a specialisation. */
   intent: ProgrammeIntent;
+  /** `activity` intent: the activities.json site template (ACTIVITY_TEMPLATES) standing as the place. */
+  template?: string;
   /** Specialisation axis. Missing/null: automatic (population, cultural profile, declared port siting).
    * An explicit empty object means no specialisation. */
   functions?: ProgrammeFunctionWeights | null;
@@ -13,7 +15,9 @@ export interface ProgrammeContext {
   decay?: number | null;
 }
 /** A single structure without a town: one intent on one unsubdivided domain. */
-export type ProgrammeIsolatedIntent = 'isolated-farm' | 'roadside-temple' | 'isolated-shrine' | 'isolated-mill' | 'isolated-inn' | 'isolated-tower';
+export type ProgrammeIsolatedIntent = 'isolated-farm' | 'roadside-temple' | 'isolated-shrine' | 'isolated-mill' | 'isolated-inn' | 'isolated-tower' | 'activity';
+/** Site templates of `urban/activities.json`, for the `activity` intent. */
+export const ACTIVITY_TEMPLATES = ['small_farm',  'large_estate',  'orchard_press',  'vineyard',  'olive_estate',  'rice_terraces',  'pastoral_enclosure',  'seasonal_upland_pasture',  'forest_logging',  'forest_charcoal',  'forest_sawmill',  'resin_tar',  'hunting_post',  'hardrock_mine',  'alluvial_workings',  'smelter_cluster',  'stone_quarry',  'clay_brickyard',  'pottery_cluster',  'saltworks',  'river_watermill',  'windmill_site',  'riverside_fulling',  'riverside_tannery',  'river_fishing',  'coastal_fishing',  'shipyard',  'trade_outpost',  'road_waystation',  'caravan_waystation',  'ferry_crossing',  'bridge_toll',  'border_outpost',  'hill_watch',  'village_workshops',  'weavers_district',  'monastic_farm',  'pilgrimage_stop',  'maori_food_store',  'budj_bim_eel_complex',  'andean_storeway',  'arctic_hunting_camp',  'fantasy_fungal_hamlet',  'fantasy_dwarven_mine',  'urban_harbour_quarter',  'tanners_quarter',  'monastery_compound',  'detached_fishing_camp',  'urban_kilns_strip',  'mining_workers_hamlet',  'country_chapel',  'country_temple',  'roadside_shrine',  'rural_monastery'] as const;
 export type ProgrammeIntent = 'settlement' | ProgrammeIsolatedIntent;
 export type ProgrammeState = 'thriving' | 'declining' | 'abandoned' | 'ruined';
 export const PROGRAMME_FUNCTIONS = ['agricultural', 'commerce', 'artisan', 'riverine', 'port', 'capital'] as const;
@@ -105,11 +109,14 @@ export interface LayoutConfig extends Omit<ParcelConfig, 'operator' | 'zoneOpera
   roadWidthBySize: boolean; townMainRoad: boolean; polishRoadEnds: boolean; lowRuralHouses: boolean;
   /** Under test, off by default: access-way mouths on the axis, crossing remnants, joined road ends, small-place capacity tolerance. */
   roadMouths: boolean; roadRemnants: boolean; roadEndJoins: boolean; smallPlaceCapacity: boolean;
+  naturalCampApproaches: boolean; streetFrontage: boolean; alignEnclosedGrid: boolean; hideUnusedQuarters: boolean; villageBridgeBudget: boolean; linksJoinRoads: boolean; organicBranchVariation: number; ribbonWidthVariation: number;
+  campRingWobble?: number | null;
   /** Large camps: one ring (default, omitted from the native payload), concentric rows or several daughter camps. */
   campGrowth: 'ring' | 'concentric' | 'clusters';
   shelteredHarbour: boolean;
   portDetachment: number;
   portShelter: number;
+  lagoonCanals?: number | null;
   /** Site archetype from settlement placement (`harbor`, `bridge`, `hilltop`…); absent = unknown. */
   siteArchetype?: string;
   siteArchetypes?: Record<string, string>;
@@ -118,7 +125,7 @@ export interface LayoutConfig extends Omit<ParcelConfig, 'operator' | 'zoneOpera
 /** Native plan grammars (Rust `urban::kinds::Kind`), distinct from demographic classes. */
 export type SettlementKind = 'single' | 'ruin' | 'farmstead' | 'camp' | 'hamlet' | 'street-village' | 'nucleated-village' | 'market-town' | 'walled-town' | 'city' | 'metropolis';
 export const defaultFootprintConfig = (): FootprintConfig => ({ mechanism: 'auto', family: 'auto', budget: 'population', grossDensity: 0, aspect: 1.4, orientation: 0, nuclei: 3, irregularity: 0.2, anisotropy: 0.65, separation: 1.3, epochs: 3, cohesion: 0.85, satellites: 0.15, branchDepth: 0.2, gapSize: 60 });
-export const defaultLayoutConfig = (): LayoutConfig => ({ programme: defaultProgrammeContext(), axisAlignment: 'regional', mixCulture: '', mixMode: 'phases', mixShare: 0.5, mixAngle: 0, exitTreatment: 'adaptive', peripheralRoad: 'auto', siteAdaptation: 1, scope: 'settlement', settlementForm: 'auto', suburbs: 'auto', phases: 0, preset: 'culture', culture: 'site', recipe: 'auto', zone: 'auto', density: 1, count: 4, rings: 1, radius: 0, radiusScale: 1, placement: 'center', params: {}, monument: 'none', fortification: 'culture', fortificationStyle: 'auto', wallStiffness: null, wallTerrain: null, wallRelief: null, wallTowerSpacing: null, ditchWetness: null, riverControlMode: '', portEnclosure: '', plannedWall: '', heightsCastle: '', wallExtension: '', oldEnclosureCitadel: false, medievalWalls: false, riverControl: false, dryDitches: false, gateVillages: false, gateVillage: 0, maxStreetGrade: 0.12, maxLaneGrade: 0.18, maxStairGrade: 0.65, allowStairs: true, shelteredHarbour: false, portDetachment: 1, portShelter: 0, powerHighGround: false, mergeParallelStreets: false, parallelMerge: 0, roadWidthBySize: true, townMainRoad: true, polishRoadEnds: true, lowRuralHouses: true, roadMouths: false, roadRemnants: false, roadEndJoins: false, smallPlaceCapacity: false, campGrowth: 'ring', regularGridOutline: false, footprint: defaultFootprintConfig(), tissue: 'culture', accessMode: 'adaptive', accessDepth: 0, accessBudget: 4 });
+export const defaultLayoutConfig = (): LayoutConfig => ({ programme: defaultProgrammeContext(), axisAlignment: 'regional', mixCulture: '', mixMode: 'phases', mixShare: 0.5, mixAngle: 0, exitTreatment: 'adaptive', peripheralRoad: 'auto', siteAdaptation: 1, scope: 'settlement', settlementForm: 'auto', suburbs: 'auto', phases: 0, preset: 'culture', culture: 'site', recipe: 'auto', zone: 'auto', density: 1, count: 4, rings: 1, radius: 0, radiusScale: 1, placement: 'center', params: {}, monument: 'none', fortification: 'culture', fortificationStyle: 'auto', wallStiffness: null, wallTerrain: null, wallRelief: null, wallTowerSpacing: null, ditchWetness: null, riverControlMode: '', portEnclosure: '', plannedWall: '', heightsCastle: '', wallExtension: '', oldEnclosureCitadel: false, medievalWalls: false, riverControl: false, dryDitches: false, gateVillages: false, gateVillage: 0, maxStreetGrade: 0.12, maxLaneGrade: 0.18, maxStairGrade: 0.65, allowStairs: true, shelteredHarbour: false, portDetachment: 1, portShelter: 0, lagoonCanals: null, powerHighGround: false, mergeParallelStreets: false, parallelMerge: 0, roadWidthBySize: true, townMainRoad: true, polishRoadEnds: true, lowRuralHouses: true, roadMouths: false, roadRemnants: false, roadEndJoins: false, smallPlaceCapacity: false, naturalCampApproaches: false, campRingWobble: null, streetFrontage: false, alignEnclosedGrid: false, hideUnusedQuarters: false, villageBridgeBudget: false, linksJoinRoads: false, organicBranchVariation: 0, ribbonWidthVariation: 0, campGrowth: 'ring', regularGridOutline: false, footprint: defaultFootprintConfig(), tissue: 'culture', accessMode: 'adaptive', accessDepth: 0, accessBudget: 4 });
 export const defaultParcelConfig = (): ParcelConfig => ({ preset: 'culture', culture: 'site', recipe: 'auto', zone: 'auto', density: 1, params: {}, operator: 'culture' });
 
 /** Keep the Rust contract strict while discarding fields leaked by older UI versions. */
@@ -144,6 +151,7 @@ export function normalizeLayoutConfig(saved?: Partial<Omit<LayoutConfig, 'footpr
   // Optional fields reach Rust only when set, so older links keep their payload.
   // Preserve explicit null/0 and imported values for native validation; only
   // absent/undefined fields remain omitted. Never coerce optional inputs.
+  if (saved?.programme?.template) config.programme.template = saved.programme.template;
   if (saved?.programme?.state !== undefined) config.programme.state = saved.programme.state;
   if (saved?.programme?.decay !== undefined) config.programme.decay = saved.programme.decay;
   if (saved?.programme?.functions !== undefined) config.programme.functions = saved.programme.functions === null ? null : normalizeProgrammeFunctions(saved.programme.functions);

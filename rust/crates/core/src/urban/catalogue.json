@@ -1,4 +1,2538 @@
 {
+  "farmstead": {
+    "version": 2,
+    "default": "european-organic",
+    "buildings": {
+      "barn": {
+        "width": [
+          10,
+          16
+        ],
+        "depth": [
+          6,
+          9
+        ],
+        "eave": [
+          3.2,
+          4.2
+        ]
+      },
+      "byre": {
+        "width": [
+          6,
+          10
+        ],
+        "depth": [
+          4.5,
+          6
+        ],
+        "eave": [
+          2.4,
+          3.0
+        ]
+      },
+      "stable": {
+        "width": [
+          5,
+          8
+        ],
+        "depth": [
+          4,
+          5.5
+        ],
+        "eave": [
+          2.4,
+          2.8
+        ]
+      },
+      "granary": {
+        "width": [
+          3,
+          5
+        ],
+        "depth": [
+          3,
+          4
+        ],
+        "eave": [
+          2.2,
+          2.8
+        ]
+      },
+      "raised-granary": {
+        "width": [
+          2.4,
+          3.4
+        ],
+        "depth": [
+          2.4,
+          3.4
+        ],
+        "eave": [
+          1.8,
+          2.2
+        ],
+        "stilts": 1.0
+      },
+      "shed": {
+        "width": [
+          3,
+          5
+        ],
+        "depth": [
+          2.5,
+          3.5
+        ],
+        "eave": [
+          2.0,
+          2.4
+        ],
+        "lean": true
+      },
+      "cart-shed": {
+        "width": [
+          5,
+          8
+        ],
+        "depth": [
+          3.5,
+          4.5
+        ],
+        "eave": [
+          2.4,
+          2.8
+        ],
+        "lean": true
+      },
+      "bakehouse": {
+        "width": [
+          2.5,
+          3.5
+        ],
+        "depth": [
+          2.5,
+          3.5
+        ],
+        "eave": [
+          1.8,
+          2.2
+        ]
+      },
+      "well": {
+        "width": [
+          1.4,
+          1.8
+        ],
+        "depth": [
+          1.4,
+          1.8
+        ],
+        "eave": [
+          0.8,
+          0.9
+        ],
+        "roof": "flat",
+        "round": true,
+        "cover": "stone",
+        "wall": "stone"
+      },
+      "hayrick": {
+        "width": [
+          3,
+          4.5
+        ],
+        "depth": [
+          3,
+          4.5
+        ],
+        "eave": [
+          1.2,
+          1.6
+        ],
+        "roof": "cone",
+        "round": true,
+        "cover": "thatch",
+        "wall": "wattle"
+      },
+      "pit-house": {
+        "width": [
+          3.5,
+          5
+        ],
+        "depth": [
+          3,
+          4
+        ],
+        "eave": [
+          0.8,
+          1.2
+        ]
+      },
+      "smithy": {
+        "width": [
+          4,
+          6
+        ],
+        "depth": [
+          3.5,
+          5
+        ],
+        "eave": [
+          2.4,
+          2.8
+        ]
+      },
+      "storeroom": {
+        "width": [
+          3,
+          5
+        ],
+        "depth": [
+          3,
+          4
+        ],
+        "eave": [
+          2.2,
+          2.6
+        ]
+      },
+      "farm-tower": {
+        "width": [
+          3,
+          4
+        ],
+        "depth": [
+          3,
+          4
+        ],
+        "eave": [
+          6,
+          8
+        ],
+        "roof": "flat",
+        "wall": "stone"
+      },
+      "dovecote": {
+        "width": [
+          2.5,
+          3.5
+        ],
+        "depth": [
+          2.5,
+          3.5
+        ],
+        "eave": [
+          3.5,
+          4.5
+        ],
+        "roof": "cone",
+        "round": true
+      },
+      "hut": {
+        "width": [
+          3.5,
+          5
+        ],
+        "depth": [
+          3.5,
+          5
+        ],
+        "eave": [
+          1.8,
+          2.2
+        ],
+        "round": true
+      }
+    },
+    "types": {
+      "vierkanthof": {
+        "arch": "vierkanthof",
+        "roof": "gable",
+        "material": "brick",
+        "roofs": {
+          "house": "hip"
+        },
+        "layout": "closed",
+        "enclosure": "wall",
+        "outbuildings": [
+          3,
+          5
+        ],
+        "houseSize": [
+          6,
+          13,
+          5,
+          9
+        ],
+        "yard": [
+          4,
+          9
+        ],
+        "jitter": 0.035,
+        "cover": "tile",
+        "wall": "brick",
+        "ancillary": [
+          "granary",
+          "shed",
+          "cart-shed",
+          "bakehouse",
+          "well",
+          "stable",
+          "dovecote"
+        ],
+        "core": [
+          "barn",
+          "byre"
+        ]
+      },
+      "u-yard": {
+        "arch": "dreiseithof",
+        "roof": "gable",
+        "material": "timber-frame",
+        "layout": "u",
+        "enclosure": "fence",
+        "outbuildings": [
+          2,
+          5
+        ],
+        "houseSize": [
+          6,
+          13,
+          5,
+          9
+        ],
+        "yard": [
+          4,
+          9
+        ],
+        "jitter": 0.035,
+        "cover": "thatch",
+        "wall": "timber",
+        "ancillary": [
+          "byre",
+          "stable",
+          "shed",
+          "cart-shed",
+          "granary",
+          "bakehouse",
+          "well",
+          "hayrick"
+        ],
+        "core": [
+          "barn"
+        ]
+      },
+      "l-yard": {
+        "arch": "hakenhof",
+        "roof": "gable",
+        "material": "stone",
+        "layout": "l",
+        "enclosure": "fence",
+        "outbuildings": [
+          2,
+          4
+        ],
+        "houseSize": [
+          6,
+          13,
+          5,
+          9
+        ],
+        "yard": [
+          4,
+          9
+        ],
+        "jitter": 0.035,
+        "cover": "tile",
+        "wall": "stone",
+        "ancillary": [
+          "byre",
+          "shed",
+          "bakehouse",
+          "well",
+          "hayrick",
+          "cart-shed"
+        ],
+        "core": [
+          "barn"
+        ]
+      },
+      "haufenhof": {
+        "arch": "haufenhof",
+        "roof": "gable",
+        "material": "timber-frame",
+        "roofs": {
+          "house": "hip"
+        },
+        "layout": "scattered",
+        "enclosure": "fence",
+        "outbuildings": [
+          3,
+          6
+        ],
+        "houseSize": [
+          6,
+          13,
+          5,
+          9
+        ],
+        "yard": [
+          4,
+          9
+        ],
+        "jitter": 0.38,
+        "cover": "thatch",
+        "wall": "timber",
+        "ancillary": [
+          "byre",
+          "granary",
+          "shed",
+          "bakehouse",
+          "well",
+          "hayrick",
+          "stable",
+          "cart-shed",
+          "hayrick"
+        ],
+        "core": [
+          "barn"
+        ]
+      },
+      "longere": {
+        "arch": "longere",
+        "roof": "gable",
+        "material": "stone",
+        "roofs": {
+          "lean-to": "flat"
+        },
+        "layout": "linear",
+        "enclosure": "fence",
+        "outbuildings": [
+          1,
+          4
+        ],
+        "houseSize": [
+          6,
+          13,
+          5,
+          9
+        ],
+        "yard": [
+          4,
+          9
+        ],
+        "jitter": 0.035,
+        "cover": "tile",
+        "wall": "stone",
+        "ancillary": [
+          "barn",
+          "shed",
+          "bakehouse",
+          "well",
+          "hayrick",
+          "cart-shed"
+        ],
+        "core": [
+          "byre"
+        ]
+      },
+      "einhaus": {
+        "arch": "hallenhaus",
+        "roof": "hip",
+        "material": "timber-frame",
+        "names": {
+          "house": "hall-house"
+        },
+        "layout": "linear",
+        "enclosure": "fence",
+        "outbuildings": [
+          1,
+          4
+        ],
+        "houseSize": [
+          6,
+          13,
+          5,
+          9
+        ],
+        "yard": [
+          4,
+          9
+        ],
+        "jitter": 0.035,
+        "cover": "thatch",
+        "wall": "timber",
+        "ancillary": [
+          "granary",
+          "bakehouse",
+          "shed",
+          "hayrick",
+          "well",
+          "cart-shed"
+        ],
+        "core": []
+      },
+      "masseria": {
+        "arch": "masseria",
+        "roof": "flat",
+        "material": "stone",
+        "roofs": {
+          "barn": "gable",
+          "byre": "gable"
+        },
+        "layout": "u",
+        "enclosure": "wall",
+        "outbuildings": [
+          2,
+          5
+        ],
+        "houseSize": [
+          6,
+          13,
+          5,
+          9
+        ],
+        "yard": [
+          4,
+          9
+        ],
+        "jitter": 0.035,
+        "cover": "tile",
+        "wall": "stone",
+        "ancillary": [
+          "barn",
+          "granary",
+          "bakehouse",
+          "well",
+          "storeroom",
+          "dovecote"
+        ],
+        "core": [
+          "byre",
+          "farm-tower"
+        ]
+      },
+      "dvor": {
+        "arch": "izba",
+        "roof": "gable",
+        "material": "log",
+        "names": {
+          "house": "izba",
+          "barn": "ambar"
+        },
+        "layout": "u",
+        "enclosure": "fence",
+        "outbuildings": [
+          2,
+          5
+        ],
+        "houseSize": [
+          6,
+          13,
+          5,
+          9
+        ],
+        "yard": [
+          4,
+          9
+        ],
+        "jitter": 0.035,
+        "cover": "shingle",
+        "wall": "wood",
+        "ancillary": [
+          "stable",
+          "storeroom",
+          "shed",
+          "bakehouse",
+          "well",
+          "hayrick"
+        ],
+        "core": [
+          "barn"
+        ]
+      },
+      "norse-longhouse": {
+        "arch": "norse",
+        "roof": "gable",
+        "material": "turf",
+        "roofs": {
+          "pit-house": "gable"
+        },
+        "layout": "scattered",
+        "enclosure": "fence",
+        "outbuildings": [
+          2,
+          5
+        ],
+        "houseSize": [
+          10,
+          28,
+          5,
+          8
+        ],
+        "yard": [
+          4,
+          9
+        ],
+        "jitter": 0.38,
+        "cover": "turf",
+        "wall": "earth",
+        "ancillary": [
+          "pit-house",
+          "smithy",
+          "storeroom",
+          "shed",
+          "hayrick",
+          "pit-house"
+        ],
+        "core": [
+          "byre"
+        ]
+      },
+      "roundhouse": {
+        "arch": "celtic",
+        "roof": "conical",
+        "material": "wattle",
+        "roofs": {
+          "granary": "pyramidal"
+        },
+        "layout": "round",
+        "enclosure": "hedge",
+        "outbuildings": [
+          2,
+          5
+        ],
+        "houseSize": [
+          5,
+          9,
+          5,
+          9
+        ],
+        "yard": [
+          4,
+          9
+        ],
+        "jitter": 0.035,
+        "cover": "thatch",
+        "wall": "wattle",
+        "ancillary": [
+          "hut",
+          "raised-granary",
+          "byre",
+          "hayrick",
+          "hut"
+        ],
+        "core": [
+          "granary"
+        ]
+      },
+      "minka": {
+        "arch": "minka",
+        "roof": "hip",
+        "material": "thatch",
+        "roofs": {
+          "storehouse": "gable"
+        },
+        "names": {
+          "storehouse": "kura",
+          "gatehouse": "nagaya-mon"
+        },
+        "mats": {
+          "storehouse": "plaster"
+        },
+        "layout": "l",
+        "enclosure": "fence",
+        "outbuildings": [
+          1,
+          3
+        ],
+        "houseSize": [
+          6,
+          13,
+          5,
+          9
+        ],
+        "yard": [
+          4,
+          9
+        ],
+        "jitter": 0.035,
+        "cover": "thatch",
+        "wall": "wood",
+        "ancillary": [
+          "shed",
+          "barn",
+          "well",
+          "hayrick"
+        ],
+        "core": [
+          "storeroom"
+        ]
+      },
+      "hanok": {
+        "arch": "hanok",
+        "roof": "tiled-hip",
+        "material": "timber",
+        "roofs": {
+          "barn": "gable",
+          "shed": "gable"
+        },
+        "names": {
+          "house": "anchae",
+          "byre": "oeyanggan"
+        },
+        "layout": "u",
+        "enclosure": "fence",
+        "outbuildings": [
+          2,
+          4
+        ],
+        "houseSize": [
+          6,
+          13,
+          5,
+          9
+        ],
+        "yard": [
+          4,
+          9
+        ],
+        "jitter": 0.035,
+        "cover": "tile",
+        "wall": "timber",
+        "ancillary": [
+          "storeroom",
+          "shed",
+          "well",
+          "granary"
+        ],
+        "core": [
+          "byre"
+        ]
+      },
+      "chinese-court": {
+        "arch": "siheyuan",
+        "roof": "gable",
+        "material": "brick",
+        "names": {
+          "house": "zhengfang",
+          "byre": "xiangfang",
+          "cart-shed": "daozuofang"
+        },
+        "layout": "closed",
+        "enclosure": "wall",
+        "outbuildings": [
+          2,
+          4
+        ],
+        "houseSize": [
+          6,
+          13,
+          5,
+          9
+        ],
+        "yard": [
+          4,
+          9
+        ],
+        "jitter": 0.035,
+        "cover": "tile",
+        "wall": "brick",
+        "ancillary": [
+          "granary",
+          "shed",
+          "well"
+        ],
+        "core": [
+          "byre",
+          "storeroom"
+        ]
+      },
+      "indian-court": {
+        "arch": "indian-court",
+        "roof": "flat",
+        "material": "mudbrick",
+        "roofs": {
+          "byre": "gable"
+        },
+        "layout": "closed",
+        "enclosure": "wall",
+        "outbuildings": [
+          2,
+          4
+        ],
+        "houseSize": [
+          6,
+          13,
+          5,
+          9
+        ],
+        "yard": [
+          4,
+          9
+        ],
+        "jitter": 0.035,
+        "cover": "earth",
+        "wall": "earth",
+        "ancillary": [
+          "granary",
+          "shed",
+          "well",
+          "storeroom"
+        ],
+        "core": [
+          "byre"
+        ]
+      },
+      "ksar": {
+        "arch": "ksar",
+        "roof": "flat",
+        "material": "mudbrick",
+        "roofs": {
+          "tower": "flat"
+        },
+        "layout": "closed",
+        "enclosure": "wall",
+        "outbuildings": [
+          2,
+          4
+        ],
+        "houseSize": [
+          6,
+          13,
+          5,
+          9
+        ],
+        "yard": [
+          4,
+          9
+        ],
+        "jitter": 0.035,
+        "cover": "earth",
+        "wall": "earth",
+        "ancillary": [
+          "byre",
+          "granary",
+          "farm-tower",
+          "well",
+          "bakehouse"
+        ],
+        "core": [
+          "storeroom"
+        ]
+      },
+      "sahel-compound": {
+        "arch": "sahel",
+        "roof": "conical",
+        "material": "mudbrick",
+        "roofs": {
+          "house": "flat"
+        },
+        "layout": "round",
+        "enclosure": "hedge",
+        "outbuildings": [
+          3,
+          6
+        ],
+        "houseSize": [
+          5,
+          9,
+          5,
+          9
+        ],
+        "yard": [
+          4,
+          9
+        ],
+        "jitter": 0.035,
+        "cover": "earth",
+        "wall": "earth",
+        "ancillary": [
+          "hut",
+          "granary",
+          "byre",
+          "hut"
+        ],
+        "core": [
+          "granary",
+          "granary"
+        ]
+      },
+      "kraal": {
+        "arch": "kraal",
+        "roof": "thatch-round",
+        "material": "wattle",
+        "layout": "round",
+        "enclosure": "hedge",
+        "outbuildings": [
+          3,
+          6
+        ],
+        "houseSize": [
+          5,
+          9,
+          5,
+          9
+        ],
+        "yard": [
+          4,
+          9
+        ],
+        "jitter": 0.16,
+        "cover": "thatch",
+        "wall": "wattle",
+        "ancillary": [
+          "granary",
+          "raised-granary",
+          "hut",
+          "hut"
+        ],
+        "core": [
+          "hut"
+        ]
+      },
+      "ail": {
+        "arch": "ger",
+        "roof": "dome",
+        "material": "felt",
+        "roofs": {
+          "shed": "gable"
+        },
+        "layout": "round",
+        "enclosure": "hedge",
+        "outbuildings": [
+          1,
+          3
+        ],
+        "houseSize": [
+          5,
+          9,
+          5,
+          9
+        ],
+        "yard": [
+          4,
+          9
+        ],
+        "jitter": 0.035,
+        "cover": "felt",
+        "wall": "hide",
+        "ancillary": [
+          "shed",
+          "hayrick",
+          "hut"
+        ],
+        "core": [
+          "hut"
+        ]
+      },
+      "native-longhouse": {
+        "arch": "iroquoian",
+        "roof": "barrel",
+        "material": "bark",
+        "roofs": {
+          "granary": "gable"
+        },
+        "layout": "linear",
+        "enclosure": "fence",
+        "outbuildings": [
+          1,
+          3
+        ],
+        "houseSize": [
+          10,
+          28,
+          5,
+          8
+        ],
+        "yard": [
+          4,
+          9
+        ],
+        "jitter": 0.035,
+        "cover": "bark",
+        "wall": "wood",
+        "ancillary": [
+          "shed",
+          "granary",
+          "hut"
+        ],
+        "core": [
+          "raised-granary"
+        ]
+      },
+      "pueblo-ranch": {
+        "arch": "pueblo",
+        "roof": "flat",
+        "material": "adobe",
+        "roofs": {
+          "shed": "flat"
+        },
+        "layout": "terraced",
+        "enclosure": "wall",
+        "outbuildings": [
+          2,
+          4
+        ],
+        "houseSize": [
+          6,
+          13,
+          5,
+          9
+        ],
+        "yard": [
+          4,
+          9
+        ],
+        "jitter": 0.035,
+        "cover": "earth",
+        "wall": "earth",
+        "ancillary": [
+          "storeroom",
+          "bakehouse",
+          "byre",
+          "shed"
+        ],
+        "core": [
+          "storeroom"
+        ]
+      },
+      "solar": {
+        "arch": "solar",
+        "roof": "hip",
+        "material": "thatch",
+        "roofs": {
+          "granary": "conical",
+          "bath": "dome"
+        },
+        "layout": "scattered",
+        "enclosure": "fence",
+        "outbuildings": [
+          2,
+          4
+        ],
+        "houseSize": [
+          6,
+          13,
+          5,
+          9
+        ],
+        "yard": [
+          4,
+          9
+        ],
+        "jitter": 0.38,
+        "cover": "thatch",
+        "wall": "wood",
+        "ancillary": [
+          "hut",
+          "bakehouse",
+          "shed",
+          "granary",
+          "well"
+        ],
+        "core": [
+          "granary"
+        ]
+      },
+      "kancha": {
+        "arch": "kancha",
+        "roof": "gable",
+        "material": "stone",
+        "layout": "terraced",
+        "enclosure": "wall",
+        "outbuildings": [
+          2,
+          4
+        ],
+        "houseSize": [
+          6,
+          13,
+          5,
+          9
+        ],
+        "yard": [
+          4,
+          9
+        ],
+        "jitter": 0.035,
+        "cover": "tile",
+        "wall": "stone",
+        "ancillary": [
+          "storeroom",
+          "byre",
+          "granary",
+          "shed"
+        ],
+        "core": [
+          "storeroom"
+        ]
+      },
+      "stilt": {
+        "arch": "stilt",
+        "roof": "gable",
+        "material": "bamboo",
+        "layout": "scattered",
+        "enclosure": "fence",
+        "outbuildings": [
+          1,
+          3
+        ],
+        "houseSize": [
+          6,
+          13,
+          5,
+          9
+        ],
+        "yard": [
+          4,
+          9
+        ],
+        "jitter": 0.38,
+        "cover": "bamboo",
+        "wall": "bamboo",
+        "ancillary": [
+          "byre",
+          "shed",
+          "raised-granary",
+          "well"
+        ],
+        "core": [
+          "raised-granary"
+        ]
+      },
+      "fungal-farm": {
+        "arch": "fungal-farm",
+        "roof": "flat",
+        "material": "dark-stone",
+        "names": {
+          "house": "dwelling",
+          "barn": "cultivation-hall",
+          "byre": "spore-store",
+          "shed": "store"
+        },
+        "layout": "u",
+        "enclosure": "fence",
+        "outbuildings": [
+          2,
+          4
+        ],
+        "houseSize": [
+          6,
+          13,
+          5,
+          9
+        ],
+        "yard": [
+          4,
+          9
+        ],
+        "jitter": 0.035,
+        "cover": "stone",
+        "wall": "stone",
+        "ancillary": [
+          "storeroom",
+          "shed",
+          "byre"
+        ],
+        "core": [
+          "barn"
+        ]
+      },
+      "spore-farm": {
+        "arch": "spore-farm",
+        "roof": "dome",
+        "material": "fungal",
+        "names": {
+          "roundhouse": "dwelling",
+          "hut": "cultivation-pod",
+          "byre": "cultivation-pod",
+          "granary": "spore-store"
+        },
+        "layout": "round",
+        "enclosure": "hedge",
+        "outbuildings": [
+          2,
+          4
+        ],
+        "houseSize": [
+          5,
+          9,
+          5,
+          9
+        ],
+        "yard": [
+          4,
+          9
+        ],
+        "jitter": 0.035,
+        "cover": "turf",
+        "wall": "wattle",
+        "ancillary": [
+          "granary",
+          "hut"
+        ],
+        "core": [
+          "hut"
+        ]
+      }
+    },
+    "cultures": {
+      "european-organic": {
+        "types": [
+          [
+            "vierkanthof",
+            1
+          ],
+          [
+            "u-yard",
+            1
+          ],
+          [
+            "l-yard",
+            1
+          ],
+          [
+            "haufenhof",
+            1
+          ],
+          [
+            "longere",
+            1
+          ],
+          [
+            "einhaus",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "bastide": {
+        "types": [
+          [
+            "longere",
+            1.5
+          ],
+          [
+            "masseria",
+            1
+          ],
+          [
+            "l-yard",
+            1
+          ],
+          [
+            "u-yard",
+            0.6
+          ],
+          [
+            "haufenhof",
+            0.5
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "medina": {
+        "types": [
+          [
+            "ksar",
+            2
+          ],
+          [
+            "masseria",
+            0.3
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "chinese": {
+        "types": [
+          [
+            "chinese-court",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "japanese-jokamachi": {
+        "types": [
+          [
+            "minka",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "indian-temple": {
+        "types": [
+          [
+            "indian-court",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "roman-core": {
+        "types": [
+          [
+            "masseria",
+            2
+          ],
+          [
+            "l-yard",
+            0.7
+          ],
+          [
+            "u-yard",
+            0.6
+          ],
+          [
+            "longere",
+            0.4
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "elven": {
+        "types": [
+          [
+            "haufenhof",
+            1
+          ]
+        ],
+        "density": 0.65,
+        "hamlet": [
+          3,
+          6
+        ],
+        "enclosure": "none",
+        "jitter": 0.5
+      },
+      "dwarven": {
+        "types": [
+          [
+            "kancha",
+            1
+          ],
+          [
+            "l-yard",
+            0.6
+          ]
+        ],
+        "density": 0.65,
+        "hamlet": [
+          3,
+          6
+        ],
+        "terrain": "hillside"
+      },
+      "necropolis": {
+        "types": [
+          [
+            "ksar",
+            2
+          ],
+          [
+            "masseria",
+            0.3
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "russian-kremlin": {
+        "types": [
+          [
+            "dvor",
+            2.5
+          ],
+          [
+            "haufenhof",
+            0.6
+          ],
+          [
+            "u-yard",
+            0.3
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "aztec": {
+        "types": [
+          [
+            "solar",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "inca": {
+        "types": [
+          [
+            "kancha",
+            1
+          ]
+        ],
+        "density": 0.65,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "byzantine-greek": {
+        "types": [
+          [
+            "masseria",
+            2
+          ],
+          [
+            "l-yard",
+            0.7
+          ],
+          [
+            "u-yard",
+            0.6
+          ],
+          [
+            "longere",
+            0.4
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "venetian-lagoon": {
+        "types": [
+          [
+            "masseria",
+            2
+          ],
+          [
+            "l-yard",
+            0.7
+          ],
+          [
+            "u-yard",
+            0.6
+          ],
+          [
+            "longere",
+            0.4
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "persian": {
+        "types": [
+          [
+            "ksar",
+            2
+          ],
+          [
+            "masseria",
+            0.3
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "ottoman": {
+        "types": [
+          [
+            "masseria",
+            1.2
+          ],
+          [
+            "ksar",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "sahel": {
+        "types": [
+          [
+            "sahel-compound",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "hanseatic": {
+        "types": [
+          [
+            "einhaus",
+            2.2
+          ],
+          [
+            "vierkanthof",
+            1
+          ],
+          [
+            "haufenhof",
+            0.8
+          ],
+          [
+            "l-yard",
+            0.6
+          ],
+          [
+            "u-yard",
+            0.6
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "korean": {
+        "types": [
+          [
+            "hanok",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "wizard-city": {
+        "types": [
+          [
+            "vierkanthof",
+            1
+          ],
+          [
+            "u-yard",
+            1
+          ],
+          [
+            "l-yard",
+            1
+          ],
+          [
+            "haufenhof",
+            1
+          ],
+          [
+            "longere",
+            1
+          ],
+          [
+            "einhaus",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "gnomish": {
+        "types": [
+          [
+            "vierkanthof",
+            1
+          ],
+          [
+            "u-yard",
+            1
+          ],
+          [
+            "l-yard",
+            1
+          ],
+          [
+            "haufenhof",
+            1
+          ],
+          [
+            "longere",
+            1
+          ],
+          [
+            "einhaus",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "stilt-town": {
+        "types": [
+          [
+            "stilt",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "barbarian": {
+        "types": [
+          [
+            "einhaus",
+            1.6
+          ],
+          [
+            "haufenhof",
+            1
+          ],
+          [
+            "norse-longhouse",
+            0.3
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "barbarian-celtic": {
+        "types": [
+          [
+            "roundhouse",
+            2.5
+          ],
+          [
+            "haufenhof",
+            0.3
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "barbarian-norse": {
+        "types": [
+          [
+            "norse-longhouse",
+            2.5
+          ],
+          [
+            "haufenhof",
+            0.3
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "norse-ringfort": {
+        "types": [
+          [
+            "norse-longhouse",
+            2.5
+          ],
+          [
+            "haufenhof",
+            0.3
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "maya": {
+        "types": [
+          [
+            "solar",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "khmer": {
+        "types": [
+          [
+            "stilt",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "celtic-oppidum": {
+        "types": [
+          [
+            "roundhouse",
+            2.5
+          ],
+          [
+            "haufenhof",
+            0.3
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "orcish": {
+        "types": [
+          [
+            "kraal",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "halfling": {
+        "types": [
+          [
+            "vierkanthof",
+            1
+          ],
+          [
+            "u-yard",
+            1
+          ],
+          [
+            "l-yard",
+            1
+          ],
+          [
+            "haufenhof",
+            1
+          ],
+          [
+            "longere",
+            1
+          ],
+          [
+            "einhaus",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "kraal": {
+        "types": [
+          [
+            "kraal",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "native-iroquoian": {
+        "types": [
+          [
+            "native-longhouse",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "native-pueblo": {
+        "types": [
+          [
+            "pueblo-ranch",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "native-plains": {
+        "types": [
+          [
+            "ail",
+            1
+          ]
+        ],
+        "density": 0.4,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "nomad-camp": {
+        "types": [
+          [
+            "ail",
+            1
+          ]
+        ],
+        "density": 0.4,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "swahili-stone-town": {
+        "types": [
+          [
+            "masseria",
+            2
+          ],
+          [
+            "l-yard",
+            0.7
+          ],
+          [
+            "u-yard",
+            0.6
+          ],
+          [
+            "longere",
+            0.4
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "drow-enclave": {
+        "types": [
+          [
+            "fungal-farm",
+            1
+          ]
+        ],
+        "density": 0.65,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "duergar-hold": {
+        "types": [
+          [
+            "fungal-farm",
+            1
+          ]
+        ],
+        "density": 0.65,
+        "hamlet": [
+          3,
+          6
+        ],
+        "terrain": "hillside"
+      },
+      "myconid-colony": {
+        "types": [
+          [
+            "spore-farm",
+            1
+          ]
+        ],
+        "density": 0.65,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "egyptian-planned": {
+        "types": [
+          [
+            "ksar",
+            2
+          ],
+          [
+            "masseria",
+            0.3
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "nubian-fortified": {
+        "types": [
+          [
+            "sahel-compound",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "mesopotamian": {
+        "types": [
+          [
+            "ksar",
+            2
+          ],
+          [
+            "masseria",
+            0.3
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "levantine-tell": {
+        "types": [
+          [
+            "masseria",
+            2
+          ],
+          [
+            "l-yard",
+            0.7
+          ],
+          [
+            "u-yard",
+            0.6
+          ],
+          [
+            "longere",
+            0.4
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "oasis-caravan": {
+        "types": [
+          [
+            "ksar",
+            2
+          ],
+          [
+            "masseria",
+            0.3
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "ksar-oasis": {
+        "types": [
+          [
+            "ksar",
+            2
+          ],
+          [
+            "masseria",
+            0.3
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "yoruba": {
+        "types": [
+          [
+            "sahel-compound",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "himalayan-terraces": {
+        "types": [
+          [
+            "kancha",
+            1
+          ]
+        ],
+        "density": 0.65,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "newar": {
+        "types": [
+          [
+            "indian-court",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "indus-planned": {
+        "types": [
+          [
+            "indian-court",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "javanese-courts": {
+        "types": [
+          [
+            "stilt",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "mississippian": {
+        "types": [
+          [
+            "solar",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "al-andalus": {
+        "types": [
+          [
+            "ksar",
+            2
+          ],
+          [
+            "masseria",
+            0.3
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "italian-comune": {
+        "types": [
+          [
+            "masseria",
+            2
+          ],
+          [
+            "l-yard",
+            0.7
+          ],
+          [
+            "u-yard",
+            0.6
+          ],
+          [
+            "longere",
+            0.4
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "flemish-cloth-town": {
+        "types": [
+          [
+            "einhaus",
+            2.2
+          ],
+          [
+            "vierkanthof",
+            1
+          ],
+          [
+            "haufenhof",
+            0.8
+          ],
+          [
+            "l-yard",
+            0.6
+          ],
+          [
+            "u-yard",
+            0.6
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "rynek-town": {
+        "types": [
+          [
+            "vierkanthof",
+            1
+          ],
+          [
+            "u-yard",
+            1
+          ],
+          [
+            "l-yard",
+            1
+          ],
+          [
+            "haufenhof",
+            1
+          ],
+          [
+            "longere",
+            1
+          ],
+          [
+            "einhaus",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "slavic-gord": {
+        "types": [
+          [
+            "dvor",
+            2.5
+          ],
+          [
+            "haufenhof",
+            0.6
+          ],
+          [
+            "u-yard",
+            0.3
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "caucasian-highland": {
+        "types": [
+          [
+            "kancha",
+            1
+          ]
+        ],
+        "density": 0.65,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "ethiopian-highland": {
+        "types": [
+          [
+            "sahel-compound",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "great-zimbabwe": {
+        "types": [
+          [
+            "kraal",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "hausa-kano": {
+        "types": [
+          [
+            "sahel-compound",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "hadhrami-tower": {
+        "types": [
+          [
+            "ksar",
+            2
+          ],
+          [
+            "masseria",
+            0.3
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "rajput-fort": {
+        "types": [
+          [
+            "indian-court",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "dravidian-temple": {
+        "types": [
+          [
+            "indian-court",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "bagan": {
+        "types": [
+          [
+            "stilt",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "vietnamese-citadel": {
+        "types": [
+          [
+            "stilt",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "tibetan-monastery": {
+        "types": [
+          [
+            "kancha",
+            1
+          ]
+        ],
+        "density": 0.65,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "mongol-ordu": {
+        "types": [
+          [
+            "ail",
+            1
+          ]
+        ],
+        "density": 0.4,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "maori-pa": {
+        "types": [
+          [
+            "solar",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "pnw-plank-village": {
+        "types": [
+          [
+            "norse-longhouse",
+            2.5
+          ],
+          [
+            "haufenhof",
+            0.3
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "inuit-camp": {
+        "types": [
+          [
+            "ail",
+            1
+          ]
+        ],
+        "density": 0.4,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "siberian-camp": {
+        "types": [
+          [
+            "ail",
+            1
+          ]
+        ],
+        "density": 0.4,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "guarani-village": {
+        "types": [
+          [
+            "solar",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "budj-bim": {
+        "types": [
+          [
+            "kraal",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "lizardfolk-swamp": {
+        "types": [
+          [
+            "stilt",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "merfolk-tidal": {
+        "types": [
+          [
+            "stilt",
+            1
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "giant-hold": {
+        "types": [
+          [
+            "norse-longhouse",
+            2.5
+          ],
+          [
+            "haufenhof",
+            0.3
+          ]
+        ],
+        "density": 1,
+        "hamlet": [
+          3,
+          8
+        ]
+      },
+      "goblin-warren": {
+        "types": [
+          [
+            "haufenhof",
+            1
+          ],
+          [
+            "roundhouse",
+            0.5
+          ]
+        ],
+        "density": 0.8,
+        "hamlet": [
+          3,
+          8
+        ],
+        "jitter": 0.7,
+        "material": "wood"
+      }
+    },
+    "smallholding": [
+      1,
+      2
+    ]
+  },
   "version": 2,
   "fields": {
     "quarters": [
@@ -4077,12 +6611,12 @@
             900
           ],
           "middle": [
-            350,
-            900
+            250,
+            650
           ],
           "edge": [
-            450,
-            1100
+            250,
+            700
           ],
           "faubourg": [
             250,
@@ -4171,12 +6705,12 @@
             22
           ],
           "middle": [
-            14,
-            22
+            11,
+            17
           ],
           "edge": [
-            15,
-            24
+            10,
+            16
           ],
           "faubourg": [
             7,
@@ -4193,12 +6727,12 @@
             34
           ],
           "middle": [
-            22,
-            34
+            20,
+            30
           ],
           "edge": [
-            24,
-            36
+            20,
+            30
           ],
           "faubourg": [
             30,
@@ -4265,8 +6799,8 @@
             1.2
           ],
           "edge": [
-            0.5,
-            2.5
+            0,
+            1.2
           ],
           "faubourg": [
             0.8,
@@ -4290,12 +6824,12 @@
             0.62
           ],
           "middle": [
-            0.5,
-            0.62
+            0.6,
+            0.72
           ],
           "edge": [
-            0.45,
-            0.58
+            0.58,
+            0.7
           ],
           "faubourg": [
             0.38,
@@ -4362,12 +6896,12 @@
             900
           ],
           "middle": [
-            350,
-            900
+            250,
+            650
           ],
           "edge": [
-            450,
-            1100
+            250,
+            700
           ],
           "faubourg": [
             250,
@@ -4456,12 +6990,12 @@
             22
           ],
           "middle": [
-            14,
-            22
+            11,
+            17
           ],
           "edge": [
-            15,
-            24
+            10,
+            16
           ],
           "faubourg": [
             7,
@@ -4478,12 +7012,12 @@
             34
           ],
           "middle": [
-            22,
-            34
+            20,
+            30
           ],
           "edge": [
-            24,
-            36
+            20,
+            30
           ],
           "faubourg": [
             30,
@@ -4550,8 +7084,8 @@
             1.2
           ],
           "edge": [
-            0.5,
-            2.5
+            0,
+            1.2
           ],
           "faubourg": [
             0.8,
@@ -4575,12 +7109,12 @@
             0.62
           ],
           "middle": [
-            0.5,
-            0.62
+            0.6,
+            0.72
           ],
           "edge": [
-            0.45,
-            0.58
+            0.58,
+            0.7
           ],
           "faubourg": [
             0.38,
@@ -9750,6 +12284,7 @@
     "elven/core": {
       "label": "Elven forest town / Cœur",
       "params": {
+      "disorder": 0.65,
         "id": "elven",
         "streets": [
           "spiral",
@@ -10035,6 +12570,7 @@
     "elven/ring": {
       "label": "Elven forest town / Extension",
       "params": {
+      "disorder": 0.65,
         "id": "elven",
         "streets": [
           "spiral",
@@ -10320,6 +12856,7 @@
     "elven/village": {
       "label": "Elven forest town / Village",
       "params": {
+      "disorder": 0.65,
         "id": "elven",
         "streets": [
           "spiral",
@@ -10605,6 +13142,7 @@
     "elven/hamlet": {
       "label": "Elven forest town / Hameau",
       "params": {
+      "disorder": 0.65,
         "id": "elven",
         "streets": [
           "spiral",
@@ -17476,7 +20014,7 @@
           "typology": "byzantine-house",
           "roof": "tiled-hip",
           "storeys": [
-            2,
+            1,
             3
           ],
           "material": "stone"
@@ -17762,7 +20300,7 @@
           "typology": "byzantine-house",
           "roof": "tiled-hip",
           "storeys": [
-            2,
+            1,
             3
           ],
           "material": "stone"
@@ -18048,7 +20586,7 @@
           "typology": "byzantine-house",
           "roof": "tiled-hip",
           "storeys": [
-            2,
+            1,
             3
           ],
           "material": "stone"
@@ -18334,7 +20872,7 @@
           "typology": "byzantine-house",
           "roof": "tiled-hip",
           "storeys": [
-            2,
+            1,
             3
           ],
           "material": "stone"
@@ -18620,7 +21158,7 @@
           "typology": "byzantine-house",
           "roof": "tiled-hip",
           "storeys": [
-            2,
+            1,
             3
           ],
           "material": "stone"
@@ -46547,6 +49085,8 @@
     "native-iroquoian/core": {
       "label": "Native American: Iroquoian longhouse village / Cœur",
       "params": {
+      "villagePaths": true,
+      "campRowWarp": 8, "campRowWarpScale": 75, "campRowVary": 0.35, "campRowStagger": 1, "campFringe": 14, "campHouseEnds": 0.9,
         "id": "iroquoian",
         "streets": [
           "radials",
@@ -46559,7 +49099,7 @@
         "closeOp": "none",
         "plotOp": "burgage",
         "buildingOp": "streetFrontRow",
-        "orientation": "road",
+        "orientation": "terrain",
         "laneSpacing": [
           0,
           0
@@ -46844,6 +49384,8 @@
     "native-iroquoian/village": {
       "label": "Native American: Iroquoian longhouse village / Village",
       "params": {
+      "villagePaths": true,
+      "campRowWarp": 8, "campRowWarpScale": 75, "campRowVary": 0.35, "campRowStagger": 1, "campFringe": 14, "campHouseEnds": 0.9,
         "id": "iroquoian",
         "streets": [
           "radials",
@@ -46856,7 +49398,7 @@
         "closeOp": "none",
         "plotOp": "burgage",
         "buildingOp": "streetFrontRow",
-        "orientation": "road",
+        "orientation": "terrain",
         "laneSpacing": [
           0,
           0
@@ -47141,6 +49683,8 @@
     "native-iroquoian/hamlet": {
       "label": "Native American: Iroquoian longhouse village / Hameau",
       "params": {
+      "villagePaths": true,
+      "campRowWarp": 8, "campRowWarpScale": 75, "campRowVary": 0.35, "campRowStagger": 1, "campFringe": 14, "campHouseEnds": 0.9,
         "id": "iroquoian",
         "streets": [
           "radials",
@@ -47153,7 +49697,7 @@
         "closeOp": "none",
         "plotOp": "burgage",
         "buildingOp": "streetFrontRow",
-        "orientation": "road",
+        "orientation": "terrain",
         "laneSpacing": [
           0,
           0
@@ -48610,10 +51154,7 @@
             250,
             800
           ],
-          "village": [
-            600,
-            2000
-          ]
+          "village": [160, 480]
         },
         "roomDepth": [
           4.5,
@@ -48704,10 +51245,7 @@
             7,
             13
           ],
-          "village": [
-            18,
-            40
-          ]
+          "village": [12, 20]
         },
         "plotDepth": {
           "core": [
@@ -48726,10 +51264,7 @@
             30,
             60
           ],
-          "village": [
-            40,
-            80
-          ]
+          "village": [18, 30]
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
@@ -48794,10 +51329,7 @@
             0.8,
             3
           ],
-          "village": [
-            3,
-            8
-          ]
+          "village": [0, 0.6]
         },
         "infill": {
           "core": 0.92,
@@ -48823,10 +51355,7 @@
             0.64,
             0.74
           ],
-          "village": [
-            0.12,
-            0.3
-          ]
+          "village": [0.58, 0.78]
         },
         "bigCourtChance": 0.12,
         "footprintConformity": {
@@ -48852,7 +51381,7 @@
           "middle": 250,
           "edge": 250,
           "faubourg": 250,
-          "village": 250
+          "village": 110
         }
       }
     },
@@ -70304,6 +72833,7 @@
     "morph/elven": {
       "label": "elven",
       "params": {
+      "disorder": 0.65,
         "id": "elven",
         "streets": [
           "spiral",
@@ -71782,7 +74312,7 @@
           "typology": "byzantine-house",
           "roof": "tiled-hip",
           "storeys": [
-            2,
+            1,
             3
           ],
           "material": "stone"
@@ -102155,6 +104685,9 @@
         "streetOp": "organic",
         "closeOp": "none",
         "plotOp": "compound",
+        "sharedCourtScale": 0,
+        "buildingOp": "roundHouse",
+        "arch": { "typology": "roundhouse", "roof": "conical", "storeys": [1, 1], "material": "earth" },
         "orientation": "terrain",
         "laneSpacing": [
           0,
@@ -102428,6 +104961,9 @@
         "streetOp": "organic",
         "closeOp": "none",
         "plotOp": "compound",
+        "sharedCourtScale": 0,
+        "buildingOp": "roundHouse",
+        "arch": { "typology": "roundhouse", "roof": "conical", "storeys": [1, 1], "material": "earth" },
         "orientation": "terrain",
         "laneSpacing": [
           0,
@@ -102701,6 +105237,9 @@
         "streetOp": "organic",
         "closeOp": "none",
         "plotOp": "compound",
+        "sharedCourtScale": 0,
+        "buildingOp": "roundHouse",
+        "arch": { "typology": "roundhouse", "roof": "conical", "storeys": [1, 1], "material": "earth" },
         "orientation": "terrain",
         "laneSpacing": [
           0,
@@ -102974,6 +105513,9 @@
         "streetOp": "organic",
         "closeOp": "none",
         "plotOp": "compound",
+        "sharedCourtScale": 0,
+        "buildingOp": "roundHouse",
+        "arch": { "typology": "roundhouse", "roof": "conical", "storeys": [1, 1], "material": "earth" },
         "orientation": "terrain",
         "laneSpacing": [
           0,
@@ -103247,6 +105789,9 @@
         "streetOp": "organic",
         "closeOp": "none",
         "plotOp": "compound",
+        "sharedCourtScale": 0,
+        "buildingOp": "roundHouse",
+        "arch": { "typology": "roundhouse", "roof": "conical", "storeys": [1, 1], "material": "earth" },
         "orientation": "terrain",
         "laneSpacing": [
           0,
@@ -116270,7 +118815,8 @@
           ],
           "material": "snow"
         },
-        "parcellation": "organic"
+        "parcellation": "organic",
+        "organicIrregularity": 0.75
       }
     },
     "inuit-camp/village": {
@@ -116554,7 +119100,8 @@
           ],
           "material": "snow"
         },
-        "parcellation": "organic"
+        "parcellation": "organic",
+        "organicIrregularity": 0.75
       }
     },
     "inuit-camp/hamlet": {
@@ -116838,7 +119385,8 @@
           ],
           "material": "snow"
         },
-        "parcellation": "organic"
+        "parcellation": "organic",
+        "organicIrregularity": 0.75
       }
     },
     "siberian-camp/core": {
@@ -123498,6 +126046,18 @@
     "goblin-warren/core": {
       "label": "Gobelins · terrier à flanc de colline · Cœur",
       "params": {
+      "arch": {
+        "typology": "shack",
+        "roof": "shed",
+        "storeys": [
+          1,
+          1
+        ],
+        "material": "wattle"
+      },
+      "organicLotMix": 0.35,
+      "parcellation": "organic",
+      "disorder": 1.0,
         "id": "goblin-warren/core",
         "streets": [
           "organicInfill",
@@ -123690,27 +126250,27 @@
           ]
         },
         "sideGap": {
-          "core": [
-            0,
-            0
-          ],
-          "middle": [
-            0,
-            1.2
-          ],
-          "edge": [
-            0.5,
-            2.5
-          ],
-          "faubourg": [
-            0.8,
-            3
-          ],
-          "village": [
-            3,
-            8
-          ]
-        },
+        "core": [
+          0.8,
+          2.8
+        ],
+        "middle": [
+          0.8,
+          2.8
+        ],
+        "edge": [
+          0.8,
+          2.8
+        ],
+        "faubourg": [
+          0.8,
+          2.8
+        ],
+        "village": [
+          0.8,
+          2.8
+        ]
+      },
         "infill": {
           "core": 0.92,
           "middle": 0.62,
@@ -123719,28 +126279,28 @@
           "village": 0.12
         },
         "coverage": {
-          "core": [
-            0.55,
-            0.75
-          ],
-          "middle": [
-            0.5,
-            0.7
-          ],
-          "edge": [
-            0.42,
-            0.6
-          ],
-          "faubourg": [
-            0.38,
-            0.55
-          ],
-          "village": [
-            0.3,
-            0.45
-          ]
-        },
-        "bigCourtChance": 0.6,
+        "core": [
+          0.18,
+          0.68
+        ],
+        "middle": [
+          0.18,
+          0.68
+        ],
+        "edge": [
+          0.18,
+          0.68
+        ],
+        "faubourg": [
+          0.18,
+          0.68
+        ],
+        "village": [
+          0.18,
+          0.68
+        ]
+      },
+        "bigCourtChance": 0.05,
         "footprintConformity": {
           "core": 0.97,
           "middle": 0.95,
@@ -123772,6 +126332,18 @@
     "goblin-warren/ring": {
       "label": "Gobelins · terrier à flanc de colline · Extension",
       "params": {
+      "arch": {
+        "typology": "shack",
+        "roof": "shed",
+        "storeys": [
+          1,
+          1
+        ],
+        "material": "wattle"
+      },
+      "organicLotMix": 0.35,
+      "parcellation": "organic",
+      "disorder": 1.0,
         "id": "goblin-warren/ring",
         "streets": [
           "organicInfill",
@@ -123964,27 +126536,27 @@
           ]
         },
         "sideGap": {
-          "core": [
-            0,
-            0
-          ],
-          "middle": [
-            0,
-            1.2
-          ],
-          "edge": [
-            0.5,
-            2.5
-          ],
-          "faubourg": [
-            0.8,
-            3
-          ],
-          "village": [
-            3,
-            8
-          ]
-        },
+        "core": [
+          0.8,
+          2.8
+        ],
+        "middle": [
+          0.8,
+          2.8
+        ],
+        "edge": [
+          0.8,
+          2.8
+        ],
+        "faubourg": [
+          0.8,
+          2.8
+        ],
+        "village": [
+          0.8,
+          2.8
+        ]
+      },
         "infill": {
           "core": 0.92,
           "middle": 0.62,
@@ -123993,28 +126565,28 @@
           "village": 0.12
         },
         "coverage": {
-          "core": [
-            0.55,
-            0.75
-          ],
-          "middle": [
-            0.5,
-            0.7
-          ],
-          "edge": [
-            0.42,
-            0.6
-          ],
-          "faubourg": [
-            0.38,
-            0.55
-          ],
-          "village": [
-            0.3,
-            0.45
-          ]
-        },
-        "bigCourtChance": 0.6,
+        "core": [
+          0.18,
+          0.68
+        ],
+        "middle": [
+          0.18,
+          0.68
+        ],
+        "edge": [
+          0.18,
+          0.68
+        ],
+        "faubourg": [
+          0.18,
+          0.68
+        ],
+        "village": [
+          0.18,
+          0.68
+        ]
+      },
+        "bigCourtChance": 0.05,
         "footprintConformity": {
           "core": 0.97,
           "middle": 0.95,
@@ -124046,6 +126618,18 @@
     "goblin-warren/faubourg": {
       "label": "Gobelins · terrier à flanc de colline · Faubourg",
       "params": {
+      "arch": {
+        "typology": "shack",
+        "roof": "shed",
+        "storeys": [
+          1,
+          1
+        ],
+        "material": "wattle"
+      },
+      "organicLotMix": 0.35,
+      "parcellation": "organic",
+      "disorder": 1.0,
         "id": "goblin-warren/faubourg",
         "streets": [
           "organicInfill",
@@ -124238,27 +126822,27 @@
           ]
         },
         "sideGap": {
-          "core": [
-            0,
-            0
-          ],
-          "middle": [
-            0,
-            1.2
-          ],
-          "edge": [
-            0.5,
-            2.5
-          ],
-          "faubourg": [
-            0.8,
-            3
-          ],
-          "village": [
-            3,
-            8
-          ]
-        },
+        "core": [
+          0.8,
+          2.8
+        ],
+        "middle": [
+          0.8,
+          2.8
+        ],
+        "edge": [
+          0.8,
+          2.8
+        ],
+        "faubourg": [
+          0.8,
+          2.8
+        ],
+        "village": [
+          0.8,
+          2.8
+        ]
+      },
         "infill": {
           "core": 0.92,
           "middle": 0.62,
@@ -124267,28 +126851,28 @@
           "village": 0.12
         },
         "coverage": {
-          "core": [
-            0.55,
-            0.75
-          ],
-          "middle": [
-            0.5,
-            0.7
-          ],
-          "edge": [
-            0.42,
-            0.6
-          ],
-          "faubourg": [
-            0.38,
-            0.55
-          ],
-          "village": [
-            0.3,
-            0.45
-          ]
-        },
-        "bigCourtChance": 0.6,
+        "core": [
+          0.18,
+          0.68
+        ],
+        "middle": [
+          0.18,
+          0.68
+        ],
+        "edge": [
+          0.18,
+          0.68
+        ],
+        "faubourg": [
+          0.18,
+          0.68
+        ],
+        "village": [
+          0.18,
+          0.68
+        ]
+      },
+        "bigCourtChance": 0.05,
         "footprintConformity": {
           "core": 0.97,
           "middle": 0.95,
@@ -124320,6 +126904,18 @@
     "goblin-warren/village": {
       "label": "Gobelins · terrier à flanc de colline · Village",
       "params": {
+      "arch": {
+        "typology": "shack",
+        "roof": "shed",
+        "storeys": [
+          1,
+          1
+        ],
+        "material": "wattle"
+      },
+      "organicLotMix": 0.35,
+      "parcellation": "organic",
+      "disorder": 1.0,
         "id": "goblin-warren/village",
         "streets": [
           "organicInfill",
@@ -124512,27 +127108,27 @@
           ]
         },
         "sideGap": {
-          "core": [
-            0,
-            0
-          ],
-          "middle": [
-            0,
-            1.2
-          ],
-          "edge": [
-            0.5,
-            2.5
-          ],
-          "faubourg": [
-            0.8,
-            3
-          ],
-          "village": [
-            3,
-            8
-          ]
-        },
+        "core": [
+          0.8,
+          2.8
+        ],
+        "middle": [
+          0.8,
+          2.8
+        ],
+        "edge": [
+          0.8,
+          2.8
+        ],
+        "faubourg": [
+          0.8,
+          2.8
+        ],
+        "village": [
+          0.8,
+          2.8
+        ]
+      },
         "infill": {
           "core": 0.92,
           "middle": 0.62,
@@ -124541,28 +127137,28 @@
           "village": 0.12
         },
         "coverage": {
-          "core": [
-            0.55,
-            0.75
-          ],
-          "middle": [
-            0.5,
-            0.7
-          ],
-          "edge": [
-            0.42,
-            0.6
-          ],
-          "faubourg": [
-            0.38,
-            0.55
-          ],
-          "village": [
-            0.3,
-            0.45
-          ]
-        },
-        "bigCourtChance": 0.6,
+        "core": [
+          0.18,
+          0.68
+        ],
+        "middle": [
+          0.18,
+          0.68
+        ],
+        "edge": [
+          0.18,
+          0.68
+        ],
+        "faubourg": [
+          0.18,
+          0.68
+        ],
+        "village": [
+          0.18,
+          0.68
+        ]
+      },
+        "bigCourtChance": 0.05,
         "footprintConformity": {
           "core": 0.97,
           "middle": 0.95,
@@ -124594,6 +127190,18 @@
     "goblin-warren/hamlet": {
       "label": "Gobelins · terrier à flanc de colline · Hameau",
       "params": {
+      "arch": {
+        "typology": "shack",
+        "roof": "shed",
+        "storeys": [
+          1,
+          1
+        ],
+        "material": "wattle"
+      },
+      "organicLotMix": 0.35,
+      "parcellation": "organic",
+      "disorder": 1.0,
         "id": "goblin-warren/hamlet",
         "streets": [
           "organicInfill",
@@ -124786,27 +127394,27 @@
           ]
         },
         "sideGap": {
-          "core": [
-            0,
-            0
-          ],
-          "middle": [
-            0,
-            1.2
-          ],
-          "edge": [
-            0.5,
-            2.5
-          ],
-          "faubourg": [
-            0.8,
-            3
-          ],
-          "village": [
-            3,
-            8
-          ]
-        },
+        "core": [
+          0.8,
+          2.8
+        ],
+        "middle": [
+          0.8,
+          2.8
+        ],
+        "edge": [
+          0.8,
+          2.8
+        ],
+        "faubourg": [
+          0.8,
+          2.8
+        ],
+        "village": [
+          0.8,
+          2.8
+        ]
+      },
         "infill": {
           "core": 0.92,
           "middle": 0.62,
@@ -124815,28 +127423,28 @@
           "village": 0.12
         },
         "coverage": {
-          "core": [
-            0.55,
-            0.75
-          ],
-          "middle": [
-            0.5,
-            0.7
-          ],
-          "edge": [
-            0.42,
-            0.6
-          ],
-          "faubourg": [
-            0.38,
-            0.55
-          ],
-          "village": [
-            0.3,
-            0.45
-          ]
-        },
-        "bigCourtChance": 0.6,
+        "core": [
+          0.18,
+          0.68
+        ],
+        "middle": [
+          0.18,
+          0.68
+        ],
+        "edge": [
+          0.18,
+          0.68
+        ],
+        "faubourg": [
+          0.18,
+          0.68
+        ],
+        "village": [
+          0.18,
+          0.68
+        ]
+      },
+        "bigCourtChance": 0.05,
         "footprintConformity": {
           "core": 0.97,
           "middle": 0.95,
@@ -125398,6 +128006,7 @@
         "fortification": "wall",
         "gates": "cardinal",
         "orientation": "cardinal",
+        "secondCore": 0.15,
         "stairs": false,
         "waterfront": false,
         "sources": [
@@ -126684,7 +129293,8 @@
       },
       "render": {
         "towerShape": "round",
-        "lagoon": true
+        "lagoon": true,
+        "canalWaterReachM": 120
       },
       "growth": null
     },
@@ -127439,13 +130049,17 @@
       "render": {
         "towerShape": "square",
         "lagoon": true,
+        "canalWaterReachM": 120,
         "locks": true
       },
       "growth": null
     },
     "stilt-town": {
-      "sitePrefs": {"lakeshore": 4, "harbor": 3, "estuary": 2},
-      "sitePrefs": {"lakeshore": 4, "harbor": 3, "estuary": 2},
+      "sitePrefs": {
+        "lakeshore": 4,
+        "harbor": 3,
+        "estuary": 2
+      },
       "label": "Stilt town (marsh folk)",
       "recipes": [
         {
@@ -127515,6 +130129,7 @@
         "form": "ring"
       },
       "render": {
+        "stiltShore": { "reachM": 100, "maxDepthM": 4, "waterShare": 0.4, "plans": 1 },
         "towerShape": "round",
         "plotLines": true,
         "stilts": true
@@ -129313,7 +131928,8 @@
       },
       "camp": {
         "layout": "ring",
-        "variant": "tipi"
+        "variant": "tipi",
+        "ringWobble": 0.15
       },
       "growth": {
         "minPop": 4500,
@@ -129464,7 +132080,8 @@
       },
       "camp": {
         "layout": "ring",
-        "variant": "nomad"
+        "variant": "nomad",
+        "groupVariation": 0.65
       },
       "growth": {
         "minPop": 6000,
@@ -132750,6 +135367,11 @@
       "scope": "Settlement patterns only; numerical ranges are artistic, not measured reconstructions."
     },
     "tibetan-monastery": {
+      "sitePrefs": {
+        "mountainFace": 1,
+        "spur": 3,
+        "hilltop": 2
+      },
       "label": "Tibet · bourg monastique de pente",
       "recipes": [
         {
@@ -133553,8 +136175,17 @@
       "scope": "Settlement patterns only; numerical ranges are artistic, not measured reconstructions."
     },
     "lizardfolk-swamp": {
-      "sitePrefs": {"lakeshore": 5, "bridge": 2, "harbor": 2, "hilltop": 0.3},
-      "render": {"stilts": true, "plotLines": true},
+      "sitePrefs": {
+        "lakeshore": 5,
+        "bridge": 2,
+        "harbor": 2,
+        "hilltop": 0.3
+      },
+      "render": {
+        "stiltShore": { "reachM": 140, "maxDepthM": 12, "waterShare": 0.5, "plans": 1 },
+        "stilts": true,
+        "plotLines": true
+      },
       "label": "Hommes-lézards · cité lacustre sur pilotis",
       "recipes": [
         {
@@ -133662,8 +136293,17 @@
       "scope": "Fantasy settlement built on the cited real morphologies; numerical ranges are artistic."
     },
     "merfolk-tidal": {
-      "sitePrefs": {"harbor": 5, "island": 3, "estuary": 3, "hilltop": 0.3},
-      "render": {"stilts": true, "plotLines": true},
+      "sitePrefs": {
+        "harbor": 5,
+        "island": 3,
+        "estuary": 3,
+        "hilltop": 0.3
+      },
+      "render": {
+        "stiltShore": { "reachM": 300, "maxDepthM": 12, "waterShare": 0.65, "seaward": 0.6, "plans": 1 },
+        "stilts": true,
+        "plotLines": true
+      },
       "label": "Ondins · village de grève et de grottes marines",
       "recipes": [
         {

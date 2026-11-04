@@ -94,6 +94,8 @@ export interface RenderHints {
   stairs?: boolean;
   /** Lagoon town: the first cuts of the quarters are canals (water, fondamenta) crossed by footbridges. */
   lagoon?: boolean;
+  /** Canal towns dig canals only when sea, lake or river water lies within this distance (m) of their streets; each canal runs to that water. */
+  canalWaterReachM?: number;
   /** Persian city: the covered bazaar spine (vault and domes) and the qanat lines across the fields. */
   bazaarRoof?: boolean;
   qanats?: boolean;
@@ -101,6 +103,8 @@ export interface RenderHints {
   locks?: boolean;
   /** Stilt town: boardwalks drawn as planks, the lots over the water left unfilled (the water shows). */
   stilts?: boolean;
+  /** Native shore admission: metric reach, depth and bounded occupation search. */
+  stiltShore?: { reachM: number; maxDepthM: number; waterShare: number; seaward?: number; plans: number };
   /** Carved double doors at the actual entrances of coral-stone courtyard houses. */
   carvedDoors?: boolean;
 }

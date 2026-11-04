@@ -33,6 +33,8 @@ fn shore_front(path:&[Point],surface:Surface<'_>)->bool {
     })
 }
 
+fn code(surface: Surface<'_>, p: Point) -> u8 { water_code(surface, p) }
+
 fn dist(a: Point, b: Point) -> f64 {
     (a.x - b.x).hypot(a.y - b.y)
 }
@@ -121,7 +123,7 @@ pub(in super::super) fn port_town(cfg: &LayoutConfig) -> bool {
             .is_some_and(|f| f.port > 0.0)
 }
 
-fn code(surface: Surface<'_>, p: Point) -> u8 {
+pub(in super::super) fn water_code(surface: Surface<'_>, p: Point) -> u8 {
     if p.x < 0.0 || p.y < 0.0 || p.x >= surface.width || p.y >= surface.width {
         return 0;
     }
@@ -683,11 +685,11 @@ pub(in super::super) fn quays(
     _port: bool,
 ) {
     const MIN: f64 = 20.0;
-    let inherited: Vec<Street> = if parameterized(cfg) {
+    let inherited: Vec<Street> = {
         let quays = streets.iter().filter(|s|s.role=="quay").cloned().collect();
         streets.retain(|s|s.role!="quay");
         quays
-    } else {vec![]};
+    };
     let h = params(culture);
     let cell = surface.width / surface.n as f64;
     let width = if h.fondamenta {
@@ -786,17 +788,13 @@ pub(in super::super) fn quays(
         }
     }
     // The sea or lake front first, then river quays, nearest the centre.
-    if parameterized(cfg) {
-        pieces.extend(inherited.into_iter().map(|s|Piece {near:s.path.iter().map(|&p|dist(p,site.center)).fold(f64::INFINITY,f64::min),river:river_side(surface,&s.path),path:s.path}));
-        placement::select(&mut pieces,regions,streets,surface,site,cfg);
+    {
+        pieces.extend(inherited.into_iter().filter(|s| channel_width(surface,&s.path) >= NAVIGABLE)
+            .map(|s|Piece {near:s.path.iter().map(|&p|dist(p,site.center)).fold(f64::INFINITY,f64::min),river:river_side(surface,&s.path),path:s.path}));
+        if parameterized(cfg) { placement::select(&mut pieces,regions,streets,surface,site,cfg); }
     }
     pieces.sort_by(|a, b| a.river.cmp(&b.river).then(a.near.total_cmp(&b.near)));
-    let population = f64::from(site.population.max(1));
-    let mut budget = if h.fondamenta {
-        f64::INFINITY
-    } else {
-        h.quay_per_sqrt_pop * population.sqrt()
-    } - streets
+    let mut budget = quay_budget(site, cfg, h) - streets
         .iter()
         .filter(|s| s.role == "quay")
         .map(|s| length(&s.path))
@@ -822,44 +820,9 @@ pub(in super::super) fn quays(
         });
         streets.extend(links);
     }
-    join_fronts(streets,surface,grade);
 }
 
-/// Quarter seams must not interrupt the same bank. Join only short, dry,
-/// grade-safe gaps with navigable water beside them, never across a channel.
-fn join_fronts(streets: &mut Vec<Street>, surface: Surface<'_>, grade: f64) {
-    loop {
-        let mut joined=None;
-        'pairs: for i in 0..streets.len() {
-            if streets[i].role!="quay" {continue;}
-            for j in i+1..streets.len() {
-                if streets[j].role!="quay" {continue;}
-                for (a,b) in [(false,false),(false,true),(true,false),(true,true)] {
-                    let si=&streets[i]; let sj=&streets[j];
-                    let p=if a {si.path[0]} else {*si.path.last().unwrap()};
-                    let q=if b {*sj.path.last().unwrap()} else {sj.path[0]};
-                    let d=dist(p,q);
-                    if d>20.0 {continue;}
-                    let width=si.widths.iter().chain(&sj.widths).copied().fold(0.0,f64::max);
-                    let n=left(unit(p,q));
-                    let dry=d<0.01 || (routing::segment_clear(surface,p,q,grade)
-                        && (0..=(d/2.0).ceil() as usize).all(|k| {
-                            let x=super::point(p,q,k as f64/(d/2.0).ceil().max(1.0));
-                            !surface.wet(add(x,n,width*0.5)) && !surface.wet(add(x,n,-width*0.5))
-                        }) && channel_width(surface,&[p,q])>=NAVIGABLE);
-                    if dry {joined=Some((i,j,a,b,width));break 'pairs;}
-                }
-            }
-        }
-        let Some((i,j,a,b,width))=joined else {break};
-        let mut other=streets.remove(j);
-        if a {streets[i].path.reverse();}
-        if b {other.path.reverse();}
-        streets[i].path.extend(other.path);
-        streets[i].path.dedup_by(|a,b|dist(*a,*b)<0.01);
-        streets[i].widths=vec![width;streets[i].path.len()];
-    }
-}
+
 
 /// The land left between each quay and its water, as ribbons (path,
 /// widths) to cut from the blocks with the street ribbons: the quay edge is
@@ -1013,6 +976,16 @@ pub(in super::super) fn protect_navigation(layout: &mut super::super::Layout, su
     }
 }
 
+// A small landing grows linearly with demand; major ports retain longer fronts.
+// Lagoon towns (fondamenta) line every canal: their quays are the street.
+fn quay_budget(site: &Site, cfg: &LayoutConfig, h: Harbour) -> f64 {
+    if h.fondamenta { return f64::INFINITY; }
+    let population = f64::from(site.population.max(1));
+    let port = cfg.programme.functions.map_or(0.0, |f| f.port).clamp(0.0, 1.0);
+    let factor = 1.0 + port.max(if cfg.site_archetype == "harbor" { 0.5 } else { 0.0 });
+    (population * 0.035 * factor).clamp(20.0, (h.quay_per_sqrt_pop * population.sqrt()).max(20.0))
+}
+
 /// The `budget` metres of `path` centred on its point nearest `c`.
 fn centred(path: &[Point], c: Point, budget: f64) -> Vec<Point> {
     let total = length(path);
@@ -1149,7 +1122,7 @@ fn works_with_minimum(streets: &[Street], surface: Surface<'_>, site: &Site, cul
     let limit = ((population / 1500.0).ceil() as usize).clamp(1, 40);
     let segments: Vec<(Point, Point)> = streets
         .iter()
-        .flat_map(|s| s.path.windows(2).filter(|w| matches!(s.role.as_str(),"pier"|"mole"|"landing"|"bridge"|"causeway")
+        .flat_map(|s| s.path.windows(2).filter(|w| matches!(s.role.as_str(),"pier"|"boardwalk"|"mole"|"landing"|"bridge"|"causeway")
             || surface.wet(super::point(w[0],w[1],0.5))).map(|w| (w[0], w[1])))
         .collect();
     let crosses = |a: Point, b: Point, own: &[(Point, Point)]| {
@@ -1297,8 +1270,19 @@ fn works_with_minimum(streets: &[Street], surface: Surface<'_>, site: &Site, cul
 }
 
 pub(in super::super) fn configured_works(streets: &[Street], surface: Surface<'_>, site: &Site, culture: &str, cfg: &LayoutConfig) -> Vec<Street> {
-    if parameterized(cfg) {shelter::works(streets,surface,site,culture)}
-    else {works(streets,surface,site,culture)}
+    let mut out = if parameterized(cfg) {shelter::works(streets,surface,site,culture)}
+    else {works(streets,surface,site,culture)};
+    {
+        // One pier or mole per ~80 m of the port's quay budget (its demand).
+        let budget = quay_budget(site, cfg, params(culture));
+        let limit = if budget.is_finite() { ((budget / 80.0).ceil() as usize).clamp(1, 20) } else { 20 };
+        out.retain(|s| site.population >= 3000 || s.role != "mole");
+        out.truncate(limit);
+        if site.population < 1000 {
+            for s in &mut out { s.path = sub_path(&s.path, 0.0, 12.0); s.widths = vec![3.0; s.path.len()]; s.role = "landing".into(); }
+        }
+    }
+    out
 }
 
 /// A platform is cadastral geometry, not the casing of a street.
@@ -1373,6 +1357,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn review_quay_budget_keeps_villages_short_and_ports_larger() {
+        let mut site = Site { key:"landing".into(),name:String::new(),population:500,culture:"hanseatic".into(),center:Point{x:180.0,y:128.0},radius:120.0 };
+        let cfg = LayoutConfig::default();
+        let village = quay_budget(&site,&cfg,Harbour::default());
+        assert_eq!(village,20.0);
+        site.population=10_000;
+        let town = quay_budget(&site,&cfg,Harbour::default());
+        let port = quay_budget(&site,&LayoutConfig { site_archetype:"harbor".into(),..cfg },Harbour::default());
+        assert!(town > village && town <= 350.001 && port > town && port <= 600.0);
+    }
+
+    #[test]
     fn quay_frontage_and_landing_works_scale_with_population() {
         let (height,water)=coast(256);
         let surface=Surface {geometry:None,width:256.,n:256,height:&height,water:&water};
@@ -1386,9 +1382,11 @@ mod tests {
             let mut streets=vec![Street {path:vec![Point{x:180.,y:4.},Point{x:180.,y:252.}],widths:vec![5.;2],rank:1,role:"street".into()}];
             quays(std::slice::from_ref(&domain),&mut streets,surface,&cfg,&site,"hanseatic",true);
             let metres:f64=streets.iter().filter(|s|s.role=="quay").map(|s|length(&s.path)).sum();
-            assert!(metres>50.);
+            // A village keeps a short landing (quay_budget), a town a real front.
+            assert!(metres>if pop==500 {15.} else {50.});
             let works=works(&streets,surface,&site,"hanseatic");
-            assert!(!works.is_empty());
+            // Under 40 m a village quay is its own landing; a town adds works.
+            assert!(pop==500 || !works.is_empty());
             if pop==500 { assert!(works.iter().all(|s|s.role=="landing")); }
             else { assert!(works.iter().any(|s|s.role=="pier"||s.role=="mole")); }
             lengths.push(metres); counts.push(works.len());
@@ -1533,7 +1531,7 @@ mod tests {
         let quay: Vec<_> = streets.iter().filter(|s| s.role == "quay").collect();
         assert_eq!(quay.len(), 1, "one continuous quay");
         let l = length(&quay[0].path);
-        let budget = 6.0 * 2000f64.sqrt();
+        let budget = quay_budget(&site, &cfg, params("european-organic"));
         assert!(
             l > 0.9 * budget.min(200.0) && l <= budget + 1.0,
             "quay {l} m"

@@ -157,6 +157,31 @@ fn scale_point(p: Point, s: f64) -> Point {
     super::scale(p, s)
 }
 
+#[cfg(test)]
+mod enclosure_tests {
+    use super::*;
+    #[test]
+    fn serviced_walled_land_keeps_an_urban_gradient() {
+        let mut l: Layout = serde_json::from_value(serde_json::json!({
+            "key":"enclosed-density","culture":"chinese","center":{"x":10.,"y":0.},
+            "quarters":[],"warnings":[],
+            "blocks":[{"shape":super::super::super::geometry::rectangle(10.,4.,30.,24.),"quarter":0,"kind":"block","axis":{"x":1.,"y":0.}},
+                {"shape":super::super::super::geometry::rectangle(140.,4.,160.,24.),"quarter":0,"kind":"block","axis":{"x":1.,"y":0.}}],
+            "streets":[{"path":[{"x":0.,"y":0.},{"x":180.,"y":0.}],"widths":[8.,8.],"rank":1,"role":"street"}]
+        })).unwrap();
+        let open = super::super::occupation_pressures(&l);
+        l.enclosures.push(serde_json::from_value(serde_json::json!({"kind":"wall","path":[
+            {"x":0.,"y":-10.},{"x":180.,"y":-10.},{"x":180.,"y":40.},{"x":0.,"y":40.},{"x":0.,"y":-10.}],
+            "gates":[],"towers":[]})).unwrap());
+        let enclosed = super::super::occupation_pressures(&l);
+        assert!(open[0] > open[1] && open[1] > 0., "{open:?}");
+        assert!(enclosed[0] > enclosed[1] && enclosed[1] >= 0.65, "{enclosed:?}");
+        assert!(enclosed[0]-enclosed[1] < open[0]-open[1]);
+        l.enclosures[0].purpose = "citadel".into();
+        assert_eq!(super::super::occupation_pressures(&l), open);
+    }
+}
+
 /// Invariant (« gradient régulier »): density follows the access pressure
 /// alone, the same curve in every zone, so no step appears where a core, a
 /// ring or a faubourg quarter meets the next. Only a distant but fully urban

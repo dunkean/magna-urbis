@@ -89,9 +89,10 @@ export function createUrbanSceneClient() {
     return { id: site.id, parcel_id: site.parcel_id, offset: site.offset, function: site.function,
       culture: { culture: c.culture, pack: c.pack, mode: c.mode, borrowing: c.borrowing }, surface: site.surface,
       preview: site.preview, ground_z_m: site.ground_z_m, entrance: { x: site.entrance.x, y: site.entrance.y }, access_id: site.access_id,
-      ...(p ? { programme: { role: p.role, label: p.label, landmark: p.landmark, district_role: p.district_role, wealth: p.wealth,
+      ...(p ? { programme: { role: p.role, archetype: p.archetype, label: p.label, landmark: p.landmark, district_role: p.district_role, wealth: p.wealth,
         households: p.households, state: p.state, composition: p.composition, built_area_m2: p.built_area_m2,
         frontage_continuity: p.frontage_continuity, party_walls: p.party_walls, ...((p as { massing?: unknown }).massing ? { massing: (p as { massing?: unknown }).massing } : {}),
+        ...((p as { farmstead?: unknown }).farmstead ? { farmstead: (p as { farmstead?: unknown }).farmstead } : {}),
         ...(p.floors ? { floors: [p.floors[0], p.floors[1]] } : {}) } } : {}) };
   }
   async function receiveCold(item: Cold, response: UrbanSceneResponse, source?: Worker): Promise<void> {

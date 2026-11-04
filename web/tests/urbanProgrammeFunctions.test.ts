@@ -57,7 +57,7 @@ class Control {
 }
 function controls() {
   const nodes = new Map<string, Control>();
-  for (const selector of ['[data-programme-intent]', '[data-programme-custom-functions]', '[data-programme-functions]', '[data-programme-function-note]', '[data-programme-function-effects]',
+  for (const selector of ['[data-programme-intent]', '[data-programme-template]', '[data-programme-template-row]', '[data-programme-custom-functions]', '[data-programme-functions]', '[data-programme-function-note]', '[data-programme-function-effects]',
     ...PROGRAMME_FUNCTIONS.map(key => `[data-programme-function="${key}"]`)]) nodes.set(selector, new Control());
   let changed = () => {};
   const host = { querySelector: (selector: string) => nodes.get(selector), addEventListener: (_: string, listener: () => void) => { changed = listener; } };

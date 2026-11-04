@@ -130,10 +130,10 @@ function buildDetail(e: Enclosure): WallDetail | undefined {
   const bank = style === 'gord' || family === 'timber' && width > 3, stakes = family === 'timber' || family === 'hedge';
   // Water spans: the curtain between the two banks of a water gate stands on arches.
   const cuts: Array<{ a: number; b: number; water: boolean }> = [], waterEnds: number[] = [];
-  for (const g of e.gatehouses ?? []) if (g.kind === 'water' && g.passage?.length === 2) {
+  for (const g of e.gatehouses ?? []) if (['water', 'shore'].includes(g.kind) && g.passage?.length === 2) {
     const sa = project(r, g.passage[0]).s, sb = project(r, g.passage[1]).s, ab = wrap(r, sb - sa);
     if (ab < 1e-3 || r.length - ab < 1e-3) continue;
-    if (ab <= r.length / 2) cuts.push({ a: sa, b: sa + ab, water: true }); else cuts.push({ a: sb, b: sb + r.length - ab, water: true });
+    if (g.kind === 'shore' || ab <= r.length / 2) cuts.push({ a: sa, b: sa + ab, water: g.kind === 'water' }); else cuts.push({ a: sb, b: sb + r.length - ab, water: g.kind === 'water' });
     waterEnds.push(sa, sb);
   }
   // Land gates: the passage of the gatehouse (street width + 1), measured along the curtain.
@@ -141,7 +141,7 @@ function buildDetail(e: Enclosure): WallDetail | undefined {
     const at = project(r, gate);
     if (waterEnds.some(s => Math.min(wrap(r, s - at.s), wrap(r, at.s - s)) < 2)) return;
     let half = 3, best = Infinity;
-    for (const g of e.gatehouses ?? []) if (g.gate === i && g.kind !== 'water' && g.passage?.length === 2) {
+    for (const g of e.gatehouses ?? []) if (g.gate === i && !['water', 'shore'].includes(g.kind) && g.passage?.length === 2) {
       const near = dist(g.passage[0], gate); if (near >= best) continue;
       const sx = g.passage[1].x - g.passage[0].x, sy = g.passage[1].y - g.passage[0].y, sl = Math.hypot(sx, sy) || 1;
       const sin = Math.abs(sx * at.tangent.y - sy * at.tangent.x) / sl;
@@ -181,7 +181,7 @@ function buildDetail(e: Enclosure): WallDetail | undefined {
     const fam: Family = g.kind === 'timber' ? 'timber' : towerFamily;
     // Only the masses are built: the passage between them stays open (no mass, no gatehouse drawn).
     for (const m of g.masses ?? []) add(g.kind === 'ravelin' ? 'work' : 'gatehouse', m, fam);
-    if (g.kind !== 'ravelin' && g.kind !== 'water' && g.masses?.length) add('gateRoof', g.shape, fam);
+    if (!['ravelin', 'water', 'shore'].includes(g.kind) && g.masses?.length) add('gateRoof', g.shape, fam);
   }
   (e.attached ?? []).forEach((a, i) => { if ((a.shape?.outer?.length ?? 0) >= 3) polys.push({ cat: 'attached', family, shape: a.shape, attached: i }); });
   polys.sort((a, b) => CATS.indexOf(a.cat) - CATS.indexOf(b.cat));

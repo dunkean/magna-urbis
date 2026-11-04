@@ -17,7 +17,7 @@ export function effectiveRegion(settings:V2Settings):{placement:SettlementConfig
     mode:settings.settlementCount?'counts':'auto',distribution:'classes',main:regionSpec(),
     counts:{city:0,town:0,village,hamlet:secondary-village,farmstead:0},list:[],relief:settings.terrain?.relief??o.relief,
     density:1,zipfExponent:1.1,minPopulation:8,populationJitter:.25,spread:1.3,smallTop:.35,mainClear:2.5,clustering:0,edgeMargin:.03,
-    flatnessWeight:1,buildableWeight:1,freshWaterWeight:1,riverWeight:1,coastWeight:1,floodWeight:1,defenseWeight:0,elevation:0,variationWeight:1,siteWeights:{},...p,
+    flatnessWeight:1,buildableWeight:1,freshWaterWeight:1,riverWeight:1,coastWeight:1,floodWeight:1,defenseWeight:0,elevation:0,variationWeight:1,siteWeights:{},farmDensity:1,...p,
   };
   const mainPopulation = local.population ?? (o.population > 0 ? o.population : SIZE_SHORTCUT[o.size]);
   placement.main={...regionSpec('main',mainPopulation),culture:o.culture,siteType:o.siteType??'auto',position:o.center,sitePrefs:o.sitePrefs??{},...p?.main,key:'main'};
@@ -81,7 +81,7 @@ export function validateRegionSettings(value: unknown, width = 100000): void {
   if (region.resolution !== undefined) number(region.resolution, 'Regional raster resolution', 64, 1024, true);
   if (region.placement !== undefined) {
     const p = object(region.placement, 'placement settings');
-    const limits: Record<string, readonly [number, number]> = { density: [0, 10], zipfExponent: [.3, 3], minPopulation: [1, 100000], populationJitter: [0, 1], spread: [.1, 100], smallTop: [0, 1], mainClear: [0, 100], clustering: [0, 100], edgeMargin: [0, .3], flatnessWeight: [0, 100], buildableWeight: [0, 100], freshWaterWeight: [0, 100], riverWeight: [0, 100], coastWeight: [0, 100], floodWeight: [0, 100], defenseWeight: [0, 100], elevation: [-1, 1], variationWeight: [0, 100] };
+    const limits: Record<string, readonly [number, number]> = { density: [0, 10], zipfExponent: [.3, 3], minPopulation: [1, 100000], populationJitter: [0, 1], spread: [.1, 100], smallTop: [0, 1], mainClear: [0, 100], clustering: [0, 100], edgeMargin: [0, .3], flatnessWeight: [0, 100], buildableWeight: [0, 100], freshWaterWeight: [0, 100], riverWeight: [0, 100], coastWeight: [0, 100], floodWeight: [0, 100], defenseWeight: [0, 100], elevation: [-1, 1], variationWeight: [0, 100], farmDensity: [0, 10] };
     fields(p, ['mode', 'distribution', 'main', 'counts', 'list', 'relief', 'siteWeights', ...Object.keys(limits)], 'placement');
     enumeration(p.mode, ['auto', 'counts', 'list'], 'regional composition'); enumeration(p.distribution, ['classes', 'zipf'], 'population distribution'); enumeration(p.relief, TERRAIN_RELIEFS, 'regional relief');
     for (const [key, range] of Object.entries(limits)) if (p[key] !== undefined) number(p[key], `placement.${key}`, ...range, key === 'minPopulation');
@@ -100,7 +100,8 @@ export function validateRegionSettings(value: unknown, width = 100000): void {
   if (region.roads !== undefined && region.roads !== null) {
     const r = object(region.roads, 'road settings');
     const limits: Record<string, readonly [number, number]> = { density: [0, 1], gradeWeight: [0, 10], maxGrade: [0, 1], crossingCost: [.05, 10], wobble: [0, 5], sharing: [0, 1], exits: [0, 16] };
-    fields(r, ['level', 'surface', 'culture', ...Object.keys(limits)], 'roads');
+    fields(r, ['level', 'surface', 'culture', 'activityAccess', ...Object.keys(limits)], 'roads');
+    if (r.activityAccess !== undefined && typeof r.activityAccess !== 'boolean') throw new Error('Invalid roads.activityAccess.');
     enumeration(r.level, ['primitive', 'rural', 'developed', 'imperial'], 'road level'); enumeration(r.surface, ['auto', 'dirt', 'gravel', 'paved', 'flagstone'], 'road surface'); enumeration(r.culture, ['auto', 'medieval', 'roman', 'east-asian', 'caravan', 'andean', 'mesoamerican', 'tribal', 'elven', 'dwarven'], 'road construction profile');
     for (const [key, range] of Object.entries(limits)) if (r[key] !== undefined) number(r[key], `roads.${key}`, ...range, key === 'exits');
   }

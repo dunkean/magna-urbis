@@ -5,10 +5,41 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#201e19">
   <meta name="description" content="Magna Urbis V2: a procedural mapmaking workshop, from terrain to individual houses.">
-  <link rel="icon" href="./assets/logo-magna-urbis.png">
+  <link rel="icon" href="../../../rust/desktop-v2/assets/app-icon-v2.png">
   <title>Magna Urbis · V2 Workshop</title>
+  <style>
+    html,body{margin:0;background:#201e19}
+    #boot-splash{position:fixed;inset:0;z-index:10000;display:grid;place-content:center;justify-items:center;gap:22px;background:#201e19;color:#eadfc9;font:15px/1.5 system-ui,sans-serif;text-align:center;padding:24px}
+    #boot-splash img{width:128px;height:128px;object-fit:contain}
+    #boot-splash strong{font:24px/1.2 Georgia,serif;letter-spacing:.16em}
+    #boot-splash p{margin:0;color:#c3b08b;max-width:34em}
+    #boot-splash .boot-progress{width:100px;height:3px;border-radius:2px;overflow:hidden;background:#504330}
+    #boot-splash .boot-progress:after{content:'';display:block;width:40%;height:100%;background:#cba968;animation:boot-progress 1.5s ease-in-out infinite alternate}
+    @keyframes boot-progress{to{transform:translateX(150%)}}
+    @media(prefers-reduced-motion:reduce){#boot-splash .boot-progress:after{animation:none;width:100%}}
+  </style>
 </head>
 <body>
+  <div id="boot-splash" role="status" aria-live="polite">
+    <img src="../../../rust/desktop-v2/assets/app-icon.png" alt="" width="128" height="128">
+    <strong>MAGNA URBIS</strong>
+    <p id="boot-message">Preparing the workshop…</p>
+    <div class="boot-progress" aria-hidden="true"></div>
+  </div>
+  <script>
+    (()=>{
+      let french=false;
+      try{french=(new URLSearchParams(location.search).get('lang')||localStorage.getItem('magna-urbis-v2-language'))==='fr';}catch{}
+      const message=document.getElementById('boot-message');
+      if(french)message.textContent='Préparation de l’atelier…';
+      window.addEventListener('error',event=>{
+        if(!(event instanceof ErrorEvent))return;
+        if(!document.getElementById('boot-splash'))return;
+        message.textContent=french?'Le chargement a échoué. Rechargez l’application pour réessayer.':'Loading failed. Reload the application to try again.';
+        document.querySelector('#boot-splash .boot-progress')?.remove();
+      });
+    })();
+  </script>
   <div id="app"></div>
   <script type="module" src="./v2.ts"></script>
 </body>

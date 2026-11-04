@@ -51,5 +51,6 @@ __pycache__/
 .venv-illustration/
 illustration/output/
 web/dist-v2/
+/release-v2/
 .tmp/
 .vite/

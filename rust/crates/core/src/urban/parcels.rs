@@ -16,7 +16,7 @@ mod occupation;
 mod organic;
 mod pressure;
 mod tidy;
-mod ruins;
+pub(super) mod ruins;
 pub(super) use admission::{compact_fallback, witnessed_by};
 pub(super) use occupation::{
     Kind as OccupationKind, Occupancy, kind as occupation_kind, preview_parts as occupation_preview,
@@ -347,6 +347,16 @@ pub(super) fn block_contacts_indexed(
 /// programme and the cadastre of one probe ask for the same network.
 static PRESSURES: super::probe_cache::Memo<std::sync::Arc<Vec<f64>>> = super::probe_cache::Memo::new();
 pub(super) fn occupation_pressures(layout: &Layout) -> Vec<f64> {
+    let rings: Vec<_> = layout.enclosures.iter().filter(|e| e.purpose.is_empty())
+        .map(|e| Shape { outer:e.path.clone(), holes:vec![] }).collect();
+    network_pressures(layout).into_iter().zip(&layout.blocks).map(|(p,b)| {
+        // Serviced land inside an enceinte is urban tissue, even in its youngest epoch.
+        if p > 0.0 && rings.iter().any(|r| super::geometry::contains(r, super::geometry::interior_point(&b.shape))) {
+            0.65 + 0.35 * p
+        } else { p }
+    }).collect()
+}
+fn network_pressures(layout: &Layout) -> Vec<f64> {
     if !super::probe_cache::enabled() {
         return pressure::for_layout(layout);
     }

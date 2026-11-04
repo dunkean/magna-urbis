@@ -5,6 +5,7 @@ import { CORE_STAGES, coreOperations, proceduralSignatures, stableKey, TerrainFi
 import { nativeRequest, nativeSession } from './nativeEngine';
 import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
 import type { TerrainSettings } from './terrain';
+import { stepSeed } from './generationSeed';
 
 interface Retained { root: string; keys: string[]; pipeline?: TerrainPipeline; runtime?: ExecutionRuntime; session?: string }
 let retained: Retained | undefined;
@@ -44,13 +45,19 @@ export async function generateCpuTerrain(settings: TerrainSettings, control?: Ge
       throw error;
     }
   };
-  const configuration = { parameters: Array.from(p), surface: Array.from(s), flags: Array.from(flags) };
+  const stepSeeds = settings.generalSeed ? Object.fromEntries([['initialize','relief-noise'],['coastCut','relief-coast-cut'],['reconstruct','relief-reconstruct'],['ridged','relief-detail']].map(([operation, key]) => [operation, stepSeed(settings.generalSeed!, key)])) : undefined;
+  const configuration = { parameters: Array.from(p), surface: Array.from(s), flags: Array.from(flags), stepSeeds: stepSeeds ?? {} };
+  const configureNative = async (input: { command: string; [key: string]: unknown }) => {
+    const response = await native(input), ready = await response.json() as { ready?: boolean; stepSeeds?: boolean };
+    if (stepSeeds && Object.values(stepSeeds).some(seed => seed !== settings.seed) && !ready.stepSeeds)
+      throw new Error('Redémarrez le service Rust natif reconstruit pour utiliser les variations indépendantes du relief.');
+  };
   if (!retained || first === 0) {
     releaseCpuCheckpoints();
     if(runtime&&!nativeSessions.has(runtime.server))nativeSessions.set(runtime.server,nativeSession());
     retained = { root, keys: [], runtime, ...(runtime ? { session: nativeSessions.get(runtime.server) } : {}) };
     await control?.before('grids', `Rust ${runtime ? 'natif' : 'WASM'} · régional ${p[2]}² · surface ${s[0]}²`);
-    if (runtime) { await releasingNative; await native({ command: 'start', seed: settings.seed, ...configuration }); }
+    if (runtime) { await releasingNative; await configureNative({ command: 'start', seed: settings.seed, ...configuration }); }
     else retained.pipeline = new TerrainPipeline(settings.seed, p, s, flags);
     await control?.after('grids');
   } else {
@@ -58,11 +65,12 @@ export async function generateCpuTerrain(settings: TerrainSettings, control?: Ge
     else { await control?.before('grids'); await control?.after('grids'); }
   }
   const current = retained!;
+  if (!runtime) current.pipeline!.set_step_seeds(JSON.stringify(stepSeeds ?? {}));
   let height: Float32Array | undefined;
   for (let slot = 0; slot < operations.length; slot++) {
     const stage = operations[slot], cached = slot < first;
     if (!cached && slot === first && slot > 0) {
-      if (runtime) await native({ command: 'restore', checkpoint: slot - 1, ...configuration });
+      if (runtime) await configureNative({ command: 'restore', checkpoint: slot - 1, ...configuration });
       else current.pipeline!.restore(slot - 1, p, s, flags);
       current.keys.length = slot;
     }

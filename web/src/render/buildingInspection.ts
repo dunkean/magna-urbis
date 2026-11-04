@@ -9,6 +9,7 @@ export type BuildingValidation = 'preview' | 'plan_only' | 'native';
 /** Optional city metadata; planned households are separate from native capacity. */
 export interface BuildingInspectionProgramme {
   role?: string;
+  archetype?: string;
   district_role?: string;
   wealth?: number;
   landmark?: boolean;

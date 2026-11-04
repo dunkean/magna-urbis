@@ -1,3 +1,4 @@
+import { drawCityWaterways } from './cityWaterways';
 /** City Bench map layer: one viewport-sized Canvas 2D in world coordinates.
  * The plan is indexed once in spatial bins; every camera change repaints only
  * the visible items, batched by style, with a level of detail chosen from the
@@ -6,15 +7,17 @@ import type { Layout, Parcel, Partition, Point, Quay, Shape, Street } from '../.
 import type { Surface } from '../../../rust/bridge/housesContract';
 import type { PlacementBatch, PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
 import { urbanFunctionColor, type UrbanBuildingAppearance } from './urbanBuildingStyle';
-import { roleLabel } from './cityRoles';
+import { funeraryLandFill, roleLabel } from './cityRoles';
 import { MATERIALS, coverLayer, layerExtent, layerPattern, materialImagesNow, placeLayer, streetLayer, wallStoneLayer, type MaterialImages } from './buildingMaterials';
 import { planBuildingColors, planRoofColor } from './cityBuildingPalette';
-import { drawLotEnclosures } from './cityLotEnclosures'; // enclosures hook (cityLotEnclosures.ts)
+import { drawLotEnclosures, updateYardEnclosures } from './cityLotEnclosures'; // enclosures hook (cityLotEnclosures.ts)
 import { cityWallDetails, drawCityWallGround, drawCityWalls } from './cityWalls'; // walls hook (cityWalls.ts)
-import { STRUCTURE_ROLES, blendLine, blendTone, blendsGround, groundWash, isBlended, softStreet, type WashKind } from './groundBlend';
+import { streetToneAt, washAt } from './groundTone';
+import { STRUCTURE_ROLES, blendLine, blendTone, blendsGround, isBlended, softStreet, type WashKind } from './groundBlend';
 import { CityGround, boardwalkWidth, isBoardwalk, type CityGroundRaster } from './cityGround';
 import { buildingRoof, pieceShadows, pieceVolumes, readMassing, stiltDeck, stiltSupports, roofLight as roofLight3 } from './cityMassing';
 import { drawGardenDetails } from './readableGardens';
+import { softenRuralGround } from './countryside';
 import { polygonCentroid as shapeRingCenter } from '../gen/core/geom';
 import { roadSurface } from './roadSurface';
 
@@ -22,7 +25,7 @@ export interface Box { minX: number; minY: number; maxX: number; maxY: number }
 export type CityView = 'tissue' | 'uses' | 'parcels' | 'buildings' | 'roles';
 export type CityLod = 'far' | 'mid' | 'near' | 'close';
 export type CityPalette = 'growth' | 'atlas' | 'ink' | 'terrain' | 'parchment';
-export interface CityLayers { reserve: boolean; allocated: boolean; centers: boolean; domains: boolean; quarters: boolean; blocks: boolean; streets: boolean; enclosures: boolean; /** Walls, hedges and fences of the lots; absent = shown. */ lotEnclosures?: boolean; /** Streets as a ground surface (square junctions, curb returns, tapers); absent = on, off = round-capped strokes. */ roadSurface?: boolean; parcels: boolean; gardens: boolean; places: boolean; fronts: boolean; axes: boolean; access: boolean }
+export interface CityLayers { waterways?: boolean; reserve: boolean; allocated: boolean; centers: boolean; domains: boolean; quarters: boolean; blocks: boolean; streets: boolean; enclosures: boolean; /** Walls, hedges and fences of the lots; absent = shown. */ lotEnclosures?: boolean; /** Streets as a ground surface (square junctions, curb returns, tapers); absent = on, off = round-capped strokes. */ roadSurface?: boolean; parcels: boolean; gardens: boolean; places: boolean; fronts: boolean; axes: boolean; access: boolean }
 
 // ---------------------------------------------------------------- levels of detail
 const LOD_ORDER: CityLod[] = ['close', 'near', 'mid', 'far'];
@@ -148,6 +151,8 @@ export interface CityScene {
   landmarks: CityLandmark[]; footprint: Shape[]; ground?: CityGround; extent: Box; quays?: Quay[];
   /** Walls, hedges and fences round the lots (enclosures hook). */
   lotEnclosures?: import('../../../rust/bridge/urban').LotEnclosure[];
+  enclosureProfiles?: (import('../../../rust/bridge/urban').ResolvedEnclosure | undefined)[];
+  lotYards?: import('./cityLotEnclosures').Yard[];
   bins: { blocks: SpatialBins; parcels: SpatialBins; streets: SpatialBins; landmarks: SpatialBins };
   parcelById: Map<string, number>;
 }
@@ -217,7 +222,8 @@ export function buildCityScene(layouts: readonly Layout[], partitions: readonly 
     };
     layout.blocks.forEach((block, bi) => {
       const z = zoneOf(block.quarter, block.zone, block.phase), district = byQuarter.get(block.quarter);
-      blocks.push({ layout: li, index: bi, shape: block.shape, ground: ground?.clip(block.shape), kind: block.kind, zone: z.zone, phase: z.phase, quarter: block.quarter, district, peripheral: z.peripheral });
+      const shape = block.kind === 'reserve' ? softenRuralGround(block.shape) : block.shape;
+      blocks.push({ layout: li, index: bi, shape, ground: ground?.clip(shape), kind: block.kind, zone: z.zone, phase: z.phase, quarter: block.quarter, district, peripheral: z.peripheral });
       if (district && !block.kind.startsWith('reserve')) districtShapes.get(district)!.push(block.shape);
       grow(extent, block.shape.outer);
     });
@@ -241,7 +247,8 @@ export function buildCityScene(layouts: readonly Layout[], partitions: readonly 
     partition.parcels.forEach((parcel, pi) => {
       const block = layout.blocks[parcel.block], z = zoneOf(block?.quarter ?? -1, block?.zone, block?.phase);
       const allocation = parcel.id ? allocations.get(parcel.id) : undefined, index = parcels.length;
-      parcels.push({ layout: li, index: pi, shape: parcel.shape, ground: ground?.clip(parcel.shape), use: parcel.use, block: parcel.block, zone: z.zone, id: parcel.id, allocation, district: block && byQuarter.get(block.quarter), peripheral: z.peripheral, source: parcel });
+      const shape = parcel.use === 'reserve' ? softenRuralGround(parcel.shape) : parcel.shape;
+      parcels.push({ layout: li, index: pi, shape, ground: ground?.clip(shape), use: parcel.use, block: parcel.block, zone: z.zone, id: parcel.id, allocation, district: block && byQuarter.get(block.quarter), peripheral: z.peripheral, source: parcel });
       if (parcel.id) parcelById.set(parcel.id, index);
       if (allocation?.landmark || parcel.use === 'market') {
         const point = centroid([parcel.shape]);
@@ -250,8 +257,10 @@ export function buildCityScene(layouts: readonly Layout[], partitions: readonly 
       }
     });
   });
-  const lotEnclosures = partitions.flatMap(p => p.lotEnclosures ?? []);
-  return { layouts, blocks, parcels, streets, walls, districts, landmarks, footprint, extent, parcelById, quays, ground, lotEnclosures,
+  // Native previews supply occupied houses later; an empty cadastre has no fences.
+  const lotEnclosures: import('../../../rust/bridge/urban').LotEnclosure[] = [];
+  const enclosureProfiles = layouts.map(l => partitions.find(p => p.key === l.key)?.enclosure);
+  return { layouts, blocks, parcels, streets, walls, districts, landmarks, footprint, extent, parcelById, quays, ground, lotEnclosures, enclosureProfiles,
     bins: { blocks: new SpatialBins(blocks.map(b => shapeBox(b.shape)), 128), parcels: new SpatialBins(parcels.map(p => shapeBox(p.shape)), 64),
       streets: new SpatialBins(streets.map(s => grow({ ...EMPTY }, s.street.path, s.width)), 128), landmarks: new SpatialBins(landmarks.map(l => l.box), 128) } };
 }
@@ -454,6 +463,7 @@ function drawPlanRoofs(ctx: CanvasRenderingContext2D, b: CityBuildings, o: CityD
 
 /** Paint the visible plan into a context already set to world coordinates. */
 export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: CityDrawOptions): CityFrameStats {
+  if (o.buildings) updateYardEnclosures(scene, o.buildings.items, () => o.buildings!.items.map(b => b.building));
   const start = performance.now(), { viewport, mpp, lod, view, palette, layers } = o, px = (n: number): number => n * mpp;
   // Textured materials: repeating patterns anchored to world metres (ink and parchment keep their own look).
   const tex = o.textured && palette !== 'parchment' && palette !== 'ink' ? materialImagesNow(o.onTexturesReady) : undefined;
@@ -472,7 +482,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
   // Far: the urban footprint as one tint, main roads and walls.
   const blend = (o.groundBlend ?? isBlended()) && blendsGround(view, palette), tone = blendTone(palette), softLine = blendLine(tone);
   if (lod === 'far') {
-    if (blend && layers.blocks) { const w = groundWash('footprint', tone); for (const shape of scene.footprint) if (overlaps(shapeBox(shape), viewport)) batch.add({ fill: w.color, alpha: w.alpha }, shapePath(shape)); }
+    if (blend && layers.blocks) { for (const shape of scene.footprint) if (overlaps(shapeBox(shape), viewport)) { const w = washAt('footprint', tone, shape); batch.add({ fill: w.color, alpha: w.alpha }, shapePath(shape)); } }
     else if (layers.blocks) for (const shape of scene.footprint) if (overlaps(shapeBox(shape), viewport)) batch.add({ fill: palette === 'terrain' ? undefined : parchment ? PARCH.footprint : '#cfb589', stroke: parchment ? PARCH.ink : '#7b6446', width: px(1), alpha: 0.9 }, shapePath(shape));
     if (parchment && layers.blocks && !blend) { const hatch = hatchPattern(ctx, mpp); if (hatch) for (const shape of scene.footprint) if (overlaps(shapeBox(shape), viewport)) batch.add({ fill: hatch }, shapePath(shape)); }
     batch.flush(ctx);
@@ -495,7 +505,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
       const stroke = view === 'buildings' && lod !== 'close' ? undefined : outline;
       if (blend && fill) {
         // Blended: one translucent wash (a wider low-alpha stroke of the same colour feathers the edge), faint lot lines only up close.
-        const w = groundWash(reserve ? 'reserve' : b.kind === 'common' ? 'common' : b.kind === 'place' ? 'place' : 'block', tone), a = w.alpha * (b.peripheral && view !== 'buildings' ? 0.7 : 1);
+        const w = washAt(reserve ? 'reserve' : b.kind === 'common' ? 'common' : b.kind === 'place' ? 'place' : 'block', tone, b.shape), a = w.alpha * (b.peripheral && view !== 'buildings' ? 0.7 : 1);
         if (!tex || !(b.kind === 'place' || b.kind === 'market')) batch.add({ stroke: w.color, width: px(2.2), alpha: a * 0.4, cap: 'round' }, pathOf(b));
         batch.add({ fill: plaza(b.kind, w.color), alpha: a }, pathOf(b));
         if (lod === 'close') batch.add({ stroke: softLine.color, width: px(0.5), alpha: softLine.alpha }, pathOf(b));
@@ -513,13 +523,14 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
       const built = ['plot', 'compound', 'residual', 'court'].includes(use), open = ['place', 'market', 'common'].includes(use);
       if (!(built && layers.parcels || use === 'garden' && layers.gardens || open && layers.places || use === 'reserve' && layers.domains)) continue;
       stats.parcels++;
-      const openFill = parchment ? (use === 'garden' ? PARCH.garden : use === 'reserve' ? PARCH.reserve : use === 'common' ? PARCH.common : use === 'market' ? PARCH.market : use === 'place' ? PARCH.place : undefined)
-        : use === 'garden' ? '#a8bc89' : use === 'reserve' ? '#cbc2a8' : use === 'common' ? '#adc5bf' : use === 'market' ? '#ead39a' : use === 'place' ? '#e6d1a5' : undefined;
+      const burialFill = funeraryLandFill(p.allocation?.role);
+      const openFill = burialFill ?? (parchment ? (use === 'garden' ? PARCH.garden : use === 'reserve' ? PARCH.reserve : use === 'common' ? PARCH.common : use === 'market' ? PARCH.market : use === 'place' ? PARCH.place : undefined)
+        : use === 'garden' ? '#a8bc89' : use === 'reserve' ? '#cbc2a8' : use === 'common' ? '#adc5bf' : use === 'market' ? '#ead39a' : use === 'place' ? '#e6d1a5' : undefined);
       if (blend && (view === 'parcels' || view === 'buildings')) {
         const kind: WashKind = use === 'garden' ? 'garden' : use === 'reserve' ? 'reserve' : use === 'common' ? 'common' : use === 'market' ? 'market' : use === 'place' ? 'place' : 'parcel';
-        const w = groundWash(kind, tone), a = w.alpha * (p.peripheral ? 0.7 : 1), ground = kind === 'parcel' || kind === 'reserve';
+        const w = washAt(kind, tone, p.shape), a = w.alpha * (p.peripheral ? 0.7 : 1), ground = kind === 'parcel' || kind === 'reserve';
         // Plain lots add no wash over the block's (the buildings stand on it); gardens, commons and squares stack theirs.
-        if (!(view === 'buildings' && ground)) batch.add({ fill: plaza(use, w.color), alpha: a }, pathOf(p));
+        if (!(view === 'buildings' && ground)) batch.add({ fill: burialFill ?? plaza(use, w.color), alpha: burialFill ? 0.85 : a }, pathOf(p));
         if (lod === 'close') batch.add({ stroke: softLine.color, width: px(0.5), alpha: softLine.alpha * (ground ? 0.8 : 1) }, pathOf(p));
       } else if (view === 'parcels') {
         const fill = palette === 'terrain' ? undefined : palette === 'ink' ? '#eee0c9' : parchment ? openFill ?? PARCH.lot : openFill ?? (palette === 'atlas' ? ATLAS[p.index % ATLAS.length] : growthColor(p.zone));
@@ -587,11 +598,15 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
       paint.fill = (s.role === 'track' ? o.colors?.track : o.colors?.road) ?? paint.fill; paint.casing = o.colors?.roadEdge ?? paint.casing;
       const path = s.path ??= linePath(s.street.path);
       const w = Math.max(s.width, px(isBoardwalk(s.role) ? 0.8 : s.role === 'mole' ? 3.4 : STREET_MIN_PX[Math.min(4, Math.max(0, s.rank))])), w2 = Math.round(w * 4) / 4;
-      if (softStreets && !STRUCTURE_ROLES.has(s.role)) {
+      const toned = streetToneAt(s.street.path, s.role, s.rank);   // map-tinted street (groundTone.ts)
+      if (toned || softStreets && !STRUCTURE_ROLES.has(s.role)) {
         // Blended: earth wash at rank-decaying opacity and a faint soft edge instead of the dark casing.
-        const soft = softStreet(s.role, s.rank, tone); soft.fill = (s.role === 'track' ? o.colors?.track : o.colors?.road) ?? soft.fill; soft.edge = o.colors?.roadEdge ?? soft.edge;
+        const soft = toned ?? softStreet(s.role, s.rank, tone); soft.fill = (s.role === 'track' ? o.colors?.track : o.colors?.road) ?? soft.fill; soft.edge = o.colors?.roadEdge ?? soft.edge;
         const edge = px(lod === 'mid' ? 0.8 : 1.1);
+        if (toned && s.role !== 'track') casing.add({ stroke: toned.ground, width: w + 7 * edge, alpha: 0.45, cap: 'round' }, path);
         if (surfaceOk(s)) { surfaced.push({ s, w, edge, casing: lod !== 'far' ? { fill: soft.edge, alpha: soft.edgeAlpha } : undefined, fill: { fill: soft.fill, alpha: soft.alpha } }); continue; }
+        // The land use leaves a corridor along every street (the darker decor shows there): an apron of the ground tone hides it.
+        if (toned && s.role !== 'track') casing.add({ stroke: toned.ground, width: w2 + 7 * edge, alpha: 0.45, cap: 'round' }, path);
         if (lod !== 'far') casing.add({ stroke: soft.edge, width: w2 + 2 * edge, alpha: soft.edgeAlpha, cap: 'round' }, path);
         fill.add({ stroke: soft.fill, width: w2, alpha: soft.alpha, cap: 'round' }, path);
         continue;
@@ -652,6 +667,8 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
     batch.flush(ctx); towers.flush(ctx);
     drawCityWalls(ctx, scene, { viewport, mpp, lod, palette }); // walls hook
   }
+
+  if (layers.waterways !== false && (layers.streets || layers.waterways)) drawCityWaterways(ctx, scene.layouts, mpp);
 
   // Buildings: native renderer (compact / detailed) or batched silhouettes.
   if (o.buildingsVisible && o.buildings && atLeast(lod, 'near') && (view === 'buildings' || view === 'roles')) {

@@ -1,5 +1,6 @@
 import phasorShader from './terrainPhasor.wgsl?raw';
 import { configureCompactPlan, phasorUniforms } from './terrainPhasor';
+import { seedRoot, seedSubset, stepSeed } from './generationSeed';
 import previewShader from './terrainGenerationPreview.wgsl?raw';
 import { configureProceduralPlan, isCompactProcedural, stageEnabled, type GenerationControl, type GenerationStage } from './terrainGenerationRecipe';
 import shader from './terrainErosion.wgsl?raw';
@@ -132,6 +133,7 @@ async function generateWithBudget(state: Context, settings: TerrainSettings, sha
 
 async function generateOnce(state: Context, settings: TerrainSettings, factor: number, shape?: Float32Array, coast?: { source: GPUBuffer; tuning: Float32Array }, timing?: Timing,progress?:TerrainProgressCallback): Promise<Float32Array> {
   const device = state.device, lab = coast ? undefined : timing?.control, compact = isCompactProcedural(settings);
+  const seededStages = !!settings.generalSeed && seedSubset(settings.generalSeed, key => key.startsWith('relief-')) !== seedRoot(settings.generalSeed);
   const plan = GenerationNoisePlan.erosion(settings.seed, settings.width, coast || compact && settings.relief === 'flat' ? 'hills' : shape ? 'mixed' : settings.relief, settings.erosion, settings.motifSize, settings.mountainMix);
   // Compact runs release allocations, including a previous classic scratch pool.
   if(compact){scratch.get(device)?.forEach(buffer=>buffer.destroy());scratch.delete(device);}
@@ -165,6 +167,7 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
     const reconstructEntry:Entry=settings.procedural?.reconstruction && settings.procedural.reconstruction!=='default' ? 'generationReconstruct':compact?'compactReconstruct':'reconstruct';
     const entries = new Set<Entry>([packEntry,...(!stageEnabled(settings,'amplitude')?['generationUnitScale' as const]:[]),...(!stageEnabled(settings,'normalize')?['generationKeepDatum' as const]:[]), ...(lab ? ['generationPreview' as const] : []), ...(!coast && !shape && settings.procedural ? ['generationCut','generationRegionalRead','generationPreview'] as const : [])]), modes = new Set<number>();
     const require = (...values: Entry[]) => values.forEach(value => entries.add(value));
+    if (seededStages && !coast && !shape) require('generationCut', 'generationRegionalRead', 'generationPreview');
     const graph = () => require('start', 'clearNext', 'solveStats', 'solveTile', 'receivers', 'flow', 'graphInit', 'graphFinish', 'thermalFlux', 'thermalApply', 'copyHeight', 'diffuse');
     if (coast) require('coastLoad', 'coastResult');
     else require('percentileInit', 'histogramClear', 'histogram', 'percentileSelect', 'normalize');
@@ -204,7 +207,7 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
     const output = create(1024 * 1024 * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST);
     const readback = create(1024 * 1024 * 4 + 1088, GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ);
     const tileFlags = create(Math.ceil(Math.max(n, surface[2]) / 16) ** 2 * 8, GPUBufferUsage.STORAGE);
-    const resumable = !coast && !shape && !!settings.procedural;
+    const resumable = !coast && !shape && !!(settings.procedural || seededStages);
     const inspect=!!lab&&lab.previews!==false || resumable;
     let querySet = inspect ? undefined : queries.get(device);
     if (!inspect && !querySet && device.features.has('timestamp-query')) {
@@ -213,10 +216,24 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
     }
     const queryBuffer = querySet ? create(48, GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC) : undefined;
     const queryReadback = querySet ? create(48, GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ) : undefined;
-    const group = device.createBindGroup({ layout: program.layout, entries: [
+    const makeGroup = (permutations: Uint32Array, gradients: Float32Array) => device.createBindGroup({ layout: program.layout, entries: [
       { binding: 0, resource: { buffer: uniform, size: 224 } },
-      ...[upload(plan.permutations()), upload(plan.gradients()), nodes, fine, control, output, tileFlags].map((buffer, i) => ({ binding: i + 1, resource: { buffer } })),
+      ...[upload(permutations), upload(gradients), nodes, fine, control, output, tileFlags].map((buffer, i) => ({ binding: i + 1, resource: { buffer } })),
     ] });
+    let group = makeGroup(plan.permutations(), plan.gradients());
+    const seedGroups = new Map([[settings.seed, group]]);
+    const stageNoise = (stage: GenerationStage) => {
+      const key = { initialize: 'relief-noise', reconstruct: 'relief-reconstruct', ridged: 'relief-detail' }[stage as 'initialize' | 'reconstruct' | 'ridged'];
+      if (!key || !settings.generalSeed) return;
+      const seed = stepSeed(settings.generalSeed, key);
+      let found = seedGroups.get(seed);
+      if (!found) {
+        const noise = GenerationNoisePlan.erosion(seed, settings.width, settings.relief, settings.erosion, settings.motifSize, settings.mountainMix);
+        try { found = makeGroup(noise.permutations(), noise.gradients()); } finally { noise.free(); }
+        seedGroups.set(seed, found);
+      }
+      group = found;
+    };
     const variants = new Map<string, number>();
     let settingsBlock = block;
     const offset = (extra: number[], config: Float32Array) => {
@@ -329,7 +346,7 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
         if((lab&&lab.previews!==false)||index===first-1)restore(cached);
         await reportCached(stage,cached);return;
       }
-      await lab?.before(stage);await operation();save(stage,kind);await snapshot(stage,kind);
+      await lab?.before(stage);stageNoise(stage);await operation();save(stage,kind);await snapshot(stage,kind);
     };
     const coastAfter=settings.procedural?.coastAfter??'initialize';
     const earlyCoast=async(stage:GenerationStage,kind:number)=>{
@@ -341,7 +358,7 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
         pass.end();const count=kind===0?n*n:1024*1024;
         encoder.copyBufferToBuffer(output,0,readback,0,count*4);device.queue.submit([encoder.finish()]);
         await readback.mapAsync(GPUMapMode.READ);const source=new Float32Array(readback.getMappedRange(),0,count).slice();readback.unmap();
-        const cut=TerrainPipeline.cut_field(settings.seed,settings.width,parameters[3]*2400,parameters[12],settings.coastMask!,settings.islandMode??'island',kind===0?n:1024,kind===0?base[5]:0,kind===0?base[4]:base[11],source);
+        const cut=TerrainPipeline.cut_field(stepSeed(settings.generalSeed??settings.seed,'relief-coast-cut'),settings.width,parameters[3]*2400,parameters[12],settings.coastMask!,settings.islandMode??'island',kind===0?n:1024,kind===0?base[5]:0,kind===0?base[4]:base[11],source);
         device.queue.writeBuffer(output,0,cut as GPUAllowSharedBufferSource);
         encoder=device.createCommandEncoder();pass=beginPass(0);dispatch('generationCut',extras,kind===0?Math.ceil(n*n/256):4096);
       });

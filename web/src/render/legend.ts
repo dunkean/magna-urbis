@@ -1,4 +1,5 @@
 import { cavernWallFill } from './caverns';
+import { forestLandPaint } from './landuseForestTone';
 import { isUnderdarkBiome } from '../gen/biomes';
 /**
  * Cartouche (town name, population, scale bar) and legend (land use + urban symbology per style),
@@ -158,7 +159,7 @@ export function legendModel(world: World, pal: Palette): Panel {
     if (kinds.has('meadow')) add('Meadow', fillSwatch(pal.land.meadow, undefined, 0.9));
     if (kinds.has('pasture')) add('Pasture', fillSwatch(pal.land.pasture, undefined, 0.9));
     if (kinds.has('commons')) add(world.options.biome === 'desert' ? 'Bare ground, scrub' : world.options.biome === 'tundra' ? 'Heath, exposed ground' : 'Commons', fillSwatch(pal.land.commons, undefined, 0.9));
-    if (kinds.has('forest')) add('Woodland', (x, y) => [{ t: 'rect', x, y, w: SW, h: SH, fill: pal.land.forest }, ...[[6, 4], [13, 8], [19, 4], [9, 8]].flatMap(([dx, dy]) => treeSymbol(pal, x + dx, y + dy, 2.4))]);
+    if (kinds.has('forest')) add('Woodland', (x, y) => [{ t: 'rect', x, y, w: SW, h: SH, fill: forestLandPaint(pal).color }, ...[[6, 4], [13, 8], [19, 4], [9, 8]].flatMap(([dx, dy]) => treeSymbol(pal, x + dx, y + dy, 2.4))]);
     if (kinds.has('orchard')) add('Orchard', (x, y) => [{ t: 'rect', x, y, w: SW, h: SH, fill: pal.land.orchard }, ...[[6, 4], [12, 4], [18, 4], [6, 9], [12, 9], [18, 9]].flatMap(([dx, dy]) => treeSymbol(pal, x + dx, y + dy, 1.7))]);
     if (kinds.has('marsh')) add('Marsh', (x, y) => [{ t: 'rect', x, y, w: SW, h: SH, fill: pal.land.marsh }, ...[5, 12, 19].map((dx): Prim => ({ t: 'line', pts: [[x + dx - 2, y + 8], [x + dx + 2, y + 8]], stroke: pal.reed, sw: 0.9 }))]);
     if (kinds.has('garden')) add('Gardens', fillSwatch(pal.land.garden, undefined, 0.9));

@@ -86,6 +86,7 @@ pub(super) struct Style {
     pub forced: bool,
     pub medieval: bool,
     pub dry_ditches: bool,
+    pub timber_culture: bool,
     pub ditch_wetness: Option<f64>,
 }
 
@@ -158,12 +159,28 @@ impl Style {
             forced: false,
             medieval: false,
             dry_ditches: false,
+            timber_culture: false,
             ditch_wetness: None,
         })
     }
     pub(super) fn options(&mut self, cfg: &super::LayoutConfig) {
         self.medieval = cfg.medieval_walls && cfg.wall_tower_spacing.is_none() && self.kind == "wall";
         self.dry_ditches = cfg.dry_ditches;
+        // A culture's timber rampart yields to an explicit style or « Muraille ».
+        // A hedge (kraal thorn boma, halfling hedgerow) stays a hedge.
+        self.timber_culture &= !self.forced && cfg.fortification != "wall" && self.kind != "hedge";
+        if self.timber_culture || self.kind == "palisade" || self.material.starts_with("timber") {
+            if self.timber_culture {
+                self.id = "gord".into(); self.kind = "palisade".into();
+                self.tower_shape = "square".into(); self.flank_shape = "square".into();
+                self.gate_major = "timber".into(); self.gate_minor = "opening".into();
+                self.outworks.clear(); self.attached = 0.0;
+            }
+            self.material = if self.id == "gord" { "timber-earth" } else { "timber" }.into();
+            self.curtain_width = self.curtain_width.min(if self.id == "gord" { 3.0 } else { 1.5 });
+            self.height = self.height.min(3.5);
+            self.tower_height = self.tower_height.min(5.0);
+        }
         self.ditch_wetness = cfg.ditch_wetness;
         if self.medieval {
             self.tower_spacing = Some(pair(&data()["styles"][&self.id]["towerSpacing"], [25.0, 35.0])
@@ -298,6 +315,7 @@ fn styled(id: &str, culture: &str, pop: u32) -> Style {
     }
     // Group defaults (an earthwork rampart, ...), then the culture's own.
     s.apply(group(culture));
+    s.timber_culture = group(culture)["timberRampart"].as_bool().unwrap_or(false);
     for o in culture_override(culture) {
         s.apply(o);
     }
@@ -459,7 +477,7 @@ pub(super) use parameters::{valid_parameters, parameter_trace, port_walls, wall_
 
 #[path = "fortification_extension.rs"]
 mod extension;
-pub(super) use extension::{attach, lopsided, trim_shared, dedupe_shared, inner_gates};
+pub(super) use extension::{attach, lopsided, trim_shared, dedupe_shared, inner_gates, shared_length};
 
 // ---------------------------------------------------------------- vectors
 
@@ -528,6 +546,20 @@ fn buffer(s: &Shape, d: f64) -> Vec<Shape> {
     let p = g::polygon(s);
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| g::shapes(p.buffer(d))))
         .unwrap_or_default()
+}
+fn curtain_body(path: &[Point], width: f64, half: f64) -> Vec<Shape> {
+    let n = path.len().saturating_sub(1);
+    if n<3 { return vec![]; }
+    let ns = normals(path);
+    let offset = |i:usize,d:f64| {
+        let (a,b) = (ns[(i+n-1)%n],ns[i]);
+        let m = (a.0+b.0,a.1+b.1); let len=m.0.hypot(m.1);
+        let m = if len<1e-6 {b} else {(m.0/len,m.1/len)};
+        add(path[i],m,d/dot(m,b).max(0.4))
+    };
+    let inner:Vec<_> = (0..n).map(|i|offset(i,-half-0.15)).collect();
+    let outer:Vec<_> = (0..n).map(|i|offset(i,width-half+0.15)).collect();
+    (0..n).map(|i|g::normalized(Shape {outer:vec![inner[i],inner[(i+1)%n],outer[(i+1)%n],outer[i]],holes:vec![]})).collect()
 }
 fn buffer_all(shapes: &[Shape], d: f64) -> Vec<Shape> {
     use geo::Buffer;
@@ -863,11 +895,21 @@ fn candidates(shape: &Shape, limits: PocketLimits) -> Vec<Pocket> {
 /// length (stable, discovery order on ties) and only validated in that order,
 /// up to the first that passes.
 fn without_invaginations(shape: &Shape, surface: Surface<'_>) -> Shape {
+    fill_pockets(shape, surface, PocketLimits::read(), f64::INFINITY)
+}
+/// Re-entrant bends (deeper than a sixth of their chord, chord under 400 m)
+/// of a joined circuit are cut by straight runs: two circuits made one go
+/// straight across where each used to turn in, never across water.
+pub(super) fn straight_across(shape: &Shape, surface: Surface<'_>) -> Shape {
+    let limits = PocketLimits { depth_span: 1.0 / 6.0, ..PocketLimits::read() };
+    fill_pockets(shape, surface, limits, 400.0)
+}
+fn fill_pockets(shape: &Shape, surface: Surface<'_>, limits: PocketLimits, max_span: f64) -> Shape {
     if !g::simple(shape) { return shape.clone(); }
-    let limits = PocketLimits::read();
     let mut trace = shape.clone();
     loop {
         let mut repairs = candidates(&trace, limits);
+        repairs.retain(|p| dist(p.a, p.b) <= max_span);
         repairs.sort_by(|a, b| a.length.total_cmp(&b.length));
         // The trace is simple (checked above, then kept by every repair).
         let base = sides(&trace.outer);
@@ -1336,6 +1378,35 @@ fn severed(piece: &Shape, path: &[Point], streets: &[(Point, Point)]) -> bool {
         .iter()
         .any(|&(a, b)| g::segment_hit(p, c, a, b).is_some())
 }
+/// Depths (m) beyond a moat's outer edge at which the town is looked for.
+const EMBED_DEPTHS: [f64; 4] = [10.0, 30.0, 60.0, 100.0];
+/// A moat with built blocks beyond it at every depth on three quarters of its
+/// outer edge lies inside the town (an older circuit, a curtain in a river
+/// loop the faubourg has grown round), not outside the curtain it guards.
+fn embedded(piece: &Shape, path: &[Point], built: &[(Box2, &Shape)]) -> bool {
+    let ring = &piece.outer;
+    let n = ring.len();
+    let mut samples = vec![];
+    for i in 0..n {
+        let (a, b) = (ring[i], ring[(i + 1) % n]);
+        let k = (dist(a, b) / 4.0).ceil().max(1.0) as usize;
+        samples.extend((0..k).map(|j| add(a, dir(a, b), dist(a, b) * j as f64 / k as f64)));
+    }
+    let near: Vec<(Point, f64, Point)> = samples.iter().filter_map(|&p| {
+        let (d, _, c) = path.windows(2).map(|w| g::distance(p, w[0], w[1])).min_by(|x, y| x.0.total_cmp(&y.0))?;
+        Some((p, d, c))
+    }).collect();
+    let (lo, hi) = near.iter().fold((f64::MAX, 0.0_f64), |(l, h), x| (l.min(x.1), h.max(x.1)));
+    // The outer half of the piece: its edge away from the curtain.
+    let outer: Vec<_> = near.into_iter().filter(|x| x.1 >= 0.5 * (lo + hi) && x.1 > 1e-6).collect();
+    if outer.len() < 4 { return false; }
+    let inside = |q: Point| built.iter().any(|(b, s)| q.x >= b.0 && q.x <= b.2 && q.y >= b.1 && q.y <= b.3 && g::contains(s, q));
+    let hits: usize = outer.iter().map(|&(p, d, c)| {
+        let u = ((p.x - c.x) / d, (p.y - c.y) / d);
+        EMBED_DEPTHS.iter().filter(|&&k| inside(add(p, u, k))).count()
+    }).sum();
+    hits as f64 >= 0.75 * (outer.len() * EMBED_DEPTHS.len()) as f64
+}
 /// Street ribbons (+1 m) within `reach` of the curtain.
 fn street_clear(
     path: &[Point],
@@ -1419,6 +1490,7 @@ pub(super) fn build(
 ) -> Vec<Street> {
     let path = e.path.clone();
     let n_seg = path.len().saturating_sub(1);
+    if style.timber_culture && style.material == "timber-earth" { e.kind = style.kind.clone(); }
     e.style = style.id.clone();
     e.material = style.material.clone();
     e.curtain_width_m = style.curtain_width;
@@ -1440,10 +1512,14 @@ pub(super) fn build(
     let jitter = hgt.range(0.92, 1.08);
     let (height, tower_height) = (style.height * jitter, style.tower_height * jitter);
     let mut dr = rng.fork("ditch");
+    // Moat and berm scale with the settlement: a village digs a few metres,
+    // a 10 000-inhabitant town the full width of its style.
+    let size = (f64::from(pop) / 10_000.0).sqrt().clamp(0.3, 1.0);
     let dw = dr.range(
         style.ditch_width[0],
         style.ditch_width[1].max(style.ditch_width[0]),
     );
+    let dw = if dw > 0.0 { (dw * size).max(3.0_f64.min(dw)) } else { dw };
     let reach =
         face + style.berm + dw + 25.0 + style.court_radius[1].max(style.outer_gap[1] + 16.0) + 45.0;
     let clear = Cut::new(street_clear(&path, streets, reach, predicted));
@@ -1478,6 +1554,93 @@ pub(super) fn build(
             })
             .unwrap_or(0)
     };
+    // Arc length along the curtain, for passages and the runs between them.
+    let cum: Vec<f64> = std::iter::once(0.0).chain((0..n_seg).scan(0.0, |acc, i| { *acc += dist(path[i], path[i + 1]); Some(*acc) })).collect();
+    let total = cum[n_seg].max(1e-9);
+    let arc = |p: Point| { let k = seg_of(p); cum[k] + dist(path[k], p).min(dist(path[k], path[k + 1])) };
+    let along = |s: f64| {
+        let s = s.rem_euclid(total);
+        let k = (0..n_seg).find(|&k| cum[k + 1] >= s).unwrap_or(n_seg - 1);
+        (add(path[k], dir(path[k], path[k + 1]), s - cum[k]), k)
+    };
+    // Water runs that the curtain leaves only briefly (a spit, under 40 m) or
+    // along a dry run that just hugs the shore with nothing built behind it
+    // open as one passage: no stub of wall, tower or moat between them.
+    let hugs = |q: Point, k: usize| [3.0, 6.0, 10.0].iter().any(|&d| surface.wet(add(q, ns[k], d)));
+    let merged: Vec<(Point, bool)> = {
+        let mut b: Vec<(Point, bool)> = banks.to_vec();
+        // At a bank, the passage starts where the curtain stops
+        // hugging the shore, when that run is short or has nothing behind it.
+        let m = b.len();
+        if m >= 2 {
+            let arcs: Vec<f64> = b.iter().map(|x| arc(x.0)).collect();
+            // Dry run length on each bank's land side, and how far it hugs.
+            let side = |k: usize| if b[k].1 { (arcs[k] - arcs[(k + m - 1) % m]).rem_euclid(total) } else { (arcs[(k + 1) % m] - arcs[k]).rem_euclid(total) };
+            let walk: Vec<f64> = (0..m).map(|k| {
+                let sign = if b[k].1 { -1.0 } else { 1.0 };
+                let (mut h, mut open) = (0.0, true);
+                while h + 4.0 < side(k).min(200.0) {
+                    let (q, j) = along(arcs[k] + sign * (h + 4.0));
+                    if !hugs(q, j) || surface.wet(q) { break; }
+                    open &= !street_lines.iter().any(|&(u, v)| g::distance(q, u, v).0 < 25.0);
+                    h += 4.0;
+                }
+                if h >= 4.0 && (h < 40.0 || open) { h } else { 0.0 }
+            }).collect();
+            // A jog: past its last corner the curtain turns (over ~60°) and
+            // runs on along the water, ending under 40 m from that corner. It
+            // guards nothing; the curtain ends at the corner.
+            let shore_near = |q: Point| (0..8).any(|a| {
+                let t = f64::from(a) * std::f64::consts::FRAC_PI_4;
+                [3.0, 6.0, 10.0].iter().any(|&d| surface.wet(add(q, (t.cos(), t.sin()), d)))
+            });
+            let walk: Vec<f64> = (0..m).map(|k| {
+                let back = |s: f64| if b[k].1 { arcs[k] - s } else { arcs[k] + s };
+                // The farthest such corner on the land side, the whole run by the water.
+                let corner = (0..n_seg).filter_map(|v| {
+                    let d = if b[k].1 { (arcs[k] - cum[v]).rem_euclid(total) } else { (cum[v] - arcs[k]).rem_euclid(total) };
+                    if !(4.0..80.0).contains(&d) || dist(path[v], b[k].0) >= 40.0 || d >= side(k) - 4.0
+                        || turn_at(&ring, v) <= 1.05 { return None; }
+                    let steps = (d / 4.0).ceil() as usize;
+                    (0..=steps).all(|i| shore_near(along(back(d * i as f64 / steps as f64)).0)).then_some(d)
+                }).fold(0.0, f64::max);
+                walk[k].max(corner)
+            }).collect();
+            // A run hugged from both ends is one passage: its two banks go.
+            let mut gone = vec![false; m];
+            for k in (0..m).filter(|&k| !b[k].1) {
+                let j = (k + 1) % m;
+                if b[j].1 && walk[k] + walk[j] >= side(k) - 4.0 { gone[k] = true; gone[j] = true; }
+            }
+            let moved: Vec<(Point, bool)> = (0..m).filter(|&k| !gone[k]).map(|k| {
+                (if walk[k] > 0.0 { along(arcs[k] + if b[k].1 { -walk[k] } else { walk[k] }).0 } else { b[k].0 }, b[k].1)
+            }).collect();
+            if moved.iter().any(|x| x.1) && moved.iter().any(|x| !x.1) { b = moved; }
+        }
+        loop {
+            let m = b.len();
+            if m < 4 { break; }
+            let cut = (0..m).find(|&k| {
+                let (x, y) = (b[k], b[(k + 1) % m]);
+                if x.1 || !y.1 { return false; }
+                let (s0, len) = (arc(x.0), (arc(y.0) - arc(x.0)).rem_euclid(total));
+                if len < 40.0 { return true; }
+                let n = (len / 4.0).ceil() as usize;
+                (0..=n).all(|i| {
+                    let (q, k) = along(s0 + len * i as f64 / n as f64);
+                    hugs(q, k)
+                        && !street_lines.iter().any(|&(u, v)| g::distance(q, u, v).0 < 25.0)
+                })
+            });
+            let Some(k) = cut else { break; };
+            let j = (k + 1) % m;
+            b = b.into_iter().enumerate().filter(|&(i, _)| i != k && i != j).map(|(_, v)| v).collect();
+        }
+        b
+    };
+    // A moved or merged passage end is a gate point of the curtain.
+    for &(p, _) in &merged { if e.gates.iter().all(|&q| dist(q, p) >= 8.0) { e.gates.push(p); } }
+    let banks: &[(Point, bool)] = &merged;
     // Gates: street, rank and direction at each land crossing.
     let infos: Vec<GateInfo> = e.gates[..land]
         .iter()
@@ -1702,6 +1865,29 @@ pub(super) fn build(
                 continue; // two entries in a row: not a crossing pair
             }
             let (a, b) = (banks[k].0, banks[j].0);
+            let shore = {
+                let (first, last) = (seg_of(a), seg_of(b));
+                let (mut wet, mut river, mut transverse, mut samples) = (false, true, 0, 0);
+                for offset in 0..n_seg {
+                    let i = (first+offset)%n_seg;
+                    let p = if offset == 0 { a } else { path[i] };
+                    let q = if i == last { b } else { path[i+1] };
+                    let steps = (dist(p,q)/4.0).ceil().max(1.0) as usize;
+                    for k in 0..=steps {
+                        let at = pt(p.x+(q.x-p.x)*k as f64/steps as f64,p.y+(q.y-p.y)*k as f64/steps as f64);
+                        if surface.wet(at) {
+                            wet = true; river &= super::macroplan::harbour::water_code(surface,at) == 3;
+                            let t = dir(p,q); let normal = (t.1,-t.0);
+                            let probe = (surface.width / surface.n.max(1) as f64 * 1.5).max(8.0);
+                            samples += 1;
+                            if surface.wet(add(at,normal,probe)) && surface.wet(add(at,normal,-probe)) { transverse += 1; }
+                        }
+                    }
+                    if i == last { break; }
+                }
+                // A stream narrower than the 4 m sampling stays a water gate.
+                wet && !(river && transverse * 2 >= samples)
+            };
             let Some(gi) = (0..e.gates.len())
                 .min_by(|&x, &y| dist(e.gates[x], a).total_cmp(&dist(e.gates[y], a)))
             else {
@@ -1719,12 +1905,15 @@ pub(super) fn build(
                 let sk = seg_of(bank);
                 let t = dir(path[sk], path[sk + 1]);
                 let along = (t.0 * sign, t.1 * sign); // pointing onto land
+                // Abutment and tower stay on this curtain segment, never
+                // past its end on the tangent (a lone tower on a spit).
+                let avail = if sign > 0.0 { dist(bank, path[sk + 1]) } else { dist(bank, path[sk]) };
                 // The first dry offset back from the bank: a curtain meeting
                 // the water obliquely needs a few metres more.
                 let Some(back) = [1.0, 3.0, 6.0, 10.0, 15.0, 22.0, 30.0, 40.0]
                     .into_iter()
                     .find(|&b| {
-                        dry_points(&quad(
+                        b + 5.0 <= avail && dry_points(&quad(
                             add(bank, along, b),
                             along,
                             ns[sk],
@@ -1744,7 +1933,7 @@ pub(super) fn build(
                 ));
                 if has_towers {
                     let r = style.tower_radius[1];
-                    if let Some(tw) = [1.5, 4.0, 8.0].into_iter().find_map(|b| {
+                    if let Some(tw) = [1.5, 4.0, 8.0].into_iter().filter(|&b| back + 2.0 * r + b <= avail).find_map(|b| {
                         tower_at(
                             add(bank, along, back + r + b),
                             t,
@@ -1781,7 +1970,7 @@ pub(super) fn build(
                 });
             gatehouses.push(Gatehouse {
                 gate: gi,
-                kind: "water".into(),
+                kind: if shore { "shore" } else { "water" }.into(),
                 shape,
                 masses,
                 passage: [a, b],
@@ -1963,6 +2152,11 @@ pub(super) fn build(
     // Outer face of everything the ditch surrounds.
     // The ditch runs around every projecting work: towers, gatehouses,
     // bastions (and below the outer wall, courts and barbicans).
+    // Nothing of the curtain stands inside a shore passage: no tower there.
+    let shore_gaps: Vec<(f64, f64)> = gatehouses.iter().filter(|gh| gh.kind == "shore")
+        .map(|gh| (arc(gh.passage[0]), (arc(gh.passage[1]) - arc(gh.passage[0])).rem_euclid(total))).collect();
+    let in_gap = |p: Point| { let s = arc(p); shore_gaps.iter().any(|&(a, l)| { let d = (s - a).rem_euclid(total); d > 1.0 && d < l - 1.0 }) };
+    towers.retain(|t| !in_gap(t.anchor));
     let mut moat_core: Vec<Shape> = buffer(&poly, face.max(0.1));
     moat_core.extend(bastion_union.iter().cloned());
     moat_core.extend(towers.iter().map(|t| t.footprint.clone()));
@@ -1993,7 +2187,34 @@ pub(super) fn build(
             });
             let band = buffer(&o, style.outer_width);
             let strip: Vec<Shape> = band.iter().flat_map(|b| g::difference(b, &o)).collect();
-            let strip = g::union(&clear.from(tiles(strip, TILE)));
+            let strip = {
+                let near = Near::new(&closed(&o.outer), 16.0);
+                let mut cuts = vec![];
+                for s in streets {
+                    let half = s.widths.iter().copied().fold(3.0, f64::max) * 0.5 + 0.5;
+                    for w in s.path.windows(2) {
+                        // A street running inside the band: the wall never stands on it.
+                        if near.distance(w[0], w[1]) <= style.outer_width + half && dist(w[0], w[1]) > 0.1 {
+                            let u = dir(w[0], w[1]);
+                            cuts.push(quad(w[0],u,(u.1,-u.0),[-half,dist(w[0],w[1])+half],[-half,half]));
+                        }
+                        for i in near.crossed(w[0], w[1]) {
+                            let a = o.outer[i % o.outer.len()]; let b = o.outer[(i+1) % o.outer.len()];
+                            if let Some((_, p)) = g::segment_hit(w[0], w[1], a, b) {
+                                let t = dir(a,b); let u = dir(w[0],w[1]);
+                                let sin = (t.0*u.1-t.1*u.0).abs();
+                                if sin > 0.3 { cuts.push(quad(p,t,(t.1,-t.0),[-half/sin,half/sin],[-style.outer_width-1.0,style.outer_width+1.0])); }
+                                else {
+                                    // A grazing street: open the wall along the street's own ribbon.
+                                    let reach = (style.outer_width+1.0)/sin.max(0.05)+half;
+                                    cuts.push(quad(p,u,(u.1,-u.0),[-reach.min(dist(w[0],p)),reach.min(dist(p,w[1]))],[-half,half]));
+                                }
+                            }
+                        }
+                    }
+                }
+                g::union(&Cut::new(cuts).from(tiles(strip,TILE)))
+            };
             // Between the walls (outside the main curtain by construction).
             let lists = clear.from(tiles(g::difference(&o, &poly), TILE));
             // Rule 3 for a wall: the outer wall stops at the water.
@@ -2413,7 +2634,7 @@ pub(super) fn build(
     let mut ditch: Vec<Work> = vec![];
     let mut glacis: Vec<Shape> = vec![];
     let moat_core = g::union(&moat_core);
-    let berm = style.berm;
+    let berm = style.berm * size;
     let ditch_kind = match style.ditch.as_str() {
         "none" => None,
         _ if style.ditch_wetness.is_some() => Some("dry"),
@@ -2507,7 +2728,7 @@ pub(super) fn build(
     // slope instead of stopping tens of metres short of it.
     let no_ditch = Cut::new(
         (0..n_seg)
-            .filter(|&i| steep[i] || wet[i])
+            .filter(|&i| steep[i])
             .map(|i| {
                 let (a, b) = (path[i], path[i + 1]);
                 let t = dir(a, b);
@@ -2515,6 +2736,15 @@ pub(super) fn build(
                 quad(a, t, ns[i], [0.0, dist(a, b)], [-wd, wd])
             })
             .chain(fronts)
+            // A shore passage keeps no moat along its open run either.
+            .chain(shore_gaps.iter().flat_map(|&(a, l)| {
+                let n = (l / 8.0).ceil().max(1.0) as usize;
+                (0..n).map(move |i| (a + l * i as f64 / n as f64, a + l * (i + 1) as f64 / n as f64)).collect::<Vec<_>>()
+            }).map(|(s0, s1)| {
+                let (p0, k) = along(s0); let (p1, _) = along(s1); let t = dir(p0, p1);
+                let wd = face + berm + dw + 30.0;
+                quad(p0, t, ns[k], [0.0, dist(p0, p1)], [-wd, wd])
+            }))
             .collect(),
     );
     if let Some(kind) = ditch_kind {
@@ -2543,11 +2773,20 @@ pub(super) fn build(
         band.extend(ravelin_ditch.iter().cloned());
         let band = tiles(g::union(&band), TILE);
         let band = Cut::new(ravelin_cut.clone()).from(band);
-        let band = g::union(&clear.from(no_ditch.from(inner_core.from(band))));
+        // Test separation locally: one access road cannot discard a whole
+        // connected moat because its representative point lies beyond it.
+        let band = clear.from(no_ditch.from(inner_core.from(band)));
+        let band = tiles(band, 24.0).into_iter()
+            .filter(|d| !severed(d, &path, &street_lines)).collect::<Vec<_>>();
+        let band = g::union(&band);
         let band = if style.ditch_wetness.is_some() || (style.dry_ditches && style.ditch == "auto") { tiles(band, 24.0) } else { band };
+        // A moat hook left round the tip of a stretch inside a shore passage
+        // guards no curtain: it goes with the stretch.
+        let off_gap = |d: &Shape| { let s = arc(g::interior_point(d));
+            !shore_gaps.iter().any(|&(a, l)| { let t = (s - a).rem_euclid(total); t > 8.0 && t < l - 8.0 }) };
         for p in band {
             for d in g::dry_clip(&surface, &p) {
-                if g::area(&d) > 20.0 && !severed(&d, &path, &street_lines) {
+                if g::area(&d) > 20.0 && off_gap(&d) {
                     ditch.push(Work {
                         kind: if let Some(wetness) = style.ditch_wetness {
                             parameters::ditch_kind(&d, surface, rng, wetness).into()
@@ -2675,11 +2914,9 @@ pub(super) fn build(
             break;
         }
     }
-    // --- reserve: curtain body outside the inner face and every structure.
-    let body: Vec<Shape> = buffer(&poly, face.max(0.1))
-        .iter()
-        .flat_map(|b| g::difference(b, &poly))
-        .collect();
+    // Same bounded mitres as the drawn curtain, with a quantisation margin.
+    // Rounded buffers leave buildable wedges under its corners.
+    let body = curtain_body(&path,c,h);
     let mut reserve: Vec<Shape> = clear.from(tiles(body, TILE));
     reserve.extend(extra_reserve);
     reserve.extend(towers.iter().map(|t| t.footprint.clone()));
@@ -2874,7 +3111,7 @@ fn stop_at_curtains(streets: &mut Vec<Street>, enclosures: &mut [Enclosure]) {
     for (i, s) in streets.iter_mut().enumerate() {
         if matches!(
             s.role.as_str(),
-            "wall-lane" | "bridge" | "ford" | "causeway" | "quay" | "pier" | "landing" | "mole"
+            "wall-lane" | "bridge" | "ford" | "causeway" | "quay" | "pier" | "boardwalk" | "landing" | "mole"
         ) || s.path.len() < 2
         {
             continue;
@@ -2998,7 +3235,7 @@ fn reconcile_gates(e: &mut Enclosure, streets: &[Street], surface: Surface<'_>) 
     let water_ends: Vec<Point> = e
         .gatehouses
         .iter()
-        .filter(|gh| gh.kind == "water")
+        .filter(|gh| matches!(gh.kind.as_str(), "water" | "shore"))
         .flat_map(|gh| gh.passage)
         .collect();
     let bank = |p: Point| {
@@ -3013,11 +3250,14 @@ fn reconcile_gates(e: &mut Enclosure, streets: &[Street], surface: Surface<'_>) 
     let referenced: Vec<usize> = e
         .gatehouses
         .iter()
-        .filter(|gh| gh.kind == "water")
+        .filter(|gh| matches!(gh.kind.as_str(), "water" | "shore"))
         .map(|gh| gh.gate)
         .collect();
     for (i, &q) in e.gates.iter().enumerate() {
-        if crossings.iter().any(|&c| dist(c, q) < 2.0) || referenced.contains(&i) || bank(q) {
+        let access = streets.iter().filter(|s| matches!(s.role.as_str(), "regional" | "approach"))
+            .any(|s| s.path.first().into_iter().chain(s.path.last()).any(|&p|
+                dist(p,q)<s.widths.iter().copied().fold(0.0,f64::max)*0.5+2.0));
+        if crossings.iter().any(|&c| dist(c, q) < 2.0) || referenced.contains(&i) || bank(q) || access {
             remap[i] = Some(gates.len());
             gates.push(q);
         }
@@ -3062,6 +3302,31 @@ pub(super) fn sync_gates(layout: &mut super::Layout, surface: Surface<'_>) {
 /// - The reserve is what the fortification still holds; blocks give it up
 ///   (pieces under `MIN_BLOCK_PIECE` m² return to open land).
 pub(super) fn settle(layout: &mut super::Layout, surface: Surface<'_>) {
+    // Forced footprint circuits enter from the macroplan without detailed
+    // works. They obey the same water, reserve and gate rules as historical ones.
+    if layout.enclosures.iter().any(|e| e.style.is_empty() && e.path.len()>=4) {
+        let cfg = layout.config.clone().unwrap_or_default();
+        let pop = layout.structure.as_ref().map_or_else(|| layout.phases.iter().map(|p|p.population).sum(),
+            |s|s.metrics.planned_population).max(500.0).round() as u32;
+        let predicted = Predicted {widths:[9.0,8.0,5.0,3.5,3.0],arterial:1,dwelling:[5.0;2]};
+        for (i,e) in layout.enclosures.iter_mut().enumerate().filter(|(_,e)|e.style.is_empty() && e.path.len()>=4) {
+            let circuit = g::normalized(Shape {outer:e.path[..e.path.len()-1].to_vec(),holes:vec![]});
+            let (relief,_) = terrain(&[circuit],surface);
+            let rng = Rng::new(&layout.key).fork(&format!("final-circuit:{i}"));
+            let mut style = resolve(&e.kind,&Inputs {culture:&layout.culture,pop,period:&cfg.programme.period,
+                state:"",archetype:&layout.archetype,forced:&cfg.fortification_style,relief},&rng,&mut layout.warnings);
+            style.options(&cfg);
+            for p in super::composition::gates(&e.path,&layout.streets) {
+                if e.gates.iter().all(|&g|dist(g,p)>=8.0) {e.gates.push(p);}
+            }
+            let land = e.gates.len();
+            let banks = super::composition::water_gates(&e.path,surface);
+            for &(p,_) in &banks { if e.gates.iter().all(|&g|dist(g,p)>=8.0) {e.gates.push(p);} }
+            // Access lanes added this late would change the road network.
+            style.attached = 0.0;
+            build(e,land,&banks,&layout.streets,surface,&style,pop,&predicted,&rng);
+        }
+    }
     if layout.enclosures.iter().all(|e| e.style.is_empty()) {
         return;
     }
@@ -3076,6 +3341,10 @@ pub(super) fn settle(layout: &mut super::Layout, surface: Surface<'_>) {
         .filter(|s| s.role != "wall-lane")
         .collect();
     let mut reserve_all: Vec<(Shape, Box2)> = vec![];
+    // Built land of the final plan, for moats the town has grown round.
+    let built: Vec<(Box2, &Shape)> = layout.blocks.iter()
+        .filter(|b| matches!(b.kind.as_str(), "block" | "place"))
+        .map(|b| (g::bbox(&b.shape), &b.shape)).collect();
     for e in layout
         .enclosures
         .iter_mut()
@@ -3166,7 +3435,7 @@ pub(super) fn settle(layout: &mut super::Layout, surface: Surface<'_>) {
                     .flat_map(|m| ribbons.from(vec![m.clone()]))
                     .filter(|m| g::area(m) >= 4.0)
                     .collect();
-                if gh.kind == "water" {
+                if matches!(gh.kind.as_str(), "water" | "shore") {
                     return Some(gh);
                 }
                 let mid = pt(
@@ -3190,8 +3459,15 @@ pub(super) fn settle(layout: &mut super::Layout, surface: Surface<'_>) {
                 Some(a)
             })
             .collect();
-        e.outworks = cut(std::mem::take(&mut e.outworks), 10.0);
+        let (continuous, works): (Vec<_>, Vec<_>) = std::mem::take(&mut e.outworks).into_iter()
+            .partition(|w| matches!(w.kind.as_str(), "outer-wall" | "antemural"));
+        e.outworks = cut(works, 10.0);
+        e.outworks.extend(continuous);
         e.ditch = cut(std::mem::take(&mut e.ditch), 20.0);
+        // A moat inside the built town holds no water: a dry ditch.
+        for d in e.ditch.iter_mut().filter(|d| d.kind == "wet") {
+            if embedded(&d.shape, &e.path, &built) { d.kind = "dry".into(); }
+        }
         e.reserve = ribbons
             .from(std::mem::take(&mut e.reserve))
             .into_iter()
@@ -3262,6 +3538,115 @@ mod tests {
 
     const W: f64 = 2048.0;
     const N: usize = 256;
+
+    #[test]
+    fn review_curtain_reserves_both_faces_and_moat_cuts_stay_local() {
+        let sharp = vec![pt(200.0,600.0),pt(1400.0,600.0),pt(210.0,640.0),pt(200.0,600.0)];
+        assert!(curtain_body(&sharp,3.0,1.5).iter().any(|s|g::contains(s,pt(1403.0,599.94))),"mitred tip must stay unbuildable");
+        let height = vec![10.0; N*N]; let water = vec![0; N*N];
+        let surface = surface(&height,&water);
+        let path = closed(&g::rectangle(600.0,600.0,1400.0,1400.0).outer);
+        let roads = vec![street(&[(640.0,588.0),(800.0,588.0)],2,4.0)];
+        let mut e = Enclosure {path,kind:"wall".into(),..Default::default()};
+        let mut style = styled("curtain","european-organic",10_000);
+        style.ditch = "wet".into(); style.ditch_width = [10.0;2];
+        style.berm = 2.0; style.outworks.clear(); style.attached = 0.0;
+        style.tower_spacing = None; style.corner_turn = None;
+        build(&mut e,0,&[],&roads,surface,&style,10_000,&predicted(),&Rng::new("water2"));
+        for p in [pt(1000.0,600.5),pt(1000.0,599.5)] {
+            assert!(e.reserve.iter().any(|s|g::contains(s,p)),"curtain face {p:?}");
+        }
+        for p in [pt(1000.0,590.0),pt(1200.0,590.0),pt(1410.0,1000.0)] {
+            assert!(e.ditch.iter().any(|s|g::contains(&s.shape,p)),"moat lost away from local road {p:?}");
+        }
+        // A river-side curtain is not an arcade along the bank.
+        let water:Vec<_> = river(1000.0,1080.0).into_iter().map(|w|if w>0 {3} else {0}).collect();
+        let surface = super::tests::surface(&height,&water);
+        e.path = vec![pt(800.0,600.0),pt(1004.0,600.0),pt(1004.0,1400.0),pt(800.0,1400.0),pt(800.0,600.0)];
+        let banks = composition::water_gates(&e.path,surface);
+        e.gates = banks.iter().map(|b|b.0).collect();
+        build(&mut e,0,&banks,&[],surface,&style,10_000,&predicted(),&Rng::new("water2-bank"));
+        assert!(!e.gatehouses.is_empty());
+        assert!(e.gatehouses.iter().all(|g|g.kind=="shore"));
+    }
+
+    #[test]
+    fn review_forced_circuits_gain_water_gates_and_keep_regional_access() {
+        let mut layout = town("curtain").remove(0);
+        layout.culture = "chinese".into(); layout.blocks.clear();
+        let path = closed(&g::rectangle(600.0,600.0,1400.0,1400.0).outer);
+        layout.enclosures = vec![Enclosure {path,kind:"wall".into(),gates:vec![pt(600.0,1000.0)],..Default::default()}];
+        let mut access = street(&[(600.0,1000.0),(950.0,1000.0)],1,8.0); access.role="regional".into();
+        layout.streets = vec![access];
+        let height=vec![10.0;N*N];
+        let water:Vec<_> = river(1100.0,1180.0).into_iter().map(|w|if w>0 {3} else {0}).collect();
+        settle(&mut layout,surface(&height,&water));
+        let e=&layout.enclosures[0];
+        assert!(!e.style.is_empty() && !e.reserve.is_empty());
+        assert!(e.gates.iter().any(|&p|dist(p,pt(600.0,1000.0))<1.0));
+        assert_eq!(e.gatehouses.iter().filter(|g|g.kind=="water").count(),2);
+    }
+
+    /// Review 03/11 (medina village): a curtain that turns at its last corner
+    /// and runs on along the shore for a few metres before the water ends at
+    /// that corner; the shore passage starts there.
+    #[test]
+    fn review11_curtain_ends_at_its_corner_without_a_shore_jog() {
+        let height = vec![10.0f32; N * N];
+        let cell = W / N as f64;
+        let water: Vec<u8> = (0..N * N).map(|i| if (i / N) as f64 * cell >= 1000.0 { 1 } else { 0 }).collect();
+        let surface = surface(&height, &water);
+        let corner = pt(1300.0, 996.0);
+        let path = vec![pt(600.0, 600.0), pt(1300.0, 600.0), corner, pt(1330.0, 1004.0), pt(600.0, 1010.0), pt(600.0, 600.0)];
+        let banks = composition::water_gates(&path, surface);
+        assert_eq!(banks.len(), 2);
+        let mut e = Enclosure { gates: banks.iter().map(|b| b.0).collect(), path, kind: "wall".into(), ..Default::default() };
+        let mut style = styled("curtain", "medina", 500);
+        style.options(&LayoutConfig::default());
+        build(&mut e, 0, &banks, &[], surface, &style, 500, &predicted(), &Rng::new("review11-jog"));
+        let shore: Vec<_> = e.gatehouses.iter().filter(|g| g.kind == "shore").collect();
+        assert_eq!(shore.len(), 1);
+        assert!(shore[0].passage.iter().any(|&p| dist(p, corner) < 3.0), "passage {:?} does not start at the corner", shore[0].passage);
+    }
+
+    /// Review 03/11 (european-organic river town): a moat the town has grown
+    /// round on its outer side holds no water; one facing open land keeps it.
+    #[test]
+    fn review11_moat_inside_the_built_town_is_dry() {
+        let path = closed(&g::rectangle(600.0, 600.0, 1400.0, 1400.0).outer);
+        let piece = g::rectangle(800.0, 584.0, 1200.0, 596.0);
+        let faubourg = g::rectangle(700.0, 380.0, 1300.0, 582.0);
+        assert!(embedded(&piece, &path, &[(g::bbox(&faubourg), &faubourg)]));
+        assert!(!embedded(&piece, &path, &[]));
+        // A single row of houses along the moat is a faubourg street, not the town.
+        let row = g::rectangle(700.0, 555.0, 1300.0, 582.0);
+        assert!(!embedded(&piece, &path, &[(g::bbox(&row), &row)]));
+    }
+
+    #[test]
+    fn review_water_edges_and_timber_are_standard() {
+        let mut old = styled("curtain", "celtic-oppidum", 500);
+        old.options(&LayoutConfig::default());
+        let mut timber = old.clone();
+        timber.options(&LayoutConfig::default());
+        assert_eq!(timber.kind, "palisade");
+        assert_eq!(timber.material, "timber-earth");
+        assert!(timber.curtain_width <= 3.0 && timber.height <= 3.5);
+        for (code, expected) in [(1, "shore"), (3, "water")] {
+            let height = vec![10.0f32; N*N];
+            let water: Vec<_> = river(1180.0,1260.0).into_iter().map(|w| if w != 0 { code } else { 0 }).collect();
+            let surface = surface(&height,&water);
+            let path = octagon();
+            let banks = composition::water_gates(&path,surface);
+            let gates = banks.iter().map(|b| b.0).collect();
+            let mut e = Enclosure { path, gates, kind: "wall".into(), ..Default::default() };
+            let mut style = styled("curtain","european-organic",500);
+            style.options(&LayoutConfig::default());
+            build(&mut e,0,&banks,&[],surface,&style,500,&predicted(),&Rng::new("review-water"));
+            assert!(!e.gatehouses.is_empty());
+            assert!(e.gatehouses.iter().all(|g| g.kind == expected));
+        }
+    }
 
     fn surface<'a>(height: &'a [f32], water: &'a [u8]) -> Surface<'a> {
         Surface {
@@ -3863,7 +4248,8 @@ mod tests {
     /// centre; the curtain opens on paired water gates.
     #[test]
     fn nothing_stands_in_the_water_and_water_gates_pair_banks() {
-        let water = river(1180.0, 1260.0);
+        // River code 3: a sea or lake strip opens as shore ends, not water gates.
+        let water: Vec<u8> = river(1180.0, 1260.0).into_iter().map(|w| w * 3).collect();
         let height = vec![10.0f32; N * N];
         let s = surface(&height, &water);
         for style in ["flanked", "bastioned"] {
@@ -3996,7 +4382,7 @@ mod tests {
             for layout in town_on(style, water.clone()) {
                 for e in layout.enclosures.iter().filter(|e| !e.style.is_empty() && e.path.len() >= 4) {
                     for st in layout.streets.iter().filter(|st| {
-                        !matches!(st.role.as_str(), "wall-lane" | "bridge" | "ford" | "causeway" | "quay" | "pier" | "landing" | "mole")
+                        !matches!(st.role.as_str(), "wall-lane" | "bridge" | "ford" | "causeway" | "quay" | "pier" | "boardwalk" | "landing" | "mole")
                     }) {
                         for w in st.path.windows(2) {
                             for c in e.path.windows(2) {
@@ -4017,7 +4403,7 @@ mod tests {
                         for j in 0..k {
                             let t = (j as f64 + 0.5) / k as f64;
                             let p = pt(c[0].x + t * (c[1].x - c[0].x), c[0].y + t * (c[1].y - c[0].y));
-                            let passage = e.gatehouses.iter().filter(|gh| gh.kind == "water").any(|gh| {
+                            let passage = e.gatehouses.iter().filter(|gh| matches!(gh.kind.as_str(), "water" | "shore")).any(|gh| {
                                 g::distance(p, gh.passage[0], gh.passage[1]).0 <= 25.0
                             });
                             // Water a full raster cell deep: the curtain hugs a bank within one cell.

@@ -15,7 +15,7 @@ import { urbanLandscapeGround, landscapeCoverGround } from './landscapeGround';
 import { partitionRegion, pruneWays, FieldCtx, FieldNet } from './fields';
 import { connectFieldWays } from './fieldAccess';
 import type { World, LandArea, LandKind, Farmstead, LandUseLayer, PolyH } from '../types';
-import { FARM_SIZES, farmSize, farmType, layoutFarm, placeFarm, frameOf, segRectDist, type FarmContext, type LocalFarm } from './farms';
+import { FARM_SIZES, farmCulture, farmSize, farmType, layoutFarm, placeFarm, frameOf, segRectDist, type FarmContext, type LocalFarm } from './farms';
 import { biomeName, biomeLandKind } from '../biomes';
 
 type Ring = [number, number][];
@@ -43,6 +43,41 @@ const C = { NONE: 0, FIELD: 1, MEADOW: 2, PASTURE: 3, FOREST: 4, ORCHARD: 5, GAR
 const NATURAL_CLASSES: readonly number[] = [C.FOREST, C.MEADOW, C.PASTURE, C.COMMONS, C.MARSH];
 
 /** Rectangle polygon centered at (cx, cy) with long axis at `ang`. */
+/** The cuts that can change `rg`. A cut whose box meets the region's box may still lie wholly in one of its holes or
+ * outside its outer ring: every urban street segment of a town sits in the clearing of the woods around it, and a
+ * difference against those thousands of overlapping rectangles ran for minutes (10k norse-ringfort). A cut matters
+ * when a region edge meets it, or when it lies inside the region; edges are bucketed on a 32 m grid (linear). */
+function cutsTouching(rg: Region, cuts: readonly { poly: PolyH; box: { minX: number; minY: number; maxX: number; maxY: number } }[]): PolyH[] {
+  const box = bbox(rg.outer);
+  const near = cuts.filter(({ box: b }) => b.minX <= box.maxX && b.maxX >= box.minX && b.minY <= box.maxY && b.maxY >= box.minY);
+  if (near.length <= 16) return near.map(({ poly }) => poly);
+  const G = 32, grid = new Map<number, [Vec2, Vec2][]>(), cellKey = (x: number, y: number): number => (x + 4096) * 16384 + (y + 4096);
+  for (const ring of [rg.outer, ...rg.holes]) for (let i = 0; i < ring.length; i++) {
+    const a = ring[i], b = ring[(i + 1) % ring.length], edge: [Vec2, Vec2] = [a, b];
+    for (let gy = Math.floor(Math.min(a.y, b.y) / G); gy <= Math.floor(Math.max(a.y, b.y) / G); gy++)
+      for (let gx = Math.floor(Math.min(a.x, b.x) / G); gx <= Math.floor(Math.max(a.x, b.x) / G); gx++) {
+        const k = cellKey(gx, gy), list = grid.get(k); if (list) list.push(edge); else grid.set(k, [edge]);
+      }
+  }
+  const orient = (p: Vec2, q: Vec2, r: Vec2): number => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+  const crosses = (p1: Vec2, p2: Vec2, p3: Vec2, p4: Vec2): boolean => {
+    const d1 = orient(p3, p4, p1), d2 = orient(p3, p4, p2), d3 = orient(p1, p2, p3), d4 = orient(p1, p2, p4);
+    return (d1 > 0) !== (d2 > 0) && (d3 > 0) !== (d4 > 0) || d1 === 0 || d2 === 0 || d3 === 0 || d4 === 0;
+  };
+  const meets = (cut: Polygon, b: { minX: number; minY: number; maxX: number; maxY: number }): boolean => {
+    for (let gy = Math.floor(b.minY / G); gy <= Math.floor(b.maxY / G); gy++) for (let gx = Math.floor(b.minX / G); gx <= Math.floor(b.maxX / G); gx++) {
+      for (const [a, c] of grid.get(cellKey(gx, gy)) ?? []) {
+        if (Math.max(a.x, c.x) < b.minX || Math.min(a.x, c.x) > b.maxX || Math.max(a.y, c.y) < b.minY || Math.min(a.y, c.y) > b.maxY) continue;
+        if (polygonContains(cut, a) || polygonContains(cut, c)) return true;
+        for (let i = 0; i < cut.length; i++) if (crosses(a, c, cut[i], cut[(i + 1) % cut.length])) return true;
+      }
+    }
+    return false;
+  };
+  const inside = (p: Vec2): boolean => polygonContains(rg.outer, p) && !rg.holes.some((h) => polygonContains(h, p));
+  return near.filter(({ poly, box: b }) => meets(poly.outer, b) || inside(poly.outer[0])).map(({ poly }) => poly);
+}
+
 function rect(cx: number, cy: number, len: number, wid: number, ang: number): Polygon {
   const c = Math.cos(ang), s = Math.sin(ang);
   const pts: [number, number][] = [[-len / 2, -wid / 2], [len / 2, -wid / 2], [len / 2, wid / 2], [-len / 2, wid / 2]];
@@ -138,7 +173,9 @@ export function cultivationScale(population: number): number {
  * and hamlet's own fields, commons and woods, and the planner's farmsteads sitting in their fields.
  * `mainRoads`: number of leading roads that belong to the main town (the legacy roadside farmsteads use only those).
  */
-export function generateRural(world: World, root: Rng, mainRoads?: number, stripLod?: { center: Vec2; radius: number }, plan?: RuralPlan): { layer: LandUseLayer; stats: Record<string, number> } {
+/** Soil fertility -1..1 at a map-frame point (Rust resource model); absent: the field is low-frequency noise. */
+export type RuralSoil = (x: number, y: number) => number;
+export function generateRural(world: World, root: Rng, mainRoads?: number, stripLod?: { center: Vec2; radius: number }, plan?: RuralPlan, soilField?: RuralSoil): { layer: LandUseLayer; stats: Record<string, number> } {
   const terrain = world.terrain, site = world.site!;
   const roads = world.roads ?? [];
   const S = world.mapSize;
@@ -298,7 +335,7 @@ export function generateRural(world: World, root: Rng, mainRoads?: number, strip
     return {
       culture, pop,
       ...(biome === 'underdark' ? { biome } : {}),
-      soil: noise.fbm(p.x / 380, p.y / 380, 3),
+      soil: soilField ? soilField(p.x, p.y) : noise.fbm(p.x / 380, p.y / 380, 3),
       slope: slopeL[i],
       downhill: gl / (2 * g) > 0.012 ? { x: -hx / gl, y: -hy / gl } : null,
       wet: cl((5 - f.hab[i]) / 3.5) * cl((450 - f.dWater[i]) / 300),
@@ -320,13 +357,13 @@ export function generateRural(world: World, root: Rng, mainRoads?: number, strip
   for (const rd of roads) for (let i = 1; i < rd.path.length; i++) addSeg(rd.path[i - 1], rd.path[i], rd.width / 2 + 1.5);
   for (const rv of terrain.rivers) for (let i = 1; i < rv.path.length; i++) addSeg(rv.path[i - 1], rv.path[i], Math.max(rv.width[i - 1] ?? 2, rv.width[i] ?? 2) / 2 + 3);
   /** The lot (front middle o, inward V, W × D) is on dry free land, clear of roads, rivers, settlements and other lots. */
-  const lotOk = (o: Vec2, V: Vec2, W: number, D: number): boolean => {
+  const lotOk = (o: Vec2, V: Vec2, W: number, D: number, gap = 12): boolean => {
     const U = { x: V.y, y: -V.x };
     const P = (u: number, v: number): Vec2 => ({ x: o.x + u * U.x + v * V.x, y: o.y + u * U.y + v * V.y });
     const c = P(0, D / 2), rad = 0.5 * Math.hypot(W, D);
     if (biome === 'desert' && f.dWater[cellAt(c)] > 350) return false;
     if (c.x - rad < 0.01 * S || c.y - rad < 0.01 * S || c.x + rad > 0.99 * S || c.y + rad > 0.99 * S) return false;
-    for (const l of lotsC) if (dist(l.c, c) < l.r + rad + 12) return false;
+    for (const l of lotsC) if (dist(l.c, c) < l.r + rad + gap) return false;
     const st = Math.min(4, 0.45 * cell);
     for (let v = 0.5; v <= D; v += st) for (let u = -W / 2 + 0.5; u <= W / 2; u += st) {
       const i = cellAt(P(u, v));
@@ -346,7 +383,7 @@ export function generateRural(world: World, root: Rng, mainRoads?: number, strip
   };
   type Place = { o: Vec2; V: Vec2 };
   /** Plan the farm (type from the culture and the site, size from its wealth), shrinking it until its lot fits one of the placements. */
-  const planOn = (ctx: FarmContext, fr: Rng, places: (D: number) => Place[]): { lf: LocalFarm; o: Vec2; V: Vec2 } | null => {
+  const planOn = (ctx: FarmContext, fr: Rng, places: (D: number) => Place[], gap = 12): { lf: LocalFarm; o: Vec2; V: Vec2 } | null => {
     const size0 = plan?.denserSmallholdings && ctx.market < .45 ? 'cottage' : farmSize(ctx, fr);
     if (plan?.streetAlignedHomes && nearestRoad(places(0)[0].o).d < 100) ctx = { ...ctx, streetAlignedHomes: true };
     const type = farmType(ctx, size0, fr);
@@ -356,7 +393,7 @@ export function generateRural(world: World, root: Rng, mainRoads?: number, strip
       for (let k = 0; k < dirs.length; k++) {
         const lf = layoutFarm(type, FARM_SIZES[s], ctx, frameOf(dirs[k], ctx.downhill), lr.fork('l' + k));
         const q = places(lf.D)[k];
-        if (lotOk(q.o, q.V, lf.W, lf.D)) return { lf, o: q.o, V: q.V };
+        if (lotOk(q.o, q.V, lf.W, lf.D, gap)) return { lf, o: q.o, V: q.V };
       }
     }
     return null;
@@ -419,7 +456,8 @@ export function generateRural(world: World, root: Rng, mainRoads?: number, strip
   // farmsteads along the roads: dispersed farms of the main town's farmland (and, on custom maps, of the whole country)
   if (plan?.farmsteads !== false) {
     const custom = world.options.mapSize !== undefined;
-    const farmCount = (({ hamlet: 0, village: 2, town: 4, city: 7, metropolis: 10 } as const)[world.options.size] + (custom ? Math.min(90, Math.round(0.2 * (S / 1000) ** 2)) : 0)) * (plan?.denserSmallholdings ? 3 : 1);
+    // dispersed farms per culture (`farmstead.cultures[c].density`: elves and dwarves farm less open land)
+    const farmCount = Math.round((({ hamlet: 0, village: 2, town: 4, city: 7, metropolis: 10 } as const)[world.options.size] + (custom ? Math.min(90, Math.round(0.2 * (S / 1000) ** 2)) : 0)) * (plan?.denserSmallholdings ? 3 : 1) * farmCulture(world.options.culture).density);
     const fr = rr.fork('farm');
     const cand: { o: Vec2; V: Vec2; score: number }[] = [];
     const rds = custom ? roads : mainRoads === undefined ? roads : roads.slice(0, mainRoads);
@@ -464,6 +502,51 @@ export function generateRural(world: World, root: Rng, mainRoads?: number, strip
       made++;
     }
   }
+  // hamlets: a few farmsteads (culture `farmstead.hamlet`, 3–8) on both sides of a short lane off a road, far out
+  // in the farmland; the lane is the first farm's drive (a farm track, not the street network)
+  if (plan?.farmsteads !== false) {
+    const custom = world.options.mapSize !== undefined;
+    const want = Math.round(((({ hamlet: 0, village: 1, town: 1, city: 2, metropolis: 3 } as const)[world.options.size] ?? 1) + (custom ? Math.min(30, Math.round(0.05 * (S / 1000) ** 2)) : 0)) * farmCulture(world.options.culture).density);
+    const hr = rr.fork('hamlet');
+    const sites: { o: Vec2; n: Vec2; w: number; score: number }[] = [];
+    for (const rd of custom ? roads : mainRoads === undefined ? roads : roads.slice(0, mainRoads)) {
+      if (rd.kind === 'track' && !custom) continue;
+      for (let i = 1; i < rd.path.length; i += 2) {
+        const a = rd.path[i - 1], b = rd.path[i], L = dist(a, b);
+        if (L < 1) continue;
+        const side = hr.chance(0.5) ? 1 : -1, n = { x: (-(b.y - a.y) / L) * side, y: ((b.x - a.x) / L) * side };
+        const p = { x: b.x + n.x * 80, y: b.y + n.y * 80 };
+        if (p.x < 0.08 * S || p.y < 0.08 * S || p.x > 0.92 * S || p.y > 0.92 * S) continue;
+        const idx = cellAt(p);
+        if (terrain.water[idx] || f.dWater[idx] < 40 || f.hab[idx] < 0.8 || slopeL[idx] > pastureMax || farmReserve[idx] || uDist[idx] < 0.18 * Lm || uDist[idx] > 0.45 * Lm) continue;
+        sites.push({ o: b, n, w: rd.width, score: hr.float() });
+      }
+    }
+    sites.sort((x, y) => y.score - x.score);
+    let made = 0;
+    for (const s of sites) {
+      if (made >= want) break;
+      if (lotsC.some((l) => dist(l.c, s.o) < Math.max(160, 0.1 * Lm))) continue;
+      const culture = cultureAt({ x: s.o.x + s.n.x * 80, y: s.o.y + s.n.y * 80 });
+      const [lo, hi] = farmCulture(culture).hamlet;
+      const count = hr.int(lo, hi), before = farmsteads.length, lotsBefore = lotsC.length;
+      let last = -1, lastQ = s.o;
+      for (let along = s.w / 2 + 14; farmsteads.length - before < count && along < 320; along += 9) for (const sd of [1, -1]) {
+        if (farmsteads.length - before >= count) break;
+        const q = { x: s.o.x + s.n.x * along, y: s.o.y + s.n.y * along };
+        const V = { x: s.n.y * sd, y: -s.n.x * sd }, o = { x: q.x + V.x * 3.5, y: q.y + V.y * 3.5 };
+        const pl = planOn({ ...ctxAt(o, culture), pop: 6 }, hr.fork(`h${made}:${along}:${sd}`), () => [{ o, V }], 2);
+        if (!pl) continue;
+        accept(pl, culture, q);
+        last = farmsteads.length - 1; lastQ = q;
+      }
+      if (farmsteads.length - before < Math.min(3, count)) { farmsteads.length = before; lotsC.length = lotsBefore; continue; }
+      farmsteads[last].drive = [s.o, lastQ, ...farmsteads[last].drive.slice(1)];
+      for (let k = before; k < farmsteads.length; k++) farmsteads[k].tags = [...(farmsteads[k].tags ?? []), 'hamlet'];
+      made++;
+    }
+    stats['farm.hamlets'] = made;
+  }
   for (const fm of farmsteads) stats['farm.' + fm.type] = (stats['farm.' + fm.type] ?? 0) + 1;
   // exclusion masks: the lots (and their drives); the halo round them is gardens and orchards
   if (farmsteads.length) {
@@ -506,7 +589,7 @@ export function generateRural(world: World, root: Rng, mainRoads?: number, strip
   const sStride = Math.max(1, Math.min(8, Math.floor(380 / (4 * cell))));
   const sgw = Math.ceil((n - 1) / sStride) + 2;
   const soilG = new Float32Array(sgw * sgw);
-  for (let gy = 0; gy < sgw; gy++) for (let gx = 0; gx < sgw; gx++) soilG[gy * sgw + gx] = noise.fbm(((gx * sStride + 0.5) * cell) / 380, ((gy * sStride + 0.5) * cell) / 380, 3);
+  for (let gy = 0; gy < sgw; gy++) for (let gx = 0; gx < sgw; gx++) soilG[gy * sgw + gx] = soilField ? soilField((gx * sStride + 0.5) * cell, (gy * sStride + 0.5) * cell) : noise.fbm(((gx * sStride + 0.5) * cell) / 380, ((gy * sStride + 0.5) * cell) / 380, 3);
   const soilAt = (x: number, y: number): number => {
     const fx = x / sStride, fy = y / sStride, x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
     const o = y0 * sgw + x0;
@@ -725,11 +808,15 @@ export function generateRural(world: World, root: Rng, mainRoads?: number, strip
   // vectorisation: a cell-centre mask cannot guarantee tree clearance on a 52 m grid.
   // Six metres cover the largest Canvas crown/trunk and the physical road casing.
   const naturalRoadCuts: { poly: PolyH; box: ReturnType<typeof bbox> }[] = [];
-  for (const rd of roads) for (let i = 1; i < rd.path.length; i++) {
-    const a = rd.path[i - 1], b = rd.path[i];
+  // Each road is simplified first (deviation <= ROAD_CUT_TOL, added to the radius so the clearance still holds): rectangles
+  // over dense road vertices stacked several deep with nearly collinear edges, and one forest difference ran for minutes
+  // (10k norse-ringfort: 796 cuts, stuck; simplified: 257 cuts, 83 ms).
+  const ROAD_CUT_TOL = 0.75;
+  for (const rd of roads) for (let i = 1, path = simplify(rd.path, ROAD_CUT_TOL); i < path.length; i++) {
+    const a = path[i - 1], b = path[i];
     const len = dist(a, b);
     if (len < 0.001) continue;
-    const radius = rd.width / 2 + 6;
+    const radius = rd.width / 2 + 6 + ROAD_CUT_TOL;
     const outer = rect((a.x + b.x) / 2, (a.y + b.y) / 2, len + 2 * radius, 2 * radius, Math.atan2(b.y - a.y, b.x - a.x));
     naturalRoadCuts.push({ poly: { outer, holes: [] }, box: bbox(outer) });
   }
@@ -743,8 +830,7 @@ export function generateRural(world: World, root: Rng, mainRoads?: number, strip
     return retainOnCutFailure(retainOnCutFailure(regions, cuts.slice(0, middle)), cuts.slice(middle));
   };
   const clearNaturalRoads = (regions: Region[], cuts = naturalRoadCuts): Region[] => regions.flatMap((rg) => {
-    const box = bbox(rg.outer);
-    const near = cuts.filter(({ box: b }) => b.minX <= box.maxX && b.maxX >= box.minX && b.minY <= box.maxY && b.maxY >= box.minY).map(({ poly }) => poly);
+    const near = cutsTouching(rg, cuts);
     return near.length ? retainOnCutFailure([rg], near).filter((piece) => mpArea([piece]) > 0.01) : [rg];
   });
   const warpRegion = (rg: Region, kind: number): Region[] => {

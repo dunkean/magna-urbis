@@ -526,6 +526,10 @@ fn camp_entrance(
 fn camp_approaches(streets: &mut Vec<Street>, envelope: &Shape, width: f64, kerb: bool) {
     // Retain a usable kerb beside the road's half-width, not just its end cap.
     let width=width+if kerb {0.5*streets.iter().flat_map(|s|&s.widths).copied().fold(0_f64,f64::max)}else{0.0};
+    // The belt must be deeper than the reserve between the envelope and the built
+    // blocks (hedge, palisade ring): a thinner stub ends outside every block, the
+    // camp then has no street front and builds one house (round 13, iroquoian).
+    let width = width.max(24.0);
     let mut ring = envelope.outer.clone();
     if let Some(&p) = ring.first() { ring.push(p); }
     let belt: Vec<_> = g::ribbon(&ring, &[2.0 * width]).iter()
@@ -550,7 +554,8 @@ mod camp_approach_tests {
         assert_eq!(streets.len(),2);
         assert_eq!(streets[0].path[0], road.path[0]);
         assert_eq!(streets[1].path.last(), road.path.last());
-        assert!(streets.iter().all(|s|s.path.windows(2).all(|w|g::distance(Point{x:100.,y:100.},w[0],w[1]).0>90.)));
+        // The stubs stop at the belt (at least 24 m deep): the road never crosses the camp.
+        assert!(streets.iter().all(|s|s.path.windows(2).all(|w|g::distance(Point{x:100.,y:100.},w[0],w[1]).0>70.)));
         assert_eq!(streets[0].widths[0],6.);
         assert_eq!(*streets[1].widths.last().unwrap(),8.);
     }
@@ -1180,6 +1185,11 @@ pub(super) fn generate_oriented_domain(
         angle = regional + cfg.footprint.orientation.to_radians();
     }
     if pattern == "grid" && let Some(a) = grid_angle { angle = a; }
+    if cfg.align_enclosed_grid && pattern == "grid"
+        && matches!(profiles::fortification(profile, &cfg.fortification, site.population), "wall" | "palisade")
+        && let Some(domain) = domain {
+        angle = super::quarters::outline_frame(domain);
+    }
     let fortified = profiles::fortification(profile, &cfg.fortification, site.population);
     let closed = matches!(fortified, "wall" | "palisade" | "hedge");
     let rect = (!pattern_override
@@ -1248,7 +1258,7 @@ pub(super) fn generate_oriented_domain(
     let mut camp_guide = false;
     if camp {
         camp_guide = camp_entrance(&mut streets, &envelope, c, radius, roads);
-        if !camp_guide && m.text("campLayout") != "rows" {
+        if !camp_guide && (m.text("campLayout") != "rows" || cfg.natural_camp_approaches && m.flag("villagePaths")) {
             // Validate the entrance that will remain, not a discarded drive
             // through a steep centre that the footpaths need not cross.
             camp_approaches(&mut streets, &envelope, m.number_or("campPath", m.number_or("footpathWidth", 3.0)).max(2.0), true);
@@ -1302,7 +1312,7 @@ pub(super) fn generate_oriented_domain(
     // The generated entrance already stops at the heart's edge. Clipping it
     // to the outer belt loses the handover to camp paths and can leave it
     // entirely outside the final hedge; keep its full, validated approach.
-    if camp && !camp_guide && m.text("campLayout") != "rows" {
+    if camp && !camp_guide && (m.text("campLayout") != "rows" || cfg.natural_camp_approaches && m.flag("villagePaths")) {
         camp_approaches(&mut streets, &envelope, m.number_or("campPath", m.number_or("footpathWidth", 3.0)).max(2.0), true);
     }
     if !camp {
@@ -1922,7 +1932,10 @@ mod tests {
         );
         let quays: Vec<_> = streets.iter().filter(|s| s.role == "quay").collect();
         assert_eq!(quays.len(), 1);
-        assert!(dist(quays[0].path[0], *quays[0].path.last().unwrap()) > 170.);
+        // One straight quay despite the 2 m contour edges; its length is the
+        // population budget (0.035 m per inhabitant), not the whole shore.
+        let l: f64 = quays[0].path.windows(2).map(|w| dist(w[0], w[1])).sum();
+        assert!(l >= 60. && dist(quays[0].path[0], *quays[0].path.last().unwrap()) > 0.95 * l, "quay {l} m");
         assert!(routing::path_clear(surface, &quays[0].path, 0.04));
         for ribbon in g::ribbon(&quays[0].path, &quays[0].widths) {
             assert!(
@@ -1998,14 +2011,10 @@ mod tests {
         assert_eq!(quays.len(), 1);
         assert!(quays[0].path.len() >= 3);
         assert!(routing::path_clear(surface, &quays[0].path, 0.04));
-        assert!(
-            quays[0]
-                .path
-                .windows(2)
-                .map(|w| dist(w[0], w[1]))
-                .sum::<f64>()
-                > 180.
-        );
+        // One quay across the bend; its length is the population budget
+        // (0.035 m per inhabitant), not the whole shore.
+        let l: f64 = quays[0].path.windows(2).map(|w| dist(w[0], w[1])).sum();
+        assert!(l >= 60., "quay {l} m");
     }
     fn port_site() -> Site {
         Site {
@@ -2275,5 +2284,29 @@ mod tests {
             (dist(*path.last().unwrap(), c) - 50.0).abs() < 0.01,
             "{path:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod v7_grid_tests {
+    use super::*;
+    #[test]
+    fn v7_grid_armature_follows_rotated_component() {
+        let a = 0.37f64;
+        let domain = Shape {outer:[(-180.,-110.),(180.,-110.),(180.,110.),(-180.,110.)].into_iter()
+            .map(|(x,y)|Point{x:500.+x*a.cos()-y*a.sin(),y:500.+x*a.sin()+y*a.cos()}).collect(),holes:vec![]};
+        let site = Site {key:"grid".into(),name:"Grid".into(),population:500,culture:"indus-planned".into(),center:Point{x:500.,y:500.},radius:200.};
+        let cfg = LayoutConfig {align_enclosed_grid:true,fortification:"wall".into(),tissue:"grid".into(),count:4,..Default::default()};
+        let m = super::super::resolve("indus-planned","culture","core","core",1.,&serde_json::json!({"minWidth":10,"gridSpacing":[80,80]}),"quarters").unwrap();
+        let height=vec![10.;32*32];let water=vec![0;32*32];
+        let surface=Surface {geometry:None,width:1000.,n:32,height:&height,water:&water};
+        let p=generate_oriented_domain("v7-grid",&site,&cfg,&m,surface,&[],200.,Some(&domain),None);
+        let lines:Vec<_>=p.streets.iter().filter(|s|s.role=="street" && s.path.len()>=2 && dist(s.path[0],*s.path.last().unwrap())>20.).collect();
+        assert!(!lines.is_empty(),"{} quarters, {:?}",p.quarters.len(),p.warnings);
+        for s in lines {
+            let end=s.path.last().unwrap();
+            let angle=(end.y-s.path[0].y).atan2(end.x-s.path[0].x);
+            assert!((2.*(angle-a)).sin().abs()<1e-5,"{angle} vs {a}");
+        }
     }
 }

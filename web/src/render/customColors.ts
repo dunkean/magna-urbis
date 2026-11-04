@@ -1,5 +1,6 @@
 import type { Palette } from './styles';
 import { waterRamp } from './waterStyle';
+import { styleTraits } from './terrainStyle';
 
 /** Display tokens only. Never write these colours into generated geometry or materials. */
 export const COLOR_GROUPS = {
@@ -43,9 +44,9 @@ export function applyRenderColors(p: Palette, colors?: RenderColors): Palette {
 
 /** Physical satellite materials and diagnostic scales keep their own semantic colours. */
 export function supportsRenderColor(key: RenderColorKey, style: string): boolean {
-  if (['groundLow', 'groundHigh'].includes(key)) return !/^(render|fantasy|copernicus)/.test(style);
-  if (['forest', 'meadow'].includes(key)) return !/^(render|fantasy|copernicus)/.test(style);
-  if (['waterShore', 'waterDeep', 'river'].includes(key)) return !style.startsWith('render-v2');
-  if (key === 'contour') return !/^(fantasy|copernicus)/.test(style);
+  const traits = styleTraits(style);
+  if (key === 'groundLow' || key === 'groundHigh' || key === 'forest' || key === 'meadow') return traits.customGroundColors;
+  if (key === 'waterShore' || key === 'waterDeep' || key === 'river') return traits.customWaterColors;
+  if (key === 'contour') return traits.contours;
   return true;
 }

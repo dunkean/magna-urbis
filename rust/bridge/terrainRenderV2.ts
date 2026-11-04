@@ -196,7 +196,6 @@ vec3 v2DiagnosticEnv(V2Env local,float fp){return v2Color(v2Appearance(local,fp)
 vec3 v2Diagnostic(vec3 s,vec2 world,float tpi,float fp){return v2DiagnosticEnv(v2Local(s,world,tpi,fp),fp);}
 `;
 
-export const renderV2Number = (style: string): number => ({ 'render-v2': 1, 'render-v2-substrate': 2, 'render-v2-moisture': 3, 'render-v2-vegetation': 4, 'render-v2-snow': 5 }[style] ?? 0);
 
 interface V2SourceLayer { x:number; y:number; width:number; n:number; data:Float32Array }
 const glacierCache=new WeakMap<Float32Array,Map<string,Float32Array>>();

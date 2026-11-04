@@ -18,6 +18,7 @@ import { runtimeSummary } from './runtimeChoices';
 
 const copy = (en: string, fr: string): string => { registerMessages({ [en]: { en, fr } }); return en; };
 const T = {
+  variation: copy('New variation', 'Nouvelle variation'),
   run: copy('Show this stage’s output', 'Afficher la sortie de cette étape'), required: copy('Required stage', 'Étape obligatoire'),
   enable: copy('Enable or disable this stage', 'Activer ou désactiver cette étape'), help: copy('Method in the scientific atlas', 'Méthode dans l’atlas scientifique'),
   general: copy('General settings', 'Paramètres généraux'), method: copy('Method', 'Méthode'), size: copy('Size', 'Taille'), stale: copy('Settings changed since the last run', 'Réglages modifiés depuis la dernière exécution'),
@@ -64,6 +65,7 @@ export interface StageChainBindings {
   onCityScope(mode: 'all' | 'selection'): void;
   onChange(): void; onAppearance(): void; onRegionChange(): void;
   run(stage: StageDef): void; runFamily(family: StageFamily): void; openPlace(): void;
+  reroll?(stage: StageDef): void;
   /** Detected backends (Settings); unavailable choices are disabled with their reason. */
   /** Opens Settings on the Execution block. */
   openExecution(): void;
@@ -77,7 +79,7 @@ export interface StageChain {
   body(id: string): HTMLElement; sync(): void; family(): StageFamily; selectFamily(family: StageFamily): void;
   beginRun(stages: readonly string[]): void; progress(progress: V2Progress): void; endRun(ok: boolean): void; context(): StageContext;
 }
-interface Row { stage: StageDef; element: HTMLElement; node: HTMLButtonElement; time: HTMLOutputElement; run: HTMLButtonElement; body: HTMLElement; number: HTMLElement; note: HTMLElement; title: HTMLButtonElement }
+interface Row { stage: StageDef; element: HTMLElement; node: HTMLButtonElement; time: HTMLOutputElement; run: HTMLButtonElement; body: HTMLElement; number: HTMLElement; note: HTMLElement; title: HTMLButtonElement; draw?: HTMLButtonElement }
 
 export function mountStageChain(b: StageChainBindings): StageChain {
   const { root } = b, get = b.getSettings;
@@ -159,12 +161,19 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     run.innerHTML = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 1.8v8.4L10 6z" fill="currentColor"/></svg>'; run.onclick = () => b.run(stage);
     const help = document.createElement('a'); help.className = 'stage-help'; help.href = atlasUrl(`./scientific/index.html#${stageAnchor(stage.id)}`); help.target = '_blank'; help.rel = 'noopener';
     setText(help, T.help); help.title = translate(T.help); help.setAttribute('aria-label', `${translate(T.help)} · ${translate(text(stage.label))}`); help.dataset.l10nKeep = '';
-    head.append(number, title, node, run, time);
+    const actions = document.createElement('div'); actions.className = 'stage-actions'; actions.append(run);
+    let draw: HTMLButtonElement | undefined;
+    if (stage.variation && b.reroll) {
+      draw = document.createElement('button'); draw.type = 'button'; draw.className = 'stage-reroll'; draw.dataset.stageVariation = stage.id;
+      draw.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.3"/><g fill="currentColor"><circle cx="5" cy="5" r="1"/><circle cx="11" cy="5" r="1"/><circle cx="8" cy="8" r="1"/><circle cx="5" cy="11" r="1"/><circle cx="11" cy="11" r="1"/></g></svg>'; draw.title = translate(T.variation); draw.setAttribute('aria-label', `${translate(T.variation)} · ${translate(text(stage.label))}`);
+      draw.onclick = () => b.reroll!(stage); actions.prepend(draw);
+    }
+    head.append(number, title, node, actions, time);
     const note = document.createElement('p'); note.className = 'stage-note'; note.hidden = true;
     const body = document.createElement('div'); body.className = 'stage-body'; body.id = `body-${stage.id}`; body.hidden = true;
     const summary = document.createElement('p'); summary.className = 'stage-summary hint'; setText(summary, text(stage.summary)); body.append(summary, help);
     element.append(head, note, body);
-    const row = { stage, element, node, time, run, body, number, note, title };
+    const row = { stage, element, node, time, run, body, number, note, title, draw };
     rows.set(stage.id, row); return row;
   }
   function expand(id: string, open: boolean): void {
@@ -523,6 +532,12 @@ export function mountStageChain(b: StageChainBindings): StageChain {
       if (stage.optional && stage.toggle && stage.toggle.kind !== 'unavailable') { row.node.setAttribute('aria-checked', String(on)); row.node.disabled = busy || !!reason; }
       const prerequisite = stage.run.action === 'town' ? !ctx.hasRegion ? T.needRegion : !b.cityScope().count && T.needPlace : stage.family !== 'region' && stage.id !== 'map-export' ? !ctx.hasTerrain && T.needTerrain : false;
       row.run.disabled = busy || !!reason || !!prerequisite || stage.optional && !on && stage.toggle?.kind !== 'unavailable';
+      if (row.draw) {
+        row.draw.hidden = !(typeof stage.variation === 'function' ? stage.variation(ctx) : stage.variation);
+        row.draw.disabled = row.run.disabled;
+        row.draw.title = translate(T.variation);
+        row.draw.setAttribute('aria-label', `${translate(T.variation)} · ${translate(text(stage.label))}`);
+      }
       row.run.title = translate(prerequisite || (reason ? text(reason) : T.run));
     }
     for (const f of FAMILIES) { const button = panels.get(f.id)!.querySelector<HTMLButtonElement>('.family-run')!; button.disabled = busy || (f.id !== 'region' && !ctx.hasTerrain) || (f.id === 'cities' && (!ctx.hasRegion || !b.cityScope().count)); }

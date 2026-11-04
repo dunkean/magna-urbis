@@ -198,6 +198,23 @@ impl SettlementTerrain {
             .map_err(|e| JsValue::from_str(&e))
     }
 
+    /// Seed, climate (°C, mm), biome and world position of the map for the resource model.
+    pub fn set_region(&mut self, seed: &str, temperature: f32, precipitation: f32, biome: &str, x: f64, y: f64) {
+        self.inner.set_region(magna_urbis_core::resources::RegionInput {
+            seed: seed.into(),
+            temperature,
+            precipitation,
+            biome: biome.into(),
+            x,
+            y,
+        });
+    }
+
+    /// Compact resource payload for the view layers (JSON, same shape as the native `resources` reply).
+    pub fn resources(&self) -> Result<String, JsValue> {
+        serde_json::to_string(&self.inner.resources().payload()).map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
     /// Settlement points from a placement configuration (JSON).
     pub fn place(&self, seed: &str, config: &str) -> Result<String, JsValue> {
         let cfg = serde_json::from_str(config).map_err(|e| JsValue::from_str(&e.to_string()))?;

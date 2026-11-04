@@ -1,7 +1,9 @@
 import { CityGround } from '../render/cityGround';
+import { updateYardEnclosures } from '../render/cityLotEnclosures';
+import { city3dLotEnclosures } from '../render/city3dMeshes';
 import { city3dBoardwalks } from '../render/city3dBoardwalks';
-import { city3dQuays } from '../render/city3dQuays';
-import { cityBridgeStreets } from '../render/cityBridges';
+import { city3dQuays, city3dWaterways } from '../render/city3dQuays';
+import { bridgeWaterHeight, cityBridgeStreets } from '../render/cityBridges';
 /** City Bench 3D view. Reuses the Terrain Bench engine (Terrain3d: quadtree
  * relief, tiled materials, orbit camera, native building pass with 256 m sectors,
  * overview LOD, bounded GPU cache and picking). This module only adapts the city
@@ -60,6 +62,7 @@ export interface City3dOptions {
   /** Regional roads crossing the map: their bridges are drawn too. */
   getRegionalStreets?(): readonly Street[] | undefined;
   getPartitions?(): readonly Partition[] | undefined;
+  getLotEnclosures?(): readonly import('../../../rust/bridge/urban').LotEnclosure[] | undefined;
   getSelected?(): string | undefined;
   /** Textured materials (PBR roofs, walls, streets, plazas): the 2D map's « Matières texturées » switch. */
   getTextured?(): boolean;
@@ -221,6 +224,7 @@ export function mountCity3d(options: City3dOptions): City3d {
   let quayCount = 0;
   let wallStats: City3dWallStats = { count: 0, pieces: 0, triangles: 0, ms: 0 };
   let structureInputs: unknown[] = [], structureBuildings: Building3dVisual[] = [];
+  let yardInputs: unknown[] = [];
   const realized = new WeakSet<Building3dVisual>();
   let displayIndex = new Map<string, number>(), indexOf: unknown;
   const pendingSwaps = new Map<string, Building3dVisual>();
@@ -304,6 +308,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     const t = terrain!, r = d.raster;
     surfaceDecor = d; heightAt = rasterHeight(r.height, r.n, r.width); bridgeWaterAt = r.waterLevel ? rasterHeight(r.waterLevel, r.n, r.width) : undefined; sceneOf = undefined; sourceEpoch++; details.clear(); detailBases.clear();
     const physical = new CityGround(r), levels = bridgeWaterAt;
+    bridgeWaterAt = r.waterLevel ? bridgeWaterHeight(r, (x, y) => physical.waterAt({ x, y })) : undefined;
     stiltWaterAt = levels ? (x, y) => physical.waterAt({ x, y }) ? levels(x, y) : NaN : undefined;
     waterMask = undefined; waterPaths = undefined; image = undefined; mapFallback = undefined; planOf = undefined;
     const surface = options.getSurface?.();
@@ -380,6 +385,8 @@ export function mountCity3d(options: City3dOptions): City3d {
   // ------------------------------------------------------------ buildings
   function syncBuildings(force = false): void {
     const t = terrain; if (!t) return;
+    const nextYards = [options.getLotEnclosures?.(), options.getPartitions?.()];
+    if (nextYards.some((input, i) => input !== yardInputs[i])) { yardInputs = nextYards; force = true; t.invalidateTiles(); }
     const scene = options.getProjection?.() ?? options.getScene(), layouts = options.getLayouts?.(), regional = options.getRegionalStreets?.();
     if (layouts !== bridgesOf[0] || regional !== bridgesOf[1]) { bridgesOf = [layouts, regional]; force = true; }
     if (scene !== sceneOf) {
@@ -407,10 +414,15 @@ export function mountCity3d(options: City3dOptions): City3d {
         wallStats = { count: enclosures.size, pieces: walls.length, ms: Math.round(performance.now() - wallStarted),
           triangles: walls.reduce((n, w) => n + w.volumes.reduce((m, v) => m + v.roof_mesh.faces.reduce((k, f) => k + f.vertices.length - 2, 0), 0), 0),
           first: walls[0] && center(walls[0]), gate: gate && center(gate) };
-        const quays = city3dQuays(layouts ?? []), boardwalks = city3dBoardwalks(bridgeStreets, heightAt, bridgeWaterAt); quayCount = quays.length + boardwalks.length;
+        const quays = [...city3dQuays(layouts ?? []), ...city3dWaterways(layouts ?? [])], boardwalks = city3dBoardwalks(bridgeStreets, heightAt, bridgeWaterAt); quayCount = quays.length + boardwalks.length;
         structureBuildings = [...bridges, ...walls, ...quays, ...boardwalks];
       }
-      const extra = structureBuildings;
+      const yardPlan = cityPlan();
+      const sharedYards = options.getLotEnclosures?.();
+      if (yardPlan && sharedYards) yardPlan.lotEnclosures = sharedYards as import('../../../rust/bridge/urban').LotEnclosure[];
+      else if (yardPlan && scene) updateYardEnclosures(yardPlan, scene.buildings, () => scene.buildings);
+      const yardMeshes = yardPlan ? city3dLotEnclosures(yardPlan.lotEnclosures ?? [], heightAt) : [];
+      const extra = [...structureBuildings, ...yardMeshes];
       if (extra.length) display = display ? { ...display, buildings: [...display.buildings, ...extra],
         ...(display.occupationBuildings ? { occupationBuildings: [...display.occupationBuildings, ...extra] } : {}) }
         : { materials: city3dScene({ schema_version: '1', generator_version: '', buildings: [], refusals: [], open_spaces: [] }).materials, buildings: extra, kinds: { silhouette: 0, compact: 0, detailed: 0 } };

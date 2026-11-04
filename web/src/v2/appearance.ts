@@ -2,6 +2,8 @@
 import { isMapStyle } from '../render/styles';
 import { isTerrainStyle } from '../render/terrainStyle';
 import { DIAGNOSTICS } from '../render/displayDiagnostics';
+import { POTENTIAL_IDS } from '../../../rust/bridge/resources';
+import { DEFAULT_LANDUSE_FOREST_TONE, setLanduseForestTone } from '../render/landuseForestTone';
 import { validateRenderColors } from '../render/customColors';
 import type { CityLayers } from '../render/cityCanvas';
 import type { DisplayOpts } from '../ui/protocol';
@@ -9,6 +11,9 @@ import type { VegetationStyle } from '../render/canopy';
 import type { RenderOptions } from '../render/svg';
 import type { BrushSources } from '../render/brushes';
 import type { V2Appearance, V2Settings } from './contracts';
+import type { World } from '../gen/types';
+import { resolveAppearance, type RenderTarget, type ResolveFlags, type ResolvedAppearance } from '../render/appearanceRecipe';
+import { worldCapabilities } from './nativeProducts';
 
 export const CITY_LAYER_NAMES = ['reserve', 'allocated', 'centers', 'domains', 'quarters', 'blocks', 'streets', 'enclosures', 'lotEnclosures', 'parcels', 'gardens', 'places', 'fronts', 'axes', 'access'] as const satisfies readonly (keyof CityLayers)[];
 export const CITY_GROUND_STYLES = ['map', 'render', 'render3d', 'render3d-brush', 'render-v2', 'render-v2-substrate', 'render-v2-moisture', 'render-v2-vegetation', 'render-v2-snow'] as const;
@@ -32,8 +37,10 @@ export function validateAppearance(value: unknown): asserts value is V2Appearanc
   if (value.terrainStyle !== undefined && (typeof value.terrainStyle !== 'string' || !isTerrainStyle(value.terrainStyle))) throw new Error('appearance.terrainStyle: unknown terrain style.');
   enumeration(value.renderer, ['classic', 'bench'], 'appearance.renderer');
   enumeration(value.vegetation, ['classic', 'canopy'], 'appearance.vegetation');
+  enumeration(value.landuseForestTone, ['ground', 'marked'], 'appearance.landuseForestTone');
   enumeration(value.diagnostic, DIAGNOSTICS.map(diagnostic => diagnostic.id), 'appearance.diagnostic');
-  for (const key of ['contours', 'landuse', 'labels', 'legend', 'cartouche', 'textured', 'painted', 'lakes', 'oxbows', 'roads', 'buildings']) boolean(value[key], `appearance.${key}`);
+  enumeration(value.resourcePotential, POTENTIAL_IDS, 'appearance.resourcePotential');
+  for (const key of ['contours', 'landuse', 'labels', 'legend', 'cartouche', 'textured', 'painted', 'lakes', 'oxbows', 'roads', 'buildings', 'unifiedDefaults']) boolean(value[key], `appearance.${key}`);
   if (value.colors !== undefined) validateRenderColors(value.colors);
   if (value.forest !== undefined) {
     object(value.forest, 'appearance.forest');
@@ -85,14 +92,23 @@ export function validateAppearance(value: unknown): asserts value is V2Appearanc
 }
 
 export interface V2ExportDisplay extends DisplayOpts { vegetation?: VegetationStyle }
+/** The one place that turns settings + retained products into a resolved appearance (call per change, never per frame). */
+export function resolveSettingsAppearance(settings: V2Settings, world: World | undefined, target: RenderTarget, flags?: ResolveFlags): ResolvedAppearance {
+  const o = settings.options;
+  // The land-use painters (2D canvas, SVG export, legend) read the shared setting; the V2 appearance is its source of truth.
+  setLanduseForestTone(settings.appearance?.landuseForestTone ?? DEFAULT_LANDUSE_FOREST_TONE);
+  return resolveAppearance(settings.appearance, { mapStyle: o.style, contours: o.contours, landuse: o.landuse, labels: o.labels, legend: o.legend, forest: settings.terrain?.forest },
+    worldCapabilities(world), target, flags);
+}
+/** Classic-renderer / export display options derived from the resolved cartography. */
+export function resolvedDisplayOptions(r: ResolvedAppearance): V2ExportDisplay {
+  const c = r.cartography;
+  return { ...(r.palette.colors ? { colors: r.palette.colors } : {}), buildings: r.city.visible, layers: { roads: c.roads }, style: r.palette.mapStyle, contours: r.ground.contours,
+    landuse: c.landuse, labels: c.labels, legend: c.legend, cartouche: c.cartouche, painted: c.painted, vegetation: r.vegetation.symbols };
+}
 /** Export starts from the same persisted preferences as the viewer, including explicit false values. */
-export function appearanceDisplayOptions(settings: V2Settings): V2ExportDisplay {
-  const a = settings.appearance, o = settings.options;
-  return { ...(a?.colors ? { colors: a.colors } : {}), ...(a?.buildings !== undefined ? { buildings: a.buildings } : {}),
-    ...(a?.roads !== undefined ? { layers: { roads: a.roads } } : {}), style: a?.style ?? o.style, contours: a?.contours ?? o.contours ?? true,
-    landuse: a?.landuse ?? o.landuse ?? true, labels: a?.labels ?? o.labels ?? true,
-    legend: a?.legend ?? o.legend ?? false, cartouche: a?.cartouche ?? false,
-    painted: a?.painted ?? false, vegetation: a?.vegetation ?? 'canopy' };
+export function appearanceDisplayOptions(settings: V2Settings, world?: World): V2ExportDisplay {
+  return resolvedDisplayOptions(resolveSettingsAppearance(settings, world, 'export'));
 }
 /** Keep the legacy RenderOptions request valid while accepting an explicit display snapshot. */
 export function svgOptionsForDisplay(options: RenderOptions, display?: Partial<V2ExportDisplay>, brushes?: BrushSources): RenderOptions {

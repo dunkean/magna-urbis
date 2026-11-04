@@ -1,0 +1,3 @@
+{
+  "bundle": { "targets": ["deb", "appimage"] }
+}

@@ -14,6 +14,7 @@ const labels: Record<string, Words> = {
   '[data-programme="resources"]':['Ressources connues','Known resources','已知资源','Recursos conocidos','Recursos conhecidos'],
   '[data-programme="lore"]':['Choix du lieu','Place choices','地点选择','Opciones del lugar','Escolhas do local'],
   '[data-programme-intent]':['Intention d’implantation','Settlement intent','聚落意图','Intención de asentamiento','Intenção de povoamento'],
+  '[data-programme-template]':['Site d’activité','Activity site','活动地点','Sitio de actividad','Local de atividade'],
   '[data-programme="mode"]':['Politique d’admission','Admission policy','接纳策略','Política de admisión','Política de admissão'],
   '[data-programme="period"]':['Filtre d’époque','Period filter','时期筛选','Filtro de época','Filtro de período'],
   '[data-condition-state]':['État demandé','Requested state','请求状态','Estado solicitado','Estado solicitado'],
@@ -42,6 +43,7 @@ const choices: Record<string, Record<string, Words>> = {
     'isolated-farm':['Ferme isolée','Isolated farm','孤立农场','Granja aislada','Fazenda isolada'], 'roadside-temple':['Temple de bord de route','Roadside temple','路边寺庙','Templo junto al camino','Templo à beira da estrada'],
     'isolated-shrine':['Sanctuaire isolé','Isolated shrine','孤立神龛','Santuario aislado','Santuário isolado'], 'isolated-mill':['Moulin isolé','Isolated mill','孤立磨坊','Molino aislado','Moinho isolado'],
     'isolated-inn':['Auberge isolée','Isolated inn','孤立客栈','Posada aislada','Estalagem isolada'], 'isolated-tower':['Tour isolée','Isolated tower','孤立塔楼','Torre aislada','Torre isolada'],
+    activity:['Site d’activité','Activity site','活动地点','Sitio de actividad','Local de atividade'],
   },
   '[data-programme="mode"]': {
     strict:['Strict · contrôles de sources et d’emprunts','Strict · source and borrowing checks','严格 · 来源与借用检查','Estricto · controles de fuentes y préstamos','Estrito · verificações de fontes e empréstimos'],

@@ -1,8 +1,9 @@
+import { styleTraits } from '../../web/src/render/terrainStyle';
 /** Shared display-only painter. Coordinates and pitch are world metres; no engine rules. */
 export type FantasyStyle = 'fantasy-ink' | 'fantasy-color';
 export interface FantasyOptions { density: number; size: number; spacing: number; followLanduse?: boolean }
 export const DEFAULT_FANTASY_OPTIONS: FantasyOptions = { density: 1, size: 1, spacing: 1 };
-export const isFantasyStyle = (style: string): style is FantasyStyle => style === 'fantasy-ink' || style === 'fantasy-color';
+export const isFantasyStyle = (style: string): style is FantasyStyle => styleTraits(style).fantasy !== undefined;
 export type PaintLanduse = 'forest' | 'orchard' | 'field' | 'garden' | 'marsh' | 'meadow' | 'pasture' | 'commons';
 export interface PaintSample { height: number; slope: number; temperature: number; rain: number; water?: boolean; occupied?: boolean; landuse?: PaintLanduse; /** Signed local prominence / sampling radius, as in Render. */ tpi?: number; relief?: number }
 export interface PaintOptions { seed: string; pitch: number; density?: number; size?: number; maxStamps?: number; followLanduse?: boolean; /** Size stays independent of spacing. */ brushPitch?: number }
@@ -25,7 +26,7 @@ export function createBrushLibrary(style: FantasyStyle, families: Record<BrushFa
     for (let v = 0; v < variants; v++) {
       // Five to eight tree silhouettes; never mix individual trees and giant clumps.
       const variant = v % (brush < 4 || brush >= 12 && brush <= 14 ? Math.min(6, count) : count);
-      const index = variant + (style === 'fantasy-color' ? count : 0), rect = atlasRect(atlas, index);
+      const index = variant + (styleTraits(style).fantasy === 'color' ? count : 0), rect = atlasRect(atlas, index);
       frames.push({ atlas, family, index, token: `${family}-${index}`, rect, aspect: rect[3] / rect[2] });
     }
   }
