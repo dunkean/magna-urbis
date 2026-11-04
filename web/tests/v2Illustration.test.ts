@@ -19,11 +19,14 @@ describe('V2 illustration capture', () => {
     let world: World | undefined;
     const element = { clientWidth: 800, clientHeight: 600 } as HTMLElement;
     const view = { cx: 200, cy: 100, scale: 2 };
-    mountV2Illustration({ host: {} as Element, getWorld: () => world, getSettings: defaultSettings, get3d: () => undefined, getViewport: () => ({ element, view }) });
+    const beforeCapture2d = vi.fn();
+    mountV2Illustration({ host: {} as Element, getWorld: () => world, getSettings: defaultSettings, get3d: () => undefined, getViewport: () => ({ element, view }), beforeCapture2d });
     await expect(mocked.capture!()).rejects.toThrow();
     world = { seed: 'world-seed', stats: {}, settlements: [] } as unknown as World;
     const result = await mocked.capture!();
     expect(mocked.viewport).toHaveBeenCalledWith(element);
+    expect(beforeCapture2d).toHaveBeenCalledOnce();
+    expect(beforeCapture2d.mock.invocationCallOrder[0]).toBeLessThan(mocked.viewport.mock.invocationCallOrder.at(-1)!);
     expect(result.image.size).toBe(2);
     expect(result.context.sourceId).toBe('world-seed');
     expect(result.context.projection).toBe('orthographic');

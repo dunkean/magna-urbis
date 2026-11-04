@@ -614,6 +614,14 @@ export class TerrainGpu implements TerrainRenderer {
     try { this.draw(); } finally { this.capturing = false; }
   }
 
+  /** Present in the caller's animation frame without entering the capture/readback path. */
+  redrawNow(view?: View, width?: number, height?: number): void {
+    if (this.frame) cancelAnimationFrame(this.frame);
+    this.frame = 0;
+    if (this.fallback) this.fallback.redrawNow(view, width, height);
+    else { if (view && width && height) this.view = { view, width, height }; this.draw(); }
+  }
+
   /** The capture canvas (its own WebGPU context), configured for opaque or premultiplied output. */
   private captureSurface(opaque: boolean): Surface {
     if (!this.capture) {

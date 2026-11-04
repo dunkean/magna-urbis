@@ -254,7 +254,7 @@ mountSettingsPanel($('#hardware-details'),backendBindings);
 const desktopModulesHost=document.createElement('div');$('#hardware-details').after(desktopModulesHost);
 mountDesktopModules(desktopModulesHost,()=>void inspectHardware());
 mountDesktopUpdates($('.header-tools'),desktopModulesHost);
-mountV2Illustration({host:$('.header-tools'),getWorld:()=>world,getSettings:()=>settings,get3d:()=>city3d,getViewport:()=>({element:$('#map'),view:client.viewer.getView()})});
+mountV2Illustration({host:$('.header-tools'),getWorld:()=>world,getSettings:()=>settings,get3d:()=>city3d,getViewport:()=>({element:$('#map'),view:client.viewer.getView()}),beforeCapture2d:()=>client.prepareViewportCapture()});
 let chainSyncFrame=0;
 function scheduleChainSync():void{if(chainSyncFrame)return;chainSyncFrame=requestAnimationFrame(()=>{chainSyncFrame=0;chain.sync();});}
 const familyActions:Record<StageFamily,[string,()=>void]>={

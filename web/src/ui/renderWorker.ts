@@ -134,6 +134,7 @@ function onQuarters(m: QuarterMsg): void {
 }
 
 function onAttach(m: RAttach): void {
+  if (m.display) display = m.display;
   port?.close();
   if (megaTimer) { clearTimeout(megaTimer); megaTimer = null; }
   gen = m.gen; port = m.port;
@@ -141,6 +142,15 @@ function onAttach(m: RAttach): void {
     try { if (e.data.type === 'settlement') onSettlement(e.data); else if (e.data.type === 'quarters') onQuarters(e.data); else onWorld(e.data as WorldMsg); } catch (err) { post({ type: 'error', gen: e.data.gen, error: String((err as Error)?.stack ?? err) }); }
   };
   // Stage snapshots do not replace the preceding map. Only the final scene can produce its replacement bitmap.
+}
+
+/** Release an inactive scene while keeping the worker, canvas and decoded assets warm. */
+function releaseScene(): void {
+  if (megaTimer) { clearTimeout(megaTimer); megaTimer = null; }
+  port?.close(); port = null; gen = -1; worldGen = -1;
+  renderer?.dispose(); renderer = null; rendererBrushes = null;
+  world = null; metaCache = null; sceneBuilder = null; sceneCache = null; lastView = null;
+  miniDirty = true; miniSize = 0; miniCanvas = null;
 }
 
 function onView(v: RView): void {
@@ -203,7 +213,8 @@ ctx.onmessage = (e: MessageEvent<RRequest>): void => {
         break;
       }
       case 'view': onView(m); break;
-      case 'dispose': disposed = true; ++brushLoad; port?.close(); renderer?.dispose(); closeBrushes(brushImages); brushImages = null; world = null; metaCache = null; renderer = null; sceneBuilder = null; sceneCache = null; break;
+      case 'release': releaseScene(); break;
+      case 'dispose': disposed = true; ++brushLoad; releaseScene(); closeBrushes(brushImages); brushImages = null; break;
     }
   } catch (err) {
     post({ type: 'error', gen: worldGen, error: String((err as Error)?.stack ?? err) });

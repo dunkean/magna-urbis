@@ -78,7 +78,7 @@ try {
   const select = async (path, value) => { const selector = field(path); await reveal(selector); await page.locator(selector).selectOption(value); await idle(); };
   const check = async (path, value) => { const selector = field(path); await reveal(selector); await page.locator(selector).setChecked(value); await idle(); };
   const closeSettings = async () => page.locator('#render-settings').evaluate(element => { element.open = false; });
-  const pixels = async () => digest(await page.locator('#map-canvas').evaluate(canvas => canvas.toDataURL('image/png')));
+  const pixels = async () => digest(await page.locator('#map').screenshot());
   const cityStats = async () => JSON.parse(await page.locator('#map-canvas').getAttribute('data-city-render') ?? '{}');
   const screenshot = async name => { await closeSettings(); await page.screenshot({ path: resolve(out, name), fullPage: false }); };
   const exportFile = async (format, filename, layers) => {

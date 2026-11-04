@@ -60,12 +60,12 @@ export type PortMsg = WorldMsg | SettlementMsg | QuarterMsg;
 
 // ---- M -> R ----
 export interface RInit { type: 'init'; dpr: number }
-export interface RAttach { type: 'attach'; gen: number; port: MessagePort }
+export interface RAttach { type: 'attach'; gen: number; port: MessagePort; /** Apply atomically with the incoming world, without rebuilding the preceding scene. */ display?: DisplayOpts }
 export interface RDisplay { type: 'display'; display: DisplayOpts }
 export interface RView { type: 'view'; seq: number; view: View; w: number; h: number; dpr: number; mini: number }
 export interface RPng { type: 'dispose' }
 export interface RBrushes { type: 'brushes'; sources: BrushSources }
-export type RRequest = RInit | RAttach | RDisplay | RView | RPng | RBrushes;
+export type RRequest = RInit | RAttach | RDisplay | RView | RPng | RBrushes | { type: 'release' };
 
 // ---- R -> M ----
 export interface RReady { type: 'ready'; ok: boolean; reason?: string }

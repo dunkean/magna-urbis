@@ -835,6 +835,14 @@ export class TerrainGl {
     try { this.draw(); } finally { this.capturing = false; }
   }
 
+  /** Present in the caller's animation frame; do not schedule a second draw or wait for compilation. */
+  redrawNow(view?: View, width?: number, height?: number): void {
+    if (this.frame) cancelAnimationFrame(this.frame);
+    this.frame = 0;
+    if (view && width && height) this.view = { view, width, height };
+    this.draw();
+  }
+
   /** Render a world-space LOD tile with the same material and detail as the map. */
   captureRegion(region: { x: number; y: number; width: number }, size = 512, includeDetails = true, restoreDisplay = true, height?: HeightLayer, groundOverlay = false, alphaOnly?: Uint8Array): HTMLCanvasElement {
     if (!this.base || !this.look || this.gl.isContextLost()) throw new Error('Le terrain est indisponible.');

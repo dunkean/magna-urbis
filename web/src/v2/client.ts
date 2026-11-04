@@ -80,7 +80,11 @@ export class StudioClient {
     render.onmessage = ({ data: m }: MessageEvent<RResponse>) => {
       if(this.benchActive){if(m.type==='frame')this.viewer.present(m,false);return;}
       if (m.type === 'content') this.viewer.contentChanged(m.mapSize, true, m.marker);
-      else if (m.type === 'frame') { this.viewer.present(m, m.gen === this.drawingId); if(m.gen===this.pendingDraw?.gen){clearTimeout(this.pendingDraw.timer);this.pendingDraw.resolve();this.pendingDraw=null;} }
+      else if (m.type === 'frame') {
+        const shown=this.viewer.present(m, m.gen === this.drawingId);
+        if(shown){this.canvas.dataset.renderer='Classic Canvas';this.canvas.dataset.renderStyle=this.display.style;this.canvas.dataset.cityRender='{}';}
+        if(shown&&m.gen===this.pendingDraw?.gen){clearTimeout(this.pendingDraw.timer);this.pendingDraw.resolve();this.pendingDraw=null;}
+      }
       else if (m.type === 'error') { const error=new Error(m.error); if(this.pendingDraw){clearTimeout(this.pendingDraw.timer);this.pendingDraw.reject(error);this.pendingDraw=null;}else this.onError(error); }
     };
     render.onerror = e => {const error=new Error(e.message || 'Le rendu de la carte a été interrompu.');if(this.pendingDraw){clearTimeout(this.pendingDraw.timer);this.pendingDraw.reject(error);this.pendingDraw=null;}else this.onError(error);};
@@ -121,6 +125,8 @@ export class StudioClient {
   /** Imported projects replace the old worker source; release its heavyweight archives. */
   invalidateRetained():void{this.retained=undefined;this.engine.postMessage({type:'release'});}
   async clear():Promise<void>{
+    this.viewer.clear();
+    this.resolutions=[];this.resourceCache=undefined;
     this.benchActive=false;this.appearanceRevision++;this.bench?.dispose();this.bench=undefined;this.classicBackground=undefined;
     this.invalidateRetained();this.world=null;this.syncRenderer?.dispose();this.syncRenderer=null;
     if(this.pendingDraw){clearTimeout(this.pendingDraw.timer);this.pendingDraw.resolve();this.pendingDraw=null;}
@@ -128,7 +134,7 @@ export class StudioClient {
   }
   async show(world: World, keepView = false): Promise<void> {
     const mapChanged = this.world?.mapSize !== world.mapSize;
-    if(this.world!==world)this.benchMiniRevision=-1;
+    if(this.world!==world){this.benchMiniRevision=-1;this.resolutions=[];if(this.world?.stats['v2.terrainKey']!==world.stats['v2.terrainKey'])this.resourceCache=undefined;}
     this.world = world;
     this.syncRenderer?.dispose(); this.syncRenderer = null;
     const settings=this.appearanceSettings;
@@ -139,8 +145,9 @@ export class StudioClient {
       this.bench??=new BenchRenderer(()=>{if(this.benchActive&&this.world)this.viewer.contentChanged(this.world.mapSize,true);});
       this.bench.resourceSource=w=>this.resources(w);
       await this.bench.set(world,settings!,resolved!);
+      if(!this.benchActive)this.render?.postMessage({type:'release'});
       this.benchActive=true;
-      this.viewer.setSource({request:frame=>void this.drawBench(frame)});
+      this.viewer.setDirectSource({element:this.bench.element,draw:frame=>this.drawBench(frame)});
       this.viewer.contentChanged(world.mapSize,keepView&&!mapChanged);
       return;
     }
@@ -151,7 +158,7 @@ export class StudioClient {
       const gen = ++this.drawingId;
       if(this.pendingDraw){clearTimeout(this.pendingDraw.timer);this.pendingDraw.resolve();this.pendingDraw=null;}
       const drawn=new Promise<void>((resolve,reject)=>{const timer=setTimeout(()=>{this.pendingDraw=null;reject(new Error('Le rendu de la carte a dépassé 60 secondes.'));},60000);this.pendingDraw={gen,resolve,reject,timer};});
-      this.render.postMessage({ type: 'attach', gen, port: channel.port1 }, [channel.port1]);
+      this.render.postMessage({ type: 'attach', gen, port: channel.port1, display: this.display }, [channel.port1]);
       channel.port2.postMessage({ type: 'world', gen, world:renderProjection(world),final: true, stage: 'done' });
       channel.port2.close();
       this.viewer.contentChanged(world.mapSize, keepView && !mapChanged);
@@ -165,23 +172,22 @@ export class StudioClient {
       return Promise.resolve();
     }
   }
-  private async drawBench(frame:FrameRequest):Promise<void>{
-    const revision=this.appearanceRevision;
+  private drawBench(frame:FrameRequest):{mini?:HTMLCanvasElement;ms:number;band:number;scale:number}{
+    const started=performance.now();
     const renderer=this.bench;
-    if(!renderer||!this.benchActive){this.viewer.present({...frame,mini:undefined,ms:0,band:0,scale:frame.view.scale},false);return;}
-    try{
-      const surface=renderer.draw(frame.view,frame.w,frame.h,frame.dpr);
-      const cityStats=JSON.stringify(renderer.stats.city??{}),style=String(renderer.stats.style),backend=String(renderer.stats.renderer);
-      const bitmap=await createImageBitmap(surface);
-      if(!this.benchActive||revision!==this.appearanceRevision||this.bench!==renderer){this.viewer.present({...frame,bitmap,mini:undefined,ms:0,band:0,scale:frame.view.scale},false);return;}
-      let mini:ImageBitmap|undefined;
-      if(frame.mini&&this.world&&(this.benchMiniRevision!==revision||this.benchMiniSize!==frame.mini)){const size=this.world.mapSize;mini=await createImageBitmap(renderer.draw({cx:size/2,cy:size/2,scale:frame.mini/size},frame.mini,frame.mini,1));this.benchMiniRevision=revision;this.benchMiniSize=frame.mini;}
-      if(!this.benchActive||revision!==this.appearanceRevision||this.bench!==renderer){this.viewer.present({...frame,bitmap,mini,ms:0,band:0,scale:frame.view.scale},false);return;}
-      this.canvas.dataset.renderer=backend;this.canvas.dataset.renderStyle=style;
-      this.canvas.dataset.cityRender=cityStats;this.canvas.dataset.renderPasses=JSON.stringify(renderer.stats.passes??[]);
-      this.viewer.present({...frame,bitmap,mini,ms:0,band:0,scale:frame.view.scale},this.benchActive&&revision===this.appearanceRevision);
-    }catch(error){this.onError(error instanceof Error?error:new Error(String(error)));this.viewer.present({...frame,mini:undefined,ms:0,band:0,scale:frame.view.scale},false);}
+    if(!renderer||!this.benchActive)return{ms:0,band:0,scale:frame.view.scale};
+    let mini:HTMLCanvasElement|undefined;
+    if(frame.mini&&(this.benchMiniRevision!==this.appearanceRevision||this.benchMiniSize!==frame.mini)){
+      mini=renderer.drawMini(frame.mini);this.benchMiniRevision=this.appearanceRevision;this.benchMiniSize=frame.mini;
+    }
+    // Restore the live camera after a miniature capture, in this same animation frame.
+    renderer.drawLive(frame.view,frame.w,frame.h,frame.dpr);
+    this.canvas.dataset.renderer=String(renderer.stats.renderer);this.canvas.dataset.renderStyle=String(renderer.stats.style);
+    this.canvas.dataset.terrainBackend=String(renderer.stats.terrainBackend);
+    this.canvas.dataset.cityRender=JSON.stringify(renderer.stats.city??{});this.canvas.dataset.renderPasses=JSON.stringify(renderer.stats.passes??[]);
+    return{mini,ms:performance.now()-started,band:0,scale:frame.view.scale};
   }
+  prepareViewportCapture():void{if(this.benchActive)this.bench?.prepareCapture();}
   /** Resolve the appearance for the current products. `previewAware`: a stage-preview world is inspected through its elevation. */
   private resolve(settings:V2Settings,world:World|undefined,previewAware:boolean):ResolvedAppearance{
     const preview=previewAware&&!!world&&!!world.stats['v2.previewStage'];
@@ -202,15 +208,14 @@ export class StudioClient {
     this.appearanceSettings=settings;this.appearanceRevision++;
     const display=this.resolve(settings,this.world??undefined,false);
     this.display={...this.display,...resolvedDisplayOptions(display),colors:display.palette.colors};
-    if(this.render&&display.cartography.painted&&!this.brushSourcesSent){const {BRUSH_SOURCES}=await import('../render/assets/brushAssets');this.render.postMessage({type:'brushes',sources:BRUSH_SOURCES});this.brushSourcesSent=true;}
-    if(this.render)this.render.postMessage({type:'display',display:this.display});
     const needsBench=this.resolve(settings,this.world??undefined,true).path==='composite';
+    if(this.render&&!needsBench&&display.cartography.painted&&!this.brushSourcesSent){const {BRUSH_SOURCES}=await import('../render/assets/brushAssets');this.render.postMessage({type:'brushes',sources:BRUSH_SOURCES});this.brushSourcesSent=true;}
     if(this.world&&(!this.render||this.benchActive||needsBench))await this.show(this.world,true);
-    else if(this.world){this.canvas.dataset.renderer='Classic Canvas';this.canvas.dataset.renderStyle=this.display.style;this.canvas.dataset.cityRender='{}';this.viewer.invalidate();}
-    else if(this.render)this.render.postMessage({type:'display',display:this.display});
+    else if(this.world){if(!sameDisplay(previousDisplay,this.display))this.render?.postMessage({type:'display',display:this.display});this.canvas.dataset.renderer='Classic Canvas';this.canvas.dataset.renderStyle=this.display.style;this.canvas.dataset.cityRender='{}';}
+    else if(this.render&&!needsBench&&!sameDisplay(previousDisplay,this.display))this.render.postMessage({type:'display',display:this.display});
     } catch(error) {
       this.appearanceSettings=previousSettings;this.display=previousDisplay;
-      if(this.render)this.render.postMessage({type:'display',display:this.display});
+      if(this.render&&!this.benchActive)this.render.postMessage({type:'display',display:this.display});
       throw error;
     }
   }
@@ -237,7 +242,7 @@ export class StudioClient {
   }
   setDisplay(patch: Partial<DisplayOpts>): void {
     const next={...this.display,...patch};if(sameDisplay(this.display,next))return;this.display=next;
-    if (this.render) this.render.postMessage({ type: 'display', display: this.display });
+    if (this.render) { if(!this.benchActive)this.render.postMessage({ type: 'display', display: this.display }); }
     else if (this.world) this.show({ ...this.world, options: { ...this.world.options, contours: this.display.contours ?? true, landuse: this.display.landuse ?? true, labels: this.display.labels } }, true);
   }
   destroy(): void { this.cancel();this.bench?.dispose(); if(this.pendingDraw){clearTimeout(this.pendingDraw.timer);this.pendingDraw.resolve();this.pendingDraw=null;}this.engine.terminate(); this.render?.terminate(); this.syncRenderer?.dispose(); this.viewer.destroy(); }

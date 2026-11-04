@@ -94,7 +94,7 @@ if (process.argv.includes('--serve')) {
       await page.locator('#export-dialog').waitFor({ state: 'hidden' });
       return JSON.parse(await readFile(path, 'utf8'));
     };
-    const canvasDigest = async () => digest(await page.locator('#map-canvas').evaluate(canvas => canvas.toDataURL('image/png')));
+    const canvasDigest = async () => digest(await page.locator('#map').screenshot());
     const assertEnglish = async () => {
       assert.equal(await page.locator('html').getAttribute('lang'), 'en');
       assert.match(await page.locator('#tab-terrain').innerText(), /Topography/i);

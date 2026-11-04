@@ -27,6 +27,11 @@ export interface ViewerOptions {
 
 export interface FrameRequest { seq: number; view: View; w: number; h: number; dpr: number; /** minimap size in device px */ mini: number }
 export interface FrameSource { request(r: FrameRequest): void }
+/** A renderer on this thread can present its own layers without creating a bitmap. */
+export interface DirectFrameSource {
+  element: HTMLElement;
+  draw(r: FrameRequest): { mini?: HTMLCanvasElement; ms: number; band: number; scale: number };
+}
 export interface PresentedFrame {
   seq: number; ver?: number; view: View; w: number; h: number; dpr: number;
   bitmap?: ImageBitmap; mini?: ImageBitmap; ms: number; band: number; scale: number;
@@ -36,6 +41,7 @@ export interface Viewer {
   setRenderer(r: CanvasRenderer, mapSize: number, keepView?: boolean): void;
   /** Async mode: frames come from `src` (a worker); call `present` for every answer. */
   setSource(src: FrameSource): void;
+  setDirectSource(src: DirectFrameSource): void;
   /** Rejecting an obsolete answer still releases the in-flight request and closes its bitmaps. */
   present(f: PresentedFrame, accept?: boolean): boolean;
   /** The drawn content changed (new world snapshot, style...): request a new frame; refit if the map size changed (or `keepView` is false). */
@@ -46,6 +52,7 @@ export interface Viewer {
   zoomBy(factor: number): void;
   invalidate(): void;
   getView(): View;
+  clear(): void;
   destroy(): void;
 }
 
@@ -55,6 +62,8 @@ export function createViewer(o: ViewerOptions): Viewer {
   const { container, canvas, minimap } = o;
   let renderer: CanvasRenderer | null = null;
   let source: FrameSource | null = null;
+  let direct: DirectFrameSource | null = null;
+  const originalOpacity = canvas.style.opacity;
   let mapSize = 1000;
   let view: View = { cx: 500, cy: 500, scale: 0.5 };
   let w = 1, h = 1, dpr = 1;
@@ -63,21 +72,30 @@ export function createViewer(o: ViewerOptions): Viewer {
   let bmCtx: ImageBitmapRenderingContext | null = null;
   let shown: { view: View; w: number; h: number } | null = null;
   let req: { view: View; w: number; h: number; dpr: number } | null = null;
-  let seq = 0, inflight = 0, force = false;
-  let miniBase: ImageBitmap | null = null, marker = '#a33';
+  let seq = 0, inflight = 0, requestSeq = 0, force = false;
+  let miniBase: ImageBitmap | HTMLCanvasElement | null = null, marker = '#a33';
+  const closeMini = (): void => { if (miniBase && 'close' in miniBase) miniBase.close(); miniBase = null; };
+  const detachDirect = (): void => {
+    if (!direct) return;
+    direct?.element.remove(); direct = null; canvas.style.opacity = originalOpacity;
+    delete canvas.dataset.presentation;
+  };
+  const resetRequests = (): void => { inflight = 0; requestSeq = 0; req = null; shown = null; canvas.style.transform = ''; force = true; };
 
   const size = (): void => {
     const r = container.getBoundingClientRect();
     dpr = window.devicePixelRatio || 1;
     w = Math.max(1, Math.round(r.width)); h = Math.max(1, Math.round(r.height));
-    if (!source) {
-      canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+    if (!source && !direct) {
+      const pw = Math.round(w * dpr), ph = Math.round(h * dpr);
+      if (canvas.width !== pw) canvas.width = pw;
+      if (canvas.height !== ph) canvas.height = ph;
       canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
     }
     if (minimap) {
       const mw = Math.round(minimap.clientWidth || 140);
       const px = Math.round(mw * dpr);
-      if (minimap.width !== px) { minimap.width = px; minimap.height = px; miniBase?.close(); miniBase = null; force = true; } // the worker redraws it at the new size
+      if (minimap.width !== px) { minimap.width = px; minimap.height = px; closeMini(); force = true; } // the renderer redraws it at the new size
     }
   };
   const invalidate = (): void => {
@@ -112,6 +130,7 @@ export function createViewer(o: ViewerOptions): Viewer {
     force = false;
     req = { view: { ...view }, w, h, dpr };
     inflight = ++seq;
+    requestSeq = inflight;
     source.request({ seq: inflight, view: req.view, w, h, dpr, mini: minimap ? minimap.width : 0 });
   }
 
@@ -121,6 +140,16 @@ export function createViewer(o: ViewerOptions): Viewer {
     dirty = false;
     view = clampView(view, mapSize, w, h);
     o.onView?.(view, w, h);
+    if (direct) {
+      try {
+        canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+        const st = direct.draw({ seq: ++seq, view: { ...view }, w, h, dpr, mini: minimap ? minimap.width : 0 });
+        if (st.mini && miniBase !== st.mini) { closeMini(); miniBase = st.mini; }
+        drawMiniOverlay();
+        o.onFrame?.(st.ms, st.band, st.scale);
+      } catch (error) { o.onError?.(error instanceof Error ? error : new Error(String(error))); }
+      return;
+    }
     if (source) {
       applyTransform();
       drawMiniOverlay();
@@ -225,18 +254,27 @@ export function createViewer(o: ViewerOptions): Viewer {
 
   return {
     setRenderer(r, size2, keepView = false) {
+      detachDirect(); source = null; resetRequests(); size();
       renderer?.dispose();
       const sizeChanged = size2 !== mapSize;
       renderer = r; mapSize = size2;
       if (!keepView || sizeChanged) view = fitView(mapSize, w, h);
       invalidate();
     },
-    setSource(src) { source = src; force = true; },
+    setSource(src) { detachDirect(); source = src; resetRequests(); invalidate(); },
+    setDirectSource(src) {
+      if (direct?.element !== src.element) { detachDirect(); container.insertBefore(src.element, canvas); }
+      direct = src; source = null; resetRequests();
+      canvas.style.opacity = '0'; canvas.dataset.presentation = 'direct';
+      invalidate();
+    },
     present(f, accept = true) {
-      if (f.seq === inflight) inflight = 0;
-      if (!accept) { f.bitmap?.close(); f.mini?.close(); invalidate(); return false; }
+      // An answer from a previous source must never replace the current view or release its request.
+      if (!source || f.seq !== requestSeq) { f.bitmap?.close(); f.mini?.close(); return false; }
+      inflight = 0;
+      if (!accept) { f.bitmap?.close(); f.mini?.close(); force = true; invalidate(); return false; }
       let presented = false;
-      if (f.mini) { miniBase?.close(); miniBase = f.mini; }
+      if (f.mini) { closeMini(); miniBase = f.mini; }
       if (f.bitmap) {
         bmCtx ??= canvas.getContext('bitmaprenderer');
         if (bmCtx) {
@@ -271,9 +309,14 @@ export function createViewer(o: ViewerOptions): Viewer {
     },
     fit, setView: set, zoomBy: (f) => zoomBy(f), invalidate,
     getView: () => view,
+    clear() {
+      detachDirect(); source = null; renderer = null; resetRequests(); closeMini();
+      dirty = false; if (raf) cancelAnimationFrame(raf); raf = 0;
+      canvas.width = canvas.width;
+    },
     destroy() {
       destroyed = true; ro.disconnect(); window.removeEventListener('keydown', key);
-      miniBase?.close(); miniBase = null;
+      closeMini(); detachDirect();
       if (raf) cancelAnimationFrame(raf);
     },
   };

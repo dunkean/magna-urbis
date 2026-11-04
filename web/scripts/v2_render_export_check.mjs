@@ -65,7 +65,7 @@ async function check(name, value) { await reveal(field(name)); await page.locato
 async function closePanel() { await page.locator('#render-settings').evaluate(element => { element.open = false; }); }
 async function camera() {
   await idle();
-  return { image: hash(await page.locator('#map-canvas').evaluate(canvas => canvas.toDataURL('image/png'))),
+  return { image: hash(await page.locator('#map').screenshot()),
     scale: await page.locator('#scale-label').textContent(), frame: await page.locator('#map-canvas').evaluate(canvas => ({ width: canvas.width, height: canvas.height,
       transform: canvas.style.transform, cssWidth: canvas.style.width, cssHeight: canvas.style.height })) };
 }

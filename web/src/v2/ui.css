@@ -1,4 +1,5 @@
 @import url('../ui/exportCrop.css');
+.viewer-direct:has(+ canvas[hidden]){display:none}
 #render-status[data-error="true"]{position:absolute;top:100%;right:0;max-width:min(440px,calc(100vw - 28px));padding:8px 10px;background:#25271f;color:#f0c68a;border:1px solid #dcb86f55;border-radius:6px;white-space:normal;z-index:2}
 
 .parameter-fieldset{border:0;min-width:0;margin:12px 0 0;padding:0}.parameter-group{border:1px solid var(--line);border-radius:7px;padding:10px;margin:12px 0}.parameter-group>summary{font-size:11px;cursor:pointer;padding:0 0 9px;line-height:1.5}.parameter-group>.parameter-form{margin-top:9px}.parameter-group button{font-size:10px;margin-top:9px}.region-controls>fieldset>.checkline{margin:14px 0}#local-urban-controls{margin-top:15px}.v2-urban-controls>.parameter-form{margin:12px 0}.inspector:has(.v2-urban-controls){width:min(440px,calc(100% - 44px))}.parameter-fieldset:disabled{opacity:.5}

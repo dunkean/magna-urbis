@@ -17,7 +17,7 @@ import { renderSvg } from '../render/svg';
 import { DEFAULT_FRACTAL_DETAIL, seedHash } from '../../../rust/bridge/terrainAdjust';
 import { climateOf, type TerrainData, type TerrainSettings } from '../../../rust/bridge/terrain';
 import { effectiveTerrainSettings } from './terrainSettings';
-import { createTerrainRenderer, terrainRendererCanvas, type TerrainRenderer } from '../ui/terrainRenderer';
+import { createTerrainRenderer, terrainRendererCanvas, terrainRendererBackend, type TerrainRenderer } from '../ui/terrainRenderer';
 import { lakeField } from '../ui/lakeGeometry';
 import { riverSegments, vectorWaterSvg, vectorOverlaySvg, vectorOverlayPixels, type WaterDisplay, type VectorOverlay } from '../ui/vectorWaterRender';
 import { renderHydrology, hydrologySegments, hydrologyWaterColour } from '../../../rust/bridge/hydrologyRender';
@@ -54,6 +54,12 @@ const CARTOGRAPHIC_ONLY_VEGETATION = ['forest', 'meadow', 'marsh', 'commons'];
 type BaseRaster = { svg: string; image?: HTMLImageElement };
 export class BenchRenderer {
   private surface = document.createElement('canvas');
+  private miniature = document.createElement('canvas');
+  /** Live GPU ground and transparent CPU overlays are composed by the browser. */
+  readonly element = document.createElement('div');
+  private liveGround?: HTMLCanvasElement;
+  private liveWidth = 0;
+  private liveHeight = 0;
   private overlay = document.createElement('canvas');
   private gpuCanvas = document.createElement('canvas');
   private gpu?: TerrainRenderer;
@@ -95,6 +101,9 @@ export class BenchRenderer {
   resourceSource?: ResourceSource;
   constructor(private invalidate: () => void,rasterOnly=false, private materialContext?: MaterialRasterContext, shared?: SharedPassResources) {
     this.gpuUnavailable=rasterOnly;this.ownsMaterialContext=!materialContext;this.ownsShared=!shared;this.shared=shared??{cache:new ResourceCache()};
+    this.element.className = 'viewer-direct';
+    this.element.setAttribute('aria-hidden', 'true');
+    this.element.style.cssText = 'position:absolute;inset:0;pointer-events:none;overflow:hidden';
   }
   private ownsMaterialContext: boolean;
   /** Resources an export renderer may reuse (read-only for it). */
@@ -120,6 +129,7 @@ export class BenchRenderer {
       const ran = await this.passes.run(() => passKeys(this.input()), {
         terrainData: () => this.terrainDataPass(), terrainLook: () => this.terrainLookPass(), forest: () => this.forestPass(), water: () => this.waterPass(),
         frame: () => this.framePass(), cartography: () => this.cartographyPass(), overlays: () => this.overlaysPass(), city: () => this.cityPass() });
+      if (this.gpuActive) await this.gpu!.variantReady();
       if (this.vectorsDirty) await this.refreshVectors();
       this.stats.passes = ran;
     } catch (error) {
@@ -129,6 +139,7 @@ export class BenchRenderer {
       throw error;
     }
     this.stats.style = r.ground.style; this.stats.renderer = this.gpuActive ? 'TerrainGl + CityBench' : 'RustBench raster + CityBench';
+    this.stats.terrainBackend = this.gpuActive ? terrainRendererBackend(this.gpu!) : 'cpu';
   }
   private layers(): any {
     const r = this.resolved!, l = this.exportLayers;
@@ -280,14 +291,41 @@ export class BenchRenderer {
     if (this.ownsShared) { shared.city?.map.dispose(); shared.city = { key, map }; } else { this.exportCity?.dispose(); this.exportCity = map; }
     this.city = map;
   }
-  draw(view: View, w: number, h: number, dpr: number): HTMLCanvasElement {
-    const canvas = this.surface, r = this.resolved!, size = this.world!.mapSize;
+  /** Capture/export only: combines the layers into a single raster. */
+  draw(view: View, w: number, h: number, dpr: number, canvas = this.surface): HTMLCanvasElement {
+    return this.drawInto(canvas, view, w, h, dpr, false);
+  }
+  drawMini(size: number): HTMLCanvasElement {
+    const width = this.world!.mapSize;
+    return this.draw({ cx: width / 2, cy: width / 2, scale: size / width }, size, size, 1, this.miniature);
+  }
+  /** No GPU readback, intermediate bitmap or full-frame copy in the live display path. */
+  drawLive(view: View, w: number, h: number, dpr: number): void {
+    const ground = this.gpuActive ? terrainRendererCanvas(this.gpu!, this.gpuCanvas) : undefined;
+    const groundChanged = ground !== this.liveGround;
+    if (groundChanged) {
+      this.liveGround?.remove(); this.liveGround = ground;
+      if (ground) this.element.prepend(ground);
+    }
+    if (groundChanged || w !== this.liveWidth || h !== this.liveHeight) {
+      this.liveWidth = w; this.liveHeight = h;
+      this.surface.style.width = w + 'px'; this.surface.style.height = h + 'px';
+      if (ground) { ground.style.width = w + 'px'; ground.style.height = h + 'px'; }
+    }
+    if (ground) this.gpu!.redrawNow(view, w, h);
+    if (this.surface.parentElement !== this.element) this.element.append(this.surface);
+    this.drawInto(this.surface, view, w, h, dpr, true);
+  }
+  /** Explicit readback for screenshots/illustration; ordinary navigation never calls it. */
+  prepareCapture(): void { if (this.gpuActive) this.gpu!.redrawForCapture(); }
+  private drawInto(canvas: HTMLCanvasElement, view: View, w: number, h: number, dpr: number, live: boolean): HTMLCanvasElement {
+    const r = this.resolved!, size = this.world!.mapSize;
     this.dpr = dpr; const pixelW=Math.round(w*dpr),pixelH=Math.round(h*dpr);if(canvas.width!==pixelW)canvas.width=pixelW;if(canvas.height!==pixelH)canvas.height=pixelH;
     const ctx = canvas.getContext('2d')!;
     ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,canvas.width,canvas.height);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    if (this.exportLayers.background !== false) { ctx.fillStyle = this.paper; ctx.fillRect(0, 0, w, h); }
-    if (this.gpuActive) { this.gpu!.setView(view, w, h); this.gpu!.redrawForCapture(); ctx.drawImage(terrainRendererCanvas(this.gpu!, this.gpuCanvas), 0, 0, w, h); }
+    if (this.exportLayers.background !== false && !(live && this.gpuActive)) { ctx.fillStyle = this.paper; ctx.fillRect(0, 0, w, h); }
+    if (this.gpuActive && !live) { this.gpu!.setView(view, w, h); this.gpu!.redrawForCapture(); ctx.drawImage(terrainRendererCanvas(this.gpu!, this.gpuCanvas), 0, 0, w, h); }
     ctx.save(); ctx.translate(w / 2 - view.cx * view.scale, h / 2 - view.cy * view.scale); ctx.scale(view.scale, view.scale);
     if (this.base) ctx.drawImage(this.base, 0, 0, size, size);
     const vectors = this.vectorRaster(view, w, h, dpr);
@@ -296,7 +334,7 @@ export class BenchRenderer {
     const overlay = this.exportOverlay && view.scale * dpr * size <= this.exportOverlay.naturalWidth * 1.01 ? this.exportOverlay : undefined;
     if (overlay) ctx.drawImage(overlay, 0, 0, size, size);
     ctx.restore();
-    if (!overlay && this.cartography) { this.overlay.width = canvas.width; this.overlay.height = canvas.height; this.cartography.draw(view); ctx.drawImage(this.overlay, 0, 0, w, h); }
+    if (!overlay && this.cartography) { if (this.overlay.width !== canvas.width) this.overlay.width = canvas.width; if (this.overlay.height !== canvas.height) this.overlay.height = canvas.height; this.cartography.draw(view); ctx.drawImage(this.overlay, 0, 0, w, h); }
     if (this.exportLayers.city !== false||this.exportLayers.streets!==false) this.stats.city = this.city?.draw(ctx, view, w, h, dpr, r, this.exportLayers);
     return canvas;
   }

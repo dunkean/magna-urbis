@@ -18,6 +18,35 @@ vi.mock('../src/render/canvas', () => ({ createCanvasRenderer: (_canvas: unknown
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.resetModules(); recorded.builds.length = 0; recorded.draws.length = 0; recorded.refreshed.length = 0; });
 
 describe('final-world-only render worker handoff', () => {
+  it('releases an inactive scene, ignores late arrivals, and resumes with an atomic display/world handoff', async () => {
+    vi.stubGlobal('Path2D', class {});
+    vi.stubGlobal('OffscreenCanvas', class {
+      constructor(public width: number, public height: number) {}
+      getContext(): object { return {}; }
+      transferToImageBitmap(): ImageBitmap { return { close: vi.fn() } as unknown as ImageBitmap; }
+    });
+    const scope = { onmessage: null as ((event: MessageEvent<RRequest>) => void) | null, postMessage: vi.fn() };
+    vi.stubGlobal('self', scope);
+    await import('../src/ui/renderWorker');
+    const send = (data: RRequest) => scope.onmessage!({ data } as MessageEvent<RRequest>);
+    send({ type: 'init', dpr: 1 });
+    const port = () => {
+      const p = { onmessage: null as ((e: MessageEvent<PortMsg>) => void) | null, close: vi.fn() };
+      return { p, send: (data: PortMsg) => p.onmessage!({ data } as MessageEvent<PortMsg>) };
+    };
+    const world = (seed: string) => ({ mapSize: 1600, options: { seed, biome: 'temperate' }, site: { center: { x: 800, y: 800 } } }) as World;
+    const first = port(); send({ type: 'attach', gen: 1, port: first.p as unknown as MessagePort });
+    first.send({ type: 'world', gen: 1, world: world('first'), final: true, stage: 'done' });
+    send({ type: 'release' }); expect(first.p.close).toHaveBeenCalledOnce();
+    send({ type: 'display', display: { style: 'atlas' } });
+    first.send({ type: 'world', gen: 1, world: world('late'), final: true, stage: 'done' });
+    expect(recorded.builds).toEqual(['first']);
+    const next = port(); send({ type: 'attach', gen: 2, port: next.p as unknown as MessagePort, display: { style: 'blueprint' } });
+    expect(recorded.builds).toEqual(['first']);
+    next.send({ type: 'world', gen: 2, world: world('next'), final: true, stage: 'done' });
+    expect(recorded.builds).toEqual(['first', 'next']);
+    send({ type: 'dispose' });
+  });
   it('refreshes the rock mask after lazy settlements and coalesced quarter arrivals before announcing the scene', async () => {
     vi.useFakeTimers();
     const responses: RResponse[] = [];

@@ -15,6 +15,7 @@ export interface V2IllustrationOptions {
   get3d(): V2Urban3d | undefined;
   /** The same DOM viewport and camera used by the V2 viewer. */
   getViewport(): { element: HTMLElement; view: View };
+  beforeCapture2d?(): void;
 }
 
 registerMessages({
@@ -43,7 +44,8 @@ export function mountV2Illustration(options: V2IllustrationOptions) {
         workflow: settings.options.workflow, coast: settings.options.coast, river: settings.options.river, biome: settings.options.biome },
     });
     if (captured) return { image: captured.image, guides: { depth: captured.depth }, context };
-    // The map is a complete raster canvas; the service derives its own edge guide.
+    // Freeze the GPU ground before captureViewport composites the visible layers.
+    options.beforeCapture2d?.();
     return { image: await captureViewport(element), guides: {}, context };
   } });
   setText(mounted.button, '✦ Illustrer');

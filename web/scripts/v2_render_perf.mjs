@@ -36,6 +36,15 @@ try {
       const proto = window.ImageBitmapRenderingContext?.prototype, native = proto?.transferFromImageBitmap;
       // A present is stamped when it happens; its content signature (48x48 average) is read right after.
       const probe = document.createElement('canvas'); probe.width = probe.height = 48; const pc = probe.getContext('2d', { willReadFrequently: true });
+      // Direct presentation exposes stacked canvases; sample them in the drawing task, before GPU buffers clear.
+      window.__recordDirect = canvas => {
+        if (canvas.dataset.presentation !== 'direct') return;
+        const layers = canvas.previousElementSibling?.querySelectorAll('canvas');
+        if (!layers?.length) return;
+        pc.clearRect(0, 0, 48, 48);
+        for (const layer of layers) pc.drawImage(layer, 0, 0, 48, 48);
+        window.__presents.push(performance.now()); window.__sigs.push(pc.getImageData(0, 0, 48, 48).data);
+      };
       if (native) proto.transferFromImageBitmap = function (bitmap) {
         const r = native.call(this, bitmap), canvas = this.canvas, i = window.__presents.length; window.__presents.push(performance.now()); window.__sigs.push(null);
         queueMicrotask(() => { try { pc.clearRect(0, 0, 48, 48); pc.drawImage(canvas, 0, 0, 48, 48); window.__sigs[i] = pc.getImageData(0, 0, 48, 48).data; } catch {} });
@@ -49,6 +58,8 @@ try {
     await page.goto(`${base}/v2.html?empty&lang=en`, { waitUntil: 'domcontentloaded' });
     await page.locator('#map-style').waitFor();
     await page.evaluate(() => {
+      const canvas = document.querySelector('#map-canvas');
+      new MutationObserver(() => window.__recordDirect(canvas)).observe(canvas, { attributes: true, attributeFilter: ['data-city-render'] });
       const quietMs = 350;
       window.__reveal = sel => { const el = document.querySelector(sel); for (let p = el.parentElement; p; p = p.parentElement) if (p instanceof HTMLDetailsElement) p.open = true; return el; };
       window.__fire = (el, types) => { for (const t of types) el.dispatchEvent(new Event(t, { bubbles: true })); };
@@ -145,7 +156,7 @@ try {
   if (shots) {
     for (const style of ['parchment', 'render-v2', 'render3d', 'fantasy-color']) {
       await change(page, styleOp(style)); await idle(page);
-      await page.locator('#map-canvas').screenshot({ path: join(shots, `${arg('label', 'run')}-${style}.png`) });
+      await page.locator('#map').screenshot({ path: join(shots, `${arg('label', 'run')}-${style}.png`) });
     }
   }
   const heap = await page.evaluate(() => { gc(); return performance.memory.usedJSHeapSize / 1048576; });
