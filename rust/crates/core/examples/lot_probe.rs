@@ -29,7 +29,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         c.organic_branch_variation = v; c.ribbon_width_variation = v;
     }
     // V7=sf,align,hide,vbb: one review switch at a time (vbb: villageBridgeBudget).
-    if let Ok(v) = std::env::var("V7") { let c = &mut f.layout_config; for k in v.split(',') { match k { "sf" => c.street_frontage = true, "align" => c.align_enclosed_grid = true, "hide" => c.hide_unused_quarters = true, "vbb" => c.village_bridge_budget = true, _ => {} } } }
+    if let Ok(v) = std::env::var("V7") { let c = &mut f.layout_config; for k in v.split(',') { match k { "sf" => c.street_frontage = true, "align" => c.align_enclosed_grid = true, "hide" => c.hide_unused_quarters = true, "vbb" => c.village_bridge_budget = true, "deep" => c.deep_block_lanes = true, _ => {} } } }
     let geography = f.geometry.map(|g| Geography::new(g, f.width)).transpose()?;
     let surface = Surface { geometry: geography.as_ref(), width: f.width, n: f.n, height: &f.height, water: &f.water };
     // TIMING=1: seconds per stage on stderr.

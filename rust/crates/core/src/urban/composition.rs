@@ -1338,6 +1338,9 @@ pub(super) fn fit_enclosures(layout: &mut super::Layout, population: u32, surfac
     fit_to_built(layout, surface);
 }
 
+/// Longest refitted curtain, as a share of the circuit it replaces.
+const MAX_REFIT_GROWTH: f64 = 1.05;
+
 /// A town circuit holds its town: dry land more than `VOID_MARGIN` from any
 /// built block, place or programme reservation (open spaces included) is
 /// empty; empty pieces of at least `max(VOID_SHARE × circuit, VOID_MIN)` are
@@ -1387,6 +1390,9 @@ fn fit_to_built(layout: &mut super::Layout, surface: Surface<'_>) {
             refit.push(closed(&trace.outer));
         }
         if refit.is_empty() { result.push(e); continue; }
+        // A curtain that gives land back never grows: tracing round thin arms of houses
+        // would raise a longer, tentacled wall (review 04/11, giant-hold 10k).
+        if refit.iter().map(|p| length(p)).sum::<f64>() > MAX_REFIT_GROWTH * length(&e.path) { result.push(e); continue; }
         for path in refit {
             result.push(Enclosure { gates: gates(&path, &layout.streets), path, kind: e.kind.clone(), ..Default::default() });
         }

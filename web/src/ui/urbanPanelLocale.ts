@@ -27,6 +27,7 @@ const labels: Record<string, Words> = {
   villageBridgeBudget:['À tester · Ponts selon le besoin (village)','Testing · Bridges by need (village)','测试 · 按需建桥（村庄）','En prueba · Puentes según la necesidad (aldea)','Em teste · Pontes conforme a necessidade (aldeia)'],
   linksJoinRoads:['À tester · Liaisons vers la route','Testing · Links join the road','测试 · 连接到道路','En prueba · Enlaces hacia la carretera','Em teste · Ligações à estrada'],
   hideUnusedQuarters:['À tester · Effacer les quartiers annulés','Testing · Hide cancelled quarters','测试 · 隐藏取消的街区','En prueba · Ocultar barrios cancelados','Em teste · Ocultar bairros cancelados'],
+  deepBlockLanes:['À tester · Ruelles dans les îlots profonds','Testing · Back lanes in deep blocks','测试 · 深街区后巷','En prueba · Callejones en manzanas profundas','Em teste · Ruelas em quarteirões profundos'],
   organicBranchVariation:['À tester · Variation des branches','Testing · Branch variation','测试 · 支路变化','En prueba · Variación de ramales','Em teste · Variação dos ramais'],
   ribbonWidthVariation:['À tester · Variation de largeur des rubans','Testing · Ribbon width variation','测试 · 带状地块宽度变化','En prueba · Variación del ancho de franjas','Em teste · Variação da largura das faixas'],
   campGrowth:['Grands camps','Large camps','大型营地','Campamentos grandes','Acampamentos grandes'],

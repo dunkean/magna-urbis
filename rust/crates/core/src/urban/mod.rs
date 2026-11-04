@@ -8,6 +8,7 @@ pub mod building_sites;
 mod house_mix;
 pub mod display;
 mod composition;
+mod deep_blocks;
 // Structural user edits (shape, delete, reroll): urban/edits.rs.
 mod edits;
 mod enclosure;
@@ -661,6 +662,9 @@ pub struct LayoutConfig {
     pub align_enclosed_grid: bool,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub hide_unused_quarters: bool,
+    /// V7: very deep blocks get a back lane (`deep_blocks`) so houses fill their core.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub deep_block_lanes: bool,
     /// V7: a village (one crossing's demand) builds the bridges its banks need,
     /// counting bank networks already joined on land by the regional road as
     /// one; its bridgeheads keep no approaches or stubs of dropped decks.
@@ -816,6 +820,7 @@ impl Default for LayoutConfig {
             camp_ring_wobble: None,
             align_enclosed_grid: false,
             hide_unused_quarters: false,
+            deep_block_lanes: false,
             village_bridge_budget: false,
             links_join_roads: false,
             organic_branch_variation: 0.0,
@@ -1473,6 +1478,7 @@ pub fn generate_quarters(
             let gates: Vec<Point> = layout.enclosures.iter().flat_map(|e| e.gates.iter().copied()).collect();
             if config.polish_road_ends { network::polish_ends(&mut layout.streets, &gates, config.road_remnants); }
             if config.road_mouths { network::seat_mouths(&mut layout.streets); }
+            if config.deep_block_lanes { deep_blocks::run(layout); }
             access::summarize(layout, config);
             fortification::prepare_options(layout, config, surface);
             programme::prepare(layout, site.population, &config.programme, surface)?;
