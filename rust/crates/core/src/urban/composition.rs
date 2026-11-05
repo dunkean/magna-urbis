@@ -1267,10 +1267,22 @@ const BIG_BLOCK: f64 = 2_500.0;
 
 /// Land within `FRONT_REACH` of a street, as shapes.
 fn street_reach(layout: &super::Layout) -> Vec<Shape> {
-    use geo::{Buffer, LineString, MultiLineString};
-    let lines = MultiLineString(layout.streets.iter().filter(|s| s.path.len() >= 2 && s.role != "bridge")
-        .map(|s| LineString::from(s.path.iter().map(|p| (p.x, p.y)).collect::<Vec<_>>())).collect());
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| g::shapes(lines.buffer(FRONT_REACH)))).unwrap_or_default()
+    // One ribbon per street, then one union: buffering the whole multi-line
+    // network at once (geo `Buffer`) never ends on a dense, overlapping network.
+    // `ribbon` already rounds the interior joins; the two ends get a disc so the
+    // reach is a true round-capped buffer, as before.
+    let cap = |c: &Point| Shape {
+        outer: (0..16).map(|k| { let a = k as f64 * std::f64::consts::TAU / 16.0; Point { x: c.x + FRONT_REACH * a.cos(), y: c.y + FRONT_REACH * a.sin() } }).collect(),
+        holes: vec![],
+    };
+    let ribbons: Vec<Shape> = layout.streets.iter().filter(|s| s.path.len() >= 2 && s.role != "bridge")
+        .flat_map(|s| {
+            let mut v = g::ribbon(&s.path, &vec![2.0 * FRONT_REACH; s.path.len()]);
+            v.push(cap(&s.path[0]));
+            v.push(cap(&s.path[s.path.len() - 1]));
+            v
+        }).collect();
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| g::union(&ribbons))).unwrap_or_default()
 }
 
 /// The built part of a block of kind "block": whole when small or when no street

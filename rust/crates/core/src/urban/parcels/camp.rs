@@ -84,7 +84,7 @@ fn shared_plan(layout: &Layout, morph: &Morph, make: impl FnOnce() -> Plan) -> P
     key.extend(morph.value.to_string().bytes());
     let cell = PLANS.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(Default::default)
         .entry(key).or_default().clone();
-    cell.get_or_init(make).clone()
+    cell.get_or_init(|| super::super::par::holding_cell(make)).clone()
 }
 
 /// Clipped or inaccessible pitches do not house the population. Compare a

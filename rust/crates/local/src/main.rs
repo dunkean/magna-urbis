@@ -929,6 +929,23 @@ fn urban_guard<T>(state: &mut Session, work: impl FnOnce(&mut Session) -> ApiRes
     }
 }
 
+thread_local! { static CLIENT_PROBE: std::cell::RefCell<Option<TcpStream>> = const { std::cell::RefCell::new(None) }; }
+/// True when the peer already closed the connection (non-blocking peek sees EOF or a reset).
+fn client_gone() -> bool {
+    CLIENT_PROBE.with(|probe| {
+        let probe = probe.borrow();
+        let Some(stream) = probe.as_ref() else { return false };
+        if stream.set_nonblocking(true).is_err() { return false; }
+        let mut byte = [0u8; 1];
+        let gone = match stream.peek(&mut byte) {
+            Ok(0) => true,
+            Ok(_) => false,
+            Err(e) => !matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::Interrupted),
+        };
+        let _ = stream.set_nonblocking(false);
+        gone
+    })
+}
 fn dispatch(path: &str, body: &[u8], sessions: &Mutex<Sessions>) -> ApiResult<Reply> {
     if path == "/status" {
         return json_reply(
@@ -1012,6 +1029,11 @@ fn dispatch(path: &str, body: &[u8], sessions: &Mutex<Sessions>) -> ApiResult<Re
         }
     };
     let mut state = session.lock().map_err(|_| "Session indisponible.")?;
+    // Requests queue on the session lock while a long job runs; a client that timed out and
+    // closed its socket meanwhile must not start (and keep computing) its abandoned job.
+    if path != "/release" && client_gone() {
+        return Err("[client_gone] Client disconnected before the job started.".into());
+    }
     match path {
         "/terrain/stage" => {
             if input["command"]=="cancel" {state.terrain_pipeline=None;return json_reply(json!({"released":true}));}
@@ -1205,7 +1227,10 @@ fn handle(mut stream: TcpStream, sessions: &Mutex<Sessions>) {
             Ok(n) => bytes.extend_from_slice(&scratch[..n]),
         }
     }
-    respond_result(&mut stream, origin, dispatch(path, &bytes[head_end..head_end + length], sessions));
+    CLIENT_PROBE.with(|probe| *probe.borrow_mut() = stream.try_clone().ok());
+    let result = dispatch(path, &bytes[head_end..head_end + length], sessions);
+    CLIENT_PROBE.with(|probe| *probe.borrow_mut() = None);
+    respond_result(&mut stream, origin, result);
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

@@ -14,6 +14,32 @@ fn serial() -> bool {
     *SERIAL.get_or_init(|| std::env::var("URBAN_THREADS").is_ok_and(|v| v.trim() == "1"))
 }
 
+#[cfg(any(not(target_arch = "wasm32"), feature = "threads"))]
+thread_local! {
+    static HOLDS_CELL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Runs `f`, the initialiser of a cell shared by parallel items, with every
+/// `map` on this thread serial. A rayon worker waiting in a parallel map steals
+/// other items, and an item reaching the same cell would wait on the worker
+/// initialising it: itself.
+#[cfg(any(not(target_arch = "wasm32"), feature = "threads"))]
+pub(crate) fn holding_cell<R>(f: impl FnOnce() -> R) -> R {
+    struct Release(bool);
+    impl Drop for Release {
+        fn drop(&mut self) {
+            HOLDS_CELL.set(self.0);
+        }
+    }
+    let _release = Release(HOLDS_CELL.replace(true));
+    f()
+}
+
+#[cfg(all(target_arch = "wasm32", not(feature = "threads")))]
+pub(crate) fn holding_cell<R>(f: impl FnOnce() -> R) -> R {
+    f()
+}
+
 /// `items.iter().enumerate().map(f).collect()`, possibly in parallel, always
 /// in input order.
 #[cfg(any(not(target_arch = "wasm32"), feature = "threads"))]
@@ -24,7 +50,7 @@ where
     F: Fn(usize, &T) -> R + Sync + Send,
 {
     use rayon::prelude::*;
-    if items.len() < 2 || serial() || rayon::current_num_threads() < 2 {
+    if items.len() < 2 || serial() || HOLDS_CELL.get() || rayon::current_num_threads() < 2 {
         return items.iter().enumerate().map(|(i, t)| f(i, t)).collect();
     }
     items.par_iter().enumerate().map(|(i, t)| f(i, t)).collect()
@@ -42,7 +68,7 @@ where
 /// Results never depend on it.
 #[cfg(any(not(target_arch = "wasm32"), feature = "threads"))]
 pub(crate) fn threads() -> usize {
-    if serial() {
+    if serial() || HOLDS_CELL.get() {
         1
     } else {
         rayon::current_num_threads().max(1)
@@ -84,6 +110,22 @@ pub(crate) fn with_threads<R>(_threads: usize, f: impl FnOnce() -> R) -> R {
 
 #[cfg(test)]
 mod tests {
+    /// Every item reaches one cell whose initialiser maps in parallel: a worker
+    /// stealing an item while it initialises would wait on itself for ever.
+    #[test]
+    fn a_cell_shared_by_parallel_items_does_not_wait_on_itself() {
+        let cell = std::sync::OnceLock::new();
+        let items: Vec<u64> = (0..64).collect();
+        let sums = super::with_threads(4, || {
+            super::map(&items, |_, _| {
+                *cell.get_or_init(|| {
+                    super::holding_cell(|| super::map(&items, |_, v| *v).iter().sum::<u64>())
+                })
+            })
+        });
+        assert!(sums.iter().all(|s| *s == 2016));
+    }
+
     #[test]
     fn map_keeps_input_order_with_any_thread_count() {
         let items: Vec<u64> = (0..1000).collect();
