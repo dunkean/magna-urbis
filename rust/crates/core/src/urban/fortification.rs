@@ -2784,9 +2784,26 @@ pub(super) fn build(
         // guards no curtain: it goes with the stretch.
         let off_gap = |d: &Shape| { let s = arc(g::interior_point(d));
             !shore_gaps.iter().any(|&(a, l)| { let t = (s - a).rem_euclid(total); t > 8.0 && t < l - 8.0 }) };
+        // A circuit crossing a river to wall a small salient of the far bank
+        // (under a quarter of its largest dry land) digs no moat there: the
+        // river is its ditch, and a stub of ditch among the houses is a relic.
+        let lands = g::dry_clip(&surface, &poly);
+        let big = lands.iter().map(|l| g::area(l)).fold(0.0_f64, f64::max);
+        let salients: Vec<&Shape> = if lands.len() > 1 { lands.iter().filter(|l| g::area(l) < 0.25 * big).collect() } else { vec![] };
+        let near_ring = |c: Point, s: &Shape| {
+            let n = s.outer.len();
+            (0..n).any(|i| g::distance(c, s.outer[i], s.outer[(i + 1) % n]).0 < 3.0)
+        };
+        let far_bank = |d: &Shape| {
+            if salients.is_empty() { return false; }
+            let p = g::interior_point(d);
+            let Some((_, _, c)) = path.windows(2).map(|w| g::distance(p, w[0], w[1]))
+                .min_by(|x, y| x.0.total_cmp(&y.0)) else { return false };
+            salients.iter().any(|s| near_ring(c, s)) && !lands.iter().filter(|l| g::area(l) >= 0.25 * big).any(|l| near_ring(c, l))
+        };
         for p in band {
             for d in g::dry_clip(&surface, &p) {
-                if g::area(&d) > 20.0 && off_gap(&d) {
+                if g::area(&d) > 20.0 && off_gap(&d) && !far_bank(&d) {
                     ditch.push(Work {
                         kind: if let Some(wetness) = style.ditch_wetness {
                             parameters::ditch_kind(&d, surface, rng, wetness).into()

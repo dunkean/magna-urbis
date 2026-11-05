@@ -90,19 +90,27 @@ fn unbuilt(seed: &str, layout: &Layout, config: &LayoutConfig, original: &Layout
         .collect();
     let mut built = vec![false; layout.blocks.len()];
     let used = |p: &super::Parcel| roles.get(p.id.as_str()).is_some_and(|role| !role.starts_with("open."));
+    let mut lots_built = vec![0usize; layout.blocks.len()];
     for p in &part.parcels {
         let Some(slot) = built.get_mut(p.block) else { continue };
-        *slot |= used(p);
+        let u = used(p);
+        *slot |= u;
+        if u { lots_built[p.block] += 1; }
     }
-    let empty = layout
+    // A block of thirty thousand square metres or more with fewer than one
+    // built lot per 4 000 m² (a few mansions along its one street, the rest
+    // out of any access) is as empty as an unbuilt one: it holds the wall out
+    // over fields.
+    let sparse = |i: usize| { let a = g::area(&layout.blocks[i].shape); a >= 30_000.0 && (lots_built[i] as f64) * 4_000.0 < a };
+    let empty: Vec<bool> = layout
         .blocks
         .iter()
         .enumerate()
-        .map(|(i, b)| b.kind == "block" && !built[i] && !reserved.contains(&i))
+        .map(|(i, b)| b.kind == "block" && (!built[i] || sparse(i)) && !reserved.contains(&i))
         .collect();
     // Consolidated yards can reach a different street from their house. Only
     // retained contacts justify fringe frontage; urban properties keep their yards.
-    let lots = part.parcels.iter().filter(|p| roles.get(p.id.as_str()).is_some_and(|role|street_use(p,role,layout))
+    let lots = part.parcels.iter().filter(|p| !empty.get(p.block).copied().unwrap_or(false)).filter(|p| roles.get(p.id.as_str()).is_some_and(|role|street_use(p,role,layout))
         || urban(p,layout) && p.access.as_ref().is_some_and(|a|a.kind == "attached")
             && p.parent_ids.iter().any(|id|roles.get(id.as_str()).is_some_and(|role|!role.starts_with("open.")))).flat_map(|p| {
         if urban(p,layout) && !config.street_frontage { return vec![p.shape.clone()]; }
