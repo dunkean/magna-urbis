@@ -1,0 +1,8 @@
+{
+  "appRunning": true,
+  "windowTitle": "Magna Urbis V2",
+  "childEngine": "rust-native",
+  "loopbackPort": 11835,
+  "service": "magna-urbis-local",
+  "testedAt": "2026-10-28T13:54:30.6790601Z"
+}

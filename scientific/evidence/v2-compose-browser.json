@@ -1,0 +1,40 @@
+{
+  "time": "2026-10-28T14:08:18.653Z",
+  "checks": {
+    "sourceTerrainLog": "\n15:08:20  Début : terrain · graine v2-compose-browser-source\n15:08:20  Recherche du relief et de l’hydrologie conservés…\n15:08:20  Calcul du relief, du drainage, des rivières et des lacs… · miss\n15:08:20  Enregistrement du relief et de l’hydrologie…\n15:08:20  Classification du biome et du couvert naturel…\n15:08:21  Topographie prête · miss\n15:08:21  Préparation de la scène et dessin dans le worker de rendu…\n15:08:21  Terminé en 0.52 s · relief typescript-cpu · villes typescript-cpu",
+    "currentWorldLog": "\n15:08:22  Début : all · graine v2-compose-browser-current\n15:08:22  Recherche du relief et de l’hydrologie conservés…\n15:08:22  Calcul du relief, du drainage, des rivières et des lacs… · miss\n15:08:22  Enregistrement du relief et de l’hydrologie…\n15:08:22  Classification du biome et du couvert naturel…\n15:08:23  Topographie prête · miss\n15:08:23  Recherche des sites habitables…\n15:08:23  Tracé des axes régionaux…\n15:08:23  Implantation de la hiérarchie des lieux…\n15:08:23  Connexion des lieux par le réseau routier…\n15:08:23  Implantations et routes prêtes\n15:08:23  Ain Hanij : plan, rues, parcelles et bâtiments…\n15:08:24  Mise à jour des terres cultivées et des noms…\n15:08:24  Lieux générés\n15:08:24  Préparation de la scène et dessin dans le worker de rendu…\n15:08:25  Terminé en 2.60 s · relief typescript-cpu · villes typescript-cpu",
+    "localTownLog": "\n15:08:25  Début : town · graine v2-compose-browser-current\n15:08:25  Plan → quartiers → rues → îlots → parcelles → bâtiments…\n15:08:26  Mise à jour des terres cultivées et des noms…\n15:08:26  Lieux générés\n15:08:26  Préparation de la scène et dessin dans le worker de rendu…\n15:08:26  Terminé en 1.52 s · relief typescript-cpu · villes typescript-cpu",
+    "terrainComposition": {
+      "exactPhysicalHash": "1335b38083682fec0e03b50c6e10d156fa390ad5ce410443e42bbf1c244e21c3",
+      "currentCityRecipeRetained": true,
+      "oldGeometryPurged": true,
+      "cached": true,
+      "rebuildValid": true
+    },
+    "composedRegionLog": "\n15:08:34  Début : region · graine v2-compose-browser-source\n15:08:34  Recherche des sites habitables…\n15:08:34  Tracé des axes régionaux…\n15:08:34  Implantation de la hiérarchie des lieux…\n15:08:34  Connexion des lieux par le réseau routier…\n15:08:34  Implantations et routes prêtes\n15:08:34  Préparation de la scène et dessin dans le worker de rendu…\n15:08:34  Terminé en 0.71 s · relief typescript-cpu · villes typescript-cpu",
+    "composedTownsLog": "\n15:08:35  Début : towns · graine v2-compose-browser-source\n15:08:35  Al-Nalif : plan, rues, parcelles et bâtiments…\n15:08:35  Mise à jour des terres cultivées et des noms…\n15:08:36  Lieux générés\n15:08:36  Préparation de la scène et dessin dans le worker de rendu…\n15:08:36  Terminé en 1.49 s · relief typescript-cpu · villes typescript-cpu",
+    "urbanComposition": {
+      "territoryRetained": true,
+      "foreignTerrainIgnored": true,
+      "cityRecipeImported": true,
+      "oldGeometryPurged": true,
+      "oneClickRebuildValid": true
+    },
+    "composedOneClickLog": "\n15:08:40  Début : all · graine v2-compose-browser-source\n15:08:40  Recherche du relief et de l’hydrologie conservés…\n15:08:40  Relief et hydrologie réutilisés · memory\n15:08:40  Classification du biome et du couvert naturel…\n15:08:40  Topographie prête · memory\n15:08:40  Recherche des sites habitables…\n15:08:41  Tracé des axes régionaux…\n15:08:41  Implantation de la hiérarchie des lieux…\n15:08:41  Connexion des lieux par le réseau routier…\n15:08:41  Implantations et routes prêtes\n15:08:41  Bedworth : plan, rues, parcelles et bâtiments…\n15:08:41  Mise à jour des terres cultivées et des noms…\n15:08:41  Lieux générés\n15:08:41  Préparation de la scène et dessin dans le worker de rendu…\n15:08:42  Terminé en 1.34 s · relief typescript-cpu · villes typescript-cpu",
+    "appearance": {
+      "style": "atlas",
+      "contours": false,
+      "labels": false,
+      "roundTrip": true
+    },
+    "seedTerrainLog": "\n15:08:54  Début : terrain · graine v2-compose-browser-source\n15:08:54  Recherche du relief et de l’hydrologie conservés…\n15:08:54  Calcul du relief, du drainage, des rivières et des lacs… · miss\n15:08:56  Enregistrement du relief et de l’hydrologie…\n15:08:56  Classification du biome et du couvert naturel…\n15:08:56  Topographie prête · miss\n15:08:56  Préparation de la scène et dessin dans le worker de rendu…\n15:08:57  Terminé en 3.31 s · relief typescript-cpu · villes typescript-cpu",
+    "minimalSeed": {
+      "bytes": 79,
+      "onlySeedAndFormat": true,
+      "importResetsRecipe": true,
+      "terrainGenerationValid": true
+    }
+  },
+  "errors": [],
+  "ok": true
+}

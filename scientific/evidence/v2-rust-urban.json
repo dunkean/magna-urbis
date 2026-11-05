@@ -1,0 +1,82 @@
+{
+  "metrics": [
+    {
+      "stage": "layout",
+      "ms": 2386,
+      "quarters": 24,
+      "streets": 2,
+      "parcels": 0,
+      "buildings": 0,
+      "refusals": 0,
+      "backend": "rust-wasm-cpu"
+    },
+    {
+      "stage": "parcels",
+      "ms": 253,
+      "quarters": 24,
+      "streets": 2,
+      "parcels": 31,
+      "buildings": 0,
+      "refusals": 0,
+      "backend": "rust-wasm-cpu"
+    },
+    {
+      "stage": "programme",
+      "ms": 378,
+      "quarters": 24,
+      "streets": 2,
+      "parcels": 31,
+      "buildings": 0,
+      "refusals": 0,
+      "backend": "rust-wasm-cpu"
+    },
+    {
+      "stage": "buildings",
+      "ms": 3724,
+      "quarters": 24,
+      "streets": 2,
+      "parcels": 31,
+      "buildings": 19,
+      "refusals": 0,
+      "backend": "rust-wasm-cpu",
+      "generator": "architectural-plans-2"
+    }
+  ],
+  "progress": [
+    "Rust · emprise, phases, quartiers, rues et îlots…",
+    "Chargement du moteur urbain Rust/WASM…",
+    "Rust · plan prêt",
+    "Mise à jour des terres cultivées et des noms…",
+    "Lieux générés",
+    "Rust · plan urbain réutilisé",
+    "Rust · découpage des parcelles et accès cadastraux…",
+    "Rust · parcelles prêt",
+    "Mise à jour des terres cultivées et des noms…",
+    "Lieux générés",
+    "Rust · plan urbain réutilisé",
+    "Rust · fonctions, besoins, capacités et affectation des parcelles…",
+    "Rust · programme prêt",
+    "Mise à jour des terres cultivées et des noms…",
+    "Lieux générés",
+    "Rust · plan urbain réutilisé",
+    "Rust · domaines constructibles, accès et contraintes des maisons…",
+    "Chargement du moteur Rust des maisons…",
+    "Rust · plans sources des maisons avant les modifications individuelles…",
+    "Rust · maisons sources 19/19…",
+    "Rust · maisons prêt",
+    "Mise à jour des terres cultivées et des noms…",
+    "Lieux générés"
+  ],
+  "localHouseInvalidation": true,
+  "incrementalHouseRequests": 1,
+  "unrelatedHousesUnchanged": true,
+  "houseFloorPrecedence": {
+    "global": 2,
+    "local": 3,
+    "house": 2
+  },
+  "invalidFourStoreysExplicitlyRefused": true,
+  "recipeReproducesInteractiveEdits": true,
+  "stageWarningsScoped": true,
+  "requestId": "layout-1f5962a2ce9803c8/block-5b487152cd915351/parcel-5b487152cd915351/building"
+}
