@@ -640,6 +640,60 @@
       "path": "web/tests/v2Compose.test.ts",
       "sha256": "536ac6d3c023352f63cfd04e80bc646df1a3993af1fa141c9fd12813bc9eda3a",
       "bytes": 10302
+    },
+    {
+      "path": "rust/crates/terrain/src/coast.rs",
+      "sha256": "ddcecd247c81ddb2517a398ca1193920089b1b80de0ee4360330bfd041509da1",
+      "bytes": 17375,
+      "note": "Reference path updated after terrain crate split; hash recorded in current checkout. Historical original entry retained."
+    },
+    {
+      "path": "rust/crates/terrain/src/engine.rs",
+      "sha256": "22e32aa02af9c8e4eddeb63080686a27ab45446d0e8c57926f2d66bf01ce3eff",
+      "bytes": 39409,
+      "note": "Reference path updated after terrain crate split; hash recorded in current checkout. Historical original entry retained."
+    },
+    {
+      "path": "rust/crates/terrain/src/erosion.rs",
+      "sha256": "7208e68b20fe2433ef59b7a85f23a3bb7c0da73234817062b42edb3b3e827c0b",
+      "bytes": 46061,
+      "note": "Reference path updated after terrain crate split; hash recorded in current checkout. Historical original entry retained."
+    },
+    {
+      "path": "rust/crates/terrain/src/generation_noise.rs",
+      "sha256": "d94dbf945689933184077cb563bf055fec045d4de9f6c96aabaa2be96844ecbc",
+      "bytes": 7544,
+      "note": "Reference path updated after terrain crate split; hash recorded in current checkout. Historical original entry retained."
+    },
+    {
+      "path": "rust/crates/terrain/src/hydrology.rs",
+      "sha256": "ab198841108cdb3701810388cb8522358e7c4e8cf3a41904fee72f9e32d5adec",
+      "bytes": 204313,
+      "note": "Reference path updated after terrain crate split; hash recorded in current checkout. Historical original entry retained."
+    },
+    {
+      "path": "rust/crates/terrain/src/hydrology_balance.rs",
+      "sha256": "a91a0999c3ec4243b786190498a47aa7f06cc00ac8b51188c2b5f1d452ddd4ac",
+      "bytes": 11925,
+      "note": "Reference path updated after terrain crate split; hash recorded in current checkout. Historical original entry retained."
+    },
+    {
+      "path": "rust/crates/terrain/src/hydrology_flats.rs",
+      "sha256": "fb1938ede6cd96bff92a94e64c4ea105db0b4d61ec19b591bbf7839e62c16dae",
+      "bytes": 37561,
+      "note": "Reference path updated after terrain crate split; hash recorded in current checkout. Historical original entry retained."
+    },
+    {
+      "path": "rust/crates/terrain/src/hydrology_meanders.rs",
+      "sha256": "12cf28a9aa7dd7ba073f1657b1d41b8224d575857c8d89312c55f3a004883d78",
+      "bytes": 9980,
+      "note": "Reference path updated after terrain crate split; hash recorded in current checkout. Historical original entry retained."
+    },
+    {
+      "path": "rust/crates/terrain/src/noise.rs",
+      "sha256": "0318e46ae015f31d8c8abe634bd95d0c65b9496770020716c33084664e57952c",
+      "bytes": 4301,
+      "note": "Reference path updated after terrain crate split; hash recorded in current checkout. Historical original entry retained."
     }
   ],
   "externalReferences": [
@@ -725,9 +779,9 @@
       "en",
       "fr"
     ],
-    "recordedAt": "2026-10-28T21:01:31.362Z",
+    "recordedAt": "2026-11-05T14:40:00.428Z",
     "sourceLanguage": "fr",
-    "translatedContentFragments": 708,
+    "translatedContentFragments": 709,
     "pages": {
       "en": "index.html",
       "fr": "fr.html"
@@ -735,23 +789,23 @@
     "fingerprints": [
       {
         "file": "index.html",
-        "sha256": "7fd6fb99b6cb22308f4e54d6b3346800502b03abfc08379aba24454d65eb8a36",
-        "bytes": 80398
+        "sha256": "3243e102e628043c4ce2c93340632d4688d2f1cafc9ebb556611192746ae63ca",
+        "bytes": 169000
       },
       {
         "file": "fr.html",
-        "sha256": "80d27594124b4541e5292b8083f017bff7c5d815738f134b563a9b00e06f8120",
-        "bytes": 87294
+        "sha256": "2e51cd90953403cccd21b714ee7f283376b3f0be7a5112d8f6c9ba8670f8c58e",
+        "bytes": 185333
       },
       {
         "file": "translation-source.json",
-        "sha256": "8db3ae9c56c2c8ffb6e4462b59002807b4e59ab86292354cc6c1ebbee0b9ccff",
-        "bytes": 62513
+        "sha256": "7a06ebc551f33de3002f2a785e3f05f16c74c890c2b6c0f967463eaffc8591d6",
+        "bytes": 63259
       },
       {
         "file": "translations-en.tsv",
-        "sha256": "dcef95b9af9b2d745e36e0e8cb10724c8fc84feee93940daaae388bc87561562",
-        "bytes": 55634
+        "sha256": "b3d9f1d302f90bb2144e65ab6e02eb8a6ea1af6d80e24e7ca8100216cee233e8",
+        "bytes": 55663
       },
       {
         "file": "translations-attributes-en.json",

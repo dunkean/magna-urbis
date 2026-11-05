@@ -7,6 +7,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { docs, labels, groups } from './stages-data.mjs';
 const dir = dirname(fileURLToPath(import.meta.url));
+const additions = JSON.parse(await readFile(resolve(dir, 'stage-additions.json'), 'utf8'));
 const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 // The prose is authored with raw & and < only inside intentional markup; escape bare ampersands.
 const html = s => s.replace(/&(?![a-z]+;|#\d+;)/g, '&amp;');
@@ -200,7 +201,7 @@ ${img}<p class="sources">${esc(L.methods)} : ${links}</p>
 export function render(lang) {
   const x = text[lang];
   const idx = groups.map(g => `<li><a href="#${g.id}">${esc(g.title[lang])}</a><ul class="stage-index">${g.stages.map(s => `<li><a href="#stage-${s.id}">${esc(s.name[lang])}</a></li>`).join('')}</ul></li>`).join('');
-  return `<!--STAGES:BEGIN-->
+  const result = `<!--STAGES:BEGIN-->
 <section class="chapter" id="etapes" data-title="${esc(x.dataTitle)}">
 <div class="chapter-number">${esc(x.chapter)}</div><h2>${esc(x.title)}</h2>
 <p>${esc(x.intro)}</p>
@@ -215,6 +216,13 @@ ${g.stages.map(s => stage(lang, g, s)).join('\n')}
 </div>`).join('\n')}
 </section>
 <!--STAGES:END-->`;
+  let completed = result;
+  for (const [id, before] of Object.entries({ 'relief-climate':'relief-mask', 'relief-coast-cut':'relief-coasts', 'city-roads':'city-quarters', 'map-naming':'END', 'map-export':'END' })) {
+    const markup = additions[lang][id];
+    if (before === 'END') completed = completed.replace('\n</div>\n</section>\n<!--STAGES:END-->', '\n' + markup + '\n</div>\n</section>\n<!--STAGES:END-->');
+    else completed = completed.replace('<section class="stage" id="stage-' + before + '"', markup + '\n<section class="stage" id="stage-' + before + '"');
+  }
+  return completed;
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

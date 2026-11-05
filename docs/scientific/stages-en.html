@@ -20,6 +20,10 @@
 
 <p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/procedural-generation-stages.md">procedural-generation-stages.md</a></p>
 </section>
+<section class="stage" id="stage-relief-climate" data-stage="relief-climate">
+<h4>Input climate <code class="stage-id">relief-climate</code></h4>
+<p>Climate is an initial condition: temperature, seasonality and rain reach the neural model before diffusion, then feed climate-driven erosion, water budgets and vegetation. A row of icons in Region’s top frame selects the preset; this stage contains the detailed values. Regional biome remains a separate choice. Disabling forest does not disable climate.</p>
+</section>
 <section class="stage" id="stage-relief-mask" data-stage="relief-mask">
 <h4>Custom mask (zones, brushes, import/export) <code class="stage-id">relief-mask</code> <span class="tag">Procedural source</span> <span class="tag compare">can be switched off</span></h4>
 
@@ -218,6 +222,10 @@
 
 <p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/procedural-generation-stages.md">procedural-generation-stages.md</a></p>
 </section>
+<section class="stage" id="stage-relief-coast-cut" data-stage="relief-coast-cut">
+<h4>Coast formation <code class="stage-id">relief-coast-cut</code></h4>
+<p>The land/sea cut deforms the relief after initial noise by default. Its position can move after regional relaxation, amplitude calibration, ridged detail, surface erosion or datum normalization. Later operations may change the relief; coastal finishing reapplies the geographic cut to preserve a coast, then runs coastal erosion. Exact internal checkpoints remain in memory and expire from the first changed dependency.</p>
+</section>
 <section class="stage" id="stage-relief-coasts" data-stage="relief-coasts">
 <h4>Coasts (marine mask, coastal erosion) <code class="stage-id">relief-coasts</code> <span class="tag">Always</span> <span class="tag compare">can be switched off</span></h4>
 
@@ -307,6 +315,10 @@
 <p><b>References.</b> <a href="#ref-city">Parish and Müller [11]</a> and <a href="#ref-tensor">Chen et al. [12]</a> are comparison points, not the exact solver. See <a href="#ville">chapter 08</a>.</p>
 <p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/urban-parcels.md">urban-parcels.md</a></p>
 </section>
+<section class="stage" id="stage-city-roads" data-stage="city-roads">
+<h4>Urban roads and streets <code class="stage-id">city-roads</code></h4>
+<p>The local street network and quarter subdivision share the native layout output. Regional roads belong to Settlements; this Cities pipeline applies to all places or the checked subset in the right-hand list.</p>
+</section>
 <section class="stage" id="stage-city-quarters" data-stage="city-quarters">
 <h4>Quarters: streets, split, blocks, bridges <code class="stage-id">city-quarters</code> <span class="tag">Per selected place</span> <span class="tag own">required</span></h4>
 <figure class="diagram sdiag" id="fig-city"><svg class="dg" role="img" aria-labelledby="dg5-t" viewBox="0 0 890 260" xmlns="http://www.w3.org/2000/svg"><title id="dg5-t">City generation: footprint, macroplan, quarters, blocks, trim, parcels, programme, building sites, massing, houses</title><defs><marker id="dg5-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="head"/></marker></defs><rect class="box " x="10" y="14" width="150" height="62" rx="6"/><text x="85" y="42" text-anchor="middle" class="b">Footprint</text><text x="85" y="56" text-anchor="middle">land budget · growth</text><rect class="box " x="190" y="14" width="150" height="62" rx="6"/><text x="265" y="42" text-anchor="middle" class="b">Macroplan</text><text x="265" y="56" text-anchor="middle">corridors · harbour · walls</text><rect class="box core" x="370" y="14" width="150" height="62" rx="6"/><text x="445" y="42" text-anchor="middle" class="b">Quarters</text><text x="445" y="56" text-anchor="middle">street cuts · ribbons</text><rect class="box " x="550" y="14" width="150" height="62" rx="6"/><text x="625" y="42" text-anchor="middle" class="b">Blocks</text><text x="625" y="56" text-anchor="middle">faces between streets</text><rect class="box " x="730" y="14" width="150" height="62" rx="6"/><text x="805" y="42" text-anchor="middle" class="b">Trim</text><text x="805" y="56" text-anchor="middle">drop unbuilt blocks</text><line class="ln " x1="160" y1="45" x2="190" y2="45" marker-end="url(#dg5-a)"/><line class="ln " x1="340" y1="45" x2="370" y2="45" marker-end="url(#dg5-a)"/><line class="ln " x1="520" y1="45" x2="550" y2="45" marker-end="url(#dg5-a)"/><line class="ln " x1="700" y1="45" x2="730" y2="45" marker-end="url(#dg5-a)"/><rect class="box core" x="10" y="124" width="170" height="62" rx="6"/><text x="95" y="152" text-anchor="middle" class="b">Parcels</text><text x="95" y="166" text-anchor="middle">four operators · contacts</text><rect class="box " x="210" y="124" width="170" height="62" rx="6"/><text x="295" y="152" text-anchor="middle" class="b">Programme</text><text x="295" y="166" text-anchor="middle">demand · reserve · allocate</text><rect class="box " x="410" y="124" width="170" height="62" rx="6"/><text x="495" y="152" text-anchor="middle" class="b">Building sites</text><text x="495" y="166" text-anchor="middle">neutral intents</text><rect class="box " x="610" y="124" width="120" height="62" rx="6"/><text x="670" y="152" text-anchor="middle" class="b">Massing</text><text x="670" y="166" text-anchor="middle">storeys · roofs</text><rect class="box out" x="750" y="124" width="130" height="62" rx="6"/><text x="815" y="152" text-anchor="middle" class="b">Houses</text><text x="815" y="166" text-anchor="middle">native plan · admission</text><path class="ln br" d="M805 76 C805 100 95 96 95 124" fill="none" marker-end="url(#dg5-a)"/><line class="ln " x1="180" y1="155" x2="210" y2="155" marker-end="url(#dg5-a)"/><line class="ln " x1="380" y1="155" x2="410" y2="155" marker-end="url(#dg5-a)"/><line class="ln " x1="580" y1="155" x2="610" y2="155" marker-end="url(#dg5-a)"/><line class="ln " x1="730" y1="155" x2="750" y2="155" marker-end="url(#dg5-a)"/><path class="ln loop" d="M295 186 C295 214 805 214 805 188" fill="none" marker-end="url(#dg5-a)"/><text x="550" y="226" text-anchor="middle" class="note">refusals and counted capacity return to the programme</text><path class="ln dash2" d="M295 124 C295 100 805 100 805 78" fill="none" marker-end="url(#dg5-a)"/><text x="10" y="248" class="note">Trim runs the programme and cadastre on a copy until a fixed point; a content-addressed memo avoids recomputing identical blocks.</text></svg><figcaption>Original diagram of the city chain, quarters to houses.</figcaption></figure>
@@ -381,7 +393,7 @@
 <h4>Terrain shading and palette <code class="stage-id">display-terrain</code> <span class="tag">Display</span> <span class="tag compare">can be switched off</span></h4>
 
 <p><b>What and why.</b> Turns heights into a readable relief: hillshade, slope and altitude tints, material blending and optional vertical exaggeration.</p>
-<p><b>Algorithm.</b> Hillshading from the normal map of the retained surface (slope-based, after Horn 1981) combined with hypsometric palettes; in perspective, ground materials have their own spatial scales and fine texture does not turn a coarse DEM into centimetre topography. Exaggeration is a camera effect and never changes physical dimensions.</p>
+<p><b>Algorithm.</b> Hillshading from the normal map of the retained surface (slope-based, after Horn 1981) combined with hypsometric palettes; in perspective, ground materials have their own spatial scales and fine texture does not turn a coarse DEM into centimetre topography. A ground residual shared by vertex displacement and fragment normals combines four oriented bands from 8 m to 5.5 cm, producing undulations, grooves and clasts. Its gain depends on slope, elevation and climate and vanishes on flat plains and below sea level. Filtering follows the projected footprint to limit aliasing. Exaggeration is a camera effect and never changes physical dimensions.</p>
 <p><b>Inputs and outputs.</b> In: retained heights, palette and style. Out: pixels or terrain mesh.</p>
 <p><b>Controls.</b> Style (parchment, atlas, diagnostic), palette, light direction, exaggeration, 2D or 3D.</p>
 <p><b>Cost and backends.</b> GPU; cost tied to the screen, not to the generation.</p>
@@ -403,7 +415,7 @@
 <h4>Vegetation <code class="stage-id">display-vegetation</code> <span class="tag">Display</span> <span class="tag compare">can be switched off</span></h4>
 
 <p><b>What and why.</b> Shows forests, fields and trees from the natural cover field and land use.</p>
-<p><b>Algorithm.</b> In 3D, crowns become distinguishable close up while unresolved cover turns into an averaged material at distance; luminance jumps across scale transitions are limited without touching the terrain. In 2D, hand-painted brushes are guided by occupation polygons (spatial index then exact point-in-polygon test) with deterministic hatching; no occupation invents no forest.</p>
+<p><b>Algorithm.</b> In 3D, crowns become distinguishable close up while unresolved cover turns into an averaged material at distance; luminance jumps across scale transitions are limited without touching the terrain. The cover field depends on climate, relief and disturbances; the shader adapts its representation to projected crown size and aims to preserve mean coverage. Tree centres avoid visible water, while crowns may overhang banks: water, trees and contours are composited in that order. In 2D, hand-painted brushes are guided by occupation polygons (spatial index then exact point-in-polygon test) with deterministic hatching; no occupation invents no forest.</p>
 <p><b>Inputs and outputs.</b> In: cover field, land use. Out: vegetation layers and instances.</p>
 <p><b>Controls.</b> Density, season, brush style, vegetation on/off.</p>
 <p><b>Cost and backends.</b> Instanced drawing at close range; strongly resolution dependent.</p>
@@ -443,6 +455,8 @@
 
 <p class="sources">Method note : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/render-v2.md">render-v2.md</a></p>
 </section>
+<section class="stage" id="stage-map-naming" data-stage="map-naming"><h4>Map title and toponyms <code class="stage-id">map-naming</code></h4><p>Map contains the title, naming language and place names. Naming reuses retained geometry without rebuilding terrain or cities. Manual names persist in projects and recipes.</p></section>
+<section class="stage" id="stage-map-export" data-stage="map-export"><h4>Export <code class="stage-id">map-export</code></h4><p>Map provides PNG, SVG, heightmap, project, recipe and seed exports. Visual exports use the displayed map, its appearance and its names. Projects retain data and edits.</p></section>
 </div>
 </section>
 <!--STAGES:END-->

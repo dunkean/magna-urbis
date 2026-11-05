@@ -11,7 +11,7 @@ const delta = relative(dir, target);
 if (!delta || (!delta.startsWith('..') && !isAbsolute(delta))) throw new Error('Destination must be outside the documentation source folder.');
 await check();
 await mkdir(target, { recursive: true });
-for (const file of ['index.html', 'fr.html', 'styles.css', 'reader.js', 'evidence.json', 'v2-browser-evidence.json']) await copyFile(resolve(dir, file), resolve(target, file));
+for (const file of ['index.html', 'fr.html', 'catalogue-architecture.html', 'styles.css', 'reader.js', 'evidence.json', 'v2-browser-evidence.json']) await copyFile(resolve(dir, file), resolve(target, file));
 await cp(resolve(dir, 'assets'), resolve(target, 'assets'), { recursive: true });
 await cp(resolve(dir, 'evidence'), resolve(target, 'evidence'), { recursive: true });
 console.log(`Static documentation exported to ${target}. Open index.html directly, or serve the folder. No network required for reading.`);

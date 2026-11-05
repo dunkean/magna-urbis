@@ -49,7 +49,7 @@ export async function check(){
   const reports=JSON.parse(await readFile(resolve(dir,'evidence/report-provenance.json'),'utf8'));
   for(const report of reports.reports)assert(hash(await figureBytes('../evidence/'+report.file))===report.sha256,'Integration report hash mismatch '+report.file);
   const drift=[];
-  for(const source of manifest.linkedSources)if(hash(await readFile(resolve(root,source.path)))!==source.sha256)drift.push(source.path);
+  for(const source of manifest.linkedSources){ try { if(hash(await readFile(resolve(root,source.path)))!==source.sha256)drift.push(source.path); } catch(error) { if(error.code !== 'ENOENT') throw error; drift.push(source.path + ' (missing historical path)'); } }
   console.log('PASS: English and French, 20 matching chapters, '+pages[0].ids.length+' matching anchors, '+pages[0].linkedPaths.length+' local references, '+manifest.figures.length+' exact figure hashes, '+reports.reports.length+' integration reports. No remote reading dependency.');
   if(drift.length)console.log('NOTICE: '+drift.length+' source files changed since the evidence snapshot:\n'+drift.join('\n'));
   return{languages:['en','fr'],chapters:20,anchors:pages[0].ids.length,linkedSources:pages[0].linkedPaths.length,figures:manifest.figures.length,sourceDrift:drift};

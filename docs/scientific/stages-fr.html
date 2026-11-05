@@ -20,6 +20,10 @@
 
 <p class="sources">Note de méthode : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/procedural-generation-stages.md">procedural-generation-stages.md</a></p>
 </section>
+<section class="stage" id="stage-relief-climate" data-stage="relief-climate">
+<h4>Climat de départ <code class="stage-id">relief-climate</code></h4>
+<p>Le climat est une condition initiale : température, saisonnalité et pluie sont transmis au neuronal avant la diffusion, puis utilisés par l’érosion climatique, les bilans hydriques et la végétation. Le préréglage est accessible par une ligne d’icônes dans le cadre supérieur de Région ; les valeurs détaillées sont ici. Le biome régional reste un réglage distinct. Désactiver la forêt ne désactive pas le climat.</p>
+</section>
 <section class="stage" id="stage-relief-mask" data-stage="relief-mask">
 <h4>Masque personnalisé (zones, pinceaux, import/export) <code class="stage-id">relief-mask</code> <span class="tag">Source procédurale</span> <span class="tag compare">désactivable</span></h4>
 
@@ -218,6 +222,10 @@
 
 <p class="sources">Note de méthode : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/procedural-generation-stages.md">procedural-generation-stages.md</a></p>
 </section>
+<section class="stage" id="stage-relief-coast-cut" data-stage="relief-coast-cut">
+<h4>Formation des côtes <code class="stage-id">relief-coast-cut</code></h4>
+<p>La découpe terre/mer déforme le relief après le bruit initial par défaut. Elle peut être déplacée après la relaxation régionale, la calibration de l’amplitude, le détail ridgé, l’érosion de surface ou la normalisation du datum. Les traitements suivants peuvent modifier le relief ; la finition réapplique la découpe géographique pour conserver une côte, puis applique l’érosion côtière. Les états internes sont conservés en mémoire et invalidés à partir de la première dépendance modifiée.</p>
+</section>
 <section class="stage" id="stage-relief-coasts" data-stage="relief-coasts">
 <h4>Côtes (masque marin, érosion côtière) <code class="stage-id">relief-coasts</code> <span class="tag">Toujours</span> <span class="tag compare">désactivable</span></h4>
 
@@ -307,6 +315,10 @@
 <p><b>Références.</b> <a href="#ref-city">Parish et Müller [11]</a> et <a href="#ref-tensor">Chen et al. [12]</a> sont des repères comparatifs, pas le solveur exact. Voir le <a href="#ville">chapitre 08</a>.</p>
 <p class="sources">Note de méthode : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/urban-parcels.md">urban-parcels.md</a></p>
 </section>
+<section class="stage" id="stage-city-roads" data-stage="city-roads">
+<h4>Routes et rues urbaines <code class="stage-id">city-roads</code></h4>
+<p>Le réseau de rues local et le découpage des quartiers partagent la sortie du plan natif. Les routes régionales relèvent de Peuplements ; ce pipeline Villes s’applique à tous les lieux ou au sous-ensemble coché dans la liste de droite.</p>
+</section>
 <section class="stage" id="stage-city-quarters" data-stage="city-quarters">
 <h4>Quartiers : rues, découpe, îlots, ponts <code class="stage-id">city-quarters</code> <span class="tag">Par lieu sélectionné</span> <span class="tag own">obligatoire</span></h4>
 <figure class="diagram sdiag" id="fig-city"><svg class="dg" role="img" aria-labelledby="dg5-t" viewBox="0 0 890 260" xmlns="http://www.w3.org/2000/svg"><title id="dg5-t">Génération de la ville : emprise, macroplan, quartiers, îlots, élagage, parcelles, programme, sites de bâtiments, volumétrie, maisons</title><defs><marker id="dg5-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="head"/></marker></defs><rect class="box " x="10" y="14" width="150" height="62" rx="6"/><text x="85" y="42" text-anchor="middle" class="b">Emprise</text><text x="85" y="56" text-anchor="middle">budget de terre · croissance</text><rect class="box " x="190" y="14" width="150" height="62" rx="6"/><text x="265" y="42" text-anchor="middle" class="b">Macroplan</text><text x="265" y="56" text-anchor="middle">couloirs · port · remparts</text><rect class="box core" x="370" y="14" width="150" height="62" rx="6"/><text x="445" y="42" text-anchor="middle" class="b">Quartiers</text><text x="445" y="56" text-anchor="middle">coupes de rues · rubans</text><rect class="box " x="550" y="14" width="150" height="62" rx="6"/><text x="625" y="42" text-anchor="middle" class="b">Îlots</text><text x="625" y="56" text-anchor="middle">faces entre les rues</text><rect class="box " x="730" y="14" width="150" height="62" rx="6"/><text x="805" y="42" text-anchor="middle" class="b">Élagage</text><text x="805" y="56" text-anchor="middle">retrait des îlots vides</text><line class="ln " x1="160" y1="45" x2="190" y2="45" marker-end="url(#dg5-a)"/><line class="ln " x1="340" y1="45" x2="370" y2="45" marker-end="url(#dg5-a)"/><line class="ln " x1="520" y1="45" x2="550" y2="45" marker-end="url(#dg5-a)"/><line class="ln " x1="700" y1="45" x2="730" y2="45" marker-end="url(#dg5-a)"/><rect class="box core" x="10" y="124" width="170" height="62" rx="6"/><text x="95" y="152" text-anchor="middle" class="b">Parcelles</text><text x="95" y="166" text-anchor="middle">quatre opérateurs · contacts</text><rect class="box " x="210" y="124" width="170" height="62" rx="6"/><text x="295" y="152" text-anchor="middle" class="b">Programme</text><text x="295" y="166" text-anchor="middle">demande · réserve · alloue</text><rect class="box " x="410" y="124" width="170" height="62" rx="6"/><text x="495" y="152" text-anchor="middle" class="b">Sites de bâtiments</text><text x="495" y="166" text-anchor="middle">intentions neutres</text><rect class="box " x="610" y="124" width="120" height="62" rx="6"/><text x="670" y="152" text-anchor="middle" class="b">Volumétrie</text><text x="670" y="166" text-anchor="middle">étages · toits</text><rect class="box out" x="750" y="124" width="130" height="62" rx="6"/><text x="815" y="152" text-anchor="middle" class="b">Maisons</text><text x="815" y="166" text-anchor="middle">plan natif · admission</text><path class="ln br" d="M805 76 C805 100 95 96 95 124" fill="none" marker-end="url(#dg5-a)"/><line class="ln " x1="180" y1="155" x2="210" y2="155" marker-end="url(#dg5-a)"/><line class="ln " x1="380" y1="155" x2="410" y2="155" marker-end="url(#dg5-a)"/><line class="ln " x1="580" y1="155" x2="610" y2="155" marker-end="url(#dg5-a)"/><line class="ln " x1="730" y1="155" x2="750" y2="155" marker-end="url(#dg5-a)"/><path class="ln loop" d="M295 186 C295 214 805 214 805 188" fill="none" marker-end="url(#dg5-a)"/><text x="550" y="226" text-anchor="middle" class="note">refus et capacité comptée reviennent au programme</text><path class="ln dash2" d="M295 124 C295 100 805 100 805 78" fill="none" marker-end="url(#dg5-a)"/><text x="10" y="248" class="note">L’élagage rejoue programme et cadastre sur une copie jusqu’à un point fixe ; une mémoïsation par contenu évite de recalculer des îlots identiques.</text></svg><figcaption>Schéma original de la chaîne de ville, des quartiers aux maisons.</figcaption></figure>
@@ -381,7 +393,7 @@
 <h4>Ombrage du terrain et palette <code class="stage-id">display-terrain</code> <span class="tag">Affichage</span> <span class="tag compare">désactivable</span></h4>
 
 <p><b>Quoi et pourquoi.</b> Convertit les altitudes en relief lisible : ombrage, teintes de pente et d’altitude, mélange de matériaux et exagération verticale optionnelle.</p>
-<p><b>Algorithme.</b> Ombrage à partir de la carte des normales de la surface conservée (fondé sur la pente, d’après Horn 1981) combiné à des palettes hypsométriques ; en perspective, les matériaux du sol ont leurs propres échelles spatiales et une texture fine ne transforme pas un MNT grossier en topographie centimétrique. L’exagération est un effet de caméra et ne change jamais les dimensions physiques.</p>
+<p><b>Algorithme.</b> Ombrage à partir de la carte des normales de la surface conservée (fondé sur la pente, d’après Horn 1981) combiné à des palettes hypsométriques ; en perspective, les matériaux du sol ont leurs propres échelles spatiales et une texture fine ne transforme pas un MNT grossier en topographie centimétrique. Le shader évalue un résidu de sol partagé par le déplacement des sommets et les normales par fragment : quatre bandes orientées de 8 m à 5,5 cm ajoutent ondulations, stries et petits cailloux. Leur gain dépend de la pente, de l’altitude et du climat ; il est nul sur les plaines plates et sous la mer. Le filtrage dépend de la taille projetée pour limiter le crénelage. L’exagération est un effet de caméra et ne change jamais les dimensions physiques.</p>
 <p><b>Entrées et sorties.</b> Entrées : altitudes conservées, palette et style. Sorties : pixels ou maillage de terrain.</p>
 <p><b>Réglages.</b> Style (parchemin, atlas, diagnostic), palette, direction de la lumière, exagération, 2D ou 3D.</p>
 <p><b>Coût et backends.</b> GPU ; coût lié à l’écran, pas à la génération.</p>
@@ -403,7 +415,7 @@
 <h4>Végétation <code class="stage-id">display-vegetation</code> <span class="tag">Affichage</span> <span class="tag compare">désactivable</span></h4>
 
 <p><b>Quoi et pourquoi.</b> Montre forêts, champs et arbres à partir du champ de couverture naturelle et de l’occupation du sol.</p>
-<p><b>Algorithme.</b> En 3D, les couronnes deviennent distinguables de près tandis que la couverture non résolue devient un matériau moyen au loin ; les sauts de luminance aux transitions d’échelle sont limités sans toucher au terrain. En 2D, des pinceaux peints sont guidés par les polygones d’occupation (index spatial puis test exact de point dans polygone) avec hachures déterministes ; sans occupation, aucune forêt n’est inventée.</p>
+<p><b>Algorithme.</b> En 3D, les couronnes deviennent distinguables de près tandis que la couverture non résolue devient un matériau moyen au loin ; les sauts de luminance aux transitions d’échelle sont limités sans toucher au terrain. Le champ de couvert dépend du climat, du relief et de perturbations ; le shader adapte la représentation à la taille projetée des couronnes et préserve autant que possible la couverture moyenne. Les centres évitent l’eau visible, mais les couronnes peuvent déborder sur les berges : eau, arbres puis courbes de niveau sont composés dans cet ordre. En 2D, des pinceaux peints sont guidés par les polygones d’occupation (index spatial puis test exact de point dans polygone) avec hachures déterministes ; sans occupation, aucune forêt n’est inventée.</p>
 <p><b>Entrées et sorties.</b> Entrées : champ de couverture, occupation du sol. Sorties : couches et instances de végétation.</p>
 <p><b>Réglages.</b> Densité, saison, style de pinceau, végétation affichée ou non.</p>
 <p><b>Coût et backends.</b> Dessin instancié de près ; fortement dépendant de la résolution.</p>
@@ -443,6 +455,8 @@
 
 <p class="sources">Note de méthode : <a href="https://github.com/dunkean/magna-urbis/blob/main/docs/methods/render-v2.md">render-v2.md</a></p>
 </section>
+<section class="stage" id="stage-map-naming" data-stage="map-naming"><h4>Titre et toponymes <code class="stage-id">map-naming</code></h4><p>Le panneau Carte réunit le titre, la langue des toponymes et les noms des lieux. La génération des noms réutilise les géométries conservées ; elle ne reconstruit ni le relief ni les villes. Les noms manuels sont conservés dans les projets et recettes.</p></section>
+<section class="stage" id="stage-map-export" data-stage="map-export"><h4>Export <code class="stage-id">map-export</code></h4><p>Le panneau Carte donne accès aux exports PNG, SVG, heightmap, projet, recette et graine. Les images utilisent la carte affichée, avec ses réglages et ses noms. Les projets conservent les données et les modifications.</p></section>
 </div>
 </section>
 <!--STAGES:END-->

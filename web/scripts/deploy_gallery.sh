@@ -4,6 +4,7 @@
 set -euo pipefail
 ROOT=$(git rev-parse --show-toplevel)
 SRC=${1:-$ROOT/web/out/gallery-v2}
+python3 "$ROOT/web/scripts/gallery_doc_links.py" "$SRC/index.html"
 REMOTE=$(git -C "$ROOT" remote get-url origin)
 AUTH=()
 if [[ -n "${GITHUB_TOKEN_FILE:-}" ]]; then

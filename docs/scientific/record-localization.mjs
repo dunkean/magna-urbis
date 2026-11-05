@@ -7,7 +7,7 @@ const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 export async function recordLocalization(manifest){
   manifest.figures=manifest.figures.filter(figure=>!['pipeline-en.svg','hydrology-en.svg','capacity-en.svg','parcel-en.svg'].includes(figure.file));
   for(const name of ['pipeline','hydrology','capacity','parcel']){
-    const file=name+'-en.svg',bytes=await readFile(resolve(dir,'assets',file));
+    const file=name+'-en.svg',bytes=Buffer.from((await readFile(resolve(dir,'assets',file),'utf8')).replace(/\r\n/g,'\n'),'utf8');
     manifest.figures.push({file,kind:'original-educational-vector-diagram',language:'en',source:'docs/scientific/assets/'+file,
       translatedFrom:name+'.svg',transformation:'English labels and descriptions; vector geometry unchanged',
       sha256:hash(bytes),bytes:bytes.length,limitation:'Schematic, not measured output; not to scale.'});

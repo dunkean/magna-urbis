@@ -10,7 +10,7 @@ registration, with original terrain hashes, parent diagnostics, world IDs,
 versions and layer descriptors checked. These are retained replay packets, not
 archived byte-exact network BODYs. No new generation or registration was used.
 
-The [recorded profile](evidence/native-v11-cpu-replay.json) loads the saved initial
+The [recorded profile](../../evidence/native-v11-cpu-replay.json) loads the saved initial
 context, warms canonical layer images, accepts those packets through the native
 consumer, and profiles private instrumented copies of the unchanged adapters.
 All six production adapter hashes match the frozen runtime. No GPU was used.

@@ -4,7 +4,7 @@ V10 remains FAILED. Its recorded large preview has a 10.717 s gap between the fi
 
 A short CPU/HTTP-only test uses Chromium with GPU disabled, the actual production `postSurfaceBinary` and `createSurfaceLiveBroker`, and the complete archived 69.8 MB live-refinement body. It is **not** a replay of the unarchived 9.35 MB preview. No UI application, Vite middleware, native renderer, shader or generation runs in this test.
 
-The 17 ordered 4 MiB chunks preserve the complete SHA. Total transfer: 3.813 s. Maximum client fetch-to-headers: 236 ms. Maximum acknowledgement-to-next-request: 0.10 ms. Maximum broker processing interval: 46.5 ms. Maximum Node event-loop delay: 359 ms. No 10 s pause reproduced. See [v10-upload-isolated-http.json](evidence/v10-upload-isolated-http.json).
+The 17 ordered 4 MiB chunks preserve the complete SHA. Total transfer: 3.813 s. Maximum client fetch-to-headers: 236 ms. Maximum acknowledgement-to-next-request: 0.10 ms. Maximum broker processing interval: 46.5 ms. Maximum Node event-loop delay: 359 ms. No 10 s pause reproduced. See [v10-upload-isolated-http.json](../../evidence/v10-upload-isolated-http.json).
 
 This result does not clear the browser UI, Vite, driver or OS during the actual campaign. Post-run CPU/RAM availability is not an in-stall measurement. No unrelated process was stopped, and no runtime fix is made on this evidence alone.
 

@@ -30,7 +30,7 @@ JavaScript. Evidence is written to `web/out/scientific-docs-bilingual/`.
 The static build exports both pages and all assets to
 `web/out/scientific-site/` by default. It does not delete its destination.
 
-`fr.html` is the editorial source. `translation-source.json` records its
+`fr-source.html` is the editorial source; `fr.html` and `index.html` are generated static pages. The generator places stage explanations beside the corresponding chapters, including without JavaScript. `translation-source.json` records its
 ordered content fragments; `translations-en.tsv` contains the corresponding
 curated English text. Separate JSON catalogues cover attributes, explanatory
 code/formulas and diagrams. Run `node docs/scientific/localize.mjs` to generate
@@ -69,8 +69,9 @@ possible edited recipe.
 
 Chapter 19 (`#etapes`) has one section per generation stage, id `stage-<id>`,
 for every id of `docs/stage-registry-contract.md` (the V2 "?" links target them).
-Its text and inline SVG diagrams are authored in `stages-data.mjs` (EN and FR)
+Its text and inline SVG diagrams are authored in `stages-data.mjs` and `stage-additions.json` (EN and FR)
 and rendered by `node docs/scientific/stages.mjs` into `stages-en.html` /
-`stages-fr.html`, which `localize.mjs` injects between the `STAGES` markers of
-`fr.html` and `index.html`. `check.mjs` fails if a contract id is missing from
+`stages-fr.html`, which `localize.mjs` injects from the source and distributes across `fr.html` and `index.html`. `check.mjs` fails if a contract id is missing from
 either page or if the generated files are stale.
+
+The architectural catalogue is generated from all 79 cultures in the current Rust catalogue with `python docs/scientific/catalogue.py`. It writes the HTML, Markdown and 79 local SVG plates. `editorial.mjs` applies the shared reading layout and editorial treatment after localization. The two pages link to each other in their top navigation.
