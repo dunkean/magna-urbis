@@ -100,7 +100,7 @@ export interface V2Settings {
   urban?: V2UrbanSettings;
   appearance?: V2Appearance;
   /** Cartographic names can be edited without regenerating terrain or buildings. */
-  naming?: { title?: string; places?: Record<string, string> };
+  naming?: { title?: string; places?: Record<string, string>; mode?: 'cultural' | 'localized'; displayLanguage?: 'fr' | 'en' | 'ja' | 'ar' | 'es' | 'pt' | 'zh' };
   runtime?: {
     compute: 'auto' | 'cpu' | 'gpu';
     backend: 'typescript' | 'rust' | 'native';

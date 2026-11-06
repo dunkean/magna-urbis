@@ -5,6 +5,7 @@
  */
 import type { Rng } from '../core/rng';
 import type { NameFamily } from './types';
+import { frenchDe } from './syntax';
 
 const VOW = 'aeiouyàâäéèêëîïôöùûüœ';
 const isV = (c: string | undefined): boolean => !!c && VOW.includes(c.toLowerCase());
@@ -40,6 +41,8 @@ export interface StreetVocab {
   church(s: string): string; dest(p: string): string; gate(p: string): string; craft(word: string): string; minor(r: Rng): string; road(p: string): string;
 }
 export interface Vocab {
+  /** Composition metadata recorded before rendering; complete labels are never reparsed. */
+  describeName?(cultural: string): { proper: string; opaque: boolean } | undefined;
   /** tier 0 = town, 1 = village, 2 = hamlet / farm cluster */
   place(r: Rng, tier: 0 | 1 | 2): string;
   /** Dedication: a saint in Europe, a deity / ancestor elsewhere. */
@@ -57,7 +60,7 @@ export interface Vocab {
   crafts: Record<string, string>;
   st: StreetVocab;
   sq: { market: string[]; green: string[]; plain(r: Rng, saint: string): string; church(saint: string): string };
-  worship(saint: string, big: boolean): string;
+  worship(saint: string, big: boolean, kind?: string): string;
   castle(name: string): string;
   river(n: string): string; lake(n: string): string; sea(n: string): string; forest(n: string): string; hill(n: string): string; farm(n: string): string;
   gateDir(d: string): string;
@@ -68,7 +71,7 @@ export interface Vocab {
 }
 
 /* ------------------------------------------------------------------ French */
-const frDe = (n: string): string => (isV(n[0]) || n[0] === 'H' ? `d'${n}` : `de ${n}`);
+const frDe = frenchDe;
 const FR_SAINTS = ['Martin', 'Pierre', 'Jean', 'Étienne', 'Michel', 'Nicolas', 'Léger', 'Maurice', 'Denis', 'Sulpice', 'Médard', 'Laurent', 'Germain', 'Hilaire', 'Aubin', 'Rémy', 'Georges', 'Julien', 'Éloi', 'Benoît', 'Vincent', 'Saturnin', 'Marie', 'Anne', 'Catherine', 'Madeleine', 'Foy', 'Geneviève', 'Radegonde'];
 const FR_FEM = new Set(['Marie', 'Anne', 'Catherine', 'Madeleine', 'Foy', 'Geneviève', 'Radegonde']);
 const frSaint = (s: string): string => (FR_FEM.has(s) ? 'Sainte-' : 'Saint-') + s;

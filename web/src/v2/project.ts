@@ -84,6 +84,8 @@ export function validateSettings(value: unknown): asserts value is V2Settings {
   if (value.appearance !== undefined) validateAppearance(value.appearance);
   if (value.naming !== undefined) {
     if (!isRecord(value.naming)) throw new Error('Nommage invalide.');
+    checkEnum(value.naming.mode, ['cultural', 'localized'], 'mode des toponymes');
+    checkEnum(value.naming.displayLanguage, ['fr', 'en', 'ja', 'ar', 'es', 'pt', 'zh'], 'langue d’affichage des toponymes');
     if (value.naming.title !== undefined && (typeof value.naming.title !== 'string' || value.naming.title.length > 200)) throw new Error('Titre de carte invalide.');
     if (value.naming.places !== undefined) {
       if (!isRecord(value.naming.places) || Object.keys(value.naming.places).length > 2000) throw new Error('Noms des lieux invalides.');

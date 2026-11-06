@@ -12,6 +12,15 @@ versions; this change does not revoke earlier GPL grants.
 
 ## Locked software dependencies
 
+The embedded Namebench toponym resources are documented separately in the
+[naming guide](docs/NAMEBENCH_TOPONYMS_FR.md) and their
+[source and transformation manifest](web/src/gen/names/data/names-manifest.json).
+The place-name selection comes from the local Namebench import of GeoNames;
+the selected generator arrays and patterns come from its Snake4life
+fantasy-names import. The source database is not distributed. These extracts
+retain their upstream provenance; they are not covered by a new blanket
+license declaration for the source datasets.
+
 [dependency-inventory.json](licenses/dependency-inventory.json) enumerates every
 unique registry package/version in the committed npm lockfile and six Cargo
 lockfiles, with its original license expression, registry URL, integrity value,

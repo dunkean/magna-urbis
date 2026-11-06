@@ -1,4 +1,5 @@
 docs/*.md text eol=lf
+web/src/gen/names/data/*.json text eol=lf
 rust/crates/houses/data/*.json text eol=lf
 rust/fixtures/houses/*.json text eol=lf
 rust/bridge/house*.ts text eol=lf

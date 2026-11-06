@@ -1,7 +1,7 @@
 import { NAME_FAMILIES } from '../gen/names/types';
 import type { World } from '../gen/types';
 import type { V2Settings } from './contracts';
-import { registerMessages, setText, translate } from './i18n';
+import { getLanguage, registerMessages, setText, translate } from './i18n';
 import { mountParameterForm } from './parameterForm';
 
 const copy = (en: string, fr: string) => { registerMessages({ [en]: { en, fr } }); return en; };
@@ -11,6 +11,11 @@ const T = {
   places: copy('Place names', 'Noms des lieux'), generated: copy('Generated name', 'Nom généré'),
   empty: copy('Place settlements to edit their names.', 'Implantez les peuplements pour modifier leurs noms.'),
   main: copy('Main settlement', 'Lieu principal'),
+  mode: copy('Place-name presentation', 'Présentation des toponymes'),
+  cultural: copy('Full cultural names', 'Culture intégrale'),
+  localized: copy('Partially translated names', 'Traduction partielle'),
+  displayLanguage: copy('Language of generic place terms', 'Langue des éléments génériques'),
+  presentationHint: copy('Keep the full cultural form, or translate only generic place terms. Proper names stay unchanged.', 'Conservez la forme culturelle intégrale, ou traduisez seulement les éléments génériques. Les noms propres restent inchangés.'),
   export: copy('Choose format and export…', 'Choisir le format et exporter…'),
 };
 const languages = [
@@ -27,16 +32,30 @@ export function mountMapControls(namingHost: HTMLElement, exportHost: HTMLElemen
     { path: 'title', id: 'map-title-input', type: 'text', label: T.title, optional: true, placeholder: T.generated },
     { path: 'language', id: 'map-naming-language', type: 'select', label: T.language,
       options: [{ value: 'auto', label: T.auto }, ...NAME_FAMILIES.map((value, i) => ({ value, label: copy(languages[i][0], languages[i][1]) }))] },
+    { path: 'mode', id: 'map-naming-mode', type: 'select', label: T.mode,
+      options: [{ value: 'cultural', label: T.cultural }, { value: 'localized', label: T.localized }] },
+    { path: 'displayLanguage', id: 'map-naming-display-language', type: 'select', label: T.displayLanguage,
+      options: [{ value: 'fr', label: 'Français' }, { value: 'en', label: 'English' }, { value: 'ja', label: '日本語' },
+        { value: 'ar', label: 'العربية' }, { value: 'es', label: 'Español' }, { value: 'pt', label: 'Português' }, { value: 'zh', label: '中文' }] },
   ], {
-    getValue: path => path === 'title' ? b.getSettings().naming?.title ?? '' : b.getSettings().options.language ?? 'auto',
+    getValue: path => path === 'title' ? b.getSettings().naming?.title ?? ''
+      : path === 'mode' ? b.getSettings().naming?.mode ?? 'cultural'
+      : path === 'displayLanguage' ? b.getSettings().naming?.displayLanguage ?? getLanguage()
+      : b.getSettings().options.language ?? 'auto',
     setValue: (path, value) => {
       const settings = b.getSettings();
       if (path === 'language') settings.options.language = value as V2Settings['options']['language'];
+      else if (path === 'mode' || path === 'displayLanguage') {
+        settings.naming ??= {};
+        if (path === 'mode') { settings.naming.mode = value as 'cultural' | 'localized'; settings.naming.displayLanguage ??= getLanguage(); }
+        else settings.naming.displayLanguage = value as NonNullable<V2Settings['naming']>['displayLanguage'];
+      }
       else { settings.naming ??= {}; settings.naming.title = String(value ?? '').trim().slice(0, 200); }
       b.onNames();
     }, disabled: b.busy,
   });
   formHost.querySelector<HTMLInputElement>('#map-title-input')!.maxLength = 200;
+  const presentationHint = document.createElement('p'); presentationHint.className = 'hint'; setText(presentationHint, T.presentationHint); namingHost.append(presentationHint);
   const heading = document.createElement('p'); heading.className = 'hint'; setText(heading, T.places); namingHost.append(heading);
   const places = document.createElement('div'); places.className = 'map-place-names'; namingHost.append(places);
   const apply = document.createElement('button'); apply.type = 'button'; apply.id = 'map-names-apply'; setText(apply, T.apply); apply.onclick = b.onNames; namingHost.append(apply);

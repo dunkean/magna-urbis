@@ -1,0 +1,5365 @@
+{
+  "schemaVersion": 1,
+  "version": "original-cultural-phonotactics-v1",
+  "attribution": "Original fictional design authored for Magna Urbis. Tokens are not translations, attested historical morphemes, Indigenous-language data or authentic personal/place names. Cultural identifiers select distinct fictional palettes only. Source policy and limitations: docs/NAMEBENCH_CULTURAL_SOURCES.md.",
+  "profiles": {
+    "french": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "br",
+        "ch",
+        "cl",
+        "f",
+        "g",
+        "l",
+        "m",
+        "n",
+        "r",
+        "s",
+        "t",
+        "v"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "é",
+        "i",
+        "o",
+        "ou"
+      ],
+      "codas": [
+        "",
+        "n",
+        "r",
+        "l"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ay",
+            "igny",
+            "elles"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "onne",
+            "ance",
+            "elle"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "eau",
+            "ière",
+            "ette"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ane",
+            "enne",
+            "ine"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "ière",
+            "elle",
+            "aine"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "on",
+            "et",
+            "ard"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ais",
+            "ois",
+            "aine"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "ière",
+            "erie",
+            "ette"
+          ]
+        }
+      }
+    },
+    "english": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "br",
+        "cr",
+        "d",
+        "f",
+        "g",
+        "h",
+        "l",
+        "m",
+        "n",
+        "r",
+        "s",
+        "t",
+        "w"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u",
+        "ea"
+      ],
+      "codas": [
+        "",
+        "n",
+        "r",
+        "l",
+        "s"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "wick",
+            "ley",
+            "stead"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "en",
+            "er",
+            "on"
+          ],
+          "culturalTemplate": "River {proper}"
+        },
+        "lake": {
+          "suffixes": [
+            "mere",
+            "en",
+            "el"
+          ],
+          "culturalTemplate": "{proper} Lake"
+        },
+        "sea": {
+          "suffixes": [
+            "an",
+            "ern",
+            "en"
+          ],
+          "culturalTemplate": "{proper} Sea"
+        },
+        "forest": {
+          "suffixes": [
+            "el",
+            "en",
+            "eth"
+          ],
+          "culturalTemplate": "{proper} Forest"
+        },
+        "hill": {
+          "suffixes": [
+            "en",
+            "ar",
+            "el"
+          ],
+          "culturalTemplate": "{proper} Hill"
+        },
+        "region": {
+          "suffixes": [
+            "en",
+            "er",
+            "eth"
+          ],
+          "culturalTemplate": "{proper} Region"
+        },
+        "farm": {
+          "suffixes": [
+            "en",
+            "el",
+            "ar"
+          ],
+          "culturalTemplate": "{proper} Farm"
+        }
+      }
+    },
+    "german": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "br",
+        "d",
+        "f",
+        "fr",
+        "g",
+        "h",
+        "k",
+        "l",
+        "m",
+        "n",
+        "r",
+        "s",
+        "t",
+        "w"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u",
+        "au"
+      ],
+      "codas": [
+        "",
+        "n",
+        "r",
+        "l",
+        "s"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ingen",
+            "heim",
+            "bach"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ach",
+            "en",
+            "er"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "en",
+            "el",
+            "au"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "en",
+            "er",
+            "an"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "en",
+            "el",
+            "er"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "en",
+            "ar",
+            "el"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "en",
+            "er",
+            "an"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "en",
+            "el",
+            "er"
+          ]
+        }
+      }
+    },
+    "italian": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "br",
+        "c",
+        "d",
+        "f",
+        "g",
+        "l",
+        "m",
+        "n",
+        "p",
+        "r",
+        "s",
+        "t",
+        "v"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u"
+      ],
+      "codas": [
+        "",
+        "n",
+        "r",
+        "l"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ara",
+            "ino",
+            "ella"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ara",
+            "ena",
+            "ona"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "ino",
+            "ello",
+            "ano"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ano",
+            "ino",
+            "aro"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "ella",
+            "ina",
+            "ara"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "ano",
+            "ello",
+            "aro"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ana",
+            "ina",
+            "era"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "ella",
+            "ina",
+            "ara"
+          ]
+        }
+      }
+    },
+    "arabic": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "d",
+        "f",
+        "h",
+        "j",
+        "k",
+        "kh",
+        "l",
+        "m",
+        "n",
+        "q",
+        "r",
+        "s",
+        "sh",
+        "t",
+        "z"
+      ],
+      "vowels": [
+        "a",
+        "i",
+        "u",
+        "ā",
+        "ī",
+        "ū"
+      ],
+      "codas": [
+        "",
+        "n",
+        "r",
+        "m",
+        "h"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ara",
+            "ina",
+            "ura"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ira",
+            "ura",
+            "ara"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "ala",
+            "ila",
+            "ula"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ar",
+            "ir",
+            "ur"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "ana",
+            "ina",
+            "una"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "am",
+            "im",
+            "um"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ara",
+            "ira",
+            "ura"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "ala",
+            "ila",
+            "ula"
+          ]
+        }
+      }
+    },
+    "chinese": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "c",
+        "ch",
+        "d",
+        "f",
+        "g",
+        "h",
+        "j",
+        "k",
+        "l",
+        "m",
+        "n",
+        "p",
+        "q",
+        "r",
+        "s",
+        "sh",
+        "t",
+        "w",
+        "x",
+        "y",
+        "zh"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u",
+        "ai",
+        "ao",
+        "ei",
+        "ou"
+      ],
+      "codas": [
+        "",
+        "n",
+        "ng"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "an",
+            "ing",
+            "ao"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ei",
+            "uan",
+            "iao"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "ou",
+            "ing",
+            "ai"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ai",
+            "ao",
+            "ou"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "in",
+            "an",
+            "iang"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "ao",
+            "ing",
+            "an"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ian",
+            "eng",
+            "ao"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "ao",
+            "an",
+            "ing"
+          ]
+        }
+      }
+    },
+    "japanese": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "h",
+        "k",
+        "m",
+        "n",
+        "r",
+        "s",
+        "sh",
+        "t",
+        "ts",
+        "w",
+        "y"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u"
+      ],
+      "codas": [
+        ""
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "sawa",
+            "nari",
+            "tomo"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "miya",
+            "rina",
+            "sase"
+          ],
+          "culturalTemplate": "{proper}-gawa"
+        },
+        "lake": {
+          "suffixes": [
+            "hama",
+            "nori",
+            "rase"
+          ],
+          "culturalTemplate": "{proper}-ko"
+        },
+        "sea": {
+          "suffixes": [
+            "sora",
+            "nami",
+            "hara"
+          ],
+          "culturalTemplate": "{proper}-kai"
+        },
+        "forest": {
+          "suffixes": [
+            "mori",
+            "yama",
+            "nara"
+          ],
+          "culturalTemplate": "{proper}-no-mori"
+        },
+        "hill": {
+          "suffixes": [
+            "taka",
+            "mine",
+            "saka"
+          ],
+          "culturalTemplate": "{proper}-yama"
+        },
+        "region": {
+          "suffixes": [
+            "hana",
+            "nari",
+            "kaze"
+          ],
+          "culturalTemplate": "{proper}-no-kuni"
+        },
+        "farm": {
+          "suffixes": [
+            "mura",
+            "sawa",
+            "tane"
+          ],
+          "culturalTemplate": "{proper}-no-sato"
+        }
+      }
+    },
+    "sanskrit": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "bh",
+        "ch",
+        "d",
+        "dh",
+        "g",
+        "j",
+        "k",
+        "kh",
+        "l",
+        "m",
+        "n",
+        "p",
+        "r",
+        "s",
+        "sh",
+        "t",
+        "th",
+        "v"
+      ],
+      "vowels": [
+        "a",
+        "ā",
+        "i",
+        "ī",
+        "u",
+        "ū",
+        "e",
+        "o"
+      ],
+      "codas": [
+        "",
+        "n",
+        "m",
+        "r"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ara",
+            "ina",
+            "ava"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ari",
+            "ini",
+            "avi"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "ala",
+            "ila",
+            "ula"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ara",
+            "ira",
+            "ura"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "ana",
+            "ina",
+            "una"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "aka",
+            "ika",
+            "uka"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ava",
+            "iva",
+            "uva"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "ala",
+            "ila",
+            "ula"
+          ]
+        }
+      }
+    },
+    "norse": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "d",
+        "dr",
+        "f",
+        "g",
+        "h",
+        "k",
+        "l",
+        "m",
+        "n",
+        "r",
+        "s",
+        "sk",
+        "st",
+        "t",
+        "v"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u",
+        "y",
+        "ei"
+      ],
+      "codas": [
+        "",
+        "n",
+        "r",
+        "l",
+        "d"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "vik",
+            "heim",
+            "gard"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "en",
+            "ir",
+            "a"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "in",
+            "ar",
+            "en"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ar",
+            "en",
+            "ir"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "holt",
+            "lund",
+            "skog"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "fell",
+            "berg",
+            "dal"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "land",
+            "mark",
+            "rike"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "tun",
+            "stad",
+            "bol"
+          ]
+        }
+      }
+    },
+    "elven": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "a",
+        "e",
+        "f",
+        "h",
+        "l",
+        "m",
+        "n",
+        "r",
+        "s",
+        "th",
+        "v"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u",
+        "ae"
+      ],
+      "codas": [
+        "",
+        "l",
+        "n",
+        "r"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "iel",
+            "aeth",
+            "alor"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ira",
+            "ela",
+            "una"
+          ],
+          "culturalTemplate": "{proper} River"
+        },
+        "lake": {
+          "suffixes": [
+            "iel",
+            "eth",
+            "ail"
+          ],
+          "culturalTemplate": "{proper} Mere"
+        },
+        "sea": {
+          "suffixes": [
+            "ara",
+            "ela",
+            "ira"
+          ],
+          "culturalTemplate": "{proper} Sea"
+        },
+        "forest": {
+          "suffixes": [
+            "iel",
+            "eth",
+            "ail"
+          ],
+          "culturalTemplate": "{proper} Wood"
+        },
+        "hill": {
+          "suffixes": [
+            "or",
+            "en",
+            "ar"
+          ],
+          "culturalTemplate": "{proper} Tor"
+        },
+        "region": {
+          "suffixes": [
+            "ia",
+            "ea",
+            "ael"
+          ],
+          "culturalTemplate": "{proper} Realm"
+        },
+        "farm": {
+          "suffixes": [
+            "iel",
+            "eth",
+            "ail"
+          ],
+          "culturalTemplate": "{proper} Glade"
+        }
+      }
+    },
+    "dwarven": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "br",
+        "d",
+        "dr",
+        "g",
+        "gr",
+        "k",
+        "kh",
+        "m",
+        "n",
+        "r",
+        "t",
+        "th"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u"
+      ],
+      "codas": [
+        "",
+        "k",
+        "m",
+        "n",
+        "r"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "adin",
+            "arum",
+            "agor"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "um",
+            "in",
+            "ar"
+          ],
+          "culturalTemplate": "{proper} Run"
+        },
+        "lake": {
+          "suffixes": [
+            "in",
+            "um",
+            "or"
+          ],
+          "culturalTemplate": "{proper} Tarn"
+        },
+        "sea": {
+          "suffixes": [
+            "ar",
+            "um",
+            "in"
+          ],
+          "culturalTemplate": "{proper} Sea"
+        },
+        "forest": {
+          "suffixes": [
+            "in",
+            "ar",
+            "um"
+          ],
+          "culturalTemplate": "{proper} Wood"
+        },
+        "hill": {
+          "suffixes": [
+            "adur",
+            "agor",
+            "akur"
+          ],
+          "culturalTemplate": "{proper} Crag"
+        },
+        "region": {
+          "suffixes": [
+            "arum",
+            "orin",
+            "urim"
+          ],
+          "culturalTemplate": "{proper} Reach"
+        },
+        "farm": {
+          "suffixes": [
+            "in",
+            "ar",
+            "um"
+          ],
+          "culturalTemplate": "{proper} Holding"
+        }
+      }
+    },
+    "orcish": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "br",
+        "d",
+        "g",
+        "gr",
+        "k",
+        "kr",
+        "m",
+        "n",
+        "r",
+        "t",
+        "th",
+        "z"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u"
+      ],
+      "codas": [
+        "",
+        "g",
+        "k",
+        "r",
+        "z"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "gash",
+            "grud",
+            "gath"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "gur",
+            "gra",
+            "gar"
+          ],
+          "culturalTemplate": "{proper} Torrent"
+        },
+        "lake": {
+          "suffixes": [
+            "gruk",
+            "grak",
+            "grok"
+          ],
+          "culturalTemplate": "{proper} Pool"
+        },
+        "sea": {
+          "suffixes": [
+            "gar",
+            "gor",
+            "gur"
+          ],
+          "culturalTemplate": "{proper} Sea"
+        },
+        "forest": {
+          "suffixes": [
+            "grom",
+            "gram",
+            "grum"
+          ],
+          "culturalTemplate": "{proper} Thicket"
+        },
+        "hill": {
+          "suffixes": [
+            "krag",
+            "krog",
+            "krug"
+          ],
+          "culturalTemplate": "{proper} Crag"
+        },
+        "region": {
+          "suffixes": [
+            "garoth",
+            "gorath",
+            "gurath"
+          ],
+          "culturalTemplate": "{proper} Reach"
+        },
+        "farm": {
+          "suffixes": [
+            "grak",
+            "grok",
+            "gruk"
+          ],
+          "culturalTemplate": "{proper} Holding"
+        }
+      }
+    },
+    "halfling": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "br",
+        "d",
+        "f",
+        "g",
+        "h",
+        "l",
+        "m",
+        "n",
+        "p",
+        "r",
+        "t",
+        "w"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u",
+        "ea"
+      ],
+      "codas": [
+        "",
+        "n",
+        "r",
+        "l"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "bury",
+            "wick",
+            "well"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "er",
+            "en",
+            "el"
+          ],
+          "culturalTemplate": "River {proper}"
+        },
+        "lake": {
+          "suffixes": [
+            "en",
+            "el",
+            "er"
+          ],
+          "culturalTemplate": "{proper} Mere"
+        },
+        "sea": {
+          "suffixes": [
+            "er",
+            "en",
+            "el"
+          ],
+          "culturalTemplate": "{proper} Sea"
+        },
+        "forest": {
+          "suffixes": [
+            "el",
+            "en",
+            "er"
+          ],
+          "culturalTemplate": "{proper} Wood"
+        },
+        "hill": {
+          "suffixes": [
+            "en",
+            "el",
+            "ar"
+          ],
+          "culturalTemplate": "{proper} Hill"
+        },
+        "region": {
+          "suffixes": [
+            "en",
+            "er",
+            "el"
+          ],
+          "culturalTemplate": "{proper} Shire"
+        },
+        "farm": {
+          "suffixes": [
+            "el",
+            "en",
+            "ar"
+          ],
+          "culturalTemplate": "{proper} Farm"
+        }
+      }
+    },
+    "greek": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "d",
+        "f",
+        "g",
+        "k",
+        "kh",
+        "l",
+        "m",
+        "n",
+        "p",
+        "r",
+        "s",
+        "t",
+        "th",
+        "v"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "y",
+        "ai"
+      ],
+      "codas": [
+        "",
+        "n",
+        "r",
+        "s"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ara",
+            "ion",
+            "ena"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "aros",
+            "eris",
+            "onas"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "ena",
+            "ela",
+            "ona"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ara",
+            "era",
+            "ora"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "ea",
+            "ia",
+            "ara"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "oros",
+            "eron",
+            "aron"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "enia",
+            "aria",
+            "onia"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "ela",
+            "ena",
+            "ara"
+          ]
+        }
+      }
+    },
+    "persian": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "d",
+        "f",
+        "g",
+        "h",
+        "j",
+        "k",
+        "kh",
+        "l",
+        "m",
+        "n",
+        "p",
+        "r",
+        "s",
+        "sh",
+        "t",
+        "v",
+        "z"
+      ],
+      "vowels": [
+        "a",
+        "ā",
+        "e",
+        "i",
+        "o",
+        "u"
+      ],
+      "codas": [
+        "",
+        "n",
+        "r",
+        "m",
+        "h"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ava",
+            "aran",
+            "isan"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ara",
+            "ira",
+            "ura"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "ina",
+            "ana",
+            "una"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ar",
+            "ir",
+            "ur"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "ara",
+            "ina",
+            "ava"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "an",
+            "ar",
+            "in"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "aran",
+            "eran",
+            "iran"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "ava",
+            "iva",
+            "uva"
+          ]
+        }
+      }
+    },
+    "dutch": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "br",
+        "d",
+        "f",
+        "g",
+        "h",
+        "k",
+        "l",
+        "m",
+        "n",
+        "p",
+        "r",
+        "s",
+        "t",
+        "v",
+        "w"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u",
+        "oe",
+        "ij"
+      ],
+      "codas": [
+        "",
+        "n",
+        "r",
+        "l",
+        "s"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "endam",
+            "hoven",
+            "wijk"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "en",
+            "er",
+            "el"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "en",
+            "el",
+            "er"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "er",
+            "en",
+            "el"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "en",
+            "er",
+            "el"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "en",
+            "el",
+            "ar"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "er",
+            "en",
+            "an"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "en",
+            "er",
+            "el"
+          ]
+        }
+      }
+    },
+    "roman": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "c",
+        "d",
+        "f",
+        "l",
+        "m",
+        "n",
+        "p",
+        "r",
+        "s",
+        "t",
+        "v"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u"
+      ],
+      "codas": [
+        "",
+        "n",
+        "r",
+        "l"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ara",
+            "ium",
+            "ella"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ana",
+            "eris",
+            "ona"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "elum",
+            "anum",
+            "ilum"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "arium",
+            "erium",
+            "orium"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "evia",
+            "oria",
+            "iva"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "arus",
+            "orum",
+            "urnum"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ania",
+            "uria",
+            "enia"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "ellum",
+            "anum",
+            "illum"
+          ]
+        }
+      }
+    },
+    "turkish": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "c",
+        "d",
+        "g",
+        "h",
+        "k",
+        "l",
+        "m",
+        "n",
+        "p",
+        "r",
+        "s",
+        "sh",
+        "t",
+        "v",
+        "y",
+        "z"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "ı",
+        "i",
+        "o",
+        "ö",
+        "u",
+        "ü"
+      ],
+      "codas": [
+        "",
+        "n",
+        "r",
+        "l",
+        "s"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ara",
+            "eri",
+            "ulu"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ara",
+            "ere",
+            "uru"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "ana",
+            "ene",
+            "unu"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ar",
+            "er",
+            "ur"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "an",
+            "en",
+            "un"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "ak",
+            "ek",
+            "uk"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ara",
+            "ere",
+            "uru"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "ala",
+            "ele",
+            "ulu"
+          ]
+        }
+      }
+    },
+    "korean": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "ch",
+        "d",
+        "g",
+        "h",
+        "j",
+        "k",
+        "m",
+        "n",
+        "p",
+        "r",
+        "s",
+        "t"
+      ],
+      "vowels": [
+        "a",
+        "eo",
+        "i",
+        "o",
+        "u",
+        "eu",
+        "ae"
+      ],
+      "codas": [
+        "",
+        "n",
+        "ng",
+        "m",
+        "l"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "an",
+            "ong",
+            "eun"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "an",
+            "eon",
+            "ung"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "on",
+            "an",
+            "eun"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ang",
+            "eong",
+            "ung"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "an",
+            "in",
+            "un"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "am",
+            "om",
+            "eum"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "an",
+            "eon",
+            "ong"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "am",
+            "eom",
+            "um"
+          ]
+        }
+      }
+    },
+    "russian": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "br",
+        "d",
+        "dr",
+        "f",
+        "g",
+        "h",
+        "k",
+        "l",
+        "m",
+        "n",
+        "p",
+        "r",
+        "s",
+        "st",
+        "t",
+        "v",
+        "z"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u",
+        "ya"
+      ],
+      "codas": [
+        "",
+        "n",
+        "r",
+        "l",
+        "v"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ovo",
+            "ino",
+            "ev"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ava",
+            "ena",
+            "ina"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "ovo",
+            "evo",
+            "ino"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "oe",
+            "ee",
+            "ia"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "ovo",
+            "evo",
+            "ino"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "ov",
+            "en",
+            "ar"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ova",
+            "ina",
+            "ava"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "ovo",
+            "ino",
+            "evo"
+          ]
+        }
+      }
+    },
+    "polish": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "br",
+        "ch",
+        "d",
+        "g",
+        "k",
+        "kr",
+        "l",
+        "m",
+        "n",
+        "p",
+        "r",
+        "s",
+        "sz",
+        "t",
+        "w",
+        "z"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u",
+        "y"
+      ],
+      "codas": [
+        "",
+        "n",
+        "r",
+        "l",
+        "s"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "owo",
+            "ice",
+            "aw"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "awa",
+            "ina",
+            "yna"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "owo",
+            "ino",
+            "eno"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "owe",
+            "ine",
+            "yne"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "owo",
+            "ino",
+            "eno"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "ow",
+            "ek",
+            "ar"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "owa",
+            "yna",
+            "ana"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "owo",
+            "ino",
+            "eno"
+          ]
+        }
+      }
+    },
+    "slavic": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "br",
+        "d",
+        "g",
+        "h",
+        "k",
+        "l",
+        "m",
+        "n",
+        "p",
+        "r",
+        "s",
+        "t",
+        "v",
+        "z"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u",
+        "y"
+      ],
+      "codas": [
+        "",
+        "n",
+        "r",
+        "l",
+        "v"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ava",
+            "ino",
+            "ica"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ava",
+            "ena",
+            "iva"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "ino",
+            "ovo",
+            "evo"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "oje",
+            "ine",
+            "ove"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "ina",
+            "ana",
+            "ena"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "ov",
+            "en",
+            "ar"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ava",
+            "ina",
+            "ova"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "ica",
+            "ina",
+            "ena"
+          ]
+        }
+      }
+    },
+    "celtic": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "br",
+        "c",
+        "d",
+        "f",
+        "g",
+        "gw",
+        "l",
+        "m",
+        "n",
+        "p",
+        "r",
+        "s",
+        "t",
+        "th"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u",
+        "ae"
+      ],
+      "codas": [
+        "",
+        "n",
+        "r",
+        "l",
+        "s"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "avan",
+            "elin",
+            "orin"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ara",
+            "eri",
+            "ona"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "elin",
+            "orin",
+            "aran"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ara",
+            "eri",
+            "ora"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "elin",
+            "aran",
+            "orin"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "arn",
+            "ern",
+            "orn"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ava",
+            "ena",
+            "ora"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "elin",
+            "aran",
+            "orin"
+          ]
+        }
+      }
+    },
+    "maya": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "ch",
+        "h",
+        "k",
+        "l",
+        "m",
+        "n",
+        "p",
+        "s",
+        "t",
+        "tz",
+        "w",
+        "x",
+        "y"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u"
+      ],
+      "codas": [
+        "",
+        "l",
+        "m",
+        "n",
+        "k"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ala",
+            "ina",
+            "uka"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ila",
+            "una",
+            "aka"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "ela",
+            "ona",
+            "ika"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ara",
+            "era",
+            "ura"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "ana",
+            "ina",
+            "una"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "ak",
+            "ek",
+            "ok"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ala",
+            "ela",
+            "ila"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "ina",
+            "una",
+            "ana"
+          ]
+        }
+      }
+    },
+    "aztec": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "ch",
+        "h",
+        "k",
+        "l",
+        "m",
+        "n",
+        "p",
+        "t",
+        "tl",
+        "tz",
+        "w",
+        "x",
+        "y"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o"
+      ],
+      "codas": [
+        "",
+        "l",
+        "n",
+        "t"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "alan",
+            "iten",
+            "otan"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "alit",
+            "etan",
+            "itan"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "elin",
+            "olan",
+            "itan"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "alan",
+            "etan",
+            "otan"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "alit",
+            "elit",
+            "olit"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "atek",
+            "itek",
+            "otek"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "alan",
+            "itlan",
+            "otlan"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "elan",
+            "ilan",
+            "olan"
+          ]
+        }
+      }
+    },
+    "andean": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "ch",
+        "h",
+        "k",
+        "l",
+        "ll",
+        "m",
+        "n",
+        "ñ",
+        "p",
+        "q",
+        "r",
+        "s",
+        "t",
+        "w",
+        "y"
+      ],
+      "vowels": [
+        "a",
+        "i",
+        "u"
+      ],
+      "codas": [
+        "",
+        "n",
+        "r",
+        "s"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ana",
+            "ina",
+            "una"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ara",
+            "ira",
+            "ura"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "ala",
+            "ila",
+            "ula"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ara",
+            "ira",
+            "ura"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "ana",
+            "ina",
+            "una"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "aka",
+            "ika",
+            "uka"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ama",
+            "ima",
+            "uma"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "aya",
+            "iya",
+            "uya"
+          ]
+        }
+      }
+    },
+    "khmer": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "ch",
+        "d",
+        "k",
+        "kh",
+        "l",
+        "m",
+        "n",
+        "ng",
+        "p",
+        "ph",
+        "r",
+        "s",
+        "t",
+        "th",
+        "v"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u"
+      ],
+      "codas": [
+        "",
+        "n",
+        "m",
+        "ng",
+        "k"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ara",
+            "iri",
+            "ona"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ara",
+            "iri",
+            "ura"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "ang",
+            "eng",
+            "ong"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ara",
+            "era",
+            "ora"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "ang",
+            "ing",
+            "ong"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "ak",
+            "ek",
+            "ok"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ara",
+            "iri",
+            "ora"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "an",
+            "in",
+            "un"
+          ]
+        }
+      }
+    },
+    "sahel": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "d",
+        "f",
+        "g",
+        "h",
+        "j",
+        "k",
+        "l",
+        "m",
+        "n",
+        "p",
+        "r",
+        "s",
+        "t",
+        "w",
+        "y",
+        "z"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u"
+      ],
+      "codas": [
+        "",
+        "n",
+        "r",
+        "m"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ara",
+            "ena",
+            "uva"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ira",
+            "una",
+            "aya"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "ala",
+            "ila",
+            "ula"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ara",
+            "ira",
+            "ura"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "ana",
+            "ina",
+            "una"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "am",
+            "em",
+            "um"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ava",
+            "ena",
+            "ora"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "ala",
+            "ila",
+            "ula"
+          ]
+        }
+      }
+    },
+    "swahili": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "ch",
+        "d",
+        "f",
+        "g",
+        "h",
+        "j",
+        "k",
+        "l",
+        "m",
+        "mb",
+        "n",
+        "nd",
+        "ng",
+        "p",
+        "r",
+        "s",
+        "sh",
+        "t",
+        "v",
+        "w",
+        "z"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u"
+      ],
+      "codas": [
+        ""
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ala",
+            "ena",
+            "ika"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ara",
+            "ira",
+            "ura"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "ela",
+            "ila",
+            "ula"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ara",
+            "ira",
+            "ora"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "ana",
+            "ina",
+            "una"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "aka",
+            "eka",
+            "ika"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ava",
+            "eva",
+            "iva"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "ala",
+            "ela",
+            "ila"
+          ]
+        }
+      }
+    },
+    "southern-african": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "bh",
+        "d",
+        "dl",
+        "g",
+        "hl",
+        "k",
+        "kh",
+        "l",
+        "m",
+        "n",
+        "ng",
+        "p",
+        "ph",
+        "s",
+        "sh",
+        "t",
+        "th",
+        "v",
+        "w",
+        "z"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u"
+      ],
+      "codas": [
+        ""
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ala",
+            "ela",
+            "ula"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ara",
+            "ira",
+            "ura"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "ela",
+            "ila",
+            "ola"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ala",
+            "ila",
+            "ula"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "ana",
+            "ina",
+            "ona"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "aka",
+            "eka",
+            "uka"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ava",
+            "eva",
+            "uva"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "ala",
+            "ela",
+            "ula"
+          ]
+        }
+      }
+    },
+    "west-african": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "d",
+        "f",
+        "g",
+        "gb",
+        "h",
+        "j",
+        "k",
+        "kp",
+        "l",
+        "m",
+        "n",
+        "p",
+        "r",
+        "s",
+        "sh",
+        "t",
+        "w",
+        "y",
+        "z"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "ẹ",
+        "i",
+        "o",
+        "ọ",
+        "u"
+      ],
+      "codas": [
+        ""
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ala",
+            "ena",
+            "ora"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ara",
+            "ira",
+            "ura"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "ela",
+            "ila",
+            "ola"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ala",
+            "ila",
+            "ula"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "ana",
+            "ina",
+            "ona"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "aka",
+            "eka",
+            "oka"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ava",
+            "eva",
+            "ova"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "ala",
+            "ela",
+            "ola"
+          ]
+        }
+      }
+    },
+    "egyptian": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "d",
+        "f",
+        "h",
+        "k",
+        "kh",
+        "m",
+        "n",
+        "p",
+        "r",
+        "s",
+        "sh",
+        "t",
+        "th",
+        "w"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u"
+      ],
+      "codas": [
+        "",
+        "n",
+        "r",
+        "m"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ara",
+            "etu",
+            "ona"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ira",
+            "ena",
+            "ura"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "ela",
+            "ina",
+            "ula"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ara",
+            "era",
+            "ura"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "ana",
+            "ena",
+            "una"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "ak",
+            "et",
+            "uk"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ara",
+            "eta",
+            "ura"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "ala",
+            "eta",
+            "ula"
+          ]
+        }
+      }
+    },
+    "nubian": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "d",
+        "f",
+        "g",
+        "h",
+        "k",
+        "l",
+        "m",
+        "n",
+        "p",
+        "r",
+        "s",
+        "t",
+        "w"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u"
+      ],
+      "codas": [
+        "",
+        "n",
+        "r",
+        "l"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ara",
+            "ina",
+            "ura"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "iri",
+            "ena",
+            "uri"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "ela",
+            "ila",
+            "ula"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ara",
+            "era",
+            "ura"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "ana",
+            "ina",
+            "una"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "ar",
+            "er",
+            "ur"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ara",
+            "era",
+            "ura"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "ala",
+            "ila",
+            "ula"
+          ]
+        }
+      }
+    },
+    "mesopotamian": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "d",
+        "g",
+        "h",
+        "k",
+        "kh",
+        "l",
+        "m",
+        "n",
+        "p",
+        "q",
+        "r",
+        "s",
+        "sh",
+        "t",
+        "z"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "u"
+      ],
+      "codas": [
+        "",
+        "n",
+        "m",
+        "r"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ara",
+            "unu",
+            "eri"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ira",
+            "ena",
+            "uru"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "ela",
+            "inu",
+            "ula"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ara",
+            "eri",
+            "uru"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "ana",
+            "eni",
+            "unu"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "ak",
+            "ek",
+            "uk"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ara",
+            "iri",
+            "uru"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "ala",
+            "ili",
+            "ulu"
+          ]
+        }
+      }
+    },
+    "levantine": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "d",
+        "g",
+        "h",
+        "k",
+        "kh",
+        "l",
+        "m",
+        "n",
+        "p",
+        "q",
+        "r",
+        "s",
+        "sh",
+        "t",
+        "y",
+        "z"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u"
+      ],
+      "codas": [
+        "",
+        "n",
+        "r",
+        "m"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ara",
+            "ena",
+            "ira"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ira",
+            "ena",
+            "ura"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "ela",
+            "ila",
+            "ula"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ara",
+            "era",
+            "ura"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "ana",
+            "ina",
+            "una"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "ar",
+            "er",
+            "ur"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ara",
+            "eri",
+            "ura"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "ala",
+            "ili",
+            "ula"
+          ]
+        }
+      }
+    },
+    "himalayan": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "ch",
+        "d",
+        "g",
+        "gy",
+        "h",
+        "j",
+        "k",
+        "kh",
+        "l",
+        "m",
+        "n",
+        "ny",
+        "p",
+        "r",
+        "s",
+        "sh",
+        "t",
+        "th",
+        "ts"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u"
+      ],
+      "codas": [
+        "",
+        "n",
+        "m",
+        "ng"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ala",
+            "eri",
+            "uma"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ara",
+            "iri",
+            "ura"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "ela",
+            "ila",
+            "ula"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ara",
+            "era",
+            "ora"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "ana",
+            "ina",
+            "una"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "ang",
+            "ing",
+            "ung"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ala",
+            "eli",
+            "ula"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "ana",
+            "eni",
+            "una"
+          ]
+        }
+      }
+    },
+    "javanese": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "c",
+        "d",
+        "dh",
+        "g",
+        "h",
+        "j",
+        "k",
+        "l",
+        "m",
+        "n",
+        "ng",
+        "ny",
+        "p",
+        "r",
+        "s",
+        "t",
+        "th",
+        "w",
+        "y"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u"
+      ],
+      "codas": [
+        "",
+        "n",
+        "ng",
+        "r"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ara",
+            "ina",
+            "uru"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ara",
+            "iri",
+            "ura"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "ela",
+            "ila",
+            "ula"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ara",
+            "era",
+            "ora"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "ana",
+            "ina",
+            "una"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "aka",
+            "ika",
+            "uka"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ara",
+            "eri",
+            "ura"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "ala",
+            "ili",
+            "ula"
+          ]
+        }
+      }
+    },
+    "burmese": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "ch",
+        "d",
+        "g",
+        "h",
+        "k",
+        "kh",
+        "l",
+        "m",
+        "n",
+        "ng",
+        "ny",
+        "p",
+        "ph",
+        "s",
+        "sh",
+        "t",
+        "th",
+        "w",
+        "y"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u"
+      ],
+      "codas": [
+        "",
+        "n",
+        "ng",
+        "m"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ara",
+            "ena",
+            "ura"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ara",
+            "iri",
+            "ura"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "ela",
+            "ila",
+            "ula"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ara",
+            "era",
+            "ura"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "ana",
+            "ina",
+            "una"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "ak",
+            "ek",
+            "uk"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ara",
+            "eri",
+            "ura"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "ala",
+            "ili",
+            "ula"
+          ]
+        }
+      }
+    },
+    "vietnamese": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "c",
+        "ch",
+        "d",
+        "g",
+        "h",
+        "kh",
+        "l",
+        "m",
+        "n",
+        "ng",
+        "nh",
+        "ph",
+        "qu",
+        "r",
+        "s",
+        "t",
+        "th",
+        "tr",
+        "v",
+        "x"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u",
+        "ư",
+        "ơ"
+      ],
+      "codas": [
+        "",
+        "n",
+        "ng",
+        "m",
+        "c"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "an",
+            "ong",
+            "inh"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "an",
+            "ien",
+            "ung"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "on",
+            "an",
+            "inh"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ang",
+            "ong",
+            "ung"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "an",
+            "in",
+            "un"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "am",
+            "om",
+            "um"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "an",
+            "ien",
+            "ong"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "am",
+            "im",
+            "um"
+          ]
+        }
+      }
+    },
+    "tibetan": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "ch",
+        "d",
+        "g",
+        "h",
+        "j",
+        "k",
+        "kh",
+        "l",
+        "m",
+        "n",
+        "ng",
+        "ny",
+        "p",
+        "ph",
+        "r",
+        "s",
+        "sh",
+        "t",
+        "th",
+        "ts"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u"
+      ],
+      "codas": [
+        "",
+        "n",
+        "ng",
+        "m"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ara",
+            "ena",
+            "ura"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ara",
+            "iri",
+            "uru"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "ela",
+            "ili",
+            "ula"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ara",
+            "eri",
+            "ura"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "ana",
+            "ini",
+            "una"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "ak",
+            "ek",
+            "uk"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ara",
+            "eri",
+            "uru"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "ala",
+            "ili",
+            "ulu"
+          ]
+        }
+      }
+    },
+    "mongolian": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "ch",
+        "d",
+        "g",
+        "h",
+        "j",
+        "k",
+        "kh",
+        "l",
+        "m",
+        "n",
+        "p",
+        "r",
+        "s",
+        "sh",
+        "t",
+        "ts"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u",
+        "ö",
+        "ü"
+      ],
+      "codas": [
+        "",
+        "n",
+        "r",
+        "l",
+        "g"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ara",
+            "eri",
+            "uru"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ara",
+            "iri",
+            "uru"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "ela",
+            "ili",
+            "ulu"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ara",
+            "eri",
+            "uru"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "ana",
+            "ini",
+            "unu"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "ag",
+            "eg",
+            "ug"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ara",
+            "eri",
+            "uru"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "ala",
+            "ili",
+            "ulu"
+          ]
+        }
+      }
+    },
+    "maori": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "h",
+        "k",
+        "m",
+        "n",
+        "ng",
+        "p",
+        "r",
+        "t",
+        "w",
+        "wh"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u",
+        "ā",
+        "ē",
+        "ī",
+        "ō",
+        "ū"
+      ],
+      "codas": [
+        ""
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "rea",
+            "nara",
+            "mua"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ria",
+            "nira",
+            "wera"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "rea",
+            "nora",
+            "wira"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "raa",
+            "nera",
+            "wara"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "rahi",
+            "nari",
+            "mahu"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "rangi",
+            "naki",
+            "wari"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "rewa",
+            "nari",
+            "mau"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "rena",
+            "nira",
+            "wahu"
+          ]
+        }
+      }
+    },
+    "iroquoian": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "h",
+        "k",
+        "n",
+        "r",
+        "s",
+        "t",
+        "th",
+        "w",
+        "y"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u"
+      ],
+      "codas": [
+        "",
+        "n",
+        "h"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ane",
+            "eno",
+            "una"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "eri",
+            "ono",
+            "ari"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "ene",
+            "ino",
+            "ane"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ara",
+            "ero",
+            "ora"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "eni",
+            "oni",
+            "ani"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "ake",
+            "oke",
+            "eke"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ane",
+            "ene",
+            "one"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "ani",
+            "eni",
+            "oni"
+          ]
+        }
+      }
+    },
+    "pueblo": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "h",
+        "k",
+        "kw",
+        "l",
+        "m",
+        "n",
+        "p",
+        "s",
+        "sh",
+        "t",
+        "ts",
+        "w",
+        "y"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u"
+      ],
+      "codas": [
+        "",
+        "n",
+        "m"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ewa",
+            "una",
+            "iya"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "esi",
+            "uwi",
+            "aya"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "ina",
+            "uwa",
+            "eya"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "esa",
+            "uwa",
+            "aya"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "ina",
+            "uwa",
+            "esa"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "eka",
+            "uka",
+            "iya"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ewa",
+            "una",
+            "esa"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "ina",
+            "uwi",
+            "eya"
+          ]
+        }
+      }
+    },
+    "plains": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "ch",
+        "h",
+        "k",
+        "m",
+        "n",
+        "p",
+        "s",
+        "sh",
+        "t",
+        "w",
+        "y"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u"
+      ],
+      "codas": [
+        "",
+        "n",
+        "k"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ata",
+            "ena",
+            "owa"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ita",
+            "eno",
+            "awa"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "ota",
+            "ino",
+            "ewa"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ata",
+            "ena",
+            "owa"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "ati",
+            "eni",
+            "owi"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "ake",
+            "eke",
+            "oke"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ata",
+            "ena",
+            "owa"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "ati",
+            "eni",
+            "owi"
+          ]
+        }
+      }
+    },
+    "mississippian": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "ch",
+        "h",
+        "k",
+        "l",
+        "m",
+        "n",
+        "p",
+        "s",
+        "sh",
+        "t",
+        "w",
+        "y"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u"
+      ],
+      "codas": [
+        "",
+        "n",
+        "m"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "oma",
+            "ila",
+            "ena"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ima",
+            "ola",
+            "ana"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "ema",
+            "ula",
+            "ina"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "oma",
+            "ila",
+            "una"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "omi",
+            "ili",
+            "eni"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "oka",
+            "ila",
+            "eka"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "oma",
+            "ila",
+            "ena"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "omi",
+            "ela",
+            "ani"
+          ]
+        }
+      }
+    },
+    "pnw": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "ch",
+        "h",
+        "k",
+        "kh",
+        "kw",
+        "l",
+        "m",
+        "n",
+        "p",
+        "q",
+        "s",
+        "sh",
+        "t",
+        "tl",
+        "ts",
+        "w",
+        "y"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u"
+      ],
+      "codas": [
+        "",
+        "k",
+        "l",
+        "m",
+        "n",
+        "q",
+        "s"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ala",
+            "uka",
+            "emi"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ila",
+            "eku",
+            "ama"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "ela",
+            "iku",
+            "ami"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ala",
+            "eku",
+            "uma"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "ali",
+            "iki",
+            "emi"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "ak",
+            "eq",
+            "ik"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ala",
+            "eku",
+            "umi"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "ali",
+            "eku",
+            "imi"
+          ]
+        }
+      }
+    },
+    "inuit": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "g",
+        "j",
+        "k",
+        "l",
+        "m",
+        "n",
+        "p",
+        "q",
+        "r",
+        "s",
+        "t",
+        "v"
+      ],
+      "vowels": [
+        "a",
+        "i",
+        "u"
+      ],
+      "codas": [
+        "",
+        "k",
+        "n",
+        "q",
+        "t"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ana",
+            "iri",
+            "uku"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ina",
+            "uri",
+            "aka"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "una",
+            "ari",
+            "ika"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ana",
+            "uri",
+            "uka"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "ani",
+            "iri",
+            "uki"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "ak",
+            "iq",
+            "uk"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ana",
+            "iri",
+            "uku"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "ani",
+            "uri",
+            "iki"
+          ]
+        }
+      }
+    },
+    "siberian": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "ch",
+        "d",
+        "g",
+        "h",
+        "j",
+        "k",
+        "l",
+        "m",
+        "n",
+        "ng",
+        "p",
+        "r",
+        "s",
+        "sh",
+        "t",
+        "y"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u"
+      ],
+      "codas": [
+        "",
+        "n",
+        "m",
+        "t",
+        "k"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ena",
+            "iri",
+            "uko"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ina",
+            "eri",
+            "uka"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "una",
+            "eri",
+            "ika"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ana",
+            "iri",
+            "uka"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "eni",
+            "iri",
+            "uki"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "ek",
+            "it",
+            "uk"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ena",
+            "iri",
+            "uko"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "eni",
+            "iri",
+            "uki"
+          ]
+        }
+      }
+    },
+    "guarani": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "ch",
+        "h",
+        "j",
+        "k",
+        "l",
+        "m",
+        "mb",
+        "n",
+        "nd",
+        "ng",
+        "ñ",
+        "p",
+        "r",
+        "s",
+        "t",
+        "v",
+        "y"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u",
+        "y"
+      ],
+      "codas": [
+        ""
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ara",
+            "eri",
+            "una"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ira",
+            "eri",
+            "ura"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "ela",
+            "ili",
+            "ula"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ara",
+            "eri",
+            "ura"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "ana",
+            "ini",
+            "una"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "aka",
+            "eki",
+            "uka"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ara",
+            "eri",
+            "una"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "ala",
+            "ili",
+            "ula"
+          ]
+        }
+      }
+    },
+    "australian": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "d",
+        "dh",
+        "g",
+        "k",
+        "l",
+        "m",
+        "n",
+        "ng",
+        "nh",
+        "ny",
+        "p",
+        "r",
+        "t",
+        "th",
+        "w",
+        "y"
+      ],
+      "vowels": [
+        "a",
+        "i",
+        "u"
+      ],
+      "codas": [
+        "",
+        "n",
+        "ng",
+        "l",
+        "r"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ara",
+            "ina",
+            "uru"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ira",
+            "ana",
+            "uru"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "ela",
+            "ina",
+            "ula"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ara",
+            "ira",
+            "ura"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "ana",
+            "ina",
+            "una"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "aka",
+            "ika",
+            "uka"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ara",
+            "ina",
+            "uru"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "ala",
+            "ina",
+            "ula"
+          ]
+        }
+      }
+    },
+    "caucasian": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "ch",
+        "d",
+        "dz",
+        "g",
+        "gh",
+        "k",
+        "kh",
+        "l",
+        "m",
+        "n",
+        "p",
+        "q",
+        "r",
+        "s",
+        "sh",
+        "t",
+        "ts",
+        "v",
+        "z"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u"
+      ],
+      "codas": [
+        "",
+        "n",
+        "r",
+        "l"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ara",
+            "eni",
+            "uri"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ira",
+            "ena",
+            "ura"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "ela",
+            "ina",
+            "ula"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ara",
+            "era",
+            "ura"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "ana",
+            "ina",
+            "una"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "ar",
+            "er",
+            "ur"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ara",
+            "eri",
+            "ura"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "ala",
+            "ili",
+            "ula"
+          ]
+        }
+      }
+    },
+    "ethiopian": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "ch",
+        "d",
+        "f",
+        "g",
+        "h",
+        "j",
+        "k",
+        "kh",
+        "l",
+        "m",
+        "n",
+        "ñ",
+        "p",
+        "q",
+        "r",
+        "s",
+        "sh",
+        "t",
+        "ts",
+        "w",
+        "y",
+        "z"
+      ],
+      "vowels": [
+        "a",
+        "e",
+        "i",
+        "o",
+        "u",
+        "ə"
+      ],
+      "codas": [
+        "",
+        "n",
+        "r",
+        "m"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ara",
+            "ena",
+            "uru"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ira",
+            "ena",
+            "ura"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "ela",
+            "ina",
+            "ula"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ara",
+            "era",
+            "ura"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "ana",
+            "ina",
+            "una"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "ak",
+            "ek",
+            "uk"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ara",
+            "eri",
+            "ura"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "ala",
+            "ili",
+            "ula"
+          ]
+        }
+      }
+    },
+    "dravidian": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "ch",
+        "k",
+        "l",
+        "m",
+        "n",
+        "ñ",
+        "p",
+        "r",
+        "s",
+        "t",
+        "th",
+        "v",
+        "y"
+      ],
+      "vowels": [
+        "a",
+        "ā",
+        "e",
+        "ē",
+        "i",
+        "ī",
+        "o",
+        "ō",
+        "u",
+        "ū"
+      ],
+      "codas": [
+        "",
+        "m",
+        "n",
+        "l",
+        "r"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ara",
+            "ina",
+            "eri"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "iri",
+            "una",
+            "ara"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "ela",
+            "ina",
+            "ura"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ara",
+            "eri",
+            "ura"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "ana",
+            "ini",
+            "una"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "aka",
+            "eri",
+            "uka"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ara",
+            "eri",
+            "ura"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "ala",
+            "ini",
+            "ula"
+          ]
+        }
+      }
+    },
+    "arabian": {
+      "authorship": "original-fictional",
+      "onsets": [
+        "b",
+        "d",
+        "f",
+        "h",
+        "j",
+        "k",
+        "kh",
+        "l",
+        "m",
+        "n",
+        "q",
+        "r",
+        "s",
+        "sh",
+        "t",
+        "w",
+        "y",
+        "z"
+      ],
+      "vowels": [
+        "a",
+        "ā",
+        "i",
+        "ī",
+        "u",
+        "ū"
+      ],
+      "codas": [
+        "",
+        "n",
+        "r",
+        "m",
+        "h"
+      ],
+      "syllables": [
+        2,
+        3
+      ],
+      "roots": {
+        "habitation": {
+          "suffixes": [
+            "ara",
+            "ina",
+            "ura"
+          ]
+        },
+        "river": {
+          "suffixes": [
+            "ira",
+            "una",
+            "ara"
+          ]
+        },
+        "lake": {
+          "suffixes": [
+            "ala",
+            "ina",
+            "ula"
+          ]
+        },
+        "sea": {
+          "suffixes": [
+            "ara",
+            "ira",
+            "ura"
+          ]
+        },
+        "forest": {
+          "suffixes": [
+            "ana",
+            "ina",
+            "una"
+          ]
+        },
+        "hill": {
+          "suffixes": [
+            "am",
+            "im",
+            "um"
+          ]
+        },
+        "region": {
+          "suffixes": [
+            "ara",
+            "ira",
+            "ura"
+          ]
+        },
+        "farm": {
+          "suffixes": [
+            "ala",
+            "ila",
+            "ula"
+          ]
+        }
+      }
+    }
+  }
+}

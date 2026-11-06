@@ -253,6 +253,8 @@ export interface UrbanSite {
   anchor: Vec2;
   culture?: string;
   name?: string;
+  /** Last name written by the toponym stage; a different name is an explicit author override. */
+  generatedName?: string;
   /** Free-form tags for name generators (order, dedication, trade...). */
   tags?: Record<string, string>;
 }

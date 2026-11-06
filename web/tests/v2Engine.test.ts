@@ -51,7 +51,12 @@ describe('V2 retained generation pipeline', () => {
     expect(named.names?.family).toBe('english');
     expect(named.settlements?.find(place => place.main)?.name).toBe('Valmont');
     expect(named.names?.entries.some(entry => entry.kind === 'town' && entry.text === 'Valmont')).toBe(true);
-    expect(named.terrain).toBe(town.terrain); expect(named.roads).toBe(town.roads); expect(named.urban).toBe(town.urban);
+    // River/site display names are detached; physical geometry remains shared and unchanged.
+    expect(named.terrain.height).toBe(town.terrain.height);
+    expect(named.terrain.rivers.map(river => river.path)).toEqual(town.terrain.rivers.map(river => river.path));
+    expect(named.roads).toBe(town.roads);
+    expect(named.urban?.buildings).toBe(town.urban?.buildings);
+    expect(named.urban?.streets).toBe(town.urban?.streets);
     expect(town.names).toEqual(originalNames); expect(terrainCacheKey(s)).toBe(key);
     const loaded = parseProject(serializeProject(s, named));
     expect(loaded.settings.naming).toEqual(s.naming); expect(loaded.world?.names).toEqual(named.names);

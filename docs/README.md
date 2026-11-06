@@ -1,6 +1,7 @@
 # Documentation : accès par thème
 
 - [Atlas scientifique bilingue et pipeline](scientific/README.md)
+- [Toponymes Namebench embarqués](NAMEBENCH_TOPONYMS_FR.md) : corpus, profils culturels, composition et reconstruction de l’extrait
 - [Catalogue architectural](CATALOGUE_ARCHITECTURE_FR.md) et [cultures urbaines](CITY_CULTURES_FR.md)
 - [Méthodes de génération](methods/README.md) : terrain, villes, parcelles, bâtiments et rendu
 - [Guide de l’Atelier V2](V2_ATELIER_FR.md) et [contrat des étapes](stage-registry-contract.md)

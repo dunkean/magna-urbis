@@ -9,7 +9,7 @@ import { routeRoads } from './roads/regional';
 import { generateRural } from './landuse/rural';
 import { generateNaturalCover } from './landuse/natural';
 import { generateUrban } from './urban';
-import { generateNames, settlementNames } from './names';
+import { generateNames, settlementNames, setSettlementName } from './names';
 import { planSettlements } from './settlements/planner';
 import { routeNetwork } from './settlements/network';
 import { generateSettlementUrban } from './settlements/urban';
@@ -318,13 +318,6 @@ export function applyNameOverrides(world: World): void {
   for (const s of world.settlements) {
     const name = cleanSettlementName(byKey.get(s.main ? 'main' : s.key)?.name);
     if (!name) continue;
-    if (s.main) {
-      const old = names.town;
-      for (const e of names.entries) if (old && e.text.includes(old)) e.text = e.text === old ? name : e.text.split(old).join(name);
-      names.town = name;
-    } else {
-      for (const e of names.entries) if (e.sub === 'settlement:' + s.key) e.text = name;
-    }
-    s.name = name;
+    setSettlementName(world, s.main ? 'main' : s.key, name);
   }
 }
