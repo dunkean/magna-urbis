@@ -36,13 +36,13 @@ fn phHash(x:i32,y:i32,seed:u32)->f32{
   h=(h^(h>>16u))*0x7feb352du;h=(h^(h>>15u))*0x846ca68bu;return f32(h^(h>>16u))/4294967296.0;
 }
 fn phHeight(pos:vec2<f32>)->f32{
-  let q=clamp(pos/p.values[8].x-0.5,vec2<f32>(0.0),vec2<f32>(1023.0));let a=vec2<u32>(floor(q));let t=fract(q);
-  let b=min(a+1u,vec2<u32>(1023u));
-  return mix(mix(fine[a.y*1024u+a.x].x,fine[a.y*1024u+b.x].x,t.x),mix(fine[b.y*1024u+a.x].x,fine[b.y*1024u+b.x].x,t.x),t.y);
+  let n=sourceSize();let q=clamp(pos/p.values[8].x-0.5,vec2<f32>(0.0),vec2<f32>(f32(n-1u)));let a=vec2<u32>(floor(q));let t=fract(q);
+  let b=min(a+1u,vec2<u32>(n-1u));
+  return mix(mix(fine[a.y*n+a.x].x,fine[a.y*n+b.x].x,t.x),mix(fine[b.y*n+a.x].x,fine[b.y*n+b.x].x,t.x),t.y);
 }
 fn compactPhasor(i:u32)->f32{
   let h=fine[i].x;let intensity=p.values[8].z;if(intensity<=0.0){return h;}
-  let cell=p.values[8].x;let pos=(vec2<f32>(f32(i%1024u),f32(i/1024u))+0.5)*cell;
+  let cell=p.values[8].x;let n=sourceSize();let pos=(vec2<f32>(f32(i%n),f32(i/n))+0.5)*cell;
   let span=max(cell,p.values[8].w*.3);
   let ex=vec2<f32>(span,0.0);let ey=vec2<f32>(0.0,span);
   let l=phHeight(pos-ex);let r=phHeight(pos+ex);let t=phHeight(pos-ey);let b=phHeight(pos+ey);
@@ -83,4 +83,4 @@ fn compactReconstructionPoint(xy:vec2<f32>)->vec2<f32>{
 
 // The compact preset's positive reconstruction, selected by the shared scheduler.
 @compute @workgroup_size(256)
-fn compactReconstruct(@builtin(global_invocation_id) id:vec3<u32>){let i=id.x;if(i>=1048576u){return;}let xy=(vec2<f32>(f32(i%1024u),f32(i/1024u))+0.5)*p.values[2].w;var r=0.0;if(p.values[4].x>0.0){r=ridge(xy/p.values[2].y,u32(p.values[2].z));}fine[i]=vec4<f32>(compactRegional((compactReconstructionPoint(xy)-p.values[1].y)/p.values[1].x-0.5),1.0,r,0.0);}
+fn compactReconstruct(@builtin(global_invocation_id) id:vec3<u32>,@builtin(num_workgroups) groups:vec3<u32>){let i=cellId(id,groups);let n=sourceSize();if(i>=n*n){return;}let xy=(vec2<f32>(f32(i%n),f32(i/n))+0.5)*p.values[2].w;var r=0.0;if(p.values[4].x>0.0 && !openSeaSource(i)){r=ridge(xy/p.values[2].y,u32(p.values[2].z));}fine[i]=vec4<f32>(compactRegional((compactReconstructionPoint(xy)-p.values[1].y)/p.values[1].x-0.5),1.0,r,0.0);}

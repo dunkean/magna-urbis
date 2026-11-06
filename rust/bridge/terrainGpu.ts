@@ -17,7 +17,9 @@ export async function gpuContext(): Promise<Context | undefined> {
   contextPromise ??= (async () => {
     const adapter = await navigator.gpu?.requestAdapter({ powerPreference: 'high-performance' });
     if (!adapter) return;
-    const device = await adapter.requestDevice({ requiredFeatures: adapter.features.has('timestamp-query') ? ['timestamp-query'] : [] });
+    // The defaults stop a binding at 128 Mio, which a 2896² source or a 1095² erosion grid reaches.
+    const { maxBufferSize, maxStorageBufferBindingSize } = adapter.limits;
+    const device = await adapter.requestDevice({ requiredFeatures: adapter.features.has('timestamp-query') ? ['timestamp-query'] : [], requiredLimits: { maxBufferSize, maxStorageBufferBindingSize } });
     const result: Context = { device, pipelines: new Map(), lost: false };
     void device.lost.then(() => { result.lost = true; contextPromise = undefined; });
     return result;
@@ -49,8 +51,7 @@ export async function prepareGpu(mode: TerrainCompute, relief: string): Promise<
 
 export const GPU_GENERATION_RELIEFS = ['hills', 'mountains', 'mixed', 'high-mountains', 'valley', 'volcano', 'caldera', 'plateau', 'canyon'];
 export async function generateGpuNoise(state: Context, settings: TerrainSettings,progress?:TerrainProgressCallback): Promise<{ coarse: Float32Array; fine: Float32Array }> {
-  if (sourceDefinition(settings).n !== 1024) throw new Error('Bruit de génération GPU limité à une source de 1024² cellules ; utilisez le calcul CPU pour ce pas physique.');
-  const device = state.device;
+  const device = state.device, sourceN = sourceDefinition(settings).n;
   // Both entry points share an explicit layout, so the seed buffers are uploaded once.
   const layout = device.createBindGroupLayout({ entries: [
     { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
@@ -70,7 +71,7 @@ export async function generateGpuNoise(state: Context, settings: TerrainSettings
     }
     return result;
   });
-  const plan = GenerationNoisePlan.generation(settings.seed, settings.width, settings.relief, settings.motifSize);
+  const plan = GenerationNoisePlan.generation_at_resolution(settings.seed, settings.width, settings.relief, settings.motifSize, sourceN);
   const buffers: GPUBuffer[] = [];
   try {
     const params = plan.parameters();
@@ -154,7 +155,6 @@ export class GpuTerrainSampler {
 
   /** Assemble the full coast on the device; the erosion stage reads this buffer directly. */
   prepareCoastField(settings: TerrainSettings): GPUBuffer {
-    if (this.sourceN !== 1024) throw new Error('Érosion littorale GPU limitée à 1024² cellules ; utilisez le calcul CPU.');
     this.dispatchField({ x: 0, y: 0, extent: settings.width, resolution: this.sourceN }, settings);
     return this.output!;
   }
@@ -163,7 +163,7 @@ export class GpuTerrainSampler {
     const { x, y, extent, resolution: n } = region;
     if (![x, y, extent, n].every(Number.isFinite) || x < 0 || y < 0 || extent <= 0
       || x + extent > settings.width + 0.0001 || y + extent > settings.width + 0.0001
-      || !Number.isInteger(n) || n < 64 || n > 8192) throw new Error('Région d’échantillonnage invalide.');
+      || !Number.isInteger(n) || n < 16 || n > 8192) throw new Error('Région d’échantillonnage invalide.');
     const device = this.state.device;
     const cell = extent / n, epsilon = Math.max(settings.motifSize / 65536, cell * 0.5);
     const a = this.parameters;
@@ -173,9 +173,8 @@ export class GpuTerrainSampler {
       x, y, extent, cell, Math.floor(lod), Math.min(maxLevel, Math.floor(lod) + 1), lod - Math.floor(lod), epsilon, a[6], a[7], this.sourceN, maxLevel, ...Array.from({ length: 16 }, (_, i) => a[8 + i] ?? 0)]);
     const bytes = n * n * 16;
     if (bytes > this.capacity) {
-      this.output?.destroy(); this.readback?.destroy(); this.capacity = bytes;
+      this.output?.destroy(); this.capacity = bytes;
       this.output = device.createBuffer({ size: bytes, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
-      this.readback = device.createBuffer({ size: bytes, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
       this.group = device.createBindGroup({ layout: this.pipeline.getBindGroupLayout(0), entries:
         [this.uniform, this.field, this.perm, this.gradients, this.output, this.branches, this.coast].map((buffer, binding) => ({ binding, resource: { buffer } })) });
     }
@@ -192,6 +191,11 @@ export class GpuTerrainSampler {
     const { x, y, extent, resolution: n } = region;
     this.dispatchField(region, settings);
     const bytes = n * n * 16, commands = device.createCommandEncoder();
+    // Allocated on first read: a coast field stays on the device and never needs it.
+    if (!this.readback || this.readback.size < bytes) {
+      this.readback?.destroy();
+      this.readback = device.createBuffer({ size: bytes, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+    }
     commands.copyBufferToBuffer(this.output!, 0, this.readback!, 0, bytes);
     device.queue.submit([commands.finish()]);
     await this.readback!.mapAsync(GPUMapMode.READ, 0, bytes);

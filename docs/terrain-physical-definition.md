@@ -44,16 +44,32 @@ aux villes ; elle ne réduit pas le travail initial du modèle à 30 m. Les rast
 intermédiaires de cette inférence ne sont pas inclus dans le budget de la source
 conservée.
 
-Le calcul procédural GPU actuel produit une source de 1024². En automatique,
-une autre dimension utilise le pipeline CPU et l’activité indique ce choix.
-Un forçage GPU incompatible est refusé. Les budgets et coefficients d’érosion
-sont dans les contrôles « Super avancé ». La définition effective de l’érosion
-peut être moins fine que celle de la source ; elle est indiquée séparément.
+Le calcul procédural GPU produit toute source de 16² à 4096². La taille est lue
+dans le bloc uniforme : la changer ne recompile aucun pipeline. L’appareil
+demande les limites de buffers de l’adaptateur. En automatique, une taille que
+l’adaptateur refuse, ou dont le coût fixe GPU dépasse le calcul CPU estimé,
+utilise le pipeline CPU et l’activité indique ce choix. Un forçage GPU impossible
+est refusé avec la taille maximale de l’adaptateur.
+
+La grille régionale ne dépend pas de la source. La grille d’érosion de surface
+vaut sa base physique (640² à 1024²), jamais plus que la source ; au-delà de
+1024², elle suit 0,6 × la source, plafonnée à 2048². Une itération de surface
+représente le même temps physique sur toute grille : l’incision implicite suit
+1/pas et la reptation thermique et la diffusion 1/pas², dans leurs limites de
+stabilité. Les budgets et coefficients d’érosion sont dans les contrôles
+« Super avancé ». La définition effective de l’érosion peut être moins fine que
+celle de la source ; elle est indiquée séparément.
 Changer le pas peut changer le drainage, même avec la même graine.
+La pleine mer reste grossière : une fois la côte découpée, un masque de 128²
+marque les cellules de mer plus éloignées de la terre que ce qu’atteignent les
+étapes ignorées (détail, Phasor, surface). Elles gardent leur bathymétrie
+reconstruite. Tant que la côte n’est pas connue, rien n’est ignoré.
 L’hydrologie garde sa propre grille, plafonnée à 1024² dans les moteurs actuels :
 à 200 km, son meilleur pas régional est donc 195,31 m, même avec une source
-neuronale à 30 m. Le panneau affiche séparément ce pas ; une source plus dense
-ne signifie pas que les bassins et écoulements ont été calculés à la même finesse.
+neuronale à 30 m. Elle ne dépasse pas non plus la puissance de deux qui contient
+la source, avec un minimum de 256² : une source de 200² draine sur 256². Le
+panneau affiche séparément ce pas ; une source plus dense ne signifie pas que les
+bassins et écoulements ont été calculés à la même finesse.
 
 ## Transmission aux villes
 

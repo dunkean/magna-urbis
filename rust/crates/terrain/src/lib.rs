@@ -7,6 +7,7 @@ mod erosion;
 mod generation_noise;
 mod hydrology;
 pub mod noise;
+mod priority_flood;
 mod rng;
 mod terrain_par;
 mod terrain_zones;
@@ -21,6 +22,7 @@ pub use erosion::{EROSION_TUNING, set_erosion_tuning, TerrainPipeline};
 pub use erosion::cut_coast_field;
 pub use generation_noise::{GenerationNoise, GenerationNoisePlan};
 pub use hydrology::{HydrologyConfig, HydrologyEngine, HydrologyOutput};
+pub use priority_flood::{FloodGrids, erode_grid, flood_grids};
 pub use terrain_zones::{TerrainZones, ZONE_CHANNELS};
 
 pub struct Terrain {

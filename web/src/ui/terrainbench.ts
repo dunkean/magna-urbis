@@ -80,7 +80,7 @@ import type {} from './benchContext';
 import { installRecipeSharing, generationRecipe } from './recipeSharing';
 import { executionRuntime, executionProfiles, applyExecutionProfile, installExecutionProfile } from './executionProfile';
 import { initialTerrainSource } from './terrainStartupState';
-import { defaultSourceSpacing, sourceDefinition, terrainCapability, unsupportedExplicitGpuResolution } from '../../../rust/bridge/terrainDefinition';
+import { defaultSourceSpacing, MAX_GPU_SOURCE_RESOLUTION, physicalPlan, physicalPlanSummary, sourceDefinition, terrainCapability, unsupportedExplicitGpuResolution } from '../../../rust/bridge/terrainDefinition';
 import { terrainLoading } from './terrainStartup';
 import { mountIllustration, captureViewport } from '../../../illustration/web/index.mjs';
 import { illustrationContext } from './illustrationContext';
@@ -1036,7 +1036,7 @@ function benchGpuMismatch(n: number, source: TerrainSource, sketch: TerrainSetti
   const zones = el<HTMLSelectElement>('relief').value === 'cavern' ? undefined : sketchEditor ? sketchEditor.zones() : settings.zones;
   return unsupportedExplicitGpuResolution({ source, generationCompute: requestedGenerationCompute(), sketch, zones }, n);
 }
-const benchGpuError = (n: number): string => `GPU procédural explicite limité à 1024² ; ${n}² demande Auto ou CPU${executionRuntime.profile === 'local' ? ' ou Rust natif' : ''}.`;
+const benchGpuError = (n: number): string => `GPU procédural explicite limité à ${MAX_GPU_SOURCE_RESOLUTION}² ; ${n}² demande Auto ou CPU${executionRuntime.profile === 'local' ? ' ou Rust natif' : ''}.`;
 function updateSourceDefinitionControl(): void {
   const source = el<HTMLSelectElement>('terrainSource').value as TerrainSource;
   const baseModel = el<HTMLSelectElement>('baseModel').value;
@@ -1057,9 +1057,10 @@ function updateSourceDefinitionControl(): void {
   try {
     const definition = sourceDefinition({ width, sampleSpacing, source, baseModel, sketch });
     if (benchGpuMismatch(definition.n, source, sketch)) throw new Error(benchGpuError(definition.n));
-    const hydroGrid = el<HTMLSelectElement>('hydroEngine').value === 'vector' ? 'hydroVectorResolution' : 'hydroResolution';
-    const hydroN = Math.min(1024, Number(el<HTMLSelectElement>(hydroGrid).value) || 512);
-    summary.textContent = `${labels[capability.kind]} · ${range} · source ${definition.n}² à ${definition.spacing.toFixed(2)} m/cellule · ${Math.ceil(definition.sourceBytes / 1048576)} Mio de hauteurs · ~${Math.ceil(definition.estimatedWorkingBytes / 1048576)} Mio de rasters estimés. Eau : grille ${hydroN}² à ${(width / hydroN).toFixed(2)} m/cellule (plafond 1024², au mieux ${(width / 1024).toFixed(2)} m).`;
+    const plan = physicalPlan({ definition, motifSize: Number(input('motifSize').value), surfaceN: proceduralRecipe?.surfaceN,
+      compact: isCompactProcedural({ source, procedural: proceduralRecipe }), generationCompute: requestedGenerationCompute(), compute: el<HTMLSelectElement>('compute').value as TerrainCompute,
+      hydrology: { engine: el<HTMLSelectElement>('hydroEngine').value as 'vector' | 'rust', resolution: Number(el<HTMLSelectElement>('hydroResolution').value) || 512, vectorResolution: Number(el<HTMLSelectElement>('hydroVectorResolution').value) || 1024 } });
+    summary.textContent = `${labels[capability.kind]} · ${range} · ${physicalPlanSummary(plan, document.documentElement.lang.startsWith('fr'))} · ${Math.ceil(definition.sourceBytes / 1048576)} Mio de hauteurs · ~${Math.ceil(definition.estimatedWorkingBytes / 1048576)} Mio de rasters estimés.`;
     summary.dataset.error = 'false';
     widthField.setCustomValidity(''); spacingField.setCustomValidity('');
   } catch (error) {
@@ -1072,7 +1073,7 @@ function updateSourceDefinitionControl(): void {
     ? 'Tile40 expérimental : 40 km et 1024² fixes, quatre fenêtres coarse. L’aperçu et le LOD restent indépendants de la source.'
     : capability.kind === 'neural'
       ? 'Source neuronale native à 30 m : un pas de sortie plus gros réduit les données conservées, pas le calcul du modèle. Le conditionnement régional reste à 7,68 km ; la sortie 30 m ne le rend pas plus fin. Aperçu/LOD indépendants.'
-      : 'Aperçu/LOD indépendants de la source. Le GPU procédural produit actuellement 1024² ; hors 1024², calcul Rust CPU.')
+      : `Aperçu/LOD indépendants de la source. Le GPU procédural va de 16² à ${MAX_GPU_SOURCE_RESOLUTION}² ; l’érosion et l’eau gardent leurs propres grilles.`)
     + ' Le budget de 1536 Mio pour les rasters exclut modèles, VRAM et caches.';
 }
 /** Neural relief uses the selected physical source definition; procedural motif and erosion remain separate. */

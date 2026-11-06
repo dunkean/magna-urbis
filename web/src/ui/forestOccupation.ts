@@ -143,37 +143,32 @@ function fill(rings: Polygon[], x0: number, y0: number, cell: number, n: number,
  * texel centres. One transform to the boundary texels (those with a 4-neighbour
  * on the other side) gives both signs: d = ±(distance + 1/2).
  */
+/** Reach of the transform: the retained R/G channels saturate at |d| = 8 texels (128 + 16 d), so past 12 texels the exact value is never read. */
+const REACH = 12, FAR = REACH * REACH;
+const ROOTS = Float64Array.from({ length: FAR + 1 }, (_, i) => Math.sqrt(i));
 function signedDistance(mask: Uint8Array, n: number): Float32Array {
-  const d = new Float32Array(n * n);
+  // Squared distance to the nearest boundary texel of the same column, capped at FAR.
+  const column = new Uint8Array(n * n).fill(FAR), last = new Int32Array(n).fill(-REACH);
   for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
     const i = y * n + x, m = mask[i];
-    const edge = (x > 0 && mask[i - 1] !== m) || (x < n - 1 && mask[i + 1] !== m) || (y > 0 && mask[i - n] !== m) || (y < n - 1 && mask[i + n] !== m);
-    d[i] = edge ? 0 : 1e20;
+    if ((x > 0 && mask[i - 1] !== m) || (x < n - 1 && mask[i + 1] !== m) || (y > 0 && mask[i - n] !== m) || (y < n - 1 && mask[i + n] !== m)) last[x] = y;
+    const dy = y - last[x]; if (dy < REACH) column[i] = dy * dy;
   }
-  edt(d, n);
-  for (let i = 0; i < n * n; i++) d[i] = (Math.sqrt(d[i]) + 0.5) * (mask[i] ? 1 : -1);
-  return d;
-}
-
-/** In-place squared Euclidean distance transform (Felzenszwalb & Huttenlocher 2012), columns in cache-sized blocks. */
-function edt(d: Float32Array, n: number): void {
-  const B = 16, f = new Float64Array(n), v = new Int32Array(n), z = new Float64Array(n + 1), block = new Float32Array(B * n);
-  const line = (src: Float32Array, offset: number): void => {
-    for (let q = 0; q < n; q++) f[q] = src[offset + q];
-    let k = 0; v[0] = 0; z[0] = -Infinity; z[1] = Infinity;
-    for (let q = 1; q < n; q++) {
-      let s = ((f[q] + q * q) - (f[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]);
-      while (s <= z[k]) { k--; s = ((f[q] + q * q) - (f[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]); }
-      k++; v[k] = q; z[k] = s; z[k + 1] = Infinity;
+  last.fill(n + REACH);
+  for (let y = n - 1; y >= 0; y--) for (let x = 0; x < n; x++) {
+    const i = y * n + x; if (column[i] === 0) last[x] = y;
+    const dy = last[x] - y; if (dy < REACH && dy * dy < column[i]) column[i] = dy * dy;
+  }
+  // Row pass: spread only the texels within reach, exactly min(d², FAR). Most of a map is far from any boundary.
+  const squared = new Uint8Array(n * n).fill(FAR), d = new Float32Array(n * n);
+  for (let y = 0; y < n; y++) {
+    const row = y * n;
+    for (let x = 0; x < n; x++) {
+      const g = column[row + x]; if (g >= FAR) continue;
+      const from = Math.max(0, x - REACH + 1), to = Math.min(n - 1, x + REACH - 1);
+      for (let q = from; q <= to; q++) { const value = (q - x) * (q - x) + g; if (value < squared[row + q]) squared[row + q] = value; }
     }
-    k = 0;
-    for (let q = 0; q < n; q++) { while (z[k + 1] < q) k++; src[offset + q] = (q - v[k]) * (q - v[k]) + f[v[k]]; }
-  };
-  for (let c0 = 0; c0 < n; c0 += B) {
-    const w = Math.min(B, n - c0);
-    for (let r = 0; r < n; r++) for (let c = 0; c < w; c++) block[c * n + r] = d[r * n + c0 + c];
-    for (let c = 0; c < w; c++) line(block, c * n);
-    for (let r = 0; r < n; r++) for (let c = 0; c < w; c++) d[r * n + c0 + c] = block[c * n + r];
   }
-  for (let r = 0; r < n; r++) line(d, r * n);
+  for (let i = 0; i < n * n; i++) d[i] = (ROOTS[squared[i]] + 0.5) * (mask[i] ? 1 : -1);
+  return d;
 }

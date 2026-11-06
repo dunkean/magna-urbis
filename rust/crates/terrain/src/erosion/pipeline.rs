@@ -423,12 +423,18 @@ impl TerrainPipeline {
                 let gy = raw[(y + 1).min(source_n - 1) * source_n + x] as f64
                     - raw[y.saturating_sub(1) * source_n + x] as f64;
                 let slope = gx.hypot(gy) * this.scale / (2. * p[11]);
+                let gate = smooth((slope - 0.015) / 0.3);
+                // Flat ground (the sea floor first) takes no detail: skip its noise.
+                if gate == 0. {
+                    row[x] = (raw[i] as f64 * this.scale).max(0.3) as f32;
+                    continue;
+                }
                 let r=this.fine_value(i,2,||this.noise2.ridged((x as f64+0.5)*p[11]/p[9],(y as f64+0.5)*p[11]/p[9],p[10] as usize));
                 row[x] = (raw[i] as f64 * this.scale
                     + (r - 0.5)
                         * p[16]
                         * amplitude
-                        * smooth((slope - 0.015) / 0.3)
+                        * gate
                         * this.drainage[i])
                     .max(0.3) as f32;
             }
@@ -459,6 +465,7 @@ impl TerrainPipeline {
                 coarse: s[0] as usize - 24,
                 iterations: s[3] as usize,
                 canyon_amplitude: (self.flags[10] == 1).then_some(p[12]),
+                freeze_plateaus: true,
             },
         );
     }

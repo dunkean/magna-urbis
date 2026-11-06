@@ -19,6 +19,16 @@ function externalAssets(): Plugin {
   };
 }
 
+/** Dev server: serve `.wasm?url&inline` as the file itself (application/wasm, cached, streamable), not as a 3x larger base64 JS module. */
+function devWasmUrl(): Plugin {
+  return { name: 'v2-dev-wasm-url', enforce: 'pre', apply: 'serve',
+    async resolveId(source, importer) {
+      if (!/\.wasm\?(?:[^&]*&)*inline\b/.test(source) || !/[?&]url\b/.test(source)) return null;
+      return this.resolve(source.replace(/&inline\b/, ''), importer, { skipSelf: true });
+    },
+  };
+}
+
 /** Inline WASM outside Vite's root otherwise remains cached after prepare:v2. */
 function wasmReload(): Plugin {
   const directories = ['wasm', 'wasm-threads', 'houses'].map(name => normalizePath(resolve(root, `rust/pkg/${name}`)) + '/');
@@ -88,7 +98,7 @@ export default defineConfig({
   root: resolve(web, 'src/ui'),
   base: './',
   cacheDir: resolve(web, 'out/.vite-v2'),
-  plugins: [externalAssets(), v2Resources(), wasmReload()],
+  plugins: [externalAssets(), devWasmUrl(), v2Resources(), wasmReload()],
   esbuild: { legalComments: 'inline' },
   // Cross-origin isolation for the WASM threads package (static hosting: public/coi-serviceworker.js).
   server: { host: '127.0.0.1', port: 5174, strictPort: true, fs: { allow: [root] }, headers: { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'credentialless' } },

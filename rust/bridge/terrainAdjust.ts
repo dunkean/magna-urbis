@@ -55,13 +55,28 @@ export function applyDelta(data: SurfaceData, delta: Float32Array, m: number, ma
 }
 
 // Gradient noise (Perlin 2002 fade) on an integer lattice, seeded by a hash.
-function gradientNoise(x: number, y: number, seed: number): number {
+// The unit gradient of a lattice corner depends only on (corner, seed): applyFractalDetail memoizes the
+// cos/sin pair per octave in a direct-mapped cache (identical values; a corner is shared by many texels).
+const GRADIENT_CACHE = 1 << 16;
+interface GradientCache { i: Int32Array; j: Int32Array; c: Float64Array; s: Float64Array }
+const gradientCaches: GradientCache[] = [];
+function gradientCache(k: number): GradientCache {
+  let cache = gradientCaches[k];
+  if (!cache) cache = gradientCaches[k] = { i: new Int32Array(GRADIENT_CACHE), j: new Int32Array(GRADIENT_CACHE), c: new Float64Array(GRADIENT_CACHE), s: new Float64Array(GRADIENT_CACHE) };
+  cache.i.fill(0x7fffffff); cache.j.fill(0x7fffffff);
+  return cache;
+}
+function cachedNoise(x: number, y: number, seed: number, cache: GradientCache): number {
   const i = Math.floor(x), j = Math.floor(y), fx = x - i, fy = y - j;
   const dot = (a: number, b: number, dx: number, dy: number): number => {
-    let h = Math.imul(a, 374761393) ^ Math.imul(b, 668265263) ^ seed;
-    h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16;
-    const angle = (h >>> 0) / 4294967296 * Math.PI * 2;
-    return Math.cos(angle) * dx + Math.sin(angle) * dy;
+    const slot = (Math.imul(a, 73856093) ^ Math.imul(b, 19349663)) & (GRADIENT_CACHE - 1);
+    if (cache.i[slot] !== a || cache.j[slot] !== b) {
+      let h = Math.imul(a, 374761393) ^ Math.imul(b, 668265263) ^ seed;
+      h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16;
+      const angle = (h >>> 0) / 4294967296 * Math.PI * 2;
+      cache.i[slot] = a; cache.j[slot] = b; cache.c[slot] = Math.cos(angle); cache.s[slot] = Math.sin(angle);
+    }
+    return cache.c[slot] * dx + cache.s[slot] * dy;
   };
   const u = fx * fx * fx * (fx * (fx * 6 - 15) + 10), v = fy * fy * fy * (fy * (fy * 6 - 15) + 10);
   const a = dot(i, j, fx, fy), b = dot(i + 1, j, fx - 1, fy), c = dot(i, j + 1, fx, fy - 1), d = dot(i + 1, j + 1, fx - 1, fy - 1);
@@ -109,6 +124,7 @@ export function applyFractalDetail(data: SurfaceData, sourceCell: number, seed: 
   for (let wavelength = sourceCell * detail.start; wavelength >= 2 * cell && octaves.length < count; wavelength /= lacunarity) octaves.push(wavelength);
   if (!octaves.length || !detail.amplitude) return;
   const change = new Float32Array(n * n);
+  const rotation = octaves.map((wavelength, k) => ({ c: Math.cos(FRACTAL_ROTATIONS[k]), s: Math.sin(FRACTAL_ROTATIONS[k]), amplitude: Math.pow(wavelength / sourceCell, detail.hurst), seed: seed + k * 7919, cache: gradientCache(k) }));
   for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
     const i = y * n + x, h = data.height[i];
     if (h <= 0) continue;
@@ -116,10 +132,10 @@ export function applyFractalDetail(data: SurfaceData, sourceCell: number, seed: 
     const scale = detail.amplitude * Math.pow(slope + detail.flat, detail.slope) * sourceCell;
     const wx = data.x + (x + 0.5) * cell, wy = data.y + (y + 0.5) * cell;
     let v = 0;
-    octaves.forEach((wavelength, k) => {
-      const c = Math.cos(FRACTAL_ROTATIONS[k]), s = Math.sin(FRACTAL_ROTATIONS[k]), u = (wx * c - wy * s) / wavelength, w = (wx * s + wy * c) / wavelength;
-      v += gradientNoise(u, w, seed + k * 7919) * scale * Math.pow(wavelength / sourceCell, detail.hurst);
-    });
+    for (let k = 0; k < octaves.length; k++) {
+      const o = rotation[k], wavelength = octaves[k], u = (wx * o.c - wy * o.s) / wavelength, w = (wx * o.s + wy * o.c) / wavelength;
+      v += cachedNoise(u, w, o.seed, o.cache) * scale * o.amplitude;
+    }
     // Fade out near the shore: the coast keeps its line.
     v *= detail.shore > 0 ? Math.min(1, h / detail.shore) : 1;
     change[i] = v; data.height[i] = h + v;

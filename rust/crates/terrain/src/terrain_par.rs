@@ -113,7 +113,7 @@ where
 /// so the order is that of the serial stable sort for any thread count.
 pub(crate) fn radix_sort(keys: &mut Vec<(u32, u32)>, spare: &mut Vec<(u32, u32)>) {
     const DIGITS: usize = 2048;
-    spare.clear();
+    // Scratch contents do not matter: no need to clear them.
     spare.resize(keys.len(), (0, 0));
     #[cfg(any(not(target_arch = "wasm32"), feature = "threads"))]
     if parallel(keys.len()) {
@@ -157,20 +157,41 @@ pub(crate) fn radix_sort(keys: &mut Vec<(u32, u32)>, spare: &mut Vec<(u32, u32)>
         }
         return;
     }
-    for shift in [0, 11, 22] {
-        let mut count = [0usize; DIGITS];
-        for &(key, _) in keys.iter() {
-            count[(key >> shift) as usize & (DIGITS - 1)] += 1;
+    // Digits span only the key range, so they are narrow and their tables stay
+    // in the first cache level; one read counts them all.
+    let (mut low, mut high) = (u32::MAX, 0);
+    for &(key, _) in keys.iter() {
+        low = low.min(key);
+        high = high.max(key);
+    }
+    if low >= high {
+        return;
+    }
+    let bits = 32 - (high - low).leading_zeros();
+    let passes = bits.div_ceil(11);
+    let width = bits.div_ceil(passes);
+    let mask = (1_u32 << width) - 1;
+    let mut counts = vec![0_u32; (passes as usize) << width];
+    for &(key, _) in keys.iter() {
+        for pass in 0..passes {
+            counts[((pass << width) | ((key - low) >> (pass * width) & mask)) as usize] += 1;
         }
+    }
+    for (pass, count) in counts.chunks_exact_mut(1 << width).enumerate() {
+        // A digit shared by all keys needs no pass.
+        if count.contains(&(keys.len() as u32)) {
+            continue;
+        }
+        let shift = pass as u32 * width;
         let mut start = 0;
-        for slot in &mut count {
+        for slot in count.iter_mut() {
             let c = *slot;
             *slot = start;
             start += c;
         }
         for &entry in keys.iter() {
-            let slot = &mut count[(entry.0 >> shift) as usize & (DIGITS - 1)];
-            spare[*slot] = entry;
+            let slot = &mut count[((entry.0 - low) >> shift & mask) as usize];
+            spare[*slot as usize] = entry;
             *slot += 1;
         }
         std::mem::swap(keys, spare);

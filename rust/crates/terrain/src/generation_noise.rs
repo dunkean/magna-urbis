@@ -18,13 +18,20 @@ pub struct GenerationNoisePlan {
 
 impl GenerationNoisePlan {
     pub fn generation(seed: &str, width: f64, relief: &str, motif: f64) -> Result<Self, String> {
+        Self::generation_at_resolution(seed, width, relief, motif, 1024)
+    }
+
+    /// Fine noises of a physical source of `n` samples per side.
+    pub fn generation_at_resolution(
+        seed: &str, width: f64, relief: &str, motif: f64, n: usize,
+    ) -> Result<Self, String> {
         let kind = crate::Relief::parse(relief)?;
         let source_motif = if kind == crate::Relief::Valley {
             motif * kind.environment_scale()
         } else {
             motif
         };
-        Self::new(seed, width, source_motif)
+        Self::new_at_resolution(seed, width, source_motif, n)
     }
 
     pub fn new(seed: &str, width: f64, motif: f64) -> Result<Self, String> {
@@ -201,6 +208,7 @@ impl GenerationNoisePlan {
         {
             return Err("Configuration de forme finie GPU invalide.".into());
         }
+        // Only the noise tables survive: the parameters below hold no grid size.
         let mut plan = Self::new(seed, motif, motif)?;
         let root = Rng::new(&format!("magna-urbis:{seed}")).fork("terrain");
         if kind == crate::Relief::Plateau {

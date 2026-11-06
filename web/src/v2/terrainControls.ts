@@ -15,7 +15,7 @@ import './terrainControls.css';
 import { applyRuntimePath, normalizeRuntime } from './runtimeChoices';
 import { mountTerrainSketchControls, type TerrainSketchContext } from './terrainSketchControls';
 import { loadTerrainControlDefaults } from './terrainControlDefaults';
-import { sourceDefinition, terrainCapability } from '../../../rust/bridge/terrainDefinition';
+import { physicalPlan, physicalPlanSummary, sourceDefinition, terrainCapability } from '../../../rust/bridge/terrainDefinition';
 import { isTerrainExpertControl } from './terrainControlAccess';
 
 export interface TerrainControlBindings {
@@ -284,12 +284,12 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
       if (isClassicEngine) definitionHint.textContent = french ? 'Source TypeScript classique · définition propre au moteur.' : 'Classic TypeScript source · engine-defined spacing.';
       else {
         const definition = sourceDefinition(effective);
-        definitionHint.textContent = `${definition.n} × ${definition.n} · ${definition.spacing.toFixed(2)} m / ${french ? 'échantillon' : 'sample'} · ${Math.ceil(definition.sourceBytes / 1048576)} ${french ? 'Mio d’altitudes' : 'MiB heights'} · ≈ ${Math.ceil(definition.estimatedWorkingBytes / 1048576)} ${french ? 'Mio de rasters de travail (hors modèles)' : 'MiB working rasters (excluding models)'}`;
+        const runtime = settings.runtime;
+        const plan = physicalPlan({ definition, motifSize: effective.motifSize, surfaceN: effective.procedural?.surfaceN, compact: isCompactProcedural(effective),
+          hydrology: effective.hydrology?.enabled ? effective.hydrology : undefined, compute: runtime?.compute === 'cpu' ? 'wasm' : effective.compute,
+          generationCompute: effective.generationCompute ?? (runtime?.backend === 'native' ? 'native' : runtime?.compute === 'gpu' ? 'gpu-erosion' : undefined) });
+        definitionHint.textContent = `${physicalPlanSummary(plan, french)} · ${Math.ceil(definition.sourceBytes / 1048576)} ${french ? 'Mio d’altitudes' : 'MiB heights'} · ≈ ${Math.ceil(definition.estimatedWorkingBytes / 1048576)} ${french ? 'Mio de rasters de travail (hors modèles)' : 'MiB working rasters (excluding models)'}`;
         if (definition.nativeSpacing) definitionHint.textContent += ` · ${french ? 'source native' : 'native source'} ${definition.nativeSpacing.toFixed(2)} m`;
-        if (effective.hydrology?.enabled) {
-          const hydroN = effective.hydrology.engine === 'vector' ? effective.hydrology.vectorResolution : effective.hydrology.resolution;
-          definitionHint.textContent += ` · ${french ? 'hydrologie' : 'hydrology'} ${(metres / hydroN).toFixed(2)} m`;
-        }
         if (definition.kind === 'neural') definitionHint.textContent += french
           ? ' · conditionnement régional à 7,68 km ; le modèle calcule toujours à 30 m, même pour une sortie moins dense'
           : ' · regional conditioning at 7.68 km; the model always computes at 30 m, including for coarser output';

@@ -9,7 +9,8 @@ export function initialTerrainSource(params: URLSearchParams, neuralDefault: str
   // Older saved procedural URLs omitted source; reloading under another profile
   // must not turn those maps into the default neural generator.
   if (!requested && (params.has('procedural') || params.get('engine') === 'rust' && params.has('v'))) return 'procedural';
-  return neuralDefault === 'neural-python' ? 'neural-python' : 'neural-wasm';
+  // Web: procedural (WASM CPU / WebGPU); neural WASM is opt-in and never loaded otherwise.
+  return neuralDefault === 'neural-python' ? 'neural-python' : 'procedural';
 }
 
 export interface NeuralServiceState { state: string; message: string; loaded?: boolean }

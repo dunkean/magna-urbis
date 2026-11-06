@@ -4,7 +4,7 @@ import { initialTerrainSource, neuralModelLabel, terrainStartupText } from '../s
 describe('terrain startup', () => {
   it('starts new local and browser maps with the corresponding neural backend', () => {
     expect(initialTerrainSource(new URLSearchParams(), 'neural-python')).toBe('neural-python');
-    expect(initialTerrainSource(new URLSearchParams(), 'neural-wasm')).toBe('neural-wasm');
+    expect(initialTerrainSource(new URLSearchParams(), 'neural-wasm')).toBe('procedural');
     expect(initialTerrainSource(new URLSearchParams('source=obsolete'), 'neural-python')).toBe('neural-python');
   });
   it('preserves intentional map sources and legacy neural endpoints', () => {

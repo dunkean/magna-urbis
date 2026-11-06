@@ -1,5 +1,6 @@
 import { PROCEDURAL_RECIPE_VERSION, isCompactProcedural } from '../../../rust/bridge/terrainGenerationRecipe';
 import { COMPACT_VERSION } from '../../../rust/bridge/terrainPhasor';
+import { seaDistanceSurface } from '../render/terrainWater';
 import { Rng } from '../gen/core/rng';
 import { urbanSeed } from './urbanSeeds';
 import { seedRoot, seedSubset, stepSeed } from '../../../rust/bridge/generationSeed';
@@ -201,6 +202,8 @@ export async function generateTerrain(settings: V2Settings, onProgress?: Progres
       if (!generated.terrain) throw new Error('The Rust adapter did not return the retained terrain and water network.');
       report(onProgress,'terrain-projection','PrÃ©paration de la carte, des cÃ´tes et du rÃ©seau hydrographiqueâ€¦',0,0);
       nativeTerrain = projectEngineTerrain(generated.terrain);
+      // The renderer reads this instead of searching the coast on the main thread.
+      generated.terrain.waterSurface ??= seaDistanceSurface(generated.terrain, generated.terrain.width);
     } else if (!options.importedHeight && settings.runtime?.compute === 'gpu') {
       throw new Error('Le moteur TypeScript fonctionne sur CPU. Choisissez Rust pour utiliser le GPU.');
     }

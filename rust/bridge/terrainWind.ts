@@ -11,8 +11,8 @@ struct Params{n:u32,cell:f32,dx:f32,dy:f32,amount:f32,pad:vec3<f32>}
 @group(0) @binding(2) var<uniform> p:Params;
 fn neighbor(i:u32,axis:u32,sign:i32)->u32{let x=i%p.n;let y=i/p.n;return u32(clamp(i32(y)+select(0,sign,axis==1u),0,i32(p.n)-1))*p.n+u32(clamp(i32(x)+select(0,sign,axis==0u),0,i32(p.n)-1));}
 @compute @workgroup_size(256)
-fn entrain(@builtin(global_invocation_id) id:vec3<u32>){
- let i=id.x;if(i>=p.n*p.n){return;}let x=i%p.n;let y=i/p.n;
+fn entrain(@builtin(global_invocation_id) id:vec3<u32>,@builtin(num_workgroups) groups:vec3<u32>){
+ let i=id.y*groups.x*256u+id.x;if(i>=p.n*p.n){return;}let x=i%p.n;let y=i/p.n;
  if(x==0u||y==0u||x==p.n-1u||y==p.n-1u||height[i]<=.3){flux[i]=0.;return;}
  let gx=(height[i+1u]-height[i-1u])/(2.*p.cell);let gy=(height[i+p.n]-height[i-p.n])/(2.*p.cell);
  let slope=gx*p.dx+gy*p.dy;
@@ -20,8 +20,8 @@ fn entrain(@builtin(global_invocation_id) id:vec3<u32>){
  flux[i]=min(max(0.,height[i]-.3),p.amount*clamp(.55+2.*slope,.1,1.)*mobility);
 }
 @compute @workgroup_size(256)
-fn deposit(@builtin(global_invocation_id) id:vec3<u32>){
- let i=id.x;if(i>=p.n*p.n){return;}let sx=select(-1,1,p.dx>=0.);let sy=select(-1,1,p.dy>=0.);
+fn deposit(@builtin(global_invocation_id) id:vec3<u32>,@builtin(num_workgroups) groups:vec3<u32>){
+ let i=id.y*groups.x*256u+id.x;if(i>=p.n*p.n){return;}let sx=select(-1,1,p.dx>=0.);let sy=select(-1,1,p.dy>=0.);
  let wx=abs(p.dx)/max(.00001,abs(p.dx)+abs(p.dy));let wy=1.-wx;
  let a=neighbor(i,0u,-sx);let b=neighbor(i,1u,-sy);
  let incoming=select(0.,flux[a]*wx,a!=i)+select(0.,flux[b]*wy,b!=i);
@@ -79,13 +79,14 @@ export async function erodeWindGpu(context: Context, source: Float32Array, width
         floats[4] = s.transport;
         device.queue.writeBuffer(u, 0, params);
         const group = device.createBindGroup({ layout, entries: [h, f, u].map((buffer, binding) => ({ binding, resource: { buffer } })) });
+        const groups = Math.ceil(source.length / 256), gy = Math.ceil(groups / device.limits.maxComputeWorkgroupsPerDimension), gx = Math.ceil(groups / gy);
         const e = device.createCommandEncoder(), pass = e.beginComputePass();
         pass.setBindGroup(0, group);
         for (let i = 0; i < s.iterations; i++) {
             pass.setPipeline(a);
-            pass.dispatchWorkgroups(Math.ceil(source.length / 256));
+            pass.dispatchWorkgroups(gx, gy);
             pass.setPipeline(b);
-            pass.dispatchWorkgroups(Math.ceil(source.length / 256));
+            pass.dispatchWorkgroups(gx, gy);
         }
         pass.end();
         e.copyBufferToBuffer(h, 0, r, 0, source.byteLength);

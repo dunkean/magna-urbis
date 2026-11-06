@@ -10,11 +10,13 @@ struct Node {
   breached: atomic<u32>,
 }
 struct Control {
-  flags: array<atomic<u32>,2>, errors: atomic<u32>, padding: u32,
+  flags: array<atomic<u32>,2>, errors: atomic<u32>, seaReady: u32,
   histogram: array<atomic<u32>,256>,
   prefix: u32, quantileIndex: u32, selected: u32, pad: u32,
   p99: f32, p1: f32,
   solveSteps:u32, maxSolveSteps:array<u32,4>,
+  // 128² bits over the map. They travel with stage checkpoints, as `control` does.
+  seaLand:array<atomic<u32>,512>, openSea:array<u32,512>,
 }
 @group(0) @binding(0) var<uniform> p: Params;
 @group(0) @binding(1) var<storage, read> perm: array<u32>;
@@ -31,6 +33,25 @@ const directions = array<vec2<i32>,8>(vec2<i32>(1,0),vec2<i32>(1,1),vec2<i32>(0,
 const distances = array<f32,8>(1.0,1.4142135623730951,1.0,1.4142135623730951,1.0,1.4142135623730951,1.0,1.4142135623730951);
 fn size() -> u32 {return u32(p.values[0].z);}
 fn count() -> u32 {return size()*size();}
+// Physical source grid, read from the uniform: changing it recompiles nothing.
+fn sourceSize() -> u32 {return u32(p.values[0].y);}
+fn sourceCount() -> u32 {return sourceSize()*sourceSize();}
+// Above 65535 workgroups a source dispatch spills into y; the linear index is unchanged.
+fn cellId(id:vec3<u32>,groups:vec3<u32>) -> u32 {return id.y*groups.x*256u+id.x;}
+// Open sea: farther from land than the stages it skips can reach. `seaReady` stays
+// zero until a coast is cut, so maps without sea pay one uniform-like load. A mask
+// cell spans whole waves on large sources, which then skip together.
+fn seaCell(xy:vec2<f32>)->i32 {
+  let q=vec2<i32>(floor(xy/p.values[0].x*128.0));
+  if(any(q<vec2<i32>(0)) || any(q>=vec2<i32>(128))){return -1;}
+  return q.y*128+q.x;
+}
+fn openSeaAt(xy:vec2<f32>)->bool {
+  if(control.seaReady==0u){return false;}
+  let k=seaCell(xy);if(k<0){return false;}
+  return (control.openSea[u32(k)>>5u]&(1u<<(u32(k)&31u)))!=0u;
+}
+fn openSeaSource(i:u32)->bool {let n=sourceSize();return openSeaAt((vec2<f32>(f32(i%n),f32(i/n))+0.5)*p.values[2].w);}
 fn edge(i:u32) -> bool {let n=size();return i%n==0u || i/n==0u || i%n==n-1u || i/n==n-1u;}
 fn neighbor(i:u32,d:u32) -> i32 {
   let n=i32(size());let q=vec2<i32>(i32(i)%n,i32(i)/n)+directions[d];
@@ -244,7 +265,9 @@ fn graphInit(@builtin(global_invocation_id) id:vec3<u32>){
   let i=id.x;let tiles=(size()+15u)/16u;let tileCount=tiles*tiles;
   if(i<tileCount){atomicStore(&tileFlags[i],1u);atomicStore(&tileFlags[tileCount+i],0u);}
   if(i>=count()){return;}let mode=u32(p.values[6].y);
-  let value=select(1.0,nodes[i].h,mode>=2u);nodes[i].state[0]=vec2<f32>(value,0.0);nodes[i].state[1]=nodes[i].state[0];
+  // Surface graphs take open sea as a resolved, fixed base level: its tiles leave the solve at once.
+  let n=size();let fixedSea=p.values[7].w==1.0 && openSeaAt((vec2<f32>(f32(i%n),f32(i/n))+0.5)*p.values[1].x+p.values[1].y);
+  let value=select(1.0,nodes[i].h,mode>=2u);nodes[i].state[0]=vec2<f32>(value,select(0.0,1.0,fixedSea));nodes[i].state[1]=nodes[i].state[0];
   // Heights, accumulation and receivers remain fixed throughout this solve.
   // Cache the coefficient in scratch consumed only later by thermal/diffusion.
   var factor=0.0;let f=nodes[i].flow;
@@ -307,16 +330,23 @@ fn sample(pos:vec2<f32>,drain:bool)->f32 {
   return clamp(cubic(rows[0],rows[1],rows[2],rows[3],t.y),lo,hi);
 }
 @compute @workgroup_size(256)
-fn reconstruct(@builtin(global_invocation_id) id:vec3<u32>){let i=id.x;let n=u32(p.values[0].y);if(i>=n*n){return;}let xy=(vec2<f32>(f32(i%n),f32(i/n))+0.5)*p.values[2].w;let warp=p.values[13].y*min(16.0*p.values[0].w,p.values[1].x*0.9);let w=xy+warp*vec2<f32>(fbm(xy/p.values[2].x+vec2<f32>(11.3,0.0),1u,2u,0.5,0.0),fbm(xy/p.values[2].x+vec2<f32>(-4.7,2.9),1u,2u,0.5,0.0));let drainage=sample((xy-p.values[1].y)/p.values[1].x-0.5,true);fine[i]=vec4<f32>(sample((w-p.values[1].y)/p.values[1].x-0.5,false),1.0-0.85*p.values[4].z*smooth01((drainage-4.0)/max(12.0,f32(count())*0.001-4.0)),ridge(xy/p.values[2].y,u32(p.values[2].z)),0.0);}
+fn reconstruct(@builtin(global_invocation_id) id:vec3<u32>,@builtin(num_workgroups) groups:vec3<u32>){let i=cellId(id,groups);let n=sourceSize();if(i>=n*n){return;}let xy=(vec2<f32>(f32(i%n),f32(i/n))+0.5)*p.values[2].w;let warp=p.values[13].y*min(16.0*p.values[0].w,p.values[1].x*0.9);let w=xy+warp*vec2<f32>(fbm(xy/p.values[2].x+vec2<f32>(11.3,0.0),1u,2u,0.5,0.0),fbm(xy/p.values[2].x+vec2<f32>(-4.7,2.9),1u,2u,0.5,0.0));let drainage=sample((xy-p.values[1].y)/p.values[1].x-0.5,true);var r=0.5;if(!openSeaSource(i)){r=ridge(xy/p.values[2].y,u32(p.values[2].z));}fine[i]=vec4<f32>(sample((w-p.values[1].y)/p.values[1].x-0.5,false),1.0-0.85*p.values[4].z*smooth01((drainage-4.0)/max(12.0,f32(count())*0.001-4.0)),r,0.0);}
+// The amplitude percentile reads a lattice of at least 65536 cells, one in 16 from 1024² up.
+fn percentileMask()->u32{return min(16u,1u<<firstLeadingBit(max(1u,sourceCount()>>16u)))-1u;}
+fn percentileCount()->u32{
+  let n=sourceSize();let mask=percentileMask();let stride=mask+1u;var total=0u;
+  for(var row=0u;row<stride;row++){let column=(stride-((7u*row)&mask))&mask;total+=((n+mask-row)/stride)*((n+mask-column)/stride);}
+  return total;
+}
 @compute @workgroup_size(1)
-fn percentileInit(){control.prefix=0u;control.quantileIndex=select(u32(floor(0.99*65536.0)),u32(floor(0.01*1048576.0)),p.values[7].x==1.0);}
+fn percentileInit(){control.prefix=0u;control.quantileIndex=select(u32(floor(0.99*f32(percentileCount()))),u32(floor(0.01*f32(sourceCount()))),p.values[7].x==1.0);}
 @compute @workgroup_size(256)
 fn histogramClear(@builtin(local_invocation_id) id:vec3<u32>){atomicStore(&control.histogram[id.x],0u);}
 @compute @workgroup_size(256)
-fn histogram(@builtin(global_invocation_id) id:vec3<u32>,@builtin(local_invocation_id) local:vec3<u32>){
+fn histogram(@builtin(global_invocation_id) id:vec3<u32>,@builtin(num_workgroups) groups:vec3<u32>,@builtin(local_invocation_id) local:vec3<u32>){
   atomicStore(&localHistogram[local.x],0u);workgroupBarrier();
-  let i=id.x;
-  if(i<1048576u && (p.values[7].x!=0.0 || ((i%1024u+(i/1024u)*7u)&15u)==0u)){
+  let i=cellId(id,groups);let n=sourceSize();
+  if(i<n*n && (p.values[7].x!=0.0 || ((i%n+(i/n)*7u)&percentileMask())==0u)){
     let value=select(fine[i].x,fine[i].w,p.values[7].x==1.0);let bits=ordered(value);let shift=u32(p.values[7].y);let mask=select(0xffffffffu,0u,shift==24u)<<min(31u,shift+8u);
     if((bits&mask)==control.prefix){atomicAdd(&localHistogram[(bits>>shift)&255u],1u);}
   }
@@ -327,39 +357,72 @@ var<workgroup> localHistogram:array<atomic<u32>,256>;
 @compute @workgroup_size(1)
 fn percentileSelect(){let shift=u32(p.values[7].y);var quantileIndex=control.quantileIndex;var selected=0u;for(var bin=0u;bin<256u;bin++){let frequency=atomicLoad(&control.histogram[bin]);if(quantileIndex<frequency){selected=bin;break;}quantileIndex-=frequency;}control.quantileIndex=quantileIndex;control.prefix|=selected<<shift;if(shift==0u){let value=decoded(control.prefix);if(p.values[7].x==0.0){control.p99=max(0.0001,value);}else{control.p1=value;}}}
 @compute @workgroup_size(256)
-fn detail(@builtin(global_invocation_id) id:vec3<u32>){let i=id.x;if(i>=1048576u){return;}let x=i%1024u;let y=i/1024u;let gx=fine[y*1024u+min(x+1u,1023u)].x-fine[y*1024u+select(x-1u,0u,x==0u)].x;let gy=fine[min(y+1u,1023u)*1024u+x].x-fine[select(y-1u,0u,y==0u)*1024u+x].x;let amplitude=p.values[3].x*(1.0-0.2*p.values[4].z);let scale=amplitude/control.p99;let slope=length(vec2<f32>(gx,gy))*scale/(2.0*p.values[2].w);let extra=(fine[i].z-0.5)*p.values[4].x*amplitude*smooth01((slope-0.015)/0.3)*fine[i].y;fine[i].w=max(0.3,fine[i].x*scale+extra);}
+fn detail(@builtin(global_invocation_id) id:vec3<u32>,@builtin(num_workgroups) groups:vec3<u32>){let i=cellId(id,groups);let n=sourceSize();if(i>=n*n){return;}if(openSeaSource(i)){fine[i].w=max(0.3,fine[i].x*p.values[3].x*(1.0-0.2*p.values[4].z)/control.p99);return;}let x=i%n;let y=i/n;let gx=fine[y*n+min(x+1u,n-1u)].x-fine[y*n+select(x-1u,0u,x==0u)].x;let gy=fine[min(y+1u,n-1u)*n+x].x-fine[select(y-1u,0u,y==0u)*n+x].x;let amplitude=p.values[3].x*(1.0-0.2*p.values[4].z);let scale=amplitude/control.p99;let slope=length(vec2<f32>(gx,gy))*scale/(2.0*p.values[2].w);let extra=(fine[i].z-0.5)*p.values[4].x*amplitude*smooth01((slope-0.015)/0.3)*fine[i].y;fine[i].w=max(0.3,fine[i].x*scale+extra);}
 @compute @workgroup_size(256)
-fn normalize(@builtin(global_invocation_id) id:vec3<u32>){let i=id.x;if(i<1048576u){fine[i].x=max(0.3,1.0+fine[i].w-control.p1);}}
+fn normalize(@builtin(global_invocation_id) id:vec3<u32>,@builtin(num_workgroups) groups:vec3<u32>){let i=cellId(id,groups);if(i<sourceCount()){fine[i].x=max(0.3,1.0+fine[i].w-control.p1);}}
 @compute @workgroup_size(256)
-fn packHeight(@builtin(global_invocation_id) id:vec3<u32>){let i=id.x;if(i<1048576u){outputHeight[i]=fine[i].x;}}
+fn packHeight(@builtin(global_invocation_id) id:vec3<u32>,@builtin(num_workgroups) groups:vec3<u32>){let i=cellId(id,groups);if(i<sourceCount()){outputHeight[i]=fine[i].x;}}
 
 @compute @workgroup_size(256)
-fn volcanicInitial(@builtin(global_invocation_id) id:vec3<u32>){
-  let i=id.x;if(i>=1048576u){return;}
-  let xy=(vec2<f32>(f32(i%1024u),f32(i/1024u))+0.5)*p.values[2].w;
+fn volcanicInitial(@builtin(global_invocation_id) id:vec3<u32>,@builtin(num_workgroups) groups:vec3<u32>){
+  let i=cellId(id,groups);let n=sourceSize();if(i>=n*n){return;}
+  let xy=(vec2<f32>(f32(i%n),f32(i/n))+0.5)*p.values[2].w;
   fine[i].w=volcanoElevation(xy);
 }
-fn fineAt(xy:vec2<i32>)->f32{return fine[u32(clamp(xy.y,0,1023)*1024+clamp(xy.x,0,1023))].w;}
+fn fineAt(xy:vec2<i32>)->f32{let n=i32(sourceSize());return fine[u32(clamp(xy.y,0,n-1)*n+clamp(xy.x,0,n-1))].w;}
 fn fineSample(pos:vec2<f32>)->f32{
-  let q=clamp(pos,vec2<f32>(0.0),vec2<f32>(1023.0));let xy=vec2<i32>(floor(q));let t=fract(q);
+  let last=f32(sourceSize()-1u);let q=clamp(pos,vec2<f32>(0.0),vec2<f32>(last));let xy=vec2<i32>(floor(q));let t=fract(q);
   var value=mix(mix(fineAt(xy),fineAt(xy+vec2<i32>(1,0)),t.x),mix(fineAt(xy+vec2<i32>(0,1)),fineAt(xy+1),t.x),t.y);
-  if(pos.x!=q.x){let a=vec2<f32>(max(0.0,q.x-1.0),q.y);let b=vec2<f32>(min(1023.0,q.x+1.0),q.y);value+=(pos.x-q.x)*(fineAt(vec2<i32>(b))-fineAt(vec2<i32>(a)))/(b.x-a.x);}
-  if(pos.y!=q.y){let a=vec2<f32>(q.x,max(0.0,q.y-1.0));let b=vec2<f32>(q.x,min(1023.0,q.y+1.0));value+=(pos.y-q.y)*(fineAt(vec2<i32>(b))-fineAt(vec2<i32>(a)))/(b.y-a.y);}
+  if(pos.x!=q.x){let a=vec2<f32>(max(0.0,q.x-1.0),q.y);let b=vec2<f32>(min(last,q.x+1.0),q.y);value+=(pos.x-q.x)*(fineAt(vec2<i32>(b))-fineAt(vec2<i32>(a)))/(b.x-a.x);}
+  if(pos.y!=q.y){let a=vec2<f32>(q.x,max(0.0,q.y-1.0));let b=vec2<f32>(q.x,min(last,q.y+1.0));value+=(pos.y-q.y)*(fineAt(vec2<i32>(b))-fineAt(vec2<i32>(a)))/(b.y-a.y);}
   return value;
 }
 @compute @workgroup_size(256)
 fn surfaceLoad(@builtin(global_invocation_id) id:vec3<u32>){let i=id.x;if(i>=count()){return;}let xy=(vec2<f32>(f32(i%size()),f32(i/size()))+0.5)*p.values[1].x+p.values[1].y;let h=fineSample(xy/p.values[2].w-0.5);nodes[i].h=h;nodes[i].uplift=h;nodes[i].acc=1.0;nodes[i].routingPriority=seededRoutingPriority(i);}
 // Coast assembly uses x for height. Preserve signed meters throughout erosion.
 @compute @workgroup_size(256)
-fn coastLoad(@builtin(global_invocation_id) id:vec3<u32>){let i=id.x;if(i<1048576u){fine[i].w=fine[i].x;}}
+fn coastLoad(@builtin(global_invocation_id) id:vec3<u32>,@builtin(num_workgroups) groups:vec3<u32>){let i=cellId(id,groups);if(i<sourceCount()){fine[i].w=fine[i].x;}}
 @compute @workgroup_size(256)
-fn coastResult(@builtin(global_invocation_id) id:vec3<u32>){let i=id.x;if(i<1048576u){fine[i].x=fine[i].w;}}
+fn coastResult(@builtin(global_invocation_id) id:vec3<u32>,@builtin(num_workgroups) groups:vec3<u32>){let i=cellId(id,groups);if(i<sourceCount()){fine[i].x=fine[i].w;}}
 @compute @workgroup_size(256)
 fn surfaceFlowInit(@builtin(global_invocation_id) id:vec3<u32>){let i=id.x;if(i<count()){nodes[i].flood[0]=vec2<f32>(nodes[i].h,0.0);}}
 @compute @workgroup_size(256)
 fn surfaceDelta(@builtin(global_invocation_id) id:vec3<u32>){let i=id.x;if(i<count()){nodes[i].h-=nodes[i].uplift;}}
 @compute @workgroup_size(256)
-fn surfaceReconstruct(@builtin(global_invocation_id) id:vec3<u32>){let i=id.x;if(i>=1048576u){return;}let xy=(vec2<f32>(f32(i%1024u),f32(i/1024u))+0.5)*p.values[2].w;fine[i].w+=surfaceSample((xy-p.values[1].y)/p.values[1].x-0.5);}
+fn surfaceReconstruct(@builtin(global_invocation_id) id:vec3<u32>,@builtin(num_workgroups) groups:vec3<u32>){let i=cellId(id,groups);let n=sourceSize();if(i>=n*n || openSeaSource(i)){return;}let xy=(vec2<f32>(f32(i%n),f32(i/n))+0.5)*p.values[2].w;fine[i].w+=surfaceSample((xy-p.values[1].y)/p.values[1].x-0.5);}
+
+// Marks mask cells holding land, from the field a coast was just cut into.
+// p.values[7].w names that field: 0 regional heights, 2 fine.w, otherwise fine.x.
+@compute @workgroup_size(256)
+fn seaLandMark(@builtin(global_invocation_id) id:vec3<u32>,@builtin(num_workgroups) groups:vec3<u32>){
+  let i=cellId(id,groups);let kind=p.values[7].w;var h=0.0;var xy=vec2<f32>(0.0);
+  if(kind==0.0){
+    if(i>=count()){return;}let n=size();h=nodes[i].h;xy=(vec2<f32>(f32(i%n),f32(i/n))+0.5)*p.values[1].x+p.values[1].y;
+  } else {
+    if(i>=sourceCount()){return;}let n=sourceSize();h=select(fine[i].x,fine[i].w,kind==2.0);xy=(vec2<f32>(f32(i%n),f32(i/n))+0.5)*p.values[2].w;
+  }
+  if(h<=0.0){return;}
+  let k=seaCell(xy);if(k<0){return;}
+  let word=u32(k)>>5u;let bit=1u<<(u32(k)&31u);
+  if((atomicLoad(&control.seaLand[word])&bit)==0u){atomicOr(&control.seaLand[word],bit);}
+}
+// A cell is open sea when no land lies within p.values[7].y mask cells. One thread per word.
+@compute @workgroup_size(256)
+fn seaMaskGrow(@builtin(global_invocation_id) id:vec3<u32>){
+  let word=id.x;if(word>=512u){return;}let radius=i32(p.values[7].y);var bits=0u;
+  for(var b=0u;b<32u;b++){
+    let k=i32(word*32u+b);let x=k%128;let y=k/128;var open=true;
+    for(var yy=max(0,y-radius);open && yy<=min(127,y+radius);yy++){
+      for(var xx=max(0,x-radius);xx<=min(127,x+radius);xx++){
+        let c=u32(yy*128+xx);
+        if((atomicLoad(&control.seaLand[c>>5u])&(1u<<(c&31u)))!=0u){open=false;break;}
+      }
+    }
+    if(open){bits|=1u<<b;}
+  }
+  control.openSea[word]=bits;
+  if(word==0u){control.seaReady=1u;}
+}
 
 fn surfaceWeights(t:f32)->vec4<f32>{let t3=t*t*t;let omt=1.0-t;return vec4<f32>(omt*omt*omt,3.0*t3-6.0*t*t+4.0,-3.0*t3+3.0*t*t+3.0*t+1.0,t3)/6.0;}
 fn surfaceSample(pos:vec2<f32>)->f32{

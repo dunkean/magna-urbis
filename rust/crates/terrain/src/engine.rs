@@ -738,14 +738,7 @@ impl TerrainGenerator {
         }
         let n = self.source_n;
         let cell = self.map_width / n as f64;
-        let mut field = Vec::with_capacity(n * n);
-        for y in 0..n {
-            for x in 0..n {
-                field.push(
-                    self.height_at((x as f64 + 0.5) * cell, (y as f64 + 0.5) * cell, cell) as f32,
-                );
-            }
-        }
+        let mut field = self.physical_height_field();
         if let Some(zones) = &self.sea_zones {
             self.cut_zone_sea(&mut field, zones, self.motif);
         }

@@ -187,7 +187,7 @@ impl Flood {
         reset(&mut self.lower, len, 0);
         self.order.clear();
         self.order.reserve(len);
-        sort_by_height(h, &mut self.sorted, &mut self.keys, &mut self.spare);
+        sort_by_height(h, &[], &mut self.sorted, &mut self.keys, &mut self.spare);
         let (filled, receiver, state, queue, order, lower) = (
             &mut self.filled,
             &mut self.receiver,
@@ -274,7 +274,7 @@ impl Flood {
     }
 
     fn rank_order(&mut self) {
-        reset(&mut self.rank, self.order.len(), 0);
+        reset(&mut self.rank, self.filled.len(), 0);
         for (k, &c) in self.order.iter().enumerate() {
             self.rank[c as usize] = k as u32;
         }
@@ -290,12 +290,14 @@ fn reset<T: Copy>(values: &mut Vec<T>, len: usize, value: T) {
 /// `sort_unstable_by(h total_cmp, then index)`, by a stable LSD radix sort.
 fn sort_by_height(
     h: &[f32],
+    only: &[u32],
     order: &mut Vec<u32>,
     keys: &mut Vec<(u32, u32)>,
     spare: &mut Vec<(u32, u32)>,
 ) {
-    reset(keys, h.len(), (0, 0));
-    crate::terrain_par::cells(keys, |i, entry| {
+    reset(keys, if only.is_empty() { h.len() } else { only.len() }, (0, 0));
+    crate::terrain_par::cells(keys, |k, entry| {
+        let i = if only.is_empty() { k } else { only[k] as usize };
         let bits = h[i].to_bits();
         let key = if bits & 0x8000_0000 != 0 {
             !bits
@@ -306,7 +308,7 @@ fn sort_by_height(
     });
     crate::terrain_par::radix_sort(keys, spare);
     let sorted: &[(u32, u32)] = keys;
-    reset(order, h.len(), 0);
+    reset(order, sorted.len(), 0);
     crate::terrain_par::cells(order, |k, cell| *cell = sorted[k].1);
 }
 
@@ -433,10 +435,13 @@ fn flow_cell(
 }
 
 /// Split drainage of a flood whose receivers are already final.
-fn continuous_flow(fl: &Flood, grid: &Grid, flow: &mut Vec<FlowCell>) {
+fn continuous_flow(fl: &Flood, grid: &Grid, lively: &[bool], flow: &mut Vec<FlowCell>) {
     let (filled, rank, receiver) = (&fl.filled, &fl.rank, &fl.receiver);
     reset(flow, filled.len(), FlowCell::NONE);
     crate::terrain_par::cells(flow, |c, out| {
+        if !is_lively(lively, c) {
+            return;
+        }
         let neighbors = grid.neighbors(c);
         let lower = drained_before(c, &neighbors, rank);
         *out = flow_cell(c, receiver[c], filled, &neighbors, lower, grid);
@@ -582,6 +587,66 @@ struct Relax {
     donors: Vec<(f64, f64)>,
     next: Vec<f32>,
     delta: Vec<f64>,
+    /// Cells the passes may change; empty means all (see [`lively_cells`]).
+    lively: Vec<bool>,
+}
+
+#[inline(always)]
+fn is_lively(lively: &[bool], c: usize) -> bool {
+    lively.is_empty() || lively[c]
+}
+
+/// Strict descent leaves a uniform plateau untouched until a change reaches it: no
+/// receiver, no thermal excess, and diffusion rounds back to the same float32. Each
+/// iteration moves that front at most four cells (incision one, thermal two, diffusion
+/// one). So cells more than `reach` from any relief never change, and sit outside the
+/// routing of those that do: the open sea floor drops out of the kernels, with an
+/// identical result. `None` when too little would drop out.
+fn lively_cells(h: &[f32], grid: &Grid, reach: usize) -> Option<(Vec<bool>, Vec<u32>)> {
+    const NEGATIVE_ZERO: u32 = 0x8000_0000;
+    let (n, len) = (grid.n, h.len());
+    let mut seeds = vec![false; len];
+    let mut relief = 0;
+    for (c, seed) in seeds.iter_mut().enumerate() {
+        let bits = h[c].to_bits();
+        // Thermal rewrites a negative zero as a zero: it is not inert.
+        *seed = bits == NEGATIVE_ZERO
+            || grid.neighbors(c).iter().any(|&r| r != usize::MAX && h[r].to_bits() != bits);
+        relief += usize::from(*seed);
+    }
+    if relief * 4 > len * 3 {
+        return None;
+    }
+    // Chebyshev dilation, rows then columns, in both directions.
+    let mut near = vec![false; len];
+    for row in 0..n {
+        let line = row * n..(row + 1) * n;
+        let mut gap = reach + 1;
+        for c in line.clone() {
+            gap = if seeds[c] { 0 } else { gap + 1 };
+            near[c] = gap <= reach;
+        }
+        gap = reach + 1;
+        for c in line.rev() {
+            gap = if seeds[c] { 0 } else { gap + 1 };
+            near[c] |= gap <= reach;
+        }
+    }
+    let mut lively = vec![false; len];
+    let mut gaps = vec![reach + 1; n];
+    for c in 0..len {
+        let gap = &mut gaps[c % n];
+        *gap = if near[c] { 0 } else { *gap + 1 };
+        lively[c] = *gap <= reach;
+    }
+    gaps.fill(reach + 1);
+    for c in (0..len).rev() {
+        let gap = &mut gaps[c % n];
+        *gap = if near[c] { 0 } else { *gap + 1 };
+        lively[c] |= *gap <= reach;
+    }
+    let cells: Vec<u32> = (0..len as u32).filter(|&c| lively[c as usize]).collect();
+    (cells.len() * 4 <= len * 3).then_some((lively, cells))
 }
 
 // D8 directions by increasing neighbour index (-n-1, -n, -n+1, -1, +1, n-1, n, n+1),
@@ -600,14 +665,15 @@ fn thermal(
     work: &mut Relax,
 ) {
     if !crate::terrain_par::threaded() {
-        return thermal_scatter(h, grid, cell, talus, passes, rate, &mut work.delta);
+        return thermal_scatter(h, grid, cell, talus, passes, rate, &work.lively, &mut work.delta);
     }
     let len = h.len();
     for _ in 0..passes {
         reset(&mut work.donors, len, (0.0, 0.0));
         let heights: &[f32] = h;
+        let lively: &[bool] = &work.lively;
         crate::terrain_par::cells(&mut work.donors, |i, donor| {
-            if grid.borders[i] {
+            if grid.borders[i] || !is_lively(lively, i) {
                 return;
             }
             let neighbors = grid.neighbors(i);
@@ -629,6 +695,10 @@ fn thermal(
         reset(&mut work.next, len, 0.0);
         let donors = &work.donors;
         crate::terrain_par::cells(&mut work.next, |i, out| {
+            if !is_lively(lively, i) {
+                *out = heights[i];
+                return;
+            }
             let neighbors = grid.neighbors(i);
             let mut delta = 0.0_f64;
             let gather = |delta: &mut f64, d: usize| {
@@ -669,12 +739,13 @@ fn thermal_scatter(
     talus: f64,
     passes: usize,
     rate: f64,
+    lively: &[bool],
     delta: &mut Vec<f64>,
 ) {
     for _ in 0..passes {
         reset(delta, h.len(), 0.0);
         for i in 0..h.len() {
-            if grid.borders[i] {
+            if grid.borders[i] || !is_lively(lively, i) {
                 continue;
             }
             let neighbors = grid.neighbors(i);
@@ -706,13 +777,16 @@ fn thermal_scatter(
 fn diffuse(h: &mut [f32], n: usize, channels: &[bool], strength: f64, work: &mut Relax) {
     work.next.clear();
     work.next.extend_from_slice(h);
-    let previous = &work.next;
+    let (previous, lively) = (&work.next, &work.lively);
     crate::terrain_par::rows(h, n, |y, row| {
         if y == 0 || y == n - 1 {
             return;
         }
         for x in 1..n - 1 {
             let i = y * n + x;
+            if !is_lively(lively, i) {
+                continue;
+            }
             let weight = strength
                 * if channels.get(i).copied().unwrap_or(false) {
                     0.75
@@ -1283,6 +1357,7 @@ pub(crate) fn erode_shape(h: &mut [f32], n: usize, cell: f64, erosion: f64, talu
             coarse: physical_erosion_resolution(n, 320),
             iterations: tuning(SURFACE_ITERATIONS).max(0.0) as usize,
             canyon_amplitude: None,
+            freeze_plateaus: true,
         },
     );
 }
@@ -1310,6 +1385,7 @@ pub(crate) fn erode_canyon(
             coarse: physical_erosion_resolution(n, surface_resolution(cell * n as f64, motif)),
             iterations: tuning(SURFACE_ITERATIONS).max(0.0) as usize,
             canyon_amplitude: Some(amplitude),
+            freeze_plateaus: true,
         },
     );
 }
@@ -1338,6 +1414,7 @@ pub(crate) fn erode_surface(
             coarse: physical_erosion_resolution(n, surface_resolution(cell * n as f64, motif)),
             iterations: tuning(SURFACE_ITERATIONS).max(0.0) as usize,
             canyon_amplitude: None,
+            freeze_plateaus: true,
         },
     );
 }
@@ -1350,6 +1427,8 @@ struct ShapeErosion {
     coarse: usize,
     iterations: usize,
     canyon_amplitude: Option<f64>,
+    /// Keep inert plateaus out of strict descent (see [`lively_cells`]).
+    freeze_plateaus: bool,
 }
 
 // Deep trunk-river erosion is deliberately separate from ordinary hillside
@@ -1531,6 +1610,12 @@ fn erode_shape_coarse(
     let (mut keys, mut spare) = (Vec::new(), Vec::new());
     let mut acc = vec![1.0_f32; h.len()];
     let mut channels = vec![false; h.len()];
+    // Routed water crosses flats: only strict descent leaves them alone.
+    let lively = (!shape.routed && shape.freeze_plateaus)
+        .then(|| lively_cells(h, &grid, 4 * shape.iterations + 2))
+        .flatten();
+    let (lively, only) = lively.unwrap_or_default();
+    work.relax.lively = lively;
     for _ in 0..shape.iterations {
         let fl = &mut work.flood;
         // Strict physical descent: closed bowls stay closed instead of acquiring
@@ -1540,13 +1625,14 @@ fn erode_shape_coarse(
             fl.compute(h, &grid, Some(&mut work.flow));
             carve_sills(h, fl, &grid, cell, carve, &mut work.basins);
         } else {
-            sort_by_height(h, &mut fl.order, &mut keys, &mut spare);
+            sort_by_height(h, &only, &mut fl.order, &mut keys, &mut spare);
             fl.filled.clear();
             fl.filled.extend_from_slice(h);
             reset(&mut fl.receiver, h.len(), NONE);
             let heights: &[f32] = h;
+            let lively: &[bool] = &work.relax.lively;
             crate::terrain_par::cells(&mut fl.receiver, |c, receiver| {
-                if grid.borders[c] {
+                if grid.borders[c] || !is_lively(lively, c) {
                     return;
                 }
                 let neighbors = grid.neighbors(c);
@@ -1560,7 +1646,7 @@ fn erode_shape_coarse(
                 }
             });
             fl.rank_order();
-            continuous_flow(fl, &grid, &mut work.flow);
+            continuous_flow(fl, &grid, &work.relax.lively, &mut work.flow);
         }
         let fl = &work.flood;
         accumulate_f32(&mut acc, &fl.order, &work.flow);
@@ -1591,6 +1677,7 @@ fn erode_shape_coarse(
         }
         diffuse(h, n, &channels, diffusion, &mut work.relax);
     }
+    work.relax.lively = Vec::new();
 }
 
 /// The `k`-th smallest value in `f32::total_cmp` order (what
@@ -1659,4 +1746,38 @@ pub(crate) fn surface_parameters(width: f64, motif: f64, erosion: f64, talus: f6
         (tuning(SURFACE_INCISION) * erosion * 0.40 * cell / (0.004_f64.sqrt() * motif)) as f32,
         (tuning(SURFACE_DIFFUSION) * erosion * 0.025).min(0.1) as f32,
     ]
+}
+
+#[cfg(test)]
+mod plateau_tests {
+    use super::*;
+
+    #[test]
+    fn strict_descent_on_a_flat_sea_floor_ignores_the_frozen_cells() {
+        let n = 200;
+        let h: Vec<f32> = (0..n * n)
+            .map(|i| {
+                let (x, y) = ((i % n) as f32, (i / n) as f32);
+                if x > 55.0 { -250.0 } else { (55.0 - x) * 4.0 - 250.0 + (x * 0.7).sin() * (y * 0.4).cos() * 9.0 }
+            })
+            .collect();
+        let shape = |freeze_plateaus| ShapeErosion {
+            gain: 1.0,
+            routed: false,
+            motif: 3000.0,
+            coarse: n,
+            iterations: 12,
+            canyon_amplitude: None,
+            freeze_plateaus,
+        };
+        let (mut full, mut frozen) = (h.clone(), h.clone());
+        erode_with(&mut full, n, 30.0, 1.0, 0.5, &shape(false));
+        erode_with(&mut frozen, n, 30.0, 1.0, 0.5, &shape(true));
+        let padded = n + 24;
+        let grid = Grid::new(padded);
+        let coarse: Vec<f32> = (0..padded * padded).map(|i| h[(i / padded).clamp(12, n + 11).abs_diff(12) * n + (i % padded).clamp(12, n + 11).abs_diff(12)]).collect();
+        assert!(lively_cells(&coarse, &grid, 50).is_some(), "the plateau must drop out");
+        assert!(full != h, "the erosion must act");
+        assert!(full.iter().map(|v| v.to_bits()).eq(frozen.iter().map(|v| v.to_bits())));
+    }
 }

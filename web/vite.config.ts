@@ -97,6 +97,19 @@ function externalAssets(): Plugin {
   };
 }
 
+/** Dev server: `.wasm?url&inline` would be served as a base64 JS module (15-18 MB of WASM became 47-55 MB of
+ * JavaScript, parsed before any code ran, fetched again by each worker, and not streamable). Serve the file itself
+ * (application/wasm, HTTP-cached, streaming compilation); the importing module only receives its URL. */
+function devWasmUrl(): Plugin {
+  return {
+    name: 'magna-dev-wasm-url', apply: 'serve', enforce: 'pre',
+    async resolveId(source, importer) {
+      if (!/\.wasm\?(?:[^&]*&)*inline\b/.test(source) || !/[?&]url\b/.test(source)) return null;
+      return this.resolve(source.replace(/&inline\b/, ''), importer, { skipSelf: true });
+    },
+  };
+}
+
 function rustBenchEntry(): Plugin {
   return { name: 'rust-bench-entry', apply: 'serve', configureServer(server) {
     server.middlewares.use((req, res, next) => {
@@ -121,7 +134,7 @@ export default defineConfig(({ mode: requested, command }) => {
   cacheDir: fileURLToPath(new URL('./out/.vite-cache/', import.meta.url)),
   root: 'src/ui',
   base: single ? undefined : './',
-  plugins: [surfaceLivePlugin(), ...(single ? [viteSingleFile()] : [externalAssets()]), neuralServe(), ...(mode === 'rustbench' ? [rustBenchEntry()] : []), ...(['terrainbench', 'citybench', 'rustbench'].includes(mode) ? [terrainWasmReload(), decorServe()] : []), ...(['housebench', 'rustbench'].includes(mode) ? [housesWasmReload()] : [])],
+  plugins: [surfaceLivePlugin(), ...(single ? [viteSingleFile()] : [externalAssets()]), ...(command === 'serve' ? [devWasmUrl()] : []), neuralServe(), ...(mode === 'rustbench' ? [rustBenchEntry()] : []), ...(['terrainbench', 'citybench', 'rustbench'].includes(mode) ? [terrainWasmReload(), decorServe()] : []), ...(['housebench', 'rustbench'].includes(mode) ? [housesWasmReload()] : [])],
   // Keep third-party notices inside the self-contained offline bundle.
   esbuild: { legalComments: 'inline' },
   optimizeDeps: mode === 'housebench' ? { entries: ['housebench.html'] } : mode === 'rustbench' ? { entries: ['rustbench.html', 'terrainbench.html', 'citybench.html', 'urbanbench.html', 'housebench.html'] } : undefined,

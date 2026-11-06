@@ -665,6 +665,13 @@ impl GenerationNoisePlan {
             .map(|plan| GenerationNoisePlan { plan })
             .map_err(|e| JsValue::from_str(&e))
     }
+    pub fn generation_at_resolution(
+        seed: &str, width: f64, relief: &str, motif: f64, n: u32,
+    ) -> Result<GenerationNoisePlan, JsValue> {
+        magna_urbis_core::GenerationNoisePlan::generation_at_resolution(seed, width, relief, motif, n as usize)
+            .map(|plan| GenerationNoisePlan { plan })
+            .map_err(|e| JsValue::from_str(&e))
+    }
     pub fn generation(
         seed: &str,
         width: f64,

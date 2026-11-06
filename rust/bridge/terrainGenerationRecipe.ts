@@ -1,11 +1,14 @@
 import { CLIMATE_VALUES, CLIMATE_ZONE_VALUES, type ClimateZone } from './terrainClimate';
 import { compactProfile } from './terrainPhasor';
+import { surfaceGrid } from './terrainDefinition';
 import type { TerrainSettings, ErosionTuning } from './terrain';
 export const PROCEDURAL_RECIPE_VERSION = 'procedural-stages-v4-checkpoints';
+/** Explicit-step stability: a donor keeps at least half its excess, a cell half its height. */
+const SURFACE_THERMAL_LIMIT = 5, SURFACE_DIFFUSION_LIMIT = .5;
 export const GENERATION_STAGES = [
     ['prepare', 'Préparation du backend', false], ['grids', 'Grilles et buffers', false],
     ['initialize', 'Bruits et soulèvement initial', false], ['coastCut', 'Formation des côtes', true], ['regional', 'Cycles d’érosion régionale', true],
-    ['regionalFinish', 'Relaxation et drainage finaux', true], ['reconstruct', 'Reconstruction 1024²', false],
+    ['regionalFinish', 'Relaxation et drainage finaux', true], ['reconstruct', 'Reconstruction à la source', false],
     ['amplitude', 'Calibration de l’amplitude (p99)', true], ['ridged', 'Détail ridgé classique', true],
     ['surface', 'Érosion de surface après détail', true], ['normalize', 'Datum et plancher (p1)', true],
     ['phasor', 'Détail Phasor', true], ['posterior', 'Conditionnement fluvial a posteriori', true],
@@ -117,17 +120,23 @@ export const erosionBiome = (s: TerrainSettings): ErosionZone => {
 export const stageEnabled = (s: TerrainSettings, id: GenerationStage, fallback = true) => s.procedural?.enabled?.[id] ?? fallback;
 /** The old source name remains a readable alias for saved recipes. */
 export const isCompactProcedural = (s: Pick<TerrainSettings, 'source' | 'procedural'>) => (!s.source || s.source==='procedural' || s.source==='procedural-phasor') && (s.procedural?.preset === 'compact' || s.procedural?.preset === undefined && s.source === 'procedural-phasor');
-/** The final hydraulic grid has a measured metre cell and cannot exceed the source. */
+/** The final hydraulic grid has a measured metre cell and cannot exceed the source.
+ * One iteration stays the same physical time on any grid. The implicit incision
+ * coefficient is K·dt/dx: `surface[6]` multiplies the catchment in cells, so
+ * leaving it alone gives 1/cell. Thermal creep and diffusion are K·dt/dx², so
+ * they follow 1/cell². The plan's own grid, as at 1024², changes nothing. */
 export function finalizePhysicalSurfacePlan(surface: Float32Array, settings: TerrainSettings, sourceN: number): number {
     const requested = settings.procedural?.surfaceN;
     if (requested !== undefined && requested > sourceN)
         throw new Error(`Grille d'érosion ${requested}² supérieure à la source physique ${sourceN}².`);
-    const baseline = surface[0] - 24;
-    const n = requested ?? (sourceN > 1024 ? Math.min(2048, Math.max(baseline, Math.ceil(sourceN * .6))) : baseline);
-    const actual = Math.min(sourceN, n);
+    const actual = surfaceGrid(surface[0] - 24, sourceN, requested);
     const oldCell = surface[1];
     surface[0] = actual + 24; surface[1] = settings.width / actual; surface[2] = -12 * surface[1];
-    surface[6] *= surface[1] / oldCell;
+    const dose = (oldCell / surface[1]) ** 2;
+    if (dose !== 1) {
+        surface[5] = Math.min(surface[5] * dose, SURFACE_THERMAL_LIMIT);
+        surface[7] = Math.min(surface[7] * dose, SURFACE_DIFFUSION_LIMIT);
+    }
     return actual;
 }
 export function posteriorSettings(s: TerrainSettings) {

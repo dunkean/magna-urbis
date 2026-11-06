@@ -153,20 +153,22 @@ class HydrologyWorkset {
     const initial = device.createCommandEncoder(), initPass = initial.beginComputePass();
     dispatch(initPass, 'reset'); dispatch(initPass, 'initialize'); initPass.end();
     device.queue.submit([initial.finish()]);
-    let floodPasses = 0, converged = false;
+    let floodPasses = 0, converged = false, batch = 32;
     // Normally a handful of tile traversals. Tortuous basins get a bounded
     // larger budget; nonconvergence throws for the caller's explicit CPU path.
+    // Passes after the fixed point exit at once, so each CPU poll can cover
+    // twice the last batch: long drainages pay few GPU round trips.
     const budget = Math.max(256, n);
     while (floodPasses < budget) {
       const encoder = device.createCommandEncoder(), pass = encoder.beginComputePass();
-      for (let step = 0; step < 32; step++) {
+      for (let step = 0; step < batch; step++) {
         const phase = (floodPasses + step) & 1;
         dispatch(pass, 'clearNext', phase); dispatch(pass, 'solveTile', phase);
       }
       pass.end();
       encoder.copyBufferToBuffer(this.control, 0, this.statusReadback, 0, 16);
       device.queue.submit([encoder.finish()]);
-      floodPasses += 32;
+      floodPasses += batch; batch = Math.min(batch * 2, 128);
       await this.statusReadback.mapAsync(GPUMapMode.READ);
       const changes = new Uint32Array(this.statusReadback.getMappedRange())[0];
       this.statusReadback.unmap();

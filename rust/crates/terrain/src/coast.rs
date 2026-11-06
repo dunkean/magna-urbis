@@ -7,6 +7,9 @@ use std::f64::consts::TAU;
 const HEADER: usize = 56;
 const BUMPS: usize = 32;
 const MAX_BUMPS: usize = 6;
+/// Upper bound of |simplex noise|, hence of any fractal sum of it: three corners of
+/// at most 75 * max((0.5 - r²)⁴ r) = 75 * 0.0092 each.
+const NOISE_BOUND: f64 = 2.1;
 
 pub(crate) struct Coast {
     rng: Rng,
@@ -543,20 +546,94 @@ impl Coast {
         (distance, scale, islet_height, apron)
     }
 
+    /// Coastal band, in map widths, of a shore of this `scale` and `apron`: four of its
+    /// widest ramps (largest `width_variation`, no cliff), as `shore` uses. A ramp
+    /// grows with the relief it cuts. Beyond the band the sea floor is flat at `-depth`.
+    fn shore_band(&self, scale: f64, apron: f64, relief: f64, width: f64) -> f64 {
+        4.0 * (self.parameters[2] as f64).max(relief / (width * 0.45)).min(scale * 0.18) * 1.75 * apron
+    }
+
+    /// Open sea: `(x, y)`, in map widths, is provably beyond the coastal band of every
+    /// shore that could pass here, so the coast returns the exact sea floor `-depth`
+    /// whatever the relief `height` below. THE definition of open sea: the signed
+    /// distance is bounded with each noise at its bound, so no noise is evaluated. The
+    /// shore nearest to a cell decides its ramp, and each one clears its own band.
+    pub fn open_sea(&self, x: f64, y: f64, width: f64, height: f64) -> bool {
+        let at = |i: usize| self.parameters[i] as f64;
+        // Bays and headlands widen the sea or the land by at most their own bump.
+        let mut raised = 0.0;
+        for k in 0..(at(30) as usize).min(MAX_BUMPS) {
+            let j = BUMPS + k * 4;
+            let d2 = ((x - at(j)).powi(2) + (y - at(j + 1)).powi(2)) / at(j + 2).powi(2);
+            if d2 < 1.0 {
+                raised += at(j + 3).max(0.0) * (1.0 - d2) * (1.0 - d2);
+            }
+        }
+        let mask = at(0) as u32;
+        if mask != 255 {
+            // `shore` never exceeds the smallest of its directions' distances.
+            let reach = at(24).abs() * NOISE_BOUND;
+            let mut shore = 10.0_f64;
+            for i in 0..8 {
+                if mask & (1 << i) == 0 {
+                    continue;
+                }
+                let (sin, cos) = (i as f64 * TAU / 8.0 + at(16 + i)).sin_cos();
+                let warp = reach * (sin.abs() + cos.abs());
+                shore = shore.min(at(8 + i) - ((x - 0.5) * sin - (y - 0.5) * cos) + warp);
+            }
+            let top = shore + (at(26).abs() + at(28).abs()) * NOISE_BOUND + raised;
+            if top + self.shore_band(0.2, 1.0, height, width) > 0.0 {
+                return false;
+            }
+        } else if raised - 2.0 + self.shore_band(0.2, 1.0, height, width) > 0.0 {
+            return false;
+        }
+        for i in 0..at(1) as usize {
+            let j = HEADER + i * 12;
+            let (ax, ay, bx, by) = (at(j), at(j + 1), at(j + 2), at(j + 3));
+            let (dx, dy) = (bx - ax, by - ay);
+            let t =
+                (((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy).max(1e-12)).clamp(0.0, 1.0);
+            let scale = at(j + 6);
+            let top = at(j + 4) * (1.0 - t) + at(j + 5) * t - (x - ax - t * dx).hypot(y - ay - t * dy)
+                + scale * 0.165 * NOISE_BOUND
+                + raised;
+            // An islet stands on its own height, with a rise of at most eight metres.
+            let relief = height.max(at(j + 8) + 8.0);
+            if top + self.shore_band(scale, at(j + 11), relief, width) > 0.0 {
+                return false;
+            }
+        }
+        true
+    }
+
     pub fn apply(&self, x: f64, y: f64, width: f64, height: f64, footprint: f64) -> f64 {
         if !self.active() {
             return height;
         }
-        // Coastal plains should not stand on their inland formula's constant
-        // pedestal. Express elevations above the marine datum, with a smooth
-        // positive floor so low pockets retain the selected coast geography.
+        let relief = self.marine_relief(height);
+        if self.open_sea(x / width, y / width, width, relief) {
+            return -self.depth();
+        }
+        self.shore(x, y, width, height, footprint)
+    }
+
+    fn marine_relief(&self, height: f64) -> f64 {
         let datum = self.parameters[7] as f64;
-        let height = if datum > 0.0 {
+        if datum > 0.0 {
             let relative = height - datum;
             0.3 + 0.5 * (relative + (relative * relative + 1.0).sqrt())
         } else {
             height
-        };
+        }
+    }
+
+    fn shore(&self, x: f64, y: f64, width: f64, height: f64, footprint: f64) -> f64 {
+        // Coastal plains should not stand on their inland formula's constant
+        // pedestal. Express elevations above the marine datum, with a smooth
+        // positive floor so low pockets retain the selected coast geography.
+        let height = self.marine_relief(height);
         let (distance, scale, islet_height, apron) =
             self.distance(x / width, y / width, footprint / width);
         let height = if islet_height > 0.0 {
@@ -584,6 +661,32 @@ impl Coast {
             -self.depth() * smooth(-distance / (ramp * 4.0))
         } else {
             height * smooth(distance / ramp)
+        }
+    }
+}
+
+#[cfg(test)]
+mod open_sea_tests {
+    use super::*;
+
+    #[test]
+    fn open_sea_is_exactly_what_the_shore_returns() {
+        let width = 25000.0;
+        for (mask, mode) in [(255, "island"), (255, "archipelago"), (255, "peninsula"), (3, "island"), (136, "island")] {
+            let mut coast = Coast::new(Rng::new("open-sea").fork("coast"), width, 10000.0, 1000.0, 0.0);
+            coast.configure(mask, mode).unwrap();
+            let mut open = 0;
+            for y in 0..160 {
+                for x in 0..160 {
+                    let (px, py) = ((x as f64 + 0.5) * width / 160.0, (y as f64 + 0.5) * width / 160.0);
+                    let height = 5.0 + 150.0 * ((x * 7 + y * 3) % 11) as f64 / 11.0;
+                    let full = coast.shore(px, py, width, height, 150.0);
+                    let quick = coast.apply(px, py, width, height, 150.0);
+                    assert_eq!(full.to_bits(), quick.to_bits(), "{mask} {mode} at {x},{y}");
+                    open += usize::from(coast.open_sea(px / width, py / width, width, height));
+                }
+            }
+            println!("{mask} {mode}: open sea {:.1}%", open as f64 / 256.0);
         }
     }
 }
