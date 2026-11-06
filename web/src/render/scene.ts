@@ -263,7 +263,7 @@ export function buildScene(world0: World, tileSize = TILE_SIZE, build: SceneBuil
       l.push({ poly: a.poly, holes: a.holes, stripAngle: a.stripAngle });
       if (a.kind === 'field') {
         if (a.fieldLayout === 'parcel' || !(a as { enclosed?: boolean }).enclosed) { open.push(a.poly); open_h.push(a.holes); }
-        if (a.fieldLayout === 'parcel' && a.stripAngle !== undefined) {
+        if (a.fieldLayout === 'parcel' && !a.strips?.length && a.stripAngle !== undefined) {
           furrowAreas.push({ poly: a.poly, holes: a.holes, strips: [a.poly], angle: a.stripAngle });
           const tone = holdingTone(a.poly); tones[tone].push(a.poly); toneHoles[tone].push(a.holes);
         } else if (a.strips && a.stripAngle !== undefined) {

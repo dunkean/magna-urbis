@@ -2,6 +2,11 @@ import type { LandKind } from './types';
 
 export const BIOME_NAMES = ['temperate', 'forest', 'desert', 'steppe', 'tropical', 'tundra', 'underdark', 'underdark-caverns'] as const;
 export type BiomeName = typeof BIOME_NAMES[number];
+/** Classic biome that goes with each climate zone (underdark biomes are never replaced). */
+export const climateZoneBiome: Record<string, BiomeName> = {
+  temperate: 'temperate', mediterranean: 'temperate', continental: 'forest', nordic: 'forest', alpine: 'forest', arctic: 'tundra',
+  steppe: 'steppe', desert: 'desert', savanna: 'steppe', tropical: 'tropical', wetland: 'temperate',
+};
 export const BIOME_LABELS: [BiomeName, string][] = [
   ['temperate', 'Temperate countryside'], ['forest', 'Woodland'], ['desert', 'Desert and oases'],
   ['steppe', 'Steppe'], ['tropical', 'Tropical forest'], ['tundra', 'Tundra'],

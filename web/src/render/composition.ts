@@ -16,7 +16,9 @@ export type BaseLook = 'atlas' | 'parchment' | 'plain' | 'topographic' | 'illust
 export type VegetationLook = 'none' | 'symbols' | 'painted' | 'procedural-canopy';
 export type SemanticLook = 'off' | 'subtle' | 'categorical' | 'outlines';
 export type SemanticDepth = 'surface' | 'readable';
-export type NetworkLook = 'inherit' | 'ink' | 'natural';
+export type NetworkLook = 'inherit' | 'ink' | 'natural' | 'wash';
+/** How a road network is drawn: `wash` is the translucent earth of the parchment map (groundBlend.ts), roads only. */
+export type RoadLook = 'ink' | 'natural' | 'wash';
 export type BuildingLook = 'footprints' | 'cartographic-roofs' | 'simple-volumes' | 'detailed-volumes';
 export type Ambience = 'day' | 'night';
 export type PresetId = 'atlas' | 'parchment' | 'illustrated' | 'plan' | 'topographic' | 'natural' | 'atlas-night';
@@ -25,7 +27,7 @@ export const BASE_LOOKS: readonly BaseLook[] = ['atlas', 'parchment', 'plain', '
 export const VEGETATION_LOOKS: readonly VegetationLook[] = ['none', 'symbols', 'painted', 'procedural-canopy'];
 export const SEMANTIC_LOOKS: readonly SemanticLook[] = ['off', 'subtle', 'categorical', 'outlines'];
 export const SEMANTIC_DEPTHS: readonly SemanticDepth[] = ['surface', 'readable'];
-export const NETWORK_LOOKS: readonly NetworkLook[] = ['inherit', 'ink', 'natural'];
+export const NETWORK_LOOKS: readonly NetworkLook[] = ['inherit', 'ink', 'natural', 'wash'];
 export const BUILDING_LOOKS: readonly BuildingLook[] = ['footprints', 'cartographic-roofs', 'simple-volumes', 'detailed-volumes'];
 export const AMBIENCES: readonly Ambience[] = ['day', 'night'];
 export const PRESET_IDS: readonly PresetId[] = ['atlas', 'parchment', 'illustrated', 'plan', 'topographic', 'natural', 'atlas-night'];
@@ -59,7 +61,7 @@ interface PresetValues { ground: BaseLook; contours: boolean; vegetation: Vegeta
 const only = (...shown: TextGroup[]) => Object.fromEntries(TEXT_GROUPS.map(g => [g, shown.includes(g)])) as Record<TextGroup, boolean>;
 const PRESETS: Readonly<Record<PresetId, PresetValues>> = {
   atlas: { ground: 'atlas', contours: true, vegetation: 'symbols', rural: 'subtle', urban: 'subtle', depth: 'surface', network: 'inherit', building: 'cartographic-roofs', parcels: false, ambience: 'day', text: defaultText({ look: 'sans' }) },
-  parchment: { ground: 'parchment', contours: true, vegetation: 'symbols', rural: 'subtle', urban: 'subtle', depth: 'surface', network: 'inherit', building: 'cartographic-roofs', parcels: false, ambience: 'day', text: defaultText({ look: 'inherit' }) },
+  parchment: { ground: 'parchment', contours: true, vegetation: 'symbols', rural: 'off', urban: 'off', depth: 'surface', network: 'wash', building: 'cartographic-roofs', parcels: false, ambience: 'day', text: defaultText({ look: 'inherit' }) },
   illustrated: { ground: 'illustrated', contours: false, vegetation: 'painted', rural: 'subtle', urban: 'subtle', depth: 'surface', network: 'inherit', building: 'cartographic-roofs', parcels: false, ambience: 'day', text: defaultText({ look: 'inherit' }) },
   plan: { ground: 'plain', contours: false, vegetation: 'none', rural: 'categorical', urban: 'categorical', depth: 'readable', network: 'ink', building: 'footprints', parcels: true, ambience: 'day', text: defaultText({ look: 'sans', groups: only('city', 'landmarks', 'pins') }) },
   topographic: { ground: 'topographic', contours: true, vegetation: 'symbols', rural: 'outlines', urban: 'outlines', depth: 'readable', network: 'ink', building: 'footprints', parcels: false, ambience: 'day', text: defaultText({ look: 'sans', groups: only('places', 'water', 'nature', 'pins'), density: 'high' }) },
@@ -70,7 +72,7 @@ const PRESETS: Readonly<Record<PresetId, PresetValues>> = {
 export function presetComposition(id: PresetId): CompositionRecipe {
   const p = PRESETS[id];
   return { preset: id, ground: { look: p.ground, variant: GROUND_VARIANTS[p.ground][0], relief: true, contours: p.contours }, vegetation: { look: p.vegetation },
-    landuse: { rural: p.rural, urban: p.urban, opacity: .4, depth: p.depth }, networks: { roads: { visible: true, look: p.network, emphasis: 1 }, water: { visible: true, look: p.network } },
+    landuse: { rural: p.rural, urban: p.urban, opacity: .4, depth: p.depth }, networks: { roads: { visible: true, look: p.network, emphasis: 1 }, water: { visible: true, look: p.network === 'wash' ? 'inherit' : p.network } },
     buildings: { visible: true, look: p.building, parcels: p.parcels, blocks: true, districts: false }, text: structuredClone(p.text), annotations: { legend: false, cartouche: false }, ambience: p.ambience };
 }
 
@@ -92,7 +94,7 @@ export interface ResolvedComposition {
     /** An Illustrated ground paints its forest brushes: its own form of the `painted` look. */ readonly groundForests: boolean;
   };
   readonly landuse: { readonly rural: SemanticLook; readonly urban: SemanticLook; readonly opacity: number; readonly depth: SemanticDepth; readonly classes: Readonly<Record<LandKind, boolean>> };
-  readonly networks: { readonly roads: { readonly visible: boolean; readonly look: 'ink' | 'natural'; readonly emphasis: number }; readonly water: { readonly visible: boolean; readonly look: 'ink' | 'natural' } };
+  readonly networks: { readonly roads: { readonly visible: boolean; readonly look: RoadLook; readonly emphasis: number }; readonly water: { readonly visible: boolean; readonly look: 'ink' | 'natural' } };
   readonly buildings: { readonly visible: boolean; readonly look: BuildingLook; /** What the 3D view raises from the ground. */ readonly meshes: 'none' | 'simple' | 'detailed'; readonly parcels: boolean; readonly blocks: boolean; readonly districts: boolean };
   readonly text: Readonly<TextSettings>;
   readonly ambience: Ambience;
@@ -104,7 +106,8 @@ const BUILDING_2D: Readonly<Record<BuildingLook, { style: UrbanBuildingStyle; pa
   'simple-volumes': { style: 'geometric', painted: false, meshes: 'simple' }, 'detailed-volumes': { style: 'cartographic', painted: true, meshes: 'detailed' },
 };
 const effectiveVariant = (c: CompositionRecipe): TerrainStyle => c.ambience === 'night' && styleTraits(c.ground.variant).family === 'map' ? 'night' : c.ground.variant;
-const networkLook = (look: NetworkLook, traits: StyleTraits): 'ink' | 'natural' => look === 'inherit' ? traits.family === 'material' ? 'natural' : 'ink' : look;
+const networkLook = (look: NetworkLook, traits: StyleTraits): RoadLook => look === 'inherit' ? traits.family === 'material' ? 'natural' : 'ink' : look;
+const waterLook = (look: NetworkLook, traits: StyleTraits): 'ink' | 'natural' => { const resolved = networkLook(look, traits); return resolved === 'wash' ? 'ink' : resolved; };
 /** `painted` on an Illustrated ground is the ground's own forest brushes, never the overlay's. */
 const overlayPainted = (look: VegetationLook, traits: StyleTraits): boolean => look === 'painted' && !traits.fantasy;
 const vectorVegetation = (look: VegetationLook, traits: StyleTraits): boolean => look === 'symbols' || overlayPainted(look, traits);
@@ -121,7 +124,7 @@ export function applyComposition(a: AppearanceInput, c: CompositionRecipe): Appe
     // The land-use painter is the physical look of the fields on a map ground: the semantic layer never switches it off.
     landuse: true, painted: overlayPainted(c.vegetation.look, traits), forest:c.vegetation.look === 'procedural-canopy' ? forest : { ...forest, enabled: false },
     roads: c.networks.roads.visible, buildings: c.buildings.visible, labels: c.text.visible, legend: c.annotations.legend, cartouche: c.annotations.cartouche,
-    city: { ...city, buildingStyle: building.style, painted: building.painted, groundBlend: roads === 'natural' ? 'blended' : 'classic',
+    city: { ...city, buildingStyle: building.style, painted: building.painted, groundBlend: roads === 'ink' ? 'classic' : 'blended',
       layers: { ...city.layers, parcels: c.buildings.parcels, blocks: c.buildings.blocks, quarters: c.buildings.districts } } };
 }
 
@@ -143,7 +146,7 @@ export function resolveComposition(recipe: CompositionRecipe | undefined, traits
     vegetation: recipe ? { look, procedural: look === 'procedural-canopy', cartographic: vectorVegetation(look, traits), painted: overlayPainted(look, traits), groundForests: look === 'painted' }
       : { look, procedural: traits.ground3d, cartographic: traits.cartographicVegetation, painted: false, groundForests: true },
     landuse: { rural: recipe ? c.landuse.rural : 'off', urban: recipe ? c.landuse.urban : 'off', opacity: c.landuse.opacity, depth: c.landuse.depth, classes },
-    networks: { roads: { visible: c.networks.roads.visible, look: networkLook(c.networks.roads.look, traits), emphasis: c.networks.roads.emphasis }, water: { visible: c.networks.water.visible, look: networkLook(c.networks.water.look, traits) } },
+    networks: { roads: { visible: c.networks.roads.visible, look: networkLook(c.networks.roads.look, traits), emphasis: c.networks.roads.emphasis }, water: { visible: c.networks.water.visible, look: waterLook(c.networks.water.look, traits) } },
     buildings: { visible: c.buildings.visible, look: c.buildings.look, meshes: recipe ? BUILDING_2D[c.buildings.look].meshes : 'detailed', parcels: c.buildings.parcels, blocks: c.buildings.blocks, districts: c.buildings.districts },
     text: c.text, ambience: c.ambience, limitations: Object.freeze(recipe ? limitationsOf(c, traits, target, capabilities) : []) });
 }

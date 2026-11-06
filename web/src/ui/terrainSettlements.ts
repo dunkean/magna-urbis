@@ -62,7 +62,7 @@ const sites = (output: SettlementOutput): RoadSite[] => output.settlements.map(s
 
 export function createTerrainSettlements(options: {
   map: SVGSVGElement; viewport: HTMLElement; getTerrain(): TerrainData | undefined; getSettings(): TerrainSettings;
-  active?: boolean; parcelDefault?: boolean; getRaster?(): import('../../../rust/bridge/settlements').SettlementRaster | undefined; getDecor?(): Decor | undefined;
+  active?: boolean; parcelDefault?: boolean; getRaster?(): import('../../../rust/bridge/settlements').SettlementRaster | undefined; getBiome?(): import('../gen/biomes').BiomeName | undefined; getDecor?(): Decor | undefined;
   getView(): View; getAuto?(): boolean; getQuery?(): string; onChange(): void; onPlanChange?(): void; onPicking(): void; onFocus?(center: Point, radius: number): void; onProjection?(active: boolean, camera?: import('./terrain3d').Terrain3dCamera): boolean | void;
   /** Render3D forest material is displayed: it replaces the cartoon landuse woods. */
   useForestMaterial?(): boolean;
@@ -202,7 +202,7 @@ export function createTerrainSettlements(options: {
     if (!raster || !output || !enabled) { landuse?.set(); return; }
     const city = output.settlements.find(s => s.key === urban.target) ?? output.settlements.find(s => s.key === selection) ?? output.settlements[0];
     const relief = options.getSettings().relief;
-    landuse?.set({ raster, seed: options.getSettings().seed, relief: (['flat', 'hills', 'valley'].includes(relief) ? relief : 'mountains') as Relief,
+    landuse?.set({ raster, biome: options.getBiome?.(), seed: options.getSettings().seed, relief: (['flat', 'hills', 'valley'].includes(relief) ? relief : 'mountains') as Relief,
       city, neighbours: output.settlements.filter(s => s.key !== city?.key), roads: roads.output, layouts: urban.layouts,
       ruralOptions: { streetAlignedHomes: urban.partitions?.find(p => p.key === city?.key)?.config?.streetAlignedHomes,
         denserSmallholdings: urban.partitions?.find(p => p.key === city?.key)?.config?.denserSmallholdings,

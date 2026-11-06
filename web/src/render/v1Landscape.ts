@@ -71,6 +71,33 @@ export function v1LandscapeCanvas(r: SettlementRaster, style: V1LandscapeStyle, 
   ctx.putImageData(image, 0, 0); entries.set(key, canvas); return canvas;
 }
 
+/** The lit V1 land alone, transparent over sea, lakes and the `rivers` segments (x0 y0 x1 y1 w0 w1 r g b, the renderers' format):
+ * the backdrop the multiply tints of the land use need on a transparent overlay, with the real water left visible below. */
+export function v1LandCanvas(r: SettlementRaster, style: V1LandscapeStyle, biome: BiomeName = 'temperate', rivers?: Float32Array): HTMLCanvasElement {
+  let entries = cache.get(r); if (!entries) { entries = new Map(); cache.set(r, entries); }
+  const key = `land:${style}:${biome}:${rivers?.length ?? 0}`, found = entries.get(key); if (found) return found;
+  const world = v1LandscapeWorld(r, biome), size = 2048, k = size / r.width;
+  const dry: World = { ...world, terrain: { ...world.terrain, water: new Uint8Array(r.water.length) } };
+  const land = renderTerrainPixels(dry, biomePalette(style, biome), { pixels: Math.min(1024, r.n * 2) });
+  const canvas = Object.assign(document.createElement('canvas'), { width: size, height: size }), ctx = canvas.getContext('2d')!;
+  ctx.imageSmoothingQuality = 'high'; ctx.drawImage(rgbCanvas(land.rgb, land.w, land.h), 0, 0, size, size);
+  ctx.globalCompositeOperation = 'destination-out'; ctx.fillStyle = ctx.strokeStyle = '#000'; ctx.lineCap = 'round';
+  // The raster covers the open sea; the vector rings, where they exist, give closed water its smooth edge.
+  const mask = Object.assign(document.createElement('canvas'), { width: r.n, height: r.n }), m = mask.getContext('2d')!, image = m.createImageData(r.n, r.n);
+  for (let i = 0; i < r.water.length; i++) if (r.water[i] > 0 && r.water[i] < 4) image.data[i * 4 + 3] = 255;
+  m.putImageData(image, 0, 0); ctx.drawImage(mask, 0, 0, size, size);
+  for (const group of r.geometry?.water ?? []) {
+    const path = new Path2D();
+    for (const ring of group) { if (ring.length < 3) continue; ring.forEach((p, i) => i ? path.lineTo(p.x * k, p.y * k) : path.moveTo(p.x * k, p.y * k)); path.closePath(); }
+    ctx.fill(path, 'evenodd');
+  }
+  if (rivers) for (let i = 0; i + 8 < rivers.length; i += 9) {
+    ctx.lineWidth = Math.max(1, (rivers[i + 4] + rivers[i + 5]) / 2 * k);
+    ctx.beginPath(); ctx.moveTo(rivers[i] * k, rivers[i + 1] * k); ctx.lineTo(rivers[i + 2] * k, rivers[i + 3] * k); ctx.stroke();
+  }
+  entries.set(key, canvas); return canvas;
+}
+
 export class V1LandscapeLayer {
   private image?: SVGImageElement;
   private raster?: SettlementRaster;

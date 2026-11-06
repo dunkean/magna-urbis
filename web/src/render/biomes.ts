@@ -9,6 +9,14 @@ const GROUND: Record<Exclude<BiomeName, 'temperate'>, [string, string, string]> 
   underdark: ['#c0b9c6', '#8e8999', '#655e73'],
   'underdark-caverns': ['#c0b9c6', '#8e8999', '#655e73'],
 };
+/** Crops by climate: field tint, its light and dark strips, furrow ink, meadow. Temperate keeps the parchment tones. */
+const CROPS: Record<'forest' | 'desert' | 'steppe' | 'tropical' | 'tundra', { field: string; stripA: string; stripB: string; furrow: string; meadow: string }> = {
+  forest: { field: '#d8cf97', stripA: '#e3daaa', stripB: '#cdc389', furrow: '#7f7446', meadow: '#b1c48a' },
+  desert: { field: '#e6d199', stripA: '#efdfb2', stripB: '#dac085', furrow: '#937b4b', meadow: '#d4ca92' },
+  steppe: { field: '#e3cf8e', stripA: '#ebdca4', stripB: '#d5bf7b', furrow: '#8c7543', meadow: '#d2c88a' },
+  tropical: { field: '#cdd089', stripA: '#d9dc9b', stripB: '#b7c376', furrow: '#6f7a3c', meadow: '#a9c882' },
+  tundra: { field: '#d3d4b6', stripA: '#dddcc5', stripB: '#c3c6a7', furrow: '#7f806a', meadow: '#c0c9ae' },
+};
 const CACHE = new Map<string, Palette>();
 
 /** Shared palette for SVG, Canvas, terrain and legend. Never mutate the registered map styles. */
@@ -48,14 +56,15 @@ export function biomePalette(style: MapStyle | Palette, value?: string): Palette
   }
   const dry = biome === 'desert', cold = biome === 'tundra';
   const colorful = !['engraving', 'blueprint', 'night'].includes(base.name);
-  const tones = GROUND[biome];
+  const tones = GROUND[biome], crops = CROPS[biome as keyof typeof CROPS];
   const pal: Palette = {
     ...base, tex: { ...base.tex, commons: dry ? false : base.tex.commons },
     hedgeOn: dry || cold ? false : base.hedgeOn,
     ...(colorful ? {
       hypso: [[0, tones[0]], [0.5, tones[1]], [1, tones[2]]] as [number, string][],
-      land: { ...base.land, commons: tones[1], pasture: dry ? '#d5c79d' : cold ? '#c4cbb0' : base.land.pasture,
-        forest: biome === 'tropical' ? '#799b65' : biome === 'forest' ? '#879e6e' : base.land.forest },
+      land: { ...base.land, field: crops.field, meadow: crops.meadow, commons: tones[1], pasture: dry ? '#d5c79d' : cold ? '#c4cbb0' : base.land.pasture,
+        forest: biome === 'tropical' ? '#799b65' : biome === 'forest' ? '#879e6e' : cold ? '#8e9f83' : dry ? '#9ba873' : base.land.forest },
+      stripA: crops.stripA, stripB: crops.stripB, furrow: crops.furrow,
       grass: dry ? '#a18e64' : cold ? '#89927b' : base.grass,
       // Dedicated gardens still read as cultivation; dry rear yards use terrain instead of these tokens.
       urban: { ...base.urban, garden: dry ? '#c4c098' : biome === 'steppe' ? '#cbc994' : cold ? '#c2cbb6' : base.urban.garden,

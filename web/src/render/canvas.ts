@@ -32,6 +32,7 @@ import { CANVAS_MAP_STROKES as MAP_STROKES, mapStrokeWidth } from './strokes';
 import { NATURAL_LAND_KINDS, countryKind, FRINGE_ORDER, FRINGE_PAINT } from './countryside';
 import { TERRACE_STROKES as TS, terraceDetailAlpha } from './terraces';
 import { regionalBridgeSurface, regionalRoadSurface } from './roadSurfaces';
+import { BLEND_ROAD_ALPHA, BLEND_ROAD_PX } from './groundBlend';
 import { emphasisAlpha, regionalRank, roadWidth, strokeNaturalRoad, trackInk, type RoadStyle } from './roadStyle';
 import { worldWaterPixels } from './terrainWater';
 import { renderTerrainPixels } from './raster';
@@ -54,7 +55,7 @@ export interface CanvasRendererDeps {
   separateText?: boolean;
   textSources?(): readonly CityScene[] | undefined;
   colors?: RenderColors;
-  roadLook?: 'ink' | 'natural';
+  roadLook?: import('./composition').RoadLook;
   /** Look, emphasis and ambience of the roads, read per frame so a new emphasis repaints without a rebuild. */
   roadStyle?: () => RoadStyle;
   /** Path2D constructor (default: global). */
@@ -682,6 +683,16 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
         // Layers of one rank share a width: one painter call each, tracks first.
         if (tracks.length) strokeNaturalRoad(ctx, merged(tracks), 'track', roadWidth('track', tracks[0].width, sc), sc, roadStyle);
         for (const kind of ['minor', 'major'] as const) { const ls = roads.filter((l) => l.kind === kind); if (ls.length) strokeNaturalRoad(ctx, merged(ls), regionalRank(kind), roadWidth(regionalRank(kind), ls[0].width, sc), sc, roadStyle); }
+        return;
+      }
+      if (roadStyle.look === 'wash') {
+        // Pale translucent bands with a faint edge, as the bench draws them (terrainRoads.ts).
+        for (const kind of ['minor', 'major'] as const) {
+          const ls = roads.filter((l) => l.kind === kind), rank = kind === 'major' ? 'highway' : 'local', width = (l: LineLayer): number => Math.max(px(BLEND_ROAD_PX[rank]), l.width);
+          strokeLines(ls, pal.roadEdge, (l) => width(l) + px(1.6), BLEND_ROAD_ALPHA[rank] * .22 * inkAlpha);
+          strokeLines(ls, pal.roadFill, width, Math.min(1, BLEND_ROAD_ALPHA[rank] * inkAlpha));
+        }
+        strokeLines(tracks, trackInk(ruralInk(pal), pal.roadFill), () => Math.min(lw(1.3, 0.85), px(2.2)), Math.min(1, pal.rural.track * inkAlpha), [px(lod.band >= 2 ? 7 : 5), px(lod.band >= 2 ? 4 : 3)], 'butt');
         return;
       }
       const surface = (l: LineLayer) => regionalRoadSurface(l.kind === 'major' ? 'major' : 'minor', sc, l.width);

@@ -414,58 +414,64 @@ export function partitionRegion(outer: Polygon, holes: Polygon[], ctx: FieldCtx,
     }
     const fl: Furlong = { outer: o, holes, angle: ang0, enclosed: lf.enclosed, stripW: 0, ...(regular ? { layout: 'parcel' as const } : {}) };
     net.furlongs.push(fl);
-    if (regular) continue;
-    if (lf.enclosed) continue;
-    const ws = rng.range(11, 22);
-    fl.stripW = ws;
-    const L = ex.umax - ex.umin;
-    const slabs = Math.ceil((ex.vmax - ex.vmin) / ws);
-    if (slabs < 2 || slabs > 70 || a <= 2500 || (ctx.stripsAt && !ctx.stripsAt(cen))) continue;
-    // Work in a fixed affine frame. Curved nearest-streamline coordinates are
-    // not invertible in concavities and used to fold strips over themselves.
-    // The same gently curved band is intersected with the complete polygon,
-    // including holes, by the existing robust Boolean kernel.
-    const amplitude = rng.range(-1, 1) * Math.min(.012 * L, 2.5);
-    const phase = rng.range(0, .4);
-    const bend = (u: number) => amplitude * Math.sin(2 * Math.PI * ((u - ex.umin) / Math.max(1, L) + phase));
-    const local: Ring[] = lf.rings.map(ring => ring.map(([x, y]) => [x * ca + y * sa, -x * sa + y * ca]));
-    const extent = Math.max(L, ex.vmax - ex.vmin) + 100;
-    const strips: Polygon[] = [];
-    // A strip stores a simple ring. Split any remaining internal holes along a
-    // line through their interior, rather than silently filling the holes.
-    const append = (piece: Ring[], depth = 0): void => {
-      if (piece.length === 1) {
-        const poly = fromRing(piece[0]).map(p => ({ x: p.x * ca - p.y * sa, y: p.x * sa + p.y * ca }));
-        if (Math.abs(polygonArea(poly)) >= 120) strips.push(poly);
-        return;
-      }
-      if (depth >= 32) return;
-      const hole = piece[1], xs = hole.map(p => p[0]);
-      const split = (Math.min(...xs) + Math.max(...xs)) / 2;
-      const bounds = extents(piece[0], 1, 0);
-      for (const [lo, hi] of [[bounds.umin - 1, split], [split, bounds.umax + 1]]) {
-        const box: Ring = [[lo, ex.vmin - extent], [hi, ex.vmin - extent], [hi, ex.vmax + extent], [lo, ex.vmax + extent], [lo, ex.vmin - extent]];
-        for (const pg of polygonClipping.intersection([piece], [[box]])) append(pg as Ring[], depth + 1);
-      }
-    };
-    const count = Math.ceil((ex.vmax - ex.vmin + 2 * Math.abs(amplitude)) / ws);
-    for (let i = 0; i < count; i++) {
-      const lo = ex.vmin - Math.abs(amplitude) + i * ws;
-      const hi = lo + ws - .65; // narrow unploughed baulk, in metres
-      const band: Ring = [];
-      const steps = Math.max(8, Math.ceil(L / 20));
-      for (let k = 0; k <= steps; k++) {
-        const u = ex.umin - 1 + (L + 2) * k / steps;
-        band.push([u, lo + bend(u)]);
-      }
-      for (let k = steps; k >= 0; k--) {
-        const u = ex.umin - 1 + (L + 2) * k / steps;
-        band.push([u, hi + bend(u)]);
-      }
-      band.push(band[0]);
-      try { for (const pg of polygonClipping.intersection([local], [[band]])) append(pg as Ring[]); }
-      catch { strips.length = 0; break; } // Retain the holding when a Boolean degeneracy defeats its texture.
-    }
-    if (strips.length) fl.strips = strips;
+    if (regular || lf.enclosed) continue;
+    cutStrips(fl, lf.rings, rng, ctx.stripsAt);
   }
+}
+
+/** Cut an open furlong into the holders' strips (`rings`: its final outline and holes). Leaves it whole when it is too small, too wide or outside `stripsAt`. */
+export function cutStrips(fl: Furlong, rings: Ring[], rng: FieldCtx['rng'], stripsAt?: FieldCtx['stripsAt']): void {
+  const cen = polygonCentroid(fl.outer), ca = Math.cos(fl.angle), sa = Math.sin(fl.angle), ex = extents(rings[0], ca, sa);
+  const a = ringArea(rings[0]) - rings.slice(1).reduce((sum, r) => sum + ringArea(r), 0);
+  const ws = rng.range(11, 22);
+  fl.stripW = ws;
+  const L = ex.umax - ex.umin;
+  const slabs = Math.ceil((ex.vmax - ex.vmin) / ws);
+  if (slabs < 2 || slabs > 70 || a <= 2500 || (stripsAt && !stripsAt(cen))) return;
+  // Work in a fixed affine frame. Curved nearest-streamline coordinates are
+  // not invertible in concavities and used to fold strips over themselves.
+  // The same gently curved band is intersected with the complete polygon,
+  // including holes, by the existing robust Boolean kernel.
+  const amplitude = rng.range(-1, 1) * Math.min(.012 * L, 2.5);
+  const phase = rng.range(0, .4);
+  const bend = (u: number) => amplitude * Math.sin(2 * Math.PI * ((u - ex.umin) / Math.max(1, L) + phase));
+  const local: Ring[] = rings.map(ring => ring.map(([x, y]) => [x * ca + y * sa, -x * sa + y * ca]));
+  const extent = Math.max(L, ex.vmax - ex.vmin) + 100;
+  const strips: Polygon[] = [];
+  // A strip stores a simple ring. Split any remaining internal holes along a
+  // line through their interior, rather than silently filling the holes.
+  const append = (piece: Ring[], depth = 0): void => {
+    if (piece.length === 1) {
+      const poly = fromRing(piece[0]).map(p => ({ x: p.x * ca - p.y * sa, y: p.x * sa + p.y * ca }));
+      if (Math.abs(polygonArea(poly)) >= 120) strips.push(poly);
+      return;
+    }
+    if (depth >= 32) return;
+    const hole = piece[1], xs = hole.map(p => p[0]);
+    const split = (Math.min(...xs) + Math.max(...xs)) / 2;
+    const bounds = extents(piece[0], 1, 0);
+    for (const [lo, hi] of [[bounds.umin - 1, split], [split, bounds.umax + 1]]) {
+      const box: Ring = [[lo, ex.vmin - extent], [hi, ex.vmin - extent], [hi, ex.vmax + extent], [lo, ex.vmax + extent], [lo, ex.vmin - extent]];
+      for (const pg of polygonClipping.intersection([piece], [[box]])) append(pg as Ring[], depth + 1);
+    }
+  };
+  const count = Math.ceil((ex.vmax - ex.vmin + 2 * Math.abs(amplitude)) / ws);
+  for (let i = 0; i < count; i++) {
+    const lo = ex.vmin - Math.abs(amplitude) + i * ws;
+    const hi = lo + ws - .65; // narrow unploughed baulk, in metres
+    const band: Ring = [];
+    const steps = Math.max(8, Math.ceil(L / 20));
+    for (let k = 0; k <= steps; k++) {
+      const u = ex.umin - 1 + (L + 2) * k / steps;
+      band.push([u, lo + bend(u)]);
+    }
+    for (let k = steps; k >= 0; k--) {
+      const u = ex.umin - 1 + (L + 2) * k / steps;
+      band.push([u, hi + bend(u)]);
+    }
+    band.push(band[0]);
+    try { for (const pg of polygonClipping.intersection([local], [[band]])) append(pg as Ring[]); }
+    catch { strips.length = 0; break; } // Retain the holding when a Boolean degeneracy defeats its texture.
+  }
+  if (strips.length) fl.strips = strips;
 }

@@ -3,7 +3,7 @@ import type { TerrainLook } from './terrainGl';
 import { moonlightSvg } from '../render/materialLook';
 import { benchSettlementTextWorld, benchTextLayer } from './benchComposition';
 import { createTerrainSettlements } from './terrainSettlements';
-import { decorClimate } from './decorClimate';
+import { decorBiome, decorClimate } from './decorClimate';
 import { seedHash } from '../../../rust/bridge/terrainAdjust';
 import { buildForestField, DEFAULT_FOREST_SETTINGS, type ForestField } from '../../../rust/bridge/terrainForest';
 import { forestRetainedRiverSegments } from '../../../rust/bridge/terrainForestRiparian';
@@ -205,9 +205,9 @@ const settlements = createTerrainSettlements({ map, viewport, city: true, active
   },
   getTerrain: () => terrain,
   getSettings: () => ({ seed: decor?.meta.seed ?? '', width: decor?.raster.width ?? 0, relief: new URLSearchParams(decor?.meta.query).get('relief') ?? 'flat' }) as TerrainSettings,
-  getRaster: () => decor?.raster, getDecor: () => decor, getView: () => view, getAuto: () => false, getQuery: shareQuery,
+  getRaster: () => decor?.raster, getBiome: () => decor && decorBiome(decor.meta), getDecor: () => decor, getView: () => view, getAuto: () => false, getQuery: shareQuery,
   onPlanChange: () => queueMicrotask(() => { publishBenchCapabilities(); showView(); if (decor) void drawBackground(decor); city3d.refresh(); }),
-  onChange: () => { save(); city3d.refresh(); rpgPins?.draw(); queueMicrotask(() => { publishBenchCapabilities(); showView(); if (decor) void drawBackground(decor); }); }, onPicking: () => {},
+  onChange: () => queueMicrotask(() => { save(); city3d.refresh(); rpgPins?.draw(); publishBenchCapabilities(); showView(); if (decor) void drawBackground(decor); }), onPicking: () => {},
   onFocus: (center, radius) => city3d.active ? city3d.focus(center, radius) : setView({ cx: center.x, cy: center.y, scale: Math.min(viewport.clientWidth, viewport.clientHeight) / Math.max(200, 2.4 * radius) }),
   onProjection: active => { setProjection(active); return city3d.active; },
 });

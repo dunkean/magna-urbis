@@ -1,5 +1,11 @@
 import { CLIMATE_VALUES, type ClimateValues } from '../../../rust/bridge/terrainClimate';
+import { climateZoneBiome, type BiomeName } from '../gen/biomes';
 import type { DecorMeta } from './decor';
+
+/** The land-use biome of a retained map. */
+export function decorBiome(meta: Pick<DecorMeta, 'query' | 'tags'>): BiomeName {
+  return climateZoneBiome[new URLSearchParams(meta.query).get('climate') ?? meta.tags.climate ?? 'temperate'] ?? 'temperate';
+}
 
 /** The retained recipe owns the climate, including custom numerical values. */
 export function decorClimate(meta: Pick<DecorMeta, 'query' | 'tags'>): ClimateValues {

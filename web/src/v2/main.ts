@@ -385,7 +385,7 @@ function updateProgress(p: V2Progress): void {
 }
 function setBusy(value: boolean): void {
   busy = value; $('#progress-card').hidden = !value; $('#hardware-led').classList.toggle('busy-led',value); $('#app').setAttribute('aria-busy',String(value));
-  for(const selector of ['#terrain-controls .chain-scroll','#urban-settings-panel','#inspector'])$(selector).inert=value;
+  for(const selector of ['#terrain-controls .chain-scroll','#urban-settings-panel','#inspector']){const panel=document.querySelector<HTMLElement>(selector);if(panel)panel.inert=value;}
   for (const id of ['generate-region','terrain-only','region-only','towns-only','cities-select-all','cities-select-none','random-seed','expert-apply','export-go','clear-heightmap','preview-close']) $<HTMLButtonElement>(`#${id}`).disabled = value;
   document.querySelectorAll<HTMLInputElement|HTMLSelectElement>('[data-option],#town-count,#project-file,#heightmap-file,#terrain-controls .chain-scroll input,#terrain-controls .chain-scroll select,#terrain-controls .chain-scroll button,#urban-settings-panel input,#urban-settings-panel select,#urban-settings-panel button').forEach(e=>e.disabled=value);
   document.querySelectorAll<HTMLButtonElement>('[data-relief],#inspector button').forEach(e=>e.disabled=value);

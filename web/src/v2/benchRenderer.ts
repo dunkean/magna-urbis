@@ -19,6 +19,8 @@ import { seaDistanceSurface, seaMaterialSvg } from '../render/terrainWater';
 import { renderSvg } from '../render/svg';
 import { DEFAULT_FRACTAL_DETAIL, seedHash } from '../../../rust/bridge/terrainAdjust';
 import { climateOf, type TerrainData, type TerrainSettings } from '../../../rust/bridge/terrain';
+import { settlementRaster, type SettlementRaster } from '../../../rust/bridge/settlements';
+import { v1LandCanvas } from '../render/v1Landscape';
 import { effectiveTerrainSettings } from './terrainSettings';
 import { createTerrainRenderer, terrainRendererCanvas, terrainRendererBackend, type TerrainRenderer } from '../ui/terrainRenderer';
 import { lakeField } from '../ui/lakeGeometry';
@@ -91,6 +93,7 @@ export class BenchRenderer {
   private terrainSvg = '';
   /** Vector water, hydrology (waterSvg) and frame (frameSvg): world-coordinate SVG body, rasterized per view (render/viewRaster). */
   private waterSvg = '';
+  private landRaster?: { terrain: TerrainData; raster: SettlementRaster };
   private frameSvg = '';
   private vectors = '';
   private vectorsDirty = false;
@@ -236,6 +239,14 @@ export class BenchRenderer {
     if (!this.gpuActive) return;
     this.dropBackground(); this.gpu!.setForest(v2DisplayForest(this.world!, this.settings!, this.resolved!), v2ForestOccupation(this.world!));
   }
+  /** The parchment tints multiply over the lit ground: the overlay gets it as a backdrop, transparent on the water below. */
+  private landBackdrop(): HTMLCanvasElement | null {
+    const t = this.native, r = this.resolved!;
+    if (!t || r.composition.variant !== 'parchment' || !r.ground.layers.relief) return null;
+    if (this.landRaster?.terrain !== t) this.landRaster = { terrain: t, raster: settlementRaster(t) };
+    const water = this.waterDisplay(), rivers = !r.composition.networks.water.visible ? undefined : t.water ? riverSegments(t.water, water) : t.hydrology ? hydrologySegments(t.hydrology, hydrologyWaterColour(r.ground.style, r.palette.colors)) : undefined;
+    return v1LandCanvas(this.landRaster.raster, 'parchment', this.world!.options.biome, rivers);
+  }
   /** GPU water/overlay textures, plus the vector water and hydrology diagnostics (rasterized per view). */
   private async waterPass(): Promise<void> {
     this.dropBackground();
@@ -310,7 +321,7 @@ export class BenchRenderer {
     const built = this.shared.cache.get(sceneKey, () => buildScene(shown, undefined, { mask }));
     const state=this;
     const palette={...biomePalette(r.palette.mapStyle,world.options.biome),frameKind:'none' as const,...(layers.decor===false?{grid:null}:{})};
-    this.cartography = createCanvasRenderer(this.overlay, shown, palette, { colors: r.palette.colors, separateText: true, textSources: () => this.city?.scenes(), transparentBackground: true, terrain: () => null, scene: built, mask, roadLook: r.composition.networks.roads.look, roadStyle: () => { const c = this.resolved!.composition; return { look: c.networks.roads.look, emphasis: c.networks.roads.emphasis, night: c.ambience === 'night', colors: this.resolved!.palette.colors }; },
+    this.cartography = createCanvasRenderer(this.overlay, shown, palette, { colors: r.palette.colors, separateText: true, textSources: () => this.city?.scenes(), transparentBackground: true, terrain: () => this.landBackdrop(), scene: built, mask, roadLook: r.composition.networks.roads.look, roadStyle: () => { const c = this.resolved!.composition; return { look: c.networks.roads.look, emphasis: c.networks.roads.emphasis, night: c.ambience === 'night', colors: this.resolved!.palette.colors }; },
       // Read per frame: a new look repaints the raster tiles through `key`, never the cartography pass.
       semantic: { key: () => this.semantic?.key ?? '', draw: (ctx, rect, mpp) => this.paintRural(ctx, rect, mpp), legend: () => this.semanticLegend() },
       brushes, vegetation: r.vegetation.symbols, get dpr() { return state.dpr; } });

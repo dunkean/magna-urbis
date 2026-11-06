@@ -68,7 +68,7 @@ export const compositionFields: Record<string, ParameterField> = Object.fromEntr
   choice('composition.landuse.depth', 'Land-use legibility', 'Lisibilité de l’occupation', [['surface', 'Surface', 'Surface'], ['readable', 'Readable', 'Lisible']]),
   // An absent class key means shown; a change moves only `keys.semantic`.
   ...LAND_KINDS.map(kind => ({ ...flag(`composition.landuse.classes.${kind}`, ...LAND_KIND_LABELS[kind]), defaultValue: true })),
-  flag('composition.networks.roads.visible', 'Show roads', 'Afficher les routes'), choice('composition.networks.roads.look', 'Road look', 'Aspect des routes', networkEntries),
+  flag('composition.networks.roads.visible', 'Show roads', 'Afficher les routes'), choice('composition.networks.roads.look', 'Road look', 'Aspect des routes', [...networkEntries, ['wash', 'Wash', 'Lavis']]),
   number('composition.networks.roads.emphasis', 'Road emphasis', 'Présence des routes', .5, 1.5, .05),
   flag('composition.networks.water.visible', 'Show rivers and water', 'Afficher les rivières et l’eau'), choice('composition.networks.water.look', 'Water look', 'Aspect de l’eau', networkEntries),
   flag('composition.buildings.visible', 'Show buildings', 'Afficher les bâtiments'),

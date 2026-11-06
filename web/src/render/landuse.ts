@@ -122,7 +122,7 @@ export function landuseLayer(world: Pick<World, 'options' | 'mapSize' | 'landuse
       const tone: string[] = ['', '', '', ''];
       let fi = 0;
       for (const a of list) {
-        if (a.fieldLayout === 'parcel' && a.stripAngle !== undefined) {
+        if (a.fieldLayout === 'parcel' && !a.strips?.length && a.stripAngle !== undefined) {
           const d = ringsD(a); tone[holdingTone(a.poly)] += d;
           out += `<path d="${d}" fill="url(#p-fur-${furrowDegrees(a.stripAngle)})" fill-rule="evenodd"/>`;
           continue;
@@ -258,7 +258,7 @@ function bridgeShape(a: Vec2, b: Vec2, w: number, pad: number): { deck: string; 
   return { deck, rails, ends };
 }
 
-export function roadsLayer(world: World, pal: Palette, u: number, brushes?: SvgBrushes, layers = { roads: true, city: true }, roadLook?: 'ink' | 'natural', colors?: RenderColors, roadEmphasis = 1, roadNight = false): string {
+export function roadsLayer(world: World, pal: Palette, u: number, brushes?: SvgBrushes, layers = { roads: true, city: true }, roadLook?: import('./composition').RoadLook, colors?: RenderColors, roadEmphasis = 1, roadNight = false): string {
   const roads = world.roads ?? [];
   if ((!layers.roads || !roads.length) && (!layers.city || !world.landuse?.farmsteads.length)) return '';
   const s = Math.max(1, u * 0.85);

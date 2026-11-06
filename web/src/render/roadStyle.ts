@@ -44,7 +44,7 @@ export function roadWidth(rank: RoadRank, metres: number, scale: number): number
   return Math.max(s.floor / scale, scale < .3 ? Math.min(metres, s.ceil / scale) : metres);
 }
 
-export interface RoadStyle { look: 'ink' | 'natural'; /** 0.5–1.5, contrast against the ground. */ emphasis: number; night: boolean; colors?: RenderColors }
+export interface RoadStyle { look: import('./composition').RoadLook; /** 0.5–1.5, contrast against the ground. */ emphasis: number; night: boolean; colors?: RenderColors }
 /** Ink strokes of the current palette, so every backend draws the same map. */
 export interface RoadInk { fill: string; edge: string; track: string; trackAlpha: number }
 export const roadInkOf = (pal: Pick<Palette, 'roadFill' | 'roadEdge' | 'rural' | 'trackFill'>, colors?: RenderColors): RoadInk =>

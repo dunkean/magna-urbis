@@ -17,7 +17,7 @@ const STORAGE = 'magna-urbis-bench-composition';
 function load(): CompositionRecipe {
   try {
     const saved = new URLSearchParams(location.search).get('composition') ?? localStorage.getItem(STORAGE);
-    if (saved) { const value: unknown = JSON.parse(saved); validateComposition(value); return value; }
+    if (saved) { const value: unknown = JSON.parse(saved); validateComposition(value); return value.preset === 'custom' ? value : presetComposition(value.preset); }
   } catch { /* Invalid or unavailable storage starts with the explicit default. */ }
   return presetComposition('parchment');
 }

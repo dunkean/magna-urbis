@@ -12,7 +12,7 @@ import { differenceSafeS, intersectionS, mpArea, unionS, tryDifferenceS } from '
 import { urbanNaturalGround } from './urbanGround';
 import { LAB_OPEN } from '../urban/streets';
 import { urbanLandscapeGround, landscapeCoverGround } from './landscapeGround';
-import { partitionRegion, pruneWays, FieldCtx, FieldNet } from './fields';
+import { cutStrips, partitionRegion, pruneWays, toRing as fieldRing, FieldCtx, FieldNet } from './fields';
 import { connectFieldWays } from './fieldAccess';
 import type { World, LandArea, LandKind, Farmstead, LandUseLayer, PolyH } from '../types';
 import { FARM_SIZES, farmCulture, farmSize, farmType, layoutFarm, placeFarm, frameOf, segRectDist, type FarmContext, type LocalFarm } from './farms';
@@ -998,6 +998,7 @@ export function generateRural(world: World, root: Rng, mainRoads?: number, strip
     for (const margin of net.margins ?? []) areas.push({kind:'pasture',poly:margin.outer,holes:margin.holes});
   }
   let stripCount = 0, furlongCount = 0, closeCount = 0;
+  const stripRng = rr.fork('strips');
   for (const fl of net.furlongs) {
     if (fl.enclosed) {
       closeCount++;
@@ -1014,6 +1015,8 @@ export function generateRural(world: World, root: Rng, mainRoads?: number, strip
       areas.push(ar);
       continue;
     }
+    // Planned parcels take their strips here: their outlines are final only once the lanes are cut.
+    if (plan) cutStrips(fl, [fieldRing(fl.outer), ...fl.holes.map(fieldRing)], stripRng);
     stripCount += fl.strips?.length ?? 0;
     furlongCount++;
     areas.push({ kind: 'field', poly: fl.outer, holes: fl.holes.length ? fl.holes : undefined, stripAngle: fl.angle, strips: fl.strips, fieldLayout: fl.layout });

@@ -1,13 +1,13 @@
 import { benchOverlayChange } from './benchComposition';
 import { feedLanduse } from '../render/groundTone';
-import { v1LandscapeCanvas, type V1LandscapeStyle } from '../render/v1Landscape';
+import { v1LandCanvas, v1LandscapeCanvas, type V1LandscapeStyle } from '../render/v1Landscape';
 import { CityGround } from '../render/cityGround';
 import { bindGear, gearButton } from './mapGroup';
 import { localizeCityInspector } from './cityInspectorLocale';
 import { urbanText } from './urbanPanelLocale';
 import { LOCALE_KEY } from './shellLocale';
 import LanduseWorker from './urbanLanduseWorker?worker&inline';
-import { BIOME_NAMES, type BiomeName } from '../gen/biomes';
+import { BIOME_NAMES, isUnderdarkBiome, type BiomeName } from '../gen/biomes';
 import { SIZE_PRESETS } from '../gen/options';
 import { getBenchRenderColors } from './benchRenderColors';
 import { resolveBenchAppearance } from './benchComposition';
@@ -25,7 +25,8 @@ import { decodeBrushes, type BrushImages } from '../render/brushes';
 import { BRUSH_SOURCES } from '../render/assets/brushAssets';
 import { generateUrbanLanduse, urbanLanduseRenderWorld, type UrbanLanduseInput, type UrbanLanduseResponse, type UrbanLanduseScene } from './urbanLanduseData';
 
-type Context = Omit<UrbanLanduseInput, 'biome'>;
+/** `biome`: the biome of the map, when the map has one; the panel setting otherwise. */
+type Context = Omit<UrbanLanduseInput, 'biome'> & { biome?: BiomeName };
 interface Settings { seed: string; biome: BiomeName; style: MapStyle; vegetation: VegetationStyle; painted: boolean; opacity: number; visible: boolean; enabled: boolean; hiddenKinds: LandKind[]; showFarms: boolean; visiblePaddocks?: boolean; concreteFieldBoundaries?: boolean }
 const biomeLabels = ['Campagne tempérée', 'Forêt', 'Désert et oasis', 'Steppe', 'Forêt tropicale', 'Toundra', 'Outreterre', 'Cavernes'];
 const landKinds: [LandKind, string][] = [['forest', 'Forêts'], ['orchard', 'Vergers'], ['field', 'Champs et sillons'], ['garden', 'Jardins'], ['meadow', 'Prairies'], ['pasture', 'Pâturages'], ['marsh', 'Marais'], ['commons', 'Terrains communaux']];
@@ -194,6 +195,8 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
       furrowReferenceSize: SIZE_PRESETS[scene.options.size].mapSize,
       terrain: () => {
         if (v1Style) return v1LandscapeCanvas(context!.raster, v1Style, scene!.options.biome);
+        // The parchment tints multiply over the lit ground: a transparent canvas has nothing to multiply with.
+        if (composition.variant === 'parchment' && appearance.ground.layers.relief) return v1LandCanvas(context!.raster, 'parchment', scene!.options.biome);
         if (!background.image || background.opacity <= 0) return null;
         if (background.opacity === 1) return background.image;
         const base = document.createElement('canvas'); base.width = background.image.width; base.height = background.image.height;
@@ -248,7 +251,7 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     scene = undefined;
     notify(); draw();
     const streetAlignedHomes = context.ruralOptions?.streetAlignedHomes, denserSmallholdings = context.ruralOptions?.denserSmallholdings, fieldEnclosure = context.ruralOptions?.fieldEnclosure, fieldMaterial = context.ruralOptions?.fieldMaterial;
-    const request = { id, input: { ...context, seed: settings.seed || context.seed, biome: settings.biome,
+    const request = { id, input: { ...context, seed: settings.seed || context.seed, biome: isUnderdarkBiome(settings.biome) ? settings.biome : context.biome ?? settings.biome,
       ...((streetAlignedHomes || denserSmallholdings || fieldEnclosure !== undefined) ? { ruralOptions: { streetAlignedHomes, denserSmallholdings, fieldEnclosure, fieldMaterial } } : {}) } };
     requested = !!request.input.city;
     state(urbanText(['Génération des champs et de la végétation…','Generating fields and vegetation…','正在生成田地和植被…','Generando campos y vegetación…','Gerando campos e vegetação…']), true);

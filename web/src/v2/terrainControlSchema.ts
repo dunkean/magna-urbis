@@ -47,11 +47,7 @@ export const climateZoneHelp: Record<string, string> = {
   tropical: copy('Southeast Asia — jungle, rice terraces', 'Asie du Sud-Est — jungle, rizières en terrasses'),
   wetland: copy('Venice, Netherlands, Fens — reeds, canals, peat bogs', 'Venise, Pays-Bas, Fens — roseaux, canaux, tourbières'),
 };
-/** Classic biome that goes with each climate zone (underdark biomes are never replaced). */
-export const climateZoneBiome: Record<string, string> = {
-  temperate: 'temperate', mediterranean: 'temperate', continental: 'forest', nordic: 'forest', alpine: 'forest', arctic: 'tundra',
-  steppe: 'steppe', desert: 'desert', savanna: 'steppe', tropical: 'tropical', wetland: 'temperate',
-};
+export { climateZoneBiome } from '../gen/biomes';
 export const terrainBasicFields: ParameterField[] = [
   { ...select('relief', 'Relief type', 'Type de relief', reliefChoices), id: 'terrain-relief' },
   select('climate', 'Climate zone', 'Zone climatique', simple([

@@ -37,7 +37,7 @@ import { roadGroundTones, setRoadGround, type RoadGroundTones } from './roadStyl
 export interface RenderOptions {
   text?: Readonly<TextSettings>;
   colors?: RenderColors;
-  roadLook?: 'ink' | 'natural';
+  roadLook?: import('./composition').RoadLook;
   roadGround?: RoadGroundTones;
   roadEmphasis?: number; roadNight?: boolean;
   buildings?: boolean;

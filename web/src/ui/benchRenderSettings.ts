@@ -53,7 +53,7 @@ export function installBenchRenderSettings(): void {
       driven('#style, #backgroundStyle', c.variant); driven('#showContours', r.ground.contours); driven('#showRelief', r.ground.layers.relief);
       driven('#showWater', c.networks.water.visible); driven('#roadShow', c.networks.roads.visible); driven('#roadPreset', c.networks.roads.look === 'natural' ? 'render' : 'ink');
       driven('[data-building-visible]', c.buildings.visible); driven('[data-building-style]', r.city.buildingStyle); driven('[data-building-diagnostic]', r.city.diagnostic);
-      driven('#roadBlend', c.networks.roads.look === 'natural' ? 'blended' : 'classic'); driven('[data-render="groundBlend"]', r.city.groundBlend);
+      driven('#roadBlend', c.networks.roads.look === 'ink' ? 'classic' : 'blended'); driven('[data-render="groundBlend"]', r.city.groundBlend);
       driven('#showLanduse', true); driven('#showPlan', r.city.plan); driven('#showLegend', r.cartography.legend); driven('#showFrame', r.ground.layers.frame);
       driven('#landuseStyle', r.palette.mapStyle); driven('#landuseVegetation', r.vegetation.symbols); driven('#landusePainted', c.vegetation.painted);
       driven('#showHypsometry', r.ground.layers.hypsometry); driven('#showShading', r.ground.lighting.enabled);
