@@ -1,6 +1,29 @@
 import { WATER_MATERIAL_GLSL } from '../../web/src/render/terrainWater';
 import { GROUND_COVER_GLSL } from './terrainGround';
 
+/** Cache the water lookup already consumed by V2 before its micro material. */
+export const GROUND_COVER_WATER_GLSL = `
+bool surfaceGroundWaterCached=false;vec2 surfaceGroundWaterPoint=vec2(0.);float surfaceGroundWaterSample=0.;
+float surfaceGroundRetainWater(vec2 world,float coverage){
+  surfaceGroundWaterCached=true;surfaceGroundWaterPoint=world;surfaceGroundWaterSample=coverage;return coverage;
+}
+`;
+
+/** Share the forest's retained bank texel with the close ground pass. */
+export function groundCoverInputsGlsl(source: string): string {
+  return source.replaceAll('textureLod(uForestBank,uv,0.)','surfaceGroundBankTexel(world,uv)')+`
+void surfaceGroundReadInputs(vec2 world,float fp){
+  if(uGroundCover.w<.5||uForest==0||uForestBrushes!=0||uRenderV2>1||fp>=10.)return;
+  if(surfaceGroundHasInputs&&all(equal(world,surfaceGroundPoint)))return;
+  vec3 occupation=groundOccupation(world);vec2 bank=fp<1.?forestBankAt(world):vec2(-1e3,0.);
+  surfaceGroundWet=uRenderV2==1?forestWaterCoverage(world):0.;
+  // Wide channels refer to the bank; narrow channels retain their centreline.
+  float distance=bank.y>0.?bank.y-bank.x:1e9;
+  surfaceGroundInputs(world,occupation,surfaceGroundWet>=.5?-max(distance,.3):distance);
+}
+`;
+}
+
 // Material compositor ported from Neural Earth web/terrain_renderer.js (GPL-3.0).
 // Original blending, noise, coverage and palettes; local climate/substrate adapter below.
 export const NEURAL_EARTH_MATERIAL_GLSL = `
@@ -51,7 +74,13 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
     // xyz: sun in X/up/Z, w: satellite ground with procedural-canopy.
     uniform vec4 uGroundCover;
     bool surfaceGroundHasInputs=false;vec2 surfaceGroundPoint=vec2(0.);
-    vec3 surfaceGroundOccupation=vec3(0.);float surfaceGroundBank=1e9;
+    vec3 surfaceGroundOccupation=vec3(0.);float surfaceGroundBank=1e9,surfaceGroundWet=0.;
+    bool surfaceGroundBankCached=false;vec2 surfaceGroundBankPoint=vec2(0.);vec4 surfaceGroundBankSample=vec4(0.);
+    vec4 surfaceGroundBankTexel(vec2 world,vec2 uv){
+      if(surfaceGroundBankCached&&all(equal(world,surfaceGroundBankPoint)))return surfaceGroundBankSample;
+      surfaceGroundBankCached=true;surfaceGroundBankPoint=world;surfaceGroundBankSample=textureLod(uForestBank,uv,0.);
+      return surfaceGroundBankSample;
+    }
     // Supply the existing categorical occupation and signed dry-bank distance;
     // this hook must reuse retained reads, never sample a texture for cover.
     void surfaceGroundInputs(vec2 world,vec3 occupation,float bankDistance){

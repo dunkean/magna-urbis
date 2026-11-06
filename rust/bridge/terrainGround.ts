@@ -175,11 +175,15 @@ vec3 surfaceGroundCap(vec2 d,vec2 radius){
   vec2 inverse=1./(radius*radius);float t=max(1.-dot(d*d,inverse),0.);
   return vec3(t*t,-4.*t*d*inverse);
 }
+vec4 surfaceGroundHerbCap(vec2 d,vec2 radius){
+  vec3 cap=surfaceGroundCap(d,radius);
+  return vec4(cap,cap.x*(sqrt(cap.x)-.75));
+}
 vec3 surfaceGroundCover(vec2 world,float slope,float fp,float rock,float grass,uint salt){
   surfaceGroundSlope=vec2(0.);vec3 tone=vec3(0.);
 #ifdef RENDER3D_FOREST
   if(uGroundCover.w<.5||uForest==0||uForestBrushes!=0||uRenderV2>1||fp>=10.||surfaceGroundHeight<=0.)return tone;
-  if(fp>=.42&&surfaceGroundEnv.z<.01)return tone;
+  if(fp>=3.&&surfaceGroundEnv.z<.01)return tone;
   // v2GroundEnv scales groundField by this substrate gain. Cover normals are
   // already material-specific and must also survive on perfectly flat plains.
   if(uRenderV2==1)surfaceGroundNormalGain=mix(.02+.43*rock+.07*(1.-grass),.008,v2GroundSnow);
@@ -193,30 +197,38 @@ vec3 surfaceGroundCover(vec2 world,float slope,float fp,float rock,float grass,u
   if(exposed<=0.)return tone;
   float moisture=surfaceGroundEnv.x,green=surfaceGroundEnv.y;
   float land=supplied&&cls>0?sstep(0.,max(.3,fp),min(occupation.x,-occupation.y)):1.;
-  exposed*=land;vec2 light=uGroundCover.xz;
+  exposed*=land*(1.-surfaceGroundWet);vec2 light=uGroundCover.xz;
   light=dot(light,light)>.0001?normalize(light):vec2(1.,0.);
   float herb=grass*(1.-rock)*exposed*(1.-sstep(.35,.7,slope));
-  float tuftKeep=1.-sstep(.035,.09,fp);
+  float tuftKeep=1.-sstep(.6,1.5,fp);
   if(herb>.01&&tuftKeep>0.){
-    float cell=cls==3?.65:.9;
-    vec2 q=vec2(dot(world,vec2(.8,.6)),dot(world,vec2(-.6,.8)))/cell;
-    uint h=groundHash(ivec3(ivec2(floor(q)),811),salt);
     float density=(.10+.52*sstep(.2,1.6,moisture))*(cls==2?1.:cls==3?.65:.35);
-    if(float(h>>24u)/255.<density){
-      if(uRenderV2==1){
-        float phase=.5-.5*cos(6.283185307*uV2Season);
-        float temperature=uMaterialClimate.x-.0065*surfaceGroundHeight+6.*(2.*phase-1.);
-        green=sstep(.35,1.3,moisture)*sstep(1.,13.,temperature);
-      }
-      vec2 centre=.4+.2*vec2(float(h&255u),float((h>>8u)&255u))/255.;
-      vec3 cap=surfaceGroundCap(fract(q)-centre,vec2(.22,.14));
-      float amount=herb*tuftKeep;
-      vec2 g=cap.yz*(cls==3?.07:.14)/cell;
+    if(uRenderV2==1){
+      float phase=.5-.5*cos(6.283185307*uV2Season);
+      float temperature=uMaterialClimate.x-.0065*surfaceGroundHeight+6.*(2.*phase-1.);
+      green=sstep(.35,1.3,moisture)*sstep(1.,13.,temperature);
+    }
+    float singleKeep=1.-sstep(.25,.65,fp);
+    // Two fixed world lattices: broad three-tuft clumps resolve first, then
+    // individual tufts. Crossfade amplitudes, never cell size or phase.
+    for(int level=0;level<2;level++){
+      float keep=level==0?tuftKeep*(1.-singleKeep):singleKeep;
+      if(keep<=0.)continue;
+      float cell=level==0?12.:cls==3?1.8:2.4;
+      vec2 q=vec2(dot(world,vec2(.8,.6)),dot(world,vec2(-.6,.8)))/cell;
+      uint h=groundHash(ivec3(ivec2(floor(q)),811+level),salt);
+      if(float(h>>24u)/255.>=density)continue;
+      vec2 centre=.4+.2*vec2(float(h&255u),float((h>>8u)&255u))/255.,d=fract(q)-centre;
+      vec4 cap;
+      if(level==0)cap=surfaceGroundHerbCap(d-vec2(-.19,-.07),vec2(.18,.13))
+        +surfaceGroundHerbCap(d-vec2(.15,-.11),vec2(.16,.12))+surfaceGroundHerbCap(d-vec2(.03,.17),vec2(.17,.13));
+      else cap=surfaceGroundHerbCap(d,vec2(.22,.14));
+      float amount=herb*keep;
+      vec2 g=cap.yz*(level==0?.55:cls==3?.09:.18)/cell;
       surfaceGroundSlope+=amount*vec2(.8*g.x-.6*g.y,.6*g.x+.8*g.y);
       // Integral of t^2(t-3/4) over an ellipse is exactly zero: dark base,
       // bright tip, no cell-wide compensation and no change to mean grass.
-      float tip=cap.x*(sqrt(cap.x)-.75);
-      tone+=amount*tip*mix(vec3(.65,.49,.24),vec3(.40,.67,.25),green);
+      tone+=amount*cap.w*mix(vec3(.65,.49,.24),vec3(.40,.67,.25),green);
     }
   }
   float sand=surfaceGroundEnv.z*(1.-rock)*(1.-grass)*exposed*(1.-sstep(.35,.7,slope));
@@ -241,34 +253,33 @@ vec3 surfaceGroundCover(vec2 world,float slope,float fp,float rock,float grass,u
   float distance=min(surfaceGroundShore,bank);
   float bankKeep=exposed*sstep(0.,.3,distance)*(1.-sstep(8.,36.,distance))*(1.-sstep(.5,.9,slope));
   bankKeep*=max(surfaceGroundBeach,1.-.85*grass);
-  if(bankKeep>.01&&fp<.09){
-    // Fixed lattices at both sizes avoid swimming when the bank grade changes.
-    // Large cobbles lie nearest the water; smaller pebbles remain inland.
+  if(bankKeep>.01&&fp<1.){
+    // Gravel bars resolve as aggregates before individual cobbles/pebbles.
+    // Every band is a centred derivative, including while levels crossfade.
     float coarse=1.-sstep(2.,18.,distance);
-    float k=1.-sstep(.035,.09,fp);
-    if(coarse>.001&&k>0.){
-      vec4 cap=groundGravel(world/.92,salt+827u);vec2 g=cap.yw/.92;
-      surfaceGroundSlope+=bankKeep*coarse*k*.075*g;
-      // A derivative has zero spatial mean, even for overlapping capped stones.
-      tone+=vec3(bankKeep*coarse*k*.012*dot(g,light));
-    }
+    float k=1.-sstep(.4,1.,fp),mediumKeep=1.-sstep(.12,.3,fp);
     float fineKeep=1.-sstep(.01,.026,fp);
-    if(coarse<.999&&fineKeep>0.){
-      vec4 cap=groundGravel(world/.26,salt+829u);vec2 g=cap.yw/.26;
-      surfaceGroundSlope+=bankKeep*(1.-coarse)*fineKeep*.022*g;
-      tone+=vec3(bankKeep*(1.-coarse)*fineKeep*.0035*dot(g,light));
+    for(int level=0;level<3;level++){
+      float keep=level==0?k*(1.-mediumKeep):level==1?mediumKeep*(1.-fineKeep):fineKeep;
+      if(keep<=0.)continue;
+      float cell=level==0?8.:level==1?2.4:.26;
+      float height=level==0?.55:level==1?.20:.022;
+      vec4 cap=groundGravel(world/cell,salt+827u+uint(level));vec2 g=cap.yw/cell;
+      float amount=bankKeep*keep*(.45+.55*coarse);
+      surfaceGroundSlope+=amount*height*g;
+      tone+=vec3(amount*height*.16*dot(g,light));
     }
   }
   float scree=sstep(.22,.42,slope)*(1.-sstep(1.1,1.7,slope))*(1.-.85*grass)*exposed;
-  float blockKeep=1.-sstep(.16,.42,fp);
+  float blockKeep=1.-sstep(1.2,3.,fp);
   if(scree>.01&&blockKeep>0.){
-    vec2 q=world/6.;uint h=groundHash(ivec3(ivec2(floor(q)),839),salt);
+    vec2 q=world/16.;uint h=groundHash(ivec3(ivec2(floor(q)),839),salt);
     if(float(h>>24u)/255.<.12+.16*rock){
       vec2 centre=.46+.08*vec2(float(h&255u),float((h>>8u)&255u))/255.;
       vec2 radius=.14+.07*vec2(float((h>>16u)&15u),float((h>>20u)&15u))/15.;
       vec2 d=fract(q)-centre;vec3 cap=surfaceGroundCap(d,radius);
       float amount=scree*blockKeep;
-      surfaceGroundSlope+=amount*cap.yz*.65/6.;
+      surfaceGroundSlope+=amount*cap.yz*1.3/16.;
       vec2 shadowD=d+light*.10;
       vec2 shadowUv=vec2(dot(shadowD,light),dot(shadowD,vec2(-light.y,light.x)));
       float shadow=surfaceGroundCap(shadowUv,vec2(.19,.14)).x;

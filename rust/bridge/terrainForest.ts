@@ -432,6 +432,8 @@ uniform int uForest;
 uniform int uRenderV2;uniform float uV2Season;uniform int uV2WaterVisible;
 ${RENDER_V2_ZONE_GLSL}
 float v2Foliage=1.;
+// Zone water table and zone bare belt (rock, treeline): set by v2ZoneEnv, read by crowns and land use.
+float v2ZoneWet=0.,v2ZoneBare=0.;
 float v2FloorModulation=1.;
 vec3 v2MacroNormal=vec3(0.,1.,0.);
 vec3 v2MacroCanopy=vec3(0.);
@@ -476,8 +478,11 @@ void applyGroundOccupation(inout GroundMaterial m,vec2 world,float footprint){
   if(uRenderV2!=1||uHasOccupation==0)return;
   vec3 o=groundOccupation(world);int cls=int(o.z);
   if(cls<1||cls==8||cls>10)return;
-  float cell=uOccupationRect.z/uOccupationN,w=min(max(footprint,cell*.6),cell*4.);
-  float a=clamp(min(o.x,-o.y)/w,0.,1.)*(1.-v2GroundSnow);
+  // Arid climates: pasture, meadow and field dry to straw, and their edge fades over a wider band.
+  float humid=uMaterialClimate.y/max(20.*uMaterialClimate.x+280.,120.);
+  float dry=(1.-groundSmooth(.8,2.,humid))*(1.-clamp(v2ZoneWet,0.,1.))*(cls<=3?1.:cls<=5?.5:0.);
+  float cell=uOccupationRect.z/uOccupationN,w=min(max(footprint,cell*.6)*(1.+1.5*dry),cell*6.);
+  float a=clamp(min(o.x,-o.y)/w,0.,1.);a=mix(a,a*a*(3.-2.*a),dry)*(1.-.3*dry)*(1.-v2GroundSnow);
   if(a<=0.)return;
   float phase=clamp(uV2Season,0.,1.),green=.5+.5*sin(phase*6.2831853-1.5707963);
   vec3 bare=renderGuideOpen,target=bare;float rough=.9,detail=0.;
@@ -502,8 +507,9 @@ void applyGroundOccupation(inout GroundMaterial m,vec2 world,float footprint){
   }else if(cls==10){target=bare*vec3(.57,.68,.58);rough=.27;}
   else if(cls==6){target=mix(bare,vec3(.42,.38,.28),.6);rough=.9;}
   else {target=mix(bare,vec3(.45,.40,.31),.55);rough=.91;}
+  if(cls<=5)target=mix(target,mix(bare,vec3(.55,.47,.30),.55),.9*dry);
   // Keep biome tint and the existing microdetail, slope normal, snow and sun response.
-  target=mix(bare,target,.66)+detail;
+  target=mix(bare,target,mix(.66,.5,dry))+detail;
   renderGuideOpen=mix(bare,clamp(target,0.,1.),a);
   m.albedo=mix(m.albedo,groundToLinear(clamp(target,0.,1.))*v2FloorModulation,a);
   m.roughness=mix(m.roughness,rough,a);
@@ -632,9 +638,10 @@ ForestCrown forestCrown(ivec2 cell,int level,float s,ForestStand st,ForestPatch 
     // lone trees within a few crowns of the stand. Bank strips persist in
     // farmland at half density, not in built land.
     float stray=.18*(1.-groundSmooth(0.,4.*radius,open))*min(cover*3.,1.);
-    k.alive=forestU8(h2*0x27d4eb2du,24u)<max(allow+(open<5.?hedge:0.)+stray,openGallery*gallery);k.edge=1.;
+    k.alive=forestU8(h2*0x27d4eb2du,24u)<max(allow+(open<5.?hedge:0.)+stray,openGallery*gallery)*(1.-v2ZoneBare);k.edge=1.;
   } else {
-    k.alive=forestU8(h,16u)<q&&threshold<share;
+    // The zone bare belt (rock, treeline) takes the same share cut as the mean, so near crowns stop where it does.
+    k.alive=forestU8(h,16u)<q&&threshold<share*(1.-v2ZoneBare);
     // Harper et al.: stand margins are denser and darker.
     k.edge=1.-groundSmooth(0.,.1,share-threshold);
   }
@@ -660,13 +667,14 @@ ForestCrown forestCrown(ivec2 cell,int level,float s,ForestStand st,ForestPatch 
   return k;
 }
 // Outline radius along the unit direction n: elliptic and trefoil harmonics, smaller
-// for conifers, whose branch tips add a six-lobed star (cos 6θ from the trefoil term).
-float forestOutline(ForestCrown k,vec2 n){
+// for conifers, whose branch tips add a six-lobed star (cos 6θ from the trefoil term). The star needs
+// a crown many pixels wide; below that it reads as a polygon, so the outline eases to a smooth cone.
+float forestOutline(ForestCrown k,vec2 n,float aa){
   uint h=k.id*0x9e3779b9u;vec2 a=vec2(forestU8(h,0u),forestU8(h,8u))*6.2831853;float amp=k.needle?.07:.13;
   vec4 shape=vec4(cos(a.x),sin(a.x),.6*cos(a.y),.6*sin(a.y))*amp;
   vec2 c2=vec2(n.x*n.x-n.y*n.y,2.*n.x*n.y),c3=vec2(n.x*(4.*n.x*n.x-3.),n.y*(3.-4.*n.y*n.y));
-  float lobe=dot(c3,shape.zw)/(.6*amp);
-  return k.r*(1.+dot(c2,shape.xy)+dot(c3,shape.zw)+(k.needle?.08*(2.*lobe*lobe-1.):0.));
+  float lobe=dot(c3,shape.zw)/(.6*amp),star=groundSmooth(7.,22.,k.r/max(aa,1e-4));
+  return k.r*(1.+dot(c2,shape.xy)+dot(c3,shape.zw)*(k.needle?mix(.3,1.,star):1.)+(k.needle?.08*star*(2.*lobe*lobe-1.):0.));
 }
 struct ForestHit{float cover;float top;float second;vec2 slope;float rel;vec2 local;float r;bool needle;bool riparian;float edge;uint id;int level;float near;float ink;};
 // Overhead canopy and shrub watercolor sprites, stripped of hue at packing time.
@@ -696,7 +704,7 @@ void forestCrowns(inout ForestHit hit,int level,float s,ForestStand st,float aa)
     if(dist>=2.*k.r+aa)continue;
     float r=k.r,a=0.,ink=.5;
     if(uForestBrushes==1){vec2 brushTexel=forestBrush(k,st,d,aa,s);a=brushTexel.r;ink=brushTexel.g;hit.near=min(hit.near,dist/r);if(a<.002)continue;}
-    else {r=forestOutline(k,d/max(dist,1e-4));hit.near=min(hit.near,dist/r);if(dist>=r+aa)continue;a=clamp((r-dist)/aa+.5,0.,1.);}
+    else {r=forestOutline(k,d/max(dist,1e-4),aa);hit.near=min(hit.near,dist/r);if(dist>=r+aa)continue;a=clamp((r-dist)/aa+.5,0.,1.);}
     // Profiles: sharp-tipped cone, dome, or the flat top of a savanna umbrella.
     float delta=min(dist/r,1.),d2=delta*delta,tip=sqrt(d2+.006);
     float z=k.h-k.depth*(k.needle?tip:mix(d2,d2*d2,umbrella));
@@ -722,7 +730,7 @@ float forestShadow(ForestHit hit,int level,float s,ForestStand st,float aa,float
     // has a broad penumbra even when the display resolves individual leaves.
     float penumbra=max(aa,(k.needle?.12:.22)*k.r+.055*o);
     vec2 d=st.p-(k.c-sun*o);float sd=length(d);if(sd>=1.3*k.r+penumbra)continue;
-    shade=max(shade,clamp((.92*forestOutline(k,d/max(sd,1e-4))-sd)/penumbra+.5,0.,1.));
+    shade=max(shade,clamp((.92*forestOutline(k,d/max(sd,1e-4),aa)-sd)/penumbra+.5,0.,1.));
   }
   return shade;
 }
@@ -741,7 +749,7 @@ vec3 forestGrade(ForestStand st,float needle){
   vec3 temperate=mix(mix(vec3(1.02,1.04,.92),vec3(1.1,1.1,.82),season.y),vec3(1.3,1.,.62),.75*season.x);
   vec3 savanna=mix(vec3(1.12,1.,.66),vec3(.94,1.02,.76),season.z);
   vec3 broad=temperate*(1.-kind.x-kind.y-kind.z)+vec3(.58,.68,.66)*kind.x+vec3(.7,1.06,.62)*kind.y+savanna*kind.z;
-  return mix(broad,mix(vec3(.56,.62,.78),vec3(.6,.7,.9),season.z),needle);
+  return mix(broad,mix(vec3(.64,.70,.85),vec3(.68,.78,.97),season.z),needle);
 }
 vec3 forestCanopy(ForestStand st,float needle,vec2 jitter,float special){
   vec3 c=forestPalette(st,needle),kind=forestKind(st.trop,st.dry);float temperate=1.-kind.x-kind.y-kind.z;

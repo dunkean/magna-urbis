@@ -42,7 +42,7 @@ import { createTerrainRenderer, type TerrainRenderer } from './terrainRenderer';
 import { TERRAIN_3D_FOV, TERRAIN_GROUND_MAX_SCALE, type Terrain3d, type Terrain3dCamera, type Terrain3dTile } from './terrain3d';
 import { createTerrain3d } from './terrain3dRenderer';
 import { keepRendererOverride } from './rendererOverride';
-import { terrain3dTexture } from './terrain3dTexture';
+import { terrain3dTexture, terrain3dBillboards, terrain3dTextureOverlay } from './terrain3dTexture';
 import { withBuildingOccupation } from './forestOccupation';
 import type { PlacementBatch, PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
 import { city3dScene, city3dProjectionScene, rasterHeight } from '../render/city3dMeshes';
@@ -653,7 +653,7 @@ async function load3dTile(tile: Terrain3dTile) {
     canopyWater={x,y,width,n:width,alpha:gpu.captureWaterMask({x,y,width})};
   }
   const semantic = benchSemanticTile(region, canvas.width, ground3dEnabled()?result:undefined);
-  if (!ground3dEnabled() && semantic) result.getContext('2d')!.drawImage(semantic, 0, 0, result.width, result.height);
+  if (!ground3dEnabled() && semantic) terrain3dTextureOverlay(result,ctx=>ctx.drawImage(semantic,0,0,result.width,result.height));
   return { texture: result, height, gutter, water: canopyWater, semantic: ground3dEnabled() ? semantic : undefined };
 }
 
@@ -888,12 +888,13 @@ async function refresh3dTexture(epoch: number): Promise<void> {
     if (!perspective || !terrain || !gpu || epoch !== texture3dEpoch) return;
     const canvas = await captureBenchGround(() => gpu!.captureMap(2048, ground));
     const texture = await terrain3dTexture(canvas, terrain, style, settings, fantasyOptions, layers.relief, ground ? '' : appliedGroundOverlay(), undefined, settlements.paintingContext, ground ? undefined : ctx => drawBenchGround(ctx, { x: 0, y: 0, width: terrain!.width }, canvas.width));
+    const billboards = await terrain3dBillboards(terrain,style,settings,fantasyOptions,layers.relief,settlements.paintingContext);
     if (perspective && epoch === texture3dEpoch) {
       terrain3d.setTileBoundaries(input('tileBounds3d').checked);
       terrain3d.setHeightSampler(gpu.createSurfaceSampler());
       terrain3d.invalidateTiles();
-      if (!ground) { const semantic = benchSemanticTile({ x: 0, y: 0, width: terrain.width }, texture.width); if (semantic) texture.getContext('2d')!.drawImage(semantic, 0, 0); }
-      terrain3d.setTexture(texture); benchTextOverlay?.invalidate();
+      if (!ground) { const semantic = benchSemanticTile({ x: 0, y: 0, width: terrain.width }, texture.width); if (semantic) terrain3dTextureOverlay(texture,ctx=>ctx.drawImage(semantic,0,0)); }
+      terrain3d.setTexture(texture,billboards); benchTextOverlay?.invalidate();
     }
   } catch (error) {
     if (epoch !== texture3dEpoch) return;

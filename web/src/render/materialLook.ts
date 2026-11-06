@@ -1,6 +1,11 @@
 import { terrainStyle } from './terrainStyle';
 import { WATER_SURFACE_GLSL, waterFunctionGlsl } from './waterStyle';
 
+/** A retained forest field represents procedural-canopy; painted/diagnostic grounds never get cover. */
+export function groundCoverActive(variant: number, brushes: boolean, procedural: boolean, enabled = true): number {
+  return +(enabled && procedural && !brushes && variant <= 1);
+}
+
 /** Display-only grades: no physical height, cover or lighting resources change. */
 export const MOONLIGHT_GLSL = `
 vec3 moonlight(vec3 c){float y=dot(c,vec3(.2126,.7152,.0722));return c*vec3(.16,.23,.38)+vec3(.018,.029,.065)*(.35+y);}

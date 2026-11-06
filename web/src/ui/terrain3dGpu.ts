@@ -26,6 +26,7 @@ import type { ForestField, ForestOccupation } from '../../../rust/bridge/terrain
 import { renderV2GlacierSources } from '../../../rust/bridge/terrainRenderV2';
 import { renderV2ZoneUniform } from '../../../rust/bridge/terrainRenderV2Zones';
 import { terrainLights } from '../render/terrainLighting';
+import { groundCoverActive } from '../render/materialLook';
 import { MATERIALS, type MaterialImages } from '../render/buildingMaterials';
 import { Terrain3d, paddedMaterial, fullPatchIndices, patchClipKey, clippedPatchIndices,
   type FrameGeometry, type Patch, type PatchDraw, type Terrain3dOptions, type Terrain3dTile, type Terrain3dTileContent } from './terrain3d';
@@ -114,13 +115,16 @@ const mipCount = (width: number, height: number): number => Math.floor(Math.log2
 const SAMPLES = 4, DEPTH: GPUTextureFormat = 'depth32float';
 const T = WGSL.WGSL3D_TEXTURES;
 const TERRAIN_TEXTURES = ['material', 'previousMaterial', 'macroField', 'uShoreRing', 'canopyWater', 'previousCanopyWater',
-  'uForestField', 'uForestBank', 'uOccupation', 'uForestBeach', 'uForestBrushAtlas', 'semanticTile', 'previousSemanticTile'] as const;
+  'uForestField', 'uForestBank', 'uOccupation', 'uForestBeach', 'uForestBrushAtlas', 'semanticTile', 'previousSemanticTile', 'drapedMaterial', 'previousDrapedMaterial'] as const;
 type TerrainTexture = typeof TERRAIN_TEXTURES[number];
 const PATCH_BUFFERS: GPUVertexBufferLayout[] = [
   { arrayStride: 40, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }, { shaderLocation: 1, offset: 12, format: 'float32x2' },
     { shaderLocation: 2, offset: 20, format: 'float32x2' }, { shaderLocation: 3, offset: 28, format: 'float32' }, { shaderLocation: 4, offset: 32, format: 'float32x2' }] },
   { arrayStride: 12, attributes: [{ shaderLocation: 5, offset: 0, format: 'float32x3' }] },
 ];
+const BILLBOARD_BUFFERS: GPUVertexBufferLayout[] = [{ arrayStride: 48, stepMode: 'instance', attributes: [
+  { shaderLocation: 0, offset: 0, format: 'float32x4' }, { shaderLocation: 1, offset: 16, format: 'float32x4' }, { shaderLocation: 2, offset: 32, format: 'float32x4' },
+] }];
 const BUILDING_BUFFERS: Record<'color' | 'tex', GPUVertexBufferLayout[]> = {
   color: [{ arrayStride: 40, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }, { shaderLocation: 1, offset: 12, format: 'float32x3' }, { shaderLocation: 2, offset: 24, format: 'float32x3' },
     { shaderLocation: 4, offset: 36, format: 'float32' }] }],
@@ -156,8 +160,9 @@ const PREVIEW_GROUND = groundKey(0, 0, 0, 0);
 class Gpu3d {
   readonly format = navigator.gpu.getPreferredCanvasFormat();
   readonly modules: Record<string, GPUShaderModule> = {};
-  readonly layouts: Record<'terrain' | 'sky' | 'building', GPUBindGroupLayout>;
-  readonly pipelineLayouts: Record<'terrain' | 'sky' | 'building', GPUPipelineLayout>;
+  readonly layouts: Record<'terrain' | 'sky' | 'building' | 'billboard', GPUBindGroupLayout>;
+  readonly pipelineLayouts: Record<'terrain' | 'sky' | 'building' | 'billboard', GPUPipelineLayout>;
+  readonly billboardSampler: GPUSampler;
   readonly samplers: { nearest: GPUSampler; linear: GPUSampler; aniso: GPUSampler; repeat: GPUSampler };
   readonly mip: GPUShaderModule; readonly depth: GPUShaderModule;
   private pipelines = new Map<string, Entry>();
@@ -166,7 +171,7 @@ class Gpu3d {
   readonly lostListeners = new Set<() => void>();
   lost = false;
   constructor(readonly device: GPUDevice) {
-    for (const key of ['terrainVs', 'groundFs', 'mapFs', 'skyVs', 'skyFs', 'buildingColorVs', 'buildingColorFs', 'buildingTexVs', 'buildingTexFs'] as const)
+    for (const key of ['terrainVs', 'groundFs', 'mapFs', 'skyVs', 'skyFs', 'buildingColorVs', 'buildingColorFs', 'buildingTexVs', 'buildingTexFs', 'billboardVs', 'billboardFs'] as const)
       this.modules[key] = device.createShaderModule({ label: key, code: WGSL[key] });
     this.mip = device.createShaderModule({ label: 'mipmaps', code: MIP_WGSL });
     this.depth = device.createShaderModule({ label: 'depth readback', code: DEPTH_WGSL });
@@ -177,6 +182,7 @@ class Gpu3d {
       aniso: device.createSampler({ label: 'material', ...linear, maxAnisotropy: 8 }),
       repeat: device.createSampler({ label: 'building materials', ...linear, maxAnisotropy: 4, addressModeU: 'repeat', addressModeV: 'repeat' }),
     };
+    this.billboardSampler = device.createSampler({ label: 'relief brushes', ...linear, lodMaxClamp: 4 });
     const F = GPUShaderStage.FRAGMENT, both = GPUShaderStage.VERTEX | F;
     const texture = (name: string): GPUBindGroupLayoutEntry => ({ binding: T[name], visibility: F,
       texture: name === 'macroField' ? { sampleType: 'unfilterable-float' } : name === 'uForestBrushAtlas' || name === 'albedoTex' || name === 'normalTex' ? { sampleType: 'float', viewDimension: '2d-array' } : { sampleType: 'float' } });
@@ -187,6 +193,7 @@ class Gpu3d {
       sky: device.createBindGroupLayout({ label: 'sky', entries: [{ binding: 0, visibility: both, buffer: { type: 'read-only-storage' } }] }),
       building: device.createBindGroupLayout({ label: 'buildings 3d', entries: [{ binding: 0, visibility: both, buffer: { type: 'read-only-storage', hasDynamicOffset: true } },
         sampler(4, 'filtering'), texture('albedoTex'), texture('normalTex')] }),
+      billboard: device.createBindGroupLayout({ label: 'relief brushes', entries: [{ binding: 0, visibility: both, buffer: { type: 'read-only-storage' } }, sampler(2, 'filtering'), texture('billboardAtlas')] }),
     };
     this.pipelineLayouts = Object.fromEntries(Object.entries(this.layouts).map(([name, layout]) =>
       [name, device.createPipelineLayout({ label: name, bindGroupLayouts: [layout] })])) as Gpu3d['pipelineLayouts'];
@@ -210,6 +217,9 @@ class Gpu3d {
     const depthStencil = (write: boolean): GPUDepthStencilState => ({ format: DEPTH, depthWriteEnabled: write, depthCompare: write ? 'less-equal' : 'always' });
     if (key === 'sky') return { label: key, layout: this.pipelineLayouts.sky, vertex: { module: this.modules.skyVs, entryPoint: 'main' },
       fragment: { module: this.modules.skyFs, entryPoint: 'main', targets: target }, depthStencil: depthStencil(false), multisample };
+    if (key === 'billboard') return { label: key, layout: this.pipelineLayouts.billboard,
+      vertex: { module: this.modules.billboardVs, entryPoint: 'main', buffers: BILLBOARD_BUFFERS },
+      fragment: { module: this.modules.billboardFs, entryPoint: 'main', targets: target }, depthStencil: depthStencil(true), multisample: { count: SAMPLES, alphaToCoverageEnabled: true } };
     if (key === 'buildingColor' || key === 'buildingTex') {
       const kind = key === 'buildingTex' ? 'tex' : 'color', vs = key === 'buildingTex' ? 'buildingTexVs' : 'buildingColorVs', fs = key === 'buildingTex' ? 'buildingTexFs' : 'buildingColorFs';
       return { label: key, layout: this.pipelineLayouts.building, vertex: { module: this.modules[vs], entryPoint: 'main', buffers: BUILDING_BUFFERS[kind] },
@@ -298,6 +308,9 @@ class Terrain3dGpu extends Terrain3d {
   private seamPool!: Pool;
   private readonly terrainParams = new Params(WGSL.WGSL3D_PARAMS.terrain);
   private readonly skyParams = new Params(WGSL.WGSL3D_PARAMS.sky);
+  private readonly billboardParams = new Params(WGSL.WGSL3D_PARAMS.billboard);
+  private gpuBillboardBuffer?: GPUBuffer;
+  private gpuBillboardAtlas?: { source: HTMLCanvasElement; texture: WebGLTexture };
   private fullIndices!: { buffer: GPUBuffer; count: number };
   private patchIndexCache = new Map<string, { buffer: GPUBuffer; count: number }>();
   /** Buffers released while a frame is being recorded, destroyed after its submit. */
@@ -411,6 +424,30 @@ class Terrain3dGpu extends Terrain3d {
     patch.vao = buffer; patch.vertices = undefined;
   }
   protected override releaseMesh(patch: Patch): void { (patch.vao as GPUBuffer | undefined)?.destroy(); }
+  protected override uploadBillboards(values: Float32Array, atlas?: HTMLCanvasElement): void {
+    this.gpuBillboardBuffer?.destroy(); this.gpuBillboardBuffer = undefined;
+    if (!values.length) return;
+    this.gpuBillboardBuffer = this.device.createBuffer({ label: 'relief instances', size: values.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
+    this.device.queue.writeBuffer(this.gpuBillboardBuffer, 0, values.buffer, values.byteOffset, values.byteLength);
+    if (atlas && this.gpuBillboardAtlas?.source !== atlas) {
+      if (this.gpuBillboardAtlas) this.deleteTexture(this.gpuBillboardAtlas.texture);
+      this.gpuBillboardAtlas = { source: atlas, texture: this.uploadTexture(atlas) };
+    }
+    this.gpu.pipeline('billboard');
+  }
+  protected override billboardsReady(): boolean { return !this.billboardCount || !!this.gpu.pipeline('billboard'); }
+  private recordBillboards(pass: GPURenderPassEncoder, frame: FrameGeometry, blend: number): boolean {
+    if (!this.billboardCount || !this.gpuBillboardBuffer || !this.gpuBillboardAtlas || blend<=0) return false;
+    const pipeline=this.gpu.pipeline('billboard'); if (!pipeline) return true;
+    const p=this.billboardParams,c=this.camera;
+    p.setArray('matrix',frame.matrix); p.set('cameraOrigin',c.x,frame.targetHeight,c.y); p.set('cameraRight',Math.cos(c.yaw),-Math.sin(c.yaw));
+    p.set('exaggeration',c.exaggeration); p.set('raisedBlend',blend); p.setArray('eye',frame.eye); p.set('fogDistance',Math.max(c.distance*2,100)); p.set('uNight',this.lookSettings.ambience==='night'?1:0);
+    const slot=this.params.alloc(p.bytes);
+    pass.setPipeline(pipeline); pass.setBindGroup(0,this.device.createBindGroup({ layout:this.gpu.layouts.billboard,entries:[
+      { binding:0,resource:{buffer:slot.buffer,offset:slot.offset,size:p.bytes.byteLength} },{ binding:2,resource:this.gpu.billboardSampler },{ binding:T.billboardAtlas,resource:image(this.gpuBillboardAtlas.texture).view },
+    ] }));
+    pass.setVertexBuffer(0,this.gpuBillboardBuffer); pass.draw(6,this.billboardCount); return false;
+  }
 
   private ensureTargets(width: number, height: number): NonNullable<Terrain3dGpu['targets']> {
     if (this.targets?.width === width && this.targets.height === height) return this.targets;
@@ -441,6 +478,7 @@ class Terrain3dGpu extends Terrain3d {
 
   protected override renderFrame(frame: FrameGeometry, w: number, h: number, draws: PatchDraw[]): boolean {
     const device = this.device, gpu = this.gpu, layer = this.layer!, c = this.camera, settings = this.groundSettings;
+    this.prepareBillboards(); const raisedBlend=this.raisedBlend(frame);
     const targets = this.ensureTargets(w, h);
     this.params.begin(); this.seamPool.begin();
     const encoder = device.createCommandEncoder({ label: 'terrain 3d' });
@@ -459,6 +497,7 @@ class Terrain3dGpu extends Terrain3d {
     const pipeline = this.terrainPipeline(), p = this.terrainParams, empty = this.blank.view;
     const textures: Partial<Record<TerrainTexture, GPUTextureView>> = { macroField: image(this.macroTexture).view };
     p.setArray('matrix', frame.matrix); p.set('exaggeration', c.exaggeration); p.setArray('eye', frame.eye);
+    p.set('raisedBlend',raisedBlend);
     p.set('fogDistance', Math.max(c.distance * 2, 100)); p.set('showTileBounds', this.tileBounds ? 1 : 0);
     p.set('uNight',this.lookSettings.ambience==='night'?1:0); p.set('displayWaterVisible',this.lookSettings.waterVisible===false?0:1);
     p.set('displayWaterBand',layer.width*.016);
@@ -468,6 +507,7 @@ class Terrain3dGpu extends Terrain3d {
       p.set('uMaterialSeed', canopy.seed >>> 0); p.set('uMaterialClimate', canopy.climate.temperature, canopy.climate.precipitation);
       p.set('groundEye', c.x + frame.eye[0], (frame.targetHeight + frame.eye[1]) / c.exaggeration, c.y + frame.eye[2]);
       p.set('groundLight', lights.primary[0], lights.primary[2], lights.primary[1]);
+      p.set('uGroundCover',lights.primary[0],lights.primary[2],lights.primary[1],groundCoverActive(settings?.renderV2??0,!!settings?.forestBrushes,!!settings&&!!this.forest,this.lookSettings.groundCover));
       p.set('groundLight2', lights.secondary[0], lights.secondary[2], lights.secondary[1]);
       p.set('groundStrength', canopy.lighting.enabled ? canopy.lighting.strength : 0);
       p.set('macroRect', layer.x, layer.y, layer.width); p.set('macroN', layer.n);
@@ -509,6 +549,9 @@ class Terrain3dGpu extends Terrain3d {
         p.set('physicalOrigin', tile.x, patch.heightOrigin, tile.y); p.set('patchRect', tile.x, tile.y, tile.width);
         p.set('morph', draw.morph); p.setArray('textureRect', draw.textureRect); p.setArray('previousRect', draw.previousRect); p.set('textureBlend', material.blend);
         textures.material = image(material.to.texture).view; textures.previousMaterial = image(material.from.texture).view;
+        for (const [ref,name,flag] of [[material.to,'drapedMaterial','hasRaisedMaterial'],[material.from,'previousDrapedMaterial','hasPreviousRaisedMaterial']] as const) {
+          const raised=this.raisedMaterials.get(ref.texture); textures[name]=raised?image(raised).view:empty; p.set(flag,raised?1:0);
+        }
         for (const [ref, name] of [[material.to, 'canopyWater'], [material.from, 'previousCanopyWater']] as const) {
           const mask = this.waterMasks.get(ref.texture);
           textures[name] = mask ? image(mask.texture).view : empty;
@@ -537,6 +580,7 @@ class Terrain3dGpu extends Terrain3d {
     buildings.target = { pass, params: this.params };
     let pending: boolean;
     try { pending = buildings.draw(this.buildingFrame(frame)); } finally { buildings.target = undefined; }
+    pending = this.recordBillboards(pass,frame,raisedBlend) || pending;
     pass.end();
     this.params.flush(); this.seamPool.flush();
     device.queue.submit([encoder.finish()]);
@@ -588,6 +632,8 @@ class Terrain3dGpu extends Terrain3d {
     this.gpu.listeners.delete(this.redraw); this.gpu.lostListeners.delete(this.deviceLost);
     this.releaseForest(this.forest);
     if (this.occupation) this.deleteTexture(this.occupation.texture);
+    this.gpuBillboardBuffer?.destroy(); if (this.gpuBillboardAtlas) this.deleteTexture(this.gpuBillboardAtlas.texture);
+    for (const texture of this.raisedMaterials.values()) this.deleteTexture(texture); this.raisedMaterials.clear();
     for (const texture of [this.material, this.macroTexture, this.blank, this.emptyUnfilterable, this.brushes.image, this.ring?.image]) if (texture) this.deleteTexture(texture);
     this.fullIndices.buffer.destroy();
     for (const indices of this.patchIndexCache.values()) indices.buffer.destroy();

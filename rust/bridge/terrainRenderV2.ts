@@ -15,7 +15,7 @@ float v2FlatSedimentExposure(float herbs,float shore,float openness){
 // Climate zone reweighting of the shared fields (see terrainRenderV2Zones).
 // Low flat ground of wet zones holds a water table: a mottled mosaic of wet
 // meadow, bog or paddy, never a uniform sheet. Diagnostics see the same fields.
-float v2ZoneWet=0.,v2ZoneBare=0.;
+// v2ZoneWet and v2ZoneBare are declared in FOREST_PRELUDE_GLSL: the forest code reads them too.
 void v2ZoneEnv(inout V2Env e,vec3 s,vec2 world,float tpi,float fp){
   int z=v2Zone();vec4 F=V2_ZONE_FOREST[z],S=V2_ZONE_SOIL[z];
   float slope=length(s.yz),level=1.-sstep(.012,.06,slope);
@@ -142,7 +142,8 @@ GroundMaterial v2GroundEnv(V2Env local,vec3 s,vec2 world,float footprint,vec3 li
     ForestStand st;st.p=world;st.cover=f.r;st.height=f.g*50.;st.needle=f.b;st.tone=f.a;
     float T=uMaterialClimate.x,humid=uMaterialClimate.y/max(20.*T+280.,120.);
     st.trop=groundSmooth(13.,19.,T-6.);st.dry=1.-groundSmooth(.8,2.,humid);
-    st.kappa=mix(.25,.78,groundSmooth(.9,1.8,humid))*mix(.55,1.,groundSmooth(3.,10.,st.height))*mix(1.,.6,st.needle)*(1.-.6*st.trop);
+    vec3 kind=forestKind(st.trop,st.dry);
+    st.kappa=mix(.25,.78,groundSmooth(.9,1.8,humid))*mix(.55,1.,groundSmooth(3.,10.,st.height))*mix(1.,.85,st.needle)*(1.-.6*st.trop)*(1.-.5*kind.x)*(1.-.85*kind.z);
     st.open=-1e3;st.forced=-1e3;st.allow=0.;st.hedge=0.;
     float d=forestDensity(st.cover,st.kappa),share=st.cover/max(d,1e-3);
     float available=(1.-clamp(renderGuideBeach/.8,0.,1.))*(1.-forestWaterCoverage(world))*(1.-v2ZoneBare);

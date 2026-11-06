@@ -1,18 +1,19 @@
 import { RENDER_V2_GLSL, renderV2GlacierSources } from './terrainRenderV2';
 import { renderV2ZoneUniform } from './terrainRenderV2Zones';
-import { NEURAL_EARTH_MATERIAL_GLSL } from './terrainMaterial';
+import { NEURAL_EARTH_MATERIAL_GLSL, GROUND_COVER_WATER_GLSL, groundCoverInputsGlsl } from './terrainMaterial';
 import { RENDER_3D_MATERIAL_GLSL } from './terrainMaterial3d';
 import { FOREST_PRELUDE_GLSL, forestBeachTexture, type ForestField, type ForestOccupation } from './terrainForest';
 import { seedHash } from './terrainAdjust';
 import type { TerrainData, TerrainSettings } from './terrain';
 import { CLIMATE_VALUES } from './terrain';
 import { bindForestBrushes } from '../../web/src/render/forestBrushAtlas';
+import { groundCoverActive } from '../../web/src/render/materialLook';
 import { createMaterialRasterContext, type MaterialRasterContext } from './terrainMaterialContext';
 
 /** Render3D forest for rasters: the live view's canonical field/occupation and
  * its sun direction (map x, map y, up; terrainLights().primary). */
 export interface ForestWaterRaster { x: number; y: number; width: number; n: number; alpha: Uint8Array; key: string }
-export interface ForestRaster { field?: ForestField; occupation?: ForestOccupation; water?: ForestWaterRaster; light?: readonly number[]; light2?: readonly number[]; lightingStrength?: number; brushes?: boolean; renderV2?: number; v2Season?: number; waterVisible?: boolean; /** rgb = crowns shaded as the live map pass does, to lay over a palette ground by canopyAlpha. */ mapCanopy?: boolean }
+export interface ForestRaster { field?: ForestField; occupation?: ForestOccupation; water?: ForestWaterRaster; light?: readonly number[]; light2?: readonly number[]; lightingStrength?: number; brushes?: boolean; groundCover?: boolean; renderV2?: number; v2Season?: number; waterVisible?: boolean; /** rgb = crowns shaded as the live map pass does, to lay over a palette ground by canopyAlpha. */ mapCanopy?: boolean }
 export interface MaterialRaster { rgb: Uint8Array; canopyAlpha: Uint8Array }
 interface Uploaded { key: string; texture: WebGLTexture }
 interface RasterRenderer extends MaterialRasterContext { program: WebGLProgram; texture: WebGLTexture; field?: Uploaded; bank?: Uploaded; beach?: Uploaded; occupation?: Uploaded; water?: Uploaded; target?: { n: number; texture: WebGLTexture; framebuffer: WebGLFramebuffer } }
@@ -58,16 +59,18 @@ function composeMaterialRaster(terrain: TerrainData, settings: Pick<TerrainSetti
       precision highp float;precision highp int;precision highp sampler2D;
       uniform sampler2D heights;uniform int n;uniform float cell;uniform vec2 origin;
       out vec4 color;
-      ${enhanced3d ? `${FOREST_PRELUDE_GLSL}uniform vec3 uForestLight,uForestLight2;uniform float uForestStrength;uniform int uMapCanopy;
+      ${enhanced3d ? `${GROUND_COVER_WATER_GLSL}${FOREST_PRELUDE_GLSL}uniform vec3 uForestLight,uForestLight2;uniform float uForestStrength;uniform int uMapCanopy;
       uniform sampler2D uForestWater;uniform int uHasForestWater;uniform vec3 uForestWaterRect;
       float forestWaterCoverage(vec2 world){
+        if(surfaceGroundWaterCached&&all(equal(world,surfaceGroundWaterPoint)))return surfaceGroundWaterSample;
         vec2 uv=(world-uForestWaterRect.xy)/uForestWaterRect.z;
         if(uHasForestWater==0||any(lessThan(uv,vec2(0.)))||any(greaterThan(uv,vec2(1.))))return 0.;
-        return textureLod(uForestWater,uv,0.).r;
+        return surfaceGroundRetainWater(world,textureLod(uForestWater,uv,0.).r);
       }` : ''}
       ${NEURAL_EARTH_MATERIAL_GLSL}
-      ${enhanced3d ? RENDER_3D_MATERIAL_GLSL + RENDER_V2_GLSL + `
+      ${enhanced3d ? groundCoverInputsGlsl(RENDER_3D_MATERIAL_GLSL) + RENDER_V2_GLSL + `
       vec3 rasterMaterial(vec3 s,vec2 world,float fp,float tpi,float shore,float openness,vec3 light){
+        surfaceGroundReadInputs(world,fp);
         GroundMaterial m;
         vec3 macro=earthMaterial(s,world,max(fp,1.),tpi,shore,openness);
         if(uRenderV2>0)m=v2Ground(s,world,fp,tpi,light,uForestLight2,uForestStrength,renderGuideBaseOpen);
@@ -172,6 +175,7 @@ function composeMaterialRaster(terrain: TerrainData, settings: Pick<TerrainSetti
     gl.uniform1i(u('uHasOccupation'), occupation ? 1 : 0);
     gl.uniform3f(u('uOccupationRect'), occupation?.x ?? 0, occupation?.y ?? 0, occupation?.width ?? 1); gl.uniform1f(u('uOccupationN'), occupation?.n ?? 1);
     gl.uniform3f(u('uForestLight'), light[0], light[2], light[1]);
+    gl.uniform4f(u('uGroundCover'),light[0],light[2],light[1],groundCoverActive(forest?.renderV2??0,!!forest?.brushes,!!field,forest?.groundCover!==false&&!forest?.mapCanopy));
     const light2=forest?.light2??[.2,-.75,.63];
     gl.uniform3f(u('uForestLight2'),light2[0],light2[2],light2[1]);gl.uniform1f(u('uForestStrength'),forest?.lightingStrength??1);
     gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, water ? active.water!.texture : texture);

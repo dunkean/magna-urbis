@@ -29,6 +29,8 @@ import { roadGroundTones, roadInkOf, setRoadGround } from '../render/roadStyle';
 import { biomePalette } from '../render/biomes';
 import { ruralSemanticLegend, urbanSemanticLegend } from '../render/semanticLayer';
 import { buildCityScene, type CityScene } from '../render/cityCanvas';
+import { terrain3dIllustratedSvg } from '../ui/terrain3dTexture';
+import { isFantasyStyle, registerFantasyBrushes } from '../../../rust/bridge/fantasyTerrain';
 
 export interface V2Urban3dOptions {
   host: HTMLElement;
@@ -176,6 +178,22 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
   let details: InstanceType<typeof UrbanBuildingDetailController> | undefined, renderer: InstanceType<typeof UrbanBuildingLodRenderer> | undefined, runtimeOf = '';
   let sampleOf: Float32Array | undefined, sampleKey = '', sampler: ReturnType<typeof createV2Terrain3dSampler> | undefined;
   const listeners = new Set<() => void>();
+  let illustrationRevision = 0;
+  let illustration: { url: string; terrain: import('../../../rust/bridge/terrain').TerrainData; key: string; value: NonNullable<ReturnType<NonNullable<City3dOptions['getIllustrated']>>> } | undefined;
+  const illustrated = (): ReturnType<NonNullable<City3dOptions['getIllustrated']>> => {
+    const world=options.getWorld(),settings=options.getSettings(); if (!world) return;
+    const r=v2Resolved3d(settings,world),style=r.ground.style,url=options.getBackground?.();
+    if (!isFantasyStyle(style) || !r.ground.layers.relief || !url?.startsWith('data:image/svg+xml')) return;
+    const terrain=renderScene(world,settings).terrain,config={...effectiveTerrainSettings(settings,world.mapSize),seed:world.seed};
+    const key=JSON.stringify([style,config.seed,config.width,config.climate,config.climateValues,r.vegetation.fantasy]);
+    if (illustration?.url===url && illustration.terrain===terrain && illustration.key===key) return illustration.value;
+    let pending: ReturnType<typeof terrain3dIllustratedSvg> | undefined;
+    const value={key:String(++illustrationRevision),load:()=> pending??=(async()=>{
+      const {fantasyLibraries}=await import('../render/fantasyBrushAssets'); registerFantasyBrushes(fantasyLibraries);
+      return terrain3dIllustratedSvg(url,terrain,style,config,r.vegetation.fantasy);
+    })().catch(error=>{pending=undefined;throw error;})};
+    illustration={url,terrain,key,value}; return value;
+  };
   // These reused bench modules follow a shared locale key. Keep their labels aligned
   // with V2 without changing or reloading the V2 settings, seeds or geometry.
   const syncLocale = () => { try { localStorage.setItem('magna-urbis-locale', getLanguage()); } catch { /* Storage is optional. */ } window.dispatchEvent(new Event('magna-locale-change')); };
@@ -240,6 +258,7 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
   });
   const view = mountCity3d({ host: options.host, navigation: true, fastTerrain: true, materialGrounds: true, softwareMaterialFallback: !!options.getBackground, getDecor: () => decor, getLayouts: () => layouts, getPartitions: () => partitions, getRegionalStreets: () => v2Resolved3d(options.getSettings()).cartography.roads ? roads : [],
     getBuildingsVisible: () => { const b = v2Resolved3d(options.getSettings()).composition.buildings; return b.visible && b.meshes !== 'none'; }, getScene: () => scene, getSelected: options.getSelected, onSelect: options.onSelect, getBackground: options.getBackground,
+    getIllustrated: illustrated,
     getGroundSettings: ground => { const world = options.getWorld(); return world && v2Terrain3dGround(world, options.getSettings(), ground); },
     getLook: () => {const r=v2Resolved3d(options.getSettings());return {ambience:r.composition.ambience,waterLook:r.composition.networks.water.look,waterVisible:r.ground.layers.water};},
     getWaterDisplay: () => { const world = options.getWorld(); return world && v2WaterDisplay(world, options.getSettings()); },

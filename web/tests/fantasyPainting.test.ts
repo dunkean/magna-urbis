@@ -23,7 +23,12 @@ describe('fantasy cartographic placement', () => {
     expect(trees.length).toBeGreaterThan(5000);
     const limited = planPainting(bounds, landscape, { ...options, maxStamps: 512 });
     expect(limited).toHaveLength(512);
-    expect(limited.every(s => s.brush === 5 || s.brush === 6)).toBe(true);
+    // Relief is kept first: every summit survives the cut, trees only fill the remainder.
+    expect(limited.filter(s => s.brush === 5 || s.brush === 6)).toHaveLength(summits.length);
+    expect(limited.every(s => s.brush >= 4 && s.brush <= 8 || s.brush < 4)).toBe(true);
+    const tight = planPainting(bounds, landscape, { ...options, maxStamps: 40 });
+    expect(tight).toHaveLength(40);
+    expect(tight.every(s => s.brush === 5 || s.brush === 6)).toBe(true);
   });
   it('fills rolling terrain with many hills capped well below peak size', () => {
     const stamps = planPainting({ x: 0, y: 0, width: 10000, height: 10000 }, () => ({ height: 500, slope: .3, temperature: 18, rain: 1500 }), options);

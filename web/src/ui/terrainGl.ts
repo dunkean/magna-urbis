@@ -1,6 +1,6 @@
 import { ShaderVariants, finishProgram, isAngleD3D11, specializeShader, startProgram } from './glVariants';
 import { showAngleD3D11Notice } from './angleNotice';
-import { NEURAL_EARTH_MATERIAL_GLSL } from '../../../rust/bridge/terrainMaterial';
+import { NEURAL_EARTH_MATERIAL_GLSL, GROUND_COVER_WATER_GLSL, groundCoverInputsGlsl } from '../../../rust/bridge/terrainMaterial';
 import { RENDER_3D_MATERIAL_GLSL } from '../../../rust/bridge/terrainMaterial3d';
 import { shoreRingFor, shoreRingTexture } from '../../../rust/bridge/terrainForestBeach';
 import { FOREST_GLSL, FOREST_PRELUDE_GLSL, forestBeachTexture, type ForestField, type ForestOccupation } from '../../../rust/bridge/terrainForest';
@@ -29,7 +29,7 @@ import type { ClimateZone } from '../../../rust/bridge/terrainClimate';
 import { styleTraits, terrainStyle, type TerrainStyle } from '../render/terrainStyle';
 import type { RenderColors } from '../render/customColors';
 import { WATER_STYLE_GLSL, waterUniforms } from '../render/waterStyle';
-import { MATERIAL_WATER_GLSL, MOONLIGHT_GLSL } from '../render/materialLook';
+import { MATERIAL_WATER_GLSL, MOONLIGHT_GLSL, groundCoverActive } from '../render/materialLook';
 import { paintRetainedWater, retainedWaterPaths, type RetainedWaterPath } from '../render/retainedWaterGeometry';
 import { RENDER_WATER_FS, renderWaterRings } from '../render/renderWaterShader';
 import { CANVAS_MAP_STROKES, mapStrokeWidth } from '../render/strokes';
@@ -52,6 +52,7 @@ export interface HeightLayer {
 
 export interface TerrainLook {
   ambience?: 'day' | 'night'; waterLook?: 'ink' | 'natural';
+  groundCover?: boolean;
   colors?: RenderColors;
   /** V2 composes the retained canopy over every ground; standalone benches keep their material-only canopy. */
   independentCanopy?: boolean;
@@ -248,16 +249,18 @@ float hillshade(vec2 gradient) {
   return clamp(1.0 + uShade * (dd > 0.0 ? 1.0 : 0.8) * dd * 1.15, 0.58, 1.25);
 }
 
+${GROUND_COVER_WATER_GLSL}
 ${FOREST_PRELUDE_GLSL}
 vec3 forestRootSurface(vec2 world){return level(0,world);}
 float forestRootCell(){return uFieldCell;}
 float forestWaterCoverage(vec2 world) {
+  if(surfaceGroundWaterCached&&all(equal(world,surfaceGroundWaterPoint)))return surfaceGroundWaterSample;
   if(uUseWaterLayer==0)return 0.;
   vec2 uv=(world-uOrigin)/(uPx*uCanvas);
-  return textureLod(uWaterLayer,vec2(uv.x,1.-uv.y),0.).a;
+  return surfaceGroundRetainWater(world,textureLod(uWaterLayer,vec2(uv.x,1.-uv.y),0.).a);
 }
 ${NEURAL_EARTH_MATERIAL_GLSL}
-${RENDER_3D_MATERIAL_GLSL}
+${groundCoverInputsGlsl(RENDER_3D_MATERIAL_GLSL)}
 ${RENDER_3D_FOREST_GLSL}
 ${RENDER_V2_GLSL}
 
@@ -284,6 +287,7 @@ vec3 naturalMaterial(vec3 s, vec2 world) {
   }
   shore=min(shore,max(s.x,0.)/max(length(s.yz),.0001));
   if(uMode==3 || uRenderV2>0) {
+    surfaceGroundReadInputs(world,uPx);
     vec3 base=level(0,world);GroundMaterial m;
     vec3 macro=earthMaterial(base,world,max(uPx,1.),(base.x-mean)/(6.*r),shore,openness);
     if(uRenderV2>1)return v2DiagnosticEnv(v2Here,uPx);
@@ -1028,6 +1032,7 @@ export class TerrainGl {
     gl.uniform1fv(u('uStopT'), new Float32Array(Array.from({ length: 8 }, (_, i) => stops[Math.min(i, stops.length - 1)][0])));
     gl.uniform1i(u('uStopCount'), stops.length);
     const lights = terrainLights(look.lighting);
+    gl.uniform4f(u('uGroundCover'),lights.primary[0],lights.primary[2],lights.primary[1],groundCoverActive(definition.traits.satelliteVariant,definition.traits.forestBrushes,this.lookVariant(look).forest,mode===3&&look.groundCover!==false));
     gl.uniform3fv(u('uLight'), lights.primary); gl.uniform3fv(u('uLight2'), lights.secondary);
     gl.uniform1f(u('uRockStrength'), look.lighting.enabled ? look.lighting.strength : 0);
     gl.uniform1f(u('uFlatLight'), lights.flat); gl.uniform1f(u('uExaggeration'), look.lighting.exaggeration);

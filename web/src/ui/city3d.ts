@@ -19,6 +19,8 @@ import { bridgeWaterHeight, cityBridgeStreets } from '../render/cityBridges';
  * architecture mode as display volumes (render/city3dMeshes.ts). */
 import { TERRAIN_3D_FOV, type Terrain3d, type Terrain3dCamera, type Terrain3dTile, type Terrain3dTileContent, type Terrain3dGroundSettings, type Terrain3dLookSettings } from './terrain3d';
 import { createTerrain3d } from './terrain3dRenderer';
+import { terrain3dRaisedTexture, terrain3dSetRaisedTexture, type Terrain3dIllustration } from './terrain3dTexture';
+import type { Terrain3dBillboards } from './terrain3dBillboards';
 import type { HeightLayer } from './terrainGl';
 import type { ForestField, ForestOccupation } from '../../../rust/bridge/terrainForest';
 import { type UrbanBuildingAppearance } from '../render/urbanBuildingStyle';
@@ -87,6 +89,8 @@ export interface City3dOptions {
   setTextured?(on: boolean): void;
   /** URL of the 2D map image; default `decors/<id>.png` (or the parent decor's). */
   getBackground?(): string | undefined;
+  /** Retained Illustrated background with the raised relief removed from its oblique material. */
+  getIllustrated?(): { key: string; load(): Promise<Terrain3dIllustration> } | undefined;
   onSelect?(id: string): void;
   onCamera?(camera: Terrain3dCamera): void;
   /** Shared native detail controller (Codex `urban.buildingDetails`): one queue and
@@ -223,6 +227,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     return {...forest,occupation:occupationGround};
   }
   let surfaceDecor: Decor | undefined, imageUrl: string | undefined, heightAt: City3dHeight | undefined, stiltWaterAt: City3dHeight | undefined, image: HTMLImageElement | HTMLCanvasElement | undefined, mapFallback: HTMLCanvasElement | undefined, waterMask: HTMLCanvasElement | undefined, waterPaths: Path2D | undefined, waterMaskVisible = true;
+  let imageBillboards: Terrain3dBillboards | undefined;
   let bridgeWaterAt: City3dHeight | undefined;
   const textured = (): boolean => options.getTextured?.() ?? false;
   let texturedSeen = false;
@@ -336,6 +341,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     bridgeWaterAt = r.waterLevel ? bridgeWaterHeight(r, (x, y) => physical.waterAt({ x, y })) : undefined;
     stiltWaterAt = levels ? (x, y) => physical.waterAt({ x, y }) ? levels(x, y) : NaN : undefined;
     waterMask = undefined; waterPaths = undefined; openWater = undefined; image = undefined; mapFallback = undefined; planOf = undefined;
+    imageBillboards = undefined;
     const surface = options.getSurface?.();
     t.setSurface(surface?.height ?? { x: 0, y: 0, width: r.width, n: r.n, data: r.height }, surface?.water, surface?.waterVisible);
     imageUrl = undefined; syncImage(d);
@@ -343,9 +349,19 @@ export function mountCity3d(options: City3dOptions): City3d {
   }
   /** The 2D background may change (map style selector): follow its image. */
   function syncImage(d: Decor): void {
+    const illustrated = ground === 'map' ? options.getIllustrated?.() : undefined;
+    if (illustrated) {
+      const key = `illustrated:${illustrated.key}`; if (key === imageUrl) return;
+      imageUrl = key; const ticket = ++textureTicket;
+      void illustrated.load().then(result => {
+        if (ticket !== textureTicket || disposed) return;
+        image = result.texture; imageBillboards = result.billboards; applyGround();
+      }, error => { if (ticket === textureTicket) { imageUrl = undefined; console.warn('Illustrated relief:', error); } });
+      return;
+    }
     const url = backgroundUrl(d); if (url === imageUrl) return;
     imageUrl = url; const ticket = ++textureTicket;
-    if (url) void loadImage(url).then(img => { if (ticket === textureTicket && !disposed) { image = img; applyGround(); } }, () => { /* the hillshade stays */ });
+    if (url) void loadImage(url).then(img => { if (ticket === textureTicket && !disposed) { image = img; imageBillboards = undefined; applyGround(); } }, () => { /* the hillshade stays */ });
   }
   function applyGround(): void {
     const t = terrain, d = surfaceDecor; if (!t || !d) return;
@@ -364,7 +380,7 @@ export function mountCity3d(options: City3dOptions): City3d {
       t.setTexture(waterMask);
     } else {
       t.setGroundMaterial(undefined);
-      t.setTexture(image ?? (mapFallback ??= hillshade(d)));
+      t.setTexture(image ?? (mapFallback ??= hillshade(d)), imageBillboards);
     }
     // Only a software material raster already holds its canopy; a material ground draped for want of relief does not.
     const forest = procedural || ground === 'map' || !softwareMaterial ? groundForest() : undefined;
@@ -441,12 +457,15 @@ export function mountCity3d(options: City3dOptions): City3d {
   const emptyFootprintPlan = buildCityScene([], []);
   async function loadTile(tile: Terrain3dTile): Promise<TexImageSource | Terrain3dTileContent> {
     const d = surfaceDecor!, size = tile.pixels, c = document.createElement('canvas'); c.width = c.height = size;
-    const ctx = c.getContext('2d')!, width = d.raster.width;
+    const width = d.raster.width;
+    const source = proceduralGround ? waterMask : image ?? (mapFallback ??= hillshade(d));
+    const draped = source && terrain3dRaisedTexture(source), ink = draped ? document.createElement('canvas') : c;
+    if (draped) { ink.width = ink.height = size; }
+    const ctx = ink.getContext('2d')!;
     ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
     // V2 can supply a physical raster without a pre-rendered external PNG.
     // Use the same hillshade for both the overview and close-up map tiles.
-    const source = proceduralGround ? waterMask : image ?? (mapFallback ??= hillshade(d));
-    if (source) { const k = source.width / width; ctx.drawImage(source, tile.x * k, tile.y * k, tile.width * k, tile.width * k, 0, 0, size, size); }
+    if (source) { const k = source.width / width; c.getContext('2d')!.drawImage(source, tile.x * k, tile.y * k, tile.width * k, tile.width * k, 0, 0, size, size); }
     const k = size / tile.width, mpp = tile.width / size, semanticMpp = proceduralGround ? tile.width / Math.ceil(size / 2) : mpp;
     const groundSettings=options.getGroundSettings?.(ground),satellite=proceduralGround&&groundSettings?.renderV2===1;
     const waterVisible = groundSettings?.waterVisible !== false;
@@ -504,7 +523,16 @@ export function mountCity3d(options: City3dOptions): City3d {
     const scene = semantic && semantic.urban !== 'off' ? cityPlan() : undefined;
     const urban = semantic && scene && scene.extent.maxX >= box.minX && scene.extent.minX <= box.maxX && scene.extent.maxY >= box.minY && scene.extent.minY <= box.maxY
       ? semanticLayer(tile, target => drawUrbanSemantic(target, [scene], { look: semantic.urban, opacity: semantic.opacity, mpp: semanticMpp, viewport: box })) : undefined;
-    if (!proceduralGround) { if (urban) ctx.drawImage(urban, 0, 0); return {texture:c,water:waterTile(tile)}; }
+    if (!proceduralGround) {
+      if (urban) ctx.drawImage(urban, 0, 0);
+      if (draped) {
+        const full = document.createElement('canvas'); full.width = full.height = size;
+        const target=full.getContext('2d')!, scale=draped.width/width;
+        target.drawImage(draped,tile.x*scale,tile.y*scale,tile.width*scale,tile.width*scale,0,0,size,size); target.drawImage(ink,0,0);
+        c.getContext('2d')!.drawImage(ink,0,0); terrain3dSetRaisedTexture(c,full);
+      }
+      return {texture:c,water:waterTile(tile)};
+    }
     if (urban) {
       if (overlay) { const target = overlay.getContext('2d')!; target.setTransform(1, 0, 0, 1, 0, 0); target.drawImage(urban, 0, 0, overlay.width, overlay.height); } else overlay = urban;
     }

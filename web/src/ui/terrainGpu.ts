@@ -29,6 +29,7 @@ import { renderV2GlacierSources } from '../../../rust/bridge/terrainRenderV2';
 import { renderV2ZoneUniform } from '../../../rust/bridge/terrainRenderV2Zones';
 import { FRACTAL_ROTATIONS } from '../../../rust/bridge/terrainAdjust';
 import { terrainLights } from '../render/terrainLighting';
+import { groundCoverActive } from '../render/materialLook';
 import { lakeDistances, seaDistanceSurface, type WaterSurface } from '../render/terrainWater';
 import { styleTraits, terrainStyle } from '../render/terrainStyle';
 import { waterUniforms } from '../render/waterStyle';
@@ -839,6 +840,7 @@ export class TerrainGpu implements TerrainRenderer {
       p.setArray('uStopT', Array.from({ length: 8 }, (_, i) => stops[Math.min(i, stops.length - 1)][0]));
       p.set('uStopCount', stops.length);
       const lights = terrainLights(look.lighting);
+      p.set('uGroundCover',lights.primary[0],lights.primary[2],lights.primary[1],groundCoverActive(definition.traits.satelliteVariant,definition.traits.forestBrushes,this.lookVariant(look).forest,mode===3&&look.groundCover!==false));
       p.setArray('uLight', lights.primary); p.setArray('uLight2', lights.secondary);
       p.set('uRockStrength', look.lighting.enabled ? look.lighting.strength : 0);
       p.set('uFlatLight', lights.flat); p.set('uExaggeration', look.lighting.exaggeration);

@@ -23,6 +23,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { TERRAIN_3D_GLSL } from '../src/ui/terrain3d';
 import { BUILDING_3D_GLSL } from '../src/ui/urbanBuilding3d';
+import { BILLBOARD_3D_GLSL } from '../src/ui/terrain3dBillboards';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '../..');
@@ -47,6 +48,7 @@ const TEXTURES: Record<string, { binding: number; sampler: SamplerKind }> = {
   // Only in the map's auxiliary-texture branch (#ifdef AUX_TEXTURE), never compiled here.
   uAux: { binding: 18, sampler: 'nearest' },
   semanticTile: { binding: 19, sampler: 'aniso' }, previousSemanticTile: { binding: 20, sampler: 'aniso' },
+  drapedMaterial: { binding: 21, sampler: 'aniso' }, previousDrapedMaterial: { binding: 22, sampler: 'aniso' }, billboardAtlas: { binding: 23, sampler: 'linear' },
 };
 const TEXTURE_TYPE: Record<string, string> = { sampler2D: 'texture2D', usampler2D: 'utexture2D', sampler2DArray: 'texture2DArray' };
 const TEXTURE_BUILTINS = 'texture|textureLod|texelFetch|textureSize|textureGrad|textureOffset|textureLodOffset|texelFetchOffset|textureQueryLevels';
@@ -220,6 +222,7 @@ function main(): void {
     terrain: { sources: [g.vertex, g.ground, g.map], blockName: 'TerrainParams' },
     sky: { sources: [g.skyVertex, g.skyFragment], blockName: 'SkyParams' },
     building: { sources: [b.colorVertex, b.colorFragment, b.texVertex, b.texFragment], blockName: 'BuildingParams' },
+    billboard: { sources: [BILLBOARD_3D_GLSL.vertex, BILLBOARD_3D_GLSL.fragment], blockName: 'BillboardParams' },
   };
   const blocks = Object.fromEntries(Object.entries(programs).map(([name, p]) => [name, paramsBlock(p.sources)]));
   const jobs: Job[] = [
@@ -232,6 +235,8 @@ function main(): void {
     { key: 'buildingColorFs', stage: 'frag', source: b.colorFragment, program: 'building' },
     { key: 'buildingTexVs', stage: 'vert', source: b.texVertex, program: 'building' },
     { key: 'buildingTexFs', stage: 'frag', source: b.texFragment, program: 'building' },
+    { key: 'billboardVs', stage: 'vert', source: BILLBOARD_3D_GLSL.vertex, program: 'billboard' },
+    { key: 'billboardFs', stage: 'frag', source: BILLBOARD_3D_GLSL.fragment, program: 'billboard' },
   ];
   const work = mkdtempSync(join(tmpdir(), 'glsl-wgsl-3d-'));
   try {
