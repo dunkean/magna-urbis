@@ -17,7 +17,7 @@ import { drawLotEnclosures, updateYardEnclosures } from './cityLotEnclosures'; /
 import { cityWallDetails, drawCityWallGround, drawCityWalls } from './cityWalls'; // walls hook (cityWalls.ts)
 import { streetToneAt, washAt } from './groundTone';
 import { STREET_MIN_PX, emphasisAlpha, naturalMarks, roadGrain, roadPaint, streetRank, type RoadStyle } from './roadStyle';
-import { STRUCTURE_ROLES, blendLine, blendTone, blendsGround, isBlended, softStreet, type WashKind } from './groundBlend';
+import { STRUCTURE_ROLES, blendLine, blendTone, blendsGround, groundWash, naturalGroundWash, isBlended, softStreet, type WashKind } from './groundBlend';
 import { CityGround, boardwalkWidth, isBoardwalk, type CityGroundRaster } from './cityGround';
 import { buildingRoof, pieceShadows, pieceVolumes, readMassing, stiltDeck, stiltSupports, roofLight as roofLight3 } from './cityMassing';
 import { drawGardenDetails } from './readableGardens';
@@ -327,6 +327,8 @@ export interface CityDrawOptions {
   textured?: boolean; onTexturesReady?: () => void;
   /** Blended ground and streets (groundBlend.ts): translucent washes, no outlines or casings. Default: the shared setting. */
   groundBlend?: boolean;
+  /** Unlit physical albedo tile; lighting and night tint belong to the terrain shader. */
+  materialGround?: boolean;
   roadLook?: 'ink' | 'natural';
   /** Contrast of the roads against their ground, 0.5–1.5 (roadStyle.ts). */
   roadEmphasis?: number;
@@ -498,9 +500,14 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
   const growthColor = (zone: string): string => ZONE_COLORS[zone] ?? ZONE_COLORS.core;
 
   // Far: the urban footprint as one tint, main roads and walls.
-  const blend = (o.groundBlend ?? isBlended()) && blendsGround(view, palette), tone = blendTone(palette), softLine = blendLine(tone);
+  const material=!!o.materialGround,naturalGround=material||palette==='terrain'||o.roadLook==='natural';
+  const blend = material||(o.groundBlend ?? isBlended()) && (naturalGround?view!=='uses'&&view!=='roles':blendsGround(view,palette)), tone = material?'earth':blendTone(palette), softLine = blendLine(tone);
+  const wash=(kind: WashKind,shape: Shape) => {
+    if(material){const w=groundWash(kind,'earth');return {color:w.color,alpha:Math.min(.8,w.alpha*1.8)};}
+    const w=washAt(kind,tone,shape);return naturalGround?naturalGroundWash(w,kind):w;
+  };
   if (lod === 'far') {
-    if (blend && layers.blocks) { for (const shape of scene.footprint) if (overlaps(shapeBox(shape), viewport)) { const w = washAt('footprint', tone, shape); batch.add({ fill: w.color, alpha: w.alpha }, shapePath(shape)); } }
+    if (blend && layers.blocks) { for (const shape of scene.footprint) if (overlaps(shapeBox(shape), viewport)) { const w = wash('footprint', shape),path=shapePath(shape); batch.add({ stroke:w.color,width:px(2.2),alpha:w.alpha*.35 },path);batch.add({ fill: w.color, alpha: w.alpha }, path); } }
     else if (layers.blocks) for (const shape of scene.footprint) if (overlaps(shapeBox(shape), viewport)) batch.add({ fill: palette === 'terrain' ? undefined : pl ? C.footprint : '#cfb589', stroke: pl ? C.ink : '#7b6446', width: px(1), alpha: 0.9 }, shapePath(shape));
     if (parchment && !night && layers.blocks && !blend) { const hatch = hatchPattern(ctx, mpp); if (hatch) for (const shape of scene.footprint) if (overlaps(shapeBox(shape), viewport)) batch.add({ fill: hatch }, shapePath(shape)); }
     batch.flush(ctx);
@@ -511,7 +518,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
       if (reserve ? !layers.domains : !layers.blocks) continue;
       stats.blocks++;
       let fill: string | undefined;
-      if (palette === 'terrain' && view !== 'roles') fill = undefined;
+      if (palette === 'terrain' && view !== 'roles' && !blend) fill = undefined;
       else if (reserve) fill = pl ? C.reserve : '#cbc2a8';
       else if (b.kind === 'common') fill = pl ? C.common : '#adc5bf';
       else if (b.kind === 'place') fill = pl ? C.place : '#e8d6ae';
@@ -524,10 +531,10 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
       const stroke = view === 'buildings' && lod !== 'close' ? undefined : outline;
       if (blend && fill) {
         // Blended: one translucent wash (a wider low-alpha stroke of the same colour feathers the edge), faint lot lines only up close.
-        const w = washAt(reserve ? 'reserve' : b.kind === 'common' ? 'common' : b.kind === 'place' ? 'place' : 'block', tone, b.shape), a = w.alpha * (b.peripheral && view !== 'buildings' ? 0.7 : 1);
+        const w = wash(reserve ? 'reserve' : b.kind === 'common' ? 'common' : b.kind === 'place' ? 'place' : 'block', b.shape), a = w.alpha * (b.peripheral && view !== 'buildings' ? 0.7 : 1);
         if (!tex || !(b.kind === 'place' || b.kind === 'market')) batch.add({ stroke: w.color, width: px(2.2), alpha: a * 0.4, cap: 'round' }, pathOf(b));
         batch.add({ fill: plaza(b.kind, w.color), alpha: a }, pathOf(b));
-        if (lod === 'close') batch.add({ stroke: softLine.color, width: px(0.5), alpha: softLine.alpha }, pathOf(b));
+        if (lod === 'close'&&!material) batch.add({ stroke: softLine.color, width: px(0.5), alpha: softLine.alpha }, pathOf(b));
         continue;
       }
       batch.add({ fill: plaza(b.kind, fill), stroke: stroke ?? (parchment && b.kind === 'place' ? PARCH.inkSoft : undefined), width: lineW, alpha: b.peripheral && view !== 'buildings' ? 0.6 : 1, dash: reserve ? [px(3), px(2)] : undefined }, pathOf(b));
@@ -547,10 +554,10 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
         : use === 'garden' ? '#a8bc89' : use === 'reserve' ? '#cbc2a8' : use === 'common' ? '#adc5bf' : use === 'market' ? '#ead39a' : use === 'place' ? '#e6d1a5' : undefined);
       if (blend && (view === 'parcels' || view === 'buildings')) {
         const kind: WashKind = use === 'garden' ? 'garden' : use === 'reserve' ? 'reserve' : use === 'common' ? 'common' : use === 'market' ? 'market' : use === 'place' ? 'place' : 'parcel';
-        const w = washAt(kind, tone, p.shape), a = w.alpha * (p.peripheral ? 0.7 : 1), ground = kind === 'parcel' || kind === 'reserve';
+        const w = wash(kind, p.shape), a = w.alpha * (p.peripheral ? 0.7 : 1), ground = kind === 'parcel' || kind === 'reserve';
         // Plain lots add no wash over the block's (the buildings stand on it); gardens, commons and squares stack theirs.
         if (!(view === 'buildings' && ground)) batch.add({ fill: burialFill ?? plaza(use, w.color), alpha: burialFill ? 0.85 : a }, pathOf(p));
-        if (lod === 'close') batch.add({ stroke: softLine.color, width: px(0.5), alpha: softLine.alpha * (ground ? 0.8 : 1) }, pathOf(p));
+        if (lod === 'close'&&!material) batch.add({ stroke: softLine.color, width: px(0.5), alpha: softLine.alpha * (ground ? 0.8 : 1) }, pathOf(p));
       } else if (view === 'parcels') {
         const fill = palette === 'terrain' ? undefined : night ? openFill ?? C.lot : palette === 'ink' ? '#eee0c9' : parchment ? openFill ?? PARCH.lot : openFill ?? (palette === 'atlas' ? ATLAS[p.index % ATLAS.length] : growthColor(p.zone));
         batch.add({ fill: plaza(use, fill), stroke: atLeast(lod, 'near') ? outline : undefined, width: lineW, alpha: p.peripheral ? 0.65 : 1 }, pathOf(p));
@@ -603,7 +610,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
       const k = order(s), list = buckets.get(k); if (list) list.push(s); else buckets.set(k, [s]);
     }
     const visible = [...buckets.keys()].sort((a, b) => b - a).flatMap(k => buckets.get(k)!);
-    const casing = new Batches(), under = new Batches(), surface = new Batches(), over = new Batches(), marks = new Batches(), marks2 = new Batches(), softStreets = (o.groundBlend ?? isBlended()) && !tex;
+    const casing = new Batches(), under = new Batches(), surface = new Batches(), over = new Batches(), marks = new Batches(), marks2 = new Batches(), softStreets = o.roadLook!=='ink'&&(o.groundBlend ?? isBlended()) && !tex;
     // Near and close: streets are their ground surface (roadSurface.ts) — square ends at
     // junctions, curb returns, tapers — filled once per style, so nothing shows twice.
     // Decks, quays, fords, dashed tracks and stairs keep their stroked art.

@@ -47,7 +47,7 @@ vec3 v2ZoneOpen(vec3 c,V2Env e,vec2 world,float fp){
   int z=v2Zone();vec4 sw=V2_ZONE_SWARD[z],bare=V2_ZONE_BARE[z],can=V2_ZONE_CANOPY[z];
   float cover=e.grass*(1.-e.rock);
   // Stand tone also varies the substrate (gravel plains, pale pavements).
-  c=mix(c,mix(bare.rgb*(.86+.28*e.tone),sw.rgb,cover),mix(bare.a,sw.a,cover));
+  c=mix(c,mix(bare.rgb*(.86+.28*e.tone)*surfaceMicroTone,sw.rgb*surfaceHerbTone*surfaceMicroTone,cover),mix(bare.a*(1.-.8*clamp(e.rock,0.,1.)),sw.a,cover));
   // Scrub/grove patches (garrigue, acacia parkland); the unresolved pattern
   // converges to its mean.
   vec3 p=vec3(world,0.);

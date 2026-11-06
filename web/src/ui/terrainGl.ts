@@ -291,6 +291,7 @@ vec3 naturalMaterial(vec3 s, vec2 world) {
     else {
       m=terrainGroundMaterial(base,world,uPx,macro,uMaterialClimate,uMaterialSeed);
     }
+    applyGroundOccupation(m,world,uPx);
     if(uForest==1)applyForest(m,world,uPx,uLight.xzy);
     vec3 rgb=uRenderV2>0?v2ShadeGround(m,vec3(0.,1.,0.),uLight.xzy,uLight2.xzy,uRockStrength):shadeTerrainGround(m,vec3(0.,1.,0.),uLight.xzy,uLight2.xzy,uRockStrength);
     return uRenderV2>0?v2DisplayShoulder(rgb):rgb;
@@ -836,7 +837,6 @@ export class TerrainGl {
   /** Render3D forest: texture uploads only. `undefined` restores the legacy macro canopy exactly. */
   setForest(field: ForestField | undefined, occupation?: ForestOccupation): void {
     const gl = this.gl;
-    occupation = field ? occupation : undefined;
     if (field !== this.forest?.field) {
       deleteForestTextures(gl, this.forest);
       this.forest = field && forestTextures(gl, field);
@@ -1267,7 +1267,7 @@ export function deleteForestTextures(gl: WebGL2RenderingContext, textures: Fores
 export function bindForest(gl: WebGL2RenderingContext, u: (name: string) => WebGLUniformLocation | null,
   forest: ForestTextures | undefined, occupation: { data: ForestOccupation; texture: WebGLTexture } | undefined,
   empty: WebGLTexture, enabled: boolean, fieldUnit: number, occupationUnit: number, bankUnit: number, beachUnit: number): void {
-  const field = enabled ? forest : undefined, applied = field ? occupation : undefined;
+  const field = enabled ? forest : undefined, applied = occupation;
   gl.uniform1i(u('uForest'), field ? 1 : 0);
   gl.activeTexture(gl.TEXTURE0 + fieldUnit); gl.bindTexture(gl.TEXTURE_2D, field?.texture ?? empty);
   gl.uniform1i(u('uForestField'), fieldUnit);

@@ -1,15 +1,16 @@
-import { isFantasyStyle, planPainting, paintingSvg, DEFAULT_FANTASY_OPTIONS, type FantasyOptions, type BrushLibrary, type FantasyStyle, type PaintOptions, type PaintSample, type Stamp } from './fantasyPainting';
+import { isFantasyStyle, planPainting, paintingSvg, fantasyLod, reliefProminence, DEFAULT_FANTASY_OPTIONS, type FantasyOptions, type BrushLibrary, type FantasyStyle, type PaintOptions, type PaintSample, type Stamp } from './fantasyPainting';
 import type { TerrainData, TerrainSettings } from './terrain';
 import { climateOf } from './terrain';
 import { urbanPaintingMask, type UrbanPaintingContext } from './urbanPaintingMask';
 import { paintingRelief } from './paintingRelief';
-export { isFantasyStyle, DEFAULT_FANTASY_OPTIONS };
+export { isFantasyStyle, fantasyLod, DEFAULT_FANTASY_OPTIONS };
 export type { FantasyOptions };
 let libraries: Record<FantasyStyle, BrushLibrary> | undefined;
 export function registerFantasyBrushes(value: Record<FantasyStyle, BrushLibrary>): void { libraries = value; }
-export interface FantasyTerrainPainting { stamps: Stamp[]; library: BrushLibrary; width: number; namespace: string; svg?: string }
-const scenes = new WeakMap<TerrainData, { water: TerrainData['water']; hydro: TerrainData['hydrology']; urban?: UrbanPaintingContext; variants: Map<string, FantasyTerrainPainting>; reliefWidth?: number; relief?: ReturnType<typeof paintingRelief> }>();
-/** Whole-map overview owns brush positions; camera refinement never repaints stands. */
+export interface FantasyTerrainPainting { stamps: Stamp[]; lod: "overview" | "detail"; library: BrushLibrary; width: number; namespace: string; svg?: string }
+const scenes = new WeakMap<TerrainData, { water: TerrainData['water']; hydro: TerrainData['hydrology']; urban?: UrbanPaintingContext; variants: Map<string, FantasyTerrainPainting>; reliefWidth?: number; relief?: ReturnType<typeof paintingRelief>; reliefRef?: number }>();
+/** Whole-map overview owns brush positions; camera refinement never repaints stands. Each detail level is planned once per setting and cached:
+ * `options.lod` "auto" takes the detail level for a small map; a zoomed export asks for `{ ...options, lod: "detail" }` (see `fantasyLod`). */
 export function prepareFantasyTerrain(terrain: TerrainData, style: FantasyStyle, settings: Pick<TerrainSettings, 'seed' | 'width'> & Partial<Pick<TerrainSettings, 'climate' | 'climateValues'>>, options = DEFAULT_FANTASY_OPTIONS, urban?: UrbanPaintingContext): FantasyTerrainPainting | undefined {
   if (terrain.caveMask.length) return;
   const key = JSON.stringify([style, settings.seed, settings.width, settings.climate, settings.climateValues, options]);
@@ -23,6 +24,13 @@ export function prepareFantasyTerrain(terrain: TerrainData, style: FantasyStyle,
   const occupied = urban && urbanPaintingMask(settings.width, n, { layouts: urban.layouts, cities: urban.cities });
   if (!entry.relief || entry.reliefWidth !== settings.width) {
     entry.relief = paintingRelief(terrain.height, n, terrain.width, settings.width / 65 * 3); entry.reliefWidth = settings.width;
+    // Tallest relief of the map (97th percentile on a coarse grid) tops the size hierarchy, whatever the region size.
+    const g = 48, values: number[] = [];
+    for (let j = 0; j < g; j++) for (let i = 0; i < g; i++) {
+      const r = entry.relief((i + .5) / g * terrain.width, (j + .5) / g * terrain.width);
+      if (r.height > 0) values.push(reliefProminence({ ...r, temperature: 0, rain: 0 }));
+    }
+    values.sort((a, b) => a - b); entry.reliefRef = values.length ? values[Math.min(values.length - 1, Math.floor(values.length * .97))] : undefined;
   }
   const relief = entry.relief;
   const sample = (x: number, y: number): PaintSample | undefined => {
@@ -34,10 +42,11 @@ export function prepareFantasyTerrain(terrain: TerrainData, style: FantasyStyle,
     const water = hydro && hydro.waterField[Math.min(hydro.resolution - 1, Math.floor(v * hydro.resolution)) * hydro.resolution + Math.min(hydro.resolution - 1, Math.floor(u * hydro.resolution))] > 0;
     return { ...relief(x - terrain.x, y - terrain.y), temperature: climate.temperature, rain: climate.precipitation, water: !!water || !!vectorWater, occupied: occupied?.(x, y), landuse: options.followLanduse ? urban?.landuse?.(x, y) : undefined };
   };
-  const paint: PaintOptions = { seed: settings.seed, pitch: settings.width / 65 * options.spacing, brushPitch: settings.width / 65, density: options.density, size: options.size, followLanduse: options.followLanduse, forests: options.forests, forestsOnly: options.forestsOnly };
+  const lod = options.lod && options.lod !== "auto" ? options.lod : fantasyLod(settings.width);
+  const paint: PaintOptions = { seed: settings.seed, pitch: settings.width / 65 * options.spacing, brushPitch: settings.width / 65, mapWidth: settings.width, lod, raster: options.raster, reliefRef: entry.reliefRef, density: options.density, size: options.size, followLanduse: options.followLanduse, forests: options.forests, forestsOnly: options.forestsOnly };
   const stamps = planPainting({ x: terrain.x, y: terrain.y, width: terrain.width, height: terrain.width }, sample, paint);
   if (!libraries) throw new Error('Fantasy brush sheets have not been registered by the page.');
-  const scene: FantasyTerrainPainting = { stamps, library: libraries[style], width: terrain.width, namespace: `fantasy-${style}-${terrain.x}-${terrain.y}` };
+  const scene: FantasyTerrainPainting = { stamps, lod, library: libraries[style], width: terrain.width, namespace: `fantasy-${style}-${terrain.x}-${terrain.y}` };
   if (cache.size >= 6) cache.delete(cache.keys().next().value!);
   cache.set(key, scene); return scene;
 }

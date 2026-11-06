@@ -49,10 +49,15 @@ const WASH: Record<BlendTone, Record<WashKind, Wash>> = {
   },
 };
 export const groundWash = (kind: WashKind, tone: BlendTone): Wash => WASH[tone][kind];
+/** Canvas above a natural ground must leave its lit relief visible, even when groundTone supplies an opaque sample. */
+export function naturalGroundWash(wash: Wash,kind: WashKind): Wash {
+  const alpha=kind==='place'||kind==='market'?.26:kind==='garden'||kind==='common'?.19:kind==='footprint'?.16:.14;
+  return {color:wash.color,alpha:Math.min(wash.alpha,alpha)};
+}
 /** Faint lot / block lines of the blended plan (close views only). */
 export const blendLine = (tone: BlendTone): Wash => tone === 'sepia' ? { color: '#5a4530', alpha: 0.2 } : { color: '#5f5036', alpha: 0.2 };
 /** Plan views that take the wash: the ground under buildings, and the sepia plans. Diagnostic views keep their colours. */
-export const blendsGround = (view: string, palette: string): boolean => palette !== 'terrain' && view !== 'uses' && view !== 'roles' && (view === 'buildings' || palette === 'parchment' || palette === 'ink');
+export const blendsGround = (view: string, palette: string): boolean => view !== 'uses' && view !== 'roles' && (view === 'buildings' || palette === 'terrain' || palette === 'parchment' || palette === 'ink');
 
 /** Urban street class → continuous visual rank (0 = main street … 4 = lane). */
 export interface SoftStreet { fill: string; alpha: number; edge: string; edgeAlpha: number }

@@ -30,6 +30,7 @@ import type { Parent3dScene } from './urbanParent3d';
 import { buildCityBuildings, buildCityScene, drawCity, selectCityLod, type CityDrawOptions, type CityLayers, type CityScene } from '../render/cityCanvas';
 import { DEFAULT_TERRAIN_LIGHTING } from '../render/terrainLighting';
 import { drawRuralSemantic, drawUrbanSemantic } from '../render/semanticLayer';
+import { forestOccupation } from './forestOccupation';
 import type { SemanticDepth, SemanticLook } from '../render/composition';
 import type { LandKind, LandUseLayer } from '../gen/types';
 import type { PlacementBatch, PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
@@ -213,6 +214,14 @@ export function mountCity3d(options: City3dOptions): City3d {
   let groundKey = '', planKey = '', proceduralGround = false, softwareMaterial = false;
   let waterDisplay: City3dWaterDisplay | undefined;
   let openWater: { mask: HTMLCanvasElement; paths?: Path2D } | undefined, semanticKey = '', semanticLanduse: LandUseLayer | undefined, physicalKey = '';
+  let occupationLanduse: LandUseLayer | undefined,occupationGround: ForestOccupation | undefined;
+  function groundForest(): ReturnType<NonNullable<City3dOptions['getForest']>> {
+    const forest=options.getForest?.();
+    if(forest?.occupation||options.getGroundSettings?.(ground)?.renderV2!==1)return forest;
+    const landuse=options.getSemantic?.()?.landuse;
+    if(landuse!==occupationLanduse){occupationLanduse=landuse;occupationGround=landuse&&forestOccupation(landuse);}
+    return {...forest,occupation:occupationGround};
+  }
   let surfaceDecor: Decor | undefined, imageUrl: string | undefined, heightAt: City3dHeight | undefined, stiltWaterAt: City3dHeight | undefined, image: HTMLImageElement | HTMLCanvasElement | undefined, mapFallback: HTMLCanvasElement | undefined, waterMask: HTMLCanvasElement | undefined, waterPaths: Path2D | undefined, waterMaskVisible = true;
   let bridgeWaterAt: City3dHeight | undefined;
   const textured = (): boolean => options.getTextured?.() ?? false;
@@ -358,7 +367,7 @@ export function mountCity3d(options: City3dOptions): City3d {
       t.setTexture(image ?? (mapFallback ??= hillshade(d)));
     }
     // Only a software material raster already holds its canopy; a material ground draped for want of relief does not.
-    const forest = procedural || ground === 'map' || !softwareMaterial ? options.getForest?.() : undefined;
+    const forest = procedural || ground === 'map' || !softwareMaterial ? groundForest() : undefined;
     t.setForest(forest?.field, forest?.occupation, { seed: seedHash(d.meta.seed), climate: decorClimate(d.meta), lighting: configured?.lighting ?? DEFAULT_TERRAIN_LIGHTING });
     t.setHeightSampler(options.getHeightSampler?.());
     textOverlay.invalidate();
@@ -439,7 +448,8 @@ export function mountCity3d(options: City3dOptions): City3d {
     const source = proceduralGround ? waterMask : image ?? (mapFallback ??= hillshade(d));
     if (source) { const k = source.width / width; ctx.drawImage(source, tile.x * k, tile.y * k, tile.width * k, tile.width * k, 0, 0, size, size); }
     const k = size / tile.width, mpp = tile.width / size, semanticMpp = proceduralGround ? tile.width / Math.ceil(size / 2) : mpp;
-    const waterVisible = options.getGroundSettings?.(ground)?.waterVisible !== false;
+    const groundSettings=options.getGroundSettings?.(ground),satellite=proceduralGround&&groundSettings?.renderV2===1;
+    const waterVisible = groundSettings?.waterVisible !== false;
     if (proceduralGround && waterPaths && waterVisible) { ctx.save(); ctx.setTransform(k, 0, 0, k, -tile.x * k, -tile.y * k); ctx.fillStyle = `rgb(${WATER})`; ctx.fill(waterPaths, 'evenodd'); ctx.restore(); }
     const semantic = options.getSemantic?.(), box = { minX: tile.x, minY: tile.y, maxX: tile.x + tile.width, maxY: tile.y + tile.width };
     const physicalGround = options.getPhysicalGround?.(proceduralGround), physical = physicalGround && physicalLayer(tile, physicalGround, box);
@@ -458,11 +468,18 @@ export function mountCity3d(options: City3dOptions): City3d {
       }
       return overlay.getContext('2d')!;
     };
+    let groundTile: HTMLCanvasElement | undefined;
+    const groundContext=(): CanvasRenderingContext2D => {
+      if(!satellite)return inkContext();
+      if(!groundTile){groundTile=document.createElement('canvas');groundTile.width=groundTile.height=size;}
+      return groundTile.getContext('2d')!;
+    };
     const roads = planOverlay ? options.getRegionalStreets?.()?.filter(road => tileRoadVisible(road, box, mpp)) : undefined;
     const planOptions = options.getPlanOptions?.();
     if (roads?.length) {
-      const target = inkContext(); target.save(); target.setTransform(k, 0, 0, k, -tile.x * k, -tile.y * k);
-      drawTileRoads(target, roads, box, mpp, { look: planOptions?.groundBlend ? 'natural' : 'ink', emphasis: planOptions?.roadEmphasis ?? 1, night: planOptions?.appearance?.ambience === 'night', colors: planOptions?.appearance?.colors }, planOptions?.roadInk); target.restore();
+      const roadLook=planOptions?.roadLook??(planOptions?.groundBlend?'natural':'ink');
+      const target = roadLook==='natural'?groundContext():inkContext(); target.save(); target.setTransform(k, 0, 0, k, -tile.x * k, -tile.y * k);
+      drawTileRoads(target, roads, box, mpp, { look: roadLook, emphasis: planOptions?.roadEmphasis ?? 1, night: !satellite&&planOptions?.appearance?.ambience === 'night', colors: planOptions?.appearance?.colors }, planOptions?.roadInk); target.restore();
     }
     const footprintScene = planOptions?.buildingsVisible ? options.getScene() : undefined;
     let footprints = footprintScene && footprintPlans.get(footprintScene);
@@ -471,10 +488,17 @@ export function mountCity3d(options: City3dOptions): City3d {
     const planLayers = { ...planOptions?.layers ?? PLAN_LAYERS, lotEnclosureMeshes: true }, lod = selectCityLod(mpp);
     const planInk = city && cityTileHasInk(city, box, planLayers, lod, footprints);
     if (city && planInk && (planOptions?.opacity ?? 1) > 0) {
+      if(satellite){
+        const target=groundContext();target.save();target.setTransform(k,0,0,k,-tile.x*k,-tile.y*k);target.globalAlpha=planOptions?.opacity??1;
+        drawCity(target,city,{viewport:box,mpp,dpr:1,lod,view:'buildings',palette:'terrain',width:0,layers:{...planLayers,reserve:false,allocated:false,centers:false,quarters:false,streets:planLayers.streets&&planOptions?.roadLook!=='ink',enclosures:false,waterways:false,fronts:false,axes:false,access:false},buildingsVisible:false,appearance:{style:'geometric',diagnostic:'none'},materialGround:true,groundBlend:true,roadLook:'natural',roadEmphasis:planOptions?.roadEmphasis,textured:textured(),onTexturesReady:()=>terrain?.invalidateTiles()});
+        target.restore();
+      }
       const target = inkContext(); target.save(); target.setTransform(k, 0, 0, k, -tile.x * k, -tile.y * k);
       target.globalAlpha = planOptions?.opacity ?? 1;
+      const thematic=planOptions?.view==='uses'||planOptions?.view==='roles';
+      const inkLayers=satellite?{...planLayers,blocks:thematic&&planLayers.blocks,domains:thematic&&planLayers.domains,parcels:thematic&&planLayers.parcels,gardens:thematic&&planLayers.gardens,places:thematic&&planLayers.places,streets:planLayers.streets&&planOptions?.roadLook==='ink',lotEnclosures:false}:planLayers;
       drawCity(target, city, { viewport: box, mpp, dpr: 1, lod,
-        colors: planOptions?.colors, view: planOptions?.view ?? 'parcels', labels: false, palette: planOptions?.palette ?? 'terrain', width: planOptions?.width ?? 0.6, layers: planLayers, buildings: footprints, buildingsVisible: planOptions?.buildingsVisible ?? false, appearance: planOptions?.appearance ?? { style: 'cartographic', diagnostic: 'none' }, textured: textured(), roadLook: planOptions?.roadLook, roadEmphasis: planOptions?.roadEmphasis, streetPalette: planOptions?.streetPalette, night: planOptions?.night, groundBlend: planOptions?.groundBlend ?? false, onTexturesReady: () => terrain?.invalidateTiles() });
+        colors: planOptions?.colors, view: planOptions?.view ?? 'parcels', labels: false, palette: planOptions?.palette ?? 'terrain', width: planOptions?.width ?? 0.6, layers: inkLayers, buildings: footprints, buildingsVisible: planOptions?.buildingsVisible ?? false, appearance: planOptions?.appearance ?? { style: 'cartographic', diagnostic: 'none' }, textured: textured(), roadLook: planOptions?.roadLook, roadEmphasis: planOptions?.roadEmphasis, streetPalette: planOptions?.streetPalette, night: planOptions?.night, groundBlend: planOptions?.groundBlend ?? false, onTexturesReady: () => terrain?.invalidateTiles() });
       target.restore();
     }
     const scene = semantic && semantic.urban !== 'off' ? cityPlan() : undefined;
@@ -485,6 +509,7 @@ export function mountCity3d(options: City3dOptions): City3d {
       if (overlay) { const target = overlay.getContext('2d')!; target.setTransform(1, 0, 0, 1, 0, 0); target.drawImage(urban, 0, 0, overlay.width, overlay.height); } else overlay = urban;
     }
     if (overlay) clearSemanticWater(tile, overlay.getContext('2d')!);
+    if (groundTile) clearSemanticWater(tile,groundTile.getContext('2d')!);
     const display=currentWaterDisplay(),look=options.getLook?.();
     if(look?.waterLook==='ink' && look.waterVisible!==false && display?.ink){
       const target=inkContext(),source=display.texture,scale=source.width/width;
@@ -492,7 +517,7 @@ export function mountCity3d(options: City3dOptions): City3d {
       if(display.paths){target.setTransform(k,0,0,k,-tile.x*k,-tile.y*k);target.fillStyle=display.ink.fill;target.fill(display.paths,'evenodd');target.strokeStyle=display.ink.stroke;target.lineWidth=mpp*.8;target.stroke(display.paths);}
       target.restore();
     }
-    return overlay ? { texture: c, semantic: overlay } : c;
+    return overlay||groundTile ? { texture: c, semantic: overlay, ground: groundTile } : c;
   }
   function cityPlan(): CityScene | undefined {
     const layouts = options.getLayouts?.(), partitions = options.getPartitions?.();
@@ -740,7 +765,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     if(procedural && configured)t.setGroundMaterial(configured);
     if (groundKey !== groundResourceKey(configured) || waterDisplay !== options.getWaterDisplay?.()) applyGround();
     t.setHeightSampler(options.getHeightSampler?.());
-    const forest = proceduralGround || ground === 'map' || !softwareMaterial ? options.getForest?.() : undefined;
+    const forest = proceduralGround || ground === 'map' || !softwareMaterial ? groundForest() : undefined;
     t.setForest(forest?.field, forest?.occupation, { seed: seedHash(d.meta.seed), climate: decorClimate(d.meta), lighting: configured?.lighting ?? DEFAULT_TERRAIN_LIGHTING });
     const { labels: _tileLabels, ...tilePlanOptions } = options.getPlanOptions?.() ?? {};
     const {ambience:_planAmbience,...planAppearance}=tilePlanOptions.appearance??{};

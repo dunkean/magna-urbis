@@ -39,6 +39,8 @@ export interface Terrain3dTile { key: string; x: number; y: number; width: numbe
 export interface Terrain3dTileContent {
   texture: TexImageSource; height?: HeightLayer; gutter?: number;
   water?: { x: number; y: number; width: number; n: number; alpha: Uint8Array };
+  /** Albedo and coverage of physical ground, before lighting; same world extent and gutter. */
+  ground?: TexImageSource;
   /** Tint blended over the shaded ground material, with the same world extent and proportional gutter. The material tile's
    * alpha is water cover (it also clears the canopy), so tints cannot travel in it. */
   semantic?: TexImageSource;
@@ -193,6 +195,8 @@ uniform float groundContourStep,groundContourOpacity,groundFlatSlope;
 uniform sampler2D semanticTile,previousSemanticTile;
 uniform int hasSemanticTile,hasPreviousSemanticTile;
 uniform vec4 semanticRect,previousSemanticRect;
+uniform vec4 groundRect,previousGroundRect;
+uniform int hasGroundTile,hasPreviousGroundTile;
 in vec2 texcoord;
 in vec3 normal;
 in vec3 world;
@@ -214,6 +218,30 @@ float forestWaterCoverage(vec2 p){
 ${NEURAL_EARTH_MATERIAL_GLSL}
 ${forestMaterial}
 ${RENDER_V2_GLSL}
+vec4 groundTileSample(vec4 rect,bool previous,int slot){
+  vec2 uv=rect.xy+texcoord*rect.zw;
+  if(slot<0){if(previous)return texture(previousSemanticTile,uv);return texture(semanticTile,uv);}
+  vec2 size=previous?vec2(textureSize(previousSemanticTile,0)):vec2(textureSize(semanticTile,0));
+  vec2 dx=dFdx(uv)*size,dy=dFdy(uv)*size;
+  float lod=clamp(log2(max(max(length(dx),length(dy)),1.)),0.,max(log2(size.y)-2.,0.));
+  // Stay within one atlas half, including the trilinear filter's coarser tap.
+  vec2 margin=vec2(exp2(ceil(lod)))*1.25/size;
+  uv=clamp(uv,vec2(float(slot)*.5+margin.x,margin.y),vec2(float(slot+1)*.5-margin.x,1.-margin.y));
+  if(previous)return textureLod(previousSemanticTile,uv,lod);
+  return textureLod(semanticTile,uv,lod);
+}
+void cityGroundMaterial(inout GroundMaterial m,vec4 tile){
+  float a=clamp(tile.a,0.,1.)*(1.-v2GroundSnow);
+  if(a<=0.)return;
+  vec3 albedo=tile.rgb/max(tile.a,.001);
+  // The tile supplies unlit earth/stone, with a small retained local soil tint.
+  albedo*=mix(vec3(1.),clamp(renderGuideOpen/vec3(.42,.40,.30),vec3(.65),vec3(1.25)),.24);
+  renderGuideOpen=mix(renderGuideOpen,albedo,a);
+  m.albedo=mix(m.albedo,groundToLinear(albedo)*v2FloorModulation,a);
+  m.roughness=mix(m.roughness,mix(.93,.74,smoothstep(.42,.72,dot(albedo,vec3(.21,.72,.07)))),a);
+  m.normal=normalize(mix(m.normal,v2MacroNormal,a*.4));
+  v2MeanEnabled=0.;
+}
 vec4 groundSpline(float t){float u=1.-t;return vec4(u*u*u,3.*t*t*t-6.*t*t+4.,-3.*t*t*t+3.*t*t+3.*t+1.,t*t*t)/6.;}
 vec4 groundSplineDerivative(float t){return vec4(-.5*(1.-t)*(1.-t),1.5*t*t-2.*t,-1.5*t*t+t+.5,.5*t*t);}
 vec3 groundMacroSurface(vec2 p){
@@ -253,6 +281,13 @@ void main() {
     else {
       m=terrainGroundMaterial(s,physical.xz,footprint,macro,uMaterialClimate,uMaterialSeed);
     }
+    applyGroundOccupation(m,physical.xz,footprint);
+    if(uRenderV2==1&&(hasGroundTile==1||hasPreviousGroundTile==1)){
+      vec4 previousGround=vec4(0.),cityGround=vec4(0.);
+      if(hasPreviousGroundTile==1)previousGround=groundTileSample(previousGroundRect,true,0);
+      if(hasGroundTile==1)cityGround=groundTileSample(groundRect,false,0);
+      cityGroundMaterial(m,mix(previousGround,cityGround,textureBlend));
+    }
     if(uForest==1)applyForest(m,physical.xz,footprint,groundLight);
     base=uRenderV2>0?v2ShadeGround(m,normalize(groundEye-physical),groundLight,groundLight2,groundStrength):shadeTerrainGround(m,normalize(groundEye-physical),groundLight,groundLight2,groundStrength);
     if(uRenderV2>0)base=v2DisplayShoulder(base);
@@ -271,8 +306,8 @@ void main() {
       base=mix(base,groundContourColor,a);
     }
     if(uNight==1)base=moonlight(base);
-    vec4 semantic=mix(texture(previousSemanticTile,previousSemanticRect.xy+texcoord*previousSemanticRect.zw)*float(hasPreviousSemanticTile),
-      texture(semanticTile,semanticRect.xy+texcoord*semanticRect.zw)*float(hasSemanticTile),textureBlend);
+    vec4 semantic=mix(groundTileSample(previousSemanticRect,true,hasPreviousGroundTile==1?1:-1)*float(hasPreviousSemanticTile),
+      groundTileSample(semanticRect,false,hasGroundTile==1?1:-1)*float(hasSemanticTile),textureBlend);
     base=base*(1.-semantic.a)+semantic.rgb;
   } else {
     float light=.89+.11*max(0.,dot(normalize(normal),normalize(vec3(-.4,.8,-.3))));
@@ -605,7 +640,7 @@ export class Terrain3d {
   private empty!: WebGLTexture;
   protected waterMasks = new Map<WebGLTexture, { texture: WebGLTexture; rect: readonly [number, number, number]; bytes: number }>();
   /** Semantic tile of a material tile: follows it through parent fallbacks and fades. */
-  protected semanticTiles = new Map<WebGLTexture, { texture: WebGLTexture; pixels: number; gutter: number }>();
+  protected semanticTiles = new Map<WebGLTexture, { texture: WebGLTexture; pixels: number; gutter: number; atlas?: boolean; semantic: boolean }>();
   protected forestField?: ForestField;
   protected forestOccupation?: ForestOccupation;
   protected forestSettings?: Terrain3dForestSettings;
@@ -736,7 +771,7 @@ export class Terrain3d {
   private groundShader(settings: Terrain3dGroundSettings | undefined): WebGLProgram {
     const forest = !!this.forest;
     const v = { groundEnabled: +!!settings, uRenderV2: settings?.renderV2 ?? 0, uForest: +forest, uForestBrushes: +!!settings?.forestBrushes, uNaturalWater: +(this.lookSettings.waterLook==='natural'),
-      uHasOccupation: +(forest && !!this.occupation), uHasForestBank: +(forest && !!this.forest?.bank) };
+      uHasOccupation: +!!this.occupation, uHasForestBank: +(forest && !!this.forest?.bank) };
     const variant = (constants: typeof v, wait: boolean) => this.groundVariants.get(Object.values(constants).join('.'), () => [vertexShader, specializeShader(fragmentShader, constants)], wait);
     const target = variant(v, false);
     this.mark('groundVariant', target ? 'ready' : 'pending');
@@ -851,14 +886,13 @@ export class Terrain3d {
   }
   /** Render3D forest: texture uploads only, no mesh or material tile rebuild. */
   setForest(field: ForestField | undefined, occupation?: ForestOccupation, settings = this.forestSettings): void {
-    occupation = field ? occupation : undefined;
     this.forestSettings = settings ?? { seed: 0, climate: { temperature: 18, precipitation: 1000 }, lighting: DEFAULT_TERRAIN_LIGHTING };
     this.forestField = field; this.forestOccupation = occupation;
     if (this.mergedOccupationSource !== occupation || this.mergedOccupationScene !== this.buildingScene) {
       this.mergedOccupationSource = occupation; this.mergedOccupationScene = this.buildingScene;
       this.mergedOccupation = withBuildingOccupation(occupation, this.buildingScene);
     }
-    occupation = field ? this.mergedOccupation : undefined;
+    occupation = this.mergedOccupation;
     if (field !== this.forest?.field) {
       const hadForest = !!this.forest;
       this.releaseForest(this.forest);
@@ -1277,10 +1311,24 @@ export class Terrain3d {
         const gutter=Math.max(0,Math.min(8,Math.round(content.gutter??0)));
         const texture = this.uploadTexture(source);
         let textureBytes = materialBytes(source);
-        if(content.semantic){
-          const size = materialSize(content.semantic), semanticGutter = gutter*size.width/(TILE_PIXELS+2*gutter);
-          this.semanticTiles.set(texture,{texture:this.uploadTexture(content.semantic),pixels:size.width-2*semanticGutter,gutter:semanticGutter});
-          textureBytes+=materialBytes(content.semantic);
+        if(content.semantic||content.ground){
+          const size=Math.max(content.semantic?materialSize(content.semantic).width:0,content.ground?materialSize(content.ground).width:0);
+          const semanticGutter=gutter*size/(TILE_PIXELS+2*gutter);
+          let overlay=content.semantic!;
+          if(content.ground){
+            // Two independently padded squares reuse one sampler: physical albedo on the left, ink on the right.
+            const atlas=document.createElement('canvas');atlas.width=2*(size+2);atlas.height=size+2;
+            const target=atlas.getContext('2d')!;
+            for(const [source,x] of [[content.ground,0],[content.semantic,size+2]] as const){
+              if(!source)continue;
+              const square=document.createElement('canvas');square.width=square.height=size;
+              square.getContext('2d')!.drawImage(source as CanvasImageSource,0,0,size,size);
+              target.drawImage(paddedMaterial(square),x,0);
+            }
+            overlay=atlas;
+          }
+          this.semanticTiles.set(texture,{texture:this.uploadTexture(overlay),pixels:size-2*semanticGutter,gutter:semanticGutter,atlas:!!content.ground,semantic:!!content.semantic});
+          textureBytes+=materialBytes(overlay);
         }
         if(content.water){
           const water=content.water,mask=this.uploadWaterMask(water);
@@ -1376,6 +1424,14 @@ export class Terrain3d {
     const source = ref.tile ?? this.layer!, pixels = ref.pixels,gutter=1+(ref.gutter??0),total=pixels+2*gutter;
     const x = (tile.x - source.x) / source.width, y = (tile.y - source.y) / source.width, size = tile.width / source.width;
     return [(gutter+x*pixels)/total,(gutter+y*pixels)/total,size*pixels/total,size*pixels/total];
+  }
+  protected overlayRect(ref: MaterialRef,tile: Terrain3dTile,ground=false): [number,number,number,number] {
+    const overlay=this.semanticTiles.get(ref.texture);
+    if(!overlay)return [0,0,0,0];
+    const r=this.textureRect({...ref,pixels:overlay.pixels,gutter:overlay.gutter},tile);
+    if(!overlay.atlas)return ground?[0,0,0,0]:r;
+    const side=overlay.pixels+2*overlay.gutter+2,w=2*side+2,h=side+2;
+    return [(1+(ground?0:side)+r[0]*side)/w,(1+r[1]*side)/h,r[2]*side/w,r[3]*side/h];
   }
   private advanceMorphs(node: Node, incomingFull = true): void {
     if (!node.visible) { node.blend = 0; node.children = undefined; node.updated = this.now; node.moving = false; return; }
@@ -1473,8 +1529,10 @@ export class Terrain3d {
     for(const [ref,name,flag,unit] of [[material.to,'semanticTile','hasSemanticTile',12],[material.from,'previousSemanticTile','hasPreviousSemanticTile',13]] as const){
       const overlay=this.semanticTiles.get(ref.texture);
       gl.activeTexture(gl.TEXTURE0+unit);gl.bindTexture(gl.TEXTURE_2D,overlay?.texture??this.empty);
-      gl.uniform1i(this.uniform(name),unit);gl.uniform1i(this.uniform(flag),overlay?1:0);
-      gl.uniform4fv(this.uniform(name==='semanticTile'?'semanticRect':'previousSemanticRect'),this.textureRect(overlay?{...ref,pixels:overlay.pixels,gutter:overlay.gutter}:ref,tile));
+      gl.uniform1i(this.uniform(name),unit);gl.uniform1i(this.uniform(flag),overlay?.semantic?1:0);
+      gl.uniform4fv(this.uniform(name==='semanticTile'?'semanticRect':'previousSemanticRect'),this.overlayRect(ref,tile));
+      gl.uniform1i(this.uniform(name==='semanticTile'?'hasGroundTile':'hasPreviousGroundTile'),overlay?.atlas?1:0);
+      gl.uniform4fv(this.uniform(name==='semanticTile'?'groundRect':'previousGroundRect'),this.overlayRect(ref,tile,true));
     }
     for(const [ref,prefix,unit] of [[material.to,'',6],[material.from,'previous',7]] as const){
       const mask=this.waterMasks.get(ref.texture),name=prefix?'previousCanopyWater':'canopyWater';

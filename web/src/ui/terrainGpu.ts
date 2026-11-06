@@ -579,7 +579,6 @@ export class TerrainGpu implements TerrainRenderer {
   /** Render3D forest: texture uploads only. `undefined` restores the legacy macro canopy exactly. */
   setForest(field: ForestField | undefined, occupation?: ForestOccupation): void {
     if (this.fallback) return this.fallback.setForest(field, occupation);
-    occupation = field ? occupation : undefined;
     if (field !== this.forest?.field) {
       this.releaseForest();
       this.forest = field && { field, texture: this.rgbaImage(field, true), bank: field.bank ? this.rgbaImage({ n: field.n, rgba: field.bank }, true) : undefined,
@@ -1019,7 +1018,7 @@ export class TerrainGpu implements TerrainRenderer {
 
   /** Forest textures and parameters shared with TerrainGl's bindForest. */
   private bindForest(p: Params, textures: Record<string, GPUTextureView>, enabled: boolean): void {
-    const field = enabled ? this.forest : undefined, applied = field ? this.occupation : undefined, empty = this.empty.view;
+    const field = enabled ? this.forest : undefined, applied = this.occupation, empty = this.empty.view;
     textures.uForestField = field?.texture.view ?? empty;
     p.set('uForestRect', field?.field.x ?? 0, field?.field.y ?? 0, field?.field.width ?? 1);
     textures.uForestBank = field?.bank?.view ?? empty;

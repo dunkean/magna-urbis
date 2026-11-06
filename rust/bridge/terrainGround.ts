@@ -146,30 +146,11 @@ export function createGroundDisplacementSampler(baseSampler: GroundSampler, opti
 const glslFloat = (v: number): string => Number.isInteger(v) ? `${v}.` : String(v);
 const glslArray = (key: keyof typeof bands[number]): string => bands.map(b => glslFloat(b[key])).join(',');
 
-/** Self-contained; normals use X/up/Z. Albedo is linear. The shade function
- * returns display RGB, and raster compatibility converts unlit albedo itself. */
-export const GROUND_FIELD_GLSL = `
-float groundSmooth(float a,float b,float x){float t=clamp((x-a)/(b-a),0.,1.);return t*t*(3.-2.*t);}
-vec3 groundToLinear(vec3 c){return pow(max(c,vec3(0.)),vec3(2.2));}
-vec3 groundToDisplay(vec3 c){
-#ifdef RENDER3D_FOREST
-  if(uRenderV2>0)return pow(max(c,vec3(0.)),vec3(1./2.2));
-#endif
-  return pow(clamp(c,vec3(0.),vec3(1.)),vec3(1./2.2));
-}
+/** Shared with surfaceMicro; emitted after the material noise helpers. */
+export const GROUND_COVER_GLSL = `
 uint groundHash(ivec3 cell,uint seed){
   uvec3 p=uvec3(cell);uint h=(p.x*0x9e3779b9u)^(p.y*0x85ebca6bu)^(p.z*0xc2b2ae35u)^seed;
   h=(h^(h>>16u))*0x7feb352du;h=(h^(h>>15u))*0x846ca68bu;return h^(h>>16u);
-}
-vec4 groundNoise(vec3 point,uint seed){
-  ivec3 cell=ivec3(floor(point));vec3 f=fract(point),u=f*f*f*(f*(f*6.-15.)+10.),du=30.*f*f*(f*(f-2.)+1.);
-  vec4 n=vec4(0.);
-  for(int k=0;k<8;k++){
-    ivec3 corner=ivec3(k&1,(k>>1)&1,k>>2);uint h=groundHash(cell+corner,seed);
-    vec3 g=vec3(float(h&1023u),float((h>>10u)&1023u),float((h>>20u)&1023u))/511.5-1.;
-    vec3 w=mix(1.-u,u,vec3(corner)),d=mix(-du,du,vec3(corner));float v=dot(g,f-vec3(corner));
-    n+=vec4(v*w.x*w.y*w.z,g*w.x*w.y*w.z+v*vec3(d.x*w.y*w.z,w.x*d.y*w.z,w.x*w.y*d.z));
-  }return n*1.7;
 }
 vec4 groundGravel(vec2 point,uint seed){
   ivec2 cell=ivec2(floor(point));vec2 f=fract(point);float sum=0.;vec2 gradient=vec2(0.);
@@ -187,6 +168,142 @@ vec4 groundGravel(vec2 point,uint seed){
     gradient+=-4.*weight*t*vec2(c*uv.x*inverse.x-s*uv.y*inverse.y,s*uv.x*inverse.x+c*uv.y*inverse.y);
   }
   float attenuation=exp(-sum);return vec4(1.-attenuation,gradient.x*attenuation,0.,gradient.y*attenuation);
+}
+// A compact C1 cap and its gradient in cell coordinates. Jitter and support
+// stay inside the owning cell, including the shadow: no neighbour search.
+vec3 surfaceGroundCap(vec2 d,vec2 radius){
+  vec2 inverse=1./(radius*radius);float t=max(1.-dot(d*d,inverse),0.);
+  return vec3(t*t,-4.*t*d*inverse);
+}
+vec3 surfaceGroundCover(vec2 world,float slope,float fp,float rock,float grass,uint salt){
+  surfaceGroundSlope=vec2(0.);vec3 tone=vec3(0.);
+#ifdef RENDER3D_FOREST
+  if(uGroundCover.w<.5||uForest==0||uForestBrushes!=0||uRenderV2>1||fp>=10.||surfaceGroundHeight<=0.)return tone;
+  if(fp>=.42&&surfaceGroundEnv.z<.01)return tone;
+  // v2GroundEnv scales groundField by this substrate gain. Cover normals are
+  // already material-specific and must also survive on perfectly flat plains.
+  if(uRenderV2==1)surfaceGroundNormalGain=mix(.02+.43*rock+.07*(1.-grass),.008,v2GroundSnow);
+  bool supplied=surfaceGroundHasInputs&&all(equal(world,surfaceGroundPoint));
+  vec3 occupation=supplied?surfaceGroundOccupation:vec3(0.);
+  int cls=supplied?int(occupation.z):uHasOccupation==1?-1:0;
+  // Unknown occupation is conservative until the caller supplies its existing
+  // categorical sample. Fields, roads and buildings must never sprout cover.
+  if(cls<0||cls==1||cls==4||cls==5||cls==7||cls==8||cls==9||cls==10)return tone;
+  float snow=clamp(uRenderV2==1?v2GroundSnow:surfaceGroundEnv.w,0.,1.),exposed=1.-snow;
+  if(exposed<=0.)return tone;
+  float moisture=surfaceGroundEnv.x,green=surfaceGroundEnv.y;
+  float land=supplied&&cls>0?sstep(0.,max(.3,fp),min(occupation.x,-occupation.y)):1.;
+  exposed*=land;vec2 light=uGroundCover.xz;
+  light=dot(light,light)>.0001?normalize(light):vec2(1.,0.);
+  float herb=grass*(1.-rock)*exposed*(1.-sstep(.35,.7,slope));
+  float tuftKeep=1.-sstep(.035,.09,fp);
+  if(herb>.01&&tuftKeep>0.){
+    float cell=cls==3?.65:.9;
+    vec2 q=vec2(dot(world,vec2(.8,.6)),dot(world,vec2(-.6,.8)))/cell;
+    uint h=groundHash(ivec3(ivec2(floor(q)),811),salt);
+    float density=(.10+.52*sstep(.2,1.6,moisture))*(cls==2?1.:cls==3?.65:.35);
+    if(float(h>>24u)/255.<density){
+      if(uRenderV2==1){
+        float phase=.5-.5*cos(6.283185307*uV2Season);
+        float temperature=uMaterialClimate.x-.0065*surfaceGroundHeight+6.*(2.*phase-1.);
+        green=sstep(.35,1.3,moisture)*sstep(1.,13.,temperature);
+      }
+      vec2 centre=.4+.2*vec2(float(h&255u),float((h>>8u)&255u))/255.;
+      vec3 cap=surfaceGroundCap(fract(q)-centre,vec2(.22,.14));
+      float amount=herb*tuftKeep;
+      vec2 g=cap.yz*(cls==3?.07:.14)/cell;
+      surfaceGroundSlope+=amount*vec2(.8*g.x-.6*g.y,.6*g.x+.8*g.y);
+      // Integral of t^2(t-3/4) over an ellipse is exactly zero: dark base,
+      // bright tip, no cell-wide compensation and no change to mean grass.
+      float tip=cap.x*(sqrt(cap.x)-.75);
+      tone+=amount*tip*mix(vec3(.65,.49,.24),vec3(.40,.67,.25),green);
+    }
+  }
+  float sand=surfaceGroundEnv.z*(1.-rock)*(1.-grass)*exposed*(1.-sstep(.35,.7,slope));
+  if(sand>.01){
+    float angle=float(salt&1023u)*.006135923;vec2 wind=vec2(cos(angle),sin(angle));
+    vec3 flow=surfaceBand(world,1600.,salt+821u);
+    float phase=dot(world,wind)*.130899694+7.*flow.x+.07*surfaceGroundHeight;
+    vec2 rate=wind*.130899694+7.*flow.yz+.07*surfaceGroundGradient;
+    float keep=(1.-sstep(5.,10.,fp))*(1.-sstep(.125,.25,fp*length(rate)/6.283185307));
+    surfaceGroundSlope+=sand*keep*1.4*cos(phase)*rate;
+    tone+=vec3(sand*keep*.07*sin(phase));
+    // Warped scalar phase gives a continuous wind field and its true gradient;
+    // the terrain height bends the phase uphill without view-dependent noise.
+    if(fp<.1){
+      float ripple=dot(world,wind)*13.962634+1400.*flow.x+.6*surfaceGroundHeight;
+      vec2 rippleRate=wind*13.962634+1400.*flow.yz+.6*surfaceGroundGradient;
+      float rippleKeep=(1.-sstep(.05,.1,fp))*(1.-sstep(.125,.25,fp*length(rippleRate)/6.283185307));
+      surfaceGroundSlope+=sand*rippleKeep*.018*cos(ripple)*rippleRate;
+    }
+  }
+  float bank=supplied?surfaceGroundBank:1e9;
+  float distance=min(surfaceGroundShore,bank);
+  float bankKeep=exposed*sstep(0.,.3,distance)*(1.-sstep(8.,36.,distance))*(1.-sstep(.5,.9,slope));
+  bankKeep*=max(surfaceGroundBeach,1.-.85*grass);
+  if(bankKeep>.01&&fp<.09){
+    // Fixed lattices at both sizes avoid swimming when the bank grade changes.
+    // Large cobbles lie nearest the water; smaller pebbles remain inland.
+    float coarse=1.-sstep(2.,18.,distance);
+    float k=1.-sstep(.035,.09,fp);
+    if(coarse>.001&&k>0.){
+      vec4 cap=groundGravel(world/.92,salt+827u);vec2 g=cap.yw/.92;
+      surfaceGroundSlope+=bankKeep*coarse*k*.075*g;
+      // A derivative has zero spatial mean, even for overlapping capped stones.
+      tone+=vec3(bankKeep*coarse*k*.012*dot(g,light));
+    }
+    float fineKeep=1.-sstep(.01,.026,fp);
+    if(coarse<.999&&fineKeep>0.){
+      vec4 cap=groundGravel(world/.26,salt+829u);vec2 g=cap.yw/.26;
+      surfaceGroundSlope+=bankKeep*(1.-coarse)*fineKeep*.022*g;
+      tone+=vec3(bankKeep*(1.-coarse)*fineKeep*.0035*dot(g,light));
+    }
+  }
+  float scree=sstep(.22,.42,slope)*(1.-sstep(1.1,1.7,slope))*(1.-.85*grass)*exposed;
+  float blockKeep=1.-sstep(.16,.42,fp);
+  if(scree>.01&&blockKeep>0.){
+    vec2 q=world/6.;uint h=groundHash(ivec3(ivec2(floor(q)),839),salt);
+    if(float(h>>24u)/255.<.12+.16*rock){
+      vec2 centre=.46+.08*vec2(float(h&255u),float((h>>8u)&255u))/255.;
+      vec2 radius=.14+.07*vec2(float((h>>16u)&15u),float((h>>20u)&15u))/15.;
+      vec2 d=fract(q)-centre;vec3 cap=surfaceGroundCap(d,radius);
+      float amount=scree*blockKeep;
+      surfaceGroundSlope+=amount*cap.yz*.65/6.;
+      vec2 shadowD=d+light*.10;
+      vec2 shadowUv=vec2(dot(shadowD,light),dot(shadowD,vec2(-light.y,light.x)));
+      float shadow=surfaceGroundCap(shadowUv,vec2(.19,.14)).x;
+      // Equal kernel integrals keep the cast shadow and its lit cap neutral.
+      float centredShadow=shadow-cap.x*(.19*.14)/(radius.x*radius.y);
+      float tip=cap.x*(sqrt(cap.x)-.75);
+      float shadowStrength=1.-sstep(.85,.99,uGroundCover.y/max(length(uGroundCover.xyz),.001));
+      tone+=vec3(amount*(.3*tip-.10*centredShadow*shadowStrength));
+    }
+  }
+#endif
+  return tone;
+}
+`;
+
+/** Emitted after NEURAL_EARTH_MATERIAL_GLSL; normals use X/up/Z. Albedo is linear. The shade function
+ * returns display RGB, and raster compatibility converts unlit albedo itself. */
+export const GROUND_FIELD_GLSL = `
+float groundSmooth(float a,float b,float x){float t=clamp((x-a)/(b-a),0.,1.);return t*t*(3.-2.*t);}
+vec3 groundToLinear(vec3 c){return pow(max(c,vec3(0.)),vec3(2.2));}
+vec3 groundToDisplay(vec3 c){
+#ifdef RENDER3D_FOREST
+  if(uRenderV2>0)return pow(max(c,vec3(0.)),vec3(1./2.2));
+#endif
+  return pow(clamp(c,vec3(0.),vec3(1.)),vec3(1./2.2));
+}
+vec4 groundNoise(vec3 point,uint seed){
+  ivec3 cell=ivec3(floor(point));vec3 f=fract(point),u=f*f*f*(f*(f*6.-15.)+10.),du=30.*f*f*(f*(f-2.)+1.);
+  vec4 n=vec4(0.);
+  for(int k=0;k<8;k++){
+    ivec3 corner=ivec3(k&1,(k>>1)&1,k>>2);uint h=groundHash(cell+corner,seed);
+    vec3 g=vec3(float(h&1023u),float((h>>10u)&1023u),float((h>>20u)&1023u))/511.5-1.;
+    vec3 w=mix(1.-u,u,vec3(corner)),d=mix(-du,du,vec3(corner));float v=dot(g,f-vec3(corner));
+    n+=vec4(v*w.x*w.y*w.z,g*w.x*w.y*w.z+v*vec3(d.x*w.y*w.z,w.x*d.y*w.z,w.x*w.y*d.z));
+  }return n*1.7;
 }
 const float groundWavelength[4]=float[4](${glslArray('wavelength')});
 const float groundAmplitude[4]=float[4](${glslArray('amplitude')});
@@ -229,7 +346,12 @@ vec4 groundFieldWithClasts(vec3 point,uint seed,float footprint,out float clasts
     sum+=vec4(value*a,vec3(c*g.x-s*g.z,g.y,s*g.x+c*g.z)*d);
   }return sum;
 }
-vec4 groundField(vec3 point,uint seed,float footprint){float clasts;return groundFieldWithClasts(point,seed,footprint,clasts);}
+// surfaceMicroSlope is the relief of the colour bands of this fragment, so a
+// lit crack is also a dark one. Slope only: the height keeps its ground bands.
+vec4 groundField(vec3 point,uint seed,float footprint){
+  vec2 slope=surfaceMicroSlope+surfaceGroundSlope*(1./max(surfaceGroundNormalGain,.008)-1.);
+  float clasts;return groundFieldWithClasts(point,seed,footprint,clasts)+vec4(0.,slope.x,0.,slope.y);
+}
 // rock / soil / grass / snow; continuous and sums to one.
 vec4 groundCover(vec3 macro,vec2 climate){
   float grade=length(macro.yz),temperature=climate.x-.0065*max(macro.x,0.),wet=groundSmooth(250.,1400.,climate.y);
@@ -251,22 +373,22 @@ vec3 groundDisplacement(vec3 macro,vec2 world,float footprint,vec2 climate,uint 
 struct GroundMaterial {vec3 albedo;vec3 normal;float roughness;float occlusion;};
 GroundMaterial terrainGroundMaterial(vec3 macro,vec2 world,float footprint,vec3 macroColor,vec2 climate,uint seed,float meshFootprint){
   float fp=max(0.,footprint);vec4 cover=groundCover(macro,climate);float gain=groundGain(macro,cover);
-  float clasts;vec4 detail=groundFieldWithClasts(vec3(world.x,0.,world.y),seed,fp,clasts);vec2 gradient=detail.yw*gain;
+  vec3 micro=surfaceMicro(world,length(macro.yz),fp,cover.x,cover.z,seed);
+  float clasts,meshClasts;vec4 detail=groundFieldWithClasts(vec3(world.x,0.,world.y),seed,fp,clasts);vec2 gradient=(detail.yw+surfaceMicroSlope)*gain+surfaceGroundSlope*(1.-gain);
   // Subtract the slope already represented by the displaced mesh. Zero means
   // an undisplaced macro surface; tiny positive means all bands represented.
-  if(meshFootprint>0.)gradient-=groundField(vec3(world.x,0.,world.y),seed,meshFootprint).yw*gain;
+  if(meshFootprint>0.)gradient-=groundFieldWithClasts(vec3(world.x,0.,world.y),seed,meshFootprint,meshClasts).yw*gain;
   GroundMaterial m;m.normal=normalize(vec3(-macro.y-gradient.x,1.,-macro.z-gradient.y));
   float form=clamp(detail.x*18.,-1.,1.),cavity=clamp(-detail.x*20.,0.,1.)*cover.x;
-  vec3 rock=mix(macroColor,vec3(.43,.42,.39),.7),soil=mix(macroColor,vec3(.40,.32,.22),.18);
+  // The slope cover keeps its weights; earthMaterial supplies this fragment's lithology.
+  vec3 rock=mix(macroColor,surfaceRockTone,.7),soil=mix(macroColor,surfaceSoilTone,.18);
   vec3 grass=macroColor*vec3(.96,1.02,.93),snow=mix(macroColor,vec3(.87,.91,.95),.35);
   vec3 color=rock*cover.x+soil*cover.y+grass*cover.z+snow*cover.w;
   color*=1.+form*dot(cover,vec4(.12,.055,.045,.012));
   // The visible cap that displaced this stone also lightens its mineral crest
   // and slightly polishes it. No independent high-frequency color noise.
   float cap=groundSmooth(.05,.7,clasts);color*=1.+cap*.12*cover.x;
-  float grade=length(macro.yz),strataKeep=groundVisibility(.65/max(1.,grade),fp);
-  float strata=sin((macro.x+.13*world.x-.09*world.y)*9.66643893+detail.x*3.);
-  color*=1.+cover.x*.022*strata*strataKeep;color*=1.-cavity*.11;
+  color*=micro*(1.-cavity*.11);
   float wet=groundSmooth(500.,1800.,climate.y)*(1.-cover.w),roughness=dot(cover,vec4(.52,.83,.91,.76));
   roughness-=wet*(.08*cover.y+.10*cavity);roughness+=(form*.025-cap*.055)*cover.x;
   float alpha2=pow(clamp(roughness,.38,.98),4.)+gain*gain*groundSlopeVariance(fp);

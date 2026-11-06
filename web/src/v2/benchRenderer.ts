@@ -289,6 +289,12 @@ export class BenchRenderer {
     const hideUrban = this.scene!.capabilities.nativeCities || layers.city === false;
     return displayWorld(world, { roads: layers.roads, city: hideUrban ? false : undefined }, r.city.visible);
   }
+  /** Land classes the vector overlay paints. A material ground draws the physical land use in its shader, so the overlay keeps only the vegetation symbols asked for. */
+  private overlayLandKinds(): true | ((kind: LandKind) => boolean) {
+    const r = this.resolved!, symbols = r.composition.vegetation.cartographic;
+    if (r.ground.traits.family === 'material') return kind => symbols && CARTOGRAPHIC_ONLY_VEGETATION.includes(kind);
+    return symbols ? true : kind => !CARTOGRAPHIC_ONLY_VEGETATION.includes(kind);
+  }
   /** Overlay renderer (names, roads, land use, painted/vegetation symbols); the natural layers it does not own are masked, not faked. */
   private async cartographyPass(): Promise<void> {
     const world = this.world!, r = this.resolved!, layers = this.exportLayers, scene = this.scene!;
@@ -299,8 +305,8 @@ export class BenchRenderer {
     const landuse = layers.landuse !== false && r.cartography.landuse;
     // The physical land use keeps its own vegetation drawing only where the composition asks for it on the vector overlay; the semantic layer is separate (hook below).
     const cartographic = r.composition.vegetation.cartographic;
-    const mask: SceneMask = { water: false, contours: false, landuse: !landuse ? false : cartographic ? true : kind => !CARTOGRAPHIC_ONLY_VEGETATION.includes(kind) };
-    const v = scene.revisions, sceneKey = JSON.stringify(['scene', v.roads, v.landuse, v.settlements, v.terrain, v.cities, shown === world, layers.roads, layers.city, r.city.visible, landuse, cartographic, world.mapSize, world.seed, world.options.biome]);
+    const mask: SceneMask = { water: false, contours: false, landuse: !landuse ? false : this.overlayLandKinds() };
+    const v = scene.revisions, sceneKey = JSON.stringify(['scene', r.ground.traits.family, v.roads, v.landuse, v.settlements, v.terrain, v.cities, shown === world, layers.roads, layers.city, r.city.visible, landuse, cartographic, world.mapSize, world.seed, world.options.biome]);
     const built = this.shared.cache.get(sceneKey, () => buildScene(shown, undefined, { mask }));
     const state=this;
     const palette={...biomePalette(r.palette.mapStyle,world.options.biome),frameKind:'none' as const,...(layers.decor===false?{grid:null}:{})};
@@ -325,7 +331,7 @@ export class BenchRenderer {
     const landuseOn=layers.landuse!==false&&r.cartography.landuse;
     // Rural semantics sit above the physical land use but below roads and labels: with a semantic look on, the land use is its own raster (exportGround) under the semantics.
     const split=landuseOn&&this.semantic!.rural!=='off';
-    const common={width:EXPORT_OVERLAY_PX,style:r.palette.mapStyle,colors:r.palette.colors,buildings:r.city.visible,contours:false,landuseKinds:r.composition.vegetation.cartographic?undefined:(kind:LandKind)=>!CARTOGRAPHIC_ONLY_VEGETATION.includes(kind),text:r.composition.text,labels:false,brushes:sources,vegetation:r.vegetation.symbols,roadGround:roadGroundTones(r.ground.traits.family === 'material', biomePalette(r.palette.mapStyle, this.world!.options.biome)),roadLook:r.composition.networks.roads.look,roadEmphasis:r.composition.networks.roads.emphasis,roadNight:r.composition.ambience==='night'};
+    const common={width:EXPORT_OVERLAY_PX,style:r.palette.mapStyle,colors:r.palette.colors,buildings:r.city.visible,contours:false,landuseKinds:((kinds=>kinds===true?undefined:kinds)(this.overlayLandKinds())),text:r.composition.text,labels:false,brushes:sources,vegetation:r.vegetation.symbols,roadGround:roadGroundTones(r.ground.traits.family === 'material', biomePalette(r.palette.mapStyle, this.world!.options.biome)),roadLook:r.composition.networks.roads.look,roadEmphasis:r.composition.networks.roads.emphasis,roadNight:r.composition.ambience==='night'};
     const rasterOf=async(svg:string)=>{const document=new DOMParser().parseFromString(svg,'image/svg+xml');document.querySelectorAll('.layer-decor').forEach(frame=>frame.remove());return imageOf(new XMLSerializer().serializeToString(document.documentElement));};
     this.exportGround=undefined;
     if(split)this.exportGround=await rasterOf(renderSvg(this.shownWorld(),{...common,layers:{background:false,terrain:false,water:false,landuse:true,city:false,streets:false,roads:false,labels:false,decor:false},landuse:true,legend:false,cartouche:false}));

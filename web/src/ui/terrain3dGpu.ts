@@ -490,7 +490,7 @@ class Terrain3dGpu extends Terrain3d {
       if (contours) { const value = contours.color.replace('#', ''); p.set('groundContourColor', parseInt(value.slice(0, 2), 16) / 255, parseInt(value.slice(2, 4), 16) / 255, parseInt(value.slice(4, 6), 16) / 255); }
     }
     textures.uShoreRing = this.ring?.image.view ?? empty;
-    const field = this.forest, applied = field ? this.occupation : undefined, beach = field?.field.beach;
+    const field = this.forest, applied = this.occupation, beach = field?.field.beach;
     textures.uForestField = field ? image(field.texture).view : empty;
     p.set('uForestRect', field?.field.x ?? 0, field?.field.y ?? 0, field?.field.width ?? 1);
     textures.uForestBank = field?.bank ? image(field.bank).view : empty;
@@ -518,8 +518,10 @@ class Terrain3dGpu extends Terrain3d {
         for (const [ref, name, flag] of [[material.to, 'semanticTile', 'hasSemanticTile'], [material.from, 'previousSemanticTile', 'hasPreviousSemanticTile']] as const) {
           const overlay = this.semanticTiles.get(ref.texture);
           textures[name] = overlay ? image(overlay.texture).view : empty;
-          p.set(flag, overlay ? 1 : 0);
-          p.setArray(name === 'semanticTile' ? 'semanticRect' : 'previousSemanticRect', this.textureRect(overlay ? { ...ref, pixels: overlay.pixels, gutter: overlay.gutter } : ref, tile));
+          p.set(flag, overlay?.semantic ? 1 : 0);
+          p.setArray(name === 'semanticTile' ? 'semanticRect' : 'previousSemanticRect', this.overlayRect(ref,tile));
+          p.set(name === 'semanticTile' ? 'hasGroundTile' : 'hasPreviousGroundTile',overlay?.atlas ? 1 : 0);
+          p.setArray(name === 'semanticTile' ? 'groundRect' : 'previousGroundRect',this.overlayRect(ref,tile,true));
         }
         const slot = this.params.alloc(p.bytes), seams = this.seamPool.alloc(draw.correction), indices = this.patchIndices(tile, draw.clip);
         pass.setBindGroup(0, device.createBindGroup({ layout: gpu.layouts.terrain, entries: [

@@ -1,5 +1,5 @@
 import type { TerrainData, TerrainSettings } from '../../../rust/bridge/terrain';
-import { isFantasyStyle, prepareFantasyTerrain, type FantasyOptions, type FantasyTerrainPainting } from '../../../rust/bridge/fantasyTerrain';
+import { isFantasyStyle, prepareFantasyTerrain, fantasyLod, type FantasyOptions, type FantasyTerrainPainting } from '../../../rust/bridge/fantasyTerrain';
 import { brushFrame, paintingCanvas, stampHeight, type BrushLibrary, type Stamp } from '../../../rust/bridge/fantasyPainting';
 import type { TerrainStyle } from '../render/terrainStyle';
 import type { UrbanPaintingContext } from '../../../rust/bridge/urbanPaintingMask';
@@ -63,7 +63,7 @@ export async function terrain3dTexture(base: HTMLCanvasElement, terrain: Terrain
   // Ground painted per tile (the city plan), above the overlay and under the brushes.
   ground?.(context);
   if (drawBrushes && isFantasyStyle(style)) {
-    const painting = prepareFantasyTerrain(terrain, style, settings, options, urban);
+    const painting = prepareFantasyTerrain(terrain, style, settings, { ...options, lod: fantasyLod(settings.width, region.width) }, urban);
     if (painting?.stamps.length) {
       const stamps = visibleStamps(painting, region, base.width);
       if (!stamps.length) return base;

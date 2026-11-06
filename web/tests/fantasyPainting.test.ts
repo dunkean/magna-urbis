@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { planPainting, createBrushLibrary, brushFrame, paintingSvg, FAMILY_NAMES, type Atlas, type BrushFamily, type PaintSample, paintingCover } from '../../rust/bridge/fantasyPainting';
 const sample = (x: number, y: number): PaintSample => ({ height: x < 1500 ? -10 : 300 + y * .04, slope: .08, temperature: 18, rain: 1600, water: y > 7000 && y < 7500 });
 const options = { seed: 'fantasy-42', pitch: 150 };
+// Overview raster: 1400 px for a map 65 brush pitches wide; stamp sizes clamp in px, then convert to metres.
+const mpp = options.pitch * 65 / 1400, mean = (v: number[]) => v.reduce((a, b) => a + b, 0) / v.length;
 describe('fantasy cartographic placement', () => {
   it('packs variable relief and fixed-width trees, preserving relief under a tight budget', () => {
     const bounds = { x: 0, y: 0, width: 10000, height: 10000 };
@@ -10,8 +12,12 @@ describe('fantasy cartographic placement', () => {
     const summits = stamps.filter(s => s.brush === 5 || s.brush === 6);
     const trees = stamps.filter(s => s.brush < 4 || s.brush >= 12 && s.brush <= 14);
     expect(summits.length).toBeGreaterThan(40);
-    expect(summits.every(s => s.width >= options.pitch * 2.2 * .95 * .55 && s.width <= options.pitch * 6.6 * 1.05 * .55)).toBe(true);
-    expect(new Set(trees.map(s => s.width))).toEqual(new Set([options.pitch * .48 * .55]));
+    // Summit widths vary (heavy-tailed) but stay within the mountain pixel clamp times the largest size multiplier.
+    expect(summits.every(s => s.width > 0 && s.width <= 90 * mpp * 2.1)).toBe(true);
+    expect(Math.max(...summits.map(s => s.width))).toBeGreaterThan(Math.min(...summits.map(s => s.width)) * 2);
+    // Trees share one fixed width (the overview crown clamp).
+    expect(new Set(trees.map(s => s.width)).size).toBe(1);
+    expect(trees[0].width).toBeCloseTo(4.5 * mpp, 6);
     expect(trees.every(s => s.heightScale! >= .95 && s.heightScale! <= 1.05)).toBe(true);
     // Half the map alone contains several times the former whole-map forest count.
     expect(trees.length).toBeGreaterThan(5000);
@@ -19,12 +25,12 @@ describe('fantasy cartographic placement', () => {
     expect(limited).toHaveLength(512);
     expect(limited.every(s => s.brush === 5 || s.brush === 6)).toBe(true);
   });
-  it('fills rolling terrain with more, smaller hills', () => {
+  it('fills rolling terrain with many hills capped well below peak size', () => {
     const stamps = planPainting({ x: 0, y: 0, width: 10000, height: 10000 }, () => ({ height: 500, slope: .3, temperature: 18, rain: 1500 }), options);
-    expect(stamps.length).toBeGreaterThan(2000);
+    expect(stamps.length).toBeGreaterThan(1000);
     const hills = stamps.filter(s => s.brush === 4);
-    expect(hills.length).toBeGreaterThan(2000);
-    expect(hills.every(s => s.width <= options.pitch * 2.7 * 1.05)).toBe(true);
+    expect(hills.length).toBeGreaterThan(800);
+    expect(hills.every(s => s.width <= 34 * mpp * 1.3)).toBe(true);
     expect(stamps.some(s => s.brush < 4)).toBe(true);
   });
   it('replays exactly and preserves world anchors between overlapping crops', () => {
@@ -62,15 +68,16 @@ describe('fantasy cartographic placement', () => {
     expect(svg).toContain('data-brush="pines"'); expect(svg).toContain('data-variant="5"');
     expect((svg.match(/<image /g) ?? []).length).toBeLessThan(5);
   });
-  it('keeps high valleys wooded while ridge brushes grow continuously towards the summits', () => {
+  it('keeps high valleys wooded while ridge brushes grow with relief towards the summits', () => {
     const valley = { height: 1800, slope: .08, tpi: -.12, relief: 900, temperature: 18, rain: 1600 };
     const ridge = { ...valley, tpi: .12, slope: .45 };
     expect(paintingCover(valley).woods).toBeGreaterThan(paintingCover(ridge).woods);
     expect(paintingCover(valley).mountain).toBeLessThan(.16);
-    const mountains = (height: number) => planPainting({ x: 0, y: 0, width: 3000, height: 3000 }, () => ({ ...ridge, height, temperature: 28 }), options).filter(s => s.brush === 5 || s.brush === 6);
-    const low = mountains(900), high = mountains(3000);
-    expect(low.length).toBeGreaterThan(10);
-    expect(Math.min(...high.map(s => s.width))).toBeGreaterThan(Math.max(...low.map(s => s.width)) * 1.8);
+    const mountains = (relief: number) => planPainting({ x: 0, y: 0, width: 3000, height: 3000 }, () => ({ ...ridge, height: 600, relief, temperature: 28 }), options).filter(s => s.brush === 5 || s.brush === 6);
+    const low = mountains(500), high = mountains(900);
+    expect(low.length).toBeGreaterThan(10); expect(high.length).toBeGreaterThan(10);
+    // Hierarchy holds on average; individual sizes overlap because of the per-stamp variance.
+    expect(mean(high.map(s => s.width))).toBeGreaterThan(mean(low.map(s => s.width)) * 1.4);
   });
 
   it('follows actual occupation optionally, with no invented woodland, crops or orchards', () => {
