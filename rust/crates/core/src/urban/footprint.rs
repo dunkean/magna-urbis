@@ -444,7 +444,7 @@ struct Geography {
     contour_angle: f64,
 }
 fn slope(surface: Surface<'_>, p: Point) -> (f64, f64) {
-    let d = (surface.width / surface.n as f64 * 0.45).max(1.0);
+    let d = (surface.width / surface.height_resolution() as f64 * 0.45).max(1.0);
     (
         (surface.height_at(Point { x: p.x + d, y: p.y })
             - surface.height_at(Point { x: p.x - d, y: p.y }))
@@ -606,7 +606,7 @@ pub(super) fn orientation(site: &Site, cfg: &LayoutConfig, surface: Surface<'_>,
         angle = 0.0;
     }
     if p.orientation == "terrain" {
-        let step = (surface.width / surface.n as f64).max(5.0);
+        let step = (surface.width / surface.height_resolution() as f64).max(5.0);
         let c = site.center;
         let gx = surface.height_at(Point {
             x: c.x + step,
@@ -690,7 +690,7 @@ fn summit_access(site: &Site, cfg: &LayoutConfig, surface: Surface<'_>, roads: &
         return None;
     }
     let reach = radius * 0.75;
-    let step = (surface.width / surface.n as f64 * 0.5).max(reach / 24.0).max(2.0);
+    let step = (surface.width / surface.height_resolution() as f64 * 0.5).max(reach / 24.0).max(2.0);
     let count = (reach / step).ceil() as i32;
     let mut candidates = vec![site.center];
     for y in -count..=count {
@@ -2129,7 +2129,7 @@ fn ribbon(
     let ry = radius / cfg.footprint.aspect.max(3.0).sqrt() * 1.35;
     let reserve = template(c, "rectangle", (rx * ry).sqrt(), rx / ry, angle, 0.0, 0.0);
     let bounds = g::bbox(&reserve);
-    let step = (surface.width / surface.n as f64)
+    let step = (surface.width / surface.height_resolution() as f64)
         .max(((bounds.2 - bounds.0).max(bounds.3 - bounds.1) + radius * 4.0) / 160.0);
     let grid = Grid {
         x0: (bounds.0 - radius * 2.0).max(0.0),
@@ -2650,7 +2650,7 @@ mod tests {
     #[test]
     fn v7_a_secondary_planned_core_takes_the_given_frame() {
         let n = 64; let height = vec![10.0; n * n]; let water = vec![0u8; n * n];
-        let surface = Surface { geometry: None, width: 4000., n, height: &height, water: &water };
+        let surface = Surface { geometry: None, width: 4000., n, height: &height, water: &water, interpolation: Default::default(),};
         let centers = vec![UrbanCenter { id: 0, point: Point { x: 1000., y: 1000. }, weight: 0.6 },
             UrbanCenter { id: 1, point: Point { x: 3000., y: 3000. }, weight: 0.4 }];
         let cfg = LayoutConfig { footprint: FootprintConfig { irregularity: 0.0, ..Default::default() }, ..Default::default() };
@@ -2667,7 +2667,7 @@ mod tests {
     fn site_options_grid_outline_uses_the_grid_at_500_and_10000_and_keeps_water_out() {
         let height=vec![20.;128*128];
         let water=vec![0; height.len()];
-        let surface=Surface{geometry:None,width:3000.,n:128,height:&height,water:&water};
+        let surface=Surface{geometry:None,width:3000.,n:128,height:&height,water:&water, interpolation: Default::default(),};
         let mut cfg=LayoutConfig{fortification:"none".into(),regular_grid_outline:true,..Default::default()};
         cfg.footprint.budget="radius".into();
         cfg.footprint.epochs=1;
@@ -2719,7 +2719,7 @@ mod tests {
             (100.+45.*(-((x-600.).powi(2)+(y-500.).powi(2))/(2.*140_f64.powi(2))).exp()) as f32
         }).collect();
         let water=vec![0; height.len()];
-        let surface=Surface{geometry:None,width:1000.,n,height:&height,water:&water};
+        let surface=Surface{geometry:None,width:1000.,n,height:&height,water:&water, interpolation: Default::default(),};
         let site=Site{key:"hill".into(),name:String::new(),culture:"european-organic".into(),population:3000,center:Point{x:480.,y:500.},radius:300.};
         let cfg=LayoutConfig{power_high_ground:true,site_archetype:"hilltop".into(),..Default::default()};
         let roads=vec![Street{path:vec![Point{x:350.,y:250.},Point{x:350.,y:750.}],widths:vec![5.;2],rank:1,role:"regional".into()}];
@@ -2751,6 +2751,7 @@ mod tests {
             n: 128,
             height: &h,
             water: &w,
+            interpolation: Default::default(),
         };
         let site = Site {
             key: "capacity".into(),
@@ -2795,7 +2796,7 @@ mod tests {
     fn review12_a_giant_town_widens_its_own_tissue_instead_of_borrowing() {
         let h = vec![10.0; 128 * 128];
         let w = vec![0; h.len()];
-        let surface = Surface { geometry: None, width: 8000.0, n: 128, height: &h, water: &w };
+        let surface = Surface { geometry: None, width: 8000.0, n: 128, height: &h, water: &w, interpolation: Default::default(),};
         let site = Site { key: "capacity".into(), name: String::new(), population: 10_000, culture: "giant-hold".into(),
             center: Point { x: 4000.0, y: 4000.0 }, radius: 735.0 };
         let cfg = LayoutConfig { culture: "site".into(), ..LayoutConfig::default() };
@@ -2872,6 +2873,7 @@ mod tests {
             n: 128,
             height: &height,
             water: &water,
+            interpolation: Default::default(),
         };
         let mut cfg = LayoutConfig {
             footprint: FootprintConfig {
@@ -2966,6 +2968,7 @@ mod tests {
             n: 128,
             height: &h,
             water: &w,
+            interpolation: Default::default(),
         };
         let cfg = LayoutConfig {
             footprint: FootprintConfig {
@@ -3024,6 +3027,7 @@ mod tests {
             n: 128,
             height: &h,
             water: &w,
+            interpolation: Default::default(),
         };
         let cfg = LayoutConfig {
             footprint: FootprintConfig {
@@ -3063,6 +3067,7 @@ mod tests {
             n: 128,
             height: &h,
             water: &w,
+            interpolation: Default::default(),
         };
         let cfg = LayoutConfig {
             footprint: FootprintConfig {
@@ -3103,6 +3108,7 @@ mod tests {
             n: 128,
             height: &h,
             water: &w,
+            interpolation: Default::default(),
         };
         let (west, east) = (62.0 / 128.0 * 3000.0, 65.0 / 128.0 * 3000.0);
         let road = |a: f64, b: f64, role: &str| Street {
@@ -3187,6 +3193,7 @@ mod tests {
                 n,
                 height: &h,
                 water: &w,
+                interpolation: Default::default(),
             };
             let (west, east) = (1500.0, 1500.0 + cells as f64 * 5.0);
             let a = generate("stream", &site, &cfg, &morph, surface, &[], 250.0);
@@ -3240,6 +3247,7 @@ mod tests {
             n: 128,
             height: &h,
             water: &w,
+            interpolation: Default::default(),
         };
         let mut cfg = LayoutConfig {
             footprint: FootprintConfig {
@@ -3282,6 +3290,7 @@ mod tests {
             n: 128,
             height: &h,
             water: &w,
+            interpolation: Default::default(),
         };
         let cfg = LayoutConfig {
             footprint: FootprintConfig {
@@ -3327,6 +3336,7 @@ mod tests {
             n: 64,
             height: &h,
             water: &w,
+            interpolation: Default::default(),
         };
         let raw = grid.contours(&mask);
         let anchors = grid.boundary_centers(&mask);
@@ -3419,6 +3429,7 @@ mod tests {
             n: 64,
             height: &h,
             water: &w,
+            interpolation: Default::default(),
         };
         let raw = grid.contours(&mask);
         let anchors = grid.boundary_centers(&mask);
@@ -3473,6 +3484,7 @@ mod tests {
             n,
             height: &h,
             water: &water,
+            interpolation: Default::default(),
         };
         let shoreline = super::super::geography::raster_shoreline(&raster).unwrap();
         let surface = shoreline.surface(raster);
@@ -3517,6 +3529,7 @@ mod tests {
             n: 64,
             height: &h,
             water: &w,
+            interpolation: Default::default(),
         };
         let raw = grid.contours(&mask);
         let anchors = grid.boundary_centers(&mask);
@@ -3583,6 +3596,7 @@ mod tests {
             n: 64,
             height: &h,
             water: &w,
+            interpolation: Default::default(),
         };
         let raw = dry(surface, &grid.contours(&mask));
         let anchors = grid.boundary_centers(&mask);

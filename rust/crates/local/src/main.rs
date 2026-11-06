@@ -20,9 +20,8 @@ use std::{
 };
 use urban_session::{RetainedUrban, UrbanSourceHandle};
 
-const MAX_BODY: usize = 128 * 1024 * 1024;
+const MAX_BODY: usize = 320 * 1024 * 1024;
 const MAX_SESSIONS: usize = 8;
-const FIELD_N: usize = 1024;
 type ApiResult<T> = Result<T, String>;
 
 #[derive(Default)]
@@ -31,6 +30,7 @@ struct Session {
     terrain: Option<TerrainGenerator>,
     terrain_key: String,
     field: Vec<f32>,
+    field_n: usize,
     field_exact: bool,
     settlements: Option<settlements::Terrain>,
     layouts: Option<(u64, Arc<Vec<urban::Layout>>)>,
@@ -83,6 +83,8 @@ impl Sessions {
 struct TerrainSettings {
     seed: String,
     width: f64,
+    sample_spacing: Option<f64>,
+    source_n: Option<usize>,
     relief: String,
     erosion: f64,
     motif_size: f64,
@@ -200,6 +202,23 @@ fn terrain_reply(input: TerrainRequest, state: &mut Session) -> ApiResult<Reply>
         // Free old grids before creating the next ones, bounding peak session memory.
         state.terrain = None;
         state.field.clear();
+        let requested_spacing = settings.sample_spacing.unwrap_or(30.0);
+        if !requested_spacing.is_finite() || !(1.0..=1000.0).contains(&requested_spacing) {
+            return Err("Pas physique invalide (1 à 1000 mètres).".into());
+        }
+        let derived_n = (settings.width / requested_spacing).ceil() as usize;
+        let source_n = if let Some(heights) = settings.surface.as_ref() {
+            let n = (heights.len() as f64).sqrt() as usize;
+            if n * n != heights.len() { return Err("Surface importée non carrée.".into()); }
+            n
+        } else { derived_n };
+        if settings.source_n.is_some_and(|n| n != source_n)
+            || settings.surface.is_none() && source_n != derived_n {
+            return Err("Résolution physique incohérente avec le pas demandé.".into());
+        }
+        if !(16..=8192).contains(&source_n) || source_n.saturating_mul(source_n).saturating_mul(96) > 1536 * 1024 * 1024 {
+            return Err("Champ physique trop grand ; augmentez le pas de génération.".into());
+        }
         let mix = if settings.relief == "mixed" {
             settings.mountain_mix
         } else {
@@ -211,14 +230,16 @@ fn terrain_reply(input: TerrainRequest, state: &mut Session) -> ApiResult<Reply>
             .and_then(|s| s["processing"].as_str());
         let mut terrain = if let Some(heights) = settings.surface.as_ref() {
             if processing == Some("erosion") {
-                let mut generator = TerrainGenerator::new_with_environment(
+                let mut generator = TerrainGenerator::new_mixed_with_noise_at_resolution(
                     &settings.seed,
                     settings.width,
                     &settings.relief,
                     settings.erosion,
                     settings.motif_size,
                     mix,
+                    None,
                     settings.environment.as_deref(),
+                    source_n,
                 )?;
                 generator.set_edited_surface(heights)?;
                 generator
@@ -234,7 +255,7 @@ fn terrain_reply(input: TerrainRequest, state: &mut Session) -> ApiResult<Reply>
             );
         } else {
             match settings.zones.as_ref() {
-                Some(zones) => TerrainGenerator::with_zones(
+                Some(zones) => TerrainGenerator::with_zones_at_resolution(
                     &settings.seed,
                     settings.width,
                     &settings.relief,
@@ -243,15 +264,18 @@ fn terrain_reply(input: TerrainRequest, state: &mut Session) -> ApiResult<Reply>
                     mix,
                     settings.environment.as_deref(),
                     zones,
+                    source_n,
                 )?,
-                None => TerrainGenerator::new_with_environment(
+                None => TerrainGenerator::new_mixed_with_noise_at_resolution(
                     &settings.seed,
                     settings.width,
                     &settings.relief,
                     settings.erosion,
                     settings.motif_size,
                     mix,
+                    None,
                     settings.environment.as_deref(),
+                    source_n,
                 )?,
             }
         };
@@ -262,16 +286,11 @@ fn terrain_reply(input: TerrainRequest, state: &mut Session) -> ApiResult<Reply>
         // Preserve their control points rather than smoothing them a second time.
         let family = terrain.sampling_parameters()[5];
         state.field_exact = (family == 1.0 || family == 4.0) && settings.relief != "cavern";
-        state.field = if settings.relief == "cavern" {
-            Vec::new()
-        } else if state.field_exact {
-            let mut field = terrain.sampling_field();
-            field.truncate(FIELD_N * FIELD_N);
-            field
+        state.field_n = terrain.source_resolution();
+        state.field = if state.field_exact {
+            terrain.sampling_base_field()
         } else {
-            terrain
-                .sample_region(0.0, 0.0, settings.width, FIELD_N)?
-                .height
+            terrain.physical_height_field()
         };
         state.terrain = Some(terrain);
         state.terrain_key = key;
@@ -282,6 +301,8 @@ fn terrain_reply(input: TerrainRequest, state: &mut Session) -> ApiResult<Reply>
     let r = input.region;
     let data = terrain.sample_region(r.x, r.y, r.extent, r.resolution)?;
     let sampling_ms = millis(sampling_started);
+    let physical = if input.field && !state.field.is_empty() { terrain.physical_height_field() } else { Vec::new() };
+    let physical_cave = if input.field && settings.relief == "cavern" { terrain.physical_cave_field() } else { Vec::new() };
     let mut arrays = vec![
         ("height", data.height.as_slice()),
         ("normalX", data.normal_x.as_slice()),
@@ -290,10 +311,12 @@ fn terrain_reply(input: TerrainRequest, state: &mut Session) -> ApiResult<Reply>
     ];
     if input.field && !state.field.is_empty() {
         arrays.push(("field", &state.field));
+        arrays.push(("physical", &physical));
     }
     let descriptors: Vec<Value> = arrays
         .iter()
         .map(|(name, data)| json!({"name": name, "type": "f32", "count": data.len()}))
+        .chain((!physical_cave.is_empty()).then_some(json!({"name": "physicalCave", "type": "u8", "count": physical_cave.len()})))
         .chain(std::iter::once(
             json!({"name": "caveMask", "type": "u8", "count": data.cave_mask.len()}),
         ))
@@ -302,17 +325,19 @@ fn terrain_reply(input: TerrainRequest, state: &mut Session) -> ApiResult<Reply>
         "resolution": data.resolution, "minHeight": data.min_height, "maxHeight": data.max_height,
         "globalMinHeight": terrain.min_height(), "globalMaxHeight": terrain.max_height(),
         "motifSize": settings.motif_size, "prepareMs": prepare_ms, "samplingMs": sampling_ms,
-        "fieldExact": state.field_exact, "fieldN": FIELD_N, "arrays": descriptors,
+        "fieldExact": state.field_exact, "fieldN": state.field_n,
+        "fieldFloor": if settings.relief != "cavern" && terrain.sampling_parameters()[5] == 1.0 { 0.3 } else { 0.0 }, "arrays": descriptors,
         "erosionDefaults": magna_urbis_core::erosion_defaults(&settings.relief, settings.width, settings.motif_size, settings.mountain_mix)?});
     let mut encoded = serde_json::to_vec(&header).map_err(|e| e.to_string())?;
     encoded.resize(encoded.len().next_multiple_of(4), b' ');
     let count: usize = arrays.iter().map(|(_, a)| a.len() * 4).sum();
-    let mut body = Vec::with_capacity(4 + encoded.len() + count + data.cave_mask.len());
+    let mut body = Vec::with_capacity(4 + encoded.len() + count + physical_cave.len() + data.cave_mask.len());
     body.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
     body.extend_from_slice(&encoded);
     for (_, array) in arrays {
         extend_f32_le(&mut body, array);
     }
+    body.extend_from_slice(&physical_cave);
     body.extend_from_slice(&data.cave_mask);
     Ok(Reply {
         kind: "application/octet-stream",
@@ -325,6 +350,12 @@ struct RasterHeader {
     session: String,
     width: f64,
     n: usize,
+    #[serde(rename = "physicalN")]
+    physical_n: Option<usize>,
+    #[serde(rename = "physicalInterpolation")]
+    physical_interpolation: Option<String>,
+    #[serde(rename = "physicalFloor")]
+    physical_floor: Option<f32>,
     geometry: Option<urban::VectorGeography>,
     #[serde(default)]
     region: Option<magna_urbis_core::resources::RegionInput>,
@@ -353,9 +384,16 @@ fn raster_upload(body: &[u8], sessions: &Mutex<Sessions>) -> ApiResult<Reply> {
         .checked_mul(header.n)
         .filter(|_| (16..=1024).contains(&header.n))
         .ok_or("RÃƒÆ’Ã‚Â©solution invalide.")?;
+    let physical_count = match header.physical_n {
+        Some(n) if (2..=8192).contains(&n) => n.checked_mul(n).ok_or("Surface physique invalide.")?,
+        Some(_) => return Err("Surface physique: définition 2–8192 requise.".into()),
+        None => 0,
+    };
+    let expected = physical_count.checked_mul(4).and_then(|bytes| bytes.checked_add(count * 17))
+        .ok_or("Surface physique trop grande.")?;
     let data = body
         .get(end..)
-        .filter(|data| data.len() == count * 17)
+        .filter(|data| data.len() == expected)
         .ok_or("Raster incomplet.")?;
     let floats = |index| -> Vec<f32> {
         data[index * count * 4..(index + 1) * count * 4]
@@ -374,7 +412,7 @@ fn raster_upload(body: &[u8], sessions: &Mutex<Sessions>) -> ApiResult<Reply> {
         .iter()
         .map(|bytes| i32::from_le_bytes(*bytes))
         .collect();
-    let water = &data[4 * count * 4..];
+    let water = &data[4 * count * 4..17 * count];
     let mut terrain = settlements::Terrain::new(settlements::Raster {
         width: header.width,
         n: header.n,
@@ -384,6 +422,15 @@ fn raster_upload(body: &[u8], sessions: &Mutex<Sessions>) -> ApiResult<Reply> {
         river_width: &river_width,
         river_ids: &river_ids,
     })?;
+    if let Some(n) = header.physical_n {
+        let physical = data[17 * count..].as_chunks::<4>().0.iter()
+            .map(|bytes| f32::from_le_bytes(*bytes)).collect();
+        match header.physical_interpolation.as_deref() {
+            Some("bspline") => terrain.set_physical_spline(n, physical, header.physical_floor.unwrap_or(0.0))?,
+            None => terrain.set_physical_height(n, physical)?,
+            Some(_) => return Err("Interpolation physique inconnue.".into()),
+        }
+    }
     if let Some(geometry) = header.geometry {
         terrain.set_urban_geometry(geometry)?;
     }

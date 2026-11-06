@@ -24,7 +24,7 @@ fn morph(site: &Site, cfg: &LayoutConfig) -> Morph {
         &cfg.recipe, "core", cfg.density, &cfg.params, "quarters").unwrap(), &cfg.tissue)
 }
 fn surface<'a>(height: &'a [f32], water: &'a [u8]) -> Surface<'a> {
-    Surface { geometry: None, width: 4000., n: 128, height, water }
+    Surface { geometry: None, width: 4000., n: 128, height, water, interpolation: Default::default(),}
 }
 fn bytes<T: serde::Serialize>(value: &T) -> Vec<u8> { serde_json::to_vec(value).unwrap() }
 

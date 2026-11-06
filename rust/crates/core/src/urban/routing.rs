@@ -83,7 +83,8 @@ fn valid_surface(surface: Surface<'_>) -> bool {
     surface.n > 0
         && surface.width.is_finite()
         && surface.width > 0.0
-        && surface.height.len() == surface.n * surface.n
+        && surface.height_resolution() >= 2
+        && surface.height_resolution().checked_mul(surface.height_resolution()) == Some(surface.height.len())
         && surface.water.len() == surface.n * surface.n
 }
 
@@ -111,7 +112,7 @@ fn inspect_segment(surface: Surface<'_>, a: Point, b: Point, dry: bool) -> Optio
     if distance < 1e-8 {
         return (!dry || !surface.wet(a)).then_some(0.0);
     }
-    let half = surface.width / surface.n as f64 * 0.5;
+    let half = surface.width / surface.height_resolution() as f64 * 0.5;
     let crossing = |origin: f64, delta: f64| {
         if delta.abs() < 1e-12 {
             return (f64::INFINITY, f64::INFINITY);
@@ -785,7 +786,7 @@ mod tests {
         let (a, b) = (Point { x: 24.0, y: 48.0 }, Point { x: 68.0, y: 48.0 });
         for closed in [false, true] {
             let water: Vec<_> = (0..n * n).map(|i| u8::from((22..26).contains(&(i % n)) && (closed || i / n < 34))).collect();
-            let surface = Surface { geometry: None, width: 96.0, n, height: &height, water: &water };
+            let surface = Surface { geometry: None, width: 96.0, n, height: &height, water: &water, interpolation: Default::default(),};
             for raised in [false, true] {
                 let mut planner = if raised { RoutePlanner::raised_bank(surface, (8.0, 8.0, 88.0, 88.0)) }
                     else { RoutePlanner::bank(surface, (8.0, 8.0, 88.0, 88.0)) };
@@ -820,6 +821,7 @@ mod tests {
             n,
             height: &height,
             water: &water,
+            interpolation: Default::default(),
         };
         let a = Point { x: 70.0, y: 260.0 };
         let b = Point { x: 450.0, y: 260.0 };
@@ -851,6 +853,7 @@ mod tests {
             n: 3,
             height: &height,
             water: &[0; 9],
+            interpolation: Default::default(),
         };
         let a = Point { x: 5.0, y: 15.0 };
         let b = Point { x: 25.0, y: 15.0 };
@@ -863,6 +866,7 @@ mod tests {
             n: 2,
             height: &[0.0, 0.0, 0.0, 10.0],
             water: &[0; 4],
+            interpolation: Default::default(),
         };
         let a = Point { x: 5.0, y: 5.0 };
         let b = Point { x: 15.0, y: 15.0 };
@@ -885,6 +889,7 @@ mod tests {
             n,
             height: &height,
             water: &water,
+            interpolation: Default::default(),
         };
         let a = Point { x: 50.3, y: 100.2 };
         let b = Point { x: 149.1, y: 101.7 };
@@ -920,6 +925,7 @@ mod tests {
             n,
             height: &height,
             water: &water,
+            interpolation: Default::default(),
         };
         let a = Point { x: 80.0, y: 120.0 };
         let b = Point { x: 120.0, y: 120.0 };
@@ -946,6 +952,7 @@ mod tests {
             n,
             height: &height,
             water: &water,
+            interpolation: Default::default(),
         };
         let mut planner = RoutePlanner::new(surface, (30.0, 30.0, 130.0, 130.0));
         assert!(
@@ -966,6 +973,7 @@ mod tests {
             n,
             height: &height,
             water: &water,
+            interpolation: Default::default(),
         };
         let mut planner = RoutePlanner::new(surface, (0.0, 0.0, 256.0, 256.0));
         let mut region = g::rectangle(20.0, 20.0, 220.0, 220.0);

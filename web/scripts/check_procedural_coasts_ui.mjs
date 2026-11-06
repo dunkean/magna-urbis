@@ -15,6 +15,7 @@ try {
     const frame=layout==='rustbench'?page.frameLocator('#frames iframe').first():page;
     await page.waitForFunction(embedded=>{const w=embedded?document.querySelector('#frames iframe')?.contentWindow:window;return w?.magnaBenchContext?.ready()&&w.document.querySelector('#terrainLoading')?.hidden;},layout==='rustbench');
     const panel=frame.locator('#proceduralPipeline'),coasts=panel.locator('[data-stage="coasts"]');
+    assert(await panel.isHidden());await frame.locator('#proceduralInspector').click();await panel.waitFor();
     assert.equal(await panel.locator('[data-stage] > summary .pipeline-stage-toggle input').count(),20);
     assert.equal(await panel.locator('[data-stage] > summary [data-run-stage]').count(),20);
     assert.equal(await frame.locator('#coastStage').isVisible(),false);assert.equal(await frame.locator('#hydroStage').isVisible(),false);
@@ -40,7 +41,7 @@ try {
     }
     if(!await panel.locator('#terrainMethod').isVisible())await panel.locator('#reliefStage > summary').click({position:{x:25,y:12}});
     await panel.locator('#terrainMethod').selectOption('neural');assert(await frame.locator('#coastStage #coastAll').isVisible());assert.equal(await frame.locator('#reliefStage .pipeline-stage-actions').isVisible(),false);
-    await frame.locator('#terrainMethod').selectOption('procedural');await panel.locator('[data-open-coasts]').click();assert(await coasts.locator('#coastAll').isVisible());assert(await coasts.locator('#islandMode').isVisible());
+    await frame.locator('#terrainMethod').selectOption('procedural');assert(await panel.isHidden());await frame.locator('#proceduralInspector').click();await panel.locator('[data-open-coasts]').click();assert(await coasts.locator('#coastAll').isVisible());assert(await coasts.locator('#islandMode').isVisible());
     const position=await coasts.evaluate(row=>({top:row.querySelector('summary').getBoundingClientRect().top,toolbarBottom:document.querySelector('#proceduralPipeline .inspector-actions').getBoundingClientRect().bottom}));assert(position.top>=position.toolbarBottom,JSON.stringify(position));
     assert.equal(await frame.locator('#coastControl').count(),1);assert.equal(await frame.locator('#islandMode').count(),1);
     await page.screenshot({path:`${out}/coasts-headers-${layout}.png`});

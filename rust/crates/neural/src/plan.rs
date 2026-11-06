@@ -5,6 +5,7 @@
 //! `[stride·t, stride·t + size)`, exactly as the upstream infinite tensors.
 
 pub const NATIVE_M: f64 = 30.0;
+pub const MAX_EXTENT_M: f64 = 200_000.0;
 pub const LATENT: i64 = 8;
 pub const COARSE: i64 = 32;
 pub const DECODER_SIZE: i64 = 512;
@@ -16,10 +17,9 @@ pub const COARSE_STRIDE: i64 = 48;
 /// Laplacian reconstruction margin: (11 // 2 + 1) latent cells.
 pub const ELEVATION_PAD: i64 = 6 * LATENT;
 
-/// Native crop origin where a 40 km map needs only 1 coarse, 8×8 base and 4×4
-/// decoder windows. Its 48 m reconstruction margin is the only area that
-/// blends fewer decoder windows than an infinite world would.
-pub const FAST_ORIGIN: i64 = 6304;
+/// A fixed world-grid placement that keeps the full-context dependency inside
+/// one coarse tile for every supported regional extent, including 200 km.
+pub const REGIONAL_ORIGIN: i64 = 4784;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Span {
@@ -63,11 +63,44 @@ pub struct Plan {
 }
 
 impl Plan {
+    /// Full-context regional plan. Reject a request whose dependencies cross
+    /// another coarse tile rather than silently adding a second coarse pass.
+    pub fn regional(extent_m: f64) -> Result<Self, String> {
+        if !extent_m.is_finite() || !(500.0..=MAX_EXTENT_M).contains(&extent_m) {
+            return Err(format!(
+                "Neural extent must be between 500 and {MAX_EXTENT_M} metres"
+            ));
+        }
+        let plan = Self::with_context(
+            REGIONAL_ORIGIN,
+            Self::cells(extent_m),
+            true,
+            ELEVATION_PAD,
+            1,
+            3,
+        );
+        if plan.coarse.len() != 1 {
+            return Err("Neural region requires more than one coarse window".into());
+        }
+        Ok(plan)
+    }
+
     /// `exact` blends every decoder window of the margin, as the infinite reference.
     pub fn new(origin: i64, size: usize, exact: bool) -> Self {
+        Self::with_context(origin, size, exact, ELEVATION_PAD, 1, 3)
+    }
+
+    fn with_context(
+        origin: i64,
+        size: usize,
+        exact: bool,
+        pad: i64,
+        coarse_before: i64,
+        coarse_after: i64,
+    ) -> Self {
         let residual = Span {
-            start: (origin - ELEVATION_PAD).div_euclid(LATENT) * LATENT,
-            end: -(-(origin + size as i64 + ELEVATION_PAD)).div_euclid(LATENT) * LATENT,
+            start: (origin - pad).div_euclid(LATENT) * LATENT,
+            end: -(-(origin + size as i64 + pad)).div_euclid(LATENT) * LATENT,
         };
         let decoder = if exact {
             overlapping(residual.start, residual.end, DECODER_SIZE, DECODER_STRIDE)
@@ -84,8 +117,8 @@ impl Plan {
         };
         let base = overlapping(latent.start, latent.end, BASE_SIZE, BASE_STRIDE);
         let coarse_cells = Span {
-            start: base.start - 1,
-            end: base.end - 1 + 3,
+            start: base.start - coarse_before,
+            end: base.end - 1 + coarse_after,
         };
         let coarse = overlapping(
             coarse_cells.start,
@@ -135,10 +168,17 @@ mod tests {
     }
 
     #[test]
-    fn fast_origin_needs_minimum_windows() {
-        let plan = Plan::new(FAST_ORIGIN, Plan::cells(40000.0), false);
-        assert_eq!(plan.evaluations(4), (4, 64, 16));
-        assert!(plan.residual.start >= plan.decoder.start * DECODER_STRIDE);
-        assert!(plan.residual.end <= (plan.decoder.end - 1) * DECODER_STRIDE + DECODER_SIZE);
+    fn regional_plan_keeps_one_coarse_window_with_full_context() {
+        for extent in [500.0, 2_000.0, 40_000.0, 120_000.0, 200_000.0] {
+            let plan = Plan::regional(extent).unwrap();
+            assert_eq!(plan.coarse.len(), 1, "{extent}");
+            assert!(plan.residual.start >= plan.decoder.start * DECODER_STRIDE);
+            assert!(plan.residual.end <= (plan.decoder.end - 1) * DECODER_STRIDE + DECODER_SIZE);
+        }
+        assert_eq!(Plan::regional(200_000.0).unwrap().size, 6667);
+        assert_eq!(Plan::new(REGIONAL_ORIGIN, 6688, true).coarse.len(), 1);
+        assert_eq!(Plan::new(REGIONAL_ORIGIN, 6689, true).coarse.len(), 2);
+        assert!(Plan::regional(200_001.0).is_err());
+        assert!(Plan::regional(f64::NAN).is_err());
     }
 }

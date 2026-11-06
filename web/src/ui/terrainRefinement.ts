@@ -1,4 +1,5 @@
 import type { HeightLayer } from './terrainGl';
+import { assertRefinementRegistrationBudget } from '../surface/refinementBudget';
 
 export type TerrainAmplification = 'classic' | 'phasor' | 'mse' | 'hybrid';
 export type TerrainRefinement = 'source' | 'noise' | 'neural-earth' | 'neural-earth-phasor' | 'neural-earth-mse' | 'neural-earth-hybrid';
@@ -52,6 +53,7 @@ export class TerrainRefinementSession {
   private constructor(readonly server: string, public registration: RefinementRegistration, private reconnect: () => Promise<RefinementRegistration>) {}
 
   static async create(server: string, field: HeightLayer, options: { seed: string; source?: string; amplification?: TerrainAmplification; intensity?: number; neuralToken?: string; neuralWindow?: { x: number; y: number; width: number; heightScale: number } }): Promise<TerrainRefinementSession> {
+    assertRefinementRegistrationBudget(field.n);
     const body = JSON.stringify({ ...options, width: field.width, n: field.n, heights: base64(field.data), interpolation: 'bspline' });
     const connect = async (): Promise<RefinementRegistration> => {
       let response: Response;

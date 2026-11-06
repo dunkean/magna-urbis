@@ -2,6 +2,7 @@
 import type { TerrainSettings } from './terrain';
 import { seedHash } from './terrainAdjust';
 import { stepSeed } from './generationSeed';
+import { sourceDefinition } from './terrainDefinition';
 
 export const COMPACT_RELIEFS = ['flat', 'hills', 'valley', 'canyon', 'mountains', 'mixed', 'high-mountains'] as const;
 export type PhasorQuality = 'fast' | 'balanced' | 'detailed';
@@ -55,7 +56,7 @@ export function configureCompactPlan(original: Float32Array, settings: TerrainSe
 export function phasorUniforms(settings: TerrainSettings, coast = false): Float32Array {
   validatePhasorSettings(settings.phasor);
   const profile = compactProfile(settings);
-  return new Float32Array([settings.width / 1024, seedHash(stepSeed(settings.generalSeed ?? settings.seed, 'relief-phasor')) & 65535,
+  return new Float32Array([sourceDefinition(settings).spacing, seedHash(stepSeed(settings.generalSeed ?? settings.seed, 'relief-phasor')) & 65535,
     coast ? 0 : (settings.phasor?.intensity ?? 1) * profile.amplitude,
     Math.max(48, Math.min(160, settings.motifSize / 24)) * profile.wavelength, ...new Array(12).fill(0)]);
 }
@@ -103,6 +104,7 @@ export function phasorAt(x: number, y: number, cell: number, seed: number, wavel
 }
 export function applyPhasorCpu(values: Float32Array, settings: TerrainSettings): Float32Array {
   const n=Math.sqrt(values.length),cell=settings.width/n, u=phasorUniforms(settings);
+  if (!Number.isInteger(n) || n !== sourceDefinition(settings).n) throw new Error('Phasor: source physique incompatible avec le pas de génération.');
   const sample=(x:number,y:number):number=>{
     const px=Math.max(0,Math.min(n-1,x/cell-.5)),py=Math.max(0,Math.min(n-1,y/cell-.5)),ix=Math.floor(px),iy=Math.floor(py),tx=px-ix,ty=py-iy;
     const at=(a:number,b:number)=>values[Math.min(n-1,b)*n+Math.min(n-1,a)];

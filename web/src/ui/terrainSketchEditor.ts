@@ -8,6 +8,7 @@ interface MapEditing {
   viewport: HTMLElement; surface: SVGSVGElement;
   bounds: () => { left: number; top: number; size: number };
   width: () => number; setWidth: (width: number) => void;
+  onHeightmapImported?: (resolution: number) => void;
   onEnable: () => void; apply: () => void;
 }
 interface EditorLocale {
@@ -184,7 +185,7 @@ export function createTerrainSketchEditor(host: HTMLElement, initial: TerrainSke
   function displayed(): TerrainSketch { const s=surface();if(!s)throw Error(urbanText(['Générez un terrain d’abord.','Generate terrain first.','请先生成地形。','Genera primero un terreno.','Gere um terreno primeiro.']));return parseTerrainSketch({version:1,resolution:s.resolution,heights:Array.from(s.height),processing:'surface'}); }
   get('surface').onclick=()=>{try{const next=displayed();remember();heightmap=next;mode.value='surface';mutated();setEditing(false);notify();}catch(error){state.textContent=String(error);}};
   const fileInput=get<HTMLInputElement>('file');get('import').onclick=()=>fileInput.click();
-  fileInput.onchange=()=>{const file=fileInput.files?.[0];fileInput.value='';if(!file)return;const expected=revision;void(async()=>{try{const data=await readHeightmap(file,numeric(get('min'),-12000,12000),numeric(get('max'),-12000,12000));if(expected!==revision)return;remember();heightmap=data.terrain;if(data.width)map?.setWidth(data.width);mode.value='surface';mutated();setEditing(false);notify();}catch(error){state.textContent=String(error);}})();};
+  fileInput.onchange=()=>{const file=fileInput.files?.[0];fileInput.value='';if(!file)return;const expected=revision;void(async()=>{try{const data=await readHeightmap(file,numeric(get('min'),-12000,12000),numeric(get('max'),-12000,12000));if(expected!==revision)return;remember();heightmap=data.terrain;if(data.width)map?.setWidth(data.width);mode.value='surface';map?.onHeightmapImported?.(heightmap.resolution);mutated();setEditing(false);notify();}catch(error){state.textContent=String(error);}})();};
   const exportHeightmap=(png:boolean):void=>{try{const fromDisplay=get<HTMLSelectElement>('exportSource').value==='displayed';const s=fromDisplay?displayed():heightmap;if(!s)throw Error(urbanText(['Aucune heightmap importée.','No heightmap imported.','尚未导入高程图。','No se ha importado ningún mapa de altura.','Nenhum mapa de altura importado.']));const width=fromDisplay?surface()?.width??map?.width():map?.width();if(png)download(new Uint8Array(heightmapPng(s,width??40000)).buffer,'image/png','terrain-heightmap.png');else download(JSON.stringify({...s,width,kind:s.processing?'heightmap':'sketch',units:'m',seaLevel:0}),'application/json','terrain-heightmap.json');}catch(error){state.textContent=String(error);}};
   get('export').onclick=()=>exportHeightmap(false);get('png').onclick=()=>exportHeightmap(true);get('exportSource').onchange=draw;
   const setAvailable=(value:boolean):void=>{if(value===available)return;available=value;if(!value)setEditing(false);for(const c of Array.from(host.querySelectorAll<HTMLInputElement|HTMLButtonElement|HTMLSelectElement>('[data-id]')))if(c.matches('button,input,select'))c.disabled=!value;draw();};

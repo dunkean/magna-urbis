@@ -881,6 +881,7 @@ mod tests {
             n: 10,
             height: &heights,
             water: &water,
+            interpolation: Default::default(),
         };
         let pieces = dry_clip(&surface, &shape);
         assert!((pieces.iter().map(area).sum::<f64>() - 8600.0).abs() < 0.01);

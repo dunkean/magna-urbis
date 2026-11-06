@@ -51,7 +51,7 @@ fn foundation_index_preserves_bound_bits_grid_samples_and_local_geometry_lifetim
     let n=32;let water=vec![0;n*n];let flat=vec![0.;n*n];let hill:Vec<f32>=(0..n*n).map(|i|((i%n)as f32)*0.025).collect();
     let dirs=[Point{x:1.,y:0.},Point{x:0.6,y:0.8}];
     for height in [&flat,&hill] {
-        let surface=Surface{geometry:None,width:100.,n,height,water:&water};
+        let surface=Surface{geometry:None,width:100.,n,height,water:&water, interpolation: Default::default(),};
         for recipe in ["AF-MAG-B01","AF-MAG-B02"] {let w=recipe_sources(recipe)[0];
             for step in [0.5,1.] {for stop in [-1.,MAX_FOUNDATION_STEP+0.02] {
                 let old=pose_lower_bound_step_mode(surface,&shape,&dirs,w,stop,step,false);

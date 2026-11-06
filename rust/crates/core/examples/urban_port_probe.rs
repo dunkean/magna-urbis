@@ -27,7 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(v)=args.get(4) {f.layout_config.port_shelter=Some(v.parse()?);}
     let vector=f.geometry.as_ref().map(|g|(g.land.clone(),g.water.clone()));
     let geography = f.geometry.map(|g| Geography::new(g, f.width)).transpose()?;
-    let surface = Surface { geometry: geography.as_ref(), width:f.width, n:f.n, height:&f.height, water:&f.water };
+    let surface = Surface { geometry: geography.as_ref(), width:f.width, n:f.n, height:&f.height, water:&f.water, interpolation: Default::default(),};
     let layouts = generate_quarters(&f.seed,&f.sites,&f.layout_config,surface,&f.roads)?;
     let parts = generate_parcels(&f.seed,&layouts,&ParcelConfig::default())?;
     let requests=magna_urbis_core::urban::building_sites::requests(&f.seed,&layouts,&parts,surface,&f.water_level,None)?;

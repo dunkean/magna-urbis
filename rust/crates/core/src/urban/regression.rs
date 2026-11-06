@@ -48,6 +48,7 @@ fn large_village_retains_a_nucleus_and_disjoint_served_faubourgs() {
         n: 64,
         height: &height,
         water: &water,
+        interpolation: Default::default(),
     };
     let mut village = site("european-organic");
     village.population = 900;
@@ -136,6 +137,7 @@ fn complete_town_inherits_phase_recipes_and_keeps_faubourgs_outside_its_wall() {
         n: 64,
         height: &height,
         water: &water,
+        interpolation: Default::default(),
     };
     let mut town = site("chinese");
     town.center = Point { x: 900.0, y: 900.0 };
@@ -215,6 +217,7 @@ fn isolated_scene_and_village_ribbon_remain_separate_from_full_town_composition(
         n: 64,
         height: &height,
         water: &water,
+        interpolation: Default::default(),
     };
     let mut village = site("european-organic");
     village.population = 600;
@@ -424,6 +427,7 @@ fn seeded_hillside_enforces_street_lane_and_optional_stair_grades() {
         n,
         height: &height,
         water: &water,
+        interpolation: Default::default(),
     };
     let site = site("himalayan-terraces");
     let roads = [street(&[(256.0, 40.0), (256.0, 470.0)], "regional")];
@@ -464,6 +468,7 @@ fn seeded_river_town_preserves_the_only_bridge_and_connected_banks() {
         n,
         height: &height,
         water: &water,
+        interpolation: Default::default(),
     };
     let mut site = site("hanseatic");
     site.center.x = 232.0;
@@ -536,6 +541,7 @@ fn seeded_flat_town_keeps_real_junctions_and_replays_exactly() {
         n,
         height: &height,
         water: &water,
+        interpolation: Default::default(),
     };
     let site = site("european-organic");
     let cfg = LayoutConfig {
@@ -578,6 +584,7 @@ fn seeded_open_fringe_leaves_reserves_while_wall_town_keeps_a_defined_edge() {
         n,
         height: &height,
         water: &water,
+        interpolation: Default::default(),
     };
     let site = site("european-organic");
     let roads = [street(&[(20.0, 220.0), (490.0, 290.0)], "regional")];
@@ -671,7 +678,7 @@ fn oblique_river_town(bank_slope: impl Fn(f64) -> f32) {
             height[y * n + x] = 3.0 + (d.abs() - 8.0).min(60.0) as f32 * bank_slope(along);
         }
     }
-    let surface = Surface { geometry: None, width: n as f64 * cell, n, height: &height, water: &water };
+    let surface = Surface { geometry: None, width: n as f64 * cell, n, height: &height, water: &water, interpolation: Default::default(),};
     let mut site = site("european-organic");
     site.population = 5000;
     let cfg = LayoutConfig { fortification: "none".into(), ..legacy_config() };

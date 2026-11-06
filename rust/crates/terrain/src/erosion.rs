@@ -1280,7 +1280,7 @@ pub(crate) fn erode_shape(h: &mut [f32], n: usize, cell: f64, erosion: f64, talu
             gain: tuning(SURFACE_INCISION),
             routed: tuning(SURFACE_ROUTED) > 0.5,
             motif: cell * n as f64,
-            coarse: 320,
+            coarse: physical_erosion_resolution(n, 320),
             iterations: tuning(SURFACE_ITERATIONS).max(0.0) as usize,
             canyon_amplitude: None,
         },
@@ -1307,7 +1307,7 @@ pub(crate) fn erode_canyon(
             gain: tuning(SURFACE_INCISION),
             routed: tuning(SURFACE_ROUTED) > 0.5,
             motif,
-            coarse: surface_resolution(cell * n as f64, motif),
+            coarse: physical_erosion_resolution(n, surface_resolution(cell * n as f64, motif)),
             iterations: tuning(SURFACE_ITERATIONS).max(0.0) as usize,
             canyon_amplitude: Some(amplitude),
         },
@@ -1335,7 +1335,7 @@ pub(crate) fn erode_surface(
             gain: tuning(SURFACE_INCISION),
             routed: !coast && tuning(SURFACE_ROUTED) > 0.5,
             motif,
-            coarse: surface_resolution(cell * n as f64, motif),
+            coarse: physical_erosion_resolution(n, surface_resolution(cell * n as f64, motif)),
             iterations: tuning(SURFACE_ITERATIONS).max(0.0) as usize,
             canyon_amplitude: None,
         },
@@ -1635,8 +1635,12 @@ pub(crate) fn nth_smallest(values: &[f32], k: usize) -> f32 {
     })
 }
 
-fn surface_resolution(width: f64, motif: f64) -> usize {
+pub(crate) fn surface_resolution(width: f64, motif: f64) -> usize {
     ((width / motif * 96.0).ceil() as usize).clamp(640, 1024)
+}
+
+pub(crate) fn physical_erosion_resolution(n: usize, baseline: usize) -> usize {
+    if n <= 1024 { baseline.min(n) } else { baseline.max(((n as f64) * 0.6).ceil() as usize).min(2048).min(n) }
 }
 
 /// Scalar schedule shared with the browser GPU adapter. Cell size is physical;

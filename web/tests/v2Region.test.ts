@@ -109,6 +109,13 @@ describe('V2 regional Rust forwarding and retained sessions', () => {
     expect(() => validateRegionSettings({ placement: { main: { position: { x: 1200, y: 300 } } } }, 1200)).toThrow('inside');
     expect(() => validateRegionSettings({ roads: { density: 1, maxGrade: 1, crossingCost: .05, exits: 16 }, placement: { populationJitter: 1, zipfExponent: .3, edgeMargin: .3 } })).not.toThrow();
   });
+  it('uses a finer bounded regional planning grid beyond 40 km unless explicitly set', () => {
+    const { settings } = setup();
+    settings.extent = 200_000;
+    expect(effectiveRegion(settings).resolution).toBe(1024);
+    settings.region!.resolution = 512;
+    expect(effectiveRegion(settings).resolution).toBe(512);
+  });
   it('applies local main and listed-settlement placement preferences over their global recipes', () => {
     const { settings } = setup();
     settings.region!.placement = { main: { ...regionSpec('main', 200), position: { x: 900, y: 900 } }, list: [regionSpec('secondary', 50)] };

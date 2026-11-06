@@ -2,7 +2,7 @@ import type { World, UrbanLayer, UrbanBuilding, PolyH, UrbanZone, StreetRole, Op
 import type { Layout, Partition, UrbanResponse, Street, UrbanEngine } from '../../../rust/bridge/urban';
 import type { LayoutConfig, ParcelConfig } from '../../../rust/bridge/urbanConfig';
 import { defaultLayoutConfig, defaultParcelConfig, normalizeLayoutConfig, normalizeParcelConfig } from '../../../rust/bridge/urbanConfig';
-import type { SettlementRaster } from '../../../rust/bridge/settlements';
+import { settlementRaster, type SettlementRaster } from '../../../rust/bridge/settlements';
 import type { PlacementBatch, PlacementRequest, PlacementBatchSettings } from '../../../rust/bridge/urbanArchitecture';
 import type { HouseConfig } from '../../../rust/bridge/housesContract';
 import { carryUrbanOpenDeficits } from '../../../rust/bridge/urbanOpenDeficits';
@@ -42,7 +42,8 @@ export interface RustTownSnapshot {
 export interface RustTownResult { urban: UrbanLayer; snapshot: RustTownSnapshot; stats: Record<string, string | number> }
 const engines = new Map<string, { engine: Promise<UrbanEngine>; terrainKey?: string }>();
 interface RasterCacheEntry {
-  width: number; cell: number; water: World['terrain']['water']; filled: World['terrain']['filled']; seaLevel: number;
+  width: number; cell: number; height: World['terrain']['height']['data']; water: World['terrain']['water']; filled: World['terrain']['filled']; seaLevel: number;
+  physical?: Float32Array; physicalFloor?: number; physicalInterpolation?: 'bspline';
   coastline: World['terrain']['coastline']; islands: World['terrain']['islands']; lakes: World['terrain']['lakes'];
   rivers: { path: World['terrain']['rivers'][number]['path']; width: World['terrain']['rivers'][number]['width']; id: number | undefined }[];
   raster: SettlementRaster;
@@ -70,18 +71,28 @@ export function urbanBackend(settings: V2Settings): 'typescript' | 'rust' | 'nat
 
 /** Retain cell-centred physical metres and the existing vector geography; never rerun terrain. */
 export function rustSettlementRaster(world: World): SettlementRaster {
-  const terrain = world.terrain, grid = terrain.height, n = grid.w, cell = grid.cell;
+  const terrain = world.terrain, grid = terrain.height;
+  const native = (terrain as typeof terrain & { v2NativeTerrain?: import('../../../rust/bridge/terrain').TerrainData }).v2NativeTerrain;
+  const n = world.mapSize > 40000 && native?.physical && grid.w < 1024
+    ? Math.min(1024, Math.max(16, native.physical.n)) : grid.w;
+  const cell = world.mapSize / n;
+  const source = native?.physical, field = native?.field && source && native.field.n === source.n ? native.field : undefined;
+  const sameHeight = !field && source?.n === grid.w && source.height.length === grid.data.length && source.height.every((h, i) => h === grid.data[i]);
+  const physical: SettlementRaster['physical'] = field ? { n: field.n, height: field.data, interpolation: 'bspline', floor: field.floor }
+    : source && !sameHeight ? { n: source.n, height: source.height } : undefined;
   if (grid.w !== grid.h) throw new Error('Le moteur urbain Rust requiert une grille carrée.');
   const cached = physicalRasters.get(grid);
-  if (cached && cached.width === world.mapSize && cached.cell === cell && cached.raster.n === n && cached.raster.height === grid.data && cached.water === terrain.water && cached.filled === terrain.filled && cached.seaLevel === terrain.seaLevel
+  if (cached && cached.width === world.mapSize && cached.cell === cell && cached.raster.n === n && cached.height === grid.data && cached.physical === physical?.height && cached.physicalFloor === physical?.floor && cached.physicalInterpolation === physical?.interpolation && cached.water === terrain.water && cached.filled === terrain.filled && cached.seaLevel === terrain.seaLevel
     && cached.coastline === terrain.coastline && cached.islands === terrain.islands && cached.lakes === terrain.lakes
     && cached.rivers.length === terrain.rivers.length && cached.rivers.every((river, i) => river.path === terrain.rivers[i].path && river.width === terrain.rivers[i].width && river.id === terrain.rivers[i].id)) return cached.raster;
-  const waterLevel = new Float32Array(n * n), riverWidth = new Float32Array(n * n), riverIds = new Int32Array(n * n).fill(-1);
-  for (let i = 0; i < waterLevel.length; i++) if (terrain.water[i]) waterLevel[i] = terrain.water[i] === 1 ? terrain.seaLevel : Math.max(grid.data[i], terrain.filled[i]);
-  for (const [index, river] of terrain.rivers.entries()) for (let j = 1; j < river.path.length; j++) {
+  const planning = n !== grid.w ? settlementRaster(native!, n) : undefined;
+  const height = planning?.height ?? grid.data, waterMask = planning?.water ?? terrain.water;
+  const waterLevel = planning?.waterLevel ?? new Float32Array(n * n), riverWidth = planning?.riverWidth ?? new Float32Array(n * n), riverIds = planning?.riverIds ?? new Int32Array(n * n).fill(-1);
+  if (!planning) for (let i = 0; i < waterLevel.length; i++) if (terrain.water[i]) waterLevel[i] = terrain.water[i] === 1 ? terrain.seaLevel : Math.max(grid.data[i], terrain.filled[i]);
+  if (!planning) for (const [index, river] of terrain.rivers.entries()) for (let j = 1; j < river.path.length; j++) {
     const width = Math.max(river.width[j - 1] ?? 1, river.width[j] ?? 1);
     forCellsNearPolyline([river.path[j - 1], river.path[j]], n, n, cell, Math.max(cell * .8, width / 2), i => {
-      if (terrain.water[i] === 3 && width >= riverWidth[i]) { riverWidth[i] = width; riverIds[i] = river.id ?? index; }
+      if (waterMask[i] === 3 && width >= riverWidth[i]) { riverWidth[i] = width; riverIds[i] = river.id ?? index; }
     });
   }
   const square = [{ x: 0, y: 0 }, { x: world.mapSize, y: 0 }, { x: world.mapSize, y: world.mapSize }, { x: 0, y: world.mapSize }];
@@ -93,9 +104,10 @@ export function rustSettlementRaster(world: World): SettlementRaster {
   // As in the original Rust bench adapter, the land envelope removes the sea;
   // lakes/rivers remain separate water constraints instead of a second expensive polygon boolean.
   const land = seaWater.length ? differenceS(square, seaWater) : [{ outer: square, holes: [] }];
-  const raster: SettlementRaster = { width: world.mapSize, n, height: grid.data, water: terrain.water, waterLevel, riverWidth, riverIds,
+  const raster: SettlementRaster = { width: world.mapSize, n, height, water: waterMask, waterLevel, riverWidth, riverIds,
+    ...(physical ? { physical } : {}),
     geometry: { land: land.flatMap(p => [p.outer, ...p.holes]), water: water.map(p => [p.outer, ...p.holes]) } };
-  physicalRasters.set(grid, { width: world.mapSize, cell, water: terrain.water, filled: terrain.filled, seaLevel: terrain.seaLevel, coastline: terrain.coastline, islands: terrain.islands, lakes: terrain.lakes,
+  physicalRasters.set(grid, { width: world.mapSize, cell, height: grid.data, physical: physical?.height, physicalFloor: physical?.floor, physicalInterpolation: physical?.interpolation, water: terrain.water, filled: terrain.filled, seaLevel: terrain.seaLevel, coastline: terrain.coastline, islands: terrain.islands, lakes: terrain.lakes,
     rivers: terrain.rivers.map(river => ({ path: river.path, width: river.width, id: river.id })), raster });
   return raster;
 }

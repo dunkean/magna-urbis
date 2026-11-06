@@ -26,7 +26,7 @@ fn main()->Result<(),Box<dyn std::error::Error>> {
     let f:Fixture=serde_json::from_slice(&std::fs::read(&args[1])?)?;
     let water_shapes=f.geometry.as_ref().map(|g|g.water.clone());
     let geography=f.geometry.map(|g|Geography::new(g,f.width)).transpose()?;
-    let surface=Surface {geometry:geography.as_ref(),width:f.width,n:f.n,height:&f.height,water:&f.water};
+    let surface=Surface {geometry:geography.as_ref(),width:f.width,n:f.n,height:&f.height,water:&f.water, interpolation: Default::default(),};
     let out=PathBuf::from(&args[2]);std::fs::create_dir_all(&out)?;
     let mut baseline=None;let mut inherited=None;let mut reports=vec![];
     for strength in [0.0,0.5,1.0] {

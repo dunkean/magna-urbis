@@ -1371,7 +1371,7 @@ mod tests {
     #[test]
     fn quay_frontage_and_landing_works_scale_with_population() {
         let (height,water)=coast(256);
-        let surface=Surface {geometry:None,width:256.,n:256,height:&height,water:&water};
+        let surface=Surface {geometry:None,width:256.,n:256,height:&height,water:&water, interpolation: Default::default(),};
         let domain=g::rectangle(128.,4.,254.,252.);
         let cfg=LayoutConfig {site_archetype:"harbor".into(),..Default::default()};
         let mut lengths=vec![];
@@ -1413,7 +1413,7 @@ mod tests {
                 if x >= bank && (!river || x < bank + 200.0) { if river { 3 } else { 1 } } else { 0 }
             }).collect();
             let height: Vec<f32> = (0..n*n).map(|i| 2.0 + if river { ((i / n) as f64 * width / n as f64 * 0.002) as f32 } else { 0.0 }).collect();
-            let surface = Surface { geometry: None, width, n, height: &height, water: &water };
+            let surface = Surface { geometry: None, width, n, height: &height, water: &water, interpolation: Default::default(),};
             let site = Site { key: "port-10k".into(), name: String::new(), population: 10_000, culture: culture.into(),
                 center: Point { x: 1500.0, y: 1400.0 }, radius: 480.0 };
             let cfg = LayoutConfig { site_archetypes: std::collections::BTreeMap::from([("port-10k".into(), if river { "bridge" } else { "harbor" }.into())]), ..LayoutConfig::default() };
@@ -1480,6 +1480,7 @@ mod tests {
             n,
             height: &height,
             water: &water,
+            interpolation: Default::default(),
         };
         // A stair-stepped raster shore (4 m cells, 12 m steps) at x ≈ 128.
         let mut outer = vec![
@@ -1621,6 +1622,7 @@ mod tests {
                 n,
                 height: &height,
                 water: &water,
+                interpolation: Default::default(),
             };
             let mut streets = vec![road.clone()];
             // The land east of the water, 30 m clear of the map edge.
@@ -1652,6 +1654,7 @@ mod tests {
             n,
             height: &height,
             water: &water,
+            interpolation: Default::default(),
         };
         let domain = g::rectangle(150.0, 40.0, 240.0, 200.0);
         let cfg = LayoutConfig::default();
@@ -1692,6 +1695,7 @@ mod tests {
             n,
             height: &gentle,
             water: &water,
+            interpolation: Default::default(),
         };
         let mut cfg = LayoutConfig::default();
         cfg.programme.functions = Some(crate::urban::programme::ProgrammeFunctions { port: 1.0, ..Default::default() });
@@ -1752,7 +1756,7 @@ mod tests {
             }).collect()
         };
         let at = |height: &[f32]| {
-            let surface = Surface { geometry: None, width: 256.0, n, height, water: &water };
+            let surface = Surface { geometry: None, width: 256.0, n, height, water: &water, interpolation: Default::default(),};
             gentle_behind(surface, Point { x: 130.0, y: 128.0 }, Point { x: 1.0, y: 0.0 }, 1.0, cfg.max_street_grade)
         };
         assert!(at(&shelf(0.5)));

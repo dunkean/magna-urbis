@@ -157,7 +157,7 @@ mod tests {
                 water[y * n + x] = 3;
             }
         }
-        let surface = Surface { geometry: None, width: 6000.0, n, height: &height, water: &water };
+        let surface = Surface { geometry: None, width: 6000.0, n, height: &height, water: &water, interpolation: Default::default(),};
         let site = Site {
             key: "memo".into(), name: String::new(), population, culture: culture.into(),
             center: Point { x: 2800.0, y: 3000.0 }, radius: 150.0,

@@ -14,7 +14,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(st) = args.get(4) { f.layout_config.programme.state = st.clone(); }
     if let Some(p) = args.get(5) { for s in &mut f.sites { s.population = p.parse()?; } }
     let geo = f.geometry.map(|g| Geography::new(g, f.width)).transpose()?;
-    let surface = Surface { geometry: geo.as_ref(), width: f.width, n: f.n, height: &f.height, water: &f.water };
+    let surface = Surface { geometry: geo.as_ref(), width: f.width, n: f.n, height: &f.height, water: &f.water, interpolation: Default::default(),};
     let t = std::time::Instant::now();
     let layouts = generate_quarters(&f.seed, &f.sites, &f.layout_config, surface, &f.roads)?;
     let parts = generate_parcels(&f.seed, &layouts, &f.parcel_config)?;

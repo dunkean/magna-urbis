@@ -147,7 +147,7 @@ mod tests {
     #[test]
     fn partial_parallel_runs_merge_but_keep_tails_and_junctions() {
         let h = vec![20.; 100 * 100]; let water = vec![0; h.len()];
-        let surface = Surface { geometry: None, width: 200., n: 100, height: &h, water: &water };
+        let surface = Surface { geometry: None, width: 200., n: 100, height: &h, water: &water, interpolation: Default::default(),};
         let cfg = LayoutConfig { merge_parallel_streets: true, ..Default::default() };
         let mut roads = fixture();
         let old = roads.clone();
@@ -166,7 +166,7 @@ mod tests {
     fn terraces_walls_crossings_and_real_lots_keep_their_roads() {
         let h: Vec<f32> = (0..10000).map(|i| if i / 100 >= 27 {24.} else {20.}).collect();
         let water = vec![0; h.len()];
-        let surface = Surface { geometry: None, width: 200., n: 100, height: &h, water: &water };
+        let surface = Surface { geometry: None, width: 200., n: 100, height: &h, water: &water, interpolation: Default::default(),};
         let cfg = LayoutConfig { merge_parallel_streets: true, ..Default::default() };
         let mut roads = vec![street(&[(20.,50.),(160.,50.)],1), street(&[(20.,56.),(160.,56.)],2)];
         let old = serde_json::to_string(&roads).unwrap();
@@ -185,7 +185,7 @@ mod tests {
     #[test]
     fn disabled_option_is_the_legacy_narrow_pass_byte_for_byte() {
         let h=vec![20.;10000];let water=vec![0;h.len()];
-        let surface=Surface{geometry:None,width:200.,n:100,height:&h,water:&water};
+        let surface=Surface{geometry:None,width:200.,n:100,height:&h,water:&water, interpolation: Default::default(),};
         let off=LayoutConfig{parallel_merge:0.,..Default::default()};
         let mut a=fixture();let mut b=a.clone();
         assert_eq!(drop_narrow_doubles(&mut a,&[],200.),narrow_options(&mut b,&[],200.,&off,surface));

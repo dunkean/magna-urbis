@@ -27,7 +27,7 @@ fn replay(bridge_limit: Option<std::time::Duration>) {
         .map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect();
     let geometry = Geography::new(fixture.geometry, fixture.width).unwrap();
     let surface = Surface { geometry: Some(&geometry), width: fixture.width, n: fixture.n,
-        height: &height, water: &data[count * 4..] };
+        height: &height, water: &data[count * 4..], interpolation: Default::default() };
     for (culture, family) in [("european-organic", "compact"), ("italian-comune", "elongated"), ("flemish-cloth-town", "linear")] {
         if std::env::var("PANIC20K_CULTURE").is_ok_and(|c| c != culture) { continue; }
         fixture.sites[0].culture = culture.into();
@@ -59,7 +59,7 @@ fn captured_bridge_stage() {
         .map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect();
     let geometry = Geography::new(fixture.geometry, fixture.width).unwrap();
     let surface = Surface { geometry: Some(&geometry), width: fixture.width, n: fixture.n,
-        height: &height, water: &data[count * 4..] };
+        height: &height, water: &data[count * 4..], interpolation: Default::default() };
     let mut streets: Vec<Street> = serde_json::from_slice(&std::fs::read(std::env::var_os("BRIDGE_STREETS").unwrap()).unwrap()).unwrap();
     let start = std::time::Instant::now();
     network::bridge_water_on_ground(&mut streets, surface, surface, fixture.layout_config.max_street_grade);

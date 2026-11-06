@@ -65,7 +65,9 @@ impl TerrainPipeline {
             || !(64.0..=640.0).contains(&parameters[2])
             || parameters[2].fract() != 0.0
             || !(500.0..=100000.0).contains(&parameters[0])
-            || !(64.0..=1024.0).contains(&(surface[0] - 24.0))
+            || !(2.0..=8192.0).contains(&parameters[1])
+            || parameters[1].fract() != 0.0
+            || !(16.0..=2048.0).contains(&(surface[0] - 24.0))
             || surface[0].fract() != 0.0
             || !(1.0..=200.0).contains(&parameters[13])
             || parameters[13].fract()!=0.0
@@ -107,6 +109,9 @@ impl TerrainPipeline {
         })
     }
     pub fn checkpoint(&mut self, slot: usize) -> Result<(), String> {
+        // Full-resolution fields dominate memory above the overview size. These
+        // generations run as one pass; retain only the live stage arrays.
+        if self.p[1] > 1024.0 { return Ok(()); }
         if slot > self.checkpoints.len() || slot > 8 { return Err("Invalid terrain checkpoint".into()); }
         self.checkpoints.truncate(slot);
         self.checkpoints.push(Checkpoint {
@@ -134,7 +139,7 @@ impl TerrainPipeline {
     pub fn restore(&mut self, slot: usize, parameters: &[f32], surface: &[f32], flags: &[u32]) -> Result<(), String> {
         // Revalidate new controls; the caller identifies the unchanged prefix.
         let configured = Self::new(&self.seed, parameters, surface, flags)?;
-        if configured.grid.n != self.grid.n { return Err("Terrain checkpoint grid changed".into()); }
+        if configured.grid.n != self.grid.n || configured.p[1] != self.p[1] { return Err("Terrain checkpoint grid changed".into()); }
         let c = self.checkpoints.get(slot).ok_or("Missing terrain checkpoint")?;
         self.next=c.next; self.h=c.h.clone(); self.uplift=c.uplift.clone(); self.acc=c.acc.clone();
         self.channels=c.channels.clone(); self.raw=c.raw.clone(); self.output=c.output.clone();
@@ -154,7 +159,7 @@ impl TerrainPipeline {
         let p=&self.p;
         let (n, origin, cell, field) = if self.next <= 3 {
             (self.grid.n, p[5], p[4], &mut self.h)
-        } else { (1024, 0., p[11], &mut self.output) };
+        } else { (p[1] as usize, 0., p[11], &mut self.output) };
         cut_coast_field(self.step_seeds.get("coastCut").unwrap_or(&self.seed),p[0],p[3]*2400.,p[12],mask,mode,n,origin,cell,field)?;
         if (4..=5).contains(&self.next) {
             self.raw=self.output.iter().map(|&h|(h as f64/self.scale.max(1e-12)) as f32).collect();
@@ -190,7 +195,7 @@ impl TerrainPipeline {
         Ok(())
     }
     pub fn set_noise(&mut self,coarse:&[f32],fine:&[f32])->Result<(),String>{
-        if self.next!=0 || !coarse.is_empty()&&coarse.len()!=self.grid.n*self.grid.n*4 || fine.len()!=1024*1024*4 || coarse.iter().chain(fine).any(|v|!v.is_finite()){return Err("Invalid retained generation noises".into());}
+        if self.next!=0 || !coarse.is_empty()&&coarse.len()!=self.grid.n*self.grid.n*4 || fine.len()!=self.p[1] as usize*self.p[1] as usize*4 || coarse.iter().chain(fine).any(|v|!v.is_finite()){return Err("Invalid retained generation noises".into());}
         self.coarse_noise=coarse.to_vec();self.fine_noise=fine.to_vec();Ok(())
     }
     fn coarse_value(&self,i:usize,k:usize,f:impl FnOnce()->f64)->f64{self.coarse_noise.get(i*4+k).map_or_else(f,|&v|v as f64)}
@@ -212,13 +217,14 @@ impl TerrainPipeline {
     fn sample_height(&self, h: &[f32]) -> Vec<f32> {
         let p = &self.p;
         let nc = self.grid.n;
-        (0..1024 * 1024)
+        let source_n = p[1] as usize;
+        (0..source_n * source_n)
             .map(|i| {
                 sample(
                     h,
                     nc,
-                    (((i % 1024) as f64 + 0.5) * p[11] - p[5]) / p[4] - 0.5,
-                    (((i / 1024) as f64 + 0.5) * p[11] - p[5]) / p[4] - 0.5,
+                    (((i % source_n) as f64 + 0.5) * p[11] - p[5]) / p[4] - 0.5,
+                    (((i / source_n) as f64 + 0.5) * p[11] - p[5]) / p[4] - 0.5,
                     false,
                 ) as f32
             })
@@ -345,15 +351,16 @@ impl TerrainPipeline {
         }
     }
     fn reconstruct(&mut self) {
-        let mut raw = vec![0.; 1024 * 1024];
+        let source_n = self.p[1] as usize;
+        let mut raw = vec![0.; source_n * source_n];
         let mut drainage = vec![0.; raw.len()];
         let this = &*self;
         let p = &this.p;
         let n = this.grid.n;
         let bspline = this.flags[9] == 2 || this.flags[9] == 0 && this.flags[0] == 1;
-        crate::terrain_par::rows2(&mut raw, &mut drainage, 1024, |y, raw, drainage_row| {
-            for x in 0usize..1024 {
-                let i = y * 1024 + x;
+        crate::terrain_par::rows2(&mut raw, &mut drainage, source_n, |y, raw, drainage_row| {
+            for x in 0usize..source_n {
+                let i = y * source_n + x;
                 let px = (x as f64 + 0.5) * p[11];
                 let py = (y as f64 + 0.5) * p[11];
                 let warp = p[38] * (16. * p[3]).min(p[4] * 0.9);
@@ -407,13 +414,14 @@ impl TerrainPipeline {
         let p = &this.p;
         let raw = &this.raw;
         let amplitude = p[12] * (1. - 0.2 * p[18]);
-        crate::terrain_par::rows(&mut output, 1024, |y, row| {
-            for x in 0usize..1024 {
-                let i = y * 1024 + x;
-                let gx = raw[y * 1024 + (x + 1).min(1023)] as f64
-                    - raw[y * 1024 + x.saturating_sub(1)] as f64;
-                let gy = raw[(y + 1).min(1023) * 1024 + x] as f64
-                    - raw[y.saturating_sub(1) * 1024 + x] as f64;
+        let source_n = p[1] as usize;
+        crate::terrain_par::rows(&mut output, source_n, |y, row| {
+            for x in 0usize..source_n {
+                let i = y * source_n + x;
+                let gx = raw[y * source_n + (x + 1).min(source_n - 1)] as f64
+                    - raw[y * source_n + x.saturating_sub(1)] as f64;
+                let gy = raw[(y + 1).min(source_n - 1) * source_n + x] as f64
+                    - raw[y.saturating_sub(1) * source_n + x] as f64;
                 let slope = gx.hypot(gy) * this.scale / (2. * p[11]);
                 let r=this.fine_value(i,2,||this.noise2.ridged((x as f64+0.5)*p[11]/p[9],(y as f64+0.5)*p[11]/p[9],p[10] as usize));
                 row[x] = (raw[i] as f64 * this.scale
@@ -440,7 +448,7 @@ impl TerrainPipeline {
         TUNING.with(|v| v.set(t));
         erode_with(
             &mut self.output,
-            1024,
+            p[1] as usize,
             p[11],
             p[23],
             s[4],
@@ -472,6 +480,19 @@ impl TerrainPipeline {
 #[cfg(test)]
 mod checkpoint_tests {
     use super::*;
+    #[test]
+    fn physical_source_resolution_controls_final_field_length_and_cell() {
+        let plan=crate::GenerationNoisePlan::erosion_at_resolution("metres",3000.,"hills",0.,1200.,0.5,96).unwrap();
+        let p=plan.parameters;
+        let mut s=p[24..32].to_vec();s[3]=0.;
+        let flags=vec![0;11];
+        let mut pipeline=TerrainPipeline::new("metres",&p,&s,&flags).unwrap();
+        assert_eq!(p[1],96.);
+        assert!((p[11] as f64 - 3000.0/96.0).abs()<1e-6);
+        assert_eq!(pipeline.height().len(),96*96);
+        for stage in 0..4 {pipeline.advance(stage).unwrap();}
+        assert_eq!(pipeline.height().len(),96*96);
+    }
     fn configuration() -> (Vec<f32>, Vec<f32>, Vec<u32>) {
         let plan=crate::GenerationNoisePlan::erosion("resume",2400.,"hills",0.3,2400.,0.5).unwrap();
         let mut p=plan.parameters; p[2]=64.;p[4]=2400.*1.44/64.;p[13]=1.;

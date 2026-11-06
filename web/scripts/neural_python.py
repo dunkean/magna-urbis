@@ -31,7 +31,6 @@ sys.path[:0] = [str(EARTH), str(EARTH / 'backend'), str(EARTH / 'terrain-diffusi
 
 import numpy as np
 import torch
-from scipy.ndimage import map_coordinates
 import terrain_app
 from terrain_app import load_pipeline
 from terrain_diffusion.inference.world_pipeline import WorldPipeline
@@ -39,10 +38,12 @@ from terrain_inference import configure_world
 from distill.inference import install
 import neural_model_catalog as model_catalog
 import neural_refinement as refinement
+from neural_sampling import resample_native
 
 LOCK = threading.Lock()
 STATE = {'state': 'ready', 'message': 'Python/CUDA pret ; poids charges au premier calcul',
-         'backend': 'python-cuda', 'generated': 0, 'loaded': False, 'resolution': 1024, 'extent': 40000,
+         'backend': 'python-cuda', 'generated': 0, 'loaded': False, 'extent': 40000, 'resolution': 1334,
+         'maxExtent': 200000, 'nativeCellM': 30,
          'zoneConditioning': 1, 'modelCatalog': 1, 'nativeOutput': True}
 MODELS = None
 MODELS_KEY = None
@@ -73,13 +74,28 @@ def models(seed, params):
 
 def generate(body):
     params, condition = body['params'], body['conditioning']
-    native_output = params.get('outputResolution') == 'native'
-    output_n = math.ceil(40000 / 30) if native_output else 1024
+    extent = number(params, 'extent', 40000, 500, 200000)
+    spacing = number(params, 'sampleSpacing', 30, 30, min(1000, extent / 16))
+    native_n = math.ceil(extent / 30)
+    output_n = math.ceil(extent / spacing)
+    if condition.get('extent') != extent or condition.get('nativeResolution') != native_n:
+        raise ValueError('Conditioning extent does not match the requested neural region; rebuild the neural WASM assets.')
+    selected = model_catalog.selection(params)
+    if selected['baseModel'] == 'residual8k':
+        if extent != 40000 or ('sampleSpacing' in params and output_n != 1024):
+            raise ValueError('Residual8k supports exactly 40 km at its 1024-sample output.')
+        output_n = 1024
+    if number(params, 'resolution', output_n, output_n, output_n) != output_n:
+        raise ValueError('resolution does not match extent and sampleSpacing')
+    if condition.get('resolution') != output_n:
+        raise ValueError('Conditioning output resolution does not match the requested neural region.')
+    native_output = output_n == native_n
     seed = int(condition['seed'])
     if not 0 <= seed < 2**64:
         raise ValueError('Invalid seed')
     origin, start, size = int(condition['origin']), int(condition['start']), int(condition['size'])
-    if origin != 6304 or not 64 <= size <= 256 or not -256 <= start <= 256:
+    expected_origin = 6304 if selected['baseModel'] == 'residual8k' else 4784
+    if origin != expected_origin or not 64 <= size <= 256 or not -256 <= start <= 256:
         raise ValueError('Invalid regional conditioning bounds')
     fields = np.asarray(condition['fields'], dtype=np.float32)
     if fields.size != 5 * size * size or not np.isfinite(fields).all():
@@ -98,7 +114,6 @@ def generate(body):
     detail = number(params, 'detail', 1, 0, 5)
     relief_scale = number(params, 'reliefScale', 1, 0, 5)
     relief_fixed = number(params, 'reliefFixed', 0, 0, 5000) if 'reliefFixed' in params else None
-    selected = model_catalog.selection(params)
     if selected['baseModel'] == 'residual8k':
         STATE.update(state='generating', message='Python : Coarse2 -> flow résiduel 8k -> décodeur')
         return model_catalog.generate_finite(condition | {'edited': bool(body.get('edited'))}, params, seed)
@@ -183,16 +198,17 @@ def generate(body):
         STATE.update(state='generating', message='Python : coarse -> base -> decoder sur CUDA')
         torch.cuda.synchronize()
         began = time.perf_counter()
-        native_size = math.ceil(40000 / 30)
+        native_size = native_n
         with torch.inference_mode():
             heights = world.get(origin, origin, origin + native_size, origin + native_size, with_climate=False)['elev'].float().cpu().numpy()
         torch.cuda.synchronize()
-        coordinates = (np.arange(output_n, dtype=np.float64) + .5) * 40000 / output_n / 30 - .5
-        yy, xx = np.meshgrid(coordinates, coordinates, indexing='ij')
-        heights = map_coordinates(heights, [yy, xx], order=1, mode='nearest').astype('<f4')
+        heights = resample_native(heights, extent, output_n)
         if not np.isfinite(heights).all():
             raise RuntimeError('Python produced non-finite heights')
         stage_ms = [sum(a.elapsed_time(b) for a, b in pairs) if isinstance(pairs, list) else 0 for pairs in timings]
+        expected_coarse_evaluations = 20 if selected['coarseModel'] == 'original' else steps
+        if counts[0] != expected_coarse_evaluations:
+            raise RuntimeError(f'Neural region crossed the one-coarse-window boundary: {counts[0]} evaluations, expected {expected_coarse_evaluations}.')
         total_ms = (time.perf_counter() - began) * 1000
         profile = 'coarse4-original-base-t1-decoder' if selected == model_catalog.catalog()['defaults'] else '-'.join(selected.values())
         meta = dict(backend='python-cuda', precision='bf16', profile=profile,
@@ -201,7 +217,8 @@ def generate(body):
                     land=float(np.mean(heights > 0)), edited=bool(body.get('edited')), sketchRegion=True, zoneConditioning=1,
                     **model_catalog.model_info(selected))
         meta['neuralSeed'] = str(seed)
-        meta.update(outputResolution=output_n, outputCell=40000/output_n, decoderNativeCell=30,
+        meta.update(extent=extent, resolution=output_n, nativeCellM=30, nativeResolution=native_n,
+                    outputCellM=extent/output_n, outputResolution=output_n, outputCell=extent/output_n, decoderNativeCell=30,
                     stages=['coarse', 'base', 'decoder'], nativeDefinitionRetained=native_output)
         meta['neuralToken'] = refinement.retain_world(world, origin)
         retained_world = True
@@ -261,6 +278,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             length = int(self.headers.get('Content-Length', 0))
             if not 0 < length <= 12 * 1024**2:
+                if path == '/refinement/register' and length > 12 * 1024**2:
+                    raise ValueError('Optional Neural Earth refinement supports retained rasters up to 1500² samples; terrain generation is unaffected.')
                 raise ValueError('Invalid request size')
             body = json.loads(self.rfile.read(length))
             with LOCK:

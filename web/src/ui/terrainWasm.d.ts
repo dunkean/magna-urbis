@@ -49,12 +49,20 @@ declare module '*magna_urbis_wasm.js' {
   export class TerrainEngine {
     set_edited_surface(heights: Float32Array): void;
     static with_surface(seed: string, width: number, heights: Float32Array): TerrainEngine;
+    static at_resolution(seed: string, width: number, relief: string, erosion: number, motif: number, mix: number, environment: string | undefined, n: number): TerrainEngine;
+    static with_zones_at_resolution(seed: string, width: number, relief: string, erosion: number, motif: number, mix: number, environment: string | undefined, zones_json: string, n: number): TerrainEngine;
     static with_source(seed: string, width: number, relief: string, erosion: number, motif: number, mix: number, source: Float32Array, environment?: string): TerrainEngine;
     static with_generation_noise(seed: string, width: number, relief: string, erosion: number, motif: number, mix: number, coarse: Float32Array, fine: Float32Array, environment?: string): TerrainEngine;
     static prepare_environment(seed: string, width: number, relief: string, erosion: number, motif: number): Float32Array;
+    static prepare_environment_at_resolution(seed: string, width: number, relief: string, erosion: number, motif: number, n: number): Float32Array;
     constructor(seed: string, map_width: number, relief: string, erosion: number, motif_size: number, mountain_mix?: number, environment?: string);
     readonly min_height: number; readonly max_height: number;
     sampling_field(): Float32Array;
+    sampling_base_field(): Float32Array;
+    source_resolution(): number;
+    erosion_spacing(): number | undefined;
+    physical_height_field(): Float32Array;
+    physical_cave_field(): Uint8Array;
     set_coast(mask: number, mode: string): void;
     coast_parameters(): Float32Array;
     configure_coast(mask: number, mode: string): void;
@@ -71,6 +79,7 @@ declare module '*magna_urbis_wasm.js' {
     static generation(seed: string, width: number, relief: string, motif: number): GenerationNoisePlan;
     static finite_shape(seed: string, motif: number, relief: string, erosion: number): GenerationNoisePlan;
     static erosion(seed: string, width: number, relief: string, erosion: number, motif: number, mix: number): GenerationNoisePlan;
+    static erosion_at_resolution(seed: string, width: number, relief: string, erosion: number, motif: number, mix: number, n: number): GenerationNoisePlan;
     constructor(seed: string, width: number, motif: number);
     parameters(): Float32Array; permutations(): Uint32Array; gradients(): Float32Array;
     free(): void;

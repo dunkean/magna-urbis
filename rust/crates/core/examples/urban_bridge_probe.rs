@@ -14,7 +14,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if args.len() != 3 { return Err("Expected fixture.json output-directory".into()); }
     let f: Fixture = serde_json::from_slice(&std::fs::read(&args[1])?)?;
     let geography = f.geometry.map(|g| Geography::new(g, f.width)).transpose()?;
-    let surface = Surface { geometry: geography.as_ref(), width: f.width, n: f.n, height: &f.height, water: &f.water };
+    let surface = Surface { geometry: geography.as_ref(), width: f.width, n: f.n, height: &f.height, water: &f.water, interpolation: Default::default(),};
     let layouts = generate_quarters(&f.seed, &f.sites, &f.layout_config, surface, &f.roads)?;
     let out = PathBuf::from(&args[2]); std::fs::create_dir_all(&out)?;
     std::fs::write(out.join("layouts.json"), serde_json::to_vec(&layouts)?)?;

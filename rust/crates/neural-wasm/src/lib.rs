@@ -47,6 +47,25 @@ fn request(params: &str, grid: &str) -> Result<Request, String> {
         &text("islands", "island"),
         &text("climate", "temperate"),
         number("noise", 0.05, 0.001, 2.0)? as f32,
+        number(
+            "extent",
+            40_000.0,
+            500.0,
+            neural_runtime::plan::MAX_EXTENT_M,
+        )?,
+    )?;
+    let spacing = number(
+        "sampleSpacing",
+        neural_runtime::plan::NATIVE_M,
+        neural_runtime::plan::NATIVE_M,
+        (r.extent_m / 16.0).min(1000.0),
+    )?;
+    r.resolution = (r.extent_m / spacing).ceil() as usize;
+    number(
+        "resolution",
+        r.resolution as f64,
+        r.resolution as f64,
+        r.resolution as f64,
     )?;
     if let Sketch::Regional(s) = &mut r.sketch {
         s.land_scale = number("landScale", 1.0, 0.0, 5.0)?;
@@ -114,7 +133,7 @@ fn request(params: &str, grid: &str) -> Result<Request, String> {
             .collect::<Result<Vec<_>, _>>()?;
         let region = &g["region"];
         let (extent, origin) = if region.is_null() {
-            (40000.0, (0.0, 0.0))
+            (r.extent_m, (0.0, 0.0))
         } else {
             (
                 region["width"].as_f64().ok_or("Invalid sketch width")?,
@@ -125,13 +144,13 @@ fn request(params: &str, grid: &str) -> Result<Request, String> {
             )
         };
         if !extent.is_finite()
-            || !(500.0..=40000.0).contains(&extent)
+            || !(500.0..=r.extent_m).contains(&extent)
             || !origin.0.is_finite()
             || !origin.1.is_finite()
             || origin.0 < 0.0
             || origin.1 < 0.0
-            || origin.0 + extent > 40000.000001
-            || origin.1 + extent > 40000.000001
+            || origin.0 + extent > r.extent_m + 1e-6
+            || origin.1 + extent > r.extent_m + 1e-6
         {
             return Err("Sketch outside neural surface".into());
         }
@@ -150,12 +169,36 @@ fn request(params: &str, grid: &str) -> Result<Request, String> {
 #[wasm_bindgen]
 pub fn conditioning_json(params: &str, grid: &str) -> Result<String, JsValue> {
     let r = request(params, grid).map_err(error)?;
-    let origin = neural_runtime::plan::FAST_ORIGIN;
-    let plan =
-        neural_runtime::plan::Plan::new(origin, neural_runtime::plan::Plan::cells(40000.0), false);
-    let start = plan.coarse.start * neural_runtime::plan::COARSE_STRIDE;
-    let end = (plan.coarse.end - 1) * neural_runtime::plan::COARSE_STRIDE
-        + neural_runtime::plan::COARSE_SIZE;
+    let options: Value = serde_json::from_str(params).map_err(error)?;
+    let finite = options["baseModel"] == "residual8k";
+    let plan = if finite {
+        if r.extent_m != 40_000.0 {
+            return Err(error("Residual8k supports exactly 40 km"));
+        }
+        neural_runtime::plan::Plan::new(6304, neural_runtime::plan::Plan::cells(40_000.0), false)
+    } else {
+        neural_runtime::plan::Plan::regional(r.extent_m).map_err(error)?
+    };
+    let origin = plan.origin;
+    let (start, end) = if finite {
+        // Pinned Tile40 evaluates the two coarse windows at -48 and 0, each
+        // 64 cells wide. Convert their sample coordinates to this world grid;
+        // include both interpolation neighbours at the fractional offset.
+        let shift =
+            origin as f64 / (neural_runtime::plan::COARSE * neural_runtime::plan::LATENT) as f64;
+        let first = -neural_runtime::plan::COARSE_STRIDE;
+        let after_last = neural_runtime::plan::COARSE_SIZE;
+        (
+            (first as f64 + shift).floor() as i64,
+            ((after_last - 1) as f64 + shift).ceil() as i64 + 1,
+        )
+    } else {
+        (
+            plan.coarse.start * neural_runtime::plan::COARSE_STRIDE,
+            (plan.coarse.end - 1) * neural_runtime::plan::COARSE_STRIDE
+                + neural_runtime::plan::COARSE_SIZE,
+        )
+    };
     let n = (end - start) as usize;
     let mut relief = Vec::with_capacity(n * n);
     let mut strength = Vec::with_capacity(n * n);
@@ -172,6 +215,8 @@ pub fn conditioning_json(params: &str, grid: &str) -> Result<String, JsValue> {
     }
     Ok(
         json!({"seed": r.seed.to_string(), "origin": origin, "start": start, "size": n,
+        "extent": r.extent_m, "resolution": r.resolution,
+        "nativeResolution": neural_runtime::plan::Plan::cells(r.extent_m),
         "fields": r.sketch.fields(&plan, start, start, n), "localRelief": relief, "localReliefWeight": strength})
         .to_string(),
     )
@@ -183,10 +228,10 @@ pub fn sketch_json(params: &str) -> Result<String, JsValue> {
     let mut heights = Vec::with_capacity(64 * 64);
     for y in 0..64 {
         for x in 0..64 {
-            heights.push(
-                r.sketch
-                    .elevation((x as f64 + 0.5) * 625.0, (y as f64 + 0.5) * 625.0),
-            );
+            heights.push(r.sketch.elevation(
+                (x as f64 + 0.5) * r.extent_m / 64.0,
+                (y as f64 + 0.5) * r.extent_m / 64.0,
+            ));
         }
     }
     Ok(json!({"version": 1, "resolution": 64, "heights": heights}).to_string())
@@ -244,6 +289,8 @@ impl NeuralRelief {
             .map_err(error)?;
         let t = &out.timings;
         let meta = json!({"backend": "wasm-webgpu", "profile": "coarse4-nf4-b75-t2-decoder", "precision": self.networks.precision(),
+            "extent": r.extent_m, "resolution": out.resolution, "nativeCellM": 30, "nativeResolution": out.native_n,
+            "outputCellM": r.extent_m / out.resolution as f64,
             "totalMs": now_ms() - started, "coarseMs": t.coarse_ms, "baseMs": t.base_ms, "decoderMs": t.decoder_ms,
             "reconstructionMs": t.reconstruction_ms, "evaluations": [out.evaluations.0, out.evaluations.1, out.evaluations.2],
             "land": out.heights.iter().filter(|v| **v > 0.0).count() as f64 / out.heights.len() as f64,

@@ -14,19 +14,19 @@ pub(crate) fn apply(request: &mut Request, value: &Value) -> Result<(), String> 
         return Err("Contexte régional requis pour les zones.".into());
     };
     let region = &value["region"];
-    let extent = region["width"].as_f64().unwrap_or(40000.0);
+    let extent = region["width"].as_f64().unwrap_or(request.extent_m);
     let origin = (
         region["x"].as_f64().unwrap_or(0.0),
         region["y"].as_f64().unwrap_or(0.0),
     );
     if !extent.is_finite()
-        || !(500.0..=40000.0).contains(&extent)
+        || !(500.0..=request.extent_m).contains(&extent)
         || !origin.0.is_finite()
         || !origin.1.is_finite()
         || origin.0 < 0.0
         || origin.1 < 0.0
-        || origin.0 + extent > 40000.000001
-        || origin.1 + extent > 40000.000001
+        || origin.0 + extent > request.extent_m + 1e-6
+        || origin.1 + extent > request.extent_m + 1e-6
     {
         return Err("Zones hors de la surface neuronale.".into());
     }

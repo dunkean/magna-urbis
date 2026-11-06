@@ -20,7 +20,7 @@ fn exact_archived_camp_requests_keep_needs_and_regional_access() {
         let f:Fixture=serde_json::from_slice(&input).unwrap();
         let config=serde_json::to_vec(&f.layout_config).unwrap();
         let roads=serde_json::to_vec(&f.roads).unwrap();
-        let surface=Surface{geometry:None,width:f.width,n:f.n,height:&f.height,water:&f.water};
+        let surface=Surface{geometry:None,width:f.width,n:f.n,height:&f.height,water:&f.water, interpolation: Default::default(),};
         let tick=std::time::Instant::now();
         let layouts=super::super::generate_quarters(&f.seed,&f.sites,&f.layout_config,surface,&f.roads).unwrap();
         let parts=super::super::generate_parcels(&f.seed,&layouts,&Default::default()).unwrap();

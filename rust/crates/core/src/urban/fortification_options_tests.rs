@@ -5,7 +5,7 @@ const N:usize=128;
 const W:f64=2048.0;
 fn point(x:f64,y:f64)->Point {pt(x,y)}
 fn surface<'a>(height:&'a [f32],water:&'a [u8])->Surface<'a> {
-    Surface {geometry:None,width:W,n:N,height,water}
+    Surface {geometry:None,width:W,n:N,height,water, interpolation: Default::default(),}
 }
 fn street(a:Point,b:Point)->Street {Street {path:vec![a,b],widths:vec![6.0;2],rank:1,role:"regional".into()}}
 fn layout(shape:Shape,streets:Vec<Street>)->Layout {
@@ -162,7 +162,7 @@ fn river_witness_on_off_svg() {
         geometry:Option<super::super::super::VectorGeography>,sites:Vec<Site>,roads:Vec<Street>,layout_config:LayoutConfig}
     let f:Fixture=serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     let geography=f.geometry.map(|g|super::super::super::Geography::new(g,f.width).unwrap());
-    let s=Surface {geometry:geography.as_ref(),width:f.width,n:f.n,height:&f.height,water:&f.water};
+    let s=Surface {geometry:geography.as_ref(),width:f.width,n:f.n,height:&f.height,water:&f.water, interpolation: Default::default(),};
     let out=std::env::var("WALLS_OPTS_OUT").unwrap();std::fs::create_dir_all(&out).unwrap();
     for culture in ["european-organic","bastide","al-andalus","medina","hanseatic"] {
         let mut site=f.sites[0].clone();site.culture=culture.into();

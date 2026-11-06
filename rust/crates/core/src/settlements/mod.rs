@@ -229,6 +229,9 @@ impl Output {
 /// The adapted terrain with its derived fields, computed once and shared by placement and routing.
 pub struct Terrain {
     fields: grid::Fields,
+    /// Authoritative physical metres; planning fields and wet routing retain their capped grid.
+    physical_height: Option<Vec<f32>>,
+    physical_interpolation: crate::urban::HeightInterpolation,
     urban_geometry: Option<crate::urban::Geography>,
     /// Pooled fields of the last coarser routing grid (block size, fields).
     route_fields: std::sync::Mutex<Option<(usize, std::sync::Arc<grid::Fields>)>>,
@@ -236,6 +239,41 @@ pub struct Terrain {
     resources: std::sync::OnceLock<crate::resources::ResourceFields>,
 }
 impl Terrain {
+    fn urban_surface(&self) -> crate::urban::Surface<'_> {
+        let r = &self.fields.r;
+        crate::urban::Surface {
+            geometry: self.urban_geometry.as_ref(),
+            width: r.width,
+            n: r.n,
+            height: self.physical_height.as_deref().unwrap_or(&r.height),
+            water: &r.water,
+            interpolation: self.physical_interpolation,
+        }
+    }
+
+    /// Install the full-extent, cell-centred physical height field. Water and
+    /// routing masks remain on the planning grid to bound their memory use.
+    pub fn set_physical_height(&mut self, n: usize, height: Vec<f32>) -> Result<(), String> {
+        let size = n.checked_mul(n).ok_or("Invalid physical terrain resolution")?;
+        if !(2..=8192).contains(&n)
+            || size.checked_mul(std::mem::size_of::<f32>()).is_none_or(|bytes| bytes > 256 * 1024 * 1024)
+            || height.len() != size
+            || height.iter().any(|v| !v.is_finite())
+        {
+            return Err("Invalid physical terrain height field".into());
+        }
+        self.physical_height = Some(height);
+        self.physical_interpolation = crate::urban::HeightInterpolation::PhysicalBilinear;
+        Ok(())
+    }
+
+    pub fn set_physical_spline(&mut self, n: usize, height: Vec<f32>, floor: f32) -> Result<(), String> {
+        if !floor.is_finite() { return Err("Invalid physical terrain floor".into()); }
+        self.set_physical_height(n, height)?;
+        self.physical_interpolation = crate::urban::HeightInterpolation::BSpline { floor };
+        Ok(())
+    }
+
     /// Uses the retained physical ground and wet/rock mask; no terrain regeneration.
     pub fn urban_quarters(
         &self,
@@ -249,13 +287,7 @@ impl Terrain {
             seed,
             sites,
             config,
-            crate::urban::Surface {
-                geometry: self.urban_geometry.as_ref(),
-                width: r.width,
-                n: r.n,
-                height: &r.height,
-                water: &r.water,
-            },
+            self.urban_surface(),
             roads,
         )?;
         crate::urban::display::quay_water_levels(&mut layouts, r.width, r.n, &r.water, &r.water_level);
@@ -282,13 +314,7 @@ impl Terrain {
             seed,
             layouts,
             partitions,
-            crate::urban::Surface {
-                geometry: self.urban_geometry.as_ref(),
-                width: r.width,
-                n: r.n,
-                height: &r.height,
-                water: &r.water,
-            },
+            self.urban_surface(),
             &r.water_level,
             architecture_culture,
         )
@@ -310,13 +336,7 @@ impl Terrain {
             seed,
             layouts,
             partitions,
-            crate::urban::Surface {
-                geometry: self.urban_geometry.as_ref(),
-                width: r.width,
-                n: r.n,
-                height: &r.height,
-                water: &r.water,
-            },
+            self.urban_surface(),
             &r.water_level,
             architecture_culture,
             start,
@@ -342,13 +362,7 @@ impl Terrain {
             seed,
             layouts,
             partitions,
-            crate::urban::Surface {
-                geometry: self.urban_geometry.as_ref(),
-                width: r.width,
-                n: r.n,
-                height: &r.height,
-                water: &r.water,
-            },
+            self.urban_surface(),
             &r.water_level,
             architecture_culture,
             offset,
@@ -360,7 +374,7 @@ impl Terrain {
         let size = raster.n.checked_mul(raster.n).ok_or("Invalid raster")?;
         if !(16..=1024).contains(&raster.n)
             || !raster.width.is_finite()
-            || !(250.0..=100000.0).contains(&raster.width)
+            || !(250.0..=200000.0).contains(&raster.width)
             || [
                 raster.height.len(),
                 raster.water.len(),
@@ -382,6 +396,8 @@ impl Terrain {
         }
         Ok(Self {
             fields: grid::Fields::new(raster),
+            physical_height: None,
+            physical_interpolation: crate::urban::HeightInterpolation::Bilinear,
             urban_geometry: None,
             route_fields: Default::default(),
             region: Default::default(),
@@ -606,4 +622,28 @@ fn class_of(pop: u32) -> &'static str {
 fn smooth(v: f64, lo: f64, hi: f64) -> f64 {
     let t = ((v - lo) / (hi - lo)).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
+}
+
+#[cfg(test)]
+mod physical_tests {
+    use super::*;
+
+    #[test]
+    fn retained_physical_ground_does_not_expand_planning_water() {
+        let height = vec![12.0; 16 * 16];
+        let water = vec![0; 16 * 16];
+        let widths = vec![0.0; 16 * 16];
+        let ids = vec![-1; 16 * 16];
+        let mut terrain = Terrain::new(Raster { width: 250.0, n: 16,
+            height: &height, water: &water, water_level: &height, river_width: &widths, river_ids: &ids }).unwrap();
+        let mut physical = vec![30.0; 32 * 32];
+        physical[10 * 32 + 10] = 80.0;
+        terrain.set_physical_height(32, physical).unwrap();
+        let surface = terrain.urban_surface();
+        assert_eq!(surface.n, 16);
+        assert_eq!(surface.water.len(), 16 * 16);
+        assert_eq!(surface.height_resolution(), 32);
+        assert_eq!(surface.height_at(Point { x: 10.5 * 250.0 / 32.0, y: 10.5 * 250.0 / 32.0 }), 80.0);
+        assert!(terrain.set_physical_height(32, vec![f32::NAN; 32 * 32]).is_err());
+    }
 }

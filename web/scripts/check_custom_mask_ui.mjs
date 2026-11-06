@@ -17,7 +17,7 @@ try {
     const ready=()=>page.waitForFunction(embed=>{const w=embed?document.querySelector('#frames iframe')?.contentWindow:window;return w?.magnaBenchContext?.ready()&&w.document.querySelector('#terrainLoading')?.hidden;},embedded);
     const maskStats=async()=>{const e=await frame.locator('body').evaluate(()=>window.magnaBenchContext.capture().editor),weights=inflateSync(Buffer.from(e.mask,'base64url')).subarray(2);let sum=0,hash=0;for(let i=0;i<weights.length;i++){sum+=weights[i];hash=(hash+weights[i]*(i+1))%4294967291;}return {sum,hash,mode:e.mode,encoded:e.mask};};
     const stroke=async(tool,u=.35,v=.45)=>{await editor.locator('[data-id="tool"]').selectOption(tool);const b=await canvas.boundingBox();await page.mouse.move(b.x+b.width*u,b.y+b.height*v);await page.mouse.down();await page.mouse.move(b.x+b.width*(u+.08),b.y+b.height*v,{steps:8});await page.mouse.up();};
-    await ready();assert.equal(await panel.locator('[data-stage]').count(),19);assert.equal(await editor.locator('canvas').count(),0);assert.equal(await stage.evaluate(e=>e.open),false);assert.equal(await toggle.isChecked(),false);
+    await ready();assert(await panel.isHidden());await frame.locator('#proceduralInspector').click();await panel.waitFor();assert.equal(await panel.locator('[data-stage]').count(),19);assert.equal(await editor.locator('canvas').count(),0);assert.equal(await stage.evaluate(e=>e.open),false);assert.equal(await toggle.isChecked(),false);
     await panel.locator('[data-start]').click();await panel.locator('[data-stage="grids"][data-state="waiting"]').waitFor();
     await stage.locator('[data-run-stage="customMask"]').click();assert.equal(await stage.evaluate(e=>e.open),false);assert(await canvas.isVisible());assert(await toggle.isChecked());await ready();
     await panel.locator('[data-open-mask]').click();assert(await editor.locator('[data-id="tool"]').isVisible());
@@ -49,7 +49,7 @@ try {
     const pngPromise=page.waitForEvent('download');await editor.locator('[data-id="png"]').click();const png=await readFile(await (await pngPromise).path());assert.equal(png.readUInt32BE(0),0x89504e47);assert.equal(png[24],16);
     // Switching to neural restores this same input card, without a duplicate editor.
     await toggle.click();await panel.locator('#terrainMethod').selectOption('neural');assert.equal(await frame.locator('.stages > [data-stage="customMask"]').count(),1);assert.equal(await frame.locator('#terrainSketchEditor').count(),1);assert(await stage.locator('[data-run-stage="customMask"]').isVisible());
-    await frame.locator('#terrainMethod').selectOption('procedural');assert.equal(await panel.locator('[data-stage="customMask"]').count(),1);
+    await frame.locator('#terrainMethod').selectOption('procedural');assert(await panel.isHidden());await frame.locator('#proceduralInspector').click();assert.equal(await panel.locator('[data-stage="customMask"]').count(),1);
     report.push({layout,preset,interactiveInputStage:true,mainMapOverlay:true,transparent:true,brushAndEraser:true,undoRedo:true,fillAndClear:true,zoneImportExport:true,heightmapImportExport:true,zoomAligned:true,maskApplied:true,toggleRetainsDrawing:true,neuralCardRetained:true});console.log('Passed '+layout);await page.close();
   }
   assert.deepEqual(errors,[]);await writeFile(`${out}/custom-mask-report.json`,JSON.stringify({report,errors},null,2));

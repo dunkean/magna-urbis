@@ -8,8 +8,20 @@ use crate::{
 
 const SOURCE_N: usize = 1024;
 
+fn checked_source_n(n: usize) -> Result<usize, String> {
+    if !(2..=8192).contains(&n) { return Err("Résolution physique invalide (2 à 8192 cellules).".into()); }
+    Ok(n)
+}
+
+fn square_source_n(len: usize) -> Result<usize, String> {
+    let n = (len as f64).sqrt() as usize;
+    if n.checked_mul(n) != Some(len) { return Err("Surface préparée non carrée.".into()); }
+    checked_source_n(n)
+}
+
 pub struct TerrainGenerator {
     map_width: f64,
+    source_n: usize,
     motif: f64,
     relief: Relief,
     erosion: f64,
@@ -99,7 +111,16 @@ impl TerrainGenerator {
             generation_noise,
             None,
             environment,
+            SOURCE_N,
         )
+    }
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_mixed_with_noise_at_resolution(
+        seed: &str, map_width: f64, relief: &str, erosion: f64, motif: f64,
+        mountain_mix: f64, generation_noise: Option<&crate::GenerationNoise<'_>>,
+        environment: Option<&str>, source_n: usize,
+    ) -> Result<Self, String> {
+        Self::new_prepared(seed,map_width,relief,erosion,motif,mountain_mix,generation_noise,None,environment,source_n)
     }
     #[allow(clippy::too_many_arguments)]
     pub fn new_mixed_with_source(
@@ -113,6 +134,9 @@ impl TerrainGenerator {
         environment: Option<&str>,
     ) -> Result<Self, String> {
         // The engine takes ownership of the pipeline output: no copy of the field.
+        let planes = if Relief::parse(relief)?.is_geological() { 2 } else { 1 };
+        if source.len() % planes != 0 { return Err("Champ de relief externe invalide.".into()); }
+        let source_n = square_source_n(source.len() / planes)?;
         Self::new_prepared(
             seed,
             map_width,
@@ -123,7 +147,15 @@ impl TerrainGenerator {
             None,
             Some(source),
             environment,
+            source_n,
         )
+    }
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_mixed_with_source_at_resolution(
+        seed: &str, map_width: f64, relief: &str, erosion: f64, motif: f64,
+        mountain_mix: f64, source: Vec<f32>, environment: Option<&str>, source_n: usize,
+    ) -> Result<Self, String> {
+        Self::new_prepared(seed,map_width,relief,erosion,motif,mountain_mix,None,Some(source),environment,source_n)
     }
     #[allow(clippy::too_many_arguments)] // Temporary prepared numeric interchange.
     fn new_prepared(
@@ -136,15 +168,18 @@ impl TerrainGenerator {
         generation_noise: Option<&crate::GenerationNoise<'_>>,
         external_source: Option<Vec<f32>>,
         environment: Option<&str>,
+        source_n: usize,
     ) -> Result<Self, String> {
+        let source_n = checked_source_n(source_n)?;
         if seed.len() > 4096 {
             return Err("La graine ne doit pas dépasser 4 096 octets.".into());
         }
         if !mountain_mix.is_finite() || !(0.0..=1.0).contains(&mountain_mix) {
             return Err("La proportion de montagnes doit être comprise entre 0 et 1.".into());
         }
-        if !map_width.is_finite() || !(500.0..=100000.0).contains(&map_width) {
-            return Err("La largeur doit être comprise entre 500 et 100 000 mètres.".into());
+        let width_limit = if external_source.is_some() { 200000.0 } else { 100000.0 };
+        if !map_width.is_finite() || !(500.0..=width_limit).contains(&map_width) {
+            return Err(format!("La largeur doit être comprise entre 500 et {width_limit:.0} mètres."));
         }
         if !motif.is_finite() || !(250.0..=50000.0).contains(&motif) {
             return Err("La taille du motif doit être comprise entre 250 et 50 000 mètres.".into());
@@ -192,7 +227,7 @@ impl TerrainGenerator {
                     source_width,
                     source_relief,
                     0.0,
-                    SOURCE_N,
+                    source_n,
                     source_motif,
                     mountain_mix,
                 )?
@@ -204,32 +239,36 @@ impl TerrainGenerator {
         // Geological reliefs carry their background after the source field.
         let mut external_background = None;
         let prepared = if let Some(mut source) = external_source {
-            if !matches!(
-                kind,
-                Relief::Hills
-                    | Relief::Mountains
-                    | Relief::Mixed
-                    | Relief::HighMountains
-                    | Relief::Valley
-                    | Relief::Canyon
-                    | Relief::Volcano
-                    | Relief::Caldera
-                    | Relief::Plateau
-            ) || source.len() != SOURCE_N * SOURCE_N * if kind.is_geological() { 2 } else { 1 }
-                || !source.iter().all(|h| h.is_finite() && *h >= 0.3)
-            {
-                return Err("Champ de relief externe invalide.".into());
+            if source.is_empty() {
+                PreparedTerrain::default()
+            } else {
+                if !matches!(
+                    kind,
+                    Relief::Hills
+                        | Relief::Mountains
+                        | Relief::Mixed
+                        | Relief::HighMountains
+                        | Relief::Valley
+                        | Relief::Canyon
+                        | Relief::Volcano
+                        | Relief::Caldera
+                        | Relief::Plateau
+                ) || source.len() != source_n * source_n * if kind.is_geological() { 2 } else { 1 }
+                    || !source.iter().all(|h| h.is_finite() && *h >= 0.3)
+                {
+                    return Err("Champ de relief externe invalide.".into());
+                }
+                if kind.is_geological() {
+                    external_background = Some(source.split_off(source_n * source_n));
+                }
+                PreparedTerrain { height: source }
             }
-            if kind.is_geological() {
-                external_background = Some(source.split_off(SOURCE_N * SOURCE_N));
-            }
-            PreparedTerrain { height: source }
         } else if let Some(base) = &flat_base {
             let mut height = base.clone();
             crate::erosion::erode_shape(
                 &mut height,
-                SOURCE_N,
-                source_width / SOURCE_N as f64,
+                source_n,
+                source_width / source_n as f64,
                 source_erosion,
                 0.03,
             );
@@ -244,7 +283,7 @@ impl TerrainGenerator {
                     source_width,
                     source_relief,
                     source_erosion,
-                    SOURCE_N,
+                    source_n,
                     source_motif,
                     mountain_mix,
                     generation_noise,
@@ -263,7 +302,7 @@ impl TerrainGenerator {
                 map_width,
                 environment,
                 erosion,
-                SOURCE_N,
+                source_n,
                 environment_motif,
                 0.5,
             )?
@@ -326,6 +365,7 @@ impl TerrainGenerator {
         );
         let result = Self {
             map_width,
+            source_n,
             motif,
             relief: kind,
             erosion,
@@ -365,7 +405,7 @@ impl TerrainGenerator {
         Ok(result)
     }
 
-    /// Retains an externally prepared signed surface: `1024²` metres over the
+    /// Retains an externally prepared square signed surface in metres over the
     /// map, row-major from the north-west corner, sea level at zero. Sampling
     /// reads it as is; no procedural relief, coast cut or erosion is applied.
     pub fn with_surface(seed: &str, map_width: f64, heights: &[f32]) -> Result<Self, String> {
@@ -373,11 +413,12 @@ impl TerrainGenerator {
     }
     /// `with_surface` taking ownership of the heights (no copy).
     pub fn with_surface_owned(seed: &str, map_width: f64, heights: Vec<f32>) -> Result<Self, String> {
-        if heights.len() != SOURCE_N * SOURCE_N || !heights.iter().all(|h| h.is_finite()) {
+        let source_n = square_source_n(heights.len())?;
+        if !heights.iter().all(|h| h.is_finite()) {
             return Err("Surface préparée invalide.".into());
         }
-        // A constant placeholder source skips any procedural relief generation.
-        let placeholder = vec![1.0; SOURCE_N * SOURCE_N];
+        // An empty external source skips procedural generation without allocating
+        // a duplicate N² placeholder or its mip pyramid.
         let mut generator = Self::new_prepared(
             seed,
             map_width,
@@ -386,8 +427,9 @@ impl TerrainGenerator {
             map_width.clamp(250.0, 50000.0),
             0.5,
             None,
-            Some(placeholder),
+            Some(Vec::new()),
             None,
+            source_n,
         )?;
         let max = heights.iter().copied().fold(f32::MIN, f32::max) as f64;
         generator.max_height = max.max(1.0);
@@ -426,12 +468,13 @@ impl TerrainGenerator {
         {
             return;
         }
-        let cell = self.map_width / SOURCE_N as f64;
-        for y in 0..SOURCE_N {
-            for x in 0..SOURCE_N {
+        let n = self.source_n;
+        let cell = self.map_width / n as f64;
+        for y in 0..n {
+            for x in 0..n {
                 let (u, v) = (
-                    (x as f64 + 0.5) / SOURCE_N as f64,
-                    (y as f64 + 0.5) / SOURCE_N as f64,
+                    (x as f64 + 0.5) / n as f64,
+                    (y as f64 + 0.5) / n as f64,
                 );
                 let sea = zones.sample(u, v)[1];
                 if sea <= 0.0 {
@@ -444,7 +487,7 @@ impl TerrainGenerator {
                             (y as f64 + 0.5) * cell / motif,
                             3,
                         );
-                let value = &mut field[y * SOURCE_N + x];
+                let value = &mut field[y * n + x];
                 *value = if sea < 0.5 {
                     (*value as f64 * (1.0 - sea * 2.0)) as f32
                 } else {
@@ -466,9 +509,15 @@ impl TerrainGenerator {
         environment: Option<&str>,
         zones: &crate::TerrainZones,
     ) -> Result<Self, String> {
+        Self::with_zones_at_resolution(seed,width,relief,erosion,motif,mix,environment,zones,SOURCE_N)
+    }
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_zones_at_resolution(
+        seed: &str, width: f64, relief: &str, erosion: f64, motif: f64, mix: f64,
+        environment: Option<&str>, zones: &crate::TerrainZones, source_n: usize,
+    ) -> Result<Self, String> {
         zones.validate()?;
-        let mut base =
-            Self::new_with_environment(seed, width, relief, erosion, motif, mix, environment)?;
+        let mut base = Self::new_mixed_with_noise_at_resolution(seed,width,relief,erosion,motif,mix,None,environment,source_n)?;
         if base.relief == Relief::Cavern {
             return Err("Les zones de relief ne s’appliquent pas aux cavernes.".into());
         }
@@ -480,17 +529,18 @@ impl TerrainGenerator {
             width,
             relief,
             erosion,
-            SOURCE_N,
+            base.source_n,
             motif,
             mix,
             None,
             Some(zones),
         )?
         .height;
-        let cell = width / SOURCE_N as f64;
-        for y in 0..SOURCE_N {
-            for x in 0..SOURCE_N {
-                let i = y * SOURCE_N + x;
+        let n = base.source_n;
+        let cell = width / n as f64;
+        for y in 0..n {
+            for x in 0..n {
+                let i = y * n + x;
                 let (px, py) = ((x as f64 + 0.5) * cell, (y as f64 + 0.5) * cell);
                 let weights = zones.sample(px / width, py / width);
                 let coverage = 1.0 - weights[0];
@@ -499,7 +549,7 @@ impl TerrainGenerator {
             }
         }
         base.cut_zone_sea(&mut field, zones, motif);
-        crate::erosion::erode_surface(&mut field, SOURCE_N, cell, erosion, 0.85, motif, false);
+        crate::erosion::erode_surface(&mut field, n, cell, erosion, 0.85, motif, false);
         base.max_height = field.iter().copied().fold(f32::NEG_INFINITY, f32::max) as f64;
         base.edited_surface = Surface::new(field);
         base.sea_zones = Some(zones.clone());
@@ -510,7 +560,7 @@ impl TerrainGenerator {
     pub fn set_edited_surface(&mut self, heights: &[f32]) -> Result<(), String> {
         if self.prepared
             || self.relief == Relief::Cavern
-            || heights.len() != SOURCE_N * SOURCE_N
+            || heights.len() != self.source_n * self.source_n
             || !heights.iter().all(|h| h.is_finite())
         {
             return Err("Surface éditée invalide.".into());
@@ -518,8 +568,8 @@ impl TerrainGenerator {
         let mut field = heights.to_vec();
         crate::erosion::erode_surface(
             &mut field,
-            SOURCE_N,
-            self.map_width / SOURCE_N as f64,
+            self.source_n,
+            self.map_width / self.source_n as f64,
             self.erosion,
             self.coast_talus(),
             self.motif,
@@ -552,6 +602,41 @@ impl TerrainGenerator {
             values.extend(self.background.levels.iter().flatten());
         }
         values
+    }
+    pub fn sampling_base_field(&self) -> Vec<f32> {
+        let physical = if !self.coastal_surface.levels.is_empty() {
+            &self.coastal_surface
+        } else if !self.edited_surface.levels.is_empty() {
+            &self.edited_surface
+        } else {
+            self.sampling_surface()
+        };
+        physical.levels.first().cloned().unwrap_or_default()
+    }
+    /// One authoritative physical height plane for native consumers. This
+    /// evaluates finite analytic features at the selected generation spacing.
+    pub fn physical_height_field(&self) -> Vec<f32> {
+        let n = self.source_n;
+        let cell = self.map_width / n as f64;
+        let mut field = vec![0.0; n * n];
+        crate::terrain_par::rows(&mut field, n, |y, row| {
+            for (x, h) in row.iter_mut().enumerate() {
+                *h = self.height_at((x as f64 + 0.5) * cell, (y as f64 + 0.5) * cell, cell) as f32;
+            }
+        });
+        field
+    }
+    pub fn physical_cave_field(&self) -> Vec<u8> {
+        if self.cave.is_none() { return Vec::new(); }
+        let n = self.source_n;
+        let cell = self.map_width / n as f64;
+        let mut field = vec![0; n * n];
+        crate::terrain_par::rows(&mut field, n, |y, row| {
+            for (x, value) in row.iter_mut().enumerate() {
+                *value = self.rock_at((x as f64 + 0.5) * cell, (y as f64 + 0.5) * cell);
+            }
+        });
+        field
     }
     /// Retained physical field, including its filtered pyramid.
     fn sampling_surface(&self) -> &Surface {
@@ -612,11 +697,17 @@ impl TerrainGenerator {
         erosion: f64,
         motif: f64,
     ) -> Result<Vec<f32>, String> {
+        // The legacy GPU erosion path is explicitly limited to 1024².
+        Self::prepare_environment_at_resolution(seed,width,relief,erosion,motif,SOURCE_N)
+    }
+    pub fn prepare_environment_at_resolution(
+        seed: &str, width: f64, relief: &str, erosion: f64, motif: f64, source_n: usize,
+    ) -> Result<Vec<f32>, String> {
         Relief::environment(relief)?;
         if !motif.is_finite() || !(250.0..=150000.0).contains(&motif) {
             return Err("Taille du motif environnant invalide.".into());
         }
-        Ok(generate_motif(seed, width, relief, erosion, SOURCE_N, motif, 0.5)?.height)
+        Ok(generate_motif(seed, width, relief, erosion, checked_source_n(source_n)?, motif, 0.5)?.height)
     }
     pub fn sampling_permutations(&self) -> Vec<u32> {
         self.noise
@@ -645,10 +736,11 @@ impl TerrainGenerator {
         if mask == 0 {
             return Ok(());
         }
-        let cell = self.map_width / SOURCE_N as f64;
-        let mut field = Vec::with_capacity(SOURCE_N * SOURCE_N);
-        for y in 0..SOURCE_N {
-            for x in 0..SOURCE_N {
+        let n = self.source_n;
+        let cell = self.map_width / n as f64;
+        let mut field = Vec::with_capacity(n * n);
+        for y in 0..n {
+            for x in 0..n {
                 field.push(
                     self.height_at((x as f64 + 0.5) * cell, (y as f64 + 0.5) * cell, cell) as f32,
                 );
@@ -659,7 +751,7 @@ impl TerrainGenerator {
         }
         crate::erosion::erode_surface(
             &mut field,
-            SOURCE_N,
+            n,
             cell,
             self.erosion,
             self.coast_talus(),
@@ -706,7 +798,7 @@ impl TerrainGenerator {
     /// Prepared signed heights; sea level must not be renormalized or cut again.
     pub fn set_coast_surface(&mut self, heights: &[f32]) -> Result<(), String> {
         if !self.coast.active()
-            || heights.len() != SOURCE_N * SOURCE_N
+            || heights.len() != self.source_n * self.source_n
             || !heights.iter().all(|h| h.is_finite())
         {
             return Err("Surface littorale préparée invalide.".into());
@@ -721,6 +813,14 @@ impl TerrainGenerator {
 
     pub fn width(&self) -> f64 {
         self.map_width
+    }
+    pub fn source_resolution(&self) -> usize { self.source_n }
+    pub fn erosion_spacing(&self) -> Option<f64> {
+        if self.prepared || self.erosion == 0.0 || self.relief == Relief::Cavern { return None; }
+        let baseline = if self.relief == Relief::Flat { 320 }
+            else { crate::erosion::surface_resolution(self.map_width, self.motif) };
+        let n = crate::erosion::physical_erosion_resolution(self.source_n, baseline).min(self.source_n);
+        Some(self.map_width / n as f64)
     }
     pub fn motif_size(&self) -> f64 {
         self.motif
@@ -1031,45 +1131,64 @@ fn sample_c2(field: &[f32], n: usize, fx: f64, fy: f64) -> f64 {
 // same smoothly interpolated level, including finite features and erosion deltas.
 struct Surface {
     levels: Vec<Vec<f32>>,
+    dimensions: Vec<usize>,
 }
 
 impl Surface {
     fn new(field: Vec<f32>) -> Self {
         if field.is_empty() {
-            return Self { levels: Vec::new() };
+            return Self { levels: Vec::new(), dimensions: Vec::new() };
         }
+        let mut n = (field.len() as f64).sqrt() as usize;
+        debug_assert_eq!(n * n, field.len());
         let mut levels = vec![field];
-        let mut n = SOURCE_N;
+        let mut dimensions = vec![n];
         while n > 1 {
             let previous = levels.last().unwrap();
             let half = n / 2;
             let mut next = vec![0.0; half * half];
+            let ratio = n as f64 / half as f64;
             for y in 0..half {
+                let y0 = y as f64 * ratio;
+                let y1 = (y + 1) as f64 * ratio;
                 for x in 0..half {
-                    let i = 2 * y * n + 2 * x;
-                    next[y * half + x] =
-                        (previous[i] + previous[i + 1] + previous[i + n] + previous[i + n + 1])
-                            * 0.25;
+                    if n % 2 == 0 {
+                        let i = 2 * y * n + 2 * x;
+                        next[y * half + x] = (previous[i] + previous[i + 1] + previous[i + n] + previous[i + n + 1]) * 0.25;
+                        continue;
+                    }
+                    let x0 = x as f64 * ratio;
+                    let x1 = (x + 1) as f64 * ratio;
+                    let mut weighted = 0.0;
+                    for iy in y0.floor() as usize..(y1.ceil() as usize).min(n) {
+                        let wy = (y1.min((iy + 1) as f64) - y0.max(iy as f64)).max(0.0);
+                        for ix in x0.floor() as usize..(x1.ceil() as usize).min(n) {
+                            let wx = (x1.min((ix + 1) as f64) - x0.max(ix as f64)).max(0.0);
+                            weighted += previous[iy * n + ix] as f64 * wx * wy;
+                        }
+                    }
+                    next[y * half + x] = (weighted / (ratio * ratio)) as f32;
                 }
             }
             levels.push(next);
             n = half;
+            dimensions.push(n);
         }
-        Self { levels }
+        Self { levels, dimensions }
     }
 
     fn sample(&self, u: f64, v: f64, footprint: f64) -> f64 {
         if self.levels.is_empty() {
             return 0.0;
         }
-        let lod = (footprint * SOURCE_N as f64)
+        let lod = (footprint * self.dimensions[0] as f64)
             .max(1.0)
             .log2()
             .min((self.levels.len() - 1) as f64);
         let lower = lod.floor() as usize;
         let upper = (lower + 1).min(self.levels.len() - 1);
         let at = |level: usize| {
-            let n = SOURCE_N >> level;
+            let n = self.dimensions[level];
             sample_c2(
                 &self.levels[level],
                 n,
@@ -1083,5 +1202,50 @@ impl Surface {
         } else {
             at(lower) * (1.0 - t) + at(upper) * t
         }
+    }
+}
+
+#[cfg(test)]
+mod physical_resolution_tests {
+    use super::*;
+
+    #[test]
+    fn odd_mips_cover_the_entire_physical_extent() {
+        for source_n in [33, 1334] {
+            let ramp: Vec<f32> = (0..source_n*source_n)
+                .map(|i| ((i % source_n) as f64 + 0.5) as f32 / source_n as f32)
+                .collect();
+            let surface = Surface::new(ramp);
+            for (level, &n) in surface.dimensions.iter().enumerate() {
+                if n < 4 { continue; }
+                for x in [0, n/4, n/2, n*3/4, n-1] {
+                    let expected = (x as f64 + 0.5) / n as f64;
+                    let actual = surface.levels[level][(n/2)*n+x] as f64;
+                    assert!((actual-expected).abs() < 0.002, "N={source_n}, level={level}, x={x}: {actual} vs {expected}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn prepared_surface_retains_native_cell_centers_and_pyramid() {
+        let n = 17;
+        let height: Vec<f32> = (0..n*n).map(|i| i as f32 - 100.0).collect();
+        let terrain = TerrainGenerator::with_surface_owned("physical", 500.0, height.clone()).unwrap();
+        assert_eq!(terrain.source_resolution(), n);
+        assert!(terrain.source.levels.is_empty());
+        assert_eq!(terrain.sampling_base_field(), height);
+        assert_eq!(&terrain.sampling_field()[..n*n], height.as_slice());
+        assert_eq!(terrain.physical_height_field().len(), n*n);
+        assert!((terrain.width() / terrain.source_resolution() as f64 - 500.0 / 17.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn prepared_surface_accepts_large_neural_extent_without_changing_n() {
+        let n = 19;
+        let terrain = TerrainGenerator::with_surface_owned("wide", 200000.0, vec![42.0; n*n]).unwrap();
+        assert_eq!(terrain.source_resolution(), n);
+        assert_eq!(terrain.sampling_field()[0], 42.0);
+        assert!(TerrainGenerator::with_surface_owned("bad", 200000.0, vec![0.0; n*n+1]).is_err());
     }
 }

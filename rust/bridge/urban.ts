@@ -5,6 +5,7 @@ import type { SettlementTerrain } from '../pkg/wasm/magna_urbis_wasm.js';
 import { inWorker, loadCoreWasm, recoverCoreWasm, singleWasmModule, wasmThreadsInfo, type CoreWasm, type WasmThreadsInfo } from './wasmRuntime';
 import { createUrbanPool, ranges, type PoolArgs, type UrbanPool } from './urbanPool';
 import type { Point, RoadOutput, RoadSite, SettlementRaster } from './settlements';
+import { validatePhysicalTerrain } from './settlements';
 import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
 import { nativeJson, nativeRasterClient } from './nativeEngine';
 import { validateUrbanSource, type UrbanSourceHandle } from './urbanSource';
@@ -299,12 +300,30 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
   const runWasmUncached = async (request: UrbanRequest, keepLayouts = false): Promise<UrbanResponse> => {
     if (request.raster) {
       const r = request.raster;
+      validatePhysicalTerrain(r.physical);
+      // Bound helper copies of the full height plane; a later smaller raster can use the pool again.
+      const helperBytes = (wasmThreadsInfo().threads - 1) * (r.physical?.height.byteLength ?? 0);
+      if (helperBytes > 128 * 1024 * 1024 && pool) { pool.dispose(); pool = undefined; }
+      else if (helperBytes <= 128 * 1024 * 1024 && !pool && core && wasmThreadsInfo().mode === 'pool' && inWorker()) {
+        try { pool = createUrbanPool(wasmThreadsInfo().threads, await singleWasmModule()); }
+        catch (error) { console.warn('Urban worker pool unavailable:', error); }
+      }
       if (!keepLayouts) retainedLayouts = undefined;
       retainedPartitions = undefined;
       terrain?.free();
       terrain = undefined;
       const next = new Terrain!(r.width, r.n, r.height, r.water, r.waterLevel, r.riverWidth, r.riverIds);
-      try { if (r.geometry) next.set_urban_geometry(JSON.stringify(r.geometry)); }
+      try {
+        if (r.physical) {
+          const physical = next as SettlementTerrain & {
+            set_physical_height(n: number, height: Float32Array): void;
+            set_physical_height_spline(n: number, height: Float32Array, floor: number): void;
+          };
+          if (r.physical.interpolation === 'bspline') physical.set_physical_height_spline(r.physical.n, r.physical.height, r.physical.floor ?? 0);
+          else physical.set_physical_height(r.physical.n, r.physical.height);
+        }
+        if (r.geometry) next.set_urban_geometry(JSON.stringify(r.geometry));
+      }
       catch (error) { next.free(); throw error; }
       terrain = next; terrainRaster = r;
       pool?.setRaster(r);

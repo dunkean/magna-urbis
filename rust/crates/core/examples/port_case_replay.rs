@@ -8,7 +8,7 @@ fn main()->Result<(),Box<dyn std::error::Error>> {
     let args:Vec<_>=std::env::args().collect();
     let f:Case=serde_json::from_slice(&std::fs::read(&args[1])?)?;
     let geography=f.geometry.map(|g|Geography::new(g,f.width)).transpose()?;
-    let surface=Surface{geometry:geography.as_ref(),n:f.n,width:f.width,height:&f.height,water:&f.water};
+    let surface=Surface{geometry:geography.as_ref(),n:f.n,width:f.width,height:&f.height,water:&f.water, interpolation: Default::default(),};
     let layouts=generate_quarters(&f.seed,&f.sites,&f.layout_config,surface,&f.roads)?;
     std::fs::create_dir_all(&args[2])?;
     std::fs::write(format!("{}/layouts.json",args[2]),serde_json::to_vec(&layouts)?)?;

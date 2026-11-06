@@ -1,4 +1,5 @@
 import type { TerrainProvider } from '../provider';
+import { assertRefinementRegistrationBudget } from '../refinementBudget';
 import { assertNotAborted, type TerrainGrid } from '../model';
 import { assertCanonicalRegistrationField, assertRefinementTerrainRegion, compareRefinementParent,
   registrationFieldFingerprint, validateRegistrationField, type RefinementParentComparison, type RegistrationField, type SurfaceRegistrationBinding } from '../registrationBinding';
@@ -28,8 +29,9 @@ interface Flight { controller: AbortController; promise: Promise<InfiniteRefinem
 export async function createInfiniteRefinementProvider(server: string, field: RegistrationField, options: InfiniteRefinementOptions,
   transport: typeof fetch = fetch): Promise<InfiniteRefinementProvider> {
   assertNotAborted(options.signal);
+  assertRefinementRegistrationBudget(field.n);
   validateRegistrationField(field);
-  if (field.n < 8 || !/^[+]?\d+$/.test(options.seed) || BigInt(options.seed) >= 2n ** 64n) throw new Error('Refinement registration requires an 8–4096 grid and unsigned 64-bit seed');
+  if (field.n < 8 || !/^[+]?\d+$/.test(options.seed) || BigInt(options.seed) >= 2n ** 64n) throw new Error('Refinement registration requires a grid of at least 8 samples per side and an unsigned 64-bit seed');
   const retained: RegistrationField = { width: field.width, n: field.n, data: new Float32Array(field.data) };
   const fieldFingerprint = registrationFieldFingerprint(retained);
   let canonicalField = retained;

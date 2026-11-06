@@ -7,6 +7,7 @@ import { GenerationNoisePlan } from './wasmRuntime';
 import type { TerrainEngine } from './wasmRuntime';
 import type { TerrainData, TerrainRegion, TerrainSettings, TerrainCompute } from './terrain';
 import { gpuSetupDeadline, type TerrainProgressCallback } from './terrainProgress';
+import { sourceDefinition } from './terrainDefinition';
 
 export interface Context { device: GPUDevice; pipelines: Map<string, Promise<GPUComputePipeline>>; lost: boolean }
 let contextPromise: Promise<Context | undefined> | undefined;
@@ -48,6 +49,7 @@ export async function prepareGpu(mode: TerrainCompute, relief: string): Promise<
 
 export const GPU_GENERATION_RELIEFS = ['hills', 'mountains', 'mixed', 'high-mountains', 'valley', 'volcano', 'caldera', 'plateau', 'canyon'];
 export async function generateGpuNoise(state: Context, settings: TerrainSettings,progress?:TerrainProgressCallback): Promise<{ coarse: Float32Array; fine: Float32Array }> {
+  if (sourceDefinition(settings).n !== 1024) throw new Error('Bruit de génération GPU limité à une source de 1024² cellules ; utilisez le calcul CPU pour ce pas physique.');
   const device = state.device;
   // Both entry points share an explicit layout, so the seed buffers are uploaded once.
   const layout = device.createBindGroupLayout({ entries: [
@@ -119,13 +121,22 @@ export class GpuTerrainSampler {
   private capacity = 0;
   private parameters: Float64Array;
   private hasField: boolean;
+  private sourceN: number;
   get lost(): boolean { return this.state.lost; }
 
   constructor(private state: Context, private pipeline: GPUComputePipeline, private mode: TerrainCompute, engine: TerrainEngine) {
     this.parameters = engine.sampling_parameters();
+    this.sourceN = engine.source_resolution();
+    let pyramidCells = 0;
+    for (let level = this.sourceN; level >= 1; level = Math.floor(level / 2)) pyramidCells += level * level;
+    const planes = this.parameters[5] === 3 ? 2 : 1;
+    if (pyramidCells * planes * 4 > state.device.limits.maxStorageBufferBindingSize)
+      throw new Error(`Champ physique ${this.sourceN}² trop grand pour l'échantillonnage GPU ; utilisez le calcul CPU.`);
     const values = engine.sampling_field();
     this.hasField = values.length > 0;
     const data = values.length ? values : new Float32Array(1);
+    if (data.byteLength > state.device.limits.maxStorageBufferBindingSize)
+      throw new Error(`Champ physique ${this.sourceN}² trop grand pour l'échantillonnage GPU ; utilisez le calcul CPU.`);
     this.field = this.upload(data);
     this.perm = this.upload(engine.sampling_permutations());
     this.gradients = this.upload(engine.sampling_gradients());
@@ -143,7 +154,8 @@ export class GpuTerrainSampler {
 
   /** Assemble the full coast on the device; the erosion stage reads this buffer directly. */
   prepareCoastField(settings: TerrainSettings): GPUBuffer {
-    this.dispatchField({ x: 0, y: 0, extent: settings.width, resolution: 1024 }, settings);
+    if (this.sourceN !== 1024) throw new Error('Érosion littorale GPU limitée à 1024² cellules ; utilisez le calcul CPU.');
+    this.dispatchField({ x: 0, y: 0, extent: settings.width, resolution: this.sourceN }, settings);
     return this.output!;
   }
 
@@ -151,13 +163,14 @@ export class GpuTerrainSampler {
     const { x, y, extent, resolution: n } = region;
     if (![x, y, extent, n].every(Number.isFinite) || x < 0 || y < 0 || extent <= 0
       || x + extent > settings.width + 0.0001 || y + extent > settings.width + 0.0001
-      || !Number.isInteger(n) || n < 64 || n > 1024) throw new Error('Région d’échantillonnage invalide.');
+      || !Number.isInteger(n) || n < 64 || n > 8192) throw new Error('Région d’échantillonnage invalide.');
     const device = this.state.device;
     const cell = extent / n, epsilon = Math.max(settings.motifSize / 65536, cell * 0.5);
     const a = this.parameters;
-    const lod = Math.min(10, Math.log2(Math.max(1, cell * (settings.relief === 'flat' && a[5] !== 4 ? 2 / settings.motifSize : 1 / settings.width) * 1024)));
+    const maxLevel = Math.floor(Math.log2(this.sourceN));
+    const lod = Math.min(maxLevel, Math.log2(Math.max(1, cell * (settings.relief === 'flat' && a[5] !== 4 ? 2 / settings.motifSize : 1 / settings.width) * this.sourceN)));
     const params = new Float32Array([a[0], a[1], a[2], a[3], a[4], a[5], this.hasField ? 1 : 0, n,
-      x, y, extent, cell, Math.floor(lod), Math.min(10, Math.floor(lod) + 1), lod - Math.floor(lod), epsilon, a[6], a[7], 0, 0, ...Array.from({ length: 16 }, (_, i) => a[8 + i] ?? 0)]);
+      x, y, extent, cell, Math.floor(lod), Math.min(maxLevel, Math.floor(lod) + 1), lod - Math.floor(lod), epsilon, a[6], a[7], this.sourceN, maxLevel, ...Array.from({ length: 16 }, (_, i) => a[8 + i] ?? 0)]);
     const bytes = n * n * 16;
     if (bytes > this.capacity) {
       this.output?.destroy(); this.readback?.destroy(); this.capacity = bytes;

@@ -46,7 +46,7 @@ fn organic_footpath_camp_delegates_below_the_hamlet_threshold(){
     assert_eq!(kind,Kind::Camp);
     let m=super::super::resolve("inuit-camp","culture","auto","core",1.,&json!({}),"quarters").unwrap();
     let height=vec![10.;64*64];let water=vec![0;64*64];
-    let surface=Surface{geometry:None,width:4000.,n:64,height:&height,water:&water};
+    let surface=Surface{geometry:None,width:4000.,n:64,height:&height,water:&water, interpolation: Default::default(),};
     assert!(lay_out("organic-camp",&s,&applied,kind,&m,surface,&[]).is_none(),"Use the declared organic cut, not roadside farms or a fabricated ring");
 }
 

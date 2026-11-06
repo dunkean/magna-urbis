@@ -41,7 +41,7 @@ fn stilt_entry_small_kind_receives_the_same_bank_and_ground_as_programme() {
     let height = vec![20.0; n * n];
     let water = shore_water(n, 1000.0, 600.0);
     let saved_water = water.clone();
-    let surface = Surface { geometry: None, width: 1000.0, n, height: &height, water: &water };
+    let surface = Surface { geometry: None, width: 1000.0, n, height: &height, water: &water, interpolation: Default::default(),};
     let site = site(100);
     let ground = geography::stilt_ground(&site, &site.culture, surface).unwrap();
     assert!((ground.site.center.x - site.center.x).abs() > 150.0);
@@ -62,7 +62,7 @@ fn stilt_entry_culture_override_controls_ground_without_affecting_other_cultures
     let n = 100;
     let height = vec![20.0; n * n];
     let water = shore_water(n, 1000.0, 600.0);
-    let surface = Surface { geometry: None, width: 1000.0, n, height: &height, water: &water };
+    let surface = Surface { geometry: None, width: 1000.0, n, height: &height, water: &water, interpolation: Default::default(),};
     let mut site = site(100);
     let mut cfg = LayoutConfig { culture: "european-organic".into(), settlement_form: "hamlet".into(), fortification: "none".into(), ..Default::default() };
     assert!(geography::stilt_ground(&site, &cfg.culture, surface).is_none());
@@ -86,7 +86,7 @@ fn stilt_entry_keeps_stilt_bank_priority_over_a_second_port_relocation() {
     let n = 200;
     let height = vec![20.0; n * n];
     let water = shore_water(n, 1000.0, 600.0);
-    let surface = Surface { geometry: None, width: 1000.0, n, height: &height, water: &water };
+    let surface = Surface { geometry: None, width: 1000.0, n, height: &height, water: &water, interpolation: Default::default(),};
     let mut site = site(2000);
     // A 140 m stilt reach (lizardfolk shore model), further than the harbour's 120 m front;
     // stilt-town's 100 m band never leaves a competing relocation.
@@ -126,7 +126,7 @@ fn stilt_entry_p29_shared_surface_allocates_wet_lots_and_exports_real_water_leve
     assert_eq!(height.len(), n * n);
     assert_eq!(levels.len(), n * n);
     assert_eq!(water.len(), n * n);
-    let surface = Surface { geometry: None, width: raster["width"].as_f64().unwrap(), n, height: &height, water };
+    let surface = Surface { geometry: None, width: raster["width"].as_f64().unwrap(), n, height: &height, water, interpolation: Default::default(),};
     let sites: Vec<Site> = serde_json::from_value(request["sites"].clone()).unwrap();
     let roads: Vec<Street> = serde_json::from_value(request["roads"].clone()).unwrap();
     let cfg: LayoutConfig = serde_json::from_value(request["layoutConfig"].clone()).unwrap();
@@ -174,7 +174,7 @@ fn tidal_settlements_build_a_real_share_of_their_occupied_lots_over_water() {
     let width = 4000.;
     let height = vec![1.; n*n];
     let water = shore_water(n, width, 2000.);
-    let surface = Surface { geometry:None, width, n, height:&height, water:&water };
+    let surface = Surface { geometry:None, width, n, height:&height, water:&water, interpolation: Default::default(),};
     let mut shares = vec![];
     let mut footprint_shares = vec![];
     for population in [500, 10000] {

@@ -263,6 +263,7 @@ mod tests {
             n,
             height: &height,
             water: &water,
+            interpolation: Default::default(),
         };
         let site = Site {
             key: "mahalle".into(),

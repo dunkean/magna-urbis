@@ -12,7 +12,7 @@ fn land(quarters:&[magna_urbis_core::urban::Quarter])->geo::MultiPolygon<f64> {
 #[test]
 fn gate_strength_preserves_zero_endpoint_and_population_budget() {
     let n=128;let height=vec![10.0;n*n];let water=vec![0;n*n];
-    let surface=Surface {width:2048.0,n,height:&height,water:&water,geometry:None};
+    let surface=Surface {width:2048.0,n,height:&height,water:&water,geometry:None, interpolation: Default::default(),};
     let site:Site=serde_json::from_value(serde_json::json!({"key":"faubourgs","name":"faubourgs",
         "culture":"european-organic","population":10000,"center":{"x":1000,"y":1000},"radius":320})).unwrap();
     let roads:Vec<Street>=serde_json::from_value(serde_json::json!([

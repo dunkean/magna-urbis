@@ -926,21 +926,67 @@ impl Default for ParcelConfig {
     }
 }
 
+#[derive(Clone, Copy, Default)]
+pub enum HeightInterpolation {
+    #[default]
+    Bilinear,
+    /// Explicit physical source using bilinear samples; coastal wet checks apply even at planning n.
+    PhysicalBilinear,
+    BSpline { floor: f32 },
+}
+
 #[derive(Clone, Copy)]
 pub struct Surface<'a> {
     pub geometry: Option<&'a Geography>,
     pub width: f64,
     pub n: usize,
+    /// Cell-centred metres. This may be finer than `n`/`water`; wet routing stays on the planning grid.
     pub height: &'a [f32],
     pub water: &'a [u8],
+    pub interpolation: HeightInterpolation,
 }
 impl Surface<'_> {
+    pub fn height_resolution(&self) -> usize {
+        if self.height.len() == self.n * self.n { self.n } else { self.height.len().isqrt() }
+    }
     pub fn height_at(&self, p: Point) -> f64 {
-        let x = (p.x / self.width * self.n as f64 - 0.5).clamp(0.0, (self.n - 1) as f64);
-        let y = (p.y / self.width * self.n as f64 - 0.5).clamp(0.0, (self.n - 1) as f64);
+        let height = self.raw_height_at(p);
+        match self.interpolation {
+            HeightInterpolation::Bilinear | HeightInterpolation::PhysicalBilinear => height,
+            HeightInterpolation::BSpline { floor } => height.max(floor as f64),
+        }
+    }
+    pub fn raw_height_at(&self, p: Point) -> f64 {
+        let n = self.height_resolution();
+        let x = p.x / self.width * n as f64 - 0.5;
+        let y = p.y / self.width * n as f64 - 0.5;
+        if let HeightInterpolation::BSpline { .. } = self.interpolation {
+            let x = x.clamp(-0.5, n as f64 - 0.5);
+            let y = y.clamp(-0.5, n as f64 - 0.5);
+            let (ix, iy) = (x.floor() as isize, y.floor() as isize);
+            let weights = |t: f64| [
+                (1.0 - t).powi(3) / 6.0,
+                (3.0 * t.powi(3) - 6.0 * t * t + 4.0) / 6.0,
+                (-3.0 * t.powi(3) + 3.0 * t * t + 3.0 * t + 1.0) / 6.0,
+                t.powi(3) / 6.0,
+            ];
+            let wx = weights(x - ix as f64);
+            let wy = weights(y - iy as f64);
+            let mut value = 0.0;
+            for (j, weight_y) in wy.into_iter().enumerate() {
+                let row = (iy + j as isize - 1).clamp(0, n as isize - 1) as usize;
+                for (i, weight_x) in wx.into_iter().enumerate() {
+                    let col = (ix + i as isize - 1).clamp(0, n as isize - 1) as usize;
+                    value += self.height[row * n + col] as f64 * weight_x * weight_y;
+                }
+            }
+            return value;
+        }
+        let x = x.clamp(0.0, (n - 1) as f64);
+        let y = y.clamp(0.0, (n - 1) as f64);
         let (ix, iy) = (x.floor() as usize, y.floor() as usize);
         let h = |dx: usize, dy: usize| {
-            self.height[(iy + dy).min(self.n - 1) * self.n + (ix + dx).min(self.n - 1)] as f64
+            self.height[(iy + dy).min(n - 1) * n + (ix + dx).min(n - 1)] as f64
         };
         let (tx, ty) = (x.fract(), y.fract());
         (h(0, 0) * (1.0 - tx) + h(1, 0) * tx) * (1.0 - ty)
@@ -950,12 +996,116 @@ impl Surface<'_> {
         if p.x < 0.0 || p.y < 0.0 || p.x >= self.width || p.y >= self.width {
             return true;
         }
-        if let Some(geometry) = self.geometry {
-            return geometry.wet(p);
-        }
         let x = (p.x / self.width * self.n as f64) as usize;
         let y = (p.y / self.width * self.n as f64) as usize;
-        self.water[y.min(self.n - 1) * self.n + x.min(self.n - 1)] != 0
+        let x = x.min(self.n - 1);
+        let y = y.min(self.n - 1);
+        if matches!(self.interpolation, HeightInterpolation::Bilinear)
+            && self.height.len() == self.n * self.n {
+            return if let Some(geometry) = self.geometry { geometry.wet(p) }
+                else { self.water[y * self.n + x] != 0 };
+        }
+        if self.geometry.is_some_and(|geometry| geometry.wet(p)) { return true; }
+        // A coastline can cross a dry planning cell on a large map. Only use
+        // negative physical elevation where a neighbouring cell is already sea;
+        // an isolated inland depression remains dry.
+        let sea_nearby = (y.saturating_sub(1)..=(y + 1).min(self.n - 1)).any(|j|
+            (x.saturating_sub(1)..=(x + 1).min(self.n - 1)).any(|i| self.water[j * self.n + i] == 1));
+        if sea_nearby && self.raw_height_at(p) <= 0.0 { return true; }
+        if self.geometry.is_some() { return false; }
+        self.water[y * self.n + x] != 0
+    }
+}
+
+#[cfg(test)]
+mod physical_surface_tests {
+    use super::*;
+
+    #[test]
+    fn local_heights_and_grades_use_physical_cells_with_capped_water() {
+        let height: Vec<f32> = (0..64 * 64).map(|i| (i % 64) as f32 + 0.5 + 2.0 * ((i / 64) as f32 + 0.5)).collect();
+        let mut water = vec![0; 16 * 16];
+        water[7 * 16 + 5] = 1;
+        let surface = Surface { geometry: None, width: 64.0, n: 16, height: &height, water: &water, interpolation: Default::default(),};
+        assert_eq!(surface.height_resolution(), 64);
+        assert!((surface.height_at(Point { x: 20.5, y: 30.5 }) - 81.5).abs() < 1e-6);
+        assert!(surface.wet(Point { x: 20.5, y: 30.5 }));
+        assert!((routing::segment_grade(surface, Point { x: 10.5, y: 10.5 }, Point { x: 30.5, y: 10.5 }) - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn physical_sea_inside_a_dry_large_map_cell_is_wet_but_inland_depression_is_dry() {
+        let width = 200_000.0;
+        let mut water = vec![0; 16 * 16];
+        for y in 0..16 { for x in 0..7 { water[y * 16 + x] = 1; } }
+        let mut height = vec![20.0; 64 * 64];
+        for y in 0..64 { for x in 0..29 { height[y * 64 + x] = -5.0; } }
+        for y in 30..34 { for x in 36..40 { height[y * 64 + x] = -5.0; } }
+        let surface = Surface { geometry: None, width, n: 16, height: &height, water: &water,
+            interpolation: HeightInterpolation::BSpline { floor: 0.3 } };
+        assert!(surface.wet(Point { x: 89_000.0, y: 100_000.0 }));
+        assert!(!surface.wet(Point { x: 118_750.0, y: 100_000.0 }));
+    }
+
+    #[test]
+    fn planning_deck_remains_dry_but_same_resolution_physical_coast_is_wet() {
+        let mut water = vec![0; 16 * 16];
+        for row in 0..16 { for x in 0..7 { water[row * 16 + x] = 1; } }
+        let mut height = vec![10.0; 16 * 16];
+        height[8 * 16 + 7] = -3.0;
+        let point = Point { x: 7.5 * 12_500.0, y: 8.5 * 12_500.0 };
+        let planning = Surface { geometry: None, width: 200_000.0, n: 16, height: &height, water: &water,
+            interpolation: HeightInterpolation::Bilinear };
+        assert!(!planning.wet(point));
+        let physical = Surface { interpolation: HeightInterpolation::PhysicalBilinear, ..planning };
+        assert!(physical.wet(point));
+    }
+
+    #[test]
+    fn spline_matches_cell_centred_planar_metres_at_n1334() {
+        let n = 1334;
+        let width = 40_020.0;
+        let height: Vec<f32> = (0..n * n).map(|i| 3.0 + (i % n) as f32 * 0.07 + (i / n) as f32 * 0.11).collect();
+        let water = vec![0; 16 * 16];
+        let surface = Surface { geometry: None, width, n: 16, height: &height, water: &water,
+            interpolation: HeightInterpolation::BSpline { floor: 0.3 } };
+        for k in 0..100 {
+            let gx = 3.5 + ((k * 811) % (n - 8)) as f64 + (k % 7) as f64 / 7.0;
+            let gy = 3.5 + ((k * 613) % (n - 8)) as f64 + (k % 11) as f64 / 11.0;
+            let p = Point { x: (gx + 0.5) * width / n as f64, y: (gy + 0.5) * width / n as f64 };
+            let expected = 3.0 + gx * 0.07 + gy * 0.11;
+            assert!((surface.height_at(p) - expected).abs() < 1e-3, "{k}: {} vs {expected}", surface.height_at(p));
+        }
+        let below = vec![-5.0; 16 * 16];
+        let floor = Surface { geometry: None, width: 160.0, n: 16, height: &below, water: &water,
+            interpolation: HeightInterpolation::BSpline { floor: 0.3 } };
+        assert_eq!(floor.height_at(Point { x: 80.0, y: 80.0 }), 0.3_f32 as f64);
+        assert!(floor.raw_height_at(Point { x: 80.0, y: 80.0 }) < 0.0);
+    }
+
+    #[test]
+    fn curved_spline_matches_terrain_engine_at_edges_and_interior() {
+        let n = 1334;
+        let width = 40_020.0;
+        let controls: Vec<f32> = (0..n * n).map(|i| {
+            let x = (i % n) as f64;
+            let y = (i / n) as f64;
+            (20.0 + 7.0 * (x * 0.017).sin() + 5.0 * (y * 0.013).cos()
+                + 3.0 * ((x + y) * 0.011).sin()) as f32
+        }).collect();
+        let generator = crate::TerrainGenerator::with_surface("spline-parity", width, &controls).unwrap();
+        let water = vec![0; 16 * 16];
+        let surface = Surface { geometry: None, width, n: 16, height: &controls, water: &water,
+            interpolation: HeightInterpolation::BSpline { floor: 0.0 } };
+        for (ox, oy) in [(0.0, 0.0), (20_000.0, 18_000.0), (width - 64.0, width - 64.0)] {
+            let sampled = generator.sample_region(ox, oy, 64.0, 64).unwrap();
+            for row in [0, 5, 17, 31, 63] { for col in [0, 7, 23, 44, 63] {
+                let point = Point { x: ox + col as f64 + 0.5, y: oy + row as f64 + 0.5 };
+                let expected = sampled.height[row * 64 + col] as f64;
+                assert!((surface.raw_height_at(point) - expected).abs() < 1e-3,
+                    "sample ({}, {}) differs at ({}, {})", ox, oy, row, col);
+            }}
+        }
     }
 }
 
@@ -1329,7 +1479,8 @@ pub fn generate_quarters(
     if surface.n < 2
         || !surface.width.is_finite()
         || surface.width <= 0.0
-        || surface.height.len() != surface.n * surface.n
+        || surface.height_resolution() < 2
+        || surface.height_resolution().checked_mul(surface.height_resolution()) != Some(surface.height.len())
         || surface.water.len() != surface.n * surface.n
         || surface.height.iter().any(|h| !h.is_finite())
         || roads.iter().any(|s| {

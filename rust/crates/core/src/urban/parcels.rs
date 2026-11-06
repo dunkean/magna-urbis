@@ -5531,6 +5531,7 @@ mod tests {
             n,
             height: &height,
             water: &water,
+            interpolation: Default::default(),
         };
         let c = width * 0.5;
         let mut roads = vec![

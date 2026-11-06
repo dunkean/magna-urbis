@@ -2,7 +2,7 @@
 //!
 //! One GPU thread keeps the networks resident; it warms the kernels up once at
 //! start. `GET /status` reports its state; `GET /generate?seed=…&relief=…`
-//! returns the delivered `1024²` little-endian FP32 heights (metres, row-major
+//! returns little-endian FP32 heights (metres, row-major
 //! from the north-west corner, sea at zero), with metadata in `X-Neural-Meta`.
 use crate::{Clock, Networks, Request, Sketch};
 use std::collections::HashMap;
@@ -61,6 +61,10 @@ fn request(query: &HashMap<String, String>) -> Result<Request, String> {
             .and_then(|v| v.parse().ok())
             .unwrap_or(default)
     };
+    let extent = match query.get("extent") {
+        Some(value) => value.parse::<f64>().map_err(|_| "Invalid extent")?,
+        None => 40_000.0,
+    };
     let mut request = Request::regional(
         &get("seed", "42"),
         &get("relief", "hills"),
@@ -69,7 +73,25 @@ fn request(query: &HashMap<String, String>) -> Result<Request, String> {
         &get("islands", "island"),
         &get("climate", "temperate"),
         number("noise", 0.05) as f32,
+        extent,
     )?;
+    let spacing = match query.get("sampleSpacing") {
+        Some(value) => value.parse::<f64>().map_err(|_| "Invalid sampleSpacing")?,
+        None => crate::plan::NATIVE_M,
+    };
+    if !spacing.is_finite()
+        || spacing < crate::plan::NATIVE_M
+        || spacing > (extent / 16.0).min(1000.0)
+    {
+        return Err("sampleSpacing must be between 30 m and min(1000 m, extent / 16)".into());
+    }
+    request.resolution = (extent / spacing).ceil() as usize;
+    if let Some(value) = query.get("resolution") {
+        let asserted = value.parse::<usize>().map_err(|_| "Invalid resolution")?;
+        if asserted != request.resolution {
+            return Err("resolution does not match extent and sampleSpacing".into());
+        }
+    }
     // Optional network properties of the neural bench; absent keys keep production values.
     let bounded = |key: &str, default: f64, min: f64, max: f64| -> Result<f64, String> {
         let value = number(key, default);
@@ -182,9 +204,11 @@ fn generate(networks: &Networks, query: &HashMap<String, String>, clock: &Wall) 
     let c = &output.coarse;
     let edited = query.contains_key("sketch");
     let meta = format!(
-        r#"{{"edited":{edited},"sketchRegion":{edited},"resolution":{},"extent":{},"min":{min},"max":{max},"land":{land},"totalMs":{:.1},"coarseMs":{:.1},"baseMs":{:.1},"decoderMs":{:.1},"reconstructionMs":{:.1},"evaluations":[{},{},{}],"coarse":{{"sketch":{:.1},"elevation":{:.1},"relief":{:.1},"reliefUsed":{:.1},"cells":{}}},"profile":"coarse{} \u00b7 base 1 passe \u00b7 decoder student200k \u00b7 FP16 Vulkan"}}"#,
+        r#"{{"edited":{edited},"sketchRegion":{edited},"resolution":{},"extent":{},"nativeCellM":30,"nativeResolution":{},"outputCellM":{},"min":{min},"max":{max},"land":{land},"totalMs":{:.1},"coarseMs":{:.1},"baseMs":{:.1},"decoderMs":{:.1},"reconstructionMs":{:.1},"evaluations":[{},{},{}],"coarse":{{"sketch":{:.1},"elevation":{:.1},"relief":{:.1},"reliefUsed":{:.1},"cells":{}}},"profile":"coarse{} \u00b7 base 1 passe \u00b7 decoder student200k \u00b7 FP16 Vulkan"}}"#,
         output.resolution,
         request.extent_m,
+        output.native_n,
+        request.extent_m / output.resolution as f64,
         clock.now_ms() - started,
         t.coarse_ms,
         t.base_ms,
@@ -322,7 +346,7 @@ fn handle(
         "/status" => {
             let s = status.lock().unwrap().clone();
             let body = format!(
-                r#"{{"state":"{}","message":"{}","generated":{},"extent":40000,"resolution":1024}}"#,
+                r#"{{"state":"{}","message":"{}","generated":{},"extent":40000,"resolution":1334,"maxExtent":200000,"nativeCellM":30}}"#,
                 s.state,
                 json_escape(&s.message),
                 s.generated
@@ -446,4 +470,43 @@ pub fn serve(
         });
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn requested_extent_and_sampling_preserve_native_definition() {
+        for extent in [500, 40_000, 200_000] {
+            let query = HashMap::from([("extent".into(), extent.to_string())]);
+            let r = request(&query).unwrap();
+            assert_eq!(r.extent_m, extent as f64);
+            assert_eq!(r.resolution, crate::plan::Plan::cells(extent as f64));
+            assert_eq!(
+                crate::plan::Plan::regional(r.extent_m)
+                    .unwrap()
+                    .coarse
+                    .len(),
+                1
+            );
+        }
+        let query = HashMap::from([
+            ("extent".into(), "200000".into()),
+            ("sampleSpacing".into(), "200".into()),
+        ]);
+        assert_eq!(request(&query).unwrap().resolution, 1000);
+        let mismatch = HashMap::from([
+            ("extent".into(), "200000".into()),
+            ("sampleSpacing".into(), "200".into()),
+            ("resolution".into(), "1024".into()),
+        ]);
+        assert!(request(&mismatch).is_err());
+        for bad in ["200001", "NaN", "0"] {
+            let query = HashMap::from([("extent".into(), bad.into())]);
+            assert!(request(&query).is_err());
+        }
+        let query = HashMap::from([("sampleSpacing".into(), "20".into())]);
+        assert!(request(&query).is_err());
+    }
 }

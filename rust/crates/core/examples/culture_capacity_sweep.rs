@@ -53,7 +53,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .cloned()
         .collect();
     let geography = f.geometry.map(|g| Geography::new(g, f.width)).transpose()?;
-    let surface = Surface { geometry: geography.as_ref(), width: f.width, n: f.n, height: &f.height, water: &f.water };
+    let surface = Surface { geometry: geography.as_ref(), width: f.width, n: f.n, height: &f.height, water: &f.water, interpolation: Default::default(),};
     let mut rows = vec![];
     for culture in &cultures {
         for &population in &populations {

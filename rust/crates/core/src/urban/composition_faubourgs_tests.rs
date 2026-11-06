@@ -20,7 +20,7 @@ fn parameter_defaults_legacy_mapping_and_explicit_zero() {
 #[test]
 fn zero_keeps_the_exact_old_geometry_and_nonzero_keeps_placement() {
     let height=vec![10.0;128*128];let water=vec![0;128*128];
-    let surface=Surface {width:2048.0,n:128,height:&height,water:&water,geometry:None};
+    let surface=Surface {width:2048.0,n:128,height:&height,water:&water,geometry:None, interpolation: Default::default(),};
     for strength in [0.0,0.5,1.0] {
         let mut plan=plan();let before=self::plan();
         let (_,added)=grow_gate_villages(&mut plan,&LayoutConfig {gate_village:Some(strength),..Default::default()},surface);
@@ -49,7 +49,7 @@ fn no_new_nucleus_on_unoccupied_or_wet_land() {
         if water==&dry {plan.quarters[0].shape=g::rectangle(410.0,310.0,840.0,690.0);}
         let count=plan.streets.len();
         let (centers,lanes)=grow_gate_villages(&mut plan,&LayoutConfig {gate_village:Some(1.0),..Default::default()},
-            Surface {width:2048.0,n:128,height:&height,water,geometry:None});
+            Surface {width:2048.0,n:128,height:&height,water,geometry:None, interpolation: Default::default(),});
         assert_eq!(plan.streets.len(),count);
         assert!(centers.is_empty() && lanes.is_empty());
     }
@@ -58,7 +58,7 @@ fn no_new_nucleus_on_unoccupied_or_wet_land() {
 #[test]
 fn market_reserves_public_land_and_density_falls_outward() {
     let height=vec![10.0;128*128];let water=vec![0;128*128];
-    let surface=Surface {width:2048.0,n:128,height:&height,water:&water,geometry:None};
+    let surface=Surface {width:2048.0,n:128,height:&height,water:&water,geometry:None, interpolation: Default::default(),};
     let cfg=LayoutConfig {gate_village:Some(1.0),..Default::default()};
     let plan=plan();
     let mut layout:Layout=serde_json::from_value(serde_json::json!({"key":"faubourgs","culture":"european-organic",
@@ -82,7 +82,7 @@ fn market_reserves_public_land_and_density_falls_outward() {
 #[test]
 fn upper_range_grows_a_visible_market_and_more_curved_lanes() {
     let height=vec![10.0;128*128];let water=vec![0;128*128];
-    let surface=Surface {width:2048.0,n:128,height:&height,water:&water,geometry:None};
+    let surface=Surface {width:2048.0,n:128,height:&height,water:&water,geometry:None, interpolation: Default::default(),};
     let mut previous=None;
     for strength in [0.5,1.0] {
         let mut candidate=plan();candidate.quarters[0].shape=g::rectangle(0.0,100.0,1000.0,900.0);

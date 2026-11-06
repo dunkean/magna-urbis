@@ -582,7 +582,7 @@ mod camp_approach_tests {
     fn a_steep_discarded_drive_does_not_disqualify_two_dry_entrances() {
         let envelope=g::rectangle(100.,100.,300.,300.);
         let height=(0..64*64).map(|i|if (30..34).contains(&(i%64)){1000.}else{10.}).collect::<Vec<f32>>();
-        let water=vec![0;64*64];let surface=Surface{geometry:None,width:400.,n:64,height:&height,water:&water};
+        let water=vec![0;64*64];let surface=Surface{geometry:None,width:400.,n:64,height:&height,water:&water, interpolation: Default::default(),};
         let road=Street{path:vec![Point{x:100.,y:200.},Point{x:300.,y:200.}],widths:vec![6.;2],rank:0,role:"regional".into()};
         assert!(!routing::path_clear(surface,&road.path,0.12));
         let mut entrances=vec![road];camp_approaches(&mut entrances,&envelope,3.,true);
@@ -1896,6 +1896,7 @@ mod tests {
             n,
             height: &height,
             water: &water,
+            interpolation: Default::default(),
         };
         let shore = |x| {
             let mut outer = vec![
@@ -1981,6 +1982,7 @@ mod tests {
             n,
             height: &height,
             water: &water,
+            interpolation: Default::default(),
         };
         let shore = g::normalized(Shape {
             outer: vec![
@@ -2079,6 +2081,7 @@ mod tests {
             n: 64,
             height: &heights,
             water: &water,
+            interpolation: Default::default(),
         };
         let cfg = LayoutConfig {
             rings: 2,
@@ -2169,6 +2172,7 @@ mod tests {
             n: 64,
             height: &heights,
             water: &water,
+            interpolation: Default::default(),
         };
         let angle = water_angle(surface, Point { x: 250.0, y: 260.0 }, 120.0).unwrap();
         assert!(angle.cos().abs() < 0.01);
@@ -2235,6 +2239,7 @@ mod tests {
             n,
             height: &height,
             water: &water,
+            interpolation: Default::default(),
         };
         let bridge = way(&[(303.0, 300.0), (315.0, 300.0)], 0, "bridge");
         let road = way(&[(100.0, 300.0), (295.0, 300.0), (302.0, 300.0)], 0, "regional");
@@ -2299,7 +2304,7 @@ mod v7_grid_tests {
         let cfg = LayoutConfig {align_enclosed_grid:true,fortification:"wall".into(),tissue:"grid".into(),count:4,..Default::default()};
         let m = super::super::resolve("indus-planned","culture","core","core",1.,&serde_json::json!({"minWidth":10,"gridSpacing":[80,80]}),"quarters").unwrap();
         let height=vec![10.;32*32];let water=vec![0;32*32];
-        let surface=Surface {geometry:None,width:1000.,n:32,height:&height,water:&water};
+        let surface=Surface {geometry:None,width:1000.,n:32,height:&height,water:&water, interpolation: Default::default(),};
         let p=generate_oriented_domain("v7-grid",&site,&cfg,&m,surface,&[],200.,Some(&domain),None);
         let lines:Vec<_>=p.streets.iter().filter(|s|s.role=="street" && s.path.len()>=2 && dist(s.path[0],*s.path.last().unwrap())>20.).collect();
         assert!(!lines.is_empty(),"{} quarters, {:?}",p.quarters.len(),p.warnings);

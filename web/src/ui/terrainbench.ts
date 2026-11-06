@@ -80,6 +80,7 @@ import type {} from './benchContext';
 import { installRecipeSharing, generationRecipe } from './recipeSharing';
 import { executionRuntime, executionProfiles, applyExecutionProfile, installExecutionProfile } from './executionProfile';
 import { initialTerrainSource } from './terrainStartupState';
+import { defaultSourceSpacing, sourceDefinition, terrainCapability, unsupportedExplicitGpuResolution } from '../../../rust/bridge/terrainDefinition';
 import { terrainLoading } from './terrainStartup';
 import { mountIllustration, captureViewport } from '../../../illustration/web/index.mjs';
 import { illustrationContext } from './illustrationContext';
@@ -328,7 +329,7 @@ let settings: TerrainSettings = {
   zones: initialZones,
   sketch: initialSketch,
   seed: query.get('seed')?.slice(0, 120) || '42',
-  width: bounded(finite(query.get('width'), 2400), 500, 100000),
+  width: bounded(finite(query.get('width'), 2400), 500, 200000),
   // Version 1 links had no independent physical motif scale.
   motifSize: bounded(finite(query.get('motif'), 10000), 250, 50000),
   relief: RELIEFS.includes(initialRelief) ? initialRelief : 'flat',
@@ -341,7 +342,7 @@ let settings: TerrainSettings = {
   mountainMix: bounded(finite(query.get('mix'), 0.5), 0, 1),
   erosion: bounded(finite(query.get('erosion'), 1), 0, 2), resolution: 512,
   compute: COMPUTE_MODES.includes(query.get('compute') as TerrainCompute) ? query.get('compute') as TerrainCompute : profileDefaults.compute as TerrainCompute,
-  generationCompute: ['cpu', 'gpu', 'gpu-all', 'gpu-erosion', ...(executionRuntime.profile === 'local' ? ['native'] : [])].includes(query.get('generation') ?? '') ? query.get('generation') as TerrainSettings['generationCompute'] : profileDefaults.generation as TerrainSettings['generationCompute'],
+  generationCompute: ['cpu', 'gpu', 'gpu-all', 'gpu-erosion', ...(executionRuntime.profile === 'local' ? ['native'] : [])].includes(query.get('generation') ?? '') ? query.get('generation') as TerrainSettings['generationCompute'] : executionRuntime.profile === 'local' && !query.has('generation') ? profileDefaults.generation as TerrainSettings['generationCompute'] : undefined,
   source: initialSource,
   phasor: { quality: ['fast','balanced','detailed'].includes(query.get('phasorQuality') ?? '') ? query.get('phasorQuality') as 'fast' | 'balanced' | 'detailed' : 'balanced', intensity: bounded(finite(query.get('phasorIntensity'),1),0,2) },
   climate: selectedClimateBase,
@@ -356,6 +357,7 @@ let settings: TerrainSettings = {
   detailNoise: readDetailNoise(key => query.get(`d_${key}`)),
   erosionTuning: readErosionTuning(name => query.get(`e_${name}`)),
 };
+settings.sampleSpacing = finite(query.get('sampleSpacing'), defaultSourceSpacing(settings));
 // Only old versioned neural links had a fixed 40 km extent; fresh maps stay small.
 if (isNeuralSource(settings.source)) {
   if (['2', '3'].includes(query.get('v') ?? '')) settings.width = NEURAL_EXTENT;
@@ -432,7 +434,6 @@ diagnosticSelect.value = elevationDiagnostic ? 'elevation' : hydroOverlay;
 let view: View = viewFromString(query.get('view')) || fitView(settings.width, viewport.clientWidth, viewport.clientHeight);
 let terrain: TerrainData | undefined;
 let sketchEditor: ReturnType<typeof createTerrainSketchEditor> | undefined;
-let zoningWasActive = !!initialZones, zoningSource:TerrainSource = initialSource;
 let pinMode = false, generation = 0, requestId = 0, terrainGeneration = 0;
 let overviewRequest: TerrainRequest | undefined, detailRequest: TerrainRequest | undefined;
 let overviewPending = false, pipelinePaused = false, generationError: string | undefined;
@@ -956,13 +957,13 @@ function updateCoordinates(): void {
   el('coordinates').textContent = `x ${x.toFixed(1)} · y ${y.toFixed(1)} · z ${z} m${diagnostic}`;
 }
 
-input('width').value = String(settings.width); input('motifSize').value = String(settings.motifSize);
+input('width').value = String(settings.width); input('sampleSpacing').value = String(settings.sampleSpacing); input('motifSize').value = String(settings.motifSize);
 input('mountainMix').value = String(settings.mountainMix);
 input('seed').value = settings.seed; input('erosion').value = String(settings.erosion);
 el<HTMLSelectElement>('relief').value = settings.relief; el<HTMLSelectElement>('style').value = styleTraits(baseStyle).variantOf ?? baseStyle;
 el<HTMLSelectElement>('environment').value = settings.environment!;
 el<HTMLSelectElement>('compute').value = settings.compute!;
-el<HTMLSelectElement>('generationCompute').value = settings.generationCompute!;
+el<HTMLSelectElement>('generationCompute').value = settings.generationCompute ?? 'auto';
 el<HTMLSelectElement>('proceduralPreset').value = proceduralRecipe.preset ?? 'classic'; input('proceduralPhasor').checked = proceduralRecipe.enabled?.phasor ?? proceduralRecipe.preset==='compact';
 el<HTMLSelectElement>('phasorQuality').value = settings.phasor?.quality ?? 'balanced'; input('phasorIntensity').value = String(settings.phasor?.intensity ?? 1);
 if (settings.source === 'neural') {
@@ -1027,7 +1028,54 @@ function updateHydrologyControl(): void {
   el('hydroLakeAbundanceControl').hidden = el<HTMLSelectElement>('hydroLakes').value !== 'some';
 }
 const isNeural = (): boolean => !sketchEditor?.snapshot()?.processing && isNeuralSource(el<HTMLSelectElement>('terrainSource').value as TerrainSource);
-/** Neural relief: 40 km surface cropped or scaled to the map, regional families only, no procedural motif or erosion. */
+function requestedGenerationCompute(): TerrainSettings['generationCompute'] {
+  const choice = el<HTMLSelectElement>('generationCompute').value;
+  return choice === 'auto' ? undefined : choice as TerrainSettings['generationCompute'];
+}
+function benchGpuMismatch(n: number, source: TerrainSource, sketch: TerrainSettings['sketch']): boolean {
+  const zones = el<HTMLSelectElement>('relief').value === 'cavern' ? undefined : sketchEditor ? sketchEditor.zones() : settings.zones;
+  return unsupportedExplicitGpuResolution({ source, generationCompute: requestedGenerationCompute(), sketch, zones }, n);
+}
+const benchGpuError = (n: number): string => `GPU procédural explicite limité à 1024² ; ${n}² demande Auto ou CPU${executionRuntime.profile === 'local' ? ' ou Rust natif' : ''}.`;
+function updateSourceDefinitionControl(): void {
+  const source = el<HTMLSelectElement>('terrainSource').value as TerrainSource;
+  const baseModel = el<HTMLSelectElement>('baseModel').value;
+  const sketch = sketchEditor ? sketchEditor.snapshot() : settings.sketch;
+  const capability = terrainCapability({ source, baseModel, sketch });
+  const widthField = input('width'), spacingField = input('sampleSpacing');
+  if (capability.kind === 'finite-neural') {
+    widthField.value = String(capability.maxWidth);
+    spacingField.value = String(capability.minSpacing);
+  }
+  widthField.disabled = spacingField.disabled = capability.kind === 'finite-neural';
+  widthField.min = String(capability.minWidth); widthField.max = String(capability.maxWidth);
+  spacingField.min = String(capability.minSpacing);
+  const summary = el<HTMLOutputElement>('sourceDefinitionSummary');
+  const width = Number(widthField.value), sampleSpacing = Number(spacingField.value);
+  const labels = { procedural: 'Procédural Rust', neural: 'Neuronal régional', 'finite-neural': 'Tile40', imported: 'Heightmap', classic: 'Classique' };
+  const range = capability.minWidth === capability.maxWidth ? `${capability.maxWidth / 1000} km fixes` : `${capability.minWidth / 1000}–${capability.maxWidth / 1000} km`;
+  try {
+    const definition = sourceDefinition({ width, sampleSpacing, source, baseModel, sketch });
+    if (benchGpuMismatch(definition.n, source, sketch)) throw new Error(benchGpuError(definition.n));
+    const hydroGrid = el<HTMLSelectElement>('hydroEngine').value === 'vector' ? 'hydroVectorResolution' : 'hydroResolution';
+    const hydroN = Math.min(1024, Number(el<HTMLSelectElement>(hydroGrid).value) || 512);
+    summary.textContent = `${labels[capability.kind]} · ${range} · source ${definition.n}² à ${definition.spacing.toFixed(2)} m/cellule · ${Math.ceil(definition.sourceBytes / 1048576)} Mio de hauteurs · ~${Math.ceil(definition.estimatedWorkingBytes / 1048576)} Mio de rasters estimés. Eau : grille ${hydroN}² à ${(width / hydroN).toFixed(2)} m/cellule (plafond 1024², au mieux ${(width / 1024).toFixed(2)} m).`;
+    summary.dataset.error = 'false';
+    widthField.setCustomValidity(''); spacingField.setCustomValidity('');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    summary.textContent = `${labels[capability.kind]} · ${range} · ${message}`;
+    summary.dataset.error = 'true';
+    widthField.setCustomValidity(message); spacingField.setCustomValidity(message);
+  }
+  el('sourceDefinitionNote').textContent = (capability.kind === 'finite-neural'
+    ? 'Tile40 expérimental : 40 km et 1024² fixes, quatre fenêtres coarse. L’aperçu et le LOD restent indépendants de la source.'
+    : capability.kind === 'neural'
+      ? 'Source neuronale native à 30 m : un pas de sortie plus gros réduit les données conservées, pas le calcul du modèle. Le conditionnement régional reste à 7,68 km ; la sortie 30 m ne le rend pas plus fin. Aperçu/LOD indépendants.'
+      : 'Aperçu/LOD indépendants de la source. Le GPU procédural produit actuellement 1024² ; hors 1024², calcul Rust CPU.')
+    + ' Le budget de 1536 Mio pour les rasters exclut modèles, VRAM et caches.';
+}
+/** Neural relief uses the selected physical source definition; procedural motif and erosion remain separate. */
 function updateSourceControl(): void {
   const inputProcessing = sketchEditor ? sketchEditor?.snapshot()?.processing : settings.sketch?.processing;
   const compact = isCompactProcedural({source:el<HTMLSelectElement>('terrainSource').value as TerrainSource,procedural:proceduralRecipe});
@@ -1035,20 +1083,21 @@ function updateSourceControl(): void {
   el('proceduralInspector').hidden = isNeural();
   proceduralPanel?.syncSource(!isNeural());
   const generationChoice = el<HTMLSelectElement>('generationCompute');
-  for (const option of Array.from(generationChoice.options)) option.disabled = compact && !['cpu','gpu-erosion','native'].includes(option.value);
-  if (compact && !['cpu','gpu-erosion','native'].includes(generationChoice.value)) generationChoice.value = 'gpu-erosion';
+  for (const option of Array.from(generationChoice.options)) option.disabled = compact && !['auto','cpu','gpu-erosion','native'].includes(option.value);
+  if (compact && !['auto','cpu','gpu-erosion','native'].includes(generationChoice.value)) generationChoice.value = 'auto';
   const neural = isNeural() && !inputProcessing, relief = el<HTMLSelectElement>('relief');
   el<HTMLSelectElement>('terrainSource').disabled = !!inputProcessing;
   for (const option of Array.from(relief.options)) option.disabled = neural && !neuralRelief(option.value) || compact && !['flat','hills','valley','canyon','mountains','mixed','high-mountains'].includes(option.value);
   if (compact && ['plateau','volcano','caldera','cavern'].includes(relief.value)) relief.value = 'mixed';
   if (neural && !neuralRelief(relief.value)) relief.value = 'mixed';
-  input('width').title = neural ? 'Map width: cropped window or scaled version of the 40 km neural surface' : '';
+  input('width').title = neural ? 'Étendue physique du terrain neuronal, jusqu’à 200 km hors Tile40.' : '';
   el('motifControl').hidden = neural || inputProcessing === 'surface';
   el('erosionControl').hidden = neural || inputProcessing === 'surface';
   el('erosionAdvanced').hidden = neural || inputProcessing === 'surface';
+  el('terrainSuperAdvanced').hidden = neural || inputProcessing === 'surface';
   el('fidelityControl').hidden = !neural;
-  el('neuralFitControl').hidden = !neural;
-  el('neuralSlopesControl').hidden = !neural || el<HTMLSelectElement>('neuralFit').value !== 'scale';
+  el('neuralFitControl').hidden = true;
+  el('neuralSlopesControl').hidden = true;
   el('neuralAdvanced').hidden = !neural;
   const pythonModels = el<HTMLSelectElement>('terrainSource').value === 'neural-python';
   const compactBase = el<HTMLSelectElement>('baseModel').value === 'residual8k';
@@ -1069,6 +1118,7 @@ function updateSourceControl(): void {
   for (const button of coastButtons) button.disabled ||= !!inputProcessing;
   el<HTMLButtonElement>('coastAll').disabled ||= !!inputProcessing;
   el<HTMLButtonElement>('generateCoasts').disabled = !!inputProcessing || relief.value === 'cavern';
+  updateSourceDefinitionControl();
   window.dispatchEvent(new Event('bench-source-change'));
 }
 let neuralPolling: TerrainSource | undefined;
@@ -1128,6 +1178,7 @@ function status(message: string, error = false): void {
 }
 function shareQuery(): string {
   const params = new URLSearchParams({ brush_density: String(fantasyOptions.density), brush_size: String(fantasyOptions.size), brush_spacing: String(fantasyOptions.spacing), engine: 'rust', v: '4', seed: settings.seed, width: String(settings.width), motif: String(settings.motifSize), relief: settings.relief, erosion: String(settings.erosion), style: baseStyle, auto: input('auto').checked ? '1' : '0' });
+  if (settings.sampleSpacing !== undefined) params.set('sampleSpacing', String(settings.sampleSpacing));
   params.set('source',settings.source??'procedural');
   if(!isNeuralSource(settings.source))params.set('procedural',JSON.stringify(settings.procedural??proceduralRecipe));
   writeRenderColorsQuery(params, getBenchRenderColors()); writeBenchCompositionQuery(params);
@@ -1162,7 +1213,6 @@ function shareQuery(): string {
   if (isNeuralSource(settings.source)) {
     if (settings.source === 'neural-python') for (const key of ['coarseModel', 'baseModel', 'decoderModel'] as const) if (settings[key]) params.set(key, settings[key]!);
     params.set('source', settings.source!); params.set('fidelity', String(settings.fidelity ?? 0.05));
-    params.set('fit', settings.neuralFit ?? 'crop'); params.set('slopes', settings.neuralSlopes ? '1' : '0');
     const tuning = settings.neuralTuning ?? DEFAULT_NEURAL_TUNING;
     for (const key of Object.keys(tuningFields) as (keyof typeof tuningFields)[]) if (tuning[key] !== DEFAULT_NEURAL_TUNING[key]) params.set(`n_${key}`, String(tuning[key]));
     if (tuning.reliefMode !== 'auto') params.set('n_reliefMode', tuning.reliefMode);
@@ -1179,7 +1229,7 @@ function shareQuery(): string {
   }
   if (settings.zones) params.set('zones', encodeZones(settings.zones));
   params.set('compute', settings.compute ?? 'gpu-f32');
-  params.set('generation', settings.generationCompute ?? 'gpu-erosion');
+  params.set('generation', settings.generationCompute ?? 'auto');
   if (pipelineStage === 'settlements') params.set('stage', pipelineStage);
   if (legacyPipeline) params.set('pipeline', 'legacy');
   if (retainedDecor) params.set('artifact', retainedDecor.meta.id);
@@ -1401,8 +1451,8 @@ function renderedStatus(): void {
     el('neuralState').dataset.state = 'ready';
     el('neuralState').textContent = `${neural.backend ?? 'Rust natif'} · ${neural.profile} · ${neural.totalMs.toFixed(0)} ms`;
     const contours = contourStep && map.dataset.contours === 'true' ? `contours ${contourStep} m` : 'no contours';
-    const fit = settings.width === NEURAL_EXTENT ? '40 km' : settings.neuralFit === 'scale' || settings.width > NEURAL_EXTENT ? `40 km scaled to ${(settings.width / 1000).toLocaleString('en-US')} km` : `${(settings.width / 1000).toLocaleString('en-US')} km window over 40`;
-    status(`${name} · neural ${neural.profile} · evaluations ${neural.evaluations.join('/')} (coarse/base/decoder) · service ${neural.totalMs.toFixed(0)} ms (coarse ${neural.coarseMs.toFixed(0)}, base ${neural.baseMs.toFixed(0)}, decoder ${neural.decoderMs.toFixed(0)}, reconstruction ${neural.reconstructionMs.toFixed(0)}) · request ${neural.requestMs.toFixed(0)} ms · land ${(neural.land * 100).toFixed(0)}% · ${backend} · map ${fit} · overview ${terrain.resolution}² · ${contours} · generation + overview ${terrain.generationMs.toFixed(0)} ms${detail} · rendering ${renderingMs.toFixed(0)} ms`);
+    const physicalN = terrain.definition?.n ?? terrain.physical?.n ?? terrain.resolution;
+    status(`${name} · neural ${neural.profile} · evaluations ${neural.evaluations.join('/')} (coarse/base/decoder) · service ${neural.totalMs.toFixed(0)} ms (coarse ${neural.coarseMs.toFixed(0)}, base ${neural.baseMs.toFixed(0)}, decoder ${neural.decoderMs.toFixed(0)}, reconstruction ${neural.reconstructionMs.toFixed(0)}) · request ${neural.requestMs.toFixed(0)} ms · land ${(neural.land * 100).toFixed(0)}% · ${backend} · map ${(settings.width / 1000).toLocaleString('en-US')} km · source ${physicalN}² · overview ${terrain.resolution}² · ${contours} · generation + overview ${terrain.generationMs.toFixed(0)} ms${detail} · rendering ${renderingMs.toFixed(0)} ms`);
     return;
   }
   status(`${name}${environment} · ${backend} · map ${settings.width.toLocaleString('en-US')} m · landform scale ${settings.motifSize.toLocaleString('en-US')} m · overview ${terrain.resolution}² · ${contourStep && map.dataset.contours === 'true' ? `contours ${contourStep} m` : 'no contours'}${preparation}${coast}${setup} · generation + overview ${terrain.generationMs.toFixed(0)} ms${detail} · rendering ${renderingMs.toFixed(0)} ms`);
@@ -1814,10 +1864,14 @@ function readSettings(stage: GenerationStage = 'all', reportError = true): Terra
   if (stage === 'hydrology') return { ...settings, hydrology: readHydrology() };
   if (stage === 'coasts') return { ...settings, coastMask: settings.relief === 'cavern' ? 0 : draftCoastMask, islandMode: el<HTMLSelectElement>('islandMode').value as IslandMode };
   const source = el<HTMLSelectElement>('terrainSource').value as TerrainSource;
-  const width = Number(input('width').value), motifSize = Number(input('motifSize').value), seed = input('seed').value.trim();
-  if (!Number.isFinite(width) || width < 500 || width > 100000 || !seed) {
-    if (reportError) status('Enter a width between 500 and 100,000 m and a seed.', true); return;
+  const width = Number(input('width').value), sampleSpacing = Number(input('sampleSpacing').value), motifSize = Number(input('motifSize').value), seed = input('seed').value.trim();
+  if (!seed) { if (reportError) status('Saisissez une graine.', true); return; }
+  try {
+    const sketch = sketchEditor ? sketchEditor.snapshot() : settings.sketch;
+    const definition = sourceDefinition({ width, sampleSpacing, source, baseModel: el<HTMLSelectElement>('baseModel').value, sketch });
+    if (benchGpuMismatch(definition.n, source, sketch)) throw new Error(benchGpuError(definition.n));
   }
+  catch (error) { if (reportError) status(error instanceof Error ? error.message : String(error), true); return; }
   if (!Number.isFinite(motifSize) || motifSize < 250 || motifSize > 50000) {
     if (reportError) status('Enter a landform scale between 250 and 50,000 m.', true); return;
   }
@@ -1827,7 +1881,7 @@ function readSettings(stage: GenerationStage = 'all', reportError = true): Terra
   if (!sketchEditor?.snapshot()?.processing && isNeuralSource(source) && !neuralRelief(relief)) { if (reportError) status('This terrain type is unavailable with the neural source.', true); return; }
   const environment = el<HTMLSelectElement>('environment').value as TerrainEnvironment;
   if (!ENVIRONMENT_RELIEFS.includes(environment)) { if (reportError) status('Choose the surrounding terrain from the menu.', true); return; }
-  return { zones: relief === 'cavern' ? undefined : sketchEditor?.zones(), sketch: relief === 'cavern' ? undefined : sketchEditor?.snapshot(), seed, width, motifSize, relief, environment, coastMask: relief === 'cavern' ? 0 : draftCoastMask, islandMode: el<HTMLSelectElement>('islandMode').value as IslandMode, erosion: Number(input('erosion').value), mountainMix: Number(input('mountainMix').value), resolution: 512, hydrology: readHydrology(), compute: el<HTMLSelectElement>('compute').value as TerrainCompute, generationCompute: el<HTMLSelectElement>('generationCompute').value as TerrainSettings['generationCompute'], source, climate: readClimate(), climateValues: readClimateValues(), fidelity: bounded(finite(input('fidelity').value, 0.05), 0.001, 2), neuralServer: neuralServerFor(source), neuralAssets,
+  return { zones: relief === 'cavern' ? undefined : sketchEditor?.zones(), sketch: relief === 'cavern' ? undefined : sketchEditor?.snapshot(), seed, width, sampleSpacing, motifSize, relief, environment, coastMask: relief === 'cavern' ? 0 : draftCoastMask, islandMode: el<HTMLSelectElement>('islandMode').value as IslandMode, erosion: Number(input('erosion').value), mountainMix: Number(input('mountainMix').value), resolution: 512, hydrology: readHydrology(), compute: el<HTMLSelectElement>('compute').value as TerrainCompute, generationCompute: requestedGenerationCompute(), source, climate: readClimate(), climateValues: readClimateValues(), fidelity: bounded(finite(input('fidelity').value, 0.05), 0.001, 2), neuralServer: neuralServerFor(source), neuralAssets,
     neuralTuning: readTuning(), coarseModel: el<HTMLSelectElement>('coarseModel').value, baseModel: el<HTMLSelectElement>('baseModel').value, decoderModel: el<HTMLSelectElement>('decoderModel').value, neuralFit: el<HTMLSelectElement>('neuralFit').value === 'scale' ? 'scale' : 'crop', neuralSlopes: input('neuralSlopes').checked, refine: input('refine').checked,
     procedural: !isNeuralSource(source)&&!['plateau','volcano','caldera','cavern'].includes(relief)&&!sketchEditor?.snapshot()?.processing ? structuredClone(proceduralRecipe) : undefined,
     phasor: { quality: el<HTMLSelectElement>('phasorQuality').value as 'fast' | 'balanced' | 'detailed', intensity: bounded(finite(input('phasorIntensity').value,1),0,2) }, detailNoise: readDetailNoise((_, id) => input(id).value), erosionTuning: readErosionTuning(name => input(`er_${name}`).value) };
@@ -1857,7 +1911,7 @@ function generate(stage: GenerationStage = 'all',inspection?:TerrainRequest['ins
   // The climate of a procedural relief only drives the water budget.
   const next = stage === 'hydrology' ? { ...settings, hydrology: draft.hydrology, ...(isNeuralSource(settings.source) ? {} : { climate: draft.climate, climateValues: draft.climateValues }) }
     : stage === 'coasts' ? { ...settings, coastMask: draft.coastMask, islandMode: draft.islandMode }
-    : stage === 'relief' ? { ...settings, seed: draft.seed, width: draft.width, motifSize: draft.motifSize, relief: draft.relief, environment: draft.environment, erosion: draft.erosion, mountainMix: draft.mountainMix, compute: draft.compute, generationCompute: draft.generationCompute, source: draft.source, climate: draft.climate, climateValues: draft.climateValues, fidelity: draft.fidelity, zones: draft.zones, sketch: draft.sketch, neuralTuning: draft.neuralTuning, coarseModel: draft.coarseModel, baseModel: draft.baseModel, decoderModel: draft.decoderModel, neuralFit: draft.neuralFit, neuralSlopes: draft.neuralSlopes, refine: draft.refine, detailNoise: draft.detailNoise, phasor: draft.phasor, procedural: draft.procedural, erosionTuning: draft.erosionTuning }
+    : stage === 'relief' ? { ...settings, seed: draft.seed, width: draft.width, sampleSpacing: draft.sampleSpacing, motifSize: draft.motifSize, relief: draft.relief, environment: draft.environment, erosion: draft.erosion, mountainMix: draft.mountainMix, compute: draft.compute, generationCompute: draft.generationCompute, source: draft.source, climate: draft.climate, climateValues: draft.climateValues, fidelity: draft.fidelity, zones: draft.zones, sketch: draft.sketch, neuralTuning: draft.neuralTuning, coarseModel: draft.coarseModel, baseModel: draft.baseModel, decoderModel: draft.decoderModel, neuralFit: draft.neuralFit, neuralSlopes: draft.neuralSlopes, refine: draft.refine, detailNoise: draft.detailNoise, phasor: draft.phasor, procedural: draft.procedural, erosionTuning: draft.erosionTuning }
     : draft;
   mainPipelineSession?.command('cancel');
   generation++; clearTimeout(detailTimer); detailRequest = undefined; detailCache.clear(); settlements.terrainPending();
@@ -1888,7 +1942,7 @@ function updateStageStates(): void {
     || (!neural && JSON.stringify(draft.erosionTuning) !== JSON.stringify(settings.erosionTuning ?? {}))
     || JSON.stringify(draft.procedural) !== JSON.stringify(settings.procedural) || (draft.procedural?.biome && (draft.climate !== settings.climate || climateChanged))
     || JSON.stringify(draft.phasor) !== JSON.stringify(settings.phasor) || (isCompactProcedural(draft) && draft.climate !== settings.climate)
-    || ['seed', 'width', 'motifSize', 'relief', 'environment', 'mountainMix', 'erosion', 'compute', 'generationCompute', 'source', 'fidelity', 'neuralFit', 'neuralSlopes', 'refine', 'coarseModel', 'baseModel', 'decoderModel'].some(key => draft[key as keyof TerrainSettings] !== settings[key as keyof TerrainSettings]);
+    || ['seed', 'width', 'sampleSpacing', 'motifSize', 'relief', 'environment', 'mountainMix', 'erosion', 'compute', 'generationCompute', 'source', 'fidelity', 'refine', 'coarseModel', 'baseModel', 'decoderModel'].some(key => draft[key as keyof TerrainSettings] !== settings[key as keyof TerrainSettings]);
   const coastChanged = draft.coastMask !== settings.coastMask || draft.islandMode !== settings.islandMode;
   const hydroChanged = JSON.stringify(draft.hydrology) !== JSON.stringify(settings.hydrology) || (!neural && climateChanged);
   el('reliefState').textContent = reliefChanged ? 'changed' : '';
@@ -1896,9 +1950,6 @@ function updateStageStates(): void {
   el('hydroState').textContent = reliefChanged || coastChanged ? 'recalculate after upstream stage' : hydroChanged ? 'changed' : '';
 }
 function parameterChanged(): void {
-  const zoned = !!sketchEditor?.zones(), source = el<HTMLSelectElement>('terrainSource').value as TerrainSource;
-  if (zoned && (!zoningWasActive || source !== zoningSource) && isNeuralSource(source)) el<HTMLSelectElement>('neuralFit').value = 'scale';
-  zoningWasActive = zoned; zoningSource = source;
   sketchEditor?.refresh(settings.sketch, settings.zones);
   updateErosionControl(); updateStageStates(); clearTimeout(generationTimer);
   if (input('auto').checked) generationTimer = setTimeout(() => generate(), 220);
@@ -1914,7 +1965,7 @@ el('erReset').onclick = () => { delete proceduralRecipe.erosionTuning; for (cons
 function showErosionDefaults(values: number[] | undefined): void {
   EROSION_SETTINGS.forEach((name, i) => { let v=values?.[i];if(isCompactProcedural(settings)){if(name==='iterations')v=compactBudget(settings).steps;if(name==='warp')v=0;if(name==='surfaceIterations')v=settings.procedural?.enabled?.surface?12:0;if(name==='detail'&&!settings.procedural?.enabled?.ridged)v=0;} input(`er_${name}`).placeholder = v===undefined?'':String(Math.round(v * 1000) / 1000); });
 }
-for (const id of ['width', 'motifSize', 'relief', 'environment', 'mountainMix', 'erosion', 'seed', 'islandMode', 'terrainSource', 'fidelity', 'neuralFit', 'neuralSlopes', 'refine', 'nReliefMode', ...Object.values(tuningFields), 'nH0', 'nH1', 'nH2', 'nH3', 'nH4']) el(id).addEventListener('input', parameterChanged);
+for (const id of ['width', 'sampleSpacing', 'motifSize', 'relief', 'environment', 'mountainMix', 'erosion', 'seed', 'islandMode', 'terrainSource', 'fidelity', 'neuralFit', 'neuralSlopes', 'refine', 'nReliefMode', ...Object.values(tuningFields), 'nH0', 'nH1', 'nH2', 'nH3', 'nH4']) el(id).addEventListener('input', parameterChanged);
 for (const id of ['coarseModel', 'baseModel', 'decoderModel']) el(id).addEventListener('change', () => {
   updateErosionControl();
   const selected = neuralModels.coarse.find(model => model.id === el<HTMLSelectElement>('coarseModel').value);
@@ -2125,7 +2176,10 @@ el('copyReport').onclick = async () => {
   lines.push(`Hydrology: ${JSON.stringify(settings.hydrology)} · diagnostic: ${hydroOverlay} · water: ${input('showWater').checked ? 'visible' : 'hidden'}`);
   lines.push(`Contour lines: ${map.dataset.contours === 'true' ? 'visible' : 'hidden'}`);
   if (settings.coastMask) lines.push(`Coasts: ${COAST_DIRECTIONS.filter((_, i) => settings.coastMask! & (1 << i)).join(', ')} · islands: ${settings.islandMode}`);
-  if (terrain) lines.push('', `Physical source: 1024² · overview: ${terrain.resolution}² · generation: ${terrain.generationMs.toFixed(1)} ms · rendering: ${renderingMs.toFixed(1)} ms`);
+  if (terrain) {
+    const physicalN = terrain.definition?.n ?? terrain.physical?.n ?? terrain.field?.n ?? terrain.resolution;
+    lines.push('', `Physical source: ${physicalN}² · ${(terrain.width / physicalN).toFixed(2)} m/cell · overview: ${terrain.resolution}² · generation: ${terrain.generationMs.toFixed(1)} ms · rendering: ${renderingMs.toFixed(1)} ms`);
+  }
   if (displayedDetail) lines.push(`Detailed region: ${displayedDetail.terrain.x}, ${displayedDetail.terrain.y}, ${displayedDetail.terrain.width} m · ${displayedDetail.terrain.resolution}² · sampling: ${detailSamplingMs.toFixed(1)} ms`);
   void copy(lines.join('\n'));
 };
@@ -2184,6 +2238,7 @@ sketchEditor = createTerrainSketchEditor(el('terrainSketchEditor'), settings.ske
   viewport, surface: map,
   bounds: () => ({ left: viewport.clientWidth / 2 - view.cx * view.scale, top: viewport.clientHeight / 2 - view.cy * view.scale, size: Number(input('width').value) * view.scale }),
   width: () => Number(input('width').value), setWidth: width => { input('width').value = String(width); },
+  onHeightmapImported: resolution => { input('sampleSpacing').value = String(defaultSourceSpacing({ width: Number(input('width').value), source: el<HTMLSelectElement>('terrainSource').value as TerrainSource, sourceNativeResolution: resolution })); },
   onEnable: () => { setPerspective(false); clearTimeout(generationTimer); ruler.setEnabled(false); settlements.cancelPicking(); pinMode = false; el('pinMode').setAttribute('aria-pressed', 'false'); viewport.classList.remove('pin-mode'); },
   apply: () => generate('relief'),
 }, initialZones);
@@ -2393,6 +2448,9 @@ if (query.get('artifact')) void readHistory(query.get('artifact')!).then(d => {
   retainedDecor = d; lastExport = d; settings = { ...settings, seed: d.meta.seed, width: d.raster.width, refine: d.meta.terrainDisplay?.refine ?? false };
   input('refine').checked = !!settings.refine;
   input('width').value = String(settings.width); input('seed').value = settings.seed;
+  settings.sampleSpacing = finite(new URLSearchParams(d.meta.query).get('sampleSpacing'), defaultSourceSpacing(settings));
+  input('sampleSpacing').value = String(settings.sampleSpacing);
+  updateSourceDefinitionControl();
   terrain = terrainFromDecor(d); terrainGeneration = generation; overviewPending = false;
   if (!query.has('view')) view = fitView(d.raster.width, viewport.clientWidth, viewport.clientHeight);
   render();

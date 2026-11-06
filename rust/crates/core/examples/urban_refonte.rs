@@ -183,6 +183,7 @@ fn run(
         n,
         height: &heights,
         water: &water,
+        interpolation: Default::default(),
     };
     let site = Site {
         key: case.family.into(),

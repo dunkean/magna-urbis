@@ -3,6 +3,7 @@ import wasmUrl from '../pkg/wasm/magna_urbis_wasm_bg.wasm?url&inline';
 import type { RoadOutput, SettlementOutput, SettlementRequest, SettlementResponse } from './settlements';
 import type { ResourcePayload } from './resources';
 import { nativeRasterClient } from './nativeEngine';
+import { validatePhysicalTerrain } from './settlements';
 import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
 
 export interface SettlementEngine { run(request: SettlementRequest): SettlementResponse | Promise<SettlementResponse>; dispose?(): void }
@@ -26,7 +27,16 @@ export async function createSettlementEngine(runtime?: ExecutionRuntime): Promis
         if (request.raster) {
           const r = request.raster;
           terrain?.free();
+          validatePhysicalTerrain(r.physical);
           terrain = new SettlementTerrain(r.width, r.n, r.height, r.water, r.waterLevel, r.riverWidth, r.riverIds);
+          if (r.physical) {
+            const physical = terrain as SettlementTerrain & {
+              set_physical_height(n: number, height: Float32Array): void;
+              set_physical_height_spline(n: number, height: Float32Array, floor: number): void;
+            };
+            if (r.physical.interpolation === 'bspline') physical.set_physical_height_spline(r.physical.n, r.physical.height, r.physical.floor ?? 0);
+            else physical.set_physical_height(r.physical.n, r.physical.height);
+          }
           if (r.region) terrain.set_region(r.region.seed, r.region.temperature, r.region.precipitation, r.region.biome, r.region.x, r.region.y);
         }
         if (!terrain) throw new Error('Generate a terrain first.');

@@ -98,7 +98,19 @@ export interface RoadOutput {
 
 /** Map inputs of the Rust resource model (seed, sea-level °C, annual mm, biome or climate zone, world corner). */
 export interface SettlementRegion { seed: string; temperature: number; precipitation: number; biome: string; x: number; y: number }
-export interface SettlementRaster { geometry?: import('./urbanGeography').VectorGeography; region?: SettlementRegion; width: number; n: number; height: Float32Array; water: Uint8Array; waterLevel: Float32Array; riverWidth: Float32Array; riverIds: Int32Array }
+/** Full-extent, cell-centred ground elevation in metres. Planning and routing stay on the capped raster below. */
+export interface PhysicalTerrain { n: number; height: Float32Array; interpolation?: 'bspline'; floor?: number }
+export interface SettlementRaster { geometry?: import('./urbanGeography').VectorGeography; region?: SettlementRegion; physical?: PhysicalTerrain; width: number; n: number; height: Float32Array; water: Uint8Array; waterLevel: Float32Array; riverWidth: Float32Array; riverIds: Int32Array }
+export function validatePhysicalTerrain(physical: PhysicalTerrain | undefined): void {
+  if (!physical) return;
+  const { n, height } = physical;
+  if (!Number.isInteger(n) || n < 2 || n > 8192 || n * n * Float32Array.BYTES_PER_ELEMENT > 256 * 1024 * 1024
+    || !(height instanceof Float32Array) || height.length !== n * n || !height.every(Number.isFinite)
+    || (physical.interpolation !== undefined && physical.interpolation !== 'bspline')
+    || (physical.floor !== undefined && !Number.isFinite(physical.floor))) {
+    throw new Error('Invalid physical terrain height field.');
+  }
+}
 /**
  * One worker request. `place` reruns placement (then routes the new places); without it the
  * roads are rerouted between `sites`. `roads: null` skips routing.
@@ -116,8 +128,10 @@ export async function runSettlementRequest(request: SettlementRequest): Promise<
 
 /** Adapt the completed terrain and the displayed water geometry, without regenerating either. */
 export function settlementRaster(t: TerrainData, maxResolution = 512): SettlementRaster {
-  const source = t.field?.data ?? t.height, sn = t.field?.n ?? t.resolution;
-  const n = Math.min(maxResolution, sn), width = t.width, cell = width / n, size = n * n;
+  const source = t.physical?.height ?? t.height, sn = t.physical?.n ?? t.resolution;
+  validatePhysicalTerrain({ n: sn, height: source });
+  if (!Number.isInteger(maxResolution) || maxResolution < 1 || maxResolution > 8192) throw new Error('Invalid settlement planning resolution.');
+  const n = Math.min(1024, Math.max(16, maxResolution), Math.max(16, sn)), width = t.width, cell = width / n, size = n * n;
   const height = new Float32Array(size), water = new Uint8Array(size), waterLevel = new Float32Array(size), riverWidth = new Float32Array(size), riverIds = new Int32Array(size).fill(-1);
   const sample = (values: ArrayLike<number>, vn: number, x: number, y: number): number => {
     const gx = Math.max(0, Math.min(vn - 1, x / width * vn - 0.5)), gy = Math.max(0, Math.min(vn - 1, y / width * vn - 0.5));
@@ -125,14 +139,28 @@ export function settlementRaster(t: TerrainData, maxResolution = 512): Settlemen
     const a = values[yy * vn + xx], b = values[yy * vn + Math.min(vn - 1, xx + 1)], c = values[Math.min(vn - 1, yy + 1) * vn + xx], d = values[Math.min(vn - 1, yy + 1) * vn + Math.min(vn - 1, xx + 1)];
     return (a * (1 - dx) + b * dx) * (1 - dy) + (c * (1 - dx) + d * dx) * dy;
   };
+  // Exact area-weighted box mean for downsampling; no full-size integral plane.
+  const groundAt = (x: number, y: number): number => {
+    if (sn <= n) return sample(source, sn, (x + .5) * cell, (y + .5) * cell);
+    const x0 = x * sn / n, x1 = (x + 1) * sn / n, y0 = y * sn / n, y1 = (y + 1) * sn / n;
+    let sum = 0;
+    for (let sy = Math.floor(y0); sy < Math.ceil(y1); sy++) {
+      const wy = Math.min(y1, sy + 1) - Math.max(y0, sy);
+      for (let sx = Math.floor(x0); sx < Math.ceil(x1); sx++) {
+        const wx = Math.min(x1, sx + 1) - Math.max(x0, sx);
+        sum += source[sy * sn + sx] * wx * wy;
+      }
+    }
+    return sum / ((x1 - x0) * (y1 - y0));
+  };
   const vector = t.water, hydro = t.hydrology;
   const lakes = vector ? lakeField(vector.lake, vector.hydro.n) : undefined;
   for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
     const i = y * n + x, px = (x + 0.5) * cell, py = (y + 0.5) * cell;
-    height[i] = sample(source, sn, px, py); waterLevel[i] = height[i];
+    height[i] = groundAt(x, y); waterLevel[i] = height[i];
     if (height[i] <= 0) { water[i] = 1; waterLevel[i] = 0; }
     if (t.caveMask.length || t.field?.cave?.length) {
-      const cave = t.field?.cave ?? t.caveMask, cn = t.field?.cave ? sn : t.resolution;
+      const cave = t.field?.cave ?? t.caveMask, cn = t.field?.cave ? t.field.n : t.resolution;
       if (cave[Math.min(cn - 1, Math.floor(py / width * cn)) * cn + Math.min(cn - 1, Math.floor(px / width * cn))]) water[i] = 2;
     }
     if (vector) {
@@ -181,5 +209,8 @@ export function settlementRaster(t: TerrainData, maxResolution = 512): Settlemen
       segment(p[a], p[a + 1], p[b], p[b + 1], Math.max(p[a + 2], p[b + 2]), p[a + 3], p[b + 3], id);
     }
   }
-  return { width, n, height, water, waterLevel, riverWidth, riverIds };
+  const field = t.field?.n === sn && t.field.data.length === source.length ? t.field : undefined;
+  const physical = field ? { n: sn, height: field.data, interpolation: 'bspline' as const, floor: field.floor }
+    : sn !== n ? { n: sn, height: source } : undefined;
+  return { width, n, height, water, waterLevel, riverWidth, riverIds, ...(physical ? { physical } : {}) };
 }

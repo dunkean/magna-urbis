@@ -10,7 +10,7 @@ struct Fixture {
  layout_config:LayoutConfig,parcel_config:crate::urban::ParcelConfig,
 }
 fn fixture()->Fixture { serde_json::from_slice(include_bytes!("fixtures/pnw-ribbon-exact.json")).unwrap() }
-fn surface(f:&Fixture)->Surface<'_>{Surface{geometry:None,width:f.width,n:f.n,height:&f.height,water:&f.water}}
+fn surface(f:&Fixture)->Surface<'_>{Surface{geometry:None,width:f.width,n:f.n,height:&f.height,water:&f.water, interpolation: Default::default(),}}
 fn morph(f:&Fixture)->Morph { resolve("pnw-plank-village","culture","village","village",f.layout_config.density,&f.layout_config.params,"quarters").unwrap() }
 fn covered(st:&Street,domain:&Shape,surface:Surface<'_>,cfg:&LayoutConfig)->bool {
  let p=g::polygon(domain);
@@ -38,7 +38,7 @@ fn an_existing_regional_axis_is_not_duplicated_as_a_fallback_guide() {
  assert_eq!(serde_json::to_vec(&road).unwrap(),original);
 }
 fn axis()->Street{Street{path:vec![Point{x:100.,y:300.},Point{x:500.,y:300.}],widths:vec![5.;2],rank:1,role:"street".into()}}
-fn test_surface<'a>(height:&'a[f32],water:&'a[u8])->Surface<'a>{Surface{geometry:None,width:640.,n:64,height,water}}
+fn test_surface<'a>(height:&'a[f32],water:&'a[u8])->Surface<'a>{Surface{geometry:None,width:640.,n:64,height,water, interpolation: Default::default(),}}
 #[test]
 fn a_hole_inside_the_full_stroke_refuses_an_otherwise_clear_centerline() {
  let h=vec![10.;64*64];let w=vec![0;h.len()];let s=test_surface(&h,&w);let cfg=LayoutConfig::default();

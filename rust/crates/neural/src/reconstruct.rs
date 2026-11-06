@@ -197,25 +197,38 @@ pub fn elevation(residual: &Grid, lowfreq: &Grid, offset: usize, size: usize) ->
     out
 }
 
-/// Bilinear resampling of a native crop to `n²` cell centres over `extent_m`.
+/// Area sampling of a native crop over the requested physical extent.
+/// Each output pixel averages its footprint in the 30 m source cells. The
+/// taps are shared by both axes; no second full-size raster is allocated.
 pub fn resample(native: &[f32], native_n: usize, cell_m: f64, extent_m: f64, n: usize) -> Vec<f32> {
-    let coord = |i: usize| {
-        ((i as f64 + 0.5) * extent_m / n as f64 / cell_m - 0.5).clamp(0.0, (native_n - 1) as f64)
-    };
-    let taps: Vec<(usize, usize, f32)> = (0..n)
+    if n == native_n && extent_m == native_n as f64 * cell_m {
+        return native.to_vec();
+    }
+    let cell = extent_m / n as f64 / cell_m;
+    let taps: Vec<Vec<(usize, f64)>> = (0..n)
         .map(|i| {
-            let c = coord(i);
-            let a = c.floor() as usize;
-            let b = (a + 1).min(native_n - 1);
-            (a, b, (c - a as f64) as f32)
+            let left = i as f64 * cell;
+            let right = (i + 1) as f64 * cell;
+            let mut row = Vec::new();
+            for j in (left.floor() as usize)..(right.ceil() as usize).min(native_n) {
+                let overlap = (right.min((j + 1) as f64) - left.max(j as f64)).max(0.0);
+                if overlap > 0.0 {
+                    row.push((j, overlap / cell));
+                }
+            }
+            row
         })
         .collect();
     let mut out = vec![0.0f32; n * n];
-    for (y, &(ya, yb, ty)) in taps.iter().enumerate() {
-        for (x, &(xa, xb, tx)) in taps.iter().enumerate() {
-            let top = native[ya * native_n + xa] * (1.0 - tx) + native[ya * native_n + xb] * tx;
-            let bottom = native[yb * native_n + xa] * (1.0 - tx) + native[yb * native_n + xb] * tx;
-            out[y * n + x] = top * (1.0 - ty) + bottom * ty;
+    for (y, ys) in taps.iter().enumerate() {
+        for (x, xs) in taps.iter().enumerate() {
+            let mut sum = 0.0f64;
+            for &(sy, wy) in ys {
+                for &(sx, wx) in xs {
+                    sum += native[sy * native_n + sx] as f64 * wy * wx;
+                }
+            }
+            out[y * n + x] = sum as f32;
         }
     }
     out
@@ -251,6 +264,22 @@ mod tests {
                 "{x}: {}",
                 up.at(10, x)
             );
+        }
+    }
+
+    #[test]
+    fn physical_resample_averages_checkerboard_and_preserves_ramp() {
+        let checker: Vec<f32> = (0..8)
+            .flat_map(|y| (0..8).map(move |x| ((x + y) % 2) as f32))
+            .collect();
+        let down = resample(&checker, 8, 30.0, 240.0, 2);
+        assert!(down.iter().all(|&v| (v - 0.5).abs() < 1e-6));
+        assert_eq!(resample(&checker, 8, 30.0, 240.0, 8), checker);
+        assert_eq!(down, resample(&checker, 8, 30.0, 240.0, 2));
+        let ramp: Vec<f32> = (0..8).flat_map(|_| (0..8).map(|x| x as f32)).collect();
+        let down = resample(&ramp, 8, 30.0, 240.0, 4);
+        for row in down.chunks(4) {
+            assert_eq!(row, &[0.5, 2.5, 4.5, 6.5]);
         }
     }
 }

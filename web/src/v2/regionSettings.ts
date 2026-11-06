@@ -38,7 +38,7 @@ export function effectiveRegion(settings:V2Settings):{placement:SettlementConfig
       ...(overrides.sitePrefs?{sitePrefs:{...spec.sitePrefs,...overrides.sitePrefs,weights:{...spec.sitePrefs?.weights,...overrides.sitePrefs.weights}}}:{})};
   });
   const roads=settings.region?.roads===null?null:{level:'rural',surface:'auto',culture:'auto',density:.5,gradeWeight:1,maxGrade:0,crossingCost:1,wobble:1,sharing:.7,exits:o.roads??2,...settings.region?.roads} as RoadConfig;
-  return {placement,roads,resolution:settings.region?.resolution??512};
+  return {placement,roads,resolution:settings.region?.resolution??(typeof settings.extent==='number'&&settings.extent>40000?1024:512)};
 }
 /** Mirrors core/settlements/mod.rs::validate and roads/mod.rs::validate. */
 export function validateRegionSettings(value: unknown, width = 100000): void {

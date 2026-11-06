@@ -335,7 +335,7 @@ mod tests {
     fn review12_a_gate_patch_on_the_road_gets_no_link_to_the_centre() {
         let height = vec![0.0; 64 * 64];
         let water = vec![0; height.len()];
-        let surface = Surface { geometry: None, width: 640.0, n: 64, height: &height, water: &water };
+        let surface = Surface { geometry: None, width: 640.0, n: 64, height: &height, water: &water, interpolation: Default::default(),};
         let centers = vec![UrbanCenter { id: 0, point: Point { x: 400.0, y: 300.0 }, weight: 1.0 }];
         let road = |y: f64| Street { path: (0..=40).map(|i| Point { x: 10.0 * i as f64, y }).collect(), widths: vec![5.0; 41], rank: 1, role: "regional".into() };
         let crosses_camp = |links: &[Street]| links.iter().any(|l| l.path.iter().any(|p| p.x > 330.0));
@@ -365,6 +365,7 @@ mod tests {
             n: 64,
             height: &height,
             water: &water,
+            interpolation: Default::default(),
         };
         let centers = vec![UrbanCenter {
             id: 0,
@@ -420,6 +421,7 @@ mod tests {
             n: 64,
             height: &height,
             water: &water,
+            interpolation: Default::default(),
         };
         let centers = vec![UrbanCenter {
             id: 0,
@@ -458,6 +460,7 @@ mod tests {
             n: 64,
             height: &height,
             water: &water,
+            interpolation: Default::default(),
         };
         let centers = vec![UrbanCenter {
             id: 0,

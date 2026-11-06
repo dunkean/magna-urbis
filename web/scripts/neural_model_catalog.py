@@ -18,7 +18,11 @@ _finite_key = None
 
 
 def catalog():
-    return _catalog | {'inventory': _inventory, 'bundledBytes': sum(
+    profiles = [row | ({'extentMin': 40000, 'extentMax': 40000, 'outputResolution': 1024,
+                        'coarseWindowCount': 4}
+                       if row['id'] == 'residual8k' else {'extentMin': 500, 'extentMax': 200000, 'nativeCellM': 30})
+                for row in _catalog['base']]
+    return _catalog | {'base': profiles, 'inventory': _inventory, 'bundledBytes': sum(
         (ASSETS / v['file']).stat().st_size for v in _inventory['models'].values()
         if (ASSETS / v['file']).is_file())}
 
@@ -129,13 +133,17 @@ def finite_generator(decoder, device='cuda'):
 
 def generate_finite(condition, params, seed, device='cuda'):
     """Execute the actual finite flow; no original base or teacher latents."""
+    if float(params.get('extent', 40000)) != 40000:
+        raise ValueError('Residual8k supports exactly 40 km.')
     import numpy as np
     import torch
     from scipy.ndimage import map_coordinates
-    from distill.tile40_height import guided_reference, resample_tile
+    from distill.tile40_height import guided_reference
+    from neural_sampling import assert_finite_conditioning_coverage, resample_native
     selected = selection(params)
-    generator = finite_generator(selected['decoderModel'], device)
     size, start, origin = int(condition['size']), int(condition['start']), int(condition['origin'])
+    assert_finite_conditioning_coverage(origin, start, size)
+    generator = finite_generator(selected['decoderModel'], device)
     fields = np.asarray(condition['fields'], np.float32).reshape(5, size, size)
     offset = origin / 256. - start
 
@@ -180,19 +188,22 @@ def generate_finite(condition, params, seed, device='cuda'):
         generator.synchronize()
         decoder_done = time.perf_counter()
         guided = guided_reference(native, factory.elevation)
-        heights = resample_tile(guided['native_height'], pixels=1024).astype('<f4')
+        heights = resample_native(guided['native_height'], 40000, 1024)
     done = time.perf_counter()
     if not np.isfinite(heights).all():
         raise RuntimeError('The residual model produced non-finite elevations.')
     from distill.tile40_runtime import ROOT_ORIGIN, ROOT_SIZE, window_origins
-    evaluations = [len(window_origins(generator.coarse_origin, generator.coarse_end, 64, 48))**2 * generator.coarse.steps,
+    coarse_window_count = len(window_origins(generator.coarse_origin, generator.coarse_end, 64, 48))**2
+    evaluations = [coarse_window_count * generator.coarse.steps,
                    generator.encoder.steps * 2,
                    1 if generator.whole_decoder else len(window_origins(ROOT_ORIGIN, ROOT_ORIGIN + ROOT_SIZE, 512, 384))**2]
     meta = dict(backend='python-cuda' if str(device).startswith('cuda') else 'python-cpu', precision='fp32-mixed-bf16',
+                extent=40000, resolution=1024, nativeCellM=30, nativeResolution=1334, outputCellM=40000/1024,
                 profile=f'coarse2-residual48-8k-midpoint4-{selected["decoderModel"]}',
                 totalMs=(done-began)*1000, coarseMs=(coarse_done-began)*1000,
                 baseMs=(base_done-coarse_done)*1000, decoderMs=(decoder_done-base_done)*1000,
                 reconstructionMs=(done-decoder_done)*1000, evaluations=evaluations,
+                coarseWindowCount=coarse_window_count,
                 land=float(np.mean(heights > 0)), edited=bool(condition.get('edited')),
                 sketchRegion=True, zoneConditioning=1, refinementDecoder=False, neuralSeed=str(seed),
                 refinementReason='Finite residual flow has a separate latent domain; close LOD uses deterministic sparse detail.',

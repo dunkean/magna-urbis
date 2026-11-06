@@ -8,13 +8,13 @@ const errors=[],report={};
 try {
   const page=await browser.newPage({viewport:{width:1600,height:1100}});page.setDefaultTimeout(60000);page.on('pageerror',e=>errors.push(e.message));
   // The reported case: classic GPU erosion, 12 km landforms and Rust hydrology/conditioning.
-  const query=new URLSearchParams({profile:'web',engine:'rust',v:'4',seed:'42',width:'50000',motif:'12000',relief:'mountains',erosion:'1',style:'parchment',auto:'0',source:'procedural',procedural:JSON.stringify({biome:true,preset:'classic'}),render:'svg',compute:'gpu-f32',generation:'gpu-erosion',hydro_enabled:'1',hydro_engine:'rust',hydro_compute:'auto',hydro_resolution:'512',hydro_condMode:'both',hydro_condStrength:'2',hydro_condDepth:'30',hydro_condLength:'3000',forest:'0',view:'25000,25000,0.02068'});
+  const query=new URLSearchParams({profile:'web',engine:'rust',v:'4',seed:'42',width:'50000',sampleSpacing:String(50000/1024),motif:'12000',relief:'mountains',erosion:'1',style:'parchment',auto:'0',source:'procedural',procedural:JSON.stringify({biome:true,preset:'classic'}),render:'svg',compute:'gpu-f32',generation:'gpu-erosion',hydro_enabled:'1',hydro_engine:'rust',hydro_compute:'auto',hydro_resolution:'512',hydro_condMode:'both',hydro_condStrength:'2',hydro_condDepth:'30',hydro_condLength:'3000',forest:'0',view:'25000,25000,0.02068'});
   await page.goto(`${origin}/rustbench.html?profile=web#terrain?${query}`);
   const frame=page.frameLocator('#frames iframe').first(),panel=frame.locator('#proceduralPipeline');
   const ready=width=>page.waitForFunction(expected=>{const w=document.querySelector('#frames iframe')?.contentWindow,d=w?.document;return w?.magnaBenchContext?.ready()&&d.querySelector('#terrainLoading')?.hidden&&new URL(w.location.href).searchParams.get('width')===String(expected);},width);
-  await ready(50000);report.initial=await frame.locator('#status').textContent();
+  await ready(50000);report.initial=await frame.locator('#status').textContent();assert(await panel.isHidden());await frame.locator('#proceduralInspector').click();await panel.waitFor();
   // Do not blur the size field first: validation used to shift the arrow during this click.
-  await panel.locator('#width').fill('10000');const started=Date.now();await panel.locator('[data-run-stage="prepare"]').click();await ready(10000);report.resizeMs=Date.now()-started;
+  await panel.locator('#width').fill('10000');await frame.locator('#sampleSpacing').fill(String(10000/1024));const started=Date.now();await panel.locator('[data-run-stage="prepare"]').click();await ready(10000);report.resizeMs=Date.now()-started;
   const result=await frame.locator('body').evaluate(()=>({view:window.magnaBenchContext.capture().view,status:document.querySelector('#status').textContent,compute:document.querySelector('#compute').value,generation:document.querySelector('#generationCompute').value,motif:document.querySelector('#motifSize').value}));
   assert.equal(result.view.cx,5000);assert.equal(result.view.cy,5000);assert.equal(result.motif,'12000');assert.equal(result.compute,'gpu-f32');assert.equal(result.generation,'gpu-erosion');assert(!result.status.includes('error'));report.result=result;
   await panel.locator('[data-run-stage="initialize"]').click();await panel.locator('[data-stage="regional"][data-state="waiting"]').waitFor();

@@ -31,7 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         for k in opts.split(',').filter(|k| !k.is_empty()) { v["layoutConfig"][k] = Value::Bool(true); }
         let f: Fixture = serde_json::from_value(v)?;
         let geography = f.geometry.map(|g| Geography::new(g, f.width)).transpose()?;
-        let surface = Surface { geometry: geography.as_ref(), width: f.width, n: f.n, height: &f.height, water: &f.water };
+        let surface = Surface { geometry: geography.as_ref(), width: f.width, n: f.n, height: &f.height, water: &f.water, interpolation: Default::default(),};
         let layouts = generate_quarters(&f.seed, &f.sites, &f.layout_config, surface, &f.roads)?;
         let partitions = generate_parcels(&f.seed, &layouts, &f.parcel_config)?;
         let requests = building_sites::requests(&f.seed, &layouts, &partitions, surface, &f.water_level, None)?;

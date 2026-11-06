@@ -16,6 +16,7 @@ class RetainedStore implements TerrainStore {
 function settings(): V2Settings {
   const settings = defaultSettings();
   settings.runtime = { backend: 'typescript', compute: 'cpu', source: 'procedural' };
+  settings.generation = 'procedural';
   settings.extent = 1200;
   settings.settlementCount = 1;
   settings.options = { ...settings.options, population: 80, size: 'hamlet', coast: 'none', river: 'none', relief: 'flat', walls: 'none', castle: 'no',
@@ -73,7 +74,7 @@ describe('V2 retained generation pipeline', () => {
     expect(terrainCacheKey(settings)).toBe(originalKey);
   });
   it('retains the optional automatic extent recommendation and accepts a fixed extent', () => {
-    const small = defaultSettings(); small.extent = 'auto';
+    const small = defaultSettings(); small.extent = 'auto'; small.generation = 'procedural'; small.runtime!.source = 'procedural';
     const large = structuredClone(small);
     large.options.population = 100000; large.settlementCount = 12;
     expect(adaptedExtent(large)).toBeGreaterThan(adaptedExtent(small));

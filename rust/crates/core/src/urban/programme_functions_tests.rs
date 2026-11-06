@@ -8,7 +8,7 @@ fn prepared(context: &ProgrammeContext, population: u32) -> UrbanProgramme {
         "quarters":[], "blocks":[], "streets":[], "warnings":[]
     })).unwrap();
     prepare(&mut layout, population, context, Surface { geometry: None, width: 1000.0,
-        n: 1, height: &[0.0], water: &[0] }).unwrap();
+        n: 1, height: &[0.0], water: &[0], interpolation: Default::default() }).unwrap();
     layout.programme.unwrap()
 }
 fn generic<'a>(p: &'a UrbanProgramme, function: &str) -> Option<&'a Demand> {

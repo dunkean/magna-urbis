@@ -25,7 +25,8 @@ import type { V2Settings, ProgressCallback, V2TownStage } from './contracts';
 import { validateSettings } from './project';
 import { adaptedExtent } from './settings';
 import { effectiveTerrainSettings } from './terrainSettings';
-import { projectEngineTerrain, type V2TerrainLayer } from './terrainProjection';
+import { sourceDefinition } from '../../../rust/bridge/terrainDefinition';
+import { projectEngineTerrain, assertUrbanPhysicalCapability, type V2TerrainLayer } from './terrainProjection';
 import { importedHeightfield } from '../gen/terrain/import';
 import { buildForestField, type ForestField } from '../../../rust/bridge/terrainForest';
 import { seedHash } from '../../../rust/bridge/terrainAdjust';
@@ -174,14 +175,18 @@ export async function generateTerrain(settings: V2Settings, onProgress?: Progres
       else if (configuration.compute === 'gpu-f32' || ['gpu', 'gpu-all', 'gpu-erosion'].includes(configuration.generationCompute ?? '')) compute = 'gpu';
       if(softwareGpu&&compute==='cpu'&&['procedural','procedural-phasor'].includes(runtime!.source))report(onProgress,'compute','WebGPU logiciel détecté · sélection du CPU pour le procédural',0,0);
       const { seed: _seed, width: _width, source: _source, neuralAssets: _assets, neuralServer: _server, forest: _forest, ...controls } = configuration;
+      if (runtime!.compute === 'gpu' && runtime!.backend !== 'native' && !remoteNeural && !options.importedHeight && !controls.sketch && !controls.zones
+        && ['procedural', 'procedural-phasor'].includes(runtime!.source) && !controls.generationCompute)
+        controls.generationCompute = 'gpu-erosion';
       if (options.importedHeight) {
-        const image = importedHeightfield(options.importedHeight, options.mapSize!, 1024, options.heightScale ?? 120, options.importSea ?? 0).height;
-        controls.sketch = { version: 1, resolution: 1024, heights: Array.from(image.data), processing: 'surface' };
+        const sourceN = sourceDefinition(configuration).n;
+        const image = importedHeightfield(options.importedHeight, options.mapSize!, sourceN, options.heightScale ?? 120, options.importSea ?? 0).height;
+        controls.sketch = { version: 1, resolution: sourceN, heights: Array.from(image.data), processing: 'surface' };
       }
       const execute = () => generateEngineHeight({ seed: configuration.seed, width: options.mapSize!,
         relief: options.relief, coast: options.coast,
         climate: options.biome === 'desert' ? 'arid' : options.biome === 'tropical' ? 'tropical' : options.biome === 'tundra' ? 'cold' : 'temperate',
-        compute, source: runtime!.source, native: runtime!.backend === 'native',
+        compute, strictCompute: runtime!.compute === 'gpu' || configuration.compute === 'gpu-f32' || gpuGeneration, source: runtime!.source, native: runtime!.backend === 'native',
         localServer: runtime!.localServer, pythonServer: runtime!.pythonServer, neuralServer: runtime!.neuralServer,
         neuralAssets: ['procedural', 'procedural-phasor'].includes(runtime!.source) || controls.sketch?.processing ? undefined : resolveModelAssets(runtime!.neuralAssets, assetBase),
         resolution: controls.resolution, erosion: controls.erosion, terrain: controls, terrainStage }, (message,work) => onProgress?.({stage:work?.stage??'relief-engine',label:message,completed:work?.completed??0,total:work?.total??0,...(work?.detail?{detail:work.detail}:{})}));
@@ -390,6 +395,7 @@ async function buildTown(world: World, settings: V2Settings, key: string, onProg
   const backend = settings.urban?.backend ?? settings.runtime?.backend ?? 'typescript';
   const requestedStage = through ?? settings.urban?.local?.[key]?.through ?? settings.urban?.through ?? 'buildings';
   if (settlement.detail === 'farmstead' && backend === 'typescript') return;
+  assertUrbanPhysicalCapability(world, backend);
   const override = settings.local[key] ?? {};
   const population = Number(world.stats['v2.population:' + key] ?? settlement.population);
   const options = { ...settings.options, ...override, mapSize: world.mapSize,

@@ -86,7 +86,7 @@ mod tests {
     #[test]
     fn coast_review_lagoon_water_needs_an_outlet_and_respects_the_cultural_parameter() {
         let n=100;let height=vec![0.;n*n];let water=(0..n*n).map(|i|u8::from(i%n>70)).collect::<Vec<_>>();
-        let surface=Surface{geometry:None,width:1000.,n,height:&height,water:&water};
+        let surface=Surface{geometry:None,width:1000.,n,height:&height,water:&water, interpolation: Default::default(),};
         let mut layout:Layout=serde_json::from_value(serde_json::json!({"key":"lagoon","culture":"venetian-lagoon","center":{"x":500.,"y":500.},"quarters":[],"blocks":[],"streets":[{"path":[{"x":400.,"y":500.},{"x":550.,"y":500.},{"x":690.,"y":500.}],"widths":[9.,9.,9.],"rank":2,"role":"street"}],"warnings":[],"structure":{}})).unwrap();
         let original=serde_json::to_value(&layout.streets).unwrap();
         apply(&mut layout,&LayoutConfig::default(),surface);

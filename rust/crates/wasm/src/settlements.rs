@@ -210,6 +210,17 @@ impl SettlementTerrain {
         });
     }
 
+    /// Full-resolution physical metres for local urban elevations and foundations.
+    pub fn set_physical_height(&mut self, resolution: u32, height: &[f32]) -> Result<(), JsValue> {
+        self.inner.set_physical_height(resolution as usize, height.to_vec())
+            .map_err(|e| JsValue::from_str(&e))
+    }
+
+    pub fn set_physical_height_spline(&mut self, resolution: u32, height: &[f32], floor: f32) -> Result<(), JsValue> {
+        self.inner.set_physical_spline(resolution as usize, height.to_vec(), floor)
+            .map_err(|e| JsValue::from_str(&e))
+    }
+
     /// Compact resource payload for the view layers (JSON, same shape as the native `resources` reply).
     pub fn resources(&self) -> Result<String, JsValue> {
         serde_json::to_string(&self.inner.resources().payload()).map_err(|e| JsValue::from_str(&e.to_string()))

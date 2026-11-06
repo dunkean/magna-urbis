@@ -30,7 +30,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         c.organic_branch_variation = v; c.ribbon_width_variation = v;
     }
     let geography = f.geometry.map(|g| Geography::new(g, f.width)).transpose()?;
-    let surface = Surface { geometry: geography.as_ref(), width: f.width, n: f.n, height: &f.height, water: &f.water };
+    let surface = Surface { geometry: geography.as_ref(), width: f.width, n: f.n, height: &f.height, water: &f.water, interpolation: Default::default(),};
     // TIMING=1: seconds per stage on stderr.
     let clock = std::time::Instant::now();
     let lap = |what: &str| if std::env::var("TIMING").is_ok() { eprintln!("TIMING {what} {:.1} s", clock.elapsed().as_secs_f64()); };

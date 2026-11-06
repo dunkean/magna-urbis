@@ -16,7 +16,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Ok(population) = std::env::var("POPULATION") { for site in &mut f.sites { site.population = population.parse()?; } }
     if let Ok(v) = std::env::var("CAMPGROWTH") { f.layout_config.camp_growth = v; }
     let geography = f.geometry.map(|g| Geography::new(g, f.width)).transpose()?;
-    let surface = Surface { geometry: geography.as_ref(), width: f.width, n: f.n, height: &f.height, water: &f.water };
+    let surface = Surface { geometry: geography.as_ref(), width: f.width, n: f.n, height: &f.height, water: &f.water, interpolation: Default::default(),};
     let clock = std::time::Instant::now();
     let layouts = generate_quarters(&f.seed, &f.sites, &f.layout_config, surface, &f.roads)?;
     let partitions = generate_parcels(&f.seed, &layouts, &f.parcel_config)?;

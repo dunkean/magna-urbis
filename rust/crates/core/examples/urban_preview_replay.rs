@@ -31,6 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             n: 1,
             height: &[0.],
             water: &[0],
+            interpolation: Default::default(),
         },
         &[0.],
         None,

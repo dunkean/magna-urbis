@@ -24,9 +24,9 @@ export function fitNeuralSketch(sketch: TerrainSketch, extent: number, window: N
 export function parseTerrainSketch(value: unknown, copy = true): TerrainSketch {
   const s = value as TerrainSketch;
   if (!s || s.version !== 1 || (s.processing !== undefined && s.processing !== 'surface' && s.processing !== 'erosion')
-    || !Number.isInteger(s.resolution) || s.resolution < 8 || s.resolution > (s.processing ? 1024 : 128)
+    || !Number.isInteger(s.resolution) || s.resolution < 8 || s.resolution > (s.processing ? 8192 : 128)
     || !Array.isArray(s.heights) || s.heights.length !== s.resolution ** 2) {
-    throw new Error('Heightmap invalide : grille carrée 8–1024² (esquisse : 128² max.), altitudes entre −12 000 et 12 000 m.');
+    throw new Error('Heightmap invalide : grille carrée 8–8192² (esquisse : 128² max.), altitudes entre −12 000 et 12 000 m.');
   }
   for (let i = 0; i < s.heights.length; i++) {
     const h = s.heights[i];

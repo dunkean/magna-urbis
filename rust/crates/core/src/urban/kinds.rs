@@ -1842,6 +1842,7 @@ mod tests {
             n,
             height: &height,
             water: &water,
+            interpolation: Default::default(),
         };
         let road = Street {
             path: vec![
@@ -1895,6 +1896,7 @@ mod tests {
             n,
             height: &height,
             water: &water,
+            interpolation: Default::default(),
         };
         let p = |x: f64, y: f64| Point { x, y };
         let road = |a: Point, b: Point| Street {
@@ -1950,7 +1952,7 @@ mod tests {
         let height: Vec<f32> = (0..n * n).map(|k| 0.05 * (k % n) as f32).collect();
         let cell = 2000.0 / n as f64;
         let water: Vec<u8> = (0..n * n).map(|k| 3 * u8::from((1300.0..1340.0).contains(&(((k % n) as f64 + 0.5) * cell)))).collect();
-        let surface = Surface { geometry: None, width: 2000.0, n, height: &height, water: &water };
+        let surface = Surface { geometry: None, width: 2000.0, n, height: &height, water: &water, interpolation: Default::default(),};
         let site = Site { key: "activity".into(), name: String::new(), population: 12, culture: "european-organic".into(), center: Point { x: 1004.0, y: 1004.0 }, radius: 30.0 };
         for template in ["river_watermill", "stone_quarry", "forest_logging"] {
             let mut cfg = LayoutConfig::default();

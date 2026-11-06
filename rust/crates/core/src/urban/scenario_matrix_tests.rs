@@ -9,7 +9,7 @@ use crate::settlements::demographics::class_of;
 fn run(culture: &str, population: u32, cfg: &LayoutConfig) -> (Layout, Partition) {
     let n = 128;
     let (height, water) = (vec![0.0; n * n], vec![0u8; n * n]);
-    let surface = Surface { geometry: None, width: 9000.0, n, height: &height, water: &water };
+    let surface = Surface { geometry: None, width: 9000.0, n, height: &height, water: &water, interpolation: Default::default(),};
     let road = Street {
         path: vec![Point { x: 300.0, y: 4520.0 }, Point { x: 8700.0, y: 4480.0 }],
         widths: vec![6.0, 6.0], rank: 0, role: "regional".into(),
@@ -51,7 +51,7 @@ fn isolated_establishments_build_their_one_structure() {
 fn an_activity_intent_builds_its_yard_buildings() {
     let n = 128;
     let (height, water, level) = (vec![0.0; n * n], vec![0u8; n * n], vec![0.0; n * n]);
-    let surface = Surface { geometry: None, width: 9000.0, n, height: &height, water: &water };
+    let surface = Surface { geometry: None, width: 9000.0, n, height: &height, water: &water, interpolation: Default::default(),};
     let mut cfg = LayoutConfig::default();
     cfg.programme.intent = "activity".into();
     cfg.programme.template = "stone_quarry".into();
@@ -71,7 +71,7 @@ fn an_activity_intent_builds_its_yard_buildings() {
 fn an_activity_intent_far_from_any_road_still_builds() {
     let n = 128;
     let (height, water) = (vec![0.0; n * n], vec![0u8; n * n]);
-    let surface = Surface { geometry: None, width: 9000.0, n, height: &height, water: &water };
+    let surface = Surface { geometry: None, width: 9000.0, n, height: &height, water: &water, interpolation: Default::default(),};
     for (template, roads) in [("windmill_site", vec![]), ("hardrock_mine", vec![Street { path: vec![Point { x: 300.0, y: 4560.0 }, Point { x: 8700.0, y: 4560.0 }], widths: vec![6.0, 6.0], rank: 0, role: "regional".into() }])] {
         let mut cfg = LayoutConfig::default();
         cfg.programme.intent = "activity".into();
@@ -93,7 +93,7 @@ fn every_utility_sheet_row_builds_its_yard() {
     let mut failures = vec![];
     for grade in [0.0_f32, 0.13] {
     let height: Vec<f32> = (0..n * n).map(|k| grade * 9000.0 / n as f32 * (k % n) as f32).collect();
-    let surface = Surface { geometry: None, width: 9000.0, n, height: &height, water: &water };
+    let surface = Surface { geometry: None, width: 9000.0, n, height: &height, water: &water, interpolation: Default::default(),};
     for (template, culture) in [("river_watermill", "european-organic"), ("windmill_site", "flemish-cloth-town"), ("stone_quarry", "italian-comune"), ("hardrock_mine", "dwarven"), ("smelter_cluster", "barbarian-norse"), ("coastal_fishing", "norse-ringfort"), ("detached_fishing_camp", "pnw-plank-village"), ("forest_logging", "slavic-gord"), ("saltworks", "venetian-lagoon"), ("caravan_waystation", "ksar-oasis"), ("monastic_farm", "european-organic"), ("pottery_cluster", "mesopotamian"), ("rice_terraces", "javanese-courts"), ("andean_storeway", "inca"), ("road_waystation", "hanseatic"), ("small_farm", "european-organic"), ("small_farm", "yoruba"), ("country_chapel", "european-organic"), ("country_temple", "japanese-jokamachi"), ("roadside_shrine", "chinese"), ("rural_monastery", "tibetan-monastery"), ("country_temple", "medina")] {
         let mut cfg = LayoutConfig::default();
         cfg.programme.intent = "activity".into();

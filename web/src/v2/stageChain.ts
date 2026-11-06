@@ -3,6 +3,7 @@
  * the mounted terrain/region/render forms keep their handlers, validation and sync. */
 import { SETTINGS_PANEL_CONTROLS, FAMILIES, STAGES, GENERATION_STAGE_ROWS, stagesOf, stageForControl, stageForProgress, stageAnchor, type StageContext, type StageDef, type StageFamily, type Copy } from './stageRegistry';
 import { terrainProceduralStageFields, terrainBasicFields, climateZoneHelp } from './terrainControlSchema';
+import { isTerrainExpertControl } from './terrainControlAccess';
 import { mountParameterForm, readSettingPath, writeSettingPath, type ParameterForm } from './parameterForm';
 import { atlasUrl, bindTree, getLanguage, numberLocale, registerMessages, setDynamicText, setText, translate } from './i18n';
 import { iconImg, type IconId } from './stageIcons';
@@ -50,7 +51,7 @@ const familyIcon: Record<StageFamily, IconId> = { region: 'family-relief', settl
 const text = (value: Copy) => value.en;
 /** Live controls promoted above the stage boxes, in display order. */
 const GENERAL_CONTROLS: Record<StageFamily, readonly string[]> = {
-  region: ['widget:extent', 'terrain.relief', 'options.relief', 'options.biome', 'terrain.climate', 'terrain.motifSize', 'widget:seed', 'widget:coasts'],
+  region: ['widget:extent', 'terrain.sampleSpacing', 'terrain.relief', 'options.relief', 'options.biome', 'terrain.climate', 'terrain.motifSize', 'widget:seed', 'widget:coasts'],
   settlements: ['main:town-count', 'main:population', 'main:culture'],
   cities: ['main:sprawl', 'main:walls'],
   map: [],
@@ -281,9 +282,20 @@ export function mountStageChain(b: StageChainBindings): StageChain {
 
   // ── Placing the existing controls ────────────────────────────────────────
   const owner = (id: string) => { const stage = stageForControl(id); if (!stage) console.warn(`[stage-chain] no stage owns control ${id}`); return stage; };
+  const expertHosts = new Map<string, HTMLDetailsElement>();
+  const expertHost = (stageId: string): HTMLDetailsElement => {
+    let host = expertHosts.get(stageId);
+    if (!host) {
+      host = document.createElement('details'); host.className = 'terrain-super-advanced';
+      const summary = document.createElement('summary'); setText(summary, copy('Super advanced · erosion', 'Super avancé · érosion'));
+      host.append(summary); rows.get(stageId)!.body.append(host); expertHosts.set(stageId, host);
+    }
+    return host;
+  };
   const place = (node: Element | null | undefined, stageId: string | undefined) => {
     if (!node || !stageId) return; const row = rows.get(stageId); if (!row) return;
-    row.body.append(node);
+    const path = node instanceof HTMLElement ? node.dataset.fieldPath : undefined;
+    if (path && isTerrainExpertControl(path)) expertHost(stageId).append(node); else row.body.append(node);
   };
   const tRoot = leftovers, sketchHost = b.terrain.sketchHost;
   // Composite widgets first, so their fields stay together.
@@ -343,8 +355,12 @@ export function mountStageChain(b: StageChainBindings): StageChain {
   for (const stage of STAGES) {
     const fields = terrainProceduralStageFields.filter(field => stageForControl(field.path) === stage.id);
     if (!fields.length) continue;
-    const host = document.createElement('div'); rows.get(stage.id)!.body.append(host);
-    forms.push(mountParameterForm(host, fields.map(field => ({ ...field, id: `stage-${field.path.replace(/[^a-z0-9]/gi, '-')}` })), { getValue: b.terrain.access.get, setValue: b.terrain.access.set, disabled: b.busy }));
+    for (const expert of [false, true]) {
+      const selected = fields.filter(field => isTerrainExpertControl(field.path) === expert);
+      if (!selected.length) continue;
+      const host = document.createElement('div'); (expert ? expertHost(stage.id) : rows.get(stage.id)!.body).append(host);
+      forms.push(mountParameterForm(host, selected.map(field => ({ ...field, id: `stage-${field.path.replace(/[^a-z0-9]/gi, '-')}` })), { getValue: b.terrain.access.get, setValue: b.terrain.access.set, disabled: b.busy }));
+    }
   }
 
   // General settings use the mounted controls so all handlers and visibility stay in sync.

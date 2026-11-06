@@ -13,7 +13,7 @@ fn main()->Result<(),Box<dyn std::error::Error>> {
     let layouts:Vec<Layout>=serde_json::from_slice(&std::fs::read(dir.join("layouts.json"))?)?;
     let partitions:Vec<Partition>=serde_json::from_slice(&std::fs::read(dir.join("partitions.json"))?)?;
     let geo=t.geometry.map(|g|Geography::new(g,t.width)).transpose()?;
-    let surface=Surface{geometry:geo.as_ref(),width:t.width,n:t.n,height:&t.height,water:&t.water};
+    let surface=Surface{geometry:geo.as_ref(),width:t.width,n:t.n,height:&t.height,water:&t.water, interpolation: Default::default(),};
     let selected:Vec<_>=(0..layouts.len()).collect();
     let mut index=BuildingSiteIndex::prepare(&layouts,&partitions,&selected)?;
     let mut output=vec![];

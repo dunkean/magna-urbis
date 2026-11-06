@@ -7,7 +7,7 @@ fn a_500_inhabitant_camp_keeps_its_entrance_and_building_sites() {
     // No incoming road: the generated entrance must cross the finished hedge
     // and reach the camp paths, rather than being cut to an outer-belt stub.
     let n=64;let height=vec![10.;n*n];let water=vec![0;n*n];let level=vec![0.;n*n];
-    let surface=u::Surface{geometry:None,width:4000.,n,height:&height,water:&water};
+    let surface=u::Surface{geometry:None,width:4000.,n,height:&height,water:&water, interpolation: Default::default(),};
     let site=u::Site{key:"probe".into(),name:String::new(),population:500,culture:"kraal".into(),center:Point{x:2000.,y:2000.},radius:150.};
     let cfg:u::LayoutConfig=serde_json::from_str(include_str!("../fixtures/small-layout-config.json")).unwrap();
     let layouts=u::generate_quarters("small-settlement",&[site],&cfg,surface,&[]).unwrap();

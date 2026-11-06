@@ -37,7 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("Invalid raster dimensions or sample counts".into());
     }
     let geography = f.geometry.map(|g| Geography::new(g, f.width)).transpose()?;
-    let surface = Surface { geometry: geography.as_ref(), width: f.width, n: f.n, height: &f.height, water: &f.water };
+    let surface = Surface { geometry: geography.as_ref(), width: f.width, n: f.n, height: &f.height, water: &f.water, interpolation: Default::default(),};
     let start = Instant::now();
     let layouts = generate_quarters(&f.seed, &f.sites, &f.layout_config, surface, &f.roads)?;
     let quarters_ms = start.elapsed().as_secs_f64() * 1000.;

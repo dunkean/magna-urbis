@@ -167,7 +167,7 @@ pub struct Request {
 }
 
 impl Request {
-    /// A 40 km map from the bench settings (relief family, coasts, climate).
+    /// A regional map from the bench settings (relief family, coasts, climate).
     #[allow(clippy::too_many_arguments)]
     pub fn regional(
         seed: &str,
@@ -177,7 +177,9 @@ impl Request {
         islands: &str,
         climate: &str,
         height_noise: f32,
+        extent_m: f64,
     ) -> Result<Self, String> {
+        Plan::regional(extent_m)?;
         let world = crate::world_seed(seed);
         let sketch = crate::Regional::new(
             world,
@@ -186,13 +188,15 @@ impl Request {
             coast_mask,
             islands,
             crate::Climate::parse(climate)?,
-            40000.0,
+            extent_m,
         )?;
         if !height_noise.is_finite() || !(0.001..=2.0).contains(&height_noise) {
             return Err("Fidélité à l’esquisse invalide.".into());
         }
         let mut request = Self::new(world, Sketch::Regional(Box::new(sketch)));
         request.height_noise = height_noise;
+        request.extent_m = extent_m;
+        request.resolution = Plan::cells(extent_m);
         Ok(request)
     }
 
@@ -202,8 +206,8 @@ impl Request {
             sketch,
             height_noise: 0.05,
             extent_m: 40000.0,
-            resolution: 1024,
-            exact: false,
+            resolution: Plan::cells(40_000.0),
+            exact: true,
             origin: None,
             base_batch: 16,
             decoder_batch: 2,
@@ -272,12 +276,20 @@ impl Networks {
 
     pub async fn generate(&self, request: &Request, clock: &dyn Clock) -> Result<Output, String> {
         let size = Plan::cells(request.extent_m);
-        let origin = request.origin.unwrap_or(if request.exact {
-            0
+        // The infinite viewer supplies explicit tile coordinates; regional
+        // requests use the fixed placement and the one-coarse bound.
+        let regional = request.origin.is_none();
+        if regional && (request.resolution < 16 || request.resolution > size) {
+            return Err(
+                "Neural output resolution must be between 16 and the native 30 m grid".into(),
+            );
+        }
+        let origin = request.origin.unwrap_or(crate::plan::REGIONAL_ORIGIN);
+        let plan = if regional {
+            Plan::regional(request.extent_m)?
         } else {
-            crate::plan::FAST_ORIGIN
-        });
-        let plan = Plan::new(origin, size, request.exact);
+            Plan::new(origin, size, request.exact)
+        };
         let mut timings = Timings::default();
 
         let started = clock.now_ms();

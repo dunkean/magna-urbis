@@ -482,6 +482,7 @@ impl StiltGround {
             geometry: None,
             water: &self.water,
             height: &self.height,
+            interpolation: super::HeightInterpolation::Bilinear,
             ..s
         }
     }
@@ -679,7 +680,16 @@ pub(super) fn stilt_ground(
         }
     }
     let mut water_mask = surface.water.to_vec();
-    let mut height = surface.height.to_vec();
+    // The stilt override shares the planning water grid. Preserve that shape while
+    // sampling its elevations from the finer physical surface at cell centres.
+    let mut height = if surface.height_resolution() == surface.n
+        && matches!(surface.interpolation, super::HeightInterpolation::Bilinear) {
+        surface.height.to_vec()
+    } else {
+        (0..surface.n * surface.n).map(|g| {
+            surface.height_at(centre((g % surface.n) as i64, (g / surface.n) as i64)) as f32
+        }).collect()
+    };
     let mut shore = BTreeMap::new();
     let mut bands=[(0_usize,0_usize);4];
     for j in 0..rows {
@@ -733,7 +743,7 @@ mod tests {
         let n=200;let width=1000.;let cell=width/n as f64;
         let water=(0..n*n).map(|k|u8::from(k%n>=100)).collect::<Vec<_>>();
         let height=(0..n*n).map(|k|if k%n>=112 {-20.} else {0.}).collect::<Vec<_>>();
-        let surface=Surface{geometry:None,width,n,height:&height,water:&water};
+        let surface=Surface{geometry:None,width,n,height:&height,water:&water, interpolation: Default::default(),};
         for culture in ["stilt-town","lizardfolk-swamp","merfolk-tidal"] {
             let site=super::super::Site{key:"shore".into(),name:String::new(),population:10000,culture:culture.into(),center:Point{x:520.,y:500.},radius:700.};
             let ground=stilt_ground(&site,culture,surface).unwrap();
@@ -783,6 +793,7 @@ mod tests {
             n: 16,
             height: &h,
             water: &water,
+            interpolation: Default::default(),
         };
         let clipped = g::dry_clip(&surface, &g::rectangle(100.0, 100.0, 700.0, 420.0));
         assert_eq!(clipped.len(), 1);
@@ -843,6 +854,7 @@ mod tests {
             n,
             height: &h,
             water: &water,
+            interpolation: Default::default(),
         };
         let block = g::rectangle(100.0, 100.0, 540.0, 540.0);
         let stairs = |shapes: &[Shape]| {
@@ -908,6 +920,7 @@ mod tests {
             n,
             height: &height,
             water: &water,
+            interpolation: Default::default(),
         };
         let site = crate::urban::Site {
             key: "stilts".into(),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { settlementRaster } from '../../rust/bridge/settlements';
+import { settlementRaster, validatePhysicalTerrain } from '../../rust/bridge/settlements';
 import type { TerrainData } from '../../rust/bridge/terrain';
 import type { VectorWater } from '../src/ui/vectorWater';
 
@@ -8,9 +8,9 @@ const terrain = (n = 32): TerrainData => ({
   height: new Float32Array(n * n).fill(30), caveMask: new Uint8Array(), normalX: new Float32Array(n * n), normalY: new Float32Array(n * n), normalZ: new Float32Array(n * n).fill(1), generationMs: 0,
 });
 describe('completed terrain adapter for Rust settlements', () => {
-  it('copies the physical display field and sea without mutating the terrain', () => {
-    const t = terrain(); t.field = { n: 32, data: new Float32Array(1024).fill(42), exact: true, floor: 0 };
-    t.field.data[0] = -3;
+  it('uses canonical physical heights and sea without mutating the terrain', () => {
+    const t = terrain(); t.physical = { n: 32, height: new Float32Array(1024).fill(42) };
+    t.physical.height[0] = -3;
     const result = settlementRaster(t);
     expect(result.height[1]).toBe(42); expect(result.water[0]).toBe(1); expect(result.waterLevel[0]).toBe(0);
     expect(result.water[1]).toBe(0); expect(result.riverIds[1]).toBe(-1); expect(t.height[1]).toBe(30);
@@ -36,6 +36,24 @@ describe('completed terrain adapter for Rust settlements', () => {
   it('bounds the routing grid while retaining world dimensions', () => {
     const t = terrain(1024); const result = settlementRaster(t);
     expect(result.n).toBe(512); expect(result.width).toBe(3200); expect(result.height.length).toBe(512 ** 2);
+    expect(result.physical).toEqual({ n: 1024, height: t.height });
+    expect(settlementRaster(t, 8192).n).toBe(1024);
+  });
+  it('keeps cell-centred physical metres while the planning raster is resampled', () => {
+    const t = terrain(32), source = new Float32Array(64 * 64);
+    for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) source[y * 64 + x] = 10 + x * 2 + y;
+    t.physical = { n: 64, height: source };
+    const controls = Float32Array.from(source, value => value + 100);
+    t.field = { n: 64, data: controls, exact: true, floor: .3 };
+    const result = settlementRaster(t, 32);
+    expect(result.n).toBe(32);
+    expect(result.physical).toEqual({ n: 64, height: controls, interpolation: 'bspline', floor: .3 });
+    expect(result.height[0]).toBeCloseTo((source[0] + source[1] + source[64] + source[65]) / 4);
+    expect(result.height[0]).not.toBe(source[0]);
+  });
+  it('rejects malformed physical dimensions before upload', () => {
+    expect(() => validatePhysicalTerrain({ n: 64, height: new Float32Array(32) })).toThrow('Invalid physical');
+    expect(() => validatePhysicalTerrain({ n: 2, height: new Float32Array([1, 2, Number.NaN, 4]) })).toThrow('Invalid physical');
   });
   it('adapts the native Rust water arrays to the same passability classes', () => {
     const t = terrain(), n = 32, seaMask = new Uint8Array(n * n), lakeLabels = new Uint32Array(n * n), lakeDepth = new Float32Array(n * n);

@@ -10,6 +10,7 @@ const climatePresetValues = (zone: string | undefined, name: string): ClimateVal
 import { DEFAULT_FRACTAL_DETAIL } from '../../../rust/bridge/terrainAdjust';
 import type { TerrainProgressCallback } from '../../../rust/bridge/terrainProgress';
 import { isCompactProcedural, type GenerationControl } from '../../../rust/bridge/terrainGenerationRecipe';
+import { sourceDefinition } from '../../../rust/bridge/terrainDefinition';
 import { TERRAIN_STAGE_OUTPUTS, TerrainStageOutput, previewTerrainData } from './terrainStagePreview';
 export type PlatformProgress = { phase: 'detecting' | 'loading' | 'ready' | 'unavailable'; message: string; source: 'browser' | 'rust' | 'python' };
 export interface PlatformCapabilities {
@@ -164,6 +165,8 @@ export interface EngineHeightRequest {
   seed: string; width: number; relief: TerrainRelief;
   coast?: 'none' | 'N' | 'E' | 'S' | 'W' | 'random';
   climate?: NeuralClimate; compute: 'cpu' | 'gpu';
+  /** False when GPU was detected automatically: CPU sampling remains a valid capability fallback. */
+  strictCompute?: boolean;
   source: 'procedural' | 'procedural-phasor' | 'neural-wasm' | 'neural-python' | 'neural';
   native?: boolean; localServer?: string; pythonServer?: string; neuralServer?: string; neuralAssets?: string;
   resolution?: number; erosion?: number;
@@ -184,10 +187,13 @@ export async function generateEngineHeight(request: EngineHeightRequest, onProgr
   const usesNeural = !['procedural', 'procedural-phasor'].includes(request.source) && !request.terrain?.sketch?.processing;
   if (request.source === 'procedural-phasor' && request.native) throw new Error('Compact Phasor uses the browser Rust/WebGPU backend. Select Rust browser, with CPU or GPU compute.');
   if (usesNeural && request.compute === 'cpu') throw new Error('Les moteurs neuronaux actuels nécessitent WebGPU ou un service GPU local. Le relief procédural fonctionne sur CPU.');
-  if (!Number.isFinite(request.width) || request.width < 500 || request.width > 100000) throw new Error('Étendue moteur Rust invalide (500–100000 m).');
-  if (request.terrain) validateTerrainSettings(request.terrain);
+  sourceDefinition({ ...request.terrain, width: request.width, source: request.source });
+  if (request.terrain) {
+    const { sourceNativeResolution: _nativeResolution, ...recipe } = request.terrain as Partial<TerrainSettings>;
+    validateTerrainSettings(recipe);
+  }
   const n = request.terrain?.resolution ?? request.resolution ?? 512;
-  if (!Number.isInteger(n) || n < 64 || n > 2048) throw new Error('Résolution moteur invalide (64–2048).');
+  if (!Number.isInteger(n) || n < 64 || n > 1024) throw new Error('Résolution d’aperçu invalide (64–1024).');
   const localServer = loopbackServer(request.localServer ?? 'http://127.0.0.1:8791');
   const pythonServer = loopbackServer(request.pythonServer ?? 'http://127.0.0.1:8793');
   const neuralServer = loopbackServer(request.neuralServer ?? 'http://127.0.0.1:8792');
@@ -217,7 +223,7 @@ export async function generateEngineHeight(request: EngineHeightRequest, onProgr
     seed: request.seed, width: request.width, motifSize: custom.motifSize ?? 3000, relief: custom.relief ?? request.relief,
     coastMask: custom.coastMask ?? coasts[request.coast ?? 'none'], erosion: custom.erosion ?? request.erosion ?? 1, mountainMix: custom.mountainMix ?? .5, resolution: n,
     compute: custom.compute ?? (request.compute === 'cpu' ? 'wasm' : 'gpu-f32'),
-    generationCompute: custom.generationCompute ?? (request.source === 'procedural-phasor' ? request.compute === 'cpu' ? 'cpu' : 'gpu-erosion' : request.native ? 'native' : request.compute === 'gpu' ? 'gpu-erosion' : 'cpu'),
+    generationCompute: custom.generationCompute ?? (request.native && !usesNeural ? 'native' : request.compute === 'cpu' ? 'cpu' : undefined),
     source: request.source, climate: custom.climate ?? request.climate ?? 'temperate', neuralAssets,
     neuralServer: request.source === 'neural-python' ? pythonServer : request.source === 'neural' ? neuralServer : undefined,
     hydrology: { ...DEFAULT_HYDROLOGY, ...custom.hydrology },
@@ -276,24 +282,29 @@ export async function generateEngineHeight(request: EngineHeightRequest, onProgr
       return data;
     });
     signal?.throwIfAborted();
-    if (request.compute === 'gpu' && request.source !== 'neural-python' && request.source !== 'neural' && result.backend !== 'gpu-f32') {
+    if (request.compute === 'gpu' && request.strictCompute !== false && request.source !== 'neural-python' && request.source !== 'neural' && result.backend !== 'gpu-f32') {
       throw new Error(`Le calcul GPU demandé a échoué : ${result.backendReason ?? result.generationReason ?? 'GPU indisponible'}. Choisissez CPU ou Automatique.`);
     }
     if(!usesNeural&&!settings.sketch&&!settings.zones&&['gpu','gpu-all','gpu-erosion'].includes(custom.generationCompute??'')&&(result.generationBackend??'cpu')==='cpu'&&result.generationReason?.startsWith('GPU generation unavailable: ')){
       throw new Error(`La génération GPU demandée a échoué : ${result.generationReason??'GPU indisponible'}. Choisissez CPU ou Automatique.`);
     }
-    if (!snapshot && isCompactProcedural(settings) && request.compute === 'gpu' && result.generationBackend !== 'compact-gpu-f32') throw new Error('Compact procedural GPU generation was requested but not used.');
+    if (!snapshot && isCompactProcedural(settings) && request.compute === 'gpu' && request.strictCompute !== false && result.generationBackend !== 'compact-gpu-f32') throw new Error('Compact procedural GPU generation was requested but not used.');
     if (result.height.length !== n * n || result.height.some(v => !Number.isFinite(v))) throw new Error('Sortie moteur incomplète ou invalide.');
     const backend = result.neural?.backend ?? (result.generationBackend === 'native' ? 'rust-native' : result.backend === 'gpu-f32' ? 'rust-webgpu' : 'rust-wasm-cpu');
     const generationBackend = result.generationBackend ?? 'cpu';
     if (result.hydrologyError) throw new Error(`Hydrology failed: ${result.hydrologyError}. Change the water settings or disable hydrology explicitly.`);
     if (settings.hydrology?.compute === 'gpu' && result.hydrology && result.hydrology.backend !== 'gpu-f32') throw new Error(`Hydrology GPU request could not be fulfilled: ${result.hydrology.backendReason ?? 'CPU result'}.`);
     if (snapshot) onProgress?.(`Sortie intermédiaire · ${request.terrainStage} · ${backend}`);
-    else onProgress?.(`Relief et eau terminés · ${backend} · biomes ensuite`);
+    else onProgress?.(`Relief et eau terminés · ${backend}${result.definition ? ` · source ${result.definition.n}² / ${result.definition.spacing.toFixed(2)} m${result.definition.erosionSpacing ? ` · érosion ${result.definition.erosionSpacing.toFixed(2)} m` : ''}` : ''} · biomes ensuite`);
     return {
       importedHeight: { w: n, h: n, rgba: new Uint8Array(0), elevations: result.height.slice(), name: `${backend}-${request.seed}` },
       heightScale: Math.max(1, result.maxHeight), importSeaLevel: 0, backend, generationBackend, terrain: result,
       stats: { backend, generationBackend, 'ms.reliefEngine': Math.round(result.generationMs),
+        ...(result.definition ? { sourceResolution: result.definition.n, sourceSpacing: result.definition.spacing,
+          requestedSpacing: result.definition.requestedSpacing,
+          ...(result.definition.nativeSpacing ? { nativeSpacing: result.definition.nativeSpacing } : {}),
+          ...(result.definition.erosionSpacing ? { erosionSpacing: result.definition.erosionSpacing } : {}) } : {}),
+        ...(result.definition?.regionalErosionSpacing ? { regionalErosionSpacing: result.definition.regionalErosionSpacing } : {}),
         samplingBackend: result.backend ?? 'wasm',
         hydrologyBackend: result.hydrology?.backend ?? (result.water ? 'vector-cpu' : 'disabled'),
         ...(result.generationReason ? { generationReason: result.generationReason } : {}),

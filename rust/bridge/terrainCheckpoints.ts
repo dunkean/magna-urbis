@@ -21,7 +21,7 @@ export function proceduralSignatures(s: TerrainSettings): Map<GenerationStage, s
   const pick = (...names: (keyof typeof t)[]) => names.map(k => t[k] ?? null);
   const climate = [s.climate, s.climateZone, s.climateValues];
   const own: Partial<Record<GenerationStage, unknown>> = {
-    initialize: [s.seed, s.width, s.source, s.relief, s.environment, s.motifSize, s.mountainMix, s.erosion,
+    initialize: [s.seed, s.width, s.sampleSpacing, s.source, s.relief, s.environment, s.motifSize, s.mountainMix, s.erosion,
       isCompactProcedural(s), isCompactProcedural(s) ? s.phasor?.quality ?? 'balanced' : null,
       r.regionalN, r.noiseScale, r.crest, r.biome && climate, s.generationCompute, s.compute],
     regional: [r.uplift, r.regionalThermal, r.regionalDiffusion, pick('iterations', 'incision', 'incisionSlope', 'fill', 'carve', 'talus', 'thermal', 'diffusion')],
@@ -45,7 +45,7 @@ export function proceduralSignatures(s: TerrainSettings): Map<GenerationStage, s
     prefix.push([stage, active, active ? own[stage] : null]);
     keys.set(stage, stableKey(prefix));
   }
-  keys.set('grids', stableKey([s.seed, s.width, s.procedural?.regionalN, s.resolution]));
+  keys.set('grids', stableKey([s.seed, s.width, s.sampleSpacing, s.procedural?.regionalN, s.resolution]));
   return keys;
 }
 

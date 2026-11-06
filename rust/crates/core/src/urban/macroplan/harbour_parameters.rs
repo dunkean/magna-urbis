@@ -296,7 +296,7 @@ mod tests {
         assert_eq!(fabric(&regions,&site).len(),2);
         let (n,width)=(200,2000.0);let height=vec![0.0;n*n];
         let water:Vec<u8>=(0..n*n).map(|i|u8::from(i%n>=100)).collect();
-        let surface=Surface{geometry:None,n,width,height:&height,water:&water};
+        let surface=Surface{geometry:None,n,width,height:&height,water:&water, interpolation: Default::default(),};
         let main=fabric(&regions,&site);
         let path=vec![Point{x:990.0,y:1500.0},Point{x:990.0,y:1600.0}];
         let mut cfg=LayoutConfig{port_detachment:0.0,..LayoutConfig::default()};
@@ -308,7 +308,7 @@ mod tests {
     fn attached_score_ignores_shelter_and_detached_score_ignores_fabric_distance() {
         let (n,width)=(200,2000.0);let height=vec![0.0;n*n];
         let water:Vec<u8>=(0..n*n).map(|i|u8::from(i%n>=140 || (i%n>=100 && (80..=120).contains(&(i/n))))).collect();
-        let surface=Surface{geometry:None,n,width,height:&height,water:&water};
+        let surface=Surface{geometry:None,n,width,height:&height,water:&water, interpolation: Default::default(),};
         let site=Site{key:"blend".into(),name:String::new(),culture:"hanseatic".into(),population:10000,
             center:Point{x:1300.0,y:300.0},radius:500.0};
         let main=vec![g::rectangle(1100.0,200.0,1390.0,400.0)];
@@ -330,7 +330,7 @@ mod tests {
     fn both_port_looks_are_reachable_on_the_same_coast() {
         let (n,width)=(200,2000.0);let height=vec![0.0;n*n];
         let water:Vec<u8>=(0..n*n).map(|i|u8::from(i%n>=140 || (i%n>=100 && (80..=120).contains(&(i/n))))).collect();
-        let surface=Surface{geometry:None,n,width,height:&height,water:&water};
+        let surface=Surface{geometry:None,n,width,height:&height,water:&water, interpolation: Default::default(),};
         let site=Site{key:"coast".into(),name:String::new(),culture:"hanseatic".into(),population:10000,
             center:Point{x:1300.0,y:300.0},radius:500.0};
         let regions=vec![g::rectangle(1100.0,200.0,1398.0,400.0)];
@@ -357,7 +357,7 @@ mod tests {
         let (n,width)=(200,2000.0);
         let height:Vec<f32>=(0..n*n).map(|i|((1000.0-((i%n) as f64+0.5)*10.0).clamp(0.0,30.0)*1.6) as f32).collect();
         let water:Vec<u8>=(0..n*n).map(|i|u8::from(i%n>=100)).collect();
-        let surface=Surface{geometry:None,n,width,height:&height,water:&water};
+        let surface=Surface{geometry:None,n,width,height:&height,water:&water, interpolation: Default::default(),};
         let (p,q)=(Point{x:990.0,y:1000.0},Point{x:950.0,y:1000.0});
         assert!(!routing::segment_clear(surface,p,q,0.65));
         let ramp=bank_ramp(p,q,surface,0.65,1200.0).expect("switchback along the bank");
@@ -367,7 +367,7 @@ mod tests {
     #[test]
     fn port_controls_reject_nonfinite_and_out_of_range_values() {
         let height=vec![0.0;4];let water=vec![0;4];
-        let surface=Surface{geometry:None,n:2,width:100.0,height:&height,water:&water};
+        let surface=Surface{geometry:None,n:2,width:100.0,height:&height,water:&water, interpolation: Default::default(),};
         for value in [-0.1,1.1,f64::NAN,f64::INFINITY] {
             for cfg in [LayoutConfig{port_detachment:value,..LayoutConfig::default()},LayoutConfig{port_shelter:Some(value),..LayoutConfig::default()}] {
                 assert!(super::super::super::super::generate_quarters("port-params",&[],&cfg,surface,&[]).is_err());

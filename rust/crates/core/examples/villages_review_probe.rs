@@ -18,7 +18,7 @@ fn main()->Result<(),Box<dyn std::error::Error>> {
         let named=root.join(format!("{culture}-fixture.json"));
         let input=if named.exists(){named}else{root.join(format!("{culture}.json"))};
         let f:Fixture=serde_json::from_slice(&std::fs::read(input)?)?;
-        let surface=Surface{geometry:None,width:f.width,n:f.n,height:&f.height,water:&f.water};
+        let surface=Surface{geometry:None,width:f.width,n:f.n,height:&f.height,water:&f.water, interpolation: Default::default(),};
         let layouts=generate_quarters(&f.seed,&f.sites,&f.layout_config,surface,&f.roads)?;
         let parts=generate_parcels(&f.seed,&layouts,&ParcelConfig::default())?;
         let requests=building_sites::requests(&f.seed,&layouts,&parts,surface,&f.water_level,None)?;

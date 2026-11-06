@@ -117,6 +117,19 @@ export const erosionBiome = (s: TerrainSettings): ErosionZone => {
 export const stageEnabled = (s: TerrainSettings, id: GenerationStage, fallback = true) => s.procedural?.enabled?.[id] ?? fallback;
 /** The old source name remains a readable alias for saved recipes. */
 export const isCompactProcedural = (s: Pick<TerrainSettings, 'source' | 'procedural'>) => (!s.source || s.source==='procedural' || s.source==='procedural-phasor') && (s.procedural?.preset === 'compact' || s.procedural?.preset === undefined && s.source === 'procedural-phasor');
+/** The final hydraulic grid has a measured metre cell and cannot exceed the source. */
+export function finalizePhysicalSurfacePlan(surface: Float32Array, settings: TerrainSettings, sourceN: number): number {
+    const requested = settings.procedural?.surfaceN;
+    if (requested !== undefined && requested > sourceN)
+        throw new Error(`Grille d'érosion ${requested}² supérieure à la source physique ${sourceN}².`);
+    const baseline = surface[0] - 24;
+    const n = requested ?? (sourceN > 1024 ? Math.min(2048, Math.max(baseline, Math.ceil(sourceN * .6))) : baseline);
+    const actual = Math.min(sourceN, n);
+    const oldCell = surface[1];
+    surface[0] = actual + 24; surface[1] = settings.width / actual; surface[2] = -12 * surface[1];
+    surface[6] *= surface[1] / oldCell;
+    return actual;
+}
 export function posteriorSettings(s: TerrainSettings) {
     const dose = s.procedural?.biome ? erosionBiome(s).posterior : 0, p = s.procedural?.posterior;
     return { mode: p?.mode ?? (dose ? 'erosion' : 'none'), strength: p?.strength ?? (p?.mode && p.mode !== 'none' ? (dose || 1) : dose) * s.erosion, maxDepth: p?.maxDepth ?? 12, maxLength: p?.maxLength ?? 150 } as const;
@@ -180,7 +193,7 @@ export function validateProceduralRecipe(r?: ProceduralRecipe): void {
     const ranges: Record<string, readonly [
         number,
         number
-    ]> = { coastIterations: [0, 100], coastIncision: [0, 10], coastThermal: [0, 10], coastDiffusion: [0, 10], regionalN: [64, 640], surfaceN: [64, 1024], uplift: [0, 4], crest: [0, 1.5], noiseScale: [.25, 4] };
+    ]> = { coastIterations: [0, 100], coastIncision: [0, 10], coastThermal: [0, 10], coastDiffusion: [0, 10], regionalN: [64, 640], surfaceN: [16, 2048], uplift: [0, 4], crest: [0, 1.5], noiseScale: [.25, 4] };
     for (const [key, [lo, hi]] of Object.entries(ranges)) {
         const v = r[key as keyof ProceduralRecipe];
         if (v !== undefined && (typeof v !== 'number' || !Number.isFinite(v) || v < lo || v > hi || (key.endsWith('N') || key === 'coastIterations') && !Number.isInteger(v)))

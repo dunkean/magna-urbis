@@ -4302,6 +4302,7 @@ pub(super) fn probe_quarter(
         n: 2,
         height: &heights,
         water: &water,
+        interpolation: Default::default(),
     };
     let center = Point {
         x: width * 0.5,
@@ -4597,6 +4598,7 @@ mod tests {
             n,
             height: &heights,
             water: &water,
+            interpolation: Default::default(),
         };
         let road = |a: Point, b: Point| Street {
             path: (0..=24)
@@ -4720,6 +4722,7 @@ mod tests {
             n,
             height: &height,
             water: &water,
+            interpolation: Default::default(),
         };
         let cfg: LayoutConfig = serde_json::from_value(v["layoutConfig"].clone()).unwrap();
         let sites: Vec<Site> = serde_json::from_value(v["sites"].clone()).unwrap();
@@ -4853,6 +4856,7 @@ mod tests {
             n: 64,
             height: &heights,
             water: &water,
+            interpolation: Default::default(),
         };
         let site = Site {
             key: "small".into(),
@@ -4979,6 +4983,7 @@ mod tests {
             n,
             height: &heights,
             water: &water,
+            interpolation: Default::default(),
         };
         let road = Street {
             path: (0..=40)
@@ -5181,6 +5186,7 @@ mod tests {
             n,
             height: &heights,
             water: &water,
+            interpolation: Default::default(),
         };
         let c = width * 0.5;
         let roads: Vec<Street> = bearings

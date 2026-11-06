@@ -3672,6 +3672,7 @@ mod tests {
             n: N,
             height,
             water,
+            interpolation: Default::default(),
         }
     }
     /// Water cells for a river running north-south over x in [x0, x1).
@@ -3944,7 +3945,7 @@ mod tests {
             geometry: Option<super::super::VectorGeography>, sites: Vec<Site>, roads: Vec<Street>, layout_config: LayoutConfig }
         let f: Fixture = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
         let geography = f.geometry.map(|g| super::super::Geography::new(g, f.width).unwrap());
-        let s = Surface { geometry: geography.as_ref(), width: f.width, n: f.n, height: &f.height, water: &f.water };
+        let s = Surface { geometry: geography.as_ref(), width: f.width, n: f.n, height: &f.height, water: &f.water, interpolation: Default::default(),};
         for site in &f.sites {
             TRACE_PAIRS.with(|p| *p.borrow_mut() = Some(vec![]));
             CONTOUR_PAIRS.with(|p| *p.borrow_mut() = Some(vec![]));
@@ -3980,7 +3981,7 @@ mod tests {
             geometry: Option<super::super::VectorGeography>, sites: Vec<Site>, roads: Vec<Street>, layout_config: LayoutConfig }
         let f: Fixture = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
         let geography = f.geometry.map(|g| super::super::Geography::new(g, f.width).unwrap());
-        let s = Surface { geometry: geography.as_ref(), width: f.width, n: f.n, height: &f.height, water: &f.water };
+        let s = Surface { geometry: geography.as_ref(), width: f.width, n: f.n, height: &f.height, water: &f.water, interpolation: Default::default(),};
         let site = f.sites.iter().find(|s| s.culture == "bastide").unwrap();
         TRACE_PAIRS.with(|p| *p.borrow_mut() = Some(vec![]));
         let c = composition::generate(&f.seed, site, &f.layout_config, s, &f.roads, site.radius).unwrap();

@@ -31,7 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(o) = v["layoutConfig"].as_object_mut() { o.remove("composition"); if let Some(p) = o.get_mut("programme").and_then(Value::as_object_mut) { p.remove("role"); } }
         let f: Fixture = serde_json::from_value(v)?;
         let geography = f.geometry.map(|g| Geography::new(g, f.width)).transpose()?;
-        let surface = Surface { geometry: geography.as_ref(), width: f.width, n: f.n, height: &f.height, water: &f.water };
+        let surface = Surface { geometry: geography.as_ref(), width: f.width, n: f.n, height: &f.height, water: &f.water, interpolation: Default::default(),};
         let t0 = std::time::Instant::now();
         let layouts = generate_quarters(&f.seed, &f.sites, &f.layout_config, surface, &f.roads)?;
         let partitions = generate_parcels(&f.seed, &layouts, &f.parcel_config)?;

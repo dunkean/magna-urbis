@@ -1,5 +1,6 @@
 import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
 import type { SettlementRaster } from './settlements';
+import { validatePhysicalTerrain } from './settlements';
 
 /** One ID per worker/bench; all native retained grids stay behind this handle. */
 export function nativeSession(): string { return crypto.randomUUID(); }
@@ -21,14 +22,18 @@ export async function nativeRequest(runtime: ExecutionRuntime, path: string, bod
   return response;
 }
 
-/** Upload a terrain once: 17 bytes/cell, without JSON number arrays or base64. */
+/** Upload capped planning planes (17 bytes/cell), then optional physical metres (4 bytes/cell). */
 export async function uploadNativeRaster(runtime: ExecutionRuntime, session: string, raster: SettlementRaster): Promise<void> {
-  const header = new TextEncoder().encode(JSON.stringify({ session, width: raster.width, n: raster.n, geometry: raster.geometry, region: raster.region }));
+  validatePhysicalTerrain(raster.physical);
+  const header = new TextEncoder().encode(JSON.stringify({ session, width: raster.width, n: raster.n,
+    physicalN: raster.physical?.n, physicalInterpolation: raster.physical?.interpolation,
+    physicalFloor: raster.physical?.floor, geometry: raster.geometry, region: raster.region }));
   const padded = new Uint8Array(Math.ceil(header.length / 4) * 4).fill(32); padded.set(header);
   const length = new Uint8Array(4); new DataView(length.buffer).setUint32(0, padded.length, true);
   const bytes = (array: ArrayBufferView): Uint8Array<ArrayBuffer> => new Uint8Array(array.buffer as ArrayBuffer, array.byteOffset, array.byteLength);
   await nativeRequest(runtime, '/raster', new Blob([length, padded,
-    bytes(raster.height), bytes(raster.waterLevel), bytes(raster.riverWidth), bytes(raster.riverIds), bytes(raster.water)]));
+    bytes(raster.height), bytes(raster.waterLevel), bytes(raster.riverWidth), bytes(raster.riverIds), bytes(raster.water),
+    ...(raster.physical ? [bytes(raster.physical.height)] : [])]));
 }
 
 export async function nativeJson<T>(runtime: ExecutionRuntime, path: string, value: unknown): Promise<T> {

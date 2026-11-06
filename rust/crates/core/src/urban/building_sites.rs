@@ -54,7 +54,8 @@ fn access_segments(
 }
 /// Row-major physical samples; origin is the centre of the first source cell.
 fn ground_patch(surface: Surface<'_>, shape: &super::Shape) -> Value {
-    let step = surface.width / surface.n as f64;
+    let n = surface.height_resolution();
+    let step = surface.width / n as f64;
     let (mut x0, mut y0, mut x1, mut y1) = (
         f64::INFINITY,
         f64::INFINITY,
@@ -68,14 +69,14 @@ fn ground_patch(surface: Surface<'_>, shape: &super::Shape) -> Value {
         y1 = y1.max(p.y);
     }
     let lo =
-        |v: f64| ((v / step - 0.5).floor() as isize - 1).clamp(0, surface.n as isize - 1) as usize;
+        |v: f64| ((v / step - 0.5).floor() as isize - 1).clamp(0, n as isize - 1) as usize;
     let hi =
-        |v: f64| ((v / step - 0.5).ceil() as isize + 1).clamp(0, surface.n as isize - 1) as usize;
+        |v: f64| ((v / step - 0.5).ceil() as isize + 1).clamp(0, n as isize - 1) as usize;
     let (a, b, c, d) = (lo(x0), lo(y0), hi(x1), hi(y1));
     let mut heights = vec![];
     for y in b..=d {
         for x in a..=c {
-            heights.push(surface.height[y * surface.n + x]);
+            heights.push(surface.height_at(Point { x: (x as f64 + 0.5) * step, y: (y as f64 + 0.5) * step }) as f32);
         }
     }
     json!({"origin":{"x":(a as f64+0.5)*step,"y":(b as f64+0.5)*step},"step_m":step,
@@ -767,7 +768,7 @@ impl BuildingSiteIndex {
         };
         let center = interior_point(&parcel.shape);
         let ground = surface.height_at(center);
-        let delta = (surface.width / surface.n as f64).max(0.5);
+        let delta = (surface.width / surface.height_resolution() as f64).max(0.5);
         let gradient = [
             (surface.height_at(Point {
                 x: center.x + delta,
@@ -1471,6 +1472,36 @@ fn ring_area(ring: &[Point]) -> f64 {
 mod tests {
     use super::*;
 
+    #[test]
+    fn ground_patch_retains_physical_cell_spacing() {
+        let height: Vec<f32> = (0..64 * 64).map(|i| (i % 64) as f32 + 0.5).collect();
+        let water = vec![0; 16 * 16];
+        let surface = Surface { geometry: None, width: 64.0, n: 16, height: &height, water: &water, interpolation: Default::default(),};
+        let shape = super::super::Shape {
+            outer: vec![Point { x: 20.0, y: 20.0 }, Point { x: 22.0, y: 20.0 },
+                Point { x: 22.0, y: 22.0 }, Point { x: 20.0, y: 22.0 }], holes: vec![],
+        };
+        let patch = ground_patch(surface, &shape);
+        assert_eq!(patch["step_m"], 1.0);
+        assert_eq!(patch["origin"]["x"], 18.5);
+        assert_eq!(patch["elevations_m"][0], 18.5);
+    }
+
+    #[test]
+    fn spline_ground_patch_exports_sampled_metres_not_control_values() {
+        let mut controls = vec![0.0; 64 * 64];
+        controls[18 * 64 + 18] = 100.0;
+        let water = vec![0; 16 * 16];
+        let surface = Surface { geometry: None, width: 64.0, n: 16, height: &controls, water: &water,
+            interpolation: super::super::HeightInterpolation::BSpline { floor: 0.0 } };
+        let shape = super::super::Shape { outer: vec![Point { x: 20.0, y: 20.0 }, Point { x: 22.0, y: 20.0 },
+            Point { x: 22.0, y: 22.0 }, Point { x: 20.0, y: 22.0 }], holes: vec![] };
+        let patch = ground_patch(surface, &shape);
+        let sampled = surface.height_at(Point { x: 18.5, y: 18.5 });
+        assert!((patch["elevations_m"][0].as_f64().unwrap() - sampled).abs() < 1e-5);
+        assert!(sampled < 100.0);
+    }
+
     fn native_fits(
         pack: &str,
         culture: &str,
@@ -1556,6 +1587,7 @@ mod tests {
             n: 16,
             height: &heights,
             water: &water,
+            interpolation: Default::default(),
         };
         let seed = "paged-sites";
         let collected = requests(seed, &layouts, &partitions, surface, &heights, None).unwrap();
@@ -1782,7 +1814,7 @@ mod tests {
             pack:&mapping.architecture_pack, court_lot:false, court_kept:None,
         });
         let heights = vec![20.; 16*16]; let water = vec![0; heights.len()];
-        let surface = Surface { geometry:None, width:512., n:16, height:&heights, water:&water };
+        let surface = Surface { geometry:None, width:512., n:16, height:&heights, water:&water, interpolation: Default::default(),};
         let index = BuildingSiteIndex::prepare(&layouts, &partitions, &[0]).unwrap();
         let request = index.request_one(0, &seed, &layouts, &partitions, surface, &heights, None).unwrap();
         let preview: Vec<super::super::Shape> = serde_json::from_value(request["preview"].clone()).unwrap();
@@ -1886,6 +1918,7 @@ mod tests {
             n: 16,
             height: &heights,
             water: &water,
+            interpolation: Default::default(),
         };
         let sites = requests("rome", &[layout], &[partition], surface, &heights, None).unwrap();
         let site = |id: &str| {
@@ -1970,6 +2003,7 @@ mod tests {
             n: 16,
             height: &flat,
             water: &water,
+            interpolation: Default::default(),
         };
         let slope = Surface {
             geometry: None,
@@ -1977,6 +2011,7 @@ mod tests {
             n: 16,
             height: &steep,
             water: &water,
+            interpolation: Default::default(),
         };
         let Some(b12) = feasibility::pose_witness("MED-ANT-B12::default") else {
             // A table older than the houses export emits no pose at all.
@@ -2068,6 +2103,7 @@ mod tests {
                 n: 16,
                 height,
                 water: &water,
+                interpolation: Default::default(),
             };
             requests(
                 "rome",
@@ -2151,6 +2187,7 @@ mod tests {
             n: 16,
             height: &height,
             water: &water,
+            interpolation: Default::default(),
         };
         requests("lots", &[layout], &[partition], surface, &height, None).unwrap()
     }
@@ -2173,7 +2210,7 @@ mod tests {
         let layouts:Vec<Layout>=serde_json::from_slice(&std::fs::read(city.join("layouts.json")).unwrap()).unwrap();
         let partitions:Vec<Partition>=serde_json::from_slice(&std::fs::read(city.join("partitions.json")).unwrap()).unwrap();
         let geo=t.geometry.map(|g|super::super::Geography::new(g,t.width).unwrap());
-        let surface=Surface{geometry:geo.as_ref(),width:t.width,n:t.n,height:&t.height,water:&t.water};
+        let surface=Surface{geometry:geo.as_ref(),width:t.width,n:t.n,height:&t.height,water:&t.water, interpolation: Default::default(),};
         struct Mode(bool);
         impl Mode {fn control()->Self{Self(PREVIEW_TOPOLOGY.with(|v|v.replace(false)))}}
         impl Drop for Mode {fn drop(&mut self){PREVIEW_TOPOLOGY.with(|v|v.set(self.0));}}

@@ -58,7 +58,9 @@ export function waterRings(svg: string): Point[][][] {
 export const landPath = (rings: Point[][]): string => rings.map(r => r.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(3)},${p.y.toFixed(3)}`).join(' ') + 'Z').join(' ');
 
 export function terrainGeography(t: TerrainData): VectorGeography {
-  const height = t.field?.data ?? t.height, n = t.field?.n ?? t.resolution;
+  // The land envelope is a bounded planning polygon. Local elevations use the
+  // independent physical plane; water rings below retain their native vectors.
+  const height = t.height, n = t.resolution;
   const water = t.water ? vectorWaterSvg(t.water, { style: 'atlas', showLakes: true, showOxbows: true, riverArea: 1, riverMode: 'vector', overlay: 'none' }) : t.hydrology ? renderHydrology(t.hydrology, 'none', true, 'atlas') : '';
   return { land: landRings(height, n, t.width), water: waterRings(water) };
 }

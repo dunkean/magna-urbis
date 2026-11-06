@@ -134,6 +134,7 @@ fn retained_source_routes_share_geometry_validate_keys_and_expire_before_replace
                 n: 16,
                 height: &[1.0; 256],
                 water: &[0; 256],
+                interpolation: Default::default(),
             },
         )
         .unwrap();

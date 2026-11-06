@@ -42,7 +42,7 @@ struct Fixture {seed:String,n:usize,width:f64,height:Vec<f32>,water:Vec<u8>,wate
 fn exact_pnw_retains_a_real_served_block_and_records_the_remaining_admissions() {
  let f:Fixture=serde_json::from_slice(include_bytes!("fixtures/pnw-ribbon-exact.json")).unwrap();
  assert!(f.roads.is_empty());assert!(f.height.iter().all(|&h|h==10.));assert!(f.water.iter().all(|&w|w==0));
- let s=Surface{geometry:None,width:f.width,n:f.n,height:&f.height,water:&f.water};
+ let s=Surface{geometry:None,width:f.width,n:f.n,height:&f.height,water:&f.water, interpolation: Default::default(),};
  let layouts=crate::urban::generate_quarters(&f.seed,&f.sites,&f.layout_config,s,&f.roads).unwrap();
  let parts=crate::urban::generate_parcels(&f.seed,&layouts,&f.parcel_config).unwrap();
  let ids=(0..layouts.len()).collect::<Vec<_>>();let mut index=crate::urban::building_sites::BuildingSiteIndex::prepare(&layouts,&parts,&ids).unwrap();let mut sites=vec![];

@@ -1560,6 +1560,7 @@ mod tests {
             n,
             height: &height,
             water: &water,
+            interpolation: Default::default(),
         };
         let road = |a: (f64, f64), b: (f64, f64)| Street {
             path: vec![Point { x: a.0, y: a.1 }, Point { x: b.0, y: b.1 }],
@@ -1757,6 +1758,7 @@ mod tests {
                 n,
                 height: &height,
                 water: &water,
+                interpolation: Default::default(),
             };
             let c = width / 2.0;
             let roads = [
@@ -1851,6 +1853,7 @@ mod tests {
             n,
             height: &height,
             water: &water,
+            interpolation: Default::default(),
         };
         let road = |a: (f64, f64), b: (f64, f64)| Street {
             path: vec![Point { x: a.0, y: a.1 }, Point { x: b.0, y: b.1 }],
@@ -2006,6 +2009,7 @@ parcels {} demands {:?}; quarters {quarters_ms} ms, parcels+alloc {parcels_ms} m
             n,
             height: &height,
             water: &water,
+            interpolation: Default::default(),
         };
         let road = |a: (f64, f64), b: (f64, f64)| Street {
             path: vec![Point { x: a.0, y: a.1 }, Point { x: b.0, y: b.1 }],

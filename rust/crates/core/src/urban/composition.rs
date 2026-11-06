@@ -1426,7 +1426,7 @@ mod built_fit_tests {
         })).unwrap() };
         let block = |x0: f64, x1: f64, kind: &str| serde_json::json!({"shape":g::rectangle(x0,10.,x1,390.),"quarter":0,"kind":kind,"axis":{"x":1.,"y":0.}});
         let (h, w) = (vec![0.; 16 * 16], vec![0; 16 * 16]);
-        let surface = Surface { geometry: None, width: 1024., n: 16, height: &h, water: &w };
+        let surface = Surface { geometry: None, width: 1024., n: 16, height: &h, water: &w, interpolation: Default::default(),};
         // Built east half, trimmed (reserve) west half: the curtain moves to the town.
         let mut l = layout(serde_json::json!([block(310.,590.,"block"), block(10.,300.,"reserve")]));
         fit_enclosures(&mut l, 10000, surface);
@@ -1449,7 +1449,7 @@ mod side_by_side_tests {
     use super::*;
     static FLAT: [f32; 256] = [0.0; 256];
     static DRY: [u8; 256] = [0; 256];
-    fn surface() -> Surface<'static> { Surface { geometry: None, width: 2048., n: 16, height: &FLAT, water: &DRY } }
+    fn surface() -> Surface<'static> { Surface { geometry: None, width: 2048., n: 16, height: &FLAT, water: &DRY, interpolation: Default::default(),} }
     fn layout(rings: &[Shape]) -> crate::urban::Layout {
         let mut l: crate::urban::Layout = serde_json::from_value(serde_json::json!({
             "key":"side-by-side","culture":"dwarven","center":{"x":0.,"y":0.},"quarters":[],"streets":[],"warnings":[],"blocks":[],"enclosures":[]
@@ -1503,7 +1503,7 @@ mod wall_density_tests {
             "enclosures":[{"kind":"wall","path":[{"x":0.,"y":0.},{"x":500.,"y":0.},{"x":500.,"y":500.},{"x":0.,"y":500.},{"x":0.,"y":0.}],"gates":[],"towers":[]}]
         })).unwrap();
         let h = vec![0.;16*16];let w = vec![0;16*16];
-        fit_enclosures(&mut l,10000,Surface {geometry:None,width:512.,n:16,height:&h,water:&w});
+        fit_enclosures(&mut l,10000,Surface {geometry:None,width:512.,n:16,height:&h,water:&w, interpolation: Default::default(),});
         assert_eq!(l.enclosures.len(),1);
         let sh = Shape {outer:l.enclosures[0].path.clone(),holes:vec![]};
         assert!(g::contains(&sh,Point {x:50.,y:50.}));
@@ -1675,7 +1675,7 @@ fn enclosed_quarters_reach_the_ring_road_without_claiming_water() {
     let road = Street { path:vec![Point{x:10.,y:50.},Point{x:90.,y:50.}],widths:vec![4.;2],rank:1,role:"street".into() };
     let height = vec![10.;100];
     let water: Vec<_> = (0..100).map(|i|u8::from(i % 10 >= 8)).collect();
-    let surface = Surface {geometry:None,width:100.,n:10,height:&height,water:&water};
+    let surface = Surface {geometry:None,width:100.,n:10,height:&height,water:&water, interpolation: Default::default(),};
     fit_enclosed_quarters(&mut quarters, std::slice::from_ref(&wall), std::slice::from_ref(&road), surface);
     let added = g::difference(&quarters[0].shape, &g::rectangle(20.,20.,80.,80.));
     let road = g::rectangle(10.,48.,90.,52.);

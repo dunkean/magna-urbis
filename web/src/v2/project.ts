@@ -5,7 +5,9 @@ import { CULTURES, SITE_ARCHETYPES } from '../gen/options';
 import { normalizeRuntime } from './runtimeChoices';
 import { validateTerrainSettings, migrateTerrainClimate, TERRAIN_EXTENT_MIN, TERRAIN_EXTENT_MAX } from './terrainSettings';
 import { validateRegionSettings } from './regionSettings';
-import { defaultSettings } from './settings';
+import { defaultSettings, adaptedExtent } from './settings';
+import { effectiveTerrainSettings } from './terrainSettings';
+import { sourceDefinition, terrainCapability } from '../../../rust/bridge/terrainDefinition';
 import { projectJsonChunks } from './projectJson';
 import { validateAppearance } from './appearance';
 import { NAME_FAMILIES } from '../gen/names/types';
@@ -49,7 +51,7 @@ function validateOptions(o: unknown, partial = false): asserts o is Options {
   if (o.importedHeight !== undefined) {
     const image = o.importedHeight;
     if (!isRecord(image)) throw new Error('Heightmap invalide.');
-    finite(image.w, 'largeur heightmap', 1, 8192); finite(image.h, 'hauteur heightmap', 1, 8192);
+    finite(image.w, 'largeur heightmap', 1, 32768); finite(image.h, 'hauteur heightmap', 1, 32768);
     const elevations = image.elevations;
     if (!Number.isInteger(image.w) || !Number.isInteger(image.h) || Number(image.w) * Number(image.h) > 16777216 ||
       !(image.rgba instanceof Uint8Array || image.rgba instanceof Uint8ClampedArray) ||
@@ -78,9 +80,15 @@ export function validateSettings(value: unknown): asserts value is V2Settings {
     checkEnum(value.runtime.backend, ['typescript', 'rust', 'native'], 'moteur');
     checkEnum(value.runtime.source, ['procedural', 'procedural-phasor', 'neural-wasm', 'neural-python', 'neural'], 'source de relief');
     if (!value.runtime.compute || !value.runtime.backend || !value.runtime.source) throw new Error('Configuration du moteur incomplète.');
-    if (value.runtime.resolution !== undefined) finite(value.runtime.resolution, 'résolution moteur', 64, 2048);
+    if (value.runtime.resolution !== undefined) finite(value.runtime.resolution, 'résolution moteur', 64, 1024);
     if (value.runtime.erosion !== undefined) finite(value.runtime.erosion, 'érosion moteur', 0, 10);
   }
+  const physicalSettings = value as unknown as V2Settings;
+  const physicalWidth = adaptedExtent(physicalSettings);
+  if (physicalSettings.runtime?.backend === 'typescript') {
+    const capability = terrainCapability({ backend: 'typescript' });
+    finite(physicalWidth, 'étendue TypeScript', capability.minWidth, capability.maxWidth);
+  } else sourceDefinition(effectiveTerrainSettings(physicalSettings, physicalWidth));
   if (value.appearance !== undefined) validateAppearance(value.appearance);
   if (value.naming !== undefined) {
     if (!isRecord(value.naming)) throw new Error('Nommage invalide.');

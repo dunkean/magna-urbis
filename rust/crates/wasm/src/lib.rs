@@ -376,6 +376,26 @@ pub struct TerrainEngine {
 
 #[wasm_bindgen]
 impl TerrainEngine {
+    #[allow(clippy::too_many_arguments)]
+    pub fn at_resolution(
+        seed: &str, width: f64, relief: &str, erosion: f64, motif_size: f64,
+        mountain_mix: f64, environment: Option<String>, source_n: u32,
+    ) -> Result<TerrainEngine, JsValue> {
+        magna_urbis_core::TerrainGenerator::new_mixed_with_noise_at_resolution(
+            seed,width,relief,erosion,motif_size,mountain_mix,None,environment.as_deref(),source_n as usize,
+        ).map(|generator| TerrainEngine { generator }).map_err(|e| JsValue::from_str(&e))
+    }
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_zones_at_resolution(
+        seed: &str, width: f64, relief: &str, erosion: f64, motif_size: f64,
+        mountain_mix: f64, environment: Option<String>, zones_json: &str, source_n: u32,
+    ) -> Result<TerrainEngine, JsValue> {
+        let zones = serde_json::from_str(zones_json)
+            .map_err(|e| JsValue::from_str(&format!("Zones : {e}")))?;
+        magna_urbis_core::TerrainGenerator::with_zones_at_resolution(
+            seed,width,relief,erosion,motif_size,mountain_mix,environment.as_deref(),&zones,source_n as usize,
+        ).map(|generator| TerrainEngine { generator }).map_err(|e| JsValue::from_str(&e))
+    }
     pub fn with_zoned_surface(
         seed: &str,
         width: f64,
@@ -431,7 +451,7 @@ impl TerrainEngine {
         motif_size: f64,
         mountain_mix: f64,
         // Owned: wasm-bindgen copies the Float32Array into WASM memory once and
-        // the engine keeps that buffer (no second copy of the 1024² field).
+        // the engine keeps that buffer (no second copy of the physical field).
         source: Vec<f32>,
         environment: Option<String>,
     ) -> Result<TerrainEngine, JsValue> {
@@ -448,7 +468,7 @@ impl TerrainEngine {
         .map(|generator| TerrainEngine { generator })
         .map_err(|e| JsValue::from_str(&e))
     }
-    /// Prepared signed surface (neural relief), `1024²` metres over the map.
+    /// Prepared signed square surface (neural relief) in metres over the map.
     pub fn with_surface(seed: &str, width: f64, heights: Vec<f32>) -> Result<TerrainEngine, JsValue> {
         magna_urbis_core::TerrainGenerator::with_surface_owned(seed, width, heights)
             .map(|generator| TerrainEngine { generator })
@@ -517,6 +537,12 @@ impl TerrainEngine {
         magna_urbis_core::TerrainGenerator::prepare_environment(seed, width, relief, erosion, motif)
             .map_err(|error| JsValue::from_str(&error))
     }
+    pub fn prepare_environment_at_resolution(
+        seed: &str, width: f64, relief: &str, erosion: f64, motif: f64, source_n: u32,
+    ) -> Result<Vec<f32>, JsValue> {
+        magna_urbis_core::TerrainGenerator::prepare_environment_at_resolution(seed,width,relief,erosion,motif,source_n as usize)
+            .map_err(|error| JsValue::from_str(&error))
+    }
     #[wasm_bindgen(getter)]
     pub fn motif_size(&self) -> f64 {
         self.generator.motif_size()
@@ -569,6 +595,11 @@ impl TerrainEngine {
     pub fn sampling_field(&self) -> Vec<f32> {
         self.generator.sampling_field()
     }
+    pub fn sampling_base_field(&self) -> Vec<f32> { self.generator.sampling_base_field() }
+    pub fn source_resolution(&self) -> u32 { self.generator.source_resolution() as u32 }
+    pub fn erosion_spacing(&self) -> Option<f64> { self.generator.erosion_spacing() }
+    pub fn physical_height_field(&self) -> Vec<f32> { self.generator.physical_height_field() }
+    pub fn physical_cave_field(&self) -> Vec<u8> { self.generator.physical_cave_field() }
     pub fn sampling_parameters(&self) -> Vec<f64> {
         self.generator.sampling_parameters()
     }
@@ -627,6 +658,13 @@ impl TerrainPipeline {
 
 #[wasm_bindgen]
 impl GenerationNoisePlan {
+    pub fn erosion_at_resolution(
+        seed: &str, width: f64, relief: &str, erosion: f64, motif: f64, mix: f64, n: u32,
+    ) -> Result<GenerationNoisePlan, JsValue> {
+        magna_urbis_core::GenerationNoisePlan::erosion_at_resolution(seed,width,relief,erosion,motif,mix,n as usize)
+            .map(|plan| GenerationNoisePlan { plan })
+            .map_err(|e| JsValue::from_str(&e))
+    }
     pub fn generation(
         seed: &str,
         width: f64,

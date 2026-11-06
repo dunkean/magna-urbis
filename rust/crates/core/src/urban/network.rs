@@ -3958,6 +3958,7 @@ mod tests {
             n: 64,
             height: &h,
             water: &water,
+            interpolation: Default::default(),
         };
         let quarter = super::super::Quarter {
             shape: super::super::geometry::rectangle(80.0, 80.0, 320.0, 320.0),
@@ -4028,6 +4029,7 @@ mod tests {
             n: 64,
             height: &height,
             water: &water,
+            interpolation: Default::default(),
         };
         // Walled town (x < 400) and an open faubourg against its east side.
         let quarters = [
@@ -4122,6 +4124,7 @@ mod tests {
             n: 64,
             height: &height,
             water: &water,
+            interpolation: Default::default(),
         };
         let wall: Vec<Point> = [
             (195.0, 195.0),
@@ -4215,6 +4218,7 @@ mod tests {
             n: 64,
             height: &height,
             water: &water,
+            interpolation: Default::default(),
         };
         let wall: Vec<Point> = [
             (195.0, 195.0),
@@ -4325,6 +4329,7 @@ mod tests {
             n: 64,
             height: &height,
             water: &water,
+            interpolation: Default::default(),
         };
         let wall: Vec<Point> = [
             (195.0, 195.0),
@@ -4449,6 +4454,7 @@ mod tests {
             n: 64,
             height: &height,
             water: &water,
+            interpolation: Default::default(),
         };
         let quarter = Quarter {
             shape: g::rectangle(200.0, 200.0, 400.0, 400.0),
@@ -4573,6 +4579,7 @@ mod tests {
             n,
             height: &height,
             water: &water,
+            interpolation: Default::default(),
         };
         let mut streets = vec![
             street(&[(300.0, 300.0), (300.0, 330.0)], "bridge"),
@@ -4609,6 +4616,7 @@ mod tests {
             n,
             height: &height,
             water: &water,
+            interpolation: Default::default(),
         };
         let mut streets = vec![
             street(&[(250.0, 300.0), (298.0, 300.0)], "street"),
@@ -4828,6 +4836,7 @@ mod tests {
             n: 64,
             height: &h,
             water: &water,
+            interpolation: Default::default(),
         };
         let path: Vec<Point> = (0..=40)
             .map(|k| Point {
@@ -4900,7 +4909,7 @@ mod v7_access_tests {
         let original = serde_json::to_value(&layout.streets[0]).unwrap();
         let roads = [Street {path:vec![Point{x:100.,y:1.},Point{x:100.,y:999.}],widths:vec![6.],rank:1,role:"regional".into()}];
         let height = vec![10.;32*32];let water = vec![0;32*32];
-        let surface = super::super::Surface {geometry:None,width:1000.,n:32,height:&height,water:&water};
+        let surface = super::super::Surface {geometry:None,width:1000.,n:32,height:&height,water:&water, interpolation: Default::default(),};
         ensure_regional_access(&mut layout,&roads,surface,&Default::default());
         assert_eq!(layout.streets.len(),2);
         assert_eq!(serde_json::to_value(&layout.streets[0]).unwrap(),original);

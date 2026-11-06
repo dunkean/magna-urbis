@@ -9,7 +9,7 @@ fn main()->Result<(),Box<dyn std::error::Error>> {
     let args:Vec<_>=std::env::args().collect();
     let f:Fixture=serde_json::from_slice(&std::fs::read(&args[1])?)?;
     let geo=f.geometry.map(|g|Geography::new(g,f.width)).transpose()?;
-    let surface=Surface{geometry:geo.as_ref(),width:f.width,n:f.n,height:&f.height,water:&f.water};
+    let surface=Surface{geometry:geo.as_ref(),width:f.width,n:f.n,height:&f.height,water:&f.water, interpolation: Default::default(),};
     let start=std::time::Instant::now();
     let layouts=generate_quarters(&f.seed,&f.sites,&f.layout_config,surface,&f.roads)?;
     let parts=generate_parcels(&f.seed,&layouts,&f.parcel_config)?;

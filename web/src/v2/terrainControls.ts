@@ -2,7 +2,7 @@ import { isCompactProcedural } from '../../../rust/bridge/terrainGenerationRecip
 import { openMethodNote } from '../ui/methodNotes';
 import type { V2Settings } from './contracts';
 import { adaptedExtent } from './settings';
-import { effectiveTerrainSettings, TERRAIN_EXTENT_MIN, TERRAIN_EXTENT_MAX } from './terrainSettings';
+import { effectiveTerrainSettings } from './terrainSettings';
 import { bindTree, registerMessages, setText } from './i18n';
 import { mountParameterForm, readSettingPath, writeSettingPath, type ParameterField, type ParameterForm } from './parameterForm';
 import {
@@ -15,6 +15,8 @@ import './terrainControls.css';
 import { applyRuntimePath, normalizeRuntime } from './runtimeChoices';
 import { mountTerrainSketchControls, type TerrainSketchContext } from './terrainSketchControls';
 import { loadTerrainControlDefaults } from './terrainControlDefaults';
+import { sourceDefinition, terrainCapability } from '../../../rust/bridge/terrainDefinition';
+import { isTerrainExpertControl } from './terrainControlAccess';
 
 export interface TerrainControlBindings {
   getSettings(): V2Settings;
@@ -28,7 +30,7 @@ export interface TerrainControls { sync(): void; dispose(): void; sketchHost: HT
 
 const ui = {
   width: copy('Map width', 'Largeur de la carte'),
-  extentHelp: copy('Square map. Set its width here; settlements are configured later.', 'Carte carrée. Fixez sa largeur ici ; les peuplements se règlent ensuite.'),
+  extentHelp: copy('Square map. Choose its physical width and generation spacing. Changing spacing can change drainage for the same seed.', 'Carte carrée. Choisissez sa largeur physique et son pas de génération. Changer le pas peut modifier le drainage pour une même graine.'),
   unit: copy('Map distance unit', 'Unité de distance de la carte'),
   coasts: copy('Sea directions', 'Directions de la mer'),
   coastHelp: copy('Combine directions freely. All eight surround the map with sea.', 'Combinez les directions. Les huit entourent la carte de mer.'),
@@ -40,6 +42,7 @@ const ui = {
   basics: copy('Relief and climate', 'Relief et climat'), procedural: copy('Procedural terrain', 'Relief procédural'),
   climate: copy('Detailed climate', 'Climat détaillé'), neural: copy('Neural generation', 'Génération neuronale'),
   models: copy('Models and local services', 'Modèles et services locaux'), erosion: copy('Detailed erosion', 'Érosion détaillée'),
+  expertErosion: copy('Super advanced · erosion', 'Super avancé · érosion'),
   refinement: copy('Fractal refinement', 'Raffinement fractal'), hydrology: copy('Hydrology', 'Hydrologie'),
   rustWater: copy('Rust hydrology parameters', 'Paramètres hydrologiques Rust'), vectorWater: copy('Vector hydrology parameters', 'Paramètres hydrologiques vectoriels'),
   forest: copy('Forest and clearings', 'Forêts et clairières'),
@@ -117,6 +120,7 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
     }
     if(path==='terrain.procedural.preset')settings.terrain!.procedural!.biome??=true;
     applyRuntimePath(settings,path,value);
+    if (path === 'terrain.baseModel' && value === 'residual8k' && settings.terrain) delete settings.terrain.sampleSpacing;
     normalizeRuntime(settings);
     change();
   };
@@ -124,7 +128,15 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
   const group = (title: string, fields: readonly ParameterField[], open = false, host: HTMLElement = root): HTMLDetailsElement => {
     const details = document.createElement('details'); details.className = 'terrain-control-group'; details.open = open;
     const summary = document.createElement('summary'); setText(summary, title); details.append(summary);
-    const body = document.createElement('div'); body.className = 'terrain-group-body'; details.append(body); host.append(details); form(body, fields); return details;
+    const body = document.createElement('div'); body.className = 'terrain-group-body'; details.append(body); host.append(details);
+    form(body, fields.filter(field => !isTerrainExpertControl(field.path)));
+    const expert = fields.filter(field => isTerrainExpertControl(field.path));
+    if (expert.length) {
+      const advanced = document.createElement('details'); advanced.className = 'terrain-super-advanced';
+      const label = document.createElement('summary'); setText(label, ui.expertErosion);
+      advanced.append(label); body.append(advanced); form(advanced, expert);
+    }
+    return details;
   };
   const button = (host: HTMLElement, label: string, action: () => void, id?: string): HTMLButtonElement => {
     const result = document.createElement('button'); result.type = 'button'; if (id) result.id = id; setText(result, label);
@@ -155,8 +167,9 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
   const widthSlider = document.createElement('input'); widthSlider.type = 'range'; widthSlider.id = 'terrain-width-slider'; widthSlider.className = 'parameter-slider';
   widthSlider.dataset.sliderPath = 'extent'; widthSlider.setAttribute('aria-label', ui.width); extent.append(widthSlider);
   const extentHint = document.createElement('p'); extentHint.id = 'terrain-width-help'; extentHint.className = 'hint'; setText(extentHint, ui.extentHelp); width.setAttribute('aria-describedby', extentHint.id); extent.append(extentHint);
+  const definitionHint = document.createElement('p'); definitionHint.id = 'terrain-definition-help'; definitionHint.className = 'hint'; definitionHint.setAttribute('role', 'status'); extent.append(definitionHint);
   const presetRow = document.createElement('div'); presetRow.className = 'terrain-presets';
-  for (const metres of [2400, 10000, 40000, 100000]) { const preset = button(presetRow, `${metres / 1000} km`, () => { bindings.getSettings().extent = metres; change(); }); preset.dataset.extent = String(metres); preset.dataset.l10nKeep = ''; }
+  for (const metres of [2400, 10000, 40000, 100000, 200000]) { const preset = button(presetRow, `${metres / 1000} km`, () => { bindings.getSettings().extent = metres; change(); }); preset.dataset.extent = String(metres); preset.dataset.l10nKeep = ''; }
   extent.append(presetRow); quick.append(extent);
   const quickFields = document.createElement('div'); quickFields.className = 'terrain-quick-fields'; quick.append(quickFields);
   form(quickFields, [sourceField, terrainBasicFields.find(field => field.path === 'options.biome')!, terrainBasicFields.find(field => field.path === 'terrain.relief')!, terrainClassicFields.find(field => field.path === 'options.relief')!, terrainProceduralFields.find(field => field.path === 'terrain.motifSize')!].map(field => ({ ...field, help: undefined })));
@@ -164,7 +177,9 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
   scale.setAttribute('title', terrainProceduralFields.find(field => field.path === 'terrain.motifSize')!.help!);
   const onWidth = () => {
     const metres = Number(width.value) * (unit.value === 'km' ? 1000 : 1);
-    const classic = bindings.getSettings().runtime?.backend === 'typescript', min = classic ? 600 : TERRAIN_EXTENT_MIN, max = classic ? 40000 : TERRAIN_EXTENT_MAX;
+    const settings = bindings.getSettings();
+    const capability = terrainCapability({ ...effectiveTerrainSettings(settings, metres), backend: settings.runtime?.backend });
+    const min = capability.minWidth, max = capability.maxWidth;
     if (!width.value.trim() || !Number.isFinite(metres) || metres < min || metres > max) { width.setAttribute('aria-invalid', 'true'); return; }
     width.removeAttribute('aria-invalid'); bindings.getSettings().extent = metres; change();
   };
@@ -225,7 +240,8 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
   classic.querySelector('.terrain-group-body')!.prepend(classicNote);
   const inputGroup = group(ui.sourceHelp, []); inputGroup.querySelector('.terrain-group-body')!.append(source);
   const neuralNote = document.createElement('p'); neuralNote.className = 'hint terrain-neural-note'; setText(neuralNote, ui.neuralNote); root.append(neuralNote);
-  const procedural = group(ui.procedural, terrainProceduralFields.filter(field => field.path !== 'terrain.motifSize'));
+  const procedural = group(ui.procedural, terrainProceduralFields.filter(field => !['terrain.motifSize', 'terrain.sampleSpacing'].includes(field.path)));
+  form(extent, [terrainProceduralFields.find(field => field.path === 'terrain.sampleSpacing')!]);
   const compactHelp = button(procedural, '? · Phasor', () => openMethodNote('compact-terrain-phasor'), 'terrain-phasor-method');
   const climate = group(ui.climate, terrainClimateFields);
   const neural = group(ui.neural, terrainNeuralFields);
@@ -250,21 +266,43 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
     // Historical recipes may still recommend an extent. Freeze it when opened in the editor.
     if (settings.extent === 'auto') settings.extent = adaptedExtent(settings);
     const metres = adaptedExtent(settings), factor = unit.value === 'km' ? 1000 : 1;
-    const isClassicEngine = settings.runtime?.backend === 'typescript', min = isClassicEngine ? 600 : TERRAIN_EXTENT_MIN, max = isClassicEngine ? 40000 : TERRAIN_EXTENT_MAX;
+    const isClassicEngine = settings.runtime?.backend === 'typescript';
+    const effective = effectiveTerrainSettings(settings, metres);
+    const capability = terrainCapability({ ...effective, backend: settings.runtime?.backend });
+    const min = capability.minWidth, max = capability.maxWidth;
     width.min = String(min / factor); width.max = String(max / factor); width.step = unit.value === 'km' ? '.1' : '100';
     widthSlider.min = String(min); widthSlider.max = String(max); widthSlider.step = '100'; widthSlider.disabled = bindings.disabled?.() ?? false;
     if (document.activeElement !== widthSlider) widthSlider.value = String(metres);
     if (document.activeElement !== width) width.value = String(metres / factor);
     width.disabled = unit.disabled = bindings.disabled?.() ?? false;
     if (metres < min || metres > max) width.setAttribute('aria-invalid', 'true'); else width.removeAttribute('aria-invalid');
-    for (const preset of Array.from(presetRow.querySelectorAll<HTMLButtonElement>('button'))) preset.disabled = Number(preset.dataset.extent) > max || (bindings.disabled?.() ?? false);
+    for (const preset of Array.from(presetRow.querySelectorAll<HTMLButtonElement>('button'))) preset.disabled = Number(preset.dataset.extent) < min || Number(preset.dataset.extent) > max || (bindings.disabled?.() ?? false);
+    const spacingControl = root.querySelector<HTMLInputElement>('[data-setting-path="terrain.sampleSpacing"]');
+    if (spacingControl) { spacingControl.min = String(capability.minSpacing); spacingControl.max = String(Math.min(1000, metres / 16)); spacingControl.step = 'any'; spacingControl.disabled = isClassicEngine || capability.kind === 'finite-neural' || (bindings.disabled?.() ?? false); }
+    try {
+      const french = document.documentElement.lang.startsWith('fr');
+      if (isClassicEngine) definitionHint.textContent = french ? 'Source TypeScript classique · définition propre au moteur.' : 'Classic TypeScript source · engine-defined spacing.';
+      else {
+        const definition = sourceDefinition(effective);
+        definitionHint.textContent = `${definition.n} × ${definition.n} · ${definition.spacing.toFixed(2)} m / ${french ? 'échantillon' : 'sample'} · ${Math.ceil(definition.sourceBytes / 1048576)} ${french ? 'Mio d’altitudes' : 'MiB heights'} · ≈ ${Math.ceil(definition.estimatedWorkingBytes / 1048576)} ${french ? 'Mio de rasters de travail (hors modèles)' : 'MiB working rasters (excluding models)'}`;
+        if (definition.nativeSpacing) definitionHint.textContent += ` · ${french ? 'source native' : 'native source'} ${definition.nativeSpacing.toFixed(2)} m`;
+        if (effective.hydrology?.enabled) {
+          const hydroN = effective.hydrology.engine === 'vector' ? effective.hydrology.vectorResolution : effective.hydrology.resolution;
+          definitionHint.textContent += ` · ${french ? 'hydrologie' : 'hydrology'} ${(metres / hydroN).toFixed(2)} m`;
+        }
+        if (definition.kind === 'neural') definitionHint.textContent += french
+          ? ' · conditionnement régional à 7,68 km ; le modèle calcule toujours à 30 m, même pour une sortie moins dense'
+          : ' · regional conditioning at 7.68 km; the model always computes at 30 m, including for coarser output';
+      }
+      spacingControl?.removeAttribute('aria-invalid');
+    } catch (error) { definitionHint.textContent = error instanceof Error ? error.message : String(error); spacingControl?.setAttribute('aria-invalid', 'true'); }
     for (const [direction, coast] of compassButtons) { const mask = Number(get('terrain.coastMask')); coast.setAttribute('aria-pressed', String(direction === 'all' ? mask === 255 : !!(mask & 1 << coastDirections.indexOf(direction as typeof coastDirections[number])))); coast.disabled = bindings.disabled?.() ?? false; }
     for (const [value, input] of coastChoices) {
       const mask = Number(get('terrain.coastMask'));
       input.checked = value === 'none' ? mask === 0 : mask === 255 && get('terrain.islandMode') === value;
       input.disabled = bindings.disabled?.() ?? false;
     }
-    const importedSurface = !!settings.terrain?.sketch?.processing;
+    const importedSurface = !!(settings.terrain?.sketch?.processing || settings.options.importedHeight);
     const isNeural = !['procedural', 'procedural-phasor'].includes(String(get('runtime.source'))) && !importedSurface, isClassic = get('runtime.backend') === 'typescript';
     importedNote.hidden = !importedSurface || isClassic;
     classicNote.hidden = !isClassic; classic.hidden = !isClassic;
@@ -279,7 +317,7 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
     const compact = !isNeural && get('terrain.procedural.preset') === 'compact';
     const generationCompute = root.querySelector<HTMLSelectElement>('[data-setting-path="terrain.generationCompute"]');
     if (generationCompute) for (const option of Array.from(generationCompute.options)) option.disabled = compact && !!option.value && !['cpu','gpu-erosion','native'].includes(option.value);
-    procedural.hidden = isNeural || isClassic || settings.terrain?.sketch?.processing === 'surface';
+    procedural.hidden = isNeural || isClassic || settings.terrain?.sketch?.processing === 'surface' || !!settings.options.importedHeight && settings.terrain?.sketch?.processing !== 'erosion';
     compactHelp.hidden = procedural.hidden;
     erosion.hidden = procedural.hidden;
     root.querySelector<HTMLElement>('[data-field-path="terrain.phasor.quality"]')!.hidden = !compact;
@@ -293,7 +331,6 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
     const mode = get('terrain.neuralTuning.reliefMode');
     root.querySelector<HTMLElement>('[data-field-path="terrain.neuralTuning.reliefScale"]')!.hidden = mode !== 'scale';
     root.querySelector<HTMLElement>('[data-field-path="terrain.neuralTuning.reliefFixed"]')!.hidden = mode !== 'fixed';
-    root.querySelector<HTMLElement>('[data-field-path="terrain.neuralSlopes"]')!.hidden = get('terrain.neuralFit') !== 'scale';
     const relief = get('terrain.relief');
     root.querySelector<HTMLElement>('[data-field-path="terrain.mountainMix"]')!.hidden = relief !== 'mixed' && !(get('terrain.environment') === 'mixed' && ['plateau', 'volcano', 'caldera'].includes(String(relief)));
     root.querySelector<HTMLElement>('[data-field-path="terrain.environment"]')!.hidden = !['plateau', 'volcano', 'caldera'].includes(String(relief));

@@ -205,7 +205,7 @@ mod tests {
     fn short_sheltered_front_has_a_landing_only_when_enabled() {
         let (n,width)=(200,2000.0);let height=vec![0.0;n*n];
         let water:Vec<u8>=(0..n*n).map(|i|if (100..104).contains(&(i%n)) {3} else {0}).collect();
-        let surface=Surface{geometry:None,n,width,height:&height,water:&water};
+        let surface=Surface{geometry:None,n,width,height:&height,water:&water, interpolation: Default::default(),};
         let quay=Street {path:vec![Point{x:990.0,y:980.0},Point{x:990.0,y:1018.0}],widths:vec![5.0;2],rank:1,role:"quay".into()};
         let site=Site{key:"short".into(),name:String::new(),culture:"venetian-lagoon".into(),population:10000,center:Point{x:900.0,y:1000.0},radius:400.0};
         assert!(super::super::works(std::slice::from_ref(&quay),surface,&site,&site.culture).is_empty());
@@ -222,7 +222,7 @@ mod tests {
         assert_eq!(serde_json::to_vec(&cfg).unwrap(),serde_json::to_vec(&disabled).unwrap());
         let (n,width)=(64,1600.0);let height=vec![5.0;n*n];
         let water:Vec<u8>=(0..n*n).map(|i|u8::from(i%n>=40)).collect();
-        let surface=Surface{geometry:None,n,width,height:&height,water:&water};
+        let surface=Surface{geometry:None,n,width,height:&height,water:&water, interpolation: Default::default(),};
         let site=Site{key:"off".into(),name:String::new(),culture:"hanseatic".into(),population:1000,center:Point{x:900.0,y:800.0},radius:180.0};
         let a=super::super::super::super::generate_quarters("off",std::slice::from_ref(&site),&cfg,surface,&[]).unwrap();
         let b=super::super::super::super::generate_quarters("off",std::slice::from_ref(&site),&disabled,surface,&[]).unwrap();
@@ -236,7 +236,7 @@ mod tests {
         let (n,width)=(200,2000.0);
         let height=vec![0.0;n*n];
         let open:Vec<u8>=(0..n*n).map(|i|u8::from(i%n>=100)).collect();
-        let surface=Surface{geometry:None,n,width,height:&height,water:&open};
+        let surface=Surface{geometry:None,n,width,height:&height,water:&open, interpolation: Default::default(),};
         let path=vec![Point{x:990.0,y:800.0},Point{x:990.0,y:1200.0}];
         let exposed=water(surface,&path).unwrap();assert!(!exposed.sheltered,"{exposed:?}");
         let cove:Vec<u8>=(0..n*n).map(|i|u8::from(i%n>=100 && (i%n>=140 || (80..=120).contains(&(i/n))))).collect();
@@ -250,7 +250,7 @@ mod tests {
     fn exposed_coast_gets_population_sized_moles_on_existing_water() {
         let (n,width)=(200,2000.0);let height=vec![0.0;n*n];
         let water:Vec<u8>=(0..n*n).map(|i|u8::from(i%n>=100)).collect();
-        let surface=Surface{geometry:None,n,width,height:&height,water:&water};
+        let surface=Surface{geometry:None,n,width,height:&height,water:&water, interpolation: Default::default(),};
         let path=vec![Point{x:990.0,y:700.0},Point{x:990.0,y:1300.0}];
         let a=basin(surface,&path,1000).unwrap();let b=basin(surface,&path,10000).unwrap();
         assert_eq!(b.len(),2);assert!(length(&b[0].path)>length(&a[0].path));
@@ -260,7 +260,7 @@ mod tests {
     fn floating_front_cannot_supply_a_parameterized_basin() {
         let (n,width)=(200,2000.0);let height=vec![0.0;n*n];
         let water:Vec<u8>=(0..n*n).map(|i|u8::from(i%n>=100)).collect();
-        let surface=Surface{geometry:None,n,width,height:&height,water:&water};
+        let surface=Surface{geometry:None,n,width,height:&height,water:&water, interpolation: Default::default(),};
         let site=Site{key:"shore".into(),name:String::new(),culture:"swahili-stone-town".into(),population:10000,center:Point{x:900.0,y:1000.0},radius:400.0};
         let front=|x|Street{path:vec![Point{x,y:800.0},Point{x,y:1200.0}],widths:vec![6.0;2],rank:1,role:"quay".into()};
         assert!(works(&[front(1010.0)],surface,&site,&site.culture).is_empty());

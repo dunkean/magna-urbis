@@ -176,8 +176,8 @@ fn generate_motif_base_with_noise(
     if !erosion.is_finite() || !(0.0..=2.0).contains(&erosion) {
         return Err("Le niveau d’érosion doit être compris entre 0 et 2.".into());
     }
-    if !(64..=1024).contains(&resolution) {
-        return Err("La résolution doit être comprise entre 64 et 1 024.".into());
+    if !(2..=8192).contains(&resolution) {
+        return Err("La résolution de source doit être comprise entre 2 et 8 192.".into());
     }
     if seed.len() > 4096 {
         return Err("La graine ne doit pas dépasser 4 096 octets.".into());

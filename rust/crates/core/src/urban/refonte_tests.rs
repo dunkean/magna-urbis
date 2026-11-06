@@ -25,6 +25,7 @@ fn an_inherited_bent_crossroads_is_the_village_spine_without_a_parallel_cultural
         n: 64,
         height: &h,
         water: &w,
+        interpolation: Default::default(),
     };
     let center = Point { x: 800.0, y: 800.0 };
     let roads: Vec<_> = [
@@ -102,6 +103,7 @@ fn accessible_growth_approaches_a_dry_coast_without_spending_land_on_water() {
         n: 96,
         height: &h,
         water: &dry,
+        interpolation: Default::default(),
     };
     let site = Site {
         key: "shore-growth".into(),
@@ -176,6 +178,7 @@ fn primary_regional_entry_rotates_the_foundation_over_culture_and_nearby_tracks(
         n: 64,
         height: &h,
         water: &water,
+        interpolation: Default::default(),
     };
     let center = Point { x: 800.0, y: 800.0 };
     let angle = 27.0_f64.to_radians();
@@ -263,6 +266,7 @@ fn mixed_influences_share_land_exactly_and_reach_parcels() {
         n: 64,
         height: &h,
         water: &water,
+        interpolation: Default::default(),
     };
     let site = Site {
         key: "mixed".into(),
@@ -460,6 +464,7 @@ fn adaptive_access_is_connected_and_the_partition_remains_covered() {
         n: 64,
         height: &height,
         water: &water,
+        interpolation: Default::default(),
     };
     let cfg = LayoutConfig {
         access_depth: 30.0,
@@ -527,6 +532,7 @@ fn cluster_tissue_creates_a_real_common_and_keeps_it_during_parcelling() {
         n: 64,
         height: &height,
         water: &water,
+        interpolation: Default::default(),
     };
     let mut layout = deep_layout();
     let cfg = LayoutConfig {
@@ -573,6 +579,7 @@ fn spatial_phase_recipes_do_not_create_artificial_sector_boundaries() {
         n: 64,
         height: &height,
         water: &water,
+        interpolation: Default::default(),
     };
     let site = Site {
         key: "history".into(),
@@ -669,6 +676,7 @@ fn natural_auto_respects_geography_and_explicit_foundations_remain_available() {
         n,
         height,
         water: &water,
+        interpolation: Default::default(),
     };
     let organic = footprint::generate(
         "natural",
@@ -783,6 +791,7 @@ fn open_peripheral_frontage_has_parcels_on_both_sides_without_extra_outer_roads(
         n: 64,
         height: &height,
         water: &water,
+        interpolation: Default::default(),
     };
     let site = Site {
         key: "peripheral".into(),
@@ -859,6 +868,7 @@ fn unbuildable_terrain_leaves_an_explicit_budget_deficit_and_no_phantom_center()
         n,
         height: &steep,
         water: &water,
+        interpolation: Default::default(),
     };
     let site = Site {
         key: "steep".into(),
@@ -890,7 +900,7 @@ fn unbuildable_terrain_leaves_an_explicit_budget_deficit_and_no_phantom_center()
 fn zone_overrides_change_one_zone_and_old_configs_still_load() {
     let h = vec![20.0; 64 * 64];
     let water = vec![0; h.len()];
-    let surface = Surface { geometry: None, width: 1600.0, n: 64, height: &h, water: &water };
+    let surface = Surface { geometry: None, width: 1600.0, n: 64, height: &h, water: &water, interpolation: Default::default(),};
     let site = Site {
         key: "zones".into(),
         name: String::new(),
@@ -920,7 +930,7 @@ fn zone_overrides_change_one_zone_and_old_configs_still_load() {
 fn chosen_zones_ignore_global_recipe_and_preset() {
     let h = vec![20.0; 64 * 64];
     let water = vec![0; h.len()];
-    let surface = Surface { geometry: None, width: 1600.0, n: 64, height: &h, water: &water };
+    let surface = Surface { geometry: None, width: 1600.0, n: 64, height: &h, water: &water, interpolation: Default::default(),};
     let site = Site {
         key: "chosen".into(),
         name: String::new(),

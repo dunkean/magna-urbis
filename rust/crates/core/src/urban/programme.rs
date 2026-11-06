@@ -3134,6 +3134,7 @@ mod tests {
             n: 64,
             height: &height,
             water: &water,
+            interpolation: Default::default(),
         };
         let coastal = rectangle(90., 20., 100.0000032, 60.);
         assert!(coastal.outer.iter().any(|&p| surface.wet(p)));
@@ -3194,6 +3195,7 @@ mod tests {
                     n: 128,
                     height: &height,
                     water: &water,
+                    interpolation: Default::default(),
                 },
             )
             .unwrap();
@@ -3248,6 +3250,7 @@ mod tests {
                 n: 32,
                 height: &height,
                 water: &water,
+                interpolation: Default::default(),
             },
         )
         .unwrap();
@@ -3269,6 +3272,7 @@ mod tests {
                 n: 32,
                 height: &height,
                 water: &water,
+                interpolation: Default::default(),
             },
         )
         .unwrap();
@@ -3310,6 +3314,7 @@ mod tests {
                 n: 32,
                 height: &height,
                 water: &water,
+                interpolation: Default::default(),
             },
         )
         .unwrap();
@@ -3369,6 +3374,7 @@ mod tests {
                     n: 32,
                     height: &height,
                     water: &water,
+                    interpolation: Default::default(),
                 },
             )
             .unwrap();
@@ -3425,6 +3431,7 @@ mod tests {
                 n: 32,
                 height: &height,
                 water: &water,
+                interpolation: Default::default(),
             },
         )
         .unwrap();
@@ -3539,6 +3546,7 @@ mod tests {
             n: 32,
             height: &height,
             water: &water,
+            interpolation: Default::default(),
         };
         prepare(&mut l, 50_000, &ProgrammeContext::default(), surface).unwrap();
         let pr = l.programme.as_ref().unwrap();
@@ -3780,6 +3788,7 @@ mod tests {
                 n: 32,
                 height: &height,
                 water: &water,
+                interpolation: Default::default(),
             },
         )
         .unwrap();
@@ -3894,6 +3903,7 @@ mod tests {
             n: 32,
             height: &height,
             water: &water,
+            interpolation: Default::default(),
         };
         let mut diffuse = source.clone();
         let mut context = context_for("artisan");
@@ -4095,6 +4105,7 @@ mod tests {
                 n: 32,
                 height: &height,
                 water: &water,
+                interpolation: Default::default(),
             },
         )
         .unwrap();

@@ -53,6 +53,18 @@ export async function browserNeural(assets: string, params: URLSearchParams, ske
   const engine = await engineReady;
   progress?.('Neuronal WASM · calcul coarse → base → decoder');
   const output = await engine.generate_json(JSON.stringify(Object.fromEntries(params)), sketch ? JSON.stringify(sketch) : '');
-  try { return { heights: new Float32Array(output.heights), meta: { ...JSON.parse(output.meta), modelIdentity } }; }
+  try {
+    const heights = new Float32Array(output.heights);
+    const meta = JSON.parse(output.meta) as { extent?: number; resolution?: number; nativeCellM?: number; nativeResolution?: number; outputCellM?: number };
+    const extent = Number(params.get('extent') ?? 40000);
+    const expectedN = Number(params.get('resolution') ?? Math.ceil(extent / Number(params.get('sampleSpacing') ?? 30)));
+    const n = meta.resolution;
+    if (meta.extent !== extent || meta.nativeCellM !== 30 || meta.nativeResolution !== Math.ceil(extent / 30)
+      || typeof n !== 'number' || !Number.isInteger(n) || n !== expectedN || heights.length !== n * n
+      || meta.outputCellM !== extent / n || heights.some(v => !Number.isFinite(v))) {
+      throw new Error('Neural browser runtime returned an incompatible physical surface; rebuild the neural WASM assets.');
+    }
+    return { heights, meta: { ...meta, modelIdentity } };
+  }
   finally { output.free(); }
 }

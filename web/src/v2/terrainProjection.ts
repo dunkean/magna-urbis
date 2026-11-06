@@ -1,7 +1,7 @@
 /** Adapt an already computed bench overview. No relief, drainage or river is regenerated here. */
 import type { TerrainData } from '../../../rust/bridge/terrain';
 import type { ForestField } from '../../../rust/bridge/terrainForest';
-import type { TerrainLayer, Polygon, River } from '../gen/types';
+import type { TerrainLayer, World, Polygon, River } from '../gen/types';
 import { slopeGrid } from '../gen/core/grid';
 import { forCellsNearPolyline } from '../gen/core/field';
 import { vectorize } from '../gen/landuse/rural';
@@ -13,6 +13,15 @@ export interface V2TerrainLayer extends TerrainLayer {
   v2ForestField?: ForestField;
   v2NaturalForest?: Float32Array;
   v2EngineStats?: Record<string, string | number>;
+}
+/** Legacy TypeScript town generation works on the planning grid only. */
+export function assertUrbanPhysicalCapability(world: World, backend: 'typescript' | 'rust' | 'native'): void {
+  const physical = (world.terrain as V2TerrainLayer).v2NativeTerrain?.physical;
+  const planning = world.terrain.height;
+  if (backend === 'typescript' && physical && (physical.n !== planning.w || physical.height.length !== planning.data.length
+    || physical.height.some((height, i) => height !== planning.data[i]))) {
+    throw new Error('TypeScript urban generation cannot use these physical terrain heights; choose the Rust or native urban backend.');
+  }
 }
 const at = (x: number, y: number, n: number, width: number): number => Math.max(0, Math.min(n - 1, Math.floor(y / width * n))) * n + Math.max(0, Math.min(n - 1, Math.floor(x / width * n)));
 function polygons(mask: Uint8Array, n: number, cell: number): { outer: Polygon; holes: Polygon[] }[] {

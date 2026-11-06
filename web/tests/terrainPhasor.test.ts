@@ -42,6 +42,7 @@ describe('compact erosion and Phasor policy', () => {
   });
   it('has climate-dependent morphology with explicit recipe validation', () => {
     expect(phasorUniforms({...settings,climate:'arid'})[2]).toBeGreaterThan(phasorUniforms({...settings,climate:'cold'})[2]);
+    expect(phasorUniforms(settings)[0]).toBeCloseTo(settings.width / Math.ceil(settings.width / 30));
     expect(()=>validateTerrainSettings({phasor:{quality:'fast',intensity:1.2}})).not.toThrow();
     for(const phasor of [{quality:'unknown'},{intensity:-1},{intensity:Infinity},{typo:1}])expect(()=>validateTerrainSettings({phasor})).toThrow();
   });
@@ -58,8 +59,8 @@ describe('compact erosion and Phasor policy', () => {
       const a=phasorAt(boundary-1e-4,241,2,17,90,1,h),b=phasorAt(boundary+1e-4,241,2,17,90,1,h);
       expect(Math.abs(a-b)).toBeLessThan(.005);expect(a).toBe(phasorAt(boundary-1e-4,241,2,17,90,1,h));
     }
-    const flat=new Float32Array(16*16).fill(90);
-    expect(applyPhasorCpu(flat,{...settings,width:32})).toEqual(flat);
+    const flat=new Float32Array(17*17).fill(90);
+    expect(applyPhasorCpu(flat,{...settings,width:500})).toEqual(flat);
   });
   it('round-trips a new-source recipe and separates quality and climate cache identities', () => {
     const s=defaultSettings();s.runtime={backend:'rust',source:'procedural-phasor',compute:'gpu'};s.generation='procedural';s.terrain={phasor:{quality:'balanced',intensity:1}};

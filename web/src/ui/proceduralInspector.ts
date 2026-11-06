@@ -130,7 +130,7 @@ export function mountProceduralInspector(bindings: Bindings): ProceduralInspecto
     function refreshProfile() { const s = bindings.read(); profileInfo.textContent = !recipe.biome ? 'Influence climatique désactivée.' : s ? `Profil ${s.climate} : eau ×${erosionBiome(s).water.toFixed(2)}, thermique ×${erosionBiome(s).thermal.toFixed(2)}, fluvial ${erosionBiome(s).posterior.toFixed(2)}, vent ${erosionBiome(s).wind} passes à ${erosionBiome(s).transport.toFixed(2)} m/passe.` : 'Réglages incomplets'; }
     refreshProfile();
     number(body('grids'), 'regionalN', 'Grille régionale (côté)', 64, 640, 1);
-    number(body('grids'), 'surfaceN', 'Grille de surface hors marge', 64, 1024, 1);
+    number(body('grids'), 'surfaceN', 'Grille de surface hors marge', 16, 2048, 1);
     number(body('initialize'), 'noiseScale', 'Échelle du bruit régional ×', .25, 4, .05);
     number(body('initialize'), 'crest', 'Force des crêtes', 0, 1.5, .05);
     number(body('regional'), 'uplift', 'Soulèvement ×', 0, 4, .05);
@@ -183,7 +183,7 @@ export function mountProceduralInspector(bindings: Bindings): ProceduralInspecto
     number(body('wind'), 'wind.transport', 'Transport maximal m/passe', 0, 5, .05);
     body('wind').append(document.createTextNode('Transport conservatif entre voisins, exposition et abri par la pente. Modèle morphologique de surface meuble ; pas une simulation atmosphérique.'));
     body('coasts').append(document.createTextNode('Les directions marines et le mode île / archipel se règlent ici. Les îles apparaissent lorsque tous les côtés sont marins.'));
-    body('sampling').append(document.createTextNode('Aperçu 512² ; source physique 1024².'));
+    body('sampling').append(document.createTextNode('Aperçu 512² ; la définition de la source physique est indiquée dans le panneau Terrain.'));
     body('hydrology').append(document.createTextNode('Les paramètres du panneau Hydrologie restent la source de vérité : moteur, conditionnement, lacs, incision des lits et climat.'));
     body('render').append(document.createTextNode('Affichage dans la carte principale, avec le style du bench. Le résultat final devient le terrain courant.'));
     dialog.querySelector<HTMLButtonElement>('[data-start]')!.onclick = () => start();
@@ -223,7 +223,7 @@ export function mountProceduralInspector(bindings: Bindings): ProceduralInspecto
         update(m,height){const row=rows.get(m.stage);if(row){row.dataset.state=m.status;const time=row.querySelector<HTMLOutputElement>('[data-pipeline-time]')!;time.textContent=m.elapsedMs===undefined?(m.paused?'pause':m.status==='running'?'en cours':''):m.elapsedMs<1000?`${m.elapsedMs.toFixed(1)} ms`:`${(m.elapsedMs/1000).toFixed(2)} s`;time.title=[m.paused?'en pause':stateLabels[m.status],m.detail,m.elapsedMs===undefined?'':`${m.elapsedMs.toFixed(1)} ms`].filter(Boolean).join(' · ');}status.textContent=m.paused?`En pause avant « ${stageLabels.get(m.stage)} » · Étape suivante ou Tout calculer pour poursuivre.`:`${stageLabels.get(m.stage)} · ${stateLabels[m.status]}${m.detail?' · '+m.detail:''}`;if(height)draw(height);},
         complete(terrain){running=false;for(const row of rows.values())if(!row.dataset.state){row.dataset.state='cached';const time=row.querySelector<HTMLOutputElement>('[data-pipeline-time]')!;time.textContent='cache';time.title='Conservé · non recalculé';}status.textContent='Pipeline terminé · résultat appliqué à la carte principale.';draw(terrain.field?.data??terrain.height);},
         error(message){running=false;status.textContent=message;},
-        syncSource(active){recipe=structuredClone(bindings.getRecipe());for(const [id,row] of rows){const checkbox=row.querySelector<HTMLInputElement>(`[data-procedural-param="enabled.${id}"]`);if(checkbox)checkbox.checked=recipe.enabled?.[id]??(id==='phasor'?isCompactProcedural(bindings.read()??{}):id==='ridged'||id==='surface'?!isCompactProcedural(bindings.read()??{})||id==='surface'&&bindings.read()?.relief==='canyon':true);}if(active!==sourceActive){sourceActive=active;setVisible(active);}refreshProfile();refreshSize();syncMask();},
+        syncSource(active){recipe=structuredClone(bindings.getRecipe());for(const [id,row] of rows){const checkbox=row.querySelector<HTMLInputElement>(`[data-procedural-param="enabled.${id}"]`);if(checkbox)checkbox.checked=recipe.enabled?.[id]??(id==='phasor'?isCompactProcedural(bindings.read()??{}):id==='ridged'||id==='surface'?!isCompactProcedural(bindings.read()??{})||id==='surface'&&bindings.read()?.relief==='canyon':true);}if(active!==sourceActive){sourceActive=active;if(!active)setVisible(false);}refreshProfile();refreshSize();syncMask();},
         toggle(){if(sourceActive)setVisible(!visible);},editMask:openMask
     };
 }

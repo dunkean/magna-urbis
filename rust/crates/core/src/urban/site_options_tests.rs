@@ -42,7 +42,7 @@ fn high_ground_reserves_the_highest_admissible_blocks_for_church_and_keep() {
     let n=128;
     let height:Vec<f32>=(0..n*n).map(|i|100.+(i%n) as f32*0.4).collect();
     let water=vec![0;height.len()];
-    let surface=Surface{geometry:None,width:1000.,n,height:&height,water:&water};
+    let surface=Surface{geometry:None,width:1000.,n,height:&height,water:&water, interpolation: Default::default(),};
     let points=[150.,250.,350.,450.,550.,650.,750.,850.];
     let mut base=Layout{config:Some(LayoutConfig::default()),programme:None,key:"ridge".into(),culture:"european-organic".into(),
         center:Point{x:350.,y:500.},quarters:vec![Quarter{shape:geometry::rectangle(100.,400.,900.,600.),phase:0,zone:"core".into()}],

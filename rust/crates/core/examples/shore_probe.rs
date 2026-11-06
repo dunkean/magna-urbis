@@ -10,7 +10,7 @@ fn main()->Result<(),Box<dyn std::error::Error>> {
     if let Some(c)=args.get(3) {for s in &mut f.sites {s.culture=c.clone();}}
     if let Some(c)=args.get(4) {f.layout_config.lagoon_canals=Some(c.parse()?);}
     let geography=f.geometry.map(|g|Geography::new(g,f.width)).transpose()?;
-    let surface=Surface{geometry:geography.as_ref(),n:f.n,width:f.width,height:&f.height,water:&f.water};
+    let surface=Surface{geometry:geography.as_ref(),n:f.n,width:f.width,height:&f.height,water:&f.water, interpolation: Default::default(),};
     let start=std::time::Instant::now();
     let layouts=generate_quarters(&f.seed,&f.sites,&f.layout_config,surface,&f.roads)?;
     let quarters_ms=start.elapsed().as_secs_f64()*1000.;

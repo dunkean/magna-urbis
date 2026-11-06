@@ -8,6 +8,7 @@ import type { Partition } from '../../rust/bridge/urban';
 import deficitFixture from './fixtures/open-deficit-roman04-bridge-native.json';
 import { showCityStageOutput } from '../src/v2/cityStageOutput';
 import { nativeCitiesOf, nativeCityRecords } from '../src/v2/nativeProducts';
+import { assertUrbanPhysicalCapability } from '../src/v2/terrainProjection';
 
 const native = vi.hoisted(() => ({ run: vi.fn(), plan: vi.fn() }));
 vi.mock('../../rust/bridge/urban', () => ({ createUrbanEngine: async () => ({ run: native.run }) }));
@@ -149,6 +150,43 @@ describe('immutable retained native stages', () => {
     expect(rustSettlementRaster({ ...world, terrain: { ...world.terrain, rivers: [...world.terrain.rivers] } })).toBe(first);
     const sea = { ...world, terrain: { ...world.terrain, water: new Uint8Array([1, 0, 0, 0]), seaLevel: 6 } };
     const changed = rustSettlementRaster(sea); expect(changed).not.toBe(first); expect(changed.waterLevel[0]).toBe(6);
+    const source = new Float32Array(16).fill(23);
+    const physical = { ...world, terrain: { ...world.terrain,
+      v2NativeTerrain: { physical: { n: 4, height: source } } } } as unknown as World;
+    const finer = rustSettlementRaster(physical);
+    expect(finer.physical).toEqual({ n: 4, height: source });
+    expect(finer.n).toBe(2); expect(finer.water.length).toBe(4);
+    expect(rustSettlementRaster(physical)).toBe(finer);
+    expect(() => assertUrbanPhysicalCapability(physical, 'typescript')).toThrow('physical terrain heights');
+    expect(() => assertUrbanPhysicalCapability(physical, 'rust')).not.toThrow();
+    const sameN = { ...world, terrain: { ...world.terrain,
+      v2NativeTerrain: { physical: { n: 2, height: new Float32Array([1, 2, 3, 4]) } } } } as unknown as World;
+    expect(rustSettlementRaster(sameN).physical?.height[3]).toBe(4);
+    expect(() => assertUrbanPhysicalCapability(sameN, 'typescript')).toThrow('physical terrain heights');
+    const controls = new Float32Array(16).fill(44);
+    const spline = { ...world, terrain: { ...world.terrain,
+      v2NativeTerrain: { physical: { n: 4, height: source }, field: { n: 4, data: controls, exact: true, floor: .3 } } } } as unknown as World;
+    expect(rustSettlementRaster(spline).physical).toEqual({ n: 4, height: controls, interpolation: 'bspline', floor: .3 });
+  });
+  it('caps a large Rust town planning grid at 1024 while retaining finer physical metres', () => {
+    const { world } = fixture();
+    const physical = new Float32Array(1025 * 1025).fill(10);
+    const wide = { ...world, mapSize: 200_000, terrain: { ...world.terrain,
+      height: { w: 2, h: 2, cell: 100_000, data: world.terrain.height.data },
+      v2NativeTerrain: { width: 200_000, resolution: 2, height: world.terrain.height.data,
+        caveMask: new Uint8Array(), physical: { n: 1025, height: physical } } } } as unknown as World;
+    const raster = rustSettlementRaster(wide);
+    expect(raster.n).toBe(1024);
+    expect(raster.height.length).toBe(1024 ** 2);
+    expect(raster.physical?.height).toBe(physical);
+    const smallSource = new Float32Array(64 * 64).fill(10);
+    const small = { ...wide, terrain: { ...wide.terrain,
+      v2NativeTerrain: { width: 200_000, resolution: 2, height: world.terrain.height.data,
+        caveMask: new Uint8Array(), physical: { n: 64, height: smallSource } } } } as unknown as World;
+    const bounded = rustSettlementRaster(small);
+    expect(bounded.n).toBe(64);
+    expect(bounded.height.length).toBe(bounded.n ** 2);
+    expect(bounded.water.length).toBe(bounded.n ** 2);
   });
   it('sends built capacity a scene whose deficit open spaces carry their actual Core declaration', async () => {
     // Real native roman04 rows: two non-market parcels whose Core request is an

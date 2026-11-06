@@ -12,9 +12,10 @@ import type { ClimateValues } from '../../../rust/bridge/terrainClimate';
 import { parseTerrainSketch } from '../../../rust/bridge/terrainSketch';
 import { parseTerrainZones } from '../../../rust/bridge/terrainZones';
 import type { V2Settings } from './contracts';
+import { defaultSourceSpacing } from '../../../rust/bridge/terrainDefinition';
 
 export type V2TerrainSettings = Partial<Omit<TerrainSettings,
-  'seed' | 'width' | 'source' | 'climate' | 'neuralAssets' | 'neuralServer' | 'hydrology' | 'neuralTuning' | 'climateValues' | 'detailNoise'>> & {
+  'seed' | 'width' | 'source' | 'climate' | 'neuralAssets' | 'neuralServer' | 'hydrology' | 'neuralTuning' | 'climateValues' | 'detailNoise' | 'sourceNativeResolution'>> & {
   hydrology?: Partial<HydrologySettings>;
   neuralTuning?: Partial<NeuralTuning>;
   forest?: Partial<ForestSettings>;
@@ -33,7 +34,7 @@ export function migrateTerrainClimate(terrain: { climate?: unknown } | undefined
   const zone = terrain && typeof terrain.climate === 'string' ? LEGACY_CLIMATE_ZONES[terrain.climate] : undefined;
   if (terrain && zone) terrain.climate = zone;
 }
-export const TERRAIN_EXTENT_MIN = 500, TERRAIN_EXTENT_MAX = 100000;
+export const TERRAIN_EXTENT_MIN = 500, TERRAIN_EXTENT_MAX = 200000;
 export const DEFAULT_NEURAL_TUNING: NeuralTuning = {
   landScale: 1, steps: 4, noiseTemperature: .5, noiseTemperatureStd: .5, noisePrecipitation: .5, noisePrecipitationCv: .5,
   reliefMode: 'auto', reliefScale: 1, reliefFixed: 50, histogram: [0, 0, 0, 0, 0], detail: 1,
@@ -59,6 +60,11 @@ export type EffectiveTerrainSettings = TerrainSettings & { forest: ForestSetting
 /** Defaults merge nested knobs. Runtime selection owns source, endpoints and auto compute. */
 export function effectiveTerrainSettings(settings: V2Settings, width: number): EffectiveTerrainSettings {
   const t = settings.terrain ?? {}, runtime = settings.runtime;
+  const source = runtime?.source ?? (settings.generation === 'neural' ? 'neural-wasm' : 'procedural');
+  const image = settings.options.importedHeight;
+  const sourceNativeResolution = image ? Math.min(8192, image.w, image.h) : undefined;
+  const input = { width, source, baseModel: source === 'neural-python' ? t.baseModel : undefined, sketch: t.sketch, sourceNativeResolution };
+  const sampleSpacing = t.sampleSpacing ?? defaultSourceSpacing(input);
   const zone: ClimateZone = climateZoneOf(t.climate) ?? BIOME_CLIMATE_ZONE[String(settings.options.biome)] ?? 'temperate';
   const masks = { none: 0, N: 1, E: 4, S: 16, W: 64, random: 255 };
   return { ...defaultTerrainSettings(), ...t,
@@ -69,7 +75,7 @@ export function effectiveTerrainSettings(settings: V2Settings, width: number): E
     seed: stepSeed(settings.options.seed, 'relief-noise'),
     ...(seedSubset(settings.options.seed, key => /^(relief-|water-)/.test(key)) !== seedRoot(settings.options.seed)
       ? { generalSeed: seedSubset(settings.options.seed, key => /^(relief-|water-)/.test(key)) } : {}),
-    width, source: runtime?.source ?? 'procedural',
+    width, source, sampleSpacing, sourceNativeResolution,
     motifSize: t.motifSize ?? 3000, relief: t.relief ?? settings.options.relief, mountainMix: t.mountainMix ?? .5,
     coastMask: t.coastMask ?? masks[settings.options.coast], erosion: t.erosion ?? runtime?.erosion ?? 1,
     resolution: t.resolution ?? runtime?.resolution ?? 512,
@@ -95,7 +101,7 @@ function enumeration(value: unknown, values: readonly unknown[], name: string): 
 /** Reject typos and out-of-range recipes instead of silently dropping customisation. */
 export function validateTerrainSettings(value: unknown): asserts value is V2TerrainSettings {
   if (!record(value)) throw new Error('Invalid terrain settings.');
-  const allowed = ['zones', 'motifSize', 'relief', 'environment', 'coastMask', 'islandMode', 'erosion', 'mountainMix', 'resolution', 'compute', 'generationCompute', 'hydrology', 'climate', 'climateZone', 'fidelity', 'sketch', 'climateValues', 'neuralTuning', 'coarseModel', 'baseModel', 'decoderModel', 'neuralFit', 'neuralSlopes', 'refine', 'detailNoise', 'erosionTuning', 'forest', 'phasor', 'procedural'];
+  const allowed = ['zones', 'motifSize', 'relief', 'environment', 'coastMask', 'islandMode', 'erosion', 'mountainMix', 'resolution', 'sampleSpacing', 'compute', 'generationCompute', 'hydrology', 'climate', 'climateZone', 'fidelity', 'sketch', 'climateValues', 'neuralTuning', 'coarseModel', 'baseModel', 'decoderModel', 'neuralFit', 'neuralSlopes', 'refine', 'detailNoise', 'erosionTuning', 'forest', 'phasor', 'procedural'];
   if(value.procedural!==undefined)validateProceduralRecipe(value.procedural as import('../../../rust/bridge/terrainGenerationRecipe').ProceduralRecipe);
   if (value.phasor !== undefined) {
     if (!record(value.phasor) || Object.keys(value.phasor).some(key => !['quality', 'intensity'].includes(key))) throw new Error('Invalid compact Phasor settings.');
@@ -109,7 +115,8 @@ export function validateTerrainSettings(value: unknown): asserts value is V2Terr
   enumeration(value.neuralFit, ['crop', 'scale'], 'neuralFit');
   for (const key of ['neuralSlopes', 'refine']) enumeration(value[key], [true, false], key);
   numeric(value.motifSize, 'motifSize', 250, 50000); numeric(value.coastMask, 'coastMask', 0, 255, true);
-  numeric(value.erosion, 'erosion', 0, 2); numeric(value.mountainMix, 'mountainMix', 0, 1); numeric(value.resolution, 'resolution', 64, 2048, true);
+  numeric(value.erosion, 'erosion', 0, 2); numeric(value.mountainMix, 'mountainMix', 0, 1); numeric(value.resolution, 'resolution', 64, 1024, true);
+  numeric(value.sampleSpacing, 'sampleSpacing', 1, 1000);
   numeric(value.fidelity, 'fidelity', .001, 2);
   for (const key of ['coarseModel', 'baseModel', 'decoderModel']) if (value[key] !== undefined && (typeof value[key] !== 'string' || (value[key] as string).length > 300)) throw new Error(`Invalid terrain.${key}.`);
   const ranges: Record<string, Record<string, readonly [number, number]>> = {

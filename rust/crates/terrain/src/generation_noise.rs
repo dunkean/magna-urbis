@@ -28,15 +28,19 @@ impl GenerationNoisePlan {
     }
 
     pub fn new(seed: &str, width: f64, motif: f64) -> Result<Self, String> {
+        Self::new_at_resolution(seed, width, motif, 1024)
+    }
+
+    pub fn new_at_resolution(seed: &str, width: f64, motif: f64, n: usize) -> Result<Self, String> {
         if seed.len() > 4096
             || !width.is_finite()
             || !(250.0..=100000.0).contains(&width)
             || !motif.is_finite()
             || !(250.0..=150000.0).contains(&motif)
+            || !(2..=8192).contains(&n)
         {
             return Err("Paramètres de bruit de génération invalides.".into());
         }
-        let n = 1024;
         let nc = if width > motif * 3.0 { 640 } else { 320 };
         let cell = width / n as f64;
         let cc = width * 1.44 / nc as f64;
@@ -89,6 +93,11 @@ impl GenerationNoisePlan {
         motif: f64,
         mix: f64,
     ) -> Result<Self, String> {
+        Self::erosion_at_resolution(seed,width,relief,erosion,motif,mix,1024)
+    }
+    pub fn erosion_at_resolution(
+        seed: &str, width: f64, relief: &str, erosion: f64, motif: f64, mix: f64, n: usize,
+    ) -> Result<Self, String> {
         let kind = crate::Relief::parse(relief)?;
         if !matches!(
             kind,
@@ -121,7 +130,7 @@ impl GenerationNoisePlan {
             0.5
         };
         let cfg = crate::mountain_parameters(source_kind, width, motif, mix);
-        let mut plan = Self::new(seed, width, motif)?;
+        let mut plan = Self::new_at_resolution(seed, width, motif, n)?;
         let mut rng = Rng::new(&format!("magna-urbis:{seed}"))
             .fork("terrain")
             .fork("params");

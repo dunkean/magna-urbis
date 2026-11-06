@@ -698,7 +698,7 @@ mod tests {
         let mut water = vec![0;n*n];
         if river { for y in 0..n { for x in n/2..n/2+2 { water[y*n+x] = 3; } } }
         let level = vec![10.;n*n];
-        let surface = Surface { geometry:None, width:6000., n, height:&height, water:&water };
+        let surface = Surface { geometry:None, width:6000., n, height:&height, water:&water, interpolation: Default::default(),};
         let site = super::super::Site { key:"fill3".into(),name:String::new(),population,culture:culture.into(),center:Point{x:if river {2800.} else {3000.},y:3000.},radius:150. };
         let cfg: LayoutConfig = serde_json::from_str(include_str!("fixtures/small-layout-config.json")).unwrap();
         let roads = if river { vec![Street { path:vec![Point{x:0.,y:3000.},Point{x:6000.,y:3000.}],widths:vec![8.;2],rank:1,role:"regional".into() }] } else { vec![] };

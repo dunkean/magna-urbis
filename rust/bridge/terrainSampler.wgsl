@@ -17,8 +17,8 @@ fn weights(t: f32) -> vec4<f32> {
   return vec4<f32>(omt*omt*omt,3.0*t3-6.0*t*t+4.0,-3.0*t3+3.0*t*t+3.0*t+1.0,t3)/6.0;
 }
 fn at_level_offset(uv: vec2<f32>, level: u32, start:u32) -> f32 {
-  let n=1024u >> level; var offset=start;
-  for(var l=0u;l<level;l++){let size=1024u >> l; offset+=size*size;}
+  var n=u32(p.values[4].z); var offset=start;
+  for(var l=0u;l<level;l++){offset+=n*n;n=max(1u,n/2u);}
   let pos=uv*f32(n)-0.5; let origin=vec2<i32>(floor(pos));
   let wx=vec4<f32>(weights(pos.x-f32(origin.x))); let wy=vec4<f32>(weights(pos.y-f32(origin.y)));
   var value=f32(0.0);
@@ -32,9 +32,15 @@ fn at_level_offset(uv: vec2<f32>, level: u32, start:u32) -> f32 {
   return f32(value);
 }
 fn at_level(uv:vec2<f32>,level:u32)->f32{return at_level_offset(uv,level,0u);}
+fn pyramid_size()->u32 {
+  var n=u32(p.values[4].z); var size=0u;
+  loop {size+=n*n;if(n<=1u){break;}n=max(1u,n/2u);}
+  return size;
+}
 fn filteredSurface(uv:vec2<f32>,footprint:f32,start:u32)->f32 {
-  let lod=clamp(log2(max(1.0,footprint*1024.0)),0.0,10.0);let l=u32(floor(lod));
-  return mix(at_level_offset(uv,l,start),at_level_offset(uv,min(l+1u,10u),start),fract(lod));
+  let maxLevel=u32(p.values[4].w);
+  let lod=clamp(log2(max(1.0,footprint*p.values[4].z)),0.0,f32(maxLevel));let l=u32(floor(lod));
+  return mix(at_level_offset(uv,l,start),at_level_offset(uv,min(l+1u,maxLevel),start),fract(lod));
 }
 fn surface(uv: vec2<f32>) -> f32 {
   if(p.values[1].z == 0.0){return 0.0;}
@@ -90,7 +96,7 @@ fn height_at(xy: vec2<f32>) -> f32 {
     h=amp*(0.45+0.275*swell+0.065*rough)+surface(uv);
   } else if(FAMILY == 3u) {
     // Complete local and regional mip chains; physical motif scale survives map enlargement.
-    let start=1398101u;
+    let start=pyramid_size();
     let surroundings=filteredSurface(xy/map,cell/map,start);
     let origin=volcanicParams(3u).yz;
     let uv=(xy-origin)/motif;

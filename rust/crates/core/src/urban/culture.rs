@@ -1656,6 +1656,7 @@ mod tests {
             n,
             height: &height,
             water: &water,
+            interpolation: Default::default(),
         };
         let road = |a: (f64, f64), b: (f64, f64)| Street {
             path: vec![Point { x: a.0, y: a.1 }, Point { x: b.0, y: b.1 }],

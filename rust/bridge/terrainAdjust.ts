@@ -1,7 +1,7 @@
 /**
  * Adjustments of sampled terrain regions in the bench: a height change kept
  * on a coarse grid (pre-hydrology conditioning), fractal refinement below the
- * source raster's cell, and the fit of a 40 km neural surface to the map.
+ * source raster's cell, and placement of a generated neural surface.
  * Heights in metres, coordinates in metres from the map's north-west corner.
  */
 interface SurfaceData {
@@ -127,53 +127,16 @@ export function applyFractalDetail(data: SurfaceData, sourceCell: number, seed: 
   addGradient(data, change);
 }
 
-/** Sea and land directions of the eight coast bits (N, NE, … NW, y pointing south). */
-function coastShift(mask: number): [number, number] {
-  let sx = 0, sy = 0;
-  for (let k = 0; k < 8; k++) if (mask & (1 << k)) {
-    const a = k * Math.PI / 4 - Math.PI / 2;
-    sx += Math.cos(a); sy += Math.sin(a);
-  }
-  const l = Math.hypot(sx, sy);
-  return l < 1e-6 ? [0, 0] : [sx / l, sy / l];
-}
-
-/**
- * Fits the 40 km neural surface (`1024²`) to a map of `width` metres:
- * `crop` keeps a window of the map's size, moved towards the coasts so they
- * stay in view; `scale` stretches the whole surface, and with `slopes` scales
- * its heights alike to keep its slopes. Returns a `1024²` surface.
- */
-export function neuralWindow(extent: number, width: number, mode: 'crop' | 'scale', slopes: boolean, coastMask: number): { x: number; y: number; width: number; heightScale: number } {
-  if (mode === 'scale' || width >= extent) {
-    return { x: 0, y: 0, width: extent, heightScale: slopes ? width / extent : 1 };
-  }
-  const [sx, sy] = coastMask === 255 ? [0, 0] : coastShift(coastMask), free = (extent - width) / 2;
-  return { x: free + sx * free * 0.9, y: free + sy * free * 0.9, width, heightScale: 1 };
+/** Physical neural fields use identity coordinates for refinement registration. */
+export function neuralWindow(_extent: number, width: number, _mode: 'crop' | 'scale', _slopes: boolean, _coastMask: number): { x: number; y: number; width: number; heightScale: number } {
+  if (!Number.isFinite(width) || width <= 0) throw new Error('Invalid neural surface extent.');
+  return { x: 0, y: 0, width, heightScale: 1 };
 }
 
 export function fitNeuralSurface(heights: Float32Array, extent: number, width: number, mode: 'crop' | 'scale', slopes: boolean, coastMask: number): Float32Array {
-  const n = 1024;
-  if (mode === 'scale' || width >= extent) {
-    if (width === extent || !slopes) return heights;
-    const k = width / extent;
-    return Float32Array.from(heights, h => h * k);
-  }
-  const window = neuralWindow(extent, width, mode, slopes, coastMask);
-  const ox = window.x, oy = window.y, source = extent / n, out = new Float32Array(n * n);
-  // Catmull–Rom interpolation of the window, sample centres to sample centres.
-  const at = (x: number, y: number): number => heights[Math.max(0, Math.min(n - 1, y)) * n + Math.max(0, Math.min(n - 1, x))];
-  const weights = (t: number): number[] => [(-t * t * t + 2 * t * t - t) / 2, (3 * t * t * t - 5 * t * t + 2) / 2, (-3 * t * t * t + 4 * t * t + t) / 2, (t * t * t - t * t) / 2];
-  for (let y = 0; y < n; y++) {
-    const gy = (oy + (y + 0.5) * width / n) / source - 0.5, j = Math.floor(gy), wy = weights(gy - j);
-    for (let x = 0; x < n; x++) {
-      const gx = (ox + (x + 0.5) * width / n) / source - 0.5, i = Math.floor(gx), wx = weights(gx - i);
-      let v = 0;
-      for (let a = 0; a < 4; a++) for (let b = 0; b < 4; b++) v += at(i + b - 1, j + a - 1) * wy[a] * wx[b];
-      out[y * n + x] = v;
-    }
-  }
-  return out;
+  if (!Number.isFinite(extent) || extent <= 0 || extent !== width) throw new Error('Neural surface extent must match the requested map extent.');
+  neuralWindow(extent, width, mode, slopes, coastMask);
+  return heights;
 }
 
 /** Cubic B-spline upsampling of an `m²` grid to `n²` over the same extent. */

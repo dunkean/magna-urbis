@@ -8,7 +8,7 @@ fn village(culture: &str, population: u32) -> (usize, usize, f64, bool, f64) {
     let h = vec![10.0_f32; n * n];
     let w = vec![0_u8; n * n];
     let level = vec![0.0_f32; n * n];
-    let s = Surface { geometry: None, width: 4000.0, n, height: &h, water: &w };
+    let s = Surface { geometry: None, width: 4000.0, n, height: &h, water: &w, interpolation: Default::default(),};
     let site = Site {
         key: "probe".into(),
         name: String::new(),
@@ -99,7 +99,7 @@ fn village_shape(culture: &str, population: u32, slope: f64) -> (f64, f64, f64) 
     let width = 6000.0;
     let h: Vec<f32> = (0..n * n).map(|i| (10.0 + slope * (i / n) as f64 * width / n as f64) as f32).collect();
     let w = vec![0_u8; n * n];
-    let s = Surface { geometry: None, width, n, height: &h, water: &w };
+    let s = Surface { geometry: None, width, n, height: &h, water: &w, interpolation: Default::default(),};
     let site = Site {
         key: "probe".into(),
         name: String::new(),
@@ -161,7 +161,7 @@ fn empty_blocks(culture: &str) -> (usize, usize, f64) {
     let h = vec![10.0_f32; n * n];
     let w = vec![0_u8; n * n];
     let level = vec![0.0_f32; n * n];
-    let s = Surface { geometry: None, width: 4000.0, n, height: &h, water: &w };
+    let s = Surface { geometry: None, width: 4000.0, n, height: &h, water: &w, interpolation: Default::default(),};
     let site = Site { key: "probe".into(), name: String::new(), population: 500, culture: culture.into(), center: Point { x: 2000.0, y: 2000.0 }, radius: 150.0 };
     let layout_config: LayoutConfig = serde_json::from_str(include_str!("fixtures/small-layout-config.json")).unwrap();
     let parcel_config: ParcelConfig = serde_json::from_str(include_str!("fixtures/small-parcel-config.json")).unwrap();
@@ -244,7 +244,7 @@ fn village_layout(culture: &str, population: u32) -> Layout {
     let n = 64;
     let h = vec![10.0_f32; n * n];
     let w = vec![0_u8; n * n];
-    let s = Surface { geometry: None, width: 4000.0, n, height: &h, water: &w };
+    let s = Surface { geometry: None, width: 4000.0, n, height: &h, water: &w, interpolation: Default::default(),};
     let site = Site { key: "probe".into(), name: String::new(), population, culture: culture.into(), center: Point { x: 2000.0, y: 2000.0 }, radius: 150.0 };
     let cfg: LayoutConfig = serde_json::from_str(include_str!("fixtures/small-layout-config.json")).unwrap();
     generate_quarters("small-settlement", &[site], &cfg, s, &[]).unwrap().remove(0)
@@ -289,7 +289,7 @@ fn serviced_quarters_fill_from_the_core_with_a_bounded_population() {
         let height = vec![10.; n*n];
         let water = vec![0; n*n];
         let level = vec![0.; n*n];
-        let surface = Surface { geometry:None, width:4000., n, height:&height, water:&water };
+        let surface = Surface { geometry:None, width:4000., n, height:&height, water:&water, interpolation: Default::default(),};
         let mut index = building_sites::BuildingSiteIndex::prepare(layouts, &parts, &[0]).unwrap();
         let mut ids = std::collections::HashSet::new();
         let mut offset = 0;
@@ -345,7 +345,7 @@ fn an_overlarge_enclosure_replans_its_land_budget_before_filling() {
     let n = 64;
     let height = vec![10.;n*n];
     let water = vec![0;n*n];
-    let surface = Surface{geometry:None,width:6000.,n,height:&height,water:&water};
+    let surface = Surface{geometry:None,width:6000.,n,height:&height,water:&water, interpolation: Default::default(),};
     let site = Site{key:"fill-budget".into(),name:String::new(),population:500,culture:"celtic-oppidum".into(),center:Point{x:3000.,y:3000.},radius:150.};
     let mut cfg: LayoutConfig = serde_json::from_str(include_str!("fixtures/small-layout-config.json")).unwrap();
     cfg.footprint.gross_density = 5.;
@@ -400,7 +400,7 @@ fn reviewed_villages_have_no_unoccupied_parcels() {
     let height = vec![10.; n*n];
     let water = vec![0; n*n];
     let level = vec![0.; n*n];
-    let surface = Surface { geometry:None, width:4000., n, height:&height, water:&water };
+    let surface = Surface { geometry:None, width:4000., n, height:&height, water:&water, interpolation: Default::default(),};
     let mut failures = vec![];
     for &culture in FILL2_CULTURES {
         let layout = village_layout(culture, 500);
@@ -484,7 +484,7 @@ fn plank_house_count_follows_population_at_its_declared_metric_size() {
         let layout = village_layout("pnw-plank-village", population);
         let n = 64;
         let height = vec![10.; n*n]; let water = vec![0; n*n]; let level = vec![0.; n*n];
-        let surface = Surface { geometry:None, width:4000., n, height:&height, water:&water };
+        let surface = Surface { geometry:None, width:4000., n, height:&height, water:&water, interpolation: Default::default(),};
         let layouts = std::slice::from_ref(&layout);
         let parts = generate_parcels("small-settlement", layouts, &ParcelConfig::default()).unwrap();
         let requests = building_sites::requests("small-settlement", layouts, &parts, surface, &level, None).unwrap();
@@ -523,7 +523,7 @@ fn reviewed_camps_real_map_geometry() {
         let height:Vec<f32> = serde_json::from_value(f["height"].clone()).unwrap();
         let water:Vec<u8> = serde_json::from_value(f["water"].clone()).unwrap();
         let level:Vec<f32> = serde_json::from_value(f["waterLevel"].clone()).unwrap();
-        let surface = Surface { geometry:None,width:f["width"].as_f64().unwrap(),n:f["n"].as_u64().unwrap() as usize,height:&height,water:&water };
+        let surface = Surface { geometry:None,width:f["width"].as_f64().unwrap(),n:f["n"].as_u64().unwrap() as usize,height:&height,water:&water, interpolation: Default::default(),};
         let seed = f["seed"].as_str().unwrap();
         let sites:Vec<Site> = serde_json::from_value(f["sites"].clone()).unwrap();
         let roads:Vec<Street> = serde_json::from_value(f["roads"].clone()).unwrap();
@@ -550,7 +550,7 @@ fn reviewed_camps_real_map_geometry() {
 fn large_camps_reached_by_track_ends_keep_their_homes() {
     let n = 16;
     let (h, w, level) = (vec![10.0_f32; n * n], vec![0_u8; n * n], vec![0.0_f32; n * n]);
-    let s = Surface { geometry: None, width: 4000.0, n, height: &h, water: &w };
+    let s = Surface { geometry: None, width: 4000.0, n, height: &h, water: &w, interpolation: Default::default(),};
     let p = |x: f64, y: f64| Point { x, y };
     let track = |a: Point, b: Point, width: f64| Street { path: vec![a, b], widths: vec![width; 2], rank: 2, role: "regional".into() };
     let roads = [
@@ -594,7 +594,7 @@ fn large_camps_reached_by_track_ends_keep_their_homes() {
 fn review12_a_longhouse_village_on_trail_ends_builds_its_longhouses() {
     let n = 16;
     let (h, w, level) = (vec![10.0_f32; n * n], vec![0_u8; n * n], vec![0.0_f32; n * n]);
-    let s = Surface { geometry: None, width: 4000.0, n, height: &h, water: &w };
+    let s = Surface { geometry: None, width: 4000.0, n, height: &h, water: &w, interpolation: Default::default(),};
     let trail = |pts: &[(f64, f64)]| Street { path: pts.iter().map(|&(x, y)| Point { x, y }).collect(), widths: vec![1.62; pts.len()], rank: 2, role: "regional".into() };
     let roads = [
         trail(&[(2261., 1141.), (2254., 1260.), (2220., 1413.), (2168., 1603.), (2164., 1716.), (2105., 1870.), (2020., 1996.)]),
@@ -629,7 +629,7 @@ fn review12_a_longhouse_village_on_trail_ends_builds_its_longhouses() {
 fn outbuildings_share_thins_village_house_dependencies() {
     let n = 16;
     let (h, w, level) = (vec![10.0_f32; n * n], vec![0_u8; n * n], vec![0.0_f32; n * n]);
-    let s = Surface { geometry: None, width: 4000.0, n, height: &h, water: &w };
+    let s = Surface { geometry: None, width: 4000.0, n, height: &h, water: &w, interpolation: Default::default(),};
     let base: LayoutConfig = serde_json::from_str(include_str!("fixtures/small-layout-config.json")).unwrap();
     let seed = "city-temperate-coast-s-1";
     let farms = |outbuildings: f64| {
@@ -667,7 +667,7 @@ fn no_quarter_of_a_town_stands_empty() {
             block(g::rectangle(300.0, 385.0, 370.0, 445.0), "block"), block(crescent, "block")],
         "streets":[street(vec![Point { x: 100.0, y: 450.0 }, Point { x: 500.0, y: 450.0 }]), street(arc(90.0, 0.0, 180.0))],"warnings":[]})).unwrap();
     let (h, w, level) = (vec![6.0_f32; 1024], vec![0_u8; 1024], vec![0.0_f32; 1024]);
-    let s = Surface { geometry: None, width: 1000.0, n: 32, height: &h, water: &w };
+    let s = Surface { geometry: None, width: 1000.0, n: 32, height: &h, water: &w, interpolation: Default::default(),};
     programme::prepare(&mut layout, 10_000, &programme::ProgrammeContext::default(), s).unwrap();
     let layouts = [layout];
     let parts = generate_parcels("lived", &layouts, &ParcelConfig::default()).unwrap();

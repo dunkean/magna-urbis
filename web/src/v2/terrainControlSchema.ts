@@ -77,7 +77,8 @@ export const terrainProceduralFields: ParameterField[] = [
   select('environment', 'Surrounding terrain', 'Relief environnant', reliefChoices.filter(option => ['flat', 'hills', 'mixed', 'mountains', 'high-mountains'].includes(option.value))),
   number('mountainMix', 'Mountain proportion', 'Proportion de montagnes', 0, 1, .01),
   number('erosion', 'Overall erosion', 'Érosion globale', 0, 2, .01),
-  number('resolution', 'Terrain grid resolution', 'Résolution de grille du relief', 64, 2048, 1),
+  number('sampleSpacing', 'Generation spacing (m)', 'Pas de génération (m)', 1, 1000, 1, ['Physical spacing of the retained terrain. Neural models provide native 30 m detail; finer requests are rejected.', 'Espacement physique du terrain conservé. Le neuronal fournit un détail natif de 30 m ; les demandes plus fines sont refusées.']),
+  number('resolution', 'Overview grid resolution', 'Résolution de l’aperçu', 64, 1024, 1, ['Overview pixels do not determine the physical source definition.', 'Les pixels de l’aperçu ne déterminent pas la définition de la source physique.']),
   { ...select('compute', 'Terrain sampling', 'Échantillonnage du relief', simple([['wasm', 'CPU · Rust reference', 'CPU · référence Rust'], ['gpu-f32', 'GPU · FP32', 'GPU · FP32']])), optional: true },
   { ...select('generationCompute', 'Procedural generation compute', 'Calcul de génération procédurale', simple([
     ['cpu', 'CPU · reference', 'CPU · référence'], ['gpu', 'GPU · fine noise FP32', 'GPU · bruit fin FP32'], ['gpu-all', 'GPU · all noise FP32', 'GPU · tous les bruits FP32'], ['gpu-erosion', 'GPU · erosion FP32', 'GPU · érosion FP32'],
@@ -98,8 +99,6 @@ export const terrainClimateFields: ParameterField[] = [
   number('climateValues.precipitationCv', 'Precipitation variation (%)', 'Variation des précipitations (%)', 0, 200, 1),
 ];
 export const terrainNeuralFields: ParameterField[] = [
-  select('neuralFit', 'Neural extent fitting', 'Adaptation de l’étendue neuronale', simple([['crop', 'Crop a 40 km source', 'Recadrer la source de 40 km'], ['scale', 'Scale the complete source', 'Redimensionner la source entière']]), ['The model generates 40 × 40 km. Crop retains physical scale; scale fits the complete result to this map.', 'Le modèle génère 40 × 40 km. Recadrer conserve l’échelle physique ; redimensionner adapte le résultat complet à cette carte.']),
-  bool('neuralSlopes', 'Preserve slopes when scaling', 'Préserver les pentes au redimensionnement'),
   number('fidelity', 'Sketch noise / signal', 'Bruit / signal de l’esquisse', .001, 2, .01, ['Lower values follow the sketch more closely: 0.02 close, 0.05 normal, 0.15 loose.', 'Les petites valeurs suivent davantage l’esquisse : 0,02 fidèle, 0,05 normal, 0,15 libre.']),
   number('neuralTuning.landScale', 'Sketch land elevation multiplier', 'Multiplicateur d’altitude de l’esquisse', 0, 5, .05),
   number('neuralTuning.steps', 'Coarse solver steps', 'Étapes du solveur coarse', 1, 32, 1),
@@ -222,7 +221,7 @@ export const terrainProceduralStageFields: ParameterField[] = [
     ['surface', 'Surface erosion', 'Érosion de surface'], ['normalize', 'Datum normalisation', 'Normalisation du datum'],
   ])), optional: true },
   recipeNumber('regionalN', 'Regional grid (side)', 'Grille régionale (côté)', 64, 640, 1),
-  recipeNumber('surfaceN', 'Surface grid (without margin)', 'Grille de surface (hors marge)', 64, 1024, 1),
+  recipeNumber('surfaceN', 'Surface grid (without margin)', 'Grille de surface (hors marge)', 16, 2048, 1),
   recipeNumber('noiseScale', 'Regional noise scale ×', 'Échelle du bruit régional ×', .25, 4, .05),
   recipeNumber('crest', 'Crest strength', 'Force des crêtes', 0, 1.5, .05),
   recipeNumber('uplift', 'Uplift ×', 'Soulèvement ×', 0, 4, .05),

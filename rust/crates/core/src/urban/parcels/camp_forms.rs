@@ -681,7 +681,7 @@ mod review_tests {
     #[test]
     fn camp_review_native_cluster_variation_keeps_retained_parcels() {
         let (height,water) = (vec![0.;64*64],vec![0;64*64]);
-        let surface = Surface {geometry:None,width:4000.,n:64,height:&height,water:&water};
+        let surface = Surface {geometry:None,width:4000.,n:64,height:&height,water:&water, interpolation: Default::default(),};
         let site = Site {key:"native-groups".into(),name:String::new(),population:1500,culture:"nomad-camp".into(),center:Point{x:2000.,y:2000.},radius:300.};
         let roads = [Street {path:vec![Point{x:1500.,y:2000.},Point{x:2500.,y:2000.}],widths:vec![4.;2],rank:0,role:"regional".into()}];
         let draw = || {
@@ -700,7 +700,7 @@ mod review_tests {
     #[test]
     fn camp_review_native_ring_parameter_reaches_retained_parcels() {
         let (height,water) = (vec![0.;64*64],vec![0;64*64]);
-        let surface = Surface {geometry:None,width:4000.,n:64,height:&height,water:&water};
+        let surface = Surface {geometry:None,width:4000.,n:64,height:&height,water:&water, interpolation: Default::default(),};
         let site = Site {key:"native-wobble".into(),name:String::new(),population:500,culture:"native-plains".into(),center:Point{x:2000.,y:2000.},radius:150.};
         let roads = [Street {path:vec![Point{x:1500.,y:2000.},Point{x:2500.,y:2000.}],widths:vec![4.;2],rank:0,role:"regional".into()}];
         let draw = |wobble| {

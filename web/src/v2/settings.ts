@@ -14,8 +14,7 @@ export function defaultSettings(): V2Settings {
 export function adaptedExtent(settings: V2Settings): number {
   if (settings.extent !== 'auto') return Math.round(settings.extent);
   if (settings.options.mapSize !== undefined) return Math.round(settings.options.mapSize);
-  // Existing finite neural models produce a 40 km window (rust/bridge/terrain.ts: NEURAL_EXTENT).
-  // Keep this pure setting module independent from the WASM/GPU implementation.
+  // Automatic size recommends 40 km; conventional neural generation also accepts explicit extents.
   if (settings.generation === 'neural') return 40000;
   const population = settings.options.population || SIZE_SHORTCUT[settings.options.size];
   const main = 1400 + Math.sqrt(population) * 26 * Math.max(.7, settings.options.sprawl ?? 1);

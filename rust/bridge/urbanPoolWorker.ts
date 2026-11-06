@@ -2,6 +2,7 @@
 // instance and terrain handle, running independent slices of one request.
 import init, { SettlementTerrain } from '../pkg/wasm/magna_urbis_wasm.js';
 import type { PoolMessage, PoolReply, PoolShared } from './urbanPool';
+import { validatePhysicalTerrain } from './settlements';
 
 let terrain: SettlementTerrain | undefined, version = -1;
 let batch = -1, shared: PoolShared = {};
@@ -35,8 +36,19 @@ self.onmessage = async (event: MessageEvent<PoolMessage>) => {
     terrain?.free(); terrain = undefined; version = -1;
     const r = message.raster;
     try {
+      validatePhysicalTerrain(r.physical);
       const next = new SettlementTerrain(r.width, r.n, r.height, r.water, r.waterLevel, r.riverWidth, r.riverIds);
-      try { if (r.geometry) next.set_urban_geometry(JSON.stringify(r.geometry)); }
+      try {
+        if (r.physical) {
+          const physical = next as SettlementTerrain & {
+            set_physical_height(n: number, height: Float32Array): void;
+            set_physical_height_spline(n: number, height: Float32Array, floor: number): void;
+          };
+          if (r.physical.interpolation === 'bspline') physical.set_physical_height_spline(r.physical.n, r.physical.height, r.physical.floor ?? 0);
+          else physical.set_physical_height(r.physical.n, r.physical.height);
+        }
+        if (r.geometry) next.set_urban_geometry(JSON.stringify(r.geometry));
+      }
       catch (error) { next.free(); throw error; }
       terrain = next; version = message.version;
     } catch { /* the next job reports the missing terrain; the coordinator then runs it locally */ }

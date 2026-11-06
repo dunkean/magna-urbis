@@ -12,6 +12,7 @@ import { generationStageActive } from './terrainGenerationRecipe';
 import type { Context } from './terrainGpu';
 import type { TerrainSettings } from './terrain';
 import { gpuSetupDeadline, type TerrainProgressCallback } from './terrainProgress';
+import { sourceDefinition } from './terrainDefinition';
 
 const ENTRIES = ['compactInitialize','compactReconstruct','generationUnitScale','generationKeepDatum','generationReconstruct','generationPreview', 'generationPlainPack', 'generationPhasorPack', 'initialize', 'uplift', 'start', 'clearNext', 'solveStats', 'floodInit', 'solveTile', 'receivers', 'flow', 'graphInit', 'graphFinish', 'floodCheck', 'pitInit', 'pitUnion', 'pitCompress', 'pitReduce', 'pitPour', 'pitFill', 'breachInit', 'breach', 'breachFinish', 'thermalFlux', 'thermalApply', 'copyHeight', 'bounds', 'diffuse', 'reconstruct', 'percentileInit', 'histogramClear', 'histogram', 'percentileSelect', 'detail', 'normalize', 'volcanicInitial', 'surfaceLoad', 'surfaceFlowInit', 'surfaceDelta', 'surfaceReconstruct', 'canyonSeed', 'canyonSpread', 'canyonApply', 'coastLoad', 'coastResult', 'packHeight'] as const;
 type Entry = typeof ENTRIES[number] | 'generationCut' | 'generationRegionalRead';
@@ -81,10 +82,12 @@ export interface ErosionProfile {
   maxSolveSteps: number[]; allocatedBytes?: number;
   gpuStagesMs?: { coarse: number; surface: number; normalization: number };
 }
-interface Timing { nativeEnvironmentMs: number; profiles?: ErosionProfile[]; control?: GenerationControl }
+interface Timing { nativeEnvironmentMs: number; profiles?: ErosionProfile[]; control?: GenerationControl;
+  onPhysicalPlan?: (erosionSpacing?: number, regionalErosionSpacing?: number) => void }
 
 /** Cut/assembled coast -> the existing hydraulic/thermal surface pass, without normalization. */
 export async function erodeGpuCoast(state: Context, settings: TerrainSettings, source: GPUBuffer, tuning: Float32Array,progress?:TerrainProgressCallback): Promise<Float32Array> {
+  if (sourceDefinition(settings).n !== 1024) throw new Error('Érosion GPU limitée à une source de 1024² cellules ; utilisez le calcul CPU pour ce pas physique.');
   return serialized(state, () => erodeCoast(state, settings, source, tuning,progress));
 }
 async function erodeCoast(state: Context, settings: TerrainSettings, source: GPUBuffer, tuning: Float32Array,progress?:TerrainProgressCallback): Promise<Float32Array> {
@@ -97,6 +100,8 @@ async function erodeCoast(state: Context, settings: TerrainSettings, source: GPU
 
 /** All simulation state stays on the device; only the final physical raster is read. */
 export async function generateGpuTerrain(state: Context, settings: TerrainSettings, timing?: Timing,progress?:TerrainProgressCallback): Promise<Float32Array> {
+  if (sourceDefinition(settings).n !== 1024) throw new Error('Génération GPU limitée à une source de 1024² cellules ; utilisez le calcul CPU pour ce pas physique.');
+  if ((settings.procedural?.surfaceN ?? 0) > 1024) throw new Error('Érosion GPU limitée à une grille de surface de 1024² cellules ; utilisez le calcul CPU.');
   timing?.control?.backend?.('gpu');
   return serialized(state, () => generateTerrain(state, settings, timing,progress));
 }
@@ -164,6 +169,10 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
     const packEntry:Entry=!coast && stageEnabled(settings,'phasor',compact) ? 'generationPhasorPack' : 'packHeight';
     const initializeEntry:Entry=compact?'compactInitialize':'initialize';
     const surfaceEnabled=!!coast || stageEnabled(settings,'surface',!compact || settings.relief==='canyon') && (!compact || settings.relief==='canyon' || tuning[3]>0);
+    const reportPhysicalPlan=()=>{if(!coast)timing?.onPhysicalPlan?.(
+      settings.erosion>0 && surfaceEnabled && tuning[3]>0 ? tuning[1] : undefined,
+      !shape && settings.erosion>0 && (stageEnabled(settings,'regional') || stageEnabled(settings,'regionalFinish')) ? base[4] : undefined,
+    );};
     const reconstructEntry:Entry=settings.procedural?.reconstruction && settings.procedural.reconstruction!=='default' ? 'generationReconstruct':compact?'compactReconstruct':'reconstruct';
     const entries = new Set<Entry>([packEntry,...(!stageEnabled(settings,'amplitude')?['generationUnitScale' as const]:[]),...(!stageEnabled(settings,'normalize')?['generationKeepDatum' as const]:[]), ...(lab ? ['generationPreview' as const] : []), ...(!coast && !shape && settings.procedural ? ['generationCut','generationRegionalRead','generationPreview'] as const : [])]), modes = new Set<number>();
     const require = (...values: Entry[]) => values.forEach(value => entries.add(value));
@@ -454,6 +463,7 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
       pass.end();device.queue.submit([encoder.finish()]);
       if(lab?.cached)await lab.cached('phasor',lab.previews===false?undefined:cachedPhasor);
       else{await lab?.before('phasor');await lab?.after('phasor',cachedPhasor);}
+      reportPhysicalPlan();
       return cachedPhasor;
     }
     if(!cachedPhasor)await lab?.before('phasor');
@@ -484,6 +494,7 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
     readback.unmap();
     profile.unpackMs = performance.now() - unpackStarted;
     if (!height.every(value => Number.isFinite(value) && (coast || resumable && generationStageActive(settings,'coastCut') || value >= .3 - 1e-7))) throw new Error('Champ GPU invalide.');
+    reportPhysicalPlan();
     // Core snapshots are independent of the phasor pack, which reads the same fine field.
     if(resumable)packed.put('phasor',stageKey('phasor'),height);
     if(lab)await lab.after('phasor',height,'Sortie GPU lue et validée');

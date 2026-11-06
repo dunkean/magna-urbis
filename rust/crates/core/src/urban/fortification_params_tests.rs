@@ -1,7 +1,7 @@
 use super::*;
 const N:usize=128;
 const W:f64=2048.0;
-fn surface<'a>(height:&'a [f32],water:&'a [u8])->Surface<'a> {Surface {geometry:None,width:W,n:N,height,water}}
+fn surface<'a>(height:&'a [f32],water:&'a [u8])->Surface<'a> {Surface {geometry:None,width:W,n:N,height,water, interpolation: Default::default(),}}
 fn layout()->Layout {
     serde_json::from_value(serde_json::json!({"key":"params","culture":"hanseatic","center":pt(800.0,900.0),
         "quarters":[{"shape":g::rectangle(600.0,600.0,1000.0,1200.0),"phase":0,"zone":"core"},
@@ -95,7 +95,7 @@ fn reviewed_witness_matrix() {
         let f:Fixture=serde_json::from_slice(&std::fs::read(std::path::Path::new(&root).join(format!("{culture}.json"))).unwrap()).unwrap();
         let vector=f.geometry.as_ref().map(|g|(g.land.clone(),g.water.clone()));
         let geo=f.geometry.map(|g|super::super::super::Geography::new(g,f.width).unwrap());
-        let surface=Surface {geometry:geo.as_ref(),n:f.n,width:f.width,height:&f.height,water:&f.water};
+        let surface=Surface {geometry:geo.as_ref(),n:f.n,width:f.width,height:&f.height,water:&f.water, interpolation: Default::default(),};
         let mut cases=vec![("default".into(),f.layout_config.clone())];
         if std::env::var("WALL_PARAMS_BASELINE").is_err() {
             for stiff in [0.0,0.5,1.0] {for terrain in [0.0,0.5,1.0] {
