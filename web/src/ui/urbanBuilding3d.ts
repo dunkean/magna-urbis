@@ -3,6 +3,7 @@ import { building3dHeight, isBuildingProjection, isYardMesh, yardLod, buildingRa
 import { layerExtent, loadMaterialImages, uploadMaterialArrays, coverLayer, wallLayer, MATERIALS, type MaterialImages } from '../render/buildingMaterials';
 import { buildingFeatureLod, buildingFeatureMetresPerPixel, hasBuildingFeatureLod, sameBuildingFeatureLod, type BuildingFeatureLod } from '../render/urbanBuildingFeatureLod';
 import { buildingTint } from '../render/buildingPalette';
+import { MOONLIGHT_GLSL } from '../render/materialLook';
 
 type Vec3 = [number, number, number];
 type Bounds = [number, number, number, number, number, number];
@@ -14,6 +15,22 @@ interface Entry { building: Building3dVisual; bounds: Bounds }
 /** `yard`: lot boundaries only, in a sector of their own: they change level far earlier than buildings and for a fraction of the cost. */
 export interface Sector { origin: [number, number]; entries: Entry[]; bounds: Bounds; width: number; featureLodEligible: boolean; overview: boolean; shown: boolean; yard?: boolean; cached?: { overview: boolean; featureLod?: BuildingFeatureLod; yardLevel?: number; batches: Batch[]; used: number } }
 const SECTOR = 256, MAX_CACHE_BYTES = 96 * 1024 * 1024;
+const nightWindows = `
+uniform int uNight;
+${MOONLIGHT_GLSL}
+vec3 buildingNight(vec3 color,vec3 p,vec3 normal){
+  if(uNight==0)return color;
+  vec3 N=normalize(normal);color=moonlight(color);
+  if(abs(N.y)>.3 || p.y<1.3)return color;
+  vec2 tangent=normalize(vec2(-N.z,N.x));
+  vec2 q=vec2(dot(p.xz,tangent)/2.8,p.y/3.1),cell=floor(q),f=fract(q);
+  float facade=floor(dot(p.xz,N.xz)*.5),random=fract(sin(dot(cell,vec2(127.1,311.7))+facade*74.7)*43758.5453);
+  vec2 aa=max(fwidth(q),vec2(.001));
+  float window=(smoothstep(.31-aa.x,.31+aa.x,f.x)-smoothstep(.58-aa.x,.58+aa.x,f.x))*(smoothstep(.43-aa.y,.43+aa.y,f.y)-smoothstep(.74-aa.y,.74+aa.y,f.y));
+  window*=step(.66,random)*(1.-smoothstep(.16,.42,max(aa.x,aa.y)));
+  return mix(color,vec3(1.,.61,.22),window*.93);
+}
+`;
 const vertexColor = `#version 300 es
 precision highp float;
 layout(location=0) in vec3 position;
@@ -22,14 +39,16 @@ layout(location=2) in vec3 albedo;
 uniform mat4 matrix;
 uniform vec3 offset;
 uniform float exaggeration;
+uniform vec2 sectorOrigin;
 layout(location=4) in float groundIn;
-out vec3 n; out vec3 base;
-void main(){float k=position.y>groundIn+.01?1.:exaggeration;n=normalize(vec3(normal.x,normal.y/k,normal.z));base=albedo;gl_Position=matrix*vec4(vec3(position.x,position.y+groundIn*(exaggeration-1.),position.z)+offset,1.);}`;
+out vec3 n; out vec3 base; out vec3 facadePosition;
+void main(){float k=position.y>groundIn+.01?1.:exaggeration;n=normalize(vec3(normal.x,normal.y/k,normal.z));base=albedo;facadePosition=vec3(position.x+sectorOrigin.x,groundIn<1e10?position.y-groundIn:0.,position.z+sectorOrigin.y);gl_Position=matrix*vec4(vec3(position.x,position.y+groundIn*(exaggeration-1.),position.z)+offset,1.);}`;
 const fragmentColor = `#version 300 es
 precision highp float;
-in vec3 n; in vec3 base;
+in vec3 n; in vec3 base; in vec3 facadePosition;
 out vec4 color;
-void main(){float light=.55+.45*abs(dot(normalize(n),normalize(vec3(-.4,.85,.3))));color=vec4(base*light,1.);}`;
+${nightWindows}
+void main(){float light=.55+.45*abs(dot(normalize(n),normalize(vec3(-.4,.85,.3))));color=vec4(buildingNight(base*light,facadePosition,n),1.);}`;
 
 /** Textured variant: per-vertex uv (metres on the face: walls along the face and down, roofs along the ridge and down
  * the slope) and material layer; albedo + normal map arrays; same lighting model. Layer < 0 keeps the flat colour. */
@@ -42,12 +61,13 @@ layout(location=3) in float layerIn;
 uniform mat4 matrix;
 uniform vec3 offset;
 uniform float exaggeration;
+uniform vec2 sectorOrigin;
 layout(location=4) in float groundIn;
-out vec3 n; out vec3 wp; out vec2 uv; flat out float layer;
-void main(){float k=position.y>groundIn+.01?1.:exaggeration;n=normalize(vec3(normal.x,normal.y/k,normal.z));vec3 p=vec3(position.x,position.y+groundIn*(exaggeration-1.),position.z)+offset;wp=p;uv=uvIn;layer=layerIn;gl_Position=matrix*vec4(p,1.);}`;
+out vec3 n; out vec3 wp; out vec2 uv; flat out float layer; out vec3 facadePosition;
+void main(){float k=position.y>groundIn+.01?1.:exaggeration;n=normalize(vec3(normal.x,normal.y/k,normal.z));vec3 p=vec3(position.x,position.y+groundIn*(exaggeration-1.),position.z)+offset;wp=p;uv=uvIn;layer=layerIn;facadePosition=vec3(position.x+sectorOrigin.x,groundIn<1e10?position.y-groundIn:0.,position.z+sectorOrigin.y);gl_Position=matrix*vec4(p,1.);}`;
 const texFragment = `#version 300 es
 precision highp float;
-in vec3 n; in vec3 wp; in vec2 uv; flat in float layer;
+in vec3 n; in vec3 wp; in vec2 uv; flat in float layer; in vec3 facadePosition;
 uniform vec3 material;
 uniform vec3 tint;
 uniform int recolored;
@@ -56,6 +76,7 @@ uniform float softFrom;
 uniform highp sampler2DArray albedoTex;
 uniform highp sampler2DArray normalTex;
 out vec4 color;
+${nightWindows}
 void main(){
   vec3 N=normalize(n), dp1=dFdx(wp), dp2=dFdy(wp);
   if(dot(N,normalize(cross(dp1,dp2)))<0.) N=-N;
@@ -81,7 +102,7 @@ void main(){
     base=recolored==1?clamp(mix(material,albedo*tint,.65),0.,1.):albedo*tint;
     N=normalize(mat3(T*invmax,-B*invmax,N)*normalize(tn));
   }
-  float light=.55+.45*abs(dot(N,normalize(vec3(-.4,.85,.3))));color=vec4(base*light,1.);
+  float light=.55+.45*abs(dot(N,normalize(vec3(-.4,.85,.3))));color=vec4(buildingNight(base*light,facadePosition,n),1.);
 }`;
 /** First material layer that keeps half its contrast in the natural texture mode (roads, places; not the stone wall layer). */
 export const SOFT_LAYER_FROM = Math.min(...Object.entries(MATERIALS.road).filter(([k]) => k !== 'wall').map(([, v]) => v));
@@ -145,6 +166,7 @@ function faceUv(p: readonly number[], normal: readonly number[], layer: number):
  * Off-screen sectors require no roof traversal or GPU buffers. Plan (x,y),
  * altitude z become GL (x,z,y), before display exaggeration. */
 export class UrbanBuildingPass {
+  protected night = false;
   protected sectors: Sector[] = [];
   private colorProgram?: WebGLProgram;
   /** Draw calls and sectors of the last draw (render stats). */
@@ -163,6 +185,8 @@ export class UrbanBuildingPass {
   constructor(private gl: WebGL2RenderingContext | undefined, protected onTexturesReady?: () => void) {}
 
   setScene(scene: Building3dScene | undefined, appearance: UrbanBuildingAppearance): void {
+    this.night=appearance.ambience==='night';
+    appearance={...appearance,ambience:undefined};
     const key = JSON.stringify(appearance);
     if (this.source === scene && this.appearanceKey === key) return;
     this.clear(); this.source = scene; this.appearance = { ...appearance }; this.appearanceKey = key;
@@ -338,8 +362,10 @@ export class UrbanBuildingPass {
       gl.activeTexture(gl.TEXTURE0);
     }
     gl.uniformMatrix4fv(gl.getUniformLocation(p, 'matrix'), false, frame.matrix); gl.uniform1f(gl.getUniformLocation(p, 'exaggeration'), frame.exaggeration);
+    gl.uniform1i(gl.getUniformLocation(p,'uNight'),+this.night);
     for (const sector of shown) {
       gl.uniform3f(gl.getUniformLocation(p, 'offset'), sector.origin[0] - frame.cameraX, -frame.targetHeight, sector.origin[1] - frame.cameraY);
+      gl.uniform2f(gl.getUniformLocation(p,'sectorOrigin'),sector.origin[0],sector.origin[1]);
       for (const batch of sector.cached!.batches) {
         if (texProgram) {
           gl.uniform3fv(gl.getUniformLocation(p, 'material'), batch.color); gl.uniform3fv(gl.getUniformLocation(p, 'tint'), batch.tint);

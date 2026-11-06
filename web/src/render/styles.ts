@@ -403,7 +403,7 @@ const night = derive('night', 'Night', {
   treeShape: 'blob',
   stripA: '#1d2a48', stripB: '#16203a', stripAlpha: [0.5, 0.5], furrow: '#3b4c78', furrowAlpha: 0.5, hedge: '#1c4a3c', hedgeOn: true,
   treeFill: '#12342c', treeInk: '#0a1c18', grass: '#1f5a48', reed: '#2a6a72', orchardDot: '#1c4a3c',
-  roadEdge: '#04060e', roadFill: '#3a3529', trackFill: '#2a2b38', rural: { ink: '#5a5446', track: 0.7, way: 0.5, headland: 0.35 }, bridgeDeck: '#3a3529', bridgeInk: '#04060e',
+  roadEdge: '#141927', roadFill: '#444b62', trackFill: '#3a4054', rural: { ink: '#565d72', track: 0.7, way: 0.5, headland: 0.35 }, bridgeDeck: '#4d546c', bridgeInk: '#04060e',
   farmRoof: '#22283e', farmInk: '#04060e', farmYard: '#1a2236', marker: '#ffb45a',
   urban: {
     street: '#352f26', streetEdge: '#04060e', yard: '#141a2c', garden: '#14281f', gardenInk: '#2d6a4a',

@@ -1,3 +1,4 @@
+import type { TextSettings } from './textLayer';
 import { cavernDisplayWorld } from './cavernDisplay';
 import { cavernPathD, cavernWallsSvg, cavernFungalRoomsSvg } from './caverns';
 import type { World, LandKind } from '../gen/types';
@@ -21,7 +22,7 @@ import { f1, pathD, seaWithIslands } from './util';
 import { landuseLayer, roadsLayer, siteLayer } from './landuse';
 import { urbanLayer } from './urban';
 import { labelsSvg } from './svgLabels';
-import { cartoucheModel, legendModel, panelSvg } from './legend';
+import { cartoucheModel, legendModel, panelSvg, type SemanticLegendEntry } from './legend';
 import { frameModel, panelMargin } from './frame';
 import { litSvg, shadowSvg, gridSvg, waterLinesSvg } from './extras';
 import { FONT_STACKS } from './labelStyles';
@@ -31,9 +32,14 @@ import { supportsPaintedBiome } from './brushes';
 import type { Measure } from './mapLabels';
 import type { ExportLayers } from './exportLayers';
 import type { VegetationStyle } from './canopy';
+import { roadGroundTones, setRoadGround, type RoadGroundTones } from './roadStyle';
 
 export interface RenderOptions {
+  text?: Readonly<TextSettings>;
   colors?: RenderColors;
+  roadLook?: 'ink' | 'natural';
+  roadGround?: RoadGroundTones;
+  roadEmphasis?: number; roadNight?: boolean;
   buildings?: boolean;
   /** Independent export layers; omitted flags stay visible. */
   layers?: Partial<ExportLayers>;
@@ -44,6 +50,8 @@ export interface RenderOptions {
   landuseKinds?: (kind: LandKind) => boolean;
   /** Name labels (default: world.options.labels !== false), legend (default: world.options.legend) and cartouche (default on). */
   labels?: boolean; legend?: boolean; cartouche?: boolean;
+  /** Semantic land-use entries appended to the legend (same model as the live legend). */
+  semanticLegend?: readonly SemanticLegendEntry[];
   /** Text width measurer for label placement (browser: canvas based; default: estimate). */
   measure?: Measure;
   /** Optional display-only raster stamps; omitted keeps classic output byte-for-byte. */
@@ -67,6 +75,7 @@ function decor(world: World, pal: Palette, u: number): string {
 }
 
 export function renderSvg(world0: World, opts: RenderOptions = {}): string {
+  if (opts.roadLook === 'natural') setRoadGround(world0.landuse, world0.mapSize, opts.roadGround ?? roadGroundTones(false, applyRenderColors(biomePalette(opts.style ?? world0.options.style, world0.options.biome), opts.colors)), !!opts.roadNight);
   if (opts.landuseKinds && world0.landuse) world0 = { ...world0, landuse: { ...world0.landuse, areas: world0.landuse.areas.filter(area => opts.landuseKinds!(area.kind)) } };
   world0 = cavernDisplayWorld(displayWorld(world0, undefined, opts.buildings));
   const world = renderView(world0);
@@ -140,23 +149,23 @@ export function renderSvg(world0: World, opts: RenderOptions = {}): string {
   const lakeD = t.lakes.filter((p) => p.length >= 3).map((p) => pathD(p, true)).join('');
   const masked = seaD.length > 0 || lakeD.length > 0;
   if (masked) parts.push(`<clipPath id="landclip"><path d="M-50 -50H${S + 50}V${S + 50}H-50Z${seaD.join('')}${lakeD}" clip-rule="evenodd"/></clipPath>`);
-  parts.push(`<g id="regional-road-ground"${masked ? ' clip-path="url(#landclip)"' : ''}>${roadsLayer(world, pal, u, painted?.brushes, { roads: layers.roads !== false, city: layers.city !== false })}</g>`);
+  parts.push(`<g id="regional-road-ground"${masked ? ' clip-path="url(#landclip)"' : ''}>${roadsLayer(world, pal, u, painted?.brushes, { roads: layers.roads !== false, city: layers.city !== false }, opts.roadLook, opts.colors, opts.roadEmphasis, opts.roadNight)}</g>`);
   if (world.urban && (layers.city !== false || layers.streets !== false || layers.water !== false)) {
     const landscape = world0.landuse?.landscapeGround !== undefined;
     parts.push(urbanLayer(world, pal, u, !!opts.debug, opts.debug || landscape ? { bands: [], ground: [], streets: [] } : countrysideFringe(world0), raster, landuse, opts.debug || landscape ? [] : (world0.landuse?.naturalGround ?? []), contours, opts.debug ? [] : currentLandscapeGround(world0, true), worldGroundAppearance(world0), opts.debug ? [] : worldCampCover(world0), painted?.brushes, forestMask, layers));
     if (!opts.debug && layers.city !== false) { parts.push(shadowSvg(world, pal, u)); parts.push(litSvg(world, pal, u)); }
-  } else if (layers.city !== false) parts.push(siteLayer(world, pal, u, !!opts.debug, layers.labels !== false && (opts.labels ?? world.options.labels !== false)));
+  } else if (layers.city !== false) parts.push(siteLayer(world, pal, u, !!opts.debug, false));
 
   if (t.caverns && landuse) parts.push(cavernFungalRoomsSvg(world, pal));
   if (t.caverns) { parts.push('</g>'); if (layers.terrain !== false) parts.push(cavernWallsSvg(world, pal, raster)); }
   parts.push('</g>');
-  if (layers.labels !== false && (opts.labels ?? world.options.labels !== false)) parts.push(labelsSvg(world, pal, opts.measure, !!(opts.legend ?? world.options.legend)));
+  if (layers.labels !== false && (opts.labels ?? world.options.labels !== false)) parts.push(labelsSvg(world, pal, opts.measure, !!(opts.legend ?? world.options.legend), opts.text));
   if (layers.decor !== false) parts.push(decor(world, pal, u));
   const fam = FONT_STACKS[style] ?? pal.fontFamily;
   const pm = panelMargin(pal) * u;
   if (layers.decor !== false && opts.cartouche !== false) parts.push(panelSvg(cartoucheModel(world, pal, 1 / u), pm, pm, u, fam, 'cartouche'));
   if (layers.decor !== false && (opts.legend ?? !!world.options.legend)) {
-    const lg = legendModel(world, pal);
+    const lg = legendModel(world, pal, opts.semanticLegend ?? []);
     parts.push(panelSvg(lg, pm, S - pm - lg.h * u, u, fam, 'legend'));
   }
   parts.push('</svg>');

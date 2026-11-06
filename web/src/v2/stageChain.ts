@@ -29,7 +29,7 @@ const T = {
   needTerrain: copy('Create the relief first', 'Créez d’abord le relief'), needRegion: copy('Place the settlements first', 'Implantez d’abord les peuplements'),
   needPlace: copy('Choose a place in the list on the right', 'Choisissez un lieu dans la liste à droite'), procedural: copy('Procedural', 'Procédural'), neural: copy('Neural', 'Neuronal'),
   heightmap: copy('Heightmap', 'Heightmap'), source: copy('Relief source', 'Source du relief'),
-  view2d: copy('2D map', 'Carte 2D'), view3d: copy('3D view', 'Vue 3D'), style: copy('Map style', 'Style de carte'),
+  view2d: copy('2D map', 'Carte 2D'), view3d: copy('3D view', 'Vue 3D'),
   noNeural: copy('Neural generation needs WebGPU in this browser, the Python/CUDA server or the native neural service. None is available (see Settings).', 'Le neuronal exige WebGPU dans ce navigateur, le serveur Python/CUDA ou le service neuronal natif. Aucun n’est disponible (voir Réglages).'),
   overrides: copy('Local settings of this place', 'Réglages locaux de ce lieu'),
   scope: copy('Cities to generate', 'Villes à générer'), allCities: copy('All cities', 'Toutes les villes'), selection: copy('Selection on the right', 'Sélection à droite'),
@@ -53,7 +53,7 @@ const GENERAL_CONTROLS: Record<StageFamily, readonly string[]> = {
   region: ['widget:extent', 'terrain.relief', 'options.relief', 'options.biome', 'terrain.climate', 'terrain.motifSize', 'widget:seed', 'widget:coasts'],
   settlements: ['main:town-count', 'main:population', 'main:culture'],
   cities: ['main:sprawl', 'main:walls'],
-  map: ['widget:style', 'widget:view3d'],
+  map: [],
 };
 const METHOD_CONTROLS = ['terrain.procedural.preset'] as const;
 
@@ -79,7 +79,7 @@ export interface StageChain {
   body(id: string): HTMLElement; sync(): void; family(): StageFamily; selectFamily(family: StageFamily): void;
   beginRun(stages: readonly string[]): void; progress(progress: V2Progress): void; endRun(ok: boolean): void; context(): StageContext;
 }
-interface Row { stage: StageDef; element: HTMLElement; node: HTMLButtonElement; time: HTMLOutputElement; run: HTMLButtonElement; body: HTMLElement; number: HTMLElement; note: HTMLElement; title: HTMLButtonElement; draw?: HTMLButtonElement }
+interface Row { stage: StageDef; element: HTMLElement; node: HTMLButtonElement; time: HTMLOutputElement; run: HTMLButtonElement; body: HTMLElement; number: HTMLElement; note: HTMLElement; title: HTMLButtonElement; quick: HTMLElement; draw?: HTMLButtonElement }
 
 export function mountStageChain(b: StageChainBindings): StageChain {
   const { root } = b, get = b.getSettings;
@@ -172,8 +172,10 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     const note = document.createElement('p'); note.className = 'stage-note'; note.hidden = true;
     const body = document.createElement('div'); body.className = 'stage-body'; body.id = `body-${stage.id}`; body.hidden = true;
     const summary = document.createElement('p'); summary.className = 'stage-summary hint'; setText(summary, text(stage.summary)); body.append(summary, help);
-    element.append(head, note, body);
-    const row = { stage, element, node, time, run, body, number, note, title, draw };
+    // The row's main controls, visible while it is collapsed (filled from `stage.quick` once the sections are placed).
+    const quick = document.createElement('div'); quick.className = 'stage-quick'; quick.hidden = true;
+    element.append(head, quick, note, body);
+    const row = { stage, element, node, time, run, body, number, note, title, quick, draw };
     rows.set(stage.id, row); return row;
   }
   function expand(id: string, open: boolean): void {
@@ -324,11 +326,18 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     place(field, owner(`region.${field.dataset.fieldPath}`));
   }
   // Appearance panel sections → display rows (section bodies, with their colour pickers).
-  const renderOwners: Record<string, string> = { ground: 'display-terrain', relief: 'display-terrain', diagnostics: 'display-terrain', water: 'display-water', cover: 'display-vegetation', roads: 'display-roads', buildings: 'display-buildings', general: 'display-labels' };
+  const renderOwners: Record<string, string> = { ground: 'display-terrain', relief: 'display-relief', diagnostics: 'display-relief', vegetation: 'display-vegetation', landuse: 'display-landuse', water: 'display-water', roads: 'display-roads',
+    buildings: 'display-buildings', ambience: 'display-ambience', text: 'display-text', general: 'display-labels' };
   for (const [section, stageId] of Object.entries(renderOwners)) {
     const sectionBody = b.renderRoot.querySelector(`[data-render-section="${section}"] > .render-settings-fields`);
     if (!sectionBody) continue;
     const box = document.createElement('div'); box.className = 'stage-render-section'; box.dataset.renderSection = section; box.append(sectionBody); place(box, stageId);
+  }
+  // Quick controls: the shared field is lifted out of its section body (one DOM home) onto the collapsed row, so it keeps the shared form's handlers, notes and sync.
+  for (const stage of STAGES) for (const id of stage.quick) {
+    const control = id === 'widget:view3d' ? viewQuick() : id.startsWith('appearance.') ? root.querySelector<HTMLElement>(`[data-setting-path="${id}"]`)?.closest<HTMLElement>('.parameter-field') : null;
+    if (!control) continue;
+    const row = rows.get(stage.id)!; row.quick.append(control); row.quick.hidden = false;
   }
   // Procedural recipe controls are new staged forms over the same terrain value model.
   for (const stage of STAGES) {
@@ -345,8 +354,6 @@ export function mountStageChain(b: StageChainBindings): StageChain {
       control = root.querySelector<HTMLElement>('.terrain-extent');
       const legend = control?.querySelector('legend'); if (legend) setText(legend, T.size);
     } else if (id === 'widget:coasts') control = coastPanel;
-    else if (id === 'widget:style') control = styleQuick();
-    else if (id === 'widget:view3d') control = viewQuick();
     else if (id === 'widget:seed') control = root.querySelector<HTMLElement>('[data-control="widget:seed"]');
     else control = root.querySelector<HTMLElement>(id.startsWith('main:') ? `[data-control="${id}"]` : `[data-field-path="${id}"]`);
     if (!control) continue;
@@ -420,15 +427,6 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     });
   }
 
-  function styleQuick(): HTMLElement {
-    const label = document.createElement('label'); label.className = 'quick-style';
-    label.append(iconImg('display-palette', 24));
-    const select = document.createElement('select'); select.id = 'quick-map-style'; select.setAttribute('aria-label', translate(T.style));
-    const source = document.querySelector<HTMLSelectElement>('#map-style');
-    if (source) { select.innerHTML = source.innerHTML; select.onchange = () => { source.value = select.value; source.dispatchEvent(new Event('change')); }; }
-    label.append(select); syncers.push(() => { if (source && document.activeElement !== select) { if (select.options.length !== source.options.length) select.innerHTML = source.innerHTML; select.value = source.value; } });
-    return label;
-  }
   function viewQuick(): HTMLElement {
     const group = document.createElement('div'); group.className = 'icon-segments'; group.setAttribute('role', 'group'); group.setAttribute('aria-label', '2D / 3D');
     const make = (mode: '2d' | '3d') => {

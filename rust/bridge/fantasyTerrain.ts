@@ -34,7 +34,7 @@ export function prepareFantasyTerrain(terrain: TerrainData, style: FantasyStyle,
     const water = hydro && hydro.waterField[Math.min(hydro.resolution - 1, Math.floor(v * hydro.resolution)) * hydro.resolution + Math.min(hydro.resolution - 1, Math.floor(u * hydro.resolution))] > 0;
     return { ...relief(x - terrain.x, y - terrain.y), temperature: climate.temperature, rain: climate.precipitation, water: !!water || !!vectorWater, occupied: occupied?.(x, y), landuse: options.followLanduse ? urban?.landuse?.(x, y) : undefined };
   };
-  const paint: PaintOptions = { seed: settings.seed, pitch: settings.width / 65 * options.spacing, brushPitch: settings.width / 65, density: options.density, size: options.size, followLanduse: options.followLanduse };
+  const paint: PaintOptions = { seed: settings.seed, pitch: settings.width / 65 * options.spacing, brushPitch: settings.width / 65, density: options.density, size: options.size, followLanduse: options.followLanduse, forests: options.forests, forestsOnly: options.forestsOnly };
   const stamps = planPainting({ x: terrain.x, y: terrain.y, width: terrain.width, height: terrain.width }, sample, paint);
   if (!libraries) throw new Error('Fantasy brush sheets have not been registered by the page.');
   const scene: FantasyTerrainPainting = { stamps, library: libraries[style], width: terrain.width, namespace: `fantasy-${style}-${terrain.x}-${terrain.y}` };

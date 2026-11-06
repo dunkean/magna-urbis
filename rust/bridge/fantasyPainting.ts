@@ -1,12 +1,12 @@
 import { styleTraits } from '../../web/src/render/terrainStyle';
 /** Shared display-only painter. Coordinates and pitch are world metres; no engine rules. */
 export type FantasyStyle = 'fantasy-ink' | 'fantasy-color';
-export interface FantasyOptions { density: number; size: number; spacing: number; followLanduse?: boolean }
+export interface FantasyOptions { density: number; size: number; spacing: number; followLanduse?: boolean; /** false: no forest brushes, another vegetation look owns the woods. */ forests?: boolean; /** Forest brushes alone: a ground with its relief hidden has no hills, mountains or ground motifs. */ forestsOnly?: boolean }
 export const DEFAULT_FANTASY_OPTIONS: FantasyOptions = { density: 1, size: 1, spacing: 1 };
 export const isFantasyStyle = (style: string): style is FantasyStyle => styleTraits(style).fantasy !== undefined;
 export type PaintLanduse = 'forest' | 'orchard' | 'field' | 'garden' | 'marsh' | 'meadow' | 'pasture' | 'commons';
 export interface PaintSample { height: number; slope: number; temperature: number; rain: number; water?: boolean; occupied?: boolean; landuse?: PaintLanduse; /** Signed local prominence / sampling radius, as in Render. */ tpi?: number; relief?: number }
-export interface PaintOptions { seed: string; pitch: number; density?: number; size?: number; maxStamps?: number; followLanduse?: boolean; /** Size stays independent of spacing. */ brushPitch?: number }
+export interface PaintOptions { seed: string; pitch: number; density?: number; size?: number; maxStamps?: number; followLanduse?: boolean; /** Size stays independent of spacing. */ brushPitch?: number; forests?: boolean; forestsOnly?: boolean }
 export interface Stamp { x: number; y: number; width: number; height: number; brush: number; variant?: number; flip: boolean; opacity: number; heightScale?: number }
 export interface PaintBounds { x: number; y: number; width: number; height: number }
 export interface Atlas { url: string; width: number; height: number; rows: number[]; rects?: [number, number, number, number][]; variantsPerStyle?: number }
@@ -99,7 +99,8 @@ export function planPainting(bounds: PaintBounds, sample: (x: number, y: number)
   const mountains = new Map<string, Stamp[]>(), mountainCell = brushPitch * 4;
   const mountainKey = (x: number, y: number) => `${Math.floor(x / mountainCell)},${Math.floor(y / mountainCell)}`;
   for (const pass of ['relief', 'ground', 'forest'] as const) {
-    const pad = brushPitch * (pass === 'relief' ? 8 : 2) * size;
+    if (pass === 'forest' ? options.forests === false : options.forestsOnly) continue;
+    const pad =brushPitch * (pass === 'relief' ? 8 : 2) * size;
     const step = pitch * (pass === 'relief' ? .85 : pass === 'forest' ? .24 : .9);
     const x0 = Math.floor((bounds.x - pad) / step), x1 = Math.ceil((bounds.x + bounds.width + pad) / step);
     const y0 = Math.floor((bounds.y - pad) / step), y1 = Math.ceil((bounds.y + bounds.height + pad) / step);

@@ -46,7 +46,7 @@ describe('appearance recipe', () => {
   });
   it('explains what a target cannot show and merges view patches', () => {
     const fantasy = resolveAppearance({ style: 'parchment', terrainStyle: 'fantasy-ink', painted: true }, base, { nativeCities: false }, 'view3d');
-    expect(fantasy.incompatibilities.map(item => item.field)).toEqual(expect.arrayContaining(['terrainStyle', 'painted']));
+    expect(fantasy.incompatibilities.map(item => item.field)).not.toContain('terrainStyle');
     expect(resolve({ style: 'parchment', terrainStyle: 'render-v2', colors: { river: '#112233' } }).incompatibilities.map(item => item.field)).toContain('colors.river');
     const original: AppearanceInput = { style: 'parchment', city: { opacity: .4 } };
     const next = applyAppearancePatch(original, 'parchment', { terrainStyle: 'render-v2', renderer: 'bench', city: { plan: false } });

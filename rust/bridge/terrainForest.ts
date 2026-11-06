@@ -461,6 +461,8 @@ float renderGuideShore=1e9,renderGuideOpenness=0.;
  * and an earthMaterial call for the same fragment before applyForest (Render guide). */
 export const FOREST_GLSL = `
 float forestResolvedCover=0.;
+// Cover of a canopy mixed over another ground: resolved crowns up close, the stand's expected fraction once crowns are below a pixel.
+float forestMapCover=0.;
 const float forestTauTable[33]=float[33](${list(FOREST_TAU_TABLE)});
 const float forestPatchCdf[17]=float[17](${list(PATCH_CDF)});
 const float forestCrownCdf[17]=float[17](${list(CROWN_CDF)});
@@ -787,7 +789,7 @@ uvec3 forestCanopyPack(ForestCanopy c){
     auxPack4x8(vec4(min(c.near,9.)/9.,c.rel,c.edge,((c.needle?1.:0.)+(c.riparian?2.:0.)+tint)/4.)));
 }
 void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
-  forestResolvedCover=0.;
+  forestResolvedCover=0.;forestMapCover=0.;
   ForestPrep p=forestPrep(world,footprint);
   if(!p.valid)return;
   ForestStand st=p.st;float fp=p.fp,openA=p.openA,forcedA=p.forcedA,hedgeA=p.hedgeA,crownVis=p.crownVis,radius=p.radius,reveal=p.reveal;
@@ -846,6 +848,7 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
   float natural=mask*d*(1.-openA),openTrees=openA*(st.allow*.7+hedgeA/max(openA,1e-3)*st.hedge*.6);
   float canopy=clamp(natural+openTrees,0.,1.),stand=mask*(1.-openA);
   if(uRenderV2>0)canopy*=v2Foliage;
+  forestMapCover=canopy;
   float groundShadow=clamp(maskQ*dq*(1.-openA)+openTrees*.6,0.,1.);
   if(uRenderV2>0)groundShadow*=v2Foliage;
   vec3 litter=forestFloor(openGround,st,p.cold);
@@ -866,6 +869,7 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
     forestResolvedCover=hit.cover*crownVis*(uRenderV2>0&&v2MeanEnabled>.5?v2ForestReveal:reveal);
     float shade=hit.shade;
     if(uRenderV2>0){hit.cover*=v2Foliage;shade*=v2Foliage;forestResolvedCover*=v2Foliage;}
+    forestMapCover=mix(forestMapCover,forestResolvedCover,crownVis);
     // A lit dome per crown with a per-tree tint; fantasy brushes keep their own luminance.
     float tint=hit.tint;
     vec2 jitter=vec2(tint,fract(tint*7.31))*2.-1.;float special=fract(tint*13.17);

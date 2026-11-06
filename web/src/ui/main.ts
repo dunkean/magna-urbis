@@ -1060,7 +1060,7 @@ async function buildExport(snapshot: ExportSnapshot, kind: 'svg' | 'json', full 
       return measureCtx.measureText(text).width;
     };
     blob = kind === 'svg'
-      ? new Blob([renderSvg(world, { width, style: d.style, layers: d.layers, contours: d.contours, landuse: d.landuse, labels: d.labels !== false, legend: !!d.legend, measure, brushes: d.painted ? snapshot.brushes : undefined })], { type: 'image/svg+xml' })
+      ? new Blob([renderSvg(world, { width, style: d.style, layers: d.layers, contours: d.contours, landuse: d.landuse, text: d.text, labels: d.labels !== false, legend: !!d.legend, measure, brushes: d.painted ? snapshot.brushes : undefined })], { type: 'image/svg+xml' })
       : new Blob([worldToJson(world)], { type: 'application/json' });
   }
   rec(kind === 'svg' ? 'exportSvg' : 'exportJson', pnow() - t);

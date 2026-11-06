@@ -230,6 +230,8 @@ export class StudioClient {
     this.classicBackground={world:this.world,key,url:`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`};
   }
   backgroundUrl():string|undefined{return this.benchActive?this.bench?.backgroundUrl():this.classicBackground?.url;}
+  /** The classic 3D background already holds the land use. */
+  physicalGround(){return this.benchActive?this.bench?.physicalGround():undefined;}
   async exportBench(settings:V2Settings,resolved:ResolvedAppearance,size:number,layers:Partial<ExportLayers>):Promise<HTMLCanvasElement>{
     if(!this.world)throw new Error('Create a region first.');
     const {BenchRenderer}=await import('./benchRenderer');

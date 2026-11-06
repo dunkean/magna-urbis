@@ -9,9 +9,11 @@ import { farmRidges } from './farms';
 import { fieldBoundaryStyle, fieldHedges, fieldHedgeStyle } from './hedges';
 import { furrowDegrees, furrowOffset, furrowSpacing, holdingTone } from './furrows';
 import type { Vec2 } from '../gen/core/geom';
+import type { RenderColors } from './customColors';
 import { type Palette, ruralInk } from './styles';
 import { f1, pathD } from './util';
 import { regionalBridgeSurface, regionalRoadSurface } from './roadSurfaces';
+import { naturalMarks, regionalRank, roadToneAt, roadWidth, type RoadStyle } from './roadStyle';
 import { MAP_STROKES, svgMapStroke } from './strokes';
 import { underdarkPatterns, underdarkMarkSvg } from './underdark';
 import { canopyAreaMarks, canopySvg, type VegetationStyle } from './canopy';
@@ -256,7 +258,7 @@ function bridgeShape(a: Vec2, b: Vec2, w: number, pad: number): { deck: string; 
   return { deck, rails, ends };
 }
 
-export function roadsLayer(world: World, pal: Palette, u: number, brushes?: SvgBrushes, layers = { roads: true, city: true }): string {
+export function roadsLayer(world: World, pal: Palette, u: number, brushes?: SvgBrushes, layers = { roads: true, city: true }, roadLook?: 'ink' | 'natural', colors?: RenderColors, roadEmphasis = 1, roadNight = false): string {
   const roads = world.roads ?? [];
   if ((!layers.roads || !roads.length) && (!layers.city || !world.landuse?.farmsteads.length)) return '';
   const s = Math.max(1, u * 0.85);
@@ -286,7 +288,15 @@ export function roadsLayer(world: World, pal: Palette, u: number, brushes?: SvgB
     const d = by(k);
     if (!d) continue;
     // hierarchy: cased major roads, thinner minor roads, tracks as thin dashed earth lines
-    if (k === 'track') {
+    if (roadLook === 'natural') {
+      // Same marks as the canvas painter, flat: SVG has no ground texture, so each road takes the tone of its midpoint.
+      const rank = regionalRank(k), style: RoadStyle = { look: 'natural', emphasis: roadEmphasis, night: roadNight, colors };
+      for (const road of roads.filter(r => r.kind === k)) {
+        const width = roadWidth(rank, road.width, 1 / u), mid = road.path[road.path.length >> 1], marks = naturalMarks(rank, width, 1 / u, style), d = pathD(road.path, false);
+        if (marks.shadow) out += `<path d="${d}" stroke="${marks.shadow.color}" stroke-opacity="${marks.shadow.alpha.toFixed(2)}" stroke-width="${f1(width + marks.shadow.extra)}"/>`;
+        out += `<path d="${d}" stroke="${roadToneAt(mid.x, mid.y, rank, style)}" stroke-opacity="${marks.bed.alpha.toFixed(2)}" stroke-width="${f1(width)}"/>`;
+      }
+    } else if (k === 'track') {
       out += `<path d="${d}" stroke="${ruralInk(pal)}" stroke-width="${f1(Math.max(1.6, 0.6 * s))}" stroke-dasharray="${f1(6 * s)} ${f1(3.5 * s)}" stroke-linecap="butt" stroke-opacity="${pal.rural.track}"/>`;
     } else {
       const road = regionalRoadSurface(k, 1 / u);

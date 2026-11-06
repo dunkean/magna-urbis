@@ -1,3 +1,5 @@
+import type { CityScene } from './cityCanvas';
+import { DEFAULT_TEXT, textPlacement, drawMapLabels, cityTextLabels, type TextSettings } from './textLayer';
 import { cavernDisplayWorld } from './cavernDisplay';
 import { drawRuralDetails } from './ruralDetails';
 import { cavernWallFill, cavernRockPixels, CAVERN_RIM } from './caverns';
@@ -30,6 +32,7 @@ import { CANVAS_MAP_STROKES as MAP_STROKES, mapStrokeWidth } from './strokes';
 import { NATURAL_LAND_KINDS, countryKind, FRINGE_ORDER, FRINGE_PAINT } from './countryside';
 import { TERRACE_STROKES as TS, terraceDetailAlpha } from './terraces';
 import { regionalBridgeSurface, regionalRoadSurface } from './roadSurfaces';
+import { emphasisAlpha, regionalRank, roadWidth, strokeNaturalRoad, trackInk, type RoadStyle } from './roadStyle';
 import { worldWaterPixels } from './terrainWater';
 import { renderTerrainPixels } from './raster';
 import { RasterTileCache } from './rasterTiles';
@@ -40,7 +43,7 @@ import { View, viewRect, Rect4 } from './view';
 import { Label, placeLabels } from './labels';
 import { buildMapLabels, placeMapLabels, MapLabel, PlacedMapLabel, estimateWidth } from './mapLabels';
 import { fontString, FONT_STACKS, KindStyle } from './labelStyles';
-import { cartoucheModel, legendModel, compactMapPanels, compactScaleModel, drawPanelCanvas, Panel, type MapInformation } from './legend';
+import { cartoucheModel, legendModel, compactMapPanels, compactScaleModel, drawPanelCanvas, Panel, type MapInformation, type SemanticLegendEntry } from './legend';
 import { appendUnderdarkMark, underdarkMark, underdarkTextureSpec } from './underdark';
 import { frameModel, panelMargin } from './frame';
 import { litDots } from './extras';
@@ -48,7 +51,12 @@ import { litDots } from './extras';
 export interface CanvasLike { width: number; height: number; getContext(id: '2d'): CanvasRenderingContext2D | null }
 
 export interface CanvasRendererDeps {
+  separateText?: boolean;
+  textSources?(): readonly CityScene[] | undefined;
   colors?: RenderColors;
+  roadLook?: 'ink' | 'natural';
+  /** Look, emphasis and ambience of the roads, read per frame so a new emphasis repaints without a rebuild. */
+  roadStyle?: () => RoadStyle;
   /** Path2D constructor (default: global). */
   Path2D?: new () => Path2D;
   /** Offscreen canvas factory (default: OffscreenCanvas / document canvas). Return null if unavailable. */
@@ -73,6 +81,8 @@ export interface CanvasRendererDeps {
   furrowReferenceSize?: number;
   /** Natural layers owned by another pass (no fabricated world): they are neither built nor drawn. Absent = all. */
   mask?: SceneMask;
+  /** Semantic land use of another pass, painted after the land-use layers and before water, roads and labels. `key` joins the raster tile keys, so a new look repaints the tiles; `draw` gets the world-coordinate context, the culling rect and the world units per screen pixel. */
+  semantic?: { key(): string; draw(ctx: CanvasRenderingContext2D, rect: Rect4, mpp: number): void; legend?(): readonly SemanticLegendEntry[] };
 }
 
 export interface FrameStats {
@@ -85,12 +95,15 @@ export interface FrameStats {
   rasterHits?: number; rasterBuilt?: number; rasterBytes?: number;
 }
 
-export interface Overlays { labels: boolean; legend: boolean; cartouche: boolean }
+export interface Overlays { text?: Readonly<TextSettings>; labels: boolean; legend: boolean; cartouche: boolean }
 
 export interface CanvasRenderer {
   scene: Scene;
   palette: Palette;
   draw(view: View): FrameStats;
+  drawText(target: CanvasRenderingContext2D, view: View, width: number, height: number): void;
+  /** Physical land use alone (no grid, semantics, water or roads) on the transparent `target`, which covers the world square `box`. False: nothing there. */
+  drawGround(target: CanvasLike, box: Rect4): boolean;
   /** Reuse immutable scene tiles and resources after detail arrival. False requires a new renderer. */
   update(world: World, scene: Scene, style?: MapStyle | Palette): boolean;
   setLabels(labels: Label[]): void;
@@ -221,11 +234,19 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
   let built = 0;
   let labels: Label[] = [];
   const overlays: Overlays = { labels: world.options.labels !== false, legend: !!world.options.legend, cartouche: true };
-  let mapLabels: MapLabel[] = buildMapLabels(world, pal.name, pal);
+  let text = DEFAULT_TEXT;
+  let mapLabels: MapLabel[] = buildMapLabels(world, pal.name, pal, text);
   const family = FONT_STACKS[pal.name] ?? pal.fontFamily;
   const widthCache = new Map<string, number>();
   let placedLast: PlacedMapLabel[] = [];
   let legendPanel: Panel | null = null;
+  let legendKey = '';
+  /** The legend with the semantic classes currently shown; rebuilt only when they change. */
+  const legendNow = (): Panel => {
+    const extra = deps.semantic?.legend?.() ?? [], key = extra.map(e => `${e.label}|${e.color}|${e.look}`).join(';');
+    if (!legendPanel || key !== legendKey) { legendPanel = legendModel(world, pal, extra); legendKey = key; }
+    return legendPanel;
+  };
   let infoPanel: Panel | null = null;
   let terrainImg: CanvasImageSource | null | undefined;
   let waterImg: CanvasImageSource | null | undefined;
@@ -319,12 +340,38 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     return width + (sh ? Math.max(Math.abs(sh.dx), Math.abs(sh.dy)) : 2) + 32 / scale;
   }
 
+  let textSourcesOf: readonly CityScene[] | undefined, textLabelsOf: MapLabel[] | undefined, combinedLabels: MapLabel[] = mapLabels;
+  function drawText(ctx: CanvasRenderingContext2D, view: View, cssW: number, cssH: number): void {
+    const sources = deps.textSources?.();
+    if (sources !== textSourcesOf || textLabelsOf !== mapLabels) {
+      textSourcesOf = sources; textLabelsOf = mapLabels;
+      combinedLabels = sources?.length ? [...mapLabels, ...sources.flatMap(scene => cityTextLabels(scene, text, pal))] : mapLabels;
+    }
+    placedLast = [];
+    if (overlays.labels && combinedLabels.length) {
+      const measure = (text: string, size: number, st: KindStyle): number => {
+        const key = `${st.family ?? family}|${st.italic ? 'i' : ''}${st.bold ? 'b' : ''}|${Math.round(size * 10)}|${text}`;
+        let w = widthCache.get(key);
+        if (w === undefined) {
+          ctx.font = fontString(st, Math.round(size * 10) / 10, st.family ?? family);
+          w = ctx.measureText(text).width;
+          if (widthCache.size > 20000) widthCache.clear();
+          widthCache.set(key, w);
+        }
+        return w;
+      };
+      const reserved = compactMapPanels(cssW, cssH) && overlays.cartouche ? [{ x0: 12, y0: cssH - 40, x1: 132, y1: cssH - 12 }] : undefined;
+      placedLast = placeMapLabels(combinedLabels, view, cssW, cssH, measure, { ...textPlacement(text), reserved });
+      drawMapLabels(ctx, placedLast, pal, family);
+    }
+  }
+
   function update(nextSource: World, nextScene: Scene, nextStyle: MapStyle | Palette = style): boolean {
     if ((brushes || canopy) && nextSource.seed !== sourceWorld.seed) return false;
     if (nextSource.mapSize !== S || biomePalette(nextStyle, nextSource.options.biome) !== basePalette) return false;
     // Prepare potentially fallible metadata before committing the replacement.
     const nextWorld = cavernDisplayWorld(nextScene.renderedWorld ? { ...nextScene.renderedWorld, options: nextSource.options } : renderView(cavernDisplayWorld(nextSource)));
-    const nextLabels = buildMapLabels(nextWorld, pal.name, pal);
+    const nextLabels = buildMapLabels(nextWorld, pal.name, pal, text);
     const terrainChanged = nextSource.terrain !== sourceWorld.terrain;
     if (nextSource.seed !== sourceWorld.seed) cavernRockImg = undefined;
     if (terrainChanged || nextScene.poly.get('sea') !== scene.poly.get('sea') || nextScene.poly.get('lakes') !== scene.poly.get('lakes')) landPath = undefined;
@@ -466,7 +513,8 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     const x1 = Math.floor(rect.maxX / tileSize), y1 = Math.floor(rect.maxY / tileSize);
     const budget = rasterBudget(rect, view.scale);
     const requests: { key: string; x: number; y: number }[] = [];
-    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) requests.push({ key: `${view.scale}|${dpr}|${budget}|${x},${y}`, x, y });
+    const semanticKey = `${deps.semantic?.key() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}`;
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) requests.push({ key: `${view.scale}|${dpr}|${budget}|${semanticKey}|${x},${y}`, x, y });
     if (requests.length * (tilePx + 2 * gutter) ** 2 * 4 > rasterCache.maxBytes) return drawVector(view);
     // Resolve every missing resource before painting the target, so allocation refusal retains the vector fallback.
     const tiles: { image: CanvasImageSource; x: number; y: number }[] = [];
@@ -528,7 +576,13 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     });
   }
 
-  function drawVector(view: View, target: CanvasLike = canvas, mode: 'all' | 'map' | 'overlays' = 'all', fullRect?: Rect4): FrameStats {
+  function drawGround(target: CanvasLike, box: Rect4): boolean {
+    const dpr = deps.dpr ?? (globalThis as { devicePixelRatio?: number }).devicePixelRatio ?? 1;
+    const fs = drawVector({ cx: (box.minX + box.maxX) / 2, cy: (box.minY + box.maxY) / 2, scale: target.width / (box.maxX - box.minX) / dpr }, target, 'ground');
+    return fs.tilesDrawn + fs.bigDrawn + fs.textureTiles > 0;
+  }
+
+  function drawVector(view: View, target: CanvasLike = canvas, mode: 'all' | 'map' | 'overlays' | 'ground' = 'all', fullRect?: Rect4): FrameStats {
     const t0 = now();
     const ctx = target.getContext('2d');
     if (!ctx) return stats;
@@ -547,7 +601,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     // background (device pixels)
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1;
-    if (deps.transparentBackground) ctx.clearRect(0, 0, target.width, target.height);
+    if (deps.transparentBackground || mode === 'ground') ctx.clearRect(0, 0, target.width, target.height);
     else {
       ctx.fillStyle = pal.paper;
       ctx.fillRect(0, 0, target.width, target.height);
@@ -619,6 +673,23 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       strokeLines(ls, pal.roadFill, (l) => lw(l.width, fillMinPx(l)));
     };
 
+    const roadStyle: RoadStyle = deps.roadStyle?.() ?? { look: deps.roadLook ?? 'ink', emphasis: 1, night: false, colors: deps.colors };
+    const natural = roadStyle.look === 'natural', inkAlpha = emphasisAlpha(roadStyle.emphasis);
+    /** All the visible pieces of some layers as one path: a translucent stroke never doubles at chunk ends. */
+    const merged = (ls: LineLayer[]): Path2D => { const out = new Path2D(); for (const l of ls) for (const p of linePaths(l)) out.addPath(p); return out; };
+    const drawRegionalRoads = (roads: LineLayer[], tracks: LineLayer[]): void => {
+      if (natural) {
+        // Layers of one rank share a width: one painter call each, tracks first.
+        if (tracks.length) strokeNaturalRoad(ctx, merged(tracks), 'track', roadWidth('track', tracks[0].width, sc), sc, roadStyle);
+        for (const kind of ['minor', 'major'] as const) { const ls = roads.filter((l) => l.kind === kind); if (ls.length) strokeNaturalRoad(ctx, merged(ls), regionalRank(kind), roadWidth(regionalRank(kind), ls[0].width, sc), sc, roadStyle); }
+        return;
+      }
+      const surface = (l: LineLayer) => regionalRoadSurface(l.kind === 'major' ? 'major' : 'minor', sc, l.width);
+      strokeLines(roads, pal.roadEdge, (l) => { const r = surface(l); return r.fill + (r.casing - r.fill) * Math.max(1, roadStyle.emphasis); }, Math.min(1, inkAlpha));
+      strokeLines(roads, pal.roadFill, (l) => surface(l).fill);
+      strokeLines(tracks, trackInk(ruralInk(pal), pal.roadFill), () => Math.min(lw(1.3, 0.85), px(2.2)), Math.min(1, pal.rural.track * inkAlpha), [px(lod.band >= 2 ? 7 : 5), px(lod.band >= 2 ? 4 : 3)], 'butt');
+    };
+
     // 1. terrain
     const tex = getTerrain();
     const drawVisibleTerrain = (): void => {
@@ -665,7 +736,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     const landFill = (kind: keyof Palette['land']): string => kind === 'forest' ? forestLandPaint(pal).color : pal.land[kind];
     const landAlpha = (kind: keyof Palette['land']): number => kind === 'forest' ? forestLandPaint(pal).alpha : luAlpha;
     const multiply = (on: boolean): void => { ctx.globalCompositeOperation = on && pal.landBlend === 'multiply' ? 'multiply' : 'source-over'; };
-    if (pal.grid && sc * pal.grid.step > 7) {
+    if (mode !== 'ground' && pal.grid && sc * pal.grid.step > 7) {
       const g = pal.grid;
       ctx.strokeStyle = g.color; ctx.globalAlpha = g.opacity; ctx.lineWidth = 0.8 / sc; // graticule: a screen-size line
       ctx.beginPath();
@@ -732,7 +803,8 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       strokeLines(linesOf((l) => l.name === 'headlands'), pal.furrow, () => mapStrokeWidth(MAP_STROKES.headland, sc), pal.rural.headland, [], 'butt');
       if (sc >= WAY_SCALE) {
         const ways = linesOf((l) => l.name === 'field-ways');
-        strokeLines(ways, rk, () => lw(1.4, 0.8), pal.rural.way, lod.band >= 2 ? [px(6), px(4)] : [], 'butt');
+        if (natural) { if (ways.length) strokeNaturalRoad(ctx, merged(ways), 'path', roadWidth('path', ways[0].width * .7, sc), sc, roadStyle); }
+        else strokeLines(ways, trackInk(rk, pal.roadFill), () => lw(1.4, 0.8), Math.min(1, pal.rural.way * inkAlpha), lod.band >= 2 ? [px(6), px(4)] : [], 'butt');
       }
       if (pal.hedgeOn) {
         const hedge = fieldHedgeStyle(pal, u);
@@ -753,6 +825,15 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     if (lod.textures && luOn) {
       for (const tl of scene.textures) if (pal.tex[tl.kind] || (brushes && isBrushKind(tl.kind) && brushTextureOn(tl.kind, pal, world.options.biome))) fs.textureTiles += drawTexture(ctx, tl, rect, band, lw, budgetRect);
     }
+
+    if (mode === 'ground') {
+      if (cavernFloor) ctx.restore();
+      ctx.restore(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+      return fs;
+    }
+
+    // Semantic land use: above every physical land-use layer, below water, roads and labels.
+    deps.semantic?.draw(ctx, rect, 1 / sc);
 
     // 3. rivers + water
     const rivers = polyL('rivers');
@@ -790,7 +871,9 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
 
     // 4. regional roads + farmsteads
     if (lod.farmsteads && polyL('farm-yards')) {
-      strokeLines(linesOf((l) => l.role === 'drive'), pal.trackFill, (l) => lw(l.width, 1), 0.7, [], 'butt');
+      const drives = linesOf((l) => l.role === 'drive');
+      if (natural) { if (drives.length) strokeNaturalRoad(ctx, merged(drives), 'track', roadWidth('track', drives[0].width, sc), sc, roadStyle); }
+      else strokeLines(drives, pal.trackFill, (l) => Math.min(lw(l.width * .7, 1), px(2.4)), 0.55 * Math.min(1, inkAlpha), [], 'butt');
       fillPolys('farm-gardens', pal.land.garden);
       fillPolys('farm-fungal-gardens', pal.land.garden);
       strokePolys('farm-gardens', pal.hedge, lw(0.4, 0.3), 0.8);
@@ -827,10 +910,8 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     if (land) ctx.clip(land, 'evenodd');
     // hierarchy: cased major roads; thinner cased minor roads; tracks as thin dashed earth lines from mid zoom only
     const roads = linesOf((l) => l.role === 'road' && l.kind !== 'track' && (lod.minorRoads || l.kind === 'major'));
-    strokeLines(roads, pal.roadEdge, (l) => regionalRoadSurface(l.kind === 'major' ? 'major' : 'minor', sc, l.width).casing);
-    strokeLines(roads, pal.roadFill, (l) => regionalRoadSurface(l.kind === 'major' ? 'major' : 'minor', sc, l.width).fill);
     const tracks = linesOf((l) => l.role === 'road' && l.kind === 'track' && lod.band >= 1);
-    strokeLines(tracks, ruralInk(pal), () => lw(1.6, 0.9), pal.rural.track, [px(lod.band >= 2 ? 7 : 5), px(lod.band >= 2 ? 4 : 3)], 'butt');
+    drawRegionalRoads(roads, tracks);
     ctx.restore();
 
     // 5. urban
@@ -1010,9 +1091,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
           }
           // Keep the original cased/dashed regional-road rendering within the restored ground.
           if (land) ctx.clip(land, 'evenodd');
-          strokeLines(roads, pal.roadEdge, (l) => regionalRoadSurface(l.kind === 'major' ? 'major' : 'minor', sc, l.width).casing);
-          strokeLines(roads, pal.roadFill, (l) => regionalRoadSurface(l.kind === 'major' ? 'major' : 'minor', sc, l.width).fill);
-          strokeLines(tracks, ruralInk(pal), () => lw(1.6, 0.9), pal.rural.track, [px(lod.band >= 2 ? 7 : 5), px(lod.band >= 2 ? 4 : 3)], 'butt');
+          drawRegionalRoads(roads, tracks);
           // Restore native paths only where this opaque replay covered their earlier earth/causeway strokes.
           if (open && !scene.earthStreets && natural.name === 'u-landscape-ground') {
             strokeLines(uStreets.filter((l) => !(l.width >= 6.5 && Number(l.kind.slice(1, 2)) <= 1)), earth, (l) => Math.max(1.2, l.width * 0.92, 0.8 / sc), 0.8);
@@ -1233,7 +1312,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     // 6. bridges
     if (world.bridges?.length) drawBridges(ctx, world, pal, rect, sc);
     // site marker (placeholder until an urban layer exists)
-    if (!world.urban && world.site) drawSiteMarker(ctx, world, pal, sc, overlays.labels);
+    if (!world.urban && world.site) drawSiteMarker(ctx, world, pal, sc, false);
     if (cavernFloor) {
       if (luOn && world.options.biome === 'underdark-caverns' && world.terrain.caverns?.fungalRooms?.length) {
         const rooms = exactCavernPath('fungalRooms');
@@ -1289,23 +1368,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
         ctx.fillText(pl.label.text, pl.x, pl.y);
       }
     }
-    placedLast = [];
-    if (overlays.labels && mapLabels.length) {
-      const measure = (text: string, size: number, st: KindStyle): number => {
-        const key = `${st.italic ? 'i' : ''}${st.bold ? 'b' : ''}|${Math.round(size * 10)}|${text}`;
-        let w = widthCache.get(key);
-        if (w === undefined) {
-          ctx.font = fontString(st, Math.round(size * 10) / 10, family);
-          w = ctx.measureText(text).width;
-          if (widthCache.size > 20000) widthCache.clear();
-          widthCache.set(key, w);
-        }
-        return w;
-      };
-      const reserved = compactMapPanels(cssW, cssH) && overlays.cartouche ? [{ x0: 12, y0: cssH - 40, x1: 132, y1: cssH - 12 }] : undefined;
-      placedLast = placeMapLabels(mapLabels, view, cssW, cssH, measure, { reserved });
-      drawMapLabels(ctx, placedLast, pal, family);
-    }
+    if (!deps.separateText) drawText(ctx, view, cssW, cssH);
     // panels sit inside the map frame when the map corner is under them, else at the viewport corner
     const pm = panelMargin(pal) * 0.75;
     const mx0 = cssW / 2 - view.cx * sc, my0 = cssH / 2 - view.cy * sc, mapBottom = my0 + S * sc;
@@ -1317,10 +1380,10 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       drawPanelCanvas(ctx, cart, inside ? Math.max(12, mx0 + pm) : 12, inside ? Math.max(12, my0 + pm) : 12, family);
     }
     if (overlays.legend && !compact) {
-      legendPanel ??= legendModel(world, pal);
-      const home = Math.max(12, cssH - legendPanel.h - 34);
-      const inside = mx0 < 12 + legendPanel.w && mapBottom > home && mapBottom < cssH + legendPanel.h + 60;
-      drawPanelCanvas(ctx, legendPanel, inside ? Math.max(12, mx0 + pm) : 12, inside ? Math.max(12, Math.min(home, mapBottom - pm - legendPanel.h)) : home, family);
+      const panel = legendNow();
+      const home = Math.max(12, cssH - panel.h - 34);
+      const inside = mx0 < 12 + panel.w && mapBottom > home && mapBottom < cssH + panel.h + 60;
+      drawPanelCanvas(ctx, panel, inside ? Math.max(12, mx0 + pm) : 12, inside ? Math.max(12, Math.min(home, mapBottom - pm - panel.h)) : home, family);
     }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     }
@@ -1519,54 +1582,17 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
 
   return {
     get scene() { return scene; }, palette: pal,
-    draw, update,
+    draw, drawText, drawGround, update,
     setLabels(l: Label[]) { labels = l; },
-    setOverlays(o: Partial<Overlays>) { Object.assign(overlays, o); },
+    setOverlays(o: Partial<Overlays>) { if (o.text && JSON.stringify(o.text) !== JSON.stringify(text)) { text = o.text; mapLabels = buildMapLabels(world, pal.name, pal, text); widthCache.clear(); } Object.assign(overlays, o); },
     lastPlaced: () => placedLast,
     drawMinimap,
     lastStats: () => stats,
-    getMapInfo: () => ({ cartouche: infoPanel ??= cartoucheModel(world, pal, 1, false), legend: legendPanel ??= legendModel(world, pal), fontFamily: family }),
+    getMapInfo: () => ({ cartouche: infoPanel ??= cartoucheModel(world, pal, 1, false), legend: legendNow(), fontFamily: family }),
     dispose() { canopy?.dispose(); brushes?.dispose(); treeMarks.clear(); patterns.clear(); cache.clear(); furrowCache.clear(); rasterCache.clear(); terrainImg = waterImg = densityImg = cavernRockImg = undefined; },
   };
 }
 
-/** Glyph-by-glyph label painting (halo first): handles straight, letter-spaced, small-cap and curved text alike. */
-function drawMapLabels(ctx: CanvasRenderingContext2D, placed: PlacedMapLabel[], pal: Palette, family: string): void {
-  ctx.lineJoin = 'round'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  for (const pl of placed) {
-    const st = pl.label.st;
-    const halo = Math.max(2.4, pl.size * 0.26);
-    const curved = pl.glyphs.some((g) => g.a !== 0);
-    for (const pass of [0, 1] as const) {
-      ctx.globalAlpha = pass === 0 ? pal.lab.haloOp : 1;
-      ctx.strokeStyle = pal.lab.halo; ctx.fillStyle = st.color; ctx.lineWidth = halo;
-      let lastSize = -1;
-      for (const g of pl.glyphs) {
-        if (g.ch === ' ') continue;
-        if (g.size !== lastSize) { ctx.font = fontString(st, Math.round(g.size * 10) / 10, family); lastSize = g.size; }
-        if (curved) {
-          ctx.save(); ctx.translate(g.x, g.y); ctx.rotate(g.a);
-          if (pass === 0) ctx.strokeText(g.ch, 0, 0); else ctx.fillText(g.ch, 0, 0);
-          ctx.restore();
-        } else if (pass === 0) ctx.strokeText(g.ch, g.x, g.y); else ctx.fillText(g.ch, g.x, g.y);
-      }
-    }
-    ctx.globalAlpha = 1;
-    if (pl.symbol) {
-      const { x, y, r } = pl.symbol;
-      ctx.lineWidth = 1.1; ctx.strokeStyle = st.color; ctx.fillStyle = st.color;
-      ctx.beginPath();
-      switch (st.symbol) {
-        case 'cross': ctx.moveTo(x, y - r * 1.25); ctx.lineTo(x, y + r * 1.25); ctx.moveTo(x - r * 0.85, y - r * 0.3); ctx.lineTo(x + r * 0.85, y - r * 0.3); ctx.lineWidth = 1.6; ctx.stroke(); break;
-        case 'tri': ctx.moveTo(x, y - r * 1.1); ctx.lineTo(x + r * 1.1, y + r * 0.8); ctx.lineTo(x - r * 1.1, y + r * 0.8); ctx.closePath(); ctx.fill(); break;
-        case 'square': ctx.rect(x - r * 0.9, y - r * 0.9, r * 1.8, r * 1.8); ctx.fill(); break;
-        case 'ring': ctx.arc(x, y, r * 0.7, 0, TAU); ctx.stroke(); break;
-        default: ctx.arc(x, y, r * 0.75, 0, TAU); ctx.fill();
-      }
-    }
-  }
-  ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
-}
 void estimateWidth;
 
 function drawTownBridge(ctx: CanvasRenderingContext2D, sh: BridgeShapes, pal: Palette, sc: number): void {

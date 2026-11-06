@@ -31,7 +31,7 @@ const targetDir = join(root, 'rust/target/glsl-wgsl');
 const output = join(root, 'web/src/ui/terrain3dWgsl.generated.ts');
 
 /** Ground switches turned into WGSL overrides (pipeline constants by id). */
-const OVERRIDES = ['groundEnabled', 'uRenderV2', 'uForest', 'uForestBrushes'] as const;
+const OVERRIDES = ['groundEnabled', 'uRenderV2', 'uForest', 'uForestBrushes', 'uNaturalWater'] as const;
 
 type SamplerKind = 'nearest' | 'linear' | 'aniso' | 'repeat';
 /** Shared samplers: 1 non-filtering, 2 filtering (trilinear, clamped), 3 anisotropic (clamped), 4 anisotropic repeating. */
@@ -46,6 +46,7 @@ const TEXTURES: Record<string, { binding: number; sampler: SamplerKind }> = {
   albedoTex: { binding: 16, sampler: 'repeat' }, normalTex: { binding: 17, sampler: 'repeat' },
   // Only in the map's auxiliary-texture branch (#ifdef AUX_TEXTURE), never compiled here.
   uAux: { binding: 18, sampler: 'nearest' },
+  semanticTile: { binding: 19, sampler: 'aniso' }, previousSemanticTile: { binding: 20, sampler: 'aniso' },
 };
 const TEXTURE_TYPE: Record<string, string> = { sampler2D: 'texture2D', usampler2D: 'utexture2D', sampler2DArray: 'texture2DArray' };
 const TEXTURE_BUILTINS = 'texture|textureLod|texelFetch|textureSize|textureGrad|textureOffset|textureLodOffset|texelFetchOffset|textureQueryLevels';

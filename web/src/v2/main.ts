@@ -5,7 +5,9 @@ import { CULTURE_LABELS, SITE_ARCHETYPES, type Options } from '../gen/options';
 import { STYLE_LIST, type MapStyle } from '../render/styles';
 import { isMapStyle } from '../render/styles';
 import { TERRAIN_STYLE_LIST, styleTraits, type TerrainStyle } from '../render/terrainStyle';
-import { mountRenderControls } from './renderControls';
+import { mountRenderControls, currentComposition, writeAppearanceControl, PRESET_OPTIONS } from './renderControls';
+import { withGroundVariant } from '../render/composition';
+import { ruralSemanticLegend } from '../render/semanticLayer';
 import { resolveSettingsAppearance, resolvedDisplayOptions } from './appearance';
 import { applyAppearancePatch } from '../render/appearanceRecipe';
 import { nativeCityRecords } from './nativeProducts';
@@ -162,9 +164,6 @@ setHTML($('#app'), `
     <div class="stage-field" data-control="main:walls">${field('Enceinte','walls',[['auto','Automatique'],['none','Ville ouverte'],['single','Simple enceinte'],['double','Double enceinte']])}</div>
     ${[['moat','Douves'],['castle','Château'],['cathedral','Cathédrale'],['palace','Palais'],['monasteries','Monastères'],['port','Port'],['arena','Arène'],['activities','Artisanat']].map(([k,l])=>`<div class="stage-field" data-control="main:${k}">${field(l,k,tri)}</div>`).join('')}
     <div class="stage-field" data-control="main:suburbs">${field('Faubourgs','suburbs',[['auto','Automatiques'],['none','Aucun'],['some','Quelques-uns'],['many','Nombreux']])}</div>
-    <label class="icon-toggle" data-control="widget:layer-contours"><input id="display-contours" type="checkbox" checked>${icon('display-layers')}<span>Courbes</span></label>
-    <label class="icon-toggle" data-control="widget:layer-landuse"><input id="display-landuse" type="checkbox" checked>${icon('display-ground')}<span>Milieux</span></label>
-    <label class="icon-toggle" data-control="widget:layer-labels"><input id="display-labels" type="checkbox" checked>${icon('display-labels')}<span>Noms</span></label>
     <details class="section" id="settings-endpoints-box"><summary>Adresses des modèles et services</summary><div id="settings-endpoints" class="parameter-form"></div></details>
     <button id="terrain-only"></button><button id="region-only"></button><button id="heightmap-import-quick"></button>
   </div>
@@ -195,7 +194,7 @@ const client = new StudioClient(canvas, $('#map'), $<HTMLCanvasElement>('#minima
 let city3d:V2Urban3d|undefined;
 let renderTimer:ReturnType<typeof setTimeout>|undefined,renderRevision=0;
 insertHTML($('.style-control'),'beforeend','<span id="render-status" class="hint" role="status" aria-live="polite" hidden></span><div id="render-controls" hidden></div>');
-const renderControls=mountRenderControls($('#render-controls'),{getSettings:()=>settings,getWorld:()=>world,getStyleSelectors:()=>[$<HTMLSelectElement>('#map-style'),$<HTMLSelectElement>('#export-style')],onChange:()=>{projectRevision++;clearTimeout(renderTimer);renderTimer=setTimeout(()=>void refreshAppearance(),120);}});
+const renderControls=mountRenderControls($('#render-controls'),{getSettings:()=>settings,getWorld:()=>world,getStyleSelectors:()=>[$<HTMLSelectElement>('#map-style')],getTarget:()=>document.querySelector('#view3d')?.getAttribute('aria-pressed')==='true'?'view3d':'view2d',onChange:()=>{projectRevision++;clearTimeout(renderTimer);renderTimer=setTimeout(()=>void refreshAppearance(),120);}});
 async function refreshAppearance():Promise<void>{
   const revision=++renderRevision;
   renderControls.sync();
@@ -203,9 +202,7 @@ async function refreshAppearance():Promise<void>{
   try{
     await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));await client.setAppearance(settings);
     if(revision===renderRevision){
-      const style=settings.appearance?.renderer==='classic'?settings.appearance.style:settings.appearance?.terrainStyle??settings.appearance?.style??settings.options.style;
-      $<HTMLSelectElement>('#map-style').value=style;$<HTMLSelectElement>('#export-style').value=style;
-      for(const key of ['contours','landuse','labels'] as const)$<HTMLInputElement>(`#display-${key}`).checked=settings.appearance?.[key]??(key==='labels'?true:settings.options[key]);
+      syncDisplayWidgets();
       if(city3d?.active)await client.prepare3dBackground();city3d?.refresh();renderControls.sync();
     }
   }
@@ -219,7 +216,15 @@ function reportAppearanceError(error:unknown):void{
   }
   toast(message,true);
 }
-for(const selector of ['#map-style','#export-style'])setHTML($(selector),renderStyleOptions());
+setHTML($('#export-style'),renderStyleOptions());
+// The top-bar selector is the preset select of the render panel; 'custom' is shown but cannot be picked.
+setHTML($('#map-style'),PRESET_OPTIONS.map(o=>`<option value="${o.value}"${o.value==='custom'?' disabled':''}>${esc(o.label)}</option>`).join(''));
+/** The top-bar preset and the export style read appearance.composition; the layer toggles are the shared render form (quick controls of the Map rows). */
+function syncDisplayWidgets():void{
+  const recipe=currentComposition(settings,world??undefined);
+  $<HTMLSelectElement>('#map-style').value=recipe.preset;$<HTMLSelectElement>('#export-style').value=recipe.ground.variant;
+}
+function writeRecipe(path:string,value:unknown):void{writeAppearanceControl(settings,`appearance.composition.${path}`,value);projectRevision++;void refreshAppearance();}
 setText($('#export-format option[value="svg"]'),'SVG · map / embedded render');
 insertHTML($('.style-control'),'beforeend','<button id="view3d" type="button" aria-pressed="false">3D</button><button id="capture3d" type="button" hidden>PNG 3D ↗</button>');
 insertHTML($('.map-title'),'beforeend','<button id="preview-close" type="button" class="quiet small" hidden></button>');
@@ -235,7 +240,7 @@ $('#view3d').onclick=async()=>{
   $<HTMLButtonElement>('#view3d').disabled=true;
   try{
     await client.prepare3dBackground();
-    if(!city3d){toast(getLanguage()==='fr'?'Chargement de la vue 3D…':'Loading the 3D view…');city3d=await(await import('./urban3d')).mountV2Urban3d({host:$('.map-area'),getWorld:()=>world,getSettings:()=>settings,getBackground:()=>client.backgroundUrl(),onAppearancePatch:patch=>{settings.appearance=applyAppearancePatch(settings.appearance,settings.options.style,patch);projectRevision++;void refreshAppearance();},getTextured:()=>settings.appearance?.textured??false,setTextured:value=>{settings.appearance={style:settings.options.style,...settings.appearance,textured:value};projectRevision++;void refreshAppearance();},getSelected:()=>selectedBuilding?(selectedBuilding.building as UrbanBuilding&{nativeId?:string}).nativeId:undefined,onSelect:id=>{
+    if(!city3d){toast(getLanguage()==='fr'?'Chargement de la vue 3D…':'Loading the 3D view…');city3d=await(await import('./urban3d')).mountV2Urban3d({host:$('.map-area'),getWorld:()=>world,getSettings:()=>settings,getBackground:()=>client.backgroundUrl(),getPhysicalGround:()=>client.physicalGround(),onAppearancePatch:patch=>{settings.appearance=applyAppearancePatch(settings.appearance,settings.options.style,patch);projectRevision++;void refreshAppearance();},getTextured:()=>settings.appearance?.textured??false,setTextured:value=>{settings.appearance={style:settings.options.style,...settings.appearance,textured:value};projectRevision++;void refreshAppearance();},getSelected:()=>selectedBuilding?(selectedBuilding.building as UrbanBuilding&{nativeId?:string}).nativeId:undefined,onSelect:id=>{
       for(const settlement of world?.settlements??[]){const urban=townUrban(world!,settlement.key),index=urban?.buildings.findIndex(b=>(b as UrbanBuilding&{nativeId?:string}).nativeId===id)??-1;if(urban&&index>=0){showBuilding({settlement:settlement.key,index,building:urban.buildings[index]});break;}}
     }});}
     city3d.show();setText($('#view3d'),'2D');$('#view3d').setAttribute('aria-pressed','true');$('#capture3d').hidden=false;
@@ -365,9 +370,7 @@ function syncControls(): Promise<void> {
   $<HTMLInputElement>('#rust-server').value=settings.runtime?.localServer??bootRuntime.localServer??'';
   $<HTMLInputElement>('#python-server').value=settings.runtime?.pythonServer??bootRuntime.pythonServer??'';
   terrainControls.sync();regionControls.sync();urbanControls.sync();syncUrbanBackend();updateExtent();
-  const appearance={style:settings.options.style,contours:settings.options.contours,landuse:settings.options.landuse,labels:settings.options.labels??true,...settings.appearance};
-  $<HTMLSelectElement>('#map-style').value=appearance.terrainStyle??appearance.style;$<HTMLSelectElement>('#export-style').value=appearance.terrainStyle??appearance.style;
-  for(const key of ['contours','landuse','labels'] as const)$<HTMLInputElement>(`#display-${key}`).checked=appearance[key]??true;
+  syncDisplayWidgets();
   renderControls.sync();mapControls.sync();return client.setAppearance(settings).catch(reportAppearanceError);
 }
 function selectTab(tab: string): void { currentTab = tab; chain.selectFamily(tab==='terrain'?'region':tab==='map'?'map':tab==='cities'?'cities':'settlements'); }
@@ -559,8 +562,7 @@ $<HTMLInputElement>('#town-count').onchange=e=>{settings.settlementCount=Number(
 $('#generate-region').onclick=()=>runFamily(chain.family());$('#run-chain').onclick=()=>void generate('all');$('#terrain-only').onclick=()=>void generate('terrain');$('#region-only').onclick=()=>void generate('region');$('#towns-only').onclick=()=>runCities();
 $('#cancel-job').onclick=()=>{cancelled=true;client.cancel();const local=settings.runtime?.backend==='native'||settings.runtime?.source==='neural-python'||settings.urban?.backend==='native';const message=local?'Attente annulée. La carte précédente est conservée ; le service local peut terminer son calcul en arrière-plan.':'Calcul annulé. La carte précédente est conservée.';log(message);setBusy(false);toast(message);};
 $('#zoom-in').onclick=()=>client.viewer.zoomBy(1.5);$('#zoom-out').onclick=()=>client.viewer.zoomBy(1/1.5);$('#fit-map').onclick=()=>client.viewer.fit();
-$<HTMLSelectElement>('#map-style').onchange=e=>{const style=(e.target as HTMLSelectElement).value as TerrainStyle;settings.appearance={...settings.appearance,style:isMapStyle(style)?style:settings.appearance?.style??settings.options.style,terrainStyle:style,...(styleTraits(style).family!=='map'?{renderer:'bench' as const}:{})};if(settings.appearance.city)delete settings.appearance.city.ground;projectRevision++;$<HTMLSelectElement>('#export-style').value=style;void refreshAppearance();};
-for(const key of ['contours','landuse','labels'] as const)$<HTMLInputElement>(`#display-${key}`).onchange=e=>{const value=(e.target as HTMLInputElement).checked;settings.appearance={style:settings.options.style,...settings.appearance,[key]:value};projectRevision++;void refreshAppearance();};
+$<HTMLSelectElement>('#map-style').onchange=e=>writeRecipe('preset',(e.target as HTMLSelectElement).value);
 $('#mobile-toggle').onclick=()=>{const closed=$('#sidebar').classList.toggle('mobile-closed');$('#mobile-toggle').setAttribute('aria-expanded',String(!closed));};
 let pointerStart={x:0,y:0};$('#map').addEventListener('pointerdown',e=>{pointerStart={x:e.clientX,y:e.clientY};});
 $('#map').addEventListener('click',e=>{
@@ -600,7 +602,7 @@ function download(blob: Blob,name: string): void { const url=URL.createObjectURL
 async function svgExport(): Promise<Blob> {
   const layers=Object.fromEntries(Array.from(document.querySelectorAll<HTMLInputElement>('[data-layer]')).map(c=>[c.dataset.layer,c.checked]));
   const style=$<HTMLSelectElement>('#export-style').value as TerrainStyle,width=Number($<HTMLSelectElement>('#export-resolution').value);
-  const appearance={style:settings.options.style,...settings.appearance,terrainStyle:style};
+  const appearance={style:settings.options.style,...settings.appearance,composition:withGroundVariant(currentComposition(settings,world??undefined),style)};
   if(isMapStyle(style))appearance.style=style;
   const exported={...settings,appearance},resolved=resolveSettingsAppearance(exported,world??undefined,'export');
   if(resolved.path==='composite'){
@@ -608,6 +610,8 @@ async function svgExport(): Promise<Blob> {
     return new Blob([`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${width}" viewBox="0 0 ${width} ${width}" data-style="${style}" data-rendering="embedded-raster"><image width="${width}" height="${width}" href="${image.toDataURL('image/png')}"/></svg>`],{type:'image/svg+xml'});
   }
   const display=resolvedDisplayOptions(resolved);
+  const lu=resolved.composition.landuse;
+  if(world&&layers.landuse!==false&&lu.rural!=='off')display.semanticLegend=ruralSemanticLegend(world.landuse,lu.classes,lu.rural); // urban entries need the city scenes (composite path only)
   const brushes=resolved.cartography.painted?(await import('../render/assets/brushAssets')).BRUSH_SOURCES:undefined;
   const worker=new ExportWorker();
   try { return await new Promise<Blob>((resolve,reject)=>{worker.onmessage=({data})=>data.error?reject(new Error(data.error)):resolve(data.blob);worker.onerror=e=>reject(new Error(e.message));worker.postMessage({id:1,world,options:{width,style:appearance.style,layers},display,brushes});}); }finally{worker.terminate();}

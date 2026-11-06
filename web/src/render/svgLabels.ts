@@ -1,3 +1,4 @@
+import { DEFAULT_TEXT, textPlacement, type TextSettings } from './textLayer';
 /**
  * SVG export of the name labels: the same placement engine as the canvas (collision avoidance,
  * priority) run once for a notional export scale; rivers/streets use `<textPath>`.
@@ -15,21 +16,21 @@ export function exportScale(mapSize: number): number {
   return Math.max(0.3, Math.min(1.6, 1300 / mapSize));
 }
 
-export function placeForExport(world: World & MapLabelWorld, pal: Palette, measure: Measure = (t, s, st) => estimateWidth(t, s, st), legend = false): { placed: PlacedMapLabel[]; scale: number } {
+export function placeForExport(world: World & MapLabelWorld, pal: Palette, measure: Measure = (t, s, st) => estimateWidth(t, s, st), legend = false, text: Readonly<TextSettings> = DEFAULT_TEXT): { placed: PlacedMapLabel[]; scale: number } {
   const S = world.mapSize;
   const sc = exportScale(S);
-  const labels = buildMapLabels(world, pal.name, pal);
+  const labels = buildMapLabels(world, pal.name, pal, text);
   // keep the cartouche (top-left) and the legend (bottom-left) free; panel units are 1/u meters, u = S/1600
   const u = S / 1600, k = sc;
   const reserved = [{ x0: 14 * u * k, y0: 14 * u * k, x1: 22 * u * k + 252 * u * k, y1: 22 * u * k + 112 * u * k }];
   if (legend) reserved.push({ x0: 14 * u * k, y0: S * k - (22 + 330) * u * k, x1: 22 * u * k + 340 * u * k, y1: S * k });
-  const placed = placeMapLabels(labels, { cx: S / 2, cy: S / 2, scale: sc }, S * sc, S * sc, measure, { maxLabels: 500, margin: 14, visScale: sc * 0.45, reserved });
+  const placed = placeMapLabels(labels, { cx: S / 2, cy: S / 2, scale: sc }, S * sc, S * sc, measure, { ...textPlacement(text), margin: 14, visScale: sc * 0.45, reserved });
   return { placed, scale: sc };
 }
 
-export function labelsSvg(world: World & MapLabelWorld, pal: Palette, measure?: Measure, legend = false): string {
-  if (!world.names && !world.mapAnnotations?.enabled) return '';
-  const { placed, scale } = placeForExport(world, pal, measure, legend);
+export function labelsSvg(world: World & MapLabelWorld, pal: Palette, measure?: Measure, legend = false, text: Readonly<TextSettings> = DEFAULT_TEXT): string {
+  if (!world.names && !world.mapAnnotations?.enabled && !world.site) return '';
+  const { placed, scale } = placeForExport(world, pal, measure, legend, text);
   return placedMapLabelsSvg(placed, pal, scale);
 }
 
@@ -42,9 +43,9 @@ export function placedMapLabelsSvg(placed: PlacedMapLabel[], pal: Palette, scale
   placed.forEach((pl, i) => {
     const st = pl.label.st;
     const size = pl.size * k;
-    const halo = Math.max(2.4, pl.size * 0.26) * k;
-    const attrs = `font-size="${f1(size)}" fill="${st.color}"${st.italic ? ' font-style="italic"' : ''}${st.bold ? ' font-weight="600"' : ''}` +
-      ` stroke="${pal.lab.halo}" stroke-width="${f1(halo)}" stroke-opacity="${pal.lab.haloOp}" stroke-linejoin="round" paint-order="stroke"` +
+    const halo = Math.max(2.4, pl.size * (st.haloWidth ?? .26)) * k;
+    const attrs = `font-family="${esc(st.family ?? family)}" font-size="${f1(size)}" fill="${st.color}"${st.italic ? ' font-style="italic"' : ''}${st.bold ? ' font-weight="600"' : ''}` +
+      ` stroke="${st.halo ?? pal.lab.halo}" stroke-width="${f1(halo)}" stroke-opacity="${st.haloOpacity ?? pal.lab.haloOp}" stroke-linejoin="round" paint-order="stroke"` +
       (pl.spacing ? ` letter-spacing="${f1(pl.spacing * k)}"` : '');
     // runs of equal glyph size (small caps produce several)
     const runs: { s: string; size: number }[] = [];

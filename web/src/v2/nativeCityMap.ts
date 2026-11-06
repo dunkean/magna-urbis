@@ -1,13 +1,14 @@
+import { terrainStyle } from '../render/terrainStyle';
 /** Retained City Bench plans and native roofs on the V2 2D camera. No generation. */
 import type { World } from '../gen/types';
 import type { View } from '../render/view';
 import type { ExportLayers } from '../render/exportLayers';
 import { viewRect } from '../render/view';
-import { buildCityBuildings, buildCityScene, drawCity, selectCityLod, type CityBuildings, type CityFrameStats, type CityLayers, type CityLod, type CityScene } from '../render/cityCanvas';
+import { buildCityBuildings, buildCityScene, drawCity, selectCityLod, type Box, type CityBuildings, type CityFrameStats, type CityLayers, type CityLod, type CityScene } from '../render/cityCanvas';
 import { DEFAULT_LAYERS } from '../render/cityGlStyle';
 import { UrbanBuildingLodRenderer, type BuildingRenderMetrics, type BuildingViewport } from '../render/urbanBuildingLod';
 import { coverLayer, layerPattern, materialImagesNow, type MaterialImages } from '../render/buildingMaterials';
-import type { UrbanBuildingAppearance } from '../render/urbanBuildingStyle';
+import { buildingColors, type UrbanBuildingAppearance } from '../render/urbanBuildingStyle';
 import type { HouseMaterial, Surface } from '../../../rust/bridge/housesContract';
 import type { PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
 import type { ResolvedAppearance } from '../render/appearanceRecipe';
@@ -29,8 +30,12 @@ export interface NativeCityMapStats {
   frames: CityFrameStats[];
   houses: BuildingRenderMetrics[];
 }
+/** Painted by each city plan between its streets and its buildings; `mpp` is world units per screen pixel. */
+export interface NativeCityHooks { beforeBuildings?(ctx: CanvasRenderingContext2D, scene: CityScene, frame: { viewport: Box; mpp: number }): void }
 export interface NativeCityMap {
-  draw(ctx: CanvasRenderingContext2D, view: View, w: number, h: number, dpr: number, appearance: ResolvedAppearance, visibility?: Partial<ExportLayers>): NativeCityMapStats;
+  draw(ctx: CanvasRenderingContext2D, view: View, w: number, h: number, dpr: number, appearance: ResolvedAppearance, visibility?: Partial<ExportLayers>, hooks?: NativeCityHooks): NativeCityMapStats;
+  /** The city plans (activity sites included), for the semantic district layer. */
+  scenes(): readonly CityScene[];
   dispose(): void;
 }
 interface Entry {
@@ -112,6 +117,7 @@ export function createNativeCityMap(world: World, onInvalidate: () => void): Nat
     entries.push({ plan, buildings: buildCityBuildings(activities, plan), houses: new UrbanBuildingLodRenderer(activities),
       materials: new Map((activities.materials ?? []).map(material => [material.id, material])), refused: new Set() });
   }
+  const textScenes = entries.map(entry => entry.plan);
   const layouts = entries.reduce((count, entry) => count + entry.plan.layouts.length, 0);
   const buildings = entries.reduce((count, entry) => count + entry.buildings.items.length, 0);
   // Bounded, display-only geometry. Retained native meshes and plan objects are
@@ -154,7 +160,8 @@ export function createNativeCityMap(world: World, onInvalidate: () => void): Nat
     return painted;
   }
   return {
-    draw(target, view, w, h, dpr, appearance, visibility = {}) {
+    scenes: () => textScenes,
+    draw(target, view, w, h, dpr, appearance, visibility = {}, hooks) {
       const started = performance.now();
       const stats: NativeCityMapStats = { native: entries.length > 0, cities: entries.length, layouts, buildings,
         visibleBuildings: 0, renderer: 'canvas2d', pending: false, ms: 0, materialFaces: 0, frames: [], houses: [] };
@@ -177,10 +184,10 @@ export function createNativeCityMap(world: World, onInvalidate: () => void): Nat
       const viewport = viewRect(view, w, h), mpp = 1 / view.scale;
       lod = selectCityLod(mpp, lod); stats.lod = lod;
       const palette = city.palette, colors = appearance.palette.colors, buildingAppearance: UrbanBuildingAppearance = {
-        colors, style: city.buildingStyle, diagnostic: city.diagnostic };
+        colors: buildingColors(colors, appearance.composition.ambience), ambience: appearance.composition.ambience, style: city.buildingStyle, diagnostic: city.diagnostic };
       const requestedLayers = city.plan ? city.layers : EMPTY_LAYERS;
       const layers = { ...(visibility.city === false ? EMPTY_LAYERS : requestedLayers),
-        streets: visibility.streets !== false && requestedLayers.streets };
+        streets: appearance.composition.networks.roads.visible && visibility.roads !== false && visibility.streets !== false && requestedLayers.streets, ...(appearance.composition.networks.water.visible ? {} : { waterways: false }) };
       const painted = city.painted, textured = city.textured;
       const images = textured && palette !== 'parchment' && palette !== 'ink' ? materialImagesNow(invalidate) : undefined;
       ctx.save();
@@ -189,11 +196,12 @@ export function createNativeCityMap(world: World, onInvalidate: () => void): Nat
         // Activity / node installations: flat ground under every building.
         if (visibility.city !== false && city.visible) drawInstallations(ctx, sites, viewport, mpp);
         for (const entry of entries) {
-          const frame = drawCity(ctx, entry.plan, { colors, viewport, mpp, dpr, lod, view: city.view, palette, layers,
-            width: finite(city.width, .6, 0, 5), labels: visibility.labels !== false && appearance.cartography.labels,
+          const frame = drawCity(ctx, entry.plan, { colors: buildingAppearance.colors, roadEmphasis: appearance.composition.networks.roads.emphasis, night: appearance.composition.ambience === 'night', viewport, mpp, dpr, lod, view: city.view, palette, layers,
+            width: finite(city.width, .6, 0, 5), labels: visibility.labels !== false && appearance.cartography.labels, text: appearance.composition.text, textPalette: terrainStyle(appearance.composition.variant, colors).palette,
             buildings: entry.buildings, buildingsVisible: visibility.city !== false && city.visible,
-            appearance: buildingAppearance, textured, onTexturesReady: invalidate, groundBlend: city.groundBlend === 'blended',
+            appearance: buildingAppearance, textured, onTexturesReady: invalidate, roadLook: appearance.composition.networks.roads.look, groundBlend: city.groundBlend === 'blended',
             refusedParcels: buildingAppearance.diagnostic === 'access' ? entry.refused : undefined,
+            beforeBuildings: visibility.city !== false && hooks?.beforeBuildings ? (hookCtx => hooks.beforeBuildings!(hookCtx, entry.plan, { viewport, mpp })) : undefined,
             renderer: { draw(houseCtx, options) {
               const metrics = entry.houses.draw(houseCtx, { ...options, painted });
               stats.houses.push(metrics); stats.visibleBuildings += metrics.visibleBuildings;
@@ -201,7 +209,7 @@ export function createNativeCityMap(world: World, onInvalidate: () => void): Nat
               return metrics;
             } } });
           stats.frames.push(frame); stats.pending ||= frame.pending;
-          if (city.view !== 'buildings') stats.visibleBuildings += frame.buildings;
+          if (city.view !== 'buildings' || buildingAppearance.style === 'silhouette') stats.visibleBuildings += frame.buildings;
         }
       } finally { ctx.restore(); }
       if (isolated) {

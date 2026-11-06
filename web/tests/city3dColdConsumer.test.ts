@@ -16,7 +16,7 @@ vi.mock('../src/ui/terrain3d', () => ({ TERRAIN_3D_FOV: Math.PI/3,
   Terrain3d: class {
     camera={x:0,y:0,distance:200,pitch:.8,yaw:0,exaggeration:1};
     constructor() {}
-    setSurface() {} setTexture() {} setGroundMaterial() {} setForest() {} setHeightSampler() {} setTileLoader() {} resize() {} setActive() {} fit() {} north() {} invalidateTiles() {}
+    setSurface() {} setLook() {} setTexture() {} setGroundMaterial() {} setForest() {} setHeightSampler() {} setTileLoader() {} resize() {} setActive() {} fit() {} north() {} invalidateTiles() {}
     getCamera() {return this.camera;} setCamera(c: typeof this.camera) {this.camera=c;}
     worldToScreen() {return [1,1];} setBuildings(scene: unknown) {spies.scenes.push(scene);}
     replaceBuildings() {return [];} getLodInfo() {return {};} dispose() {} pickBuilding() {return undefined;}
@@ -33,13 +33,13 @@ class ElementSink {
   setAttribute() {} closest() {return this;}
   append() {} remove() {} focus() {} addEventListener(name:string,listener:(event:unknown)=>void) {this.listeners.set(name,listener);}
   querySelector(name:string) {let child=this.children.get(name);if(!child){child=new ElementSink();this.children.set(name,child);}return child;}
-  getContext() {return {createImageData:(w:number,h:number)=>({data:new Uint8ClampedArray(w*h*4)}),putImageData:()=>{}};}
+  getContext() {return {createImageData:(w:number,h:number)=>({data:new Uint8ClampedArray(w*h*4)}),putImageData:()=>{},setTransform:()=>{},clearRect:()=>{}};}
 }
 function environment() {
   const elements: ElementSink[]=[];
   vi.stubGlobal('document',{getElementById:()=>({}),createElement:()=>{const e=new ElementSink();elements.push(e);return e;}});
   vi.stubGlobal('window',{addEventListener:vi.fn(),removeEventListener:vi.fn()});
-  vi.stubGlobal('ResizeObserver',class {observe(){}disconnect(){}});
+  vi.stubGlobal('devicePixelRatio',1);vi.stubGlobal('ResizeObserver',class {observe(){}disconnect(){}});
   vi.stubGlobal('requestAnimationFrame',()=>1);vi.stubGlobal('cancelAnimationFrame',()=>{});
   return {host:new ElementSink(),elements};
 }

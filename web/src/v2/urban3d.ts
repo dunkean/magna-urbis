@@ -1,10 +1,10 @@
 /** Exact City Bench renderer inside V2; no iframe, geometry regeneration or surrogate houses. */
-import { v2DisplayForest } from './displayForest';
+import { v2DisplayForest, v2ForestOccupation } from './displayForest';
 import type { World } from '../gen/types';
 import type { Layout, Partition, Street } from '../../../rust/bridge/urban';
 import type { PlacementBatch } from '../../../rust/bridge/urbanArchitecture';
 import type { Decor } from '../ui/decor';
-import type { City3d, City3dDetailService, City3dOptions, City3dGround, City3dSurface, City3dViewSettings, City3dWaterDisplay } from '../ui/city3d';
+import type { City3d, City3dDetailService, City3dOptions, City3dGround, City3dPhysicalGround, City3dSurface, City3dViewSettings, City3dWaterDisplay } from '../ui/city3d';
 import type { Terrain3dGroundSettings } from '../ui/terrain3d';
 import type { TerrainLook } from '../ui/terrainGl';
 import { renderScene } from './renderScene';
@@ -23,6 +23,12 @@ import type { RustTownSnapshot } from './rustUrban';
 import { rustSettlementRaster } from './rustUrban';
 import { getLanguage, onLanguageChange } from './i18n';
 import { activityScene } from './activitySites';
+import { provideFurniture3d, refreshFurniture3d } from '../ui/legendOverlay3d';
+import { buildingColors } from '../render/urbanBuildingStyle';
+import { roadGroundTones, roadInkOf, setRoadGround } from '../render/roadStyle';
+import { biomePalette } from '../render/biomes';
+import { ruralSemanticLegend, urbanSemanticLegend } from '../render/semanticLayer';
+import { buildCityScene, type CityScene } from '../render/cityCanvas';
 
 export interface V2Urban3dOptions {
   host: HTMLElement;
@@ -31,6 +37,8 @@ export interface V2Urban3dOptions {
   getSelected?(): string | undefined;
   onSelect?(id: string): void;
   getBackground?(): string | undefined;
+  /** The 2D map's physical land use, for the ground tiles. */
+  getPhysicalGround?(): City3dPhysicalGround | undefined;
   getTextured?(): boolean;
   setTextured?(value: boolean): void;
   onCamera?: City3dOptions['onCamera'];
@@ -76,20 +84,22 @@ const rasterMetrics = new WeakMap<ReturnType<typeof rustSettlementRaster>, { min
 const rasterWater = new WeakMap<ReturnType<typeof rustSettlementRaster>, Float32Array>();
 const waterDisplays = new WeakMap<ReturnType<typeof rustSettlementRaster>, Map<string, City3dWaterDisplay>>();
 function v2WaterDisplay(world: World, settings: V2Settings): City3dWaterDisplay {
-  const raster = rustSettlementRaster(world), r = v2Resolved3d(settings, world), shown = r.ground.layers.water, lakes = r.ground.lakes, key = `${shown}:${lakes}`;
+  const raster = rustSettlementRaster(world), r = v2Resolved3d(settings, world), shown = r.ground.layers.water, lakes = r.ground.lakes;
+  const palette=terrainStyle(r.palette.mapStyle,r.palette.colors).palette,ink=r.composition.networks.water.look==='ink',key=JSON.stringify([shown,lakes,ink,ink?palette.lakeFill:undefined,ink?palette.waterEdge:undefined]);
   let cache = waterDisplays.get(raster); if (!cache) { cache = new Map(); waterDisplays.set(raster, cache); }
   const retained = cache.get(key); if (retained) return retained;
   const texture = document.createElement('canvas'); texture.width = texture.height = raster.n;
   const ctx = texture.getContext('2d')!, pixels = ctx.createImageData(raster.n, raster.n), paths = new Path2D();
   if (shown) {
-    for (let i = 0; i < raster.water.length; i++) if (raster.water[i] > 0 && raster.water[i] < 4 && (lakes || raster.water[i] !== 2)) pixels.data.set([74, 134, 179, 255], i * 4);
+    const value=parseInt(palette.lakeFill.slice(1),16),rgba=ink?[value>>16&255,value>>8&255,value&255,255]:[74,134,179,255];
+    for (let i = 0; i < raster.water.length; i++) if (raster.water[i] > 0 && raster.water[i] < 4 && (lakes || raster.water[i] !== 2)) pixels.data.set(rgba, i * 4);
     const firstLake = world.terrain.coastline.length, lastLake = firstLake + world.terrain.lakes.length;
     for (const [index, polygon] of (raster.geometry?.water ?? []).entries()) {
       if (!lakes && index >= firstLake && index < lastLake) continue;
       for (const ring of polygon) { if (ring.length < 3) continue; paths.moveTo(ring[0].x, ring[0].y); for (const p of ring.slice(1)) paths.lineTo(p.x, p.y); paths.closePath(); }
     }
   }
-  ctx.putImageData(pixels, 0, 0); const result = { texture, paths }; cache.set(key, result); return result;
+  ctx.putImageData(pixels, 0, 0); const result = { texture, paths, ...(ink?{ink:{fill:palette.lakeFill,stroke:palette.waterEdge}}:{}) }; cache.set(key, result); return result;
 }
 /** Preserve the native control grid and the applied lake levels; never resample the terrain. */
 export function v2Terrain3dSurface(world: World, settings: V2Settings): City3dSurface {
@@ -113,7 +123,7 @@ export function v2Terrain3dGround(world: World, settings: V2Settings, ground: Ci
   if (!layers.relief || !layers.hypsometry) return;
   return { seed: seedHash(world.seed), climate: { temperature: config.climateValues!.temperature, precipitation: config.climateValues!.precipitation }, climateZone: config.climateZone,
     sourceCell: native ? native.width / (native.field?.n ?? native.resolution) : world.terrain.height.cell,
-    lighting: { ...r.ground.lighting }, renderV2: style.traits.satelliteVariant, v2Season: r.ground.season,
+    lighting: { ...r.ground.lighting }, renderV2: style.traits.satelliteVariant, v2Season: r.ground.season, ambience:r.composition.ambience, waterLook:r.composition.networks.water.look,
     waterVisible: layers.water, displacement: r.city.refinement !== 'source', forestBrushes: style.traits.forestBrushes,
     contours: r.ground.contours && layers.relief && config.relief !== 'cavern' ? { step: CONTOUR_INTERVAL[relief] * (relief === 'mountains' ? 2 : 1), color: style.palette.contour, opacity: style.palette.contourOpacity, flat: relief === 'flat' } : undefined };
 }
@@ -173,6 +183,8 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
   const update = () => {
     const world = options.getWorld(), settings = options.getSettings();
     if (!world) { if (worldOf) { worldOf = undefined; terrainOf = undefined; decor = undefined; nativeOf = []; scene = undefined; layouts = []; partitions = []; roads = []; details?.dispose(); details = undefined; renderer = undefined; activitiesOf = undefined; } return; }
+    const r = v2Resolved3d(settings, world);
+    setRoadGround(world.landuse, world.mapSize, roadGroundTones(r.ground.traits.family === 'material', biomePalette(r.palette.mapStyle, world.options.biome)), r.composition.ambience === 'night');
     const climate = JSON.stringify([settings.terrain?.climate, settings.terrain?.climateValues, settings.terrain?.motifSize, settings.terrain?.refine, settings.terrain?.relief]);
     if (world.terrain !== terrainOf) { terrainOf = world.terrain; decor = v2WorldDecor(world, settings); }
     else if (climate !== climateOf && decor) decor.meta = v2WorldDecor(world, settings).meta;
@@ -206,21 +218,45 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
     if (sampleOf !== height.data || key !== sampleKey) { sampleOf = height.data; sampleKey = key; sampler = createV2Terrain3dSampler(world, settings, view.ground); }
     return sampler;
   };
+  const detailed = () => { const b = v2Resolved3d(options.getSettings()).composition.buildings; return b.visible && b.meshes === 'detailed'; };
   const service: City3dDetailService = {
-    setActiveView: view => { if (view === '2d') details?.suspend(); },
-    update: view => details?.update(view), cached: () => details?.cachedDetails() ?? [],
+    setActiveView: view => { if (view === '2d' || !detailed()) details?.suspend(); },
+    update: view => { if (detailed()) return details?.update(view); details?.suspend(); return details?.stats; }, cached: () => detailed() ? details?.cachedDetails() ?? [] : [],
     subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener); },
   };
   update();
+  // The legend only needs the blocks' classes: a terrain-free plan of the retained layouts, rebuilt when they change.
+  let legendPlan: { layouts: Layout[]; partitions: Partition[]; scene: CityScene } | undefined;
+  const legendScene = (): CityScene | undefined => {
+    if (!layouts.length) return;
+    if (legendPlan?.layouts !== layouts || legendPlan.partitions !== partitions) legendPlan = { layouts, partitions, scene: buildCityScene(layouts, partitions) };
+    return legendPlan.scene;
+  };
+  provideFurniture3d(options.host, () => {
+    const world = options.getWorld(); if (!world) return;
+    const r = v2Resolved3d(options.getSettings(), world), lu = r.composition.landuse, plan = r.cartography.legend && lu.urban !== 'off' ? legendScene() : undefined;
+    return { world, palette: terrainStyle(r.composition.variant, r.palette.colors).palette, legend: r.cartography.legend, cartouche: r.cartography.cartouche,
+      semantic: [...ruralSemanticLegend(world.landuse, lu.classes, lu.rural), ...(plan ? urbanSemanticLegend([plan], lu.urban) : [])] };
+  });
   const view = mountCity3d({ host: options.host, navigation: true, fastTerrain: true, materialGrounds: true, softwareMaterialFallback: !!options.getBackground, getDecor: () => decor, getLayouts: () => layouts, getPartitions: () => partitions, getRegionalStreets: () => v2Resolved3d(options.getSettings()).cartography.roads ? roads : [],
-    getBuildingsVisible: () => v2Resolved3d(options.getSettings()).city.visible, getScene: () => scene, getSelected: options.getSelected, onSelect: options.onSelect, getBackground: options.getBackground,
+    getBuildingsVisible: () => { const b = v2Resolved3d(options.getSettings()).composition.buildings; return b.visible && b.meshes !== 'none'; }, getScene: () => scene, getSelected: options.getSelected, onSelect: options.onSelect, getBackground: options.getBackground,
     getGroundSettings: ground => { const world = options.getWorld(); return world && v2Terrain3dGround(world, options.getSettings(), ground); },
+    getLook: () => {const r=v2Resolved3d(options.getSettings());return {ambience:r.composition.ambience,waterLook:r.composition.networks.water.look,waterVisible:r.ground.layers.water};},
     getWaterDisplay: () => { const world = options.getWorld(); return world && v2WaterDisplay(world, options.getSettings()); },
     getSurface: () => { const world = options.getWorld(); return world && v2Terrain3dSurface(world, options.getSettings()); }, getHeightSampler: heightSampler,
     getForest: () => {
-      const settings = options.getSettings(), world = options.getWorld(), field = world && v2DisplayForest(world, settings, v2Resolved3d(settings, world));
-      return field && Number.isInteger(field.n) && field.n > 0 && Number.isFinite(field.width) && field.width > 0 && field.rgba instanceof Uint8Array && field.rgba.length === field.n ** 2 * 4 ? { field } : undefined;
+      // An Illustrated ground has its canopy in the raster draped as the map.
+      const settings = options.getSettings(), world = options.getWorld(), r = world && v2Resolved3d(settings, world), field = r && !r.traits.fantasy && v2DisplayForest(world!, settings, r);
+      return field &&Number.isInteger(field.n) && field.n > 0 && Number.isFinite(field.width) && field.width > 0 && field.rgba instanceof Uint8Array && field.rgba.length === field.n ** 2 * 4 ? { field, occupation: v2ForestOccupation(world!) } : undefined;
     },
+    getText: () => { const r = v2Resolved3d(options.getSettings()); return { world: options.getWorld(), text: r.composition.text, palette: terrainStyle(r.composition.variant, r.palette.colors).palette }; },
+    getSemantic: () => {
+      const world = options.getWorld(), settings = options.getSettings(); if (!world) return;
+      const { rural, urban, opacity, classes, depth } = v2Resolved3d(settings, world).composition.landuse;
+      return { landuse: world.landuse, rural, urban, opacity, classes, depth };
+    },
+    // The painter follows `composition.vegetation` (cartographic classes, painted brushes). A map ground always shows its fields, as in 2D; a material ground only with vector vegetation.
+    getPhysicalGround: material => !material || v2Resolved3d(options.getSettings(), options.getWorld()).composition.vegetation.cartographic ? options.getPhysicalGround?.() : undefined,
     getViewSettings: () => v2Terrain3dView(options.getSettings()),
     // The view never writes the shared settings: it emits a patch, the orchestration applies it.
     onViewSettingsChange: value => {
@@ -231,12 +267,15 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
     },
     getPlanOptions: () => {
       const r = v2Resolved3d(options.getSettings()), city = r.city;
-      return { colors: r.palette.colors, view: city.view, palette: city.palette, width: city.width, opacity: city.opacity, labels: r.cartography.labels, layers: city.layers, groundBlend: city.groundBlend === 'blended' };
+      return { colors: buildingColors(r.palette.colors, r.composition.ambience), view: city.view, palette: city.palette, width: city.width, opacity: city.opacity, labels: r.cartography.labels,
+        layers: { ...city.layers, streets: city.layers.streets && r.composition.networks.roads.visible, waterways: r.composition.networks.water.visible && city.layers.waterways !== false }, roadLook: r.composition.networks.roads.look, roadEmphasis: r.composition.networks.roads.emphasis, streetPalette: city.palette === 'terrain' ? 'parchment' as const : city.palette, roadInk: roadInkOf(terrainStyle(r.palette.mapStyle, r.palette.colors).palette, buildingColors(r.palette.colors, r.composition.ambience)), groundBlend: r.composition.networks.roads.look === 'natural',
+        night: r.composition.ambience === 'night',
+        buildingsVisible: r.composition.buildings.visible && r.composition.buildings.meshes === 'none', appearance: { colors: r.palette.colors, style: city.buildingStyle, diagnostic: city.diagnostic, ambience: r.composition.ambience } };
     },
-    getBuildingAppearance: () => { const r = v2Resolved3d(options.getSettings()); return { colors: r.palette.colors, style: r.city.buildingStyle, diagnostic: r.city.diagnostic }; },
+    getBuildingAppearance: () => { const r = v2Resolved3d(options.getSettings()); return { colors: r.palette.colors, style: r.city.buildingStyle, diagnostic: r.city.diagnostic, ambience: r.composition.ambience }; },
     getTextured: options.getTextured, setTextured: options.setTextured, onCamera: options.onCamera, details: service });
   return { get active() { return view.active; }, get detailStats() { return details?.stats; },
-    show: () => { update(); view.show(); }, hide: () => view.hide(), refresh: () => { update(); view.refresh(); },
+    show: () => { update(); view.show(); refreshFurniture3d(options.host); }, hide: () => view.hide(), refresh: () => { update(); view.refresh(); refreshFurniture3d(options.host); },
     focus: (point, radius) => view.focus(point, radius), getCamera: () => view.getCamera(), setCamera: camera => view.setCamera(camera),
     capture: () => view.capture(), captureIllustration: () => view.captureIllustration(), stats: () => view.stats(),
     dispose: () => { offLocale(); view.dispose(); details?.dispose(); listeners.clear(); },

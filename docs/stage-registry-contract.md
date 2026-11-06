@@ -80,13 +80,21 @@ when an output is missing or outdated, and pulses while that stage executes.
 | city-houses | Architecture / detailed houses | city | yes |
 
 ## Map — display, naming and export
+2026-11-06: the display rows follow the composition layers (`render/composition.ts`), one row per layer, in this order.
+`display-relief`, `display-landuse`, `display-ambience` and `display-text` are new; the other ids keep their meaning with a narrower scope.
+The collapsed row shows the layer's main control (`quick`), taken from the shared render form.
+
 | id | name |
 | --- | --- |
-| display-terrain | Terrain shading and palette |
-| display-water | Water |
+| display-terrain | Preset and ground (with the 2D / 3D switch) |
+| display-relief | Relief and lighting (with diagnostics) |
 | display-vegetation | Vegetation |
-| display-roads | Roads and ground |
-| display-buildings | Buildings (2D/3D, LOD, colours) |
-| display-labels | Labels and icons |
+| display-landuse | Land use (semantic information layer and classes shown) |
+| display-water | Water |
+| display-roads | Roads |
+| display-buildings | Buildings |
+| display-ambience | Ambience |
+| display-text | Text |
+| display-labels | Legend and cartouche |
 | map-naming | Map title and toponyms |
 | map-export | Export the current map or project |

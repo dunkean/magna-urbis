@@ -5,7 +5,8 @@ import { styleTraits } from './terrainStyle';
 /** Display tokens only. Never write these colours into generated geometry or materials. */
 export const COLOR_GROUPS = {
   ground: ['paper', 'groundLow', 'groundHigh'],
-  cover: ['contour', 'forest', 'meadow', 'field'],
+  relief: ['contour'],
+  vegetation: ['forest', 'meadow', 'field'],
   roads: ['road', 'roadEdge', 'track'],
   water: ['waterShore', 'waterDeep', 'river'],
   buildings: ['building', 'buildingEdge'],

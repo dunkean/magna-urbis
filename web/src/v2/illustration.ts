@@ -32,7 +32,7 @@ export function mountV2Illustration(options: V2IllustrationOptions) {
     const captured = city3d?.active ? await city3d.captureIllustration() : undefined;
     const scenes = nativeCitiesOf(world).map(city => city.scene).filter(scene => scene !== undefined);
     const context = illustrationContext({
-      sourceStyle: settings.appearance?.terrainStyle ?? settings.appearance?.style ?? settings.options.style,
+      sourceStyle: settings.appearance?.composition?.ground.variant ?? settings.options.style,
       seed: world.seed, view: { ...view }, camera: captured?.camera,
       width: element.clientWidth, height: element.clientHeight,
       terrain: { relief: settings.terrain?.relief ?? settings.options.relief, climate: settings.terrain?.climate,

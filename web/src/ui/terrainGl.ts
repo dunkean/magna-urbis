@@ -29,6 +29,7 @@ import type { ClimateZone } from '../../../rust/bridge/terrainClimate';
 import { styleTraits, terrainStyle, type TerrainStyle } from '../render/terrainStyle';
 import type { RenderColors } from '../render/customColors';
 import { WATER_STYLE_GLSL, waterUniforms } from '../render/waterStyle';
+import { MATERIAL_WATER_GLSL, MOONLIGHT_GLSL } from '../render/materialLook';
 import { paintRetainedWater, retainedWaterPaths, type RetainedWaterPath } from '../render/retainedWaterGeometry';
 import { RENDER_WATER_FS, renderWaterRings } from '../render/renderWaterShader';
 import { CANVAS_MAP_STROKES, mapStrokeWidth } from '../render/strokes';
@@ -50,7 +51,10 @@ export interface HeightLayer {
 }
 
 export interface TerrainLook {
+  ambience?: 'day' | 'night'; waterLook?: 'ink' | 'natural';
   colors?: RenderColors;
+  /** V2 composes the retained canopy over every ground; standalone benches keep their material-only canopy. */
+  independentCanopy?: boolean;
   /** Explicit opt-in for perspective captures; ordinary 2D styles retain their surface. */
   mesh3d?: boolean;
   v2Season?: number;
@@ -131,6 +135,7 @@ uniform int uContours; uniform float uStep, uThinW, uIndexW, uThinA, uIndexA, uF
 uniform int uRefine; uniform float uSourceCell; uniform uint uSeed;
 uniform int uEnhanced3d;
 uniform int uGroundCapture;
+uniform int uNaturalWater; uniform int uNight;
 uniform int uRefinementMode;
 uniform sampler2D uRefined, uPreviousRefined;
 uniform vec4 uRefinedRect, uPreviousRefinedRect;
@@ -257,6 +262,8 @@ ${RENDER_3D_FOREST_GLSL}
 ${RENDER_V2_GLSL}
 
 ${WATER_STYLE_GLSL}
+${MATERIAL_WATER_GLSL}
+${MOONLIGHT_GLSL}
 // Variant constants (terrainFragment): NATURAL compiles the material path, uRenderV2/uForest
 // become constants when off, so ANGLE/D3D11 (FXC) only compiles what the look uses.
 V2Env v2Here;
@@ -315,7 +322,8 @@ vec3 sea(vec2 world) {
     ivec2 p = ivec2(floor(g)), q = min(p + 1, ivec2(uCoastN - 1)); vec2 f = fract(g);
     distance = mix(mix(texelFetch(uCoastDistance,p,0).r,texelFetch(uCoastDistance,ivec2(q.x,p.y),0).r,f.x),mix(texelFetch(uCoastDistance,ivec2(p.x,q.y),0).r,texelFetch(uCoastDistance,q,0).r,f.x),f.y);
   }
-  return uWaterVisible == 1 ? styledWater(max(0., distance) / uSeaBand) : uPaper;
+  float position=max(0.,distance)/uSeaBand;
+  return uWaterVisible == 1 ? (uNaturalWater==1?materialWater(world,position,uPx):styledWater(position)) : uPaper;
 }
 
 vec3 refinedSurface(sampler2D field, vec4 rect, int n, vec2 world) {
@@ -387,10 +395,23 @@ void main() {
       color = mix(color, vec3(shade), rock);
       coverage=rock+coverage*(1.-rock);
     }
+#ifndef AUX_PASS
+    if(uForest==1 && uMode!=3 && uRenderV2==0 && uGroundCapture==0){
+      vec3 root=level(0,world);
+      float shore=max(root.x,0.)/max(length(root.yz),.0001);
+      vec3 macro=earthMaterial(root,world,max(uPx,1.),naturalTpi(root,world),shore,0.);
+      GroundMaterial canopy=terrainGroundMaterial(root,world,uPx,macro,uMaterialClimate,uMaterialSeed);
+      applyForest(canopy,world,uPx,uLight.xzy);
+      vec3 crowns=shadeTerrainGround(canopy,vec3(0.,1.,0.),uLight.xzy,uLight2.xzy,uRockStrength);
+      if(uNight==1 && uMode<2)crowns=moonlight(crowns);
+      color=mix(color,crowns,forestMapCover*landCover);
+    }
+#endif
     // One V2 water evaluation per fragment (the three cases below only choose its inputs).
     bool v2w=false;vec3 wBase=color;float wCover=0.,wKind=1.,wDepth=0.;
     if (uUseWaterLayer==1) {
       vec4 water=texelFetch(uWaterLayer,ivec2(gl_FragCoord.xy),0);
+      if(uNight==1 && uMode<2 && uNaturalWater==1)water.rgb=moonlight(water.rgb);
       float under=uRenderV2>0?1.:1.-forestResolvedCover;
       if(uRenderV2>0){v2w=true;wBase=color;wCover=water.a;wKind=s.x<0.?1.:3.;wDepth=s.x<0.?-s.x:8.*water.a;}
       else color=color*(1.-water.a*under)+water.rgb*under;
@@ -403,7 +424,8 @@ void main() {
         ivec2 p = ivec2(floor(g)), q = min(p + 1, ivec2(int(uLakeN) - 1));
         vec2 f = fract(g);
         float distance = mix(mix(texelFetch(uLake,p,0).g,texelFetch(uLake,ivec2(q.x,p.y),0).g,f.x),mix(texelFetch(uLake,ivec2(p.x,q.y),0).g,texelFetch(uLake,q,0).g,f.x),f.y);
-        lakeColor = styledWater(max(distance, 0.) / uSeaBand);
+        float position=max(distance,0.)/uSeaBand;
+        lakeColor = uNaturalWater==1?materialWater(world,position,uPx):styledWater(position);
       }
       float a=clamp(m/w+.5,0.,1.);
       if(uRenderV2>0){v2w=true;wBase=color;wCover=a;wKind=2.;wDepth=8.*a;}else color=mix(color,lakeColor,a);
@@ -416,6 +438,9 @@ void main() {
     if(v2w && uRenderV2 > 0 && uV2WaterVisible == 1 && wCover > 0. && uHasAux == 1){ vec4 aux = auxUnpack4x8(texelFetch(uAux, ivec2(gl_FragCoord.xy), 0).w); if(aux.a > 0.) color = mix(wBase, aux.rgb, wCover); }
 #else
     if(v2w)color=v2WaterAtEnv(v2Here,wBase,world,uPx,wCover,wKind,wDepth);
+#endif
+#ifndef AUX_PASS
+    if(uNight==1 && uGroundCapture==0 && uMode>=2)color=moonlight(color);
 #endif
     if (uContours == 1 && s.x > 0.0 && uMode != 1) {
       float v = raster.x / uStep;
@@ -511,18 +536,18 @@ const compile = (gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgr
  * Forest crowns and Render v2 water come from an auxiliary pass (mapPasses). Measured alone with FXC:
  * Render v2 with forest 22 s for the map and 21 s for its auxiliary pass (linking in parallel), Render v2
  * 19 s + 12 s, natural 5 s; the full shader never loaded. On FXC they link in the background. */
-export interface TerrainVariant { mode: number; v2: number; forest: boolean; brushes: boolean }
+export interface TerrainVariant { mode: number; v2: number; forest: boolean; brushes: boolean; water?: boolean }
 export const PREVIEW_VARIANT: TerrainVariant = { mode: 0, v2: 0, forest: false, brushes: false };
-const variantKey = (v: TerrainVariant): string => `${v.mode}.${v.v2}.${+v.forest}${+v.brushes}`;
+const variantKey = (v: TerrainVariant): string => `${v.mode}.${v.v2}.${+v.forest}${+v.brushes}.${+!!v.water}`;
 /** Map passes of a look: forest crowns and Render v2 water are rendered first by an auxiliary pass
  * (one RGBA32UI texture: crowns in three words, the water colour in the fourth), then read by the map. */
 export const mapPasses = (v: TerrainVariant): ('aux' | 'map')[] => v.forest || v.v2 > 0 ? ['aux', 'map'] : ['map'];
 const terrainFragment = (v: TerrainVariant): string => specializeShader(TERRAIN_FS,
-  { uMode: v.mode, uRenderV2: v.v2, uForest: +v.forest, uForestBrushes: +v.brushes },
+  { uMode: v.mode, uRenderV2: v.v2, uForest: +v.forest, uForestBrushes: +v.brushes, uNaturalWater: +!!v.water },
   { NATURAL: v.mode >= 2 ? 1 : 0, ...(mapPasses(v).includes('aux') ? { AUX_TEXTURE: 1 } : {}) });
-const auxKey = (v: TerrainVariant): string => `aux.${v.mode}.${v.v2}.${+v.forest}${+v.brushes}`;
+const auxKey = (v: TerrainVariant): string => `aux.${variantKey(v)}`;
 const auxFragment = (v: TerrainVariant): string => specializeShader(TERRAIN_FS,
-  { uMode: v.mode, uRenderV2: v.v2, uForest: +v.forest, uForestBrushes: +v.brushes }, { NATURAL: 0, AUX_PASS: 1 });
+  { uMode: v.mode, uRenderV2: v.v2, uForest: +v.forest, uForestBrushes: +v.brushes, uNaturalWater: +!!v.water }, { NATURAL: 0, AUX_PASS: 1 });
 export const lookMode = (look: TerrainLook): number => styleTraits(look.style).elevation ? 1 : look.layers.hypsometry && styleTraits(look.style).ground3d ? 3 : styleTraits(look.style).neuralEarth && look.layers.hypsometry ? 2 : 0;
 
 interface GpuLayer { layer: HeightLayer; levels: Float32Array[]; texture: WebGLTexture; cave?: WebGLTexture; alpha: number; fadeStart: number }
@@ -623,7 +648,7 @@ export class TerrainGl {
     if (!mapPasses(v).includes('aux') || !this.base) return;
     const main = this.terrain, aux = this.variants.get(auxKey(v), () => [TERRAIN_VS, auxFragment(v)], this.capturing || framebuffer !== null);
     const key = aux && JSON.stringify([width, height, origin, px, look.seed, look.climate, look.lighting, look.v2Season, look.layers, look.refinement3d,
-      look.mesh3d, look.style, this.forestVersion, this.riverCount, this.retainedWaterKey, this.lakeN, separateWater, this.base.layer.width, this.base.layer.n,
+      look.mesh3d, look.style, look.waterLook, this.forestVersion, this.riverCount, this.retainedWaterKey, this.lakeN, separateWater, this.base.layer.width, this.base.layer.n,
       this.enhanced.at(-1)?.fadeStart, this.coastDistance ? 1 : 0]);
     if (aux && key !== this.auxKey) {
       this.auxTarget = this.uintTarget(width, height, this.auxTarget);
@@ -672,7 +697,7 @@ export class TerrainGl {
   }
   private lookVariant(look: TerrainLook): TerrainVariant {
     const mode = lookMode(look);
-    return { mode, v2: styleTraits(look.style).satelliteVariant, forest: mode === 3 && !!this.forest, brushes: styleTraits(look.style).forestBrushes && mode === 3 };
+    return { mode, v2: styleTraits(look.style).satelliteVariant, water: look.waterLook === 'natural', forest: !styleTraits(look.style).fantasy && (look.independentCanopy === true || mode === 3) && !!this.forest, brushes: styleTraits(look.style).forestBrushes && mode === 3 };
   }
   /** The look's variant once linked; meanwhile the last drawn variant, or the preview, stands in
    * (undefined if none is linked yet). Captures wait for the link. */
@@ -951,7 +976,7 @@ export class TerrainGl {
     gl.viewport(0, 0, width, height);
     const { view } = state, px = 1 / (view.scale * dpr);
     const origin: [number, number] = [view.cx - state.width / (2 * view.scale), view.cy - state.height / (2 * view.scale)];
-    const definition = terrainStyle(look.style, look.colors), pal = definition.palette, water = terrainStyle(look.waterStyle ?? look.style, look.colors).water;
+    const definition = terrainStyle(look.style, look.colors), pal = definition.palette, water = terrainStyle(look.waterLook === 'natural' ? 'render3d' : look.waterStyle ?? look.style, look.waterLook === 'natural' ? undefined : look.colors).water;
     const u = (name: string): WebGLUniformLocation | null => this.uniform(name);
     let enhancedAlpha = 1;
     // Every uniform of the look; replayed on the canopy program (same names, same values).
@@ -960,6 +985,7 @@ export class TerrainGl {
     gl.uniform2f(u('uOrigin'), origin[0], origin[1]);
     gl.uniform1f(u('uPx'), px); gl.uniform1f(u('uDpr'), stylePixelRatio);
     gl.uniform1i(u('uGroundCapture'),look.groundCapture?1:0);
+    gl.uniform1i(u('uNaturalWater'),look.waterLook==='natural'?1:0); gl.uniform1i(u('uNight'),look.ambience==='night'?1:0);
     gl.uniform1f(u('uMapW'), look.mapWidth);
     gl.uniform1i(u('uRelief'), look.layers.relief ? 1 : 0); gl.uniform1i(u('uWaterVisible'), look.layers.water !== false ? 1 : 0);
     gl.uniform1ui(u('uMaterialSeed'), look.seed >>> 0);
@@ -967,7 +993,7 @@ export class TerrainGl {
     const mode = lookMode(look);
     gl.uniform1i(u('uMode'), mode);
     // Textures 7 forest field, 8 occupation, 12 banks; 10/11 belong to water.
-    bindForest(gl, u, this.forest, this.occupation, this.empty, mode === 3, 7, 8, 12, 13);
+    bindForest(gl, u, this.forest, this.occupation, this.empty, this.lookVariant(look).forest, 7, 8, 12, 13);
     // Texture 14: baked shore ring (CPU, shared with the 3D view), only for the natural looks.
     if (mode >= 2 && this.base && this.shoreRing?.layer !== this.base.layer) {
       if (this.shoreRing) gl.deleteTexture(this.shoreRing.texture);
@@ -1060,7 +1086,7 @@ export class TerrainGl {
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     };
     // The render style paints its water layers (depth, shelf, glint, wet banks); other styles keep the flat ink.
-    const paintedWater = styleTraits(look.style).neuralEarth && !look.groundCapture;
+    const paintedWater = (look.waterLook === 'natural' || styleTraits(look.style).neuralEarth) && !look.groundCapture;
     const waterBand = (this.seaSurface?.referenceWidth ?? look.mapWidth) * water.bandFraction;
     const renderRivers = (destination: WebGLFramebuffer | null): void => {
       if (!this.riverCount || (look.layers.water === false&&!styleTraits(look.style).waterAlwaysDrawn)) return;
@@ -1114,7 +1140,7 @@ export class TerrainGl {
       gl.uniform1i(gl.getUniformLocation(this.composite, 'uLayer'), 11);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     };
-    const separateWater = styleTraits(look.style).ground3d && look.layers.relief && look.layers.hypsometry && (look.layers.water !== false || styleTraits(look.style).waterAlwaysDrawn) && !look.groundCapture;
+    const separateWater = (look.waterLook === 'natural' || styleTraits(look.style).ground3d && look.layers.relief && look.layers.hypsometry || this.lookVariant(look).forest) && (look.layers.water !== false || styleTraits(look.style).waterAlwaysDrawn) && !look.groundCapture;
     gl.uniform1i(u('uWaterLayer'), 10); gl.uniform1i(u('uUseWaterLayer'), 0);
     gl.activeTexture(gl.TEXTURE10); gl.bindTexture(gl.TEXTURE_2D, this.empty);
     if (separateWater) {
@@ -1154,7 +1180,7 @@ export class TerrainGl {
     if (!this.renderWater) this.renderWater = { program: compile(gl, COMPOSITE_VS, RENDER_WATER_FS), u: new Map() };
     const { program, u: cache } = this.renderWater;
     const u = (name: string): WebGLUniformLocation | null => { if (!cache.has(name)) cache.set(name, gl.getUniformLocation(program, name)); return cache.get(name)!; };
-    const water = terrainStyle(this.look?.waterStyle ?? this.look?.style ?? 'render', this.look?.colors).water, palette = waterUniforms(water), rings = renderWaterRings(px, band);
+    const water = terrainStyle(this.look?.waterLook === 'natural' ? 'render3d' : this.look?.waterStyle ?? this.look?.style ?? 'render', this.look?.waterLook === 'natural' ? undefined : this.look?.colors).water, palette = waterUniforms(water), rings = renderWaterRings(px, band);
     // Bilinear taps (the bound layer is only ever read with texelFetch elsewhere).
     gl.activeTexture(gl.TEXTURE0 + unit);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);

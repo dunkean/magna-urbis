@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { forestLandPaint } from '../src/render/landuseForestTone';
 import { Resvg } from '@resvg/resvg-js';
 import type { Polygon } from '../src/gen/types';
 import { urbanNaturalGround } from '../src/gen/landuse/urbanGround';
@@ -133,7 +134,7 @@ describe('natural cover in unoccupied urban plots', () => {
     ctx.clip = (p: RecordingPath) => { clip = p; };
     const pal = biomePalette('parchment', w.options.biome);
     ctx.fill = (...args: unknown[]) => {
-      if (clip && ctx.fillStyle === pal.land.forest && ctx.globalAlpha === 0.7) replays.push(clip);
+      if (clip && ctx.fillStyle === forestLandPaint(pal).color && ctx.globalAlpha === forestLandPaint(pal).alpha) replays.push(clip);
       fill(...args);
     };
     const r = createCanvasRenderer(m.canvas as unknown as CanvasLike, w, 'parchment', { Path2D: RecordingPath as never, dpr: 1, terrain: () => null });

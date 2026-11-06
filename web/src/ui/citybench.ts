@@ -1,7 +1,11 @@
+import { benchOverlayChange, benchMaterialNightChange } from './benchComposition';
+import type { TerrainLook } from './terrainGl';
+import { moonlightSvg } from '../render/materialLook';
+import { benchSettlementTextWorld, benchTextLayer } from './benchComposition';
 import { createTerrainSettlements } from './terrainSettlements';
 import { decorClimate } from './decorClimate';
 import { seedHash } from '../../../rust/bridge/terrainAdjust';
-import { DEFAULT_FOREST_SETTINGS } from '../../../rust/bridge/terrainForest';
+import { buildForestField, DEFAULT_FOREST_SETTINGS, type ForestField } from '../../../rust/bridge/terrainForest';
 import { forestRetainedRiverSegments } from '../../../rust/bridge/terrainForestRiparian';
 import { createTerrainDecorLibrary } from './terrainDecorLibrary';
 import { createHistoryPanel, downloadHistory, openBench, readHistory, saveHistory, syncBenchUrl } from './benchHistory';
@@ -11,10 +15,16 @@ import type { Decor } from './decor';
 import { downloadDecorFile, readDecorFile } from './decorFile';
 import { clampView, fitView, panBy, zoomAt, type View } from '../render/view';
 import { CITY_LOD_OFF } from '../render/cityCanvas';
-import { cityContourPaths, type CityContourPaths } from '../render/cityContours';
-import { terrainContourWidths } from '../../../rust/bridge/terrainRender';
+import { cityContourPaths, cityContourInterval, type CityContourPaths } from '../render/cityContours';
+import { renderRustTerrain, terrainContourWidths } from '../../../rust/bridge/terrainRender';
 import { getBenchRenderColors, writeRenderColorsQuery } from './benchRenderColors';
-import { terrainStyle } from '../render/terrainStyle';
+import { isTerrainStyle, styleTraits, terrainStyle, type TerrainStyle } from '../render/terrainStyle';
+import { benchVegetationLimitations, getBenchComposition, resolveBenchAppearance, syncBenchAnnotations, setBenchAppearanceField, setBenchComposition, setBenchRenderCapabilities, writeBenchCompositionQuery } from './benchComposition';
+import { withGroundVariant, type Limitation } from '../render/composition';
+import { createTerrainRenderer, type TerrainRenderer } from './terrainRenderer';
+import { DEFAULT_FRACTAL_DETAIL } from '../../../rust/bridge/terrainAdjust';
+import { forestOccupation } from './forestOccupation';
+import { decorWaterSvg } from './decorWater';
 import { encodePng, pngDataUrl } from '../render/raster';
 import { applyExecutionProfile, installExecutionProfile } from './executionProfile';
 import type { TerrainData, TerrainSettings } from '../../../rust/bridge/terrain';
@@ -24,6 +34,8 @@ import { decodeSituation, encodeSituation, type SituationPin } from './citySitua
 import { mountCityRpgPins, prepareCityMapExport } from './cityRpgPins';
 import { installUrbanMapExports } from './urbanMapExport';
 import { mountCity3d } from './city3d';
+import { provideFurniture3d, refreshFurniture3d } from './legendOverlay3d';
+import { ruralSemanticLegend, urbanSemanticLegend } from '../render/semanticLayer';
 import { urbanText } from './urbanPanelLocale';
 import { mountIllustration, captureViewport } from '../../../illustration/web/index.mjs';
 import { illustrationContext, illustrationTerrainFromDecor } from './illustrationContext';
@@ -32,14 +44,13 @@ import { keepRendererOverride } from './rendererOverride';
 declare global { interface Window { magnaCityBackground?: { url(): string | undefined; style(): string } } }
 
 /**
- * City Bench: one city on a prebuilt map. Relief shading comes from the image
- * pre-rendered with its .decor (web/scripts/render_city_maps.mjs); contours and
- * the settlement, road and urban stages use the decor raster, as in Settlements.
+ * City Bench: one city on a retained map. The shared terrain renderer and the
+ * settlement, road and urban stages all consume the decor raster.
  */
 installExecutionProfile(document.querySelector('header')!);
 const ns = 'http://www.w3.org/2000/svg';
 const query = new URLSearchParams(location.search);
-const labels = query.get('labels') !== '0';
+const labels = true;
 const el = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const map = document.getElementById('map') as unknown as SVGSVGElement, viewport = el('viewport'), stages = document.querySelector('.stages')!;
 let decor: Decor | undefined, terrain: TerrainData | undefined, ready = false, lastExport: Decor | undefined;
@@ -58,27 +69,50 @@ const pinLayer = document.createElementNS(ns, 'g'); pinLayer.id = 'cityPins';
 function showView(): void {
   const w = viewport.clientWidth, h = viewport.clientHeight;
   map.setAttribute('viewBox', `${view.cx - w / 2 / view.scale} ${view.cy - h / 2 / view.scale} ${w / view.scale} ${h / view.scale}`);
-  drawContours();
-  settlements.updateView();
+  drawContours(); groundRenderer?.setView(view, w, h);
+  settlements.updateView(); publishBenchCapabilities();
   rpgPins?.draw();
   drawPins();
+  syncBenchAnnotations(map, view, w, h, { title: decor?.meta.label ?? '', subtitle: decor ? `${(decor.raster.width / 1000).toFixed(1)} km · ${decor.meta.seed}` : '', landuse: settlements.landuse, scenes: settlements.urban.semanticScenes, world: benchSettlementTextWorld(settlements.illustrationSettlements, rpgPins?.world) });
 }
 function setView(next: View): void { view = terrain ? clampView(next, terrain.width, viewport.clientWidth, viewport.clientHeight) : next; showView(); }
 const fit = (): void => { if (terrain) setView(fitView(terrain.width, viewport.clientWidth, viewport.clientHeight)); };
 
-/** Map background style: Relief is `decors/<id>.png` (atlas), Rendu and Parchemin are
- * `decors/<id>-render.png` / `-parchment.png` (render_city_maps.mjs --style), same pixels. */
-type BackgroundStyle = 'relief' | 'render' | 'parchment' | 'cadastre';
-const BACKGROUND_LABELS: Record<BackgroundStyle, string> = { relief: 'Relief', render: 'Rendu', parchment: 'Parchemin', cadastre: 'Cadastre' };
-const isBackgroundStyle = (v: string | null): v is BackgroundStyle => !!v && v in BACKGROUND_LABELS;
-let backgroundStyle: BackgroundStyle = isBackgroundStyle(query.get('fond')) ? query.get('fond') as BackgroundStyle : 'relief';
-let backgroundTicket = 0;
-/** Current background image URL (pre-rendered PNG or computed hillshade data URL): what the 3D view drapes. */
-const backgroundUrl = (): string | undefined => background.querySelector('image')?.getAttribute('href') ?? undefined;
+type BackgroundStyle = TerrainStyle;
+const isBackgroundStyle = (value: string | null): value is BackgroundStyle => isTerrainStyle(value);
+let backgroundStyle: BackgroundStyle = resolveBenchAppearance().composition.variant;
+let backgroundTicket = 0, backgroundSnapshot: string | undefined, backgroundKey = '', backgroundDecor: Decor | undefined, uploadedBackground: TerrainData | undefined;
+const groundCanvas = el<HTMLCanvasElement>('gl');
+let groundRenderer: TerrainRenderer | undefined;
+let backgroundLook: TerrainLook | undefined;
+const groundReady = createTerrainRenderer(groundCanvas).then(renderer => { groundRenderer = renderer; viewport.classList.add('gl'); }, error => { groundCanvas.hidden = true; status(String(error)); });
+const backgroundUrl = (): string | undefined => backgroundSnapshot;
 window.magnaCityBackground = { url: backgroundUrl, style: () => backgroundStyle };
+let forestOf: Decor | undefined, forestKey = '', forestField: ForestField | undefined, occupationOf: unknown, occupation: ReturnType<typeof forestOccupation>;
+const lakeMasks = new WeakMap<Decor, Float32Array>();
+function benchForest(target: 'view2d' | 'view3d' = 'view2d') {
+  const r = resolveBenchAppearance({}, target), d = decor; if (!d || !r.composition.vegetation.procedural || !r.vegetation.forestSettings.enabled || target === 'view2d' && !r.ground.layers.relief) return;
+  const settings = r.vegetation.forestSettings, key = JSON.stringify(settings), raster = d.raster, climate = decorClimate(d.meta);
+  if (forestOf !== d || forestKey !== key) {
+    forestOf = d; forestKey = key;
+    forestField = buildForestField({ seed: seedHash(d.meta.seed), climate: [climate.temperature, climate.precipitation], height: { x: 0, y: 0, width: raster.width, n: raster.n, data: raster.height }, water: raster.water, riverSegments: forestRetainedRiverSegments(d.meta.waterSvg, raster.width) }, settings);
+  }
+  if (occupationOf !== settlements.landuse) { occupationOf = settlements.landuse; occupation = settlements.landuse ? forestOccupation(settlements.landuse) : undefined; }
+  return { field: forestField, occupation };
+}
+function publishBenchCapabilities(): void {
+  const diagnostic = resolveBenchAppearance().diagnostic;
+  const limitations: Limitation[] = [{ pass: 'ground', kind: 'data', field: 'resourcePotential', reason: 'This bench has no retained resource diagnostics.' }];
+  if (diagnostic !== 'none' && diagnostic !== 'elevation') limitations.push({ pass: 'ground', kind: 'data', field: 'diagnostic', reason: diagnostic.startsWith('res-') ? 'This bench has no retained resource diagnostics.' : 'This bench has no retained data for the selected diagnostic.' });
+  if (!decor) limitations.push({ pass: 'ground', kind: 'data', reason: 'No terrain raster in the retained products.' });
+  if (!groundRenderer && getBenchComposition().vegetation.look === 'procedural-canopy' && !styleTraits(backgroundStyle).ground3d) limitations.push({ pass: 'vegetation', kind: 'backend', reason: 'The raster backend cannot compose procedural canopy on map grounds.' });
+  limitations.push({ pass: 'networks', kind: 'data', field: 'oxbows', reason: 'No retained oxbow geometry in this bench.' }, ...benchVegetationLimitations(city3d.active));
+  if (city3d.active && resolveBenchAppearance().composition.buildings.meshes === 'none' && settlements.urban.buildingProjection && !settlements.urban.buildingState.scene) limitations.push({ pass: 'buildings', kind: 'backend', reason: 'The 3D bench cannot drape footprints from retained building projections.' });
+  setBenchRenderCapabilities({ nativeTerrain: !!terrain, nativeCities: !!settlements.urban.layouts?.length, buildings: !!settlements.urban.buildingState.scene?.buildings.length || !!settlements.urban.buildingProjection, parcels: !!settlements.urban.partitions?.length, ruralLanduse: !!settlements.landuse, urbanLanduse: !!settlements.urban.layouts?.length, limitations }, city3d.active ? 'view3d' : 'view2d');
+}
 
 function drawContours(): void {
-  const visible = el<HTMLInputElement>('showContours').checked;
+  const r = resolveBenchAppearance(), visible = r.ground.contours && r.ground.layers.relief;
   contours.style.display = visible ? '' : 'none';
   if (!visible || !terrain || !decor) return;
   if (contourTerrain === terrain && contourScale === view.scale && contourStyle === backgroundStyle) return;
@@ -93,72 +127,57 @@ function drawContours(): void {
   const paths = cityContourPaths(terrain, new URLSearchParams(decor.meta.query).get('relief') ?? 'flat', view.scale);
   const layer = contours.querySelector('g')!, [thin, index] = Array.from(layer.querySelectorAll('path'));
   if (shownContours !== paths) { thin.setAttribute('d', paths.thin); index.setAttribute('d', paths.index); shownContours = paths; }
-  const style = backgroundStyle === 'relief' ? 'atlas' : backgroundStyle, pal = terrainStyle(style, getBenchRenderColors()).palette, widths = terrainContourWidths(style, view.scale);
+  const style = r.composition.variant, pal = terrainStyle(style, getBenchRenderColors()).palette, widths = terrainContourWidths(style, view.scale);
   layer.setAttribute('stroke', pal.contour); contours.dataset.step = String(paths.step);
   thin.setAttribute('stroke-width', String(widths.thin)); thin.setAttribute('opacity', '0.4');
   index.setAttribute('stroke-width', String(widths.index)); index.setAttribute('opacity', '0.5');
   contourScale = view.scale; contourStyle = backgroundStyle;
 }
 
-/** Pre-rendered map image of the chosen style, else the relief image, else a quick
- * hillshade of the raster (imported decors without image). */
+/** Draw the retained raster with the same ground and canopy renderer as Terrain Bench. */
 async function drawBackground(d: Decor): Promise<void> {
-  const width = d.raster.width, source = d.meta.id.startsWith('city-') ? d.meta.id : d.meta.pipeline?.parent, ticket = ++backgroundTicket;
-  const image = document.createElementNS(ns, 'image');
-  for (const [key, value] of Object.entries({ x: '0', y: '0', width: String(width), height: String(width), preserveAspectRatio: 'none' })) image.setAttribute(key, value);
-  const exists = (url: string): Promise<boolean> => fetch(url, { method: 'HEAD' }).then(r => r.ok && !!r.headers.get('content-type')?.startsWith('image/'), () => false);
-  const styled = source && backgroundStyle !== 'relief' ? `decors/${source}-${backgroundStyle}.png` : undefined, relief = source ? `decors/${source}.png` : undefined;
-  let url: string | undefined;
-  for (const candidate of [styled, relief]) if (candidate && await exists(candidate)) { url = candidate; break; }
-  if (ticket !== backgroundTicket) return;
-  image.setAttribute('href', url ?? hillshade(d));
-  background.replaceChildren(image);
-  city3d.refresh();
-  if (!url) status('Image pré-rendue absente pour cette carte : ombrage calculé depuis le relief.');
-  else if (styled && url !== styled) status(`Fond « ${BACKGROUND_LABELS[backgroundStyle]} » absent pour cette carte : relief affiché (node scripts/render_city_maps.mjs --style ${backgroundStyle}).`);
-}
-/** Parchemin background ⇒ parchment city palette, Cadastre ⇒ ink; leaving them gives the previous palette back. */
-let paletteBeforeParchment = 'growth';
-const BACKGROUND_PALETTES: Partial<Record<BackgroundStyle, string>> = { parchment: 'parchment', cadastre: 'ink' };
-function syncCityPalette(): void {
-  const select = document.querySelector<HTMLSelectElement>('select[data-render="palette"]'); if (!select) return;
-  if (!select.querySelector('option[value="parchment"]')) select.append(new Option('Parchemin · encre', 'parchment'));
-  const current = select.value, set = (value: string): void => { select.value = value; select.dispatchEvent(new Event('change')); };
-  const wanted = BACKGROUND_PALETTES[backgroundStyle], forced = Object.values(BACKGROUND_PALETTES);
-  if (wanted) { if (current !== wanted) { if (current && !forced.includes(current)) paletteBeforeParchment = current; set(wanted); } }
-  else if (forced.includes(current) || !current) set(paletteBeforeParchment);
-}
-/** Rendu background ⇒ painted road preset (casings, surfaces, stone bridges); leaving it gives the previous preset back. */
-let presetBeforeRender = 'surface';
-function syncRoadPreset(): void {
-  const select = document.querySelector<HTMLSelectElement>('#roadPreset'); if (!select) return;
-  const current = select.value, set = (value: string): void => { select.value = value; select.dispatchEvent(new Event('change')); };
-  const wanted = backgroundStyle === 'render' ? 'render' : backgroundStyle === 'cadastre' ? 'ink' : undefined;
-  if (wanted) { if (current !== wanted) { if (current !== 'render' && current !== 'ink') presetBeforeRender = current || 'surface'; set(wanted); } }
-  else if (current === 'render' || current === 'ink') set(presetBeforeRender);
-}
-function hillshade(d: Decor): string {
-  const { n, height, water, width } = d.raster, cell = width / n, canvas = document.createElement('canvas'); canvas.width = canvas.height = n;
-  const ctx = canvas.getContext('2d')!, pixels = ctx.createImageData(n, n);
-  let low = Infinity, high = -Infinity; for (let i = 0; i < height.length; i++) if (!water[i]) { low = Math.min(low, height[i]); high = Math.max(high, height[i]); }
-  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
-    const i = y * n + x, o = i * 4;
-    if (water[i]) { pixels.data.set([143, 186, 215, 255], o); continue; }
-    const dx = (height[y * n + Math.min(n - 1, x + 1)] - height[y * n + Math.max(0, x - 1)]) / (2 * cell), dy = (height[Math.min(n - 1, y + 1) * n + x] - height[Math.max(0, y - 1) * n + x]) / (2 * cell);
-    const light = Math.max(0, Math.min(1, 0.75 + (-dx - dy) * 1.4)), t = (height[i] - low) / Math.max(1, high - low);
-    pixels.data.set([(200 + 40 * t) * light, (205 + 10 * t) * light, (160 + 30 * t) * light, 255].map(Math.round), o);
-  }
-  ctx.putImageData(pixels, 0, 0); return canvas.toDataURL();
+  const ticket = ++backgroundTicket; await groundReady; if (ticket !== backgroundTicket || decor !== d || !terrain) return;
+  const r = resolveBenchAppearance(), c = r.composition, t = terrain, climate = decorClimate(d.meta), q = new URLSearchParams(d.meta.query);
+  const key = `${r.keys.terrainLook}:${r.keys.water}:${c.vegetation.look}:${r.keys.forest}:${settlements.ruralGroundRevision}`;
+  if (backgroundDecor === d && backgroundKey === key) return;
+  backgroundDecor = d; backgroundKey = key;
+  backgroundStyle = c.variant; const relief = q.get('relief') ?? 'flat';
+  const settings = { seed: d.meta.seed, width: t.width, relief: relief as TerrainSettings['relief'], climateValues: climate };
+  const canopy = benchForest(), forest = r.ground.traits.ground3d && canopy ? { ...canopy, brushes: r.ground.traits.forestBrushes, waterVisible: c.networks.water.visible } : undefined;
+  const scene = renderRustTerrain(t, r.ground.style, true, { ...settings, v2Season: r.ground.season, forest }, false, 'city-ground', r.ground.lighting, r.ground.layers, r.vegetation.fantasy, true, r.composition.networks.water.look === 'ink' ? r.palette.mapStyle : 'render3d', r.palette.colors);
+  if(c.ambience==='night' && r.ground.traits.family==='material')scene.svg=moonlightSvg(scene.svg,'city-ground-night');
+  const rural = document.createElement('canvas'); rural.width = rural.height = 2048; settlements.drawRuralGround(rural.getContext('2d')!, { x: 0, y: 0, width: t.width }, 2048);
+  const ruralImage = settlements.landuse ? `<image width="${t.width}" height="${t.width}" href="${rural.toDataURL()}"/>` : '';
+  const contourPaths = r.ground.contours && r.ground.layers.relief ? cityContourPaths(t, relief, 2048 / t.width) : undefined;
+  const contourSvg = contourPaths ? `<g fill="none" stroke="${terrainStyle(c.variant, r.palette.colors).palette.contour}"><path d="${contourPaths.thin}" stroke-width=".7" opacity=".4" vector-effect="non-scaling-stroke"/><path d="${contourPaths.index}" stroke-width="1.2" opacity=".5" vector-effect="non-scaling-stroke"/></g>` : '';
+  backgroundSnapshot = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="2048" height="2048" viewBox="0 0 ${t.width} ${t.width}">${scene.svg}${ruralImage}${contourSvg}</svg>`)}`;
+  if (groundRenderer && !r.ground.traits.fantasy) {
+    groundCanvas.hidden = false; background.replaceChildren();
+    const field = t.field!;
+    if (uploadedBackground !== t) { groundRenderer.setBase({ x: 0, y: 0, width: t.width, n: field.n, data: field.data, cave: field.cave, waterSurface: t.waterSurface }); uploadedBackground = t; }
+    groundRenderer.setForest(canopy?.field, canopy?.occupation);
+    backgroundLook={ style: r.ground.style, ambience:c.ambience,waterLook:c.networks.water.look,waterStyle: c.networks.water.look === 'ink' ? r.palette.mapStyle : r.ground.style, independentCanopy: c.vegetation.procedural,
+      colors: r.palette.colors, mapWidth: t.width, lighting: r.ground.lighting, layers: r.ground.layers, globalMin: t.globalMinHeight, globalMax: t.globalMaxHeight,
+      contours: false, contourStep: 1, flatRelief: relief === 'flat', refine: d.meta.terrainDisplay?.refine !== false, sourceCell: d.meta.terrainDisplay?.sourceCell ?? t.width / field.n,
+      seed: seedHash(d.meta.seed), detail: DEFAULT_FRACTAL_DETAIL, floor: field.floor ?? 0, frame: r.ground.layers.frame, background: terrainStyle(c.variant, r.palette.colors).palette.paper, climate, v2Season: r.ground.season };
+    groundRenderer.setLook(backgroundLook);
+    groundRenderer.setRetainedWater(c.networks.water.visible ? decorWaterSvg(d, c.networks.water.look === 'ink' ? r.palette.mapStyle : c.variant, r.ground.lakes, r.palette.colors) : '', t.width);
+    groundRenderer.setView(view, viewport.clientWidth, viewport.clientHeight);
+  } else { groundCanvas.hidden = true; background.innerHTML = scene.svg; }
+  drawContours(); publishBenchCapabilities(); city3d.refresh();
 }
 
-window.addEventListener('bench-render-colors-change', () => { drawContours(); save(); city3d.refresh(); });
+window.addEventListener('bench-render-colors-change', () => { contourStyle = ''; if (decor) void drawBackground(decor); drawContours(); save(); city3d.refresh(); });
+window.addEventListener('bench-composition-change', () => {
+  if(benchMaterialNightChange() && groundRenderer && backgroundLook){backgroundLook={...backgroundLook,ambience:resolveBenchAppearance().composition.ambience};groundRenderer.setLook(backgroundLook);showView();city3d.refresh();save();return;}
+  if (benchOverlayChange()) { showView(); city3d.refresh(); save(); return; } contourStyle = ''; if (decor) void drawBackground(decor); showView(); save(); city3d.refresh();
+});
 function shareQuery(): string {
-  const params = new URLSearchParams(); writeRenderColorsQuery(params, getBenchRenderColors()); if (decor) params.set('artifact', decor.meta.id);
+  const params = new URLSearchParams(); writeRenderColorsQuery(params, getBenchRenderColors()); writeBenchCompositionQuery(params); if (decor) params.set('artifact', decor.meta.id);
   settlements.share(params);
   rpgPins?.share(params);
-  if (backgroundStyle !== 'relief') params.set('fond', backgroundStyle);
+
   params.set('contours', el<HTMLInputElement>('showContours').checked ? '1' : '0');
-  if (!labels) params.set('labels', '0');
   return applyExecutionProfile(new URL(`?${params}`, location.href)).searchParams.toString();
 }
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -187,26 +206,60 @@ const settlements = createTerrainSettlements({ map, viewport, city: true, active
   getTerrain: () => terrain,
   getSettings: () => ({ seed: decor?.meta.seed ?? '', width: decor?.raster.width ?? 0, relief: new URLSearchParams(decor?.meta.query).get('relief') ?? 'flat' }) as TerrainSettings,
   getRaster: () => decor?.raster, getDecor: () => decor, getView: () => view, getAuto: () => false, getQuery: shareQuery,
-  onChange: () => { save(); city3d.refresh(); rpgPins?.draw(); }, onPicking: () => {},
+  onPlanChange: () => queueMicrotask(() => { publishBenchCapabilities(); showView(); if (decor) void drawBackground(decor); city3d.refresh(); }),
+  onChange: () => { save(); city3d.refresh(); rpgPins?.draw(); queueMicrotask(() => { publishBenchCapabilities(); showView(); if (decor) void drawBackground(decor); }); }, onPicking: () => {},
   onFocus: (center, radius) => city3d.active ? city3d.focus(center, radius) : setView({ cx: center.x, cy: center.y, scale: Math.min(viewport.clientWidth, viewport.clientHeight) / Math.max(200, 2.4 * radius) }),
   onProjection: active => { setProjection(active); return city3d.active; },
 });
+// Legend and cartouche of the 3D view: the same plain panels as the 2D map, with the visible semantic classes (rural and urban).
+provideFurniture3d(viewport, () => {
+  if (!decor) return;
+  const r = resolveBenchAppearance({}, 'view3d'), s = r.composition.landuse;
+  return { bench: { title: decor.meta.label ?? '', subtitle: `${(decor.raster.width / 1000).toFixed(1)} km · ${decor.meta.seed}` }, palette: terrainStyle(r.composition.variant, r.palette.colors).palette,
+    legend: r.cartography.legend, cartouche: r.cartography.cartouche, semantic: [...ruralSemanticLegend(settlements.landuse, s.classes, s.rural), ...urbanSemanticLegend(settlements.urban.semanticScenes, s.urban)] };
+});
 // 3D view (city3d.ts): the decor relief draped with the map image, the plan and the buildings in volume.
-const city3d = mountCity3d({ host: viewport, labels, getDecor: () => decor, getScene: () => settlements.urban.buildingState.scene,
+const city3d = mountCity3d({ getText: () => benchTextLayer(benchSettlementTextWorld(settlements.illustrationSettlements, rpgPins?.world)), host: viewport, labels, materialGrounds: true, getDecor: () => decor, getScene: () => settlements.urban.buildingState.scene,
   getProjection: () => settlements.urban.buildingProjection,
   getLotEnclosures: () => settlements.urban.lotEnclosures,
-  getLayouts: () => settlements.urban.layouts, getRegionalStreets: () => settlements.urban.regionalStreets, getPartitions: () => settlements.urban.partitions, getSelected: () => { const s = settlements.urban.buildingState; return s.parentSelected?.kind === 'member' ? s.parentSelected.member_id : s.selected; }, getTextured: () => settlements.urban.textured, setTextured: on => settlements.urban.setTextured(on),
-  details: settlements.urban.buildingDetails, getBuildingAppearance: () => ({ ...settlements.urban.buildingState.appearance, colors: getBenchRenderColors() }),
-  getBackground: () => background.querySelector('image')?.getAttribute('href') ?? undefined,
+  getLayouts: () => settlements.urban.layouts, getRegionalStreets: () => resolveBenchAppearance().composition.networks.roads.visible ? settlements.urban.regionalStreets : [], getPartitions: () => settlements.urban.partitions, getSelected: () => { const s = settlements.urban.buildingState; return s.parentSelected?.kind === 'member' ? s.parentSelected.member_id : s.selected; }, getTextured: () => settlements.urban.textured, setTextured: on => settlements.urban.setTextured(on),
+  details: settlements.urban.buildingDetails, getBuildingAppearance: () => { const r = resolveBenchAppearance({}, 'view3d'); return { ...settlements.urban.buildingState.appearance, colors: r.palette.colors, style: r.city.buildingStyle, diagnostic: r.city.diagnostic, ambience: r.composition.ambience }; },
+  getBackground: backgroundUrl,
+  getLook:()=>{const c=resolveBenchAppearance({},'view3d').composition;return {ambience:c.ambience,waterLook:c.networks.water.look,waterVisible:c.networks.water.visible};},
+  getBuildingsVisible: () => { const b = resolveBenchAppearance({}, 'view3d').composition.buildings; return b.visible && b.meshes !== 'none'; },
+  getForest: () => benchForest('view3d'),
+  getSurface: () => {
+    if (!decor) return;
+    const raster = decor.raster, r = resolveBenchAppearance({}, 'view3d'); let mask = lakeMasks.get(decor);
+    if (!mask) { mask = Float32Array.from(raster.water, value => value === 2 ? 1 : -1); lakeMasks.set(decor, mask); }
+    return { height: { x: 0, y: 0, width: raster.width, n: raster.n, data: raster.height }, water: r.ground.lakes ? { n: raster.n, mask, levels: raster.waterLevel } : undefined, waterVisible: r.composition.networks.water.visible };
+  },
+  getSemantic: () => { const s = resolveBenchAppearance({}, 'view3d').composition.landuse; return { landuse: settlements.landuse, ...s }; },
+  getViewSettings: () => { const r = resolveBenchAppearance({}, 'view3d'); return { ground: r.city.ground as import('./city3d').City3dGround, plan: r.city.plan, colors: r.city.colors, exaggeration: r.city.exaggeration, refinement: r.city.refinement }; },
+  onViewSettingsChange: value => { if (value.ground !== resolveBenchAppearance({}, 'view3d').city.ground) setBenchComposition(withGroundVariant(getBenchComposition(), value.ground === 'map' ? 'parchment' : value.ground === 'render' ? 'render3d' : value.ground)); for (const key of ['plan', 'colors', 'exaggeration', 'refinement'] as const) setBenchAppearanceField(`city.${key}`, value[key]); },
+  getGroundSettings: ground => {
+    if (!decor || ground === 'map') return;
+    const r = resolveBenchAppearance({}, 'view3d'); if (!r.ground.layers.relief || !r.ground.layers.hypsometry) return;
+    const traits = styleTraits(ground === 'render' ? 'render3d' : ground), relief = new URLSearchParams(decor.meta.query).get('relief'), pal = terrainStyle(r.composition.variant, r.palette.colors).palette;
+    const landform = relief === 'flat' || relief === 'hills' || relief === 'valley' ? relief : 'mountains';
+    return { seed: seedHash(decor.meta.seed), climate: decorClimate(decor.meta), sourceCell: decor.meta.terrainDisplay?.sourceCell ?? decor.raster.width / decor.raster.n,
+      lighting: r.ground.lighting, ambience:r.composition.ambience,waterLook:r.composition.networks.water.look, displacement: r.city.refinement !== 'source', forestBrushes: traits.forestBrushes, renderV2: traits.satelliteVariant, v2Season: r.ground.season, waterVisible: r.composition.networks.water.visible,
+      contours: r.ground.contours && relief !== 'cavern' ? { step: cityContourInterval(landform, 1), color: pal.contour, opacity: pal.contourOpacity, flat: relief === 'flat' } : undefined };
+  },
+  getPlanOptions: () => { const r = resolveBenchAppearance({}, 'view3d'), c = r.composition; return { colors: r.palette.colors, view: r.city.view, palette: r.city.palette, width: r.city.width, opacity: r.city.opacity, labels: labels && r.cartography.labels, layers: { ...r.city.layers, streets: c.networks.roads.visible && r.city.layers.streets, waterways: c.networks.water.visible && r.city.layers.waterways !== false }, roadLook: c.networks.roads.look, roadEmphasis: c.networks.roads.emphasis, groundBlend: c.networks.roads.look === 'natural', buildingsVisible: c.buildings.visible && c.buildings.meshes === 'none', appearance: { colors: r.palette.colors, style: r.city.buildingStyle, diagnostic: r.city.diagnostic, ambience: c.ambience } }; },
   onSelect: id => settlements.urban.selectBuilding(id) });
-const view3d = document.createElement('button'); view3d.type = 'button'; view3d.id = 'view3d'; view3d.setAttribute('aria-pressed', 'false');
+// Every bench change already calls city3d.refresh(): the furniture follows it instead of polling.
+{ const refresh = city3d.refresh.bind(city3d); city3d.refresh = () => { refresh(); refreshFurniture3d(viewport); }; }
+const view3d =document.createElement('button'); view3d.type = 'button'; view3d.id = 'view3d'; view3d.setAttribute('aria-pressed', 'false');
 el('focusCity').after(view3d);
 function setProjection(active: boolean): void {
   if (active) city3d.show(); else city3d.hide();
   view3d.setAttribute('aria-pressed', String(city3d.active)); view3d.textContent = city3d.active ? 'Vue 2D' : 'Vue 3D';
+  publishBenchCapabilities();
   view3d.title = city3d.active ? 'Revenir à la carte 2D' : 'Voir la ville et ses maisons en 3D';
 }
 setProjection(false);
+window.dispatchEvent(new Event('bench-space-change'));
 view3d.onclick = () => setProjection(!city3d.active);
 (window as Window & { magnaCity3d?: typeof city3d }).magnaCity3d = city3d; // Automated checks (stats, capture).
 mountIllustration({ host: document.querySelector('header')!, capture: async () => {
@@ -238,9 +291,9 @@ const transfer = document.createElement('details'); transfer.className = 'stage'
 transfer.innerHTML = '<summary>Conserver et partager</summary><div class="stage-controls"><button id="pipelineReturn" type="button" hidden>Renvoyer aux settlements</button><button id="pipelineSave" type="button">Conserver cet export</button><button id="pipelineDownload" type="button">Partager .decor</button><small id="pipelineStatus" role="status"></small></div>';
 stages.append(transfer);
 installUrbanMapExports(transfer.querySelector('.stage-controls')!, map, status, prepareCityMapExport);
-rpgPins = mountCityRpgPins({ map, viewport, query, labels, host: stages,
+rpgPins = mountCityRpgPins({ separateText: true, getText: () => benchTextLayer(), map, viewport, query, labels, host: stages,
   getView: () => view, getLayouts: () => settlements.urban.layouts, getPartitions: () => settlements.urban.partitions,
-  focus: setView, onChange: save, onPinning: () => { pinning = false; el('situationPin').setAttribute('aria-pressed', 'false'); } });
+  focus: setView, onChange: () => { save(); showView(); city3d.refresh(); }, onPinning: () => { pinning = false; el('situationPin').setAttribute('aria-pressed', 'false'); } });
 async function keep(download: boolean): Promise<void> {
   try {
     if (settlements.urban.layoutPending || settlements.urban.generationPending) throw new Error('Attendez la fin du calcul du plan et des parcelles.');
@@ -397,22 +450,22 @@ new ResizeObserver(() => showView()).observe(viewport);
 el('fit').onclick = fit;
 // The 2D frame is never wider than the near LOD (2.2 m/px): the buildings stay drawn on a big town.
 el('focusCity').onclick = () => { const e = settlements.urban.extent; if (e && city3d.active) city3d.focus(e.center, e.radius); else if (e) setView({ cx: e.center.x, cy: e.center.y, scale: Math.min(viewport.clientWidth, viewport.clientHeight) / Math.max(200, 2.4 * e.radius) }); else fit(); };
-el<HTMLInputElement>('showBackground').onchange = event => { background.style.display = (event.target as HTMLInputElement).checked ? '' : 'none'; };
+el<HTMLInputElement>('showBackground').onchange = event => { const visible = (event.target as HTMLInputElement).checked; background.style.display = visible ? '' : 'none'; groundCanvas.style.visibility = visible ? '' : 'hidden'; };
 el<HTMLInputElement>('showContours').onchange = () => { drawContours(); save(); };
 el<HTMLInputElement>('showPlan').onchange = event => settlements.urban.setPlanVisible((event.target as HTMLInputElement).checked);
 el<HTMLSelectElement>('backgroundStyle').value = backgroundStyle;
 el<HTMLSelectElement>('backgroundStyle').onchange = event => {
   const value = (event.target as HTMLSelectElement).value; if (!isBackgroundStyle(value)) return;
-  backgroundStyle = value; syncCityPalette(); syncRoadPreset(); drawContours(); save();
+  backgroundStyle = value; drawContours(); save();
   // The city layer reads it for its bridges (stone decks on the Rendu background).
   document.documentElement.dataset.cityBackground = backgroundStyle; settlements.updateView();
   if (decor) void drawBackground(decor);
 };
-syncCityPalette(); syncRoadPreset(); document.documentElement.dataset.cityBackground = backgroundStyle;
+document.documentElement.dataset.cityBackground = backgroundStyle;
 map.addEventListener('urban:v1-style', event => {
   if ((event as CustomEvent).detail.active && city3d.active) setProjection(false);
 });
-el<HTMLInputElement>('backgroundOpacity').oninput = event => { background.setAttribute('opacity', (event.target as HTMLInputElement).value); };
+el<HTMLInputElement>('backgroundOpacity').oninput = event => { background.setAttribute('opacity', (event.target as HTMLInputElement).value); groundCanvas.style.opacity = (event.target as HTMLInputElement).value; };
 
 /** An export of this browser, otherwise the catalogue file of the same id. */
 async function load(id: string): Promise<Decor> {

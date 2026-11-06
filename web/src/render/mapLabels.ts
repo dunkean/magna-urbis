@@ -1,3 +1,4 @@
+import { DEFAULT_TEXT, styleTextLabels, type TextSettings } from './textLayer';
 /**
  * Map label engine (M5a): names and opt-in RPG/landmark annotations; point, area and curved path labels,
  * greedy collision avoidance with priority by kind/rank and zoom. Pure: text widths come from
@@ -15,7 +16,7 @@ export type RpgPinKind = keyof typeof RPG_PIN_KINDS;
 export interface RpgPin { id: string; kind: RpgPinKind; text: string; x: number; y: number }
 export interface LandmarkLabel { id: string; kind: 'castle' | 'church' | 'square' | 'gate'; text: string; x: number; y: number }
 export interface MapAnnotations { enabled: boolean; pins?: RpgPin[]; landmarks?: LandmarkLabel[] }
-export type MapLabelWorld = Pick<World, 'names'> & { mapAnnotations?: MapAnnotations; options?: { labels?: boolean } };
+export type MapLabelWorld = Pick<World, 'names'> & { site?: { center: Vec2 }; urban?: unknown; mapAnnotations?: MapAnnotations; options?: { labels?: boolean } };
 
 /** Only placed programme features get labels: unmet demands have no map position. */
 export function nativeLandmarkLabels(layouts: Layout[] = [], partitions: Partition[] = []): LandmarkLabel[] {
@@ -60,7 +61,10 @@ export interface MapLabel {
 /** Text width in px of `text` at `size` px for the given style (italic/bold matter). */
 export type Measure = (text: string, size: number, st: KindStyle) => number;
 
-export function buildMapLabels(world: MapLabelWorld, style: MapStyle, pal: Palette): MapLabel[] {
+const labelCache = new WeakMap<MapLabelWorld, { key: string; labels: MapLabel[] }>();
+export function buildMapLabels(world: MapLabelWorld, style: MapStyle, pal: Palette, text: Readonly<TextSettings> = DEFAULT_TEXT): MapLabel[] {
+  const key = JSON.stringify([text, style, pal.fontFamily, pal.ink, pal.inkSoft, pal.lab]), cached = labelCache.get(world);
+  if (cached?.key === key) return cached.labels;
   const names = world.names;
   const styles = kindStyles(style, pal);
   const out: MapLabel[] = [];
@@ -70,7 +74,7 @@ export function buildMapLabels(world: MapLabelWorld, style: MapStyle, pal: Palet
     if (e.kind === 'street') st = streetRankStyle(st, e.rank);
     out.push({ id: e.id, kind: e.kind, text: e.text, st, x: e.anchor.x, y: e.anchor.y, path: e.path, span: e.span, rank: e.rank });
   }
-  if (world.options?.labels !== false && world.mapAnnotations?.enabled) {
+  if (world.mapAnnotations?.enabled) {
     for (const l of world.mapAnnotations.landmarks ?? []) if (l.text.trim()) out.push({ ...l, st: { ...styles[l.kind], minScale: 0, maxScale: Infinity } });
     for (const p of world.mapAnnotations.pins ?? []) {
       if (!p.text.trim()) continue;
@@ -78,7 +82,9 @@ export function buildMapLabels(world: MapLabelWorld, style: MapStyle, pal: Palet
       out.push({ ...p, id: `rpg:${p.id}`, kind: `rpg:${p.kind}`, st: { ...styles.gate, minScale: 0, maxScale: Infinity, priority: 110, italic: false, color: pal.ink, symbol } });
     }
   }
-  return out;
+  if (world.site && !world.urban) out.push({ id: 'site', kind: 'site', text: ' ', ...world.site.center, st: { ...styles.village, symbol: 'ring', minPx: 18, maxPx: 18, minScale: 0, maxScale: Infinity, priority: 105 } }); // fixed px size: the ring never follows the zoom
+  const result = styleTextLabels(out, text, pal); labelCache.set(world, { key, labels: result });
+  return result;
 }
 
 export interface GlyphPos { ch: string; x: number; y: number; a: number; size: number; w: number }

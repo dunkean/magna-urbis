@@ -54,6 +54,18 @@ export function waterFunctionGlsl(name: string, style: WaterStyle): string {
   return `vec3 ${name}(float position){${body}return color;}`;
 }
 
+/** Surface terms shared by material sea/lakes and the retained river compositor. */
+export const WATER_SURFACE_GLSL = `
+float waterSurfaceHash(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+45.32);return fract(p.x*p.y);}
+float waterSurfaceNoise(vec2 p){vec2 i=floor(p),f=fract(p),u=f*f*(3.-2.*f);return mix(mix(waterSurfaceHash(i),waterSurfaceHash(i+vec2(1.,0.)),u.x),mix(waterSurfaceHash(i+vec2(0.,1.)),waterSurfaceHash(i+vec2(1.,1.)),u.x),u.y);}
+vec3 waterSurfaceShade(vec3 color,vec2 world,float px,float shelf,float rim,float wide){
+  color=mix(color,vec3(.16,.33,.32),shelf*.3*wide);
+  color=mix(color,vec3(.40,.55,.52),rim*.18*wide);
+  float fine=1.-smoothstep(2.,6.,px);
+  float n=waterSurfaceNoise(world/170.)*.6+waterSurfaceNoise(world/45.+7.3)*.4*fine+(1.-fine)*.2;
+  return color*(.9+.2*n);
+}
+`;
 const uniforms = new WeakMap<WaterStyle, { colors: Float32Array; positions: Float32Array }>();
 /** Prepared once per material; panning allocates no water palettes. */
 export function waterUniforms(style: WaterStyle): { colors: Float32Array; positions: Float32Array } {

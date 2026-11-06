@@ -9,7 +9,7 @@
  * - a soft damp shadow on the land just outside it;
  * - gentle world-anchored surface variation (static value noise).
  * Land pixels cost at most 24 taps; nothing is computed on the CPU per pixel. */
-import { WATER_STYLE_GLSL } from './waterStyle';
+import { WATER_STYLE_GLSL, WATER_SURFACE_GLSL } from './waterStyle';
 
 export const RENDER_WATER_RINGS = 12;
 
@@ -20,13 +20,9 @@ uniform vec2 uCanvas, uOrigin;
 uniform float uPx, uDpr, uBand, uBankPx;
 uniform float uRings[${RENDER_WATER_RINGS}]; uniform int uRingCount;
 ${WATER_STYLE_GLSL}
+${WATER_SURFACE_GLSL}
 out vec4 outColor;
 float cover(vec2 f) { return textureLod(uLayer, clamp(f, vec2(.5), uCanvas - .5) / uCanvas, 0.).a; }
-float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
-float vnoise(vec2 p) {
-  vec2 i = floor(p), f = fract(p), u = f * f * (3. - 2. * f);
-  return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y);
-}
 const vec2 DIRS[8] = vec2[8](vec2(1, 0), vec2(.7071, .7071), vec2(0, 1), vec2(-.7071, .7071), vec2(-1, 0), vec2(-.7071, -.7071), vec2(0, -1), vec2(.7071, -.7071));
 void main() {
   vec2 f = gl_FragCoord.xy;
@@ -77,14 +73,10 @@ void main() {
   vec3 color = styledWater(.85 * depth * uPx / uBand);
   // Shallow shelf: a lighter, greener teal over the first pixels.
   float shelf = 1. - smoothstep(0., 3. * uDpr, depth);
-  color = mix(color, vec3(.16, .33, .32), shelf * .3 * wide);
   // Shoreline glint about one pixel inside the bank.
   float rim = smoothstep(.2 * uDpr, .9 * uDpr, depth) * (1. - smoothstep(1.2 * uDpr, 2.4 * uDpr, depth));
-  color = mix(color, vec3(.40, .55, .52), rim * .18 * wide);
   // Gentle surface variation, finer octave only where it stays above a pixel.
-  float fine = smoothstep(6., 2., uPx);
-  float n = vnoise(world / 170.) * .6 + vnoise(world / 45. + 7.3) * .4 * fine + (1. - fine) * .2;
-  color *= .9 + .2 * n;
+  color = waterSurfaceShade(color, world, uPx, shelf, rim, wide);
   // Wet bank: soft dark shadow on the land side.
   vec3 bankColor = vec3(.055, .085, .045);
   float bankA = .55 * bank * bank;

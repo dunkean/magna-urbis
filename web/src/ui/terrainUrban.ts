@@ -1,3 +1,5 @@
+import { benchOverlayChange } from './benchComposition';
+import { terrainStyle } from '../render/terrainStyle';
 import { recordStageMs } from './benchTimings';
 import { growthPhaseCultureHtml, growthStepLabel } from './urbanGrowthEvidence';
 import { setupUrbanRenderLocale } from './urbanRenderLocale';
@@ -52,7 +54,9 @@ import { updateYardEnclosures } from '../render/cityLotEnclosures';
 import { createNativeSiteStore, createLegacySiteStore, createUnboundSiteStore, type UrbanSiteStore, type UrbanSiteVisual } from './urbanSiteStore';
 import { CityGlCanvasLayer, type CityGlHostFrame } from '../render/cityGlHost';
 import { cityGlOverlayLayers } from '../render/cityGl';
-import { resolveAppearance, type CityComponent } from '../render/appearanceRecipe';
+import type { CityComponent } from '../render/appearanceRecipe';
+import { getBenchComposition, resolveBenchAppearance, setBenchAppearanceField } from './benchComposition';
+import { drawUrbanSemantic } from '../render/semanticLayer';
 import { cityGlBlocker, getRenderMode, onRenderMode, reportRenderStats, setRenderMode, type RenderMode } from '../render/renderMode';
 import { V1LandscapeLayer, type V1LandscapeStyle } from '../render/v1Landscape';
 import { cityWallSvg } from '../render/cityWalls'; // walls hook
@@ -206,13 +210,19 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   const renderDefaults = { ...render };
   // The city look the draws read: resolved once per change of the bench's Render state (never per frame; the guard is a field compare).
   const LOOK_FIELDS = ['view', 'reserve', 'allocated', 'centers', 'domains', 'quarters', 'blocks', 'streets', 'roadSurface', 'enclosures', 'lotEnclosures', 'parcels', 'gardens', 'places', 'fronts', 'axes', 'access', 'opacity', 'width', 'palette', 'textured', 'groundBlend'] as const;
-  let lookOf: unknown[] | undefined, lookCity: CityComponent | undefined;
+  let lookComposition: unknown, lookOf: unknown[] | undefined, lookCity: CityComponent | undefined;
   function cityLook(): CityComponent {
-    if (lookCity && lookOf && LOOK_FIELDS.every((f, i) => render[f] === lookOf![i])) return lookCity;
-    lookOf = LOOK_FIELDS.map(f => render[f]);
+    if (lookComposition === getBenchComposition() && lookCity && lookOf && LOOK_FIELDS.every((f, i) => render[f] === lookOf![i])) return lookCity;
+    lookComposition = getBenchComposition(); lookOf = LOOK_FIELDS.map(f => render[f]);
     const { view, palette, opacity, width, textured, groundBlend, v1, v1Style, readableGardens, ...layers } = render;
-    lookCity = resolveAppearance({ style: 'parchment', city: { view, palette, opacity, width, groundBlend, layers }, textured: !!textured }, { mapStyle: 'parchment' }, { nativeCities: true }, 'view2d').city;
+    const r = resolveBenchAppearance({ city: { view, palette, opacity, width, groundBlend, layers }, textured: !!textured }, 'view2d');
+    lookCity = { ...r.city, layers: { ...r.city.layers, streets: r.city.layers.streets && r.composition.networks.roads.visible, waterways: r.composition.networks.water.visible && r.city.layers.waterways !== false } };
     return lookCity;
+  }
+  function syncCompositionRender(): void {
+    const r = resolveBenchAppearance({}, 'view2d');
+    Object.assign(render, r.city.layers, { view: r.city.view, palette: r.city.palette, opacity: r.city.opacity, width: r.city.width, groundBlend: r.city.groundBlend, textured: r.city.textured });
+    lookOf = undefined;
   }
   function restoreState(saved: string | null): boolean {
     if (!saved) return false;
@@ -229,6 +239,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     } catch { return false; }
   }
   restoreState(new URLSearchParams(location.search).get('urban'));
+  syncCompositionRender();
   const v1Query = new URLSearchParams(location.search).get('v1');
   // Roads & ground: the saved URL wins over the stored setting; either way the shared store is the source.
   if (render.groundBlend === 'classic' || render.groundBlend === 'blended') setGroundBlend(render.groundBlend); else render.groundBlend = getGroundBlend();
@@ -516,13 +527,14 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   onGroundBlend(() => { render.groundBlend = getGroundBlend(); blendSelect.value = render.groundBlend; draw(); options.onChange(); });
   const forestToneSelect = rendering.querySelector<HTMLSelectElement>('[data-forest-tone]')!;
   forestToneSelect.value = getLanduseForestTone(); forestToneSelect.dataset.renderDefault = DEFAULT_LANDUSE_FOREST_TONE;
-  forestToneSelect.closest<HTMLElement>('label')!.dataset.renderSettingsCategory = 'cover';
+  forestToneSelect.closest<HTMLElement>('label')!.dataset.renderSettingsCategory = 'landuse';
   forestToneSelect.onchange = () => setLanduseForestTone(forestToneSelect.value as LanduseForestTone);
   onLanduseForestTone(() => { forestToneSelect.value = getLanduseForestTone(); draw(); options.onChange(); });
   const modeSelect = rendering.querySelector<HTMLSelectElement>('[data-render-mode]')!;
   modeSelect.value = getRenderMode(); modeSelect.onchange = () => setRenderMode(modeSelect.value as RenderMode);
   onRenderMode(() => { modeSelect.value = getRenderMode(); draw(); options.onChange(); });
   window.addEventListener('bench-render-colors-change', () => { draw(); options.onChange(); });
+  window.addEventListener('bench-composition-change', () => { if (benchOverlayChange()) { draw(); return; } syncCompositionRender(); draw(); options.onChange(); options.onPlanChange?.(); });
   let appliedLayout = clone(layoutConfig), appliedParcel = clone(parcelConfig), appliedQuarterSeed = quarterSeed, appliedParcelSeed = parcelSeed;
   let successfulLayout = clone(appliedLayout), successfulParcel = clone(appliedParcel), successfulQuarterSeed = appliedQuarterSeed, successfulParcelSeed = appliedParcelSeed;
   let citySettings: NonNullable<import('./testbenchUrban').WorkshopState['citySettings']> = {};
@@ -793,7 +805,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
         coldSession?.dispose(); coldSession = undefined;
       }
       const appearance = JSON.stringify({ visible: state.visible, appearance: state.appearance });
-      if ((state.scene || state.cold || state.parent) && changedScene && render.view !== 'roles') render.view = 'buildings';
+      if ((state.scene || state.cold || state.parent) && changedScene) render.view = resolveBenchAppearance().city.view;
       const changedAppearance = appearance !== lastBuildingAppearance;
       lastBuiltScene = state.scene; lastBuiltCold = state.cold; lastBuiltParent = state.parent; lastBuildingAppearance = appearance;
       if (target !== 'all') rememberCities([target]); draw(); options.onChange();
@@ -949,7 +961,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   views.dataset.renderDefault = renderDefaults.view;
   for (const [view, label] of Object.entries({ tissue: 'Tissu', uses: 'Usages', parcels: 'Parcelles', buildings: 'Bâtiments', ...(cityView ? { roles: 'Rôles' } : {}) })) {
     const button = document.createElement('button'); button.type = 'button'; button.textContent = label; button.dataset.urbanView = view;
-    button.onclick = () => { render.v1 = false; render.view = view as Render['view']; draw(); options.onChange(); options.onPlanChange?.(); }; views.append(button);
+    button.hidden = true; button.onclick = () => { render.v1 = false; setBenchAppearanceField('city.view', view); }; views.append(button);
   }
   const v1Button = document.createElement('button'); v1Button.type = 'button'; v1Button.textContent = 'Carte V1'; v1Button.dataset.urbanView = 'v1';
   v1Button.title = 'Fond et occupation du sol V1, maisons V2 conservées';
@@ -1400,7 +1412,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     });
   }
   function publishColdArchitectureBatch(preview: ArchitecturePreview, chunk: NativeBuildingProjectionScene, progress: ArchitectureBatchProgress): void {
-    if (render.view !== 'roles') render.view = 'buildings';
+    render.view = resolveBenchAppearance().city.view;
     preview.completed = progress.completed; preview.total = progress.total;
     preview.buildings = (preview.buildings ?? 0) + chunk.metrics.buildings;
     preview.refusals = (preview.refusals ?? 0) + chunk.metrics.refusals;
@@ -1422,7 +1434,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       replaceCityRenderer(scene); cityBuiltOf = scene; cityBuilt = undefined; refusedParcels = new Set();
     } else { cityRenderer.appendScene(delta); cityDetails?.appendScene(scene); }
     for (const refusal of delta.refusals) refusedParcels!.add(refusal.parcel_id);
-    if (first) { render.view = 'buildings'; draw(); }
+    if (first) { render.view = resolveBenchAppearance().city.view; draw(); }
     else { cityCountsReport(); cityLayer?.request(); }
   }
   function drawCityLayer(layer: SVGGElement): void {
@@ -1511,52 +1523,54 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       if (architectureView === '2d') cityDetails?.update({ viewport: frame.viewport, metresPerPixel: frame.mpp, enabled: false });
       frameInfo.textContent = ''; return false;
     }
+    const r = resolveBenchAppearance({}, 'view2d'), composition = r.composition, visible = composition.buildings.visible && buildingPanel.state.visible;
     const start = performance.now(), selected = architecturePreview?.selected ?? buildingPanel.state.selected;
     cityLod = selectCityLod(frame.mpp, cityLod);
     const compare = comparison.state(), silhouetteCompare = compare?.architecture === 'silhouette';
     const look = cityLook(), view = compare ? compare.renderView : look.view;
     if (compare && silhouetteCompare && (comparisonBuilt?.[0] !== compare.silhouette || comparisonBuilt[1] !== cityPlan)) comparisonBuilt = [compare.silhouette, cityPlan, buildCityBuildings(compare.silhouette, cityPlan)];
-    const appearance = { colors: getBenchRenderColors(), style: (compare ? silhouetteCompare : architectureMode === 'silhouette') ? 'silhouette' as const : 'cartographic' as const, diagnostic: buildingPanel.state.appearance.diagnostic };
-    const viewport = !compare && !architecturePreview && architectureView === '2d' && view === 'buildings' && buildingPanel.state.visible ? boundedCold() : undefined;
+    const appearance = { colors: r.palette.colors, style: compare ? silhouetteCompare ? 'silhouette' as const : 'cartographic' as const : r.city.buildingStyle, diagnostic: r.city.diagnostic, ambience: composition.ambience };
+    const viewport = !compare && !architecturePreview && architectureView === '2d' && view === 'buildings' && visible ? boundedCold() : undefined;
     viewport?.ensureViewport([frame.viewport.minX, frame.viewport.minY, frame.viewport.maxX, frame.viewport.maxY]);
-    const parent = !compare && !architecturePreview && architectureView === '2d' && view === 'buildings' && buildingPanel.state.visible ? boundedParent() : undefined;
-    const parentPreview = !compare && buildingPanel.state.visible && view === 'buildings' ? architecturePreview?.parent : undefined;
+    const parent = !compare && !architecturePreview && architectureView === '2d' && view === 'buildings' && visible ? boundedParent() : undefined;
+    const parentPreview = !compare && visible && view === 'buildings' ? architecturePreview?.parent : undefined;
     const parentOwned = !!buildingPanel.state.parent || !!architecturePreview?.parent;
-    const native = viewport ?? ((compare ? !silhouetteCompare && view === 'buildings' : buildingPanel.state.visible && render.view === 'buildings') ? cityRenderer : undefined);
+    const native = viewport ?? ((compare ? !silhouetteCompare && view === 'buildings' : visible && render.view === 'buildings') ? cityRenderer : undefined);
     const detail = viewport ? viewport.details?.stats : architectureView === '2d' ? cityDetails?.update({ viewport: frame.viewport, metresPerPixel: frame.mpp, selectedId: selected,
-      enabled: !compare && architectureMode === 'detailed' && !!native }) : cityDetails?.stats;
+      enabled: !compare && composition.buildings.meshes === 'detailed' && !!native }) : cityDetails?.stats;
     // WebGL once its upload is done; comparisons and the parchment ink (hatching) keep Canvas 2D.
     // Custom colours are GL uniforms of the colour tables (CityGlStyleState.colors); render=cpu forces Canvas 2D.
     const blocker = cityGlBlocker({ mode: getRenderMode(), compare: !!compare, parchment: (look.palette as string) === 'parchment', ready: glReady === cityPlan });
-    const drawGl = blocker ? undefined : frame.drawGl;
+    const drawGl = blocker || composition.landuse.urban !== 'off' || composition.networks.roads.look === 'natural' || r.city.buildingStyle !== 'cartographic' || r.city.painted || composition.ambience === 'night' ? undefined : frame.drawGl;
     const refused = appearance.diagnostic === 'access' ? refusedParcels : undefined;
     const glFrame = drawGl?.({ viewport: frame.viewport, metresPerPixel: frame.mpp, lod: cityLod, view, palette: look.palette, layers: look.layers, selectedId: selected, selectedParcel,
-      buildingsVisible: buildingPanel.state.visible && !native && !parentOwned, diagnostic: appearance.diagnostic, refusedParcels: refused, textured: look.textured, colors: getBenchRenderColors() });
-    cityFrame = drawCity(ctx, cityPlan, { ...frame, colors: getBenchRenderColors(), labels: options.labels, lod: cityLod, view, palette: look.palette, width: look.width, layers: glFrame ? cityGlOverlayLayers(look.layers) : look.layers,
+      buildingsVisible: visible && !native && !parentOwned, diagnostic: appearance.diagnostic, refusedParcels: refused, textured: look.textured, colors: getBenchRenderColors() });
+    cityFrame = drawCity(ctx, cityPlan, { ...frame, colors: getBenchRenderColors(), labels: false, text: r.composition.text, textPalette: terrainStyle(r.composition.variant, r.palette.colors).palette, roadLook: composition.networks.roads.look, groundBlend: composition.networks.roads.look === 'natural', night: composition.ambience === 'night', lod: cityLod, view, palette: look.palette, width: look.width, layers: glFrame ? cityGlOverlayLayers(look.layers) : look.layers,
       buildings: compare ? (silhouetteCompare ? comparisonBuilt?.[2] : native ? landmarkOverlay() : cityBuilt) : native ? landmarkOverlay() : cityBuilt,
-      buildingsVisible: !parentOwned && (compare ? view === 'buildings' : buildingPanel.state.visible && (!glFrame || !!native)), appearance,
+      buildingsVisible: !parentOwned && (compare ? view === 'buildings' : visible && (!glFrame || !!native)), appearance,
+      beforeBuildings: target => drawUrbanSemantic(target, [cityPlan!], { look: composition.landuse.urban, opacity: composition.landuse.opacity, mpp: frame.mpp, viewport: frame.viewport }),
       selectedBuilding: selected, selectedParcel, refusedParcels: refused, readableGardens: render.readableGardens && look.layers.gardens, textured: look.textured, onTexturesReady: draw });
     // Native plans have their own screen-size LOD and bounded overview tiles.
     // They must remain visible while the first chunks arrive, even at city scale.
     if (native) {
       // A comparison shows the retained compact plans only, never cached native exteriors.
       if (viewport) {
-        const result = viewport.draw(ctx, { viewport: frame.viewport, metresPerPixel: frame.mpp, appearance, selectedId: selected }, architectureMode === 'detailed');
+        const result = viewport.draw(ctx, { viewport: frame.viewport, metresPerPixel: frame.mpp, appearance, painted: r.city.painted, selectedId: selected }, composition.buildings.meshes === 'detailed');
         cityFrame.buildings = result.visibleBuildings ?? 0;
         frameInfo.dataset.coldCoverage = result.coverage; frameInfo.dataset.coldTotal = String(viewport.totals.buildings);
         frameInfo.dataset.coldResident = String(viewport.stats.residentBuildings);
       } else {
-        const metrics = (native as UrbanBuildingLodRenderer<CityVisual>).draw(ctx, { viewport: frame.viewport, metresPerPixel: frame.mpp, appearance, selectedId: selected, useDetails: !compare });
+        const metrics = (native as UrbanBuildingLodRenderer<CityVisual>).draw(ctx, { viewport: frame.viewport, metresPerPixel: frame.mpp, appearance, painted: r.city.painted, selectedId: selected, useDetails: !compare && composition.buildings.meshes === 'detailed' });
         cityFrame.pending ||= metrics.rasterTilesPending > 0; cityFrame.buildings = metrics.visibleBuildings;
       }
     }
     if (parent) {
-      const result = parent.draw(ctx, { viewport: frame.viewport, metresPerPixel: frame.mpp, appearance }, architectureMode === 'detailed');
+      const result = parent.draw(ctx, { viewport: frame.viewport, metresPerPixel: frame.mpp, appearance, painted: r.city.painted }, composition.buildings.meshes === 'detailed');
       cityFrame.buildings = result.visibleMembers ?? 0; cityFrame.pending ||= result.pending;
       frameInfo.dataset.parentEvidence = JSON.stringify({ ...parent.evidence(), active: sameParentBuildingState(parent.state, buildingPanel.state.parent) && !architecturePreview, cityPalette: render.palette });
     } else if (parentPreview) {
       paintParentContexts(ctx, parentPreview.records.contexts, parentPreview.records.materials);
-      const metrics = parentPreview.renderer.draw(ctx, { viewport: frame.viewport, metresPerPixel: frame.mpp, appearance, useDetails: false });
+      const metrics = parentPreview.renderer.draw(ctx, { viewport: frame.viewport, metresPerPixel: frame.mpp, appearance, painted: r.city.painted, useDetails: false });
       cityFrame.buildings = metrics.visibleBuildings; cityFrame.pending = true;
       frameInfo.dataset.parentEvidence = JSON.stringify({ version: 'parent-city-viewport-evidence-1', phase: 'staging', active: false, complete: false, coverage: 'partial',
         sourceFingerprint: parentPreview.source.fingerprint, sourceRevision: parentPreview.source.revision, nativeSession: parentPreview.sessionId,
@@ -1571,7 +1585,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     frameInfo.dataset.detailCacheBytes = String(detail?.cacheBytes ?? 0);
     frameInfo.dataset.buildingsPainted = viewport?.stats.coverage === 'complete-native-contours' ? 'unknown' : String(cityFrame.buildings);
     frameInfo.dataset.renderer = glFrame ? 'webgl2' : 'canvas2d';
-    frameInfo.textContent = `${render.v1 ? 'Style V1 · ' : ''}Vue ${lodNames[cityFrame.lod]} · ${frame.mpp < 1 ? frame.mpp.toFixed(2) : frame.mpp.toFixed(1)} m/px · ${glFrame ? `WebGL2 · ${glFrame.drawCalls} appels, ${(glFrame.triangles / 1000).toFixed(0)} k triangles` : `${cityFrame.blocks} îlots, ${cityFrame.parcels} parcelles, ${cityFrame.streets} rues`}${cityFrame.buildings ? `, ${cityFrame.buildings} bâtiments` : ''} · ${cityFrame.ms.toFixed(1)} ms${architectureMode === 'detailed' && detail ? ` · ${detail.cached} extérieurs détaillés, ${detail.inFlight} en calcul` : ''}`;
+    frameInfo.textContent = `${render.v1 ? 'Style V1 · ' : ''}Vue ${lodNames[cityFrame.lod]} · ${frame.mpp < 1 ? frame.mpp.toFixed(2) : frame.mpp.toFixed(1)} m/px · ${glFrame ? `WebGL2 · ${glFrame.drawCalls} appels, ${(glFrame.triangles / 1000).toFixed(0)} k triangles` : `${cityFrame.blocks} îlots, ${cityFrame.parcels} parcelles, ${cityFrame.streets} rues`}${cityFrame.buildings ? `, ${cityFrame.buildings} bâtiments` : ''} · ${cityFrame.ms.toFixed(1)} ms${composition.buildings.meshes === 'detailed' && detail ? ` · ${detail.cached} extérieurs détaillés, ${detail.inFlight} en calcul` : ''}`;
     if (viewport) frameInfo.textContent += ` · ${viewport.statusText}`;
     else if (architecturePreview?.coldProjection) { frameInfo.textContent += ' · contours partiels pendant l’implantation'; frameInfo.dataset.coldCoverage = 'partial-native-contours'; }
     return cityFrame.pending;
@@ -2253,12 +2267,14 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     get partitions(): Partition[] | undefined { return partitions; },
     /** The city plan (no buildings: they stand in the 3D pass) painted into a 3D ground tile
      * at the tile's own resolution, over the whole city; the 2D canvas only covers the 2D framing. */
-    drawGround(ctx: CanvasRenderingContext2D, region: { x: number; y: number; width: number }, size: number, onTexturesReady: () => void = options.onChange): void {
+    drawGround(ctx: CanvasRenderingContext2D, region: { x: number; y: number; width: number }, size: number, onTexturesReady: () => void = options.onChange, semantic = true): void {
       if (!enabled || !cityPlan) return;
+      const r = resolveBenchAppearance({}, 'view3d'), composition = r.composition, footprint = composition.buildings.visible && composition.buildings.meshes === 'none';
       const k = size / region.width, mpp = 1 / k;
       ctx.save(); ctx.setTransform(k, 0, 0, k, -region.x * k, -region.y * k); ctx.globalAlpha = cityLook().opacity;
       drawCity(ctx, cityPlan, { viewport: { minX: region.x, minY: region.y, maxX: region.x + region.width, maxY: region.y + region.width }, mpp, dpr: 1, lod: selectCityLod(mpp),
-        view: cityLook().view, labels: options.labels, palette: cityLook().palette, width: cityLook().width, layers: cityLook().layers, buildingsVisible: false, appearance: { style: 'cartographic', diagnostic: 'none' }, readableGardens: render.readableGardens && cityLook().layers.gardens, textured: cityLook().textured, onTexturesReady });
+        view: footprint ? 'buildings' : cityLook().view, labels: false, text: r.composition.text, textPalette: terrainStyle(r.composition.variant, r.palette.colors).palette, palette: cityLook().palette, width: cityLook().width, layers: r.city.plan ? cityLook().layers : { ...cityLook().layers, blocks: false, parcels: false, gardens: false, places: false, domains: false, allocated: false, reserve: false }, buildings: footprint ? cityBuilt : undefined, buildingsVisible: footprint, appearance: { colors: r.palette.colors, style: r.city.buildingStyle, diagnostic: r.city.diagnostic, ambience: composition.ambience }, colors: r.palette.colors, roadLook: composition.networks.roads.look, groundBlend: composition.networks.roads.look === 'natural',
+        beforeBuildings: semantic ? target => drawUrbanSemantic(target, [cityPlan!], { look: composition.landuse.urban, opacity: composition.landuse.opacity, mpp, viewport: { minX: region.x, minY: region.y, maxX: region.x + region.width, maxY: region.y + region.width } }) : undefined, readableGardens: render.readableGardens && cityLook().layers.gardens, textured: cityLook().textured, onTexturesReady });
       if (buildingPanel.state.parent && buildingPanel.state.visible && render.view === 'buildings') boundedParent()?.drawContexts(ctx);
       ctx.restore();
     },
@@ -2279,10 +2295,10 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
         const state = buildingPanel.state.cold; if (view === '3d' && state) void ensureColdSession(state).then(() => { draw(); options.onPlanChange?.(); }, e => inspectorNote(String(e)));
         cityLayer?.request(); },
       // A comparison never asks for native work, from either camera.
-      update(view: BuildingDetailView) { const parent = boundedParent(); if (architectureView === '3d' && buildingPanel.state.parent) { if (parent && !comparison.state()) { const v = view.viewport; parent.details.suspend(); parent.ensureViewport([v.minX, v.minY, v.maxX, v.maxY]); } return; } return architectureView === '3d' && !comparison.state() ? cityDetails?.update(view) : cityDetails?.stats; },
+      update(view: BuildingDetailView) { const parent = boundedParent(); if (architectureView === '3d' && buildingPanel.state.parent) { if (parent && !comparison.state()) { const v = view.viewport; parent.details.suspend(); parent.ensureViewport([v.minX, v.minY, v.maxX, v.maxY]); } return; } if (resolveBenchAppearance().composition.buildings.meshes !== 'detailed' || !resolveBenchAppearance().composition.buildings.visible) { cityDetails?.suspend(); return cityDetails?.stats; } return architectureView === '3d' && !comparison.state() ? cityDetails?.update(view) : cityDetails?.stats; },
       getDetail(id: string) { return cityDetails?.getDetail(id); },
       status(id: string) { return cityDetails?.status(id); },
-      cached() { return buildingPanel.state.parent ? [] : cityDetails?.cachedDetails() ?? []; },
+      cached() { return resolveBenchAppearance().composition.buildings.meshes !== 'detailed' || buildingPanel.state.parent ? [] : cityDetails?.cachedDetails() ?? []; },
       subscribe(listener: () => void): () => void { detailListeners.add(listener); return () => { detailListeners.delete(listener); }; },
       get scene() { if (buildingPanel.state.parent) throw new Error('Le consommateur Single n’accepte pas les parents natifs.'); return displayedColdProjection() ?? cityBuiltOf ?? undefined; },
       get stats() { return cityDetails?.stats; },
@@ -2292,8 +2308,9 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     comparison: { ...comparison.api, async prepare() { if (buildingPanel.state.parent) throw new Error('La comparaison legacy des parents natifs n’est pas encore prise en charge.'); const state = buildingPanel.state.cold; if (state) await ensureColdSession(state); draw(); } },
     /** Map clicks belong to the inspector (City Bench roles view too), not to settlement markers. */
     get lotEnclosures() { return cityPlan?.lotEnclosures; },
+    get semanticScenes(): readonly CityScene[] { return cityPlan ? [cityPlan] : []; },
     get inspecting(): boolean { return render.view === 'buildings' || cityView && render.view === 'roles'; },
-    get buildingVisible(): boolean { return buildingPanel.state.visible && render.view === 'buildings'; },
+    get buildingVisible(): boolean { const b = resolveBenchAppearance().composition.buildings; return buildingPanel.state.visible && b.visible && b.meshes !== 'none'; },
     selectBuilding: (id: string): void => { if (buildingPanel.state.parent) { const parent = boundedParent(), member = parent?.projection3d.buildings.find(m => m.member_id === id); if (!member) return; const pick = { kind: 'member' as const, parent_id: member.parent_id, member_id: member.member_id, member_key: member.member_key }; parent?.select(pick); buildingPanel.selectParent(pick); return; } buildingPanel.select(id); },
     selectParent: (pick: import('./urbanParentColdWindow').ParentMapSelection): void => { boundedParent()?.select(pick); buildingPanel.selectParent(pick); },
     get extent() { return layoutExtent(layouts); },

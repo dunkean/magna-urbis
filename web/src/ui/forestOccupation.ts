@@ -7,7 +7,7 @@ import type { Building3dScene } from '../render/urbanBuildingGeometry';
 import { buildingOccupationSurfaces } from './urbanBuildingProjection';
 
 /** Shared classes: 7 built reserve, 8 construction, 9 agricultural lane clearance. */
-const CLASS: Partial<Record<LandKind, number>> = { field: 1, meadow: 2, pasture: 3, orchard: 4, garden: 5, commons: 6 };
+const CLASS: Partial<Record<LandKind, number>> = { field: 1, meadow: 2, pasture: 3, orchard: 4, garden: 5, commons: 6, marsh: 10 };
 const BUILT = 7, OCCUPIED = 8, CLEARANCE = 9, RANGE = 8;
 
 /** Merge accepted footprints and authorized circulation into the same retained
@@ -68,7 +68,7 @@ export function withBuildingOccupation(source: ForestOccupation | undefined, sce
  * R and G hold signed distances (texels, positive inside) to the open and
  * forest regions, so bilinear sampling keeps sharp edges (Green 2007). The
  * raster covers only the occupied square, in the landuse/terrain frame (m).
- * Marsh is left to the material. Deterministic: same layer, same bytes.
+ * Deterministic: same layer, same bytes.
  */
 export function forestOccupation(landuse: LandUseLayer, maxN = 1536, minCell = 2): ForestOccupation | undefined {
   const shapes: { rings: Polygon[]; cls: number; forest: boolean }[] = [];

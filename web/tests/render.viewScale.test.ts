@@ -39,7 +39,7 @@ describe('view scale invariants', () => {
       // The marker ring: the largest arc of the frame, in screen pixels.
       return Math.max(...m.arcs.map(a => a.r * a.k));
     });
-    expect(radii[0]).toBeGreaterThan(3);
+    expect(radii[0]).toBeGreaterThan(3); // the text layer's 'ring' symbol (kind 'site'), drawn in screen space
     for (const r of radii) expect(r).toBeCloseTo(radii[0], 6);
   });
 

@@ -81,15 +81,19 @@ export function createTerrainSurfaceSampler(base: HeightLayer, look: TerrainLook
     const gx = (x - layer.x) / cell - .5, gy = (y - layer.y) / cell - .5;
     const bx = Math.floor(gx), by = Math.floor(gy), data = levels[lod];
     axis(0, gx - bx); axis(8, gy - by);
+    const last = n - 1, c0 = Math.max(0, Math.min(last, bx - 1)), c1 = Math.max(0, Math.min(last, bx)), c2 = Math.max(0, Math.min(last, bx + 1)), c3 = Math.max(0, Math.min(last, bx + 2));
+    const w0 = weights[0], w1 = weights[1], w2 = weights[2], w3 = weights[3];
     height = gradientX = gradientY = 0;
     for (let j = 0; j < 4; j++) {
-      const row = Math.max(0, Math.min(n - 1, by + j - 1)) * n;
-      let value = 0, derivative = 0;
-      for (let i = 0; i < 4; i++) {
-        const sample = data[row + Math.max(0, Math.min(n - 1, bx + i - 1))];
-        value += sample * weights[i]; derivative += sample * weights[i + 4];
+      const row = Math.max(0, Math.min(last, by + j - 1)) * n;
+      const s0 = data[row + c0], s1 = data[row + c1], s2 = data[row + c2], s3 = data[row + c3];
+      const value = s0 * w0 + s1 * w1 + s2 * w2 + s3 * w3;
+      height += value * weights[j + 8];
+      // Only the refined branch reads gradients: every other sampler takes the height alone.
+      if (refine) {
+        gradientX += (s0 * weights[4] + s1 * weights[5] + s2 * weights[6] + s3 * weights[7]) * weights[j + 8];
+        gradientY += value * weights[j + 12];
       }
-      height += value * weights[j + 8]; gradientX += derivative * weights[j + 8]; gradientY += value * weights[j + 12];
     }
     gradientX /= cell; gradientY /= cell;
   };
@@ -108,9 +112,13 @@ export function createTerrainSurfaceSampler(base: HeightLayer, look: TerrainLook
       const { layer, inset } = candidate;
       if (x >= layer.x + inset && y >= layer.y + inset && x <= layer.x + layer.width - inset && y <= layer.y + layer.width - inset) { prepared = candidate; break; }
     }
-    const maxLod = prepared.levels.length - 1;
-    const lod = Math.max(0, Math.min(maxLod, Math.log2(Math.max(1, px / prepared.cell)) - .5)), lower = Math.floor(lod), t = lod - lower;
-    filtered(prepared, lower, t, x, y);
+    // Footprints up to one cell always land on level 0 (the canonical probes all use 0).
+    if (px <= prepared.cell) level(prepared, 0, x, y);
+    else {
+      const maxLod = prepared.levels.length - 1;
+      const lod = Math.max(0, Math.min(maxLod, Math.log2(Math.max(1, px / prepared.cell)) - .5)), lower = Math.floor(lod), t = lod - lower;
+      filtered(prepared, lower, t, x, y);
+    }
     if (floor > 0) height = Math.max(height, floor);
     if (refine && height > 0 && px * 2 < sourceCell * detail.start) {
       const scale = detail.amplitude * Math.pow(Math.max(Math.hypot(gradientX, gradientY) + detail.flat, 1e-6), detail.slope) * sourceCell;

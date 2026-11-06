@@ -92,6 +92,27 @@ export function cartoucheModel(world: World, pal: Palette, pxPerM: number, inclu
   return { w: W, h: H, prims };
 }
 
+const plainBackground = (pal: Palette, w: number, h: number): Prim[] => [{ t: 'rect', x: 0, y: 0, w, h, fill: pal.cart.fill, stroke: pal.cart.stroke, sw: 1, op: pal.cart.op }];
+/** Title block of the benches, which hold no World; the scale bar only when the view's px/m is known (2D). */
+export function plainCartouchePanel(pal: Palette, title: string, subtitle: string, pxPerM?: number): Panel {
+  const h = pxPerM ? 86 : 56, prims: Prim[] = [...plainBackground(pal, 244, h),
+    { t: 'text', x: 12, y: 25, s: title, size: 16, anchor: 'start', fill: pal.ink, bold: true },
+    { t: 'text', x: 12, y: 44, s: subtitle, size: 10, anchor: 'start', fill: pal.inkSoft }];
+  if (pxPerM) {
+    const length = niceLength(pxPerM);
+    prims.push({ t: 'line', pts: [[12, 60], [12 + length * pxPerM, 60]], stroke: pal.ink, sw: 2 },
+      { t: 'text', x: 12, y: 76, s: length >= 1000 ? `${length / 1000} km` : `${length} m`, size: 10, anchor: 'start', fill: pal.ink });
+  }
+  return { w: 244, h, prims };
+}
+/** Legend of the benches: the visible semantic classes only. */
+export function plainLegendPanel(pal: Palette, entries: readonly SemanticLegendEntry[]): Panel {
+  const h = 16 + entries.length * 18, prims = plainBackground(pal, 224, h);
+  entries.forEach((entry, i) => prims.push({ t: 'rect', x: 10, y: 9 + i * 18, w: 15, h: 11, fill: entry.look === 'outlines' ? 'none' : entry.color, stroke: entry.color, sw: 1 },
+    { t: 'text', x: 33, y: 19 + i * 18, s: entry.label, size: 10, anchor: 'start', fill: pal.ink }));
+  return { w: 224, h, prims };
+}
+
 /** The only map overlay on compact screens; its scale follows the actual view. */
 export function compactScaleModel(pal: Palette, pxPerM: number): Panel {
   const L = niceLength(pxPerM, 80), bw = L * pxPerM;
@@ -131,7 +152,33 @@ function lineSwatch(edge: string, fill: string | null, w: number, dash?: number[
   };
 }
 
-export function legendModel(world: World, pal: Palette): Panel {
+export type SemanticPatternId = 'none' | 'furrows' | 'dots' | 'trees' | 'grid' | 'cross' | 'reeds' | 'dashes';
+/** One semantic land-use class of the legend: its own colour, whatever the ground palette (semanticLayer.ts builds them). */
+export interface SemanticLegendEntry { label: string; color: string; pattern: SemanticPatternId; dash: readonly number[]; look: 'subtle' | 'categorical' | 'outlines' }
+/** Swatch of a semantic class: tint, pattern and border as the map draws them (the same alpha per look, at legend scale). */
+function semanticSwatch(e: SemanticLegendEntry): (x: number, y: number) => Prim[] {
+  return (x, y) => {
+    const fill = e.look === 'categorical' ? .55 : e.look === 'subtle' ? .2 : 0, out: Prim[] = [];
+    if (fill) out.push({ t: 'rect', x, y, w: SW, h: SH, fill: e.color, op: fill });
+    if (e.look !== 'subtle' && e.pattern !== 'none') {
+      const mark = (pts: [number, number][], sw = .8, dash?: number[]): Prim => ({ t: 'line', pts, stroke: e.color, sw, dash, op: .9 });
+      const dots = (r: number, xs: number[], ys: number[]): Prim[] => ys.flatMap(dy => xs.map((dx): Prim => ({ t: 'circle', x: x + dx, y: y + dy, r, fill: e.color, op: .9 })));
+      switch (e.pattern) {
+        case 'furrows': for (const d of [3, 6, 9]) out.push(mark([[x + 1, y + d], [x + SW - 1, y + d]], .8)); break;
+        case 'dots': out.push(...dots(.8, [4, 12, 20], [3, 9]), ...dots(.8, [8, 16], [6])); break;
+        case 'trees': out.push(...dots(1.5, [5, 12, 19], [3.5, 9]), ...dots(1.5, [8.5, 15.5], [6.2])); break;
+        case 'grid': out.push(...dots(1.3, [5, 12, 19], [3, 9])); break;
+        case 'cross': out.push(mark([[x + 1, y + 11], [x + 11, y + 1]], .6), mark([[x + 8, y + 11], [x + 18, y + 1]], .6), mark([[x + 1, y + 1], [x + 11, y + 11]], .6), mark([[x + 8, y + 1], [x + 18, y + 11]], .6)); break;
+        case 'reeds': for (const [dy, dx] of [[3, 3], [6, 8], [9, 3]]) out.push(mark([[x + dx, y + dy], [x + dx + 6, y + dy]], 1)); break;
+        case 'dashes': out.push(mark([[x + 1, y + 11], [x + 11, y + 1]], .8, [3, 2]), mark([[x + 8, y + 11], [x + 18, y + 1]], .8, [3, 2])); break;
+      }
+    }
+    out.push({ t: 'rect', x, y, w: SW, h: SH, stroke: e.color, sw: 1 });
+    return out;
+  };
+}
+
+export function legendModel(world: World, pal: Palette, semantic: readonly SemanticLegendEntry[] = []): Panel {
   const underground = isUnderdarkBiome(world.options.biome);
   const U = pal.urban;
   const items: Item[] = [];
@@ -188,6 +235,7 @@ export function legendModel(world: World, pal: Palette): Panel {
   }
   if (world.options.contours) add('Contour (index heavier)', (x, y) => [{ t: 'line', pts: [[x, y + 9], [x + 10, y + 3], [x + SW, y + 7]], stroke: pal.contour, sw: 0.9, op: pal.contourOpacity + 0.2 }]);
   if (world.landuse?.farmsteads.length) add('Farmstead', (x, y) => [{ t: 'rect', x: x + 4, y: y + 2, w: 7, h: 6, fill: pal.farmRoof, stroke: pal.farmInk, sw: 0.7 }, { t: 'rect', x: x + 13, y: y + 4, w: 6, h: 5, fill: pal.farmRoof, stroke: pal.farmInk, sw: 0.7 }]);
+  for (const entry of semantic) add(entry.label, semanticSwatch(entry));
 
   const cols = items.length > 9 ? 2 : 1;
   const rows = Math.ceil(items.length / cols);

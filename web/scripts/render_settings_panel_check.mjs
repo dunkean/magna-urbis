@@ -20,7 +20,7 @@ const reveal = async selector => page.locator(selector).evaluate(element => { fo
 const color = key => `[data-render-color="${key}"]`;
 try {
   await page.goto(`${v2}?empty&lang=fr`); await page.locator('#render-settings').waitFor();
-  assert.deepEqual(await page.locator('#render-settings [data-render-section]').evaluateAll(elements => elements.map(element => element.dataset.renderSection)), ['general', 'relief', 'ground', 'cover', 'roads', 'water', 'buildings', 'diagnostics']);
+  assert.deepEqual(await page.locator('#render-settings [data-render-section]').evaluateAll(elements => elements.map(element => element.dataset.renderSection)), ['ground', 'relief', 'diagnostics', 'vegetation', 'landuse', 'water', 'roads', 'buildings', 'ambience', 'text', 'general']);
   await reveal(color('road')); await page.locator(color('road')).fill('#ca1256');
   await page.locator('[data-setting-path="appearance.terrainStyle"]').selectOption('render-v2');
   await page.waitForTimeout(300);
@@ -37,13 +37,13 @@ try {
   assert(bounds && bounds.x >= 0 && bounds.x + bounds.width <= 390 && bounds.y + bounds.height <= 844, JSON.stringify(bounds));
   await page.screenshot({ path: resolve(output, 'v2-mobile.png') });
   assert.deepEqual(await page.evaluate(() => window.__renderJobs), []);
-  report.checks.push('V2: eight sections, retained colours, material compatibility, reset, mobile bounds, no generation');
+  report.checks.push('V2: eleven sections, retained colours, material compatibility, reset, mobile bounds, no generation');
 
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(`${bench}/terrainbench.html?standalone=1&profile=local&stage=settlements&source=procedural&auto=0&render=svg&style=atlas`);
   await page.waitForFunction(() => window.magnaBenchContext && document.body.dataset.terrainStartup === 'ready');
   await page.locator('#bench-render-settings #roadPreset').waitFor({ state: 'attached' });
-  for (const [id, category] of Object.entries({ showShading: 'relief', style: 'ground', showContours: 'cover', roadPreset: 'roads', showWater: 'water', hydroOverlay: 'diagnostics' })) {
+  for (const [id, category] of Object.entries({ showShading: 'relief', style: 'ground', showContours: 'relief', roadPreset: 'roads', showWater: 'water', hydroOverlay: 'diagnostics' })) {
     assert.equal(await page.locator(`#${id}`).evaluate(element => element.closest('[data-render-section]')?.dataset.renderSection), category, id);
     assert.equal(await page.locator(`#${id}`).count(), 1);
   }

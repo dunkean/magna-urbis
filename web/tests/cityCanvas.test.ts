@@ -43,10 +43,11 @@ describe('City Bench canvas scene', () => {
         const options: CityDrawOptions = { viewport: { minX: 0, minY: 0, maxX: 1000, maxY: 1000 }, mpp: 1, dpr: 1, lod, view: 'roles', palette: 'atlas', width: 1,
           layers: overlay ? cityGlOverlayLayers(layers) : layers, buildingsVisible: false, appearance: { style: 'cartographic', diagnostic: 'none' } };
         const shown = drawCity(ctx, scene, options);
-        if (lod !== 'far') { expect(log.calls.fillText).toBeGreaterThan(0); expect(log.calls.arc).toBeGreaterThan(0); }
+        // Names come from the text layer (scale-driven, any LOD); centre pins are crosses (moveTo/lineTo), landmark glyphs are gone.
+        expect(log.calls.fillText).toBeGreaterThan(0); expect(log.calls.lineTo).toBeGreaterThan(0);
         reset();
         const hidden = drawCity(ctx, scene, { ...options, labels: false });
-        expect(log.calls.fillText ?? 0).toBe(0); expect(log.calls.strokeText ?? 0).toBe(0); expect(log.calls.arc ?? 0).toBe(0);
+        expect(log.calls.fillText ?? 0).toBe(0); expect(log.calls.strokeText ?? 0).toBe(0); expect(log.calls.lineTo ?? 0).toBe(0);
         expect(hidden.blocks).toBe(shown.blocks); expect(hidden.parcels).toBe(shown.parcels); expect(hidden.streets).toBe(shown.streets);
       }
     } finally { vi.unstubAllGlobals(); }

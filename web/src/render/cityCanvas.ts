@@ -1,3 +1,6 @@
+import { DEFAULT_TEXT, cityTextLabels, drawMapLabels, textFamily, textPlacement, measureTextCached, type TextSettings } from './textLayer';
+import { placeMapLabels } from './mapLabels';
+import { PALETTES, type Palette } from './styles';
 import { drawCityWaterways } from './cityWaterways';
 /** City Bench map layer: one viewport-sized Canvas 2D in world coordinates.
  * The plan is indexed once in spatial bins; every camera change repaints only
@@ -6,13 +9,14 @@ import { drawCityWaterways } from './cityWaterways';
 import type { Layout, Parcel, Partition, Point, Quay, Shape, Street } from '../../../rust/bridge/urban';
 import type { Surface } from '../../../rust/bridge/housesContract';
 import type { PlacementBatch, PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
-import { urbanFunctionColor, type UrbanBuildingAppearance } from './urbanBuildingStyle';
+import { buildingColors, urbanFunctionColor, type UrbanBuildingAppearance } from './urbanBuildingStyle';
 import { funeraryLandFill, roleLabel } from './cityRoles';
 import { MATERIALS, coverLayer, layerExtent, layerPattern, materialImagesNow, placeLayer, streetLayer, wallStoneLayer, type MaterialImages } from './buildingMaterials';
 import { planBuildingColors, planRoofColor } from './cityBuildingPalette';
 import { drawLotEnclosures, updateYardEnclosures } from './cityLotEnclosures'; // enclosures hook (cityLotEnclosures.ts)
 import { cityWallDetails, drawCityWallGround, drawCityWalls } from './cityWalls'; // walls hook (cityWalls.ts)
 import { streetToneAt, washAt } from './groundTone';
+import { STREET_MIN_PX, emphasisAlpha, naturalMarks, roadGrain, roadPaint, streetRank, type RoadStyle } from './roadStyle';
 import { STRUCTURE_ROLES, blendLine, blendTone, blendsGround, isBlended, softStreet, type WashKind } from './groundBlend';
 import { CityGround, boardwalkWidth, isBoardwalk, type CityGroundRaster } from './cityGround';
 import { buildingRoof, pieceShadows, pieceVolumes, readMassing, stiltDeck, stiltSupports, roofLight as roofLight3 } from './cityMassing';
@@ -156,7 +160,7 @@ export interface CityScene {
   bins: { blocks: SpatialBins; parcels: SpatialBins; streets: SpatialBins; landmarks: SpatialBins };
   parcelById: Map<string, number>;
 }
-export interface CityBuilding { stilts?: boolean; id: string; surface: Surface; fn: string; family: string; role?: string; landmark: boolean; parcel?: number; building: PlacedBuilding; material?: { culture: string; wall: string; cover: string; tone: number }; path?: Path2D }
+export interface CityBuilding { stilts?: boolean; id: string; surface: Surface; fn: string; family: string; role?: string; landmark: boolean; parcel?: number; building: PlacedBuilding; material?: { culture: string; wall: string; cover: string; tone: number }; path?: Path2D; footprintPath?: Path2D }
 /** Roof pans of the massing (cityMassing.ts): one polygon per sloped face, its
  * building and its light; height shadows per building (sun from the north-west). */
 /** `dir`: downslope direction of each pan in plan (radians, atan2 of the face normal's horizontal part; 0 when flat). */
@@ -315,7 +319,7 @@ export interface CityDrawOptions {
   colors?: import('./customColors').RenderColors;
   readableGardens?: boolean;
   /** Names, landmark glyphs and centre pins; omitted keeps the normal map. */
-  labels?: boolean;
+  labels?: boolean; text?: Readonly<TextSettings>; textPalette?: Palette;
   viewport: Box; mpp: number; dpr: number; lod: CityLod; view: CityView; palette: CityPalette; width: number; layers: CityLayers;
   buildings?: CityBuildings; buildingsVisible: boolean; renderer?: CityBuildingRenderer; appearance: UrbanBuildingAppearance;
   selectedBuilding?: string; selectedParcel?: number; refusedParcels?: ReadonlySet<string>;
@@ -323,6 +327,15 @@ export interface CityDrawOptions {
   textured?: boolean; onTexturesReady?: () => void;
   /** Blended ground and streets (groundBlend.ts): translucent washes, no outlines or casings. Default: the shared setting. */
   groundBlend?: boolean;
+  roadLook?: 'ink' | 'natural';
+  /** Contrast of the roads against their ground, 0.5–1.5 (roadStyle.ts). */
+  roadEmphasis?: number;
+  /** Ink streets of another palette than the blocks: the 3D plan keeps its ground plain but draws the streets of the 2D map. */
+  streetPalette?: CityPalette;
+  /** Night ambience: blocks, parcels and yards take dark slate tones whatever the palette (diagnostic views keep their colours). */
+  night?: boolean;
+  /** Painted above the streets, walls and waterways and below the buildings, in the same world-coordinate context (semantic district usage). */
+  beforeBuildings?: (ctx: CanvasRenderingContext2D) => void;
 }
 export interface CityFrameStats { lod: CityLod; blocks: number; parcels: number; streets: number; buildings: number; ms: number; pending: boolean }
 
@@ -337,6 +350,11 @@ const PARCH = {
   garden: '#d3cf98', place: '#d5cdb7', market: '#d9c9a1', common: '#cdd097', reserve: '#d8c79a', footprint: '#d9c393',
   street: '#f4ead0', streetEdge: '#3f2f1f', bridge: '#f6edd0', ford: '#bccbc8', quay: '#e9dfc4',
   mass: '#4a3826', landmark: '#7d5f40', wall: '#3b2c1c', wallFill: '#6b5540', tower: '#4e3b28',
+};
+/** Night plan grounds, matched to render/styles.ts PALETTES.night urban colours and buildingColors (dark slate blocks under dark masses). */
+const NIGHT_PLAN = {
+  ink: '#04060e', inkSoft: '#04060e', block: '#182038', lot: '#1d2640', yard: '#141a2c',
+  garden: '#14281f', place: '#2e2b30', market: '#3d372b', common: '#162a30', reserve: '#1a2236', footprint: '#18203a',
 };
 /** Ink hatching in screen pixels (one tile per context, rescaled to the frame). */
 const hatches = new WeakMap<CanvasRenderingContext2D, CanvasPattern>();
@@ -402,7 +420,6 @@ class Batches {
     ctx.globalAlpha = 1; ctx.setLineDash([]); this.groups.clear();
   }
 }
-const STREET_MIN_PX = [3, 2.4, 1.6, 1.1, 0.8];
 const CROSSINGS = new Set(['bridge', 'causeway', 'ford', 'pier', 'boardwalk', 'walkway']);
 /** Street surface rings per scene, by streets, widths and edges drawn (a few camera steps). */
 const SURFACE_CACHE = new WeakMap<object, Map<string, { casing: { street: number; path: Path2D }[]; fill: { street: number; path: Path2D }[] }>>();
@@ -470,7 +487,8 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
   const pat = (layer: number): CanvasPattern | undefined => tex ? layerPattern(ctx, tex, layer) ?? undefined : undefined;
   const plaza = (use: string, color: string | undefined): string | CanvasPattern | undefined => color && tex && (use === 'place' || use === 'market') ? pat(placeLayer()) ?? color : color;
   const stats: CityFrameStats = { lod, blocks: 0, parcels: 0, streets: 0, buildings: 0, ms: 0, pending: false };
-  const parchment = palette === 'parchment', batch = new Batches(), outline = palette === 'ink' ? '#3c3024' : parchment ? PARCH.inkSoft : '#655847', lineW = px(Math.max(0.2, o.width));
+  const parchment = palette === 'parchment', night = !!o.night, pl = parchment || night, C = night ? NIGHT_PLAN : PARCH;
+  const batch = new Batches(), outline = night ? NIGHT_PLAN.ink : palette === 'ink' ? '#3c3024' : parchment ? PARCH.inkSoft : '#655847', lineW = px(Math.max(0.2, o.width));
   ctx.lineJoin = 'round'; ctx.lineCap = 'round';
   const pathOf = <T extends { path?: Path2D; shape: Shape; ground?: Shape[]; groundPath?: Path2D }>(item: T): Path2D => {
     if (!item.ground) return item.path ??= shapePath(item.shape);
@@ -483,8 +501,8 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
   const blend = (o.groundBlend ?? isBlended()) && blendsGround(view, palette), tone = blendTone(palette), softLine = blendLine(tone);
   if (lod === 'far') {
     if (blend && layers.blocks) { for (const shape of scene.footprint) if (overlaps(shapeBox(shape), viewport)) { const w = washAt('footprint', tone, shape); batch.add({ fill: w.color, alpha: w.alpha }, shapePath(shape)); } }
-    else if (layers.blocks) for (const shape of scene.footprint) if (overlaps(shapeBox(shape), viewport)) batch.add({ fill: palette === 'terrain' ? undefined : parchment ? PARCH.footprint : '#cfb589', stroke: parchment ? PARCH.ink : '#7b6446', width: px(1), alpha: 0.9 }, shapePath(shape));
-    if (parchment && layers.blocks && !blend) { const hatch = hatchPattern(ctx, mpp); if (hatch) for (const shape of scene.footprint) if (overlaps(shapeBox(shape), viewport)) batch.add({ fill: hatch }, shapePath(shape)); }
+    else if (layers.blocks) for (const shape of scene.footprint) if (overlaps(shapeBox(shape), viewport)) batch.add({ fill: palette === 'terrain' ? undefined : pl ? C.footprint : '#cfb589', stroke: pl ? C.ink : '#7b6446', width: px(1), alpha: 0.9 }, shapePath(shape));
+    if (parchment && !night && layers.blocks && !blend) { const hatch = hatchPattern(ctx, mpp); if (hatch) for (const shape of scene.footprint) if (overlaps(shapeBox(shape), viewport)) batch.add({ fill: hatch }, shapePath(shape)); }
     batch.flush(ctx);
   } else {
     // Blocks: palette, district role, or the ground under buildings.
@@ -494,11 +512,12 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
       stats.blocks++;
       let fill: string | undefined;
       if (palette === 'terrain' && view !== 'roles') fill = undefined;
-      else if (reserve) fill = parchment ? PARCH.reserve : '#cbc2a8';
-      else if (b.kind === 'common') fill = parchment ? PARCH.common : '#adc5bf';
-      else if (b.kind === 'place') fill = parchment ? PARCH.place : '#e8d6ae';
+      else if (reserve) fill = pl ? C.reserve : '#cbc2a8';
+      else if (b.kind === 'common') fill = pl ? C.common : '#adc5bf';
+      else if (b.kind === 'place') fill = pl ? C.place : '#e8d6ae';
       else if (view === 'roles') fill = districtColor(b.district, growthColor(b.zone));
-      else if (view === 'buildings') fill = parchment ? PARCH.yard : lod === 'mid' ? mix(districtColor(b.district, growthColor(b.zone)), PAPER, 0.35) : '#ece2cb';
+      else if (view === 'buildings') fill = pl ? C.yard : lod === 'mid' ? mix(districtColor(b.district, growthColor(b.zone)), PAPER, 0.35) : '#ece2cb';
+      else if (night) fill = C.block;
       else if (palette === 'ink') fill = '#e3d1b5';
       else if (parchment) fill = PARCH.block;
       else fill = palette === 'atlas' ? ATLAS[b.quarter % ATLAS.length] : growthColor(b.zone);
@@ -513,7 +532,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
       }
       batch.add({ fill: plaza(b.kind, fill), stroke: stroke ?? (parchment && b.kind === 'place' ? PARCH.inkSoft : undefined), width: lineW, alpha: b.peripheral && view !== 'buildings' ? 0.6 : 1, dash: reserve ? [px(3), px(2)] : undefined }, pathOf(b));
       // Parchment: built blocks hatched in ink, as on the engraved plans.
-      if (parchment && !blend && !reserve && b.kind !== 'common' && b.kind !== 'place' && view !== 'roles') { const hatch = hatchPattern(ctx, mpp); if (hatch) batch.add({ fill: hatch, alpha: view === 'buildings' ? 0.5 : 1 }, pathOf(b)); }
+      if (parchment && !night && !blend && !reserve && b.kind !== 'common' && b.kind !== 'place' && view !== 'roles') { const hatch = hatchPattern(ctx, mpp); if (hatch) batch.add({ fill: hatch, alpha: view === 'buildings' ? 0.5 : 1 }, pathOf(b)); }
     }
     batch.flush(ctx);
     // Parcels: cadastral detail from near; uses and roles from mid.
@@ -524,7 +543,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
       if (!(built && layers.parcels || use === 'garden' && layers.gardens || open && layers.places || use === 'reserve' && layers.domains)) continue;
       stats.parcels++;
       const burialFill = funeraryLandFill(p.allocation?.role);
-      const openFill = burialFill ?? (parchment ? (use === 'garden' ? PARCH.garden : use === 'reserve' ? PARCH.reserve : use === 'common' ? PARCH.common : use === 'market' ? PARCH.market : use === 'place' ? PARCH.place : undefined)
+      const openFill = burialFill ?? (pl ? (use === 'garden' ? C.garden : use === 'reserve' ? C.reserve : use === 'common' ? C.common : use === 'market' ? C.market : use === 'place' ? C.place : undefined)
         : use === 'garden' ? '#a8bc89' : use === 'reserve' ? '#cbc2a8' : use === 'common' ? '#adc5bf' : use === 'market' ? '#ead39a' : use === 'place' ? '#e6d1a5' : undefined);
       if (blend && (view === 'parcels' || view === 'buildings')) {
         const kind: WashKind = use === 'garden' ? 'garden' : use === 'reserve' ? 'reserve' : use === 'common' ? 'common' : use === 'market' ? 'market' : use === 'place' ? 'place' : 'parcel';
@@ -533,7 +552,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
         if (!(view === 'buildings' && ground)) batch.add({ fill: burialFill ?? plaza(use, w.color), alpha: burialFill ? 0.85 : a }, pathOf(p));
         if (lod === 'close') batch.add({ stroke: softLine.color, width: px(0.5), alpha: softLine.alpha * (ground ? 0.8 : 1) }, pathOf(p));
       } else if (view === 'parcels') {
-        const fill = palette === 'terrain' ? undefined : palette === 'ink' ? '#eee0c9' : parchment ? openFill ?? PARCH.lot : openFill ?? (palette === 'atlas' ? ATLAS[p.index % ATLAS.length] : growthColor(p.zone));
+        const fill = palette === 'terrain' ? undefined : night ? openFill ?? C.lot : palette === 'ink' ? '#eee0c9' : parchment ? openFill ?? PARCH.lot : openFill ?? (palette === 'atlas' ? ATLAS[p.index % ATLAS.length] : growthColor(p.zone));
         batch.add({ fill: plaza(use, fill), stroke: atLeast(lod, 'near') ? outline : undefined, width: lineW, alpha: p.peripheral ? 0.65 : 1 }, pathOf(p));
       } else if (view === 'uses') {
         if (p.allocation) { const c = urbanFunctionColor(p.allocation.function); batch.add({ fill: c, alpha: 0.62 }, pathOf(p)); batch.add({ stroke: c, width: px(0.55) }, pathOf(p)); }
@@ -584,21 +603,35 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
       const k = order(s), list = buckets.get(k); if (list) list.push(s); else buckets.set(k, [s]);
     }
     const visible = [...buckets.keys()].sort((a, b) => b - a).flatMap(k => buckets.get(k)!);
-    const casing = new Batches(), under = new Batches(), surface = new Batches(), over = new Batches(), marks = new Batches(), softStreets = (o.groundBlend ?? isBlended()) && !tex;
+    const casing = new Batches(), under = new Batches(), surface = new Batches(), over = new Batches(), marks = new Batches(), marks2 = new Batches(), softStreets = (o.groundBlend ?? isBlended()) && !tex;
     // Near and close: streets are their ground surface (roadSurface.ts) — square ends at
     // junctions, curb returns, tapers — filled once per style, so nothing shows twice.
     // Decks, quays, fords, dashed tracks and stairs keep their stroked art.
     const surfaced: { s: CityStreet; w: number; edge: number; casing?: Style; fill: Style }[] = [];
     const surfaceOk = (s: CityStreet, dash?: boolean): boolean => layers.roadSurface !== false && atLeast(lod, 'near') && !dash && !CROSSINGS.has(s.role) && !SURFACE_SKIP.has(s.role);
+    const emphasis = o.roadEmphasis ?? 1, inkEmphasis = emphasisAlpha(emphasis);
+    // The user's own colours; the night defaults of `colors` belong to the ink look.
+    const roadStyle: RoadStyle = { look: 'natural', emphasis, night: o.appearance.ambience === 'night', colors: o.appearance.colors }, natural = o.roadLook === 'natural';
     for (const s of visible) {
       stats.streets++;
       // Stroked ways under the surfaced streets, crossings over them.
       const fill = CROSSINGS.has(s.role) ? over : under;
-      const paint = streetPaint(s.role, s.rank, palette);
+      const paint = streetPaint(s.role, s.rank, o.streetPalette ?? palette);
       paint.fill = (s.role === 'track' ? o.colors?.track : o.colors?.road) ?? paint.fill; paint.casing = o.colors?.roadEdge ?? paint.casing;
       const path = s.path ??= linePath(s.street.path);
       const w = Math.max(s.width, px(isBoardwalk(s.role) ? 0.8 : s.role === 'mole' ? 3.4 : STREET_MIN_PX[Math.min(4, Math.max(0, s.rank))])), w2 = Math.round(w * 4) / 4;
-      const toned = streetToneAt(s.street.path, s.role, s.rank);   // map-tinted street (groundTone.ts)
+      if (natural && !STRUCTURE_ROLES.has(s.role)) {
+        // Same paint as the regional roads: a tone of the local ground, a soft shoulder instead of a casing, wear up close.
+        const rank = streetRank(s.role, s.rank), marks = naturalMarks(rank, w, 1 / mpp, roadStyle), bed = { alpha: marks.bed.alpha }, edge = Math.max(px(lod === 'mid' ? 0.9 : 1.4), w * .09), shoulder = marks.shadow && { ...marks.shadow, alpha: marks.shadow.alpha * .8 };
+        const paintRoad = roadPaint(ctx, rank, roadStyle);
+        if (marks.wear) marks2.add({ stroke: marks.wear.color, width: w2 * marks.wear.share, alpha: marks.wear.alpha, dash: marks.wear.dash as number[], cap: 'round' }, path);
+        const grain = marks.grain ? roadGrain(ctx) : undefined; if (grain) marks2.add({ stroke: grain, width: w2, alpha: marks.grain, cap: 'round' }, path);
+        if (surfaceOk(s)) { surfaced.push({ s, w, edge, casing: shoulder && lod !== 'far' ? { fill: shoulder.color, alpha: shoulder.alpha } : undefined, fill: { fill: paintRoad, alpha: bed.alpha } }); continue; }
+        if (shoulder && lod !== 'far') casing.add({ stroke: shoulder.color, width: w2 + 2 * edge, alpha: shoulder.alpha, cap: 'round' }, path);
+        fill.add({ stroke: paintRoad, width: w2, alpha: bed.alpha, cap: 'round' }, path);
+        continue;
+      }
+      const toned = o.roadLook === 'ink' ? undefined : streetToneAt(s.street.path, s.role, s.rank);   // map-tinted street (groundTone.ts)
       if (toned || softStreets && !STRUCTURE_ROLES.has(s.role)) {
         // Blended: earth wash at rank-decaying opacity and a faint soft edge instead of the dark casing.
         const soft = toned ?? softStreet(s.role, s.rank, tone); soft.fill = (s.role === 'track' ? o.colors?.track : o.colors?.road) ?? soft.fill; soft.edge = o.colors?.roadEdge ?? soft.edge;
@@ -613,10 +646,11 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
       }
       const edge = s.role === 'bridge' || s.role === 'quay' || s.role === 'mole' ? Math.max(1.2, px(1.4)) : lod === 'far' ? 0 : px(lod === 'mid' ? 0.7 : 0.9);
       const cap = s.role === 'bridge' || s.role === 'quay' || s.role === 'mole' ? 'butt' : 'round';
-      const body = (!(s.role === 'track' ? o.colors?.track : o.colors?.road) && tex && pat(streetLayer(s.role, s.rank))) || paint.fill;
-      if (surfaceOk(s, paint.dash)) { surfaced.push({ s, w, edge, casing: edge > 0 ? { fill: paint.casing } : undefined, fill: { fill: body } }); continue; }
-      if (edge > 0) casing.add({ stroke: paint.casing, width: w2 + 2 * edge, dash: paint.dash ? [px(4), px(2)] : undefined, cap }, path);
-      fill.add({ stroke: body, width: w2, cap }, path);
+      const body = (!(s.role === 'track' ? o.colors?.track : o.colors?.road) && o.roadLook !== 'ink' && tex && pat(streetLayer(s.role, s.rank))) || paint.fill;
+      const inkEdge = edge * Math.max(1, emphasis), inkAlpha = Math.min(1, inkEmphasis);
+      if (surfaceOk(s, paint.dash)) { surfaced.push({ s, w, edge: inkEdge, casing: edge > 0 ? { fill: paint.casing, alpha: inkAlpha } : undefined, fill: { fill: body, alpha: inkAlpha } }); continue; }
+      if (edge > 0) casing.add({ stroke: paint.casing, width: w2 + 2 * inkEdge, alpha: inkAlpha, dash: paint.dash ? [px(4), px(2)] : undefined, cap }, path);
+      fill.add({ stroke: body, width: w2, alpha: inkAlpha, cap }, path);
       if (s.role === 'bridge' && w2 > px(3.5)) {
         const rails = new Path2D(), offset = w2 / 2 - Math.max(0.4, px(0.8));
         for (let i = 1; i < s.street.path.length; i++) {
@@ -644,7 +678,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
       for (const p of rings.casing) { const st = surfaced[p.street].casing; if (st) casing.add(st, p.path); }
       for (const p of rings.fill) surface.add(surfaced[p.street].fill, p.path);
     }
-    casing.flush(ctx); under.flush(ctx); surface.flush(ctx); over.flush(ctx); marks.flush(ctx);
+    casing.flush(ctx); under.flush(ctx); surface.flush(ctx); marks2.flush(ctx); over.flush(ctx); marks.flush(ctx);
   }
 
   if (layers.lotEnclosures !== false) drawLotEnclosures(ctx, scene, { mpp, lod, palette, groundOnly: layers.lotEnclosureMeshes }); // enclosures hook
@@ -670,24 +704,49 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
 
   if (layers.waterways !== false && (layers.streets || layers.waterways)) drawCityWaterways(ctx, scene.layouts, mpp);
 
+  o.beforeBuildings?.(ctx);
+
   // Buildings: native renderer (compact / detailed) or batched silhouettes.
-  if (o.buildingsVisible && o.buildings && atLeast(lod, 'near') && (view === 'buildings' || view === 'roles')) {
-    if (o.renderer && view === 'buildings') {
+  if (o.buildingsVisible && o.buildings && (o.appearance.style === 'silhouette' || atLeast(lod, 'near')) && (o.appearance.style === 'silhouette' || view === 'buildings' || view === 'roles')) {
+    const footprint = o.appearance.style === 'silhouette', colors = buildingColors(o.appearance.colors, o.appearance.ambience);
+    if (o.renderer && view === 'buildings' && !footprint) {
       stats.pending = o.renderer.draw(ctx, { viewport, metresPerPixel: mpp, appearance: o.appearance, selectedId: o.selectedBuilding }).rasterTilesPending > 0;
     } else {
-      const edge = lod === 'close' ? { stroke: o.colors?.buildingEdge ?? (parchment ? '#f1e5c6' : '#2e261d'), width: px(parchment ? 0.3 : 0.5) } : {};
+      const edge = footprint || lod === 'close' ? { stroke: colors?.buildingEdge ?? (parchment ? '#f1e5c6' : '#2e261d'), width: px(parchment ? 0.3 : 0.5) } : {};
       for (const i of o.buildings.bins.query(viewport)) {
         const b = o.buildings.items[i]; stats.buildings++;
         const tint = planBuildingColors(b, palette);
-        const color = view === 'roles' ? BUILDING_FAMILIES[b.family]?.color ?? '#5a4b3c' : o.appearance.diagnostic === 'uses' ? urbanFunctionColor(b.fn) : o.colors?.building ?? (o.buildings.roofs ? tint.wall : tint.roof);
-        if (!b.path) { b.path = new Path2D(); for (const s of b.surface) b.path.addPath(shapePath(s)); }
-        batch.add({ fill: color, ...edge, ...(b.stilts ? { stroke: '#514431', width: px(0.6) } : {}) }, b.path);
+        const color = view === 'roles' ? BUILDING_FAMILIES[b.family]?.color ?? '#5a4b3c' : o.appearance.diagnostic === 'uses' ? urbanFunctionColor(b.fn) : colors?.building ?? (o.buildings.roofs ? tint.wall : tint.roof);
+        if (footprint) {
+          if (!b.footprintPath) { b.footprintPath = new Path2D(); for (const s of b.building.footprint) b.footprintPath.addPath(shapePath(s)); }
+          batch.add({ fill: color, ...edge }, b.footprintPath);
+        } else {
+          if (!b.path) { b.path = new Path2D(); for (const s of b.surface) b.path.addPath(shapePath(s)); }
+          batch.add({ fill: color, ...edge, ...(b.stilts ? { stroke: '#514431', width: px(0.6) } : {}) }, b.path);
+        }
       }
       batch.flush(ctx);
-      if (o.buildings.roofs && view === 'buildings' && o.appearance.diagnostic !== 'uses') drawPlanRoofs(ctx, o.buildings, o, tex);
+      if (!footprint && o.buildings.roofs && view === 'buildings' && o.appearance.diagnostic !== 'uses') drawPlanRoofs(ctx, o.buildings, o, tex);
       const selected = o.selectedBuilding === undefined ? undefined : o.buildings.byId.get(o.selectedBuilding);
-      if (selected !== undefined && o.buildings.items[selected].path) { ctx.strokeStyle = '#197ea4'; ctx.lineWidth = px(2); ctx.stroke(o.buildings.items[selected].path!); }
+      const selectedPath = selected === undefined ? undefined : footprint ? o.buildings.items[selected].footprintPath : o.buildings.items[selected].path;
+      if (selectedPath) { ctx.strokeStyle = '#197ea4'; ctx.lineWidth = px(2); ctx.stroke(selectedPath); }
     }
+  }
+
+  if (o.buildingsVisible && o.buildings && o.appearance.ambience === 'night' && o.appearance.style !== 'silhouette' && atLeast(lod, 'near')) {
+    ctx.save(); ctx.strokeStyle = '#ffc45e'; ctx.lineCap = 'round';
+    for (const i of o.buildings.bins.query(viewport)) {
+      const b = o.buildings.items[i];
+      let hash = 2166136261; for (const c of b.id) hash = Math.imul(hash ^ c.charCodeAt(0), 16777619);
+      if ((hash >>> 0) % 100 >= 50) continue;
+      const shape = b.building.footprint[0]; if (!shape?.outer.length) continue;
+      const p = shapeRingCenter(shape.outer);
+      ctx.save(); const clip = new Path2D(); for (const s of b.building.footprint) clip.addPath(shapePath(s)); ctx.clip(clip, 'evenodd');
+      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x, p.y);
+      ctx.globalAlpha = .16; ctx.lineWidth = Math.max(1.3, px(2)) * 3.2; ctx.stroke();
+      ctx.globalAlpha = 1; ctx.lineWidth = Math.max(1.3, px(2)); ctx.stroke(); ctx.restore();
+    }
+    ctx.restore();
   }
 
   // Diagnostics of the plan.
@@ -717,22 +776,12 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
   if (o.labels === false) { stats.ms = performance.now() - start; return stats; }
   ctx.save(); ctx.setTransform(o.dpr, 0, 0, o.dpr, 0, 0);
   const screen = (p: Point): Point => ({ x: (p.x - viewport.minX) / mpp, y: (p.y - viewport.minY) / mpp });
-  const label = (text: string, p: Point, size: number, color: string, weight = 600): void => {
-    ctx.font = `${weight} ${size}px Georgia, 'Times New Roman', serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(250,245,232,.9)'; ctx.strokeText(text, p.x, p.y); ctx.fillStyle = color; ctx.fillText(text, p.x, p.y);
-  };
-  if (lod !== 'far') for (const i of scene.bins.landmarks.query(viewport)) {
-    const l = scene.landmarks[i], s = screen(l.point);
-    landmarkGlyph(ctx, l.family, s.x, s.y);
-    if (atLeast(lod, 'near')) label(l.label, { x: s.x, y: s.y + 13 }, 10, '#3a2f25');
-  }
-  if ((lod === 'mid' || lod === 'near') && (view === 'roles' || view === 'buildings' || layers.centers)) for (const d of scene.districts) {
-    // Ordinary housing districts are named only from near, to keep the overview legible.
-    if (!d.anchor || !(d.role || layers.centers) || lod === 'mid' && districtRoleKey(d.role) === 'commoner' && !layers.centers) continue;
-    if (d.anchor.x < viewport.minX || d.anchor.x > viewport.maxX || d.anchor.y < viewport.minY || d.anchor.y > viewport.maxY) continue;
-    label(d.role ? districtRoleLabel(d.role).toUpperCase() : `Q${d.id + 1}`, screen(d.anchor), lod === 'mid' ? 11 : 12, '#4a3b2c', 700);
-  }
-  if (layers.centers) for (const layout of scene.layouts) for (const c of layout.structure?.centers ?? []) {
+  const text = o.text ?? DEFAULT_TEXT, pal = o.textPalette ?? PALETTES.parchment;
+  const labels = cityTextLabels(scene, text, pal);
+  const w = (viewport.maxX - viewport.minX) / mpp, h = (viewport.maxY - viewport.minY) / mpp;
+  const placed = placeMapLabels(labels, { cx: (viewport.minX + viewport.maxX) / 2, cy: (viewport.minY + viewport.maxY) / 2, scale: 1 / mpp }, w, h, (t, size, st) => measureTextCached(ctx, t, size, st, textFamily(text, pal)), textPlacement(text));
+  drawMapLabels(ctx, placed, pal, textFamily(text, pal));
+  if (text.visible && text.groups.city && layers.centers) for (const layout of scene.layouts) for (const c of layout.structure?.centers ?? []) {
     const s = screen(c.point); ctx.strokeStyle = '#a43526'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(s.x - 5, s.y); ctx.lineTo(s.x + 5, s.y); ctx.moveTo(s.x, s.y - 5); ctx.lineTo(s.x, s.y + 5); ctx.stroke();
   }
   ctx.restore();

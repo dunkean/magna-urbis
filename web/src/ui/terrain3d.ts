@@ -10,7 +10,7 @@ import { renderV2ZoneUniform } from '../../../rust/bridge/terrainRenderV2Zones';
 import type { ClimateZone } from '../../../rust/bridge/terrainClimate';
 import { RENDER_3D_MATERIAL_GLSL } from '../../../rust/bridge/terrainMaterial3d';
 import { createGroundDisplacementSampler } from '../../../rust/bridge/terrainGround';
-import { terrainLights, type TerrainLighting } from '../render/terrainLighting';
+import { DEFAULT_TERRAIN_LIGHTING, terrainLights, type TerrainLighting } from '../render/terrainLighting';
 import { gridHeight, raycastGrid, type TerrainPickGrid } from './terrain3dPicking';
 import { stitchTerrainPieces, type TerrainStitchedPiece, type TerrainStitchPiece } from './terrain3dStitch';
 import { UrbanBuildingPass } from './urbanBuilding3d';
@@ -20,6 +20,7 @@ import type { BuildingVector, Building3dVisual, Building3dScene } from '../rende
 import type { BuildingFrame } from './urbanBuilding3d';
 import { withBuildingOccupation } from './forestOccupation';
 import { UrbanBuildingGround } from './urbanBuildingGround';
+import { MATERIAL_WATER_GLSL, MOONLIGHT_GLSL } from '../render/materialLook';
 import { groundNavigationScale, walkDisplacement, WALK_EYE_HEIGHT } from './terrain3dNavigation';
 
 /** Target and orbit distance in world metres; yaw/pitch in radians. */
@@ -38,20 +39,27 @@ export interface Terrain3dTile { key: string; x: number; y: number; width: numbe
 export interface Terrain3dTileContent {
   texture: TexImageSource; height?: HeightLayer; gutter?: number;
   water?: { x: number; y: number; width: number; n: number; alpha: Uint8Array };
+  /** Tint blended over the shaded ground material, with the same world extent and proportional gutter. The material tile's
+   * alpha is water cover (it also clears the canopy), so tints cannot travel in it. */
+  semantic?: TexImageSource;
 }
-export interface Terrain3dGroundSettings {
+export interface Terrain3dLookSettings { ambience?: 'day' | 'night'; waterLook?: 'ink' | 'natural'; waterVisible?: boolean }
+export interface Terrain3dGroundSettings extends Terrain3dLookSettings {
   seed: number; climate: { temperature: number; precipitation: number }; sourceCell: number;
   /** V2 climate zone (Render v2 styles); absent keeps the climate-only look. */
   climateZone?: ClimateZone;
   lighting: TerrainLighting; displacement: boolean; forestBrushes?: boolean; renderV2?: number; v2Season?: number; waterVisible?: boolean;
   contours?: { step: number; color: string; opacity: number; flat: boolean };
 }
+export type Terrain3dForestSettings = Pick<Terrain3dGroundSettings, 'seed' | 'climate' | 'lighting'>;
 export interface Terrain3dOptions {
   /** Ground-level walking and altitude-sensitive orbit controls (V2). */
   navigation?: boolean;
   /** Compile the small draped-map shader first; procedural ground is compiled
    * only when setGroundMaterial is actually requested. Existing benches opt in. */
   fastMapShader?: boolean;
+  /** Synchronous city cartography painting shares the frame budget with terrain meshes. */
+  tileJobsPerFrame?: number;
   /** Set by terrain3dRenderer.ts when the view draws into its own canvas laid over the owner's (a backend
    * switch): the owner's element, which keeps receiving the input and carries the status attributes. */
   element?: HTMLElement;
@@ -65,9 +73,37 @@ export const TERRAIN_3D_MAX_SCALE = 8;
 export const TERRAIN_GROUND_MAX_SCALE = 128;
 type Vec3 = [number, number, number];
 const FOV = TERRAIN_3D_FOV;
-const GRID = 64, TILE_PIXELS = 512, MAX_LEAVES = 64, MAX_CACHE = 192, CACHE_BYTES = 96 * 1024 * 1024;
+const GRID = 64, TILE_PIXELS = 512, MAX_LEAVES = 64, MAX_CACHE = 192, CACHE_BYTES = 128 * 1024 * 1024, HEIGHT_GRIDS = 1024;
 const SPLIT_ERROR = 2.4, MERGE_ERROR = 1.7, MORPH_MS = 220, TEXTURE_FADE_MS = 200;
 const clamp = (value: number, low: number, high: number): number => Math.max(low, Math.min(high, value));
+const mapWaterGlsl = `
+uniform int uNaturalWater; uniform int uNight; uniform int displayWaterVisible; uniform float displayWaterBand;
+uniform sampler2D canopyWater,previousCanopyWater;
+uniform int hasCanopyWater,hasPreviousCanopyWater;
+uniform vec3 canopyWaterRect,previousCanopyWaterRect;
+${MATERIAL_WATER_GLSL}
+${MOONLIGHT_GLSL}
+float displayWaterCover(vec2 p){
+  vec2 q=(p-canopyWaterRect.xy)/canopyWaterRect.z;
+  // Extend the mask's edge for the bounded depth taps: a tile border is not a water bank.
+  if(hasCanopyWater==1)return textureLod(canopyWater,clamp(q,vec2(0.),vec2(1.)),0.).r;
+  q=(p-previousCanopyWaterRect.xy)/previousCanopyWaterRect.z;
+  if(hasPreviousCanopyWater==1)return textureLod(previousCanopyWater,clamp(q,vec2(0.),vec2(1.)),0.).r;
+  return 0.;
+}
+vec3 naturalMapWater(vec3 base,vec3 p,float footprint){
+  if(uNaturalWater==0 || displayWaterVisible==0)return base;
+  float cover=displayWaterCover(p.xz);if(cover<=0.)return base;
+  float band=max(displayWaterBand,1.),position=0.;
+  // Twelve fixed taps approximate bank depth; no view-dependent CPU raster or ray search.
+  for(int i=0;i<3;i++){
+    float r=band*(i==0?.025:i==1?.15:.6);
+    position+=(displayWaterCover(p.xz+vec2(r,0.))+displayWaterCover(p.xz-vec2(r,0.))+displayWaterCover(p.xz+vec2(0.,r))+displayWaterCover(p.xz-vec2(0.,r)))/12.;
+  }
+  vec3 water=materialWater(p.xz,position,footprint);if(uNight==1)water=moonlight(water);
+  return mix(base,water,cover);
+}
+`;
 /** Same lighting, texture transitions, fog and tile diagnostics as the map branch
  * of the full material shader, without compiling unused procedural material code. */
 export const TERRAIN_3D_MAP_FRAGMENT = `#version 300 es
@@ -75,6 +111,7 @@ precision highp float;
 in vec2 texcoord;
 in vec3 normal;
 in vec3 world;
+in vec3 physical;
 uniform sampler2D material;
 uniform sampler2D previousMaterial;
 uniform vec4 textureRect;
@@ -84,11 +121,13 @@ uniform vec3 eye;
 uniform float fogDistance;
 uniform int showTileBounds;
 out vec4 color;
+${mapWaterGlsl}
 void main() {
   vec3 base=mix(texture(previousMaterial,previousRect.xy+texcoord*previousRect.zw),texture(material,textureRect.xy+texcoord*textureRect.zw),textureBlend).rgb;
   base*=.89+.11*max(0.,dot(normalize(normal),normalize(vec3(-.4,.8,-.3))));
+  base=naturalMapWater(base,physical,max(length(dFdx(physical)),length(dFdy(physical))));
   float fog=1.-exp(-pow(length(world-eye)/fogDistance,2.)*.11);
-  base=mix(base,vec3(.77,.85,.88),min(.62,fog));
+  base=mix(base,uNight==1?vec3(.018,.028,.065):vec3(.77,.85,.88),min(.62,fog));
   if(showTileBounds==1){
     vec2 edge=min(texcoord,1.-texcoord)/max(fwidth(texcoord),vec2(1e-6));
     float line=1.-smoothstep(.45,1.35,min(edge.x,edge.y));
@@ -124,6 +163,11 @@ void main() {
   texcoord = uv;
   gl_Position = matrix * vec4(world, 1.);
 }`;
+// The map only blends resolved crowns: reuse that sample when shading the material underneath them.
+const forestMaterial = `${RENDER_3D_MATERIAL_GLSL}\n${RENDER_3D_FOREST_GLSL}`.replace(
+  'ForestCanopy forestCanopyAt(ForestPrep p,vec3 l){return forestCanopyNear(p,l);}',
+  'ForestCanopy mapCanopy;\nForestCanopy forestCanopyAt(ForestPrep p,vec3 l){if(groundEnabled==0)return mapCanopy;return forestCanopyNear(p,l);}',
+);
 const fragmentShader = `#version 300 es
 precision highp float;
 precision highp int;
@@ -146,28 +190,29 @@ uniform int macroN;
 uniform vec3 patchRect;
 uniform int groundContours; uniform vec3 groundContourColor;
 uniform float groundContourStep,groundContourOpacity,groundFlatSlope;
-uniform sampler2D canopyWater,previousCanopyWater;
-uniform int hasCanopyWater,hasPreviousCanopyWater;
-uniform vec3 canopyWaterRect,previousCanopyWaterRect;
+uniform sampler2D semanticTile,previousSemanticTile;
+uniform int hasSemanticTile,hasPreviousSemanticTile;
+uniform vec4 semanticRect,previousSemanticRect;
 in vec2 texcoord;
 in vec3 normal;
 in vec3 world;
 in vec3 physical;
 in vec2 physicalSlope;
 out vec4 color;
+${mapWaterGlsl}
 ${FOREST_PRELUDE_GLSL}
 float forestWaterCoverage(vec2 p){
   vec2 current=(p-canopyWaterRect.xy)/canopyWaterRect.z;
   if(hasCanopyWater==1 && all(greaterThanEqual(current,vec2(0.))) && all(lessThanEqual(current,vec2(1.))))return textureLod(canopyWater,current,0.).r;
   vec2 previous=(p-previousCanopyWaterRect.xy)/previousCanopyWaterRect.z;
   if(hasPreviousCanopyWater==1 && all(greaterThanEqual(previous,vec2(0.))) && all(lessThanEqual(previous,vec2(1.))))return textureLod(previousCanopyWater,previous,0.).r;
+  if(groundEnabled==0)return 0.; // Draped map alpha is opacity, not water cover.
   vec2 uv=(p-patchRect.xy)/patchRect.z;
   return mix(textureLod(previousMaterial,previousRect.xy+uv*previousRect.zw,0.).a,
     textureLod(material,textureRect.xy+uv*textureRect.zw,0.).a,textureBlend);
 }
 ${NEURAL_EARTH_MATERIAL_GLSL}
-${RENDER_3D_MATERIAL_GLSL}
-${RENDER_3D_FOREST_GLSL}
+${forestMaterial}
 ${RENDER_V2_GLSL}
 vec4 groundSpline(float t){float u=1.-t;return vec4(u*u*u,3.*t*t*t-6.*t*t+4.,-3.*t*t*t+3.*t*t+3.*t+1.,t*t*t)/6.;}
 vec4 groundSplineDerivative(float t){return vec4(-.5*(1.-t)*(1.-t),1.5*t*t-2.*t,-1.5*t*t+t+.5,.5*t*t);}
@@ -225,12 +270,37 @@ void main() {
       a*=smoothstep(.25*groundFlatSlope,.5*groundFlatSlope,length(s.yz));
       base=mix(base,groundContourColor,a);
     }
+    if(uNight==1)base=moonlight(base);
+    vec4 semantic=mix(texture(previousSemanticTile,previousSemanticRect.xy+texcoord*previousSemanticRect.zw)*float(hasPreviousSemanticTile),
+      texture(semanticTile,semanticRect.xy+texcoord*semanticRect.zw)*float(hasSemanticTile),textureBlend);
+    base=base*(1.-semantic.a)+semantic.rgb;
   } else {
     float light=.89+.11*max(0.,dot(normalize(normal),normalize(vec3(-.4,.8,-.3))));
     base*=light;
+    base=naturalMapWater(base,physical,max(length(dFdx(physical)),length(dFdy(physical))));
+    if(uForest==1){
+      float footprint=max(.001,max(length(dFdx(physical)),length(dFdy(physical))));
+      ForestPrep prep=forestPrep(physical.xz,footprint);
+      if(prep.valid && !prep.occupied && prep.reveal>0. && prep.crownVis>0.){
+      mapCanopy=forestCanopyNear(prep,normalize(groundLight));
+      if(mapCanopy.cover>0.){
+      vec3 s=groundMacroSurface(physical.xz);
+      float shore=max(s.x,0.)/max(length(s.yz),.0001);
+      // applyForest reads the Render guide written by earthMaterial.
+      vec3 macro=earthMaterial(s,physical.xz,max(footprint,1.),0.,shore,0.);
+      GroundMaterial canopy;
+      canopy.albedo=groundToLinear(base);canopy.normal=normalize(vec3(-physicalSlope.x,1.,-physicalSlope.y));
+      canopy.roughness=.9;canopy.occlusion=1.;
+      applyForest(canopy,physical.xz,footprint,groundLight);
+      vec3 crowns=shadeTerrainGround(canopy,normalize(groundEye-physical),groundLight,groundLight2,groundStrength);
+      if(uNight==1)crowns=moonlight(crowns);
+      base=mix(base,crowns,forestMapCover);
+      }
+      }
+    }
   }
   float fog = 1. - exp(-pow(length(world - eye) / fogDistance, 2.) * .11);
-  base=mix(base,vec3(.77,.85,.88),min(.62,fog));
+  base=mix(base,uNight==1?vec3(.018,.028,.065):vec3(.77,.85,.88),min(.62,fog));
   if(showTileBounds==1){
     vec2 edge=min(texcoord,1.-texcoord)/max(fwidth(texcoord),vec2(1e-6));
     float line=1.-smoothstep(.45,1.35,min(edge.x,edge.y));
@@ -246,10 +316,11 @@ void main() {
 const skyFragment = `#version 300 es
 precision highp float;
 uniform float height;
+uniform int uNight;
 out vec4 color;
 void main() {
   float t = clamp(gl_FragCoord.y / height, 0., 1.);
-  color = vec4(mix(vec3(.89, .92, .91), vec3(.49, .68, .81), pow(t, .8)), 1.);
+  color = vec4(uNight==1?mix(vec3(.035,.046,.09),vec3(.008,.014,.04),pow(t,.8)):mix(vec3(.89, .92, .91), vec3(.49, .68, .81), pow(t, .8)), 1.);
 }`;
 /** GLSL sources translated to WGSL for the WebGPU backend (web/scripts/wgsl_shaders_3d.ts). */
 export const TERRAIN_3D_GLSL = { vertex: vertexShader, ground: fragmentShader, map: TERRAIN_3D_MAP_FRAGMENT, skyVertex, skyFragment };
@@ -300,8 +371,15 @@ function perspective(aspect: number, near: number, far: number): Float32Array {
 function spline(data: Float32Array, n: number, u: number, v: number): number {
   const gx = clamp(u, 0, 1) * n - .5, gy = clamp(v, 0, 1) * n - .5;
   const bx = Math.floor(gx), by = Math.floor(gy);
-  const weights = (t: number): number[] => [(1 - t) ** 3 / 6, (3 * t ** 3 - 6 * t * t + 4) / 6, (-3 * t ** 3 + 3 * t * t + 3 * t + 1) / 6, t ** 3 / 6];
-  const wx = weights(gx - bx), wy = weights(gy - by);
+  splineWeights(gx - bx, wx); splineWeights(gy - by, wy);
+  return splineSum(data, n, bx, by);
+}
+const wx = new Float64Array(4), wy = new Float64Array(4);
+function splineWeights(t: number, out: Float64Array): void {
+  const cube = t ** 3;
+  out[0] = (1 - t) ** 3 / 6; out[1] = (3 * cube - 6 * t * t + 4) / 6; out[2] = (-3 * cube + 3 * t * t + 3 * t + 1) / 6; out[3] = cube / 6;
+}
+function splineSum(data: Float32Array, n: number, bx: number, by: number): number {
   let height = 0;
   for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) {
     height += data[clamp(by + y - 1, 0, n - 1) * n + clamp(bx + x - 1, 0, n - 1)] * wx[x] * wy[y];
@@ -310,11 +388,10 @@ function spline(data: Float32Array, n: number, u: number, v: number): number {
 }
 function lakeHeight(water: WaterSurface, u: number, v: number): number | undefined {
   const { n, mask, levels } = water;
-  if (spline(mask, n, u, v) <= 0) return undefined;
   const gx = clamp(u, 0, 1) * n - .5, gy = clamp(v, 0, 1) * n - .5;
   const bx = Math.floor(gx), by = Math.floor(gy);
-  const weights = (t: number): number[] => [(1 - t) ** 3 / 6, (3 * t ** 3 - 6 * t * t + 4) / 6, (-3 * t ** 3 + 3 * t * t + 3 * t + 1) / 6, t ** 3 / 6];
-  const wx = weights(gx - bx), wy = weights(gy - by);
+  splineWeights(gx - bx, wx); splineWeights(gy - by, wy);
+  if (splineSum(mask, n, bx, by) <= 0) return undefined;
   let height = 0, weight = 0;
   // Dry controls need not carry a water elevation. Excluding them keeps the
   // lake horizontal right up to its B-spline shore, including old .decor files.
@@ -375,12 +452,24 @@ export function clippedPatchIndices(key: string): Uint16Array {
   }
   return new Uint16Array(indices);
 }
-/** A material image with a duplicated one-texel border: every mip keeps a continuous edge; UVs
- * address the inner world rectangle rather than the added gutter. */
-export function paddedMaterial(source: TexImageSource): HTMLCanvasElement {
+function materialSize(source: TexImageSource): { width: number; height: number } {
   const dimensions = source as { width?: number; naturalWidth?: number; videoWidth?: number; height?: number; naturalHeight?: number; videoHeight?: number };
   const width = dimensions.videoWidth || dimensions.naturalWidth || dimensions.width || 1;
   const height = dimensions.videoHeight || dimensions.naturalHeight || dimensions.height || width;
+  return { width, height };
+}
+function materialBytes(source: TexImageSource): number {
+  const size = materialSize(source); let width = size.width + 2, height = size.height + 2, bytes = 0;
+  for (;;) {
+    bytes += width * height * 4;
+    if (width === 1 && height === 1) return bytes;
+    width = Math.max(1, width >> 1); height = Math.max(1, height >> 1);
+  }
+}
+/** A material image with a duplicated one-texel border: every mip keeps a continuous edge; UVs
+ * address the inner world rectangle rather than the added gutter. */
+export function paddedMaterial(source: TexImageSource): HTMLCanvasElement {
+  const { width, height } = materialSize(source);
   let drawable = source as CanvasImageSource;
   if (typeof ImageData !== 'undefined' && source instanceof ImageData) {
     const bitmap = document.createElement('canvas'); bitmap.width = width; bitmap.height = height;
@@ -395,15 +484,49 @@ export function paddedMaterial(source: TexImageSource): HTMLCanvasElement {
   context.drawImage(padded, width, 0, 1, height + 2, width + 1, 0, 1, height + 2);
   return padded;
 }
-/** Seam corrections of a stitched piece, copied onto its skirt vertices (vertex attribute 5). */
+/** Seam corrections of a stitched piece, copied onto its skirt vertices (vertex attribute 5): the
+ * stitch leaves room for them after the surface vertices, in the same buffer. */
+const SKIRT_FLOATS = 4 * (GRID + 1) * 3;
+const skirtCorrections = new WeakMap<Float32Array, Float32Array>();
 function skirtCorrection(stitched: TerrainStitchedPiece): Float32Array {
-  const side = GRID + 1, count = side * side, correction = new Float32Array((count + 4 * side) * 3);
-  correction.set(stitched.correction);
+  const cached = skirtCorrections.get(stitched.correction); if (cached) return cached;
+  const side = GRID + 1, count = side * side, correction = new Float32Array(stitched.correction.buffer);
   for (let edge = 0; edge < 4; edge++) for (let i = 0; i < side; i++) {
-    const from = gridEdgeVertex(edge, i) * 3;
-    correction.set(correction.subarray(from, from + 3), (count + edge * side + i) * 3);
+    const from = gridEdgeVertex(edge, i) * 3, to = (count + edge * side + i) * 3;
+    correction[to] = correction[from]; correction[to + 1] = correction[from + 1]; correction[to + 2] = correction[from + 2];
   }
-  return correction;
+  skirtCorrections.set(stitched.correction, correction); return correction;
+}
+/** A stitched source that still draws the same surface: its join can be kept. */
+function sameSurface(a: TerrainStitchPiece, b: TerrainStitchPiece): boolean {
+  const before = a as RenderPiece, after = b as RenderPiece;
+  return before.patch === after.patch && before.field === after.field && before.heightOrigin === after.heightOrigin && before.morph === after.morph;
+}
+/** Whether two seam snapshots differ beyond what a mesh could show. */
+function seamDiffers(a: Float32Array, b: Float32Array): boolean {
+  for (let i = 0; i < a.length; i++) if (Math.abs(a[i] - b[i]) > 1e-7) return true;
+  return false;
+}
+/** One patch mesh, rebuilt then copied by the upload (10 floats per vertex, skirts included). */
+const meshValues = new Float32Array(((GRID + 1) * (GRID + 1) + 4 * (GRID + 1)) * 10);
+const parentValue = new Float64Array(3);
+function addParentVertex(heights: Float32Array, seam: Float32Array | undefined, step: number, x: number, y: number, weight: number, out: Float64Array): void {
+  const side = GRID + 1, x0 = Math.max(0, x - 1), x1 = Math.min(GRID, x + 1), y0 = Math.max(0, y - 1), y1 = Math.min(GRID, y + 1), i = y * side + x;
+  out[0] += heights[i] * weight;
+  out[1] += (heights[y * side + x1] - heights[y * side + x0]) / ((x1 - x0) * step) * weight;
+  out[2] += (heights[y1 * side + x] - heights[y0 * side + x]) / ((y1 - y0) * step) * weight;
+  if (seam) { const at = i * 3; out[0] += seam[at] * weight; out[1] += seam[at + 1] * weight; out[2] += seam[at + 2] * weight; }
+}
+/** Height and gradient of the parent's triangles at a world point, as the GPU interpolates them. */
+function parentSample(tile: Terrain3dTile, heights: Float32Array, seam: Float32Array | undefined, x: number, y: number, out: Float64Array): void {
+  const step = tile.width / GRID, gx = clamp((x - tile.x) / step, 0, GRID), gy = clamp((y - tile.y) / step, 0, GRID);
+  const ix = Math.min(GRID - 1, Math.floor(gx)), iy = Math.min(GRID - 1, Math.floor(gy)), tx = gx - ix, ty = gy - iy;
+  out[0] = out[1] = out[2] = 0;
+  if (tx + ty <= 1) {
+    addParentVertex(heights, seam, step, ix, iy, 1 - tx - ty, out); addParentVertex(heights, seam, step, ix + 1, iy, tx, out); addParentVertex(heights, seam, step, ix, iy + 1, ty, out);
+  } else {
+    addParentVertex(heights, seam, step, ix + 1, iy, 1 - ty, out); addParentVertex(heights, seam, step, ix, iy + 1, 1 - tx, out); addParentVertex(heights, seam, step, ix + 1, iy + 1, tx + ty - 1, out);
+  }
 }
 
 /** Textures and handles below are WebGL objects, or the WebGPU backend's own (terrain3dGpu.ts). */
@@ -424,6 +547,8 @@ export interface Patch {
   /** The exact fine and parent fields uploaded to this mesh. */
   field?: Float32Array;
   seamSnapshot?: Float32Array;
+  /** The last correction compared with the snapshot. */
+  seamCompared?: Float32Array;
   parentSeam?: Float32Array;
   textureFadeStart: number;
   textureProgress: number;
@@ -440,7 +565,7 @@ interface Node { patch: Patch; children?: Node[]; error: number; wantsSplit: boo
 export interface MaterialRef { texture: WebGLTexture; tile?: Terrain3dTile; pixels: number; gutter?:number }
 export interface PatchMaterial { from: MaterialRef; to: MaterialRef; blend: number; ready: boolean }
 export interface FrameGeometry { eye: Vec3; targetHeight: number; matrix: Float32Array; focal: number; right: Vec3; up: Vec3; forward: Vec3 }
-interface RenderPiece extends TerrainStitchPiece { patch: Patch; morph: number }
+interface RenderPiece extends TerrainStitchPiece { patch: Patch; morph: number; field: Float32Array; heightOrigin: number }
 /** One patch draw of a frame, backend independent: mesh, clip, material blend and seam corrections. */
 export interface PatchDraw {
   patch: Patch; morph: number; clip: Terrain3dTile; material: PatchMaterial;
@@ -453,6 +578,7 @@ export interface PatchDraw {
  * backend (terrain3dGpu.ts) overrides the protected GPU hooks (attach, upload*, release*, renderFrame...). */
 export class Terrain3d {
   private gl!: WebGL2RenderingContext;
+  private textureAnisotropy?: { parameter: number; value: number };
   private terrainProgram!: WebGLProgram;
   private mapProgram?: WebGLProgram;
   /** Ground material variants (glVariants.ts): settings switches as constants, linked in parallel. */
@@ -478,8 +604,11 @@ export class Terrain3d {
   private shoreRing?: { layer: object; texture: WebGLTexture };
   private empty!: WebGLTexture;
   protected waterMasks = new Map<WebGLTexture, { texture: WebGLTexture; rect: readonly [number, number, number]; bytes: number }>();
+  /** Semantic tile of a material tile: follows it through parent fallbacks and fades. */
+  protected semanticTiles = new Map<WebGLTexture, { texture: WebGLTexture; pixels: number; gutter: number }>();
   protected forestField?: ForestField;
   protected forestOccupation?: ForestOccupation;
+  protected forestSettings?: Terrain3dForestSettings;
   protected forest?: ForestTextures;
   protected occupation?: { data: ForestOccupation; texture: WebGLTexture };
   private indexCount = 0;
@@ -490,12 +619,16 @@ export class Terrain3d {
   private fallbackPixels = 1;
   private fallbackGutter = 0;
   protected groundSettings?: Terrain3dGroundSettings;
+  protected lookSettings: Terrain3dLookSettings = {};
   protected tileBounds = false;
   private tileLoader?: (tile: Terrain3dTile) => Promise<TexImageSource | Terrain3dTileContent>;
   private requireHeights = false;
   private geometryNeeded: Patch[] = [];
   private heightSampler?: (x: number, y: number, metresPerPixel: number) => number;
   private patches = new Map<string, Patch>();
+  /** Sampled grids by tile key (17 KB each): they outlive the textures that evict their patch, and a
+   * revisited tile costs no sampling. Every input of surface() clears them through clearPatches. */
+  private heightGrids = new Map<string, Float32Array>();
   private root?: Node;
   private splits = new Set<string>();
   private animating = false;
@@ -568,11 +701,13 @@ export class Terrain3d {
 
   private initialize(): void {
     const gl = this.gl;
+    const anisotropy = gl.getExtension('EXT_texture_filter_anisotropic');
+    this.textureAnisotropy = anisotropy ? { parameter: anisotropy.TEXTURE_MAX_ANISOTROPY_EXT, value: Math.min(8, gl.getParameter(anisotropy.MAX_TEXTURE_MAX_ANISOTROPY_EXT)) } : undefined;
     this.uniformLocations = new WeakMap();
     this.clippedIndices.clear();
     this.mapProgram = this.lastGround = undefined;
     this.groundVariants?.reset(); this.groundVariants = new ShaderVariants(gl, () => this.request());
-    this.selectTerrainProgram(!!this.groundSettings);
+    this.selectTerrainProgram(!!this.groundSettings || !!this.forestField);
     this.skyProgram = program(gl, skyVertex, skyFragment);
     this.buildings?.dispose(); this.buildings = new UrbanBuildingPass(gl, () => this.request());
     this.buildings.setScene(this.buildingsVisible ? this.buildingScene : undefined, this.buildingAppearance);
@@ -599,14 +734,14 @@ export class Terrain3d {
   /** The settings' ground variant once linked; meanwhile the last drawn one, or the variant without
    * ground material (the projected map, quick to compile), stands in. */
   private groundShader(settings: Terrain3dGroundSettings | undefined): WebGLProgram {
-    const forest = !!settings && !!this.forest;
-    const v = { groundEnabled: +!!settings, uRenderV2: settings?.renderV2 ?? 0, uForest: +forest, uForestBrushes: +!!settings?.forestBrushes,
+    const forest = !!this.forest;
+    const v = { groundEnabled: +!!settings, uRenderV2: settings?.renderV2 ?? 0, uForest: +forest, uForestBrushes: +!!settings?.forestBrushes, uNaturalWater: +(this.lookSettings.waterLook==='natural'),
       uHasOccupation: +(forest && !!this.occupation), uHasForestBank: +(forest && !!this.forest?.bank) };
     const variant = (constants: typeof v, wait: boolean) => this.groundVariants.get(Object.values(constants).join('.'), () => [vertexShader, specializeShader(fragmentShader, constants)], wait);
     const target = variant(v, false);
     this.mark('groundVariant', target ? 'ready' : 'pending');
     if (target) return this.lastGround = target;
-    const preview = variant({ groundEnabled: 0, uRenderV2: 0, uForest: 0, uForestBrushes: 0, uHasOccupation: 0, uHasForestBank: 0 }, true);
+    const preview = variant({ groundEnabled: 0, uRenderV2: 0, uForest: 0, uForestBrushes: 0, uNaturalWater: 0, uHasOccupation: 0, uHasForestBank: 0 }, true);
     if (!this.lastGround && !preview) throw new Error('Shader terrain 3D indisponible.');
     return this.lastGround ?? preview!;
   }
@@ -653,8 +788,8 @@ export class Terrain3d {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.generateMipmap(gl.TEXTURE_2D);
-    const anisotropy = gl.getExtension('EXT_texture_filter_anisotropic');
-    if (anisotropy) gl.texParameterf(gl.TEXTURE_2D, anisotropy.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(8, gl.getParameter(anisotropy.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));
+    // A capability query here synchronizes every tile upload with the preceding canopy draw.
+    if (this.textureAnisotropy) gl.texParameterf(gl.TEXTURE_2D, this.textureAnisotropy.parameter, this.textureAnisotropy.value);
     return texture;
   }
 
@@ -680,9 +815,10 @@ export class Terrain3d {
   }
   setGroundMaterial(settings: Terrain3dGroundSettings | undefined): void {
     const previous = this.groundSettings;
+    if(settings && (settings.ambience!==undefined || settings.waterLook!==undefined))this.setLook(settings);
     // Compile before committing the switch: a failed optional material keeps
     // the current renderer and retained geometry usable.
-    this.selectTerrainProgram(!!settings);
+    this.selectTerrainProgram(!!settings || !!this.forest);
     this.groundSettings = settings;
     if(settings?.renderV2 && !previous?.renderV2 && !this.textureSource){
       this.deleteTexture(this.material);this.material=this.uploadTexture(new Uint8Array([0,0,0,0]));
@@ -695,6 +831,10 @@ export class Terrain3d {
     this.request();
   }
   setRenderV2Season(season:number):void { if(this.groundSettings?.renderV2){this.groundSettings={...this.groundSettings,v2Season:season};this.request();} }
+  setLook(look: Terrain3dLookSettings): void {
+    if(this.lookSettings.ambience===look.ambience && this.lookSettings.waterLook===look.waterLook && this.lookSettings.waterVisible===look.waterVisible)return;
+    this.lookSettings={...look};this.request();
+  }
   setTileBoundaries(visible: boolean): void { this.tileBounds = visible; this.request(); }
   /** Presentation consumes the same immutable native scene as the map. */
   setBuildings(scene: Building3dScene | undefined, appearance: UrbanBuildingAppearance, visible = true): void {
@@ -710,8 +850,9 @@ export class Terrain3d {
     const missing = this.buildings.replaceBuildings(changes); this.request(); return missing;
   }
   /** Render3D forest: texture uploads only, no mesh or material tile rebuild. */
-  setForest(field: ForestField | undefined, occupation?: ForestOccupation): void {
+  setForest(field: ForestField | undefined, occupation?: ForestOccupation, settings = this.forestSettings): void {
     occupation = field ? occupation : undefined;
+    this.forestSettings = settings ?? { seed: 0, climate: { temperature: 18, precipitation: 1000 }, lighting: DEFAULT_TERRAIN_LIGHTING };
     this.forestField = field; this.forestOccupation = occupation;
     if (this.mergedOccupationSource !== occupation || this.mergedOccupationScene !== this.buildingScene) {
       this.mergedOccupationSource = occupation; this.mergedOccupationScene = this.buildingScene;
@@ -719,8 +860,10 @@ export class Terrain3d {
     }
     occupation = field ? this.mergedOccupation : undefined;
     if (field !== this.forest?.field) {
+      const hadForest = !!this.forest;
       this.releaseForest(this.forest);
       this.forest = field && this.uploadForest(field);
+      if (hadForest !== !!field) this.selectTerrainProgram(!!this.groundSettings || !!field);
     }
     if (occupation !== this.occupation?.data) {
       if (this.occupation) this.deleteTexture(this.occupation.texture);
@@ -777,7 +920,7 @@ export class Terrain3d {
   private clearPatches(): void {
     ++this.epoch;
     for (const patch of this.patches.values()) this.releasePatch(patch);
-    this.patches.clear(); this.root = undefined; this.desired = []; this.protected.clear(); this.splits.clear();
+    this.patches.clear(); this.heightGrids.clear(); this.root = undefined; this.desired = []; this.protected.clear(); this.splits.clear();
     this.displayedGrids = [];
     this.displayedPieces = [];
     this.stitchUpdated = 0;
@@ -844,6 +987,28 @@ export class Terrain3d {
     const dot = (axis: Vec3): number => relative[0] * axis[0] + relative[1] * axis[1] + relative[2] * axis[2];
     const depth = dot(frame.forward);
     return depth > 0 ? [this.width / 2 + frame.focal * dot(frame.right) / depth, this.height / 2 - frame.focal * dot(frame.up) / depth] : null;
+  }
+  /** One camera basis per text update; canonical terrain heights also reject anchors behind hills. */
+  labelProjector(): { scale: number; project(x: number, y: number): [number, number] | null } | undefined {
+    if (!this.layer || !this.active) return undefined;
+    const frame = this.frameGeometry(), c = this.camera, width = this.width, height = this.height, layer = this.layer;
+    const ex = c.x + frame.eye[0], ey = c.y + frame.eye[2], ez = frame.targetHeight + frame.eye[1];
+    const far = Math.max(c.distance * 4, this.layer.width * 2 + this.heightRange * c.exaggeration * 2);
+    return { scale: frame.focal / Math.max(1, c.distance), project: (x, y) => {
+      const z = (this.heightAt(x, y) ?? 0) * c.exaggeration + .6;
+      const dx = x - ex, dy = z - ez, dz = y - ey;
+      const dot = (axis: Vec3): number => dx * axis[0] + dy * axis[1] + dz * axis[2];
+      const depth = dot(frame.forward); if (depth <= .02 || depth > far) return null;
+      const sx = width / 2 + frame.focal * dot(frame.right) / depth, sy = height / 2 - frame.focal * dot(frame.up) / depth;
+      if (sx < 0 || sy < 0 || sx > width || sy > height) return null;
+      for (let i = 1; i < 24; i++) {
+        const f = i / 24, x = ex + dx * f, y = ey + dz * f;
+        if (x < layer.x || y < layer.y || x > layer.x + layer.width || y > layer.y + layer.width) continue;
+        const ground = this.surface(x, y, 0, false) * c.exaggeration;
+        if (ground > ez + dy * f + .8) return null;
+      }
+      return [sx, sy];
+    } };
   }
   private patch(level: number, ix: number, iy: number): Patch {
     const layer = this.layer!, key = `${level}/${ix}/${iy}`;
@@ -964,10 +1129,14 @@ export class Terrain3d {
   }
   private grid(patch: Patch): Float32Array {
     if (patch.heights) return patch.heights;
+    const key = patch.tile.key, known = this.heightGrids.get(key);
+    if (known) { this.heightGrids.delete(key); this.heightGrids.set(key, known); return patch.heights = known; }
     const side = GRID + 1, heights = new Float32Array(side * side), step = patch.tile.width / GRID;
     for (let y = 0; y < side; y++) for (let x = 0; x < side; x++) {
       heights[y * side + x] = this.surface(patch.tile.x + x * step, patch.tile.y + y * step, step);
     }
+    this.heightGrids.set(key, heights);
+    if (this.heightGrids.size > HEIGHT_GRIDS) this.heightGrids.delete(this.heightGrids.keys().next().value!);
     patch.heights = heights; return heights;
   }
   private decodedGrid(tile: Terrain3dTile, layer: HeightLayer): Float32Array {
@@ -1019,34 +1188,13 @@ export class Terrain3d {
     const visit = (node: Node): boolean => node.visible && (node.patch === patch || !!node.children?.some(visit));
     return !!this.root && visit(this.root);
   }
-  private gradient(heights: Float32Array, x: number, y: number, step: number): [number, number] {
-    const side = GRID + 1, x0 = Math.max(0, x - 1), x1 = Math.min(GRID, x + 1), y0 = Math.max(0, y - 1), y1 = Math.min(GRID, y + 1);
-    return [(heights[y * side + x1] - heights[y * side + x0]) / ((x1 - x0) * step),
-      (heights[y1 * side + x] - heights[y0 * side + x]) / ((y1 - y0) * step)];
-  }
-  private parentSample(parent: Patch, x: number, y: number, stitched = false): [number, number, number] {
-    const heights = this.grid(parent), tile = parent.tile, step = tile.width / GRID, side = GRID + 1;
-    const gx = clamp((x - tile.x) / step, 0, GRID), gy = clamp((y - tile.y) / step, 0, GRID);
-    const ix = Math.min(GRID - 1, Math.floor(gx)), iy = Math.min(GRID - 1, Math.floor(gy)), tx = gx - ix, ty = gy - iy;
-    const points = tx + ty <= 1 ? [[ix, iy, 1 - tx - ty], [ix + 1, iy, tx], [ix, iy + 1, ty]]
-      : [[ix + 1, iy, 1 - ty], [ix, iy + 1, 1 - tx], [ix + 1, iy + 1, tx + ty - 1]];
-    let height = 0, dx = 0, dy = 0;
-    for (const [px, py, weight] of points) {
-      const gradient = this.gradient(heights, px, py, step);
-      height += heights[py * side + px] * weight; dx += gradient[0] * weight; dy += gradient[1] * weight;
-      if (stitched && parent.seamSnapshot) {
-        const at = (py * side + px) * 3;
-        height += parent.seamSnapshot[at] * weight; dx += parent.seamSnapshot[at + 1] * weight; dy += parent.seamSnapshot[at + 2] * weight;
-      }
-    }
-    return [height, dx, dy];
-  }
   private buildMesh(patch: Patch): void {
     const tile = patch.tile, side = GRID + 1, count = side * side;
-    const heights = this.grid(patch), values = new Float32Array((count + 4 * side) * 10), field = new Float32Array(count * 6);
+    const heights = this.grid(patch), values = meshValues, field = new Float32Array(count * 6);
     const step = tile.width / GRID, [level, ix, iy] = tile.key.split('/').map(Number);
     const parent = level ? this.patch(level - 1, Math.floor(ix / 2), Math.floor(iy / 2)) : patch;
-    patch.parentSeam = parent === patch ? undefined : parent.seamSnapshot;
+    const seam = parent === patch ? undefined : parent.seamSnapshot, parentHeights = this.grid(parent);
+    patch.parentSeam = seam;
     const skirt = Math.max(.05, tile.width * .12);
     for (let y = 0; y < side; y++) for (let x = 0; x < side; x++) {
       const i = y * side + x, at = i * 10;
@@ -1055,13 +1203,16 @@ export class Terrain3d {
       values[at + 3] = x / GRID; values[at + 4] = y / GRID;
       values[at + 5] = (heights[y * side + x1] - heights[y * side + x0]) / ((x1 - x0) * step);
       values[at + 6] = (heights[y1 * side + x] - heights[y0 * side + x]) / ((y1 - y0) * step);
-      const coarse = this.parentSample(parent, tile.x + x * step, tile.y + y * step, parent !== patch);
-      values[at + 7] = coarse[0] - patch.heightOrigin; values[at + 8] = coarse[1]; values[at + 9] = coarse[2];
-      field.set([values[at + 1], values[at + 5], values[at + 6], values[at + 7], values[at + 8], values[at + 9]], i * 6);
+      parentSample(parent.tile, parentHeights, seam, tile.x + x * step, tile.y + y * step, parentValue);
+      values[at + 7] = parentValue[0] - patch.heightOrigin; values[at + 8] = parentValue[1]; values[at + 9] = parentValue[2];
+      const out = i * 6;
+      field[out] = values[at + 1]; field[out + 1] = values[at + 5]; field[out + 2] = values[at + 6];
+      field[out + 3] = values[at + 7]; field[out + 4] = values[at + 8]; field[out + 5] = values[at + 9];
     }
     for (let edge = 0; edge < 4; edge++) for (let i = 0; i < side; i++) {
       const from = gridEdgeVertex(edge, i) * 10, to = (count + edge * side + i) * 10;
-      values.set(values.subarray(from, from + 10), to); values[to + 1] -= skirt; values[to + 7] -= skirt;
+      for (let k = 0; k < 10; k++) values[to + k] = values[from + k];
+      values[to + 1] -= skirt; values[to + 7] -= skirt;
     }
     this.uploadMesh(patch, values);
     patch.field = field; patch.meshBytes = values.byteLength + field.byteLength;
@@ -1095,12 +1246,18 @@ export class Terrain3d {
   private loadTiles(): void {
     if (!this.tileLoader || !this.active || this.contextLost()) return;
     const queue = this.requireHeights ? [...new Set([...this.geometryNeeded, ...this.desired])] : this.desired;
+    let started = 0;
     for (const patch of queue) {
-      if (this.jobs.size >= 2) break;
+      if (this.jobs.size >= 2 || started >= (this.options.tileJobsPerFrame ?? 2)) break;
       if (patch.tile.level === 0 || patch.status !== 'idle') continue;
       const job = {}, epoch = this.epoch, loader = this.tileLoader;
       patch.status = 'loading'; this.jobs.add(job);
-      void Promise.resolve().then(() => loader({ ...patch.tile })).then(result => {
+      ++started;
+      // In its own task: a synchronous tile paint must not hold back the frame that asked for it.
+      void new Promise<void>(resolve => setTimeout(resolve)).then(() => {
+        if (epoch !== this.epoch || this.disposed) throw new Error('Tuile abandonnée.');
+        return loader({ ...patch.tile });
+      }).then(result => {
         const content = typeof result === 'object' && result !== null && 'texture' in result ? result as Terrain3dTileContent : { texture: result as TexImageSource };
         const source = content.texture;
         if (epoch !== this.epoch || this.disposed || this.contextLost() || this.patches.get(patch.tile.key) !== patch) {
@@ -1119,7 +1276,12 @@ export class Terrain3d {
         }
         const gutter=Math.max(0,Math.min(8,Math.round(content.gutter??0)));
         const texture = this.uploadTexture(source);
-        let textureBytes = (TILE_PIXELS+2*gutter+2)**2*4*4/3;
+        let textureBytes = materialBytes(source);
+        if(content.semantic){
+          const size = materialSize(content.semantic), semanticGutter = gutter*size.width/(TILE_PIXELS+2*gutter);
+          this.semanticTiles.set(texture,{texture:this.uploadTexture(content.semantic),pixels:size.width-2*semanticGutter,gutter:semanticGutter});
+          textureBytes+=materialBytes(content.semantic);
+        }
         if(content.water){
           const water=content.water,mask=this.uploadWaterMask(water);
           this.waterMasks.set(texture,{texture:mask,rect:[water.x,water.y,water.width],bytes:water.alpha.byteLength});
@@ -1210,7 +1372,7 @@ export class Terrain3d {
     this.protectMaterial(own); this.protectMaterial(patch.materialParent);
     return { from: patch.materialParent, to: own, blend, ready: true };
   }
-  private textureRect(ref: MaterialRef, tile: Terrain3dTile): [number, number, number, number] {
+  protected textureRect(ref: MaterialRef, tile: Terrain3dTile): [number, number, number, number] {
     const source = ref.tile ?? this.layer!, pixels = ref.pixels,gutter=1+(ref.gutter??0),total=pixels+2*gutter;
     const x = (tile.x - source.x) / source.width, y = (tile.y - source.y) / source.width, size = tile.width / source.width;
     return [(gutter+x*pixels)/total,(gutter+y*pixels)/total,size*pixels/total,size*pixels/total];
@@ -1218,16 +1380,7 @@ export class Terrain3d {
   private advanceMorphs(node: Node, incomingFull = true): void {
     if (!node.visible) { node.blend = 0; node.children = undefined; node.updated = this.now; node.moving = false; return; }
     const replacingHeights = node.children?.some(child => !!child.patch.pendingHeights);
-    const allowed = incomingFull && node.wantsSplit && !replacingHeights;
-    // Opening children must start on the exact parent surface shown in the
-    // preceding frame, including its joined boundary. Refresh only while they
-    // are still hidden; changing their parent endpoint mid-morph would pop.
-    if (allowed && node.blend === 0 && node.patch.seamSnapshot) {
-      for (const child of node.children ?? []) if (child.patch.vao && child.patch.parentSeam !== node.patch.seamSnapshot) {
-        this.releaseMesh(child.patch);
-        this.buildMesh(child.patch);
-      }
-    }
+    const allowed = incomingFull && node.wantsSplit && !replacingHeights, closed = node.blend === 0;
     for (const child of node.children ?? []) {
       if (!allowed) child.wantsSplit = false;
       this.advanceMorphs(child, allowed && node.blend >= 1 && child.birth >= 1);
@@ -1245,6 +1398,16 @@ export class Terrain3d {
     if (Math.abs(target - node.blend) <= .001) { node.blend = target; node.moving = false; }
     else {
       node.blend += clamp(target - node.blend, -delta, delta); node.moving = true; this.animating = true;
+    }
+    // Opening children must start on the exact parent surface shown in the
+    // preceding frame, including its joined boundary. Refresh them on the frame
+    // they open: hidden, they are not drawn, and the seams move on every frame of
+    // a neighbour's morph; changing their parent endpoint mid-morph would pop.
+    if (allowed && closed && node.blend > 0 && node.patch.seamSnapshot) {
+      for (const child of node.children ?? []) if (child.patch.vao && child.patch.parentSeam !== node.patch.seamSnapshot) {
+        this.releaseMesh(child.patch);
+        this.buildMesh(child.patch);
+      }
     }
     if (node.blend === 0 && replacingHeights && !descendantsOpen) {
       for (const child of node.children ?? []) if (child.patch.pendingHeights) this.installHeights(child.patch, child.patch.pendingHeights);
@@ -1271,12 +1434,17 @@ export class Terrain3d {
     const selected = node.patch.vao ? { patch: node.patch, morph } : fallback;
     if (!selected?.patch.field) return;
     const { patch, morph: amount } = selected, tile = patch.tile, field = patch.field!;
-    pieces.push({ ...tile, patch, morph: amount, clip: node.patch.tile, cells: GRID,
+    pieces.push({ ...tile, patch, morph: amount, field, heightOrigin: patch.heightOrigin, clip: node.patch.tile, cells: GRID,
       key: `${tile.key}:${node.patch.tile.key}`, vertex: (x, y) => {
         const at = (y * (GRID + 1) + x) * 6;
         return [patch.heightOrigin + field[at + 3] + (field[at] - field[at + 3]) * amount,
           field[at + 4] + (field[at + 1] - field[at + 4]) * amount,
           field[at + 5] + (field[at + 2] - field[at + 5]) * amount];
+      }, read: (x, y, out) => {
+        const at = (y * (GRID + 1) + x) * 6;
+        out[0] = patch.heightOrigin + field[at + 3] + (field[at] - field[at + 3]) * amount;
+        out[1] = field[at + 4] + (field[at + 1] - field[at + 4]) * amount;
+        out[2] = field[at + 5] + (field[at + 2] - field[at + 5]) * amount;
       } });
   }
   /** The backend-independent part of a patch draw: material blend, picking grid and seam corrections. */
@@ -1302,6 +1470,12 @@ export class Terrain3d {
     gl.uniform1f(this.uniform('textureBlend'), material.blend);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, material.to.texture);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, material.from.texture);
+    for(const [ref,name,flag,unit] of [[material.to,'semanticTile','hasSemanticTile',12],[material.from,'previousSemanticTile','hasPreviousSemanticTile',13]] as const){
+      const overlay=this.semanticTiles.get(ref.texture);
+      gl.activeTexture(gl.TEXTURE0+unit);gl.bindTexture(gl.TEXTURE_2D,overlay?.texture??this.empty);
+      gl.uniform1i(this.uniform(name),unit);gl.uniform1i(this.uniform(flag),overlay?1:0);
+      gl.uniform4fv(this.uniform(name==='semanticTile'?'semanticRect':'previousSemanticRect'),this.textureRect(overlay?{...ref,pixels:overlay.pixels,gutter:overlay.gutter}:ref,tile));
+    }
     for(const [ref,prefix,unit] of [[material.to,'',6],[material.from,'previous',7]] as const){
       const mask=this.waterMasks.get(ref.texture),name=prefix?'previousCanopyWater':'canopyWater';
       gl.activeTexture(gl.TEXTURE0+unit);gl.bindTexture(gl.TEXTURE_2D,mask?.texture??this.empty);
@@ -1317,6 +1491,8 @@ export class Terrain3d {
   private releaseMaterial(texture: WebGLTexture): void {
     const mask=this.waterMasks.get(texture);
     if(mask){this.deleteTexture(mask.texture);this.waterMasks.delete(texture);}
+    const semantic=this.semanticTiles.get(texture);
+    if(semantic){this.deleteTexture(semantic.texture);this.semanticTiles.delete(texture);}
     this.deleteTexture(texture);
   }
   private releasePatch(patch: Patch, preserveMesh = false): void {
@@ -1443,14 +1619,19 @@ export class Terrain3d {
     this.displayedGrids = [];
     const pieces: RenderPiece[] = [];
     if (this.root) this.collectPieces(this.root, pieces);
-    this.displayedPieces = stitchTerrainPieces(pieces, this.displayedPieces, this.now - this.stitchUpdated);
+    const unchanged = pieces.length === this.displayedPieces.length && pieces.every((piece, i) => {
+      const previous = this.displayedPieces[i];
+      return !previous.releasing && piece.key === previous.source.key && sameSurface(previous.source, piece);
+    });
+    if (!unchanged) this.displayedPieces = stitchTerrainPieces(pieces, this.displayedPieces, this.now - this.stitchUpdated, { same: sameSurface, tail: SKIRT_FLOATS });
     this.stitchUpdated = this.now;
     this.animating ||= this.displayedPieces.some(piece => piece.releasing);
     for (const stitched of this.displayedPieces) {
       const source = stitched.source as RenderPiece, patch = source.patch;
       if (source.morph === 1 && source.clip === patch.tile) {
         const old = patch.seamSnapshot, next = stitched.correction;
-        if (!old || next.some((value, i) => Math.abs(value - old[i]) > 1e-7)) patch.seamSnapshot = next;
+        if (!old || patch.seamCompared !== next && seamDiffers(next, old)) patch.seamSnapshot = next;
+        patch.seamCompared = next;
       }
       const draw = this.patchDraw(patch, drawn, source.morph, source.clip as Terrain3dTile, stitched);
       if (draw) draws.push(draw);
@@ -1474,7 +1655,8 @@ export class Terrain3d {
     const gl = this.gl, layer = this.layer!;
     gl.viewport(0, 0, w, h); gl.clearDepth(1); gl.clear(gl.DEPTH_BUFFER_BIT);
     gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE); gl.bindVertexArray(null);
-    gl.useProgram(this.skyProgram); gl.uniform1f(this.uniform('height', this.skyProgram), h); gl.drawArrays(gl.TRIANGLES, 0, 3);
+    const night=this.lookSettings.ambience==='night';
+    gl.useProgram(this.skyProgram); gl.uniform1f(this.uniform('height', this.skyProgram), h); gl.uniform1i(this.uniform('uNight',this.skyProgram),+night); gl.drawArrays(gl.TRIANGLES, 0, 3);
     this.terrainProgram = this.useMapShader ? this.mapProgram! : this.groundShader(this.groundSettings);
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.useProgram(this.terrainProgram);
     gl.uniformMatrix4fv(this.uniform('matrix'), false, frame.matrix);
@@ -1482,21 +1664,25 @@ export class Terrain3d {
     gl.uniform3fv(this.uniform('eye'), frame.eye);
     gl.uniform1f(this.uniform('fogDistance'), Math.max(this.camera.distance * 2, 100));
     const settings=this.groundSettings;
+    const canopy=settings??this.forestSettings;
     gl.uniform1i(this.uniform('groundEnabled'),settings?1:0);
     gl.uniform1i(this.uniform('showTileBounds'),this.tileBounds?1:0);
-    if(settings){
-      const lights=terrainLights(settings.lighting);
-      gl.uniform1i(this.uniform('uRenderV2'),settings.renderV2??0);gl.uniform1i(this.uniform('uV2WaterVisible'),settings.waterVisible===false?0:1);gl.uniform4fv(this.uniform('uV2GlacierSources[0]'),renderV2GlacierSources(layer,settings.climate));gl.uniform1f(this.uniform('uV2Season'),settings.v2Season??.5);gl.uniform1i(this.uniform('uMaterialZone'),renderV2ZoneUniform(settings.climateZone));
-      gl.uniform1ui(this.uniform('uMaterialSeed'),settings.seed>>>0);
-      gl.uniform2f(this.uniform('uMaterialClimate'),settings.climate.temperature,settings.climate.precipitation);
+    gl.uniform1i(this.uniform('uNight'),+night); gl.uniform1i(this.uniform('uNaturalWater'),+(this.lookSettings.waterLook==='natural'));
+    gl.uniform1i(this.uniform('displayWaterVisible'),this.lookSettings.waterVisible===false?0:1);
+    gl.uniform1f(this.uniform('displayWaterBand'),layer.width*.016);
+    if(canopy){
+      const lights=terrainLights(canopy.lighting);
+      gl.uniform1ui(this.uniform('uMaterialSeed'),canopy.seed>>>0);
+      gl.uniform2f(this.uniform('uMaterialClimate'),canopy.climate.temperature,canopy.climate.precipitation);
       gl.uniform3f(this.uniform('groundEye'),this.camera.x+frame.eye[0],(frame.targetHeight+frame.eye[1])/this.camera.exaggeration,this.camera.y+frame.eye[2]);
       gl.uniform3f(this.uniform('groundLight'),lights.primary[0],lights.primary[2],lights.primary[1]);
       gl.uniform3f(this.uniform('groundLight2'),lights.secondary[0],lights.secondary[2],lights.secondary[1]);
-      gl.uniform1f(this.uniform('groundStrength'),settings.lighting.enabled?settings.lighting.strength:0);
-      gl.uniform3f(this.uniform('macroRect'),layer.x,layer.y,layer.width);
-      gl.uniform1i(this.uniform('macroN'),layer.n);
-      gl.activeTexture(gl.TEXTURE2);gl.bindTexture(gl.TEXTURE_2D,this.macroTexture);
-      gl.uniform1i(this.uniform('macroField'),2);
+      gl.uniform1f(this.uniform('groundStrength'),canopy.lighting.enabled?canopy.lighting.strength:0);
+      gl.uniform3f(this.uniform('macroRect'),layer.x,layer.y,layer.width);gl.uniform1i(this.uniform('macroN'),layer.n);
+      gl.activeTexture(gl.TEXTURE2);gl.bindTexture(gl.TEXTURE_2D,this.macroTexture);gl.uniform1i(this.uniform('macroField'),2);
+    }
+    if(settings){
+      gl.uniform1i(this.uniform('uRenderV2'),settings.renderV2??0);gl.uniform1i(this.uniform('uV2WaterVisible'),settings.waterVisible===false?0:1);gl.uniform4fv(this.uniform('uV2GlacierSources[0]'),renderV2GlacierSources(layer,settings.climate));gl.uniform1f(this.uniform('uV2Season'),settings.v2Season??.5);gl.uniform1i(this.uniform('uMaterialZone'),renderV2ZoneUniform(settings.climateZone));
       if((settings.renderV2??0)>0&&this.shoreRing?.layer!==layer){
         if(this.shoreRing)gl.deleteTexture(this.shoreRing.texture);
         this.shoreRing={layer,texture:shoreRingTexture(gl,shoreRingFor(layer))};
@@ -1512,7 +1698,7 @@ export class Terrain3d {
       if(contours){const value=contours.color.replace('#','');gl.uniform3f(this.uniform('groundContourColor'),parseInt(value.slice(0,2),16)/255,parseInt(value.slice(2,4),16)/255,parseInt(value.slice(4,6),16)/255);}
     }
     // Textures 3 forest field, 4 occupation, 8 bank envelope.
-    bindForest(gl, name => this.uniform(name), this.forest, this.occupation, this.empty, !!settings, 3, 4, 8, 9);
+    bindForest(gl, name => this.uniform(name), this.forest, this.occupation, this.empty, true, 3, 4, 8, 9);
     bindForestBrushes(gl, name => this.uniform(name), !!settings?.forestBrushes, 5);
     gl.activeTexture(gl.TEXTURE0); gl.uniform1i(this.uniform('material'), 0);
     gl.uniform1i(this.uniform('previousMaterial'), 1);
@@ -1655,13 +1841,14 @@ export class Terrain3d {
    * load again through the same loader. */
   transferTo(target: Terrain3d): void {
     target.setGroundMaterial(this.groundSettings);
+    target.setLook(this.lookSettings);
     if (this.layer) target.setSurface(this.layer, this.water, this.waterVisible);
     target.setHeightSampler(this.heightSampler);
     target.setTileBoundaries(this.tileBounds);
     target.setBuildings(this.buildingScene, this.buildingAppearance, this.buildingsVisible);
     const replaced = this.buildings.replacedBuildings();
     if (replaced.length) target.replaceBuildings(replaced);
-    target.setForest(this.forestField, this.forestOccupation);
+    target.setForest(this.forestField, this.forestOccupation, this.forestSettings);
     target.setTileLoader(this.tileLoader, this.requireHeights);
     if (this.textureSource) target.setTexture(this.textureSource);
     target.resize(this.width, this.height);

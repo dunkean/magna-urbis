@@ -76,7 +76,7 @@ function rebuild(): number {
     const next = createCanvasRenderer(canvas as unknown as CanvasLike, w, display.style, { colors: display.colors, scene: sceneCache.scene, brushes: activeBrushes ?? undefined,vegetation:display.vegetation, get dpr(): number { return curDpr; } });
     renderer?.dispose(); renderer = next; rendererBrushes = activeBrushes;rendererVegetation=display.vegetation; rendererColors=colorKey;
   }
-  renderer.setOverlays({ cartouche: display.cartouche ?? final,labels:display.labels??world.options.labels??true,legend:display.legend??world.options.legend??false });
+  renderer.setOverlays({ text: display.text, cartouche: display.cartouche ?? final,labels:display.labels??world.options.labels??true,legend:display.legend??world.options.legend??false });
   miniDirty = true; ver++;
   return performance.now() - t0;
 }

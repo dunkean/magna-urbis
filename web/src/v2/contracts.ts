@@ -53,6 +53,8 @@ export interface V2CityAppearance {
   refinement?: 'source' | 'noise';
 }
 export interface V2Appearance {
+  /** Pass-by-pass recipe (render/composition.ts): the source of truth of every field it covers. */
+  composition?: import('../render/composition').CompositionRecipe;
   colors?: RenderColors;
   roads?: boolean;
   buildings?: boolean;

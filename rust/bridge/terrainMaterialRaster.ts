@@ -12,7 +12,7 @@ import { createMaterialRasterContext, type MaterialRasterContext } from './terra
 /** Render3D forest for rasters: the live view's canonical field/occupation and
  * its sun direction (map x, map y, up; terrainLights().primary). */
 export interface ForestWaterRaster { x: number; y: number; width: number; n: number; alpha: Uint8Array; key: string }
-export interface ForestRaster { field?: ForestField; occupation?: ForestOccupation; water?: ForestWaterRaster; light?: readonly number[]; light2?: readonly number[]; lightingStrength?: number; brushes?: boolean; renderV2?: number; v2Season?: number; waterVisible?: boolean }
+export interface ForestRaster { field?: ForestField; occupation?: ForestOccupation; water?: ForestWaterRaster; light?: readonly number[]; light2?: readonly number[]; lightingStrength?: number; brushes?: boolean; renderV2?: number; v2Season?: number; waterVisible?: boolean; /** rgb = crowns shaded as the live map pass does, to lay over a palette ground by canopyAlpha. */ mapCanopy?: boolean }
 export interface MaterialRaster { rgb: Uint8Array; canopyAlpha: Uint8Array }
 interface Uploaded { key: string; texture: WebGLTexture }
 interface RasterRenderer extends MaterialRasterContext { program: WebGLProgram; texture: WebGLTexture; field?: Uploaded; bank?: Uploaded; beach?: Uploaded; occupation?: Uploaded; water?: Uploaded; target?: { n: number; texture: WebGLTexture; framebuffer: WebGLFramebuffer } }
@@ -58,7 +58,7 @@ function composeMaterialRaster(terrain: TerrainData, settings: Pick<TerrainSetti
       precision highp float;precision highp int;precision highp sampler2D;
       uniform sampler2D heights;uniform int n;uniform float cell;uniform vec2 origin;
       out vec4 color;
-      ${enhanced3d ? `${FOREST_PRELUDE_GLSL}uniform vec3 uForestLight,uForestLight2;uniform float uForestStrength;
+      ${enhanced3d ? `${FOREST_PRELUDE_GLSL}uniform vec3 uForestLight,uForestLight2;uniform float uForestStrength;uniform int uMapCanopy;
       uniform sampler2D uForestWater;uniform int uHasForestWater;uniform vec3 uForestWaterRect;
       float forestWaterCoverage(vec2 world){
         vec2 uv=(world-uForestWaterRect.xy)/uForestWaterRect.z;
@@ -79,6 +79,7 @@ function composeMaterialRaster(terrain: TerrainData, settings: Pick<TerrainSetti
           vec3 bareLit=shadeTerrainGround(bareMaterial,vec3(0.,1.,0.),light,uForestLight2,uForestStrength);
           rgb=v2ShadeGround(m,vec3(0.,1.,0.),light,uForestLight2,uForestStrength)*groundToDisplay(bareMaterial.albedo)/max(bareLit,vec3(.0001));
         }
+        else if(uMapCanopy==1){applyForest(m,world,fp,light);rgb=shadeTerrainGround(m,vec3(0.,1.,0.),light,uForestLight2,uForestStrength);}
         else if(uForest==1){vec3 l=normalize(light);float bare=forestRasterLight(m,l);applyForest(m,world,fp,l);rgb=groundToDisplay(m.albedo*forestRasterLight(m,l)/max(bare,1e-3));}
         else rgb=groundToDisplay(m.albedo);
         return uRenderV2>0?v2DisplayShoulder(rgb):rgb;
@@ -110,7 +111,7 @@ function composeMaterialRaster(terrain: TerrainData, settings: Pick<TerrainSetti
         shore=min(shore,max(height,0.)/max(length(gradient),.0001));
         vec3 material=${enhanced3d ? 'rasterMaterial' : 'earthMaterial'}(vec3(height,gradient),origin+(vec2(p)+.5)*cell,cell,(height-mean)/(6.*radius),shore,openness${enhanced3d ? ',uForestLight' : ''});
         ${enhanced3d ? `if(uRenderV2>0){V2Env e=v2Local(vec3(height,gradient),origin+(vec2(p)+.5)*cell,(height-mean)/(6.*radius),cell);if(uRenderV2>1)material=v2Color(e,float(uRenderV2-1));float water=forestWaterCoverage(origin+(vec2(p)+.5)*cell);water=max(water,height<0.?1.:0.);material=v2WaterAt(material,vec3(height,gradient),origin+(vec2(p)+.5)*cell,cell,water,height<0.?1.:3.,height<0.?-height:8.*water);}` : ''}
-        color=vec4(material,${enhanced3d ? 'forestResolvedCover' : '0.'});
+        color=vec4(material,${enhanced3d ? 'uMapCanopy==1?forestMapCover:forestResolvedCover' : '0.'});
       }`);
     const program = gl.createProgram()!;
     gl.attachShader(program, vertex); gl.attachShader(program, fragment); gl.linkProgram(program);
@@ -166,7 +167,7 @@ function composeMaterialRaster(terrain: TerrainData, settings: Pick<TerrainSetti
     }
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, field ? active.field!.texture : texture);
     gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, occupation ? active.occupation!.texture : texture);
-    gl.uniform1i(u('uForest'), field ? 1 : 0); gl.uniform1i(u('uForestField'), 1); gl.uniform1i(u('uOccupation'), 2);
+    gl.uniform1i(u('uForest'), field ? 1 : 0); gl.uniform1i(u('uMapCanopy'), field && forest?.mapCanopy ? 1 : 0); gl.uniform1i(u('uForestField'), 1); gl.uniform1i(u('uOccupation'), 2);
     gl.uniform3f(u('uForestRect'), field?.x ?? 0, field?.y ?? 0, field?.width ?? 1);
     gl.uniform1i(u('uHasOccupation'), occupation ? 1 : 0);
     gl.uniform3f(u('uOccupationRect'), occupation?.x ?? 0, occupation?.y ?? 0, occupation?.width ?? 1); gl.uniform1f(u('uOccupationN'), occupation?.n ?? 1);

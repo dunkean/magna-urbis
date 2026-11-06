@@ -1,3 +1,4 @@
+import { DEFAULT_TEXT, textPlacement, type TextSettings } from '../render/textLayer';
 import type { Layout, Partition } from '../../../rust/bridge/urban';
 import { buildMapLabels, estimateWidth, nativeLandmarkLabels, placeMapLabels, RPG_PIN_KINDS, type RpgPin } from '../render/mapLabels';
 import { placedMapLabelsSvg } from '../render/svgLabels';
@@ -36,7 +37,8 @@ export async function prepareCityMapExport(copy: SVGSVGElement): Promise<void> {
 
 /** A retained SVG layer: both existing plan exports include the same placed labels. */
 export function mountCityRpgPins(options: {
-  map: SVGSVGElement; viewport: HTMLElement; host: Element; query: URLSearchParams; labels: boolean;
+  separateText?: boolean; map: SVGSVGElement; viewport: HTMLElement; host: Element; query: URLSearchParams; labels: boolean;
+  getText?(): { text: Readonly<TextSettings>; palette: import('../render/styles').Palette };
   getView(): View; getLayouts(): Layout[] | undefined; getPartitions(): Partition[] | undefined;
   focus(view: View): void; onChange(): void; onPinning(): void;
 }) {
@@ -61,14 +63,17 @@ export function mountCityRpgPins(options: {
   const status = find<HTMLElement>('[data-rpg-status]');
   let pinning = false, layouts: Layout[] | undefined, partitions: Partition[] | undefined, landmarks: ReturnType<typeof nativeLandmarkLabels> = [];
   const cancel = (): void => { pinning = false; place.setAttribute('aria-pressed', 'false'); };
+  let labelWorld: import('../render/mapLabels').MapLabelWorld = {}, worldKey = '';
   function draw(): void {
-    if (!state.enabled || !options.labels) { layer.remove(); return; }
+    const appearance = options.getText?.() ?? { text: DEFAULT_TEXT, palette: PALETTES.parchment };
     const nextLayouts = options.getLayouts(), nextPartitions = options.getPartitions();
     if (layouts !== nextLayouts || partitions !== nextPartitions) { layouts = nextLayouts; partitions = nextPartitions; landmarks = nativeLandmarkLabels(layouts, partitions); }
     const view = options.getView(), w = options.viewport.clientWidth, h = options.viewport.clientHeight;
-    const palette = PALETTES[document.querySelector<HTMLSelectElement>('#backgroundStyle')?.value === 'parchment' ? 'parchment' : 'atlas'];
-    const labels = buildMapLabels({ mapAnnotations: { ...state, landmarks } }, palette.name, palette);
-    const placed = placeMapLabels(labels, view, w, h, estimateWidth);
+    const palette = appearance.palette, key = JSON.stringify([state, landmarks]);
+    if (key !== worldKey) { worldKey = key; labelWorld = { mapAnnotations: { ...state, landmarks } }; }
+    if (options.separateText || !appearance.text.visible || !state.enabled || !options.labels) { layer.remove(); return; }
+    const labels = buildMapLabels(labelWorld, palette.name, palette, appearance.text);
+    const placed = placeMapLabels(labels, view, w, h, estimateWidth, textPlacement(appearance.text));
     layer.setAttribute('transform', `translate(${view.cx - w / 2 / view.scale} ${view.cy - h / 2 / view.scale})`);
     layer.innerHTML = placedMapLabelsSvg(placed, palette, view.scale);
     const bugPins = options.map.querySelector('#cityPins');
@@ -96,6 +101,7 @@ export function mountCityRpgPins(options: {
   list(); sync();
   return {
     draw, cancel,
+    get world() { return labelWorld; },
     share: (query: URLSearchParams): void => shareRpgPins(query, state),
     click(event: MouseEvent): boolean {
       if (!pinning || !state.enabled) return false;

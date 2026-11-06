@@ -48,6 +48,13 @@ export function createTerrain3dNoiseSampler(baseSampler: Sampler, look: TerrainL
   if (!look.refine || detail.amplitude === 0) return base;
   const octaves = Math.min(12, Math.max(1, Math.round(detail.octaves) + 4)), lacunarity = clamp(detail.lacunarity + .5, 1.5, 2.5);
   const samples = new Float64Array(3), probes = Math.max(.125, cell * .25), radius = cell * 4;
+  // Everything an octave derives from its wavelength alone: the trigonometry and powers stay out of the vertex loop.
+  const bands: { wavelength: number; c: number; s: number; seed: number; broad: number; fine: number; middle: number; wide: boolean; carried: number; hurst: number }[] = [];
+  for (let k = 0, wavelength = cell * 8 * detail.start; k < octaves && wavelength >= .125; k++, wavelength /= lacunarity) {
+    const angle = .37 + k * 2.399963229728653, ratio = wavelength / cell, broad = smooth(1.4, 3.5, ratio), fine = 1 - smooth(.045, .12, ratio);
+    bands.push({ wavelength, c: Math.cos(angle), s: Math.sin(angle), seed: (seed + k * 7919) >>> 0, broad, fine, middle: 1 - Math.max(broad, fine), wide: broad > .5, carried: broad + fine * .15,
+      hurst: Math.pow(Math.max(ratio, 1), clamp(detail.hurst, .7, 1.3) - 1) * Math.pow(Math.min(ratio, 1), Math.max(0, detail.hurst - 1)) });
+  }
   return (x, y): number => {
     const h = base(x, y); if (h <= 0) return h;
     const gx = (base(x + probes, y) - base(x - probes, y)) / (2 * probes), gy = (base(x, y + probes) - base(x, y - probes)) / (2 * probes);
@@ -57,21 +64,21 @@ export function createTerrain3dNoiseSampler(baseSampler: Sampler, look: TerrainL
     const mountain = smooth(.04, .2, slope);
     if (crest === 0 && mountain === 0) return h;
     const downhillX = gx / Math.max(slope, 1e-6), downhillY = gy / Math.max(slope, 1e-6);
-    let wavelength = cell * 8 * detail.start, residual = 0, accumulatedX = 0, accumulatedY = 0;
-    for (let k = 0; k < octaves && wavelength >= .125; k++, wavelength /= lacunarity) {
-      const angle = .37 + k * 2.399963229728653, c = Math.cos(angle), s = Math.sin(angle), ratio = wavelength / cell;
-      noise((x * c - y * s) / wavelength, (x * s + y * c) / wavelength, (seed + k * 7919) >>> 0, samples);
+    const narrowWeight = Math.pow(Math.max(slope + detail.flat, 1e-6), detail.slope);
+    const wideWeight = Math.pow(Math.max(Math.max(slope, relief) + detail.flat, 1e-6), detail.slope);
+    let residual = 0, accumulatedX = 0, accumulatedY = 0;
+    for (const { wavelength, c, s, seed, broad, fine, middle, wide, carried, hurst } of bands) {
+      // Broad shrinks with the wavelength: on a crest off the slopes, every later envelope is exactly zero.
+      if (mountain === 0 && broad === 0) break;
+      noise((x * c - y * s) / wavelength, (x * s + y * c) / wavelength, seed, samples);
       const rounded = Math.sqrt(samples[0] * samples[0] + .0025), signal = samples[0] * .45 + (.24 - rounded) * .55;
       const derivative = .45 - .55 * samples[0] / rounded;
       const dx = (samples[1] * c + samples[2] * s) * derivative, dy = (-samples[1] * s + samples[2] * c) * derivative;
-      const broad = smooth(1.4, 3.5, ratio), fine = 1 - smooth(.045, .12, ratio);
-      const envelope = broad * crest + fine * mountain * 3 + (1 - Math.max(broad, fine)) * mountain * .015;
-      const terrainSlope = broad > .5 ? Math.max(slope, relief) : slope;
-      const slopeWeight = Math.pow(Math.max(terrainSlope + detail.flat, 1e-6), detail.slope);
-      accumulatedX += dx * (broad + fine * .15); accumulatedY += dy * (broad + fine * .15);
+      const envelope = broad * crest + fine * mountain * 3 + middle * mountain * .015;
+      const slopeWeight = wide ? wideWeight : narrowWeight;
+      accumulatedX += dx * carried; accumulatedY += dy * carried;
       const erosionWeight = 1 / (1 + .65 * (accumulatedX * accumulatedX + accumulatedY * accumulatedY));
       const directionWeight = 1 / (1 + 1.5 * Math.abs(dx * downhillX + dy * downhillY));
-      const hurst = Math.pow(Math.max(ratio, 1), clamp(detail.hurst, .7, 1.3) - 1) * Math.pow(Math.min(ratio, 1), Math.max(0, detail.hurst - 1));
       residual += signal * wavelength * detail.amplitude * hurst * envelope * slopeWeight * erosionWeight * directionWeight;
     }
     return h + residual * (detail.shore > 0 ? clamp(h / detail.shore, 0, 1) : 1);

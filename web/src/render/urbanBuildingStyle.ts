@@ -6,7 +6,8 @@ import type { ArchitectureFunction } from '../../../rust/bridge/urbanArchitectur
 /** `silhouette`: flat footprints only (City Bench), no roofs or materials. */
 export type UrbanBuildingStyle = 'geometric' | 'cartographic' | 'silhouette';
 export type UrbanBuildingDiagnostic = 'none' | 'uses' | 'height' | 'access';
-export interface UrbanBuildingAppearance { colors?: RenderColors; style: UrbanBuildingStyle; diagnostic: UrbanBuildingDiagnostic; /** Textured materials (3D): PBR roofs and walls by cover / wall id. */ textured?: boolean }
+export interface UrbanBuildingAppearance { ambience?: 'day' | 'night'; colors?: RenderColors; style: UrbanBuildingStyle; diagnostic: UrbanBuildingDiagnostic; /** Textured materials (3D): PBR roofs and walls by cover / wall id. */ textured?: boolean }
+export const buildingColors = (colors: RenderColors | undefined, ambience?: 'day' | 'night'): RenderColors | undefined => ambience === 'night' ? { building: '#232a42', buildingEdge: '#070a14', road: '#444b62', track: '#3a4054', roadEdge: '#141927', ...colors } : colors;
 export interface BuildingPaint { wall: string; roof: string; edge: string; courtyard: string }
 export const URBAN_FUNCTION_LABELS: Record<ArchitectureFunction, string> = {
   domestic: 'Habitat', mixed: 'Habitat et boutique', workshop: 'Atelier', warehouse: 'Entrepôt', collective: 'Établissement collectif', open_space: 'Espace ouvert',
@@ -26,6 +27,10 @@ export function buildingPaint(materials: MaterialSlots | undefined, fn: Architec
     const t = Math.max(0, Math.min(1, height / 24));
     wall = roof = `rgb(${Math.round(112 + 100 * t)},${Math.round(175 - 82 * t)},${Math.round(188 - 53 * t)})`;
   }
-  if (appearance.diagnostic === 'none') roof = appearance.colors?.building ?? roof;
+  if (appearance.diagnostic === 'none') {
+    if (appearance.style === 'geometric') { wall = '#b2aa97'; roof = '#847b69'; }
+    if (appearance.ambience === 'night') { wall = '#141a2c'; roof = '#232a42'; }
+    roof = appearance.colors?.building ?? roof;
+  }
   return { wall, roof, edge: appearance.colors?.buildingEdge ?? '#393a31', courtyard: '#f4efdf' };
 }

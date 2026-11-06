@@ -9,11 +9,13 @@ import type { CityLayers } from '../render/cityCanvas';
 import type { DisplayOpts } from '../ui/protocol';
 import type { VegetationStyle } from '../render/canopy';
 import type { RenderOptions } from '../render/svg';
+import type { SemanticLegendEntry } from '../render/legend';
 import type { BrushSources } from '../render/brushes';
 import type { V2Appearance, V2Settings } from './contracts';
 import type { World } from '../gen/types';
 import { resolveAppearance, type RenderTarget, type ResolveFlags, type ResolvedAppearance } from '../render/appearanceRecipe';
 import { worldCapabilities } from './nativeProducts';
+import { presetComposition, validateComposition } from '../render/composition';
 
 export const CITY_LAYER_NAMES = ['reserve', 'allocated', 'centers', 'domains', 'quarters', 'blocks', 'streets', 'enclosures', 'lotEnclosures', 'parcels', 'gardens', 'places', 'fronts', 'axes', 'access'] as const satisfies readonly (keyof CityLayers)[];
 export const CITY_GROUND_STYLES = ['map', 'render', 'render3d', 'render3d-brush', 'render-v2', 'render-v2-substrate', 'render-v2-moisture', 'render-v2-vegetation', 'render-v2-snow'] as const;
@@ -33,6 +35,7 @@ function number(value: unknown, name: string, min: number, max: number, required
 }
 export function validateAppearance(value: unknown): asserts value is V2Appearance {
   object(value, 'appearance');
+  if (value.composition !== undefined) validateComposition(value.composition);
   if (!isMapStyle(value.style as string)) throw new Error('appearance.style: unknown map palette.');
   if (value.terrainStyle !== undefined && (typeof value.terrainStyle !== 'string' || !isTerrainStyle(value.terrainStyle))) throw new Error('appearance.terrainStyle: unknown terrain style.');
   enumeration(value.renderer, ['classic', 'bench'], 'appearance.renderer');
@@ -91,20 +94,22 @@ export function validateAppearance(value: unknown): asserts value is V2Appearanc
   }
 }
 
-export interface V2ExportDisplay extends DisplayOpts { vegetation?: VegetationStyle }
+export interface V2ExportDisplay extends DisplayOpts { vegetation?: VegetationStyle; semanticLegend?: readonly SemanticLegendEntry[] }
 /** The one place that turns settings + retained products into a resolved appearance (call per change, never per frame). */
 export function resolveSettingsAppearance(settings: V2Settings, world: World | undefined, target: RenderTarget, flags?: ResolveFlags): ResolvedAppearance {
   const o = settings.options;
   // The land-use painters (2D canvas, SVG export, legend) read the shared setting; the V2 appearance is its source of truth.
   setLanduseForestTone(settings.appearance?.landuseForestTone ?? DEFAULT_LANDUSE_FOREST_TONE);
-  return resolveAppearance(settings.appearance, { mapStyle: o.style, contours: o.contours, landuse: o.landuse, labels: o.labels, legend: o.legend, forest: settings.terrain?.forest },
+  // V2 always renders a composition; a project without one starts from the preset of its map style.
+  const appearance = { style: o.style, ...settings.appearance, composition: settings.appearance?.composition ?? presetComposition(o.style === 'atlas' ? 'atlas' : 'parchment') };
+  return resolveAppearance(appearance, { mapStyle: o.style, contours: o.contours, landuse: o.landuse, labels: o.labels, legend: o.legend, forest: settings.terrain?.forest },
     worldCapabilities(world), target, flags);
 }
 /** Classic-renderer / export display options derived from the resolved cartography. */
 export function resolvedDisplayOptions(r: ResolvedAppearance): V2ExportDisplay {
   const c = r.cartography;
   return { ...(r.palette.colors ? { colors: r.palette.colors } : {}), buildings: r.city.visible, layers: { roads: c.roads }, style: r.palette.mapStyle, contours: r.ground.contours,
-    landuse: c.landuse, labels: c.labels, legend: c.legend, cartouche: c.cartouche, painted: c.painted, vegetation: r.vegetation.symbols };
+    text: r.composition.text, landuse: c.landuse, labels: c.labels, legend: c.legend, cartouche: c.cartouche, painted: c.painted, vegetation: r.vegetation.symbols };
 }
 /** Export starts from the same persisted preferences as the viewer, including explicit false values. */
 export function appearanceDisplayOptions(settings: V2Settings, world?: World): V2ExportDisplay {
@@ -114,7 +119,7 @@ export function appearanceDisplayOptions(settings: V2Settings, world?: World): V
 export function svgOptionsForDisplay(options: RenderOptions, display?: Partial<V2ExportDisplay>, brushes?: BrushSources): RenderOptions {
   if (!display) return options;
   const result = { ...options };
-  for (const key of ['style', 'colors', 'buildings', 'contours', 'landuse', 'labels', 'legend', 'cartouche', 'vegetation'] as const)
+  for (const key of ['text', 'style', 'colors', 'buildings', 'contours', 'landuse', 'labels', 'legend', 'cartouche', 'vegetation', 'semanticLegend'] as const)
     if (display[key] !== undefined) Object.assign(result, { [key]: display[key] });
   result.layers = { ...display.layers, ...options.layers };
   if (display.painted !== undefined) {

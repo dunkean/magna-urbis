@@ -1,3 +1,4 @@
+import { benchOverlayChange } from './benchComposition';
 import { feedLanduse } from '../render/groundTone';
 import { v1LandscapeCanvas, type V1LandscapeStyle } from '../render/v1Landscape';
 import { CityGround } from '../render/cityGround';
@@ -9,6 +10,8 @@ import LanduseWorker from './urbanLanduseWorker?worker&inline';
 import { BIOME_NAMES, type BiomeName } from '../gen/biomes';
 import { SIZE_PRESETS } from '../gen/options';
 import { getBenchRenderColors } from './benchRenderColors';
+import { resolveBenchAppearance } from './benchComposition';
+import { drawRuralSemantic } from '../render/semanticLayer';
 import { createCanvasRenderer, type CanvasRenderer } from '../render/canvas';
 import type { VegetationStyle } from '../render/canopy';
 import type { View } from '../render/view';
@@ -65,7 +68,7 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     <label title="Affiche ou masque la couche d’occupation du territoire sur la carte"><input id="showLanduse" type="checkbox" checked>Occupation du territoire visible</label>
     <label>Graine des paysages<input id="landuseSeed" type="text" placeholder="Graine du décor"></label>
     <label>Biome<select id="landuseBiome"></select></label>
-    <details class="advanced" data-render-settings-category="cover"><summary>Occupation vectorielle · affichage</summary>
+    <details class="advanced" data-render-settings-category="landuse"><summary>Occupation vectorielle · affichage</summary>
       <label hidden><input id="landuseVisible" type="checkbox">Afficher tous les objets d’occupation</label>
       <label>Style<select id="landuseStyle"></select></label>
       <label>Végétation<select id="landuseVegetation"><option value="canopy">Feuillages et canopée</option><option value="classic">Symboles classiques</option></select></label>
@@ -128,6 +131,7 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
   let renderer: CanvasRenderer | undefined, renderWorld: World | undefined, renderScene: Scene | undefined;
   let canvas: HTMLCanvasElement | undefined, host: SVGForeignObjectElement | undefined, frame = 0, rendererDpr = 1;
   let brushImages: BrushImages | undefined, brushPromise: Promise<void> | undefined;
+  let groundRevision = 0;
 
   function state(text: string, busy = false): void {
     status.textContent = text; button.setAttribute('aria-busy', String(busy));
@@ -156,6 +160,8 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     landuseLayer.style.display = active() && settings.visible ? '' : 'none'; landuseLayer.setAttribute('opacity', String(settings.opacity));
   }
   function draw(): void {
+    groundRevision++;
+    const appearance = resolveBenchAppearance(), composition = appearance.composition;
     visibility();
     renderer?.dispose(); renderer = undefined; cancelAnimationFrame(frame);
     if (!active() || !scene || !context) { landuseLayer.replaceChildren(); canvas = undefined; host = undefined; renderWorld = undefined; renderScene = undefined; return; }
@@ -178,12 +184,13 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
       farmsteads: settings.showFarms ? scene.landuse.farmsteads : [] } }, context.raster);
     if (renderWorld.landuse && (settings.visiblePaddocks || settings.concreteFieldBoundaries)) (renderWorld.landuse as RuralRenderLayer).ruralDetails = {
       visiblePaddocks: settings.visiblePaddocks, concreteFieldBoundaries: settings.concreteFieldBoundaries };
-    const pal = { ...biomePalette(v1Style ?? settings.style, scene.options.biome), frameKind: 'none' as const };
+    const pal = { ...biomePalette(appearance.palette.mapStyle, scene.options.biome), frameKind: 'none' as const };
     const background = options.getBackground();
     rendererDpr = window.devicePixelRatio || 1;
     renderer = createCanvasRenderer(canvas, renderWorld, pal, { colors: getBenchRenderColors(),
       dpr: rendererDpr, scene: renderScene, transparentBackground: true, raster: false,
-      vegetation: v1Style ? 'classic' : settings.vegetation, brushes: !v1Style && settings.painted ? brushImages : undefined,
+      vegetation: appearance.vegetation.symbols, brushes: composition.vegetation.painted ? brushImages : undefined,
+      mask: { landuse: composition.vegetation.cartographic ? true : kind => !['forest', 'meadow', 'marsh', 'commons'].includes(kind) },
       furrowReferenceSize: SIZE_PRESETS[scene.options.size].mapSize,
       terrain: () => {
         if (v1Style) return v1LandscapeCanvas(context!.raster, v1Style, scene!.options.biome);
@@ -196,8 +203,8 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     });
     renderScene = renderer.scene; renderer.setOverlays({ labels: false, legend: false, cartouche: false });
     updateView();
-    if (settings.painted && !brushPromise) brushPromise = decodeBrushes(BRUSH_SOURCES).then(images => {
-      brushImages = images ?? undefined; if (settings.painted && brushImages) draw();
+    if (composition.vegetation.painted && !brushPromise) brushPromise = decodeBrushes(BRUSH_SOURCES).then(images => {
+      brushImages = images ?? undefined; if (resolveBenchAppearance().composition.vegetation.painted && brushImages) draw();
     });
   }
   function updateView(): void {
@@ -212,7 +219,16 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     const cw = Math.max(1, Math.round(width * rendererDpr)), ch = Math.max(1, Math.round(height * rendererDpr));
     if (canvas.width !== cw) canvas.width = cw;
     if (canvas.height !== ch) canvas.height = ch;
-    frame = requestAnimationFrame(() => { renderer?.draw(view); if (canvas && context) feedLanduse(canvas, view.cx - w / 2, view.cy - h / 2, w, h, context.raster.width); });
+    frame = requestAnimationFrame(() => {
+      renderer?.draw(view);
+      if (canvas && context) {
+        feedLanduse(canvas, view.cx - w / 2, view.cy - h / 2, w, h, context.raster.width);
+        const ctx = canvas.getContext('2d')!, s = resolveBenchAppearance().composition.landuse, k = view.scale * rendererDpr;
+        ctx.save(); ctx.setTransform(k, 0, 0, k, (width / 2 - view.cx * view.scale) * rendererDpr, (height / 2 - view.cy * view.scale) * rendererDpr);
+        drawRuralSemantic(ctx, scene?.landuse, { look: s.rural, opacity: s.opacity, classes: s.classes, mpp: 1 / view.scale, viewport: { minX: view.cx - w / 2, minY: view.cy - h / 2, maxX: view.cx + w / 2, maxY: view.cy + h / 2 } });
+        ctx.restore();
+      }
+    });
   }
   function cancel(): void {
     ++id; clearTimeout(timer); worker?.terminate(); worker = undefined;
@@ -309,7 +325,23 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     ?? document.querySelector<HTMLButtonElement>('[data-urban-view="v1"][aria-pressed="true"]');
   if (selectedV1) v1Style = document.querySelector<HTMLSelectElement>('[data-v1-style]')?.value === 'atlas' ? 'atlas' : 'parchment';
   visibility(); schedule();
+  window.addEventListener('bench-composition-change', () => { if (benchOverlayChange()) return; renderWorld = undefined; renderScene = undefined; draw(); });
   return {
+    get landuse() { return active() ? scene?.landuse : undefined; },
+    get groundRevision() { return groundRevision; },
+    drawGround(ctx: CanvasRenderingContext2D, region: { x: number; y: number; width: number }, size: number): void {
+      if (!active() || !settings.visible || !renderWorld || !scene) return;
+      const r = resolveBenchAppearance(), target = document.createElement('canvas'); target.width = target.height = size;
+      const painter = createCanvasRenderer(target, renderWorld, { ...biomePalette(r.palette.mapStyle, scene.options.biome), frameKind: 'none' }, {
+        colors: r.palette.colors, dpr: 1, scene: renderScene, transparentBackground: true, raster: false, terrain: () => null,
+        vegetation: r.vegetation.symbols, brushes: r.composition.vegetation.painted ? brushImages : undefined,
+        mask: { landuse: r.composition.vegetation.cartographic ? true : kind => !['forest', 'meadow', 'marsh', 'commons'].includes(kind) },
+        furrowReferenceSize: SIZE_PRESETS[scene.options.size].mapSize,
+      });
+      painter.setOverlays({ labels: false, legend: false, cartouche: false });
+      painter.draw({ cx: region.x + region.width / 2, cy: region.y + region.width / 2, scale: size / region.width });
+      ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(target, 0, 0); ctx.restore(); painter.dispose();
+    },
     get sample() { return sample; },
     updateView,
     refreshBackground: draw,

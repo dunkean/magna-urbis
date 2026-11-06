@@ -114,7 +114,7 @@ const mipCount = (width: number, height: number): number => Math.floor(Math.log2
 const SAMPLES = 4, DEPTH: GPUTextureFormat = 'depth32float';
 const T = WGSL.WGSL3D_TEXTURES;
 const TERRAIN_TEXTURES = ['material', 'previousMaterial', 'macroField', 'uShoreRing', 'canopyWater', 'previousCanopyWater',
-  'uForestField', 'uForestBank', 'uOccupation', 'uForestBeach', 'uForestBrushAtlas'] as const;
+  'uForestField', 'uForestBank', 'uOccupation', 'uForestBeach', 'uForestBrushAtlas', 'semanticTile', 'previousSemanticTile'] as const;
 type TerrainTexture = typeof TERRAIN_TEXTURES[number];
 const PATCH_BUFFERS: GPUVertexBufferLayout[] = [
   { arrayStride: 40, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }, { shaderLocation: 1, offset: 12, format: 'float32x2' },
@@ -149,7 +149,7 @@ const DEPTH_WGSL = `
 export interface GpuImage { texture: GPUTexture; view: GPUTextureView }
 const image = (texture: WebGLTexture): GpuImage => texture as GpuImage;
 type Entry = { pipeline?: GPURenderPipeline; failed?: boolean };
-const groundKey = (ground: number, v2: number, forest: number, brushes: number): string => `ground.${ground}.${v2}.${forest}.${brushes}`;
+const groundKey = (ground: number, v2: number, forest: number, brushes: number, water = 0): string => `ground.${ground}.${v2}.${forest}.${brushes}.${water}`;
 const PREVIEW_GROUND = groundKey(0, 0, 0, 0);
 
 /** Device-wide objects of the 3D view: modules, layouts, samplers, pipelines. */
@@ -216,12 +216,12 @@ class Gpu3d {
         fragment: { module: this.modules[fs], entryPoint: 'main', targets: target }, depthStencil: depthStencil(true), multisample };
     }
     const vertex: GPUVertexState = { module: this.modules.terrainVs, entryPoint: 'main', buffers: PATCH_BUFFERS };
-    if (key === 'map') return { label: key, layout: this.pipelineLayouts.terrain, vertex,
-      fragment: { module: this.modules.mapFs, entryPoint: 'main', targets: target }, depthStencil: depthStencil(true), multisample };
-    const [ground, v2, forest, brushes] = key.split('.').slice(1).map(Number), o = WGSL.WGSL3D_OVERRIDES;
+    if (key === 'map' || key === 'map.water') return { label: key, layout: this.pipelineLayouts.terrain, vertex,
+      fragment: { module: this.modules.mapFs, entryPoint: 'main', targets: target, constants: { [WGSL.WGSL3D_OVERRIDES.uNaturalWater]: key==='map.water'?1:0 } }, depthStencil: depthStencil(true), multisample };
+    const [ground, v2, forest, brushes, water] = key.split('.').slice(1).map(Number), o = WGSL.WGSL3D_OVERRIDES;
     return { label: key, layout: this.pipelineLayouts.terrain, vertex, depthStencil: depthStencil(true), multisample,
       fragment: { module: this.modules.groundFs, entryPoint: 'main', targets: target,
-        constants: { [o.groundEnabled]: ground, [o.uRenderV2]: v2, [o.uForest]: forest, [o.uForestBrushes]: brushes } } };
+        constants: { [o.groundEnabled]: ground, [o.uRenderV2]: v2, [o.uForest]: forest, [o.uForestBrushes]: brushes, [o.uNaturalWater]: water } } };
   }
   private mipPipelines = new Map<GPUTextureFormat, GPURenderPipeline>();
   /** Fills mip levels 1.. of every layer of a 2D (array) texture from level 0. */
@@ -421,9 +421,9 @@ class Terrain3dGpu extends Terrain3d {
   }
   /** The ground variant once created; meanwhile the last drawn one, or the preview, stands in. */
   private terrainPipeline(): GPURenderPipeline | undefined {
-    if (this.useMapShader) return this.gpu.pipeline('map');
-    const settings = this.groundSettings, forest = !!settings && !!this.forest;
-    const target = this.gpu.pipeline(groundKey(+!!settings, settings?.renderV2 ?? 0, +forest, +!!settings?.forestBrushes));
+    if (this.useMapShader) return this.gpu.pipeline(this.lookSettings.waterLook==='natural'?'map.water':'map') ?? this.gpu.pipeline('map');
+    const settings = this.groundSettings, forest = !!this.forest;
+    const target = this.gpu.pipeline(groundKey(+!!settings, settings?.renderV2 ?? 0, +forest, +!!settings?.forestBrushes, +(this.lookSettings.waterLook==='natural')));
     this.mark('groundVariant', target ? 'ready' : 'pending');
     if (target) return this.lastGroundPipeline = target;
     return this.lastGroundPipeline ?? this.gpu.pipeline(PREVIEW_GROUND);
@@ -450,6 +450,7 @@ class Terrain3dGpu extends Terrain3d {
     const sky = gpu.pipeline('sky');
     if (sky) {
       this.skyParams.set('height', h);
+      this.skyParams.set('uNight', this.lookSettings.ambience==='night'?1:0);
       const slot = this.params.alloc(this.skyParams.bytes);
       pass.setPipeline(sky);
       pass.setBindGroup(0, device.createBindGroup({ layout: gpu.layouts.sky, entries: [{ binding: 0, resource: { buffer: slot.buffer, offset: slot.offset, size: this.skyParams.bytes.byteLength } }] }));
@@ -459,16 +460,22 @@ class Terrain3dGpu extends Terrain3d {
     const textures: Partial<Record<TerrainTexture, GPUTextureView>> = { macroField: image(this.macroTexture).view };
     p.setArray('matrix', frame.matrix); p.set('exaggeration', c.exaggeration); p.setArray('eye', frame.eye);
     p.set('fogDistance', Math.max(c.distance * 2, 100)); p.set('showTileBounds', this.tileBounds ? 1 : 0);
-    if (settings) {
-      const lights = terrainLights(settings.lighting), v2 = settings.renderV2 ?? 0;
-      p.set('uV2WaterVisible', settings.waterVisible === false ? 0 : 1); p.setArray('uV2GlacierSources', renderV2GlacierSources(layer, settings.climate));
-      p.set('uV2Season', settings.v2Season ?? .5); p.set('uMaterialZone', renderV2ZoneUniform(settings.climateZone));
-      p.set('uMaterialSeed', settings.seed >>> 0); p.set('uMaterialClimate', settings.climate.temperature, settings.climate.precipitation);
+    p.set('uNight',this.lookSettings.ambience==='night'?1:0); p.set('displayWaterVisible',this.lookSettings.waterVisible===false?0:1);
+    p.set('displayWaterBand',layer.width*.016);
+    const canopy = settings ?? this.forestSettings;
+    if (canopy) {
+      const lights = terrainLights(canopy.lighting);
+      p.set('uMaterialSeed', canopy.seed >>> 0); p.set('uMaterialClimate', canopy.climate.temperature, canopy.climate.precipitation);
       p.set('groundEye', c.x + frame.eye[0], (frame.targetHeight + frame.eye[1]) / c.exaggeration, c.y + frame.eye[2]);
       p.set('groundLight', lights.primary[0], lights.primary[2], lights.primary[1]);
       p.set('groundLight2', lights.secondary[0], lights.secondary[2], lights.secondary[1]);
-      p.set('groundStrength', settings.lighting.enabled ? settings.lighting.strength : 0);
+      p.set('groundStrength', canopy.lighting.enabled ? canopy.lighting.strength : 0);
       p.set('macroRect', layer.x, layer.y, layer.width); p.set('macroN', layer.n);
+    }
+    if (settings) {
+      const v2 = settings.renderV2 ?? 0;
+      p.set('uV2WaterVisible', settings.waterVisible === false ? 0 : 1); p.setArray('uV2GlacierSources', renderV2GlacierSources(layer, settings.climate));
+      p.set('uV2Season', settings.v2Season ?? .5); p.set('uMaterialZone', renderV2ZoneUniform(settings.climateZone));
       if (v2 > 0 && this.ring?.layer !== layer) {
         if (this.ring) this.deleteTexture(this.ring.image);
         const grid = shoreRingFor(layer), half = new Uint16Array(grid.data.length);
@@ -483,8 +490,7 @@ class Terrain3dGpu extends Terrain3d {
       if (contours) { const value = contours.color.replace('#', ''); p.set('groundContourColor', parseInt(value.slice(0, 2), 16) / 255, parseInt(value.slice(2, 4), 16) / 255, parseInt(value.slice(4, 6), 16) / 255); }
     }
     textures.uShoreRing = this.ring?.image.view ?? empty;
-    // Forest (bindForest): enabled with the ground material.
-    const field = settings ? this.forest : undefined, applied = field ? this.occupation : undefined, beach = field?.field.beach;
+    const field = this.forest, applied = field ? this.occupation : undefined, beach = field?.field.beach;
     textures.uForestField = field ? image(field.texture).view : empty;
     p.set('uForestRect', field?.field.x ?? 0, field?.field.y ?? 0, field?.field.width ?? 1);
     textures.uForestBank = field?.bank ? image(field.bank).view : empty;
@@ -508,6 +514,12 @@ class Terrain3dGpu extends Terrain3d {
           textures[name] = mask ? image(mask.texture).view : empty;
           p.set(name === 'canopyWater' ? 'hasCanopyWater' : 'hasPreviousCanopyWater', mask ? 1 : 0);
           p.set(`${name}Rect`, mask?.rect[0] ?? 0, mask?.rect[1] ?? 0, mask?.rect[2] ?? 1);
+        }
+        for (const [ref, name, flag] of [[material.to, 'semanticTile', 'hasSemanticTile'], [material.from, 'previousSemanticTile', 'hasPreviousSemanticTile']] as const) {
+          const overlay = this.semanticTiles.get(ref.texture);
+          textures[name] = overlay ? image(overlay.texture).view : empty;
+          p.set(flag, overlay ? 1 : 0);
+          p.setArray(name === 'semanticTile' ? 'semanticRect' : 'previousSemanticRect', this.textureRect(overlay ? { ...ref, pixels: overlay.pixels, gutter: overlay.gutter } : ref, tile));
         }
         const slot = this.params.alloc(p.bytes), seams = this.seamPool.alloc(draw.correction), indices = this.patchIndices(tile, draw.clip);
         pass.setBindGroup(0, device.createBindGroup({ layout: gpu.layouts.terrain, entries: [
@@ -623,9 +635,11 @@ class UrbanBuildingPassGpu extends UrbanBuildingPass {
     const albedo = (this.atlases?.albedo ?? this.placeholder).createView({ dimension: '2d-array' }), normal = (this.atlases?.normal ?? this.placeholder).createView({ dimension: '2d-array' });
     pass.setPipeline(pipeline);
     p.setArray('matrix', frame.matrix); p.set('exaggeration', frame.exaggeration); p.set('useTex', this.atlases ? 2 : 0); p.set('softFrom', SOFT_LAYER_FROM);
+    p.set('uNight',+this.night);
     let group: GPUBindGroup | undefined, groupBuffer: GPUBuffer | undefined;
     for (const sector of shown) {
       p.set('offset', sector.origin[0] - frame.cameraX, -frame.targetHeight, sector.origin[1] - frame.cameraY);
+      p.set('sectorOrigin',sector.origin[0],sector.origin[1]);
       for (const batch of sector.cached!.batches) {
         if (!batch.gpu) continue;
         if (textured) { p.setArray('material', batch.color); p.setArray('tint', batch.tint); p.set('recolored', batch.recolored ? 1 : 0); }

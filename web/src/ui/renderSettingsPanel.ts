@@ -2,15 +2,19 @@ import { COLOR_GROUPS, paletteColors, supportsRenderColor, type RenderColorKey, 
 import type { Palette } from '../render/styles';
 import './renderSettingsPanel.css';
 
+/** One section = one composition layer, in display order; V2 rows and rustBench share it. */
 export const RENDER_SECTIONS = {
-  general: ['Map presentation', 'Présentation de la carte'],
-  relief: ['Relief and shadows', 'Relief et ombres'],
-  ground: ['Ground colours and style', 'Sol : couleurs et style'],
-  cover: ['Land cover and contours', 'Couverture du sol et courbes'],
-  roads: ['Roads and streets', 'Routes et rues'],
-  water: ['Rivers, lakes and sea', 'Rivières, lacs et mer'],
-  buildings: ['Buildings and city plan', 'Bâtiments et plan de ville'],
+  ground: ['Preset and ground', 'Préréglage et fond'],
+  relief: ['Relief and lighting', 'Relief et lumière'],
   diagnostics: ['Diagnostics', 'Diagnostics'],
+  vegetation: ['Vegetation', 'Végétation'],
+  landuse: ['Land use', 'Occupation du sol'],
+  water: ['Water', 'Eau'],
+  roads: ['Roads', 'Routes'],
+  buildings: ['Buildings', 'Bâtiments'],
+  ambience: ['Ambience', 'Ambiance'],
+  text: ['Text', 'Textes'],
+  general: ['Legend and cartouche', 'Légende et cartouche'],
 } as const;
 export type RenderSection = keyof typeof RENDER_SECTIONS;
 export type RenderText = (element: HTMLElement, en: string, fr: string) => void;
@@ -31,7 +35,7 @@ export function mountRenderSettingsPanel(host: HTMLElement, text: RenderText): R
   const sections = {} as RenderSettingsPanel['sections'], bodies = {} as RenderSettingsPanel['bodies'];
   for (const [key, labels] of Object.entries(RENDER_SECTIONS) as [RenderSection, readonly [string, string]][]) {
     const section = document.createElement('details'); section.className = 'render-settings-section'; section.dataset.renderSection = key;
-    section.open = key === 'general' || key === 'ground';
+    section.open = key === 'ground';
     const summary = document.createElement('summary'); text(summary, ...labels);
     const body = document.createElement('div'); body.className = 'render-settings-fields';
     section.append(summary, body); popup.append(section); sections[key] = section; bodies[key] = body;
@@ -50,6 +54,15 @@ export function mountRenderSettingsPanel(host: HTMLElement, text: RenderText): R
   const escape = (event: KeyboardEvent) => { if (event.key === 'Escape' && root.open) { root.open = false; title.focus(); } };
   document.addEventListener('pointerdown', dismiss); root.addEventListener('keydown', escape);
   return { root, popup, sections, bodies, dispose() { document.removeEventListener('pointerdown', dismiss); root.removeEventListener('keydown', escape); root.removeEventListener('toggle', layout); window.removeEventListener('resize', layout); root.remove(); } };
+}
+export interface SectionLevels { /** Level 2: the composition rows, always visible. */ rows: HTMLElement; /** Level 3: the fine controls, folded by default. */ advanced: HTMLElement; details: HTMLDetailsElement }
+/** Split a section body in composition rows (open) and a folded advanced group. */
+export function splitSectionLevels(body: HTMLElement, text: RenderText): SectionLevels {
+  const rows = document.createElement('div'); rows.className = 'render-settings-composition';
+  const details = document.createElement('details'); details.className = 'render-settings-advanced';
+  const summary = document.createElement('summary'); text(summary, 'Advanced settings', 'Réglages avancés');
+  const advanced = document.createElement('div'); advanced.className = 'render-settings-advanced-body'; details.append(summary, advanced);
+  body.append(rows, details); return { rows, advanced, details };
 }
 export const COLOR_LABELS: Record<RenderColorKey, readonly [string, string]> = {
   paper: ['Map background', 'Fond de carte'], groundLow: ['Low ground', 'Sol bas'], groundHigh: ['High ground', 'Sol élevé'],

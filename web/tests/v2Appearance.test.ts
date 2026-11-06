@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { presetComposition } from '../src/render/composition';
 import { defaultSettings } from '../src/v2/settings';
 import { parseProject, serializeProject, validateSettings } from '../src/v2/project';
 import { terrainCacheKey } from '../src/v2/engine';
@@ -67,12 +68,14 @@ describe('V2 appearance recipes and export snapshots', () => {
   });
   it('uses persisted false flags in visual exports instead of generation-time layer defaults', () => {
     const settings = defaultSettings(); settings.options.contours = settings.options.landuse = settings.options.labels = settings.options.legend = true;
-    settings.appearance = { style: 'night', contours: false, landuse: false, labels: false, legend: false, cartouche: false, painted: true, vegetation: 'canopy' };
-    expect(appearanceDisplayOptions(settings)).toMatchObject({ ...settings.appearance });
+    const composition = presetComposition('atlas-night');
+    composition.ground.contours = composition.text.visible = false; composition.vegetation.look = 'painted';
+    settings.appearance = { style: 'atlas', composition, vegetation: 'canopy' };
+    expect(appearanceDisplayOptions(settings)).toMatchObject({ style: 'night', contours: false, labels: false, legend: false, cartouche: false, painted: true, vegetation: 'canopy' });
     const sources = { version: 'retained-test-atlases', vegetation: 'data:image/png;base64,AAA', terrain: 'data:image/png;base64,BBB' };
     const snapshot = svgOptionsForDisplay({ width: 1600, style: 'atlas', contours: true, labels: true, legend: true,
       layers: { city: false } }, { ...appearanceDisplayOptions(settings), layers: { water: false, decor: false } }, sources);
-    expect(snapshot).toMatchObject({ width: 1600, style: 'night', contours: false, landuse: false, labels: false, legend: false,
+    expect(snapshot).toMatchObject({ width: 1600, style: 'night', contours: false, labels: false, legend: false,
       cartouche: false, vegetation: 'canopy', layers: { water: false, decor: false }, brushes: sources });
     expect(svgOptionsForDisplay(snapshot, { painted: false }).brushes).toBeUndefined();
     expect(() => svgOptionsForDisplay({}, { painted: true })).toThrow('still loading');

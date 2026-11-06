@@ -67,6 +67,14 @@
 .stage-help{display:inline-block;font-size:10.5px;color:var(--muted);text-decoration:underline;text-underline-offset:3px}
 .stage-help:hover{color:var(--gold)}
 .stage-note{margin:3px 0 2px;font-size:10.5px;line-height:1.45;color:#c9b48e}
+/* Main controls of a Map row, visible while it is collapsed. */
+.stage-quick{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin:2px 0 4px 28px}
+.stage-quick>.parameter-field{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0;margin:0;font-size:11px}
+.stage-quick>.parameter-field>small{flex:1 1 100%}
+.stage-quick>.parameter-field .parameter-caption{font-size:10.5px;color:var(--muted)}
+.stage-quick>.parameter-field select{min-width:0;max-width:170px;padding:3px 6px;font-size:11px}
+.stage-quick>.parameter-field .parameter-slider{display:none}
+.stage-quick .icon-segments{display:flex}
 
 /* General controls remain accessible without opening a stage. */
 .family-general{display:flex;flex-direction:column;gap:10px;margin:0 0 16px;padding:12px;border:1px solid #dcb86f33;border-radius:9px;background:#dcb86f05}
@@ -86,8 +94,6 @@
 .family-general .terrain-width-row select{width:54px}
 .family-general .terrain-presets{grid-column:1/-1;display:flex;gap:4px}
 .family-general .terrain-presets button{flex:1;padding:3px;font-size:10px}
-.family-general .quick-style{width:100%}
-.family-general .quick-style select{flex:1;max-width:none}
 .family-general .icon-segments{display:flex}
 .family-general .icon-segments button{flex:1;justify-content:center}
 .family-general>.climate-picker{display:flex;flex-direction:column;align-items:stretch;gap:7px}
@@ -158,16 +164,11 @@
 .icon-segments{display:inline-flex;gap:4px}
 .icon-toggle{display:inline-flex;align-items:center;gap:5px;padding:3px 8px 3px 4px;border-radius:7px;font-size:10.5px;color:var(--muted);background:#ffffff04}
 .icon-toggle .v2-icon{width:22px;height:22px;filter:grayscale(.9) brightness(.65);transition:filter .15s}
-.icon-toggle[aria-pressed=true],.icon-toggle:has(input:checked){color:var(--ink);border-color:#dcb86f66;background:#dcb86f10}
-.icon-toggle[aria-pressed=true] .v2-icon,.icon-toggle:has(input:checked) .v2-icon{filter:none}
-label.icon-toggle{border:1px solid var(--line);cursor:pointer}
-label.icon-toggle input{position:absolute;opacity:0;pointer-events:none}
-label.icon-toggle:has(input:focus-visible){outline:2px solid var(--gold);outline-offset:2px}
+.icon-toggle[aria-pressed=true]{color:var(--ink);border-color:#dcb86f66;background:#dcb86f10}
+.icon-toggle[aria-pressed=true] .v2-icon{filter:none}
 .text-segments{display:inline-flex;padding:2px;border:1px solid var(--line);border-radius:8px;background:#161712}
 .text-segments button{padding:3px 8px;border:0;border-radius:6px;font-size:10.5px;color:var(--muted);background:none}
 .text-segments button[aria-checked=true]{background:#dcb86f1c;color:var(--ink)}
-.quick-style{display:inline-flex;align-items:center;gap:5px}
-.quick-style select{max-width:170px}
 
 /* Heightmap alternative and library */
 .heightmap-source{display:flex;flex-direction:column;gap:9px;padding:10px;border:1px solid #dcb86f30;border-radius:9px;background:#dcb86f07}

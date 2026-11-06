@@ -1,3 +1,9 @@
+import { selectCityLod } from '../render/cityCanvas';
+import { mountTextOverlay3d } from './textOverlay3d';
+import { buildMapLabels, type MapLabel, type MapLabelWorld } from '../render/mapLabels';
+import { cityTextLabels } from '../render/textLayer';
+import { drawTileRoads, tileRoadVisible, cityTileHasInk } from '../render/tileNetworks';
+import { benchOverlayChange, benchMaterialNightChange, benchTextLayer, benchSettlementTextWorld } from './benchComposition';
 import { mountProceduralInspector, type ProceduralInspector } from './proceduralInspector';
 import { TerrainPipelineSession, pipelinePreview } from './terrainPipelineSession';
 import { compactBudget } from '../../../rust/bridge/terrainPhasor';
@@ -8,7 +14,8 @@ import { isFantasyStyle, prepareFantasyTerrain, renderFantasyTerrain, registerFa
 import { createFantasyTerrainLayer } from '../../../rust/bridge/fantasyTerrainLayer';
 import { fantasyLibraries } from '../render/fantasyBrushAssets';
 import { TERRAIN_STYLE_LIST, isTerrainStyle, styleTraits, terrainStyle } from '../render/terrainStyle';
-import { resolveAppearance } from '../render/appearanceRecipe';
+import { benchVegetationLimitations, resolveBenchAppearance, syncBenchAnnotations, setBenchRenderCapabilities, writeBenchCompositionQuery } from './benchComposition';
+import { drawRuralSemantic, drawUrbanSemantic } from '../render/semanticLayer';
 import { isMapStyle } from '../render/styles';
 import { DIAGNOSTICS, diagnosticAvailable, diagnosticDefinition } from '../render/displayDiagnostics';
 import { DEFAULT_TERRAIN_LAYERS, DEFAULT_TERRAIN_LIGHTING, type TerrainLayers, type TerrainLighting } from '../render/terrainLighting';
@@ -24,6 +31,7 @@ import TerrainWorker from './terrainWorker?worker&inline';
 import { wasmWorkerFailed, wasmWorkerOptions } from '../../../rust/bridge/wasmThreads';
 import { reliefStatistics, sampleRustTerrain, EROSION_SETTINGS, type ErosionSetting, type ErosionTuning, RELIEFS, GEOLOGICAL_RELIEFS, ENVIRONMENT_RELIEFS, COMPUTE_MODES, type TerrainEnvironment, type TerrainCompute, type TerrainData, type TerrainSettings, type TerrainRequest, type TerrainResponse, type TerrainRelief, type TerrainRegion } from '../../../rust/bridge/terrain';
 import { renderRustTerrain, terrainContourWidths, type TerrainStyle, type TerrainScene } from '../../../rust/bridge/terrainRender';
+import { moonlightSvg } from '../render/materialLook';
 import { DEFAULT_HYDROLOGY, riverAreaFor, type HydrologySettings, type HydrologyOverlay } from '../../../rust/bridge/hydrology';
 import { CLIMATE_VALUES, DEFAULT_NEURAL_TUNING, NEURAL_RELIEF_DEFAULTS, climateOf, type ClimateValues, type NeuralTuning } from '../../../rust/bridge/terrain';
 import { lakeColour, riverSegments, vectorOverlayPixels, vectorOverlaySvg, vectorWaterSvg, VECTOR_LEGENDS, VECTOR_OVERLAYS, type VectorOverlay } from './vectorWaterRender';
@@ -36,8 +44,9 @@ import { createTerrain3d } from './terrain3dRenderer';
 import { keepRendererOverride } from './rendererOverride';
 import { terrain3dTexture } from './terrain3dTexture';
 import { withBuildingOccupation } from './forestOccupation';
-import type { PlacementBatch } from '../../../rust/bridge/urbanArchitecture';
-import { city3dScene, rasterHeight } from '../render/city3dMeshes';
+import type { PlacementBatch, PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
+import { city3dScene, city3dProjectionScene, rasterHeight } from '../render/city3dMeshes';
+import type { Building3dScene } from '../render/urbanBuildingGeometry';
 import { TerrainRefinementSession, isNeuralRefinement, refinementAmplification, type TerrainRefinement } from './terrainRefinement';
 import neuralModels from '../../../rust/models/neural-earth/catalog.json';
 import { CONTOUR_INTERVAL } from '../render/contours';
@@ -77,6 +86,14 @@ import { illustrationContext } from './illustrationContext';
 import { installSurfaceLive } from './surfaceLive';
 import { createSurfaceBenchRevisionReader } from './surfaceBenchRevision';
 import { onGroundBlend } from '../render/groundBlend';
+function renderBenchTerrain(...args: Parameters<typeof renderRustTerrain>): TerrainScene {
+  const c=resolveBenchAppearance().composition;
+  if(c.networks.water.look==='natural')args[10]='render3d';
+  const scene=renderRustTerrain(...args);
+  if(c.ambience==='night' && styleTraits(args[1]).family==='material')scene.svg=moonlightSvg(scene.svg,`bench-${args[5]??'ground'}-night`);
+  return scene;
+}
+function benchPreparedLook(): boolean {const c=resolveBenchAppearance().composition;return c.ambience==='day' && c.networks.water.look==='ink';}
 
 const el = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const profileDefaults = executionProfiles[executionRuntime.profile];
@@ -177,7 +194,7 @@ for (const format of ['svg', 'png'] as const) {
     if (!terrain || !isFantasyStyle(style)) return;
     button.disabled = true;
     try {
-      const scene = renderRustTerrain(terrain, style, true, { ...settings, v2Season, forest: forestRaster() }, false, 'export', lighting, layers, fantasyOptions, false, baseStyle, getBenchRenderColors());
+      const scene = renderBenchTerrain(terrain, style, true, { ...settings, v2Season, forest: forestRaster() }, false, 'export', lighting, layers, fantasyOptions, false, baseStyle, getBenchRenderColors());
       const svg = map.cloneNode(true) as SVGSVGElement;
       for (const id of ['terrainOverview', 'terrainDetail', 'fantasyPainting']) svg.querySelector(`#${id}`)?.remove();
       svg.setAttribute('viewBox', `0 0 ${terrain.width} ${terrain.width}`); svg.setAttribute('width', '4096'); svg.setAttribute('height', '4096');
@@ -406,7 +423,7 @@ const isVectorOverlay = (overlay: string): overlay is VectorOverlay => (VECTOR_O
 input('showLakes').checked = query.get('lakes') !== '0'; input('showOxbows').checked = query.get('oxbows') !== '0';
 el<HTMLSelectElement>('hydroOverlay').value = hydroOverlay;
 input('showWater').checked = query.get('water') !== '0'; layers.water = input('showWater').checked;
-let baseStyle: TerrainStyle = isTerrainStyle(query.get('style')) && !styleTraits(query.get('style')!).elevation ? query.get('style') as TerrainStyle : 'parchment';
+let baseStyle: TerrainStyle = resolveBenchAppearance().composition.variant;
 let v2DiagnosticStyle: TerrainStyle = styleTraits(baseStyle).satelliteVariant ? baseStyle : 'render-v2';
 let elevationDiagnostic = query.get('diagnostic') === 'elevation' || styleTraits(query.get('style') ?? '').elevation;
 let style: TerrainStyle = elevationDiagnostic ? 'copernicus' : baseStyle;
@@ -443,27 +460,32 @@ el('refinement3d').dataset.renderDefault = 'noise';
 // Render3D forest: display-only settings, outside TerrainSettings. One canonical
 // field per input set feeds the map and the perspective; edits never regenerate.
 let v2Season=bounded(finite(query.get('v2season'),.5),0,1);
-let forest: ForestSettings = {
-  enabled: query.get('forest') !== '0',
-  density: bounded(finite(query.get('forestDensity'), DEFAULT_FOREST_SETTINGS.density), 0, 2),
-  clearings: bounded(finite(query.get('forestClearings'), DEFAULT_FOREST_SETTINGS.clearings), 0, 1),
-};
+let forest: ForestSettings = { ...resolveBenchAppearance().vegetation.forestSettings };
 interface ForestEntry { field: ForestField; occupation?: ForestOccupation; source: Float32Array; naturalKey?: string }
 interface ForestJob { key: string; data: TerrainData; input: ForestFieldInput; settings: ForestSettings }
 let forestOccupation: ForestOccupation | undefined, forestShown: ForestEntry | undefined, forestWanted = '';
-let appliedBuildingScene: PlacementBatch | undefined;
-let buildingOccupationSource: ForestOccupation | undefined, buildingOccupationScene: PlacementBatch | undefined, buildingOccupation: ForestOccupation | undefined;
-let scene3dOf: [PlacementBatch | undefined, Decor | undefined] | undefined, scene3d: PlacementBatch | undefined;
-/** The 3D view shows the city as City Bench does (render/city3dMeshes.ts):
- * silhouettes raised with the same massing volumes and roofs as the 2D map. */
-function buildings3d(scene: PlacementBatch | undefined): PlacementBatch | undefined {
-  if (!scene3dOf || scene3dOf[0] !== scene || scene3dOf[1] !== retainedDecor) {
-    const r = retainedDecor?.raster;
-    scene3dOf = [scene, retainedDecor];
-    scene3d = scene && city3dScene(scene, { heightAt: r ? rasterHeight(r.height, r.n, r.width) : undefined });
+let appliedBuildingScene: Building3dScene | undefined;
+let buildingOccupationSource: ForestOccupation | undefined, buildingOccupationScene: Building3dScene | undefined, buildingOccupation: ForestOccupation | undefined;
+type BenchBuildingSource = PlacementBatch | import('./urbanBuildingProjection').NativeBuildingProjectionScene | import('./urbanParent3d').Parent3dScene;
+let scene3dOf: [BenchBuildingSource | undefined, Decor | undefined] | undefined, scene3d: Building3dScene | undefined, scene3dDetails: readonly PlacedBuilding[] = [];
+/** The accepted plans and the shared exterior cache feed the same 3D mesh adapter as City Bench. */
+function buildings3d(scene: PlacementBatch | undefined): Building3dScene | undefined {
+  const source = settlements.urban.buildingProjection ?? scene, detailed = resolveBenchAppearance({}, 'view3d').composition.buildings.meshes === 'detailed';
+  const cached = detailed ? settlements.urban.buildingDetails.cached() : [];
+  if (!scene3dOf || scene3dOf[0] !== source || scene3dOf[1] !== retainedDecor || cached.length !== scene3dDetails.length || cached.some((building, i) => building !== scene3dDetails[i])) {
+    const r = retainedDecor?.raster, details = new Map(cached.map(building => [building.id, building]));
+    scene3dOf = [source, retainedDecor]; scene3dDetails = cached;
+    scene3d = source ? 'projection' in source ? city3dProjectionScene(source, { details }) : city3dScene(source, { heightAt: r ? rasterHeight(r.height, r.n, r.width) : undefined, details }) : undefined;
   }
   return scene3d;
 }
+function driveBenchBuildingDetails(): void {
+  if (!terrain3d || !perspective) return;
+  const c = terrain3d.getCamera(), half = c.distance * Math.tan(TERRAIN_3D_FOV / 2), aspect = Math.max(1, viewport.clientWidth / Math.max(1, viewport.clientHeight));
+  settlements.urban.buildingDetails.update({ viewport: { minX: c.x - half * aspect, minY: c.y - half, maxX: c.x + half * aspect, maxY: c.y + half }, metresPerPixel: 2 * half / Math.max(1, viewport.clientHeight), selectedId: settlements.urban.buildingState.selected, enabled: benchMeshesVisible() });
+}
+function benchBuildingAppearance() { const r = resolveBenchAppearance({}, 'view3d'); return { colors: r.palette.colors, style: r.city.buildingStyle, diagnostic: r.city.diagnostic, ambience: r.composition.ambience }; }
+function benchMeshesVisible(): boolean { const b = resolveBenchAppearance({}, 'view3d').composition.buildings; return b.visible && b.meshes !== 'none'; }
 /** Accepted physical footprints clear the same canopy in 2D and exported rasters. */
 function displayedForestOccupation(source: ForestOccupation | undefined): ForestOccupation | undefined {
   if (source !== buildingOccupationSource || appliedBuildingScene !== buildingOccupationScene) {
@@ -503,12 +525,12 @@ if (cameraValues.length === 6 && cameraValues.every(Number.isFinite)) {
 
 function camera3dChanged(): void {
   if (!terrain3d) return;
-  camera3d = terrain3d.getCamera();
+  camera3d = terrain3d.getCamera(); benchTextOverlay?.invalidate();
   if (pipelineStage === 'settlements') { settlements.urban.buildingState.camera = camera3d; settlements.urban.buildingState.projection = perspective; }
   input('exaggeration3d').value = String(camera3d.exaggeration);
   el('exaggeration3dValue').textContent = camera3d.exaggeration.toFixed(1).replace('.0', '');
   el('terrain3dInfo').textContent = `Distance ${(camera3d.distance / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} km · inclinaison ${Math.round(camera3d.pitch * 180 / Math.PI)}°`;
-  if (perspective) scheduleDetail();
+  if (perspective) { scheduleDetail(); driveBenchBuildingDetails(); }
   deferSave();
 }
 
@@ -618,28 +640,30 @@ async function load3dTile(tile: Terrain3dTile) {
   // texel. Adjacent tiles then interpolate the same world-space samples.
   const gutter = 2, pad = tile.width / tile.pixels * gutter;
   const region = { x: tile.x - pad, y: tile.y - pad, width: tile.width + 2 * pad };
-  const canvas = gpu.captureRegion(region, tile.pixels + 2 * gutter, true, false, height, ground3dEnabled());
-  const result = await terrain3dTexture(canvas, terrain, style, settings, fantasyOptions, layers.relief, appliedGroundOverlay(), region, settlements.paintingContext,
-    ctx => settlements.urban.drawGround(ctx, region, canvas.width, schedule3dTexture));
+  const canvas = await captureBenchGround(() => gpu!.captureRegion(region, tile.pixels + 2 * gutter, true, false, height, ground3dEnabled()));
+  const result = await terrain3dTexture(canvas, terrain, style, settings, fantasyOptions, layers.relief, ground3dEnabled() ? '' : appliedGroundOverlay(), region, settlements.paintingContext,
+    ground3dEnabled() ? undefined : ctx => drawBenchGround(ctx, region, canvas.width));
   if (!perspective || epoch !== texture3dEpoch) throw new DOMException('Tuile remplacée', 'AbortError');
   // Crown centres can lie outside the displayed patch. A separate, globally
   // aligned 1 m mask retains a 64 m halo without enlarging the fine colour tile.
   let canopyWater;
-  if(ground3dEnabled() && layers.water !== false && tile.width<=2048){
+  if((ground3dEnabled() || forestActive()) && layers.water !== false && tile.width<=2048){
     const x=Math.floor(tile.x-64),y=Math.floor(tile.y-64);
     const width=Math.max(Math.ceil(tile.x+tile.width+64)-x,Math.ceil(tile.y+tile.width+64)-y);
     canopyWater={x,y,width,n:width,alpha:gpu.captureWaterMask({x,y,width})};
   }
-  return { texture: result, height, gutter, water: canopyWater };
+  const semantic = benchSemanticTile(region, canvas.width, ground3dEnabled()?result:undefined);
+  if (!ground3dEnabled() && semantic) result.getContext('2d')!.drawImage(semantic, 0, 0, result.width, result.height);
+  return { texture: result, height, gutter, water: canopyWater, semantic: ground3dEnabled() ? semantic : undefined };
 }
 
 function ground3dEnabled(): boolean { return styleTraits(style).ground3d && layers.relief && layers.hypsometry; }
-/** The forest replaces the legacy macro canopy only where Render3D shows its ground material. */
-function forestActive(): boolean { return forest.enabled && ground3dEnabled(); }
+/** Procedural canopy is independent of the chosen ground. */
+function forestActive(): boolean { return forest.enabled && (perspective || layers.relief) && resolveBenchAppearance().composition.vegetation.procedural; }
 /** The shown canonical field for Render3D rasters (no TerrainGl); undefined keeps the legacy canopy. */
 function forestRaster(region = terrain): ForestRaster | undefined {
   if(overviewPending&&overviewRequest?.inspection?.previews)return undefined;
-  if (!styleTraits(style).ground3d || (!forestShown&&!styleTraits(style).waterAlwaysDrawn) || !terrain || !region) return undefined;
+  if ((!forestActive() && !styleTraits(style).ground3d) || (!forestShown&&!styleTraits(style).waterAlwaysDrawn) || !terrain || !region) return undefined;
   return { waterVisible:input('showWater').checked,field: forestShown?.field, occupation: displayedForestOccupation(forestShown?.occupation), brushes: styleTraits(style).forestBrushes,
     water: !input('showWater').checked&&!styleTraits(style).waterAlwaysDrawn ? undefined : retainedDecor ? forestRetainedWater(retainedDecor.meta.waterSvg, terrain.width, region, input('showLakes').checked)
       : forestDisplayWater(terrain, { showLakes: input('showLakes').checked, showOxbows: input('showOxbows').checked,
@@ -647,7 +671,7 @@ function forestRaster(region = terrain): ForestRaster | undefined {
 }
 /** Keep the applied terrain recipe while recording its displayed style and forest controls. */
 function withForestQuery(d: Decor): Decor {
-  const params = new URLSearchParams(d.meta.query);
+  const params = new URLSearchParams(d.meta.query); writeBenchCompositionQuery(params);
   if (query.has('surface_geology') || query.has('surface_geology_descriptor')) copySurfaceGeologyQuery(params, query);
   params.set('style', baseStyle);
   params.set('v2season',String(v2Season));
@@ -662,7 +686,7 @@ function updateForestControls(): void {
   el('renderV2Controls').hidden=!styleTraits(style).satelliteVariant;input('renderV2Season').value=String(v2Season);el('renderV2Date').textContent=new Intl.DateTimeFormat('en',{month:'long'}).format(new Date(Date.UTC(2024,0,1+Math.floor(v2Season*365))));
   el<HTMLSelectElement>('style').value = styleTraits(baseStyle).variantOf ?? baseStyle;
   el<HTMLSelectElement>('renderV2Diagnostic').value = v2DiagnosticStyle;
-  el('forestControls3d').hidden = !styleTraits(style).ground3d;
+  el('forestControls3d').hidden = !resolveBenchAppearance().composition.vegetation.procedural;
   input('forestDensity').disabled = input('forestClearings').disabled = !forest.enabled;
   el('forestDensityValue').textContent = `${Math.round(forest.density * 100)} %`;
   el('forestClearingsValue').textContent = `${Math.round(forest.clearings * 100)} %`;
@@ -672,9 +696,9 @@ function showForest(entry: ForestEntry | undefined): void {
   forestShown = entry;
   gpu?.setForest(entry?.field, displayedForestOccupation(entry?.occupation));
   // Terrain3d merges its applied building scene internally; pass the base only.
-  terrain3d?.setForest(entry?.field, entry?.occupation);
+  terrain3d?.setForest(entry?.field, entry?.occupation, { seed: seedHash(settings.seed), climate: climateOf(settings), lighting });
   // Without TerrainGl, the Render3D raster carries the field: redraw it once per change.
-  if (changed && !gpu && !forestRendering && terrain && styleTraits(style).ground3d) render();
+  if (changed && !gpu && !forestRendering && terrain && forestActive()) render();
 }
 /** Sea, lakes and rivers on the height grid: the applied raster, else the displayed water geometry. */
 function forestWater(data: TerrainData, n: number): Uint8Array | undefined {
@@ -767,7 +791,7 @@ updateForestControls();
 function setPerspective(active: boolean): void {
   active &&= !legacyPipeline && !!gpu;
   if (active && !terrain3d) {
-    try { terrain3d = createTerrain3d(el<HTMLCanvasElement>('terrain3d'), camera3dChanged, () => ruler.update()); terrain3d.setTileLoader(load3dTile, isNeuralRefinement(refinement3d)); terrain3d.setForest(forestShown?.field, forestShown?.occupation); }
+    try { terrain3d = createTerrain3d(el<HTMLCanvasElement>('terrain3d'), camera3dChanged, () => ruler.update()); terrain3d.setTileLoader(load3dTile, isNeuralRefinement(refinement3d)); terrain3d.setForest(forestShown?.field, forestShown?.occupation, { seed: seedHash(settings.seed), climate: climateOf(settings), lighting }); }
     catch (error) { status(`Vue 3D : ${error instanceof Error ? error.message : error}`, true); active = false; }
   }
   if (active) {
@@ -783,7 +807,7 @@ function setPerspective(active: boolean): void {
     camera3d = terrain3d.getCamera();
     view = { cx: camera3d.x, cy: camera3d.y, scale: perspectiveScale(camera3d) };
   }
-  perspective = active;
+  perspective = active; syncBenchText(); settlements.urban.buildingDetails.setActiveView(active ? '3d' : '2d'); publishBenchCapabilities();
   viewport.classList.toggle('perspective', active);
   el('projection3d').setAttribute('aria-pressed', String(active));
   el('projection3d').textContent = active ? '2D' : '3D';
@@ -823,12 +847,15 @@ async function refresh3dTexture(epoch: number): Promise<void> {
   try {
     const ground = ground3dEnabled();
     const buildings = settlements.urban.buildingState;
-    terrain3d.setBuildings(buildings3d(buildings.scene), { ...buildings.appearance, colors: getBenchRenderColors(), textured: settlements.urban.textured }, settlements.urban.buildingVisible);
+    driveBenchBuildingDetails();
+    terrain3d.setBuildings(buildings3d(buildings.scene), { ...buildings.appearance, ...benchBuildingAppearance(), textured: settlements.urban.textured }, benchMeshesVisible());
     // Establish the style's zoom range before restoring a shared camera.
+    const look3d=resolveBenchAppearance({},'view3d').composition;
+    terrain3d.setLook({ambience:look3d.ambience,waterLook:look3d.networks.water.look,waterVisible:look3d.networks.water.visible});
     terrain3d.setGroundMaterial(ground ? {
       seed: seedHash(settings.seed), climate: climateOf(settings),
       sourceCell: retainedDecor?.meta.terrainDisplay?.sourceCell ?? settings.width / 1024,
-      lighting, renderV2:styleTraits(style).satelliteVariant,v2Season,waterVisible:input('showWater').checked, displacement: refinement3d !== 'source', forestBrushes: styleTraits(style).forestBrushes,
+      lighting, ambience:look3d.ambience,waterLook:look3d.networks.water.look, renderV2:styleTraits(style).satelliteVariant,v2Season,waterVisible:input('showWater').checked, displacement: refinement3d !== 'source', forestBrushes: styleTraits(style).forestBrushes,
       contours: input('showContours').checked && contourInterval()>0 ? {
         step: contourInterval(), color: terrainStyle(style, getBenchRenderColors()).palette.contour,
         opacity: terrainStyle(style, getBenchRenderColors()).palette.contourOpacity, flat: settings.relief === 'flat',
@@ -859,13 +886,14 @@ async function refresh3dTexture(epoch: number): Promise<void> {
     // Same as the tiles: wait for the map variant to link instead of stalling the page in the capture.
     await gpu.variantReady();
     if (!perspective || !terrain || !gpu || epoch !== texture3dEpoch) return;
-    const canvas = gpu.captureMap(2048, ground);
-    const texture = await terrain3dTexture(canvas, terrain, style, settings, fantasyOptions, layers.relief, appliedGroundOverlay(), undefined, settlements.paintingContext);
+    const canvas = await captureBenchGround(() => gpu!.captureMap(2048, ground));
+    const texture = await terrain3dTexture(canvas, terrain, style, settings, fantasyOptions, layers.relief, ground ? '' : appliedGroundOverlay(), undefined, settlements.paintingContext, ground ? undefined : ctx => drawBenchGround(ctx, { x: 0, y: 0, width: terrain!.width }, canvas.width));
     if (perspective && epoch === texture3dEpoch) {
       terrain3d.setTileBoundaries(input('tileBounds3d').checked);
       terrain3d.setHeightSampler(gpu.createSurfaceSampler());
       terrain3d.invalidateTiles();
-      terrain3d.setTexture(texture);
+      if (!ground) { const semantic = benchSemanticTile({ x: 0, y: 0, width: terrain.width }, texture.width); if (semantic) texture.getContext('2d')!.drawImage(semantic, 0, 0); }
+      terrain3d.setTexture(texture); benchTextOverlay?.invalidate();
     }
   } catch (error) {
     if (epoch !== texture3dEpoch) return;
@@ -1101,7 +1129,7 @@ function shareQuery(): string {
   const params = new URLSearchParams({ brush_density: String(fantasyOptions.density), brush_size: String(fantasyOptions.size), brush_spacing: String(fantasyOptions.spacing), engine: 'rust', v: '4', seed: settings.seed, width: String(settings.width), motif: String(settings.motifSize), relief: settings.relief, erosion: String(settings.erosion), style: baseStyle, auto: input('auto').checked ? '1' : '0' });
   params.set('source',settings.source??'procedural');
   if(!isNeuralSource(settings.source))params.set('procedural',JSON.stringify(settings.procedural??proceduralRecipe));
-  writeRenderColorsQuery(params, getBenchRenderColors());
+  writeRenderColorsQuery(params, getBenchRenderColors()); writeBenchCompositionQuery(params);
   copySurfaceGeologyQuery(params, query.has('surface_geology') || query.has('surface_geology_descriptor') ? query : retainedDecor?.meta.query ?? query);
   if (!gpu) params.set('render', 'svg');
   params.set('brush_landuse', fantasyOptions.followLanduse ? '1' : '0');
@@ -1205,16 +1233,17 @@ const settlements = createTerrainSettlements({ map, viewport, getTerrain: () => 
   parcelDefault: legacyPipeline,
   getRaster: pipelineStage === 'settlements' ? () => retainedDecor?.raster : undefined,
   getDecor: () => retainedDecor,
-  getView: () => view, getAuto: () => input('auto').checked, getQuery: shareQuery, onChange: () => { deferSave(); queueMicrotask(syncTextured3d); }, // after construction (the binding)
+  getView: () => view, getAuto: () => input('auto').checked, getQuery: shareQuery, onChange: () => { deferSave(); queueMicrotask(() => { syncTextured3d(); publishBenchCapabilities(); if (perspective) schedule3dTexture(); }); }, // after construction (the binding)
   useForestMaterial: forestActive,
   onForestOccupation: occupation => { forestOccupation = occupation; scheduleForest(); },
   onPlanChange: () => queueMicrotask(() => {
     // Initial settlement construction can call back before its binding exists.
+    publishBenchCapabilities();
     const b = settlements.urban.buildingState;
-    appliedBuildingScene = b.scene;
+    appliedBuildingScene = settlements.urban.buildingProjection ?? b.scene;
     gpu?.setForest(forestShown?.field, displayedForestOccupation(forestShown?.occupation));
-    terrain3d?.setBuildings(buildings3d(b.scene), { ...b.appearance, colors: getBenchRenderColors(), textured: settlements.urban.textured }, settlements.urban.buildingVisible);
-    refreshUrbanPainting();
+    terrain3d?.setBuildings(buildings3d(b.scene), { ...b.appearance, ...benchBuildingAppearance(), textured: settlements.urban.textured }, benchMeshesVisible());
+    refreshUrbanPainting(); syncBenchText();
     if (!gpu && terrain && styleTraits(style).ground3d) render();
     if (perspective) schedule3dTexture();
   }),
@@ -1226,6 +1255,74 @@ const settlements = createTerrainSettlements({ map, viewport, getTerrain: () => 
   },
 });
 
+settlements.urban.buildingDetails.subscribe(() => { if (perspective && terrain3d) terrain3d.setBuildings(buildings3d(settlements.urban.buildingState.scene), { ...benchBuildingAppearance(), textured: settlements.urban.textured }, benchMeshesVisible()); });
+
+let benchTextOverlay: ReturnType<typeof mountTextOverlay3d> | undefined;
+let benchTextInputs: { key: string; sites: unknown; scene: unknown; labels: MapLabel[] } | undefined;
+function syncBenchText(): void {
+  if (!perspective) { if (benchTextOverlay) benchTextOverlay.canvas.hidden = true; return; }
+  benchTextOverlay ??= mountTextOverlay3d(viewport, () => terrain3d); benchTextOverlay.canvas.hidden = false;
+  const semantic=resolveBenchAppearance({},'view3d').composition.landuse;
+  benchTextOverlay.setLimits({...semantic,landuse:settlements.landuse,scenes:settlements.urban.semanticScenes});
+  const { text, palette } = benchTextLayer(), sites = settlements.illustrationSettlements, scene = settlements.urban.semanticScenes[0], key = JSON.stringify([text, palette.name, palette.lab]);
+  if (benchTextInputs?.key === key && benchTextInputs.sites === sites && benchTextInputs.scene === scene) return;
+  const world = benchSettlementTextWorld(sites);
+  const labels = [...(world ? buildMapLabels(world, palette.name, palette, text) : []), ...(scene ? cityTextLabels(scene, text, palette) : [])].sort((a, b) => b.st.priority - a.st.priority);
+  benchTextInputs = { key, sites, scene, labels }; benchTextOverlay.set({ labels, text, palette });
+}
+function drawBenchGround(ctx: CanvasRenderingContext2D, region: { x: number; y: number; width: number }, size: number): void {
+  if (!ground3dEnabled()) settlements.drawRuralGround(ctx, region, size);
+  settlements.urban.drawGround(ctx, region, size, schedule3dTexture, false);
+}
+function benchSemanticTile(region: { x: number; y: number; width: number }, size: number, waterInk?: HTMLCanvasElement): HTMLCanvasElement | undefined {
+  const r = resolveBenchAppearance({}, 'view3d'), s = r.composition.landuse, viewport = { minX: region.x, minY: region.y, maxX: region.x + region.width, maxY: region.y + region.width };
+  const procedural = ground3dEnabled(), roads = procedural && r.composition.networks.roads.visible ? settlements.urban.regionalStreets.filter(road => tileRoadVisible(road, viewport, region.width / size)) : [];
+  const planInk = procedural && settlements.urban.semanticScenes.some(scene => cityTileHasInk(scene, viewport, r.city.layers, selectCityLod(region.width / size)));
+  const pixels = procedural ? Math.ceil(size / 2) : size, tile = document.createElement('canvas'); tile.width = tile.height = pixels;
+  const ctx = tile.getContext('2d')!, k = pixels / region.width;
+  ctx.setTransform(k, 0, 0, k, -region.x * k, -region.y * k);
+  let painted = drawRuralSemantic(ctx, settlements.landuse, { look: s.rural, opacity: s.opacity, classes: s.classes, mpp: 1 / k, viewport, indexed: true });
+  let overlay = painted ? tile : undefined;
+  if(waterInk && r.composition.networks.water.visible && r.composition.networks.water.look==='ink'){
+    const full=document.createElement('canvas');full.width=full.height=size;const target=full.getContext('2d')!;
+    if(overlay)target.drawImage(overlay,0,0,size,size);target.drawImage(waterInk,0,0,size,size);overlay=full;
+  }
+  if (roads.length || planInk) {
+    const full = document.createElement('canvas'); full.width = full.height = size; const target = full.getContext('2d')!;
+    if (overlay) target.drawImage(overlay, 0, 0, size, size);
+    const scale = size / region.width; target.setTransform(scale, 0, 0, scale, -region.x * scale, -region.y * scale);
+    if (roads.length) drawTileRoads(target, roads, viewport, 1 / scale, { look: r.composition.networks.roads.look, emphasis: r.composition.networks.roads.emphasis, night: r.composition.ambience === 'night', colors: r.palette.colors });
+    settlements.urban.drawGround(target, region, size, schedule3dTexture, false); overlay = full;
+  }
+  const urban = document.createElement('canvas'); urban.width = urban.height = pixels; const urbanCtx = urban.getContext('2d')!;
+  urbanCtx.setTransform(k, 0, 0, k, -region.x * k, -region.y * k);
+  painted = drawUrbanSemantic(urbanCtx, settlements.urban.semanticScenes, { look: s.urban, opacity: s.opacity, mpp: 1 / k, viewport });
+  if (painted) {
+    if (overlay) { const target = overlay.getContext('2d')!; target.setTransform(1, 0, 0, 1, 0, 0); target.drawImage(urban, 0, 0, overlay.width, overlay.height); }
+    else overlay = urban;
+  }
+  return overlay;
+}
+async function captureBenchGround<T>(capture: () => T): Promise<T> {
+  const renderer = gpu!;
+  // Canopy is a 3D pass: never bake its 2D crowns into draped map tiles as well.
+  if (!benchTerrainLook || ground3dEnabled() || !forestActive()) return capture();
+  renderer.setLook({ ...benchTerrainLook, independentCanopy: false });
+  try { await renderer.variantReady(); renderer.setLook({ ...benchTerrainLook!, independentCanopy: false }); return capture(); }
+  finally { if (benchTerrainLook) renderer.setLook(benchTerrainLook); }
+}
+function publishBenchCapabilities(): void {
+  const diagnostic = resolveBenchAppearance().diagnostic, vectorWater = !!terrain?.water, hydrology = !!terrain?.hydrology;
+  const limitations: import('../render/composition').Limitation[] = [
+    { pass: 'ground', kind: 'data', field: 'resourcePotential', reason: 'This bench has no retained resource diagnostics.' },
+  ];
+  if (diagnostic.startsWith('res-')) limitations.push({ pass: 'ground', kind: 'data', field: 'diagnostic', reason: 'This bench has no retained resource diagnostics.' });
+  else if (!diagnosticAvailable(diagnostic, vectorWater ? 'vector' : hydrology ? 'rust' : 'none')) limitations.push({ pass: 'ground', kind: 'data', field: 'diagnostic', reason: 'This bench has no retained data for the selected diagnostic.' });
+  if (!terrain) limitations.push({ pass: 'ground', kind: 'data', reason: 'No terrain raster in the retained products.' });
+  limitations.push(...benchVegetationLimitations(perspective));
+  if (perspective && resolveBenchAppearance().composition.buildings.meshes === 'none' && settlements.urban.buildingProjection && !settlements.urban.buildingState.scene) limitations.push({ pass: 'buildings', kind: 'backend', reason: 'The 3D bench cannot drape footprints from retained building projections.' });
+  setBenchRenderCapabilities({ nativeTerrain: !!terrain, nativeCities: !!settlements.urban.layouts?.length, buildings: !!settlements.urban.buildingState.scene?.buildings.length || !!settlements.urban.buildingProjection, parcels: !!settlements.urban.partitions?.length, ruralLanduse: !!settlements.landuse, urbanLanduse: !!settlements.urban.layouts?.length, vectorWater, hydrology, limitations }, perspective ? 'view3d' : 'view2d');
+}
 function refreshUrbanPainting(): void {
   const layer = map.querySelector<SVGGElement>('#fantasyPainting');
   if (!terrain || !layer || !isFantasyStyle(style) || !layers.relief) { fantasyTiles.clear(); return; }
@@ -1245,6 +1342,7 @@ function updateView(): void {
   pins.update(view, w, h);
   ruler.update();
   settlements.updateView();
+  syncBenchAnnotations(map, view, w, h, { title: retainedDecor?.meta.label ?? settings.seed, subtitle: `${(settings.width / 1000).toFixed(1)} km · ${settings.relief}`, landuse: settlements.landuse, scenes: settlements.urban.semanticScenes, world: benchSettlementTextWorld(settlements.illustrationSettlements) });
   drawTransferSelection?.();
   sketchEditor?.updateView();
   const sampling = displayedDetail ? `${(displayedDetail.terrain.width / displayedDetail.terrain.resolution).toFixed(2)} m / sample` : terrain?.field?.exact && gpu ? `raster ${(terrain.width / terrain.field.n).toFixed(1)} m + GPU detail` : 'overview';
@@ -1337,6 +1435,7 @@ function lakesOnlySvg(svg: string): string {
 onGroundBlend(() => renderWater()); // Roads & ground: headwaters taper in Blended
 function renderWater(): void {
   schedule3dTexture();
+  const r = resolveBenchAppearance(), ink = r.composition.networks.water.look === 'ink', shown = r.composition.networks.water.visible, waterStyle = ink ? r.palette.mapStyle : 'render3d';
   const layer = document.getElementById('hydrologyOverlay');
   const source = retainedDecor ? 'none' : terrain?.water ? 'vector' : terrain?.hydrology ? 'rust' : 'none';
   for (const option of Array.from(diagnosticSelect.options)) option.disabled = !diagnosticAvailable(option.value, source);
@@ -1344,13 +1443,13 @@ function renderWater(): void {
 
   if (retainedDecor && layer) {
     gpu?.setWater(undefined); gpu?.setOverlay(undefined);
-    const retainedWater = (input('showWater').checked || styleTraits(style).waterAlwaysDrawn) ? decorWaterSvg(retainedDecor, baseStyle, input('showLakes').checked, getBenchRenderColors()) : '';
+    const retainedWater = shown ? decorWaterSvg(retainedDecor, waterStyle, input('showLakes').checked, getBenchRenderColors()) : '';
     if (gpu && styleTraits(style).neuralEarth) {
       // Render: the GPU paints the rivers (depth, banks); lakes keep their SVG material above.
-      gpu.setRetainedWater(input('showWater').checked ? decorWaterSvg(retainedDecor, baseStyle, false, getBenchRenderColors()) : '', retainedDecor.raster.width);
-      layer.innerHTML = svgWaterLayer(lakesOnlySvg(retainedWater));
+      gpu.setRetainedWater(input('showWater').checked ? decorWaterSvg(retainedDecor, waterStyle, false, getBenchRenderColors()) : '', retainedDecor.raster.width);
+      layer.innerHTML = svgWaterLayer(ink ? retainedWater : lakesOnlySvg(retainedWater));
     } else if (gpu && styleTraits(style).ground3d) {
-      gpu.setRetainedWater(retainedWater, retainedDecor.raster.width); layer.innerHTML = '';
+      gpu.setRetainedWater(retainedWater, retainedDecor.raster.width); layer.innerHTML = ink ? svgWaterLayer(retainedWater) : '';
     } else { gpu?.setRetainedWater(undefined); layer.innerHTML = svgWaterLayer(retainedWater); }
     el('hydrologyLegend').hidden = !elevationDiagnostic || !input('showLegend').checked;
     el('hydrologyLegend').textContent = diagnosticDefinition(elevationDiagnostic ? 'elevation' : 'none').legend;
@@ -1363,23 +1462,23 @@ function renderWater(): void {
   if (gpu && !styleTraits(style).fantasy) {
     const vectorOverlay = water && isVectorOverlay(hydroOverlay) ? hydroOverlay : 'none';
     const cond = terrain?.conditioning;
-    const display = { style: baseStyle, colors: getBenchRenderColors(), showLakes: input('showLakes').checked, showOxbows: input('showOxbows').checked, riverArea: riverAreaFor(settings.hydrology ?? DEFAULT_HYDROLOGY, settings.width), riverMode: settings.hydrology?.riverMode ?? 'vector', overlay: vectorOverlay };
-    const shown = input('showWater').checked, hydrology = !water && !terrain?.hydrologyError ? terrain?.hydrology : undefined;
-    if (water && (shown||styleTraits(style).waterAlwaysDrawn)) gpu.setWater({ lake: display.showLakes ? lakeField(water.lake, water.hydro.n).values : undefined, n: water.hydro.n, rivers: riverSegments(water, display) });
-    else if (hydrology && (shown||styleTraits(style).waterAlwaysDrawn)) {
+    const display = { style: waterStyle as TerrainStyle, colors: getBenchRenderColors(), showLakes: input('showLakes').checked, showOxbows: input('showOxbows').checked, riverArea: riverAreaFor(settings.hydrology ?? DEFAULT_HYDROLOGY, settings.width), riverMode: settings.hydrology?.riverMode ?? 'vector', overlay: vectorOverlay };
+    const hydrology = !water && !terrain?.hydrologyError ? terrain?.hydrology : undefined;
+    if (water && shown) gpu.setWater({ lake: display.showLakes ? lakeField(water.lake, water.hydro.n).values : undefined, n: water.hydro.n, rivers: riverSegments(water, display) });
+    else if (hydrology && shown) {
       // The Rust network on the GPU: its lakes' shore field, as the SVG rings contour it.
-      const colour = hydrologyWaterColour(baseStyle, getBenchRenderColors());
+      const colour = hydrologyWaterColour(waterStyle, getBenchRenderColors());
       gpu.setWater({ lake: display.showLakes ? hydrology.waterField : undefined, shore: 'exact', n: hydrology.resolution, rivers: hydrologySegments(hydrology, colour) });
     } else gpu.setWater(undefined);
     gpu.setOverlay(water ? vectorOverlayPixels(water, vectorOverlay, cond ? { values: cond.delta, n: cond.n } : undefined) : undefined);
-    layer.innerHTML = hydrology && !isVectorOverlay(hydroOverlay) ? renderHydrology(hydrology, hydroOverlay, false, style) : '';
+    layer.innerHTML = (ink && shown && water ? svgWaterLayer(vectorWaterSvg(water, display)) : '') + (hydrology && !isVectorOverlay(hydroOverlay) ? renderHydrology(hydrology, hydroOverlay, ink && shown, waterStyle, true, getBenchRenderColors()) : '');
   } else if (water) {
     const vectorOverlay = isVectorOverlay(hydroOverlay) ? hydroOverlay : 'none';
     const cond = terrain?.conditioning;
-    layer.innerHTML = svgWaterLayer(input('showWater').checked ? vectorWaterSvg(water, { style: baseStyle, colors: getBenchRenderColors(), showLakes: input('showLakes').checked, showOxbows: input('showOxbows').checked, riverArea: riverAreaFor(settings.hydrology ?? DEFAULT_HYDROLOGY, settings.width), riverMode: settings.hydrology?.riverMode ?? 'vector', overlay: vectorOverlay }) : '',
+    layer.innerHTML = svgWaterLayer(input('showWater').checked ? vectorWaterSvg(water, { style: waterStyle, colors: getBenchRenderColors(), showLakes: input('showLakes').checked, showOxbows: input('showOxbows').checked, riverArea: riverAreaFor(settings.hydrology ?? DEFAULT_HYDROLOGY, settings.width), riverMode: settings.hydrology?.riverMode ?? 'vector', overlay: vectorOverlay }) : '',
       vectorOverlaySvg(water, vectorOverlay, cond ? { values: cond.delta, n: cond.n } : undefined));
-  } else layer.innerHTML = terrain?.hydrology && (hydroOverlay === 'none' || !isVectorOverlay(hydroOverlay)) ? svgWaterLayer(input('showWater').checked ? renderHydrology(terrain.hydrology, 'none', true, baseStyle, true, getBenchRenderColors()) : '',
-    hydroOverlay === 'none' ? '' : renderHydrology(terrain.hydrology, hydroOverlay, false, baseStyle)) : '';
+  } else layer.innerHTML = terrain?.hydrology && (hydroOverlay === 'none' || !isVectorOverlay(hydroOverlay)) ? svgWaterLayer(input('showWater').checked ? renderHydrology(terrain.hydrology, 'none', true, waterStyle, true, getBenchRenderColors()) : '',
+    hydroOverlay === 'none' ? '' : renderHydrology(terrain.hydrology, hydroOverlay, false, waterStyle)) : '';
   if(!gpu&&styleTraits(style).waterAlwaysDrawn&&hydroOverlay==='none')layer.innerHTML='';
   const legend = el('hydrologyLegend');
   const diagnostic = diagnosticDefinition(elevationDiagnostic ? 'elevation' : hydroOverlay);
@@ -1418,7 +1517,7 @@ function report(): void {
   }
   el('report').innerHTML = rows.map(([key, value]) => `<p><small><b>${key}</b><br>${value}</small></p>`).join('');
 }
-let uploaded: TerrainData | undefined;
+let uploaded: TerrainData | undefined, benchTerrainLook: TerrainLook | undefined;
 /** Contour interval of the bench: shared intervals, doubled in mountains; none in caverns. */
 function contourInterval(): number {
   if (!terrain || terrain.caveMask.length || styleTraits(style).fantasy || styleTraits(style).elevation) return 0;
@@ -1439,18 +1538,18 @@ function renderGpu(): void {
   }
   contourStep = contourInterval();
   // The bench controls form an appearance recipe; the terrain look resolves exactly as in the V2.
-  const resolved = resolveAppearance({ style: isMapStyle(baseStyle) ? baseStyle : 'parchment', terrainStyle: baseStyle, diagnostic: elevationDiagnostic ? 'elevation' : undefined, colors: getBenchRenderColors(),
-    lighting, terrainLayers: layers, contours: input('showContours').checked, season: v2Season, fantasy: fantasyOptions }, { mapStyle: 'parchment' }, { nativeCities: false }, 'view2d');
+  const resolved = resolveBenchAppearance({ style: isMapStyle(baseStyle) ? baseStyle : 'parchment', terrainStyle: baseStyle, diagnostic: elevationDiagnostic ? 'elevation' : undefined, lighting, terrainLayers: layers, contours: input('showContours').checked, season: v2Season, fantasy: fantasyOptions });
+  fantasyOptions.forests = resolved.vegetation.fantasy.forests;
   const ground = resolved.ground, brushed = ground.traits.fantasy;
   const look: TerrainLook = {
-    refinement3d, v2Season: ground.season, colors: resolved.palette.colors,
-    style: ground.style, waterStyle: baseStyle, lighting: brushed ? { ...ground.lighting, strength: .12 } : ground.lighting, layers: brushed ? { ...ground.layers, hypsometry: false } : ground.layers, climate: climateOf(settings), mapWidth: terrain.width, globalMin: terrain.globalMinHeight, globalMax: terrain.globalMaxHeight,
+    independentCanopy: resolved.composition.vegetation.procedural, ambience:resolved.composition.ambience,waterLook:resolved.composition.networks.water.look, refinement3d, v2Season: ground.season, colors: resolved.palette.colors,
+    style: ground.style, waterStyle: resolved.composition.networks.water.look === 'ink' ? resolved.palette.mapStyle : resolved.composition.variant, lighting: brushed ? { ...ground.lighting, strength: .12 } : ground.lighting, layers: brushed ? { ...ground.layers, hypsometry: false } : ground.layers, climate: climateOf(settings), mapWidth: terrain.width, globalMin: terrain.globalMinHeight, globalMax: terrain.globalMaxHeight,
     contours: ground.layers.relief && !brushed && ground.contours && contourStep > 0, contourStep, flatRelief: settings.relief === 'flat',
     refine: !!settings.refine && !terrain.caveMask.length, sourceCell: retainedDecor?.meta.terrainDisplay?.sourceCell ?? settings.width / 1024, seed: seedHash(settings.seed),
     detail: settings.detailNoise ?? DEFAULT_FRACTAL_DETAIL,
     floor: field?.floor ?? 0, frame: layers.frame, background: '#f1f0e9',
   };
-  gpu.setLook(look);
+  benchTerrainLook = look; gpu.setLook(look);
   let fantasy: Element | null = document.getElementById('fantasyPainting');
   if (styleTraits(style).fantasy && layers.relief) {
     if (!fantasy) { fantasy = document.createElementNS('http://www.w3.org/2000/svg', 'g'); fantasy.id = 'fantasyPainting'; fantasy.setAttribute('pointer-events', 'none'); map.append(fantasy); }
@@ -1462,6 +1561,7 @@ function renderGpu(): void {
   updateView(); renderedStatus();
 }
 function render(preparedScene?: TerrainScene, preparationMs = 0): void {
+  publishBenchCapabilities();
   brushPanel.hidden = !styleTraits(style).fantasy;
   if (!terrain) return;
   if (gpu) { updateContourControl(); renderGpu(); return; }
@@ -1469,7 +1569,7 @@ function render(preparedScene?: TerrainScene, preparationMs = 0): void {
   // Hide a stale stand before drawing; a new field redraws through showForest.
   forestRendering = true; try { scheduleForest(); } finally { forestRendering = false; }
   const forestScene = forestRaster();
-  const start = performance.now(), scene = (!styleTraits(style).fantasy && !forestScene && !Object.keys(getBenchRenderColors()).length ? preparedScene : undefined) ?? renderRustTerrain(terrain, style, true, { ...settings, forest: forestScene, v2Season }, input('showContours').checked, 'main', lighting, layers, fantasyOptions, false, baseStyle, getBenchRenderColors());
+  const start = performance.now(), scene = (benchPreparedLook() && !styleTraits(style).fantasy && !forestScene && !Object.keys(getBenchRenderColors()).length ? preparedScene : undefined) ?? renderBenchTerrain(terrain, style, true, { ...settings, forest: forestScene, v2Season }, input('showContours').checked, 'main', lighting, layers, fantasyOptions, false, baseStyle, getBenchRenderColors());
   rasterWaterMask = scene.waterMask;
   map.innerHTML = `<g id="terrainOverview">${scene.svg}</g><g id="terrainDetail"></g><g id="hydrologyOverlay"></g>${styleTraits(style).fantasy && layers.relief ? '<g id="fantasyPainting" pointer-events="none"></g>' : ''}`;
   refreshUrbanPainting();
@@ -1623,7 +1723,7 @@ function receive(response: TerrainResponse): void {
       if (terrain) data.waterSurface = seaDistanceSurface(terrain, settings.width);
       // Detail crops sample the same full-tile forest field; the worker scenes carry none.
       const forestScene = forestRaster(data);
-      const scene = prepared && response.scene && !forestScene && !Object.keys(getBenchRenderColors()).length ? response.scene : renderRustTerrain(data, style, false, { ...settings, forest: forestScene, v2Season }, input('showContours').checked, 'detail', lighting, layers, fantasyOptions, false, baseStyle, getBenchRenderColors()), image = new Image();
+      const scene = benchPreparedLook() && prepared && response.scene && !forestScene && !Object.keys(getBenchRenderColors()).length ? response.scene : renderBenchTerrain(data, style, false, { ...settings, forest: forestScene, v2Season }, input('showContours').checked, 'detail', lighting, layers, fantasyOptions, false, baseStyle, getBenchRenderColors()), image = new Image();
       image.src = scene.imageUrl;
       const tile: DetailTile = {
         terrain: { x: data.x, y: data.y, width: data.width, resolution: data.resolution, height: data.height, caveMask: data.caveMask, generationMs: data.generationMs, backend: data.backend, backendReason: data.backendReason, prepareMs: data.prepareMs, samplingMs: data.samplingMs, gpuSetupMs: data.gpuSetupMs },
@@ -1888,6 +1988,22 @@ function changeStyle(next: TerrainStyle): void {
   el('retryRefinement').hidden = !refinementError || !isNeuralRefinement(refinement3d) || (!perspective && !styleTraits(style).ground3d);
   updateForestControls(); settlements.refreshForestMaterial();
 }
+window.addEventListener('bench-composition-change', () => {
+  if(benchMaterialNightChange() && gpu && benchTerrainLook){
+    const r=resolveBenchAppearance(),c=r.composition;
+    if(benchTerrainLook){benchTerrainLook={...benchTerrainLook,ambience:c.ambience};gpu?.setLook(benchTerrainLook);}
+    terrain3d?.setLook({ambience:c.ambience,waterLook:c.networks.water.look,waterVisible:c.networks.water.visible});
+    const buildings=settlements.urban.buildingState;
+    terrain3d?.setBuildings(buildings3d(buildings.scene),{...buildings.appearance,...benchBuildingAppearance(),textured:settlements.urban.textured},benchMeshesVisible());
+    syncBenchText();updateView();save();return;
+  }
+  if (benchOverlayChange()) { syncBenchText(); updateView(); save(); return; }
+  const r = resolveBenchAppearance(); forest = { ...r.vegetation.forestSettings }; lighting = { ...r.ground.lighting }; layers = { ...r.ground.layers }; v2Season = r.ground.season;
+  fantasyOptions.density = r.vegetation.fantasy.density; fantasyOptions.size = r.vegetation.fantasy.size; fantasyOptions.spacing = r.vegetation.fantasy.spacing; fantasyOptions.followLanduse = r.vegetation.fantasy.followLanduse; fantasyOptions.forests = r.vegetation.fantasy.forests;
+  baseStyle = r.composition.variant; style = r.ground.style; elevationDiagnostic = r.diagnostic === 'elevation'; refinement3d = r.city.refinement;
+  if (terrain3d) terrain3d.setCamera({ ...terrain3d.getCamera(), exaggeration: r.city.exaggeration });
+  displayedDetail = undefined; detailRequest = undefined; render(); settlements.refreshForestMaterial(); syncBenchText(); if (perspective) schedule3dTexture(); save();
+});
 window.addEventListener('bench-render-colors-change', () => { displayedDetail = undefined; detailRequest = undefined; render(); save(); });
 el<HTMLSelectElement>('style').onchange = () => {
   const selected = el<HTMLSelectElement>('style').value as TerrainStyle;
@@ -1922,7 +2038,7 @@ capture3d.onclick = async () => {
   if (!terrain3d || !perspective || capture3d.disabled) return;
   capture3d.disabled = true;
   try {
-    const image = await terrain3d.capture(), url = URL.createObjectURL(image);
+    const image = await terrain3d.capture().then(blob => benchTextOverlay ? benchTextOverlay.composite(blob) : blob), url = URL.createObjectURL(image);
     const link = document.createElement('a'); link.href = url; link.download = `magna-urbis-3d-${settings.seed.replace(/[^a-z0-9_-]/gi, '_')}.png`; link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     status(urbanText(['Capture 3D PNG exportée.','3D PNG capture exported.','三维 PNG 截图已导出。','Captura 3D PNG exportada.','Captura 3D PNG exportada.']));
@@ -2268,6 +2384,8 @@ if (import.meta.env.DEV) {
   }, message => { el('pipelineStatus').textContent = message; });
   window.addEventListener('pagehide', () => { disconnect(); if (liveHandler) void liveHandler.then(handler => handler.dispose()).catch(() => {}); }, { once: true });
 }
+window.dispatchEvent(new Event('bench-composition-change'));
+window.dispatchEvent(new Event('bench-space-change'));
 updateView();
 terrainLoading('ready');
 if (query.get('artifact')) void readHistory(query.get('artifact')!).then(d => {
@@ -2325,6 +2443,7 @@ installRecipeSharing({
 mountIllustration({ host: document.querySelector('header')!, capture: async () => {
   if (!terrain || overviewPending || generationError || terrain.hydrologyError || (pipelineStage === 'settlements' && !settlements.contextReady())) throw new Error(urbanText(['Attendez la fin de la génération avant de capturer la vue.','Wait for generation to finish before capturing the view.','请等待生成完成后再截取视图。','Espera a que termine la generación antes de capturar la vista.','Aguarde a geração terminar antes de capturar a visualização.']));
   const captured = perspective && terrain3d ? await terrain3d.captureIllustration() : undefined;
+  if (captured && benchTextOverlay) captured.image = await benchTextOverlay.composite(captured.image);
   const context = illustrationContext({ sourceStyle: el<HTMLSelectElement>('style').value, seed: settings.seed, camera: captured?.camera,
     view: { ...view }, width: viewport.clientWidth, height: viewport.clientHeight,
     terrain: { relief: settings.relief, climate: settings.climate, environment: settings.environment, ...climateOf(settings), minHeight: terrain.minHeight, maxHeight: terrain.maxHeight },

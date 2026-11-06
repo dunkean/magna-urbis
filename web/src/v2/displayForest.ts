@@ -1,18 +1,26 @@
 import type { ResolvedAppearance } from '../render/appearanceRecipe';
 import { nativeTerrainLayer } from './nativeProducts';
-import { buildForestField, type ForestField } from '../../../rust/bridge/terrainForest';
+import { buildForestField, type ForestField, type ForestOccupation } from '../../../rust/bridge/terrainForest';
 import { seedHash } from '../../../rust/bridge/terrainAdjust';
-import type { World } from '../gen/types';
+import type { LandUseLayer, World } from '../gen/types';
 import type { V2Settings } from './contracts';
 import { effectiveTerrainSettings } from './terrainSettings';
+import { forestOccupation } from '../ui/forestOccupation';
 
 const cache = new WeakMap<World, Map<string, ForestField>>();
+const occupations = new WeakMap<LandUseLayer, ForestOccupation | undefined>();
+/** Product identity is the land-use revision; neither appearance nor visibility is an input. */
+export function v2ForestOccupation(world: World): ForestOccupation | undefined {
+  const landuse = world.landuse; if (!landuse) return;
+  if (!occupations.has(landuse)) occupations.set(landuse, forestOccupation(landuse));
+  return occupations.get(landuse);
+}
 /** Repaint the forest over retained heights. Never call terrain or settlement generation. */
 export function v2DisplayForest(world: World, settings: V2Settings, resolved: ResolvedAppearance): ForestField | undefined {
+  if (!resolved.composition.vegetation.procedural) return;
   const configuration = effectiveTerrainSettings(settings, world.mapSize), overrides = resolved.vegetation.forest;
-  const forest = { ...configuration.forest, ...overrides };
-  if (!forest.enabled) return;
-  if (!Object.keys(overrides).length) return nativeTerrainLayer(world)?.v2ForestField;
+  const { enabled: _enabled, ...parameters } = overrides, forest = { ...configuration.forest, ...parameters, enabled: true };
+  if (!Object.keys(parameters).length) return nativeTerrainLayer(world)?.v2ForestField;
   const climate = configuration.climateValues!, clearingProfile = resolved.traits.forestClearingProfile;
   const key = JSON.stringify([forest, climate, world.seed, clearingProfile]);
   let fields = cache.get(world); if (!fields) { fields = new Map(); cache.set(world, fields); }

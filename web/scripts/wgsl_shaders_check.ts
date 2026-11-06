@@ -1,14 +1,16 @@
 /**
- * Compiles the generated WGSL of the WebGPU map renderer (src/ui/terrainWgsl.generated.ts) in a headless
- * Chrome (Tint), on top of naga's validation in `npm run shaders:wgsl`. Exits 1 on any error.
+ * Compiles the generated WGSL of the WebGPU map and 3D renderers in a headless Chrome (Tint), on top
+ * of naga's validation in the two shader generators. Exits 1 on any error.
  *
  *   npm run shaders:wgsl:check
  */
 import { chromium } from 'playwright';
 import { createServer } from 'node:http';
 import * as generated from '../src/ui/terrainWgsl.generated';
+import * as generated3d from '../src/ui/terrain3dWgsl.generated';
 
-const modules = Object.fromEntries(Object.entries(generated).filter(([, value]) => typeof value === 'string')) as Record<string, string>;
+const modules = Object.fromEntries(Object.entries({ map: generated, terrain3d: generated3d }).flatMap(([prefix, sources]) =>
+  Object.entries(sources).filter(([, value]) => typeof value === 'string').map(([key, value]) => [`${prefix}.${key}`, value]))) as Record<string, string>;
 // WebGPU needs a secure context: a local page, not about:blank.
 const server = createServer((_, response) => { response.setHeader('content-type', 'text/html'); response.end('<!doctype html><title>wgsl</title>'); }).listen(0, '127.0.0.1');
 await new Promise(resolve => server.once('listening', resolve));

@@ -111,6 +111,18 @@ function renderElevation(terrain: TerrainData, frame: boolean, clipNamespace: st
   return { svg, imageUrl, contourStep: 0 };
 }
 
+/** The crowns alone, transparent elsewhere, as the map pass of renderRustTerrain shades them: the canopy of a flat ground with no terrain raster (relief hidden). */
+export function renderTerrainCanopy(terrain: TerrainData, style: TerrainStyle, settings: Partial<Pick<TerrainSettings, 'seed' | 'climate' | 'climateValues' | 'climateZone'>> & { forest: Omit<ForestRaster, 'light'>; v2Season?: number }, lighting: TerrainLighting, materialContext?: MaterialRasterContext): string {
+  const n = terrain.resolution, traits = styleTraits(style), lights = terrainLights(lighting);
+  const canopy = renderMaterialRaster(terrain, { seed: settings.seed ?? '42', climate: settings.climate, climateValues: settings.climateValues, climateZone: settings.climateZone }, true,
+    { ...settings.forest, renderV2: traits.satelliteVariant, v2Season: settings.v2Season, brushes: traits.forestBrushes, light: lights.primary, light2: lights.secondary, lightingStrength: lighting.enabled ? lighting.strength : 0, mapCanopy: true }, materialContext);
+  const rgba = new Uint8Array(n * n * 4);
+  for (let i = 0; i < n * n; i++) if (canopy.canopyAlpha[i] && terrain.height[i] >= 0 && !terrain.caveMask[i]) {
+    rgba[i * 4] = canopy.rgb[i * 3]; rgba[i * 4 + 1] = canopy.rgb[i * 3 + 1]; rgba[i * 4 + 2] = canopy.rgb[i * 3 + 2]; rgba[i * 4 + 3] = canopy.canopyAlpha[i];
+  }
+  return `<image width="${terrain.width}" height="${terrain.width}" href="${pngDataUrl(encodePng(rgba, n, n, 4, 1))}"/>`;
+}
+
 /** Transitional renderer adapter. Rust never depends on the legacy World schema. */
 /** settings.forest: display-only Render3D forest raster input (field, occupation); absent keeps the legacy canopy. */
 export function renderRustTerrain(terrain: TerrainData, style: TerrainStyle, frame = true, settings: Pick<TerrainSettings, 'relief' | 'width'> & Partial<Pick<TerrainSettings, 'seed' | 'climate' | 'climateValues' | 'climateZone'>> & { forest?: Omit<ForestRaster, 'light'>; v2Season?: number } = { relief: 'mountains', width: terrain.width }, showContours = true, clipNamespace = 'main', lighting: TerrainLighting = DEFAULT_TERRAIN_LIGHTING, layers: TerrainLayers = DEFAULT_TERRAIN_LAYERS, fantasyOptions: FantasyOptions = DEFAULT_FANTASY_OPTIONS, paintBrushes = true, waterStyle: TerrainStyle = style, colors?: RenderColors, materialContext?: MaterialRasterContext): TerrainScene {
@@ -141,9 +153,10 @@ export function renderRustTerrain(terrain: TerrainData, style: TerrainStyle, fra
     grainCoordinates: { x: terrain.x, y: terrain.y, cell: terrain.motifSize / 512 },
   });
   let canopyAlpha: Uint8Array | undefined;
+  const materialSettings = { seed: settings.seed ?? '42', climate: settings.climate, climateValues: settings.climateValues, climateZone: settings.climateZone };
+  const materialForest = { ...settings.forest, renderV2:traits.satelliteVariant, v2Season:settings.v2Season, brushes: traits.forestBrushes, light: terrainLights(lighting).primary, light2: terrainLights(lighting).secondary, lightingStrength: lighting.enabled ? lighting.strength : 0 };
   if ((traits.neuralEarth || traits.ground3d) && layers.hypsometry) {
-    const material = renderMaterialRaster(terrain, { seed: settings.seed ?? '42', climate: settings.climate, climateValues: settings.climateValues, climateZone: settings.climateZone }, traits.ground3d,
-      { ...settings.forest, renderV2:traits.satelliteVariant, v2Season:settings.v2Season, brushes: traits.forestBrushes, light: terrainLights(lighting).primary, light2: terrainLights(lighting).secondary, lightingStrength: lighting.enabled ? lighting.strength : 0 }, materialContext);
+    const material = renderMaterialRaster(terrain, materialSettings, traits.ground3d, materialForest, materialContext);
     if (traits.ground3d && settings.forest?.field) canopyAlpha = material.canopyAlpha;
     const neutral = renderTerrainPixels(legacyRasterInput, { ...pal, hypso: [[0, '#ffffff'], [1, '#ffffff']] }, {
       pixels: n, surface: terrain.height, normals: { x: terrain.normalX, y: terrain.normalY, z: terrain.normalZ }, lighting,
@@ -151,6 +164,15 @@ export function renderRustTerrain(terrain: TerrainData, style: TerrainStyle, fra
     });
     for (let i = 0; i < n * n; i++) for (let c = 0; c < 3; c++) {
       pixels.rgb[i * 3 + c] = Math.round(material.rgb[i * 3 + c] * (terrain.height[i] >= 0 ? neutral.rgb[i * 3 + c] / 255 : 1));
+    }
+  }
+  // Same composition as the live map pass (terrainGl): the ground keeps its palette, crowns mix over the land by resolved cover.
+  if (!traits.ground3d && layers.relief && settings.forest?.field) {
+    const canopy = renderMaterialRaster(terrain, materialSettings, true, { ...materialForest, mapCanopy: true }, materialContext);
+    canopyAlpha = canopy.canopyAlpha;
+    for (let i = 0; i < n * n; i++) if (canopyAlpha[i] && terrain.height[i] >= 0) for (let c = 0; c < 3; c++) {
+      const under = pixels.rgb[i * 3 + c];
+      pixels.rgb[i * 3 + c] = Math.round(under + (canopy.rgb[i * 3 + c] - under) * canopyAlpha[i] / 255);
     }
   }
   let sea = '';

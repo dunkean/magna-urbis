@@ -15,7 +15,7 @@ type PanelSpec = {
 };
 
 const specs: Record<string, PanelSpec> = {
-  reliefStage: { main: '#width, #relief, #climate, #motifSize, #erosion, #environment, #mountainMix, #compactControls, #proceduralInspector', method: '#terrainMethod', compute: '#terrainSource, #generationCompute, #compute', action: '#generateRelief' },
+  reliefStage: { main: '#width, #sampleSpacing, #sourceDefinitionSummary, #sourceDefinitionNote, #relief, #climate, #motifSize, #environment, #mountainMix, #compactControls, #proceduralInspector', method: '#terrainMethod', compute: '#terrainSource, #generationCompute, #compute', action: '#generateRelief' },
   coastStage: { main: '#coastControl', methodText: 'Découpe du relief', computeText: 'Support du terrain · Rust / WebGPU', action: '#generateCoasts' },
   hydroStage: { main: '#hydroEnabled, #rustControls', method: '#hydroEngine', compute: '#hydroCompute', action: '#generateHydrology' },
   urbanQuarterStage: { main: '[data-enabled], #urbanTarget, [data-footprint="family"], [data-config="culture"]', method: '[data-config="scope"], [data-footprint="mechanism"], [data-config="tissue"]', computeText: 'CPU · Rust / WASM', action: '[data-apply]' },

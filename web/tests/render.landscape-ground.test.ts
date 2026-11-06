@@ -263,6 +263,7 @@ describe('opaque landscape ground across settlement models', () => {
 
   for (const culture of ['barbarian-norse', 'native-iroquoian']) it(`${culture}: actual internal paths replay after the opaque terrain in SVG and Canvas`, () => {
     const w = generate(makeOptions({ seed: '1', mapSize: 3600, population: 1000, culture, relief: 'flat', river: 'none', settlements: 'none', walls: 'single' }));
+    w.options.labels = false; // names go through the text layer (curved halos need a real canvas); this test is about ground and paths
     expect(w.urban!.renderHints?.openGround).toBe(true);
     expect(w.urban!.streets.length).toBeGreaterThan(0);
     const ground = currentLandscapeGround(w), path = w.urban!.streets.find((st) => mpArea(intersectionS(ground, [piece(offsetRibbon(st.path, st.path.map(() => st.width)))])) > 0.1);

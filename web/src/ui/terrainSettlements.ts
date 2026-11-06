@@ -1,4 +1,8 @@
+import { textStyle } from '../render/textLayer';
+import { kindStyles } from '../render/labelStyles';
+import { terrainStyle } from '../render/terrainStyle';
 import { recordStageMs } from './benchTimings';
+import { resolveBenchAppearance } from './benchComposition';
 import { retainCityPlacement } from './cityRetainedPlacement';
 import { setupSettlementLocale } from './settlementLocale';
 import { urbanText } from './urbanPanelLocale';
@@ -527,7 +531,7 @@ export function createTerrainSettlements(options: {
     // Inspector views (buildings; City Bench roles) take map clicks: markers stay visible but inert.
     layer.style.pointerEvents = urban.inspecting ? 'none' : 'auto';
     const draft = pending && config.mode === 'list' ? config.list : undefined;
-    const state = `${enabled}|${showPoints}|${selection}|${draft ? JSON.stringify(draft) : ''}`;
+    const state = `${enabled}|${showPoints}|${selection}|${JSON.stringify(resolveBenchAppearance().composition.text)}|${draft ? JSON.stringify(draft) : ''}`;
     if (layer === drawnLayer && output === drawnOutput && state === drawnState) {
       for (const marker of Array.from(layer.querySelectorAll<SVGGElement>('[data-settlement]'))) {
         marker.setAttribute('transform', `translate(${marker.dataset.x} ${marker.dataset.y}) scale(${1 / options.getView().scale})`);
@@ -535,8 +539,8 @@ export function createTerrainSettlements(options: {
       return;
     }
     drawnLayer = layer; drawnOutput = output; drawnState = state;
-    layer.replaceChildren(); if (!enabled || !output || !showPoints || options.labels === false) return;
-    const scale = options.getView().scale;
+    layer.replaceChildren(); if (!enabled || !output || !showPoints || options.labels === false || !resolveBenchAppearance().cartography.labels || !resolveBenchAppearance().composition.text.groups.pins) return;
+    const scale = options.getView().scale, resolvedText = resolveBenchAppearance(), text = resolvedText.composition.text, pal = terrainStyle(resolvedText.composition.variant, resolvedText.palette.colors).palette, labelStyle = textStyle(kindStyles(pal.name, pal).village, text, pal);
     const displayed = draft ? draft.flatMap(spec => {
       const placed = output?.settlements.find(s => s.key === spec.key), center = spec.position ?? placed?.center;
       return center ? [{ ...spec, center, cls: classOfPop(spec.population), archetype: 'pending', scores: placed?.scores }] : [];
@@ -550,6 +554,8 @@ export function createTerrainSettlements(options: {
       const number = document.createElementNS(ns, 'text'); number.classList.add('settlement-number'); number.setAttribute('x', '21'); number.setAttribute('y', '5'); number.textContent = String(index + 1);
       const population = document.createElementNS(ns, 'text'); population.classList.add('settlement-population'); population.setAttribute('x', '5'); population.setAttribute('y', '27'); population.setAttribute('text-anchor', 'middle'); population.textContent = s.population.toLocaleString();
       const title = document.createElementNS(ns, 'title'); title.textContent = `${s.cls} · ${s.culture} · ${s.archetype}\n${s.population} inhabitants${s.scores ? ` · score ${s.scores.total.toFixed(3)}` : ''}\nClick to edit; drag to move`;
+      for (const [label, size] of [[number, 13], [population, 12]] as const) { label.style.fontFamily = labelStyle.family!; label.style.fontSize = `${size * text.size}px`; label.style.fill = labelStyle.color; label.style.stroke = labelStyle.halo!; label.style.strokeWidth = `${text.halo === 'strong' ? 4 : 3}px`; label.style.strokeOpacity = String(labelStyle.haloOpacity); }
+      population.style.display = text.density === 'low' ? 'none' : '';
       marker.append(title, hit, symbol, number, population); layer.append(marker);
     }
   }
@@ -721,6 +727,9 @@ export function createTerrainSettlements(options: {
       }
       return paintingContext;
     },
+    get landuse() { return landuse?.landuse; },
+    get ruralGroundRevision() { return landuse?.groundRevision ?? 0; },
+    drawRuralGround(ctx: CanvasRenderingContext2D, region: { x: number; y: number; width: number }, size: number): void { landuse?.drawGround(ctx, region, size); },
     applyUrbanChanges: urban.applyPending,
     cancelPicking(): void { setPicking(); },
     /** Style or forest settings changed: update the Canvas woods and republish the occupation. */

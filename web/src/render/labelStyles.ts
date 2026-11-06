@@ -14,6 +14,7 @@ export type LabelShape = 'point' | 'area' | 'path';
 export type Symbol = 'dot' | 'ring' | 'cross' | 'tri' | 'square';
 
 export interface KindStyle {
+  family?: string; halo?: string; haloOpacity?: number; haloWidth?: number;
   shape: LabelShape;
   italic: boolean;
   bold: boolean;
@@ -67,6 +68,6 @@ export function streetRankStyle(base: KindStyle, rank: number): KindStyle {
   return { ...base, minScale, minPx: r === 0 ? 11.5 : 10.5, priority: base.priority + (4 - r) * 6, bold: r === 0, sizeM: base.sizeM * (r === 0 ? 1.15 : 1) };
 }
 
-export function fontString(st: Pick<KindStyle, 'italic' | 'bold'>, sizePx: number, family: string): string {
-  return `${st.italic ? 'italic ' : ''}${st.bold ? '600 ' : ''}${sizePx}px ${family}`;
+export function fontString(st: Pick<KindStyle, 'italic' | 'bold' | 'family'>, sizePx: number, family: string): string {
+  return `${st.italic ? 'italic ' : ''}${st.bold ? '600 ' : ''}${sizePx}px ${st.family ?? family}`;
 }

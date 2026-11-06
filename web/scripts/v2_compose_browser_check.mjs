@@ -104,8 +104,8 @@ try {
   await page.locator('#inspector .close').click();
   await page.locator('#map-style').selectOption('atlas');
   await page.locator('.display-menu > summary').click();
-  await page.locator('#display-contours').uncheck();
-  await page.locator('#display-labels').uncheck();
+  await page.locator('[data-setting-path="appearance.composition.ground.contours"]').uncheck();
+  await page.locator('[data-setting-path="appearance.composition.text.visible"]').uncheck();
   await page.locator('.display-menu > summary').click();
   const current = await project('02-current-world.project.json');
   assert(current.data.world.urban.buildings.length > 0);
@@ -169,13 +169,13 @@ try {
 
   await page.locator('#map-style').selectOption('parchment');
   await page.locator('.display-menu > summary').click();
-  await page.locator('#display-contours').check();
-  await page.locator('#display-labels').check();
+  await page.locator('[data-setting-path="appearance.composition.ground.contours"]').check();
+  await page.locator('[data-setting-path="appearance.composition.text.visible"]').check();
   await page.locator('.display-menu > summary').click();
   await importFile(final.buffer, 'complete', 'appearance-roundtrip.project.json');
   assert.equal(await page.locator('#map-style').inputValue(), 'atlas');
-  assert.equal(await page.locator('#display-contours').isChecked(), false);
-  assert.equal(await page.locator('#display-labels').isChecked(), false);
+  assert.equal(await page.locator('[data-setting-path="appearance.composition.ground.contours"]').isChecked(), false);
+  assert.equal(await page.locator('[data-setting-path="appearance.composition.text.visible"]').isChecked(), false);
   report.checks.appearance = { style: 'atlas', contours: false, labels: false, roundTrip: true };
 
   const seedBuffer = await exportFile('seed', '07-minimal-seed.json');

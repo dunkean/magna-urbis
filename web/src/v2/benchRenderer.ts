@@ -1,17 +1,20 @@
 /** Display adapters for the retained RustBench terrain and CityBench geometry.
  * No generation entry point is imported here. The original Canvas renderer remains available. */
 import type { MaterialRasterContext } from '../../../rust/bridge/terrainMaterialContext';
-import type { World } from '../gen/types';
+import type { World, LandKind } from '../gen/types';
 import type { V2Settings } from './contracts';
 import type { ResolvedAppearance } from '../render/appearanceRecipe';
+import type { City3dPhysicalGround as PhysicalGround } from '../ui/city3d';
 import type { View } from '../render/view';
 import type { ExportLayers } from '../render/exportLayers';
 import { createCanvasRenderer, type CanvasRenderer } from '../render/canvas';
+import { roadGroundTones, setRoadGround } from '../render/roadStyle';
 import { displayWorld } from '../render/displayWorld';
-import { v2DisplayForest } from './displayForest';
+import { v2DisplayForest, v2ForestOccupation } from './displayForest';
 import { biomePalette } from '../render/biomes';
 import { terrainStyle } from '../render/terrainStyle';
-import { renderRustTerrain, terrainLandClip } from '../../../rust/bridge/terrainRender';
+import { moonlightSvg } from '../render/materialLook';
+import { renderRustTerrain, renderTerrainCanopy, terrainLandClip } from '../../../rust/bridge/terrainRender';
 import { seaDistanceSurface, seaMaterialSvg } from '../render/terrainWater';
 import { renderSvg } from '../render/svg';
 import { DEFAULT_FRACTAL_DETAIL, seedHash } from '../../../rust/bridge/terrainAdjust';
@@ -22,12 +25,16 @@ import { lakeField } from '../ui/lakeGeometry';
 import { riverSegments, vectorWaterSvg, vectorOverlaySvg, vectorOverlayPixels, type WaterDisplay, type VectorOverlay } from '../ui/vectorWaterRender';
 import { renderHydrology, hydrologySegments, hydrologyWaterColour } from '../../../rust/bridge/hydrologyRender';
 import type { HydrologyOverlay } from '../../../rust/bridge/hydrology';
-import { registerFantasyBrushes, isFantasyStyle } from '../../../rust/bridge/fantasyTerrain';
+import { registerFantasyBrushes, isFantasyStyle, renderFantasyTerrain } from '../../../rust/bridge/fantasyTerrain';
 import { decodeBrushes, type BrushImages } from '../render/brushes';
 import { renderScene, type RenderScene } from './renderScene';
 import { PassState, ResourceCache, passKeys, type PassInput } from './passes/pass';
 import { buildScene, type SceneMask } from '../render/scene';
-import { createNativeCityMap } from './nativeCityMap';
+import { createNativeCityMap, type NativeCityHooks } from './nativeCityMap';
+import { drawRuralSemantic, drawUrbanSemantic, ruralSemanticLegend, urbanSemanticLegend } from '../render/semanticLayer';
+import type { SemanticLook } from '../render/composition';
+import type { SemanticLegendEntry } from '../render/legend';
+import type { CityScene } from '../render/cityCanvas';
 import { viewRect } from '../render/view';
 import { viewRasterFits, viewRasterRegion, type ViewRasterRegion } from '../render/viewRaster';
 import { isResourceDiagnostic } from '../render/displayDiagnostics';
@@ -51,6 +58,7 @@ const wholeMap = (width: number): ViewRasterRegion => ({ x: 0, y: 0, width, heig
 /** Resources a live renderer shares with its exports: derived products keyed by revisions, and the native city map. */
 export interface SharedPassResources { cache: ResourceCache; city?: { key: string; map: ReturnType<typeof createNativeCityMap> } }
 const CARTOGRAPHIC_ONLY_VEGETATION = ['forest', 'meadow', 'marsh', 'commons'];
+/** `svg`: the terrain of the 3D background; `image`: the 2D base, with the crowns of a hidden relief. */
 type BaseRaster = { svg: string; image?: HTMLImageElement };
 export class BenchRenderer {
   private surface = document.createElement('canvas');
@@ -73,8 +81,11 @@ export class BenchRenderer {
   private city?: ReturnType<typeof createNativeCityMap>;
   private exportCity?: ReturnType<typeof createNativeCityMap>;
   private cartography?: CanvasRenderer;
+  private physical?: PhysicalGround;
   /** renderSvg overlay of an export (explicit layers), whole map at EXPORT_OVERLAY_PX: used only where it is not stretched. */
   private exportOverlay?:HTMLImageElement;
+  /** Physical land use of an export when a rural semantic look is on: drawn under the semantics, the rest of the overlay above. */
+  private exportGround?:HTMLImageElement;
   /** Terrain raster (CPU relief, sea): natural content, whole map. */
   private base?: HTMLImageElement;
   private terrainSvg = '';
@@ -119,6 +130,7 @@ export class BenchRenderer {
     this.settings = settings; this.resolved = r; layers = { ...(r.cartography.roads ? {} : { roads: false }), ...layers }; this.exportLayers = layers;
     const scene = renderScene(world, settings);
     this.world = world; this.scene = scene; this.native = scene.terrain;
+    setRoadGround(world.landuse, world.mapSize, roadGroundTones(r.ground.traits.family === 'material', biomePalette(r.palette.mapStyle, world.options.biome)), r.composition.ambience === 'night');
     const effective = effectiveTerrainSettings(settings, world.mapSize);
     const effectiveKey = JSON.stringify([effective.relief, effective.refine, effective.detailNoise, effective.climate, effective.climateValues, effective.climateZone, effective.hydrology?.riverMode]);
     const forestKey = JSON.stringify([effective.forest, effective.climateValues]);
@@ -128,7 +140,7 @@ export class BenchRenderer {
     try {
       const ran = await this.passes.run(() => passKeys(this.input()), {
         terrainData: () => this.terrainDataPass(), terrainLook: () => this.terrainLookPass(), forest: () => this.forestPass(), water: () => this.waterPass(),
-        frame: () => this.framePass(), cartography: () => this.cartographyPass(), overlays: () => this.overlaysPass(), city: () => this.cityPass() });
+        frame: () => this.framePass(), cartography: () => this.cartographyPass(), overlays: () => this.overlaysPass(), semantic: () => this.semanticPass(), city: () => this.cityPass() });
       if (this.gpuActive) await this.gpu!.variantReady();
       if (this.vectorsDirty) await this.refreshVectors();
       this.stats.passes = ran;
@@ -147,7 +159,7 @@ export class BenchRenderer {
   }
   private waterDisplay(): WaterDisplay {
     const r = this.resolved!, t = this.native!, effective = effectiveTerrainSettings(this.settings!, this.world!.mapSize);
-    return { style: r.ground.style, colors: r.palette.colors, showLakes: r.ground.lakes, showOxbows: r.ground.oxbows,
+    return { style: r.ground.traits.fantasy && r.composition.networks.water.look === 'natural' ? 'render3d' : r.ground.style, colors: r.palette.colors, showLakes: r.ground.lakes, showOxbows: r.ground.oxbows,
       riverArea: t.water?.riverArea ?? .02, riverMode: effective.hydrology?.riverMode ?? 'vector', overlay: r.diagnostic.startsWith('v-') ? r.diagnostic as VectorOverlay : 'none' };
   }
   private dropBackground(): void { this.backgroundHref = undefined; }
@@ -175,12 +187,13 @@ export class BenchRenderer {
   /** GPU: look uniforms only. CPU: the terrain raster (the only thing re-rasterized). */
   private async terrainLookPass(): Promise<void> {
     this.dropBackground();
+    this.vectorsDirty=true;
     const t = this.native!, world = this.world!, settings = this.settings!, r = this.resolved!, style = r.ground.style, colors = r.palette.colors;
     const effective = effectiveTerrainSettings(settings, world.mapSize), layers = this.layers(), lighting = r.ground.lighting;
     if (this.gpuActive) {
       const source = t.field ?? { n: t.resolution, data: t.height, floor: 0, cave: t.caveMask };
       this.terrainSvg = ''; this.base = undefined;
-      this.gpu!.setLook({ style, colors, lighting, layers, mapWidth: t.width, climate: climateOf(effective as TerrainSettings), climateZone: effective.climateZone, v2Season: r.ground.season,
+      this.gpu!.setLook({ style, colors, lighting, layers, ambience:r.composition.ambience,waterLook:r.composition.networks.water.look,waterStyle:r.composition.networks.water.look==='ink'?r.palette.mapStyle:undefined, independentCanopy: true, mapWidth: t.width, climate: climateOf(effective as TerrainSettings), climateZone: effective.climateZone, v2Season: r.ground.season,
         globalMin: t.globalMinHeight, globalMax: t.globalMaxHeight, contours: r.ground.contours && layers.relief, contourStep: effective.relief === 'mountains' ? 40 : effective.relief === 'flat' ? 2 : 10,
         flatRelief: effective.relief === 'flat', refine: effective.refine??true, sourceCell: t.width / source.n, seed: seedHash(world.seed), detail: effective.detailNoise ?? DEFAULT_FRACTAL_DETAIL,
         floor: source.floor ?? 0, frame: layers.frame, background: terrainStyle(style,colors).palette.paper });
@@ -191,44 +204,62 @@ export class BenchRenderer {
     // The shared material shader also composes SVG/PNG exports, using an OffscreenCanvas or a page canvas according to WebGL2 availability.
     const cacheKey = `terrain:${key}`;
     const pending = this.shared.cache.get<Promise<BaseRaster>>(cacheKey, async () => {
-      const settingsForRender = { ...effective, width: world.mapSize, seed: world.seed, v2Season: r.ground.season, forest: { field: v2DisplayForest(world, settings, r), waterVisible: layers.water } };
+      const settingsForRender = { ...effective, width: world.mapSize, seed: world.seed, v2Season: r.ground.season, forest: { field: v2DisplayForest(world, settings, r), occupation: v2ForestOccupation(world), waterVisible: layers.water } };
       let svg = '';
-      if (layers.relief) svg = renderRustTerrain(t, style, layers.frame, settingsForRender, r.ground.contours, 'v2-render', lighting, layers, r.vegetation.fantasy, true, style, colors, this.rasterContext()).svg;
+      const waterStyle=r.composition.networks.water.look==='natural'?'render3d':r.palette.mapStyle;
+      if (layers.relief) svg = renderRustTerrain(t, style, layers.frame, settingsForRender, r.ground.contours, 'v2-render', lighting, layers, r.vegetation.fantasy, true, waterStyle, colors, this.rasterContext()).svg;
       if (!layers.relief && layers.water && t.globalMinHeight < 0) {
-        const sea = seaMaterialSvg(seaDistanceSurface(t, t.width), t.x, t.y, style, t.width, colors);
+        const sea = seaMaterialSvg(seaDistanceSurface(t, t.width), t.x, t.y, waterStyle, t.width, colors);
         svg += `<defs><mask id="v2-water-only"><rect width="${t.width}" height="${t.width}" fill="white"/><path d="${terrainLandClip(t)}" fill="black" fill-rule="evenodd"/></mask></defs><g mask="url(#v2-water-only)">${sea}</g>`;
       }
-      return { svg, image: svg ? await imageOf(svgOf(svg, wholeMap(t.width))) : undefined };
+      // Illustrated grounds have no shader to grade: night is one multiply over the raster, kept in the SVG so 2D, 3D and export agree.
+      if (r.composition.ambience === 'night' && r.ground.traits.fantasy) svg += `<rect width="${t.width}" height="${t.width}" fill="#26324f" style="mix-blend-mode:multiply"/>`;
+      // Relief hidden: no terrain raster carries the vegetation, it lies on the flat palette ground.
+      // `crowns` stay out of the 3D background (`svg`), which gets the canopy from its shader; an Illustrated ground has no such shader.
+      let crowns = '';
+      if (!layers.relief && this.exportLayers.terrain !== false) {
+        if (settingsForRender.forest.field) {
+          crowns = renderTerrainCanopy(t, style, settingsForRender, lighting, this.rasterContext());
+          if (isFantasyStyle(style)) { svg += crowns; crowns = ''; }
+        } else if (isFantasyStyle(style) && r.vegetation.fantasy.forests) svg += renderFantasyTerrain(t, style, settingsForRender, { ...r.vegetation.fantasy, forestsOnly: true });
+      }
+      if(r.composition.ambience==='night'){
+        if(r.ground.traits.family==='material')svg=moonlightSvg(svg,'v2-ground-night');
+        crowns=moonlightSvg(crowns,'v2-canopy-night');
+      }
+      return { svg, image: svg + crowns ? await imageOf(svgOf(svg + crowns, wholeMap(t.width))) : undefined };
     });
     const raster = await pending.catch(error => { this.shared.cache.delete(cacheKey); throw error; });
     this.terrainSvg = raster.svg; this.base = raster.image;
   }
   private forestPass(): void {
     if (!this.gpuActive) return;
-    this.dropBackground(); this.gpu!.setForest(v2DisplayForest(this.world!, this.settings!, this.resolved!));
+    this.dropBackground(); this.gpu!.setForest(v2DisplayForest(this.world!, this.settings!, this.resolved!), v2ForestOccupation(this.world!));
   }
   /** GPU water/overlay textures, plus the vector water and hydrology diagnostics (rasterized per view). */
   private async waterPass(): Promise<void> {
     this.dropBackground();
     const t = this.native!, r = this.resolved!, style = r.ground.style, colors = r.palette.colors, layers = this.layers(), water = this.waterDisplay();
+    const ink = r.composition.networks.water.look === 'ink', visible = layers.water && r.composition.networks.water.visible;
+    const vectorDisplay = { ...water, style: ink ? r.palette.mapStyle : 'render3d' as const };
     if (this.gpuActive) {
       if (t.water) {
-        this.gpu!.setWater(layers.water ? { lake: water.showLakes ? lakeField(t.water.lake, t.water.hydro.n).values : undefined, n: t.water.hydro.n, rivers: riverSegments(t.water, water) } : undefined);
+        this.gpu!.setWater(visible ? { lake: water.showLakes ? lakeField(t.water.lake, t.water.hydro.n).values : undefined, n: t.water.hydro.n, rivers: riverSegments(t.water, water) } : undefined);
         this.gpu!.setOverlay(vectorOverlayPixels(t.water, water.overlay, t.conditioning?.delta ? { values: t.conditioning.delta, n: t.conditioning.n } : undefined));
       } else if (t.hydrology) {
-        this.gpu!.setWater(layers.water ? { lake: water.showLakes ? t.hydrology.waterField : undefined, shore: 'exact', n: t.hydrology.resolution, rivers: hydrologySegments(t.hydrology, hydrologyWaterColour(style, colors)) } : undefined);
+        this.gpu!.setWater(visible ? { lake: water.showLakes ? t.hydrology.waterField : undefined, shore: 'exact', n: t.hydrology.resolution, rivers: hydrologySegments(t.hydrology, hydrologyWaterColour(style, colors)) } : undefined);
         this.gpu!.setOverlay(undefined);
       } else this.gpu!.setWater(undefined);
     }
     let svg = '';
-    if (t.water && layers.water) {
-      if (!this.gpuActive || isFantasyStyle(style)) svg += vectorWaterSvg(t.water, water);
+    if (t.water && visible) {
+      if (ink || !this.gpuActive || isFantasyStyle(style)) svg += vectorWaterSvg(t.water, vectorDisplay, !ink);
       if (!this.gpuActive && water.overlay !== 'none') svg += vectorOverlaySvg(t.water, water.overlay, t.conditioning?.delta ? { values: t.conditioning.delta, n: t.conditioning.n } : undefined);
     }
     if (t.hydrology) {
       const diagnostic = r.diagnostic !== 'none' && !r.diagnostic.startsWith('v-') && r.diagnostic !== 'elevation' && !isResourceDiagnostic(r.diagnostic) ? r.diagnostic as HydrologyOverlay : 'none';
       const hydrology = water.showLakes ? t.hydrology : { ...t.hydrology, lakeOffsets: t.hydrology.lakeOffsets.slice(0, 1), lakePoints: t.hydrology.lakePoints.slice(0, 0) };
-      svg += renderHydrology(hydrology, diagnostic, !this.gpuActive && layers.water, style, true, colors);
+      svg += renderHydrology(hydrology, diagnostic, (ink || !this.gpuActive) && visible, ink ? r.palette.mapStyle : 'render3d', true, colors);
     }
     if (isResourceDiagnostic(r.diagnostic)) {
       const resources = await resourceOverlayBody(this.world!, r, this.resourceSource);
@@ -245,7 +276,8 @@ export class BenchRenderer {
   }
   private async refreshVectors(): Promise<void> {
     this.vectorsDirty = false;
-    const svg = this.waterSvg + this.frameSvg;
+    const r=this.resolved!,water=r.composition.ambience==='night' && r.composition.networks.water.look==='natural'?moonlightSvg(this.waterSvg,'v2-water-night'):this.waterSvg;
+    const svg = water + this.frameSvg;
     if (svg === this.vectors) return;
     const whole = wholeMap(this.native!.width);
     this.vectors = svg; this.vectorView = undefined; this.vectorRequest = undefined;
@@ -260,29 +292,68 @@ export class BenchRenderer {
   /** Overlay renderer (names, roads, land use, painted/vegetation symbols); the natural layers it does not own are masked, not faked. */
   private async cartographyPass(): Promise<void> {
     const world = this.world!, r = this.resolved!, layers = this.exportLayers, scene = this.scene!;
+    // Before the dispose: 3D tiles may paint through the current renderer during this wait.
+    const brushes = r.cartography.painted ? await paintedBrushes() ?? undefined : undefined;
     this.cartography?.dispose();
     const shown = this.shownWorld();
     const landuse = layers.landuse !== false && r.cartography.landuse;
-    const mask: SceneMask = { water: false, contours: false, landuse: !landuse ? false : r.traits.cartographicVegetation ? true : kind => !CARTOGRAPHIC_ONLY_VEGETATION.includes(kind) };
-    const v = scene.revisions, sceneKey = JSON.stringify(['scene', v.roads, v.landuse, v.settlements, v.terrain, v.cities, shown === world, layers.roads, layers.city, r.city.visible, landuse, r.traits.cartographicVegetation, world.mapSize, world.seed, world.options.biome]);
+    // The physical land use keeps its own vegetation drawing only where the composition asks for it on the vector overlay; the semantic layer is separate (hook below).
+    const cartographic = r.composition.vegetation.cartographic;
+    const mask: SceneMask = { water: false, contours: false, landuse: !landuse ? false : cartographic ? true : kind => !CARTOGRAPHIC_ONLY_VEGETATION.includes(kind) };
+    const v = scene.revisions, sceneKey = JSON.stringify(['scene', v.roads, v.landuse, v.settlements, v.terrain, v.cities, shown === world, layers.roads, layers.city, r.city.visible, landuse, cartographic, world.mapSize, world.seed, world.options.biome]);
     const built = this.shared.cache.get(sceneKey, () => buildScene(shown, undefined, { mask }));
     const state=this;
     const palette={...biomePalette(r.palette.mapStyle,world.options.biome),frameKind:'none' as const,...(layers.decor===false?{grid:null}:{})};
-    this.cartography = createCanvasRenderer(this.overlay, shown, palette, { colors: r.palette.colors, transparentBackground: true, terrain: () => null, scene: built, mask,
-      brushes: r.cartography.painted ? await paintedBrushes() ?? undefined : undefined, vegetation: r.vegetation.symbols, get dpr() { return state.dpr; } });
+    this.cartography = createCanvasRenderer(this.overlay, shown, palette, { colors: r.palette.colors, separateText: true, textSources: () => this.city?.scenes(), transparentBackground: true, terrain: () => null, scene: built, mask, roadLook: r.composition.networks.roads.look, roadStyle: () => { const c = this.resolved!.composition; return { look: c.networks.roads.look, emphasis: c.networks.roads.emphasis, night: c.ambience === 'night', colors: this.resolved!.palette.colors }; },
+      // Read per frame: a new look repaints the raster tiles through `key`, never the cartography pass.
+      semantic: { key: () => this.semantic?.key ?? '', draw: (ctx, rect, mpp) => this.paintRural(ctx, rect, mpp), legend: () => this.semanticLegend() },
+      brushes, vegetation: r.vegetation.symbols, get dpr() { return state.dpr; } });
+    const renderer = this.cartography;
+    this.physical = { key: passKeys(this.input()).cartography, paint: (target, box) => renderer.drawGround(target, box) };
     this.passes.reset('overlays');
   }
+  /** The physical land use of the overlay above (composition mask, painted brushes, path caches) for the 3D ground tiles: no second scene. */
+  physicalGround(): PhysicalGround | undefined { return this.physical; }
   /** Labels, legend and cartouche on the overlay renderer; the explicit-layers export raster. */
   private async overlaysPass(): Promise<void> {
     const r = this.resolved!, layers = this.exportLayers;
-    this.cartography!.setOverlays({ labels: layers.labels !== false && r.cartography.labels, legend: layers.decor !== false && r.cartography.legend, cartouche: layers.decor !== false && r.cartography.cartouche });
-    this.exportOverlay = undefined;
+    this.cartography!.setOverlays({ text: r.composition.text, labels: layers.labels !== false && r.cartography.labels, legend: layers.decor !== false && r.cartography.legend, cartouche: layers.decor !== false && r.cartography.cartouche });
+    this.exportOverlay = undefined; this.exportGround = undefined;
     if (Object.keys(layers).length === 0) return;
     const sources=r.cartography.painted?(await import('../render/assets/brushAssets')).BRUSH_SOURCES:undefined;
-    const svg=renderSvg(this.shownWorld(),{width:EXPORT_OVERLAY_PX,style:r.palette.mapStyle,colors:r.palette.colors,buildings:r.city.visible,layers:{...layers,background:false,terrain:false,water:false},contours:false,landuse:layers.landuse!==false&&r.cartography.landuse,landuseKinds:r.traits.cartographicVegetation?undefined:kind=>!CARTOGRAPHIC_ONLY_VEGETATION.includes(kind),labels:r.cartography.labels,legend:r.cartography.legend,cartouche:r.cartography.cartouche,brushes:sources,vegetation:r.vegetation.symbols});
-    const document=new DOMParser().parseFromString(svg,'image/svg+xml');document.querySelectorAll('.layer-decor').forEach(frame=>frame.remove());
-    this.exportOverlay=await imageOf(new XMLSerializer().serializeToString(document.documentElement));
+    this.semanticPass(true); // the legend reads the semantic state, which may not be computed yet at this point
+    const landuseOn=layers.landuse!==false&&r.cartography.landuse;
+    // Rural semantics sit above the physical land use but below roads and labels: with a semantic look on, the land use is its own raster (exportGround) under the semantics.
+    const split=landuseOn&&this.semantic!.rural!=='off';
+    const common={width:EXPORT_OVERLAY_PX,style:r.palette.mapStyle,colors:r.palette.colors,buildings:r.city.visible,contours:false,landuseKinds:r.composition.vegetation.cartographic?undefined:(kind:LandKind)=>!CARTOGRAPHIC_ONLY_VEGETATION.includes(kind),text:r.composition.text,labels:false,brushes:sources,vegetation:r.vegetation.symbols,roadGround:roadGroundTones(r.ground.traits.family === 'material', biomePalette(r.palette.mapStyle, this.world!.options.biome)),roadLook:r.composition.networks.roads.look,roadEmphasis:r.composition.networks.roads.emphasis,roadNight:r.composition.ambience==='night'};
+    const rasterOf=async(svg:string)=>{const document=new DOMParser().parseFromString(svg,'image/svg+xml');document.querySelectorAll('.layer-decor').forEach(frame=>frame.remove());return imageOf(new XMLSerializer().serializeToString(document.documentElement));};
+    this.exportGround=undefined;
+    if(split)this.exportGround=await rasterOf(renderSvg(this.shownWorld(),{...common,layers:{background:false,terrain:false,water:false,landuse:true,city:false,streets:false,roads:false,labels:false,decor:false},landuse:true,legend:false,cartouche:false}));
+    this.exportOverlay=await rasterOf(renderSvg(this.shownWorld(),{...common,layers:{...layers,background:false,terrain:false,water:false,...(split?{landuse:false}:{})},landuse:landuseOn&&!split,legend:r.cartography.legend,cartouche:r.cartography.cartouche,semanticLegend:this.semanticLegend()}));
   }
+  /** Semantic land use state: looks, opacity and classes. Painted per frame from the canonical polygons (cartography hook, export branch of drawInto, city hook), so nothing else re-runs. */
+  private semantic?: { rural: SemanticLook; urban: SemanticLook; opacity: number; classes: Readonly<Record<LandKind, boolean>>; key: string };
+  private semanticPass(inline = false): void | Promise<void> {
+    const c = this.resolved!.composition.landuse, layers = this.exportLayers, shown = layers.landuse !== false, before = this.semantic;
+    const rural = shown ? c.rural : 'off', urban = shown ? c.urban : 'off';
+    this.semantic = { rural, urban, opacity: c.opacity, classes: c.classes, key: JSON.stringify([rural, urban, c.opacity, Object.entries(c.classes).filter(([, on]) => !on).map(([kind]) => kind)]) };
+    // The overlays pass runs before this one and its key ignores the semantic state, yet the exported legend embeds it:
+    // redo it now when the state moved (the inline call from the overlays pass is already up to date).
+    if (!inline && before && before.key !== this.semantic.key && this.cartography) return this.overlaysPass();
+  }
+  private paintRural(ctx: CanvasRenderingContext2D, viewport: { minX: number; minY: number; maxX: number; maxY: number }, mpp: number): void {
+    const s = this.semantic;
+    if (s && s.rural !== 'off') drawRuralSemantic(ctx, this.world?.landuse, { look: s.rural, opacity: s.opacity, mpp, viewport, classes: s.classes });
+  }
+  private paintUrban(ctx: CanvasRenderingContext2D, scene: CityScene, frame: { viewport: { minX: number; minY: number; maxX: number; maxY: number }; mpp: number }): void {
+    const s = this.semantic;
+    if (s && s.urban !== 'off') drawUrbanSemantic(ctx, [scene], { look: s.urban, opacity: s.opacity, mpp: frame.mpp, viewport: frame.viewport });
+  }
+  private semanticLegend(): SemanticLegendEntry[] {
+    const s = this.semantic;
+    return s ? [...ruralSemanticLegend(this.world?.landuse, s.classes, s.rural), ...urbanSemanticLegend(this.city?.scenes() ?? [], s.urban)] : [];
+  }
+  private cityHooks: NativeCityHooks = { beforeBuildings: (ctx, scene, frame) => this.paintUrban(ctx, scene, frame) };
   /** Native city plans/houses: rebuilt per city products only; the city appearance is read per frame (draw). */
   private cityPass(): void {
     const v = this.scene!.revisions, key = JSON.stringify([v.cities, v.settlements, v.terrain]), shared = this.shared;
@@ -332,10 +403,15 @@ export class BenchRenderer {
     if (vectors) ctx.drawImage(vectors.image, vectors.region.x, vectors.region.y, vectors.region.width, vectors.region.height);
     // The export overlay is one whole-map raster: only where it is at least as fine as the frame.
     const overlay = this.exportOverlay && view.scale * dpr * size <= this.exportOverlay.naturalWidth * 1.01 ? this.exportOverlay : undefined;
-    if (overlay) ctx.drawImage(overlay, 0, 0, size, size);
+    // Export order: physical land use, rural semantics, then roads/labels/furniture (as on screen).
+    if (overlay) {
+      if (this.exportGround) ctx.drawImage(this.exportGround, 0, 0, size, size);
+      this.paintRural(ctx, viewRect(view, w, h), 1 / view.scale); ctx.drawImage(overlay, 0, 0, size, size);
+    }
     ctx.restore();
     if (!overlay && this.cartography) { if (this.overlay.width !== canvas.width) this.overlay.width = canvas.width; if (this.overlay.height !== canvas.height) this.overlay.height = canvas.height; this.cartography.draw(view); ctx.drawImage(this.overlay, 0, 0, w, h); }
-    if (this.exportLayers.city !== false||this.exportLayers.streets!==false) this.stats.city = this.city?.draw(ctx, view, w, h, dpr, r, this.exportLayers);
+    if (this.exportLayers.city !== false||this.exportLayers.streets!==false) this.stats.city = this.city?.draw(ctx, view, w, h, dpr, r, { ...this.exportLayers, labels: false }, this.cityHooks);
+    if (this.cartography) { ctx.save(); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); this.cartography.drawText(ctx, view, w, h); ctx.restore(); }
     return canvas;
   }
   /** The vector raster for this frame: the view raster when it fits, else the whole-map one while a

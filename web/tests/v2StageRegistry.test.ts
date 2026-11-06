@@ -4,7 +4,7 @@ import { STAGES, FAMILIES, SETTINGS_PANEL_CONTROLS, stagesForControl, stageDocUr
 import { allTerrainFields, terrainProceduralStageFields } from '../src/v2/terrainControlSchema';
 import { regionControlFields } from '../src/v2/regionControls';
 import { urbanControlFields } from '../src/v2/urbanControlSchema';
-import { renderControlFields, RENDER_SECTION_FIELDS } from '../src/v2/renderControls';
+import { renderControlFields, RENDER_COMPOSITION_ROWS, RENDER_SECTION_FIELDS } from '../src/v2/renderControls';
 import { GENERATION_STAGES, validateProceduralRecipe } from '../../rust/bridge/terrainGenerationRecipe';
 import { writeSettingPath } from '../src/v2/parameterForm';
 import { HEIGHTMAP_LIBRARY } from '../src/v2/heightmapLibrary';
@@ -32,7 +32,7 @@ describe('V2 generation stage registry', () => {
     expect(stagesForControl('terrain.climate')).toEqual(['relief-climate']);
     expect(stagesForControl('widget:coasts')).toEqual(['relief-source']);
     expect(stagesForControl('options.biome')).toEqual(['relief-source']);
-    expect(STAGES.filter(stage => stage.family === 'map').map(stage => stage.id)).toEqual(expect.arrayContaining(['display-labels', 'map-naming', 'map-export']));
+    expect(STAGES.filter(stage => stage.family === 'map').map(stage => stage.id)).toEqual(['display-terrain', 'display-relief', 'display-vegetation', 'display-landuse', 'display-water', 'display-roads', 'display-buildings', 'display-ambience', 'display-text', 'display-labels', 'map-naming', 'map-export']);
   });
   it('assigns every existing control to exactly one stage (or the Settings panel)', () => {
     for (const field of [...allTerrainFields, ...terrainProceduralStageFields]) once(field.path);
@@ -41,7 +41,7 @@ describe('V2 generation stage registry', () => {
     for (const section of urbanSections) once(`urban-section:${section}`);
     for (const extra of URBAN_EXTRAS) once(`urban-extra:${extra}`);
     for (const field of renderControlFields) {
-      const path = field.path.replace('appearance.', ''), sections = Object.entries(RENDER_SECTION_FIELDS).filter(([, paths]) => paths.includes(path));
+      const path = field.path.replace('appearance.', ''), sections = path.startsWith('composition.landuse.') ? [['landuse']] : Object.entries(RENDER_SECTION_FIELDS).filter(([key, paths]) => paths.includes(path) || RENDER_COMPOSITION_ROWS[key as keyof typeof RENDER_COMPOSITION_ROWS].includes(path));
       expect(sections, path).toHaveLength(1);
       once(`render-section:${sections[0][0]}`);
     }
@@ -50,7 +50,14 @@ describe('V2 generation stage registry', () => {
   });
   it('lets every row act: quick controls belong to the row, toggles target optional stages', () => {
     for (const stage of STAGES) {
-      for (const id of stage.quick) if (!/^(widget|toggle|seg|urban)[:.]/.test(id)) expect(stagesForControl(id), `${stage.id} quick ${id}`).toEqual([stage.id]);
+      for (const id of stage.quick) {
+        if (id.startsWith('appearance.')) {
+          // A Map quick control is a field of one of the row's own render sections.
+          const path = id.replace('appearance.', ''), sections = path.startsWith('composition.landuse.') ? ['landuse'] : Object.entries(RENDER_SECTION_FIELDS).filter(([key, paths]) => paths.includes(path) || RENDER_COMPOSITION_ROWS[key as keyof typeof RENDER_COMPOSITION_ROWS].includes(path)).map(([key]) => key);
+          expect(renderControlFields.some(field => field.path === id), id).toBe(true);
+          expect(sections.map(section => stagesForControl(`render-section:${section}`)[0]), `${stage.id} quick ${id}`).toEqual([stage.id]);
+        } else if (!/^(widget|toggle|seg|urban)[:.]/.test(id)) expect(stagesForControl(id), `${stage.id} quick ${id}`).toEqual([stage.id]);
+      }
       expect(!!stage.toggle, stage.id).toBe(stage.optional);
       if (stage.toggle?.path?.startsWith('terrain.procedural.enabled.')) {
         const id = stage.toggle.path.split('.').at(-1)!;

@@ -127,8 +127,13 @@ export function createGroundDisplacementSampler(baseSampler: GroundSampler, opti
   const macroSampler = options.macroSampler ?? baseSampler, sharedMacro = macroSampler === baseSampler;
   const probe = Math.max(.125, Math.min(2, Math.max(0, options.sourceCell ?? 20) * .025));
   const value = new Float64Array(5), scratch = new Float64Array(4);
+  let footprint = NaN, visible = true;
   return (x, y, metresPerPixel = 0): number => {
     const height = baseSampler(x, y, 0); if (height <= 0) return height;
+    // Above the finest visible band the field is exactly 0: skip the macro probes.
+    const px = Math.max(0, metresPerPixel);
+    if (px !== footprint) { footprint = px; visible = bands.some(band => visibility(band.wavelength * band.aspect * band.filterWidth, px) > 0); }
+    if (!visible) return height;
     const macroHeight = sharedMacro ? height : macroSampler(x, y, 0);
     const gx = (macroSampler(x + probe, y, 0) - macroSampler(x - probe, y, 0)) / (2 * probe);
     const gy = (macroSampler(x, y + probe, 0) - macroSampler(x, y - probe, 0)) / (2 * probe);

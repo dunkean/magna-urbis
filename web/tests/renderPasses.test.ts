@@ -1,3 +1,4 @@
+import { presetComposition } from '../src/render/composition';
 import { describe, expect, it } from 'vitest';
 import { resolveAppearance, type AppearanceInput } from '../src/render/appearanceRecipe';
 import { PASS_ORDER, PASSES, PassState, ResourceCache, passKeys, type PassName } from '../src/v2/passes/pass';
@@ -33,6 +34,14 @@ describe('render passes', () => {
     expect(await reruns(v2, { ...v2, labels: false })).toEqual(['overlays']);
     expect(await reruns(v2, { ...v2, legend: true })).toEqual(['overlays']);
   });
+  it('text edits touch only overlays on both raster and GPU grounds', () => {
+    for (const mode of ['cpu', 'gpu'] as const) for (const preset of ['plan', 'natural', 'atlas-night'] as const) {
+      const composition = presetComposition(preset), a: AppearanceInput = { style: 'parchment', composition };
+      const before = keysOf(a, revisions, mode), next = structuredClone(composition); next.text.size = 1.6; next.text.groups.landmarks = false;
+      const after = keysOf({ ...a, composition: next }, revisions, mode);
+      expect(PASS_ORDER.filter(pass => before[pass] !== after[pass])).toEqual(['overlays']);
+    }
+  });
   it('land use, roads and painted rebuild the cartography only', async () => {
     expect(await reruns(v2, { ...v2, landuse: false })).toEqual(['cartography']);
     expect(await reruns(v2, { ...v2, roads: false })).toEqual(['cartography']);
@@ -54,7 +63,7 @@ describe('render passes', () => {
     let fail = true; runners.water = () => { if (fail) throw new Error('boom'); };
     await expect(state.run(() => keysOf(v2), runners)).rejects.toThrow('boom');
     fail = false;
-    expect(await state.run(() => keysOf(v2), runners)).toEqual(['water', 'frame', 'cartography', 'overlays', 'city']);
+    expect(await state.run(() => keysOf(v2), runners)).toEqual(['water', 'frame', 'cartography', 'overlays', 'semantic', 'city']);
   });
   it('the resource cache reuses by key and evicts the oldest', () => {
     const cache = new ResourceCache(2); let made = 0;

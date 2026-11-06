@@ -3,32 +3,31 @@ import { appearanceCustomized, writeAppearanceControl } from '../src/v2/renderCo
 import { markStyleCustomized } from '../src/ui/renderStyleCustomization';
 import { defaultSettings } from '../src/v2/settings';
 import { parseProject, serializeProject } from '../src/v2/project';
-import { TERRAIN_STYLE_LIST } from '../src/render/terrainStyle';
+import { PRESET_IDS } from '../src/render/composition';
 import { paletteColors } from '../src/render/customColors';
 import { PALETTES } from '../src/render/styles';
 
 describe('customized render style indicator', () => {
   it('does not mark a preset selected without other changes', () => {
-    for (const style of TERRAIN_STYLE_LIST) {
-      const settings = defaultSettings(); writeAppearanceControl(settings, 'appearance.terrainStyle', style.id);
-      expect(appearanceCustomized(settings), style.id).toBe(false);
+    for (const preset of PRESET_IDS) {
+      const settings = defaultSettings(); writeAppearanceControl(settings, 'appearance.composition.preset', preset);
+      expect(appearanceCustomized(settings), preset).toBe(false);
     }
   });
   it('compares lighting, layers, buildings and canopy with their preset defaults', () => {
     for (const [path, changed, reset] of [
-      ['lighting.azimuth', 90, 315], ['roads', false, true], ['buildings', false, true],
-      ['terrainLayers.water', false, true], ['city.layers.streets', false, true], ['forest.density', .5, 1],
+      ['lighting.azimuth', 90, 315], ['city.layers.streets', false, true], ['forest.density', .5, 1],
     ] as const) {
-      const settings = defaultSettings(); writeAppearanceControl(settings, 'appearance.terrainStyle', 'render-v2');
+      const settings = defaultSettings(); writeAppearanceControl(settings, 'appearance.composition.preset', 'natural');
       writeAppearanceControl(settings, `appearance.${path}`, changed); expect(appearanceCustomized(settings), path).toBe(true);
       writeAppearanceControl(settings, `appearance.${path}`, reset); expect(appearanceCustomized(settings), path).toBe(false);
     }
   });
   it('retains the indicator after project reload and style changes, and removes it for reset or identical colours', () => {
-    const settings = defaultSettings(); writeAppearanceControl(settings, 'appearance.terrainStyle', 'parchment');
+    const settings = defaultSettings(); writeAppearanceControl(settings, 'appearance.composition.preset', 'parchment');
     writeAppearanceControl(settings, 'appearance.colors.road', '#a01080'); expect(appearanceCustomized(settings)).toBe(true);
     expect(appearanceCustomized(parseProject(serializeProject(settings)).settings)).toBe(true);
-    writeAppearanceControl(settings, 'appearance.terrainStyle', 'atlas'); expect(appearanceCustomized(settings)).toBe(true);
+    writeAppearanceControl(settings, 'appearance.composition.preset', 'atlas'); expect(appearanceCustomized(settings)).toBe(true);
     writeAppearanceControl(settings, 'appearance.colors.road', undefined); expect(appearanceCustomized(settings)).toBe(false);
     writeAppearanceControl(settings, 'appearance.colors.road', paletteColors(PALETTES.atlas).road.toUpperCase());
     expect(appearanceCustomized(settings)).toBe(false);

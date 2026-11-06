@@ -56,7 +56,7 @@ export interface StageDef {
   /** Visible but not applicable: returns the reason. */
   unavailable?: (ctx: StageContext) => Copy | undefined;
   controls: readonly string[];
-  /** Subset shown on the collapsed row. */
+  /** Subset shown on the collapsed row. Map rows: `appearance.<path>` (a field of the row's render section, lifted out of its body) or `widget:view3d`. */
   quick: readonly string[];
   run: StageRun;
   /** Progress stage ids (engine/worker events) attributed to this row for timings. */
@@ -226,24 +226,38 @@ export const STAGES: readonly StageDef[] = [
     label: { en: 'Architecture and houses', fr: 'Architecture et maisons' }, summary: { en: 'Recipes, materials, roofs, mixed styles, workshop', fr: 'Recettes, matériaux, toits, styles mélangés, atelier' },
     controls: [U('house'), U('workshop'), 'urban-extra:mixtures', 'urban-extra:catalogue'], quick: [], progress: ['urban-buildings', 'urban-complete'] },
   // ── Display ──────────────────────────────────────────────────────────────
+  // One row = one composition layer (render/composition.ts), in panel order. A quick id `appearance.<path>` is a field of the row's
+  // render section: stageChain.ts lifts that shared control onto the collapsed row; `widget:view3d` is the 2D / 3D switch.
   { id: 'display-terrain', family: 'map', optional: false, when: always, run: display,
-    label: { en: 'Terrain shading and palette', fr: 'Ombrage et palette du relief' }, summary: { en: 'Style, colours, light, 2D / 3D, diagnostics', fr: 'Style, couleurs, lumière, 2D / 3D, diagnostics' },
-    controls: [R('ground'), R('relief'), R('diagnostics'), 'widget:style', 'widget:view3d'], quick: ['widget:style', 'widget:view3d', 'toggle:appearance.lighting.enabled'] },
+    label: { en: 'Preset and ground', fr: 'Préréglage et fond' }, summary: { en: 'Preset, ground style and colours, 2D / 3D', fr: 'Préréglage, style et couleurs du fond, 2D / 3D' },
+    controls: [R('ground'), 'widget:view3d'], quick: ['appearance.composition.preset', 'widget:view3d'] },
+  { id: 'display-relief', family: 'map', optional: false, when: always, run: display,
+    label: { en: 'Relief and lighting', fr: 'Relief et lumière' }, summary: { en: 'Shaded relief, contours, light, diagnostics', fr: 'Relief ombré, courbes, lumière, diagnostics' },
+    controls: [R('relief'), R('diagnostics')], quick: ['appearance.composition.ground.relief', 'appearance.composition.ground.contours'] },
+  { id: 'display-vegetation', family: 'map', optional: false, when: always, run: display,
+    label: { en: 'Vegetation', fr: 'Végétation' }, summary: { en: 'Map symbols, painted textures, canopy', fr: 'Symboles, textures peintes, canopée' },
+    controls: [R('vegetation')], quick: ['appearance.composition.vegetation.look'] },
+  { id: 'display-landuse', family: 'map', optional: false, when: always, run: display,
+    label: { en: 'Land use', fr: 'Occupation du sol' }, summary: { en: 'Information layer: rural and urban land use, classes shown', fr: 'Couche d’information : occupation rurale et urbaine, classes affichées' },
+    controls: [R('landuse')], quick: ['appearance.composition.landuse.rural', 'appearance.composition.landuse.urban'] },
   { id: 'display-water', family: 'map', optional: false, when: always, run: display,
     label: { en: 'Water', fr: 'Eau' }, summary: { en: 'Rivers, lakes, oxbows and sea', fr: 'Rivières, lacs, bras morts et mer' },
-    controls: [R('water')], quick: ['toggle:appearance.terrainLayers.water', 'toggle:appearance.lakes'] },
-  { id: 'display-vegetation', family: 'map', optional: false, when: always, run: display,
-    label: { en: 'Vegetation and contours', fr: 'Végétation et courbes' }, summary: { en: 'Land cover, canopy, painted textures, contours', fr: 'Couvert, canopée, textures peintes, courbes' },
-    controls: [R('cover'), 'widget:layer-contours', 'widget:layer-landuse'], quick: ['widget:layer-contours', 'widget:layer-landuse'] },
+    controls: [R('water')], quick: ['appearance.composition.networks.water.visible'] },
   { id: 'display-roads', family: 'map', optional: false, when: always, run: display,
-    label: { en: 'Roads and ground', fr: 'Routes et sols' }, summary: { en: 'Regional roads, streets, ground blending', fr: 'Routes régionales, rues, intégration des sols' },
-    controls: [R('roads')], quick: ['toggle:appearance.roads', 'seg:appearance.city.groundBlend'] },
+    label: { en: 'Roads', fr: 'Routes' }, summary: { en: 'Regional roads and streets, ink or natural look', fr: 'Routes régionales et rues, aspect encre ou naturel' },
+    controls: [R('roads')], quick: ['appearance.composition.networks.roads.visible'] },
   { id: 'display-buildings', family: 'map', optional: false, when: always, run: display,
-    label: { en: 'Buildings', fr: 'Bâtiments' }, summary: { en: '2D / 3D, roofs, colours, city layers', fr: '2D / 3D, toits, couleurs, couches urbaines' },
-    controls: [R('buildings')], quick: ['toggle:appearance.buildings', 'seg:appearance.city.colors', 'seg:appearance.city.buildingStyle'] },
+    label: { en: 'Buildings', fr: 'Bâtiments' }, summary: { en: 'Footprints, roofs or volumes, parcels, blocks, districts', fr: 'Emprises, toits ou volumes, parcelles, îlots, quartiers' },
+    controls: [R('buildings')], quick: ['appearance.composition.buildings.visible', 'appearance.composition.buildings.look'] },
+  { id: 'display-ambience', family: 'map', optional: false, when: always, run: display,
+    label: { en: 'Ambience', fr: 'Ambiance' }, summary: { en: 'Day or night', fr: 'Jour ou nuit' },
+    controls: [R('ambience')], quick: ['appearance.composition.ambience'] },
+  { id: 'display-text', family: 'map', optional: false, when: always, run: display,
+    label: { en: 'Text', fr: 'Textes' }, summary: { en: 'Place names and labels: groups, fonts, size, density', fr: 'Toponymes et étiquettes : groupes, polices, taille, densité' },
+    controls: [R('text')], quick: ['appearance.composition.text.visible'] },
   { id: 'display-labels', family: 'map', optional: false, when: always, run: display,
-    label: { en: 'Labels and icons', fr: 'Toponymes et icônes' }, summary: { en: 'Place names, legend, cartouche, frame', fr: 'Toponymes, légende, cartouche, cadre' },
-    controls: [R('general'), 'widget:layer-labels'], quick: ['widget:layer-labels', 'toggle:appearance.legend'] },
+    label: { en: 'Legend and cartouche', fr: 'Légende et cartouche' }, summary: { en: 'Map legend, title cartouche, frame', fr: 'Légende, cartouche du titre, cadre' },
+    controls: [R('general')], quick: ['appearance.composition.annotations.legend', 'appearance.composition.annotations.cartouche'] },
   { id: 'map-naming', family: 'map', optional: false, when: always, run: display,
     label: { en: 'Map title and toponyms', fr: 'Titre et toponymes' }, summary: { en: 'Name the map and its places without rebuilding the region', fr: 'Nommer la carte et ses lieux sans reconstruire la région' },
     controls: ['widget:naming'], quick: [] },
