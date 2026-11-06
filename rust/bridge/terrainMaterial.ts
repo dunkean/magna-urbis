@@ -170,7 +170,7 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
         vec2 pebble=surfaceStones(world/.21,salt+53u);tone+=clastic*(1.-sstep(.045,.09,fp))*(.22*pebble.x-.12*(.27-pebble.y));
       }
       // Add centred detail instead of multiplying correlated bands.
-      surfaceMicroTone=hue*clamp(tone,.55,1.45)+surfaceGroundCover(world,slope,fp,rock,grass,salt);
+      surfaceMicroTone=hue*clamp(tone,.55,1.45)+surfaceGroundCover(world,slope,fp,rock,grass,salt,n1,n2);
       surfaceMicroSlope+=surfaceGroundSlope;
       return surfaceMicroTone;
     }

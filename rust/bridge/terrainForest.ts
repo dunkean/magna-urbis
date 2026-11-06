@@ -485,7 +485,8 @@ void applyGroundOccupation(inout GroundMaterial m,vec2 world,float footprint){
   float a=clamp(min(o.x,-o.y)/w,0.,1.);a=mix(a,a*a*(3.-2.*a),dry)*(1.-.3*dry)*(1.-v2GroundSnow);
   if(a<=0.)return;
   float phase=clamp(uV2Season,0.,1.),green=.5+.5*sin(phase*6.2831853-1.5707963);
-  vec3 bare=renderGuideOpen,target=bare;float rough=.9,detail=0.;
+  vec3 micro=clamp(surfaceMicroTone,vec3(.35),vec3(1.65));
+  vec3 bare=renderGuideOpen/micro,target=bare;float rough=.9,detail=0.;
   // All pattern bands converge to their mean before their period reaches two pixels.
   vec2 q=vec2(dot(world,vec2(.894427,.447214)),dot(world,vec2(-.447214,.894427)));
   if(cls==1){
@@ -509,11 +510,11 @@ void applyGroundOccupation(inout GroundMaterial m,vec2 world,float footprint){
   else {target=mix(bare,vec3(.45,.40,.31),.55);rough=.91;}
   if(cls<=5)target=mix(target,mix(bare,vec3(.55,.47,.30),.55),.9*dry);
   // Keep biome tint and the existing microdetail, slope normal, snow and sun response.
-  target=mix(bare,target,mix(.66,.5,dry))+detail;
-  renderGuideOpen=mix(bare,clamp(target,0.,1.),a);
+  target=(mix(bare,target,mix(.66,.5,dry))+detail)*micro;
+  renderGuideOpen=mix(bare*micro,clamp(target,0.,1.),a);
   m.albedo=mix(m.albedo,groundToLinear(clamp(target,0.,1.))*v2FloorModulation,a);
   m.roughness=mix(m.roughness,rough,a);
-  if(cls==2||cls==3||cls==10)m.normal=normalize(mix(m.normal,v2MacroNormal,a*.6));
+  if(cls==10)m.normal=normalize(mix(m.normal,v2MacroNormal,a*.6));
 }
 float forestResolvedCover=0.;
 // Cover of a canopy mixed over another ground: resolved crowns up close, the stand's expected fraction once crowns are below a pixel.
@@ -666,15 +667,17 @@ ForestCrown forestCrown(ivec2 cell,int level,float s,ForestStand st,ForestPatch 
   }
   return k;
 }
-// Outline radius along the unit direction n: elliptic and trefoil harmonics, smaller
-// for conifers, whose branch tips add a six-lobed star (cos 6θ from the trefoil term). The star needs
-// a crown many pixels wide; below that it reads as a polygon, so the outline eases to a smooth cone.
+// Independent harmonics keep conifer branch tips uneven, without a regular six-sided rim.
 float forestOutline(ForestCrown k,vec2 n,float aa){
   uint h=k.id*0x9e3779b9u;vec2 a=vec2(forestU8(h,0u),forestU8(h,8u))*6.2831853;float amp=k.needle?.07:.13;
   vec4 shape=vec4(cos(a.x),sin(a.x),.6*cos(a.y),.6*sin(a.y))*amp;
   vec2 c2=vec2(n.x*n.x-n.y*n.y,2.*n.x*n.y),c3=vec2(n.x*(4.*n.x*n.x-3.),n.y*(3.-4.*n.y*n.y));
-  float lobe=dot(c3,shape.zw)/(.6*amp),star=groundSmooth(7.,22.,k.r/max(aa,1e-4));
-  return k.r*(1.+dot(c2,shape.xy)+dot(c3,shape.zw)*(k.needle?mix(.3,1.,star):1.)+(k.needle?.08*star*(2.*lobe*lobe-1.):0.));
+  float star=groundSmooth(7.,22.,k.r/max(aa,1e-4));
+  vec2 c5=vec2(c2.x*c3.x-c2.y*c3.y,c2.x*c3.y+c2.y*c3.x);
+  vec2 c7=vec2(c2.x*c5.x-c2.y*c5.y,c2.x*c5.y+c2.y*c5.x);
+  vec2 phase=vec2(shape.x*shape.z-shape.y*shape.w,shape.x*shape.w+shape.y*shape.z)/(.6*amp*amp);
+  float tips=k.needle?star*((.045+.025*forestU8(h,16u))*dot(c5,phase)+.035*dot(c7,shape.zw)/(.6*amp)+.025*dot(n,shape.xy)/amp):0.;
+  return k.r*(1.+dot(c2,shape.xy)+dot(c3,shape.zw)*(k.needle?mix(.3,.8,star):1.)+tips);
 }
 struct ForestHit{float cover;float top;float second;vec2 slope;float rel;vec2 local;float r;bool needle;bool riparian;float edge;uint id;int level;float near;float ink;};
 // Overhead canopy and shrub watercolor sprites, stripped of hue at packing time.
@@ -700,7 +703,9 @@ void forestCrowns(inout ForestHit hit,int level,float s,ForestStand st,float aa)
   float umbrella=forestKind(st.trop,st.dry).z;
   for(int j=-1;j<=1;j++)for(int i=-1;i<=1;i++){
     ForestCrown k=forestCrown(cell+ivec2(i,j),level,s,st,lattice);if(!k.alive)continue;
-    vec2 d=st.p-k.c;float dist=length(d);
+    vec2 d=st.p-k.c;
+    if(k.needle&&uForestBrushes==0){vec2 lean=vec2(forestU8(k.id,16u),forestU8(k.id,24u))-.5;float reach=clamp(length(d)/max(k.r,.001),0.,1.);d-=lean*k.r*.24*(1.-reach);}
+    float dist=length(d);
     if(dist>=2.*k.r+aa)continue;
     float r=k.r,a=0.,ink=.5;
     if(uForestBrushes==1){vec2 brushTexel=forestBrush(k,st,d,aa,s);a=brushTexel.r;ink=brushTexel.g;hit.near=min(hit.near,dist/r);if(a<.002)continue;}
@@ -1008,7 +1013,9 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
     float occCrown=uForestBrushes==1?.94:max(.6+.4*(1.-hit.rel*hit.rel),.5);
     float detailGain=uForestBrushes==1?.36:0.;
     // Branch whorls on a spire, once their rings span a few pixels.
-    float whorl=hit.needle&&uForestBrushes==0?.1*cos(hit.rel*25.13)*groundSmooth(5.,10.,radius/fp):0.;
+    float branch=dot(hit.slope,jitter)*inversesqrt(1.+dot(hit.slope,hit.slope));
+    float tiers=hit.rel*(19.+11.*special)+6.2831853*tint+.9*branch;
+    float whorl=hit.needle&&uForestBrushes==0?.065*(cos(tiers+1.2*sin(hit.rel*7.+tint*9.))+.35*cos(tiers*1.73+special*8.))*groundSmooth(5.,10.,radius/fp):0.;
     vec3 crown=forestCrownColor(st,renderGuideClosed,hit.needle?1.:0.,jitter,special)*(1.+detailGain*clump+whorl)*(1.-mix(.12,.3,st.trop)*hit.edge);
     if(hit.riparian)crown*=forestRiparianTint(st);
     // Forest floor under and right around crowns; open ground beyond.

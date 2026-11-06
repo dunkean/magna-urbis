@@ -260,7 +260,7 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
     getBuildingsVisible: () => { const b = v2Resolved3d(options.getSettings()).composition.buildings; return b.visible && b.meshes !== 'none'; }, getScene: () => scene, getSelected: options.getSelected, onSelect: options.onSelect, getBackground: options.getBackground,
     getIllustrated: illustrated,
     getGroundSettings: ground => { const world = options.getWorld(); return world && v2Terrain3dGround(world, options.getSettings(), ground); },
-    getLook: () => {const r=v2Resolved3d(options.getSettings());return {ambience:r.composition.ambience,waterLook:r.composition.networks.water.look,waterVisible:r.ground.layers.water};},
+    getLook: () => {const r=v2Resolved3d(options.getSettings());return {ambience:r.composition.ambience,waterLook:r.composition.networks.water.look,waterVisible:r.ground.layers.water,groundCover:r.composition.vegetation.procedural};},
     getWaterDisplay: () => { const world = options.getWorld(); return world && v2WaterDisplay(world, options.getSettings()); },
     getSurface: () => { const world = options.getWorld(); return world && v2Terrain3dSurface(world, options.getSettings()); }, getHeightSampler: heightSampler,
     getForest: () => {
