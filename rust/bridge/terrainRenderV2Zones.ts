@@ -24,12 +24,14 @@ export interface ZoneSeason {
   cool: number;
   /** Share of conifers that are larches: gold in autumn, bare in winter. */
   larch: number;
+  /** Warming of the snow line (°C): maritime springs melt the snow long before the air proxy says so. */
+  thaw?: Year<number>;
 }
 const NO_ICE: Year<number> = [0, 0, 0, 0], STEADY: Year<number> = [1, 1, 1, 1];
 export const ZONE_SEASONS: Readonly<Record<ClimateZone, ZoneSeason>> = {
-  temperate: { herb: [[.86, .80, .70], [1.02, 1.10, .92], [1, 1, 1], [1.06, .96, .78]], leaf: [0, .62, 1, .85], seaIce: NO_ICE, wet: STEADY, snow: [.12, 0, 0, 0], rain: .1, cool: 1, larch: 0 },
+  temperate: { herb: [[.86, .80, .70], [.98, 1.12, .90], [.96, 1.06, .92], [1.06, .96, .78]], leaf: [0, .62, 1, .85], seaIce: NO_ICE, wet: STEADY, snow: [.12, 0, 0, 0], rain: .1, cool: 1, larch: 0, thaw: [0, 5.3, 0, 3] },
   mediterranean: { herb: [[.90, 1.08, .86], [.92, 1.12, .84], [1.18, 1.02, .74], [1.10, .98, .78]], leaf: [.82, .92, 1, .95], seaIce: NO_ICE, wet: STEADY, snow: NO_ICE, rain: -.75, cool: 0, larch: 0 },
-  continental: { herb: [[.85, .80, .72], [.98, 1.10, .90], [1, 1, 1], [1.08, .94, .74]], leaf: [0, .55, 1, .80], seaIce: [.55, .10, 0, 0], wet: STEADY, snow: [.85, .05, 0, .05], rain: .25, cool: 6, larch: .1 },
+  continental: { herb: [[.85, .80, .72], [.96, 1.12, .90], [.97, 1.05, .93], [1.08, .94, .74]], leaf: [0, .55, 1, .80], seaIce: [.55, .10, 0, 0], wet: STEADY, snow: [.85, .05, 0, .05], rain: .25, cool: 6, larch: .1, thaw: [0, 10.5, 0, 4] },
   nordic: { herb: [[.80, .76, .72], [.94, 1.04, .88], [.98, 1.04, .96], [1.08, .94, .76]], leaf: [0, .40, 1, .75], seaIce: [.80, .40, 0, .08], wet: STEADY, snow: [1, .25, 0, .10], rain: 0, cool: 7, larch: .12 },
   alpine: { herb: [[.85, .82, .76], [.98, 1.10, .90], [1, 1.06, .96], [1.07, .95, .78]], leaf: [0, .40, 1, .75], seaIce: [.40, .05, 0, 0], wet: STEADY, snow: [1, .35, 0, .20], rain: .15, cool: 9, larch: .35 },
   arctic: { herb: [[.90, .88, .86], [.92, .92, .84], [.98, 1.02, .88], [1.12, .90, .72]], leaf: [0, .30, 1, .65], seaIce: [.82, .82, .76, .80], wet: STEADY, snow: [1, .80, .05, .55], rain: .2, cool: 6, larch: 0 },
@@ -37,7 +39,7 @@ export const ZONE_SEASONS: Readonly<Record<ClimateZone, ZoneSeason>> = {
   desert: { herb: [[.90, .90, .92], [.96, 1.02, .90], [1.08, 1, .88], [1.02, .97, .90]], leaf: [.90, 1, 1, .95], seaIce: NO_ICE, wet: STEADY, snow: NO_ICE, rain: 0, cool: 0, larch: 0 },
   savanna: { herb: [[1.12, 1, .74], [1.04, 1.02, .80], [.72, 1.14, .74], [.92, 1.08, .78]], leaf: [.30, .55, 1, .80], seaIce: NO_ICE, wet: [.2, .6, 1.6, 1.1], snow: NO_ICE, rain: .95, cool: 0, larch: 0 },
   tropical: { herb: [[1.10, 1.02, .82], [1, 1.02, .96], [.92, 1.06, .92], [.96, 1.04, .94]], leaf: [.85, .95, 1, 1], seaIce: NO_ICE, wet: [.7, .9, 1.3, 1.2], snow: NO_ICE, rain: .45, cool: 0, larch: 0 },
-  wetland: { herb: [[.92, .84, .70], [.92, 1.12, .90], [1, 1.04, .96], [1.08, .95, .74]], leaf: [0, .62, 1, .85], seaIce: [.10, 0, 0, 0], wet: [.9, 1.35, .75, 1], snow: [.30, 0, 0, 0], rain: 0, cool: 2, larch: 0 },
+  wetland: { herb: [[.92, .84, .70], [.92, 1.14, .90], [.96, 1.07, .92], [1.08, .95, .74]], leaf: [0, .62, 1, .85], seaIce: [.10, 0, 0, 0], wet: [.9, 1.35, .75, 1], snow: [.30, 0, 0, 0], rain: 0, cool: 2, larch: 0, thaw: [0, 5.3, 0, 3] },
 };
 /** Weights of the four seasons at a point of the annual cycle; they sum to 1. */
 export function seasonWeights(season: number): Year<number> {
@@ -53,6 +55,7 @@ const RENDER_V2_SEASON_GLSL = [
   zoneTable('V2_SEASON_LEAF', 'vec4', seasonRows.map(row => `vec4(${glslFloats(row.leaf)})`)),
   zoneTable('V2_SEASON_ICE', 'vec4', seasonRows.map(row => `vec4(${glslFloats(row.seaIce)})`)),
   zoneTable('V2_SEASON_WET', 'vec4', seasonRows.map(row => `vec4(${glslFloats(row.wet)})`)),
+  zoneTable('V2_SEASON_THAW', 'vec4', seasonRows.map(row => `vec4(${glslFloats(row.thaw ?? NO_ICE)})`)),
   // x rain regime, y winter cooling, z larch share.
   zoneTable('V2_SEASON_CLIMATE', 'vec3', seasonRows.map(row => `vec3(${glslFloats([row.rain, row.cool, row.larch])})`)),
 ].join('\n');
@@ -110,6 +113,7 @@ vec3 v2SeasonHerb(){
 float v2SeasonLeaf(){return dot(V2_SEASON_LEAF[v2SeasonZone()],v2SeasonWeights());}
 float v2SeasonSeaIce(){return dot(V2_SEASON_ICE[v2SeasonZone()],v2SeasonWeights());}
 float v2SeasonWet(){return dot(V2_SEASON_WET[v2SeasonZone()],v2SeasonWeights());}
+float v2SeasonThaw(){return dot(V2_SEASON_THAW[v2SeasonZone()],v2SeasonWeights());}
 vec3 v2SeasonClimate(){return V2_SEASON_CLIMATE[v2SeasonZone()];}
 vec4 v2ZoneForest(vec4 f){
   if(!v2Zoned())return f;
