@@ -10,8 +10,8 @@ import { DEFAULTS, SITE_ARCHETYPES, classOfPop, sizeForPop } from '../gen/option
 import type { Relief, SiteArchetype } from '../gen/options';
 import type { BiomeName } from '../gen/biomes';
 import type { PolyH, SiteFields, TerrainLayer, World } from '../gen/types';
-import { generateRural } from '../gen/landuse/rural';
-import { generateNaturalCover } from '../gen/landuse/natural';
+import { generateRuralNative, generateNaturalCoverNative } from '../../../rust/bridge/landuseNative';
+import type { ExecutionRuntime } from './executionProfile';
 import { buildForestField, type ForestField, type ForestFieldInput, type ForestSettings } from '../../../rust/bridge/terrainForest';
 import { CLIMATE_VALUES } from '../../../rust/bridge/terrainClimate';
 import { seedHash } from '../../../rust/bridge/terrainAdjust';
@@ -23,6 +23,7 @@ export interface UrbanLanduseSite extends RoadSite {
 }
 /** Temporary compatibility input; the retained Rust terrain and plans remain authoritative. */
 export interface UrbanLanduseInput {
+  runtime?: ExecutionRuntime;
   ruralOptions?: { streetAlignedHomes?: boolean; denserSmallholdings?: boolean; fieldEnclosure?: number; fieldMaterial?: 'hedge' | 'wall' | 'fence' };
   raster: SettlementRaster;
   seed: string;
@@ -135,18 +136,23 @@ export function urbanLanduseWorld(input: UrbanLanduseInput): World {
   return world;
 }
 
-export function generateUrbanLanduse(input: UrbanLanduseInput): UrbanLanduseScene {
+/** The forest field is Rust (native or WASM): resolved first when the caller did not retain one, then the sync generation runs. */
+export async function generateUrbanLanduse(input: UrbanLanduseInput): Promise<UrbanLanduseScene> {
+  if (input.forest?.field || input.biome === 'underdark' || input.biome === 'underdark-caverns') return generateUrbanLanduseWith(input);
+  const resolved = ruralResolution(input), r = resolved.raster;
+  const forestInput = resolved.forest?.input ?? {
+    seed: seedHash(resolved.seed), climate: [CLIMATE_VALUES.temperate.temperature, CLIMATE_VALUES.temperate.precipitation],
+    height: { x: 0, y: 0, width: r.width, n: r.n, data: r.height }, water: r.water,
+  } satisfies ForestFieldInput;
+  return generateUrbanLanduseWith(input, await buildForestField(forestInput, resolved.forest && { ...resolved.forest.settings, enabled: true }));
+}
+
+export async function generateUrbanLanduseWith(input: UrbanLanduseInput, built?: ForestField): Promise<UrbanLanduseScene> {
   const start = performance.now();
   input = ruralResolution(input);
   const world = urbanLanduseWorld(input), root = new Rng('magna-urbis:' + input.seed);
   const r = input.raster;
-  const forestInput = input.forest?.input ?? {
-    seed: seedHash(input.seed), climate: [CLIMATE_VALUES.temperate.temperature, CLIMATE_VALUES.temperate.precipitation],
-    height: { x: 0, y: 0, width: r.width, n: r.n, data: r.height }, water: r.water,
-  } satisfies ForestFieldInput;
-  const retained = input.forest?.field;
-  const forest = input.biome === 'underdark' || input.biome === 'underdark-caverns' ? undefined : retained ?? buildForestField(forestInput,
-    input.forest && { ...input.forest.settings, enabled: true });
+  const forest = input.biome === 'underdark' || input.biome === 'underdark-caverns' ? undefined : input.forest?.field ?? built;
   if (forest && (Math.abs(forest.x) > .001 || Math.abs(forest.y) > .001 || Math.abs(forest.width - r.width) > .001)) {
     throw new Error('Le couvert forestier et le terrain doivent partager la même emprise.');
   }
@@ -167,12 +173,12 @@ export function generateUrbanLanduse(input: UrbanLanduseInput): UrbanLanduseScen
     const settlementFootprints = input.layouts && Object.fromEntries(input.layouts.map(layout => [layout.key, ruralFootprint(layout)]));
     const footprint = input.layouts === undefined ? [extent(input.city)]
       : unionS(Object.values(settlementFootprints!).flat());
-    const generated = generateRural(world, root, undefined, undefined,
+    const generated = await generateRuralNative(world, root, undefined, undefined,
       { footprint, population: input.city.population,
         // Existing TS rural buildings remain opt-in through an explicit agricultural
         // function; the retained urban footprint excludes their lots without cropping roofs.
         farmsteads: (profile?.functions?.agricultural ?? 0) > 0 || !!input.ruralOptions?.denserSmallholdings, naturalForest, settlementFootprints,
-        outbuildings: input.layouts?.find(layout => layout.key === input.city?.key)?.config?.outbuildings, ...input.ruralOptions });
+        outbuildings: input.layouts?.find(layout => layout.key === input.city?.key)?.config?.outbuildings, ...input.ruralOptions }, undefined, input.runtime);
     world.landuse = generated.layer; world.stats = generated.stats;
     world.landuse.areas = world.landuse.areas.map(a => {
       if (a.kind !== 'field' || (a as { enclosed?: boolean }).enclosed) return a;
@@ -180,7 +186,7 @@ export function generateUrbanLanduse(input: UrbanLanduseInput): UrbanLanduseScen
       return { ...a, poly: shape.outer, holes: shape.holes };
     });
   } else {
-    world.landuse = generateNaturalCover(world.terrain, input.biome, root, naturalForest);
+    world.landuse = await generateNaturalCoverNative(world.terrain, input.biome, root, naturalForest, input.runtime);
   }
   world.stats.ms = Math.round(performance.now() - start);
   world.stats.rasterCellMeters = input.raster.width / input.raster.n;

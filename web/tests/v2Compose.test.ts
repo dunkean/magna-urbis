@@ -3,7 +3,7 @@ import { composeTerrain, composeUrbanRecipe } from '../src/v2/compose';
 import { defaultSettings } from '../src/v2/settings';
 import { generateTerrain, planRegion, generateTown, terrainCacheKey } from '../src/v2/engine';
 import { TerrainCache, V2_ENGINE_VERSION, type TerrainStore } from '../src/v2/cache';
-import { generateNaturalCover } from '../src/gen/landuse/natural';
+import { generateNaturalCover } from '../../rust/bridge/landuseNative';
 import { Rng } from '../src/gen/core/rng';
 import { parseProject, serializeProject } from '../src/v2/project';
 import type { V2Project, V2Settings } from '../src/v2/contracts';

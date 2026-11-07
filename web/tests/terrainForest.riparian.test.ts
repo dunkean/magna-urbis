@@ -1,8 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { FOREST_BANK_MAX_WIDTH, forestBankField, forestBankSample, forestShrubShare, svgPathSegments } from '../../rust/bridge/terrainForestRiparian';
+import { buildForestField, DEFAULT_FOREST_SETTINGS } from '../../rust/bridge/terrainForest';
+import { FOREST_BANK_MAX_WIDTH, forestBankSample, forestShrubShare, svgPathSegments } from '../../rust/bridge/terrainForestRiparian';
+import './vectorWaterWasm'; // adopts the built single-thread WASM package (beforeAll)
+
+// The bank envelope is Rust (magna_urbis_terrain::forest_bank), read here as the `bank` plane of the
+// forest field (WASM package of the web profile). Every grid below is the field's own grid
+// (forestFieldResolution: 750 over 12 km, 1024 over 40 km, 250 over 4 km), on flat dry land.
+const WEB = { profile: 'web', server: '' } as const;
 
 describe('riparian gallery envelope follows displayed banks', () => {
-  const arid = { seed: 728311, climate: [23, 150] as const, heightAt: () => 100 };
+  const arid = { seed: 728311, climate: [23, 150] as const, height: 100 };
+  const bankField = async (segments: Float32Array | undefined, grid: { x: number; y: number; width: number; n: number }, context = arid) => {
+    const field = await buildForestField({ seed: context.seed, climate: context.climate, riverSegments: segments,
+      height: { x: grid.x, y: grid.y, width: grid.width, n: 16, data: new Float32Array(16 * 16).fill(context.height) } }, DEFAULT_FOREST_SETTINGS, WEB);
+    expect(field.n).toBe(grid.n);
+    return field.bank && { rgba: field.bank };
+  };
   /** Envelope extent beyond the bank on each side of a north-south river at x = centre. */
   const extents = (rgba: Uint8Array, grid: { x: number; y: number; width: number; n: number }, centre: number, half: number, wy: number): [number, number] => {
     const result: [number, number] = [0, 0];
@@ -14,9 +27,9 @@ describe('riparian gallery envelope follows displayed banks', () => {
     return result;
   };
 
-  it('keeps a continuous narrow ribbon along both banks of a straight arid river', () => {
+  it('keeps a continuous narrow ribbon along both banks of a straight arid river', async () => {
     const grid = { x: 0, y: 0, width: 12000, n: 750 };
-    const bank = forestBankField(new Float32Array([6000, 0, 6000, 12000, 12, 12, 0, 0, 0]), grid, arid)!;
+    const bank = (await bankField(new Float32Array([6000, 0, 6000, 12000, 12, 12, 0, 0, 0]), grid))!;
     const widths: number[] = [];
     for (let wy = 50; wy < 11950; wy += 23) widths.push(...extents(bank.rgba, grid, 6000, 6, wy));
     expect(Math.min(...widths)).toBeGreaterThan(6);
@@ -29,10 +42,10 @@ describe('riparian gallery envelope follows displayed banks', () => {
     }
   });
 
-  it('resolves both banks of a channel narrower than one texel', () => {
+  it('resolves both banks of a channel narrower than one texel', async () => {
     const grid = { x: 0, y: 0, width: 40000, n: 1024 }, cell = grid.width / grid.n;
     // A 6 m stream, oblique to the 39 m texels.
-    const bank = forestBankField(new Float32Array([5000, 0, 35000, 40000, 6, 6, 0, 0, 0]), grid, arid)!;
+    const bank = (await bankField(new Float32Array([5000, 0, 35000, 40000, 6, 6, 0, 0, 0]), grid))!;
     for (let t = .05; t < .95; t += .013) {
       const cx = 5000 + 30000 * t, cy = 40000 * t, nx = .8, ny = -.6;
       for (const sign of [-1, 1]) {
@@ -50,12 +63,12 @@ describe('riparian gallery envelope follows displayed banks', () => {
     }
   });
 
-  it('stays continuous along both banks of a meandering stream on coarse texels', () => {
+  it('stays continuous along both banks of a meandering stream on coarse texels', async () => {
     const grid = { x: 0, y: 0, width: 40000, n: 1024 }, segments: number[] = [];
     // 300 m amplitude, 1.2 km wavelength (bend radius ≈ 120 m), 25 m vertices, 8 m wide.
     const at = (t: number): [number, number] => [20000 + 300 * Math.sin(2 * Math.PI * t / 1200), t];
     for (let t = 5000; t < 15000; t += 25) segments.push(...at(t), ...at(t + 25), 8, 8, 0, 0, 0);
-    const bank = forestBankField(Float32Array.from(segments), grid, arid)!;
+    const bank = (await bankField(Float32Array.from(segments), grid))!;
     for (let t = 5100; t < 14900; t += 7) {
       const [x, y] = at(t), [x2, y2] = at(t + .5), len = Math.hypot(x2 - x, y2 - y), nx = (y2 - y) / len, ny = -(x2 - x) / len;
       for (const sign of [-1, 1]) {
@@ -65,14 +78,14 @@ describe('riparian gallery envelope follows displayed banks', () => {
     }
   });
 
-  it('is deterministic, excludes the sea and stays bounded to segment extents', () => {
+  it('is deterministic, excludes the sea and stays bounded to segment extents', async () => {
     const grid = { x: 0, y: 0, width: 4000, n: 250 };
     const segments = new Float32Array([1000, 0, 1000, 4000, 8, 8, 0, 0, 0, 90000, 90000, 91000, 91000, 8, 8, 0, 0, 0]);
-    const a = forestBankField(segments, grid, arid)!, b = forestBankField(segments, grid, arid)!;
+    const a = (await bankField(segments, grid))!, b = (await bankField(segments, grid))!;
     expect(a.rgba.every((v, i) => v === b.rgba[i])).toBe(true);
-    const sea = forestBankField(segments, grid, { ...arid, heightAt: () => -3 })!;
-    for (let o = 0; o < grid.n * grid.n; o++) expect(sea.rgba[o * 4 + 2] | sea.rgba[o * 4 + 3]).toBe(0);
-    expect(forestBankField(undefined, grid, arid)).toBeUndefined();
+    const sea = (await bankField(segments, grid, { ...arid, height: -3 }))?.rgba ?? new Uint8Array(grid.n * grid.n * 4);
+    for (let o = 0; o < grid.n * grid.n; o++) expect(sea[o * 4 + 2] | sea[o * 4 + 3]).toBe(0);
+    expect(await bankField(undefined, grid)).toBeUndefined();
   });
 
   it('flattens retained bank outlines through their crop transform', () => {

@@ -215,7 +215,7 @@ export function renderRustTerrain(terrain: TerrainData, style: TerrainStyle, fra
   let paths = contourPaths.get(terrain);
   if (!cavern && !isFantasyStyle(style) && showContours && (!paths || paths.relief !== relief || paths.mapWidth !== settings.width)) {
     const height = legacyRasterInput.terrain.height;
-    const contours = contourSet({ terrain: { height, slope: slopeGrid(height) }, options: { relief } } as unknown as World, settings.width / 1600, step, true);
+    const contours = contourSet({ terrain: { height, slope: slopeGrid(height) }, options: { relief } } as unknown as World, settings.width / 1600, step);
     const pathData = (lines: typeof contours.thin): string => lines.map(path => path.pts.map((point, i) => `${i ? 'L' : 'M'}${point.x.toFixed(2)},${point.y.toFixed(2)}`).join('') + (path.closed ? 'Z' : '')).join('');
     paths = { relief, mapWidth: settings.width, step, thin: pathData(contours.thin), index: pathData(contours.index) };
     contourPaths.set(terrain, paths);

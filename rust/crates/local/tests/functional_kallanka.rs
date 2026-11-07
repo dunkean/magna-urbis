@@ -45,6 +45,7 @@ fn sites(
         n: 16,
         height: &[20.; 256],
         water: &[0; 256],
+        interpolation: Default::default(),
     };
     let whole = urban::building_sites::requests(
         "production-kallanka",

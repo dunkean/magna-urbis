@@ -1,3 +1,5 @@
+import './vectorWaterWasm';
+import { computeLakeField } from '../../rust/bridge/waterNative';
 import { describe, expect, it } from 'vitest';
 import { settlementRaster, validatePhysicalTerrain } from '../../rust/bridge/settlements';
 import type { TerrainData } from '../../rust/bridge/terrain';
@@ -19,12 +21,12 @@ describe('completed terrain adapter for Rust settlements', () => {
     const t = terrain(); t.caveMask = new Uint8Array(1024); t.caveMask[100] = 1;
     const result = settlementRaster(t); expect(result.water[100]).toBe(2); expect(result.water[101]).toBe(0);
   });
-  it('adapts displayed lake shores and channel widths, keeping sea and lakes blocked', () => {
+  it('adapts displayed lake shores and channel widths, keeping sea and lakes blocked', async () => {
     const t = terrain(), n = 32, sea = new Uint8Array(n * n), lake = new Uint8Array(n * n);
     sea.fill(1, 0, n);
     for (let y = 10; y < 20; y++) for (let x = 10; x < 20; x++) lake[y * n + x] = 1;
     t.water = {
-      hydro: { n, width: t.width, height: t.height, filled: new Float32Array(n * n).fill(35), sea }, lake,
+      hydro: { n, width: t.width, height: t.height, filled: new Float32Array(n * n).fill(35), sea }, lake, lakeField: await computeLakeField(lake, n),
       widthScale: 3, rivers: { rivers: [{ points: [1550, 150, 1550, 3050], area: [1e6, 1e6], level: [30, 28], kind: [0, 0], id: 7 }], braids: [], distributaries: [], oxbows: [] },
     } as unknown as VectorWater;
     const result = settlementRaster(t);

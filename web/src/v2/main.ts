@@ -30,7 +30,7 @@ import ProjectWorker from './project.worker?worker';
 import ComposeWorker from './compose.worker?worker';
 import type { RustTownSnapshot } from './rustUrban';
 import { mountTerrainControls } from './terrainControls';
-import { mountUrbanControls, type UrbanControls, type UrbanControlParts } from './urbanControls';
+import { batchUrbanSync, mountUrbanControls, type UrbanControls, type UrbanControlParts } from './urbanControls';
 import { mountStageChain, type StageChain } from './stageChain';
 import { stagesForAction, stageById, type StageDef, type StageFamily } from './stageRegistry';
 import { mountHeightmapSource, mountHeightmapFit } from './heightmapLibrary';
@@ -335,7 +335,7 @@ const urbanParts:[string,UrbanControlParts][]=[
   const forms=urbanParts.map(([stage,parts])=>{const host=document.createElement('div');chain.body(stage).append(host);return mountUrbanControls(host,()=>settings,()=>{touchRecipe();syncUrbanBackend();urbanControls.sync();},{kind:'global'},{...parts,
     targets:()=> (world?.settlements??[]).filter(place=>cityScope==='all'||selectedCities.has(place.key)).map(place=>place.key),
     placeDefaults:cityControlDefaults, disabled:()=>busy||!!world?.settlements?.length&&cityScope==='selection'&&!selectedCities.size});});
-  urbanControls={sync:()=>forms.forEach(form=>form.sync()),dispose:()=>forms.forEach(form=>form.dispose())};
+  urbanControls={sync:()=>batchUrbanSync(()=>forms.forEach(form=>form.sync())),dispose:()=>forms.forEach(form=>form.dispose())};
 }
 // Model and service URLs (terrain schema) belong to Settings, next to the service checks.
 $('#hardware-dialog .dialog-actions').before($('#settings-endpoints-box'));

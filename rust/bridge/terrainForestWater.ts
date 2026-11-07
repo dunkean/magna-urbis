@@ -2,7 +2,7 @@ import type { TerrainData } from './terrain';
 import type { ForestWaterRaster } from './terrainMaterialRaster';
 import { hydrologySegments } from './hydrologyRender';
 import { riverSegments } from '../../web/src/ui/vectorWaterRender';
-import { lakeField, lakeSample, type LakeField } from '../../web/src/ui/lakeGeometry';
+import { lakeSample, type LakeField } from '../../web/src/ui/lakeGeometry';
 import { paintRetainedWater, retainedWaterPaths } from '../../web/src/render/retainedWaterGeometry';
 
 export interface ForestWaterDisplay {
@@ -81,7 +81,7 @@ export function forestDisplayWater(source: TerrainData, display: ForestWaterDisp
   const alpha = new Uint8Array(n * n);
   const mapWidth = vector?.hydro.width ?? hydro!.width;
   let lake: LakeField | undefined;
-  if (display.showLakes && vector) lake = lakeField(vector.lake, vector.hydro.n);
+  if (display.showLakes && vector) lake = vector.lakeField;
   else if (display.showLakes && hydro) lake = { values: hydro.waterField, distance: hydro.waterField, n: hydro.resolution };
   if (lake) {
     const field = lake, sourceCell = mapWidth / field.n;

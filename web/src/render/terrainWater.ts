@@ -21,7 +21,9 @@ export function lakeDistances(field: Float32Array, n: number, width: number, ref
   let result = cache.get(key);
   if (!result) {
     const surface = resampleTerrainSurface({ w: n, data: field }, n);
-    result = coastDistances(Float32Array.from(surface, v => -v), n, width / n, referenceWidth);
+    const depth = new Float32Array(surface.length);
+    for (let i = 0; i < surface.length; i++) depth[i] = -surface[i];
+    result = coastDistances(depth, n, width / n, referenceWidth);
     cache.set(key, result);
   }
   return result;

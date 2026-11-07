@@ -2,7 +2,7 @@
 import { generate } from '../../src/gen/pipeline';
 import { makeOptions, effectiveSize } from '../../src/gen/options';
 import { Rng } from '../../src/gen/core/rng';
-import { generateRural } from '../../src/gen/landuse/rural';
+import { generateRural } from '../../../rust/bridge/landuseNative';
 import { generateRural as baseRural } from '../legacy/rural_legacy';
 
 const [seed, kind] = process.argv.slice(2);

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { biomeLandKind, BIOME_NAMES, type BiomeGround } from '../src/gen/biomes';
 import { makeOptions, fromQuery, toQuery, applyOverride } from '../src/gen/options';
 import { generate } from '../src/gen/pipeline';
-import { generateRural } from '../src/gen/landuse/rural';
+import { generateRural } from '../../rust/bridge/landuseNative';
 import { Rng } from '../src/gen/core/rng';
 import { area } from '../src/gen/geo/poly';
 import type { World, LandUseLayer, LandKind } from '../src/gen/types';

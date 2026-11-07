@@ -11,18 +11,18 @@ function fixture(population:number,mountain=false):UrbanLanduseInput {
  layouts:[{key:'city',center:city.center,culture:city.culture,blocks:[],warnings:[],streets:[{role:'regional',rank:1,widths:[4,4],path:[{x:200,y:3000},{x:5800,y:3000}]}],quarters:[{phase:0,shape:{outer:[{x:2900,y:2900},{x:3100,y:2900},{x:3100,y:3100},{x:2900,y:3100}],holes:[]}}]}],
  forest:{field:{x:0,y:0,width,n:64,rgba,key:'none'},settings:{enabled:true,density:0,clearings:.45}}};
 }
-const crops=(input:UrbanLanduseInput)=>{const scene=generateUrbanLanduse(input);return{scene,plots:scene.landuse!.areas.filter(a=>['field','garden','orchard'].includes(a.kind)).map(a=>({outer:a.poly,holes:a.holes??[]}))};};
-describe('population and agricultural territory',()=>{
- it('lets a large city cultivate most accessible land while keeping a modest hamlet territory',()=>{
-  const small=crops(fixture(80)),large=crops(fixture(80000));
+const crops=async (input:UrbanLanduseInput)=>{const scene=await generateUrbanLanduse(input);return{scene,plots:scene.landuse!.areas.filter(a=>['field','garden','orchard'].includes(a.kind)).map(a=>({outer:a.poly,holes:a.holes??[]}))};};
+describe('population and agricultural territory',async ()=>{
+ it('lets a large city cultivate most accessible land while keeping a modest hamlet territory',async ()=>{
+  const small=await crops(fixture(80)),large=await crops(fixture(80000));
   const low=mpArea(small.plots),high=mpArea(large.plots);
   expect(low).toBeGreaterThan(10000);expect(high).toBeGreaterThan(low*8);expect(high/(6000*6000)).toBeGreaterThan(.4);
   const ways=large.scene.landuse!.ways??[];
   for(const way of ways)expect(mpArea(intersectionS(large.plots,offsetRibbon(way,3.5)))).toBeLessThan(.02);
   expect(ways.length/large.plots.length).toBeLessThan(.1);
  });
- it('retains cultivated pockets around a mountain hamlet, with less area than on the plain',()=>{
-  const plain=crops(fixture(80)),mountain=crops(fixture(80,true));
+ it('retains cultivated pockets around a mountain hamlet, with less area than on the plain',async ()=>{
+  const plain=await crops(fixture(80)),mountain=await crops(fixture(80,true));
   expect(mpArea(mountain.plots)).toBeGreaterThan(1000);expect(mpArea(mountain.plots)).toBeLessThan(mpArea(plain.plots));
  });
 });

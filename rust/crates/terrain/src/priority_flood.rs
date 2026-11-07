@@ -38,6 +38,7 @@ struct Scratch {
     pit: Vec<u32>,
     ties: Vec<(u32, u32)>,
     stack: Vec<usize>,
+    included: Vec<u8>,
 }
 
 /// Priority-flood from the sea, the map edge and the `outlet` cells, then D8 on
@@ -51,7 +52,19 @@ pub fn flood_grids(
     loss: Option<&[f32]>,
 ) -> FloodGrids {
     let mut grids = FloodGrids::default();
-    flood(height, n, cell_area, weight, outlet, loss, true, &mut grids, &mut Scratch::default());
+    flood(
+        height,
+        n,
+        cell_area,
+        weight,
+        outlet,
+        loss,
+        true,
+        true,
+        true,
+        &mut grids,
+        &mut Scratch::default(),
+    );
     let total = n * n;
     let mut basin = vec![0_i32; total];
     let mut ids = 0_i32;
@@ -79,6 +92,46 @@ pub fn flood_grids(
     grids
 }
 
+/// Conditioning only needs the filled surface (and D8 for breaching), without
+/// accumulation, basin labels or the full ocean's order.
+pub(crate) fn flood_surface(height: &[f32], n: usize, routing: bool) -> FloodGrids {
+    let mut grids = FloodGrids::default();
+    flood(
+        height,
+        n,
+        0.0,
+        None,
+        None,
+        None,
+        false,
+        routing,
+        false,
+        &mut grids,
+        &mut Scratch::default(),
+    );
+    grids
+}
+
+/// Water balance needs a complete topological order, but supplies its own
+/// runoff accumulation and does not use basin labels.
+pub(crate) fn routing_grids(height: &[f32], n: usize) -> FloodGrids {
+    let mut grids = FloodGrids::default();
+    flood(
+        height,
+        n,
+        0.0,
+        None,
+        None,
+        None,
+        true,
+        true,
+        false,
+        &mut grids,
+        &mut Scratch::default(),
+    );
+    grids
+}
+
 /// The pre-hydrology stream-power erosion of `web/src/ui/reliefConditioning.ts` (`erode`), bit for
 /// bit: `steps` floods, each followed by implicit incision in flood order towards the receiver's
 /// water surface, depressions rising `deposit` of their depth. Same float64 arithmetic stored as
@@ -91,8 +144,60 @@ pub fn erode_grid(height: &mut [f32], n: usize, cell_area: f64, steps: u32, depo
     // divisions are looked up, the same values as computing them.
     let mut rates = vec![(u32::MAX, 0.0_f64, 0.0_f64); RATES];
     for _ in 0..steps {
-        flood(height, n, cell_area, None, None, None, false, &mut grids, &mut scratch);
-        let FloodGrids { filled, receiver, order, accumulation, .. } = &grids;
+        flood(
+            height,
+            n,
+            cell_area,
+            None,
+            None,
+            None,
+            false,
+            true,
+            true,
+            &mut grids,
+            &mut scratch,
+        );
+        let FloodGrids {
+            filled,
+            receiver,
+            order,
+            accumulation,
+            ..
+        } = &grids;
+        // With a fractional deposit every updated floor stays <= filled.
+        // Therefore max(height[receiver], filled[receiver]) is just filled:
+        // incision has no dependency on another cell's updated height.
+        #[cfg(any(not(target_arch = "wasm32"), feature = "threads"))]
+        if (0.0..=1.0).contains(&deposit) && n >= 128 {
+            use rayon::prelude::*;
+            height.par_chunks_mut(8192).enumerate().for_each(|(block, cells)| {
+                let mut rates = vec![(u32::MAX, 0.0_f64, 0.0_f64); RATES];
+                for (k, here) in cells.iter_mut().enumerate() {
+                    let c = block * 8192 + k;
+                    let r = receiver[c];
+                    if r < 0 { continue; }
+                    let depth = filled[c] as f64 - *here as f64;
+                    if depth > 0.01 {
+                        *here = (*here as f64 + deposit * depth) as f32;
+                        continue;
+                    }
+                    let base = filled[r as usize] as f64;
+                    if *here as f64 > base {
+                        let area = accumulation[c];
+                        let bits = area.to_bits();
+                        let slot = &mut rates[(bits ^ bits >> 12) as usize & (RATES - 1)];
+                        if slot.0 != bits {
+                            let rate = 0.03 * (area as f64 / 1e6).sqrt();
+                            *slot = (bits, rate, rate / std::f64::consts::SQRT_2);
+                        }
+                        let step = c.abs_diff(r as usize);
+                        let f = if step == wide || step == narrow { slot.2 } else { slot.1 };
+                        *here = ((*here as f64 + f * base) / (1.0 + f)) as f32;
+                    }
+                }
+            });
+            continue;
+        }
         for &c in &order[..scratch.keys.len()] {
             let c = c as usize;
             // SAFETY: the flood's cells and receivers lie on the n² grid of all these slices.
@@ -119,7 +224,11 @@ pub fn erode_grid(height: &mut [f32], n: usize, cell_area: f64, steps: u32, depo
                         *slot = (bits, rate, rate / std::f64::consts::SQRT_2);
                     }
                     let step = c.abs_diff(r);
-                    let f = if step == wide || step == narrow { slot.2 } else { slot.1 };
+                    let f = if step == wide || step == narrow {
+                        slot.2
+                    } else {
+                        slot.1
+                    };
                     *height.get_unchecked_mut(c) = ((here + f * base) / (1.0 + f)) as f32;
                 }
             }
@@ -144,7 +253,11 @@ fn key_height(key: u32, height: &[f32], c: usize) -> f32 {
     if key == 0x8000_0000 {
         return height[c];
     }
-    f32::from_bits(if key & 0x8000_0000 != 0 { key & 0x7FFF_FFFF } else { !key })
+    f32::from_bits(if key & 0x8000_0000 != 0 {
+        key & 0x7FFF_FFFF
+    } else {
+        !key
+    })
 }
 
 /// The flood's moving state.
@@ -244,6 +357,8 @@ fn flood(
     outlet: Option<&[u8]>,
     loss: Option<&[f32]>,
     every_cell: bool,
+    routing: bool,
+    accumulate: bool,
     grids: &mut FloodGrids,
     scratch: &mut Scratch,
 ) {
@@ -316,10 +431,15 @@ fn flood(
     }
 
     let keys = &mut scratch.keys;
+    // Repeated erosion changes heights only slightly. Retain the previous
+    // sorted cell sequence when its membership is unchanged, then repair it
+    // with bounded insertion work; fall back to radix for large changes.
+    let included = &mut scratch.included;
+    refill(included, total, 1);
+    let mut count = total;
     if any_sea && !every_cell {
         // An outlet among outlets reaches nothing: without `order` in the output,
         // the open sea stays out of the flood.
-        keys.clear();
         let near_land = |x: usize, y: usize| {
             (y.saturating_sub(1)..(y + 2).min(n))
                 .any(|yy| (x.saturating_sub(1)..(x + 2).min(n)).any(|xx| sea[yy * n + xx] == 0))
@@ -327,16 +447,46 @@ fn flood(
         for y in 0..n {
             for x in 0..n {
                 let c = y * n + x;
-                if sea[c] == 0 || near_land(x, y) {
-                    keys.push((height_key(height[c]), c as u32));
+                if sea[c] != 0 && !near_land(x, y) {
+                    included[c] = 0;
+                    count -= 1;
                 }
             }
         }
-    } else {
-        keys.resize(total, (0, 0));
-        crate::terrain_par::cells(keys, |i, entry| *entry = (height_key(height[i]), i as u32));
     }
-    crate::terrain_par::radix_sort(keys, &mut scratch.spare);
+    let reusable = keys.len() == count && keys.iter().all(|&(_, c)| included[c as usize] != 0);
+    if reusable {
+        for entry in keys.iter_mut() { entry.0 = height_key(height[entry.1 as usize]); }
+    } else {
+        keys.clear();
+        keys.extend((0..total).filter(|&c| included[c] != 0).map(|c| (height_key(height[c]), c as u32)));
+    }
+    let repaired = reusable && repair_order(keys);
+    if !repaired && n <= 512 {
+        // Small erosion grids are cache resident. Repeated 32-way radix jobs
+        // cost more than the three linear passes themselves on these grids.
+        scratch.spare.resize(keys.len(), (0, 0));
+        for shift in [0, 11, 22] {
+            let mut counts = [0_usize; 2048];
+            for &(key, _) in keys.iter() {
+                counts[(key >> shift) as usize & 2047] += 1;
+            }
+            let mut at = 0;
+            for count in &mut counts {
+                let len = *count;
+                *count = at;
+                at += len;
+            }
+            for &entry in keys.iter() {
+                let slot = &mut counts[(entry.0 >> shift) as usize & 2047];
+                scratch.spare[*slot] = entry;
+                *slot += 1;
+            }
+            std::mem::swap(keys, &mut scratch.spare);
+        }
+    } else if !repaired {
+        crate::terrain_par::radix_sort(keys, &mut scratch.spare);
+    }
     let count = keys.len();
 
     let mut sweep = Sweep {
@@ -382,11 +532,15 @@ fn flood(
     }
     debug_assert_eq!(sweep.popped, count);
 
+    if !routing {
+        return;
+    }
+
     // Steepest D8 descent on the filled surface; flats keep their flood parent.
     // Sea, outlet and edge cells have no receiver: every other cell is inner.
     let offsets = sweep.offsets;
     let filled: &[f32] = &grids.filled;
-    crate::terrain_par::rows(&mut grids.receiver, n, |y, row| {
+    let route = |y: usize, row: &mut [i32]| {
         for (x, receiver) in row.iter_mut().enumerate() {
             if *receiver < 0 {
                 *receiver = -1;
@@ -417,7 +571,18 @@ fn flood(
                 *receiver = best;
             }
         }
-    });
+    };
+    if n <= 512 {
+        for (y, row) in grids.receiver.chunks_mut(n).enumerate() {
+            route(y, row);
+        }
+    } else {
+        crate::terrain_par::rows(&mut grids.receiver, n, route);
+    }
+
+    if !accumulate {
+        return;
+    }
 
     // Upstream areas in reverse flood order, float32 storage of float64 sums.
     let (sea, receiver, order) = (&grids.sea, &grids.receiver, &grids.order[..count]);
@@ -454,6 +619,26 @@ fn flood(
             }
         }
     }
+}
+
+/// At most one extra linear pass of shifts, even on adversarial erosion.
+fn repair_order(keys: &mut [(u32, u32)]) -> bool {
+    let mut budget = keys.len();
+    for i in 1..keys.len() {
+        let entry = keys[i];
+        let mut j = i;
+        while j > 0 && keys[j - 1].0 > entry.0 {
+            if budget == 0 {
+                keys[j] = entry;
+                return false;
+            }
+            keys[j] = keys[j - 1];
+            j -= 1;
+            budget -= 1;
+        }
+        keys[j] = entry;
+    }
+    true
 }
 
 fn refill<T: Copy>(values: &mut Vec<T>, len: usize, value: T) {

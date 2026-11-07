@@ -1,13 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { buildForestField, DEFAULT_FOREST_SETTINGS } from '../../rust/bridge/terrainForest';
+import { buildForestField, DEFAULT_FOREST_SETTINGS, type ForestFieldInput, type ForestSettings } from '../../rust/bridge/terrainForest';
 import { forestBankSample } from '../../rust/bridge/terrainForestRiparian';
+import './vectorWaterWasm'; // adopts the built single-thread WASM package (beforeAll)
+
+// The field is Rust (magna_urbis_terrain::forest), here through the WASM package of the web profile.
+const WEB = { profile: 'web', server: '' } as const;
+const build = (input: ForestFieldInput, settings: ForestSettings) => buildForestField(input, settings, WEB);
 
 describe('forest banks use displayed water, independently of routing buffers', () => {
   const n = 64, width = 4000;
   const height = { x: 0, y: 0, width, n, data: new Float32Array(n * n).fill(100) };
   const settings = { ...DEFAULT_FOREST_SETTINGS, clearings: 0 };
 
-  it('keeps complete canopy under widened river and lake cells for the water compositor', () => {
+  it('keeps complete canopy under widened river and lake cells for the water compositor', async () => {
     const water = new Uint8Array(n * n);
     for (let y = 0; y < n; y++) {
       water[y * n + 30] = 3;
@@ -15,7 +20,7 @@ describe('forest banks use displayed water, independently of routing buffers', (
       water[y * n + 32] = 2;
     }
     const input = { seed: 32831, climate: [16, 600] as const, height, water };
-    const a = buildForestField(input, settings), b = buildForestField(input, settings);
+    const a = await build(input, settings), b = await build(input, settings);
     expect(a.rgba.every((value, index) => value === b.rgba[index])).toBe(true);
     // These coarse cells include dry banks by design. Their canopy must remain
     // available behind the precise, independently rendered water geometry.
@@ -27,11 +32,11 @@ describe('forest banks use displayed water, independently of routing buffers', (
     expect(minimum).toBeGreaterThan(0);
   });
 
-  it('retains the sea-level and disabled-forest exclusions', () => {
+  it('retains the sea-level and disabled-forest exclusions', async () => {
     const sea = { ...height, data: new Float32Array(n * n).fill(-5) };
     for (const field of [
-      buildForestField({ seed: 32831, climate: [16, 600], height: sea }, settings),
-      buildForestField({ seed: 32831, climate: [16, 600], height }, { ...settings, enabled: false }),
+      await build({ seed: 32831, climate: [16, 600], height: sea }, settings),
+      await build({ seed: 32831, climate: [16, 600], height }, { ...settings, enabled: false }),
     ]) {
       let maximum = 0;
       for (let i = 0; i < field.rgba.length; i += 4) maximum = Math.max(maximum, field.rgba[i]);
@@ -39,13 +44,13 @@ describe('forest banks use displayed water, independently of routing buffers', (
     }
   });
 
-  it('applies density to gallery crowns without moving banks or mutating their cache', () => {
+  it('applies density to gallery crowns without moving banks or mutating their cache', async () => {
     const input = { seed: 728311, climate: [23, 150] as const, height,
       riverSegments: new Float32Array([2000, 0, 2000, width, 12, 12, 0, 0, 0]) };
-    const full = buildForestField(input, settings);
-    const half = buildForestField(input, { ...settings, density: .5 });
-    const empty = buildForestField(input, { ...settings, density: 0 });
-    const fullAgain = buildForestField(input, settings);
+    const full = await build(input, settings);
+    const half = await build(input, { ...settings, density: .5 });
+    const empty = await build(input, { ...settings, density: 0 });
+    const fullAgain = await build(input, settings);
     const area = (bytes: Uint8Array): number => {
       let total = 0; for (let k = 3; k < bytes.length; k += 4) total += bytes[k]; return total;
     };
@@ -58,12 +63,12 @@ describe('forest banks use displayed water, independently of routing buffers', (
     expect(full.bank!.every((v, k) => v === fullAgain.bank![k])).toBe(true);
   });
 
-  it('builds a narrow arid gallery from displayed river geometry, not a broad routing-label halo', () => {
+  it('builds a narrow arid gallery from displayed river geometry, not a broad routing-label halo', async () => {
     const riverN = 256, riverWidth = 12000, water = new Uint8Array(riverN * riverN);
     for (let y = 0; y < riverN; y++) water[y * riverN + riverN / 2] = 3;
     const height = { x: 0, y: 0, width: riverWidth, n: riverN, data: new Float32Array(riverN * riverN).fill(100) };
     const input = { seed: 728311, climate: [23, 150] as const, height, water, riverSegments: new Float32Array([6000, 0, 6000, 12000, 12, 12, 0, 0, 0]) };
-    const a = buildForestField(input, settings), b = buildForestField(input, settings);
+    const a = await build(input, settings), b = await build(input, settings);
     expect(a.rgba.every((value, index) => value === b.rgba[index])).toBe(true);
     expect(a.bank && b.bank && a.bank.every((value, index) => value === b.bank![index])).toBe(true);
     const cell = riverWidth / a.n, grid = { x: 0, y: 0, width: riverWidth, n: a.n };
@@ -83,7 +88,7 @@ describe('forest banks use displayed water, independently of routing buffers', (
       expect(forestBankSample(a.bank!, grid, 6006 + 60, wy).margin).toBeLessThan(0);
     }
     // Without displayed geometry, routing river cells give a (wider) fallback envelope.
-    const fallback = buildForestField({ ...input, riverSegments: undefined }, settings);
+    const fallback = await build({ ...input, riverSegments: undefined }, settings);
     expect(forestBankSample(fallback.bank!, grid, 6030, 6000).margin).toBeGreaterThan(0);
     expect(forestBankSample(fallback.bank!, grid, 6200, 6000).margin).toBeLessThan(0);
   });

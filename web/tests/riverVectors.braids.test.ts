@@ -1,3 +1,4 @@
+import './vectorWaterWasm';
 import { describe, expect, it } from 'vitest';
 import { vectorRivers } from '../src/ui/riverVectors';
 import { computeHydrology } from '../src/ui/simpleHydrology';
@@ -23,9 +24,9 @@ function distance(x: number, y: number, p: number[]): number {
 }
 
 describe('braided reaches', () => {
-  it('part from and rejoin their main channel', () => {
-    const h = computeHydrology(height, n, width);
-    const network = vectorRivers(h, new Uint8Array(n * n), {
+  it('part from and rejoin their main channel', async () => {
+    const h = await computeHydrology(height, n, width);
+    const network = await vectorRivers(h, new Uint8Array(n * n), {
       riverArea: 0.5, flatSlope: 1, sinuosity: 1.8, widthScale: 3, seed: 'braids',
       braiding: 1, anabranching: false, terrainInfluence: true, avulsions: false, deltas: false, aridity: 0.1,
     });

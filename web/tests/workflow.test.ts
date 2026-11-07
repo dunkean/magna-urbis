@@ -4,7 +4,7 @@ import { Rng } from '../src/gen/core/rng';
 import { mpArea } from '../src/gen/geo/bool';
 import { pointInRing, area } from '../src/gen/geo/poly';
 import { polyInside } from '../src/gen/geo/split';
-import { generateRural } from '../src/gen/landuse/rural';
+import { generateRural } from '../../rust/bridge/landuseNative';
 import { generateUrban } from '../src/gen/urban';
 import { unreachableBuildings } from './accessCheck';
 import {

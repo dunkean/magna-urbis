@@ -1,5 +1,11 @@
-import { describe, it, expect } from 'vitest';
-import { forestBeachGrid, shoreRingGrid } from '../../rust/bridge/terrainForestBeach';
+import { beforeAll, describe, it, expect } from 'vitest';
+import { buildForestField, DEFAULT_FOREST_SETTINGS } from '../../rust/bridge/terrainForest';
+import { shoreRingGrid, type ForestBeachGrid } from '../../rust/bridge/terrainForestBeach';
+import './vectorWaterWasm'; // adopts the built single-thread WASM package (beforeAll)
+
+// The beach grid is Rust (magna_urbis_terrain::forest_beach), read here as the `beach` plane of the
+// V2 (progressive) forest field, through the WASM package of the web profile: about 8 m texels.
+const WEB = { profile: 'web', server: '' } as const;
 
 // West half sea, a low beach strip, then high ground.
 function layer(n = 64, width = 8000) {
@@ -10,26 +16,30 @@ function layer(n = 64, width = 8000) {
   }
   return { x: -4000, y: -4000, width, n, data };
 }
+const beachGrid = async (height: ReturnType<typeof layer>, seed: number): Promise<ForestBeachGrid> =>
+  (await buildForestField({ seed, climate: [11, 800], height, clearingProfile: 'progressive' }, DEFAULT_FOREST_SETTINGS, WEB)).beach!;
 
-describe('forestBeachGrid', () => {
-  const l = layer(), g = forestBeachGrid(l, 42, 64), many = [1, 2, 3, 4, 5, 6].map(s => forestBeachGrid(l, s, 64));
-  it('has the requested shape', () => {
-    expect(g.n).toBe(64); expect(g.data.length).toBe(64 * 64);
+describe('forest beach grid', () => {
+  const l = layer();
+  let g: ForestBeachGrid, many: ForestBeachGrid[];
+  beforeAll(async () => { g = await beachGrid(l, 42); many = await Promise.all([1, 2, 3, 4, 5, 6].map(s => beachGrid(l, s))); });
+  it('has the field shape', () => {
+    expect(g.n).toBe(1024); expect(g.data.length).toBe(1024 * 1024);
     expect([g.x, g.y, g.width]).toEqual([l.x, l.y, l.width]);
   });
-  it('is zero underwater and on high ground, within 0..255, and finds a beach', () => {
+  it('is zero underwater and on high ground, and finds a beach', () => {
     let beach = 0;
-    for (let j = 0; j < 64; j++) for (let i = 0; i < 64; i++) {
-      const v = g.data[j * 64 + i];
-      if (i < 18) expect(v).toBe(0);
-      if (i > 40) expect(v).toBe(0);
-      expect(v).toBeGreaterThanOrEqual(0); expect(v).toBeLessThanOrEqual(255);
-      if (v > 0 || many.some(m => m.data[j * 64 + i] > 0)) beach++;
+    for (let j = 0; j < g.n; j++) for (let i = 0; i < g.n; i++) {
+      const v = g.data[j * g.n + i], x = (i + .5) / g.n;
+      // The former 64-texel test bounds: columns < 18 (sea) and > 40 (high ground).
+      if (x < 18 / 64) expect(v).toBe(0);
+      if (x > 41 / 64) expect(v).toBe(0);
+      if (v > 0 || many.some(m => m.data[j * g.n + i] > 0)) beach++;
     }
     expect(beach).toBeGreaterThan(0);
   });
-  it('is deterministic for a seed', () => {
-    expect(forestBeachGrid(l, 42, 64).data).toEqual(g.data);
+  it('is deterministic for a seed', async () => {
+    expect((await beachGrid(l, 42)).data).toEqual(g.data);
   });
 });
 

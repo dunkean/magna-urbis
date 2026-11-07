@@ -9,7 +9,7 @@ import { renderView } from '../settlements/merge';
 import { GridIndex } from '../geo/spatial';
 import { bboxOf, pointInRing } from '../geo/poly';
 import { intersectionS, tryIntersection, tryDifference, tryDifferenceS, mpArea, type MultiPoly } from '../geo/bool';
-import { vectorize } from '../landuse/rural';
+import { vectorizeRegions } from '../../../../rust/bridge/landuseNative';
 
 const CACHE = new WeakMap<World, unknown[]>();
 /** Agricultural backdrop suppressed in cave mode and replaced with fungal cultivation rooms. */
@@ -219,7 +219,7 @@ export function generateCavernMask(world: World): CavernLayer {
     const margin = Math.max(cell * 0.6, requested + Math.min(5, requested * 0.35) * low + 2 * fine);
     if (support[i] || field.dist[i] <= margin) envelope[i] = 1;
   }
-  const rough = vectorize(envelope, w, h, cell, 1, { x0: 0, y0: 0, x1: w - 1, y1: h - 1 });
+  const rough = vectorizeRegions(envelope, w, h, cell, 1, { x0: 0, y0: 0, x1: w - 1, y1: h - 1 });
   const size = world.mapSize;
   const square = [{ x: 0, y: 0 }, { x: size, y: 0 }, { x: size, y: size }, { x: 0, y: size }];
   // Protection is applied after contour smoothing: rock may never erase a roof, full street or river ribbon.

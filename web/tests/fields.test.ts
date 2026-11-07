@@ -4,7 +4,7 @@ import { generate } from '../src/gen/pipeline';
 import { makeOptions, effectiveSize } from '../src/gen/options';
 import { Rng } from '../src/gen/core/rng';
 import { polygonContains, polygonArea } from '../src/gen/core/geom';
-import { generateRural } from '../src/gen/landuse/rural';
+import { generateRural } from '../../rust/bridge/landuseNative';
 import { generateRural as legacyRural } from './legacy/rural_legacy';
 import type { World, Polygon, Polyline, Vec2, LandArea } from '../src/gen/types';
 

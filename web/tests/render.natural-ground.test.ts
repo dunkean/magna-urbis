@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { forestLandPaint } from '../src/render/landuseForestTone';
 import { Resvg } from '@resvg/resvg-js';
 import type { Polygon } from '../src/gen/types';
-import { urbanNaturalGround } from '../src/gen/landuse/urbanGround';
+import { urbanNaturalGround } from '../../rust/bridge/landuseNative';
 import { intersectionS, mpArea } from '../src/gen/geo/bool';
 import { polygonContains, polygonArea } from '../src/gen/core/geom';
 import { buildScene } from '../src/render/scene';

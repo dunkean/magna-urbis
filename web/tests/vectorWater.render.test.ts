@@ -1,3 +1,4 @@
+import './vectorWaterWasm';
 import { describe, expect, it } from 'vitest';
 import { lakeField, lakeSample } from '../src/ui/lakeGeometry';
 import { computeHydrology, waterBodies } from '../src/ui/simpleHydrology';
@@ -19,24 +20,24 @@ function distance(x: number, y: number, p: number[]): number {
   return best;
 }
 
-function basin(): VectorWater {
+async function basin(): Promise<VectorWater> {
   const n = 64, width = 6400, height = new Float32Array(n * n);
   for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
     const bowl = Math.max(0, 1 - ((x - 32) / 12) ** 2 - ((y - 32) / 9) ** 2);
     height[y * n + x] = x < 2 ? -2 : 2 + x * 0.2 + Math.abs(y - 32) * 0.6 - 9 * bowl;
   }
-  const hydro = computeHydrology(height, n, width);
-  const bodies = waterBodies(hydro, { riverArea: 0.1, lakeDepth: 0.5, lakeArea: 1 });
-  const rivers = vectorRivers(hydro, bodies.lake, riverSettings);
-  return { hydro, ...bodies, rivers } as VectorWater;
+  const hydro = await computeHydrology(height, n, width);
+  const bodies = await waterBodies(hydro, { riverArea: 0.1, lakeDepth: 0.5, lakeArea: 1 });
+  const rivers = await vectorRivers(hydro, bodies.lake, riverSettings);
+  return { hydro, ...bodies, rivers, lakeField: await lakeField(bodies.lake, n) } as VectorWater;
 }
 
 describe('continuous vector water', () => {
-  it('preserves islands and makes long grid-aligned banks vary continuously below a cell', () => {
+  it('preserves islands and makes long grid-aligned banks vary continuously below a cell', async () => {
     const n = 48, width = 4800, mask = new Uint8Array(n * n);
     for (let y = 5; y < 43; y++) for (let x = 5; x < 43; x++) mask[y * n + x] = 1;
     for (let y = 20; y < 28; y++) for (let x = 20; x < 28; x++) mask[y * n + x] = 0;
-    const field = lakeField(mask, n);
+    const field = await lakeField(mask, n);
     expect(lakeSample(field, width, 1200, 1200)).toBeGreaterThan(0);
     expect(lakeSample(field, width, 2400, 2400)).toBeLessThan(0);
     expect(lakeSample(field, width, 200, 2400)).toBeLessThan(0);
@@ -54,11 +55,11 @@ describe('continuous vector water', () => {
     expect(Math.max(...banks.slice(1).map((b, i) => Math.abs(b - banks[i])))).toBeLessThan(4);
   });
 
-  it('mouths meet the continuous lakes and hidden lakes expose connected drainage', () => {
-    const water = basin(), { hydro: h, rivers: network } = water;
+  it('mouths meet the continuous lakes and hidden lakes expose connected drainage', async () => {
+    const water = await basin(), { hydro: h, rivers: network } = water;
     expect(water.lakes).toBeGreaterThan(0);
     expect(network!.lakeLinks!.length).toBeGreaterThan(0);
-    const field = lakeField(water.lake, h.n);
+    const field = water.lakeField;
     expect(network!.rivers.some(line => lakeSample(field, h.width, line.points[0], line.points[1]) > 0)).toBe(true);
     for (const line of network!.rivers) {
       const [x, y] = line.points.slice(-2), c = Math.min(h.n - 1, Math.floor(y / 100)) * h.n + Math.min(h.n - 1, Math.floor(x / 100));
@@ -82,19 +83,19 @@ describe('continuous vector water', () => {
     expect(svg).not.toContain('NaN');
   });
 
-  it('preserves isolated wet centres and single-cell islands at sub-cell precision', () => {
+  it('preserves isolated wet centres and single-cell islands at sub-cell precision', async () => {
     const n = 16, width = 1600, mask = new Uint8Array(n * n);
     mask[4 * n + 4] = 1;
     for (let y = 8; y < 14; y++) for (let x = 8; x < 14; x++) mask[y * n + x] = 1;
     mask[10 * n + 10] = 0;
-    const field = lakeField(mask, n);
+    const field = await lakeField(mask, n);
     expect(lakeSample(field, width, 450, 450)).toBeGreaterThan(0);
     expect(lakeSample(field, width, 1050, 1050)).toBeLessThan(0);
   });
 
-  it('uses one sink for a closed lake instead of cutting rivers on its undrawn shallows', () => {
-    const fixture = basin();
-    const water = computeVectorWater(fixture.hydro.height, 64, 6400, {
+  it('uses one sink for a closed lake instead of cutting rivers on its undrawn shallows', async () => {
+    const fixture = await basin();
+    const water = await computeVectorWater(fixture.hydro.height, 64, 6400, {
       ...riverSettings, lakeDepth: 0.5, lakeArea: 1, riverMode: 'vector', balance: true,
       braiding: 0, anabranching: false, terrainInfluence: true, avulsions: false, confluence: 'drainage', deltas: false,
     }, { temperature: 18, precipitation: 500 }, 'closed-regression');
@@ -102,7 +103,7 @@ describe('continuous vector water', () => {
     for (let c = 0; c < water.lakeKind!.length; c++) if (water.lakeKind![c] === 2 && water.hydro.receiver[c] < 0) sinks.push(c);
     expect(sinks.length).toBe(1);
     expect(water.closedLakes).toBe(1);
-    const field = lakeField(water.lake, 64);
+    const field = water.lakeField;
     for (const line of water.rivers!.rivers) {
       if (line.joins! >= 0) continue;
       const [x, y] = line.points.slice(-2);
@@ -111,14 +112,14 @@ describe('continuous vector water', () => {
     }
   });
 
-  it('traces a receiving river before its larger tributary after downstream losses', () => {
+  it('traces a receiving river before its larger tributary after downstream losses', async () => {
     const n = 32, width = 3200, height = new Float32Array(n * n);
     for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) height[y * n + x] = x < 2 ? -2 : 2 + x * 0.05 + Math.abs(y - 16) * 0.1;
-    const h = computeHydrology(height, n, width);
+    const h = await computeHydrology(height, n, width);
     h.accumulation.fill(0);
     for (let x = 2; x < n; x++) { h.receiver[16 * n + x] = 16 * n + x - 1; h.accumulation[16 * n + x] = x < 17 ? 2e5 : 1e6; }
     for (let y = 17; y <= 27; y++) { h.receiver[y * n + 17] = (y - 1) * n + 17; h.accumulation[y * n + 17] = 5e5; }
-    const network = vectorRivers(h, new Uint8Array(n * n), { ...riverSettings, sinuosity: 1 });
+    const network = await vectorRivers(h, new Uint8Array(n * n), { ...riverSettings, sinuosity: 1 });
     expect(network.rivers.length).toBe(2);
     const tributary = network.rivers.find(l => l.joins! >= 0)!;
     expect(tributary).toBeDefined();
@@ -128,14 +129,14 @@ describe('continuous vector water', () => {
     expect(Math.max(...tributary.area)).toBeLessThanOrEqual(5e5);
   });
 
-  it('keeps two closed pans separated below the dry saddle even when they share a depression id', () => {
+  it('keeps two closed pans separated below the dry saddle even when they share a depression id', async () => {
     const n = 32, width = 3200, height = new Float32Array(n * n).fill(10);
     for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
       if (!x || !y || x === n - 1 || y === n - 1) height[y * n + x] = -2;
       else if (y >= 12 && y <= 20 && x >= 8 && x <= 24) height[y * n + x] = 8;
     }
     for (const cx of [11, 21]) for (let y = 15; y <= 17; y++) for (let x = cx - 1; x <= cx + 1; x++) height[y * n + x] = 1 + 0.1 * ((y - 15) * 3 + x - cx + 1);
-    const water = computeVectorWater(height, n, width, {
+    const water = await computeVectorWater(height, n, width, {
       ...riverSettings, lakeDepth: 0.5, lakeArea: 1, riverMode: 'vector', balance: true,
       braiding: 0, anabranching: false, terrainInfluence: false, avulsions: false, confluence: 'drainage', deltas: false,
     }, { temperature: 18, precipitation: 450 }, 'separate-pans');
@@ -146,10 +147,10 @@ describe('continuous vector water', () => {
     expect(water.lakeKind![16 * n + 16]).toBe(0);
   });
 
-  it('charges the full open-lake evaporation on the same routing relief as its budget', () => {
-    const fixture = basin(), h = fixture.hydro, climate = { temperature: 18, precipitation: 1000 };
-    const balance = waterBalance(h.height, 64, 6400, h.sea, climate, 0.5, 1e4, h);
-    const water = computeVectorWater(h.height, 64, 6400, {
+  it('charges the full open-lake evaporation on the same routing relief as its budget', async () => {
+    const fixture = await basin(), h = fixture.hydro, climate = { temperature: 18, precipitation: 1000 };
+    const balance = await waterBalance(h.height, 64, 6400, h.sea, climate, 0.5, 1e4, h);
+    const water = await computeVectorWater(h.height, 64, 6400, {
       ...riverSettings, lakeDepth: 0.5, lakeArea: 1, riverMode: 'grid', balance: true,
       braiding: 0, anabranching: false, terrainInfluence: false, avulsions: false, confluence: 'drainage', deltas: false,
     }, climate, 'evaporation', h);
@@ -162,8 +163,8 @@ describe('continuous vector water', () => {
     expect(Math.abs(input - output - evaporation)).toBeLessThan(input * 1e-6);
   });
 
-  it('uses physical widths, splits braid discharge and widens marine estuaries with river size', () => {
-    const water = basin();
+  it('uses physical widths, splits braid discharge and widens marine estuaries with river size', async () => {
+    const water = await basin();
     const line: RiverLine = { points: [600, 3250, 150, 3250], area: [1e6, 16e6], level: [3, 0], kind: [0, 0], threads: [1, 2] };
     const widths = riverWidths(water, line);
     expect(widths[0]).toBeCloseTo(channelWidth(1e6, 3));
@@ -177,13 +178,13 @@ describe('continuous vector water', () => {
     expect(segments[5]).toBeCloseTo(widths[1]);
   });
 
-  it('keeps following a channel when downstream losses take it below the display threshold', () => {
+  it('keeps following a channel when downstream losses take it below the display threshold', async () => {
     const n = 24, width = 2400, height = new Float32Array(n * n);
     for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) height[y * n + x] = 2 + x + 2 * Math.abs(y - 12);
-    const h = computeHydrology(height, n, width);
+    const h = await computeHydrology(height, n, width);
     h.accumulation.fill(0);
     for (let x = 0; x < n - 1; x++) h.accumulation[12 * n + x] = x < 10 ? 5e4 : 2e5;
-    const network = vectorRivers(h, new Uint8Array(n * n), { ...riverSettings, sinuosity: 1 });
+    const network = await vectorRivers(h, new Uint8Array(n * n), { ...riverSettings, sinuosity: 1 });
     expect(network.rivers.length).toBeGreaterThan(0);
     for (const line of network.rivers) expect(line.points[line.points.length - 2]).toBe(0);
   });

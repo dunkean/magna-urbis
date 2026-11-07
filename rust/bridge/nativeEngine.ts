@@ -22,19 +22,50 @@ export async function nativeRequest(runtime: ExecutionRuntime, path: string, bod
   return response;
 }
 
-/** Upload capped planning planes (17 bytes/cell), then optional physical metres (4 bytes/cell). */
+/** `/raster` framing: u32 LE header length, JSON header padded with spaces to 4 bytes, then planes. */
+function rasterFrame(header: unknown): Uint8Array<ArrayBuffer>[] {
+  const json = new TextEncoder().encode(JSON.stringify(header));
+  const padded = new Uint8Array(Math.ceil(json.length / 4) * 4).fill(32); padded.set(json);
+  const length = new Uint8Array(4); new DataView(length.buffer).setUint32(0, padded.length, true);
+  return [length, padded];
+}
+/** One id per raster object (rasters are immutable once built): its content identity on the server. */
+const rasterIds = new WeakMap<SettlementRaster, string>();
+/** Uploads by server and raster id; resolves true once the server holds that terrain. */
+const rasterUploads = new Map<string, Promise<boolean>>();
+
+/**
+ * Upload capped planning planes (17 bytes/cell), then optional physical metres (4 bytes/cell).
+ * The same raster object sent to several sessions (the concurrent city lanes) crosses the wire and
+ * is parsed once: later sessions attach the server's terrain by raster id, and upload in full only
+ * when no session holds it any more (released or evicted).
+ */
 export async function uploadNativeRaster(runtime: ExecutionRuntime, session: string, raster: SettlementRaster): Promise<void> {
   validatePhysicalTerrain(raster.physical);
-  const header = new TextEncoder().encode(JSON.stringify({ session, width: raster.width, n: raster.n,
-    physicalN: raster.physical?.n, physicalInterpolation: raster.physical?.interpolation,
-    physicalFloor: raster.physical?.floor, geometry: raster.geometry, region: raster.region }));
-  const padded = new Uint8Array(Math.ceil(header.length / 4) * 4).fill(32); padded.set(header);
-  const length = new Uint8Array(4); new DataView(length.buffer).setUint32(0, padded.length, true);
+  let rasterId = rasterIds.get(raster);
+  if (!rasterId) rasterIds.set(raster, rasterId = nativeSession());
+  const key = `${runtime.server}|${rasterId}`;
+  const prior = rasterUploads.get(key);
+  if (prior && await prior) {
+    try {
+      await (await nativeRequest(runtime, '/raster', new Blob(rasterFrame({ session, rasterId, shared: true })))).arrayBuffer();
+      return;
+    } catch { /* no session holds it any more: upload it again */ }
+  }
   const bytes = (array: ArrayBufferView): Uint8Array<ArrayBuffer> => new Uint8Array(array.buffer as ArrayBuffer, array.byteOffset, array.byteLength);
-  // Drain the reply so the keep-alive connection is free for the next request.
-  await (await nativeRequest(runtime, '/raster', new Blob([length, padded,
+  const upload = (async () => {
+    // Drain the reply so the keep-alive connection is free for the next request.
+    await (await nativeRequest(runtime, '/raster', new Blob([...rasterFrame({ session, rasterId, width: raster.width, n: raster.n,
+      physicalN: raster.physical?.n, physicalInterpolation: raster.physical?.interpolation,
+      physicalFloor: raster.physical?.floor, geometry: raster.geometry, region: raster.region }),
     bytes(raster.height), bytes(raster.waterLevel), bytes(raster.riverWidth), bytes(raster.riverIds), bytes(raster.water),
     ...(raster.physical ? [bytes(raster.physical.height)] : [])]))).arrayBuffer();
+  })();
+  rasterUploads.delete(key);
+  rasterUploads.set(key, upload.then(() => true, () => false));
+  // Bounded: only the last few terrains are worth sharing.
+  for (const old of rasterUploads.keys()) if (rasterUploads.size > 8) rasterUploads.delete(old);
+  await upload;
 }
 
 export async function nativeJson<T>(runtime: ExecutionRuntime, path: string, value: unknown): Promise<T> {

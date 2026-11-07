@@ -13,7 +13,7 @@ import type { HouseMaterial, Surface } from '../../../rust/bridge/housesContract
 import type { PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
 import type { ResolvedAppearance } from '../render/appearanceRecipe';
 import { nativeCitiesOf } from './nativeProducts';
-import { rustSettlementRaster } from './rustUrban';
+import { cityGroundOf } from './rustUrban';
 import { activityScene, activitySitesOf, drawInstallations } from './activitySites';
 
 /** Roof slopes show as soon as a house is large enough to read them, on more houses than the default budget. */
@@ -105,7 +105,7 @@ export function createNativeCityMap(world: World, onInvalidate: () => void): Nat
   const cities = nativeCitiesOf(world);
   // Keep snapshots separate: older archives may reuse a layout/parcel id in
   // another settlement. Their exact native identities must not be renamed.
-  const raster = cities.length ? rustSettlementRaster(world) : undefined;
+  const raster = cities.length ? cityGroundOf(world) : undefined;
   const entries: Entry[] = cities.map(city => {
     const plan = buildCityScene(city.layouts, city.partitions ?? [], raster);
     return { plan, buildings: buildCityBuildings(city.scene, plan), houses: new UrbanBuildingLodRenderer(city.scene ?? { buildings: [] }, HOUSE_LOD),

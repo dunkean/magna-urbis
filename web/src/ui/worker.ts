@@ -1,3 +1,4 @@
+import { loadCoreWasm } from '../../../rust/bridge/wasmRuntime';
 /**
  * Generation worker (G).
  *
@@ -47,13 +48,14 @@ function generateRequest(options: Options, debugStage: DebugStage | undefined, o
   return debugSession.advance(debugStage, onStage, options);
 }
 
-function doRun(m: GRun): void {
+async function doRun(m: GRun): Promise<void> {
   const { id, options, port } = m;
   const post = (r: GResponse): void => ctx.postMessage(r);
   try {
     const t0 = performance.now();
     quarters?.stop(); quarters = null;
     lastWorld = null; lastId = id; lastPort = port;
+    await loadCoreWasm();
     const world = generateRequest(options, m.debugStage, (stage: string) => {
       post({ type: 'stage', id, stage });
       // Keep the preceding map until the final scene, without cloning and preparing discarded stage snapshots.
@@ -154,7 +156,7 @@ function doDetail(m: GDetail): void {
   }
 }
 
-self.onmessage = (e: MessageEvent<GRequest | WorkerRequest>) => {
+self.onmessage = async (e: MessageEvent<GRequest | WorkerRequest>) => {
   const m = e.data as GRequest & Partial<WorkerRequest>;
   if (m.type === 'run') return doRun(m);
   if (m.type === 'export') return doExport(m);
@@ -166,6 +168,7 @@ self.onmessage = (e: MessageEvent<GRequest | WorkerRequest>) => {
   try {
     const t0 = performance.now();
     quarters?.stop(); quarters = null;
+    await loadCoreWasm();
     const world = generateRequest(options, debugStage, (stage) => post({ id, stage }));
     lastWorld = world; lastId = id; lastPort = null;
     post({ id, world, stats: world.stats, ms: Math.round(performance.now() - t0) });

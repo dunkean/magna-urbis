@@ -57,7 +57,7 @@ export function cityContourPaths(terrain: TerrainData, landform: string, scale: 
   if (retained) return retained;
   const height = entry.world.terrain.height, radius = Math.min(10, Math.max(1, Math.round(metresPerPixel * 5 / height.cell)));
   const world = { ...entry.world, terrain: { ...entry.world.terrain, height: { ...height, data: smoothedHeight(height, radius) } } } as World;
-  const contours = contourSet(world, Math.min(terrain.width / 1600, metresPerPixel * 1.5), step, true);
+  const contours = contourSet(world, Math.min(terrain.width / 1600, metresPerPixel * 1.5), step);
   const pathData = (lines: typeof contours.thin): string => lines.map(path => path.pts.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(2)},${p.y.toFixed(2)}`).join('') + (path.closed ? 'Z' : '')).join('');
   const paths = { step, thin: pathData(contours.thin), index: pathData(contours.index) };
   entry.paths.set(key, paths); return paths;

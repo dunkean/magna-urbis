@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { clipToRings, partitionRegion, toRing, type FieldNet } from '../src/gen/landuse/fields';
+import { clipToRings, partitionRegion, toRing, type FieldNet } from '../../rust/bridge/landuseTools';
 import { intersectionS, differenceS, mpArea, unionS } from '../src/gen/geo/bool';
-import { connectFieldWays } from '../src/gen/landuse/fieldAccess';
+import { connectFieldWays } from '../../rust/bridge/landuseTools';
 import { Rng } from '../src/gen/core/rng';
 import { Noise2D } from '../src/gen/core/noise';
 import type { Polygon } from '../src/gen/types';

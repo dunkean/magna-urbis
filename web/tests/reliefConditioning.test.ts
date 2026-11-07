@@ -1,3 +1,4 @@
+import './vectorWaterWasm';
 import { describe, expect, it } from 'vitest';
 import { conditionRelief } from '../src/ui/reliefConditioning';
 import { computeHydrology } from '../src/ui/simpleHydrology';
@@ -17,24 +18,24 @@ for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
 }
 
 describe('relief conditioning', () => {
-  it('breaching opens the sub-basins of a drained lake', () => {
-    const result = conditionRelief(relief, n, width, { mode: 'breach', strength: 2, maxDepth: 30, maxLength: 3000 });
+  it('breaching opens the sub-basins of a drained lake', async () => {
+    const result = await conditionRelief(relief, n, width, { mode: 'breach', strength: 2, maxDepth: 30, maxLength: 3000 });
     expect(result.before.depressions).toBeGreaterThan(100);
     expect(result.after.depressions).toBeLessThanOrEqual(2);
   });
 
-  it('erosion and breaching drain without new pits, keep the sea, return a matching flood', () => {
-    const result = conditionRelief(relief, n, width, { mode: 'both', strength: 2, maxDepth: 30, maxLength: 3000 });
+  it('erosion and breaching drain without new pits, keep the sea, return a matching flood', async () => {
+    const result = await conditionRelief(relief, n, width, { mode: 'both', strength: 2, maxDepth: 30, maxLength: 3000 });
     expect(result.after.depressions).toBeLessThanOrEqual(2);
     expect(result.after.volume).toBeLessThan(0.01 * result.before.volume);
     for (let c = 0; c < n * n; c++) if (relief[c] <= 0) expect(result.delta[c]).toBe(0);
-    const fresh = computeHydrology(result.height, n, width);
+    const fresh = await computeHydrology(result.height, n, width);
     let mismatches = 0;
     for (let c = 0; c < n * n; c++) if (fresh.filled[c] !== result.hydrology.filled[c] || fresh.receiver[c] !== result.hydrology.receiver[c]) mismatches++;
     expect(mismatches).toBe(0);
   });
 
-  it('breaches along the drowned valley floor, not across the lake', () => {
+  it('breaches along the drowned valley floor, not across the lake', async () => {
     // A 30 m plain draining west to the sea; a lake on a 20 m floor sloping to its channel, whose
     // outlet is a notch in its western rim; a sinuous drowned channel climbing
     // from the lake bottom, at its eastern end, to the notch.
@@ -47,7 +48,7 @@ describe('relief conditioning', () => {
       else if (x >= 12 && x < 60 && Math.abs(y - 128) <= 1) z = Math.min(plain, 25 - 0.1 * (59 - x));
       lake[y * n + x] = z;
     }
-    const result = conditionRelief(lake, n, width, { mode: 'breach', strength: 2, maxDepth: 30, maxLength: 5000 });
+    const result = await conditionRelief(lake, n, width, { mode: 'breach', strength: 2, maxDepth: 30, maxLength: 5000 });
     // Share of the cut inside the lake lying away from the channel.
     let volume = 0, far = 0;
     for (let y = 0; y < n; y++) for (let x = 60; x <= 200; x++) {

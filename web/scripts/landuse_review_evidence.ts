@@ -18,7 +18,7 @@ for(const [width,population] of [[2400,300],[12000,30000],[40000,200000]]) {
  const input:UrbanLanduseInput={seed:'landuse-review-42',biome:'temperate',relief:'hills',raster:{n,width,height,water,waterLevel:height.slice(),riverWidth,riverIds},
   city:{key:'city',center,radius,population,culture:'european-organic'},neighbours:[],layouts:[{key:'city',center,culture:'european-organic',warnings:[],blocks:[],quarters:[{shape:{outer:square,holes:[]},phase:0}],
    streets:[{role:'regional',rank:1,widths:[5,5],path:[{x:width*.2,y:center.y},{x:width*.65,y:center.y}]}]}]};
- const scene=generateUrbanLanduse(input); metrics.push({width,population,stats:scene.stats,kinds:Object.fromEntries(['forest','field','orchard','garden','pasture'].map(k=>[k,scene.landuse!.areas.filter(a=>a.kind===k).length]))});
+ const scene=await generateUrbanLanduse(input); metrics.push({width,population,stats:scene.stats,kinds:Object.fromEntries(['forest','field','orchard','garden','pasture'].map(k=>[k,scene.landuse!.areas.filter(a=>a.kind===k).length]))});
  for(const style of ['parchment','atlas','cadastre'] as const) {
   const pal=biomePalette(style,'temperate');
   const view=width>2400?{x:center.x-1900,y:center.y-1900,w:3800}:{x:0,y:0,w:width};

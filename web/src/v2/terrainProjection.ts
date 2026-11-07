@@ -4,7 +4,7 @@ import type { ForestField } from '../../../rust/bridge/terrainForest';
 import type { TerrainLayer, World, Polygon, River } from '../gen/types';
 import { slopeGrid } from '../gen/core/grid';
 import { forCellsNearPolyline } from '../gen/core/field';
-import { vectorize } from '../gen/landuse/rural';
+import { vectorizeRegions } from '../../../rust/bridge/landuseNative';
 import { riverWidths } from '../ui/vectorWaterRender';
 import { channelWidth } from '../ui/riverVectors';
 
@@ -26,7 +26,7 @@ export function assertUrbanPhysicalCapability(world: World, backend: 'typescript
 const at = (x: number, y: number, n: number, width: number): number => Math.max(0, Math.min(n - 1, Math.floor(y / width * n))) * n + Math.max(0, Math.min(n - 1, Math.floor(x / width * n)));
 function polygons(mask: Uint8Array, n: number, cell: number): { outer: Polygon; holes: Polygon[] }[] {
   if (!mask.some(Boolean)) return [];
-  return vectorize(Float32Array.from(mask), n, n, cell, cell * cell * .1, { x0: 0, y0: 0, x1: n - 1, y1: n - 1 });
+  return vectorizeRegions(Float32Array.from(mask), n, n, cell, cell * cell * .1, { x0: 0, y0: 0, x1: n - 1, y1: n - 1 });
 }
 function riverClass(width: number): NonNullable<River['cls']> { return width >= 60 ? 'major' : width >= 12 ? 'river' : width >= 3 ? 'stream' : 'brook'; }
 

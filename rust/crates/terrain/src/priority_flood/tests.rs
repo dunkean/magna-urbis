@@ -357,7 +357,8 @@ fn field(n: usize, seed: u64, levels: f32, sea: bool) -> Vec<f32> {
         })
         .collect();
     if levels > 0.0 {
-        h.iter_mut().for_each(|v| *v = (*v / levels).round() * levels);
+        h.iter_mut()
+            .for_each(|v| *v = (*v / levels).round() * levels);
     }
     if sea {
         for (i, v) in h.iter_mut().enumerate() {
@@ -370,19 +371,32 @@ fn field(n: usize, seed: u64, levels: f32, sea: bool) -> Vec<f32> {
 }
 
 fn same_bits(a: &[f32], b: &[f32], what: &str) {
-    assert!(a.iter().map(|v| v.to_bits()).eq(b.iter().map(|v| v.to_bits())), "{what}");
+    assert!(
+        a.iter()
+            .map(|v| v.to_bits())
+            .eq(b.iter().map(|v| v.to_bits())),
+        "{what}"
+    );
 }
 
 #[test]
 fn the_sweep_reproduces_the_queue_bit_for_bit() {
-    let cases = [(0.0, false), (0.0, true), (4.0, false), (4.0, true), (1000.0, false)];
+    let cases = [
+        (0.0, false),
+        (0.0, true),
+        (4.0, false),
+        (4.0, true),
+        (1000.0, false),
+    ];
     for n in [2, 3, 5, 33, 96] {
         for (case, (levels, sea)) in cases.into_iter().enumerate() {
             let h = field(n, 77 + case as u64, levels, sea);
             let total = n * n;
             let weight: Vec<f32> = (0..total).map(|i| 0.5 + (i % 11) as f32 * 0.1).collect();
             let outlet: Vec<u8> = (0..total).map(|i| u8::from(i % 97 == 40)).collect();
-            let loss: Vec<f32> = (0..total).map(|i| if i % 13 == 0 { 0.7 } else { 0.0 }).collect();
+            let loss: Vec<f32> = (0..total)
+                .map(|i| if i % 13 == 0 { 0.7 } else { 0.0 })
+                .collect();
             for extra in [false, true] {
                 let (w, o, l) = if extra {
                     (Some(&weight[..]), Some(&outlet[..]), Some(&loss[..]))
@@ -406,8 +420,11 @@ fn the_sweep_reproduces_the_queue_bit_for_bit() {
 
 #[test]
 fn the_erosion_reproduces_its_reference_bit_for_bit() {
-    for n in [2, 3, 33, 96] {
-        for (case, (levels, sea)) in [(0.0, false), (0.0, true), (4.0, false)].into_iter().enumerate() {
+    for n in [2, 3, 33, 96, 128] {
+        for (case, (levels, sea)) in [(0.0, false), (0.0, true), (4.0, false)]
+            .into_iter()
+            .enumerate()
+        {
             for deposit in [0.0, 0.12] {
                 let mut old = field(n, 5 + case as u64, levels, sea);
                 let mut new = old.clone();
@@ -422,7 +439,14 @@ fn the_erosion_reproduces_its_reference_bit_for_bit() {
 #[test]
 fn the_serial_sort_is_the_stable_sort() {
     let mut state = 88172645463325252_u64;
-    for (mask, len) in [(u32::MAX, 5000), (0xFF, 5000), (0xFFFF_0000, 4000), (7, 3000), (0, 100), (u32::MAX, 2)] {
+    for (mask, len) in [
+        (u32::MAX, 5000),
+        (0xFF, 5000),
+        (0xFFFF_0000, 4000),
+        (7, 3000),
+        (0, 100),
+        (u32::MAX, 2),
+    ] {
         let mut keys: Vec<(u32, u32)> = (0..len)
             .map(|i| {
                 state ^= state << 13;
@@ -471,5 +495,7 @@ fn timing_on_a_dumped_grid() {
     same_bits(&old, &new, "dumped grid");
     let one_reference = time(&mut || drop(flood(&h, n, area, None, None, None, true)));
     let one = time(&mut || drop(flood_grids(&h, n, area, None, None, None)));
-    println!("best of 10: erode x24 {reference:.1} -> {sweep:.1} ms; one flood {one_reference:.1} -> {one:.1} ms");
+    println!(
+        "best of 10: erode x24 {reference:.1} -> {sweep:.1} ms; one flood {one_reference:.1} -> {one:.1} ms"
+    );
 }

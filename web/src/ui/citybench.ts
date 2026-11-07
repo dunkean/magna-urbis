@@ -92,15 +92,36 @@ const backgroundUrl = (): string | undefined => backgroundSnapshot;
 window.magnaCityBackground = { url: backgroundUrl, style: () => backgroundStyle };
 let forestOf: Decor | undefined, forestKey = '', forestField: ForestField | undefined, occupationOf: unknown, occupation: ReturnType<typeof forestOccupation>;
 const lakeMasks = new WeakMap<Decor, Float32Array>();
-function benchForest(target: 'view2d' | 'view3d' = 'view2d') {
+type BenchForestRequest = { d: Decor; key: string; settings: ReturnType<typeof resolveBenchAppearance>['vegetation']['forestSettings'] };
+let forestBuild: { d: Decor; key: string; job: Promise<void> } | undefined;
+function benchForestRequest(target: 'view2d' | 'view3d'): BenchForestRequest | undefined {
   const r = resolveBenchAppearance({}, target), d = decor; if (!d || !r.composition.vegetation.procedural || !r.vegetation.forestSettings.enabled || target === 'view2d' && !r.ground.layers.relief) return;
-  const settings = r.vegetation.forestSettings, key = JSON.stringify(settings), raster = d.raster, climate = decorClimate(d.meta);
-  if (forestOf !== d || forestKey !== key) {
-    forestOf = d; forestKey = key;
-    forestField = buildForestField({ seed: seedHash(d.meta.seed), climate: [climate.temperature, climate.precipitation], height: { x: 0, y: 0, width: raster.width, n: raster.n, data: raster.height }, water: raster.water, riverSegments: forestRetainedRiverSegments(d.meta.waterSvg, raster.width) }, settings);
-  }
+  return { d, key: JSON.stringify(r.vegetation.forestSettings), settings: r.vegetation.forestSettings };
+}
+function benchForestResult() {
   if (occupationOf !== settlements.landuse) { occupationOf = settlements.landuse; occupation = settlements.landuse ? withLandDetail(forestOccupation(settlements.landuse), settlements.landuse) : undefined; }
   return { field: forestField, occupation };
+}
+/** The forest field is Rust (native or WASM): built asynchronously, one build per (decor, settings). */
+async function benchForestAsync(target: 'view2d' | 'view3d' = 'view2d') {
+  const q = benchForestRequest(target); if (!q) return;
+  if (forestOf !== q.d || forestKey !== q.key) {
+    if (!(forestBuild && forestBuild.d === q.d && forestBuild.key === q.key)) {
+      const raster = q.d.raster, climate = decorClimate(q.d.meta);
+      const build: NonNullable<typeof forestBuild> = { d: q.d, key: q.key, job: buildForestField({ seed: seedHash(q.d.meta.seed), climate: [climate.temperature, climate.precipitation], height: { x: 0, y: 0, width: raster.width, n: raster.n, data: raster.height }, water: raster.water, riverSegments: forestRetainedRiverSegments(q.d.meta.waterSvg, raster.width) }, q.settings)
+        .then(field => { if (forestBuild === build) { forestOf = q.d; forestKey = q.key; forestField = field; } }).finally(() => { if (forestBuild === build) forestBuild = undefined; }) };
+      forestBuild = build;
+    }
+    await forestBuild!.job;
+    if (forestOf !== q.d || forestKey !== q.key) return;
+  }
+  return benchForestResult();
+}
+/** Sync render callback: the cached field, else a build whose completion redraws the 3D view. */
+function benchForest(target: 'view2d' | 'view3d' = 'view2d') {
+  const q = benchForestRequest(target); if (!q) return;
+  if (forestOf === q.d && forestKey === q.key) return benchForestResult();
+  void benchForestAsync(target).then(() => city3d.refresh(), error => console.warn('Forest field failed:', error));
 }
 function publishBenchCapabilities(): void {
   const diagnostic = resolveBenchAppearance().diagnostic;
@@ -146,7 +167,9 @@ async function drawBackground(d: Decor): Promise<void> {
   backgroundDecor = d; backgroundKey = key;
   backgroundStyle = c.variant; const relief = q.get('relief') ?? 'flat';
   const settings = { seed: d.meta.seed, width: t.width, relief: relief as TerrainSettings['relief'], climateValues: climate, climateZone: decorClimateZone(d.meta) };
-  const canopy = benchForest(), forest = r.ground.traits.ground3d && canopy ? { ...canopy, brushes: r.ground.traits.forestBrushes, waterVisible: c.networks.water.visible } : undefined;
+  const canopy = await benchForestAsync();
+  if (ticket !== backgroundTicket || decor !== d) return;
+  const forest = r.ground.traits.ground3d && canopy ? { ...canopy, brushes: r.ground.traits.forestBrushes, waterVisible: c.networks.water.visible } : undefined;
   const scene = renderRustTerrain(t, r.ground.style, true, { ...settings, v2Season: r.ground.season, v2Calendar: r.ground.calendar, forest }, false, 'city-ground', r.ground.lighting, r.ground.layers, r.vegetation.fantasy, true, r.composition.networks.water.look === 'ink' ? r.palette.mapStyle : 'render3d', r.palette.colors);
   if(c.ambience==='night' && r.ground.traits.family==='material')scene.svg=moonlightSvg(scene.svg,'city-ground-night');
   const rural = document.createElement('canvas'); rural.width = rural.height = 2048; settlements.drawRuralGround(rural.getContext('2d')!, { x: 0, y: 0, width: t.width }, 2048);

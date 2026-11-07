@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { loadRenderGeometry } from '../../rust/bridge/renderGeometry';
 import { Resvg } from '@resvg/resvg-js';
 import { renderTerrainPixels } from '../src/render/raster';
 import { DEFAULT_TERRAIN_LIGHTING } from '../src/render/terrainLighting';
@@ -18,6 +19,9 @@ const render = (style: 'parchment' | 'atlas', overrides = {}) => renderTerrainPi
   pixels: n, surface: height, normals, sea: { distance, bandWidth: 8 }, heightRange: { min: 0, max: 20 }, lighting, ...overrides,
 }).rgb;
 const pixel = (rgb: Uint8Array, x: number) => Array.from(rgb.slice(x * 3, x * 3 + 3));
+
+// The ported geometry runs in the Rust WASM package (synchronous calls).
+beforeAll(() => loadRenderGeometry());
 
 describe.each(['parchment', 'atlas'] as const)('%s coastal sea', style => {
   it('joins the river ink at the shore and smoothly reaches the offshore colour', () => {

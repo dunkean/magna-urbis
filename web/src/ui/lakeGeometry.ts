@@ -1,57 +1,6 @@
-/** Continuous, world-anchored shore field shared by SVG, GPU and river mouths.
- * Distances are in drainage cells. Detail stays well below one cell so it
- * cannot invent new bodies of water in the interior or outside the shore belt.
- */
+/** Pure continuous shoreline sampling and shader helpers. Fields are retained by VectorWater. */
 export interface LakeField { values: Float32Array; distance: Float32Array; n: number }
-const fields = new WeakMap<Uint8Array, LakeField>();
-
-export function lakeField(mask: Uint8Array, n: number): LakeField {
-  const cached = fields.get(mask);
-  if (cached) return cached;
-  const distance = new Float32Array(n * n).fill(4);
-  const wet = (x: number, y: number): boolean => x >= 0 && y >= 0 && x < n && y < n && !!mask[y * n + x];
-  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
-    const inside = wet(x, y);
-    if (wet(x - 1, y) !== inside || wet(x + 1, y) !== inside || wet(x, y - 1) !== inside || wet(x, y + 1) !== inside) distance[y * n + x] = 0.5;
-  }
-  // Two chamfer sweeps; sign is assigned afterwards, preserving islands.
-  // Same neighbours in the same order as a [dx, dy, cost] list, without per-cell destructuring.
-  for (const d of [1, -1]) {
-    for (let y = d > 0 ? 0 : n - 1; y >= 0 && y < n; y += d) {
-      const yy = y - d, rowOk = yy >= 0 && yy < n;
-      for (let x = d > 0 ? 0 : n - 1; x >= 0 && x < n; x += d) {
-        const i = y * n + x, xb = x - d, xf = x + d, back = xb >= 0 && xb < n;
-        if (back) distance[i] = Math.min(distance[i], distance[i - d] + 1);
-        if (rowOk) {
-          const row = yy * n;
-          distance[i] = Math.min(distance[i], distance[row + x] + 1);
-          if (back) distance[i] = Math.min(distance[i], distance[row + xb] + Math.SQRT2);
-          if (xf >= 0 && xf < n) distance[i] = Math.min(distance[i], distance[row + xf] + Math.SQRT2);
-        }
-      }
-    }
-  }
-  for (let i = 0; i < distance.length; i++) if (!mask[i]) distance[i] = -distance[i];
-  // Interpolating C2 B-spline coefficients: smoothing raw distance samples
-  // erases small ponds/holes; prefiltering preserves each cell centre's sign
-  // while retaining the broad, rounded shoreline of a cubic B-spline.
-  const values = Float32Array.from(distance, value => value + 4);
-  const inverse = new Float64Array(n), rhs = new Float64Array(n);
-  inverse[0] = 0.25;
-  for (let i = 1; i < n; i++) inverse[i] = 1 / (4 - inverse[i - 1]);
-  const filter = (origin: number, stride: number): void => {
-    rhs[0] = 6 * values[origin] * inverse[0];
-    for (let i = 1; i < n; i++) rhs[i] = (6 * values[origin + i * stride] - rhs[i - 1]) * inverse[i];
-    let next = rhs[n - 1]; values[origin + (n - 1) * stride] = next;
-    for (let i = n - 2; i >= 0; i--) { next = rhs[i] - inverse[i] * next; values[origin + i * stride] = next; }
-  };
-  for (let y = 0; y < n; y++) filter(y * n, 1);
-  for (let x = 0; x < n; x++) filter(x, n);
-  for (let i = 0; i < values.length; i++) values[i] -= 4;
-  const field = { values, distance, n };
-  fields.set(mask, field);
-  return field;
-}
+export { computeLakeField as lakeField } from '../../../rust/bridge/waterNative';
 
 const weights = (t: number): number[] => [(1 - t) ** 3 / 6, (3 * t ** 3 - 6 * t * t + 4) / 6, (-3 * t ** 3 + 3 * t * t + 3 * t + 1) / 6, t ** 3 / 6];
 function hash(x: number, y: number): number {

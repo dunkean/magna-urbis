@@ -122,7 +122,7 @@ export interface Farmstead {
   pos: Vec2; angle: number;
   /** Building footprints (same order as `parts`). */
   buildings: Polygon[]; yard: Polygon; drive: Polyline;
-  // ---- farmstead variety (landuse/farms.ts)
+  // ---- farmstead variety (Rust landuse/farms)
   /** Farm type (vierkanthof, longere, einhaus, l-yard, u-yard, haufenhof, masseria, norse-longhouse, minka, ...). */
   type?: string; size?: FarmSize; culture?: string;
   /** The farm lot: a rectangle on its track, partitioned by the farmyard / garden / orchard / paddock plots. */

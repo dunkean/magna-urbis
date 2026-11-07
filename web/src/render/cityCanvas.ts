@@ -208,6 +208,8 @@ export function buildCityScene(layouts: readonly Layout[], partitions: readonly 
   const blocks: CityBlock[] = [], parcels: CityParcel[] = [], streets: CityStreet[] = [], walls: CityWall[] = [], districts: CityDistrict[] = [];
   const landmarks: CityLandmark[] = [], footprint: Shape[] = [], parcelById = new Map<string, number>();
   const extent = { ...EMPTY }, quays: Quay[] = [];
+  // Water clipping runs once for the whole scene (one Rust call), after the walk.
+  const pendingGround: { target: { ground?: Shape[] }; shape: Shape }[] = [], footprintSources: Shape[] = [];
   layouts.forEach((layout, li) => {
     for (const q of layout.structure?.quays ?? []) { quays.push(q); grow(extent, q.shape.outer); }
     const phases = layout.phases ?? [];
@@ -227,12 +229,13 @@ export function buildCityScene(layouts: readonly Layout[], partitions: readonly 
     layout.blocks.forEach((block, bi) => {
       const z = zoneOf(block.quarter, block.zone, block.phase), district = byQuarter.get(block.quarter);
       const shape = block.kind === 'reserve' ? softenRuralGround(block.shape) : block.shape;
-      blocks.push({ layout: li, index: bi, shape, ground: ground?.clip(shape), kind: block.kind, zone: z.zone, phase: z.phase, quarter: block.quarter, district, peripheral: z.peripheral });
+      const item: CityBlock = { layout: li, index: bi, shape, ground: undefined, kind: block.kind, zone: z.zone, phase: z.phase, quarter: block.quarter, district, peripheral: z.peripheral };
+      blocks.push(item); if (ground) pendingGround.push({ target: item, shape });
       if (district && !block.kind.startsWith('reserve')) districtShapes.get(district)!.push(block.shape);
       grow(extent, block.shape.outer);
     });
     for (const [district, shapes] of districtShapes) district.anchor = centroid(shapes);
-    footprint.push(...(layout.structure?.allocated?.length ? layout.structure.allocated : layout.quarters.map(q => q.shape)).flatMap(s => ground?.clip(s) ?? [s]));
+    footprintSources.push(...(layout.structure?.allocated?.length ? layout.structure.allocated : layout.quarters.map(q => q.shape)));
     layout.streets.forEach((street, si) => {
       const width = street.widths.length ? street.widths.reduce((s, w) => s + w, 0) / street.widths.length : 4;
       streets.push({ layout: li, index: si, street, width: isBoardwalk(street.role) ? boardwalkWidth(width) : Number.isFinite(width) && width > 0 ? width : 4, rank: street.rank, role: street.role });
@@ -252,7 +255,8 @@ export function buildCityScene(layouts: readonly Layout[], partitions: readonly 
       const block = layout.blocks[parcel.block], z = zoneOf(block?.quarter ?? -1, block?.zone, block?.phase);
       const allocation = parcel.id ? allocations.get(parcel.id) : undefined, index = parcels.length;
       const shape = parcel.use === 'reserve' ? softenRuralGround(parcel.shape) : parcel.shape;
-      parcels.push({ layout: li, index: pi, shape, ground: ground?.clip(shape), use: parcel.use, block: parcel.block, zone: z.zone, id: parcel.id, allocation, district: block && byQuarter.get(block.quarter), peripheral: z.peripheral, source: parcel });
+      const item: CityParcel = { layout: li, index: pi, shape, ground: undefined, use: parcel.use, block: parcel.block, zone: z.zone, id: parcel.id, allocation, district: block && byQuarter.get(block.quarter), peripheral: z.peripheral, source: parcel };
+      parcels.push(item); if (ground) pendingGround.push({ target: item, shape });
       if (parcel.id) parcelById.set(parcel.id, index);
       if (allocation?.landmark || parcel.use === 'market') {
         const point = centroid([parcel.shape]);
@@ -261,6 +265,11 @@ export function buildCityScene(layouts: readonly Layout[], partitions: readonly 
       }
     });
   });
+  if (ground) {
+    const clipped = ground.clipMany([...pendingGround.map(p => p.shape), ...footprintSources]);
+    pendingGround.forEach((p, i) => { p.target.ground = clipped[i]; });
+    footprint.push(...clipped.slice(pendingGround.length).flat());
+  } else footprint.push(...footprintSources);
   // Native previews supply occupied houses later; an empty cadastre has no fences.
   const lotEnclosures: import('../../../rust/bridge/urban').LotEnclosure[] = [];
   const enclosureProfiles = layouts.map(l => partitions.find(p => p.key === l.key)?.enclosure);

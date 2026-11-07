@@ -1,9 +1,15 @@
 use wasm_bindgen::prelude::*;
 
 mod flood;
+mod landuse;
+mod forest;
+mod render_geometry;
 mod resident;
 mod settlements;
+mod site;
+mod water;
 pub use flood::{Flood, erode_relief, flood_hydrology};
+pub use site::site_choose;
 #[cfg(feature = "threads")]
 pub use wasm_bindgen_rayon::init_thread_pool;
 // Measured: a clear win with the rayon pool, neutral single-threaded.

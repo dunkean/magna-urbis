@@ -5,7 +5,7 @@ import { generate } from '../src/gen/pipeline';
 import { makeOptions } from '../src/gen/options';
 import { Rng } from '../src/gen/core/rng';
 import { polygonArea, polygonContains } from '../src/gen/core/geom';
-import { layoutFarm, frameOf, farmRegime, type FarmContext, type FarmType } from '../src/gen/landuse/farms';
+import { layoutFarm, frameOf, farmRegime, type FarmContext, type FarmType } from '../../rust/bridge/landuseTools';
 import type { World, Farmstead, Polygon, Vec2 } from '../src/gen/types';
 
 const T = 600000;

@@ -1,5 +1,10 @@
 //! Small loopback service sharing the exact native crates with the browser builds.
 //! Independent sessions retain terrain/urban layouts; rasters cross the boundary as bytes.
+mod forest;
+mod landuse;
+mod site;
+mod water;
+mod terrain_session;
 mod urban_session;
 #[cfg(test)]
 mod urban_source_tests;
@@ -32,7 +37,8 @@ struct Session {
     field: Vec<f32>,
     field_n: usize,
     field_exact: bool,
-    settlements: Option<settlements::Terrain>,
+    /// Immutable once built; city-lane sessions share one copy (see `raster_upload`).
+    settlements: Option<Arc<settlements::Terrain>>,
     layouts: Option<(u64, Arc<Vec<urban::Layout>>)>,
     urban: RetainedUrban,
 }
@@ -40,6 +46,9 @@ struct Session {
 pub(crate) struct Sessions {
     clock: u64,
     entries: HashMap<String, (u64, Arc<Mutex<Session>>)>,
+    /// Uploaded settlement terrains by client raster id. Weak: a terrain lives exactly as long
+    /// as one session holds it, so releasing or evicting one lane never strips another.
+    rasters: HashMap<String, std::sync::Weak<settlements::Terrain>>,
 }
 impl Sessions {
     /// A retained-source read must never recreate an evicted session.
@@ -346,51 +355,6 @@ fn terrain_reply(input: TerrainRequest, state: &mut Session) -> ApiResult<Reply>
 }
 
 #[derive(Deserialize)]
-struct CoastHeader {
-    seed: String,
-    width: f64,
-    relief: String,
-    erosion: f64,
-    #[serde(rename = "motifSize")]
-    motif_size: f64,
-    #[serde(rename = "mountainMix")]
-    mountain_mix: f64,
-    environment: Option<String>,
-    mask: u32,
-    mode: String,
-    /// Erosion overrides in force when the browser engine is built, then while its coast erodes (null: default).
-    #[serde(rename = "buildTuning")]
-    build_tuning: Vec<Option<f64>>,
-    #[serde(rename = "coastTuning")]
-    coast_tuning: Vec<Option<f64>>,
-}
-/// Stateless coast cut + surface erosion of a finished procedural source (the browser
-/// `TerrainEngine.with_source` + `set_coast`). Body: u32 header length, JSON header, f32 source.
-/// Reply: the coastal surface (f32), for `configure_coast` + `set_coast_surface`.
-fn terrain_coast(body: &[u8]) -> ApiResult<Reply> {
-    let header_len = u32::from_le_bytes(body.get(..4).ok_or("Coast request incomplete.")?.try_into().map_err(|_| "Coast request incomplete.")?) as usize;
-    let end = 4_usize.checked_add(header_len).ok_or("Coast request invalid.")?;
-    let header: CoastHeader = decode(body.get(4..end).ok_or("Coast request incomplete.")?)?;
-    let data = body.get(end..).filter(|d| d.len() % 4 == 0 && !d.is_empty()).ok_or("Coast source missing.")?;
-    if header.mask == 0 || header.mask > 255 { return Err("Invalid coast mask.".into()); }
-    let source: Vec<f32> = data.as_chunks::<4>().0.iter().map(|b| f32::from_le_bytes(*b)).collect();
-    let tuning = |values: &[Option<f64>]| -> Vec<f64> { values.iter().map(|v| v.unwrap_or(f64::NAN)).collect() };
-    let result = (|| {
-        magna_urbis_core::set_erosion_tuning(&tuning(&header.build_tuning));
-        let mut generator = TerrainGenerator::new_mixed_with_source(&header.seed, header.width, &header.relief, header.erosion,
-            header.motif_size, header.mountain_mix, source, header.environment.as_deref())?;
-        magna_urbis_core::set_erosion_tuning(&tuning(&header.coast_tuning));
-        generator.set_coast(header.mask, &header.mode)?;
-        Ok::<_, String>(generator.sampling_base_field())
-    })();
-    magna_urbis_core::set_erosion_tuning(&[]);
-    let field = result?;
-    let mut body = Vec::with_capacity(field.len() * 4);
-    extend_f32_le(&mut body, &field);
-    Ok(Reply { kind: "application/octet-stream", body })
-}
-
-#[derive(Deserialize)]
 struct RasterHeader {
     session: String,
     width: f64,
@@ -404,6 +368,30 @@ struct RasterHeader {
     geometry: Option<urban::VectorGeography>,
     #[serde(default)]
     region: Option<magna_urbis_core::resources::RegionInput>,
+    /// Client identity of this raster's content; later sessions may share it by id.
+    #[serde(default, rename = "rasterId")]
+    raster_id: Option<String>,
+    /// Header-only request: attach the terrain already uploaded under `rasterId`.
+    #[serde(default)]
+    shared: bool,
+}
+/// `{"session","rasterId","shared":true}` with no planes: the city lanes upload one raster and
+/// the other lane sessions take the same immutable terrain (an Arc, no copy, no parse).
+fn raster_share(header: RasterHeader, sessions: &Mutex<Sessions>) -> ApiResult<Reply> {
+    let id = header.raster_id.as_deref().ok_or("[raster_missing] rasterId required.")?;
+    let (session, terrain) = {
+        let mut sessions = sessions.lock().map_err(|_| "Sessions indisponibles.")?;
+        let terrain = sessions.rasters.get(id).and_then(std::sync::Weak::upgrade);
+        (sessions.get(&header.session)?, terrain)
+    };
+    let mut state = session.lock().map_err(|_| "Session indisponible.")?;
+    // Same contract as an upload: a failed replacement leaves no previous terrain behind.
+    state.settlements = None;
+    state.layouts = None;
+    state.urban.invalidate_terrain();
+    state.settlements = Some(terrain.ok_or("[raster_missing] Shared raster released; upload it again.")?);
+    state.urban.retain_terrain()?;
+    json_reply(json!({"ok": true, "session": header.session, "shared": true}))
 }
 fn raster_upload(body: &[u8], sessions: &Mutex<Sessions>) -> ApiResult<Reply> {
     let header_len = u32::from_le_bytes(
@@ -414,6 +402,12 @@ fn raster_upload(body: &[u8], sessions: &Mutex<Sessions>) -> ApiResult<Reply> {
     ) as usize;
     let end = 4_usize.checked_add(header_len).ok_or("Raster invalide.")?;
     let header: RasterHeader = decode(body.get(4..end).ok_or("Raster incomplet.")?)?;
+    if header.shared {
+        return raster_share(header, sessions);
+    }
+    if header.raster_id.as_ref().is_some_and(|id| id.is_empty() || id.len() > 128) {
+        return Err("Identifiant de raster invalide.".into());
+    }
     let session = sessions
         .lock()
         .map_err(|_| "Sessions indisponibles.")?
@@ -482,8 +476,15 @@ fn raster_upload(body: &[u8], sessions: &Mutex<Sessions>) -> ApiResult<Reply> {
     if let Some(region) = header.region {
         terrain.set_region(region);
     }
-    state.settlements = Some(terrain);
+    let terrain = Arc::new(terrain);
+    state.settlements = Some(Arc::clone(&terrain));
     state.urban.retain_terrain()?;
+    drop(state);
+    if let Some(id) = header.raster_id {
+        let mut sessions = sessions.lock().map_err(|_| "Sessions indisponibles.")?;
+        sessions.rasters.retain(|_, weak| weak.strong_count() > 0);
+        sessions.rasters.insert(id, Arc::downgrade(&terrain));
+    }
     json_reply(json!({"ok": true, "session": header.session}))
 }
 
@@ -1042,16 +1043,24 @@ pub(crate) fn dispatch(path: &str, body: &[u8], sessions: &Mutex<Sessions>) -> A
     if path == "/status" {
         return json_reply(
             json!({"ok": true, "service": "magna-urbis-local", "backend": "rust-native", "version": 1,
-                "capabilities": ["terrain.coast-v1", "urban.programme", "urban.programme-functions-v1", "urban.building-sites", "urban.building-site-pages", "urban.building-site-read", "urban.built-capacity", "urban.architecture-culture", "urban.house-mix", "urban.retained-source", "urban.display-buffers",
+                "capabilities": ["landuse.stage-v1", "terrain.water-v1", "terrain.relief-session-v1","site.choose-v1", "terrain.forest-v1", "urban.programme", "urban.programme-functions-v1", "urban.building-sites", "urban.building-site-pages", "urban.building-site-read", "urban.built-capacity", "urban.architecture-culture", "urban.house-mix", "urban.retained-source", "urban.display-buffers",
                     "houses.placement", "houses.profiles", "houses.enrich", "houses.config-template", "houses.workshop-template", "houses.parcel-fit", "houses.compact-plans", "houses.style-index", "houses.native-minimum-candidates-v1", "houses.functional-choices-v1", "houses.native-assembly-pair-1", "houses.native-assembly-std-json-v1", "houses.native-parent-batch-1", "houses.native-parent-session-1"]}),
         );
     }
     if path == "/raster" {
         return raster_upload(body, sessions);
     }
-    if path == "/terrain/coast" {
-        return terrain_coast(body);
+    if path == "/terrain/relief" {
+        return terrain_session::handle(body, sessions);
     }
+    if path == "/site/choose" {
+        return site::handle(body);
+    }
+    if path == "/terrain/forest" {
+        return forest::handle(body);
+    }
+    if path == "/terrain/water" { return water::handle(body); }
+    if path == "/landuse" { return landuse::handle(body); }
     if path.starts_with("/houses/") {
         return houses_reply(path, body);
     }
@@ -1323,19 +1332,30 @@ fn handle_one(stream: &mut TcpStream, sessions: &Mutex<Sessions>, bytes: &mut Ve
         let _ = respond(stream, "400 Bad Request", origin, Reply { kind: "text/plain", body: b"Invalid request".to_vec() });
         return false;
     }
-    while bytes.len() - head_end < length {
-        let remaining = length - (bytes.len() - head_end);
-        let chunk = remaining.min(scratch.len());
-        match stream.read(&mut scratch[..chunk]) {
+    // Read large bodies (rasters: 15 MB) straight into the buffer, reserved once: no 8 KB
+    // round trips through `scratch`, no regrowth copies.
+    let total = head_end + length;
+    bytes.reserve(total.saturating_sub(bytes.len()));
+    while bytes.len() < total {
+        let start = bytes.len();
+        let end = total.min(start + (4 << 20));
+        bytes.resize(end, 0);
+        match stream.read(&mut bytes[start..end]) {
             Ok(0) | Err(_) => return false,
-            Ok(n) => bytes.extend_from_slice(&scratch[..n]),
+            Ok(n) => bytes.truncate(start + n),
         }
     }
     let result = if method == "OPTIONS" {
         Ok(Reply { kind: "text/plain", body: vec![] })
     } else {
         CLIENT_PROBE.with(|probe| *probe.borrow_mut() = stream.try_clone().ok());
-        let result = dispatch(path, &bytes[head_end..head_end + length], sessions);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(||
+            dispatch(path, &bytes[head_end..head_end + length], sessions)))
+            .unwrap_or_else(|panic| {
+                let message = panic.downcast_ref::<String>().map(String::as_str)
+                    .or_else(|| panic.downcast_ref::<&str>().copied()).unwrap_or("unknown panic");
+                Err(format!("Native request panicked: {message}"))
+            });
         CLIENT_PROBE.with(|probe| *probe.borrow_mut() = None);
         result
     };

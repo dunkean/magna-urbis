@@ -12,7 +12,7 @@ import { polygonCentroid } from '../src/gen/core/geom';
 import { ribbon } from '../src/gen/geo/offset';
 import { generate } from '../src/gen/pipeline';
 import { makeOptions } from '../src/gen/options';
-import { urbanNaturalGround } from '../src/gen/landuse/urbanGround';
+import { urbanNaturalGround } from '../../rust/bridge/landuseNative';
 import { urbanLandscapeGround, landscapeCoverGround } from '../src/gen/landuse/landscapeGround';
 import { checkWorld } from './urbanCheck';
 import '../src/gen/urban/cultures';

@@ -87,10 +87,13 @@ export function segSegT(a: Vec2, b: Vec2, c: Vec2, d: Vec2): { t: number; u: num
   return { t, u };
 }
 
-/** True when the ring has no self-intersections (O(n²), for validation / tests). */
+/** True when the ring has no self-intersections. Long rings (river ribbons, coasts) sweep the edges by x
+ * and test only pairs whose boxes touch, with the exact same predicate and argument order as the
+ * all-pairs loop; disjoint boxes cannot intersect. */
 export function isSimple(p: Polygon): boolean {
   const n = p.length;
   if (n < 3) return false;
+  if (n > 32) return isSimpleSweep(p);
   for (let i = 0; i < n; i++) {
     const a = p[i], b = p[(i + 1) % n];
     for (let j = i + 1; j < n; j++) {
@@ -98,6 +101,34 @@ export function isSimple(p: Polygon): boolean {
       const c = p[j], d = p[(j + 1) % n];
       const r = segSegT(a, b, c, d);
       if (r && r.t > 1e-9 && r.t < 1 - 1e-9 && r.u > 1e-9 && r.u < 1 - 1e-9) return false;
+    }
+  }
+  return true;
+}
+function isSimpleSweep(p: Polygon): boolean {
+  const n = p.length, x0 = new Float64Array(n), x1 = new Float64Array(n), y0 = new Float64Array(n), y1 = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const a = p[i], b = p[(i + 1) % n];
+    x0[i] = Math.min(a.x, b.x); x1[i] = Math.max(a.x, b.x); y0[i] = Math.min(a.y, b.y); y1[i] = Math.max(a.y, b.y);
+  }
+  const order = Array.from({ length: n }, (_, i) => i).sort((a, b) => x0[a] - x0[b]);
+  for (let k = 0; k < n; k++) {
+    const e = order[k], right = x1[e], bottom = y0[e], top = y1[e];
+    for (let m = k + 1; m < n; m++) {
+      const f = order[m];
+      if (x0[f] > right) break;
+      if (y0[f] > top || y1[f] < bottom) continue;
+      // Same pair, same order and same skip rule as the all-pairs loop (i < j).
+      const i = e < f ? e : f, j = e < f ? f : e;
+      if ((j + 1) % n === i || (i + 1) % n === j) continue;
+      const a = p[i], b = p[(i + 1) % n], c = p[j], d = p[(j + 1) % n];
+      const rx = b.x - a.x, ry = b.y - a.y, sx = d.x - c.x, sy = d.y - c.y;
+      const den = rx * sy - ry * sx;
+      if (Math.abs(den) < 1e-12) continue;
+      const qx = c.x - a.x, qy = c.y - a.y;
+      const t = (qx * sy - qy * sx) / den, u = (qx * ry - qy * rx) / den;
+      if (t < 0 || t > 1 || u < 0 || u > 1) continue;
+      if (t > 1e-9 && t < 1 - 1e-9 && u > 1e-9 && u < 1 - 1e-9) return false;
     }
   }
   return true;

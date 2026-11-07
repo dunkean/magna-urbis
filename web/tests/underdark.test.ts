@@ -5,7 +5,7 @@ import type { Polygon } from '../src/gen/core/geom';
 import { area, pointInRing } from '../src/gen/geo/poly';
 import { mpArea, tryDifference, tryIntersection } from '../src/gen/geo/bool';
 import { insetConvex } from '../src/gen/geo/offset';
-import { FARM_SIZES, farmType, frameOf, layoutFarm, placeFarm, type FarmContext, type FarmType } from '../src/gen/landuse/farms';
+import { FARM_SIZES, farmType, frameOf, layoutFarm, placeFarm, type FarmContext, type FarmType } from '../../rust/bridge/landuseTools';
 import { generate } from '../src/gen/pipeline';
 import { fromQuery, makeOptions, toQuery } from '../src/gen/options';
 import type { World } from '../src/gen/types';

@@ -11,6 +11,8 @@
 import { RENDER_V2_ZONE_GLSL } from './terrainRenderV2Zones';
 import { forestBeachGrid } from './terrainForestBeach';
 import { FOREST_BANK_GLSL, forestBankDensity, forestBankField, forestLakeInterior, forestRoutingRiverSegments, forestSegmentsKey, type ForestBank } from './terrainForestRiparian';
+import { forestPlanes } from './forestNative';
+import { executionRuntime, type ExecutionRuntime } from '../../web/src/ui/executionProfile';
 
 export interface ForestSettings { enabled: boolean; density: number; clearings: number }
 /** density 0..2 (1 = climate potential), clearings 0..1. */
@@ -231,9 +233,28 @@ export function v2StandCoverage(cover: number, stand: number, disturbed: number,
 let baseCache: { key: string; base: Float32Array; optical: Float32Array; eligible: Float32Array; bank?: ForestBank } | undefined;
 let beachCache: { key: string; beach: ForestBeachGrid } | undefined;
 /** Deterministic in (seed, climate, heights, water, rivers, settings); no Math.random.
- * Terrain/climate terms vary at the height grid's scale and are evaluated on a
- * half-resolution base grid; clearings stay at full resolution. */
-export function buildForestField(input: ForestFieldInput, settings: ForestSettings = DEFAULT_FOREST_SETTINGS): ForestField {
+ * Rust (`magna_urbis_terrain::forest`, `forestNative.ts`) in the local profile (native `/terrain/forest`)
+ * and in isolated web workers (threads WASM package: ~7x faster than this TypeScript). The web main thread
+ * and single-thread realms keep this TypeScript: its base and beach caches make slider edits ~4x faster than
+ * a stateless single-thread WASM rebuild, and a cold build is within ~15 % (web-parity report, 2026-11-07).
+ * Same bytes either way. */
+export async function buildForestField(input: ForestFieldInput, settings: ForestSettings = DEFAULT_FOREST_SETTINGS, runtime: ExecutionRuntime = executionRuntime): Promise<ForestField> {
+  if (runtime.profile !== 'local') {
+    const { expectedWasmThreads, inWorker } = await import('./wasmThreads');
+    if (!(inWorker() && expectedWasmThreads().mode === 'threads')) return buildForestFieldTs(input, settings);
+  }
+  const layer = input.height, [T, P] = input.climate, seed = input.seed >>> 0, n = layer.n;
+  const density = clamp(settings.density, 0, 2), clearings = clamp(settings.clearings, 0, 1);
+  const terrainKey = `forest7:${seed}:${T}:${P}:${layer.x},${layer.y},${layer.width},${n}:${fnv(new Uint8Array(layer.data.buffer, layer.data.byteOffset, layer.data.byteLength)).toString(36)}`
+    + `:${input.water ? fnv(input.water).toString(36) : '-'}:${forestSegmentsKey(input.riverSegments)}`;
+  const key = `${terrainKey}:${settings.enabled ? 1 : 0}:${density}:${clearings}:${input.occupation?.key ?? '-'}`
+    + (input.clearingProfile === 'progressive' ? `:${V2_FOREST_PROFILE_VERSION}` : '');
+  const planes = await forestPlanes({ seed, climate: input.climate, x: layer.x, y: layer.y, width: layer.width, n, height: layer.data,
+    water: input.water, riverSegments: input.riverSegments, enabled: settings.enabled, density, clearings, progressive: input.clearingProfile === 'progressive' }, runtime);
+  return { x: layer.x, y: layer.y, width: layer.width, n: planes.n, rgba: planes.rgba, bank: planes.bank, bankDensity: density, clearingProfile: input.clearingProfile, beach: planes.beach, key };
+}
+/** The TypeScript forest field (web main thread and single-thread realms), with its terrain-keyed base and beach caches. */
+function buildForestFieldTs(input: ForestFieldInput, settings: ForestSettings): ForestField {
   const layer = input.height, [T, P] = input.climate, seed = input.seed >>> 0;
   const N = forestFieldResolution(layer.width), cell = layer.width / N, n = layer.n, source = layer.width / n;
   const density = clamp(settings.density, 0, 2), clearings = clamp(settings.clearings, 0, 1);

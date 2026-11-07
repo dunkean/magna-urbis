@@ -17,6 +17,7 @@ import type { RRequest, RResponse, RView, DisplayOpts, WorldMsg, RAttach, PortMs
 import { decodeBrushes, type BrushImages } from '../render/brushes';
 import { worldMeta } from './worldMeta';
 import { refreshCavernMask } from '../gen/terrain/caverns';
+import { loadRenderGeometry } from '../../../rust/bridge/renderGeometry';
 
 const ctx = self as unknown as Worker;
 const post = (r: RResponse, transfer: Transferable[] = []): void => ctx.postMessage(r, transfer);
@@ -184,7 +185,8 @@ ctx.onmessage = (e: MessageEvent<RRequest>): void => {
         curDpr = m.dpr;
         const p = probe();
         if (p.ok) canvas = new OffscreenCanvas(1, 1);
-        post({ type: 'ready', ok: p.ok, reason: p.reason });
+        // The canvas renderer calls the Rust render geometry synchronously.
+        void loadRenderGeometry().then(() => post({ type: 'ready', ok: p.ok, reason: p.reason }), error => post({ type: 'ready', ok: false, reason: String(error) }));
         break;
       }
       case 'brushes': {

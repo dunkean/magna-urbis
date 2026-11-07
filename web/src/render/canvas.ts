@@ -24,7 +24,7 @@ import { Palette, MapStyle, ruralInk } from './styles';
 import { forestLandPaint, FOREST_EDGE_WIDTH } from './landuseForestTone';
 import { rasterizePolys } from '../gen/geo/raster';
 import { distanceField } from '../gen/core/field';
-import { vectorize } from '../gen/landuse/rural';
+import { vectorizeRegions } from '../../../rust/bridge/landuseNative';
 import { TileIndex, boxesOf } from './tileindex';
 import { biomePalette } from './biomes';
 import { applyRenderColors, type RenderColors } from './customColors';
@@ -377,7 +377,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     // Tracks and streams cut narrow gaps: the wood carries on across them, only its true edges fade.
     const depth = distanceField(Uint8Array.from(mask, (v, j) => v || reach[j] < 20 ? 0 : 1), n, n, cell).dist;
     const layerOf = (suffix: string, ind: Float32Array): PolyLayer => {
-      const regions = vectorize(ind, n, n, cell, 0, { x0: 0, y0: 0, x1: n - 1, y1: n - 1 });
+      const regions = vectorizeRegions(ind, n, n, cell, 0, { x0: 0, y0: 0, x1: n - 1, y1: n - 1 });
       const polys = regions.map(r => r.outer), holes = regions.map(r => r.holes);
       return { name: `${name}-${suffix}`, polys, holes, index: new TileIndex(S, scene.tileSize, boxesOf(polys), 'center') };
     };

@@ -12,6 +12,8 @@ serde = { version = "1", features = ["derive"] }
 delaunator = "1"
 geo = { version = "=0.33.1", default-features = false, features = ["earcut"] }
 serde_json = "1"
+# Polygon booleans of render_geometry and landuse (same pin as rust/crates/houses).
+i_overlay = "=4.5.2"
 
 # Deterministic per-quarter / per-block parallelism (urban/par.rs). wasm32 runs
 # serially unless the `threads` feature is on (atomics build, wasm-bindgen-rayon pool).

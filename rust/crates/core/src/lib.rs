@@ -2,8 +2,11 @@
 //! (re-exported here, so `magna_urbis_core::TerrainGenerator` etc. keep working);
 //! resources, settlements and urban stay in this crate.
 mod rng;
+pub mod landuse;
+pub mod render_geometry;
 pub mod resources;
 pub mod settlements;
+pub mod site;
 pub mod urban;
 
 pub use magna_urbis_terrain::*;

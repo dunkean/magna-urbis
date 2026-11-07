@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Polygon } from '../src/gen/types';
 import { rasterizePolys } from '../src/gen/geo/raster';
 import { intersectionS, mpArea } from '../src/gen/geo/bool';
-import { farmGrowthReserve } from '../src/gen/landuse/rural';
+import { farmGrowthReserve } from '../../rust/bridge/landuseTools';
 import { quarterRoofCollar } from '../src/gen/urban/edgeFinish';
 import { generate } from '../src/gen/pipeline';
 import { makeOptions } from '../src/gen/options';

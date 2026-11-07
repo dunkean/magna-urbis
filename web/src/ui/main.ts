@@ -1,3 +1,4 @@
+import { loadCoreWasm } from '../../../rust/bridge/wasmRuntime';
 import { Options, SIZE_PRESETS, mapSizeOf, DEFAULT_ROADS, fromQuery, toQuery, wantsCustomHeight, DEFAULTS, withCulture, generationUid, SITE_ARCHETYPES, mapId } from '../gen/options';
 import { expandMapQuery } from '../gen/mapId';
 import { generate } from '../gen/pipeline';
@@ -585,9 +586,11 @@ function run(debugStage?: DebugStage): void {
     workerBusy = true;
     worker.postMessage({ id, options: opts, debugStage });
   } else {
-    setTimeout(() => {
+    setTimeout(async () => {
       if (id !== reqId) return;
       try {
+        await loadCoreWasm();
+        if (id !== reqId) return;
         if (debugStage !== undefined && (debugStage === 0 || !mainDebug || debugConfigurationKey(mainDebug.options) !== debugConfigurationKey(opts))) mainDebug = new DebugGeneration(opts);
         const world = debugStage === undefined ? generate(opts, undefined, { cache: mainCache }) : mainDebug!.advance(debugStage, undefined, opts);
         show(world, world.stats, Math.round(performance.now() - genStart));

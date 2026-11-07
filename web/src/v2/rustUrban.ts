@@ -12,6 +12,7 @@ import { differenceS } from '../gen/geo/bool';
 import { ribbon } from '../gen/geo/offset';
 import { pointInRing } from '../gen/geo/poly';
 import { streetSeedConfig, urbanSeed } from './urbanSeeds';
+import type { CityGroundRaster } from '../render/cityGround';
 
 export interface RustTownSnapshot {
   backend: 'rust-wasm-cpu' | 'rust-native-cpu';
@@ -110,6 +111,20 @@ export function rustSettlementRaster(world: World): SettlementRaster {
   physicalRasters.set(grid, { width: world.mapSize, cell, height: grid.data, physical: physical?.height, physicalFloor: physical?.floor, physicalInterpolation: physical?.interpolation, water: terrain.water, filled: terrain.filled, seaLevel: terrain.seaLevel, coastline: terrain.coastline, islands: terrain.islands, lakes: terrain.lakes,
     rivers: terrain.rivers.map(river => ({ path: river.path, width: river.width, id: river.id })), raster });
   return raster;
+}
+
+type CityGroundTerrain = World['terrain'] & { v2CityGround?: CityGroundRaster };
+/** The engine worker retains the display ground of the native cities (water mask and closed water
+ * domains, river ribbons included) on the terrain it ships, so the page never rebuilds the
+ * settlement raster: it is the worker's cached raster, without its heights and river planes. */
+export function retainCityGround(world: World): void {
+  const raster = rustSettlementRaster(world);
+  (world.terrain as CityGroundTerrain).v2CityGround = { width: raster.width, n: raster.n, water: raster.water,
+    ...(raster.geometry ? { geometry: { water: raster.geometry.water } } : {}) };
+}
+/** Display ground of the native cities: the retained engine product, rebuilt only for a world that has none (an imported project). */
+export function cityGroundOf(world: World): CityGroundRaster {
+  return (world.terrain as CityGroundTerrain).v2CityGround ?? rustSettlementRaster(world);
 }
 
 export function resolveRustUrbanControls(settings: V2Settings, key: string, options: Options): { layout: LayoutConfig; parcels: ParcelConfig; houses: PlacementBatchSettings } {

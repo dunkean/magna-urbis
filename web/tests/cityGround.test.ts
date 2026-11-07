@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { loadRenderGeometry } from '../../rust/bridge/renderGeometry';
 import type { Layout, Partition, Shape, Street } from '../../rust/bridge/urban';
 import { CityGround } from '../src/render/cityGround';
 import { buildCityScene, buildCityBuildings } from '../src/render/cityCanvas';
@@ -11,6 +12,9 @@ import type { PlacedBuilding } from '../../rust/bridge/urbanArchitecture';
 
 const rect = (x: number, y: number, w: number, h = w): Shape => ({ outer: [{ x, y }, { x:x+w, y }, { x:x+w, y:y+h }, { x, y:y+h }], holes: [] });
 const raster = { n: 4, width: 40, water: Uint8Array.from({ length:16 }, (_, i) => i % 4 >= 2 ? 1 : 0) };
+
+// The ported geometry runs in the Rust WASM package (synchronous calls).
+beforeAll(() => loadRenderGeometry());
 
 describe('physical city ground', () => {
   it('retains dry land and exact cadastral picking but no wet ground in any mesh layer', () => {

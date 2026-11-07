@@ -1,3 +1,5 @@
+import { interpolateDelta } from './waterNative';
+import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
 /**
  * Adjustments of sampled terrain regions in the bench: a height change kept
  * on a coarse grid (pre-hydrology conditioning), fractal refinement below the
@@ -28,28 +30,13 @@ function addGradient(data: SurfaceData, change: Float32Array): void {
 }
 
 /** Adds a height change kept on an `m²` grid over the map, interpolated by cubic B-splines. */
-export function applyDelta(data: SurfaceData, delta: Float32Array, m: number, mapWidth: number): void {
-  const n = data.resolution, cell = data.width / n, dc = mapWidth / m;
-  const axis = (origin: number): { i: Int32Array; w: Float64Array } => {
-    const i = new Int32Array(n * 4), w = new Float64Array(n * 4);
-    for (let k = 0; k < n; k++) {
-      const g = Math.max(0, Math.min(m - 1, (origin + (k + 0.5) * cell) / dc - 0.5)), f = Math.floor(g), t = g - f, u = 1 - t;
-      for (let j = 0; j < 4; j++) i[k * 4 + j] = Math.max(0, Math.min(m - 1, f + j - 1));
-      w.set([u ** 3 / 6, (3 * t ** 3 - 6 * t * t + 4) / 6, (-3 * t ** 3 + 3 * t * t + 3 * t + 1) / 6, t ** 3 / 6], k * 4);
-    }
-    return { i, w };
-  };
-  const xs = axis(data.x), ys = axis(data.y), change = new Float32Array(n * n);
+export async function applyDelta(data: SurfaceData, delta: Float32Array, m: number, mapWidth: number, runtime?: ExecutionRuntime): Promise<void> {
+  const values = await interpolateDelta(delta, m, data.resolution, mapWidth, data, runtime);
+  const change = new Float32Array(values.length);
   let any = false;
-  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
-    let v = 0;
-    for (let a = 0; a < 4; a++) {
-      const row = ys.i[y * 4 + a] * m, wy = ys.w[y * 4 + a];
-      for (let b = 0; b < 4; b++) v += delta[row + xs.i[x * 4 + b]] * wy * xs.w[x * 4 + b];
-    }
-    // Sea stays sea: the conditioning only reshapes land.
-    if (data.height[y * n + x] <= 0) v = Math.min(0, v);
-    change[y * n + x] = v; data.height[y * n + x] += v; any ||= v !== 0;
+  for (let i = 0; i < values.length; i++) {
+    const v = data.height[i] <= 0 ? Math.min(0, values[i]) : values[i];
+    change[i] = v; data.height[i] += v; any ||= v !== 0;
   }
   if (any) addGradient(data, change);
 }
@@ -155,31 +142,5 @@ export function fitNeuralSurface(heights: Float32Array, extent: number, width: n
   return heights;
 }
 
-/** Cubic B-spline upsampling of an `m²` grid to `n²` over the same extent. */
-export function upsampleDelta(delta: Float32Array, m: number, n: number): Float32Array {
-  if (m === n) return delta;
-  const out = new Float32Array(n * n), f = m / n;
-  const axis = (k: number): [number[], number[]] => {
-    const g = Math.max(0, Math.min(m - 1, (k + 0.5) * f - 0.5)), i = Math.floor(g), t = g - i, u = 1 - t;
-    return [[i - 1, i, i + 1, i + 2].map(v => Math.max(0, Math.min(m - 1, v))), [u ** 3 / 6, (3 * t ** 3 - 6 * t * t + 4) / 6, (-3 * t ** 3 + 3 * t * t + 3 * t + 1) / 6, t ** 3 / 6]];
-  };
-  // Flat taps and weights; the sum keeps the same terms in the same order (bit-identical).
-  const index = new Int32Array(4 * n), weight = new Float64Array(4 * n);
-  for (let k = 0; k < n; k++) { const [i, w] = axis(k); for (let a = 0; a < 4; a++) { index[4 * k + a] = i[a]; weight[4 * k + a] = w[a]; } }
-  for (let y = 0; y < n; y++) {
-    const y4 = 4 * y;
-    const r0 = index[y4] * m, r1 = index[y4 + 1] * m, r2 = index[y4 + 2] * m, r3 = index[y4 + 3] * m;
-    const w0 = weight[y4], w1 = weight[y4 + 1], w2 = weight[y4 + 2], w3 = weight[y4 + 3];
-    for (let x = 0; x < n; x++) {
-      const x4 = 4 * x, c0 = index[x4], c1 = index[x4 + 1], c2 = index[x4 + 2], c3 = index[x4 + 3];
-      const v0 = weight[x4], v1 = weight[x4 + 1], v2 = weight[x4 + 2], v3 = weight[x4 + 3];
-      let v = 0;
-      v += delta[r0 + c0] * w0 * v0; v += delta[r0 + c1] * w0 * v1; v += delta[r0 + c2] * w0 * v2; v += delta[r0 + c3] * w0 * v3;
-      v += delta[r1 + c0] * w1 * v0; v += delta[r1 + c1] * w1 * v1; v += delta[r1 + c2] * w1 * v2; v += delta[r1 + c3] * w1 * v3;
-      v += delta[r2 + c0] * w2 * v0; v += delta[r2 + c1] * w2 * v1; v += delta[r2 + c2] * w2 * v2; v += delta[r2 + c3] * w2 * v3;
-      v += delta[r3 + c0] * w3 * v0; v += delta[r3 + c1] * w3 * v1; v += delta[r3 + c2] * w3 * v2; v += delta[r3 + c3] * w3 * v3;
-      out[y * n + x] = v;
-    }
-  }
-  return out;
-}
+/** Rust cubic B-spline interpolation shared by conditioning and display deltas. */
+export { upsampleDelta } from './waterNative';

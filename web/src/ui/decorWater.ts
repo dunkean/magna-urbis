@@ -1,9 +1,7 @@
 import type { RenderColors } from '../render/customColors';
 import { hydrologyWaterColour } from '../../../rust/bridge/hydrologyRender';
 import type { TerrainStyle } from '../../../rust/bridge/terrainRender';
-import { landPath, landRings } from '../../../rust/bridge/urbanGeography';
-import { lakeMaterialSvg, encodeWaterField, decodeWaterField } from '../render/terrainWater';
-import { lakeField } from './lakeGeometry';
+import { lakeMaterialSvg, decodeWaterField } from '../render/terrainWater';
 import type { Decor } from './decor';
 
 export interface RetainedWaterMaterial {
@@ -14,19 +12,10 @@ export interface RetainedWaterMaterial {
   x?: number; y?: number; extent?: number;
 }
 const fields = new WeakMap<RetainedWaterMaterial, Float32Array>();
-const legacyMaterials = new WeakMap<Decor, RetainedWaterMaterial>();
-
-/** Old files retain their masks. Rebuild neutral input instead of reusing a colored PNG. */
+/** Water material is produced by the water chain and retained during capture. */
 export function retainedWaterMaterial(decor: Decor): RetainedWaterMaterial {
-  if (decor.meta.waterMaterial) return decor.meta.waterMaterial;
-  let material = legacyMaterials.get(decor);
-  if (!material) {
-    const r = decor.raster, mask = Uint8Array.from(r.water, value => value === 2 ? 1 : 0);
-    material = { field: encodeWaterField(lakeField(mask, r.n).values), n: r.n, width: r.width,
-      referenceWidth: decor.meta.terrainDisplay?.referenceWidth ?? r.width,
-      path: landPath(landRings(Float32Array.from(mask, v => v ? 1 : -1), r.n, r.width)) };
-    legacyMaterials.set(decor, material);
-  }
+  const material = decor.meta.waterMaterial;
+  if (!material) throw new Error('Decor has no retained water material; recapture it from Terrain Bench.');
   return material;
 }
 

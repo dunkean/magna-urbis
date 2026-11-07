@@ -11,9 +11,10 @@ export function ruralSoilField(source: ResourcePayload | ResourceGrid): (x: numb
   const grid = 'bytes' in source ? source : decodeResources(source), { nx, ny, cell, x0, y0 } = grid;
   const f = new Float32Array(nx * ny);
   for (let k = 0; k < f.length; k++) f[k] = fertilityAt(grid.value('soil_depth', k), grid.value('stoniness', k), grid.value('drainage', k));
-  return (x, y) => {
+  const sample = (x: number, y: number) => {
     const gx = Math.max(0, Math.min(nx - 1, (x - x0) / cell - 0.5)), gy = Math.max(0, Math.min(ny - 1, (y - y0) / cell - 0.5));
     const i = Math.floor(gx), j = Math.floor(gy), i1 = Math.min(nx - 1, i + 1), j1 = Math.min(ny - 1, j + 1), tx = gx - i, ty = gy - j;
     return (f[j * nx + i] * (1 - tx) + f[j * nx + i1] * tx) * (1 - ty) + (f[j1 * nx + i] * (1 - tx) + f[j1 * nx + i1] * tx) * ty;
   };
+  return Object.assign(sample, { landuseGrid: { w: nx, h: ny, cell, x0, y0, data: f } });
 }

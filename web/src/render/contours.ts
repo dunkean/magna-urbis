@@ -3,7 +3,7 @@ import type { World, Polyline } from '../gen/types';
 import type { Relief } from '../gen/options';
 import { chaikin, simplify, polylineLength } from '../gen/core/geom';
 import { sampleGrid } from '../gen/core/grid';
-import { ContourWorkspace, marchingSquares } from '../gen/terrain/contour';
+import { contourLevels } from '../../../rust/bridge/renderGeometry';
 
 export const CONTOUR_INTERVAL: Record<Relief, number> = { flat: 2, hills: 5, valley: 5, mountains: 20 };
 
@@ -14,17 +14,19 @@ export interface ContourSet {
 }
 
 /** Every 5th level is an index contour; short and near-flat loops are dropped. `u` = mapSize / 1600. */
-export function contourSet(world: World, u: number, interval = CONTOUR_INTERVAL[world.options.relief], accelerated = false): ContourSet {
+export function contourSet(world: World, u: number, interval = CONTOUR_INTERVAL[world.options.relief]): ContourSet {
   const t = world.terrain;
   const hg = t.height;
   let maxH = 0;
   for (let i = 0; i < hg.data.length; i++) if (hg.data[i] > maxH) maxH = hg.data[i];
   const out: ContourSet = { thin: [], index: [] };
-  const workspace = accelerated ? new ContourWorkspace(hg.data, hg.w, hg.h) : undefined;
-  for (let lv = interval, k = 1; lv < maxH; lv += interval, k++) {
+  const levels: number[] = [];
+  for (let lv = interval; lv < maxH; lv += interval) levels.push(lv);
+  // All levels in one Rust call (marching squares + chaining, render_geometry::contours).
+  const lines = contourLevels(hg.data, hg.w, hg.h, levels, hg.cell, hg.cell / 2, hg.cell / 2);
+  for (let k = 1; k <= levels.length; k++) {
     const dst = k % 5 === 0 ? out.index : out.thin;
-    const paths = marchingSquares(hg.data, hg.w, hg.h, lv, hg.cell, hg.cell / 2, hg.cell / 2, 0, 0, workspace);
-    for (const p of paths) {
+    for (const p of lines[k - 1]) {
       if (p.pts.length < 4) continue;
       let pts = p.pts;
       if (polylineLength(pts) < 35 * u) continue;

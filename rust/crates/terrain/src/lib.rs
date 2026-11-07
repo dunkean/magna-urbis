@@ -3,6 +3,9 @@
 mod channels;
 mod coast;
 mod engine;
+mod forest;
+mod forest_bank;
+mod forest_beach;
 mod erosion;
 mod generation_noise;
 mod hydrology;
@@ -11,6 +14,7 @@ mod priority_flood;
 mod rng;
 mod terrain_par;
 mod terrain_zones;
+pub mod vector_water;
 
 use erosion::{MountainCfg, erode_shape, erode_surface, mountain};
 use noise::Noise;
@@ -22,6 +26,7 @@ pub use erosion::{EROSION_TUNING, set_erosion_tuning, TerrainPipeline};
 pub use erosion::cut_coast_field;
 pub use generation_noise::{GenerationNoise, GenerationNoisePlan};
 pub use hydrology::{HydrologyConfig, HydrologyEngine, HydrologyOutput};
+pub use forest::{ForestParams, ForestPlanes, build_forest_field, forest_field_resolution, forest_request};
 pub use priority_flood::{FloodGrids, erode_grid, flood_grids};
 pub use terrain_zones::{TerrainZones, ZONE_CHANNELS};
 

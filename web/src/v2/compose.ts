@@ -1,6 +1,7 @@
 import type { Options, World, TerrainLayer } from '../gen/types';
 import { Rng } from '../gen/core/rng';
-import { generateNaturalCover } from '../gen/landuse/natural';
+import { generateNaturalCoverNative } from '../../../rust/bridge/landuseNative';
+import { loopbackServer } from './platform';
 import { refreshCavernMask } from '../gen/terrain/caverns';
 import type { V2Project, V2Settings, V2UrbanSettings } from './contracts';
 import { TerrainCache, terrainCache, V2_ENGINE_VERSION } from './cache';
@@ -99,7 +100,8 @@ async function terrainOnly(
     mapSize: retained.mapSize,
     options,
     terrain,
-    landuse: generateNaturalCover(terrain, options.biome === 'underdark-caverns' ? 'underdark' : options.biome, new Rng('magna-urbis:' + retained.seed),(terrain as V2TerrainLayer).v2NaturalForest),
+    landuse: await generateNaturalCoverNative(terrain, options.biome === 'underdark-caverns' ? 'underdark' : options.biome, new Rng('magna-urbis:' + retained.seed),(terrain as V2TerrainLayer).v2NaturalForest,
+      settings.runtime?.backend === 'native' ? { profile: 'local', server: loopbackServer(settings.runtime.localServer ?? 'http://127.0.0.1:8791') } : undefined),
     stats: {
       ...provenance,
       'v2.stage': 'terrain',

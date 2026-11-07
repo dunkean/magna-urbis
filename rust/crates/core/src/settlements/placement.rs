@@ -26,20 +26,46 @@ const SPECIAL_SITES: [&str; 7] = [
 /// Rank-size density at ×1: places per 100 km² of usable land.
 const ZIPF_PLACES_PER_100_KM2: f64 = 10.0;
 
-fn archetype(f: &Fields, i: usize, pop: u32, relief: &str) -> &'static str {
+/// The single-cell archetypes, in `archetype_index` order.
+const ARCHETYPES: [&str; 5] = ["harbor", "bridge", "hilltop", "valley", "plain"];
+fn archetype_index(f: &Fields, i: usize, pop: u32, relief: &str) -> usize {
     let ext = extent_radius(pop);
     if f.ds[i] < ext + 70.0 {
-        "harbor"
+        0
     } else if f.db[i] < ext + 60.0 {
-        "bridge"
+        1
     } else if (f.r.height[i] - f.hb[i]) > 8.0 && f.slope_s[i] < 0.12 {
-        "hilltop"
+        2
     } else if ["valley", "mountains", "high-mountains", "mixed"].contains(&relief)
         && f.dw[i] < 900.0
     {
-        "valley"
+        3
     } else {
-        "plain"
+        4
+    }
+}
+fn archetype(f: &Fields, i: usize, pop: u32, relief: &str) -> &'static str {
+    ARCHETYPES[archetype_index(f, i, pop, relief)]
+}
+/// The per-spec constants of `score` (culture catalogue lookups through `serde_json::Value`),
+/// resolved once per request instead of once per candidate cell. Same values, same order of use.
+struct SitePrep {
+    mountain: f64,
+    /// `log_weight(site_weight(..))` of each archetype, in `ARCHETYPES` order.
+    archetype: [f64; 5],
+    /// `site_weight(..)` of each special site, in `SPECIAL_SITES` order.
+    special: [f64; 7],
+}
+impl SitePrep {
+    fn new(s: &SettlementSpec, cfg: &Config) -> Self {
+        Self {
+            mountain: s
+                .site_prefs
+                .mountain_face
+                .max(crate::urban::culture_site_pref(&s.culture, "mountainFace", 0.0)),
+            archetype: ARCHETYPES.map(|site| log_weight(site_weight(s, cfg, site))),
+            special: SPECIAL_SITES.map(|site| site_weight(s, cfg, site)),
+        }
     }
 }
 fn site_matches(f: &Fields, i: usize, site: &str, pop: u32) -> bool {
@@ -129,15 +155,13 @@ fn log_weight(w: f64) -> f64 {
 fn rural_flexibility(pop: u32) -> f64 {
     1.0 - smooth((pop.max(1) as f64).ln(), 80.0_f64.ln(), 1000.0_f64.ln())
 }
-fn score(f: &Fields, i: usize, s: &SettlementSpec, cfg: &Config, noise: &Noise) -> (Scores, bool) {
+fn score(f: &Fields, i: usize, s: &SettlementSpec, prep: &SitePrep, cfg: &Config, noise: &Noise) -> (Scores, bool) {
     let pop = s.population;
     let p = f.pos(i);
     let ext = extent_radius(pop);
     let prefs = &s.site_prefs;
     // A hill culture (tibetan monastery) carries its own mountain-face preference in the catalogue.
-    let mountain = prefs
-        .mountain_face
-        .max(crate::urban::culture_site_pref(&s.culture, "mountainFace", 0.0));
+    let mountain = prep.mountain;
     let wood = prefs.woodland;
     let rural = rural_flexibility(pop);
     let cap_s = 0.11 + 0.18 * mountain + 0.06 * wood + 0.18 * rural;
@@ -178,9 +202,8 @@ fn score(f: &Fields, i: usize, s: &SettlementSpec, cfg: &Config, noise: &Noise) 
         + 0.6 * mountain * smooth(prominence, 0.0, 30.0)
         + 0.8 * wood
         + 0.4 * wood * smooth(sl, 0.03, 0.1);
-    let mut site = log_weight(site_weight(s, cfg, archetype(f, i, pop, &cfg.relief)));
-    for special in SPECIAL_SITES {
-        let w = site_weight(s, cfg, special);
+    let mut site = prep.archetype[archetype_index(f, i, pop, &cfg.relief)];
+    for (special, &w) in SPECIAL_SITES.iter().zip(&prep.special) {
         if w != 1.0 && site_matches(f, i, special, pop) {
             site += log_weight(w);
         }
@@ -395,6 +418,7 @@ pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
         }
         let pop = s.population;
         let ext = extent_radius(pop);
+        let prep = SitePrep::new(&s, cfg);
         let minimum = |other: &Settlement, relax: f64| -> f64 {
             let mut minimum = extent_gap(pop, other.spec.population)
                 .max(pair_spacing(pop, other.spec.population) * relax);
@@ -407,26 +431,6 @@ pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
             out.settlements
                 .iter()
                 .all(|other| p.distance(other.center) >= minimum(other, relax))
-        };
-        // Candidate cells inside another place's spacing disk, rasterized once per spacing pass
-        // so the candidate scan never scores a cell that cannot be used.
-        let blocked = |relax: f64| -> Vec<bool> {
-            let mut b = vec![false; f.r.n * f.r.n];
-            for other in &out.settlements {
-                let r = minimum(other, relax);
-                let c = f.index(other.center);
-                let (cx, cy) = (c % f.r.n, c / f.r.n);
-                let k = (r / f.cell).ceil() as usize + 1;
-                for y in cy.saturating_sub(k)..=(cy + k).min(f.r.n - 1) {
-                    for x in cx.saturating_sub(k)..=(cx + k).min(f.r.n - 1) {
-                        let i = y * f.r.n + x;
-                        if f.pos(i).distance(other.center) < r {
-                            b[i] = true;
-                        }
-                    }
-                }
-            }
-            b
         };
         let mut chosen = None;
         let mut ranking = None;
@@ -464,10 +468,11 @@ pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
                     population: [8, 40, 300, 3000, 30000][band],
                     ..s.clone()
                 };
+                let rep_prep = SitePrep::new(&rep, cfg);
                 let mut list: Vec<_> = crate::urban::par::map(&candidates, |_, &i| {
                     // Keep every dry candidate: the actual population, rather than a
                     // class representative, determines whether the site is feasible.
-                    (i, score(f, i, &rep, cfg, &noise).0.total)
+                    (i, score(f, i, &rep, &rep_prep, cfg, &noise).0.total)
                 });
                 list.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
                 list
@@ -483,30 +488,18 @@ pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
                 .fork(&format!("settlement:{}", s.key))
                 .fork("placement");
             'search: for &relax in &relaxations {
-                // Built only once the cheap exact check has rejected many candidates.
-                let mut mask: Option<Vec<bool>> = None;
-                let mut rejected = 0;
                 for require_site in [true, false] {
-                    let mut best: Option<(usize, usize, f64, f64)> = None;
-                    for (rank, &(i, ranking_score)) in ranked.iter().enumerate() {
+                    // The weight of a candidate depends only on the cell and the places already
+                    // standing: evaluate them all in parallel, then draw serially in rank order
+                    // (the same draws, in the same order, as one sequential scan).
+                    let weights: Vec<Option<f64>> = crate::urban::par::map(ranked.as_slice(), |_, &(i, _)| {
                         let p = f.pos(i);
-                        if mask.is_none() && rejected >= 256 {
-                            mask = Some(blocked(relax));
+                        if !clear(p, relax) || (require_site && !matches(f, i, &s)) {
+                            return None;
                         }
-                        let free = match &mask {
-                            Some(b) => !b[i],
-                            None => clear(p, relax),
-                        };
-                        if !free {
-                            rejected += 1;
-                            continue;
-                        }
-                        if require_site && !matches(f, i, &s) {
-                            continue;
-                        }
-                        let (actual, valid) = score(f, i, &s, cfg, &noise);
+                        let (actual, valid) = score(f, i, &s, &prep, cfg, &noise);
                         if !valid {
-                            continue;
+                            return None;
                         }
                         // A soft preference for unoccupied territory, strongest for farms and
                         // hamlets. Clustering remains an independent, optional attraction.
@@ -518,10 +511,14 @@ pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
                             })
                             .fold(4.0, f64::min)
                             .clamp(0.25, 4.0);
-                        let log_weight = (actual.total
-                            + cluster_bonus(cfg, &out.settlements, pop, p))
-                            / temperature
-                            + 1.5 * rural * vacancy.ln();
+                        Some(
+                            (actual.total + cluster_bonus(cfg, &out.settlements, pop, p)) / temperature
+                                + 1.5 * rural * vacancy.ln(),
+                        )
+                    });
+                    let mut best: Option<(usize, usize, f64, f64)> = None;
+                    for (rank, (&(i, ranking_score), weight)) in ranked.iter().zip(&weights).enumerate() {
+                        let Some(log_weight) = *weight else { continue };
                         // Gumbel-max samples the full available land with probability proportional
                         // to its weight, without exponent overflow or a shortlist of top sites.
                         let value = log_weight - (-draw.float().max(1e-12).ln()).ln();
@@ -575,12 +572,12 @@ pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
                 y: p.y + jr.range(-0.3, 0.3) * f.cell * stride as f64,
             };
             let j = f.index(jitter);
-            if score(f, j, &s, cfg, &noise).1 && clear(jitter, relax) {
+            if score(f, j, &s, &prep, cfg, &noise).1 && clear(jitter, relax) {
                 p = jitter;
             }
         }
         let final_i = f.index(p);
-        let (mut scores, valid) = score(f, final_i, &s, cfg, &noise);
+        let (mut scores, valid) = score(f, final_i, &s, &prep, cfg, &noise);
         scores.spacing_relaxation = relax;
         scores.cluster = cluster_bonus(cfg, &out.settlements, pop, p);
         scores.total += scores.cluster;

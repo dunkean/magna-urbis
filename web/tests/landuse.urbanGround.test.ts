@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { urbanNaturalGround } from '../src/gen/landuse/urbanGround';
+import { urbanNaturalGround } from '../../rust/bridge/landuseNative';
 import type { UrbanLayer, World, Polygon, PolyH } from '../src/gen/types';
 import { polygonContains, bbox } from '../src/gen/core/geom';
 import { differenceS, intersectionS, mpArea, tryDifference } from '../src/gen/geo/bool';

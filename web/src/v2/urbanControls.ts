@@ -23,7 +23,23 @@ export interface UrbanControlParts {
   placeDefaults?: (key: string) => Partial<Options> | undefined;
   disabled?: () => boolean;
 }
-const clone = <T>(value: T): T => structuredClone(value);
+const clone = <T>(value: T): T => value === null || typeof value !== 'object' ? value : structuredClone(value);
+let effectiveMemo: { settings?: V2Settings; values: Map<string, Record<string, unknown>> } | undefined;
+/** The stage forms of one panel read the same effective values: inside a batch each scope is resolved once
+ * (settings are not edited while the forms sync). */
+export function batchUrbanSync(run: () => void): void {
+  if (effectiveMemo) { run(); return; }
+  effectiveMemo = { values: new Map() };
+  try { run(); } finally { effectiveMemo = undefined; }
+}
+function memoEffectiveValues(settings: V2Settings, scope: UrbanControlScope): Record<string, unknown> {
+  if (!effectiveMemo) return urbanEffectiveValues(settings, scope);
+  if (effectiveMemo.settings !== settings) effectiveMemo = { settings, values: new Map() };
+  const key = JSON.stringify(scope);
+  let values = effectiveMemo.values.get(key);
+  if (!values) effectiveMemo.values.set(key, values = urbanEffectiveValues(settings, scope));
+  return values;
+}
 const isObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 export function mergeUrbanControlValues(...sources: unknown[]): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -247,7 +263,7 @@ export function mountUrbanControls(root: HTMLElement, getSettings: () => V2Setti
   if (global) { if (extra('phases')) mountPhaseControls(); if (extra('mixtures')) mountHouseMixtures(); if (extra('archetypes')) mountSiteArchetypes(); }
   if (scope.kind === 'quarter' || scope.kind === 'parcel') mountOutline();
   if ((global || scope.kind === 'building') && extra('catalogue')) mountCatalogue();
-  function sync(): void { root.inert = !!parts?.disabled?.(); effectiveCache = scopes().map(s => urbanEffectiveValues(getSettings(), s)); effects.forEach(effect => effect()); forms.forEach(form => form.sync()); }
+  function sync(): void { root.inert = !!parts?.disabled?.(); effectiveCache = scopes().map(s => memoEffectiveValues(getSettings(), s)); effects.forEach(effect => effect()); forms.forEach(form => form.sync()); }
   function mountPhaseControls(): void {
     const box = section(root, 'Cultural rules by growth zone');
     for (const zone of URBAN_ZONES) {

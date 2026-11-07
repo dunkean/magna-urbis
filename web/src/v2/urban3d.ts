@@ -265,7 +265,7 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
     getSurface: () => { const world = options.getWorld(); return world && v2Terrain3dSurface(world, options.getSettings()); }, getHeightSampler: heightSampler,
     getForest: () => {
       // An Illustrated ground has its canopy in the raster draped as the map.
-      const settings = options.getSettings(), world = options.getWorld(), r = world && v2Resolved3d(settings, world), field = r && !r.traits.fantasy && v2DisplayForest(world!, settings, r);
+      const settings = options.getSettings(), world = options.getWorld(), r = world && v2Resolved3d(settings, world), field = r && !r.traits.fantasy && v2DisplayForest(world!, settings, r, () => view.refresh());
       return field &&Number.isInteger(field.n) && field.n > 0 && Number.isFinite(field.width) && field.width > 0 && field.rgba instanceof Uint8Array && field.rgba.length === field.n ** 2 * 4 ? { field, occupation: v2ForestOccupation(world!) } : undefined;
     },
     getText: () => { const r = v2Resolved3d(options.getSettings()); return { world: options.getWorld(), text: r.composition.text, palette: terrainStyle(r.composition.variant, r.palette.colors).palette }; },

@@ -1,3 +1,4 @@
+import { executionRuntime } from './executionProfile';
 import { benchOverlayChange } from './benchComposition';
 import { feedLanduse } from '../render/groundTone';
 import { v1LandCanvas, v1LandscapeCanvas, type V1LandscapeStyle } from '../render/v1Landscape';
@@ -251,16 +252,16 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     scene = undefined;
     notify(); draw();
     const streetAlignedHomes = context.ruralOptions?.streetAlignedHomes, denserSmallholdings = context.ruralOptions?.denserSmallholdings, fieldEnclosure = context.ruralOptions?.fieldEnclosure, fieldMaterial = context.ruralOptions?.fieldMaterial;
-    const request = { id, input: { ...context, seed: settings.seed || context.seed, biome: isUnderdarkBiome(settings.biome) ? settings.biome : context.biome ?? settings.biome,
+    const request = { id, input: { ...context, runtime: executionRuntime, seed: settings.seed || context.seed, biome: isUnderdarkBiome(settings.biome) ? settings.biome : context.biome ?? settings.biome,
       ...((streetAlignedHomes || denserSmallholdings || fieldEnclosure !== undefined) ? { ruralOptions: { streetAlignedHomes, denserSmallholdings, fieldEnclosure, fieldMaterial } } : {}) } };
     requested = !!request.input.city;
     state(urbanText(['Génération des champs et de la végétation…','Generating fields and vegetation…','正在生成田地和植被…','Generando campos y vegetación…','Gerando campos e vegetação…']), true);
     const runFallback = (): void => {
       worker?.terminate(); worker = undefined; fallback = true;
       // Give the browser a frame to display the busy state, including file:// without workers.
-      timer = setTimeout(() => {
+      timer = setTimeout(async () => {
         if (request.id !== id) return;
-        try { receive({ id: request.id, scene: generateUrbanLanduse(request.input) }); }
+        try { receive({ id: request.id, scene: await generateUrbanLanduse(request.input) }); }
         catch (error) { receive({ id: request.id, error: String(error) }); }
       }, 0);
     };

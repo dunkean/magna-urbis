@@ -39,10 +39,10 @@ try {
   await page.goto(target.href);
   await page.waitForFunction(() => window.__waterTest && document.getElementById('hydrologyStatus').textContent.startsWith('Vector water'), null, { timeout: 180000 });
   const audit = await page.evaluate(async () => {
-    const { lakeField, lakeSample } = await import('/lakeGeometry.ts');
+    const { lakeSample } = await import('/lakeGeometry.ts');
     const { riverSegments } = await import('/vectorWaterRender.ts');
     const water = window.__waterTest, h = water.hydro, cell = h.width / h.n;
-    const field = lakeField(water.lake, h.n), rivers = water.rivers.rivers;
+    const field = water.lakeField, rivers = water.rivers.rivers;
     const terrainAt = (x, y) => {
       const gx = Math.max(0, Math.min(h.n - 1.000001, x / cell - 0.5)), gy = Math.max(0, Math.min(h.n - 1.000001, y / cell - 0.5));
       const ix = Math.floor(gx), iy = Math.floor(gy), u = gx - ix, v = gy - iy, c = iy * h.n + ix;

@@ -5,7 +5,7 @@ import type { TerrainStyle } from '../../../rust/bridge/terrainRender';
 import { channelWidth, type RiverLine } from './riverVectors';
 import type { VectorWater } from './vectorWater';
 import { marchingSquares } from '../gen/terrain/contour';
-import { lakeField, lakeSample } from './lakeGeometry';
+import { lakeSample } from './lakeGeometry';
 import { hydrologyWaterColour, riverBank } from '../../../rust/bridge/hydrologyRender';
 import { lakeMaterialSvg } from '../render/terrainWater';
 import { headwaterGeometry, isHeadwater, type HeadwaterGeometry } from '../render/riverHeadwaters';
@@ -29,7 +29,7 @@ export function lakeShores(water: VectorWater): string {
   const cached = shores.get(water);
   if (cached !== undefined) return cached;
   const { n, width } = water.hydro, cell = width / n, step = cell / 4;
-  const shore = lakeField(water.lake, n);
+  const shore = water.lakeField;
   // Only refine connected lake bounds. Merge overlapping boxes so islands
   // and neighbouring lakes are contoured once, with no even-odd cancellation.
   type Box = { x0: number; y0: number; x1: number; y1: number };
@@ -234,7 +234,7 @@ export function vectorWaterSvg(water: VectorWater, display: WaterDisplay, materi
 /** Shared lake material for live rendering and retained terrain exports. */
 export function vectorLakeMaterial(water: VectorWater, style: TerrainStyle = 'render', colors?: RenderColors): string {
   const path = lakeShores(water);
-  return path ? lakeMaterialSvg(lakeField(water.lake, water.hydro.n).values, water.hydro.n, water.hydro.width, path, 'vector-lake-material', style, water.hydro.width, colors) : '';
+  return path ? lakeMaterialSvg(water.lakeField.values, water.hydro.n, water.hydro.width, path, 'vector-lake-material', style, water.hydro.width, colors) : '';
 }
 
 /** Raster diagnostics over the hydrology grid; `delta` is the conditioning's height change on its own grid. */

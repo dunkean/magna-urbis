@@ -4,7 +4,6 @@ import { COAST_DIRECTIONS, type TerrainData, type TerrainSettings } from '../../
 import { DEFAULT_HYDROLOGY, riverAreaFor } from '../../../rust/bridge/hydrology';
 import { renderHydrology } from '../../../rust/bridge/hydrologyRender';
 import { vectorWaterSvg, lakeShores } from './vectorWaterRender';
-import { lakeField } from './lakeGeometry';
 import { encodeWaterField, seaDistanceSurface } from '../render/terrainWater';
 import { hydrologyLakePath } from '../../../rust/bridge/hydrologyRender';
 import { encodeDecor, rasterStats, type Decor, type DecorMeta } from './decor';
@@ -48,7 +47,7 @@ export function captureDecorData(t: TerrainData, settings: TerrainSettings, outp
       tags: { ...tagsOf(settings, output, roadConfig), ...extra.tags, source: settings.source ?? 'procedural', hydrology: h.engine },
       seed: settings.seed, width: t.width, query: extra.query ?? location.search.replace(/^\?/, ''), created: new Date().toISOString(),
       settlements: output.settlements, roadConfig, roads: roads ?? null, waterSvg, pipeline: extra.pipeline,
-      waterMaterial: t.water ? { field: encodeWaterField(lakeField(t.water.lake, t.water.hydro.n).values), n: t.water.hydro.n, width: t.width, referenceWidth: t.width, sea: retainedSea, path: lakeShores(t.water) }
+      waterMaterial: t.water ? { field: encodeWaterField(t.water.lakeField.values), n: t.water.hydro.n, width: t.width, referenceWidth: t.width, sea: retainedSea, path: lakeShores(t.water) }
         : t.hydrology ? { field: encodeWaterField(t.hydrology.waterField), n: t.hydrology.resolution, width: t.width, referenceWidth: t.width, sea: retainedSea, path: hydrologyLakePath(t.hydrology) } : { field: '', n: 0, width: t.width, referenceWidth: t.width, sea: retainedSea, path: '' },
       terrainDisplay: { referenceWidth: t.width, floor: t.field?.floor ?? 0, sourceCell: settings.width / 1024, refine: !!settings.refine,
         globalMinHeight: t.globalMinHeight, globalMaxHeight: t.globalMaxHeight, motifSize: t.motifSize },

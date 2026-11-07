@@ -282,7 +282,7 @@ export async function generateEngineHeight(request: EngineHeightRequest, onProgr
       return data;
     });
     signal?.throwIfAborted();
-    if (request.compute === 'gpu' && request.strictCompute !== false && request.source !== 'neural-python' && request.source !== 'neural' && result.backend !== 'gpu-f32') {
+    if (request.compute === 'gpu' && request.strictCompute !== false && request.source !== 'neural-python' && request.source !== 'neural' && result.backend !== 'gpu-f32' && result.backend !== 'native') {
       throw new Error(`Le calcul GPU demandé a échoué : ${result.backendReason ?? result.generationReason ?? 'GPU indisponible'}. Choisissez CPU ou Automatique.`);
     }
     if(!usesNeural&&!settings.sketch&&!settings.zones&&['gpu','gpu-all','gpu-erosion'].includes(custom.generationCompute??'')&&(result.generationBackend??'cpu')==='cpu'&&result.generationReason?.startsWith('GPU generation unavailable: ')){

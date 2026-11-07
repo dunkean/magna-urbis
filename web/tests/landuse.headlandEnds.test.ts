@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { partitionRegion, type FieldNet } from '../src/gen/landuse/fields';
+import { partitionRegion, type FieldNet } from '../../rust/bridge/landuseTools';
 import { Rng } from '../src/gen/core/rng';
 import { Noise2D } from '../src/gen/core/noise';
 import { distToPolyline } from '../src/gen/core/geom';

@@ -8,6 +8,7 @@ import type { Vec2, Polygon, Polyline } from '../core/geom';
 import { polygonArea, polygonCentroid, polygonContains, distToPolyline, polylineLength, bbox, dist } from '../core/geom';
 import type { World } from '../types';
 import { VOCAB, type Vocab } from './grammar';
+import { poleOf } from './pole';
 import { cleanSettlementName } from '../options';
 import { resolveToponymProfile, type ToponymProfile } from './profiles';
 import { generateToponym, generateToponymRecord, ALGORITHM_VERSION, CORPUS_VERSION, CORPUS_FINGERPRINT, type ToponymKind } from './toponyms';
@@ -78,48 +79,8 @@ export function setSettlementName(world: World, key: string, value: string): voi
 }
 
 /* ---------------------------------------------------------------- geometry */
-/** Distance to the ring; stops as soon as it is known to be <= `floor` (the returned value is then only an upper bound of it). */
-function ringDist(p: Vec2, ring: Polygon, floor = -Infinity): number {
-  let best = Infinity;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const a = ring[j], b = ring[i];
-    // The segment's box distance is a lower bound: skip it when it cannot beat the current minimum (1e-9 safety margin).
-    if (best < Infinity) {
-      const ex = Math.max(Math.min(a.x, b.x) - p.x, 0, p.x - Math.max(a.x, b.x)), ey = Math.max(Math.min(a.y, b.y) - p.y, 0, p.y - Math.max(a.y, b.y));
-      if (ex * ex + ey * ey > best * best * (1 + 1e-9)) continue;
-    }
-    const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy;
-    const t = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2));
-    best = Math.min(best, Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy));
-    if (best <= floor) return best;
-  }
-  return best;
-}
-/** Approximate pole of inaccessibility (point deepest inside the polygon) by coarse grid + refinement. */
-export function poleOf(poly: Polygon, holes: Polygon[] = []): { p: Vec2; r: number } {
-  const b = bbox(poly);
-  let best = polygonCentroid(poly), bestR = -1;
-  const inside = (p: Vec2): boolean => polygonContains(poly, p) && !holes.some((h) => polygonContains(h, p));
-  // Only a depth above the best so far matters: a ring distance <= bestR rejects the sample, inside or not.
-  const depth = (p: Vec2): number => {
-    let d = ringDist(p, poly, bestR);
-    if (d <= bestR) return d;
-    for (const h of holes) { d = Math.min(d, ringDist(p, h, bestR)); if (d <= bestR) return d; }
-    return inside(p) ? d : -1;
-  };
-  let cx0 = b.minX, cy0 = b.minY, w = b.maxX - b.minX, h = b.maxY - b.minY;
-  for (let pass = 0; pass < 3; pass++) {
-    const N = 12;
-    for (let j = 0; j <= N; j++) for (let i = 0; i <= N; i++) {
-      const p = { x: cx0 + (w * i) / N, y: cy0 + (h * j) / N };
-      const d = depth(p);
-      if (d > bestR) { bestR = d; best = p; }
-    }
-    w /= 5; h /= 5; cx0 = best.x - w / 2; cy0 = best.y - h / 2;
-  }
-  if (bestR < 0) return { p: polygonCentroid(poly), r: 0 };
-  return { p: best, r: bestR };
-}
+/** Approximate pole of inaccessibility: see pole.ts. */
+export { poleOf };
 /** Width of the polygon along the horizontal line through (x, y), for the interval containing x. */
 export function horizontalSpan(poly: Polygon, x: number, y: number): number {
   const xs: number[] = [];

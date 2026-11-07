@@ -2,7 +2,7 @@ import type { World, Settlement, Options, SiteArchetype } from '../gen/types';
 import type { SettlementOutput, RoadOutput, SettlementRaster, RoadSite } from '../../../rust/bridge/settlements';
 import type { TerrainData } from '../../../rust/bridge/terrain';
 import { Rng } from '../gen/core/rng';
-import { chooseSite } from '../gen/site/site';
+import { chooseSiteRust } from '../../../rust/bridge/siteNative';
 import { sizeForPop } from '../gen/options';
 import { circle,clipConvex,voronoiRegions } from '../gen/settlements/planner';
 import { effectiveRegion, validateRegionSettings } from './regionSettings';
@@ -98,7 +98,7 @@ export async function planRustRegion(world:World,settings:V2Settings,onProgress?
     const regions=voronoiRegions(output.settlements.map(s=>s.center),world.mapSize);
     world.settlements=output.settlements.map((s,index):Settlement=>({key:s.key,index,main:index===0,cls:s.cls as Settlement['cls'],population:s.population,culture:s.culture,center:s.center,archetype:s.archetype as SiteArchetype,radius:s.radius,extent:clipConvex(circle(s.center,s.radius),regions[index]),region:regions[index],fixed:s.scores.manual,name:s.name||undefined,detail:index===0?'main':s.cls==='farmstead'?'farmstead':'lazy'}));
     const main=world.settlements[0],opts:Options={...settings.options,...settings.local[main.key],population:main.population,culture:main.culture,size:sizeForPop(main.population),center:main.center,siteType:main.archetype,mapSize:world.mapSize};
-    world.site=chooseSite(world.terrain,opts,world.mapSize,new Rng('magna-urbis:'+world.seed));
+    world.site=await chooseSiteRust(world.terrain,opts,world.mapSize,new Rng('magna-urbis:'+world.seed),runtime);
     // Native placement owns the site. The legacy adapter only supplies travel/site fields for land use.
     world.site.center={...main.center};world.site.archetype=main.archetype;world.site.reserveRadius=main.radius;
     for(const s of world.settlements){world.stats['v2.population:'+s.key]=s.population;world.stats['v2.culture:'+s.key]=s.culture;}

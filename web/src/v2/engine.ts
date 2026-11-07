@@ -1,15 +1,16 @@
 import { PROCEDURAL_RECIPE_VERSION, isCompactProcedural } from '../../../rust/bridge/terrainGenerationRecipe';
 import { COMPACT_VERSION } from '../../../rust/bridge/terrainPhasor';
 import { seaDistanceSurface } from '../render/terrainWater';
+import { loadRenderGeometry } from '../../../rust/bridge/renderGeometry';
 import { Rng } from '../gen/core/rng';
 import { urbanSeed } from './urbanSeeds';
 import { seedRoot, seedSubset, stepSeed } from '../../../rust/bridge/generationSeed';
 import { optionsForMainSettlement, sizeForPop, SETTLEMENT_OVERRIDE_KEYS, type Options, type SettlementOverrides } from '../gen/options';
 import { terrainForExtent } from '../gen/terrain/hydrology';
 import { refreshCavernMask } from '../gen/terrain/caverns';
-import { generateNaturalCover } from '../gen/landuse/natural';
-import { generateRural } from '../gen/landuse/rural';
-import { chooseSite } from '../gen/site/site';
+import { generateNaturalCoverNative, generateRuralNative } from '../../../rust/bridge/landuseNative';
+import { chooseSiteRust } from '../../../rust/bridge/siteNative';
+import { loopbackServer } from './platform';
 import { routeRoads } from '../gen/roads/regional';
 import { planSettlements, settlementRequests } from '../gen/settlements/planner';
 import { routeNetwork } from '../gen/settlements/network';
@@ -203,6 +204,7 @@ export async function generateTerrain(settings: V2Settings, onProgress?: Progres
       report(onProgress,'terrain-projection','PrÃ©paration de la carte, des cÃ´tes et du rÃ©seau hydrographiqueâ€¦',0,0);
       nativeTerrain = projectEngineTerrain(generated.terrain);
       // The renderer reads this instead of searching the coast on the main thread.
+      if (!generated.terrain.waterSurface) await loadRenderGeometry();
       generated.terrain.waterSurface ??= seaDistanceSurface(generated.terrain, generated.terrain.width);
     } else if (!options.importedHeight && settings.runtime?.compute === 'gpu') {
       throw new Error('Le moteur TypeScript fonctionne sur CPU. Choisissez Rust pour utiliser le GPU.');
@@ -228,8 +230,9 @@ export async function generateTerrain(settings: V2Settings, onProgress?: Progres
       retained.v2ForestField = structuredClone(cachedForest.field); retained.v2NaturalForest = cachedForest.cover.slice();
     } else {
     const climate = configuration.climateValues!;
-    const forest = buildForestField({ seed: seedHash(stepSeed(settings.options.seed, 'cover-climate')), climate: [climate.temperature, climate.precipitation],
-      height: { x: 0, y: 0, width: options.mapSize!, n: terrain.height.w, data: terrain.height.data }, water: terrain.water }, configuration.forest);
+    const forestRuntime = settings.runtime?.backend === 'native' ? { profile: 'local' as const, server: loopbackServer(settings.runtime.localServer ?? 'http://127.0.0.1:8791') } : undefined;
+    const forest = await buildForestField({ seed: seedHash(stepSeed(settings.options.seed, 'cover-climate')), climate: [climate.temperature, climate.precipitation],
+      height: { x: 0, y: 0, width: options.mapSize!, n: terrain.height.w, data: terrain.height.data }, water: terrain.water }, configuration.forest, forestRuntime);
     retained.v2ForestField = forest;
     const cover = new Float32Array(terrain.height.data.length), n = terrain.height.w;
     for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) cover[y * n + x] = forest.rgba[(Math.min(forest.n - 1, Math.floor((y + .5) * forest.n / n)) * forest.n + Math.min(forest.n - 1, Math.floor((x + .5) * forest.n / n))) * 4] / 255;
@@ -242,7 +245,8 @@ export async function generateTerrain(settings: V2Settings, onProgress?: Progres
   const coverKey = key + stableStringify([biome, nativeEngine ? configuration.forest : null]);
   const cachedCover = naturalCovers.get(coverKey);
   const landuse = cachedCover ? structuredClone(cachedCover)
-    : generateNaturalCover(terrain, biome, new Rng('magna-urbis:' + stepSeed(settings.options.seed, 'cover-climate')), retained.v2NaturalForest);
+    : await generateNaturalCoverNative(terrain, biome, new Rng('magna-urbis:' + stepSeed(settings.options.seed, 'cover-climate')), retained.v2NaturalForest,
+      settings.runtime?.backend === 'native' ? { profile: 'local', server: loopbackServer(settings.runtime.localServer ?? 'http://127.0.0.1:8791') } : undefined);
   if (!cachedCover) {
     naturalCovers.set(coverKey, structuredClone(landuse));
     if (naturalCovers.size > 3) naturalCovers.delete(naturalCovers.keys().next().value!);
@@ -295,7 +299,8 @@ export async function planRegion(terrainWorld: World, settings: V2Settings, onPr
   }
   report(onProgress, 'sites', 'Recherche des sites habitablesâ€¦', 0, 4);
   const cprefs = getCulture(mainOptions.culture).sitePrefs;
-  world.site = chooseSite(world.terrain, mainOptions.sitePrefs || !cprefs ? mainOptions : { ...mainOptions, sitePrefs: cprefs }, world.mapSize, root);
+  const siteRuntime = settings.runtime?.backend === 'native' ? { profile: 'local' as const, server: loopbackServer(settings.runtime.localServer ?? 'http://127.0.0.1:8791') } : undefined;
+  world.site = await chooseSiteRust(world.terrain, mainOptions.sitePrefs || !cprefs ? mainOptions : { ...mainOptions, sitePrefs: cprefs }, world.mapSize, root, siteRuntime);
   report(onProgress, 'roads', 'TracÃ© des axes rÃ©gionauxâ€¦', 1, 4);
   const roads = routeRoads(world.terrain, world.site, mainOptions, world.mapSize, roadRoot);
   world.roads = roads.roads; world.bridges = roads.bridges;
@@ -423,6 +428,8 @@ async function buildTown(world: World, settings: V2Settings, key: string, onProg
     const cities = (world.debug.v2RustCities ??= {}) as Record<string, unknown>;
     cities[key] = result.snapshot;
     Object.assign(world.stats, result.stats);
+    // The page draws the cities on this ground: the worker's cached settlement raster, not a second build on the main thread.
+    (await import('./rustUrban')).retainCityGround(world);
   } else if (requestedStage !== 'buildings') {
     throw new Error('Les Ã©tapes urbaines indÃ©pendantes requiÃ¨rent le moteur Rust. Le moteur classique gÃ©nÃ¨re le plan complet.');
   } else if (settlement.main) {
@@ -460,9 +467,10 @@ async function finishTowns(world: World, settings: V2Settings, onProgress?: Prog
     if (mainOptions.biome === 'underdark-caverns') mainOptions.biome = 'underdark';
     // Rust resource soil (depth, stoniness, drainage); the noise field only when no resource payload exists (TypeScript backend).
     const resources = await (await import('./region')).regionResources(world, settings);
-    const rural = generateRural({ ...world, options: mainOptions }, new Rng('magna-urbis:' + world.seed), Number(world.stats['v2.regionalRoads'] ?? world.roads?.length ?? 0), undefined,
+    const rural = await generateRuralNative({ ...world, options: mainOptions }, new Rng('magna-urbis:' + world.seed), Number(world.stats['v2.regionalRoads'] ?? world.roads?.length ?? 0), undefined,
       (world.terrain as V2TerrainLayer).v2NaturalForest ? { footprint: world.urban.footprintH ?? [], population: world.urban.population, naturalForest: (world.terrain as V2TerrainLayer).v2NaturalForest } : undefined,
-      resources && (await import('./resourceSoil')).ruralSoilField(resources));
+      resources && (await import('./resourceSoil')).ruralSoilField(resources),
+      settings.runtime?.backend === 'native' ? { profile: 'local', server: loopbackServer(settings.runtime.localServer ?? 'http://127.0.0.1:8791') } : undefined);
     world.landuse = rural.layer;
   }
   nameWorld(world, settings.local.main);

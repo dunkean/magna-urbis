@@ -10,8 +10,7 @@ import type { ExportLayers } from '../render/exportLayers';
 import { createCanvasRenderer, type CanvasRenderer } from '../render/canvas';
 import { roadGroundTones, setRoadGround } from '../render/roadStyle';
 import { displayWorld } from '../render/displayWorld';
-import { v2DisplayForest, v2ForestOccupation, v2ForestOccupationAsync } from './displayForest';
-import { withBuildingOccupation } from '../ui/forestOccupation';
+import { v2DisplayForestAsync, v2ForestOccupation, v2ForestOccupationAsync, withBuildingOccupationAsync } from './displayForest';
 import type { ForestOccupation } from '../../../rust/bridge/terrainForest';
 import { nativeCitiesOf } from './nativeProducts';
 import { activityScene } from './activitySites';
@@ -28,7 +27,6 @@ import { settlementRaster, type SettlementRaster } from '../../../rust/bridge/se
 import { v1LandCanvas } from '../render/v1Landscape';
 import { effectiveTerrainSettings } from './terrainSettings';
 import { createTerrainRenderer, terrainRendererCanvas, terrainRendererBackend, type TerrainRenderer } from '../ui/terrainRenderer';
-import { lakeField } from '../ui/lakeGeometry';
 import { riverSegments, vectorWaterSvg, vectorOverlaySvg, vectorOverlayPixels, type WaterDisplay, type VectorOverlay } from '../ui/vectorWaterRender';
 import { renderHydrology, hydrologySegments, hydrologyWaterColour } from '../../../rust/bridge/hydrologyRender';
 import type { HydrologyOverlay } from '../../../rust/bridge/hydrology';
@@ -215,7 +213,7 @@ export class BenchRenderer {
     // The shared material shader also composes SVG/PNG exports, using an OffscreenCanvas or a page canvas according to WebGL2 availability.
     const cacheKey = `terrain:${key}`;
     const pending = this.shared.cache.get<Promise<BaseRaster>>(cacheKey, async () => {
-      const settingsForRender = { ...effective, width: world.mapSize, seed: world.seed, v2Season: r.ground.season, v2Calendar: r.ground.calendar, forest: { field: v2DisplayForest(world, settings, r), occupation: await this.groundOccupation(), groundCover:r.composition.vegetation.procedural, waterVisible: layers.water } };
+      const settingsForRender = { ...effective, width: world.mapSize, seed: world.seed, v2Season: r.ground.season, v2Calendar: r.ground.calendar, forest: { field: await v2DisplayForestAsync(world, settings, r), occupation: await this.groundOccupation(), groundCover:r.composition.vegetation.procedural, waterVisible: layers.water } };
       let svg = '';
       const waterStyle=r.composition.networks.water.look==='natural'?'render3d':r.palette.mapStyle;
       if (layers.relief) svg = renderRustTerrain(t, style, layers.frame, settingsForRender, r.ground.contours, 'v2-render', lighting, layers, r.vegetation.fantasy, true, waterStyle, colors, this.rasterContext()).svg;
@@ -243,23 +241,26 @@ export class BenchRenderer {
     const raster = await pending.catch(error => { this.shared.cache.delete(cacheKey); throw error; });
     this.terrainSvg = raster.svg; this.base = raster.image;
   }
-  private occupationCache?: { world: World; revision: string; data?: ForestOccupation };
-  /** Accepted footprints exclude vegetation independently of building visibility. */
-  private async groundOccupation(): Promise<ForestOccupation | undefined> {
+  private occupationCache?: { world: World; revision: string; data: Promise<ForestOccupation | undefined> };
+  /** Accepted footprints exclude vegetation independently of building visibility. Both rasters run in the
+   * occupation worker; concurrent passes share one job. */
+  private groundOccupation(): Promise<ForestOccupation | undefined> {
     const world = this.world!, v = this.scene!.revisions;
     const revision = JSON.stringify([v.landuse, v.cities, v.settlements]);
     if (this.occupationCache?.world !== world || this.occupationCache.revision !== revision) {
-      const base = await v2ForestOccupationAsync(world);
-      if (this.world !== world) return base;
-      const buildings = [...nativeCitiesOf(world).flatMap(city => city.scene?.buildings ?? []), ...(activityScene(world)?.buildings ?? [])];
-      this.occupationCache = { world, revision, data: withBuildingOccupation(base, { buildings }) };
+      const data = v2ForestOccupationAsync(world).then(base => {
+        const buildings = [...nativeCitiesOf(world).flatMap(city => city.scene?.buildings ?? []), ...(activityScene(world)?.buildings ?? [])];
+        return withBuildingOccupationAsync(base, { buildings });
+      });
+      data.catch(() => { if (this.occupationCache?.data === data) this.occupationCache = undefined; });
+      this.occupationCache = { world, revision, data };
     }
     return this.occupationCache.data;
   }
   private async forestPass(): Promise<void> {
     if (!this.gpuActive) return;
     this.dropBackground();
-    const field = v2DisplayForest(this.world!, this.settings!, this.resolved!), occupation = await this.groundOccupation();
+    const field = await v2DisplayForestAsync(this.world!, this.settings!, this.resolved!), occupation = await this.groundOccupation();
     if (this.gpuActive) this.gpu!.setForest(field, occupation);
   }
   /** The parchment tints multiply over the lit ground: the overlay gets it as a backdrop, transparent on the water below. */
@@ -278,7 +279,7 @@ export class BenchRenderer {
     const vectorDisplay = { ...water, style: ink ? r.palette.mapStyle : 'render3d' as const };
     if (this.gpuActive) {
       if (t.water) {
-        this.gpu!.setWater(visible ? { lake: water.showLakes ? lakeField(t.water.lake, t.water.hydro.n).values : undefined, n: t.water.hydro.n, rivers: riverSegments(t.water, water) } : undefined);
+        this.gpu!.setWater(visible ? { lake: water.showLakes ? t.water.lakeField.values : undefined, n: t.water.hydro.n, rivers: riverSegments(t.water, water) } : undefined);
         this.gpu!.setOverlay(vectorOverlayPixels(t.water, water.overlay, t.conditioning?.delta ? { values: t.conditioning.delta, n: t.conditioning.n } : undefined));
       } else if (t.hydrology) {
         this.gpu!.setWater(visible ? { lake: water.showLakes ? t.hydrology.waterField : undefined, shore: 'exact', n: t.hydrology.resolution, rivers: hydrologySegments(t.hydrology, hydrologyWaterColour(style, colors)) } : undefined);

@@ -13,9 +13,45 @@ const BUILT = 7, OCCUPIED = 8, CLEARANCE = 9, RANGE = 8;
 /** Merge accepted footprints and authorized circulation into the same retained
  * occupation contract, regardless of the building layer's visibility. */
 export function withBuildingOccupation(source: ForestOccupation | undefined, scene: Building3dScene | undefined): ForestOccupation | undefined {
+  const shapes = buildingOccupationShapes(scene);
+  return shapes ? withOccupationShapes(source, shapes) : source;
+}
+type OccupationShape = { outer: Polygon; holes: Polygon[] };
+/** Accepted footprints and authorized circulation of a scene; undefined without buildings. */
+export function buildingOccupationShapes(scene: Building3dScene | undefined): OccupationShape[] | undefined {
   const buildings = scene?.occupationBuildings ?? scene?.buildings;
-  if (!buildings?.length) return source;
-  const shapes = buildings.flatMap(b => buildingOccupationSurfaces(b).flatMap(surface => surface));
+  if (!buildings?.length) return undefined;
+  return buildings.flatMap(b => buildingOccupationSurfaces(b).flatMap(surface => surface)) as OccupationShape[];
+}
+/** Shapes as one transferable list: [shapes, (rings, (points, x, y…)…)…]. */
+export function packOccupationShapes(shapes: readonly OccupationShape[]): Float64Array {
+  let size = 1;
+  for (const shape of shapes) { size += 2 + 2 * shape.outer.length; for (const hole of shape.holes) size += 1 + 2 * hole.length; }
+  const out = new Float64Array(size);
+  let at = 0;
+  out[at++] = shapes.length;
+  for (const shape of shapes) {
+    out[at++] = 1 + shape.holes.length;
+    for (const ring of [shape.outer, ...shape.holes]) { out[at++] = ring.length; for (const p of ring) { out[at++] = p.x; out[at++] = p.y; } }
+  }
+  return out;
+}
+export function unpackOccupationShapes(data: Float64Array): OccupationShape[] {
+  let at = 0;
+  const shapes: OccupationShape[] = [], count = data[at++];
+  for (let s = 0; s < count; s++) {
+    const rings: Polygon[] = [], ringCount = data[at++];
+    for (let r = 0; r < ringCount; r++) {
+      const ring: Polygon = [], points = data[at++];
+      for (let k = 0; k < points; k++, at += 2) ring.push({ x: data[at], y: data[at + 1] });
+      rings.push(ring);
+    }
+    shapes.push({ outer: rings[0], holes: rings.slice(1) });
+  }
+  return shapes;
+}
+/** withBuildingOccupation for already extracted shapes (the page packs them for the occupation worker). */
+export function withOccupationShapes(source: ForestOccupation | undefined, shapes: readonly OccupationShape[]): ForestOccupation {
   let x0 = source?.x ?? Infinity, y0 = source?.y ?? Infinity, x1 = source ? source.x + source.width : -Infinity, y1 = source ? source.y + source.width : -Infinity;
   for (const shape of shapes) for (const p of shape.outer) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
   const side = Math.max(x1 - x0, y1 - y0), cell = Math.max(.5, side / (1536 - RANGE * 2));
@@ -159,14 +195,27 @@ function signedDistance(mask: Uint8Array, n: number): Float32Array {
     const i = y * n + x; if (column[i] === 0) last[x] = y;
     const dy = last[x] - y; if (dy < REACH && dy * dy < column[i]) column[i] = dy * dy;
   }
-  // Row pass: spread only the texels within reach, exactly min(d², FAR). Most of a map is far from any boundary.
+  // Row pass: exact min over q of (x − q)² + g(q), capped at FAR, as the lower envelope of the parabolas
+  // of the texels within reach (Felzenszwalb & Huttenlocher 2012): linear per row. Texels with g = FAR
+  // never go below FAR. Values are small integers, so the result is exact.
   const squared = new Uint8Array(n * n).fill(FAR), d = new Float32Array(n * n);
+  const v = new Int32Array(n), z = new Float64Array(n + 1);
   for (let y = 0; y < n; y++) {
     const row = y * n;
-    for (let x = 0; x < n; x++) {
-      const g = column[row + x]; if (g >= FAR) continue;
-      const from = Math.max(0, x - REACH + 1), to = Math.min(n - 1, x + REACH - 1);
-      for (let q = from; q <= to; q++) { const value = (q - x) * (q - x) + g; if (value < squared[row + q]) squared[row + q] = value; }
+    let k = -1;
+    for (let q = 0; q < n; q++) {
+      const g = column[row + q]; if (g >= FAR) continue;
+      const fq = g + q * q;
+      if (k < 0) { k = 0; v[0] = q; z[0] = -Infinity; z[1] = Infinity; continue; }
+      let p = v[k], s = (fq - column[row + p] - p * p) / (2 * (q - p));
+      while (s <= z[k]) { k--; p = v[k]; s = (fq - column[row + p] - p * p) / (2 * (q - p)); }
+      k++; v[k] = q; z[k] = s; z[k + 1] = Infinity;
+    }
+    if (k < 0) continue;
+    for (let x = 0, j = 0; x < n; x++) {
+      while (z[j + 1] < x) j++;
+      const value = (x - v[j]) * (x - v[j]) + column[row + v[j]];
+      if (value < FAR) squared[row + x] = value;
     }
   }
   for (let i = 0; i < n * n; i++) d[i] = (ROOTS[squared[i]] + 0.5) * (mask[i] ? 1 : -1);

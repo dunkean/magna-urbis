@@ -1,5 +1,5 @@
 import type { TerrainData } from './terrain';
-import { lakeField, lakeSample } from '../../web/src/ui/lakeGeometry';
+import { lakeSample } from '../../web/src/ui/lakeGeometry';
 import { riverWidths } from '../../web/src/ui/vectorWaterRender';
 import { channelWidth } from '../../web/src/ui/riverVectors';
 import { createSettlementEngine, type SettlementEngine } from './settlementEngine';
@@ -154,7 +154,7 @@ export function settlementRaster(t: TerrainData, maxResolution = 512): Settlemen
     return sum / ((x1 - x0) * (y1 - y0));
   };
   const vector = t.water, hydro = t.hydrology;
-  const lakes = vector ? lakeField(vector.lake, vector.hydro.n) : undefined;
+  const lakes = vector ? vector.lakeField : undefined;
   for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
     const i = y * n + x, px = (x + 0.5) * cell, py = (y + 0.5) * cell;
     height[i] = groundAt(x, y); waterLevel[i] = height[i];

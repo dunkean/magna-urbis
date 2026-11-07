@@ -51,7 +51,7 @@ export function campCover(world: World, u: UrbanLayer): LandArea[] {
   const terrain = world.terrain;
   const waterRings = [...terrain.coastline, ...(terrain.islands ?? []), ...terrain.lakes, ...terrain.rivers.map((r) => r.path)];
   if (!finite(grown) || !finite(protection) || waterRings.some((r) => r.some((p) => !Number.isFinite(p.x) || !Number.isFinite(p.y)))
-    || terrain.rivers.some((r) => r.width.some((w) => !Number.isFinite(w)))) return [];
+    || terrain.rivers.some((r) => r.width.length !== r.path.length || r.width.some((w) => !Number.isFinite(w)))) return [];
   try {
     const water = waterGround(world).filter((p) => near(p.outer));
     if (!finite(water)) return [];

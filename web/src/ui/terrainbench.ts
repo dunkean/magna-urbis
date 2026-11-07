@@ -37,7 +37,6 @@ import { moonlightSvg } from '../render/materialLook';
 import { DEFAULT_HYDROLOGY, riverAreaFor, type HydrologySettings, type HydrologyOverlay } from '../../../rust/bridge/hydrology';
 import { CLIMATE_VALUES, DEFAULT_NEURAL_TUNING, NEURAL_RELIEF_DEFAULTS, climateOf, type ClimateValues, type NeuralTuning } from '../../../rust/bridge/terrain';
 import { lakeColour, riverSegments, vectorOverlayPixels, vectorOverlaySvg, vectorWaterSvg, VECTOR_LEGENDS, VECTOR_OVERLAYS, type VectorOverlay } from './vectorWaterRender';
-import { lakeField } from './lakeGeometry';
 import { getBenchRenderColors, writeRenderColorsQuery } from './benchRenderColors';
 import { TerrainGl, type TerrainLook } from './terrainGl';
 import { createTerrainRenderer, type TerrainRenderer } from './terrainRenderer';
@@ -747,8 +746,8 @@ function runForest(): void {
   };
   const onMain = (): void => {
     const t = performance.now();
-    try { done(buildForestField(job.input, job.settings), performance.now() - t, 'main'); }
-    catch (error) { done(undefined, 0, 'main', error instanceof Error ? error.message : String(error)); }
+    buildForestField(job.input, job.settings).then(field => done(field, performance.now() - t, 'main'),
+      error => done(undefined, 0, 'main', error instanceof Error ? error.message : String(error)));
   };
   if (!forestWorker) { setTimeout(onMain); return; }
   forestReply = reply => {
@@ -873,7 +872,7 @@ async function refresh3dTexture(epoch: number): Promise<void> {
     if (surface3d !== terrain || surface3dWater !== waterSource || surface3dVisibility !== visibility) {
       let lake: { n: number; mask: Float32Array; levels: Float32Array } | undefined;
       if (lakesVisible && retained) lake = { n: retained.n, mask: Float32Array.from(retained.water, value => value === 2 ? 1 : -1), levels: retained.waterLevel };
-      else if (lakesVisible && water) lake = { n: water.hydro.n, mask: lakeField(water.lake, water.hydro.n).values, levels: water.lakeLevel ?? water.hydro.filled };
+      else if (lakesVisible && water) lake = { n: water.hydro.n, mask: water.lakeField.values, levels: water.lakeLevel ?? water.hydro.filled };
       else if (lakesVisible && hydro) {
         const levels = new Map<number, number>();
         for (let i = 0; i < hydro.lakeMeta.length; i += 6) levels.set(hydro.lakeMeta[i], hydro.lakeMeta[i + 1]);
@@ -1520,7 +1519,7 @@ function renderWater(): void {
     const cond = terrain?.conditioning;
     const display = { style: waterStyle as TerrainStyle, colors: getBenchRenderColors(), showLakes: input('showLakes').checked, showOxbows: input('showOxbows').checked, riverArea: riverAreaFor(settings.hydrology ?? DEFAULT_HYDROLOGY, settings.width), riverMode: settings.hydrology?.riverMode ?? 'vector', overlay: vectorOverlay };
     const hydrology = !water && !terrain?.hydrologyError ? terrain?.hydrology : undefined;
-    if (water && shown) gpu.setWater({ lake: display.showLakes ? lakeField(water.lake, water.hydro.n).values : undefined, n: water.hydro.n, rivers: riverSegments(water, display) });
+    if (water && shown) gpu.setWater({ lake: display.showLakes ? water.lakeField.values : undefined, n: water.hydro.n, rivers: riverSegments(water, display) });
     else if (hydrology && shown) {
       // The Rust network on the GPU: its lakes' shore field, as the SVG rings contour it.
       const colour = hydrologyWaterColour(waterStyle, getBenchRenderColors());
@@ -1558,7 +1557,7 @@ function report(): void {
     ['Mean slope', `${(stats.slope * 180 / Math.PI).toFixed(1)}° (${cell.toFixed(0)} m cell)`]);
   rows.push(['Land', `${(stats.land * 100).toFixed(1)}%`]);
   const cond = terrain.conditioning;
-  if (cond) rows.push(['Pre-hydrology', `${cond.stats.before.depressions} → ${cond.stats.after.depressions} depressions > 1 m · ${(cond.stats.before.volume / 1e6).toFixed(0)} → ${(cond.stats.after.volume / 1e6).toFixed(0)} hm³ · ${cond.stats.steps} steps, ${cond.stats.breaches} breached sills`]);
+  if (cond) rows.push(['Pre-hydrology', `${cond.stats.census === false ? '' : `${cond.stats.before.depressions} → ${cond.stats.after.depressions} depressions > 1 m · ${(cond.stats.before.volume / 1e6).toFixed(0)} → ${(cond.stats.after.volume / 1e6).toFixed(0)} hm³ · `}${cond.stats.steps} steps, ${cond.stats.breaches} breached sills`]);
   const water = terrain.water;
   if (water) {
     rows.push(['Lakes', `${water.lakes}${water.closedLakes ? ` (${water.closedLakes} closed)` : ''} · ${water.lakeAreaKm2.toFixed(1)} km²`]);

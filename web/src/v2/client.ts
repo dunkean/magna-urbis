@@ -16,6 +16,7 @@ import type { ResolvedAppearance } from '../render/appearanceRecipe';
 import type { FrameRequest } from '../ui/viewer';
 import type { ExportLayers } from '../render/exportLayers';
 import { publishWasmThreads, wasmWorkerFailed, wasmWorkerOptions } from '../../../rust/bridge/wasmThreads';
+import { loadRenderGeometry, renderGeometryReady } from '../../../rust/bridge/renderGeometry';
 
 export type Action = 'terrain' | 'region' | 'roads' | 'towns' | 'town' | 'settlements' | 'all';
 
@@ -133,6 +134,7 @@ export class StudioClient {
     this.render?.terminate();this.render=null;await this.init();
   }
   async show(world: World, keepView = false): Promise<void> {
+    if (!renderGeometryReady()) await loadRenderGeometry(); // synchronous Rust render geometry (city ground, coast, contours)
     const mapChanged = this.world?.mapSize !== world.mapSize;
     if(this.world!==world){this.benchMiniRevision=-1;this.resolutions=[];if(this.world?.stats['v2.terrainKey']!==world.stats['v2.terrainKey'])this.resourceCache=undefined;}
     this.world = world;

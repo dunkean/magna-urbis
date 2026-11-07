@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pruneWays, type FieldNet } from '../src/gen/landuse/fields';
+import { pruneWays, type FieldNet } from '../../rust/bridge/landuseTools';
 
 const net = (ways: FieldNet['ways']): FieldNet => ({ furlongs: [], ways, headlands: [] });
 

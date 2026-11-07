@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Rng } from '../src/gen/core/rng';
-import { layoutFarm, frameOf, placeFarm, type FarmContext } from '../src/gen/landuse/farms';
+import { layoutFarm, frameOf, placeFarm, type FarmContext } from '../../rust/bridge/landuseTools';
 import { gardenDetails } from '../src/render/readableGardens';
 import { ruralDetails, ruralDetailsSvg, type RuralRenderLayer } from '../src/render/ruralDetails';
 import { PALETTES } from '../src/render/styles';
