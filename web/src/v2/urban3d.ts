@@ -125,7 +125,7 @@ export function v2Terrain3dGround(world: World, settings: V2Settings, ground: Ci
   if (!layers.relief || !layers.hypsometry) return;
   return { seed: seedHash(world.seed), climate: { temperature: config.climateValues!.temperature, precipitation: config.climateValues!.precipitation }, climateZone: config.climateZone,
     sourceCell: native ? native.width / (native.field?.n ?? native.resolution) : world.terrain.height.cell,
-    lighting: { ...r.ground.lighting }, renderV2: style.traits.satelliteVariant, paperMap: !!style.traits.paperMap, v2Season: r.ground.season, ambience:r.composition.ambience, waterLook:r.composition.networks.water.look,
+    lighting: { ...r.ground.lighting }, renderV2: style.traits.satelliteVariant, paperMap: !!style.traits.paperMap, v2Season: r.ground.season, v2Calendar: r.ground.calendar, ambience:r.composition.ambience, waterLook:r.composition.networks.water.look,
     waterVisible: layers.water, displacement: r.city.refinement !== 'source', forestBrushes: style.traits.forestBrushes,
     contours: r.ground.contours && layers.relief && config.relief !== 'cavern' ? { step: CONTOUR_INTERVAL[relief] * (relief === 'mountains' ? 2 : 1), color: style.palette.contour, opacity: style.palette.contourOpacity, flat: relief === 'flat' } : undefined };
 }

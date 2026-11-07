@@ -588,4 +588,5 @@ Le curseur `effects.season` (0 hiver, .25 printemps, .5 été, .75 automne) vaut
 - Les styles matière lisent ce calendrier dans leurs shaders, en 2D comme en 3D : couleur et forme des cimes, conifères enneigés, feuillus nus, sol, gel des eaux.
 - Les styles vectoriels passent par `seasonPalette.ts`, appliqué dans `biomePalette` : seule l’occupation du sol change (champs, prés, forêts, arbres, haies) ; le papier, le relief et l’eau restent fixes.
 - La banquise de Neural Earth (`v2Ice`) reçoit un plancher de concentration par zone : l’arctique toute l’année, le nordique en hiver. Sa taille est ramenée à l’échelle locale par `V2_ICE_ZOOM`.
+- Réglages : `effects.calendar` (panneau « Effets globaux », V2 et bancs Rust) remplace champ par champ le calendrier de la zone : dégel de printemps et d’automne, froid hivernal, morcellement de la neige, régime des pluies, intensité des couleurs, feuillage caduc, mélèzes, banquise par saison. Vide = valeur de la zone.
 - Planche de contrôle : `web/scripts/season_sheet.mjs`, puis `season_sheet_page.py`.

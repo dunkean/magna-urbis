@@ -4,6 +4,7 @@
  * backend can do (see `limitations`), it never hides semantic data.
  * Pure module: no DOM, no engine, no I/O.
  */
+import { SEASON_CALENDAR_FIELDS, type SeasonCalendar } from '../../../rust/bridge/terrainRenderV2Zones';
 import { TEXT_GROUPS, defaultText, type TextGroup, type TextSettings } from './textLayer';
 import type { LandKind } from '../gen/types';
 import { isMapStyle } from './styles';
@@ -40,7 +41,8 @@ export const GROUND_VARIANTS: Readonly<Record<StyleId, readonly TerrainStyle[]>>
 export const lookOfVariant = (variant: TerrainStyle): StyleId => variant === 'night' ? 'atlas' : STYLE_IDS.find(look => GROUND_VARIANTS[look].includes(variant)) ?? 'parchment';
 
 /** Global effects: they apply on top of any style. */
-export interface RenderEffects { ambience: Ambience; /** 0-1 annual cycle. */ season: number; relief: boolean; lighting: TerrainLighting }
+export interface RenderEffects { ambience: Ambience; /** 0-1 annual cycle. */ season: number; relief: boolean; lighting: TerrainLighting;
+  /** Edits of the zone's year; an absent field keeps the zone's value. */ calendar?: SeasonCalendar }
 
 /** The persisted recipe. Every field is explicit: a preset writes all of them. */
 export interface CompositionRecipe {
@@ -182,6 +184,14 @@ function validateEffects(value: unknown): void {
   if (!record(lighting)) throw new Error('appearance.composition.effects.lighting: expected an object.');
   if (typeof lighting.enabled !== 'boolean') throw new Error('appearance.composition.effects.lighting.enabled: expected a boolean.');
   for (const [key, min, max] of [['azimuth', 0, 360], ['elevation', 5, 90], ['strength', 0, 3], ['exaggeration', 0, 10]] as const) inRange(lighting[key], min, max, `effects.lighting.${key}`);
+  if (value.calendar === undefined) return;
+  if (!record(value.calendar)) throw new Error('appearance.composition.effects.calendar: expected an object.');
+  const calendar = value.calendar;
+  for (const key of Object.keys(calendar)) {
+    const field = SEASON_CALENDAR_FIELDS.find(entry => entry.key === key);
+    if (!field) throw new Error(`appearance.composition.effects.calendar.${key}: unknown field.`);
+    if (calendar[key] !== undefined && calendar[key] !== null) inRange(calendar[key], field.min, field.max, `effects.calendar.${key}`);
+  }
 }
 export function validateComposition(value: unknown): asserts value is CompositionRecipe {
   if (!record(value)) throw new Error('appearance.composition: expected an object.');

@@ -1,3 +1,4 @@
+import type { SeasonCalendar } from './terrainRenderV2Zones';
 import type { RenderColors } from '../../web/src/render/customColors';
 import type { MaterialRasterContext } from './terrainMaterialContext';
 import { isFantasyStyle, renderFantasyTerrain, DEFAULT_FANTASY_OPTIONS, type FantasyOptions } from './fantasyTerrain';
@@ -112,10 +113,10 @@ function renderElevation(terrain: TerrainData, frame: boolean, clipNamespace: st
 }
 
 /** The crowns alone, transparent elsewhere, as the map pass of renderRustTerrain shades them: the canopy of a flat ground with no terrain raster (relief hidden). */
-export function renderTerrainCanopy(terrain: TerrainData, style: TerrainStyle, settings: Partial<Pick<TerrainSettings, 'seed' | 'climate' | 'climateValues' | 'climateZone'>> & { forest: Omit<ForestRaster, 'light'>; v2Season?: number }, lighting: TerrainLighting, materialContext?: MaterialRasterContext): string {
+export function renderTerrainCanopy(terrain: TerrainData, style: TerrainStyle, settings: Partial<Pick<TerrainSettings, 'seed' | 'climate' | 'climateValues' | 'climateZone'>> & { forest: Omit<ForestRaster, 'light'>; v2Season?: number; v2Calendar?: SeasonCalendar }, lighting: TerrainLighting, materialContext?: MaterialRasterContext): string {
   const n = terrain.resolution, traits = styleTraits(style), lights = terrainLights(lighting);
   const canopy = renderMaterialRaster(terrain, { seed: settings.seed ?? '42', climate: settings.climate, climateValues: settings.climateValues, climateZone: settings.climateZone }, true,
-    { ...settings.forest, renderV2: traits.satelliteVariant, v2Season: settings.v2Season, brushes: traits.forestBrushes, light: lights.primary, light2: lights.secondary, lightingStrength: lighting.enabled ? lighting.strength : 0, mapCanopy: true }, materialContext);
+    { ...settings.forest, renderV2: traits.satelliteVariant, v2Season: settings.v2Season, v2Calendar: settings.v2Calendar, brushes: traits.forestBrushes, light: lights.primary, light2: lights.secondary, lightingStrength: lighting.enabled ? lighting.strength : 0, mapCanopy: true }, materialContext);
   const rgba = new Uint8Array(n * n * 4);
   for (let i = 0; i < n * n; i++) if (canopy.canopyAlpha[i] && terrain.height[i] >= 0 && !terrain.caveMask[i]) {
     rgba[i * 4] = canopy.rgb[i * 3]; rgba[i * 4 + 1] = canopy.rgb[i * 3 + 1]; rgba[i * 4 + 2] = canopy.rgb[i * 3 + 2]; rgba[i * 4 + 3] = canopy.canopyAlpha[i];
@@ -125,7 +126,7 @@ export function renderTerrainCanopy(terrain: TerrainData, style: TerrainStyle, s
 
 /** Transitional renderer adapter. Rust never depends on the legacy World schema. */
 /** settings.forest: display-only Render3D forest raster input (field, occupation); absent keeps the legacy canopy. */
-export function renderRustTerrain(terrain: TerrainData, style: TerrainStyle, frame = true, settings: Pick<TerrainSettings, 'relief' | 'width'> & Partial<Pick<TerrainSettings, 'seed' | 'climate' | 'climateValues' | 'climateZone'>> & { forest?: Omit<ForestRaster, 'light'>; v2Season?: number } = { relief: 'mountains', width: terrain.width }, showContours = true, clipNamespace = 'main', lighting: TerrainLighting = DEFAULT_TERRAIN_LIGHTING, layers: TerrainLayers = DEFAULT_TERRAIN_LAYERS, fantasyOptions: FantasyOptions = DEFAULT_FANTASY_OPTIONS, paintBrushes = true, waterStyle: TerrainStyle = style, colors?: RenderColors, materialContext?: MaterialRasterContext): TerrainScene {
+export function renderRustTerrain(terrain: TerrainData, style: TerrainStyle, frame = true, settings: Pick<TerrainSettings, 'relief' | 'width'> & Partial<Pick<TerrainSettings, 'seed' | 'climate' | 'climateValues' | 'climateZone'>> & { forest?: Omit<ForestRaster, 'light'>; v2Season?: number; v2Calendar?: SeasonCalendar } = { relief: 'mountains', width: terrain.width }, showContours = true, clipNamespace = 'main', lighting: TerrainLighting = DEFAULT_TERRAIN_LIGHTING, layers: TerrainLayers = DEFAULT_TERRAIN_LAYERS, fantasyOptions: FantasyOptions = DEFAULT_FANTASY_OPTIONS, paintBrushes = true, waterStyle: TerrainStyle = style, colors?: RenderColors, materialContext?: MaterialRasterContext): TerrainScene {
   frame &&= layers.frame;
   const traits = styleTraits(style);
   if (traits.elevation) {
@@ -154,7 +155,7 @@ export function renderRustTerrain(terrain: TerrainData, style: TerrainStyle, fra
   });
   let canopyAlpha: Uint8Array | undefined;
   const materialSettings = { seed: settings.seed ?? '42', climate: settings.climate, climateValues: settings.climateValues, climateZone: settings.climateZone };
-  const materialForest = { ...settings.forest, renderV2:traits.satelliteVariant, v2Season:settings.v2Season, brushes: traits.forestBrushes, light: terrainLights(lighting).primary, light2: terrainLights(lighting).secondary, lightingStrength: lighting.enabled ? lighting.strength : 0 };
+  const materialForest = { ...settings.forest, renderV2:traits.satelliteVariant, v2Season:settings.v2Season, v2Calendar:settings.v2Calendar, brushes: traits.forestBrushes, light: terrainLights(lighting).primary, light2: terrainLights(lighting).secondary, lightingStrength: lighting.enabled ? lighting.strength : 0 };
   if ((traits.neuralEarth || traits.ground3d) && layers.hypsometry) {
     const material = renderMaterialRaster(terrain, materialSettings, traits.ground3d, materialForest, materialContext);
     if (traits.ground3d && settings.forest?.field) canopyAlpha = material.canopyAlpha;

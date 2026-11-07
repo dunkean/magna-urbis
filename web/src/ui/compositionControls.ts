@@ -1,3 +1,4 @@
+import { SEASON_CALENDAR_FIELDS } from '../../../rust/bridge/terrainRenderV2Zones';
 import { DIAGNOSTICS } from '../render/displayDiagnostics';
 import { POTENTIAL_IDS } from '../../../rust/bridge/resources';
 import { STYLE_IDS, GROUND_VARIANTS, LAND_KINDS, presetComposition, withGroundVariant, type StyleId, type CompositionRecipe, type Limitation } from '../render/composition';
@@ -63,6 +64,7 @@ export const compositionFields: Record<string, ParameterField> = Object.fromEntr
   // Global effects: they apply on top of any style.
   choice('composition.effects.ambience', 'Ambience', 'Ambiance', [['day', 'Day', 'Jour'], ['night', 'Night', 'Nuit']]),
   number('composition.effects.season', 'Season (annual cycle)', 'Saison (cycle annuel)', 0, 1, .01),
+  ...SEASON_CALENDAR_FIELDS.map(f => ({ ...number(`composition.effects.calendar.${f.key}`, f.en, f.fr, f.min, f.max, f.step), optional: true, placeholder: copy('Zone default', 'Selon la zone') })),
   flag('composition.effects.relief', 'Shaded relief', 'Relief ombré'),
   flag('composition.effects.lighting.enabled', 'Terrain shading', 'Ombrage du relief'),
   number('composition.effects.lighting.azimuth', 'Light azimuth (°)', 'Azimut de la lumière (°)', 0, 360, 1),
@@ -97,7 +99,7 @@ export const RENDER_COMPOSITION_ROWS: Record<RenderSection, readonly string[]> =
   ground: ['composition.preset', 'composition.ground.look', 'composition.ground.variant'],
   vegetation: ['composition.vegetation.look', 'composition.vegetation.forestTone'],
   landuse: [],
-  ambience: ['composition.effects.ambience', 'composition.effects.season', 'composition.effects.relief', 'composition.effects.lighting.enabled', 'composition.effects.lighting.azimuth', 'composition.effects.lighting.elevation', 'composition.effects.lighting.strength', 'composition.effects.lighting.exaggeration'],
+  ambience: ['composition.effects.ambience', 'composition.effects.season', ...SEASON_CALENDAR_FIELDS.map(f => `composition.effects.calendar.${f.key}`), 'composition.effects.relief', 'composition.effects.lighting.enabled', 'composition.effects.lighting.azimuth', 'composition.effects.lighting.elevation', 'composition.effects.lighting.strength', 'composition.effects.lighting.exaggeration'],
   roads: ['composition.networks.roads.visible', 'composition.networks.roads.look', 'composition.networks.roads.emphasis'],
   water: ['composition.networks.water.visible', 'composition.networks.water.look'],
   buildings: ['composition.buildings.visible', 'composition.buildings.look', 'composition.buildings.parcels', 'composition.buildings.blocks', 'composition.buildings.districts'],

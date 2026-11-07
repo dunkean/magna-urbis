@@ -6,7 +6,7 @@ import { bindForestBrushes, disposeForestBrushes } from '../render/forestBrushAt
 import { ShaderVariants, specializeShader } from './glVariants';
 import { NEURAL_EARTH_MATERIAL_GLSL, GROUND_COVER_WATER_GLSL, groundCoverInputsGlsl } from '../../../rust/bridge/terrainMaterial';
 import { RENDER_V2_GLSL, renderV2GlacierSources } from '../../../rust/bridge/terrainRenderV2';
-import { renderV2ZoneUniform } from '../../../rust/bridge/terrainRenderV2Zones';
+import { renderV2ZoneUniform, setSeasonCalendarGl, type SeasonCalendar } from '../../../rust/bridge/terrainRenderV2Zones';
 import type { ClimateZone } from '../../../rust/bridge/terrainClimate';
 import { RENDER_3D_MATERIAL_GLSL } from '../../../rust/bridge/terrainMaterial3d';
 import { withoutLandDetail } from '../../../rust/bridge/terrainMaterialOccupation';
@@ -52,7 +52,7 @@ export interface Terrain3dGroundSettings extends Terrain3dLookSettings {
   seed: number; climate: { temperature: number; precipitation: number }; sourceCell: number;
   /** V2 climate zone (Render v2 styles); absent keeps the climate-only look. */
   climateZone?: ClimateZone;
-  lighting: TerrainLighting; displacement: boolean; forestBrushes?: boolean; renderV2?: number; paperMap?: boolean; v2Season?: number; waterVisible?: boolean;
+  lighting: TerrainLighting; displacement: boolean; forestBrushes?: boolean; renderV2?: number; paperMap?: boolean; v2Season?: number; v2Calendar?: SeasonCalendar; waterVisible?: boolean;
   contours?: { step: number; color: string; opacity: number; flat: boolean };
 }
 export type Terrain3dForestSettings = Pick<Terrain3dGroundSettings, 'seed' | 'climate' | 'lighting'>;
@@ -1825,7 +1825,7 @@ export class Terrain3d {
       gl.activeTexture(gl.TEXTURE2);gl.bindTexture(gl.TEXTURE_2D,this.macroTexture);gl.uniform1i(this.uniform('macroField'),2);
     }
     if(settings){
-      gl.uniform1i(this.uniform('uRenderV2'),settings.renderV2??0);gl.uniform1i(this.uniform('uV2WaterVisible'),settings.waterVisible===false?0:1);gl.uniform4fv(this.uniform('uV2GlacierSources[0]'),renderV2GlacierSources(layer,settings.climate));gl.uniform1f(this.uniform('uV2Season'),settings.v2Season??.5);gl.uniform1i(this.uniform('uMaterialZone'),renderV2ZoneUniform(settings.climateZone));
+      gl.uniform1i(this.uniform('uRenderV2'),settings.renderV2??0);gl.uniform1i(this.uniform('uV2WaterVisible'),settings.waterVisible===false?0:1);gl.uniform4fv(this.uniform('uV2GlacierSources[0]'),renderV2GlacierSources(layer,settings.climate));gl.uniform1f(this.uniform('uV2Season'),settings.v2Season??.5);setSeasonCalendarGl(gl,name=>this.uniform(name),settings.climateZone,settings.v2Calendar);gl.uniform1i(this.uniform('uMaterialZone'),renderV2ZoneUniform(settings.climateZone));
       if((settings.renderV2??0)>0&&this.shoreRing?.layer!==layer){
         if(this.shoreRing)gl.deleteTexture(this.shoreRing.texture);
         this.shoreRing={layer,texture:shoreRingTexture(gl,shoreRingFor(layer))};

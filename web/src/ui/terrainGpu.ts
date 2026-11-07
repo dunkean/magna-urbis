@@ -26,7 +26,7 @@ import { shoreRingFor } from '../../../rust/bridge/terrainForestBeach';
 import type { ForestField, ForestOccupation, LandDetail } from '../../../rust/bridge/terrainForest';
 import { createGroundDisplacementSampler } from '../../../rust/bridge/terrainGround';
 import { renderV2GlacierSources } from '../../../rust/bridge/terrainRenderV2';
-import { renderV2ZoneUniform } from '../../../rust/bridge/terrainRenderV2Zones';
+import { renderV2ZoneUniform, setSeasonCalendarGpu } from '../../../rust/bridge/terrainRenderV2Zones';
 import { FRACTAL_ROTATIONS } from '../../../rust/bridge/terrainAdjust';
 import { terrainLights } from '../render/terrainLighting';
 import { groundCoverActive } from '../render/materialLook';
@@ -820,7 +820,7 @@ export class TerrainGpu implements TerrainRenderer {
       this.bindBrushes(textures, styleTraits(look.style).forestBrushes && mode === 3);
       p.set('uV2WaterVisible', look.layers.water === false ? 0 : 1);
       if (this.base && look.climate) p.setArray('uV2GlacierSources', renderV2GlacierSources(this.base.layer, look.climate));
-      p.set('uV2Season', look.v2Season ?? .5); p.set('uMaterialZone', renderV2ZoneUniform(look.climateZone));
+      p.set('uV2Season', look.v2Season ?? .5); setSeasonCalendarGpu(p, look.climateZone, look.v2Calendar); p.set('uMaterialZone', renderV2ZoneUniform(look.climateZone));
       p.set('uEnhanced3d', look.mesh3d || styleTraits(look.style).ground3d ? 1 : 0);
       p.set('uRefinementMode', look.refinement3d === 'source' ? 0 : isNeuralRefinement(look.refinement3d ?? 'noise') ? 2 : 1);
       const refined = this.enhanced.at(-1), previousRefined = this.enhanced.at(-2);
@@ -982,7 +982,7 @@ export class TerrainGpu implements TerrainRenderer {
     const v = this.lookVariant(look);
     if (mapPasses(v).includes('aux')) {
       const aux = this.terrainPipeline(v, 'aux', 'none', wait);
-      const key = aux && JSON.stringify([width, height, origin, px, look.seed, look.climate, look.lighting, look.v2Season, look.layers, look.refinement3d,
+      const key = aux && JSON.stringify([width, height, origin, px, look.seed, look.climate, look.lighting, look.v2Season, look.v2Calendar, look.layers, look.refinement3d,
         look.mesh3d, look.style, look.waterLook, this.forestVersion, this.riverCount, this.retainedWaterKey, this.lakeN, separateWater, this.base.layer.width, this.base.layer.n,
         this.enhanced.at(-1)?.fadeStart, this.coastDistance ? 1 : 0]);
       if (this.auxTarget?.width !== width || this.auxTarget.height !== height) this.auxKey = '';

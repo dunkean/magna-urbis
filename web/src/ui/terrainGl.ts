@@ -25,7 +25,7 @@ import { lakeDistances, seaDistanceSurface, type WaterSurface } from '../render/
  * Heights in metres, coordinates in metres from the map's north-west corner.
  */
 import { RENDER_V2_GLSL, renderV2GlacierSources } from '../../../rust/bridge/terrainRenderV2';
-import { renderV2ZoneUniform } from '../../../rust/bridge/terrainRenderV2Zones';
+import { renderV2ZoneUniform, setSeasonCalendarGl, type SeasonCalendar } from '../../../rust/bridge/terrainRenderV2Zones';
 import type { ClimateZone } from '../../../rust/bridge/terrainClimate';
 import { styleTraits, terrainStyle, type TerrainStyle } from '../render/terrainStyle';
 import type { RenderColors } from '../render/customColors';
@@ -60,6 +60,8 @@ export interface TerrainLook {
   /** Explicit opt-in for perspective captures; ordinary 2D styles retain their surface. */
   mesh3d?: boolean;
   v2Season?: number;
+  /** Edits of the zone's year (appearance panel). */
+  v2Calendar?: SeasonCalendar;
   /** Internal premultiplied water/ink pass for the physically shaded flyover. */
   groundCapture?: boolean;
   refinement3d?: TerrainRefinement;
@@ -670,7 +672,7 @@ export class TerrainGl {
     const gl = this.gl, v = this.lookVariant(look);
     if (!mapPasses(v).includes('aux') || !this.base) return;
     const main = this.terrain, aux = this.variants.get(auxKey(v), () => [TERRAIN_VS, auxFragment(v)], this.capturing || framebuffer !== null);
-    const key = aux && JSON.stringify([width, height, origin, px, look.seed, look.climate, look.lighting, look.v2Season, look.layers, look.refinement3d,
+    const key = aux && JSON.stringify([width, height, origin, px, look.seed, look.climate, look.lighting, look.v2Season, look.v2Calendar, look.layers, look.refinement3d,
       look.mesh3d, look.style, look.waterLook, this.forestVersion, this.riverCount, this.retainedWaterKey, this.lakeN, separateWater, this.base.layer.width, this.base.layer.n,
       this.enhanced.at(-1)?.fadeStart, this.coastDistance ? 1 : 0]);
     if (aux && key !== this.auxKey) {
@@ -1031,7 +1033,7 @@ export class TerrainGl {
     gl.activeTexture(gl.TEXTURE14); gl.bindTexture(gl.TEXTURE_2D, this.shoreRing?.texture ?? this.empty);
     gl.uniform1i(u('uShoreRing'), 14); gl.uniform3f(u('uShoreRingRect'), this.shoreRing?.x ?? 0, this.shoreRing?.y ?? 0, this.shoreRing?.width ?? 1);
     bindForestBrushes(gl, u, styleTraits(look.style).forestBrushes && mode === 3, 9);
-    gl.uniform1i(u('uPaperMap'),styleTraits(look.style).paperMap?1:0);gl.uniform1i(u('uRenderV2'),styleTraits(look.style).satelliteVariant);gl.uniform1i(u('uV2WaterVisible'),look.layers.water===false?0:1);if(this.base&&look.climate)gl.uniform4fv(u('uV2GlacierSources[0]'),renderV2GlacierSources(this.base.layer,look.climate));gl.uniform1f(u('uV2Season'),look.v2Season??.5);gl.uniform1i(u('uMaterialZone'),renderV2ZoneUniform(look.climateZone));
+    gl.uniform1i(u('uPaperMap'),styleTraits(look.style).paperMap?1:0);gl.uniform1i(u('uRenderV2'),styleTraits(look.style).satelliteVariant);gl.uniform1i(u('uV2WaterVisible'),look.layers.water===false?0:1);if(this.base&&look.climate)gl.uniform4fv(u('uV2GlacierSources[0]'),renderV2GlacierSources(this.base.layer,look.climate));gl.uniform1f(u('uV2Season'),look.v2Season??.5);setSeasonCalendarGl(gl,u,look.climateZone,look.v2Calendar);gl.uniform1i(u('uMaterialZone'),renderV2ZoneUniform(look.climateZone));
     gl.uniform1i(u('uEnhanced3d'), look.mesh3d || styleTraits(look.style).ground3d ? 1 : 0);
     gl.uniform1i(u('uRefinementMode'), look.refinement3d === 'source' ? 0 : isNeuralRefinement(look.refinement3d ?? 'noise') ? 2 : 1);
     const refined = this.enhanced.at(-1), previousRefined = this.enhanced.at(-2);

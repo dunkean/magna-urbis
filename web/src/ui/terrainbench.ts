@@ -197,7 +197,7 @@ for (const format of ['svg', 'png'] as const) {
     if (!terrain || !isFantasyStyle(style)) return;
     button.disabled = true;
     try {
-      const scene = renderBenchTerrain(terrain, style, true, { ...settings, v2Season, forest: forestRaster() }, false, 'export', lighting, layers, fantasyOptions, false, baseStyle, getBenchRenderColors());
+      const scene = renderBenchTerrain(terrain, style, true, { ...settings, v2Season, v2Calendar: benchCalendar(), forest: forestRaster() }, false, 'export', lighting, layers, fantasyOptions, false, baseStyle, getBenchRenderColors());
       const svg = map.cloneNode(true) as SVGSVGElement;
       for (const id of ['terrainOverview', 'terrainDetail', 'fantasyPainting']) svg.querySelector(`#${id}`)?.remove();
       svg.setAttribute('viewBox', `0 0 ${terrain.width} ${terrain.width}`); svg.setAttribute('width', '4096'); svg.setAttribute('height', '4096');
@@ -685,6 +685,7 @@ function withForestQuery(d: Decor): Decor {
   }
   return { ...d, meta: { ...d.meta, query: params.toString() } };
 }
+const benchCalendar = () => resolveBenchAppearance().ground.calendar;
 const benchClimateZone = (): ClimateZone | undefined => climateZoneOf(settings.climateZone ?? settings.climate);
 function updateForestControls(): void {
   el('renderV2Controls').hidden=false;input('renderV2Season').value=String(v2Season);el('renderV2Date').textContent=new Intl.DateTimeFormat('en',{month:'long'}).format(new Date(Date.UTC(2024,0,1+Math.floor(v2Season*365))));
@@ -859,7 +860,7 @@ async function refresh3dTexture(epoch: number): Promise<void> {
     terrain3d.setGroundMaterial(ground ? {
       seed: seedHash(settings.seed), climate: climateOf(settings), climateZone: benchClimateZone(),
       sourceCell: retainedDecor?.meta.terrainDisplay?.sourceCell ?? settings.width / 1024,
-      lighting, ambience:look3d.ambience,waterLook:look3d.networks.water.look, renderV2:styleTraits(style).satelliteVariant,v2Season,waterVisible:input('showWater').checked, displacement: refinement3d !== 'source', forestBrushes: styleTraits(style).forestBrushes,
+      lighting, ambience:look3d.ambience,waterLook:look3d.networks.water.look, renderV2:styleTraits(style).satelliteVariant,v2Season,v2Calendar:benchCalendar(),waterVisible:input('showWater').checked, displacement: refinement3d !== 'source', forestBrushes: styleTraits(style).forestBrushes,
       contours: input('showContours').checked && contourInterval()>0 ? {
         step: contourInterval(), color: terrainStyle(style, getBenchRenderColors()).palette.contour,
         opacity: terrainStyle(style, getBenchRenderColors()).palette.contourOpacity, flat: settings.relief === 'flat',
@@ -1600,7 +1601,7 @@ function renderGpu(): void {
   if (document.body.dataset.bench !== 'city') setMapClimateZone(benchClimateZone());
   const look: TerrainLook = {
     climateZone: benchClimateZone(),
-    independentCanopy: resolved.composition.vegetation.procedural, ambience:resolved.composition.ambience,waterLook:resolved.composition.networks.water.look, refinement3d, v2Season: ground.season, colors: resolved.palette.colors,
+    independentCanopy: resolved.composition.vegetation.procedural, ambience:resolved.composition.ambience,waterLook:resolved.composition.networks.water.look, refinement3d, v2Season: ground.season, v2Calendar: ground.calendar, colors: resolved.palette.colors,
     style: ground.style, waterStyle: resolved.composition.networks.water.look === 'ink' ? resolved.palette.mapStyle : resolved.composition.variant, lighting: brushed ? { ...ground.lighting, strength: .12 } : ground.lighting, layers: brushed ? { ...ground.layers, hypsometry: false } : ground.layers, climate: climateOf(settings), mapWidth: terrain.width, globalMin: terrain.globalMinHeight, globalMax: terrain.globalMaxHeight,
     contours: ground.layers.relief && !brushed && ground.contours && contourStep > 0, contourStep, flatRelief: settings.relief === 'flat',
     refine: !!settings.refine && !terrain.caveMask.length, sourceCell: retainedDecor?.meta.terrainDisplay?.sourceCell ?? settings.width / 1024, seed: seedHash(settings.seed),
@@ -1627,7 +1628,7 @@ function render(preparedScene?: TerrainScene, preparationMs = 0): void {
   // Hide a stale stand before drawing; a new field redraws through showForest.
   forestRendering = true; try { scheduleForest(); } finally { forestRendering = false; }
   const forestScene = forestRaster();
-  const start = performance.now(), scene = (benchPreparedLook() && !styleTraits(style).fantasy && !forestScene && !Object.keys(getBenchRenderColors()).length ? preparedScene : undefined) ?? renderBenchTerrain(terrain, style, true, { ...settings, forest: forestScene, v2Season }, input('showContours').checked, 'main', lighting, layers, fantasyOptions, false, baseStyle, getBenchRenderColors());
+  const start = performance.now(), scene = (benchPreparedLook() && !styleTraits(style).fantasy && !forestScene && !Object.keys(getBenchRenderColors()).length ? preparedScene : undefined) ?? renderBenchTerrain(terrain, style, true, { ...settings, forest: forestScene, v2Season, v2Calendar: benchCalendar() }, input('showContours').checked, 'main', lighting, layers, fantasyOptions, false, baseStyle, getBenchRenderColors());
   rasterWaterMask = scene.waterMask;
   map.innerHTML = `<g id="terrainOverview">${scene.svg}</g><g id="terrainDetail"></g><g id="hydrologyOverlay"></g>${styleTraits(style).fantasy && layers.relief ? '<g id="fantasyPainting" pointer-events="none"></g>' : ''}`;
   refreshUrbanPainting();
@@ -1781,7 +1782,7 @@ function receive(response: TerrainResponse): void {
       if (terrain) data.waterSurface = seaDistanceSurface(terrain, settings.width);
       // Detail crops sample the same full-tile forest field; the worker scenes carry none.
       const forestScene = forestRaster(data);
-      const scene = benchPreparedLook() && prepared && response.scene && !forestScene && !Object.keys(getBenchRenderColors()).length ? response.scene : renderBenchTerrain(data, style, false, { ...settings, forest: forestScene, v2Season }, input('showContours').checked, 'detail', lighting, layers, fantasyOptions, false, baseStyle, getBenchRenderColors()), image = new Image();
+      const scene = benchPreparedLook() && prepared && response.scene && !forestScene && !Object.keys(getBenchRenderColors()).length ? response.scene : renderBenchTerrain(data, style, false, { ...settings, forest: forestScene, v2Season, v2Calendar: benchCalendar() }, input('showContours').checked, 'detail', lighting, layers, fantasyOptions, false, baseStyle, getBenchRenderColors()), image = new Image();
       image.src = scene.imageUrl;
       const tile: DetailTile = {
         terrain: { x: data.x, y: data.y, width: data.width, resolution: data.resolution, height: data.height, caveMask: data.caveMask, generationMs: data.generationMs, backend: data.backend, backendReason: data.backendReason, prepareMs: data.prepareMs, samplingMs: data.samplingMs, gpuSetupMs: data.gpuSetupMs },

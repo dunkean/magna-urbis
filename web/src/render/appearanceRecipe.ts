@@ -4,6 +4,7 @@
  * A named style is a preset of this recipe; its declared `StyleTraits` drive every decision, never its id.
  * Shared by V2 and the benches: no V2 import, no engine import, no I/O.
  */
+import type { SeasonCalendar } from '../../../rust/bridge/terrainRenderV2Zones';
 import type { MapStyle } from './styles';
 import { styleTraits, type StyleTraits, type TerrainStyle } from './terrainStyle';
 import { DEFAULT_TERRAIN_LIGHTING, DEFAULT_TERRAIN_LAYERS, type TerrainLighting, type TerrainLayers } from './terrainLighting';
@@ -48,7 +49,7 @@ export interface ResolveFlags {
 export interface GroundComponent {
   /** Effective ground style ('copernicus' under the elevation diagnostic). */
   style: TerrainStyle; traits: StyleTraits;
-  lighting: TerrainLighting; season: number; layers: TerrainLayers & { water: boolean }; contours: boolean; lakes: boolean; oxbows: boolean;
+  lighting: TerrainLighting; season: number; calendar: SeasonCalendar; layers: TerrainLayers & { water: boolean }; contours: boolean; lakes: boolean; oxbows: boolean;
 }
 export interface VegetationComponent {
   /** Who draws forests: the ground material, the cartographic canopy, or classic symbols. */
@@ -151,7 +152,7 @@ export function resolveAppearance(appearance: AppearanceInput | undefined, base:
 
   // Global effects live in the recipe; a caller without one keeps the neutral defaults.
   const effects = appearance?.composition?.effects;
-  const ground: GroundComponent = { style: groundStyle, traits: groundTraits, lighting: { ...DEFAULT_TERRAIN_LIGHTING, ...effects?.lighting }, season: effects?.season ?? .5,
+  const ground: GroundComponent = { style: groundStyle, traits: groundTraits, lighting: { ...DEFAULT_TERRAIN_LIGHTING, ...effects?.lighting }, season: effects?.season ?? .5, calendar: { ...effects?.calendar },
     layers: { ...DEFAULT_TERRAIN_LAYERS, ...a?.terrainLayers, water: a?.terrainLayers?.water ?? true }, contours: a?.contours ?? base.contours ?? true, lakes: a?.lakes ?? true, oxbows: a?.oxbows ?? true };
   const unified = a?.unifiedDefaults === true, legacy3d = !unified && target === 'view3d';
   // Previously the classic 2D canvas drew classic vegetation symbols by default; export and composite used the canopy.
@@ -184,11 +185,11 @@ export function resolveAppearance(appearance: AppearanceInput | undefined, base:
   }
 
   const keys: PassKeys = {
-    terrainLook: key(ground.style, pick(palette.applicableColors, ['paper', 'contour', 'groundLow', 'groundHigh', 'waterShore', 'waterDeep', 'river']), ground.lighting, ground.season, ground.layers.relief, ground.layers.hypsometry, ground.layers.frame, ground.contours,composition.ambience,composition.networks.water.look),
+    terrainLook: key(ground.style, pick(palette.applicableColors, ['paper', 'contour', 'groundLow', 'groundHigh', 'waterShore', 'waterDeep', 'river']), ground.lighting, ground.season, ground.calendar, ground.layers.relief, ground.layers.hypsometry, ground.layers.frame, ground.contours,composition.ambience,composition.networks.water.look),
     terrainBase: key(ground.style, ground.layers.relief, groundTraits.fantasy ? vegetation.fantasy : 0),
     water: key(ground.style, pick(palette.applicableColors, ['waterShore', 'waterDeep', 'river']), ground.layers.water, ground.lakes, ground.oxbows, composition.networks.water, diagnostic, diagnostic === 'res-potential' ? a?.resourcePotential ?? 'arable' : null),
     forest: key(vegetation.forest, groundTraits.forestClearingProfile, groundTraits.forestBrushes, ground.layers.water),
-    cartography: key(groundTraits.satelliteVariant ? null : ground.season, mapStyle, capabilities.nativeCities && !cartography.legend ? omit(a?.colors, OVERLAY_FOREIGN_COLORS) : a?.colors, ground.style, cartography.roads, composition.networks.roads.look, cartography.landuse, cartography.painted, vegetation.symbols, composition.vegetation.cartographic, city.visible, cartography.landuseForestTone),
+    cartography: key(groundTraits.satelliteVariant ? null : [ground.season, ground.calendar], mapStyle, capabilities.nativeCities && !cartography.legend ? omit(a?.colors, OVERLAY_FOREIGN_COLORS) : a?.colors, ground.style, cartography.roads, composition.networks.roads.look, cartography.landuse, cartography.painted, vegetation.symbols, composition.vegetation.cartographic, city.visible, cartography.landuseForestTone),
     overlays: key(composition.text, cartography.labels, cartography.legend, cartography.cartouche),
     roads: key(composition.networks.roads.emphasis),
     semantic: key(composition.landuse),

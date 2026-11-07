@@ -1,5 +1,5 @@
 import { RENDER_V2_GLSL, renderV2GlacierSources } from './terrainRenderV2';
-import { renderV2ZoneUniform } from './terrainRenderV2Zones';
+import { renderV2ZoneUniform, setSeasonCalendarGl, type SeasonCalendar } from './terrainRenderV2Zones';
 import { NEURAL_EARTH_MATERIAL_GLSL, GROUND_COVER_WATER_GLSL, groundCoverInputsGlsl } from './terrainMaterial';
 import { RENDER_3D_MATERIAL_GLSL } from './terrainMaterial3d';
 import { FOREST_PRELUDE_GLSL, forestBeachTexture, type ForestField, type ForestOccupation } from './terrainForest';
@@ -13,7 +13,7 @@ import { createMaterialRasterContext, type MaterialRasterContext } from './terra
 /** Render3D forest for rasters: the live view's canonical field/occupation and
  * its sun direction (map x, map y, up; terrainLights().primary). */
 export interface ForestWaterRaster { x: number; y: number; width: number; n: number; alpha: Uint8Array; key: string }
-export interface ForestRaster { field?: ForestField; occupation?: ForestOccupation; water?: ForestWaterRaster; light?: readonly number[]; light2?: readonly number[]; lightingStrength?: number; brushes?: boolean; groundCover?: boolean; renderV2?: number; v2Season?: number; waterVisible?: boolean; /** rgb = crowns shaded as the live map pass does, to lay over a palette ground by canopyAlpha. */ mapCanopy?: boolean }
+export interface ForestRaster { field?: ForestField; occupation?: ForestOccupation; water?: ForestWaterRaster; light?: readonly number[]; light2?: readonly number[]; lightingStrength?: number; brushes?: boolean; groundCover?: boolean; renderV2?: number; v2Season?: number; v2Calendar?: SeasonCalendar; waterVisible?: boolean; /** rgb = crowns shaded as the live map pass does, to lay over a palette ground by canopyAlpha. */ mapCanopy?: boolean }
 export interface MaterialRaster { rgb: Uint8Array; canopyAlpha: Uint8Array }
 interface Uploaded { key: string; texture: WebGLTexture }
 interface RasterRenderer extends MaterialRasterContext { program: WebGLProgram; texture: WebGLTexture; field?: Uploaded; bank?: Uploaded; beach?: Uploaded; occupation?: Uploaded; water?: Uploaded; target?: { n: number; texture: WebGLTexture; framebuffer: WebGLFramebuffer } }
@@ -152,7 +152,7 @@ function composeMaterialRaster(terrain: TerrainData, settings: Pick<TerrainSetti
   gl.uniform2f(u('uMaterialClimate'), climate.temperature, climate.precipitation); gl.uniform1ui(u('uMaterialSeed'), seedHash(settings.seed));
   if (enhanced3d) {
     // Units 1 field, 2 occupation, 4 water, 5 bank envelope; undefined keeps the legacy macro canopy exactly.
-    gl.uniform1i(u('uRenderV2'),forest?.renderV2??0);gl.uniform1i(u('uV2WaterVisible'),forest?.waterVisible===false?0:1);gl.uniform4fv(u('uV2GlacierSources[0]'),renderV2GlacierSources({x:terrain.x,y:terrain.y,width:terrain.width,n,data:terrain.height},climate));gl.uniform1f(u('uV2Season'),forest?.v2Season??.5);gl.uniform1i(u('uMaterialZone'),renderV2ZoneUniform(settings.climateZone));
+    gl.uniform1i(u('uRenderV2'),forest?.renderV2??0);gl.uniform1i(u('uV2WaterVisible'),forest?.waterVisible===false?0:1);gl.uniform4fv(u('uV2GlacierSources[0]'),renderV2GlacierSources({x:terrain.x,y:terrain.y,width:terrain.width,n,data:terrain.height},climate));gl.uniform1f(u('uV2Season'),forest?.v2Season??.5);setSeasonCalendarGl(gl,u,settings.climateZone,forest?.v2Calendar);gl.uniform1i(u('uMaterialZone'),renderV2ZoneUniform(settings.climateZone));
     const field = forest?.field, occupation = field ? forest?.occupation : undefined, water = (field||forest?.renderV2) ? forest?.water : undefined, light = forest?.light ?? [-.5, -.5, .7071];
     gl.activeTexture(gl.TEXTURE3); // upload unit: keep the heights bound on unit 0
     if (field) active.field = forestTexture(gl, active.field, field, true);

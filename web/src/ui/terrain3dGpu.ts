@@ -24,7 +24,7 @@ import atlas from '../render/assets/fantasy/forest-brushes.json';
 import { shoreRingFor } from '../../../rust/bridge/terrainForestBeach';
 import type { ForestField, ForestOccupation, LandDetail } from '../../../rust/bridge/terrainForest';
 import { renderV2GlacierSources } from '../../../rust/bridge/terrainRenderV2';
-import { renderV2ZoneUniform } from '../../../rust/bridge/terrainRenderV2Zones';
+import { renderV2ZoneUniform, setSeasonCalendarGpu } from '../../../rust/bridge/terrainRenderV2Zones';
 import { terrainLights } from '../render/terrainLighting';
 import { groundCoverActive } from '../render/materialLook';
 import { MATERIALS, type MaterialImages } from '../render/buildingMaterials';
@@ -516,7 +516,7 @@ class Terrain3dGpu extends Terrain3d {
     if (settings) {
       const v2 = settings.renderV2 ?? 0;
       p.set('uV2WaterVisible', settings.waterVisible === false ? 0 : 1); p.setArray('uV2GlacierSources', renderV2GlacierSources(layer, settings.climate));
-      p.set('uV2Season', settings.v2Season ?? .5); p.set('uMaterialZone', renderV2ZoneUniform(settings.climateZone));
+      p.set('uV2Season', settings.v2Season ?? .5); setSeasonCalendarGpu(p, settings.climateZone, settings.v2Calendar); p.set('uMaterialZone', renderV2ZoneUniform(settings.climateZone));
       if (v2 > 0 && this.ring?.layer !== layer) {
         if (this.ring) this.deleteTexture(this.ring.image);
         const grid = shoreRingFor(layer), half = new Uint16Array(grid.data.length);

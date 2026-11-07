@@ -141,7 +141,7 @@ export class BenchRenderer {
     const scene = renderScene(world, settings);
     this.world = world; this.scene = scene; this.native = scene.terrain;
     const effective = effectiveTerrainSettings(settings, world.mapSize);
-    setMapSeason(r.ground.season, effective.climateZone);
+    setMapSeason(r.ground.season, effective.climateZone, r.ground.calendar);
     setRoadGround(world.landuse, world.mapSize, roadGroundTones(r.ground.traits.family === 'material', biomePalette(r.palette.mapStyle, world.options.biome)), r.composition.ambience === 'night');
     const effectiveKey = JSON.stringify([effective.relief, effective.refine, effective.detailNoise, effective.climate, effective.climateValues, effective.climateZone, effective.hydrology?.riverMode]);
     const forestKey = JSON.stringify([effective.forest, effective.climateValues]);
@@ -204,7 +204,7 @@ export class BenchRenderer {
     if (this.gpuActive) {
       const source = t.field ?? { n: t.resolution, data: t.height, floor: 0, cave: t.caveMask };
       this.terrainSvg = ''; this.base = undefined;
-      this.gpu!.setLook({ style, colors, lighting, layers, groundCover:r.composition.vegetation.procedural, ambience:r.composition.ambience,waterLook:r.composition.networks.water.look,waterStyle:r.composition.networks.water.look==='ink'?r.palette.mapStyle:undefined, independentCanopy: true, mapWidth: t.width, climate: climateOf(effective as TerrainSettings), climateZone: effective.climateZone, v2Season: r.ground.season,
+      this.gpu!.setLook({ style, colors, lighting, layers, groundCover:r.composition.vegetation.procedural, ambience:r.composition.ambience,waterLook:r.composition.networks.water.look,waterStyle:r.composition.networks.water.look==='ink'?r.palette.mapStyle:undefined, independentCanopy: true, mapWidth: t.width, climate: climateOf(effective as TerrainSettings), climateZone: effective.climateZone, v2Season: r.ground.season, v2Calendar: r.ground.calendar,
         globalMin: t.globalMinHeight, globalMax: t.globalMaxHeight, contours: false, contourStep: effective.relief === 'mountains' ? 40 : effective.relief === 'flat' ? 2 : 10,
         flatRelief: effective.relief === 'flat', refine: effective.refine??true, sourceCell: t.width / source.n, seed: seedHash(world.seed), detail: effective.detailNoise ?? DEFAULT_FRACTAL_DETAIL,
         floor: source.floor ?? 0, frame: layers.frame, background: terrainStyle(style,colors).palette.paper });
@@ -215,7 +215,7 @@ export class BenchRenderer {
     // The shared material shader also composes SVG/PNG exports, using an OffscreenCanvas or a page canvas according to WebGL2 availability.
     const cacheKey = `terrain:${key}`;
     const pending = this.shared.cache.get<Promise<BaseRaster>>(cacheKey, async () => {
-      const settingsForRender = { ...effective, width: world.mapSize, seed: world.seed, v2Season: r.ground.season, forest: { field: v2DisplayForest(world, settings, r), occupation: this.groundOccupation(), groundCover:r.composition.vegetation.procedural, waterVisible: layers.water } };
+      const settingsForRender = { ...effective, width: world.mapSize, seed: world.seed, v2Season: r.ground.season, v2Calendar: r.ground.calendar, forest: { field: v2DisplayForest(world, settings, r), occupation: this.groundOccupation(), groundCover:r.composition.vegetation.procedural, waterVisible: layers.water } };
       let svg = '';
       const waterStyle=r.composition.networks.water.look==='natural'?'render3d':r.palette.mapStyle;
       if (layers.relief) svg = renderRustTerrain(t, style, layers.frame, settingsForRender, r.ground.contours, 'v2-render', lighting, layers, r.vegetation.fantasy, true, waterStyle, colors, this.rasterContext()).svg;

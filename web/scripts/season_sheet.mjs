@@ -89,6 +89,12 @@ async function shootWorld(zone, reliefId, attempt) {
   const centre = { x: viewport.width / 2, y: viewport.height / 2 };
   for (const style of styles) {
     await setStyle(page, style); await settle(page, 4000);
+    // --calendar key=value,... edits the zone's year through the panel's own fields.
+    for (const pair of (arg('calendar', '') || '').split(',').filter(Boolean)) {
+      const [key, value] = pair.split('=');
+      await page.evaluate(([k, v]) => { const box = document.querySelector(`[data-setting-path="composition.effects.calendar.${k}"],[data-setting-path="appearance.composition.effects.calendar.${k}"]`); if (!box) throw Error(`No calendar control ${k}`); box.value = v; box.dispatchEvent(new Event('input', { bubbles: true })); box.dispatchEvent(new Event('change', { bubbles: true })); }, [key, value]);
+      await settle(page, 1500);
+    }
     if (arg('variant')) { await page.evaluate(v => { const box = document.querySelector('[data-setting-path="composition.ground.variant"],[data-setting-path="appearance.composition.ground.variant"]'); if (!box) throw Error('no variant control'); box.value = v; box.dispatchEvent(new Event('input', { bubbles: true })); box.dispatchEvent(new Event('change', { bubbles: true })); }, arg('variant')); await settle(page, 4000); }
     // The town does not always keep the requested centre: the place list frames it where it settled.
     record.places ??= await page.evaluate(() => [...document.querySelectorAll('[data-town]')].map(b => [b.dataset.town, b.textContent.trim().slice(0, 40)]));

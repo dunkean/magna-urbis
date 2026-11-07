@@ -80,14 +80,14 @@ V2Env v2Local(vec3 s,vec2 world,float tpi,float footprint){
   V2Env e=v2Evaluate(vec3(world,0.),s.x,s.yz,tpi,annual+amplitude,annual-amplitude-year.y,rain*.5*(1.+year.x),rain*.5*(1.-year.x),.15+.50*arid,bank,fract(uV2Season+1.-V2_SEASON_LAG),footprint,uMaterialSeed);
   // A thawing zone raises its snow line; the perennial floor of the summits stays.
   float thaw=v2Zoned()?v2SeasonThaw():0.;
-  if(thaw>0.){
+  if(thaw!=0.){
     float warmest=annual+amplitude,coldest=annual-amplitude-year.y,supply=clamp(rain/max(120.,10.*(warmest+coldest)+280.),0.,5.),slope=length(s.yz);
     e.snow=max(v2Snow(e.temperature+thaw,supply,slope,sstep(0.,-.10,tpi)),v2PerennialSnow(warmest+.65*(e.exposure-.5),supply,slope));
   }
   // Snow lies in patches, not as a veil: drifts down to field size cross the melt threshold one by one.
   vec3 ground=vec3(world,0.);
   float drift=.45*v2Pattern(ground,2600.,footprint,uMaterialSeed+721u)+.3*v2Pattern(ground,700.,footprint,uMaterialSeed+722u)+.15*v2Pattern(ground,190.,footprint,uMaterialSeed+723u)+.1*v2Pattern(ground,55.,footprint,uMaterialSeed+724u);
-  e.snow=sstep(.39,.49,e.snow+.4*drift*sstep(0.,.25,e.snow)*(1.-sstep(.8,1.,e.snow)));
+  e.snow=sstep(.39,.49,e.snow+v2SeasonSnowPatches()*drift*sstep(0.,.25,e.snow)*(1.-sstep(.8,1.,e.snow)));
   if(uForest==1){vec4 f=forestField(world,0.);e.woody=f.r;e.height=f.g*50.;e.needle=f.b;e.leaf=mix(e.leaf,1.,e.needle);}
   // The zone's calendar sets leaf fall: a temperature proxy leaves oaks in leaf through a mild winter.
   if(v2Zoned())e.leaf=mix(v2SeasonLeaf(),1.,e.needle);

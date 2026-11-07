@@ -70,7 +70,7 @@ export function benchVegetationLimitations(view3d: boolean): Limitation[] {
 export function resolveBenchAppearance(extra: Partial<AppearanceInput> = {}, nextTarget: RenderTarget = target) {
   const resolved = resolveAppearance({ style: 'parchment', ...extra, ...advanced, composition, colors: getBenchRenderColors() }, { mapStyle: 'parchment' }, capabilities, nextTarget);
   setLanduseForestTone(resolved.cartography.landuseForestTone);
-  setMapSeason(resolved.ground.season);
+  setMapSeason(resolved.ground.season, undefined, resolved.ground.calendar);
   return resolved;
 }
 

@@ -57,7 +57,7 @@ export function mountParameterForm(root: HTMLElement, fields: readonly Parameter
       if (field.min !== undefined) input.min = String(field.min);
       if (field.max !== undefined) input.max = String(field.max);
       if (field.step !== undefined) input.step = String(field.step);
-      if (field.placeholder) input.placeholder = field.placeholder;
+      if (field.placeholder) input.placeholder = translate(field.placeholder);
       if (field.suggestions?.length) {
         const list = document.createElement('datalist'); list.id = `${namespace}-suggest-${field.path.replace(/[^a-z0-9]/gi, '-')}`;
         for (const value of field.suggestions) { const option = document.createElement('option'); option.value = value; list.append(option); }
@@ -117,12 +117,12 @@ export function mountParameterForm(root: HTMLElement, fields: readonly Parameter
         } else { input.value = ''; input.placeholder = translate('Different values'); }
         continue;
       }
-      if (input instanceof HTMLInputElement) input.placeholder = field.placeholder ?? '';
+      if (input instanceof HTMLInputElement) input.placeholder = field.placeholder ? translate(field.placeholder) : '';
       const raw = bindings.getValue(field.path) ?? field.defaultValue, value =raw !== undefined && field.toInput ? field.toInput(raw) : raw;
       if (slider) {
         slider.disabled = input.disabled;
         if (slider !== document.activeElement) slider.value = String(value ?? field.min);
-        slider.setAttribute('aria-valuetext', value === undefined ? field.placeholder ?? '' : String(value));
+        slider.setAttribute('aria-valuetext', value === undefined ? (field.placeholder ? translate(field.placeholder) : '') : String(value));
       }
       if (reset) {
         const auto = value === field.resetValue; reset.disabled = input.disabled || auto; (input.closest('label') as HTMLElement).dataset.auto = String(auto);

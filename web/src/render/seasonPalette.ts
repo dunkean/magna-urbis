@@ -2,7 +2,7 @@
  *
  * The material styles read the same calendar in their shaders (`ZONE_SEASONS`). Held as display state, like the forest tone:
  * the palette is resolved in many places and every one of them must agree. */
-import { ZONE_SEASONS, seasonWeights } from '../../../rust/bridge/terrainRenderV2Zones';
+import { calendarSeason, seasonWeights, type SeasonCalendar } from '../../../rust/bridge/terrainRenderV2Zones';
 import type { ClimateZone } from '../../../rust/bridge/terrainClimate';
 import type { Palette } from './styles';
 
@@ -10,12 +10,12 @@ export interface SeasonPaint { herb: readonly [number, number, number]; leaf: nu
 const SNOW = '#f1f3ef', BARE_WOOD = '#8d8373', AUTUMN_WOOD = '#b78a3e', SPRING_WOOD = '#a6bc72', YOUNG_CROP = '#b4c47c', STUBBLE = '#c29a5c';
 /** Summer is the palette as authored. */
 const SUMMER = .5;
-let season = SUMMER, zone: ClimateZone | undefined;
-export function setMapSeason(next: number, nextZone: ClimateZone | undefined = zone): void { season = next; zone = nextZone; }
+let season = SUMMER, zone: ClimateZone | undefined, calendar: SeasonCalendar | undefined;
+export function setMapSeason(next: number, nextZone: ClimateZone | undefined = zone, nextCalendar: SeasonCalendar | undefined = calendar): void { season = next; zone = nextZone; calendar = nextCalendar; }
 /** The benches load a map apart from the appearance that sets the season. */
 export function setMapClimateZone(next: ClimateZone | undefined): void { zone = next; }
 /** Part of every cache key of a seasonal map layer. */
-export const mapSeasonKey = (): string => zone && season !== SUMMER ? `${zone}:${Math.round(season * 100)}` : '';
+export const mapSeasonKey = (): string => zone && season !== SUMMER ? `${zone}:${Math.round(season * 100)}:${JSON.stringify(calendar ?? {})}` : '';
 
 const rgb = (hex: string): [number, number, number] => { const v = parseInt(hex.slice(1), 16); return [(v >> 16) & 255, (v >> 8) & 255, v & 255]; };
 const hex = (c: readonly number[]): string => '#' + c.map(x => Math.round(Math.max(0, Math.min(255, x))).toString(16).padStart(2, '0')).join('');
@@ -24,8 +24,8 @@ const mix = (a: string, b: string, t: number): string => { if (!isHex(a)) return
 const tinted = (c: string, ratio: readonly number[]): string => isHex(c) ? hex(rgb(c).map((x, i) => x * ratio[i])) : c;
 
 /** The zone's year at this point of the cycle. */
-export function seasonPaint(value: number, climateZone: ClimateZone): SeasonPaint {
-  const w = seasonWeights(value), year = ZONE_SEASONS[climateZone], blend = (row: readonly number[]): number => row.reduce((sum, v, i) => sum + v * w[i], 0);
+export function seasonPaint(value: number, climateZone: ClimateZone, edits?: SeasonCalendar): SeasonPaint {
+  const w = seasonWeights(value), year = calendarSeason(climateZone, edits), blend = (row: readonly number[]): number => row.reduce((sum, v, i) => sum + v * w[i], 0);
   return { herb: [0, 1, 2].map(i => blend(year.herb.map(c => c[i]))) as unknown as SeasonPaint['herb'], leaf: blend(year.leaf), evergreen: year.leaf[0], snow: blend(year.snow), spring: w[1], autumn: w[3] };
 }
 /** Crops follow the herbs: green while they grow, ochre once they ripen or lie dry. */
@@ -55,6 +55,6 @@ export function seasonalPalette(pal: Palette): Palette {
   const key = mapSeasonKey();
   if (!key || MONOCHROME.has(pal.name)) return pal;
   let entries = cache.get(pal); if (!entries) cache.set(pal, entries = new Map());
-  let found = entries.get(key); if (!found) entries.set(key, found = applySeason(pal, seasonPaint(season, zone!)));
+  let found = entries.get(key); if (!found) entries.set(key, found = applySeason(pal, seasonPaint(season, zone!, calendar)));
   return found;
 }
