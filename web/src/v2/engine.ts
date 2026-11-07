@@ -392,7 +392,11 @@ function assertRegion(world: World, settings: V2Settings): void {
     throw new Error('Les paramÃ¨tres dâ€™implantation ont changÃ©. Recalculez les lieux et les routes.');
 }
 
-async function buildTown(world: World, settings: V2Settings, key: string, onProgress?: ProgressCallback, through?: V2TownStage): Promise<void> {
+/** Independent native cities computed at once (the engine has one thread per connection). */
+const TOWN_CONCURRENCY = 4;
+async function buildTown(world: World, settings: V2Settings, key: string, onProgress?: ProgressCallback, through?: V2TownStage,
+  /** Native city already computed (or being computed) concurrently from the pre-loop world; only applied here. */
+  precomputed?: Promise<Awaited<ReturnType<typeof import('./rustUrban').generateRustTown>>>): Promise<void> {
   const settlement = world.settlements!.find(s => s.key === key);
   if (!settlement) throw new Error(`Lieu inconnu : ${key}`);
   const backend = settings.urban?.backend ?? settings.runtime?.backend ?? 'typescript';
@@ -412,7 +416,7 @@ async function buildTown(world: World, settings: V2Settings, key: string, onProg
   world.debug ??= {};
   const townBridges = (world.debug.v2TownBridges ??= {}) as Record<string, NonNullable<World['bridges']>>;
   if (backend !== 'typescript') {
-    const result = await (await import('./rustUrban')).generateRustTown(world, settings, key, onProgress, requestedStage);
+    const result = await (precomputed ?? (await import('./rustUrban')).generateRustTown(world, settings, key, onProgress, requestedStage));
     if (settlement.main) world.urban = result.urban;
     settlement.urban = result.urban;
     if (!settlement.main) settlement.detail = 'eager';
@@ -483,9 +487,40 @@ export async function generateTowns(regionWorld: World, settings: V2Settings, on
   const selected = keys ? new Set(keys) : undefined;
   const backend = settings.urban?.backend ?? settings.runtime?.backend ?? 'typescript';
   const world = cloneV2WorldForGeneration(regionWorld), t0 = performance.now(), places = world.settlements!.filter(s => (!selected || selected.has(s.key)) && (backend !== 'typescript' || s.detail !== 'farmstead'));
-  for (let i = 0; i < places.length; i++) {
-    report(onProgress, 'town', `${places[i].name ?? places[i].key} : plan, rues, parcelles et bÃ¢timentsâ€¦`, i, places.length);
-    await buildTown(world, settings, places[i].key, onProgress, through);
+  if (backend === 'typescript' || places.length < 2 || TOWN_CONCURRENCY < 2) {
+    for (let i = 0; i < places.length; i++) {
+      report(onProgress, 'town', `${places[i].name ?? places[i].key} : plan, rues, parcelles et bÃ¢timentsâ€¦`, i, places.length);
+      await buildTown(world, settings, places[i].key, onProgress, through);
+    }
+  } else {
+    // Native cities only read the pre-loop world (roads, terrain key, their own retained snapshot) and write
+    // only per-city entries: compute up to TOWN_CONCURRENCY at once, then apply in the original order.
+    const n = places.length;
+    type Outcome = { ok: true; value: Awaited<ReturnType<typeof import('./rustUrban').generateRustTown>> } | { ok: false; error: unknown };
+    const waiters: ((o: Outcome) => void)[] = [], outcomes = places.map((_, i) => new Promise<Outcome>(resolve => { waiters[i] = resolve; }));
+    // Only the leader (first unapplied city) drives the stage rows, so progress never interleaves; a new leader replays its last event.
+    let leader = 0; const last: (Parameters<ProgressCallback>[0] | undefined)[] = [];
+    const forward = (i: number) => (p: Parameters<ProgressCallback>[0]): void => { last[i] = p; if (i === leader) onProgress?.(p); };
+    const { generateRustTown } = await import('./rustUrban');
+    let next = 0, stop = false;
+    const lane = async (): Promise<void> => {
+      for (;;) {
+        const i = next++; if (stop || i >= n) return;
+        try { waiters[i]({ ok: true, value: await generateRustTown(world, settings, places[i].key, forward(i), through) }); }
+        catch (error) { waiters[i]({ ok: false, error }); }
+      }
+    };
+    for (let k = 0; k < Math.min(TOWN_CONCURRENCY, n); k++) void lane();
+    try {
+      for (let i = 0; i < n; i++) {
+        leader = i;
+        report(onProgress, 'town', `${places[i].name ?? places[i].key} : plan, rues, parcelles et bÃ¢timentsâ€¦`, i, n);
+        if (last[i]) onProgress?.(last[i]!);
+        const outcome = await outcomes[i];
+        if (!outcome.ok) throw outcome.error;
+        await buildTown(world, settings, places[i].key, undefined, through, Promise.resolve(outcome.value));
+      }
+    } finally { stop = true; }
   }
   await finishTowns(world, settings, onProgress);
   world.stats['ms.towns'] = Math.round(performance.now() - t0);

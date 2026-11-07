@@ -216,6 +216,25 @@ function defaultCreateCanvas(w: number, h: number): CanvasLike | null {
   return null;
 }
 
+const indicator = (field: Float32Array, test: (value: number, index: number) => boolean): Float32Array => { const out = new Float32Array(field.length); for (let i = 0; i < out.length; i++) if (test(field[i], i)) out[i] = 1; return out; };
+type ForestWash = { levels: PolyLayer[]; fringe: PolyLayer[]; depth: Float32Array; reach: Float32Array; n: number };
+const sharedForestWashes = new Map<string, ForestWash>();
+const hashBuffer = new Float64Array(1), hashWords = new Uint32Array(hashBuffer.buffer);
+/** FNV-1a over the exact coordinates of a layer: equal geometry, equal key. */
+function layerHash(layer: PolyLayer): string {
+  let h = 0x811c9dc5, count = 0;
+  const ring = (r: { x: number; y: number }[]): void => {
+    h = Math.imul(h ^ r.length, 0x01000193);
+    for (let i = 0; i < r.length; i++) {
+      hashBuffer[0] = r[i].x; h = Math.imul(Math.imul(h ^ hashWords[0], 0x01000193) ^ hashWords[1], 0x01000193);
+      hashBuffer[0] = r[i].y; h = Math.imul(Math.imul(h ^ hashWords[0], 0x01000193) ^ hashWords[1], 0x01000193);
+    }
+    count += r.length;
+  };
+  for (let i = 0; i < layer.polys.length; i++) { ring(layer.polys[i]); for (const hole of layer.holes?.[i] ?? []) ring(hole); h = Math.imul(h ^ 0x7fffffff, 0x01000193); }
+  return `${layer.polys.length}:${count}:${(h >>> 0).toString(36)}`;
+}
+
 export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: MapStyle | Palette, deps: CanvasRendererDeps = {}): CanvasRenderer {
   let sourceWorld = world0;
   let world = cavernDisplayWorld(deps.scene?.renderedWorld ? { ...deps.scene.renderedWorld, options: world0.options } : renderView(cavernDisplayWorld(world0)));
@@ -345,6 +364,10 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     if (retained) return retained;
     const layer = polyL(name);
     if (!layer) return undefined;
+    // The wash is a pure function of the layer geometry: share it across renderers and scene rebuilds (every progress frame builds a new scene).
+    const shareKey = `${name}|${S}|${scene.tileSize}|${layerHash(layer)}`;
+    const shared = sharedForestWashes.get(shareKey);
+    if (shared) { forestWashes.set(name, shared); return shared; }
     const n = Math.min(1024, Math.max(128, Math.ceil(S / 6))), cell = S / n;
     const mask = new Uint8Array(n * n);
     for (let i = 0; i < layer.polys.length; i++) {
@@ -358,11 +381,13 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       const polys = regions.map(r => r.outer), holes = regions.map(r => r.holes);
       return { name: `${name}-${suffix}`, polys, holes, index: new TileIndex(S, scene.tileSize, boxesOf(polys), 'center') };
     };
-    const levels = [.125, .3125, .5625, .875].map((fraction, i) => layerOf(`edge-${i}`, Float32Array.from(depth, (d, j) => mask[j] && d >= FOREST_EDGE_WIDTH * fraction ? 1 : 0)));
+    const levels = [.125, .3125, .5625, .875].map((fraction, i) => layerOf(`edge-${i}`, indicator(depth, (d, j) => mask[j] !== 0 && d >= FOREST_EDGE_WIDTH * fraction)));
     // Shade of the woods on the rough ground around them, in steps like the V1 halo.
-    const fringe = [14, 30, 48, 68, 90, 114, 140].map((distance, i) => layerOf(`fringe-${i}`, Float32Array.from(reach, d => d < distance ? 1 : 0)));
+    const fringe = [14, 30, 48, 68, 90, 114, 140].map((distance, i) => layerOf(`fringe-${i}`, indicator(reach, d => d < distance)));
     const result = { levels, fringe, depth, reach, n };
-    forestWashes.set(name, result); return result;
+    forestWashes.set(name, result);
+    sharedForestWashes.set(shareKey, result); if (sharedForestWashes.size > 3) sharedForestWashes.delete(sharedForestWashes.keys().next().value!);
+    return result;
   }
 
   function forestWeight(x: number, y: number): number {

@@ -2,7 +2,7 @@
 //! Transform/rotation is exported separately; it never re-snaps shared edges.
 use crate::model::{Point, Polygon, Surface};
 use geo::algorithm::buffer::{BufferStyle, LineJoin};
-use geo::{Area, BooleanOps, Buffer, Coord, LineString, MultiPolygon, Polygon as GeoPolygon};
+use geo::{BooleanOps, Buffer, Coord, LineString, MultiPolygon, Polygon as GeoPolygon};
 use magna_urbis_random::Rng;
 use std::f64::consts::TAU;
 
@@ -126,14 +126,38 @@ pub fn union(a: &Surface, b: &Surface) -> Surface {
     from_geo(&to_geo(a).union(&to_geo(b)))
 }
 pub fn difference(a: &Surface, b: &Surface) -> Surface {
-    from_geo(&to_geo(a).difference(&to_geo(b)))
+    if let Some(result) = site_domains::get(a, b) { return result; }
+    let result = from_geo(&to_geo(a).difference(&to_geo(b)));
+    site_domains::store(a, b, &result);
+    result
 }
 pub fn intersection(a: &Surface, b: &Surface) -> Surface {
     from_geo(&to_geo(a).intersection(&to_geo(b)))
 }
-pub fn area(surface: &Surface) -> f64 {
-    to_geo(surface).unsigned_area()
+// Match geo 0.33.1's translated determinant fold, including the closing
+// vertex and the order of hole subtraction. Avoid copying every ring into geo.
+fn ring_area(ring: &[Point]) -> f64 {
+    if ring.len() < 2 { return 0.0; }
+    let first = ring[0];
+    let mut previous = (ring[1].x - first.x, ring[1].y - first.y);
+    let mut sum = 0.0;
+    for p in ring[2..].iter().chain(std::iter::once(&first)) {
+        let next = (p.x - first.x, p.y - first.y);
+        sum += previous.0 * next.1 - previous.1 * next.0;
+        previous = next;
+    }
+    sum / 2.0
 }
+pub fn area(surface: &Surface) -> f64 {
+    surface.iter().fold(0.0, |total, polygon| {
+        total + polygon.holes.iter().fold(ring_area(&polygon.outer).abs(),
+            |area, hole| area - ring_area(hole).abs()).abs()
+    })
+}
+
+#[path = "site_domains.rs"]
+pub(crate) mod site_domains;
+
 
 /// Mitered metric offset: construction uses no target-dependent trigonometry.
 pub fn offset(surface: &Surface, distance: f64) -> Surface {
@@ -568,4 +592,27 @@ pub fn primitive(id: &str, width: f64, depth: f64, seed: &str) -> Result<Primiti
         tiers,
         excavation,
     })
+}
+
+#[cfg(test)]
+mod exact_area_tests {
+    use super::*;
+    use geo::Area;
+    #[test]
+    fn borrowed_area_matches_geo_bits_for_open_closed_degenerate_and_holed_rings() {
+        for offset in [0.0, -0.0, 1234.567, 1e9] {
+            for count in 0..32 {
+                let mut surface=ellipse(offset, -offset, 17.13, 11.77, count);
+                if count>=3 { surface[0].holes=vec![rectangle(offset-1.23,-offset-2.31,2.46,4.62)[0].outer.clone()]; }
+                for closed in [false,true] {
+                    if closed && let Some(first)=surface[0].outer.first().copied() {surface[0].outer.push(first);}
+                    for reversed in [false,true] {
+                        if reversed {surface[0].outer.reverse();}
+                        assert_eq!(area(&surface).to_bits(),to_geo(&surface).unsigned_area().to_bits(),"offset {offset}, count {count}");
+                    }
+                }
+            }
+        }
+        assert_eq!(area(&vec![]).to_bits(),to_geo(&vec![]).unsigned_area().to_bits());
+    }
 }

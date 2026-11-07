@@ -176,6 +176,9 @@ pub(super) struct Fields {
     /// Steepest grade along each long road move from each cell, computed by the first road
     /// search on this terrain and kept for later reroutes.
     pub long_grades: std::sync::OnceLock<Vec<f32>>,
+    /// Allowed road moves per cell (bit per direction), without and with causeways; computed by
+    /// the first road search on this terrain.
+    pub move_masks: [std::sync::OnceLock<Vec<u32>>; 2],
 }
 impl Fields {
     pub fn new(r: Raster<'_>) -> Self {
@@ -278,6 +281,7 @@ impl Fields {
             sat,
             dry_range,
             long_grades: std::sync::OnceLock::new(),
+            move_masks: Default::default(),
         }
     }
     /// Bilinear road height (ground, bridge decks over rivers) at a point.

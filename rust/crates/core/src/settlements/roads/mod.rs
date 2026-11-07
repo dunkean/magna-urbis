@@ -743,7 +743,6 @@ pub(super) fn route(
             wobble: cfg.wobble,
             discount: 1.0 - 0.8 * cfg.sharing,
             near: 2.0 * cfg.sharing,
-            dry_around: Costs::dry_around(f),
         },
         net: Net {
             dirs: vec![0; size],

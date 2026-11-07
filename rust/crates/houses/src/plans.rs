@@ -3677,6 +3677,9 @@ pub fn plan_batch(input: PlanBatchRequest) -> Result<PlanBatch, String> {
                     .floors = Some(f);
             }
         }
+        // These inputs stay borrowed and immutable across every rigid pose.
+        let _site_domains = crate::geometry::site_domains::Scope::open(
+            &r.buildable, &r.cadastral, &r.reserves);
         match plan_one(
             &r,
             &occupied.local(&r.cadastral),

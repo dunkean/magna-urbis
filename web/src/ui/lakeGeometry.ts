@@ -15,14 +15,18 @@ export function lakeField(mask: Uint8Array, n: number): LakeField {
     if (wet(x - 1, y) !== inside || wet(x + 1, y) !== inside || wet(x, y - 1) !== inside || wet(x, y + 1) !== inside) distance[y * n + x] = 0.5;
   }
   // Two chamfer sweeps; sign is assigned afterwards, preserving islands.
-  for (const direction of [1, -1]) {
-    const neighbors = [[-direction, 0, 1], [0, -direction, 1], [-direction, -direction, Math.SQRT2], [direction, -direction, Math.SQRT2]];
-    for (let y = direction > 0 ? 0 : n - 1; y >= 0 && y < n; y += direction) {
-      for (let x = direction > 0 ? 0 : n - 1; x >= 0 && x < n; x += direction) {
-        const i = y * n + x;
-        for (const [dx, dy, cost] of neighbors) {
-          const xx = x + dx, yy = y + dy;
-          if (xx >= 0 && yy >= 0 && xx < n && yy < n) distance[i] = Math.min(distance[i], distance[yy * n + xx] + cost);
+  // Same neighbours in the same order as a [dx, dy, cost] list, without per-cell destructuring.
+  for (const d of [1, -1]) {
+    for (let y = d > 0 ? 0 : n - 1; y >= 0 && y < n; y += d) {
+      const yy = y - d, rowOk = yy >= 0 && yy < n;
+      for (let x = d > 0 ? 0 : n - 1; x >= 0 && x < n; x += d) {
+        const i = y * n + x, xb = x - d, xf = x + d, back = xb >= 0 && xb < n;
+        if (back) distance[i] = Math.min(distance[i], distance[i - d] + 1);
+        if (rowOk) {
+          const row = yy * n;
+          distance[i] = Math.min(distance[i], distance[row + x] + 1);
+          if (back) distance[i] = Math.min(distance[i], distance[row + xb] + Math.SQRT2);
+          if (xf >= 0 && xf < n) distance[i] = Math.min(distance[i], distance[row + xf] + Math.SQRT2);
         }
       }
     }

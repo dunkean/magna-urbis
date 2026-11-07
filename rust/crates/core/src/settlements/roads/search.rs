@@ -12,9 +12,9 @@
 //! apart; turning is priced on the square of the angle and dearer on steep ground, so a climb
 //! uses long traverses and puts its few hairpins where the slope eases (spurs, benches).
 use super::super::Point;
-use super::super::grid::{Entry, Fields};
+use super::super::grid::Fields;
 use super::profile::Profile;
-use std::collections::{BTreeMap, BinaryHeap};
+use std::collections::BTreeMap;
 
 /// Moves in opposite pairs: `DIRS[d ^ 1]` is the reverse of `DIRS[d]`.
 pub(super) const DIRS: [(isize, isize); 24] = [
@@ -135,8 +135,6 @@ pub(super) struct Costs {
     pub discount: f64,
     /// Extra cost beside a road (×(1 + near) next to it).
     pub near: f64,
-    /// No water within three cells: every long move from here is dry.
-    pub dry_around: Vec<bool>,
 }
 impl Costs {
     pub fn dry_around(f: &Fields) -> Vec<bool> {
@@ -173,36 +171,110 @@ pub(super) struct Query<'a> {
     pub tight: bool,
 }
 
-/// One search state, `cell * HEADINGS + sector`, kept together for locality.
+/// One search state, `cell * HEADINGS + sector`, kept together for locality (16 bytes).
 #[derive(Clone, Copy, Default)]
 struct Slot {
     d: f64,
-    parent: u32,
-    seen: u32,
-    closed: u32,
-    /// The exact move that reached this state (`u8::MAX` at the start).
-    via: u8,
+    /// `2 * epoch` once reached in this search, `2 * epoch + 1` once closed.
+    stamp: u32,
+    /// Parent state in the low [`VIA_SHIFT`] bits, the exact move that reached this state above
+    /// ([`NO_VIA`] at the start).
+    link: u32,
+}
+const VIA_SHIFT: u32 = 27;
+const NO_VIA: u32 = 31;
+impl Slot {
+    fn parent(self) -> usize {
+        (self.link & ((1 << VIA_SHIFT) - 1)) as usize
+    }
+    fn via(self) -> u32 {
+        self.link >> VIA_SHIFT
+    }
+}
+/// Exact min-queue on (cost, state): a 4-ary heap ordered like [`Entry`] (`total_cmp`, then the
+/// smaller state), so it pops the same sequence as `BinaryHeap<Entry>` (keys are distinct
+/// except for exact duplicates, which are interchangeable).
+struct Queue {
+    v: Vec<(i64, u32)>,
+}
+impl Queue {
+    fn key(cost: f64) -> i64 {
+        let b = cost.to_bits() as i64;
+        b ^ ((((b >> 63) as u64) >> 1) as i64)
+    }
+    fn push(&mut self, cost: f64, state: u32) {
+        let item = (Self::key(cost), state);
+        let v = &mut self.v;
+        let mut at = v.len();
+        v.push(item);
+        while at > 0 {
+            let up = (at - 1) / 4;
+            if v[up] <= item {
+                break;
+            }
+            v[at] = v[up];
+            at = up;
+        }
+        v[at] = item;
+    }
+    fn pop(&mut self) -> Option<u32> {
+        let v = &mut self.v;
+        let top = v.first()?.1;
+        let last = v.pop().unwrap();
+        let len = v.len();
+        if len > 0 {
+            let mut at = 0;
+            loop {
+                let c = 4 * at + 1;
+                if c >= len {
+                    break;
+                }
+                let end = (c + 4).min(len);
+                let mut best = c;
+                for k in c + 1..end {
+                    if v[k] < v[best] {
+                        best = k;
+                    }
+                }
+                if v[best] >= last {
+                    break;
+                }
+                v[at] = v[best];
+                at = best;
+            }
+            v[at] = last;
+        }
+        Some(top)
+    }
 }
 /// Reusable search buffers, stamped per search so a call costs what it explores.
 pub(super) struct Search {
     slots: Vec<Slot>,
     goal: Vec<u32>,
     epoch: u32,
+    queue: Queue,
+    /// Ground cost of entering each cell off-road in the current search (`ground × meander ×
+    /// beside × straight`), with the epoch it was computed in: a cell is entered from up to
+    /// 24 moves × 8 headings, its cost depends only on the query and the network.
+    cell_cost: Vec<(u32, f64)>,
 }
 impl Search {
     pub fn new(size: usize) -> Self {
+        assert!(size * HEADINGS < 1 << VIA_SHIFT, "road search grid too large");
         Self {
             slots: vec![Slot::default(); size * HEADINGS],
             goal: vec![0; size],
             epoch: 0,
+            queue: Queue { v: Vec::new() },
+            cell_cost: vec![(0, 0.0); size],
         }
     }
 }
 
-fn passable(f: &Fields, p: &Profile, i: usize) -> bool {
+fn passable(f: &Fields, causeway: bool, i: usize) -> bool {
     match f.r.water[i] {
         0 | 3 => true,
-        2 => p.causeway && (0.0..=8.0).contains(&f.r.lake_depth(i)) && f.r.lake_depth(i) > 0.0,
+        2 => causeway && (0.0..=8.0).contains(&f.r.lake_depth(i)) && f.r.lake_depth(i) > 0.0,
         _ => false,
     }
 }
@@ -210,7 +282,7 @@ fn passable(f: &Fields, p: &Profile, i: usize) -> bool {
 /// stay on dry land, so every water crossing is made by single steps that the crossing pass sees.
 pub(super) fn move_ok(
     f: &Fields,
-    p: &Profile,
+    p: bool,
     dry_around: &[bool],
     x: isize,
     y: isize,
@@ -247,6 +319,29 @@ pub(super) fn move_ok(
         }
     }
     Some(j)
+}
+
+/// Bit d set: [`move_ok`] allows `DIRS[d]` from this cell, for profiles without (`[0]`) and with
+/// (`[1]`) causeways. Computed by the first road search on this terrain.
+fn move_masks(f: &Fields, causeway: bool) -> &[u32] {
+    f.move_masks[usize::from(causeway)].get_or_init(|| {
+        let n = f.r.n;
+        let dry_around = Costs::dry_around(f);
+        let rows = crate::urban::par::range(n, |y| {
+            (0..n)
+                .map(|x| {
+                    (0..DIRS.len()).fold(0_u32, |mask, d| {
+                        if move_ok(f, causeway, &dry_around, x as isize, y as isize, d).is_some() {
+                            mask | 1 << d
+                        } else {
+                            mask
+                        }
+                    })
+                })
+                .collect::<Vec<u32>>()
+        });
+        rows.concat()
+    })
 }
 
 /// First index of the long moves in [`DIRS`].
@@ -307,13 +402,15 @@ impl Search {
         river_penalty: &BTreeMap<i32, f64>,
     ) -> Option<Vec<usize>> {
         let n = f.r.n;
-        self.epoch = self.epoch.wrapping_add(1);
-        if self.epoch == 0 {
+        self.epoch += 1;
+        if self.epoch >= 1 << 30 {
             self.slots.fill(Slot::default());
             self.goal.fill(0);
+            self.cell_cost.fill((0, 0.0));
             self.epoch = 1;
         }
         let e = self.epoch;
+        let (open, closed) = (2 * e, 2 * e + 1);
         // Search window: the box around both ends, widened for detours.
         let (sx, sy) = (q.start % n, q.start / n);
         let tx = ((q.target.x / f.cell) as usize).min(n - 1);
@@ -370,7 +467,15 @@ impl Search {
             let y = i / n;
             let dx = bounds.0.saturating_sub(x).max(x.saturating_sub(bounds.2)) as f64;
             let dy = bounds.1.saturating_sub(y).max(y.saturating_sub(bounds.3)) as f64;
-            f.cell * dx.hypot(dy) * h_rate
+            // Whole cell counts: one zero axis gives the other exactly, as `hypot` does.
+            let len = if dx == 0.0 {
+                dy
+            } else if dy == 0.0 {
+                dx
+            } else {
+                dx.hypot(dy)
+            };
+            f.cell * len * h_rate
         };
         let line = (q.target.x - q.origin.x, q.target.y - q.origin.y);
         let line_len = line.0.hypot(line.1);
@@ -387,67 +492,82 @@ impl Search {
         let long = long_grades(f);
         let turns = turns();
 
-        let mut heap = BinaryHeap::new();
+        // Per-move constants, computed exactly as the move loop would.
+        let mut dist = [0.0_f64; 24];
+        for (d, &(dx, dy)) in DIRS.iter().enumerate() {
+            dist[d] = f.cell * ((dx * dx + dy * dy) as f64).sqrt();
+        }
+        // Moves allowed after arriving by `came` (index 24: the start), off and on junctions.
+        let mut allowed = [[0_u32; 25]; 2];
+        for came in 0..25 {
+            for d in 0..DIRS.len() {
+                let angle = if came == 24 { 0.0 } else { turns.angle[came][d] };
+                if angle <= max_turn {
+                    allowed[0][came] |= 1 << d;
+                }
+                if angle <= 136.0 {
+                    allowed[1][came] |= 1 << d;
+                }
+            }
+        }
+        let moves = move_masks(f, q.profile.causeway);
+        let per = DIRS.len() - LONG;
+
+        let queue = &mut self.queue;
+        queue.v.clear();
         let first = q.start * HEADINGS;
         self.slots[first] = Slot {
             d: 0.0,
-            parent: 0,
-            seen: e,
-            closed: 0,
-            via: u8::MAX,
+            stamp: open,
+            link: NO_VIA << VIA_SHIFT,
         };
-        heap.push(Entry(heuristic(q.start), first));
-        while let Some(Entry(_, state)) = heap.pop() {
-            if self.slots[state].closed == e {
+        queue.push(heuristic(q.start), first as u32);
+        while let Some(state) = queue.pop() {
+            let state = state as usize;
+            let current = self.slots[state];
+            if current.stamp == closed {
                 continue;
             }
-            self.slots[state].closed = e;
+            self.slots[state].stamp = closed;
             let i = state / HEADINGS;
             if self.goal[i] == e {
                 let mut cells = vec![i];
                 let mut at = state;
                 while at != first {
-                    at = self.slots[at].parent as usize;
+                    at = self.slots[at].parent();
                     cells.push(at / HEADINGS);
                 }
                 cells.reverse();
                 return Some(cells);
             }
             let (x, y) = ((i % n) as isize, (i / n) as isize);
-            let (came, here) = (self.slots[state].via, self.slots[state].d);
+            let (came, here) = (current.via(), current.d);
             // Junctions and settlements may turn sharply: roads meet there at any angle.
             let free = net.on_road(i) || net.settled[i];
             let steep = 1.0 + 1.5 * f64::from(f.slope_s[i]).min(1.0);
-            for (d, &(dx, dy)) in DIRS.iter().enumerate() {
-                let road = net.dirs[i] & (1 << d) != 0;
-                let angle = if came == u8::MAX {
-                    0.0
-                } else {
-                    turns.angle[came as usize][d]
-                };
-                if angle > if free { 136.0 } else { max_turn } {
-                    continue;
-                }
-                // Window and closed states first: both are cheaper than the passability test.
-                let (xx, yy) = (x + dx, y + dy);
-                if xx < 0 || yy < 0 || xx >= n as isize || yy >= n as isize {
-                    continue;
-                }
-                let j = yy as usize * n + xx as usize;
+            let came_index = if came == NO_VIA { 24 } else { came as usize };
+            // Turn limit and passability (which includes the map bounds) as one mask.
+            let mut mask = allowed[usize::from(free)][came_index] & moves[i];
+            let road_dirs = net.dirs[i];
+            let wet_i = f.r.water[i] != 0;
+            let height_i = f.route_height[i];
+            while mask != 0 {
+                let d = mask.trailing_zeros() as usize;
+                mask &= mask - 1;
+                let (dx, dy) = DIRS[d];
+                let road = road_dirs & (1 << d) != 0;
+                let j = (y + dy) as usize * n + (x + dx) as usize;
                 let next = j * HEADINGS + turns.sector[d];
-                if self.slots[next].closed == e
-                    || !inside(j)
-                    || move_ok(f, q.profile, &costs.dry_around, x, y, d).is_none()
-                {
+                if self.slots[next].stamp == closed || !inside(j) {
                     continue;
                 }
-                let dist = f.cell * ((dx * dx + dy * dy) as f64).sqrt();
-                let wet = f.r.water[i] != 0 || f.r.water[j] != 0;
+                let dist = dist[d];
+                let wet = wet_i || f.r.water[j] != 0;
                 // Over water the road height is the bridge deck or causeway (see `deck_height`).
                 let grade = if d >= LONG {
-                    long[i * (DIRS.len() - LONG) + d - LONG] as f64
+                    long[i * per + d - LONG] as f64
                 } else {
-                    (f.route_height[i] - f.route_height[j]).abs() as f64 / dist
+                    (height_i - f.route_height[j]).abs() as f64 / dist
                 };
                 let excess = (grade / gmax - 1.0).max(0.0);
                 let slope = 1.0
@@ -458,18 +578,20 @@ impl Search {
                 let turn = if road {
                     0.0
                 } else {
+                    let angle = if came == NO_VIA { 0.0 } else { turns.angle[came as usize][d] };
                     turn_cost * steep * (angle / 45.0).powi(2)
                 };
                 let mut m = if road {
                     // An existing road move (with its bridge, if any).
                     costs.discount * if wet { 2.0 } else { 1.0 }
+                } else if self.cell_cost[j].0 == e {
+                    self.cell_cost[j].1
                 } else {
                     let ground = match f.r.water[j] {
                         3 => (if f.r.river_width[j] > 3.7 { 30.0 } else { 40.0 }) * river_base,
                         2 => 20.0 * costs.crossing_cost,
                         _ => costs.land[j] as f64,
                     };
-                    let p = f.pos(j);
                     // Meandering fades on steep ground, where the grade rules the line: noise there
                     // would bunch switchbacks into its cheap patches.
                     let flat = f.flat[j];
@@ -480,6 +602,7 @@ impl Search {
                         1.0 + costs.near * f64::from(net.near[j]) * 0.5
                     };
                     let straight = if q.profile.straightness > 0.0 && line_len > 0.0 {
+                        let p = f.pos(j);
                         let perp = ((p.x - q.origin.x) * line.1 - (p.y - q.origin.y) * line.0)
                             .abs()
                             / line_len;
@@ -487,19 +610,20 @@ impl Search {
                     } else {
                         1.0
                     };
-                    ground * meander * beside * straight
+                    let value = ground * meander * beside * straight;
+                    self.cell_cost[j] = (e, value);
+                    value
                 };
                 if f.r.water[j] == 3 && !river_penalty.is_empty() {
                     m *= river_penalty.get(&f.r.river_ids[j]).copied().unwrap_or(1.0);
                 }
                 let cost = here + dist * slope * m + turn;
                 let slot = &mut self.slots[next];
-                if slot.seen != e || cost < slot.d {
-                    slot.seen = e;
+                if slot.stamp != open || cost < slot.d {
+                    slot.stamp = open;
                     slot.d = cost;
-                    slot.parent = state as u32;
-                    slot.via = d as u8;
-                    heap.push(Entry(cost + heuristic(j), next));
+                    slot.link = state as u32 | (d as u32) << VIA_SHIFT;
+                    queue.push(cost + heuristic(j), next as u32);
                 }
             }
         }

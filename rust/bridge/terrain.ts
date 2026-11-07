@@ -365,7 +365,7 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
       if(saved){height=saved;if(lab?.cached)await lab.cached(stage,lab.previews===false?undefined:height);else{await lab?.before(stage);await lab?.after(stage,lab.previews===false?undefined:height);}continue;}
       await lab?.before(stage);
       if(stage==='posterior'&&settings.procedural&&stageEnabled(settings,stage)&&p.mode!=='none'){
-        const previous=height,heightN=Math.sqrt(height.length);height=conditionRelief(height,heightN,settings.width,p).height;
+        const previous=height,heightN=Math.sqrt(height.length);height=conditionRelief(height,heightN,settings.width,p,{stats:false}).height;
         for(let i=0;i<height.length;i++)height[i]=previous[i]>0?Math.max(.3,height[i]):height[i];
       }
       if(stage==='wind'&&settings.procedural&&stageEnabled(settings,stage)&&w.iterations&&w.transport)height=readyGpu?await erodeWindGpu(readyGpu.context,height,settings.width,w):erodeWindCpu(height,settings.width,w);
@@ -571,6 +571,12 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
   if(coastHeight&&!savedCoast&&definition.n<=1024)postCheckpoints.put('coasts',coastCheckpointKey,coastHeight);
   if(savedCoast&&lab?.cached)await lab.cached('coasts',lab.previews===false?undefined:savedCoast);
   else if(lab)await lab.after('coasts',lab.previews===false?undefined:coastHeight);
+  // The overview's physical field and the display field both take the conditioning change on the source grid.
+  let upsampled: { delta: Float32Array; m: number; n: number; out: Float32Array } | undefined;
+  const sourceDelta = (delta: Float32Array, m: number, n: number): Float32Array => {
+    if (upsampled?.delta !== delta || upsampled.m !== m || upsampled.n !== n) upsampled = { delta, m, n, out: upsampleDelta(delta, m, n) };
+    return upsampled.out;
+  };
   async function finish(data: TerrainData): Promise<TerrainData> {
     if(enginePhysicalPlan)Object.assign(definition,enginePhysicalPlan);else definition.erosionSpacing ??= engine!.erosion_spacing();
     data.definition = definition;
@@ -676,7 +682,7 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
     if (kind === 'overview') {
       const n = engine!.source_resolution(), height = engine!.physical_height_field();
       if (water && showErosion && conditioned?.delta) {
-        const delta = upsampleDelta(conditioned.delta, conditioned.m, n);
+        const delta = sourceDelta(conditioned.delta, conditioned.m, n);
         for (let i = 0; i < height.length; i++) height[i] += height[i] <= 0 ? Math.min(0, delta[i]) : delta[i];
       }
       if (water && showErosion && !vector && hydrology && !data.hydrologyError)
@@ -711,7 +717,7 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
     if ((family === 1 || family === 4) && settings.relief !== 'cavern') {
       const n = engine!.source_resolution(), field = engine!.sampling_base_field();
       if (water && showErosion && conditioned?.delta) {
-        const delta = upsampleDelta(conditioned.delta, conditioned.m, n);
+        const delta = sourceDelta(conditioned.delta, conditioned.m, n);
         // Sea stays sea: the conditioning only reshapes land.
         for (let i = 0; i < n * n; i++) field[i] += field[i] <= 0 ? Math.min(0, delta[i]) : delta[i];
       }

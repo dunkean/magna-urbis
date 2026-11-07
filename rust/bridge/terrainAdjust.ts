@@ -163,13 +163,21 @@ export function upsampleDelta(delta: Float32Array, m: number, n: number): Float3
     const g = Math.max(0, Math.min(m - 1, (k + 0.5) * f - 0.5)), i = Math.floor(g), t = g - i, u = 1 - t;
     return [[i - 1, i, i + 1, i + 2].map(v => Math.max(0, Math.min(m - 1, v))), [u ** 3 / 6, (3 * t ** 3 - 6 * t * t + 4) / 6, (-3 * t ** 3 + 3 * t * t + 3 * t + 1) / 6, t ** 3 / 6]];
   };
-  const axes = Array.from({ length: n }, (_, k) => axis(k));
+  // Flat taps and weights; the sum keeps the same terms in the same order (bit-identical).
+  const index = new Int32Array(4 * n), weight = new Float64Array(4 * n);
+  for (let k = 0; k < n; k++) { const [i, w] = axis(k); for (let a = 0; a < 4; a++) { index[4 * k + a] = i[a]; weight[4 * k + a] = w[a]; } }
   for (let y = 0; y < n; y++) {
-    const [ri, rw] = axes[y];
+    const y4 = 4 * y;
+    const r0 = index[y4] * m, r1 = index[y4 + 1] * m, r2 = index[y4 + 2] * m, r3 = index[y4 + 3] * m;
+    const w0 = weight[y4], w1 = weight[y4 + 1], w2 = weight[y4 + 2], w3 = weight[y4 + 3];
     for (let x = 0; x < n; x++) {
-      const [ci, cw] = axes[x];
+      const x4 = 4 * x, c0 = index[x4], c1 = index[x4 + 1], c2 = index[x4 + 2], c3 = index[x4 + 3];
+      const v0 = weight[x4], v1 = weight[x4 + 1], v2 = weight[x4 + 2], v3 = weight[x4 + 3];
       let v = 0;
-      for (let a = 0; a < 4; a++) for (let b = 0; b < 4; b++) v += delta[ri[a] * m + ci[b]] * rw[a] * cw[b];
+      v += delta[r0 + c0] * w0 * v0; v += delta[r0 + c1] * w0 * v1; v += delta[r0 + c2] * w0 * v2; v += delta[r0 + c3] * w0 * v3;
+      v += delta[r1 + c0] * w1 * v0; v += delta[r1 + c1] * w1 * v1; v += delta[r1 + c2] * w1 * v2; v += delta[r1 + c3] * w1 * v3;
+      v += delta[r2 + c0] * w2 * v0; v += delta[r2 + c1] * w2 * v1; v += delta[r2 + c2] * w2 * v2; v += delta[r2 + c3] * w2 * v3;
+      v += delta[r3 + c0] * w3 * v0; v += delta[r3 + c1] * w3 * v1; v += delta[r3 + c2] * w3 * v2; v += delta[r3 + c3] * w3 * v3;
       out[y * n + x] = v;
     }
   }

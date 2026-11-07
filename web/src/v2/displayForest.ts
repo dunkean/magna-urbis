@@ -7,6 +7,7 @@ import type { V2Settings } from './contracts';
 import { effectiveTerrainSettings } from './terrainSettings';
 import { forestOccupation } from '../ui/forestOccupation';
 import { withLandDetail } from '../ui/landDetail';
+import OccupationWorker from './occupation.worker?worker';
 
 const cache = new WeakMap<World, Map<string, ForestField>>();
 const occupations = new WeakMap<LandUseLayer, ForestOccupation | undefined>();
@@ -15,6 +16,24 @@ export function v2ForestOccupation(world: World): ForestOccupation | undefined {
   const landuse = world.landuse; if (!landuse) return;
   if (!occupations.has(landuse)) occupations.set(landuse, withLandDetail(forestOccupation(landuse), landuse));
   return occupations.get(landuse);
+}
+const computing = new WeakMap<LandUseLayer, Promise<ForestOccupation | undefined>>();
+/** Same product as v2ForestOccupation, rastered in a worker when called from the page (the sync version then hits the cache). */
+export function v2ForestOccupationAsync(world: World): Promise<ForestOccupation | undefined> {
+  const landuse = world.landuse; if (!landuse) return Promise.resolve(undefined);
+  if (occupations.has(landuse) || typeof document === 'undefined') return Promise.resolve(v2ForestOccupation(world));
+  let job = computing.get(landuse);
+  if (!job) {
+    job = new Promise<ForestOccupation | undefined>(resolve => {
+      let worker: Worker;
+      try { worker = new OccupationWorker(); } catch { resolve(v2ForestOccupation(world)); return; }
+      worker.onmessage = ({ data }) => { worker.terminate(); if (data.error) resolve(v2ForestOccupation(world)); else { occupations.set(landuse, data.result); resolve(data.result); } };
+      worker.onerror = () => { worker.terminate(); resolve(v2ForestOccupation(world)); };
+      worker.postMessage({ landuse });
+    });
+    computing.set(landuse, job);
+  }
+  return job;
 }
 /** Repaint the forest over retained heights. Never call terrain or settlement generation. */
 export function v2DisplayForest(world: World, settings: V2Settings, resolved: ResolvedAppearance): ForestField | undefined {

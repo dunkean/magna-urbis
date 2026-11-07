@@ -40,7 +40,7 @@ export interface RustTownSnapshot {
   warnings: string[];
 }
 export interface RustTownResult { urban: UrbanLayer; snapshot: RustTownSnapshot; stats: Record<string, string | number> }
-const engines = new Map<string, { engine: Promise<UrbanEngine>; terrainKey?: string }>();
+const engines = new Map<string, { engine: Promise<UrbanEngine>; terrainKey?: string; priming?: Promise<void> }>();
 interface RasterCacheEntry {
   width: number; cell: number; height: World['terrain']['height']['data']; water: World['terrain']['water']; filled: World['terrain']['filled']; seaLevel: number;
   physical?: Float32Array; physicalFloor?: number; physicalInterpolation?: 'bspline';
@@ -277,10 +277,19 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
     }
     try { engine ??= await retained.engine; } catch (error) { engines.delete(engineKey); throw error; }
     const terrainKey = String(world.stats['v2.terrainKey']);
-    if (retained.terrainKey !== terrainKey) raster = rustSettlementRaster(world);
-    const result = await engine.run({ id: 1, kind, seed, runtime, ...(raster ? { raster } : {}), ...extras });
-    if (!result.error && raster) retained.terrainKey = terrainKey;
-    return result;
+    // Concurrent cities: exactly one request uploads the terrain; the others wait for it (or take over if it failed).
+    let primed: (() => void) | undefined;
+    while (retained.terrainKey !== terrainKey) {
+      if (retained.priming) { await retained.priming; continue; }
+      raster = rustSettlementRaster(world);
+      retained.priming = new Promise<void>(resolve => { primed = resolve; });
+      break;
+    }
+    try {
+      const result = await engine.run({ id: 1, kind, seed, runtime, ...(raster ? { raster } : {}), ...extras });
+      if (!result.error && raster) retained.terrainKey = terrainKey;
+      return result;
+    } finally { if (primed) { retained.priming = undefined; primed(); } }
   };
   if (!snapshot.layouts.length) {
     const inputs = { sites: [{ key, name: place.name ?? '', population: options.population,

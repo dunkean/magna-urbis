@@ -37,7 +37,7 @@ struct Session {
     urban: RetainedUrban,
 }
 #[derive(Default)]
-struct Sessions {
+pub(crate) struct Sessions {
     clock: u64,
     entries: HashMap<String, (u64, Arc<Mutex<Session>>)>,
 }
@@ -120,9 +120,9 @@ struct TerrainRequest {
     field: bool,
 }
 
-struct Reply {
+pub(crate) struct Reply {
     kind: &'static str,
-    body: Vec<u8>,
+    pub(crate) body: Vec<u8>,
 }
 fn json_reply(value: impl Serialize) -> ApiResult<Reply> {
     Ok(Reply {
@@ -993,7 +993,7 @@ fn client_gone() -> bool {
         gone
     })
 }
-fn dispatch(path: &str, body: &[u8], sessions: &Mutex<Sessions>) -> ApiResult<Reply> {
+pub(crate) fn dispatch(path: &str, body: &[u8], sessions: &Mutex<Sessions>) -> ApiResult<Reply> {
     if path == "/status" {
         return json_reply(
             json!({"ok": true, "service": "magna-urbis-local", "backend": "rust-native", "version": 1,
@@ -1143,26 +1143,39 @@ fn local_origin(origin: &str) -> bool {
                 || host.starts_with("[::1]:")
         })
 }
-fn respond(
+/// Idle time a kept-alive connection waits for its next request before the server closes it.
+const IDLE_TIMEOUT: Duration = Duration::from_secs(120);
+/// One write per response: status line, headers and body leave together, so a kept-alive socket
+/// never stalls its tail segment on Nagle + the peer's delayed ACK.
+fn respond_with(
     stream: &mut TcpStream,
     status: &str,
     origin: &str,
     reply: Reply,
+    keep_alive: bool,
 ) -> std::io::Result<()> {
-    write!(
-        stream,
-        "HTTP/1.1 {status}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n",
+    let mut head = format!(
+        "HTTP/1.1 {status}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\n",
         reply.kind,
         reply.body.len()
-    )?;
-    if !origin.is_empty() {
-        write!(
-            stream,
-            "Access-Control-Allow-Origin: {origin}\r\nVary: Origin\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\nAccess-Control-Allow-Private-Network: true\r\n"
-        )?;
+    );
+    if keep_alive {
+        head.push_str(&format!("Connection: keep-alive\r\nKeep-Alive: timeout={}\r\n", IDLE_TIMEOUT.as_secs()));
+    } else {
+        head.push_str("Connection: close\r\n");
     }
-    write!(stream, "\r\n")?;
-    stream.write_all(&reply.body)
+    if !origin.is_empty() {
+        head.push_str(&format!(
+            "Access-Control-Allow-Origin: {origin}\r\nVary: Origin\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\nAccess-Control-Allow-Private-Network: true\r\n"
+        ));
+    }
+    head.push_str("\r\n");
+    let mut message = head.into_bytes();
+    message.extend_from_slice(&reply.body);
+    stream.write_all(&message)
+}
+fn respond(stream: &mut TcpStream, status: &str, origin: &str, reply: Reply) -> std::io::Result<()> {
+    respond_with(stream, status, origin, reply, false)
 }
 const MAX_NATIVE_ASSEMBLY_BODY:usize=32*1024*1024;
 fn native_assembly_body_budget(path:&str,length:usize)->bool {
@@ -1170,40 +1183,57 @@ fn native_assembly_body_budget(path:&str,length:usize)->bool {
         ||length<=MAX_NATIVE_ASSEMBLY_BODY
 }
 fn respond_result(stream: &mut TcpStream, origin: &str, result: ApiResult<Reply>) {
+    respond_result_with(stream, origin, result, false);
+}
+/// True when the complete response was written.
+fn respond_result_with(stream: &mut TcpStream, origin: &str, result: ApiResult<Reply>, keep_alive: bool) -> bool {
     match result {
-        Ok(reply) => { let _ = respond(stream, "200 OK", origin, reply); }
+        Ok(reply) => respond_with(stream, "200 OK", origin, reply, keep_alive).is_ok(),
         Err(error) => {
             let status = if error.starts_with("[urban_panic]") { "500 Internal Server Error" } else { "400 Bad Request" };
-            if let Ok(reply) = json_reply(json!({"error": error})) {
-                let _ = respond(stream, status, origin, reply);
+            match json_reply(json!({"error": error})) {
+                Ok(reply) => respond_with(stream, status, origin, reply, keep_alive).is_ok(),
+                Err(_) => false,
             }
         }
     }
 }
+/// HTTP/1.1 persistent connection: requests are served one after the other on the same socket.
+/// The server must not close after every response: each server-side close leaves a TIME_WAIT
+/// for (8791, client port), and Windows hands that client port out again to a new connect,
+/// whose SYN then hangs against the TIME_WAIT (Chrome: net::ERR_CONNECTION_TIMED_OUT). With
+/// keep-alive the browser reuses its few sockets and closes them itself.
 fn handle(mut stream: TcpStream, sessions: &Mutex<Sessions>) {
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(120)));
+    // Also the idle wait for the next request on a kept-alive connection.
+    let _ = stream.set_read_timeout(Some(IDLE_TIMEOUT));
     let _ = stream.set_write_timeout(Some(Duration::from_secs(120)));
+    let _ = stream.set_nodelay(true);
     let mut bytes = Vec::with_capacity(8192);
     let mut scratch = [0; 8192];
+    while handle_one(&mut stream, sessions, &mut bytes, &mut scratch) {}
+}
+/// Serves one request; true when the connection stays open for the next one.
+fn handle_one(stream: &mut TcpStream, sessions: &Mutex<Sessions>, bytes: &mut Vec<u8>, scratch: &mut [u8; 8192]) -> bool {
     let (head_end, header) = loop {
-        match stream.read(&mut scratch) {
-            Ok(0) | Err(_) => return,
-            Ok(n) => bytes.extend_from_slice(&scratch[..n]),
-        }
         if let Some(end) = bytes.windows(4).position(|s| s == b"\r\n\r\n") {
             if end > 16384 {
-                return;
+                return false;
             }
             break (end + 4, String::from_utf8_lossy(&bytes[..end]).into_owned());
         }
         if bytes.len() > 16384 {
-            return;
+            return false;
+        }
+        match stream.read(scratch) {
+            Ok(0) | Err(_) => return false,
+            Ok(n) => bytes.extend_from_slice(&scratch[..n]),
         }
     };
     let mut lines = header.lines();
     let mut request = lines.next().unwrap_or("").split_whitespace();
     let method = request.next().unwrap_or("");
     let path = request.next().unwrap_or("").split('?').next().unwrap_or("");
+    let mut keep_alive = request.next() == Some("HTTP/1.1");
     let mut length = 0;
     let mut origin = "";
     let mut host = "";
@@ -1219,65 +1249,56 @@ fn handle(mut stream: TcpStream, sessions: &Mutex<Sessions>) {
             if name.eq_ignore_ascii_case("host") {
                 host = val;
             }
+            if name.eq_ignore_ascii_case("connection") && val.eq_ignore_ascii_case("close") {
+                keep_alive = false;
+            }
+            // Only Content-Length bodies are framed; anything else ends the connection after this reply.
+            if name.eq_ignore_ascii_case("transfer-encoding") {
+                keep_alive = false;
+            }
         }
     }
     let valid_host = local_origin(&format!("http://{host}"));
     if (!origin.is_empty() && !local_origin(origin)) || !valid_host {
-        let _ = respond(
-            &mut stream,
-            "403 Forbidden",
-            "",
-            Reply {
-                kind: "text/plain",
-                body: b"Local clients only".to_vec(),
-            },
-        );
-        return;
-    }
-    if method == "OPTIONS" {
-        let _ = respond(
-            &mut stream,
-            "204 No Content",
-            origin,
-            Reply {
-                kind: "text/plain",
-                body: vec![],
-            },
-        );
-        return;
+        let _ = respond(stream, "403 Forbidden", "", Reply { kind: "text/plain", body: b"Local clients only".to_vec() });
+        return false;
     }
     // Route-specific limit BEFORE reading/allocating the complete body or
     // JSON extraction. Only the bounded header/prefetch buffer exists here.
     if !native_assembly_body_budget(path,length) {
         if let Ok(reply)=json_reply(json!({"ok":false,"error":{"code":"input_budget","field":null,"message":"Native assembly HTTP body exceeds 32 MiB"}})) {
-            let _=respond(&mut stream,"413 Payload Too Large",origin,reply);
+            let _=respond(stream,"413 Payload Too Large",origin,reply);
         }
-        return;
+        return false;
     }
-    if length > MAX_BODY || !matches!(method, "GET" | "POST") {
-        let _ = respond(
-            &mut stream,
-            "400 Bad Request",
-            origin,
-            Reply {
-                kind: "text/plain",
-                body: b"Invalid request".to_vec(),
-            },
-        );
-        return;
+    if length > MAX_BODY || !matches!(method, "GET" | "POST" | "OPTIONS") {
+        let _ = respond(stream, "400 Bad Request", origin, Reply { kind: "text/plain", body: b"Invalid request".to_vec() });
+        return false;
     }
     while bytes.len() - head_end < length {
         let remaining = length - (bytes.len() - head_end);
         let chunk = remaining.min(scratch.len());
         match stream.read(&mut scratch[..chunk]) {
-            Ok(0) | Err(_) => return,
+            Ok(0) | Err(_) => return false,
             Ok(n) => bytes.extend_from_slice(&scratch[..n]),
         }
     }
-    CLIENT_PROBE.with(|probe| *probe.borrow_mut() = stream.try_clone().ok());
-    let result = dispatch(path, &bytes[head_end..head_end + length], sessions);
-    CLIENT_PROBE.with(|probe| *probe.borrow_mut() = None);
-    respond_result(&mut stream, origin, result);
+    let result = if method == "OPTIONS" {
+        Ok(Reply { kind: "text/plain", body: vec![] })
+    } else {
+        CLIENT_PROBE.with(|probe| *probe.borrow_mut() = stream.try_clone().ok());
+        let result = dispatch(path, &bytes[head_end..head_end + length], sessions);
+        CLIENT_PROBE.with(|probe| *probe.borrow_mut() = None);
+        result
+    };
+    // Keep only what follows this request (nothing, unless the client pipelines).
+    bytes.drain(..head_end + length);
+    let written = if method == "OPTIONS" {
+        result.is_ok_and(|reply| respond_with(stream, "204 No Content", origin, reply, keep_alive).is_ok())
+    } else {
+        respond_result_with(stream, origin, result, keep_alive)
+    };
+    written && keep_alive
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -1308,9 +1329,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     let sessions = Arc::new(Mutex::new(Sessions::default()));
     let active = Arc::new(AtomicUsize::new(0));
-    // Connection slots, not compute threads: browsers hold idle pre-connected sockets (up to the
-    // 120 s read timeout), so a low cap fills with idle sockets and answers 503 to real requests.
-    let concurrency = 64;
+    // Connection slots, not compute threads: browsers hold idle kept-alive and pre-connected sockets
+    // (up to IDLE_TIMEOUT), so a low cap fills with idle sockets and answers 503 to real requests.
+    let concurrency = 256;
     for stream in listener.incoming() {
         let Ok(mut stream) = stream else {
             continue;

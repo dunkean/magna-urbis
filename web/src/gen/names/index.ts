@@ -78,13 +78,20 @@ export function setSettlementName(world: World, key: string, value: string): voi
 }
 
 /* ---------------------------------------------------------------- geometry */
-function ringDist(p: Vec2, ring: Polygon): number {
+/** Distance to the ring; stops as soon as it is known to be <= `floor` (the returned value is then only an upper bound of it). */
+function ringDist(p: Vec2, ring: Polygon, floor = -Infinity): number {
   let best = Infinity;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
     const a = ring[j], b = ring[i];
+    // The segment's box distance is a lower bound: skip it when it cannot beat the current minimum (1e-9 safety margin).
+    if (best < Infinity) {
+      const ex = Math.max(Math.min(a.x, b.x) - p.x, 0, p.x - Math.max(a.x, b.x)), ey = Math.max(Math.min(a.y, b.y) - p.y, 0, p.y - Math.max(a.y, b.y));
+      if (ex * ex + ey * ey > best * best * (1 + 1e-9)) continue;
+    }
     const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy;
     const t = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2));
     best = Math.min(best, Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy));
+    if (best <= floor) return best;
   }
   return best;
 }
@@ -93,7 +100,13 @@ export function poleOf(poly: Polygon, holes: Polygon[] = []): { p: Vec2; r: numb
   const b = bbox(poly);
   let best = polygonCentroid(poly), bestR = -1;
   const inside = (p: Vec2): boolean => polygonContains(poly, p) && !holes.some((h) => polygonContains(h, p));
-  const depth = (p: Vec2): number => (inside(p) ? Math.min(ringDist(p, poly), ...holes.map((h) => ringDist(p, h))) : -1);
+  // Only a depth above the best so far matters: a ring distance <= bestR rejects the sample, inside or not.
+  const depth = (p: Vec2): number => {
+    let d = ringDist(p, poly, bestR);
+    if (d <= bestR) return d;
+    for (const h of holes) { d = Math.min(d, ringDist(p, h, bestR)); if (d <= bestR) return d; }
+    return inside(p) ? d : -1;
+  };
   let cx0 = b.minX, cy0 = b.minY, w = b.maxX - b.minX, h = b.maxY - b.minY;
   for (let pass = 0; pass < 3; pass++) {
     const N = 12;

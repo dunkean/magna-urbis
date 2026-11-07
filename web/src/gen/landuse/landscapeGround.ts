@@ -1,13 +1,14 @@
 /** Ordinary settlement ground keeps the same opaque landscape as the surrounding land. */
 import type { World, UrbanLayer, PolyH, Polygon, TerrainLayer } from '../types';
 import { offsetRibbon, polygonContains } from '../core/geom';
-import { differenceSafeS, unionMany } from '../geo/bool';
+import { differenceSafeS, unionMany, unionManyPruned } from '../geo/bool';
 import { area, orientPos } from '../geo/poly';
 import { MEGA_KEY } from '../urban/mega/types';
 import type { MacroQuarter } from '../urban/mega/types';
 import { bboxOf } from '../geo/poly';
 import { groundAppearance, type GroundAppearance } from './groundAppearance';
 
+const WATER_MARGIN = 100;
 const piece = (outer: Polygon): PolyH => ({ outer: orientPos(outer), holes: [] });
 const finite = (shapes: PolyH[]): boolean => shapes.every((p) => [p.outer, ...p.holes]
   .every((ring) => ring.length >= 3 && ring.every((v) => Number.isFinite(v.x) && Number.isFinite(v.y))));
@@ -126,7 +127,15 @@ export function urbanLandscapeGround(world: World, appearance = false): PolyH[] 
     if (waterRings.some((ring) => ring.some((p) => !Number.isFinite(p.x) || !Number.isFinite(p.y)))
       || t?.rivers.some((r) => r.width.some((width) => !Number.isFinite(width)))) return [];
     const water = waterGround(world);
-    if (finite(source) && finite(water)) ground = differenceSafeS(unionMany(source, 24, true), unionMany(water, 24, true));
+    if (finite(source) && finite(water)) {
+      // Water far from every settlement ground cannot change the difference, and the batching tree is kept as is.
+      const land = unionMany(source, 24, true), boxes = land.map((p) => bboxOf(p.outer));
+      const near = (m: PolyH[] | unknown): boolean => {
+        const b = bboxOf((m as PolyH[])[0].outer);
+        return boxes.some((a) => a.x0 - WATER_MARGIN <= b.x1 && a.x1 + WATER_MARGIN >= b.x0 && a.y0 - WATER_MARGIN <= b.y1 && a.y1 + WATER_MARGIN >= b.y0);
+      };
+      ground = differenceSafeS(land, unionManyPruned(water, near, 24, true));
+    }
   } catch { /* Decorative ground fails closed for malformed geometry. */ }
   CACHE.set(world, { signature, ground });
   return ground;

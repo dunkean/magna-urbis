@@ -285,3 +285,23 @@ export function unionMany(list: Operand[], batch = 24, snapped = false): MultiPo
   }
   return cur[0];
 }
+
+/**
+ * unionMany with the same balanced batching (positions in the tree never move), skipping the operands for which
+ * `keep` is false: their subtrees vanish from the tree, the rest of the tree is computed exactly as unionMany would.
+ * Exact for a caller that only reads the result near the kept operands.
+ */
+export function unionManyPruned(list: Operand[], keep: (o: Operand) => boolean, batch = 24, snapped = false): MultiPoly {
+  let cur: MultiPoly[] = list.map((o) => (Array.isArray(o) && (o.length === 0 || 'x' in (o[0] as object)) ? (o as Polygon).length >= 3 ? [{ outer: orientPos(o as Polygon), holes: [] }] : [] : Array.isArray(o) ? (o as MultiPoly) : [o as PolyH])).filter((m) => m.length);
+  cur = cur.map((m) => (keep(m) ? m : []));
+  if (!cur.length) return [];
+  while (cur.length > 1) {
+    const next: MultiPoly[] = [];
+    for (let i = 0; i < cur.length; i += batch) {
+      const grp = cur.slice(i, i + batch).filter((m) => m.length);
+      next.push(grp.length === 0 ? [] : grp.length === 1 ? grp[0] : (snapped ? unionS : union)(grp[0], ...grp.slice(1)));
+    }
+    cur = next;
+  }
+  return cur[0];
+}

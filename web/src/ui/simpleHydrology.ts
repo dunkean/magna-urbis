@@ -94,14 +94,40 @@ export class Heap {
   }
 }
 
-/** Mean-pools a square grid by an integer factor. */
-export function downsample(height: Float32Array, n: number, factor: number): Float32Array {
-  if (factor === 1) return height;
-  const m = Math.floor(n / factor), out = new Float32Array(m * m);
-  for (let y = 0; y < m; y++) for (let x = 0; x < m; x++) {
-    let sum = 0;
-    for (let dy = 0; dy < factor; dy++) for (let dx = 0; dx < factor; dx++) sum += height[(y * factor + dy) * n + x * factor + dx];
-    out[y * m + x] = sum / (factor * factor);
+/** Mean-pools a square n² grid to m² (m ≤ n): each coarse cell averages the fine area it covers, for any ratio. */
+export function downsample(height: Float32Array, n: number, m: number): Float32Array {
+  if (m === n) return height;
+  const out = new Float32Array(m * m), factor = n / m;
+  if (Number.isInteger(factor)) {
+    for (let y = 0; y < m; y++) for (let x = 0; x < m; x++) {
+      let sum = 0;
+      for (let dy = 0; dy < factor; dy++) for (let dx = 0; dx < factor; dx++) sum += height[(y * factor + dy) * n + x * factor + dx];
+      out[y * m + x] = sum / (factor * factor);
+    }
+    return out;
+  }
+  // Fine cells overlapped by each coarse cell along one axis, weighted by the overlap.
+  const axes = Array.from({ length: m }, (_, k) => {
+    const start = k * factor, end = start + factor, cells: number[] = [], weights: number[] = [];
+    for (let i = Math.floor(start); i < Math.min(n, Math.ceil(end)); i++) {
+      const w = Math.min(end, i + 1) - Math.max(start, i);
+      if (w > 0) { cells.push(i); weights.push(w); }
+    }
+    return { cells, weights };
+  });
+  for (let y = 0; y < m; y++) {
+    const ry = axes[y];
+    for (let x = 0; x < m; x++) {
+      const rx = axes[x];
+      let sum = 0;
+      for (let a = 0; a < ry.cells.length; a++) {
+        const row = ry.cells[a] * n;
+        let line = 0;
+        for (let b = 0; b < rx.cells.length; b++) line += height[row + rx.cells[b]] * rx.weights[b];
+        sum += line * ry.weights[a];
+      }
+      out[y * m + x] = sum / (factor * factor);
+    }
   }
   return out;
 }

@@ -80,8 +80,16 @@ function layoutSection(key: string): UrbanControlSection {
   if (/^(tissue|access|max|allowStairs|powerHighGround|mergeParallelStreets|parallelMerge|roadWidthBySize|townMainRoad|polishRoadEnds|lowRuralHouses|outbuildings|roadMouths|roadRemnants|roadEndJoins|smallPlaceCapacity|regularGridOutline|axisAlignment|exitTreatment|peripheralRoad)/.test(key)) return 'streets';
   return 'layout';
 }
+const templates = new Map<string, Record<string, unknown>>();
+/** Pure function of the catalogue: built once per kind. Read-only for callers (merges clone their sources). */
 export function morphologyTemplate(kind: 'quarters' | 'parcels'): Record<string, unknown> {
-  return Object.fromEntries(urbanCatalogue.fields[kind].map(key => [key, Object.values(urbanCatalogue.presets).map(p => p.params[key]).find(v => v !== undefined) ?? (key === 'deepFill' ? false : key === 'lotMergeChance' ? 0 : 0)]));
+  let template = templates.get(kind);
+  if (!template) {
+    const presets = Object.values(urbanCatalogue.presets);
+    template = Object.fromEntries(urbanCatalogue.fields[kind].map(key => [key, presets.map(p => p.params[key]).find(v => v !== undefined) ?? (key === 'deepFill' ? false : key === 'lotMergeChance' ? 0 : 0)]));
+    templates.set(kind, template);
+  }
+  return template;
 }
 /** Every native default leaf is represented; optional contract leaves are added explicitly below. */
 export function urbanControlFields(): UrbanParameterField[] {

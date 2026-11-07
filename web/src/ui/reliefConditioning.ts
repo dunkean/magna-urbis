@@ -310,9 +310,17 @@ function settle(height: Float32Array, filled: Float32Array, original: Float32Arr
   }
 }
 
-export function conditionRelief(height: Float32Array, n: number, width: number, settings: ConditioningSettings): ConditioningResult {
-  const started = performance.now();
-  const before = depressions(height, n, width);
+/**
+ * `stats: false` skips the before/after depression census and, unless the
+ * sediment settling needs it, the final drainage: callers that only read
+ * `height` (the procedural posterior stage) save two full floods. The height
+ * is the same either way; `before`/`after` are then zero and `hydrology` absent.
+ */
+export function conditionRelief(height: Float32Array, n: number, width: number, settings: ConditioningSettings, options?: { stats?: true }): ConditioningResult;
+export function conditionRelief(height: Float32Array, n: number, width: number, settings: ConditioningSettings, options: { stats: false }): Omit<ConditioningResult, 'hydrology'> & { hydrology?: SimpleHydrology };
+export function conditionRelief(height: Float32Array, n: number, width: number, settings: ConditioningSettings, options: { stats?: boolean } = {}): Omit<ConditioningResult, 'hydrology'> & { hydrology?: SimpleHydrology } {
+  const started = performance.now(), stats = options.stats !== false;
+  const before = stats ? depressions(height, n, width) : { depressions: 0, volume: 0 };
   const result = new Float32Array(height);
   const both = settings.mode === 'both';
   let steps = 0, breaches = 0;
@@ -321,7 +329,7 @@ export function conditionRelief(height: Float32Array, n: number, width: number, 
     const deposit = both ? 0 : 0.12;
     if (n <= 512) erode(result, n, width, steps, deposit);
     else {
-      const m = 512, small = downsample(height, n, n / m), eroded = new Float32Array(small);
+      const m = 512, small = downsample(height, n, m), eroded = new Float32Array(small);
       erode(eroded, m, width, steps, deposit);
       for (let c = 0; c < m * m; c++) eroded[c] -= small[c];
       const change = upsampleDelta(eroded, m, n);
@@ -339,12 +347,13 @@ export function conditionRelief(height: Float32Array, n: number, width: number, 
     if (height[c] <= 0) result[c] = height[c];
     else if (result[c] < 0.1) result[c] = Math.min(height[c], 0.1);
   }
-  const hydrology = computeHydrology(result, n, width);
+  const settles = both && steps > 0;
+  const hydrology = stats || settles ? computeHydrology(result, n, width) : undefined;
   // The erosion's sediment: more steps, fuller beds (2‰ bowls at the default 24).
-  if (both && steps > 0) settle(result, hydrology.filled, height, n, width, 0.048 / steps);
+  if (settles) settle(result, hydrology!.filled, height, n, width, 0.048 / steps);
   const delta = new Float32Array(n * n);
   for (let c = 0; c < n * n; c++) delta[c] = result[c] - height[c];
-  const after = depressions(result, n, width, hydrology);
+  const after = stats ? depressions(result, n, width, hydrology) : { depressions: 0, volume: 0, hydrology: undefined };
   return {
     height: result, delta, before: { depressions: before.depressions, volume: before.volume }, after: { depressions: after.depressions, volume: after.volume },
     breaches, steps, ms: performance.now() - started, hydrology: after.hydrology,

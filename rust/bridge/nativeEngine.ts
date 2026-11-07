@@ -31,9 +31,10 @@ export async function uploadNativeRaster(runtime: ExecutionRuntime, session: str
   const padded = new Uint8Array(Math.ceil(header.length / 4) * 4).fill(32); padded.set(header);
   const length = new Uint8Array(4); new DataView(length.buffer).setUint32(0, padded.length, true);
   const bytes = (array: ArrayBufferView): Uint8Array<ArrayBuffer> => new Uint8Array(array.buffer as ArrayBuffer, array.byteOffset, array.byteLength);
-  await nativeRequest(runtime, '/raster', new Blob([length, padded,
+  // Drain the reply so the keep-alive connection is free for the next request.
+  await (await nativeRequest(runtime, '/raster', new Blob([length, padded,
     bytes(raster.height), bytes(raster.waterLevel), bytes(raster.riverWidth), bytes(raster.riverIds), bytes(raster.water),
-    ...(raster.physical ? [bytes(raster.physical.height)] : [])]));
+    ...(raster.physical ? [bytes(raster.physical.height)] : [])]))).arrayBuffer();
 }
 
 export async function nativeJson<T>(runtime: ExecutionRuntime, path: string, value: unknown): Promise<T> {

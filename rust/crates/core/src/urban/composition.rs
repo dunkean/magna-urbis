@@ -1275,13 +1275,15 @@ fn street_reach(layout: &super::Layout) -> Vec<Shape> {
         outer: (0..16).map(|k| { let a = k as f64 * std::f64::consts::TAU / 16.0; Point { x: c.x + FRONT_REACH * a.cos(), y: c.y + FRONT_REACH * a.sin() } }).collect(),
         holes: vec![],
     };
-    let ribbons: Vec<Shape> = layout.streets.iter().filter(|s| s.path.len() >= 2 && s.role != "bridge")
-        .flat_map(|s| {
-            let mut v = g::ribbon(&s.path, &vec![2.0 * FRONT_REACH; s.path.len()]);
-            v.push(cap(&s.path[0]));
-            v.push(cap(&s.path[s.path.len() - 1]));
-            v
-        }).collect();
+    // Per-street buffers are independent; collect in street order before the
+    // unchanged union, so its integer overlay grid and operand order stay exact.
+    let ribbons: Vec<Shape> = super::par::map(&layout.streets, |_, s| {
+        if s.path.len() < 2 || s.role == "bridge" { return vec![]; }
+        let mut v = g::ribbon(&s.path, &vec![2.0 * FRONT_REACH; s.path.len()]);
+        v.push(cap(&s.path[0]));
+        v.push(cap(&s.path[s.path.len() - 1]));
+        v
+    }).into_iter().flatten().collect();
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| g::union(&ribbons))).unwrap_or_default()
 }
 

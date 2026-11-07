@@ -134,6 +134,20 @@ fn source(
         .ok_or_else(|| "Unknown compact recipe variant.".into())
 }
 
+fn source_value(parameters: &'static Parameters) -> Result<std::sync::Arc<Value>, String> {
+    use std::sync::{Arc, OnceLock, RwLock};
+    use std::collections::HashMap;
+    static VALUES: OnceLock<RwLock<HashMap<usize, Arc<Value>>>> = OnceLock::new();
+    // The referent comes from the immutable, process-lifetime catalogue.
+    let key = parameters as *const Parameters as usize;
+    let values = VALUES.get_or_init(|| RwLock::new(HashMap::new()));
+    if let Some(value) = values.read().unwrap_or_else(|e| e.into_inner()).get(&key) {
+        return Ok(Arc::clone(value));
+    }
+    let value = Arc::new(serde_json::to_value(parameters).map_err(|e| e.to_string())?);
+    Ok(Arc::clone(values.write().unwrap_or_else(|e| e.into_inner()).entry(key).or_insert(value)))
+}
+
 impl ParameterDelta {
     fn between(base: &Value, value: &Value) -> Result<Self, String> {
         let base = base.as_object().ok_or("Invalid parameter base.")?;
@@ -169,12 +183,13 @@ impl CompactArchitecture {
     }
 
     pub fn pack(resolved: &ResolvedArchitecture) -> Result<Self, String> {
-        let base = serde_json::to_value(source(
+        // Catalogue parameters are immutable static data. Many candidate plans
+        // use the same source; serialize its base once, then borrow the Value.
+        let base = source_value(source(
             &resolved.config,
             &resolved.recipe_id,
             &resolved.parameters.variant_id,
-        )?)
-        .map_err(|e| e.to_string())?;
+        )?)?;
         let mut parameters = vec![];
         let mut parameter_keys = BTreeMap::new();
         let mut intern_parameter = |p: &Parameters| -> Result<usize, String> {

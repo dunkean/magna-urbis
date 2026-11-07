@@ -90,7 +90,21 @@ pub(super) fn shapes(p: geo::MultiPolygon<f64>) -> Vec<Shape> {
         .collect()
 }
 pub(super) fn area(s: &Shape) -> f64 {
-    polygon(s).unsigned_area()
+    // geo 0.33.1's exact translated determinant order, without ring allocation.
+    fn ring_area(ring: &[Point]) -> f64 {
+        if ring.len() < 2 { return 0.0; }
+        let first = ring[0];
+        let mut previous = (ring[1].x - first.x, ring[1].y - first.y);
+        let mut sum = 0.0;
+        for p in ring[2..].iter().chain(std::iter::once(&first)) {
+            let next = (p.x - first.x, p.y - first.y);
+            sum += previous.0 * next.1 - previous.1 * next.0;
+            previous = next;
+        }
+        sum / 2.0
+    }
+    s.holes.iter().fold(ring_area(&s.outer).abs(),
+        |area, hole| area - ring_area(hole).abs()).abs()
 }
 pub(super) fn centroid(s: &Shape) -> Point {
     polygon(s)
@@ -162,7 +176,9 @@ impl ContainmentIndex {
         let bounds = bbox(shape);
         let mut index = Self {
             bounds,
-            rows: vec![vec![]; 64],
+            // A long coastline should not scan scores of unrelated edges for
+            // every exact shore probe. Small rings keep a small index.
+            rows: vec![vec![]; ((shape.outer.len() + shape.holes.iter().map(Vec::len).sum::<usize>()) / 4).clamp(16, 1024)],
         };
         for ring in std::iter::once(&shape.outer).chain(shape.holes.iter()) {
             for (&a, &b) in ring
@@ -183,8 +199,8 @@ impl ContainmentIndex {
         index
     }
     fn row(&self, y: f64) -> usize {
-        (((y - self.bounds.1) / (self.bounds.3 - self.bounds.1).max(1e-12) * 64.0).floor() as usize)
-            .min(63)
+        (((y - self.bounds.1) / (self.bounds.3 - self.bounds.1).max(1e-12) * self.rows.len() as f64).floor() as usize)
+            .min(self.rows.len() - 1)
     }
     pub(super) fn contains(&self, p: Point) -> bool {
         let (x0, y0, x1, y1) = self.bounds;
@@ -892,3 +908,47 @@ mod tests {
 #[cfg(test)]
 #[path = "geometry_conversion_topology_tests.rs"]
 mod conversion_topology_tests;
+
+#[cfg(test)]
+mod perf_geometry_tests {
+    use super::*;
+    #[test]
+    fn borrowed_area_matches_geo_bits_for_open_closed_degenerate_and_holed_rings() {
+        for offset in [0.0, -0.0, 1234.567, 1e9] {
+            for count in 0..32 {
+                let mut shape=Shape {outer:(0..count).map(|i| {
+                    let angle=i as f64*std::f64::consts::TAU/count as f64;
+                    Point {x:offset+17.13*angle.cos(),y:-offset+11.77*angle.sin()}
+                }).collect(),holes:vec![]};
+                if count>=3 {shape.holes=vec![rectangle(offset-1.23,-offset-2.31,offset+1.23,-offset+2.31).outer];}
+                for closed in [false,true] {
+                    if closed && let Some(first)=shape.outer.first().copied() {shape.outer.push(first);}
+                    for reversed in [false,true] {
+                        if reversed {shape.outer.reverse();}
+                        assert_eq!(area(&shape).to_bits(),polygon(&shape).unsigned_area().to_bits(),"offset {offset}, count {count}");
+                    }
+                }
+            }
+        }
+    }
+    #[test]
+    fn adaptive_containment_rows_preserve_rays_and_boundary_answers() {
+        let mut shape=rectangle(-20.0,-30.0,40.0,50.0);
+        shape.holes=vec![rectangle(-10.0,-10.0,10.0,10.0).outer];
+        for extra in [0, 257, 4096] {
+            let a=shape.outer[0]; let b=shape.outer[1];
+            let mut subdivided=shape.clone();
+            subdivided.outer.splice(1..1,(0..extra).map(|i| {
+                let t=(i+1) as f64/(extra+1) as f64;
+                Point {x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t}
+            }));
+            let index=ContainmentIndex::new(&subdivided);
+            for y in -31..=51 {for x in -21..=41 {
+                for shift in [0.0,1e-10,-1e-10] {
+                    let p=Point{x:x as f64+shift,y:y as f64+shift};
+                    assert_eq!(index.contains(p),contains(&subdivided,p));
+                }
+            }}
+        }
+    }
+}

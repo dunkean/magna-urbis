@@ -10,7 +10,7 @@ import type { ExportLayers } from '../render/exportLayers';
 import { createCanvasRenderer, type CanvasRenderer } from '../render/canvas';
 import { roadGroundTones, setRoadGround } from '../render/roadStyle';
 import { displayWorld } from '../render/displayWorld';
-import { v2DisplayForest, v2ForestOccupation } from './displayForest';
+import { v2DisplayForest, v2ForestOccupation, v2ForestOccupationAsync } from './displayForest';
 import { withBuildingOccupation } from '../ui/forestOccupation';
 import type { ForestOccupation } from '../../../rust/bridge/terrainForest';
 import { nativeCitiesOf } from './nativeProducts';
@@ -215,7 +215,7 @@ export class BenchRenderer {
     // The shared material shader also composes SVG/PNG exports, using an OffscreenCanvas or a page canvas according to WebGL2 availability.
     const cacheKey = `terrain:${key}`;
     const pending = this.shared.cache.get<Promise<BaseRaster>>(cacheKey, async () => {
-      const settingsForRender = { ...effective, width: world.mapSize, seed: world.seed, v2Season: r.ground.season, v2Calendar: r.ground.calendar, forest: { field: v2DisplayForest(world, settings, r), occupation: this.groundOccupation(), groundCover:r.composition.vegetation.procedural, waterVisible: layers.water } };
+      const settingsForRender = { ...effective, width: world.mapSize, seed: world.seed, v2Season: r.ground.season, v2Calendar: r.ground.calendar, forest: { field: v2DisplayForest(world, settings, r), occupation: await this.groundOccupation(), groundCover:r.composition.vegetation.procedural, waterVisible: layers.water } };
       let svg = '';
       const waterStyle=r.composition.networks.water.look==='natural'?'render3d':r.palette.mapStyle;
       if (layers.relief) svg = renderRustTerrain(t, style, layers.frame, settingsForRender, r.ground.contours, 'v2-render', lighting, layers, r.vegetation.fantasy, true, waterStyle, colors, this.rasterContext()).svg;
@@ -245,18 +245,22 @@ export class BenchRenderer {
   }
   private occupationCache?: { world: World; revision: string; data?: ForestOccupation };
   /** Accepted footprints exclude vegetation independently of building visibility. */
-  private groundOccupation(): ForestOccupation | undefined {
+  private async groundOccupation(): Promise<ForestOccupation | undefined> {
     const world = this.world!, v = this.scene!.revisions;
     const revision = JSON.stringify([v.landuse, v.cities, v.settlements]);
     if (this.occupationCache?.world !== world || this.occupationCache.revision !== revision) {
+      const base = await v2ForestOccupationAsync(world);
+      if (this.world !== world) return base;
       const buildings = [...nativeCitiesOf(world).flatMap(city => city.scene?.buildings ?? []), ...(activityScene(world)?.buildings ?? [])];
-      this.occupationCache = { world, revision, data: withBuildingOccupation(v2ForestOccupation(world), { buildings }) };
+      this.occupationCache = { world, revision, data: withBuildingOccupation(base, { buildings }) };
     }
     return this.occupationCache.data;
   }
-  private forestPass(): void {
+  private async forestPass(): Promise<void> {
     if (!this.gpuActive) return;
-    this.dropBackground(); this.gpu!.setForest(v2DisplayForest(this.world!, this.settings!, this.resolved!), this.groundOccupation());
+    this.dropBackground();
+    const field = v2DisplayForest(this.world!, this.settings!, this.resolved!), occupation = await this.groundOccupation();
+    if (this.gpuActive) this.gpu!.setForest(field, occupation);
   }
   /** The parchment tints multiply over the lit ground: the overlay gets it as a backdrop, transparent on the water below. */
   private landBackdrop(): HTMLCanvasElement | null {
@@ -409,13 +413,13 @@ export class BenchRenderer {
   }
   private cityHooks: NativeCityHooks = { beforeBuildings: (ctx, scene, frame) => this.paintUrban(ctx, scene, frame) };
   /** Native city plans/houses: rebuilt per city products only; the city appearance is read per frame (draw). */
-  private cityPass(): void {
+  private async cityPass(): Promise<void> {
     const v = this.scene!.revisions, key = JSON.stringify([v.cities, v.settlements, v.terrain]), shared = this.shared;
     if (shared.city?.key === key) { this.city = shared.city.map; return; }
     const map = createNativeCityMap(this.world!, this.invalidate);
     if (this.ownsShared) { shared.city?.map.dispose(); shared.city = { key, map }; } else { this.exportCity?.dispose(); this.exportCity = map; }
     this.city = map;
-    this.forestPass();
+    await this.forestPass();
   }
   /** Capture/export only: combines the layers into a single raster. */
   draw(view: View, w: number, h: number, dpr: number, canvas = this.surface): HTMLCanvasElement {

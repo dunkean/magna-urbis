@@ -357,8 +357,16 @@ insertHTML($('#inspect-mode').parentElement!, 'beforeend', `<select id="inspect-
 insertHTML($('#hardware-details'), 'afterend', `<details class="section"><summary>Adresses des services locaux</summary><p class="hint">L’édition installable lance Rust automatiquement. Python peut utiliser le service local existant. Les adresses restent sur votre machine.</p><label class="label" for="rust-server">Rust natif</label><input id="rust-server" type="url" value="${esc(bootRuntime.localServer)}"><label class="label" for="python-server">Python neuronal</label><input id="python-server" type="url" value="${esc(bootRuntime.pythonServer)}"><button id="services-apply" class="small" style="margin-top:12px">Enregistrer & vérifier</button><p class="hint">Configuration de Python et des modèles : <a href="./scientific/index.html#calcul" target="_blank" rel="noopener">lire l’atlas ↗</a></p></details>`);
 insertHTML($('#project-file'), 'beforebegin', `<label class="label" for="import-scope">Que reprendre dans ce fichier ?</label><select id="import-scope"><option value="complete">Le projet complet · carte + recette + modifications</option><option value="terrain">Le territoire · garder ma recette de villes</option><option value="urban">La recette des villes · garder mon territoire</option></select><p class="hint" style="margin:8px 0 14px">Les compositions conservent le terrain exact et réinitialisent les géométries urbaines : reconstruisez les lieux avec la recette choisie.</p>`);
 function toast(message: string, error = false): void { clearTimeout(toastTimer); setText($('#toast'), message); $('#toast').dataset.error = String(error); $('#toast').hidden = false; toastTimer = setTimeout(() => { $('#toast').hidden = true; }, error ? 12000 : 5000); }
-function renderLog():void{$('#job-log').textContent=logs.map(entry=>`${entry.time.toLocaleTimeString(numberLocale())}  ${translate(entry.message)}`).join('\n');$('#job-log').scrollTop=$('#job-log').scrollHeight;}
-function log(message: string): void {logs.push({time:new Date(),message});if(logs.length>150)logs.shift();renderLog();}
+const logLine=(entry:{time:Date;message:string}):string=>`${entry.time.toLocaleTimeString(numberLocale())}  ${translate(entry.message)}`;
+let logScroll=0;
+function scrollLog():void{if(logScroll)return;logScroll=requestAnimationFrame(()=>{logScroll=0;const el=$('#job-log');el.scrollTop=el.scrollHeight;});}
+function renderLog():void{$('#job-log').textContent=logs.map(logLine).join('\n');scrollLog();}
+/** Append-only: the whole log is re-rendered only when the oldest line drops or the language changes. */
+function log(message: string): void {
+  const entry={time:new Date(),message};logs.push(entry);
+  if(logs.length>150){logs.shift();renderLog();return;}
+  const el=$('#job-log');el.append((logs.length>1?'\n':'')+logLine(entry));scrollLog();
+}
 function dialog(id: string): void { $<HTMLDialogElement>(id).showModal(); }
 client.onEngineReset=()=>chain.clearResults();
 function touchRecipe(): void { projectRevision++; updateExtent(); scheduleChainSync(); setText($('#footer-status'), world ? 'Réglages modifiés · prêts à générer' : 'Relief et eau, en un clic'); }
