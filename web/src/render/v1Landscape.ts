@@ -5,7 +5,6 @@ import { DEFAULTS } from '../gen/options';
 import { renderTerrainPixels } from './raster';
 import { worldWaterPixels } from './terrainWater';
 import { biomePalette } from './biomes';
-import { mapSeasonKey } from './seasonPalette';
 import type { BiomeName } from '../gen/biomes';
 import { PALETTES, ruralInk } from './styles';
 import { regionalRoadSurface } from './roadSurfaces';
@@ -63,7 +62,7 @@ function smoothLandscape(r: SettlementRaster, geometry: { water: { x: number; y:
 }
 export function v1LandscapeCanvas(r: SettlementRaster, style: V1LandscapeStyle, biome: BiomeName = 'temperate'): HTMLCanvasElement {
   let entries = cache.get(r); if (!entries) { entries = new Map(); cache.set(r, entries); }
-  const smooth = !!r.geometry?.water?.length, key = `${style}:${biome}:${smooth}:${mapSeasonKey()}`, found = entries.get(key); if (found) return found;
+  const smooth = !!r.geometry?.water?.length, key = `${style}:${biome}:${smooth}`, found = entries.get(key); if (found) return found;
   if (smooth) { const canvas = smoothLandscape(r, r.geometry!, style, biome); entries.set(key, canvas); return canvas; }
   const pixels = v1LandscapePixels(r, style, biome), canvas = document.createElement('canvas');
   canvas.width = pixels.w; canvas.height = pixels.h;
@@ -76,7 +75,7 @@ export function v1LandscapeCanvas(r: SettlementRaster, style: V1LandscapeStyle, 
  * the backdrop the multiply tints of the land use need on a transparent overlay, with the real water left visible below. */
 export function v1LandCanvas(r: SettlementRaster, style: V1LandscapeStyle, biome: BiomeName = 'temperate', rivers?: Float32Array): HTMLCanvasElement {
   let entries = cache.get(r); if (!entries) { entries = new Map(); cache.set(r, entries); }
-  const key = `land:${style}:${biome}:${rivers?.length ?? 0}:${mapSeasonKey()}`, found = entries.get(key); if (found) return found;
+  const key = `land:${style}:${biome}:${rivers?.length ?? 0}`, found = entries.get(key); if (found) return found;
   const world = v1LandscapeWorld(r, biome), size = 2048, k = size / r.width;
   const dry: World = { ...world, terrain: { ...world.terrain, water: new Uint8Array(r.water.length) } };
   // The V1 sheet is a soft relief on a mid paper tone. Real mountains would saturate its slope-driven light and spend

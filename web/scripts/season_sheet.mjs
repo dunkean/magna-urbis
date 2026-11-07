@@ -123,7 +123,8 @@ async function shootWorld(zone, reliefId, attempt) {
 for (const zone of zones) for (const reliefId of reliefs) {
   const id = `${zone}-${reliefId}`;
   if (!flag('force') && meta.worlds[id]?.shots?.length === styles.length * seasons.length * zooms.length) continue;
-  for (let attempt = 0; attempt < 4; attempt++) {
+  // --attempt replays a world from the seed an earlier run settled on, so both styles show the same town.
+  for (let attempt = Number(arg('attempt', '0')); attempt < 4; attempt++) {
     try { await shootWorld(zone, reliefId, attempt); break; }
     catch (e) { meta.failures.push({ id, attempt, message: String(e.message).slice(0, 500) }); log('FAILED', id, attempt, e.message.slice(0, 200)); await Promise.all(browser.contexts().flatMap(c => c.pages()).map(p => p.close().catch(() => {}))); }
   }

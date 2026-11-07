@@ -5,10 +5,9 @@
 import { ZONE_SEASONS, seasonWeights } from '../../../rust/bridge/terrainRenderV2Zones';
 import type { ClimateZone } from '../../../rust/bridge/terrainClimate';
 import type { Palette } from './styles';
-import { waterRamp } from './waterStyle';
 
-export interface SeasonPaint { herb: readonly [number, number, number]; leaf: number; evergreen: number; snow: number; seaIce: number; winter: number; spring: number; autumn: number }
-const SNOW = '#f1f3ef', ICE = '#e2eaed', RIVER_ICE = '#cfdee3', BARE_WOOD = '#8d8373', AUTUMN_WOOD = '#b78a3e', SPRING_WOOD = '#a6bc72', YOUNG_CROP = '#b4c47c', STUBBLE = '#c29a5c';
+export interface SeasonPaint { herb: readonly [number, number, number]; leaf: number; evergreen: number; snow: number; spring: number; autumn: number }
+const SNOW = '#f1f3ef', BARE_WOOD = '#8d8373', AUTUMN_WOOD = '#b78a3e', SPRING_WOOD = '#a6bc72', YOUNG_CROP = '#b4c47c', STUBBLE = '#c29a5c';
 /** Summer is the palette as authored. */
 const SUMMER = .5;
 let season = SUMMER, zone: ClimateZone | undefined;
@@ -27,7 +26,7 @@ const tinted = (c: string, ratio: readonly number[]): string => isHex(c) ? hex(r
 /** The zone's year at this point of the cycle. */
 export function seasonPaint(value: number, climateZone: ClimateZone): SeasonPaint {
   const w = seasonWeights(value), year = ZONE_SEASONS[climateZone], blend = (row: readonly number[]): number => row.reduce((sum, v, i) => sum + v * w[i], 0);
-  return { herb: [0, 1, 2].map(i => blend(year.herb.map(c => c[i]))) as unknown as SeasonPaint['herb'], leaf: blend(year.leaf), evergreen: year.leaf[0], snow: blend(year.snow), seaIce: blend(year.seaIce), winter: w[0], spring: w[1], autumn: w[3] };
+  return { herb: [0, 1, 2].map(i => blend(year.herb.map(c => c[i]))) as unknown as SeasonPaint['herb'], leaf: blend(year.leaf), evergreen: year.leaf[0], snow: blend(year.snow), spring: w[1], autumn: w[3] };
 }
 /** Crops follow the herbs: green while they grow, ochre once they ripen or lie dry. */
 function cropTone(c: string, herb: SeasonPaint['herb']): string {
@@ -38,20 +37,16 @@ function woodTone(c: string, s: SeasonPaint): string {
   const deciduous = 1 - s.evergreen;
   return mix(mix(mix(c, BARE_WOOD, .7 * (1 - s.leaf)), AUTUMN_WOOD, .35 * s.autumn * deciduous), SPRING_WOOD, .15 * s.spring * deciduous);
 }
+/** Only the land use follows the season: paper, relief ramp and water stay as drawn. */
 export function applySeason(pal: Palette, s: SeasonPaint): Palette {
   const snowed = (c: string, cover = .85): string => mix(c, SNOW, s.snow * cover);
-  const herbs = (c: string): string => snowed(tinted(c, s.herb.map(Math.sqrt)));
+  const herbs = (c: string): string => snowed(tinted(c, s.herb));
   const crops = (c: string): string => snowed(cropTone(c, s.herb), .8);
   const wood = (c: string): string => snowed(woodTone(c, s), .4);
-  const seaFill = mix(pal.seaFill, ICE, s.seaIce * .85), waterEdge = mix(pal.waterEdge, ICE, s.seaIce * .5);
   return { ...pal,
-    // The land tints multiply over this ramp: half the ratio on each, or the season would count twice.
-    hypso: pal.hypso.map(([t, c]) => [t, mix(snowed(tinted(c, s.herb.map(Math.sqrt))), SNOW, .8 * s.winter * Math.min(1, Math.max(0, (t - .6) / .4)))] as [number, string]),
     land: { ...pal.land, field: crops(pal.land.field), meadow: herbs(pal.land.meadow), pasture: herbs(pal.land.pasture), commons: herbs(pal.land.commons), garden: herbs(pal.land.garden), orchard: wood(pal.land.orchard), forest: wood(pal.land.forest), marsh: herbs(pal.land.marsh) },
     stripA: crops(pal.stripA), stripB: crops(pal.stripB), furrow: snowed(pal.furrow, .6), hedge: wood(pal.hedge),
-    treeFill: wood(pal.treeFill), treeInk: snowed(pal.treeInk, .25), orchardDot: snowed(pal.orchardDot, .25), grass: snowed(tinted(pal.grass, s.herb), .6), reed: snowed(tinted(pal.reed, s.herb), .5),
-    seaFill, waterEdge, water: s.seaIce > 0 ? waterRamp(waterEdge, seaFill) : pal.water, lakeFill: mix(pal.lakeFill, ICE, Math.max(s.seaIce, s.snow) * .8),
-    riverFill: mix(pal.riverFill, RIVER_ICE, s.snow * .75), riverEdge: mix(pal.riverEdge, RIVER_ICE, s.snow * .4) };
+    treeFill: wood(pal.treeFill), treeInk: snowed(pal.treeInk, .25), orchardDot: snowed(pal.orchardDot, .25), grass: snowed(tinted(pal.grass, s.herb), .6), reed: snowed(tinted(pal.reed, s.herb), .5) };
 }
 const MONOCHROME = new Set(['engraving', 'blueprint', 'night']);
 const cache = new WeakMap<Palette, Map<string, Palette>>();

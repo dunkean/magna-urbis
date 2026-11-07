@@ -1,4 +1,3 @@
-import { mapSeasonKey, seasonalPalette } from './seasonPalette';
 import { PALETTES, STYLE_LIST, isMapStyle, type MapStyle, type Palette } from './styles';
 import { waterRamp, type WaterStyle } from './waterStyle';
 import { applyRenderColors, type RenderColors } from './customColors';
@@ -78,17 +77,8 @@ const definitions = new Map<TerrainStyle, TerrainStyleDefinition>([
 ]);
 
 export const TERRAIN_STYLE_LIST = [...definitions.values()].filter(style => style.traits.family !== 'diagnostic');
-const seasonal = new Map<string, TerrainStyleDefinition>();
-/** Map palettes follow the season here; material styles read it in their shaders. */
-function inSeason(base: TerrainStyleDefinition): TerrainStyleDefinition {
-  const season = mapSeasonKey();
-  if (!season || base.traits.family !== 'map') return base;
-  const key = `${base.id}:${season}`, found = seasonal.get(key); if (found) return found;
-  const palette = seasonalPalette(base.palette), style = { ...base, palette, water: palette.water };
-  seasonal.set(key, style); return style;
-}
 export const terrainStyle = (id: TerrainStyle, colors?: RenderColors): TerrainStyleDefinition => {
-  const base = inSeason(definitions.get(id)!);
+  const base = definitions.get(id)!;
   if (!colors || !Object.keys(colors).length) return base;
   const palette = applyRenderColors({ ...base.palette, water: base.water }, colors);
   return { ...base, palette, water: palette.water };
