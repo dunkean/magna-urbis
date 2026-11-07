@@ -45,7 +45,7 @@ export async function nativeJson<T>(runtime: ExecutionRuntime, path: string, val
 export function nativeRasterClient() {
   let session: string | undefined;
   let queue: Promise<unknown> = Promise.resolve();
-  return <T>(path: string, request: { runtime: ExecutionRuntime; raster?: SettlementRaster; [key: string]: unknown }): Promise<T> => {
+  const call = <T>(path: string, request: { runtime: ExecutionRuntime; raster?: SettlementRaster; [key: string]: unknown }): Promise<T> => {
     const result = queue.then(async () => {
       session ??= nativeSession();
       const { runtime, raster, ...input } = request;
@@ -55,4 +55,10 @@ export function nativeRasterClient() {
     queue = result.catch(() => undefined);
     return result;
   };
+  /** Drop this client's retained native session (raster, urban products) once its owner is done. */
+  const release = async (runtime: ExecutionRuntime): Promise<void> => {
+    await queue; const id = session; session = undefined;
+    if (id) try { await nativeJson(runtime, '/release', { session: id }); } catch { /* an exited or evicted session is already released */ }
+  };
+  return Object.assign(call, { release });
 }

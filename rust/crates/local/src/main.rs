@@ -21,7 +21,7 @@ use std::{
 use urban_session::{RetainedUrban, UrbanSourceHandle};
 
 const MAX_BODY: usize = 320 * 1024 * 1024;
-const MAX_SESSIONS: usize = 8;
+const MAX_SESSIONS: usize = 16;
 type ApiResult<T> = Result<T, String>;
 
 #[derive(Default)]
@@ -343,6 +343,51 @@ fn terrain_reply(input: TerrainRequest, state: &mut Session) -> ApiResult<Reply>
         kind: "application/octet-stream",
         body,
     })
+}
+
+#[derive(Deserialize)]
+struct CoastHeader {
+    seed: String,
+    width: f64,
+    relief: String,
+    erosion: f64,
+    #[serde(rename = "motifSize")]
+    motif_size: f64,
+    #[serde(rename = "mountainMix")]
+    mountain_mix: f64,
+    environment: Option<String>,
+    mask: u32,
+    mode: String,
+    /// Erosion overrides in force when the browser engine is built, then while its coast erodes (null: default).
+    #[serde(rename = "buildTuning")]
+    build_tuning: Vec<Option<f64>>,
+    #[serde(rename = "coastTuning")]
+    coast_tuning: Vec<Option<f64>>,
+}
+/// Stateless coast cut + surface erosion of a finished procedural source (the browser
+/// `TerrainEngine.with_source` + `set_coast`). Body: u32 header length, JSON header, f32 source.
+/// Reply: the coastal surface (f32), for `configure_coast` + `set_coast_surface`.
+fn terrain_coast(body: &[u8]) -> ApiResult<Reply> {
+    let header_len = u32::from_le_bytes(body.get(..4).ok_or("Coast request incomplete.")?.try_into().map_err(|_| "Coast request incomplete.")?) as usize;
+    let end = 4_usize.checked_add(header_len).ok_or("Coast request invalid.")?;
+    let header: CoastHeader = decode(body.get(4..end).ok_or("Coast request incomplete.")?)?;
+    let data = body.get(end..).filter(|d| d.len() % 4 == 0 && !d.is_empty()).ok_or("Coast source missing.")?;
+    if header.mask == 0 || header.mask > 255 { return Err("Invalid coast mask.".into()); }
+    let source: Vec<f32> = data.as_chunks::<4>().0.iter().map(|b| f32::from_le_bytes(*b)).collect();
+    let tuning = |values: &[Option<f64>]| -> Vec<f64> { values.iter().map(|v| v.unwrap_or(f64::NAN)).collect() };
+    let result = (|| {
+        magna_urbis_core::set_erosion_tuning(&tuning(&header.build_tuning));
+        let mut generator = TerrainGenerator::new_mixed_with_source(&header.seed, header.width, &header.relief, header.erosion,
+            header.motif_size, header.mountain_mix, source, header.environment.as_deref())?;
+        magna_urbis_core::set_erosion_tuning(&tuning(&header.coast_tuning));
+        generator.set_coast(header.mask, &header.mode)?;
+        Ok::<_, String>(generator.sampling_base_field())
+    })();
+    magna_urbis_core::set_erosion_tuning(&[]);
+    let field = result?;
+    let mut body = Vec::with_capacity(field.len() * 4);
+    extend_f32_le(&mut body, &field);
+    Ok(Reply { kind: "application/octet-stream", body })
 }
 
 #[derive(Deserialize)]
@@ -997,12 +1042,15 @@ pub(crate) fn dispatch(path: &str, body: &[u8], sessions: &Mutex<Sessions>) -> A
     if path == "/status" {
         return json_reply(
             json!({"ok": true, "service": "magna-urbis-local", "backend": "rust-native", "version": 1,
-                "capabilities": ["urban.programme", "urban.programme-functions-v1", "urban.building-sites", "urban.building-site-pages", "urban.building-site-read", "urban.built-capacity", "urban.architecture-culture", "urban.house-mix", "urban.retained-source", "urban.display-buffers",
+                "capabilities": ["terrain.coast-v1", "urban.programme", "urban.programme-functions-v1", "urban.building-sites", "urban.building-site-pages", "urban.building-site-read", "urban.built-capacity", "urban.architecture-culture", "urban.house-mix", "urban.retained-source", "urban.display-buffers",
                     "houses.placement", "houses.profiles", "houses.enrich", "houses.config-template", "houses.workshop-template", "houses.parcel-fit", "houses.compact-plans", "houses.style-index", "houses.native-minimum-candidates-v1", "houses.functional-choices-v1", "houses.native-assembly-pair-1", "houses.native-assembly-std-json-v1", "houses.native-parent-batch-1", "houses.native-parent-session-1"]}),
         );
     }
     if path == "/raster" {
         return raster_upload(body, sessions);
+    }
+    if path == "/terrain/coast" {
+        return terrain_coast(body);
     }
     if path.starts_with("/houses/") {
         return houses_reply(path, body);

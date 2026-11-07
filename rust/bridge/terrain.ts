@@ -26,6 +26,7 @@ import { setErodeKernel } from '../../web/src/ui/reliefConditioning';
 import { browserNeural, neuralModule, releaseNeuralBrowser } from './neuralBrowser';
 import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
 import { prepareNativeTerrain, sampleNativeTerrain } from './nativeTerrain';
+import { nativeRequest } from './nativeEngine';
 import { loadTerrainRuntime, gpuSetupDeadline, type TerrainProgressCallback } from './terrainProgress';
 import { hydrologyGrid, MAX_GPU_SOURCE_RESOLUTION, preferCpuGeneration, sourceDefinition, unsupportedExplicitGpuResolution, type SourceDefinition } from './terrainDefinition';
 
@@ -136,7 +137,7 @@ export interface TerrainData {
   backend?: TerrainCompute | 'native'; backendReason?: string; prepareMs?: number; samplingMs?: number; gpuSetupMs?: number;
   generationBackend?: 'cpu' | 'native' | 'gpu-noise-f32' | 'gpu-noise-all-f32' | 'gpu-erosion-f32' | 'compact-gpu-f32' | 'compact-cpu' | 'neural'; generationReason?: string; noiseMs?: number; erosionMs?: number; gpuSimulationMs?: number; nativeEnvironmentMs?: number;
   erosionProfile?: ErosionProfile[];
-  coastBackend?: 'cpu' | 'gpu-f32'; coastMs?: number; coastReason?: string;
+  coastBackend?: 'cpu' | 'gpu-f32' | 'native'; coastMs?: number; coastReason?: string;
   hydrology?: HydrologyData;
   hydrologySurfaceMs?: number;
   hydrologyError?: string;
@@ -186,6 +187,31 @@ let ready: Promise<unknown> | undefined;
 let engine: TerrainEngine | undefined, engineKey = '';
 let enginePhysicalPlan: Pick<SourceDefinition, 'erosionSpacing' | 'regionalErosionSpacing'> | undefined;
 let engineRetainedCoasts=false;
+/** Local profile: the finished procedural source and its engine arguments, so the coast erodes natively. */
+let engineNativeSource: { source: Float32Array; seed: string; width: number; relief: string; erosion: number; motifSize: number; mountainMix: number; environment: string; tuning: Float64Array } | undefined;
+/** Below about 512² the WASM coast takes under 0.1 s and the round trip would not pay. */
+const NATIVE_COAST_MIN_CELLS = 512 * 512;
+const nativeCoastServers = new Map<string, Promise<boolean>>();
+/** An engine built before `/terrain/coast` keeps the WASM coast. */
+function nativeCoastAvailable(runtime: ExecutionRuntime): Promise<boolean> {
+  let known = nativeCoastServers.get(runtime.server);
+  if (!known) {
+    known = fetch(`${runtime.server.replace(/\/$/, '')}/status`, { cache: 'no-store' }).then(r => r.json())
+      .then((status: { capabilities?: unknown }) => Array.isArray(status.capabilities) && status.capabilities.includes('terrain.coast-v1'), () => false);
+    nativeCoastServers.set(runtime.server, known);
+    void known.then(ok => { if (!ok) nativeCoastServers.delete(runtime.server); });
+  }
+  return known;
+}
+/** Native `/terrain/coast`: header + f32 source up, coastal surface (f32) down. NaN tuning travels as null. */
+async function nativeCoast(runtime: ExecutionRuntime, input: NonNullable<typeof engineNativeSource>, mask: number, mode: string, coastTuning: Float64Array): Promise<Float32Array> {
+  const { source, tuning, ...engineArguments } = input, finite = (values: Float64Array) => Array.from(values, v => Number.isFinite(v) ? v : null);
+  const header = new TextEncoder().encode(JSON.stringify({ ...engineArguments, mask, mode, buildTuning: finite(tuning), coastTuning: finite(coastTuning) }));
+  const padded = new Uint8Array(Math.ceil(header.length / 4) * 4).fill(32); padded.set(header);
+  const length = new Uint8Array(4); new DataView(length.buffer).setUint32(0, padded.length, true);
+  const response = await nativeRequest(runtime, '/terrain/coast', new Blob([length, padded, new Uint8Array(source.buffer as ArrayBuffer, source.byteOffset, source.byteLength)]));
+  return new Float32Array(await response.arrayBuffer());
+}
 let engineCoastKey = '';
 let coastBackend: TerrainData['coastBackend'], coastReason: string | undefined;
 let sampler: GpuTerrainSampler | undefined, samplerMode: TerrainCompute | undefined;
@@ -398,22 +424,24 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
   let erosionProfile: ErosionProfile[] | undefined;
   if (lab&&lab.previews!==false || !engine || engineKey !== key) {
     sampler?.dispose(); sampler = undefined; samplerMode = undefined;
-    engine?.free(); engine = undefined; engineRetainedCoasts=false; engineKey = ''; engineCoastKey = '';enginePhysicalPlan=undefined;
+    engine?.free(); engine = undefined; engineRetainedCoasts=false; engineKey = ''; engineCoastKey = '';enginePhysicalPlan=undefined;engineNativeSource=undefined;
     const prepareStarted = performance.now();
     generationBackend = 'cpu'; generationReason = undefined;
     const mix = settings.relief === 'mixed' ? settings.mountainMix : 0.5;
     neuralInfo = undefined;
     // Read by the CPU engine and the GPU erosion plan built below, and by later coasts.
-    set_erosion_tuning(Float64Array.from(EROSION_SETTINGS,name=>{
+    const engineTuning=Float64Array.from(EROSION_SETTINGS,name=>{
       let value=compact&&!settings.procedural?NaN:settings.procedural?.erosionTuning?.[name]??settings.erosionTuning?.[name]??NaN;
       if(settings.procedural?.biome&&!gpuGeneration&&!cpuPipeline&&(name==='incision'||name==='thermal'))value=(Number.isFinite(value)?value:1)*(name==='incision'?erosionBiome(settings).water:erosionBiome(settings).thermal);
       return value;
-    }));
+    });
+    set_erosion_tuning(engineTuning);
     if(cpuPipeline){
       progress?.(autoCpuReason ? `${autoCpuReason} Génération Rust CPU à ${definition.spacing.toFixed(2)} m…` : nativeGeneration?'Rust natif · pipeline procédural…':'Rust CPU/WASM · pipeline procédural…',{stage:'terrain-generation'});
       const source=await finishSource(await generateCpuTerrain(settings,lab,nativeGeneration?runtime:undefined,gpuGeneration&&readyGpu?()=>generateGpuNoise(readyGpu.context,settings,progress):undefined,(spacing,regionalSpacing)=>{enginePhysicalPlan={erosionSpacing:spacing,regionalErosionSpacing:regionalSpacing};Object.assign(definition,enginePhysicalPlan);}));
       if(lab)await lab.before('retain');
       engine=TerrainEngine.with_source(coastSeed,settings.width,settings.relief,settings.erosion,settings.motifSize,mix,source,environment);
+      if(nativeGeneration)engineNativeSource={source,seed:coastSeed,width:settings.width,relief:settings.relief,erosion:settings.erosion,motifSize:settings.motifSize,mountainMix:mix,environment,tuning:engineTuning};
       if(lab)await lab.after('retain',lab.previews===false?undefined:source);
       generationBackend=nativeGeneration?'native':gpuGeneration?(generationMode==='gpu-all'?'gpu-noise-all-f32':'gpu-noise-f32'):compact?'compact-cpu':'cpu';
       generationReason=autoCpuReason??`Pipeline procédural Rust ${nativeGeneration?'natif':'WASM'} · étapes partagées avec la génération globale.`;
@@ -558,9 +586,16 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
     }
     if (!coastBackend) {
       const recipe=settings.procedural,tuning={...settings.erosionTuning,...recipe?.erosionTuning};
-      if(recipe&&coastMask)set_erosion_tuning(Float64Array.from(EROSION_SETTINGS,name=>name==='surfaceIterations'?recipe.coastIterations??(compact?2:12):name==='surfaceIncision'?(tuning[name]??1)*(recipe.coastIncision??1):name==='surfaceThermal'?(tuning[name]??1)*(recipe.coastThermal??1):name==='surfaceDiffusion'?(tuning[name]??1)*(recipe.coastDiffusion??1):tuning[name]??NaN));
-      try{engine.set_coast(coastMask, islandMode);}finally{if(recipe&&coastMask)set_erosion_tuning(Float64Array.from(EROSION_SETTINGS,name=>tuning[name]??NaN));}
-      if (coastMask) coastBackend = 'cpu';
+      const coastTuning=recipe&&coastMask?Float64Array.from(EROSION_SETTINGS,name=>name==='surfaceIterations'?recipe.coastIterations??(compact?2:12):name==='surfaceIncision'?(tuning[name]??1)*(recipe.coastIncision??1):name==='surfaceThermal'?(tuning[name]??1)*(recipe.coastThermal??1):name==='surfaceDiffusion'?(tuning[name]??1)*(recipe.coastDiffusion??1):tuning[name]??NaN):undefined;
+      if(coastMask&&engineNativeSource&&engineNativeSource.source.length>NATIVE_COAST_MIN_CELLS&&runtime?.profile==='local'&&await nativeCoastAvailable(runtime)){
+        // Local profile: the same Rust coast cut and surface erosion on the native engine, then retained here.
+        const field=await nativeCoast(runtime,engineNativeSource,coastMask,islandMode,coastTuning??engineNativeSource.tuning);
+        engine.configure_coast(coastMask,islandMode);engine.set_coast_surface(field);coastBackend='native';
+      }else{
+        if(coastTuning)set_erosion_tuning(coastTuning);
+        try{engine.set_coast(coastMask, islandMode);}finally{if(coastTuning)set_erosion_tuning(Float64Array.from(EROSION_SETTINGS,name=>tuning[name]??NaN));}
+        if (coastMask) coastBackend = 'cpu';
+      }
       if (gpuCoast && !readyGpu) coastReason = 'WebGPU indisponible';
     }
     engineCoastKey = coastKey;

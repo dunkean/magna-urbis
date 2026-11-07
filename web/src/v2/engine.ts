@@ -501,16 +501,17 @@ export async function generateTowns(regionWorld: World, settings: V2Settings, on
     // Only the leader (first unapplied city) drives the stage rows, so progress never interleaves; a new leader replays its last event.
     let leader = 0; const last: (Parameters<ProgressCallback>[0] | undefined)[] = [];
     const forward = (i: number) => (p: Parameters<ProgressCallback>[0]): void => { last[i] = p; if (i === leader) onProgress?.(p); };
-    const { generateRustTown } = await import('./rustUrban');
+    const { generateRustTown, releaseUrbanLanes } = await import('./rustUrban');
     let next = 0, stop = false;
-    const lane = async (): Promise<void> => {
+    const lane = async (laneId: number): Promise<void> => {
       for (;;) {
         const i = next++; if (stop || i >= n) return;
-        try { waiters[i]({ ok: true, value: await generateRustTown(world, settings, places[i].key, forward(i), through) }); }
+        try { waiters[i]({ ok: true, value: await generateRustTown(world, settings, places[i].key, forward(i), through, laneId) }); }
         catch (error) { waiters[i]({ ok: false, error }); }
       }
     };
-    for (let k = 0; k < Math.min(TOWN_CONCURRENCY, n); k++) void lane();
+    const lanes: Promise<void>[] = [];
+    for (let k = 0; k < Math.min(TOWN_CONCURRENCY, n); k++) lanes.push(lane(k));
     try {
       for (let i = 0; i < n; i++) {
         leader = i;
@@ -520,7 +521,7 @@ export async function generateTowns(regionWorld: World, settings: V2Settings, on
         if (!outcome.ok) throw outcome.error;
         await buildTown(world, settings, places[i].key, undefined, through, Promise.resolve(outcome.value));
       }
-    } finally { stop = true; }
+    } finally { stop = true; await Promise.allSettled(lanes); await releaseUrbanLanes(); }
   }
   await finishTowns(world, settings, onProgress);
   world.stats['ms.towns'] = Math.round(performance.now() - t0);

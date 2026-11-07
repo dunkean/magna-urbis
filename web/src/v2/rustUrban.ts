@@ -239,8 +239,16 @@ export function projectRustTown(snapshot: RustTownSnapshot, population: number, 
 }
 
 /** Execute only invalidated native stages; house edits do not rerun terrain, layouts or cadastral partition. */
+/** Free the dedicated native sessions of the concurrent city lanes (one raster each). */
+export async function releaseUrbanLanes(): Promise<void> {
+  const lanes = [...engines.entries()].filter(([name]) => name.includes('|lane'));
+  for (const [name] of lanes) engines.delete(name);
+  await Promise.all(lanes.map(async ([name, retained]) => {
+    try { await (await retained.engine).release?.({ profile: 'local', server: name.split('|')[1] }); } catch { /* best effort */ }
+  }));
+}
 export async function generateRustTown(world: World, settings: V2Settings, key: string, onProgress?: ProgressCallback,
-  through?: V2TownStage): Promise<RustTownResult> {
+  through?: V2TownStage, lane?: number): Promise<RustTownResult> {
   const place = world.settlements?.find(s => s.key === key);
   if (!place) throw new Error(`Lieu inconnu : ${key}`);
   const backend = urbanBackend(settings);
@@ -268,7 +276,7 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
   let engine: UrbanEngine | undefined;
   const request = async (kind: 'quarters' | 'parcels' | 'programme' | 'buildingSites' | 'builtCapacity', extras: Record<string, unknown>): Promise<UrbanResponse> => {
     let raster: SettlementRaster | undefined;
-    const engineKey = `${backend}|${runtime?.server ?? ''}`;
+    const engineKey = `${backend}|${runtime?.server ?? ''}${lane === undefined ? '' : `|lane${lane}`}`;
     let retained = engines.get(engineKey);
     if (!retained) {
       report('urban-engine', `Chargement du moteur urbain ${backend === 'native' ? 'Rust natif' : 'Rust/WASM'}…`, 0);

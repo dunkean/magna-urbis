@@ -129,7 +129,7 @@ export interface UrbanResponse { id: number; layouts?: Layout[]; partitions?: Pa
   urbanSource?: UrbanSourceHandle;
   /** Browser WASM execution mode that produced this response (threads/single/pool). */
   wasm?: WasmThreadsInfo }
-export interface UrbanEngine { run(request: UrbanRequest): UrbanResponse | Promise<UrbanResponse> }
+export interface UrbanEngine { run(request: UrbanRequest): UrbanResponse | Promise<UrbanResponse>; /** Native only: free this engine's retained session. */ release?(runtime: ExecutionRuntime): Promise<void> }
 
 /** Absent native fields already mean auto/off. Omit those defaults so older
  * strict engines remain usable; explicit choices must still reach their validator.
@@ -437,7 +437,7 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
     }
     return response;
   };
-  return { run(request) {
+  return { release: runtime => native.release(runtime), run(request) {
     if (request.source) {
       try {
         validateUrbanSource(request.source);
