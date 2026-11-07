@@ -11,13 +11,16 @@ import type { View } from '../render/view';
 import { ruralSemanticLegend, urbanSemanticLegend } from '../render/semanticLayer';
 import { panelFont, panelSvg, plainCartouchePanel, plainLegendPanel } from '../render/legend';
 import { styleTraits, terrainStyle } from '../render/terrainStyle';
-import { advancedFields } from './compositionControls';
+import { renderControlFields } from './compositionControls';
+import { setLanduseForestTone } from '../render/landuseForestTone';
+import { setMapSeason } from '../render/seasonPalette';
 
 const STORAGE = 'magna-urbis-bench-composition';
 function load(): CompositionRecipe {
   try {
-    const saved = new URLSearchParams(location.search).get('composition') ?? localStorage.getItem(STORAGE);
-    if (saved) { const value: unknown = JSON.parse(saved); validateComposition(value); return value.preset === 'custom' ? value : presetComposition(value.preset); }
+    // A recipe carried by the URL is kept verbatim; a stored one is refilled from the current preset definitions unless it is custom.
+    const fromUrl = new URLSearchParams(location.search).get('composition'), saved = fromUrl ?? localStorage.getItem(STORAGE);
+    if (saved) { const value: unknown = JSON.parse(saved); validateComposition(value); return fromUrl !== null || value.preset === 'custom' ? value : presetComposition(value.preset); }
   } catch { /* Invalid or unavailable storage starts with the explicit default. */ }
   return presetComposition('parchment');
 }
@@ -34,8 +37,8 @@ export function writeBenchCompositionQuery(query: URLSearchParams): void { query
 export function setBenchComposition(next: CompositionRecipe): void {
   validateComposition(next);
   const stable = (value: CompositionRecipe) => JSON.stringify({ ...value, preset: 'custom', text: undefined, annotations: undefined });
-  const nightStable=(value:CompositionRecipe)=>JSON.stringify({...value,preset:'custom',ambience:undefined});
-  materialNightChange=composition.ambience!==next.ambience && nightStable(composition)===nightStable(next) && styleTraits(next.ground.variant).family==='material';
+  const nightStable=(value:CompositionRecipe)=>JSON.stringify({...value,preset:'custom',effects:{...value.effects,ambience:undefined}});
+  materialNightChange=composition.effects.ambience!==next.effects.ambience && nightStable(composition)===nightStable(next) && styleTraits(next.ground.variant).family==='material';
   overlayChange = stable(composition) === stable(next); composition = structuredClone(next);
   try { localStorage.setItem(STORAGE, JSON.stringify(composition)); } catch { /* Storage is optional. */ }
   window.dispatchEvent(new Event('bench-composition-change')); overlayChange = false;materialNightChange=false;
@@ -46,12 +49,12 @@ export function setBenchAppearanceField(path: string, value: unknown): void {
 }
 export function setBenchRenderCapabilities(next: RenderCapabilities, nextTarget: RenderTarget = target): void {
   const limitations = [...next.limitations ?? []];
-  for (const { path } of advancedFields) {
+  for (const { path } of renderControlFields) {
     const field = path.replace('appearance.', '');
     if (next.buildings === false && ['city.diagnostic', 'city.painted', 'city.colors'].includes(field)) limitations.push({ pass: 'buildings', kind: 'data', field, reason: 'No buildings in the retained products.' });
     else if (!next.nativeCities && (field.startsWith('city.layers.') || ['city.view', 'city.palette', 'city.opacity', 'city.width', 'city.plan'].includes(field))) limitations.push({ pass: 'landuse', kind: 'data', field, reason: 'No urban land-use polygons in the retained products.' });
-    if (next.ruralLanduse === false && ['vegetation', 'landuseForestTone'].includes(field)) limitations.push({ pass: 'vegetation', kind: 'data', field, reason: 'No rural land-use polygons in the retained products.' });
-    if (next.nativeTerrain === false && (field.startsWith('lighting.') || field.startsWith('forest.') || field.startsWith('fantasy.') || ['terrainLayers.hypsometry', 'terrainLayers.frame', 'season', 'city.exaggeration', 'city.refinement', 'lakes'].includes(field))) limitations.push({ pass: 'ground', kind: 'data', field, reason: 'No terrain raster in the retained products.' });
+    if (next.ruralLanduse === false && ['vegetation', 'composition.vegetation.forestTone'].includes(field)) limitations.push({ pass: 'vegetation', kind: 'data', field, reason: 'No rural land-use polygons in the retained products.' });
+    if (next.nativeTerrain === false && (field.startsWith('composition.effects.lighting.') || field.startsWith('forest.') || field.startsWith('fantasy.') || ['terrainLayers.hypsometry', 'terrainLayers.frame', 'composition.effects.season', 'city.exaggeration', 'city.refinement', 'lakes'].includes(field))) limitations.push({ pass: 'ground', kind: 'data', field, reason: 'No terrain raster in the retained products.' });
   }
   next = { ...next, limitations };
   if (JSON.stringify(next) === JSON.stringify(capabilities) && nextTarget === target) return;
@@ -60,12 +63,15 @@ export function setBenchRenderCapabilities(next: RenderCapabilities, nextTarget:
 /** Vegetation looks V2 honours and the benches' own ground paths do not. */
 export function benchVegetationLimitations(view3d: boolean): Limitation[] {
   const look = composition.vegetation.look, fantasy = !!styleTraits(composition.ground.variant).fantasy, out: Limitation[] = [];
-  if (!view3d && look === 'procedural-canopy' && !composition.ground.relief) out.push({ pass: 'vegetation', kind: 'backend', reason: 'This bench shows no procedural canopy on the 2D map with relief hidden.' });
+  if (!view3d && look === 'procedural-canopy' && !composition.effects.relief) out.push({ pass: 'vegetation', kind: 'backend', reason: 'This bench shows no procedural canopy on the 2D map with relief hidden.' });
   if (view3d && look === 'painted' && !fantasy) out.push({ pass: 'vegetation', kind: 'backend', reason: 'This bench has no painted vegetation atlas in 3D.' });
   return out;
 }
 export function resolveBenchAppearance(extra: Partial<AppearanceInput> = {}, nextTarget: RenderTarget = target) {
-  return resolveAppearance({ style: 'parchment', ...extra, ...advanced, composition, colors: getBenchRenderColors() }, { mapStyle: 'parchment' }, capabilities, nextTarget);
+  const resolved = resolveAppearance({ style: 'parchment', ...extra, ...advanced, composition, colors: getBenchRenderColors() }, { mapStyle: 'parchment' }, capabilities, nextTarget);
+  setLanduseForestTone(resolved.cartography.landuseForestTone);
+  setMapSeason(resolved.ground.season);
+  return resolved;
 }
 
 window.addEventListener('storage', event => {

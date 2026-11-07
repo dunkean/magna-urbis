@@ -4,7 +4,7 @@ import { recordStageMs } from './benchTimings';
 import { growthPhaseCultureHtml, growthStepLabel } from './urbanGrowthEvidence';
 import { setupUrbanRenderLocale } from './urbanRenderLocale';
 import { getBenchRenderColors } from './benchRenderColors';
-import { DEFAULT_LANDUSE_FOREST_TONE, LANDUSE_FOREST_TONES, LANDUSE_FOREST_TONE_LABEL, getLanduseForestTone, onLanduseForestTone, setLanduseForestTone, type LanduseForestTone } from '../render/landuseForestTone';
+import { DEFAULT_LANDUSE_FOREST_TONE, LANDUSE_FOREST_TONES, LANDUSE_FOREST_TONE_LABEL, getLanduseForestTone, onLanduseForestTone, type LanduseForestTone } from '../render/landuseForestTone';
 import { getGroundBlend, onGroundBlend, setGroundBlend, type GroundBlend } from '../render/groundBlend';
 import { setupUrbanPanelLocale, urbanText } from './urbanPanelLocale';
 import { LOCALE_KEY, savedLocale } from './shellLocale';
@@ -55,7 +55,7 @@ import { createNativeSiteStore, createLegacySiteStore, createUnboundSiteStore, t
 import { CityGlCanvasLayer, type CityGlHostFrame } from '../render/cityGlHost';
 import { cityGlOverlayLayers } from '../render/cityGl';
 import type { CityComponent } from '../render/appearanceRecipe';
-import { getBenchComposition, resolveBenchAppearance, setBenchAppearanceField } from './benchComposition';
+import { getBenchComposition, resolveBenchAppearance, setBenchAppearanceField, setBenchComposition } from './benchComposition';
 import { drawUrbanSemantic } from '../render/semanticLayer';
 import { cityGlBlocker, getRenderMode, onRenderMode, reportRenderStats, setRenderMode, type RenderMode } from '../render/renderMode';
 import { V1LandscapeLayer, type V1LandscapeStyle } from '../render/v1Landscape';
@@ -526,9 +526,12 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   blendSelect.onchange = () => setGroundBlend(blendSelect.value as GroundBlend);
   onGroundBlend(() => { render.groundBlend = getGroundBlend(); blendSelect.value = render.groundBlend; draw(); options.onChange(); });
   const forestToneSelect = rendering.querySelector<HTMLSelectElement>('[data-forest-tone]')!;
-  forestToneSelect.value = getLanduseForestTone(); forestToneSelect.dataset.renderDefault = DEFAULT_LANDUSE_FOREST_TONE;
+  forestToneSelect.value = getBenchComposition().vegetation.forestTone; forestToneSelect.dataset.renderDefault = DEFAULT_LANDUSE_FOREST_TONE;
   forestToneSelect.closest<HTMLElement>('label')!.dataset.renderSettingsCategory = 'landuse';
-  forestToneSelect.onchange = () => setLanduseForestTone(forestToneSelect.value as LanduseForestTone);
+  forestToneSelect.onchange = () => {
+    const tone = forestToneSelect.value as LanduseForestTone, recipe = getBenchComposition();
+    if (recipe.vegetation.forestTone !== tone) setBenchComposition({ ...recipe, preset: 'custom', vegetation: { ...recipe.vegetation, forestTone: tone } });
+  };
   onLanduseForestTone(() => { forestToneSelect.value = getLanduseForestTone(); draw(); options.onChange(); });
   const modeSelect = rendering.querySelector<HTMLSelectElement>('[data-render-mode]')!;
   modeSelect.value = getRenderMode(); modeSelect.onchange = () => setRenderMode(modeSelect.value as RenderMode);

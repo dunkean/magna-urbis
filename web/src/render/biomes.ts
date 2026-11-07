@@ -1,6 +1,7 @@
 import { waterRamp } from './waterStyle';
 import { isUnderdarkBiome, biomeName, type BiomeName } from '../gen/biomes';
 import { PALETTES, type MapStyle, type Palette } from './styles';
+import { seasonalPalette } from './seasonPalette';
 
 const GROUND: Record<Exclude<BiomeName, 'temperate'>, [string, string, string]> = {
   forest: ['#d8dfc0', '#b5c397', '#9a9f85'], desert: ['#f2d8a4', '#dcc28f', '#bca382'],
@@ -19,8 +20,9 @@ const CROPS: Record<'forest' | 'desert' | 'steppe' | 'tropical' | 'tundra', { fi
 };
 const CACHE = new Map<string, Palette>();
 
-/** Shared palette for SVG, Canvas, terrain and legend. Never mutate the registered map styles. */
-export function biomePalette(style: MapStyle | Palette, value?: string): Palette {
+/** Shared palette for SVG, Canvas, terrain and legend, in the map's season. Never mutate the registered map styles. */
+export const biomePalette = (style: MapStyle | Palette, value?: string): Palette => seasonalPalette(climatePalette(style, value));
+function climatePalette(style: MapStyle | Palette, value?: string): Palette {
   const base = typeof style === 'string' ? PALETTES[style] : style;
   const biome = biomeName(value);
   if (biome === 'temperate') return base;

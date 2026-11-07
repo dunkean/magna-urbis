@@ -1,6 +1,6 @@
 import { DIAGNOSTICS } from '../render/displayDiagnostics';
 import { POTENTIAL_IDS } from '../../../rust/bridge/resources';
-import { BASE_LOOKS, GROUND_VARIANTS, LAND_KINDS, presetComposition, withGroundVariant, type BaseLook, type CompositionRecipe, type Limitation, type PresetId } from '../render/composition';
+import { STYLE_IDS, GROUND_VARIANTS, LAND_KINDS, presetComposition, withGroundVariant, type StyleId, type CompositionRecipe, type Limitation } from '../render/composition';
 import { TEXT_GROUPS, type TextGroup } from '../render/textLayer';
 import { TERRAIN_STYLE_LIST, type TerrainStyle } from '../render/terrainStyle';
 import { writeSettingPath, type ParameterField } from './parameterForm';
@@ -41,15 +41,14 @@ export const limitationText: Record<string, string> = {
   "The 3D bench cannot drape footprints from retained building projections.": copy("The 3D bench cannot drape footprints from retained building projections.", "Le banc 3D ne peut pas draper les emprises des projections de bâtiments conservées."),
 };
 // Level 1 and 2: every row writes appearance.composition (render/composition.ts) and nothing else.
-const PRESET_ENTRIES = [['atlas', 'Atlas', 'Atlas'], ['parchment', 'Parchment', 'Parchemin'], ['illustrated', 'Illustrated', 'Illustré'], ['plan', 'Plan', 'Plan'], ['topographic', 'Topographic', 'Topographique'],
-  ['natural', 'Natural', 'Naturel'], ['atlas-night', 'Atlas night', 'Atlas nuit'], ['custom', 'Custom', 'Personnalisé']] as const satisfies readonly (readonly [PresetId | 'custom', string, string])[];
+const STYLE_ENTRIES = [['atlas', 'Atlas', 'Atlas'], ['cadastre', 'Cadastre', 'Cadastre'], ['topographic', 'Topographic', 'Topographique'], ['satellite', 'Satellite', 'Satellite'], ['satellite-2', 'Satellite 2', 'Satellite 2'],
+  ['parchment', 'Parchment', 'Parchemin'], ['illustration', 'Illustration', 'Illustration']] as const satisfies readonly (readonly [StyleId, string, string])[];
+const PRESET_ENTRIES = [...STYLE_ENTRIES, ['custom', 'Custom', 'Personnalisé']] as const;
 /** Options of the preset selects (English labels, translated by the shared messages). */
 export const PRESET_OPTIONS: readonly { value: string; label: string }[] = PRESET_ENTRIES.map(([value, en]) => ({ value, label: en }));
-const lookEntries: readonly (readonly [BaseLook, string, string])[] = [['atlas', 'Atlas', 'Atlas'], ['parchment', 'Parchment', 'Parchemin'], ['plain', 'Plain map', 'Plan simple'], ['topographic', 'Topographic', 'Topographique'],
-  ['illustrated', 'Illustrated', 'Illustré'], ['natural', 'Natural', 'Naturel']];
 const semanticEntries = [['off', 'Off', 'Désactivée'], ['subtle', 'Subtle tint', 'Teinte discrète'], ['categorical', 'Category colours', 'Couleurs par catégorie'], ['outlines', 'Outline only', 'Contours seuls']] as const;
 const networkEntries = [['inherit', 'Follow the ground', 'Selon le fond'], ['ink', 'Ink', 'Encre'], ['natural', 'Natural', 'Naturel']] as const;
-const styleFrench: Record<string, string> = { parchment: 'Parchemin', watabou: 'Simple (classique)', engraving: 'Gravure', blueprint: 'Plan bleu', illuminated: 'Enluminure', topographic: 'Topographique', night: 'Nocturne',
+const styleFrench: Record<string, string> = { 'parchment-render': 'Satellite 2 · Peint', parchment: 'Parchemin', watabou: 'Simple (classique)', engraving: 'Gravure', blueprint: 'Plan bleu', illuminated: 'Enluminure', topographic: 'Topographique', night: 'Nocturne',
   render3d: 'Render3D · Multi-échelle', 'fantasy-ink': 'Fantasy · Encre N&B', 'fantasy-color': 'Fantasy · Aquarelle',
   'render-v2-substrate': 'Render v2 - Substrat', 'render-v2-moisture': 'Render v2 - Humidité', 'render-v2-vegetation': 'Render v2 - Végétation', 'render-v2-snow': 'Render v2 - Neige / glace' };
 const variantLabel = (id: TerrainStyle): readonly [string, string] => {
@@ -58,11 +57,20 @@ const variantLabel = (id: TerrainStyle): readonly [string, string] => {
 };
 export const compositionFields: Record<string, ParameterField> = Object.fromEntries([
   choice('composition.preset', 'Preset', 'Préréglage', PRESET_ENTRIES),
-  choice('composition.ground.look', 'Ground', 'Fond', lookEntries),
-  choice('composition.ground.variant', 'Ground variant', 'Variante du fond', BASE_LOOKS.flatMap(look => GROUND_VARIANTS[look]).map(id => [id, ...variantLabel(id)] as const)),
-  flag('composition.ground.relief', 'Shaded relief', 'Relief ombré'), flag('composition.ground.contours', 'Contour lines', 'Courbes de niveau'),
-  choice('composition.ambience', 'Ambience', 'Ambiance', [['day', 'Day', 'Jour'], ['night', 'Night', 'Nuit']]),
+  choice('composition.ground.look', 'Ground', 'Fond', STYLE_ENTRIES),
+  choice('composition.ground.variant', 'Ground variant', 'Variante du fond', STYLE_IDS.flatMap(look => GROUND_VARIANTS[look]).map(id => [id, ...variantLabel(id)] as const)),
+  flag('composition.ground.contours', 'Contour lines', 'Courbes de niveau'),
+  // Global effects: they apply on top of any style.
+  choice('composition.effects.ambience', 'Ambience', 'Ambiance', [['day', 'Day', 'Jour'], ['night', 'Night', 'Nuit']]),
+  number('composition.effects.season', 'Season (annual cycle)', 'Saison (cycle annuel)', 0, 1, .01),
+  flag('composition.effects.relief', 'Shaded relief', 'Relief ombré'),
+  flag('composition.effects.lighting.enabled', 'Terrain shading', 'Ombrage du relief'),
+  number('composition.effects.lighting.azimuth', 'Light azimuth (°)', 'Azimut de la lumière (°)', 0, 360, 1),
+  number('composition.effects.lighting.elevation', 'Light elevation (°)', 'Élévation de la lumière (°)', 5, 90, 1),
+  number('composition.effects.lighting.strength', 'Shading strength', 'Intensité de l’ombrage', 0, 3, .05),
+  number('composition.effects.lighting.exaggeration', 'Shading relief multiplier', 'Multiplicateur du relief ombré', 0, 10, .1),
   choice('composition.vegetation.look', 'Vegetation', 'Végétation', [['none', 'No vegetation', 'Aucune végétation'], ['symbols', 'Map symbols', 'Symboles cartographiques'], ['painted', 'Painted', 'Peinte'], ['procedural-canopy', 'Procedural canopy', 'Canopée procédurale']]),
+  choice('composition.vegetation.forestTone', 'Land-use forest colour', 'Couleur de la forêt (occupation du sol)', [['marked', 'Dark marked green (like the render)', 'Vert foncé marqué (comme le rendu)'], ['ground', 'Ground colour', 'Couleur du fond']]),
   choice('composition.landuse.rural', 'Rural land use', 'Occupation rurale', semanticEntries), choice('composition.landuse.urban', 'Urban land use', 'Occupation de la ville', semanticEntries),
   number('composition.landuse.opacity', 'Land-use opacity', 'Opacité de l’occupation', 0, 1, .05),
   choice('composition.landuse.depth', 'Land-use legibility', 'Lisibilité de l’occupation', [['surface', 'Surface', 'Surface'], ['readable', 'Readable', 'Lisible']]),
@@ -85,11 +93,11 @@ export const compositionFields: Record<string, ParameterField> = Object.fromEntr
 /** Level 2: the composition rows of each section, in panel order; the semantic land-use rows are mounted apart (see `SEMANTIC_ROWS` and `LANDUSE_CLASS_ROWS`). */
 export const RENDER_COMPOSITION_ROWS: Record<RenderSection, readonly string[]> = {
   general: ['composition.annotations.legend', 'composition.annotations.cartouche'],
-  relief: ['composition.ground.relief', 'composition.ground.contours'],
+  relief: ['composition.ground.contours'],
   ground: ['composition.preset', 'composition.ground.look', 'composition.ground.variant'],
-  vegetation: ['composition.vegetation.look'],
+  vegetation: ['composition.vegetation.look', 'composition.vegetation.forestTone'],
   landuse: [],
-  ambience: ['composition.ambience'],
+  ambience: ['composition.effects.ambience', 'composition.effects.season', 'composition.effects.relief', 'composition.effects.lighting.enabled', 'composition.effects.lighting.azimuth', 'composition.effects.lighting.elevation', 'composition.effects.lighting.strength', 'composition.effects.lighting.exaggeration'],
   roads: ['composition.networks.roads.visible', 'composition.networks.roads.look', 'composition.networks.roads.emphasis'],
   water: ['composition.networks.water.visible', 'composition.networks.water.look'],
   buildings: ['composition.buildings.visible', 'composition.buildings.look', 'composition.buildings.parcels', 'composition.buildings.blocks', 'composition.buildings.districts'],
@@ -103,14 +111,14 @@ export const LANDUSE_CLASS_ROWS = LAND_KINDS.map(kind => `composition.landuse.cl
 
 /** Pure recipe edit, shared by every appearance panel. */
 export function writeCompositionField(recipe: CompositionRecipe, key: string, value: unknown): CompositionRecipe {
-  if (key === 'preset') return value === 'custom' ? recipe : presetComposition(value as PresetId);
-  if (key === 'ground.look') return withGroundVariant(recipe, GROUND_VARIANTS[value as BaseLook][0]);
+  if (key === 'preset') return value === 'custom' ? recipe : presetComposition(value as StyleId);
+  if (key === 'ground.look') return withGroundVariant(recipe, GROUND_VARIANTS[value as StyleId][0]);
   if (key === 'ground.variant') return withGroundVariant(recipe, value as TerrainStyle);
   const next = structuredClone(recipe); writeSettingPath(next, key, value); next.preset = 'custom'; return next;
 }
 export const LIMITATION_ROW: Record<Limitation['pass'], string> = {
   ground: 'composition.ground.look', vegetation: 'composition.vegetation.look', landuse: 'composition.landuse.rural', networks: 'composition.networks.roads.look',
-  buildings: 'composition.buildings.look', annotations: 'composition.annotations.legend', text: 'composition.text.visible', ambience: 'composition.ambience',
+  buildings: 'composition.buildings.look', annotations: 'composition.annotations.legend', text: 'composition.text.visible', ambience: 'composition.effects.ambience',
 };
 export const NOTE_STYLE = 'display:block;grid-column:1/-1;font-size:10px;line-height:1.4;font-style:italic;opacity:.7;margin-top:3px';
 
@@ -131,18 +139,10 @@ export function mountCompositionSection(level: SectionLevels, key: RenderSection
 
 const advancedCommonFields: ParameterField[] = [
   choice('vegetation', 'Vector vegetation', 'Végétation vectorielle', [['classic', 'Classic symbols', 'Symboles classiques'], ['canopy', 'Foliage and canopy', 'Feuillages et canopée']]),
-  choice('landuseForestTone', 'Land-use forest colour', 'Couleur de la forêt (occupation du sol)', [['marked', 'Dark marked green (like the render)', 'Vert foncé marqué (comme le rendu)'], ['ground', 'Ground colour', 'Couleur du fond']]),
 ];
 const terrainFields: ParameterField[] = [
   flag('terrainLayers.hypsometry', 'Elevation colours', 'Couleurs hypsométriques'), flag('terrainLayers.frame', 'Map frame', 'Cadre de la carte'),
   flag('lakes', 'Lakes', 'Lacs'), flag('oxbows', 'Oxbow lakes', 'Bras morts'),
-];
-const lightingFields: ParameterField[] = [
-  flag('lighting.enabled', 'Terrain shading', 'Ombrage du relief'),
-  number('lighting.azimuth', 'Light azimuth (°)', 'Azimut de la lumière (°)', 0, 360, 1),
-  number('lighting.elevation', 'Light elevation (°)', 'Élévation de la lumière (°)', 5, 90, 1),
-  number('lighting.strength', 'Shading strength', 'Intensité de l’ombrage', 0, 3, .05),
-  number('lighting.exaggeration', 'Shading relief multiplier', 'Multiplicateur du relief ombré', 0, 10, .1),
 ];
 const cityFields: ParameterField[] = [
   choice('city.view', 'City view', 'Vue de la ville', [['tissue', 'Urban tissue', 'Tissu urbain'], ['uses', 'Land uses', 'Usages'], ['parcels', 'Parcels', 'Parcelles'], ['buildings', 'Buildings', 'Bâtiments'], ['roles', 'District roles', 'Fonctions des quartiers']]),
@@ -162,7 +162,6 @@ const cityLayerFields = cityLayerOrder.map(layer => flag(`city.layers.${layer}`,
 export const fantasyFields: ParameterField[] = [number('fantasy.density', 'Brush density', 'Densité des pinceaux', .3, 2, .05),
   number('fantasy.size', 'Brush size', 'Taille des pinceaux', .1, 2, .05), number('fantasy.spacing', 'Brush spacing', 'Espacement des pinceaux', .3, 2, .05),
   flag('fantasy.followLanduse', 'Follow land use', 'Suivre l’occupation du sol')];
-export const seasonFields = [number('season', 'Season (annual cycle)', 'Saison (cycle annuel)', 0, 1, .01)];
 export const forestFields = [flag('forest.enabled', 'Detailed satellite canopy', 'Canopée satellite détaillée'),
   { ...number('forest.density', 'Forest density (%)', 'Densité forestière (%)', 0, 200, 5), toInput: (value: unknown) => Number(value) * 100, fromInput: (value: unknown) => Number(value) / 100 },
   { ...number('forest.clearings', 'Natural clearings (%)', 'Clairières naturelles (%)', 0, 100, 5), toInput: (value: unknown) => Number(value) * 100, fromInput: (value: unknown) => Number(value) / 100 }];
@@ -193,17 +192,17 @@ const perspectiveFields = [flag('city.plan', 'City plan in 3D', 'Plan de ville e
   number('city.exaggeration', 'Vertical exaggeration in 3D', 'Exagération verticale en 3D', 1, 5, .1),
   choice('city.refinement', 'Surface refinement in 3D', 'Raffinement de surface en 3D', [['source', 'Source heights', 'Altitudes source'], ['noise', 'Multiscale detail', 'Détail multi-échelle']])];
 /** Level 3: the fine controls the recipe does not drive. */
-export const advancedFields = [...advancedCommonFields, ...terrainFields, ...lightingFields, ...cityFields, ...cityLayerFields, ...perspectiveFields, ...fantasyFields, ...seasonFields, ...forestFields, ...diagnosticFields];
+export const advancedFields = [...advancedCommonFields, ...terrainFields, ...cityFields, ...cityLayerFields, ...perspectiveFields, ...fantasyFields, ...forestFields, ...diagnosticFields];
 export const renderControlFields = [...Object.values(compositionFields), ...advancedFields];
 
 /** Panel section of every appearance control (the staged Display rows place one or more sections each). */
 const strip = (fields: readonly ParameterField[]) => fields.map(field => field.path.replace('appearance.', ''));
 export const RENDER_SECTION_FIELDS: Record<RenderSection, readonly string[]> = {
   general: ['terrainLayers.frame'],
-  relief: [...strip(lightingFields), 'city.exaggeration', 'city.refinement'],
+  relief: ['city.exaggeration', 'city.refinement'],
   ground: ['terrainLayers.hypsometry'],
-  vegetation: ['vegetation', ...strip(fantasyFields), ...strip(seasonFields), ...strip(forestFields)],
-  landuse: ['landuseForestTone'],
+  vegetation: ['vegetation', ...strip(fantasyFields), ...strip(forestFields)],
+  landuse: [],
   ambience: [],
   roads: ['city.layers.streets'],
   water: ['lakes', 'oxbows'],

@@ -33,6 +33,7 @@ import { buildCityBuildings, buildCityScene, drawCity, selectCityLod, type CityD
 import { DEFAULT_TERRAIN_LIGHTING } from '../render/terrainLighting';
 import { drawRuralSemantic, drawUrbanSemantic } from '../render/semanticLayer';
 import { forestOccupation } from './forestOccupation';
+import { withLandDetail } from './landDetail';
 import type { SemanticDepth, SemanticLook } from '../render/composition';
 import type { LandKind, LandUseLayer } from '../gen/types';
 import type { PlacementBatch, PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
@@ -223,7 +224,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     const forest=options.getForest?.();
     if(forest?.occupation||options.getGroundSettings?.(ground)?.renderV2!==1)return forest;
     const landuse=options.getSemantic?.()?.landuse;
-    if(landuse!==occupationLanduse){occupationLanduse=landuse;occupationGround=landuse&&forestOccupation(landuse);}
+    if(landuse!==occupationLanduse){occupationLanduse=landuse;occupationGround=landuse&&withLandDetail(forestOccupation(landuse),landuse);}
     return {...forest,occupation:occupationGround};
   }
   let surfaceDecor: Decor | undefined, imageUrl: string | undefined, heightAt: City3dHeight | undefined, stiltWaterAt: City3dHeight | undefined, image: HTMLImageElement | HTMLCanvasElement | undefined, mapFallback: HTMLCanvasElement | undefined, waterMask: HTMLCanvasElement | undefined, waterPaths: Path2D | undefined, waterMaskVisible = true;

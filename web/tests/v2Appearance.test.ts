@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { presetComposition } from '../src/render/composition';
+import { presetComposition, type CompositionRecipe } from '../src/render/composition';
 import { defaultSettings } from '../src/v2/settings';
 import { parseProject, serializeProject, validateSettings } from '../src/v2/project';
 import { terrainCacheKey } from '../src/v2/engine';
@@ -9,11 +9,12 @@ import { TERRAIN_STYLE_LIST } from '../src/render/terrainStyle';
 import { DIAGNOSTICS } from '../src/render/displayDiagnostics';
 import type { V2Appearance } from '../src/v2/contracts';
 
+const effectsComposition = (change: (c: CompositionRecipe) => void): CompositionRecipe => { const c = presetComposition('atlas'); change(c); return c; };
 const complete = (): V2Appearance => ({ style: 'parchment', terrainStyle: 'render-v2', renderer: 'bench',
   contours: false, landuse: false, labels: false, legend: false, cartouche: false, painted: true, textured: true,
-  vegetation: 'canopy', lighting: { ...DEFAULT_TERRAIN_LIGHTING, azimuth: 120, strength: 2.5 },
+  vegetation: 'canopy',
   terrainLayers: { relief: true, hypsometry: false, frame: false, water: true }, diagnostic: 'v-basins', lakes: false, oxbows: false,
-  season: .75, fantasy: { density: 1.5, size: .5, spacing: .8, followLanduse: true },
+  composition: effectsComposition(c => { c.effects.season = .75; c.effects.lighting = { ...DEFAULT_TERRAIN_LIGHTING, azimuth: 120, strength: 2.5 }; }), fantasy: { density: 1.5, size: .5, spacing: .8, followLanduse: true },
   city: { view: 'buildings', palette: 'terrain', buildingStyle: 'cartographic', diagnostic: 'height',
     layers: Object.fromEntries(CITY_LAYER_NAMES.map(layer => [layer, layer === 'gardens'])),
     groundBlend: 'blended', opacity: .75, width: 1.2, painted: true,
@@ -48,9 +49,9 @@ describe('V2 appearance recipes and export snapshots', () => {
   it('validates the real bench ranges and rejects invalid display enums, flags and partial required structures', () => {
     for (const patch of [
       { terrainStyle: 'satellite' }, { style: 'render-v2' }, { renderer: 'native' }, { vegetation: 'pbr' },
-      { diagnostic: 'fake-water' }, { season: -1 }, { season: 1.01 }, { painted: 'yes' }, { lakes: 0 },
-      { lighting: { ...DEFAULT_TERRAIN_LIGHTING, azimuth: 361 } }, { lighting: { ...DEFAULT_TERRAIN_LIGHTING, elevation: 4 } },
-      { lighting: { ...DEFAULT_TERRAIN_LIGHTING, strength: 3.1 } }, { lighting: { enabled: true } },
+      { diagnostic: 'fake-water' }, { composition: effectsComposition(c => { c.effects.season = -1; }) }, { composition: effectsComposition(c => { c.effects.season = 1.01; }) }, { painted: 'yes' }, { lakes: 0 },
+      { composition: effectsComposition(c => { c.effects.lighting.azimuth = 361; }) }, { composition: effectsComposition(c => { c.effects.lighting.elevation = 4; }) },
+      { composition: effectsComposition(c => { c.effects.lighting.strength = 3.1; }) }, { composition: effectsComposition(c => { c.effects.lighting = { enabled: true } as never; }) },
       { terrainLayers: { ...DEFAULT_TERRAIN_LAYERS, relief: 1 } }, { terrainLayers: { water: true } },
       { fantasy: { density: .2, size: 1, spacing: 1 } }, { fantasy: { density: 1, size: 2.1, spacing: 1 } },
       { city: { view: 'streets' } }, { city: { palette: 'satellite' } }, { city: { buildingStyle: 'mesh' } },
@@ -62,13 +63,13 @@ describe('V2 appearance recipes and export snapshots', () => {
     for (const lighting of [
       { enabled: false, azimuth: 0, elevation: 5, strength: 0, exaggeration: 0 },
       { enabled: true, azimuth: 360, elevation: 90, strength: 3, exaggeration: 10 },
-    ]) expect(() => validateAppearance({ style: 'parchment', lighting })).not.toThrow();
-    expect(() => validateAppearance({ style: 'parchment', season: 0, city: { opacity: 0, width: 0, exaggeration: 1 } })).not.toThrow();
-    expect(() => validateAppearance({ style: 'parchment', season: 1, city: { opacity: 1, width: 5, exaggeration: 5 } })).not.toThrow();
+    ]) expect(() => validateAppearance({ style: 'parchment', composition: effectsComposition(c => { c.effects.lighting = lighting; }) })).not.toThrow();
+    expect(() => validateAppearance({ style: 'parchment', composition: effectsComposition(c => { c.effects.season = 0; }), city: { opacity: 0, width: 0, exaggeration: 1 } })).not.toThrow();
+    expect(() => validateAppearance({ style: 'parchment', composition: effectsComposition(c => { c.effects.season = 1; }), city: { opacity: 1, width: 5, exaggeration: 5 } })).not.toThrow();
   });
   it('uses persisted false flags in visual exports instead of generation-time layer defaults', () => {
     const settings = defaultSettings(); settings.options.contours = settings.options.landuse = settings.options.labels = settings.options.legend = true;
-    const composition = presetComposition('atlas-night');
+    const composition = presetComposition('atlas'); composition.effects.ambience = 'night';
     composition.ground.contours = composition.text.visible = false; composition.vegetation.look = 'painted';
     settings.appearance = { style: 'atlas', composition, vegetation: 'canopy' };
     expect(appearanceDisplayOptions(settings)).toMatchObject({ style: 'night', contours: false, labels: false, legend: false, cartouche: false, painted: true, vegetation: 'canopy' });

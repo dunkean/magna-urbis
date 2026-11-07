@@ -37,6 +37,10 @@ export function farmGrowthReserve(base: Uint8Array, n: number, cell: number, ope
 }
 
 const K_NONE = 0;
+/** Land cover reaches the water: a wider margin draws a pale ribbon along every stream of a dense network. */
+const BANK_CELLS = .6;
+/** River cells carry land cover: the river is drawn over it, a whole cell left empty would read as a broken pale line. */
+const standingWater = (code: number): boolean => code === 1 || code === 2;
 const KINDS: (LandKind | null)[] = [null, 'field', 'meadow', 'pasture', 'forest', 'orchard', 'garden', 'marsh', 'commons', 'field'];
 /** CLOSE: enclosed ground (hedged closes: bocage, farm closes, assarts); it becomes fields or pasture. */
 const C = { NONE: 0, FIELD: 1, MEADOW: 2, PASTURE: 3, FOREST: 4, ORCHARD: 5, GARDEN: 6, MARSH: 7, COMMONS: 8, CLOSE: 9 } as const;
@@ -585,6 +589,7 @@ export function generateRural(world: World, root: Rng, mainRoads?: number, strip
     return base + 0.5 <= 0.4 ? -1 : base + 0.5 * bocNoise.fbm(wx / 900, wy / 900, 2);
   };
   const cls = new Uint8Array(N);
+  const cultivation = new Uint8Array(N);
   const hb = blurGrid(terrain.height, Math.max(2, Math.round(300 / cell)), 2).data;
   const promVals: number[] = [];
   for (let i = 0; i < N; i += 5) { const p = H[i] - hb[i]; if (p > 0 && !terrain.water[i]) promVals.push(p); }
@@ -611,7 +616,7 @@ export function generateRural(world: World, root: Rng, mainRoads?: number, strip
       : (biome === 'forest' || biome === 'tropical') && u > u3 * 0.6 ? C.FOREST : C.MEADOW;
   for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
     const i = y * n + x;
-    if (terrain.water[i] || f.dWater[i] < 1.45 * cell || (coverReserve ?? reserve)[i] || farmMask[i] === 1) continue;
+    if (standingWater(terrain.water[i]) || f.dWater[i] < BANK_CELLS * cell && !terrain.water[i] || (coverReserve ?? reserve)[i] || farmMask[i] === 1) continue;
     const wx = (x + 0.5) * cell, wy = (y + 0.5) * cell;
     const sl = slopeL[i];
     const hab = f.hab[i], dW = f.dWater[i];
@@ -619,6 +624,18 @@ export function generateRural(world: World, root: Rng, mainRoads?: number, strip
     cwx = wx; cwy = wy;
     const soil = soilAt(x, y); // -1..1
     const prom = H[i] - hb[i];
+    // Low ground beside a brook is not necessarily a wetland. Keep its dry-land
+    // capability separately; the managed floodplain pass below retains real wet
+    // basins without letting every tributary pre-empt the farming territory.
+    if (plan && biome !== 'underdark' && biome !== 'underdark-caverns' && sl < fieldMax && soil > -.6) {
+      const crop = u < u1 ? dRoad[i] < 85 && soil > -.35 ? C.GARDEN : dRoad[i] < 190 && soil > -.15 ? C.ORCHARD : C.FIELD
+        : u < u2 ? dRoad[i] < 240 && soil > -.05 ? C.ORCHARD : soil > -.35 ? C.FIELD : C.MEADOW
+          : u < u3 * (1 + .28 * soil) ? C.FIELD : C.NONE;
+      if (!excl[i] && crop) {
+        const kind = biomeLandKind(KINDS[crop]!, biome, { water: dW, hab, slope: sl, soil, settlement: u, arableRadius: u3 });
+        if (kind === 'field' || kind === 'garden' || kind === 'orchard') cultivation[i] = KINDS.indexOf(kind);
+      }
+    }
     let k: number;
     if (hab < 1.4 && sl < 0.02 && dW < 150 && gB() > -0.15 - (sea && f.dSea[i] < 200 ? 0.25 : 0)) k = C.MARSH;
     else if (hab < 4.5 && dW < 240 && sl < 0.5 * fieldMax && (dW < 130 || soil < 0.1)) k = C.MEADOW;
@@ -638,7 +655,6 @@ export function generateRural(world: World, root: Rng, mainRoads?: number, strip
       else if (u < u4 * (1 + 0.2 * soil)) k = soil < -0.05 || gB() > 0.35 ? C.COMMONS : C.PASTURE;
       else k = soil > 0 ? C.FOREST : C.PASTURE;
     }
-    if (plan && (k === C.FIELD || k === C.ORCHARD || k === C.GARDEN) && u > .55 * u3 && dRoad[i] > Math.max(500, .12 * Lm)) k = C.PASTURE;
     if (biome !== 'temperate') {
       const kind = biomeLandKind(KINDS[k]!, biome, { water: dW, hab, slope: sl, soil, settlement: u, arableRadius: u3 });
       k = KINDS.indexOf(kind);
@@ -739,7 +755,7 @@ export function generateRural(world: World, root: Rng, mainRoads?: number, strip
     const sources = Uint8Array.from(cls, (k) => k ? 1 : 0);
     const nearest = distanceField(sources, n, n, cell, cls).val!;
     for (let i = 0; i < N; i++) {
-      if (!naturalMask[i] || cls[i] || terrain.water[i] || f.dWater[i] < 1.45 * cell || excl[i] || farmMask[i] === 1) continue;
+      if (!naturalMask[i] || cls[i] || standingWater(terrain.water[i]) || f.dWater[i] < BANK_CELLS * cell && !terrain.water[i] || excl[i] || farmMask[i] === 1) continue;
       const nearby = nearest[i];
       if (!nearby) continue;
       const sl = slopeL[i], dW = f.dWater[i], hab = f.hab[i], prom = H[i] - hb[i];
@@ -757,17 +773,72 @@ export function generateRural(world: World, root: Rng, mainRoads?: number, strip
 
   // The retained Render field owns uncultivated woodland. Agriculture can clear
   // suitable ground, but neither smoothing nor steepness can invent a forest.
-  if (plan?.naturalForest) for (let i = 0; i < N; i++) {
+  // Classes follow the broad stands: thresholding the raw field turns its fine clearings into chains of noise blobs.
+  const naturalStands = plan?.naturalForest && blurGrid({ w: n, h: n, cell, data: plan.naturalForest }, 3, 2).data;
+  // The limit of the woods follows the ground: it climbs the gullies, retreats from the spurs, and wanders at every scale.
+  let standScore: Float32Array | undefined;
+  if (naturalStands) {
+    const local = blurGrid(terrain.height, Math.max(2, Math.round(110 / cell)), 2).data, edge = new Noise2D(rr.fork('stand-edge'));
+    let sum = 0, count = 0;
+    for (let i = 0; i < N; i += 7) if (!terrain.water[i]) { sum += Math.abs(H[i] - local[i]); count++; }
+    const relief = Math.max(.5, 2.2 * sum / Math.max(1, count));
+    standScore = new Float32Array(N);
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+      const i = y * n + x, spur = Math.max(-1, Math.min(1, (H[i] - local[i]) / relief));
+      standScore[i] = naturalStands[i] + .12 * edge.fbm((x + .5) * cell / 190, (y + .5) * cell / 190, 4) - .17 * spur;
+    }
+  }
+  if (standScore) for (let i = 0; i < N; i++) {
     if (!cls[i]) continue;
     const sl = terrain.slope.data[i];
     if (!NATURAL_CLASSES.includes(cls[i])) {
       if (sl > fieldCap || !Number.isFinite(costC[i]) && !secondary.length) cls[i] = C.PASTURE;
       else continue;
     }
-    if (cls[i] === C.FOREST && plan.naturalForest[i] < .22) cls[i] = sl > pastureMax ? C.COMMONS : C.PASTURE;
+    if (cls[i] === C.FOREST && standScore[i] < .22) cls[i] = sl > pastureMax ? C.COMMONS : C.PASTURE;
     // Meadows and grazed commons near settlements are human clearings too.
     // Only undeveloped ground beyond the farming territory can recover woods.
-    else if (uDist[i] > u4 && cls[i] !== C.MARSH && plan.naturalForest[i] >= .22) cls[i] = C.FOREST;
+    else if (uDist[i] > u4 && cls[i] !== C.MARSH && standScore[i] >= .22) cls[i] = C.FOREST;
+  }
+
+  if (plan && biome !== 'underdark' && biome !== 'underdark-caverns') {
+    // Wetland extent comes from broad, low, concave valley ground, rather than
+    // the 110 m noise that split the old blanket floodplain into little islands.
+    // Work after woodland allocation: this pass never clears or expands forest.
+    const wet = new Float32Array(N), damp = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      const hab = f.hab[i], d = f.dWater[i], sl = slopeL[i];
+      wet[i] = hab >= -.5 && hab < .35 && d < 70 && sl < .012 && H[i] - hb[i] < -4 ? 1 : 0;
+      damp[i] = hab >= -.5 && hab < 2 && d < 70 && sl < .5 * fieldMax ? 1 : 0;
+    }
+    const radius = Math.max(1, Math.round(40 / cell));
+    const marsh = blurGrid({ ...terrain.height, data: wet }, radius, 2).data;
+    const meadow = blurGrid({ ...terrain.height, data: damp }, radius, 2).data;
+    for (let i = 0; i < N; i++) {
+      if (cls[i] !== C.MARSH && cls[i] !== C.MEADOW) continue;
+      if (marsh[i] > .55) cls[i] = C.MARSH;
+      else if (meadow[i] > .5) cls[i] = C.MEADOW;
+      else if (cultivation[i]) {
+        cls[i] = cultivation[i];
+        stats['wet.cultivatedHa'] = (stats['wet.cultivatedHa'] ?? 0) + cell * cell / 1e4;
+      } else cls[i] = C.PASTURE;
+    }
+    // A marsh denotes a wet basin, not a scattering of damp cells. Small wet
+    // remnants remain grassland; forest cells are never part of this cleanup.
+    const seen = new Uint8Array(N), stack: number[] = [];
+    for (let s = 0; s < N; s++) {
+      if (cls[s] !== C.MARSH || seen[s]) continue;
+      const component: number[] = []; seen[s] = 1; stack.push(s);
+      while (stack.length) {
+        const i = stack.pop()!; component.push(i);
+        const x = i % n, y = Math.floor(i / n);
+        for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+          const xx = x + dx, yy = y + dy, j = yy * n + xx;
+          if (xx >= 0 && xx < n && yy >= 0 && yy < n && !seen[j] && cls[j] === C.MARSH) { seen[j] = 1; stack.push(j); }
+        }
+      }
+      if (component.length * cell * cell < 12000) for (const i of component) cls[i] = C.MEADOW;
+    }
   }
 
   stats['ms.lu.classes'] = Math.round(performance.now() - tClass);
@@ -823,7 +894,7 @@ export function generateRural(world: World, root: Rng, mainRoads?: number, strip
     const a = path[i - 1], b = path[i];
     const len = dist(a, b);
     if (len < 0.001) continue;
-    const radius = rd.width / 2 + 6 + ROAD_CUT_TOL;
+    const radius = rd.width / 2 + 2 + ROAD_CUT_TOL;
     const outer = rect((a.x + b.x) / 2, (a.y + b.y) / 2, len + 2 * radius, 2 * radius, Math.atan2(b.y - a.y, b.x - a.x));
     naturalRoadCuts.push({ poly: { outer, holes: [] }, box: bbox(outer) });
   }
@@ -1005,7 +1076,7 @@ export function generateRural(world: World, root: Rng, mainRoads?: number, strip
       // enclosed ground: ploughed closes and hedged pasture (a close is never cut into strips)
       const center = polygonCentroid(fl.outer), ci = idxAt(center.x, center.y);
       const pasture = plan ? slopeL[ci] > fieldMax * .9 || soilAt(center.x / cell - .5, center.y / cell - .5) < -.2
-        || f.hab[ci] < 3 && f.dWater[ci] < 200 : ftRng.chance(.42);
+        || cls[ci] === C.MARSH || cls[ci] === C.MEADOW : ftRng.chance(.42);
       const ar: LandArea & { enclosed?: boolean; enclosure?: 'hedge' | 'wall' | 'fence' } = pasture
         ? { kind: 'pasture', poly: fl.outer, holes: fl.holes.length ? fl.holes : undefined }
         : { kind: 'field', poly: fl.outer, holes: fl.holes.length ? fl.holes : undefined, stripAngle: fl.angle,
@@ -1030,7 +1101,7 @@ export function generateRural(world: World, root: Rng, mainRoads?: number, strip
       const outer = offsetRibbon(path, width);
       return { poly: { outer, holes: [] }, box: bbox(outer) };
     }).filter(({ poly }) => poly.outer.length >= 3);
-    const woodlandCuts = laneCuts(12), openCuts = laneCuts(4.8);
+    const woodlandCuts = laneCuts(5), openCuts = laneCuts(3);
     const cleared = areas.flatMap(a => !['forest', 'meadow', 'pasture', 'commons', 'marsh'].includes(a.kind) ? [a]
       : clearNaturalRoads([{ outer: a.poly, holes: a.holes ?? [] }], a.kind === 'forest' ? woodlandCuts : openCuts).map(piece => ({ ...a, poly: piece.outer, holes: piece.holes })));
     areas.splice(0, areas.length, ...cleared);

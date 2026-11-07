@@ -31,7 +31,7 @@ export function withBuildingOccupation(source: ForestOccupation | undefined, sce
   const occupied = (from: number, to: number): void => { cls.fill(OCCUPIED, from, to); open.fill(1, from, to); forest.fill(0, from, to); };
   for (const shape of shapes) {
     const rings = [shape.outer, ...shape.holes];
-    fill(rings, x, y, cell, n, occupied);
+    fillRings(rings, x, y, cell, n, occupied);
     // Conservative boundary cells preserve walls and supports thinner than one
     // texel. Only the boundary rim is widened; courtyard interiors stay free.
     const mark = (i: number, j: number): void => { if (i >= 0 && j >= 0 && i < n && j < n) occupied(j * n + i, j * n + i + 1); };
@@ -60,7 +60,7 @@ export function withBuildingOccupation(source: ForestOccupation | undefined, sce
     rgba[at + 2] = cls[i]; rgba[at + 3] = open[i] || forest[i] ? 255 : 0;
     hash = Math.imul(hash ^ cls[i] ^ rgba[at], 0x01000193);
   }
-  return { x, y, width: n * cell, n, rgba, key: `built-occ:${source?.key ?? ''}:${x}:${y}:${n * cell}:${n}:${hash >>> 0}` };
+  return { x, y, width: n * cell, n, rgba, detail: source?.detail, key: `built-occ:${source?.key ?? ''}:${x}:${y}:${n * cell}:${n}:${hash >>> 0}` };
 }
 
 /**
@@ -93,7 +93,7 @@ export function forestOccupation(landuse: LandUseLayer, maxN = 1536, minCell = 2
   const cls = new Uint8Array(n * n), open = new Uint8Array(n * n), forest = new Uint8Array(n * n);
   // Built reserves override fields and woods drawn below them.
   for (const s of shapes.sort((a, b) => Number(a.cls === BUILT) - Number(b.cls === BUILT))) {
-    fill(s.rings, x, y, cell, n, (from, to) => {
+    fillRings(s.rings, x, y, cell, n, (from, to) => {
       cls.fill(s.cls, from, to); open.fill(s.forest ? 0 : 1, from, to); forest.fill(s.forest ? 1 : 0, from, to);
     });
   }
@@ -115,7 +115,7 @@ export function forestOccupation(landuse: LandUseLayer, maxN = 1536, minCell = 2
 }
 
 /** Even-odd scanline fill of texel centres inside the rings, as [from, to) index spans. */
-function fill(rings: Polygon[], x0: number, y0: number, cell: number, n: number, span: (from: number, to: number) => void): void {
+export function fillRings(rings: Polygon[], x0: number, y0: number, cell: number, n: number, span: (from: number, to: number) => void): void {
   let top = n, bottom = -1;
   const rows = new Map<number, number[]>();
   for (const ring of rings) for (let k = 0; k < ring.length; k++) {

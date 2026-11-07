@@ -11,6 +11,11 @@ import { createCanvasRenderer, type CanvasRenderer } from '../render/canvas';
 import { roadGroundTones, setRoadGround } from '../render/roadStyle';
 import { displayWorld } from '../render/displayWorld';
 import { v2DisplayForest, v2ForestOccupation } from './displayForest';
+import { withBuildingOccupation } from '../ui/forestOccupation';
+import type { ForestOccupation } from '../../../rust/bridge/terrainForest';
+import { nativeCitiesOf } from './nativeProducts';
+import { activityScene } from './activitySites';
+import { setMapSeason, mapSeasonKey } from '../render/seasonPalette';
 import { biomePalette } from '../render/biomes';
 import { terrainStyle } from '../render/terrainStyle';
 import { moonlightSvg } from '../render/materialLook';
@@ -38,6 +43,8 @@ import type { SemanticLook } from '../render/composition';
 import type { SemanticLegendEntry } from '../render/legend';
 import type { CityScene } from '../render/cityCanvas';
 import { viewRect } from '../render/view';
+import { cityContourPaths } from '../render/cityContours';
+import { CANVAS_MAP_STROKES, mapStrokeWidth } from '../render/strokes';
 import { viewRasterFits, viewRasterRegion, type ViewRasterRegion } from '../render/viewRaster';
 import { isResourceDiagnostic } from '../render/displayDiagnostics';
 import { resourceOverlayBody, type ResourceSource } from './resourceLayer';
@@ -133,8 +140,9 @@ export class BenchRenderer {
     this.settings = settings; this.resolved = r; layers = { ...(r.cartography.roads ? {} : { roads: false }), ...layers }; this.exportLayers = layers;
     const scene = renderScene(world, settings);
     this.world = world; this.scene = scene; this.native = scene.terrain;
-    setRoadGround(world.landuse, world.mapSize, roadGroundTones(r.ground.traits.family === 'material', biomePalette(r.palette.mapStyle, world.options.biome)), r.composition.ambience === 'night');
     const effective = effectiveTerrainSettings(settings, world.mapSize);
+    setMapSeason(r.ground.season, effective.climateZone);
+    setRoadGround(world.landuse, world.mapSize, roadGroundTones(r.ground.traits.family === 'material', biomePalette(r.palette.mapStyle, world.options.biome)), r.composition.ambience === 'night');
     const effectiveKey = JSON.stringify([effective.relief, effective.refine, effective.detailNoise, effective.climate, effective.climateValues, effective.climateZone, effective.hydrology?.riverMode]);
     const forestKey = JSON.stringify([effective.forest, effective.climateValues]);
     const worldSig = JSON.stringify([world.mapSize, world.seed, world.options.biome]);
@@ -197,7 +205,7 @@ export class BenchRenderer {
       const source = t.field ?? { n: t.resolution, data: t.height, floor: 0, cave: t.caveMask };
       this.terrainSvg = ''; this.base = undefined;
       this.gpu!.setLook({ style, colors, lighting, layers, groundCover:r.composition.vegetation.procedural, ambience:r.composition.ambience,waterLook:r.composition.networks.water.look,waterStyle:r.composition.networks.water.look==='ink'?r.palette.mapStyle:undefined, independentCanopy: true, mapWidth: t.width, climate: climateOf(effective as TerrainSettings), climateZone: effective.climateZone, v2Season: r.ground.season,
-        globalMin: t.globalMinHeight, globalMax: t.globalMaxHeight, contours: r.ground.contours && layers.relief, contourStep: effective.relief === 'mountains' ? 40 : effective.relief === 'flat' ? 2 : 10,
+        globalMin: t.globalMinHeight, globalMax: t.globalMaxHeight, contours: false, contourStep: effective.relief === 'mountains' ? 40 : effective.relief === 'flat' ? 2 : 10,
         flatRelief: effective.relief === 'flat', refine: effective.refine??true, sourceCell: t.width / source.n, seed: seedHash(world.seed), detail: effective.detailNoise ?? DEFAULT_FRACTAL_DETAIL,
         floor: source.floor ?? 0, frame: layers.frame, background: terrainStyle(style,colors).palette.paper });
       return;
@@ -207,7 +215,7 @@ export class BenchRenderer {
     // The shared material shader also composes SVG/PNG exports, using an OffscreenCanvas or a page canvas according to WebGL2 availability.
     const cacheKey = `terrain:${key}`;
     const pending = this.shared.cache.get<Promise<BaseRaster>>(cacheKey, async () => {
-      const settingsForRender = { ...effective, width: world.mapSize, seed: world.seed, v2Season: r.ground.season, forest: { field: v2DisplayForest(world, settings, r), occupation: v2ForestOccupation(world), groundCover:r.composition.vegetation.procedural, waterVisible: layers.water } };
+      const settingsForRender = { ...effective, width: world.mapSize, seed: world.seed, v2Season: r.ground.season, forest: { field: v2DisplayForest(world, settings, r), occupation: this.groundOccupation(), groundCover:r.composition.vegetation.procedural, waterVisible: layers.water } };
       let svg = '';
       const waterStyle=r.composition.networks.water.look==='natural'?'render3d':r.palette.mapStyle;
       if (layers.relief) svg = renderRustTerrain(t, style, layers.frame, settingsForRender, r.ground.contours, 'v2-render', lighting, layers, r.vegetation.fantasy, true, waterStyle, colors, this.rasterContext()).svg;
@@ -235,9 +243,20 @@ export class BenchRenderer {
     const raster = await pending.catch(error => { this.shared.cache.delete(cacheKey); throw error; });
     this.terrainSvg = raster.svg; this.base = raster.image;
   }
+  private occupationCache?: { world: World; revision: string; data?: ForestOccupation };
+  /** Accepted footprints exclude vegetation independently of building visibility. */
+  private groundOccupation(): ForestOccupation | undefined {
+    const world = this.world!, v = this.scene!.revisions;
+    const revision = JSON.stringify([v.landuse, v.cities, v.settlements]);
+    if (this.occupationCache?.world !== world || this.occupationCache.revision !== revision) {
+      const buildings = [...nativeCitiesOf(world).flatMap(city => city.scene?.buildings ?? []), ...(activityScene(world)?.buildings ?? [])];
+      this.occupationCache = { world, revision, data: withBuildingOccupation(v2ForestOccupation(world), { buildings }) };
+    }
+    return this.occupationCache.data;
+  }
   private forestPass(): void {
     if (!this.gpuActive) return;
-    this.dropBackground(); this.gpu!.setForest(v2DisplayForest(this.world!, this.settings!, this.resolved!), v2ForestOccupation(this.world!));
+    this.dropBackground(); this.gpu!.setForest(v2DisplayForest(this.world!, this.settings!, this.resolved!), this.groundOccupation());
   }
   /** The parchment tints multiply over the lit ground: the overlay gets it as a backdrop, transparent on the water below. */
   private landBackdrop(): HTMLCanvasElement | null {
@@ -317,13 +336,13 @@ export class BenchRenderer {
     // The physical land use keeps its own vegetation drawing only where the composition asks for it on the vector overlay; the semantic layer is separate (hook below).
     const cartographic = r.composition.vegetation.cartographic;
     const mask: SceneMask = { water: false, contours: false, landuse: !landuse ? false : this.overlayLandKinds() };
-    const v = scene.revisions, sceneKey = JSON.stringify(['scene', r.ground.traits.family, v.roads, v.landuse, v.settlements, v.terrain, v.cities, shown === world, layers.roads, layers.city, r.city.visible, landuse, cartographic, world.mapSize, world.seed, world.options.biome]);
+    const v = scene.revisions, sceneKey = JSON.stringify(['scene', mapSeasonKey(), r.ground.traits.family, v.roads, v.landuse, v.settlements, v.terrain, v.cities, shown === world, layers.roads, layers.city, r.city.visible, landuse, cartographic, world.mapSize, world.seed, world.options.biome]);
     const built = this.shared.cache.get(sceneKey, () => buildScene(shown, undefined, { mask }));
     const state=this;
     const palette={...biomePalette(r.palette.mapStyle,world.options.biome),frameKind:'none' as const,...(layers.decor===false?{grid:null}:{})};
     this.cartography = createCanvasRenderer(this.overlay, shown, palette, { colors: r.palette.colors, separateText: true, textSources: () => this.city?.scenes(), transparentBackground: true, terrain: () => this.landBackdrop(), scene: built, mask, roadLook: r.composition.networks.roads.look, roadStyle: () => { const c = this.resolved!.composition; return { look: c.networks.roads.look, emphasis: c.networks.roads.emphasis, night: c.ambience === 'night', colors: this.resolved!.palette.colors }; },
       // Read per frame: a new look repaints the raster tiles through `key`, never the cartography pass.
-      semantic: { key: () => this.semantic?.key ?? '', draw: (ctx, rect, mpp) => this.paintRural(ctx, rect, mpp), legend: () => this.semanticLegend() },
+      semantic: { key: () => `${this.semantic?.key ?? ''}|c${this.contourLook()?.landform ?? ''}`, draw: (ctx, rect, mpp) => this.paintRural(ctx, rect, mpp), legend: () => this.semanticLegend() },
       brushes, vegetation: r.vegetation.symbols, get dpr() { return state.dpr; } });
     const renderer = this.cartography;
     this.physical = { key: passKeys(this.input()).cartography, paint: (target, box) => renderer.drawGround(target, box) };
@@ -358,7 +377,25 @@ export class BenchRenderer {
     // redo it now when the state moved (the inline call from the overlays pass is already up to date).
     if (!inline && before && before.key !== this.semantic.key && this.cartography) return this.overlaysPass();
   }
+  /** Contours live on the vector overlay, above the land-use tints and the parchment backdrop that would hide a ground-shader line. */
+  private contourLook(): { landform: string } | undefined {
+    const r = this.resolved, t = this.native, world = this.world;
+    if (!r || !t || !world || !r.ground.contours || !this.layers().relief || t.caveMask.length || isFantasyStyle(r.ground.style)) return undefined;
+    const landform = effectiveTerrainSettings(this.settings!, world.mapSize).relief;
+    return landform === 'cavern' ? undefined : { landform };
+  }
+  private paintContours(ctx: CanvasRenderingContext2D, mpp: number): void {
+    const look = this.contourLook(); if (!look) return;
+    const pal = terrainStyle(this.resolved!.ground.style, this.resolved!.palette.colors).palette, sc = 1 / mpp;
+    const paths = cityContourPaths(this.native!, look.landform, sc);
+    if (!paths.step) return;
+    ctx.save(); ctx.strokeStyle = pal.contour; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    if (paths.thin) { ctx.globalAlpha = pal.contourOpacity * 0.7; ctx.lineWidth = mapStrokeWidth(CANVAS_MAP_STROKES.contour, sc); ctx.stroke(new Path2D(paths.thin)); }
+    if (paths.index) { ctx.globalAlpha = pal.contourOpacity; ctx.lineWidth = mapStrokeWidth(CANVAS_MAP_STROKES.contourIndex, sc, pal.contourIndexW / 1.6); ctx.stroke(new Path2D(paths.index)); }
+    ctx.restore();
+  }
   private paintRural(ctx: CanvasRenderingContext2D, viewport: { minX: number; minY: number; maxX: number; maxY: number }, mpp: number): void {
+    this.paintContours(ctx, mpp);
     const s = this.semantic;
     if (s && s.rural !== 'off') drawRuralSemantic(ctx, this.world?.landuse, { look: s.rural, opacity: s.opacity, mpp, viewport, classes: s.classes });
   }
@@ -378,6 +415,7 @@ export class BenchRenderer {
     const map = createNativeCityMap(this.world!, this.invalidate);
     if (this.ownsShared) { shared.city?.map.dispose(); shared.city = { key, map }; } else { this.exportCity?.dispose(); this.exportCity = map; }
     this.city = map;
+    this.forestPass();
   }
   /** Capture/export only: combines the layers into a single raster. */
   draw(view: View, w: number, h: number, dpr: number, canvas = this.surface): HTMLCanvasElement {

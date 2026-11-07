@@ -302,14 +302,14 @@ function fillPolys(ctx: CanvasRenderingContext2D, d: WallDetail, o: CityWallDraw
 /** Ditches and glacis, drawn under the streets (causeways stay visible). */
 export function drawCityWallGround(ctx: CanvasRenderingContext2D, scene: CityScene, o: CityWallDraw): void {
   if (o.lod === 'far') return;
-  const painted = paintedBackground() && o.palette !== 'parchment' && o.palette !== 'ink';
+  const painted = (paintedBackground() || o.palette === 'terrain') && o.palette !== 'parchment' && o.palette !== 'ink';
   for (const d of cityWallDetails(scene)) if (d && overlaps(d.box, o.viewport)) fillPolys(ctx, d, o, true, painted);
 }
 /** Curtains, outworks, towers, gatehouses and lean-tos of detailed walls. */
 export function drawCityWalls(ctx: CanvasRenderingContext2D, scene: CityScene, o: CityWallDraw): void {
   const visible = cityWallDetails(scene).filter((d): d is WallDetail => !!d && overlaps(d.box, o.viewport));
   if (!visible.length) return;
-  const px = o.mpp, far = o.lod === 'far', minPx = px * (far ? 1.6 : 2.4), painted = paintedBackground() && o.palette !== 'parchment' && o.palette !== 'ink';
+  const px = o.mpp, far = o.lod === 'far', minPx = px * (far ? 1.6 : 2.4), painted = (paintedBackground() || o.palette === 'terrain') && o.palette !== 'parchment' && o.palette !== 'ink';
   ctx.save(); ctx.lineJoin = 'round';
   // Painted (Render background): one ground shadow, south-east, under curtain and structures.
   if (painted && !far) {

@@ -35,16 +35,16 @@ describe('V2 retained-map render controls', () => {
   it('reads legacy and style-dependent defaults without expanding a saved recipe or losing inactive values', () => {
     const settings = defaultSettings(), original = structuredClone(settings);
     const defaults = renderControlValues(settings);
-    expect(defaults.renderer).toBe('bench'); expect(defaults.city?.painted).toBe(false);
+    expect(defaults.renderer).toBe('bench'); expect(defaults.city?.painted).toBe(true);
     expect(settings).toEqual(original);
-    writeAppearanceControl(settings, 'appearance.lighting.strength', 2.2);
-    expect(settings.appearance?.lighting).toMatchObject({ enabled: true, azimuth: 315, elevation: 45, strength: 2.2, exaggeration: 2 });
+    writeAppearanceControl(settings, 'appearance.composition.effects.lighting.strength', 2.2);
+    expect(settings.appearance?.composition?.effects.lighting).toMatchObject({ enabled: true, azimuth: 315, elevation: 45, strength: 2.2, exaggeration: 2 });
     expect(settings.appearance).not.toHaveProperty('fantasy');
     writeAppearanceControl(settings, 'appearance.city.layers.fronts', true);
     expect(settings.appearance?.city?.layers).toEqual({ fronts: true });
-    writeAppearanceControl(settings, 'appearance.composition.preset', 'natural');
+    writeAppearanceControl(settings, 'appearance.composition.preset', 'satellite');
     expect(renderControlValues(settings).city?.painted).toBe(true);
-    expect(settings.appearance?.lighting?.strength).toBe(2.2);
+    expect(settings.appearance?.composition?.effects.lighting.strength).toBe(1);
     expect(settings.appearance?.city?.layers?.fronts).toBe(true);
   });
   it('has intentional English and French copy for every field and choice', () => {

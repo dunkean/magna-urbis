@@ -22,7 +22,7 @@
 import { unzlibSync } from 'fflate';
 import atlas from '../render/assets/fantasy/forest-brushes.json';
 import { shoreRingFor } from '../../../rust/bridge/terrainForestBeach';
-import type { ForestField, ForestOccupation } from '../../../rust/bridge/terrainForest';
+import type { ForestField, ForestOccupation, LandDetail } from '../../../rust/bridge/terrainForest';
 import { renderV2GlacierSources } from '../../../rust/bridge/terrainRenderV2';
 import { renderV2ZoneUniform } from '../../../rust/bridge/terrainRenderV2Zones';
 import { terrainLights } from '../render/terrainLighting';
@@ -115,7 +115,7 @@ const mipCount = (width: number, height: number): number => Math.floor(Math.log2
 const SAMPLES = 4, DEPTH: GPUTextureFormat = 'depth32float';
 const T = WGSL.WGSL3D_TEXTURES;
 const TERRAIN_TEXTURES = ['material', 'previousMaterial', 'macroField', 'uShoreRing', 'canopyWater', 'previousCanopyWater',
-  'uForestField', 'uForestBank', 'uOccupation', 'uForestBeach', 'uForestBrushAtlas', 'semanticTile', 'previousSemanticTile', 'drapedMaterial', 'previousDrapedMaterial'] as const;
+  'uForestField', 'uForestBank', 'uOccupation', 'uLandDetail', 'uForestBeach', 'uForestBrushAtlas', 'semanticTile', 'previousSemanticTile', 'drapedMaterial', 'previousDrapedMaterial'] as const;
 type TerrainTexture = typeof TERRAIN_TEXTURES[number];
 const PATCH_BUFFERS: GPUVertexBufferLayout[] = [
   { arrayStride: 40, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }, { shaderLocation: 1, offset: 12, format: 'float32x2' },
@@ -417,7 +417,8 @@ class Terrain3dGpu extends Terrain3d {
     if (!textures) return;
     this.deleteTexture(textures.texture); if (textures.bank) this.deleteTexture(textures.bank); if (textures.beach) this.deleteTexture(textures.beach);
   }
-  protected override uploadOccupation(occupation: ForestOccupation): WebGLTexture { return this.rgbaImage(occupation, false); }
+  protected override uploadOccupation(occupation: ForestOccupation): WebGLTexture { return this.rgbaImage(occupation, true); }
+  protected override uploadLandDetail(detail: LandDetail): WebGLTexture { return this.rgbaImage(detail, true); }
   protected override uploadMesh(patch: Patch, values: Float32Array): void {
     const buffer = this.device.createBuffer({ label: `patch ${patch.tile.key}`, size: values.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
     this.device.queue.writeBuffer(buffer, 0, values.buffer, values.byteOffset, values.byteLength);
@@ -540,6 +541,10 @@ class Terrain3dGpu extends Terrain3d {
     textures.uOccupation = applied ? image(applied.texture).view : empty;
     p.set('uHasOccupation', applied ? 1 : 0); p.set('uOccupationRect', applied?.data.x ?? 0, applied?.data.y ?? 0, applied?.data.width ?? 1);
     p.set('uOccupationN', applied?.data.n ?? 1);
+    p.set('uPaperMap', settings?.paperMap ? 1 : 0);
+    const detail = this.landDetail;
+    textures.uLandDetail = detail ? image(detail.texture).view : empty;
+    p.set('uHasLandDetail', detail ? 1 : 0); p.set('uLandDetailRect', detail?.data.x ?? 0, detail?.data.y ?? 0, detail?.data.width ?? 1); p.set('uLandDetailN', detail?.data.n ?? 1);
     textures.uForestBrushAtlas = this.brushAtlas(!!settings?.forestBrushes);
     if (pipeline) {
       pass.setPipeline(pipeline);
@@ -632,6 +637,7 @@ class Terrain3dGpu extends Terrain3d {
     this.gpu.listeners.delete(this.redraw); this.gpu.lostListeners.delete(this.deviceLost);
     this.releaseForest(this.forest);
     if (this.occupation) this.deleteTexture(this.occupation.texture);
+    if (this.landDetail) this.deleteTexture(this.landDetail.texture);
     this.gpuBillboardBuffer?.destroy(); if (this.gpuBillboardAtlas) this.deleteTexture(this.gpuBillboardAtlas.texture);
     for (const texture of this.raisedMaterials.values()) this.deleteTexture(texture); this.raisedMaterials.clear();
     for (const texture of [this.material, this.macroTexture, this.blank, this.emptyUnfilterable, this.brushes.image, this.ring?.image]) if (texture) this.deleteTexture(texture);

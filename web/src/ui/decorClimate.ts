@@ -1,4 +1,4 @@
-import { CLIMATE_VALUES, type ClimateValues } from '../../../rust/bridge/terrainClimate';
+import { CLIMATE_VALUES, CLIMATE_ZONES, CLIMATE_ZONE_VALUES, climateZoneOf, type ClimateValues, type ClimateZone } from '../../../rust/bridge/terrainClimate';
 import { climateZoneBiome, type BiomeName } from '../gen/biomes';
 import type { DecorMeta } from './decor';
 
@@ -17,4 +17,15 @@ export function decorClimate(meta: Pick<DecorMeta, 'query' | 'tags'>): ClimateVa
     if (raw !== null && Number.isFinite(value)) climate[key] = value;
   }
   return climate;
+}
+
+/** The climate zone of a retained map, which sets its year. Maps saved with custom values take the nearest zone. */
+export function decorClimateZone(meta: Pick<DecorMeta, 'query' | 'tags'>): ClimateZone {
+  const named = climateZoneOf(new URLSearchParams(meta.query).get('climate') ?? meta.tags.climate);
+  if (named) return named;
+  const climate = decorClimate(meta), gap = (zone: ClimateZone): number => {
+    const values = CLIMATE_ZONE_VALUES[zone];
+    return Math.abs(values.temperature - climate.temperature) / 5 + Math.abs(Math.log(values.precipitation / climate.precipitation)) + Math.abs(values.temperatureStd - climate.temperatureStd) / 300;
+  };
+  return CLIMATE_ZONES.reduce((best, zone) => gap(zone) < gap(best) ? zone : best);
 }

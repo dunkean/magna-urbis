@@ -31,7 +31,7 @@ export function contourSet(world: World, u: number, interval = CONTOUR_INTERVAL[
       let sl = 0;
       for (const q of pts) sl += sampleGrid(t.slope, q.x, q.y);
       if (sl / pts.length < (world.options.relief === 'flat' ? 0.004 : 0.012)) continue;
-      pts = chaikin(pts, 2, p.closed);
+      pts = chaikin(pts, 3, p.closed);
       pts = simplify(pts, 0.35 * u);
       dst.push({ pts, closed: p.closed });
     }

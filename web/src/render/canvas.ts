@@ -21,7 +21,11 @@ import { brushTextureOn, isBrushKind, supportsPaintedBiome, type BrushImages, ty
 import { bridgeShapes, isKinded, type BridgeShapes } from './townbridges';
 import type { World, LandKind, Vec2 } from '../gen/types';
 import { Palette, MapStyle, ruralInk } from './styles';
-import { forestLandPaint } from './landuseForestTone';
+import { forestLandPaint, FOREST_EDGE_WIDTH } from './landuseForestTone';
+import { rasterizePolys } from '../gen/geo/raster';
+import { distanceField } from '../gen/core/field';
+import { vectorize } from '../gen/landuse/rural';
+import { TileIndex, boxesOf } from './tileindex';
 import { biomePalette } from './biomes';
 import { applyRenderColors, type RenderColors } from './customColors';
 import { fieldBoundaryStyle, fieldHedgeStyle } from './hedges';
@@ -232,6 +236,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
   const cache: PathMap = new Map();
   const furrowCache = new Map<number, FurrowPaths>();
   const treeMarks = new Map<TextureLayer, Map<number, Mark[]>>();
+  const forestWashes = new Map<string, { levels: PolyLayer[]; fringe: PolyLayer[]; depth: Float32Array; reach: Float32Array; n: number }>();
   let built = 0;
   let labels: Label[] = [];
   const overlays: Overlays = { labels: world.options.labels !== false, legend: !!world.options.legend, cartouche: true };
@@ -334,6 +339,50 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     });
   }
 
+  /** Fade inside the retained woodland boundary; no cover polygon is displaced. */
+  function forestWash(name: string): { levels: PolyLayer[]; fringe: PolyLayer[]; depth: Float32Array; reach: Float32Array; n: number } | undefined {
+    const retained = forestWashes.get(name);
+    if (retained) return retained;
+    const layer = polyL(name);
+    if (!layer) return undefined;
+    const n = Math.min(1024, Math.max(128, Math.ceil(S / 6))), cell = S / n;
+    const mask = new Uint8Array(n * n);
+    for (let i = 0; i < layer.polys.length; i++) {
+      rasterizePolys([layer.polys[i], ...(layer.holes?.[i] ?? [])], n, n, cell, mask);
+    }
+    const reach = distanceField(mask, n, n, cell).dist;
+    // Tracks and streams cut narrow gaps: the wood carries on across them, only its true edges fade.
+    const depth = distanceField(Uint8Array.from(mask, (v, j) => v || reach[j] < 20 ? 0 : 1), n, n, cell).dist;
+    const layerOf = (suffix: string, ind: Float32Array): PolyLayer => {
+      const regions = vectorize(ind, n, n, cell, 0, { x0: 0, y0: 0, x1: n - 1, y1: n - 1 });
+      const polys = regions.map(r => r.outer), holes = regions.map(r => r.holes);
+      return { name: `${name}-${suffix}`, polys, holes, index: new TileIndex(S, scene.tileSize, boxesOf(polys), 'center') };
+    };
+    const levels = [.125, .3125, .5625, .875].map((fraction, i) => layerOf(`edge-${i}`, Float32Array.from(depth, (d, j) => mask[j] && d >= FOREST_EDGE_WIDTH * fraction ? 1 : 0)));
+    // Shade of the woods on the rough ground around them, in steps like the V1 halo.
+    const fringe = [14, 30, 48, 68, 90, 114, 140].map((distance, i) => layerOf(`fringe-${i}`, Float32Array.from(reach, d => d < distance ? 1 : 0)));
+    const result = { levels, fringe, depth, reach, n };
+    forestWashes.set(name, result); return result;
+  }
+
+  function forestWeight(x: number, y: number): number {
+    const wash = forestWash('lu-forest');
+    if (!wash) return 0;
+    const xx = Math.min(wash.n - 1, Math.max(0, Math.floor(x / S * wash.n)));
+    const yy = Math.min(wash.n - 1, Math.max(0, Math.floor(y / S * wash.n)));
+    const t = Math.min(1, wash.depth[yy * wash.n + xx] / (FOREST_EDGE_WIDTH * 1.4));
+    return .3 + .7 * t * t * (3 - 2 * t);
+  }
+  /** Lone trees stepping out of the wood: frequent near the edge, gone within 120 m. */
+  function forestStray(x: number, y: number): number {
+    const wash = forestWash('lu-forest');
+    if (!wash) return 0;
+    const xx = Math.min(wash.n - 1, Math.max(0, Math.floor(x / S * wash.n)));
+    const yy = Math.min(wash.n - 1, Math.max(0, Math.floor(y / S * wash.n)));
+    const t = 1 - Math.min(1, wash.reach[yy * wash.n + xx] / 120);
+    return .34 * t * t;
+  }
+
   function paintMargin(scale: number, input: Scene = scene): number {
     let width = 10 * u;
     for (const l of input.lines) width = Math.max(width, l.width * (l.role === 'wall' ? pal.urban.wallScale : 1));
@@ -379,7 +428,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     if (terrainChanged) { terrainImg = waterImg = undefined; cache.clear(); rasterCache.clear(); }
     if (nextScene.density?.cov !== scene.density?.cov) densityImg = undefined;
     if (nextScene.furrows !== scene.furrows) furrowCache.clear();
-    if (nextScene !== scene) treeMarks.clear();
+    if (nextScene !== scene) { treeMarks.clear(); forestWashes.clear(); }
     if (nextScene !== scene && !nextScene.dirty) cache.clear();
     if (world.options.landuse !== nextSource.options.landuse || world.options.contours !== nextSource.options.contours) rasterCache.clear();
     // Entries can predate several scene updates; expand by the new absolute paint radius, not a last-update delta.
@@ -746,6 +795,30 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     // Forest class: tone chosen by the shared « forest land use » setting (landuseForestTone.ts).
     const landFill = (kind: keyof Palette['land']): string => kind === 'forest' ? forestLandPaint(pal).color : pal.land[kind];
     const landAlpha = (kind: keyof Palette['land']): number => kind === 'forest' ? forestLandPaint(pal).alpha : luAlpha;
+    const fillLand = (name: string, kind: keyof Palette['land']): void => {
+      if (kind === 'forest' && !isUnderdarkBiome(world.options.biome)) {
+        const wash = forestWash(name);
+        if (wash) {
+          ctx.save(); const clip = visibleClip(polyL(name)!, rect); if (clip) ctx.clip(clip, 'nonzero');
+          fillPolys(name, landFill(kind), landAlpha(kind) * .18);
+          const gains = [.2, .24, .32, .46];
+          for (let i = 0; i < wash.levels.length; i++) {
+            ctx.globalAlpha = landAlpha(kind) * gains[i]; ctx.fillStyle = landFill(kind);
+            for (const path of polyPaths(wash.levels[i])) ctx.fill(path, 'evenodd');
+          }
+          ctx.restore(); ctx.globalAlpha = 1;
+        }
+      } else {
+        fillPolys(name, landFill(kind), landAlpha(kind));
+        const layer = polyL(name), wash = layer && kind === 'commons' && !isUnderdarkBiome(world.options.biome) ? forestWash('lu-forest') : undefined;
+        if (wash) {
+          ctx.save(); const clip = visibleClip(layer!, rect); if (clip) ctx.clip(clip, 'nonzero');
+          ctx.fillStyle = landFill('forest');
+          for (const level of wash.fringe) { ctx.globalAlpha = landAlpha('forest') * .06; for (const path of polyPaths(level)) ctx.fill(path, 'evenodd'); }
+          ctx.restore(); ctx.globalAlpha = 1;
+        }
+      }
+    };
     const multiply = (on: boolean): void => { ctx.globalCompositeOperation = on && pal.landBlend === 'multiply' ? 'multiply' : 'source-over'; };
     if (mode !== 'ground' && pal.grid && sc * pal.grid.step > 7) {
       const g = pal.grid;
@@ -767,7 +840,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       if (!polyL(name)) continue;
       if (kind === 'forest') { ctx.save(); const clip = forestClip(rect); if (clip) ctx.clip(clip, 'nonzero'); }
       multiply(true);
-      fillPolys(name, landFill(kind), landAlpha(kind));
+      fillLand(name, kind);
       multiply(false);
       // Actual parallel plough lines, anchored like the SVG pattern. Suppress subpixel moire at far zoom.
       if (kind === 'field' && !isUnderdarkBiome(world.options.biome) && lod.strips && pal.furrowAlpha > 0 && scene.furrows && furrowSpacing(furrowSize) * sc >= 1.5) {
@@ -801,11 +874,12 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
         for (let k = 0; k < 4; k++) strokePolys('stripT' + k, pal.furrow, mapStrokeWidth(MAP_STROKES.strip, sc), pal.furrowAlpha * 0.85);
       }
       if (kind === 'field' && !isUnderdarkBiome(world.options.biome) && lod.strips) strokePolys('furlong-edges', pal.furrow, mapStrokeWidth(MAP_STROKES.furlong, sc), 0.55);
-      if (kind === 'forest' && lod.strips) strokePolys(name, pal.treeInk, lw(0.7, 0.8), pal.tex.forest ? 0.5 : 0.35);
       if (brushes && lod.textures && (kind === 'field' || (kind === 'garden' && brushTextureOn(kind, pal, world.options.biome)))) brushFill(name, kind, sc);
       if ((kind === 'orchard' || kind === 'garden') && lod.strips) strokePolys(name, pal.hedge, lw(0.8, 0.8), 0.7);
       if (kind === 'forest') ctx.restore();
     }
+    // On a transparent sheet the backdrop's alpha is the land: the tints stay off the water below.
+    if (luOn && deps.transparentBackground && terrainImg) { ctx.globalCompositeOperation = 'destination-in'; ctx.drawImage(terrainImg as CanvasImageSource, 0, 0, S, S); ctx.globalCompositeOperation = 'source-over'; }
     const fu = Math.max(1, u);
     // field network: ways, headlands, hedgerows (+ trees near). Ways and headlands are subtle earth-toned hairlines
     // (never paper-white bands across the fields), and the ways only show from mid-close zoom on.
@@ -1091,9 +1165,8 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
             for (const kind of NATURAL_LAND_KINDS) {
               const name = 'lu-' + kind;
               if (kind === 'forest') { ctx.save(); const clip = forestClip(rect); if (clip) ctx.clip(clip, 'nonzero'); }
-              multiply(true); fillPolys(name, landFill(kind), landAlpha(kind)); multiply(false);
-              multiply(true); fillPolys('u-cover-' + kind, landFill(kind), landAlpha(kind)); multiply(false);
-              if (kind === 'forest' && lod.strips) strokePolys(name, pal.treeInk, lw(0.7, 0.8), pal.tex.forest ? 0.5 : 0.35);
+              multiply(true); fillLand(name, kind); multiply(false);
+              multiply(true); fillLand('u-cover-' + kind, kind); multiply(false);
               if (kind === 'forest') ctx.restore();
             }
             if (lod.textures) for (const tl of scene.textures) {
@@ -1438,8 +1511,8 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       for (const tile of tiles) {
         let points = entries.get(tile);
         if (!points) {
-          points = canopyMarks(tl, tile, world.seed).filter(m => !exclusion || !exclusion.index.query({ minX: m.x, minY: m.y, maxX: m.x, maxY: m.y }).some(i =>
-            pointInPoly(exclusion.polys[i], m.x, m.y) && !(exclusion.holes?.[i] ?? []).some(h => pointInPoly(h, m.x, m.y))));
+          points = canopyMarks(tl, tile, world.seed).filter(m => (tl.kind !== 'forest' || m.k < forestWeight(m.x, m.y)) && (!exclusion || !exclusion.index.query({ minX: m.x, minY: m.y, maxX: m.x, maxY: m.y }).some(i =>
+            pointInPoly(exclusion.polys[i], m.x, m.y) && !(exclusion.holes?.[i] ?? []).some(h => pointInPoly(h, m.x, m.y)))));
           if (entries.size >= 128) entries.delete(entries.keys().next().value!);
           entries.set(tile, points);
         }
@@ -1502,6 +1575,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
         if (!marks.length) return null;
         const path = new P();
         for (const m of marks) {
+          if (tl.kind === 'forest' && !underground && m.k >= forestWeight(m.x, m.y)) continue;
           const r = spec.r * m.r;
           if (underground) appendUnderdarkMark(path, tl.kind, m.x, m.y, r, pal);
           else if (spec.shape === 'circle') {
@@ -1533,6 +1607,23 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     ctx.globalAlpha = spec.alpha; ctx.strokeStyle = pal[spec.stroke] as string;
     ctx.lineWidth = lw(spec.shape === 'circle' ? 0.5 : 0.55, 0.6);
     for (const p of strokeP) ctx.stroke(p);
+    if (!underground && (tl.kind === 'commons' || tl.kind === 'pasture' || tl.kind === 'meadow')) {
+      const tree = TEX.forest, strays: Path2D[] = [];
+      for (const t of tiles) {
+        const p = cached(`stray-${tl.kind}|t${t}`, () => {
+          const marks = textureMarks(tl, t, tree.sp, TEX_SALT.forest, world.seed);
+          if (!marks.length) return null;
+          const path = new P();
+          for (const m of marks) if (m.k < forestStray(m.x, m.y)) { const r = tree.r * m.r; path.moveTo(m.x + r, m.y); path.arc(m.x, m.y, r, 0, TAU); }
+          return path;
+        });
+        if (p) strays.push(p);
+      }
+      ctx.globalAlpha = tree.alpha; ctx.fillStyle = pal[tree.fill!] as string;
+      for (const p of strays) ctx.fill(p, 'nonzero');
+      ctx.strokeStyle = pal[tree.stroke] as string; ctx.lineWidth = lw(.5, .6);
+      for (const p of strays) ctx.stroke(p);
+    }
     ctx.globalAlpha = 1;
     if (underground) ctx.restore();
     return tiles.length;
@@ -1600,7 +1691,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     drawMinimap,
     lastStats: () => stats,
     getMapInfo: () => ({ cartouche: infoPanel ??= cartoucheModel(world, pal, 1, false), legend: legendNow(), fontFamily: family }),
-    dispose() { canopy?.dispose(); brushes?.dispose(); treeMarks.clear(); patterns.clear(); cache.clear(); furrowCache.clear(); rasterCache.clear(); terrainImg = waterImg = densityImg = cavernRockImg = undefined; },
+    dispose() { canopy?.dispose(); brushes?.dispose(); treeMarks.clear(); forestWashes.clear(); patterns.clear(); cache.clear(); furrowCache.clear(); rasterCache.clear(); terrainImg = waterImg = densityImg = cavernRockImg = undefined; },
   };
 }
 

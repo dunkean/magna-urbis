@@ -3,28 +3,22 @@
  * The 2D land-use plan used to paint woods in the pale palette green (alpha .7) while the render view shows dark forest, so the two views
  * disagreed. `marked` (default) paints the forest class in a darker, more saturated green close to the render's canopy; `ground` lets
  * the forest take the ground tone (the same wash as the open ground of the other ground-matched layers), keeping only the outline and
- * the canopy texture so woods still read. Persisted in localStorage, overridable by `?forest=ground|marked`. */
+ * the canopy texture so woods still read. Held in the render recipe (`vegetation.forestTone`). */
 import { fromOklab, toOklab } from './roofContrast';
+/** Inward woodland ecotone in metres. Geometry and satellite cover stay unchanged. */
+export const FOREST_EDGE_WIDTH = 64;
+export const FOREST_EDGE_BLUR = 7;
 export type LanduseForestTone = 'ground' | 'marked';
 export const LANDUSE_FOREST_TONES: readonly LanduseForestTone[] = ['marked', 'ground'];
 export const DEFAULT_LANDUSE_FOREST_TONE: LanduseForestTone = 'marked';
 export const isLanduseForestTone = (v: unknown): v is LanduseForestTone => v === 'ground' || v === 'marked';
-const KEY = 'magna.landuseForestTone';
-function initial(): LanduseForestTone {
-  try {
-    const q = new URLSearchParams(globalThis.location?.search ?? '').get('forest');
-    if (isLanduseForestTone(q)) return q;
-    const s = globalThis.localStorage?.getItem(KEY);
-    return isLanduseForestTone(s) ? s : DEFAULT_LANDUSE_FOREST_TONE;
-  } catch { return DEFAULT_LANDUSE_FOREST_TONE; }
-}
-let mode: LanduseForestTone = initial();
+/** The current value the painters read; set from the resolved recipe (`vegetation.forestTone`). */
+let mode: LanduseForestTone = DEFAULT_LANDUSE_FOREST_TONE;
 const listeners = new Set<() => void>();
 export const getLanduseForestTone = (): LanduseForestTone => mode;
 export function setLanduseForestTone(next: LanduseForestTone): void {
   if (next === mode || !isLanduseForestTone(next)) return;
   mode = next;
-  try { globalThis.localStorage?.setItem(KEY, next); } catch { /* private mode */ }
   for (const f of [...listeners]) f();
 }
 export function onLanduseForestTone(f: () => void): () => void { listeners.add(f); return () => { listeners.delete(f); }; }

@@ -48,7 +48,7 @@ const TEXTURES: Record<string, { binding: number; sampler: SamplerKind }> = {
   // Only in the map's auxiliary-texture branch (#ifdef AUX_TEXTURE), never compiled here.
   uAux: { binding: 18, sampler: 'nearest' },
   semanticTile: { binding: 19, sampler: 'aniso' }, previousSemanticTile: { binding: 20, sampler: 'aniso' },
-  drapedMaterial: { binding: 21, sampler: 'aniso' }, previousDrapedMaterial: { binding: 22, sampler: 'aniso' }, billboardAtlas: { binding: 23, sampler: 'linear' },
+  drapedMaterial: { binding: 21, sampler: 'aniso' }, previousDrapedMaterial: { binding: 22, sampler: 'aniso' }, billboardAtlas: { binding: 23, sampler: 'linear' }, uLandDetail: { binding: 24, sampler: 'linear' },
 };
 const TEXTURE_TYPE: Record<string, string> = { sampler2D: 'texture2D', usampler2D: 'utexture2D', sampler2DArray: 'texture2DArray' };
 const TEXTURE_BUILTINS = 'texture|textureLod|texelFetch|textureSize|textureGrad|textureOffset|textureLodOffset|texelFetchOffset|textureQueryLevels';

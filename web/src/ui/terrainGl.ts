@@ -2,8 +2,9 @@ import { ShaderVariants, finishProgram, isAngleD3D11, specializeShader, startPro
 import { showAngleD3D11Notice } from './angleNotice';
 import { NEURAL_EARTH_MATERIAL_GLSL, GROUND_COVER_WATER_GLSL, groundCoverInputsGlsl } from '../../../rust/bridge/terrainMaterial';
 import { RENDER_3D_MATERIAL_GLSL } from '../../../rust/bridge/terrainMaterial3d';
+import { withoutLandDetail } from '../../../rust/bridge/terrainMaterialOccupation';
 import { shoreRingFor, shoreRingTexture } from '../../../rust/bridge/terrainForestBeach';
-import { FOREST_GLSL, FOREST_PRELUDE_GLSL, forestBeachTexture, type ForestField, type ForestOccupation } from '../../../rust/bridge/terrainForest';
+import { FOREST_GLSL, FOREST_PRELUDE_GLSL, forestBeachTexture, type ForestField, type ForestOccupation, type LandDetail } from '../../../rust/bridge/terrainForest';
 import { bindForestBrushes, disposeForestBrushes } from '../render/forestBrushAtlas';
 import { createGroundDisplacementSampler } from '../../../rust/bridge/terrainGround';
 import { terrainLights, type TerrainLayers, type TerrainLighting } from '../render/terrainLighting';
@@ -297,6 +298,7 @@ vec3 naturalMaterial(vec3 s, vec2 world) {
     }
     applyGroundOccupation(m,world,uPx);
     if(uForest==1)applyForest(m,world,uPx,uLight.xzy);
+    applyPaperMap(m,world,uPx);
     vec3 rgb=uRenderV2>0?v2ShadeGround(m,vec3(0.,1.,0.),uLight.xzy,uLight2.xzy,uRockStrength):shadeTerrainGround(m,vec3(0.,1.,0.),uLight.xzy,uLight2.xzy,uRockStrength);
     return uRenderV2>0?v2DisplayShoulder(rgb):rgb;
   }
@@ -318,6 +320,14 @@ vec3 land(vec3 s, vec2 world) {
   float f = hillshade(s.yz);
   float t = clamp((s.x - uMinH) / max(1.0, uMaxH - uMinH), 0.0, 1.0);
   return hypso(pow(t, 0.85)) * f;
+}
+
+float paperShore(vec2 world) {
+  if (uCoastalSea != 1) return 0.;
+  vec2 g = clamp((world - uCoastOrigin) / uCoastWidth * float(uCoastN) - .5, vec2(0.), vec2(float(uCoastN - 1)));
+  ivec2 p = ivec2(floor(g)), q = min(p + 1, ivec2(uCoastN - 1)); vec2 f = fract(g);
+  float d = mix(mix(texelFetch(uCoastDistance,p,0).r,texelFetch(uCoastDistance,ivec2(q.x,p.y),0).r,f.x),mix(texelFetch(uCoastDistance,ivec2(p.x,q.y),0).r,texelFetch(uCoastDistance,q,0).r,f.x),f.y);
+  return exp(-d / (uMapW * .011));
 }
 
 vec3 sea(vec2 world) {
@@ -445,6 +455,9 @@ void main() {
     if(v2w)color=v2WaterAtEnv(v2Here,wBase,world,uPx,wCover,wKind,wDepth);
 #endif
 #ifndef AUX_PASS
+    if(uPaperMap==1&&v2w&&wCover>0.)color=mix(wBase,paperWater(wKind,paperShore(world)),wCover);
+#endif
+#ifndef AUX_PASS
     if(uNight==1 && uGroundCapture==0 && uMode>=2)color=moonlight(color);
 #endif
     if (uContours == 1 && s.x > 0.0 && uMode != 1) {
@@ -547,11 +560,14 @@ const variantKey = (v: TerrainVariant): string => `${v.mode}.${v.v2}.${+v.forest
 /** Map passes of a look: forest crowns and Render v2 water are rendered first by an auxiliary pass
  * (one RGBA32UI texture: crowns in three words, the water colour in the fourth), then read by the map. */
 export const mapPasses = (v: TerrainVariant): ('aux' | 'map')[] => v.forest || v.v2 > 0 ? ['aux', 'map'] : ['map'];
-const terrainFragment = (v: TerrainVariant): string => specializeShader(TERRAIN_FS,
+/** Holdings take a 17th texture unit. ANGLE on D3D11 stops at 16: there the shader leaves them out and fields keep their plain material. */
+export const glLandDetailUnit = (gl: WebGL2RenderingContext): number | undefined => gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS) > 16 ? 16 : undefined;
+let glTerrainFs = TERRAIN_FS;
+const terrainFragment = (v: TerrainVariant): string => specializeShader(glTerrainFs,
   { uMode: v.mode, uRenderV2: v.v2, uForest: +v.forest, uForestBrushes: +v.brushes, uNaturalWater: +!!v.water },
   { NATURAL: v.mode >= 2 ? 1 : 0, ...(mapPasses(v).includes('aux') ? { AUX_TEXTURE: 1 } : {}) });
 const auxKey = (v: TerrainVariant): string => `aux.${variantKey(v)}`;
-const auxFragment = (v: TerrainVariant): string => specializeShader(TERRAIN_FS,
+const auxFragment = (v: TerrainVariant): string => specializeShader(glTerrainFs,
   { uMode: v.mode, uRenderV2: v.v2, uForest: +v.forest, uForestBrushes: +v.brushes, uNaturalWater: +!!v.water }, { NATURAL: 0, AUX_PASS: 1 });
 export const lookMode = (look: TerrainLook): number => styleTraits(look.style).elevation ? 1 : look.layers.hypsometry && styleTraits(look.style).ground3d ? 3 : styleTraits(look.style).neuralEarth && look.layers.hypsometry ? 2 : 0;
 
@@ -595,6 +611,7 @@ export class TerrainGl {
   /** Canonical Render3D forest field and applied occupation, sampled by world coordinates. */
   private forest?: ForestTextures;
   private occupation?: { data: ForestOccupation; texture: WebGLTexture };
+  private landDetail?: { data: LandDetail; texture: WebGLTexture };
   private lakeInput?: Float32Array;
   private lakeWidth = 0;
   private seaSurface?: WaterSurface;
@@ -608,6 +625,7 @@ export class TerrainGl {
 
   constructor(private canvas: HTMLCanvasElement) {
     const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, preserveDrawingBuffer: false, powerPreference: 'high-performance' });
+    glTerrainFs = gl && glLandDetailUnit(gl) !== undefined ? TERRAIN_FS : withoutLandDetail(TERRAIN_FS);
     if (!gl) throw new Error('WebGL2 indisponible');
     this.gl = gl;
     this.variants = new ShaderVariants(gl, () => this.request());
@@ -847,7 +865,12 @@ export class TerrainGl {
     }
     if (occupation !== this.occupation?.data) {
       if (this.occupation) gl.deleteTexture(this.occupation.texture);
-      this.occupation = occupation && { data: occupation, texture: forestTexture(gl, occupation, false) };
+      this.occupation = occupation && { data: occupation, texture: forestTexture(gl, occupation, true) };
+    }
+    const detail = glLandDetailUnit(gl) === undefined ? undefined : occupation?.detail;
+    if (detail !== this.landDetail?.data) {
+      if (this.landDetail) gl.deleteTexture(this.landDetail.texture);
+      this.landDetail = detail && { data: detail, texture: forestTexture(gl, detail, true) };
     }
     this.forestVersion++;
     this.request();
@@ -998,6 +1021,7 @@ export class TerrainGl {
     gl.uniform1i(u('uMode'), mode);
     // Textures 7 forest field, 8 occupation, 12 banks; 10/11 belong to water.
     bindForest(gl, u, this.forest, this.occupation, this.empty, this.lookVariant(look).forest, 7, 8, 12, 13);
+    bindLandDetail(gl, u, this.landDetail, this.empty);
     // Texture 14: baked shore ring (CPU, shared with the 3D view), only for the natural looks.
     if (mode >= 2 && this.base && this.shoreRing?.layer !== this.base.layer) {
       if (this.shoreRing) gl.deleteTexture(this.shoreRing.texture);
@@ -1007,7 +1031,7 @@ export class TerrainGl {
     gl.activeTexture(gl.TEXTURE14); gl.bindTexture(gl.TEXTURE_2D, this.shoreRing?.texture ?? this.empty);
     gl.uniform1i(u('uShoreRing'), 14); gl.uniform3f(u('uShoreRingRect'), this.shoreRing?.x ?? 0, this.shoreRing?.y ?? 0, this.shoreRing?.width ?? 1);
     bindForestBrushes(gl, u, styleTraits(look.style).forestBrushes && mode === 3, 9);
-    gl.uniform1i(u('uRenderV2'),styleTraits(look.style).satelliteVariant);gl.uniform1i(u('uV2WaterVisible'),look.layers.water===false?0:1);if(this.base&&look.climate)gl.uniform4fv(u('uV2GlacierSources[0]'),renderV2GlacierSources(this.base.layer,look.climate));gl.uniform1f(u('uV2Season'),look.v2Season??.5);gl.uniform1i(u('uMaterialZone'),renderV2ZoneUniform(look.climateZone));
+    gl.uniform1i(u('uPaperMap'),styleTraits(look.style).paperMap?1:0);gl.uniform1i(u('uRenderV2'),styleTraits(look.style).satelliteVariant);gl.uniform1i(u('uV2WaterVisible'),look.layers.water===false?0:1);if(this.base&&look.climate)gl.uniform4fv(u('uV2GlacierSources[0]'),renderV2GlacierSources(this.base.layer,look.climate));gl.uniform1f(u('uV2Season'),look.v2Season??.5);gl.uniform1i(u('uMaterialZone'),renderV2ZoneUniform(look.climateZone));
     gl.uniform1i(u('uEnhanced3d'), look.mesh3d || styleTraits(look.style).ground3d ? 1 : 0);
     gl.uniform1i(u('uRefinementMode'), look.refinement3d === 'source' ? 0 : isNeuralRefinement(look.refinement3d ?? 'noise') ? 2 : 1);
     const refined = this.enhanced.at(-1), previousRefined = this.enhanced.at(-2);
@@ -1231,7 +1255,8 @@ export class TerrainGl {
     if (this.overlay) gl.deleteTexture(this.overlay);
     deleteForestTextures(gl, this.forest);
     if (this.occupation) gl.deleteTexture(this.occupation.texture);
-    this.forest = this.occupation = undefined;
+    if (this.landDetail) gl.deleteTexture(this.landDetail.texture);
+    this.forest = this.occupation = this.landDetail = undefined;
     disposeForestBrushes(gl);
     gl.deleteBuffer(this.riverBuffer); gl.deleteVertexArray(this.riverVao);
     if (this.coastDistance) gl.deleteTexture(this.coastDistance);
@@ -1266,6 +1291,14 @@ export function forestTextures(gl: WebGL2RenderingContext, field: ForestField): 
 export function deleteForestTextures(gl: WebGL2RenderingContext, textures: ForestTextures | undefined): void {
   if (!textures) return;
   gl.deleteTexture(textures.texture); if (textures.bank) gl.deleteTexture(textures.bank); if (textures.beach) gl.deleteTexture(textures.beach);
+}
+
+/** Holdings uniforms of the map and perspective programs. */
+export function bindLandDetail(gl: WebGL2RenderingContext, u: (name: string) => WebGLUniformLocation | null, detail: { data: LandDetail; texture: WebGLTexture } | undefined, empty: WebGLTexture): void {
+  const unit = glLandDetailUnit(gl); if (unit === undefined) return;
+  gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, detail?.texture ?? empty);
+  gl.uniform1i(u('uLandDetail'), unit); gl.uniform1i(u('uHasLandDetail'), detail ? 1 : 0);
+  gl.uniform3f(u('uLandDetailRect'), detail?.data.x ?? 0, detail?.data.y ?? 0, detail?.data.width ?? 1); gl.uniform1f(u('uLandDetailN'), detail?.data.n ?? 1);
 }
 
 /** Forest uniforms shared by the map and perspective programs; units are owned by each caller. */

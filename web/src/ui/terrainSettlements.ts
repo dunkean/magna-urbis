@@ -30,6 +30,7 @@ import type { UrbanPaintingContext } from '../../../rust/bridge/urbanPaintingMas
 import type { ForestOccupation } from '../../../rust/bridge/terrainForest';
 import type { UrbanLanduseScene } from './urbanLanduseData';
 import { forestOccupation } from './forestOccupation';
+import { withLandDetail } from './landDetail';
 import urbanCatalogue from '../../../rust/crates/core/src/urban/catalogue.json';
 
 const ns = 'http://www.w3.org/2000/svg';
@@ -189,7 +190,7 @@ export function createTerrainSettlements(options: {
     const width = options.getTerrain()?.width;
     // Landuse, retained decor and terrain share the frame rebased by cropTerrain: [0, width]².
     if (options.useForestMaterial?.() && landuseScene?.landuse && width && Math.abs(landuseScene.mapSize - width) <= width * 1e-6) {
-      if (occupationScene !== landuseScene) { occupationScene = landuseScene; occupation = forestOccupation(landuseScene.landuse); }
+      if (occupationScene !== landuseScene) { occupationScene = landuseScene; occupation = withLandDetail(forestOccupation(landuseScene.landuse), landuseScene.landuse); }
       next = occupation;
     }
     if (always || next !== published) { published = next; options.onForestOccupation?.(next); }

@@ -4,6 +4,59 @@ import { CLIMATE_ZONES, type ClimateZone } from './terrainClimate';
  * a program that never sets it) keeps the climate-only Render v2 look. */
 export const renderV2ZoneUniform = (zone?: ClimateZone): number => zone ? CLIMATE_ZONES.indexOf(zone) + 1 : 0;
 
+type Tint = readonly [number, number, number];
+type Year<T> = readonly [T, T, T, T];
+/** The year of a climate zone. Every column runs winter, spring, summer, autumn. */
+export interface ZoneSeason {
+  /** Colour ratio of herbaceous ground. */
+  herb: Year<Tint>;
+  /** Fullness of deciduous crowns: 0 bare, 1 in full leaf. */
+  leaf: Year<number>;
+  /** Minimum sea ice concentration. */
+  seaIce: Year<number>;
+  /** Water table of low flat ground, as a ratio. */
+  wet: Year<number>;
+  /** Low-ground snow of the map styles; the material derives its own from temperature. */
+  snow: Year<number>;
+  /** Rain regime: -1 all in winter, 1 all in summer. */
+  rain: number;
+  /** Winter cooling added to the annual temperature proxy (°C). */
+  cool: number;
+  /** Share of conifers that are larches: gold in autumn, bare in winter. */
+  larch: number;
+}
+const NO_ICE: Year<number> = [0, 0, 0, 0], STEADY: Year<number> = [1, 1, 1, 1];
+export const ZONE_SEASONS: Readonly<Record<ClimateZone, ZoneSeason>> = {
+  temperate: { herb: [[.86, .80, .70], [1.02, 1.10, .92], [1, 1, 1], [1.06, .96, .78]], leaf: [0, .62, 1, .85], seaIce: NO_ICE, wet: STEADY, snow: [.12, 0, 0, 0], rain: .1, cool: 1, larch: 0 },
+  mediterranean: { herb: [[.90, 1.08, .86], [.92, 1.12, .84], [1.18, 1.02, .74], [1.10, .98, .78]], leaf: [.82, .92, 1, .95], seaIce: NO_ICE, wet: STEADY, snow: NO_ICE, rain: -.75, cool: 0, larch: 0 },
+  continental: { herb: [[.85, .80, .72], [.98, 1.10, .90], [1, 1, 1], [1.08, .94, .74]], leaf: [0, .55, 1, .80], seaIce: [.55, .10, 0, 0], wet: STEADY, snow: [.85, .05, 0, .05], rain: .25, cool: 6, larch: .1 },
+  nordic: { herb: [[.80, .76, .72], [.94, 1.04, .88], [.98, 1.04, .96], [1.08, .94, .76]], leaf: [0, .40, 1, .75], seaIce: [.80, .40, 0, .08], wet: STEADY, snow: [1, .25, 0, .10], rain: 0, cool: 7, larch: .12 },
+  alpine: { herb: [[.85, .82, .76], [.98, 1.10, .90], [1, 1.06, .96], [1.07, .95, .78]], leaf: [0, .40, 1, .75], seaIce: [.40, .05, 0, 0], wet: STEADY, snow: [1, .35, 0, .20], rain: .15, cool: 9, larch: .35 },
+  arctic: { herb: [[.90, .88, .86], [.92, .92, .84], [.98, 1.02, .88], [1.12, .90, .72]], leaf: [0, .30, 1, .65], seaIce: [.82, .82, .76, .80], wet: STEADY, snow: [1, .80, .05, .55], rain: .2, cool: 6, larch: 0 },
+  steppe: { herb: [[.92, .86, .76], [.86, 1.14, .82], [1.06, .98, .84], [1.04, .94, .80]], leaf: [0, .60, 1, .70], seaIce: [.30, 0, 0, 0], wet: STEADY, snow: [.60, 0, 0, .05], rain: .3, cool: 5, larch: 0 },
+  desert: { herb: [[.90, .90, .92], [.96, 1.02, .90], [1.08, 1, .88], [1.02, .97, .90]], leaf: [.90, 1, 1, .95], seaIce: NO_ICE, wet: STEADY, snow: NO_ICE, rain: 0, cool: 0, larch: 0 },
+  savanna: { herb: [[1.12, 1, .74], [1.04, 1.02, .80], [.72, 1.14, .74], [.92, 1.08, .78]], leaf: [.30, .55, 1, .80], seaIce: NO_ICE, wet: [.2, .6, 1.6, 1.1], snow: NO_ICE, rain: .95, cool: 0, larch: 0 },
+  tropical: { herb: [[1.10, 1.02, .82], [1, 1.02, .96], [.92, 1.06, .92], [.96, 1.04, .94]], leaf: [.85, .95, 1, 1], seaIce: NO_ICE, wet: [.7, .9, 1.3, 1.2], snow: NO_ICE, rain: .45, cool: 0, larch: 0 },
+  wetland: { herb: [[.92, .84, .70], [.92, 1.12, .90], [1, 1.04, .96], [1.08, .95, .74]], leaf: [0, .62, 1, .85], seaIce: [.10, 0, 0, 0], wet: [.9, 1.35, .75, 1], snow: [.30, 0, 0, 0], rain: 0, cool: 2, larch: 0 },
+};
+/** Weights of the four seasons at a point of the annual cycle; they sum to 1. */
+export function seasonWeights(season: number): Year<number> {
+  const at = (season % 1 + 1) % 1 * 4, i = Math.floor(at) % 4, f = at - Math.floor(at), w = [0, 0, 0, 0];
+  w[i] = 1 - f; w[(i + 1) % 4] = f;
+  return w as unknown as Year<number>;
+}
+const glslFloats = (values: readonly number[]): string => values.map(v => Number.isInteger(v) ? `${v}.` : String(v)).join(',');
+const zoneTable = (name: string, type: string, rows: readonly string[]): string => `const ${type} ${name}[${rows.length}]=${type}[${rows.length}](${rows.join(',')});`;
+const seasonRows = CLIMATE_ZONES.map(zone => ZONE_SEASONS[zone]);
+const RENDER_V2_SEASON_GLSL = [
+  zoneTable('V2_SEASON_HERB', 'vec3', seasonRows.flatMap(row => row.herb.map(c => `vec3(${glslFloats(c)})`))),
+  zoneTable('V2_SEASON_LEAF', 'vec4', seasonRows.map(row => `vec4(${glslFloats(row.leaf)})`)),
+  zoneTable('V2_SEASON_ICE', 'vec4', seasonRows.map(row => `vec4(${glslFloats(row.seaIce)})`)),
+  zoneTable('V2_SEASON_WET', 'vec4', seasonRows.map(row => `vec4(${glslFloats(row.wet)})`)),
+  // x rain regime, y winter cooling, z larch share.
+  zoneTable('V2_SEASON_CLIMATE', 'vec3', seasonRows.map(row => `vec3(${glslFloats([row.rain, row.cool, row.larch])})`)),
+].join('\n');
+
 /** Per-zone appearance table of the Render v2 series, indexed by CLIMATE_ZONES.
  * Climate values (temperature, rain) still drive every physical field; a zone
  * only reweights what those values cannot tell apart: cover classes, substrate
@@ -13,7 +66,7 @@ uniform int uMaterialZone;
 // x canopy cover scale, y needle-leaf target, z its weight, w low-flat water table.
 const vec4 V2_ZONE_FOREST[11]=vec4[11](
   vec4(1.,.12,.45,.25),vec4(.62,.30,.45,0.),vec4(1.,.55,.55,.15),vec4(1.,.92,.75,.45),
-  vec4(1.,.88,.70,.05),vec4(.12,.75,.60,.45),vec4(.22,.20,.50,.08),vec4(.55,0.,1.,0.),
+  vec4(1.,.88,.70,.05),vec4(.12,.75,.60,.45),vec4(.22,.20,.50,.08),vec4(.12,0.,1.,0.),
   vec4(.42,0.,1.,.10),vec4(1.,0.,1.,.55),vec4(.55,.08,.70,1.));
 // x rock exposure, y sand, z organic soil, w herbaceous cover scale.
 const vec4 V2_ZONE_SOIL[11]=vec4[11](
@@ -43,6 +96,21 @@ const vec4 V2_ZONE_WET[11]=vec4[11](
   vec4(.36,.42,.22,0.),vec4(.36,.56,.24,0.),vec4(.30,.29,.18,0.));
 bool v2Zoned(){return uMaterialZone>0&&uRenderV2>0;}
 int v2Zone(){return clamp(uMaterialZone-1,0,10);}
+${RENDER_V2_SEASON_GLSL}
+// A map without a zone follows the temperate year.
+int v2SeasonZone(){return uMaterialZone>0?clamp(uMaterialZone-1,0,10):0;}
+vec4 v2SeasonWeights(){
+  float at=fract(uV2Season)*4.;
+  return max(vec4(0.),1.-min(abs(vec4(at)-vec4(0.,1.,2.,3.)),abs(vec4(at)-vec4(4.,5.,6.,7.))));
+}
+vec3 v2SeasonHerb(){
+  int z=v2SeasonZone()*4;vec4 w=v2SeasonWeights();
+  return V2_SEASON_HERB[z]*w.x+V2_SEASON_HERB[z+1]*w.y+V2_SEASON_HERB[z+2]*w.z+V2_SEASON_HERB[z+3]*w.w;
+}
+float v2SeasonLeaf(){return dot(V2_SEASON_LEAF[v2SeasonZone()],v2SeasonWeights());}
+float v2SeasonSeaIce(){return dot(V2_SEASON_ICE[v2SeasonZone()],v2SeasonWeights());}
+float v2SeasonWet(){return dot(V2_SEASON_WET[v2SeasonZone()],v2SeasonWeights());}
+vec3 v2SeasonClimate(){return V2_SEASON_CLIMATE[v2SeasonZone()];}
 vec4 v2ZoneForest(vec4 f){
   if(!v2Zoned())return f;
   vec4 z=V2_ZONE_FOREST[v2Zone()];

@@ -66,6 +66,7 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
       return vec3(a+(b-a)*u.x+(d-a)*u.y+k*u.x*u.y,gradient)*5.25;
     }
     // Set by surfaceMaterial and surfaceMicro for the later passes of the same fragment.
+    vec2 surfaceFall=vec2(1.,0.);
     vec3 surfaceRockTone=vec3(.43,.42,.39),surfaceSoilTone=vec3(.40,.32,.22),surfaceHerbTone=vec3(1.),surfaceMicroTone=vec3(1.);
     vec2 surfaceMicroSlope=vec2(0.);float surfaceRise=0.,surfaceBedded=0.;
     vec2 surfaceGroundSlope=vec2(0.),surfaceGroundGradient=vec2(0.);
@@ -136,9 +137,17 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
     // amplitude, and the first ground band near 3 m, then continues to gravel. Bands
     // step by 3.6x and fade like surfaceFbm, between 8 and 4 samples per wavelength;
     // all are zero-mean, so the colour holds when a band fades in or out.
+    // Rock wears along the fall line: noise averaged down the slope gives chutes and ribs that follow the relief,
+    // with no global coordinates to swirl where the slope turns.
+    float surfaceChute(vec2 world,float across,float along,uint salt){
+      vec2 step=surfaceFall*along;float n=0.;
+      for(int i=-2;i<=2;i++)n+=surfaceNoise(vec3((world+step*float(i))/across,0.),salt);
+      return n*.42;
+    }
     vec3 surfaceMicro(vec2 world,float slope,float fp,float rock,float grass,uint salt){
       surfaceMicroSlope=vec2(0.);surfaceMicroTone=vec3(1.);surfaceGroundSlope=vec2(0.);surfaceGroundNormalGain=1.;
       if(fp>=10.){return surfaceMicroTone;}
+      float fallLength=length(surfaceGroundGradient);surfaceFall=fallLength>.0001?surfaceGroundGradient/fallLength:vec2(1.,0.);
       float k1=1.-sstep(5.,10.,fp);float k2=1.-sstep(1.4,2.8,fp);float k3=1.-sstep(.38,.76,fp);float k4=1.-sstep(.1,.2,fp);
       vec3 n1=surfaceBand(world,40.,salt+31u);vec3 n2=vec3(0.);vec3 n3=vec3(0.);vec3 n4=vec3(0.);
       if(k2>0.){n2=surfaceBand(world,11.,salt+32u);}
@@ -147,10 +156,16 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
       surfaceMicroSlope=.1*(40.*k1*n1.yz+11.*k2*n2.yz+3.*k3*n3.yz+.8*k4*n4.yz);
       float mottle=.5*k1*n1.x+.38*k2*n2.x+.3*k3*n3.x+.22*k4*n4.x;
       float soil=(1.-rock)*(1.-grass);float herb=(1.-rock)*grass;
-      float tone=1.+mottle*(.17*soil+.075*herb+.11*rock);
-      vec3 hue=vec3(1.)+mottle*(soil*vec3(.035,0.,-.045)+herb*vec3(.075,.01,-.06));
+      float tone=1.+mottle*(.05*soil+.075*herb+.035*rock);
+      vec3 hue=vec3(1.)+mottle*(soil*vec3(.012,0.,-.016)+herb*vec3(.075,.01,-.06));
       if(rock>.02){
-        tone+=rock*(.34*k1*surfaceCrack(n1.x+.4*k2*n2.x,fp,40.)+.30*k2*surfaceCrack(n2.x+.4*k3*n3.x,fp,11.)+.24*k3*surfaceCrack(n3.x+.4*k4*n4.x,fp,3.)+.16*k4*surfaceCrack(n4.x,fp,.8));
+        // Fissures stay a close-up detail: at distance their isolines read as organic cells.
+        tone+=rock*(.24*k3*surfaceCrack(n3.x+.4*k4*n4.x,fp,3.)+.16*k4*surfaceCrack(n4.x,fp,.8));
+        float steep=sstep(.12,.5,slope);
+        float wear=.075*(1.-sstep(14.,30.,fp))*surfaceChute(world,26.,15.,salt+61u);
+        if(k1>0.)wear+=.055*k1*surfaceChute(world,9.,5.4,salt+62u);
+        if(k2>0.)wear+=.05*k2*surfaceChute(world,3.2,1.9,salt+63u);
+        tone+=rock*steep*wear;
         // Bed lines on faces; the period seen on the ground is the bed thickness over the slope.
         float face=rock*sstep(.35,.9,slope)*(.3+.7*surfaceBedded);float rate=slope+.2;
         if(face>.01){

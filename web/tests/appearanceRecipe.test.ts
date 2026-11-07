@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { resolveAppearance, resolvedValues, applyAppearancePatch, type AppearanceInput, type RenderTarget } from '../src/render/appearanceRecipe';
+import { presetComposition } from '../src/render/composition';
 import { renderScene } from '../src/v2/renderScene';
 import type { World } from '../src/gen/types';
 
@@ -34,9 +35,10 @@ describe('appearance recipe', () => {
   });
   it('keys each pass on the fields it reads only', () => {
     const a: AppearanceInput = { style: 'parchment', terrainStyle: 'render-v2' }, before = resolve(a).keys;
-    const season = resolve({ ...a, season: .9 }).keys;
-    expect(season.terrainLook).not.toBe(before.terrainLook);
-    for (const pass of ['terrainBase', 'water', 'forest', 'cartography', 'city'] as const) expect(season[pass]).toBe(before[pass]);
+    const composition = presetComposition('satellite'), seasonal = presetComposition('satellite'); seasonal.effects.season = .9;
+    const base = resolve({ ...a, composition }).keys, season = resolve({ ...a, composition: seasonal }).keys;
+    expect(season.terrainLook).not.toBe(base.terrainLook);
+    for (const pass of ['terrainBase', 'water', 'forest', 'cartography', 'city'] as const) expect(season[pass]).toBe(base[pass]);
     const recolored = resolve({ ...a, colors: { river: '#112233', waterShore: '#445566' } }).keys;
     expect(recolored.water).toBe(before.water);
     const map = resolve({ style: 'atlas' }).keys;

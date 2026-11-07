@@ -1,7 +1,7 @@
-import { bindForest, deleteForestTextures, forestTexture, forestTextures, RENDER_3D_FOREST_GLSL, type ForestTextures, type HeightLayer } from './terrainGl';
+import { bindForest, bindLandDetail, deleteForestTextures, forestTexture, forestTextures, glLandDetailUnit, RENDER_3D_FOREST_GLSL, type ForestTextures, type HeightLayer } from './terrainGl';
 import { shoreRingFor, shoreRingTexture } from '../../../rust/bridge/terrainForestBeach';
 import { captureWebGlFrame } from './illustrationDepth';
-import { FOREST_PRELUDE_GLSL, type ForestField, type ForestOccupation } from '../../../rust/bridge/terrainForest';
+import { FOREST_PRELUDE_GLSL, type ForestField, type ForestOccupation, type LandDetail } from '../../../rust/bridge/terrainForest';
 import { bindForestBrushes, disposeForestBrushes } from '../render/forestBrushAtlas';
 import { ShaderVariants, specializeShader } from './glVariants';
 import { NEURAL_EARTH_MATERIAL_GLSL, GROUND_COVER_WATER_GLSL, groundCoverInputsGlsl } from '../../../rust/bridge/terrainMaterial';
@@ -9,6 +9,7 @@ import { RENDER_V2_GLSL, renderV2GlacierSources } from '../../../rust/bridge/ter
 import { renderV2ZoneUniform } from '../../../rust/bridge/terrainRenderV2Zones';
 import type { ClimateZone } from '../../../rust/bridge/terrainClimate';
 import { RENDER_3D_MATERIAL_GLSL } from '../../../rust/bridge/terrainMaterial3d';
+import { withoutLandDetail } from '../../../rust/bridge/terrainMaterialOccupation';
 import { createGroundDisplacementSampler } from '../../../rust/bridge/terrainGround';
 import { DEFAULT_TERRAIN_LIGHTING, terrainLights, type TerrainLighting } from '../render/terrainLighting';
 import { gridHeight, raycastGrid, type TerrainPickGrid } from './terrain3dPicking';
@@ -51,7 +52,7 @@ export interface Terrain3dGroundSettings extends Terrain3dLookSettings {
   seed: number; climate: { temperature: number; precipitation: number }; sourceCell: number;
   /** V2 climate zone (Render v2 styles); absent keeps the climate-only look. */
   climateZone?: ClimateZone;
-  lighting: TerrainLighting; displacement: boolean; forestBrushes?: boolean; renderV2?: number; v2Season?: number; waterVisible?: boolean;
+  lighting: TerrainLighting; displacement: boolean; forestBrushes?: boolean; renderV2?: number; paperMap?: boolean; v2Season?: number; waterVisible?: boolean;
   contours?: { step: number; color: string; opacity: number; flat: boolean };
 }
 export type Terrain3dForestSettings = Pick<Terrain3dGroundSettings, 'seed' | 'climate' | 'lighting'>;
@@ -294,6 +295,7 @@ void main() {
       cityGroundMaterial(m,mix(previousGround,cityGround,textureBlend));
     }
     if(uForest==1)applyForest(m,physical.xz,footprint,groundLight);
+    applyPaperMap(m,physical.xz,footprint);
     base=uRenderV2>0?v2ShadeGround(m,normalize(groundEye-physical),groundLight,groundLight2,groundStrength):shadeTerrainGround(m,normalize(groundEye-physical),groundLight,groundLight2,groundStrength);
     if(uRenderV2>0)base=v2DisplayShoulder(base);
     float under=uRenderV2>0?1.:1.-forestResolvedCover;
@@ -659,6 +661,7 @@ export class Terrain3d {
   protected forestSettings?: Terrain3dForestSettings;
   protected forest?: ForestTextures;
   protected occupation?: { data: ForestOccupation; texture: WebGLTexture };
+  protected landDetail?: { data: LandDetail; texture: WebGLTexture };
   private indexCount = 0;
   protected layer?: HeightLayer;
   private water?: WaterSurface;
@@ -786,7 +789,7 @@ export class Terrain3d {
     const forest = !!this.forest;
     const v = { groundEnabled: +!!settings, uRenderV2: settings?.renderV2 ?? 0, uForest: +forest, uForestBrushes: +!!settings?.forestBrushes, uNaturalWater: +(this.lookSettings.waterLook==='natural'),
       uHasOccupation: +!!this.occupation, uHasForestBank: +(forest && !!this.forest?.bank) };
-    const variant = (constants: typeof v, wait: boolean) => this.groundVariants.get(Object.values(constants).join('.'), () => [vertexShader, specializeShader(fragmentShader, constants)], wait);
+    const variant = (constants: typeof v, wait: boolean) => this.groundVariants.get(Object.values(constants).join('.'), () => [vertexShader, specializeShader(glLandDetailUnit(this.gl) === undefined ? withoutLandDetail(fragmentShader) : fragmentShader, constants)], wait);
     const target = variant(v, false);
     this.mark('groundVariant', target ? 'ready' : 'pending');
     if (target) return this.lastGround = target;
@@ -919,11 +922,16 @@ export class Terrain3d {
       if (this.occupation) this.deleteTexture(this.occupation.texture);
       this.occupation = occupation && { data: occupation, texture: this.uploadOccupation(occupation) };
     }
+    if (occupation?.detail !== this.landDetail?.data) {
+      if (this.landDetail) this.deleteTexture(this.landDetail.texture);
+      this.landDetail = occupation?.detail && { data: occupation.detail, texture: this.uploadLandDetail(occupation.detail) };
+    }
     this.request();
   }
   protected uploadForest(field: ForestField): ForestTextures { return forestTextures(this.gl, field); }
   protected releaseForest(textures: ForestTextures | undefined): void { deleteForestTextures(this.gl, textures); }
-  protected uploadOccupation(occupation: ForestOccupation): WebGLTexture { return forestTexture(this.gl, occupation, false); }
+  protected uploadOccupation(occupation: ForestOccupation): WebGLTexture { return forestTexture(this.gl, occupation, true); }
+  protected uploadLandDetail(detail: LandDetail): WebGLTexture { return forestTexture(this.gl, detail, true); }
   protected deleteTexture(texture: WebGLTexture): void { this.gl.deleteTexture(texture); }
   protected uploadWaterMask(water: NonNullable<Terrain3dTileContent['water']>): WebGLTexture {
     const gl=this.gl,mask=gl.createTexture()!;
@@ -1834,6 +1842,8 @@ export class Terrain3d {
     }
     // Textures 3 forest field, 4 occupation, 8 bank envelope.
     bindForest(gl, name => this.uniform(name), this.forest, this.occupation, this.empty, true, 3, 4, 8, 9);
+    bindLandDetail(gl, name => this.uniform(name), this.landDetail, this.empty);
+    gl.uniform1i(this.uniform('uPaperMap'), settings?.paperMap ? 1 : 0);
     bindForestBrushes(gl, name => this.uniform(name), !!settings?.forestBrushes, 5);
     gl.activeTexture(gl.TEXTURE0); gl.uniform1i(this.uniform('material'), 0);
     gl.uniform1i(this.uniform('previousMaterial'), 1);
@@ -2023,6 +2033,7 @@ export class Terrain3d {
     this.clippedIndices.clear();
     deleteForestTextures(gl, this.forest);
     if (this.occupation) gl.deleteTexture(this.occupation.texture);
+    if (this.landDetail) gl.deleteTexture(this.landDetail.texture);
     disposeForestBrushes(gl);
   }
 }

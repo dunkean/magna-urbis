@@ -134,7 +134,7 @@ describe('natural cover in unoccupied urban plots', () => {
     ctx.clip = (p: RecordingPath) => { clip = p; };
     const pal = biomePalette('parchment', w.options.biome);
     ctx.fill = (...args: unknown[]) => {
-      if (clip && ctx.fillStyle === forestLandPaint(pal).color && ctx.globalAlpha === forestLandPaint(pal).alpha) replays.push(clip);
+      if (clip && ctx.fillStyle === forestLandPaint(pal).color) replays.push(clip);
       fill(...args);
     };
     const r = createCanvasRenderer(m.canvas as unknown as CanvasLike, w, 'parchment', { Path2D: RecordingPath as never, dpr: 1, terrain: () => null });

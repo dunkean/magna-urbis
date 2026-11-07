@@ -46,7 +46,7 @@ const TEXTURES: Record<string, { binding: number; sampler: SamplerKind }> = {
   uPreviousRefined: { binding: 9, sampler: 'nearest' }, uForestField: { binding: 10, sampler: 'linear' }, uOccupation: { binding: 11, sampler: 'linear' },
   uForestBrushAtlas: { binding: 12, sampler: 'linear' }, uWaterLayer: { binding: 13, sampler: 'linear' }, uLayer: { binding: 14, sampler: 'linear' },
   uForestBank: { binding: 15, sampler: 'linear' }, uForestBeach: { binding: 16, sampler: 'linear' }, uShoreRing: { binding: 17, sampler: 'linear' },
-  uAux: { binding: 18, sampler: 'nearest' },
+  uAux: { binding: 18, sampler: 'nearest' }, uLandDetail: { binding: 19, sampler: 'linear' },
 };
 const TEXTURE_TYPE: Record<string, string> = { sampler2D: 'texture2D', usampler2D: 'utexture2D', sampler2DArray: 'texture2DArray' };
 const TEXTURE_BUILTINS = 'texture|textureLod|texelFetch|textureSize|textureGrad|textureOffset|textureLodOffset|texelFetchOffset|textureQueryLevels';

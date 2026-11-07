@@ -23,7 +23,7 @@ const star = async (selector, expected) => {
 try {
   await page.goto(`${v2}?empty&lang=en`); await page.locator('#render-settings').waitFor(); await star('#map-style', false);
   await page.locator('#map-style').selectOption('atlas'); await star('#map-style', false);
-  const azimuth = '[data-setting-path="appearance.lighting.azimuth"]'; await reveal(azimuth); await page.locator(azimuth).fill('90');
+  const azimuth = '[data-setting-path="appearance.composition.effects.lighting.azimuth"]'; await reveal(azimuth); await page.locator(azimuth).fill('90');
   await star('#map-style', true); await star('[data-setting-path="appearance.terrainStyle"]', true); await star('#export-style', true);
   await page.locator('#language-select').selectOption('fr'); await star('#map-style', true);
   await page.locator('#map-style').selectOption('parchment'); await star('#map-style', true);

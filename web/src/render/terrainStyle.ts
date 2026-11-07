@@ -1,8 +1,9 @@
+import { mapSeasonKey, seasonalPalette } from './seasonPalette';
 import { PALETTES, STYLE_LIST, isMapStyle, type MapStyle, type Palette } from './styles';
 import { waterRamp, type WaterStyle } from './waterStyle';
 import { applyRenderColors, type RenderColors } from './customColors';
 
-export type TerrainStyle = MapStyle | 'render' | 'render3d' | 'render3d-brush' | 'fantasy-ink' | 'fantasy-color' | 'render-v2' | 'render-v2-substrate' | 'render-v2-moisture' | 'render-v2-vegetation' | 'render-v2-snow' | 'copernicus';
+export type TerrainStyle = MapStyle | 'parchment-render' | 'render' | 'render3d' | 'render3d-brush' | 'fantasy-ink' | 'fantasy-color' | 'render-v2' | 'render-v2-substrate' | 'render-v2-moisture' | 'render-v2-vegetation' | 'render-v2-snow' | 'copernicus';
 /**
  * Declared rendering properties of a style. Single source of truth: call sites read these instead of testing style ids.
  * Read them once per look change, never per pixel / segment.
@@ -34,6 +35,8 @@ export interface StyleTraits {
   customWaterColors: boolean;
   /** Brush painting kind (fantasy maps), undefined otherwise. */
   fantasy?: 'ink' | 'color';
+  /** The physical ground and forests of the satellite render, repainted as an ink and wash map. */
+  paperMap?: boolean;
   /** Elevation diagnostic scale. */
   elevation: boolean;
   /** Contour lines (and their colour) are meaningful. */
@@ -67,6 +70,7 @@ const definitions = new Map<TerrainStyle, TerrainStyleDefinition>([
   ['render3d', definition('render3d', 'Render3D · Multiscale', PALETTES.parchment, { ...MATERIAL_TRAITS, ground3d: true }, { stops: [[0, '#1a4d5c'], [.4, '#0b2945'], [1, '#051126']], bandFraction: .016 })],
   ['render3d-brush', definition('render3d-brush', 'Render3DBrush', PALETTES.parchment, { ...MATERIAL_TRAITS, ground3d: true, forestBrushes: true }, { stops: [[0, '#1a4d5c'], [.4, '#0b2945'], [1, '#051126']], bandFraction: .016 })],
   ...(['render-v2', 'render-v2-substrate', 'render-v2-moisture', 'render-v2-vegetation', 'render-v2-snow'] as const).map((id, i) => [id, definition(id, ['Render v2 - Satellite', 'Render v2 - Substrate', 'Render v2 - Moisture', 'Render v2 - Vegetation', 'Render v2 - Snow / ice'][i], PALETTES.parchment, { ...V2_TRAITS, satelliteVariant: i + 1, variantOf: i ? 'render-v2' : undefined, variantGroupLabel: i ? undefined : 'Render v2' }, { stops: [[0, '#1a4d5c'], [1, '#051126']], bandFraction: .016 })] as const),
+  ['parchment-render', definition('parchment-render', 'Satellite 2 · Painted', PALETTES.parchment, { ...V2_TRAITS, family: 'material', satelliteVariant: 1, paperMap: true, seaInMaterial: false, customWaterColors: true, physicalRiverWidth: false })],
   ['fantasy-ink', definition('fantasy-ink', 'Fantasy · Encre N&B', ink, { ...BRUSH_TRAITS, fantasy: 'ink' }, waterRamp(ink.waterEdge, ink.seaFill))],
   ['fantasy-color', definition('fantasy-color', 'Fantasy · Aquarelle', color, { ...BRUSH_TRAITS, fantasy: 'color' }, waterRamp(color.waterEdge, color.seaFill))],
   // Legacy URL/render adapter. Elevation is exposed as a diagnostic in the UI.
@@ -74,8 +78,17 @@ const definitions = new Map<TerrainStyle, TerrainStyleDefinition>([
 ]);
 
 export const TERRAIN_STYLE_LIST = [...definitions.values()].filter(style => style.traits.family !== 'diagnostic');
+const seasonal = new Map<string, TerrainStyleDefinition>();
+/** Map palettes follow the season here; material styles read it in their shaders. */
+function inSeason(base: TerrainStyleDefinition): TerrainStyleDefinition {
+  const season = mapSeasonKey();
+  if (!season || base.traits.family !== 'map') return base;
+  const key = `${base.id}:${season}`, found = seasonal.get(key); if (found) return found;
+  const palette = seasonalPalette(base.palette), style = { ...base, palette, water: palette.water };
+  seasonal.set(key, style); return style;
+}
 export const terrainStyle = (id: TerrainStyle, colors?: RenderColors): TerrainStyleDefinition => {
-  const base = definitions.get(id)!;
+  const base = inSeason(definitions.get(id)!);
   if (!colors || !Object.keys(colors).length) return base;
   const palette = applyRenderColors({ ...base.palette, water: base.water }, colors);
   return { ...base, palette, water: palette.water };

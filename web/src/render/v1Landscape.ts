@@ -5,6 +5,7 @@ import { DEFAULTS } from '../gen/options';
 import { renderTerrainPixels } from './raster';
 import { worldWaterPixels } from './terrainWater';
 import { biomePalette } from './biomes';
+import { mapSeasonKey } from './seasonPalette';
 import type { BiomeName } from '../gen/biomes';
 import { PALETTES, ruralInk } from './styles';
 import { regionalRoadSurface } from './roadSurfaces';
@@ -62,7 +63,7 @@ function smoothLandscape(r: SettlementRaster, geometry: { water: { x: number; y:
 }
 export function v1LandscapeCanvas(r: SettlementRaster, style: V1LandscapeStyle, biome: BiomeName = 'temperate'): HTMLCanvasElement {
   let entries = cache.get(r); if (!entries) { entries = new Map(); cache.set(r, entries); }
-  const smooth = !!r.geometry?.water?.length, key = `${style}:${biome}:${smooth}`, found = entries.get(key); if (found) return found;
+  const smooth = !!r.geometry?.water?.length, key = `${style}:${biome}:${smooth}:${mapSeasonKey()}`, found = entries.get(key); if (found) return found;
   if (smooth) { const canvas = smoothLandscape(r, r.geometry!, style, biome); entries.set(key, canvas); return canvas; }
   const pixels = v1LandscapePixels(r, style, biome), canvas = document.createElement('canvas');
   canvas.width = pixels.w; canvas.height = pixels.h;
@@ -75,16 +76,20 @@ export function v1LandscapeCanvas(r: SettlementRaster, style: V1LandscapeStyle, 
  * the backdrop the multiply tints of the land use need on a transparent overlay, with the real water left visible below. */
 export function v1LandCanvas(r: SettlementRaster, style: V1LandscapeStyle, biome: BiomeName = 'temperate', rivers?: Float32Array): HTMLCanvasElement {
   let entries = cache.get(r); if (!entries) { entries = new Map(); cache.set(r, entries); }
-  const key = `land:${style}:${biome}:${rivers?.length ?? 0}`, found = entries.get(key); if (found) return found;
+  const key = `land:${style}:${biome}:${rivers?.length ?? 0}:${mapSeasonKey()}`, found = entries.get(key); if (found) return found;
   const world = v1LandscapeWorld(r, biome), size = 2048, k = size / r.width;
   const dry: World = { ...world, terrain: { ...world.terrain, water: new Uint8Array(r.water.length) } };
-  const land = renderTerrainPixels(dry, biomePalette(style, biome), { pixels: Math.min(1024, r.n * 2) });
+  // The V1 sheet is a soft relief on a mid paper tone. Real mountains would saturate its slope-driven light and spend
+  // the whole ramp on their summits, leaving the valleys pale: fix the light and keep the ramp in its darker half.
+  let top = 1; for (const h of r.height) if (h > top) top = h;
+  const land = renderTerrainPixels(dry, biomePalette(style, biome), { pixels: Math.min(1024, r.n * 2), exaggeration: 1.2, heightRange: { min: -1.8 * top, max: top } });
   const canvas = Object.assign(document.createElement('canvas'), { width: size, height: size }), ctx = canvas.getContext('2d')!;
   ctx.imageSmoothingQuality = 'high'; ctx.drawImage(rgbCanvas(land.rgb, land.w, land.h), 0, 0, size, size);
   ctx.globalCompositeOperation = 'destination-out'; ctx.fillStyle = ctx.strokeStyle = '#000'; ctx.lineCap = 'round';
   // The raster covers the open sea; the vector rings, where they exist, give closed water its smooth edge.
   const mask = Object.assign(document.createElement('canvas'), { width: r.n, height: r.n }), m = mask.getContext('2d')!, image = m.createImageData(r.n, r.n);
-  for (let i = 0; i < r.water.length; i++) if (r.water[i] > 0 && r.water[i] < 4) image.data[i * 4 + 3] = 255;
+  // River cells stay land when their vector line is given: a whole cell on each side would show as a pale band.
+  for (let i = 0; i < r.water.length; i++) if (r.water[i] > 0 && r.water[i] < (rivers ? 3 : 4)) image.data[i * 4 + 3] = 255;
   m.putImageData(image, 0, 0); ctx.drawImage(mask, 0, 0, size, size);
   for (const group of r.geometry?.water ?? []) {
     const path = new Path2D();

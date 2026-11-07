@@ -31,8 +31,8 @@ export interface AppearanceInput {
   colors?: RenderColors; roads?: boolean; buildings?: boolean; forest?: Partial<ForestSettings>;
   style: MapStyle; terrainStyle?: TerrainStyle; renderer?: 'classic' | 'bench';
   contours?: boolean; landuse?: boolean; labels?: boolean; legend?: boolean; cartouche?: boolean; textured?: boolean; painted?: boolean;
-  vegetation?: 'classic' | 'canopy'; /** Forest class of the land-use plan: dark marked green or the ground colour (landuseForestTone.ts). */ landuseForestTone?: 'ground' | 'marked'; lighting?: TerrainLighting; terrainLayers?: TerrainLayers; diagnostic?: DiagnosticId; /** Potential id of the `res-potential` diagnostic. */ resourcePotential?: string;
-  lakes?: boolean; oxbows?: boolean; season?: number; fantasy?: FantasyOptions; city?: CityInput;
+  vegetation?: 'classic' | 'canopy'; terrainLayers?: TerrainLayers; diagnostic?: DiagnosticId; /** Potential id of the `res-potential` diagnostic. */ resourcePotential?: string;
+  lakes?: boolean; oxbows?: boolean; fantasy?: FantasyOptions; city?: CityInput;
   /** To test (31/10): one default table for 2D, 3D and the classic canvas. Off keeps the previous per-view defaults. */
   unifiedDefaults?: boolean;
 }
@@ -149,7 +149,9 @@ export function resolveAppearance(appearance: AppearanceInput | undefined, base:
     // A style picked in the terrain look selector (terrainStyle) is drawn by the composite renderer, map palettes included.
     : a?.terrainStyle !== undefined || traits.family !== 'map' || diagnostic !== 'none' || capabilities.nativeCities ? 'composite' : 'classic';
 
-  const ground: GroundComponent = { style: groundStyle, traits: groundTraits, lighting: { ...DEFAULT_TERRAIN_LIGHTING, ...a?.lighting }, season: a?.season ?? .5,
+  // Global effects live in the recipe; a caller without one keeps the neutral defaults.
+  const effects = appearance?.composition?.effects;
+  const ground: GroundComponent = { style: groundStyle, traits: groundTraits, lighting: { ...DEFAULT_TERRAIN_LIGHTING, ...effects?.lighting }, season: effects?.season ?? .5,
     layers: { ...DEFAULT_TERRAIN_LAYERS, ...a?.terrainLayers, water: a?.terrainLayers?.water ?? true }, contours: a?.contours ?? base.contours ?? true, lakes: a?.lakes ?? true, oxbows: a?.oxbows ?? true };
   const unified = a?.unifiedDefaults === true, legacy3d = !unified && target === 'view3d';
   // Previously the classic 2D canvas drew classic vegetation symbols by default; export and composite used the canopy.
@@ -160,7 +162,7 @@ export function resolveAppearance(appearance: AppearanceInput | undefined, base:
     forestSettings: { ...DEFAULT_FOREST_SETTINGS, ...base.forest, ...forest }, fantasy: { ...DEFAULT_FANTASY_OPTIONS, followLanduse: false, ...a?.fantasy, forests: composition.vegetation.groundForests } };
   const terrainColors = a?.colors && Object.fromEntries(TERRAIN_COLOR_KEYS.map(token => [token, a.colors![token]])) as RenderColors;
   const palette: PaletteComponent = { mapStyle, colors: a?.colors, terrainColors, applicableColors: applicable(a?.colors, groundTraits) };
-  const cartography: CartographyComponent = { landuseForestTone: a?.landuseForestTone ?? 'marked', roads: a?.roads ?? true, landuse: a?.landuse ?? base.landuse ?? true, labels: preview ? false : a?.labels ?? base.labels ?? true,
+  const cartography: CartographyComponent = { landuseForestTone: composition.vegetation.forestTone, roads: a?.roads ?? true, landuse: a?.landuse ?? base.landuse ?? true, labels: preview ? false : a?.labels ?? base.labels ?? true,
     legend: a?.legend ?? base.legend ?? false, cartouche: a?.cartouche ?? false, painted: a?.painted ?? false };
   const c = a?.city;
   const city: CityComponent = { visible: a?.buildings ?? true, textured: a?.textured ?? false,
@@ -186,7 +188,7 @@ export function resolveAppearance(appearance: AppearanceInput | undefined, base:
     terrainBase: key(ground.style, ground.layers.relief, groundTraits.fantasy ? vegetation.fantasy : 0),
     water: key(ground.style, pick(palette.applicableColors, ['waterShore', 'waterDeep', 'river']), ground.layers.water, ground.lakes, ground.oxbows, composition.networks.water, diagnostic, diagnostic === 'res-potential' ? a?.resourcePotential ?? 'arable' : null),
     forest: key(vegetation.forest, groundTraits.forestClearingProfile, groundTraits.forestBrushes, ground.layers.water),
-    cartography: key(mapStyle, capabilities.nativeCities && !cartography.legend ? omit(a?.colors, OVERLAY_FOREIGN_COLORS) : a?.colors, ground.style, cartography.roads, composition.networks.roads.look, cartography.landuse, cartography.painted, vegetation.symbols, composition.vegetation.cartographic, city.visible, cartography.landuseForestTone),
+    cartography: key(groundTraits.satelliteVariant ? null : ground.season, mapStyle, capabilities.nativeCities && !cartography.legend ? omit(a?.colors, OVERLAY_FOREIGN_COLORS) : a?.colors, ground.style, cartography.roads, composition.networks.roads.look, cartography.landuse, cartography.painted, vegetation.symbols, composition.vegetation.cartographic, city.visible, cartography.landuseForestTone),
     overlays: key(composition.text, cartography.labels, cartography.legend, cartography.cartouche),
     roads: key(composition.networks.roads.emphasis),
     semantic: key(composition.landuse),
@@ -202,8 +204,8 @@ function pick(colors: RenderColors, tokens: readonly string[]): unknown[] { retu
 export function resolvedValues(r: ResolvedAppearance): AppearanceInput {
   return { composition: r.composition.recipe, style: r.palette.mapStyle, terrainStyle: r.styleId, renderer: r.path === 'composite' ? 'bench' : 'classic', colors: r.palette.colors,
     contours: r.ground.contours, landuse: r.cartography.landuse, labels: r.cartography.labels, legend: r.cartography.legend, cartouche: r.cartography.cartouche,
-    painted: r.cartography.painted, textured: r.city.textured, vegetation: r.vegetation.symbols, landuseForestTone: r.cartography.landuseForestTone, season: r.ground.season, diagnostic: r.diagnostic === 'none' ? 'none' as DiagnosticId : r.diagnostic, resourcePotential: r.resourcePotential,
-    lakes: r.ground.lakes, oxbows: r.ground.oxbows, roads: r.cartography.roads, buildings: r.city.visible, lighting: { ...r.ground.lighting }, terrainLayers: { ...r.ground.layers },
+    painted: r.cartography.painted, textured: r.city.textured, vegetation: r.vegetation.symbols, diagnostic: r.diagnostic === 'none' ? 'none' as DiagnosticId : r.diagnostic, resourcePotential: r.resourcePotential,
+    lakes: r.ground.lakes, oxbows: r.ground.oxbows, roads: r.cartography.roads, buildings: r.city.visible, terrainLayers: { ...r.ground.layers },
     fantasy: { ...r.vegetation.fantasy }, forest: { ...r.vegetation.forestSettings },
     city: { view: r.city.view, palette: r.city.palette, buildingStyle: r.city.buildingStyle, diagnostic: r.city.diagnostic, opacity: r.city.opacity, width: r.city.width, plan: r.city.plan,
       colors: r.city.colors, exaggeration: r.city.exaggeration, refinement: r.city.refinement, groundBlend: r.city.groundBlend, painted: r.city.painted, ground: r.city.ground, layers: { ...r.city.layers } } };

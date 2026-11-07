@@ -5,7 +5,7 @@ import type { HouseConfig } from '../../../rust/bridge/housesContract';
 import type { WasmThreadsInfo } from '../../../rust/bridge/wasmThreads';
 import type { MapStyle } from '../render/styles';
 import type { TerrainStyle } from '../render/terrainStyle';
-import type { TerrainLighting, TerrainLayers } from '../render/terrainLighting';
+import type { TerrainLayers } from '../render/terrainLighting';
 import type { FantasyOptions } from '../../../rust/bridge/fantasyPainting';
 import type { CityView, CityPalette, CityLayers } from '../render/cityCanvas';
 import type { UrbanBuildingStyle, UrbanBuildingDiagnostic } from '../render/urbanBuildingStyle';
@@ -71,16 +71,12 @@ export interface V2Appearance {
   textured?: boolean;
   painted?: boolean;
   vegetation?: 'classic' | 'canopy';
-  /** Forest class of the land-use plan: `marked` (dark green, default) or `ground` (background tone). */
-  landuseForestTone?: 'ground' | 'marked';
-  lighting?: TerrainLighting;
   terrainLayers?: TerrainLayers;
   diagnostic?: DiagnosticId;
   /** Resource shown by the `res-potential` diagnostic (rust/bridge/resources.ts POTENTIAL_IDS). */
   resourcePotential?: string;
   lakes?: boolean;
   oxbows?: boolean;
-  season?: number;
   fantasy?: FantasyOptions;
   city?: V2CityAppearance;
   /** To test (31/10): one default table for 2D, 3D and the classic canvas (off = previous per-view defaults). */

@@ -19,6 +19,7 @@ describe('style traits', () => {
   it('reproduce the former name-based predicates for every style', () => {
     expect(ids.length).toBeGreaterThan(14);
     for (const id of ids) {
+      if (id === 'parchment-render') continue;   // newer than the former predicates: the satellite ground repainted as a map
       const t = styleTraits(id);
       expect(terrainStyle(id).traits, id).toBe(t);
       expect(t.ground3d, id).toBe(oldRender3d(id));

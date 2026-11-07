@@ -119,10 +119,10 @@ try {
   record('switchParchmentToRenderV2', sw);
   await change(page, styleOp('render-v2')); await idle(page);
   const series = (name, make) => (async () => { const s = []; for (let i = 0; i < runs; i++) s.push(await change(page, make(i))); record(name, s); })();
-  await series('seasonChange', i => ({ kind: 'num', sel: f('season'), value: [.1, .8, .3, .65, .9, .2][i % 6] }));
+  await series('seasonChange', i => ({ kind: 'num', sel: f('composition.effects.season'), value: [.1, .8, .3, .65, .9, .2][i % 6] }));
   await series('paperColourChange', i => ({ kind: 'num', sel: '[data-render-color="paper"]', value: ['#d8c8a0', '#c0d0e0', '#e0c0c0', '#b0e0b0', '#f0f0c0', '#a0a0a0'][i % 6] }));
   await series('riverColourChange', i => ({ kind: 'num', sel: '[data-render-color="river"]', value: ['#2060a0', '#40a0c0', '#104060', '#6080c0', '#305070', '#80b0d0'][i % 6] }));
-  await series('lightingAzimuthChange', i => ({ kind: 'num', sel: f('lighting.azimuth'), value: [40, 120, 200, 280, 330, 75][i % 6] }));
+  await series('lightingAzimuthChange', i => ({ kind: 'num', sel: f('composition.effects.lighting.azimuth'), value: [40, 120, 200, 280, 330, 75][i % 6] }));
   await series('toggleLabels', i => ({ kind: 'check', sel: f('labels'), value: i % 2 === 1 }));
   await change(page, { kind: 'check', sel: f('labels'), value: true });
 

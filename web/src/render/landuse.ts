@@ -18,7 +18,7 @@ import { MAP_STROKES, svgMapStroke } from './strokes';
 import { underdarkPatterns, underdarkMarkSvg } from './underdark';
 import { canopyAreaMarks, canopySvg, type VegetationStyle } from './canopy';
 import { insideArea } from './scene';
-import { forestLandPaint } from './landuseForestTone';
+import { forestLandPaint, FOREST_EDGE_WIDTH, FOREST_EDGE_BLUR } from './landuseForestTone';
 import { ruralDetailsSvg } from './ruralDetails';
 
 /** Land-use tints multiply over the hillshaded terrain so relief stays readable under them (browsers; resvg falls back to plain alpha). Dark styles blend normally. */
@@ -150,8 +150,9 @@ export function landuseLayer(world: Pick<World, 'options' | 'mapSize' | 'landuse
     const marks = canopyAreaMarks(lu.areas.filter(a => a.kind === kind), kind, world.mapSize, world.seed ?? '')
       .filter(m => kind !== 'forest' || !clearings.some(p => insideArea({ kind, poly: p.outer, holes: p.holes }, m.x, m.y)));
     if (!marks.length) continue;
-    out += `<g class="lu-${kind}-stamps">` + (brushes ? marks.map(m => `<g opacity="${.88 + .12 * m.k}">${brushes.tree(m.x, m.y, (kind === 'orchard' ? 3.5 : 4.75) * m.r, kind === 'orchard')}</g>`).join('')
-      : canopySvg(marks, kind, world.seed ?? '', pal)) + '</g>';
+    const stamps = (brushes ? marks.map(m => `<g opacity="${.88 + .12 * m.k}">${brushes.tree(m.x, m.y, (kind === 'orchard' ? 3.5 : 4.75) * m.r, kind === 'orchard')}</g>`).join('')
+      : canopySvg(marks, kind, world.seed ?? '', pal));
+    out += `<g class="lu-${kind}-stamps">${stamps}</g>`;
   }
   out += '</g>';
   return out;
@@ -168,9 +169,20 @@ function coverAreasSvg(kind: LandKind, list: LandArea[], pal: Palette, s: number
       ? list.map(a => `<path d="${ringsD(a)}" fill="url(#p-orchard-${furrowDegrees(a.stripAngle ?? 0)})" fill-rule="evenodd"/>`).join('')
       : `<path d="${d}" fill="url(#p-${kind})" fill-rule="evenodd"/>`;
   }
-  if (edges && kind === 'forest') out += `<path d="${d}" fill="none" stroke="${pal.treeInk}" stroke-width="${f1(0.7 * s)}" stroke-opacity="${wood!.edge}" stroke-linejoin="round"/>`;
-  else if (kind === 'orchard' || kind === 'garden') out += `<path d="${d}" fill="none" stroke="${pal.hedge}" stroke-width="${f1(0.8 * s)}" stroke-opacity="0.7"/>`;
-  return out;
+  if (kind === 'orchard' || kind === 'garden') out += `<path d="${d}" fill="none" stroke="${pal.hedge}" stroke-width="${f1(0.8 * s)}" stroke-opacity="0.7"/>`;
+  return kind === 'forest' && !isUnderdarkBiome(biome) ? featherForestSvg(list, out) : out;
+}
+
+/** Match the canvas's inward wash and sparse crowns, keeping the exact cover. */
+function featherForestSvg(list: LandArea[], body: string): string {
+  const d = list.map(ringsD).join('');
+  let hash = 2166136261;
+  for (let i = 0; i < d.length; i++) hash = Math.imul(hash ^ d.charCodeAt(i), 16777619);
+  const id = `forest-edge-${hash >>> 0}`;
+  const boxes = list.map(a => bboxOf(a.poly)), margin = FOREST_EDGE_WIDTH * 2;
+  const x = Math.min(...boxes.map(b => b.x0)) - margin, y = Math.min(...boxes.map(b => b.y0)) - margin;
+  const width = Math.max(...boxes.map(b => b.x1)) + margin - x, height = Math.max(...boxes.map(b => b.y1)) + margin - y;
+  return `<defs><filter id="${id}-blur" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="${FOREST_EDGE_BLUR}"/></filter><mask id="${id}" maskUnits="userSpaceOnUse" x="${x}" y="${y}" width="${width}" height="${height}"><path d="${d}" fill="white" fill-rule="evenodd"/><path d="${d}" fill="none" stroke="black" stroke-opacity=".94" stroke-width="${FOREST_EDGE_WIDTH}" stroke-linejoin="round" filter="url(#${id}-blur)"/></mask></defs><g mask="url(#${id})">${body}</g>`;
 }
 
 /** Replays actual natural areas under a caller's occupation clip; it never invents forest or draws agriculture. */

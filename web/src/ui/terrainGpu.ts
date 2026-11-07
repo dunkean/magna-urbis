@@ -23,7 +23,7 @@
 import { unzlibSync } from 'fflate';
 import atlas from '../render/assets/fantasy/forest-brushes.json';
 import { shoreRingFor } from '../../../rust/bridge/terrainForestBeach';
-import type { ForestField, ForestOccupation } from '../../../rust/bridge/terrainForest';
+import type { ForestField, ForestOccupation, LandDetail } from '../../../rust/bridge/terrainForest';
 import { createGroundDisplacementSampler } from '../../../rust/bridge/terrainGround';
 import { renderV2GlacierSources } from '../../../rust/bridge/terrainRenderV2';
 import { renderV2ZoneUniform } from '../../../rust/bridge/terrainRenderV2Zones';
@@ -308,6 +308,7 @@ export class TerrainGpu implements TerrainRenderer {
   private shoreRing?: { layer: object; image: GpuImage; x: number; y: number; width: number };
   private forest?: ForestImages;
   private occupation?: { data: ForestOccupation; image: GpuImage };
+  private landDetail?: { data: LandDetail; image: GpuImage };
   private brushes!: { image: GpuImage; full: boolean };
   private lakeInput?: Float32Array;
   private lakeWidth = 0;
@@ -413,7 +414,7 @@ export class TerrainGpu implements TerrainRenderer {
     this.retainedWater = undefined; this.retainedWaterViewKey = ''; this.retainedWaterKey = '';
     this.base = undefined; this.details = []; this.enhanced = [];
     this.lake = undefined; this.lakeInput = undefined; this.overlay = undefined; this.coastDistance = undefined; this.shoreRing = undefined;
-    this.forest = undefined; this.occupation = undefined;
+    this.forest = undefined; this.occupation = undefined; this.landDetail = undefined;
     this.riverBuffer = undefined; this.riverCount = 0;
     TerrainGpu.restore(this, inputs);
   }
@@ -587,7 +588,11 @@ export class TerrainGpu implements TerrainRenderer {
     }
     if (occupation !== this.occupation?.data) {
       this.releaseImage(this.occupation?.image);
-      this.occupation = occupation && { data: occupation, image: this.rgbaImage(occupation, false) };
+      this.occupation = occupation && { data: occupation, image: this.rgbaImage(occupation, true) };
+    }
+    if (occupation?.detail !== this.landDetail?.data) {
+      this.releaseImage(this.landDetail?.image);
+      this.landDetail = occupation?.detail && { data: occupation.detail, image: this.rgbaImage(occupation.detail, true) };
     }
     this.forestVersion++;
     this.request();
@@ -1034,6 +1039,10 @@ export class TerrainGpu implements TerrainRenderer {
     p.set('uHasOccupation', applied ? 1 : 0);
     p.set('uOccupationRect', applied?.data.x ?? 0, applied?.data.y ?? 0, applied?.data.width ?? 1);
     p.set('uOccupationN', applied?.data.n ?? 1);
+    p.set('uPaperMap', this.look && styleTraits(this.look.style).paperMap ? 1 : 0);
+    const detail = this.landDetail;
+    textures.uLandDetail = detail?.image.view ?? empty;
+    p.set('uHasLandDetail', detail ? 1 : 0); p.set('uLandDetailRect', detail?.data.x ?? 0, detail?.data.y ?? 0, detail?.data.width ?? 1); p.set('uLandDetailN', detail?.data.n ?? 1);
   }
   /** Brush atlas (bindForestBrushes): a 1×1 placeholder until a brush look first needs the full array. */
   private bindBrushes(textures: Record<string, GPUTextureView>, enabled: boolean): void {
@@ -1053,7 +1062,7 @@ export class TerrainGpu implements TerrainRenderer {
     if (this.fallback) { this.fallback.dispose(); return; }
     for (const target of [this.auxTarget, this.mapTarget, this.riverTarget, this.waterTarget]) target?.texture.destroy();
     this.release(this.base); this.details.forEach(d => this.release(d)); this.enhanced.forEach(d => this.release(d));
-    for (const image of [this.lake, this.overlay, this.coastDistance, this.shoreRing?.image, this.occupation?.image, this.retainedWater, this.brushes.image, this.empty, this.emptyUint]) this.releaseImage(image);
+    for (const image of [this.lake, this.overlay, this.coastDistance, this.shoreRing?.image, this.occupation?.image, this.landDetail?.image, this.retainedWater, this.brushes.image, this.empty, this.emptyUint]) this.releaseImage(image);
     this.releaseForest();
     this.riverBuffer?.destroy(); this.slots.buffer.destroy();
     this.context.unconfigure(); this.capture?.context.unconfigure();

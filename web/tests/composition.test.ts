@@ -7,7 +7,7 @@ import { PALETTES } from '../src/render/styles';
 import { tileRoadVisible, drawTileRoads } from '../src/render/tileNetworks';
 import { describe, expect, it, vi } from 'vitest';
 import { resolveAppearance } from '../src/render/appearanceRecipe';
-import { GROUND_VARIANTS, PRESET_IDS, presetComposition, validateComposition, withGroundVariant, type CompositionRecipe } from '../src/render/composition';
+import { GROUND_VARIANTS, STYLE_IDS, presetComposition, validateComposition, withGroundVariant, type CompositionRecipe } from '../src/render/composition';
 
 const resolve = (composition: CompositionRecipe, target: 'view2d' | 'view3d' = 'view2d') => resolveAppearance({ style: 'parchment', composition }, { mapStyle: 'parchment' }, { nativeCities: true }, target);
 const edit = (id: Parameters<typeof presetComposition>[0], change: (c: CompositionRecipe) => void) => { const c = presetComposition(id); change(c); return c; };
@@ -15,7 +15,7 @@ const moved = (a: CompositionRecipe, b: CompositionRecipe) => { const x = resolv
 
 describe('render composition', () => {
   it('fills a valid recipe from every preset', () => {
-    for (const id of PRESET_IDS) { const c = presetComposition(id); expect(() => validateComposition(c), id).not.toThrow(); expect(GROUND_VARIANTS[c.ground.look]).toContain(c.ground.variant); }
+    for (const id of STYLE_IDS) { const c = presetComposition(id); expect(() => validateComposition(c), id).not.toThrow(); expect(GROUND_VARIANTS[c.ground.look]).toContain(c.ground.variant); }
   });
   it('draws the mixed recipe without changing the ground', () => {
     const r = resolve(edit('parchment', c => { c.vegetation.look = 'procedural-canopy'; c.landuse.rural = 'categorical'; c.networks.roads.look = 'ink'; c.buildings.look = 'footprints'; }));
@@ -25,13 +25,13 @@ describe('render composition', () => {
     expect(r.city.buildingStyle).toBe('silhouette');
   });
   it('keeps semantic data on a material ground', () => {
-    const r = resolve(presetComposition('natural'));
+    const r = resolve(edit('satellite', c => { c.landuse.rural = 'subtle'; }));
     expect(r.composition.landuse.rural).toBe('subtle'); expect(r.composition.vegetation.procedural).toBe(true);
   });
   it('moves only the semantic key for opacity and looks', () => {
-    const base = presetComposition('natural');
-    expect(moved(base, edit('natural', c => { c.landuse.opacity = .9; }))).toEqual(['semantic']);
-    expect(moved(base, edit('natural', c => { c.landuse.rural = 'off'; c.landuse.urban = 'off'; }))).toEqual(['semantic']);
+    const base = edit('atlas', () => {});
+    expect(moved(base, edit('atlas', c => { c.landuse.opacity = .9; }))).toEqual(['semantic']);
+    expect(moved(base, edit('atlas', c => { c.landuse.rural = 'off'; c.landuse.urban = 'off'; }))).toEqual(['semantic']);
   });
   it('leaves the other passes alone when one is hidden or changed', () => {
     const base = presetComposition('parchment');
@@ -40,14 +40,24 @@ describe('render composition', () => {
     expect(moved(base, edit('parchment', c => { c.networks.roads.visible = false; }))).not.toContain('semantic');
   });
   it('keeps the night ambience on a natural ground without a limitation', () => {
-    expect(resolve(presetComposition('atlas-night')).ground.style).toBe('night');
-    const c = edit('natural', x => { x.ambience = 'night'; });
+    expect(resolve(edit('atlas', x => { x.effects.ambience = 'night'; })).ground.style).toBe('night');
+    const c = edit('satellite', x => { x.effects.ambience = 'night'; });
     expect(resolve(c).composition.limitations.map(l => l.pass)).not.toContain('ambience');
-    expect(resolve(c).composition.recipe.ambience).toBe('night');
+    expect(resolve(c).composition.recipe.effects.ambience).toBe('night');
+  });
+  it('has six styles, a cadastre default variant and validated global effects', () => {
+    expect(STYLE_IDS).toEqual(['atlas', 'cadastre', 'topographic', 'satellite', 'satellite-2', 'parchment', 'illustration']);
+    expect(GROUND_VARIANTS.cadastre[0]).toBe('cadastre');
+    expect(presetComposition('cadastre').ground.variant).toBe('cadastre');
+    expect(presetComposition('atlas').effects).toMatchObject({ ambience: 'day', season: .5, relief: true });
+    for (const bad of [(c: CompositionRecipe) => { c.effects.season = 1.1; }, (c: CompositionRecipe) => { c.effects.lighting.azimuth = 361; }, (c: CompositionRecipe) => { c.effects.lighting.elevation = 4; }])
+      expect(() => validateComposition(edit('atlas', bad))).toThrow('effects');
+    expect(resolve(presetComposition('atlas')).composition.limitations.map(l => l.field)).not.toContain('composition.effects.season');
+    expect(resolve(presetComposition('satellite')).composition.limitations.map(l => l.field)).not.toContain('composition.effects.season');
   });
   it('changes the ground variant without touching the other passes', () => {
-    const next = withGroundVariant(presetComposition('plan'), 'render-v2');
-    expect(next).toMatchObject({ preset: 'custom', ground: { look: 'natural', variant: 'render-v2' }, landuse: { rural: 'categorical' }, buildings: { look: 'footprints' } });
+    const next = withGroundVariant(presetComposition('cadastre'), 'render-v2');
+    expect(next).toMatchObject({ preset: 'custom', ground: { look: 'satellite', variant: 'render-v2' }, landuse: { rural: 'categorical' }, buildings: { look: 'footprints' } });
   });
 });
 
@@ -60,9 +70,9 @@ describe('independent text composition', () => {
     expect(base.annotations).not.toHaveProperty('labels');
   });
   it('validates the complete group table and finite size bounds', () => {
-    for (const size of [.6, 1.8]) expect(() => validateComposition(edit('plan', c => { c.text.size = size; }))).not.toThrow();
-    for (const size of [.59, 1.81, NaN, Infinity]) expect(() => validateComposition(edit('plan', c => { c.text.size = size; }))).toThrow('text.size');
-    const c = presetComposition('plan'); delete (c.text.groups as Partial<typeof c.text.groups>).pins;
+    for (const size of [.6, 1.8]) expect(() => validateComposition(edit('cadastre', c => { c.text.size = size; }))).not.toThrow();
+    for (const size of [.59, 1.81, NaN, Infinity]) expect(() => validateComposition(edit('cadastre', c => { c.text.size = size; }))).toThrow('text.size');
+    const c = presetComposition('cadastre'); delete (c.text.groups as Partial<typeof c.text.groups>).pins;
     expect(() => validateComposition(c)).toThrow('text.groups.pins');
   });
   it('filters name sources, site markers and RPG pins independently and caches equivalent palettes', () => {
@@ -80,7 +90,7 @@ describe('independent text composition', () => {
     expect(buildMapLabels(world, pal.name, pal, text).map(l => l.kind)).toEqual(['street', 'castle', 'rpg:quest', 'site']);
   });
   it('shares explicit fonts, size and night contrast with SVG', () => {
-    const text = presetComposition('atlas-night').text; text.look = 'sans'; text.size = 1.5;
+    const text = presetComposition('atlas').text; text.look = 'sans'; text.halo = 'strong'; text.size = 1.5;
     const world: MapLabelWorld = { mapAnnotations: { enabled: true, pins: [{ id: 'pin', kind: 'label', text: 'Readable', x: 200, y: 200 }] } };
     const labels = buildMapLabels(world, 'night', PALETTES.night, text), st = labels[0].st;
     expect(st.family).toContain('sans-serif'); expect(st.color).toBe('#f2e9cc'); expect(st.halo).toBe('#111d2b');

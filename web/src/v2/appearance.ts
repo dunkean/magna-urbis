@@ -3,7 +3,7 @@ import { isMapStyle } from '../render/styles';
 import { isTerrainStyle } from '../render/terrainStyle';
 import { DIAGNOSTICS } from '../render/displayDiagnostics';
 import { POTENTIAL_IDS } from '../../../rust/bridge/resources';
-import { DEFAULT_LANDUSE_FOREST_TONE, setLanduseForestTone } from '../render/landuseForestTone';
+import { setLanduseForestTone } from '../render/landuseForestTone';
 import { validateRenderColors } from '../render/customColors';
 import type { CityLayers } from '../render/cityCanvas';
 import type { DisplayOpts } from '../ui/protocol';
@@ -40,7 +40,6 @@ export function validateAppearance(value: unknown): asserts value is V2Appearanc
   if (value.terrainStyle !== undefined && (typeof value.terrainStyle !== 'string' || !isTerrainStyle(value.terrainStyle))) throw new Error('appearance.terrainStyle: unknown terrain style.');
   enumeration(value.renderer, ['classic', 'bench'], 'appearance.renderer');
   enumeration(value.vegetation, ['classic', 'canopy'], 'appearance.vegetation');
-  enumeration(value.landuseForestTone, ['ground', 'marked'], 'appearance.landuseForestTone');
   enumeration(value.diagnostic, DIAGNOSTICS.map(diagnostic => diagnostic.id), 'appearance.diagnostic');
   enumeration(value.resourcePotential, POTENTIAL_IDS, 'appearance.resourcePotential');
   for (const key of ['contours', 'landuse', 'labels', 'legend', 'cartouche', 'textured', 'painted', 'lakes', 'oxbows', 'roads', 'buildings', 'unifiedDefaults']) boolean(value[key], `appearance.${key}`);
@@ -50,13 +49,6 @@ export function validateAppearance(value: unknown): asserts value is V2Appearanc
     boolean(value.forest.enabled, 'appearance.forest.enabled');
     number(value.forest.density, 'appearance.forest.density', 0, 2);
     number(value.forest.clearings, 'appearance.forest.clearings', 0, 1);
-  }
-  number(value.season, 'appearance.season', 0, 1);
-  if (value.lighting !== undefined) {
-    object(value.lighting, 'appearance.lighting');
-    boolean(value.lighting.enabled, 'appearance.lighting.enabled', true);
-    for (const [key, min, max] of [['azimuth', 0, 360], ['elevation', 5, 90], ['strength', 0, 3], ['exaggeration', 0, 10]] as const)
-      number(value.lighting[key], `appearance.lighting.${key}`, min, max, true);
   }
   if (value.terrainLayers !== undefined) {
     object(value.terrainLayers, 'appearance.terrainLayers');
@@ -98,10 +90,10 @@ export interface V2ExportDisplay extends DisplayOpts { vegetation?: VegetationSt
 /** The one place that turns settings + retained products into a resolved appearance (call per change, never per frame). */
 export function resolveSettingsAppearance(settings: V2Settings, world: World | undefined, target: RenderTarget, flags?: ResolveFlags): ResolvedAppearance {
   const o = settings.options;
-  // The land-use painters (2D canvas, SVG export, legend) read the shared setting; the V2 appearance is its source of truth.
-  setLanduseForestTone(settings.appearance?.landuseForestTone ?? DEFAULT_LANDUSE_FOREST_TONE);
   // V2 always renders a composition; a project without one starts from the preset of its map style.
   const appearance = { style: o.style, ...settings.appearance, composition: settings.appearance?.composition ?? presetComposition(o.style === 'atlas' ? 'atlas' : 'parchment') };
+  // The land-use painters (2D canvas, SVG export, legend) read the shared value; the recipe is its source of truth.
+  setLanduseForestTone(appearance.composition.vegetation.forestTone);
   return resolveAppearance(appearance, { mapStyle: o.style, contours: o.contours, landuse: o.landuse, labels: o.labels, legend: o.legend, forest: settings.terrain?.forest },
     worldCapabilities(world), target, flags);
 }

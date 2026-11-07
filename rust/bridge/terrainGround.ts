@@ -237,20 +237,22 @@ vec3 surfaceGroundCover(vec2 world,float slope,float fp,float rock,float grass,u
       vec2 sun=vec2(dot(light,vec2(.8,.6)),dot(light,vec2(-.6,.8)));
       vec2 shadowD=d+sun*.055,shadowLocal=vec2(cs*shadowD.x+sn*shadowD.y,-sn*shadowD.x+cs*shadowD.y);
       float shadow=surfaceGroundCap(shadowLocal,vec2(.32,.25)).x;
-      float shade=(1.-sstep(.85,.99,uGroundCover.y/max(length(uGroundCover.xyz),.001)))*.13;
-      tone+=amount*(cap.w*mix(vec3(.85,.65,.30),vec3(.55,.85,.36),green)
+      float shade=(1.-sstep(.85,.99,uGroundCover.y/max(length(uGroundCover.xyz),.001)))*.05;
+      tone+=.35*amount*(cap.w*mix(vec3(.85,.65,.30),vec3(.55,.85,.36),green)
         +cap.x*((variation-.5)*vec3(.34,.43,.12)+green*vec3(-.055,.08,-.035))-vec3(shade*max(shadow-cap.x,0.)));
     }
   }
-  float sand=surfaceGroundEnv.z*(1.-rock)*(1.-grass)*exposed*(1.-sstep(.35,.7,slope));
+  // Dunes need loose sand: a gravel plain stays flat.
+  float sand=sstep(.3,.7,surfaceGroundEnv.z)*(1.-rock)*(1.-grass)*exposed*(1.-sstep(.35,.7,slope));
   if(sand>.01){
     float angle=float(salt&1023u)*.006135923;vec2 wind=vec2(cos(angle),sin(angle));
     vec3 flow=surfaceBand(world,1600.,salt+821u);
-    float phase=dot(world,wind)*.130899694+7.*flow.x+.07*surfaceGroundHeight;
-    vec2 rate=wind*.130899694+7.*flow.yz+.07*surfaceGroundGradient;
+    // Long crests across the wind: a strong warp would break them into dimples.
+    float phase=dot(world,wind)*.0698+2.5*flow.x+.07*surfaceGroundHeight;
+    vec2 rate=wind*.0698+2.5*flow.yz+.07*surfaceGroundGradient;
     float keep=(1.-sstep(5.,10.,fp))*(1.-sstep(.125,.25,fp*length(rate)/6.283185307));
-    surfaceGroundSlope+=sand*keep*2.8*cos(phase)*rate;
-    tone+=vec3(sand*keep*.12*sin(phase));
+    surfaceGroundSlope+=sand*keep*.9*cos(phase)*rate;
+    tone+=vec3(sand*keep*.05*sin(phase));
     // Warped scalar phase gives a continuous wind field and its true gradient;
     // the terrain height bends the phase uphill without view-dependent noise.
     if(fp<.32){

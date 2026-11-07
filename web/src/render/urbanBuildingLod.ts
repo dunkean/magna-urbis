@@ -605,7 +605,7 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
       // landmarks get a heavier, warmer one.
       if (painted && mpp < 2.5) {
         const all: GeometryPath[] = []; for (const paths of fills.values()) all.push(...paths);
-        ctx.strokeStyle = options.appearance.colors?.buildingEdge ?? PAINTED_EDGE; ctx.globalAlpha = mpp < .4 ? .85 : .65; ctx.lineWidth = (mpp < .4 ? .8 : mpp < 1 ? .65 : .5) * mpp;
+        ctx.strokeStyle = options.appearance.colors?.buildingEdge ?? PAINTED_EDGE; ctx.globalAlpha = mpp < .4 ? .6 : .5; ctx.lineWidth = (mpp < .4 ? .8 : mpp < 1 ? .65 : .5) * mpp;
         strokeBatch(ctx, all, metrics);
         if (landmarks.length) { ctx.strokeStyle = options.appearance.colors?.buildingEdge ?? PAINTED_LANDMARK_EDGE; ctx.globalAlpha = .9; ctx.lineWidth = 1.4 * mpp; strokeBatch(ctx, landmarks, metrics); }
         ctx.globalAlpha = 1;
@@ -622,6 +622,7 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
             ctx.restore();
           }
         }
+        if (painted && lod === 'facets') paintRoofSlopes(ctx, building, geometry, this.ridges(building, geometry, metrics), mpp, metrics);
         for (const line of this.ridges(building, geometry, metrics)) {
           if (Math.hypot(line.b.x - line.a.x, line.b.y - line.a.y) / mpp < 1.5) continue;
           const color = options.appearance.colors?.buildingEdge ?? (line.kind === 'valley' ? '#736e53' : '#393a31');
@@ -739,6 +740,37 @@ export function urbanOverviewInkPadding(painted: boolean, access: boolean): { wo
   return { world: painted ? Math.max(...PAINTED_SHADOW_M) : 0,
     pixels: Math.max(1, access ? 2.2 : 0, painted ? 3 * .7 + 1.4 / 2 : 0) };
 }
+/** Light of the painted plans: it comes from the north-west, opposite the ground shadows. */
+const ROOF_SUN = {x: -.6, y: -.8};
+const ROOF_LIT = 'rgba(255,238,205,.15)', ROOF_SHADE = 'rgba(28,18,10,.3)', ROOF_COURSES = 'rgba(24,16,10,.13)';
+/** Compact plans keep their ridges, not their roof mesh: each ridge splits the roof into a lit and a shaded slope, with tile courses up close. */
+function paintRoofSlopes(ctx: CanvasRenderingContext2D, building: CompactBuildingVisual, geometry: CachedGeometry, ridges: readonly Line[], mpp: number, metrics: BuildingRenderMetrics): void {
+  ctx.save(); clipGeometry(ctx, geometry.outline);
+  // No two roofs weathered alike.
+  let hash = 2166136261; for (let i = 0; i < building.id.length; i++) hash = Math.imul(hash ^ building.id.charCodeAt(i), 16777619);
+  const weather = ((hash >>> 8) & 255) / 255 - .5;
+  ctx.fillStyle = weather > 0 ? `rgba(255,240,215,${(weather * .2).toFixed(3)})` : `rgba(30,20,12,${(-weather * .3).toFixed(3)})`;
+  paintGeometry(ctx, geometry.outline, metrics);
+  for (const {a, b, kind} of ridges) {
+    const length = Math.hypot(b.x - a.x, b.y - a.y);
+    if (kind !== 'ridge' || length < .5) continue;
+    const ux = (b.x - a.x) / length, uy = (b.y - a.y) / length, nx = -uy, ny = ux, reach = 40, over = 4;
+    const p = {x: a.x - ux * over, y: a.y - uy * over}, q = {x: b.x + ux * over, y: b.y + uy * over};
+    const lit = nx * ROOF_SUN.x + ny * ROOF_SUN.y > 0 ? 1 : -1;
+    for (const side of [1, -1]) {
+      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.lineTo(q.x + nx * reach * side, q.y + ny * reach * side); ctx.lineTo(p.x + nx * reach * side, p.y + ny * reach * side); ctx.closePath();
+      ctx.fillStyle = side === lit ? ROOF_LIT : ROOF_SHADE; ctx.fill();
+    }
+    if (mpp < .45) {
+      ctx.beginPath(); ctx.strokeStyle = ROOF_COURSES; ctx.lineWidth = Math.max(.08, .6 * mpp);
+      for (let d = .75; d < 14; d += .75) for (const side of [1, -1]) { ctx.moveTo(p.x + nx * d * side, p.y + ny * d * side); ctx.lineTo(q.x + nx * d * side, q.y + ny * d * side); }
+      ctx.stroke();
+    }
+    metrics.drawCalls += 3;
+  }
+  ctx.restore();
+}
+
 function isLandmark(building: CompactBuildingVisual): boolean {
   return !!(building as { programme?: { landmark?: boolean | null } }).programme?.landmark;
 }

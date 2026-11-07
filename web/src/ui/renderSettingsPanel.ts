@@ -12,7 +12,7 @@ export const RENDER_SECTIONS = {
   water: ['Water', 'Eau'],
   roads: ['Roads', 'Routes'],
   buildings: ['Buildings', 'Bâtiments'],
-  ambience: ['Ambience', 'Ambiance'],
+  ambience: ['Global effects', 'Effets globaux'],
   text: ['Text', 'Textes'],
   general: ['Legend and cartouche', 'Légende et cartouche'],
 } as const;

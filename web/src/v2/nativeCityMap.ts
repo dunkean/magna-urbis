@@ -16,6 +16,8 @@ import { nativeCitiesOf } from './nativeProducts';
 import { rustSettlementRaster } from './rustUrban';
 import { activityScene, activitySitesOf, drawInstallations } from './activitySites';
 
+/** Roof slopes show as soon as a house is large enough to read them, on more houses than the default budget. */
+const HOUSE_LOD = { ridgeThresholdPx: 6, facetThresholdPx: 12, maxFacetBuildings: 1500 };
 export interface NativeCityMapStats {
   native: boolean;
   cities: number;
@@ -106,7 +108,7 @@ export function createNativeCityMap(world: World, onInvalidate: () => void): Nat
   const raster = cities.length ? rustSettlementRaster(world) : undefined;
   const entries: Entry[] = cities.map(city => {
     const plan = buildCityScene(city.layouts, city.partitions ?? [], raster);
-    return { plan, buildings: buildCityBuildings(city.scene, plan), houses: new UrbanBuildingLodRenderer(city.scene ?? { buildings: [] }),
+    return { plan, buildings: buildCityBuildings(city.scene, plan), houses: new UrbanBuildingLodRenderer(city.scene ?? { buildings: [] }, HOUSE_LOD),
       materials: new Map((city.scene?.materials ?? []).map(material => [material.id, material])),
       refused: new Set(city.scene?.refusals.map(refusal => refusal.parcel_id)) };
   });
@@ -114,7 +116,7 @@ export function createNativeCityMap(world: World, onInvalidate: () => void): Nat
   const activities = activityScene(world), sites = activitySitesOf(world);
   if (activities) {
     const plan = buildCityScene([], []);
-    entries.push({ plan, buildings: buildCityBuildings(activities, plan), houses: new UrbanBuildingLodRenderer(activities),
+    entries.push({ plan, buildings: buildCityBuildings(activities, plan), houses: new UrbanBuildingLodRenderer(activities, HOUSE_LOD),
       materials: new Map((activities.materials ?? []).map(material => [material.id, material])), refused: new Set() });
   }
   const textScenes = entries.map(entry => entry.plan);

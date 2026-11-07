@@ -90,7 +90,7 @@ try {
   const initial = await exportJson('project', '01-imported'); assert.equal(hash(physical(initial)), original);
   const jobsBefore = await page.evaluate(() => window.__render3dQA.jobs.length);
   await page.locator('#map-style').selectOption('render-v2'); await idle('render-v2');
-  await fill('season', .82); await fill('lighting.azimuth', 120); await fill('lighting.elevation', 28); await fill('lighting.strength', 1.4); await idle('render-v2'); await closeSettings();
+  await fill('composition.effects.season', .82); await fill('composition.effects.lighting.azimuth', 120); await fill('composition.effects.lighting.elevation', 28); await fill('composition.effects.lighting.strength', 1.4); await idle('render-v2'); await closeSettings();
   const opening = Date.now(); await page.locator('#view3d').click(); await page.locator('.city3d:not([hidden]) canvas').waitFor();
   await page.waitForFunction(expected => {
     const root = document.querySelector('.city3d:not([hidden])'), count = root?.querySelector('.city3d-info b')?.textContent.replace(/\D/g, '');
@@ -126,14 +126,14 @@ try {
   assert.match(await page.locator('.city3d [data-ground]').locator('xpath=..').innerText(), /Sol/);
   assert.match(await page.locator('.city3d [data-ground] option[value="render-v2-snow"]').innerText(), /Neige/);
   assert.match(await page.locator('.city3d-info').innerText(), /WebGL logiciel/);
-  await reveal(field('season')); assert.equal(await page.locator(field('season')).getAttribute('aria-label'), 'Saison (cycle annuel)'); await closeSettings();
+  await reveal(field('composition.effects.season')); assert.equal(await page.locator(field('composition.effects.season')).getAttribute('aria-label'), 'Saison (cycle annuel)'); await closeSettings();
   await page.screenshot({ path: resolve(out, 'native-satellite-3d-fr.png') });
   const pendingPng = page.waitForEvent('download', { timeout: 45000 }); await page.locator('#capture3d').click();
   const pngDownload = await pendingPng, pngPath = resolve(out, 'native-satellite-3d.png'); await pngDownload.saveAs(pngPath);
   const png = await readFile(pngPath); assert.equal(png.subarray(1, 4).toString(), 'PNG'); assert(png.length > 5000);
   report.checks.capture = { bytes: png.length, width: png.readUInt32BE(16), height: png.readUInt32BE(20) };
   const final = await exportJson('project', '99-after-display'); assert.equal(hash(physical(final)), original, 'Display changes altered retained physical terrain or native architecture.');
-  const a = final.settings.appearance; assert.equal(a.season, .82); assert.equal(a.lighting.azimuth, 120); assert.equal(a.lighting.elevation, 28); assert.equal(a.lighting.strength, 1.4);
+  const a = final.settings.appearance; const fx = a.composition.effects; assert.equal(fx.season, .82); assert.equal(fx.lighting.azimuth, 120); assert.equal(fx.lighting.elevation, 28); assert.equal(fx.lighting.strength, 1.4);
   assert.equal(a.city.ground, 'render-v2'); assert.equal(a.city.plan, false); assert.equal(a.city.colors, 'uses'); assert.equal(a.city.exaggeration, 2); assert.equal(a.city.refinement, 'source');
   report.checks.preferences = a;
   const qa = await page.evaluate(() => ({ jobs: window.__render3dQA.jobs, buildingDraws: window.__render3dQA.buildingDraws, buildingVertices: window.__render3dQA.buildingVertices, terrainDraws: window.__render3dQA.terrainDraws }));

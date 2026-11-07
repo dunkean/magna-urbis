@@ -1,3 +1,5 @@
+import { setMapClimateZone } from '../render/seasonPalette';
+import { climateZoneOf, type ClimateZone } from '../../../rust/bridge/terrainClimate';
 import { selectCityLod } from '../render/cityCanvas';
 import { mountTextOverlay3d } from './textOverlay3d';
 import { buildMapLabels, type MapLabel, type MapLabelWorld } from '../render/mapLabels';
@@ -14,7 +16,7 @@ import { isFantasyStyle, prepareFantasyTerrain, renderFantasyTerrain, registerFa
 import { createFantasyTerrainLayer } from '../../../rust/bridge/fantasyTerrainLayer';
 import { fantasyLibraries } from '../render/fantasyBrushAssets';
 import { TERRAIN_STYLE_LIST, isTerrainStyle, styleTraits, terrainStyle } from '../render/terrainStyle';
-import { benchVegetationLimitations, resolveBenchAppearance, syncBenchAnnotations, setBenchRenderCapabilities, writeBenchCompositionQuery } from './benchComposition';
+import { getBenchComposition, setBenchComposition, benchVegetationLimitations, resolveBenchAppearance, syncBenchAnnotations, setBenchRenderCapabilities, writeBenchCompositionQuery } from './benchComposition';
 import { drawRuralSemantic, drawUrbanSemantic } from '../render/semanticLayer';
 import { isMapStyle } from '../render/styles';
 import { DIAGNOSTICS, diagnosticAvailable, diagnosticDefinition } from '../render/displayDiagnostics';
@@ -683,8 +685,9 @@ function withForestQuery(d: Decor): Decor {
   }
   return { ...d, meta: { ...d.meta, query: params.toString() } };
 }
+const benchClimateZone = (): ClimateZone | undefined => climateZoneOf(settings.climateZone ?? settings.climate);
 function updateForestControls(): void {
-  el('renderV2Controls').hidden=!styleTraits(style).satelliteVariant;input('renderV2Season').value=String(v2Season);el('renderV2Date').textContent=new Intl.DateTimeFormat('en',{month:'long'}).format(new Date(Date.UTC(2024,0,1+Math.floor(v2Season*365))));
+  el('renderV2Controls').hidden=false;input('renderV2Season').value=String(v2Season);el('renderV2Date').textContent=new Intl.DateTimeFormat('en',{month:'long'}).format(new Date(Date.UTC(2024,0,1+Math.floor(v2Season*365))));
   el<HTMLSelectElement>('style').value = styleTraits(baseStyle).variantOf ?? baseStyle;
   el<HTMLSelectElement>('renderV2Diagnostic').value = v2DiagnosticStyle;
   el('forestControls3d').hidden = !resolveBenchAppearance().composition.vegetation.procedural;
@@ -785,7 +788,7 @@ function naturalForestKey(source: ForestFieldInput, controls: ForestSettings): s
   return [forestId(source.height.data), source.height.n, source.height.width, source.seed, ...source.climate,
     forestId(source.water), forestId(source.riverSegments), controls.density, controls.clearings].join(':');
 }
-input('renderV2Season').addEventListener('input',()=>{v2Season=Number(input('renderV2Season').value)%1;updateForestControls();if(gpu){gpu.setRenderV2Season(v2Season);terrain3d?.setRenderV2Season(v2Season);}else render();deferSave();});
+input('renderV2Season').addEventListener('input',()=>{v2Season=Number(input('renderV2Season').value)%1;setBenchComposition({...getBenchComposition(),effects:{...getBenchComposition().effects,season:v2Season}});updateForestControls();if(gpu&&styleTraits(style).satelliteVariant){gpu.setRenderV2Season(v2Season);terrain3d?.setRenderV2Season(v2Season);}else render();deferSave();});
 for (const id of ['forestEnabled', 'forestDensity', 'forestClearings']) input(id).addEventListener('input', forestChanged);
 updateForestControls();
 
@@ -854,7 +857,7 @@ async function refresh3dTexture(epoch: number): Promise<void> {
     const look3d=resolveBenchAppearance({},'view3d').composition;
     terrain3d.setLook({ambience:look3d.ambience,waterLook:look3d.networks.water.look,waterVisible:look3d.networks.water.visible});
     terrain3d.setGroundMaterial(ground ? {
-      seed: seedHash(settings.seed), climate: climateOf(settings),
+      seed: seedHash(settings.seed), climate: climateOf(settings), climateZone: benchClimateZone(),
       sourceCell: retainedDecor?.meta.terrainDisplay?.sourceCell ?? settings.width / 1024,
       lighting, ambience:look3d.ambience,waterLook:look3d.networks.water.look, renderV2:styleTraits(style).satelliteVariant,v2Season,waterVisible:input('showWater').checked, displacement: refinement3d !== 'source', forestBrushes: styleTraits(style).forestBrushes,
       contours: input('showContours').checked && contourInterval()>0 ? {
@@ -1590,10 +1593,13 @@ function renderGpu(): void {
   }
   contourStep = contourInterval();
   // The bench controls form an appearance recipe; the terrain look resolves exactly as in the V2.
-  const resolved = resolveBenchAppearance({ style: isMapStyle(baseStyle) ? baseStyle : 'parchment', terrainStyle: baseStyle, diagnostic: elevationDiagnostic ? 'elevation' : undefined, lighting, terrainLayers: layers, contours: input('showContours').checked, season: v2Season, fantasy: fantasyOptions });
+  const resolved = resolveBenchAppearance({ style: isMapStyle(baseStyle) ? baseStyle : 'parchment', terrainStyle: baseStyle, diagnostic: elevationDiagnostic ? 'elevation' : undefined, terrainLayers: layers, contours: input('showContours').checked, fantasy: fantasyOptions });
   fantasyOptions.forests = resolved.vegetation.fantasy.forests;
   const ground = resolved.ground, brushed = ground.traits.fantasy;
+  // City Bench shares this module; its zone comes from the retained map.
+  if (document.body.dataset.bench !== 'city') setMapClimateZone(benchClimateZone());
   const look: TerrainLook = {
+    climateZone: benchClimateZone(),
     independentCanopy: resolved.composition.vegetation.procedural, ambience:resolved.composition.ambience,waterLook:resolved.composition.networks.water.look, refinement3d, v2Season: ground.season, colors: resolved.palette.colors,
     style: ground.style, waterStyle: resolved.composition.networks.water.look === 'ink' ? resolved.palette.mapStyle : resolved.composition.variant, lighting: brushed ? { ...ground.lighting, strength: .12 } : ground.lighting, layers: brushed ? { ...ground.layers, hypsometry: false } : ground.layers, climate: climateOf(settings), mapWidth: terrain.width, globalMin: terrain.globalMinHeight, globalMax: terrain.globalMaxHeight,
     contours: ground.layers.relief && !brushed && ground.contours && contourStep > 0, contourStep, flatRelief: settings.relief === 'flat',
@@ -2140,12 +2146,8 @@ function changeLighting(): void {
 }
 input('showShading').onchange = changeLighting;
 for (const [id] of Object.values(lightingFields)) input(id).oninput = changeLighting;
-el('resetLighting').onclick = () => {
-  lighting = { ...DEFAULT_TERRAIN_LIGHTING };
-  input('showShading').checked = lighting.enabled;
-  for (const [key, [id]] of Object.entries(lightingFields)) input(id).value = String(lighting[key as keyof typeof lightingFields]);
-  changeLighting();
-};
+// The lighting belongs to the recipe (effects.lighting); the legacy inputs mirror it.
+el('resetLighting').onclick = () => { const recipe = getBenchComposition(); setBenchComposition({ ...recipe, preset: 'custom', effects: { ...recipe.effects, lighting: { ...DEFAULT_TERRAIN_LIGHTING } } }); };
 input('showWater').onchange = () => { layers = { ...layers, water: input('showWater').checked }; detailRequest = undefined; render(); save(); };
 input('showLakes').onchange = () => { renderWater(); scheduleForest(); settlements.refreshForestMaterial(); save(); };
 input('showOxbows').onchange = () => { renderWater(); scheduleForest(); settlements.refreshForestMaterial(); save(); };

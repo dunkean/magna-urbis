@@ -1,5 +1,6 @@
 import { GROUND_FIELD_GLSL } from './terrainGround';
 import { FOREST_GLSL } from './terrainForest';
+import { GROUND_OCCUPATION_GLSL } from './terrainMaterialOccupation';
 
 /** Render3D shares a physical ground field; original Render remains untouched.
  * This compatibility wrapper returns unlit display RGB for retained rasters.
@@ -10,6 +11,7 @@ import { FOREST_GLSL } from './terrainForest';
  */
 export const RENDER_3D_MATERIAL_GLSL = `${GROUND_FIELD_GLSL}
 ${FOREST_GLSL}
+${GROUND_OCCUPATION_GLSL}
 float forestRasterLight(GroundMaterial m,vec3 l){return (.34+.16*clamp(m.normal.y,0.,1.))*m.occlusion+.7*max(dot(m.normal,l),0.);}
 // light: X/up/Z sun direction. The raster stays unlit, so forest crowns, stand
 // shadows and occlusion are baked relative to the bare ground's own lighting.

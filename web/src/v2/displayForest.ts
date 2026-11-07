@@ -6,13 +6,14 @@ import type { LandUseLayer, World } from '../gen/types';
 import type { V2Settings } from './contracts';
 import { effectiveTerrainSettings } from './terrainSettings';
 import { forestOccupation } from '../ui/forestOccupation';
+import { withLandDetail } from '../ui/landDetail';
 
 const cache = new WeakMap<World, Map<string, ForestField>>();
 const occupations = new WeakMap<LandUseLayer, ForestOccupation | undefined>();
 /** Product identity is the land-use revision; neither appearance nor visibility is an input. */
 export function v2ForestOccupation(world: World): ForestOccupation | undefined {
   const landuse = world.landuse; if (!landuse) return;
-  if (!occupations.has(landuse)) occupations.set(landuse, forestOccupation(landuse));
+  if (!occupations.has(landuse)) occupations.set(landuse, withLandDetail(forestOccupation(landuse), landuse));
   return occupations.get(landuse);
 }
 /** Repaint the forest over retained heights. Never call terrain or settlement generation. */

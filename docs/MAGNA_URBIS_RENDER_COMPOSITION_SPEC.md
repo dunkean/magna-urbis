@@ -8,7 +8,8 @@
 
 **Implémenté** (code sous `web/src/`) :
 
-- `render/composition.ts` : `CompositionRecipe`, 7 presets (`presetComposition`), `GROUND_VARIANTS`, `applyComposition`, `resolveComposition` (`r.composition` sur chaque `ResolvedAppearance`), `limitationsOf`, `withGroundVariant`, `validateComposition`.
+- `render/composition.ts` : `CompositionRecipe`, 6 styles (`StyleId` : `atlas`, `cadastre`, `topographic`, `satellite`, `parchment`, `illustration`, à la fois préréglages et fonds ; `atlas-night` est supprimé), `presetComposition`, `GROUND_VARIANTS` (variante par défaut du cadastre : `cadastre`), `applyComposition`, `resolveComposition` (`r.composition` sur chaque `ResolvedAppearance`), `limitationsOf`, `withGroundVariant`, `validateComposition`.
+- Effets globaux : le bloc `effects { ambience, season, relief, lighting }` de la recette remplace `ambience`, `ground.relief` et les réglages avancés `season` / `lighting` ; la nuit est un effet, pas un style. La saison n'agit encore que sur le style satellite (limitation déclarée ailleurs). Le ton de la forêt d'occupation du sol vit aussi dans la recette (`vegetation.forestTone`).
 - `render/textLayer.ts` : groupes, densité, halo et police des toponymes (`TextSettings`, `cityTextLabels`, `textPlacement`).
 - `render/semanticLayer.ts` : peintre sémantique partagé (classes rurales et urbaines, légendes `ruralSemanticLegend` / `urbanSemanticLegend`).
 - `render/roadStyle.ts` : encre ou rendu naturel des routes, emphase, utilisé par le canvas 2D, les tuiles et la 3D.
@@ -579,3 +580,12 @@ Chaque PR doit être intégrable et testable isolément. Si une PR n'est pas ent
 >
 > **Livrables attendus pour chaque PR :** fichiers modifiés, responsabilités des nouvelles passes, captures avant/après, matrice de capacités mise à jour, tests automatisés, limitations résiduelles et impacts de performance.
 
+## Saisons
+
+Le curseur `effects.season` (0 hiver, .25 printemps, .5 été, .75 automne) vaut pour tous les styles.
+
+- `ZONE_SEASONS` (`rust/bridge/terrainRenderV2Zones.ts`) décrit l’année de chaque zone climatique : herbes, feuillage, banquise, nappe, neige, pluie, froid hivernal, mélèzes.
+- Les styles matière lisent ce calendrier dans leurs shaders, en 2D comme en 3D : couleur et forme des cimes, conifères enneigés, feuillus nus, sol, gel des eaux.
+- Les styles vectoriels passent par `seasonPalette.ts`, appliqué dans `biomePalette` et `terrainStyle`.
+- La banquise de Neural Earth (`v2Ice`) reçoit un plancher de concentration par zone : l’arctique toute l’année, le nordique en hiver. Sa taille est ramenée à l’échelle locale par `V2_ICE_ZOOM`.
+- Planche de contrôle : `web/scripts/season_sheet.mjs`, puis `season_sheet_page.py`.

@@ -11,7 +11,7 @@ import { mountRenderSettingsPanel, mountRenderColorControls, splitSectionLevels,
 import { styleTraits, terrainStyle, type TerrainStyle } from '../render/terrainStyle';
 import { paletteColors, type RenderColorKey } from '../render/customColors';
 import { GROUND_VARIANTS, type CompositionRecipe } from '../render/composition';
-import { compositionMessages, advancedFields, fantasyFields, seasonFields, forestFields, diagnosticFields, renderControlFields, RENDER_SECTION_FIELDS, RENDER_COMPOSITION_ROWS, mountCompositionSection, writeCompositionField, incompatibilityText, limitationText, LIMITATION_ROW, NOTE_STYLE } from '../ui/compositionControls';
+import { compositionMessages, advancedFields, fantasyFields, forestFields, diagnosticFields, renderControlFields, RENDER_SECTION_FIELDS, RENDER_COMPOSITION_ROWS, mountCompositionSection, writeCompositionField, incompatibilityText, limitationText, LIMITATION_ROW, NOTE_STYLE } from '../ui/compositionControls';
 export { PRESET_OPTIONS, RENDER_COMPOSITION_ROWS, renderControlFields, RENDER_SECTION_FIELDS } from '../ui/compositionControls';
 import { worldCapabilities } from './nativeProducts';
 import { markStyleCustomized } from '../ui/renderStyleCustomization';
@@ -25,7 +25,7 @@ const ui = {
   help: copy('Redraw the retained map. These settings do not regenerate terrain or settlements.', 'Redessine la carte conservée. Ces réglages ne régénèrent ni le relief ni les lieux.'),
   terrain: copy('Terrain and water layers', 'Couches du relief et de l’eau'), light: copy('Lighting and relief', 'Lumière et relief'),
   city: copy('Cities and buildings', 'Villes et bâtiments'), cityLayers: copy('Detailed city layers', 'Couches détaillées des villes'),
-  fantasy: copy('Fantasy brushes', 'Pinceaux fantasy'), season: copy('Satellite season', 'Saison du satellite'),
+  fantasy: copy('Fantasy brushes', 'Pinceaux fantasy'),
   diagnostics: copy('Terrain and water diagnostics', 'Diagnostics du relief et de l’eau'),
   unavailable: copy('This diagnostic needs retained data from the selected water engine.', 'Ce diagnostic nécessite les données conservées du moteur hydrologique correspondant.'),
 };
@@ -60,7 +60,7 @@ export function writeAppearanceControl(settings: V2Settings, path: string, value
   settings.appearance ??= { style: settings.options.style };
   if (path.startsWith('appearance.composition.')) return writeComposition(settings, path.slice('appearance.composition.'.length), value);
   const defaults = renderControlValues(settings);
-  for (const key of ['lighting', 'terrainLayers', 'fantasy'] as const)
+  for (const key of ['terrainLayers', 'fantasy'] as const)
     if (path.startsWith(`appearance.${key}.`) && !settings.appearance[key]) Object.assign(settings.appearance, { [key]: defaults[key] });
   writeSettingPath(settings, path, value);
 }
@@ -101,7 +101,7 @@ export function mountRenderControls(host: HTMLElement, bindings: RenderControlBi
   // Keep the listed order: RENDER_COMPOSITION_ROWS and RENDER_SECTION_FIELDS are the single description of the panel layout.
   const byPath = (...paths: readonly string[]) => paths.map(path => renderControlFields.find(field => field.path === `appearance.${path}`)!);
   const levels = {} as Record<RenderSection, SectionLevels>;
-  const conditionalPaths = [...fantasyFields, ...seasonFields, ...forestFields].map(field => field.path.replace('appearance.', ''));
+  const conditionalPaths = [...fantasyFields, ...forestFields].map(field => field.path.replace('appearance.', ''));
   for (const key of ['ground', 'relief', 'vegetation', 'landuse', 'water', 'roads', 'buildings', 'ambience', 'text', 'general'] as const) {
     const level = levels[key] = splitSectionLevels(panel.bodies[key], text);
     mountCompositionSection(level, key, mountIn, text);
@@ -113,7 +113,7 @@ export function mountRenderControls(host: HTMLElement, bindings: RenderControlBi
     forms.push(mountParameterForm(body, fields, { getValue: valueOf, setValue: (path, value) => { writeAppearanceControl(bindings.getSettings(), path, value); bindings.onChange(); sync(); } }));
     return group;
   };
-  const fantasy = conditional(ui.fantasy, fantasyFields), season = conditional(ui.season, seasonFields);
+  const fantasy = conditional(ui.fantasy, fantasyFields);
   const forestLabel = copy('Satellite trees', 'Arbres satellite'); registerMessages(renderControlMessages);
   const forest = conditional(forestLabel, forestFields);
   mountIn(panel.bodies.diagnostics, diagnosticFields);
@@ -156,7 +156,7 @@ export function mountRenderControls(host: HTMLElement, bindings: RenderControlBi
     const customized = appearanceCustomized(settings, world);
     for (const select of [presetSelect, ...(bindings.getStyleSelectors?.() ?? [])]) markStyleCustomized(select, customized);
     const traits = styleTraits(style);
-    fantasy.hidden = !traits.fantasy; season.hidden = !traits.satelliteVariant;
+    fantasy.hidden = !traits.fantasy;
     forest.hidden = !resolved.composition.vegetation.procedural;
     const capabilities = worldCapabilities(world);
     const waterEngine = capabilities.vectorWater ? 'vector' : capabilities.hydrology ? 'rust'

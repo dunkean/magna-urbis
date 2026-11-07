@@ -3,7 +3,8 @@ import type { TerrainLook } from './terrainGl';
 import { moonlightSvg } from '../render/materialLook';
 import { benchSettlementTextWorld, benchTextLayer } from './benchComposition';
 import { createTerrainSettlements } from './terrainSettlements';
-import { decorBiome, decorClimate } from './decorClimate';
+import { decorBiome, decorClimate, decorClimateZone } from './decorClimate';
+import { setMapClimateZone } from '../render/seasonPalette';
 import { seedHash } from '../../../rust/bridge/terrainAdjust';
 import { buildForestField, DEFAULT_FOREST_SETTINGS, type ForestField } from '../../../rust/bridge/terrainForest';
 import { forestRetainedRiverSegments } from '../../../rust/bridge/terrainForestRiparian';
@@ -24,6 +25,7 @@ import { withGroundVariant, type Limitation } from '../render/composition';
 import { createTerrainRenderer, type TerrainRenderer } from './terrainRenderer';
 import { DEFAULT_FRACTAL_DETAIL } from '../../../rust/bridge/terrainAdjust';
 import { forestOccupation } from './forestOccupation';
+import { withLandDetail } from './landDetail';
 import { decorWaterSvg } from './decorWater';
 import { encodePng, pngDataUrl } from '../render/raster';
 import { applyExecutionProfile, installExecutionProfile } from './executionProfile';
@@ -97,7 +99,7 @@ function benchForest(target: 'view2d' | 'view3d' = 'view2d') {
     forestOf = d; forestKey = key;
     forestField = buildForestField({ seed: seedHash(d.meta.seed), climate: [climate.temperature, climate.precipitation], height: { x: 0, y: 0, width: raster.width, n: raster.n, data: raster.height }, water: raster.water, riverSegments: forestRetainedRiverSegments(d.meta.waterSvg, raster.width) }, settings);
   }
-  if (occupationOf !== settlements.landuse) { occupationOf = settlements.landuse; occupation = settlements.landuse ? forestOccupation(settlements.landuse) : undefined; }
+  if (occupationOf !== settlements.landuse) { occupationOf = settlements.landuse; occupation = settlements.landuse ? withLandDetail(forestOccupation(settlements.landuse), settlements.landuse) : undefined; }
   return { field: forestField, occupation };
 }
 function publishBenchCapabilities(): void {
@@ -137,12 +139,13 @@ function drawContours(): void {
 /** Draw the retained raster with the same ground and canopy renderer as Terrain Bench. */
 async function drawBackground(d: Decor): Promise<void> {
   const ticket = ++backgroundTicket; await groundReady; if (ticket !== backgroundTicket || decor !== d || !terrain) return;
+  setMapClimateZone(decorClimateZone(d.meta));
   const r = resolveBenchAppearance(), c = r.composition, t = terrain, climate = decorClimate(d.meta), q = new URLSearchParams(d.meta.query);
   const key = `${r.keys.terrainLook}:${r.keys.water}:${c.vegetation.look}:${r.keys.forest}:${settlements.ruralGroundRevision}`;
   if (backgroundDecor === d && backgroundKey === key) return;
   backgroundDecor = d; backgroundKey = key;
   backgroundStyle = c.variant; const relief = q.get('relief') ?? 'flat';
-  const settings = { seed: d.meta.seed, width: t.width, relief: relief as TerrainSettings['relief'], climateValues: climate };
+  const settings = { seed: d.meta.seed, width: t.width, relief: relief as TerrainSettings['relief'], climateValues: climate, climateZone: decorClimateZone(d.meta) };
   const canopy = benchForest(), forest = r.ground.traits.ground3d && canopy ? { ...canopy, brushes: r.ground.traits.forestBrushes, waterVisible: c.networks.water.visible } : undefined;
   const scene = renderRustTerrain(t, r.ground.style, true, { ...settings, v2Season: r.ground.season, forest }, false, 'city-ground', r.ground.lighting, r.ground.layers, r.vegetation.fantasy, true, r.composition.networks.water.look === 'ink' ? r.palette.mapStyle : 'render3d', r.palette.colors);
   if(c.ambience==='night' && r.ground.traits.family==='material')scene.svg=moonlightSvg(scene.svg,'city-ground-night');
@@ -159,7 +162,7 @@ async function drawBackground(d: Decor): Promise<void> {
     backgroundLook={ style: r.ground.style, ambience:c.ambience,waterLook:c.networks.water.look,waterStyle: c.networks.water.look === 'ink' ? r.palette.mapStyle : r.ground.style, independentCanopy: c.vegetation.procedural,
       colors: r.palette.colors, mapWidth: t.width, lighting: r.ground.lighting, layers: r.ground.layers, globalMin: t.globalMinHeight, globalMax: t.globalMaxHeight,
       contours: false, contourStep: 1, flatRelief: relief === 'flat', refine: d.meta.terrainDisplay?.refine !== false, sourceCell: d.meta.terrainDisplay?.sourceCell ?? t.width / field.n,
-      seed: seedHash(d.meta.seed), detail: DEFAULT_FRACTAL_DETAIL, floor: field.floor ?? 0, frame: r.ground.layers.frame, background: terrainStyle(c.variant, r.palette.colors).palette.paper, climate, v2Season: r.ground.season };
+      seed: seedHash(d.meta.seed), detail: DEFAULT_FRACTAL_DETAIL, floor: field.floor ?? 0, frame: r.ground.layers.frame, background: terrainStyle(c.variant, r.palette.colors).palette.paper, climate, climateZone: settings.climateZone, v2Season: r.ground.season };
     groundRenderer.setLook(backgroundLook);
     groundRenderer.setRetainedWater(c.networks.water.visible ? decorWaterSvg(d, c.networks.water.look === 'ink' ? r.palette.mapStyle : c.variant, r.ground.lakes, r.palette.colors) : '', t.width);
     groundRenderer.setView(view, viewport.clientWidth, viewport.clientHeight);
@@ -242,7 +245,7 @@ const city3d = mountCity3d({ getText: () => benchTextLayer(benchSettlementTextWo
     const r = resolveBenchAppearance({}, 'view3d'); if (!r.ground.layers.relief || !r.ground.layers.hypsometry) return;
     const traits = styleTraits(ground === 'render' ? 'render3d' : ground), relief = new URLSearchParams(decor.meta.query).get('relief'), pal = terrainStyle(r.composition.variant, r.palette.colors).palette;
     const landform = relief === 'flat' || relief === 'hills' || relief === 'valley' ? relief : 'mountains';
-    return { seed: seedHash(decor.meta.seed), climate: decorClimate(decor.meta), sourceCell: decor.meta.terrainDisplay?.sourceCell ?? decor.raster.width / decor.raster.n,
+    return { seed: seedHash(decor.meta.seed), climate: decorClimate(decor.meta), climateZone: decorClimateZone(decor.meta), sourceCell: decor.meta.terrainDisplay?.sourceCell ?? decor.raster.width / decor.raster.n,
       lighting: r.ground.lighting, ambience:r.composition.ambience,waterLook:r.composition.networks.water.look, displacement: r.city.refinement !== 'source', forestBrushes: traits.forestBrushes, renderV2: traits.satelliteVariant, v2Season: r.ground.season, waterVisible: r.composition.networks.water.visible,
       contours: r.ground.contours && relief !== 'cavern' ? { step: cityContourInterval(landform, 1), color: pal.contour, opacity: pal.contourOpacity, flat: relief === 'flat' } : undefined };
   },

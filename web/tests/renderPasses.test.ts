@@ -1,4 +1,4 @@
-import { presetComposition } from '../src/render/composition';
+import { presetComposition, type CompositionRecipe } from '../src/render/composition';
 import { describe, expect, it } from 'vitest';
 import { resolveAppearance, type AppearanceInput } from '../src/render/appearanceRecipe';
 import { PASS_ORDER, PASSES, PassState, ResourceCache, passKeys, type PassName } from '../src/v2/passes/pass';
@@ -20,9 +20,11 @@ describe('render passes', () => {
     expect(Object.keys(PASSES).sort()).toEqual([...PASS_ORDER].sort());
     for (const spec of Object.values(PASSES)) expect(spec.inputs.length).toBeGreaterThan(0);
   });
-  it('a season or lighting change re-runs only the terrain look', async () => {
-    expect(await reruns(v2, { ...v2, season: .9 })).toEqual(['terrainLook']);
-    expect(await reruns(v2, { ...v2, lighting: { azimuth: 200 } as never })).toEqual(['terrainLook']);
+  it('a season change repaints the vector map, a lighting change only the terrain look', async () => {
+    const withEffects = (change: (c: CompositionRecipe) => void): AppearanceInput => { const composition = presetComposition('parchment'); change(composition); return { ...v2, composition }; };
+    const plain = withEffects(() => undefined);
+    expect(await reruns(plain, withEffects(c => { c.effects.season = .9; }))).toEqual(['terrainLook', 'cartography']);
+    expect(await reruns(plain, withEffects(c => { c.effects.lighting.azimuth = 200; }))).toEqual(['terrainLook']);
   });
   it('water colours re-run the look (shared uniform) and the water pass, never the upload, forest or cartography', async () => {
     const map: AppearanceInput = { style: 'parchment', terrainStyle: 'engraving', renderer: 'bench' };
@@ -35,7 +37,7 @@ describe('render passes', () => {
     expect(await reruns(v2, { ...v2, legend: true })).toEqual(['overlays']);
   });
   it('text edits touch only overlays on both raster and GPU grounds', () => {
-    for (const mode of ['cpu', 'gpu'] as const) for (const preset of ['plan', 'natural', 'atlas-night'] as const) {
+    for (const mode of ['cpu', 'gpu'] as const) for (const preset of ['cadastre', 'satellite', 'atlas'] as const) {
       const composition = presetComposition(preset), a: AppearanceInput = { style: 'parchment', composition };
       const before = keysOf(a, revisions, mode), next = structuredClone(composition); next.text.size = 1.6; next.text.groups.landmarks = false;
       const after = keysOf({ ...a, composition: next }, revisions, mode);

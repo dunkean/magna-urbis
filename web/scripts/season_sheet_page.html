@@ -1,0 +1,93 @@
+<title>Magna Urbis Season Grid</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@400;500;600&family=Spectral:wght@500&display=swap">
+<style>
+/* Layout: a surveyor's contact sheet. Rows are places, columns are the year at each scale; the maps carry all the colour. */
+:root {
+  --ground: #e9e7e1; --plate: #f6f5f1; --ink: #23262a; --soft: #636a70; --line: #c9c7bf; --mark: #3b6a7a;
+  --display: 'Spectral', Georgia, serif; --text: 'IBM Plex Sans Condensed', 'Arial Narrow', Arial, sans-serif;
+  --cell: 208px; --head: 124px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ground: #1b1e21; --plate: #24282c; --ink: #e8e6df; --soft: #a0a7ad; --line: #3b4146; --mark: #86bccd; color-scheme: dark } }
+:root[data-theme="dark"] { --ground: #1b1e21; --plate: #24282c; --ink: #e8e6df; --soft: #a0a7ad; --line: #3b4146; --mark: #86bccd; color-scheme: dark }
+body { background: var(--ground); color: var(--ink); font: 15px/1.4 var(--text); padding-inline: max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px)); padding-block: 18px 40px }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--ground) }
+h1 { font: 500 27px/1.15 var(--display); margin: 0; text-wrap: balance }
+.lede { margin: 4px 0 14px; color: var(--soft); max-width: 72ch }
+.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center; padding-block: 9px; background: var(--ground); border-bottom: 1px solid var(--line) }
+fieldset { display: flex; flex-wrap: wrap; gap: 3px; border: 0; margin: 0; padding: 0; align-items: center; min-width: 0 }
+legend { float: left; margin-right: 7px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--soft) }
+button { font: 500 14px/1 var(--text); color: var(--ink); background: var(--plate); border: 1px solid var(--line); padding: 7px 10px; cursor: pointer }
+button[aria-pressed="true"] { background: var(--mark); border-color: var(--mark); color: var(--ground) }
+button:focus-visible, .shot:focus-visible { outline: 2px solid var(--mark); outline-offset: 1px }
+select { font: 500 14px var(--text); color: var(--ink); background: var(--plate); border: 1px solid var(--line); padding: 5px 6px }
+.sheet { overflow-x: auto; margin-top: 12px; border: 1px solid var(--line); background: var(--plate) }
+table { border-collapse: separate; border-spacing: 0; font-variant-numeric: tabular-nums }
+th { font-weight: 500; text-align: left; background: var(--plate); padding: 5px 7px; white-space: nowrap }
+thead th { font-size: 13px; color: var(--soft); border-bottom: 1px solid var(--line) }
+thead tr:first-child th { color: var(--ink); font-weight: 600; letter-spacing: .03em }
+tbody th { position: sticky; left: 0; z-index: 2; width: var(--head); min-width: var(--head); max-width: var(--head); white-space: normal; vertical-align: top; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line) }
+tbody th b { display: block; font: 500 15px/1.2 var(--text) }
+tbody th small { display: block; color: var(--soft); font-size: 12.5px; overflow-wrap: anywhere }
+td { padding: 0; border-bottom: 1px solid var(--line) }
+td.first { border-left: 1px solid var(--line) }
+.shot { display: block; width: var(--cell); aspect-ratio: 7 / 5; overflow: hidden; padding: 0; border: 0; background: var(--line); cursor: zoom-in }
+.shot img, .big img { display: block; width: 100%; height: 200%; max-width: none; object-fit: fill }
+[data-style="parchment"] .shot img, [data-style="parchment"] .big img { transform: translateY(-50%) }
+dialog { width: min(1120px, 94vw); max-height: 96vh; padding: 0; border: 1px solid var(--line); background: var(--plate); color: var(--ink) }
+dialog::backdrop { background: rgba(15, 17, 19, .78) }
+.big { aspect-ratio: 7 / 5; overflow: hidden; width: 100% }
+.cap { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; padding: 8px 10px }
+.cap p { margin: 0; flex: 1 1 240px; min-width: 0 }
+@media (max-width: 640px) { :root { --cell: 150px; --head: 88px } }
+</style>
+
+<h1>Magna Urbis season grid</h1>
+<p class="lede">Eleven climate zones, on plain and on mountain neural terrain of 40&nbsp;km, in four seasons at three scales: 264 views per style. Each row is one 500-inhabitant town in a culture of its zone. Plains carry a south coast to show sea ice.</p>
+<div class="bar" id="bar"></div>
+<div class="sheet"><table id="grid"></table></div>
+<dialog id="box"><div class="big"><img id="big" alt=""></div><div class="cap"><p id="cap"></p><button id="prev" type="button">Previous season</button><button id="next" type="button">Next season</button><button id="close" type="button">Close</button></div></dialog>
+<script>
+const ROWS = /*ROWS*/[];
+const SEASONS = ['winter', 'spring', 'summer', 'autumn'], ZOOMS = [['near', 'Town'], ['mid', 'Surroundings'], ['far', 'Whole map, 40 km']];
+const title = s => s[0].toUpperCase() + s.slice(1);
+const state = { style: 'satellite', zoom: 'all', relief: 'all', zone: 'all' };
+const zones = [...new Set(ROWS.map(r => r.zone))];
+const bar = document.getElementById('bar'), grid = document.getElementById('grid'), box = document.getElementById('box');
+function group(name, key, options) {
+  const set = document.createElement('fieldset'), legend = document.createElement('legend'); legend.textContent = name; set.append(legend);
+  for (const [value, text] of options) {
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = text; b.dataset.key = key; b.dataset.value = value;
+    b.onclick = () => { state[key] = value; sync(); }; set.append(b);
+  }
+  bar.append(set);
+}
+group('Style', 'style', [['satellite', 'Satellite'], ['parchment', 'Parchment']]);
+group('Scale', 'zoom', [['all', 'All'], ...ZOOMS.map(([id, text]) => [id, text.split(',')[0]])]);
+group('Relief', 'relief', [['all', 'Both'], ['plain', 'Plain'], ['mountain', 'Mountain']]);
+const pick = document.createElement('label'), select = document.createElement('select'); select.id = 'zone'; select.append(new Option('All zones', 'all'), ...zones.map(z => new Option(title(z), z)));
+select.onchange = () => { state.zone = select.value; sync(); }; pick.append(select); bar.append(pick);
+const file = (row, zoom, season) => `t/${row.id}-${zoom}-${season}.webp`;
+function draw() {
+  const zooms = ZOOMS.filter(([id]) => state.zoom === 'all' || state.zoom === id), rows = ROWS.filter(r => (state.relief === 'all' || r.relief === state.relief) && (state.zone === 'all' || r.zone === state.zone));
+  const head = `<thead><tr><th></th>${zooms.map(([, text]) => `<th colspan="4">${text}</th>`).join('')}</tr><tr><th></th>${zooms.map(() => SEASONS.map(s => `<th>${title(s)}</th>`).join('')).join('')}</tr></thead>`;
+  const body = rows.map(row => `<tr><th><b>${title(row.zone)}</b><small>${title(row.relief)}</small><small>${row.culture}</small></th>${zooms.map(([zoom]) => SEASONS.map((season, i) => `<td class="${i ? '' : 'first'}"><button class="shot" type="button" data-row="${row.id}" data-zoom="${zoom}" data-season="${season}" aria-label="${row.zone} ${row.relief}, ${zoom}, ${season}"><img loading="lazy" decoding="async" alt="" src="${file(row, zoom, season)}"></button></td>`).join('')).join('')}</tr>`).join('');
+  grid.innerHTML = head + `<tbody>${body}</tbody>`;
+}
+function sync() {
+  document.documentElement.dataset.style = state.style;
+  for (const b of bar.querySelectorAll('button')) b.setAttribute('aria-pressed', String(state[b.dataset.key] === b.dataset.value));
+  draw();
+}
+let open = null;
+function show() {
+  const row = ROWS.find(r => r.id === open.row);
+  document.getElementById('big').src = file(row, open.zoom, open.season);
+  document.getElementById('cap').textContent = `${title(row.zone)}, ${row.relief}, ${row.culture} · ${ZOOMS.find(z => z[0] === open.zoom)[1]} · ${title(open.season)}`;
+}
+const step = d => { open.season = SEASONS[(SEASONS.indexOf(open.season) + d + 4) % 4]; show(); };
+grid.addEventListener('click', e => { const b = e.target.closest('.shot'); if (!b) return; open = { ...b.dataset }; show(); box.showModal(); });
+document.getElementById('prev').onclick = () => step(-1); document.getElementById('next').onclick = () => step(1); document.getElementById('close').onclick = () => box.close();
+box.addEventListener('keydown', e => { if (e.key === 'ArrowLeft') step(-1); if (e.key === 'ArrowRight') step(1); });
+sync();
+</script>
