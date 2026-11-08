@@ -1,7 +1,8 @@
 /** Display-only headwater emergence (port of godot-render/tools/river_headwaters.mjs, docs/surface/RIVER_HEADWATERS.md).
- * A genuine spring starts at 0.6 m and smoothsteps to its retained width, instead of a disc of the full initial width.
- * Topology, discharge and downstream widths are untouched. Used by the Blended ground option (groundBlend.ts). */
-export const HEADWATER_PROFILE = { version: 1, minimumWidthMetres: 0.6, minimumReachMetres: 100, maximumReachMetres: 420, widthMultiples: 10 };
+ * A genuine spring starts at zero width and grows to its retained width, instead of a disc of the full initial width:
+ * every renderer then draws its own fine start (ink hairline, GPU cartographic minimum, physical fade in satellite).
+ * Topology, discharge and downstream widths are untouched. Applied in every style (vectorWaterRender.ts). */
+export const HEADWATER_PROFILE = { version: 2, minimumWidthMetres: 0, minimumReachMetres: 220, maximumReachMetres: 900, widthMultiples: 40 };
 
 /** What the classifier reads of a river line (RiverLine, riverVectors.ts). */
 export interface HeadwaterLine { points: number[]; area: number[]; level: number[]; kind: number[] }
@@ -25,7 +26,11 @@ export function isHeadwater(line: HeadwaterLine, ctx: HeadwaterContext, threshol
     if (xx < 0 || yy < 0 || xx >= hydro.n || yy >= hydro.n) continue;
     if (hydro.sea[yy * hydro.n + xx] || ctx.lake[yy * hydro.n + xx]) return false;
   }
-  const near = cell * 0.8;
+  // A branch starts on its parent line; a short tributary may start within a cell of the line it joins, so the
+  // tolerance never exceeds a fraction of the line's own length.
+  let length = 0;
+  for (let i = 1; i < line.area.length; i++) length += Math.hypot(p[2 * i] - p[2 * i - 2], p[2 * i + 1] - p[2 * i - 1]);
+  const near = Math.min(cell * 0.8, length * 0.35);
   for (const other of [...ctx.rivers, ...(ctx.lakeLinks ?? [])]) {
     if (other === line) continue;
     const q = other.points;
@@ -39,7 +44,8 @@ export function isHeadwater(line: HeadwaterLine, ctx: HeadwaterContext, threshol
   return true;
 }
 
-/** Smoothly resolve a small spring into its retained width; the first segments are subdivided. */
+/** Resolve a small spring into its retained width; the first segments are subdivided. The profile is an ease-out:
+ * a pointed start (width linear in the distance, like a pen lifting off) that meets the retained width without a kink. */
 export function headwaterGeometry(line: HeadwaterLine, widths: readonly number[]): HeadwaterGeometry {
   const s = HEADWATER_PROFILE, p = line.points;
   let total = 0;
@@ -49,7 +55,7 @@ export function headwaterGeometry(line: HeadwaterLine, widths: readonly number[]
   const points: number[] = [], out: number[] = [], level: number[] = [], kind: number[] = [];
   let arc = 0;
   const add = (x: number, y: number, width: number, lv: number, k: number, distance: number): void => {
-    const u = Math.min(1, distance / Math.max(0.001, reach)), smooth = u * u * (3 - 2 * u), floor = Math.min(width, s.minimumWidthMetres);
+    const u = Math.min(1, distance / Math.max(0.001, reach)), smooth = 1 - (1 - u) * (1 - u), floor = Math.min(width, s.minimumWidthMetres);
     points.push(x, y); out.push(floor + (width - floor) * smooth); level.push(lv); kind.push(k);
   };
   add(p[0], p[1], widths[0], line.level[0], line.kind[0], 0);

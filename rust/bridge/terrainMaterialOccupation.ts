@@ -213,7 +213,8 @@ void applyGroundOccupation(inout GroundMaterial m,vec2 world,float footprint){
   for(int y=0;y<2;y++)for(int x=0;x<2;x++){
     int cls=int(texelFetch(uOccupation,clamp(base+ivec2(x,y),ivec2(0),top),0).b*255.+.5);
     float weight=(x==0?1.-f.x:f.x)*(y==0?1.-f.y:f.y);
-    if(cls==8||cls<1||cls>10)hardShare+=weight;
+    // Class 11 clearings are wild ground: the lookup below gives them grass.
+    if(cls==8||cls<1||cls>11)hardShare+=weight;
     else if(cls==1)wField+=weight;
     else if(cls==4)wOrchard+=weight;
     else if(cls==5)wGarden+=weight;

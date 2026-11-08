@@ -5,6 +5,7 @@ import { benchSettlementTextWorld, benchTextLayer } from './benchComposition';
 import { createTerrainSettlements } from './terrainSettlements';
 import { decorBiome, decorClimate, decorClimateZone } from './decorClimate';
 import { setMapClimateZone } from '../render/seasonPalette';
+import { loadRenderGeometry } from '../../../rust/bridge/renderGeometry';
 import { seedHash } from '../../../rust/bridge/terrainAdjust';
 import { buildForestField, DEFAULT_FOREST_SETTINGS, type ForestField } from '../../../rust/bridge/terrainForest';
 import { forestRetainedRiverSegments } from '../../../rust/bridge/terrainForestRiparian';
@@ -504,7 +505,7 @@ const artifact = query.get('artifact'), sharedSituation = query.get('situation')
 if (sharedSituation) void openSituation(sharedSituation).catch(error => { status(String(error)); ready = true; });
 else if (artifact) {
   status('Chargement de la carte…');
-  void load(artifact).then(async d => {
+  void Promise.all([load(artifact), loadRenderGeometry()]).then(async ([d]) => { // drawing needs the render-geometry WASM
     decor = d; lastExport = d; terrain = terrainFromDecor(d);
     el('pipelineReturn').hidden = !(d.meta.pipeline?.parent && d.meta.pipeline.crop && d.meta.pipeline.city);
     fit(); await drawBackground(d);
@@ -512,7 +513,7 @@ else if (artifact) {
     if (el('status').textContent === 'Chargement de la carte…') status(`${d.meta.label.replace(/ · jusqu’à [^·]* hab\.$/, '')} · ${(d.raster.width / 1000).toFixed(0)} km`);
     save(); restoreSituation();
   }).catch(error => status(String(error))).finally(() => { ready = true; });
-} else { ready = true; showView(); }
+} else { ready = true; void loadRenderGeometry().then(showView); }
 installRecipeSharing({ host: document.querySelector('header')!, capture: async () => {
   if (!decor || !ready) throw new Error('Attendez le chargement du terrain.');
   return generationRecipe('city', shareQuery(), decor);

@@ -96,7 +96,10 @@ export function v1LandCanvas(r: SettlementRaster, style: V1LandscapeStyle, biome
     ctx.fill(path, 'evenodd');
   }
   if (rivers) for (let i = 0; i + 8 < rivers.length; i += 9) {
-    ctx.lineWidth = Math.max(1, (rivers[i + 4] + rivers[i + 5]) / 2 * k);
+    // At least one backdrop pixel, so the resampled edge never hides a stream; a tapering headwater (riverHeadwaters.ts)
+    // narrows its hole with it instead of a pale one-pixel needle around the hairline.
+    const w = (rivers[i + 4] + rivers[i + 5]) / 2 * k;
+    ctx.lineWidth = Math.max(0.05, Math.min(Math.max(1, w), 2 * w)); // 0 would be ignored by the canvas
     ctx.beginPath(); ctx.moveTo(rivers[i] * k, rivers[i + 1] * k); ctx.lineTo(rivers[i + 2] * k, rivers[i + 3] * k); ctx.stroke();
   }
   entries.set(key, canvas); return canvas;

@@ -9,13 +9,14 @@ import { buildingOccupationShapes, forestOccupation, packOccupationShapes, withO
 import type { Building3dScene } from '../render/urbanBuildingGeometry';
 import { withLandDetail } from '../ui/landDetail';
 import OccupationWorker from './occupation.worker?worker';
+import { forestCorridors } from '../render/forestRoom';
 
 const cache = new WeakMap<World, Map<string, ForestField>>();
 const occupations = new WeakMap<LandUseLayer, ForestOccupation | undefined>();
 /** Product identity is the land-use revision; neither appearance nor visibility is an input. */
 export function v2ForestOccupation(world: World): ForestOccupation | undefined {
   const landuse = world.landuse; if (!landuse) return;
-  if (!occupations.has(landuse)) occupations.set(landuse, withLandDetail(forestOccupation(landuse), landuse));
+  if (!occupations.has(landuse)) occupations.set(landuse, withLandDetail(forestOccupation(landuse, undefined, undefined, forestCorridors(world, false)), landuse));
   return occupations.get(landuse);
 }
 const computing = new WeakMap<LandUseLayer, Promise<ForestOccupation | undefined>>();
@@ -30,7 +31,7 @@ export function v2ForestOccupationAsync(world: World): Promise<ForestOccupation 
       try { worker = new OccupationWorker(); } catch { resolve(v2ForestOccupation(world)); return; }
       worker.onmessage = ({ data }) => { worker.terminate(); if (data.error) resolve(v2ForestOccupation(world)); else { occupations.set(landuse, data.result); resolve(data.result); } };
       worker.onerror = () => { worker.terminate(); resolve(v2ForestOccupation(world)); };
-      worker.postMessage({ landuse });
+      worker.postMessage({ landuse, corridors: forestCorridors(world, false) });
     });
     computing.set(landuse, job);
   }

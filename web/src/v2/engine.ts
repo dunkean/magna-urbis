@@ -1,5 +1,6 @@
 import { PROCEDURAL_RECIPE_VERSION, isCompactProcedural } from '../../../rust/bridge/terrainGenerationRecipe';
 import { COMPACT_VERSION } from '../../../rust/bridge/terrainPhasor';
+import { CLIMATE_ZONE_BASE, CLIMATE_ZONE_VALUES } from '../../../rust/bridge/terrainClimate';
 import { seaDistanceSurface } from '../render/terrainWater';
 import { loadRenderGeometry } from '../../../rust/bridge/renderGeometry';
 import { Rng } from '../gen/core/rng';
@@ -176,7 +177,9 @@ export async function generateTerrain(settings: V2Settings, onProgress?: Progres
       if (configuration.compute === 'wasm' && !remoteNeural) compute = 'cpu';
       else if (configuration.compute === 'gpu-f32' || ['gpu', 'gpu-all', 'gpu-erosion'].includes(configuration.generationCompute ?? '')) compute = 'gpu';
       if(softwareGpu&&compute==='cpu'&&['procedural','procedural-phasor'].includes(runtime!.source))report(onProgress,'compute','WebGPU logiciel détecté · sélection du CPU pour le procédural',0,0);
-      const { seed: _seed, width: _width, source: _source, neuralAssets: _assets, neuralServer: _server, forest: _forest, ...controls } = configuration;
+      const { seed: _seed, width: _width, source: _source, neuralAssets: _assets, neuralServer: _server, forest: _forest, reliefClimate, ...controls } = configuration;
+      // A climate variant may keep another zone's landforms: relief and water follow reliefClimate; cover, season and rendering keep configuration's zone.
+      if (reliefClimate) Object.assign(controls, { climateZone: reliefClimate, climate: CLIMATE_ZONE_BASE[reliefClimate], climateValues: { ...CLIMATE_ZONE_VALUES[reliefClimate] } });
       if (runtime!.compute === 'gpu' && runtime!.backend !== 'native' && !remoteNeural && !options.importedHeight && !controls.sketch && !controls.zones
         && ['procedural', 'procedural-phasor'].includes(runtime!.source) && !controls.generationCompute)
         controls.generationCompute = 'gpu-erosion';

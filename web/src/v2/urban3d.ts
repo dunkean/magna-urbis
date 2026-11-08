@@ -30,6 +30,8 @@ import { biomePalette } from '../render/biomes';
 import { ruralSemanticLegend, urbanSemanticLegend } from '../render/semanticLayer';
 import { buildCityScene, type CityScene } from '../render/cityCanvas';
 import { terrain3dIllustratedSvg } from '../ui/terrain3dTexture';
+import { paintWaterRegime, type WaterDisplay } from '../ui/vectorWaterRender';
+import { waterClimate } from '../render/waterRegime';
 import { isFantasyStyle, registerFantasyBrushes } from '../../../rust/bridge/fantasyTerrain';
 
 export interface V2Urban3dOptions {
@@ -87,21 +89,37 @@ const rasterWater = new WeakMap<ReturnType<typeof rustSettlementRaster>, Float32
 const waterDisplays = new WeakMap<ReturnType<typeof rustSettlementRaster>, Map<string, City3dWaterDisplay>>();
 function v2WaterDisplay(world: World, settings: V2Settings): City3dWaterDisplay {
   const raster = rustSettlementRaster(world), r = v2Resolved3d(settings, world), shown = r.ground.layers.water, lakes = r.ground.lakes;
-  const palette=terrainStyle(r.palette.mapStyle,r.palette.colors).palette,ink=r.composition.networks.water.look==='ink',key=JSON.stringify([shown,lakes,ink,ink?palette.lakeFill:undefined,ink?palette.waterEdge:undefined]);
+  const palette=terrainStyle(r.palette.mapStyle,r.palette.colors).palette,ink=r.composition.networks.water.look==='ink';
+  // The seasonal water regime as in 2D (vectorWaterRender.ts): same network, display threshold and calendar.
+  const vector = renderScene(world, settings).terrain.water, effective = effectiveTerrainSettings(settings, world.mapSize);
+  const regimeDisplay: WaterDisplay | undefined = vector && shown ? { style: ink ? r.palette.mapStyle : 'render3d', colors: r.palette.colors, showLakes: lakes, showOxbows: r.ground.oxbows,
+    riverArea: vector.riverArea ?? .02, riverMode: effective.hydrology?.riverMode ?? 'vector', overlay: 'none', season: { zone: effective.climateZone, season: r.ground.season, calendar: r.ground.calendar } } : undefined;
+  const climate = regimeDisplay?.season?.zone ? waterClimate(regimeDisplay.season) : undefined, active = !!climate && (climate.aridity > 0 || climate.ice > 0), frozenLakes = active && climate!.ice >= .5;
+  const key=JSON.stringify([shown,lakes,ink,ink?palette.lakeFill:undefined,ink?palette.waterEdge:undefined,active?regimeDisplay!.season:undefined]);
   let cache = waterDisplays.get(raster); if (!cache) { cache = new Map(); waterDisplays.set(raster, cache); }
   const retained = cache.get(key); if (retained) return retained;
   const texture = document.createElement('canvas'); texture.width = texture.height = raster.n;
-  const ctx = texture.getContext('2d')!, pixels = ctx.createImageData(raster.n, raster.n), paths = new Path2D();
+  const ctx = texture.getContext('2d')!, pixels = ctx.createImageData(raster.n, raster.n), paths = new Path2D(), lakePaths = new Path2D();
   if (shown) {
     const value=parseInt(palette.lakeFill.slice(1),16),rgba=ink?[value>>16&255,value>>8&255,value&255,255]:[74,134,179,255];
-    for (let i = 0; i < raster.water.length; i++) if (raster.water[i] > 0 && raster.water[i] < 4 && (lakes || raster.water[i] !== 2)) pixels.data.set(rgba, i * 4);
-    const firstLake = world.terrain.coastline.length, lastLake = firstLake + world.terrain.lakes.length;
+    for (let i = 0; i < raster.water.length; i++) if (raster.water[i] > 0 && raster.water[i] < 4 && (lakes || raster.water[i] !== 2) && !(frozenLakes && raster.water[i] === 2)) pixels.data.set(rgba, i * 4);
+    const firstLake = world.terrain.coastline.length, lastLake = firstLake + world.terrain.lakes.length, redrawn = active && !ink && regimeDisplay?.riverMode === 'vector' && !!vector?.rivers;
     for (const [index, polygon] of (raster.geometry?.water ?? []).entries()) {
-      if (!lakes && index >= firstLake && index < lastLake) continue;
-      for (const ring of polygon) { if (ring.length < 3) continue; paths.moveTo(ring[0].x, ring[0].y); for (const p of ring.slice(1)) paths.lineTo(p.x, p.y); paths.closePath(); }
+      const lake = index >= firstLake && index < lastLake;
+      if (lake && !lakes) continue;
+      // Material grounds under an active regime keep the river ribbons out of the closed water: each tile redraws the
+      // running courses from the 2D vector banks and leaves the dry and frozen ones to their bed and ice.
+      if (index >= lastLake && redrawn) continue;
+      // Frozen lakes leave the water cover: their ice is painted on the ground.
+      const target = lake && frozenLakes ? lakePaths : paths;
+      for (const ring of polygon) { if (ring.length < 3) continue; target.moveTo(ring[0].x, ring[0].y); for (const p of ring.slice(1)) target.lineTo(p.x, p.y); target.closePath(); }
     }
   }
-  ctx.putImageData(pixels, 0, 0); const result = { texture, paths, ...(ink?{ink:{fill:palette.lakeFill,stroke:palette.waterEdge}}:{}) }; cache.set(key, result); return result;
+  ctx.putImageData(pixels, 0, 0);
+  const fill = ink ? palette.lakeFill : '#4a86b3';
+  const regime = active && vector && regimeDisplay ? (target: CanvasRenderingContext2D, mode: 'erase' | 'ground' | 'ice' | 'ink', mpp: number): boolean => paintWaterRegime(target, vector, regimeDisplay, mode, mpp, lakePaths, fill) : undefined;
+  if (regime) { ctx.setTransform(raster.n / raster.width, 0, 0, raster.n / raster.width, 0, 0); regime(ctx, 'erase', raster.width / raster.n); ctx.setTransform(1, 0, 0, 1, 0, 0); }
+  const result = { texture, paths, ...(ink?{ink:{fill:palette.lakeFill,stroke:palette.waterEdge}}:{}), ...(regime ? { regime, frozen: climate!.ice > 0 } : {}) }; cache.set(key, result); return result;
 }
 /** Preserve the native control grid and the applied lake levels; never resample the terrain. */
 export function v2Terrain3dSurface(world: World, settings: V2Settings): City3dSurface {

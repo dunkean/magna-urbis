@@ -1415,7 +1415,10 @@ export class Terrain3d {
     }
     const own: MaterialRef | undefined = patch.texture ? { texture: patch.texture, tile: patch.tile, pixels: TILE_PIXELS,gutter:patch.textureGutter } : undefined;
     const progress = patch.textureProgress;
-    if (own && progress >= 1 && geometryBlend >= 1) {
+    // Only an ancestor tile is a geometry-morph partner. The whole-map fallback is another medium (no land use, roads or
+    // plan inked at tile scale): a node held part-way through its split would show its children as a pale, blurred rectangle.
+    const morphs = (ref: MaterialRef | undefined): number => ref && !ref.tile ? 1 : geometryBlend;
+    if (own && progress >= 1 && morphs(patch.materialParent) >= 1) {
       patch.materialParent = undefined; this.protectMaterial(own);
       return { from: own, to: own, blend: 1, ready: true };
     }
@@ -1441,7 +1444,7 @@ export class Terrain3d {
     patch.materialParent ??= fallback.to;
     const t = patch.textureProgress = Math.min(1, patch.textureProgress + Math.min(50, Math.max(0, this.now - patch.textureUpdated)) / TEXTURE_FADE_MS);
     patch.textureUpdated = this.now;
-    const blend = t * t * (3 - 2 * t) * geometryBlend;
+    const blend = t * t * (3 - 2 * t) * morphs(patch.materialParent);
     if (t < 1) this.animating = true;
     this.protectMaterial(own); this.protectMaterial(patch.materialParent);
     return { from: patch.materialParent, to: own, blend, ready: true };

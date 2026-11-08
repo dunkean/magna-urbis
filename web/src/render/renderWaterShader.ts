@@ -7,9 +7,12 @@
  *   on the style's water ramp like the sea and lakes;
  * - a lighter shallow shelf and a thin shoreline glint inside the bank of wide water;
  * - a soft damp shadow on the land just outside it;
- * - gentle world-anchored surface variation (static value noise).
+ * - gentle world-anchored surface variation (static value noise);
+ * - with uRegime, the seasonal regime carried by the river colour (waterRegime.ts regimeRgb):
+ *   a sandy bed with pools, ice with a darker edge line, foam speckles on steep reaches.
  * Land pixels cost at most 24 taps; nothing is computed on the CPU per pixel. */
 import { WATER_STYLE_GLSL, WATER_SURFACE_GLSL } from './waterStyle';
+import { WATER_REGIME_GLSL } from './waterRegime';
 
 export const RENDER_WATER_RINGS = 12;
 
@@ -19,19 +22,23 @@ uniform sampler2D uLayer;
 uniform vec2 uCanvas, uOrigin;
 uniform float uPx, uDpr, uBand, uBankPx;
 uniform float uRings[${RENDER_WATER_RINGS}]; uniform int uRingCount;
+uniform int uRegime;
 ${WATER_STYLE_GLSL}
 ${WATER_SURFACE_GLSL}
+${WATER_REGIME_GLSL}
 out vec4 outColor;
-float cover(vec2 f) { return textureLod(uLayer, clamp(f, vec2(.5), uCanvas - .5) / uCanvas, 0.).a; }
+vec4 tap(vec2 f) { return textureLod(uLayer, clamp(f, vec2(.5), uCanvas - .5) / uCanvas, 0.); }
+float cover(vec2 f) { return tap(f).a; }
 const vec2 DIRS[8] = vec2[8](vec2(1, 0), vec2(.7071, .7071), vec2(0, 1), vec2(-.7071, .7071), vec2(-1, 0), vec2(-.7071, -.7071), vec2(0, -1), vec2(.7071, -.7071));
 void main() {
   vec2 f = gl_FragCoord.xy;
   float a = cover(f);
   // Land side: how close the water is, over three rings within the bank width.
   float bank = 0.;
+  vec4 near = vec4(0.);
   if (a < .999) for (int k = 1; k <= 3; k++) {
     float r = uBankPx * float(k) / 3., m = 0.;
-    for (int i = 0; i < 8; i++) m = max(m, cover(f + DIRS[i] * r));
+    for (int i = 0; i < 8; i++) { vec4 t = tap(f + DIRS[i] * r); if (t.a > m) { m = t.a; if (k == 1) near = t; } }
     bank += m / 3.;
   }
   if (a <= .002 && bank <= .002) discard;
@@ -40,9 +47,10 @@ void main() {
   // nearest) rounds the cross-section between two banks, so channels have no crease on
   // their axis, and it is continuous across lakes. Open water saturates past the band.
   float reach = uRings[uRingCount - 1], depth = reach, wide = 0.;
+  vec2 nearest = vec2(0.);
   if (a > .002) {
     float hits[12], best = 2. * reach;
-    vec2 nearest = vec2(1, 0);
+    nearest = vec2(1, 0);
     for (int i = 0; i < 12; i++) {
       float turn = float(i) * .5235988;
       vec2 d = vec2(cos(turn), sin(turn));
@@ -80,6 +88,42 @@ void main() {
   // Wet bank: soft dark shadow on the land side.
   vec3 bankColor = vec3(.055, .085, .045);
   float bankA = .55 * bank * bank;
+  if (uRegime == 1) {
+    vec4 own = tap(f);
+    // Decoded back to dry, ice, foam (regimeRgb stores running and open water so MAX keeps them on overlaps).
+    vec3 regime = clamp(own.rgb / max(own.a, 1e-3), 0., 1.); regime.rg = 1. - regime.rg;
+    // b: whitewater below .5, a sediment plume above (plumeRgb).
+    float plume = max(0., regime.b - .5) * 2.; regime.b = min(regime.b, .5) * 2. * step(regime.b, .5);
+    // Flow direction in the world (y down): along the bank, perpendicular to the nearest bank.
+    vec2 bankDir = vec2(nearest.x, -nearest.y), along = vec2(-bankDir.y, bankDir.x);
+    // Centre of the channel: 0 at the bank, 1 a few pixels in (hairline streams stay near 0.3).
+    float centre = smoothstep(.2 * uDpr, 2.5 * uDpr, depth);
+    float dryOn = smoothstep(0., .1, regime.r);
+    float pools = mix(1., waterDryPools(world, regime.r, centre), dryOn);
+    color = mix(waterDryBed(world, centre), color, pools);
+    // Ice follows the bed: shore ice grows from both banks (up to 40 m) and closes the whole course when frozen,
+    // so a thaw leaves a dark open thread down the fast centre. Hairline streams freeze first. Dark bank line on both sides.
+    float shelf = 40. * regime.g;
+    // Open water never evaluates the shelf: smoothstep(0, 0, 0) is undefined and drew a dark seam along the banks.
+    float frozen = regime.g >= .97 ? 1. : regime.g < .05 ? 0. : 1. - smoothstep(.8 * shelf, shelf, depth * uPx);
+    if (frozen > 0.) color = mix(color, waterIceColor(world, 1. - smoothstep(.6 * uDpr, 2.2 * uDpr, depth), 0., along), frozen);
+    // Whitewater: resolved speckles near, a lighter mean far.
+    float fine = 1. - smoothstep(1.5, 5., uPx);
+    float speck = smoothstep(.55, .8, waterRegimeNoise(world / 9.) * .6 + waterRegimeNoise(world / 3.5) * .4);
+    color = mix(color, vec3(.86, .91, .92), regime.b * (1. - frozen) * mix(.3, speck * .9, fine));
+    // Land side: a dry bed has pale bars, not a dark wet bank; ice keeps a faint one.
+    vec3 neighbour = 1. - clamp(near.rgb / max(near.a, 1e-3), 0., 1.);
+    bankColor = mix(bankColor, vec3(.78, .70, .56), smoothstep(.3, .8, neighbour.r));
+    bankA *= 1. - .6 * smoothstep(.3, .8, max(neighbour.r, neighbour.g));
+    if (near.a > .002 && near.b / near.a > .5) bankA = 0.;
+    if (plume > 0.) {
+      // Sediment plume over the sea: a translucent silt tint, feathered at its edges and streaked by the current.
+      float feather = smoothstep(0., 8. * uDpr, depth) * (.55 + .45 * waterRegimeNoise(world / 260. + along * 3.));
+      float amount = plume * feather * .7;
+      outColor = vec4(vec3(.70, .50, .20) * amount, amount);
+      return;
+    }
+  }
   outColor = vec4(color * a + bankColor * bankA * (1. - a), a + bankA * (1. - a));
 }`;
 

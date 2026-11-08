@@ -3,7 +3,8 @@ import { DEFAULT_TEXT, textPlacement, drawMapLabels, cityTextLabels, type TextSe
 import { cavernDisplayWorld } from './cavernDisplay';
 import { drawRuralDetails } from './ruralDetails';
 import { cavernWallFill, cavernRockPixels, CAVERN_RIM } from './caverns';
-import { isUnderdarkBiome } from '../gen/biomes';
+import { isUnderdarkBiome, biomeName } from '../gen/biomes';
+import { ParchmentSymbols, SYMBOL_CELLS } from './parchmentSymbols';
 /**
  * Interactive Canvas 2D renderer with level of detail (SVG stays for export).
  *
@@ -17,12 +18,14 @@ import { isUnderdarkBiome } from '../gen/biomes';
  */
 import { CanvasBrushes } from './brushCanvas';
 import { CanvasCanopy, canopyMarks, CANOPY_MARGIN, type VegetationStyle } from './canopy';
+import { ForestRoom, farmClearings, forestCorridors } from './forestRoom';
 import { brushTextureOn, isBrushKind, supportsPaintedBiome, type BrushImages, type BrushKind } from './brushes';
 import { bridgeShapes, isKinded, type BridgeShapes } from './townbridges';
 import type { World, LandKind, Vec2 } from '../gen/types';
 import { Palette, MapStyle, ruralInk } from './styles';
 import { forestLandPaint, FOREST_EDGE_WIDTH } from './landuseForestTone';
 import { rasterizePolys } from '../gen/geo/raster';
+import { bboxOf } from '../gen/geo/poly';
 import { distanceField } from '../gen/core/field';
 import { vectorizeRegions } from '../../../rust/bridge/landuseNative';
 import { TileIndex, boxesOf } from './tileindex';
@@ -138,6 +141,77 @@ const mixHex = (a: string, b: string, t: number): string => {
 const lumHex = (h: string): number => { const c = hexRgb(h); return c ? (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255 : 0.5; };
 const CACHE_MAX = 8000;
 const TAU = Math.PI * 2;
+const frac = (v: number): number => v - Math.floor(v);
+const vhash = (i: number, j: number, salt: number): number => frac(Math.sin(i * 127.1 + j * 311.7 + salt * 74.7) * 43758.5453);
+/** Smooth value noise in 0-1, two octaves: clumps of vegetation with empty gaps between them. */
+function clumpNoise(x: number, y: number, scale: number, salt: number): number {
+  let sum = 0;
+  for (const [f, w] of [[1, .65], [3.1, .35]] as const) {
+    const fx = x * f / scale, fy = y * f / scale, i = Math.floor(fx), j = Math.floor(fy), u = fx - i, v = fy - j;
+    const su = u * u * (3 - 2 * u), sv = v * v * (3 - 2 * v), s = salt + f * 13;
+    const top = vhash(i, j, s) + (vhash(i + 1, j, s) - vhash(i, j, s)) * su, bottom = vhash(i, j + 1, s) + (vhash(i + 1, j + 1, s) - vhash(i, j + 1, s)) * su;
+    sum += w * (top + (bottom - top) * sv);
+  }
+  return sum;
+}
+const smooth01 = (t: number): number => { const c = Math.max(0, Math.min(1, t)); return c * c * (3 - 2 * c); };
+/** Share of conifers in the woods of each climate; a broad noise mixes the stands at the transitions. */
+const CONIFER_SHARE: Partial<Record<string, number>> = { tundra: .88, forest: .5, steppe: .3, temperate: .14 };
+interface PenMark { x: number; y: number; cell: number; size: number }
+/** Symbol choice for one parchment mark: clumped by noise, sized in metres, or null in a gap. */
+function penSymbol(kind: string, m: Mark): Omit<PenMark, 'x' | 'y'> | null {
+  const h1 = frac(m.k * 7.31 + .17), h2 = frac(m.k * 13.7 + .41), h3 = frac(m.k * 31.3 + .73);
+  const clump = clumpNoise(m.x, m.y, kind === 'marsh' ? 30 : 46, kind.length);
+  const density = kind === 'pasture' ? .55 : kind === 'commons' ? .8 : .9;
+  if (h1 > density * (.06 + .94 * smooth01((clump - .3) / .38))) return null;
+  const tuft = (big: number): Omit<PenMark, 'x' | 'y'> => {
+    const cell = SYMBOL_CELLS.tuft[Math.floor(h3 * 4)];
+    return { cell, size: big * (cell === 3 ? 1.25 : cell === 1 ? .8 : 1) * (.75 + .5 * h2) };
+  };
+  if (kind === 'marsh') return h2 < .82 ? { cell: SYMBOL_CELLS.reed[Math.floor(h3 * 4)], size: 7 + 4 * frac(m.k * 5.3) } : tuft(6);
+  if (kind === 'commons') {
+    if (h2 < .38) return { cell: SYMBOL_CELLS.heath[Math.floor(h3 * 3)], size: 5.5 + 3 * frac(m.k * 5.3) };
+    if (h2 < .52) return { cell: SYMBOL_CELLS.gorse, size: 5.5 + 2 * h3 };
+    if (h2 < .58) return { cell: h3 < .6 ? SYMBOL_CELLS.stones : SYMBOL_CELLS.boulder, size: 4 + 2.5 * frac(m.k * 5.3) };
+    return tuft(8);
+  }
+  if (kind === 'meadow' && h2 < .07) return { cell: SYMBOL_CELLS.heath[Math.floor(h3 * 3)], size: 5 + 2.5 * frac(m.k * 5.3) };
+  if (kind === 'meadow' && h2 < .09) return { cell: SYMBOL_CELLS.gorse, size: 5 + 1.5 * h3 };
+  return tuft(kind === 'pasture' ? 6.5 : 9);
+}
+/** Hand-drawn map symbols for the parchment sheet, in the convention of estate maps: curved grass fans, reed clumps over
+ * water dashes, stippled heath. `k` (0-1) varies each mark; strokes only, so the paper shows through. */
+function appendPenMark(path: Path2D, shape: 'tuft' | 'reed' | 'dot', x: number, y: number, r: number, k: number): void {
+  const h1 = frac(k * 7.31 + .17), h2 = frac(k * 13.7 + .41), h3 = frac(k * 31.3 + .73);
+  if (shape === 'tuft') {
+    const n = 3 + Math.floor(h1 * 3), lean = (h2 - .5) * .45, size = r * (.8 + .4 * h3);
+    for (let i = 0; i < n; i++) {
+      const t = i / (n - 1) - .5, j = frac(k * 17.9 + i * .618);
+      const a = lean + t * 1.25 + (j - .5) * .18, len = size * (1.12 - Math.abs(t) * .55) * (.85 + .3 * j);
+      const bx = x + t * size * .3, tx = bx + Math.sin(a) * len, ty = y - Math.cos(a) * len;
+      path.moveTo(bx, y); path.quadraticCurveTo(bx + Math.sin(a * .35) * len * .5, y - Math.cos(a * .35) * len * .62, tx, ty);
+    }
+    if (h3 < .4) { path.moveTo(x - size * .5, y + size * .04); path.lineTo(x + size * .45, y + size * .04); }
+  } else if (shape === 'reed') {
+    const n = 3 + Math.floor(h1 * 2), lean = (h2 - .5) * .3;
+    for (let i = 0; i < n; i++) {
+      const j = frac(k * 23.1 + i * .618), dx = (i - (n - 1) / 2) * r * .3 + (j - .5) * r * .12, hgt = r * (.85 + .55 * j);
+      const tx = x + dx + lean * hgt, ty = y - hgt;
+      path.moveTo(x + dx, y); path.quadraticCurveTo(x + dx + lean * hgt * .2, y - hgt * .55, tx, ty);
+      if (i === 1 && h3 > .35) { path.moveTo(tx + r * .07, ty + r * .2); path.ellipse(tx, ty + r * .2, r * .07, r * .2, 0, 0, TAU); }
+    }
+    path.moveTo(x - r * .95, y + r * .1); path.lineTo(x - r * .15, y + r * .1);
+    path.moveTo(x + r * .05, y + r * .32); path.lineTo(x + r * .75, y + r * .32);
+  } else {
+    // Heath stipple: two or three specks, now and then a small ring of specks (a heather cushion).
+    const dots = h1 < .2 ? 6 : 2 + Math.floor(h2 * 2), spread = h1 < .2 ? r * 2.1 : r * 1.6;
+    for (let i = 0; i < dots; i++) {
+      const a = (h1 < .2 ? i / dots : frac(k * 11.3 + i * .618)) * TAU + h3 * TAU, d = h1 < .2 ? spread : spread * frac(k * 5.7 + i * .382);
+      const px = x + Math.cos(a) * d, py = y + Math.sin(a) * d, pr = r * (.45 + .35 * frac(k * 3.1 + i * .29));
+      path.moveTo(px + pr, py); path.arc(px, py, pr, 0, TAU);
+    }
+  }
+}
 
 interface TexSpec { sp: number; shape: 'circle' | 'tuft' | 'reed' | 'dot'; r: number; fill?: keyof Palette; stroke: keyof Palette; alpha: number }
 const TEX: Record<string, TexSpec> = {
@@ -255,6 +329,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
   const cache: PathMap = new Map();
   const furrowCache = new Map<number, FurrowPaths>();
   const treeMarks = new Map<TextureLayer, Map<number, Mark[]>>();
+  const penMarks = new Map<string, PenMark[]>(), penSheets = new Map<string, ParchmentSymbols>();
   const forestWashes = new Map<string, { levels: PolyLayer[]; fringe: PolyLayer[]; depth: Float32Array; reach: Float32Array; n: number }>();
   let built = 0;
   let labels: Label[] = [];
@@ -279,6 +354,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
   let densityImg: CanvasImageSource | null | undefined;
   const patterns = new Map<string, CanvasPattern | null>();
   let litCache: Float32Array | undefined;
+  let forestRoom: ForestRoom | undefined;
   let stats: FrameStats = { band: 0, scale: 0, ms: 0, tilesDrawn: 0, bigDrawn: 0, pathsBuilt: 0, pathCache: 0, buildingsCandidate: 0, buildingsDrawn: false, textureTiles: 0 };
   const rasterCache = new RasterTileCache<CanvasImageSource>(deps.rasterBytes);
   let rasterFailed = false;
@@ -453,14 +529,14 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     if (terrainChanged) { terrainImg = waterImg = undefined; cache.clear(); rasterCache.clear(); }
     if (nextScene.density?.cov !== scene.density?.cov) densityImg = undefined;
     if (nextScene.furrows !== scene.furrows) furrowCache.clear();
-    if (nextScene !== scene) { treeMarks.clear(); forestWashes.clear(); }
+    if (nextScene !== scene) { treeMarks.clear(); penMarks.clear(); forestWashes.clear(); }
     if (nextScene !== scene && !nextScene.dirty) cache.clear();
     if (world.options.landuse !== nextSource.options.landuse || world.options.contours !== nextSource.options.contours) rasterCache.clear();
     // Entries can predate several scene updates; expand by the new absolute paint radius, not a last-update delta.
     else if (nextScene !== scene) rasterCache.invalidate(nextScene.dirty, paintMargin(1, nextScene));
     scene = nextScene; sourceWorld = nextSource; world = nextWorld; mapLabels = nextLabels;
     overlays.labels = world.options.labels !== false; overlays.legend = !!world.options.legend;
-    legendPanel = infoPanel = null; litCache = undefined;
+    legendPanel = infoPanel = null; litCache = undefined; forestRoom = undefined;
     return true;
   }
 
@@ -664,7 +740,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     const built0 = built;
     const dpr = deps.dpr ?? (globalThis as unknown as { devicePixelRatio?: number }).devicePixelRatio ?? 1;
     const cssW = target.width / dpr, cssH = target.height / dpr;
-    const sc = view.scale;
+    const trueScale = view.scale, sc = trueScale;
     const lod: Lod = selectLod(sc);
     const band = lod.band;
     const rect: Rect4 = viewRect(view, cssW, cssH, fullRect ? paintMargin(view.scale) : 0);
@@ -682,7 +758,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       ctx.fillRect(0, 0, target.width, target.height);
     }
     // world -> device
-    ctx.setTransform(dpr * sc, 0, 0, dpr * sc, dpr * (cssW / 2 - view.cx * sc), dpr * (cssH / 2 - view.cy * sc));
+    ctx.setTransform(dpr * trueScale, 0, 0, dpr * trueScale, dpr * (cssW / 2 - view.cx * trueScale), dpr * (cssH / 2 - view.cy * trueScale));
     ctx.lineJoin = 'round'; ctx.lineCap = 'round';
     ctx.setLineDash([]);
     // everything below is clipped to the map rectangle (sea polygons etc. run past it)
@@ -835,11 +911,25 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
         }
       } else {
         fillPolys(name, landFill(kind), landAlpha(kind));
-        const layer = polyL(name), wash = layer && kind === 'commons' && !isUnderdarkBiome(world.options.biome) ? forestWash('lu-forest') : undefined;
+        const engraved = pal.name === 'parchment' && (kind === 'meadow' || kind === 'pasture' || kind === 'marsh');
+        const layer = polyL(name), wash = layer && (kind === 'commons' || engraved) && !isUnderdarkBiome(world.options.biome) ? forestWash('lu-forest') : undefined;
         if (wash) {
           ctx.save(); const clip = visibleClip(layer!, rect); if (clip) ctx.clip(clip, 'nonzero');
           ctx.fillStyle = landFill('forest');
-          for (const level of wash.fringe) { ctx.globalAlpha = landAlpha('forest') * .06; for (const path of polyPaths(level)) ctx.fill(path, 'evenodd'); }
+          // Parchment: one narrow engraved rim instead of the stepped halo (the steps read as contour rings).
+          if (pal.name !== 'parchment') for (const level of wash.fringe) { ctx.globalAlpha = landAlpha('forest') * .06; for (const path of polyPaths(level)) ctx.fill(path, 'evenodd'); }
+          else {
+            // The 14 m band stamped at small offsets: a smooth gradient, dark on the shadow side (south-east), faintly lit north-west.
+            const stamp = (dx: number, dy: number, color: string, alpha: number, op: GlobalCompositeOperation): void => {
+              ctx.save(); ctx.globalCompositeOperation = op; ctx.translate(dx, dy); ctx.fillStyle = color; ctx.globalAlpha = alpha;
+              for (const path of polyPaths(wash.fringe[0])) ctx.fill(path, 'evenodd');
+              ctx.restore();
+            };
+            if (wash.fringe[0]) {
+              for (let k = 1; k <= 3; k++) stamp(-3.5 * k, -4 * k, pal.paper, .05, 'source-over');
+              for (let k = 0; k <= 6; k++) stamp(1.8 * k, 2.1 * k, pal.treeInk, .042, 'multiply');
+            }
+          }
           ctx.restore(); ctx.globalAlpha = 1;
         }
       }
@@ -856,7 +946,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     if (world.options.contours) {
       for (const l of linesOf((x) => x.role === 'contour')) {
         const idx = l.kind === 'index';
-        strokeLines([l], pal.contour, () => mapStrokeWidth(idx ? MAP_STROKES.contourIndex : MAP_STROKES.contour, sc, idx ? pal.contourIndexW / 1.6 : 1), idx ? pal.contourOpacity : pal.contourOpacity * 0.7);
+        strokeLines([l], pal.contour, () => mapStrokeWidth(idx ? MAP_STROKES.contourIndex : MAP_STROKES.contour, sc, idx ? pal.contourIndexW / 1.6 : pal.contourThinW ?? 1), idx ? pal.contourOpacity : pal.contourOpacity * 0.7);
       }
     }
     for (const kind of LAND_ORDER) {
@@ -898,7 +988,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       if (kind === 'field' && !isUnderdarkBiome(world.options.biome) && lod.strips && lod.band >= 2) {
         for (let k = 0; k < 4; k++) strokePolys('stripT' + k, pal.furrow, mapStrokeWidth(MAP_STROKES.strip, sc), pal.furrowAlpha * 0.85);
       }
-      if (kind === 'field' && !isUnderdarkBiome(world.options.biome) && lod.strips) strokePolys('furlong-edges', pal.furrow, mapStrokeWidth(MAP_STROKES.furlong, sc), 0.55);
+      if (kind === 'field' && !isUnderdarkBiome(world.options.biome) && lod.strips) strokePolys('furlong-edges', pal.furrow, mapStrokeWidth(MAP_STROKES.furlong, sc), pal.furlongAlpha ?? 0.55);
       if (brushes && lod.textures && (kind === 'field' || (kind === 'garden' && brushTextureOn(kind, pal, world.options.biome)))) brushFill(name, kind, sc);
       if ((kind === 'orchard' || kind === 'garden') && lod.strips) strokePolys(name, pal.hedge, lw(0.8, 0.8), 0.7);
       if (kind === 'forest') ctx.restore();
@@ -932,7 +1022,14 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       }
     }
     // textures (procedural marks, visible tiles only, cached per tile)
-    if (lod.textures && luOn) {
+    if (mode === 'ground' && canopy && pal.name === 'parchment') {
+      // 3D drape tiles come at many scales side by side: a scale-dependent choice of marks shows each tile as a rectangle.
+      // Woods are drawn from world-space tree positions at every scale.
+      if (luOn) for (const tl of scene.textures) {
+        // Small symbols would appear on the closest tiles only (a visible tile edge): the drape keeps the woods alone.
+        if (tl.kind === 'forest') fs.textureTiles += drawDrapeCanopy(ctx, tl, rect, trueScale * dpr);
+      }
+    } else if (lod.textures && luOn) {
       for (const tl of scene.textures) if (pal.tex[tl.kind] || (brushes && isBrushKind(tl.kind) && brushTextureOn(tl.kind, pal, world.options.biome))) fs.textureTiles += drawTexture(ctx, tl, rect, band, lw, budgetRect);
     }
 
@@ -1184,7 +1281,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
           else { ctx.fillStyle = pal.paper; ctx.fill(clip, 'nonzero'); }
           if (world.options.contours) for (const l of linesOf((x) => x.role === 'contour')) {
             const index = l.kind === 'index';
-            strokeLines([l], pal.contour, () => mapStrokeWidth(index ? MAP_STROKES.contourIndex : MAP_STROKES.contour, sc, index ? pal.contourIndexW / 1.6 : 1), index ? pal.contourOpacity : pal.contourOpacity * 0.7);
+            strokeLines([l], pal.contour, () => mapStrokeWidth(index ? MAP_STROKES.contourIndex : MAP_STROKES.contour, sc, index ? pal.contourIndexW / 1.6 : pal.contourThinW ?? 1), index ? pal.contourOpacity : pal.contourOpacity * 0.7);
           }
           if (luOn) {
             for (const kind of NATURAL_LAND_KINDS) {
@@ -1533,10 +1630,15 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       const tiles = tl.index.tilesInRect(expanded), marks: Mark[] = [];
       let entries = treeMarks.get(tl); if (!entries) { entries = new Map(); treeMarks.set(tl, entries); }
       const exclusion = tl.kind === 'forest' ? polyL('u-forest-clearings') : undefined;
+      // Woods leave room for roads, rivers and farmsteads; crowns rooted at the edge overhang them a little.
+      const room = tl.kind === 'forest' ? forestRoom ??= new ForestRoom(forestCorridors(world), farmClearings(world.landuse)) : undefined;
       for (const tile of tiles) {
         let points = entries.get(tile);
         if (!points) {
-          points = canopyMarks(tl, tile, world.seed).filter(m => (tl.kind !== 'forest' || m.k < forestWeight(m.x, m.y)) && (!exclusion || !exclusion.index.query({ minX: m.x, minY: m.y, maxX: m.x, maxY: m.y }).some(i =>
+          points = canopyMarks(tl, tile, world.seed).filter(m => (tl.kind !== 'forest' || m.k < (canopy ? .5 + .5 * forestWeight(m.x, m.y) : forestWeight(m.x, m.y)))
+            && (!room || room.keeps(m.x, m.y, (m.k * 37.17) % 1))
+            // Parchment woods grow in clumps: small glades let the dark shaded floor show between them.
+            && (tl.kind !== 'forest' || !canopy || pal.name !== 'parchment' || clumpNoise(m.x, m.y, 26, 5) > .27) && (!exclusion || !exclusion.index.query({ minX: m.x, minY: m.y, maxX: m.x, maxY: m.y }).some(i =>
             pointInPoly(exclusion.polys[i], m.x, m.y) && !(exclusion.holes?.[i] ?? []).some(h => pointInPoly(h, m.x, m.y)))));
           if (entries.size >= 128) entries.delete(entries.keys().next().value!);
           entries.set(tile, points);
@@ -1548,13 +1650,84 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
         ctx.globalAlpha = .88 + .12 * m.k;
         brushes.tree(ctx, m.x, m.y, (tl.kind === 'orchard' ? 3.5 : 4.75) * m.r, tl.kind === 'orchard');
       }
-      else canopy!.draw(ctx, marks, tl.kind, ctx.getTransform().a / (deps.dpr ?? 1), deps.dpr ?? 1);
+      else canopy!.draw(ctx, marks, tl.kind, ctx.getTransform().a / (deps.dpr ?? 1), deps.dpr ?? 1, tl.kind === 'forest' ? coniferOf : undefined);
       ctx.globalAlpha = 1; return tiles.length;
     }
     if (tl.kind !== 'forest') return drawTextureMarks(ctx, tl, rect, band, lw, budgetRect);
     ctx.save(); const clip = forestClip(rect); if (clip) ctx.clip(clip, 'nonzero');
     try { return drawTextureMarks(ctx, tl, rect, band, lw, budgetRect); }
     finally { ctx.restore(); }
+  }
+
+  /** 3D drape woods: crowns at world-space hashed centres with the world-space clump noise, so neighbouring tiles join
+   * and nothing repeats. No polygon test per tree: the tile is drawn once, then masked by the wood. Coarse tiles thin the
+   * grid by a power of two and enlarge the crowns alike, which keeps the tone and the glades at any scale. */
+  let canopyScratch: CanvasLike | undefined;
+  function drawDrapeCanopy(ctx: CanvasRenderingContext2D, tl: TextureLayer, rect: Rect4, pxPerMetre: number): number {
+    const ids = tl.index.query(rect); if (!ids.length || !canopy) return 0;
+    const target = ctx.canvas as unknown as CanvasLike, w = target.width, h = target.height;
+    if (!canopyScratch || canopyScratch.width !== w || canopyScratch.height !== h) canopyScratch = makeCanvas(w, h) ?? undefined;
+    const sx = canopyScratch?.getContext('2d'); if (!canopyScratch || !sx) return 0;
+    const f = 2 ** Math.max(0, Math.ceil(Math.log2(.5 / Math.max(1e-6, pxPerMetre)))), sp = 6 * f;
+    const boxes = ids.map(i => bboxOf(tl.areas[i].poly)).map(b => ({ minX: Math.max(rect.minX, b.x0) - 14 * f, minY: Math.max(rect.minY, b.y0) - 14 * f, maxX: Math.min(rect.maxX, b.x1) + 14 * f, maxY: Math.min(rect.maxY, b.y1) + 14 * f }));
+    const marks: Mark[] = [], i0 = Math.floor((rect.minX - 14 * f) / sp), i1 = Math.ceil((rect.maxX + 14 * f) / sp), j0 = Math.floor((rect.minY - 14 * f) / sp), j1 = Math.ceil((rect.maxY + 14 * f) / sp);
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const hh = (salt: number): number => vhash(i, j, salt + f), x = (i + .1 + .8 * hh(1)) * sp, y = (j + .1 + .8 * hh(2)) * sp;
+      if (!boxes.some(b => x >= b.minX && x <= b.maxX && y >= b.minY && y <= b.maxY)) continue;
+      if (clumpNoise(x, y, 26 * f, 5) <= .27) continue;
+      const size01 = hh(3);
+      marks.push({ x, y, r: (size01 > .94 ? 1.35 + (size01 - .94) * 4 : .72 + .55 * size01 * size01) * f, k: hh(4) });
+    }
+    marks.sort((a, b) => a.y - b.y || a.x - b.x);
+    sx.setTransform(1, 0, 0, 1, 0, 0); sx.clearRect(0, 0, w, h); sx.setTransform(ctx.getTransform());
+    canopy.draw(sx, marks, 'forest', ctx.getTransform().a, 1, coniferOf);
+    // Seen whole from a distance the crowns are let down toward the dark olive of the 2D woods.
+    sx.setTransform(1, 0, 0, 1, 0, 0); sx.globalCompositeOperation = 'source-atop'; sx.globalAlpha = .28; sx.fillStyle = pal.treeInk; sx.fillRect(0, 0, w, h);
+    sx.globalCompositeOperation = 'source-over'; sx.globalAlpha = 1;
+    // Masked by the wood (and its clearings), partly transparent: the shaded wash and the map's hill shading read through.
+    let id = brushIds.get(tl); if (id === undefined) { id = ++brushId; brushIds.set(tl, id); }
+    const wood = new P();
+    for (const i of ids) {
+      const path = cached(`brush-clip:${id}:${i}`, () => {
+        const a = tl.areas[i], p = new P(); addRing(p, orientPos(a.poly));
+        for (const hole of a.holes ?? []) addRing(p, orientPos(hole).slice().reverse()); return p;
+      });
+      if (path) wood.addPath(path);
+    }
+    ctx.save(); const clip = forestClip(rect); if (clip) ctx.clip(clip, 'nonzero'); ctx.clip(wood, 'nonzero');
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = .8; ctx.globalCompositeOperation = 'source-over';
+    ctx.drawImage(canopyScratch as unknown as CanvasImageSource, 0, 0); ctx.restore();
+    return ids.length;
+  }
+  /** Conifer or broadleaf for a forest crown, from the climate and a broad mixing noise. */
+  function coniferOf(m: Mark): boolean {
+    const share = CONIFER_SHARE[biomeName(world.options.biome)] ?? 0;
+    return share > 0 && frac(m.k * 53.3) < Math.max(0, Math.min(1, share + (clumpNoise(m.x, m.y, 420, 9) - .5) * 1.3));
+  }
+  /** Parchment symbol sheet tinted for one land kind, in the palette of the moment. */
+  function penSheet(kind: string): ParchmentSymbols {
+    const ink = mixHex(pal.inkSoft, kind === 'marsh' ? pal.reed : pal.grass, .3), wash = mixHex(pal.treeFill, pal.inkSoft, .3), key = `${ink}|${wash}`;
+    let sheet = penSheets.get(key);
+    if (!sheet) { sheet = new ParchmentSymbols(ink, wash, .6, makeCanvas); penSheets.set(key, sheet); }
+    return sheet;
+  }
+  function drawPenSymbols(ctx: CanvasRenderingContext2D, tl: TextureLayer, tiles: number[]): void {
+    const sheet = penSheet(tl.kind), sp = tl.kind === 'pasture' ? 9 : 7.5, list: PenMark[] = [];
+    for (const t of tiles) {
+      const key = `${tl.kind}|${tl.areas.length}|${t}`;
+      let marks = penMarks.get(key);
+      if (!marks) {
+        marks = [];
+        for (const m of textureMarks(tl, t, sp, (TEX_SALT[tl.kind] ?? 1) + 101, world.seed)) { const s = penSymbol(tl.kind, m); if (s) marks.push({ x: m.x, y: m.y, ...s }); }
+        if (penMarks.size >= 4096) penMarks.delete(penMarks.keys().next().value!);
+        penMarks.set(key, marks);
+      }
+      for (const m of marks) list.push(m);
+    }
+    list.sort((a, b) => a.y - b.y);
+    ctx.save(); ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; ctx.globalAlpha = .8;
+    for (const m of list) sheet.draw(ctx, m.cell, m.x, m.y, m.size);
+    ctx.restore();
   }
 
   function drawTextureMarks(ctx: CanvasRenderingContext2D, tl: TextureLayer, rect: Rect4, band: number, lw: (w: number, m: number) => number, budgetRect: Rect4): number {
@@ -1592,9 +1765,14 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       });
       ctx.save(); if (clip) ctx.clip(clip, 'nonzero');
     }
+    // Parchment draws its small symbols with the pen of the trees: thin sepia-tinted strokes that sit in the paper.
+    const pen = !underground && pal.name === 'parchment';
+    // Hand-drawn sheet symbols (parchmentSymbols.ts) replace the vector marks of the open land kinds.
+    const sprites = pen && spec.shape !== 'circle';
+    if (sprites) drawPenSymbols(ctx, tl, tiles);
     const fillP: Path2D[] = [], strokeP: Path2D[] = [];
-    for (const t of tiles) {
-      const key = `tex-${tl.kind}|${band}|t${t}`;
+    for (const t of sprites ? [] : tiles) {
+      const key = `tex-${tl.kind}|${band}|${pen ? 'pen' : 'mark'}|t${t}`;
       const p = cached(key, () => {
         const marks = textureMarks(tl, t, spec.sp, TEX_SALT[tl.kind] ?? 1, world.seed);
         if (!marks.length) return null;
@@ -1603,6 +1781,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
           if (tl.kind === 'forest' && !underground && m.k >= forestWeight(m.x, m.y)) continue;
           const r = spec.r * m.r;
           if (underground) appendUnderdarkMark(path, tl.kind, m.x, m.y, r, pal);
+          else if (pen && spec.shape !== 'circle') appendPenMark(path, spec.shape, m.x, m.y, r, m.k);
           else if (spec.shape === 'circle') {
             path.moveTo(m.x + r, m.y); path.arc(m.x, m.y, r, 0, TAU);
             if (crown) {
@@ -1625,16 +1804,24 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       });
       if (p) { strokeP.push(p); if (spec.fill) fillP.push(p); }
     }
+    const penInk = (c: string): string => pen ? mixHex(c, pal.inkSoft, .32) : c, penAlpha = pen && spec.shape !== 'circle' ? (spec.shape === 'dot' ? .78 : .62) : 1;
     if (spec.fill) {
-      ctx.globalAlpha = spec.alpha; ctx.fillStyle = pal[spec.fill] as string;
+      ctx.globalAlpha = spec.alpha * penAlpha; ctx.fillStyle = penInk(pal[spec.fill] as string);
       for (const p of fillP) ctx.fill(p, 'nonzero');
     }
-    ctx.globalAlpha = spec.alpha; ctx.strokeStyle = pal[spec.stroke] as string;
-    ctx.lineWidth = lw(spec.shape === 'circle' ? 0.5 : 0.55, 0.6);
+    ctx.globalAlpha = spec.alpha * penAlpha; ctx.strokeStyle = penInk(pal[spec.stroke] as string);
+    ctx.lineWidth = pen && spec.shape !== 'circle' ? lw(spec.shape === 'dot' ? .3 : .42, .5) : lw(spec.shape === 'circle' ? 0.5 : 0.55, 0.6);
+    if (pen) { ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; }
     for (const p of strokeP) ctx.stroke(p);
+    if (pen) ctx.restore();
     if (!underground && (tl.kind === 'commons' || tl.kind === 'pasture' || tl.kind === 'meadow')) {
       const tree = TEX.forest, strays: Path2D[] = [];
-      for (const t of tiles) {
+      if (canopy) {
+        const lone: Mark[] = [];
+        for (const t of tiles) for (const m of textureMarks(tl, t, tree.sp, TEX_SALT.forest, world.seed)) if (m.k < forestStray(m.x, m.y) * .5) lone.push({ x: m.x, y: m.y, r: .55 + .22 * frac(m.k * 9.7), k: frac(m.k * 37.3) });
+        lone.sort((a, b) => a.y - b.y || a.x - b.x);
+        canopy.draw(ctx, lone, 'forest', ctx.getTransform().a / (deps.dpr ?? 1), deps.dpr ?? 1);
+      } else for (const t of tiles) {
         const p = cached(`stray-${tl.kind}|t${t}`, () => {
           const marks = textureMarks(tl, t, tree.sp, TEX_SALT.forest, world.seed);
           if (!marks.length) return null;
@@ -1645,7 +1832,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
         if (p) strays.push(p);
       }
       ctx.globalAlpha = tree.alpha; ctx.fillStyle = pal[tree.fill!] as string;
-      for (const p of strays) ctx.fill(p, 'nonzero');
+      for (const p of strays) ctx.fill(p, 'nonzero');  // empty when the canopy drew them
       ctx.strokeStyle = pal[tree.stroke] as string; ctx.lineWidth = lw(.5, .6);
       for (const p of strays) ctx.stroke(p);
     }

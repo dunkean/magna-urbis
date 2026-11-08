@@ -17,9 +17,8 @@ export { terrain3dRaisedTexture, terrain3dSetRaisedTexture };
 export function terrain3dTextureOverlay(base: HTMLCanvasElement, draw: (ctx: CanvasRenderingContext2D) => void): void {
   draw(base.getContext('2d')!); const draped = terrain3dRaisedTexture(base); if (draped) draw(draped.getContext('2d')!);
 }
-const isRaised = (stamp: Pick<Stamp, 'brush' | 'width'>, painting: Pick<FantasyTerrainPainting, 'width' | 'lod'>): boolean => stamp.brush === 5 || stamp.brush === 6
-  // SVG widths have centimetre precision; both paths must classify exactly the same hills.
-  || stamp.brush === 4 && Math.round(stamp.width * 100) / 100 >= painting.width * (painting.lod === 'detail' ? 16 / 3400 : 16 / 1400);
+/** Illustrated relief is draped on the ground like the 2D painting: no stamp stands up as a billboard. */
+const isRaised = (_stamp: Pick<Stamp, 'brush' | 'width'>, _painting: Pick<FantasyTerrainPainting, 'width' | 'lod'>): boolean => false;
 const paintingOptions = (options: FantasyOptions, width: number): FantasyOptions => ({ ...options, lod: options.lod && options.lod !== 'auto' ? options.lod : fantasyLod(width) });
 
 function visibleStamps(painting: FantasyTerrainPainting, region: { x: number; y: number; width: number }, pixels: number, skipRaised = false): Stamp[] {
@@ -54,7 +53,7 @@ function reliefAtlas(library: BrushLibrary): Promise<{ canvas: HTMLCanvasElement
   let pending = reliefAtlases.get(library);
   if (!pending) {
     pending = decodeLibrary(library).then(images => {
-      const frames = [...new Map(library.frames.filter(frame => ['hills', 'mountains', 'snow-mountains'].includes(frame.family)).map(frame => [frame.token, frame])).values()];
+      const frames = [...new Map(library.frames.filter(frame => ['hills', 'foothills', 'mountains', 'snow-mountains', 'peaks'].includes(frame.family)).map(frame => [frame.token, frame])).values()];
       const cell = 256, pad = 16, columns = Math.min(8, frames.length), canvas = document.createElement('canvas');
       canvas.width = columns * cell; canvas.height = Math.ceil(frames.length / columns) * cell;
       const ctx = canvas.getContext('2d')!, rects = new Map<string, [number, number, number, number]>(); ctx.imageSmoothingQuality = 'high';
@@ -93,7 +92,7 @@ export async function terrain3dIllustratedSvg(url: string, terrain: TerrainData,
   if (doc.querySelector('parsererror')) throw new Error('Invalid Illustrated background SVG.');
   const painting = isFantasyStyle(style) ? prepareFantasyTerrain(terrain, style, settings, paintingOptions(options, settings.width)) : undefined;
   if (painting) for (const use of Array.from(doc.querySelectorAll('.fantasy-brushes > use[data-brush]'))) {
-    const family = use.getAttribute('data-brush'), brush = family === 'mountains' ? 5 : family === 'snow-mountains' ? 6 : family === 'hills' ? 4 : -1;
+    const family = use.getAttribute('data-brush'), brush = family === 'mountains' ? 5 : family === 'snow-mountains' ? 6 : family === 'peaks' ? 16 : family === 'hills' ? 4 : family === 'foothills' ? 18 : -1;
     if (isRaised({ brush, width: Number(use.getAttribute('width')) }, painting)) use.remove();
   }
   const cleanUrl = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(doc)], { type: 'image/svg+xml' }));

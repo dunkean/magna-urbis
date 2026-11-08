@@ -51,6 +51,14 @@ export interface Palette {
   /** Land-use base fills. */
   land: Record<LandKindKey, string>;
   landOpacity: number;
+  /** Woodland alpha of a palette that tints forests in its own `land.forest` (seasonal) instead of the shared forest tone. */
+  forestTint?: number;
+  /** Thin contour width multiplier (index ones use `contourIndexW`). */
+  contourThinW?: number;
+  /** Field strip edges and furlong lines (0 = a flat crop tint only). */
+  furlongAlpha?: number;
+  /** V2: the ink water raster cuts the land-use overlay above it, so rivers and lakes read over the tints. */
+  waterAboveLand?: boolean;
   /** `multiply` keeps the hillshade visible through the tint (light maps); dark maps use `normal`. */
   landBlend: 'multiply' | 'normal';
   /** Which land kinds carry a drawn texture (tree crowns, tufts, reeds...). */
@@ -181,16 +189,25 @@ const OLD_SERIF = "'Palatino Linotype', Palatino, 'Book Antiqua', 'URW Palladio 
 /** Script-like hand: no generic `cursive` (it falls back to unreadable faces on some systems). */
 const SCRIPT = "'Segoe Script', 'Lucida Handwriting', 'Snell Roundhand', 'Apple Chancery', 'URW Chancery L', 'Z003', 'Palatino Linotype', Georgia, serif";
 
+/**
+ * School atlas: the hypsometric ramp is the map (lowland greens, yellows, browns, light summits; bathymetric blues at sea)
+ * under a soft hillshade. Land use only tints it: woods a light green wash, fields a faint crop tint, no crowns, strips or hatching.
+ */
 const atlas = derive('atlas', 'Atlas', {
   paper: '#f4f1e8', ink: '#33404a', inkSoft: '#5b6975',
-  hypso: [[0, '#a8c98d'], [0.12, '#c2d798'], [0.32, '#e4d9a2'], [0.52, '#d9bd8b'], [0.72, '#bb9675'], [0.88, '#d6cdc6'], [1, '#f6f6f6']],
-  shade: 1.05, grain: 0,
-  seaFill: '#8fc0e2', lakeFill: '#8fc0e2', waterEdge: '#4a86b3', ripple: '#e9f4fb', rippleOpacity: [0.7, 0.5, 0.35, 0.2],
-  riverFill: '#8fc0e2', riverEdge: '#4a86b3',
-  contour: '#8b5a3c', contourOpacity: 0.55, frame: '#33404a', accent: '#4a86b3',
+  hypso: [[0, '#8fc27c'], [0.1, '#acd08c'], [0.24, '#d3e2a2'], [0.38, '#efe6ab'], [0.52, '#e9cd8f'], [0.68, '#d3a676'], [0.84, '#b48c6e'], [1, '#efebe6']],
+  shade: 0.72, grain: 0,
+  // Shore stop = coastline and river ink; the shallows are light and the sea darkens offshore (positions in shore bands, about 100 m).
+  water: { stops: [[0, '#4f8fc2'], [0.12, '#bfe0f3'], [2.5, '#a3d0ee'], [8, '#83bbe3'], [20, '#6aa5d6']], bandFraction: .016 },
+  ripple: '#e9f4fb', rippleOpacity: [0, 0, 0, 0],
+  riverEdge: '#4a86b3',
+  contour: '#8b5a3c', contourOpacity: 0.4, frame: '#33404a', accent: '#4a86b3',
   fontFamily: SANS,
-  land: { field: '#f0e6a6', meadow: '#b9dc95', pasture: '#cfe3a2', forest: '#7fba78', orchard: '#c5dc8a', garden: '#d5e3a0', marsh: '#a6d1b8', commons: '#dde3aa' },
-  landOpacity: 0.72,
+  // The V2 overlay is transparent, so a tint lays its colour over the ramp: grass classes sit close to the lowland green and vanish into it.
+  land: { field: '#ecd57e', meadow: '#b4d68e', pasture: '#bfda95', forest: '#66a65c', orchard: '#a4cd86', garden: '#c4dd98', marsh: '#94cbc0', commons: '#c3da9c' },
+  landOpacity: 0.3, forestTint: 0.4, furlongAlpha: 0, waterAboveLand: true,
+  tex: { field: false, meadow: false, pasture: false, forest: false, orchard: false, garden: false, marsh: true, commons: false },
+  stripAlpha: [0, 0], furrowAlpha: 0, hedgeOn: false, rural: { track: 0.55, way: 0.3, headland: 0 },
   stripA: '#f4ecb4', stripB: '#e6dc92', furrow: '#a89a55', hedge: '#4f8a4a',
   treeFill: '#5fa35a', treeInk: '#2f6a34', grass: '#4c8f3f', reed: '#3a8f88', orchardDot: '#3f8a3a',
   roadEdge: '#5a4a3c', roadFill: '#fffdf4', trackFill: '#8a7660', bridgeDeck: '#fffdf4', bridgeInk: '#3b3b3b',
@@ -276,7 +293,7 @@ const cadastre = derive('cadastre', 'Cadastre 1:1250', {
   frame: '#1f1c1e', frameKind: 'ticks', accent: '#1f1c1e',
   fontFamily: SCRIPT,
   land: { field: '#f3ecd8', meadow: '#ebf0d3', pasture: '#f0f3da', forest: '#d2e2b4', orchard: '#dbe8ba', garden: '#cfe3b4', marsh: '#d6e5d4', commons: '#f1f2de' },
-  landOpacity: 0.8, landBlend: 'multiply',
+  landOpacity: 0.8, landBlend: 'multiply', waterAboveLand: true,
   tex: { field: true, meadow: false, pasture: false, forest: true, orchard: true, garden: false, marsh: true, commons: false },
   treeShape: 'dot',
   stripA: '#f3ecd8', stripB: '#efe3c4', stripAlpha: [0, 0.5], furrow: '#1f1c1e', furrowAlpha: 0.65, hedge: '#3e5a2b', hedgeOn: false,
@@ -363,15 +380,17 @@ const topographic = derive('topographic', 'Topographic', {
   hypso: [[0, '#f5f3e6'], [0.5, '#efebd9'], [1, '#e6e0c8']], shade: 0.75, grain: 0,
   seaFill: '#a9d9ef', lakeFill: '#a9d9ef', waterEdge: '#3d9ac7', ripple: '#ffffff', rippleOpacity: [0.6, 0.45, 0.3, 0.15],
   riverFill: '#a9d9ef', riverEdge: '#3d9ac7',
-  contour: '#b8753a', contourOpacity: 0.75, contourIndexW: 2.1,
+  // Brown contours are the topographic map's main read: heavier than the land-use outlines at every zoom.
+  contour: '#9a5524', contourOpacity: 0.9, contourIndexW: 2.5, contourThinW: 1.35,
   frame: '#262626', frameKind: 'ticks', accent: '#3d9ac7',
   grid: { color: '#4b9dc9', opacity: 0.3, step: 100 },
   fontFamily: SANS,
-  land: { field: '#f8f2cc', meadow: '#dceeb2', pasture: '#e4efbd', forest: '#b5d99b', orchard: '#c9e3a4', garden: '#d3e8ac', marsh: '#c2e0d2', commons: '#e4efbd' },
-  landOpacity: 0.85, landBlend: 'multiply',
+  // Woods keep the light topographic green (not the shared dark forest tone) so the contours read through them.
+  land: { field: '#f8f2cc', meadow: '#dceeb2', pasture: '#e4efbd', forest: '#bfe0a4', orchard: '#c9e3a4', garden: '#d3e8ac', marsh: '#c2e0d2', commons: '#e4efbd' },
+  landOpacity: 0.85, landBlend: 'multiply', forestTint: 0.85, waterAboveLand: true,
   tex: { field: true, meadow: false, pasture: false, forest: false, orchard: true, garden: false, marsh: true, commons: false },
   treeShape: 'dot',
-  stripA: '#f8f2cc', stripB: '#f0e8b4', stripAlpha: [0.35, 0.5], furrow: '#b9ae74', furrowAlpha: 0.5, hedge: '#5f9a4c', hedgeOn: true,
+  stripA: '#f8f2cc', stripB: '#f0e8b4', stripAlpha: [0.35, 0.5], furrow: '#b9ae74', furrowAlpha: 0.2, furlongAlpha: 0.35, hedge: '#5f9a4c', hedgeOn: true,
   treeFill: '#8fc27a', treeInk: '#4b8a3a', grass: '#5f9a4c', reed: '#3d9ac7', orchardDot: '#4b8a3a',
   roadEdge: '#9a5a1c', roadFill: '#ffc869', trackFill: '#7a6a52', bridgeDeck: '#ffc869', bridgeInk: '#262626',
   farmRoof: '#6a6a6a', farmInk: '#262626', farmYard: '#ebe6d0', marker: '#b3261e',

@@ -21,6 +21,9 @@ export type V2TerrainSettings = Partial<Omit<TerrainSettings,
   forest?: Partial<ForestSettings>;
   /** A climate zone; legacy preset names (oceanic, arid, cold) are accepted on load and migrated. */
   climate?: ClimateZone | NeuralClimate;
+  /** Zone that shapes relief and water (erosion, drainage, riverbeds); `climate` still drives cover, season and rendering.
+   *  Lets a climate variant keep another zone's landforms exactly. Defaults to `climate`. */
+  reliefClimate?: ClimateZone;
   climateValues?: Partial<ClimateValues>;
   detailNoise?: Partial<FractalDetail>;
 };
@@ -56,7 +59,7 @@ export function defaultTerrainSettings(): V2TerrainSettings {
     neuralFit: 'crop', neuralSlopes: true, refine: true, detailNoise: { ...DEFAULT_FRACTAL_DETAIL }, erosionTuning: {},
     hydrology: { ...DEFAULT_HYDROLOGY }, forest: { ...DEFAULT_FOREST_SETTINGS } };
 }
-export type EffectiveTerrainSettings = TerrainSettings & { forest: ForestSettings };
+export type EffectiveTerrainSettings = TerrainSettings & { forest: ForestSettings; reliefClimate?: ClimateZone };
 /** Defaults merge nested knobs. Runtime selection owns source, endpoints and auto compute. */
 export function effectiveTerrainSettings(settings: V2Settings, width: number): EffectiveTerrainSettings {
   const t = settings.terrain ?? {}, runtime = settings.runtime;
@@ -101,7 +104,7 @@ function enumeration(value: unknown, values: readonly unknown[], name: string): 
 /** Reject typos and out-of-range recipes instead of silently dropping customisation. */
 export function validateTerrainSettings(value: unknown): asserts value is V2TerrainSettings {
   if (!record(value)) throw new Error('Invalid terrain settings.');
-  const allowed = ['zones', 'motifSize', 'relief', 'environment', 'coastMask', 'islandMode', 'erosion', 'mountainMix', 'resolution', 'sampleSpacing', 'compute', 'generationCompute', 'hydrology', 'climate', 'climateZone', 'fidelity', 'sketch', 'climateValues', 'neuralTuning', 'coarseModel', 'baseModel', 'decoderModel', 'neuralFit', 'neuralSlopes', 'refine', 'detailNoise', 'erosionTuning', 'forest', 'phasor', 'procedural'];
+  const allowed = ['zones', 'motifSize', 'relief', 'environment', 'coastMask', 'islandMode', 'erosion', 'mountainMix', 'resolution', 'sampleSpacing', 'compute', 'generationCompute', 'hydrology', 'climate', 'climateZone', 'reliefClimate', 'fidelity', 'sketch', 'climateValues', 'neuralTuning', 'coarseModel', 'baseModel', 'decoderModel', 'neuralFit', 'neuralSlopes', 'refine', 'detailNoise', 'erosionTuning', 'forest', 'phasor', 'procedural'];
   if(value.procedural!==undefined)validateProceduralRecipe(value.procedural as import('../../../rust/bridge/terrainGenerationRecipe').ProceduralRecipe);
   if (value.phasor !== undefined) {
     if (!record(value.phasor) || Object.keys(value.phasor).some(key => !['quality', 'intensity'].includes(key))) throw new Error('Invalid compact Phasor settings.');
@@ -110,7 +113,7 @@ export function validateTerrainSettings(value: unknown): asserts value is V2Terr
   }
   for (const key of Object.keys(value)) if (!allowed.includes(key)) throw new Error(`Unknown terrain parameter: ${key}.`);
   enumeration(value.relief, TERRAIN_RELIEFS, 'relief'); enumeration(value.environment, TERRAIN_ENVIRONMENTS, 'environment');
-  enumeration(value.islandMode, ['island', 'archipelago', 'peninsula', 'random'], 'islandMode'); enumeration(value.climate, [...CLIMATE_ZONES, ...Object.keys(LEGACY_CLIMATE_ZONES)], 'climate');
+  enumeration(value.islandMode, ['island', 'archipelago', 'peninsula', 'random'], 'islandMode'); enumeration(value.climate, [...CLIMATE_ZONES, ...Object.keys(LEGACY_CLIMATE_ZONES)], 'climate'); enumeration(value.reliefClimate, CLIMATE_ZONES, 'reliefClimate');
   enumeration(value.compute, ['wasm', 'gpu-f32'], 'compute'); enumeration(value.generationCompute, ['cpu', 'gpu', 'gpu-all', 'gpu-erosion', 'native'], 'generationCompute');
   enumeration(value.neuralFit, ['crop', 'scale'], 'neuralFit');
   for (const key of ['neuralSlopes', 'refine']) enumeration(value[key], [true, false], key);

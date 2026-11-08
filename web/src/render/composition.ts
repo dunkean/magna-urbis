@@ -65,10 +65,11 @@ interface PresetValues { blocks?: boolean; ground: StyleId; contours: boolean; v
 /** Hides every text group but the listed ones. */
 const only = (...shown: TextGroup[]) => Object.fromEntries(TEXT_GROUPS.map(g => [g, shown.includes(g)])) as Record<TextGroup, boolean>;
 const PRESETS: Readonly<Record<StyleId, PresetValues>> = {
-  atlas: { ground: 'atlas', contours: true, vegetation: 'symbols', rural: 'subtle', urban: 'subtle', depth: 'surface', network: 'inherit', building: 'cartographic-roofs', parcels: false, text: defaultText({ look: 'sans' }) },
+  atlas: { ground: 'atlas', contours: true, vegetation: 'symbols', rural: 'off', urban: 'subtle', depth: 'surface', network: 'inherit', building: 'cartographic-roofs', parcels: false, text: defaultText({ look: 'sans' }) },
   'satellite-2': { blocks: false, ground: 'satellite-2', contours: true, vegetation: 'procedural-canopy', rural: 'off', urban: 'off', depth: 'surface', network: 'wash', building: 'detailed-volumes', parcels: false, text: defaultText({ look: 'inherit' }) },
   parchment: { ground: 'parchment', contours: true, vegetation: 'symbols', rural: 'off', urban: 'off', depth: 'surface', network: 'wash', building: 'detailed-volumes', parcels: false, text: defaultText({ look: 'inherit' }) },
-  illustration: { ground: 'illustration', contours: false, vegetation: 'painted', rural: 'subtle', urban: 'subtle', depth: 'surface', network: 'inherit', building: 'cartographic-roofs', parcels: false, text: defaultText({ look: 'inherit' }) },
+  // Rural land use lives in the brushes (crops, orchards, heath, woods) over a painted wash, not in vector polygons.
+  illustration: { ground: 'illustration', contours: false, vegetation: 'painted', rural: 'off', urban: 'subtle', depth: 'surface', network: 'inherit', building: 'cartographic-roofs', parcels: false, text: defaultText({ look: 'inherit' }) },
   cadastre: { ground: 'cadastre', contours: false, vegetation: 'none', rural: 'categorical', urban: 'categorical', depth: 'readable', network: 'ink', building: 'footprints', parcels: true, text: defaultText({ look: 'sans', groups: only('city', 'landmarks', 'pins') }) },
   topographic: { ground: 'topographic', contours: true, vegetation: 'symbols', rural: 'outlines', urban: 'outlines', depth: 'readable', network: 'ink', building: 'footprints', parcels: false, text: defaultText({ look: 'sans', groups: only('places', 'water', 'nature', 'pins'), density: 'high' }) },
   satellite: { blocks: false, ground: 'satellite', contours: false, vegetation: 'procedural-canopy', rural: 'off', urban: 'off', depth: 'surface', network: 'natural', building: 'detailed-volumes', parcels: false, text: defaultText({ look: 'sans', halo: 'strong' }) },
@@ -126,9 +127,9 @@ export function applyComposition(a: AppearanceInput, c: CompositionRecipe): Appe
   const { enabled: _enabled, ...forest } = a.forest ?? {};
   const { ground: _ground, ...city } = a.city ?? {};
   // The map overlay follows the ambience on any ground: day-coloured fields on a night ground would float above it.
-  // The V1 sheet marks woods with small round trees on a dark wash.
-  const classicTrees = variant === 'parchment' ? { vegetation: 'classic' as const } : {};
-  return { ...a, ...classicTrees, style: isMapStyle(variant) ? variant : c.effects.ambience === 'night' ? 'night' : traits.paperMap ? 'parchment' : a.style, terrainStyle: variant, renderer: 'bench', contours: c.ground.contours,
+  // Parchment woods are dense hand-drawn crowns (canopy.ts) over a soft wash, in the ink of the sheet.
+  const parchmentTrees = variant === 'parchment' ? { vegetation: 'canopy' as const } : {};
+  return { ...a, ...parchmentTrees, style: isMapStyle(variant) ? variant : c.effects.ambience === 'night' ? 'night' : traits.paperMap ? 'parchment' : a.style, terrainStyle: variant, renderer: 'bench', contours: c.ground.contours,
     terrainLayers: { ...DEFAULT_TERRAIN_LAYERS, ...a.terrainLayers, relief: c.effects.relief, water: c.networks.water.visible },
     // The land-use painter is the physical look of the fields on a map ground: the semantic layer never switches it off.
     landuse: true, painted: overlayPainted(c.vegetation.look, traits), forest:c.vegetation.look === 'procedural-canopy' ? forest : { ...forest, enabled: false },

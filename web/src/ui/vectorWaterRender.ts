@@ -9,7 +9,7 @@ import { lakeSample } from './lakeGeometry';
 import { hydrologyWaterColour, riverBank } from '../../../rust/bridge/hydrologyRender';
 import { lakeMaterialSvg } from '../render/terrainWater';
 import { headwaterGeometry, isHeadwater, type HeadwaterGeometry } from '../render/riverHeadwaters';
-import { isBlended } from '../render/groundBlend';
+import { plumeRgb, regimeRgb, riverState, riverSymbol, waterClimate, waterRegimeActive, type RiverState, type RiverSymbol, type WaterClimate, type WaterSeason } from '../render/waterRegime';
 
 export { VECTOR_OVERLAYS, VECTOR_LEGENDS } from '../render/displayDiagnostics';
 import type { VectorOverlay } from '../render/displayDiagnostics';
@@ -83,7 +83,152 @@ export function lakeShores(water: VectorWater): string {
   return d;
 }
 
-export interface WaterDisplay { colors?: RenderColors; style: TerrainStyle; showLakes: boolean; showOxbows: boolean; riverArea: number; riverMode: 'vector' | 'grid'; overlay: VectorOverlay }
+export interface WaterDisplay {
+  colors?: RenderColors; style: TerrainStyle; showLakes: boolean; showOxbows: boolean; riverArea: number; riverMode: 'vector' | 'grid'; overlay: VectorOverlay;
+  /** Climate zone and season of the seasonal water regime (waterRegime.ts); none keeps perennial open water. */
+  season?: WaterSeason;
+  /** GPU segments for a painted material compositor: the colour carries the regime (regimeRgb) instead of the ink. */
+  material?: boolean;
+}
+
+/** Climate of the display when it changes anything; undefined keeps every course perennial and open. */
+function displayClimate(display: Pick<WaterDisplay, 'season' | 'overlay'>): WaterClimate | undefined {
+  if (!display.season?.zone || display.overlay === 'v-styles') return;
+  const c = waterClimate(display.season);
+  return waterRegimeActive(c) ? c : undefined;
+}
+const sizeMemo = new WeakMap<VectorWater, number>();
+/** Seasonal state per drawn vertex. Size from the drawn width (the headwater taper reads as a small stream);
+ * slope from the water surface over about 150 m upstream. */
+function riverStates(water: VectorWater, geo: HeadwaterGeometry, climate: WaterClimate, threshold: number): RiverState[] {
+  const scale = water.widthScale ?? water.rivers?.widthScale ?? 1;
+  let top = sizeMemo.get(water);
+  if (top === undefined) {
+    top = threshold;
+    for (const l of water.rivers?.rivers ?? []) top = Math.max(top, l.area[l.area.length - 1] ?? 0);
+    sizeMemo.set(water, top);
+  }
+  const w0 = channelWidth(threshold, scale), w1 = Math.max(w0 * 1.5, channelWidth(top, scale)), span = Math.log(w1 / w0);
+  const p = geo.points, n = geo.widths.length, arc = new Float64Array(n);
+  for (let i = 1; i < n; i++) arc[i] = arc[i - 1] + Math.hypot(p[2 * i] - p[2 * i - 2], p[2 * i + 1] - p[2 * i - 1]);
+  const out: RiverState[] = [];
+  for (let i = 0, j = 0; i < n; i++) {
+    while (j < i && arc[i] - arc[j + 1] >= 150) j++;
+    const run = arc[i] - arc[j], slope = run > 20 ? Math.abs(geo.level[j] - geo.level[i]) / run : 0;
+    const q = Math.max(0, Math.min(1, Math.log(Math.max(geo.widths[i], w0 * .3) / w0) / span));
+    out.push(riverState(climate, q, slope));
+  }
+  // A course dries over a distance, not at a vertex: dryness is averaged over about 500 m of channel.
+  if (climate.aridity > 0 && n > 2) {
+    const dry = out.map(s => s.dry);
+    for (let i = 0, a = 0, b = 0, sum = 0; i < n; i++) {
+      while (b < n && arc[b] - arc[i] <= 250) sum += dry[b++];
+      while (arc[i] - arc[a] > 250) sum -= dry[a++];
+      out[i].dry = sum / (b - a);
+    }
+  }
+  return out;
+}
+const mean = (a: RiverState, b: RiverState): RiverState => ({ dry: (a.dry + b.dry) / 2, ice: (a.ice + b.ice) / 2, foam: (a.foam + b.foam) / 2 });
+
+interface RegimeInk { intermittent: string; dry: string; dryDash: number[]; bed: string; ice: string; iceLine: string; shore: string; plume: string }
+/** Ink of each regime symbol in a style: intermittent courses keep the water ink dashed, dry beds (wadis) a dash-dot
+ * bed ink over a pale bed wash; the parchment draws both in brown, as the old surveys did. Frozen water: a pale
+ * blue-grey sheet inside darker bank lines of the water ink. Dashes in screen pixels. */
+function regimeInk(style: TerrainStyle, edge: string): RegimeInk {
+  // Parchment: brown dash-dot ink over a pale sandy wash, the classic intermittent-stream symbol of the surveys.
+  if (style === 'parchment') return { intermittent: '#6e5232', dry: '#6e5232', dryDash: [6, 2, 1.5, 2], bed: '#c9a874', ice: '#d9dfd8', iceLine: '#8e9d9a', shore: '#e0d2ae', plume: '#9c8458' };
+  if (style === 'render3d' || style === 'render') return { intermittent: edge, dry: '#8c6f4c', dryDash: [5, 2, 1.2, 2], bed: '#cdb48a', ice: '#cbd9e2', iceLine: '#90a9ba', shore: '#cdbf9f', plume: '#8f7a52' };
+  return { intermittent: edge, dry: '#86663f', dryDash: [5, 2, 1.2, 2], bed: '#e3d4b2', ice: '#d4e2eb', iceLine: '#8fb0c6', shore: '#e6dcc4', plume: '#a89870' };
+}
+/** Ice bank line width (m): a fraction of the channel, kept between 0.6 m and 3.5 m. */
+const iceEdge = (w: number): number => Math.min(3.5, Math.max(.6, .16 * w));
+
+interface RegimeGroup { symbol: RiverSymbol; colour: string; banks: string; inner: string; axes: string }
+const groupMemo = new WeakMap<VectorWater, Map<string, RegimeGroup[]>>();
+/** River runs of one symbol and colour: bank outline (with joins and caps), the inset ice sheet and the axis. A genuine
+ * headwater keeps its taper in every state (no cap at the source). Memoized per network and display. */
+function regimeGroups(water: VectorWater, display: WaterDisplay): RegimeGroup[] {
+  const key = JSON.stringify([display.style, display.colors, display.showLakes, display.showOxbows, display.riverArea, display.overlay, display.season]);
+  let memo = groupMemo.get(water); if (!memo) groupMemo.set(water, memo = new Map());
+  const found = memo.get(key); if (found) return found;
+  const network = water.rivers!, { colourOf } = waterInk(display);
+  const groups = new Map<string, RegimeGroup>();
+  const climate = displayClimate(display), threshold = display.riverArea * 1e6;
+  const lines: [RiverLine, number][] = [
+    ...(display.showOxbows ? network.oxbows.map(l => [l, 1] as [RiverLine, number]) : []),
+    ...network.braids.map(l => [l, 0] as [RiverLine, number]),
+    ...network.distributaries.map(l => [l, 0] as [RiverLine, number]),
+    ...network.rivers.map(l => [l, 0] as [RiverLine, number]),
+    ...(!display.showLakes ? (network.lakeLinks ?? []).map(l => [l, 0] as [RiverLine, number]) : []),
+  ];
+  const cap = (x: number, y: number, r: number): string => r <= 0 ? '' : `M${format(x + r)},${format(y)}a${format(r)},${format(r)} 0 1 0 ${format(-2 * r)},0a${format(r)},${format(r)} 0 1 0 ${format(2 * r)},0Z`;
+  for (const [line, thinner] of lines) {
+    const geo = riverGeometry(water, line, thinner, display.riverArea), widths = geo.widths, packed = new Float32Array(widths.length * 4);
+    for (let k = 0; k < widths.length; k++) packed.set([geo.points[2 * k], geo.points[2 * k + 1], widths[k], geo.level[k]], k * 4);
+    const states = climate ? riverStates(water, geo, climate, threshold) : undefined;
+    const symbolAt = (k: number): RiverSymbol => states ? riverSymbol(mean(states[k], states[k + 1])) : 'water';
+    let inset: Float32Array | undefined;
+    let start = 0;
+    while (start + 1 < widths.length) {
+      const colour = colourOf(geo.kind[start]), symbol = symbolAt(start);
+      let end = start + 1;
+      while (end + 1 < widths.length && colourOf(geo.kind[end]) === colour && symbolAt(end) === symbol) end++;
+      const id = `${symbol}${colour}`, group = groups.get(id) ?? { symbol, colour, banks: '', inner: '', axes: '' };
+      group.banks += riverBank(packed, start, end + 1);
+      // Round terminal caps and incident bank joins, like the GPU capsules. A headwater source has none:
+      // its bank closes on a point and the hairline axis below is the pen's first touch.
+      const caps = start === 0 && geo.reach > 0 ? [end] : [start, end];
+      for (const k of caps) group.banks += cap(packed[k * 4], packed[k * 4 + 1], widths[k] / 2);
+      if (symbol === 'ice') {
+        if (!inset) { inset = packed.slice(); for (let k = 0; k < widths.length; k++) inset[k * 4 + 2] = Math.max(0, widths[k] - 2 * iceEdge(widths[k])); }
+        group.inner += riverBank(inset, start, end + 1);
+        for (const k of caps) group.inner += cap(inset[k * 4], inset[k * 4 + 1], inset[k * 4 + 2] / 2);
+      }
+      group.axes += `M${geo.points.slice(2 * start, 2 * end + 2).map((v, k) => (k % 2 ? ',' : k ? 'L' : '') + format(v)).join('')}`;
+      groups.set(id, group); start = end;
+    }
+  }
+  const out = [...groups.values()];
+  memo.set(key, out);
+  return out;
+}
+
+/** River mouths with a sediment plume: mouth point, seaward unit direction, mouth width (m) and strength 0-1. */
+function plumeMouths(water: VectorWater, display: WaterDisplay, climate: WaterClimate | undefined): { x: number; y: number; dx: number; dy: number; w: number; strength: number }[] {
+  if (!climate || climate.sediment < .05 || !water.rivers) return [];
+  const h = water.hydro, cell = h.width / h.n, threshold = display.riverArea * 1e6, out = [];
+  const scale = water.widthScale ?? water.rivers.widthScale ?? 1;
+  let top = threshold; for (const l of water.rivers.rivers) top = Math.max(top, l.area[l.area.length - 1] ?? 0);
+  for (const l of [...water.rivers.rivers, ...water.rivers.distributaries]) {
+    const p = l.points, m = l.area.length - 1;
+    if (m < 2) continue;
+    const ix = Math.floor(p[2 * m] / cell), iy = Math.floor(p[2 * m + 1] / cell);
+    const atSea = (ix >= 0 && iy >= 0 && ix < h.n && iy < h.n && h.sea[iy * h.n + ix]) || h.sea[l.outlet ?? -1];
+    if (!atSea) continue;
+    // Size of the course on the map's own scale: brooks carry no visible plume.
+    const q = Math.log(Math.max(1, l.area[m] / threshold)) / Math.log(Math.max(2, top / threshold));
+    const strength = climate.sediment * Math.min(1, Math.max(0, (q - .35) / .45));
+    if (strength < .05) continue;
+    let k = m; while (k > 0 && Math.hypot(p[2 * m] - p[2 * k], p[2 * m + 1] - p[2 * k + 1]) < 120) k--;
+    const dx = p[2 * m] - p[2 * k], dy = p[2 * m + 1] - p[2 * k + 1], len = Math.hypot(dx, dy) || 1;
+    out.push({ x: p[2 * m], y: p[2 * m + 1], dx: dx / len, dy: dy / len, w: channelWidth(l.area[m], scale), strength });
+  }
+  return out;
+}
+/** Plume fan of one mouth as capsules (centre x, y and width per step), spreading and fading seaward. */
+function plumeSteps(mouth: { x: number; y: number; dx: number; dy: number; w: number }): { x: number; y: number; w: number; t: number }[] {
+  const length = Math.min(1800, Math.max(200, mouth.w * 28)), steps = 7, out = [];
+  let hash = Math.imul(Math.round(mouth.x) ^ Math.imul(Math.round(mouth.y), 668265263), 374761393); hash = (hash ^ (hash >>> 13)) >>> 0;
+  const bend = ((hash & 255) / 255 - .5) * .7;
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps, along = length * t, side = bend * along * t;
+    out.push({ x: mouth.x + mouth.dx * along - mouth.dy * side, y: mouth.y + mouth.dy * along + mouth.dx * side, w: mouth.w * (1.2 + 3.5 * t) + along * .35, t });
+  }
+  return out;
+}
+/** Lake draw-down ring width (m): the shore the dry season exposes. */
+const shoreRing = (climate: WaterClimate | undefined): number => climate ? 80 * climate.drop : 0;
 
 /** Shared water colour and per-vertex diagnostic colours. */
 function waterInk(display: Pick<WaterDisplay, 'style' | 'riverArea' | 'overlay' | 'colors'>): { edge: string; colourOf: (kind: number) => string } {
@@ -115,14 +260,40 @@ export function riverSegments(water: VectorWater, display: WaterDisplay): Float3
     const [r, g, b] = colour(c);
     out.push(x0, y0, x1, y1, w0, w1, r, g, b);
   };
+  const climate = displayClimate(display), ink = climate && !display.material ? regimeInk(display.style, edge) : undefined;
   const line = (l: RiverLine, thinner: number): void => {
-    const { points, widths, kind } = riverGeometry(water, l, thinner, display.riverArea);
+    const geo = riverGeometry(water, l, thinner, display.riverArea), { points, widths, kind } = geo;
+    const states = climate || display.material ? riverStates(water, geo, climate ?? { aridity: 0, rain: 1, ice: 0, sediment: 0, drop: 0 }, threshold) : undefined;
     for (let i = 1; i < widths.length; i++) {
-      push(points[2 * i - 2], points[2 * i - 1], points[2 * i], points[2 * i + 1], widths[i - 1], widths[i], colourOf(kind[i - 1]));
+      const x0 = points[2 * i - 2], y0 = points[2 * i - 1], x1 = points[2 * i], y1 = points[2 * i + 1];
+      if (!states) { push(x0, y0, x1, y1, widths[i - 1], widths[i], colourOf(kind[i - 1])); continue; }
+      if (display.material) {
+        // The regime is per vertex: a long segment is cut into pieces of interpolated colour, so a course dries or
+        // freezes gradually along its channel instead of switching state at each vertex.
+        const c0 = regimeRgb(states[i - 1]), c1 = regimeRgb(states[i]);
+        const steps = Math.max(1, Math.min(12, Math.ceil(Math.max(Math.abs(c1[0] - c0[0]), Math.abs(c1[1] - c0[1]), Math.abs(c1[2] - c0[2])) / .04)));
+        for (let k = 0; k < steps; k++) {
+          const t0 = k / steps, t1 = (k + 1) / steps, t = (t0 + t1) / 2, at = (a: number, b: number, u: number): number => a + (b - a) * u;
+          out.push(at(x0, x1, t0), at(y0, y1, t0), at(x0, x1, t1), at(y0, y1, t1), at(widths[i - 1], widths[i], t0), at(widths[i - 1], widths[i], t1), at(c0[0], c1[0], t), at(c0[1], c1[1], t), at(c0[2], c1[2], t));
+        }
+        continue;
+      }
+      const state = mean(states[i - 1], states[i]);
+      // Ink styles: the vector layer draws intermittent and dry courses as symbols over the land.
+      const symbol = riverSymbol(state);
+      if (symbol === 'water' || symbol === 'ice') push(x0, y0, x1, y1, widths[i - 1], widths[i], symbol === 'ice' ? ink!.ice : colourOf(kind[i - 1]));
     }
   };
   const rivers = water.rivers;
   if (display.riverMode === 'vector' && rivers) {
+    // Sediment plumes first: the river capsules (MAX blend) keep their own regime where they overlap.
+    if (display.material) for (const mouth of plumeMouths(water, display, climate)) {
+      const steps = plumeSteps(mouth);
+      for (let i = 1; i < steps.length; i++) {
+        const [r, g, b] = plumeRgb(mouth.strength * (1 - steps[i - 1].t));
+        out.push(steps[i - 1].x, steps[i - 1].y, steps[i].x, steps[i].y, steps[i - 1].w, steps[i].w, r, g, b);
+      }
+    }
     if (display.showOxbows) for (const o of rivers.oxbows) line(o, 1);
     for (const l of rivers.braids) line(l, 0);
     for (const l of rivers.distributaries) line(l, 0);
@@ -150,10 +321,10 @@ function headwaterSet(water: VectorWater, threshold: number): Set<RiverLine> {
   }
   return set;
 }
-/** River line geometry as drawn: in Blended mode a genuine headwater emerges from 0.6 m instead of starting as a full-width disc. */
+/** River line geometry as drawn: a genuine headwater emerges from zero width instead of starting as a full-width disc (every style). */
 export function riverGeometry(water: VectorWater, line: RiverLine, thinner: number, riverAreaKm2: number): HeadwaterGeometry {
   const widths = riverWidths(water, line, thinner);
-  return isBlended() && headwaterSet(water, riverAreaKm2 * 1e6).has(line) ? headwaterGeometry(line, widths) : { points: line.points, widths, level: line.level, kind: line.kind, reach: 0 };
+  return headwaterSet(water, riverAreaKm2 * 1e6).has(line) ? headwaterGeometry(line, widths) : { points: line.points, widths, level: line.level, kind: line.kind, reach: 0 };
 }
 
 /** Hydraulic geometry, shared by both renderers; tidal mouths widen gradually. */
@@ -179,40 +350,43 @@ export function riverWidths(water: VectorWater, line: RiverLine, thinner = 0): n
 }
 
 export function vectorWaterSvg(water: VectorWater, display: WaterDisplay, material = true): string {
-  const { edge, colourOf } = waterInk(display);
-  let svg = `<g class="water">${display.showLakes ? `<path class="water-lakes" d="${lakeShores(water)}" fill="${edge}" fill-rule="evenodd" stroke="none"/>` : ''}`;
-  const network = water.rivers;
-  if (display.riverMode === 'vector' && network) {
-    const groups = new Map<string, { banks: string; axes: string }>();
-    const lines: [RiverLine, number][] = [
-      ...(display.showOxbows ? network.oxbows.map(l => [l, 1] as [RiverLine, number]) : []),
-      ...network.braids.map(l => [l, 0] as [RiverLine, number]),
-      ...network.distributaries.map(l => [l, 0] as [RiverLine, number]),
-      ...network.rivers.map(l => [l, 0] as [RiverLine, number]),
-      ...(!display.showLakes ? (network.lakeLinks ?? []).map(l => [l, 0] as [RiverLine, number]) : []),
-    ];
-    for (const [line, thinner] of lines) {
-      const geo = riverGeometry(water, line, thinner, display.riverArea), widths = geo.widths, packed = new Float32Array(widths.length * 4);
-      for (let k = 0; k < widths.length; k++) packed.set([geo.points[2 * k], geo.points[2 * k + 1], widths[k], geo.level[k]], k * 4);
-      let start = 0;
-      while (start + 1 < widths.length) {
-        const colour = colourOf(geo.kind[start]);
-        let end = start + 1;
-        while (end + 1 < widths.length && colourOf(geo.kind[end]) === colour) end++;
-        const group = groups.get(colour) ?? { banks: '', axes: '' };
-        group.banks += riverBank(packed, start, end + 1);
-        // Round terminal caps and incident bank joins, like the GPU capsules.
-        for (const k of [start, end]) {
-          const x = packed[k * 4], y = packed[k * 4 + 1], r = widths[k] / 2;
-          group.banks += `M${format(x + r)},${format(y)}a${format(r)},${format(r)} 0 1 0 ${format(-2 * r)},0a${format(r)},${format(r)} 0 1 0 ${format(2 * r)},0Z`;
-        }
-        group.axes += `M${geo.points.slice(2 * start, 2 * end + 2).map((v, k) => (k % 2 ? ',' : k ? 'L' : '') + format(v)).join('')}`;
-        groups.set(colour, group); start = end;
-      }
+  const { edge } = waterInk(display), climate = displayClimate(display), ink = regimeInk(display.style, edge);
+  // Frozen lakes: a pale sheet inside a bank line of the water ink. Dry season: a pale exposed shore inside the lake.
+  const lakeFrozen = !!climate && climate.ice >= .5, ring = lakeFrozen ? 0 : shoreRing(climate), lakes = display.showLakes ? lakeShores(water) : '';
+  const lakeFill = lakeFrozen ? ink.ice : edge;
+  const lakeStroke = lakeFrozen ? ` stroke="${edge}" stroke-width="1.1" stroke-opacity="0.9" vector-effect="non-scaling-stroke"` : ' stroke="none"';
+  let svg = `<g class="water">`;
+  // Sediment plumes: soft fans of muted silt over the sea, under the rivers.
+  for (const mouth of plumeMouths(water, display, climate)) {
+    const steps = plumeSteps(mouth);
+    for (let i = 1; i < steps.length; i++) {
+      const a = steps[i - 1], b = steps[i], na = [-mouth.dy * a.w / 2, mouth.dx * a.w / 2], nb = [-mouth.dy * b.w / 2, mouth.dx * b.w / 2];
+      svg += `<path d="M${format(a.x + na[0])},${format(a.y + na[1])}L${format(b.x + nb[0])},${format(b.y + nb[1])}L${format(b.x - nb[0])},${format(b.y - nb[1])}L${format(a.x - na[0])},${format(a.y - na[1])}Z" fill="${ink.plume}" fill-opacity="${(.22 * mouth.strength * (1 - a.t)).toFixed(3)}" stroke="none"/>`;
     }
-    for (const [colour, group] of groups) {
-      svg += `<path d="${group.axes}" fill="none" stroke="${colour}" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
-      svg += `<path d="${group.banks}" fill="${colour}" stroke="none"/>`;
+  }
+  if (lakes) {
+    svg += `<path class="water-lakes" d="${lakes}" fill="${lakeFill}" fill-rule="evenodd"${lakeStroke}/>`;
+  }
+  if (display.riverMode === 'vector' && water.rivers) {
+    const dash = (d: number[]): string => d.join(' ');
+    for (const { colour, symbol, axes, banks, inner } of regimeGroups(water, display)) {
+      if (symbol === 'water') {
+        svg += `<path d="${axes}" fill="none" stroke="${colour}" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+        svg += `<path d="${banks}" fill="${colour}" stroke="none"/>`;
+      } else if (symbol === 'ice') {
+        // Frozen: the course keeps its water-ink banks as two darker bank lines; inside, a pale blue-grey sheet with
+        // faint streaks along the flow. Hairline streams show as a blue-grey line, never a white band.
+        svg += `<path d="${axes}" fill="none" stroke="${ink.iceLine}" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+        svg += `<path d="${banks}" fill="${colour}" stroke="none"/>`;
+        svg += `<path d="${inner}" fill="${ink.ice}" stroke="none"/>`;
+        svg += `<path d="${axes}" fill="none" stroke="${ink.iceLine}" stroke-width="0.6" stroke-opacity="0.45" stroke-dasharray="14 9" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`;
+      } else {
+        // Intermittent: pale bed and a dashed thread of water ink. Dry bed (wadi): bed wash and a dash-dot bed ink.
+        const dry = symbol === 'dry';
+        svg += `<path d="${banks}" fill="${dry ? ink.bed : colour}" fill-opacity="${dry ? 0.6 : 0.35}" stroke="none"/>`;
+        if (dry) svg += `<path d="${axes}" fill="none" stroke="${ink.bed}" stroke-width="3.2" stroke-opacity="0.55" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+        svg += `<path d="${axes}" fill="none" stroke="${dry ? ink.dry : ink.intermittent}" stroke-width="${dry ? 1.4 : 1.1}" stroke-dasharray="${dry ? dash(ink.dryDash) : '5 3'}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+      }
     }
   } else {
     const segments = riverSegments(water, display), groups = new Map<string, string>();
@@ -227,8 +401,67 @@ export function vectorWaterSvg(water: VectorWater, display: WaterDisplay, materi
       svg += `<path d="${d}" fill="none" stroke="${edge}" stroke-width="${width}" stroke-linecap="round"/>`;
     }
   }
-  if (material && display.showLakes) svg += vectorLakeMaterial(water, display.style, display.colors);
+  if (material && display.showLakes && !lakeFrozen) svg += vectorLakeMaterial(water, display.style, display.colors);
+  // The exposed shore lies over the lake material and the river mouths, inside the lake only.
+  if (lakes && ring > 1) svg += `<clipPath id="water-regime-lakes"><path d="${lakes}" clip-rule="evenodd"/></clipPath><path d="${lakes}" fill="none" stroke="${ink.shore}" stroke-width="${format(2 * ring)}" stroke-linejoin="round" clip-path="url(#water-regime-lakes)"/>`;
   return svg + '</g>';
+}
+
+/**
+ * The seasonal regime on a 3D ground tile, `ctx` transformed to map metres, `mpp` metres per tile pixel.
+ * - `erase`: removes dry and frozen water (and frozen lakes, with `lakes`) from a water cover mask, then redraws the
+ *   running courses in `fill` so a dry tributary never notches its trunk;
+ * - `ground`: dry beds, ice and exposed lake shores as ground albedo (material grounds);
+ * - `ink`: the map symbols of the style (map grounds).
+ * Returns false when the regime changes nothing.
+ */
+export function paintWaterRegime(ctx: CanvasRenderingContext2D, water: VectorWater, display: WaterDisplay, mode: 'erase' | 'ground' | 'ice' | 'ink', mpp: number, lakes?: Path2D, fill = '#4a86b3'): boolean {
+  const climate = displayClimate(display);
+  if (!climate || display.riverMode !== 'vector' || !water.rivers) return false;
+  const groups = regimeGroups(water, display), { edge } = waterInk(display), ink = regimeInk(display.style, edge);
+  const paths = groups.map(g => ({ ...g, banksPath: new Path2D(g.banks), axesPath: new Path2D(g.axes), innerPath: g.inner ? new Path2D(g.inner) : undefined }));
+  const lakeFrozen = climate.ice >= .5, ring = lakeFrozen ? 0 : shoreRing(climate);
+  ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  if (mode === 'erase') {
+    const cell = water.hydro.width / water.hydro.n;
+    ctx.globalCompositeOperation = 'destination-out'; ctx.fillStyle = ctx.strokeStyle = '#000'; ctx.lineWidth = 2.5 * cell;
+    for (const g of paths) if (g.symbol !== 'water') { ctx.fill(g.banksPath); ctx.stroke(g.axesPath); }
+    if (lakeFrozen && lakes) ctx.fill(lakes, 'evenodd');
+    if (ring > 1 && lakes) { ctx.save(); ctx.clip(lakes, 'evenodd'); ctx.lineWidth = 2 * ring; ctx.stroke(lakes); ctx.restore(); }
+    ctx.globalCompositeOperation = 'source-over'; ctx.fillStyle = ctx.strokeStyle = fill; ctx.lineWidth = cell;
+    for (const g of paths) if (g.symbol === 'water') { ctx.fill(g.banksPath); ctx.stroke(g.axesPath); }
+    // A material water cover (3D) keeps a shrunken low-water thread in the intermittent courses, as the 2D compositor
+    // keeps its pools: a running trunk narrows into its bed instead of stopping short. Ink styles draw their symbol.
+    if (display.style === 'render3d') for (const g of paths) if (g.symbol === 'intermittent') {
+      ctx.save(); ctx.clip(g.banksPath); ctx.lineWidth = 1.4 * cell; ctx.stroke(g.axesPath); ctx.restore();
+    }
+    ctx.restore(); return true;
+  }
+  // Material grounds: `ground` paints the dry beds and exposed shores as albedo, `ice` the ice as a decal over the
+  // finished (snowed) ground, so a frozen course never vanishes under the snow cover.
+  const px = (v: number): number => v * mpp, material = mode !== 'ink', iceOn = mode !== 'ground', dryOn = mode !== 'ice';
+  if (lakes && lakeFrozen && iceOn) { ctx.fillStyle = material ? '#a9bac6' : ink.ice; ctx.fill(lakes, 'evenodd'); ctx.strokeStyle = material ? '#55697a' : edge; ctx.lineWidth = px(1.6); ctx.stroke(lakes); }
+  if (lakes && ring > 1 && dryOn) { ctx.save(); ctx.clip(lakes, 'evenodd'); ctx.strokeStyle = material ? '#b9ab8e' : ink.shore; ctx.lineWidth = 2 * ring; ctx.stroke(lakes); ctx.restore(); }
+  for (const g of paths) {
+    if (g.symbol === 'water' || (g.symbol === 'ice' ? !iceOn : !dryOn)) continue;
+    if (g.symbol === 'ice') {
+      ctx.strokeStyle = material ? '#7f97a8' : ink.iceLine; ctx.lineWidth = px(1.2); ctx.stroke(g.axesPath);
+      ctx.fillStyle = material ? '#55697a' : g.colour; ctx.fill(g.banksPath);
+      if (g.innerPath) { ctx.fillStyle = material ? '#a9bac6' : ink.ice; ctx.fill(g.innerPath); }
+      continue;
+    }
+    const dry = g.symbol === 'dry';
+    // Bed wash at least two pixels wide, so a dry stream still reads at a distance.
+    ctx.globalAlpha = dry ? .75 : .45; ctx.strokeStyle = ctx.fillStyle = material ? '#c8b28c' : dry ? ink.bed : g.colour;
+    ctx.lineWidth = px(2.2); ctx.stroke(g.axesPath); ctx.fill(g.banksPath); ctx.globalAlpha = 1;
+    // A material dry bed stays a pale wash with a faint gravel thread: a dark dashed axis read as a track.
+    if (material && dry) ctx.globalAlpha = .3;
+    ctx.strokeStyle = material ? (dry ? '#a8916c' : '#35596c') : dry ? ink.dry : ink.intermittent;
+    ctx.lineWidth = px(material ? 1 : dry ? 1.4 : 1.1);
+    ctx.setLineDash((material ? (dry ? [1.5, 3.5] : [7, 3]) : dry ? ink.dryDash : [5, 3]).map(px)); ctx.stroke(g.axesPath); ctx.setLineDash([]); ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+  return true;
 }
 
 /** Shared lake material for live rendering and retained terrain exports. */

@@ -87,7 +87,6 @@ import { mountIllustration, captureViewport } from '../../../illustration/web/in
 import { illustrationContext } from './illustrationContext';
 import { installSurfaceLive } from './surfaceLive';
 import { createSurfaceBenchRevisionReader } from './surfaceBenchRevision';
-import { onGroundBlend } from '../render/groundBlend';
 function renderBenchTerrain(...args: Parameters<typeof renderRustTerrain>): TerrainScene {
   const c=resolveBenchAppearance().composition;
   if(c.networks.water.look==='natural')args[10]='render3d';
@@ -1487,7 +1486,6 @@ function lakesOnlySvg(svg: string): string {
   }
   return host.innerHTML;
 }
-onGroundBlend(() => renderWater()); // Roads & ground: headwaters taper in Blended
 function renderWater(): void {
   schedule3dTexture();
   const r = resolveBenchAppearance(), ink = r.composition.networks.water.look === 'ink', shown = r.composition.networks.water.visible, waterStyle = ink ? r.palette.mapStyle : 'render3d';

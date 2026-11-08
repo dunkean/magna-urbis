@@ -64,7 +64,9 @@ vec3 v2ZoneOpen(vec3 c,V2Env e,vec2 world,float fp){
   wet=mix(wet,parcel,keep);
   return mix(c,wet,.8*v2ZoneWet);
 }
-const float V2_ICE_ZOOM=5.;
+// Neural Earth sizes its pack for a planet; on a local map the same floes come in at ship scale.
+// Rivers and lakes keep their own freeze (rendered along their outline elsewhere); the sea pack breaks into smaller cakes.
+const float V2_ICE_ZOOM=5.,V2_SEA_ICE_ZOOM=8.;
 // Temperature follows the sun by about a month: spring is colder than autumn.
 const float V2_SEASON_LAG=.08;
 uniform vec4 uV2GlacierSources[8];
@@ -85,9 +87,11 @@ V2Env v2Local(vec3 s,vec2 world,float tpi,float footprint){
     e.snow=max(v2Snow(e.temperature+thaw,supply,slope,sstep(0.,-.10,tpi)),v2PerennialSnow(warmest+.65*(e.exposure-.5),supply,slope));
   }
   // Snow lies in patches, not as a veil: drifts down to field size cross the melt threshold one by one.
+  // Altitude, aspect and hollows (already in e.snow) set where the melt runs; the drifts only fray its edge,
+  // so the landscape-scale octave stays weak: a strong one paints random white blobs across uniform ground.
   vec3 ground=vec3(world,0.);
-  float drift=.45*v2Pattern(ground,2600.,footprint,uMaterialSeed+721u)+.3*v2Pattern(ground,700.,footprint,uMaterialSeed+722u)+.15*v2Pattern(ground,190.,footprint,uMaterialSeed+723u)+.1*v2Pattern(ground,55.,footprint,uMaterialSeed+724u);
-  e.snow=sstep(.39,.49,e.snow+v2SeasonSnowPatches()*drift*sstep(0.,.25,e.snow)*(1.-sstep(.8,1.,e.snow)));
+  float drift=.15*v2Pattern(ground,2600.,footprint,uMaterialSeed+721u)+.3*v2Pattern(ground,700.,footprint,uMaterialSeed+722u)+.32*v2Pattern(ground,190.,footprint,uMaterialSeed+723u)+.23*v2Pattern(ground,55.,footprint,uMaterialSeed+724u);
+  e.snow=sstep(.34,.54,e.snow+v2SeasonSnowPatches()*drift*sstep(0.,.25,e.snow)*(1.-sstep(.8,1.,e.snow)));
   if(uForest==1){vec4 f=forestField(world,0.);e.woody=f.r;e.height=f.g*50.;e.needle=f.b;e.leaf=mix(e.leaf,1.,e.needle);}
   // The zone's calendar sets leaf fall: a temperature proxy leaves oaks in leaf through a mild winter.
   if(v2Zoned())e.leaf=mix(v2SeasonLeaf(),1.,e.needle);
@@ -106,10 +110,21 @@ GroundMaterial v2GroundEnv(V2Env local,vec3 s,vec2 world,float footprint,vec3 li
   float macroWoods=renderGuideWoods*(1.-clamp(renderGuideBeach/.8,0.,1.));
   vec3 baseClosed=renderGuideBaseClosed;
   if(v2Zoned()){macroWoods=min(macroWoods*V2_ZONE_FOREST[v2Zone()].x,1.);baseClosed*=V2_ZONE_CANOPY[v2Zone()].rgb;}
+  // Render's macro woods ignore the V2 stands (measured ~.05-.1 over a dense nordic taiga), and every unresolved
+  // zoom shows this reference: under snow the missing canopy reads as a pale grey floor. Snowy stands take the
+  // forest field's own cover, filtered to the footprint; snow-free ground keeps the reference as it was.
+  vec2 woodsUv=(world-uForestRect.xy)/uForestRect.z;float snowStands=0.;
+  if(uForest==1&&local.snow>0.&&all(greaterThanEqual(woodsUv,vec2(0.)))&&all(lessThanEqual(woodsUv,vec2(1.)))){
+    float cell=uForestRect.z/float(textureSize(uForestField,0).x);
+    float stands=forestField(world,max(log2(max(footprint,.02)/cell),0.)).r*(1.-clamp(renderGuideBeach/.8,0.,1.));
+    macroWoods=mix(macroWoods,max(macroWoods,stands),local.snow);snowStands=stands*local.snow;
+  }
   V2Env e=v2Appearance(local,footprint);v2Foliage=e.leaf;v2GroundSnow=e.snow;
   // Retained macro canopy is the occupation/gallery fallback. Natural stands
   // below use population-weighted open, litter and intrinsic crown responses.
   float woods=(uForest==1?macroWoods:e.woody)*e.leaf*(1.-v2ZoneBare);
+  // The zone's bare outcrops (nordic slopes) must not strip stands the crowns still draw when resolved.
+  woods=max(woods,snowStands*e.leaf);
   // One retained material mean at every footprint. Resolution reveals only
   // surface detail; it must not replace the soil with another palette.
   vec3 opened=v2GroundTint(macroOpen,e);
@@ -127,9 +142,11 @@ GroundMaterial v2GroundEnv(V2Env local,vec3 s,vec2 world,float footprint,vec3 li
   v2CrownGuide=closed;
   // Integrate the intrinsic normals/AO of unresolved crowns. The guide for
   // actual resolved crowns below retains its original material, not this mean.
-  vec3 meanClosed=closed*mix(vec3(1.),v2CanopyMeanRatio(closed,e.needle,light,light2,strength),1.-e.snow);
-  closed=mix(closed,vec3(.72,.79,.77),e.snow*.62);
-  meanClosed=mix(meanClosed,vec3(.72,.79,.77),e.snow*.62);
+  // Snow frosts bare limbs heavily; conifer crowns shed it and stay dark over the white floor (the floor carries the snow).
+  float frost=e.snow*mix(.62,.08,e.needle);
+  vec3 meanClosed=closed*mix(vec3(1.),v2CanopyMeanRatio(closed,e.needle,light,light2,strength),1.-e.snow*(1.-e.needle));
+  closed=mix(closed,vec3(.72,.79,.77),frost);
+  meanClosed=mix(meanClosed,vec3(.72,.79,.77),frost);
   // Legacy sediment is composed after the unresolved canopy. Resolved crowns
   // above those flats retain their own material when applyForest reveals them.
   v2MacroCanopy=mix(meanClosed,renderGuideSediment*.9,renderGuideFlats*(1.-e.snow));
@@ -143,7 +160,11 @@ GroundMaterial v2GroundEnv(V2Env local,vec3 s,vec2 world,float footprint,vec3 li
   float form=clamp(detail.x*10.,-1.,1.);
   v2FloorModulation=1.+form*mix(mix(.04,.06,e.rock),.006,e.snow)+sward;
   v2MacroNormal=normalize(vec3(-s.y,1.,-s.z));
-  m.albedo=mix(forestFloorAlbedo(opened),groundToLinear(v2MacroCanopy),woods);
+  // Inside snowy conifer stands the floor between crowns is intercepted and shaded, and the canopy keeps a
+  // stand-scale grain: an unresolved taiga reads dark and textured over white clearings, not as a grey blanket.
+  vec3 standFloor=mix(opened,opened*vec3(.45,.48,.50)+vec3(.03,.04,.03),snowStands*e.needle);
+  float crownGrain=1.+snowStands*(.22*v2Pattern(vec3(world,0.),45.,footprint,uMaterialSeed+761u)+.14*v2Pattern(vec3(world,0.),14.,footprint,uMaterialSeed+762u));
+  m.albedo=mix(forestFloorAlbedo(standFloor),groundToLinear(v2MacroCanopy)*crownGrain,woods);
   m.roughness=clamp(pow(pow(mix(.88,.54,e.rock),4.)+gain*gain*groundSlopeVariance(footprint),.25),.4,.98);
   m.occlusion=clamp(1.-.10*max(-detail.x*12.,0.)*e.rock,.8,1.);
   v2MeanEnabled=0.;v2ForestReveal=0.;
@@ -171,8 +192,8 @@ GroundMaterial v2GroundEnv(V2Env local,vec3 s,vec2 world,float footprint,vec3 li
     v2MeanLitter.occlusion*=.72;
     vec3 bareGuide=baseClosed*v2Canopy(canopyPhase)/max(v2Canopy(leafOn),vec3(.02));
     vec3 crownBare=forestCrownColor(st,bareGuide,st.needle,vec2(0.),0.);
-    vec3 crownMean=crownBare*mix(vec3(1.),v2CanopyMeanRatio(crownBare,st.needle,light,light2,strength),1.-e.snow);
-    v2MeanCrown.albedo=groundToLinear(forestSnowed(crownMean,e.snow*.62));
+    vec3 crownMean=crownBare*mix(vec3(1.),v2CanopyMeanRatio(crownBare,st.needle,light,light2,strength),1.-e.snow*(1.-st.needle));
+    v2MeanCrown.albedo=groundToLinear(forestSnowed(crownMean,e.snow*mix(.62,.08,st.needle)));
     v2MeanCrown.normal=v2MacroNormal;v2MeanCrown.roughness=.9;v2MeanCrown.occlusion=1.;
     v2MeanEnabled=1.;
   }
@@ -199,10 +220,47 @@ vec3 v2WaterColor(V2Env local,vec2 world,float footprint,float cover,float kind,
   e.glacier=kind<1.5?v2GlacierProximity(world):0.;
   // The zone's calendar owns the sea ice: v2Freeze reads its concentration back from this temperature.
   // Above about .9 the pack closes into a white sheet and the broken plates are gone.
-  if(kind<1.5&&v2Zoned())e.temperature=-2.-7.*(.5-sin(asin(1.-2.*v2SeasonSeaIce())/3.));
-  // Neural Earth sizes its pack for a planet; on a local map the same floes come in at ship scale.
-  vec3 icePoint=vec3(world*V2_ICE_ZOOM,0.);float iceFootprint=footprint*V2_ICE_ZOOM;
+  // On a zoned map the sea ice reads as a coast: a smooth shore-fast sheet that follows the shallows, then a loose
+  // pack whose plates break into ever smaller floes and leads toward open water. The pack stays below the compact
+  // threshold (.68) here, so the shore is never paved with rigid slabs.
+  float fastIce=0.,crack=0.;v2IceWhole=.31;
+  if(kind<1.5&&v2Zoned()){
+    // The shore-fast sheet reaches past the first shallows: a continuous white rim along the whole coast.
+    float c=v2SeasonSeaIce(),reach=2.+24.*c*c;
+    // A tight fray: on a broad shallow shelf a wider one would scatter fast-ice blobs far from the coast.
+    float frayed=depth+.8*v2Pattern(vec3(world,0.),240.,footprint,uMaterialSeed+751u)+.4*v2Pattern(vec3(world,0.),70.,footprint,uMaterialSeed+752u);
+    fastIce=sstep(reach+.6,reach-.6,frayed)*sstep(.08,.3,c);
+    // Close pack with leads off the fast ice, larger floes beyond, then open water (depth stands in for distance).
+    float offshore=sstep(reach,reach+45.,depth);
+    v2IceWhole=mix(.85,.45,offshore);
+    c=min(c*mix(.6,1.,c),.66)*(1.-.85*offshore);
+    e.temperature=-2.-7.*(.5-sin(asin(1.-2.*c)/3.));
+    // Tide crack: the shore line stays a thin dark seam under the ice.
+    crack=sstep(1.2,.2,depth)*sstep(.05,.2,c);
+  }
+  float zoom=kind<1.5?V2_SEA_ICE_ZOOM:V2_ICE_ZOOM;
+  vec3 icePoint=vec3(world*zoom,0.);float iceFootprint=footprint*zoom;
   vec3 water=v2Water(depth,kind,cover,e,icePoint,iceFootprint,uMaterialSeed);
+  // Sea colour by climate, on open water only (bright ice stays as drawn): turquoise shelves and bright lagoons on
+  // warm coasts, clearer blue offshore of arid ones, a darker steel blue in cold seas. Temperate seas are unchanged.
+  if(kind<1.5){
+    float T=uMaterialClimate.x,warm=sstep(17.,25.,T),cold=sstep(6.,-1.,T),arid=sstep(500.,150.,uMaterialClimate.y);
+    float open=1.-sstep(.30,.55,dot(water,vec3(.333)));
+    float shelf=exp(-max(depth,0.)*.06),lagoon=exp(-max(depth,0.)*.35);
+    vec3 tinted=mix(water,vec3(.07,.40,.46),warm*shelf*.65);
+    tinted=mix(tinted,vec3(.36,.70,.66),warm*lagoon*.5);
+    tinted=mix(tinted,vec3(.03,.16,.33),arid*(1.-shelf)*.35);
+    tinted=mix(tinted,tinted*vec3(.80,.90,1.)+vec3(0.,.01,.02),cold*.6);
+    water=mix(water,tinted,open);
+  }
+  if(fastIce>0.){
+    // Snow-dusted shore-fast ice, a faint grey seam where it meets the pack.
+    float grain=.025*v2Pattern(vec3(world,0.),120.,footprint,uMaterialSeed+753u)+.015*v2Pattern(vec3(world,0.),35.,footprint,uMaterialSeed+754u);
+    vec3 sheet=vec3(.84,.88,.90)+grain;
+    sheet=mix(sheet,vec3(.62,.70,.74),.5*sstep(.25,.5,fastIce)*(1.-sstep(.5,.75,fastIce)));
+    water=mix(water,sheet,fastIce);
+  }
+  water=mix(water,vec3(.14,.21,.25),.75*crack);
   if(uRenderV2==5)water=mix(vec3(.08,.17,.24),vec3(.85,.94,1.),v2Ice(depth,kind,e,icePoint,iceFootprint,uMaterialSeed).x);
   if(uRenderV2==4)water=vec3(0.,0.,.13);
   return water;

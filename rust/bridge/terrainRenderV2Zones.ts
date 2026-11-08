@@ -32,8 +32,8 @@ export const ZONE_SEASONS: Readonly<Record<ClimateZone, ZoneSeason>> = {
   temperate: { herb: [[.86, .80, .70], [.98, 1.12, .90], [.96, 1.06, .92], [1.06, .96, .78]], leaf: [0, .62, 1, .85], seaIce: NO_ICE, wet: STEADY, snow: [.12, 0, 0, 0], rain: .1, cool: 1, larch: 0, thaw: [0, 5.3, 0, 3] },
   mediterranean: { herb: [[.90, 1.08, .86], [.92, 1.12, .84], [1.18, 1.02, .74], [1.10, .98, .78]], leaf: [.82, .92, 1, .95], seaIce: NO_ICE, wet: STEADY, snow: NO_ICE, rain: -.75, cool: 0, larch: 0 },
   continental: { herb: [[.85, .80, .72], [.96, 1.12, .90], [.97, 1.05, .93], [1.08, .94, .74]], leaf: [0, .55, 1, .80], seaIce: [.55, .10, 0, 0], wet: STEADY, snow: [.85, .05, 0, .05], rain: .25, cool: 6, larch: .1, thaw: [0, 10.5, 0, 4] },
-  nordic: { herb: [[.80, .76, .72], [.94, 1.04, .88], [.98, 1.04, .96], [1.08, .94, .76]], leaf: [0, .40, 1, .75], seaIce: [.80, .40, 0, .08], wet: STEADY, snow: [1, .25, 0, .10], rain: 0, cool: 7, larch: .12 },
-  alpine: { herb: [[.85, .82, .76], [.98, 1.10, .90], [1, 1.06, .96], [1.07, .95, .78]], leaf: [0, .40, 1, .75], seaIce: [.40, .05, 0, 0], wet: STEADY, snow: [1, .35, 0, .20], rain: .15, cool: 9, larch: .35 },
+  nordic: { herb: [[.80, .76, .72], [.94, 1.04, .88], [.98, 1.04, .96], [1.08, .94, .76]], leaf: [0, .40, 1, .75], seaIce: [.75, .30, 0, .05], wet: STEADY, snow: [1, .25, 0, .10], rain: 0, cool: 7, larch: .12, thaw: [0, 4.5, 0, 0] },
+  alpine: { herb: [[.85, .82, .76], [.98, 1.10, .90], [1, 1.06, .96], [1.07, .95, .78]], leaf: [0, .40, 1, .75], seaIce: NO_ICE, wet: STEADY, snow: [1, .35, 0, .20], rain: .15, cool: 9, larch: .35 },
   arctic: { herb: [[.90, .88, .86], [.92, .92, .84], [.98, 1.02, .88], [1.12, .90, .72]], leaf: [0, .30, 1, .65], seaIce: [.82, .82, .76, .80], wet: STEADY, snow: [1, .80, .05, .55], rain: .2, cool: 6, larch: 0 },
   steppe: { herb: [[.92, .86, .76], [.86, 1.14, .82], [1.06, .98, .84], [1.04, .94, .80]], leaf: [0, .60, 1, .70], seaIce: [.30, 0, 0, 0], wet: STEADY, snow: [.60, 0, 0, .05], rain: .3, cool: 5, larch: 0 },
   desert: { herb: [[.90, .90, .92], [.96, 1.02, .90], [1.08, 1, .88], [1.02, .97, .90]], leaf: [.90, 1, 1, .95], seaIce: NO_ICE, wet: STEADY, snow: NO_ICE, rain: 0, cool: 0, larch: 0 },
@@ -130,7 +130,7 @@ uniform int uMaterialZone;
 // x canopy cover scale, y needle-leaf target, z its weight, w low-flat water table.
 const vec4 V2_ZONE_FOREST[11]=vec4[11](
   vec4(1.,.12,.45,.25),vec4(.62,.30,.45,0.),vec4(1.,.55,.55,.15),vec4(1.,.92,.75,.45),
-  vec4(1.,.88,.70,.05),vec4(.12,.75,.60,.45),vec4(.22,.20,.50,.08),vec4(.12,0.,1.,0.),
+  vec4(1.,.90,.85,.05),vec4(.12,.75,.60,.45),vec4(.22,.20,.50,.08),vec4(.12,0.,1.,0.),
   vec4(.42,0.,1.,.10),vec4(1.,0.,1.,.55),vec4(.55,.08,.70,1.));
 // x rock exposure, y sand, z organic soil, w herbaceous cover scale.
 const vec4 V2_ZONE_SOIL[11]=vec4[11](

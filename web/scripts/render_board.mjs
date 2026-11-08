@@ -7,7 +7,7 @@ import { chromium } from 'playwright';
 const web = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2), arg = (name, fallback) => { const i = args.indexOf(`--${name}`); return i < 0 ? fallback : args[i + 1]; };
 const port = Number(arg('port', '')), label = arg('label', '');
-if (!Number.isInteger(port) || port < 5191 || port > 5199 || !/^[\w.-]+$/.test(label)) throw Error('Usage: --port 5191..5199 --label name [--styles a,b] [--zooms far,mid,near] [--three-d] [--page v2.html]');
+if (!Number.isInteger(port) || port < 5191 || port > 5199 || !/^[\w.-]+$/.test(label)) throw Error('Usage: --port 5191..5199 --label name [--styles a,b] [--zooms far,mid,near] [--three-d] [--season s] [--climate zone] [--relief-climate zone] [--camera-from label] [--page v2.html]');
 const styles = arg('styles', 'atlas,cadastre,topographic,satellite,parchment,illustration').split(',');
 const zooms = arg('zooms', 'far,mid,near').split(','), steps = { far: 0, mid: 5, near: 9 };
 for (const z of zooms) if (!(z in steps)) throw Error(`Unknown zoom ${z}`);
@@ -38,6 +38,11 @@ try {
   page.setDefaultTimeout(30000);
   // Other sessions edit this tree: a hot reload in the middle of the chain would lose the page.
   await page.route('**/@vite/client', route => route.fulfill({ contentType: 'text/javascript', body: 'export const createHotContext=()=>({accept(){},dispose(){},prune(){},invalidate(){},on(){},off(){},send(){},data:{}});export const updateStyle=(id,css)=>{let e=document.querySelector(`style[data-vite-dev-id="${id}"]`);if(!e){e=document.createElement("style");e.dataset.viteDevId=id;document.head.append(e);}e.textContent=css;};export const removeStyle=()=>{};export const injectQuery=u=>u;export const ErrorOverlay=class{};' }));
+  // Board-only hook: expose the 3D view's camera so a board can record it and another board can reuse it (--camera-from label).
+  // The default camera fits the buildings, so a climate variant with other farms would otherwise frame the map differently.
+  await page.route(/\/city3d\.ts(\?.*)?$/, async route => { const response = await route.fetch(), body = await response.text(); if (!body.includes('return api;')) meta.notes.push('3D camera hook missing'); await route.fulfill({ response, body: body.replace('return api;', 'globalThis.__boardCity3d = api; return api;') }); });
+  const cameraFrom = arg('camera-from', '') ? JSON.parse(fs.readFileSync(path.join(web, 'out/render-board', arg('camera-from', ''), 'meta.json'), 'utf8')).camera3d : undefined;
+  if (arg('camera-from', '') && !cameraFrom) throw Error(`No camera3d in board ${arg('camera-from', '')}`);
   if (args.includes('--webgpu')) await page.addInitScript(() => { const proto = globalThis.GPUDevice?.prototype; if (!proto) return; const create = proto.createRenderPipelineAsync; proto.createRenderPipelineAsync = function (d) { const t = performance.now(); return create.call(this, d).then(r => { console.warn('WebGPU pipeline ok', d.label, Math.round(performance.now() - t) + ' ms'); return r; }, e => { console.warn('WebGPU pipeline FAILED', d.label, String(e.message).slice(0, 240)); throw e; }); }; });
   await page.goto(`http://127.0.0.1:${port}/${meta.page}?lang=fr&source=procedural${args.includes('--webgpu') ? '&renderer=webgpu' : ''}`, { waitUntil: 'domcontentloaded', timeout: 90000 });
   await page.locator('#map-style').waitFor(); await page.waitForTimeout(6000);
@@ -47,6 +52,19 @@ try {
   await page.locator('#seed').fill(meta.seed); await page.locator('#seed').dispatchEvent('change');
   await page.locator('#expert-open').click();
   meta.recipe = JSON.parse(await page.locator('#expert-json').inputValue());
+  // --climate <zone> edits the recipe like the climate strip does (zone + its classic biome); every other parameter stays.
+  // --relief-climate <zone> keeps that zone's landforms and water (default map: temperate) under the new climate.
+  if (arg('climate', '') || arg('relief-climate', '')) {
+    const zoneBiome = { temperate: 'temperate', mediterranean: 'temperate', continental: 'forest', nordic: 'forest', alpine: 'forest', arctic: 'tundra', steppe: 'steppe', desert: 'desert', savanna: 'steppe', tropical: 'tropical', wetland: 'temperate' }; // src/gen/biomes.ts climateZoneBiome
+    const zone = arg('climate', ''), relief = arg('relief-climate', '');
+    for (const z of [zone, relief].filter(Boolean)) if (!(z in zoneBiome)) throw Error(`Unknown climate zone ${z}`);
+    meta.climate = { zone: zone || null, reliefClimate: relief || null, defaultBiome: meta.recipe.options.biome };
+    meta.recipe.terrain = { ...meta.recipe.terrain, ...(zone ? { climate: zone } : {}), ...(relief ? { reliefClimate: relief } : {}) };
+    if (zone) meta.recipe.options.biome = zoneBiome[zone];
+    await page.locator('#expert-json').fill(JSON.stringify(meta.recipe)); await page.locator('#expert-apply').click(); await page.waitForTimeout(500);
+    const refused = await page.locator('#expert-error').textContent(); if (refused) throw Error(`Recipe refused: ${refused}`);
+    await page.locator('#expert-open').click(); meta.recipe = JSON.parse(await page.locator('#expert-json').inputValue());
+  }
   await page.evaluate(()=>document.querySelector('#expert-dialog').close());
   if(meta.recipe.generation !== 'procedural' || !String(meta.recipe.runtime?.source).startsWith('procedural')) throw Error('Recipe did not confirm procedural source');
   meta.timings.readyMs = elapsed();
@@ -59,6 +77,15 @@ try {
   meta.status = await page.locator('#footer-status').textContent();
   meta.jobLog = await page.locator('#job-log').textContent();
   meta.generationToast = await page.locator('#toast').textContent();
+  // Relief identity: the app's own heightmap export (8-bit PNG + exact min/max) is kept next to the shots.
+  await page.evaluate(()=>document.querySelector('#export-open').click());
+  await page.locator('#export-format').selectOption('heightmap');
+  const files = []; const onDownload = d => files.push(d); page.on('download', onDownload);
+  await page.locator('#export-go').click();
+  await page.waitForFunction(()=>!document.querySelector('#export-dialog')?.open,null,{timeout:60000}); await page.waitForTimeout(1000); page.off('download', onDownload);
+  meta.heightmap = {};
+  for (const d of files) { const name = d.suggestedFilename().endsWith('.png') ? 'heightmap.png' : 'heightmap.json'; await d.saveAs(path.join(out, name)); const bytes = fs.readFileSync(path.join(out, name)); meta.heightmap[name] = name.endsWith('.json') ? JSON.parse(bytes) : { sha256: (await import('node:crypto')).createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length }; }
+  console.log('HEIGHTMAP', JSON.stringify(meta.heightmap));
   meta.options = await page.locator('#map-style option').evaluateAll(os=>os.map(o=>({ value:o.value, label:o.textContent, disabled:o.disabled })));
   console.log('OPTIONS', JSON.stringify(meta.options));
   const aliases = { atlas:['atlas'], cadastre:['cadastre','plan','cadastral'], topographic:['topographic','topo','topography'], satellite:['satellite','natural','render-v2','render3d'], natural:['natural','satellite','render-v2','render3d'], parchment:['parchment'], illustration:['illustration','illustrated','fantasy'] };
@@ -72,6 +99,7 @@ try {
   for (const style of meta.captureOrder) {
     const option=resolveStyle(style); await page.evaluate(value=>{const select=document.querySelector('#map-style');select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}));},option); await settle(5000);
     if (args.includes('--no-text')) { await page.evaluate(()=>{const box=document.querySelector('[data-setting-path="appearance.composition.text.visible"]');if(!box)throw Error('no text toggle');box.checked=false;box.dispatchEvent(new Event('input',{bubbles:true}));box.dispatchEvent(new Event('change',{bubbles:true}));}); await settle(1500); }
+    if (arg('season', '')) { const named = { winter: 0, spring: .25, summer: .5, autumn: .75 }, raw = arg('season', ''), v = raw in named ? named[raw] : Number(raw); meta.season = { raw, value: v }; await page.evaluate(v=>{const box=document.querySelector('[data-setting-path="composition.effects.season"],[data-setting-path="appearance.composition.effects.season"]');if(!box)throw Error('no season control');box.value=String(v);box.dispatchEvent(new Event('input',{bubbles:true}));box.dispatchEvent(new Event('change',{bubbles:true}));}, v); await settle(2500); }
     await page.evaluate(()=>document.querySelector('#fit-map').click()); await settle();
     let at=0;
     for (const zoom of [...zooms].sort((a,b)=>steps[a]-steps[b])) {
@@ -83,7 +111,10 @@ try {
     if(args.includes('--three-d')) {
       await page.evaluate(()=>document.querySelector('#view3d').click());
       await page.waitForFunction(()=>document.querySelector('#view3d')?.getAttribute('aria-pressed')==='true',null,{timeout:60000});
-      await settle(6000); if (arg('hold')) await page.waitForTimeout(Number(arg('hold'))); await shot(style,option,'3d');
+      await settle(6000);
+      if (cameraFrom && !meta.cameraRestored) { await page.evaluate(c=>{const view=globalThis.__boardCity3d;if(!view)throw Error('3D camera hook missing');view.setCamera(c);},cameraFrom); meta.cameraRestored = arg('camera-from', ''); await settle(4000); }
+      meta.camera3d ??= await page.evaluate(()=>{const c=globalThis.__boardCity3d?.getCamera();return c&&{x:c.x,y:c.y,distance:c.distance,yaw:c.yaw,pitch:c.pitch,exaggeration:c.exaggeration,navigation:c.navigation};});
+      if (arg('hold')) await page.waitForTimeout(Number(arg('hold'))); await shot(style,option,'3d');
       await page.evaluate(()=>document.querySelector('#view3d').click()); await settle(1000);
     }
   }

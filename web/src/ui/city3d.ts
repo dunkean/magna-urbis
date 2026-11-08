@@ -102,7 +102,15 @@ export const CITY_3D_MATERIAL_GROUNDS = ['render3d', 'render3d-brush', 'render-v
 export type City3dGround = 'map' | 'render' | typeof CITY_3D_MATERIAL_GROUNDS[number];
 export interface City3dViewSettings { ground: City3dGround; plan: boolean; colors: 'materials' | 'uses'; exaggeration: number; refinement: 'source' | 'noise' }
 export interface City3dSurface { height: HeightLayer; water?: { n: number; levels: Float32Array; mask: Float32Array }; waterVisible?: boolean }
-export interface City3dWaterDisplay { texture: HTMLCanvasElement; paths?: Path2D; ink?: { fill: string; stroke: string } }
+export interface City3dWaterDisplay {
+  texture: HTMLCanvasElement; paths?: Path2D; ink?: { fill: string; stroke: string };
+  /** Seasonal water regime (waterRegime.ts), on a context transformed to map metres: `erase` dry and frozen water from a
+   * water cover drawn from the raster, `ground` paints dry beds and ice as ground albedo, `ink` as map symbols.
+   * The texture and paths above already leave the dry and frozen water out. */
+  regime?(ctx: CanvasRenderingContext2D, mode: 'erase' | 'ground' | 'ice' | 'ink', mpp: number): boolean;
+  /** The regime holds ice (an `ice` decal pass is needed on material grounds). */
+  frozen?: boolean;
+}
 export interface City3dSemantic { landuse: LandUseLayer | undefined; rural: SemanticLook; urban: SemanticLook; opacity: number; classes: Readonly<Record<LandKind, boolean>>; depth: SemanticDepth }
 /** `key` moves when the painting changes. `paint` fills the transparent `target`, which covers `box`; false when the tile holds nothing. */
 export interface City3dPhysicalGround { key: string; paint(target: HTMLCanvasElement, box: { minX: number; minY: number; maxX: number; maxY: number }): boolean }
@@ -218,7 +226,7 @@ export function mountCity3d(options: City3dOptions): City3d {
   let ground: Ground = 'map', colors: Colors = 'materials', planOverlay = true, refinement: City3dViewSettings['refinement'] = 'noise';
   let groundKey = '', planKey = '', proceduralGround = false, softwareMaterial = false;
   let waterDisplay: City3dWaterDisplay | undefined;
-  let openWater: { mask: HTMLCanvasElement; paths?: Path2D } | undefined, semanticKey = '', semanticLanduse: LandUseLayer | undefined, physicalKey = '';
+  let openWater: { mask: HTMLCanvasElement; paths?: Path2D; streams?: HTMLCanvasElement; ink?: string; display?: City3dWaterDisplay } | undefined, semanticKey = '', semanticLanduse: LandUseLayer | undefined, physicalKey = '';
   let occupationLanduse: LandUseLayer | undefined,occupationGround: ForestOccupation | undefined;
   function groundForest(): ReturnType<NonNullable<City3dOptions['getForest']>> {
     const forest=options.getForest?.();
@@ -437,19 +445,32 @@ export function mountCity3d(options: City3dOptions): City3d {
   /** Rural and urban material tints share one water clearance. The raster and exact shoreline both stay authoritative. */
   function clearSemanticWater(tile: Terrain3dTile, ctx: CanvasRenderingContext2D): void {
     const d = surfaceDecor!, size = ctx.canvas.width, k = size / tile.width;
-    if (!openWater) {
+    // Parchment: river cells are not cut out. A cut reveals the 1024 px map capture underneath, whose stream banks are
+    // cream: in 3D every stream read as a white scratch. The streams are inked over the land use instead, in the river colour.
+    const palette = options.getText?.()?.palette, ink = palette?.name === 'parchment' ? palette.riverFill : undefined;
+    const regime = currentWaterDisplay();
+    if (!openWater || openWater.ink !== ink || openWater.display !== regime) {
       const { n, water } = d.raster, mask = document.createElement('canvas'); mask.width = mask.height = n;
       const context = mask.getContext('2d')!, pixels = context.createImageData(n, n);
-      for (let i = 0; i < n * n; i++) if (water[i] > 0 && water[i] < 4) pixels.data[i * 4 + 3] = 255;
-      context.putImageData(pixels, 0, 0); openWater = { mask, paths: waterPath(d) };
+      for (let i = 0; i < n * n; i++) if (water[i] > 0 && water[i] < (ink ? 3 : 4)) pixels.data[i * 4 + 3] = 255;
+      context.putImageData(pixels, 0, 0); openWater = { mask, paths: waterPath(d), ink, display: regime };
+      if (ink) {
+        const streams = document.createElement('canvas'); streams.width = streams.height = n;
+        const sx = streams.getContext('2d')!, inked = sx.createImageData(n, n), v = parseInt(ink.slice(1, 7), 16);
+        for (let i = 0; i < n * n; i++) if (water[i] === 3) { inked.data[i * 4] = (v >> 16) & 255; inked.data[i * 4 + 1] = (v >> 8) & 255; inked.data[i * 4 + 2] = v & 255; inked.data[i * 4 + 3] = 230; }
+        sx.putImageData(inked, 0, 0); openWater.streams = streams;
+        // Dry and frozen courses are not inked as running streams: their own symbols are drawn over the tile.
+        if (regime?.regime) { sx.setTransform(n / d.raster.width, 0, 0, n / d.raster.width, 0, 0); regime.regime(sx, 'erase', d.raster.width / n); sx.setTransform(1, 0, 0, 1, 0, 0); }
+      }
     }
-    const { mask, paths } = openWater, scale = mask.width / d.raster.width;
+    const { mask, paths, streams } = openWater, scale = mask.width / d.raster.width;
     ctx.setTransform(k, 0, 0, k, -tile.x * k, -tile.y * k);
     ctx.globalCompositeOperation = 'destination-out';
     if (paths) ctx.fill(paths, 'evenodd');
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = true;
     ctx.drawImage(mask, tile.x * scale, tile.y * scale, tile.width * scale, tile.width * scale, 0, 0, size, size);
     ctx.globalCompositeOperation = 'source-over';
+    if (streams) ctx.drawImage(streams, tile.x * scale, tile.y * scale, tile.width * scale, tile.width * scale, 0, 0, size, size);
   }
   /** One material tile: the map image (or water) cropped, then the city plan when close. Semantics are painted
    * into a map tile (rural under the roads, urban over the plan); on a material ground they travel beside the
@@ -471,6 +492,11 @@ export function mountCity3d(options: City3dOptions): City3d {
     const groundSettings=options.getGroundSettings?.(ground),satellite=proceduralGround&&groundSettings?.renderV2===1;
     const waterVisible = groundSettings?.waterVisible !== false;
     if (proceduralGround && waterPaths && waterVisible) { ctx.save(); ctx.setTransform(k, 0, 0, k, -tile.x * k, -tile.y * k); ctx.fillStyle = `rgb(${WATER})`; ctx.fill(waterPaths, 'evenodd'); ctx.restore(); }
+    const regimeDisplay = currentWaterDisplay();
+    // The material shader paints water wherever this tile is opaque: the seasonal regime takes the dry and frozen
+    // courses out of the cover at tile resolution (the closed water paths above hold every river ribbon) and redraws
+    // the running ones crisp. Their beds and ice are painted on the ground and ink layers below.
+    if (proceduralGround && waterVisible && regimeDisplay?.regime) { ctx.save(); ctx.setTransform(k, 0, 0, k, -tile.x * k, -tile.y * k); regimeDisplay.regime(ctx, 'erase', mpp); ctx.restore(); }
     const semantic = options.getSemantic?.(), box = { minX: tile.x, minY: tile.y, maxX: tile.x + tile.width, maxY: tile.y + tile.width };
     const physicalGround = options.getPhysicalGround?.(proceduralGround), physical = physicalGround && physicalLayer(tile, physicalGround, box);
     if (physical && !proceduralGround) ctx.drawImage(physical, 0, 0);
@@ -524,8 +550,13 @@ export function mountCity3d(options: City3dOptions): City3d {
     const scene = semantic && semantic.urban !== 'off' ? cityPlan() : undefined;
     const urban = semantic && scene && scene.extent.maxX >= box.minX && scene.extent.minX <= box.maxX && scene.extent.maxY >= box.minY && scene.extent.minY <= box.maxY
       ? semanticLayer(tile, target => drawUrbanSemantic(target, [scene], { look: semantic.urban, opacity: semantic.opacity, mpp: semanticMpp, viewport: box })) : undefined;
+    const paintRegime = (target: CanvasRenderingContext2D, mode: 'ground' | 'ice' | 'ink'): void => {
+      if (!regimeDisplay?.regime || !waterVisible) return;
+      target.save(); target.setTransform(k, 0, 0, k, -tile.x * k, -tile.y * k); regimeDisplay.regime(target, mode, mpp); target.restore();
+    };
     if (!proceduralGround) {
       if (urban) ctx.drawImage(urban, 0, 0);
+      paintRegime(ctx, 'ink');
       if (draped) {
         const full = document.createElement('canvas'); full.width = full.height = size;
         const target=full.getContext('2d')!, scale=draped.width/width;
@@ -545,6 +576,11 @@ export function mountCity3d(options: City3dOptions): City3d {
       target.save();target.setTransform(1,0,0,1,0,0);target.drawImage(source,tile.x*scale,tile.y*scale,tile.width*scale,tile.width*scale,0,0,size,size);
       if(display.paths){target.setTransform(k,0,0,k,-tile.x*k,-tile.y*k);target.fillStyle=display.ink.fill;target.fill(display.paths,'evenodd');target.strokeStyle=display.ink.stroke;target.lineWidth=mpp*.8;target.stroke(display.paths);}
       target.restore();
+    }
+    // Dry beds: albedo on a material ground; ice: a decal over the snowed ground; symbols on an ink ground.
+    if (regimeDisplay?.regime) {
+      if (look?.waterLook === 'ink') paintRegime(inkContext(), 'ink');
+      else { paintRegime(groundContext(), 'ground'); if (regimeDisplay.frozen) paintRegime(inkContext(), 'ice'); }
     }
     return overlay||groundTile ? { texture: c, semantic: overlay, ground: groundTile } : c;
   }

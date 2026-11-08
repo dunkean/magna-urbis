@@ -5,10 +5,13 @@ import { visitSegmentCells } from '../gen/core/grid';
 import type { LandKind, LandUseLayer } from '../gen/types';
 import type { Building3dScene } from '../render/urbanBuildingGeometry';
 import { buildingOccupationSurfaces } from './urbanBuildingProjection';
+import { farmClearings, type ForestCorridor } from '../render/forestRoom';
 
-/** Shared classes: 7 built reserve, 8 construction, 9 agricultural lane clearance. */
+/** Shared classes: 7 built reserve, 8 construction, 9 agricultural lane clearance, 11 forest clearing
+ * (road corridor or farmstead ground, see render/forestRoom.ts): grass ground where no crown is rooted,
+ * though crowns rooted outside may overhang it. */
 const CLASS: Partial<Record<LandKind, number>> = { field: 1, meadow: 2, pasture: 3, orchard: 4, garden: 5, commons: 6, marsh: 10 };
-const BUILT = 7, OCCUPIED = 8, CLEARANCE = 9, RANGE = 8;
+const BUILT = 7, OCCUPIED = 8, CLEARANCE = 9, CLEARING = 11, RANGE = 8;
 
 /** Merge accepted footprints and authorized circulation into the same retained
  * occupation contract, regardless of the building layer's visibility. */
@@ -106,7 +109,7 @@ export function withOccupationShapes(source: ForestOccupation | undefined, shape
  * raster covers only the occupied square, in the landuse/terrain frame (m).
  * Deterministic: same layer, same bytes.
  */
-export function forestOccupation(landuse: LandUseLayer, maxN = 1536, minCell = 2): ForestOccupation | undefined {
+export function forestOccupation(landuse: LandUseLayer, maxN = 1536, minCell = 2, corridors: readonly ForestCorridor[] = []): ForestOccupation | undefined {
   const shapes: { rings: Polygon[]; cls: number; forest: boolean }[] = [];
   for (const area of landuse.areas) {
     const cls = CLASS[area.kind] ?? 0;
@@ -132,6 +135,16 @@ export function forestOccupation(landuse: LandUseLayer, maxN = 1536, minCell = 2
     fillRings(s.rings, x, y, cell, n, (from, to) => {
       cls.fill(s.cls, from, to); open.fill(s.forest ? 0 : 1, from, to); forest.fill(s.forest ? 1 : 0, from, to);
     });
+  }
+  // Forest clearings (farmsteads, road corridors) open only wild or wooded ground: fields and plots keep their class.
+  // They never widen the raster: corridors outside the rural land use stay with the forest field.
+  const clearing = (rings: Polygon[]): void => fillRings(rings, x, y, cell, n, (from, to) => {
+    for (let i = from; i < to; i++) if (!cls[i] || forest[i]) { cls[i] = CLEARING; open[i] = 1; forest[i] = 0; }
+  });
+  for (const ring of farmClearings(landuse)) clearing([ring]);
+  for (const c of corridors) {
+    const ribbon = offsetRibbon(c.path, typeof c.half === 'number' ? 2 * c.half : c.half.map(h => 2 * h));
+    if (ribbon.length > 2) clearing([ribbon]);
   }
   // A 12 m lane can be thinner than a texel on a large map. Keep every crossed
   // cell open, as for thin building walls, rather than dropping the whole lane.

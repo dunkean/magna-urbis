@@ -1,10 +1,10 @@
 /** "Roads & ground: Classic / Blended" — one shared display setting.
  *
  * Classic keeps today's drawing. Blended replaces the opaque ground fills, white road bands and
- * dark casings with translucent earth / sepia washes, so roads, city ground and river sources sit
+ * dark casings with translucent earth / sepia washes, so roads and city ground sit
  * on the map (parchment or painted render) instead of on top of it. The mode is global: regional
- * roads (terrainRoads.ts), the city canvas (cityCanvas.ts), its GL twin (cityGlStyle.ts) and the
- * river headwaters (vectorWaterRender.ts) read it here. Persisted in localStorage, overridable by `?blend=1`. */
+ * roads (terrainRoads.ts), the city canvas (cityCanvas.ts) and its GL twin (cityGlStyle.ts)
+ * read it here (river headwaters taper in every mode, riverHeadwaters.ts). Persisted in localStorage, overridable by `?blend=1`. */
 export type GroundBlend = 'classic' | 'blended';
 const KEY = 'magna.groundBlend';
 function initial(): GroundBlend {

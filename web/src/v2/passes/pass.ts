@@ -41,7 +41,8 @@ export function passKeys(i: PassInput): Record<PassName, string> {
     terrainData: j(v.terrain, rel(i), mode),
     terrainLook: j(k.terrainLook, i.effective, mode, rel(i), l.decor, l.background, v.terrain, ...(mode === 'cpu' ? [k.terrainBase, k.forest, k.water, l.water, l.terrain, i.forestEffective, v.landuse] : [])),
     forest: mode === 'cpu' ? 'in-terrain' : j(k.forest, v.terrain, v.landuse, i.forestEffective, rel(i)),
-    water: j(k.water, v.terrain, l.water, mode, rel(i), isResourceDiagnostic(r.diagnostic) ? v.settlements : null),
+    // The season and the climate zone set the water regime (dry beds, ice).
+    water: j(k.water, v.terrain, l.water, mode, rel(i), isResourceDiagnostic(r.diagnostic) ? v.settlements : null, r.ground.season, r.ground.calendar, i.effective),
     frame: j(r.ground.style, r.palette.colors, rel(i), r.ground.layers.frame, l.decor),
     cartography: j(k.cartography, v.roads, v.landuse, v.settlements, v.names, v.terrain, i.worldSig, cartLayers),
     overlays: j(k.overlays, k.roads, l.labels, l.decor),

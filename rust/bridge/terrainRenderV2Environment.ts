@@ -123,7 +123,8 @@ export const RENDER_V2_ENVIRONMENT_GLSL = `
       vec3 evergreen=mix(vec3(.16,.235,.14),vec3(.12,.205,.15),e.needle);
       vec3 senescent=mix(vec3(.34,.29,.215),vec3(.43,.335,.205),sstep(4.,12.,e.temperature));
       vec3 c=mix(senescent,evergreen,sstep(.3,.9,e.leaf))*(.85+.3*e.tone);
-      return mix(c,vec3(.72,.79,.77),e.snow*.62);
+      // Conifers shed their snow and stay dark; bare limbs hold a heavier frost.
+      return mix(c,vec3(.72,.79,.77),e.snow*mix(.62,.08,e.needle));
     }
     vec3 v2Color(V2Env e,float channel){
       // Diagnostic ramps span every climate zone: desert to peat, tropics to ice.
@@ -165,6 +166,8 @@ export const RENDER_V2_ENVIRONMENT_GLSL = `
     }
     // Coverage, ice brightness, cyan submerged edge, cast shadow on water.
     // Unresolved fragments converge to area coverage rather than vanish.
+    // Share of marginal plates kept whole (the rest break into small floes). A local map lowers it toward open water.
+    float v2IceWhole=.31;
     vec4 v2Ice(float depth,float kind,V2Env e,vec3 point,float fp,uint salt){
       float freeze=v2Freeze(kind,e);float shore=sstep(900.,15.,depth);
       float province=v2Pattern(point,7200.,fp,salt+631u)*(1.-sstep(100.,500.,fp));
@@ -177,7 +180,32 @@ export const RENDER_V2_ENVIRONMENT_GLSL = `
         vec3 displacement=vec3(warpX,warpY,warpZ);
         float packKeep=1.-sstep(140.,450.,fp);
         float resolved=0.;float localLight=.88;float localRim=0.;
-        if(concentration<.90){
+        if(concentration<.90&&kind<1.5){
+          // Sea pack: floes are the level set of a warped multi-scale noise at the concentration's quantile, so their
+          // edges are rounded and ragged and their sizes shrink toward open water; leads are the noise's thin zero-set
+          // cracks, not cell edges. No cellular plates, no outline network.
+          vec3 warped=point+displacement*420.;
+          float body=.52*v2Pattern(warped,3400.,fp,salt+681u)+.30*v2Pattern(warped,1300.,fp,salt+682u)+.18*v2Pattern(warped,520.,fp,salt+683u);
+          float field=body+.07*v2Pattern(point,170.,fp,salt+684u)+.035*v2Pattern(point,62.,fp,salt+685u);
+          float c=clamp(concentration,.02,.98),quantile=.11*log((1.-c)/c);
+          float aa=max(.002,fp*.0006);
+          float floe=sstep(quantile-aa,quantile+aa,field);
+          // Two crack families; each fades before its noise is filtered out, where its width is far below a pixel.
+          vec3 bent=point+displacement*160.;
+          float crackA=v2Pattern(bent,2300.,fp,salt+686u)+.3*v2Pattern(bent,640.,fp,salt+687u);
+          float crackB=v2Pattern(bent,900.,fp,salt+688u)+.25*v2Pattern(point,240.,fp,salt+689u);
+          float widthA=.016+.040*(1.-c),widthB=.008+.020*(1.-c);
+          float lineA=(1.-sstep(widthA-max(.004,fp*.0004),widthA+max(.004,fp*.0004),abs(crackA)))*(1.-sstep(110.,230.,fp));
+          float lineB=(1.-sstep(widthB-max(.004,fp*.0009),widthB+max(.004,fp*.0009),abs(crackB)))*(1.-sstep(45.,90.,fp));
+          float line=max(lineA,lineB*sstep(-.2,.2,v2Pattern(point,1700.,fp,salt+690u)));
+          // Some leads are open water, others refrozen into grey young ice.
+          float open=sstep(-.25,.25,warpX+.3*warpZ);
+          resolved=floe*(1.-line*open);
+          float inner=sstep(quantile,quantile+.06,field);
+          localLight=clamp(.86+.05*v2Pattern(point,900.,fp,salt+691u)+.025*v2Pattern(point,210.,fp,salt+692u)-.06*(1.-inner)-.14*line*(1.-open),.66,.97);
+          // Submerged ice just off the floe edge: a soft cyan fringe, no drawn outline.
+          localRim=max(sstep(quantile-.035-aa,quantile-.008+aa,field)-floe,0.)*.25;
+        }else if(concentration<.90){
           vec3 warped=point+displacement*215.;
           vec4 plate=v2Cell(warped,2600.,salt+637u);
           vec4 shard=v2Cell(warped,470.,salt+638u);
@@ -185,7 +213,7 @@ export const RENDER_V2_ENVIRONMENT_GLSL = `
           float aa=max(.0008,fp/2600.*.75);
           float lead=.0025+.020*(1.-concentration);
           float large=sstep(lead-aa,lead+aa,edge);
-          float split=((fract(plate.z*7.31)>.31)?1.:0.);
+          float split=((fract(plate.z*7.31)>v2IceWhole)?1.:0.);
           float smallLead=.007+.09*(1.-concentration);
           float smallAA=max(.002,fp/470.*.8);
           float shards=sstep(smallLead-smallAA,smallLead+smallAA,shard.x);

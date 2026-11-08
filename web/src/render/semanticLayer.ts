@@ -88,7 +88,8 @@ function lookStyle(look: SemanticLook, opacity: number): LookStyle | undefined {
   switch (look) {
     case 'subtle': return { fill: o * .35, stroke: clamp01(o * 1.1), strokeWidth: 1, pattern: 0, strokeShade: 0 };
     case 'categorical': return { fill: o, stroke: clamp01(.5 + o), strokeWidth: 1.4, pattern: clamp01(o * 1.4 + .15), strokeShade: .35 };
-    case 'outlines': return { fill: 0, stroke: clamp01(.4 + o * 1.2), strokeWidth: 1.7, pattern: clamp01(o * 1.2 + .1), strokeShade: .15 };
+    // Outlines lead, the class pattern stays a light texture: contours and roads must read through it.
+    case 'outlines': return { fill: 0, stroke: clamp01(.4 + o * 1.2), strokeWidth: 1.7, pattern: clamp01(o * .55 + .05), strokeShade: .15 };
     default: return undefined;
   }
 }

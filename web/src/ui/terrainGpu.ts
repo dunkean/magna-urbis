@@ -313,7 +313,7 @@ export class TerrainGpu implements TerrainRenderer {
   private lakeInput?: Float32Array;
   private lakeWidth = 0;
   private seaSurface?: WaterSurface;
-  private riverBuffer?: GPUBuffer; private riverCount = 0;
+  private riverBuffer?: GPUBuffer; private riverCount = 0; private riverRegime = false;
   private view?: { view: View; width: number; height: number };
   private frame = 0;
   private disposed = false;
@@ -557,7 +557,7 @@ export class TerrainGpu implements TerrainRenderer {
     }
     this.lakeMode = water?.shore === 'exact' ? 2 : 1;
     const rivers = water?.rivers ?? new Float32Array();
-    this.riverCount = rivers.length / 9;
+    this.riverCount = rivers.length / 9; this.riverRegime = !!water?.regime;
     if (rivers.byteLength) {
       if (!this.riverBuffer || this.riverBuffer.size < rivers.byteLength) {
         this.riverBuffer?.destroy();
@@ -905,7 +905,7 @@ export class TerrainGpu implements TerrainRenderer {
     const paintedWater = (look.waterLook === 'natural' || styleTraits(look.style).neuralEarth) && !look.groundCapture;
     const waterBand = (this.seaSurface?.referenceWidth ?? look.mapWidth) * water.bandFraction;
     /** Premultiplied layer `source` over `destination`: plain copy, or the render style's painted water. */
-    const composite = (source: GPUTextureView, destination: Target, painted: boolean): void => {
+    const composite = (source: GPUTextureView, destination: Target, painted: boolean, regime = false): void => {
       const program = painted ? 'water' : 'composite';
       const pipeline = this.gpu.pipeline(program, () => this.gpu.simpleDescriptor(program, 'over'), wait);
       if (!pipeline) return;
@@ -917,7 +917,7 @@ export class TerrainGpu implements TerrainRenderer {
         w.set('uBankPx', Math.min(6 * stylePixelRatio, Math.max(1.5 * stylePixelRatio, 7 / px)));
         w.setArray('uRings', rings); w.set('uRingCount', rings.length);
         w.setArray('uWaterStops', palette.colors); w.setArray('uWaterStopT', palette.positions);
-        w.set('uWaterStopCount', water.stops.length);
+        w.set('uWaterStopCount', water.stops.length); w.set('uRegime', regime ? 1 : 0);
         bindGroup = device.createBindGroup({ layout: this.gpu.layouts.water, entries: [{ binding: 0, resource: this.slot(w) }, { binding: 2, resource: this.gpu.linear }, { binding: WGSL.WGSL_TEXTURES.uLayer, resource: source }] });
       } else bindGroup = device.createBindGroup({ layout: this.gpu.layouts.composite, entries: [{ binding: 2, resource: this.gpu.linear }, { binding: WGSL.WGSL_TEXTURES.uLayer, resource: source }] });
       const encoderPass = pass(destination, false, program);
@@ -939,7 +939,7 @@ export class TerrainGpu implements TerrainRenderer {
       encoderPass.setPipeline(pipeline); encoderPass.setBindGroup(0, bindGroup); encoderPass.setVertexBuffer(0, this.riverBuffer);
       encoderPass.draw(4, this.riverCount); encoderPass.end();
       // Diagnostic colours (overlay) keep the plain composite.
-      composite(target.view, destination, paintedWater && !this.overlay);
+      composite(target.view, destination, paintedWater && !this.overlay, this.riverRegime);
     };
     const renderRetainedWater = (destination: Target): void => {
       if (!this.retainedWaterPaths.length || (look.layers.water === false && !styleTraits(look.style).waterAlwaysDrawn)) return;

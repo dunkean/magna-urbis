@@ -33,6 +33,7 @@ import { WATER_STYLE_GLSL, waterUniforms } from '../render/waterStyle';
 import { MATERIAL_WATER_GLSL, MOONLIGHT_GLSL, groundCoverActive } from '../render/materialLook';
 import { paintRetainedWater, retainedWaterPaths, type RetainedWaterPath } from '../render/retainedWaterGeometry';
 import { RENDER_WATER_FS, renderWaterRings } from '../render/renderWaterShader';
+import { WATER_FRESH_ICE_GLSL, WATER_REGIME_GLSL } from '../render/waterRegime';
 import { CANVAS_MAP_STROKES, mapStrokeWidth } from '../render/strokes';
 import type { View } from '../render/view';
 import { FRACTAL_ROTATIONS, type FractalDetail } from '../../../rust/bridge/terrainAdjust';
@@ -85,6 +86,8 @@ export interface WaterLayer {
   shore?: 'procedural' | 'exact';
   /** Instances: x0, y0, x1, y1, upstream/downstream width (m), r, g, b. */
   rivers?: Float32Array;
+  /** The river colour carries the seasonal regime for the painted compositor (waterRegime.ts regimeRgb). */
+  regime?: boolean;
 }
 
 export interface OverlayLayer { rgba: Uint8Array; n: number }
@@ -266,6 +269,8 @@ ${NEURAL_EARTH_MATERIAL_GLSL}
 ${groundCoverInputsGlsl(RENDER_3D_MATERIAL_GLSL)}
 ${RENDER_3D_FOREST_GLSL}
 ${RENDER_V2_GLSL}
+${WATER_FRESH_ICE_GLSL}
+${WATER_REGIME_GLSL}
 
 ${WATER_STYLE_GLSL}
 ${MATERIAL_WATER_GLSL}
@@ -426,11 +431,47 @@ void main() {
 #endif
     // One V2 water evaluation per fragment (the three cases below only choose its inputs).
     bool v2w=false;vec3 wBase=color;float wCover=0.,wKind=1.,wDepth=0.;
+    // Water climate tints applied after the evaluation (waterRegime.ts): x humic tea, y glacial milk, z sea sediment plume.
+    vec3 wTint=vec3(0.);
     if (uUseWaterLayer==1) {
       vec4 water=texelFetch(uWaterLayer,ivec2(gl_FragCoord.xy),0);
       if(uNight==1 && uMode<2 && uNaturalWater==1)water.rgb=moonlight(water.rgb);
       float under=uRenderV2>0?1.:1.-forestResolvedCover;
-      if(uRenderV2>0){v2w=true;wBase=color;wCover=water.a;wKind=s.x<0.?1.:3.;wDepth=s.x<0.?-s.x:8.*water.a;}
+      if(uRenderV2>0){
+        v2w=true;wBase=color;wCover=water.a;wKind=s.x<0.?1.:3.;wDepth=s.x<0.?-s.x:8.*water.a;
+        // Inland water of the seasonal regime (waterRegime.ts): the painted dry beds, ice and foam lie on the ground as
+        // painted (sandy, or near white); only the wet remainder takes the Render v2 water.
+        if(s.x>=0.){
+          vec3 painted=water.rgb/max(water.a,1e-3);
+          // Sandy beds lean red; ice, its bank lines and foam are far lighter than any painted open water (luminance < .3).
+          float solid=max(smoothstep(.05,.15,painted.r-painted.b),smoothstep(.33,.42,dot(painted,vec3(.3,.45,.25))));
+          wBase=mix(wBase,painted,water.a*solid);wCover*=1.-solid;
+          // Distance inside the nearest lake, in device pixels (negative outside a lake).
+          float m=uHasLake>0?lakeShore(world,uHasLake==1):-1e3;
+          float inside=uHasLake>0?-m/max(fwidth(m),1e-4):1e3;
+          // Dry season of a dry climate: the lake draws down, leaving a pale exposed shore inside its rim.
+          float drop=waterLakeDrop()*80.;
+          if(drop>1.&&uHasLake>0){
+            float ring=step(0.,inside)*(1.-smoothstep(.85*drop,drop,inside*uPx));
+            wBase=mix(wBase,waterExposedShore(world),wCover*ring);wCover*=1.-ring;
+          }
+          // Lakes freeze with the zone's winter: one smooth sheet with a darker shore rim and a few cracks; while it
+          // thaws the shore opens first, a dark moat around the remaining sheet.
+          float fresh=waterFreshIce();
+          if(fresh>.001){
+            float shore=uHasLake>0?1.-smoothstep(.5,3.5*uDpr,inside):0.;
+            float sheet=fresh>=.97?1.:smoothstep(-.05,.05,fresh-.92*(1.-smoothstep(0.,24.*uDpr,inside)));
+            wBase=mix(wBase,waterIceColor(world,shore*step(.97,fresh),1.,vec2(0.)),wCover*sheet);wCover*=1.-sheet;
+          }
+          wTint.xy=vec2(waterTea(),waterGlacial());
+          // The aux-texture variant only mixes wBase where water remains: a fully dry or frozen bed is the ground itself.
+          color=wBase;
+        } else {
+          // A river's sediment plume, painted as a silt tint over the captured sea (renderWaterShader.ts).
+          vec3 painted=water.rgb/max(water.a,1e-3);
+          wTint.z=smoothstep(-.12,.3,painted.r-painted.b);
+        }
+      }
       else color=color*(1.-water.a*under)+water.rgb*under;
     } else if (uWaterVisible == 1 && uHasLake > 0) {
       float m = lakeShore(world, uHasLake == 1);
@@ -457,7 +498,23 @@ void main() {
     if(v2w)color=v2WaterAtEnv(v2Here,wBase,world,uPx,wCover,wKind,wDepth);
 #endif
 #ifndef AUX_PASS
-    if(uPaperMap==1&&v2w&&wCover>0.)color=mix(wBase,paperWater(wKind,paperShore(world)),wCover);
+    if(uRenderV2>0&&v2w&&uV2WaterVisible==1){
+      // Boreal humic water darkens to tea; alpine glacial flour turns lakes milky turquoise; silt plumes off river mouths.
+      color=mix(color,color*vec3(.86,.70,.48),wTint.x*wCover);
+      color=mix(color,vec3(.38,.62,.62),.45*wTint.y*wCover);
+      color=mix(color,vec3(.45,.38,.25),.55*wTint.z);
+    }
+    if(uPaperMap==1&&v2w&&wCover>0.){
+      vec3 paper=paperWater(wKind,paperShore(world));
+      // Parchment seas take the climate in muted paper tones: greener on warm coasts, clearer when arid, greyer when cold.
+      if(wKind<1.5){
+        float T=uMaterialClimate.x,warm=smoothstep(17.,25.,T),cold=1.-smoothstep(-1.,6.,T),arid=1.-smoothstep(150.,500.,uMaterialClimate.y);
+        paper*=mix(vec3(1.),vec3(.93,1.03,.97),warm);
+        paper=mix(paper,paper*vec3(.98,1.,1.04)+.02,arid);
+        paper*=mix(vec3(1.),vec3(.90,.93,.96),cold);
+      }
+      color=mix(wBase,paper,wCover);
+    }
 #endif
 #ifndef AUX_PASS
     if(uNight==1 && uGroundCapture==0 && uMode>=2)color=moonlight(color);
@@ -617,7 +674,7 @@ export class TerrainGl {
   private lakeInput?: Float32Array;
   private lakeWidth = 0;
   private seaSurface?: WaterSurface;
-  private riverBuffer: WebGLBuffer; private riverVao: WebGLVertexArrayObject; private riverCount = 0;
+  private riverBuffer: WebGLBuffer; private riverVao: WebGLVertexArrayObject; private riverCount = 0; private riverRegime = false;
   private view?: { view: View; width: number; height: number };
   private frame = 0;
   private disposed = false;
@@ -845,7 +902,7 @@ export class TerrainGl {
     const rivers = water?.rivers ?? new Float32Array();
     gl.bindBuffer(gl.ARRAY_BUFFER, this.riverBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, rivers.byteLength ? rivers : new Float32Array(9), gl.STATIC_DRAW);
-    this.riverCount = rivers.length / 9;
+    this.riverCount = rivers.length / 9; this.riverRegime = !!water?.regime;
     this.request();
   }
 
@@ -1141,7 +1198,7 @@ export class TerrainGl {
       gl.blendEquation(gl.FUNC_ADD); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, target.texture);
       // Diagnostic colours (overlay) keep the plain composite.
-      if (paintedWater && !this.overlay) { this.paintWater(0, width, height, origin, px, stylePixelRatio, waterBand); return; }
+      if (paintedWater && !this.overlay) { this.paintWater(0, width, height, origin, px, stylePixelRatio, waterBand, this.riverRegime); return; }
       gl.useProgram(this.composite);
       gl.uniform1i(gl.getUniformLocation(this.composite, 'uLayer'), 0);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
@@ -1206,7 +1263,7 @@ export class TerrainGl {
   }
 
   /** Composite a coverage layer (texture unit `unit`, bound) as painted water; blending is set by the caller. */
-  private paintWater(unit: number, width: number, height: number, origin: [number, number], px: number, dpr: number, band: number): void {
+  private paintWater(unit: number, width: number, height: number, origin: [number, number], px: number, dpr: number, band: number, regime = false): void {
     const gl = this.gl;
     if (!this.renderWater) this.renderWater = { program: compile(gl, COMPOSITE_VS, RENDER_WATER_FS), u: new Map() };
     const { program, u: cache } = this.renderWater;
@@ -1222,7 +1279,7 @@ export class TerrainGl {
     gl.uniform1f(u('uBankPx'), Math.min(6 * dpr, Math.max(1.5 * dpr, 7 / px)));
     gl.uniform1fv(u('uRings[0]'), rings); gl.uniform1i(u('uRingCount'), rings.length);
     gl.uniform3fv(u('uWaterStops[0]'), palette.colors); gl.uniform1fv(u('uWaterStopT[0]'), palette.positions);
-    gl.uniform1i(u('uWaterStopCount'), water.stops.length);
+    gl.uniform1i(u('uWaterStopCount'), water.stops.length); gl.uniform1i(u('uRegime'), regime ? 1 : 0);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   }
 

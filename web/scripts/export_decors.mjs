@@ -11,6 +11,8 @@
 //        one city at the map centre, neural relief from the Python/CUDA service on :8793)
 //   node scripts/export_decors.mjs --set biome  (City Bench: 11 climate zones × coast/river × 2 sizes,
 //        ids city-<zone>-<coast|river>-<s|l>; --only takes a comma list of id prefixes)
+//   node scripts/export_decors.mjs --set biome --rows rows.json  (v7 regeneration: one decor per row,
+//        [{decorId, zone, site: coast|river, size: s|l, source: neural|procedural, seed, culture}], fresh relief per row)
 //
 // Decors land in web/decors/ (ignored by git) with an index.json read by urbanbench.html.
 // The variation list is deterministic: the same --count gives the same decors.
@@ -27,8 +29,12 @@ const web = fileURLToPath(new URL('..', import.meta.url));
 const out = resolve(web, option('out', 'decors'));
 const base = option('url', 'http://127.0.0.1:5173').replace(/\/$/, '');
 const set = option('set', 'urban'), biome = set === 'biome', city = set === 'city' || biome;
+const ROWS = option('rows', '') ? JSON.parse(readFileSync(option('rows', ''), 'utf8')) : null;
+if (ROWS && !biome) throw new Error('--rows needs --set biome');
+// AFFINITY (hex mask): pin this process before the browser starts, so Chrome inherits the budget (v7 regeneration).
+if (process.env.AFFINITY && process.platform === 'win32') (await import('node:child_process')).execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `(Get-Process -Id ${process.pid}).ProcessorAffinity = ${process.env.AFFINITY}`]);
 const neural = option('neural', city ? 'http://127.0.0.1:8793' : 'http://127.0.0.1:8792').replace(/\/$/, '');
-const count = Number(option('count', biome ? 44 : city ? 30 : 100)), from = Number(option('from', 0)), only = option('only', '');
+const count = ROWS ? ROWS.length : Number(option('count', biome ? 44 : city ? 30 : 100)), from = Number(option('from', 0)), only = option('only', '');
 const neuralSource = city ? 'neural-python' : 'neural';
 mkdirSync(out, { recursive: true });
 
@@ -152,14 +158,17 @@ const CITY_SIZES = [
 ];
 /** `central`: the exact centre is too steep or wet; placement picks the best site of the central area instead. */
 function cityVariation(i, attempt = 0, central = false) {
-  const ENVS = biome ? BIOMES : ENVIRONMENTS;
-  const env = ENVS[i % ENVS.length], size = CITY_SIZES[Math.floor(i / ENVS.length) % CITY_SIZES.length];
+  const ENVS = biome ? BIOMES : ENVIRONMENTS, row = ROWS?.[i];
+  const env = row ? BIOMES.find(b => b.id === `${row.zone}-${row.site}`) : ENVS[i % ENVS.length], size = row ? CITY_SIZES.find(s => s.id === row.size) : CITY_SIZES[Math.floor(i / ENVS.length) % CITY_SIZES.length];
+  if (!env || !size) throw new Error(`Row ${i}: no biome ${row?.zone}-${row?.site} or size ${row?.size}`);
   const coast = COASTS.find(c => c.id === env.coast);
   // Retries change the neural seed; the last one lets placement choose the best site of the central area.
-  const seed = attempt ? `city-${env.id}-${size.id}-${attempt}` : `city-${env.id}-${size.id}`, width = size.width, centred = attempt < 3 && !central;
+  const seedBase = row ? row.seed : `city-${env.id}-${size.id}`;
+  const seed = attempt ? `${seedBase}-${attempt}` : seedBase, width = size.width, centred = attempt < 3 && !central;
+  const source = row?.source === 'procedural' ? 'procedural' : neuralSource, culture = row?.culture ?? env.culture;
   const params = new URLSearchParams({
     // Biome set on the fastest engines: neural relief on the CUDA service, hydrology and settlements on the native Rust engine.
-    engine: 'rust', profile: biome ? 'local' : 'web', source: neuralSource, neural, v: '4', seed, width: String(width), relief: env.relief, climate: env.zone ? 'custom' : env.climate, erosion: '1',
+    engine: 'rust', profile: biome ? 'local' : 'web', source, neural, v: '4', seed, width: String(width), relief: env.relief, climate: env.zone ? 'custom' : env.climate, erosion: '1',
     auto: '1', style: 'atlas', hydro_main: env.river, hydro_meanders: 'natural', hydro_lakes: env.lakes,
     compute: flag('cpu') ? 'wasm' : 'gpu-f32', generation: flag('cpu') ? 'cpu' : 'gpu-erosion',
     hydro_engine: 'rust', hydro_enabled: '1', hydro_compute: flag('cpu') ? 'cpu' : 'auto',
@@ -169,16 +178,16 @@ function cityVariation(i, attempt = 0, central = false) {
   if (env.zone) { const [temperature, temperatureStd, precipitation, precipitationCv, base] = ZONE_CLIMATE[env.zone]; for (const [k, v] of Object.entries({ temperature, temperatureStd, precipitation, precipitationCv, climateBase: base })) params.set(k, String(v)); }
   if (coast.coasts === 'all') { params.set('coasts', 'N,NE,E,SE,S,SW,W,NW'); params.set('islands', coast.islands); }
   else if (coast.coasts.length) { params.set('coasts', coast.coasts.join(',')); params.set('islands', 'island'); }
-  const place = { key: 'city', name: env.label, population: size.population, culture: env.culture, kind: 'settlement', siteType: 'auto', sitePrefs: {}, ...(centred ? { position: { x: width / 2, y: width / 2 } } : {}) };
+  const place = { key: 'city', name: env.label, population: size.population, culture, kind: 'settlement', siteType: 'auto', sitePrefs: {}, ...(centred ? { position: { x: width / 2, y: width / 2 } } : {}) };
   // Without a position the site stays in the central 60 % of the map (edge margin 0.2, plus the city's own extent);
   // the last retry accepts the best site of the whole map.
-  params.set('settlements', JSON.stringify({ config: { mode: 'list', list: [place], edgeMargin: centred || attempt >= 3 ? 0.03 : 0.2, counts: { city: 0, town: 0, village: 0, hamlet: 0, farmstead: 0 }, main: { population: size.population, culture: env.culture } }, enabled: true, showPoints: true }));
+  params.set('settlements', JSON.stringify({ config: { mode: 'list', list: [place], edgeMargin: centred || attempt >= 3 ? 0.03 : 0.2, counts: { city: 0, town: 0, village: 0, hamlet: 0, farmstead: 0 }, main: { population: size.population, culture } }, enabled: true, showPoints: true }));
   params.set('roads', JSON.stringify({ config: { level: env.level, culture: 'auto', density: 0.6, exits: size.exits }, enabled: true, show: true }));
   params.set('urban', JSON.stringify({ enabled: false, parcelEnabled: false }));
   const n = String(i % ENVS.length + 1).padStart(2, '0');
-  const id = biome ? `city-${env.id}-${size.id}` : `city-${n}-${env.id}-${size.id}`;
-  const label = biome ? `${env.zone} · ${env.label} · ${size.label}` : `${n} · ${env.label} · ${size.label}`;
-  const tags = { kit: 'city', environment: env.id, size: size.size, climate: env.climate, relief: env.relief, coast: coast.id, river: env.river, lakes: env.lakes, culture: env.culture, roads: env.level, placement: centred ? 'centre' : 'central-best', source: neuralSource, hydrology: 'rust', seed };
+  const id = row ? row.decorId : biome ? `city-${env.id}-${size.id}` : `city-${n}-${env.id}-${size.id}`;
+  const label = row ? `${env.zone} · ${env.label} · ${size.label} · ${row.decorId}` : biome ? `${env.zone} · ${env.label} · ${size.label}` : `${n} · ${env.label} · ${size.label}`;
+  const tags = { kit: 'city', environment: env.id, size: size.size, climate: env.climate, relief: env.relief, coast: coast.id, river: env.river, lakes: env.lakes, culture, roads: env.level, placement: centred ? 'centre' : 'central-best', source, hydrology: 'rust', seed };
   return { id, label, tags, query: params.toString() };
 }
 
@@ -217,6 +226,7 @@ for (let i = from; i < from + count; i++) {
   if (only && !only.split(',').some(o => first.id.startsWith(o))) continue;
   if (!flag('force') && existsSync(join(out, file))) {
     const previous = readHeader(join(out, file));
+    if (ROWS && previous.tags?.source === first.tags.source && previous.tags?.hydrology === 'rust') { console.log(`${first.id}: exists (${first.tags.source} + Rust)`); continue; }
     if (previous.tags?.source?.startsWith('neural') && previous.tags?.hydrology === 'rust') { console.log(`${first.id}: exists (neural + Rust)`); continue; }
     console.log(`${first.id}: replacing old generators`);
   }
@@ -238,7 +248,7 @@ for (let i = from; i < from + count; i++) {
       stable = state.ready ? stable + 1 : 0;
     }
     const { base64, entry } = await page.evaluate(([file, extra]) => window.magnaDecor.export(file, extra), [file, { id: v.id, label: v.label, tags: v.tags, query: v.query }]);
-    if (!entry.tags.source?.startsWith('neural') || entry.tags.hydrology !== 'rust') throw new Error('Unexpected terrain or hydrology generator');
+    if ((ROWS ? entry.tags.source !== v.tags.source : !entry.tags.source?.startsWith('neural')) || entry.tags.hydrology !== 'rust') throw new Error(`Unexpected terrain or hydrology generator: ${entry.tags.source}/${entry.tags.hydrology}`);
     const wanted = city ? 1 : 2;
     if (entry.settlements < wanted && steepCentre && attempt === 3) {
       writeFileSync(join(out, file), steepCentre); done++;
@@ -264,6 +274,6 @@ for (let i = from; i < from + count; i++) {
   }
 }
 await browser.close();
-writeIndex();
+if (!ROWS || flag('index-after')) writeIndex();   // rows: City Bench reads decors/<id>.decor directly; the launcher rebuilds the index once
 console.log(`${done} exported, ${failed} failed`);
 if (failed) process.exitCode = 1;
