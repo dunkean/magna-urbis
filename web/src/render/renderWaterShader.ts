@@ -9,7 +9,9 @@
  * - a soft damp shadow on the land just outside it;
  * - gentle world-anchored surface variation (static value noise);
  * - with uRegime, the seasonal regime carried by the river colour (waterRegime.ts regimeRgb):
- *   a sandy bed with pools, ice with a darker edge line, foam speckles on steep reaches.
+ *   a sandy bed with pools, ice with a darker edge line, foam speckles on steep reaches;
+ *   uRegime 2 (City Bench retained banks, city zoom): the dry bed is a warm ochre wash, a little darker than the
+ *   ground, with broken gravel, damp patches and shrubs, and soft edges (it never reads as a pale road).
  * Land pixels cost at most 24 taps; nothing is computed on the CPU per pixel. */
 import { WATER_STYLE_GLSL, WATER_SURFACE_GLSL } from './waterStyle';
 import { WATER_REGIME_GLSL } from './waterRegime';
@@ -88,7 +90,7 @@ void main() {
   // Wet bank: soft dark shadow on the land side.
   vec3 bankColor = vec3(.055, .085, .045);
   float bankA = .55 * bank * bank;
-  if (uRegime == 1) {
+  if (uRegime >= 1) {
     vec4 own = tap(f);
     // Decoded back to dry, ice, foam (regimeRgb stores running and open water so MAX keeps them on overlaps).
     vec3 regime = clamp(own.rgb / max(own.a, 1e-3), 0., 1.); regime.rg = 1. - regime.rg;
@@ -100,7 +102,18 @@ void main() {
     float centre = smoothstep(.2 * uDpr, 2.5 * uDpr, depth);
     float dryOn = smoothstep(0., .1, regime.r);
     float pools = mix(1., waterDryPools(world, regime.r, centre), dryOn);
-    color = mix(waterDryBed(world, centre), color, pools);
+    vec3 bed = waterDryBed(world, centre);
+    if (uRegime == 2) {
+      // Warm ochre sand, darker toward the thalweg, broken gravel, damp patches and a few shrubs along the bed.
+      float n = waterRegimeNoise(world / 40.) * .55 + waterRegimeNoise(world / 11.) * .45;
+      float gravel = smoothstep(.5, .8, waterRegimeNoise(world / 3.2) * .6 + waterRegimeNoise(world / 1.3) * .4);
+      bed = mix(vec3(.64, .53, .37), vec3(.55, .44, .29), smoothstep(.1, .9, centre)) * (.88 + .24 * n) * (1. - .22 * gravel);
+      float damp = smoothstep(.62, .78, waterRegimeNoise(world / 26. + 9.3)) * centre;
+      bed = mix(bed, vec3(.43, .38, .27), .7 * damp);
+      float shrub = smoothstep(.83, .9, waterRegimeNoise(world / 5.5 + 2.1)) * (1. - smoothstep(1.5, 4., uPx));
+      bed = mix(bed, vec3(.36, .37, .21), .85 * shrub);
+    }
+    color = mix(bed, color, pools);
     // Ice follows the bed: shore ice grows from both banks (up to 40 m) and closes the whole course when frozen,
     // so a thaw leaves a dark open thread down the fast centre. Hairline streams freeze first. Dark bank line on both sides.
     float shelf = 40. * regime.g;
@@ -114,7 +127,7 @@ void main() {
     // Land side: a dry bed has pale bars, not a dark wet bank; ice keeps a faint one.
     vec3 neighbour = 1. - clamp(near.rgb / max(near.a, 1e-3), 0., 1.);
     bankColor = mix(bankColor, vec3(.78, .70, .56), smoothstep(.3, .8, neighbour.r));
-    bankA *= 1. - .6 * smoothstep(.3, .8, max(neighbour.r, neighbour.g));
+    bankA *= 1. - (uRegime == 2 ? smoothstep(.3, .8, neighbour.r) : .6 * smoothstep(.3, .8, max(neighbour.r, neighbour.g)));
     if (near.a > .002 && near.b / near.a > .5) bankA = 0.;
     if (plume > 0.) {
       // Sediment plume over the sea: a translucent silt tint, feathered at its edges and streaked by the current.
@@ -123,6 +136,11 @@ void main() {
       outColor = vec4(vec3(.70, .50, .20) * amount, amount);
       return;
     }
+  }
+  // City dry beds fade in over their first pixels: a soft edge, no hard outline.
+  if (uRegime == 2) {
+    vec3 own = clamp(tap(f).rgb / max(a, 1e-3), 0., 1.);
+    a *= mix(1., .35 + .65 * smoothstep(0., 3. * uDpr, depth), smoothstep(.3, .8, 1. - own.r));
   }
   outColor = vec4(color * a + bankColor * bankA * (1. - a), a + bankA * (1. - a));
 }`;

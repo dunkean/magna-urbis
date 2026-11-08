@@ -19,7 +19,7 @@ import { streetToneAt, washAt } from './groundTone';
 import { STREET_MIN_PX, emphasisAlpha, naturalMarks, roadGrain, roadPaint, streetRank, type RoadStyle } from './roadStyle';
 import { STRUCTURE_ROLES, blendLine, blendTone, blendsGround, groundWash, naturalGroundWash, isBlended, softStreet, type WashKind } from './groundBlend';
 import { CityGround, boardwalkWidth, isBoardwalk, type CityGroundRaster } from './cityGround';
-import { buildingRoof, pieceShadows, pieceVolumes, readMassing, stiltDeck, stiltSupports, roofLight as roofLight3 } from './cityMassing';
+import { planRoof, pieceShadows, pieceVolumes, readMassing, stiltDeck, stiltSupports, roofLight as roofLight3 } from './cityMassing';
 import { drawGardenDetails } from './readableGardens';
 import { softenRuralGround } from './countryside';
 import { polygonCentroid as shapeRingCenter } from '../gen/core/geom';
@@ -160,7 +160,7 @@ export interface CityScene {
   bins: { blocks: SpatialBins; parcels: SpatialBins; streets: SpatialBins; landmarks: SpatialBins };
   parcelById: Map<string, number>;
 }
-export interface CityBuilding { stilts?: boolean; id: string; surface: Surface; fn: string; family: string; role?: string; landmark: boolean; parcel?: number; building: PlacedBuilding; material?: { culture: string; wall: string; cover: string; tone: number }; path?: Path2D; footprintPath?: Path2D }
+export interface CityBuilding { stilts?: boolean; /** Some volume has a flat roof (bevelled rim in plan; parchment draws its ground shadow). */ flat?: boolean; id: string; surface: Surface; fn: string; family: string; role?: string; landmark: boolean; parcel?: number; building: PlacedBuilding; material?: { culture: string; wall: string; cover: string; tone: number }; path?: Path2D; footprintPath?: Path2D }
 /** Roof pans of the massing (cityMassing.ts): one polygon per sloped face, its
  * building and its light; height shadows per building (sun from the north-west). */
 /** `dir`: downslope direction of each pan in plan (radians, atan2 of the face normal's horizontal part; 0 when flat). */
@@ -302,9 +302,10 @@ export function buildCityBuildings(batch: Pick<PlacementBatch, 'buildings'> | un
       material: { culture, wall: first?.wall ?? '', cover: first?.cover ?? '', tone: first?.tone ?? 0.5 } });
     if (!massing) { shadows.push([]); continue; }
     const owner = items.length - 1;
-    for (const face of buildingRoof(building.footprint, massing)) {
+    for (const face of planRoof(building.footprint, massing)) {
       if (face.normal[2] < 0.08 || face.points.length < 3) continue; // gable ends and walls are edge-on from above
-      roofShapes.push({ outer: face.points.map(p => ({ x: p.x, y: p.y })), holes: [] }); roofOwner.push(owner); roofLight.push(roofLight3(face.normal)); roofCover.push(face.cover); roofWall.push(face.wall); roofTone.push(face.tone); roofDir.push(Math.hypot(face.normal[0], face.normal[1]) > 1e-3 ? Math.atan2(face.normal[1], face.normal[0]) : 0);
+      if (face.flat) items[owner].flat = true;
+      roofShapes.push({ outer: face.points.map(p => ({ x: p.x, y: p.y })), holes: face.holes ?? [] }); roofOwner.push(owner); roofLight.push(face.light ?? roofLight3(face.normal)); roofCover.push(face.cover); roofWall.push(face.wall); roofTone.push(face.tone); roofDir.push(Math.hypot(face.normal[0], face.normal[1]) > 1e-3 ? Math.atan2(face.normal[1], face.normal[0]) : 0);
     }
     shadows.push(building.footprint.flatMap((shape, i) => massing[i] ? pieceShadows(shape, massing[i]) : []));
   }

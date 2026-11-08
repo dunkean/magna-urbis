@@ -15,7 +15,13 @@ interface Entry { building: Building3dVisual; bounds: Bounds }
 /** `yard`: lot boundaries only, in a sector of their own: they change level far earlier than buildings and for a fraction of the cost. */
 export interface Sector { origin: [number, number]; entries: Entry[]; bounds: Bounds; width: number; featureLodEligible: boolean; overview: boolean; shown: boolean; yard?: boolean; cached?: { overview: boolean; featureLod?: BuildingFeatureLod; yardLevel?: number; batches: Batch[]; used: number } }
 const SECTOR = 256, MAX_CACHE_BYTES = 96 * 1024 * 1024;
+// Walls darken towards their foot (cheap ambient occlusion over the first 2.4 m); roofs and ground-less
+// works (city walls, bridges: facadePosition.y = -10000) are left as they are.
 const nightWindows = `
+float baseOcclusion(vec3 normal,vec3 p){
+  if(abs(normalize(normal).y)>.5||p.y<-1000.)return 1.;
+  return mix(.72,1.,smoothstep(0.,2.4,p.y));
+}
 uniform int uNight;
 ${MOONLIGHT_GLSL}
 vec3 buildingNight(vec3 color,vec3 p,vec3 normal){
@@ -42,13 +48,13 @@ uniform float exaggeration;
 uniform vec2 sectorOrigin;
 layout(location=4) in float groundIn;
 out vec3 n; out vec3 base; out vec3 facadePosition;
-void main(){float k=position.y>groundIn+.01?1.:exaggeration;n=normalize(vec3(normal.x,normal.y/k,normal.z));base=albedo;facadePosition=vec3(position.x+sectorOrigin.x,groundIn<1e10?position.y-groundIn:0.,position.z+sectorOrigin.y);gl_Position=matrix*vec4(vec3(position.x,position.y+groundIn*(exaggeration-1.),position.z)+offset,1.);}`;
+void main(){float k=position.y>groundIn+.01?1.:exaggeration;n=normalize(vec3(normal.x,normal.y/k,normal.z));base=albedo;facadePosition=vec3(position.x+sectorOrigin.x,groundIn<1e10?position.y-groundIn:-10000.,position.z+sectorOrigin.y);gl_Position=matrix*vec4(vec3(position.x,position.y+groundIn*(exaggeration-1.),position.z)+offset,1.);}`;
 const fragmentColor = `#version 300 es
 precision highp float;
 in vec3 n; in vec3 base; in vec3 facadePosition;
 out vec4 color;
 ${nightWindows}
-void main(){float light=.55+.45*abs(dot(normalize(n),normalize(vec3(-.4,.85,.3))));color=vec4(buildingNight(base*light,facadePosition,n),1.);}`;
+void main(){float light=.55+.45*abs(dot(normalize(n),normalize(vec3(-.4,.85,.3))));color=vec4(buildingNight(base*light*baseOcclusion(n,facadePosition),facadePosition,n),1.);}`;
 
 /** Textured variant: per-vertex uv (metres on the face: walls along the face and down, roofs along the ridge and down
  * the slope) and material layer; albedo + normal map arrays; same lighting model. Layer < 0 keeps the flat colour. */
@@ -64,7 +70,7 @@ uniform float exaggeration;
 uniform vec2 sectorOrigin;
 layout(location=4) in float groundIn;
 out vec3 n; out vec3 wp; out vec2 uv; flat out float layer; out vec3 facadePosition;
-void main(){float k=position.y>groundIn+.01?1.:exaggeration;n=normalize(vec3(normal.x,normal.y/k,normal.z));vec3 p=vec3(position.x,position.y+groundIn*(exaggeration-1.),position.z)+offset;wp=p;uv=uvIn;layer=layerIn;facadePosition=vec3(position.x+sectorOrigin.x,groundIn<1e10?position.y-groundIn:0.,position.z+sectorOrigin.y);gl_Position=matrix*vec4(p,1.);}`;
+void main(){float k=position.y>groundIn+.01?1.:exaggeration;n=normalize(vec3(normal.x,normal.y/k,normal.z));vec3 p=vec3(position.x,position.y+groundIn*(exaggeration-1.),position.z)+offset;wp=p;uv=uvIn;layer=layerIn;facadePosition=vec3(position.x+sectorOrigin.x,groundIn<1e10?position.y-groundIn:-10000.,position.z+sectorOrigin.y);gl_Position=matrix*vec4(p,1.);}`;
 const texFragment = `#version 300 es
 precision highp float;
 in vec3 n; in vec3 wp; in vec2 uv; flat in float layer; in vec3 facadePosition;
@@ -102,7 +108,7 @@ void main(){
     base=recolored==1?clamp(mix(material,albedo*tint,.65),0.,1.):albedo*tint;
     N=normalize(mat3(T*invmax,-B*invmax,N)*normalize(tn));
   }
-  float light=.55+.45*abs(dot(N,normalize(vec3(-.4,.85,.3))));color=vec4(buildingNight(base*light,facadePosition,n),1.);
+  float light=.55+.45*abs(dot(N,normalize(vec3(-.4,.85,.3))));color=vec4(buildingNight(base*light*baseOcclusion(n,facadePosition),facadePosition,n),1.);
 }`;
 /** First material layer that keeps half its contrast in the natural texture mode (roads, places; not the stone wall layer). */
 export const SOFT_LAYER_FROM = Math.min(...Object.entries(MATERIALS.road).filter(([k]) => k !== 'wall').map(([, v]) => v));

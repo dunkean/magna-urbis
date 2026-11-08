@@ -20,7 +20,7 @@ import {
   slicePolygons, splitPolygons, STROKE_STRIDE, triangulatePolygons, visibleRanges,
   type CityGlFillMesh, type CityGlFillSource, type CityGlStrokes, type CityGlTriangulation,
 } from './cityGlBuild';
-import { buildingColors, DEFAULT_LAYERS, PAINTED_SHADOW, planColors, planMaterialTable, rgba01, roofMaterialTable, streetColors, streetMaterialTable, wallColors, type CityGlDraws, type CityGlStyleState } from './cityGlStyle';
+import { buildingColors, DEFAULT_LAYERS, PAINTED_SHADOW, PARCHMENT_SHADOW, planColors, planMaterialTable, rgba01, roofMaterialTable, streetColors, streetMaterialTable, wallColors, type CityGlDraws, type CityGlStyleState } from './cityGlStyle';
 import { isBlended } from './groundBlend';
 import { toneKey } from './groundTone';
 import { MATERIALS, loadMaterialImages, uploadMaterialArrays } from './buildingMaterials';
@@ -729,9 +729,9 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
       if (d.buildings && built) {
         gl.useProgram(fillP.program);
         const pans = !!built.mesh.layers.roofs?.triangles.count;
-        if (pans && palette !== 'parchment') {
-          // Massing shadows: each piece's outline swept by its own height (cityMassing.ts).
-          gl.uniform4fv(fillP.u.uTint, PAINTED_SHADOW);
+        if (pans) {
+          // Massing shadows: each piece's outline swept by its own height (cityMassing.ts); parchment shows flat roofs' only.
+          gl.uniform4fv(fillP.u.uTint, palette === 'parchment' ? PARCHMENT_SHADOW : PAINTED_SHADOW);
           fills(built, 'shadows', false);
           gl.uniform4f(fillP.u.uTint, 0, 0, 0, 0);
         } else if (painted && palette !== 'parchment') {

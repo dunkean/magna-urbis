@@ -31,7 +31,9 @@ import { styleTraits, terrainStyle, type TerrainStyle } from '../render/terrainS
 import type { RenderColors } from '../render/customColors';
 import { WATER_STYLE_GLSL, waterUniforms } from '../render/waterStyle';
 import { MATERIAL_WATER_GLSL, MOONLIGHT_GLSL, groundCoverActive } from '../render/materialLook';
-import { paintRetainedWater, retainedWaterPaths, type RetainedWaterPath } from '../render/retainedWaterGeometry';
+import { retainedWaterPaths, type RetainedWaterPath } from '../render/retainedWaterGeometry';
+import { paintRetainedWaterView, retainedRegime, type RetainedRegime } from './retainedWaterRegime';
+import { waterClimate, type WaterSeason } from '../render/waterRegime';
 import { RENDER_WATER_FS, renderWaterRings } from '../render/renderWaterShader';
 import { WATER_FRESH_ICE_GLSL, WATER_REGIME_GLSL } from '../render/waterRegime';
 import { CANVAS_MAP_STROKES, mapStrokeWidth } from '../render/strokes';
@@ -90,6 +92,9 @@ export interface WaterLayer {
   regime?: boolean;
 }
 
+/** Seasonal regime of retained water (City Bench): zone and season, and `city` for the city-zoom river colour. */
+export interface RetainedWaterOptions { season?: WaterSeason; city?: boolean }
+
 export interface OverlayLayer { rgba: Uint8Array; n: number }
 
 export const hex = (value: string): [number, number, number] => {
@@ -130,6 +135,8 @@ uniform sampler2D uCave; uniform int uHasCave;
 uniform sampler2D uLake; uniform int uHasLake; uniform float uLakeN; // uHasLake: 1 procedural shore, 2 exact shore
 uniform sampler2D uOverlay; uniform int uHasOverlay;
 uniform sampler2D uWaterLayer; uniform int uUseWaterLayer;
+// City Bench retained rivers (setRetainedWater city): x 1 grades their depth from the bank, y their sediment tint.
+uniform vec2 uCityWater;
 uniform int uWaterVisible; uniform int uRelief; uniform int uMode;             // 0 shaded, 1 elevation colours
 uniform vec3 uPaper, uSea, uBackground, uFrameColor, uContourColor;
 uniform vec3 uShore; uniform int uCoastalSea;
@@ -446,6 +453,20 @@ void main() {
           // Sandy beds lean red; ice, its bank lines and foam are far lighter than any painted open water (luminance < .3).
           float solid=max(smoothstep(.05,.15,painted.r-painted.b),smoothstep(.33,.42,dot(painted,vec3(.3,.45,.25))));
           wBase=mix(wBase,painted,water.a*solid);wCover*=1.-solid;
+          // City Bench: a retained river reads as water at city zoom instead of a near-black ribbon. Its depth grows
+          // from the bank (distance to the nearest dry pixel over 8 directions and 7 radii), and the season's
+          // sediment tints it (waterRegime.ts waterClimate).
+          if(uCityWater.x>0.&&water.a>.002){
+            float bank=128.;ivec2 here=ivec2(gl_FragCoord.xy),top=ivec2(uCanvas)-1;
+            for(int k=0;k<7;k++){
+              float r=exp2(float(k));
+              for(int i=0;i<8;i++){
+                float turn=float(i)*.7853982;
+                if(texelFetch(uWaterLayer,clamp(here+ivec2(vec2(cos(turn),sin(turn))*r),ivec2(0),top),0).a<.5)bank=min(bank,r);
+              }
+            }
+            wDepth=clamp(.07*bank*uPx,.4,6.)*water.a;wTint.z=uCityWater.y*wCover;
+          }
           // Distance inside the nearest lake, in device pixels (negative outside a lake).
           float m=uHasLake>0?lakeShore(world,uHasLake==1):-1e3;
           float inside=uHasLake>0?-m/max(fwidth(m),1e-4):1e3;
@@ -656,6 +677,7 @@ export class TerrainGl {
   private retainedWaterCanvas?: HTMLCanvasElement;
   private retainedWaterTexture?: WebGLTexture;
   private retainedWaterViewKey = '';
+  private retainedRegime?: RetainedRegime; private retainedCity: [number, number] = [0, 0]; private retainedCoded = 0;
   private captureTarget?: { framebuffer: WebGLFramebuffer; texture: WebGLTexture; width: number; height: number };
   private locations = new Map<WebGLProgram, Map<string, WebGLUniformLocation | null>>();
   private riverLocations = new Map<string, WebGLUniformLocation | null>();
@@ -784,7 +806,13 @@ export class TerrainGl {
   /** The look's variant once linked; meanwhile the last drawn variant, or the preview, stands in
    * (undefined if none is linked yet). Captures wait for the link. */
   private terrainProgram(look: TerrainLook, wait: boolean): WebGLProgram | undefined {
-    const target = this.terrainVariant(this.lookVariant(look), wait);
+    const v = this.lookVariant(look), target = this.terrainVariant(v, wait);
+    // Automated shots (v7 sheets) wait for data-map-variant-ready="1": until then a stand-in variant draws another look.
+    const canvas = this.gl.canvas;
+    if (typeof HTMLCanvasElement !== 'undefined' && canvas instanceof HTMLCanvasElement) {
+      const aux = !mapPasses(v).includes('aux') || !!this.variants.get(auxKey(v), () => [TERRAIN_VS, auxFragment(v)], wait);
+      canvas.dataset.mapVariant = variantKey(v); canvas.dataset.mapVariantReady = target && aux ? '1' : '0';
+    }
     if (target) return this.lastTerrain = target;
     return this.lastTerrain ?? this.terrainVariant(PREVIEW_VARIANT, false);
   }
@@ -876,12 +904,14 @@ export class TerrainGl {
 
   /** Retained exports keep exact SVG banks, including accumulated crop transforms.
    * Cache vector paths once; rasterize only the visible viewport, without readback. */
-  setRetainedWater(svg: string | undefined, width = 1): void {
-    const key = svg ? `${width}:${svg}` : '';
+  setRetainedWater(svg: string | undefined, width = 1, options?: RetainedWaterOptions): void {
+    const key = svg ? `${width}:${JSON.stringify(options ?? {})}:${svg}` : '';
     if (key === this.retainedWaterKey) return;
     this.retainedWaterKey = key;
     this.retainedWaterViewKey = '';
     this.retainedWaterPaths = svg ? retainedWaterPaths(svg, width) : [];
+    this.retainedRegime = retainedRegime(this.retainedWaterPaths, width, options?.season);
+    this.retainedCity = svg && options?.city ? [1, .5 * waterClimate(options.season ?? {}).sediment] : [0, 0];
     this.request();
   }
 
@@ -1090,7 +1120,7 @@ export class TerrainGl {
     gl.activeTexture(gl.TEXTURE14); gl.bindTexture(gl.TEXTURE_2D, this.shoreRing?.texture ?? this.empty);
     gl.uniform1i(u('uShoreRing'), 14); gl.uniform3f(u('uShoreRingRect'), this.shoreRing?.x ?? 0, this.shoreRing?.y ?? 0, this.shoreRing?.width ?? 1);
     bindForestBrushes(gl, u, styleTraits(look.style).forestBrushes && mode === 3, 9);
-    gl.uniform1i(u('uPaperMap'),styleTraits(look.style).paperMap?1:0);gl.uniform1i(u('uRenderV2'),styleTraits(look.style).satelliteVariant);gl.uniform1i(u('uV2WaterVisible'),look.layers.water===false?0:1);if(this.base&&look.climate)gl.uniform4fv(u('uV2GlacierSources[0]'),renderV2GlacierSources(this.base.layer,look.climate));gl.uniform1f(u('uV2Season'),look.v2Season??.5);setSeasonCalendarGl(gl,u,look.climateZone,look.v2Calendar);gl.uniform1i(u('uMaterialZone'),renderV2ZoneUniform(look.climateZone));
+    gl.uniform1i(u('uPaperMap'),styleTraits(look.style).paperMap?1:0);gl.uniform1i(u('uRenderV2'),styleTraits(look.style).satelliteVariant);gl.uniform1i(u('uV2WaterVisible'),look.layers.water===false?0:1);if(this.base&&look.climate)gl.uniform4fv(u('uV2GlacierSources[0]'),renderV2GlacierSources(this.base.layer,look.climate));gl.uniform1f(u('uV2Season'),look.v2Season??.5);setSeasonCalendarGl(gl,u,look.climateZone,look.v2Calendar);gl.uniform1i(u('uMaterialZone'),renderV2ZoneUniform(look.climateZone));gl.uniform2f(u('uCityWater'),this.retainedCity[0],this.retainedCity[1]);
     gl.uniform1i(u('uEnhanced3d'), look.mesh3d || styleTraits(look.style).ground3d ? 1 : 0);
     gl.uniform1i(u('uRefinementMode'), look.refinement3d === 'source' ? 0 : isNeuralRefinement(look.refinement3d ?? 'noise') ? 2 : 1);
     const refined = this.enhanced.at(-1), previousRefined = this.enhanced.at(-2);
@@ -1208,12 +1238,12 @@ export class TerrainGl {
       const canvas = this.retainedWaterCanvas ??= document.createElement('canvas');
       this.retainedWaterTexture ??= gl.createTexture()!;
       gl.activeTexture(gl.TEXTURE11); gl.bindTexture(gl.TEXTURE_2D, this.retainedWaterTexture);
-      const key = `${origin[0]},${origin[1]},${px},${width},${height},${water.stops[0][1]}`;
+      const key = `${origin[0]},${origin[1]},${px},${width},${height},${water.stops[0][1]},${paintedWater},${look.waterStyle ?? look.style}`;
       if (key !== this.retainedWaterViewKey) {
         if (canvas.width !== width) canvas.width = width;
         if (canvas.height !== height) canvas.height = height;
-        paintRetainedWater(canvas.getContext('2d')!, this.retainedWaterPaths,
-          { x: origin[0], y: origin[1], width: width * px, height: height * px }, { width, height }, water.stops[0][1]);
+        this.retainedCoded = Number(paintRetainedWaterView(canvas.getContext('2d')!, this.retainedWaterPaths,
+          { x: origin[0], y: origin[1], width: width * px, height: height * px }, { width, height }, water.stops[0][1], this.retainedRegime, paintedWater, look.waterStyle ?? look.style)) * (this.retainedCity[0] ? 2 : 1);
         gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
         gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
@@ -1223,7 +1253,7 @@ export class TerrainGl {
       }
       gl.bindFramebuffer(gl.FRAMEBUFFER, destination);
       gl.enable(gl.BLEND); gl.blendEquation(gl.FUNC_ADD); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-      if (paintedWater) { this.paintWater(11, width, height, origin, px, stylePixelRatio, waterBand); return; }
+      if (paintedWater) { this.paintWater(11, width, height, origin, px, stylePixelRatio, waterBand, this.retainedCoded); return; }
       gl.useProgram(this.composite);
       gl.uniform1i(gl.getUniformLocation(this.composite, 'uLayer'), 11);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
@@ -1263,7 +1293,7 @@ export class TerrainGl {
   }
 
   /** Composite a coverage layer (texture unit `unit`, bound) as painted water; blending is set by the caller. */
-  private paintWater(unit: number, width: number, height: number, origin: [number, number], px: number, dpr: number, band: number, regime = false): void {
+  private paintWater(unit: number, width: number, height: number, origin: [number, number], px: number, dpr: number, band: number, regime: boolean | number = false): void {
     const gl = this.gl;
     if (!this.renderWater) this.renderWater = { program: compile(gl, COMPOSITE_VS, RENDER_WATER_FS), u: new Map() };
     const { program, u: cache } = this.renderWater;
@@ -1279,7 +1309,7 @@ export class TerrainGl {
     gl.uniform1f(u('uBankPx'), Math.min(6 * dpr, Math.max(1.5 * dpr, 7 / px)));
     gl.uniform1fv(u('uRings[0]'), rings); gl.uniform1i(u('uRingCount'), rings.length);
     gl.uniform3fv(u('uWaterStops[0]'), palette.colors); gl.uniform1fv(u('uWaterStopT[0]'), palette.positions);
-    gl.uniform1i(u('uWaterStopCount'), water.stops.length); gl.uniform1i(u('uRegime'), regime ? 1 : 0);
+    gl.uniform1i(u('uWaterStopCount'), water.stops.length); gl.uniform1i(u('uRegime'), Number(regime));
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   }
 

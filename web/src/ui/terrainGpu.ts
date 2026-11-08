@@ -33,13 +33,15 @@ import { groundCoverActive } from '../render/materialLook';
 import { lakeDistances, seaDistanceSurface, type WaterSurface } from '../render/terrainWater';
 import { styleTraits, terrainStyle } from '../render/terrainStyle';
 import { waterUniforms } from '../render/waterStyle';
-import { paintRetainedWater, retainedWaterPaths, type RetainedWaterPath } from '../render/retainedWaterGeometry';
+import { retainedWaterPaths, type RetainedWaterPath } from '../render/retainedWaterGeometry';
+import { paintRetainedWaterView, retainedRegime, type RetainedRegime } from './retainedWaterRegime';
+import { waterClimate } from '../render/waterRegime';
 import { renderWaterRings } from '../render/renderWaterShader';
 import { CANVAS_MAP_STROKES, mapStrokeWidth } from '../render/strokes';
 import type { View } from '../render/view';
 import { createTerrainSurfaceSampler, heightPyramid } from './terrainSurface';
 import { isNeuralRefinement } from './terrainRefinement';
-import { PREVIEW_VARIANT, TerrainGl, hex, lookMode, mapPasses, type HeightLayer, type OverlayLayer, type TerrainLook, type TerrainVariant, type WaterLayer } from './terrainGl';
+import { PREVIEW_VARIANT, TerrainGl, hex, lookMode, mapPasses, type HeightLayer, type OverlayLayer, type RetainedWaterOptions, type TerrainLook, type TerrainVariant, type WaterLayer } from './terrainGl';
 import type { TerrainRenderer } from './terrainRenderer';
 import * as WGSL from './terrainWgsl.generated';
 
@@ -279,7 +281,7 @@ interface Surface { canvas: HTMLCanvasElement; context: GPUCanvasContext; opaque
 /** CPU inputs retained to rebuild the GPU state after a device loss (or to hand it to a TerrainGl). */
 interface RendererInputs {
   look?: TerrainLook; view?: { view: View; width: number; height: number }; base?: HeightLayer; details: HeightLayer[]; enhanced: HeightLayer[];
-  retainedWater?: { svg: string; width: number }; water?: WaterLayer; overlay?: OverlayLayer; forest?: ForestField; occupation?: ForestOccupation;
+  retainedWater?: { svg: string; width: number; options?: RetainedWaterOptions }; water?: WaterLayer; overlay?: OverlayLayer; forest?: ForestField; occupation?: ForestOccupation;
 }
 
 export class TerrainGpu implements TerrainRenderer {
@@ -298,6 +300,7 @@ export class TerrainGpu implements TerrainRenderer {
   private retainedWaterCanvas?: HTMLCanvasElement;
   private retainedWater?: GpuImage & { width: number; height: number };
   private retainedWaterViewKey = '';
+  private retainedRegime?: RetainedRegime; private retainedCity: [number, number] = [0, 0]; private retainedCoded = 0;
   private base?: GpuLayer; private details: GpuLayer[] = [];
   private enhanced: GpuLayer[] = [];
   private look?: TerrainLook;
@@ -325,7 +328,7 @@ export class TerrainGpu implements TerrainRenderer {
   private slots!: { buffer: GPUBuffer; staging: Uint8Array<ArrayBuffer>; used: number; align: number; slotSize: number };
   private readonly redraw = (): void => this.request();
   /** Inputs kept only to rebuild the GPU state (setWater, setOverlay, setRetainedWater). */
-  private waterInput?: WaterLayer; private overlayInput?: OverlayLayer; private retainedWaterInput?: { svg: string; width: number };
+  private waterInput?: WaterLayer; private overlayInput?: OverlayLayer; private retainedWaterInput?: { svg: string; width: number; options?: RetainedWaterOptions };
   /** Device recovery in progress, recent losses (a device lost again and again falls back to WebGL2). */
   private recovering?: Promise<void>;
   private losses: number[] = [];
@@ -375,7 +378,7 @@ export class TerrainGpu implements TerrainRenderer {
     if (inputs.base) target.setBase(inputs.base);
     for (const layer of inputs.details) target.setDetail(layer);
     for (const layer of inputs.enhanced) target.setEnhancedDetail(layer);
-    target.setRetainedWater(inputs.retainedWater?.svg, inputs.retainedWater?.width);
+    target.setRetainedWater(inputs.retainedWater?.svg, inputs.retainedWater?.width, inputs.retainedWater?.options);
     target.setWater(inputs.water);
     target.setOverlay(inputs.overlay);
     target.setForest(inputs.forest, inputs.occupation);
@@ -530,14 +533,16 @@ export class TerrainGpu implements TerrainRenderer {
     this.request();
   }
 
-  setRetainedWater(svg: string | undefined, width = 1): void {
-    if (this.fallback) return this.fallback.setRetainedWater(svg, width);
-    this.retainedWaterInput = svg ? { svg, width } : undefined;
-    const key = svg ? `${width}:${svg}` : '';
+  setRetainedWater(svg: string | undefined, width = 1, options?: RetainedWaterOptions): void {
+    if (this.fallback) return this.fallback.setRetainedWater(svg, width, options);
+    this.retainedWaterInput = svg ? { svg, width, options } : undefined;
+    const key = svg ? `${width}:${JSON.stringify(options ?? {})}:${svg}` : '';
     if (key === this.retainedWaterKey) return;
     this.retainedWaterKey = key;
     this.retainedWaterViewKey = '';
     this.retainedWaterPaths = svg ? retainedWaterPaths(svg, width) : [];
+    this.retainedRegime = retainedRegime(this.retainedWaterPaths, width, options?.season);
+    this.retainedCity = svg && options?.city ? [1, .5 * waterClimate(options.season ?? {}).sediment] : [0, 0];
     this.request();
   }
 
@@ -820,7 +825,7 @@ export class TerrainGpu implements TerrainRenderer {
       this.bindBrushes(textures, styleTraits(look.style).forestBrushes && mode === 3);
       p.set('uV2WaterVisible', look.layers.water === false ? 0 : 1);
       if (this.base && look.climate) p.setArray('uV2GlacierSources', renderV2GlacierSources(this.base.layer, look.climate));
-      p.set('uV2Season', look.v2Season ?? .5); setSeasonCalendarGpu(p, look.climateZone, look.v2Calendar); p.set('uMaterialZone', renderV2ZoneUniform(look.climateZone));
+      p.set('uV2Season', look.v2Season ?? .5); setSeasonCalendarGpu(p, look.climateZone, look.v2Calendar); p.set('uMaterialZone', renderV2ZoneUniform(look.climateZone)); p.set('uCityWater', this.retainedCity[0], this.retainedCity[1]);
       p.set('uEnhanced3d', look.mesh3d || styleTraits(look.style).ground3d ? 1 : 0);
       p.set('uRefinementMode', look.refinement3d === 'source' ? 0 : isNeuralRefinement(look.refinement3d ?? 'noise') ? 2 : 1);
       const refined = this.enhanced.at(-1), previousRefined = this.enhanced.at(-2);
@@ -905,7 +910,7 @@ export class TerrainGpu implements TerrainRenderer {
     const paintedWater = (look.waterLook === 'natural' || styleTraits(look.style).neuralEarth) && !look.groundCapture;
     const waterBand = (this.seaSurface?.referenceWidth ?? look.mapWidth) * water.bandFraction;
     /** Premultiplied layer `source` over `destination`: plain copy, or the render style's painted water. */
-    const composite = (source: GPUTextureView, destination: Target, painted: boolean, regime = false): void => {
+    const composite = (source: GPUTextureView, destination: Target, painted: boolean, regime: boolean | number = false): void => {
       const program = painted ? 'water' : 'composite';
       const pipeline = this.gpu.pipeline(program, () => this.gpu.simpleDescriptor(program, 'over'), wait);
       if (!pipeline) return;
@@ -917,7 +922,7 @@ export class TerrainGpu implements TerrainRenderer {
         w.set('uBankPx', Math.min(6 * stylePixelRatio, Math.max(1.5 * stylePixelRatio, 7 / px)));
         w.setArray('uRings', rings); w.set('uRingCount', rings.length);
         w.setArray('uWaterStops', palette.colors); w.setArray('uWaterStopT', palette.positions);
-        w.set('uWaterStopCount', water.stops.length); w.set('uRegime', regime ? 1 : 0);
+        w.set('uWaterStopCount', water.stops.length); w.set('uRegime', Number(regime));
         bindGroup = device.createBindGroup({ layout: this.gpu.layouts.water, entries: [{ binding: 0, resource: this.slot(w) }, { binding: 2, resource: this.gpu.linear }, { binding: WGSL.WGSL_TEXTURES.uLayer, resource: source }] });
       } else bindGroup = device.createBindGroup({ layout: this.gpu.layouts.composite, entries: [{ binding: 2, resource: this.gpu.linear }, { binding: WGSL.WGSL_TEXTURES.uLayer, resource: source }] });
       const encoderPass = pass(destination, false, program);
@@ -944,12 +949,12 @@ export class TerrainGpu implements TerrainRenderer {
     const renderRetainedWater = (destination: Target): void => {
       if (!this.retainedWaterPaths.length || (look.layers.water === false && !styleTraits(look.style).waterAlwaysDrawn)) return;
       const canvas = this.retainedWaterCanvas ??= document.createElement('canvas');
-      const key = `${origin[0]},${origin[1]},${px},${width},${height},${water.stops[0][1]}`;
+      const key = `${origin[0]},${origin[1]},${px},${width},${height},${water.stops[0][1]},${paintedWater},${look.waterStyle ?? look.style}`;
       if (key !== this.retainedWaterViewKey || this.retainedWater?.width !== width || this.retainedWater.height !== height) {
         if (canvas.width !== width) canvas.width = width;
         if (canvas.height !== height) canvas.height = height;
-        paintRetainedWater(canvas.getContext('2d')!, this.retainedWaterPaths,
-          { x: origin[0], y: origin[1], width: width * px, height: height * px }, { width, height }, water.stops[0][1]);
+        this.retainedCoded = Number(paintRetainedWaterView(canvas.getContext('2d')!, this.retainedWaterPaths,
+          { x: origin[0], y: origin[1], width: width * px, height: height * px }, { width, height }, water.stops[0][1], this.retainedRegime, paintedWater, look.waterStyle ?? look.style)) * (this.retainedCity[0] ? 2 : 1);
         if (this.retainedWater?.width !== width || this.retainedWater.height !== height) {
           this.retainedWater?.texture.destroy();
           const texture = device.createTexture({ size: [width, height], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT });
@@ -959,7 +964,7 @@ export class TerrainGpu implements TerrainRenderer {
         device.queue.copyExternalImageToTexture({ source: canvas, flipY: true }, { texture: this.retainedWater.texture, premultipliedAlpha: true }, [width, height]);
         this.retainedWaterViewKey = key;
       }
-      composite(this.retainedWater.view, destination, paintedWater);
+      composite(this.retainedWater.view, destination, paintedWater, this.retainedCoded);
     };
     const separateWater = (look.waterLook === 'natural' || styleTraits(look.style).ground3d && look.layers.relief && look.layers.hypsometry || this.lookVariant(look).forest) && (look.layers.water !== false || styleTraits(look.style).waterAlwaysDrawn) && !look.groundCapture;
     p.set('uUseWaterLayer', 0);

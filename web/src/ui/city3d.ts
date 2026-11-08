@@ -41,6 +41,8 @@ import type { Layout, Partition, Street } from '../../../rust/bridge/urban';
 import type { Point } from '../../../rust/bridge/housesContract';
 import type { Decor } from './decor';
 import { executionRuntime } from './executionProfile';
+import { paintRetainedRegime, type RetainedRegime } from './retainedWaterRegime';
+import type { TerrainStyle } from '../render/terrainStyle';
 import { urbanText } from './urbanPanelLocale';
 
 export interface City3dOptions {
@@ -60,6 +62,9 @@ export interface City3dOptions {
   getForest?(): { field?: ForestField; occupation?: ForestOccupation } | undefined;
   getSurface?(): City3dSurface | undefined;
   getWaterDisplay?(): City3dWaterDisplay | undefined;
+  /** The 2D map's exact water banks (retained rivers and lakes, map metres) and its flat water colour. Every 3D ground
+   * then takes its rivers from them, crisp at tile resolution, instead of the decor's 30 m water raster. */
+  getRetainedWater?(): City3dRetainedWater | undefined;
   getHeightSampler?(): ((x: number, y: number, metresPerPixel: number) => number) | undefined;
   getViewSettings?(): Partial<City3dViewSettings>;
   onViewSettingsChange?(settings: City3dViewSettings): void;
@@ -111,9 +116,14 @@ export interface City3dWaterDisplay {
   /** The regime holds ice (an `ice` decal pass is needed on material grounds). */
   frozen?: boolean;
 }
+export interface City3dRetainedWater {
+  paths: readonly { path: Path2D; rule: CanvasFillRule }[]; color: string;
+  /** Seasonal regime of these banks (retainedWaterRegime.ts) and the style of its ink symbols. */
+  regime?: RetainedRegime; style?: TerrainStyle;
+}
 export interface City3dSemantic { landuse: LandUseLayer | undefined; rural: SemanticLook; urban: SemanticLook; opacity: number; classes: Readonly<Record<LandKind, boolean>>; depth: SemanticDepth }
 /** `key` moves when the painting changes. `paint` fills the transparent `target`, which covers `box`; false when the tile holds nothing. */
-export interface City3dPhysicalGround { key: string; paint(target: HTMLCanvasElement, box: { minX: number; minY: number; maxX: number; maxY: number }): boolean }
+export interface City3dPhysicalGround { key: string; /** The painter already leaves water out of its land use: no raster clearance on map tiles. */ keepsWater?: boolean; paint(target: HTMLCanvasElement, box: { minX: number; minY: number; maxX: number; maxY: number }): boolean }
 export interface City3dDetailService {
   setActiveView(view: '2d' | '3d'): void;
   update(view: { viewport: { minX: number; minY: number; maxX: number; maxY: number }; metresPerPixel: number; selectedId?: string; enabled?: boolean }): unknown;
@@ -225,8 +235,18 @@ export function mountCity3d(options: City3dOptions): City3d {
   let tileRoadsOf: readonly Street[] | undefined;
   let ground: Ground = 'map', colors: Colors = 'materials', planOverlay = true, refinement: City3dViewSettings['refinement'] = 'noise';
   let groundKey = '', planKey = '', proceduralGround = false, softwareMaterial = false;
-  let waterDisplay: City3dWaterDisplay | undefined;
-  let openWater: { mask: HTMLCanvasElement; paths?: Path2D; streams?: HTMLCanvasElement; ink?: string; display?: City3dWaterDisplay } | undefined, semanticKey = '', semanticLanduse: LandUseLayer | undefined, physicalKey = '';
+  let waterDisplay: City3dWaterDisplay | undefined, retainedWater: City3dRetainedWater | undefined;
+  /** Rivers come from the vector banks: the raster keeps only the sea and lakes (its river cells are 30 m blocks). */
+  const vectorRivers = (): boolean => !!retainedWater?.paths.length;
+  /** `cover`: the running water only (dry and frozen courses leave the cover); `ink`: the map symbols too. */
+  function fillRetainedWater(ctx: CanvasRenderingContext2D, tile: Terrain3dTile, k: number, color: string, mode: 'cover' | 'ink' | 'symbols' | 'ground' | 'ice' = 'cover'): void {
+    if (!retainedWater?.paths.length) return;
+    ctx.save(); ctx.setTransform(k, 0, 0, k, -tile.x * k, -tile.y * k); ctx.fillStyle = color;
+    if (retainedWater.regime) paintRetainedRegime(ctx, retainedWater.paths, retainedWater.regime, mode, color, retainedWater.style);
+    else if (mode === 'cover' || mode === 'ink') for (const item of retainedWater.paths) ctx.fill(item.path, item.rule);
+    ctx.restore();
+  }
+  let openWater: { mask: HTMLCanvasElement; paths?: Path2D; streams?: HTMLCanvasElement; ink?: string; display?: City3dWaterDisplay; retained?: City3dRetainedWater } | undefined, semanticKey = '', semanticLanduse: LandUseLayer | undefined, physicalKey = '';
   let occupationLanduse: LandUseLayer | undefined,occupationGround: ForestOccupation | undefined;
   function groundForest(): ReturnType<NonNullable<City3dOptions['getForest']>> {
     const forest=options.getForest?.();
@@ -235,7 +255,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     if(landuse!==occupationLanduse){occupationLanduse=landuse;occupationGround=landuse&&withLandDetail(forestOccupation(landuse),landuse);}
     return {...forest,occupation:occupationGround};
   }
-  let surfaceDecor: Decor | undefined, imageUrl: string | undefined, heightAt: City3dHeight | undefined, stiltWaterAt: City3dHeight | undefined, image: HTMLImageElement | HTMLCanvasElement | undefined, mapFallback: HTMLCanvasElement | undefined, waterMask: HTMLCanvasElement | undefined, waterPaths: Path2D | undefined, waterMaskVisible = true;
+  let surfaceDecor: Decor | undefined, imageUrl: string | undefined, heightAt: City3dHeight | undefined, stiltWaterAt: City3dHeight | undefined, image: HTMLImageElement | HTMLCanvasElement | undefined, mapFallback: HTMLCanvasElement | undefined, waterMask: HTMLCanvasElement | undefined, waterPaths: Path2D | undefined, waterMaskVisible = '';
   let imageBillboards: Terrain3dBillboards | undefined;
   let bridgeWaterAt: City3dHeight | undefined;
   const textured = (): boolean => options.getTextured?.() ?? false;
@@ -330,7 +350,8 @@ export function mountCity3d(options: City3dOptions): City3d {
   function water(d: Decor, visible = true): HTMLCanvasElement {
     const { n, water } = d.raster, c = document.createElement('canvas'); c.width = c.height = n;
     const ctx = c.getContext('2d')!, pixels = ctx.createImageData(n, n);
-    if (visible) for (let i = 0; i < n * n; i++) if (water[i]) pixels.data.set([...WATER, 255], i * 4);
+    const rivers = !vectorRivers();
+    if (visible) for (let i = 0; i < n * n; i++) if (water[i] && (rivers || water[i] !== 3)) pixels.data.set([...WATER, 255], i * 4);
     ctx.putImageData(pixels, 0, 0); return c;
   }
   function waterPath(d: Decor): Path2D | undefined {
@@ -376,14 +397,14 @@ export function mountCity3d(options: City3dOptions): City3d {
     const t = terrain, d = surfaceDecor; if (!t || !d) return;
     const configured = options.getGroundSettings?.(ground);
     t.setLook(options.getLook?.() ?? configured ?? {});
-    waterDisplay=options.getWaterDisplay?.();
+    waterDisplay=options.getWaterDisplay?.(); retainedWater = options.getRetainedWater?.();
     const procedural = ground !== 'map' && !softwareMaterial && (!options.getGroundSettings || !!configured);
     proceduralGround = procedural;
     root.dataset.materialBackend = softwareMaterial && ground !== 'map' ? 'software-texture' : procedural ? 'gpu' : 'map';
     if (procedural) {
       const waterVisible = configured?.waterVisible !== false;
       if (waterDisplay) { waterMask = waterDisplay.texture; waterPaths = waterDisplay.paths; }
-      else { if (!waterMask || waterMaskVisible !== waterVisible) { waterMask = water(d, waterVisible); waterMaskVisible = waterVisible; } waterPaths ??= waterPath(d); }
+      else { const maskKey = `${waterVisible}:${vectorRivers()}`; if (!waterMask || waterMaskVisible !== maskKey) { waterMask = water(d, waterVisible); waterMaskVisible = maskKey; } waterPaths ??= waterPath(d); }
       const climate = decorClimate(d.meta);
       t.setGroundMaterial(configured ?? { seed: seedHash(d.meta.seed), climate, sourceCell: d.meta.terrainDisplay?.sourceCell ?? d.raster.width / 1024, lighting: DEFAULT_TERRAIN_LIGHTING, displacement: false });
       t.setTexture(waterMask);
@@ -408,7 +429,7 @@ export function mountCity3d(options: City3dOptions): City3d {
   function currentWaterDisplay(): City3dWaterDisplay | undefined {
     const supplied=options.getWaterDisplay?.();if(supplied)return supplied;
     const d=surfaceDecor,look=options.getLook?.();if(!d || !look)return;
-    const palette=options.getText?.().palette??PALETTES.parchment,key=JSON.stringify([look.waterVisible,look.waterLook,palette.lakeFill,palette.waterEdge]);
+    const palette=options.getText?.().palette??PALETTES.parchment,key=JSON.stringify([look.waterVisible,look.waterLook,palette.lakeFill,palette.waterEdge,vectorRivers()]);
     if(fallbackWater?.decor===d && fallbackWater.key===key)return fallbackWater.display;
     const texture=water(d,look.waterVisible!==false),ink=look.waterLook==='ink'?{fill:palette.lakeFill,stroke:palette.waterEdge}:undefined;
     if(ink){const ctx=texture.getContext('2d')!;ctx.globalCompositeOperation='source-in';ctx.fillStyle=ink.fill;ctx.fillRect(0,0,texture.width,texture.height);ctx.globalCompositeOperation='source-over';}
@@ -420,6 +441,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     waterTileScratch.width=waterTileScratch.height=n;const ctx=waterTileScratch.getContext('2d',{willReadFrequently:true})!;
     const scale=source.width/width;ctx.drawImage(source,tile.x*scale,tile.y*scale,tile.width*scale,tile.width*scale,0,0,n,n);
     if(display.paths){ctx.setTransform(k,0,0,k,-tile.x*k,-tile.y*k);ctx.fillStyle='#fff';ctx.fill(display.paths,'evenodd');}
+    ctx.setTransform(1,0,0,1,0,0);fillRetainedWater(ctx,tile,k,'#fff');
     const pixels=ctx.getImageData(0,0,n,n).data,alpha=new Uint8Array(n*n);for(let i=0;i<alpha.length;i++)alpha[i]=pixels[i*4+3];
     return {x:tile.x,y:tile.y,width:tile.width,n,alpha};
   }
@@ -439,7 +461,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     const c = proceduralGround ? document.createElement('canvas') : semanticScratch ??= document.createElement('canvas');
     c.width = c.height = tile.pixels;
     if (!ground.paint(c, box)) return undefined;
-    if (!proceduralGround) clearSemanticWater(tile, c.getContext('2d')!);
+    if (!proceduralGround && !ground.keepsWater) clearSemanticWater(tile, c.getContext('2d')!);
     return c;
   }
   /** Rural and urban material tints share one water clearance. The raster and exact shoreline both stay authoritative. */
@@ -449,12 +471,13 @@ export function mountCity3d(options: City3dOptions): City3d {
     // cream: in 3D every stream read as a white scratch. The streams are inked over the land use instead, in the river colour.
     const palette = options.getText?.()?.palette, ink = palette?.name === 'parchment' ? palette.riverFill : undefined;
     const regime = currentWaterDisplay();
-    if (!openWater || openWater.ink !== ink || openWater.display !== regime) {
-      const { n, water } = d.raster, mask = document.createElement('canvas'); mask.width = mask.height = n;
+    if (!openWater || openWater.ink !== ink || openWater.display !== regime || openWater.retained !== retainedWater) {
+      // With vector rivers the raster cuts only the sea and lakes: its 30 m river cells blurred a wide notch into the land use.
+      const { n, water } = d.raster, mask = document.createElement('canvas'), rivers = !vectorRivers(); mask.width = mask.height = n;
       const context = mask.getContext('2d')!, pixels = context.createImageData(n, n);
-      for (let i = 0; i < n * n; i++) if (water[i] > 0 && water[i] < (ink ? 3 : 4)) pixels.data[i * 4 + 3] = 255;
-      context.putImageData(pixels, 0, 0); openWater = { mask, paths: waterPath(d), ink, display: regime };
-      if (ink) {
+      for (let i = 0; i < n * n; i++) if (water[i] > 0 && water[i] < (ink || !rivers ? 3 : 4)) pixels.data[i * 4 + 3] = 255;
+      context.putImageData(pixels, 0, 0); openWater = { mask, paths: waterPath(d), ink, display: regime, retained: retainedWater };
+      if (ink && rivers) {
         const streams = document.createElement('canvas'); streams.width = streams.height = n;
         const sx = streams.getContext('2d')!, inked = sx.createImageData(n, n), v = parseInt(ink.slice(1, 7), 16);
         for (let i = 0; i < n * n; i++) if (water[i] === 3) { inked.data[i * 4] = (v >> 16) & 255; inked.data[i * 4 + 1] = (v >> 8) & 255; inked.data[i * 4 + 2] = v & 255; inked.data[i * 4 + 3] = 230; }
@@ -467,6 +490,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     ctx.setTransform(k, 0, 0, k, -tile.x * k, -tile.y * k);
     ctx.globalCompositeOperation = 'destination-out';
     if (paths) ctx.fill(paths, 'evenodd');
+    if (retainedWater) for (const item of retainedWater.paths) ctx.fill(item.path, item.rule);
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = true;
     ctx.drawImage(mask, tile.x * scale, tile.y * scale, tile.width * scale, tile.width * scale, 0, 0, size, size);
     ctx.globalCompositeOperation = 'source-over';
@@ -492,6 +516,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     const groundSettings=options.getGroundSettings?.(ground),satellite=proceduralGround&&groundSettings?.renderV2===1;
     const waterVisible = groundSettings?.waterVisible !== false;
     if (proceduralGround && waterPaths && waterVisible) { ctx.save(); ctx.setTransform(k, 0, 0, k, -tile.x * k, -tile.y * k); ctx.fillStyle = `rgb(${WATER})`; ctx.fill(waterPaths, 'evenodd'); ctx.restore(); }
+    if (proceduralGround && waterVisible) fillRetainedWater(ctx, tile, k, `rgb(${WATER})`);
     const regimeDisplay = currentWaterDisplay();
     // The material shader paints water wherever this tile is opaque: the seasonal regime takes the dry and frozen
     // courses out of the cover at tile resolution (the closed water paths above hold every river ribbon) and redraws
@@ -502,6 +527,9 @@ export function mountCity3d(options: City3dOptions): City3d {
     if (physical && !proceduralGround) ctx.drawImage(physical, 0, 0);
     const rural =semantic && semantic.rural !== 'off' ? semanticLayer(tile, target => drawRuralSemantic(target, semantic.landuse, { look: semantic.rural, opacity: semantic.opacity, mpp: semanticMpp, viewport: box, classes: semantic.classes, indexed: true })) : undefined;
     if (rural && !proceduralGround) ctx.drawImage(rural, 0, 0);
+    // Map ground: the pre-rendered map holds no water. The 2D banks are inked here, at tile resolution and in the 2D
+    // colour, over the land use and under the roads and the plan (bridges, quays), as on the 2D map.
+    if (!proceduralGround && waterVisible) fillRetainedWater(ctx, tile, k, retainedWater?.color ?? '#000', 'ink');
     // Keep the water tile pure. Only tiles with roads or plan ink promote the half-size semantic overlay.
     let overlay = rural;
     if (physical && proceduralGround) { if (rural) physical.getContext('2d')!.drawImage(rural, 0, 0, size, size); overlay = physical; }
@@ -581,6 +609,11 @@ export function mountCity3d(options: City3dOptions): City3d {
     if (regimeDisplay?.regime) {
       if (look?.waterLook === 'ink') paintRegime(inkContext(), 'ink');
       else { paintRegime(groundContext(), 'ground'); if (regimeDisplay.frozen) paintRegime(inkContext(), 'ice'); }
+    }
+    // The same on the retained banks (City Bench): the cover above holds only their running water.
+    if (retainedWater?.regime && waterVisible) {
+      if (look?.waterLook === 'ink') fillRetainedWater(inkContext(), tile, k, retainedWater.color, 'symbols');
+      else { fillRetainedWater(groundContext(), tile, k, retainedWater.color, 'ground'); if (retainedWater.regime.frozen) fillRetainedWater(inkContext(), tile, k, retainedWater.color, 'ice'); }
     }
     return overlay||groundTile ? { texture: c, semantic: overlay, ground: groundTile } : c;
   }
@@ -828,7 +861,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     const configured = options.getGroundSettings?.(ground), procedural = ground !== 'map' && !softwareMaterial && (!options.getGroundSettings || !!configured);
     const look=options.getLook?.()??configured??{};t.setLook(look);
     if(procedural && configured)t.setGroundMaterial(configured);
-    if (groundKey !== groundResourceKey(configured) || waterDisplay !== options.getWaterDisplay?.()) applyGround();
+    if (groundKey !== groundResourceKey(configured) || waterDisplay !== options.getWaterDisplay?.() || retainedWater !== options.getRetainedWater?.()) applyGround();
     t.setHeightSampler(options.getHeightSampler?.());
     const forest = proceduralGround || ground === 'map' || !softwareMaterial ? groundForest() : undefined;
     t.setForest(forest?.field, forest?.occupation, { seed: seedHash(d.meta.seed), climate: decorClimate(d.meta), lighting: configured?.lighting ?? DEFAULT_TERRAIN_LIGHTING });

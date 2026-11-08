@@ -134,6 +134,8 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
   let canvas: HTMLCanvasElement | undefined, host: SVGForeignObjectElement | undefined, frame = 0, rendererDpr = 1;
   let brushImages: BrushImages | undefined, brushPromise: Promise<void> | undefined;
   let groundRevision = 0;
+  /** One ground painter reused across 3D tiles: its path, furrow and forest-wash caches outlive a tile. */
+  let groundPainter: { world: World; scene: Scene | undefined; key: string; canvas: HTMLCanvasElement; painter: CanvasRenderer } | undefined;
 
   function state(text: string, busy = false): void {
     status.textContent = text; button.setAttribute('aria-busy', String(busy));
@@ -335,16 +337,24 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     get groundRevision() { return groundRevision; },
     drawGround(ctx: CanvasRenderingContext2D, region: { x: number; y: number; width: number }, size: number): void {
       if (!active() || !settings.visible || !renderWorld || !scene) return;
-      const r = resolveBenchAppearance(), target = document.createElement('canvas'); target.width = target.height = size;
-      const painter = createCanvasRenderer(target, renderWorld, { ...biomePalette(r.palette.mapStyle, scene.options.biome), frameKind: 'none' }, {
-        colors: r.palette.colors, dpr: 1, scene: renderScene, transparentBackground: true, raster: false, terrain: () => null,
-        vegetation: r.vegetation.symbols, brushes: r.composition.vegetation.painted ? brushImages : undefined,
-        mask: { landuse: r.composition.vegetation.cartographic ? true : kind => !['forest', 'meadow', 'marsh', 'commons'].includes(kind) },
-        furrowReferenceSize: SIZE_PRESETS[scene.options.size].mapSize,
-      });
-      painter.setOverlays({ labels: false, legend: false, cartouche: false });
+      const r = resolveBenchAppearance(), painted = r.composition.vegetation.painted && !!brushImages;
+      const key = JSON.stringify([r.palette.mapStyle, scene.options.biome, r.palette.colors, r.vegetation.symbols, painted, r.composition.vegetation.cartographic]);
+      if (!groundPainter || groundPainter.world !== renderWorld || groundPainter.scene !== renderScene || groundPainter.key !== key) {
+        groundPainter?.painter.dispose();
+        const target = document.createElement('canvas'); target.width = target.height = size;
+        const painter = createCanvasRenderer(target, renderWorld, { ...biomePalette(r.palette.mapStyle, scene.options.biome), frameKind: 'none' }, {
+          colors: r.palette.colors, dpr: 1, scene: renderScene, transparentBackground: true, raster: false, terrain: () => null,
+          vegetation: r.vegetation.symbols, brushes: painted ? brushImages : undefined,
+          mask: { landuse: r.composition.vegetation.cartographic ? true : kind => !['forest', 'meadow', 'marsh', 'commons'].includes(kind) },
+          furrowReferenceSize: SIZE_PRESETS[scene.options.size].mapSize,
+        });
+        painter.setOverlays({ labels: false, legend: false, cartouche: false });
+        groundPainter = { world: renderWorld, scene: renderScene, key, canvas: target, painter };
+      }
+      const { canvas: target, painter } = groundPainter;
+      if (target.width !== size) target.width = target.height = size;
       painter.draw({ cx: region.x + region.width / 2, cy: region.y + region.width / 2, scale: size / region.width });
-      ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(target, 0, 0); ctx.restore(); painter.dispose();
+      ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(target, 0, 0); ctx.restore();
     },
     get sample() { return sample; },
     updateView,

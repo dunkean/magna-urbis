@@ -32,9 +32,11 @@ function riverKm(t: TerrainData): number {
 
 /** Retained layers for an in-memory transfer; encoding belongs at the file boundary. */
 export function captureDecorData(t: TerrainData, settings: TerrainSettings, output: SettlementOutput, roads: RoadOutput | undefined, roadConfig: RoadConfig | null,
-  extra: { id?: string; label?: string; tags?: Record<string, string>; query?: string; pipeline?: DecorMeta['pipeline'] } = {}): Decor {
+  extra: { id?: string; label?: string; tags?: Record<string, string>; query?: string; pipeline?: DecorMeta['pipeline']; planning?: number } = {}): Decor {
   if (t.hydrologyError) throw new Error(`Cannot export decor: ${t.hydrologyError}`);
-  const raster = { ...settlementRaster(t, 1024), geometry: terrainGeography(t) }, h = settings.hydrology ?? DEFAULT_HYDROLOGY;
+  // `planning`: planning grid of the file, finer than the physical source if asked (interpolated heights,
+  // water and river masks drawn from the vector network at that cell; v7 sheets use 1024 as the city decors did).
+  const raster = { ...settlementRaster(t, extra.planning ?? 1024, extra.planning !== undefined), geometry: terrainGeography(t) }, h = settings.hydrology ?? DEFAULT_HYDROLOGY;
   const waterSvg = t.water
     ? vectorWaterSvg(t.water, { style: 'atlas', showLakes: true, showOxbows: true, riverArea: riverAreaFor(h, settings.width), riverMode: h.riverMode ?? 'vector', overlay: 'none' }, false)
     : t.hydrology ? renderHydrology(t.hydrology, 'none', true, 'atlas', false) : '';

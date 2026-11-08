@@ -225,8 +225,9 @@ export function buildingColors(buildings: CityBuildings | undefined, s: CityGlSt
       const color = diagnostic ? planShade(colors[roofs.owner[k]], roofs.light[k] * 0.5) : s.colors?.building ?? planRoofColor(items[roofs.owner[k]], roofs, k, s.palette);
       put(fill, f, color); put(line, f, planShade(color, -0.38), COVER_EDGE[cover] ?? 0.55);
     }
-    // Shadow features are drawn with a tint; they only need to be shown.
-    for (let i = 0; i < items.length; i++) put(fill, items.length + roofs.shapes.length + i, '#000000');
+    // Shadow features are drawn with a tint; they only need to be shown. Parchment casts only the shadows of
+    // flat-roofed buildings: pitched roofs carry their relief in their lit and shaded pans, flat ones need their height.
+    for (let i = 0; i < items.length; i++) put(fill, items.length + roofs.shapes.length + i, '#000000', !parchment || items[i].flat ? 1 : 0);
   }
   return { fill, line };
 }
@@ -264,6 +265,8 @@ export const PAINTED_BUILDINGS: Record<string, string> = {
 };
 /** Ground shadow of painted silhouettes: straight RGBA and world offset (metres, south-east). */
 export const PAINTED_SHADOW: [number, number, number, number] = [22 / 255, 18 / 255, 10 / 255, 0.3];
+/** Parchment ground shadow of flat-roofed buildings: a light sepia wash (straight RGBA). */
+export const PARCHMENT_SHADOW: [number, number, number, number] = [70 / 255, 52 / 255, 32 / 255, 0.2];
 /** Street colours: outer = casing, inner = fill (feature = street index). */
 export function streetColors(scene: CityScene, palette: CityPalette, blended = false, custom?: RenderColors): { outer: Uint8Array; inner: Uint8Array } {
   const n = Math.max(1, scene.streets.length), outer = new Uint8Array(n * 4), inner = new Uint8Array(n * 4), tone = blendTone(palette);

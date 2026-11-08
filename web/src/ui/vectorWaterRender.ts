@@ -131,11 +131,11 @@ function riverStates(water: VectorWater, geo: HeadwaterGeometry, climate: WaterC
 }
 const mean = (a: RiverState, b: RiverState): RiverState => ({ dry: (a.dry + b.dry) / 2, ice: (a.ice + b.ice) / 2, foam: (a.foam + b.foam) / 2 });
 
-interface RegimeInk { intermittent: string; dry: string; dryDash: number[]; bed: string; ice: string; iceLine: string; shore: string; plume: string }
+export interface RegimeInk { intermittent: string; dry: string; dryDash: number[]; bed: string; ice: string; iceLine: string; shore: string; plume: string }
 /** Ink of each regime symbol in a style: intermittent courses keep the water ink dashed, dry beds (wadis) a dash-dot
  * bed ink over a pale bed wash; the parchment draws both in brown, as the old surveys did. Frozen water: a pale
  * blue-grey sheet inside darker bank lines of the water ink. Dashes in screen pixels. */
-function regimeInk(style: TerrainStyle, edge: string): RegimeInk {
+export function regimeInk(style: TerrainStyle, edge: string): RegimeInk {
   // Parchment: brown dash-dot ink over a pale sandy wash, the classic intermittent-stream symbol of the surveys.
   if (style === 'parchment') return { intermittent: '#6e5232', dry: '#6e5232', dryDash: [6, 2, 1.5, 2], bed: '#c9a874', ice: '#d9dfd8', iceLine: '#8e9d9a', shore: '#e0d2ae', plume: '#9c8458' };
   if (style === 'render3d' || style === 'render') return { intermittent: edge, dry: '#8c6f4c', dryDash: [5, 2, 1.2, 2], bed: '#cdb48a', ice: '#cbd9e2', iceLine: '#90a9ba', shore: '#cdbf9f', plume: '#8f7a52' };

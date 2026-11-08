@@ -36,6 +36,8 @@ if (process.env.AFFINITY && process.platform === 'win32') (await import('node:ch
 const neural = option('neural', city ? 'http://127.0.0.1:8793' : 'http://127.0.0.1:8792').replace(/\/$/, '');
 const count = ROWS ? ROWS.length : Number(option('count', biome ? 44 : city ? 30 : 100)), from = Number(option('from', 0)), only = option('only', '');
 const neuralSource = city ? 'neural-python' : 'neural';
+// v7 rows: the decor's planning grid, as the city decors had before physical sources (4 km: 3.9 m, 16 km: 15.6 m cells).
+const ROW_PLANNING = 1024;
 mkdirSync(out, { recursive: true });
 
 // ---------------------------------------------------------------- variations
@@ -175,6 +177,8 @@ function cityVariation(i, attempt = 0, central = false) {
     fit: 'scale', slopes: '1',
   });
   if (env.relief === 'mixed') params.set('mix', '0.5');
+  // v7 rows: a procedural source is generated on the 1024 grid of the decor (neural sources stay at their native 30 m).
+  if (row && source === 'procedural') params.set('sampleSpacing', String(width / ROW_PLANNING));
   if (env.zone) { const [temperature, temperatureStd, precipitation, precipitationCv, base] = ZONE_CLIMATE[env.zone]; for (const [k, v] of Object.entries({ temperature, temperatureStd, precipitation, precipitationCv, climateBase: base })) params.set(k, String(v)); }
   if (coast.coasts === 'all') { params.set('coasts', 'N,NE,E,SE,S,SW,W,NW'); params.set('islands', coast.islands); }
   else if (coast.coasts.length) { params.set('coasts', coast.coasts.join(',')); params.set('islands', 'island'); }
@@ -217,8 +221,9 @@ if (!service.ok) throw new Error(`Neural service: HTTP ${service.status}. Run np
 
 // ---------------------------------------------------------------- export
 const browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL ?? 'msedge', headless: !flag('headed'), args: ['--enable-unsafe-webgpu', '--enable-gpu', '--ignore-gpu-blocklist', `--use-angle=${process.env.ANGLE ?? 'd3d11'}`] });
-const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
-page.on('pageerror', error => console.warn(`  page error: ${error.message}`));
+// A crashed page stays crashed: the next attempt opens a new one.
+const newPage = async () => { const p = await browser.newPage({ viewport: { width: 1400, height: 900 } }); p.on('pageerror', error => console.warn(`  page error: ${error.message}`)); return p; };
+let page = await newPage();
 let done = 0, failed = 0;
 for (let i = from; i < from + count; i++) {
   const make = city ? cityVariation : variation;
@@ -231,9 +236,15 @@ for (let i = from; i < from + count; i++) {
     console.log(`${first.id}: replacing old generators`);
   }
   // Another terrain seed when placement fails (steep or drowned maps) or generation stalls.
-  // A steep centre is kept when no central site passes the placement rules.
-  let central = false, steepCentre;
-  for (let attempt = 0; attempt < 4; attempt++) {
+  // A central-area site must still hold a town: Rust placement falls back to the best-ranked dry land
+  // when nothing passes its slope and buildable limits (v7 regen: kremlin at 0 % / 32°, gord at 28 % / 31°, both empty).
+  // Such a site moves on to the next seed; after the last one the best site seen is kept.
+  const MIN_BUILDABLE = 0.3, MAX_SLOPE = 0.3;
+  let central = false, best;
+  const keepBest = (v) => { writeFileSync(join(out, file), best.bytes); done++; console.log(`${v.id}: no seed gives a buildable site; keeping the best one (${(best.bf * 100).toFixed(0)} % buildable, slope ${best.slope.toFixed(2)}, seed ${best.seed})`); };
+  // City maps: seeds 3 and later place on the whole map (a neural window can be all sea for several seeds: v7 hausa-kano).
+  const LAST = city ? 5 : 3;
+  for (let attempt = 0; attempt <= LAST; attempt++) {
   const v = make(i, attempt, central), start = Date.now();
   try {
     // standalone=1: benchEntry otherwise moves direct links into the rustbench.html shell.
@@ -247,21 +258,32 @@ for (let i = from; i < from + count; i++) {
       if (state.error) throw new Error(state.error);
       stable = state.ready ? stable + 1 : 0;
     }
-    const { base64, entry } = await page.evaluate(([file, extra]) => window.magnaDecor.export(file, extra), [file, { id: v.id, label: v.label, tags: v.tags, query: v.query }]);
+    const { base64, entry } = await page.evaluate(([file, extra]) => window.magnaDecor.export(file, extra), [file, { id: v.id, label: v.label, tags: v.tags, query: v.query, ...(ROWS ? { planning: ROW_PLANNING } : {}) }]);
     if ((ROWS ? entry.tags.source !== v.tags.source : !entry.tags.source?.startsWith('neural')) || entry.tags.hydrology !== 'rust') throw new Error(`Unexpected terrain or hydrology generator: ${entry.tags.source}/${entry.tags.hydrology}`);
     const wanted = city ? 1 : 2;
-    if (entry.settlements < wanted && steepCentre && attempt === 3) {
-      writeFileSync(join(out, file), steepCentre); done++;
-      console.log(`${v.id}: no central site passes the placement rules; keeping the steep centre`); break;
-    }
-    if (entry.settlements < wanted && attempt < 3) { console.log(`${v.id}: ${entry.settlements} place(s) with seed ${v.tags.seed}, retrying`); continue; }
+    if (entry.settlements < wanted && attempt < LAST) { console.log(`${v.id}: ${entry.settlements} place(s) with seed ${v.tags.seed}, retrying`); central = false; continue; }
+    if (entry.settlements < wanted && best) { keepBest(v); break; }
     if (entry.settlements < wanted) throw new Error(`Fewer than ${wanted} settlement(s) after all retries`);
     const bytes = Buffer.from(base64, 'base64');
     // A city map must start on buildable land: same terrain, best site of the central area.
-    const site = city && headerOf(bytes).settlements[0];
-    if (site && !central && site.scores.buildableFraction < 0.6) {
-      console.log(`${v.id}: centre ${(site.scores.buildableFraction * 100).toFixed(0)} % buildable, placing in the central area`);
-      steepCentre ??= bytes; central = true; attempt--; continue;
+    const header = city && headerOf(bytes), site = header && header.settlements[0];
+    if (site) {
+      const bf = site.scores.buildableFraction, slope = site.scores.slope ?? 0;
+      // v7 rows: the whole town and its 2D frame (about 1.2 radius) must stay on the map. The Rust fallback
+      // (best-ranked dry land when no site passes) ignores the edge margin: v7 village barbarian sat 105 m from the edge.
+      const c = site.center, edge = Math.min(c.x, c.y, header.width - c.x, header.width - c.y), inside = !ROWS || edge >= 1.25 * site.radius + 60;
+      const good = inside && (central || attempt >= 3 ? bf >= MIN_BUILDABLE && slope <= MAX_SLOPE : bf >= 0.6);
+      if (!good) {
+        if (!inside) console.log(`${v.id}: site ${Math.round(edge)} m from the map edge (radius ${Math.round(site.radius)} m)`);
+        const rank = bf - slope - (inside ? 0 : 10);
+        if (!best || rank > best.rank) best = { bytes, bf, slope, rank, seed: v.tags.seed };
+        if (!central && attempt < 3) {
+          console.log(`${v.id}: centre ${(bf * 100).toFixed(0)} % buildable, placing in the central area`);
+          central = true; attempt--; continue;
+        }
+        if (attempt < LAST) { console.log(`${v.id}: central site ${(bf * 100).toFixed(0)} % buildable, slope ${slope.toFixed(2)} with seed ${v.tags.seed}, retrying`); central = false; continue; }
+        keepBest(v); break;
+      }
     }
     writeFileSync(join(out, file), bytes);
     done++;
@@ -269,7 +291,8 @@ for (let i = from; i < from + count; i++) {
     break;
   } catch (error) {
     console.warn(`${v.id}: FAILED ${String(error.message ?? error).split('\n')[0]}`);
-    if (attempt === 3) failed++;
+    if (/crash|closed/i.test(String(error.message ?? error))) { await page.close().catch(() => {}); page = await newPage(); }
+    if (attempt === LAST && best) keepBest(v); else if (attempt === LAST) failed++;
   }
   }
 }

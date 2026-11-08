@@ -2,7 +2,7 @@ import { decorColdStates, decorEntry, encodeDecor, type Decor, type DecorEntry }
 import { encodeDecorFileBytes } from './decorFileBytes';
 import type { DecorFileOptions } from './decorFile';
 
-export type DecorCaptureExtra = Partial<Pick<Decor['meta'], 'id' | 'label' | 'tags' | 'query' | 'pipeline'>>;
+export type DecorCaptureExtra = Partial<Pick<Decor['meta'], 'id' | 'label' | 'tags' | 'query' | 'pipeline'>> & { planning?: number };
 function encoded(bytes: Uint8Array, meta: Decor['meta'], file: string): { base64: string; entry: DecorEntry } {
   let text = '';
   for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000));

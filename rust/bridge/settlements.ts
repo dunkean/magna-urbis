@@ -127,11 +127,13 @@ export async function runSettlementRequest(request: SettlementRequest): Promise<
 }
 
 /** Adapt the completed terrain and the displayed water geometry, without regenerating either. */
-export function settlementRaster(t: TerrainData, maxResolution = 512): SettlementRaster {
+/** `upsample`: the planning grid may be finer than the physical source (bilinear heights; water and river masks
+ * rasterised from the vector network at the finer cell). Decor exports ask for it; live planning does not. */
+export function settlementRaster(t: TerrainData, maxResolution = 512, upsample = false): SettlementRaster {
   const source = t.physical?.height ?? t.height, sn = t.physical?.n ?? t.resolution;
   validatePhysicalTerrain({ n: sn, height: source });
   if (!Number.isInteger(maxResolution) || maxResolution < 1 || maxResolution > 8192) throw new Error('Invalid settlement planning resolution.');
-  const n = Math.min(1024, Math.max(16, maxResolution), Math.max(16, sn)), width = t.width, cell = width / n, size = n * n;
+  const n = Math.min(1024, Math.max(16, maxResolution), upsample ? 1024 : Math.max(16, sn)), width = t.width, cell = width / n, size = n * n;
   const height = new Float32Array(size), water = new Uint8Array(size), waterLevel = new Float32Array(size), riverWidth = new Float32Array(size), riverIds = new Int32Array(size).fill(-1);
   const sample = (values: ArrayLike<number>, vn: number, x: number, y: number): number => {
     const gx = Math.max(0, Math.min(vn - 1, x / width * vn - 0.5)), gy = Math.max(0, Math.min(vn - 1, y / width * vn - 0.5));

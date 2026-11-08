@@ -28,6 +28,10 @@ import { DEFAULT_FRACTAL_DETAIL } from '../../../rust/bridge/terrainAdjust';
 import { forestOccupation } from './forestOccupation';
 import { withLandDetail } from './landDetail';
 import { decorWaterSvg } from './decorWater';
+import { retainedWaterPaths } from '../render/retainedWaterGeometry';
+import type { City3dRetainedWater } from './city3d';
+import { retainedRegime } from './retainedWaterRegime';
+import type { WaterSeason } from '../render/waterRegime';
 import { encodePng, pngDataUrl } from '../render/raster';
 import { applyExecutionProfile, installExecutionProfile } from './executionProfile';
 import type { TerrainData, TerrainSettings } from '../../../rust/bridge/terrain';
@@ -90,6 +94,41 @@ let groundRenderer: TerrainRenderer | undefined;
 let backgroundLook: TerrainLook | undefined;
 const groundReady = createTerrainRenderer(groundCanvas).then(renderer => { groundRenderer = renderer; viewport.classList.add('gl'); }, error => { groundCanvas.hidden = true; status(String(error)); });
 const backgroundUrl = (): string | undefined => backgroundSnapshot;
+/** Rural land use and contours of the 3D map ground, painted per tile at tile resolution over the snapshot. */
+let drapedGround: { key: string; contours?: { thin: Path2D; index: Path2D; color: string } } | undefined;
+function drapedPhysicalGround(): import('./city3d').City3dPhysicalGround | undefined {
+  const draped = drapedGround; if (!draped) return;
+  return { key: draped.key, keepsWater: true, paint: (target, box) => {
+    const ctx = target.getContext('2d')!, width = box.maxX - box.minX, k = target.width / width;
+    settlements.drawRuralGround(ctx, { x: box.minX, y: box.minY, width }, target.width);
+    const lines = draped.contours;
+    if (lines) {
+      ctx.save(); ctx.setTransform(k, 0, 0, k, -box.minX * k, -box.minY * k); ctx.strokeStyle = lines.color; ctx.lineJoin = ctx.lineCap = 'round';
+      ctx.globalAlpha = .4; ctx.lineWidth = .7 / k; ctx.stroke(lines.thin);
+      ctx.globalAlpha = .5; ctx.lineWidth = 1.2 / k; ctx.stroke(lines.index);
+      ctx.restore();
+    }
+    return !!settlements.landuse || !!lines;
+  } };
+}
+/** Seasonal water regime of the retained banks: the decor's climate zone and the render's season (waterRegime.ts). */
+function retainedWaterSeason(d: Decor, r: ReturnType<typeof resolveBenchAppearance>): WaterSeason {
+  return { zone: decorClimateZone(d.meta), season: r.ground.season, calendar: r.ground.calendar };
+}
+/** The 2D map's retained water (same banks, style and colour as groundRenderer.setRetainedWater) for every 3D ground. */
+let retained3d: { decor: Decor; key: string; water: City3dRetainedWater | undefined } | undefined;
+function retainedWater3d(): City3dRetainedWater | undefined {
+  if (!decor) return;
+  const r = resolveBenchAppearance({}, 'view3d'), c = r.composition;
+  if (!c.networks.water.visible) return;
+  const style = c.networks.water.look === 'ink' ? r.palette.mapStyle : c.variant, season = retainedWaterSeason(decor, r);
+  const key = JSON.stringify([style, r.ground.lakes, r.palette.colors, season]);
+  if (retained3d?.decor !== decor || retained3d.key !== key) {
+    const paths = retainedWaterPaths(decorWaterSvg(decor, style, r.ground.lakes, r.palette.colors), decor.raster.width);
+    retained3d = { decor, key, water: paths.length ? { paths, color: terrainStyle(style, r.palette.colors).water.stops[0][1], regime: retainedRegime(paths, decor.raster.width, season), style } : undefined };
+  }
+  return retained3d.water;
+}
 window.magnaCityBackground = { url: backgroundUrl, style: () => backgroundStyle };
 let forestOf: Decor | undefined, forestKey = '', forestField: ForestField | undefined, occupationOf: unknown, occupation: ReturnType<typeof forestOccupation>;
 const lakeMasks = new WeakMap<Decor, Float32Array>();
@@ -164,20 +203,26 @@ async function drawBackground(d: Decor): Promise<void> {
   setMapClimateZone(decorClimateZone(d.meta));
   const r = resolveBenchAppearance(), c = r.composition, t = terrain, climate = decorClimate(d.meta), q = new URLSearchParams(d.meta.query);
   const key = `${r.keys.terrainLook}:${r.keys.water}:${c.vegetation.look}:${r.keys.forest}:${settlements.ruralGroundRevision}`;
+  // Automated shots wait for data-ground-applied to equal data-ground-wanted.
+  viewport.dataset.groundWanted = key;
   if (backgroundDecor === d && backgroundKey === key) return;
-  backgroundDecor = d; backgroundKey = key;
   backgroundStyle = c.variant; const relief = q.get('relief') ?? 'flat';
   const settings = { seed: d.meta.seed, width: t.width, relief: relief as TerrainSettings['relief'], climateValues: climate, climateZone: decorClimateZone(d.meta) };
   const canopy = await benchForestAsync();
+  // Illustration grounds paint with the fantasy brush sheets: register them first (V2 does the same), or the render throws.
+  if (r.ground.traits.fantasy) { const [{ fantasyLibraries }, { registerFantasyBrushes }] = await Promise.all([import('../render/fantasyBrushAssets'), import('../../../rust/bridge/fantasyTerrain')]); registerFantasyBrushes(fantasyLibraries); }
   if (ticket !== backgroundTicket || decor !== d) return;
+  // The key is retained only by the call that applies it: retained before the await, a newer call with the same key
+  // returned early while this one was superseded, and the look was never applied (v7: "satellite" shots drawn in parchment).
+  backgroundDecor = d; backgroundKey = key;
   const forest = r.ground.traits.ground3d && canopy ? { ...canopy, brushes: r.ground.traits.forestBrushes, waterVisible: c.networks.water.visible } : undefined;
   const scene = renderRustTerrain(t, r.ground.style, true, { ...settings, v2Season: r.ground.season, v2Calendar: r.ground.calendar, forest }, false, 'city-ground', r.ground.lighting, r.ground.layers, r.vegetation.fantasy, true, r.composition.networks.water.look === 'ink' ? r.palette.mapStyle : 'render3d', r.palette.colors);
   if(c.ambience==='night' && r.ground.traits.family==='material')scene.svg=moonlightSvg(scene.svg,'city-ground-night');
-  const rural = document.createElement('canvas'); rural.width = rural.height = 2048; settlements.drawRuralGround(rural.getContext('2d')!, { x: 0, y: 0, width: t.width }, 2048);
-  const ruralImage = settlements.landuse ? `<image width="${t.width}" height="${t.width}" href="${rural.toDataURL()}"/>` : '';
+  // The rural land use and the contours are vector layers painted per 3D tile (drapedGround): baked into this 2048 px
+  // snapshot they were magnified into pixel staircases on every close 3D view.
   const contourPaths = r.ground.contours && r.ground.layers.relief ? cityContourPaths(t, relief, 2048 / t.width) : undefined;
-  const contourSvg = contourPaths ? `<g fill="none" stroke="${terrainStyle(c.variant, r.palette.colors).palette.contour}"><path d="${contourPaths.thin}" stroke-width=".7" opacity=".4" vector-effect="non-scaling-stroke"/><path d="${contourPaths.index}" stroke-width="1.2" opacity=".5" vector-effect="non-scaling-stroke"/></g>` : '';
-  backgroundSnapshot = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="2048" height="2048" viewBox="0 0 ${t.width} ${t.width}">${scene.svg}${ruralImage}${contourSvg}</svg>`)}`;
+  drapedGround = { key, contours: contourPaths && { thin: new Path2D(contourPaths.thin), index: new Path2D(contourPaths.index), color: terrainStyle(c.variant, r.palette.colors).palette.contour } };
+  backgroundSnapshot = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="2048" height="2048" viewBox="0 0 ${t.width} ${t.width}">${scene.svg}</svg>`)}`;
   if (groundRenderer && !r.ground.traits.fantasy) {
     groundCanvas.hidden = false; background.replaceChildren();
     const field = t.field!;
@@ -188,10 +233,11 @@ async function drawBackground(d: Decor): Promise<void> {
       contours: false, contourStep: 1, flatRelief: relief === 'flat', refine: d.meta.terrainDisplay?.refine !== false, sourceCell: d.meta.terrainDisplay?.sourceCell ?? t.width / field.n,
       seed: seedHash(d.meta.seed), detail: DEFAULT_FRACTAL_DETAIL, floor: field.floor ?? 0, frame: r.ground.layers.frame, background: terrainStyle(c.variant, r.palette.colors).palette.paper, climate, climateZone: settings.climateZone, v2Season: r.ground.season, v2Calendar: r.ground.calendar };
     groundRenderer.setLook(backgroundLook);
-    groundRenderer.setRetainedWater(c.networks.water.visible ? decorWaterSvg(d, c.networks.water.look === 'ink' ? r.palette.mapStyle : c.variant, r.ground.lakes, r.palette.colors) : '', t.width);
+    groundRenderer.setRetainedWater(c.networks.water.visible ? decorWaterSvg(d, c.networks.water.look === 'ink' ? r.palette.mapStyle : c.variant, r.ground.lakes, r.palette.colors) : '', t.width, { season: retainedWaterSeason(d, r), city: true });
     groundRenderer.setView(view, viewport.clientWidth, viewport.clientHeight);
   } else { groundCanvas.hidden = true; background.innerHTML = scene.svg; }
   drawContours(); publishBenchCapabilities(); city3d.refresh();
+  viewport.dataset.groundApplied = key;
 }
 
 window.addEventListener('bench-render-colors-change', () => { contourStyle = ''; if (decor) void drawBackground(decor); drawContours(); save(); city3d.refresh(); });
@@ -252,6 +298,8 @@ const city3d = mountCity3d({ getText: () => benchTextLayer(benchSettlementTextWo
   getLayouts: () => settlements.urban.layouts, getRegionalStreets: () => resolveBenchAppearance().composition.networks.roads.visible ? settlements.urban.regionalStreets : [], getPartitions: () => settlements.urban.partitions, getSelected: () => { const s = settlements.urban.buildingState; return s.parentSelected?.kind === 'member' ? s.parentSelected.member_id : s.selected; }, getTextured: () => settlements.urban.textured, setTextured: on => settlements.urban.setTextured(on),
   details: settlements.urban.buildingDetails, getBuildingAppearance: () => { const r = resolveBenchAppearance({}, 'view3d'); return { ...settlements.urban.buildingState.appearance, colors: r.palette.colors, style: r.city.buildingStyle, diagnostic: r.city.diagnostic, ambience: r.composition.ambience }; },
   getBackground: backgroundUrl,
+  getPhysicalGround: material => material ? undefined : drapedPhysicalGround(),
+  getRetainedWater: retainedWater3d,
   getLook:()=>{const c=resolveBenchAppearance({},'view3d').composition;return {ambience:c.ambience,waterLook:c.networks.water.look,waterVisible:c.networks.water.visible};},
   getBuildingsVisible: () => { const b = resolveBenchAppearance({}, 'view3d').composition.buildings; return b.visible && b.meshes !== 'none'; },
   getForest: () => benchForest('view3d'),

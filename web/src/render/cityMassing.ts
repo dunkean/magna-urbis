@@ -319,6 +319,57 @@ export function pieceRoof(shape: Shape, m: MassingPiece, piece: number): RoofFac
 export function buildingRoof(footprint: Surface, massing: readonly MassingPiece[]): RoofFace[] {
   return footprint.flatMap((shape, i) => massing[i] ? pieceRoof(shape, massing[i], i) : []);
 }
+/** Plan-view roof face (2D maps): `light` overrides the shading of the normal, `holes` cut courts out of the face,
+ * `flat` marks the faces of a flat roof (rim, field, roof-top features). */
+export interface PlanRoofFace extends RoofFace { holes?: Point[][]; light?: number; flat?: boolean }
+/** Plan-view roof of a building: pitched roofs keep their faces; a flat roof (a volume resolved to one horizontal face)
+ * becomes a bevelled slab so neighbouring terraces read apart: a rim lit on the sun side and dark on the shadow side
+ * (normals tilted outward, shaded by `roofLight`), a slightly darker inset field, and its roof-top features
+ * (stair hutch, windcatcher, dome; massing.rs `flat_details`) as small lit boxes with their shadow on the roof. */
+export function planRoof(footprint: Surface, massing: readonly MassingPiece[]): PlanRoofFace[] {
+  return footprint.flatMap((shape, i) => massing[i] ? pieceVolumes(shape, massing[i]).flatMap((v, j) => {
+    const faces = volumeRoof(v, i, j);
+    return !v.tree && faces.length === 1 && faces[0].normal[2] > 0.999 ? flatPlanRoof(v, faces[0]) : faces;
+  }) : []);
+}
+const RIM_TILT = Math.SQRT1_2;
+function flatPlanRoof(v: ResolvedVolume, face: RoofFace): PlanRoofFace[] {
+  const ring = face.points.map(p => ({ x: p.x, y: p.y })), z = face.points[0].z, holes = v.shape.holes.filter(h => h.length >= 3);
+  const rings: [Point[], boolean][] = [[ring, true], ...holes.map(h => [h, false] as [Point[], boolean])];
+  const perimeter = rings.reduce((s, [r]) => s + r.reduce((t, p, k) => t + Math.hypot(r[(k + 1) % r.length].x - p.x, r[(k + 1) % r.length].y - p.y), 0), 0);
+  const area = Math.abs(signedArea(ring)) - holes.reduce((s, h) => s + Math.abs(signedArea(h)), 0);
+  // Rim: a parapet reads a little wider; never more than a fraction of the inradius, so the field stays.
+  const w = Math.min((v.detail?.parapet_m ?? 0) > 0.05 ? 0.8 : 0.6, Math.max(0.3, 0.07 * Math.sqrt(Math.max(0, area))), perimeter > 0 ? 0.3 * area / perimeter : 0);
+  const base = { piece: face.piece, vol: face.vol, cover: face.cover, wall: face.wall, tone: face.tone, flat: true as const };
+  const out: PlanRoofFace[] = [];
+  if (!(w > 0.12)) out.push({ ...face, ...base, holes });
+  else {
+    const insets = rings.map(([r, outer]) => insetRing(r, w, outer));
+    rings.forEach(([r], k) => {
+      const inner = insets[k];
+      for (let i = 0; i < r.length; i++) {
+        const j = (i + 1) % r.length, a = r[i], b = r[j], l = Math.hypot(b.x - a.x, b.y - a.y);
+        if (l < 1e-6) continue;
+        // Outward = from the field towards the edge (into the court for a hole).
+        let nx = -(b.y - a.y) / l, ny = (b.x - a.x) / l;
+        if (nx * ((a.x + b.x - inner[i].x - inner[j].x) / 2) + ny * ((a.y + b.y - inner[i].y - inner[j].y) / 2) < 0) { nx = -nx; ny = -ny; }
+        out.push({ ...base, points: [a, b, inner[j], inner[i]].map(p => at(p, z)), normal: [nx * RIM_TILT, ny * RIM_TILT, RIM_TILT] });
+      }
+    });
+    out.push({ ...base, points: insets[0].map(p => at(p, z)), holes: insets.slice(1), normal: [0, 0, 1], light: -0.05 });
+  }
+  for (const f of v.detail?.features ?? []) {
+    if (f.kind === 'sails' || !(f.w > 0.1) || !(f.d > 0.1)) continue;
+    const ca = Math.cos(f.angle), sa = Math.sin(f.angle);
+    const top = f.kind === 'dome'
+      ? Array.from({ length: 8 }, (_, k) => ({ x: f.x + Math.cos(k * Math.PI / 4) * f.w / 2, y: f.y + Math.sin(k * Math.PI / 4) * f.w / 2 }))
+      : [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([s, t]) => ({ x: f.x + s * f.w / 2 * ca - t * f.d / 2 * sa, y: f.y + s * f.w / 2 * sa + t * f.d / 2 * ca }));
+    const shadow = pieceShadow({ outer: top, holes: [] }, f.h);
+    if (shadow) out.push({ ...base, points: shadow.outer.map(p => at(p, z)), normal: [0, 0, 1], light: -0.34 });
+    out.push({ ...base, points: top.map(p => at(p, z + f.h)), normal: [0, 0, 1], light: f.kind === 'dome' ? 0.08 : 0.14 });
+  }
+  return out;
+}
 /** Highest point of a piece above the ground. */
 export const pieceTop = (m: MassingPiece): number => {
   const own = Array.isArray(m.volumes) ? m.volumes.filter(v => finite(v?.eave_m) && Array.isArray(v.ring) && v.ring.length >= 3) : [];
