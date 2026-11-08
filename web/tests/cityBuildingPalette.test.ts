@@ -45,4 +45,20 @@ describe('city plan palette', () => {
     }
     for (const palette of ['ink', 'parchment'] as const) expect(roofMaterialTable(a, state(palette)).every(v => v === 0)).toBe(true);
   });
+
+  it('preserves terrace relief in every palette, including a uniform building colour', () => {
+    const b = buildCityBuildings({ buildings: [{ id: 'tiers', parcel_id: 'parcel', function: 'domestic', footprint: [shape], roof_footprint: [],
+      programme: { massing: [{ floors: 3, eave_m: 9, rise_m: 0, roof: 'flat', wall: 'earth', cover: 'earth', volumes: [
+        { ring: [[0, 0], [6, 0], [6, 10], [0, 10]], eave_m: 9, rise_m: 0, roof: 'flat', ridges: [] },
+        { ring: [[6, 0], [12, 0], [12, 10], [6, 10]], eave_m: 3, rise_m: 0, roof: 'flat', ridges: [] },
+      ] }] } }] } as unknown as PlacementBatch);
+    expect(b.items[0].flat).toBe(true);
+    for (const palette of ['parchment', 'ink', 'terrain', 'atlas', 'growth'] as const) for (const custom of [false, true]) {
+      const s = { ...state(palette), ...(custom ? { colors: { building: '#b7a78f' } } : {}) };
+      const fill = buildingColors(b, s).fill;
+      const faces = Array.from(b.roofs!.light, (light, k) => ({ light, color: Array.from(fill.slice(4 * (k + 1), 4 * (k + 1) + 3)).join(',') }));
+      expect(new Set(faces.map(f => f.color)).size, `${palette}, custom=${custom}`).toBeGreaterThan(3);
+      expect(faces.find(f => Math.abs(f.light + 0.05) < 0.001)!.color).not.toEqual(faces.find(f => Math.abs(f.light - 0.045) < 0.001)!.color);
+    }
+  });
 });

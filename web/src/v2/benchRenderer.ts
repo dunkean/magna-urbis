@@ -227,7 +227,7 @@ export class BenchRenderer {
     // The shared material shader also composes SVG/PNG exports, using an OffscreenCanvas or a page canvas according to WebGL2 availability.
     const cacheKey = `terrain:${key}`;
     const pending = this.shared.cache.get<Promise<BaseRaster>>(cacheKey, async () => {
-      const settingsForRender = { ...effective, width: world.mapSize, seed: world.seed, v2Season: r.ground.season, v2Calendar: r.ground.calendar, forest: { field: await v2DisplayForestAsync(world, settings, r), occupation: await this.groundOccupation(), groundCover:r.composition.vegetation.procedural, waterVisible: layers.water,
+      const settingsForRender = { ...effective, width: world.mapSize, seed: world.seed, v2Season: r.ground.season, v2Calendar: r.ground.calendar, forest: { field: await v2DisplayForestAsync(world, settings, r), occupation: await this.groundOccupation(), parcels: world.landuse?.areas, groundCover:r.composition.vegetation.procedural, waterVisible: layers.water,
         clear: isFantasyStyle(style) ? fantasyClearance({ mapSize: world.mapSize, seed: world.seed, roads: world.roads, rivers: world.terrain.rivers, farmsteads: world.landuse?.farmsteads, settlements: world.settlements }, world) : undefined } };
       let svg = '';
       const waterStyle=r.composition.networks.water.look==='natural'?'render3d':r.palette.mapStyle;

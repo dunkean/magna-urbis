@@ -7,7 +7,7 @@ import type { LandUseLayer } from '../gen/types';
 import type { Rect4 } from '../render/view';
 
 /** One holding or strip, drawn as a vector at draw time so field edges and furrows stay crisp at any zoom. */
-interface FieldShape { path: Path2D; fill: string; angle: number; box: [number, number, number, number] }
+interface FieldShape { path: Path2D; fill: string; angle: number; orchard: boolean; box: [number, number, number, number] }
 /** Single trees and ground plants of one square of land, planned on demand (FantasyTerrainPainting.fine). */
 interface FineTile { stamps: Stamp[]; heights: Float32Array }
 export interface FantasyRaster { painting: FantasyTerrainPainting; images: Map<string, CanvasImageSource>; wash: HTMLCanvasElement; heights: Float32Array; up: number; down: number; half: number; fields: FieldShape[];
@@ -40,20 +40,20 @@ function fieldShapes(painting: FantasyTerrainPainting, landuse: LandUseLayer | u
     for (let i = 0; i < ring.length; i++) { const a = ring[i], b = ring[(i + 1) % ring.length], l = Math.hypot(b.x - a.x, b.y - a.y); if (l > best) { best = l; angle = Math.atan2(b.y - a.y, b.x - a.x); } }
     return angle;
   };
-  const add = (rings: Ring[], angle: number) => {
+  const add = (rings: Ring[], angle: number, orchard: boolean) => {
     const outer = rings[0]; if (!outer || outer.length < 3) return;
     const path = new Path2D(); let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const ring of rings) { ring.forEach((p, i) => { if (i) path.lineTo(p.x, p.y); else path.moveTo(p.x, p.y); }); path.closePath(); }
     for (const p of outer) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
-    let [r, g, b] = fantasyFieldColour(toneAt(outer));
+    let [r, g, b] = fantasyFieldColour(toneAt(outer), orchard ? 'orchard' : undefined);
     if (ink) { const grey = 255 - (255 - (.3 * r + .59 * g + .11 * b)) * .55; r = g = b = grey; }
-    out.push({ path, fill: `rgb(${r | 0},${g | 0},${b | 0})`, angle, box: [x0, y0, x1, y1] });
+    out.push({ path, fill: `rgb(${r | 0},${g | 0},${b | 0})`, angle, orchard, box: [x0, y0, x1, y1] });
   };
   for (const area of landuse.areas) {
     if (area.kind !== 'field' && area.kind !== 'garden' && area.kind !== 'orchard') continue;
     const angle = area.stripAngle ?? longest(area.poly);
-    add([area.poly, ...area.holes ?? []], angle);
-    for (const strip of area.strips ?? []) add([strip], angle);
+    add([area.poly, ...area.holes ?? []], angle, area.kind === 'orchard');
+    for (const strip of area.strips ?? []) add([strip], angle, area.kind === 'orchard');
   }
   return out;
 }
@@ -66,7 +66,7 @@ function drawFields(ctx: CanvasRenderingContext2D, fields: readonly FieldShape[]
     const [x0, y0, x1, y1] = f.box;
     if (x1 < rect.minX || x0 > rect.maxX || y1 < rect.minY || y0 > rect.maxY) continue;
     ctx.globalAlpha = .94; ctx.fillStyle = f.fill; ctx.fill(f.path, 'evenodd');
-    if (furrows) {
+    if (furrows && !f.orchard) {
       ctx.save(); ctx.clip(f.path, 'evenodd');
       const c = Math.cos(f.angle), s = Math.sin(f.angle), cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, r = Math.hypot(x1 - x0, y1 - y0) / 2;
       ctx.beginPath();

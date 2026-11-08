@@ -300,7 +300,10 @@ void main() {
     if(uRenderV2>0)base=v2DisplayShoulder(base);
     float under=uRenderV2>0?1.:1.-forestResolvedCover;
     if(uRenderV2>1)base=v2Diagnostic(s,physical.xz,0.,footprint);
-    if(uRenderV2>0)base=v2WaterAt(base,s,physical.xz,footprint,projected.a,s.x<0.?1.:3.,s.x<0.?-s.x:8.*projected.a);
+    // Bank crowns lean over inland water: rooted on land (forestCrown), drawn whole above it, their shadow on it.
+    if(uRenderV2>0){float bed=s.x<0.?projected.a:projected.a*(1.-forestResolvedCover);
+      base=v2WaterAt(base,s,physical.xz,footprint,bed,s.x<0.?1.:3.,s.x<0.?-s.x:8.*projected.a);
+      if(s.x>=0.)base*=1.-.4*forestResolvedShade*bed;}
     else base=base*(1.-projected.a*under)+projected.rgb*under;
     if(groundContours==1 && s.x>0.){
       float v=s.x/groundContourStep,dv=max(fwidth(v),1e-6),k=floor(v+.5);
@@ -323,7 +326,7 @@ void main() {
     if(uForest==1){
       float footprint=max(.001,max(length(dFdx(physical)),length(dFdy(physical))));
       ForestPrep prep=forestPrep(physical.xz,footprint);
-      if(prep.valid && !prep.occupied && prep.reveal>0. && prep.crownVis>0.){
+      if(prep.valid && prep.reveal>0. && prep.crownVis>0.){
       mapCanopy=forestCanopyNear(prep,normalize(groundLight));
       if(mapCanopy.cover>0.){
       vec3 s=groundMacroSurface(physical.xz);

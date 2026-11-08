@@ -1,4 +1,4 @@
-import { isFantasyStyle, planPainting, paintingSvg, paintingCover, noise, paintSeed, isReliefBrush, fantasyLod, reliefProminence, DEFAULT_FANTASY_OPTIONS, type FantasyOptions, type BrushLibrary, type FantasyStyle, type PaintLanduse, type PaintOptions, type PaintSample, type Stamp } from './fantasyPainting';
+import { isFantasyStyle, planPainting, paintingSvg, paintingCover, noise, paintSeed, isReliefBrush, isCultivatedLanduse, fantasyLod, reliefProminence, DEFAULT_FANTASY_OPTIONS, type FantasyOptions, type BrushLibrary, type FantasyStyle, type PaintLanduse, type PaintOptions, type PaintSample, type Stamp } from './fantasyPainting';
 import type { TerrainData, TerrainSettings } from './terrain';
 import { climateOf } from './terrain';
 import type { ForestField, ForestOccupation } from './terrainForest';
@@ -14,7 +14,7 @@ export interface FantasyTerrainPainting { stamps: Stamp[]; lod: "overview" | "de
   /** Single trees and ground plants of one region (world bounds), planned on demand at the same anchors as a whole-map plan. */
   fine?: (bounds: { x: number; y: number; width: number; height: number }) => Stamp[]; treeWidth?: number }
 /** The V2 display rasters: land-use classes (occupation) and the canopy field shared with the other styles. */
-export interface FantasyGround { field?: ForestField; occupation?: ForestOccupation; /** Corridors and isolated settlements kept clear of stamp anchors (roads, rivers, farms, hamlets). */ clear?: { key: string; test(x: number, y: number): boolean } }
+export interface FantasyGround { field?: ForestField; occupation?: ForestOccupation; parcels?: PaintOptions['parcels']; /** Corridors and isolated settlements kept clear of stamp anchors (roads, rivers, farms, hamlets). */ clear?: { key: string; test(x: number, y: number): boolean } }
 type FantasySettings = Pick<TerrainSettings, 'seed' | 'width'> & Partial<Pick<TerrainSettings, 'climate' | 'climateValues'>> & { forest?: FantasyGround };
 const scenes = new WeakMap<TerrainData, { water: TerrainData['water']; hydro: TerrainData['hydrology']; urban?: UrbanPaintingContext; ground?: FantasyGround; variants: Map<string, FantasyTerrainPainting>; reliefWidth?: number; relief?: ReturnType<typeof paintingRelief>; reliefRef?: number; heightRange?: [number, number] }>();
 const OCCUPATION_LANDUSE: (PaintLanduse | undefined)[] = [undefined, 'field', 'meadow', 'pasture', 'orchard', 'garden', 'commons', undefined, undefined, undefined, 'marsh'];
@@ -29,6 +29,7 @@ function groundSampler(ground: FantasyGround): (x: number, y: number) => { landu
       if (i >= 0 && j >= 0 && i < o.n && j < o.n) {
         const at = (j * o.n + i) * 4, cls = o.rgba[at + 2];
         if (cls >= 7 && cls <= 9) occupied = true;
+        else if (isCultivatedLanduse(OCCUPATION_LANDUSE[cls])) landuse = OCCUPATION_LANDUSE[cls];
         else if (o.rgba[at + 1] > 128) landuse = 'forest';
         else landuse = OCCUPATION_LANDUSE[cls];
       }
@@ -42,7 +43,7 @@ function groundSampler(ground: FantasyGround): (x: number, y: number) => { landu
 }
 const smoothstep = (a: number, b: number, v: number) => { const t = Math.max(0, Math.min(1, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
 const WASH: Record<PaintLanduse, [number, number, number, number]> = {
-  field: [214, 190, 112, .9], garden: [150, 163, 92, .7], orchard: [158, 172, 96, .7], meadow: [156, 178, 98, .6],
+  field: [214, 190, 112, .9], garden: [150, 163, 92, .7], orchard: [158, 172, 96, .7], vineyard: [158, 172, 96, .7], meadow: [156, 178, 98, .6],
   pasture: [168, 182, 108, .55], commons: [164, 154, 104, .55], marsh: [116, 146, 116, .62], forest: [86, 112, 62, .62],
 };
 const washHash = (i: number, j: number, seed: number) => { let h = Math.imul(i, 0x9e3779b9) ^ Math.imul(j, 0x85ebca6b) ^ seed; h = Math.imul(h ^ h >>> 15, 0x2c1b3c6d); return ((h ^ h >>> 13) >>> 0) / 4294967296; };
@@ -84,13 +85,15 @@ export function fantasyGroundWash(scene: FantasyTerrainPainting, n: number, ink:
 }
 const FIELD_RAMP: [number, number, number][] = [[176, 190, 112], [198, 200, 112], [224, 204, 120], [230, 190, 104], [210, 168, 92], [196, 178, 120], [150, 116, 78]];
 /** Crop colour of a holding tone (land-detail R, 0..1): golden, ochre and green crops; ploughed brown only for the top tones. */
-export function fantasyFieldColour(tone: number): [number, number, number] {
+export function fantasyFieldColour(tone: number, landuse?: PaintLanduse): [number, number, number] {
+  if (landuse === 'orchard') return [158, 172, 96];
   return FIELD_RAMP[Math.min(FIELD_RAMP.length - 1, Math.floor(tone < .9 ? tone / .9 * (FIELD_RAMP.length - 1) : FIELD_RAMP.length - 1))];
 }
 /** Holdings painted edge to edge from the land-detail raster: one crop colour per strip, furrows along the strip's
  * own direction, darker balks on the edges. Golden, ochre and green crops; ploughed brown stays a minority. */
 export function fantasyFieldWash(scene: FantasyTerrainPainting, n: number, ink: boolean): Uint8ClampedArray<ArrayBuffer> | undefined {
   const d = scene.ground?.occupation?.detail; if (!d) return;
+  const groundAt = groundSampler(scene.ground!);
   const pixels = new Uint8ClampedArray(n * n * 4), { x: x0, y: y0, width } = scene.frame!, cell = width / n;
   for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
     const x = x0 + (i + .5) * cell, y = y0 + (j + .5) * cell;
@@ -98,8 +101,8 @@ export function fantasyFieldWash(scene: FantasyTerrainPainting, n: number, ink: 
     if (di < 0 || dj < 0 || di >= d.n || dj >= d.n) continue;
     const at = (dj * d.n + di) * 4, edge = d.rgba[at + 3]; if (!edge) continue;
     const tone = d.rgba[at] / 255, a = Math.atan2(d.rgba[at + 2] / 127.5 - 1, d.rgba[at + 1] / 127.5 - 1) / 2;
-    const [r0, g0, b0] = fantasyFieldColour(tone);
-    const across = -x * Math.sin(a) + y * Math.cos(a), furrow = .5 + .5 * Math.sin(across / 7 * Math.PI);
+    const lu = groundAt(x, y).landuse, [r0, g0, b0] = fantasyFieldColour(tone, lu);
+    const across = -x * Math.sin(a) + y * Math.cos(a), furrow = lu === 'orchard' ? 1 : .5 + .5 * Math.sin(across / 7 * Math.PI);
     const band = washNoise(across / 22, (x * Math.cos(a) + y * Math.sin(a)) / 140, 523);
     const shade = (.94 + .06 * furrow) * (.93 + .12 * band) * (edge < 40 ? .82 + .18 * edge / 40 : 1);
     put(pixels, (j * n + i) * 4, r0 * shade, g0 * shade, b0 * shade, .93, ink);
@@ -115,7 +118,10 @@ export function prepareFantasyTerrain(terrain: TerrainData, style: FantasyStyle,
   if (!entry || entry.water !== terrain.water || entry.hydro !== terrain.hydrology || urban && entry.urban !== urban) {
     entry = { water: terrain.water, hydro: terrain.hydrology, urban, ground: entry?.ground, variants: new Map() }; scenes.set(terrain, entry);
   }
-  if (settings.forest?.occupation || settings.forest?.field) entry.ground = { field: settings.forest.field, occupation: settings.forest.occupation, clear: settings.forest.clear };
+  if (settings.forest?.occupation || settings.forest?.field) {
+    if (settings.forest.parcels && settings.forest.parcels !== entry.ground?.parcels) entry.variants.clear();
+    entry.ground = { field: settings.forest.field, occupation: settings.forest.occupation, clear: settings.forest.clear, parcels: settings.forest.parcels ?? entry.ground?.parcels };
+  }
   const ground = entry.ground;
   const lod = options.lod && options.lod !== "auto" ? options.lod : fantasyLod(settings.width);
   // The resolved level enters the key: an explicit `lod` equal to the automatic one reuses the same plan (2D then 3D).
@@ -154,7 +160,9 @@ export function prepareFantasyTerrain(terrain: TerrainData, style: FantasyStyle,
       occupied: occupied?.(x, y) || g?.occupied, landuse: (options.followLanduse ? urban?.landuse?.(x, y) : undefined) ?? g?.landuse, woods: g?.woods, cleared: g?.cleared, landuseDetail: !!ground?.occupation?.detail };
   };
   const paint: PaintOptions = { seed: settings.seed, pitch: settings.width / 65 * options.spacing, brushPitch: settings.width / 65, mapWidth: settings.width, lod, raster: options.raster, reliefRef: entry.reliefRef, heightRange: entry.heightRange, density: options.density, size: options.size, followLanduse: options.followLanduse, forests: options.forests, forestsOnly: options.forestsOnly };
-  // The whole-map plan holds the relief and the woodland clumps; single trees and plants are planned per view tile (fine).
+  paint.cultivated = (x, y) => isCultivatedLanduse(urban?.landuse?.(x, y)) || isCultivatedLanduse(groundAt?.(x, y).landuse);
+  paint.parcels = ground?.parcels;
+  // Retain orchard rows with relief and woodland clumps, including on the 3D drape; wild trees and plants use fine view tiles.
   const stamps = planPainting({ x: terrain.x, y: terrain.y, width: terrain.width, height: terrain.width }, sample, { ...paint, vegetation: 'coarse' });
   const summits = stamps.filter(stamp => isReliefBrush(stamp.brush));
   const fine = (bounds: { x: number; y: number; width: number; height: number }) => planPainting(bounds, sample, { ...paint, vegetation: 'fine', summits, maxStamps: 400000 });

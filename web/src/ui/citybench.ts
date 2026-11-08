@@ -26,6 +26,7 @@ import { withGroundVariant, type Limitation } from '../render/composition';
 import { createTerrainRenderer, type TerrainRenderer } from './terrainRenderer';
 import { DEFAULT_FRACTAL_DETAIL } from '../../../rust/bridge/terrainAdjust';
 import { forestOccupation } from './forestOccupation';
+import { ROAD_MARGIN } from '../render/forestRoom';
 import { withLandDetail } from './landDetail';
 import { decorWaterSvg } from './decorWater';
 import { retainedWaterPaths } from '../render/retainedWaterGeometry';
@@ -47,6 +48,8 @@ import { urbanText } from './urbanPanelLocale';
 import { mountIllustration, captureViewport } from '../../../illustration/web/index.mjs';
 import { illustrationContext, illustrationTerrainFromDecor } from './illustrationContext';
 import { keepRendererOverride } from './rendererOverride';
+import { isFantasyStyle, prepareFantasyTerrain } from '../../../rust/bridge/fantasyTerrain';
+import { drawFantasyRaster, fantasyClearance, fantasyRasterImages, prepareFantasyRaster, type FantasyRaster } from './fantasyRaster';
 
 declare global { interface Window { magnaCityBackground?: { url(): string | undefined; style(): string } } }
 
@@ -76,7 +79,7 @@ const pinLayer = document.createElementNS(ns, 'g'); pinLayer.id = 'cityPins';
 function showView(): void {
   const w = viewport.clientWidth, h = viewport.clientHeight;
   map.setAttribute('viewBox', `${view.cx - w / 2 / view.scale} ${view.cy - h / 2 / view.scale} ${w / view.scale} ${h / view.scale}`);
-  drawContours(); groundRenderer?.setView(view, w, h);
+  drawContours(); groundRenderer?.setView(view, w, h); drawFantasyGround();
   settlements.updateView(); publishBenchCapabilities();
   rpgPins?.draw();
   drawPins();
@@ -93,7 +96,47 @@ const groundCanvas = el<HTMLCanvasElement>('gl');
 let groundRenderer: TerrainRenderer | undefined;
 let backgroundLook: TerrainLook | undefined;
 const groundReady = createTerrainRenderer(groundCanvas).then(renderer => { groundRenderer = renderer; viewport.classList.add('gl'); }, error => { groundCanvas.hidden = true; status(String(error)); });
-const backgroundUrl = (): string | undefined => backgroundSnapshot;
+/** Illustrated ground, the V2 path (web/src/ui/fantasyRaster.ts): the wash, the crisp field strips and the stamps painted on
+ * canvas per view over the terrain SVG. The rural land use lives in it (fields, meadows, orchards, woods): no vector polygons. */
+let fantasyGround: { raster: FantasyRaster; svg: string; water: string; width: number; snapshot?: string } | undefined;
+/** Wash and fields under the retained water, stamps over it (V2 order): two view canvases around one water group. */
+const fantasyLayer = (id: string) => { const host = document.createElementNS(ns, 'foreignObject'), canvas = document.createElement('canvas'); host.id = id; host.setAttribute('pointer-events', 'none'); canvas.style.display = 'block'; host.append(canvas); return { host, canvas }; };
+const fantasyWash = fantasyLayer('cityFantasyWash'), fantasyStamps = fantasyLayer('cityFantasyStamps'), fantasyWater = document.createElementNS(ns, 'g');
+fantasyWater.id = 'cityFantasyWater'; fantasyWater.setAttribute('pointer-events', 'none');
+function drawFantasyGround(): void {
+  const f = fantasyGround; if (!f || fantasyStamps.host.parentNode !== background) return;
+  const w = viewport.clientWidth, h = viewport.clientHeight, dpr = window.devicePixelRatio || 1, ww = w / view.scale, wh = h / view.scale, x0 = view.cx - ww / 2, y0 = view.cy - wh / 2;
+  const cw = Math.max(1, Math.round(w * dpr)), ch = Math.max(1, Math.round(h * dpr)), k = view.scale * dpr, rect = { minX: x0, minY: y0, maxX: x0 + ww, maxY: y0 + wh };
+  for (const [{ host, canvas }, wash] of [[fantasyWash, true], [fantasyStamps, false]] as const) {
+    host.setAttribute('x', String(x0)); host.setAttribute('y', String(y0)); host.setAttribute('width', String(ww)); host.setAttribute('height', String(wh));
+    canvas.style.width = `${ww}px`; canvas.style.height = `${wh}px`;
+    if (canvas.width !== cw) canvas.width = cw;
+    if (canvas.height !== ch) canvas.height = ch;
+    const ctx = canvas.getContext('2d')!;
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cw, ch); ctx.setTransform(k, 0, 0, k, -x0 * k, -y0 * k);
+    if (wash) drawFantasyRaster(ctx, f.raster, rect, k, () => false); else drawFantasyRaster(ctx, f.raster, rect, k, undefined, false);
+  }
+}
+/** Stamp anchors stay out of the regional roads, the retained rivers and the farmsteads (V2: fantasyClearance). */
+let fantasyClearOf: { decor: Decor; landuse: unknown; streets: unknown; value: ReturnType<typeof fantasyClearance> } | undefined;
+function benchFantasyClearance(d: Decor): ReturnType<typeof fantasyClearance> {
+  const landuse = settlements.landuse, streets = settlements.urban.regionalStreets;
+  if (fantasyClearOf?.decor === d && fantasyClearOf.landuse === landuse && fantasyClearOf.streets === streets) return fantasyClearOf.value;
+  const segments = forestRetainedRiverSegments(d.meta.waterSvg, d.raster.width), rivers: { path: { x: number; y: number }[]; width: number[] }[] = [];
+  if (segments) for (let i = 0; i + 8 < segments.length; i += 9) rivers.push({ path: [{ x: segments[i], y: segments[i + 1] }, { x: segments[i + 2], y: segments[i + 3] }], width: [segments[i + 4], segments[i + 5]] });
+  const input = { mapSize: d.raster.width, seed: d.meta.seed, roads: streets.map(s => ({ path: s.path, width: Math.max(3, ...s.widths) })), rivers, farmsteads: landuse?.farmsteads };
+  fantasyClearOf = { decor: d, landuse, streets, value: fantasyClearance(input) };
+  return fantasyClearOf.value;
+}
+/** The 3D map ground of an Illustrated style: the terrain SVG, then the wash and all the stamps draped (as V2's backgroundUrl). */
+const backgroundUrl = (): string | undefined => {
+  const f = fantasyGround; if (!f) return backgroundSnapshot;
+  if (!f.snapshot) {
+    const frame = f.raster.painting.frame!, images = fantasyRasterImages(f.raster), at = `x="${frame.x}" y="${frame.y}" width="${frame.width}" height="${frame.width}" preserveAspectRatio="none"`;
+    f.snapshot = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="2048" height="2048" viewBox="0 0 ${f.width} ${f.width}">${f.svg}<image ${at} href="${images.wash}"/>${f.water}<image ${at} href="${images.stamps}"/></svg>`)}`;
+  }
+  return f.snapshot;
+};
 /** Rural land use and contours of the 3D map ground, painted per tile at tile resolution over the snapshot. */
 let drapedGround: { key: string; contours?: { thin: Path2D; index: Path2D; color: string } } | undefined;
 function drapedPhysicalGround(): import('./city3d').City3dPhysicalGround | undefined {
@@ -130,7 +173,7 @@ function retainedWater3d(): City3dRetainedWater | undefined {
   return retained3d.water;
 }
 window.magnaCityBackground = { url: backgroundUrl, style: () => backgroundStyle };
-let forestOf: Decor | undefined, forestKey = '', forestField: ForestField | undefined, occupationOf: unknown, occupation: ReturnType<typeof forestOccupation>;
+let forestOf: Decor | undefined, forestKey = '', forestField: ForestField | undefined, occupationOf: unknown, occupationStreets: unknown, occupation: ReturnType<typeof forestOccupation>;
 const lakeMasks = new WeakMap<Decor, Float32Array>();
 type BenchForestRequest = { d: Decor; key: string; settings: ReturnType<typeof resolveBenchAppearance>['vegetation']['forestSettings'] };
 let forestBuild: { d: Decor; key: string; job: Promise<void> } | undefined;
@@ -139,7 +182,13 @@ function benchForestRequest(target: 'view2d' | 'view3d'): BenchForestRequest | u
   return { d, key: JSON.stringify(r.vegetation.forestSettings), settings: r.vegetation.forestSettings };
 }
 function benchForestResult() {
-  if (occupationOf !== settlements.landuse) { occupationOf = settlements.landuse; occupation = settlements.landuse ? withLandDetail(forestOccupation(settlements.landuse), settlements.landuse) : undefined; }
+  // Regional roads clear the forest as on V2 (displayForest.ts): no trunk in the corridor, crowns overhang its edges.
+  const streets = settlements.urban.regionalStreets;
+  if (occupationOf !== settlements.landuse || occupationStreets !== streets) {
+    occupationOf = settlements.landuse; occupationStreets = streets;
+    const corridors = streets.filter(s => s.path.length > 1).map(s => ({ path: s.path, half: Math.max(3, ...s.widths) / 2 + ROAD_MARGIN }));
+    occupation = settlements.landuse ? withLandDetail(forestOccupation(settlements.landuse, undefined, undefined, corridors), settlements.landuse) : undefined;
+  }
   return { field: forestField, occupation };
 }
 /** The forest field is Rust (native or WASM): built asynchronously, one build per (decor, settings). */
@@ -212,11 +261,20 @@ async function drawBackground(d: Decor): Promise<void> {
   // Illustration grounds paint with the fantasy brush sheets: register them first (V2 does the same), or the render throws.
   if (r.ground.traits.fantasy) { const [{ fantasyLibraries }, { registerFantasyBrushes }] = await Promise.all([import('../render/fantasyBrushAssets'), import('../../../rust/bridge/fantasyTerrain')]); registerFantasyBrushes(fantasyLibraries); }
   if (ticket !== backgroundTicket || decor !== d) return;
+  // Illustrated: the V2 path. The land-use classes (occupation and holdings detail) and the clearances drive the brushes;
+  // the SVG keeps the ground, the wash, fields and stamps are painted on canvas (drawFantasyGround).
+  const fantasyStyle = r.ground.traits.fantasy && isFantasyStyle(r.ground.style) && r.ground.layers.relief ? r.ground.style : undefined;
+  const forest = r.ground.traits.ground3d && canopy ? { ...canopy, brushes: r.ground.traits.forestBrushes, waterVisible: c.networks.water.visible }
+    : fantasyStyle ? { field: canopy?.field, occupation: benchForestResult().occupation, parcels: settlements.landuse?.areas, waterVisible: c.networks.water.visible, clear: benchFantasyClearance(d) } : undefined;
+  const fantasyOptions = fantasyStyle ? { ...r.vegetation.fantasy, svgStamps: false } : r.vegetation.fantasy;
+  const renderSettings = { ...settings, v2Season: r.ground.season, v2Calendar: r.ground.calendar, forest };
+  const painting = fantasyStyle ? prepareFantasyTerrain(t, fantasyStyle, renderSettings, fantasyOptions) : undefined;
+  const fantasyRaster = painting ? await prepareFantasyRaster(painting, settlements.landuse) : undefined;
+  if (ticket !== backgroundTicket || decor !== d) return;
   // The key is retained only by the call that applies it: retained before the await, a newer call with the same key
   // returned early while this one was superseded, and the look was never applied (v7: "satellite" shots drawn in parchment).
   backgroundDecor = d; backgroundKey = key;
-  const forest = r.ground.traits.ground3d && canopy ? { ...canopy, brushes: r.ground.traits.forestBrushes, waterVisible: c.networks.water.visible } : undefined;
-  const scene = renderRustTerrain(t, r.ground.style, true, { ...settings, v2Season: r.ground.season, v2Calendar: r.ground.calendar, forest }, false, 'city-ground', r.ground.lighting, r.ground.layers, r.vegetation.fantasy, true, r.composition.networks.water.look === 'ink' ? r.palette.mapStyle : 'render3d', r.palette.colors);
+  const scene = renderRustTerrain(t, r.ground.style, true, renderSettings, false, 'city-ground', r.ground.lighting, r.ground.layers, fantasyOptions, true, r.composition.networks.water.look === 'ink' ? r.palette.mapStyle : 'render3d', r.palette.colors);
   if(c.ambience==='night' && r.ground.traits.family==='material')scene.svg=moonlightSvg(scene.svg,'city-ground-night');
   // The rural land use and the contours are vector layers painted per 3D tile (drapedGround): baked into this 2048 px
   // snapshot they were magnified into pixel staircases on every close 3D view.
@@ -235,7 +293,17 @@ async function drawBackground(d: Decor): Promise<void> {
     groundRenderer.setLook(backgroundLook);
     groundRenderer.setRetainedWater(c.networks.water.visible ? decorWaterSvg(d, c.networks.water.look === 'ink' ? r.palette.mapStyle : c.variant, r.ground.lakes, r.palette.colors) : '', t.width, { season: retainedWaterSeason(d, r), city: true });
     groundRenderer.setView(view, viewport.clientWidth, viewport.clientHeight);
-  } else { groundCanvas.hidden = true; background.innerHTML = scene.svg; }
+  } else {
+    groundCanvas.hidden = true; background.innerHTML = scene.svg;
+    // The retained rivers and lakes pass over the wash, as on V2 (the wash would hide a river baked into the ground image).
+    const water = fantasyRaster && c.networks.water.visible ? decorWaterSvg(d, c.networks.water.look === 'ink' ? r.palette.mapStyle : 'render3d', r.ground.lakes, r.palette.colors) : '';
+    fantasyGround = fantasyRaster && { raster: fantasyRaster, svg: scene.svg, water, width: t.width };
+    if (fantasyGround) {
+      fantasyWater.innerHTML = water; background.append(fantasyWash.host, fantasyWater, fantasyStamps.host);
+      fantasyRaster!.onTiles = () => { if (fantasyGround?.raster === fantasyRaster) drawFantasyGround(); }; drawFantasyGround();
+    }
+  }
+  if (!fantasyRaster) fantasyGround = undefined;
   drawContours(); publishBenchCapabilities(); city3d.refresh();
   viewport.dataset.groundApplied = key;
 }

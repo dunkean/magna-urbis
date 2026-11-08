@@ -34,7 +34,7 @@ export function planShade(color: string, k: number): string {
   const v = parseInt(color.slice(1), 16), c = (s: number): number => Math.max(0, Math.min(255, Math.round(((v >> s) & 255) * (1 + k))));
   return `#${((c(16) << 16) | (c(8) << 8) | c(0)).toString(16).padStart(6, '0')}`;
 }
-export const roofRelief = (palette: CityPalette): number => palette === 'parchment' ? 0.55 : palette === 'ink' ? 0.35 : 1;
+export const roofRelief = (palette: CityPalette, terrace = false): number => terrace ? 1 : palette === 'parchment' ? 0.55 : palette === 'ink' ? 0.35 : 1;
 export function planRoofColor(b: CityBuilding, roofs: CityRoofs, k: number, palette: CityPalette): string {
-  return planShade(planBuildingColors(b, palette, roofs.cover[k], roofs.wall?.[k], roofs.tone[k]).roof, roofs.light[k] * roofRelief(palette));
+  return planShade(planBuildingColors(b, palette, roofs.cover[k], roofs.wall?.[k], roofs.tone[k]).roof, roofs.light[k] * roofRelief(palette, roofs.flat?.[k] === 2));
 }

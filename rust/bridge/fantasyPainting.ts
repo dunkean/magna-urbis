@@ -4,10 +4,14 @@ export type FantasyStyle = 'fantasy-ink' | 'fantasy-color';
 export interface FantasyOptions { density: number; size: number; spacing: number; followLanduse?: boolean; /** false: no forest brushes, another vegetation look owns the woods. */ forests?: boolean; /** Forest brushes alone: a ground with its relief hidden has no hills, mountains or ground motifs. */ forestsOnly?: boolean; /** Detail level: auto picks `detail` for a small map. A zoomed export asks for `detail`. */ lod?: "auto" | "overview" | "detail"; /** Nominal raster width (px) the stamp sizes are clamped for; defaults to the level raster. */ raster?: number; /** false: the SVG export leaves the stamps to a canvas painter. */ svgStamps?: boolean }
 export const DEFAULT_FANTASY_OPTIONS: FantasyOptions = { density: 1, size: 1, spacing: 1 };
 export const isFantasyStyle = (style: string): style is FantasyStyle => styleTraits(style).fantasy !== undefined;
-export type PaintLanduse = 'forest' | 'orchard' | 'field' | 'garden' | 'marsh' | 'meadow' | 'pasture' | 'commons';
+export type PaintLanduse = 'forest' | 'orchard' | 'field' | 'garden' | 'vineyard' | 'marsh' | 'meadow' | 'pasture' | 'commons';
+export const isCultivatedLanduse = (landuse?: PaintLanduse): boolean => landuse === 'field' || landuse === 'orchard' || landuse === 'garden' || landuse === 'vineyard' || landuse === 'pasture';
 export interface PaintSample { height: number; slope: number; temperature: number; rain: number; water?: boolean; occupied?: boolean; landuse?: PaintLanduse; /** Signed local prominence / sampling radius, as in Render. */ tpi?: number; relief?: number; /** Display canopy cover 0..1 (the forest field shared with the other styles); replaces the climate estimate. */ woods?: number; /** Holdings are painted edge to edge by a field wash: crop tiles become sparse accents. */ landuseDetail?: boolean; /** Inside a road/river corridor or on a farm or hamlet: no stamp anchors, the ground wash still paints. */ cleared?: boolean }
-export interface PaintOptions { seed: string; pitch: number; density?: number; size?: number; maxStamps?: number; followLanduse?: boolean; /** Size stays independent of spacing. */ brushPitch?: number; forests?: boolean; forestsOnly?: boolean; /** Width of the whole map (m), the physical reference for stamp sizes; defaults to 65 brush pitches. */ mapWidth?: number; lod?: PaintLod; raster?: number; /** Tallest relief of the map (m): the top of the size hierarchy. */ reliefRef?: number; /** Land elevation of the lowlands and of the summits (m, low and high percentiles): relief tiers are relative to it. */ heightRange?: readonly [number, number];
-  /** 'coarse': relief and woodland clumps only (the whole-map plan); 'fine': single trees and ground plants only (planned per view tile, see
+export interface OrchardParcel { kind: string; poly: readonly { x: number; y: number }[]; holes?: readonly (readonly { x: number; y: number }[])[]; stripAngle?: number }
+export interface PaintOptions { seed: string; pitch: number; density?: number; size?: number; maxStamps?: number; followLanduse?: boolean; /** Exact holdings for orchard rows; absent rasters use a fixed world orientation. */ parcels?: readonly OrchardParcel[]; /** Size stays independent of spacing. */ brushPitch?: number; forests?: boolean; forestsOnly?: boolean; /** Width of the whole map (m), the physical reference for stamp sizes; defaults to 65 brush pitches. */ mapWidth?: number; lod?: PaintLod; raster?: number; /** Tallest relief of the map (m): the top of the size hierarchy. */ reliefRef?: number; /** Land elevation of the lowlands and of the summits (m, low and high percentiles): relief tiers are relative to it. */ heightRange?: readonly [number, number];
+  /** Cultivated ground stays clear of relief even when vegetation does not follow land use. */
+  cultivated?: (x: number, y: number) => boolean;
+  /** 'coarse': relief, woodland clumps and orchard rows (the whole-map plan); 'fine': wild single trees and ground plants only (planned per view tile, see
    * web/src/ui/fantasyRaster.ts), with `summits` from the coarse plan keeping trees out of the relief silhouettes; 'all' (default): everything. */
   vegetation?: 'all' | 'coarse' | 'fine'; summits?: readonly Stamp[] }
 export interface Stamp { x: number; y: number; width: number; height: number; brush: number; variant?: number; flip: boolean; opacity: number; heightScale?: number }
@@ -16,10 +20,10 @@ export interface Atlas { url: string; width: number; height: number; rows: numbe
 export const FAMILY_NAMES = ['pines', 'broadleaf', 'tropical', 'cypress', 'hills', 'mountains', 'snow-mountains', 'rocks', 'dunes', 'wetlands', 'crops', 'orchards', 'grasses', 'peaks', 'shrubs', 'foothills', 'heath', 'woodland'] as const;
 export type BrushFamily = typeof FAMILY_NAMES[number];
 /** Brush ids: 0-15 historical, 16 alpine peaks, 17 shrubs, 18 foothills, 19 heath, 20 woodland clumps. */
-const BRUSH_FAMILY: BrushFamily[] = ['pines', 'broadleaf', 'tropical', 'cypress', 'hills', 'mountains', 'snow-mountains', 'rocks', 'dunes', 'wetlands', 'crops', 'orchards', 'pines', 'broadleaf', 'tropical', 'grasses', 'peaks', 'shrubs', 'foothills', 'heath', 'woodland'];
+const BRUSH_FAMILY: BrushFamily[] = ['pines', 'broadleaf', 'tropical', 'cypress', 'hills', 'mountains', 'snow-mountains', 'rocks', 'dunes', 'wetlands', 'crops', 'broadleaf', 'pines', 'broadleaf', 'tropical', 'grasses', 'peaks', 'shrubs', 'foothills', 'heath', 'woodland'];
 export const BRUSH = { hills: 4, ridges: 5, snow: 6, rocks: 7, dunes: 8, wetlands: 9, crops: 10, orchards: 11, grasses: 15, peaks: 16, shrubs: 17, foothills: 18, heath: 19, woodland: 20 } as const;
 /** Single trees: upright crowns with a fixed aspect. */
-export const isTreeBrush = (brush: number): boolean => brush < 4 || brush >= 12 && brush <= 14;
+export const isTreeBrush = (brush: number): boolean => brush < 4 || brush === BRUSH.orchards || brush >= 12 && brush <= 14;
 /** Relief symbols: hills, ridges, peaks, rocks and dunes. */
 export const isReliefBrush = (brush: number): boolean => brush >= 4 && brush <= 8 || brush === 16 || brush === 18;
 /** Summits that hide what stands behind them (trees never grow inside their silhouette). */
@@ -36,7 +40,8 @@ export function createBrushLibrary(style: FantasyStyle, families: Record<BrushFa
     const count = atlas.variantsPerStyle ?? 8;
     for (let v = 0; v < variants; v++) {
       // Five to eight tree silhouettes; never mix individual trees and giant clumps.
-      const variant = v % (isTreeBrush(brush) ? Math.min(6, count) : count);
+      // Orchard crowns: only round, single broadleaf trees, never the orchard clump atlas.
+      const variant = brush === BRUSH.orchards ? [0, 1, 4][v % 3] % count : v % (isTreeBrush(brush) ? Math.min(6, count) : count);
       const index = variant + (styleTraits(style).fantasy === 'color' ? count : 0), rect = atlasRect(atlas, index);
       frames.push({ atlas, family, index, token: `${family}-${index}`, rect, aspect: rect[3] / rect[2] });
     }
@@ -119,6 +124,61 @@ function reliefPx(prominence: number, k: number, [lo, hi]: readonly [number, num
   return lo + (hi - lo) * rel * (.3 + .7 * phys) * mix;
 }
 interface Candidate { stamp: Stamp; r: number; prio: number }
+/** Regular fruit trees, independent of the wild vegetation's Poisson sampling and LOD.
+ * Keep the entire silhouette inside the holding, including holes, before drawing it over the wash. */
+function orchardTrees(bounds: PaintBounds, sample: (x: number, y: number) => PaintSample | undefined, options: PaintOptions): Stamp[] {
+  const result: Stamp[] = [], seed = paintSeed(options.seed) ^ 11731, step = 9;
+  const inside = (x: number, y: number, ring: OrchardParcel['poly']): boolean => {
+    let yes = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const a = ring[i], b = ring[j];
+      if ((a.y > y) !== (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) yes = !yes;
+    }
+    return yes;
+  };
+  const parcels = options.parcels?.filter(p => p.kind === 'orchard') ?? [undefined];
+  for (const parcel of parcels) {
+    if (parcel && parcel.poly.length < 3) continue;
+    let angle = parcel?.stripAngle ?? 0, longest = 0;
+    if (parcel && parcel.stripAngle === undefined) for (let i = 0; i < parcel.poly.length; i++) {
+      const a = parcel.poly[i], b = parcel.poly[(i + 1) % parcel.poly.length], length = Math.hypot(b.x - a.x, b.y - a.y);
+      if (length > longest) { longest = length; angle = Math.atan2(b.y - a.y, b.x - a.x); }
+    }
+    const c = Math.cos(angle), s = Math.sin(angle), pad = 12;
+    let x0 = bounds.x - pad, y0 = bounds.y - pad, x1 = bounds.x + bounds.width + pad, y1 = bounds.y + bounds.height + pad;
+    if (parcel) {
+      x0 = Math.max(x0, Math.min(...parcel.poly.map(p => p.x))); x1 = Math.min(x1, Math.max(...parcel.poly.map(p => p.x)));
+      y0 = Math.max(y0, Math.min(...parcel.poly.map(p => p.y))); y1 = Math.min(y1, Math.max(...parcel.poly.map(p => p.y)));
+    }
+    if (x1 < x0 || y1 < y0) continue;
+    const corners = [[x0, y0], [x1, y0], [x0, y1], [x1, y1]];
+    const us = corners.map(([x, y]) => x * c + y * s), vs = corners.map(([x, y]) => -x * s + y * c);
+    const rings = parcel ? [parcel.poly, ...parcel.holes ?? []] : [];
+    for (let j = Math.floor(Math.min(...vs) / step); j <= Math.ceil(Math.max(...vs) / step); j++) {
+      for (let i = Math.floor(Math.min(...us) / step); i <= Math.ceil(Math.max(...us) / step); i++) {
+        const u = (i + .5) * step + (hash(i, j, seed) - .5) * .6, v = (j + .5) * step + (hash(i, j, seed ^ 71) - .5) * .6;
+        const x = u * c - v * s, y = u * s + v * c;
+        if (x < x0 || x > x1 || y < y0 || y > y1) continue;
+        const p = sample(x, y);
+        if (!p || p.landuse !== 'orchard' || p.height <= 0 || p.water || p.occupied || p.cleared) continue;
+        const width = Math.max(5, Math.min(8, 6.5 * (options.size ?? 1) * (.94 + .12 * hash(i, j, seed ^ 319))));
+        const h = width * 1.25, cy = y - h * .45, radius = Math.hypot(width / 2, h / 2);
+        if (parcel && (!inside(x, cy, parcel.poly) || parcel.holes?.some(r => inside(x, cy, r)))) continue;
+        let crosses = false;
+        for (const ring of rings) for (let k = 0; k < ring.length; k++) {
+          const a = ring[k], b = ring[(k + 1) % ring.length], dx = b.x - a.x, dy = b.y - a.y;
+          const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (cy - a.y) * dy) / (dx * dx + dy * dy || 1)));
+          if (Math.hypot(x - a.x - t * dx, cy - a.y - t * dy) < radius) { crosses = true; break; }
+        }
+        if (crosses) continue;
+        // Raster-only callers have no contours: conservatively keep the silhouette on orchard ground.
+        if (!parcel && [[-width / 2, -h * .95], [width / 2, -h * .95], [-width / 2, h * .05], [width / 2, h * .05]].some(([dx, dy]) => sample(x + dx, y + dy)?.landuse !== 'orchard')) continue;
+        result.push({ x, y, width, height: h, heightScale: 1, brush: BRUSH.orchards, variant: Math.floor(hash(i, j, seed ^ 6317) * 3), flip: hash(i, j, seed ^ 97) > .5, opacity: 1 });
+      }
+    }
+  }
+  return result;
+}
 /** Order-independent Poisson-like rejection: a candidate survives unless a higher-priority one lies within
  * the sum of their radii. Local by construction, so cropped plans keep the same anchors. */
 function suppress(items: Candidate[]): Candidate[] {
@@ -196,6 +256,7 @@ export function planPainting(bounds: PaintBounds, sample: (x: number, y: number)
       const variation = .85 + .3 * hash(gx, gy, salt ^ 319);
       let brush: number, cover: number, w: number, k: number, prio = hash(gx, gy, salt ^ 5501), ridge = false, edge = false, variant = Math.floor(hash(gx, gy, salt ^ 6317) * 32), opacity = 1, flip = hash(gx, gy, salt ^ 97) > .5;
       if (pass === 'relief') {
+        if (isCultivatedLanduse(s.landuse) || options.cultivated?.(x, y)) continue;
         // Tiers follow the map's own relief (elevation above the lowlands, prominence, slope, crest position),
         // and the absolute mountain cover on high maps: peaks on the summits, then ridges, foothills on the
         // shoulders and scattered hills on the lower crests; each tier smaller and sparser than the one above.
@@ -257,7 +318,7 @@ export function planPainting(bounds: PaintBounds, sample: (x: number, y: number)
           variant = crops[Math.floor(noise(x / (brushPitch * .9), y / (brushPitch * .9), seed ^ 7717) * crops.length * .999)];
           if (s.landuseDetail) variant = 6;
         } else if (lu === 'garden') { brush = BRUSH.crops; cover = .95; scale = .6; variant = [4, 7, 4][Math.floor(grain * 2.99)]; }
-        else if (lu === 'orchard') { brush = BRUSH.orchards; cover = .95; scale = .8; k = .36; }
+        else if (lu === 'orchard') continue; // A dedicated parcel grid owns fruit trees.
         else if (lu === 'marsh') { brush = detail > .7 ? BRUSH.grasses : BRUSH.wetlands; cover = .9; scale = .55; }
         else if (lu === 'meadow' || lu === 'pasture') {
           brush = grain > .82 ? BRUSH.heath : BRUSH.grasses; cover = (lu === 'meadow' ? .8 : .6) * (.6 + .5 * detail); scale = brush === BRUSH.heath ? .4 : .32;
@@ -273,8 +334,7 @@ export function planPainting(bounds: PaintBounds, sample: (x: number, y: number)
           else if (c.dry > .45) { brush = grain > .5 ? BRUSH.shrubs : BRUSH.grasses; cover = .6 * wild; scale = brush === BRUSH.shrubs ? .4 : .32; if (brush === BRUSH.shrubs) variant = 8 + Math.floor(detail * 7.99); }
           else { brush = grain > .62 ? BRUSH.heath : grain > .5 ? BRUSH.shrubs : BRUSH.grasses; cover = .7 * wild * (1 - .5 * c.woods); scale = brush === BRUSH.grasses ? .32 : .4; if (brush === BRUSH.shrubs) variant = Math.floor(detail * 7.99); }
         }
-        if (lu !== 'field' && lu !== 'garden' && lu !== 'orchard') cover *= .15;
-        if (brush === BRUSH.orchards && c.mountain > .06 + .2 * hash(gx, gy, salt ^ 6007)) continue;
+        if (lu !== 'field' && lu !== 'garden') cover *= .15;
         if (brush === BRUSH.grasses) opacity = .9;
         w = groundW * scale * variation;
       }
@@ -306,6 +366,20 @@ export function planPainting(bounds: PaintBounds, sample: (x: number, y: number)
       }
       if (wooded && mountains.get(mountainKey(x, y))?.some(m => Math.abs(x - m.x) < (m.width + w) / 2
         && y > m.y - m.width * 1.1 && y - w * 1.9 < m.y + m.width * .1)) continue;
+      if (isReliefBrush(brush)) {
+        // Check the final crest anchor and the silhouette with a small raster margin at field edges.
+        const cultivated = options.cultivated ?? ((sx: number, sy: number) => isCultivatedLanduse(sample(sx, sy)?.landuse));
+        if (cultivated(px, py)) continue;
+        const margin = 2 * mpp;
+        let overlapsField = false;
+        for (const dx of [-w * .5 - margin, 0, w * .5 + margin]) {
+          for (const dy of [-w * .85 - margin, -w * .4, w * .1 + margin]) {
+            if (cultivated(px + dx, py + dy)) { overlapsField = true; break; }
+          }
+          if (overlapsField) break;
+        }
+        if (overlapsField) continue;
+      }
       // Land anchors stay on land; silhouettes intentionally overhang lakes/roads.
       candidates.push({ r: k * spacing * w / 2, prio, stamp: { x: px, y: py, width: w, height: w * (tree ? 1.15 : .78), heightScale: tree ? .9 + .2 * hash(gx, gy, salt ^ 519) : .95 + .1 * hash(gx, gy, salt ^ 619),
         brush, variant, flip, opacity } });
@@ -315,6 +389,8 @@ export function planPainting(bounds: PaintBounds, sample: (x: number, y: number)
       if (isSummitBrush(stamp.brush)) indexSummit(stamp);
     }
   }
+  // Orchard rows are retained even in the overview/3D scene; fine tiles never duplicate them.
+  if (mode !== 'fine' && !options.forestsOnly) for (const stamp of orchardTrees(bounds, sample, options)) result.push(stamp);
   result.sort((a, b) => a.y - b.y || a.x - b.x);
   if (result.length > budget) {
     const relief = result.filter(s => isReliefBrush(s.brush)), ground = result.filter(s => !isReliefBrush(s.brush));

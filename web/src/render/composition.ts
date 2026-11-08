@@ -136,7 +136,7 @@ export function applyComposition(a: AppearanceInput, c: CompositionRecipe): Appe
     roads: c.networks.roads.visible, buildings: c.buildings.visible, labels: c.text.visible, legend: c.annotations.legend, cartouche: c.annotations.cartouche,
     // A physical ground takes physical stone, earth and roofs: parchment inks would float over it.
     city: { ...city, ...(traits.family === 'material' && !traits.paperMap ? { palette: 'terrain' as const } : {}), buildingStyle: building.style, painted: building.painted, groundBlend: roads === 'ink' ? 'classic' : 'blended',
-      layers: { ...city.layers, parcels: c.buildings.parcels, blocks: c.buildings.blocks, quarters: c.buildings.districts } } };
+      layers: { ...city.layers, parcelOverlay: c.buildings.parcels, parcels: c.buildings.parcels, lotEnclosures: c.buildings.parcels && city.layers?.lotEnclosures !== false, blocks: c.buildings.blocks, quarters: c.buildings.districts } } };
 }
 
 function limitationsOf(c: CompositionRecipe, traits: StyleTraits, target: RenderTarget, capabilities: RenderCapabilities): Limitation[] {

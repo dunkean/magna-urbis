@@ -30,6 +30,14 @@ import { generateUrbanLanduse, urbanLanduseRenderWorld, type UrbanLanduseInput, 
 type Context = Omit<UrbanLanduseInput, 'biome'> & { biome?: BiomeName };
 interface Settings { seed: string; biome: BiomeName; style: MapStyle; vegetation: VegetationStyle; painted: boolean; opacity: number; visible: boolean; enabled: boolean; hiddenKinds: LandKind[]; showFarms: boolean; visiblePaddocks?: boolean; concreteFieldBoundaries?: boolean }
 const biomeLabels = ['Campagne tempérée', 'Forêt', 'Désert et oasis', 'Steppe', 'Forêt tropicale', 'Toundra', 'Outreterre', 'Cavernes'];
+/** Satellite and Illustrated grounds paint every rural class themselves, as on V2.
+ * Other grounds draw vegetation classes only for a cartographic look. */
+function overlayLandKinds(r: ReturnType<typeof resolveBenchAppearance>): true | ((kind: LandKind) => boolean) {
+  // The shared occupation raster covers all eight LandKinds (commons use heath).
+  // This mask is shared by the 2D overlay and the 3D ground drape.
+  if (r.ground.traits.fantasy || (r.ground.traits.satelliteVariant === 1 && !r.ground.traits.paperMap)) return () => false;
+  return kind => r.composition.vegetation.cartographic || !['forest', 'meadow', 'marsh', 'commons'].includes(kind);
+}
 const landKinds: [LandKind, string][] = [['forest', 'Forêts'], ['orchard', 'Vergers'], ['field', 'Champs et sillons'], ['garden', 'Jardins'], ['meadow', 'Prairies'], ['pasture', 'Pâturages'], ['marsh', 'Marais'], ['commons', 'Terrains communaux']];
 
 export function createUrbanLanduse(options: { map: SVGSVGElement; before: Element; onChange(): void; onPlanChange?(): void;
@@ -194,7 +202,7 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     renderer = createCanvasRenderer(canvas, renderWorld, pal, { colors: getBenchRenderColors(),
       dpr: rendererDpr, scene: renderScene, transparentBackground: true, raster: false,
       vegetation: appearance.vegetation.symbols, brushes: composition.vegetation.painted ? brushImages : undefined,
-      mask: { landuse: composition.vegetation.cartographic ? true : kind => !['forest', 'meadow', 'marsh', 'commons'].includes(kind) },
+      mask: { landuse: overlayLandKinds(appearance) },
       furrowReferenceSize: SIZE_PRESETS[scene.options.size].mapSize,
       terrain: () => {
         if (v1Style) return v1LandscapeCanvas(context!.raster, v1Style, scene!.options.biome);
@@ -338,14 +346,14 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     drawGround(ctx: CanvasRenderingContext2D, region: { x: number; y: number; width: number }, size: number): void {
       if (!active() || !settings.visible || !renderWorld || !scene) return;
       const r = resolveBenchAppearance(), painted = r.composition.vegetation.painted && !!brushImages;
-      const key = JSON.stringify([r.palette.mapStyle, scene.options.biome, r.palette.colors, r.vegetation.symbols, painted, r.composition.vegetation.cartographic]);
+      const key = JSON.stringify([r.palette.mapStyle, scene.options.biome, r.palette.colors, r.vegetation.symbols, painted, r.composition.vegetation.cartographic, r.ground.traits.fantasy, r.ground.traits.satelliteVariant, r.ground.traits.paperMap]);
       if (!groundPainter || groundPainter.world !== renderWorld || groundPainter.scene !== renderScene || groundPainter.key !== key) {
         groundPainter?.painter.dispose();
         const target = document.createElement('canvas'); target.width = target.height = size;
         const painter = createCanvasRenderer(target, renderWorld, { ...biomePalette(r.palette.mapStyle, scene.options.biome), frameKind: 'none' }, {
           colors: r.palette.colors, dpr: 1, scene: renderScene, transparentBackground: true, raster: false, terrain: () => null,
           vegetation: r.vegetation.symbols, brushes: painted ? brushImages : undefined,
-          mask: { landuse: r.composition.vegetation.cartographic ? true : kind => !['forest', 'meadow', 'marsh', 'commons'].includes(kind) },
+          mask: { landuse: overlayLandKinds(r) },
           furrowReferenceSize: SIZE_PRESETS[scene.options.size].mapSize,
         });
         painter.setOverlays({ labels: false, legend: false, cartouche: false });

@@ -563,14 +563,15 @@ export function mountCity3d(options: City3dOptions): City3d {
     const planInk = city && cityTileHasInk(city, box, planLayers, lod, footprints);
     if (city && planInk && (planOptions?.opacity ?? 1) > 0) {
       if(satellite){
+        // Satellite: streets and town walls lie in the ground tile, under the crowns that overhang them.
         const target=groundContext();target.save();target.setTransform(k,0,0,k,-tile.x*k,-tile.y*k);target.globalAlpha=planOptions?.opacity??1;
-        drawCity(target,city,{viewport:box,mpp,dpr:1,lod,view:'buildings',palette:'terrain',width:0,layers:{...planLayers,reserve:false,allocated:false,centers:false,quarters:false,streets:planLayers.streets&&planOptions?.roadLook!=='ink',enclosures:false,waterways:false,fronts:false,axes:false,access:false},buildingsVisible:false,appearance:{style:'geometric',diagnostic:'none'},materialGround:true,groundBlend:true,roadLook:'natural',roadEmphasis:planOptions?.roadEmphasis,textured:textured(),onTexturesReady:()=>terrain?.invalidateTiles()});
+        drawCity(target,city,{viewport:box,mpp,dpr:1,lod,view:'buildings',palette:'terrain',width:0,layers:{...planLayers,reserve:false,allocated:false,centers:false,quarters:false,streets:planLayers.streets&&planOptions?.roadLook!=='ink',enclosures:planLayers.enclosures,waterways:false,fronts:false,axes:false,access:false},buildingsVisible:false,appearance:{style:'geometric',diagnostic:'none'},materialGround:true,groundBlend:true,roadLook:'natural',roadEmphasis:planOptions?.roadEmphasis,textured:textured(),onTexturesReady:()=>terrain?.invalidateTiles()});
         target.restore();
       }
       const target = inkContext(); target.save(); target.setTransform(k, 0, 0, k, -tile.x * k, -tile.y * k);
       target.globalAlpha = planOptions?.opacity ?? 1;
       const thematic=planOptions?.view==='uses'||planOptions?.view==='roles';
-      const inkLayers=satellite?{...planLayers,blocks:thematic&&planLayers.blocks,domains:thematic&&planLayers.domains,parcels:thematic&&planLayers.parcels,gardens:thematic&&planLayers.gardens,places:thematic&&planLayers.places,streets:planLayers.streets&&planOptions?.roadLook==='ink',lotEnclosures:false}:planLayers;
+      const inkLayers=satellite?{...planLayers,blocks:thematic&&planLayers.blocks,domains:thematic&&planLayers.domains,parcels:thematic&&planLayers.parcels,gardens:thematic&&planLayers.gardens,places:thematic&&planLayers.places,streets:planLayers.streets&&planOptions?.roadLook==='ink',enclosures:false,lotEnclosures:false}:planLayers;
       drawCity(target, city, { viewport: box, mpp, dpr: 1, lod,
         colors: planOptions?.colors, view: planOptions?.view ?? 'parcels', labels: false, palette: planOptions?.palette ?? 'terrain', width: planOptions?.width ?? 0.6, layers: inkLayers, buildings: footprints, buildingsVisible: planOptions?.buildingsVisible ?? false, appearance: planOptions?.appearance ?? { style: 'cartographic', diagnostic: 'none' }, textured: textured(), roadLook: planOptions?.roadLook, roadEmphasis: planOptions?.roadEmphasis, streetPalette: planOptions?.streetPalette, night: planOptions?.night, groundBlend: planOptions?.groundBlend ?? false, onTexturesReady: () => terrain?.invalidateTiles() });
       target.restore();
@@ -627,7 +628,9 @@ export function mountCity3d(options: City3dOptions): City3d {
   // ------------------------------------------------------------ buildings
   function syncBuildings(force = false): void {
     const t = terrain; if (!t) return;
-    const nextYards = [options.getLotEnclosures?.(), options.getPartitions?.()];
+    // Lot fences, hedges and walls stand only with the parcels (composition): off, they are neither drawn nor cleared from the forest.
+    const yardLayers = options.getPlanOptions?.()?.layers, yardsShown = yardLayers?.parcelOverlay !== false && yardLayers?.lotEnclosures !== false;
+    const nextYards = [options.getLotEnclosures?.(), options.getPartitions?.(), yardsShown];
     if (nextYards.some((input, i) => input !== yardInputs[i])) { yardInputs = nextYards; force = true; t.invalidateTiles(); }
     const scene = options.getProjection?.() ?? options.getScene(), layouts = options.getLayouts?.(), regional = options.getRegionalStreets?.();
     if (layouts !== bridgesOf[0] || regional !== bridgesOf[1]) { bridgesOf = [layouts, regional]; force = true; }
@@ -659,7 +662,7 @@ export function mountCity3d(options: City3dOptions): City3d {
         const quays = [...city3dQuays(layouts ?? []), ...city3dWaterways(layouts ?? [])], boardwalks = city3dBoardwalks(bridgeStreets, heightAt, bridgeWaterAt); quayCount = quays.length + boardwalks.length;
         structureBuildings = [...bridges, ...walls, ...quays, ...boardwalks];
       }
-      const yardPlan = cityPlan();
+      const yardPlan = yardsShown ? cityPlan() : undefined;
       const sharedYards = options.getLotEnclosures?.();
       if (yardPlan && sharedYards) yardPlan.lotEnclosures = sharedYards as import('../../../rust/bridge/urban').LotEnclosure[];
       else if (yardPlan && scene) updateYardEnclosures(yardPlan, scene.buildings, () => scene.buildings);

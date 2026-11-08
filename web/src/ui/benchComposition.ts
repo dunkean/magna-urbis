@@ -71,6 +71,11 @@ export function resolveBenchAppearance(extra: Partial<AppearanceInput> = {}, nex
   const resolved = resolveAppearance({ style: 'parchment', ...extra, ...advanced, composition, colors: getBenchRenderColors() }, { mapStyle: 'parchment' }, capabilities, nextTarget);
   setLanduseForestTone(resolved.cartography.landuseForestTone);
   setMapSeason(resolved.ground.season, undefined, resolved.ground.calendar);
+  // Satellite rural cover belongs to the ground shader, including its boundaries.
+  // Keep semantic fills and outlines off in both the 2D overlay and the 3D drape.
+  if (resolved.ground.traits.satelliteVariant === 1 && !resolved.ground.traits.paperMap) return {
+    ...resolved, composition: { ...resolved.composition, landuse: { ...resolved.composition.landuse, rural: 'off' as const } },
+  };
   return resolved;
 }
 

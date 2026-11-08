@@ -5,6 +5,42 @@ const options = { seed: 'fantasy-42', pitch: 150 };
 // Overview raster: 1400 px for a map 65 brush pitches wide; stamp sizes clamp in px, then convert to metres.
 const mpp = options.pitch * 65 / 1400, mean = (v: number[]) => v.reduce((a, b) => a + b, 0) / v.length;
 describe('fantasy cartographic placement', () => {
+  it('plants small single trees on stable parcel rows, excluding holes and keeping them in the 3D overview', () => {
+    const angle = .61, c = Math.cos(angle), s = Math.sin(angle);
+    const point = (u: number, v: number) => ({ x: 150 + u * c - v * s, y: 150 + u * s + v * c });
+    const poly = [point(-100, -60), point(100, -60), point(100, 60), point(-100, 60)];
+    const holes = [[point(-18, -18), point(18, -18), point(18, 18), point(-18, 18)]];
+    const bounds = { x: 0, y: 0, width: 300, height: 300 };
+    const orchard = (): PaintSample => ({ height: 300, slope: .01, temperature: 18, rain: 1800, landuse: 'orchard' });
+    const opts = { ...options, parcels: [{ kind: 'orchard', poly, holes }], followLanduse: true, vegetation: 'coarse' as const };
+    const trees = planPainting(bounds, orchard, opts).filter(t => t.brush === 11);
+    expect(trees.length).toBeGreaterThan(180);
+    expect(trees.every(t => t.width >= 5 && t.width <= 8)).toBe(true);
+    for (const tree of trees) {
+      const u = (tree.x - 150) * c + (tree.y - 150) * s, v = -(tree.x - 150) * s + (tree.y - 150) * c;
+      expect(Math.abs(u)).toBeLessThan(100); expect(Math.abs(v)).toBeLessThan(60);
+      expect(Math.abs(u) > 18 || Math.abs(v) > 18).toBe(true);
+      // The long parcel edge defines the rows: jitter stays below 0.3 m on each axis.
+      const across = -tree.x * s + tree.y * c;
+      expect(Math.abs(across / 9 - .5 - Math.round(across / 9 - .5))).toBeLessThan(.034);
+    }
+    const cropped = planPainting({ x: 80, y: 80, width: 120, height: 120 }, orchard, opts).filter(t => t.brush === 11 && t.x >= 80 && t.x <= 200 && t.y >= 80 && t.y <= 200);
+    expect(cropped).toEqual(trees.filter(t => t.x >= 80 && t.x <= 200 && t.y >= 80 && t.y <= 200));
+    expect(planPainting(bounds, orchard, { ...opts, vegetation: 'fine' }).some(t => t.brush === 11)).toBe(false);
+  });
+
+  it('uses only round single broadleaf atlas cells for orchard brushes in both palettes', () => {
+    const atlas: Atlas = { url: 'test', width: 400, height: 400, rows: [0, .25, .5, .75, 1] };
+    const families = Object.fromEntries(FAMILY_NAMES.map(n => [n, atlas])) as Record<BrushFamily, Atlas>;
+    for (const style of ['fantasy-ink', 'fantasy-color'] as const) {
+      const library = createBrushLibrary(style, families), offset = style === 'fantasy-color' ? 8 : 0;
+      for (let variant = 0; variant < 32; variant++) {
+        const frame = brushFrame(library, { x: 0, y: 0, width: 6.5, height: 8, brush: 11, variant, flip: false, opacity: 1 });
+        expect(frame.family).toBe('broadleaf'); expect([0, 1, 4].map(v => v + offset)).toContain(frame.index);
+      }
+    }
+  });
+
   it('packs variable relief and fixed-width trees, preserving relief under a tight budget', () => {
     const bounds = { x: 0, y: 0, width: 10000, height: 10000 };
     const landscape = (x: number) => ({ height: x < 5000 ? 2200 : 300, slope: .03, temperature: 18, rain: 1800 });

@@ -28,6 +28,7 @@ Runtime sheets in `fantasy/families/runtime/` (manifest entries added by `fantas
 - `peaks.webp`: from the existing `fantasy/families/mountains.png` (alpine peaks; ink cells 0-7, colour cells 8-15). Top relief tier.
 - `shrubs.webp`: from the existing `fantasy/families/shrubs.png` (colour only, see `shrubs.prompt.md`); the ink half is derived (grey, contrasted) by `pack_runtime.py --color-only`.
 - `foothills.webp`, `heath.webp`, `woodland.webp`: new atlases `fantasy/families/{foothills,heath,woodland}.png` (1256×1256 RGBA, 4×4, ink rows 0-1, colour rows 2-3), generated with the Codex CLI built-in image generation tool from the prompt `fantasy/families/new-il5.prompt.md` (result note `new-il5.result.md`). Foothills sit between ridges and hills; heath is uncultivated ground cover; woodland clumps carry the forest mass at a distance.
+- Orchard placement uses the existing `broadleaf.webp` single round trees: ink cells 0, 1, 4; colour cells 8, 9, 12 (zero-based). The `orchards.webp` cells are multi-tree scenes and are excluded from orchard brushes. No bitmap assets were changed; crowns are 5–8 m on a parcel-aligned 9 m grid.
 
 # Parchment symbols (ink and wash masks)
 

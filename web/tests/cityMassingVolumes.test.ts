@@ -1,11 +1,63 @@
 import { describe, expect, it } from 'vitest';
-import { pieceRoof, pieceShadows, pieceTop, volumeRoof, pieceVolumes, loftRidges, type MassingPiece, type RoofFace } from '../src/render/cityMassing';
+import { pieceRoof, pieceShadows, pieceTop, volumeRoof, pieceVolumes, loftRidges, planRoof, buildingRoof, type MassingPiece, type RoofFace } from '../src/render/cityMassing';
 
 type P = { x: number; y: number };
 const area = (r: P[]) => r.reduce((s, p, i) => { const n = r[(i + 1) % r.length]; return s + p.x * n.y - n.x * p.y; }, 0) / 2;
 const inside = (p: P, ring: P[]) => { let c = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const a = ring[i], b = ring[j]; if ((a.y > p.y) !== (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x) c = !c; } return c; };
 let seed = 7; const rnd = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
 const piece = (over: Partial<MassingPiece>): MassingPiece => ({ floors: 2, eave_m: 6, rise_m: 3, roof: 'gable', ridges: [], cover: 'tile', wall: 'brick', ...over });
+
+describe('terraced plan roofs', () => {
+  const rect = (x: number, y: number, w: number, d: number) => ({ outer: [{ x, y }, { x: x + w, y }, { x: x + w, y: y + d }, { x, y: y + d }], holes: [] as P[][] });
+  const lower = rect(6, 0, 8, 10), upper = rect(0, 0, 6, 6);
+  const flat = (height: number) => piece({ roof: 'flat', eave_m: height, rise_m: 0 });
+  it('orders overlapping slabs by height and lights each tier independently of input order', () => {
+    const nested = rect(0, 0, 14, 14), crown = rect(2, 2, 6, 6);
+    const faces = planRoof([crown, nested], [flat(9), flat(3)]);
+    expect(faces.every(f => f.flat)).toBe(true);
+    const high = faces.findIndex(f => f.piece === 0);
+    expect(high).toBeGreaterThan(0);
+    expect(faces.slice(high).every(f => f.piece === 0)).toBe(true);
+    const fields = faces.filter(f => f.normal[2] === 1 && (f.light ?? 0) > -0.1);
+    expect(fields.find(f => f.piece === 0)!.light).toBeGreaterThan(fields.find(f => f.piece === 1)!.light!);
+    expect((1 + fields.find(f => f.piece === 0)!.light!) / (1 + fields.find(f => f.piece === 1)!.light!)).toBeCloseTo(1.1, 5);
+    for (const id of [0, 1]) {
+      const rims = faces.filter(f => f.piece === id && f.normal[2] < 0.999);
+      expect(rims).toHaveLength(4);
+      expect(rims.some(f => f.normal[0] + f.normal[1] < 0 && f.light! > 0)).toBe(true);
+      expect(rims.some(f => f.normal[0] + f.normal[1] > 0 && f.light! < -0.4)).toBe(true);
+      for (const f of rims) {
+        const [a, b, , d] = f.points, length = Math.hypot(b.x - a.x, b.y - a.y);
+        expect(Math.abs((b.x - a.x) * (d.y - a.y) - (b.y - a.y) * (d.x - a.x)) / length * 1.4).toBeGreaterThan(1.5);
+      }
+    }
+  });
+  it('casts only inside a lower terrace, preserving courts and the real height difference', () => {
+    const terrace = { ...lower, holes: [rect(7, 1, 1, 1).outer] };
+    const shadows = (height: number) => planRoof([upper, terrace], [flat(height), flat(3)]).filter(f => f.piece === 1 && f.normal[2] === 1 && Math.abs(f.light! + 0.55) < 0.001);
+    const short = shadows(6), long = shadows(9);
+    expect(shadows(3.25).length).toBeGreaterThan(0);
+    expect(short.length).toBeGreaterThan(0); expect(long.length).toBeGreaterThan(0);
+    expect(Math.max(...short.flatMap(f => f.points.map(p => p.x)))).toBeCloseTo(7.65, 2);
+    expect(Math.max(...long.flatMap(f => f.points.map(p => p.x)))).toBeCloseTo(9.3, 2);
+    for (const f of long) for (const p of f.points) {
+      expect(p.x).toBeGreaterThanOrEqual(6); expect(p.x).toBeLessThanOrEqual(14);
+      expect(p.y).toBeGreaterThanOrEqual(0); expect(p.y).toBeLessThanOrEqual(10); expect(p.z).toBe(3);
+    }
+    expect(long.some(f => inside({ x: 7.5, y: 1.5 }, f.points) && !(f.holes ?? []).some(h => inside({ x: 7.5, y: 1.5 }, h)))).toBe(false);
+  });
+  it('treats a subdivided horizontal roof as slabs without changing pitched roofs or tent caps', () => {
+    const court = { ...rect(0, 0, 14, 14), holes: [rect(4, 4, 6, 6).outer] };
+    expect(planRoof([court], [piece({ roof: 'ring', rise_m: 0 })]).every(f => f.flat)).toBe(true);
+    for (const roof of ['gable', 'hip', 'tent'] as const) {
+      const m = piece({ roof, ridges: [[0, 3, 6, 3]] });
+      expect(planRoof([upper], [m])).toEqual(buildingRoof([upper], [m]));
+    }
+    const single = planRoof([upper], [flat(6)]);
+    expect(single).toHaveLength(5);
+    expect(single.find(f => f.normal[2] === 1)!.light).toBe(-0.05);
+  });
+});
 
 /** Random convex trapezoid / slanted quad with a ridge along its long axis, strictly inside. */
 function quad() {

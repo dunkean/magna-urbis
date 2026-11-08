@@ -126,12 +126,15 @@ vec3 landOrchard(vec2 world,float footprint,float green,vec3 bare,out float roug
   vec3 c=mix(alley*(1.-.42*shadow),crown*(.72+.62*lit),tree);
   return mix(bare,mix(mean,c,keep),.85);
 }
-// Town ground: trodden earth around the houses, grass where nobody walks.
+// Town ground shares the fields' seasonal earth and lighting. Worn paths separate pale yard patches;
+// the natural floor contributes lightness only, so wetland/tropical greens cannot tint the packed earth.
 vec3 landTown(vec2 world,float footprint,float green,vec3 bare){
   uint salt=uMaterialSeed+1103u;
-  float mid=surfaceNoise(vec3(world/19.,0.),salt),fine=surfaceNoise(vec3(world/5.3,0.),salt+1u);
-  vec3 earth=vec3(.46,.40,.31)*(1.+.08*fine),grass=mix(vec3(.38,.36,.25),vec3(.35,.39,.24),green);
-  return mix(bare,mix(earth,grass,groundSmooth(-.25,.3,mid+.3*fine)),.72);
+  float mid=surfaceNoise(vec3(world/19.,0.),salt),fine=surfaceNoise(vec3(world/5.3,0.),salt+1u)*(1.-groundSmooth(1.,3.,footprint));
+  vec3 earth=mix(landCropTone(.3,green),vec3(.56,.50,.38),.25)*(1.+.08*fine),grass=mix(vec3(.46,.43,.30),vec3(.47,.44,.30),green);
+  vec3 yard=mix(earth,grass,.6*groundSmooth(-.1,.5,mid+.3*fine));
+  vec3 luminance=vec3(.2126,.7152,.0722);
+  return yard*mix(1.,dot(bare,luminance)/max(dot(yard,luminance),.001),.12);
 }
 // Kitchen plots: small beds of different greens and bare soil, with paths.
 vec3 landGarden(vec2 world,float footprint,float green,vec3 bare){

@@ -449,10 +449,12 @@ void main() {
         // Inland water of the seasonal regime (waterRegime.ts): the painted dry beds, ice and foam lie on the ground as
         // painted (sandy, or near white); only the wet remainder takes the Render v2 water.
         if(s.x>=0.){
+          // Bank crowns lean over the water: rooted on land (forestCrown), drawn whole above it.
+          float bed=water.a*(1.-forestResolvedCover);wCover=bed;
           vec3 painted=water.rgb/max(water.a,1e-3);
           // Sandy beds lean red; ice, its bank lines and foam are far lighter than any painted open water (luminance < .3).
           float solid=max(smoothstep(.05,.15,painted.r-painted.b),smoothstep(.33,.42,dot(painted,vec3(.3,.45,.25))));
-          wBase=mix(wBase,painted,water.a*solid);wCover*=1.-solid;
+          wBase=mix(wBase,painted,bed*solid);wCover*=1.-solid;
           // City Bench: a retained river reads as water at city zoom instead of a near-black ribbon. Its depth grows
           // from the bank (distance to the nearest dry pixel over 8 directions and 7 radii), and the season's
           // sediment tints it (waterRegime.ts waterClimate).
@@ -520,6 +522,8 @@ void main() {
 #endif
 #ifndef AUX_PASS
     if(uRenderV2>0&&v2w&&uV2WaterVisible==1){
+      // Overhanging crowns cast their shadow on the water.
+      color*=1.-.4*forestResolvedShade*wCover;
       // Boreal humic water darkens to tea; alpine glacial flour turns lakes milky turquoise; silt plumes off river mouths.
       color=mix(color,color*vec3(.86,.70,.48),wTint.x*wCover);
       color=mix(color,vec3(.38,.62,.62),.45*wTint.y*wCover);

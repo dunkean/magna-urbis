@@ -113,7 +113,7 @@ function composeMaterialRaster(terrain: TerrainData, settings: Pick<TerrainSetti
         }
         shore=min(shore,max(height,0.)/max(length(gradient),.0001));
         vec3 material=${enhanced3d ? 'rasterMaterial' : 'earthMaterial'}(vec3(height,gradient),origin+(vec2(p)+.5)*cell,cell,(height-mean)/(6.*radius),shore,openness${enhanced3d ? ',uForestLight' : ''});
-        ${enhanced3d ? `if(uRenderV2>0){V2Env e=v2Local(vec3(height,gradient),origin+(vec2(p)+.5)*cell,(height-mean)/(6.*radius),cell);if(uRenderV2>1)material=v2Color(e,float(uRenderV2-1));float water=forestWaterCoverage(origin+(vec2(p)+.5)*cell);water=max(water,height<0.?1.:0.);material=v2WaterAt(material,vec3(height,gradient),origin+(vec2(p)+.5)*cell,cell,water,height<0.?1.:3.,height<0.?-height:8.*water);}` : ''}
+        ${enhanced3d ? `if(uRenderV2>0){V2Env e=v2Local(vec3(height,gradient),origin+(vec2(p)+.5)*cell,(height-mean)/(6.*radius),cell);if(uRenderV2>1)material=v2Color(e,float(uRenderV2-1));float water=forestWaterCoverage(origin+(vec2(p)+.5)*cell);water=max(water,height<0.?1.:0.);float bed=height<0.?water:water*(1.-forestResolvedCover);material=v2WaterAt(material,vec3(height,gradient),origin+(vec2(p)+.5)*cell,cell,bed,height<0.?1.:3.,height<0.?-height:8.*water);if(height>=0.)material*=1.-.4*forestResolvedShade*bed;}` : ''}
         color=vec4(material,${enhanced3d ? 'uMapCanopy==1?forestMapCover:forestResolvedCover' : '0.'});
       }`);
     const program = gl.createProgram()!;

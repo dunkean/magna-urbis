@@ -12,7 +12,7 @@ import type { PlacementBatch, PlacedBuilding } from '../../../rust/bridge/urbanA
 import { buildingColors, urbanFunctionColor, type UrbanBuildingAppearance } from './urbanBuildingStyle';
 import { funeraryLandFill, roleLabel } from './cityRoles';
 import { MATERIALS, coverLayer, layerExtent, layerPattern, materialImagesNow, placeLayer, streetLayer, wallStoneLayer, type MaterialImages } from './buildingMaterials';
-import { planBuildingColors, planRoofColor } from './cityBuildingPalette';
+import { planBuildingColors, planRoofColor, planShade, roofRelief } from './cityBuildingPalette';
 import { drawLotEnclosures, updateYardEnclosures } from './cityLotEnclosures'; // enclosures hook (cityLotEnclosures.ts)
 import { cityWallDetails, drawCityWallGround, drawCityWalls } from './cityWalls'; // walls hook (cityWalls.ts)
 import { streetToneAt, washAt } from './groundTone';
@@ -24,12 +24,13 @@ import { drawGardenDetails } from './readableGardens';
 import { softenRuralGround } from './countryside';
 import { polygonCentroid as shapeRingCenter } from '../gen/core/geom';
 import { roadSurface } from './roadSurface';
+import { differenceS, unionS } from '../gen/geo/bool';
 
 export interface Box { minX: number; minY: number; maxX: number; maxY: number }
 export type CityView = 'tissue' | 'uses' | 'parcels' | 'buildings' | 'roles';
 export type CityLod = 'far' | 'mid' | 'near' | 'close';
 export type CityPalette = 'growth' | 'atlas' | 'ink' | 'terrain' | 'parchment';
-export interface CityLayers { waterways?: boolean; reserve: boolean; allocated: boolean; centers: boolean; domains: boolean; quarters: boolean; blocks: boolean; streets: boolean; enclosures: boolean; /** Walls, hedges and fences of the lots; absent = shown. */ lotEnclosures?: boolean; /** The fences stand as 3D meshes: the plan paints the yard ground only. */ lotEnclosureMeshes?: boolean; /** Streets as a ground surface (square junctions, curb returns, tapers); absent = on, off = round-capped strokes. */ roadSurface?: boolean; parcels: boolean; gardens: boolean; places: boolean; fronts: boolean; axes: boolean; access: boolean }
+export interface CityLayers { waterways?: boolean; reserve: boolean; allocated: boolean; centers: boolean; domains: boolean; quarters: boolean; blocks: boolean; streets: boolean; enclosures: boolean; /** Composition visibility for all parcel types and details; retained on the GPU's Canvas overlay. */ parcelOverlay?: boolean; /** Walls, hedges and fences of the lots; absent = shown. */ lotEnclosures?: boolean; /** The fences stand as 3D meshes: the plan paints the yard ground only. */ lotEnclosureMeshes?: boolean; /** Streets as a ground surface (square junctions, curb returns, tapers); absent = on, off = round-capped strokes. */ roadSurface?: boolean; parcels: boolean; gardens: boolean; places: boolean; fronts: boolean; axes: boolean; access: boolean }
 
 // ---------------------------------------------------------------- levels of detail
 const LOD_ORDER: CityLod[] = ['close', 'near', 'mid', 'far'];
@@ -164,7 +165,7 @@ export interface CityBuilding { stilts?: boolean; /** Some volume has a flat roo
 /** Roof pans of the massing (cityMassing.ts): one polygon per sloped face, its
  * building and its light; height shadows per building (sun from the north-west). */
 /** `dir`: downslope direction of each pan in plan (radians, atan2 of the face normal's horizontal part; 0 when flat). */
-export interface CityRoofs { shapes: Shape[]; owner: Uint32Array; light: Float32Array; cover: string[]; wall?: string[]; tone: Float32Array; dir: Float32Array; shadows: Shape[][] }
+export interface CityRoofs { shapes: Shape[]; owner: Uint32Array; light: Float32Array; cover: string[]; wall?: string[]; tone: Float32Array; dir: Float32Array; /** 0 = pitched, 1 = single flat slab, 2 = terrace. */ flat?: Uint8Array; shadows: Shape[][] }
 export interface CityBuildings { items: CityBuilding[]; bins: SpatialBins; byId: Map<string, number>; roofs?: CityRoofs }
 
 /** Optional contract fields read defensively: older plans render without them. */
@@ -281,7 +282,7 @@ export function buildCityScene(layouts: readonly Layout[], partitions: readonly 
 /** Buildings of a scene, linked to their parcel allocation for roles. */
 export function buildCityBuildings(batch: Pick<PlacementBatch, 'buildings'> | undefined, plan?: CityScene): CityBuildings {
   const items: CityBuilding[] = [], byId = new Map<string, number>();
-  const roofShapes: Shape[] = [], roofOwner: number[] = [], roofLight: number[] = [], roofCover: string[] = [], roofWall: string[] = [], roofTone: number[] = [], roofDir: number[] = [], shadows: Shape[][] = [];
+  const roofShapes: Shape[] = [], roofOwner: number[] = [], roofLight: number[] = [], roofCover: string[] = [], roofWall: string[] = [], roofTone: number[] = [], roofDir: number[] = [], roofFlat: number[] = [], shadows: Shape[][] = [];
   for (const building of batch?.buildings ?? []) {
     let surface = building.roof_footprint.length ? building.roof_footprint : building.footprint;
     if (!surface.length) continue;
@@ -302,14 +303,21 @@ export function buildCityBuildings(batch: Pick<PlacementBatch, 'buildings'> | un
       material: { culture, wall: first?.wall ?? '', cover: first?.cover ?? '', tone: first?.tone ?? 0.5 } });
     if (!massing) { shadows.push([]); continue; }
     const owner = items.length - 1;
+    let terraced = false;
     for (const face of planRoof(building.footprint, massing)) {
       if (face.normal[2] < 0.08 || face.points.length < 3) continue; // gable ends and walls are edge-on from above
       if (face.flat) items[owner].flat = true;
+      terraced ||= !!face.terrace;
+      roofFlat.push(face.terrace ? 2 : face.flat ? 1 : 0);
       roofShapes.push({ outer: face.points.map(p => ({ x: p.x, y: p.y })), holes: face.holes ?? [] }); roofOwner.push(owner); roofLight.push(face.light ?? roofLight3(face.normal)); roofCover.push(face.cover); roofWall.push(face.wall); roofTone.push(face.tone); roofDir.push(Math.hypot(face.normal[0], face.normal[1]) > 1e-3 ? Math.atan2(face.normal[1], face.normal[0]) : 0);
     }
-    shadows.push(building.footprint.flatMap((shape, i) => massing[i] ? pieceShadows(shape, massing[i]) : []));
+    const casts = building.footprint.flatMap((shape, i) => massing[i] ? pieceShadows(shape, massing[i]) : []);
+    // Terrace receivers already have their own opaque shade. The ground pass must
+    // contain only the exterior SE cast, with no overlapping hulls or courtyard wash.
+    shadows.push(terraced && casts.length ? differenceS(unionS(casts[0], ...casts.slice(1)),
+      [...building.footprint, ...surface].map(s => ({ outer: s.outer, holes: [] }))) : casts);
   }
-  const roofs = roofShapes.length ? { shapes: roofShapes, owner: Uint32Array.from(roofOwner), light: Float32Array.from(roofLight), cover: roofCover, wall: roofWall, tone: Float32Array.from(roofTone), dir: Float32Array.from(roofDir), shadows } : undefined;
+  const roofs = roofShapes.length ? { shapes: roofShapes, owner: Uint32Array.from(roofOwner), light: Float32Array.from(roofLight), cover: roofCover, wall: roofWall, tone: Float32Array.from(roofTone), dir: Float32Array.from(roofDir), flat: Uint8Array.from(roofFlat), shadows } : undefined;
   return { items, byId, bins: new SpatialBins(items.map(b => surfaceBox(b.surface)), 64), ...(roofs ? { roofs } : {}) };
 }
 
@@ -459,6 +467,7 @@ function streetPaint(role: string, rank: number, palette: CityPalette): { fill: 
 }
 
 const roofIndex = new WeakMap<CityRoofs, { byOwner: number[][]; paths: (Path2D | undefined)[] }>();
+const roofShadowPaths = new WeakMap<CityRoofs, (Path2D | undefined)[]>();
 const roofGrain = new WeakMap<ImageBitmap, Map<number, CanvasPattern>>();
 /** Mean-centred grain, shared per material; soft light keeps the final palette colour. */
 function roofGrainPattern(ctx: CanvasRenderingContext2D, images: MaterialImages, layer: number, angle: number): CanvasPattern | undefined {
@@ -477,13 +486,15 @@ function roofGrainPattern(ctx: CanvasRenderingContext2D, images: MaterialImages,
   pattern.setTransform(new DOMMatrix().rotate(angle * 180 / Math.PI).scale(s, s)); return pattern;
 }
 /** Same massing faces and shared tint as the GPU path, with optional material grain. */
-function drawPlanRoofs(ctx: CanvasRenderingContext2D, b: CityBuildings, o: CityDrawOptions, images?: MaterialImages): void {
+function drawPlanRoofs(ctx: CanvasRenderingContext2D, b: CityBuildings, o: CityDrawOptions, images?: MaterialImages, flatsOnly = false): void {
   const roofs = b.roofs!;
   let index = roofIndex.get(roofs);
   if (!index) { const byOwner: number[][] = b.items.map(() => []); roofs.owner.forEach((ow, k) => byOwner[ow]?.push(k)); roofIndex.set(roofs, index = { byOwner, paths: [] }); }
   for (const i of b.bins.query(o.viewport)) for (const k of index.byOwner[i] ?? []) {
+    if (flatsOnly && !roofs.flat?.[k]) continue;
     const path = index.paths[k] ??= shapePath(roofs.shapes[k]);
-    ctx.fillStyle = o.appearance.diagnostic === 'none' && o.colors?.building || planRoofColor(b.items[i], roofs, k, o.palette); ctx.fill(path);
+    const custom = o.appearance.diagnostic === 'none' && o.colors?.building;
+    ctx.fillStyle = custom ? planShade(custom, roofs.flat?.[k] ? roofs.light[k] * roofRelief(o.palette, roofs.flat[k] === 2) : 0) : planRoofColor(b.items[i], roofs, k, o.palette); ctx.fill(path);
     const layer = coverLayer(roofs.cover[k]), grain = images && layer >= 0 ? roofGrainPattern(ctx, images, layer, (roofs.dir[k] ?? 0) - Math.PI / 2) : undefined;
     if (grain) { ctx.save(); ctx.globalCompositeOperation = 'soft-light'; ctx.fillStyle = grain; ctx.fill(path); ctx.restore(); }
     if (o.lod === 'close') { ctx.strokeStyle = o.palette === 'parchment' ? 'rgba(63,47,31,0.35)' : 'rgba(31,24,17,0.5)'; ctx.lineWidth = (o.palette === 'parchment' ? 0.3 : 0.5) * o.mpp; ctx.stroke(path); }
@@ -554,7 +565,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
     batch.flush(ctx);
     // Parcels: cadastral detail from near; uses and roles from mid.
     const parcelLevel = view === 'uses' || view === 'roles' ? 'mid' : 'near';
-    if (atLeast(lod, parcelLevel) && view !== 'tissue') for (const i of scene.bins.parcels.query(viewport)) {
+    if (layers.parcelOverlay !== false && atLeast(lod, parcelLevel) && view !== 'tissue') for (const i of scene.bins.parcels.query(viewport)) {
       const p = scene.parcels[i], use = p.use;
       const built = ['plot', 'compound', 'residual', 'court'].includes(use), open = ['place', 'market', 'common'].includes(use);
       if (!(built && layers.parcels || use === 'garden' && layers.gardens || open && layers.places || use === 'reserve' && layers.domains)) continue;
@@ -587,7 +598,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
     batch.flush(ctx);
   }
 
-  if (o.readableGardens && (lod === 'near' || lod === 'close') && view !== 'tissue') {
+  if (layers.parcelOverlay !== false && o.readableGardens && (lod === 'near' || lod === 'close') && view !== 'tissue') {
     for (const i of scene.bins.parcels.query(viewport)) {
       const garden = scene.parcels[i];
       if (garden.use !== 'garden') continue;
@@ -698,7 +709,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
     casing.flush(ctx); under.flush(ctx); surface.flush(ctx); marks2.flush(ctx); over.flush(ctx); marks.flush(ctx);
   }
 
-  if (layers.lotEnclosures !== false) drawLotEnclosures(ctx, scene, { mpp, lod, palette, groundOnly: layers.lotEnclosureMeshes }); // enclosures hook
+  if (layers.parcelOverlay !== false && layers.lotEnclosures !== false) drawLotEnclosures(ctx, scene, { mpp, lod, palette, groundOnly: layers.lotEnclosureMeshes }); // enclosures hook
 
   // Walls: thick line broken at gates, gate and wall towers.
   if (layers.enclosures) {
@@ -730,6 +741,17 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
       stats.pending = o.renderer.draw(ctx, { viewport, metresPerPixel: mpp, appearance: o.appearance, selectedId: o.selectedBuilding }).rasterTilesPending > 0;
     } else {
       const edge = footprint || lod === 'close' ? { stroke: colors?.buildingEdge ?? (parchment ? '#f1e5c6' : '#2e261d'), width: px(parchment ? 0.3 : 0.5) } : {};
+      const roofs = o.buildings.roofs;
+      if (roofs && view === 'buildings' && o.appearance.diagnostic !== 'uses') {
+        let paths = roofShadowPaths.get(roofs);
+        if (!paths) roofShadowPaths.set(roofs, paths = []);
+        ctx.fillStyle = parchment ? 'rgba(70,52,32,0.2)' : 'rgba(22,18,10,0.3)';
+        for (const i of o.buildings.bins.query(viewport)) if (o.buildings.items[i].flat) {
+          let path = paths[i];
+          if (!path) { path = paths[i] = new Path2D(); for (const s of roofs.shadows[i] ?? []) path.addPath(shapePath(s)); }
+          ctx.fill(path);
+        }
+      }
       for (const i of o.buildings.bins.query(viewport)) {
         const b = o.buildings.items[i]; stats.buildings++;
         const tint = planBuildingColors(b, palette);
@@ -743,7 +765,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
         }
       }
       batch.flush(ctx);
-      if (!footprint && o.buildings.roofs && view === 'buildings' && o.appearance.diagnostic !== 'uses') drawPlanRoofs(ctx, o.buildings, o, tex);
+      if (o.buildings.roofs && view === 'buildings' && o.appearance.diagnostic !== 'uses') drawPlanRoofs(ctx, o.buildings, o, tex, footprint);
       const selected = o.selectedBuilding === undefined ? undefined : o.buildings.byId.get(o.selectedBuilding);
       const selectedPath = selected === undefined ? undefined : footprint ? o.buildings.items[selected].footprintPath : o.buildings.items[selected].path;
       if (selectedPath) { ctx.strokeStyle = '#197ea4'; ctx.lineWidth = px(2); ctx.stroke(selectedPath); }
@@ -769,7 +791,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
   // Diagnostics of the plan.
   if (atLeast(lod, 'near')) {
     const access: Record<string, string> = { public: '#26815d', collective: '#456fba', private: '#aa6dad', unserved: '#cc383c', reserved: '#81725b', attached: '#91a36d' };
-    if (layers.fronts || layers.axes || layers.access) for (const i of scene.bins.parcels.query(viewport)) {
+    if (layers.parcelOverlay !== false && (layers.fronts || layers.axes || layers.access)) for (const i of scene.bins.parcels.query(viewport)) {
       const p = scene.parcels[i], parcel = p.source;
       if (layers.fronts && parcel.front) batch.add({ stroke: '#a92d34', width: lineW * 2 }, linePath(parcel.front));
       if (layers.access && parcel.access) { const c = access[parcel.access.kind]; batch.add({ fill: c, alpha: 0.25 }, pathOf(p)); batch.add({ stroke: c, width: lineW * 1.5 }, pathOf(p)); }
@@ -777,7 +799,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
         const c = centroid([parcel.shape]); if (c) batch.add({ stroke: '#396781', width: lineW }, linePath([{ x: c.x - parcel.axis.x * 4, y: c.y - parcel.axis.y * 4 }, { x: c.x + parcel.axis.x * 4, y: c.y + parcel.axis.y * 4 }]));
       }
     }
-    if (o.refusedParcels?.size) for (const i of scene.bins.parcels.query(viewport)) {
+    if (layers.parcelOverlay !== false && o.refusedParcels?.size) for (const i of scene.bins.parcels.query(viewport)) {
       const p = scene.parcels[i]; if (p.id && o.refusedParcels.has(p.id)) batch.add({ stroke: urbanFunctionColor('refusal'), width: px(1.8), dash: [px(4), px(2)] }, pathOf(p));
     }
   }

@@ -142,10 +142,11 @@ export function forestOccupation(landuse: LandUseLayer, maxN = 1536, minCell = 2
     for (let i = from; i < to; i++) if (!cls[i] || forest[i]) { cls[i] = CLEARING; open[i] = 1; forest[i] = 0; }
   });
   for (const ring of farmClearings(landuse)) clearing([ring]);
-  for (const c of corridors) {
-    const ribbon = offsetRibbon(c.path, typeof c.half === 'number' ? 2 * c.half : c.half.map(h => 2 * h));
-    if (ribbon.length > 2) clearing([ribbon]);
-  }
+  // Corridors are distance fields, not rasterized ribbons: a road a few texels wide filled cell by cell left a
+  // staircase edge in the ground and the crowns. Each texel keeps its exact signed distance (texels, positive
+  // inside) to the nearest corridor capsule; it is merged into the open/forest fields below.
+  const corridor = corridorDistance(corridors, x, y, cell, n);
+  if (corridor) for (let i = 0; i < n * n; i++) if (corridor[i] > 0 && (!cls[i] || forest[i])) cls[i] = CLEARING;
   // A 12 m lane can be thinner than a texel on a large map. Keep every crossed
   // cell open, as for thin building walls, rather than dropping the whole lane.
   for (const path of landuse.ways ?? []) for (let i = 1; i < path.length; i++) {
@@ -153,6 +154,14 @@ export function forestOccupation(landuse: LandUseLayer, maxN = 1536, minCell = 2
       { x: path[i].x - x, y: path[i].y - y }, at => { cls[at] = CLEARANCE; open[at] = 1; forest[at] = 0; });
   }
   const dOpen = signedDistance(open, n), dForest = signedDistance(forest, n);
+  // Union with the corridors: open grows to max(open, corridor), forest shrinks to min(forest, -corridor).
+  // Every ground a corridor crosses is open afterwards (fields and plots already were), so the union is exact.
+  if (corridor) for (let i = 0; i < n * n; i++) {
+    const d = corridor[i]; if (d <= -RANGE) continue;
+    if (d > dOpen[i]) dOpen[i] = d;
+    if (-d < dForest[i]) dForest[i] = -d;
+    if (d > 0) { open[i] = 1; forest[i] = 0; }
+  }
   const rgba = new Uint8Array(n * n * 4);
   const enc = (d: number): number => Math.max(0, Math.min(255, Math.round(128 + 16 * d)));
   for (let i = 0, o = 0; i < n * n; i++, o += 4) {
@@ -161,6 +170,28 @@ export function forestOccupation(landuse: LandUseLayer, maxN = 1536, minCell = 2
   let hash = 0x811c9dc5;
   for (const word of new Uint32Array(rgba.buffer)) hash = Math.imul(hash ^ word, 0x01000193);
   return { x, y, width: n * cell, n, rgba, key: `occ:${x}:${y}:${n * cell}:${n}:${(hash >>> 0).toString(36)}` };
+}
+
+/** Signed distance (texels, positive inside) of each texel centre to the union of the corridor capsules, with the
+ * half width interpolated along each segment; -RANGE (saturated) beyond reach. Undefined without corridors. */
+function corridorDistance(corridors: readonly ForestCorridor[], x0: number, y0: number, cell: number, n: number): Float32Array | undefined {
+  if (!corridors.length) return undefined;
+  const out = new Float32Array(n * n).fill(-RANGE), reach = RANGE * cell;
+  for (const c of corridors) for (let k = 1; k < c.path.length; k++) {
+    const a = c.path[k - 1], b = c.path[k], ha = typeof c.half === 'number' ? c.half : c.half[k - 1], hb = typeof c.half === 'number' ? c.half : c.half[k];
+    const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy, r = Math.max(ha, hb) + reach;
+    const i0 = Math.max(0, Math.floor((Math.min(a.x, b.x) - r - x0) / cell)), i1 = Math.min(n - 1, Math.ceil((Math.max(a.x, b.x) + r - x0) / cell));
+    const j0 = Math.max(0, Math.floor((Math.min(a.y, b.y) - r - y0) / cell)), j1 = Math.min(n - 1, Math.ceil((Math.max(a.y, b.y) + r - y0) / cell));
+    for (let j = j0; j <= j1; j++) {
+      const py = y0 + (j + .5) * cell - a.y;
+      for (let i = i0; i <= i1; i++) {
+        const px = x0 + (i + .5) * cell - a.x, t = l2 > 0 ? Math.max(0, Math.min(1, (px * dx + py * dy) / l2)) : 0;
+        const d = (ha + (hb - ha) * t - Math.hypot(px - t * dx, py - t * dy)) / cell, at = j * n + i;
+        if (d > out[at]) out[at] = d;
+      }
+    }
+  }
+  return out;
 }
 
 /** Even-odd scanline fill of texel centres inside the rings, as [from, to) index spans. */

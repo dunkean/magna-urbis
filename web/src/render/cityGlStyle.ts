@@ -12,7 +12,7 @@ import { urbanFunctionColor } from './urbanBuildingStyle';
 import type { CityGlFillMesh } from './cityGlBuild';
 import type { RenderColors } from './customColors';
 import { MATERIALS, coverLayer, placeLayer, streetLayer } from './buildingMaterials';
-import { planBuildingColors, planRoofColor, planShade } from './cityBuildingPalette';
+import { planBuildingColors, planRoofColor, planShade, roofRelief } from './cityBuildingPalette';
 import { funeraryLandFill } from './cityRoles';
 
 export interface CityGlStyleState {
@@ -166,7 +166,7 @@ export function planColors(scene: CityScene, mesh: Pick<CityGlFillMesh, 'layers'
   });
   // Parcels.
   const p0 = mesh.layers.parcels.features[0], parcelLevel: CityLod = view === 'uses' || view === 'roles' ? 'mid' : 'near';
-  if (atLeast(lod, parcelLevel) && view !== 'tissue') scene.parcels.forEach((p, i) => {
+  if (layers.parcelOverlay !== false && atLeast(lod, parcelLevel) && view !== 'tissue') scene.parcels.forEach((p, i) => {
     const use = p.use, built = BUILT.has(use), open = OPEN.has(use), f = p0 + i;
     if (!(built && layers.parcels || use === 'garden' && layers.gardens || open && layers.places || use === 'reserve' && layers.domains)) return;
     const burialFill = funeraryLandFill(p.allocation?.role);
@@ -197,7 +197,7 @@ export function planColors(scene: CityScene, mesh: Pick<CityGlFillMesh, 'layers'
     }
     draws.parcels = true;
   });
-  if (atLeast(lod, 'near') && s.refusedParcels?.size) scene.parcels.forEach((p, i) => { if (p.id && s.refusedParcels!.has(p.id)) { put(line, p0 + i, urbanFunctionColor('refusal')); draws.parcelLines = true; } });
+  if (layers.parcelOverlay !== false && atLeast(lod, 'near') && s.refusedParcels?.size) scene.parcels.forEach((p, i) => { if (p.id && s.refusedParcels!.has(p.id)) { put(line, p0 + i, urbanFunctionColor('refusal')); draws.parcelLines = true; } });
   draws.buildings = s.buildingsVisible && atLeast(lod, 'near') && (view === 'buildings' || view === 'roles');
   draws.buildingLines = draws.buildings && (lod === 'close' || (!!s.painted && lod === 'near'));
   return { fill, line, draws };
@@ -222,7 +222,9 @@ export function buildingColors(buildings: CityBuildings | undefined, s: CityGlSt
   if (roofs) {
     for (let k = 0; k < roofs.shapes.length; k++) {
       const cover = roofs.cover[k], f = items.length + k;
-      const color = diagnostic ? planShade(colors[roofs.owner[k]], roofs.light[k] * 0.5) : s.colors?.building ?? planRoofColor(items[roofs.owner[k]], roofs, k, s.palette);
+      const color = diagnostic ? planShade(colors[roofs.owner[k]], roofs.light[k] * 0.5) : s.colors?.building
+        ? planShade(s.colors.building, roofs.flat?.[k] ? roofs.light[k] * roofRelief(s.palette, roofs.flat[k] === 2) : 0)
+        : planRoofColor(items[roofs.owner[k]], roofs, k, s.palette);
       put(fill, f, color); put(line, f, planShade(color, -0.38), COVER_EDGE[cover] ?? 0.55);
     }
     // Shadow features are drawn with a tint; they only need to be shown. Parchment casts only the shadows of
