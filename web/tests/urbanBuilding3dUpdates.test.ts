@@ -9,8 +9,28 @@ import { eachBuildingTriangle } from '../src/render/urbanBuildingGeometry';
 import { UrbanBuildingPass } from '../src/ui/urbanBuilding3d';
 import { projectNativeBuildingRecords } from '../src/ui/urbanBuildingProjection';
 import { city3dProjectionScene } from '../src/render/city3dMeshes';
+import { CLIMATE_ZONE_VALUES } from '../../rust/bridge/terrainClimate';
 
 const native = reference as unknown as HouseBatch, unit = native.units[0];
+it('uses satellite ground snow on compact and projected roofs and refreshes the same scene across seasons', () => {
+  for (const projected of [false, true]) for (const textured of [false, true]) {
+    const source = plan('snow-roof', 1000);
+    const scene = projected ? city3dProjectionScene(projectNativeBuildingRecords([source])) : batch([compactBuilding(source)]);
+    const { gl } = mockGl(), pass = new UrbanBuildingPass(gl), state = pass as unknown as Internals;
+    const colors = () => state.sectors.flatMap(s => (s.cached as { batches: { color: number[]; palette?: number[][] }[] }).batches.flatMap(b => b.palette ?? [b.color]));
+    const appearance = { style: 'cartographic' as const, diagnostic: 'none' as const, textured,
+      roofSnow: { season: 0, climateZone: 'arctic' as const, climate: CLIMATE_ZONE_VALUES.arctic } };
+    pass.setScene(scene, appearance);
+    for (const sector of state.sectors) state.prepare(sector, false);
+    expect(colors().some(c => c[0] > .8 && c[1] > .8 && c[2] > .8)).toBe(true);
+    (pass as unknown as { render(frame: unknown, shown: unknown, textured: boolean): void }).render({ matrix: new Float32Array(16), cameraX: 0, cameraY: 0, targetHeight: 0, exaggeration: 1 }, state.sectors, textured);
+    expect(gl.polygonOffset).toHaveBeenCalledWith(-1, -2);
+    pass.setScene(scene, { ...appearance, roofSnow: { ...appearance.roofSnow, season: .5 } });
+    for (const sector of state.sectors) state.prepare(sector, false);
+    expect(colors().some(c => c[0] > .8 && c[1] > .8 && c[2] > .8)).toBe(false);
+    pass.dispose();
+  }
+});
 it('keeps six-digit palette colours on walls and roofs in flat/textured batches and preserves uses', () => {
   const source = plan('palette', 1000), slots = { frame: 'city3d:wall:stone@ccaa88', infill: 'city3d:wall:stone@ccaa88', coating: 'city3d:wall:stone@ccaa88', cladding: 'city3d:cover:slate@776655', base: 'city3d:wall:stone@ccaa88', roof_frame: 'city3d:wall:stone@ccaa88' };
   source.volumes = source.volumes.map(v => ({ ...v, materials: slots, levels: v.levels.map(l => ({ ...l, materials: slots })) }));

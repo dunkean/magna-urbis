@@ -2598,6 +2598,8 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
     let reserve_area = area(&dry(surface, &reserve));
     let components = allocated.len();
     let structure = UrbanStructure {
+        shanty: None,
+        spring_sites: vec![],
         gate_village_centers: vec![],
         gate_village_lanes: vec![],
         quays: vec![],

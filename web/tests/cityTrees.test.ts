@@ -26,7 +26,7 @@ describe('tree dwellings', () => {
       expect(t.height / 11.5).toBeGreaterThanOrEqual(0.75); expect(t.height / 11.5).toBeLessThanOrEqual(1.25);
       expect(t.trunkRadius / t.radius).toBeGreaterThanOrEqual(0.15); expect(t.trunkRadius / t.radius).toBeLessThanOrEqual(0.3);
       expect(treeCrownFaces(t).flat().every(p => [p.x, p.y, p.z].every(Number.isFinite))).toBe(true);
-      if (t.family === 'cluster') { expect(t.crowns.length).toBeGreaterThanOrEqual(2); expect(t.crowns.length).toBeLessThanOrEqual(4); }
+      expect(t.crowns.length).toBeGreaterThanOrEqual(6); expect(t.crowns.length).toBeLessThanOrEqual(8);   // central mass, lobe ring, lit top
     }
     const ratio = (family: string): number => { const c = trees.find(t => t.family === family)!.crowns[0]; return c.height / c.rx; };
     expect(ratio('oval')).toBeGreaterThan(ratio('umbrella') * 2);
@@ -38,13 +38,14 @@ describe('tree dwellings', () => {
     expect(buildCityBuildings({ buildings: [b] }).items[0].surface[0]).toEqual(v.shape);
     expect(surfaceArea([v.shape])).toBeGreaterThan(20);
     const crown = mesh.faces.slice(0, treeCrownFaces(v.tree!).length).map(f => f.vertices.map(i => ({ ...mesh.vertices[i], z: mesh.vertices[i].z - 2 })));
-    expect(crown).toEqual(buildingRoof(b.footprint, massing).map(f => f.points));
+    const round = (faces: { x: number; y: number; z: number }[][]) => faces.map(f => f.map(p => ({ x: +p.x.toFixed(9), y: +p.y.toFixed(9), z: +p.z.toFixed(9) })));
+    expect(round(crown)).toEqual(round(buildingRoof(b.footprint, massing).map(f => f.points)));
     expect(pieceTop(massing[0])).toBeCloseTo(Math.max(...crown.flatMap(f => f.map(p => p.z))));
     expect(rendered.volumes).toHaveLength(1);
     let triangles = 0;
     eachBuildingTriangle(rendered, f => { triangles++; expect(f.points.flat().every(Number.isFinite)).toBe(true); });
     expect(triangles).toBeGreaterThan(200);
-    expect(new Set(mesh.faces.map(f => f.material)).size).toBeLessThanOrEqual(3);
+    expect(new Set(mesh.faces.map(f => f.material)).size).toBeLessThanOrEqual(6);   // four crown tones, trunk, canopy
     expect(mesh.faces.every(f => /@[0-9a-f]{6}$/.test(f.material))).toBe(true);
   });
   it('uses the building id for older massing and preserves an explicit lot seed', () => {

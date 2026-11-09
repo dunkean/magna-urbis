@@ -22,6 +22,8 @@ mod footprint;
 mod fortification;
 mod fringe;
 mod geography;
+mod springs;
+mod shanty;
 mod lagoon;
 mod geometry;
 mod massing;
@@ -226,6 +228,12 @@ pub struct Layout {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct UrbanStructure {
+    /// Appended informal quarters, with the formal prefix boundaries retained.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shanty: Option<shanty::Extension>,
+    /// Source-bound water buildings, independent of optional service budgets.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub spring_sites: Vec<springs::SpringSite>,
     /// Gate markets retained independently of street merging and deduplication.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub gate_village_centers: Vec<Point>,
@@ -545,6 +553,8 @@ pub struct LayoutConfig {
     /// Placement context per settlement when a request contains several towns.
     pub site_archetypes: std::collections::BTreeMap<String, String>,
     pub suburbs: String,
+    /// Informal peripheral quarters: 0 disables, 1 cultural default, up to 3.
+    pub shanty_scale: f64,
     /// Zero follows the cultural population thresholds.
     pub phases: usize,
     pub culture: String,
@@ -766,6 +776,7 @@ impl Default for LayoutConfig {
             site_archetype: String::new(),
             site_archetypes: std::collections::BTreeMap::new(),
             suburbs: "auto".into(),
+            shanty_scale: 1.0,
             phases: 0,
             culture: "site".into(),
             preset: "culture".into(),
@@ -1499,6 +1510,8 @@ pub fn generate_quarters(
         || config.site_archetype.len() > 32
         || config.site_archetypes.values().any(|a| a.len() > 32)
         || !["auto", "none", "few", "many"].contains(&config.suburbs.as_str())
+        || !config.shanty_scale.is_finite()
+        || !(0.0..=3.0).contains(&config.shanty_scale)
         || config.phases > 5
         || !(3..=64).contains(&config.count)
         || !(1..=2).contains(&config.rings)
@@ -1660,6 +1673,11 @@ pub fn generate_quarters(
             macroplan::harbour::platforms(layout, surface);
             if let Some(ground) = &stilt { ground.land_links(&mut layout.streets,physical_surface); }
             lagoon::apply(layout,config,physical_surface);
+            // Reserve against the final network, after trim and water works.
+            // Recompute block indices/environments after the source-site cuts.
+            if springs::reserve(layout, site, physical_surface, config) {
+                programme::prepare(layout, site.population, &config.programme, surface)?;
+            }
             Ok(())
         };
         let plan = |config: &LayoutConfig| -> Result<Layout, String> {
@@ -1668,7 +1686,9 @@ pub fn generate_quarters(
                 ground.balance(seed, layout, physical_surface, |s| plan_at(config, s), |l| finish(l))
             } else { Ok(layout) }
         };
-        edits::with_quarter_edits(config, plan, finish)
+        let mut layout = edits::with_quarter_edits(config, plan, finish)?;
+        shanty::extend(seed, &mut layout, site, config, kind, physical_surface, roads);
+        Ok(layout)
     });
     let mut out = Vec::with_capacity(laid.len());
     for layout in laid {
@@ -1711,6 +1731,10 @@ pub fn generate_parcels(
     // Layouts are cut independently, in parallel; the first error in input
     // order wins, as in a serial loop.
     par::map(layouts, |_, layout| -> Result<Partition, String> {
+        // Cut the formal cadastre first; informal pockets use its remaining budget.
+        let full_layout = layout;
+        let formal = shanty::formal_layout(layout);
+        let layout = formal.as_ref();
         let culture = if config.culture == "site" {
             &layout.culture
         } else {
@@ -1745,6 +1769,7 @@ pub fn generate_parcels(
             partition.warnings.push("Aucune habitation : le site ou la grammaire de la culture ne laisse aucune parcelle bâtissable — essayer un autre site, un rayon plus grand ou une autre culture.".into());
         }
         partition.enclosure = Some(enclosure::resolve(culture, config));
+        shanty::allocate(full_layout, &mut partition);
         Ok(partition)
     })
     .into_iter()

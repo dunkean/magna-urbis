@@ -1,4 +1,66 @@
 {
+  "shanty": {
+    "bidonville": {
+      "label": "Quartier de baraques",
+      "covers": [
+        "thatch",
+        "thatch",
+        "shingle",
+        "felt"
+      ],
+      "walls": [
+        "earth",
+        "wattle",
+        "wood"
+      ]
+    },
+    "riverbank": {
+      "label": "Quartier des berges",
+      "covers": [
+        "reed",
+        "reed",
+        "thatch",
+        "bamboo",
+        "felt"
+      ],
+      "walls": [
+        "bamboo",
+        "wattle",
+        "wood"
+      ]
+    },
+    "gecekondu": {
+      "label": "Gecekondu",
+      "covers": [
+        "tile",
+        "tile",
+        "earth",
+        "shingle",
+        "felt"
+      ],
+      "walls": [
+        "earth",
+        "brick",
+        "wood"
+      ]
+    },
+    "scrap": {
+      "label": "Quartier de recuperation",
+      "covers": [
+        "metal",
+        "metal",
+        "hide",
+        "thatch",
+        "felt"
+      ],
+      "walls": [
+        "wood",
+        "wattle",
+        "earth"
+      ],
+      "siting": "bidonville"
+    }
+  },
   "farmstead": {
     "version": 2,
     "default": "european-organic",
@@ -127852,6 +127914,7 @@
       "growth": null
     },
     "medina": {
+      "shanty": "bidonville",
       "label": "Medina (North Africa)",
       "districts": {
         "unit": "hawma",
@@ -127966,6 +128029,7 @@
       "growth": null
     },
     "chinese": {
+      "shanty": "riverbank",
       "label": "Chinese walled city",
       "districts": {
         "unit": "fang",
@@ -128095,6 +128159,7 @@
       "growth": null
     },
     "japanese-jokamachi": {
+      "shanty": "riverbank",
       "label": "Japanese castle town (jōkamachi)",
       "districts": {
         "unit": "chō",
@@ -128199,6 +128264,7 @@
       "growth": null
     },
     "indian-temple": {
+      "shanty": "riverbank",
       "label": "Indian temple town",
       "recipes": [
         {
@@ -128853,6 +128919,7 @@
       "growth": null
     },
     "aztec": {
+      "shanty": "riverbank",
       "label": "Aztec city (Tenochtitlan)",
       "districts": {
         "unit": "calpulli",
@@ -128972,6 +129039,7 @@
       "growth": null
     },
     "inca": {
+      "shanty": "gecekondu",
       "label": "Inca city (Cusco)",
       "recipes": [
         {
@@ -129083,6 +129151,7 @@
       "growth": null
     },
     "byzantine-greek": {
+      "shanty": "gecekondu",
       "label": "Byzantine hill town (Mystras)",
       "districts": {
         "unit": "paroisse",
@@ -129192,6 +129261,7 @@
       "growth": null
     },
     "venetian-lagoon": {
+      "shanty": "riverbank",
       "label": "Venetian lagoon town",
       "recipes": [
         {
@@ -129304,6 +129374,7 @@
       "growth": null
     },
     "persian": {
+      "shanty": "gecekondu",
       "label": "Persian city (Isfahan)",
       "districts": {
         "unit": "mahalla",
@@ -129420,6 +129491,7 @@
       "growth": null
     },
     "ottoman": {
+      "shanty": "gecekondu",
       "label": "Ottoman town (Bursa)",
       "districts": {
         "unit": "mahalle",
@@ -129524,6 +129596,7 @@
       "growth": null
     },
     "sahel": {
+      "shanty": "bidonville",
       "label": "Sahelian mud town (Djenne)",
       "recipes": [
         {
@@ -129746,6 +129819,7 @@
       "growth": null
     },
     "korean": {
+      "shanty": "riverbank",
       "label": "Korean walled town (Hanyang)",
       "recipes": [
         {
@@ -130838,6 +130912,7 @@
       "growth": null
     },
     "khmer": {
+      "shanty": "riverbank",
       "label": "Khmer city (Angkor)",
       "recipes": [
         {
@@ -131069,6 +131144,7 @@
       }
     },
     "orcish": {
+      "shanty": "scrap",
       "label": "Orcish war camp",
       "recipes": [
         {
@@ -135258,6 +135334,7 @@
       "scope": "Settlement patterns only; numerical ranges are artistic, not measured reconstructions."
     },
     "vietnamese-citadel": {
+      "shanty": "riverbank",
       "label": "Viêt · citadelle et quartier marchand (Thăng Long)",
       "recipes": [
         {
@@ -136527,6 +136604,7 @@
       "scope": "Fantasy settlement built on the cited real morphologies; numerical ranges are artistic."
     },
     "goblin-warren": {
+      "shanty": "scrap",
       "label": "Gobelins · terrier à flanc de colline",
       "recipes": [
         {

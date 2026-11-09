@@ -98,7 +98,8 @@ export interface V2Settings {
   urban?: V2UrbanSettings;
   appearance?: V2Appearance;
   /** Cartographic names can be edited without regenerating terrain or buildings. */
-  naming?: { title?: string; places?: Record<string, string>; mode?: 'cultural' | 'localized'; displayLanguage?: 'fr' | 'en' | 'ja' | 'ar' | 'es' | 'pt' | 'zh' };
+  naming?: { title?: string; places?: Record<string, string>; mode?: 'cultural' | 'localized'; displayLanguage?: 'fr' | 'en' | 'ja' | 'ar' | 'es' | 'pt' | 'zh';
+    labels?: Record<string, import('./mapLabels').LabelEdit> };
   runtime?: {
     compute: 'auto' | 'cpu' | 'gpu';
     backend: 'typescript' | 'rust' | 'native';

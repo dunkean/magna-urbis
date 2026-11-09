@@ -155,6 +155,10 @@ fn log_weight(w: f64) -> f64 {
 fn rural_flexibility(pop: u32) -> f64 {
     1.0 - smooth((pop.max(1) as f64).ln(), 80.0_f64.ln(), 1000.0_f64.ln())
 }
+fn raw_grade_limit(s: &SettlementSpec, prep: &SitePrep) -> f64 {
+    0.16 + 0.25 * prep.mountain + 0.08 * s.site_prefs.woodland
+        + 0.24 * rural_flexibility(s.population)
+}
 fn score(f: &Fields, i: usize, s: &SettlementSpec, prep: &SitePrep, cfg: &Config, noise: &Noise) -> (Scores, bool) {
     let pop = s.population;
     let p = f.pos(i);
@@ -165,7 +169,7 @@ fn score(f: &Fields, i: usize, s: &SettlementSpec, prep: &SitePrep, cfg: &Config
     let wood = prefs.woodland;
     let rural = rural_flexibility(pop);
     let cap_s = 0.11 + 0.18 * mountain + 0.06 * wood + 0.18 * rural;
-    let cap_r = 0.16 + 0.25 * mountain + 0.08 * wood + 0.24 * rural;
+    let cap_r = raw_grade_limit(s, prep);
     let bf = f.fraction(p, (0.8 * ext).max(f.cell));
     let dw = f.dw[i];
     let sl = f.slope_s[i] as f64;
@@ -539,18 +543,36 @@ pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
                     }
                 }
             }
-            // No land meets the slope and buildable limits of this class: the
-            // settlement still goes on the best-ranked free dry land, said so,
-            // rather than vanishing from the map.
+            // Relax town-scale preferences, never the need for usable ground.
+            // Scenic bonuses (especially river access) must not put the nucleus
+            // on a steep bank while a smaller buildable shelf is available.
+            // Rank by usable land independently of the user's scoring weights;
+            // retain the ordinary ranking only to break equal-area ties.
             if chosen.is_none() {
                 let relax = *relaxations.last().unwrap_or(&1.0);
-                if let Some((rank, &(i, ranking_score))) = ranked
+                if let Some((rank, &(i, ranking_score), _, _)) = ranked
                     .iter()
                     .enumerate()
-                    .find(|(_, (i, _))| f.r.water[*i] == 0 && clear(f.pos(*i), relax))
+                    .filter_map(|(rank, entry @ &(i, _))| {
+                        if f.r.water[i] != 0 || !clear(f.pos(i), relax)
+                            || f.slope[i] as f64 > raw_grade_limit(&s, &prep)
+                            || f.hab[i] < 1.0
+                        {
+                            return None;
+                        }
+                        let usable = f.fraction(f.pos(i), (0.8 * ext).max(f.cell));
+                        // Equal town-scale areas often include both the interior
+                        // and the map/shelf edge. A nucleus needs a local block
+                        // of land too, not just distant usable samples.
+                        let core = f.fraction(f.pos(i), (0.2 * ext).max(f.cell));
+                        (usable > 0.0).then_some((rank, entry, usable, core))
+                    })
+                    .max_by(|a, b| a.2.total_cmp(&b.2)
+                        .then_with(|| a.3.total_cmp(&b.3))
+                        .then_with(|| b.0.cmp(&a.0)))
                 {
                     out.warnings.push(format!(
-                        "{} ({} inhabitants): no site meets the slope and buildable-land limits; the best available land is used",
+                        "{} ({} inhabitants): no site meets the town-scale limits; the largest available buildable shelf is used",
                         s.key, pop
                     ));
                     chosen = Some((i, f.pos(i), relax));

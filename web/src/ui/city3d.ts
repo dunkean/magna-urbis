@@ -1,4 +1,5 @@
 import { drawTileRoads, tileRoadVisible, cityTileHasInk } from '../render/tileNetworks';
+import { outsideUrbanStreets } from '../../../rust/bridge/urbanNetwork';
 import type { RoadInk } from '../render/roadStyle';
 import { mountTextOverlay3d } from './textOverlay3d';
 import { mountLegendOverlay3d } from './legendOverlay3d';
@@ -9,6 +10,7 @@ import { CityGround } from '../render/cityGround';
 import { updateYardEnclosures } from '../render/cityLotEnclosures';
 import { city3dLotEnclosures } from '../render/city3dMeshes';
 import { city3dBoardwalks } from '../render/city3dBoardwalks';
+import { city3dCanopy, cityCanopy } from '../render/cityGrove';
 import { city3dQuays, city3dWaterways } from '../render/city3dQuays';
 import { bridgeWaterHeight, cityBridgeStreets } from '../render/cityBridges';
 /** City Bench 3D view. Reuses the Terrain Bench engine (Terrain3d: quadtree
@@ -267,6 +269,7 @@ export function mountCity3d(options: City3dOptions): City3d {
   let quayCount = 0;
   let wallStats: City3dWallStats = { count: 0, pieces: 0, triangles: 0, ms: 0 };
   let structureInputs: unknown[] = [], structureBuildings: Building3dVisual[] = [];
+  let canopyInputs: unknown[] = [], canopyBuildings: Building3dVisual[] = [];
   let yardInputs: unknown[] = [];
   const realized = new WeakSet<Building3dVisual>();
   let displayIndex = new Map<string, number>(), indexOf: unknown;
@@ -355,6 +358,9 @@ export function mountCity3d(options: City3dOptions): City3d {
     ctx.putImageData(pixels, 0, 0); return c;
   }
   function waterPath(d: Decor): Path2D | undefined {
+    // Retained banks already include rivers and lakes, rounded for display. Adding
+    // the planning polygons again restores their unsmoothed grid corners.
+    if (vectorRivers()) return;
     const polygons = d.raster.geometry?.water; if (!polygons?.length) return undefined;
     const path = new Path2D();
     for (const polygon of polygons) for (const ring of polygon) { if (ring.length < 3) continue; path.moveTo(ring[0].x, ring[0].y); for (let i = 1; i < ring.length; i++) path.lineTo(ring[i].x, ring[i].y); path.closePath(); }
@@ -437,13 +443,21 @@ export function mountCity3d(options: City3dOptions): City3d {
   }
   function waterTile(tile: Terrain3dTile): Terrain3dTileContent['water'] {
     const display=currentWaterDisplay();if(!display)return;
-    const n=Math.min(256,tile.pixels),width=surfaceDecor!.raster.width,k=n/tile.width,source=display.texture;
+    // A halo lets optical-depth taps cross tile borders without inventing banks there.
+    const pixels = tile.pixels, pad = Math.ceil(128 * pixels / tile.width), n = Math.min(1024, pixels + 2 * pad);
+    const extent = { ...tile, x: tile.x - pad * tile.width / pixels, y: tile.y - pad * tile.width / pixels, width: tile.width * (pixels + 2 * pad) / pixels };
+    const width=surfaceDecor!.raster.width,k=n/extent.width,source=display.texture;
     waterTileScratch.width=waterTileScratch.height=n;const ctx=waterTileScratch.getContext('2d',{willReadFrequently:true})!;
-    const scale=source.width/width;ctx.drawImage(source,tile.x*scale,tile.y*scale,tile.width*scale,tile.width*scale,0,0,n,n);
-    if(display.paths){ctx.setTransform(k,0,0,k,-tile.x*k,-tile.y*k);ctx.fillStyle='#fff';ctx.fill(display.paths,'evenodd');}
-    ctx.setTransform(1,0,0,1,0,0);fillRetainedWater(ctx,tile,k,'#fff');
-    const pixels=ctx.getImageData(0,0,n,n).data,alpha=new Uint8Array(n*n);for(let i=0;i<alpha.length;i++)alpha[i]=pixels[i*4+3];
-    return {x:tile.x,y:tile.y,width:tile.width,n,alpha};
+    const scale=source.width/width;ctx.drawImage(source,extent.x*scale,extent.y*scale,extent.width*scale,extent.width*scale,0,0,n,n);
+    if(display.paths){ctx.setTransform(k,0,0,k,-extent.x*k,-extent.y*k);ctx.fillStyle='#fff';ctx.fill(display.paths,'evenodd');}
+    ctx.setTransform(1,0,0,1,0,0);fillRetainedWater(ctx,extent,k,'#fff');
+    // Full beds clear vegetation too; their flat silt colour is painted on the final overlay.
+    if (proceduralGround && retainedWater) {
+      ctx.setTransform(k,0,0,k,-extent.x*k,-extent.y*k); ctx.fillStyle='#fff';
+      for (const item of retainedWater.paths) ctx.fill(item.path,item.rule);
+    }
+    const data=ctx.getImageData(0,0,n,n).data,alpha=new Uint8Array(n*n);for(let i=0;i<alpha.length;i++)alpha[i]=data[i*4+3];
+    return {x:extent.x,y:extent.y,width:extent.width,n,alpha};
   }
   let semanticScratch: HTMLCanvasElement | undefined;
   function semanticLayer(tile: Terrain3dTile, paint: (ctx: CanvasRenderingContext2D) => boolean): HTMLCanvasElement | undefined {
@@ -548,7 +562,7 @@ export function mountCity3d(options: City3dOptions): City3d {
       if(!groundTile){groundTile=document.createElement('canvas');groundTile.width=groundTile.height=size;}
       return groundTile.getContext('2d')!;
     };
-    const roads = planOverlay ? options.getRegionalStreets?.()?.filter(road => tileRoadVisible(road, box, mpp)) : undefined;
+    const roads = planOverlay ? groundRegionalStreets().filter(road => tileRoadVisible(road, box, mpp)) : undefined;
     const planOptions = options.getPlanOptions?.();
     if (roads?.length) {
       const roadLook=planOptions?.roadLook??(planOptions?.groundBlend?'natural':'ink');
@@ -614,9 +628,20 @@ export function mountCity3d(options: City3dOptions): City3d {
     // The same on the retained banks (City Bench): the cover above holds only their running water.
     if (retainedWater?.regime && waterVisible) {
       if (look?.waterLook === 'ink') fillRetainedWater(inkContext(), tile, k, retainedWater.color, 'symbols');
-      else { fillRetainedWater(groundContext(), tile, k, retainedWater.color, 'ground'); if (retainedWater.regime.frozen) fillRetainedWater(inkContext(), tile, k, retainedWater.color, 'ice'); }
+      else { fillRetainedWater(inkContext(), tile, k, retainedWater.color, 'symbols'); if (retainedWater.regime.frozen) fillRetainedWater(inkContext(), tile, k, retainedWater.color, 'ice'); }
     }
-    return overlay||groundTile ? { texture: c, semantic: overlay, ground: groundTile } : c;
+    return { texture: c, semantic: overlay, ground: groundTile, water: waterTile(tile) };
+  }
+  let groundRoadSource: readonly Street[] | undefined, groundRoadLayouts: readonly Layout[] | undefined, groundRoads: Street[] = [];
+  function groundRegionalStreets(): Street[] {
+    const roads = options.getRegionalStreets?.(), layouts = options.getLayouts?.();
+    if (roads !== groundRoadSource || layouts !== groundRoadLayouts) {
+      groundRoadSource = roads; groundRoadLayouts = layouts;
+      // Use the same ownership as the 2D road layer. Camp entrances replace
+      // destination routes inside the camp; the raw regional span stays outside.
+      groundRoads = outsideUrbanStreets([...(roads ?? [])], [...(layouts ?? [])]);
+    }
+    return groundRoads;
   }
   function cityPlan(): CityScene | undefined {
     const layouts = options.getLayouts?.(), partitions = options.getPartitions?.();
@@ -667,14 +692,19 @@ export function mountCity3d(options: City3dOptions): City3d {
       if (yardPlan && sharedYards) yardPlan.lotEnclosures = sharedYards as import('../../../rust/bridge/urban').LotEnclosure[];
       else if (yardPlan && scene) updateYardEnclosures(yardPlan, scene.buildings, () => scene.buildings);
       const yardMeshes = yardPlan ? city3dLotEnclosures(yardPlan.lotEnclosures ?? [], heightAt, options.getPlanOptions?.()?.palette) : [];
-      const extra = [...structureBuildings, ...yardMeshes];
+      // Town grove, tree platforms and their walkways (cityCanopy.ts): the same derivation as the 2D plan.
+      const canopySource = scene && !('projection' in scene) ? scene.buildings : undefined, nextCanopyInputs = [layouts, canopySource, heightAt];
+      if (nextCanopyInputs.some((input, i) => input !== canopyInputs[i])) { canopyInputs = nextCanopyInputs; canopyBuildings = city3dCanopy(cityCanopy(layouts, canopySource), heightAt); }
+      const extra = [...structureBuildings, ...yardMeshes, ...canopyBuildings];
       if (extra.length) display = display ? { ...display, buildings: [...display.buildings, ...extra],
         ...(display.occupationBuildings ? { occupationBuildings: [...display.occupationBuildings, ...extra] } : {}) }
         : { materials: city3dScene({ schema_version: '1', generator_version: '', buildings: [], refusals: [], open_spaces: [] }).materials, buildings: extra, kinds: { silhouette: 0, compact: 0, detailed: 0 } };
       displayMs = performance.now() - started;
     }
     const appearance = options.getBuildingAppearance?.(), diagnostic = colors === 'uses' ? 'uses' : appearance?.diagnostic === 'uses' ? 'none' : appearance?.diagnostic ?? 'none';
-    t.setBuildings(display, { ambience: appearance?.ambience, colors: appearance?.colors, style: appearance?.style ?? 'cartographic', diagnostic, textured: textured() && diagnostic !== 'uses' && diagnostic !== 'height' }, options.getBuildingsVisible?.() ?? true);
+    const snowGround = options.getGroundSettings?.(ground);
+    const roofSnow = snowGround?.renderV2 === 1 ? { season: snowGround.v2Season ?? .5, climateZone: snowGround.climateZone, climate: snowGround.climate, calendar: snowGround.v2Calendar } : undefined;
+    t.setBuildings(display, { ambience: appearance?.ambience, colors: appearance?.colors, style: appearance?.style ?? 'cartographic', diagnostic, roofSnow, textured: textured() && diagnostic !== 'uses' && diagnostic !== 'height' }, options.getBuildingsVisible?.() ?? true);
     ($('[data-detail]') as HTMLButtonElement).disabled = !display?.kinds.compact || !!scene && 'projection' in scene && (!options.details || scene.projection === 'native-parent-window-3d-1');
     if (options.details) { applyServiceDetails(); driveDetails(); }
     placeMarker(); updateInfo();
@@ -885,7 +915,10 @@ export function mountCity3d(options: City3dOptions): City3d {
     syncBuildings(); lap('buildings'); syncText();
     if (!focused) {
       focused = true;
-      const extent = plan?.extent, box = display?.buildings.length ? display.buildings.reduce((b, x) => { const p = center(x); return { minX: Math.min(b.minX, p.x), minY: Math.min(b.minY, p.y), maxX: Math.max(b.maxX, p.x), maxY: Math.max(b.maxY, p.y) }; }, { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }) : extent;
+      // Regional bridges and long enclosure meshes must not pull the target
+      // away from the occupied village. Frame the retained architecture itself.
+      const extent = plan?.extent, points = sceneOf?.buildings.flatMap(b => b.footprint.flatMap(s => s.outer));
+      const box = points?.length ? points.reduce((b, p) => ({ minX: Math.min(b.minX, p.x), minY: Math.min(b.minY, p.y), maxX: Math.max(b.maxX, p.x), maxY: Math.max(b.maxY, p.y) }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }) : extent;
       if (box && Number.isFinite(box.minX)) api.focus({ x: (box.minX + box.maxX) / 2, y: (box.minY + box.maxY) / 2 }, Math.max(box.maxX - box.minX, box.maxY - box.minY) / 2);
       else t.fit();
     }

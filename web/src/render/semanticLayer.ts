@@ -13,7 +13,7 @@ export interface SemanticBox { minX: number; minY: number; maxX: number; maxY: n
 export interface SemanticDrawOptions {
   look: SemanticLook; /** 0–1 */ opacity: number; /** World units per screen pixel of the context's current transform: outlines keep a constant screen width. */ mpp: number; viewport: SemanticBox;
 }
-export interface RuralSemanticOptions extends SemanticDrawOptions { classes: Readonly<Record<LandKind, boolean>>; indexed?: boolean }
+export interface RuralSemanticOptions extends SemanticDrawOptions { classes: Readonly<Record<LandKind, boolean>>; indexed?: boolean; patterns?: boolean; fieldStrips?: boolean }
 
 export interface SemanticClass { color: string; label: string; pattern: SemanticPatternId; /** Border dash, screen pixels. */ dash: readonly number[] }
 /** One stable colour, pattern and border dash per rural class (greyscale-readable); independent of the ground palette. Also the legend. */
@@ -31,6 +31,7 @@ const RURAL_ORDER: readonly LandKind[] = ['commons', 'pasture', 'meadow', 'marsh
 
 /** English names of the district roles for the legend (the role ids and colours come from cityCanvas). */
 const URBAN_LABELS_EN: Readonly<Record<string, string>> = {
+  shanty: 'Informal quarter',
   civic: 'Civic district', market: 'Market district', religious: 'Religious district', craft: 'Craft district', port: 'Port district', elite: 'Notables district',
   commoner: 'Commoner district', poor: 'Poor district', garrison: 'Garrison district', gardens: 'Gardens district', foreign: 'Foreign quarter',
 };
@@ -114,7 +115,7 @@ function paintBatch(ctx: CanvasRenderingContext2D, path: Path2D, area: SemanticB
 }
 
 // ---------------------------------------------------------------- rural
-interface RuralGeometry { boxes: SemanticBox[]; paths: (Path2D | undefined)[]; bins?: SpatialBins }
+interface RuralGeometry { boxes: SemanticBox[]; paths: (Path2D | undefined)[]; stripPaths: (Path2D | undefined)[]; bins?: SpatialBins }
 /** Boxes once per land-use product, Path2D lazily per area: a frame never rebuilds geometry. */
 const RURAL_GEOMETRY = new WeakMap<LandUseLayer, RuralGeometry>();
 function ruralGeometry(landuse: LandUseLayer): RuralGeometry {
@@ -125,7 +126,7 @@ function ruralGeometry(landuse: LandUseLayer): RuralGeometry {
       for (const p of area.poly) { if (p.x < box.minX) box.minX = p.x; if (p.x > box.maxX) box.maxX = p.x; if (p.y < box.minY) box.minY = p.y; if (p.y > box.maxY) box.maxY = p.y; }
       return box;
     });
-    RURAL_GEOMETRY.set(landuse, geometry = { boxes, paths: new Array(landuse.areas.length) });
+    RURAL_GEOMETRY.set(landuse, geometry = { boxes, paths: new Array(landuse.areas.length), stripPaths: new Array(landuse.areas.length) });
   }
   return geometry;
 }
@@ -158,12 +159,13 @@ export function drawRuralSemantic(ctx: CanvasRenderingContext2D, landuse: LandUs
     const path = new Path2D(), area = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
     for (const i of ids) {
       path.addPath(paths[i] ??= ringsPath([landuse.areas[i].poly, ...(landuse.areas[i].holes ?? [])]));
+      if (kind === 'field' && options.fieldStrips && landuse.areas[i].strips?.length) path.addPath(geometry.stripPaths[i] ??= ringsPath(landuse.areas[i].strips!));
       const box = boxes[i];
       area.minX = Math.min(area.minX, box.minX); area.minY = Math.min(area.minY, box.minY); area.maxX = Math.max(area.maxX, box.maxX); area.maxY = Math.max(area.maxY, box.maxY);
     }
     // Hatching is clipped to the shapes, so only the part of their box in view needs lines.
     const inView = { minX: Math.max(area.minX, viewport.minX), minY: Math.max(area.minY, viewport.minY), maxX: Math.min(area.maxX, viewport.maxX), maxY: Math.min(area.maxY, viewport.maxY) };
-    paintBatch(ctx, path, inView, RURAL_SEMANTIC[kind], style, options.look, mpp, true);
+    paintBatch(ctx, path, inView, RURAL_SEMANTIC[kind], style, options.look, mpp, options.patterns !== false);
   }
   return visible.size > 0;
 }

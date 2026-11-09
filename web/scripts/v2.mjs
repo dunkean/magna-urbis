@@ -6,6 +6,7 @@ import { homedir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { stageUv } from './v2_uv.mjs';
+import { buildWasmVariant } from '../../rust/scripts/wasmVariants.mjs';
 
 const web = fileURLToPath(new URL('..', import.meta.url));
 const root = resolve(web, '..'), rust = join(root, 'rust'), desktop = join(rust, 'desktop-v2');
@@ -48,6 +49,12 @@ async function prepare() {
   for (const [crate, output] of [['wasm', 'wasm'], ['houses-wasm', 'houses']]) {
     console.log(`Préparation V2 · Rust ${crate} → WASM release (${output})…`);
     await run(wasmPack, ['build', `crates/${crate}`, '--target', 'web', '--out-dir', `../../pkg/${output}`, '--release', '--no-opt'], rust);
+  }
+  // Auto mode prefers the optional threaded package. Refresh it too rather than
+  // leaving workers on an older Rust schema after updating the single package.
+  if (existsSync(join(rust, 'pkg/wasm-threads/magna_urbis_wasm.js'))) {
+    console.log('Préparation V2 · mise à jour du moteur WASM multithread existant…');
+    await buildWasmVariant('threads');
   }
   requireWasm();
   if (flags.includes('--neural')) {

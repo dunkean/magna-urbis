@@ -148,7 +148,7 @@ const PARCHMENT: Palette = {
   treeShape: 'blob',
   stripA: '#e8d9a4', stripB: '#d9c488', stripAlpha: [0.55, 0.5],
   furrow: '#8d7443', furrowAlpha: 0.6, hedge: '#5f6d3d', hedgeOn: true,
-  treeFill: '#8aa065', treeInk: '#4a5a33',
+  treeFill: '#98a57b', treeInk: '#596144',
   grass: '#5f7a3c', reed: '#4f7a72', orchardDot: '#55703a',
   roadEdge: '#4e3b28', roadFill: '#f6edd0', trackFill: '#6b5236',
   rural: { track: 0.6, way: 0.42, headland: 0.32 },
@@ -383,7 +383,7 @@ const topographic = derive('topographic', 'Topographic', {
   // Brown contours are the topographic map's main read: heavier than the land-use outlines at every zoom.
   contour: '#9a5524', contourOpacity: 0.9, contourIndexW: 2.5, contourThinW: 1.35,
   frame: '#262626', frameKind: 'ticks', accent: '#3d9ac7',
-  grid: { color: '#4b9dc9', opacity: 0.3, step: 100 },
+  grid: null,
   fontFamily: SANS,
   // Woods keep the light topographic green (not the shared dark forest tone) so the contours read through them.
   land: { field: '#f8f2cc', meadow: '#dceeb2', pasture: '#e4efbd', forest: '#bfe0a4', orchard: '#c9e3a4', garden: '#d3e8ac', marsh: '#c2e0d2', commons: '#e4efbd' },
@@ -410,13 +410,14 @@ const topographic = derive('topographic', 'Topographic', {
 /** Night: dark navy ground, dark roofs with warm deterministic lit windows, faintly lit streets, black-blue water. */
 const night = derive('night', 'Night', {
   paper: '#0c111f', ink: '#d8dcc8', inkSoft: '#8f98b4',
-  hypso: [[0, '#10182b'], [0.5, '#16203a'], [1, '#202c4a']], shade: 1.5, grain: 0,
+  hypso: [[0, '#152335'], [0.5, '#1a2a40'], [1, '#23364d']], shade: 1.1, grain: .12,
+  water: { stops: [[0, '#344d68'], [.2, '#2b435f'], [1, '#20364f']], bandFraction: .016 },
   seaFill: '#060a14', lakeFill: '#060a14', waterEdge: '#2a3b66', ripple: '#3a4f88', rippleOpacity: [0.55, 0.4, 0.3, 0.2],
   riverFill: '#060a14', riverEdge: '#2a3b66',
   waterLines: { color: '#3a4f88', opacity: 0.22, gap: 6, width: 0.3 },
   contour: '#4a5c88', contourOpacity: 0.35, contourIndexW: 1.6,
   frame: '#56679a', frameKind: 'thin', accent: '#e8b867',
-  fontFamily: SANS,
+  fontFamily: SERIF,
   land: { field: '#1a2440', meadow: '#14263a', pasture: '#172a3a', forest: '#0f2a26', orchard: '#14302a', garden: '#15302a', marsh: '#12303a', commons: '#182838' },
   landOpacity: 0.55, landBlend: 'normal',
   treeShape: 'blob',

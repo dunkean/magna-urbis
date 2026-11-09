@@ -6,28 +6,32 @@ export const DEFAULT_FANTASY_OPTIONS: FantasyOptions = { density: 1, size: 1, sp
 export const isFantasyStyle = (style: string): style is FantasyStyle => styleTraits(style).fantasy !== undefined;
 export type PaintLanduse = 'forest' | 'orchard' | 'field' | 'garden' | 'vineyard' | 'marsh' | 'meadow' | 'pasture' | 'commons';
 export const isCultivatedLanduse = (landuse?: PaintLanduse): boolean => landuse === 'field' || landuse === 'orchard' || landuse === 'garden' || landuse === 'vineyard' || landuse === 'pasture';
-export interface PaintSample { height: number; slope: number; temperature: number; rain: number; water?: boolean; occupied?: boolean; landuse?: PaintLanduse; /** Signed local prominence / sampling radius, as in Render. */ tpi?: number; relief?: number; /** Display canopy cover 0..1 (the forest field shared with the other styles); replaces the climate estimate. */ woods?: number; /** Holdings are painted edge to edge by a field wash: crop tiles become sparse accents. */ landuseDetail?: boolean; /** Inside a road/river corridor or on a farm or hamlet: no stamp anchors, the ground wash still paints. */ cleared?: boolean }
+export interface PaintSample { height: number; slope: number; temperature: number; rain: number; water?: boolean; occupied?: boolean; landuse?: PaintLanduse; /** Signed local prominence / sampling radius, as in Render. */ tpi?: number; relief?: number; /** Vertical relief within about a kilometre (m): the scale of a whole mountain, independent of the map size. */ massif?: number; /** Display canopy cover 0..1 (the forest field shared with the other styles); replaces the climate estimate. */ woods?: number; /** Holdings are painted edge to edge by a field wash: crop tiles become sparse accents. */ landuseDetail?: boolean; /** Inside a road/river corridor or on a farm or hamlet: no stamp anchors, the ground wash still paints. */ cleared?: boolean }
 export interface OrchardParcel { kind: string; poly: readonly { x: number; y: number }[]; holes?: readonly (readonly { x: number; y: number }[])[]; stripAngle?: number }
 export interface PaintOptions { seed: string; pitch: number; density?: number; size?: number; maxStamps?: number; followLanduse?: boolean; /** Exact holdings for orchard rows; absent rasters use a fixed world orientation. */ parcels?: readonly OrchardParcel[]; /** Size stays independent of spacing. */ brushPitch?: number; forests?: boolean; forestsOnly?: boolean; /** Width of the whole map (m), the physical reference for stamp sizes; defaults to 65 brush pitches. */ mapWidth?: number; lod?: PaintLod; raster?: number; /** Tallest relief of the map (m): the top of the size hierarchy. */ reliefRef?: number; /** Land elevation of the lowlands and of the summits (m, low and high percentiles): relief tiers are relative to it. */ heightRange?: readonly [number, number];
   /** Cultivated ground stays clear of relief even when vegetation does not follow land use. */
   cultivated?: (x: number, y: number) => boolean;
   /** 'coarse': relief, woodland clumps and orchard rows (the whole-map plan); 'fine': wild single trees and ground plants only (planned per view tile, see
-   * web/src/ui/fantasyRaster.ts), with `summits` from the coarse plan keeping trees out of the relief silhouettes; 'all' (default): everything. */
-  vegetation?: 'all' | 'coarse' | 'fine'; summits?: readonly Stamp[] }
+   * web/src/ui/fantasyRaster.ts); 'all' (default): everything. Trees may stand on the painted slopes: relief is drawn first, vegetation above it. */
+  vegetation?: 'all' | 'coarse' | 'fine' }
 export interface Stamp { x: number; y: number; width: number; height: number; brush: number; variant?: number; flip: boolean; opacity: number; heightScale?: number }
 export interface PaintBounds { x: number; y: number; width: number; height: number }
 export interface Atlas { url: string; width: number; height: number; rows: number[]; rects?: [number, number, number, number][]; variantsPerStyle?: number }
-export const FAMILY_NAMES = ['pines', 'broadleaf', 'tropical', 'cypress', 'hills', 'mountains', 'snow-mountains', 'rocks', 'dunes', 'wetlands', 'crops', 'orchards', 'grasses', 'peaks', 'shrubs', 'foothills', 'heath', 'woodland'] as const;
+export const FAMILY_NAMES = ['pines', 'broadleaf', 'tropical', 'cypress', 'rocks', 'dunes', 'wetlands', 'crops', 'grasses', 'shrubs', 'heath', 'woodland', 'massifs', 'downs'] as const;
 export type BrushFamily = typeof FAMILY_NAMES[number];
-/** Brush ids: 0-15 historical, 16 alpine peaks, 17 shrubs, 18 foothills, 19 heath, 20 woodland clumps. */
-const BRUSH_FAMILY: BrushFamily[] = ['pines', 'broadleaf', 'tropical', 'cypress', 'hills', 'mountains', 'snow-mountains', 'rocks', 'dunes', 'wetlands', 'crops', 'broadleaf', 'pines', 'broadleaf', 'tropical', 'grasses', 'peaks', 'shrubs', 'foothills', 'heath', 'woodland'];
+/** Brush ids: 0-15 historical, 16 alpine peaks, 17 shrubs, 18 foothills, 19 heath, 20 woodland clumps.
+ * Every mountain tier (peaks, ridges, snow, foothills) draws the large painted massifs, hills the large downs:
+ * both are high-resolution single landforms (see assets/fantasy/families/massifs-source). */
+const BRUSH_FAMILY: BrushFamily[] = ['pines', 'broadleaf', 'tropical', 'cypress', 'downs', 'massifs', 'massifs', 'rocks', 'dunes', 'wetlands', 'crops', 'broadleaf', 'pines', 'broadleaf', 'tropical', 'grasses', 'massifs', 'shrubs', 'massifs', 'heath', 'woodland'];
+/** Massif cells 0-5 are bare rock and grass, 6-7 snow-capped. */
+const MASSIF_ROCK = 6;
 export const BRUSH = { hills: 4, ridges: 5, snow: 6, rocks: 7, dunes: 8, wetlands: 9, crops: 10, orchards: 11, grasses: 15, peaks: 16, shrubs: 17, foothills: 18, heath: 19, woodland: 20 } as const;
 /** Single trees: upright crowns with a fixed aspect. */
 export const isTreeBrush = (brush: number): boolean => brush < 4 || brush === BRUSH.orchards || brush >= 12 && brush <= 14;
 /** Relief symbols: hills, ridges, peaks, rocks and dunes. */
 export const isReliefBrush = (brush: number): boolean => brush >= 4 && brush <= 8 || brush === 16 || brush === 18;
-/** Summits that hide what stands behind them (trees never grow inside their silhouette). */
-const isSummitBrush = (brush: number): boolean => brush === 4 || brush === 5 || brush === 6 || brush === 16 || brush === 18;
+/** Large landforms (massifs and downs): painted first, under the holdings and the vegetation. */
+export const isLandformBrush = (brush: number): boolean => brush === 4 || brush === 5 || brush === 6 || brush === 16 || brush === 18;
 export interface BrushFrame { atlas: Atlas; family: BrushFamily; index: number; token: string; rect: [number, number, number, number]; aspect: number }
 export interface BrushLibrary { kind: 'families'; style: FantasyStyle; families: Record<BrushFamily, Atlas>; frames: BrushFrame[]; variants: number; offsets: number[] }
 export function createBrushLibrary(style: FantasyStyle, families: Record<BrushFamily, Atlas>): BrushLibrary {
@@ -41,7 +45,8 @@ export function createBrushLibrary(style: FantasyStyle, families: Record<BrushFa
     for (let v = 0; v < variants; v++) {
       // Five to eight tree silhouettes; never mix individual trees and giant clumps.
       // Orchard crowns: only round, single broadleaf trees, never the orchard clump atlas.
-      const variant = brush === BRUSH.orchards ? [0, 1, 4][v % 3] % count : v % (isTreeBrush(brush) ? Math.min(6, count) : count);
+      const variant = brush === BRUSH.orchards ? [0, 1, 4][v % 3] % count : family === 'massifs' ? (brush === BRUSH.snow ? MASSIF_ROCK + v % 2 : v % MASSIF_ROCK) % count
+        : v % (isTreeBrush(brush) ? Math.min(6, count) : count);
       const index = variant + (styleTraits(style).fantasy === 'color' ? count : 0), rect = atlasRect(atlas, index);
       frames.push({ atlas, family, index, token: `${family}-${index}`, rect, aspect: rect[3] / rect[2] });
     }
@@ -109,20 +114,22 @@ export function paintingCover(s: PaintSample): { woods: number; mountain: number
 export type PaintLod = 'overview' | 'detail';
 export const LOD_RASTER: Record<PaintLod, number> = { overview: 1400, detail: 3400 };
 export const fantasyLod = (mapWidth: number, viewWidth = mapWidth): PaintLod => mapWidth < 6000 || viewWidth < mapWidth / 2.5 ? 'detail' : 'overview';
-// Physical size of a symbol (m), then clamped to a readable size on the raster (px).
-/** Relief tiers, top down: each family shrinks and thins out before handing over to the next one. */
-const RELIEF_PX: Readonly<Record<'peaks' | 'ridges' | 'foothills' | 'hills', readonly [number, number]>> = { peaks: [24, 64], ridges: [20, 52], foothills: [16, 40], hills: [12, 30] };
-/** Relief score span of each tier (its size grows across the span). */
-const TIER_SCORE: Readonly<Record<keyof typeof RELIEF_PX, readonly [number, number]>> = { peaks: [.74, 1], ridges: [.54, .86], foothills: [.38, .62], hills: [.1, .46] };
-const CROWN_M = 11, GROUND_M = 22, FOOTPRINT_PER_PROMINENCE = 3.2;
+/** Relief tiers, top down: peaks and ridges on the summits, foothills on the shoulders, scattered hills on the lower crests. */
+type ReliefTier = 'peaks' | 'ridges' | 'foothills' | 'hills';
+/** Real landscape scale (m), independent of map extent, camera and raster: a massif spans about 2.2 times the relief
+ * of its kilometre (a 600 m relief gives a 1.3 km massif), a hill about 4 times. Trees (11 m crowns) read the scale on the slopes. */
+const MASSIF_M = [700, 4500] as const, DOWNS_M = [400, 2000] as const, MASSIF_PER_RELIEF = 2.2, DOWNS_PER_RELIEF = 4;
+/** Shoulders of a chain shrink towards its edges but stay at least this share of the core massif. */
+const CHAIN_EDGE = .45, CHAIN_RADII = [1200, 2400];
+/** Relief within a kilometre (m) below which no landform is drawn, and below which it is a hill rather than a massif. */
+const MIN_DOWNS_RELIEF = 40, MIN_MASSIF_RELIEF = 180;
+/** Relief score span of each tier. */
+const TIER_SCORE: Readonly<Record<ReliefTier, readonly [number, number]>> = { peaks: [.74, 1], ridges: [.54, .86], foothills: [.38, .62], hills: [.1, .46] };
+const CROWN_M = 11, GROUND_M = 22;
+/** Relief of the kilometre around a point: the broad field when the sampler has it, else the local relief. */
+const massifRelief = (s: PaintSample): number => s.massif ?? reliefProminence(s);
 /** Vertical extent a summit stands on: local relief, or its height above the lowlands. */
 export const reliefProminence = (s: PaintSample): number => Math.max(s.relief ?? s.slope * 1800, .6 * Math.max(0, s.height - 250));
-/** Physical footprint says how big a relief symbol could be; the share of the map's tallest relief says
- * where it sits in the hierarchy. Large maps keep few big peaks, small maps still read as a hierarchy. */
-function reliefPx(prominence: number, k: number, [lo, hi]: readonly [number, number], ref: number, mpp: number, mix: number): number {
-  const phys = clamp(k * prominence / mpp / hi), rel = clamp(prominence / ref);
-  return lo + (hi - lo) * rel * (.3 + .7 * phys) * mix;
-}
 interface Candidate { stamp: Stamp; r: number; prio: number }
 /** Regular fruit trees, independent of the wild vegetation's Poisson sampling and LOD.
  * Keep the entire silhouette inside the holding, including holes, before drawing it over the wash. */
@@ -211,7 +218,7 @@ export function planPainting(bounds: PaintBounds, sample: (x: number, y: number)
   if (![pitch, brushPitch, bounds.x, bounds.y, bounds.width, bounds.height, density, size, mapWidth, raster].every(Number.isFinite) || pitch <= 0 || brushPitch <= 0 || bounds.width <= 0 || bounds.height <= 0 || mapWidth <= 0 || raster <= 0 || density === 0) return [];
   const defaultBudget = lod === 'detail' ? 200000 : 150000, requested = options.maxStamps ?? defaultBudget;
   const seed = paintSeed(options.seed), result: Stamp[] = [], budget = Number.isFinite(requested) ? Math.max(0, Math.min(400000, Math.floor(requested))) : defaultBudget;
-  const mpp = mapWidth / raster, spacing = Math.max(.3, Math.min(3, pitch / brushPitch)), fine = Math.max(.4, Math.min(1, spacing));
+  const spacing = Math.max(.3, Math.min(3, pitch / brushPitch)), fine = Math.max(.4, Math.min(1, spacing));
   const refProm = Math.max(120, options.reliefRef ?? 900), hr = options.heightRange;
   /** 0..1: where a point sits in the map's own relief (lowlands 0, summits 1), raised on crests, lowered in valleys. */
   const reliefScore = (p: PaintSample): number => {
@@ -220,27 +227,16 @@ export function planPainting(bounds: PaintBounds, sample: (x: number, y: number)
   };
   // Vegetation keeps its real size (a tree is a few percent of a big mountain); sub-pixel stamps are skipped at draw time.
   const treeW = CROWN_M * size, groundW = GROUND_M * size, mode = options.vegetation ?? 'all';
-  // Index summit silhouettes, rather than repeatedly scanning all relief stamps.
-  const mountains = new Map<string, Stamp[]>(), mountainCell = brushPitch * 4;
-  const mountainKey = (x: number, y: number) => `${Math.floor(x / mountainCell)},${Math.floor(y / mountainCell)}`;
-  const nbs = [[-1, 0], [1, 0], [0, -1], [0, 1]], margin = brushPitch * size + treeW;
-  const indexSummit = (stamp: Stamp) => {
-    const { x, y, width: w } = stamp;
-    for (let my = Math.floor((y - w * 1.1 - margin) / mountainCell); my <= Math.floor((y + w * .1 + margin * 2) / mountainCell); my++) {
-      for (let mx = Math.floor((x - w / 2 - margin) / mountainCell); mx <= Math.floor((x + w / 2 + margin) / mountainCell); mx++) {
-        const key = `${mx},${my}`, list = mountains.get(key);
-        if (list) list.push(stamp); else mountains.set(key, [stamp]);
-      }
-    }
-  };
-  for (const stamp of options.summits ?? []) if (isSummitBrush(stamp.brush)) indexSummit(stamp);
+  const nbs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+  const cultivated = options.cultivated ?? ((sx: number, sy: number) => isCultivatedLanduse(sample(sx, sy)?.landuse));
   for (const pass of ['relief', 'ground', 'forest'] as const) {
     if (pass === 'forest' ? options.forests === false : options.forestsOnly) continue;
+    if (pass === 'relief' && mapWidth < DOWNS_M[0]) continue;
     if (mode === 'fine' && pass === 'relief' || mode === 'coarse' && pass === 'ground') continue;
     const salt = seed ^ (pass === 'relief' ? 181 : pass === 'forest' ? 719 : 1231);
-    const pad = pass === 'relief' ? RELIEF_PX.peaks[1] * mpp * size * 2.6 : pass === 'ground' ? groundW * 2.6 : treeW * 4;
+    const pad = pass === 'relief' ? MASSIF_M[1] * .6 : pass === 'ground' ? groundW * 2.6 : treeW * 4;
     // Dense candidate lattices: the Poisson rejection below sets the final packing, overlap included.
-    const step = Math.max(1e-6, pass === 'relief' ? 4.5 * mpp * fine * Math.max(.4, Math.min(1, size)) : pass === 'forest' ? treeW * (mode === 'coarse' ? 1.5 : .66) * fine : groundW * .3 * fine);
+    const step = Math.max(1e-6, pass === 'relief' ? 110 * fine : pass === 'forest' ? treeW * (mode === 'coarse' ? 1.5 : .66) * fine : groundW * .3 * fine);
     const x0 = Math.floor((bounds.x - pad) / step), x1 = Math.ceil((bounds.x + bounds.width + pad) / step);
     const y0 = Math.floor((bounds.y - pad) / step), y1 = Math.ceil((bounds.y + bounds.height + pad) / step);
     const stride = Math.max(1, Math.ceil(Math.sqrt((x1 - x0 + 1) * (y1 - y0 + 1) / 420000)));
@@ -254,30 +250,42 @@ export function planPainting(bounds: PaintBounds, sample: (x: number, y: number)
       const c = paintingCover(s), patch = noise(x / (brushPitch * 7), y / (brushPitch * 7), seed ^ 891);
       const detail = noise(x / (brushPitch * 1.8), y / (brushPitch * 1.8), seed ^ 421), grain = noise(x / (brushPitch * .55), y / (brushPitch * .55), seed ^ 5309);
       const variation = .85 + .3 * hash(gx, gy, salt ^ 319);
-      let brush: number, cover: number, w: number, k: number, prio = hash(gx, gy, salt ^ 5501), ridge = false, edge = false, variant = Math.floor(hash(gx, gy, salt ^ 6317) * 32), opacity = 1, flip = hash(gx, gy, salt ^ 97) > .5;
+      let brush: number, cover: number, w: number, k: number, prio = hash(gx, gy, salt ^ 5501), edge = false, variant = Math.floor(hash(gx, gy, salt ^ 6317) * 32), opacity = 1, flip = hash(gx, gy, salt ^ 97) > .5;
       if (pass === 'relief') {
         if (isCultivatedLanduse(s.landuse) || options.cultivated?.(x, y)) continue;
-        // Tiers follow the map's own relief (elevation above the lowlands, prominence, slope, crest position),
-        // and the absolute mountain cover on high maps: peaks on the summits, then ridges, foothills on the
-        // shoulders and scattered hills on the lower crests; each tier smaller and sparser than the one above.
+        if (reliefProminence(s) < 35 || s.slope < .04) continue;
+        // Tiers follow the map's own relief (elevation above the lowlands, prominence, slope, crest position)
+        // and the absolute mountain cover on high maps.
         const m = c.mountain, score = Math.max(m, reliefScore(s)), valley = smooth(0, -.1, s.tpi ?? 0);
         const r1 = hash(gx, gy, salt ^ 4411), r2 = hash(gx, gy, salt ^ 4423);
-        const tier: keyof typeof RELIEF_PX | undefined = score > .74 + .12 * r1 ? 'peaks' : score > .54 + .1 * r1 ? 'ridges' : score > .38 + .08 * r2 ? 'foothills'
+        let tier: ReliefTier | undefined = score > .74 + .12 * r1 ? 'peaks' : score > .54 + .1 * r1 ? 'ridges' : score > .38 + .08 * r2 ? 'foothills'
           : score > .1 + .08 * r2 ? 'hills' : undefined;
         if (!tier || valley > .8 + .15 * r2) continue;
-        const range = RELIEF_PX[tier], [lo, hi] = TIER_SCORE[tier], level = smooth(lo, hi, score);
-        // Stacked like a painted range: every tier covers its band, smaller tiers pack slightly denser.
-        if (tier === 'peaks') { brush = c.snow > .25 + .3 * r2 ? BRUSH.snow : BRUSH.peaks; k = .2; ridge = true; cover = .98; }
-        else if (tier === 'ridges') { brush = c.snow > .45 + .3 * r2 ? BRUSH.snow : BRUSH.ridges; k = .18; ridge = true; cover = .97; }
-        else if (tier === 'foothills') { brush = BRUSH.foothills; k = .26; cover = .6 + .3 * level; }
-        else { brush = BRUSH.hills; k = .34; cover = .1 + .35 * level; }
-        // Size grows with the position inside the tier and the prominence; heavy-tailed, favoured on crests (tpi).
-        const prom = clamp(reliefProminence(s) / refProm), rank = hash(gx, gy, salt ^ 8123), crest = .85 + .3 * smooth(0, .12, s.tpi ?? .06);
-        w = (range[0] + (range[1] - range[0]) * (.2 + .55 * level + .25 * prom)) * (.7 + .6 * rank * rank) * (ridge ? crest : 1) * (ridge && rank > .94 ? 1.3 : 1);
-        // Feathered border: below the foothills, hills shrink as they bleed out into the plain.
-        if (tier === 'hills') w *= .55 + .45 * level;
-        prio += w / RELIEF_PX.peaks[1] + (tier === 'peaks' ? 1 : tier === 'ridges' ? .6 : tier === 'foothills' ? .3 : 0);
-        w *= mpp * size * variation;
+        // The physical relief of the kilometre decides the landform: a gently rolling high plateau carries downs, not
+        // mountains; a strong relief scored low on a map of giants still reads as a foothill massif.
+        const broad = massifRelief(s);
+        if (broad < MIN_DOWNS_RELIEF) continue;
+        if (tier !== 'hills' && broad < MIN_MASSIF_RELIEF) tier = 'hills';
+        else if (tier === 'hills' && broad > 2 * MIN_MASSIF_RELIEF) tier = 'foothills';
+        const [lo, hi] = TIER_SCORE[tier], level = smooth(lo, hi, score), hill = tier === 'hills';
+        // Massifs overlap into continuous stacked ranges (centres about a third of a width apart); hills stand apart, sparse.
+        if (tier === 'peaks') { brush = c.snow > .25 + .3 * r2 ? BRUSH.snow : BRUSH.peaks; k = .36; cover = .98; }
+        else if (tier === 'ridges') { brush = c.snow > .45 + .3 * r2 ? BRUSH.snow : BRUSH.ridges; k = .36; cover = .97; }
+        else if (tier === 'foothills') { brush = BRUSH.foothills; k = .4; cover = .75 + .2 * level; }
+        else { brush = BRUSH.hills; k = 1.1; cover = .25 + .25 * level; }
+        // Size in metres from the relief of the kilometre around, never from the map, view or raster: the core of a
+        // chain (largest relief within a few kilometres) sets the big massifs; its shoulders stay at least CHAIN_EDGE of it.
+        let chain = massifRelief(s);
+        for (const [dx, dy] of nbs) for (const radius of CHAIN_RADII) {
+          const n = sample(x + dx * radius, y + dy * radius);
+          if (n && !n.water && n.height > 0) chain = Math.max(chain, massifRelief(n));
+        }
+        const [wMin, wMax] = hill ? DOWNS_M : MASSIF_M, per = hill ? DOWNS_PER_RELIEF : MASSIF_PER_RELIEF;
+        const core = Math.max(wMin, Math.min(wMax, chain * per)), own = Math.min(core, massifRelief(s) * per * (tier === 'foothills' ? .8 : 1));
+        w = Math.max(wMin, CHAIN_EDGE * core, own) * size * variation;
+        w = Math.min(w, wMax * size, mapWidth * .9);
+        // Big landforms first; the higher tier wins a contested spot.
+        prio += w / MASSIF_M[1] + (tier === 'peaks' ? 1 : tier === 'ridges' ? .6 : tier === 'foothills' ? .3 : 0);
       } else if (pass === 'forest') {
         // Land use decides where woods stand; the shared canopy field (or the climate) decides elsewhere.
         let stray = false;
@@ -293,9 +301,10 @@ export function planPainting(bounds: PaintBounds, sample: (x: number, y: number)
         brush = tropical ? 2 : conifer ? 0 : c.temperature > 8 && s.rain < 850 ? 3 : 1;
         // Dense painted canopy with noise: full cores, thinning edges, clearings and stray trees.
         const field = clamp(potential * (.55 + 1.3 * (.6 * patch + .4 * detail - .25)));
-        // Wild woods breathe: large clearings, heath and scrub between stands; summits keep few trees.
+        // Wild woods breathe: large clearings, heath and scrub between stands. Woods climb the painted slopes (drawn over
+        // the massifs, they give the scale); only the bare rocky tops keep few trees.
         const glade = smooth(.28, .55, noise(x / (brushPitch * 11), y / (brushPitch * 11), seed ^ 1409));
-        cover = (s.landuse === 'forest' ? .82 + .18 * detail : smooth(.32, .85, field) * (.55 + .45 * grain) * glade) * (1 - .45 * c.wet) * (1 - smooth(.08, .45, c.mountain)) * (1 - .85 * smooth(.2, .45, reliefScore(s)));
+        cover = (s.landuse === 'forest' ? .82 + .18 * detail : smooth(.32, .85, field) * (.55 + .45 * grain) * glade) * (1 - .45 * c.wet) * (1 - .75 * smooth(.35, .85, c.mountain)) * (1 - .5 * smooth(.6, .9, reliefScore(s)));
         if (stray) cover = .5;
         edge = s.landuse === 'forest'; k = .36; w = treeW * (.8 + .45 * hash(gx, gy, salt ^ 913));
         // Woodland clumps carry the mass at a distance; single crowns keep the texture.
@@ -313,11 +322,11 @@ export function planPainting(bounds: PaintBounds, sample: (x: number, y: number)
         k = .44;
         if (lu === 'field') {
           // Whole holdings read as one crop: the variant follows a field-scale noise, not the stamp.
-          brush = BRUSH.crops; cover = s.landuseDetail ? 0 : 1; scale = s.landuseDetail ? .55 : 1.1; k = .3; flip = noise(x / (brushPitch * .9), y / (brushPitch * .9), seed ^ 7723) > .5;
+          brush = BRUSH.crops; cover = s.landuseDetail ? 0 : .15; scale = .55; k = .3; flip = noise(x / (brushPitch * .9), y / (brushPitch * .9), seed ^ 7723) > .5;
           const crops = c.temperature > 16 && c.wet > .3 ? [5, 0, 4] : s.slope > .12 ? [3, 0, 1] : [0, 2, 0, 6, 7, 0, 1, 0];
           variant = crops[Math.floor(noise(x / (brushPitch * .9), y / (brushPitch * .9), seed ^ 7717) * crops.length * .999)];
           if (s.landuseDetail) variant = 6;
-        } else if (lu === 'garden') { brush = BRUSH.crops; cover = .95; scale = .6; variant = [4, 7, 4][Math.floor(grain * 2.99)]; }
+        } else if (lu === 'garden') { brush = BRUSH.crops; cover = s.landuseDetail ? 0 : .15; scale = .4; variant = [4, 7, 4][Math.floor(grain * 2.99)]; }
         else if (lu === 'orchard') continue; // A dedicated parcel grid owns fruit trees.
         else if (lu === 'marsh') { brush = detail > .7 ? BRUSH.grasses : BRUSH.wetlands; cover = .9; scale = .55; }
         else if (lu === 'meadow' || lu === 'pasture') {
@@ -339,21 +348,20 @@ export function planPainting(bounds: PaintBounds, sample: (x: number, y: number)
         w = groundW * scale * variation;
       }
       if (hash(gx, gy, salt ^ 9811) > clamp(cover * density)) continue;
-      const tree = pass === 'forest', wooded = tree || brush === BRUSH.orchards;
+      const tree = pass === 'forest';
       let px = x, py = y;
-      if (ridge) {
-        // Support from neighbouring peaks; the anchor then slides up the prominence gradient onto the crest, so peaks line up on ridges.
-        const dn = Math.max(w * .6, step), ns = nbs.map(([dx, dy]) => sample(x + dx * dn, y + dy * dn));
-        let support = 0;
-        for (const n of ns) if (n && !n.water && n.height > 0 && Math.max(paintingCover(n).mountain, reliefScore(n)) > .45) support++;
-        if (hash(gx, gy, salt ^ 7331) > .85 + .15 * support / 4) continue;
-        const [l, r, u, d] = ns;
-        if (s.tpi !== undefined && s.tpi < .09 && l?.tpi !== undefined && r?.tpi !== undefined && u?.tpi !== undefined && d?.tpi !== undefined) {
-          const gxv = r.tpi - l.tpi, gyv = d.tpi - u.tpi, mag = Math.hypot(gxv, gyv);
-          if (mag > 1e-4) {
-            const amt = .35 * w * clamp(mag / .05), nx = x + gxv / mag * amt, ny = y + gyv / mag * amt, moved = sample(nx, ny);
-            if (moved && !moved.water && !moved.occupied && moved.height > 0) { px = nx; py = ny; }
-          }
+      if (isLandformBrush(brush)) {
+        // The anchor is the foot of the silhouette (drawn upwards from it): move it south so the painted body
+        // (centred about 0.2 width above the foot) sits on the sampled relief.
+        py = y + .2 * w;
+        // The body stays off built ground (the town is drawn over the foot); holdings are cut out of the drawn relief by the field layer
+        // painted over it (fantasyRaster), so one field never removes a whole mountain. A hill keeps clear of the
+        // holdings over most of its footprint (no hills on fields).
+        if (cultivated(x, y) || s.occupied) continue;
+        if (brush === BRUSH.hills) {
+          let tilled = 0;
+          for (const dx of [-.3, 0, .3]) for (const dy of [-.3, -.15, 0]) if (cultivated(x + dx * w, py + dy * w)) tilled++;
+          if (tilled > 3) continue;
         }
       }
       if (edge) {
@@ -364,30 +372,21 @@ export function planPainting(bounds: PaintBounds, sample: (x: number, y: number)
         if (hash(gx, gy, salt ^ 2713) > smooth(.15, .95, f)) continue;
         w *= .75 + .25 * f;
       }
-      if (wooded && mountains.get(mountainKey(x, y))?.some(m => Math.abs(x - m.x) < (m.width + w) / 2
-        && y > m.y - m.width * 1.1 && y - w * 1.9 < m.y + m.width * .1)) continue;
-      if (isReliefBrush(brush)) {
-        // Check the final crest anchor and the silhouette with a small raster margin at field edges.
-        const cultivated = options.cultivated ?? ((sx: number, sy: number) => isCultivatedLanduse(sample(sx, sy)?.landuse));
-        if (cultivated(px, py)) continue;
-        const margin = 2 * mpp;
-        let overlapsField = false;
-        for (const dx of [-w * .5 - margin, 0, w * .5 + margin]) {
-          for (const dy of [-w * .85 - margin, -w * .4, w * .1 + margin]) {
-            if (cultivated(px + dx, py + dy)) { overlapsField = true; break; }
-          }
-          if (overlapsField) break;
+      if (brush === BRUSH.woodland) {
+        // A clump has several trunks spread across its base, not one central root.
+        // Crowns may overhang water; every part of the root bed stays on dry ground.
+        let wetRoots = false;
+        for (const dx of [-.45, 0, .45]) for (const dy of [-.18, 0, .03]) {
+          const root = sample(px + dx * w, py + dy * w);
+          if (!root || root.water || root.height <= 0 || root.occupied || root.cleared) wetRoots = true;
         }
-        if (overlapsField) continue;
+        if (wetRoots) continue;
       }
       // Land anchors stay on land; silhouettes intentionally overhang lakes/roads.
       candidates.push({ r: k * spacing * w / 2, prio, stamp: { x: px, y: py, width: w, height: w * (tree ? 1.15 : .78), heightScale: tree ? .9 + .2 * hash(gx, gy, salt ^ 519) : .95 + .1 * hash(gx, gy, salt ^ 619),
         brush, variant, flip, opacity } });
     }
-    for (const { stamp } of suppress(candidates)) {
-      result.push(stamp);
-      if (isSummitBrush(stamp.brush)) indexSummit(stamp);
-    }
+    for (const { stamp } of suppress(candidates)) result.push(stamp);
   }
   // Orchard rows are retained even in the overview/3D scene; fine tiles never duplicate them.
   if (mode !== 'fine' && !options.forestsOnly) for (const stamp of orchardTrees(bounds, sample, options)) result.push(stamp);
@@ -438,7 +437,9 @@ export function paintingCanvas(ctx: CanvasRenderingContext2D, stamps: Stamp[], i
 export function stampHeight(stamp: Stamp, frame: BrushFrame): number {
   const tree = isTreeBrush(stamp.brush);
   // Relief is drawn wider than tall (height 0.45-0.68 of the width): stacked ranges, never tall spikes.
-  const aspect = tree ? (frame.family === 'pines' || frame.family === 'cypress' ? 1.8 : 1.25) : isReliefBrush(stamp.brush) ? Math.max(.45, Math.min(.68, frame.aspect * .75)) : frame.aspect;
+  // Massifs and downs are painted wider than tall at their true proportions.
+  const aspect = tree ? (frame.family === 'pines' || frame.family === 'cypress' ? 1.8 : 1.25) : isLandformBrush(stamp.brush) ? Math.max(.22, Math.min(.62, frame.aspect))
+    : isReliefBrush(stamp.brush) ? Math.max(.45, Math.min(.68, frame.aspect * .75)) : frame.aspect;
   return stamp.width * aspect * (stamp.heightScale ?? 1);
 }
 function familyPaintingSvg(stamps: Stamp[], library: BrushLibrary, id: string): string {
@@ -452,7 +453,7 @@ function familyPaintingSvg(stamps: Stamp[], library: BrushLibrary, id: string): 
   }
   svg += '</defs><g class="fantasy-brushes">';
   const f = (n: number) => n.toFixed(2);
-  for (const s of stamps) {
+  for (const s of [...stamps.filter(s => isLandformBrush(s.brush)), ...stamps.filter(s => !isLandformBrush(s.brush))]) {
     const frame = brushFrame(library, s), h = stampHeight(s, frame);
     svg += `<use class="${isReliefBrush(s.brush) ? 'fantasy-relief' : 'fantasy-landuse'}" data-brush="${frame.family}" data-variant="${frame.index % (frame.atlas.variantsPerStyle ?? 8)}" href="#${id}-${frame.token}" x="${f(-s.width / 2)}" y="${f(-h * .95)}" width="${f(s.width)}" height="${f(h)}" opacity="${s.opacity}" transform="translate(${f(s.x)} ${f(s.y)}) scale(${s.flip ? -1 : 1} 1)"/>`;
   }
@@ -460,7 +461,7 @@ function familyPaintingSvg(stamps: Stamp[], library: BrushLibrary, id: string): 
 }
 function familyPaintingCanvas(ctx: CanvasRenderingContext2D, stamps: Stamp[], images: ReadonlyMap<string, CanvasImageSource>, library: BrushLibrary, camera: { x: number; y: number; scale: number }): void {
   ctx.save();
-  for (const s of stamps) {
+  for (const s of [...stamps.filter(s => isLandformBrush(s.brush)), ...stamps.filter(s => !isLandformBrush(s.brush))]) {
     const frame = brushFrame(library, s), image = images.get(frame.family); if (!image) continue;
     const [sx, sy, sw, sh] = frame.rect, w = s.width * camera.scale, h = stampHeight(s, frame) * camera.scale;
     const x = (s.x - camera.x) * camera.scale, y = (s.y - camera.y) * camera.scale; ctx.globalAlpha = s.opacity;

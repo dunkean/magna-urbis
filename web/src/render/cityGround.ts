@@ -36,9 +36,15 @@ function channels(geometry: NonNullable<CityGroundRaster['geometry']>): Channels
 export class CityGround {
   private cache = new WeakMap<Shape, Shape[]>();
   private channels?: Channels;
-  constructor(readonly raster: CityGroundRaster) { this.channels = raster.geometry && channels(raster.geometry); }
+  private clippingRaster: CityGroundRaster;
+  constructor(readonly raster: CityGroundRaster) {
+    this.channels = raster.geometry && channels(raster.geometry);
+    // River/lake raster cells are conservative planning envelopes. Their square
+    // edges must not cut a staircase outside the retained physical vector banks.
+    this.clippingRaster = this.channels?.shapes.length ? { ...raster, water: Uint8Array.from(raster.water, v => v === 1 ? 1 : 0) } : raster;
+  }
   waterAt(p: Point): boolean {
-    const { n, width, water } = this.raster;
+    const { n, width, water } = this.clippingRaster;
     const x = Math.max(0, Math.min(n - 1, Math.floor(p.x * n / width))), y = Math.max(0, Math.min(n - 1, Math.floor(p.y * n / width)));
     return wet(water[y * n + x]) || !!this.channels?.query(p.x, p.y, p.x, p.y).some(s => polygonContains(s.outer, p) && !s.holes.some(h => polygonContains(h, p)));
   }
@@ -48,9 +54,9 @@ export class CityGround {
     for (let y = 0; y < n; y++) {
       const next = new Map<string, Run>();
       for (let x = 0; x < n;) {
-        if (wet(this.raster.water[y * n + x])) { x++; continue; }
+        if (wet(this.clippingRaster.water[y * n + x])) { x++; continue; }
         const start = x++;
-        while (x < n && !wet(this.raster.water[y * n + x])) x++;
+        while (x < n && !wet(this.clippingRaster.water[y * n + x])) x++;
         const key = `${start}:${x}`, run = active.get(key) ?? { x0: start, x1: x, y0: y, y1: y + 1 };
         run.y1 = y + 1; next.set(key, run); active.delete(key);
       }
@@ -68,7 +74,7 @@ export class CityGround {
   clipMany(shapes: readonly Shape[]): Shape[][] {
     const missing = [...new Set(shapes.filter(s => !this.cache.has(s)))];
     if (missing.length) {
-      const clipped = clipCityGround(this.raster, this.channels?.shapes ?? [], missing);
+      const clipped = clipCityGround(this.clippingRaster, this.channels?.shapes ?? [], missing);
       missing.forEach((s, i) => this.cache.set(s, clipped[i]));
     }
     return shapes.map(s => this.cache.get(s)!);

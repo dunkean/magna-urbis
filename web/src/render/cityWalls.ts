@@ -13,6 +13,7 @@ import type { Enclosure, Point, Shape } from '../../../rust/bridge/urban';
 import type { Box, CityLod, CityPalette, CityScene } from './cityCanvas';
 import { META, STROKE_STRIDE, type CityGlStrokes } from './cityGlBuild';
 import { earcut } from './cityGlEarcut';
+import { nightRoof } from './cityNight';
 
 // ---------------------------------------------------------------- geometry
 type Family = 'stone' | 'earth' | 'brick' | 'rampart' | 'timber' | 'hedge';
@@ -266,7 +267,7 @@ const paintedBackground = (): boolean => globalThis.document?.documentElement.da
 const shadowShift = (mpp: number): Point => { const dx = Math.max(2.2, 1.1 * mpp); return { x: dx, y: 0.8 * dx }; };
 
 // ---------------------------------------------------------------- Canvas 2D
-export interface CityWallDraw { viewport: Box; mpp: number; lod: CityLod; palette: CityPalette }
+export interface CityWallDraw { viewport: Box; mpp: number; lod: CityLod; palette: CityPalette; night?: boolean }
 interface CanvasCache { polys: Map<string, { cat: Cat; family: Family; path: Path2D }>; solid: Path2D; closedSolid: Path2D; water: Path2D }
 const canvasCache = new WeakMap<WallDetail, CanvasCache>();
 function shapePath(path: Path2D, s: Shape): void {
@@ -294,6 +295,7 @@ function fillPolys(ctx: CanvasRenderingContext2D, d: WallDetail, o: CityWallDraw
   for (const g of canvasOf(d).polys.values()) {
     if (GROUND.has(g.cat) !== ground || !shown(g.cat, o.lod)) continue;
     const k = polyInk(g.cat, g.family, o.palette, painted);
+    if (o.night) { if (k.fill) k.fill = nightRoof(k.fill, o.palette === 'parchment'); if (k.edge) k.edge = '#8194a9'; }
     if (k.fill && k.fillAlpha > 0) { ctx.globalAlpha = k.fillAlpha; ctx.fillStyle = k.fill; ctx.fill(g.path, 'nonzero'); }
     if (k.edge && k.edgeAlpha > 0) { ctx.globalAlpha = k.edgeAlpha; ctx.strokeStyle = k.edge; ctx.lineWidth = px * (o.palette === 'parchment' ? 0.8 : 0.6); ctx.stroke(g.path); }
   }
@@ -322,6 +324,7 @@ export function drawCityWalls(ctx: CanvasRenderingContext2D, scene: CityScene, o
   }
   for (const d of visible) {
     const c = canvasOf(d), k = curtainInk(d, o.palette), body = Math.max(d.width, minPx);
+    if (o.night) { k.body = '#8296aa'; k.core = '#2c3e54'; k.arcade = '#70869e'; if (k.stakes) k.stakes = '#6b7b8a'; }
     ctx.lineCap = 'butt';
     if (k.body) { ctx.strokeStyle = k.body; ctx.lineWidth = body; ctx.stroke(c.solid); ctx.stroke(c.closedSolid); }
     if (k.core && !far && d.width - 2 * d.edge > px * 0.5) { ctx.strokeStyle = k.core; ctx.lineWidth = d.width - 2 * d.edge; ctx.stroke(c.solid); ctx.stroke(c.closedSolid); }

@@ -268,9 +268,17 @@ vec3 forestRootSurface(vec2 world){return level(0,world);}
 float forestRootCell(){return uFieldCell;}
 float forestWaterCoverage(vec2 world) {
   if(surfaceGroundWaterCached&&all(equal(world,surfaceGroundWaterPoint)))return surfaceGroundWaterSample;
-  if(uUseWaterLayer==0)return 0.;
+  // Sea is drawn from its own coastal field, outside the inland water layer. Root tests need both.
+  float seaCover=0.;
+  if(uCoastalSea==1){
+    vec2 g=clamp((world-uCoastOrigin)/uCoastWidth*float(uCoastN)-.5,vec2(0.),vec2(float(uCoastN-1)));
+    ivec2 p=ivec2(floor(g)),q=min(p+1,ivec2(uCoastN-1));vec2 f=fract(g);
+    float d=mix(mix(texelFetch(uCoastDistance,p,0).r,texelFetch(uCoastDistance,ivec2(q.x,p.y),0).r,f.x),mix(texelFetch(uCoastDistance,ivec2(p.x,q.y),0).r,texelFetch(uCoastDistance,q,0).r,f.x),f.y);
+    seaCover=clamp(d+.5,0.,1.);
+  }
+  if(uUseWaterLayer==0)return surfaceGroundRetainWater(world,seaCover);
   vec2 uv=(world-uOrigin)/(uPx*uCanvas);
-  return surfaceGroundRetainWater(world,textureLod(uWaterLayer,vec2(uv.x,1.-uv.y),0.).a);
+  return surfaceGroundRetainWater(world,max(seaCover,textureLod(uWaterLayer,vec2(uv.x,1.-uv.y),0.).a));
 }
 ${NEURAL_EARTH_MATERIAL_GLSL}
 ${groundCoverInputsGlsl(RENDER_3D_MATERIAL_GLSL)}
@@ -454,6 +462,7 @@ void main() {
           vec3 painted=water.rgb/max(water.a,1e-3);
           // Sandy beds lean red; ice, its bank lines and foam are far lighter than any painted open water (luminance < .3).
           float solid=max(smoothstep(.05,.15,painted.r-painted.b),smoothstep(.33,.42,dot(painted,vec3(.3,.45,.25))));
+          bed=mix(bed,water.a,solid);
           wBase=mix(wBase,painted,bed*solid);wCover*=1.-solid;
           // City Bench: a retained river reads as water at city zoom instead of a near-black ribbon. Its depth grows
           // from the bank (distance to the nearest dry pixel over 8 directions and 7 radii), and the season's
@@ -522,8 +531,8 @@ void main() {
 #endif
 #ifndef AUX_PASS
     if(uRenderV2>0&&v2w&&uV2WaterVisible==1){
-      // Overhanging crowns cast their shadow on the water.
-      color*=1.-.4*forestResolvedShade*wCover;
+      // Keep gallery shade on inland water. Detached crown silhouettes on the open sea read as offshore trees.
+      if(wKind>1.5)color*=1.-.4*forestResolvedShade*wCover;
       // Boreal humic water darkens to tea; alpine glacial flour turns lakes milky turquoise; silt plumes off river mouths.
       color=mix(color,color*vec3(.86,.70,.48),wTint.x*wCover);
       color=mix(color,vec3(.38,.62,.62),.45*wTint.y*wCover);

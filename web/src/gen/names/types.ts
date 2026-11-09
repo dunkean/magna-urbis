@@ -46,6 +46,11 @@ export interface NameEntry {
   span?: number;
   /** Free-form tag, e.g. 'exit' for a village named at a regional road exit. */
   sub?: string;
+  /** Optional author typography, shared by canvas and vector exports. */
+  labelStyle?: { color?: string; size?: number; bold?: boolean; italic?: boolean };
+  manual?: boolean;
+  /** Original anchor of a separately drawn city label replaced by an author. */
+  replacedAnchor?: Vec2;
 }
 
 export interface NamesLayer {

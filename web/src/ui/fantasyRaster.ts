@@ -1,16 +1,19 @@
 /** Canvas painter of the Illustrated ground: the painted washes, then the depth-sorted stamps drawn as atlas cells.
  * The SVG never carries the stamps here (FantasyOptions.svgStamps false): one drawImage per visible stamp per frame
  * is far cheaper than tens of thousands of SVG uses, and it keeps the stamps sharp at any zoom. */
-import { brushFrame, isReliefBrush, stampHeight, type BrushLibrary, type Stamp } from '../../../rust/bridge/fantasyPainting';
+import { brushFrame, isLandformBrush, isReliefBrush, stampHeight, type BrushLibrary, type Stamp } from '../../../rust/bridge/fantasyPainting';
 import { fantasyFieldColour, fantasyFieldWash, fantasyGroundWash, type FantasyTerrainPainting } from '../../../rust/bridge/fantasyTerrain';
 import type { LandUseLayer } from '../gen/types';
 import type { Rect4 } from '../render/view';
+import type { ForestWaterRaster } from '../../../rust/bridge/terrainMaterialRaster';
 
 /** One holding or strip, drawn as a vector at draw time so field edges and furrows stay crisp at any zoom. */
 interface FieldShape { path: Path2D; fill: string; angle: number; orchard: boolean; box: [number, number, number, number] }
 /** Single trees and ground plants of one square of land, planned on demand (FantasyTerrainPainting.fine). */
 interface FineTile { stamps: Stamp[]; heights: Float32Array }
-export interface FantasyRaster { painting: FantasyTerrainPainting; images: Map<string, CanvasImageSource>; wash: HTMLCanvasElement; heights: Float32Array; up: number; down: number; half: number; fields: FieldShape[];
+export interface FantasyRaster { painting: FantasyTerrainPainting; images: Map<string, CanvasImageSource>; wash: HTMLCanvasElement;
+  /** The holdings alone, opaque, painted over the massifs and downs so fields cut them cleanly (far views; near views add the vector strips). */
+  fieldCover?: HTMLCanvasElement; heights: Float32Array; up: number; down: number; half: number; fields: FieldShape[];
   tiles: Map<string, FineTile>; queue: Set<string>; /** Called when planned tiles arrive, so the view repaints. */ onTiles?: () => void }
 const FINE_TILE = 400, FINE_MIN_PX = 4, MAX_TILES = 400;
 /** Plan queued tiles one per task: navigation stays responsive and each arrival repaints. */
@@ -40,32 +43,33 @@ function fieldShapes(painting: FantasyTerrainPainting, landuse: LandUseLayer | u
     for (let i = 0; i < ring.length; i++) { const a = ring[i], b = ring[(i + 1) % ring.length], l = Math.hypot(b.x - a.x, b.y - a.y); if (l > best) { best = l; angle = Math.atan2(b.y - a.y, b.x - a.x); } }
     return angle;
   };
-  const add = (rings: Ring[], angle: number, orchard: boolean) => {
+  const add = (rings: Ring[], angle: number, kind: 'field' | 'garden' | 'orchard') => {
+    const orchard = kind === 'orchard';
     const outer = rings[0]; if (!outer || outer.length < 3) return;
     const path = new Path2D(); let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const ring of rings) { ring.forEach((p, i) => { if (i) path.lineTo(p.x, p.y); else path.moveTo(p.x, p.y); }); path.closePath(); }
     for (const p of outer) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
-    let [r, g, b] = fantasyFieldColour(toneAt(outer), orchard ? 'orchard' : undefined);
+    let [r, g, b] = fantasyFieldColour(toneAt(outer), kind);
     if (ink) { const grey = 255 - (255 - (.3 * r + .59 * g + .11 * b)) * .55; r = g = b = grey; }
     out.push({ path, fill: `rgb(${r | 0},${g | 0},${b | 0})`, angle, orchard, box: [x0, y0, x1, y1] });
   };
   for (const area of landuse.areas) {
     if (area.kind !== 'field' && area.kind !== 'garden' && area.kind !== 'orchard') continue;
     const angle = area.stripAngle ?? longest(area.poly);
-    add([area.poly, ...area.holes ?? []], angle, area.kind === 'orchard');
-    for (const strip of area.strips ?? []) add([strip], angle, area.kind === 'orchard');
+    add([area.poly, ...area.holes ?? []], angle, area.kind);
+    for (const strip of area.strips ?? []) add([strip], angle, area.kind);
   }
   return out;
 }
 /** Crisp holdings: flat crop colour, furrows along the strip direction and a darker balk, at screen resolution. */
-function drawFields(ctx: CanvasRenderingContext2D, fields: readonly FieldShape[], rect: Rect4, pixelsPerMetre: number): void {
+function drawFields(ctx: CanvasRenderingContext2D, fields: readonly FieldShape[], rect: Rect4, pixelsPerMetre: number, opaque = false): void {
   if (pixelsPerMetre < .35) return;
   const furrows = pixelsPerMetre > .6, spacing = 7;
   ctx.lineCap = 'butt';
   for (const f of fields) {
     const [x0, y0, x1, y1] = f.box;
     if (x1 < rect.minX || x0 > rect.maxX || y1 < rect.minY || y0 > rect.maxY) continue;
-    ctx.globalAlpha = .94; ctx.fillStyle = f.fill; ctx.fill(f.path, 'evenodd');
+    ctx.globalAlpha = opaque ? 1 : .94; ctx.fillStyle = f.fill; ctx.fill(f.path, 'evenodd');
     if (furrows && !f.orchard) {
       ctx.save(); ctx.clip(f.path, 'evenodd');
       const c = Math.cos(f.angle), s = Math.sin(f.angle), cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, r = Math.hypot(x1 - x0, y1 - y0) / 2;
@@ -93,14 +97,17 @@ const canvasOf = (pixels: Uint8ClampedArray<ArrayBuffer>, n: number): HTMLCanvas
   const canvas = document.createElement('canvas'); canvas.width = canvas.height = n;
   canvas.getContext('2d')!.putImageData(new ImageData(pixels, n, n), 0, 0); return canvas;
 };
-/** Ground wash at 1024 under field strips at 2048, on one 2048 canvas covering the terrain square. */
-function washCanvas(painting: FantasyTerrainPainting): HTMLCanvasElement {
+/** Ground wash at 1024 under field strips at 2048, on one 2048 canvas covering the terrain square; plus the strips alone, opaque. */
+function washCanvas(painting: FantasyTerrainPainting): { wash: HTMLCanvasElement; fieldCover?: HTMLCanvasElement } {
   const ink = painting.library.style === 'fantasy-ink', out = document.createElement('canvas'); out.width = out.height = 2048;
   const ctx = out.getContext('2d')!; ctx.imageSmoothingQuality = 'high';
-  if (!painting.sample || !painting.frame) return out;
+  if (!painting.sample || !painting.frame) return { wash: out };
   ctx.drawImage(canvasOf(fantasyGroundWash(painting, 1024, ink), 1024), 0, 0, 2048, 2048);
-  const fields = fantasyFieldWash(painting, 2048, ink); if (fields) ctx.drawImage(canvasOf(fields, 2048), 0, 0);
-  return out;
+  const fields = fantasyFieldWash(painting, 2048, ink); if (!fields) return { wash: out };
+  const fieldCover = canvasOf(fields, 2048);
+  ctx.drawImage(fieldCover, 0, 0);
+  for (let i = 3; i < fields.length; i += 4) if (fields[i]) fields[i] = 255;
+  return { wash: out, fieldCover: canvasOf(fields, 2048) };
 }
 export function prepareFantasyRaster(painting: FantasyTerrainPainting, landuse?: LandUseLayer): Promise<FantasyRaster> {
   let pending = rasters.get(painting);
@@ -111,8 +118,8 @@ export function prepareFantasyRaster(painting: FantasyTerrainPainting, landuse?:
         const h = heights[i] = stampHeight(stamp, brushFrame(painting.library, stamp));
         up = Math.max(up, h * .95); down = Math.max(down, h * .05); half = Math.max(half, stamp.width / 2);
       });
-      const wash = washCanvas(painting);
-      return { painting, images, wash, heights, up, down, half, fields: fieldShapes(painting, landuse), tiles: new Map(), queue: new Set() };
+      const { wash, fieldCover } = washCanvas(painting);
+      return { painting, images, wash, fieldCover, heights, up, down, half, fields: fieldShapes(painting, landuse), tiles: new Map(), queue: new Set() };
     });
     rasters.set(painting, pending); void pending.catch(() => rasters.delete(painting));
   }
@@ -148,13 +155,25 @@ export function drawFantasyRaster(ctx: CanvasRenderingContext2D, raster: Fantasy
     if (queued && raster.queue.size) setTimeout(() => planTiles(raster), 0);
     visible.sort((a, b) => a.s.y - b.s.y || a.s.x - b.s.x);
   }
-  for (const { s, h } of visible) {
-    const frameOf = brushFrame(painting.library, s), image = images.get(frameOf.family); if (!image) continue;
-    const [sx, sy, sw, sh] = frameOf.rect, w = s.width;
-    ctx.globalAlpha = s.opacity;
-    if (s.flip) { ctx.save(); ctx.translate(s.x, s.y); ctx.scale(-1, 1); ctx.drawImage(image, sx, sy, sw, sh, -w / 2, -h * .95, w, h); ctx.restore(); }
-    else ctx.drawImage(image, sx, sy, sw, sh, s.x - w / 2, s.y - h * .95, w, h);
+  const draw = (list: readonly { s: Stamp; h: number }[]) => {
+    for (const { s, h } of list) {
+      const frameOf = brushFrame(painting.library, s), image = images.get(frameOf.family); if (!image) continue;
+      const [sx, sy, sw, sh] = frameOf.rect, w = s.width;
+      ctx.globalAlpha = s.opacity;
+      if (s.flip) { ctx.save(); ctx.translate(s.x, s.y); ctx.scale(-1, 1); ctx.drawImage(image, sx, sy, sw, sh, -w / 2, -h * .95, w, h); ctx.restore(); }
+      else ctx.drawImage(image, sx, sy, sw, sh, s.x - w / 2, s.y - h * .95, w, h);
+    }
+  };
+  // Layers: massifs and downs, then the holdings painted over them (a field cuts the landform with its own clean edge,
+  // never a whole mountain dropped), then the vegetation, trees standing on the painted slopes.
+  const landforms = visible.filter(v => isLandformBrush(v.s.brush));
+  draw(landforms);
+  if (landforms.length && frame) {
+    ctx.globalAlpha = 1;
+    if (raster.fieldCover) ctx.drawImage(raster.fieldCover, frame.x, frame.y, frame.width, frame.width);
+    drawFields(ctx, raster.fields, rect, pixelsPerMetre, true);
   }
+  draw(landforms.length ? visible.filter(v => !isLandformBrush(v.s.brush)) : visible);
   ctx.restore();
 }
 /** The 3D ground, draped like 2D: the wash (under the water) and all the stamps (over it). PNG data URLs. */
@@ -171,6 +190,8 @@ export function fantasyRasterImages(raster: FantasyRaster, size = 2048): { wash:
 type Point = { x: number; y: number };
 interface ClearanceInput {
   mapSize: number; seed: string;
+  /** Drawn banks supplement centreline corridors, including cropped retained rivers. */
+  water?: ForestWaterRaster;
   roads?: readonly { path: readonly Point[]; width: number }[];
   rivers?: readonly { path: readonly Point[]; width: readonly number[] }[];
   farmsteads?: readonly { yard: readonly Point[]; buildings: readonly (readonly Point[])[] }[];
@@ -200,7 +221,12 @@ export function fantasyClearance(input: ClearanceInput, owner: object = input): 
   const alpha = ctx.getImageData(0, 0, n, n).data, mask = new Uint8Array(n * n);
   let hash = 0x811c9dc5;
   for (let i = 0; i < mask.length; i++) if (alpha[i * 4 + 3] > 96) { mask[i] = 1; hash = Math.imul(hash ^ i, 0x01000193); }
-  const result = { key: `clear:${input.seed}:${input.mapSize}:${(hash >>> 0).toString(36)}`, test: (x: number, y: number) => {
+  const water = input.water;
+  const result = { key: `clear:${input.seed}:${input.mapSize}:${(hash >>> 0).toString(36)}:${water?.key ?? ''}`, test: (x: number, y: number) => {
+    if (water) {
+      const wi = Math.floor((x - water.x) / water.width * water.n), wj = Math.floor((y - water.y) / water.width * water.n);
+      if (wi >= 0 && wj >= 0 && wi < water.n && wj < water.n && water.alpha[wj * water.n + wi] > 96) return true;
+    }
     const i = Math.floor(x / cell), j = Math.floor(y / cell);
     return i >= 0 && j >= 0 && i < n && j < n && mask[j * n + i] === 1;
   } };

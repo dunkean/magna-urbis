@@ -92,6 +92,7 @@ const vec4 V2_FRESH_ICE[${FRESH_ICE_ROWS.length}]=vec4[${FRESH_ICE_ROWS.length}]
 const float V2_WATER_ARIDITY[${CLIMATE_ZONES.length}]=${zoneFloats(ARIDITY)};
 const float V2_WATER_TEA[${CLIMATE_ZONES.length}]=${zoneFloats(TEA)};
 const float V2_WATER_GLACIAL[${CLIMATE_ZONES.length}]=${zoneFloats(GLACIAL)};
+const float V2_WATER_SEDIMENT[${CLIMATE_ZONES.length}]=${zoneFloats(SEDIMENT)};
 int waterZone(){return clamp(uMaterialZone-1,0,${CLIMATE_ZONES.length - 1});}
 float waterFreshIce(){return uMaterialZone>0?dot(V2_FRESH_ICE[waterZone()],v2SeasonWeights()):0.;}
 // Lake draw-down of the dry season (dropOf in waterRegime.ts), 0-1.
@@ -102,6 +103,11 @@ float waterLakeDrop(){
 }
 float waterTea(){return uMaterialZone>0?V2_WATER_TEA[waterZone()]:0.;}
 float waterGlacial(){return uMaterialZone>0?V2_WATER_GLACIAL[waterZone()]:0.;}
+float waterSediment(){
+  if(uMaterialZone<=0)return 0.;
+  vec4 w=v2SeasonWeights();float rain=max(0.,1.+v2SeasonClimate().x*(w.z-w.x));
+  return V2_WATER_SEDIMENT[waterZone()]*clamp(rain-.9*V2_WATER_ARIDITY[waterZone()],0.,1.)*(1.-waterFreshIce());
+}
 `;
 /** Painting of the regime (dry bed, pools, ice, exposed shore) shared by the material water compositors. */
 export const WATER_REGIME_GLSL = `
@@ -119,19 +125,13 @@ vec3 waterIceColor(vec2 world,float edge,float cracks,vec2 along){
   vec3 ice=mix(vec3(.58,.68,.76),vec3(.72,.80,.86),n*.6+streak*.4)*(1.-.12*crack);
   return mix(ice,vec3(.33,.43,.52),edge*.9);
 }
-// Dry bed of an intermittent course: pale sand with a faint darker gravel texture, slightly deeper in the centre.
-// No dark band anywhere across it: a dark centre or edge reads as a track at a distance.
+// A dry course is one flat silt band with a slightly darker bank, without surface texture.
 vec3 waterDryBed(vec2 world,float centre){
-  float n=waterRegimeNoise(world/55.)*.55+waterRegimeNoise(world/14.)*.45;
-  float gravel=smoothstep(.55,.85,waterRegimeNoise(world/4.5)*.6+waterRegimeNoise(world/1.7)*.4);
-  // Warm sand mottled at two scales, so a wide bed never reads as a flat pale road surface.
-  vec3 bar=vec3(.86,.78,.62),bed=vec3(.78,.68,.52);
-  return mix(bar,bed,smoothstep(.15,.9,centre))*(.86+.28*n)*(1.-.18*gravel);
+  return mix(vec3(.69,.57,.40),vec3(.80,.70,.53),smoothstep(0.,.35,centre));
 }
-// Water left in a drying bed: broken thread and isolated pools along the centre. 0 dry, 1 water.
+// Draw-down changes the amount of open water uniformly, never into mottled pools.
 float waterDryPools(vec2 world,float dry,float centre){
-  float n=waterRegimeNoise(world/220.)*.7+waterRegimeNoise(world/60.+5.7)*.3;
-  return smoothstep(-.06,.06,n*.85+.45*centre-.25-dry*.95);
+  return 1.-smoothstep(.15,.55,dry);
 }
 // Exposed lake shore of the dry season: pale cracked mud and salt-whitened silt.
 vec3 waterExposedShore(vec2 world){

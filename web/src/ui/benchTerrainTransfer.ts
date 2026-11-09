@@ -25,7 +25,8 @@ export function cropTerrain(decor: Decor, x: number, y: number, width: number): 
     if (!rings.length) return [];
     return intersection({ outer: rings[0], holes: rings.slice(1) }, box).map(poly => [poly.outer, ...poly.holes].map(ring => ring.map(p => ({ x: p.x - x, y: p.y - y }))));
   };
-  const geometry: VectorGeography | undefined = r.geometry ? { land: r.geometry.land.flatMap(ring => clip([ring]).flat()), water: r.geometry.water.flatMap(clip) } : undefined;
+  const geometry: VectorGeography | undefined = r.geometry ? { land: r.geometry.land.flatMap(ring => clip([ring]).flat()), water: r.geometry.water.flatMap(clip),
+    springs: r.geometry.springs?.filter(p => p.x >= x && p.y >= y && p.x <= x + width && p.y <= y + width).map(p => ({ x: p.x - x, y: p.y - y })) } : undefined;
   const material = retainedWaterMaterial(decor);
   const raster = { width, n, height: crop(r.height), water: crop(r.water), waterLevel: crop(r.waterLevel), riverWidth: crop(r.riverWidth), riverIds: crop(r.riverIds), geometry };
   const cropFrame={x,y,width,sourceWidth:sourceFrame.fullSource.widthM,coordinateFrame:'crop-local' as const,

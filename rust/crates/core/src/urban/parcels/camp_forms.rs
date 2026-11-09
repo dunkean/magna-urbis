@@ -427,7 +427,9 @@ fn grown_court(plan: &mut Plan, rng: &mut Rng, frame: &Frame, morph: &Morph, n: 
         }
     }
     let units = centres.len();
-    let front = scale(dir(beta), 0.5 * (2.0 * s).max(26.0));
+    // Join the actual senior front paths, not points in the open courts:
+    // a near miss leaves each court's dwelling paths disconnected.
+    let front = scale(dir(beta), 0.5 * (depth + path));
     for (u, &c) in centres.iter().enumerate() {
         let k = n / units + usize::from(u < n % units);
         let bound = |p: Point| on(p) && length(sub(p, c)) <= r;
@@ -435,6 +437,27 @@ fn grown_court(plan: &mut Plan, rng: &mut Rng, frame: &Frame, morph: &Morph, n: 
         if u > 0 {
             let (a, b) = (add(c, front), add(frame.centre, front));
             plan.paths.push(vec![a, lerp(a, b, 0.5), b]);
+        }
+    }
+    // A camp's internal tracks must reach a real road before they can serve
+    // dwelling plots. Cross the kerb normally, as the ring entrance does,
+    // and join an existing track rather than an unconnected court point.
+    for entry in entries {
+        let mut normal = entry.normal;
+        if dot(sub(frame.centre, entry.p), normal) < 0.0 {
+            normal = scale(normal, -1.0);
+        }
+        let mut landing = add(entry.p, scale(normal, entry.half + path));
+        if !on(landing) {
+            normal = scale(normal, -1.0);
+            landing = add(entry.p, scale(normal, entry.half + path));
+        }
+        if !on(landing) { continue; }
+        let join = plan.paths.iter().flat_map(|p| p.windows(2))
+            .map(|w| crate::urban::geometry::distance(landing, w[0], w[1]))
+            .min_by(|a, b| a.0.total_cmp(&b.0));
+        if let Some((_, _, to)) = join {
+            plan.paths.push(vec![to, landing, entry.p]);
         }
     }
     centres.into_iter().map(|c| (c, r)).collect()
@@ -1024,6 +1047,47 @@ mod tests {
         let heads = plan.sites.iter().filter(|s| s.hold == Hold::Head).map(|s| s.group).collect::<std::collections::BTreeSet<_>>();
         assert_eq!(heads.len(), figures.len());
         assert!(homes(&plan).len() >= 228, "{}", homes(&plan).len());
+    }
+
+    /// A served camp must keep admitted dwellings, even when its regional
+    /// road skirts the clusters instead of crossing their internal tracks.
+    #[test]
+    fn clustered_courts_connect_to_the_road_and_keep_dwelling_plots() {
+        let shape = rectangle(-700.0, -700.0, 700.0, 700.0);
+        let mut l = layout(&shape);
+        l.culture = "mongol-ordu".into();
+        l.streets[0].path = vec![Point { x: -900.0, y: -703.0 }, Point { x: 900.0, y: -703.0 }];
+        l.config = Some(super::super::super::super::LayoutConfig {
+            camp_growth: "clusters".into(), ..Default::default()
+        });
+        l.programme = Some(serde_json::from_value(serde_json::json!({
+            "version": 1, "population": 1500, "context": {}, "cultures": [],
+            "demands": [{"id":"domestic", "function":"domestic", "unit":"domesticUnits",
+                "requested":273.0, "targetArea":19110.0, "targetFrontage":4.0,
+                "provenance":[], "requires":[], "parcelCapacity":0.0, "builtCapacity":0.0,
+                "deficit":273.0, "reasons":[]}],
+            "reservations":[], "allocations":[], "adjacency":[], "environment":[],
+            "reconciliationPasses":0, "warnings":[]
+        })).unwrap());
+        let morph = Morph { value: crate::urban::catalogue()["presets"]["mongol-ordu/village"]["params"].clone() };
+        let index = FrontageIndex::new(&l);
+        let native = |p: &Shape| contacts::street_contacts(p, &l, &index);
+        let mut fronts = native(&shape);
+        assert!(!fronts.is_empty(), "the block has a real regional kerb");
+        let plan = tiles(&Frame::of(&l), &morph, &l);
+        let mut cells = assemble_with_contacts(&shape, 0, l.blocks[0].axis, &mut fronts, &morph, plan, native);
+        assert!(fronts.iter().any(|f| f.shared && f.gate), "internal tracks must actually reach the road");
+        let mapping = crate::urban::culture::contextual_mapping("mongol-ordu", "", "village", morph.text("plotOp"), "domestic").unwrap();
+        let fallback = compact_fallback(&mapping.architecture_pack, "", &mapping.admissibility);
+        let mut admission = mapping.admissibility;
+        admission.shared_access = true;
+        let family = families::family(morph.text("plotOp"));
+        qualify(&mut cells, &fronts, &l, &admission, fallback.as_ref(), family == "courtyard", family, None, false, 0.0);
+        let dwellings = cells.iter().filter(|p| p.use_kind == "plot" && p.envelope.is_some()
+            && p.access.as_ref().is_some_and(|a| matches!(a.kind.as_str(), "public" | "collective"))
+            && p.provenance.iter().any(|s| matches!(s.as_str(), "camp-dwelling" | "camp-head"))).count();
+        assert!(dwellings > 0, "a road-served camp cannot become only gardens");
+        eprintln!("clustered mongol-ordu/1500: {dwellings} admitted dwelling plots");
     }
 
     /// The default growth stays out of a serialized configuration (saved

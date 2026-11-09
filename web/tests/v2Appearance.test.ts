@@ -21,6 +21,13 @@ const complete = (): V2Appearance => ({ style: 'parchment', terrainStyle: 'rende
     ground: 'render-v2', plan: false, colors: 'uses', exaggeration: 2.5, refinement: 'noise' } });
 
 describe('V2 appearance recipes and export snapshots', () => {
+  it('uses a flat field-boundary view for the topographic preset and its SVG export', () => {
+    const settings = defaultSettings(); settings.appearance = { style:'topographic', composition:presetComposition('topographic') };
+    const display = appearanceDisplayOptions(settings), options = svgOptionsForDisplay({}, display);
+    expect(display).toMatchObject({ style:'topographic', landuse:false, contours:true, raster:false, fieldOutlines:true, buildings:true });
+    expect(options).toMatchObject({ landuse:false, contours:true, raster:false, fieldOutlines:true });
+    expect(settings.appearance.composition).toMatchObject({ vegetation:{look:'none'}, landuse:{rural:'outlines',urban:'off',classes:{field:true,forest:false}}, effects:{relief:false}, networks:{roads:{visible:true},water:{visible:true}} });
+  });
   it('round trips the complete bench display recipe without changing the generation cache key', () => {
     const settings = defaultSettings(), key = terrainCacheKey(settings);
     settings.appearance = complete();

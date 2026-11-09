@@ -14,7 +14,7 @@ import { v2DisplayForestAsync, v2ForestOccupation, v2ForestOccupationAsync, with
 import type { ForestOccupation } from '../../../rust/bridge/terrainForest';
 import { nativeCitiesOf } from './nativeProducts';
 import { activityScene } from './activitySites';
-import { setMapSeason, mapSeasonKey } from '../render/seasonPalette';
+import { setMapClimateZone, setMapSeason, mapSeasonKey } from '../render/seasonPalette';
 import { biomePalette } from '../render/biomes';
 import { terrainStyle } from '../render/terrainStyle';
 import { moonlightSvg } from '../render/materialLook';
@@ -153,6 +153,7 @@ export class BenchRenderer {
     this.world = world; this.scene = scene; this.native = scene.terrain;
     const effective = effectiveTerrainSettings(settings, world.mapSize);
     setMapSeason(r.ground.season, effective.climateZone, r.ground.calendar);
+    setMapClimateZone(effective.climateZone, effective.climateValues);
     setRoadGround(world.landuse, world.mapSize, roadGroundTones(r.ground.traits.family === 'material', biomePalette(r.palette.mapStyle, world.options.biome)), r.composition.ambience === 'night');
     const effectiveKey = JSON.stringify([effective.relief, effective.refine, effective.detailNoise, effective.climate, effective.climateValues, effective.climateZone, effective.hydrology?.riverMode]);
     const forestKey = JSON.stringify([effective.forest, effective.climateValues]);
@@ -412,7 +413,7 @@ export class BenchRenderer {
   /** Contours live on the vector overlay, above the land-use tints and the parchment backdrop that would hide a ground-shader line. */
   private contourLook(): { landform: string } | undefined {
     const r = this.resolved, t = this.native, world = this.world;
-    if (!r || !t || !world || !r.ground.contours || !this.layers().relief || t.caveMask.length || isFantasyStyle(r.ground.style)) return undefined;
+    if (!r || !t || !world || !r.ground.contours || this.exportLayers.terrain === false || (!this.layers().relief && r.composition.variant !== 'topographic') || t.caveMask.length || isFantasyStyle(r.ground.style)) return undefined;
     const landform = effectiveTerrainSettings(this.settings!, world.mapSize).relief;
     return landform === 'cavern' ? undefined : { landform };
   }
@@ -462,7 +463,8 @@ export class BenchRenderer {
   private paintRural(ctx: CanvasRenderingContext2D, viewport: { minX: number; minY: number; maxX: number; maxY: number }, mpp: number): void {
     this.paintContours(ctx, viewport, mpp);
     const s = this.semantic;
-    if (s && s.rural !== 'off') drawRuralSemantic(ctx, this.world?.landuse, { look: s.rural, opacity: s.opacity, mpp, viewport, classes: s.classes });
+    const lineView = this.resolved?.composition.variant === 'topographic';
+    if (s && s.rural !== 'off') drawRuralSemantic(ctx, this.world?.landuse, { look: s.rural, opacity: s.opacity, mpp, viewport, classes: s.classes, patterns: !lineView, fieldStrips: lineView });
   }
   private paintUrban(ctx: CanvasRenderingContext2D, scene: CityScene, frame: { viewport: { minX: number; minY: number; maxX: number; maxY: number }; mpp: number }): void {
     const s = this.semantic;

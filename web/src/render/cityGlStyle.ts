@@ -13,10 +13,12 @@ import type { CityGlFillMesh } from './cityGlBuild';
 import type { RenderColors } from './customColors';
 import { MATERIALS, coverLayer, placeLayer, streetLayer } from './buildingMaterials';
 import { planBuildingColors, planRoofColor, planShade, roofRelief } from './cityBuildingPalette';
+import { mapGroundSnow } from './seasonPalette';
 import { funeraryLandFill } from './cityRoles';
 
 export interface CityGlStyleState {
   view: CityView; lod: CityLod; palette: CityPalette; layers: CityLayers;
+  buildingStyle?: 'geometric' | 'cartographic' | 'silhouette';
   buildingsVisible: boolean; diagnostic: 'none' | 'uses' | string;
   refusedParcels?: ReadonlySet<string>;
   /** Render background: painted building silhouettes (function tints, landmarks, dark edges). */
@@ -108,7 +110,8 @@ const BUILT = new Set(['plot', 'compound', 'residual', 'court']), OPEN = new Set
 export function planColors(scene: CityScene, mesh: Pick<CityGlFillMesh, 'layers' | 'featureCount'>, s: CityGlStyleState): CityGlPlanColors {
   const { view, lod, palette, layers } = s, parchment = palette === 'parchment';
   // Render background: district-tinted yards under the roofs, paved squares (see PAVED_ALPHA).
-  const painted = !!s.painted && !parchment && palette !== 'ink' && palette !== 'terrain';
+  const footprint = s.buildingStyle === 'silhouette';
+  const painted = !footprint && !!s.painted && !parchment && palette !== 'ink' && palette !== 'terrain';
   const blend = !!s.blended && blendsGround(view, palette), tone = blendTone(palette), softLine = blendLine(tone);
   const fill = new Uint8Array(mesh.featureCount * 4), line = new Uint8Array(mesh.featureCount * 4);
   const outline = palette === 'ink' ? '#3c3024' : parchment ? PARCH.inkSoft : '#655847';
@@ -198,8 +201,8 @@ export function planColors(scene: CityScene, mesh: Pick<CityGlFillMesh, 'layers'
     draws.parcels = true;
   });
   if (layers.parcelOverlay !== false && atLeast(lod, 'near') && s.refusedParcels?.size) scene.parcels.forEach((p, i) => { if (p.id && s.refusedParcels!.has(p.id)) { put(line, p0 + i, urbanFunctionColor('refusal')); draws.parcelLines = true; } });
-  draws.buildings = s.buildingsVisible && atLeast(lod, 'near') && (view === 'buildings' || view === 'roles');
-  draws.buildingLines = draws.buildings && (lod === 'close' || (!!s.painted && lod === 'near'));
+  draws.buildings = s.buildingsVisible && (s.buildingStyle === 'silhouette' || atLeast(lod, 'near')) && (view === 'buildings' || view === 'roles');
+  draws.buildingLines = draws.buildings && (s.buildingStyle === 'silhouette' || atLeast(lod, 'near'));
   return { fill, line, draws };
 }
 
@@ -207,15 +210,16 @@ export function planColors(scene: CityScene, mesh: Pick<CityGlFillMesh, 'layers'
 export function buildingColors(buildings: CityBuildings | undefined, s: CityGlStyleState, _scene?: CityScene): { fill: Uint8Array; line: Uint8Array } {
   const items = buildings?.items ?? [], roofs = buildings?.roofs, count = items.length + (roofs ? roofs.shapes.length + items.length : 0);
   const fill = new Uint8Array(Math.max(1, count) * 4), line = new Uint8Array(Math.max(1, count) * 4), colors: string[] = [];
-  const parchment = s.palette === 'parchment', edge = parchment ? '#f1e5c6' : '#2e261d';
+  const parchment = s.palette === 'parchment', edge = s.buildingStyle === 'silhouette' && parchment ? '#f1e5c6' : '#2e261d';
   const diagnostic = s.view === 'roles' || s.diagnostic === 'uses';
-  const painted = !!s.painted && !parchment && s.palette !== 'ink' && !diagnostic;
+  const footprint = s.buildingStyle === 'silhouette';
+  const painted = !footprint && !!s.painted && !parchment && s.palette !== 'ink' && !diagnostic;
   items.forEach((b, i) => {
-    const tint = planBuildingColors(b, s.palette);
+    const tint = planBuildingColors(b, footprint ? 'terrain' : s.palette);
     const color = s.view === 'roles' ? BUILDING_FAMILIES[b.family]?.color ?? '#5a4b3c' : s.diagnostic === 'uses' ? urbanFunctionColor(b.fn)
-      : s.colors?.building ?? (roofs ? tint.wall : tint.roof);
+      : s.colors?.building ?? (footprint ? tint.roof : roofs ? tint.wall : tint.roof);
     // Party walls: every roof keeps a dark edge, so adjoining houses of a row stay distinct.
-    put(fill, i, color); put(line, i, b.stilts ? '#514431' : s.colors?.buildingEdge ? s.colors.buildingEdge : painted ? b.landmark ? '#e2d3a6' : '#1f1811' : edge, painted && !b.landmark ? 0.8 : 1);
+    put(fill, i, color); put(line, i, !footprint && b.stilts ? '#514431' : s.colors?.buildingEdge ? s.colors.buildingEdge : painted ? b.landmark ? '#e2d3a6' : '#1f1811' : edge, painted && !b.landmark ? 0.8 : 1);
     colors.push(color);
   });
   // Roof pans use the exact shared culture/material/tone, softened for ink maps.
@@ -223,13 +227,12 @@ export function buildingColors(buildings: CityBuildings | undefined, s: CityGlSt
     for (let k = 0; k < roofs.shapes.length; k++) {
       const cover = roofs.cover[k], f = items.length + k;
       const color = diagnostic ? planShade(colors[roofs.owner[k]], roofs.light[k] * 0.5) : s.colors?.building
-        ? planShade(s.colors.building, roofs.flat?.[k] ? roofs.light[k] * roofRelief(s.palette, roofs.flat[k] === 2) : 0)
+        ? planRoofColor(items[roofs.owner[k]], roofs, k, s.palette, s.colors.building)
         : planRoofColor(items[roofs.owner[k]], roofs, k, s.palette);
-      put(fill, f, color); put(line, f, planShade(color, -0.38), COVER_EDGE[cover] ?? 0.55);
+      put(fill, f, color); put(line, f, '#30271f', roofs.snow?.[k] ? 0 : Math.max(.6, COVER_EDGE[cover] ?? .55));
     }
-    // Shadow features are drawn with a tint; they only need to be shown. Parchment casts only the shadows of
-    // flat-roofed buildings: pitched roofs carry their relief in their lit and shaded pans, flat ones need their height.
-    for (let i = 0; i < items.length; i++) put(fill, items.length + roofs.shapes.length + i, '#000000', !parchment || items[i].flat ? 1 : 0);
+    // Every relief roof casts a short, height-derived ground shadow.
+    for (let i = 0; i < items.length; i++) put(fill, items.length + roofs.shapes.length + i, '#000000', 1);
   }
   return { fill, line };
 }
@@ -266,9 +269,9 @@ export const PAINTED_BUILDINGS: Record<string, string> = {
   domestic: '#8a5c45', mixed: '#93664a', workshop: '#7c6652', warehouse: '#6e6a63', collective: '#6b5a63', open_space: '#7f8461', landmark: '#4f4459',
 };
 /** Ground shadow of painted silhouettes: straight RGBA and world offset (metres, south-east). */
-export const PAINTED_SHADOW: [number, number, number, number] = [22 / 255, 18 / 255, 10 / 255, 0.3];
+export const PAINTED_SHADOW: [number, number, number, number] = [0, 0, 0, 0.3];
 /** Parchment ground shadow of flat-roofed buildings: a light sepia wash (straight RGBA). */
-export const PARCHMENT_SHADOW: [number, number, number, number] = [70 / 255, 52 / 255, 32 / 255, 0.2];
+export const PARCHMENT_SHADOW: [number, number, number, number] = [0, 0, 0, 0.2];
 /** Street colours: outer = casing, inner = fill (feature = street index). */
 export function streetColors(scene: CityScene, palette: CityPalette, blended = false, custom?: RenderColors): { outer: Uint8Array; inner: Uint8Array } {
   const n = Math.max(1, scene.streets.length), outer = new Uint8Array(n * 4), inner = new Uint8Array(n * 4), tone = blendTone(palette);
@@ -304,7 +307,8 @@ export function roofMaterialTable(buildings: CityBuildings | undefined, s: CityG
   const items = buildings?.items ?? [], roofs = buildings?.roofs, n = items.length + (roofs ? roofs.shapes.length + items.length : 0), out = new Uint8Array(Math.max(1, n) * 4);
   if (!roofs || s.view === 'roles' || s.diagnostic === 'uses' || (s.palette === 'parchment' || s.palette === 'ink')) return out;
   for (let k = 0; k < roofs.shapes.length; k++) {
-    const layer = coverLayer(roofs.cover[k]);
+    const b = items[roofs.owner[k]], snow = roofs.snow?.[k] && mapGroundSnow(b.snowAltitude ?? b.building.ground_z_m);
+    const layer = snow ? -1 : coverLayer(roofs.cover[k]);
     if (layer < 0) continue;
     matPut(out, items.length + k, layer, Math.round(((roofs.dir[k] ?? 0) / (2 * Math.PI) + 1) % 1 * 255), 1, true);
   }

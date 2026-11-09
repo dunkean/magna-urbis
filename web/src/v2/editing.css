@@ -1,0 +1,27 @@
+/* Map editing shares the workshop's glass, brass and compact form language. */
+.v2-edit-actions{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+.v2-edit-actions button{font-size:11px;padding:7px 9px;min-height:32px}
+.v2-edit-actions>label{flex:1 1 110px;min-width:0}
+.v2-edit-actions button[aria-pressed=true]{border-color:var(--gold);background:#dcb86f22;color:#f6e1b3}
+.v2-edit-actions .danger{color:#efb09d;border-color:#d78d7555}
+.v2-edit-hint{font-size:11px;line-height:1.6;color:var(--muted);margin:8px 0}
+.v2-edit-panel{border:1px solid var(--line);border-radius:8px;padding:12px;margin-top:12px;background:#ffffff03}
+.v2-edit-panel h3{font-size:19px;margin-bottom:8px}
+.v2-edit-panel label{display:block;font-size:11px;color:#d2cdbd;margin:10px 0 5px}
+.v2-edit-panel .row label{flex:1;min-width:0}
+.v2-edit-panel input[type=color]{height:34px;padding:3px}
+.v2-edit-panel [role=status]{font-size:11px;line-height:1.5;color:var(--gold);margin-top:8px}
+.v2-edit-overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:6;overflow:hidden}
+.v2-edit-overlay .edit-handle{pointer-events:all;cursor:move;fill:#fff7e4;stroke:#9b671d;stroke-width:2}
+.v2-edit-overlay .edit-line{fill:none;stroke:#e7ab39;stroke-width:3;pointer-events:stroke;cursor:move}
+.v2-edit-overlay .edit-label{pointer-events:all;cursor:move}
+.map-topbar .edit-open{font-size:11px;padding:7px 10px}
+.v2-town-move-hint{position:absolute;top:165px;left:22px;z-index:4;max-width:380px;padding:8px 12px;font-size:11px;pointer-events:none}
+.v2-moving-towns canvas{cursor:grab}
+.map-area:has(>.city3d:not([hidden]))>.v2-town-move-hint{display:none}
+#cityShapeEditor .se-handle{filter:drop-shadow(0 1px 2px #0006)}
+.map-area .city-shape-toolbar{background:#26271ff5;border:1px solid #dcb86f66;color:#eee9db;border-radius:8px;top:85px;z-index:12;box-shadow:0 5px 20px #0004}
+.map-area .city-shape-toolbar small{color:#c5bda6}
+.map-area .city-shape-toolbar button{background:#ffffff08;border-color:#ffffff25;color:#eee9db}
+.map-area .city-shape-toolbar button:hover{background:#dcb86f22}
+@media(max-width:720px){.map-area .city-shape-toolbar{top:122px}.v2-edit-actions button{min-height:36px}}

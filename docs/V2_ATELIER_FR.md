@@ -148,6 +148,28 @@ Les contraintes d’une recette restent actives : demander quatre étages à une
 recette qui en autorise trois produit un refus explicite. Le rapport du moteur
 montre les raisons et permet de corriger la configuration puis de réessayer.
 
+L’inspection propose aussi des actions directes : **Nouvelle variation**,
+**Supprimer**, **Modifier le contour** et le choix du rôle, de la culture et de
+la trame d’un quartier. Le contour se modifie sur la carte : glisser un sommet,
+cliquer un bord pour en ajouter un, puis **Valider**. Les zones supprimées sont
+restaurables depuis l’inspecteur du lieu. Une maison native dispose d’un tirage
+individuel et du catalogue architectural.
+
+**Carte → Noms et étiquettes**, également accessible en haut de la carte,
+permet de rechercher les noms existants, nommer quartiers, parcelles et maisons,
+ou créer une étiquette libre. Le texte, la couleur, la taille, le gras, l’italique
+et les coordonnées sont modifiables. **Sélectionner sur la carte** choisit un
+élément ; **Placer sur la carte** fixe sa nouvelle position. Les étiquettes sont
+conservées dans le projet et la recette, et suivent les exports visuels.
+
+**Région → Supprimer une rivière** sélectionne un cours d’eau et prévisualise
+tous les affluents et bras qui disparaîtront avec lui. Le relief est conservé.
+Dans **Peuplements → Routes régionales**, les outils permettent de tracer,
+déplacer et supprimer une route, ou modifier ses points, sa catégorie et sa
+largeur. Ces retouches directes sont conservées dans le **projet complet** ;
+une nouvelle génération du réseau les remplace. Les villes déjà construites
+peuvent demander une reconstruction pour adapter leurs accès et leurs rives.
+
 Le sélecteur de rendu propose les vingt styles existants : neuf palettes V1,
 Render Neural Earth, Render3D Multiscale et Brush, satellite Render v2 et ses
 quatre vues de matériaux, Fantasy encre et aquarelle, altitude DEM. Les réglages
@@ -172,6 +194,23 @@ Les inventaires de correspondance avec les bancs sont dans
 La [revue d’optimisation](V2_OPTIMIZATION.md) détaille les copies supprimées,
 les caches, le rendu, les mesures avant/après et les vérifications d’identité
 des résultats.
+
+Les commandes **Déplacer les villes**, **Modifier les routes** et **Tracer une
+route** sont visibles directement sur la carte. Activez une commande puis
+glissez la ville ou la route ; **Échap** termine l’édition. Déplacer une ville
+translate son plan existant et ses bâtiments, sans relancer leur génération.
+
+**Tracer une route** utilise par défaut le mode **Automatique · relief** :
+cliquez le départ puis l’arrivée. Le moteur Rust calcule le parcours avec les
+réglages régionaux de pente, de franchissement, de culture et de revêtement.
+Le calcul s’exécute dans un worker ; **Échap** ou **Annuler** l’interrompt.
+Le mode **Libre · points de contrôle** reste disponible dans le panneau.
+Le raccordement aux routes existantes est conservé ; leur utilisation comme
+réseau de partage pendant cette recherche n’est pas exposée par l’API actuelle.
+
+Le rendu **Topographique** est une vue de travail simplifiée : fond uni, courbes
+de niveau, limites et bandes des champs, rivières, routes et villes. Il conserve les données de
+land use dans le projet mais n’en affiche ni les aplats ni la végétation.
 
 ## Moteurs, activité et matériel
 

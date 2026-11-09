@@ -496,7 +496,8 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     const sources = deps.textSources?.();
     if (sources !== textSourcesOf || textLabelsOf !== mapLabels) {
       textSourcesOf = sources; textLabelsOf = mapLabels;
-      combinedLabels = sources?.length ? [...mapLabels, ...sources.flatMap(scene => cityTextLabels(scene, text, pal))] : mapLabels;
+      const replaced = (world.names?.entries ?? []).flatMap(e => e.replacedAnchor ? [e.replacedAnchor] : []);
+      combinedLabels = sources?.length ? [...mapLabels, ...sources.flatMap(scene => cityTextLabels(scene, text, pal)).filter(label => !replaced.some(p => Math.abs(p.x-label.x)<.01 && Math.abs(p.y-label.y)<.01))] : mapLabels;
     }
     placedLast = [];
     if (overlays.labels && combinedLabels.length) {
@@ -900,7 +901,8 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       if (kind === 'forest' && !isUnderdarkBiome(world.options.biome)) {
         const wash = forestWash(name);
         if (wash) {
-          ctx.save(); const clip = visibleClip(polyL(name)!, rect); if (clip) ctx.clip(clip, 'nonzero');
+          const clip = visibleClip(polyL(name)!, rect); if (!clip) return;
+          ctx.save(); ctx.clip(clip, 'nonzero');
           fillPolys(name, landFill(kind), landAlpha(kind) * .18);
           const gains = [.2, .24, .32, .46];
           for (let i = 0; i < wash.levels.length; i++) {
@@ -914,7 +916,8 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
         const engraved = pal.name === 'parchment' && (kind === 'meadow' || kind === 'pasture' || kind === 'marsh');
         const layer = polyL(name), wash = layer && (kind === 'commons' || engraved) && !isUnderdarkBiome(world.options.biome) ? forestWash('lu-forest') : undefined;
         if (wash) {
-          ctx.save(); const clip = visibleClip(layer!, rect); if (clip) ctx.clip(clip, 'nonzero');
+          const clip = visibleClip(layer!, rect); if (!clip) return;
+          ctx.save(); ctx.clip(clip, 'nonzero');
           ctx.fillStyle = landFill('forest');
           // Parchment: one narrow engraved rim instead of the stepped halo (the steps read as contour rings).
           if (pal.name !== 'parchment') for (const level of wash.fringe) { ctx.globalAlpha = landAlpha('forest') * .06; for (const path of polyPaths(level)) ctx.fill(path, 'evenodd'); }

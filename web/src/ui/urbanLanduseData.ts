@@ -16,6 +16,7 @@ import { buildForestField, type ForestField, type ForestFieldInput, type ForestS
 import { CLIMATE_VALUES } from '../../../rust/bridge/terrainClimate';
 import { seedHash } from '../../../rust/bridge/terrainAdjust';
 import { softenRuralGround } from '../render/countryside';
+import { forestCorridors } from '../render/forestRoom';
 
 export interface UrbanLanduseSite extends RoadSite {
   archetype?: string; siteType?: string; offers?: Partial<Record<SiteArchetype, number>>;
@@ -188,6 +189,9 @@ export async function generateUrbanLanduseWith(input: UrbanLanduseInput, built?:
   } else {
     world.landuse = await generateNaturalCoverNative(world.terrain, input.biome, root, naturalForest, input.runtime);
   }
+  // Keep urban streets as well as regional roads in the displayed forest's
+  // occupation. The rural reserve alone does not clear a continuous road core.
+  world.landuse.forestCorridors = forestCorridors(world, false);
   world.stats.ms = Math.round(performance.now() - start);
   world.stats.rasterCellMeters = input.raster.width / input.raster.n;
   world.stats.areas = world.landuse.areas.length;

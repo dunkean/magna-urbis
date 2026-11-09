@@ -4,6 +4,12 @@ import type { HouseMaterial, MaterialSlots, Point, RoofEdgeKind, Surface } from 
 import type { ArchitectureFunction, ArchitectureVolume, PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
 import { houseMaterialColor } from '../../../rust/bridge/houseRender';
 import { buildingPaint, type UrbanBuildingAppearance } from './urbanBuildingStyle';
+import { mapGroundSnow, roofSeasonKey } from './seasonPalette';
+import { roofSnowPatches, snowRoofTint } from './roofSnow';
+import { planShade } from './cityBuildingPalette';
+import { massingFootprint, readMassing, planRoof, roofLight } from './cityMassing';
+import { drawNightBuildings, nightRoof, nightWindowReach } from './cityNight';
+import { drawRuinPlan, ruinFootprint } from './cityRuins';
 
 export interface BuildingViewport { minX: number; minY: number; maxX: number; maxY: number }
 export type BuildingLod = 'silhouette' | 'ridges' | 'facets';
@@ -117,8 +123,11 @@ type Line = BuildingRoofLine;
 interface FacetLayer { groups: { color: string; darkness: number; geometry: GeometryPath }[]; z: number }
 interface CachedGeometry {
   outline: GeometryPath;
+  ruins?: Surface;
+  footprint?: GeometryPath;
   ridges?: Line[];
   facets?: FacetLayer[];
+  relief?: { geometry: GeometryPath; light: number; snow: number }[];
   vertices: number;
 }
 interface RasterTile {
@@ -504,6 +513,20 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
     geometry.ridges = clipped; metrics.preparedVertices += clipped.length * 2;
     this.growGeometry(building, geometry, clipped.length * 2); return clipped;
   }
+  private planRelief(building: CompactBuildingVisual, geometry: CachedGeometry, metrics: BuildingRenderMetrics) {
+    if (geometry.relief) return geometry.relief;
+    const massing = readMassing((building as CompactBuildingVisual & { programme?: unknown }).programme, building.footprint, building.id);
+    const faces = massing ? planRoof(building.footprint, massing) : [];
+    geometry.relief = faces.filter(f => f.normal[2] >= .08).flatMap(face => {
+      const light = face.light ?? roofLight(face.normal);
+      const base = { geometry: geometryPath([{ outer: face.points, holes: face.holes ?? [] }], metrics), light, snow: 0 };
+      return [base, ...(face.snow === 0 ? [] : roofSnowPatches(face.points, face.normal).map(p => ({
+        geometry: geometryPath([{ outer: p.points, holes: face.holes ?? [] }], metrics), light, snow: p.weight,
+      })))];
+    });
+    this.growGeometry(building, geometry, geometry.relief.reduce((n, f) => n + f.geometry.vertices, 0));
+    return geometry.relief;
+  }
   private facets(building: CompactBuildingVisual, geometry: CachedGeometry, metrics: BuildingRenderMetrics): FacetLayer[] {
     if (geometry.facets) return geometry.facets;
     const layers: FacetLayer[] = [], catalogue = {materials: this.scene.materials ?? []};
@@ -546,20 +569,28 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
   draw(ctx: CanvasRenderingContext2D, options: BuildingDrawOptions): BuildingRenderMetrics {
     if (!validViewport(options.viewport)) throw new Error('Building viewport must contain finite, ordered bounds.');
     if (!(options.metresPerPixel > 0) || !Number.isFinite(options.metresPerPixel)) throw new Error('metresPerPixel must be finite and positive.');
-    if (this.options.raster && !this.rasterUnavailable && options.metresPerPixel >= this.options.rasterThresholdMpp) {
-      const raster = this.drawRaster(ctx, options); if (raster) return raster;
+    const raster = this.options.raster && !this.rasterUnavailable && options.metresPerPixel >= this.options.rasterThresholdMpp
+      ? this.drawRaster(ctx, options) : undefined;
+    const result = raster ?? this.drawVector(ctx, options);
+    if (options.appearance.ambience === 'night' && options.appearance.diagnostic === 'none') {
+      // Light the destination after the opaque roof tiles, so screen blends with streets too.
+      // Query beyond the viewport for windows whose pool reaches in; never bake pools into tiles.
+      const v = options.viewport, pad = nightWindowReach(options.metresPerPixel);
+      const lights = this.query({ minX: v.minX - pad, minY: v.minY - pad, maxX: v.maxX + pad, maxY: v.maxY + pad }, options.metresPerPixel, options.appearance);
+      drawNightBuildings(ctx, lights.visible.map(entry => entry.building), v, options.metresPerPixel, !!options.appearance.nightInk);
     }
-    return this.drawVector(ctx, options);
+    return result;
   }
 
   private drawVector(ctx: CanvasRenderingContext2D, options: BuildingDrawOptions): BuildingRenderMetrics {
+    const night = options.appearance.ambience === 'night' && options.appearance.diagnostic === 'none', ink = !!options.appearance.nightInk;
     const start = performance.now(), frame = this.query(options.viewport, options.metresPerPixel, options.appearance);
     const painted = paintedBuildings(options), shadows: GeometryPath[][] = [[], [], []], landmarks: GeometryPath[] = [];
     const metrics: BuildingRenderMetrics = {...frame.metrics, indexBuildMs: this.indexBuildMs, drawMs: 0, drawCalls: 0,
       submittedVertices: 0, preparedVertices: 0, roofMeshesRead: 0, ridgeSegments: 0, cacheHits: 0, cacheMisses: 0,
       cachedBuildings: 0, cachedVertices: 0, lod: {silhouette: 0, ridges: 0, facets: 0}, renderMode: 'vector', visibleBuildingsExact: true,
       rasterTiles: 0, rasterTilesBuilt: 0, rasterTilesPending: 0, rasterCacheBytes: this.rasterBytes, rasterDrawCalls: 0};
-    const fills = new Map<string, GeometryPath[]>(), detailed: {building: CompactBuildingVisual; geometry: CachedGeometry; lod: BuildingLod}[] = [];
+    const fills = new Map<string, GeometryPath[]>(), detailed: {building: CompactBuildingVisual; geometry: CachedGeometry; lod: BuildingLod}[] = [], ruinPlans: Surface[] = [];
     const catalogue = {materials: this.scene.materials ?? []};
     let selected: CachedGeometry | undefined, facetsRemaining = this.options.maxFacetBuildings;
     for (const entry of frame.visible) {
@@ -567,18 +598,27 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
       if (lod === 'facets' && facetsRemaining-- <= 0) lod = 'ridges';
       const building = options.useDetails !== false && lod === 'facets' && options.metresPerPixel < this.options.rasterThresholdMpp
         ? this.details.get(entry.building.id) ?? entry.building : entry.building;
-      const geometry = this.geometry(building, metrics);
+      let geometry = this.geometry(building, metrics);
+      if (options.appearance.style === 'silhouette') {
+        geometry.ruins ??= ruinFootprint(building.footprint, (building as CompactBuildingVisual & { programme?: unknown }).programme);
+        if (geometry.ruins.length) ruinPlans.push(geometry.ruins);
+        if (!geometry.footprint) {
+          geometry.footprint = geometryPath(massingFootprint(building.footprint, readMassing((building as CompactBuildingVisual & { programme?: unknown }).programme, building.footprint, building.id)), metrics);
+          this.growGeometry(building, geometry, geometry.footprint.vertices);
+        }
+        geometry = { ...geometry, outline: geometry.footprint };
+      }
       metrics.lod[lod]++;
       const paint = buildingPaint(building.materials ?? building.volumes?.[0]?.materials, building.function, visualHeight(building), options.appearance, undefined, catalogue);
-      const flat = options.appearance.style === 'silhouette' && options.appearance.diagnostic === 'none', landmark = painted && isLandmark(building);
-      const color = flat ? (options.appearance.colors?.building ?? (painted ? PAINTED_SILHOUETTE[landmark ? 'landmark' : building.function] ?? PAINTED_SILHOUETTE.domestic : '#5a4b3c')) : paint.roof;
+      const landmark = painted && isLandmark(building);
+      const color = options.appearance.style === 'silhouette' || options.appearance.diagnostic !== 'none' ? paint.roof : snowHex(paint.roof, mapGroundSnow(building.ground_z_m) * .72, 0);
       const group = fills.get(color) ?? []; group.push(geometry.outline); fills.set(color, group);
       if (painted) {
         const height = visualHeight(building);
         shadows[landmark || height >= 12 ? 2 : height >= 6 ? 1 : 0].push(geometry.outline);
         if (landmark) landmarks.push(geometry.outline);
       }
-      if (lod !== 'silhouette') detailed.push({building, geometry, lod});
+      if (options.appearance.style !== 'silhouette' && (lod !== 'silhouette' || (building as CompactBuildingVisual & { programme?: { massing?: unknown } }).programme?.massing)) detailed.push({building, geometry, lod});
       if (building.id === options.selectedId) selected = geometry;
     }
     ctx.save();
@@ -605,27 +645,38 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
       // landmarks get a heavier, warmer one.
       if (painted && mpp < 2.5) {
         const all: GeometryPath[] = []; for (const paths of fills.values()) all.push(...paths);
-        ctx.strokeStyle = options.appearance.colors?.buildingEdge ?? PAINTED_EDGE; ctx.globalAlpha = mpp < .4 ? .6 : .5; ctx.lineWidth = (mpp < .4 ? .8 : mpp < 1 ? .65 : .5) * mpp;
+        ctx.strokeStyle = options.appearance.colors?.buildingEdge ?? (night ? ink ? '#94a9bb' : '#101a29' : PAINTED_EDGE); ctx.globalAlpha = mpp < .4 ? .6 : .5; ctx.lineWidth = (mpp < .4 ? .8 : mpp < 1 ? .65 : .5) * mpp;
         strokeBatch(ctx, all, metrics);
-        if (landmarks.length) { ctx.strokeStyle = options.appearance.colors?.buildingEdge ?? PAINTED_LANDMARK_EDGE; ctx.globalAlpha = .9; ctx.lineWidth = 1.4 * mpp; strokeBatch(ctx, landmarks, metrics); }
+        if (landmarks.length) { ctx.strokeStyle = options.appearance.colors?.buildingEdge ?? (night ? '#7c8d9f' : PAINTED_LANDMARK_EDGE); ctx.globalAlpha = .9; ctx.lineWidth = 1.4 * mpp; strokeBatch(ctx, landmarks, metrics); }
         ctx.globalAlpha = 1;
       }
       const lineGroups = new Map<string, Line[]>();
       for (const {building, geometry, lod} of detailed) {
+        const relief = options.appearance.diagnostic === 'none' ? this.planRelief(building, geometry, metrics) : [];
+        if (relief.length) {
+          const paint = buildingPaint(building.materials ?? building.volumes?.[0]?.materials, building.function, visualHeight(building), options.appearance, undefined, catalogue);
+          for (const face of relief) {
+            ctx.fillStyle = snowHex(planShade(paint.roof, face.light), face.snow * mapGroundSnow(building.ground_z_m), face.light);
+            paintGeometry(ctx, face.geometry, metrics);
+            if (!face.snow) { ctx.strokeStyle = 'rgba(35,28,21,.55)'; ctx.lineWidth = .45 * mpp; paintGeometry(ctx, face.geometry, metrics, true); }
+          }
+          continue;
+        }
         if (lod === 'facets' && options.appearance.diagnostic !== 'uses' && options.appearance.diagnostic !== 'height') {
           const facets = this.facets(building, geometry, metrics);
           if (facets.length) {
             ctx.save(); clipGeometry(ctx, geometry.outline);
             for (const layer of facets) for (const group of layer.groups) {
-              ctx.fillStyle = options.appearance.colors?.building ? shadeMaterial(options.appearance.colors.building, group.darkness) : group.color; paintGeometry(ctx, group.geometry, metrics);
+              const color = options.appearance.colors?.building ? shadeMaterial(options.appearance.colors.building, group.darkness) : night ? nightRoof(group.color, ink) : group.color;
+              ctx.fillStyle = options.appearance.diagnostic === 'none' ? snowHex(color, mapGroundSnow(building.ground_z_m) * .8, -group.darkness) : color; paintGeometry(ctx, group.geometry, metrics);
             }
             ctx.restore();
           }
         }
-        if (painted && lod === 'facets') paintRoofSlopes(ctx, building, geometry, this.ridges(building, geometry, metrics), mpp, metrics);
+        if (painted && !night) paintRoofSlopes(ctx, building, geometry, this.ridges(building, geometry, metrics), mpp, metrics);
         for (const line of this.ridges(building, geometry, metrics)) {
           if (Math.hypot(line.b.x - line.a.x, line.b.y - line.a.y) / mpp < 1.5) continue;
-          const color = options.appearance.colors?.buildingEdge ?? (line.kind === 'valley' ? '#736e53' : '#393a31');
+          const color = options.appearance.colors?.buildingEdge ?? (night ? ink ? '#9eafc1' : '#3b4a60' : line.kind === 'valley' ? '#736e53' : '#393a31');
           const lines = lineGroups.get(color) ?? []; lines.push(line); lineGroups.set(color, lines);
         }
       }
@@ -634,6 +685,14 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
         for (const {a, b} of lines) { ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); }
         ctx.stroke(); metrics.drawCalls++; metrics.ridgeSegments += lines.length; metrics.submittedVertices += lines.length * 2;
       }
+      // Footprint plans retain a hairline around each individual house,
+      // including shared party walls, after every fill and roof detail.
+      if (options.appearance.style === 'silhouette' && !painted) {
+        const all: GeometryPath[] = []; for (const paths of fills.values()) all.push(...paths);
+        ctx.strokeStyle = options.appearance.colors?.buildingEdge ?? '#2e261d'; ctx.lineWidth = .4 * mpp;
+        strokeBatch(ctx, all, metrics);
+      }
+      for (const surface of ruinPlans) metrics.drawCalls += drawRuinPlan(ctx, surface, mpp);
       if (options.appearance.diagnostic === 'access') {
         ctx.beginPath(); ctx.fillStyle = '#147e67';
         for (const {building} of frame.visible) if (building.entrance && validPoint(building.entrance)) {
@@ -671,7 +730,7 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
     const tiles: {key: string; x: number; y: number; tile?: RasterTile}[] = [];
     const protectedKeys = new Set<string>();
     for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
-      const key = `${level}:${x}:${y}:${appearance.style}:${appearance.diagnostic}:${colorKey}:${paint}`;
+      const key = `${level}:${x}:${y}:${appearance.style}:${appearance.diagnostic}:${appearance.ambience}:${appearance.nightInk}:${colorKey}:${paint}:${roofSeasonKey()}`;
       const tile = this.rasterCache.get(key); protectedKeys.add(key); tiles.push({key, x, y, tile});
       if (tile) { this.rasterCache.delete(key); this.rasterCache.set(key, tile); }
     }
@@ -716,8 +775,11 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
       const selected = options.selectedId ? this.byId.get(options.selectedId) : undefined;
       if (selected && overlaps(selected.bounds, viewport)) {
         const geometry = this.geometry(selected.building, metrics);
+        const outline = appearance.style === 'silhouette'
+          ? geometry.footprint ??= geometryPath(massingFootprint(selected.building.footprint, readMassing((selected.building as CompactBuildingVisual & { programme?: unknown }).programme, selected.building.footprint, selected.building.id)), metrics)
+          : geometry.outline;
         ctx.strokeStyle = '#197ea4'; ctx.lineWidth = 2 * options.metresPerPixel; ctx.lineJoin = 'round';
-        paintGeometry(ctx, geometry.outline, metrics, true);
+        paintGeometry(ctx, outline, metrics, true);
       }
     } finally { ctx.restore(); }
     metrics.cachedBuildings = this.geometryCache.size; metrics.cachedVertices = this.cacheVertices;
@@ -726,11 +788,7 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
 }
 
 // ---------------------------------------------------------------- painted plans (Render background)
-const paintedBuildings = (options: BuildingDrawOptions): boolean => options.painted ?? globalThis.document?.documentElement.dataset.cityBackground === 'render';
-/** Silhouette tints by function: warm roofs for houses, greyer for stores, a deep slate for landmarks. */
-const PAINTED_SILHOUETTE: Record<string, string> = {
-  domestic: '#8a5c45', mixed: '#93664a', workshop: '#7c6652', warehouse: '#6e6a63', collective: '#6b5a63', open_space: '#7f8461', landmark: '#4f4459',
-};
+const paintedBuildings = (options: BuildingDrawOptions): boolean => options.appearance.style !== 'silhouette' && (options.painted ?? globalThis.document?.documentElement.dataset.cityBackground === 'render');
 const PAINTED_SHADOW = 'rgba(22, 18, 10, 0.3)', PAINTED_EDGE = '#241d15', PAINTED_LANDMARK_EDGE = '#d9c79a';
 /** Ground shadow offsets (metres) of low (< 6 m), mid and tall (≥ 12 m, landmarks) buildings. */
 const PAINTED_SHADOW_M = [1.1, 2, 3.4];
@@ -742,7 +800,7 @@ export function urbanOverviewInkPadding(painted: boolean, access: boolean): { wo
 }
 /** Light of the painted plans: it comes from the north-west, opposite the ground shadows. */
 const ROOF_SUN = {x: -.6, y: -.8};
-const ROOF_LIT = 'rgba(255,238,205,.15)', ROOF_SHADE = 'rgba(28,18,10,.3)', ROOF_COURSES = 'rgba(24,16,10,.13)';
+const ROOF_LIT = 'rgba(255,238,205,.28)', ROOF_SHADE = 'rgba(28,18,10,.44)', ROOF_COURSES = 'rgba(24,16,10,.13)';
 /** Compact plans keep their ridges, not their roof mesh: each ridge splits the roof into a lit and a shaded slope, with tile courses up close. */
 function paintRoofSlopes(ctx: CanvasRenderingContext2D, building: CompactBuildingVisual, geometry: CachedGeometry, ridges: readonly Line[], mpp: number, metrics: BuildingRenderMetrics): void {
   ctx.save(); clipGeometry(ctx, geometry.outline);
@@ -797,4 +855,10 @@ function visualHeight(building: CompactBuildingVisual): number {
 function shadeMaterial(color: string, darkness: number): string {
   const value = Number.parseInt(color.slice(1), 16), shade = Math.round(darkness * 24) / 24;
   return `rgb(${Math.round(((value >> 16) & 255) * (1 - shade) + 41 * shade)},${Math.round(((value >> 8) & 255) * (1 - shade) + 51 * shade)},${Math.round((value & 255) * (1 - shade) + 45 * shade)})`;
+}
+
+function snowHex(color: string, amount: number, light: number): string {
+  if (!amount) return color;
+  const c = color.startsWith('rgb') ? color.match(/[\d.]+/g)!.slice(0, 3).map(v => Number(v) / 255) : [1, 3, 5].map(i => parseInt(color.slice(i, i + 2), 16) / 255);
+  return '#' + snowRoofTint(c as [number, number, number], amount, light).map(v => Math.round(v * 255).toString(16).padStart(2, '0')).join('');
 }

@@ -44,7 +44,7 @@ export function terrain3dBackend(view: Terrain3d): Terrain3dBackend {
   return view.getStatus('renderer') === 'webgpu' ? 'webgpu' : 'webgl';
 }
 
-const RECOVERY_ATTEMPTS = 3, RECOVERY_DELAY_MS = 500, LOSS_WINDOW_MS = 60_000, WARMUP_LIMIT_MS = 10_000;
+const RECOVERY_ATTEMPTS = 3, RECOVERY_DELAY_MS = 500, LOSS_WINDOW_MS = 60_000, WARMUP_LIMIT_MS = 45_000;
 /** Calls that change a view's inputs or camera: also applied to a view being prepared behind it. */
 const MIRRORED = new Set<PropertyKey>(['setSurface', 'setHeightSampler', 'setGroundMaterial', 'setLook', 'setRenderV2Season', 'setTileBoundaries', 'setBuildings',
   'replaceBuildings', 'setForest', 'setTileLoader', 'invalidateTiles', 'setTexture', 'setCamera', 'setNavigation', 'setActive', 'resize', 'fit', 'zoom', 'north']);
@@ -164,12 +164,21 @@ class Terrain3dHost {
   private settle(): void {
     const warming = this.warming;
     if (!warming || this.disposed) return;
-    // A closed view has nothing to keep on screen; otherwise wait for the new frame (bounded).
-    if (!this.current.isActive || warming.view.isSettled() || performance.now() - warming.started > WARMUP_LIMIT_MS) {
+    if (warming.view.isSettled()) {
       this.warming = undefined;
       warming.view.setCamera(this.current.getCamera());
       this.swap(warming.view, warming.overlay);
+      this.element.dataset.rendererUpgrade = 'ready';
       console.info(`WebGPU 3D view: upgraded from WebGL2 after ${Math.round(performance.now() - warming.started)} ms of preparation.`);
+      return;
+    }
+    // An inactive view cannot finish preparing; a slow or failed candidate must
+    // never replace a working frame, nor keep a second renderer in memory.
+    if (!this.current.isActive || performance.now() - warming.started > WARMUP_LIMIT_MS) {
+      const inactive = !this.current.isActive;
+      this.abandonWarmup();
+      this.element.dataset.rendererUpgrade = inactive ? 'inactive' : 'timeout';
+      if (!inactive) console.warn('WebGPU 3D view did not finish preparing in time; keeping the current WebGL view.');
       return;
     }
     warming.timer = setTimeout(() => this.settle(), 150);

@@ -48,6 +48,8 @@ export interface RenderOptions {
   style?: MapStyle; contours?: boolean; raster?: boolean; landuse?: boolean; debug?: boolean;
   /** Land-use kinds drawn (mask: the others belong to another layer, e.g. the ground material draws the forest). */
   landuseKinds?: (kind: LandKind) => boolean;
+  /** Plain field boundaries for the topographic line preset. */
+  fieldOutlines?: boolean;
   /** Name labels (default: world.options.labels !== false), legend (default: world.options.legend) and cartouche (default on). */
   labels?: boolean; legend?: boolean; cartouche?: boolean;
   /** Semantic land-use entries appended to the legend (same model as the live legend). */
@@ -111,6 +113,10 @@ export function renderSvg(world0: World, opts: RenderOptions = {}): string {
   if (contours) parts.push(contourLayer(world, pal, u, scale));
 
   if (landuse) parts.push(landuseLayer(world, pal, u, scale, painted?.brushes, forestMask, opts.vegetation, clearings));
+  if (layers.landuse !== false && opts.fieldOutlines && world.landuse) {
+    const paths = world.landuse.areas.filter(area => area.kind === 'field').map(area => pathD(area.poly, true) + (area.holes ?? []).map(hole => pathD(hole, true)).join('') + (area.strips ?? []).map(strip => pathD(strip, true)).join(''));
+    if (paths.length) parts.push(`<g class="layer-field-outlines" fill="none" stroke="rgb(184,131,26)" stroke-opacity="0.88" stroke-width="${f1(1.7 / scale)}" stroke-linejoin="round">${paths.map(d => `<path d="${d}"/>`).join('')}</g>`);
+  }
 
   // rivers: casing first, then fill so confluences merge cleanly
   const minW = 1.1 * u;

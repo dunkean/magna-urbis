@@ -145,7 +145,7 @@ export function forestOccupation(landuse: LandUseLayer, maxN = 1536, minCell = 2
   // Corridors are distance fields, not rasterized ribbons: a road a few texels wide filled cell by cell left a
   // staircase edge in the ground and the crowns. Each texel keeps its exact signed distance (texels, positive
   // inside) to the nearest corridor capsule; it is merged into the open/forest fields below.
-  const corridor = corridorDistance(corridors, x, y, cell, n);
+  const corridor = corridorDistance([...corridors, ...landuse.forestCorridors ?? []], x, y, cell, n);
   if (corridor) for (let i = 0; i < n * n; i++) if (corridor[i] > 0 && (!cls[i] || forest[i])) cls[i] = CLEARING;
   // A 12 m lane can be thinner than a texel on a large map. Keep every crossed
   // cell open, as for thin building walls, rather than dropping the whole lane.

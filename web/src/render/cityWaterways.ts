@@ -1,4 +1,5 @@
 /** Retained native lagoon water in public ribbons, with pedestrian crossings. */
+import polygonClipping from 'polygon-clipping';
 import type { Layout } from '../../../rust/bridge/urban';
 const cache = new WeakMap<object, { water: Path2D; bridges: Path2D }>();
 export function drawCityWaterways(ctx: CanvasRenderingContext2D, layouts: readonly Layout[], mpp: number): void {
@@ -8,8 +9,13 @@ export function drawCityWaterways(ctx: CanvasRenderingContext2D, layouts: readon
   let paths = cache.get(layouts);
   if (!paths) {
     paths = { water: new Path2D(), bridges: new Path2D() };
+    const polygons: polygonClipping.Polygon[] = [];
     for (const layout of layouts) for (const w of layout.structure?.waterways ?? []) {
-      paths.water.addPath(path(w.shape)); for (const s of w.crossings) paths.bridges.addPath(path(s));
+      polygons.push([w.shape.outer.map(p => [p.x, p.y] as [number, number]), ...w.shape.holes.map(r => r.map(p => [p.x, p.y] as [number, number]))]); for (const s of w.crossings) paths.bridges.addPath(path(s));
+    }
+    // Union the public ribbons before outlining them: internal segment caps are not banks.
+    if (polygons.length) for (const polygon of polygonClipping.union(polygons[0], ...polygons.slice(1))) {
+      for (const ring of polygon) paths.water.addPath(path({ outer: ring.map(([x, y]) => ({ x, y })) }));
     }
     cache.set(layouts, paths);
   }

@@ -9,6 +9,10 @@ use std::sync::OnceLock;
 
 #[derive(Deserialize)]
 pub(crate) struct Look {
+    /// A constructed installation can declare its material independently of
+    /// the culture's dwelling form (for example a stone water trough).
+    #[serde(default)]
+    pub material: Option<String>,
     pub roof: Vec<String>,
     pub eave: [f64; 2],
     pub floors: [u32; 2],
@@ -313,10 +317,10 @@ mod tests {
         let cat: serde_json::Value = serde_json::from_str(include_str!("catalogue.json")).unwrap();
         let farm = &cat["farmstead"]["buildings"];
         let cultures: BTreeSet<&str> = cat["cultures"].as_object().unwrap().keys().map(String::as_str).collect();
-        // 310 archetypes, unique ids, looks/ground resolve
-        assert_eq!(d.archetypes.len(), 310);
+        // 317 archetypes (310 + 7 spring water buildings), unique ids, looks/ground resolve
+        assert_eq!(d.archetypes.len(), 317);
         let ids: BTreeSet<&str> = d.archetypes.iter().map(|a| a.id.as_str()).collect();
-        assert_eq!(ids.len(), 310, "duplicate archetype id");
+        assert_eq!(ids.len(), 317, "duplicate archetype id");
         assert!(d.family_looks.values().all(|l| d.looks.contains_key(l)), "family_looks -> unknown look");
         let cats: BTreeSet<&str> = d.archetypes.iter().map(|a| a.category.as_str()).collect();
         let known_group = |x: &String| cultures.contains(x.as_str()) || d.cultures.families.contains_key(x);

@@ -463,6 +463,8 @@ vec3 v2MacroCanopy=vec3(0.);
 float v2GroundSnow=0.;
 float v2MeanEnabled=0.,v2ForestReveal=0.;
 uniform int uForestBrushes; uniform highp sampler2DArray uForestBrushAtlas;
+// 3D near trees (terrain3dTrees.ts): eye xy, full radius, end of fade (m); w = 0 when no tree stands.
+uniform vec4 uForestTrees;
 uniform sampler2D uForestField; uniform vec3 uForestRect;
 uniform int uHasForestBank; uniform sampler2D uForestBank; uniform float uForestBankDensity;
 uniform int uHasOccupation; uniform sampler2D uOccupation; uniform vec3 uOccupationRect; uniform float uOccupationN;
@@ -565,7 +567,7 @@ vec3 forestKind(float trop,float dry){
   return vec3((1.-trop)*groundSmooth(10.,14.,uMaterialClimate.x)*groundSmooth(.35,.7,dry),trop-savanna,savanna);
 }
 // Mean crown radius: spires are narrow, so the τ lattice packs them tighter at the same cover.
-float forestRadius(float height,float needle,float dry){return mix((.24*height+1.)*(1.+.45*dry),.085*height+.8,needle);}
+float forestRadius(float height,float needle,float dry){return mix((.24*height+1.)*(1.+.45*dry),.07*height+.55,needle);}
 // Stunted conifers near the treeline: the field's stature has already shrunk with altitude.
 float forestKrummholz(float height,float needle){return (1.-groundSmooth(3.,7.,height))*groundSmooth(.35,.7,needle);}
 // Field heights vanish where Render's eligibility does: planted trees need ground where trees can grow.
@@ -673,7 +675,7 @@ ForestCrown forestCrown(ivec2 cell,int level,float s,ForestStand st,ForestPatch 
     k.r=min(rho*s*(.8+.4*forestU8(h,24u))*(1.+.1*k.edge)*(beyond>0.?.75:1.)*(1.+.6*emergent+.3*krumm),1.14*s);
     // Tropical canopies spread their heights into layers.
     k.h=height*(mix(.82,.66,kind.y)+mix(.36,.6,kind.y)*forestU8(h2,16u))*(1.+.45*emergent);
-    k.depth=k.r*(k.needle?mix(2.4,.5,krumm):mix(.55,.22,kind.z));
+    k.depth=k.r*(k.needle?mix(3.2,1.1,krumm):mix(.55,.22,kind.z));
   }
   return k;
 }
@@ -682,14 +684,18 @@ float forestOutline(ForestCrown k,vec2 n,float aa){
   uint h=k.id*0x9e3779b9u;vec2 a=vec2(forestU8(h,0u),forestU8(h,8u))*6.2831853;float amp=k.needle?.07:.13;
   vec4 shape=vec4(cos(a.x),sin(a.x),.6*cos(a.y),.6*sin(a.y))*amp;
   vec2 c2=vec2(n.x*n.x-n.y*n.y,2.*n.x*n.y),c3=vec2(n.x*(4.*n.x*n.x-3.),n.y*(3.-4.*n.y*n.y));
-  float star=groundSmooth(3.,9.,k.r/max(aa,1e-4));
+  float star=groundSmooth(1.5,5.,k.r/max(aa,1e-4));
   vec2 c5=vec2(c2.x*c3.x-c2.y*c3.y,c2.x*c3.y+c2.y*c3.x);
   vec2 c7=vec2(c2.x*c5.x-c2.y*c5.y,c2.x*c5.y+c2.y*c5.x);
   vec2 phase=vec2(shape.x*shape.z-shape.y*shape.w,shape.x*shape.w+shape.y*shape.z)/(.6*amp*amp);
   float tips=k.needle?star*((.045+.025*forestU8(h,16u))*dot(c5,phase)+.035*dot(c7,shape.zw)/(.6*amp)+.025*dot(n,shape.xy)/amp):0.;
   // From above a conifer is a star of boughs, not a disc: deep notches once the crown spans a few pixels.
   float boughs=0.;
-  if(k.needle&&star>0.){float wave=abs(cos(atan(n.y,n.x)*(3.5+floor(forestU8(h,16u)*3.))+a.x));boughs=star*(.3*wave*wave-.13);}
+  if(k.needle&&star>0.){
+    float branches=9.+floor(forestU8(h,16u)*4.);
+    float spoke=1.-2.*abs(fract(atan(n.y,n.x)*branches/6.2831853+a.x)-.5);
+    boughs=star*(-.32+.43*pow(spoke,1.7));
+  }
   return k.r*(1.+dot(c2,shape.xy)+dot(c3,shape.zw)*(k.needle?mix(.3,.8,star):1.)+tips+boughs);
 }
 struct ForestHit{float cover;float top;float second;vec2 slope;float rel;vec2 local;float r;bool needle;bool riparian;float edge;uint id;int level;float near;float ink;};
@@ -746,8 +752,9 @@ float forestTaper(vec2 p,vec2 ab,float ra,float rb){
   float k=c.x*q.y-c.y*q.x;
   return k<0.?sqrt(h*dot(q,q))-ra:k>c.x?sqrt(h*(dot(q,q)+1.-2.*q.y))-rb:dot(c,q)-ra;
 }
-// Cast shadow of the crowns around the sunward point onto height zp. A spire's shadow
-// weighs 2.5: the caller removes 30 % of the direct light per unit, so its core is dark.
+// Cast shadow of the crowns around the sunward point onto height zp. A spire's shadow is
+// kept short (about its crown length) and as soft as a broadleaf one: buildings and broadleaves
+// cast no long shadows on the map, so a long dark spire wedge reads as a glitch.
 float forestShadow(ForestHit hit,int level,float s,ForestStand st,float aa,float zp,vec2 sun,float cot){
   // Spires centre the search on the broad foot of their wedge, not its thin apex.
   vec2 from=st.p+sun*max(st.height*mix(.75,.45,st.needle)-zp,0.)*cot;
@@ -758,11 +765,11 @@ float forestShadow(ForestHit hit,int level,float s,ForestStand st,float aa,float
     if(k.needle){
       // A spire is a cone down to its lower boughs: its shadow tapers from the tree's foot
       // to the apex shadow, a sharp dark wedge pointing away from the sun.
-      float foot=min(k.h-k.depth,.1*k.h),apex=(k.h-zp)*cot;if(apex<=0.)continue;
+      float foot=min(k.h-k.depth,.1*k.h),apex=min((k.h-zp)*cot,1.6*k.r);if(apex<=0.)continue;
       float rb=k.r*clamp((k.h-max(foot,zp))/max(k.h-foot,1e-3),0.,1.);
       float low=max(foot-zp,0.)*cot;vec2 p=st.p-(k.c-sun*low);
       float wedge=forestTaper(p,-sun*(apex-low),.92*forestOutline(k,p/max(length(p),1e-4),aa)*rb/max(k.r,1e-3),.04*k.r);
-      shade=max(shade,2.5*clamp(-wedge/max(aa,.04*k.r+.02*apex)+.5,0.,1.));
+      shade=max(shade,.9*clamp(-wedge/max(aa,.12*k.r+.04*apex)+.5,0.,1.));
       continue;
     }
     float caster=k.h-.5*k.depth,o=(caster-zp)*cot;if(o<=0.)continue;
@@ -1094,7 +1101,7 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
     float tiers=hit.rel*(19.+11.*special)+6.2831853*tint+.9*branch;
     // Boughs catch the light, the gaps between them fall dark, darkest at the trunk.
     float bough=abs(cos(atan(hit.slope.y,hit.slope.x)*(3.5+floor(tint*3.))+tint*6.2831853));
-    float whorl=hit.needle&&uForestBrushes==0?(.065*(cos(tiers+1.2*sin(hit.rel*7.+tint*9.))+.35*cos(tiers*1.73+special*8.))+.42*(bough*bough-.45)*hit.rel-.08*(1.-hit.rel))*groundSmooth(3.,8.,radius/fp):0.;
+    float whorl=hit.needle&&uForestBrushes==0?(.10*(cos(tiers+1.2*sin(hit.rel*7.+tint*9.))+.35*cos(tiers*1.73+special*8.))+.18*(bough*bough-.45)*hit.rel-.08*(1.-hit.rel))*groundSmooth(2.,6.,radius/fp):0.;
     // A spire reads as a cone by its terminator: the sunward flank lit to the rim, the far flank in its own shade.
     vec3 flank=vec3(1.);
     if(hit.needle&&uForestBrushes==0){
@@ -1105,6 +1112,8 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
     }
     vec3 crown=forestCrownColor(st,forestGuide(),hit.needle?1.:0.,jitter,special)*(1.+detailGain*clump+whorl)*flank*(1.-mix(.12,.3,st.trop)*hit.edge);
     if(hit.riparian)crown*=forestRiparianTint(st);
+    // Near the camera a modelled tree stands on each crown: the painted crown under it becomes its ground shade.
+    if(uForestTrees.w>0.)crown*=mix(1.,.6,1.-groundSmooth(uForestTrees.z,uForestTrees.w,distance(world,uForestTrees.xy)));
     if(uRenderV2>0){
       // Autumn turns each temperate broadleaf crown on its own: orange, rust or gold, a few still green.
       // The hue is absolute, its lightness follows the crown so the stand keeps its exposure.
@@ -1120,7 +1129,7 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
       if(larch)crown=mix(crown,vec3(.70,.52,.17)*(.9+.2*tint),.85*forestSeason().x);
       crown=mix(crown,vec3(.31,.27,.23)*(.85+.3*tint),1.-leaf);
       // Snow rests on the boughs of a spire, the gaps between them stay dark; a dusting on bare limbs.
-      crown=forestSnowed(crown,v2GroundSnow*(hit.needle?.12+.75*bough*bough*hit.rel:.3));
+      crown=forestSnowed(crown,v2GroundSnow*(hit.needle?.06+.24*bough*bough*hit.rel:.3));
     }
     // Forest floor under and right around crowns; open ground beyond.
     float under=uForestBrushes==1?hit.cover:1.-groundSmooth(1.,1.8,hit.near);

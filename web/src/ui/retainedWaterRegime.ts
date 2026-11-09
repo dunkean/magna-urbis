@@ -162,7 +162,7 @@ const strokeAll = (c: CanvasRenderingContext2D, paths: readonly RetainedWaterPat
  * - `code`: the coverage in the regime code, for a material water compositor (RENDER_WATER_FS with uRegime);
  * - `cover`: the running water only, in `fill` (a material water cover, or the flat water of an ink style);
  * - `ink`: the map symbols of `style` over `cover`: running water, intermittent courses (pale water, dashed bank
- *   lines), wadis (sandy bed, dash-dot bed ink on the banks), ice (pale sheet with an ink bank line);
+ *   lines), wadis (flat sandy bed with a continuous bank edge), ice (pale sheet with an ink bank line);
  * - `symbols`: the same symbols without the running water (drawn by a material water elsewhere);
  * - `ground`: dry beds and exposed shores as ground albedo (3D material ground);
  * - `ice`: the ice as a decal over the finished ground (3D material ground).
@@ -175,18 +175,19 @@ export function paintRetainedRegime(ctx: CanvasRenderingContext2D, paths: readon
     ctx.drawImage(regime.code, 0, 0, width, width); ctx.restore();
     return;
   }
-  if (mode === 'cover' || mode === 'ink') masked(ctx, regime.wet, width, c => { c.fillStyle = fill; fillAll(c, paths); });
+  // The map needs an opaque base even where seasonal masks cross-fade; otherwise
+  // their combined alpha exposes the captured ground/forest inside the channel.
+  if (mode === 'ink') { ctx.fillStyle = fill; fillAll(ctx, paths); }
+  if (mode === 'cover') masked(ctx, regime.wet, width, c => { c.fillStyle = fill; fillAll(c, paths); });
   if (mode === 'cover') return;
   if (mode === 'ink' || mode === 'symbols') {
     const ink = regimeInk(style, fill);
     if (regime.drying) {
-      masked(ctx, regime.intermittent, width, c => {
-        c.strokeStyle = ink.intermittent; c.lineWidth = 1.1 * px; c.setLineDash([5 * px, 3 * px]); strokeAll(c, paths);
-      });
-      masked(ctx, regime.dry, width, c => {
-        c.globalAlpha = .6; c.fillStyle = ink.bed; fillAll(c, paths); c.globalAlpha = 1;
-        // Bold enough to read at the town's overview zoom: the classic intermittent-stream symbol of the surveys.
-        c.strokeStyle = ink.dry; c.lineWidth = 1.8 * px; c.setLineDash(ink.dryDash.map(v => v * 1.4 * px)); strokeAll(c, paths);
+      for (const field of [regime.intermittent, regime.dry]) masked(ctx, field, width, c => {
+        c.fillStyle = ink.bed; fillAll(c, paths);
+        // Clip the continuous edge to the bed so adjoining land stays untouched.
+        c.save(); const clip = new Path2D(); for (const item of paths) clip.addPath(item.path); c.clip(clip);
+        c.strokeStyle = ink.dry; c.lineWidth = 1.2 * px; strokeAll(c, paths); c.restore();
       });
     }
     if (regime.frozen) masked(ctx, regime.ice, width, c => {
@@ -197,8 +198,8 @@ export function paintRetainedRegime(ctx: CanvasRenderingContext2D, paths: readon
     return;
   }
   if (mode === 'ground' && regime.drying) {
-    masked(ctx, regime.dry, width, c => { c.globalAlpha = .8; c.fillStyle = '#c8b28c'; fillAll(c, paths); });
-    masked(ctx, regime.intermittent, width, c => { c.globalAlpha = .5; c.fillStyle = '#c8b28c'; fillAll(c, paths); });
+    masked(ctx, regime.dry, width, c => { c.fillStyle = regimeInk(style, fill).bed; fillAll(c, paths); });
+    masked(ctx, regime.intermittent, width, c => { c.fillStyle = regimeInk(style, fill).bed; fillAll(c, paths); });
   }
   if (mode === 'ice' && regime.frozen) masked(ctx, regime.ice, width, c => {
     c.fillStyle = '#a9bac6'; fillAll(c, paths); c.strokeStyle = '#55697a'; c.lineWidth = Math.max(1.2 * px, 1.2); strokeAll(c, paths);

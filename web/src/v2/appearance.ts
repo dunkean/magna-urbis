@@ -86,7 +86,7 @@ export function validateAppearance(value: unknown): asserts value is V2Appearanc
   }
 }
 
-export interface V2ExportDisplay extends DisplayOpts { vegetation?: VegetationStyle; semanticLegend?: readonly SemanticLegendEntry[] }
+export interface V2ExportDisplay extends DisplayOpts { vegetation?: VegetationStyle; semanticLegend?: readonly SemanticLegendEntry[]; raster?: boolean; fieldOutlines?: boolean }
 /** The one place that turns settings + retained products into a resolved appearance (call per change, never per frame). */
 export function resolveSettingsAppearance(settings: V2Settings, world: World | undefined, target: RenderTarget, flags?: ResolveFlags): ResolvedAppearance {
   const o = settings.options;
@@ -101,7 +101,9 @@ export function resolveSettingsAppearance(settings: V2Settings, world: World | u
 export function resolvedDisplayOptions(r: ResolvedAppearance): V2ExportDisplay {
   const c = r.cartography;
   return { ...(r.palette.colors ? { colors: r.palette.colors } : {}), buildings: r.city.visible, layers: { roads: c.roads }, style: r.palette.mapStyle, contours: r.ground.contours,
-    text: r.composition.text, landuse: c.landuse, labels: c.labels, legend: c.legend, cartouche: c.cartouche, painted: c.painted, vegetation: r.vegetation.symbols };
+    text: r.composition.text, landuse: c.landuse, labels: c.labels, legend: c.legend, cartouche: c.cartouche, painted: c.painted, vegetation: r.vegetation.symbols,
+    ...(r.composition.variant === 'topographic' && !r.ground.layers.relief ? { raster: false } : {}),
+    fieldOutlines: r.composition.variant === 'topographic' && r.composition.landuse.rural === 'outlines' && r.composition.landuse.classes.field };
 }
 /** Export starts from the same persisted preferences as the viewer, including explicit false values. */
 export function appearanceDisplayOptions(settings: V2Settings, world?: World): V2ExportDisplay {
@@ -111,7 +113,7 @@ export function appearanceDisplayOptions(settings: V2Settings, world?: World): V
 export function svgOptionsForDisplay(options: RenderOptions, display?: Partial<V2ExportDisplay>, brushes?: BrushSources): RenderOptions {
   if (!display) return options;
   const result = { ...options };
-  for (const key of ['text', 'style', 'colors', 'buildings', 'contours', 'landuse', 'labels', 'legend', 'cartouche', 'vegetation', 'semanticLegend'] as const)
+  for (const key of ['text', 'style', 'colors', 'buildings', 'contours', 'landuse', 'labels', 'legend', 'cartouche', 'vegetation', 'semanticLegend', 'raster', 'fieldOutlines'] as const)
     if (display[key] !== undefined) Object.assign(result, { [key]: display[key] });
   result.layers = { ...display.layers, ...options.layers };
   if (display.painted !== undefined) {

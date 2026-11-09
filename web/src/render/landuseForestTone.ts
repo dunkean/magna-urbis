@@ -42,9 +42,11 @@ export function markedForest(base: string): string {
 }
 export interface ForestPaint { color: string; alpha: number; /** Opacity of the wood outline. */ edge: number }
 /** Fill of the forest land-use class for a palette-like `{ land, paper, landOpacity }`. */
-export function forestLandPaint(pal: { land: { forest: string; meadow: string }; paper: string; landOpacity: number; forestTint?: number }, tone: LanduseForestTone = mode): ForestPaint {
+export function forestLandPaint(pal: { name?: string; land: { forest: string; meadow: string }; paper: string; landOpacity: number; forestTint?: number }, tone: LanduseForestTone = mode): ForestPaint {
   // A palette with its own woodland tint (the atlas: a light wash over the hypsometric ramp) keeps it whatever the shared tone.
   if (pal.forestTint !== undefined) return { color: pal.land.forest, alpha: pal.forestTint, edge: 0.35 };
   if (tone === 'ground') return { color: mix(pal.paper, pal.land.meadow, 0.35), alpha: Math.min(0.8, pal.landOpacity * 0.8), edge: 0.7 };
+  // Keep a readable marked woodland on parchment without the very dark, saturated satellite-green wash.
+  if (pal.name === 'parchment') return { color: mix(markedForest(pal.land.forest), pal.land.forest, .35), alpha: .75, edge: .5 };
   return { color: markedForest(pal.land.forest), alpha: 0.85, edge: 0.55 };
 }

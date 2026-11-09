@@ -1,4 +1,5 @@
 import { createUrbanEngine, type UrbanRequest, type UrbanResponse } from '../../../rust/bridge/urban';
+import { runActivityPlacement } from './urbanActivityPlacement';
 
 let pending: UrbanRequest | undefined, raster: UrbanRequest['raster'], running = false;
 let engine: ReturnType<typeof createUrbanEngine> | undefined;
@@ -16,7 +17,7 @@ async function drain(): Promise<void> {
       const request = pending; pending = undefined;
       if (raster && !request.raster) request.raster = raster;
       raster = undefined;
-      self.postMessage(await e.run(request));
+      self.postMessage(await runActivityPlacement(e, request, () => !pending));
     }
   } catch (error) {
     if (pending) self.postMessage({ id: pending.id, error: String(error) } satisfies UrbanResponse);

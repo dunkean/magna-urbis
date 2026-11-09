@@ -2,11 +2,13 @@ import type { RenderColors } from './customColors';
 import { houseMaterialColor, type HouseMaterialCatalogue } from '../../../rust/bridge/houseRender';
 import type { MaterialSlots } from '../../../rust/bridge/housesContract';
 import type { ArchitectureFunction } from '../../../rust/bridge/urbanArchitecture';
+import { nightRoof } from './cityNight';
+import type { GroundSnowSettings } from './seasonPalette';
 
-/** `silhouette`: flat footprints only (City Bench), no roofs or materials. */
+/** `silhouette`: flat occupied footprints with optional uniform ink; no relief or shadows. */
 export type UrbanBuildingStyle = 'geometric' | 'cartographic' | 'silhouette';
 export type UrbanBuildingDiagnostic = 'none' | 'uses' | 'height' | 'access';
-export interface UrbanBuildingAppearance { ambience?: 'day' | 'night'; colors?: RenderColors; style: UrbanBuildingStyle; diagnostic: UrbanBuildingDiagnostic; /** Textured materials (3D): PBR roofs and walls by cover / wall id. */ textured?: boolean }
+export interface UrbanBuildingAppearance { ambience?: 'day' | 'night'; nightInk?: boolean; colors?: RenderColors; style: UrbanBuildingStyle; diagnostic: UrbanBuildingDiagnostic; /** Physical satellite ground driving roof snow, including season cache invalidation. */ roofSnow?: GroundSnowSettings; /** Textured materials (3D): PBR roofs and walls by cover / wall id. */ textured?: boolean }
 export const buildingColors = (colors: RenderColors | undefined, ambience?: 'day' | 'night'): RenderColors | undefined => ambience === 'night' ? { building: '#232a42', buildingEdge: '#070a14', road: '#444b62', track: '#3a4054', roadEdge: '#141927', ...colors } : colors;
 export interface BuildingPaint { wall: string; roof: string; edge: string; courtyard: string }
 export const URBAN_FUNCTION_LABELS: Record<ArchitectureFunction, string> = {
@@ -29,7 +31,7 @@ export function buildingPaint(materials: MaterialSlots | undefined, fn: Architec
   }
   if (appearance.diagnostic === 'none') {
     if (appearance.style === 'geometric') { wall = '#b2aa97'; roof = '#847b69'; }
-    if (appearance.ambience === 'night') { wall = '#141a2c'; roof = '#232a42'; }
+    if (appearance.ambience === 'night') { wall = nightRoof(wall, appearance.nightInk); roof = nightRoof(roof, appearance.nightInk); }
     roof = appearance.colors?.building ?? roof;
   }
   return { wall, roof, edge: appearance.colors?.buildingEdge ?? '#393a31', courtyard: '#f4efdf' };

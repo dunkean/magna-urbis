@@ -30,6 +30,8 @@ export interface VectorWater {
   lakeKind?: Uint8Array;
   lakes: number; closedLakes: number; lakeAreaKm2: number; riverCells: number;
   rivers?: RiverNetwork;
+  /** Author-edited channels are authoritative even when a raw drainage display was selected. */
+  editedNetwork?: boolean;
   /** Hydraulic width multiplier, also retained when grid diagnostics are selected. */
   widthScale?: number;
   /** Applied threshold, retained so grid-mode consumers reproduce the drawn D8 network. */

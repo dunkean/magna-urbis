@@ -928,6 +928,16 @@ pub(super) fn massing(m: &Input) -> Value {
     }
     // Giant houses: one huge storey of massive stone under a flat roof (user: no storeys, flat roofs).
     if m.culture == "giant-hold" { tr.roof = "flat"; tr.cover = "stone"; tr.wall = "stone"; tr.storeys = [1, 1]; }
+    if let Some(look) = super::activities::archetype(m.archetype)
+        .and_then(|a| a.look.as_deref())
+        .and_then(|id| super::activities::data().looks.get(id))
+        && let Some(material) = look.material.as_deref()
+    {
+        tr.form = "";
+        tr.roof = look.roof.first().map_or("flat", |r| r.as_str());
+        tr.wall = material;
+        tr.cover = material;
+    }
     let mut rng = Rng::new(m.seed).fork("massing");
     let floors = lot_floors(m, &tr, &mut rng);
     let compact = small_home(m);

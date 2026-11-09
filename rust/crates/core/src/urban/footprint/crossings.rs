@@ -569,6 +569,7 @@ mod tests {
         let n = 20;
         let height = vec![20.0; n * n]; let water = vec![0; n * n];
         let geography = crate::urban::Geography::new(crate::urban::VectorGeography {
+                springs: vec![],
             land: vec![g::rectangle(0.0, 0.0, 1000.0, 1000.0).outer],
             water: vec![vec![g::rectangle(500.0, 0.0, 502.0, 1000.0).outer],
                 vec![g::rectangle(514.0, 0.0, 516.0, 1000.0).outer]],

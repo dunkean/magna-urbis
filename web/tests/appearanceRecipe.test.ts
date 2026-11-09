@@ -23,15 +23,30 @@ describe('appearance recipe', () => {
     for (const base of [{ style: 'parchment' as const }, { style: 'parchment' as const, terrainStyle: 'render-v2' as const }]) {
       const a = { ...base, unifiedDefaults: true }, city = resolve(a).city;
       expect(city).toMatchObject({ view: 'buildings', palette: 'parchment', buildingStyle: 'cartographic', opacity: .8 });
-      expect(resolve(a, false, 'view3d').city).toEqual(city);
+      // 2D relief styles paint their houses (shadows, bevels); the 3D view draws volumes instead.
+      expect({ ...resolve(a, false, 'view3d').city, painted: city.painted }).toEqual(city);
       expect(resolve(a, false, 'export').city).toEqual(city);
     }
-    expect(resolvedValues(resolve(undefined)).city?.painted).toBe(false);
+    expect(resolvedValues(resolve(undefined, false, 'view3d')).city?.painted).toBe(false);
   });
   it('keeps the previous 3D and classic defaults while unifiedDefaults is off', () => {
     expect(resolve(undefined, false, 'view3d').city).toMatchObject({ view: 'parcels', palette: 'terrain', opacity: 1 });
     expect(resolve(undefined).vegetation.symbols).toBe('classic');
     expect(resolve(undefined, false, 'export').vegetation.symbols).toBe('canopy');
+  });
+  it('raises footprint presets in 3D while preserving their flat 2D and export tiers', () => {
+    for (const preset of ['cadastre', 'topographic'] as const) {
+      const composition = presetComposition(preset), input: AppearanceInput = { style: 'parchment', composition };
+      for (const target of ['view2d', 'export'] as const) {
+        expect(resolve(input, true, target).city.buildingStyle).toBe('silhouette');
+        expect(resolve(input, true, target).composition.buildings.meshes).toBe('none');
+      }
+      const perspective = resolve(input, true, 'view3d');
+      expect(perspective.city.buildingStyle).toBe('cartographic');
+      expect(perspective.composition.buildings).toMatchObject({ visible: true, look: 'detailed-volumes', meshes: 'detailed' });
+      composition.buildings.visible = false;
+      expect(resolve(input, true, 'view3d').composition.buildings.visible).toBe(false);
+    }
   });
   it('keys each pass on the fields it reads only', () => {
     const a: AppearanceInput = { style: 'parchment', terrainStyle: 'render-v2' }, before = resolve(a).keys;

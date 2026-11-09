@@ -6,7 +6,7 @@ import type { RustTownSnapshot } from '../src/v2/rustUrban';
 import type { V2Settings } from '../src/v2/contracts';
 import { presetComposition } from '../src/render/composition';
 
-const snowComposition = () => { const c = presetComposition('parchment'); c.effects.season = .125; c.effects.lighting = { enabled: true, azimuth: 90, elevation: 15, strength: 2, exaggeration: 1 }; return c; };
+const snowComposition = () => { const c = presetComposition('satellite'); c.ground.variant = 'render-v2-snow'; c.networks.water.visible = false; c.effects.season = .125; c.effects.lighting = { enabled: true, azimuth: 90, elevation: 15, strength: 2, exaggeration: 1 }; return c; };
 
 function town(id: string, stage: RustTownSnapshot['stage'] = 'buildings'): RustTownSnapshot {
   return { backend: 'rust-wasm-cpu', stage, layoutKey: id, layouts: [{ key: id } as RustTownSnapshot['layouts'][number]], buildingIds: [], warnings: [],
@@ -72,6 +72,8 @@ describe('V2 City Bench 3D retained-scene boundary', () => {
     expect(v2Terrain3dView(settings).ground).toBe('render-v2-snow');
     expect(v2Terrain3dGround(world, settings, 'render-v2-snow')).toMatchObject({ renderV2: 5, v2Season: .125, lighting: settings.appearance!.composition!.effects.lighting, waterVisible: false, displacement: false, climate: { temperature: 24, precipitation: 70 } });
     expect(v2Terrain3dGround(world, settings, 'render3d-brush')?.forestBrushes).toBe(true);
+    // A legacy per-view override applies when no shared composition owns the ground.
+    settings.appearance!.composition = undefined;
     settings.appearance!.city = { ground: 'map', refinement: 'noise' };
     expect(v2Terrain3dView(settings).ground).toBe('map'); expect(v2Terrain3dGround(world, settings, 'map')).toBeUndefined();
   });

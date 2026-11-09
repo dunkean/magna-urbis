@@ -30,7 +30,8 @@ export function paletteColors(p: Palette): Required<RenderColors> {
 /** Return an isolated palette. Empty overrides preserve palette identity and historical pixels. */
 export function applyRenderColors(p: Palette, colors?: RenderColors): Palette {
   if (!colors || !Object.keys(colors).length) return p;
-  const c = { ...paletteColors(p), ...colors };
+  // Optional tokens can be explicitly unset by a resolved appearance; keep the palette default in that case.
+  const c = { ...paletteColors(p), ...Object.fromEntries(Object.entries(colors).filter(([, value]) => value !== undefined)) };
   return { ...p, paper: c.paper, contour: c.contour,
     hypso: colors.groundLow || colors.groundHigh ? [[0, c.groundLow], [1, c.groundHigh]] : p.hypso,
     land: { ...p.land, forest: c.forest, meadow: c.meadow, field: c.field },

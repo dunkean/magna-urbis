@@ -4,6 +4,7 @@ import { cleanSettlementName } from '../gen/options';
 import type { World, UrbanLayer } from '../gen/types';
 import type { V2Settings } from './contracts';
 import { cloneV2TerrainForStage } from './worldState';
+import { applyLabelEdits } from './mapLabels';
 
 /** Detach only metadata that the names stage writes; physical geometry stays shared. */
 function namingUrban(source: UrbanLayer | undefined): UrbanLayer | undefined {
@@ -52,5 +53,6 @@ export function renameMap(source: World, settings: V2Settings): World {
   namingView.names = world.names;
   settlementNames(namingView, root);
   if (settings.naming?.title?.trim()) world.names.town = settings.naming.title.trim();
+  applyLabelEdits(world, settings.naming?.labels);
   return world;
 }

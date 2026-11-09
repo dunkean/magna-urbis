@@ -141,6 +141,8 @@ export interface Farmstead {
   cultivation?: 'fungal';
 }
 export interface LandUseLayer {
+  /** Retained road clearances: crowns may overhang their edges, trunks stay outside. */
+  forestCorridors?: { path: Polyline; half: number | number[] }[];
   areas: LandArea[];
   farmsteads: Farmstead[];
   ways?: Polyline[];

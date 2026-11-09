@@ -162,7 +162,11 @@ export function resolveAppearance(appearance: AppearanceInput | undefined, base:
   const vegetation: VegetationComponent = { representation: composition.vegetation.procedural ? 'material' : symbols, symbols, forest,
     forestSettings: { ...DEFAULT_FOREST_SETTINGS, ...base.forest, ...forest }, fantasy: { ...DEFAULT_FANTASY_OPTIONS, followLanduse: false, ...a?.fantasy, forests: composition.vegetation.groundForests } };
   const terrainColors = a?.colors && Object.fromEntries(TERRAIN_COLOR_KEYS.map(token => [token, a.colors![token]])) as RenderColors;
-  const palette: PaletteComponent = { mapStyle, colors: a?.colors, terrainColors, applicableColors: applicable(a?.colors, groundTraits) };
+  // The two flat map styles own their building ink; material colours remain per house.
+  const flatBuildings = styleId === 'cadastre' || styleId === 'topographic';
+  const houseColors = styleId === 'cadastre' ? { ...a?.colors, building: '#323232', buildingEdge: '#000000' }
+    : styleId === 'topographic' ? { ...a?.colors, building: undefined, buildingEdge: '#262626' } : a?.colors;
+  const palette: PaletteComponent = { mapStyle, colors: houseColors, terrainColors, applicableColors: applicable(a?.colors, groundTraits) };
   const cartography: CartographyComponent = { landuseForestTone: composition.vegetation.forestTone, roads: a?.roads ?? true, landuse: a?.landuse ?? base.landuse ?? true, labels: preview ? false : a?.labels ?? base.labels ?? true,
     legend: a?.legend ?? base.legend ?? false, cartouche: a?.cartouche ?? false, painted: a?.painted ?? false };
   const c = a?.city;
@@ -171,6 +175,13 @@ export function resolveAppearance(appearance: AppearanceInput | undefined, base:
     layers: { ...(legacy3d ? LEGACY_3D_LAYERS : DEFAULT_CITY_LAYERS), ...c?.layers }, groundBlend: c?.groundBlend ?? DEFAULT_CITY.groundBlend, painted: c?.painted ?? (traits.paintedCityByDefault || styleTraits(c?.ground ?? '').paintedCityByDefault),
     opacity: c?.opacity ?? (legacy3d ? LEGACY_3D_CITY.opacity : DEFAULT_CITY.opacity), width: c?.width ?? DEFAULT_CITY.width, ground: c?.ground ?? (traits.ground3d ? styleId as CityGround : 'map'), plan: c?.plan ?? DEFAULT_CITY.plan,
     colors: c?.colors ?? (c?.diagnostic === 'uses' ? 'uses' : DEFAULT_CITY.colors), exaggeration: c?.exaggeration ?? DEFAULT_CITY.exaggeration, refinement: c?.refinement ?? DEFAULT_CITY.refinement };
+
+  if (target !== 'view3d') {
+    city.buildingStyle = flatBuildings ? 'silhouette' : 'cartographic';
+    city.painted = !flatBuildings;
+  } else if (appearance?.composition?.buildings.look === 'footprints') {
+    city.buildingStyle = 'cartographic';
+  }
 
   const incompatibilities: Incompatibility[] = [];
   const reject = (field: string, reason: string): void => { incompatibilities.push({ field, reason }); };
@@ -193,7 +204,7 @@ export function resolveAppearance(appearance: AppearanceInput | undefined, base:
     overlays: key(composition.text, cartography.labels, cartography.legend, cartography.cartouche),
     roads: key(composition.networks.roads.emphasis),
     semantic: key(composition.landuse),
-    city: key(city, a?.colors,composition.ambience),
+    city: key(city, houseColors,composition.ambience),
   };
   const result: ResolvedAppearance = { target, path, styleId, traits, ground: Object.freeze(ground), vegetation: Object.freeze(vegetation), palette: Object.freeze(palette),
     cartography: Object.freeze(cartography), city: Object.freeze(city), composition, diagnostic, resourcePotential: a?.resourcePotential ?? 'arable', incompatibilities: Object.freeze(incompatibilities), keys: Object.freeze(keys) };

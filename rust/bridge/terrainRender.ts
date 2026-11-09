@@ -1,4 +1,5 @@
 import type { SeasonCalendar } from './terrainRenderV2Zones';
+import { setCityCanopy } from '../../web/src/render/cityCanopy';
 import type { RenderColors } from '../../web/src/render/customColors';
 import type { MaterialRasterContext } from './terrainMaterialContext';
 import { isFantasyStyle, renderFantasyTerrain, DEFAULT_FANTASY_OPTIONS, type FantasyOptions } from './fantasyTerrain';
@@ -156,6 +157,23 @@ export function renderRustTerrain(terrain: TerrainData, style: TerrainStyle, fra
   let canopyAlpha: Uint8Array | undefined;
   const materialSettings = { seed: settings.seed ?? '42', climate: settings.climate, climateValues: settings.climateValues, climateZone: settings.climateZone };
   const materialForest = { ...settings.forest, renderV2:traits.satelliteVariant, v2Season:settings.v2Season, v2Calendar:settings.v2Calendar, brushes: traits.forestBrushes, light: terrainLights(lighting).primary, light2: terrainLights(lighting).secondary, lightingStrength: lighting.enabled ? lighting.strength : 0 };
+  if (clipNamespace === 'city-ground') setCityCanopy(layers.relief && settings.forest?.field ? (region, size) => {
+    // Evaluate at the overlay's pixel footprint: enlarging the overview mask
+    // would turn small crowns into broad transparent holes at city zoom.
+    const height = new Float32Array(size * size), cell = terrain.width / n;
+    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+      const gx = Math.max(0, Math.min(n - 1, (region.x + (x + .5) * region.width / size - terrain.x) / cell - .5));
+      const gy = Math.max(0, Math.min(n - 1, (region.y + (y + .5) * region.width / size - terrain.y) / cell - .5));
+      const ix = Math.floor(gx), iy = Math.floor(gy), jx = Math.min(n - 1, ix + 1), jy = Math.min(n - 1, iy + 1), fx = gx - ix, fy = gy - iy;
+      height[y * size + x] = (terrain.height[iy * n + ix] * (1 - fx) + terrain.height[iy * n + jx] * fx) * (1 - fy)
+        + (terrain.height[jy * n + ix] * (1 - fx) + terrain.height[jy * n + jx] * fx) * fy;
+    }
+    const raster = renderMaterialRaster({ ...terrain, ...region, resolution: size, height }, materialSettings, true, materialForest, materialContext);
+    const canvas = document.createElement('canvas'); canvas.width = canvas.height = size;
+    const ctx = canvas.getContext('2d')!, image = ctx.createImageData(size, size);
+    for (let i = 0; i < height.length; i++) image.data[i * 4 + 3] = raster.canopyAlpha[i];
+    ctx.putImageData(image, 0, 0); return canvas;
+  } : undefined);
   if ((traits.neuralEarth || traits.ground3d) && layers.hypsometry) {
     const material = renderMaterialRaster(terrain, materialSettings, traits.ground3d, materialForest, materialContext);
     if (traits.ground3d && settings.forest?.field) canopyAlpha = material.canopyAlpha;

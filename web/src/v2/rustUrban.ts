@@ -1,3 +1,4 @@
+import { springPoints } from '../../../rust/bridge/urbanGeography';
 import type { World, UrbanLayer, UrbanBuilding, PolyH, UrbanZone, StreetRole, Options } from '../gen/types';
 import type { Layout, Partition, UrbanResponse, Street, UrbanEngine } from '../../../rust/bridge/urban';
 import type { LayoutConfig, ParcelConfig } from '../../../rust/bridge/urbanConfig';
@@ -107,7 +108,7 @@ export function rustSettlementRaster(world: World): SettlementRaster {
   const land = seaWater.length ? differenceS(square, seaWater) : [{ outer: square, holes: [] }];
   const raster: SettlementRaster = { width: world.mapSize, n, height, water: waterMask, waterLevel, riverWidth, riverIds,
     ...(physical ? { physical } : {}),
-    geometry: { land: land.flatMap(p => [p.outer, ...p.holes]), water: water.map(p => [p.outer, ...p.holes]) } };
+    geometry: { land: land.flatMap(p => [p.outer, ...p.holes]), water: water.map(p => [p.outer, ...p.holes]), springs: springPoints(native?.water, native?.hydrology) } };
   physicalRasters.set(grid, { width: world.mapSize, cell, height: grid.data, physical: physical?.height, physicalFloor: physical?.floor, physicalInterpolation: physical?.interpolation, water: terrain.water, filled: terrain.filled, seaLevel: terrain.seaLevel, coastline: terrain.coastline, islands: terrain.islands, lakes: terrain.lakes,
     rivers: terrain.rivers.map(river => ({ path: river.path, width: river.width, id: river.id })), raster });
   return raster;
@@ -281,7 +282,7 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
   const roads: Street[] = (world.roads ?? []).map(road => ({ path: road.path, widths: road.path.map(() => road.width),
     rank: road.kind === 'major' ? 1 : road.kind === 'minor' ? 2 : 3, role: 'regional' }));
   const seed = urbanSeed(settings, key, 'composition'), streetSeed = urbanSeed(settings, key, 'streets');
-  const compositionKey = fingerprint([world.stats['v2.terrainKey'], key, backend, seed, place.center, options.population, options.culture, config.layout, roads]);
+  const compositionKey = fingerprint([world.stats['v2.terrainKey'], ...(world.stats['v2.waterEditRevision'] ? [world.stats['v2.waterEditRevision']] : []), key, backend, seed, place.center, options.population, options.culture, config.layout, roads]);
   const layoutKey = streetSeed === seed ? compositionKey : fingerprint([compositionKey, streetSeed]);
   const previousComposition = previous?.compositionKey === compositionKey ? previous.compositionLayouts
     : !previous?.compositionKey && previous?.layoutKey === compositionKey ? previous.layouts : undefined;
@@ -299,7 +300,7 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
       retained = { engine: module.createUrbanEngine(runtime) }; engines.set(engineKey, retained);
     }
     try { engine ??= await retained.engine; } catch (error) { engines.delete(engineKey); throw error; }
-    const terrainKey = String(world.stats['v2.terrainKey']);
+    const terrainKey = String(world.stats['v2.terrainKey']) + (world.stats['v2.waterEditRevision'] ? `/water-edit/${world.stats['v2.waterEditRevision']}` : '');
     // Concurrent cities: exactly one request uploads the terrain; the others wait for it (or take over if it failed).
     let primed: (() => void) | undefined;
     while (retained.terrainKey !== terrainKey) {

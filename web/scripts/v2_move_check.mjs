@@ -1,0 +1,34 @@
+import { chromium } from 'playwright';
+import { readFile,writeFile } from 'node:fs/promises';
+import assert from 'node:assert/strict';
+const out='out/v2-editing';
+const fixture=JSON.parse(await readFile(`${out}/fixture.json`,'utf8'));
+const ring=(x,y,w,h)=>[{x,y},{x:x+w,y},{x:x+w,y:y+h},{x,y:y+h}];
+const lot=ring(300,300,140,140),house=ring(330,330,45,35);
+const urban={footprint:[lot],streets:[{path:[{x:290,y:305},{x:450,y:305}],width:5,kind:'street',rank:2,role:'street',phase:0}],blocks:[lot],parcels:[{poly:lot,use:'plot',block:0}],buildings:[{poly:house,kind:'house',height:5,storeys:1,roof:'gable'}],walls:[],landmarks:[],squares:[],archetype:'nucleated-village',population:200,morphology:'organic',phases:[],quarters:[{poly:{outer:lot,holes:[]},phase:0,zone:'village',streetSpace:[]}],blockInfo:[{quarter:0,phase:0,zone:'village',kind:'block'}],masses:[{outer:house,holes:[]}],backLand:[],footprintH:[{outer:lot,holes:[]}]};
+fixture.world.urban=urban;
+fixture.world.settlements=[{key:'main',index:0,main:true,cls:'village',population:200,culture:'european-organic',center:{x:370,y:370},radius:100,extent:lot,region:ring(0,0,1000,1000),detail:'main',urban}];
+fixture.world.landuse={areas:[{kind:'field',poly:ring(200,650,400,200),strips:[ring(210,660,80,180)]},{kind:'forest',poly:ring(650,200,200,250)}],farmsteads:[],reserve:[lot]};
+await writeFile(`${out}/town-fixture.json`,JSON.stringify(fixture));
+const browser=await chromium.launch({channel:'msedge',headless:true,args:['--use-angle=swiftshader','--enable-unsafe-swiftshader']});
+const page=await browser.newPage({viewport:{width:1500,height:1000},acceptDownloads:true}),errors=[];
+page.on('pageerror',e=>errors.push(e.message));
+try{
+ await page.goto('http://127.0.0.1:5174/v2.html?lang=fr');
+ await page.locator('#import-open').click();await page.locator('#project-file').setInputFiles(`${out}/town-fixture.json`);
+ await page.waitForFunction(()=>document.querySelector('#app').getAttribute('aria-busy')==='false'&&document.querySelector('#map-name').textContent==='Editor fixture');
+ const move=page.locator('#move-towns');await move.waitFor({state:'visible'});await move.click();assert.equal(await move.getAttribute('aria-pressed'),'true');
+ const map=await page.locator('#map').boundingBox(),scale=(Math.min(map.width,map.height)-24)/1000;
+ const x=map.x+map.width/2+(370-500)*scale,y=map.y+map.height/2+(370-500)*scale;
+ await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+80,y+55,{steps:8});await page.mouse.up();
+ await page.waitForTimeout(900);await page.keyboard.press('Escape');
+ await page.locator('#map-style').selectOption('topographic');await page.waitForTimeout(1800);
+ await page.screenshot({path:`${out}/topographic-town-moved.png`});
+ await page.locator('#export-open').click();await page.locator('#export-format').selectOption('project');
+ const downloading=page.waitForEvent('download');await page.locator('#export-go').click();const file=await downloading;
+ const saved=JSON.parse(await readFile(await file.path(),'utf8'));
+ const city=saved.world.settlements[0];assert(city.center.x>440&&city.center.y>410,JSON.stringify(city.center));
+ assert(saved.world.urban.buildings[0].poly[0].x>400);assert(saved.world.urban.buildings[0].poly[0].y>380);
+ assert.equal(saved.world.landuse.areas[1].kind,'forest');assert.equal(saved.settings.appearance.composition.landuse.rural,'outlines');
+ assert.deepEqual(errors,[]);console.log('Town drag, built geometry, simple topographic view and saved project passed',city.center);
+}catch(error){await page.screenshot({path:`${out}/move-failure.png`}).catch(()=>{});console.error(errors);throw error;}finally{await browser.close();}

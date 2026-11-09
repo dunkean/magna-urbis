@@ -130,7 +130,7 @@ uniform int uMaterialZone;
 // x canopy cover scale, y needle-leaf target, z its weight, w low-flat water table.
 const vec4 V2_ZONE_FOREST[11]=vec4[11](
   vec4(1.,.12,.45,.25),vec4(.62,.30,.45,0.),vec4(1.,.55,.55,.15),vec4(1.,.92,.75,.45),
-  vec4(1.,.90,.85,.05),vec4(.12,.75,.60,.45),vec4(.22,.20,.50,.08),vec4(.12,0.,1.,0.),
+  vec4(1.,.90,.85,.05),vec4(.05,.98,.95,.45),vec4(.22,.20,.50,.08),vec4(.12,0.,1.,0.),
   vec4(.42,0.,1.,.10),vec4(1.,0.,1.,.55),vec4(.55,.08,.70,1.));
 // x rock exposure, y sand, z organic soil, w herbaceous cover scale.
 const vec4 V2_ZONE_SOIL[11]=vec4[11](
@@ -190,6 +190,8 @@ vec3 v2SeasonClimate(){return uV2Calendar==1?uV2CalClimate.xyz:V2_SEASON_CLIMATE
 vec4 v2ZoneForest(vec4 f){
   if(!v2Zoned())return f;
   vec4 z=V2_ZONE_FOREST[v2Zone()];
-  return vec4(clamp(f.r*z.x,0.,1.),f.g,mix(f.b,z.y,z.z),f.a);
+  // Arctic woody cover is low, wind-pruned spruce, including trees retained in town reserves.
+  float stature=v2Zone()==5?.35:1.;
+  return vec4(clamp(f.r*z.x,0.,1.),f.g*stature,mix(f.b,z.y,z.z),f.a);
 }
 `;

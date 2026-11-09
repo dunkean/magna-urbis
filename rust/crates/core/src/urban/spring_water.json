@@ -1,0 +1,39 @@
+{
+  "radius_multiple": 1.5,
+  "minimum_reach_m": 300.0,
+  "max_sites": 3,
+  "max_offset_m": 32.0,
+  "path_width_m": 1.5,
+  "default": ["well_house"],
+  "families": {
+    "classical": ["thermae", "nymphaeum"],
+    "european": ["public_washhouse", "fountain_house"],
+    "islamic": ["hammam", "sabil"],
+    "chinese": ["well_pavilion"],
+    "japanese": ["onsen", "well_pavilion"],
+    "indian": ["public_bathhouse", "well_house"],
+    "insular": ["public_bathhouse", "well_house"],
+    "norse": ["public_washhouse", "well_house"],
+    "steppe": ["stone_wellhead"],
+    "clan": ["stone_wellhead"],
+    "native": ["stone_wellhead"],
+    "mesoamerican": ["fountain_house"],
+    "andean": ["fountain_house"],
+    "african": ["well_house"],
+    "ancient": ["fountain_house", "well_house"],
+    "fantasy": ["fountain_house", "well_house"]
+  },
+  "types": {
+    "thermae": {"label": "Thermes de la source", "min_population": 1500},
+    "nymphaeum": {"label": "Nymphée de la source", "min_population": 0},
+    "public_washhouse": {"label": "Lavoir de la source", "min_population": 0},
+    "fountain_house": {"label": "Maison de la source", "min_population": 0},
+    "hammam": {"label": "Hammam de la source", "min_population": 1000},
+    "sabil": {"label": "Sabil de la source", "min_population": 0},
+    "onsen": {"label": "Bains de la source", "min_population": 300},
+    "well_pavilion": {"label": "Pavillon de la source", "min_population": 0},
+    "public_bathhouse": {"label": "Bains de la source", "min_population": 1000},
+    "well_house": {"label": "Maison du puits de source", "min_population": 0},
+    "stone_wellhead": {"label": "Puits de source et abreuvoir", "min_population": 0}
+  }
+}

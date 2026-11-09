@@ -1,4 +1,4 @@
-import { isFantasyStyle, planPainting, paintingSvg, paintingCover, noise, paintSeed, isReliefBrush, isCultivatedLanduse, fantasyLod, reliefProminence, DEFAULT_FANTASY_OPTIONS, type FantasyOptions, type BrushLibrary, type FantasyStyle, type PaintLanduse, type PaintOptions, type PaintSample, type Stamp } from './fantasyPainting';
+import { isFantasyStyle, planPainting, paintingSvg, paintingCover, noise, paintSeed, isCultivatedLanduse, fantasyLod, reliefProminence, DEFAULT_FANTASY_OPTIONS, type FantasyOptions, type BrushLibrary, type FantasyStyle, type PaintLanduse, type PaintOptions, type PaintSample, type Stamp } from './fantasyPainting';
 import type { TerrainData, TerrainSettings } from './terrain';
 import { climateOf } from './terrain';
 import type { ForestField, ForestOccupation } from './terrainForest';
@@ -16,7 +16,7 @@ export interface FantasyTerrainPainting { stamps: Stamp[]; lod: "overview" | "de
 /** The V2 display rasters: land-use classes (occupation) and the canopy field shared with the other styles. */
 export interface FantasyGround { field?: ForestField; occupation?: ForestOccupation; parcels?: PaintOptions['parcels']; /** Corridors and isolated settlements kept clear of stamp anchors (roads, rivers, farms, hamlets). */ clear?: { key: string; test(x: number, y: number): boolean } }
 type FantasySettings = Pick<TerrainSettings, 'seed' | 'width'> & Partial<Pick<TerrainSettings, 'climate' | 'climateValues'>> & { forest?: FantasyGround };
-const scenes = new WeakMap<TerrainData, { water: TerrainData['water']; hydro: TerrainData['hydrology']; urban?: UrbanPaintingContext; ground?: FantasyGround; variants: Map<string, FantasyTerrainPainting>; reliefWidth?: number; relief?: ReturnType<typeof paintingRelief>; reliefRef?: number; heightRange?: [number, number] }>();
+const scenes = new WeakMap<TerrainData, { water: TerrainData['water']; hydro: TerrainData['hydrology']; urban?: UrbanPaintingContext; ground?: FantasyGround; variants: Map<string, FantasyTerrainPainting>; reliefWidth?: number; relief?: ReturnType<typeof paintingRelief>; massif?: ReturnType<typeof paintingRelief>; reliefRef?: number; heightRange?: [number, number] }>();
 const OCCUPATION_LANDUSE: (PaintLanduse | undefined)[] = [undefined, 'field', 'meadow', 'pasture', 'orchard', 'garden', 'commons', undefined, undefined, undefined, 'marsh'];
 /** Land use, built ground and canopy cover from the V2 rasters. Classes 7-9 (built reserve, construction, lanes) stay bare. */
 function groundSampler(ground: FantasyGround): (x: number, y: number) => { landuse?: PaintLanduse; occupied: boolean; cleared: boolean; woods?: number } {
@@ -87,6 +87,7 @@ const FIELD_RAMP: [number, number, number][] = [[176, 190, 112], [198, 200, 112]
 /** Crop colour of a holding tone (land-detail R, 0..1): golden, ochre and green crops; ploughed brown only for the top tones. */
 export function fantasyFieldColour(tone: number, landuse?: PaintLanduse): [number, number, number] {
   if (landuse === 'orchard') return [158, 172, 96];
+  if (landuse === 'garden') return [150, 163, 92];
   return FIELD_RAMP[Math.min(FIELD_RAMP.length - 1, Math.floor(tone < .9 ? tone / .9 * (FIELD_RAMP.length - 1) : FIELD_RAMP.length - 1))];
 }
 /** Holdings painted edge to edge from the land-detail raster: one crop colour per strip, furrows along the strip's
@@ -134,6 +135,8 @@ export function prepareFantasyTerrain(terrain: TerrainData, style: FantasyStyle,
   const groundAt = ground && groundSampler(ground);
   if (!entry.relief || entry.reliefWidth !== settings.width) {
     entry.relief = paintingRelief(terrain.height, n, terrain.width, settings.width / 65 * 3); entry.reliefWidth = settings.width;
+    // Relief of the surrounding kilometre, at a fixed physical radius: the scale of a whole massif, whatever the map size.
+    entry.massif = paintingRelief(terrain.height, n, terrain.width, 900);
     // Tallest relief of the map (97th percentile on a coarse grid) tops the size hierarchy, whatever the region size.
     const g = 48, values: number[] = [];
     for (let j = 0; j < g; j++) for (let i = 0; i < g; i++) {
@@ -147,16 +150,21 @@ export function prepareFantasyTerrain(terrain: TerrainData, style: FantasyStyle,
     heights.sort((a, b) => a - b);
     entry.heightRange = heights.length ? [heights[Math.floor(heights.length * .1)], heights[Math.min(heights.length - 1, Math.floor(heights.length * .98))]] : undefined;
   }
-  const relief = entry.relief;
+  const relief = entry.relief, massif = entry.massif!;
   const sample = (x: number, y: number): PaintSample | undefined => {
     const u = (x - terrain.x) / terrain.width, v = (y - terrain.y) / terrain.width;
     if (u < 0 || v < 0 || u >= 1 || v >= 1) return;
     const vector = terrain.water;
     const vectorN = vector?.hydro.n ?? 0;
-    const vectorWater = vector && vector.lake[Math.min(vectorN - 1, Math.floor(v * vectorN)) * vectorN + Math.min(vectorN - 1, Math.floor(u * vectorN))] !== 0;
-    const water = hydro && hydro.waterField[Math.min(hydro.resolution - 1, Math.floor(v * hydro.resolution)) * hydro.resolution + Math.min(hydro.resolution - 1, Math.floor(u * hydro.resolution))] > 0;
+    const vi = Math.min(vectorN - 1, Math.floor(v * vectorN)) * vectorN + Math.min(vectorN - 1, Math.floor(u * vectorN));
+    // The routing sea mask also covers positive-height cells below a retained water
+    // surface. Height alone is not a dry-ground test (e.g. a low lakeshore).
+    const vectorWater = vector && (!!vector.hydro.sea[vi] || !!vector.lake[vi]);
+    const hydroN = hydro?.resolution ?? 0;
+    const hi = Math.min(hydroN - 1, Math.floor(v * hydroN)) * hydroN + Math.min(hydroN - 1, Math.floor(u * hydroN));
+    const water = hydro && (!!hydro.seaMask?.[hi] || hydro.waterField[hi] > 0);
     const g = groundAt?.(x, y);
-    return { ...relief(x - terrain.x, y - terrain.y), temperature: climate.temperature, rain: climate.precipitation, water: !!water || !!vectorWater,
+    return { ...relief(x - terrain.x, y - terrain.y), massif: massif(x - terrain.x, y - terrain.y).relief, temperature: climate.temperature, rain: climate.precipitation, water: !!water || !!vectorWater,
       occupied: occupied?.(x, y) || g?.occupied, landuse: (options.followLanduse ? urban?.landuse?.(x, y) : undefined) ?? g?.landuse, woods: g?.woods, cleared: g?.cleared, landuseDetail: !!ground?.occupation?.detail };
   };
   const paint: PaintOptions = { seed: settings.seed, pitch: settings.width / 65 * options.spacing, brushPitch: settings.width / 65, mapWidth: settings.width, lod, raster: options.raster, reliefRef: entry.reliefRef, heightRange: entry.heightRange, density: options.density, size: options.size, followLanduse: options.followLanduse, forests: options.forests, forestsOnly: options.forestsOnly };
@@ -164,8 +172,7 @@ export function prepareFantasyTerrain(terrain: TerrainData, style: FantasyStyle,
   paint.parcels = ground?.parcels;
   // Retain orchard rows with relief and woodland clumps, including on the 3D drape; wild trees and plants use fine view tiles.
   const stamps = planPainting({ x: terrain.x, y: terrain.y, width: terrain.width, height: terrain.width }, sample, { ...paint, vegetation: 'coarse' });
-  const summits = stamps.filter(stamp => isReliefBrush(stamp.brush));
-  const fine = (bounds: { x: number; y: number; width: number; height: number }) => planPainting(bounds, sample, { ...paint, vegetation: 'fine', summits, maxStamps: 400000 });
+  const fine = (bounds: { x: number; y: number; width: number; height: number }) => planPainting(bounds, sample, { ...paint, vegetation: 'fine', maxStamps: 400000 });
   const planMs = performance.now() - started;
   if (!libraries) throw new Error('Fantasy brush sheets have not been registered by the page.');
   const scene: FantasyTerrainPainting = { stamps, lod, library: libraries[style], width: terrain.width, namespace: `fantasy-${style}-${terrain.x}-${terrain.y}`, planMs,

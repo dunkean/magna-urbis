@@ -15,7 +15,8 @@ import { roleFamily, type CityPalette } from './cityCanvas';
 import type { Enclosure } from '../../../rust/bridge/urban';
 import { loftRidges, pieceVolumes, readMassing, scaledRing, stiltDeck, stiltSupports, volumeRoof, type ResolvedVolume } from './cityMassing';
 import { buildingTint } from './buildingPalette';
-import type { TreeDwelling } from './cityTrees';
+import { lightCrowns, type TreeDwelling } from './cityTrees';
+const TREE_CROWNS = ['city3d:tree:crown@34502a', 'city3d:tree:crown@4c6d36', 'city3d:tree:crown@668a45', 'city3d:tree:crown@83a65a'];
 import type { LotEnclosure } from '../../../rust/bridge/urban';
 import type { YardBoundary } from './cityLotEnclosures';
 import { TOP_LIGHT, yardMeshTint, yardRuns, yardStyle } from './yardStyle';
@@ -257,6 +258,13 @@ function treeDetails(roof: RoofBuilder, tree: TreeDwelling, base: number, wood: 
   const rings = [trunk(0, 1.5), trunk(0.12, 1.05), trunk(0.5, 0.91), trunk(1.03, 0.65)];
   const loft = (a: Vertex3[], b: Vertex3[], material: string): void => { for (let i = 0; i < a.length; i++) { const j = (i + 1) % a.length; roof.face([a[i], a[j], b[j], b[i]], material); } };
   for (let i = 1; i < rings.length; i++) loft(rings[i - 1], rings[i], wood);
+  // Limbs from the upper trunk out to the ring lobes.
+  const fork = { x: c.x + lean.x * 0.75, y: c.y + lean.y * 0.75, z: base + h * 0.75 };
+  for (const crown of tree.crowns.slice(1, tree.light ? 3 : -1)) {
+    const end = { x: crown.x, y: crown.y, z: base + crown.z }, dx = end.x - fork.x, dy = end.y - fork.y, d = Math.hypot(dx, dy) || 1, w = tr * 0.4, nx = -dy / d * w, ny = dx / d * w;
+    roof.face([{ x: fork.x + nx, y: fork.y + ny, z: fork.z }, { x: fork.x - nx, y: fork.y - ny, z: fork.z }, { x: end.x - nx * 0.4, y: end.y - ny * 0.4, z: end.z }, { x: end.x + nx * 0.4, y: end.y + ny * 0.4, z: end.z }], wood);
+    roof.face([{ x: fork.x, y: fork.y, z: fork.z + w }, { x: fork.x + nx, y: fork.y + ny, z: fork.z }, { x: end.x + nx * 0.4, y: end.y + ny * 0.4, z: end.z }, { x: end.x, y: end.y, z: end.z + w * 0.4 }], wood);
+  }
   for (const p of tree.platforms) {
     const z = base + p.height, pc = { x: c.x + lean.x * p.height / h, y: c.y + lean.y * p.height / h }, count = p.shape === 'polygon' || tree.light ? 6 : 12;
     if (tree.light) {   // a plain disc and its pod: rails and domes cannot be seen at this scale
@@ -425,7 +433,8 @@ export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHe
         const materials = paletteSlots(plain, culture, v.wall, v.cover, v.tone, role + (v.wall === 'stone' ? ' monument' : '')), wallId = materials.coating;
         if (v.tree) {
           const tree = lightTrees ? { ...v.tree, light: true } : v.tree;
-          for (const face of volumeRoof({ ...v, tree }, i, j)) roof.face(face.points.map(p => ({ ...p, z: p.z + ground })), 'city3d:tree:crown@5f8247');
+          // Crown lobes from the dark lower ring to the lit top (TreeCrown.tone).
+          for (const c of tree.light ? lightCrowns(tree) : tree.crowns) for (const face of volumeRoof({ ...v, tree: { ...tree, crowns: [c] } }, i, j)) roof.face(face.points.map(p => ({ ...p, z: p.z + ground })), TREE_CROWNS[Math.min(TREE_CROWNS.length - 1, Math.floor(c.tone * TREE_CROWNS.length))]);
           const trunk = treeDetails(roof, tree, ground, 'city3d:tree:trunk@4b5a36', 'city3d:tree:crown@5f8247'), bodyShape = { outer: trunk, holes: [] };
           const volume = baseVolume(`${building.id}:city3d:${i}:${j}`, [v.shape], ground, v.eave_m, v.rise_m, materials, roof.mesh(), 'RF-DOME',
             { ...foundation, footprint: [bodyShape] }, [{ index: 0, footprint: [{ outer: scaledRing(v.shape.outer, v.tree.trunkRadius / v.tree.radius), holes: [] }], z_m: ground, height_m: v.eave_m }]);

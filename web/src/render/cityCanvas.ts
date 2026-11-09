@@ -10,6 +10,8 @@ import type { Layout, Parcel, Partition, Point, Quay, Shape, Street } from '../.
 import type { Surface } from '../../../rust/bridge/housesContract';
 import type { PlacementBatch, PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
 import { buildingColors, urbanFunctionColor, type UrbanBuildingAppearance } from './urbanBuildingStyle';
+import { mapGroundSnow } from './seasonPalette';
+import { roofSnowPatches } from './roofSnow';
 import { funeraryLandFill, roleLabel } from './cityRoles';
 import { MATERIALS, coverLayer, layerExtent, layerPattern, materialImagesNow, placeLayer, streetLayer, wallStoneLayer, type MaterialImages } from './buildingMaterials';
 import { planBuildingColors, planRoofColor, planShade, roofRelief } from './cityBuildingPalette';
@@ -19,12 +21,14 @@ import { streetToneAt, washAt } from './groundTone';
 import { STREET_MIN_PX, emphasisAlpha, naturalMarks, roadGrain, roadPaint, streetRank, type RoadStyle } from './roadStyle';
 import { STRUCTURE_ROLES, blendLine, blendTone, blendsGround, groundWash, naturalGroundWash, isBlended, softStreet, type WashKind } from './groundBlend';
 import { CityGround, boardwalkWidth, isBoardwalk, type CityGroundRaster } from './cityGround';
-import { planRoof, pieceShadows, pieceVolumes, readMassing, stiltDeck, stiltSupports, roofLight as roofLight3 } from './cityMassing';
+import { massingFootprint, planRoof, pieceShadows, pieceVolumes, readMassing, stiltDeck, stiltSupports, roofLight as roofLight3 } from './cityMassing';
 import { drawGardenDetails } from './readableGardens';
 import { softenRuralGround } from './countryside';
 import { polygonCentroid as shapeRingCenter } from '../gen/core/geom';
 import { roadSurface } from './roadSurface';
 import { differenceS, unionS } from '../gen/geo/bool';
+import { drawNightBuildings, drawNightTown, nightRoof } from './cityNight';
+import { drawRuinPlan, ruinFootprint } from './cityRuins';
 
 export interface Box { minX: number; minY: number; maxX: number; maxY: number }
 export type CityView = 'tissue' | 'uses' | 'parcels' | 'buildings' | 'roles';
@@ -51,6 +55,7 @@ const atLeast = (lod: CityLod, level: CityLod): boolean => LOD_ORDER.indexOf(lod
 
 // ---------------------------------------------------------------- roles
 export const DISTRICT_ROLES: Record<string, { label: string; color: string }> = {
+  shanty: { label: 'Habitat informel', color: '#b69274' },
   civic: { label: 'Civique', color: '#d9a55b' }, market: { label: 'Marché', color: '#e8c35f' }, religious: { label: 'Religieux', color: '#b79bd1' },
   craft: { label: 'Artisanat', color: '#cf9270' }, port: { label: 'Port', color: '#7eb2cc' }, elite: { label: 'Notables', color: '#d98c8c' },
   commoner: { label: 'Commun', color: '#dccaa2' }, poor: { label: 'Pauvre', color: '#b9ae98' }, garrison: { label: 'Garnison', color: '#919c89' },
@@ -161,11 +166,11 @@ export interface CityScene {
   bins: { blocks: SpatialBins; parcels: SpatialBins; streets: SpatialBins; landmarks: SpatialBins };
   parcelById: Map<string, number>;
 }
-export interface CityBuilding { stilts?: boolean; /** Some volume has a flat roof (bevelled rim in plan; parchment draws its ground shadow). */ flat?: boolean; id: string; surface: Surface; fn: string; family: string; role?: string; landmark: boolean; parcel?: number; building: PlacedBuilding; material?: { culture: string; wall: string; cover: string; tone: number }; path?: Path2D; footprintPath?: Path2D }
+export interface CityBuilding { ruins?: Surface; stilts?: boolean; /** Some volume has a flat roof (bevelled rim in plan; parchment draws its ground shadow). */ flat?: boolean; snowAltitude?: number; id: string; surface: Surface; footprint?: Surface; fn: string; family: string; role?: string; landmark: boolean; parcel?: number; building: PlacedBuilding; material?: { culture: string; wall: string; cover: string; tone: number }; path?: Path2D; footprintPath?: Path2D }
 /** Roof pans of the massing (cityMassing.ts): one polygon per sloped face, its
  * building and its light; height shadows per building (sun from the north-west). */
 /** `dir`: downslope direction of each pan in plan (radians, atan2 of the face normal's horizontal part; 0 when flat). */
-export interface CityRoofs { shapes: Shape[]; owner: Uint32Array; light: Float32Array; cover: string[]; wall?: string[]; tone: Float32Array; dir: Float32Array; /** 0 = pitched, 1 = single flat slab, 2 = terrace. */ flat?: Uint8Array; shadows: Shape[][] }
+export interface CityRoofs { shapes: Shape[]; owner: Uint32Array; light: Float32Array; cover: string[]; wall?: string[]; tone: Float32Array; dir: Float32Array; /** 0 = pitched, 1 = single flat slab, 2 = terrace. */ flat?: Uint8Array; snow?: Float32Array; shadows: Shape[][] }
 export interface CityBuildings { items: CityBuilding[]; bins: SpatialBins; byId: Map<string, number>; roofs?: CityRoofs }
 
 /** Optional contract fields read defensively: older plans render without them. */
@@ -282,7 +287,7 @@ export function buildCityScene(layouts: readonly Layout[], partitions: readonly 
 /** Buildings of a scene, linked to their parcel allocation for roles. */
 export function buildCityBuildings(batch: Pick<PlacementBatch, 'buildings'> | undefined, plan?: CityScene): CityBuildings {
   const items: CityBuilding[] = [], byId = new Map<string, number>();
-  const roofShapes: Shape[] = [], roofOwner: number[] = [], roofLight: number[] = [], roofCover: string[] = [], roofWall: string[] = [], roofTone: number[] = [], roofDir: number[] = [], roofFlat: number[] = [], shadows: Shape[][] = [];
+  const roofShapes: Shape[] = [], roofOwner: number[] = [], roofLight: number[] = [], roofCover: string[] = [], roofWall: string[] = [], roofTone: number[] = [], roofDir: number[] = [], roofFlat: number[] = [], roofSnow: number[] = [], shadows: Shape[][] = [];
   for (const building of batch?.buildings ?? []) {
     let surface = building.roof_footprint.length ? building.roof_footprint : building.footprint;
     if (!surface.length) continue;
@@ -297,18 +302,18 @@ export function buildCityBuildings(batch: Pick<PlacementBatch, 'buildings'> | un
     }
     const culture = building.culture?.culture || allocation?.culture || (parcel === undefined ? '' : plan?.layouts[plan.parcels[parcel].layout]?.culture) || '';
     byId.set(building.id, items.length);
-    items.push({ id: building.id, surface, fn: building.function, role: programme?.role ?? allocation?.role, family: roleFamily(programme?.role ?? allocation?.role, building.function),
-      landmark: programme?.landmark === true || allocation?.landmark === true, parcel, building,
+    items.push({ id: building.id, surface, footprint: massingFootprint(building.footprint, massing), fn: building.function, role: programme?.role ?? allocation?.role, family: roleFamily(programme?.role ?? allocation?.role, building.function),
+      landmark: programme?.landmark === true || allocation?.landmark === true, parcel, building, ruins: ruinFootprint(building.footprint, programme, massing),
       stilts: massing?.some((m, i) => pieceVolumes(building.footprint[i], m).some(v => (v.detail?.stilts_m ?? 0) > 0)),
       material: { culture, wall: first?.wall ?? '', cover: first?.cover ?? '', tone: first?.tone ?? 0.5 } });
     if (!massing) { shadows.push([]); continue; }
     const owner = items.length - 1;
     let terraced = false;
-    for (const face of planRoof(building.footprint, massing)) {
+    for (const face of planRoof(building.footprint, massing).flatMap(face => [{ ...face, snow: 0 }, ...(face.snow === 0 ? [] : roofSnowPatches(face.points, face.normal).map(p => ({ ...face, points: p.points, snow: p.weight })))])) {
       if (face.normal[2] < 0.08 || face.points.length < 3) continue; // gable ends and walls are edge-on from above
       if (face.flat) items[owner].flat = true;
       terraced ||= !!face.terrace;
-      roofFlat.push(face.terrace ? 2 : face.flat ? 1 : 0);
+      roofFlat.push(face.terrace ? 2 : face.flat ? 1 : 0); roofSnow.push(face.snow ?? 0);
       roofShapes.push({ outer: face.points.map(p => ({ x: p.x, y: p.y })), holes: face.holes ?? [] }); roofOwner.push(owner); roofLight.push(face.light ?? roofLight3(face.normal)); roofCover.push(face.cover); roofWall.push(face.wall); roofTone.push(face.tone); roofDir.push(Math.hypot(face.normal[0], face.normal[1]) > 1e-3 ? Math.atan2(face.normal[1], face.normal[0]) : 0);
     }
     const casts = building.footprint.flatMap((shape, i) => massing[i] ? pieceShadows(shape, massing[i]) : []);
@@ -317,8 +322,17 @@ export function buildCityBuildings(batch: Pick<PlacementBatch, 'buildings'> | un
     shadows.push(terraced && casts.length ? differenceS(unionS(casts[0], ...casts.slice(1)),
       [...building.footprint, ...surface].map(s => ({ outer: s.outer, holes: [] }))) : casts);
   }
-  const roofs = roofShapes.length ? { shapes: roofShapes, owner: Uint32Array.from(roofOwner), light: Float32Array.from(roofLight), cover: roofCover, wall: roofWall, tone: Float32Array.from(roofTone), dir: Float32Array.from(roofDir), flat: Uint8Array.from(roofFlat), shadows } : undefined;
-  return { items, byId, bins: new SpatialBins(items.map(b => surfaceBox(b.surface)), 64), ...(roofs ? { roofs } : {}) };
+  const altitudes = new Map<number, { sum: number; count: number }>();
+  for (const b of items) {
+    const town = b.parcel === undefined ? -1 : plan?.parcels[b.parcel]?.layout ?? -1;
+    const a = altitudes.get(town) ?? { sum: 0, count: 0 }; a.sum += b.building.ground_z_m || 0; a.count++; altitudes.set(town, a);
+  }
+  for (const b of items) {
+    const town = b.parcel === undefined ? -1 : plan?.parcels[b.parcel]?.layout ?? -1, a = altitudes.get(town)!;
+    b.snowAltitude = a.sum / a.count;
+  }
+  const roofs = roofShapes.length ? { shapes: roofShapes, owner: Uint32Array.from(roofOwner), light: Float32Array.from(roofLight), cover: roofCover, wall: roofWall, tone: Float32Array.from(roofTone), dir: Float32Array.from(roofDir), flat: Uint8Array.from(roofFlat), snow: Float32Array.from(roofSnow), shadows } : undefined;
+  return { items, byId, bins: new SpatialBins(items.map(b => surfaceBox([...b.surface, ...b.footprint ?? []])), 64), ...(roofs ? { roofs } : {}) };
 }
 
 export interface CityPick { building?: CityBuilding; parcel?: CityParcel; block?: CityBlock }
@@ -354,6 +368,8 @@ export interface CityDrawOptions {
   streetPalette?: CityPalette;
   /** Night ambience: blocks, parcels and yards take dark slate tones whatever the palette (diagnostic views keep their colours). */
   night?: boolean;
+  /** A host with a separate native building pass paints town lights after those roofs. */
+  deferNightTown?: boolean;
   /** Painted above the streets, walls and waterways and below the buildings, in the same world-coordinate context (semantic district usage). */
   beforeBuildings?: (ctx: CanvasRenderingContext2D) => void;
 }
@@ -486,18 +502,18 @@ function roofGrainPattern(ctx: CanvasRenderingContext2D, images: MaterialImages,
   pattern.setTransform(new DOMMatrix().rotate(angle * 180 / Math.PI).scale(s, s)); return pattern;
 }
 /** Same massing faces and shared tint as the GPU path, with optional material grain. */
-function drawPlanRoofs(ctx: CanvasRenderingContext2D, b: CityBuildings, o: CityDrawOptions, images?: MaterialImages, flatsOnly = false): void {
+function drawPlanRoofs(ctx: CanvasRenderingContext2D, b: CityBuildings, o: CityDrawOptions, images?: MaterialImages): void {
   const roofs = b.roofs!;
   let index = roofIndex.get(roofs);
   if (!index) { const byOwner: number[][] = b.items.map(() => []); roofs.owner.forEach((ow, k) => byOwner[ow]?.push(k)); roofIndex.set(roofs, index = { byOwner, paths: [] }); }
   for (const i of b.bins.query(o.viewport)) for (const k of index.byOwner[i] ?? []) {
-    if (flatsOnly && !roofs.flat?.[k]) continue;
     const path = index.paths[k] ??= shapePath(roofs.shapes[k]);
     const custom = o.appearance.diagnostic === 'none' && o.colors?.building;
-    ctx.fillStyle = custom ? planShade(custom, roofs.flat?.[k] ? roofs.light[k] * roofRelief(o.palette, roofs.flat[k] === 2) : 0) : planRoofColor(b.items[i], roofs, k, o.palette); ctx.fill(path);
-    const layer = coverLayer(roofs.cover[k]), grain = images && layer >= 0 ? roofGrainPattern(ctx, images, layer, (roofs.dir[k] ?? 0) - Math.PI / 2) : undefined;
+    const color = planRoofColor(b.items[i], roofs, k, o.palette, custom || undefined);
+    ctx.fillStyle = o.night && !custom ? nightRoof(color, o.palette === 'parchment') : color; ctx.fill(path);
+    const layer = coverLayer(roofs.cover[k]), snow = roofs.snow?.[k] && mapGroundSnow(b.items[i].snowAltitude ?? b.items[i].building.ground_z_m), grain = images && !snow && layer >= 0 ? roofGrainPattern(ctx, images, layer, (roofs.dir[k] ?? 0) - Math.PI / 2) : undefined;
     if (grain) { ctx.save(); ctx.globalCompositeOperation = 'soft-light'; ctx.fillStyle = grain; ctx.fill(path); ctx.restore(); }
-    if (o.lod === 'close') { ctx.strokeStyle = o.palette === 'parchment' ? 'rgba(63,47,31,0.35)' : 'rgba(31,24,17,0.5)'; ctx.lineWidth = (o.palette === 'parchment' ? 0.3 : 0.5) * o.mpp; ctx.stroke(path); }
+    if (!roofs.snow?.[k]) { ctx.strokeStyle = o.palette === 'parchment' ? 'rgba(44,33,23,0.65)' : 'rgba(31,24,17,0.65)'; ctx.lineWidth = (o.palette === 'parchment' ? 0.3 : 0.5) * o.mpp; ctx.stroke(path); }
   }
 }
 
@@ -506,7 +522,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
   if (o.buildings) updateYardEnclosures(scene, o.buildings.items, () => o.buildings!.items.map(b => b.building));
   const start = performance.now(), { viewport, mpp, lod, view, palette, layers } = o, px = (n: number): number => n * mpp;
   // Textured materials: repeating patterns anchored to world metres (ink and parchment keep their own look).
-  const tex = o.textured && palette !== 'parchment' && palette !== 'ink' ? materialImagesNow(o.onTexturesReady) : undefined;
+  const tex = o.textured && !o.night && palette !== 'parchment' && palette !== 'ink' ? materialImagesNow(o.onTexturesReady) : undefined;
   const pat = (layer: number): CanvasPattern | undefined => tex ? layerPattern(ctx, tex, layer) ?? undefined : undefined;
   const plaza = (use: string, color: string | undefined): string | CanvasPattern | undefined => color && tex && (use === 'place' || use === 'market') ? pat(placeLayer()) ?? color : color;
   const stats: CityFrameStats = { lod, blocks: 0, parcels: 0, streets: 0, buildings: 0, ms: 0, pending: false };
@@ -619,7 +635,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
     ctx.strokeStyle = q.kind === 'mole' ? '#2b2015' : parchment ? PARCH.ink : '#57534b'; ctx.lineWidth = px(q.kind === 'mole' ? 1.6 : 0.9); ctx.stroke(path);
   }
 
-  if (layers.enclosures) drawCityWallGround(ctx, scene, { viewport, mpp, lod, palette }); // walls hook: ditches and glacis under the streets
+  if (layers.enclosures) drawCityWallGround(ctx, scene, { viewport, mpp, lod, palette, night }); // walls hook: ditches and glacis under the streets
   // Streets: centrelines stroked by rank, casing first, majors and crossings on top.
   if (layers.streets) {
     const maxRank = lod === 'far' ? 1 : lod === 'mid' ? 2 : 9;
@@ -645,6 +661,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
       // Stroked ways under the surfaced streets, crossings over them.
       const fill = CROSSINGS.has(s.role) ? over : under;
       const paint = streetPaint(s.role, s.rank, o.streetPalette ?? palette);
+      if (night) { paint.fill = parchment ? '#647b95' : '#242e3b'; paint.casing = '#172538'; }
       paint.fill = (s.role === 'track' ? o.colors?.track : o.colors?.road) ?? paint.fill; paint.casing = o.colors?.roadEdge ?? paint.casing;
       const path = s.path ??= linePath(s.street.path);
       const w = Math.max(s.width, px(isBoardwalk(s.role) ? 0.8 : s.role === 'mole' ? 3.4 : STREET_MIN_PX[Math.min(4, Math.max(0, s.rank))])), w2 = Math.round(w * 4) / 4;
@@ -652,6 +669,11 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
         // Same paint as the regional roads: a tone of the local ground, a soft shoulder instead of a casing, wear up close.
         const rank = streetRank(s.role, s.rank), marks = naturalMarks(rank, w, 1 / mpp, roadStyle), bed = { alpha: marks.bed.alpha }, edge = Math.max(px(lod === 'mid' ? 0.9 : 1.4), w * .09), shoulder = marks.shadow && { ...marks.shadow, alpha: marks.shadow.alpha * .8 };
         const paintRoad = roadPaint(ctx, rank, roadStyle);
+        const snow = !roadStyle.night && mapGroundSnow();
+        if (snow && rank !== 'path' && w2 / mpp >= 4) {
+          marks2.add({ stroke: 'rgb(130,151,170)', width: w2 * .66, alpha: .38 * Number(snow), cap: 'round' }, path);
+          marks2.add({ stroke: paintRoad, width: w2 * .3, alpha: bed.alpha, cap: 'round' }, path);
+        }
         if (marks.wear) marks2.add({ stroke: marks.wear.color, width: w2 * marks.wear.share, alpha: marks.wear.alpha, dash: marks.wear.dash as number[], cap: 'round' }, path);
         const grain = marks.grain ? roadGrain(ctx) : undefined; if (grain) marks2.add({ stroke: grain, width: w2, alpha: marks.grain, cap: 'round' }, path);
         if (surfaceOk(s)) { surfaced.push({ s, w, edge, casing: shoulder && lod !== 'far' ? { fill: shoulder.color, alpha: shoulder.alpha } : undefined, fill: { fill: paintRoad, alpha: bed.alpha } }); continue; }
@@ -659,8 +681,8 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
         fill.add({ stroke: paintRoad, width: w2, alpha: bed.alpha, cap: 'round' }, path);
         continue;
       }
-      const toned = o.roadLook === 'ink' ? undefined : streetToneAt(s.street.path, s.role, s.rank);   // map-tinted street (groundTone.ts)
-      if (toned || softStreets && !STRUCTURE_ROLES.has(s.role)) {
+      const toned = o.roadLook === 'ink' || night ? undefined : streetToneAt(s.street.path, s.role, s.rank);   // map-tinted street (groundTone.ts)
+      if (toned || !night && softStreets && !STRUCTURE_ROLES.has(s.role)) {
         // Blended: earth wash at rank-decaying opacity and a faint soft edge instead of the dark casing.
         const soft = toned ?? softStreet(s.role, s.rank, tone); soft.fill = (s.role === 'track' ? o.colors?.track : o.colors?.road) ?? soft.fill; soft.edge = o.colors?.roadEdge ?? soft.edge;
         const edge = px(lod === 'mid' ? 0.8 : 1.1);
@@ -727,7 +749,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
       for (const t of [...wall.gateTowers, ...wall.towers]) { const c = new Path2D(); c.arc(t.x, t.y, radius, 0, Math.PI * 2); towers.add({ fill: parchment ? PARCH.tower : '#5a5248', stroke: parchment ? PARCH.wall : '#2f2a24', width: px(0.6) }, c); }
     }
     batch.flush(ctx); towers.flush(ctx);
-    drawCityWalls(ctx, scene, { viewport, mpp, lod, palette }); // walls hook
+    drawCityWalls(ctx, scene, { viewport, mpp, lod, palette, night }); // walls hook
   }
 
   if (layers.waterways !== false && (layers.streets || layers.waterways)) drawCityWaterways(ctx, scene.layouts, mpp);
@@ -740,13 +762,14 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
     if (o.renderer && view === 'buildings' && !footprint) {
       stats.pending = o.renderer.draw(ctx, { viewport, metresPerPixel: mpp, appearance: o.appearance, selectedId: o.selectedBuilding }).rasterTilesPending > 0;
     } else {
-      const edge = footprint || lod === 'close' ? { stroke: colors?.buildingEdge ?? (parchment ? '#f1e5c6' : '#2e261d'), width: px(parchment ? 0.3 : 0.5) } : {};
+      const edge = { stroke: colors?.buildingEdge ?? (footprint && parchment ? '#f1e5c6' : '#2e261d'), width: px(footprint && parchment ? 0.3 : 0.55) };
       const roofs = o.buildings.roofs;
-      if (roofs && view === 'buildings' && o.appearance.diagnostic !== 'uses') {
+      if (!footprint && roofs && view === 'buildings' && o.appearance.diagnostic !== 'uses') {
         let paths = roofShadowPaths.get(roofs);
         if (!paths) roofShadowPaths.set(roofs, paths = []);
-        ctx.fillStyle = parchment ? 'rgba(70,52,32,0.2)' : 'rgba(22,18,10,0.3)';
-        for (const i of o.buildings.bins.query(viewport)) if (o.buildings.items[i].flat) {
+        // Neutral attenuation cannot brighten any channel of the receiving ground.
+        ctx.fillStyle = parchment ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.3)';
+        for (const i of o.buildings.bins.query(viewport)) {
           let path = paths[i];
           if (!path) { path = paths[i] = new Path2D(); for (const s of roofs.shadows[i] ?? []) path.addPath(shapePath(s)); }
           ctx.fill(path);
@@ -754,10 +777,10 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
       }
       for (const i of o.buildings.bins.query(viewport)) {
         const b = o.buildings.items[i]; stats.buildings++;
-        const tint = planBuildingColors(b, palette);
-        const color = view === 'roles' ? BUILDING_FAMILIES[b.family]?.color ?? '#5a4b3c' : o.appearance.diagnostic === 'uses' ? urbanFunctionColor(b.fn) : colors?.building ?? (o.buildings.roofs ? tint.wall : tint.roof);
+        const tint = planBuildingColors(b, footprint ? 'terrain' : palette);
+        const color = view === 'roles' ? BUILDING_FAMILIES[b.family]?.color ?? '#5a4b3c' : o.appearance.diagnostic === 'uses' ? urbanFunctionColor(b.fn) : colors?.building ?? (footprint ? tint.roof : o.buildings.roofs ? tint.wall : tint.roof);
         if (footprint) {
-          if (!b.footprintPath) { b.footprintPath = new Path2D(); for (const s of b.building.footprint) b.footprintPath.addPath(shapePath(s)); }
+          if (!b.footprintPath) { b.footprintPath = new Path2D(); for (const s of b.footprint ?? b.building.footprint) b.footprintPath.addPath(shapePath(s)); }
           batch.add({ fill: color, ...edge }, b.footprintPath);
         } else {
           if (!b.path) { b.path = new Path2D(); for (const s of b.surface) b.path.addPath(shapePath(s)); }
@@ -765,27 +788,21 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
         }
       }
       batch.flush(ctx);
-      if (o.buildings.roofs && view === 'buildings' && o.appearance.diagnostic !== 'uses') drawPlanRoofs(ctx, o.buildings, o, tex, footprint);
+      if (!footprint && o.buildings.roofs && view === 'buildings' && o.appearance.diagnostic !== 'uses') drawPlanRoofs(ctx, o.buildings, o, tex);
+      if (footprint && !parchment) {
+        ctx.strokeStyle = colors?.buildingEdge ?? '#2e261d'; ctx.lineWidth = px(0.4);
+        for (const i of o.buildings.bins.query(viewport)) if (o.buildings.items[i].footprintPath) ctx.stroke(o.buildings.items[i].footprintPath!);
+      }
+      if (footprint) for (const i of o.buildings.bins.query(viewport)) drawRuinPlan(ctx, o.buildings.items[i].ruins ?? [], mpp);
       const selected = o.selectedBuilding === undefined ? undefined : o.buildings.byId.get(o.selectedBuilding);
       const selectedPath = selected === undefined ? undefined : footprint ? o.buildings.items[selected].footprintPath : o.buildings.items[selected].path;
       if (selectedPath) { ctx.strokeStyle = '#197ea4'; ctx.lineWidth = px(2); ctx.stroke(selectedPath); }
     }
   }
 
-  if (o.buildingsVisible && o.buildings && o.appearance.ambience === 'night' && o.appearance.style !== 'silhouette' && atLeast(lod, 'near')) {
-    ctx.save(); ctx.strokeStyle = '#ffc45e'; ctx.lineCap = 'round';
-    for (const i of o.buildings.bins.query(viewport)) {
-      const b = o.buildings.items[i];
-      let hash = 2166136261; for (const c of b.id) hash = Math.imul(hash ^ c.charCodeAt(0), 16777619);
-      if ((hash >>> 0) % 100 >= 50) continue;
-      const shape = b.building.footprint[0]; if (!shape?.outer.length) continue;
-      const p = shapeRingCenter(shape.outer);
-      ctx.save(); const clip = new Path2D(); for (const s of b.building.footprint) clip.addPath(shapePath(s)); ctx.clip(clip, 'evenodd');
-      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x, p.y);
-      ctx.globalAlpha = .16; ctx.lineWidth = Math.max(1.3, px(2)) * 3.2; ctx.stroke();
-      ctx.globalAlpha = 1; ctx.lineWidth = Math.max(1.3, px(2)); ctx.stroke(); ctx.restore();
-    }
-    ctx.restore();
+  if (night && o.appearance.diagnostic === 'none') {
+    if (!o.deferNightTown) drawNightTown(ctx, scene, viewport, mpp, parchment, layers.streets);
+    if (o.buildingsVisible && o.buildings) drawNightBuildings(ctx, o.buildings.items.map(b => b.building), viewport, mpp, parchment);
   }
 
   // Diagnostics of the plan.

@@ -511,7 +511,7 @@ impl BuildingSiteIndex {
                 let slot = index.layouts.len();
                 index.layouts.push(LayoutIndex {
                     layout: layout_id,
-                    frontages: super::parcels::FrontageIndex::new(layout),
+                    frontages: super::parcels::FrontageIndex::new(&super::shanty::formal_layout(layout)),
                     districts: district_programmes(layout),
                 });
                 slot
@@ -694,6 +694,18 @@ impl BuildingSiteIndex {
             .parcels
             .get(site.parcel)
             .ok_or("Retained parcel missing")?;
+        if parcel.family == "shanty" {
+            let site_seed = super::edits::building_seed(seed, &parcel.id, partition);
+            let mut request = super::shanty::request(layout, parcel, surface, &site_seed)?;
+            request["terrain"]["grid"] = ground_patch(surface, &parcel.shape);
+            return Ok(request);
+        }
+        if let Some(water) = super::springs::site(layout, &parcel.id) {
+            let site_seed = super::edits::building_seed(seed, &parcel.id, partition);
+            let mut request = super::springs::request(water, layout, surface, &site_seed);
+            request["terrain"]["grid"] = ground_patch(surface, &water.shape);
+            return Ok(request);
+        }
         // Mixed house styles (`house_mix`): the drawn culture replaces the lot's
         // own; a pack that refuses the lot falls back to it, never a refusal.
         let drawn = super::house_mix::HouseSettings::parse(architecture_culture).and_then(|h| {
@@ -988,7 +1000,7 @@ impl BuildingSiteIndex {
             && !programme["landmark"].as_bool().unwrap_or(false)
             && !role.contains("tower") && parts.iter().all(|(_,l)| matches!(*l, "building" | "barn" | "byre"))
             && super::house_mix::ordinary_home(building_culture, arch, &site_seed) {
-            let radius = (layout.quarters.iter().map(|q| super::geometry::area(&q.shape)).sum::<f64>() / std::f64::consts::PI).sqrt().max(1.0);
+            let radius = super::shanty::formal_radius(layout);
             let outside = !layout.enclosures.is_empty() && !layout.enclosures.iter().any(|e|
                 super::geometry::contains(&super::Shape { outer:e.path.clone(), holes:vec![] }, center));
             super::house_mix::HomeContext {
@@ -1343,7 +1355,7 @@ impl BuildingSiteIndex {
             seed: &site_seed,
             low_rural: layout.config.as_ref().is_none_or(|c| c.low_rural_houses),
             distance: {
-                let radius = (layout.quarters.iter().map(|q| super::geometry::area(&q.shape)).sum::<f64>() / std::f64::consts::PI).sqrt().max(1.0);
+                let radius = super::shanty::formal_radius(layout);
                 (center.x - layout.center.x).hypot(center.y - layout.center.y) / radius
             },
         });
@@ -2472,6 +2484,12 @@ fn preview_site(
         let pr = partition.programme.as_ref().ok_or("Retained programme missing")?;
         let allocation = pr.allocations.get(site.allocation).ok_or("Retained allocation missing")?;
         let parcel = partition.parcels.get(site.parcel).ok_or("Retained parcel missing")?;
+        if parcel.family == "shanty" {
+            return Ok((!check_only).then(|| parcel.id.clone()));
+        }
+        if super::springs::site(layout, &parcel.id).is_some() {
+            return Ok((!check_only).then(|| parcel.id.clone()));
+        }
         let drawn = super::house_mix::HouseSettings::parse(architecture_culture).and_then(|h| {
             let block = layout.blocks.get(parcel.block)?;
             let drawn = h.pick(seed, &layout.key, &parcel.id, parcel.block, block.quarter, &block.zone)?;

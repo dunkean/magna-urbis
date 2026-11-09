@@ -1,6 +1,7 @@
-import { decorGeography, type VectorGeography } from '../../../rust/bridge/urbanGeography';
+import { decorGeography, waterRings, type VectorGeography } from '../../../rust/bridge/urbanGeography';
 import { Gunzip, gunzip, gunzipSync, gzip, gzipSync } from 'fflate';
 import type { RetainedWaterMaterial } from './decorWater';
+import { coastalRiverMouths } from '../render/riverMouths';
 import type { RoadConfig, RoadOutput, Settlement, SettlementRaster } from '../../../rust/bridge/settlements';
 
 /**
@@ -124,7 +125,11 @@ function readDecorBytes(raw: Uint8Array): Decor {
   const riverWidth = unshuffle(take(size * 4), size), riverIds = new Int32Array(take(size * 4).buffer);
   for (let i = 0; i < size; i++) if (!water[i]) waterLevel[i] = height[i];
   const raster: SettlementRaster = { width: header.width, n, height, water, waterLevel, riverWidth, riverIds };
+  const joinedWater = coastalRiverMouths(header.meta.waterSvg, raster, header.width / (header.meta.waterMaterial?.n || n));
+  const waterChanged = joinedWater !== header.meta.waterSvg;
+  header.meta.waterSvg = joinedWater;
   raster.geometry = header.geometry ?? decorGeography(raster, header.meta.waterSvg);
+  if (waterChanged && header.geometry) raster.geometry = { ...header.geometry, water: waterRings(joinedWater) };
   return { meta: header.meta, raster };
 }
 

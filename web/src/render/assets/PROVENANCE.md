@@ -30,6 +30,12 @@ Runtime sheets in `fantasy/families/runtime/` (manifest entries added by `fantas
 - `foothills.webp`, `heath.webp`, `woodland.webp`: new atlases `fantasy/families/{foothills,heath,woodland}.png` (1256×1256 RGBA, 4×4, ink rows 0-1, colour rows 2-3), generated with the Codex CLI built-in image generation tool from the prompt `fantasy/families/new-il5.prompt.md` (result note `new-il5.result.md`). Foothills sit between ridges and hills; heath is uncultivated ground cover; woodland clumps carry the forest mass at a distance.
 - Orchard placement uses the existing `broadleaf.webp` single round trees: ink cells 0, 1, 4; colour cells 8, 9, 12 (zero-based). The `orchards.webp` cells are multi-tree scenes and are excluded from orchard brushes. No bitmap assets were changed; crowns are 5–8 m on a parcel-aligned 9 m grid.
 
+# Illustration massifs and downs (2026-11-09)
+
+Runtime sheets `fantasy/families/runtime/massifs.webp` (8 mountain massifs; cells 6-7 snow-capped) and `downs.webp` (4 hills): the large landforms of the Illustration style, drawn from 700 m to 4.5 km (massifs) and 400 m to 2 km (downs) wide, so they are kept at high resolution (colour cells 1536 px wide, the derived grey ink half at half that).
+Source: generated on 2026-11-09 with the Codex CLI built-in image generation tool, at the user's request: one transparent RGBA image per landform in `fantasy/families/massifs-source/` (`massif-01..08.png`, `hill-01..04.png`), with the request prompt `prompt.md` and Codex's report `codex-result.md`. Codex upscaled and padded the generator's originals to 1152 px high; no manual pixel edits.
+Packing: `python -I fantasy/families/pack_runtime.py --singles massifs massifs-source/massif-0{1..8}.png` and `--singles downs massifs-source/hill-0{1..4}.png` (alpha-bound crop, shelf-packed, manifest entry). The former relief sheets (`hills`, `mountains`, `snow-mountains`, `peaks`, `foothills`) are no longer drawn.
+
 # Parchment symbols (ink and wash masks)
 
 `parchment-symbols.json`: 16 cells of 64×64, two 8-bit masks per pixel (ink, wash), zlib + base64, 43.5 KB. Drawn by `parchmentSymbols.ts` for the parchment meadow, pasture, marsh and heath symbols; the colours come from the palette at draw time (biomes, seasons).

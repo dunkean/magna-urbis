@@ -6,12 +6,14 @@ import { setupUrbanRenderLocale } from './urbanRenderLocale';
 import { getBenchRenderColors } from './benchRenderColors';
 import { DEFAULT_LANDUSE_FOREST_TONE, LANDUSE_FOREST_TONES, LANDUSE_FOREST_TONE_LABEL, getLanduseForestTone, onLanduseForestTone, type LanduseForestTone } from '../render/landuseForestTone';
 import { getGroundBlend, onGroundBlend, setGroundBlend, type GroundBlend } from '../render/groundBlend';
+import { clearCityGroundUnderCanopy } from '../render/cityCanopy';
 import { setupUrbanPanelLocale, urbanText } from './urbanPanelLocale';
 import { LOCALE_KEY, savedLocale } from './shellLocale';
 import { bindControlRelevance, controlRelevanceControlsHtml } from './urbanControlRelevance';
 import { retainSelectValue } from './retainedSelectValue';
 import { bindCityPlanCulture, withCityPlanCulture } from './cityPlanCulture';
 import UrbanWorker from './urbanWorker?worker&inline';
+import { runActivityPlacement } from './urbanActivityPlacement';
 import { publishWasmThreads, wasmWorkerFailed, wasmWorkerOptions } from '../../../rust/bridge/wasmThreads';
 import catalogueJson from '../../../rust/crates/core/src/urban/catalogue.json';
 import { defaultLayoutConfig, defaultParcelConfig, layoutExtent, normalizeLayoutConfig, normalizeParcelConfig, regionalStreets, runUrbanRequest, type Layout, type LayoutConfig, type ParcelConfig, type Partition, type Point, type Shape, type Street, type UrbanRequest, type UrbanResponse } from '../../../rust/bridge/urban';
@@ -53,6 +55,7 @@ import { siteVisualScene } from './urbanSilhouettes';
 import { updateYardEnclosures } from '../render/cityLotEnclosures';
 import { createNativeSiteStore, createLegacySiteStore, createUnboundSiteStore, type UrbanSiteStore, type UrbanSiteVisual } from './urbanSiteStore';
 import { CityGlCanvasLayer, type CityGlHostFrame } from '../render/cityGlHost';
+import { cityCanopy, drawCityCanopy } from '../render/cityGrove';
 import { cityGlOverlayLayers } from '../render/cityGl';
 import type { CityComponent } from '../render/appearanceRecipe';
 import { getBenchComposition, resolveBenchAppearance, setBenchAppearanceField, setBenchComposition } from './benchComposition';
@@ -62,6 +65,7 @@ import { V1LandscapeLayer, type V1LandscapeStyle } from '../render/v1Landscape';
 import { cityWallSvg } from '../render/cityWalls'; // walls hook
 import { BUILDING_FAMILIES, CityCanvasLayer, DISTRICT_ROLES, districtRoleKey, buildCityBuildings, buildCityScene, drawCity, pickCity, selectCityLod, type CityBuildings, type CityFrameStats, type CityLod, type CityPick, type CityScene } from '../render/cityCanvas';
 import { UrbanBuildingLodRenderer } from '../render/urbanBuildingLod';
+import { drawNightTown } from '../render/cityNight';
 import { UrbanBuildingDetailController, type BuildingDetailView } from '../render/urbanBuildingDetails';
 import type { ArchitectureBatchProgress } from '../../../rust/bridge/architectureBatch';
 import type { PlacementBatch, PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
@@ -1096,7 +1100,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     }
     appliedKind = kind; appliedOnly = only;
     status(kind, kind === 'quarters' ? urbanText(['Rust · génération des quartiers…','Rust · generating districts…','Rust · 正在生成街区…','Rust · generando barrios…','Rust · gerando bairros…']) : urbanText(['Rust · génération des parcelles…','Rust · generating parcels…','Rust · 正在生成地块…','Rust · generando parcelas…','Rust · gerando lotes…']), true);
-    if (fallback) void runUrbanRequest(message).then(receive, error => receive({ id: message.id, error: String(error) }));
+    if (fallback) void runActivityPlacement({ run: runUrbanRequest }, message, () => id === message.id).then(receive, error => receive({ id: message.id, error: String(error) }));
     else try { const r = message.raster; worker!.postMessage(message, r ? [r.height.buffer, r.water.buffer, r.waterLevel.buffer, r.riverWidth.buffer, r.riverIds.buffer] : []); } catch { useFallback(); }
   }
   function useFallback(): void { worker?.terminate(); worker = undefined; fallback = true; cachedTerrain = undefined; request(appliedKind, appliedOnly); }
@@ -1532,7 +1536,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     const compare = comparison.state(), silhouetteCompare = compare?.architecture === 'silhouette';
     const look = cityLook(), view = compare ? compare.renderView : look.view;
     if (compare && silhouetteCompare && (comparisonBuilt?.[0] !== compare.silhouette || comparisonBuilt[1] !== cityPlan)) comparisonBuilt = [compare.silhouette, cityPlan, buildCityBuildings(compare.silhouette, cityPlan)];
-    const appearance = { colors: r.palette.colors, style: compare ? silhouetteCompare ? 'silhouette' as const : 'cartographic' as const : r.city.buildingStyle, diagnostic: r.city.diagnostic, ambience: composition.ambience };
+    const appearance = { colors: r.palette.colors, style: compare ? silhouetteCompare ? 'silhouette' as const : 'cartographic' as const : r.city.buildingStyle, diagnostic: r.city.diagnostic, ambience: composition.ambience, nightInk: look.palette === 'parchment' };
     const viewport = !compare && !architecturePreview && architectureView === '2d' && view === 'buildings' && visible ? boundedCold() : undefined;
     viewport?.ensureViewport([frame.viewport.minX, frame.viewport.minY, frame.viewport.maxX, frame.viewport.maxY]);
     const parent = !compare && !architecturePreview && architectureView === '2d' && view === 'buildings' && visible ? boundedParent() : undefined;
@@ -1547,11 +1551,15 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     const drawGl = blocker || composition.landuse.urban !== 'off' || composition.networks.roads.look === 'natural' || r.city.buildingStyle !== 'cartographic' || r.city.painted || composition.ambience === 'night' ? undefined : frame.drawGl;
     const refused = appearance.diagnostic === 'access' ? refusedParcels : undefined;
     const glFrame = drawGl?.({ viewport: frame.viewport, metresPerPixel: frame.mpp, lod: cityLod, view, palette: look.palette, layers: look.layers, selectedId: selected, selectedParcel,
-      buildingsVisible: visible && !native && !parentOwned, diagnostic: appearance.diagnostic, refusedParcels: refused, textured: look.textured, colors: getBenchRenderColors() });
-    cityFrame = drawCity(ctx, cityPlan, { ...frame, colors: getBenchRenderColors(), labels: false, text: r.composition.text, textPalette: terrainStyle(r.composition.variant, r.palette.colors).palette, roadLook: composition.networks.roads.look, groundBlend: composition.networks.roads.look === 'natural', night: composition.ambience === 'night', lod: cityLod, view, palette: look.palette, width: look.width, layers: glFrame ? cityGlOverlayLayers(look.layers) : look.layers,
+      buildingStyle: appearance.style, paintedBuildings: r.city.painted, buildingsVisible: visible && !native && !parentOwned, diagnostic: appearance.diagnostic, refusedParcels: refused, textured: look.textured, colors: r.palette.colors });
+    cityFrame = drawCity(ctx, cityPlan, { ...frame, colors: r.palette.colors, labels: false, text: r.composition.text, textPalette: terrainStyle(r.composition.variant, r.palette.colors).palette, roadLook: composition.networks.roads.look, groundBlend: composition.networks.roads.look === 'natural', night: composition.ambience === 'night', lod: cityLod, view, palette: look.palette, width: look.width, layers: glFrame ? cityGlOverlayLayers(look.layers) : look.layers,
+      deferNightTown: true,
       buildings: compare ? (silhouetteCompare ? comparisonBuilt?.[2] : native ? landmarkOverlay() : cityBuilt) : native ? landmarkOverlay() : cityBuilt,
       buildingsVisible: !parentOwned && (compare ? view === 'buildings' : visible && (!glFrame || !!native)), appearance,
-      beforeBuildings: target => drawUrbanSemantic(target, [cityPlan!], { look: composition.landuse.urban, opacity: composition.landuse.opacity, mpp: frame.mpp, viewport: frame.viewport }),
+      beforeBuildings: target => {
+        if (composition.vegetation.procedural) clearCityGroundUnderCanopy(target, frame.viewport, frame.mpp);
+        drawUrbanSemantic(target, [cityPlan!], { look: composition.landuse.urban, opacity: composition.landuse.opacity, mpp: frame.mpp, viewport: frame.viewport });
+      },
       selectedBuilding: selected, selectedParcel, refusedParcels: refused, readableGardens: render.readableGardens && look.layers.gardens, textured: look.textured, onTexturesReady: draw });
     // Native plans have their own screen-size LOD and bounded overview tiles.
     // They must remain visible while the first chunks arrive, even at city scale.
@@ -1580,6 +1588,10 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
         durableCompleted: parentPreview.durableCompleted, nativeAckedCompleted: parentPreview.nativeAckedCompleted, counts: parentPreview.counts });
     } else if (parentOwned) frameInfo.dataset.parentEvidence = JSON.stringify({ version: 'parent-city-viewport-evidence-1', phase: 'loading', active: false, complete: false });
     else delete frameInfo.dataset.parentEvidence;
+    // Town grove, tree-dwelling crowns and walkways over the buildings (cityCanopy.ts), under the night lights.
+    if (visible && view === 'buildings' && appearance.diagnostic === 'none' && !compare) drawCityCanopy(ctx, cityCanopy(cityPlan.layouts, displayedArchitecture()?.buildings),
+      { viewport: frame.viewport, mpp: frame.mpp, palette: look.palette, night: composition.ambience === 'night' });
+    if (composition.ambience === 'night' && appearance.diagnostic === 'none') drawNightTown(ctx, cityPlan, frame.viewport, frame.mpp, look.palette === 'parchment', look.layers.streets);
     cityFrame.ms = performance.now() - start;
     reportRenderStats({ path: glFrame ? 'gpu' : 'cpu', ms: cityFrame.ms, drawCalls: glFrame?.drawCalls ?? 0, reason: glFrame ? undefined : blocker ?? 'gl-unavailable',
       canvas2dFills: cityFrame.blocks + cityFrame.parcels + cityFrame.streets + (glFrame && !native ? 0 : cityFrame.buildings) });

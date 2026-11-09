@@ -3,7 +3,7 @@
  * The material styles read the same calendar in their shaders (`ZONE_SEASONS`). Held as display state, like the forest tone:
  * the palette is resolved in many places and every one of them must agree. */
 import { calendarSeason, seasonWeights, type SeasonCalendar } from '../../../rust/bridge/terrainRenderV2Zones';
-import type { ClimateZone } from '../../../rust/bridge/terrainClimate';
+import { CLIMATE_ZONE_VALUES, type ClimateValues, type ClimateZone } from '../../../rust/bridge/terrainClimate';
 import type { Palette } from './styles';
 
 export interface SeasonPaint { herb: readonly [number, number, number]; leaf: number; evergreen: number; snow: number; spring: number; autumn: number }
@@ -11,9 +11,28 @@ const SNOW = '#f1f3ef', BARE_WOOD = '#8d8373', AUTUMN_WOOD = '#b78a3e', SPRING_W
 /** Summer is the palette as authored. */
 const SUMMER = .5;
 let season = SUMMER, zone: ClimateZone | undefined, calendar: SeasonCalendar | undefined;
+let climate: ClimateValues | undefined;
 export function setMapSeason(next: number, nextZone: ClimateZone | undefined = zone, nextCalendar: SeasonCalendar | undefined = calendar): void { season = next; zone = nextZone; calendar = nextCalendar; }
 /** The benches load a map apart from the appearance that sets the season. */
-export function setMapClimateZone(next: ClimateZone | undefined): void { zone = next; }
+export function setMapClimateZone(next: ClimateZone | undefined, values?: ClimateValues): void { zone = next; climate = values; }
+/** Physical snow on level ground at a town's altitude. CPU counterpart of
+ * terrainRenderV2 v2Local/v2Snow: lapse rate, lag, supply, thaw and perennial floor.
+ * Field-scale drift noise is averaged out at town scale. */
+export interface GroundSnowSettings { season: number; climateZone?: ClimateZone; climate: Pick<ClimateValues, 'temperature' | 'precipitation'>; calendar?: SeasonCalendar }
+export function mapGroundSnow(altitude = 0, settings?: GroundSnowSettings): number {
+  const snowZone = settings?.climateZone ?? zone;
+  if (!snowZone) return 0;
+  const c = settings?.climate ?? climate ?? CLIMATE_ZONE_VALUES[snowZone], year = calendarSeason(snowZone, settings ? settings.calendar : calendar), date = settings?.season ?? season;
+  const smooth = (a: number, b: number, x: number): number => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  const annual = c.temperature - .0065 * Math.max(0, altitude), amplitude = 6 + .5 * Math.max(0, 10 - c.temperature);
+  const warm = annual + amplitude, cold = annual - amplitude - year.cool;
+  const phase = .5 - .5 * Math.cos(2 * Math.PI * (date - .08));
+  const w = seasonWeights(date), thaw = (year.thaw ?? [0, 0, 0, 0]).reduce((sum, v, i) => sum + v * w[i], 0);
+  const supply = smooth(.12, .7, c.precipitation / Math.max(120, 10 * (warm + cold) + 280));
+  const cover = Math.max(smooth(2, -5, cold + (warm - cold) * phase + thaw), smooth(2.5, -2.5, warm)) * supply;
+  return smooth(.405, .465, cover);
+}
+export const roofSeasonKey = (): string => `${zone}|${season}|${JSON.stringify(calendar)}|${JSON.stringify(climate)}`;
 /** Part of every cache key of a seasonal map layer. */
 export const mapSeasonKey = (): string => zone && season !== SUMMER ? `${zone}:${Math.round(season * 100)}:${JSON.stringify(calendar ?? {})}` : '';
 

@@ -53,7 +53,7 @@ function reliefAtlas(library: BrushLibrary): Promise<{ canvas: HTMLCanvasElement
   let pending = reliefAtlases.get(library);
   if (!pending) {
     pending = decodeLibrary(library).then(images => {
-      const frames = [...new Map(library.frames.filter(frame => ['hills', 'foothills', 'mountains', 'snow-mountains', 'peaks'].includes(frame.family)).map(frame => [frame.token, frame])).values()];
+      const frames = [...new Map(library.frames.filter(frame => ['downs', 'massifs'].includes(frame.family)).map(frame => [frame.token, frame])).values()];
       const cell = 256, pad = 16, columns = Math.min(8, frames.length), canvas = document.createElement('canvas');
       canvas.width = columns * cell; canvas.height = Math.ceil(frames.length / columns) * cell;
       const ctx = canvas.getContext('2d')!, rects = new Map<string, [number, number, number, number]>(); ctx.imageSmoothingQuality = 'high';
@@ -92,7 +92,7 @@ export async function terrain3dIllustratedSvg(url: string, terrain: TerrainData,
   if (doc.querySelector('parsererror')) throw new Error('Invalid Illustrated background SVG.');
   const painting = isFantasyStyle(style) ? prepareFantasyTerrain(terrain, style, settings, paintingOptions(options, settings.width)) : undefined;
   if (painting) for (const use of Array.from(doc.querySelectorAll('.fantasy-brushes > use[data-brush]'))) {
-    const family = use.getAttribute('data-brush'), brush = family === 'mountains' ? 5 : family === 'snow-mountains' ? 6 : family === 'peaks' ? 16 : family === 'hills' ? 4 : family === 'foothills' ? 18 : -1;
+    const family = use.getAttribute('data-brush'), brush = family === 'massifs' ? 5 : family === 'downs' ? 4 : -1;
     if (isRaised({ brush, width: Number(use.getAttribute('width')) }, painting)) use.remove();
   }
   const cleanUrl = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(doc)], { type: 'image/svg+xml' }));

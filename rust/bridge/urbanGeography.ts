@@ -1,11 +1,35 @@
 import { marchingSquares } from '../../web/src/gen/terrain/contour';
+import { isHeadwater } from '../../web/src/render/riverHeadwaters';
+import type { VectorWater } from '../../web/src/ui/vectorWater';
 import { vectorWaterSvg } from '../../web/src/ui/vectorWaterRender';
 import { renderHydrology } from './hydrologyRender';
 import type { TerrainData } from './terrain';
+import type { HydrologyData } from './hydrology';
 import type { SettlementRaster } from './settlements';
 import type { Point } from './urban';
 
-export interface VectorGeography { land: Point[][]; water: Point[][][] }
+export interface VectorGeography { land: Point[][]; water: Point[][][]; springs?: Point[] }
+
+/** Classify against the full network before cropping a town: cropped inflows are never sources. */
+export function springPoints(water: VectorWater | undefined, hydrology?: HydrologyData): Point[] {
+  const network = water?.rivers;
+  if (!water || !network) {
+    if (!hydrology) return [];
+    const points: Point[] = [], margin = 2 * hydrology.width / hydrology.resolution;
+    for (let i = 0; i + 1 < hydrology.riverOffsets.length; i++) {
+      const from = hydrology.riverMeta[i * 6 + 1], first = hydrology.riverOffsets[i] * 4;
+      // Native graph kinds: 0 source, 1 confluence, 3 edge, 5 lake outlet, 6 external.
+      if (hydrology.nodeMeta[from * 3 + 2] !== 0 || hydrology.nodeMeta[from * 3 + 1] !== 0) continue;
+      const x = hydrology.riverPoints[first], y = hydrology.riverPoints[first + 1];
+      if (x >= margin && y >= margin && x <= hydrology.width - margin && y <= hydrology.width - margin) points.push({ x, y });
+    }
+    return points;
+  }
+  const context = { rivers: network.rivers, lakeLinks: network.lakeLinks, hydro: water.hydro, lake: water.lake };
+  const threshold = (water.riverArea && water.riverArea > 0 ? water.riverArea : Math.max(0.02, 0.003 * (water.hydro.width / 1000) ** 2)) * 1e6;
+  return network.rivers.filter(line => isHeadwater(line, context, threshold))
+    .map(line => ({ x: line.points[0], y: line.points[1] }));
+}
 const midpoint = (a: Point, b: Point): Point => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
 
 /** Flatten the midpoint quadratics used by Terrain Bench to a sub-metre tolerance. */
@@ -62,7 +86,7 @@ export function terrainGeography(t: TerrainData): VectorGeography {
   // independent physical plane; water rings below retain their native vectors.
   const height = t.height, n = t.resolution;
   const water = t.water ? vectorWaterSvg(t.water, { style: 'atlas', showLakes: true, showOxbows: true, riverArea: 1, riverMode: 'vector', overlay: 'none' }) : t.hydrology ? renderHydrology(t.hydrology, 'none', true, 'atlas') : '';
-  return { land: landRings(height, n, t.width), water: waterRings(water) };
+  return { land: landRings(height, n, t.width), water: waterRings(water), springs: springPoints(t.water, t.hydrology) };
 }
 /** Older decors retain their measured heights; their saved vector water is authoritative. */
 export function decorGeography(r: SettlementRaster, svg: string): VectorGeography {

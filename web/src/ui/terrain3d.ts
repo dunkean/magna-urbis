@@ -6,6 +6,7 @@ import { bindForestBrushes, disposeForestBrushes } from '../render/forestBrushAt
 import { ShaderVariants, specializeShader } from './glVariants';
 import { NEURAL_EARTH_MATERIAL_GLSL, GROUND_COVER_WATER_GLSL, groundCoverInputsGlsl } from '../../../rust/bridge/terrainMaterial';
 import { RENDER_V2_GLSL, renderV2GlacierSources } from '../../../rust/bridge/terrainRenderV2';
+import { CITY_WATER_3D_GLSL } from '../../../rust/bridge/cityWater3d';
 import { renderV2ZoneUniform, setSeasonCalendarGl, type SeasonCalendar } from '../../../rust/bridge/terrainRenderV2Zones';
 import type { ClimateZone } from '../../../rust/bridge/terrainClimate';
 import { RENDER_3D_MATERIAL_GLSL } from '../../../rust/bridge/terrainMaterial3d';
@@ -23,6 +24,8 @@ import { withBuildingOccupation } from './forestOccupation';
 import { UrbanBuildingGround } from './urbanBuildingGround';
 import { MATERIAL_WATER_GLSL, MOONLIGHT_GLSL, groundCoverActive } from '../render/materialLook';
 import { groundNavigationScale, walkDisplacement, WALK_EYE_HEIGHT } from './terrain3dNavigation';
+import { terrain3dPixelRatio } from './terrain3dResolution';
+import { buildNearTrees, TREE_3D_GLSL, TREE_FAR, TREE_NEAR, TREE_STRIDE, TREE_VERTICES, type TreeInputs } from './terrain3dTrees';
 import { BILLBOARD_3D_GLSL, RAISED_MATERIAL_GLSL, terrain3dRaisedBlend, terrain3dRaisedTexture, type Terrain3dBillboard, type Terrain3dBillboards } from './terrain3dBillboards';
 
 /** Target and orbit distance in world metres; yaw/pitch in radians. */
@@ -184,6 +187,7 @@ uniform float textureBlend;
 uniform vec3 eye;
 uniform float fogDistance;
 uniform int groundEnabled;
+uniform int proceduralPreview;
 uniform int showTileBounds;
 uniform vec3 groundEye;
 uniform vec3 groundLight,groundLight2;
@@ -237,11 +241,15 @@ vec4 groundTileSample(vec4 rect,bool previous,int slot){
   return textureLod(semanticTile,uv,lod);
 }
 void cityGroundMaterial(inout GroundMaterial m,vec4 tile){
-  float a=clamp(tile.a,0.,1.)*(1.-v2GroundSnow);
+  float a=clamp(tile.a,0.,1.);
   if(a<=0.)return;
   vec3 albedo=tile.rgb/max(tile.a,.001);
   // The tile supplies unlit earth/stone, with a small retained local soil tint.
   albedo*=mix(vec3(1.),clamp(renderGuideOpen/vec3(.42,.40,.30),vec3(.65),vec3(1.25)),.24);
+  // Traffic compacts the mantle: retain the road mask, shaded shoulders and
+  // wheel-rut luminance even at full snow cover, below overhanging crowns.
+  float wear=clamp(dot(albedo,vec3(.21,.72,.07))-.5,-.4,.4);
+  albedo=mix(albedo,vec3(.68,.73,.77)+wear*.18,v2GroundSnow);
   renderGuideOpen=mix(renderGuideOpen,albedo,a);
   m.albedo=mix(m.albedo,groundToLinear(albedo)*v2FloorModulation,a);
   m.roughness=mix(m.roughness,mix(.93,.74,smoothstep(.42,.72,dot(albedo,vec3(.21,.72,.07)))),a);
@@ -265,6 +273,7 @@ float groundMacroHeight(vec2 p){
 }
 vec3 forestRootSurface(vec2 p){return groundMacroSurface(p);}
 float forestRootCell(){return macroRect.z/float(macroN);}
+${CITY_WATER_3D_GLSL}
 
 void main() {
   vec4 projected = mix(reliefPrevious(previousRect.xy+texcoord*previousRect.zw),reliefCurrent(textureRect.xy+texcoord*textureRect.zw),textureBlend);
@@ -301,8 +310,9 @@ void main() {
     float under=uRenderV2>0?1.:1.-forestResolvedCover;
     if(uRenderV2>1)base=v2Diagnostic(s,physical.xz,0.,footprint);
     // Bank crowns lean over inland water: rooted on land (forestCrown), drawn whole above it, their shadow on it.
-    if(uRenderV2>0){float bed=s.x<0.?projected.a:projected.a*(1.-forestResolvedCover);
-      base=v2WaterAt(base,s,physical.xz,footprint,bed,s.x<0.?1.:3.,s.x<0.?-s.x:8.*projected.a);
+    if(uRenderV2>0){float cover=(hasCanopyWater==1||hasPreviousCanopyWater==1)?displayWaterCover(physical.xz):projected.a;
+      float bed=s.x<0.?cover:cover*(1.-forestResolvedCover);
+      base=cityWaterAt(base,s,physical.xz,footprint,bed);
       if(s.x>=0.)base*=1.-.4*forestResolvedShade*bed;}
     else base=base*(1.-projected.a*under)+projected.rgb*under;
     if(groundContours==1 && s.x>0.){
@@ -320,6 +330,14 @@ void main() {
       groundTileSample(semanticRect,false,hasGroundTile==1?1:-1)*float(hasSemanticTile),textureBlend);
     base=base*(1.-semantic.a)+semantic.rgb;
   } else {
+    // The preview receives premultiplied water over transparent land. Fill
+    // only transparent land until the full material shader is ready.
+    if(proceduralPreview==1){
+      float altitude=smoothstep(300.,2500.,physical.y);
+      float rock=smoothstep(.15,.75,length(physicalSlope));
+      vec3 land=mix(vec3(.31,.38,.23),vec3(.48,.46,.39),max(altitude,rock));
+      base=projected.rgb+land*(1.-projected.a);
+    }
     float light=.89+.11*max(0.,dot(normalize(normal),normalize(vec3(-.4,.8,-.3))));
     base*=light;
     base=naturalMapWater(base,physical,max(length(dFdx(physical)),length(dFdy(physical))));
@@ -656,7 +674,13 @@ export class Terrain3d {
   protected macroTexture!: WebGLTexture;
   private shoreRing?: { layer: object; texture: WebGLTexture };
   private empty!: WebGLTexture;
-  protected waterMasks = new Map<WebGLTexture, { texture: WebGLTexture; rect: readonly [number, number, number]; bytes: number }>();
+  protected waterMasks = new Map<WebGLTexture, { texture: WebGLTexture; rect: readonly [number, number, number]; bytes: number; water?: NonNullable<Terrain3dTileContent['water']> }>();
+  /** Satellite near trees (terrain3dTrees.ts): instance count and the eye/heading they were built for. */
+  protected treeCount = 0;
+  private treeKey = '';
+  private treeProgram?: WebGLProgram;
+  private treeVao?: WebGLVertexArrayObject;
+  private treeBuffer?: WebGLBuffer;
   /** Semantic tile of a material tile: follows it through parent fallbacks and fades. */
   protected semanticTiles = new Map<WebGLTexture, { texture: WebGLTexture; pixels: number; gutter: number; atlas?: boolean; semantic: boolean }>();
   protected forestField?: ForestField;
@@ -697,6 +721,7 @@ export class Terrain3d {
   private clock = 0;
   private heightRange = 0;
   private maxSlope = 0;
+  protected maxFramebufferDimension = 8192;
   protected camera: Terrain3dCamera = { x: 0, y: 0, distance: 1000, yaw: 0, pitch: .8, exaggeration: 1 };
   private active = false;
   private width = 1;
@@ -755,6 +780,7 @@ export class Terrain3d {
 
   private initialize(): void {
     const gl = this.gl;
+    this.maxFramebufferDimension = gl.getParameter(gl.MAX_RENDERBUFFER_SIZE);
     this.raisedMaterials.clear(); this.billboardProgram = undefined; this.billboardVao = undefined; this.billboardBuffer = undefined; this.billboardAtlas = undefined; this.billboardDirty = true;
     const anisotropy = gl.getExtension('EXT_texture_filter_anisotropic');
     this.textureAnisotropy = anisotropy ? { parameter: anisotropy.TEXTURE_MAX_ANISOTROPY_EXT, value: Math.min(8, gl.getParameter(anisotropy.MAX_TEXTURE_MAX_ANISOTROPY_EXT)) } : undefined;
@@ -798,7 +824,9 @@ export class Terrain3d {
     if (target) return this.lastGround = target;
     const preview = variant({ groundEnabled: 0, uRenderV2: 0, uForest: 0, uForestBrushes: 0, uNaturalWater: 0, uHasOccupation: 0, uHasForestBank: 0 }, true);
     if (!this.lastGround && !preview) throw new Error('Shader terrain 3D indisponible.');
-    return this.lastGround ?? preview!;
+    // A material transition uses the lightweight preview, without an old
+    // forest/material variant that may be costly or expect different inputs.
+    return settings ? preview! : this.lastGround ?? preview!;
   }
   /** Uniform locations are constant for one linked program and GL context.
    * Inactive uniforms (null in the map shader) are cached as well. */
@@ -895,9 +923,11 @@ export class Terrain3d {
   setTileBoundaries(visible: boolean): void { this.tileBounds = visible; this.request(); }
   /** Presentation consumes the same immutable native scene as the map. */
   setBuildings(scene: Building3dScene | undefined, appearance: UrbanBuildingAppearance, visible = true): void {
-    const changed = this.buildingScene !== scene;
+    const changed = this.buildingScene !== scene || this.buildingsVisible !== visible;
     this.buildingScene = scene; this.buildingAppearance = appearance; this.buildingsVisible = visible;
-    if (changed) { this.buildingGround = new UrbanBuildingGround(scene); this.billboardDirty = true; this.clearPatches(); this.setForest(this.forestField, this.forestOccupation); }
+    // Footprints painted on a map have no foundation to clear. Carving their
+    // hidden meshes into the terrain creates false, grid-shaped terraces.
+    if (changed) { this.buildingGround = new UrbanBuildingGround(visible ? scene : undefined); this.billboardDirty = true; this.clearPatches(); this.setForest(this.forestField, this.forestOccupation); }
     this.buildings.setScene(visible ? scene : undefined, appearance); this.request();
   }
   /** Swap a few buildings of the current scene (native exteriors in or out):
@@ -1361,7 +1391,7 @@ export class Terrain3d {
         }
         if(content.water){
           const water=content.water,mask=this.uploadWaterMask(water);
-          this.waterMasks.set(texture,{texture:mask,rect:[water.x,water.y,water.width],bytes:water.alpha.byteLength});
+          this.waterMasks.set(texture,{texture:mask,rect:[water.x,water.y,water.width],bytes:water.alpha.byteLength,water});
           textureBytes+=water.alpha.byteLength;
         }
         if (deferred) { patch.pendingTexture = texture; patch.pendingTextureBytes = textureBytes;patch.pendingTextureGutter=gutter; }
@@ -1661,6 +1691,64 @@ export class Terrain3d {
       this.billboardAtlas = { source:atlas,texture };
     }
   }
+  /** Inputs of the satellite near trees, or undefined when the view paints its forest only. */
+  private treeInputs(): TreeInputs | undefined {
+    const g = this.groundSettings, field = this.forestField;
+    if (!g || !field || this.useMapShader || !((g.renderV2 ?? 0) > 0) || g.forestBrushes || g.paperMap) return undefined;
+    return { field, occupation: this.occupation?.data, seed: g.seed >>> 0, climate: g.climate, renderV2: g.renderV2 ?? 0,
+      zone: renderV2ZoneUniform(g.climateZone), season: g.v2Season ?? .5, height: (x, y) => this.heightAt(x, y), water: (x, y) => this.waterAt(x, y) };
+  }
+  /** Displayed water cover at a point from the finest tile water mask holding it (nearest texel). */
+  private waterAt(x: number, y: number): number {
+    let best: NonNullable<Terrain3dTileContent['water']> | undefined;
+    for (const mask of this.waterMasks.values()) {
+      const w = mask.water;
+      if (w && x >= w.x && y >= w.y && x < w.x + w.width && y < w.y + w.width && (!best || w.width < best.width)) best = w;
+    }
+    if (!best) return 0;
+    const i = Math.min(best.n - 1, Math.floor((x - best.x) / best.width * best.n)), j = Math.min(best.n - 1, Math.floor((y - best.y) / best.width * best.n));
+    return best.alpha[j * best.n + i] / 255;
+  }
+  /** Rebuilds the near-tree instances once the eye has moved about 40 m or turned, or the inputs changed. */
+  protected prepareTrees(frame: FrameGeometry): void {
+    const inputs = this.treeInputs(), c = this.camera;
+    if (!inputs) { if (this.treeCount) { this.treeCount = 0; this.treeKey = ''; } return; }
+    const x = c.x + frame.eye[0], y = c.y + frame.eye[2], fl = Math.hypot(frame.forward[0], frame.forward[2]) || 1;
+    const lift = (frame.targetHeight + frame.eye[1]) / c.exaggeration - (this.heightAt(x, y) ?? 0);
+    const key = lift > TREE_FAR ? 'high' : [Math.round(x / 40), Math.round(y / 40), Math.round(c.yaw / .25), inputs.field.key, inputs.occupation?.key, this.waterMasks.size, inputs.season, inputs.seed].join('|');
+    if (key === this.treeKey) return;
+    this.treeKey = key;
+    const values = key === 'high' ? new Float32Array(0) : buildNearTrees(inputs, { x, y, forwardX: frame.forward[0] / fl, forwardY: frame.forward[2] / fl });
+    this.treeCount = values.length / TREE_STRIDE;
+    (globalThis as { magnaNearTrees?: number }).magnaNearTrees = this.treeCount;
+    if (this.treeCount) this.uploadTrees(values);
+  }
+  protected uploadTrees(values: Float32Array): void {
+    const gl = this.gl;
+    this.treeProgram ??= program(gl, TREE_3D_GLSL.vertex, TREE_3D_GLSL.fragment);
+    this.treeVao ??= gl.createVertexArray()!; this.treeBuffer ??= gl.createBuffer()!;
+    gl.bindVertexArray(this.treeVao); gl.bindBuffer(gl.ARRAY_BUFFER, this.treeBuffer); gl.bufferData(gl.ARRAY_BUFFER, values, gl.DYNAMIC_DRAW);
+    for (let i = 0; i < 3; i++) { gl.enableVertexAttribArray(i); gl.vertexAttribPointer(i, 4, gl.FLOAT, false, TREE_STRIDE * 4, i * 16); gl.vertexAttribDivisor(i, 1); }
+    gl.bindVertexArray(null);
+  }
+  /** uForestTrees of the ground shader: eye xy and the fade radii, w = 0 without trees. */
+  protected forestTreesUniform(frame: FrameGeometry): [number, number, number, number] {
+    return [this.camera.x + frame.eye[0], this.camera.y + frame.eye[2], TREE_NEAR, this.treeCount ? TREE_FAR : 0];
+  }
+  protected treeLight(): [number, number, number] {
+    const lights = terrainLights((this.groundSettings ?? this.forestSettings)?.lighting ?? DEFAULT_TERRAIN_LIGHTING);
+    return [lights.primary[0], lights.primary[2], lights.primary[1]];
+  }
+  private drawTrees(frame: FrameGeometry): void {
+    const gl = this.gl, p = this.treeProgram, c = this.camera;
+    if (!p || !this.treeCount) return;
+    gl.useProgram(p); gl.bindVertexArray(this.treeVao!); gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
+    gl.uniformMatrix4fv(this.uniform('matrix', p), false, frame.matrix); gl.uniform3f(this.uniform('cameraOrigin', p), c.x, frame.targetHeight, c.y);
+    gl.uniform1f(this.uniform('exaggeration', p), c.exaggeration); gl.uniform4fv(this.uniform('treeFade', p), this.forestTreesUniform(frame));
+    gl.uniform3fv(this.uniform('eye', p), frame.eye); gl.uniform3fv(this.uniform('treeLight', p), this.treeLight());
+    gl.uniform1f(this.uniform('fogDistance', p), Math.max(c.distance * 2, 100)); gl.uniform1i(this.uniform('uNight', p), +(this.lookSettings.ambience === 'night'));
+    gl.drawArraysInstanced(gl.TRIANGLES, 0, TREE_VERTICES, this.treeCount); gl.bindVertexArray(null);
+  }
   protected billboardsReady(): boolean { return !this.billboardCount || !!this.billboardProgram; }
   protected raisedBlend(frame: FrameGeometry): number { return this.billboardCount && this.billboardsReady() ? terrain3dRaisedBlend(Math.max(0,-frame.forward[1])) : 0; }
   private drawBillboards(frame: FrameGeometry, blend: number): void {
@@ -1736,7 +1824,7 @@ export class Terrain3d {
     this.camera.distance /= factor ** this.navigationScale(); this.changed();
   }
   north(): void { this.camera.yaw = 0; this.changed(); }
-  private dpr(): number { return Math.min(2, window.devicePixelRatio || 1); }
+  private dpr(): number { return terrain3dPixelRatio(this.width, this.height, window.devicePixelRatio || 1, this.maxFramebufferDimension); }
   private maxScale(): number { return this.groundSettings ? TERRAIN_GROUND_MAX_SCALE : TERRAIN_3D_MAX_SCALE; }
   private limitCamera(): void {
     const width = this.layer?.width ?? 1000, c = this.camera;
@@ -1756,7 +1844,7 @@ export class Terrain3d {
   }
   private draw(): void {
     if (!this.layer || !this.active || this.contextLost()) return;
-    const dpr = this.dpr(), w = Math.max(1, Math.round(this.width * dpr)), h = Math.max(1, Math.round(this.height * dpr));
+    const dpr = this.dpr(), w = Math.max(1, Math.floor(this.width * dpr)), h = Math.max(1, Math.floor(this.height * dpr));
     if (this.canvas.width !== w || this.canvas.height !== h) { this.canvas.width = w; this.canvas.height = h; }
     this.now = performance.now(); this.animating = false;
     const frame = this.frameGeometry(); this.select(frame); const preparing = this.prepareMeshes(); this.loadTiles();
@@ -1799,7 +1887,7 @@ export class Terrain3d {
   /** Sky, terrain patches and buildings of one frame; returns whether buildings are still preparing. */
   protected renderFrame(frame: FrameGeometry, w: number, h: number, draws: PatchDraw[]): boolean {
     const gl = this.gl, layer = this.layer!;
-    this.prepareBillboards(); const raisedBlend = this.raisedBlend(frame);
+    this.prepareBillboards(); this.prepareTrees(frame); const raisedBlend = this.raisedBlend(frame);
     gl.viewport(0, 0, w, h); gl.clearDepth(1); gl.clear(gl.DEPTH_BUFFER_BIT);
     gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE); gl.bindVertexArray(null);
     const night=this.lookSettings.ambience==='night';
@@ -1814,6 +1902,7 @@ export class Terrain3d {
     const settings=this.groundSettings;
     const canopy=settings??this.forestSettings;
     gl.uniform1i(this.uniform('groundEnabled'),settings?1:0);
+    gl.uniform1i(this.uniform('proceduralPreview'),settings?1:0);
     gl.uniform1i(this.uniform('showTileBounds'),this.tileBounds?1:0);
     gl.uniform1i(this.uniform('uNight'),+night); gl.uniform1i(this.uniform('uNaturalWater'),+(this.lookSettings.waterLook==='natural'));
     gl.uniform1i(this.uniform('displayWaterVisible'),this.lookSettings.waterVisible===false?0:1);
@@ -1850,13 +1939,14 @@ export class Terrain3d {
     bindForest(gl, name => this.uniform(name), this.forest, this.occupation, this.empty, true, 3, 4, 8, 9);
     bindLandDetail(gl, name => this.uniform(name), this.landDetail, this.empty);
     gl.uniform1i(this.uniform('uPaperMap'), settings?.paperMap ? 1 : 0);
+    gl.uniform4fv(this.uniform('uForestTrees'), this.forestTreesUniform(frame));
     bindForestBrushes(gl, name => this.uniform(name), !!settings?.forestBrushes, 5);
     gl.activeTexture(gl.TEXTURE0); gl.uniform1i(this.uniform('material'), 0);
     gl.uniform1i(this.uniform('previousMaterial'), 1);
     for (const draw of draws) this.renderPatch(draw, frame);
     gl.bindVertexArray(null);
     const pending = this.buildings.draw(this.buildingFrame(frame));
-    this.drawBillboards(frame,raisedBlend); return pending;
+    this.drawTrees(frame); this.drawBillboards(frame,raisedBlend); return pending;
   }
   protected buildingFrame(frame: FrameGeometry): BuildingFrame {
     return { matrix: frame.matrix, cameraX: this.camera.x, cameraY: this.camera.y, targetHeight: frame.targetHeight,

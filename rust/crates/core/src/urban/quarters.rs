@@ -3600,7 +3600,8 @@ fn generate_once(
         !enclosures.is_empty() || cfg.exit_treatment != "legacy", &centers, cfg, surface));
     network::narrow_options(&mut streets, &enclosures, radius, cfg, surface);
     // Camp entrances hand over to their native paths, never urban bypass feeders.
-    if open_edge && cfg.exit_treatment != "legacy" && cfg.settlement_form != "camp" {
+    let path_camp = cfg.settlement_form == "camp" || !m.text("campLayout").is_empty();
+    if open_edge && cfg.exit_treatment != "legacy" && !path_camp {
         network::resolve_exits(
             &mut streets,
             &quarters,
@@ -3644,7 +3645,9 @@ fn generate_once(
             axis,
             &quarters.iter().map(|q| q.shape.clone()).collect::<Vec<_>>(),
             cfg.road_width_by_size,
-            cfg.town_main_road,
+            // A camp entrance keeps its regional path width at the handover;
+            // urban arterial sizing would turn a short curved trail into a road.
+            cfg.town_main_road && !path_camp,
         );
     }
     lap("hierarchy");
@@ -3770,7 +3773,7 @@ fn generate_once(
         network::weld_ends(&mut streets, surface);
     }
     lap("harmonize+fringe");
-    if cfg.settlement_form == "camp" {
+    if path_camp {
         let width = m.number_or("campPath", m.number_or("footpathWidth", 2.5)).clamp(1.2, 3.0);
         for s in streets.iter_mut().filter(|s| s.rank > 0 && matches!(s.role.as_str(), "street" | "lane" | "gate-street" | "wall-lane")) {
             for w in &mut s.widths { *w = w.min(width); }

@@ -57,6 +57,15 @@ describe('physical city ground', () => {
     const lake = new CityGround({ n:1,width:40,water:new Uint8Array(1),geometry:{ water:[[rect(10,10,10).outer]] } });
     expect(lake.land()[0].holes).toHaveLength(1);
   });
+  it('clips a coarse river envelope to its physical banks in both plan and ground meshes', () => {
+    const water = new Uint8Array(16); water[5] = 3; water[6] = 3;
+    const ground = new CityGround({ n:4,width:40,water,geometry:{ water:[[rect(19,0,2,40).outer]] } });
+    expect(ground.waterAt({ x:12,y:15 })).toBe(false);
+    expect(ground.waterAt({ x:20,y:15 })).toBe(true);
+    const dry = ground.clip(rect(0,0,40));
+    expect(dry).toHaveLength(2);
+    expect(dry.flatMap(s=>s.outer).filter(p=>p.x>0 && p.x<40).every(p=>p.x===19 || p.x===21)).toBe(true);
+  });
 });
 
 describe('raised timber display', () => {

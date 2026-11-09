@@ -4,28 +4,29 @@ import { hydrologySegments } from './hydrologyRender';
 import { riverSegments } from '../../web/src/ui/vectorWaterRender';
 import { lakeSample, type LakeField } from '../../web/src/ui/lakeGeometry';
 import { paintRetainedWater, retainedWaterPaths } from '../../web/src/render/retainedWaterGeometry';
+import type { WaterSurface } from '../../web/src/render/terrainWater';
 
 export interface ForestWaterDisplay {
   showLakes: boolean; showOxbows: boolean; riverArea: number; riverMode: 'vector' | 'grid';
 }
 const caches = new WeakMap<object, Map<string, ForestWaterRaster>>();
 let sourceId = 0;
-const retainedCaches = new Map<string, { width: number; rasters: Map<string, ForestWaterRaster> }>();
+const retainedCaches = new Map<string, { width: number; sea?: Float32Array; rasters: Map<string, ForestWaterRaster> }>();
 let retainedCanvas: HTMLCanvasElement | undefined;
 
 /** Retained decor stores the drawn bank polygons, with nested SVG crop frames.
  * Parse those exact paths once on the main thread; workers receive the resulting
  * alpha raster rather than reading the wider settlement routing labels. */
-export function forestRetainedWater(svg: string, mapWidth: number, region: Pick<TerrainData, 'x' | 'y' | 'width' | 'resolution'>, showLakes = true): ForestWaterRaster | undefined {
-  if (!svg || typeof document === 'undefined' || typeof Path2D === 'undefined') return undefined;
+export function forestRetainedWater(svg: string, mapWidth: number, region: Pick<TerrainData, 'x' | 'y' | 'width' | 'resolution'>, showLakes = true, sea?: WaterSurface): ForestWaterRaster | undefined {
+  if ((!svg && !sea) || typeof document === 'undefined' || typeof Path2D === 'undefined') return undefined;
   if (!showLakes) svg = svg.replace(/<path\b[^>]*class="water-lakes"[^>]*\/>/g, '');
   const pixel = region.width / region.resolution, gutter = Math.ceil(64 / pixel);
   const n = Math.min(2048, region.resolution + 2 * gutter), width = region.width + 2 * gutter * pixel;
   const x = region.x - gutter * pixel, y = region.y - gutter * pixel;
   const key = [x, y, width, n].join(':');
   let cache = retainedCaches.get(svg);
-  if (!cache || cache.width !== mapWidth) {
-    cache = { width: mapWidth, rasters: new Map() }; retainedCaches.set(svg, cache);
+  if (!cache || cache.width !== mapWidth || cache.sea !== sea?.distance) {
+    cache = { width: mapWidth, sea: sea?.distance, rasters: new Map() }; retainedCaches.set(svg, cache);
     while (retainedCaches.size > 3) retainedCaches.delete(retainedCaches.keys().next().value!);
   }
   const found = cache.rasters.get(key);
@@ -37,6 +38,20 @@ export function forestRetainedWater(svg: string, mapWidth: number, region: Pick<
   paintRetainedWater(context, paths, { x, y, width, height: width }, { width: n, height: n }, '#ffffff');
   const rgba = context.getImageData(0, 0, n, n).data, alpha = new Uint8Array(n * n);
   for (let i = 0; i < alpha.length; i++) alpha[i] = rgba[i * 4 + 3];
+  // Retained SVG banks contain inland water only. The sea has its own signed coastal distance field.
+  // Merge both here so baked satellite crowns and their overlay mask reject the same wet roots as the live map.
+  if (sea) {
+    const cell = width / n, sn = sea.n;
+    const at = (i: number, j: number): number => sea.distance[Math.max(0, Math.min(sn - 1, j)) * sn + Math.max(0, Math.min(sn - 1, i))];
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+      const gx = (x + (i + .5) * cell - sea.x) / sea.width * sn - .5;
+      const gy = (y + (j + .5) * cell - sea.y) / sea.width * sn - .5;
+      const ix = Math.floor(gx), iy = Math.floor(gy), fx = gx - ix, fy = gy - iy;
+      const d = (at(ix, iy) * (1 - fx) + at(ix + 1, iy) * fx) * (1 - fy)
+        + (at(ix, iy + 1) * (1 - fx) + at(ix + 1, iy + 1) * fx) * fy;
+      alpha[j * n + i] = Math.max(alpha[j * n + i], Math.round(255 * Math.max(0, Math.min(1, d / cell + .5))));
+    }
+  }
   const raster = { x, y, width, n, alpha, key: `forest-retained-water:${++sourceId}:${key}` };
   cache.rasters.set(key, raster);
   while (cache.rasters.size > 3) cache.rasters.delete(cache.rasters.keys().next().value!);

@@ -111,7 +111,7 @@ export class StudioClient {
   resources(world: World): Promise<ResourcePayload | undefined> {
     const settings = this.appearanceSettings;
     if (!settings) return Promise.resolve(undefined);
-    const key = JSON.stringify([world.stats['v2.terrainKey'] ?? null, world.mapSize, world.seed, settings.runtime?.backend]);
+    const key = JSON.stringify([world.stats['v2.terrainKey'] ?? null, world.stats['v2.waterEditRevision'] ?? 0, world.mapSize, world.seed, settings.runtime?.backend]);
     if (this.resourceCache?.key === key) return this.resourceCache.payload;
     const id = ++this.id;
     const payload = new Promise<ResourcePayload | undefined>((resolve, reject) => {

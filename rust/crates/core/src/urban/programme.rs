@@ -1498,6 +1498,14 @@ fn household_capacity(
 /// Priority bands: reserved institutions, then sited trades, then shops scaled to
 /// the land actually left, then housing, then explicit gardens on the remainder.
 pub fn allocate(layout: &Layout, partition: &mut Partition) {
+    if let std::borrow::Cow::Owned(formal) = super::shanty::formal_layout(layout) {
+        partition.parcels.retain(|p| !p.provenance.iter().any(|s| s == "informal-growth"));
+        allocate(&formal, partition);
+        super::shanty::allocate(layout, partition);
+        return;
+    }
+    // Source sites have their own fixed geometry and never compete for homes.
+    partition.parcels.retain(|p| p.reason != "spring-water");
     #[cfg(not(target_arch = "wasm32"))]
     let tick = std::time::Instant::now();
     #[cfg(target_arch = "wasm32")]
@@ -2411,6 +2419,7 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
         }
     }
     partition.programme = Some(pr);
+    super::springs::allocate(layout, partition);
     lap("done");
 }
 pub(super) fn consolidate(partition: &mut Partition) {
@@ -2418,6 +2427,7 @@ pub(super) fn consolidate(partition: &mut Partition) {
 }
 pub(super) fn finish_lots(layout: &Layout, partition: &mut Partition) {
     lots::consolidate(Some(layout),partition);
+    super::springs::allocate(layout, partition);
 }
 /// Heap tier of a main-street lot for housing: above any cohesion bonus.
 const PRIME_TIER: f64 = 100.0;
@@ -3120,6 +3130,7 @@ mod tests {
     fn shoreline_roundoff_is_not_an_inundated_service_block() {
         let geography = super::super::Geography::new(
             super::super::VectorGeography {
+                springs: vec![],
                 land: vec![rectangle(0., 0., 100., 100.).outer],
                 water: vec![],
             },

@@ -7,11 +7,15 @@ use std::collections::{BTreeMap, BTreeSet};
 #[derive(Default, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct VectorGeography {
+    /// Genuine upstream ends classified against the complete river network,
+    /// before any town crop (edge inflows and lake outlets are not springs).
+    pub springs: Vec<Point>,
     pub land: Vec<Vec<Point>>,
     /// Each path is an even/odd group; overlapping channels are then united.
     pub water: Vec<Vec<Vec<Point>>>,
 }
 pub struct Geography {
+    pub(super) springs: Vec<Point>,
     land: Vec<Shape>,
     water: Vec<Shape>,
     land_index: Vec<g::ContainmentIndex>,
@@ -64,12 +68,20 @@ impl Geography {
                 .flat_map(even_odd)
                 .collect::<Vec<_>>(),
         );
-        Ok(Self::build(land, water, width))
+        if input.springs.len() > 100_000 || input.springs.iter().any(|p|
+            !p.x.is_finite() || !p.y.is_finite() || p.x < 0.0 || p.y < 0.0
+                || p.x > width || p.y > width) {
+            return Err("Invalid spring coordinates".into());
+        }
+        let mut result = Self::build(land, water, width);
+        result.springs = input.springs;
+        Ok(result)
     }
     /// Index already resolved land and water shapes. Water shapes may share
     /// edges (tiles of one body); containment and clipping treat them as a union.
     fn build(land: Vec<Shape>, water: Vec<Shape>, width: f64) -> Self {
         let mut result = Self {
+            springs: vec![],
             land_index: land.iter().map(g::ContainmentIndex::new).collect(),
             water_index: water.iter().map(g::ContainmentIndex::new).collect(),
             land,
@@ -779,6 +791,7 @@ mod tests {
         let river = g::rectangle(313.0, 450.0, 315.0, 780.0).outer;
         let geometry = Geography::new(
             VectorGeography {
+                springs: vec![],
                 land: vec![land],
                 water: vec![vec![river]],
             },

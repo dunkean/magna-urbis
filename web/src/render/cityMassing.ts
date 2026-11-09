@@ -62,6 +62,13 @@ export function readMassing(programme: unknown, footprint: Surface, buildingId?:
     ? { ...m, volumes: m.volumes.map((v, j) => v.form === 'tree' && !v.tree_seed ? { ...v, tree_seed: `${buildingId}:${i}:${j}` } : v) } : m);
 }
 
+/** Flat map outline follows the occupied massing, never its enclosing preview lot. */
+export function massingFootprint(footprint: Surface, massing?: readonly MassingPiece[]): Surface {
+  if (!massing) return footprint;
+  const shapes = footprint.flatMap((shape, i) => massing[i] ? pieceVolumes(shape, massing[i]).map(v => v.shape) : [shape]);
+  return shapes.length > 1 ? unionS(shapes[0], ...shapes.slice(1)) : shapes;
+}
+
 const signedArea = (ring: readonly Point[]): number => ring.reduce((s, p, i) => { const n = ring[(i + 1) % ring.length]; return s + p.x * n.y - n.x * p.y; }, 0) / 2;
 function centroid(ring: readonly Point[]): Point {
   let a = 0, x = 0, y = 0;
@@ -322,7 +329,7 @@ export function buildingRoof(footprint: Surface, massing: readonly MassingPiece[
 }
 /** Plan-view roof face (2D maps): `light` overrides the shading of the normal, `holes` cut courts out of the face,
  * `flat` marks the faces of a flat roof (rim, field, roof-top features). */
-export interface PlanRoofFace extends RoofFace { holes?: Point[][]; light?: number; flat?: boolean; terrace?: boolean }
+export interface PlanRoofFace extends RoofFace { holes?: Point[][]; light?: number; flat?: boolean; terrace?: boolean; snow?: number }
 /** Plan geometry is built once with the scene, shared by every 2D palette and backend.
  * Roof sets with entirely horizontal pans are slabs (including subdivided slabs); pitched roofs
  * and their horizontal caps keep their original faces. Terraces are painted low to high,
@@ -369,10 +376,10 @@ function flatPlanRoof(v: ResolvedVolume, face: RoofFace, roofHoles: Point[][], s
   // At the 1.4 px/m core view, a terrace bevel is ~1.5–1.7 px plus its dark seam.
   const w = terrace ? Math.min(1.45, perimeter > 0 ? 0.9 * area / perimeter : 0)
     : Math.min((v.detail?.parapet_m ?? 0) > 0.05 ? 0.8 : 0.6, Math.max(0.3, 0.07 * Math.sqrt(Math.max(0, area))), perimeter > 0 ? 0.3 * area / perimeter : 0);
-  const base = { piece: face.piece, vol: face.vol, cover: face.cover, wall: face.wall, tone: face.tone, flat: true as const, ...(terrace ? { terrace: true } : {}) };
+  const base = { piece: face.piece, vol: face.vol, cover: face.cover, wall: face.wall, tone: face.tone, flat: true as const, snow: 0, ...(terrace ? { terrace: true } : {}) };
   const out: PlanRoofFace[] = [];
   const rims: PlanRoofFace[] = [];
-  if (!(w > 0.12)) out.push({ ...face, ...base, holes });
+  if (!(w > 0.12)) out.push({ ...face, ...base, holes, snow: 1 });
   else {
     const insets = rings.map(([r, outer]) => insetRing(r, w, outer));
     rings.forEach(([outline, outer], k) => {
@@ -390,7 +397,7 @@ function flatPlanRoof(v: ResolvedVolume, face: RoofFace, roofHoles: Point[][], s
           ...(terrace ? { light: Math.max(-0.48, Math.min(0.32, -(nx + ny) * 0.48)) } : {}) });
       }
     });
-    out.push({ ...base, points: insets[0].map(p => at(p, z)), holes: insets.slice(1), normal: [0, 0, 1], light: -0.05 });
+    out.push({ ...base, points: insets[0].map(p => at(p, z)), holes: insets.slice(1), normal: [0, 0, 1], light: -0.05, snow: 1 });
   }
   for (const shadow of shadows) out.push({ ...base, points: shadow.outer.map(p => at(p, z)), holes: shadow.holes, normal: [0, 0, 1], light: terrace ? -0.55 : -0.38 });
   // Keep the raised lip readable even where the lower roof receives a cast shadow.
@@ -408,7 +415,10 @@ function flatPlanRoof(v: ResolvedVolume, face: RoofFace, roofHoles: Point[][], s
       out.push({ ...base, points: s.outer.map(p => at(p, z)), holes: s.holes, normal: [0, 0, 1], light: terrace ? -0.55 : -0.34 });
     out.push({ ...base, points: top.map(p => at(p, z + f.h)), normal: [0, 0, 1], light: f.kind === 'dome' ? 0.08 : 0.14 });
   }
-  return out;
+  // Concave terrace insets can cross at a re-entrant corner. Clip every
+  // receiving face to its actual roof, so a pale bevel never reaches a street.
+  return out.flatMap(f => intersectionS({ outer: ring, holes }, { outer: f.points.map(p => ({ x: p.x, y: p.y })), holes: f.holes ?? [] })
+    .map(s => ({ ...f, points: s.outer.map(p => at(p, f.points[0].z)), holes: s.holes })));
 }
 /** Highest point of a piece above the ground. */
 export const pieceTop = (m: MassingPiece): number => {
@@ -419,25 +429,26 @@ export const pieceTop = (m: MassingPiece): number => {
   })) : m.eave_m + Math.max(0, m.rise_m);
 };
 
-/** Map light from the north-west, high: brightness factor of a roof face (−0.42…+0.26). */
+/** Map light from the north-west, high: brightness factor of a roof face (−0.52…+0.34). */
 export function roofLight([nx, ny, nz]: readonly [number, number, number]): number {
   const lx = -0.55, ly = -0.55, lz = 0.63; // y grows southward on the map
   const lambert = nx * lx + ny * ly + nz * lz, flatLambert = lz;
-  return Math.max(-0.42, Math.min(0.26, (lambert - flatLambert) * 1.3));
+  // A shallow pitched face still needs a readable pan at settlement zoom.
+  const h = Math.hypot(nx, ny), directional = h > .001 ? -(nx + ny) / h * .24 : 0;
+  return Math.max(-.52, Math.min(.34, (lambert - flatLambert) * 1.45 + directional));
 }
 
-/** Ground shadow of a piece (sun from the north-west): the hull of the outline and
- * its copy shifted by the piece's height. Convex hull: pieces are near-convex. */
+/** Ground shadow of a piece (sun from the north-west): the sweep of the outline and
+ * its copy shifted by the piece's height. Sweep edges to preserve concavities. */
 export function pieceShadow(shape: Shape, height: number, k = 0.55): Shape | undefined {
   if (height <= 0.05 || shape.outer.length < 3) return undefined;
-  const dx = height * k, dy = height * k * 0.8, points = [...shape.outer, ...shape.outer.map(p => ({ x: p.x + dx, y: p.y + dy }))];
-  points.sort((a, b) => a.x - b.x || a.y - b.y);
-  const cross = (o: Point, a: Point, b: Point) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
-  const lower: Point[] = [], upper: Point[] = [];
-  for (const p of points) { while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop(); lower.push(p); }
-  for (let i = points.length - 1; i >= 0; i--) { const p = points[i]; while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop(); upper.push(p); }
-  const hull = lower.slice(0, -1).concat(upper.slice(0, -1));
-  return hull.length >= 3 ? { outer: hull, holes: [] } : undefined;
+  const dx = height * k, dy = height * k * 0.8;
+  const shift = (p: Point): Point => ({ x: p.x + dx, y: p.y + dy });
+  const sweeps = [shape.outer, ...shape.holes].flatMap(ring => ring.flatMap((a, i) => {
+    const b = ring[(i + 1) % ring.length];
+    return Math.abs((b.x - a.x) * dy - (b.y - a.y) * dx) > 1e-8 ? [{ outer: [a, b, shift(b), shift(a)], holes: [] }] : [];
+  }));
+  return unionS(shape, { outer: shape.outer.map(shift), holes: shape.holes.map(h => h.map(shift)) }, ...sweeps)[0];
 }
 
 /** Ground shadows of a piece, one per volume (each swept by its own height). */

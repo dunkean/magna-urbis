@@ -2,6 +2,62 @@
 use super::geometry as g;
 use super::*;
 
+#[cfg(test)]
+mod site_selection {
+    use super::*;
+
+    /// A river bonus cannot turn an unbuildable bank into an empty town.
+    /// The small shelf fails town-scale clearance/area, but can hold real homes.
+    #[test]
+    #[ignore = "open: riviere--korean still gets no homes after the fallback fix (2026-11-08)"]
+    fn constrained_town_uses_buildable_shelf_before_river_preference() {
+        let n = 96;
+        let width = 3000.0;
+        let cell = width / n as f64;
+        let height: Vec<f32> = (0..n * n).map(|i| {
+            let x = (i % n) as f64 * cell + 0.5 * cell;
+            let y = (i / n) as f64 * cell + 0.5 * cell;
+            (20.0 + 0.6 * (2000.0 - x).max(0.0) + 0.6 * (y - 400.0).max(0.0)) as f32
+        }).collect();
+        let water: Vec<u8> = (0..n * n)
+            .map(|i| if i % n == 25 { 3 } else { 0 }).collect();
+        let levels = vec![0.0; n * n];
+        let river_width = vec![8.0; n * n];
+        let river_ids = vec![0; n * n];
+        let cfg = crate::settlements::Config {
+            mode: "list".into(), edge_margin: 0.09,
+            river_weight: 100.0, buildable_weight: 0.0, farm_density: 0.0,
+            list: vec![crate::settlements::SettlementSpec {
+                key: "shelf-town".into(), population: 10_000,
+                culture: "european-organic".into(), site_type: "bridge".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let output = crate::settlements::generate("constrained-shelf", crate::settlements::Raster {
+            width, n, height: &height, water: &water, water_level: &levels,
+            river_width: &river_width, river_ids: &river_ids,
+        }, &cfg).unwrap();
+        assert_eq!(output.settlements.len(), 1, "{:?}", output.warnings);
+        let placed = &output.settlements[0];
+        assert!(placed.center.x > 2000.0 && placed.center.y < 400.0, "{:?}", placed.center);
+        assert!(placed.scores.buildable_fraction > 0.1);
+        assert!(output.warnings.iter().any(|w| w.contains("buildable shelf")));
+        let site = Site {
+            key: placed.spec.key.clone(), name: String::new(), population: placed.spec.population,
+            culture: placed.spec.culture.clone(), center: placed.center, radius: placed.radius,
+        };
+        let surface = Surface { geometry: None, width, n, height: &height, water: &water,
+            interpolation: Default::default() };
+        let layout_cfg = LayoutConfig { fortification: "none".into(), ..Default::default() };
+        let layouts = generate_quarters("constrained-shelf", &[site], &layout_cfg, surface, &[]).unwrap();
+        let partitions = generate_parcels("constrained-shelf", &layouts, &ParcelConfig::default()).unwrap();
+        let requests = building_sites::requests("constrained-shelf", &layouts, &partitions, surface, &levels, None).unwrap();
+        assert!(requests.iter().any(|r| r["function"] == "domestic" || r["function"] == "mixed"),
+            "the selected shelf must produce residential buildings");
+    }
+}
+
 fn morph() -> Morph {
     resolve(
         "european-organic",

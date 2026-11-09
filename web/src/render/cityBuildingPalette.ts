@@ -1,6 +1,8 @@
 /** Map treatment of the shared final sRGB colours; no independent lot jitter. */
 import { buildingTint, type PaletteRgb } from './buildingPalette';
 import { centreOf, groundAt, toneStamp } from './groundTone';
+import { mapGroundSnow } from './seasonPalette';
+import { snowRoofTint } from './roofSnow';
 import { roofAgainstGround, type Rgb01 } from './roofContrast';
 import type { CityBuilding, CityPalette, CityRoofs } from './cityCanvas';
 
@@ -34,7 +36,10 @@ export function planShade(color: string, k: number): string {
   const v = parseInt(color.slice(1), 16), c = (s: number): number => Math.max(0, Math.min(255, Math.round(((v >> s) & 255) * (1 + k))));
   return `#${((c(16) << 16) | (c(8) << 8) | c(0)).toString(16).padStart(6, '0')}`;
 }
-export const roofRelief = (palette: CityPalette, terrace = false): number => terrace ? 1 : palette === 'parchment' ? 0.55 : palette === 'ink' ? 0.35 : 1;
-export function planRoofColor(b: CityBuilding, roofs: CityRoofs, k: number, palette: CityPalette): string {
-  return planShade(planBuildingColors(b, palette, roofs.cover[k], roofs.wall?.[k], roofs.tone[k]).roof, roofs.light[k] * roofRelief(palette, roofs.flat?.[k] === 2));
+export const roofRelief = (palette: CityPalette, terrace = false): number => terrace ? 1 : palette === 'ink' ? .85 : 1;
+export function planRoofColor(b: CityBuilding, roofs: CityRoofs, k: number, palette: CityPalette, custom?: string): string {
+  const light = roofs.light[k] * roofRelief(palette, roofs.flat?.[k] === 2);
+  const color = planShade(custom ?? planBuildingColors(b, palette, roofs.cover[k], roofs.wall?.[k], roofs.tone[k]).roof, light);
+  const snow = (roofs.snow?.[k] ?? 0) * mapGroundSnow(b.snowAltitude ?? b.building.ground_z_m);
+  return snow > 0 ? hex(snowRoofTint([1, 3, 5].map(i => parseInt(color.slice(i, i + 2), 16) / 255) as PaletteRgb, snow, light)) : color;
 }

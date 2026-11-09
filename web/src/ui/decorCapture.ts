@@ -6,6 +6,8 @@ import { renderHydrology } from '../../../rust/bridge/hydrologyRender';
 import { vectorWaterSvg, lakeShores } from './vectorWaterRender';
 import { encodeWaterField, seaDistanceSurface } from '../render/terrainWater';
 import { hydrologyLakePath } from '../../../rust/bridge/hydrologyRender';
+import { coastalRiverMouths } from '../render/riverMouths';
+import { waterRings } from '../../../rust/bridge/urbanGeography';
 import { encodeDecor, rasterStats, type Decor, type DecorMeta } from './decor';
 
 /** Default classification of a Terrain Bench map; the batch exporter adds its own tags. */
@@ -37,9 +39,11 @@ export function captureDecorData(t: TerrainData, settings: TerrainSettings, outp
   // `planning`: planning grid of the file, finer than the physical source if asked (interpolated heights,
   // water and river masks drawn from the vector network at that cell; v7 sheets use 1024 as the city decors did).
   const raster = { ...settlementRaster(t, extra.planning ?? 1024, extra.planning !== undefined), geometry: terrainGeography(t) }, h = settings.hydrology ?? DEFAULT_HYDROLOGY;
-  const waterSvg = t.water
+  const rawWaterSvg = t.water
     ? vectorWaterSvg(t.water, { style: 'atlas', showLakes: true, showOxbows: true, riverArea: riverAreaFor(h, settings.width), riverMode: h.riverMode ?? 'vector', overlay: 'none' }, false)
     : t.hydrology ? renderHydrology(t.hydrology, 'none', true, 'atlas', false) : '';
+  const waterSvg = coastalRiverMouths(rawWaterSvg, raster, t.width / (t.water?.hydro.n ?? t.hydrology?.resolution ?? raster.n));
+  if (waterSvg !== rawWaterSvg) raster.geometry = { ...raster.geometry, water: waterRings(waterSvg) };
   const sea = seaDistanceSurface(t, settings.width);
   const retainedSea = { distance: encodeWaterField(sea.distance), n: sea.n };
   const relief = settings.relief, id = extra.id ?? `${relief}-${settings.seed}`.replace(/[^\w.-]+/g, '_');

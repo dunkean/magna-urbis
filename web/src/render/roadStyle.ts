@@ -9,6 +9,7 @@
 import type { LandKind, LandUseLayer } from '../gen/types';
 import type { RenderColors } from './customColors';
 import type { Palette } from './styles';
+import { mapGroundSnow, roofSeasonKey } from './seasonPalette';
 
 export type RoadRank = 'major' | 'minor' | 'street' | 'lane' | 'track' | 'path';
 export type Rgb = readonly [number, number, number];
@@ -72,16 +73,20 @@ export function roadGroundTones(material: boolean, pal: Pick<Palette, 'name' | '
   return { key: pal.name, base, kinds };
 }
 const lum = (c: Rgb): number => (.3 * c[0] + .59 * c[1] + .11 * c[2]) / 255;
-const NIGHT_EARTH: Rgb = [112, 118, 136];
+const NIGHT_EARTH: Rgb = [27, 32, 42];
 /** Local road colour: earth pulled towards the ground, lifted off dark ground, sunk into pale ground. */
-export function roadTone(ground: Rgb, rank: RoadRank, emphasis: number, night: boolean): Rgb {
+export function roadTone(ground: Rgb, rank: RoadRank, emphasis: number, night: boolean, snow = mapGroundSnow()): Rgb {
+  if (night) return over(NIGHT_EARTH, ground, .72 + .08 * clamp(emphasis, .5, 1.5));
   const s = ROAD_RANK_STYLE[rank], l = lum(ground), mix = over(night ? NIGHT_EARTH : s.surface, ground, s.earth), m = lum(mix);
   // Above .7 a ground is pale enough for the road to sink; the band keeps the turn free of a hard step.
   const sink = clamp((l - .66) / .1, 0, 1), step = s.contrast * (night ? .62 : 1) * clamp(emphasis, .5, 1.5);
   const target = (l + step) * (1 - sink) + (l - 1.9 * step) * sink, k = clamp(target, .05, .95) / Math.max(.04, m);
   // Scaling brightens the chroma too; earth stays dull.
   const out: Rgb = [mix[0] * k, mix[1] * k, mix[2] * k], grey = lum(out) * 255;
-  return [grey + (out[0] - grey) * .8, grey + (out[1] - grey) * .8, grey + (out[2] - grey) * .8];
+  const dry: Rgb = [grey + (out[0] - grey) * .8, grey + (out[1] - grey) * .8, grey + (out[2] - grey) * .8];
+  // Trodden snow is cooler and darker than the untouched mantle, even on a path.
+  const compact = (rank === 'path' || rank === 'track' ? 7 : 0) - 12 * (clamp(emphasis, .5, 1.5) - 1);
+  return over([180 + compact, 192 + compact, 202 + compact], dry, snow);
 }
 
 const GRID = 256;
@@ -134,7 +139,7 @@ const texturesOf = new Map<string, Surface>();
 /** One rank's texture (`bare`: the ground itself, for the grass between wheel ruts). */
 function texture(rank: RoadRank | 'bare', emphasis: number): Surface | undefined {
   if (!ground?.data.length) return undefined;
-  const key = `${ground.key}|${rank}|${emphasis}`; let out = texturesOf.get(key);
+  const key = `${ground.key}|${rank}|${emphasis}|${roofSeasonKey()}`; let out = texturesOf.get(key);
   if (out) return out;
   const surface = makeSurface(GRID, GRID), ctx = surface?.getContext('2d') as CanvasRenderingContext2D | null | undefined;
   if (!surface || !ctx) return undefined;
@@ -206,21 +211,24 @@ const EDGE_DASH = [61, 17, 29, 41, 13, 23, 47, 11], WEAR_DASH = [23, 9, 41, 15, 
 export interface NaturalMarks { shadow: { color: string; alpha: number; extra: number } | undefined; bed: { alpha: number }; wear: { color: string; alpha: number; share: number; dash: readonly number[] } | undefined; /** Opacity of the grain, 0 until a road is wide enough to show it. */ grain: number }
 /** The strokes of a natural road of `width` world units at `scale` px per unit; each shows only once it can be seen. */
 export function naturalMarks(rank: RoadRank, width: number, scale: number, style: RoadStyle): NaturalMarks {
-  const s = ROAD_RANK_STYLE[rank], e = emphasisAlpha(style.emphasis), px = width * scale;
-  return { shadow: s.shoulder > 0 ? { color: SHADOW, alpha: clamp(s.shoulder * e, 0, .4), extra: Math.max(1.4 / scale, width * .34) } : undefined,
-    bed: { alpha: clamp(s.alpha * e, .2, 1) },
-    wear: px >= 2.6 && px < 7 ? { color: style.night ? LIGHT_WEAR : WEAR, alpha: (style.night ? .07 : .13) * e, share: .56, dash: WEAR_DASH } : undefined,
-    grain: px >= 7 ? (style.night ? .3 : .5) * Math.min(1, e) : 0 };
+  const s = ROAD_RANK_STYLE[rank], e = emphasisAlpha(style.emphasis), px = width * scale, snow = !style.night && mapGroundSnow();
+  return { shadow: s.shoulder > 0 || snow ? { color: snow ? 'rgb(116,139,158)' : SHADOW, alpha: clamp((snow ? .2 : s.shoulder) * e, 0, .4), extra: Math.max(1.4 / scale, width * .34) } : undefined,
+    bed: { alpha: clamp((snow ? Math.max(.8, s.alpha) : s.alpha) * e, .2, 1) },
+    wear: px >= 2.6 && px < 7 ? { color: snow ? 'rgb(128,151,172)' : style.night ? LIGHT_WEAR : WEAR, alpha: (style.night ? .07 : .13) * e, share: .56, dash: WEAR_DASH } : undefined,
+    grain: px >= 7 ? (style.night ? .3 : .5) * Math.min(1, e) * (1 - Number(snow)) : 0 };
 }
 /** One natural road class: shoulder, bed with an uneven edge, wear, and wheel ruts on earth tracks up close. */
 export function strokeNaturalRoad(ctx: CanvasRenderingContext2D, path: Path2D, rank: RoadRank, width: number, scale: number, style: RoadStyle): void {
-  const paint = roadPaint(ctx, rank, style), marks = naturalMarks(rank, width, scale, style), px = width * scale, earthen = rank === 'track' || rank === 'path';
+  const paint = roadPaint(ctx, rank, style), marks = naturalMarks(rank, width, scale, style), px = width * scale, earthen = rank === 'track' || rank === 'path', snow = !style.night && mapGroundSnow();
   const stroke = (color: string | CanvasPattern, w: number, alpha: number, dash: readonly number[] = [], cap: CanvasLineCap = 'round'): void => {
     ctx.strokeStyle = color; ctx.lineWidth = w; ctx.globalAlpha = alpha; ctx.setLineDash(dash as number[]); ctx.lineCap = cap; ctx.stroke(path);
   };
   ctx.lineJoin = 'round';
-  if (marks.shadow) stroke(marks.shadow.color, width + marks.shadow.extra, marks.shadow.alpha);
-  if (rank === 'path') stroke(paint, width, marks.bed.alpha, [Math.max(3.4, 4 / scale), Math.max(1.8, 2.6 / scale)], 'butt');
+  if (marks.shadow) {
+    if (snow) stroke(marks.shadow.color, width + marks.shadow.extra * 1.8, marks.shadow.alpha * .35);
+    stroke(marks.shadow.color, width + marks.shadow.extra, marks.shadow.alpha);
+  }
+  if (rank === 'path' && !snow) stroke(paint, width, marks.bed.alpha, [Math.max(3.4, 4 / scale), Math.max(1.8, 2.6 / scale)], 'butt');
   else if (px < 2.4) stroke(paint, width, marks.bed.alpha);
   else {
     // A narrower continuous bed and full-width irregular runs: the edge wanders without any new geometry; on earth the grass eats further in.
@@ -229,6 +237,10 @@ export function strokeNaturalRoad(ctx: CanvasRenderingContext2D, path: Path2D, r
   }
   if (marks.wear) stroke(marks.wear.color, width * marks.wear.share, marks.wear.alpha, marks.wear.dash, 'round');
   if (marks.grain) { const grain = roadGrain(ctx); if (grain) stroke(grain, width, marks.grain); }
-  if (earthen && px >= 5) { const grass = texture('bare', style.emphasis), p = grass && pattern(ctx, grass); if (p) stroke(p, width * .2, .55, RUT_DASH, 'butt'); }
+  if (snow && rank !== 'path' && px >= 4) {
+    // A dark band with its centre restored leaves two parallel wheel ruts.
+    stroke('rgb(130,151,170)', width * .66, .38 * Number(snow));
+    stroke(paint, width * .3, marks.bed.alpha);
+  } else if (earthen && px >= 5) { const grass = texture('bare', style.emphasis), p = grass && pattern(ctx, grass); if (p) stroke(p, width * .2, .55, RUT_DASH, 'butt'); }
   ctx.globalAlpha = 1; ctx.setLineDash([]); ctx.lineCap = 'round';
 }

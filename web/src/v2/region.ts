@@ -56,7 +56,7 @@ let retainedResources:{key:string;payload:ResourcePayload}|undefined;
 export async function regionResources(world:World,settings:V2Settings):Promise<ResourcePayload|undefined>{
   if(!settings.runtime?.backend||settings.runtime.backend==='typescript')return undefined;
   const {resolution}=effectiveRegion(settings),runtime=runtimeOf(settings);
-  const terrainKey=JSON.stringify([world.stats['v2.terrainKey']??null,world.mapSize,resolution]),key=JSON.stringify([runtime,terrainKey,settings.options.seed]);
+  const terrainKey=JSON.stringify([world.stats['v2.terrainKey']??null,world.stats['v2.waterEditRevision']??0,world.mapSize,resolution]),key=JSON.stringify([runtime,terrainKey,settings.options.seed]);
   if(retainedResources?.key===key)return retainedResources.payload;
   const engine=await engineFor(runtime);
   const raster=engine.terrainKey===terrainKey&&world.stats['v2.terrainKey']!==undefined?undefined:await regionalRaster(world,resolution,settings);
@@ -72,7 +72,7 @@ export async function planRustRegion(world:World,settings:V2Settings,onProgress?
   const runtime=runtimeOf(settings);
   onProgress?.({stage:'sites',label:roadsOnly?'Routing roads between retained sites…':'Rust · evaluating regional settlement sites…',completed:0,total:3});
   if(roadsOnly&&!world.settlements?.length)throw new Error('Place settlements before routing their roads.');
-  const terrainKey = JSON.stringify([world.stats['v2.terrainKey'] ?? null, world.mapSize, resolution]);
+  const terrainKey = JSON.stringify([world.stats['v2.terrainKey'] ?? null, world.stats['v2.waterEditRevision'] ?? 0, world.mapSize, resolution]);
   const engine = await engineFor(runtime);
   // The worker serializes requests. A route-only change reuses both the sampled raster and the native/WASM handle.
   const raster = engine.terrainKey === terrainKey && world.stats['v2.terrainKey'] !== undefined ? undefined : await regionalRaster(world, resolution, settings);

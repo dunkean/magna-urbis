@@ -666,7 +666,7 @@ function forestRaster(region = terrain): ForestRaster | undefined {
   if(overviewPending&&overviewRequest?.inspection?.previews)return undefined;
   if ((!forestActive() && !styleTraits(style).ground3d) || (!forestShown&&!styleTraits(style).waterAlwaysDrawn) || !terrain || !region) return undefined;
   return { waterVisible:input('showWater').checked,field: forestShown?.field, occupation: displayedForestOccupation(forestShown?.occupation), brushes: styleTraits(style).forestBrushes,
-    water: !input('showWater').checked&&!styleTraits(style).waterAlwaysDrawn ? undefined : retainedDecor ? forestRetainedWater(retainedDecor.meta.waterSvg, terrain.width, region, input('showLakes').checked)
+    water: !input('showWater').checked&&!styleTraits(style).waterAlwaysDrawn ? undefined : retainedDecor ? forestRetainedWater(retainedDecor.meta.waterSvg, terrain.width, region, input('showLakes').checked, terrain.waterSurface)
       : forestDisplayWater(terrain, { showLakes: input('showLakes').checked, showOxbows: input('showOxbows').checked,
         riverArea: riverAreaFor(settings.hydrology ?? DEFAULT_HYDROLOGY, settings.width), riverMode: settings.hydrology?.riverMode ?? 'vector' }, region) };
 }
@@ -1595,7 +1595,7 @@ function renderGpu(): void {
   fantasyOptions.forests = resolved.vegetation.fantasy.forests;
   const ground = resolved.ground, brushed = ground.traits.fantasy;
   // City Bench shares this module; its zone comes from the retained map.
-  if (document.body.dataset.bench !== 'city') setMapClimateZone(benchClimateZone());
+  if (document.body.dataset.bench !== 'city') setMapClimateZone(benchClimateZone(), climateOf(settings));
   const look: TerrainLook = {
     climateZone: benchClimateZone(),
     independentCanopy: resolved.composition.vegetation.procedural, ambience:resolved.composition.ambience,waterLook:resolved.composition.networks.water.look, refinement3d, v2Season: ground.season, v2Calendar: ground.calendar, colors: resolved.palette.colors,

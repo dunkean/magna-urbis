@@ -72,6 +72,7 @@ export function buildMapLabels(world: MapLabelWorld, style: MapStyle, pal: Palet
     let st = styles[e.kind];
     if (!st) continue;
     if (e.kind === 'street') st = streetRankStyle(st, e.rank);
+    if (e.manual) st = { ...st, shape: 'point', symbol: undefined, stretch: 0, minScale: 0, maxScale: Infinity, priority: 110 };
     out.push({ id: e.id, kind: e.kind, text: e.text, st, x: e.anchor.x, y: e.anchor.y, path: e.path, span: e.span, rank: e.rank });
   }
   if (world.mapAnnotations?.enabled) {
@@ -83,7 +84,13 @@ export function buildMapLabels(world: MapLabelWorld, style: MapStyle, pal: Palet
     }
   }
   if (world.site && !world.urban) out.push({ id: 'site', kind: 'site', text: ' ', ...world.site.center, st: { ...styles.village, symbol: 'ring', minPx: 18, maxPx: 18, minScale: 0, maxScale: Infinity, priority: 105 } }); // fixed px size: the ring never follows the zoom
-  const result = styleTextLabels(out, text, pal); labelCache.set(world, { key, labels: result });
+  const edits = new Map((names?.entries ?? []).filter(e => e.labelStyle).map(e => [e.id, e.labelStyle!]));
+  const result = styleTextLabels(out, text, pal).map(l => {
+    const edit = edits.get(l.id); if (!edit) return l;
+    const factor = edit.size ?? 1;
+    return { ...l, st: { ...l.st, color: edit.color ?? l.st.color, bold: edit.bold ?? l.st.bold, italic: edit.italic ?? l.st.italic,
+      sizeM: l.st.sizeM * factor, minPx: l.st.minPx * factor, maxPx: l.st.maxPx * factor } };
+  }); labelCache.set(world, { key, labels: result });
   return result;
 }
 

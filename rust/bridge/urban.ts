@@ -149,6 +149,7 @@ function nativeLayoutConfig(config: LayoutConfig) {
   if (input.campGrowth === 'ring' || !input.campGrowth) delete input.campGrowth;
   if (!input.parallelMerge) delete input.parallelMerge;
   if (input.outbuildings === 0.5 || input.outbuildings === undefined) delete input.outbuildings;
+  if (input.shantyScale === 1 || input.shantyScale === undefined) delete input.shantyScale;
   if (!input.organicBranchVariation) delete input.organicBranchVariation;
   if (!input.ribbonWidthVariation) delete input.ribbonWidthVariation;
   if (input.portDetachment === 1) delete input.portDetachment;

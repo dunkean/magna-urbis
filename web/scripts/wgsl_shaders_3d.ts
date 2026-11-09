@@ -24,6 +24,7 @@ import { fileURLToPath } from 'node:url';
 import { TERRAIN_3D_GLSL } from '../src/ui/terrain3d';
 import { BUILDING_3D_GLSL } from '../src/ui/urbanBuilding3d';
 import { BILLBOARD_3D_GLSL } from '../src/ui/terrain3dBillboards';
+import { TREE_3D_GLSL } from '../src/ui/terrain3dTrees';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '../..');
@@ -223,6 +224,7 @@ function main(): void {
     sky: { sources: [g.skyVertex, g.skyFragment], blockName: 'SkyParams' },
     building: { sources: [b.colorVertex, b.colorFragment, b.texVertex, b.texFragment], blockName: 'BuildingParams' },
     billboard: { sources: [BILLBOARD_3D_GLSL.vertex, BILLBOARD_3D_GLSL.fragment], blockName: 'BillboardParams' },
+    tree: { sources: [TREE_3D_GLSL.vertex, TREE_3D_GLSL.fragment], blockName: 'TreeParams' },
   };
   const blocks = Object.fromEntries(Object.entries(programs).map(([name, p]) => [name, paramsBlock(p.sources)]));
   const jobs: Job[] = [
@@ -237,6 +239,8 @@ function main(): void {
     { key: 'buildingTexFs', stage: 'frag', source: b.texFragment, program: 'building' },
     { key: 'billboardVs', stage: 'vert', source: BILLBOARD_3D_GLSL.vertex, program: 'billboard' },
     { key: 'billboardFs', stage: 'frag', source: BILLBOARD_3D_GLSL.fragment, program: 'billboard' },
+    { key: 'treeVs', stage: 'vert', source: TREE_3D_GLSL.vertex, program: 'tree' },
+    { key: 'treeFs', stage: 'frag', source: TREE_3D_GLSL.fragment, program: 'tree' },
   ];
   const work = mkdtempSync(join(tmpdir(), 'glsl-wgsl-3d-'));
   try {

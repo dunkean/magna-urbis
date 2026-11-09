@@ -22,7 +22,9 @@ import {
 } from './cityGlBuild';
 import { buildingColors, DEFAULT_LAYERS, PAINTED_SHADOW, PARCHMENT_SHADOW, planColors, planMaterialTable, rgba01, roofMaterialTable, streetColors, streetMaterialTable, wallColors, type CityGlDraws, type CityGlStyleState } from './cityGlStyle';
 import { isBlended } from './groundBlend';
+import { roofSeasonKey } from './seasonPalette';
 import { toneKey } from './groundTone';
+import { RUIN_INK, RUIN_PAPER } from './cityRuins';
 import { MATERIALS, loadMaterialImages, uploadMaterialArrays } from './buildingMaterials';
 import { cityLegacyWalls, cityWallColors, cityWallStrokes, createCityGlWalls, type CityGlWalls } from './cityWalls'; // walls hook (cityWalls.ts)
 
@@ -32,7 +34,8 @@ export interface CityGlDrawOptions {
   lod?: CityLod; palette?: CityPalette; layers?: Partial<CityLayers>;
   /** Building id or parcel id to outline. */
   selectedId?: string; selectedParcel?: number;
-  /** false when another renderer draws the buildings (e.g. detailed roofs at close zoom). */
+  /** Flat footprint rendering skips roof faces, textures and shadows at every zoom. */
+  buildingStyle?: 'geometric' | 'cartographic' | 'silhouette';
   buildingsVisible?: boolean; diagnostic?: 'none' | 'uses' | string; refusedParcels?: ReadonlySet<string>;
   /** Clear colour (straight RGBA 0–1); transparent by default so the map shows through. */
   clear?: [number, number, number, number];
@@ -86,7 +89,9 @@ uniform vec4 uView;
 uniform highp sampler2D uColors;
 uniform vec4 uTint;
 out vec4 vColor;
+out vec2 vPos;
 void main() {
+  vPos = aPos;
   int f = int(aFeature);
   vColor = texelFetch(uColors, ivec2(f & 4095, f >> 12), 0);
   bool shown = vColor.a > 0.0;
@@ -95,10 +100,20 @@ void main() {
   gl_Position = shown ? vec4(aPos * uView.xy + uView.zw, 0.0, 1.0) : vec4(2.0, 2.0, 2.0, 1.0);
 }`;
 const FILL_FS = `#version 300 es
-precision mediump float;
+precision highp float;
 in vec4 vColor;
+in vec2 vPos;
+uniform float uRuinSpacing;
 out vec4 outColor;
-void main() { outColor = vec4(vColor.rgb * vColor.a, vColor.a); }`;
+void main() {
+  vec3 color = vColor.rgb;
+  if (uRuinSpacing > 0.0) {
+    float stripe = abs(fract((vPos.x - vPos.y) / uRuinSpacing + 0.5) - 0.5);
+    float hatch = 1.0 - smoothstep(0.04, 0.13, stripe);
+    color = mix(color, vec3(0.275, 0.231, 0.176), hatch);
+  }
+  outColor = vec4(color * vColor.a, vColor.a);
+}`;
 /** Paved squares (render background, below 0.3 m/px): a second pass over the plan mesh in
  * which only the features whose alpha byte is 253 (cityGlStyle PAVED_ALPHA) survive the
  * vertex stage, so the sett pattern costs fragments on the squares alone. Rows of setts in
@@ -590,18 +605,19 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
         streetSurface = surface;
         if (scene && origin && !lost && !gl.isContextLost()) { streetData = buildStreetStrokes(scene, origin, surface); streets?.dispose(); streets = new StrokePack(gl, streetData); streetKey = ''; }
       }
-      const renderBackground = globalThis.document?.documentElement.dataset.cityBackground === 'render', painted = o.paintedBuildings ?? renderBackground;
-      const style: CityGlStyleState = { view: o.view, lod, palette, layers, buildingsVisible: o.buildingsVisible ?? true, diagnostic: o.diagnostic ?? 'none', refusedParcels: o.refusedParcels, painted, blended: o.groundBlend ?? isBlended(), colors: o.colors };
+      const footprint = o.buildingStyle === 'silhouette';
+      const renderBackground = globalThis.document?.documentElement.dataset.cityBackground === 'render', painted = !footprint && (o.paintedBuildings ?? renderBackground);
+      const style: CityGlStyleState = { buildingStyle: o.buildingStyle, view: o.view, lod, palette, layers, buildingsVisible: o.buildingsVisible ?? true, diagnostic: o.diagnostic ?? 'none', refusedParcels: o.refusedParcels, painted, blended: o.groundBlend ?? isBlended(), colors: o.colors };
       const colorKey = o.colors ? JSON.stringify(o.colors) : '';
       // Colour tables: rebuilt only when the state changes.
-      const key = JSON.stringify([o.view, lod, palette, layers, style.buildingsVisible, refusedKey(o.refusedParcels), painted, style.blended, toneKey()]);
+      const key = JSON.stringify([o.view, lod, palette, layers, style.buildingsVisible, o.buildingStyle, refusedKey(o.refusedParcels), painted, style.blended, toneKey()]);
       if (key !== styleKey) { const pc = planColors(scene, plan.mesh, style); plan.colors(pc.fill, pc.line); draws = pc.draws; styleKey = key; }
       const softStreets = !!style.blended && !(o.textured && palette !== 'parchment' && palette !== 'ink'), sKey = `${palette}|${softStreets}|${colorKey}|${toneKey()}`;
       if (sKey !== streetKey) {
         const sc = streetColors(scene, palette, softStreets, o.colors), wc = cityWallColors(scene, palette); // walls hook
         streets?.colors(sc.outer, sc.inner); walls?.colors(wc.outer, wc.inner); towerColors = wc.tower; streetKey = sKey;
       }
-      const bKey = `${o.view}|${palette}|${style.diagnostic}|${buildingGeneration}|${painted}|${colorKey}`;
+      const bKey = `${o.view}|${palette}|${style.diagnostic}|${o.buildingStyle}|${buildingGeneration}|${painted}|${colorKey}|${roofSeasonKey()}`;
       if (built && bKey !== builtKey) { const bc = buildingColors(buildings, style, scene); built.colors(bc.fill, bc.line); builtKey = bKey; }
       // Textured materials: albedo array loaded once (the plan is drawn flat until it arrives, then repainted).
       const textured = !!o.textured && !!albedoTex;
@@ -636,6 +652,7 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
 
       // Fills and outlines.
       gl.useProgram(fillP.program); gl.uniform4fv(fillP.u.uView, view); gl.uniform1i(fillP.u.uColors, 0); gl.uniform4f(fillP.u.uTint, 0, 0, 0, 0);
+      gl.uniform1f(fillP.u.uRuinSpacing, 0);
       const fills = (pack: FillPack | undefined, layer: string, lines: boolean): void => {
         const l = pack?.mesh.layers[layer];
         if (!pack || !l || !(lines ? l.lines : l.triangles).count) return;
@@ -728,9 +745,10 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
       // Buildings above the streets (as in drawCity).
       if (d.buildings && built) {
         gl.useProgram(fillP.program);
-        const pans = !!built.mesh.layers.roofs?.triangles.count;
+        const pans = !footprint && !!built.mesh.layers.roofs?.triangles.count;
+        const buildingLayer = footprint ? 'buildingFootprints' : 'buildings';
         if (pans) {
-          // Massing shadows: each piece's outline swept by its own height (cityMassing.ts); parchment shows flat roofs' only.
+          // Massing shadows: each piece's outline swept by its own height (cityMassing.ts).
           gl.uniform4fv(fillP.u.uTint, palette === 'parchment' ? PARCHMENT_SHADOW : PAINTED_SHADOW);
           fills(built, 'shadows', false);
           gl.uniform4f(fillP.u.uTint, 0, 0, 0, 0);
@@ -739,19 +757,27 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
           const dx = Math.max(1.6, 1.1 * mpp), dy = 0.8 * dx;
           gl.uniform4fv(fillP.u.uView, [view[0], view[1], view[2] + dx * view[0], view[3] + dy * view[1]]);
           gl.uniform4fv(fillP.u.uTint, PAINTED_SHADOW); // straight RGBA: FILL_FS premultiplies
-          fills(built, 'buildings', false);
+          fills(built, buildingLayer, false);
           gl.uniform4fv(fillP.u.uView, view); gl.uniform4f(fillP.u.uTint, 0, 0, 0, 0);
         }
-        fills(built, 'buildings', false);
+        fills(built, buildingLayer, false);
         if (pans) {
           if (textured && built.mats && palette !== 'parchment' && palette !== 'ink') { useTextured(tfillP, built.mats, false); fills(built, 'roofs', false); gl.useProgram(fillP.program); gl.uniform4fv(fillP.u.uView, view); gl.uniform1i(fillP.u.uColors, 0); }
           else fills(built, 'roofs', false);
-          if (lod === 'close') fills(built, 'roofs', true);
+          fills(built, 'roofs', true);
         }
-        if (d.buildingLines) fills(built, 'buildings', true);
+        if (d.buildingLines) fills(built, buildingLayer, true);
+        if (footprint && built.mesh.layers.ruins?.triangles.count) {
+          // Only native ruin pieces: roofed parts of a decaying lot stay intact.
+          gl.uniform4fv(fillP.u.uTint, rgba01(RUIN_PAPER)); gl.uniform1f(fillP.u.uRuinSpacing, 3 * mpp);
+          fills(built, 'ruins', false);
+          gl.uniform1f(fillP.u.uRuinSpacing, 0); gl.uniform4fv(fillP.u.uTint, rgba01(RUIN_INK));
+          fills(built, 'ruins', true);
+          gl.uniform4f(fillP.u.uTint, 0, 0, 0, 0);
+        }
       }
       // Selection: a 2 px outline built on demand (a few segments).
-      const selKey = `${o.selectedId ?? ''}|${o.selectedParcel ?? ''}|${generation}|${buildingGeneration}`;
+      const selKey = `${o.buildingStyle ?? ''}|${o.selectedId ?? ''}|${o.selectedParcel ?? ''}|${generation}|${buildingGeneration}`;
       if (selKey !== selectionKey) { selection?.dispose(); selection = selectionStrokes(o); selectionKey = selKey; }
       if (selection) {
         useStroke(strokeP); gl.uniform4fv(u.uOverride, rgba01('#197ea4'));
@@ -801,7 +827,7 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
     if (!scene) return undefined;
     const b = o.selectedId === undefined ? undefined : buildings?.byId.get(o.selectedId);
     const parcel = o.selectedParcel ?? (o.selectedId === undefined ? undefined : scene.parcelById.get(o.selectedId));
-    const shapes = b !== undefined ? buildings!.items[b].surface : parcel !== undefined && scene.parcels[parcel] ? [scene.parcels[parcel].shape] : [];
+    const shapes = b !== undefined ? (o.buildingStyle === 'silhouette' ? buildings!.items[b].footprint ?? buildings!.items[b].building.footprint : buildings!.items[b].surface) : parcel !== undefined && scene.parcels[parcel] ? [scene.parcels[parcel].shape] : [];
     const rings = shapes.flatMap(s => [s.outer, ...(s.holes ?? [])]).filter(r => r.length >= 2);
     if (!rings.length) return undefined;
     const n = rings.reduce((s, r) => s + r.length, 0), buffer = new ArrayBuffer(n * STROKE_STRIDE * 4), f = new Float32Array(buffer), u32 = new Uint32Array(buffer);

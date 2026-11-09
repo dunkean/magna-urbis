@@ -60,12 +60,13 @@ export function translateBuildingScene(scene: PlacementBatch, dx: number, dy: nu
 }
 /** Layout and cadastral contracts contain points plus axis vectors. All coordinates
  * in programmes/reservations/contacts/envelopes obey the same local metric frame. */
-function translateLand<T>(value: T, dx: number, dy: number): T {
+export function translateLand<T>(value: T, dx: number, dy: number): T {
   if (!value || typeof value !== 'object') return value;
+  if (ArrayBuffer.isView(value)) return value;
   if (Array.isArray(value)) return value.map(child => translateLand(child, dx, dy)) as T;
   const obj = value as Record<string, unknown>;
   if (typeof obj.x === 'number' && typeof obj.y === 'number') return point(obj as unknown as Point, dx, dy) as T;
-  return Object.fromEntries(Object.entries(obj).map(([key, child]) => [key, key === 'axis' ? child : translateLand(child, dx, dy)])) as T;
+  return Object.fromEntries(Object.entries(obj).map(([key, child]) => [key, ['axis','dir','direction','resolved','densityGrid'].includes(key) ? child : translateLand(child, dx, dy)])) as T;
 }
 export function translateWorkshopState(state: WorkshopState, dx: number, dy: number): WorkshopState {
   const built = state.buildingState;

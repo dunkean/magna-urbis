@@ -90,13 +90,15 @@ V2Env v2Local(vec3 s,vec2 world,float tpi,float footprint){
   // Altitude, aspect and hollows (already in e.snow) set where the melt runs; the drifts only fray its edge,
   // so the landscape-scale octave stays weak: a strong one paints random white blobs across uniform ground.
   vec3 ground=vec3(world,0.);
-  float drift=.15*v2Pattern(ground,2600.,footprint,uMaterialSeed+721u)+.3*v2Pattern(ground,700.,footprint,uMaterialSeed+722u)+.32*v2Pattern(ground,190.,footprint,uMaterialSeed+723u)+.23*v2Pattern(ground,55.,footprint,uMaterialSeed+724u);
-  e.snow=sstep(.34,.54,e.snow+v2SeasonSnowPatches()*drift*sstep(0.,.25,e.snow)*(1.-sstep(.8,1.,e.snow)));
+  vec2 wind=mat2(.89,.46,-.46,.89)*world;
+  float drift=.12*v2Pattern(ground,700.,footprint,uMaterialSeed+722u)+.26*v2Pattern(ground,190.,footprint,uMaterialSeed+723u)+.34*v2Pattern(vec3(wind/vec2(4.,1.),0.),42.,footprint,uMaterialSeed+724u)+.28*v2Pattern(ground,18.,footprint,uMaterialSeed+725u);
+  e.snow=sstep(.405,.465,e.snow+v2SeasonSnowPatches()*drift*sstep(0.,.25,e.snow)*(1.-sstep(.8,1.,e.snow)));
   if(uForest==1){vec4 f=forestField(world,0.);e.woody=f.r;e.height=f.g*50.;e.needle=f.b;e.leaf=mix(e.leaf,1.,e.needle);}
   // The zone's calendar sets leaf fall: a temperature proxy leaves oaks in leaf through a mild winter.
   if(v2Zoned())e.leaf=mix(v2SeasonLeaf(),1.,e.needle);
   v2ZoneWet=0.;v2ZoneBare=0.;if(v2Zoned())v2ZoneEnv(e,s,world,tpi,footprint);
-  if(uHasOccupation==1){vec2 uv=(world-uOccupationRect.xy)/uOccupationRect.z;if(all(greaterThanEqual(uv,vec2(0.)))&&all(lessThanEqual(uv,vec2(1.)))){int cls=int(textureLod(uOccupation,uv,0.).b*255.+.5);if(cls==8){e.woody=0.;e.grass=0.;}}}
+  // Construction excludes tree roots, not the surrounding soil/grass response: changing it made a pale pad per house.
+  if(uHasOccupation==1){vec2 uv=(world-uOccupationRect.xy)/uOccupationRect.z;if(all(greaterThanEqual(uv,vec2(0.)))&&all(lessThanEqual(uv,vec2(1.)))){int cls=int(groundOccupation(world).z);if(cls==8)e.woody=0.;}}
   float water=forestWaterCoverage(world);e.woody*=1.-water;e.grass*=1.-water;
   // Preserve the retained physical beach footprint at every detail level.
   // Its 0.8 factor belongs to legacy colour blending, not vegetation cover.
@@ -132,7 +134,12 @@ GroundMaterial v2GroundEnv(V2Env local,vec3 s,vec2 world,float footprint,vec3 li
   // A low alluvial plain is not necessarily exposed sediment. Potential
   // herbaceous cover recolonizes it; the physical beach remains separate.
   opened=mix(opened,renderGuideSediment*.9,renderGuideFlats*v2FlatSedimentExposure(e.grass,renderGuideShore,renderGuideOpenness));
-  opened=mix(opened,vec3(.88,.91,.91),e.snow);
+  // Wind-packed snow: narrow drift ridges and fine grain, resolved in metres and faded before aliasing.
+  vec2 snowWind=mat2(.89,.46,-.46,.89)*world;
+  float snowDrift=v2Pattern(vec3(snowWind/vec2(5.,1.),0.),12.,footprint,uMaterialSeed+726u);
+  float snowGrain=v2Pattern(vec3(world,0.),3.2,footprint,uMaterialSeed+727u);
+  vec3 snowColor=vec3(.88,.91,.91)*(1.+.035*clamp(snowDrift*1.7,-1.,1.)+.018*snowGrain);
+  opened=mix(opened,snowColor,e.snow);
   opened=mix(opened,renderGuideSediment,clamp(renderGuideBeach/.8,0.,1.)*(1.-e.snow));
   V2Env canopyPhase=e;canopyPhase.snow=0.;
   V2Env leafOn=canopyPhase;leafOn.leaf=1.;

@@ -99,6 +99,23 @@ export function validateSettings(value: unknown): asserts value is V2Settings {
       if (!isRecord(value.naming.places) || Object.keys(value.naming.places).length > 2000) throw new Error('Noms des lieux invalides.');
       for (const [key, name] of Object.entries(value.naming.places)) if (!/^[\w:-]{1,80}$/.test(key) || typeof name !== 'string' || name.length > 200) throw new Error('Nom de lieu invalide.');
     }
+    if (value.naming.labels !== undefined) {
+      if (!isRecord(value.naming.labels) || Object.keys(value.naming.labels).length > 50000) throw new Error('Étiquettes invalides.');
+      for (const [id, edit] of Object.entries(value.naming.labels)) {
+        if (!id || id.length > 500 || !isRecord(edit) || typeof edit.text !== 'string' || edit.text.length > 200) throw new Error('Étiquette invalide.');
+        checkEnum(edit.kind, ['free', 'quarter', 'parcel', 'building'], 'type d’étiquette');
+        if (edit.anchor !== undefined) {
+          if (!isRecord(edit.anchor)) throw new Error('Position d’étiquette invalide.');
+          finite(edit.anchor.x, 'position x', -1e9, 1e9); finite(edit.anchor.y, 'position y', -1e9, 1e9);
+        }
+        if (edit.style !== undefined) {
+          if (!isRecord(edit.style)) throw new Error('Style d’étiquette invalide.');
+          if (edit.style.color !== undefined && (typeof edit.style.color !== 'string' || !/^#[0-9a-f]{6}$/i.test(edit.style.color))) throw new Error('Couleur d’étiquette invalide.');
+          if (edit.style.size !== undefined) finite(edit.style.size, 'taille d’étiquette', .25, 4);
+          for (const key of ['bold', 'italic']) if (edit.style[key] !== undefined && typeof edit.style[key] !== 'boolean') throw new Error('Style d’étiquette invalide.');
+        }
+      }
+    }
   }
   if (value.urban !== undefined) {
     if (!isRecord(value.urban)) throw new Error('Moteur urbain invalide.');
@@ -229,6 +246,10 @@ export function parseProjectInput(text:string):V2Project{
   }
   return parsedProject(reviveProject(value));
 }
+export function validateModifications(mods: unknown): asserts mods is unknown[] {
+  if (!Array.isArray(mods) || mods.length > 100000) throw new Error('Historique de modifications invalide.');
+  checkTree(mods, false);
+}
 function parsedProject(project:unknown):V2Project{
   if (!isRecord(project) || project.format !== 'magna-urbis-v2' || project.version !== 1 || typeof project.engine !== 'string') throw new Error('Format de projet V2 inconnu.');
   validateSettings(project.settings);
@@ -236,7 +257,6 @@ function parsedProject(project:unknown):V2Project{
   // Hand-edited or older recipes reach the engine with one coherent backend combination.
   if ((project.settings as V2Settings).runtime) normalizeRuntime(project.settings as V2Settings);
   if (project.world !== undefined) validateWorld(project.world);
-  if (!Array.isArray(project.mods) || project.mods.length > 100000) throw new Error('Historique de modifications invalide.');
-  checkTree(project.mods, false);
+  validateModifications(project.mods);
   return project as unknown as V2Project;
 }

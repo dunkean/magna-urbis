@@ -136,6 +136,7 @@ export interface RegimeInk { intermittent: string; dry: string; dryDash: number[
  * bed ink over a pale bed wash; the parchment draws both in brown, as the old surveys did. Frozen water: a pale
  * blue-grey sheet inside darker bank lines of the water ink. Dashes in screen pixels. */
 export function regimeInk(style: TerrainStyle, edge: string): RegimeInk {
+  if (style === 'night') return { intermittent: '#405875', dry: '#45546a', dryDash: [6, 2, 1.5, 2], bed: '#253749', ice: '#758ba0', iceLine: '#526d86', shore: '#35475a', plume: '#394552' };
   // Parchment: brown dash-dot ink over a pale sandy wash, the classic intermittent-stream symbol of the surveys.
   if (style === 'parchment') return { intermittent: '#6e5232', dry: '#6e5232', dryDash: [6, 2, 1.5, 2], bed: '#c9a874', ice: '#d9dfd8', iceLine: '#8e9d9a', shore: '#e0d2ae', plume: '#9c8458' };
   if (style === 'render3d' || style === 'render') return { intermittent: edge, dry: '#8c6f4c', dryDash: [5, 2, 1.2, 2], bed: '#cdb48a', ice: '#cbd9e2', iceLine: '#90a9ba', shore: '#cdbf9f', plume: '#8f7a52' };
@@ -285,7 +286,7 @@ export function riverSegments(water: VectorWater, display: WaterDisplay): Float3
     }
   };
   const rivers = water.rivers;
-  if (display.riverMode === 'vector' && rivers) {
+  if ((display.riverMode === 'vector' || water.editedNetwork) && rivers) {
     // Sediment plumes first: the river capsules (MAX blend) keep their own regime where they overlap.
     if (display.material) for (const mouth of plumeMouths(water, display, climate)) {
       const steps = plumeSteps(mouth);
@@ -367,8 +368,7 @@ export function vectorWaterSvg(water: VectorWater, display: WaterDisplay, materi
   if (lakes) {
     svg += `<path class="water-lakes" d="${lakes}" fill="${lakeFill}" fill-rule="evenodd"${lakeStroke}/>`;
   }
-  if (display.riverMode === 'vector' && water.rivers) {
-    const dash = (d: number[]): string => d.join(' ');
+  if ((display.riverMode === 'vector' || water.editedNetwork) && water.rivers) {
     for (const { colour, symbol, axes, banks, inner } of regimeGroups(water, display)) {
       if (symbol === 'water') {
         svg += `<path d="${axes}" fill="none" stroke="${colour}" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
@@ -381,11 +381,8 @@ export function vectorWaterSvg(water: VectorWater, display: WaterDisplay, materi
         svg += `<path d="${inner}" fill="${ink.ice}" stroke="none"/>`;
         svg += `<path d="${axes}" fill="none" stroke="${ink.iceLine}" stroke-width="0.6" stroke-opacity="0.45" stroke-dasharray="14 9" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`;
       } else {
-        // Intermittent: pale bed and a dashed thread of water ink. Dry bed (wadi): bed wash and a dash-dot bed ink.
-        const dry = symbol === 'dry';
-        svg += `<path d="${banks}" fill="${dry ? ink.bed : colour}" fill-opacity="${dry ? 0.6 : 0.35}" stroke="none"/>`;
-        if (dry) svg += `<path d="${axes}" fill="none" stroke="${ink.bed}" stroke-width="3.2" stroke-opacity="0.55" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
-        svg += `<path d="${axes}" fill="none" stroke="${dry ? ink.dry : ink.intermittent}" stroke-width="${dry ? 1.4 : 1.1}" stroke-dasharray="${dry ? dash(ink.dryDash) : '5 3'}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+        // Dry and intermittent beds retain the full river outline as a plain silt band.
+        svg += `<path d="${banks}" fill="${ink.bed}" stroke="${ink.dry}" stroke-width="0.6" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
       }
     }
   } else {
@@ -450,15 +447,9 @@ export function paintWaterRegime(ctx: CanvasRenderingContext2D, water: VectorWat
       if (g.innerPath) { ctx.fillStyle = material ? '#a9bac6' : ink.ice; ctx.fill(g.innerPath); }
       continue;
     }
-    const dry = g.symbol === 'dry';
-    // Bed wash at least two pixels wide, so a dry stream still reads at a distance.
-    ctx.globalAlpha = dry ? .75 : .45; ctx.strokeStyle = ctx.fillStyle = material ? '#c8b28c' : dry ? ink.bed : g.colour;
-    ctx.lineWidth = px(2.2); ctx.stroke(g.axesPath); ctx.fill(g.banksPath); ctx.globalAlpha = 1;
-    // A material dry bed stays a pale wash with a faint gravel thread: a dark dashed axis read as a track.
-    if (material && dry) ctx.globalAlpha = .3;
-    ctx.strokeStyle = material ? (dry ? '#a8916c' : '#35596c') : dry ? ink.dry : ink.intermittent;
-    ctx.lineWidth = px(material ? 1 : dry ? 1.4 : 1.1);
-    ctx.setLineDash((material ? (dry ? [1.5, 3.5] : [7, 3]) : dry ? ink.dryDash : [5, 3]).map(px)); ctx.stroke(g.axesPath); ctx.setLineDash([]); ctx.globalAlpha = 1;
+    ctx.fillStyle = ink.bed; ctx.fill(g.banksPath);
+    ctx.save(); ctx.clip(g.banksPath); ctx.strokeStyle = ink.dry;
+    ctx.lineWidth = px(1.2); ctx.stroke(g.banksPath); ctx.restore();
   }
   ctx.restore();
   return true;

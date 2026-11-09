@@ -65,22 +65,22 @@ interface PresetValues { blocks?: boolean; ground: StyleId; contours: boolean; v
 /** Hides every text group but the listed ones. */
 const only = (...shown: TextGroup[]) => Object.fromEntries(TEXT_GROUPS.map(g => [g, shown.includes(g)])) as Record<TextGroup, boolean>;
 const PRESETS: Readonly<Record<StyleId, PresetValues>> = {
-  atlas: { ground: 'atlas', contours: true, vegetation: 'symbols', rural: 'off', urban: 'subtle', depth: 'surface', network: 'inherit', building: 'cartographic-roofs', parcels: false, text: defaultText({ look: 'sans' }) },
+  atlas: { ground: 'atlas', contours: true, vegetation: 'symbols', rural: 'off', urban: 'subtle', depth: 'surface', network: 'inherit', building: 'detailed-volumes', parcels: false, text: defaultText({ look: 'sans' }) },
   'satellite-2': { blocks: false, ground: 'satellite-2', contours: true, vegetation: 'procedural-canopy', rural: 'off', urban: 'off', depth: 'surface', network: 'wash', building: 'detailed-volumes', parcels: false, text: defaultText({ look: 'inherit' }) },
   parchment: { ground: 'parchment', contours: true, vegetation: 'symbols', rural: 'off', urban: 'off', depth: 'surface', network: 'wash', building: 'detailed-volumes', parcels: false, text: defaultText({ look: 'inherit' }) },
   // Rural land use lives in the brushes (crops, orchards, heath, woods) over a painted wash, not in vector polygons.
-  illustration: { ground: 'illustration', contours: false, vegetation: 'painted', rural: 'off', urban: 'subtle', depth: 'surface', network: 'inherit', building: 'cartographic-roofs', parcels: false, text: defaultText({ look: 'inherit' }) },
+  illustration: { ground: 'illustration', contours: false, vegetation: 'painted', rural: 'off', urban: 'subtle', depth: 'surface', network: 'inherit', building: 'detailed-volumes', parcels: false, text: defaultText({ look: 'inherit' }) },
   cadastre: { ground: 'cadastre', contours: false, vegetation: 'none', rural: 'categorical', urban: 'categorical', depth: 'readable', network: 'ink', building: 'footprints', parcels: true, text: defaultText({ look: 'sans', groups: only('city', 'landmarks', 'pins') }) },
-  topographic: { ground: 'topographic', contours: true, vegetation: 'symbols', rural: 'outlines', urban: 'outlines', depth: 'readable', network: 'ink', building: 'footprints', parcels: false, text: defaultText({ look: 'sans', groups: only('places', 'water', 'nature', 'pins'), density: 'high' }) },
+  topographic: { blocks: false, ground: 'topographic', contours: true, vegetation: 'none', rural: 'outlines', urban: 'off', depth: 'readable', network: 'ink', building: 'footprints', parcels: false, text: defaultText({ look: 'sans', groups: only('places', 'water', 'nature', 'pins'), density: 'high' }) },
   satellite: { blocks: false, ground: 'satellite', contours: false, vegetation: 'procedural-canopy', rural: 'off', urban: 'off', depth: 'surface', network: 'natural', building: 'detailed-volumes', parcels: false, text: defaultText({ look: 'sans', halo: 'strong' }) },
 };
 /** A fresh recipe filled by a preset. */
 export function presetComposition(id: StyleId): CompositionRecipe {
   const p = PRESETS[id];
   return { preset: id, ground: { look: p.ground, variant: GROUND_VARIANTS[p.ground][0], contours: p.contours }, vegetation: { look: p.vegetation, forestTone: 'marked' },
-    landuse: { rural: p.rural, urban: p.urban, opacity: .4, depth: p.depth }, networks: { roads: { visible: true, look: p.network, emphasis: 1 }, water: { visible: true, look: p.network === 'wash' ? 'ink' : p.network } },
+    landuse: { rural: p.rural, urban: p.urban, opacity: .4, depth: p.depth, ...(id === 'topographic' ? { classes: Object.fromEntries(LAND_KINDS.map(kind => [kind, kind === 'field'])) } : {}) }, networks: { roads: { visible: true, look: p.network, emphasis: 1 }, water: { visible: true, look: p.network === 'wash' ? 'ink' : p.network } },
     buildings: { visible: true, look: p.building, parcels: p.parcels, blocks: p.blocks ?? true, districts: false }, text: structuredClone(p.text), annotations: { legend: false, cartouche: false },
-    effects: { ambience: 'day', season: .5, relief: true, lighting: { ...DEFAULT_TERRAIN_LIGHTING } } };
+    effects: { ambience: 'day', season: .5, relief: id !== 'topographic', lighting: { ...DEFAULT_TERRAIN_LIGHTING } } };
 }
 
 /** One choice the current backend cannot honour. The recipe keeps the choice; the UI shows the reason. */
@@ -132,11 +132,11 @@ export function applyComposition(a: AppearanceInput, c: CompositionRecipe): Appe
   return { ...a, ...parchmentTrees, style: isMapStyle(variant) ? variant : c.effects.ambience === 'night' ? 'night' : traits.paperMap ? 'parchment' : a.style, terrainStyle: variant, renderer: 'bench', contours: c.ground.contours,
     terrainLayers: { ...DEFAULT_TERRAIN_LAYERS, ...a.terrainLayers, relief: c.effects.relief, water: c.networks.water.visible },
     // The land-use painter is the physical look of the fields on a map ground: the semantic layer never switches it off.
-    landuse: true, painted: overlayPainted(c.vegetation.look, traits), forest:c.vegetation.look === 'procedural-canopy' ? forest : { ...forest, enabled: false },
+    landuse: variant !== 'topographic', painted: overlayPainted(c.vegetation.look, traits), forest:c.vegetation.look === 'procedural-canopy' ? forest : { ...forest, enabled: false },
     roads: c.networks.roads.visible, buildings: c.buildings.visible, labels: c.text.visible, legend: c.annotations.legend, cartouche: c.annotations.cartouche,
     // A physical ground takes physical stone, earth and roofs: parchment inks would float over it.
     city: { ...city, ...(traits.family === 'material' && !traits.paperMap ? { palette: 'terrain' as const } : {}), buildingStyle: building.style, painted: building.painted, groundBlend: roads === 'ink' ? 'classic' : 'blended',
-      layers: { ...city.layers, parcelOverlay: c.buildings.parcels, parcels: c.buildings.parcels, lotEnclosures: c.buildings.parcels && city.layers?.lotEnclosures !== false, blocks: c.buildings.blocks, quarters: c.buildings.districts } } };
+      layers: { ...city.layers, ...(variant === 'topographic' ? { domains: false, gardens: false, places: false } : {}), parcelOverlay: c.buildings.parcels, parcels: c.buildings.parcels, lotEnclosures: c.buildings.parcels && city.layers?.lotEnclosures !== false, blocks: c.buildings.blocks, quarters: c.buildings.districts } } };
 }
 
 function limitationsOf(c: CompositionRecipe, traits: StyleTraits, target: RenderTarget, capabilities: RenderCapabilities): Limitation[] {
@@ -153,12 +153,16 @@ function limitationsOf(c: CompositionRecipe, traits: StyleTraits, target: Render
 export function resolveComposition(recipe: CompositionRecipe | undefined, traits: StyleTraits, target: RenderTarget, capabilities: RenderCapabilities): ResolvedComposition {
   const c = recipe ?? presetComposition('parchment'), classes = Object.fromEntries(LAND_KINDS.map(kind => [kind, c.landuse.classes?.[kind] !== false])) as Record<LandKind, boolean>;
   const look = c.vegetation.look;
+  const buildingLook: BuildingLook = target !== 'view3d'
+    ? c.ground.variant === 'cadastre' || c.ground.variant === 'topographic' ? 'footprints' : 'detailed-volumes'
+    // Flat map tiers never suppress architecture in a perspective view.
+    : c.buildings.look === 'footprints' ? 'detailed-volumes' : c.buildings.look;
   return Object.freeze({ recipe: c, variant: recipe ? effectiveVariant(c) : c.ground.variant,
     vegetation: recipe ? { look, forestTone: c.vegetation.forestTone, procedural: look === 'procedural-canopy', cartographic: vectorVegetation(look, traits), painted: overlayPainted(look, traits), groundForests: look === 'painted' }
       : { look, forestTone: c.vegetation.forestTone, procedural: traits.ground3d, cartographic: traits.cartographicVegetation, painted: false, groundForests: true },
     landuse: { rural: recipe ? c.landuse.rural : 'off', urban: recipe ? c.landuse.urban : 'off', opacity: c.landuse.opacity, depth: c.landuse.depth, classes },
     networks: { roads: { visible: c.networks.roads.visible, look: networkLook(c.networks.roads.look, traits), emphasis: c.networks.roads.emphasis }, water: { visible: c.networks.water.visible, look: waterLook(c.networks.water.look, traits) } },
-    buildings: { visible: c.buildings.visible, look: c.buildings.look, meshes: recipe ? BUILDING_2D[c.buildings.look].meshes : 'detailed', parcels: c.buildings.parcels, blocks: c.buildings.blocks, districts: c.buildings.districts },
+    buildings: { visible: c.buildings.visible, look: buildingLook, meshes: recipe ? BUILDING_2D[buildingLook].meshes : 'detailed', parcels: c.buildings.parcels, blocks: c.buildings.blocks, districts: c.buildings.districts },
     text: c.text, ambience: c.effects.ambience, limitations: Object.freeze(recipe ? limitationsOf(c, traits, target, capabilities) : []) });
 }
 

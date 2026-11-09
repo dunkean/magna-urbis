@@ -1010,6 +1010,8 @@ pub(super) fn lay_out(
         })
         .collect();
     let structure = UrbanStructure {
+        shanty: None,
+        spring_sites: vec![],
         gate_village_centers: vec![],
         gate_village_lanes: vec![],
         quays: vec![],
@@ -1329,6 +1331,42 @@ fn varied_side(path: &[Point], half: f64, depth: f64, left: bool, strength: f64,
     pieces.into_iter().max_by(|a,b|g::area(a).total_cmp(&g::area(b)))
 }
 
+/// A single broad bend, keeping the junction and field end fixed. Compare just
+/// two mirrored bends on the physical surface: no per-lane routing search.
+fn field_lane(
+    surface: Surface<'_>,
+    from: Point,
+    to: Point,
+    bend: f64,
+    grade: f64,
+) -> Option<Vec<Point>> {
+    let direction = unit(from, to);
+    let normal = perp(direction);
+    let length = dist(from, to);
+    let mut best: Option<(Vec<Point>, f64)> = None;
+    for offset in [bend, -bend] {
+        let mut path = vec![from];
+        for i in 1..4 {
+            let t = i as f64 / 4.0;
+            let sway = offset * (std::f64::consts::PI * t).sin().powi(2);
+            path.push(at(at(from, direction, length * t), normal, sway));
+        }
+        path.push(to);
+        if !routing::path_clear(surface, &path, grade) {
+            continue;
+        }
+        let climb: f64 = path.windows(2)
+            .map(|w| (surface.height_at(w[1]) - surface.height_at(w[0])).abs())
+            .sum();
+        if best.as_ref().is_none_or(|(_, cost)| climb < *cost - 1e-6) {
+            best = Some((path, climb));
+        }
+    }
+    best.map(|(path, _)| path).or_else(|| {
+        routing::segment_clear(surface, from, to, grade).then(|| vec![from, to])
+    })
+}
+
 /// Farms or long plots along an axis: the passing road when it is near, else
 /// a lane through the site joined to the road by a track. A hamlet places
 /// separate farm plots with gaps; a street village continuous strips cut by
@@ -1439,6 +1477,7 @@ fn linear(
         let lane = if cfg.road_width_by_size { super::network::town_table(morph, site.population, true)[3] } else { 3.5 };
         let mut cuts = vec![];
         let mut variation = rng.fork("v7-linear-variation");
+        let mut lanes = rng.fork("street-village-field-lanes");
         let mut s = rng.range(90.0, 160.0);
         while s < total - 60.0 {
             let (p, d) = point_at(&axis, s);
@@ -1448,13 +1487,26 @@ fn linear(
             let reach = half + depth * (1.0 + 0.34 * cfg.ribbon_width_variation) + 10.0;
             for sign in [-1.0, 1.0] {
                 let strength = cfg.organic_branch_variation;
-                let (normal, run) = if strength > 0.0 {
-                    let angle = variation.range(-0.20,0.20) * strength;
-                    (Point {x:n.x*angle.cos()-n.y*angle.sin(), y:n.x*angle.sin()+n.y*angle.cos()},
-                        (reach*(1.0+variation.range(-0.30,0.25)*strength)).max((reach-6.0)/angle.cos()))
-                } else { (n,reach) };
+                // Modest variation belongs to this form even with default options.
+                // Vary the field extension, rather than clamping short lanes to
+                // one length; every lane must still cross the widest plot strip.
+                let angle = lanes.range(-0.10, 0.10) * (1.0 + strength);
+                let normal = Point {
+                    x: n.x * angle.cos() - n.y * angle.sin(),
+                    y: n.x * angle.sin() + n.y * angle.cos(),
+                };
+                let run = (reach + lanes.range(-4.0, 18.0) * (1.0 + 0.4 * strength)) / angle.cos();
                 let end = at(p, normal, sign * run);
-                cuts.push(street(vec![p, end], lane, 3, "lane"));
+                let bend = lanes.range(1.8, 3.6) * (1.0 + 0.4 * strength)
+                    * if lanes.chance(0.5) { -1.0 } else { 1.0 };
+                if let Some(path) = field_lane(surface, p, end, bend, cfg.max_lane_grade) {
+                    cuts.push(street(path, lane, 3, "lane"));
+                }
+                // Keep the optional ribbon outline's random stream unchanged.
+                if strength > 0.0 {
+                    variation.range(-0.20, 0.20);
+                    variation.range(-0.30, 0.25);
+                }
             }
             s += rng.range(110.0, 200.0);
         }
@@ -1491,13 +1543,14 @@ fn linear(
         }
         // A cross-lane that no plot touches leads nowhere: drop it.
         cuts.retain(|lane| {
-            let (a, b) = (lane.path[0], lane.path[lane.path.len() - 1]);
             blocks.iter().any(|(shape, kind)| {
                 *kind == "block"
                     && shape
                         .outer
                         .iter()
-                        .any(|&v| g::distance(v, a, b).0 < lane.widths[0] * 0.5 + 3.0)
+                        .any(|&v| lane.path.windows(2).any(|w| {
+                            g::distance(v, w[0], w[1]).0 < lane.widths[0] * 0.5 + 3.0
+                        }))
             })
         });
         streets.extend(cuts);
@@ -2048,6 +2101,93 @@ mod tests {
             m.streets.iter().any(|s| s.role == "ring"),
             "old wall line as boulevard"
         );
+    }
+}
+
+#[cfg(test)]
+mod field_lane_tests {
+    use super::*;
+
+    #[test]
+    fn street_village_lanes_vary_without_losing_the_spine_or_field_access() {
+        let p = |x, y| Point { x, y };
+        let n = 128;
+        let height = vec![0.0; n * n];
+        let water = vec![0; n * n];
+        let surface = Surface {
+            geometry: None, width: 2000.0, n, height: &height, water: &water,
+            interpolation: Default::default(),
+        };
+        let roads = vec![street(vec![p(100.0, 990.0), p(1000.0, 1010.0), p(1900.0, 980.0)], 6.0, 0, "regional")];
+        let inherited = roads[0].path.clone();
+        let site = Site {
+            key: "field-lanes".into(), name: String::new(), population: 500,
+            culture: "hanseatic".into(), center: p(1000.0, 1000.0), radius: 100.0,
+        };
+        let near = nearest(site.center, &roads, 600.0);
+        let morph = Morph { value: serde_json::json!({
+            "plotDepth": {"village": [40.0, 60.0]},
+            "frontage": {"village": [12.0, 16.0]},
+        }) };
+        for strength in [0.0, 1.0] {
+            let cfg = LayoutConfig {
+                road_width_by_size: false, organic_branch_variation: strength,
+                ribbon_width_variation: strength, ..LayoutConfig::default()
+            };
+            let build = |seed| linear(
+                &site, &cfg, Kind::StreetVillage, &morph, &near, &[], &|_| 3.05,
+                &roads, surface, &mut Rng::new(seed),
+            ).unwrap();
+            let plan = build("field-lanes");
+            let paths = |plan: &Plan| plan.streets.iter().map(|s| s.path.clone()).collect::<Vec<_>>();
+            assert_eq!(paths(&plan), paths(&build("field-lanes")), "seed replay");
+            assert_ne!(paths(&plan), paths(&build("other-field-lanes")), "seed variation");
+            assert!(plan.streets.len() >= 6, "both sides keep field access");
+            let mut lengths = vec![];
+            let mut angles = vec![];
+            for lane in &plan.streets {
+                assert_eq!(lane.path.len(), 5, "one broad bend with bounded work");
+                assert_eq!(lane.widths.len(), lane.path.len());
+                assert!(routing::path_clear(surface, &lane.path, cfg.max_lane_grade));
+                let (a, b) = (lane.path[0], *lane.path.last().unwrap());
+                let (_, segment) = roads[0].path.windows(2)
+                    .map(|w| (g::distance(a, w[0], w[1]).0, w))
+                    .min_by(|a, b| a.0.total_cmp(&b.0)).unwrap();
+                assert!(g::distance(a, segment[0], segment[1]).0 < 1e-6, "junction stays on spine");
+                let d = unit(segment[0], segment[1]);
+                let outward = perp(d);
+                let across = ((b.x - a.x) * outward.x + (b.y - a.y) * outward.y).abs();
+                assert!(across > 3.05 + 60.0 * (1.0 + 0.34 * strength), "lane crosses the whole strip");
+                let bend = g::distance(lane.path[2], a, b).0;
+                assert!((1.7..5.1).contains(&bend), "gentle bend: {bend}");
+                angles.push(((b.x - a.x) * d.x + (b.y - a.y) * d.y) / across);
+                lengths.push(*arc(&lane.path).last().unwrap());
+                // Parcels are cut by the actual curved ribbon, not its chord.
+                for ribbon in g::ribbon(&lane.path, &lane.widths) {
+                    for (shape, _) in plan.blocks.iter().filter(|(_, kind)| *kind == "block") {
+                        let overlap: f64 = g::intersection(shape, &ribbon).iter().map(g::area).sum();
+                        assert!(overlap < 0.01, "lane overlaps a plot by {overlap} m2");
+                    }
+                }
+            }
+            lengths.sort_by(f64::total_cmp);
+            angles.sort_by(f64::total_cmp);
+            assert!(lengths.last().unwrap() - lengths[0] > 6.0, "unequal field ends");
+            assert!(angles.last().unwrap() - angles[0] > 0.03, "unequal angles");
+        }
+        assert_eq!(roads[0].path, inherited);
+
+        // A low ridge on the right must win over the seed's preferred bend.
+        let height: Vec<f32> = (0..n * n).map(|i| {
+            let x = (i % n) as f64 * 4.0 + 2.0;
+            ((x - 256.0).max(0.0) * 0.2) as f32
+        }).collect();
+        let terrain = Surface { width: 512.0, height: &height, ..surface };
+        let path = field_lane(terrain, p(256.0, 400.0), p(256.0, 480.0), -4.0, 0.12).unwrap();
+        assert!(path[2].x < 256.0, "bend follows the lower terrain cost");
+        assert!(routing::path_clear(terrain, &path, 0.12));
+        let flooded = vec![1; n * n];
+        assert!(field_lane(Surface { water: &flooded, ..surface }, p(500.0, 400.0), p(500.0, 480.0), 4.0, 0.12).is_none());
     }
 }
 

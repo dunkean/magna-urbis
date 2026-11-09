@@ -2,6 +2,9 @@ import { buildingPaint, type UrbanBuildingAppearance } from '../render/urbanBuil
 import { building3dHeight, isBuildingProjection, isYardMesh, yardLod, buildingRayDistance, eachBuildingTriangle, type BuildingVector, type Building3dVisual, type Building3dScene } from '../render/urbanBuildingGeometry';
 import { layerExtent, loadMaterialImages, uploadMaterialArrays, coverLayer, wallLayer, MATERIALS, type MaterialImages } from '../render/buildingMaterials';
 import { buildingFeatureLod, buildingFeatureMetresPerPixel, hasBuildingFeatureLod, sameBuildingFeatureLod, type BuildingFeatureLod } from '../render/urbanBuildingFeatureLod';
+import { mapGroundSnow, roofSeasonKey } from '../render/seasonPalette';
+import { roofSnowPatches, snowRoofTint, townRoofAltitudes } from '../render/roofSnow';
+import type { BuildingTriangle } from '../render/urbanBuildingGeometry';
 import { buildingTint } from '../render/buildingPalette';
 import { MOONLIGHT_GLSL } from '../render/materialLook';
 
@@ -10,7 +13,7 @@ type Bounds = [number, number, number, number, number, number];
 export interface BuildingFrame { matrix: Float32Array; cameraX: number; cameraY: number; targetHeight: number; exaggeration: number; focal: number; distance: number }
 /** `stride`: floats per vertex, 10: position, normal, uv in tiles + material layer (textured) or colour, then the
  * vertex's ground: the display exaggeration lifts a building's base with the relief, never its own height. */
-export interface Batch { color: Vec3; tint: Vec3; recolored: boolean; values: number[]; buffer?: WebGLBuffer; vao?: WebGLVertexArrayObject; /** WebGPU backend's vertex buffer. */ gpu?: GPUBuffer; count: number; stride: number; /** Untextured batches carry the colour per vertex (one batch, one draw per sector). */ vcolor?: boolean; /** Distinct vertex colours of a vcolor batch (inspection). */ palette?: Vec3[] }
+export interface Batch { color: Vec3; tint: Vec3; recolored: boolean; values: number[]; buffer?: WebGLBuffer; vao?: WebGLVertexArrayObject; /** Snow overlays need their own depth bias in both backends. */ snow?: boolean; /** WebGPU backend's vertex buffer. */ gpu?: GPUBuffer; count: number; stride: number; /** Untextured batches carry the colour per vertex (one batch, one draw per sector). */ vcolor?: boolean; /** Distinct vertex colours of a vcolor batch (inspection). */ palette?: Vec3[] }
 interface Entry { building: Building3dVisual; bounds: Bounds }
 /** `yard`: lot boundaries only, in a sector of their own: they change level far earlier than buildings and for a fraction of the cost. */
 export interface Sector { origin: [number, number]; entries: Entry[]; bounds: Bounds; width: number; featureLodEligible: boolean; overview: boolean; shown: boolean; yard?: boolean; cached?: { overview: boolean; featureLod?: BuildingFeatureLod; yardLevel?: number; batches: Batch[]; used: number } }
@@ -183,6 +186,7 @@ export class UrbanBuildingPass {
   private source?: Building3dScene;
   private appearance: UrbanBuildingAppearance = { style: 'cartographic', diagnostic: 'none' };
   private appearanceKey = '';
+  private snowAltitudes = new Map<string, number>();
   private tick = 0;
   /** Building id → its sector, for targeted replacements. */
   private index = new Map<string, Sector>();
@@ -193,9 +197,10 @@ export class UrbanBuildingPass {
   setScene(scene: Building3dScene | undefined, appearance: UrbanBuildingAppearance): void {
     this.night=appearance.ambience==='night';
     appearance={...appearance,ambience:undefined};
-    const key = JSON.stringify(appearance);
+    const key = JSON.stringify(appearance) + roofSeasonKey();
     if (this.source === scene && this.appearanceKey === key) return;
     this.clear(); this.source = scene; this.appearance = { ...appearance }; this.appearanceKey = key;
+    this.snowAltitudes = townRoofAltitudes(scene?.buildings ?? []);
     const sectors = new Map<string, Sector>();
     for (const building of scene?.buildings ?? []) {
       const box = bounds(building);
@@ -250,11 +255,11 @@ export class UrbanBuildingPass {
       const role = `${programme?.role ?? ''}${programme?.landmark ? ' monument' : ''}`;
       // Walls and bridges follow the relief whole; a building keeps its real height above its ground.
       const ground = /^city3d-(wall|bridge)/.test(building.id) || !Number.isFinite(building.ground_z_m) ? Infinity : building.ground_z_m;
-      eachBuildingTriangle(building, face => {
+      const paintFace = (face: BuildingTriangle, snow = 0): void => {
         const raw = face.material ?? (face.surface === 'roof' ? face.materials.cladding : face.materials.coating), tm = /@([0-9a-f]{6}|[0-9a-f]{3})$/.exec(raw ?? '');
         const id = tm ? raw.slice(0, tm.index) : raw;
         const paint = buildingPaint(face.materials, building.function, building3dHeight(building), this.appearance, id, {materials: this.source?.materials ?? []});
-        const layer = textured ? materialLayer(id ?? (face.surface === 'roof' ? face.materials.cladding : face.materials.coating)) : -1;
+        const layer = textured && !snow ? materialLayer(id ?? (face.surface === 'roof' ? face.materials.cladding : face.materials.coating)) : -1;
         const base = face.surface === 'roof' ? paint.roof : paint.wall, key = `${raw}|${face.surface}`;
         let c = colors.get(key);
         if (!c) {
@@ -271,20 +276,32 @@ export class UrbanBuildingPass {
           }
           if (face.surface === 'roof' && this.appearance.diagnostic === 'none' && this.appearance.colors?.building) c = rgb(this.appearance.colors.building);
           const tree = /^city3d:tree:(crown|trunk)$/.exec(id ?? '');   // switch treeHouseGreens: forest greens, whatever the colour mode
-          if (tree) c = rgb(tree[1] === 'crown' ? '#5f8247' : '#4b5a36');
+          if (tree) c = rgb(tm?.[1].length === 6 ? `#${tm[1]}` : tree[1] === 'crown' ? '#5f8247' : '#4b5a36');   // a canopy layer may carry its own green
           if (id === 'city3d:water') c = rgb('#' + (tm?.[1] ?? '8aaeb8'));
           colors.set(key, c);
         }
+        if (snow) c = snowRoofTint(c, snow, -(face.normal[0] + face.normal[1]) * .4);
         const recolored = this.appearance.diagnostic === 'none' && (!!this.appearance.colors?.building && face.surface === 'roof' || tm?.[1].length === 6 || !!culture && !building.id.startsWith('city3d-'));
-        const color = textured ? `${c.join(',')}|${layer}|${recolored}` : 'vertex-colour', mean = MATERIALS.layers[layer]?.mean_rgb;
+        const color = textured ? `${c.join(',')}|${layer}|${recolored}|${!!snow}` : `vertex-colour|${!!snow}`, mean = MATERIALS.layers[layer]?.mean_rgb;
         const tint = mean && recolored ? c.map((v, i) => v / Math.max(0.04, mean[i] / 255)) as Vec3
           : tm?.[1].length === 3 ? [...tm[1]].map(v => parseInt(v, 16) / 8) as Vec3 : [1, 1, 1] as Vec3;
-        let batch = groups.get(color); if (!batch) { batch = { color: textured ? c : [1, 1, 1], tint, recolored, values: [], count: 0, stride: 10, vcolor: !textured, palette: [] }; groups.set(color, batch); }
+        let batch = groups.get(color); if (!batch) { batch = { color: textured ? c : [1, 1, 1], tint, recolored, snow: !!snow, values: [], count: 0, stride: 10, vcolor: !textured, palette: [] }; groups.set(color, batch); }
         if (batch.palette && !batch.palette.some(q => q[0] === c[0] && q[1] === c[1] && q[2] === c[2])) batch.palette.push(c);
         for (const [i, p] of face.points.entries()) {
           batch.values.push(p[0] - sector.origin[0], p[2], p[1] - sector.origin[1], face.normal[0], face.normal[2], face.normal[1]);
           if (textured) { const [u, v] = faceUv(p, face.normal, layer); batch.values.push(u, v, layer); } else batch.values.push(c[0], c[1], c[2]);
           batch.values.push(face.ground?.[i] ?? Math.min(p[2], ground));
+        }
+      };
+      const snow = this.appearance.style !== 'silhouette' && this.appearance.diagnostic === 'none' ? mapGroundSnow(this.snowAltitudes.get(building.id) ?? building.ground_z_m, this.appearance.roofSnow) : 0;
+      eachBuildingTriangle(building, face => {
+        paintFace(face);
+        // Cover-only geometry: chimneys, parapets, walls, trees and civil works keep their material.
+        const material = face.material ?? face.materials.cladding;
+        if (!snow || face.surface !== 'roof' || /^city3d:(wall|tree|road|water)/.test(material) || building.id.startsWith('city3d-')) return;
+        for (const patch of roofSnowPatches(face.points.map(([x, y, z]) => ({ x, y, z })), face.normal, .025)) {
+          const points = patch.points.map(p => [p.x, p.y, p.z + .018] as [number, number, number]);
+          for (let i = 1; i + 1 < points.length; i++) paintFace({ ...face, points: [points[0], points[i], points[i + 1]] }, snow * patch.weight);
         }
       }, overview, featureLod, yardLevel);
     }
@@ -294,6 +311,7 @@ export class UrbanBuildingPass {
       this.upload(batch, new Float32Array(batch.values));
       batch.count = batch.values.length / batch.stride; batch.values = []; batches.push(batch);
     }
+    batches.sort((a, b) => Number(a.snow) - Number(b.snow));
     sector.cached = { overview, featureLod, yardLevel, batches, used: this.tick };
   }
   /** Vertex buffer of a batch (10 floats per vertex). */
@@ -373,6 +391,10 @@ export class UrbanBuildingPass {
       gl.uniform3f(gl.getUniformLocation(p, 'offset'), sector.origin[0] - frame.cameraX, -frame.targetHeight, sector.origin[1] - frame.cameraY);
       gl.uniform2f(gl.getUniformLocation(p,'sectorOrigin'),sector.origin[0],sector.origin[1]);
       for (const batch of sector.cached!.batches) {
+        // Centimetres of physical separation are below depth precision in a
+        // town-wide view. Bias only snow; never lift the roof or its walls.
+        if (batch.snow) { gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(-1, -2); }
+        else gl.disable(gl.POLYGON_OFFSET_FILL);
         if (texProgram) {
           gl.uniform3fv(gl.getUniformLocation(p, 'material'), batch.color); gl.uniform3fv(gl.getUniformLocation(p, 'tint'), batch.tint);
           gl.uniform1i(gl.getUniformLocation(p, 'recolored'), batch.recolored ? 1 : 0);
@@ -380,7 +402,7 @@ export class UrbanBuildingPass {
         gl.bindVertexArray(batch.vao!); gl.drawArrays(gl.TRIANGLES, 0, batch.count);
       }
     }
-    gl.bindVertexArray(null);
+    gl.disable(gl.POLYGON_OFFSET_FILL); gl.bindVertexArray(null);
   }
   pick(origin: BuildingVector, direction: BuildingVector): { id?: string; distance: number } {
     let distance = Infinity, id: string | undefined;

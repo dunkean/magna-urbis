@@ -520,8 +520,8 @@ fn camp_entrance(
     !streets.is_empty()
 }
 
-/// End each dry approach in the entrance belt. Both ends of a through road
-/// survive; crossings and wholly internal streets keep their physical access.
+/// End each destination approach in the entrance belt. A real through route,
+/// crossings and wholly internal streets keep their physical access.
 /// Camp paths take over inside, rather than a cart road bisecting the centre.
 fn camp_approaches(streets: &mut Vec<Street>, envelope: &Shape, width: f64, kerb: bool) {
     // Retain a usable kerb beside the road's half-width, not just its end cap.
@@ -537,6 +537,13 @@ fn camp_approaches(streets: &mut Vec<Street>, envelope: &Shape, width: f64, kerb
     if belt.is_empty() { return; }
     *streets = streets.iter().flat_map(|s| {
         if matches!(s.role.as_str(), "bridge" | "ford" | "causeway") { return vec![s.clone()]; }
+        // A regional path that enters and leaves the land is a through route.
+        // Separate arms ending at the settlement nucleus are destination access,
+        // not evidence for a road across the tents.
+        let on_edge = |p: Point| ring.windows(2).any(|w| g::distance(p, w[0], w[1]).0 < 0.1);
+        if s.path.first().is_some_and(|&p| on_edge(p)) && s.path.last().is_some_and(|&p| on_edge(p)) {
+            return vec![s.clone()];
+        }
         let parts: Vec<_> = belt.iter().flat_map(|b| clip(s, b)).collect();
         if parts.is_empty() { vec![s.clone()] } else { parts }
     }).collect();
@@ -546,18 +553,22 @@ fn camp_approaches(streets: &mut Vec<Street>, envelope: &Shape, width: f64, kerb
 mod camp_approach_tests {
     use super::*;
     #[test]
-    fn both_ends_of_a_through_road_keep_access_at_the_camp_entrance() {
+    fn camp_destination_paths_keep_their_bends_and_widths_but_real_through_routes_survive() {
         let envelope = g::rectangle(0., 0., 200., 200.);
         let road = Street { path: vec![Point{x:0.,y:100.},Point{x:200.,y:100.}], widths:vec![6.,8.],rank:0,role:"regional".into() };
         let mut streets = vec![road.clone()];
         camp_approaches(&mut streets, &envelope, 3., true);
-        assert_eq!(streets.len(),2);
-        assert_eq!(streets[0].path[0], road.path[0]);
-        assert_eq!(streets[1].path.last(), road.path.last());
-        // The stubs stop at the belt (at least 24 m deep): the road never crosses the camp.
-        assert!(streets.iter().all(|s|s.path.windows(2).all(|w|g::distance(Point{x:100.,y:100.},w[0],w[1]).0>70.)));
-        assert_eq!(streets[0].widths[0],6.);
-        assert_eq!(*streets[1].widths.last().unwrap(),8.);
+        assert_eq!(serde_json::to_vec(&streets).unwrap(), serde_json::to_vec(&vec![road]).unwrap());
+        let inbound = Street { path: vec![Point{x:0.,y:100.},Point{x:8.,y:102.},Point{x:16.,y:100.},Point{x:100.,y:100.}],
+            widths: vec![2.1;4], rank:2, role:"regional".into() };
+        streets = vec![inbound.clone()];
+        camp_approaches(&mut streets, &envelope, 3., true);
+        // Repeat the post-routing pass: clipping is stable, the bends are not replaced.
+        camp_approaches(&mut streets, &envelope, 3., true);
+        assert_eq!(streets.len(), 1);
+        assert_eq!(&streets[0].path[..3], &inbound.path[..3]);
+        assert!(streets[0].path.last().unwrap().x <= 24.01);
+        assert!(streets[0].widths.iter().all(|&w| (w - 2.1).abs() < 1e-9));
     }
     #[test]
     fn an_existing_crossing_and_wholly_internal_access_are_never_dropped() {
@@ -585,7 +596,9 @@ mod camp_approach_tests {
         let water=vec![0;64*64];let surface=Surface{geometry:None,width:400.,n:64,height:&height,water:&water, interpolation: Default::default(),};
         let road=Street{path:vec![Point{x:100.,y:200.},Point{x:300.,y:200.}],widths:vec![6.;2],rank:0,role:"regional".into()};
         assert!(!routing::path_clear(surface,&road.path,0.12));
-        let mut entrances=vec![road];camp_approaches(&mut entrances,&envelope,3.,true);
+        let mut entrances=vec![Street {path:vec![road.path[0],Point{x:200.,y:200.}],..road.clone()},
+            Street {path:vec![Point{x:200.,y:200.},road.path[1]],..road}];
+        camp_approaches(&mut entrances,&envelope,3.,true);
         assert_eq!(entrances.len(),2);
         assert!(entrances.iter().all(|s|routing::path_clear(surface,&s.path,0.12)));
     }
