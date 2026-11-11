@@ -159,6 +159,16 @@ fn raw_grade_limit(s: &SettlementSpec, prep: &SitePrep) -> f64 {
     0.16 + 0.25 * prep.mountain + 0.08 * s.site_prefs.woodland
         + 0.24 * rural_flexibility(s.population)
 }
+fn minimum_buildable_fraction(pop: u32, mountain: f64) -> f64 {
+    let minimum = if pop >= 1000 {
+        0.45
+    } else if pop >= 150 {
+        0.35
+    } else {
+        0.2
+    };
+    minimum * (1.0 - 0.6 * mountain).max(0.0) * (1.0 - rural_flexibility(pop))
+}
 fn score(f: &Fields, i: usize, s: &SettlementSpec, prep: &SitePrep, cfg: &Config, noise: &Noise) -> (Scores, bool) {
     let pop = s.population;
     let p = f.pos(i);
@@ -217,14 +227,7 @@ fn score(f: &Fields, i: usize, s: &SettlementSpec, prep: &SitePrep, cfg: &Config
     let elevation = cfg.elevation * 0.9 * (2.0 * f.elevation(i) - 1.0);
     let variation = 0.35 * cfg.variation_weight * noise.fbm(p.x / 900.0, p.y / 900.0, 2);
     let edge = p.x.min(p.y).min(f.r.width - p.x).min(f.r.width - p.y);
-    let min_bf = if pop >= 1000 {
-        0.45
-    } else if pop >= 150 {
-        0.35
-    } else {
-        0.2
-    } * (1.0 - 0.6 * mountain).max(0.0)
-        * (1.0 - rural);
+    let min_bf = minimum_buildable_fraction(pop, mountain);
     let valid = f.r.water[i] == 0
         && edge >= cfg.edge_margin * f.r.width + 0.8 * ext + 40.0
         && sl <= cap_s
@@ -284,6 +287,91 @@ fn cluster_bonus(cfg: &Config, placed: &[Settlement], pop: u32, p: Point) -> f64
         })
         .fold(0.0, f64::max)
         * cfg.clustering
+}
+
+/// Cumulative list-only relaxations, ordered from the least to the most permissive.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum RequiredSiteStage {
+    Slope,
+    Buildable,
+    SiteType,
+    EdgeMargin,
+    WaterDistance,
+    Spacing,
+    MapCell,
+    WetCell,
+}
+impl RequiredSiteStage {
+    fn warning(self) -> &'static str {
+        match self {
+            Self::Slope => "limites de pente assouplies",
+            Self::Buildable => "pente et part constructible assouplies",
+            Self::SiteType => "pente, part constructible et type de site assouplis",
+            Self::EdgeMargin => "marge de bord réduite au minimum du cadre",
+            Self::WaterDistance => "distance à l'eau et risque d'inondation assouplis",
+            Self::Spacing => "espacement entre les implantations assoupli",
+            Self::MapCell => "meilleure cellule terrestre disponible, cadre incomplet",
+            Self::WetCell => "aucune terre sèche, meilleure cellule disponible",
+        }
+    }
+}
+
+/// A list is an installation request, even when the terrain cannot meet the preferences.
+/// Inspect every cell (including land missed by the normal stride), retain the earliest
+/// successful relaxation, then choose its highest score. Valid rasters are never empty.
+fn required_list_site(
+    f: &Fields,
+    s: &SettlementSpec,
+    prep: &SitePrep,
+    cfg: &Config,
+    noise: &Noise,
+    placed: &[Settlement],
+) -> (usize, RequiredSiteStage) {
+    let pop = s.population;
+    let ext = extent_radius(pop);
+    // Keep the normal per-town frame clearance when dropping the extra map margin.
+    let frame_minimum = 0.8 * ext + 40.0;
+    let requested_edge = cfg.edge_margin * f.r.width + frame_minimum;
+    let min_bf = minimum_buildable_fraction(pop, prep.mountain);
+    let mut best: Option<(usize, RequiredSiteStage, f64)> = None;
+    for i in 0..f.r.n * f.r.n {
+        let p = f.pos(i);
+        let (scores, _) = score(f, i, s, prep, cfg, noise);
+        let edge = p.x.min(p.y).min(f.r.width - p.x).min(f.r.width - p.y);
+        let water_site = pop >= 150
+            && (f.ds[i] < ext + 80.0 || (f.db[i] < ext + 120.0 && f.hab[i] > 2.0));
+        let water_ok = f.dw[i] >= if water_site { 40.0 } else { 25.0_f64.max(0.35 * ext) }
+            && !(f.dw[i] < 200.0 && f.hab[i] < 1.5);
+        let clear = placed.iter().all(|other| {
+            p.distance(other.center) >= extent_gap(pop, other.spec.population)
+                .max(0.4 * pair_spacing(pop, other.spec.population))
+        });
+        let stage = if f.r.water[i] != 0 {
+            RequiredSiteStage::WetCell
+        } else if edge < frame_minimum {
+            RequiredSiteStage::MapCell
+        } else if !clear {
+            RequiredSiteStage::Spacing
+        } else if !water_ok {
+            RequiredSiteStage::WaterDistance
+        } else if edge < requested_edge {
+            RequiredSiteStage::EdgeMargin
+        } else if !matches(f, i, s) {
+            RequiredSiteStage::SiteType
+        } else if scores.buildable_fraction < min_bf {
+            RequiredSiteStage::Buildable
+        } else {
+            RequiredSiteStage::Slope
+        };
+        let value = scores.total + cluster_bonus(cfg, placed, pop, p);
+        if best.is_none_or(|(_, previous, score)| {
+            stage < previous || (stage == previous && value > score)
+        }) {
+            best = Some((i, stage, value));
+        }
+    }
+    let (i, stage, _) = best.expect("validated settlement raster has cells");
+    (i, stage)
 }
 fn relief_factor(relief: &str) -> f64 {
     match relief {
@@ -438,6 +526,7 @@ pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
         };
         let mut chosen = None;
         let mut ranking = None;
+        let mut forced = false;
         if let Some(p) = s.position {
             let i = f.index(p);
             // Keep an explicitly chosen dry point exactly; never silently move a user's marker.
@@ -548,7 +637,7 @@ pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
             // on a steep bank while a smaller buildable shelf is available.
             // Rank by usable land independently of the user's scoring weights;
             // retain the ordinary ranking only to break equal-area ties.
-            if chosen.is_none() {
+            if chosen.is_none() && cfg.mode != "list" {
                 let relax = *relaxations.last().unwrap_or(&1.0);
                 if let Some((rank, &(i, ranking_score), _, _)) = ranked
                     .iter()
@@ -580,6 +669,15 @@ pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
                 }
             }
         }
+        if chosen.is_none() && cfg.mode == "list" {
+            let (i, stage) = required_list_site(f, &s, &prep, cfg, &noise, &out.settlements);
+            out.warnings.push(format!(
+                "{} ({} habitants) : implantation forcée ; {}",
+                s.key, pop, stage.warning()
+            ));
+            chosen = Some((i, f.pos(i), 0.4));
+            forced = true;
+        }
         let Some((i, mut p, relax)) = chosen else {
             out.warnings.push(format!(
                 "{} ({} inhabitants): no suitable position available",
@@ -587,7 +685,7 @@ pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
             ));
             continue;
         };
-        if s.position.is_none() {
+        if s.position.is_none() && !forced {
             let mut jr = root.fork(&format!("settlement:{}", s.key)).fork("jitter");
             let jitter = Point {
                 x: p.x + jr.range(-0.3, 0.3) * f.cell * stride as f64,
@@ -652,6 +750,61 @@ pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
 mod tests {
     use super::*;
     use crate::settlements::Raster;
+
+    #[test]
+    fn list_mode_places_requested_settlement_on_steep_cone() {
+        let n = 32;
+        let width = 3200.0;
+        let cell = width / n as f64;
+        let height: Vec<f32> = (0..n * n)
+            .map(|i| {
+                let x = (i % n) as f64 * cell + 0.5 * cell - width / 2.0;
+                let y = (i / n) as f64 * cell + 0.5 * cell - width / 2.0;
+                (10000.0 - 2.0 * x.hypot(y)) as f32
+            })
+            .collect();
+        let water = vec![0; n * n];
+        let rivers = vec![0.0; n * n];
+        let ids = vec![-1; n * n];
+        let f = Fields::new(Raster {
+            width,
+            n,
+            height: &height,
+            water: &water,
+            water_level: &height,
+            river_width: &rivers,
+            river_ids: &ids,
+        });
+        let spec = SettlementSpec {
+            key: "steep-town".into(),
+            population: 5000,
+            ..Default::default()
+        };
+        let cfg = Config {
+            mode: "list".into(),
+            list: vec![spec.clone()],
+            edge_margin: 0.15,
+            relief: "high-mountains".into(),
+            ..Default::default()
+        };
+        let prep = SitePrep::new(&spec, &cfg);
+        // Neither the normal slope gates nor the old buildable-shelf fallback can pass.
+        assert!(f.slope.iter().all(|&slope| slope as f64 > raw_grade_limit(&spec, &prep)));
+        assert_eq!(f.fraction(f.pos(n * n / 2), extent_radius(spec.population)), 0.0);
+
+        let out = place("required-steep-town", &f, &cfg);
+        assert_eq!(out.requested, 1);
+        assert_eq!(out.settlements.len(), 1);
+        let town = &out.settlements[0];
+        assert_eq!(town.spec.key, spec.key);
+        assert_eq!(town.scores.buildable_fraction, 0.0);
+        assert!(town.scores.total.is_finite());
+        assert_eq!(f.r.water[f.index(town.center)], 0);
+        let edge = town.center.x.min(town.center.y)
+            .min(width - town.center.x).min(width - town.center.y);
+        assert!(edge >= cfg.edge_margin * width + 0.8 * town.radius + 40.0);
+        assert!(out.warnings.iter().any(|warning| warning.contains("implantation forcée")));
+    }
 
     #[test]
     fn island_spur_and_lakeshore_sites_are_recognised() {

@@ -125,9 +125,9 @@ export function mountV2TestHook(bindings: V2TestBindings): void {
       Object.assign(settings.options, {
         seed: setStepSeed(setStepSeed(req.seed, 'settle-sites', placementSeed), 'settle-roads', placementSeed),
         culture: req.culture, population: req.population, workflow: 'list', mapSize: width, biome: decorBiome(meta),
-        ...((TERRAIN_RELIEFS as readonly string[]).includes(relief) ? { relief } : {}),
       });
-      settings.terrain = { ...settings.terrain, climate: decorClimateZone(meta), climateValues: decorClimate(meta), forest: cityForestSettings(query) };
+      // The decor relief goes to terrain.relief (options.relief only takes the legacy families, as in cityCode).
+      settings.terrain = { ...settings.terrain, ...((TERRAIN_RELIEFS as readonly string[]).includes(relief) ? { relief: relief as NonNullable<V2Settings['terrain']>['relief'] } : {}), climate: decorClimateZone(meta), climateValues: decorClimate(meta), forest: cityForestSettings(query) };
       settings.extent = width; settings.settlementCount = 1; settings.local = {};
       // Placement: the shared City Bench rule.
       const original = meta.settlements[0];
@@ -148,7 +148,7 @@ export function mountV2TestHook(bindings: V2TestBindings): void {
       if (!request) throw new Error('prepare() first');
       await bindings.run();
       const world = bindings.getWorld();
-      if (!world?.settlements?.length) throw new Error('The chain produced no placed town');
+      if (!world?.settlements?.length) throw new Error(`The chain produced no placed town (stage ${world?.stats?.['v2.stage'] ?? '?'}, backend ${world?.stats?.['v2.regionBackend'] ?? '?'}, requested ${world?.stats?.['settlements.requested'] ?? '?'}, warning: ${world?.stats?.['settlements.warning'] || 'none'})`);
       if (world.stats.decor !== request.decor) throw new Error(`The world is not the saved decor ${request.decor} (terrain backend ${world.stats.backend})`);
     },
     /** Frames the town in the real viewport (#map size): City Bench's "City" rule, its core at 1.4 px/m, an activity yard at 7 px/m. */
