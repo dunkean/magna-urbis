@@ -12,7 +12,7 @@
 //   node scripts/export_decors.mjs --set biome  (City Bench: 11 climate zones × coast/river × 2 sizes,
 //        ids city-<zone>-<coast|river>-<s|l>; --only takes a comma list of id prefixes)
 //   node scripts/export_decors.mjs --set biome --rows rows.json  (v7 regeneration: one decor per row,
-//        [{decorId, zone, site: coast|river, size: s|l, source: neural|procedural, seed, culture}], fresh relief per row)
+//        [{decorId, zone, site: coast|river, size: s|l, source: neural|procedural, seed, culture, relief?}], fresh relief per row)
 //
 // Decors land in web/decors/ (ignored by git) with an index.json read by urbanbench.html.
 // The variation list is deterministic: the same --count gives the same decors.
@@ -168,15 +168,17 @@ function cityVariation(i, attempt = 0, central = false) {
   const seedBase = row ? row.seed : `city-${env.id}-${size.id}`;
   const seed = attempt ? `${seedBase}-${attempt}` : seedBase, width = size.width, centred = attempt < 3 && !central;
   const source = row?.source === 'procedural' ? 'procedural' : neuralSource, culture = row?.culture ?? env.culture;
+  // A v7/v8 row may override the zone's default relief (the sheet rotates reliefs per zone for diversity).
+  const relief = row?.relief ?? env.relief;
   const params = new URLSearchParams({
     // Biome set on the fastest engines: neural relief on the CUDA service, hydrology and settlements on the native Rust engine.
-    engine: 'rust', profile: biome ? 'local' : 'web', source, neural, v: '4', seed, width: String(width), relief: env.relief, climate: env.zone ? 'custom' : env.climate, erosion: '1',
+    engine: 'rust', profile: biome ? 'local' : 'web', source, neural, v: '4', seed, width: String(width), relief, climate: env.zone ? 'custom' : env.climate, erosion: '1',
     auto: '1', style: 'atlas', hydro_main: env.river, hydro_meanders: 'natural', hydro_lakes: env.lakes,
     compute: flag('cpu') ? 'wasm' : 'gpu-f32', generation: flag('cpu') ? 'cpu' : 'gpu-erosion',
     hydro_engine: 'rust', hydro_enabled: '1', hydro_compute: flag('cpu') ? 'cpu' : 'auto',
     fit: 'scale', slopes: '1',
   });
-  if (env.relief === 'mixed') params.set('mix', '0.5');
+  if (relief === 'mixed') params.set('mix', '0.5');
   // v7 rows: a procedural source is generated on the 1024 grid of the decor (neural sources stay at their native 30 m).
   if (row && source === 'procedural') params.set('sampleSpacing', String(width / ROW_PLANNING));
   if (env.zone) { const [temperature, temperatureStd, precipitation, precipitationCv, base] = ZONE_CLIMATE[env.zone]; for (const [k, v] of Object.entries({ temperature, temperatureStd, precipitation, precipitationCv, climateBase: base })) params.set(k, String(v)); }
@@ -191,7 +193,7 @@ function cityVariation(i, attempt = 0, central = false) {
   const n = String(i % ENVS.length + 1).padStart(2, '0');
   const id = row ? row.decorId : biome ? `city-${env.id}-${size.id}` : `city-${n}-${env.id}-${size.id}`;
   const label = row ? `${env.zone} · ${env.label} · ${size.label} · ${row.decorId}` : biome ? `${env.zone} · ${env.label} · ${size.label}` : `${n} · ${env.label} · ${size.label}`;
-  const tags = { kit: 'city', environment: env.id, size: size.size, climate: env.climate, relief: env.relief, coast: coast.id, river: env.river, lakes: env.lakes, culture, roads: env.level, placement: centred ? 'centre' : 'central-best', source, hydrology: 'rust', seed };
+  const tags = { kit: 'city', environment: env.id, size: size.size, climate: env.climate, relief, coast: coast.id, river: env.river, lakes: env.lakes, culture, roads: env.level, placement: centred ? 'centre' : 'central-best', source, hydrology: 'rust', seed };
   return { id, label, tags, query: params.toString() };
 }
 

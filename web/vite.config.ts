@@ -157,6 +157,6 @@ export default defineConfig(({ mode: requested, command }) => {
       output: { banner: vendorNotice },
     },
   },
-  worker: { format: mode === 'housebench' ? 'iife' : 'es', plugins: () => single ? [] : [externalAssets()], rollupOptions: { output: { banner: vendorNotice } } },
+  worker: { format: 'es', plugins: () => single ? [] : [externalAssets()], rollupOptions: { output: { banner: vendorNotice } } },
   };
 });
