@@ -1,3 +1,5 @@
+import type { CityGround } from './cityGroundModes';
+export type { CityGround } from './cityGroundModes';
 /**
  * Appearance recipe: the user's visual intent split into typed components, resolved once per change
  * (never per frame) into a frozen, fully defaulted `ResolvedAppearance` for one target.
@@ -19,7 +21,6 @@ import type { ResolvedDisplayQuality } from './displayQuality';
 
 export type RenderTarget = 'view2d' | 'view3d' | 'export';
 export type RenderPath = 'classic' | 'composite';
-export type CityGround = 'map' | 'render' | 'render3d' | 'render3d-brush' | 'render-v2' | 'render-v2-substrate' | 'render-v2-moisture' | 'render-v2-vegetation' | 'render-v2-snow';
 
 export interface CityInput {
   view?: CityView; palette?: CityPalette; buildingStyle?: UrbanBuildingStyle; diagnostic?: UrbanBuildingDiagnostic; layers?: Partial<CityLayers>;

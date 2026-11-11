@@ -1,4 +1,5 @@
-import { bindTree, setText, translate } from '../v2/i18n';
+import { bindTree, setText, setDynamicText, translate, onLanguageChange } from '../v2/i18n';
+import { convertUnits, displayUnit, getDistanceUnit, onUnitsChange, unitInputNumber, type PhysicalUnit } from '../v2/units';
 
 export interface ParameterChoice { value: string; label: string }
 export interface ParameterField {
@@ -35,6 +36,21 @@ export interface ParameterFormBindings {
 }
 export interface ParameterForm { sync(): void; dispose(): void }
 let parameterFormSequence = 0;
+function physicalUnit(field: ParameterField): PhysicalUnit | undefined {
+  const unit = field.unit ?? field.label.match(/\((m|km|m²|km²)\)$/)?.[1];
+  return unit === 'm' || unit === 'km' || unit === 'm²' || unit === 'km²' ? unit : undefined;
+}
+function inputConversion(field: ParameterField, value: unknown, inverse = false): unknown {
+  const source = physicalUnit(field);
+  return source && typeof value === 'number' ? inverse
+    ? convertUnits(value, displayUnit(source, getDistanceUnit()), source)
+    : unitInputNumber(convertUnits(value, source, displayUnit(source, getDistanceUnit()))) : value;
+}
+function fieldCaption(field: ParameterField): string {
+  const source = physicalUnit(field), text = translate(field.label);
+  return source && /\((m|km|m²|km²)\)$/.test(field.label)
+    ? `${text.replace(/\s*[（(][^()（）]*[)）]\s*$/, '')} (${displayUnit(source, getDistanceUnit())})` : text;
+}
 
 /** Shared scalar editor. It never rebuilds controls when values or language change. */
 export function mountParameterForm(root: HTMLElement, fields: readonly ParameterField[], bindings: ParameterFormBindings): ParameterForm {
@@ -45,7 +61,7 @@ export function mountParameterForm(root: HTMLElement, fields: readonly Parameter
   for (const field of fields) {
     const label = document.createElement('label'); label.className = `parameter-field parameter-${field.type}`;
     label.dataset.fieldPath = field.path;
-    const caption = document.createElement('span'); caption.className = 'parameter-caption'; setText(caption, field.label); label.append(caption);
+    const caption = document.createElement('span'); caption.className = 'parameter-caption'; setDynamicText(caption, () => fieldCaption(field)); label.append(caption);
     let input: HTMLInputElement | HTMLSelectElement;
     if (field.type === 'select' || field.type === 'boolean' && field.optional) {
       input = document.createElement('select');
@@ -81,17 +97,18 @@ export function mountParameterForm(root: HTMLElement, fields: readonly Parameter
       reset = document.createElement('button'); reset.type = 'button'; reset.className = 'parameter-reset'; setText(reset, field.emptyLabel ?? 'Automatic'); reset.setAttribute('aria-label', `${field.label} · ${field.emptyLabel ?? 'Automatic'}`);
       const onReset = () => bindings.setValue(field.path, field.resetValue); reset.addEventListener('click', onReset); cleanups.push(() => reset!.removeEventListener('click', onReset)); label.append(reset);
     }
-    if (field.unit) { const unit = document.createElement('span'); unit.className = 'parameter-unit'; setText(unit, field.unit); label.append(unit); }
+    if (field.unit) { const unit = document.createElement('span'); unit.className = 'parameter-unit'; setDynamicText(unit, () => physicalUnit(field) ? displayUnit(physicalUnit(field)!, getDistanceUnit()) : field.unit!); label.append(unit); }
     if (field.help) { const help = document.createElement('small'); help.className = 'parameter-help'; help.id = `${input.id}-help`; setText(help, field.help); input.setAttribute('aria-describedby', help.id); label.append(help); }
     const onInput = () => {
       let value: unknown;
       if (field.type === 'boolean') value = field.optional ? input.value === '' ? undefined : input.value === 'true' : (input as HTMLInputElement).checked;
       else if (field.type === 'number') {
         if (input.value.trim() === '' && field.optional) value = undefined;
-        else { value = input.value.trim() === '' ? NaN : Number(input.value); if (!Number.isFinite(value) || field.min !== undefined && (value as number) < field.min || field.max !== undefined && (value as number) > field.max) { input.setAttribute('aria-invalid', 'true'); return; } }
+        else { value = inputConversion(field, input.value.trim() === '' ? NaN : Number(input.value), true); if (!Number.isFinite(value) || field.min !== undefined && (value as number) < field.min - 1e-6 || field.max !== undefined && (value as number) > field.max + 1e-6) { input.setAttribute('aria-invalid', 'true'); return; } }
+        if (typeof value === 'number') value = Math.min(field.max ?? Infinity, Math.max(field.min ?? -Infinity,value));
       } else value = field.optional && input.value === '' ? undefined : input.value;
       input.removeAttribute('aria-invalid');
-      if (slider && value !== undefined) slider.value = String(value);
+      if (slider && value !== undefined) slider.value = String(inputConversion(field, value));
       bindings.setValue(field.path, field.fromInput && value !== undefined ? field.fromInput(value) : value);
     };
     const event = field.type === 'boolean' || field.type === 'select' ? 'change' : 'input';
@@ -105,6 +122,19 @@ export function mountParameterForm(root: HTMLElement, fields: readonly Parameter
   bindTree(root);
   const sync = () => {
     for (const { field, input, slider, reset } of controls) {
+      input.setAttribute('aria-label', fieldCaption(field));
+      const sourceUnit = physicalUnit(field);
+      if (sourceUnit) {
+        const label = input.closest('label')!;
+        label.querySelector('.parameter-caption')!.textContent = fieldCaption(field);
+        const unitLabel = label.querySelector('.parameter-unit'); if (unitLabel) unitLabel.textContent = displayUnit(sourceUnit, getDistanceUnit());
+        for (const control of [input, slider]) if (control) {
+          if (field.min !== undefined) (control as HTMLInputElement).min = String(inputConversion(field, field.min));
+          if (field.max !== undefined) (control as HTMLInputElement).max = String(inputConversion(field, field.max));
+          (control as HTMLInputElement).step = 'any';
+          control.setAttribute('aria-label', fieldCaption(field));
+        }
+      }
       input.disabled = bindings.disabled?.() ?? false;
       const mixed = bindings.isMixed?.(field.path) ?? false;
       if (slider) slider.hidden = mixed;
@@ -118,7 +148,8 @@ export function mountParameterForm(root: HTMLElement, fields: readonly Parameter
         continue;
       }
       if (input instanceof HTMLInputElement) input.placeholder = field.placeholder ? translate(field.placeholder) : '';
-      const raw = bindings.getValue(field.path) ?? field.defaultValue, value =raw !== undefined && field.toInput ? field.toInput(raw) : raw;
+      const raw = bindings.getValue(field.path) ?? field.defaultValue, converted = raw !== undefined && field.toInput ? field.toInput(raw) : raw;
+      const value = inputConversion(field, converted);
       if (slider) {
         slider.disabled = input.disabled;
         if (slider !== document.activeElement) slider.value = String(value ?? field.min);
@@ -142,6 +173,7 @@ export function mountParameterForm(root: HTMLElement, fields: readonly Parameter
       input.removeAttribute('aria-invalid');
     }
   };
+  cleanups.push(onUnitsChange(sync), onLanguageChange(sync));
   sync(); return { sync, dispose: () => { cleanups.forEach(cleanup => cleanup()); root.replaceChildren(); } };
 }
 

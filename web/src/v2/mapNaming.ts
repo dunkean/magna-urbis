@@ -5,6 +5,8 @@ import type { World, UrbanLayer } from '../gen/types';
 import type { V2Settings } from './contracts';
 import { cloneV2TerrainForStage } from './worldState';
 import { applyLabelEdits } from './mapLabels';
+import { presentName } from '../gen/names/displayNames';
+import type { Language } from './languages';
 
 /** Detach only metadata that the names stage writes; physical geometry stays shared. */
 function namingUrban(source: UrbanLayer | undefined): UrbanLayer | undefined {
@@ -16,7 +18,7 @@ function namingUrban(source: UrbanLayer | undefined): UrbanLayer | undefined {
 }
 
 /** Rebuild only names. Retained geometry, heights and random streams are untouched. */
-export function renameMap(source: World, settings: V2Settings): World {
+export function renameMap(source: World, settings: V2Settings, language: Language = 'en'): World {
   const manual = new Map<string, string>();
   const specs = source.options.settlements;
   if (source.options.workflow === 'list' && specs && typeof specs === 'object' && 'list' in specs) {
@@ -31,13 +33,13 @@ export function renameMap(source: World, settings: V2Settings): World {
   }
   const settlements = source.settlements?.map(place => ({ ...place,
     culture: settings.local[place.key]?.culture ?? (place.main ? settings.options.culture : place.culture),
-    options: { ...place.options, ...settings.local[place.key] },
+    options: { ...place.options, ...settings.local[place.key], language: 'auto' as const },
   }));
   // List names are an input to generation, so all derived references see the corrected destination.
   const main = settlements?.find(place => place.main);
   const ordered = main ? [main, ...settlements!.filter(place => !place.main)] : settlements;
   const world: World = { ...source,
-    options: { ...source.options, language: settings.options.language, culture: settings.options.culture },
+    options: { ...source.options, language: 'auto', culture: settings.options.culture },
     terrain: cloneV2TerrainForStage(source.terrain), urban: namingUrban(source.urban), settlements,
   };
   // The synthetic list belongs only to this naming view, never to the retained generation recipe.
@@ -48,11 +50,22 @@ export function renameMap(source: World, settings: V2Settings): World {
   } };
   const root = new Rng('magna-urbis:' + source.seed);
   world.names = generateNames({ ...namingView, options: { ...namingView.options, ...settings.local.main,
-    culture: settings.local.main?.culture ?? main?.culture ?? settings.options.culture } }, root,
-    { mode: settings.naming?.mode ?? 'cultural', language: settings.naming?.displayLanguage ?? 'en' });
+    culture: settings.local.main?.culture ?? main?.culture ?? settings.options.culture, language: 'auto' } }, root,
+    { mode: settings.naming?.mode ?? 'localized', language });
   namingView.names = world.names;
   settlementNames(namingView, root);
   if (settings.naming?.title?.trim()) world.names.town = settings.naming.title.trim();
   applyLabelEdits(world, settings.naming?.labels);
   return world;
+}
+
+/** A view of the retained names: never regenerate proper names when switching the UI. */
+export function presentMapNames(source: World, language: Language, mode: 'cultural' | 'localized' = 'localized'): World {
+  if (!source.names) return source;
+  const presentation = { mode, language };
+  return { ...source, names: { ...source.names, presentation,
+    region: source.names.regionParts ? presentName(source.names.regionParts, presentation) : source.names.region,
+    entries: source.names.entries.map(entry => entry.parts && !entry.manual
+      ? { ...entry, text: presentName(entry.parts, presentation) } : entry),
+  } };
 }

@@ -33,3 +33,11 @@ dialog{border:1px solid #dcb86f55;border-radius:12px;background:#25261f;color:#e
 
 /* The 3D view (.city3d, z-index 6) fills the map area: keep the progress card and the render-status chip above it. */
 .map-area>.progress-card{z-index:12}
+
+/* Keep preferences readable in long translations and RTL interfaces. */
+.brand{flex-shrink:0}.brand h1{white-space:nowrap}.header-tools{margin-left:0;margin-inline-start:auto}.language-control #units-select{width:126px}.parameter-caption{overflow-wrap:break-word}input[type=number],input[data-option=seed],textarea[spellcheck=false],#scale-label{direction:ltr;text-align:start}html[dir=rtl] .header-caption{letter-spacing:normal}
+.family-general>.parameter-field:has(>.parameter-slider){grid-template-columns:minmax(80px,1fr) minmax(50px,1fr) 80px}
+@media(max-width:1500px){.header-caption,.header-divider{display:none}}
+@media(max-width:1200px){.header-tools .edition{display:none}}
+@media(max-width:1050px){.header-tools .science-link{display:none}}
+@media(max-width:720px){.language-control #units-select{width:78px}.app-header{flex-wrap:wrap;height:auto;min-height:61px;padding-block:7px}.header-tools{flex-wrap:wrap;justify-content:flex-end}.brand p{display:none}}

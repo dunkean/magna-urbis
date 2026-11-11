@@ -1,3 +1,5 @@
+import { CITY_3D_MATERIAL_GROUNDS, type CityGround as CityGroundMode } from '../render/cityGroundModes';
+export { CITY_3D_MATERIAL_GROUNDS } from '../render/cityGroundModes';
 import { displayQualityFor } from '../render/displayQuality';
 import { DrapeTiles } from '../render/drapeTiles';
 import { TileWaterMask } from './tileWaterMask';
@@ -110,8 +112,7 @@ export interface City3dOptions {
    * bounded cache for 2D and 3D. When given, the 3D view never realizes on its own. */
   details?: City3dDetailService;
 }
-export const CITY_3D_MATERIAL_GROUNDS = ['render3d', 'render3d-brush', 'render-v2', 'render-v2-substrate', 'render-v2-moisture', 'render-v2-vegetation', 'render-v2-snow'] as const;
-export type City3dGround = 'map' | 'render' | typeof CITY_3D_MATERIAL_GROUNDS[number];
+export type City3dGround = CityGroundMode;
 export interface City3dViewSettings { ground: City3dGround; plan: boolean; colors: 'materials' | 'uses'; exaggeration: number; refinement: 'source' | 'noise' }
 export interface City3dSurface { height: HeightLayer; water?: { n: number; levels: Float32Array; mask: Float32Array }; waterVisible?: boolean }
 export interface City3dWaterDisplay {
@@ -214,6 +215,7 @@ export function mountCity3d(options: City3dOptions): City3d {
   const $ = <T extends HTMLElement>(selector: string): T => root.querySelector(selector) as T;
   $('[data-navigation-label]').hidden = !options.navigation;
   const groundNames: Record<typeof CITY_3D_MATERIAL_GROUNDS[number], [string, string, string, string, string]> = {
+    'parchment-render': ['Satellite 2 · Painted', 'Satellite 2 · Painted', 'Satellite 2 · Painted', 'Satellite 2 · Painted', 'Satellite 2 · Painted'],
     render3d: ['Render3D · Multi-échelle', 'Render3D · Multiscale', 'Render3D · 多尺度', 'Render3D · Multiescala', 'Render3D · Multiescala'],
     'render3d-brush': ['Render3D · Pinceaux', 'Render3D · Brushes', 'Render3D · 笔刷', 'Render3D · Pinceles', 'Render3D · Pincéis'],
     'render-v2': ['Satellite · Render v2', 'Satellite · Render v2', '卫星 · Render v2', 'Satélite · Render v2', 'Satélite · Render v2'],
@@ -701,8 +703,8 @@ export function mountCity3d(options: City3dOptions): City3d {
   // ------------------------------------------------------------ buildings
   function syncBuildings(force = false): void {
     const t = terrain; if (!t) return;
-    // Lot fences, hedges and walls stand only with the parcels (composition): off, they are neither drawn nor cleared from the forest.
-    const yardLayers = options.getPlanOptions?.()?.layers, yardsShown = yardLayers?.parcelOverlay !== false && yardLayers?.lotEnclosures !== false;
+    // Lot fences, hedges and walls stand with the buildings (composition), not with the parcel diagram: off, they are neither drawn nor cleared from the forest.
+    const yardLayers = options.getPlanOptions?.()?.layers, yardsShown = yardLayers?.lotEnclosures !== false;
     const nextYards = [options.getLotEnclosures?.(), options.getPartitions?.(), yardsShown];
     if (nextYards.some((input, i) => input !== yardInputs[i])) { yardInputs = nextYards; force = true; t.invalidateTiles(); }
     const scene = options.getProjection?.() ?? options.getScene(), layouts = options.getLayouts?.(), regional = options.getRegionalStreets?.();

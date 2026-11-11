@@ -1,3 +1,6 @@
+import { cityOverlayLandKinds, cityOverlayLandKey, cityWaterCutsLand, cityCountrysideCanvasOptions } from '../render/cityEnvironment';
+import { retainedDecorOf } from './decorTerrain';
+import { decorWaterSvg } from '../ui/decorWater';
 import { displayQualityFor } from '../render/displayQuality';
 /** Display adapters for the retained RustBench terrain and CityBench geometry.
  * No generation entry point is imported here. The original Canvas renderer remains available. */
@@ -70,7 +73,6 @@ const EXPORT_OVERLAY_PX = 4096;
 const wholeMap = (width: number): ViewRasterRegion => ({ x: 0, y: 0, width, height: width, density: 2048 / width });
 /** Resources a live renderer shares with its exports: derived products keyed by revisions, and the native city map. */
 export interface SharedPassResources { cache: ResourceCache; city?: { key: string; map: ReturnType<typeof createNativeCityMap> } }
-const CARTOGRAPHIC_ONLY_VEGETATION = ['forest', 'meadow', 'marsh', 'commons'];
 /** `svg`: the terrain of the 3D background; `image`: the 2D base, with the crowns of a hidden relief. */
 type BaseRaster = { svg: string; image?: HTMLImageElement; fantasy?: FantasyRaster };
 /** Contour width factor on the 3D drape tiles. */
@@ -370,7 +372,8 @@ export class BenchRenderer {
         this.gpu!.setOverlay(undefined);
       } else this.gpu!.setWater(undefined);
     }
-    let svg = '';
+    const decor = retainedDecorOf(this.world!.terrain);
+    let svg = decor && visible ? decorWaterSvg(decor, ink ? r.palette.mapStyle : 'render3d', water.showLakes, colors) : '';
     if (t.water && visible) {
       if (ink || !this.gpuActive || isFantasyStyle(style)) svg += vectorWaterSvg(t.water, vectorDisplay, !ink);
       if (!this.gpuActive && water.overlay !== 'none') svg += vectorOverlaySvg(t.water, water.overlay, t.conditioning?.delta ? { values: t.conditioning.delta, n: t.conditioning.n } : undefined);
@@ -411,11 +414,7 @@ export class BenchRenderer {
   }
   /** Land classes the vector overlay paints. A material ground draws the physical land use in its shader, so the overlay keeps only the vegetation symbols asked for. */
   private overlayLandKinds(): true | ((kind: LandKind) => boolean) {
-    const r = this.resolved!, symbols = r.composition.vegetation.cartographic;
-    if (r.ground.traits.family === 'material') return kind => symbols && CARTOGRAPHIC_ONLY_VEGETATION.includes(kind);
-    // Illustrated grounds paint every rural class with brushes over a wash (rust/bridge/fantasyTerrain.ts): no vector polygons.
-    if (r.ground.traits.fantasy) return () => false;
-    return symbols ? true : kind => !CARTOGRAPHIC_ONLY_VEGETATION.includes(kind);
+    return cityOverlayLandKinds(this.resolved!);
   }
   /** Overlay renderer (names, roads, land use, painted/vegetation symbols); the natural layers it does not own are masked, not faked. */
   private async cartographyPass(): Promise<void> {
@@ -428,11 +427,11 @@ export class BenchRenderer {
     // The physical land use keeps its own vegetation drawing only where the composition asks for it on the vector overlay; the semantic layer is separate (hook below).
     const cartographic = r.composition.vegetation.cartographic;
     const mask: SceneMask = { water: false, contours: false, landuse: !landuse ? false : this.overlayLandKinds() };
-    const v = scene.revisions, sceneKey = JSON.stringify(['scene', mapSeasonKey(), r.ground.traits.family, v.roads, v.landuse, v.settlements, v.terrain, v.cities, shown === world, layers.roads, layers.city, r.city.visible, landuse, cartographic, world.mapSize, world.seed, world.options.biome]);
+    const v = scene.revisions, sceneKey = JSON.stringify(['scene', mapSeasonKey(), cityOverlayLandKey(r), v.roads, v.landuse, v.settlements, v.terrain, v.cities, shown === world, layers.roads, layers.city, r.city.visible, landuse, cartographic, world.mapSize, world.seed, world.options.biome]);
     const built = this.shared.cache.get(sceneKey, () => buildScene(shown, undefined, { mask }));
     const state=this;
     const palette={...biomePalette(r.palette.mapStyle,world.options.biome),frameKind:'none' as const,...(layers.decor===false?{grid:null}:{})};
-    this.cartography = createCanvasRenderer(this.overlay, shown, palette, { colors: r.palette.colors, separateText: true, textSources: () => this.city?.scenes(), buildingClearings: () => buildingOccupationShapes({ buildings: [...nativeCitiesOf(world).flatMap(city => city.scene?.buildings ?? []), ...(activityScene(world)?.buildings ?? [])] } as never)?.map(shape => shape.outer) ?? [], transparentBackground: true, terrain: () => this.landBackdrop(), scene: built, mask, roadLook: r.composition.networks.roads.look, roadStyle: () => { const c = this.resolved!.composition; return { look: c.networks.roads.look, emphasis: c.networks.roads.emphasis, night: c.ambience === 'night', colors: this.resolved!.palette.colors }; },
+    this.cartography = createCanvasRenderer(this.overlay, shown, palette, { colors: r.palette.colors, separateText: true, textSources: () => this.city?.scenes(), ...cityCountrysideCanvasOptions(r, world.mapSize), buildingClearings: () => buildingOccupationShapes({ buildings: [...nativeCitiesOf(world).flatMap(city => city.scene?.buildings ?? []), ...(activityScene(world)?.buildings ?? [])] } as never)?.map(shape => shape.outer) ?? [], transparentBackground: true, terrain: () => this.landBackdrop(), scene: built, mask, roadLook: r.composition.networks.roads.look, roadStyle: () => { const c = this.resolved!.composition; return { look: c.networks.roads.look, emphasis: c.networks.roads.emphasis, night: c.ambience === 'night', colors: this.resolved!.palette.colors }; },
       // Read per frame: a new look repaints the raster tiles through `key`, never the cartography pass.
       semantic: { key: () => `${this.semantic?.key ?? ''}|c${this.contourLook()?.landform ?? ''}|w${this.waterAboveLand() ? this.waterMaskVersion : ''}`, draw: (ctx, rect, mpp, quality) => { this.paintRural(ctx, rect, mpp, quality === 'light'); this.cutWater(ctx, rect); }, legend: () => this.semanticLegend() },
       invalidate: () => this.invalidate(), brushes, vegetation: r.vegetation.symbols, get dpr() { return state.dpr; } });
@@ -506,7 +505,7 @@ export class BenchRenderer {
   /** Palettes whose ink water must read above the land-use tints (atlas, topographic). */
   private waterAboveLand(): boolean {
     const r = this.resolved;
-    return !!r && !!terrainStyle(r.ground.style, r.palette.colors).palette.waterAboveLand && r.composition.networks.water.look === 'ink';
+    return !!r && cityWaterCutsLand(r);
   }
   /**
    * The vector water raster lies under the overlay: erase the land use, contours and semantics above it (the parchment

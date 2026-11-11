@@ -731,7 +731,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
     casing.flush(ctx); under.flush(ctx); surface.flush(ctx); marks2.flush(ctx); over.flush(ctx); marks.flush(ctx);
   }
 
-  if (layers.parcelOverlay !== false && layers.lotEnclosures !== false) drawLotEnclosures(ctx, scene, { mpp, lod, palette, groundOnly: layers.lotEnclosureMeshes }); // enclosures hook
+  if (layers.lotEnclosures !== false) drawLotEnclosures(ctx, scene, { mpp, lod, palette, groundOnly: layers.lotEnclosureMeshes }); // enclosures hook
 
   // Walls: thick line broken at gates, gate and wall towers.
   if (layers.enclosures) {

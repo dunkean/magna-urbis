@@ -1,6 +1,8 @@
 import type { World, Vec2 } from '../gen/types';
 import type { V2Settings } from './contracts';
-import { getLanguage, onLanguageChange } from './i18n';
+import { onLanguageChange, translate, registerMessages } from './i18n';
+import { getDistanceUnit, unitFactor, onUnitsChange } from './units';
+import { mapPresentation } from './mapPresentation';
 import { labelCandidates, type LabelCandidate, type LabelEdit } from './mapLabels';
 
 /** Host performs the redraw and forwards map clicks while active. */
@@ -23,13 +25,13 @@ export function mountMapLabelEditor(host: HTMLElement, api: { getWorld(): World 
   for (const n of [x,y,size]) n.style.width = '5.5rem';
   box.append(title, filter, search, select, count, input, row(lx,ly), row(lc,ls,lb,li), row(create,choose,locate,remove), hint);
   let candidates: LabelCandidate[] = [], selected = '', picking: 'place' | 'select' | undefined;
-  const t = (fr:string,en:string) => getLanguage() === 'fr' ? fr : en;
+  const t = (fr:string,en:string) => {registerMessages({[en]:{en,fr}});return translate(en);};
   function locale(): void {
     title.textContent=t('Noms et étiquettes','Names and labels'); search.placeholder=t('Rechercher un nom, un quartier, une parcelle ou un bâtiment','Search names, districts, parcels or buildings');
     input.placeholder=t('Texte de l’étiquette','Label text'); create.textContent=t('+ Étiquette libre','+ Free label'); choose.textContent=picking === 'select' ? t('Annuler la sélection','Cancel selection') : t('Sélectionner sur la carte','Select on map'); locate.textContent=picking === 'place'?t('Annuler le placement','Cancel placement'):t('Placer sur la carte','Place on map'); remove.textContent=t('Effacer la modification','Clear edit');
     hint.textContent=t('Sélectionnez un élément, modifiez son texte puis placez-le sur la carte. Les modifications sont enregistrées dans le projet.','Select an item, edit its text, then place it on the map. Edits are saved in the project.');
     const caption = (el: HTMLElement, text: string) => { if (el.lastChild?.nodeType === Node.TEXT_NODE) el.lastChild.textContent = text; else el.append(document.createTextNode(text)); };
-    caption(lx,' X'); caption(ly,' Y'); caption(lc,t(' Couleur',' Colour')); caption(ls,t(' Taille',' Size')); caption(lb,t(' Gras',' Bold')); caption(li,t(' Italique',' Italic'));
+    caption(lx,` X (${getDistanceUnit()})`); caption(ly,` Y (${getDistanceUnit()})`); caption(lc,t(' Couleur',' Colour')); caption(ls,t(' Taille',' Size')); caption(lb,t(' Gras',' Bold')); caption(li,t(' Italique',' Italic'));
     search.setAttribute('aria-label',search.placeholder); select.setAttribute('aria-label',t('Élément à nommer','Item to name')); input.setAttribute('aria-label',input.placeholder);
     filter.setAttribute('aria-label',t('Type d’élément','Item type'));
     const value=filter.value || 'all'; filter.replaceChildren();
@@ -53,14 +55,14 @@ export function mountMapLabelEditor(host: HTMLElement, api: { getWorld(): World 
       select.add(new Option(name, candidate.id));
       shown++;
     }
-    count.textContent = matches > shown ? t(`${shown} sur ${matches} résultats · affinez la recherche`, `${shown} of ${matches} results · refine the search`) : `${matches}`;
+    count.textContent = matches > shown ? t('{shown} sur {matches} résultats · affinez la recherche', '{shown} of {matches} results · refine the search').replace('{shown}',String(shown)).replace('{matches}',String(matches)) : `${matches}`;
     if (previous && Array.from(select.options).some(option => option.value === previous)) select.value = previous;
     else selected = select.value;
   }
   function fields(): void {
     const candidate = candidates.find(c => c.id === selected), edit = edits()[selected], anchor = edit?.anchor ?? candidate?.anchor;
     const value=(field:HTMLInputElement,next:string)=>{if(document.activeElement!==field)field.value=next;};
-    value(input,edit?.text ?? candidate?.text ?? '');value(x,anchor ? String(Math.round(anchor.x*100)/100) : '');value(y,anchor ? String(Math.round(anchor.y*100)/100) : '');
+    value(input,edit?.text ?? candidate?.text ?? '');value(x,anchor ? String(Math.round(anchor.x/unitFactor(getDistanceUnit())*100)/100) : '');value(y,anchor ? String(Math.round(anchor.y/unitFactor(getDistanceUnit())*100)/100) : '');
     value(color,edit?.style?.color ?? '#493c2b');value(size,String(edit?.style?.size ?? 1));
     if(document.activeElement!==bold)bold.checked=!!edit?.style?.bold;
     if(document.activeElement!==italic)italic.checked=!!edit?.style?.italic;
@@ -68,7 +70,7 @@ export function mountMapLabelEditor(host: HTMLElement, api: { getWorld(): World 
   }
   function write(position = false): void {
     const candidate = candidates.find(c => c.id === selected); if (!candidate) return;
-    const old = edits()[selected], xx = Number(x.value), yy = Number(y.value);
+    const old = edits()[selected], xx = Number(x.value)*unitFactor(getDistanceUnit()), yy = Number(y.value)*unitFactor(getDistanceUnit());
     const edit: LabelEdit = { ...old, text: input.value.slice(0,200), style: { color: color.value, size: Math.max(.25,Math.min(4,Number(size.value)||1)), bold: bold.checked, italic: italic.checked } };
     if (position && x.value !== '' && y.value !== '' && Number.isFinite(xx) && Number.isFinite(yy)) edit.anchor = { x:xx, y:yy };
     if (candidate.kind === 'free' || selected.startsWith('free:')) edit.kind = 'free';
@@ -90,11 +92,12 @@ export function mountMapLabelEditor(host: HTMLElement, api: { getWorld(): World 
   locate.onclick = () => picking === 'place' ? stop() : start();
   choose.onclick = () => { if (picking === 'select') { stop(); return; } picking='select'; window.dispatchEvent(new CustomEvent('v2-edit-mode',{detail:'labels'})); locale(); };
   remove.onclick = () => { delete edits()[selected]; api.onChange(); };
-  onLanguageChange(locale); locale();
-  return { sync() { const world=api.getWorld(); create.disabled = choose.disabled = !world; candidates=world ? labelCandidates(world) : []; populate(); fields(); }, active:()=>!!picking, stop, start,
+  const sync = () => { const world=api.getWorld(); create.disabled = choose.disabled = !world; candidates=world ? labelCandidates(mapPresentation(world,api.getSettings())) : []; populate(); fields(); };
+  onLanguageChange(()=>{locale();sync();}); onUnitsChange(()=>{locale();fields();}); locale();
+  return { sync, active:()=>!!picking, stop, start,
     pick(point) { if (!picking || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
       if (picking === 'select') { let best: LabelCandidate | undefined, distance=(api.getWorld()?.mapSize ?? 0)*.03; const saved=api.getSettings().naming?.labels;
         for (const candidate of candidates) { if (!matchesType(candidate)) continue; const anchor=saved?.[candidate.id]?.anchor ?? candidate.anchor; const d=Math.hypot(anchor.x-point.x,anchor.y-point.y); if (d<distance) {distance=d;best=candidate;} }
         if (best) {selected=best.id;search.value='';populate();fields();} }
-      else if (selected) { x.value=String(point.x); y.value=String(point.y); write(true); } stop(); } };
+      else if (selected) { x.value=String(point.x/unitFactor(getDistanceUnit())); y.value=String(point.y/unitFactor(getDistanceUnit())); write(true); } stop(); } };
 }

@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { chmod, copyFile, cp, mkdir, readFile } from 'node:fs/promises';
+import { chmod, copyFile, cp, mkdir, readFile, rm } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { homedir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
@@ -176,6 +176,13 @@ async function main() {
     }
     if (action === 'desktop-build') {
       await run(process.execPath, [join(web, 'scripts/rust_benches.mjs')]);
+      // The window opens the V2; the bench workshop stays bundled beside it (same engine).
+      await run(process.execPath, [join(web, 'node_modules/vite/bin/vite.js'), 'build', '--config', join(web, 'vite.v2.config.ts')]);
+      const app = join(root, 'rust/out/app');
+      await rm(app, { recursive: true, force: true });
+      await cp(join(root, 'rust/out/benches'), app, { recursive: true });
+      await cp(join(web, 'dist-v2'), app, { recursive: true, force: true });
+      await copyFile(join(app, 'rustbench.html'), join(app, 'benches.html'));
     } else {
       await vite();
       await neural();

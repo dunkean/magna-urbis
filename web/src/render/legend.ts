@@ -12,6 +12,7 @@ import { FONT_STACKS } from './labelStyles';
 import { SETTLEMENT_CLASS } from '../gen/names';
 import { NameFamily } from '../gen/names/types';
 import { underdarkMark } from './underdark';
+import { distanceScale, formatDistance, type DistanceUnit } from '../gen/units';
 
 export type Prim =
   | { t: 'rect'; x: number; y: number; w: number; h: number; fill?: string; stroke?: string; sw?: number; op?: number }
@@ -40,7 +41,7 @@ export function fmtPop(n: number): string {
 const round2 = (n: number): number => (n >= 1000 ? Math.round(n / 100) * 100 : n >= 100 ? Math.round(n / 10) * 10 : n);
 
 export function townTitle(world: World): { title: string; sub: string } {
-  if (world.options.workflow === 'environment') return { title: 'Landscape', sub: `${fmtPop(world.mapSize)} m · ${world.options.biome ?? 'temperate'}` };
+  if (world.options.workflow === 'environment') return { title: 'Landscape', sub: `${formatDistance(world.mapSize, world.options.distanceUnit)} · ${world.options.biome ?? 'temperate'}` };
   const fam: NameFamily = world.names?.family ?? 'english';
   const pop = world.urban?.population;
   const cls = SETTLEMENT_CLASS(fam, pop ?? 0);
@@ -69,7 +70,7 @@ function panelFrame(pal: Palette, W: number, H: number): Prim[] {
 export function cartoucheModel(world: World, pal: Palette, pxPerM: number, includeScale = true): Panel {
   const { title, sub } = townTitle(world);
   const W = 244;
-  const L = niceLength(pxPerM, 112);
+  const scale = distanceScale(pxPerM, 112, world.options.distanceUnit), L = scale.metres;
   const barW = Math.max(24, L * pxPerM);
   const prims: Prim[] = [];
   const H = includeScale ? 104 : 76;
@@ -85,8 +86,8 @@ export function cartoucheModel(world: World, pal: Palette, pxPerM: number, inclu
   const seg = 4;
   for (let i = 0; i < seg; i++) prims.push({ t: 'rect', x: x0 + (barW * i) / seg, y: y0, w: barW / seg, h: bh, fill: i % 2 ? pal.paper : pal.ink, stroke: pal.ink, sw: 0.7 });
   prims.push({ t: 'text', x: x0, y: y0 - 4, s: '0', size: 10, anchor: 'middle', fill: pal.ink });
-  prims.push({ t: 'text', x: x0 + barW / 2, y: y0 - 4, s: String(L / 2), size: 10, anchor: 'middle', fill: pal.ink });
-  prims.push({ t: 'text', x: x0 + barW, y: y0 - 4, s: L >= 1000 ? `${L / 1000} km` : `${L} m`, size: 10, anchor: 'middle', fill: pal.ink });
+  prims.push({ t: 'text', x: x0 + barW / 2, y: y0 - 4, s: String(scale.value / 2), size: 10, anchor: 'middle', fill: pal.ink });
+  prims.push({ t: 'text', x: x0 + barW, y: y0 - 4, s: `${scale.value} ${scale.unit}`, size: 10, anchor: 'middle', fill: pal.ink });
   }
   prims.push({ t: 'text', x: W / 2, y: H - 9, s: `seed ${world.seed}`, size: 9, anchor: 'middle', fill: pal.inkSoft, italic: true });
   return { w: W, h: H, prims };
@@ -94,14 +95,14 @@ export function cartoucheModel(world: World, pal: Palette, pxPerM: number, inclu
 
 const plainBackground = (pal: Palette, w: number, h: number): Prim[] => [{ t: 'rect', x: 0, y: 0, w, h, fill: pal.cart.fill, stroke: pal.cart.stroke, sw: 1, op: pal.cart.op }];
 /** Title block of the benches, which hold no World; the scale bar only when the view's px/m is known (2D). */
-export function plainCartouchePanel(pal: Palette, title: string, subtitle: string, pxPerM?: number): Panel {
+export function plainCartouchePanel(pal: Palette, title: string, subtitle: string, pxPerM?: number, unit: DistanceUnit = 'm'): Panel {
   const h = pxPerM ? 86 : 56, prims: Prim[] = [...plainBackground(pal, 244, h),
     { t: 'text', x: 12, y: 25, s: title, size: 16, anchor: 'start', fill: pal.ink, bold: true },
     { t: 'text', x: 12, y: 44, s: subtitle, size: 10, anchor: 'start', fill: pal.inkSoft }];
   if (pxPerM) {
-    const length = niceLength(pxPerM);
+    const scale = distanceScale(pxPerM, 120, unit), length = scale.metres;
     prims.push({ t: 'line', pts: [[12, 60], [12 + length * pxPerM, 60]], stroke: pal.ink, sw: 2 },
-      { t: 'text', x: 12, y: 76, s: length >= 1000 ? `${length / 1000} km` : `${length} m`, size: 10, anchor: 'start', fill: pal.ink });
+      { t: 'text', x: 12, y: 76, s: `${scale.value} ${scale.unit}`, size: 10, anchor: 'start', fill: pal.ink });
   }
   return { w: 244, h, prims };
 }
@@ -114,12 +115,12 @@ export function plainLegendPanel(pal: Palette, entries: readonly SemanticLegendE
 }
 
 /** The only map overlay on compact screens; its scale follows the actual view. */
-export function compactScaleModel(pal: Palette, pxPerM: number): Panel {
-  const L = niceLength(pxPerM, 80), bw = L * pxPerM;
+export function compactScaleModel(pal: Palette, pxPerM: number, unit: DistanceUnit = 'm'): Panel {
+  const scale = distanceScale(pxPerM, 80, unit), L = scale.metres, bw = L * pxPerM;
   const W = Math.max(60, bw + 20), H = 28;
   const prims: Prim[] = [{ t: 'rect', x: 0, y: 0, w: W, h: H, fill: pal.cart.fill, op: pal.cart.op }];
   prims.push({ t: 'text', x: 8, y: 11, s: '0', size: 9, anchor: 'start', fill: pal.ink },
-    { t: 'text', x: bw + 8, y: 11, s: L >= 1000 ? `${L / 1000} km` : `${L} m`, size: 9, anchor: 'end', fill: pal.ink });
+    { t: 'text', x: bw + 8, y: 11, s: `${scale.value} ${scale.unit}`, size: 9, anchor: 'end', fill: pal.ink });
   for (let i = 0; i < 4; i++) prims.push({ t: 'rect', x: 8 + bw * i / 4, y: 17, w: bw / 4, h: 4, fill: i % 2 ? pal.paper : pal.ink, stroke: pal.ink, sw: .6 });
   return { w: W, h: H, prims };
 }

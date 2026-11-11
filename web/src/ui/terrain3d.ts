@@ -754,7 +754,9 @@ export class Terrain3d {
   protected frameQuality = 0;
   private unlistenQuality?: () => void;
   protected frameInteracting = false;
-  private msaa?: { width: number; height: number; framebuffer: WebGLFramebuffer; color: WebGLRenderbuffer; depth: WebGLRenderbuffer };
+  private msaa?: { width: number; height: number; framebuffer: WebGLFramebuffer; color: WebGLRenderbuffer; depth: WebGLRenderbuffer; checked?: boolean };
+  /** The drawing buffer refused the MSAA resolve (ANGLE Vulkan: alpha:false back buffer is not RGBA8): draw to it directly. */
+  private msaaUnsupported = false;
   protected disposed = false;
   private events = new AbortController();
   private pointers = new Map<number, { x: number; y: number; orbit: boolean }>();
@@ -2091,10 +2093,17 @@ export class Terrain3d {
     const pending = this.buildings.draw(this.buildingFrame(frame));
     this.drawTrees(frame); this.drawBillboards(frame,raisedBlend);
     if (target) {
+      // The first resolve of a target is checked once: a multisampled blit needs identical read/draw formats, and some
+      // back ends give the alpha:false drawing buffer another format. Then the canvas stayed black; fall back to direct drawing.
+      if (!target.checked) while (gl.getError() !== gl.NO_ERROR) { /* drain earlier errors */ }
       gl.bindFramebuffer(gl.READ_FRAMEBUFFER, target.framebuffer);
       gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
       gl.blitFramebuffer(0, 0, w, h, 0, 0, w, h, gl.COLOR_BUFFER_BIT, gl.NEAREST);
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      if (!target.checked) {
+        target.checked = true;
+        if (gl.getError() === gl.INVALID_OPERATION) { this.msaaUnsupported = true; this.releaseMsaa(); this.request(); }
+      }
     }
     return pending;
   }
@@ -2107,6 +2116,7 @@ export class Terrain3d {
   private msaaTarget(width: number, height: number): NonNullable<Terrain3d['msaa']> | undefined {
     if (this.msaa?.width === width && this.msaa.height === height) return this.msaa;
     this.releaseMsaa();
+    if (this.msaaUnsupported) return undefined;
     const gl = this.gl;
     const colorSamples = gl.getInternalformatParameter(gl.RENDERBUFFER, gl.RGBA8, gl.SAMPLES) as Int32Array;
     const depthSamples = gl.getInternalformatParameter(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, gl.SAMPLES) as Int32Array;

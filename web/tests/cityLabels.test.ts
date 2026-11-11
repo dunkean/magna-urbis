@@ -4,6 +4,7 @@ import { createCanvasRenderer, type CanvasLike } from '../src/render/canvas';
 import { siteLayer } from '../src/render/landuse';
 import { PALETTES } from '../src/render/styles';
 import { renderSvg } from '../src/render/svg';
+import { buildScene } from '../src/render/scene';
 
 function fixture() {
   const world = fakeWorld({ mapSize: 1600, buildings: 0, streets: 0, landAreas: 0 });
@@ -14,6 +15,17 @@ function fixture() {
 }
 
 describe('map annotations in city land-use overlays', () => {
+  it('uses the current name presentation when a cached scene retains an older rendered world', () => {
+    const original = fixture(); original.options.contours = false;
+    const scene = buildScene(original); scene.renderedWorld = original;
+    const world = { ...original, names: { ...original.names!, town: 'Updated cultural name', entries: original.names!.entries.map(entry => ({ ...entry, text: 'Updated cultural name' })) } };
+    const { canvas } = mockCanvas(1000, 1000);
+    const renderer = createCanvasRenderer(canvas as unknown as CanvasLike, world, 'atlas', { scene, Path2D: MockPath2D as never, terrain: () => null, raster: false });
+    const title = renderer.getMapInfo().cartouche.prims.filter(primitive => primitive.t === 'text').map(primitive => primitive.s);
+    expect(title).toContain('Updated cultural name');
+    expect(original.names!.entries[0].text).toBe('Ville test');
+    renderer.dispose();
+  });
   it('disables custom labels, place names and placeholder pins through the existing canvas overlay flag', () => {
     const world = fixture(), { canvas, log, reset } = mockCanvas(1000, 1000);
     const renderer = createCanvasRenderer(canvas as unknown as CanvasLike, world, 'atlas', { Path2D: MockPath2D as never, terrain: () => null, raster: false });

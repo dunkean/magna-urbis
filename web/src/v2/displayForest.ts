@@ -1,7 +1,9 @@
+import { cityForestInput } from '../render/cityEnvironment';
+import { retainedDecorOf } from './decorTerrain';
+import { forestRetainedRiverSegments } from '../../../rust/bridge/terrainForestRiparian';
 import type { ResolvedAppearance } from '../render/appearanceRecipe';
 import { nativeTerrainLayer } from './nativeProducts';
 import { buildForestField, type ForestField, type ForestOccupation } from '../../../rust/bridge/terrainForest';
-import { seedHash } from '../../../rust/bridge/terrainAdjust';
 import type { LandUseLayer, World } from '../gen/types';
 import type { V2Settings } from './contracts';
 import { effectiveTerrainSettings } from './terrainSettings';
@@ -58,12 +60,16 @@ function displayForestRequest(world: World, settings: V2Settings, resolved: Reso
   if (!resolved.composition.vegetation.procedural) return;
   const configuration = effectiveTerrainSettings(settings, world.mapSize), overrides = resolved.vegetation.forest;
   const { enabled: _enabled, ...parameters } = overrides, forest = { ...configuration.forest, ...parameters, enabled: true };
-  if (!Object.keys(parameters).length) return nativeTerrainLayer(world)?.v2ForestField;
+  const decor = retainedDecorOf(world.terrain);
+  if (!decor && !Object.keys(parameters).length) return nativeTerrainLayer(world)?.v2ForestField;
   const climate = configuration.climateValues!, clearingProfile = resolved.traits.forestClearingProfile;
   const key = JSON.stringify([forest, climate, world.seed, clearingProfile]);
-  return { key, build: () => buildForestField({ seed: seedHash(world.seed), climate: [climate.temperature, climate.precipitation],
-    height: { x: 0, y: 0, width: world.mapSize, n: world.terrain.height.w, data: world.terrain.height.data },
-    water: world.terrain.water, clearingProfile }, forest) };
+  const raster = decor?.raster;
+  return { key, build: () => buildForestField(cityForestInput(world.seed, climate,
+    raster ? { x: 0, y: 0, width: raster.width, n: raster.n, data: raster.height }
+      : { x: 0, y: 0, width: world.mapSize, n: world.terrain.height.w, data: world.terrain.height.data },
+    raster?.water ?? world.terrain.water, { clearingProfile,
+      ...(decor ? { riverSegments: forestRetainedRiverSegments(decor.meta.waterSvg, decor.raster.width) } : {}) }), forest) };
 }
 const isField = (v: unknown): v is ForestField => !!v && typeof (v as ForestField).rgba !== 'undefined';
 /** Repaint the forest over retained heights (Rust: native or WASM, hence async). Never call terrain or settlement generation. */

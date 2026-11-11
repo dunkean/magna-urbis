@@ -1,3 +1,4 @@
+import { generateToponymRecord } from '../gen/names/toponyms';
 /**
  * Generation defaults shared by the V2 and City Bench for one city (V2 values).
  * Layout and parcel configs already come from `rust/bridge/urbanConfig.ts` (`defaultLayoutConfig`,
@@ -8,6 +9,7 @@ import type { PlacementBatchSettings } from '../../../rust/bridge/urbanArchitect
 import { settlementRaster, type SettlementRaster } from '../../../rust/bridge/settlements';
 import type { TerrainData } from '../../../rust/bridge/terrain';
 import { defaultLayoutConfig } from '../../../rust/bridge/urbanConfig';
+import { regionalStreets } from '../../../rust/bridge/urbanRoads';
 
 /** Side of the settlement raster sent to the engine for city generation. */
 export const CITY_RASTER_RESOLUTION = 1024;
@@ -35,4 +37,21 @@ export const CITY_LAYOUT_DEFAULTS = Object.freeze({ naturalCampApproaches: true,
   hideUnusedQuarters: true, organicBranchVariation: .5, ribbonWidthVariation: .5 });
 export function defaultCityLayoutConfig(): import('../../../rust/bridge/urbanConfig').LayoutConfig {
   return { ...defaultLayoutConfig(), ...CITY_LAYOUT_DEFAULTS };
+}
+
+/** Regional roads sent with a town's quarters request (and drawn as its 3D bridges) by both pages: the native road
+ * segments split at their crossings (bridge, ford...) and ranked by class (highway 0, main 1, others 2). */
+export const cityTownRoads = regionalStreets;
+/** Site archetype of each town in the quarters request (layout `siteArchetypes`, read by urban/kinds.rs): an explicit
+ * per-site rule, else the requested site type, else the archetype the placement chose. */
+export function citySiteArchetypes(sites: readonly { key: string; siteType?: string; archetype?: string }[], explicit?: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(sites.flatMap(s => {
+    const archetype = explicit?.[s.key] ?? (s.siteType && s.siteType !== 'auto' ? s.siteType : s.archetype);
+    return archetype ? [[s.key, archetype]] : [];
+  }));
+}
+
+/** Quarter labels receive the same cultural place name on both pages. */
+export function cityNamedSite<T extends { key: string; name?: string; culture: string }>(site: T, seed: string, language = 'auto'): T & { name: string } {
+  return { ...site, name: site.name?.trim() || generateToponymRecord({ seed, key: `settlement:${site.key}`, kind: 'town', culture: site.culture, language }).cultural };
 }

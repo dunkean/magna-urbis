@@ -1,28 +1,20 @@
-import { NAME_FAMILIES } from '../gen/names/types';
 import type { World } from '../gen/types';
 import type { V2Settings } from './contracts';
-import { getLanguage, registerMessages, setText, translate } from './i18n';
+import { registerMessages, setText, translate } from './i18n';
 import { mountParameterForm } from './parameterForm';
 
 const copy = (en: string, fr: string) => { registerMessages({ [en]: { en, fr } }); return en; };
 const T = {
-  title: copy('Map title', 'Titre de la carte'), language: copy('Naming language', 'Langue des toponymes'),
-  auto: copy('Follow the culture', 'Selon la culture'), apply: copy('Apply names', 'Appliquer les noms'),
+  title: copy('Map title', 'Titre de la carte'), apply: copy('Apply names', 'Appliquer les noms'),
   places: copy('Place names', 'Noms des lieux'), generated: copy('Generated name', 'Nom généré'),
   empty: copy('Place settlements to edit their names.', 'Implantez les peuplements pour modifier leurs noms.'),
   main: copy('Main settlement', 'Lieu principal'),
   mode: copy('Place-name presentation', 'Présentation des toponymes'),
   cultural: copy('Full cultural names', 'Culture intégrale'),
-  localized: copy('Partially translated names', 'Traduction partielle'),
-  displayLanguage: copy('Language of generic place terms', 'Langue des éléments génériques'),
-  presentationHint: copy('Keep the full cultural form, or translate only generic place terms. Proper names stay unchanged.', 'Conservez la forme culturelle intégrale, ou traduisez seulement les éléments génériques. Les noms propres restent inchangés.'),
+  localized: copy('Generic terms in interface language', 'Éléments génériques dans la langue de l’interface'),
+  presentationHint: copy('Cultural names; generic terms follow the interface language.', 'Noms culturels ; les éléments génériques suivent la langue de l’interface.'),
   export: copy('Choose format and export…', 'Choisir le format et exporter…'),
 };
-const languages = [
-  ['French', 'Français'], ['English', 'Anglais'], ['German', 'Allemand'], ['Italian', 'Italien'],
-  ['Arabic', 'Arabe'], ['Chinese', 'Chinois'], ['Japanese', 'Japonais'], ['Sanskrit', 'Sanskrit'],
-  ['Norse', 'Nordique'], ['Elven', 'Elfique'], ['Dwarven', 'Nain'], ['Orcish', 'Orque'], ['Halfling', 'Halfelin'],
-];
 
 export function mountMapControls(namingHost: HTMLElement, exportHost: HTMLElement, b: {
   getSettings(): V2Settings; getWorld(): World | undefined; busy(): boolean; onNames(): void; onExport(): void;
@@ -30,25 +22,17 @@ export function mountMapControls(namingHost: HTMLElement, exportHost: HTMLElemen
   const formHost = document.createElement('div'); namingHost.append(formHost);
   const form = mountParameterForm(formHost, [
     { path: 'title', id: 'map-title-input', type: 'text', label: T.title, optional: true, placeholder: T.generated },
-    { path: 'language', id: 'map-naming-language', type: 'select', label: T.language,
-      options: [{ value: 'auto', label: T.auto }, ...NAME_FAMILIES.map((value, i) => ({ value, label: copy(languages[i][0], languages[i][1]) }))] },
     { path: 'mode', id: 'map-naming-mode', type: 'select', label: T.mode,
       options: [{ value: 'cultural', label: T.cultural }, { value: 'localized', label: T.localized }] },
-    { path: 'displayLanguage', id: 'map-naming-display-language', type: 'select', label: T.displayLanguage,
-      options: [{ value: 'fr', label: 'Français' }, { value: 'en', label: 'English' }, { value: 'ja', label: '日本語' },
-        { value: 'ar', label: 'العربية' }, { value: 'es', label: 'Español' }, { value: 'pt', label: 'Português' }, { value: 'zh', label: '中文' }] },
   ], {
     getValue: path => path === 'title' ? b.getSettings().naming?.title ?? ''
-      : path === 'mode' ? b.getSettings().naming?.mode ?? 'cultural'
-      : path === 'displayLanguage' ? b.getSettings().naming?.displayLanguage ?? getLanguage()
-      : b.getSettings().options.language ?? 'auto',
+      : b.getSettings().naming?.mode ?? 'localized',
     setValue: (path, value) => {
       const settings = b.getSettings();
-      if (path === 'language') settings.options.language = value as V2Settings['options']['language'];
-      else if (path === 'mode' || path === 'displayLanguage') {
+      if (path === 'mode') {
         settings.naming ??= {};
-        if (path === 'mode') { settings.naming.mode = value as 'cultural' | 'localized'; settings.naming.displayLanguage ??= getLanguage(); }
-        else settings.naming.displayLanguage = value as NonNullable<V2Settings['naming']>['displayLanguage'];
+        settings.naming.mode = value as 'cultural' | 'localized';
+        delete settings.naming.displayLanguage;
       }
       else { settings.naming ??= {}; settings.naming.title = String(value ?? '').trim().slice(0, 200); }
       b.onNames();

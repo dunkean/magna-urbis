@@ -17,6 +17,7 @@ import { mountTerrainSketchControls, type TerrainSketchContext } from './terrain
 import { loadTerrainControlDefaults } from './terrainControlDefaults';
 import { physicalPlan, physicalPlanSummary, sourceDefinition, terrainCapability } from '../../../rust/bridge/terrainDefinition';
 import { isTerrainExpertControl } from './terrainControlAccess';
+import { getDistanceUnit, onUnitsChange, unitFactor, formatDistance, convertUnits, displayUnit, unitInputNumber, type PhysicalUnit } from './units';
 
 export interface TerrainControlBindings {
   getSettings(): V2Settings;
@@ -162,29 +163,30 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
   const extentRow = document.createElement('div'); extentRow.className = 'terrain-width-row';
   const width = document.createElement('input'); width.type = 'number'; width.id = 'terrain-width'; width.dataset.settingPath = 'extent'; width.setAttribute('aria-label', ui.width); width.step = '0.1';
   const unit = document.createElement('select'); unit.id = 'terrain-width-unit'; unit.setAttribute('aria-label', ui.unit);
-  for (const value of ['km', 'm']) { const option = document.createElement('option'); option.value = value; option.textContent = value; option.dataset.l10nKeep = ''; unit.append(option); }
+  for (const value of ['km', 'm', 'ft', 'yd', 'mi']) { const option = document.createElement('option'); option.value = value; option.textContent = value; option.dataset.l10nKeep = ''; unit.append(option); }
+  unit.value = getDistanceUnit() === 'm' ? 'km' : getDistanceUnit();
   extentRow.append(width, unit); extent.append(extentRow);
   const widthSlider = document.createElement('input'); widthSlider.type = 'range'; widthSlider.id = 'terrain-width-slider'; widthSlider.className = 'parameter-slider';
   widthSlider.dataset.sliderPath = 'extent'; widthSlider.setAttribute('aria-label', ui.width); extent.append(widthSlider);
   const extentHint = document.createElement('p'); extentHint.id = 'terrain-width-help'; extentHint.className = 'hint'; setText(extentHint, ui.extentHelp); width.setAttribute('aria-describedby', extentHint.id); extent.append(extentHint);
   const definitionHint = document.createElement('p'); definitionHint.id = 'terrain-definition-help'; definitionHint.className = 'hint'; definitionHint.setAttribute('role', 'status'); extent.append(definitionHint);
   const presetRow = document.createElement('div'); presetRow.className = 'terrain-presets';
-  for (const metres of [2400, 10000, 40000, 100000, 200000]) { const preset = button(presetRow, `${metres / 1000} km`, () => { bindings.getSettings().extent = metres; change(); }); preset.dataset.extent = String(metres); preset.dataset.l10nKeep = ''; }
+  for (const metres of [2400, 10000, 40000, 100000, 200000]) { const preset = button(presetRow, formatDistance(metres,getDistanceUnit()), () => { bindings.getSettings().extent = metres; change(); }); preset.dataset.extent = String(metres); preset.dataset.l10nKeep = ''; }
   extent.append(presetRow); quick.append(extent);
   const quickFields = document.createElement('div'); quickFields.className = 'terrain-quick-fields'; quick.append(quickFields);
   form(quickFields, [sourceField, terrainBasicFields.find(field => field.path === 'options.biome')!, terrainBasicFields.find(field => field.path === 'terrain.relief')!, terrainClassicFields.find(field => field.path === 'options.relief')!, terrainProceduralFields.find(field => field.path === 'terrain.motifSize')!].map(field => ({ ...field, help: undefined })));
   const scale = quickFields.querySelector<HTMLInputElement>('#terrain-scale')!;
   scale.setAttribute('title', terrainProceduralFields.find(field => field.path === 'terrain.motifSize')!.help!);
   const onWidth = () => {
-    const metres = Number(width.value) * (unit.value === 'km' ? 1000 : 1);
+    const metres = Number(width.value) * unitFactor(unit.value as PhysicalUnit);
     const settings = bindings.getSettings();
     const capability = terrainCapability({ ...effectiveTerrainSettings(settings, metres), backend: settings.runtime?.backend });
     const min = capability.minWidth, max = capability.maxWidth;
     if (!width.value.trim() || !Number.isFinite(metres) || metres < min || metres > max) { width.setAttribute('aria-invalid', 'true'); return; }
     width.removeAttribute('aria-invalid'); bindings.getSettings().extent = metres; change();
   };
-  const onUnit = () => { width.value = String(adaptedExtent(bindings.getSettings()) / (unit.value === 'km' ? 1000 : 1)); sync(); };
-  const onWidthSlide = () => { bindings.getSettings().extent = Number(widthSlider.value); width.value = String(Number(widthSlider.value) / (unit.value === 'km' ? 1000 : 1)); change(); };
+  const onUnit = () => { width.value = String(adaptedExtent(bindings.getSettings()) / unitFactor(unit.value as PhysicalUnit)); sync(); };
+  const onWidthSlide = () => { bindings.getSettings().extent = Number(widthSlider.value); width.value = String(Number(widthSlider.value) / unitFactor(unit.value as PhysicalUnit)); change(); };
   width.addEventListener('input', onWidth); unit.addEventListener('change', onUnit);
   widthSlider.addEventListener('input', onWidthSlide);
   cleanup.push(() => width.removeEventListener('input', onWidth), () => unit.removeEventListener('change', onUnit), () => widthSlider.removeEventListener('input', onWidthSlide));
@@ -265,20 +267,20 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
     const settings = bindings.getSettings();
     // Historical recipes may still recommend an extent. Freeze it when opened in the editor.
     if (settings.extent === 'auto') settings.extent = adaptedExtent(settings);
-    const metres = adaptedExtent(settings), factor = unit.value === 'km' ? 1000 : 1;
+    const metres = adaptedExtent(settings), factor = unitFactor(unit.value as PhysicalUnit);
     const isClassicEngine = settings.runtime?.backend === 'typescript';
     const effective = effectiveTerrainSettings(settings, metres);
     const capability = terrainCapability({ ...effective, backend: settings.runtime?.backend });
     const min = capability.minWidth, max = capability.maxWidth;
-    width.min = String(min / factor); width.max = String(max / factor); width.step = unit.value === 'km' ? '.1' : '100';
+    width.min = String(min / factor); width.max = String(max / factor); width.step = 'any';
     widthSlider.min = String(min); widthSlider.max = String(max); widthSlider.step = '100'; widthSlider.disabled = bindings.disabled?.() ?? false;
     if (document.activeElement !== widthSlider) widthSlider.value = String(metres);
-    if (document.activeElement !== width) width.value = String(metres / factor);
+    if (document.activeElement !== width) width.value = String(unitInputNumber(metres / factor));
     width.disabled = unit.disabled = bindings.disabled?.() ?? false;
     if (metres < min || metres > max) width.setAttribute('aria-invalid', 'true'); else width.removeAttribute('aria-invalid');
     for (const preset of Array.from(presetRow.querySelectorAll<HTMLButtonElement>('button'))) preset.disabled = Number(preset.dataset.extent) < min || Number(preset.dataset.extent) > max || (bindings.disabled?.() ?? false);
     const spacingControl = root.querySelector<HTMLInputElement>('[data-setting-path="terrain.sampleSpacing"]');
-    if (spacingControl) { spacingControl.min = String(capability.minSpacing); spacingControl.max = String(Math.min(1000, metres / 16)); spacingControl.step = 'any'; spacingControl.disabled = isClassicEngine || capability.kind === 'finite-neural' || (bindings.disabled?.() ?? false); }
+    if (spacingControl) { spacingControl.min = String(convertUnits(capability.minSpacing,'m',displayUnit('m',getDistanceUnit()))); spacingControl.max = String(convertUnits(Math.min(1000, metres / 16),'m',displayUnit('m',getDistanceUnit()))); spacingControl.step = 'any'; spacingControl.disabled = isClassicEngine || capability.kind === 'finite-neural' || (bindings.disabled?.() ?? false); }
     try {
       const french = document.documentElement.lang.startsWith('fr');
       if (isClassicEngine) definitionHint.textContent = french ? 'Source TypeScript classique · définition propre au moteur.' : 'Classic TypeScript source · engine-defined spacing.';
@@ -344,6 +346,12 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
     for (const option of Array.from(reliefSelect.options)) option.disabled = isNeural && !['flat', 'hills', 'valley', 'mountains', 'mixed', 'plateau', 'high-mountains'].includes(option.value) || compact && !['flat','hills','valley','canyon','mountains','mixed','high-mountains'].includes(option.value);
   }
   void loadTerrainControlDefaults().then(reader => { if (disposed) return; defaultValues = reader; sync(); root.dispatchEvent(new Event('terrain-defaults-ready')); }).catch(error => { console.error('Terrain control defaults unavailable', error); });
+  cleanup.push(onUnitsChange(() => {
+    unit.value = getDistanceUnit() === 'm' ? 'km' : getDistanceUnit();
+    width.value = String(adaptedExtent(bindings.getSettings()) / unitFactor(unit.value as PhysicalUnit));
+    presetRow.querySelectorAll<HTMLButtonElement>('[data-extent]').forEach(button => button.textContent = formatDistance(Number(button.dataset.extent), getDistanceUnit()));
+    sync();
+  }));
   sync();
   return { sync, sketchHost, access: { get, set }, dispose: () => { disposed = true; cleanup.forEach(fn => fn()); forms.forEach(form => form.dispose()); sketchControls?.dispose(); root.replaceChildren(); } };
 }

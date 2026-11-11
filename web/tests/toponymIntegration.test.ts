@@ -142,7 +142,7 @@ describe('Namebench pipeline integration', () => {
     expect(renamed.names!.town).toBe('Copper Coast');
     expect(renamed.names!.entries.find(e => e.kind === 'town')?.text).toBe('Valmont');
     expect(renamed.names!.entries.find(e => e.kind === 'gate')?.text).toBe('Rivermeet Gate');
-    expect(renamed.names!.family).toBe('english');
+    expect(renamed.names!.family).toBe('french'); // V2 proper names follow culture, independently of UI/legacy language.
   });
   it.each([
     ['persian', /^Kucheh/, /^Meydān/, /^Mahalleh/, /^Masjed/],
@@ -167,9 +167,9 @@ describe('Namebench pipeline integration', () => {
     expect(w.names!.entries.find(e => e.kind === 'castle')?.reference?.culture).toBe('swahili-stone-town');
   });
 
-  it('localizes an annotated generic in seven languages without altering the cultural proper name', () => {
+  it('localizes an annotated generic in eight languages without altering the cultural proper name', () => {
     const parts: NameParts = { proper: 'TsingTao', cultural: 'TsingTao Jiang', kind: 'river', opaque: false };
-    const expected = { fr: 'Fleuve TsingTao', en: 'TsingTao River', ja: 'TsingTao川', ar: 'نهر \u2068TsingTao\u2069', es: 'Río TsingTao', pt: 'Rio TsingTao', zh: 'TsingTao河' };
+    const expected = { fr: 'Fleuve TsingTao', en: 'TsingTao River', ja: 'TsingTao川', ar: 'نهر \u2068TsingTao\u2069', es: 'Río TsingTao', pt: 'Rio TsingTao', zh: 'TsingTao河', ru: 'Река «TsingTao»' };
     for (const language of Object.keys(expected) as NameDisplayLanguage[]) {
       expect(presentName(parts, { mode: 'localized', language })).toBe(expected[language]);
       expect(presentName({ ...parts, opaque: true }, { mode: 'localized', language })).toBe('TsingTao Jiang');
@@ -188,13 +188,13 @@ describe('Namebench pipeline integration', () => {
     expect(parts.proper).toBe('El Paso');
   });
 
-  it.each(['fr', 'en', 'ja', 'ar', 'es', 'pt', 'zh'] as const)('round trips cultural and %s partial display with stable identities, overrides and geometry', language => {
+  it.each(['fr', 'en', 'ja', 'ar', 'es', 'pt', 'zh', 'ru'] as const)('round trips cultural and %s partial display with stable identities, overrides and geometry', language => {
     const source = name(richWorld('persian'));
     const settings = defaultSettings(); settings.options.culture = 'persian';
     settings.naming = { places: { main: 'Valmont', 'village:4': 'TsingTao' }, mode: 'cultural' };
     const cultural = renameMap(source, settings);
     settings.naming = { ...settings.naming, mode: 'localized', displayLanguage: language };
-    const localized = renameMap(cultural, settings);
+    const localized = renameMap(cultural, settings, language);
     expect(localized.names!.entries.map(e => [e.id, e.parts?.proper, e.canonicalText])).toEqual(cultural.names!.entries.map(e => [e.id, e.parts?.proper, e.canonicalText]));
     const road = localized.names!.entries.find(e => e.kind === 'road')!;
     expect(road.parts?.proper).toBe('TsingTao');

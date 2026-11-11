@@ -1,9 +1,13 @@
 import { interfaceEnglish, interfaceFrench } from './interfaceMessages';
 import { translateRuntimeMessage } from './runtimeMessages';
+import { LANGUAGES, isLanguage, type Language } from './languages';
+import { localeMessages } from './localeMessages';
+import { onUnitsChange } from './units';
 
-export type Language = 'en' | 'fr';
+export type { Language } from './languages';
+export { LANGUAGES } from './languages';
 export const LANGUAGE_STORAGE_KEY = 'magna-urbis-v2-language';
-const supported = (value:unknown):value is Language => value==='en'||value==='fr';
+const supported = isLanguage;
 export function resolveLanguage(search:string,stored?:string|null):Language {
   const explicit=new URLSearchParams(search).get('lang');
   return supported(explicit)?explicit:supported(stored)?stored:'en';
@@ -17,22 +21,50 @@ const registeredMessages:Record<string,{en:string;fr:string}>=Object.create(null
 /** Feature modules register intentional UI copy without translating user values. */
 export function registerMessages(messages:Record<string,{en:string;fr:string}>):void{
   Object.assign(registeredMessages,messages);
+  for (const message of Object.values(messages)) registeredMessages[message.fr] = message;
 }
+registerMessages({
+  'Magna Urbis · V2 Workshop': { en: 'Magna Urbis · V2 Workshop', fr: 'Magna Urbis · Atelier V2' },
+  'Magna Urbis V2: a procedural mapmaking workshop, from terrain to individual houses.': { en: 'Magna Urbis V2: a procedural mapmaking workshop, from terrain to individual houses.', fr: 'Magna Urbis V2 : du relief à la maison, un atelier de cartographie procédurale.' },
+});
 export const getLanguage=():Language=>language;
-export const numberLocale=():string=>language==='en'?'en-GB':'fr-FR';
+export const numberLocale=():string=>LANGUAGES.find(item=>item.code===language)!.locale;
 export function translate(source:string,target:Language=language):string{
   const leading=source.match(/^\s*/)?.[0]??'',trailing=source.match(/\s*$/)?.[0]??'',body=source.trim();
   if(!body)return source;
   let translated:string;
-  if(Object.hasOwn(registeredMessages,body))translated=registeredMessages[body][target];
-  else if(Object.hasOwn(interfaceEnglish,body))translated=target==='en'?interfaceEnglish[body]:body;
+  const bilingualTarget = target === 'fr' ? 'fr' : 'en';
+  if(Object.hasOwn(registeredMessages,body))translated=registeredMessages[body][bilingualTarget];
+  else if(Object.hasOwn(interfaceEnglish,body))translated=target==='fr'?body:interfaceEnglish[body];
   else if(Object.hasOwn(interfaceFrench,body))translated=target==='fr'?interfaceFrench[body]:body;
-  else translated=translateRuntimeMessage(body,target);
+  else {
+    if(target!=='en'&&target!=='fr'&&Object.hasOwn(localeMessages[target],body))return leading+localeMessages[target][body]+trailing;
+    translated=translateRuntimeMessage(body,target);
+    if(target!=='en'&&target!=='fr'&&translated!==body)return leading+translated+trailing;
+  }
+  if(target!=='en'&&target!=='fr')translated=localeMessages[target][translated]??translateCatalogTemplate(translated,target);
   return leading+translated+trailing;
+}
+/** Match complete registered UI templates and preserve every interpolated user value. */
+const templateCache = new Map<string, { pattern: RegExp; keys: string[] }>();
+const catalogTemplates = Object.fromEntries(Object.entries(localeMessages).map(([language, dictionary])=>[language,Object.entries(dictionary).filter(([source])=>source.includes('{'))]));
+function translateCatalogTemplate(source: string, target: Exclude<Language, 'en'|'fr'>): string {
+  for (const [template, translated] of catalogTemplates[target]) {
+    let compiled = templateCache.get(template);
+    if (!compiled) {
+      const keys: string[] = [], parts = template.split(/(\{[a-zA-Z][a-zA-Z0-9_]*\})/g);
+      const pattern = parts.map(part=>/^\{/.test(part)?(keys.push(part.slice(1,-1)),'([\\s\\S]+?)'):part.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('');
+      compiled={pattern:new RegExp(`^${pattern}$`,'u'),keys};templateCache.set(template,compiled);
+    }
+    const match=compiled.pattern.exec(source);if(!match)continue;
+    const values=Object.fromEntries(compiled.keys.map((key,index)=>[key,match[index+1]]));
+    return translated.replace(/\{([a-zA-Z][a-zA-Z0-9_]*)\}/g,(placeholder,key:string)=>values[key]??placeholder);
+  }
+  return source;
 }
 function isTranslatable(source:string):boolean{
   const text=source.trim();
-  return !!text&&(Object.hasOwn(registeredMessages,text)||Object.hasOwn(interfaceEnglish,text)||Object.hasOwn(interfaceFrench,text)||translateRuntimeMessage(text,'en')!==text||translateRuntimeMessage(text,'fr')!==text);
+  return !!text&&(Object.hasOwn(registeredMessages,text)||Object.hasOwn(interfaceEnglish,text)||Object.hasOwn(interfaceFrench,text)||Object.hasOwn(localeMessages.es,text)||translateRuntimeMessage(text,'en')!==text||translateRuntimeMessage(text,'fr')!==text);
 }
 const protectedContent='[data-l10n-keep],textarea,pre,code,script,style';
 /** Register only intentional UI copy; user content, form values and technical JSON stay untouched. */
@@ -85,8 +117,9 @@ export function atlasUrl(href='./scientific/index.html'):string{
 }
 function applyDocumentLanguage():void{
   document.documentElement.lang=language;
-  document.title=language==='en'?'Magna Urbis · V2 Workshop':'Magna Urbis · Atelier V2';
-  document.querySelector('meta[name="description"]')?.setAttribute('content',language==='en'?'Magna Urbis V2: a procedural mapmaking workshop, from terrain to individual houses.':'Magna Urbis V2 : du relief à la maison, un atelier de cartographie procédurale.');
+  document.documentElement.dir=language==='ar'?'rtl':'ltr';
+  document.title=translate('Magna Urbis · V2 Workshop');
+  document.querySelector('meta[name="description"]')?.setAttribute('content',translate('Magna Urbis V2: a procedural mapmaking workshop, from terrain to individual houses.'));
   document.querySelectorAll<HTMLElement>('[data-i18n]').forEach(element=>{if(!element.closest(protectedContent))element.textContent=translate(element.getAttribute('data-i18n')!);});
   for(const attr of ['aria-label','title','placeholder','alt'])document.querySelectorAll(`[data-i18n-${attr}]`).forEach(element=>element.setAttribute(attr,translate(element.getAttribute(`data-i18n-${attr}`)!)));
   for(const [element,value] of dynamicBindings){if(!element.isConnected){dynamicBindings.delete(element);continue;}element.textContent=translate(value());}
@@ -95,6 +128,7 @@ function applyDocumentLanguage():void{
   document.querySelectorAll('[data-i18n-number]').forEach(element=>{element.textContent=Number(element.getAttribute('data-i18n-number')).toLocaleString(numberLocale());});
 }
 export function setLanguage(next:Language):void{
+  if(!supported(next))return;
   language=next;
   try{localStorage.setItem(LANGUAGE_STORAGE_KEY,next);}catch{/* Private mode remains usable. */}
   if(typeof history!=='undefined'){const url=new URL(location.href);url.searchParams.set('lang',next);history.replaceState(history.state,'',url);}
@@ -105,3 +139,4 @@ export function initializeLanguage():void{
   applyDocumentLanguage();
   try{if(new URLSearchParams(location.search).has('lang'))localStorage.setItem(LANGUAGE_STORAGE_KEY,language);}catch{/* Optional preference. */}
 }
+onUnitsChange(()=>{if(typeof document!=='undefined')applyDocumentLanguage();});

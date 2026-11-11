@@ -9,6 +9,7 @@ import type { View } from '../render/view';
 import { screenToWorld } from '../render/view';
 import type { V2Settings } from './contracts';
 import { getLanguage, numberLocale, onLanguageChange, registerMessages, setText, translate } from './i18n';
+import { getDistanceUnit, formatDistance, unitFactor, onUnitsChange } from './units';
 import {
   ROAD_CLASS_ORDER, addRoad, deleteRiver, deleteRoad, junctionPoints,
   planRiverDeletion, refreshNaturalForest, riverAt, roadAt, roadClassOf, setRoadClass, setRoadPath,
@@ -65,7 +66,7 @@ const T = {
     'Cliquez pour ajouter des points. Cliquez à nouveau sur le dernier point ou appuyez sur Entrée pour terminer ; Échap annule. Les extrémités s’accrochent aux carrefours, aux lieux et aux routes.'),
   riversHint: copy('Click a river. It is deleted together with every upstream tributary, its braids and its oxbows.',
     'Cliquez sur une rivière. Elle est supprimée avec tous ses affluents amont, ses bras et ses bras morts.'),
-  road: copy('Road {n}', 'Route {n}'), roadInfo: copy('{km} km · {points} handles', '{km} km · {points} poignées'),
+  road: copy('Road {n}', 'Route {n}'), roadInfo: copy('{distance} · {points} handles', '{distance} · {points} poignées'),
   cls: copy('Class', 'Catégorie'), width: copy('Width (m)', 'Largeur (m)'),
   deleteRoad: copy('Delete road', 'Supprimer la route'), removePoint: copy('Remove point', 'Retirer le point'), deselect: copy('Deselect', 'Désélectionner'),
   points: copy('{n} points', '{n} points'), finish: copy('Finish road', 'Terminer la route'), cancel: copy('Cancel', 'Annuler'),
@@ -459,12 +460,12 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
     if (current === 'roads' && selected >= 0 && w.roads?.[selected]) {
       const road = w.roads[selected], title = el('strong'), info = el('span', 'hint');
       title.textContent = fmt(T.road, { n: selected + 1 });
-      info.textContent = fmt(T.roadInfo, { km: Math.round(polylineLength(road.path) / 10) / 100, points: roadControlIndices(road.path, scale(), activeVertex).length });
+      info.textContent = fmt(T.roadInfo, { distance: formatDistance(polylineLength(road.path),getDistanceUnit(),numberLocale()), points: roadControlIndices(road.path, scale(), activeVertex).length });
       const width = el('label'), widthCaption = el('span'), widthInput = el('input');
-      setText(widthCaption, T.width); widthInput.type = 'number'; widthInput.min = '0.5'; widthInput.max = '60'; widthInput.step = '0.5';
-      widthInput.value = String(Math.round(road.width * 10) / 10); widthInput.disabled = working;
+      widthCaption.textContent = `${translate(T.width).replace(/\s*[（(][^()（）]*[)）]\s*$/, '')} (${getDistanceUnit()})`; widthInput.type = 'number'; widthInput.min = String(.5/unitFactor(getDistanceUnit())); widthInput.max = String(60/unitFactor(getDistanceUnit())); widthInput.step = 'any';
+      widthInput.value = String(road.width/unitFactor(getDistanceUnit())); widthInput.disabled = working;
       const index = selected;
-      widthInput.onchange = () => { const value = widthInput.valueAsNumber; if (Number.isFinite(value) && value > 0) void edit(source => setRoadClass(source, index, roadClassOf(source, index), value).world); };
+      widthInput.onchange = () => { const value = widthInput.valueAsNumber*unitFactor(getDistanceUnit()); if (Number.isFinite(value) && value >= .5 && value <= 60) void edit(source => setRoadClass(source, index, roadClassOf(source, index), value).world); };
       width.append(widthCaption, widthInput);
       const row = el('div', 'v2-network-row');
       row.append(button(T.removePoint, removeActiveVertex, { disabled: activeVertex <= 0 || activeVertex >= road.path.length - 1 }),
@@ -498,11 +499,12 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
     render();
   }
   const offLanguage = onLanguageChange(() => { svg.setAttribute('aria-label', translate(T.overlay)); render(); });
+  const offUnits = onUnitsChange(render);
   render();
   return {
     sync, start, stop, active: () => current !== 'off', tool: () => current, toWorld,
     destroy() {
-      stop(); offLanguage();
+      stop(); offLanguage(); offUnits();
       host.map.removeEventListener('pointerdown', onPointerDown, true); host.map.removeEventListener('pointermove', onPointerMove, true);
       host.map.removeEventListener('pointerup', onPointerUp, true); host.map.removeEventListener('pointercancel', onPointerUp, true);
       host.map.removeEventListener('click', onClick, true); host.map.removeEventListener('dblclick', onDoubleClick, true);

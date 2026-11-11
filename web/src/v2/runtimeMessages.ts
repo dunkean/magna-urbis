@@ -4,7 +4,9 @@
  * recipes, URLs and numeric payloads are never translated by word replacement.
  * Unknown backend diagnostics stay verbatim so their scientific evidence is retained.
  */
-export type RuntimeLanguage = 'en' | 'fr';
+import type { Language } from './languages';
+import { localeMessages } from './localeMessages';
+export type RuntimeLanguage = Language;
 
 const entries: readonly (readonly [string, string])[] = [
   ['Stockage des modèles neuronaux indisponible ; les poids devront être téléchargés à nouveau.', 'Neural model storage unavailable; weights will need to be downloaded again.'],
@@ -303,7 +305,7 @@ const englishToFrench = new Map<string, string>(entries.map(([fr, en]) => [en, f
 
 type Template = { pattern: RegExp; keys: string[]; target: string };
 const numericSlots = new Set(['count', 'index', 'done', 'total', 'quarters', 'parcels', 'buildings', 'placed', 'built', 'population', 'extent', 'seconds', 'size', 'min', 'max', 'factor', 'status']);
-const numberPattern = '[-+]?\\d[\\d \\u00a0\\u202f.,]*(?:[eE][-+]?\\d+)?';
+const numberPattern = '[-+]?\\p{Nd}[\\p{Nd} \\u00a0\\u202f.,\\u066b\\u066c]*(?:[eE][-+]?\\d+)?';
 function compileTemplate(source: string, target: string): Template {
   const keys: string[] = [];
   const token = /\{([a-zA-Z]+)\}/g;
@@ -391,6 +393,8 @@ const templatePairs: readonly (readonly [string, string])[] = [
 ];
 const toEnglish = templatePairs.map(([fr, en]) => compileTemplate(fr, en));
 const toFrench = templatePairs.map(([fr, en]) => compileTemplate(en, fr));
+const localizedTemplates = Object.fromEntries(Object.entries(localeMessages).map(([language, dictionary]) => [language,
+  templatePairs.flatMap(([fr, en]) => [compileTemplate(fr, dictionary[en] ?? en), compileTemplate(en, dictionary[en] ?? en)])]));
 
 // These are validation labels, not values or object keys in a generation recipe.
 const fieldLabels = new Map<string, string>([
@@ -409,6 +413,24 @@ const fieldLabels = new Map<string, string>([
 const frenchFieldLabels = new Map([...fieldLabels].map(([fr, en]) => [en, fr]));
 
 function translateLine(message: string, language: RuntimeLanguage): string {
+  if (language !== 'en' && language !== 'fr') {
+    const dictionary = localeMessages[language];
+    const english = frenchToEnglish.get(message) ?? message;
+    if (dictionary[english]) return dictionary[english];
+    const error = /^(Error|TypeError|RangeError|AbortError|DOMException):\s+([\s\S]+)$/u.exec(message);
+    if (error) return `${error[1]}: ${translateLine(error[2], language)}`;
+    const cached = /^([\s\S]+) · (memory|disk|miss)$/u.exec(message);
+    if(cached)return `${translateLine(cached[1],language)} · ${cached[2]}`;
+    for (const template of localizedTemplates[language]) {
+      const match = template.pattern.exec(message);
+      if (!match) continue;
+      const values = Object.fromEntries(template.keys.map((key, index) => [key, match[index + 1]]));
+      if (values.reason) values.reason = translateLine(values.reason, language);
+      if (values.field) values.field = dictionary[fieldLabels.get(values.field) ?? values.field] ?? fieldLabels.get(values.field) ?? values.field;
+      return template.target.replace(/\{([a-zA-Z]+)\}/g, (_placeholder, key: string) => values[key]);
+    }
+    return translateLine(message, 'en');
+  }
   const dictionary = language === 'en' ? frenchToEnglish : englishToFrench;
   const exact = dictionary.get(message);
   if (exact !== undefined) return exact;
@@ -440,7 +462,8 @@ export function translateRuntimeMessage(message: string, language: RuntimeLangua
 
 /** Label unknown scientific diagnostics explicitly instead of inventing a translation. */
 export function runtimeDiagnosticLabel(language: RuntimeLanguage = 'en'): string {
-  return language === 'fr' ? 'Diagnostic du moteur (texte source)' : 'Engine diagnostic (source text)';
+  const source = 'Engine diagnostic (source text)';
+  return language === 'fr' ? 'Diagnostic du moteur (texte source)' : language === 'en' ? source : localeMessages[language][source] ?? source;
 }
 
 /** Exposed for catalogue validation; no execution state or map data enters the dictionaries. */

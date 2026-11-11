@@ -1,3 +1,4 @@
+import { cityNamedSite } from '../render/cityGeneration';
 import { defaultCityLayoutConfig as defaultLayoutConfig } from '../render/cityGeneration';
 import { springPoints } from '../../../rust/bridge/urbanGeography';
 import type { World, UrbanLayer, UrbanBuilding, PolyH, UrbanZone, StreetRole, Options } from '../gen/types';
@@ -5,7 +6,8 @@ import type { Layout, Partition, UrbanResponse, Street, UrbanEngine } from '../.
 import type { LayoutConfig, ParcelConfig } from '../../../rust/bridge/urbanConfig';
 import { defaultParcelConfig, normalizeLayoutConfig, normalizeParcelConfig } from '../../../rust/bridge/urbanConfig';
 import { settlementRaster, type SettlementRaster } from '../../../rust/bridge/settlements';
-import { cityRasterSide } from '../render/cityGeneration';
+import { cityRasterSide, citySiteArchetypes, cityTownRoads } from '../render/cityGeneration';
+import type { RustRegionSnapshot } from './region';
 import type { PlacementBatch, PlacementRequest, PlacementBatchSettings } from '../../../rust/bridge/urbanArchitecture';
 import type { HouseConfig } from '../../../rust/bridge/housesContract';
 import { carryUrbanOpenDeficits } from '../../../rust/bridge/urbanOpenDeficits';
@@ -132,6 +134,23 @@ export function retainCityGround(world: World): void {
 /** Display ground of the native cities: the retained engine product, rebuilt only for a world that has none (an imported project). */
 export function cityGroundOf(world: World): CityGroundRaster {
   return (world.terrain as CityGroundTerrain).v2CityGround ?? rustSettlementRaster(world);
+}
+
+/** Regional roads of a V2 town, for its generation and its 3D bridges: the retained native network split at its
+ * crossings and ranked by class, exactly as City Bench sends it (`cityTownRoads`). A TypeScript region has no
+ * native network and keeps its projected roads. */
+const townRoads = new WeakMap<object, Street[]>();
+export function townRoadStreets(world: World): Street[] {
+  const native = (world.debug?.v2RustRegion as RustRegionSnapshot | undefined)?.roads;
+  if (native) { let streets = townRoads.get(native); if (!streets) townRoads.set(native, streets = cityTownRoads(native)); return streets; }
+  return (world.roads ?? []).map(road => ({ path: road.path, widths: road.path.map(() => road.width),
+    rank: road.kind === 'major' ? 1 : road.kind === 'minor' ? 2 : 3, role: 'regional' }));
+}
+/** Site archetype of a V2 town (layout `siteArchetypes`), from its native placement record as City Bench reads it. */
+export function townSiteArchetypes(world: World, key: string, explicit?: Record<string, string>): Record<string, string> {
+  const placed = (world.debug?.v2RustRegion as RustRegionSnapshot | undefined)?.placement?.settlements.find(s => s.key === key);
+  const place = world.settlements?.find(s => s.key === key);
+  return citySiteArchetypes([placed ?? { key, archetype: place?.archetype }], explicit);
 }
 
 export function resolveRustUrbanControls(settings: V2Settings, key: string, options: Options): { layout: LayoutConfig; parcels: ParcelConfig; houses: PlacementBatchSettings } {
@@ -278,15 +297,16 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
   const options = { ...settings.options, ...settings.local[key],
     culture: settings.local[key]?.culture ?? String(world.stats['v2.culture:' + key] ?? place.culture),
     population: settings.local[key]?.population ?? Number(world.stats['v2.population:' + key] ?? place.population) };
-  const config = resolveRustUrbanControls(settings, key, options), local = settings.urban?.local?.[key];
+  const resolved = resolveRustUrbanControls(settings, key, options), local = settings.urban?.local?.[key];
+  // Same site archetype as City Bench's quarters request (kinds.rs reads it for the village form and the defences).
+  const config = { ...resolved, layout: { ...resolved.layout, siteArchetypes: townSiteArchetypes(world, key, resolved.layout.siteArchetypes) } };
   const target = through ?? local?.through ?? settings.urban?.through ?? 'buildings';
   const stageIndex = ['layout', 'parcels', 'programme', 'buildings'].indexOf(target);
   if (stageIndex < 0) throw new Error('Étape urbaine inconnue.');
   const runtime = backend === 'native' ? { profile: 'local' as const, server: settings.runtime?.localServer ?? 'http://127.0.0.1:8791' } : undefined;
   const report = (stage: string, label: string, completed: number, total = 5): void => onProgress?.({ stage, label, completed, total });
   const previous = (world.debug?.v2RustCities as Record<string, RustTownSnapshot> | undefined)?.[key];
-  const roads: Street[] = (world.roads ?? []).map(road => ({ path: road.path, widths: road.path.map(() => road.width),
-    rank: road.kind === 'major' ? 1 : road.kind === 'minor' ? 2 : 3, role: 'regional' }));
+  const roads = townRoadStreets(world);
   const seed = urbanSeed(settings, key, 'composition'), streetSeed = urbanSeed(settings, key, 'streets');
   const compositionKey = fingerprint([world.stats['v2.terrainKey'], ...(world.stats['v2.waterEditRevision'] ? [world.stats['v2.waterEditRevision']] : []), key, backend, seed, place.center, options.population, options.culture, config.layout, roads]);
   const layoutKey = streetSeed === seed ? compositionKey : fingerprint([compositionKey, streetSeed]);
@@ -322,8 +342,8 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
     } finally { if (primed) { retained.priming = undefined; primed(); } }
   };
   if (!snapshot.layouts.length) {
-    const inputs = { sites: [{ key, name: place.name ?? '', population: options.population,
-      culture: options.culture, center: place.center, radius: place.radius }], roads };
+    const inputs = { sites: [cityNamedSite({ key, name: place.name, population: options.population,
+      culture: options.culture, center: place.center, radius: place.radius }, world.seed, options.language)], roads };
     if (!snapshot.compositionLayouts) {
       report('urban-layout', 'Rust · composition urbaine…', 0);
       snapshot.compositionLayouts = required<Layout[]>(await request('quarters', { ...inputs, layoutConfig: config.layout }), 'layouts');

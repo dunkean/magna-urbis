@@ -1,3 +1,4 @@
+import { cityNamedSite } from '../render/cityGeneration';
 import { defaultCityLayoutConfig as defaultLayoutConfig } from '../render/cityGeneration';
 import { benchOverlayChange } from './benchComposition';
 import { terrainStyle } from '../render/terrainStyle';
@@ -7,7 +8,6 @@ import { setupUrbanRenderLocale } from './urbanRenderLocale';
 import { getBenchRenderColors } from './benchRenderColors';
 import { DEFAULT_LANDUSE_FOREST_TONE, LANDUSE_FOREST_TONES, LANDUSE_FOREST_TONE_LABEL, getLanduseForestTone, onLanduseForestTone, type LanduseForestTone } from '../render/landuseForestTone';
 import { getGroundBlend, onGroundBlend, setGroundBlend, type GroundBlend } from '../render/groundBlend';
-import { clearCityGroundUnderCanopy } from '../render/cityCanopy';
 import { cityBuildingAppearance, cityDrawOptions, finishCityFrame } from '../render/cityDrawOptions';
 import { setupUrbanPanelLocale, urbanText } from './urbanPanelLocale';
 import { LOCALE_KEY, savedLocale } from './shellLocale';
@@ -79,7 +79,7 @@ import { updateUrbanBuildingSelection } from './urbanBuildingSelection';
 import { buildingSettings, workshopSettings, appliedWorkshopSnapshot, mergeCityWorkshop, mergeWorkshopCities } from './urbanSnapshot';
 import { programmeSvg, refusalSvg } from '../render/urbanProgramme';
 import { DEFAULT_CITY_ARCHITECTURE, CITY_DISPLAY_DEFAULTS, cityGlBlockReason, usesNativeHouseRenderer } from '../render/cityContract';
-import { citySettlementRaster } from '../render/cityGeneration';
+import { citySettlementRaster, citySiteArchetypes, cityTownRoads } from '../render/cityGeneration';
 import { openMethodNote } from './methodNotes';
 import { applySettlementStyle, installSettlementStyles } from './urbanSettlementStyles';
 import { createUrbanMainPanel } from './urbanMainPanel';
@@ -1087,9 +1087,9 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       cachedTerrain = source;
     }
     if (kind === 'quarters') {
-      message.layoutConfig = layoutWithEdits(clone(appliedLayout), edits); message.sites = selected.map(s => ({ key: s.key, population: s.population, culture: s.culture, center: s.center, radius: s.radius }));
-      message.layoutConfig.siteArchetypes = Object.fromEntries(selected.map(s => [s.key, s.siteType && s.siteType !== 'auto' ? s.siteType : s.archetype]));
-      message.roads = regionalStreets(roads);
+      message.layoutConfig = layoutWithEdits(clone(appliedLayout), edits); message.sites = selected.map(s => cityNamedSite({ key: s.key, name: s.name, population: s.population, culture: s.culture, center: s.center, radius: s.radius }, options.getSeed()));
+      message.layoutConfig.siteArchetypes = citySiteArchetypes(selected);
+      message.roads = cityTownRoads(roads);
     } else {
       // The engine retains the exact serialized layouts of its last quarter response:
       // when they are still the applied plan, only their id is sent. A restarted
@@ -1562,7 +1562,6 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
         buildings: compare ? (silhouetteCompare ? comparisonBuilt?.[2] : native ? landmarkOverlay() : cityBuilt) : native ? landmarkOverlay() : cityBuilt,
         buildingsVisible: !parentOwned && (compare ? view === 'buildings' : visible && (!glFrame || !!native)),
         beforeBuildings: target => {
-          if (composition.vegetation.procedural) clearCityGroundUnderCanopy(target, frame.viewport, frame.mpp);
           drawUrbanSemantic(target, [cityPlan!], { look: composition.landuse.urban, opacity: composition.landuse.opacity, mpp: frame.mpp, viewport: frame.viewport });
         },
         selectedBuilding: selected, selectedParcel, refusedParcels: refused, readableGardens: render.readableGardens && look.layers.gardens, onTexturesReady: draw } }));

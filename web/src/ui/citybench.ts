@@ -1,3 +1,4 @@
+import { cityGroundSettings, cityGroundLook, cityForestInput, cityForestSettings } from '../render/cityEnvironment';
 import { cityRegionalStreets } from '../render/cityContract';
 import { city3dPlanOptions } from '../render/cityDrawOptions';
 import { benchOverlayChange, benchMaterialNightChange } from './benchComposition';
@@ -9,7 +10,7 @@ import { decorBiome, decorClimate, decorClimateZone } from './decorClimate';
 import { setMapClimateZone } from '../render/seasonPalette';
 import { loadRenderGeometry } from '../../../rust/bridge/renderGeometry';
 import { seedHash } from '../../../rust/bridge/terrainAdjust';
-import { buildForestField, DEFAULT_FOREST_SETTINGS, type ForestField } from '../../../rust/bridge/terrainForest';
+import { buildForestField, type ForestField } from '../../../rust/bridge/terrainForest';
 import { forestRetainedRiverSegments } from '../../../rust/bridge/terrainForestRiparian';
 import { forestRetainedWater } from '../../../rust/bridge/terrainForestWater';
 import { createTerrainDecorLibrary } from './terrainDecorLibrary';
@@ -20,7 +21,7 @@ import type { Decor } from './decor';
 import { downloadDecorFile, readDecorFile } from './decorFile';
 import { clampView, fitView, panBy, zoomAt, type View } from '../render/view';
 import { CITY_LOD_OFF } from '../render/cityCanvas';
-import { cityContourPaths, cityContourInterval, type CityContourPaths } from '../render/cityContours';
+import { cityContourPaths, type CityContourPaths } from '../render/cityContours';
 import { renderRustTerrain, terrainContourWidths } from '../../../rust/bridge/terrainRender';
 import { getBenchRenderColors, writeRenderColorsQuery } from './benchRenderColors';
 import { isTerrainStyle, styleTraits, terrainStyle, type TerrainStyle } from '../render/terrainStyle';
@@ -187,11 +188,12 @@ function retainedWater3d(): City3dRetainedWater | undefined {
 window.magnaCityBackground = { url: backgroundUrl, style: () => backgroundStyle };
 let forestOf: Decor | undefined, forestKey = '', forestField: ForestField | undefined, occupationOf: unknown, occupationStreets: unknown, occupation: ReturnType<typeof forestOccupation>;
 const lakeMasks = new WeakMap<Decor, Float32Array>();
-type BenchForestRequest = { d: Decor; key: string; settings: ReturnType<typeof resolveBenchAppearance>['vegetation']['forestSettings'] };
+type BenchForestRequest = { d: Decor; key: string; settings: ReturnType<typeof resolveBenchAppearance>['vegetation']['forestSettings']; clearingProfile: ReturnType<typeof resolveBenchAppearance>['traits']['forestClearingProfile'] };
 let forestBuild: { d: Decor; key: string; job: Promise<void> } | undefined;
 function benchForestRequest(target: 'view2d' | 'view3d'): BenchForestRequest | undefined {
   const r = resolveBenchAppearance({}, target), d = decor; if (!d || !r.composition.vegetation.procedural || !r.vegetation.forestSettings.enabled || target === 'view2d' && !r.ground.layers.relief) return;
-  return { d, key: JSON.stringify(r.vegetation.forestSettings), settings: r.vegetation.forestSettings };
+  const settings = { ...cityForestSettings(new URLSearchParams(d.meta.query)), ...r.vegetation.forest };
+  return { d, key: JSON.stringify([settings, r.traits.forestClearingProfile]), settings, clearingProfile: r.traits.forestClearingProfile };
 }
 function benchForestResult() {
   // Regional roads clear the forest as on V2 (displayForest.ts): no trunk in the corridor, crowns overhang its edges.
@@ -209,7 +211,7 @@ async function benchForestAsync(target: 'view2d' | 'view3d' = 'view2d') {
   if (forestOf !== q.d || forestKey !== q.key) {
     if (!(forestBuild && forestBuild.d === q.d && forestBuild.key === q.key)) {
       const raster = q.d.raster, climate = decorClimate(q.d.meta);
-      const build: NonNullable<typeof forestBuild> = { d: q.d, key: q.key, job: buildForestField({ seed: seedHash(q.d.meta.seed), climate: [climate.temperature, climate.precipitation], height: { x: 0, y: 0, width: raster.width, n: raster.n, data: raster.height }, water: raster.water, riverSegments: forestRetainedRiverSegments(q.d.meta.waterSvg, raster.width) }, q.settings)
+      const build: NonNullable<typeof forestBuild> = { d: q.d, key: q.key, job: buildForestField(cityForestInput(q.d.meta.seed, climate, { x: 0, y: 0, width: raster.width, n: raster.n, data: raster.height }, raster.water, { riverSegments: forestRetainedRiverSegments(q.d.meta.waterSvg, raster.width), clearingProfile: q.clearingProfile }), q.settings)
         .then(field => { if (forestBuild === build) { forestOf = q.d; forestKey = q.key; forestField = field; } }).finally(() => { if (forestBuild === build) forestBuild = undefined; }) };
       forestBuild = build;
     }
@@ -366,11 +368,8 @@ const settlements = createTerrainSettlements({ map, viewport, city: true, active
   getForestSource: () => {
     if (!decor) return undefined;
     const r = decor.raster, climate = decorClimate(decor.meta), q = new URLSearchParams(decor.meta.query);
-    const bounded = (name: string, fallback: number, max: number) => q.has(name) && Number.isFinite(Number(q.get(name))) ? Math.max(0, Math.min(max, Number(q.get(name)))) : fallback;
-    return { key: `${decor.meta.id}:${decor.meta.query}`, input: { seed: seedHash(decor.meta.seed), climate: [climate.temperature, climate.precipitation],
-      height: { x: 0, y: 0, width: r.width, n: r.n, data: r.height }, water: r.water,
-      riverSegments: forestRetainedRiverSegments(decor.meta.waterSvg, r.width) }, settings: { enabled: true,
-      density: bounded('forestDensity', DEFAULT_FOREST_SETTINGS.density, 2), clearings: bounded('forestClearings', DEFAULT_FOREST_SETTINGS.clearings, 1) } };
+    return { key: `${decor.meta.id}:${decor.meta.query}`, input: cityForestInput(decor.meta.seed, climate, { x: 0, y: 0, width: r.width, n: r.n, data: r.height }, r.water,
+      { riverSegments: forestRetainedRiverSegments(decor.meta.waterSvg, r.width) }), settings: cityForestSettings(q) };
   },
   getTerrain: () => terrain,
   getSettings: () => ({ seed: decor?.meta.seed ?? '', width: decor?.raster.width ?? 0, relief: new URLSearchParams(decor?.meta.query).get('relief') ?? 'flat' }) as TerrainSettings,
@@ -396,7 +395,7 @@ const city3d = mountCity3d({ getText: () => benchTextLayer(benchSettlementTextWo
   getBackground: backgroundUrl,
   getPhysicalGround: material => material ? undefined : drapedPhysicalGround(),
   getRetainedWater: retainedWater3d,
-  getLook:()=>{const c=resolveBenchAppearance({},'view3d').composition;return {ambience:c.ambience,waterLook:c.networks.water.look,waterVisible:c.networks.water.visible};},
+  getLook: () => cityGroundLook(resolveBenchAppearance({}, 'view3d')),
   getBuildingsVisible: () => { const b = resolveBenchAppearance({}, 'view3d').composition.buildings; return b.visible && b.meshes !== 'none'; },
   getForest: () => benchForest('view3d'),
   getSurface: () => {
@@ -409,13 +408,10 @@ const city3d = mountCity3d({ getText: () => benchTextLayer(benchSettlementTextWo
   getViewSettings: () => { const r = resolveBenchAppearance({}, 'view3d'); return { ground: r.city.ground as import('./city3d').City3dGround, plan: r.city.plan, colors: r.city.colors, exaggeration: r.city.exaggeration, refinement: r.city.refinement }; },
   onViewSettingsChange: value => { if (value.ground !== resolveBenchAppearance({}, 'view3d').city.ground) setBenchComposition(withGroundVariant(getBenchComposition(), value.ground === 'map' ? 'parchment' : value.ground === 'render' ? 'render3d' : value.ground)); for (const key of ['plan', 'colors', 'exaggeration', 'refinement'] as const) setBenchAppearanceField(`city.${key}`, value[key]); },
   getGroundSettings: ground => {
-    if (!decor || ground === 'map') return;
-    const r = resolveBenchAppearance({}, 'view3d'); if (!r.ground.layers.relief || !r.ground.layers.hypsometry) return;
-    const traits = styleTraits(ground === 'render' ? 'render3d' : ground), relief = new URLSearchParams(decor.meta.query).get('relief'), pal = terrainStyle(r.composition.variant, r.palette.colors).palette;
-    const landform = relief === 'flat' || relief === 'hills' || relief === 'valley' ? relief : 'mountains';
-    return { seed: seedHash(decor.meta.seed), climate: decorClimate(decor.meta), climateZone: decorClimateZone(decor.meta), sourceCell: decor.meta.terrainDisplay?.sourceCell ?? decor.raster.width / decor.raster.n,
-      lighting: r.ground.lighting, ambience:r.composition.ambience,waterLook:r.composition.networks.water.look, displacement: r.city.refinement !== 'source', forestBrushes: traits.forestBrushes, renderV2: traits.satelliteVariant, v2Season: r.ground.season, v2Calendar: r.ground.calendar, waterVisible: r.composition.networks.water.visible,
-      contours: r.ground.contours && relief !== 'cavern' ? { step: cityContourInterval(landform, 1), color: pal.contour, opacity: pal.contourOpacity, flat: relief === 'flat' } : undefined };
+    if (!decor) return;
+    return cityGroundSettings(resolveBenchAppearance({}, 'view3d'), ground, { seed: decor.meta.seed, climate: decorClimate(decor.meta),
+      climateZone: decorClimateZone(decor.meta), sourceCell: decor.meta.terrainDisplay?.sourceCell ?? decor.raster.width / decor.raster.n,
+      relief: new URLSearchParams(decor.meta.query).get('relief') ?? 'mountains' });
   },
   getPlanOptions: () => city3dPlanOptions(resolveBenchAppearance({}, 'view3d'), labels),
   onSelect: id => settlements.urban.selectBuilding(id) });

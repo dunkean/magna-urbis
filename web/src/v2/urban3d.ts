@@ -1,3 +1,5 @@
+import { cityGroundSettings, cityGroundLook } from '../render/cityEnvironment';
+import { retainedDecorOf } from './decorTerrain';
 import { cityRegionalStreets, usesNativeHouseRenderer } from '../render/cityContract';
 /** Exact City Bench renderer inside V2; no iframe, geometry regeneration or surrogate houses. */
 import { v2DisplayForest, v2ForestOccupation } from './displayForest';
@@ -15,14 +17,15 @@ import type { AppearancePatch, ResolvedAppearance } from '../render/appearanceRe
 import { effectiveTerrainSettings } from './terrainSettings';
 import { DEFAULT_TERRAIN_LIGHTING } from '../render/terrainLighting';
 import { terrainStyle } from '../render/terrainStyle';
-import { CONTOUR_INTERVAL } from '../render/contours';
 import { createTerrainSurfaceSampler } from '../ui/terrainSurface';
 import { createGroundDisplacementSampler } from '../../../rust/bridge/terrainGround';
 import { seedHash } from '../../../rust/bridge/terrainAdjust';
 import type { V2Settings } from './contracts';
 import type { RustTownSnapshot } from './rustUrban';
-import { rustSettlementRaster } from './rustUrban';
+import { rustSettlementRaster, townRoadStreets } from './rustUrban';
 import { getLanguage, onLanguageChange } from './i18n';
+import { getDistanceUnit } from './units';
+import { mapPresentation } from './mapPresentation';
 import { activityScene } from './activitySites';
 import { provideFurniture3d, refreshFurniture3d } from '../ui/legendOverlay3d';
 import { city3dPlanOptions } from '../render/cityDrawOptions';
@@ -143,16 +146,9 @@ export function v2Terrain3dView(settings: V2Settings): City3dViewSettings {
 }
 /** All material modes consume one physical surface and the same display-only recipe. */
 export function v2Terrain3dGround(world: World, settings: V2Settings, ground: City3dGround): Terrain3dGroundSettings | undefined {
-  if (ground === 'map') return;
   const config = effectiveTerrainSettings(settings, world.mapSize), r = v2Resolved3d(settings, world), native = renderScene(world, settings).nativeTerrain;
-  const style = terrainStyle(ground === 'render' ? 'render3d' : ground, r.palette.colors), relief = config.relief === 'flat' || config.relief === 'hills' || config.relief === 'valley' ? config.relief : 'mountains';
-  const layers = r.ground.layers;
-  if (!layers.relief || !layers.hypsometry) return;
-  return { seed: seedHash(world.seed), climate: { temperature: config.climateValues!.temperature, precipitation: config.climateValues!.precipitation }, climateZone: config.climateZone,
-    sourceCell: native ? native.width / (native.field?.n ?? native.resolution) : world.terrain.height.cell,
-    lighting: { ...r.ground.lighting }, renderV2: style.traits.satelliteVariant, paperMap: !!style.traits.paperMap, v2Season: r.ground.season, v2Calendar: r.ground.calendar, ambience:r.composition.ambience, waterLook:r.composition.networks.water.look,
-    waterVisible: layers.water, displacement: r.city.refinement !== 'source', forestBrushes: style.traits.forestBrushes,
-    contours: r.ground.contours && layers.relief && config.relief !== 'cavern' ? { step: CONTOUR_INTERVAL[relief] * (relief === 'mountains' ? 2 : 1), color: style.palette.contour, opacity: style.palette.contourOpacity, flat: relief === 'flat' } : undefined };
+  return cityGroundSettings(r, ground, { seed: world.seed, climate: config.climateValues!, climateZone: config.climateZone,
+    sourceCell: native ? native.width / (native.field?.n ?? native.resolution) : world.terrain.height.cell, relief: config.relief });
 }
 export function createV2Terrain3dSampler(world: World, settings: V2Settings, ground: City3dGround): ReturnType<typeof createTerrainSurfaceSampler> {
   const base = v2Terrain3dSurface(world, settings).height, config = effectiveTerrainSettings(settings, world.mapSize), native = renderScene(world, settings).nativeTerrain;
@@ -168,6 +164,7 @@ export function createV2Terrain3dSampler(world: World, settings: V2Settings, gro
   return createGroundDisplacementSampler(sampler, { seed: look.seed, sourceCell: look.sourceCell, macroSampler: createTerrainSurfaceSampler(base, { ...look, refine: false }, [], false), climate: [look.climate!.temperature, look.climate!.precipitation] });
 }
 export function v2WorldDecor(world: World, settings: V2Settings): Decor {
+  const retained = retainedDecorOf(world.terrain); if (retained) return retained;
   const raster = rustSettlementRaster(world);
   let metrics = rasterMetrics.get(raster);
   if (!metrics) {
@@ -255,7 +252,7 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
       }
     }
     nativeOf = cities;
-    if (world !== worldOf) { roads = (world.roads ?? []).map(road => ({ path: road.path, widths: road.path.map(() => road.width), rank: road.kind === 'major' ? 1 : road.kind === 'minor' ? 2 : 3, role: 'regional' })); worldOf = world; }
+    if (world !== worldOf) { roads = townRoadStreets(world); worldOf = world; }
   };
   const heightSampler = () => {
     const world = options.getWorld(); if (!world) return;
@@ -278,17 +275,23 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
     if (legendPlan?.layouts !== layouts || legendPlan.partitions !== partitions) legendPlan = { layouts, partitions, scene: buildCityScene(layouts, partitions) };
     return legendPlan.scene;
   };
+  let presentedSource: World | undefined, presentedKey = '', presentedWorld: World | undefined;
+  const textWorld = (): World | undefined => {
+    const world = options.getWorld(), key = `${getLanguage()}:${getDistanceUnit()}:${options.getSettings().naming?.mode ?? 'localized'}`;
+    if (world !== presentedSource || key !== presentedKey) { presentedSource = world; presentedKey = key; presentedWorld = world ? mapPresentation(world, options.getSettings()) : undefined; }
+    return presentedWorld;
+  };
   provideFurniture3d(options.host, () => {
     const world = options.getWorld(); if (!world) return;
     const r = v2Resolved3d(options.getSettings(), world), lu = r.composition.landuse, plan = r.cartography.legend && lu.urban !== 'off' ? legendScene() : undefined;
-    return { world, palette: terrainStyle(r.composition.variant, r.palette.colors).palette, legend: r.cartography.legend, cartouche: r.cartography.cartouche,
+    return { world: textWorld(), palette: terrainStyle(r.composition.variant, r.palette.colors).palette, legend: r.cartography.legend, cartouche: r.cartography.cartouche,
       semantic: [...ruralSemanticLegend(world.landuse, lu.classes, lu.rural), ...(plan ? urbanSemanticLegend([plan], lu.urban) : [])] };
   });
   const view = mountCity3d({ host: options.host, navigation: true, fastTerrain: true, materialGrounds: true, softwareMaterialFallback: !!options.getBackground, getDecor: () => decor, getLayouts: () => layouts, getPartitions: () => partitions, getRegionalStreets: () => cityRegionalStreets(v2Resolved3d(options.getSettings(), options.getWorld()), roads),
     getBuildingsVisible: () => { const b = v2Resolved3d(options.getSettings()).composition.buildings; return b.visible && b.meshes !== 'none'; }, getScene: () => scene, getSelected: options.getSelected, onSelect: options.onSelect, getBackground: options.getBackground, getBackgroundImage: options.getBackgroundImage,
     getIllustrated: illustrated,
     getGroundSettings: ground => { const world = options.getWorld(); return world && v2Terrain3dGround(world, options.getSettings(), ground); },
-    getLook: () => {const r=v2Resolved3d(options.getSettings());return {ambience:r.composition.ambience,waterLook:r.composition.networks.water.look,waterVisible:r.ground.layers.water,groundCover:r.composition.vegetation.procedural};},
+    getLook: () => cityGroundLook(v2Resolved3d(options.getSettings())),
     getWaterDisplay: () => { const world = options.getWorld(); return world && v2WaterDisplay(world, options.getSettings()); },
     getSurface: () => { const world = options.getWorld(); return world && v2Terrain3dSurface(world, options.getSettings()); }, getHeightSampler: heightSampler,
     getForest: () => {
@@ -296,7 +299,7 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
       const settings = options.getSettings(), world = options.getWorld(), r = world && v2Resolved3d(settings, world), field = r && !r.traits.fantasy && v2DisplayForest(world!, settings, r, () => view.refresh());
       return field &&Number.isInteger(field.n) && field.n > 0 && Number.isFinite(field.width) && field.width > 0 && field.rgba instanceof Uint8Array && field.rgba.length === field.n ** 2 * 4 ? { field, occupation: v2ForestOccupation(world!) } : undefined;
     },
-    getText: () => { const r = v2Resolved3d(options.getSettings()); return { world: options.getWorld(), text: r.composition.text, palette: terrainStyle(r.composition.variant, r.palette.colors).palette }; },
+    getText: () => { const r = v2Resolved3d(options.getSettings()); return { world: textWorld(), text: r.composition.text, palette: terrainStyle(r.composition.variant, r.palette.colors).palette }; },
     getSemantic: () => {
       const world = options.getWorld(), settings = options.getSettings(); if (!world) return;
       const { rural, urban, opacity, classes, depth } = v2Resolved3d(settings, world).composition.landuse;

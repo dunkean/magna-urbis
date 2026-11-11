@@ -16,7 +16,7 @@ export type RpgPinKind = keyof typeof RPG_PIN_KINDS;
 export interface RpgPin { id: string; kind: RpgPinKind; text: string; x: number; y: number }
 export interface LandmarkLabel { id: string; kind: 'castle' | 'church' | 'square' | 'gate'; text: string; x: number; y: number }
 export interface MapAnnotations { enabled: boolean; pins?: RpgPin[]; landmarks?: LandmarkLabel[] }
-export type MapLabelWorld = Pick<World, 'names'> & { site?: { center: Vec2 }; urban?: unknown; mapAnnotations?: MapAnnotations; options?: { labels?: boolean } };
+export type MapLabelWorld = Pick<World, 'names'> & { site?: { center: Vec2 }; urban?: unknown; mapAnnotations?: MapAnnotations; options?: { labels?: boolean; distanceUnit?: import('../gen/units').DistanceUnit } };
 
 /** Only placed programme features get labels: unmet demands have no map position. */
 export function nativeLandmarkLabels(layouts: Layout[] = [], partitions: Partition[] = []): LandmarkLabel[] {

@@ -1,3 +1,7 @@
+import { generateUrbanLanduse, cityCountrysideOptions } from '../ui/urbanLanduseData';
+import { cityForestInput } from '../render/cityEnvironment';
+import { retainedDecorOf } from './decorTerrain';
+import { forestRetainedRiverSegments } from '../../../rust/bridge/terrainForestRiparian';
 import { PROCEDURAL_RECIPE_VERSION, isCompactProcedural } from '../../../rust/bridge/terrainGenerationRecipe';
 import { COMPACT_VERSION } from '../../../rust/bridge/terrainPhasor';
 import { CLIMATE_ZONE_BASE, CLIMATE_ZONE_VALUES } from '../../../rust/bridge/terrainClimate';
@@ -471,7 +475,24 @@ async function finishTowns(world: World, settings: V2Settings, onProgress?: Prog
   // Rebuild cultivation from the retained plans, never from the expensive terrain stage.
   report(onProgress, 'landuse', 'Mise Ã  jour des terres cultivÃ©es et des nomsâ€¦', 0, 1);
   world.options = { ...effectiveOptions(settings, world.mapSize), workflow: world.options.workflow };
-  if (world.urban) {
+  const nativeRegion = world.debug?.v2RustRegion as import('./region').RustRegionSnapshot | undefined;
+  const nativeCities = Object.values((world.debug?.v2RustCities ?? {}) as Record<string, import('./rustUrban').RustTownSnapshot>);
+  if (nativeRegion && nativeCities.length) {
+    const { rustSettlementRaster } = await import('./rustUrban');
+    const raster = rustSettlementRaster(world), config = effectiveTerrainSettings(settings, world.mapSize), decor = retainedDecorOf(world.terrain);
+    const layouts = nativeCities.flatMap(city => city.layouts), partitions = nativeCities.flatMap(city => city.partitions ?? []);
+    const city = nativeRegion.placement.settlements.find(s => s.key === world.settlements?.find(s => s.main)?.key) ?? nativeRegion.placement.settlements[0];
+    const parcel = partitions.find(p => p.key === city?.key);
+    const rural = await generateUrbanLanduse({ raster, seed: world.seed, biome: world.options.biome ?? 'temperate',
+      relief: (['flat', 'hills', 'valley'].includes(config.relief) ? config.relief : 'mountains') as import('../gen/options').Relief,
+      city, neighbours: nativeRegion.placement.settlements.filter(s => s.key !== city?.key), roads: nativeRegion.roads ?? undefined, layouts,
+      ruralOptions: cityCountrysideOptions(parcel),
+      forest: { settings: config.forest, input: cityForestInput(world.seed, config.climateValues!,
+        { x: 0, y: 0, width: raster.width, n: raster.n, data: raster.height }, raster.water,
+        decor ? { riverSegments: forestRetainedRiverSegments(decor.meta.waterSvg, raster.width) } : {}) },
+      runtime: settings.runtime?.backend === 'native' ? { profile: 'local', server: loopbackServer(settings.runtime.localServer ?? 'http://127.0.0.1:8791') } : undefined });
+    world.landuse = rural.landuse;
+  } else if (world.urban) {
     const mainOptions = { ...world.options, ...settings.local.main };
     if (mainOptions.biome === 'underdark-caverns') mainOptions.biome = 'underdark';
     // Rust resource soil (depth, stoniness, drainage); the noise field only when no resource payload exists (TypeScript backend).

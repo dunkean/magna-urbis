@@ -1,4 +1,6 @@
-import { setHTML, insertHTML, setText, setUserText, setDynamicText, bindTree, translate, getLanguage, setLanguage, onLanguageChange, initializeLanguage, numberLocale, nameHTML, numberHTML, registerMessages } from './i18n';
+import { setHTML, insertHTML, setText, setUserText, setDynamicText, bindTree, translate, getLanguage, setLanguage, onLanguageChange, initializeLanguage, numberLocale, nameHTML, numberHTML, registerMessages, LANGUAGES, type Language } from './i18n';
+import { getDistanceUnit, setDistanceUnit, onUnitsChange, formatDistance, unitFactor, type DistanceUnit } from './units';
+import { mapPresentation } from './mapPresentation';
 import './ui.css';
 import './editing.css';
 import logo from '../ui/assets/logo-magna-urbis.png';
@@ -200,7 +202,7 @@ setHTML($('#app'), `
 const canvas = $<HTMLCanvasElement>('#map-canvas');
 const client = new StudioClient(canvas, $('#map'), $<HTMLCanvasElement>('#minimap'), updateProgress, e => toast(e.message, true), () => {
   const view = client.viewer.getView();
-  setText($('#scale-label'), `${Math.round(80 / view.scale).toLocaleString(numberLocale())} m`);
+  setText($('#scale-label'), formatDistance(80 / view.scale, getDistanceUnit(), numberLocale()));
 });
 let city3d:V2Urban3d|undefined;
 let renderTimer:ReturnType<typeof setTimeout>|undefined,renderRevision=0;
@@ -346,7 +348,7 @@ labelEditor.sync();
 function redrawEditedLabels():void{
   if(busy||!world)return;
   const source=labelBaseline??=pristine??world;
-  const names=source.names??renameMap(source,settings).names!;
+  const names=source.names??renameMap(source,settings,getLanguage()).names!;
   const labels=settings.naming?.labels;
   const next:World={...source,names:{...names,entries:names.entries.filter(e=>!(/^(free:|urban:|classic:)/.test(e.id)&&e.manual&&!labels?.[e.id])).map(e=>({...e}))}};
   applyLabelEdits(next,labels);pristine=next;world=applyBuildingEdits(next,mods).world;
@@ -377,7 +379,7 @@ function redrawNames():Promise<void>{
   namingWork=namingWork.catch(()=>{}).then(async()=>{
     if(revision!==namingRevision||busy)return;
     if(!world){mapControls.sync();return;}
-    pristine=renameMap(pristine??world,settings);
+    pristine=renameMap(pristine??world,settings,getLanguage());
     world=applyBuildingEdits(pristine,mods).world;
     await client.show(world,true);
     if(revision===namingRevision)updateWorld();
@@ -434,7 +436,7 @@ function log(message: string): void {
 function dialog(id: string): void { $<HTMLDialogElement>(id).showModal(); }
 client.onEngineReset=()=>chain.clearResults();
 function touchRecipe(): void { projectRevision++; scheduleAutosave(); updateExtent(); scheduleChainSync(); setText($('#footer-status'), world ? 'Réglages modifiés · prêts à générer' : 'Relief et eau, en un clic'); }
-function updateExtent(): void { setDynamicText($('#extent-hint'), ()=>`${(adaptedExtent(settings)/1000).toLocaleString(numberLocale())} km de côté · ${settings.extent === 'auto' ? settings.generation==='neural'?'fenêtre native du modèle':'selon les peuplements demandés' : 'étendue imposée'}`); }
+function updateExtent(): void { setDynamicText($('#extent-hint'), ()=>formatDistance(adaptedExtent(settings),getDistanceUnit(),numberLocale(),true)); }
 function syncControls(): Promise<void> {
   if (!world?.stats['v2.previewStage']) previewBase = undefined;
   document.querySelectorAll<HTMLInputElement|HTMLSelectElement>('[data-option]').forEach(input => { const key = input.dataset.option!; const value = key.startsWith('center.') ? settings.options.center?.[key.endsWith('x') ? 'x' : 'y'] : (settings.options as unknown as Record<string,unknown>)[key]; input.value = String(value ?? (input.tagName === 'SELECT' ? 'auto' : '')); });
@@ -514,7 +516,7 @@ function updateWorld(): void {
   setUserText($('#map-name'), world.names?.town, 'Le territoire des possibles');
   const towns = world.settlements ?? [], detailed = towns.filter(s=>s.main ? !!world?.urban : !!s.urban).length;
   setText($('#map-subtitle'), towns.length ? `${towns.length} lieux implantés · ${detailed} construits` : 'Topographie · relief & milieux naturels');
-  setText($('#map-size'), `${(world.mapSize/1000).toLocaleString(numberLocale())} × ${(world.mapSize/1000).toLocaleString(numberLocale())} km`);
+  setDynamicText($('#map-size'), () => { const size=formatDistance(world!.mapSize,getDistanceUnit(),numberLocale(),true);return `${size} × ${size}`; });
   setText($('#map-metrics'), `${world.terrain.rivers.length} cours d’eau\n${towns.length} peuplements`);
   setText($('#caption-title'), towns.length ? 'Du territoire à ses habitants' : 'La région avant les villes');
   setText($('#caption-text'), towns.length ? 'Sélectionnez un lieu pour le construire ou affiner ses paramètres. Activez l’inspection et zoomez pour choisir une maison.' : 'Le paysage est prêt. Passez aux peuplements pour implanter les lieux et tracer leurs routes.');
@@ -590,14 +592,14 @@ function showInspector(key: string, focus = false): void {
 function showBuilding(hit: NonNullable<ReturnType<typeof buildingAt>>): void {
   showInspector(hit.settlement); selectedBuilding = hit;
   const b=hit.building;
-  setHTML($('#building-inspector'), `<div class="edit-building"><span class="eyebrow">Maison ${hit.index+1}</span><h3>Le dernier détail</h3><p class="hint">${esc(b.kind)} · ${esc(b.arch || 'typologie générée')}</p><div class="control-grid"><div><label class="label">Étages</label><input id="house-storeys" type="number" min="1" max="100" value="${b.storeys??1}"></div><div><label class="label">Hauteur (m)</label><input id="house-height" type="number" min="0.5" max="1000" step="0.5" value="${b.height??3}"></div></div><label class="label">Toit</label><select id="house-roof">${options(['gable','hip','flat','dome','pyramidal','pagoda','thatch-round','none','tiled-hip','conical','barrel','terraced'])}</select><label class="label">Matériau</label><input id="house-material" type="text" maxlength="100" value="${esc(b.material??'')}"><details class="section"><summary>Emprise & métadonnées</summary><textarea id="house-json" spellcheck="false">${esc(JSON.stringify(b,null,2))}</textarea><p class="hint">Coordonnées de l’emprise en mètres. Les métadonnées architecturales sont exportées ; leur apparence dépend du rendu.</p></details><button id="house-apply">Enregistrer la maison</button><button id="house-undo" class="quiet small">Annuler la dernière modification</button></div>`);
+  setHTML($('#building-inspector'), `<div class="edit-building"><span class="eyebrow">Maison ${hit.index+1}</span><h3>Le dernier détail</h3><p class="hint">${esc(b.kind)} · ${esc(b.arch || 'typologie générée')}</p><div class="control-grid"><div><label class="label">Étages</label><input id="house-storeys" type="number" min="1" max="100" value="${b.storeys??1}"></div><div><label class="label"><span data-i18n="Height">${translate("Height")}</span> (<span data-house-height-unit>${getDistanceUnit()}</span>)</label><input id="house-height" data-distance-unit="${getDistanceUnit()}" type="number" min="${.5/unitFactor(getDistanceUnit())}" max="${1000/unitFactor(getDistanceUnit())}" step="any" value="${(b.height??3)/unitFactor(getDistanceUnit())}"></div></div><label class="label">Toit</label><select id="house-roof">${options(['gable','hip','flat','dome','pyramidal','pagoda','thatch-round','none','tiled-hip','conical','barrel','terraced'])}</select><label class="label">Matériau</label><input id="house-material" type="text" maxlength="100" value="${esc(b.material??'')}"><details class="section"><summary>Emprise & métadonnées</summary><textarea id="house-json" spellcheck="false">${esc(JSON.stringify(b,null,2))}</textarea><p class="hint">Coordonnées de l’emprise en mètres. Les métadonnées architecturales sont exportées ; leur apparence dépend du rendu.</p></details><button id="house-apply">Enregistrer la maison</button><button id="house-undo" class="quiet small">Annuler la dernière modification</button></div>`);
   $<HTMLSelectElement>('#house-roof').value=b.roof??'gable';
   $('#house-apply').onclick=()=>{
     try {
       if (!selectedBuilding || !pristine) return;
       const source=townUrban(pristine,hit.settlement)?.buildings[hit.index]; if (!source) throw new Error('Bâtiment source introuvable.');
       const json=JSON.parse($<HTMLTextAreaElement>('#house-json').value);
-      const patch=validateBuildingPatch({...json,storeys:Number($<HTMLInputElement>('#house-storeys').value),height:Number($<HTMLInputElement>('#house-height').value),roof:$<HTMLSelectElement>('#house-roof').value,material:$<HTMLInputElement>('#house-material').value});
+      const patch=validateBuildingPatch({...json,storeys:Number($<HTMLInputElement>('#house-storeys').value),height:Number($<HTMLInputElement>('#house-height').value)*unitFactor(getDistanceUnit()),roof:$<HTMLSelectElement>('#house-roof').value,material:$<HTMLInputElement>('#house-material').value});
       const ids=source as UrbanBuilding&{nativeId?:string;nativeRequestId?:string};
       const edit:BuildingEdit={type:'building',settlement:hit.settlement,index:hit.index,nativeId:ids.nativeId,nativeRequestId:ids.nativeRequestId,signature:buildingSignature(source),patch};
       mods=mods.filter(m=>!(m&&typeof m==='object'&&(m as BuildingEdit).type==='building'&&(m as BuildingEdit).settlement===hit.settlement&&(m as BuildingEdit).index===hit.index)); mods.push(edit);
@@ -735,7 +737,7 @@ async function svgExport(): Promise<Blob> {
   if(world&&layers.landuse!==false&&lu.rural!=='off')display.semanticLegend=ruralSemanticLegend(world.landuse,lu.classes,lu.rural); // urban entries need the city scenes (composite path only)
   const brushes=resolved.cartography.painted?(await import('../render/assets/brushAssets')).BRUSH_SOURCES:undefined;
   const worker=new ExportWorker();
-  try { return await new Promise<Blob>((resolve,reject)=>{worker.onmessage=({data})=>data.error?reject(new Error(data.error)):resolve(data.blob);worker.onerror=e=>reject(new Error(e.message));worker.postMessage({id:1,world,options:{width,style:appearance.style,layers},display,brushes});}); }finally{worker.terminate();}
+  try { return await new Promise<Blob>((resolve,reject)=>{worker.onmessage=({data})=>data.error?reject(new Error(data.error)):resolve(data.blob);worker.onerror=e=>reject(new Error(e.message));worker.postMessage({id:1,world:world?mapPresentation(world,settings):world,options:{width,style:appearance.style,layers},display,brushes});}); }finally{worker.terminate();}
 }
 function heightmapBlob(): Promise<Blob> {
   if(!world)throw new Error('Créez d’abord une carte.');const grid=world.terrain.height,c=document.createElement('canvas');c.width=grid.w;c.height=grid.h;
@@ -766,9 +768,25 @@ async function inspectHardware():Promise<void>{
 $('#hardware-open').onclick=()=>{dialog('#hardware-dialog');void inspectHardware();};$('#hardware-refresh').onclick=()=>void inspectHardware();
 $('#services-apply').onclick=()=>{try{const localServer=loopbackServer($<HTMLInputElement>('#rust-server').value),pythonServer=loopbackServer($<HTMLInputElement>('#python-server').value);settings.runtime={compute:'auto',backend:'rust',source:'procedural',...settings.runtime,localServer,pythonServer};connectLocal=true;touchRecipe();syncControls();void inspectHardware();}catch(e){toast(String(e),true);}};
 window.addEventListener('beforeunload',()=>{clearTimeout(renderTimer);renderControls.dispose();city3d?.dispose();terrainControls.dispose();urbanControls.dispose();regionControls.dispose();neuralModelManager.dispose();disposeInspectorForms();client.destroy();});
-insertHTML($('.header-tools'),'afterbegin',`<label class="language-control"><span class="sr-only">Language</span><select id="language-select" aria-label="Language"><option value="en">English</option><option value="fr">Français</option></select></label>`);
-$<HTMLSelectElement>('#language-select').onchange=event=>setLanguage((event.target as HTMLSelectElement).value as 'en'|'fr');
-onLanguageChange(()=>{renderLog();document.querySelectorAll<HTMLOptGroupElement>('optgroup[data-render-label]').forEach(group=>group.label=translate(group.dataset.renderLabel!));renderControls.sync();});
+registerMessages({'Units':{en:'Units',fr:'Unités'},'Metric (m / km)':{en:'Metric (m / km)',fr:'Métrique (m / km)'},'Imperial (ft / mi)':{en:'Imperial (ft / mi)',fr:'Impérial (ft / mi)'},'Yards (yd / mi)':{en:'Yards (yd / mi)',fr:'Yards (yd / mi)'}});
+insertHTML($('.header-tools'),'afterbegin',`<label class="language-control"><span class="sr-only">Language</span><select id="language-select" aria-label="Language">${LANGUAGES.map(item=>`<option value="${item.code}" data-l10n-keep>${item.name}</option>`).join('')}</select></label><label class="language-control"><span class="sr-only">Units</span><select id="units-select" aria-label="Units"><option value="m">Metric (m / km)</option><option value="ft">Imperial (ft / mi)</option><option value="yd">Yards (yd / mi)</option></select></label>`);
+$<HTMLSelectElement>('#language-select').onchange=event=>setLanguage((event.target as HTMLSelectElement).value as Language);
+$<HTMLSelectElement>('#units-select').value=getDistanceUnit();
+$<HTMLSelectElement>('#units-select').onchange=event=>setDistanceUnit((event.target as HTMLSelectElement).value as DistanceUnit);
+const refreshPresentation=()=>{
+  updateExtent();
+  setText($('#scale-label'),formatDistance(80/client.viewer.getView().scale,getDistanceUnit(),numberLocale()));
+  const height=document.querySelector<HTMLInputElement>('#house-height');
+  if(height){
+    const previous=(height.dataset.distanceUnit??'m') as DistanceUnit;
+    if(previous!==getDistanceUnit()&&height.value!=='')height.value=String(Number((Number(height.value)*unitFactor(previous)/unitFactor(getDistanceUnit())).toFixed(6)));
+    height.dataset.distanceUnit=getDistanceUnit();height.min=String(.5/unitFactor(getDistanceUnit()));height.max=String(1000/unitFactor(getDistanceUnit()));
+    const label=document.querySelector('[data-house-height-unit]');if(label)label.textContent=getDistanceUnit();
+  }
+  if(world&&!busy){const shown=world;void client.show(shown,true).then(()=>{if(world===shown)updateWorld();}).catch(reportAppearanceError);}
+};
+onUnitsChange(refreshPresentation);
+onLanguageChange(()=>{renderLog();document.querySelectorAll<HTMLOptGroupElement>('optgroup[data-render-label]').forEach(group=>group.label=translate(group.dataset.renderLabel!));renderControls.sync();refreshPresentation();});
 registerMessages({'General seed':{en:'General seed',fr:'Graine générale'}});
 setText($('label[for="seed"]'),'General seed');
 $<HTMLInputElement>('#seed').maxLength=65536;

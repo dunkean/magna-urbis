@@ -68,7 +68,7 @@ export function setSettlementName(world: World, key: string, value: string): voi
       const profile = resolveToponymProfile(ref.culture ?? ref.family, ref.language ?? ref.family, world.seed);
       const previous = entry.canonicalText ?? entry.text;
       const cultural = referenceText(profile, ref.form, name);
-      entry.parts = { proper: name, cultural, kind: entry.kind, opaque: ref.form === 'name' };
+      entry.parts = { proper: name, cultural, kind: entry.kind, opaque: ref.form === 'name', ...(entry.parts?.generic ? { generic: entry.parts.generic } : {}) };
       entry.canonicalText = cultural;
       entry.text = presentName(entry.parts, names.presentation);
       if (ref.form === 'castle') for (const site of world.urban?.sites ?? []) if (site.name === previous) { site.name = cultural; if (site.generatedName === previous) site.generatedName = cultural; }
@@ -184,7 +184,7 @@ export function generateNames(world: World, root: Rng, presentation: NamePresent
     const usesTown = !castles.length;
     const base = usesTown ? town : generateToponym({ seed: world.seed, key: 'castle:' + (siteId ?? pointKey(anchor)), kind: 'town', culture, language: opts.language });
     const text = providedName ?? vocabulary(culture).castle(base);
-    const entry = add({ kind: 'castle', text, rank: 2, anchor, parts: partsFor('castle', base, text, !!providedName), generated: !providedName, ...(!providedName && usesTown ? { reference: referenceTo('main', 'castle', culture) } : {}) });
+    const entry = add({ kind: 'castle', text, rank: 2, anchor, parts: { ...partsFor('castle', base, text, !!providedName), ...(familyFor(culture, opts.language, world.seed) === 'elven' ? { generic: 'tower' as const } : {}) }, generated: !providedName, ...(!providedName && usesTown ? { reference: referenceTo('main', 'castle', culture) } : {}) });
     if (siteId) castleLabels.set(siteId, entry);
     return text;
   };

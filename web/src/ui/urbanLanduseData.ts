@@ -1,4 +1,4 @@
-import type { Layout } from '../../../rust/bridge/urban';
+import { layoutExtent, type Layout } from '../../../rust/bridge/urban';
 import { regionalOutsideUrban } from '../../../rust/bridge/urbanNetwork';
 import type { RoadOutput, RoadSite, SettlementRaster } from '../../../rust/bridge/settlements';
 import { Rng } from '../gen/core/rng';
@@ -129,7 +129,7 @@ export function urbanLanduseWorld(input: UrbanLanduseInput): World {
     const grade = pt >= 2 || pass(from) >= 2 ? 0 : Math.abs(r.height[to] - r.height[from]) / (d * cell);
     return d * cell * (1 + 100 * grade * grade) * (pt === 1 ? 1 : pt === 2 ? 4 : 3);
   });
-  world.site = { center: city.center, archetype: siteArchetype(city), offers: { ...city.offers }, reserveRadius: city.radius,
+  world.site = { center: city.center, archetype: siteArchetype(city), offers: { ...city.offers }, reserveRadius: layoutExtent(input.layouts?.filter(layout => layout.key === city.key))?.radius ?? city.radius,
     cost: { w: n, h: n, cell, data: cost }, fields };
   world.settlements = input.neighbours.filter(s => s.key !== city.key).map((s, i) => ({
     ...s, index: i + 1, cls: classOfPop(s.population), archetype: siteArchetype(s), extent: extent(s).outer, region: [], detail: 'lazy',
@@ -145,7 +145,7 @@ export async function generateUrbanLanduse(input: UrbanLanduseInput): Promise<Ur
     seed: seedHash(resolved.seed), climate: [CLIMATE_VALUES.temperate.temperature, CLIMATE_VALUES.temperate.precipitation],
     height: { x: 0, y: 0, width: r.width, n: r.n, data: r.height }, water: r.water,
   } satisfies ForestFieldInput;
-  return generateUrbanLanduseWith(input, await buildForestField(forestInput, resolved.forest && { ...resolved.forest.settings, enabled: true }));
+  return generateUrbanLanduseWith(input, await buildForestField(forestInput, resolved.forest && { ...resolved.forest.settings, enabled: true }, input.runtime));
 }
 
 export async function generateUrbanLanduseWith(input: UrbanLanduseInput, built?: ForestField): Promise<UrbanLanduseScene> {
@@ -225,4 +225,10 @@ function ruralResolution(input: UrbanLanduseInput): UrbanLanduseInput {
     water[i] = r.water[j]; waterLevel[i] = r.waterLevel[j]; riverWidth[i] = r.riverWidth[j]; riverIds[i] = r.riverIds[j];
   }
   return { ...input, raster: { ...r, n, height, water, waterLevel, riverWidth, riverIds } };
+}
+
+/** Programme and enclosure choices feeding the countryside on both pages. */
+export function cityCountrysideOptions(parcel: import('../../../rust/bridge/urban').Partition | undefined): NonNullable<UrbanLanduseInput['ruralOptions']> {
+  return { streetAlignedHomes: parcel?.config?.streetAlignedHomes, denserSmallholdings: parcel?.config?.denserSmallholdings,
+    fieldEnclosure: parcel?.enclosure?.field, fieldMaterial: parcel?.enclosure?.fieldMaterial };
 }

@@ -10,7 +10,7 @@ import { loadCoreWasm } from '../../../rust/bridge/wasmRuntime';
 import { decodeDecor, type Decor } from '../ui/decor';
 import type { V2TerrainLayer } from './terrainProjection';
 
-export interface DecorTerrainLayer extends V2TerrainLayer { v2DecorRaster?: SettlementRaster; v2DecorId?: string }
+export interface DecorTerrainLayer extends V2TerrainLayer { v2DecorRaster?: SettlementRaster; v2DecorId?: string; v2Decor?: Decor }
 
 /** The decor raster retained on a V2 terrain, if the world was opened from a decor. */
 export const decorRasterOf = (terrain: TerrainLayer): SettlementRaster | undefined => (terrain as DecorTerrainLayer).v2DecorRaster;
@@ -108,7 +108,7 @@ export async function decorTerrainLayer(decor: Decor, id: string): Promise<Decor
   const sides = ['N', 'E', 'S', 'W'] as const, side = sides[edgeSea.indexOf(Math.max(...edgeSea))];
   return { height, slope: slopeGrid(height), flow, water, receiver, filled, seaLevel: 0, seaFraction: seaCells / length,
     coastline: seaRegions.map(p => p.outer), islands: seaRegions.flatMap(p => p.holes), lakes, rivers: riverLines(r),
-    downSide: side, seaSide: seaCells ? side : null, v2DecorRaster: r, v2DecorId: id,
+    downSide: side, seaSide: seaCells ? side : null, v2DecorRaster: r, v2DecorId: id, v2Decor: decor,
     v2EngineStats: { backend: 'decor', decor: id } };
 }
 
@@ -116,3 +116,6 @@ export async function decorTerrainLayer(decor: Decor, id: string): Promise<Decor
 export function settingsDecorTerrain(decor: { id: string; bytes: Uint8Array }): Promise<DecorTerrainLayer> {
   return decorTerrainLayer(decodeDecor(decor.bytes), decor.id);
 }
+
+/** Original retained geometry, shared with City Bench without reconstructing river banks. */
+export const retainedDecorOf = (terrain: TerrainLayer): Decor | undefined => (terrain as DecorTerrainLayer).v2Decor;

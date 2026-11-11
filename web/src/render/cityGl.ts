@@ -78,7 +78,7 @@ export interface CityGlRenderer {
 /** Layers left for the Canvas 2D overlay (drawCity) once the GPU draws the plan:
  * diagnostics, landmark glyphs, labels and district names only. */
 export function cityGlOverlayLayers(layers: CityLayers): CityLayers {
-  return { ...layers, waterways: layers.streets, blocks: false, domains: false, streets: false, enclosures: false, parcels: false, gardens: false, places: false };
+  return { ...layers, waterways: layers.waterways !== false, blocks: false, domains: false, streets: false, enclosures: false, parcels: false, gardens: false, places: false };
 }
 
 // ---------------------------------------------------------------- shaders

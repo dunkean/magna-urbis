@@ -1,3 +1,4 @@
+import { cityCountrysideTextureVisible } from './cityEnvironment';
 import type { CityScene } from './cityCanvas';
 import { DEFAULT_TEXT, textPlacement, drawMapLabels, cityTextLabels, type TextSettings } from './textLayer';
 import { cavernDisplayWorld } from './cavernDisplay';
@@ -330,7 +331,7 @@ function layerHash(layer: PolyLayer): string {
 
 export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: MapStyle | Palette, deps: CanvasRendererDeps = {}): CanvasRenderer {
   let sourceWorld = world0;
-  let world = cavernDisplayWorld(deps.scene?.renderedWorld ? { ...deps.scene.renderedWorld, options: world0.options } : renderView(cavernDisplayWorld(world0)));
+  let world = cavernDisplayWorld(deps.scene?.renderedWorld ? { ...deps.scene.renderedWorld, options: world0.options, names: world0.names } : renderView(cavernDisplayWorld(world0)));
   const basePalette = biomePalette(style, world.options.biome), pal = applyRenderColors(basePalette, deps.colors);
   let scene = deps.scene ?? buildScene(world0, deps.tileSize, { mask: deps.mask });
   const S = world.mapSize;
@@ -1198,8 +1199,8 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
         // Small symbols would appear on the closest tiles only (a visible tile edge): the drape keeps the woods alone.
         if (tl.kind === 'forest') fs.textureTiles += drawDrapeCanopy(ctx, tl, rect, trueScale * dpr);
       }
-    } else if (lod.textures && luOn) {
-      for (const tl of scene.textures) if (pal.tex[tl.kind] || (brushes && isBrushKind(tl.kind) && brushTextureOn(tl.kind, pal, world.options.biome))) fs.textureTiles += drawTexture(ctx, tl, rect, band, lw, budgetRect);
+    } else if (luOn) {
+      for (const tl of scene.textures) if (cityCountrysideTextureVisible(tl.kind, sc) && (pal.tex[tl.kind] || (brushes && isBrushKind(tl.kind) && brushTextureOn(tl.kind, pal, world.options.biome)))) fs.textureTiles += drawTexture(ctx, tl, rect, band, lw, budgetRect);
     }
 
     if (mode === 'ground') {
@@ -1460,8 +1461,8 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
               multiply(true); fillLand('u-cover-' + kind, kind); multiply(false);
               if (kind === 'forest') ctx.restore();
             }
-            if (lod.textures) for (const tl of scene.textures) {
-              if ((NATURAL_LAND_KINDS as readonly string[]).includes(tl.kind) && (pal.tex[tl.kind] || (brushes && isBrushKind(tl.kind) && brushTextureOn(tl.kind, pal, world.options.biome)))) fs.textureTiles += drawTexture(ctx, tl, rect, band, lw, budgetRect);
+            for (const tl of scene.textures) {
+              if (cityCountrysideTextureVisible(tl.kind, sc) && (NATURAL_LAND_KINDS as readonly string[]).includes(tl.kind) && (pal.tex[tl.kind] || (brushes && isBrushKind(tl.kind) && brushTextureOn(tl.kind, pal, world.options.biome)))) fs.textureTiles += drawTexture(ctx, tl, rect, band, lw, budgetRect);
             }
           }
           // Keep the original cased/dashed regional-road rendering within the restored ground.
@@ -1748,7 +1749,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     const pm = panelMargin(pal) * 0.75;
     const mx0 = cssW / 2 - view.cx * sc, my0 = cssH / 2 - view.cy * sc, mapBottom = my0 + S * sc;
     const compact = compactMapPanels(cssW, cssH);
-    if (compact && overlays.cartouche) drawPanelCanvas(ctx, compactScaleModel(pal, sc), 12, cssH - 40, family);
+    if (compact && overlays.cartouche) drawPanelCanvas(ctx, compactScaleModel(pal, sc, world.options.distanceUnit), 12, cssH - 40, family);
     const cart = overlays.cartouche && !compact ? cartoucheModel(world, pal, sc) : null;
     if (cart) {
       const inside = mx0 < 12 + cart.w && my0 < 12 + cart.h;

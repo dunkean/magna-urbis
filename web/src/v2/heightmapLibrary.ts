@@ -5,6 +5,7 @@ import { readHeightmap } from '../ui/terrainHeightmap';
 import type { TerrainSketch } from '../../../rust/bridge/terrainSketch';
 import type { V2Settings } from './contracts';
 import { getLanguage, registerMessages, setText, setDynamicText, translate, numberLocale } from './i18n';
+import { getDistanceUnit, onUnitsChange, convertUnits, displayUnit, formatDistance } from './units';
 import { iconImg } from './stageIcons';
 
 const urls = import.meta.glob('./assets/heightmaps/*.png', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
@@ -80,7 +81,7 @@ export function mountHeightmapSource(host: HTMLElement, bindings: HeightmapSourc
     const tile = document.createElement('button'); tile.type = 'button'; tile.className = 'heightmap-tile'; tile.setAttribute('role', 'option'); tile.dataset.heightmap = entry.id;
     const img = document.createElement('img'); img.src = libraryUrl(entry) ?? ''; img.alt = ''; img.loading = 'lazy';
     const caption = document.createElement('span'); caption.className = 'heightmap-name'; registerMessages({ [entry.name.en]: entry.name }); setText(caption, entry.name.en);
-    const meta = document.createElement('small'); setDynamicText(meta, () => `${(entry.extentM / 1000).toLocaleString(numberLocale())} km · ${Math.round(entry.verticalRangeM[1] - entry.verticalRangeM[0]).toLocaleString(numberLocale())} m`);
+    const meta = document.createElement('small'); setDynamicText(meta, () => `${formatDistance(entry.extentM,getDistanceUnit(),numberLocale(),true)} · ${formatDistance(entry.verticalRangeM[1] - entry.verticalRangeM[0],getDistanceUnit(),numberLocale())}`);
     tile.title = `${entry.size[0]} × ${entry.size[1]} px · 16-bit · ${entry.license}`;
     tile.append(img, caption, meta);
     tile.onclick = async () => {
@@ -112,10 +113,10 @@ export function mountHeightmapFit(host: HTMLElement, bindings: HeightmapFitBindi
   const form = document.createElement('div'); form.className = 'parameter-form';
   const field = (label: string, key: keyof typeof fit | 'width', min: number, max: number, step: number): HTMLInputElement => {
     const row = document.createElement('label'); row.className = 'parameter-field parameter-number';
-    const caption = document.createElement('span'); caption.className = 'parameter-caption'; setText(caption, label);
+    const caption = document.createElement('span'); caption.className = 'parameter-caption'; setDynamicText(caption, () => key==='datum'||key==='width' ? `${translate(label).replace(/\s*[（(][^()（）]*[)）]\s*$/, '')} (${displayUnit(key==='width'?'km':'m',getDistanceUnit())})` : translate(label));
     const input = document.createElement('input'); input.type = 'number'; input.min = String(min); input.max = String(max); input.step = String(step); input.id = `heightmap-fit-${key}`;
     input.addEventListener('change', () => {
-      const value = Number(input.value), settings = bindings.getSettings();
+      const value = key==='datum'||key==='width' ? convertUnits(Number(input.value),displayUnit(key==='width'?'km':'m',getDistanceUnit()),key==='width'?'km':'m') : Number(input.value), settings = bindings.getSettings();
       if (!Number.isFinite(value) || value < min || value > max) { input.setAttribute('aria-invalid', 'true'); return; }
       input.removeAttribute('aria-invalid');
       if (key === 'width') settings.extent = Math.round(value * 1000); else { fit[key] = value; applyFit(settings); }
@@ -141,13 +142,16 @@ export function mountHeightmapFit(host: HTMLElement, bindings: HeightmapFitBindi
     reset.disabled = !active;
     if (document.activeElement !== scale) scale.value = String(fit.scale);
     if (document.activeElement !== quickInput) quickInput.value = String(fit.scale);
-    if (document.activeElement !== datum) datum.value = String(fit.datum);
+    if (document.activeElement !== datum) datum.value = String(convertUnits(fit.datum,'m',displayUnit('m',getDistanceUnit())));
     if (document.activeElement !== crop) crop.value = String(fit.crop);
-    if (document.activeElement !== width) width.value = String((typeof settings.extent === 'number' ? settings.extent : 6000) / 1000);
+    if (document.activeElement !== width) width.value = String(convertUnits((typeof settings.extent === 'number' ? settings.extent : 6000)/1000,'km',displayUnit('km',getDistanceUnit())));
+    datum.min=String(convertUnits(-5000,'m',displayUnit('m',getDistanceUnit())));datum.max=String(convertUnits(5000,'m',displayUnit('m',getDistanceUnit())));datum.step='any';
+    width.min=String(convertUnits(.5,'km',displayUnit('km',getDistanceUnit())));width.max=String(convertUnits(100,'km',displayUnit('km',getDistanceUnit())));width.step='any';
     if (!active || !sketch) { setText(status, settings.options.importedHeight ? '8-bit image: use the height scale and sea level below.' : 'No heightmap loaded yet. Pick one in Relief source.'); return; }
     let lo = Infinity, hi = -Infinity; for (const h of sketch.heights) { lo = Math.min(lo, h); hi = Math.max(hi, h); }
-    setDynamicText(status, () => `${source!.name} · ${sketch.resolution} × ${sketch.resolution} px · ${Math.round(lo).toLocaleString(numberLocale())} → ${Math.round(hi).toLocaleString(numberLocale())} m`);
+    setDynamicText(status, () => `${source!.name} · ${sketch.resolution} × ${sketch.resolution} px · ${formatDistance(lo,getDistanceUnit(),numberLocale())} → ${formatDistance(hi,getDistanceUnit(),numberLocale())}`);
   }
   registerMessages({ '8-bit image: use the height scale and sea level below.': { en: '8-bit image: use the height scale and sea level below.', fr: 'Image 8 bits : réglez l’échelle de hauteur et le niveau marin ci-dessous.' }, 'Imported heightmap': { en: 'Imported heightmap', fr: 'Heightmap importée' } });
+  onUnitsChange(sync);
   sync(); return { sync, quick };
 }

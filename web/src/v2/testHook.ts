@@ -1,3 +1,4 @@
+import { cityForestSettings } from '../render/cityEnvironment';
 import { defaultCityLayoutConfig } from '../render/cityGeneration';
 // Test hook of the V2 page: the v7 review sheet (web/out/planches-styles-v7/run.mjs, v2drive.mjs) drives v2.html through it.
 // Active only with `?test=1`; it installs `window.__v2Test` and changes nothing else.
@@ -126,11 +127,11 @@ export function mountV2TestHook(bindings: V2TestBindings): void {
         culture: req.culture, population: req.population, workflow: 'list', mapSize: width, biome: decorBiome(meta),
         ...((TERRAIN_RELIEFS as readonly string[]).includes(relief) ? { relief } : {}),
       });
-      settings.terrain = { ...settings.terrain, climate: decorClimateZone(meta), climateValues: decorClimate(meta) };
+      settings.terrain = { ...settings.terrain, climate: decorClimateZone(meta), climateValues: decorClimate(meta), forest: cityForestSettings(query) };
       settings.extent = width; settings.settlementCount = 1; settings.local = {};
       // Placement: the shared City Bench rule.
       const original = meta.settlements[0];
-      const spec: SettlementSpec = { key: original?.key ?? 'main', name: '', population: req.population, culture: req.culture, sitePrefs: {},
+      const spec: SettlementSpec = { key: original?.key ?? 'main', name: original?.name ?? '', population: req.population, culture: req.culture, sitePrefs: {},
         siteType: req.autoPosition ? req.site ?? 'auto' : original?.siteType ?? 'auto',
         ...(req.autoPosition ? {} : { position: original ? { ...original.center } : { x: width / 2, y: width / 2 } }) };
       const edgeMargin = req.autoPosition ? framedEdgeMargin(req.population, width) : defaultSettlementConfig().edgeMargin;

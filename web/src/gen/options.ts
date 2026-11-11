@@ -97,6 +97,8 @@ export const CULTURE_LABELS: [string, string][] = CULTURES.map((id) => [id, CULT
 export type { CultureMix, PlanOverride };
 
 export interface Options {
+  /** Cartographic display only; generation geometry remains in metres. */
+  distanceUnit?: import('./units').DistanceUnit;
   seed: string;
   /** Opt-in generation workflow; absent keeps the original one-step map and URL contract. */
   workflow?: 'environment' | 'automatic' | 'list';

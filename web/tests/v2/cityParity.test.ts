@@ -1,8 +1,17 @@
+import { CITY_3D_MATERIAL_GROUNDS } from '../../src/ui/city3d';
+import { cityGroundSettings, cityForestInput, cityOverlayLandKinds, cityOverlayLandKey, cityWaterCutsLand, cityCountrysideCanvasOptions, cityCountrysideTextureVisible } from '../../src/render/cityEnvironment';
+import { cityNamedSite } from '../../src/render/cityGeneration';
+import { cityGlOverlayLayers } from '../../src/render/cityGl';
+import { setCityCanopy } from '../../src/render/cityCanopy';
 import { FramePreparation, PREPARATION_BUDGET_MS } from '../../src/ui/framePreparation';
 import { buildNearTrees, buildNearTreesSteps, type TreeInputs } from '../../src/ui/terrain3dTrees';
 import { describe, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { resolveRustUrbanControls } from '../../src/v2/rustUrban';
+import { readFileSync, existsSync } from 'node:fs';
+import { resolveRustUrbanControls, townRoadStreets, townSiteArchetypes } from '../../src/v2/rustUrban';
+import { regionalStreets } from '../../../rust/bridge/urban';
+import type { RoadOutput } from '../../../rust/bridge/settlements';
+import type { World } from '../../src/gen/types';
+import { citySiteArchetypes, cityTownRoads } from '../../src/render/cityGeneration';
 import { urbanSeed } from '../../src/v2/urbanSeeds';
 import { defaultLayoutConfig, defaultParcelConfig, normalizeLayoutConfig, normalizeParcelConfig } from '../../../rust/bridge/urbanConfig';
 import { siteVisualScene, silhouetteScene, type CityPlacementRequest } from '../../src/ui/urbanSilhouettes';
@@ -253,6 +262,30 @@ describe('V2 and City Bench stay in sync', () => {
     });
   }
 
+  it('sends the same regional roads and site archetype to the town generator on both pages', () => {
+    const road = { a: 0, b: 1, class: 'highway', surface: 'paved', width: 8, length: 300,
+      path: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 200, y: 0 }, { x: 300, y: 0 }],
+      crossings: [{ kind: 'bridge', path: [{ x: 120, y: 0 }, { x: 180, y: 0 }] }] };
+    const output = { segments: [road, { ...road, class: 'main', crossings: [] }] } as unknown as RoadOutput;
+    const placed = { key: 'main', siteType: 'auto', archetype: 'bridge', center: { x: 0, y: 0 }, radius: 100 };
+    const world = { roads: [{ path: road.path, width: 8, kind: 'major' }], settlements: [{ key: 'main', archetype: 'bridge' }],
+      debug: { v2RustRegion: { placement: { settlements: [placed] }, roads: output } } } as unknown as World;
+    const v2 = townRoadStreets(world), bench = regionalStreets(output);
+    expect(v2).toEqual(bench);
+    expect(v2.map(s => [s.rank, s.role])).toEqual([[0, 'regional'], [0, 'bridge'], [0, 'regional'], [1, 'regional']]);
+    expect(townRoadStreets(world)).toBe(v2); // stable identity: no rebuilt bridges or ground tiles on refresh
+    expect(cityTownRoads).toBe(regionalStreets);
+    // City Bench: the requested site type, else the placed archetype; the V2 reads the same native placement record.
+    expect(townSiteArchetypes(world, 'main')).toEqual(citySiteArchetypes([placed]));
+    expect(citySiteArchetypes([placed])).toEqual({ main: 'bridge' });
+    expect(citySiteArchetypes([{ ...placed, siteType: 'hilltop' }])).toEqual({ main: 'hilltop' });
+    expect(townSiteArchetypes(world, 'main', { main: 'harbor' })).toEqual({ main: 'harbor' });
+    const benchSource = read('../../src/ui/terrainUrban.ts');
+    expect(benchSource).toContain('message.layoutConfig.siteArchetypes = citySiteArchetypes(selected);');
+    expect(benchSource).toContain('message.roads = cityTownRoads(roads);');
+    expect(read('../../src/v2/urban3d.ts')).toContain('roads = townRoadStreets(world);');
+  });
+
   it('draws every stage from the one general seed when no variation is set', () => {
     const s = settings('abc');
     for (const stage of ['composition', 'streets', 'parcels', 'programme', 'buildings', 'houses'] as const) expect(urbanSeed(s, 'a', stage)).toBe(urbanSeed(s, 'a'));
@@ -293,11 +326,26 @@ describe('V2 and City Bench stay in sync', () => {
       const frame = { viewport: { minX: 0, minY: 0, maxX: 100, maxY: 100 }, mpp: 1, dpr: 1 };
       const v2 = cityDrawOptions({ appearance: r, city: r.city, frame, lod: 'near', layers: r.city.layers, labelsAllowed: true, buildingAppearance: cityBuildingAppearance(r), page: { buildingsVisible: true } });
       const bench = cityDrawOptions({ appearance: r, city: { ...r.city }, view: r.city.view, frame: { ...frame }, lod: 'near', layers: { ...r.city.layers }, labelsAllowed: true, buildingAppearance: cityBuildingAppearance(r, { nightInk: undefined }), page: { buildingsVisible: true } });
-      expect(bench).toEqual(v2);
+      const { beforeBuildings: benchBefore, ...benchOptions } = bench, { beforeBuildings: v2Before, ...v2Options } = v2;
+      expect(benchOptions).toEqual(v2Options);
+      expect(benchBefore).toBeTypeOf('function'); expect(v2Before).toBeTypeOf('function');
       expect(v2.colors).toBe(v2.appearance.colors);
       expect(v2.groundBlend).toBe(r.city.groundBlend === 'blended');
       expect(v2.roadEmphasis).toBe(r.composition.networks.roads.emphasis);
     }
+  });
+
+  it('stands lot fences with the buildings, not with the parcel diagram, in 2D and 3D', () => {
+    for (const style of PRESET_IDS) for (const target of ['view2d', 'view3d'] as const) {
+      const r = resolveAppearance({ style: 'parchment', composition: presetComposition(style) }, { mapStyle: 'parchment' }, { nativeCities: true }, target);
+      expect(r.city.layers.lotEnclosures, `${style} ${target}`).toBe(r.composition.buildings.visible);
+      expect(city3dPlanOptions(r).layers.lotEnclosures, `${style} ${target} 3D`).toBe(r.composition.buildings.visible);
+    }
+    const hidden = presetComposition('parchment'); hidden.buildings.visible = false;
+    expect(resolveAppearance({ style: 'parchment', composition: hidden }, { mapStyle: 'parchment' }, { nativeCities: true }, 'view2d').city.layers.lotEnclosures).toBe(false);
+    // Both draw paths gate the fences on lotEnclosures alone (parcelOverlay is the parcel diagram).
+    expect(read('../../src/render/cityCanvas.ts')).toContain('if (layers.lotEnclosures !== false) drawLotEnclosures(');
+    expect(read('../../src/ui/city3d.ts')).toContain('yardsShown = yardLayers?.lotEnclosures !== false;');
   });
 
   it('builds the drawCity options of both pages with the shared function only', () => {
@@ -429,4 +477,87 @@ describe('V2 and City Bench stay in sync', () => {
     expect(renderer).toContain('this.backgroundImage ??= this.gpu!.captureMap(1024)');
   });
 
+});
+
+
+describe('retained city environment parity', () => {
+  it('keeps water independent from streets and retains the decor vectors', () => {
+    const parchment = resolveAppearance({ style: 'parchment', composition: presetComposition('parchment') }, {} as never, { nativeCities: true }, 'view2d');
+    expect(cityWaterCutsLand(parchment)).toBe(true);
+    const layers = { ...CITY_DISPLAY_DEFAULTS.layers, streets: false, waterways: true };
+    expect(cityGlOverlayLayers(layers).waterways).toBe(true);
+    expect(cityGlOverlayLayers({ ...layers, streets: true, waterways: false }).waterways).toBe(false);
+    expect(read('../../src/v2/decorTerrain.ts')).toContain('v2Decor: decor');
+    expect(read('../../src/v2/benchRenderer.ts')).toContain('decorWaterSvg(decor,');
+    expect(read('../../src/ui/citybench.ts')).toContain('decorWaterSvg(decor,');
+    expect(read('../../src/v2/urban3d.ts')).toContain('retainedDecorOf(world.terrain)');
+  });
+
+  it('shares countryside generation, physical forest inputs and vector layer ownership', () => {
+    expect(read('../../src/v2/engine.ts')).toContain('await generateUrbanLanduse({');
+    expect(read('../../src/ui/urbanLanduse.ts')).toContain('urbanLanduseData');
+    for (const file of ['../../src/v2/displayForest.ts', '../../src/ui/citybench.ts']) {
+      expect(read(file)).toContain('cityForestInput(');
+      expect(read(file)).toContain('forestRetainedRiverSegments(');
+    }
+    for (const file of ['../../src/v2/benchRenderer.ts', '../../src/ui/urbanLanduse.ts']) {
+      expect(read(file)).toContain('cityOverlayLandKinds('); expect(read(file)).toContain('cityOverlayLandKey('); expect(read(file)).toContain('cityWaterCutsLand('); expect(read(file)).toContain('cityCountrysideCanvasOptions(');
+    }
+    expect(cityCountrysideTextureVisible('forest', .607)).toBe(true);
+    expect(cityCountrysideTextureVisible('orchard', .767)).toBe(true);
+    expect(cityCountrysideTextureVisible('field', .607)).toBe(false);
+    expect(read('../../src/render/canvas.ts')).toContain('cityCountrysideTextureVisible(tl.kind, sc)');
+    const height = { x: 0, y: 0, width: 100, n: 2, data: new Float32Array(4) }, water = new Uint8Array(4);
+    const source = cityForestInput('decor', { temperature: 12, precipitation: 800 }, height, water);
+    expect(source.height).toBe(height); expect(source.water).toBe(water); expect(source.climate).toEqual([12, 800]);
+    for (const preset of ['parchment', 'satellite', 'satellite-2'] as const) {
+      const r = resolveAppearance({ style: 'parchment', composition: presetComposition(preset) }, {} as never, { nativeCities: true }, 'view2d');
+      const draw = cityCountrysideCanvasOptions(r, 4000);
+      expect(draw.raster).toBe(true); expect(draw.furrowReferenceSize).toBe(4000);
+      const mask = cityOverlayLandKinds(r);
+      if (r.ground.traits.family === 'material') expect(mask !== true && mask('field')).toBe(false);
+    }
+  });
+
+  it('uses V2 material settings on both pages, including satellite paper and ground cover', () => {
+    for (const file of ['../../src/v2/urban3d.ts', '../../src/ui/citybench.ts']) expect(read(file)).toContain('return cityGroundSettings(');
+    expect(CITY_3D_MATERIAL_GROUNDS).toContain('parchment-render');
+    for (const file of ['../../src/ui/city3d.ts', '../../src/v2/appearance.ts', '../../src/render/appearanceRecipe.ts']) expect(read(file)).toContain('cityGroundModes');
+    const r = resolveAppearance({ style: 'parchment', composition: presetComposition('satellite-2') }, {} as never, { nativeCities: true }, 'view3d');
+    const source = { seed: 'decor', climate: { temperature: 12, precipitation: 800 }, climateZone: 'temperate' as const, sourceCell: 4, relief: 'flat' };
+    const a = cityGroundSettings(r, 'parchment-render', source), b = cityGroundSettings(r, 'parchment-render', { ...source });
+    expect(a).toEqual(b); expect(a?.paperMap).toBe(true); expect(a?.groundCover).toBe(r.composition.vegetation.procedural);
+    expect(cityGroundSettings(r, 'map', source)).toBeUndefined();
+  });
+
+  it('clears canopy ground in the shared under-building hook before page painting', () => {
+    const r = resolveAppearance({ style: 'parchment', composition: presetComposition('parchment') }, {} as never, { nativeCities: true }, 'view2d');
+    const image = {} as HTMLCanvasElement, events: string[] = [];
+    setCityCanopy(() => image);
+    const ctx = { save() {}, restore() {}, drawImage() { events.push('clear'); } } as unknown as CanvasRenderingContext2D;
+    try {
+      for (const page of ['v2', 'bench']) {
+        const options = cityDrawOptions({ appearance: r, city: r.city, frame: { viewport: { minX: 0, minY: 0, maxX: 100, maxY: 100 }, mpp: 1, dpr: 1 },
+          lod: 'near', layers: r.city.layers, labelsAllowed: true, buildingAppearance: cityBuildingAppearance(r), page: { buildingsVisible: true, beforeBuildings() { events.push(page); } } });
+        options.beforeBuildings?.(ctx);
+      }
+      expect(events).toEqual(r.composition.vegetation.procedural ? ['clear', 'v2', 'clear', 'bench'] : ['v2', 'bench']);
+    } finally { setCityCanopy(undefined); }
+    expect(read('../../src/ui/terrainUrban.ts')).not.toContain('clearCityGroundUnderCanopy(');
+  });
+
+  it('shares cultural naming input and shoots V2 with the decor seed without changing framing', () => {
+    expect(read('../../src/v2/testHook.ts')).toContain("name: original?.name ?? ''");
+    const site = { key: 'main', name: '', culture: 'european-organic' };
+    expect(cityNamedSite(site, 'decor')).toEqual(cityNamedSite({ ...site }, 'decor'));
+    expect(cityNamedSite(site, 'decor').name.length).toBeGreaterThan(0);
+    expect(cityNamedSite({ ...site, name: 'Town' }, 'decor').name).toBe('Town');
+    for (const file of ['../../src/v2/rustUrban.ts', '../../src/ui/terrainUrban.ts']) expect(read(file)).toContain('cityNamedSite(');
+    // Review sheets are local artifacts, absent in a clean source checkout.
+    if (existsSync(new URL('../../out/planches-styles-v7/v2drive.mjs', import.meta.url))) {
+      const driver = read('../../out/planches-styles-v7/v2drive.mjs');
+      expect(driver).toContain('const seed = process.env.SEED ?? meta.seed;');
+      expect(driver).toContain("p.evaluate(hideOverlays, '.map-area')");
+    }
+  });
 });

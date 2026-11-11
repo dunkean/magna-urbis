@@ -48,7 +48,7 @@ export interface V2CityAppearance {
   painted?: boolean;
   opacity?: number;
   width?: number;
-  ground?: 'map' | 'render' | 'render3d' | 'render3d-brush' | 'render-v2' | 'render-v2-substrate' | 'render-v2-moisture' | 'render-v2-vegetation' | 'render-v2-snow';
+  ground?: import('../render/cityGroundModes').CityGround;
   plan?: boolean;
   colors?: 'materials' | 'uses';
   exaggeration?: number;
@@ -102,7 +102,7 @@ export interface V2Settings {
   urban?: V2UrbanSettings;
   appearance?: V2Appearance;
   /** Cartographic names can be edited without regenerating terrain or buildings. */
-  naming?: { title?: string; places?: Record<string, string>; mode?: 'cultural' | 'localized'; displayLanguage?: 'fr' | 'en' | 'ja' | 'ar' | 'es' | 'pt' | 'zh';
+  naming?: { title?: string; places?: Record<string, string>; mode?: 'cultural' | 'localized'; /** Legacy import only; generic terms follow the UI language. */ displayLanguage?: import('./languages').Language;
     labels?: Record<string, import('./mapLabels').LabelEdit> };
   runtime?: {
     compute: 'auto' | 'cpu' | 'gpu';

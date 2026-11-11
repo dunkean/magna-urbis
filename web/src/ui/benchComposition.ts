@@ -99,7 +99,7 @@ export function syncBenchAnnotations(map: SVGSVGElement, view: View, width: numb
   if (!layer) { layer = document.createElementNS('http://www.w3.org/2000/svg', 'g'); layer.id = 'benchAnnotations'; layer.style.pointerEvents = 'none'; }
   const k = 1 / view.scale, x = view.cx - width * k / 2, y = view.cy - height * k / 2, font = panelFont(r.palette.mapStyle);
   let svg = '';
-  if (r.cartography.cartouche) svg += panelSvg(plainCartouchePanel(pal, data.title, data.subtitle, view.scale), x + 12 * k, y + 12 * k, k, font, 'map-cartouche');
+  if (r.cartography.cartouche) svg += panelSvg(plainCartouchePanel(pal, data.title, data.subtitle, view.scale, data.world?.options?.distanceUnit), x + 12 * k, y + 12 * k, k, font, 'map-cartouche');
   const entries = [...ruralSemanticLegend(data.landuse, s.classes, s.rural), ...urbanSemanticLegend(data.scenes, s.urban)];
   if (r.cartography.legend && entries.length) {
     const panel = plainLegendPanel(pal, entries);

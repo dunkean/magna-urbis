@@ -1,3 +1,4 @@
+import { clearCityGroundUnderCanopy } from './cityCanopy';
 /** Canvas 2D `drawCity` options shared by the V2 (nativeCityMap) and City Bench (paintCity).
  * One function maps the resolved appearance to the options (V2 values), so both pages paint the same
  * parchment/ink/night frame. What is truly page-specific stays a parameter, never a fork:
@@ -51,6 +52,10 @@ export function cityDrawOptions(i: CityDrawInput): CityDrawOptions {
     labels: i.labelsAllowed && a.cartography.labels, text: c.text, textPalette: terrainStyle(c.variant, colors).palette,
     appearance: i.buildingAppearance, textured: i.city.textured, roadLook: c.networks.roads.look, groundBlend: i.city.groundBlend === 'blended',
     deferNightTown: true, ...i.page,
+    beforeBuildings: ctx => {
+      if (c.vegetation.procedural) clearCityGroundUnderCanopy(ctx, i.frame.viewport, i.frame.mpp);
+      i.page.beforeBuildings?.(ctx);
+    },
   };
 }
 

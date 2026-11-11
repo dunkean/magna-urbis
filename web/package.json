@@ -48,6 +48,7 @@
     "test:v2:platform": "node scripts/v2_platform_check.mjs",
     "test:v2:static": "node scripts/v2_static_check.mjs",
     "test:v2:locales": "node scripts/v2_locale_check.mjs",
+    "test:v2:localization": "node scripts/v2_localization_check.mjs",
     "test:v2:urban": "node scripts/v2_rust_urban_check.mjs",
     "test:v2:urban-ui": "node scripts/v2_rust_browser_check.mjs",
     "test:fast": "vitest run --project fast",

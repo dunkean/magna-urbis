@@ -1,3 +1,5 @@
+import { CITY_GROUND_STYLES } from '../render/cityGroundModes';
+export { CITY_GROUND_STYLES } from '../render/cityGroundModes';
 /** Display-only validation and export preferences. This module never loads a generation engine. */
 import { isMapStyle } from '../render/styles';
 import { isTerrainStyle } from '../render/terrainStyle';
@@ -18,7 +20,6 @@ import { worldCapabilities } from './nativeProducts';
 import { presetComposition, validateComposition } from '../render/composition';
 
 export const CITY_LAYER_NAMES = ['reserve', 'allocated', 'centers', 'domains', 'quarters', 'blocks', 'streets', 'enclosures', 'lotEnclosures', 'parcels', 'gardens', 'places', 'fronts', 'axes', 'access'] as const satisfies readonly (keyof CityLayers)[];
-export const CITY_GROUND_STYLES = ['map', 'render', 'render3d', 'render3d-brush', 'render-v2', 'render-v2-substrate', 'render-v2-moisture', 'render-v2-vegetation', 'render-v2-snow'] as const;
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 function object(value: unknown, name: string): asserts value is Record<string, unknown> {
   if (!record(value)) throw new Error(`${name}: expected an object.`);

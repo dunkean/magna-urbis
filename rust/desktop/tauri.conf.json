@@ -5,11 +5,12 @@
   "identifier": "community.magna-urbis.desktop",
   "build": {
     "devUrl": "http://127.0.0.1:5173",
-    "frontendDist": "../out/benches"
+    "frontendDist": "../out/app"
   },
   "app": {
     "windows": [],
-    "security": { "csp": null }
+    "security": { "csp": null,
+      "headers": { "Cross-Origin-Opener-Policy": "same-origin", "Cross-Origin-Embedder-Policy": "credentialless" } }
   },
   "bundle": {
     "active": true,

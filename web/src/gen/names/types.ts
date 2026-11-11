@@ -14,14 +14,14 @@ export type NameKind =
   | 'town' | 'quarter' | 'street' | 'road' | 'square' | 'church' | 'castle' | 'gate'
   | 'river' | 'lake' | 'sea' | 'forest' | 'hill' | 'village' | 'farm' | 'bridge';
 
-export type NameDisplayLanguage = 'fr' | 'en' | 'ja' | 'ar' | 'es' | 'pt' | 'zh';
+export type NameDisplayLanguage = 'fr' | 'en' | 'ja' | 'ar' | 'es' | 'pt' | 'zh' | 'ru';
 export interface NamePresentation { mode?: 'cultural' | 'localized'; language?: NameDisplayLanguage }
 /** Decomposed at composition time, never by stripping words from a complete name. */
 export interface NameParts {
   proper: string;
   cultural: string;
   kind: NameKind | 'region';
-  generic?: 'mosque' | 'temple' | 'church' | 'cathedral' | 'monastery' | 'shrine';
+  generic?: 'mosque' | 'temple' | 'church' | 'cathedral' | 'monastery' | 'shrine' | 'tower';
   /** Imported full labels and fixed lexical names remain intact in every display mode. */
   opaque: boolean;
 }

@@ -17,6 +17,7 @@ import type { FrameRequest } from '../ui/viewer';
 import type { ExportLayers } from '../render/exportLayers';
 import { publishWasmThreads, wasmWorkerFailed, wasmWorkerOptions } from '../../../rust/bridge/wasmThreads';
 import { loadRenderGeometry, renderGeometryReady } from '../../../rust/bridge/renderGeometry';
+import { mapPresentation } from './mapPresentation';
 
 /** Delay of the miniature after a new live frame (its first frame must not wait for it). */
 const MINI_DELAY_MS = 350;
@@ -145,6 +146,7 @@ export class StudioClient {
     const mapChanged = this.world?.mapSize !== world.mapSize;
     if(this.world!==world){this.benchMiniRevision=-1;this.resolutions=[];if(this.world?.stats['v2.terrainKey']!==world.stats['v2.terrainKey'])this.resourceCache=undefined;}
     this.world = world;
+    world = mapPresentation(world, this.appearanceSettings);
     this.syncRenderer?.dispose(); this.syncRenderer = null;
     const settings=this.appearanceSettings;
     const resolved=settings&&this.resolve(settings,world,true);
@@ -252,7 +254,7 @@ export class StudioClient {
   async exportBench(settings:V2Settings,resolved:ResolvedAppearance,size:number,layers:Partial<ExportLayers>):Promise<HTMLCanvasElement>{
     if(!this.world)throw new Error('Create a region first.');
     const {BenchRenderer}=await import('./benchRenderer');
-    const world=this.world,snapshot={...settings,appearance:settings.appearance?structuredClone(settings.appearance):undefined},renderer=new BenchRenderer(()=>{},true,this.bench?.rasterContext(),this.bench?.sharedResources());
+    const world=mapPresentation(this.world,settings),snapshot={...settings,appearance:settings.appearance?structuredClone(settings.appearance):undefined},renderer=new BenchRenderer(()=>{},true,this.bench?.rasterContext(),this.bench?.sharedResources());
     renderer.resourceSource=w=>this.resources(w);
     try{
       await renderer.set(world,snapshot,resolved,layers);

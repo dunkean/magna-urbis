@@ -1,3 +1,4 @@
+import { cityOverlayLandKinds, cityOverlayLandKey, cityWaterCutsLand, cityCountrysideCanvasOptions } from '../render/cityEnvironment';
 import { executionRuntime } from './executionProfile';
 import { benchOverlayChange } from './benchComposition';
 import { feedLanduse } from '../render/groundTone';
@@ -33,10 +34,7 @@ const biomeLabels = ['Campagne tempérée', 'Forêt', 'Désert et oasis', 'Stepp
 /** Satellite and Illustrated grounds paint every rural class themselves, as on V2.
  * Other grounds draw vegetation classes only for a cartographic look. */
 function overlayLandKinds(r: ReturnType<typeof resolveBenchAppearance>): true | ((kind: LandKind) => boolean) {
-  // The shared occupation raster covers all eight LandKinds (commons use heath).
-  // This mask is shared by the 2D overlay and the 3D ground drape.
-  if (r.ground.traits.fantasy || (r.ground.traits.satelliteVariant === 1 && !r.ground.traits.paperMap)) return () => false;
-  return kind => r.composition.vegetation.cartographic || !['forest', 'meadow', 'marsh', 'commons'].includes(kind);
+  return cityOverlayLandKinds(r);
 }
 const landKinds: [LandKind, string][] = [['forest', 'Forêts'], ['orchard', 'Vergers'], ['field', 'Champs et sillons'], ['garden', 'Jardins'], ['meadow', 'Prairies'], ['pasture', 'Pâturages'], ['marsh', 'Marais'], ['commons', 'Terrains communaux']];
 
@@ -141,7 +139,7 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
   let renderer: CanvasRenderer | undefined, renderWorld: World | undefined, renderScene: Scene | undefined;
   let canvas: HTMLCanvasElement | undefined, host: SVGForeignObjectElement | undefined, frame = 0, rendererDpr = 1;
   let brushImages: BrushImages | undefined, brushPromise: Promise<void> | undefined;
-  let groundRevision = 0;
+  let groundRevision = 0, renderMaskKey = '';
   /** One ground painter reused across 3D tiles: its path, furrow and forest-wash caches outlive a tile. */
   let groundPainter: { world: World; scene: Scene | undefined; key: string; canvas: HTMLCanvasElement; painter: CanvasRenderer } | undefined;
 
@@ -174,12 +172,14 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
   function draw(): void {
     groundRevision++;
     const appearance = resolveBenchAppearance(), composition = appearance.composition;
+    const maskKey = cityOverlayLandKey(appearance);
+    if (renderMaskKey !== maskKey) { renderMaskKey = maskKey; renderScene = undefined; }
     visibility();
     renderer?.dispose(); renderer = undefined; cancelAnimationFrame(frame);
     if (!active() || !scene || !context) { landuseLayer.replaceChildren(); canvas = undefined; host = undefined; renderWorld = undefined; renderScene = undefined; return; }
     if (!canvas) {
       const ring = (r: { x: number; y: number }[]): string => r.map((p, i) => `${i ? 'L' : 'M'}${p.x},${p.y}`).join('') + 'Z';
-      const water = context.raster.geometry?.water;
+      const water = cityWaterCutsLand(appearance) ? context.raster.geometry?.water : undefined;
       if (water?.length) {   // dry land = the world rectangle minus the vector water (evenodd): smooth edges, no raster staircase
         const w = context.raster.width, rings = water.flatMap(g => g.filter(r => r.length >= 3)).map(ring).join('');
         landuseLayer.innerHTML = `<defs><clipPath id="urban-landuse-clip"><path d="M0,0H${w}V${w}H0Z${rings}" clip-rule="evenodd"/></clipPath></defs><g clip-path="url(#urban-landuse-clip)"><foreignObject/></g>`;
@@ -200,10 +200,8 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     const background = options.getBackground();
     rendererDpr = window.devicePixelRatio || 1;
     renderer = createCanvasRenderer(canvas, renderWorld, pal, { colors: getBenchRenderColors(),
-      dpr: rendererDpr, scene: renderScene, transparentBackground: true, raster: false,
-      vegetation: appearance.vegetation.symbols, brushes: composition.vegetation.painted ? brushImages : undefined,
-      mask: { landuse: overlayLandKinds(appearance) },
-      furrowReferenceSize: SIZE_PRESETS[scene.options.size].mapSize,
+      dpr: rendererDpr, scene: renderScene, ...cityCountrysideCanvasOptions(appearance, scene.mapSize),
+      brushes: composition.vegetation.painted ? brushImages : undefined,
       terrain: () => {
         if (v1Style) return v1LandscapeCanvas(context!.raster, v1Style, scene!.options.biome);
         // The parchment tints multiply over the lit ground: a transparent canvas has nothing to multiply with.

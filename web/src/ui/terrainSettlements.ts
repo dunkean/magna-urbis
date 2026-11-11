@@ -1,3 +1,4 @@
+import { cityCountrysideOptions } from './urbanLanduseData';
 import { textStyle } from '../render/textLayer';
 import { kindStyles } from '../render/labelStyles';
 import { terrainStyle } from '../render/terrainStyle';
@@ -204,10 +205,7 @@ export function createTerrainSettlements(options: {
     const relief = options.getSettings().relief;
     landuse?.set({ raster, biome: options.getBiome?.(), seed: options.getSettings().seed, relief: (['flat', 'hills', 'valley'].includes(relief) ? relief : 'mountains') as Relief,
       city, neighbours: output.settlements.filter(s => s.key !== city?.key), roads: roads.output, layouts: urban.layouts,
-      ruralOptions: { streetAlignedHomes: urban.partitions?.find(p => p.key === city?.key)?.config?.streetAlignedHomes,
-        denserSmallholdings: urban.partitions?.find(p => p.key === city?.key)?.config?.denserSmallholdings,
-        fieldEnclosure: urban.partitions?.find(p => p.key === city?.key)?.enclosure?.field,
-        fieldMaterial: urban.partitions?.find(p => p.key === city?.key)?.enclosure?.fieldMaterial },
+      ruralOptions: cityCountrysideOptions(urban.partitions?.find(p => p.key === city?.key)),
       forest: options.getForestSource?.() });
   }
   let paintingContext: UrbanPaintingContext | undefined;

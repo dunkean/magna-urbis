@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Mutex, mpsc};
 use std::time::Duration;
+use tauri::menu::{Menu, MenuItem, Submenu};
 use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 
 struct Engine(Mutex<Child>);
@@ -136,11 +137,20 @@ fn main() {
             let profiles: serde_json::Value =
                 serde_json::from_str(include_str!("../../../config/execution.json"))?;
             let source = profiles["local"]["neural"].as_str().unwrap_or("neural-python");
-            // An explicit fresh route replaces a stale procedural terrain session,
-            // while the other workshops and exported decors remain available.
-            let url = format!(
-                "rustbench.html?profile=local&localServer=http%3A%2F%2F127.0.0.1%3A{port}#terrain?source={source}&width=2400"
-            );
+            let server = format!("http%3A%2F%2F127.0.0.1%3A{port}");
+            let url = format!("v2.html?profile=local&localServer={server}&pythonServer=http%3A%2F%2F127.0.0.1%3A8793");
+            let benches = format!("benches.html?profile=local&localServer={server}#terrain?source={source}&width=2400");
+            let menu = Menu::with_items(app, &[&Submenu::with_items(app, "Workshops", true, &[
+                &MenuItem::with_id(app, "benches", "Bench workshop", true, None::<&str>)?,
+            ])?])?;
+            app.set_menu(menu)?;
+            let handle = app.handle().clone();
+            app.on_menu_event(move |_, event| {
+                if event.id().as_ref() == "benches" {
+                    let _ = WebviewWindowBuilder::new(&handle, "benches", WebviewUrl::App(benches.clone().into()))
+                        .title("Magna Urbis - Benches").inner_size(1440.0, 960.0).build();
+                }
+            });
             WebviewWindowBuilder::new(app, "main", WebviewUrl::App(url.into()))
                 .title("Magna Urbis")
                 .inner_size(1440.0, 960.0)
