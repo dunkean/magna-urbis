@@ -54,7 +54,7 @@ export const DEFAULT_HYDROLOGY: HydrologySettings = {
 };
 export const DEFAULT_FOREST_SETTINGS: ForestSettings = { enabled: true, density: 1, clearings: .45 };
 export function defaultTerrainSettings(): V2TerrainSettings {
-  return { motifSize: 3000, environment: 'mixed', islandMode: 'island', mountainMix: .5, erosion: 1, resolution: 512,
+  return { motifSize: 10000, environment: 'mixed', islandMode: 'island', mountainMix: .5, erosion: 1, resolution: 512,
     fidelity: .05, neuralTuning: { ...DEFAULT_NEURAL_TUNING, histogram: [...DEFAULT_NEURAL_TUNING.histogram] },
     neuralFit: 'crop', neuralSlopes: true, refine: true, detailNoise: { ...DEFAULT_FRACTAL_DETAIL }, erosionTuning: {},
     hydrology: { ...DEFAULT_HYDROLOGY }, forest: { ...DEFAULT_FOREST_SETTINGS } };
@@ -79,7 +79,7 @@ export function effectiveTerrainSettings(settings: V2Settings, width: number): E
     ...(seedSubset(settings.options.seed, key => /^(relief-|water-)/.test(key)) !== seedRoot(settings.options.seed)
       ? { generalSeed: seedSubset(settings.options.seed, key => /^(relief-|water-)/.test(key)) } : {}),
     width, source, sampleSpacing, sourceNativeResolution,
-    motifSize: t.motifSize ?? 3000, relief: t.relief ?? settings.options.relief, mountainMix: t.mountainMix ?? .5,
+    motifSize: t.motifSize ?? 10000, relief: t.relief ?? settings.options.relief, mountainMix: t.mountainMix ?? .5,
     coastMask: t.coastMask ?? masks[settings.options.coast], erosion: t.erosion ?? runtime?.erosion ?? 1,
     resolution: t.resolution ?? runtime?.resolution ?? 512,
     climateZone: zone, climate: CLIMATE_ZONE_BASE[zone], climateValues: { ...CLIMATE_ZONE_VALUES[zone], ...t.climateValues },

@@ -9,7 +9,7 @@ import { chaikin, simplify, polylineLength } from '../gen/core/geom';
 export interface CityContourPaths { step: number; thin: string; index: string }
 /** One square of fine contours (Path2D strings); neighbours share their border samples, so lines meet. */
 export interface FineBlock { thin: string; index: string }
-interface Entry { terrain: TerrainData; world: World; relief: Relief; slope: number; paths: Map<string, CityContourPaths>; smoothed: Map<number, Float32Array>; blocks: Map<string, FineBlock> }
+interface Entry { terrain: TerrainData; world: World; relief: Relief; slope: number; paths: Map<string, CityContourPaths>; smoothed: Map<number, Float32Array>; blocks: Map<string, FineBlock>; pending: Set<string>; idle?: number; warmScale?: number }
 const cache = new WeakMap<TerrainData, Entry>();
 /** Thin lines stay this many pixels apart on a typical slope: a contour map reads the shape, not a hatching. */
 const LINE_GAP_PX = 18;
@@ -58,7 +58,7 @@ function entryOf(terrain: TerrainData, relief: Relief): Entry {
   let entry = cache.get(terrain);
   if (!entry || entry.relief !== relief) {
     const height = { w: terrain.resolution, h: terrain.resolution, cell: terrain.width / terrain.resolution, data: terrain.height }, slope = slopeGrid(height);
-    entry = { terrain, world: { terrain: { height, slope }, options: { relief } } as unknown as World, relief, slope: typicalSlope(slope.data), paths: new Map(), smoothed: new Map(), blocks: new Map() }; cache.set(terrain, entry);
+    entry = { terrain, world: { terrain: { height, slope }, options: { relief } } as unknown as World, relief, slope: typicalSlope(slope.data), paths: new Map(), smoothed: new Map(), blocks: new Map(), pending: new Set() }; cache.set(terrain, entry);
   }
   return entry;
 }
@@ -71,13 +71,65 @@ function smoothedFor(entry: Entry, metresPerPixel: number): Float32Array {
 }
 const reliefOf = (landform: string): Relief => landform === 'flat' || landform === 'hills' || landform === 'valley' ? landform : 'mountains';
 
+function contourKey(entry: Entry, scale: number): { key: string; step: number; metresPerPixel: number } {
+  const metresPerPixel = 2 ** Math.round(Math.log2(1 / Math.max(1e-6, scale))), step = cityContourInterval(entry.relief, scale, entry.slope);
+  return { key: `${step}:${metresPerPixel}`, step, metresPerPixel };
+}
+
+export type ContourWorkerRequest = { id: number; landform: string; scale: number; terrain?: Pick<TerrainData, 'height' | 'resolution' | 'width' | 'caveMask'> };
+export type ContourWorkerResponse = { id: number; paths?: CityContourPaths; error?: string };
+let warmer: Worker | undefined, workerEntry: WeakRef<Entry> | undefined, warmId = 0, workerFailed = false;
+const warming = new Map<number, { entry: Entry; key: string }>();
+
+/** Warm the neighbouring zoom levels off the main thread, using the exact same contour builder.
+ * The first level still draws synchronously; later levels are copied into its normal cache. */
+function warmNeighbours(entry: Entry, scale: number): void {
+  if (typeof document === 'undefined' || typeof Worker === 'undefined' || typeof requestIdleCallback === 'undefined' || workerFailed) return;
+  if ([scale / 2, scale * 2].every(next => { const { key } = contourKey(entry, next); return entry.paths.has(key) || entry.pending.has(key); })) return;
+  entry.warmScale = scale;
+  if (entry.idle !== undefined) return;
+  entry.idle = requestIdleCallback(() => {
+    entry.idle = undefined;
+    try {
+      if (!warmer) {
+        warmer = new Worker(new URL('./cityContourWorker.ts', import.meta.url), { type: 'module' });
+        warmer.onmessage = ({ data }: MessageEvent<ContourWorkerResponse>) => {
+          const job = warming.get(data.id); if (!job) return;
+          warming.delete(data.id); job.entry.pending.delete(job.key);
+          if (data.paths && !job.entry.paths.has(job.key)) job.entry.paths.set(job.key, data.paths);
+          if (data.error) stopWarmer();
+        };
+        warmer.onerror = stopWarmer;
+      }
+      for (const next of [entry.warmScale! / 2, entry.warmScale! * 2]) {
+        const { key } = contourKey(entry, next);
+        if (entry.paths.has(key) || entry.pending.has(key)) continue;
+        const id = ++warmId, request: ContourWorkerRequest = { id, landform: entry.relief, scale: next };
+        if (workerEntry?.deref() !== entry) {
+          const t = entry.terrain;
+          // Clone only the samples the worker reads; never transfer the live renderer's buffers.
+          request.terrain = { height: t.height, resolution: t.resolution, width: t.width, caveMask: t.caveMask };
+          workerEntry = new WeakRef(entry);
+        }
+        entry.pending.add(key); warming.set(id, { entry, key }); warmer.postMessage(request);
+      }
+    } catch { stopWarmer(); }
+  });
+}
+function stopWarmer(): void {
+  workerFailed = true; warmer?.terminate(); warmer = undefined; workerEntry = undefined;
+  for (const job of warming.values()) job.entry.pending.delete(job.key);
+  warming.clear();
+}
+
 /** Same samples, slope filtering and index levels as Terrain Bench, without repainting its raster; smoothing follows the zoom. */
 export function cityContourPaths(terrain: TerrainData, landform: string, scale: number): CityContourPaths {
   if (terrain.caveMask.length || landform === 'cavern') return { step: 0, thin: '', index: '' };
   const relief = reliefOf(landform);
   const entry = entryOf(terrain, relief);
   // One detail level per doubling of the zoom, so the cache stays small and a zoom step does not redraw every line.
-  const metresPerPixel = 2 ** Math.round(Math.log2(1 / Math.max(1e-6, scale))), step = cityContourInterval(relief, scale, entry.slope), key = `${step}:${metresPerPixel}`, retained = entry.paths.get(key);
+  const { metresPerPixel, step, key } = contourKey(entry, scale), retained = entry.paths.get(key);
+  warmNeighbours(entry, scale);
   if (retained) return retained;
   const height = entry.world.terrain.height;
   const world = { ...entry.world, terrain: { ...entry.world.terrain, height: { ...height, data: smoothedFor(entry, metresPerPixel) } } } as World;

@@ -84,7 +84,11 @@ fn overlaps(a: &Shape, b: &Shape) -> bool {
     x0<u1 && x1>u0 && y0<v1 && y1>v0
         && g::intersection(a,b).iter().map(g::area).sum::<f64>()>0.05
 }
-fn find(layout: &Layout, source: Point, archetype: &str, surface: Surface<'_>, cfg: &LayoutConfig) -> Option<SpringSite> {
+/// Route searches allowed per source, shared by every archetype tried there. Placement candidates
+/// are cheap; a full route is not, and an unreachable source (steep bank, across a river) would
+/// otherwise route every offset x angle x street x archetype, minutes per town.
+const ROUTE_BUDGET: usize = 16;
+fn find(layout: &Layout, source: Point, archetype: &str, surface: Surface<'_>, cfg: &LayoutConfig, budget: &mut usize) -> Option<SpringSite> {
     let a=act::archetype(archetype)?;
     let look=act::data().looks.get(a.look.as_deref()?)?;
     let (w,d)=(look.footprint.w[0],look.footprint.d[0]);
@@ -107,6 +111,8 @@ fn find(layout: &Layout, source: Point, archetype: &str, surface: Surface<'_>, c
                 let pad=distance(door,goal).max(20.)*0.3+12.;
                 let bounds=(door.x.min(goal.x)-pad,door.y.min(goal.y)-pad,door.x.max(goal.x)+pad,door.y.max(goal.y)+pad);
                 let grade=if cfg.allow_stairs {cfg.max_stair_grade} else {cfg.max_lane_grade};
+                if *budget==0 {return None;}
+                *budget-=1;
                 let Some(path)=routing::RoutePlanner::bank(surface,bounds).route(door,goal,grade) else {continue;};
                 // No paths through an enclosure wall or another source building.
                 let obstacles=layout.enclosures.iter().flat_map(|e|&e.reserve)
@@ -143,7 +149,8 @@ pub(super) fn reserve(layout: &mut Layout, town: &Site, surface: Surface<'_>, cf
         .cloned().collect::<Vec<_>>();
     let mut masks=vec![];
     for (i,source) in unique.into_iter().take(r.max_sites).enumerate() {
-        let found=preferences.iter().find_map(|id|find(layout,source,id,surface,cfg));
+        let mut budget=ROUTE_BUDGET;
+        let found=preferences.iter().find_map(|id|find(layout,source,id,surface,cfg,&mut budget));
         let Some(mut water)=found else {
             layout.warnings.push(format!("Spring at {:.1},{:.1}: no dry accessible water-building site within {} m",source.x,source.y,r.max_offset_m));
             continue;

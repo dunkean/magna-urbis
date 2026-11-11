@@ -59,7 +59,11 @@ export function nativeLabelCandidates(world: World): LabelCandidate[] {
       if (anchor) out.push({ id: `urban:${prefix}:parcel:${encodeURIComponent(partition.key)}:${encodeURIComponent(parcel.id ?? String(index))}`, text, anchor, kind: 'parcel' });
       }
     }
-    for (const building of city.scene?.buildings ?? []) if (building.transform?.origin) out.push({ id: `urban:${prefix}:building:${encodeURIComponent(building.id)}`, text: '', anchor: building.transform.origin, kind: 'building' });
+    for (const building of city.scene?.buildings ?? []) {
+      // City volumes carry no placement transform: anchor them on their footprint.
+      const anchor = building.recipe_id === 'silhouette' ? building.footprint[0] && center(building.footprint[0].outer) : building.transform?.origin;
+      if (anchor) out.push({ id: `urban:${prefix}:building:${encodeURIComponent(building.id)}`, text: '', anchor, kind: 'building' });
+    }
   }
   return out;
 }

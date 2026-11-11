@@ -76,6 +76,14 @@ interface Climate { trop: number; dry: number; humid: number; kind: [number, num
 
 /** Builds the instance stream of the crowns within TREE_FAR of the eye, in front of it. */
 export function buildNearTrees(inputs: TreeInputs, view: TreeView): Float32Array {
+  const work = buildNearTreesSteps(inputs, view);
+  let step = work.next();
+  while (!step.done) step = work.next();
+  return step.value;
+}
+
+/** Same instance order and arithmetic, with one bounded world block per step. */
+export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView): Generator<void, Float32Array> {
   const { field, occupation: occ, seed } = inputs, T = inputs.climate.temperature, P = inputs.climate.precipitation;
   const humid = P / Math.max(20 * T + 280, 120), trop = sstep(13, 19, T - 6), dry = 1 - sstep(.8, 2, humid);
   const savanna = trop * sstep(.3, .6, dry);
@@ -136,6 +144,7 @@ export function buildNearTrees(inputs: TreeInputs, view: TreeView): Float32Array
   const bx0 = Math.floor((view.x - TREE_FAR) / block), bx1 = Math.floor((view.x + TREE_FAR) / block);
   const by0 = Math.floor((view.y - TREE_FAR) / block), by1 = Math.floor((view.y + TREE_FAR) / block);
   for (let by = by0; by <= by1; by++) for (let bx = bx0; bx <= bx1; bx++) {
+    yield;
     const cxm = (bx + .5) * block, cym = (by + .5) * block, dx = cxm - view.x, dy = cym - view.y;
     if (dx * dx + dy * dy > (TREE_FAR + block) ** 2 || dx * view.forwardX + dy * view.forwardY < -2 * block) continue;
     const levels = levelsAt(cxm, cym); if (!levels) continue;
@@ -243,7 +252,7 @@ out float treeLevel;
 const float BROAD_U[5]=float[5](0.,.22,.5,.8,1.);
 const float BROAD_R[5]=float[5](.5,.93,1.,.74,0.);
 const float NEEDLE_U[5]=float[5](0.,.34,.37,.68,1.);
-const float NEEDLE_R[5]=float[5](1.,.5,.7,.36,0.);
+const float NEEDLE_R[5]=float[5](1.,.62,.82,.42,0.);
 void main(){
   int v=int(gl_VertexID),quad=v/6,corner=v-quad*6;
   int band=quad/${SEGMENTS},seg=quad-band*${SEGMENTS};
@@ -252,7 +261,7 @@ void main(){
   float fade=1.-smoothstep(treeFade.z,treeFade.w,distance(treeBase.xy,treeFade.xy));
   if(fade<=0.){gl_Position=vec4(2.,2.,2.,1.);world=vec3(0.);treeNormal=vec3(0.,1.,0.);tint=vec3(0.);treeLevel=0.;return;}
   bool needle=treeShape.z>.5;
-  float r=treeBase.w,h=treeShape.x,bottom=needle?min(max(h-treeShape.y,.08*h),2.5):clamp(h-treeShape.y,.3*h,.4*h);
+  float r=treeBase.w,h=treeShape.x,bottom=needle?min(max(h-treeShape.y,.05*h),.1*h):clamp(h-treeShape.y,.3*h,.4*h);
   // A broadleaf seen from the side is a full crown on a short bole, deeper than its painted dome suggests.
   float angle=float(seg+dseg)*${(2 * Math.PI / SEGMENTS).toFixed(7)}+treeShape.w;
   vec2 dir=vec2(cos(angle),sin(angle));

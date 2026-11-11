@@ -14,7 +14,11 @@ fn merge_share(cfg: &LayoutConfig) -> f64 {
 
 pub(in crate::urban) fn clean_options(streets: &mut Vec<Street>, center: Point, radius: f64,
     fortified: bool, centers: &[Point], cfg: &LayoutConfig, surface: Surface<'_>) -> Vec<String> {
-    clean_terrain(streets, center, radius, fortified, centers, (merge_share(cfg) > 0.0).then_some(surface))
+    let warnings = clean_terrain(streets, center, radius, fortified, centers, (merge_share(cfg) > 0.0).then_some(surface));
+    if cfg.small_road_loops {
+        policy::small_loops(streets, cfg.tissue == "grid" || cfg.align_enclosed_grid);
+    }
+    warnings
 }
 
 pub(in crate::urban) fn narrow_options(streets: &mut Vec<Street>, enclosures: &[Enclosure], radius: f64,
@@ -78,7 +82,8 @@ fn merge_partial(streets: &mut [Street], walls: &[(Point, Point)], surface: Surf
                 for &(j, seg) in buckets.get(&cell).into_iter().flatten() {
                     if j == i || altered.contains(&j) || priority(j) >= priority(i) { continue; }
                     let other = &original[j];
-                    if matches!(other.role.as_str(), "bridge" | "ford" | "causeway" | "quay" | "stairs") { continue; }
+                    if matches!(other.role.as_str(), "bridge" | "ford" | "quay" | "stairs")
+                        || other.role == "causeway" && !cfg.small_road_loops { continue; }
                     let (a, b) = (other.path[seg], other.path[seg + 1]);
                     let run = distance(a, b);
                     if run < EPS || ((w[1].x - w[0].x) * (b.x - a.x) + (w[1].y - w[0].y) * (b.y - a.y)).abs() < 0.94 * length * run { continue; }

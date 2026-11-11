@@ -10,11 +10,12 @@ import { mountParameterForm, readSettingPath, writeSettingPath, type ParameterFi
 import { mountRenderSettingsPanel, mountRenderColorControls, splitSectionLevels, type RenderSection, type SectionLevels } from '../ui/renderSettingsPanel';
 import { styleTraits, terrainStyle, type TerrainStyle } from '../render/terrainStyle';
 import { paletteColors, type RenderColorKey } from '../render/customColors';
-import { GROUND_VARIANTS, type CompositionRecipe } from '../render/composition';
+import { GROUND_VARIANTS, withCompositionQuality, type CompositionRecipe } from '../render/composition';
 import { compositionMessages, advancedFields, fantasyFields, forestFields, diagnosticFields, renderControlFields, RENDER_SECTION_FIELDS, RENDER_COMPOSITION_ROWS, mountCompositionSection, writeCompositionField, incompatibilityText, limitationText, LIMITATION_ROW, NOTE_STYLE } from '../ui/compositionControls';
 export { PRESET_OPTIONS, RENDER_COMPOSITION_ROWS, renderControlFields, RENDER_SECTION_FIELDS } from '../ui/compositionControls';
 import { worldCapabilities } from './nativeProducts';
 import { markStyleCustomized } from '../ui/renderStyleCustomization';
+import { setDisplayQualityPreference, onDisplayQualityChange, setDisplayAppearanceQuality } from '../render/displayQuality';
 
 export interface RenderControlBindings { getSettings(): V2Settings; onChange(): void; getWorld?(): World | undefined; getStyleSelectors?(): readonly HTMLSelectElement[]; /** Target of the current view, for the limitations shown under the rows. */ getTarget?(): RenderTarget }
 export interface RenderControls { sync(): void; dispose(): void }
@@ -27,6 +28,8 @@ const ui = {
   city: copy('Cities and buildings', 'Villes et bâtiments'), cityLayers: copy('Detailed city layers', 'Couches détaillées des villes'),
   fantasy: copy('Fantasy brushes', 'Pinceaux fantasy'),
   diagnostics: copy('Terrain and water diagnostics', 'Diagnostics du relief et de l’eau'),
+  fullQuality: copy('Full quality', 'Qualité complète'),
+  qualityNotice: copy('Light quality enabled to keep navigation fluid.', 'Qualité allégée activée pour garder une navigation fluide.'),
   unavailable: copy('This diagnostic needs retained data from the selected water engine.', 'Ce diagnostic nécessite les données conservées du moteur hydrologique correspondant.'),
 };
 // These labels also localize the shared terrain-style selector mounted by the main UI.
@@ -52,7 +55,10 @@ export function appearanceCustomized(settings: V2Settings, world?: World): boole
 function resetCityGround(settings: V2Settings): void { delete settings.appearance?.city?.ground; }
 function writeComposition(settings: V2Settings, key: string, value: unknown): void {
   const appearance = settings.appearance!;
+  const previous = appearance.composition;
   appearance.composition = writeCompositionField(appearance.composition ?? currentComposition(settings), key, value);
+  // Choosing the full entry again overrides an automatic fallback and remembers that explicit choice.
+  if (key === 'preset' && value !== 'custom' && previous?.quality === 'light' && appearance.composition.quality === 'full') setDisplayQualityPreference('full');
   if (key === 'preset' && value !== 'custom' || key === 'ground.look' || key === 'ground.variant') resetCityGround(settings);
 }
 /** Materialize only the nested structure being edited, keeping unrelated inherited values absent. */
@@ -114,6 +120,31 @@ export function mountRenderControls(host: HTMLElement, bindings: RenderControlBi
     return group;
   };
   const fantasy = conditional(ui.fantasy, fantasyFields);
+  let qualityToast: HTMLElement | undefined;
+  const unlistenQuality = onDisplayQualityChange(change => {
+    if (change.reason === 'preference') { qualityToast?.remove(); qualityToast = undefined; }
+    if (change.reason !== 'auto') return;
+    const settings = bindings.getSettings(), recipe = currentComposition(settings, bindings.getWorld?.());
+    if (recipe.preset === 'satellite' || recipe.preset === 'parchment') {
+      settings.appearance ??= { style: settings.options.style };
+      settings.appearance.composition = withCompositionQuality(recipe, 'light');
+      setDisplayAppearanceQuality('light');
+      for (const select of bindings.getStyleSelectors?.() ?? []) select.value = settings.appearance.composition.preset;
+      bindings.onChange(); sync();
+    }
+    qualityToast?.remove();
+    const toast = qualityToast = document.createElement('div'); toast.className = 'toast'; toast.setAttribute('role', 'status');
+    const message = document.createElement('span'), action = document.createElement('button');
+    setText(message, ui.qualityNotice); setText(action, ui.fullQuality); action.style.marginLeft = '12px';
+    action.onclick = () => {
+      const settings = bindings.getSettings(); settings.appearance ??= { style: settings.options.style };
+      settings.appearance.composition = withCompositionQuality(currentComposition(settings, bindings.getWorld?.()), 'full');
+      setDisplayQualityPreference('full'); setDisplayAppearanceQuality('full');
+      for (const select of bindings.getStyleSelectors?.() ?? []) select.value = settings.appearance.composition.preset;
+      qualityToast?.remove(); qualityToast = undefined; bindings.onChange(); sync();
+    };
+    toast.append(message, action); document.body.append(toast);
+  });
   const forestLabel = copy('Satellite trees', 'Arbres satellite'); registerMessages(renderControlMessages);
   const forest = conditional(forestLabel, forestFields);
   mountIn(panel.bodies.diagnostics, diagnosticFields);
@@ -168,5 +199,5 @@ export function mountRenderControls(host: HTMLElement, bindings: RenderControlBi
     legend.hidden = !resource;
     if (resource) text(legend, RESOURCE_LEGENDS[shown], legendFr[shown]);
   }
-  sync(); return { sync, dispose: () => { forms.forEach(form => form.dispose()); panel.dispose(); } };
+  sync(); return { sync, dispose: () => { unlistenQuality(); qualityToast?.remove(); forms.forEach(form => form.dispose()); panel.dispose(); } };
 }

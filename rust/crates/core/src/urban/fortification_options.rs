@@ -109,8 +109,9 @@ pub(in super::super) fn service_cost(layout:&Layout,d:&super::super::programme::
 
 pub(super) fn river_works(layout:&mut Layout,surface:Surface<'_>) {
     if layout.enclosures.is_empty() {return;}
-    let streets:Vec<Shape>=layout.streets.iter().flat_map(|s|g::ribbon(&s.path,
-        &s.widths.iter().map(|w|w+2.0).collect::<Vec<_>>())).collect();
+    // Independent per-street buffers, in parallel, flattened in street order.
+    let streets:Vec<Shape>=crate::urban::par::map(&layout.streets,|_,s|g::ribbon(&s.path,
+        &s.widths.iter().map(|w|w+2.0).collect::<Vec<_>>())).into_iter().flatten().collect();
     let clear=Cut::new(streets);
     let mut works=vec![];
     let mut spans:Vec<(Point,Point,V,f64,bool)>=vec![];

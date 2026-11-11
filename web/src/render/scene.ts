@@ -488,9 +488,40 @@ export function pointInPoly(p: Polygon, x: number, y: number): boolean {
   return inside;
 }
 
+/** Horizontal bands of a large ring: each band lists the edges whose y-span meets it (CSR). */
+interface RingBands { minY: number; maxY: number; h: number; start: Int32Array; edges: Int32Array }
+const ringBands = new WeakMap<Polygon, RingBands>();
+const BANDED_RING = 48;
+function bandsOf(p: Polygon): RingBands {
+  let b = ringBands.get(p); if (b) return b;
+  let minY = Infinity, maxY = -Infinity; for (const v of p) { if (v.y < minY) minY = v.y; if (v.y > maxY) maxY = v.y; }
+  const nb = Math.max(1, Math.min(4096, Math.ceil(p.length / 6))), h = Math.max((maxY - minY) / nb, 1e-9), start = new Int32Array(nb + 1);
+  const span = (i: number): [number, number] => {
+    const a = p[i].y, c = p[i === 0 ? p.length - 1 : i - 1].y;
+    return [Math.max(0, Math.min(nb - 1, Math.floor((Math.min(a, c) - minY) / h))), Math.max(0, Math.min(nb - 1, Math.floor((Math.max(a, c) - minY) / h)))];
+  };
+  for (let i = 0; i < p.length; i++) { const [b0, b1] = span(i); for (let k = b0; k <= b1; k++) start[k + 1]++; }
+  for (let k = 0; k < nb; k++) start[k + 1] += start[k];
+  const edges = new Int32Array(start[nb]), fill = start.slice(0, nb);
+  for (let i = 0; i < p.length; i++) { const [b0, b1] = span(i); for (let k = b0; k <= b1; k++) edges[fill[k]++] = i; }
+  b = { minY, maxY, h, start, edges }; ringBands.set(p, b); return b;
+}
+/** Same answer as pointInPoly; large immutable render rings only visit the edges of the point's band. */
+export function pointInRenderPoly(p: Polygon, x: number, y: number): boolean {
+  if (p.length < BANDED_RING) return pointInPoly(p, x, y);
+  const b = bandsOf(p); if (y < b.minY || y > b.maxY) return false;
+  const k = Math.min(b.start.length - 2, Math.floor((y - b.minY) / b.h));
+  let inside = false;
+  for (let e = b.start[k], end = b.start[k + 1]; e < end; e++) {
+    const i = b.edges[e], a = p[i], c = p[i === 0 ? p.length - 1 : i - 1];
+    if ((a.y > y) !== (c.y > y) && x < ((c.x - a.x) * (y - a.y)) / (c.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
 export function insideArea(a: TextureArea, x: number, y: number): boolean {
-  if (!pointInPoly(a.poly, x, y)) return false;
-  if (a.holes) for (const h of a.holes) if (pointInPoly(h, x, y)) return false;
+  if (!pointInRenderPoly(a.poly, x, y)) return false;
+  if (a.holes) for (const h of a.holes) if (pointInRenderPoly(h, x, y)) return false;
   return true;
 }
 

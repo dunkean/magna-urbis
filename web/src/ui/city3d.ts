@@ -1,3 +1,6 @@
+import { displayQualityFor } from '../render/displayQuality';
+import { DrapeTiles } from '../render/drapeTiles';
+import { TileWaterMask } from './tileWaterMask';
 import { drawTileRoads, tileRoadVisible, cityTileHasInk } from '../render/tileNetworks';
 import { outsideUrbanStreets } from '../../../rust/bridge/urbanNetwork';
 import type { RoadInk } from '../render/roadStyle';
@@ -97,6 +100,8 @@ export interface City3dOptions {
   setTextured?(on: boolean): void;
   /** URL of the 2D map image; default `decors/<id>.png` (or the parent decor's). */
   getBackground?(): string | undefined;
+  /** Ready map bitmap; hosts with a rendered canvas avoid a PNG/decode round trip. */
+  getBackgroundImage?(): HTMLCanvasElement | undefined;
   /** Retained Illustrated background with the raised relief removed from its oblique material. */
   getIllustrated?(): { key: string; load(): Promise<Terrain3dIllustration> } | undefined;
   onSelect?(id: string): void;
@@ -111,6 +116,8 @@ export interface City3dViewSettings { ground: City3dGround; plan: boolean; color
 export interface City3dSurface { height: HeightLayer; water?: { n: number; levels: Float32Array; mask: Float32Array }; waterVisible?: boolean }
 export interface City3dWaterDisplay {
   texture: HTMLCanvasElement; paths?: Path2D; ink?: { fill: string; stroke: string };
+  /** River ribbons use nonzero fill: evenodd would punch holes where caps and confluences overlap. */
+  riverPaths?: Path2D;
   /** Seasonal water regime (waterRegime.ts), on a context transformed to map metres: `erase` dry and frozen water from a
    * water cover drawn from the raster, `ground` paints dry beds and ice as ground albedo, `ink` as map symbols.
    * The texture and paths above already leave the dry and frozen water out. */
@@ -125,7 +132,14 @@ export interface City3dRetainedWater {
 }
 export interface City3dSemantic { landuse: LandUseLayer | undefined; rural: SemanticLook; urban: SemanticLook; opacity: number; classes: Readonly<Record<LandKind, boolean>>; depth: SemanticDepth }
 /** `key` moves when the painting changes. `paint` fills the transparent `target`, which covers `box`; false when the tile holds nothing. */
-export interface City3dPhysicalGround { key: string; /** The painter already leaves water out of its land use: no raster clearance on map tiles. */ keepsWater?: boolean; paint(target: HTMLCanvasElement, box: { minX: number; minY: number; maxX: number; maxY: number }): boolean }
+export interface City3dPhysicalGround {
+  key: string;
+  /** The painter already leaves water out of its land use. */
+  keepsWater?: boolean;
+  /** Read-only reuse of the live 2D pyramid while the camera moves. */
+  preview?(target: HTMLCanvasElement, box: { minX: number; minY: number; maxX: number; maxY: number }): boolean;
+  paint(target: HTMLCanvasElement, box: { minX: number; minY: number; maxX: number; maxY: number }, options?: { live: boolean }): boolean;
+}
 export interface City3dDetailService {
   setActiveView(view: '2d' | '3d'): void;
   update(view: { viewport: { minX: number; minY: number; maxX: number; maxY: number }; metresPerPixel: number; selectedId?: string; enabled?: boolean }): unknown;
@@ -134,6 +148,8 @@ export interface City3dDetailService {
 }
 export interface City3d {
   readonly active: boolean;
+  /** Load retained inputs and asynchronous backend pipelines before showing the view. */
+  prepare(): Promise<void>;
   show(): void;
   hide(): void;
   /** Cheap: re-reads the getters and updates only what changed. */
@@ -141,6 +157,10 @@ export interface City3d {
   focus(point: Point, radius?: number): void;
   getCamera(): Terrain3dCamera | undefined;
   setCamera(camera: Terrain3dCamera): void;
+  /** The 2D map view (centre in metres, CSS pixels per metre) equivalent to the current orbit camera: its target and distance. */
+  toMapView(): { cx: number; cy: number; scale: number } | undefined;
+  /** Points the orbit camera at a 2D map view's centre, at the distance that shows the same ground width. Needs a shown view. */
+  fromMapView(view: { cx: number; cy: number; scale: number }): void;
   capture(): Promise<Blob>;
   captureIllustration(): Promise<{ image: Blob; depth: Blob; camera: Terrain3dCamera }>;
   stats(): City3dStats;
@@ -239,7 +259,7 @@ export function mountCity3d(options: City3dOptions): City3d {
   let groundKey = '', planKey = '', proceduralGround = false, softwareMaterial = false;
   let waterDisplay: City3dWaterDisplay | undefined, retainedWater: City3dRetainedWater | undefined;
   /** Rivers come from the vector banks: the raster keeps only the sea and lakes (its river cells are 30 m blocks). */
-  const vectorRivers = (): boolean => !!retainedWater?.paths.length;
+  const vectorRivers = (): boolean => !!retainedWater?.paths.length || !!waterDisplay?.riverPaths;
   /** `cover`: the running water only (dry and frozen courses leave the cover); `ink`: the map symbols too. */
   function fillRetainedWater(ctx: CanvasRenderingContext2D, tile: Terrain3dTile, k: number, color: string, mode: 'cover' | 'ink' | 'symbols' | 'ground' | 'ice' = 'cover'): void {
     if (!retainedWater?.paths.length) return;
@@ -385,6 +405,11 @@ export function mountCity3d(options: City3dOptions): City3d {
   }
   /** The 2D background may change (map style selector): follow its image. */
   function syncImage(d: Decor): void {
+    const bitmap = options.getBackgroundImage?.();
+    if (bitmap) {
+      if (image !== bitmap) { ++textureTicket; imageUrl = undefined; image = bitmap; imageBillboards = undefined; applyGround(); }
+      return;
+    }
     const illustrated = ground === 'map' ? options.getIllustrated?.() : undefined;
     if (illustrated) {
       const key = `illustrated:${illustrated.key}`; if (key === imageUrl) return;
@@ -397,12 +422,17 @@ export function mountCity3d(options: City3dOptions): City3d {
     }
     const url = backgroundUrl(d); if (url === imageUrl) return;
     imageUrl = url; const ticket = ++textureTicket;
-    if (url) void loadImage(url).then(img => { if (ticket === textureTicket && !disposed) { image = img; imageBillboards = undefined; applyGround(); } }, () => { /* the hillshade stays */ });
+    // A removed or not-yet-ready source must not leave the previous style draped.
+    image = undefined; imageBillboards = undefined;
+    if (!url) { applyGround(); return; }
+    void loadImage(url).then(img => { if (ticket === textureTicket && !disposed) { image = img; applyGround(); } }, () => {
+      if (ticket === textureTicket && !disposed) { imageUrl = undefined; applyGround(); }
+    });
   }
   function applyGround(): void {
     const t = terrain, d = surfaceDecor; if (!t || !d) return;
     const configured = options.getGroundSettings?.(ground);
-    t.setLook(options.getLook?.() ?? configured ?? {});
+    t.setLook({ ...(options.getLook?.() ?? configured ?? {}), paperMap: options.getText?.().palette.name === 'parchment' });
     waterDisplay=options.getWaterDisplay?.(); retainedWater = options.getRetainedWater?.();
     const procedural = ground !== 'map' && !softwareMaterial && (!options.getGroundSettings || !!configured);
     proceduralGround = procedural;
@@ -430,7 +460,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     const {ambience:_ambience,waterLook:_waterLook,...resources}=configured??{};
     return JSON.stringify([ground,refinement,resources]);
   }
-  const waterTileScratch=document.createElement('canvas');
+  const waterTileScratch=document.createElement('canvas'), tileWaterMask = new TileWaterMask();
   let fallbackWater: {decor:Decor;key:string;display:City3dWaterDisplay}|undefined;
   function currentWaterDisplay(): City3dWaterDisplay | undefined {
     const supplied=options.getWaterDisplay?.();if(supplied)return supplied;
@@ -441,24 +471,33 @@ export function mountCity3d(options: City3dOptions): City3d {
     if(ink){const ctx=texture.getContext('2d')!;ctx.globalCompositeOperation='source-in';ctx.fillStyle=ink.fill;ctx.fillRect(0,0,texture.width,texture.height);ctx.globalCompositeOperation='source-over';}
     const display={texture,paths:waterPath(d),ink};fallbackWater={decor:d,key,display};return display;
   }
-  function waterTile(tile: Terrain3dTile): Terrain3dTileContent['water'] {
+  async function waterTile(tile: Terrain3dTile): Promise<Terrain3dTileContent['water']> {
     const display=currentWaterDisplay();if(!display)return;
     // A halo lets optical-depth taps cross tile borders without inventing banks there.
-    const pixels = tile.pixels, pad = Math.ceil(128 * pixels / tile.width), n = Math.min(1024, pixels + 2 * pad);
+    // Bound the halo, not the raster density: capping n after expanding the world extent
+    // magnified texels at close zoom and made narrow river sections disappear.
+    const pixels = tile.pixels, pad = Math.min(Math.ceil(pixels / 2), Math.ceil(128 * pixels / tile.width)), n = pixels + 2 * pad;
     const extent = { ...tile, x: tile.x - pad * tile.width / pixels, y: tile.y - pad * tile.width / pixels, width: tile.width * (pixels + 2 * pad) / pixels };
     const width=surfaceDecor!.raster.width,k=n/extent.width,source=display.texture;
-    waterTileScratch.width=waterTileScratch.height=n;const ctx=waterTileScratch.getContext('2d',{willReadFrequently:true})!;
+    waterTileScratch.width=waterTileScratch.height=n;const ctx=waterTileScratch.getContext('2d')!;
     const scale=source.width/width;ctx.drawImage(source,extent.x*scale,extent.y*scale,extent.width*scale,extent.width*scale,0,0,n,n);
     if(display.paths){ctx.setTransform(k,0,0,k,-extent.x*k,-extent.y*k);ctx.fillStyle='#fff';ctx.fill(display.paths,'evenodd');}
+    if(display.riverPaths){
+      // A river keeps a minimum width of two texels at every tile resolution: a thin ribbon on a far tile would
+      // otherwise fade to a partial coverage and read as pale blue that darkens, and flickers, as the tiles refine.
+      ctx.setTransform(k,0,0,k,-extent.x*k,-extent.y*k);ctx.fillStyle='#fff';ctx.strokeStyle='#fff';ctx.lineJoin='round';ctx.lineWidth=1.5/k;
+      ctx.fill(display.riverPaths);ctx.stroke(display.riverPaths);
+    }
     ctx.setTransform(1,0,0,1,0,0);fillRetainedWater(ctx,extent,k,'#fff');
     // Full beds clear vegetation too; their flat silt colour is painted on the final overlay.
     if (proceduralGround && retainedWater) {
       ctx.setTransform(k,0,0,k,-extent.x*k,-extent.y*k); ctx.fillStyle='#fff';
       for (const item of retainedWater.paths) ctx.fill(item.path,item.rule);
     }
-    const data=ctx.getImageData(0,0,n,n).data,alpha=new Uint8Array(n*n);for(let i=0;i<alpha.length;i++)alpha[i]=data[i*4+3];
+    const alpha = await tileWaterMask.read(waterTileScratch);
     return {x:extent.x,y:extent.y,width:extent.width,n,alpha};
   }
+  const drapeTiles = new DrapeTiles();
   let semanticScratch: HTMLCanvasElement | undefined;
   function semanticLayer(tile: Terrain3dTile, paint: (ctx: CanvasRenderingContext2D) => boolean): HTMLCanvasElement | undefined {
     const size = proceduralGround ? Math.ceil(tile.pixels / 2) : tile.pixels, k = size / tile.width;
@@ -471,10 +510,11 @@ export function mountCity3d(options: City3dOptions): City3d {
     return c;
   }
   /** Physical land use at tile resolution, as roads: a map tile takes it at once (the scratch is free again), a material tile keeps it as its overlay. */
-  function physicalLayer(tile: Terrain3dTile, ground: City3dPhysicalGround, box: { minX: number; minY: number; maxX: number; maxY: number }): HTMLCanvasElement | undefined {
-    const c = proceduralGround ? document.createElement('canvas') : semanticScratch ??= document.createElement('canvas');
+  async function physicalLayer(tile: Terrain3dTile, ground: City3dPhysicalGround, box: { minX: number; minY: number; maxX: number; maxY: number }): Promise<HTMLCanvasElement | undefined> {
+    const c = document.createElement('canvas');
     c.width = c.height = tile.pixels;
-    if (!ground.paint(c, box)) return undefined;
+    if (!tile.exact && tile.prepare) await tile.prepare(drapeTiles.paint(c, box, `${ground.key}|${displayQualityFor(true)}`, (target, area) => ground.paint(target, area, { live: true })));
+    else if (!ground.paint(c, box)) return undefined;
     if (!proceduralGround && !ground.keepsWater) clearSemanticWater(tile, c.getContext('2d')!);
     return c;
   }
@@ -505,6 +545,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     ctx.globalCompositeOperation = 'destination-out';
     if (paths) ctx.fill(paths, 'evenodd');
     if (retainedWater) for (const item of retainedWater.paths) ctx.fill(item.path, item.rule);
+    if (regime?.riverPaths) ctx.fill(regime.riverPaths);
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = true;
     ctx.drawImage(mask, tile.x * scale, tile.y * scale, tile.width * scale, tile.width * scale, 0, 0, size, size);
     ctx.globalCompositeOperation = 'source-over';
@@ -532,18 +573,24 @@ export function mountCity3d(options: City3dOptions): City3d {
     if (proceduralGround && waterPaths && waterVisible) { ctx.save(); ctx.setTransform(k, 0, 0, k, -tile.x * k, -tile.y * k); ctx.fillStyle = `rgb(${WATER})`; ctx.fill(waterPaths, 'evenodd'); ctx.restore(); }
     if (proceduralGround && waterVisible) fillRetainedWater(ctx, tile, k, `rgb(${WATER})`);
     const regimeDisplay = currentWaterDisplay();
+    if (proceduralGround && waterVisible && regimeDisplay?.riverPaths) { ctx.save(); ctx.setTransform(k,0,0,k,-tile.x*k,-tile.y*k); ctx.fillStyle=`rgb(${WATER})`; ctx.fill(regimeDisplay.riverPaths); ctx.restore(); }
     // The material shader paints water wherever this tile is opaque: the seasonal regime takes the dry and frozen
     // courses out of the cover at tile resolution (the closed water paths above hold every river ribbon) and redraws
     // the running ones crisp. Their beds and ice are painted on the ground and ink layers below.
     if (proceduralGround && waterVisible && regimeDisplay?.regime) { ctx.save(); ctx.setTransform(k, 0, 0, k, -tile.x * k, -tile.y * k); regimeDisplay.regime(ctx, 'erase', mpp); ctx.restore(); }
     const semantic = options.getSemantic?.(), box = { minX: tile.x, minY: tile.y, maxX: tile.x + tile.width, maxY: tile.y + tile.width };
-    const physicalGround = options.getPhysicalGround?.(proceduralGround), physical = physicalGround && physicalLayer(tile, physicalGround, box);
+    const physicalGround = options.getPhysicalGround?.(proceduralGround);
+    let physical: HTMLCanvasElement | undefined;
+    if (tile.preview && !proceduralGround) {
+      physical = document.createElement('canvas'); physical.width = physical.height = size;
+      if (!physicalGround?.preview?.(physical, box)) physical = undefined;
+    } else physical = physicalGround && await physicalLayer(tile, physicalGround, box);
     if (physical && !proceduralGround) ctx.drawImage(physical, 0, 0);
-    const rural =semantic && semantic.rural !== 'off' ? semanticLayer(tile, target => drawRuralSemantic(target, semantic.landuse, { look: semantic.rural, opacity: semantic.opacity, mpp: semanticMpp, viewport: box, classes: semantic.classes, indexed: true })) : undefined;
+    const rural = !tile.preview && semantic && semantic.rural !== 'off' ? semanticLayer(tile, target => drawRuralSemantic(target, semantic.landuse, { look: semantic.rural, opacity: semantic.opacity, mpp: semanticMpp, viewport: box, classes: semantic.classes, indexed: true })) : undefined;
     if (rural && !proceduralGround) ctx.drawImage(rural, 0, 0);
     // Map ground: the pre-rendered map holds no water. The 2D banks are inked here, at tile resolution and in the 2D
     // colour, over the land use and under the roads and the plan (bridges, quays), as on the 2D map.
-    if (!proceduralGround && waterVisible) fillRetainedWater(ctx, tile, k, retainedWater?.color ?? '#000', 'ink');
+    if (!proceduralGround && waterVisible && !tile.preview) fillRetainedWater(ctx, tile, k, retainedWater?.color ?? '#000', 'ink');
     // Keep the water tile pure. Only tiles with roads or plan ink promote the half-size semantic overlay.
     let overlay = rural;
     if (physical && proceduralGround) { if (rural) physical.getContext('2d')!.drawImage(rural, 0, 0, size, size); overlay = physical; }
@@ -562,7 +609,7 @@ export function mountCity3d(options: City3dOptions): City3d {
       if(!groundTile){groundTile=document.createElement('canvas');groundTile.width=groundTile.height=size;}
       return groundTile.getContext('2d')!;
     };
-    const roads = planOverlay ? groundRegionalStreets().filter(road => tileRoadVisible(road, box, mpp)) : undefined;
+    const roads = planOverlay && !tile.preview ? groundRegionalStreets().filter(road => tileRoadVisible(road, box, mpp)) : undefined;
     const planOptions = options.getPlanOptions?.();
     if (roads?.length) {
       const roadLook=planOptions?.roadLook??(planOptions?.groundBlend?'natural':'ink');
@@ -606,7 +653,7 @@ export function mountCity3d(options: City3dOptions): City3d {
         target.drawImage(draped,tile.x*scale,tile.y*scale,tile.width*scale,tile.width*scale,0,0,size,size); target.drawImage(ink,0,0);
         c.getContext('2d')!.drawImage(ink,0,0); terrain3dSetRaisedTexture(c,full);
       }
-      return {texture:c,water:waterTile(tile)};
+      return {texture:c,water:await waterTile(tile)};
     }
     if (urban) {
       if (overlay) { const target = overlay.getContext('2d')!; target.setTransform(1, 0, 0, 1, 0, 0); target.drawImage(urban, 0, 0, overlay.width, overlay.height); } else overlay = urban;
@@ -618,6 +665,7 @@ export function mountCity3d(options: City3dOptions): City3d {
       const target=inkContext(),source=display.texture,scale=source.width/width;
       target.save();target.setTransform(1,0,0,1,0,0);target.drawImage(source,tile.x*scale,tile.y*scale,tile.width*scale,tile.width*scale,0,0,size,size);
       if(display.paths){target.setTransform(k,0,0,k,-tile.x*k,-tile.y*k);target.fillStyle=display.ink.fill;target.fill(display.paths,'evenodd');target.strokeStyle=display.ink.stroke;target.lineWidth=mpp*.8;target.stroke(display.paths);}
+      if(display.riverPaths){target.setTransform(k,0,0,k,-tile.x*k,-tile.y*k);target.fillStyle=display.ink.fill;target.fill(display.riverPaths);}
       target.restore();
     }
     // Dry beds: albedo on a material ground; ice: a decal over the snowed ground; symbols on an ink ground.
@@ -630,7 +678,7 @@ export function mountCity3d(options: City3dOptions): City3d {
       if (look?.waterLook === 'ink') fillRetainedWater(inkContext(), tile, k, retainedWater.color, 'symbols');
       else { fillRetainedWater(inkContext(), tile, k, retainedWater.color, 'symbols'); if (retainedWater.regime.frozen) fillRetainedWater(inkContext(), tile, k, retainedWater.color, 'ice'); }
     }
-    return { texture: c, semantic: overlay, ground: groundTile, water: waterTile(tile) };
+    return { texture: c, semantic: overlay, ground: groundTile, water: await waterTile(tile) };
   }
   let groundRoadSource: readonly Street[] | undefined, groundRoadLayouts: readonly Layout[] | undefined, groundRoads: Street[] = [];
   function groundRegionalStreets(): Street[] {
@@ -892,7 +940,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     if (d !== surfaceDecor) { setSurface(d); lap('surface'); } else syncImage(d);
     const surface = options.getSurface?.(); if (surface) t.setSurface(surface.height, surface.water, surface.waterVisible);
     const configured = options.getGroundSettings?.(ground), procedural = ground !== 'map' && !softwareMaterial && (!options.getGroundSettings || !!configured);
-    const look=options.getLook?.()??configured??{};t.setLook(look);
+    const look=options.getLook?.()??configured??{};t.setLook({ ...look, paperMap: options.getText?.().palette.name === 'parchment' });
     if(procedural && configured)t.setGroundMaterial(configured);
     if (groundKey !== groundResourceKey(configured) || waterDisplay !== options.getWaterDisplay?.() || retainedWater !== options.getRetainedWater?.()) applyGround();
     t.setHeightSampler(options.getHeightSampler?.());
@@ -925,6 +973,11 @@ export function mountCity3d(options: City3dOptions): City3d {
   }
   const api: City3d = {
     get active() { return active; },
+    async prepare(): Promise<void> {
+      const t = ensureTerrain(); if (!t) throw new Error(error ?? 'The 3D renderer is unavailable.');
+      sync();
+      await (t as Terrain3d & { prepareVariant?(): Promise<void> }).prepareVariant?.();
+    },
     show(): void {
       if (disposed) return;
       root.hidden = false; active = true;
@@ -952,10 +1005,19 @@ export function mountCity3d(options: City3dOptions): City3d {
     },
     getCamera: () => terrain?.getCamera(),
     setCamera(camera: Terrain3dCamera): void { terrain?.setCamera(camera); focused = true; updateInfo(); },
+    toMapView() {
+      const c = terrain?.getCamera(), h = root.clientHeight; if (!c || !(h > 0) || !(c.distance > 0)) return undefined;
+      return { cx: c.x, cy: c.y, scale: h / (2 * Math.tan(TERRAIN_3D_FOV / 2) * c.distance) };
+    },
+    fromMapView(view) {
+      const t = terrain, h = root.clientHeight; if (!t || !(h > 0) || !(view.scale > 0)) return;
+      t.setCamera({ ...t.getCamera(), navigation: 'orbit', x: view.cx, y: view.cy, distance: h / (2 * Math.tan(TERRAIN_3D_FOV / 2) * view.scale) });
+      focused = true; updateInfo();
+    },
     capture: () => terrain ? terrain.capture().then(blob => textOverlay.composite(blob)) : Promise.reject(new Error('Vue 3D inactive.')),
     captureIllustration: () => terrain ? terrain.captureIllustration().then(async result => ({ ...result, image: await textOverlay.composite(result.image) })) : Promise.reject(new Error('Vue 3D inactive.')),
     stats: () => ({ buildings: (display?.buildings.length ?? 0) - bridgeStats.count - wallStats.pieces - quayCount, ...(display?.kinds ?? { silhouette: 0, compact: 0, detailed: 0 }), displayMs, timings: { ...timings }, realizing: converting.size, realizeError: info.dataset.detailError || undefined, bridges: bridgeStats, walls: wallStats, lod: terrain?.getLodInfo(), parentWindow: sceneOf && 'projection' in sceneOf && sceneOf.projection === 'native-parent-window-3d-1' ? { complete: sceneOf.complete, reason: sceneOf.reason, parents: sceneOf.parents, members: sceneOf.buildings.length } : undefined }),
-    dispose(): void { textOverlay.dispose(); disposed = true; active = false; sourceEpoch++; clearTimeout(detailTimer); cancelAnimationFrame(detailFrame); unsubscribeDetails?.(); unsubscribeDetails = undefined; options.details?.setActiveView('2d'); window.removeEventListener('magna-locale-change', localizeControls); resize.disconnect(); terrain?.dispose(); terrain = undefined; root.remove(); },
+    dispose(): void { drapeTiles.clear(); tileWaterMask.dispose(); textOverlay.dispose(); disposed = true; active = false; sourceEpoch++; clearTimeout(detailTimer); cancelAnimationFrame(detailFrame); unsubscribeDetails?.(); unsubscribeDetails = undefined; options.details?.setActiveView('2d'); window.removeEventListener('magna-locale-change', localizeControls); resize.disconnect(); terrain?.dispose(); terrain = undefined; root.remove(); },
   };
   // The initial status reads display/scene state declared above; initialise it
   // after those bindings exist (also when mounted lazily from the V2 app).

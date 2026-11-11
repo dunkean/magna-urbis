@@ -521,17 +521,12 @@ pub(super) fn derbs(
     let step = (reach / 3.0).max((total / 600.0).sqrt()).max(2.0);
     let inside = ContainmentIndex::new(shape);
     let mut samples = Vec::new();
-    let mut y = y0 + step * 0.5;
-    while total > 1.5 * reach * reach && y < y1 {
-        let mut x = x0 + step * 0.5;
-        while x < x1 {
-            let p = Point { x, y };
+    if total > 1.5 * reach * reach {
+        for p in super::super::generation_limits::samples((x0, y0, x1, y1), step, 600) {
             if inside.contains(p) {
                 samples.push(p);
             }
-            x += step;
         }
-        y += step;
     }
     let near = |p: Point, a: Point, b: Point| distance(p, a, b);
     let mut far: Vec<f64> = samples

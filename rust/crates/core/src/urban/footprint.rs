@@ -325,7 +325,7 @@ fn capacity_epochs(
     // divides it by 1 + 3 × slope): the median slope of that land.
     let median = slopes.get(slopes.len() / 2).copied().unwrap_or(0.0);
     let max_slope = super::culture::mapping_for(culture, &cfg.programme.period)
-        .map_or(0.15, |m| super::profiles::house_slope(culture, m.admissibility.max_slope));
+        .map_or(0.15, |m| super::profiles::house_slope(culture, m.admissibility.max_slope, cfg.programme.slope_relax));
     let steep =
         slopes.iter().filter(|&&s| s > max_slope).count() as f64 / slopes.len().max(1) as f64;
     let access: Vec<(f64, f64)> = capacity::epoch_access(&fractions, area)
@@ -2459,11 +2459,12 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
         let first = grow(&mut centers, grade, service);
         // A site whose streets cannot climb out of the core would leave the place almost
         // without land (under a quarter of its budget): it then grows by stairs and
-        // terraces, on steeper ground step by step, and says so.
+        // terraces, on steeper ground step by step, and says so. The ladder runs up to
+        // a 56° flank (grade 1.5), so a town placed on a volcano's cone still takes land.
         let got = |r: &(Vec<Shape>, Vec<Vec<Shape>>, Vec<Street>)| area(&union(&r.1.iter().flatten().cloned().collect::<Vec<_>>()));
         let first_area = got(&first);
         let mut best = first;
-        for steep_grade in [grade.max(0.5), 0.75] {
+        for steep_grade in [grade.max(0.5), 0.75, 1.0, 1.5] {
             if got(&best) >= 0.25 * target {
                 break;
             }

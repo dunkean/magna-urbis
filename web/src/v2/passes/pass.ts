@@ -15,7 +15,7 @@ export interface PassSpec { readonly inputs: readonly string[]; readonly owns: r
 export const PASSES: Readonly<Record<PassName, PassSpec>> = {
   terrainData: { inputs: ['revisions.terrain', 'layers.terrain', 'mode'], owns: ['GPU height/cave/water-surface textures'], invalidation: 'new terrain product' },
   terrainLook: { inputs: ['keys.terrainLook', 'effective terrain settings', 'layers.terrain|decor|background', 'cpu: keys.terrainBase+forest+water'], owns: ['GPU look uniforms', 'cpu: terrain raster + background SVG'], invalidation: 'season, lighting, palette, contours, layers; never a GPU upload' },
-  forest: { inputs: ['keys.forest', 'revisions.terrain', 'effective forest settings'], owns: ['GPU forest field'], invalidation: 'forest settings, terrain' },
+  forest: { inputs: ['keys.forest', 'revisions.terrain|landuse|cities|settlements', 'effective forest settings'], owns: ['GPU forest field'], invalidation: 'forest settings, terrain' },
   water: { inputs: ['keys.water', 'revisions.terrain', 'layers.water', 'mode'], owns: ['GPU water/overlay textures', 'water vector SVG'], invalidation: 'water colours, lakes, oxbows, diagnostic overlay (resource diagnostics also read revisions.settlements and the lazily fetched payload)' },
   frame: { inputs: ['ground style + palette', 'layers.decor'], owns: ['frame vector SVG'], invalidation: 'frame toggle, palette' },
   cartography: { inputs: ['keys.cartography', 'revisions.roads|landuse|settlements|names|terrain', 'layers.roads|landuse|city|labels|decor'], owns: ['CanvasRenderer (Path2D caches)', 'export overlay raster'], invalidation: 'palette, roads, land use, painted, vegetation, world products' },
@@ -40,7 +40,7 @@ export function passKeys(i: PassInput): Record<PassName, string> {
   return {
     terrainData: j(v.terrain, rel(i), mode),
     terrainLook: j(k.terrainLook, i.effective, mode, rel(i), l.decor, l.background, v.terrain, ...(mode === 'cpu' ? [k.terrainBase, k.forest, k.water, l.water, l.terrain, i.forestEffective, v.landuse] : [])),
-    forest: mode === 'cpu' ? 'in-terrain' : j(k.forest, v.terrain, v.landuse, i.forestEffective, rel(i)),
+    forest: mode === 'cpu' ? 'in-terrain' : j(k.forest, v.terrain, v.landuse, v.cities, v.settlements, i.forestEffective, rel(i)),
     // The season and the climate zone set the water regime (dry beds, ice).
     water: j(k.water, v.terrain, l.water, mode, rel(i), isResourceDiagnostic(r.diagnostic) ? v.settlements : null, r.ground.season, r.ground.calendar, i.effective),
     frame: j(r.ground.style, r.palette.colors, rel(i), r.ground.layers.frame, l.decor),
@@ -60,7 +60,9 @@ export class PassState {
     for (const name of only ?? PASS_ORDER) {
       const key = next()[name];   // lazy: an earlier pass may have changed the GPU/CPU mode
       if (this.keys[name] === key) continue;
+      const started = performance.now();
       await runners[name](); this.keys[name] = key; ran.push(name);
+      performance.measure(`v2pass:${name}`, { start: started });
     }
     return ran;
   }

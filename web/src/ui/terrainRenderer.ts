@@ -14,7 +14,7 @@ import { rendererOverride } from './rendererOverride';
 export type TerrainRenderer = Pick<TerrainGl,
   'setBase' | 'setDetail' | 'setRenderV2Season' | 'setLook' | 'setEnhancedDetail' | 'setRetainedWater' | 'setWater' | 'setOverlay'
   | 'setView' | 'setForest' | 'captureMap' | 'redrawForCapture' | 'captureRegion' | 'captureWaterMask' | 'createSurfaceSampler'
-  | 'heightAt' | 'variantReady' | 'redrawNow' | 'dispose' | 'drawMs'>;
+  | 'heightAt' | 'variantReady' | 'redrawNow' | 'setLivePaused' | 'dispose' | 'drawMs'>;
 
 export type TerrainBackend = 'webgl' | 'webgpu';
 

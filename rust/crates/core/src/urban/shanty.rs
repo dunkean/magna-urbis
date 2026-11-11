@@ -365,13 +365,15 @@ pub(super) fn extend(
         .iter()
         .map(|q| q.shape.clone())
         .collect::<Vec<_>>();
-    for q in &layout.quarters {
+    // Breathing-space ribbons are pure per quarter: built in parallel, kept in order.
+    let breathing = super::par::map(&layout.quarters, |_, q| {
         let mut ring = q.shape.outer.clone();
         if let Some(p) = ring.first().copied() {
             ring.push(p);
         }
-        forbidden.extend(g::ribbon(&ring, &[40.]));
-    }
+        g::ribbon(&ring, &[40.])
+    });
+    forbidden.extend(breathing.into_iter().flatten());
     forbidden.extend(
         layout
             .enclosures
@@ -396,9 +398,9 @@ pub(super) fn extend(
         .chain(roads)
         .cloned()
         .collect::<Vec<_>>();
-    let road_masks = streets
-        .iter()
-        .flat_map(|s| g::ribbon(&s.path, &s.widths))
+    let road_masks = super::par::map(&streets, |_, s| g::ribbon(&s.path, &s.widths))
+        .into_iter()
+        .flatten()
         .collect::<Vec<_>>();
     let mut obstacles = layout
         .blocks
@@ -1278,7 +1280,7 @@ pub(super) fn request(
         "preview":shapes,"preview_parts":parts.iter().map(|(_,l)|l).collect::<Vec<_>>(),"placement_hint":[hut.shape],
         "accesses":[{"id":format!("{}/path",hut.id),"segment":hut.front,"kind":"public","width_m":1.1}],
         "party_boundaries":[],"neighbors":[],"function":"domestic",
-        "culture":{"culture":layout.culture,"pack":culture::architecture_pack(&layout.culture).unwrap_or(""),"mode":"inspired","borrowing":null},
+        "culture":{"culture":layout.culture,"pack":culture::architecture_pack(&layout.culture).unwrap_or(""),"mode":"historical_inspired","borrowing":null},
         "terrain":{"origin":c,"ground_z_m":surface.height_at(c),"gradient":[gradient(surface,c).x,gradient(surface,c).y],"water_z_m":null,"max_foundation_step_m":0.75},
         "programme":{"role":"dwelling.shanty","district_role":"shanty","label":"Habitation informelle","landmark":false,
             "composition":"detached","households":1,"wealth":0.08,"floors":[1,1],"shanty_flavour":pocket.flavour,

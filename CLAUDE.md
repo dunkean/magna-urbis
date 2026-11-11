@@ -6,6 +6,12 @@
 - Do not add migrations, legacy aliases or fallbacks just to preserve old behaviour; change things directly, across repositories if needed (e.g. ../infinite_map).
 - The V2 stays local (never deployed to github.io).
 
+## V2 is the reference; benches stay in sync
+- The V2 (v2.html) is the test page. City Bench, the render board and the v7 sheets must show exactly what the V2 shows.
+- Every generation or display choice shared by the pages (building architecture, 2D/3D renderers, defaults) lives in one shared module that both import (`web/src/render/cityContract.ts` and the shared render modules). Never fix or tune a render in one page only.
+- `web/tests/v2/cityParity.test.ts` fails when the V2 and City Bench drift; keep it green and extend it when you add a shared choice.
+- Judge render changes on v2.html (sheet `run.mjs`, `render_board.mjs`); the bench is a debug page.
+
 ## Rust builds: shared, batched, few
 Several Claude/Codex sessions and their agents work on this tree at the same time. Parallel builds waste hours and millions of tokens.
 

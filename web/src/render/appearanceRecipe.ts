@@ -15,6 +15,7 @@ import type { UrbanBuildingStyle, UrbanBuildingDiagnostic } from './urbanBuildin
 import { DEFAULT_FANTASY_OPTIONS, type FantasyOptions } from '../../../rust/bridge/fantasyPainting';
 import { DEFAULT_FOREST_SETTINGS, type ForestSettings } from '../../../rust/bridge/terrainForest';
 import { applyComposition, resolveComposition, withGroundVariant, type CompositionRecipe, type ResolvedComposition } from './composition';
+import type { ResolvedDisplayQuality } from './displayQuality';
 
 export type RenderTarget = 'view2d' | 'view3d' | 'export';
 export type RenderPath = 'classic' | 'composite';
@@ -96,6 +97,7 @@ export interface PassKeys {
   city: string;
 }
 export interface ResolvedAppearance {
+  readonly quality: ResolvedDisplayQuality;
   readonly target: RenderTarget;
   readonly path: RenderPath;
   /** Selected style (terrain style, else map style). */
@@ -198,7 +200,7 @@ export function resolveAppearance(appearance: AppearanceInput | undefined, base:
   const keys: PassKeys = {
     terrainLook: key(ground.style, pick(palette.applicableColors, ['paper', 'contour', 'groundLow', 'groundHigh', 'waterShore', 'waterDeep', 'river']), ground.lighting, ground.season, ground.calendar, ground.layers.relief, ground.layers.hypsometry, ground.layers.frame, ground.contours,composition.ambience,composition.networks.water.look),
     terrainBase: key(ground.style, ground.layers.relief, groundTraits.fantasy ? vegetation.fantasy : 0),
-    water: key(ground.style, pick(palette.applicableColors, ['waterShore', 'waterDeep', 'river']), ground.layers.water, ground.lakes, ground.oxbows, composition.networks.water, diagnostic, diagnostic === 'res-potential' ? a?.resourcePotential ?? 'arable' : null),
+    water: key(ground.style, ground.season, ground.calendar, pick(palette.applicableColors, ['waterShore', 'waterDeep', 'river']), ground.layers.water, ground.lakes, ground.oxbows, composition.networks.water, diagnostic, diagnostic === 'res-potential' ? a?.resourcePotential ?? 'arable' : null),
     forest: key(vegetation.forest, groundTraits.forestClearingProfile, groundTraits.forestBrushes, ground.layers.water),
     cartography: key(groundTraits.satelliteVariant ? null : [ground.season, ground.calendar], mapStyle, capabilities.nativeCities && !cartography.legend ? omit(a?.colors, OVERLAY_FOREIGN_COLORS) : a?.colors, ground.style, cartography.roads, composition.networks.roads.look, cartography.landuse, cartography.painted, vegetation.symbols, composition.vegetation.cartographic, city.visible, cartography.landuseForestTone),
     overlays: key(composition.text, cartography.labels, cartography.legend, cartography.cartouche),
@@ -206,7 +208,7 @@ export function resolveAppearance(appearance: AppearanceInput | undefined, base:
     semantic: key(composition.landuse),
     city: key(city, houseColors,composition.ambience),
   };
-  const result: ResolvedAppearance = { target, path, styleId, traits, ground: Object.freeze(ground), vegetation: Object.freeze(vegetation), palette: Object.freeze(palette),
+  const result: ResolvedAppearance = { target, quality: target === 'export' ? 'full' : appearance?.composition?.quality ?? 'full', path, styleId, traits, ground: Object.freeze(ground), vegetation: Object.freeze(vegetation), palette: Object.freeze(palette),
     cartography: Object.freeze(cartography), city: Object.freeze(city), composition, diagnostic, resourcePotential: a?.resourcePotential ?? 'arable', incompatibilities: Object.freeze(incompatibilities), keys: Object.freeze(keys) };
   return Object.freeze(result);
 }

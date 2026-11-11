@@ -255,3 +255,10 @@
 .settlement-choice>input{flex:0 0 auto;width:15px;height:15px;accent-color:var(--gold)}
 .places-panel .settlement-choice .settlement-item{min-width:0;margin:0}
 .places-panel[data-collapsed=true]>.places-selection{display:none}
+
+/* One row per slider parameter: label, slider, value. Shared by every panel that mounts parameterForm. */
+.parameter-form .parameter-field:has(>.parameter-slider),.stage-body .parameter-field:has(>.parameter-slider){display:grid!important;grid-template-columns:minmax(70px,1fr) minmax(80px,1.6fr) 74px;align-items:center;gap:4px 8px}
+.parameter-field:has(>.parameter-slider)>.parameter-caption{grid-column:1;grid-row:1}
+.parameter-field:has(>.parameter-slider)>.parameter-slider{grid-column:2!important;grid-row:1;width:100%;min-width:0}
+.parameter-field:has(>.parameter-slider)>input:not(.parameter-slider){grid-column:3;grid-row:1;width:100%;min-width:0}
+.parameter-field:has(>.parameter-slider)>:not(.parameter-caption):not(input){grid-column:1/-1}

@@ -56,12 +56,12 @@ export interface RoadConfig {
   gradeWeight: number; maxGrade: number; crossingCost: number; wobble: number; sharing: number; exits: number;
   /** Largest routing grid side (Rust default 512): finer rasters are pooled before routing; 0 routes on the raster itself. */
   grid?: number;
-  /** Under test: route tracks/trails to the activity sites' access points (off: network unchanged). */
+  /** Route tracks/trails to activity access points (Rust default on; false keeps the old network). */
   activityAccess?: boolean;
   /** Network nodes (tolls, ferries, inns, border posts) along the finished network (Rust default on). */
   networkNodes?: boolean;
 }
-export const defaultRoadConfig = (): RoadConfig => ({ level: 'rural', surface: 'auto', culture: 'auto', density: 0.5, gradeWeight: 1, maxGrade: 0, crossingCost: 1, wobble: 1, sharing: 0.7, exits: 2 });
+export const defaultRoadConfig = (): RoadConfig => ({ level: 'rural', surface: 'auto', culture: 'auto', density: 0.5, gradeWeight: 1, maxGrade: 0, crossingCost: 1, wobble: 1, sharing: 0.7, exits: 2, activityAccess: true });
 export type RoadLevel = 'primitive' | 'rural' | 'developed' | 'imperial';
 export type RoadClass = 'highway' | 'main' | 'local' | 'track' | 'trail';
 export type RoadSurface = 'dirt' | 'gravel' | 'paved' | 'flagstone';

@@ -104,10 +104,8 @@ pub(super) fn for_layout(layout: &Layout) -> Vec<f64> {
     let area = layout.blocks.iter().map(|b| area(&b.shape)).sum::<f64>();
     let scale = (area / std::f64::consts::PI).sqrt().clamp(60.0, 600.0);
     let index = FrontageIndex::new(layout);
-    layout
-        .blocks
-        .iter()
-        .map(|block| {
+    // Pure per block: measured in parallel, returned in block order.
+    super::super::par::map(&layout.blocks, |_, block| {
             let fronts = frontages(&block.shape, layout, &index);
             let mut access = f64::INFINITY;
             for f in &fronts {
@@ -149,7 +147,6 @@ pub(super) fn for_layout(layout: &Layout) -> Vec<f64> {
                 (0.12 + 0.88 * (-access / scale).exp()).clamp(0.0, 1.0)
             }
         })
-        .collect()
 }
 
 // Keep the metric normalizer distinct from the parent's vector scale helper.

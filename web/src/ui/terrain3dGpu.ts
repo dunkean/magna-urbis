@@ -1,3 +1,4 @@
+import { waterSeasonUniforms } from '../render/seasonPalette';
 /**
  * WebGPU backend of the 3D terrain view: Terrain3d (terrain3d.ts) with its GPU hooks overridden, and the
  * building pass (urbanBuilding3d.ts) likewise. Quadtree, LOD morphs, tile loading, stitching, picking and
@@ -204,21 +205,35 @@ class Gpu3d {
       [name, device.createPipelineLayout({ label: name, bindGroupLayouts: [layout] })])) as Gpu3d['pipelineLayouts'];
   }
   /** A pipeline once created; its asynchronous creation starts on first request. */
-  pipeline(key: string): GPURenderPipeline | undefined {
-    let entry = this.pipelines.get(key);
+  pipeline(key: string, samples = SAMPLES): GPURenderPipeline | undefined {
+    const cacheKey = `${samples}:${key}`;
+    let entry = this.pipelines.get(cacheKey);
     if (!entry) {
       const created: Entry = entry = {}, started = performance.now();
-      this.pipelines.set(key, created);
-      this.device.createRenderPipelineAsync(this.descriptor(key)).then(pipeline => {
+      this.pipelines.set(cacheKey, created);
+      this.device.createRenderPipelineAsync(this.descriptor(key, samples)).then(pipeline => {
         console.debug(`WebGPU 3D pipeline ${key}: ${Math.round(performance.now() - started)} ms`);
         created.pipeline = pipeline; for (const listener of this.listeners) listener();
       }, error => { created.failed = true; if (!this.lost) console.error(`WebGPU 3D pipeline ${key}:`, error); });
     }
     return entry.pipeline;
   }
-  async adopt(key: string): Promise<void> { this.pipelines.set(key, { pipeline: await this.device.createRenderPipelineAsync(this.descriptor(key)) }); }
-  private descriptor(key: string): GPURenderPipelineDescriptor {
-    const multisample = { count: SAMPLES }, target = [{ format: this.format }];
+  async adopt(key: string, samples = SAMPLES): Promise<void> {
+    const started = performance.now();
+    this.pipelines.set(`${samples}:${key}`, { pipeline: await this.device.createRenderPipelineAsync(this.descriptor(key, samples)) });
+    console.debug(`WebGPU 3D pipeline ${key}: ${Math.round(performance.now() - started)} ms (prepare)`);
+  }
+  /** Complete a requested look before it is captured or first shown. */
+  async settled(key: string, samples = SAMPLES): Promise<void> {
+    for (;;) {
+      if (this.lost) throw new Error('WebGPU 3D device lost while preparing the ground.');
+      if (this.pipeline(key, samples)) return;
+      if (this.pipelines.get(`${samples}:${key}`)?.failed) throw new Error(`WebGPU 3D pipeline ${key} failed.`);
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+  }
+  private descriptor(key: string, samples: number): GPURenderPipelineDescriptor {
+    const multisample = { count: samples }, target = [{ format: this.format }];
     const depthStencil = (write: boolean): GPUDepthStencilState => ({ format: DEPTH, depthWriteEnabled: write, depthCompare: write ? 'less-equal' : 'always' });
     if (key === 'sky') return { label: key, layout: this.pipelineLayouts.sky, vertex: { module: this.modules.skyVs, entryPoint: 'main' },
       fragment: { module: this.modules.skyFs, entryPoint: 'main', targets: target }, depthStencil: depthStencil(false), multisample };
@@ -227,7 +242,7 @@ class Gpu3d {
       fragment: { module: this.modules.treeFs, entryPoint: 'main', targets: target }, depthStencil: depthStencil(true), multisample };
     if (key === 'billboard') return { label: key, layout: this.pipelineLayouts.billboard,
       vertex: { module: this.modules.billboardVs, entryPoint: 'main', buffers: BILLBOARD_BUFFERS },
-      fragment: { module: this.modules.billboardFs, entryPoint: 'main', targets: target }, depthStencil: depthStencil(true), multisample: { count: SAMPLES, alphaToCoverageEnabled: true } };
+      fragment: { module: this.modules.billboardFs, entryPoint: 'main', targets: target }, depthStencil: depthStencil(true), multisample: { count: samples, alphaToCoverageEnabled: samples > 1 } };
     if (key.startsWith('buildingColor') || key.startsWith('buildingTex')) {
       const kind = key.startsWith('buildingTex') ? 'tex' : 'color', vs = kind === 'tex' ? 'buildingTexVs' : 'buildingColorVs', fs = kind === 'tex' ? 'buildingTexFs' : 'buildingColorFs';
       return { label: key, layout: this.pipelineLayouts.building, vertex: { module: this.modules[vs], entryPoint: 'main', buffers: BUILDING_BUFFERS[kind] },
@@ -294,7 +309,7 @@ export function prepareTerrain3dGpu(forced: boolean): Promise<boolean> {
         if (errors.length) throw new Error(`WGSL ${key}: ${errors.map(m => `${m.lineNum}:${m.linePos} ${m.message}`).join('; ')}`);
       }
       // Throws (GPUPipelineError) if the translated shaders or the layouts are refused.
-      await Promise.all(['sky', 'map', PREVIEW_GROUND, 'buildingColor', 'buildingTex'].map(key => gpu.adopt(key)));
+      await Promise.all([1, SAMPLES].flatMap(samples => ['sky', 'map', PREVIEW_GROUND, 'buildingColor', 'buildingTex', 'tree', 'billboard'].map(key => gpu.adopt(key, samples))));
       if (gpu.lost) throw new Error('WebGPU : appareil perdu pendant la préparation de la vue 3D.');
       return ready = gpu;
     } catch (error) { destroyedHere.add(device); device.destroy(); throw error; }
@@ -325,11 +340,13 @@ class Terrain3dGpu extends Terrain3d {
   private patchIndexCache = new Map<string, { buffer: GPUBuffer; count: number }>();
   /** Buffers released while a frame is being recorded, destroyed after its submit. */
   private garbage: GPUBuffer[] = [];
-  private targets?: { width: number; height: number; color: GPUTexture; colorView: GPUTextureView; depth: GPUTexture; depthView: GPUTextureView };
+  private targets?: { width: number; height: number; samples: number; color: GPUTexture; colorView: GPUTextureView; depth: GPUTexture; depthView: GPUTextureView };
   private blank!: GpuImage; private emptyUnfilterable!: GpuImage;
   private brushes!: { image: GpuImage; full: boolean };
   private ring?: { layer: object; image: GpuImage; x: number; y: number; width: number };
-  private lastGroundPipeline?: GPURenderPipeline;
+  private lastGroundPipelines = new Map<number, GPURenderPipeline>();
+  private get samples(): number { return this.frameInteracting || this.frameQuality > 0 ? 1 : SAMPLES; }
+  private pipeline(key: string): GPURenderPipeline | undefined { return this.gpu.pipeline(key, this.samples); }
   private readonly redraw = (): void => this.request();
   private onDeviceLost?: () => void;
   private readonly deviceLost = (): void => { const callback = this.onDeviceLost; this.onDeviceLost = undefined; if (!this.disposed) callback?.(); };
@@ -445,18 +462,18 @@ class Terrain3dGpu extends Terrain3d {
       if (this.gpuBillboardAtlas) this.deleteTexture(this.gpuBillboardAtlas.texture);
       this.gpuBillboardAtlas = { source: atlas, texture: this.uploadTexture(atlas) };
     }
-    this.gpu.pipeline('billboard');
+    this.pipeline('billboard');
   }
   protected override uploadTrees(values: Float32Array): void {
     this.gpuTreeBuffer?.destroy(); this.gpuTreeBuffer = undefined;
     if (!values.length) return;
     this.gpuTreeBuffer = this.device.createBuffer({ label: 'near trees', size: values.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
     this.device.queue.writeBuffer(this.gpuTreeBuffer, 0, values.buffer, values.byteOffset, values.byteLength);
-    this.gpu.pipeline('tree');
+    this.pipeline('tree');
   }
   private recordTrees(pass: GPURenderPassEncoder, frame: FrameGeometry): void {
     if (!this.treeCount || !this.gpuTreeBuffer) return;
-    const pipeline = this.gpu.pipeline('tree'); if (!pipeline) return;
+    const pipeline = this.pipeline('tree'); if (!pipeline) return;
     const p = this.treeParams, c = this.camera;
     p.setArray('matrix', frame.matrix); p.set('cameraOrigin', c.x, frame.targetHeight, c.y); p.set('exaggeration', c.exaggeration);
     p.setArray('treeFade', this.forestTreesUniform(frame)); p.setArray('eye', frame.eye); p.setArray('treeLight', this.treeLight());
@@ -466,10 +483,10 @@ class Terrain3dGpu extends Terrain3d {
       { binding: 0, resource: { buffer: slot.buffer, offset: slot.offset, size: p.bytes.byteLength } }] }));
     pass.setVertexBuffer(0, this.gpuTreeBuffer); pass.draw(TREE_VERTICES, this.treeCount);
   }
-  protected override billboardsReady(): boolean { return !this.billboardCount || !!this.gpu.pipeline('billboard'); }
+  protected override billboardsReady(): boolean { return !this.billboardCount || !!this.pipeline('billboard'); }
   private recordBillboards(pass: GPURenderPassEncoder, frame: FrameGeometry, blend: number): boolean {
     if (!this.billboardCount || !this.gpuBillboardBuffer || !this.gpuBillboardAtlas || blend<=0) return false;
-    const pipeline=this.gpu.pipeline('billboard'); if (!pipeline) return true;
+    const pipeline=this.pipeline('billboard'); if (!pipeline) return true;
     const p=this.billboardParams,c=this.camera;
     p.setArray('matrix',frame.matrix); p.set('cameraOrigin',c.x,frame.targetHeight,c.y); p.set('cameraRight',Math.cos(c.yaw),-Math.sin(c.yaw));
     p.set('exaggeration',c.exaggeration); p.set('raisedBlend',blend); p.setArray('eye',frame.eye); p.set('fogDistance',Math.max(c.distance*2,100)); p.set('uNight',this.lookSettings.ambience==='night'?1:0);
@@ -481,20 +498,28 @@ class Terrain3dGpu extends Terrain3d {
   }
 
   private ensureTargets(width: number, height: number): NonNullable<Terrain3dGpu['targets']> {
-    if (this.targets?.width === width && this.targets.height === height) return this.targets;
+    const samples = this.samples;
+    if (this.targets?.width === width && this.targets.height === height && this.targets.samples === samples) return this.targets;
     this.targets?.color.destroy(); this.targets?.depth.destroy();
-    const color = this.device.createTexture({ label: '3d colour', size: [width, height], format: this.gpu.format, sampleCount: SAMPLES, usage: GPUTextureUsage.RENDER_ATTACHMENT });
-    const depth = this.device.createTexture({ label: '3d depth', size: [width, height], format: DEPTH, sampleCount: SAMPLES, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING });
-    return this.targets = { width, height, color, colorView: color.createView(), depth, depthView: depth.createView() };
+    const color = this.device.createTexture({ label: '3d colour', size: [width, height], format: this.gpu.format, sampleCount: samples, usage: GPUTextureUsage.RENDER_ATTACHMENT });
+    const depth = this.device.createTexture({ label: '3d depth', size: [width, height], format: DEPTH, sampleCount: samples, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING });
+    return this.targets = { width, height, samples, color, colorView: color.createView(), depth, depthView: depth.createView() };
   }
   /** The ground variant once created; meanwhile the last drawn one, or the preview, stands in. */
   private terrainPipeline(): GPURenderPipeline | undefined {
-    if (this.useMapShader) return this.gpu.pipeline(this.lookSettings.waterLook==='natural'?'map.water':'map') ?? this.gpu.pipeline('map');
+    if (this.useMapShader) return this.pipeline(this.lookSettings.waterLook==='natural'?'map.water':'map') ?? this.pipeline('map');
     const settings = this.groundSettings, forest = !!this.forest;
-    const target = this.gpu.pipeline(groundKey(+!!settings, settings?.renderV2 ?? 0, +forest, +!!settings?.forestBrushes, +(this.lookSettings.waterLook==='natural')));
+    const target = this.pipeline(groundKey(+!!settings, settings?.renderV2 ?? 0, +forest, +!!settings?.forestBrushes, +(this.lookSettings.waterLook==='natural')));
     this.mark('groundVariant', target ? 'ready' : 'pending');
-    if (target) return this.lastGroundPipeline = target;
-    return settings ? this.gpu.pipeline(PREVIEW_GROUND) : this.lastGroundPipeline ?? this.gpu.pipeline(PREVIEW_GROUND);
+    if (target) { this.lastGroundPipelines.set(this.samples, target); return target; }
+    return settings ? this.pipeline(PREVIEW_GROUND) : this.lastGroundPipelines.get(this.samples) ?? this.pipeline(PREVIEW_GROUND);
+  }
+  /** Unlike the live preview, a newly opened view must have its actual material available. */
+  async prepareVariant(): Promise<void> {
+    const settings = this.groundSettings;
+    const key = this.useMapShader ? this.lookSettings.waterLook === 'natural' ? 'map.water' : 'map'
+      : groundKey(+!!settings, settings?.renderV2 ?? 0, +!!this.forest, +!!settings?.forestBrushes, +(this.lookSettings.waterLook === 'natural'));
+    await Promise.all([1, SAMPLES].map(samples => this.gpu.settled(key, samples)));
   }
   /** Brush atlas (bindForestBrushes): a 1×1 placeholder until a brush look first needs the full array. */
   private brushAtlas(enabled: boolean): GPUTextureView {
@@ -514,9 +539,9 @@ class Terrain3dGpu extends Terrain3d {
     this.params.begin(); this.seamPool.begin();
     const encoder = device.createCommandEncoder({ label: 'terrain 3d' });
     const pass = encoder.beginRenderPass({ label: 'terrain 3d',
-      colorAttachments: [{ view: targets.colorView, resolveTarget: this.context.getCurrentTexture().createView(), clearValue: [0, 0, 0, 1], loadOp: 'clear', storeOp: 'discard' }],
+      colorAttachments: [{ view: targets.samples > 1 ? targets.colorView : this.context.getCurrentTexture().createView(), resolveTarget: targets.samples > 1 ? this.context.getCurrentTexture().createView() : undefined, clearValue: [0, 0, 0, 1], loadOp: 'clear', storeOp: targets.samples > 1 ? 'discard' : 'store' }],
       depthStencilAttachment: { view: targets.depthView, depthClearValue: 1, depthLoadOp: 'clear', depthStoreOp: 'store' } });
-    const sky = gpu.pipeline('sky');
+    const sky = this.pipeline('sky');
     if (sky) {
       this.skyParams.set('height', h);
       this.skyParams.set('uNight', this.lookSettings.ambience==='night'?1:0);
@@ -528,11 +553,13 @@ class Terrain3dGpu extends Terrain3d {
     const pipeline = this.terrainPipeline(), p = this.terrainParams, empty = this.blank.view;
     p.set('proceduralPreview', settings ? 1 : 0);
     const textures: Partial<Record<TerrainTexture, GPUTextureView>> = { macroField: image(this.macroTexture).view };
+    p.set('uQuality', this.frameQuality);
     p.setArray('matrix', frame.matrix); p.set('exaggeration', c.exaggeration); p.setArray('eye', frame.eye);
     p.set('raisedBlend',raisedBlend);
     p.set('fogDistance', Math.max(c.distance * 2, 100)); p.set('showTileBounds', this.tileBounds ? 1 : 0);
     p.set('uNight',this.lookSettings.ambience==='night'?1:0); p.set('displayWaterVisible',this.lookSettings.waterVisible===false?0:1);
     p.set('displayWaterBand',layer.width*.016);
+    p.setArray('uWaterSeason', waterSeasonUniforms(settings?.v2Season, settings?.climateZone, settings?.v2Calendar));
     const canopy = settings ?? this.forestSettings;
     if (canopy) {
       const lights = terrainLights(canopy.lighting);
@@ -614,7 +641,7 @@ class Terrain3dGpu extends Terrain3d {
       }
     }
     const buildings = this.buildings as UrbanBuildingPassGpu;
-    buildings.target = { pass, params: this.params };
+    buildings.target = { pass, params: this.params, samples: this.samples };
     let pending: boolean;
     try { pending = buildings.draw(this.buildingFrame(frame)); } finally { buildings.target = undefined; }
     this.recordTrees(pass, frame);
@@ -685,7 +712,7 @@ class Terrain3dGpu extends Terrain3d {
 
 /** UrbanBuildingPass recording into the 3D view's render pass (UrbanBuildingPassGpu.target). */
 class UrbanBuildingPassGpu extends UrbanBuildingPass {
-  target?: { pass: GPURenderPassEncoder; params: Pool };
+  target?: { pass: GPURenderPassEncoder; params: Pool; samples: number };
   private readonly params = new Params(WGSL.WGSL3D_PARAMS.building);
   private atlases?: { albedo: GPUTexture; normal: GPUTexture };
   private placeholder: GPUTexture;
@@ -716,8 +743,8 @@ class UrbanBuildingPassGpu extends UrbanBuildingPass {
   protected override render(frame: BuildingFrame, shown: readonly Sector[], textured: boolean): void {
     const target = this.target;
     if (!target || !shown.length) return;
-    const pipeline = this.gpu.pipeline(textured ? 'buildingTex' : 'buildingColor');
-    const snowPipeline = shown.some(s => s.cached?.batches.some(b => b.snow)) ? this.gpu.pipeline(textured ? 'buildingTex.snow' : 'buildingColor.snow') : undefined;
+    const pipeline = this.gpu.pipeline(textured ? 'buildingTex' : 'buildingColor', target.samples);
+    const snowPipeline = shown.some(s => s.cached?.batches.some(b => b.snow)) ? this.gpu.pipeline(textured ? 'buildingTex.snow' : 'buildingColor.snow', target.samples) : undefined;
     if (!pipeline) return;
     const { pass, params } = target, p = this.params, device = this.gpu.device;
     const albedo = (this.atlases?.albedo ?? this.placeholder).createView({ dimension: '2d-array' }), normal = (this.atlases?.normal ?? this.placeholder).createView({ dimension: '2d-array' });

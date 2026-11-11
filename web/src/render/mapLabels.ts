@@ -112,6 +112,19 @@ const SMALL_CAP = 0.82;
 
 /** Split text into glyphs (case rules applied) with their advance widths (letter spacing included). */
 export function layoutGlyphs(text: string, st: KindStyle, size: number, spacingPx: number, measure: Measure): { glyphs: LGlyph[]; total: number } {
+  // Memoised per (measure function, style object, text, size, spacing): a pan keeps size and spacing, so labels are laid out
+  // once per zoom. Results are shared and read-only. A caller with a fresh `measure` per call simply misses.
+  let byStyle = layoutMemo.get(measure); if (!byStyle) layoutMemo.set(measure, byStyle = new WeakMap());
+  let memo = byStyle.get(st); if (!memo) byStyle.set(st, memo = new Map());
+  const key = `${size}|${spacingPx}|${text}`, hit = memo.get(key);
+  if (hit) return hit;
+  const result = layoutGlyphsUncached(text, st, size, spacingPx, measure);
+  if (memo.size >= 8) memo.delete(memo.keys().next().value!);
+  memo.set(key, result);
+  return result;
+}
+const layoutMemo = new WeakMap<Measure, WeakMap<KindStyle, Map<string, { glyphs: LGlyph[]; total: number }>>>();
+function layoutGlyphsUncached(text: string, st: KindStyle, size: number, spacingPx: number, measure: Measure): { glyphs: LGlyph[]; total: number } {
   const glyphs: LGlyph[] = [];
   let newWord = true;
   for (const raw of text) {
@@ -176,6 +189,8 @@ export function placeMapLabels(labels: MapLabel[], view: View, w: number, h: num
     const st = l.st;
     const size0 = Math.max(st.minPx, Math.min(st.maxPx, st.sizeM * sc));
     const [sx, sy] = worldToScreen(view, w, h, l.x, l.y);
+    // A point label (or its symbol) must fit inside the margins around its anchor: reject before laying the text out.
+    if (st.shape !== 'path' && st.shape !== 'area' && (sx < margin || sx > w - margin || sy < margin || sy > h - margin)) continue;
     let res: PlacedMapLabel | null = null;
     let resBoxes: Box[] = [];
 

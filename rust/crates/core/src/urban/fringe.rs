@@ -21,7 +21,7 @@ pub(super) fn frontages(
         for pair in street.path.windows(2) {
             let mut a = pair[0];
             let b = pair[1];
-            loop {
+            for _ in 0..4096 {
                 let length = (b.x - a.x).hypot(b.y - a.y);
                 if run + length < 65.0 {
                     chunk.push(b);
@@ -33,6 +33,7 @@ pub(super) fn frontages(
                     x: a.x + (b.x - a.x) * t,
                     y: a.y + (b.y - a.y) * t,
                 };
+                if p == a { break; }
                 chunk.push(p);
                 chunks.push(chunk);
                 chunk = vec![p];

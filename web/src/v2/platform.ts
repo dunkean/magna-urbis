@@ -220,7 +220,7 @@ export async function generateEngineHeight(request: EngineHeightRequest, onProgr
   if (usesNeural && request.source !== 'neural-python' && [custom.coarseModel, custom.baseModel, custom.decoderModel].some(Boolean)) throw new Error('Checkpoint selection is available with Python/CUDA. Browser and native Rust neural generation use their installed model profile.');
   const settings: TerrainSettings = {
     ...defaults, ...custom,
-    seed: request.seed, width: request.width, motifSize: custom.motifSize ?? 3000, relief: custom.relief ?? request.relief,
+    seed: request.seed, width: request.width, motifSize: custom.motifSize ?? 10000, relief: custom.relief ?? request.relief,
     coastMask: custom.coastMask ?? coasts[request.coast ?? 'none'], erosion: custom.erosion ?? request.erosion ?? 1, mountainMix: custom.mountainMix ?? .5, resolution: n,
     compute: custom.compute ?? (request.compute === 'cpu' ? 'wasm' : 'gpu-f32'),
     generationCompute: custom.generationCompute ?? (request.native && !usesNeural ? 'native' : request.compute === 'cpu' ? 'cpu' : undefined),

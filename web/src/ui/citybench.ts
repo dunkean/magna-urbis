@@ -1,3 +1,5 @@
+import { cityRegionalStreets } from '../render/cityContract';
+import { city3dPlanOptions } from '../render/cityDrawOptions';
 import { benchOverlayChange, benchMaterialNightChange } from './benchComposition';
 import type { TerrainLook } from './terrainGl';
 import { moonlightSvg } from '../render/materialLook';
@@ -51,7 +53,8 @@ import { illustrationContext, illustrationTerrainFromDecor } from './illustratio
 import { keepRendererOverride } from './rendererOverride';
 import { isFantasyStyle, prepareFantasyTerrain, registerFantasyBrushes } from '../../../rust/bridge/fantasyTerrain';
 import { fantasyLibraries } from '../render/fantasyBrushAssets';
-import { drawFantasyRaster, fantasyClearance, fantasyRasterImages, prepareFantasyRaster, type FantasyRaster } from './fantasyRaster';
+import { drawFantasyRaster, fantasyClearance, fantasyRasterImages, prepareFantasyRaster, KEEP_NONE, type FantasyRaster } from './fantasyRaster';
+import { cityFocusView, extentRadius, framedEdgeMargin } from './cityPlacementRule';
 
 declare global { interface Window { magnaCityBackground?: { url(): string | undefined; style(): string } } }
 
@@ -122,7 +125,7 @@ function drawFantasyGround(): void {
     if (canvas.height !== ch) canvas.height = ch;
     const ctx = canvas.getContext('2d')!;
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cw, ch); ctx.setTransform(k, 0, 0, k, -x0 * k, -y0 * k);
-    if (wash) drawFantasyRaster(ctx, f.raster, rect, k, () => false); else drawFantasyRaster(ctx, f.raster, rect, k, undefined, false);
+    if (wash) drawFantasyRaster(ctx, f.raster, rect, k, KEEP_NONE); else drawFantasyRaster(ctx, f.raster, rect, k, undefined, false);
   }
 }
 /** Stamp anchors stay out of the regional roads, the retained rivers and the farmsteads (V2: fantasyClearance). */
@@ -374,7 +377,7 @@ const settlements = createTerrainSettlements({ map, viewport, city: true, active
   getRaster: () => decor?.raster, getBiome: () => decor && decorBiome(decor.meta), getDecor: () => decor, getView: () => view, getAuto: () => false, getQuery: shareQuery,
   onPlanChange: () => queueMicrotask(() => { publishBenchCapabilities(); showView(); if (decor) void drawBackground(decor); city3d.refresh(); }),
   onChange: () => queueMicrotask(() => { save(); city3d.refresh(); rpgPins?.draw(); publishBenchCapabilities(); showView(); if (decor) void drawBackground(decor); }), onPicking: () => {},
-  onFocus: (center, radius) => city3d.active ? city3d.focus(center, radius) : setView({ cx: center.x, cy: center.y, scale: Math.min(viewport.clientWidth, viewport.clientHeight) / Math.max(200, 2.4 * radius) }),
+  onFocus: (center, radius) => city3d.active ? city3d.focus(center, radius) : setView(cityFocusView({ center, radius }, viewport.clientWidth, viewport.clientHeight)),
   onProjection: active => { setProjection(active); return city3d.active; },
 });
 // Legend and cartouche of the 3D view: the same plain panels as the 2D map, with the visible semantic classes (rural and urban).
@@ -388,7 +391,7 @@ provideFurniture3d(viewport, () => {
 const city3d = mountCity3d({ getText: () => benchTextLayer(benchSettlementTextWorld(settlements.illustrationSettlements, rpgPins?.world)), host: viewport, labels, materialGrounds: true, getDecor: () => decor, getScene: () => settlements.urban.buildingState.scene,
   getProjection: () => settlements.urban.buildingProjection,
   getLotEnclosures: () => settlements.urban.lotEnclosures,
-  getLayouts: () => settlements.urban.layouts, getRegionalStreets: () => resolveBenchAppearance().composition.networks.roads.visible ? settlements.urban.regionalStreets : [], getPartitions: () => settlements.urban.partitions, getSelected: () => { const s = settlements.urban.buildingState; return s.parentSelected?.kind === 'member' ? s.parentSelected.member_id : s.selected; }, getTextured: () => settlements.urban.textured, setTextured: on => settlements.urban.setTextured(on),
+  getLayouts: () => settlements.urban.layouts, getRegionalStreets: () => cityRegionalStreets(resolveBenchAppearance({}, 'view3d'), settlements.urban.regionalStreets), getPartitions: () => settlements.urban.partitions, getSelected: () => { const s = settlements.urban.buildingState; return s.parentSelected?.kind === 'member' ? s.parentSelected.member_id : s.selected; }, getTextured: () => settlements.urban.textured, setTextured: on => settlements.urban.setTextured(on),
   details: settlements.urban.buildingDetails, getBuildingAppearance: () => { const r = resolveBenchAppearance({}, 'view3d'); return { ...settlements.urban.buildingState.appearance, colors: r.palette.colors, style: r.city.buildingStyle, diagnostic: r.city.diagnostic, ambience: r.composition.ambience }; },
   getBackground: backgroundUrl,
   getPhysicalGround: material => material ? undefined : drapedPhysicalGround(),
@@ -414,7 +417,7 @@ const city3d = mountCity3d({ getText: () => benchTextLayer(benchSettlementTextWo
       lighting: r.ground.lighting, ambience:r.composition.ambience,waterLook:r.composition.networks.water.look, displacement: r.city.refinement !== 'source', forestBrushes: traits.forestBrushes, renderV2: traits.satelliteVariant, v2Season: r.ground.season, v2Calendar: r.ground.calendar, waterVisible: r.composition.networks.water.visible,
       contours: r.ground.contours && relief !== 'cavern' ? { step: cityContourInterval(landform, 1), color: pal.contour, opacity: pal.contourOpacity, flat: relief === 'flat' } : undefined };
   },
-  getPlanOptions: () => { const r = resolveBenchAppearance({}, 'view3d'), c = r.composition; return { colors: r.palette.colors, view: r.city.view, palette: r.city.palette, width: r.city.width, opacity: r.city.opacity, labels: labels && r.cartography.labels, layers: { ...r.city.layers, streets: c.networks.roads.visible && r.city.layers.streets, waterways: c.networks.water.visible && r.city.layers.waterways !== false }, roadLook: c.networks.roads.look, roadEmphasis: c.networks.roads.emphasis, groundBlend: c.networks.roads.look === 'natural', buildingsVisible: c.buildings.visible && c.buildings.meshes === 'none', appearance: { colors: r.palette.colors, style: r.city.buildingStyle, diagnostic: r.city.diagnostic, ambience: c.ambience } }; },
+  getPlanOptions: () => city3dPlanOptions(resolveBenchAppearance({}, 'view3d'), labels),
   onSelect: id => settlements.urban.selectBuilding(id) });
 // Every bench change already calls city3d.refresh(): the furniture follows it instead of polling.
 { const refresh = city3d.refresh.bind(city3d); city3d.refresh = () => { refresh(); refreshFurniture3d(viewport); }; }
@@ -617,7 +620,9 @@ map.addEventListener('click', event => {
 new ResizeObserver(() => showView()).observe(viewport);
 el('fit').onclick = fit;
 // The 2D frame is never wider than the near LOD (2.2 m/px): the buildings stay drawn on a big town.
-el('focusCity').onclick = () => { const e = settlements.urban.extent; if (e && city3d.active) city3d.focus(e.center, e.radius); else if (e) setView({ cx: e.center.x, cy: e.center.y, scale: Math.min(viewport.clientWidth, viewport.clientHeight) / Math.max(200, 2.4 * e.radius) }); else fit(); };
+el('focusCity').onclick = () => { const e = settlements.urban.extent; if (e && city3d.active) city3d.focus(e.center, e.radius); else if (e) setView(cityFocusView(e, viewport.clientWidth, viewport.clientHeight)); else fit(); };
+// The v7 sheet (web/out/planches-styles-v7/run.mjs) reads the shared placement rule here, as the V2 test hook does.
+(window as unknown as { magnaCityPlacement: unknown }).magnaCityPlacement = { framedEdgeMargin, extentRadius };
 el<HTMLInputElement>('showBackground').onchange = event => { const visible = (event.target as HTMLInputElement).checked; background.style.display = visible ? '' : 'none'; groundCanvas.style.visibility = visible ? '' : 'hidden'; };
 el<HTMLInputElement>('showContours').onchange = () => { drawContours(); save(); };
 el<HTMLInputElement>('showPlan').onchange = event => settlements.urban.setPlanVisible((event.target as HTMLInputElement).checked);

@@ -3,7 +3,7 @@ import type { World,TerrainLayer } from '../gen/types';
 /** Rendering owns cartographic geometry. Backend archives and input rasters stay in the project. */
 export function renderProjection(source:World):World{
   const {importedHeight:_input,...options}=source.options;
-  const {v2NativeTerrain:_native,v2ForestField:_forest,v2NaturalForest:_cover,v2EngineStats:_provenance,v2CityGround:_cityGround,...terrain}=source.terrain as TerrainLayer&Record<string,unknown>;
+  const {v2NativeTerrain:_native,v2ForestField:_forest,v2NaturalForest:_cover,v2EngineStats:_provenance,v2CityGround:_cityGround,v2DecorRaster:_decor,...terrain}=source.terrain as TerrainLayer&Record<string,unknown>;
   const {'v2.terrainKey':_terrainKey,'v2.planKey':_planKey,'v2.placementKey':_placementKey,...stats}=source.stats;
   const debug=source.debug?.urban===undefined?undefined:{urban:source.debug.urban};
   return {...source,options,terrain:terrain as TerrainLayer,stats,debug};

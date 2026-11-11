@@ -43,7 +43,13 @@ pub struct ProgrammeContext {
     pub state: String,
     /// Share of empty buildings; `None` uses the state's default.
     pub decay: Option<f64>,
+    /// Relaxation of the house slope gates, 0 (strict) to 1 (open)
+    /// (`profiles::house_slope`). Chosen by `generate_quarters` when the
+    /// strict gates leave most of the town's land unbuildable.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub slope_relax: f64,
 }
+fn is_zero(v: &f64) -> bool { *v == 0.0 }
 impl Default for ProgrammeContext {
     fn default() -> Self {
         Self {
@@ -57,6 +63,7 @@ impl Default for ProgrammeContext {
             lore: vec![],
             state: "thriving".into(),
             decay: None,
+            slope_relax: 0.0,
         }
     }
 }
@@ -298,6 +305,7 @@ fn prepare_inner(
         || context
             .decay
             .is_some_and(|d| !d.is_finite() || !(0.0..=1.0).contains(&d))
+        || !(0.0..=1.0).contains(&context.slope_relax)
         || !["strict", "inspired", "fantasy"].contains(&context.mode.as_str())
         || context.resources.len() > 64
         || context.lore.len() > 32
@@ -535,11 +543,7 @@ fn prepare_inner(
     });
     lap("contacts");
     let quay_water = roles::quay_water_fronts(layout, surface);
-    let mut environment = layout
-        .blocks
-        .iter()
-        .enumerate()
-        .map(|(block, b)| {
+    let mut environment = super::par::map(&layout.blocks, |block, b| {
             let c = centroid(&b.shape);
             let h = surface.height_at(c);
             let slope = b
@@ -564,8 +568,7 @@ fn prepare_inner(
                 water: front.map_or_else(String::new, |f| f.0.into()),
                 water_height: front.map_or(0.0, |f| f.1),
             }
-        })
-        .collect::<Vec<_>>();
+        });
     // District roles read the same environment the services are sited with.
     // A sea or lake shore is a harbour; a river carries boats past a town.
     // Measured fact, never the declared label: a quay on a channel at least
@@ -735,7 +738,7 @@ fn prepare_inner(
                     .as_ref()?
             };
             // An activity site stands where its resource is (a hill for a windmill): no house slope limit.
-            if context.intent != "activity" && environment[bi].slope > super::profiles::house_slope(block_culture(layout, bi), profile.max_slope) {
+            if context.intent != "activity" && environment[bi].slope > super::profiles::house_slope(block_culture(layout, bi), profile.max_slope, context.slope_relax) {
                 return None;
             }
             let filtered;
@@ -907,7 +910,7 @@ fn prepare_inner(
             let mut crowd = vec![std::iter::empty::<f64>().sum::<f64>(); options.len()];
             let mut taken = vec![false; options.len()];
             let mut chosen: Vec<(usize, usize, f64)> = vec![];
-            while chosen.len() < d.sites {
+            for _ in 0..d.sites.min(options.len()) {
                 let best = options
                     .iter()
                     .enumerate()
@@ -1255,6 +1258,25 @@ struct Memo {
     shared_envelopes: HashMap<usize, Option<std::sync::Arc<super::parcels::EnvelopeMemo>>>,
 }
 impl Memo {
+    /// Takes the entries of a memo filled on other parcels and blocks. Every
+    /// entry is a pure function of its key, so a key both hold has one value.
+    fn absorb(&mut self, other: Memo) {
+        fn merge<K: std::hash::Hash + Eq, V>(into: &mut HashMap<K, V>, from: HashMap<K, V>) {
+            for (k, v) in from {
+                into.entry(k).or_insert(v);
+            }
+        }
+        merge(&mut self.camp_sources, other.camp_sources);
+        merge(&mut self.mappings, other.mappings);
+        merge(&mut self.envelopes, other.envelopes);
+        merge(&mut self.frontages, other.frontages);
+        merge(&mut self.witnesses, other.witnesses);
+        merge(&mut self.fronts, other.fronts);
+        merge(&mut self.shared_envelopes, other.shared_envelopes);
+        if self.index.is_none() {
+            self.index = other.index;
+        }
+    }
     fn block_witness(&mut self, layout: &Layout, pi: usize, p: &Parcel, w: f64, d: f64) -> bool {
         if pi == usize::MAX {
             return block_witness(layout, &p.shape, w, d);
@@ -1394,7 +1416,7 @@ fn eligible_memo(
     if pr
         .environment
         .get(p.block)
-        .is_some_and(|e| e.wet || (pr.context.intent != "activity" && e.slope > super::profiles::house_slope(block_culture(layout, p.block), c.max_slope)))
+        .is_some_and(|e| e.wet || (pr.context.intent != "activity" && e.slope > super::profiles::house_slope(block_culture(layout, p.block), c.max_slope, pr.context.slope_relax)))
     {
         return false;
     }
@@ -1639,6 +1661,65 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
     let mut memo = Memo::default();
     // Eligibility is shared by demands of one class outside reserved blocks.
     let mut classes: HashMap<(String, String, u64), Vec<bool>> = HashMap::new();
+    let class_key = |d: &Demand| {
+        (
+            d.function.clone(),
+            if camps::camp(layout, pr.population) { format!("{}|{}", d.requires.join("|"), d.role) } else { d.requires.join("|") },
+            d.target_frontage.to_bits(),
+        )
+    };
+    // The class rows (each from the first demand of its class, as the scan
+    // below would) are evaluated block by block in parallel. Within a block the
+    // parcels are tested in the scan's order (class, then parcel), and the memo
+    // keys are per parcel or per block, so every memoised witness is the one the
+    // serial scan would keep; the block memos are then merged for later bands.
+    {
+        let mut pending: Vec<((String, String, u64), usize)> = vec![];
+        for (di, d) in pr.demands.iter().enumerate() {
+            if d.function == "mixed" && d.unit == "domesticUnits" || d.sites > 0 {
+                continue;
+            }
+            let key = class_key(d);
+            if !pending.iter().any(|(k, _)| *k == key) {
+                pending.push((key, di));
+            }
+        }
+        let mut by_block: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+        for (pi, p) in parcels.iter().enumerate() {
+            if !reserved_for.contains_key(&p.block) {
+                by_block.entry(p.block).or_default().push(pi);
+            }
+        }
+        let groups: Vec<Vec<usize>> = by_block.into_values().collect();
+        let mut rows = vec![vec![false; parcels.len()]; pending.len()];
+        if !pending.is_empty() {
+            let pr_ref = &pr;
+            let done = super::par::map(&groups, |_, group| {
+                let mut local = Memo::default();
+                let part: Vec<Vec<bool>> = pending
+                    .iter()
+                    .map(|&(_, di)| {
+                        group
+                            .iter()
+                            .map(|&pi| eligible_memo(layout, pi, &parcels[pi], &pr_ref.demands[di], pr_ref, &mut local))
+                            .collect()
+                    })
+                    .collect();
+                (part, local)
+            });
+            for (group, (part, local)) in groups.iter().zip(done) {
+                for (row, values) in rows.iter_mut().zip(part) {
+                    for (&pi, ok) in group.iter().zip(values) {
+                        row[pi] = ok;
+                    }
+                }
+                memo.absorb(local);
+            }
+        }
+        for ((key, _), row) in pending.into_iter().zip(rows) {
+            classes.insert(key, row);
+        }
+    }
     let mut admission = pr
         .demands
         .iter()
@@ -1660,11 +1741,7 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
                     })
                     .collect();
             }
-            let key = (
-                d.function.clone(),
-                if camps::camp(layout, pr.population) { format!("{}|{}", d.requires.join("|"), d.role) } else { d.requires.join("|") },
-                d.target_frontage.to_bits(),
-            );
+            let key = class_key(d);
             if !classes.contains_key(&key) {
                 let base = parcels
                     .iter()
@@ -1849,7 +1926,7 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
         let mut crowd = vec![0.0; kept.len()];
         let mut taken = vec![false; kept.len()];
         let mut chosen: Vec<usize> = vec![];
-        while placed + chosen.len() < d.sites && trade_budget > 0 {
+        for _ in 0..d.sites.saturating_sub(placed).min(trade_budget).min(kept.len()) {
             let best = (0..kept.len())
                 .filter(|&k| !taken[k])
                 .map(|k| (k, kept[k].1 + 3.0 * crowd[k]))
@@ -2122,9 +2199,10 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
                 .filter(|&pi| assignments[pi] == Some(di) && households[pi] < household_caps[pi])
                 .collect();
             own.sort_by(|&a, &b| pressures[b].total_cmp(&pressures[a]).then(a.cmp(&b)));
-            let mut grown = true;
-            while grown && pr.demands[di].parcel_capacity + 0.01 < goal {
-                grown = false;
+            let rounds = own.iter().map(|&pi| (household_caps[pi] - households[pi]).max(0.0).ceil() as usize).max().unwrap_or(0);
+            for _ in 0..rounds {
+                if pr.demands[di].parcel_capacity + 0.01 >= goal { break; }
+                let before = pr.demands[di].parcel_capacity;
                 for &pi in &own {
                     if pr.demands[di].parcel_capacity + 0.01 >= goal {
                         break;
@@ -2132,9 +2210,9 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
                     if households[pi] < household_caps[pi] {
                         households[pi] += 1.0;
                         pr.demands[di].parcel_capacity += 1.0;
-                        grown = true;
                     }
                 }
+                if pr.demands[di].parcel_capacity <= before { break; }
             }
         }
         if commercial {
@@ -2210,6 +2288,8 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
     }
     if scattered > 0 { pr.warnings.push(format!("{scattered} ménage(s) réparti(s) sur des façades vacantes, sans population supplémentaire.")); }
     // Band 5: every plot left over is an explicit garden, orchard or yard.
+    // A substantial wall-side verge also needs a cultural land use, even when
+    // its width rules out a house. Only small incidental verges stay unallocated.
     // An isolated site is one intention: its other land stays as it is.
     let isolated = roles::is_isolated(&pr.context.intent);
     let gardens: Vec<usize> = (0..parcels.len())
@@ -2219,7 +2299,9 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
                 && (matches!(parcels[pi].use_kind.as_str(), "plot" | "compound")
                     || parcels[pi].use_kind == "garden" && parcels[pi].family != "reserve"
                         && parcels[pi].reason != "camp-open"
-                        && parcels[pi].access.as_ref().is_none_or(|a| a.kind != "private"))
+                        && parcels[pi].access.as_ref().is_none_or(|a| a.kind != "private")
+                    || parcels[pi].use_kind == "common" && parcels[pi].reason == "common:verge"
+                        && land_areas[pi] >= super::trim::SMALL_VERGE_AREA)
                 && !reserved_for.contains_key(&parcels[pi].block)
                 && pr.environment.get(parcels[pi].block).is_none_or(|e| !e.wet)
         })
@@ -2418,6 +2500,9 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
             }
         }
     }
+    super::generation_limits::report_population(&mut pr, false);
+    partition.warnings.retain(|w| !w.starts_with("Population target not reached:"));
+    partition.warnings.extend(pr.warnings.iter().filter(|w| w.starts_with("Population target not reached:")).cloned());
     partition.programme = Some(pr);
     super::springs::allocate(layout, partition);
     lap("done");
@@ -2746,7 +2831,9 @@ fn legacy_fill(
     units: &[f64],
     locked: &[bool],
 ) {
-    while pr.demands[di].parcel_capacity + 0.01 < pr.demands[di].requested {
+    // Each successful attempt claims a previously unassigned/relocatable plot.
+    for _ in 0..parcels.len() {
+        if pr.demands[di].parcel_capacity + 0.01 >= pr.demands[di].requested { break; }
         let d = &pr.demands[di];
         let options = parcels
             .iter()
@@ -3104,6 +3191,9 @@ pub fn reconcile_built(
             demand.deficit =
                 (demand.requested - demand.built_capacity - demand.open_capacity).max(0.0);
         }
+        super::generation_limits::report_population(programme, true);
+        partition.warnings.retain(|w| !w.starts_with("Population target not reached:"));
+        partition.warnings.extend(programme.warnings.iter().filter(|w| w.starts_with("Population target not reached:")).cloned());
     }
     Ok(result)
 }

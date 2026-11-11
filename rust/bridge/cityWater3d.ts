@@ -3,6 +3,11 @@ import { WATER_FRESH_ICE_GLSL } from '../../web/src/render/waterRegime';
 /** City water uses the map's optical depth and climate, retaining v2 ice and shores. */
 export const CITY_WATER_3D_GLSL = `${WATER_FRESH_ICE_GLSL}
 float cityWaterDepth(vec2 world,float footprint,float cover){
+  if(uQuality>0){
+    // The retained mask and its screen-space ramp approximate distance to the bank.
+    float ramp=max(length(vec2(dFdx(cover),dFdy(cover))),.001);
+    return clamp(.07*max(footprint,.001)*cover/ramp,.4,6.)*cover;
+  }
   // Fixed world-space radii and a haloed mask give adjacent LOD tiles the same depth.
   float bank=128.;
   for(int i=0;i<8;i++){

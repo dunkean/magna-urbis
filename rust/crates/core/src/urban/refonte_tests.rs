@@ -914,8 +914,9 @@ fn open_peripheral_frontage_has_parcels_on_both_sides_without_extra_outer_roads(
 fn unbuildable_terrain_leaves_an_explicit_budget_deficit_and_no_phantom_center() {
     let width = 3000.0;
     let n = 96;
+    // Slope 2.0: beyond the steepest footprint growth tier (1.5), so truly unbuildable.
     let steep = (0..n * n)
-        .map(|i| ((i % n) as f64 / n as f64 * width * 0.8) as f32)
+        .map(|i| ((i % n) as f64 / n as f64 * width * 2.0) as f32)
         .collect::<Vec<_>>();
     let water = vec![0; n * n];
     let surface = Surface {

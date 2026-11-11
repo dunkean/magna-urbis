@@ -70,7 +70,7 @@ async function shootWorld(zone, reliefId, attempt) {
   page.setDefaultTimeout(30000);
   // Other sessions edit this tree: a hot reload in the middle of a chain would lose the page.
   await page.route('**/@vite/client', route => route.fulfill({ contentType: 'text/javascript', body: viteStub }));
-  await page.goto(`http://127.0.0.1:${port}/v2.html?lang=en`, { waitUntil: 'domcontentloaded', timeout: 90000 });
+  await page.goto(`http://127.0.0.1:${port}/v2.html?test=1&quality=full&lang=en`, { waitUntil: 'domcontentloaded', timeout: 90000 });
   await page.locator('#map-style').waitFor(); await page.waitForTimeout(5000);
   const recipe = await openRecipe(page), relief = RELIEFS[reliefId];
   if (flag('dump-recipe')) fs.writeFileSync(path.join(out, 'recipe.json'), JSON.stringify(recipe, null, 2));
@@ -107,6 +107,7 @@ async function shootWorld(zone, reliefId, attempt) {
       for (const season of seasons) {
         await setSeason(page, SEASONS[season]); await settle(page, 2500);
         const file = `${id}-${style}-${zoom}-${season}.png`;
+        await page.evaluate(() => window.__v2Test.prepareCapture());
         await page.screenshot({ path: path.join(out, file), timeout: 120000 });
         record.shots.push({ style, zoom, season, file, scale: await page.locator('#scale-label').textContent().catch(() => null) });
         log('shot', file); save();

@@ -21,11 +21,16 @@ describe('V2 City Bench 3D retained-scene boundary', () => {
     expect(scene.plan_archives).toEqual({ a: 'retained-exact-a', b: 'retained-exact-b' });
     expect(combineV2NativeScenes([upstream])).toBeUndefined();
   });
-  it('refuses mixed generator identities or colliding plan archives instead of synthesising a compatible scene', () => {
-    const a = town('a'), b = town('b'); b.scene!.generator_version = 'unknown-future-architecture';
-    expect(() => combineV2NativeScenes([a, b])).toThrow(/versions differ/);
-    b.scene!.generator_version = a.scene!.generator_version; b.scene!.plan_archives = { a: 'different-bytes' };
-    expect(() => combineV2NativeScenes([a, b])).toThrow(/identity collision/);
+  it('combines towns of different architectures and partial scenes without throwing', () => {
+    const native = town('a'), silhouette = town('b'), partial = town('c');
+    silhouette.scene!.generator_version = 'silhouette'; delete silhouette.scene!.plan_archives;
+    delete (partial.scene as { plan_archives?: unknown }).plan_archives; delete (partial.scene as { refusals?: unknown }).refusals;
+    const scene = combineV2NativeScenes([silhouette, native, partial])!;
+    expect(scene.generator_version).toBe('architectural-plans-2');
+    expect(scene.buildings.map(building => building.id)).toEqual(['b', 'a', 'c']);
+    expect(scene.plan_archives).toEqual({ a: 'retained-exact-a' });
+    expect(combineV2NativeScenes([silhouette, town('d')].reverse().reverse())!.generator_version).toBe('architectural-plans-2');
+    expect(combineV2NativeScenes([silhouette])!.generator_version).toBe('silhouette');
   });
   it('keeps a complete single native scene and geometry indexes across progress-only snapshot headers', () => {
     const original = town('a'); original.scene!.materials = [];

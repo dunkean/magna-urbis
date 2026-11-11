@@ -9,7 +9,7 @@ const resolved = (a: AppearanceInput) => resolveAppearance(a, { mapStyle: a.styl
 
 const draw = vi.hoisted(() => vi.fn());
 const raster = vi.hoisted(() => vi.fn(() => undefined));
-vi.mock('../../src/v2/rustUrban', () => ({ rustSettlementRaster: raster }));
+vi.mock('../../src/v2/rustUrban', () => ({ rustSettlementRaster: raster, cityGroundOf: raster }));
 vi.mock('../../src/render/cityCanvas', async importOriginal => {
   const original = await importOriginal<typeof import('../../src/render/cityCanvas')>();
   return { ...original, drawCity: draw };

@@ -118,7 +118,7 @@ vec3 terrain3dSurface(vec2 world,float sourceCell,uint seed,vec4 a,vec3 b,int oc
   float mountain=smoothstep(.04,.2,slope);if(a.x==0.||(crest==0.&&mountain==0.))return vec3(h,g);
   vec2 downhill=g/max(slope,1e-6),accumulated=vec2(0.),residualGradient=vec2(0.);float wavelength=cell*8.*a.w,residual=0.;
   for(int k=0;k<12;k++) {
-    if(k>=min(12,max(1,octaveCount+4))||wavelength<.125)break;
+    if(k>=(uQuality>0?2:min(12,max(1,octaveCount+4)))||wavelength<.125)break;
     float angle=.37+float(k)*2.399963229728653,c=cos(angle),sn=sin(angle),ratio=wavelength/cell;
     vec3 v=terrain3dGradientNoise(vec2(world.x*c-world.y*sn,world.x*sn+world.y*c)/wavelength,seed+uint(k*7919));
     float rounded=sqrt(v.x*v.x+.0025),signal=v.x*.45+(.24-rounded)*.55;

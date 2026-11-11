@@ -195,6 +195,13 @@ function regimeGroups(water: VectorWater, display: WaterDisplay): RegimeGroup[] 
   return out;
 }
 
+/** The same tapered banks as the 2D ink, rasterized by each 3D tile at its own density. */
+export function vectorRiverPath(water: VectorWater, display: WaterDisplay): Path2D {
+  const path = new Path2D();
+  if (water.rivers) for (const group of regimeGroups(water, { ...display, season: undefined })) path.addPath(new Path2D(group.banks));
+  return path;
+}
+
 /** River mouths with a sediment plume: mouth point, seaward unit direction, mouth width (m) and strength 0-1. */
 function plumeMouths(water: VectorWater, display: WaterDisplay, climate: WaterClimate | undefined): { x: number; y: number; dx: number; dy: number; w: number; strength: number }[] {
   if (!climate || climate.sediment < .05 || !water.rivers) return [];
@@ -425,8 +432,8 @@ export function paintWaterRegime(ctx: CanvasRenderingContext2D, water: VectorWat
     for (const g of paths) if (g.symbol !== 'water') { ctx.fill(g.banksPath); ctx.stroke(g.axesPath); }
     if (lakeFrozen && lakes) ctx.fill(lakes, 'evenodd');
     if (ring > 1 && lakes) { ctx.save(); ctx.clip(lakes, 'evenodd'); ctx.lineWidth = 2 * ring; ctx.stroke(lakes); ctx.restore(); }
-    ctx.globalCompositeOperation = 'source-over'; ctx.fillStyle = ctx.strokeStyle = fill; ctx.lineWidth = cell;
-    for (const g of paths) if (g.symbol === 'water') { ctx.fill(g.banksPath); ctx.stroke(g.axesPath); }
+    ctx.globalCompositeOperation = 'source-over'; ctx.fillStyle = ctx.strokeStyle = fill;
+    for (const g of paths) if (g.symbol === 'water') ctx.fill(g.banksPath);
     // A material water cover (3D) keeps a shrunken low-water thread in the intermittent courses, as the 2D compositor
     // keeps its pools: a running trunk narrows into its bed instead of stopping short. Ink styles draw their symbol.
     if (display.style === 'render3d') for (const g of paths) if (g.symbol === 'intermittent') {

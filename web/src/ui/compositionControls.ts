@@ -1,7 +1,7 @@
 import { SEASON_CALENDAR_FIELDS } from '../../../rust/bridge/terrainRenderV2Zones';
 import { DIAGNOSTICS } from '../render/displayDiagnostics';
 import { POTENTIAL_IDS } from '../../../rust/bridge/resources';
-import { STYLE_IDS, GROUND_VARIANTS, LAND_KINDS, presetComposition, withGroundVariant, type StyleId, type CompositionRecipe, type Limitation } from '../render/composition';
+import { STYLE_IDS, GROUND_VARIANTS, LAND_KINDS, presetComposition, withGroundVariant, type StyleId, type PresetId, type CompositionRecipe, type Limitation } from '../render/composition';
 import { TEXT_GROUPS, type TextGroup } from '../render/textLayer';
 import { TERRAIN_STYLE_LIST, type TerrainStyle } from '../render/terrainStyle';
 import { writeSettingPath, type ParameterField } from './parameterForm';
@@ -44,7 +44,9 @@ export const limitationText: Record<string, string> = {
 // Level 1 and 2: every row writes appearance.composition (render/composition.ts) and nothing else.
 const STYLE_ENTRIES = [['atlas', 'Atlas', 'Atlas'], ['cadastre', 'Cadastre', 'Cadastre'], ['topographic', 'Topographic', 'Topographique'], ['satellite', 'Satellite', 'Satellite'], ['satellite-2', 'Satellite 2', 'Satellite 2'],
   ['parchment', 'Parchment', 'Parchemin'], ['illustration', 'Illustration', 'Illustration']] as const satisfies readonly (readonly [StyleId, string, string])[];
-const PRESET_ENTRIES = [...STYLE_ENTRIES, ['custom', 'Custom', 'Personnalisé']] as const;
+const PRESET_ENTRIES = [...STYLE_ENTRIES.flatMap((entry): readonly (readonly [PresetId, string, string])[] => entry[0] === 'satellite'
+  ? [entry, ['satellite-light', 'Satellite · light', 'Satellite · léger'] as const]
+  : entry[0] === 'parchment' ? [entry, ['parchment-light', 'Parchment · light', 'Parchemin · léger'] as const] : [entry]), ['custom', 'Custom', 'Personnalisé']] as const;
 /** Options of the preset selects (English labels, translated by the shared messages). */
 export const PRESET_OPTIONS: readonly { value: string; label: string }[] = PRESET_ENTRIES.map(([value, en]) => ({ value, label: en }));
 const semanticEntries = [['off', 'Off', 'Désactivée'], ['subtle', 'Subtle tint', 'Teinte discrète'], ['categorical', 'Category colours', 'Couleurs par catégorie'], ['outlines', 'Outline only', 'Contours seuls']] as const;
@@ -113,7 +115,7 @@ export const LANDUSE_CLASS_ROWS = LAND_KINDS.map(kind => `composition.landuse.cl
 
 /** Pure recipe edit, shared by every appearance panel. */
 export function writeCompositionField(recipe: CompositionRecipe, key: string, value: unknown): CompositionRecipe {
-  if (key === 'preset') return value === 'custom' ? recipe : presetComposition(value as StyleId);
+  if (key === 'preset') return value === 'custom' ? recipe : presetComposition(value as PresetId);
   if (key === 'ground.look') return withGroundVariant(recipe, GROUND_VARIANTS[value as StyleId][0]);
   if (key === 'ground.variant') return withGroundVariant(recipe, value as TerrainStyle);
   const next = structuredClone(recipe); writeSettingPath(next, key, value); next.preset = 'custom'; return next;

@@ -26,12 +26,12 @@ describe('physical roof snow and relief', () => {
     expect(mapGroundSnow(0)).toBe(0);
     expect(mapGroundSnow(4000)).toBe(1);
   });
-  it('covers low pitches, separates steep snow into downslope bands, and excludes walls', () => {
+  it('covers low pitches, covers steep pitches with one uniform patch, and excludes walls', () => {
     const points = [{ x: 0, y: 0, z: 3 }, { x: 10, y: 0, z: 3 }, { x: 10, y: 6, z: 6 }, { x: 0, y: 6, z: 6 }];
     const low = roofSnowPatches(points, [0, -.2, .98]);
     const steep = roofSnowPatches(points, [0, -.8, .6]);
     expect(low).toHaveLength(1); expect(low[0].weight).toBeGreaterThan(.95);
-    expect(steep).toHaveLength(4); expect(steep[0].weight).toBeLessThan(low[0].weight);
+    expect(steep).toHaveLength(1); expect(steep[0].weight).toBeGreaterThan(.95);
     expect(steep.every(p => p.points.every(v => v.x > 0 && v.x < 10 && v.y > 0 && v.y < 6))).toBe(true);
     expect(roofSnowPatches(points, [0, 1, 0])).toHaveLength(0);
   });

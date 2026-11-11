@@ -13,9 +13,11 @@ import { DEFAULT_TERRAIN_LAYERS, DEFAULT_TERRAIN_LIGHTING, type TerrainLighting 
 import type { LanduseForestTone } from './landuseForestTone';
 import type { AppearanceInput, RenderCapabilities, RenderTarget } from './appearanceRecipe';
 import type { UrbanBuildingStyle } from './urbanBuildingStyle';
+import type { ResolvedDisplayQuality } from './displayQuality';
 
-/** The six render styles: used both as presets and as the base look of the ground. */
+/** Base looks of the ground; light presets reuse these renderers. */
 export type StyleId = 'atlas' | 'cadastre' | 'topographic' | 'satellite' | 'satellite-2' | 'parchment' | 'illustration';
+export type PresetId = StyleId | 'satellite-light' | 'parchment-light';
 export type VegetationLook = 'none' | 'symbols' | 'painted' | 'procedural-canopy';
 export type SemanticLook = 'off' | 'subtle' | 'categorical' | 'outlines';
 export type SemanticDepth = 'surface' | 'readable';
@@ -26,6 +28,7 @@ export type BuildingLook = 'footprints' | 'cartographic-roofs' | 'simple-volumes
 export type Ambience = 'day' | 'night';
 
 export const STYLE_IDS: readonly StyleId[] = ['atlas', 'cadastre', 'topographic', 'satellite', 'satellite-2', 'parchment', 'illustration'];
+export const PRESET_IDS: readonly PresetId[] = STYLE_IDS.flatMap(id => id === 'satellite' || id === 'parchment' ? [id, `${id}-light` as PresetId] : [id]);
 export const VEGETATION_LOOKS: readonly VegetationLook[] = ['none', 'symbols', 'painted', 'procedural-canopy'];
 export const SEMANTIC_LOOKS: readonly SemanticLook[] = ['off', 'subtle', 'categorical', 'outlines'];
 export const SEMANTIC_DEPTHS: readonly SemanticDepth[] = ['surface', 'readable'];
@@ -47,7 +50,9 @@ export interface RenderEffects { ambience: Ambience; /** 0-1 annual cycle. */ se
 /** The persisted recipe. Every field is explicit: a preset writes all of them. */
 export interface CompositionRecipe {
   /** Last preset applied; 'custom' once a pass was changed by hand. */
-  preset: StyleId | 'custom';
+  preset: PresetId | 'custom';
+  /** Live display tier; captures always use full quality. Absent means full. */
+  quality?: ResolvedDisplayQuality;
   ground: { look: StyleId; /** Concrete style, one of GROUND_VARIANTS[look]. */ variant: TerrainStyle; contours: boolean };
   vegetation: { look: VegetationLook; /** Forest class of the land-use plan: dark marked green or the ground colour. */ forestTone: LanduseForestTone };
   landuse: {
@@ -75,12 +80,20 @@ const PRESETS: Readonly<Record<StyleId, PresetValues>> = {
   satellite: { blocks: false, ground: 'satellite', contours: false, vegetation: 'procedural-canopy', rural: 'off', urban: 'off', depth: 'surface', network: 'natural', building: 'detailed-volumes', parcels: false, text: defaultText({ look: 'sans', halo: 'strong' }) },
 };
 /** A fresh recipe filled by a preset. */
-export function presetComposition(id: StyleId): CompositionRecipe {
-  const p = PRESETS[id];
-  return { preset: id, ground: { look: p.ground, variant: GROUND_VARIANTS[p.ground][0], contours: p.contours }, vegetation: { look: p.vegetation, forestTone: 'marked' },
+export function presetComposition(id: PresetId): CompositionRecipe {
+  const base = id === 'satellite-light' ? 'satellite' : id === 'parchment-light' ? 'parchment' : id;
+  const p = PRESETS[base];
+  return { preset: id, quality: id === base ? 'full' : 'light', ground: { look: p.ground, variant: GROUND_VARIANTS[p.ground][0], contours: p.contours }, vegetation: { look: p.vegetation, forestTone: 'marked' },
     landuse: { rural: p.rural, urban: p.urban, opacity: .4, depth: p.depth, ...(id === 'topographic' ? { classes: Object.fromEntries(LAND_KINDS.map(kind => [kind, kind === 'field'])) } : {}) }, networks: { roads: { visible: true, look: p.network, emphasis: 1 }, water: { visible: true, look: p.network === 'wash' ? 'ink' : p.network } },
     buildings: { visible: true, look: p.building, parcels: p.parcels, blocks: p.blocks ?? true, districts: false }, text: structuredClone(p.text), annotations: { legend: false, cartouche: false },
     effects: { ambience: 'day', season: .5, relief: id !== 'topographic', lighting: { ...DEFAULT_TERRAIN_LIGHTING } } };
+}
+
+/** Change only the display tier, preserving every pass and any advanced customization. */
+export function withCompositionQuality(c: CompositionRecipe, quality: ResolvedDisplayQuality): CompositionRecipe {
+  const base = c.preset === 'satellite-light' ? 'satellite' : c.preset === 'parchment-light' ? 'parchment' : c.preset;
+  const preset = quality === 'light' && (base === 'satellite' || base === 'parchment') ? `${base}-light` as PresetId : base;
+  return { ...c, preset, quality };
 }
 
 /** One choice the current backend cannot honour. The recipe keeps the choice; the UI shows the reason. */
@@ -200,7 +213,8 @@ function validateEffects(value: unknown): void {
 }
 export function validateComposition(value: unknown): asserts value is CompositionRecipe {
   if (!record(value)) throw new Error('appearance.composition: expected an object.');
-  oneOf(value.preset, [...STYLE_IDS, 'custom'], 'preset');
+  oneOf(value.preset, [...PRESET_IDS, 'custom'], 'preset');
+  if (value.quality !== undefined) oneOf(value.quality, ['full', 'light'], 'quality');
   const { effects, ground, vegetation, landuse, networks, buildings, annotations, text } = value as Record<string, Record<string, unknown>>;
   validateEffects(effects); flags(ground, ['contours'], 'ground'); oneOf(ground.look, STYLE_IDS, 'ground.look');
   if (typeof ground.variant !== 'string' || !isTerrainStyle(ground.variant)) throw new Error('appearance.composition.ground.variant: unknown style.');

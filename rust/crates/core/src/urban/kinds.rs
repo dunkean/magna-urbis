@@ -114,6 +114,11 @@ pub fn label(id: &str) -> &'static str {
 
 /// Site archetypes where a small town is worth a wall, or a village clusters.
 const DEFENSIVE: [&str; 4] = ["hilltop", "spur", "pass", "island"];
+/// Cultures whose villages are enclosed by definition: the draw that leaves most villages open skips them.
+const FORTIFIED_VILLAGES: [&str; 10] = [
+    "kraal", "maori-pa", "guarani-village", "mississippian", "native-iroquoian",
+    "nubian-fortified", "ksar-oasis", "levantine-tell", "celtic-oppidum", "norse-ringfort",
+];
 
 fn culture<'a>(site: &'a Site, cfg: &'a LayoutConfig) -> &'a str {
     if cfg.culture == "site" {
@@ -415,6 +420,16 @@ pub(super) fn effective(site: &Site, cfg: &LayoutConfig, roads: &[Street]) -> (L
         Kind::StreetVillage | Kind::NucleatedVillage => {
             set(&mut c.suburbs, "auto", "none");
             set(&mut c.peripheral_road, "auto", "none");
+            // A culture's wall belongs to its towns: only a few villages are enclosed, by a deterministic
+            // draw per site (likelier on defensive sites and for larger villages), except where the
+            // enclosure is the settlement's identity (ringforts, pā, kraals, ksour, palisaded villages).
+            if c.fortification == "culture" && !FORTIFIED_VILLAGES.contains(&culture(site, cfg)) {
+                let grown = ((site.population as f64 - 200.0) / 1000.0).clamp(0.0, 1.0);
+                let base = if DEFENSIVE.contains(&cfg.site_archetype.as_str()) { 0.3 } else { 0.08 };
+                if !Rng::new(&format!("village-wall:{}", site.key)).chance(base + 0.15 * grown) {
+                    c.fortification = "none".into();
+                }
+            }
             if default_epochs {
                 c.footprint.epochs = 1;
             }

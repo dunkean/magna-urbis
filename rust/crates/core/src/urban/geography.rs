@@ -234,7 +234,26 @@ impl Geography {
             return !self.wet(a);
         }
         let mut cuts = vec![0.0, 1.0];
-        for i in self.candidates((a.x.min(b.x), a.y.min(b.y), a.x.max(b.x), a.y.max(b.y))) {
+        // Edges are binned by their boxes, so an edge crossing the segment is
+        // in a bin the segment itself passes through: the bins of the boxes of
+        // cell-long pieces of the segment, not of its whole box (a long
+        // diagonal sightline otherwise reads every edge of a square of bins).
+        let pieces = ((a.x - b.x).hypot(a.y - b.y) / self.cell).ceil().max(1.0) as usize;
+        let mut ids: Vec<usize> = vec![];
+        for k in 0..pieces {
+            let (t0, t1) = (k as f64 / pieces as f64, (k + 1) as f64 / pieces as f64);
+            let (p, q) = (Point { x: a.x + (b.x - a.x) * t0, y: a.y + (b.y - a.y) * t0 },
+                if k + 1 == pieces { b } else { Point { x: a.x + (b.x - a.x) * t1, y: a.y + (b.y - a.y) * t1 } });
+            let bb = (p.x.min(q.x), p.y.min(q.y), p.x.max(q.x), p.y.max(q.y));
+            for y in (bb.1 / self.cell).floor() as i64..=(bb.3 / self.cell).floor() as i64 {
+                for x in (bb.0 / self.cell).floor() as i64..=(bb.2 / self.cell).floor() as i64 {
+                    if let Some(bin) = self.bins.get(&(x, y)) { ids.extend(bin); }
+                }
+            }
+        }
+        ids.sort_unstable();
+        ids.dedup();
+        for i in ids {
             let (c, d) = self.edges[i];
             if let Some((t, _)) = g::segment_hit(a, b, c, d) {
                 cuts.push(t);

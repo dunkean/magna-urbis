@@ -5,12 +5,11 @@ import type { CanvasLike } from './canvas';
 /** Engraved tree symbols for the parchment woods (assets/parchment-trees.json, see PROVENANCE.md): an ink mask and a crown
  * fill mask per cell, 6x6 cells. Colours come from the palette at draw time (canopy.ts tints, shades and casts the shadow). */
 export const TREE_CELLS = {
-  // Cells 8, 14 (open feathery ash), 20 and 34 have open outlines: their crown fill is incomplete, so they are not used.
-  broadleaf: [0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 15, 16, 17],
-  fruit: [18, 19, 21, 22, 23],
-  coniferPlan: [24, 25, 26],
-  coniferSide: [27, 28, 29],
-  clump: [30, 31, 32, 33, 35],
+  // A map seen from above: plan symbols only, few and close to each other (the side-view firs 27-29, the clumps 30-35 and
+  // the feathery or cauliflower crowns are not used). Rotation and size give the remaining variety.
+  broadleaf: [1, 5, 11],
+  fruit: [19, 22],
+  conifer: [24, 25, 26], // legacy engraved cells, no longer drawn (conifers are procedural serrated crowns in canopy.ts)
 } as const;
 export const TREE_SPRITE = sheet.size;
 

@@ -3292,6 +3292,8 @@ fn reconcile_gates(e: &mut Enclosure, streets: &[Street], surface: Surface<'_>) 
 /// (bridges, walkways, trims): `settle`'s rule against the final network.
 /// A gatehouse whose gate closed goes with it.
 pub(super) fn sync_gates(layout: &mut super::Layout, surface: Surface<'_>) {
+    let old_masses = gate_masses(layout);
+    super::network::wall_approaches(layout, surface);
     let streets = std::mem::take(&mut layout.streets);
     for e in layout.enclosures.iter_mut().filter(|e| !e.style.is_empty() && e.path.len() >= 4) {
         let remap = reconcile_gates(e, &streets, surface);
@@ -3304,6 +3306,49 @@ pub(super) fn sync_gates(layout: &mut super::Layout, surface: Surface<'_>) {
             .collect();
     }
     layout.streets = streets;
+    release_gate_reserve(layout, old_masses);
+}
+
+fn gate_masses(layout: &super::Layout) -> Vec<Shape> {
+    layout.enclosures.iter().flat_map(|e| &e.gatehouses)
+        .flat_map(|gh| gh.masses.iter().cloned()).collect()
+}
+
+/// Later streets can close a gate or clip its towers. Return only its vacated
+/// ground: another work (including a neighbouring curtain) still owns its land.
+fn release_gate_reserve(layout: &mut super::Layout, old_masses: Vec<Shape>) -> Vec<Shape> {
+    if old_masses.is_empty() { return vec![]; }
+    let held = Cut::new(layout.enclosures.iter().flat_map(|e| {
+        curtain_body(&e.path, e.curtain_width_m, ribbon_half(&e.kind)).into_iter()
+            .chain(e.towers_detail.iter().map(|t| t.footprint.clone()))
+            .chain(e.gatehouses.iter().flat_map(|gh| gh.masses.iter().cloned()))
+            .chain(e.bastions.iter().map(|w| w.shape.clone()))
+            .chain(e.outworks.iter().map(|w| w.shape.clone()))
+            .chain(e.ditch.iter().map(|w| w.shape.clone()))
+            .chain(e.attached.iter().map(|w| w.shape.clone()))
+    }).collect());
+    let freed = held.from(old_masses);
+    if freed.is_empty() { return freed; }
+    let cut = Cut::new(freed.clone());
+    for e in &mut layout.enclosures {
+        e.reserve = cut.from(std::mem::take(&mut e.reserve));
+    }
+    for q in &mut layout.quarters {
+        let domain = Shape { outer: q.shape.outer.clone(), holes: vec![] };
+        let qb = g::bbox(&domain);
+        let mut shapes = vec![q.shape.clone()];
+        shapes.extend(freed.iter().filter(|s| overlaps(qb, g::bbox(s), 0.0))
+            .flat_map(|s| g::intersection(&domain, s)));
+        if shapes.len() > 1 {
+            // Refill holes within this quarter's existing boundary; neither its
+            // index nor its neighbours' land changes after block allocation.
+            if let Some(shape) = g::union(&shapes).into_iter()
+                .max_by(|a, b| g::area(a).total_cmp(&g::area(b))) {
+                q.shape = shape;
+            }
+        }
+    }
+    freed
 }
 
 /// Final pass, once streets, blocks and access lanes are final
@@ -3319,6 +3364,8 @@ pub(super) fn sync_gates(layout: &mut super::Layout, surface: Surface<'_>) {
 /// - The reserve is what the fortification still holds; blocks give it up
 ///   (pieces under `MIN_BLOCK_PIECE` m² return to open land).
 pub(super) fn settle(layout: &mut super::Layout, surface: Surface<'_>) {
+    let old_masses = gate_masses(layout);
+    super::network::wall_approaches(layout, surface);
     // Forced footprint circuits enter from the macroplan without detailed
     // works. They obey the same water, reserve and gate rules as historical ones.
     if layout.enclosures.iter().any(|e| e.style.is_empty() && e.path.len()>=4) {
@@ -3510,6 +3557,9 @@ pub(super) fn settle(layout: &mut super::Layout, surface: Surface<'_>) {
                 .collect();
         }
     }
+    let freed = release_gate_reserve(layout, old_masses);
+    let reserve_all: Vec<_> = Cut::new(freed).from(reserve_all.into_iter().map(|(s, _)| s).collect()).into_iter()
+        .map(|s| { let bb = g::bbox(&s); (s, bb) }).collect();
     if reserve_all.is_empty() {
         return;
     }

@@ -181,6 +181,7 @@ vec4 surfaceGroundHerbCap(vec2 d,vec2 radius){
 }
 vec3 surfaceGroundCover(vec2 world,float slope,float fp,float rock,float grass,uint salt,vec3 broad,vec3 fine){
   surfaceGroundSlope=vec2(0.);vec3 tone=vec3(0.);
+  if(uQuality>0)return tone;
 #ifdef RENDER3D_FOREST
   if(uGroundCover.w<.5||uForest==0||uForestBrushes!=0||uRenderV2>1||fp>=10.||surfaceGroundHeight<=0.)return tone;
   if(fp>=3.&&surfaceGroundEnv.z<.01)return tone;
@@ -224,11 +225,17 @@ vec3 surfaceGroundCover(vec2 world,float slope,float fp,float rock,float grass,u
       float angle=float((h>>16u)&255u)*.024543693,cs=cos(angle),sn=sin(angle);
       vec2 local=vec2(cs*d.x+sn*d.y,-sn*d.x+cs*d.y);
       float variation=float((h>>20u)&15u)/15.;
+      // Each tuft draws its own shape: overall size, spread of its blades and per-blade radii come from a second hash,
+      // so no crescent repeats across the lattice. Scales only shrink, a cap never reaches its cell edge.
+      uint h2=groundHash(ivec3(ivec2(floor(q)),823+level),salt);
+      vec4 jit=vec4(float(h2&255u),float((h2>>8u)&255u),float((h2>>16u)&255u),float(h2>>24u))/255.;
+      float spread=.55+.45*jit.x,size=.7+.3*jit.y;
+      vec2 r1=vec2(.85+.15*jit.z,1.-.3*jit.w),r2=vec2(1.-.3*jit.z,.85+.15*jit.w),r3=vec2(.8+.2*jit.w,.8+.2*jit.x);
       vec4 cap;
-      if(level==0)cap=surfaceGroundHerbCap(local-vec2(-.15,-.06),vec2(.19,.15))
-        +surfaceGroundHerbCap(local-vec2(.13,-.10),vec2(.17,.14))+surfaceGroundHerbCap(local-vec2(.02,.15),vec2(.18,.15));
-      else cap=surfaceGroundHerbCap(local+vec2(.11,.03),vec2(.12,.22))
-        +surfaceGroundHerbCap(local-vec2(.10,-.04),vec2(.13,.20))+surfaceGroundHerbCap(local-vec2(.01,.11),vec2(.20,.12));
+      if(level==0)cap=surfaceGroundHerbCap(local-spread*vec2(-.15,-.06),size*r1*vec2(.19,.15))
+        +surfaceGroundHerbCap(local-spread*vec2(.13,-.10),size*r2*vec2(.17,.14))+surfaceGroundHerbCap(local-spread*vec2(.02,.15),size*r3*vec2(.18,.15));
+      else cap=surfaceGroundHerbCap(local+spread*vec2(.11,.03),size*r1*vec2(.12,.22))
+        +surfaceGroundHerbCap(local-spread*vec2(.10,-.04),size*r2*vec2(.13,.20))+surfaceGroundHerbCap(local-spread*vec2(.01,.11),size*r3*vec2(.20,.12));
       float amount=herb*keep;
       vec2 g=vec2(cs*cap.y-sn*cap.z,sn*cap.y+cs*cap.z)*(level==0?.65:cls==3?.14:.23)/cell;
       surfaceGroundSlope+=amount*(vec2(.8*g.x-.6*g.y,.6*g.x+.8*g.y)+.6*(g.x*broad.yz+g.y*fine.yz));
@@ -288,16 +295,20 @@ vec3 surfaceGroundCover(vec2 world,float slope,float fp,float rock,float grass,u
   if(scree>.01&&blockKeep>0.){
     vec2 q=world/16.;uint h=groundHash(ivec3(ivec2(floor(q)),839),salt);
     if(float(h>>24u)/255.<.12+.16*rock){
-      vec2 centre=.46+.08*vec2(float(h&255u),float((h>>8u)&255u))/255.;
-      vec2 radius=.14+.07*vec2(float((h>>16u)&15u),float((h>>20u)&15u))/15.;
+      // Boulders spread over the cell and cast a shadow of their own size: a near-centred
+      // block with one fixed shadow drew the same crescent on a regular 16 m lattice.
+      vec2 radius=.09+.12*vec2(float((h>>16u)&15u),float((h>>20u)&15u))/15.;
+      float reach=max(radius.x,radius.y)*1.9;
+      vec2 centre=reach+(1.-2.*reach)*vec2(float(h&255u),float((h>>8u)&255u))/255.;
       vec2 d=fract(q)-centre;vec3 cap=surfaceGroundCap(d,radius);
       float amount=scree*blockKeep;
       surfaceGroundSlope+=amount*cap.yz*1.3/16.;
-      vec2 shadowD=d+light*.10;
+      vec2 shadowRadius=vec2(1.2*max(radius.x,radius.y),.95*min(radius.x,radius.y));
+      vec2 shadowD=d+light*.55*shadowRadius.x;
       vec2 shadowUv=vec2(dot(shadowD,light),dot(shadowD,vec2(-light.y,light.x)));
-      float shadow=surfaceGroundCap(shadowUv,vec2(.19,.14)).x;
+      float shadow=surfaceGroundCap(shadowUv,shadowRadius).x;
       // Equal kernel integrals keep the cast shadow and its lit cap neutral.
-      float centredShadow=shadow-cap.x*(.19*.14)/(radius.x*radius.y);
+      float centredShadow=shadow-cap.x*(shadowRadius.x*shadowRadius.y)/(radius.x*radius.y);
       float tip=cap.x*(sqrt(cap.x)-.75);
       float shadowStrength=1.-sstep(.85,.99,uGroundCover.y/max(length(uGroundCover.xyz),.001));
       tone+=vec3(amount*(.3*tip-.10*centredShadow*shadowStrength));
@@ -348,6 +359,7 @@ float groundSlopeVariance(float footprint){
 }
 vec4 groundFieldWithClasts(vec3 point,uint seed,float footprint,out float clasts){
   vec4 sum=vec4(0.);clasts=0.;int turn=int((seed>>29u)&3u);
+  if(uQuality>0)return sum;
   for(int k=0;k<4;k++){
     float wavelength=groundWavelength[k];
     float keep=groundVisibility(wavelength*groundAspect[k]*groundFilterWidth[k],max(footprint,0.));if(keep<=0.)continue;
@@ -433,6 +445,11 @@ vec3 groundBrdf(GroundMaterial m,vec3 view,vec3 light){
   return ((1.-fresnel)*m.albedo/3.14159265+vec3(distribution*visibility*fresnel))*nl;
 }
 vec3 shadeTerrainGround(GroundMaterial m,vec3 view,vec3 light,vec3 light2,float strength){
+  if(uQuality>0){
+    // One diffuse light over the retained material and macro normal.
+    float diffuse=max(dot(m.normal,normalize(light)),0.);
+    return groundToDisplay(m.albedo*mix(1.,.5*m.occlusion+.75*diffuse,clamp(strength,0.,1.)));
+  }
   float amount=clamp(strength,0.,1.);vec3 ambient=m.albedo*(.34+.16*clamp(m.normal.y,0.,1.))*m.occlusion;
   vec3 direct=groundBrdf(m,view,light)*2.2+groundBrdf(m,view,light2)*.58;
   return groundToDisplay(mix(m.albedo,ambient,amount)+direct*max(strength,0.));

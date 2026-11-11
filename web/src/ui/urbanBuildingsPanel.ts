@@ -31,6 +31,7 @@ import { setupUrbanBuildingLocale } from './urbanBuildingLocale';
 import { localizeCityInspector } from './cityInspectorLocale';
 import { urbanText } from './urbanPanelLocale';
 import { LOCALE_KEY } from './shellLocale';
+import { CITY_DEFAULT_PARCEL_FIT } from '../render/cityGeneration';
 
 export interface UrbanBuildingDraft { seed: string; floors: string; typology: string; model: string; culture?: string; fit?: boolean; houses?: HouseSettings }
 export type UrbanColdBuildingState = Pick<UrbanColdSceneResponse, 'store' | 'counts'> & {
@@ -321,7 +322,7 @@ export function createUrbanBuildingsPanel(options: {
   const architectureHint = document.createElement('small'); architectureHint.textContent = 'Ce profil nommé route les bâtiments vers des sources/variantes ; ce n’est ni une recette imposée ni une certification historique. Le plan et les parcelles sont conservés, l’accès et les droits restent requis.';
   architecture.after(architectureHint);
   const fitLabel = document.createElement('label');
-  fitLabel.innerHTML = '<input type="checkbox" data-building-fit checked>Adapter les dimensions au lot';
+  fitLabel.innerHTML = `<input type="checkbox" data-building-fit ${CITY_DEFAULT_PARCEL_FIT ? 'checked' : ''}>Adapter les dimensions au lot`;
   fitLabel.title = 'En mode inspiré ou fantasy, adapte les corps simples jusqu’à deux fois les dimensions du catalogue. Les modèles exacts et le mode historique strict gardent leurs dimensions.';
   architectureHint.after(fitLabel);
   for (const [host, id] of [[programme, 'urban-programme-allocation'], [panel, 'urban-architecture-placement']] as const) {

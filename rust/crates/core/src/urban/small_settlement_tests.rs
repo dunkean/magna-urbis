@@ -4,6 +4,14 @@ use super::*;
 
 /// (parcels, building requests, enclosed area m2, walled) of one 500-hab. village on flat land.
 fn village(culture: &str, population: u32) -> (usize, usize, f64, bool, f64) {
+    village_with(culture, population, None)
+}
+/// Same village with the culture's own enclosure requested: most villages are drawn open (a rare walled one is
+/// a per-site draw), so the tests of a walled village ask for its wall.
+fn walled_village(culture: &str, population: u32) -> (usize, usize, f64, bool, f64) {
+    village_with(culture, population, Some(profiles::profile(culture).fortification))
+}
+fn village_with(culture: &str, population: u32, fortification: Option<&str>) -> (usize, usize, f64, bool, f64) {
     let n = 64;
     let h = vec![10.0_f32; n * n];
     let w = vec![0_u8; n * n];
@@ -17,7 +25,8 @@ fn village(culture: &str, population: u32) -> (usize, usize, f64, bool, f64) {
         center: Point { x: 2000.0, y: 2000.0 },
         radius: 150.0,
     };
-    let layout_config: LayoutConfig = serde_json::from_str(include_str!("fixtures/small-layout-config.json")).unwrap();
+    let mut layout_config: LayoutConfig = serde_json::from_str(include_str!("fixtures/small-layout-config.json")).unwrap();
+    if let Some(kind) = fortification.filter(|k| *k != "none") { layout_config.fortification = kind.into(); }
     let parcel_config: ParcelConfig = serde_json::from_str(include_str!("fixtures/small-parcel-config.json")).unwrap();
     let layouts = generate_quarters("small-settlement", &[site], &layout_config, s, &[]).unwrap();
     if std::env::var("SURVEY_WARN").is_ok() { for w in &layouts[0].warnings { println!("WARN {culture}: {w}"); } }
@@ -44,7 +53,7 @@ fn village(culture: &str, population: u32) -> (usize, usize, f64, bool, f64) {
 
 #[test]
 fn a_walled_medina_of_500_is_packed_inside_its_wall() {
-    let (parcels, sites, enclosed, walled, _) = village("medina", 500);
+    let (parcels, sites, enclosed, walled, _) = walled_village("medina", 500);
     eprintln!("medina parcels={parcels} sites={sites} enclosed_ha={:.2}", enclosed / 1e4);
     assert!(walled);
     // 500 inhabitants at an intra-muros gross density of at least 150 hab./ha.
@@ -146,7 +155,7 @@ fn a_500_inhabitant_village_is_compact_and_has_no_lane_to_nowhere() {
 fn a_500_inhabitant_enclosure_is_sized_from_its_population() {
     // At least 75 inhabitants per walled hectare, and the walled town is still drawn.
     for culture in ["celtic-oppidum", "indus-planned", "native-iroquoian", "kraal", "nubian-fortified", "roman-core"] {
-        let (_, sites, enclosed, walled, _) = village(culture, 500);
+        let (_, sites, enclosed, walled, _) = walled_village(culture, 500);
         assert!(walled, "{culture}: no wall");
         assert!(enclosed <= 500.0 / 70.0 * 1e4, "{culture}: enclosure {:.1} ha", enclosed / 1e4);
         assert!(sites >= 15, "{culture}: sites {sites}");
@@ -685,5 +694,87 @@ fn no_quarter_of_a_town_stands_empty() {
         let bare = (0..((x1 - x0) / 5.0) as usize).flat_map(|i| (0..((y1 - y0) / 5.0) as usize).map(move |j| Point { x: x0 + 5.0 * i as f64, y: y0 + 5.0 * j as f64 }))
             .filter(|&p| g::contains(&b.shape, p) && !lived(p)).count();
         assert_eq!(bare, 0, "block {bi} ({:?}): {} m2 out of reach of {} buildings", role.map(|d| &d.role), bare * 25, built.len());
+    }
+}
+
+#[test]
+fn a_town_forced_onto_a_steep_flank_houses_half_its_households() {
+    // A user-placed town on a uniform 29° flank (grade 0.55): the strict house
+    // gates refuse every block, so the slope gates relax until half of the
+    // land is housable; the town is laid out, cut and sited without panic.
+    let (n, width, grade) = (128, 6000.0, 0.55);
+    let h: Vec<f32> = (0..n * n).map(|i| (10.0 + grade * (i / n) as f64 * width / n as f64) as f32).collect();
+    let w = vec![0_u8; n * n];
+    let level = vec![0.0_f32; n * n];
+    let s = Surface { geometry: None, width, n, height: &h, water: &w, interpolation: Default::default(),};
+    let site = Site { key: "flank".into(), name: String::new(), population: 500, culture: "european-organic".into(), center: Point { x: 3000.0, y: 3000.0 }, radius: 150.0 };
+    let layout_config: LayoutConfig = serde_json::from_str(include_str!("fixtures/small-layout-config.json")).unwrap();
+    let parcel_config: ParcelConfig = serde_json::from_str(include_str!("fixtures/small-parcel-config.json")).unwrap();
+    let layouts = generate_quarters("steep-flank", &[site], &layout_config, s, &[]).unwrap();
+    let parts = generate_parcels("steep-flank", &layouts, &parcel_config).unwrap();
+    let ids = (0..layouts.len()).collect::<Vec<_>>();
+    let mut index = building_sites::BuildingSiteIndex::prepare(&layouts, &parts, &ids).unwrap();
+    let mut sites = 0;
+    loop {
+        let page = index.page("steep-flank", &layouts, &parts, s, &level, None, sites, 64, 24 * 1024 * 1024).unwrap();
+        sites += page.requests.len();
+        if sites == page.total || page.requests.is_empty() { break; }
+    }
+    let pr = parts[0].programme.as_ref().expect("programme");
+    let wanted: f64 = pr.demands.iter().filter(|d| d.unit == "domesticUnits").map(|d| d.requested).sum();
+    let housed: f64 = pr.allocations.iter().map(|a| a.households).sum();
+    eprintln!("steep flank: relax {} housed {housed:.0}/{wanted:.0} households, {sites} sites, warnings {:?}", pr.context.slope_relax, layouts[0].warnings);
+    assert!(housed >= 0.5 * wanted, "housed {housed:.0} of {wanted:.0} households");
+}
+
+/// (layout, parts, building requests, housed households, wanted households) of a
+/// village placed on the flank of a volcanic cone rising `grade` toward its summit.
+fn cone_village(population: u32, grade: f64, radius: f64) -> (Layout, Partition, usize, f64, f64) {
+    let (n, width) = (128, 6000.0);
+    let apex = Point { x: 3000.0, y: 3000.0 };
+    let h: Vec<f32> = (0..n * n).map(|i| {
+        let p = Point { x: (i % n) as f64 * width / n as f64, y: (i / n) as f64 * width / n as f64 };
+        (10.0 + grade * (2800.0 - ((p.x - apex.x).hypot(p.y - apex.y))).max(0.0)) as f32
+    }).collect();
+    let w = vec![0_u8; n * n];
+    let level = vec![0.0_f32; n * n];
+    let s = Surface { geometry: None, width, n, height: &h, water: &w, interpolation: Default::default(),};
+    let site = Site { key: "cone".into(), name: String::new(), population, culture: "european-organic".into(),
+        center: Point { x: apex.x + radius, y: apex.y }, radius: 150.0 };
+    let layout_config: LayoutConfig = serde_json::from_str(include_str!("fixtures/small-layout-config.json")).unwrap();
+    let parcel_config: ParcelConfig = serde_json::from_str(include_str!("fixtures/small-parcel-config.json")).unwrap();
+    let layouts = generate_quarters("cone", &[site], &layout_config, s, &[]).unwrap();
+    let parts = generate_parcels("cone", &layouts, &parcel_config).unwrap();
+    let ids = (0..layouts.len()).collect::<Vec<_>>();
+    let mut index = building_sites::BuildingSiteIndex::prepare(&layouts, &parts, &ids).unwrap();
+    let mut sites = 0;
+    loop {
+        let page = index.page("cone", &layouts, &parts, s, &level, None, sites, 64, 24 * 1024 * 1024).unwrap();
+        sites += page.requests.len();
+        if sites == page.total || page.requests.is_empty() { break; }
+    }
+    let (wanted, housed) = parts[0].programme.as_ref().map_or((0.0, 0.0), |pr| (
+        pr.demands.iter().filter(|d| d.unit == "domesticUnits").map(|d| d.requested).sum(),
+        pr.allocations.iter().map(|a| a.households).sum()));
+    let mut layouts = layouts;
+    let mut parts = parts;
+    (layouts.remove(0), parts.remove(0), sites, housed, wanted)
+}
+
+#[test]
+fn a_village_placed_on_a_volcano_flank_still_builds_houses() {
+    // A user-placed village 1.2 km from the summit of a cone at 29° (grade 0.55)
+    // and 39° (0.8): no street climbs to it at street or lane grade and the
+    // culture builds no stairs, yet the village keeps land, a contour street
+    // and houses near where it was placed.
+    for grade in [0.55, 0.8] {
+        let (layout, part, sites, housed, wanted) = cone_village(300, grade, 1200.0);
+        let site = Point { x: 4200.0, y: 3000.0 };
+        let far = part.parcels.iter().filter(|p| p.use_kind == "plot")
+            .map(|p| { let c = g::centroid(&p.shape); (c.x - site.x).hypot(c.y - site.y) }).fold(0.0, f64::max);
+        eprintln!("cone grade {grade}: {} blocks, {} streets, {sites} sites, housed {housed:.0}/{wanted:.0}, farthest plot {far:.0} m, warnings {:?}",
+            layout.blocks.len(), layout.streets.len(), layout.warnings);
+        assert!(sites > 0 && housed > 0.0, "grade {grade}: {sites} building sites, {housed:.0} households");
+        assert!(far <= 500.0, "grade {grade}: a plot {far:.0} m from the village site");
     }
 }

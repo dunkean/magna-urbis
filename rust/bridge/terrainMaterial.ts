@@ -13,6 +13,7 @@ float surfaceGroundRetainWater(vec2 world,float coverage){
 export function groundCoverInputsGlsl(source: string): string {
   return source.replaceAll('textureLod(uForestBank,uv,0.)','surfaceGroundBankTexel(world,uv)')+`
 void surfaceGroundReadInputs(vec2 world,float fp){
+  if(uQuality>0)return;
   if(uGroundCover.w<.5||uForest==0||uForestBrushes!=0||uRenderV2>1||fp>=10.)return;
   if(surfaceGroundHasInputs&&all(equal(world,surfaceGroundPoint)))return;
   vec3 occupation=groundOccupation(world);vec2 bank=fp<1.?forestBankAt(world):vec2(-1e3,0.);
@@ -27,6 +28,8 @@ void surfaceGroundReadInputs(vec2 world,float fp){
 // Material compositor ported from Neural Earth web/terrain_renderer.js (GPL-3.0).
 // Original blending, noise, coverage and palettes; local climate/substrate adapter below.
 export const NEURAL_EARTH_MATERIAL_GLSL = `
+// Runtime display tier only: captures and material rasters bind zero.
+uniform int uQuality; // 0 full, 1 light; never a specialization constant
 uniform uint uMaterialSeed;
 uniform vec2 uMaterialClimate; // sea-level temperature Celsius, annual rain mm
 float sstep(float a,float b,float x){float t=clamp((x-a)/(b-a),0.,1.);return t*t*(3.-2.*t);}
@@ -69,6 +72,12 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
     vec2 surfaceFall=vec2(1.,0.);
     vec3 surfaceRockTone=vec3(.43,.42,.39),surfaceSoilTone=vec3(.40,.32,.22),surfaceHerbTone=vec3(1.),surfaceMicroTone=vec3(1.);
     vec2 surfaceMicroSlope=vec2(0.);float surfaceRise=0.,surfaceBedded=0.;
+    // Exposed rock colouring, one model for 2D and 3D. Three zero-mean parts, weighted per biome by
+    // surfaceMaterial: strata of the stratigraphic height (dominant in arid ranges, weaker in temperate
+    // ones), jointed blocks (every range) and fall-line streaks (the cold-range look, a minor part elsewhere).
+    // These constants scale each part everywhere; 1 is the reference look.
+    const float ROCK_STRATA=1.;const float ROCK_FACETS=1.;const float ROCK_STREAKS=1.;
+    float surfaceStrataWeight=0.,surfaceFacetWeight=1.,surfaceStreakWeight=1.;
     vec2 surfaceGroundSlope=vec2(0.),surfaceGroundGradient=vec2(0.);
     vec4 surfaceGroundEnv=vec4(0.);float surfaceGroundHeight=0.,surfaceGroundShore=1e9,surfaceGroundBeach=0.,surfaceGroundNormalGain=1.;
 #ifdef RENDER3D_FOREST
@@ -104,15 +113,25 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
       float k=min(40.,.02*wavelength*wavelength/max(fp*fp,.0001));
       return inversesqrt(1.+1.6*k)-exp2(-k*n*n);
     }
-    // 2x2 cellular stones: (zero-mean stone tone, distance to the nearest joint).
-    vec2 surfaceStones(vec2 q,uint salt){
-      vec2 fl=floor(q-.5);ivec2 c=ivec2(fl);vec2 f=q-fl;float first=9.;float second=9.;float tone=0.;
-      for(int j=0;j<2;j++){for(int i=0;i<2;i++){
+    // Jointed blocks on a 3x3 cellular search (a 2x2 search loses the second
+    // neighbour and draws straight seams along the lattice): (zero-mean block
+    // tone, distance to the nearest joint, zero-mean tilt of the block face).
+    vec4 surfaceFacets(vec2 q,uint salt){
+      vec2 fl=floor(q);ivec2 c=ivec2(fl);vec2 f=q-fl;float first=9.;float second=9.;uint id=0u;
+      for(int j=-1;j<=1;j++){for(int i=-1;i<=1;i++){
         uint h=surfaceHash(ivec3(c+ivec2(i,j),0),salt);
         vec2 d=vec2(float(i),float(j))+.1+.8*vec2(float(h&255u),float((h>>8u)&255u))/255.-f;float r=dot(d,d);
-        if(r<first){second=first;first=r;tone=float((h>>16u)&255u)/255.-.5;}else if(r<second){second=r;}
+        if(r<first){second=first;first=r;id=h;}else if(r<second){second=r;}
       }}
-      return vec2(tone,sqrt(second)-sqrt(first));
+      return vec4(float((id>>16u)&255u)/255.-.5,sqrt(second)-sqrt(first),vec2(float((id>>24u)&15u),float(id>>28u))/15.-.5);
+    }
+    // Cellular stones: (zero-mean stone tone, distance to the nearest joint).
+    vec2 surfaceStones(vec2 q,uint salt){return surfaceFacets(q,salt).xy;}
+    // Dark joint between blocks, widened to the pixel (cell units) and faded
+    // before it would draw a lattice of lines.
+    float surfaceJoint(float edge,float pixel){
+      float a=max(pixel,.004);
+      return (1.-sstep(.03-a,.03+a,edge))*(1.-sstep(.03,.07,pixel));
     }
     // Procedural rock map until real geology is wired in. Maps are 1 to 40 km wide,
     // so units vary at kilometre scale. Field a splits sedimentary from crystalline
@@ -125,7 +144,7 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
       surfaceRise=h+.03*dot(world,vec2(cos(dip),sin(dip)))+70.*grove+14.*crag;
       // Once the bands are unresolved, the wider step is their area mean.
       float contact=1.-sstep(.125,.25,fp*(grade+.2)/460.);float wide=1.1-.8*contact;
-      float bands=sstep(-wide,wide,b+1.1*contact*sin(.01365910*surfaceRise));
+      float bands=sstep(-wide,wide,b+2.2*contact*surfaceBed(surfaceRise/460.+.9*surfaceBed(surfaceRise/270.,salt+35u),salt+36u));
       float crystal=sstep(-.3,.3,a);surfaceBedded=1.-crystal;
       vec3 sedimentary=surfaceMix(vec3(.76,.72,.62),vec3(.68,.49,.31),bands); // limestone, sandstone
       vec3 crystalline=surfaceMix(vec3(.62,.54,.52),vec3(.37,.41,.46),sstep(-.35,.35,b-.6*a)); // granite, schist
@@ -146,6 +165,11 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
     }
     vec3 surfaceMicro(vec2 world,float slope,float fp,float rock,float grass,uint salt){
       surfaceMicroSlope=vec2(0.);surfaceMicroTone=vec3(1.);surfaceGroundSlope=vec2(0.);surfaceGroundNormalGain=1.;
+      if(uQuality>0){
+        // One filtered band tints the substrate; no strata, facets or cover searches.
+        if(fp<2.)surfaceMicroTone=vec3(1.)+surfaceBand(world,40.,salt+31u).x*(1.-sstep(1.,2.,fp))*(vec3(.025)+grass*vec3(.025,.01,-.015));
+        return surfaceMicroTone;
+      }
       if(fp>=10.){return surfaceMicroTone;}
       float fallLength=length(surfaceGroundGradient);surfaceFall=fallLength>.0001?surfaceGroundGradient/fallLength:vec2(1.,0.);
       float k1=1.-sstep(5.,10.,fp);float k2=1.-sstep(1.4,2.8,fp);float k3=1.-sstep(.38,.76,fp);float k4=1.-sstep(.1,.2,fp);
@@ -159,20 +183,37 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
       float tone=1.+mottle*(.05*soil+.075*herb+.035*rock);
       vec3 hue=vec3(1.)+mottle*(soil*vec3(.012,0.,-.016)+herb*vec3(.075,.01,-.06));
       if(rock>.02){
+        // Steep faces keep a moderate albedo contrast: in 3D the lit relief must still read
+        // through the paint. Block faces are tilted in the normal, never shaded in the albedo.
+        float relief=mix(1.,.65,sstep(.5,1.2,slope));
         // Fissures stay a close-up detail: at distance their isolines read as organic cells.
-        tone+=rock*(.24*k3*surfaceCrack(n3.x+.4*k4*n4.x,fp,3.)+.16*k4*surfaceCrack(n4.x,fp,.8));
+        float detail=.24*k3*surfaceCrack(n3.x+.4*k4*n4.x,fp,3.)+.16*k4*surfaceCrack(n4.x,fp,.8);
+        // Fall-line wear (chutes and ribs), weighted by biome: alone it reads as threads.
         float steep=sstep(.12,.5,slope);
-        float wear=.075*(1.-sstep(14.,30.,fp))*surfaceChute(world,26.,15.,salt+61u);
-        if(k1>0.)wear+=.055*k1*surfaceChute(world,9.,5.4,salt+62u);
-        if(k2>0.)wear+=.05*k2*surfaceChute(world,3.2,1.9,salt+63u);
-        tone+=rock*steep*wear;
+        if(surfaceStreakWeight>.01){
+          float wear=.06*(1.-sstep(14.,30.,fp))*surfaceChute(world,26.,15.,salt+61u);
+          if(k1>0.)wear+=.045*k1*surfaceChute(world,9.,5.4,salt+62u);
+          if(k2>0.)wear+=.04*k2*surfaceChute(world,3.2,1.9,salt+63u);
+          detail+=steep*surfaceStreakWeight*wear;
+        }
+        // Jointed blocks on outcrops and cliffs, not on rocky plains: a tone and a face tilt per
+        // block, dark joints once resolved. Bands follow the 40/11/3 m fades of the mottle.
+        float blocky=surfaceFacetWeight*sstep(.1,.4,slope);
+        if(blocky>.01){
+          vec4 f1=surfaceFacets(world/40.,salt+71u);
+          float block=.10*k1*f1.x-.12*k1*surfaceJoint(f1.y,fp/40.);vec2 tilt=.5*k1*f1.zw;
+          if(k2>0.){vec4 f2=surfaceFacets(world/11.,salt+72u);block+=.08*k2*f2.x-.12*k2*surfaceJoint(f2.y,fp/11.);tilt+=.4*k2*f2.zw;}
+          if(k3>0.){vec4 f3=surfaceFacets(world/3.,salt+73u);block+=.06*k3*f3.x-.10*k3*surfaceJoint(f3.y,fp/3.);tilt+=.3*k3*f3.zw;}
+          detail+=blocky*block;surfaceMicroSlope+=rock*blocky*tilt;
+        }
+        tone+=rock*relief*detail;
         // Bed lines on faces; the period seen on the ground is the bed thickness over the slope.
-        float face=rock*sstep(.35,.9,slope)*(.3+.7*surfaceBedded);float rate=slope+.2;
+        float face=rock*sstep(.35,.9,slope)*surfaceStrataWeight;float rate=slope+.2;
         if(face>.01){
           float b1=surfaceBed(surfaceRise/18.,salt+41u)*(1.-sstep(.125,.25,fp*rate/18.));
           float b2=surfaceBed(surfaceRise/4.5,salt+42u)*(1.-sstep(.125,.25,fp*rate/4.5));
           float b3=surfaceBed(surfaceRise/1.1,salt+43u)*(1.-sstep(.125,.25,fp*rate/1.1));
-          tone+=face*(.30*b1+.24*b2+.16*b3);
+          tone+=face*relief*(.24*b1+.18*b2+.12*b3);
         }
       }
       // Scree rests at the angle of repose, between soil and cliff; gravel on open soil.
@@ -195,6 +236,7 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
     vec2 surfaceFbm(vec3 p,float scale,int octaves,float footprint,uint salt){
       float value=0.;float kept=0.;float total=0.;float s=scale;float a=1.;
       for(int i=0;i<octaves;i++){
+        if(uQuality>0&&i>=1)break;
         total+=a*a;
         if(footprint<s*.25){float fade=1.-sstep(s*.125,s*.25,footprint);value+=a*fade*surfaceNoise(p/s,salt+uint(i)*0x9e37u);kept+=a*fade*a*fade;}
         a*=.5;s*=.5;
@@ -279,13 +321,33 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
       vec3 rock=surfaceMix(lith,surfaceMix(lith*vec3(.70,.66,.62),lith*vec3(1.1,.84,.64),sstep(-.2,.6,m2+.5*groveTone)),arid*.8);
       rock=surfaceMix(rock,surfaceMix(rock,vec3(lithLuma),.55)*vec3(.92,.96,1.03),frost*.7);
       rock=rock*(1.-.14*sstep(1.2,3.,humid));
-      // Beds of the stratigraphic height, strongest in bare sedimentary ranges.
-      // Their period on the ground shortens with the slope, hence the filter.
+      // Rock colouring weights per biome: strata dominate bare arid (sedimentary) ranges and stay
+      // present in temperate ones; fall-line streaks belong to cold ranges; blocks are everywhere,
+      // a little softer under frost.
+      surfaceStrataWeight=ROCK_STRATA*(.3+.7*arid)*(1.-.5*frost)*(.45+.55*surfaceBedded);
+      surfaceStreakWeight=ROCK_STREAKS*mix(.4,1.,frost)*(1.-.3*arid);
+      surfaceFacetWeight=ROCK_FACETS*mix(1.,.6,frost);
+      // Strata of the stratigraphic height (elevation, a gentle regional dip and a low-frequency
+      // warp): formation tones of 280 and 70 m beds, and the fine 90 m banding of desert ranges,
+      // its contrast set by the formation. Their period on the ground shortens with the slope,
+      // hence the filters; the smooth banding fades later, as it cannot alias into blocks.
+      float layered=0.,blocks=0.;
+      if(uQuality==0){
       float bedRate=fp*(grade+.2);
-      float layered=(.28*surfaceBed(surfaceRise/280.,salt+24u)*(1.-sstep(.125,.25,bedRate/280.))+.20*surfaceBed(surfaceRise/70.,salt+25u)*(1.-sstep(.125,.25,bedRate/70.)))*(.35+.65*surfaceBedded)*(.4+.6*arid);
-      rock=rock*(1.+variation*(layered+.07*cragTone))*(vec3(1.)+variation*layered*vec3(.25,0.,-.3));
+      // Beds of uneven thickness and tone: a sine of the height drew evenly spaced contour
+      // rings on every cone or crater wall.
+      float banding=2.*surfaceBed(surfaceRise/90.+.9*surfaceBed(surfaceRise/53.,salt+28u),salt+29u)*(1.1+.8*surfaceBed(surfaceRise/280.,salt+26u))*(1.-sstep(.25,.45,bedRate/90.));
+      layered=(.24*surfaceBed(surfaceRise/280.,salt+24u)*(1.-sstep(.125,.25,bedRate/280.))+.16*surfaceBed(surfaceRise/70.,salt+25u)*(1.-sstep(.125,.25,bedRate/70.))+.09*banding)*surfaceStrataWeight;
+      // Jointed blocks at map scale: one tone per ~150 m block on rocky slopes, faded to the
+      // zero mean below 4 samples per block. Close-range blocks continue in surfaceMicro.
+      float blockKeep=(1.-sstep(19.,38.,fp))*sstep(rockTan*.2,rockTan*.6,grade)*surfaceFacetWeight;
+      if(blockKeep>.01)blocks=.08*blockKeep*surfaceFacets(point.xy/150.,salt+27u).x;
+      }
+      // Debris and shore sediment take the rock's colour, not its beds.
+      vec3 rockPlain=rock;
+      rock=rock*(1.+variation*(layered+blocks+.07*cragTone))*(vec3(1.)+variation*layered*vec3(.25,0.,-.3));
       // Debris shed by the rock above reaches the soil of the talus slopes.
-      ground=surfaceMix(ground,rock*1.06,.4*sstep(.22,.42,grade)*(1.-sstep(.8,1.2,grade)));
+      ground=surfaceMix(ground,rockPlain*1.06,.4*sstep(.22,.42,grade)*(1.-sstep(.8,1.2,grade)));
       surfaceRockTone=rock;surfaceSoilTone=ground;
       float rockTanEff=rockTan*(.55+.45*sstep(.3,1.3,humid));
       float alpine=1.-sstep(2.,9.,tHot);
@@ -354,8 +416,8 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
       float shingle=max(1.-sstep(4.,14.,tHot),sstep(.04,.22,grade)*terrain);
       vec3 sediment=surfaceMix(vec3(.80,.75,.61),vec3(.76,.63,.43),sstep(-.2,.9,pv));
       sediment=surfaceMix(sediment,vec3(.86,.84,.76),wTrop*sstep(0.,-.8,pv)*.7);
-      sediment=surfaceMix(sediment,rock,shingle*.9);
-      sediment=surfaceMix(sediment,surfaceMix(ground,rock,.4),sstep(-.9,-1.5,m2)*.85);
+      sediment=surfaceMix(sediment,rockPlain,shingle*.9);
+      sediment=surfaceMix(sediment,surfaceMix(ground,rockPlain,.4),sstep(-.9,-1.5,m2)*.85);
       sediment=surfaceMix(sediment,vec3(.27,.26,.25),sstep(1.25,1.75,m1+.35*shingle)*.9);
       color=surfaceMix(color,sediment*.9,flats*(1.-sstep(240.,960.,fp))*.8);
       color=surfaceMix(color,sediment,beach*.8);

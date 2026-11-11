@@ -18,6 +18,9 @@ import type { ExportLayers } from '../render/exportLayers';
 import { publishWasmThreads, wasmWorkerFailed, wasmWorkerOptions } from '../../../rust/bridge/wasmThreads';
 import { loadRenderGeometry, renderGeometryReady } from '../../../rust/bridge/renderGeometry';
 
+/** Delay of the miniature after a new live frame (its first frame must not wait for it). */
+const MINI_DELAY_MS = 350;
+
 export type Action = 'terrain' | 'region' | 'roads' | 'towns' | 'town' | 'settlements' | 'all';
 
 /** Generation and drawing stay on separate workers; a failed job keeps the previous map. */
@@ -45,6 +48,10 @@ export class StudioClient {
   /** One resolution per (settings, world, preview): show() and applyAppearance() share it. */
   private resolutions: { settings: V2Settings; world: World | undefined; preview: boolean; resolved: ResolvedAppearance }[] = [];
   private benchMiniSize = 0;
+  private benchMiniDue = false;
+  private benchMiniTimer?: ReturnType<typeof setTimeout>;
+  /** Intermediate invalidations may redraw the live map while its new look is still compiling. */
+  private benchPreparing = 0;
   private classicBackground?:{world:World;key:string;url:string};
   private retained?:{id:number;world:World};
   private pendingDraw: { gen:number; resolve:()=>void; reject:(e:Error)=>void; timer:ReturnType<typeof setTimeout> } | null = null;
@@ -146,7 +153,8 @@ export class StudioClient {
       const {BenchRenderer}=await import('./benchRenderer');
       this.bench??=new BenchRenderer(()=>{if(this.benchActive&&this.world)this.viewer.contentChanged(this.world.mapSize,true);});
       this.bench.resourceSource=w=>this.resources(w);
-      await this.bench.set(world,settings!,resolved!);
+      this.benchPreparing++;
+      try{await this.bench.set(world,settings!,resolved!);}finally{this.benchPreparing--;}
       if(!this.benchActive)this.render?.postMessage({type:'release'});
       this.benchActive=true;
       this.viewer.setDirectSource({element:this.bench.element,draw:frame=>this.drawBench(frame)});
@@ -179,8 +187,11 @@ export class StudioClient {
     const renderer=this.bench;
     if(!renderer||!this.benchActive)return{ms:0,band:0,scale:frame.view.scale};
     let mini:HTMLCanvasElement|undefined;
-    if(frame.mini&&(this.benchMiniRevision!==this.appearanceRevision||this.benchMiniSize!==frame.mini)){
-      mini=renderer.drawMini(frame.mini);this.benchMiniRevision=this.appearanceRevision;this.benchMiniSize=frame.mini;
+    // The whole-map miniature costs as much as a full frame: the live view shows first, the miniature follows in a later frame.
+    if(frame.mini&&!this.benchPreparing&&(this.benchMiniRevision!==this.appearanceRevision||this.benchMiniSize!==frame.mini)){
+      if(this.benchMiniDue){
+        this.benchMiniDue=false;mini=renderer.drawMini(frame.mini);this.benchMiniRevision=this.appearanceRevision;this.benchMiniSize=frame.mini;
+      }else if(!this.benchMiniTimer)this.benchMiniTimer=setTimeout(()=>{this.benchMiniTimer=undefined;if(!this.benchActive)return;this.benchMiniDue=true;this.viewer.invalidate();},MINI_DELAY_MS);
     }
     // Restore the live camera after a miniature capture, in this same animation frame.
     renderer.drawLive(frame.view,frame.w,frame.h,frame.dpr);
@@ -222,7 +233,10 @@ export class StudioClient {
     }
   }
   async prepare3dBackground():Promise<void>{
-    if(this.benchActive){this.bench?.backgroundUrl();return;}
+    // A style switch may still be setting up the bench and compiling its look. Capturing earlier
+    // would cache the old map or its preview, or enter a second synchronous pipeline compilation.
+    for(;;){const work=this.appearanceWork;await work;if(work===this.appearanceWork)break;}
+    if(this.benchActive){if(!this.bench?.groundBackground())this.bench?.backgroundUrl();return;}
     if(!this.world)return;
     const key=JSON.stringify(this.display);
     if(this.classicBackground?.world===this.world&&this.classicBackground.key===key)return;
@@ -231,6 +245,7 @@ export class StudioClient {
     const svg=renderSvg(this.world,{...this.display,brushes,width:2048,labels:false,legend:false,cartouche:false,layers:{city:false,streets:false,roads:false,labels:false,decor:false}}); // roads: vectors per 3D tile (city3d), not this map raster
     this.classicBackground={world:this.world,key,url:`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`};
   }
+  groundBackground():HTMLCanvasElement|undefined{return this.benchActive?this.bench?.groundBackground():undefined;}
   backgroundUrl():string|undefined{return this.benchActive?this.bench?.backgroundUrl():this.classicBackground?.url;}
   /** The classic 3D background already holds the land use. */
   physicalGround(){return this.benchActive?this.bench?.physicalGround():undefined;}

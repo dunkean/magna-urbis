@@ -43,8 +43,8 @@ pub struct RoadConfig {
     /// many cells per side before routing (0 routes on the raster itself). Search work grows
     /// faster than the cell count, so a 1024² raster routes about ten times slower than 512².
     pub grid: usize,
-    /// Under test: link the access points of activity sites (sites with `access`) to the
-    /// network as tracks/trails. Off: those sites are ignored and the network is unchanged.
+    /// Link activity access points to the network as tracks/trails (default on).
+    /// Off: those sites are ignored and the network is unchanged.
     pub activity_access: bool,
     /// Place network nodes (tolls, ferries, inns, border posts) along the finished network.
     pub network_nodes: bool,
@@ -63,7 +63,7 @@ impl Default for RoadConfig {
             sharing: 0.7,
             exits: 2,
             grid: 512,
-            activity_access: false,
+            activity_access: true,
             network_nodes: true,
         }
     }

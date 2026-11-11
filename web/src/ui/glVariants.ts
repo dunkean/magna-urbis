@@ -57,6 +57,7 @@ export class ShaderVariants {
   start(key: string, sources: () => [string, string]): void {
     if (!this.programs.has(key) && !this.failed.has(key)) this.programs.set(key, startProgram(this.gl, ...sources()));
   }
+  hasFailed(key: string): boolean { return this.failed.has(key); }
   get(key: string, sources: () => [string, string], wait = false): WebGLProgram | undefined {
     if (this.failed.has(key)) return undefined;
     let program = this.programs.get(key);

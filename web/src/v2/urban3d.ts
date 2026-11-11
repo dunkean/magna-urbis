@@ -1,3 +1,4 @@
+import { cityRegionalStreets, usesNativeHouseRenderer } from '../render/cityContract';
 /** Exact City Bench renderer inside V2; no iframe, geometry regeneration or surrogate houses. */
 import { v2DisplayForest, v2ForestOccupation } from './displayForest';
 import type { World } from '../gen/types';
@@ -24,13 +25,13 @@ import { rustSettlementRaster } from './rustUrban';
 import { getLanguage, onLanguageChange } from './i18n';
 import { activityScene } from './activitySites';
 import { provideFurniture3d, refreshFurniture3d } from '../ui/legendOverlay3d';
-import { buildingColors } from '../render/urbanBuildingStyle';
-import { roadGroundTones, roadInkOf, setRoadGround } from '../render/roadStyle';
+import { city3dPlanOptions } from '../render/cityDrawOptions';
+import { roadGroundTones, setRoadGround } from '../render/roadStyle';
 import { biomePalette } from '../render/biomes';
 import { ruralSemanticLegend, urbanSemanticLegend } from '../render/semanticLayer';
 import { buildCityScene, type CityScene } from '../render/cityCanvas';
 import { terrain3dIllustratedSvg } from '../ui/terrain3dTexture';
-import { paintWaterRegime, type WaterDisplay } from '../ui/vectorWaterRender';
+import { paintWaterRegime, vectorRiverPath, type WaterDisplay } from '../ui/vectorWaterRender';
 import { waterClimate } from '../render/waterRegime';
 import { isFantasyStyle, registerFantasyBrushes } from '../../../rust/bridge/fantasyTerrain';
 
@@ -41,6 +42,7 @@ export interface V2Urban3dOptions {
   getSelected?(): string | undefined;
   onSelect?(id: string): void;
   getBackground?(): string | undefined;
+  getBackgroundImage?(): HTMLCanvasElement | undefined;
   /** The 2D map's physical land use, for the ground tiles. */
   getPhysicalGround?(): City3dPhysicalGround | undefined;
   getTextured?(): boolean;
@@ -64,24 +66,28 @@ export function v2Resolved3d(settings: V2Settings, world?: World): ResolvedAppea
 export function combineV2NativeScenes(cities: readonly RustTownSnapshot[]): PlacementBatch | undefined {
   const scenes = cities.filter(city => stageIndex(city.stage) >= 3).map(city => city.scene).filter((scene): scene is PlacementBatch => !!scene);
   if (!scenes.length) return undefined;
-  const generator = scenes[0].generator_version;
-  if (scenes.some(scene => scene.generator_version !== generator)) throw new Error('The retained native architecture versions differ. Regenerate the affected settlements.');
+  // Towns may use different architectures (city volumes, compact plans, detailed houses). The union header names
+  // the native generator when any town has one: the LOD and detail code skip the silhouette buildings.
+  const generator = (scenes.find(scene => scene.generator_version !== 'silhouette') ?? scenes[0]).generator_version;
   // A complete single native scene is already the exact union. Preserve its
   // arrays and compressed archives instead of rebuilding them on every view.
   if (scenes.length === 1 && scenes[0].materials && scenes[0].plan_archives) return scenes[0];
   const materials = new Map(scenes.flatMap(scene => scene.materials ?? []).map(material => [material.id, material]));
   const plan_archives: Record<string, string> = {};
-  for (const scene of scenes) for (const [id, archive] of Object.entries(scene.plan_archives ?? {})) {
-    if (plan_archives[id] !== undefined && plan_archives[id] !== archive) throw new Error(`Retained plan archive identity collision: ${id}`);
-    plan_archives[id] = archive;
-  }
-  return { schema_version: '1', generator_version: generator, materials: [...materials.values()], buildings: scenes.flatMap(scene => scene.buildings), refusals: scenes.flatMap(scene => scene.refusals), open_spaces: scenes.flatMap(scene => scene.open_spaces), plan_archives };
+  // A partial scene (cancelled build) may lack archives or arrays; the first archive of an id wins.
+  for (const scene of scenes) for (const [id, archive] of Object.entries(scene.plan_archives ?? {})) plan_archives[id] ??= archive;
+  return { schema_version: '1', generator_version: generator, materials: [...materials.values()], buildings: scenes.flatMap(scene => scene.buildings ?? []), refusals: scenes.flatMap(scene => scene.refusals ?? []), open_spaces: scenes.flatMap(scene => scene.open_spaces ?? []), plan_archives };
 }
 /** The towns' scene plus the activity sites (farms, mills, chapels…) of the region, drawn from their massing. */
 export function withV2ActivityScene(scene: PlacementBatch | undefined, activities: PlacementBatch | undefined): PlacementBatch | undefined {
   if (!activities?.buildings.length) return scene;
   if (!scene) return activities;
-  return { ...scene, materials: [...scene.materials ?? [], ...activities.materials ?? []], buildings: [...scene.buildings, ...activities.buildings] };
+  // Activity buildings planned by the houses crate bring their archive table and the native generator header.
+  const native = (value: PlacementBatch): boolean => value.generator_version.startsWith('architectural-plans-');
+  const materials = new Map([...scene.materials ?? [], ...activities.materials ?? []].map(material => [material.id, material]));
+  const plan_archives = { ...activities.plan_archives, ...scene.plan_archives };
+  return { ...scene, generator_version: !native(scene) && native(activities) ? activities.generator_version : scene.generator_version, materials: [...materials.values()],
+    buildings: [...scene.buildings, ...activities.buildings], ...(Object.keys(plan_archives).length ? { plan_archives } : {}) };
 }
 /** Physical raster reference is cached per terrain. Retained geographic domains are reused by 3D. */
 const rasterMetrics = new WeakMap<ReturnType<typeof rustSettlementRaster>, { minHeight: number; maxHeight: number; land: number }>();
@@ -95,21 +101,22 @@ function v2WaterDisplay(world: World, settings: V2Settings): City3dWaterDisplay 
   const regimeDisplay: WaterDisplay | undefined = vector && shown ? { style: ink ? r.palette.mapStyle : 'render3d', colors: r.palette.colors, showLakes: lakes, showOxbows: r.ground.oxbows,
     riverArea: vector.riverArea ?? .02, riverMode: effective.hydrology?.riverMode ?? 'vector', overlay: 'none', season: { zone: effective.climateZone, season: r.ground.season, calendar: r.ground.calendar } } : undefined;
   const climate = regimeDisplay?.season?.zone ? waterClimate(regimeDisplay.season) : undefined, active = !!climate && (climate.aridity > 0 || climate.ice > 0), frozenLakes = active && climate!.ice >= .5;
-  const key=JSON.stringify([shown,lakes,ink,ink?palette.lakeFill:undefined,ink?palette.waterEdge:undefined,active?regimeDisplay!.season:undefined]);
+  const exactRivers = !!vector?.rivers && regimeDisplay?.riverMode === 'vector';
+  const key=JSON.stringify([shown,lakes,ink,ink?palette.lakeFill:undefined,ink?palette.waterEdge:undefined,regimeDisplay]);
   let cache = waterDisplays.get(raster); if (!cache) { cache = new Map(); waterDisplays.set(raster, cache); }
   const retained = cache.get(key); if (retained) return retained;
   const texture = document.createElement('canvas'); texture.width = texture.height = raster.n;
   const ctx = texture.getContext('2d')!, pixels = ctx.createImageData(raster.n, raster.n), paths = new Path2D(), lakePaths = new Path2D();
   if (shown) {
     const value=parseInt(palette.lakeFill.slice(1),16),rgba=ink?[value>>16&255,value>>8&255,value&255,255]:[74,134,179,255];
-    for (let i = 0; i < raster.water.length; i++) if (raster.water[i] > 0 && raster.water[i] < 4 && (lakes || raster.water[i] !== 2) && !(frozenLakes && raster.water[i] === 2)) pixels.data.set(rgba, i * 4);
+    for (let i = 0; i < raster.water.length; i++) if (raster.water[i] > 0 && raster.water[i] < 4 && !(exactRivers && raster.water[i] === 3) && (lakes || raster.water[i] !== 2) && !(frozenLakes && raster.water[i] === 2)) pixels.data.set(rgba, i * 4);
     const firstLake = world.terrain.coastline.length, lastLake = firstLake + world.terrain.lakes.length, redrawn = active && !ink && regimeDisplay?.riverMode === 'vector' && !!vector?.rivers;
     for (const [index, polygon] of (raster.geometry?.water ?? []).entries()) {
       const lake = index >= firstLake && index < lastLake;
       if (lake && !lakes) continue;
       // Material grounds under an active regime keep the river ribbons out of the closed water: each tile redraws the
       // running courses from the 2D vector banks and leaves the dry and frozen ones to their bed and ice.
-      if (index >= lastLake && redrawn) continue;
+      if (index >= lastLake && (redrawn || exactRivers)) continue;
       // Frozen lakes leave the water cover: their ice is painted on the ground.
       const target = lake && frozenLakes ? lakePaths : paths;
       for (const ring of polygon) { if (ring.length < 3) continue; target.moveTo(ring[0].x, ring[0].y); for (const p of ring.slice(1)) target.lineTo(p.x, p.y); target.closePath(); }
@@ -119,7 +126,7 @@ function v2WaterDisplay(world: World, settings: V2Settings): City3dWaterDisplay 
   const fill = ink ? palette.lakeFill : '#4a86b3';
   const regime = active && vector && regimeDisplay ? (target: CanvasRenderingContext2D, mode: 'erase' | 'ground' | 'ice' | 'ink', mpp: number): boolean => paintWaterRegime(target, vector, regimeDisplay, mode, mpp, lakePaths, fill) : undefined;
   if (regime) { ctx.setTransform(raster.n / raster.width, 0, 0, raster.n / raster.width, 0, 0); regime(ctx, 'erase', raster.width / raster.n); ctx.setTransform(1, 0, 0, 1, 0, 0); }
-  const result = { texture, paths, ...(ink?{ink:{fill:palette.lakeFill,stroke:palette.waterEdge}}:{}), ...(regime ? { regime, frozen: climate!.ice > 0 } : {}) }; cache.set(key, result); return result;
+  const result = { texture, paths, ...(exactRivers ? { riverPaths: vectorRiverPath(vector!, regimeDisplay!) } : {}), ...(ink?{ink:{fill:palette.lakeFill,stroke:palette.waterEdge}}:{}), ...(regime ? { regime, frozen: climate!.ice > 0 } : {}) }; cache.set(key, result); return result;
 }
 /** Preserve the native control grid and the applied lake levels; never resample the terrain. */
 export function v2Terrain3dSurface(world: World, settings: V2Settings): City3dSurface {
@@ -190,6 +197,9 @@ export function sameV2NativeInputs(before: readonly RustTownSnapshot[], after: r
 export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban3d> {
   const [{ mountCity3d }, { UrbanBuildingDetailController }, { UrbanBuildingLodRenderer }] = await Promise.all([
     import('../ui/city3d'), import('../render/urbanBuildingDetails'), import('../render/urbanBuildingLod'),
+    // Choose the prepared backend before taking a canvas context. Otherwise the first opening always
+    // starts WebGL2, compiling the same ground in ANGLE while WebGPU prepares a second view behind it.
+    import('../ui/terrain3dRenderer').then(module => module.terrain3dBackendReady()),
   ]);
   let worldOf: World | undefined, terrainOf: World['terrain'] | undefined, decor: Decor | undefined, climateOf = '';
   let nativeOf: readonly RustTownSnapshot[] = [], activitiesOf: PlacementBatch | undefined, scene: PlacementBatch | undefined, layouts: Layout[] = [], partitions: Partition[] = [], roads: Street[] = [];
@@ -236,9 +246,9 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
     if (changedScene) { scene = withV2ActivityScene(combineV2NativeScenes(cities), activities); activitiesOf = activities; }
     if (runtimeKey !== runtimeOf || changedScene) {
       details?.dispose(); details = undefined; renderer = undefined; runtimeOf = runtimeKey;
-      if (scene) {
-        renderer = new UrbanBuildingLodRenderer(scene);
-        details = new UrbanBuildingDetailController({ scene, renderer,
+      if (usesNativeHouseRenderer(scene)) {
+        renderer = new UrbanBuildingLodRenderer(scene!);
+        details = new UrbanBuildingDetailController({ scene: scene!, renderer,
           realize: async (building, context) => (await import('../../../rust/bridge/architecture')).realizeUrbanBuilding(building, runtime, false, context.scene),
           onChange: () => listeners.forEach(listener => listener()),
         });
@@ -274,8 +284,8 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
     return { world, palette: terrainStyle(r.composition.variant, r.palette.colors).palette, legend: r.cartography.legend, cartouche: r.cartography.cartouche,
       semantic: [...ruralSemanticLegend(world.landuse, lu.classes, lu.rural), ...(plan ? urbanSemanticLegend([plan], lu.urban) : [])] };
   });
-  const view = mountCity3d({ host: options.host, navigation: true, fastTerrain: true, materialGrounds: true, softwareMaterialFallback: !!options.getBackground, getDecor: () => decor, getLayouts: () => layouts, getPartitions: () => partitions, getRegionalStreets: () => v2Resolved3d(options.getSettings()).cartography.roads ? roads : [],
-    getBuildingsVisible: () => { const b = v2Resolved3d(options.getSettings()).composition.buildings; return b.visible && b.meshes !== 'none'; }, getScene: () => scene, getSelected: options.getSelected, onSelect: options.onSelect, getBackground: options.getBackground,
+  const view = mountCity3d({ host: options.host, navigation: true, fastTerrain: true, materialGrounds: true, softwareMaterialFallback: !!options.getBackground, getDecor: () => decor, getLayouts: () => layouts, getPartitions: () => partitions, getRegionalStreets: () => cityRegionalStreets(v2Resolved3d(options.getSettings(), options.getWorld()), roads),
+    getBuildingsVisible: () => { const b = v2Resolved3d(options.getSettings()).composition.buildings; return b.visible && b.meshes !== 'none'; }, getScene: () => scene, getSelected: options.getSelected, onSelect: options.onSelect, getBackground: options.getBackground, getBackgroundImage: options.getBackgroundImage,
     getIllustrated: illustrated,
     getGroundSettings: ground => { const world = options.getWorld(); return world && v2Terrain3dGround(world, options.getSettings(), ground); },
     getLook: () => {const r=v2Resolved3d(options.getSettings());return {ambience:r.composition.ambience,waterLook:r.composition.networks.water.look,waterVisible:r.ground.layers.water,groundCover:r.composition.vegetation.procedural};},
@@ -302,18 +312,14 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
       if (value.ground !== 'map' && value.ground !== previous.ground) { patch.terrainStyle = value.ground === 'render' ? 'render3d' : value.ground; patch.renderer = 'bench'; }
       options.onAppearancePatch(patch);
     },
-    getPlanOptions: () => {
-      const r = v2Resolved3d(options.getSettings()), city = r.city;
-      return { colors: buildingColors(r.palette.colors, r.composition.ambience), view: city.view, palette: city.palette, width: city.width, opacity: city.opacity, labels: r.cartography.labels,
-        layers: { ...city.layers, streets: city.layers.streets && r.composition.networks.roads.visible, waterways: r.composition.networks.water.visible && city.layers.waterways !== false }, roadLook: r.composition.networks.roads.look, roadEmphasis: r.composition.networks.roads.emphasis, streetPalette: city.palette === 'terrain' ? 'parchment' as const : city.palette, roadInk: roadInkOf(terrainStyle(r.palette.mapStyle, r.palette.colors).palette, buildingColors(r.palette.colors, r.composition.ambience)), groundBlend: r.composition.networks.roads.look === 'natural',
-        night: r.composition.ambience === 'night',
-        buildingsVisible: r.composition.buildings.visible && r.composition.buildings.meshes === 'none', appearance: { colors: r.palette.colors, style: city.buildingStyle, diagnostic: city.diagnostic, ambience: r.composition.ambience } };
-    },
+    getPlanOptions: () => city3dPlanOptions(v2Resolved3d(options.getSettings(), options.getWorld())),
     getBuildingAppearance: () => { const r = v2Resolved3d(options.getSettings()); return { colors: r.palette.colors, style: r.city.buildingStyle, diagnostic: r.city.diagnostic, ambience: r.composition.ambience }; },
     getTextured: options.getTextured, setTextured: options.setTextured, onCamera: options.onCamera, details: service });
   return { get active() { return view.active; }, get detailStats() { return details?.stats; },
+    prepare: () => { update(); return view.prepare(); },
     show: () => { update(); view.show(); refreshFurniture3d(options.host); }, hide: () => view.hide(), refresh: () => { update(); view.refresh(); refreshFurniture3d(options.host); },
     focus: (point, radius) => view.focus(point, radius), getCamera: () => view.getCamera(), setCamera: camera => view.setCamera(camera),
+    toMapView: () => view.toMapView(), fromMapView: mapView => view.fromMapView(mapView),
     capture: () => view.capture(), captureIllustration: () => view.captureIllustration(), stats: () => view.stats(),
     dispose: () => { offLocale(); view.dispose(); details?.dispose(); listeners.clear(); },
   };

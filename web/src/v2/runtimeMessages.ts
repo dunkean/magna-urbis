@@ -320,6 +320,7 @@ function escapeRegex(value: string): string { return value.replace(/[.*+?^${}()|
 
 /** Only the named message slots below are variable. Their contents are retained verbatim. */
 const templatePairs: readonly (readonly [string, string])[] = [
+  ['Population cible non atteinte : {achieved}/{target} habitants.', 'Population target not reached: {achieved}/{target} inhabitants.'],
   ['Moteur Rust/WASM · {done} / {total} Mio reçus','Rust/WASM engine · {done} / {total} MiB received'],
   ['Moteur Rust/WASM · {done} Mio reçus','Rust/WASM engine · {done} MiB received'],
   ['Chargement du moteur Rust/WASM impossible : HTTP {status}.','Rust/WASM engine download failed: HTTP {status}.'],

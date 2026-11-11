@@ -1,6 +1,7 @@
 import { PALETTES, STYLE_LIST, isMapStyle, type MapStyle, type Palette } from './styles';
 import { waterRamp, type WaterStyle } from './waterStyle';
 import { applyRenderColors, type RenderColors } from './customColors';
+import { seasonalWaterPalette } from './seasonPalette';
 
 export type TerrainStyle = MapStyle | 'parchment-render' | 'render' | 'render3d' | 'render3d-brush' | 'fantasy-ink' | 'fantasy-color' | 'render-v2' | 'render-v2-substrate' | 'render-v2-moisture' | 'render-v2-vegetation' | 'render-v2-snow' | 'copernicus';
 /**
@@ -77,10 +78,13 @@ const definitions = new Map<TerrainStyle, TerrainStyleDefinition>([
 ]);
 
 export const TERRAIN_STYLE_LIST = [...definitions.values()].filter(style => style.traits.family !== 'diagnostic');
+const waterPalettes = new Map<TerrainStyle, Palette>();
 export const terrainStyle = (id: TerrainStyle, colors?: RenderColors): TerrainStyleDefinition => {
   const base = definitions.get(id)!;
-  if (!colors || !Object.keys(colors).length) return base;
-  const palette = applyRenderColors({ ...base.palette, water: base.water }, colors);
+  let authored = waterPalettes.get(id);
+  if (!authored) waterPalettes.set(id, authored = base.water === base.palette.water ? base.palette : { ...base.palette, water: base.water });
+  const palette = seasonalWaterPalette(colors && Object.keys(colors).length ? applyRenderColors(authored, colors) : authored);
+  if (palette === base.palette) return base;
   return { ...base, palette, water: palette.water };
 };
 export const isTerrainStyle = (id: string | null | undefined): id is TerrainStyle => !!id && (isMapStyle(id) || definitions.has(id as TerrainStyle));

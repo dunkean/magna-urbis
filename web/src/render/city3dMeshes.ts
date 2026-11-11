@@ -209,9 +209,14 @@ function paletteSlots(plain: MaterialSlots, culture: string, wall: string, cover
 const OPENING = 'city3d:wall:opening@393126';
 const ringCentre = (ring: readonly Point[]): Point => ({ x: ring.reduce((s, p) => s + p.x, 0) / ring.length, y: ring.reduce((s, p) => s + p.y, 0) / ring.length });
 
-/** Roof faces with a hut overhang: eave vertices pushed outward from the centre and dropped a little. */
-function overhung(points: Vertex3[], eave: number, c: Point, d: number): Vertex3[] {
-  return points.map(p => { if (Math.abs(p.z - eave) > 1e-6) return p; const dx = p.x - c.x, dy = p.y - c.y, l = Math.hypot(dx, dy) || 1; return { x: p.x + dx / l * d, y: p.y + dy / l * d, z: p.z - d * 0.35 }; });
+/** Extend the eave outside the supporting wall without moving the roof's
+ * bearing edge below the wall top. The short skirt stays in the eave plane. */
+function overhang(roof: RoofBuilder, points: Vertex3[], eave: number, c: Point, d: number, material: string): void {
+  const out = (p: Vertex3): Vertex3 => { const dx = p.x - c.x, dy = p.y - c.y, l = Math.hypot(dx, dy) || 1; return { x: p.x + dx / l * d, y: p.y + dy / l * d, z: eave }; };
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i], b = points[(i + 1) % points.length];
+    if (Math.abs(a.z - eave) < 1e-6 && Math.abs(b.z - eave) < 1e-6) roof.face([a, out(a), out(b), b], material);
+  }
 }
 /** Facade quad on an edge: `s0..s1` metres along it from `a`, `z0..z1` up, `off` out of the wall. */
 function facadeQuad(roof: RoofBuilder, a: Point, b: Point, outward: number, s0: number, s1: number, z0: number, z1: number, off: number, material: string, batter?: { center: Point; ground: number; height: number }): void {
@@ -450,7 +455,12 @@ export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHe
         const form = v.detail?.form, organic = form === 'tree' || form === 'mushroom';
         // Crowns and trunks get forest-green display materials (urbanBuilding3d.ts paints them).
         const greens = form === 'tree', crown = greens ? 'city3d:tree:crown@5f8247' : materials.cladding;
-        for (const face of volumeRoof(v, i, j)) roof.face((over > 0 ? overhung(face.points, v.eave_m, centre, over) : face.points).map(p => ({ x: p.x, y: p.y, z: p.z + base })), crown);
+        for (const face of volumeRoof(v, i, j)) {
+          const points = face.points.map(p => ({ ...p, z: p.z + base }));
+          if (face.holes?.length) for (const triangle of surfaceTriangles([{ outer: points, holes: face.holes }])) roof.face(triangle.map(p => ({ ...p, z: points[0].z })), crown);
+          else roof.face(points, crown);
+          if (over > 0) overhang(roof, points, base + v.eave_m, centre, over, crown);
+        }
         const bodyShape = organic ? { outer: scaledRing(v.shape.outer, form === 'tree' ? 0.22 : 0.3), holes: [] } : v.shape;
         if (organic) {
           flatRoof(roof, [v.shape], base + v.eave_m, crown);

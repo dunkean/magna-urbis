@@ -1,3 +1,7 @@
+import { displayQualityFor } from '../render/displayQuality';
+import { FramePreparation } from './framePreparation';
+import { waterSeasonUniforms } from '../render/seasonPalette';
+import { displayQualityUniform, onDisplayQualityChange } from '../render/displayQuality';
 import { bindForest, bindLandDetail, deleteForestTextures, forestTexture, forestTextures, glLandDetailUnit, RENDER_3D_FOREST_GLSL, type ForestTextures, type HeightLayer } from './terrainGl';
 import { shoreRingFor, shoreRingTexture } from '../../../rust/bridge/terrainForestBeach';
 import { captureWebGlFrame } from './illustrationDepth';
@@ -24,8 +28,8 @@ import { withBuildingOccupation } from './forestOccupation';
 import { UrbanBuildingGround } from './urbanBuildingGround';
 import { MATERIAL_WATER_GLSL, MOONLIGHT_GLSL, groundCoverActive } from '../render/materialLook';
 import { groundNavigationScale, walkDisplacement, WALK_EYE_HEIGHT } from './terrain3dNavigation';
-import { terrain3dPixelRatio } from './terrain3dResolution';
-import { buildNearTrees, TREE_3D_GLSL, TREE_FAR, TREE_NEAR, TREE_STRIDE, TREE_VERTICES, type TreeInputs } from './terrain3dTrees';
+import { terrain3dPixelRatio, TERRAIN_3D_SETTLE_MS } from './terrain3dResolution';
+import { buildNearTrees, buildNearTreesSteps, TREE_3D_GLSL, TREE_FAR, TREE_NEAR, TREE_STRIDE, TREE_VERTICES, type TreeInputs } from './terrain3dTrees';
 import { BILLBOARD_3D_GLSL, RAISED_MATERIAL_GLSL, terrain3dRaisedBlend, terrain3dRaisedTexture, type Terrain3dBillboard, type Terrain3dBillboards } from './terrain3dBillboards';
 
 /** Target and orbit distance in world metres; yaw/pitch in radians. */
@@ -39,7 +43,11 @@ export interface Terrain3dCamera {
 
 interface WaterSurface { n: number; levels: Float32Array; mask: Float32Array }
 /** A square material request in the terrain's metre coordinate system. */
-export interface Terrain3dTile { key: string; x: number; y: number; width: number; level: number; pixels: number }
+export interface Terrain3dTile { key: string; x: number; y: number; width: number; level: number; pixels: number;
+  /** Cheap cached map while navigating; exact requests retain the original capture painter. */
+  preview?: boolean; exact?: boolean;
+  prepare?<T>(work: Generator<void, T>): Promise<T>;
+}
 /** Final signed metre coefficients at cell centres, optionally including a halo. */
 export interface Terrain3dTileContent {
   texture: TexImageSource; height?: HeightLayer; gutter?: number;
@@ -50,7 +58,7 @@ export interface Terrain3dTileContent {
    * alpha is water cover (it also clears the canopy), so tints cannot travel in it. */
   semantic?: TexImageSource;
 }
-export interface Terrain3dLookSettings { ambience?: 'day' | 'night'; waterLook?: 'ink' | 'natural'; waterVisible?: boolean; groundCover?: boolean }
+export interface Terrain3dLookSettings { paperMap?: boolean; ambience?: 'day' | 'night'; waterLook?: 'ink' | 'natural'; waterVisible?: boolean; groundCover?: boolean }
 export interface Terrain3dGroundSettings extends Terrain3dLookSettings {
   seed: number; climate: { temperature: number; precipitation: number }; sourceCell: number;
   /** V2 climate zone (Render v2 styles); absent keeps the climate-only look. */
@@ -101,6 +109,8 @@ float displayWaterCover(vec2 p){
 vec3 naturalMapWater(vec3 base,vec3 p,float footprint){
   if(uNaturalWater==0 || displayWaterVisible==0)return base;
   float cover=displayWaterCover(p.xz);if(cover<=0.)return base;
+  // Sharpen the bilinear edge of the mask: a thin river on a coarse far tile otherwise stays a pale partial blend.
+  cover=smoothstep(.2,.8,cover);
   float band=max(displayWaterBand,1.),position=0.;
   // Twelve fixed taps approximate bank depth; no view-dependent CPU raster or ray search.
   for(int i=0;i<3;i++){
@@ -600,6 +610,9 @@ export interface Patch {
   texture?: WebGLTexture;
   textureBytes: number;
   textureGutter?: number;
+  texturePixels?: number;
+  preview?: boolean;
+  exact?: boolean;
   meshBytes: number;
   heightOrigin: number;
   minHeight: number;
@@ -623,6 +636,7 @@ export interface Patch {
   pendingTexture?: WebGLTexture;
   pendingTextureBytes: number;
   pendingTextureGutter?: number;
+  pendingTexturePixels?: number;
 }
 interface Node { patch: Patch; children?: Node[]; error: number; wantsSplit: boolean; blend: number; updated: number; ready: boolean; visible: boolean; moving: boolean; birth: number; birthUpdated: number }
 export interface MaterialRef { texture: WebGLTexture; tile?: Terrain3dTile; pixels: number; gutter?:number }
@@ -666,6 +680,8 @@ export class Terrain3d {
   protected raisedMaterials = new Map<WebGLTexture, WebGLTexture>();
   protected billboardSource?: Terrain3dBillboards;
   protected billboardCount = 0;
+  private billboardKey = '';
+  private billboardReadyKey = '';
   private billboardDirty = false;
   private billboardProgram?: WebGLProgram;
   private billboardVao?: WebGLVertexArrayObject;
@@ -678,6 +694,7 @@ export class Terrain3d {
   /** Satellite near trees (terrain3dTrees.ts): instance count and the eye/heading they were built for. */
   protected treeCount = 0;
   private treeKey = '';
+  private treeReadyKey = '';
   private treeProgram?: WebGLProgram;
   private treeVao?: WebGLVertexArrayObject;
   private treeBuffer?: WebGLBuffer;
@@ -702,6 +719,8 @@ export class Terrain3d {
   private tileLoader?: (tile: Terrain3dTile) => Promise<TexImageSource | Terrain3dTileContent>;
   private requireHeights = false;
   private geometryNeeded: Patch[] = [];
+  private preparation = new FramePreparation();
+  private meshJobs = new Map<Patch, Promise<void>>();
   private heightSampler?: (x: number, y: number, metresPerPixel: number) => number;
   private patches = new Map<string, Patch>();
   /** Sampled grids by tile key (17 KB each): they outlive the textures that evict their patch, and a
@@ -715,6 +734,7 @@ export class Terrain3d {
   private displayedGrids: TerrainPickGrid[] = [];
   private displayedPieces: TerrainStitchedPiece[] = [];
   private stitchUpdated = 0;
+  private surfaceRevision = 0;
   private protected = new Set<string>();
   private jobs = new Set<object>();
   private epoch = 0;
@@ -727,6 +747,14 @@ export class Terrain3d {
   private width = 1;
   private height = 1;
   private frame = 0;
+  private cameraMovedAt = -Infinity;
+  private settleTimer?: ReturnType<typeof setTimeout>;
+  private fullQualityCapture = false;
+  private captureMode = false;
+  protected frameQuality = 0;
+  private unlistenQuality?: () => void;
+  protected frameInteracting = false;
+  private msaa?: { width: number; height: number; framebuffer: WebGLFramebuffer; color: WebGLRenderbuffer; depth: WebGLRenderbuffer };
   protected disposed = false;
   private events = new AbortController();
   private pointers = new Map<number, { x: number; y: number; orbit: boolean }>();
@@ -744,6 +772,7 @@ export class Terrain3d {
   constructor(protected canvas: HTMLCanvasElement, private onChange: () => void, private onRender?: () => void, protected options: Terrain3dOptions = {}) {
     this.element = options.element ?? canvas; this.silent = !!options.silent;
     this.attach(); this.element.style.touchAction = 'none'; this.interactions();
+    this.unlistenQuality = onDisplayQualityChange(() => { this.invalidateTiles(); this.billboardDirty = true; this.request(); });
   }
   /** Records a status attribute, shown on the element unless the view is silent. */
   protected mark(key: Terrain3dStatus, value: string): void {
@@ -763,7 +792,7 @@ export class Terrain3d {
    * subclass field exists: the WebGPU backend overrides it with a no-op and initializes afterwards). */
   protected attach(): void {
     const canvas = this.canvas;
-    const gl = canvas.getContext('webgl2', { alpha: false, antialias: true, depth: true, stencil: false, powerPreference: 'high-performance' });
+    const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: true, stencil: false, powerPreference: 'high-performance' });
     if (!gl) throw new Error('La vue 3D nécessite WebGL2.');
     this.gl = gl; this.initialize(); this.mark('renderer', 'webgl');
     canvas.addEventListener('webglcontextlost', event => {
@@ -780,6 +809,7 @@ export class Terrain3d {
 
   private initialize(): void {
     const gl = this.gl;
+    this.msaa = undefined;
     this.maxFramebufferDimension = gl.getParameter(gl.MAX_RENDERBUFFER_SIZE);
     this.raisedMaterials.clear(); this.billboardProgram = undefined; this.billboardVao = undefined; this.billboardBuffer = undefined; this.billboardAtlas = undefined; this.billboardDirty = true;
     const anisotropy = gl.getExtension('EXT_texture_filter_anisotropic');
@@ -917,7 +947,7 @@ export class Terrain3d {
   }
   setRenderV2Season(season:number):void { if(this.groundSettings?.renderV2){this.groundSettings={...this.groundSettings,v2Season:season};this.request();} }
   setLook(look: Terrain3dLookSettings): void {
-    if(this.lookSettings.ambience===look.ambience && this.lookSettings.waterLook===look.waterLook && this.lookSettings.waterVisible===look.waterVisible && this.lookSettings.groundCover===look.groundCover)return;
+    if(this.lookSettings.paperMap===look.paperMap && this.lookSettings.ambience===look.ambience && this.lookSettings.waterLook===look.waterLook && this.lookSettings.waterVisible===look.waterVisible && this.lookSettings.groundCover===look.groundCover)return;
     this.lookSettings={...look};this.request();
   }
   setTileBoundaries(visible: boolean): void { this.tileBounds = visible; this.request(); }
@@ -998,6 +1028,7 @@ export class Terrain3d {
   }
   invalidateTiles(): void {
     ++this.epoch;
+    this.preparation.clear(); this.meshJobs.clear(); this.treeKey = ''; this.treeReadyKey = ''; this.billboardDirty = true; this.geometryNeeded = [];
     for (const patch of this.patches.values()) {
       if (patch.texture) this.releaseMaterial(patch.texture);
       if (patch.pendingTexture) this.releaseMaterial(patch.pendingTexture);
@@ -1006,10 +1037,11 @@ export class Terrain3d {
     }
     this.request();
   }
-  getLodInfo(): typeof this.lod { return { ...this.lod, pending: this.jobs.size }; }
+  getLodInfo(): typeof this.lod { return { ...this.lod, pending: this.jobs.size + this.preparation.pending }; }
 
   private clearPatches(): void {
     ++this.epoch;
+    this.preparation.clear(); this.meshJobs.clear(); this.treeKey = ''; this.treeReadyKey = ''; this.billboardDirty = true; this.geometryNeeded = [];
     for (const patch of this.patches.values()) this.releasePatch(patch);
     this.patches.clear(); this.heightGrids.clear(); this.root = undefined; this.desired = []; this.protected.clear(); this.splits.clear();
     this.displayedGrids = [];
@@ -1218,19 +1250,20 @@ export class Terrain3d {
       - Math.hypot(b.tile.x + b.tile.width / 2 - this.camera.x, b.tile.y + b.tile.width / 2 - this.camera.y));
     this.protected = new Set(this.desired.map(p => p.tile.key)); this.protected.add(rootPatch.tile.key);
   }
-  private grid(patch: Patch): Float32Array {
+  private *grid(patch: Patch): Generator<void, Float32Array> {
     if (patch.heights) return patch.heights;
     const key = patch.tile.key, known = this.heightGrids.get(key);
     if (known) { this.heightGrids.delete(key); this.heightGrids.set(key, known); return patch.heights = known; }
     const side = GRID + 1, heights = new Float32Array(side * side), step = patch.tile.width / GRID;
-    for (let y = 0; y < side; y++) for (let x = 0; x < side; x++) {
-      heights[y * side + x] = this.surface(patch.tile.x + x * step, patch.tile.y + y * step, step);
+    for (let y = 0; y < side; y++) {
+      for (let x = 0; x < side; x++) heights[y * side + x] = this.surface(patch.tile.x + x * step, patch.tile.y + y * step, step);
+      yield;
     }
     this.heightGrids.set(key, heights);
     if (this.heightGrids.size > HEIGHT_GRIDS) this.heightGrids.delete(this.heightGrids.keys().next().value!);
     patch.heights = heights; return heights;
   }
-  private decodedGrid(tile: Terrain3dTile, layer: HeightLayer): Float32Array {
+  private *decodedGrid(tile: Terrain3dTile, layer: HeightLayer): Generator<void, Float32Array> {
     if (layer.n < 2 || layer.data.length !== layer.n * layer.n || !(layer.width > 0)
       || tile.x < layer.x || tile.y < layer.y || tile.x + tile.width > layer.x + layer.width + 1e-5
       || tile.y + tile.width > layer.y + layer.width + 1e-5) throw new Error('Grille de relief 3D incomplète.');
@@ -1241,17 +1274,20 @@ export class Terrain3d {
       seed: settings.seed, climate: [settings.climate.temperature, settings.climate.precipitation], sourceCell: settings.sourceCell,
       macroSampler: (wx, wy) => spline(base.data, base.n, (wx - base.x) / base.width, (wy - base.y) / base.width),
     }) : baseSample;
-    for (let y = 0; y < side; y++) for (let x = 0; x < side; x++) {
-      const wx = tile.x + x * step, wy = tile.y + y * step;
-      let height = sample(wx, wy, step);
-      if (!Number.isFinite(height)) throw new Error('Altitude 3D non finie.');
-      height = this.buildingGround.constrain(wx, wy, height);
-      if (this.waterVisible) {
-        height = Math.max(0, height);
-        const lake = this.water && lakeHeight(this.water, (wx - base.x) / base.width, (wy - base.y) / base.width);
-        if (lake !== undefined) height = lake;
+    for (let y = 0; y < side; y++) {
+      for (let x = 0; x < side; x++) {
+        const wx = tile.x + x * step, wy = tile.y + y * step;
+        let height = sample(wx, wy, step);
+        if (!Number.isFinite(height)) throw new Error('Altitude 3D non finie.');
+        height = this.buildingGround.constrain(wx, wy, height);
+        if (this.waterVisible) {
+          height = Math.max(0, height);
+          const lake = this.water && lakeHeight(this.water, (wx - base.x) / base.width, (wy - base.y) / base.width);
+          if (lake !== undefined) height = lake;
+        }
+        heights[y * side + x] = height;
       }
-      heights[y * side + x] = height;
+      yield;
     }
     return heights;
   }
@@ -1269,7 +1305,7 @@ export class Terrain3d {
     if (patch.pendingTexture) {
       if (patch.texture) this.releaseMaterial(patch.texture);
       patch.texture = patch.pendingTexture; patch.textureBytes = patch.pendingTextureBytes;
-      patch.textureGutter=patch.pendingTextureGutter;
+      patch.textureGutter=patch.pendingTextureGutter; patch.texturePixels=patch.pendingTexturePixels;
       patch.pendingTexture = undefined; patch.pendingTextureBytes = 0; patch.textureFadeStart = 0;
       patch.textureProgress = 0; patch.materialParent = undefined;
       patch.coherentReady = true;
@@ -1279,45 +1315,53 @@ export class Terrain3d {
     const visit = (node: Node): boolean => node.visible && (node.patch === patch || !!node.children?.some(visit));
     return !!this.root && visit(this.root);
   }
-  private buildMesh(patch: Patch): void {
+  private *buildMesh(patch: Patch): Generator<void, void> {
     const tile = patch.tile, side = GRID + 1, count = side * side;
-    const heights = this.grid(patch), values = meshValues, field = new Float32Array(count * 6);
+    const heights = yield* this.grid(patch);
+    const values = new Float32Array(meshValues.length), field = new Float32Array(count * 6);
     const step = tile.width / GRID, [level, ix, iy] = tile.key.split('/').map(Number);
     const parent = level ? this.patch(level - 1, Math.floor(ix / 2), Math.floor(iy / 2)) : patch;
-    const seam = parent === patch ? undefined : parent.seamSnapshot, parentHeights = this.grid(parent);
-    patch.parentSeam = seam;
+    const seam = parent === patch ? undefined : parent.seamSnapshot, parentHeights = yield* this.grid(parent);
     const skirt = Math.max(.05, tile.width * .12);
-    for (let y = 0; y < side; y++) for (let x = 0; x < side; x++) {
-      const i = y * side + x, at = i * 10;
-      const x0 = Math.max(0, x - 1), x1 = Math.min(GRID, x + 1), y0 = Math.max(0, y - 1), y1 = Math.min(GRID, y + 1);
-      values[at] = x * step; values[at + 1] = heights[i] - patch.heightOrigin; values[at + 2] = y * step;
-      values[at + 3] = x / GRID; values[at + 4] = y / GRID;
-      values[at + 5] = (heights[y * side + x1] - heights[y * side + x0]) / ((x1 - x0) * step);
-      values[at + 6] = (heights[y1 * side + x] - heights[y0 * side + x]) / ((y1 - y0) * step);
-      parentSample(parent.tile, parentHeights, seam, tile.x + x * step, tile.y + y * step, parentValue);
-      values[at + 7] = parentValue[0] - patch.heightOrigin; values[at + 8] = parentValue[1]; values[at + 9] = parentValue[2];
-      const out = i * 6;
-      field[out] = values[at + 1]; field[out + 1] = values[at + 5]; field[out + 2] = values[at + 6];
-      field[out + 3] = values[at + 7]; field[out + 4] = values[at + 8]; field[out + 5] = values[at + 9];
+    for (let y = 0; y < side; y++) {
+      for (let x = 0; x < side; x++) {
+        const i = y * side + x, at = i * 10;
+        const x0 = Math.max(0, x - 1), x1 = Math.min(GRID, x + 1), y0 = Math.max(0, y - 1), y1 = Math.min(GRID, y + 1);
+        values[at] = x * step; values[at + 1] = heights[i] - patch.heightOrigin; values[at + 2] = y * step;
+        values[at + 3] = x / GRID; values[at + 4] = y / GRID;
+        values[at + 5] = (heights[y * side + x1] - heights[y * side + x0]) / ((x1 - x0) * step);
+        values[at + 6] = (heights[y1 * side + x] - heights[y0 * side + x]) / ((y1 - y0) * step);
+        parentSample(parent.tile, parentHeights, seam, tile.x + x * step, tile.y + y * step, parentValue);
+        values[at + 7] = parentValue[0] - patch.heightOrigin; values[at + 8] = parentValue[1]; values[at + 9] = parentValue[2];
+        const out = i * 6;
+        field[out] = values[at + 1]; field[out + 1] = values[at + 5]; field[out + 2] = values[at + 6];
+        field[out + 3] = values[at + 7]; field[out + 4] = values[at + 8]; field[out + 5] = values[at + 9];
+      }
+      yield;
     }
     for (let edge = 0; edge < 4; edge++) for (let i = 0; i < side; i++) {
       const from = gridEdgeVertex(edge, i) * 10, to = (count + edge * side + i) * 10;
       for (let k = 0; k < 10; k++) values[to + k] = values[from + k];
       values[to + 1] -= skirt; values[to + 7] -= skirt;
     }
+    // Inputs can change while a row is suspended; never publish a stale mesh.
+    if (patch.heights !== heights || parent.heights !== parentHeights || parent !== patch && parent.seamSnapshot !== seam) return;
+    if (patch.vao) this.releaseMesh(patch);
     this.uploadMesh(patch, values);
+    patch.parentSeam = seam;
     patch.field = field; patch.meshBytes = values.byteLength + field.byteLength;
   }
   private prepareMeshes(): boolean {
     if (!this.root) return false;
-    const queue: Patch[] = [], visit = (node: Node, incomingFull = true): void => {
+    const queue: Patch[] = [], visit = (node: Node, incomingFull = true, parent?: Node): void => {
       // Once children cover a node, its coarse mesh is no longer needed.
       // The LRU may evict it without causing a rebuild on every later frame.
       if (!node.visible) return;
-      if (!node.patch.vao && (!incomingFull || !node.wantsSplit || node.blend < 1 || !node.children?.every(child => this.covered(child)))) queue.push(node.patch);
+      const refreshSeam = parent?.blend === 0 && parent.patch.seamSnapshot && node.patch.parentSeam !== parent.patch.seamSnapshot;
+      if ((!node.patch.vao || refreshSeam) && (!incomingFull || !node.wantsSplit || node.blend < 1 || !node.children?.every(child => this.covered(child)))) queue.push(node.patch);
       // Prepare direct children while a branch opens. Deeper ancestors only
       // become relevant once that incoming morph has reached its exact endpoint.
-      if (incomingFull && node.wantsSplit) node.children?.forEach(child => visit(child, node.blend >= 1));
+      if (incomingFull && node.wantsSplit) node.children?.forEach(child => visit(child, node.blend >= 1, node));
     };
     visit(this.root);
     queue.sort((a, b) => a.tile.level - b.tile.level || Math.hypot(a.tile.x - this.camera.x, a.tile.y - this.camera.y) - Math.hypot(b.tile.x - this.camera.x, b.tile.y - this.camera.y));
@@ -1327,28 +1371,43 @@ export class Terrain3d {
       if (!this.requireHeights || level === 0) return true;
       return patch.hasHeight && (level === 1 || this.patch(level - 1, Math.floor(ix / 2), Math.floor(iy / 2)).hasHeight);
     });
-    const start = performance.now(); let built = 0;
+    const epoch = this.epoch;
     for (const patch of available) {
-      if (built && performance.now() - start > 7) break;
-      this.buildMesh(patch); ++built;
+      if (this.meshJobs.has(patch)) continue;
+      const priority = () => patch.tile.level * 1e9 + Math.hypot(patch.tile.x + patch.tile.width / 2 - this.camera.x, patch.tile.y + patch.tile.width / 2 - this.camera.y);
+      const work = this.preparation.run(this.buildMesh(patch), () => epoch === this.epoch && this.active && !this.disposed && this.patches.get(patch.tile.key) === patch && this.geometryNeeded.includes(patch), priority);
+      this.meshJobs.set(patch, work);
+      void work.catch(error => { if (error?.name !== 'AbortError') console.warn('Terrain mesh preparation:', error); }).finally(() => {
+        if (this.meshJobs.get(patch) === work) this.meshJobs.delete(patch);
+        this.request();
+      });
     }
-    return built < available.length;
+    return available.length > 0;
   }
+
   private loadTiles(): void {
     if (!this.tileLoader || !this.active || this.contextLost()) return;
     const queue = this.requireHeights ? [...new Set([...this.geometryNeeded, ...this.desired])] : this.desired;
     let started = 0;
     for (const patch of queue) {
       if (this.jobs.size >= 2 || started >= (this.options.tileJobsPerFrame ?? 2)) break;
-      if (patch.tile.level === 0 || patch.status !== 'idle') continue;
-      const job = {}, epoch = this.epoch, loader = this.tileLoader;
+      if (patch.tile.level === 0) continue;
+      const preview = (this.useMapShader || !!this.lookSettings.paperMap) && this.frameInteracting && !this.requireHeights;
+      // A moving preview never displaces a completed full tile.
+      if (patch.status === 'ready' && (patch.preview && !preview || this.captureMode && !patch.exact)) patch.status = 'idle';
+      if (patch.status !== 'idle') continue;
+      const job = {}, epoch = this.epoch, loader = this.tileLoader, exact = this.captureMode;
       patch.status = 'loading'; this.jobs.add(job);
       ++started;
       // In its own task: a synchronous tile paint must not hold back the frame that asked for it.
       void new Promise<void>(resolve => setTimeout(resolve)).then(() => {
         if (epoch !== this.epoch || this.disposed) throw new Error('Tuile abandonnée.');
-        return loader({ ...patch.tile });
-      }).then(result => {
+        const far = patch.tile.width * this.frameGeometry().focal / Math.max(this.camera.distance, 1) < 384;
+        const pixels = !exact && (this.useMapShader || this.lookSettings.paperMap) && far && (preview || displayQualityFor(true) === 'light') ? 256 : TILE_PIXELS;
+        return loader({ ...patch.tile, pixels, preview, exact,
+          prepare: work => this.preparation.run(work, () => epoch === this.epoch && !this.disposed && this.patches.get(patch.tile.key) === patch,
+            () => patch.tile.level * 1e9 + Math.hypot(patch.tile.x + patch.tile.width / 2 - this.camera.x, patch.tile.y + patch.tile.width / 2 - this.camera.y)) });
+      }).then(async result => {
         const content = typeof result === 'object' && result !== null && 'texture' in result ? result as Terrain3dTileContent : { texture: result as TexImageSource };
         const source = content.texture;
         if (epoch !== this.epoch || this.disposed || this.contextLost() || this.patches.get(patch.tile.key) !== patch) {
@@ -1358,12 +1417,16 @@ export class Terrain3d {
         if (this.requireHeights && !content.height) throw new Error('Tuile de relief 3D sans grille d’altitude.');
         let deferred = false;
         if (content.height) {
-          const heights = this.decodedGrid(patch.tile, content.height);
+          const heights = await this.preparation.run(this.decodedGrid(patch.tile, content.height), () => epoch === this.epoch && !this.disposed && this.patches.get(patch.tile.key) === patch, patch.tile.level * 1e9);
           const unchanged = patch.hasHeight && patch.heights?.every((value, i) => Math.abs(value - heights[i]) < .0001);
           if (!unchanged) {
             if (patch.heights && this.containsLivePatch(patch)) { patch.pendingHeights = heights; deferred = true; }
             else this.installHeights(patch, heights);
           }
+        }
+        if (epoch !== this.epoch || this.disposed || this.contextLost() || this.patches.get(patch.tile.key) !== patch) {
+          if (typeof ImageBitmap !== 'undefined' && source instanceof ImageBitmap) source.close();
+          return;
         }
         const gutter=Math.max(0,Math.min(8,Math.round(content.gutter??0)));
         const texture = this.uploadTexture(source);
@@ -1372,7 +1435,7 @@ export class Terrain3d {
         if (raised) { this.raisedMaterials.set(texture, this.uploadTexture(raised)); textureBytes += materialBytes(raised); }
         if(content.semantic||content.ground){
           const size=Math.max(content.semantic?materialSize(content.semantic).width:0,content.ground?materialSize(content.ground).width:0);
-          const semanticGutter=gutter*size/(TILE_PIXELS+2*gutter);
+          const semanticGutter=gutter*size/(materialSize(source).width);
           let overlay=content.semantic!;
           if(content.ground){
             // Two independently padded squares reuse one sampler: physical albedo on the left, ink on the right.
@@ -1394,13 +1457,13 @@ export class Terrain3d {
           this.waterMasks.set(texture,{texture:mask,rect:[water.x,water.y,water.width],bytes:water.alpha.byteLength,water});
           textureBytes+=water.alpha.byteLength;
         }
-        if (deferred) { patch.pendingTexture = texture; patch.pendingTextureBytes = textureBytes;patch.pendingTextureGutter=gutter; }
+        if (deferred) { patch.pendingTexture = texture; patch.pendingTextureBytes = textureBytes;patch.pendingTextureGutter=gutter; patch.pendingTexturePixels=materialSize(source).width-2*gutter; }
         else {
           if (patch.texture) this.releaseMaterial(patch.texture);
           patch.texture = texture; patch.textureBytes = textureBytes; patch.textureFadeStart = 0; patch.textureProgress = 0;
-          patch.textureGutter=gutter;
+          patch.textureGutter=gutter; patch.texturePixels=materialSize(source).width-2*gutter;
         }
-        patch.status = 'ready';
+        patch.status = 'ready'; patch.preview = preview; patch.exact = exact;
         if (patch.hasHeight && patch.texture) patch.coherentReady = true;
         if (typeof ImageBitmap !== 'undefined' && source instanceof ImageBitmap) source.close();
       }).catch(error => {
@@ -1423,7 +1486,7 @@ export class Terrain3d {
       if (parent?.texture) {
         parent.used = this.clock; this.protected.add(parent.tile.key);
         const width = parent.tile.width;
-        return { texture: parent.texture, rect: [(tile.x - parent.tile.x) / width, (tile.y - parent.tile.y) / width, tile.width / width, tile.width / width], texel: width / TILE_PIXELS, ready: parent === patch };
+        return { texture: parent.texture, rect: [(tile.x - parent.tile.x) / width, (tile.y - parent.tile.y) / width, tile.width / width, tile.width / width], texel: width / (parent.texturePixels ?? TILE_PIXELS), ready: parent === patch };
       }
       --level; ix = Math.floor(ix / 2); iy = Math.floor(iy / 2);
     }
@@ -1446,7 +1509,7 @@ export class Terrain3d {
       // material. It must never bind that deleted texture when merging later.
       if (!retained) patch.materialParent = undefined;
     }
-    const own: MaterialRef | undefined = patch.texture ? { texture: patch.texture, tile: patch.tile, pixels: TILE_PIXELS,gutter:patch.textureGutter } : undefined;
+    const own: MaterialRef | undefined = patch.texture ? { texture: patch.texture, tile: patch.tile, pixels: patch.texturePixels ?? TILE_PIXELS,gutter:patch.textureGutter } : undefined;
     const progress = patch.textureProgress;
     // Only an ancestor tile is a geometry-morph partner. The whole-map fallback is another medium (no land use, roads or
     // plan inked at tile scale): a node held part-way through its split would show its children as a pale, blurred rectangle.
@@ -1503,7 +1566,8 @@ export class Terrain3d {
       if (!allowed) child.wantsSplit = false;
       this.advanceMorphs(child, allowed && node.blend >= 1 && child.birth >= 1);
     }
-    const childrenReady = !!node.children?.length && node.children.every(child => this.covered(child));
+    const childrenReady = !!node.children?.length && node.children.every(child => this.covered(child)
+      && (!closed || !node.patch.seamSnapshot || child.patch.parentSeam === node.patch.seamSnapshot));
     const raw = clamp((node.error - 2.15) / (3.6 - 2.15), 0, 1);
     let target = allowed && childrenReady && !replacingHeights ? raw * raw * (3 - 2 * raw) : 0;
     const descendantsOpen = node.children?.some(child => child.blend > 0);
@@ -1517,16 +1581,8 @@ export class Terrain3d {
     else {
       node.blend += clamp(target - node.blend, -delta, delta); node.moving = true; this.animating = true;
     }
-    // Opening children must start on the exact parent surface shown in the
-    // preceding frame, including its joined boundary. Refresh them on the frame
-    // they open: hidden, they are not drawn, and the seams move on every frame of
-    // a neighbour's morph; changing their parent endpoint mid-morph would pop.
-    if (allowed && closed && node.blend > 0 && node.patch.seamSnapshot) {
-      for (const child of node.children ?? []) if (child.patch.vao && child.patch.parentSeam !== node.patch.seamSnapshot) {
-        this.releaseMesh(child.patch);
-        this.buildMesh(child.patch);
-      }
-    }
+    // Mesh preparation refreshes the parent endpoint before opening a branch.
+    // Keep its coarse surface visible while those rows are being prepared.
     if (node.blend === 0 && replacingHeights && !descendantsOpen) {
       for (const child of node.children ?? []) if (child.patch.pendingHeights) this.installHeights(child.patch, child.patch.pendingHeights);
       node.ready = false; node.updated = this.now; this.animating = true;
@@ -1664,17 +1720,35 @@ export class Terrain3d {
     this.billboardDirty = true; this.request();
   }
   protected prepareBillboards(): void {
-    if (!this.billboardDirty) return;
-    this.billboardDirty = false;
+    const light = displayQualityFor(!this.fullQualityCapture && !this.captureMode) === 'light' && this.lookSettings.paperMap;
+    const frame = this.frameGeometry(), x = this.camera.x + frame.eye[0], y = this.camera.y + frame.eye[2];
+    const key = light ? `${Math.round(x / 80)}|${Math.round(y / 80)}|light` : 'full';
+    if (!this.billboardDirty && key === this.billboardKey && (!this.fullQualityCapture || this.billboardReadyKey === key)) return;
+    this.billboardDirty = false; this.billboardKey = key;
     const source = this.billboardSource;
-    this.billboardCount = source?.stamps.length ?? 0;
-    const values = new Float32Array(this.billboardCount * 12);
-    if (source) source.stamps.forEach((stamp, i) => {
-      const [u,v,w,h] = stamp.rect, aw = source.atlas.width, ah = source.atlas.height;
-      values.set([stamp.x,stamp.y,this.heightAt(stamp.x,stamp.y)??0,stamp.width,
-        (1+u*aw)/(aw+2),(1+v*ah)/(ah+2),w*aw/(aw+2),h*ah/(ah+2),stamp.height,stamp.flip?-1:1,stamp.opacity,0],i*12);
-    });
-    this.uploadBillboards(values, source?.atlas);
+    const work = function* (view: Terrain3d): Generator<void, Float32Array> {
+      const values: number[] = [];
+      if (source) for (let i = 0; i < source.stamps.length; i++) {
+        if (i % 64 === 0) yield;
+        const stamp = source.stamps[i];
+        if (light && Math.hypot(stamp.x - x, stamp.y - y) > TREE_FAR) continue;
+        const [u,v,w,h] = stamp.rect, aw = source.atlas.width, ah = source.atlas.height;
+        values.push(stamp.x,stamp.y,view.heightAt(stamp.x,stamp.y)??0,stamp.width,
+          (1+u*aw)/(aw+2),(1+v*ah)/(ah+2),w*aw/(aw+2),h*ah/(ah+2),stamp.height,stamp.flip?-1:1,stamp.opacity,0);
+      }
+      return new Float32Array(values);
+    }(this);
+    const install = (values: Float32Array): void => {
+      this.billboardCount = values.length / 12; this.billboardReadyKey = key;
+      this.uploadBillboards(values, source?.atlas);
+    };
+    if (this.fullQualityCapture) {
+      let step = work.next(); while (!step.done) step = work.next(); install(step.value); return;
+    }
+    const epoch = this.epoch;
+    void this.preparation.run(work, () => !this.captureMode && !this.disposed && epoch === this.epoch && this.billboardKey === key && this.billboardSource === source, 1e14)
+      .then(values => { install(values); this.request(); })
+      .catch(error => { if (error?.name !== 'AbortError') console.warn('Terrain billboard preparation:', error); });
   }
   protected uploadBillboards(values: Float32Array, atlas?: HTMLCanvasElement): void {
     const gl = this.gl;
@@ -1694,7 +1768,7 @@ export class Terrain3d {
   /** Inputs of the satellite near trees, or undefined when the view paints its forest only. */
   private treeInputs(): TreeInputs | undefined {
     const g = this.groundSettings, field = this.forestField;
-    if (!g || !field || this.useMapShader || !((g.renderV2 ?? 0) > 0) || g.forestBrushes || g.paperMap) return undefined;
+    if (!g || !field || this.useMapShader || !((g.renderV2 ?? 0) > 0) || g.forestBrushes) return undefined;   // satellite-2 (paperMap) shares the satellite near trees
     return { field, occupation: this.occupation?.data, seed: g.seed >>> 0, climate: g.climate, renderV2: g.renderV2 ?? 0,
       zone: renderV2ZoneUniform(g.climateZone), season: g.v2Season ?? .5, height: (x, y) => this.heightAt(x, y), water: (x, y) => this.waterAt(x, y) };
   }
@@ -1712,17 +1786,27 @@ export class Terrain3d {
   /** Rebuilds the near-tree instances once the eye has moved about 40 m or turned, or the inputs changed. */
   protected prepareTrees(frame: FrameGeometry): void {
     const inputs = this.treeInputs(), c = this.camera;
-    if (!inputs) { if (this.treeCount) { this.treeCount = 0; this.treeKey = ''; } return; }
+    if (!inputs) { this.treeCount = 0; this.treeKey = ''; return; }
     const x = c.x + frame.eye[0], y = c.y + frame.eye[2], fl = Math.hypot(frame.forward[0], frame.forward[2]) || 1;
     const lift = (frame.targetHeight + frame.eye[1]) / c.exaggeration - (this.heightAt(x, y) ?? 0);
-    const key = lift > TREE_FAR ? 'high' : [Math.round(x / 40), Math.round(y / 40), Math.round(c.yaw / .25), inputs.field.key, inputs.occupation?.key, this.waterMasks.size, inputs.season, inputs.seed].join('|');
-    if (key === this.treeKey) return;
+    const key = lift > TREE_FAR ? 'high' : [Math.round(x / 40), Math.round(y / 40), Math.round(c.yaw / .25), inputs.field.key, inputs.occupation?.key, this.waterMasks.size, this.surfaceRevision, inputs.season, inputs.seed].join('|');
+    if (key === this.treeKey && (!this.fullQualityCapture || this.treeReadyKey === key)) return;
     this.treeKey = key;
-    const values = key === 'high' ? new Float32Array(0) : buildNearTrees(inputs, { x, y, forwardX: frame.forward[0] / fl, forwardY: frame.forward[2] / fl });
-    this.treeCount = values.length / TREE_STRIDE;
-    (globalThis as { magnaNearTrees?: number }).magnaNearTrees = this.treeCount;
-    if (this.treeCount) this.uploadTrees(values);
+    if (key === 'high') { this.treeCount = 0; this.treeReadyKey = key; return; }
+    const view = { x, y, forwardX: frame.forward[0] / fl, forwardY: frame.forward[2] / fl };
+    const install = (values: Float32Array): void => {
+      this.treeCount = values.length / TREE_STRIDE; this.treeReadyKey = key;
+      (globalThis as { magnaNearTrees?: number }).magnaNearTrees = this.treeCount;
+      if (this.treeCount) this.uploadTrees(values);
+    };
+    // Capture uses the exact stream immediately, independent of a live queue's progress.
+    if (this.fullQualityCapture) { install(buildNearTrees(inputs, view)); return; }
+    const epoch = this.epoch;
+    void this.preparation.run(buildNearTreesSteps(inputs, view), () => !this.captureMode && !this.disposed && epoch === this.epoch && this.treeKey === key, 1e15)
+      .then(values => { install(values); this.request(); })
+      .catch(error => { if (error?.name !== 'AbortError') console.warn('Terrain tree preparation:', error); });
   }
+
   protected uploadTrees(values: Float32Array): void {
     const gl = this.gl;
     this.treeProgram ??= program(gl, TREE_3D_GLSL.vertex, TREE_3D_GLSL.fragment);
@@ -1761,7 +1845,11 @@ export class Terrain3d {
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,this.billboardAtlas.texture); gl.uniform1i(this.uniform('billboardAtlas',p),0);
     gl.drawArraysInstanced(gl.TRIANGLES,0,6,this.billboardCount); gl.disable(gl.SAMPLE_ALPHA_TO_COVERAGE); gl.bindVertexArray(null);
   }
-  setCamera(camera: Terrain3dCamera): void { this.stopWalking(); this.camera = { ...camera }; this.limitCamera(); this.request(); }
+  setCamera(camera: Terrain3dCamera): void {
+    this.stopWalking(); this.camera = { ...camera }; this.limitCamera();
+    if (this.active) this.cameraMoving();
+    this.request();
+  }
   getCamera(): Terrain3dCamera { return { ...this.camera }; }
   setNavigation(navigation: 'orbit' | 'walk'): void {
     if (!this.options.navigation || (this.camera.navigation ?? 'orbit') === navigation) return;
@@ -1775,37 +1863,52 @@ export class Terrain3d {
     }
     this.changed();
   }
+  /** Refine live previews through the original whole-tile painter before encoding. */
+  private async prepareCapture(): Promise<void> {
+    this.captureMode = true;
+    try {
+      do {
+        this.draw(true);
+        if (!this.active || this.disposed || this.contextLost()) throw new DOMException('Capture cancelled', 'AbortError');
+        if (!this.jobs.size && !this.preparation.pending && !this.meshJobs.size && !this.animating) return;
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+      } while (true);
+    } catch (error) { this.captureMode = false; throw error; }
+  }
   /** Draw and read in the same task: no permanent drawing-buffer retention. */
-  capture(): Promise<Blob> {
+  async capture(): Promise<Blob> {
     if (!this.active || !this.layer || this.contextLost()) return Promise.reject(new Error('Ouvrez la vue 3D avant de la capturer.'));
-    this.draw();
-    return new Promise((resolve, reject) => this.canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Capture 3D indisponible.')), 'image/png'));
+    await this.prepareCapture();
+    try { return await new Promise<Blob>((resolve, reject) => this.canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Capture 3D indisponible.')), 'image/png')); }
+    finally { this.captureMode = false; this.request(); }
   }
   async captureIllustration(): Promise<{ image: Blob; depth: Blob; camera: Terrain3dCamera }> {
     if (!this.active || !this.layer || this.contextLost()) throw new Error('Ouvrez la vue 3D avant de la capturer.');
-    this.draw();
-    const camera = this.getCamera(), geometry = this.frameGeometry();
-    camera.heightAboveTargetMetres = geometry.eye[1];
-    camera.viewAngleDegrees = Math.atan2(-geometry.forward[1], Math.hypot(geometry.forward[0], geometry.forward[2])) * 180 / Math.PI;
-    // Map north is decreasing world y; yaw=0 puts the eye south of the target.
-    camera.azimuthDegrees = ((-camera.yaw * 180 / Math.PI) % 360 + 360) % 360;
-    camera.verticalFovDegrees = FOV * 180 / Math.PI;
-    if (camera.exaggeration === 1) camera.altitudeMetres = geometry.targetHeight + geometry.eye[1];
-    const far = Math.max(camera.distance * 4, this.layer.width * 2 + this.heightRange * camera.exaggeration * 2);
-    const frame = await this.captureFrame(Math.max(.02, camera.distance * .0002), far);
-    this.request();
-    const encode = (canvas: HTMLCanvasElement): Promise<Blob> => new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Capture 3D indisponible.')), 'image/png'));
-    const [image, depth] = await Promise.all([encode(frame.color), encode(frame.depth)]);
-    return { image, depth, camera };
+    await this.prepareCapture();
+    try {
+      const camera = this.getCamera(), geometry = this.frameGeometry();
+      camera.heightAboveTargetMetres = geometry.eye[1];
+      camera.viewAngleDegrees = Math.atan2(-geometry.forward[1], Math.hypot(geometry.forward[0], geometry.forward[2])) * 180 / Math.PI;
+      // Map north is decreasing world y; yaw=0 puts the eye south of the target.
+      camera.azimuthDegrees = ((-camera.yaw * 180 / Math.PI) % 360 + 360) % 360;
+      camera.verticalFovDegrees = FOV * 180 / Math.PI;
+      if (camera.exaggeration === 1) camera.altitudeMetres = geometry.targetHeight + geometry.eye[1];
+      const far = Math.max(camera.distance * 4, this.layer.width * 2 + this.heightRange * camera.exaggeration * 2);
+      const frame = await this.captureFrame(Math.max(.02, camera.distance * .0002), far);
+      this.request();
+      const encode = (canvas: HTMLCanvasElement): Promise<Blob> => new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Capture 3D indisponible.')), 'image/png'));
+      const [image, depth] = await Promise.all([encode(frame.color), encode(frame.depth)]);
+      return { image, depth, camera };
+    } finally { this.captureMode = false; this.request(); }
   }
   /** Colour and normalized inverse depth of the frame just drawn (illustrationDepth.ts). */
   protected captureFrame(near: number, far: number): Promise<{ color: HTMLCanvasElement; depth: HTMLCanvasElement }> {
-    return Promise.resolve(captureWebGlFrame(this.gl, near, far));
+    return Promise.resolve(captureWebGlFrame(this.gl, near, far, this.msaa?.framebuffer));
   }
   setActive(active: boolean): void {
     this.active = active;
     if (active) this.request();
-    else { this.stopWalking(); cancelAnimationFrame(this.frame); this.frame = 0; this.pointers.clear(); this.gesture = undefined; this.element.classList.remove('drag'); }
+    else { this.stopWalking(); cancelAnimationFrame(this.frame); this.frame = 0; clearTimeout(this.settleTimer); this.cameraMovedAt = -Infinity; this.pointers.clear(); this.gesture = undefined; this.element.classList.remove('drag'); }
   }
   resize(width: number, height: number): void {
     this.width = Math.max(1, width); this.height = Math.max(1, height); this.limitCamera(); this.request();
@@ -1818,13 +1921,34 @@ export class Terrain3d {
       distance: Math.max(span, this.heightRange * this.camera.exaggeration) / (2 * Math.tan(FOV / 2)) * Math.max(1, this.height / this.width) * 1.18, yaw: 0, pitch: .88 };
     this.changed();
   }
-  zoom(factor: number): void {
+  /** Zooms the orbit distance. With a cursor position (CSS pixels in the canvas) the ground point under the
+   * cursor stays under it: the orbit target slides toward that point in proportion to the distance change. */
+  zoom(factor: number, cursorX?: number, cursorY?: number): void {
     if (!Number.isFinite(factor) || factor <= 0) return;
     if (this.camera.navigation === 'walk') return;
-    this.camera.distance /= factor ** this.navigationScale(); this.changed();
+    const before = this.camera.distance, anchor = cursorX === undefined || cursorY === undefined ? null : this.cursorGround(cursorX, cursorY);
+    this.camera.distance = before / factor ** this.navigationScale();
+    this.limitCamera();
+    if (anchor) {
+      const k = this.camera.distance / before, c = this.camera;
+      c.x = anchor[0] + (c.x - anchor[0]) * k; c.y = anchor[1] + (c.y - anchor[1]) * k;
+    }
+    this.changed();
+  }
+  /** Ground point under a canvas pixel: the terrain hit, else the horizontal plane through the orbit target. */
+  private cursorGround(x: number, y: number): [number, number] | null {
+    const hit = this.screenToWorld(x, y); if (hit) return hit;
+    if (!this.layer || !this.active) return null;
+    const frame = this.frameGeometry(), c = this.camera;
+    const u = (x - this.width / 2) / frame.focal, v = (this.height / 2 - y) / frame.focal;
+    const dy = frame.forward[1] + u * frame.right[1] + v * frame.up[1];
+    if (dy >= -1e-4) return null;
+    const t = -frame.eye[1] / dy; if (!(t > 0)) return null;
+    return [c.x + frame.eye[0] + (frame.forward[0] + u * frame.right[0] + v * frame.up[0]) * t, c.y + frame.eye[2] + (frame.forward[2] + u * frame.right[2] + v * frame.up[2]) * t];
   }
   north(): void { this.camera.yaw = 0; this.changed(); }
-  private dpr(): number { return terrain3dPixelRatio(this.width, this.height, window.devicePixelRatio || 1, this.maxFramebufferDimension); }
+  private interacting(): boolean { return !this.fullQualityCapture && !this.captureMode && performance.now() - this.cameraMovedAt < TERRAIN_3D_SETTLE_MS; }
+  private dpr(): number { return terrain3dPixelRatio(this.width, this.height, window.devicePixelRatio || 1, this.maxFramebufferDimension, this.interacting()); }
   private maxScale(): number { return this.groundSettings ? TERRAIN_GROUND_MAX_SCALE : TERRAIN_3D_MAX_SCALE; }
   private limitCamera(): void {
     const width = this.layer?.width ?? 1000, c = this.camera;
@@ -1837,13 +1961,28 @@ export class Terrain3d {
     c.yaw = Number.isFinite(c.yaw) ? ((c.yaw + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI : 0;
     c.exaggeration = clamp(Number.isFinite(c.exaggeration) ? c.exaggeration : 1, 1, 5);
   }
-  private changed(): void { this.limitCamera(); this.request(); this.onChange(); }
+  private cameraMoving(): void {
+    this.cameraMovedAt = performance.now();
+    clearTimeout(this.settleTimer);
+    this.settleTimer = setTimeout(() => this.request(), TERRAIN_3D_SETTLE_MS + 1);
+  }
+  private changed(): void {
+    this.cameraMoving();
+    this.limitCamera(); this.request(); this.onChange();
+  }
   protected request(): void {
     if (!this.active || this.frame || this.disposed || this.contextLost()) return;
     this.frame = requestAnimationFrame(() => { this.frame = 0; this.draw(); });
   }
-  private draw(): void {
+  private draw(fullQuality = false): void {
     if (!this.layer || !this.active || this.contextLost()) return;
+    this.fullQualityCapture = fullQuality;
+    try { this.drawFrame(); } finally { this.fullQualityCapture = false; }
+  }
+  private drawFrame(): void {
+    if (!this.layer) return;
+    this.frameQuality = displayQualityUniform(!this.fullQualityCapture);
+    this.frameInteracting = this.interacting();
     const dpr = this.dpr(), w = Math.max(1, Math.floor(this.width * dpr)), h = Math.max(1, Math.floor(this.height * dpr));
     if (this.canvas.width !== w || this.canvas.height !== h) { this.canvas.width = w; this.canvas.height = h; }
     this.now = performance.now(); this.animating = false;
@@ -1857,7 +1996,7 @@ export class Terrain3d {
       const previous = this.displayedPieces[i];
       return !previous.releasing && piece.key === previous.source.key && sameSurface(previous.source, piece);
     });
-    if (!unchanged) this.displayedPieces = stitchTerrainPieces(pieces, this.displayedPieces, this.now - this.stitchUpdated, { same: sameSurface, tail: SKIRT_FLOATS });
+    if (!unchanged) { this.displayedPieces = stitchTerrainPieces(pieces, this.displayedPieces, this.now - this.stitchUpdated, { same: sameSurface, tail: SKIRT_FLOATS }); ++this.surfaceRevision; }
     this.stitchUpdated = this.now;
     this.animating ||= this.displayedPieces.some(piece => piece.releasing);
     for (const stitched of this.displayedPieces) {
@@ -1887,6 +2026,8 @@ export class Terrain3d {
   /** Sky, terrain patches and buildings of one frame; returns whether buildings are still preparing. */
   protected renderFrame(frame: FrameGeometry, w: number, h: number, draws: PatchDraw[]): boolean {
     const gl = this.gl, layer = this.layer!;
+    const target = this.frameInteracting || this.frameQuality > 0 ? undefined : this.msaaTarget(w, h);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target?.framebuffer ?? null);
     this.prepareBillboards(); this.prepareTrees(frame); const raisedBlend = this.raisedBlend(frame);
     gl.viewport(0, 0, w, h); gl.clearDepth(1); gl.clear(gl.DEPTH_BUFFER_BIT);
     gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE); gl.bindVertexArray(null);
@@ -1894,12 +2035,14 @@ export class Terrain3d {
     gl.useProgram(this.skyProgram); gl.uniform1f(this.uniform('height', this.skyProgram), h); gl.uniform1i(this.uniform('uNight',this.skyProgram),+night); gl.drawArrays(gl.TRIANGLES, 0, 3);
     this.terrainProgram = this.useMapShader ? this.mapProgram! : this.groundShader(this.groundSettings);
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.useProgram(this.terrainProgram);
+    gl.uniform1i(this.uniform('uQuality'), this.frameQuality);
     gl.uniformMatrix4fv(this.uniform('matrix'), false, frame.matrix);
     gl.uniform1f(this.uniform('exaggeration'), this.camera.exaggeration);
     gl.uniform1f(this.uniform('raisedBlend'),raisedBlend);
     gl.uniform3fv(this.uniform('eye'), frame.eye);
     gl.uniform1f(this.uniform('fogDistance'), Math.max(this.camera.distance * 2, 100));
     const settings=this.groundSettings;
+    gl.uniform2fv(this.uniform('uWaterSeason'), waterSeasonUniforms(settings?.v2Season, settings?.climateZone, settings?.v2Calendar));
     const canopy=settings??this.forestSettings;
     gl.uniform1i(this.uniform('groundEnabled'),settings?1:0);
     gl.uniform1i(this.uniform('proceduralPreview'),settings?1:0);
@@ -1946,7 +2089,38 @@ export class Terrain3d {
     for (const draw of draws) this.renderPatch(draw, frame);
     gl.bindVertexArray(null);
     const pending = this.buildings.draw(this.buildingFrame(frame));
-    this.drawTrees(frame); this.drawBillboards(frame,raisedBlend); return pending;
+    this.drawTrees(frame); this.drawBillboards(frame,raisedBlend);
+    if (target) {
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, target.framebuffer);
+      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+      gl.blitFramebuffer(0, 0, w, h, 0, 0, w, h, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
+    return pending;
+  }
+  private releaseMsaa(): void {
+    if (!this.msaa) return;
+    const gl = this.gl;
+    gl.deleteFramebuffer(this.msaa.framebuffer); gl.deleteRenderbuffer(this.msaa.color); gl.deleteRenderbuffer(this.msaa.depth);
+    this.msaa = undefined;
+  }
+  private msaaTarget(width: number, height: number): NonNullable<Terrain3d['msaa']> | undefined {
+    if (this.msaa?.width === width && this.msaa.height === height) return this.msaa;
+    this.releaseMsaa();
+    const gl = this.gl;
+    const colorSamples = gl.getInternalformatParameter(gl.RENDERBUFFER, gl.RGBA8, gl.SAMPLES) as Int32Array;
+    const depthSamples = gl.getInternalformatParameter(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, gl.SAMPLES) as Int32Array;
+    const samples = [...colorSamples].find(n => n <= 4 && n > 1 && depthSamples.includes(n));
+    if (!samples) return undefined;
+    const framebuffer = gl.createFramebuffer()!, color = gl.createRenderbuffer()!, depth = gl.createRenderbuffer()!;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+    for (const [buffer, format, attachment] of [[color, gl.RGBA8, gl.COLOR_ATTACHMENT0], [depth, gl.DEPTH_COMPONENT24, gl.DEPTH_ATTACHMENT]] as const) {
+      gl.bindRenderbuffer(gl.RENDERBUFFER, buffer); gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, format, width, height);
+      gl.framebufferRenderbuffer(gl.FRAMEBUFFER, attachment, gl.RENDERBUFFER, buffer);
+    }
+    this.msaa = { width, height, framebuffer, color, depth };
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) { this.releaseMsaa(); gl.bindFramebuffer(gl.FRAMEBUFFER, null); return undefined; }
+    return this.msaa;
   }
   protected buildingFrame(frame: FrameGeometry): BuildingFrame {
     return { matrix: frame.matrix, cameraX: this.camera.x, cameraY: this.camera.y, targetHeight: frame.targetHeight,
@@ -2045,7 +2219,7 @@ export class Terrain3d {
       event.preventDefault(); event.stopPropagation();
       const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? this.height : 1);
       if (this.camera.navigation === 'walk') { this.walk(-clamp(delta, -200, 200) / 100, 0, .25, event.shiftKey); this.changed(); }
-      else this.zoom(Math.exp(-clamp(delta, -1000, 1000) * .0015));
+      else { const rect = canvas.getBoundingClientRect(); this.zoom(Math.exp(-clamp(delta, -1000, 1000) * .0015), event.clientX - rect.left, event.clientY - rect.top); }
     }, { passive: false, signal });
     canvas.addEventListener('dblclick', event => {
       if (!this.active) return; event.preventDefault(); event.stopPropagation(); this.zoom(event.shiftKey ? .5 : 2);
@@ -2104,12 +2278,15 @@ export class Terrain3d {
   isSettled(): boolean {
     const lod = this.getLodInfo();
     return !!this.layer && lod.tiles > 0 && lod.pending === 0 && lod.ready === lod.tiles
+      && !this.frameInteracting
       && !this.billboardDirty && this.billboardsReady()
       && (this.useMapShader || this.status.groundVariant !== 'pending');
   }
   get isActive(): boolean { return this.active; }
 
   dispose(): void {
+    clearTimeout(this.settleTimer);
+    this.unlistenQuality?.();
     this.disposed = true; this.active = false; this.stopWalking(); cancelAnimationFrame(this.frame); this.events.abort(); this.clearPatches();
     this.buildings.dispose(); this.buildingScene = undefined;
     this.buildingGround = new UrbanBuildingGround(); this.mergedOccupation = this.mergedOccupationSource = undefined; this.mergedOccupationScene = undefined;
@@ -2121,6 +2298,7 @@ export class Terrain3d {
   /** Releases the backend's own objects (patches and buildings are already released). */
   protected disposeBackend(): void {
     const gl = this.gl;
+    this.releaseMsaa();
     if (this.billboardProgram) gl.deleteProgram(this.billboardProgram); if (this.billboardVao) gl.deleteVertexArray(this.billboardVao); if (this.billboardBuffer) gl.deleteBuffer(this.billboardBuffer); if (this.billboardAtlas) gl.deleteTexture(this.billboardAtlas.texture);
     for (const texture of this.raisedMaterials.values()) this.deleteTexture(texture); this.raisedMaterials.clear();
     gl.deleteBuffer(this.indices); gl.deleteBuffer(this.seams); gl.deleteTexture(this.material);gl.deleteTexture(this.macroTexture); gl.deleteTexture(this.empty);if(this.shoreRing)gl.deleteTexture(this.shoreRing.texture);

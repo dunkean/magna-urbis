@@ -144,7 +144,7 @@ function nativeLayoutConfig(config: LayoutConfig) {
     if (input[key] == null) delete input[key];
   for (const key of ['riverControlMode', 'portEnclosure', 'plannedWall', 'heightsCastle', 'wallExtension'] as const)
     if (!input[key]) delete input[key];
-  for (const key of ['roadWidthBySize', 'townMainRoad', 'polishRoadEnds', 'lowRuralHouses'] as const)
+  for (const key of ['roadWidthBySize', 'townMainRoad', 'polishRoadEnds', 'lowRuralHouses', 'riverSpurFilter', 'harbourBridgeClearance', 'wallGatePolicy', 'smallRoadLoops', 'isolatedAccess'] as const)
     if (input[key] === true || input[key] === undefined) delete input[key];
   if (input.campGrowth === 'ring' || !input.campGrowth) delete input.campGrowth;
   if (!input.parallelMerge) delete input.parallelMerge;

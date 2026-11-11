@@ -5,8 +5,7 @@
  * the callback paints everything with drawCity as before. */
 import { clearCanvas2d, type Box } from './cityCanvas';
 import { createCityGlRenderer, type CityGlDrawOptions, type CityGlFrame, type CityGlRenderer } from './cityGl';
-/** `?cityGl=software`: accept a software WebGL2 (headless SwiftShader checks of the GPU look). */
-const SOFTWARE_CHECKS = typeof location !== 'undefined' && new URLSearchParams(location.search).get('cityGl') === 'software';
+import { CITY_GL_SOFTWARE } from './cityGlView';
 
 export interface CityGlHostFrame {
   viewport: Box; mpp: number; dpr: number;
@@ -30,7 +29,7 @@ export class CityGlCanvasLayer {
     for (const c of [this.glCanvas, this.canvas]) { c.style.display = 'block'; c.style.pointerEvents = 'none'; c.style.position = 'absolute'; c.style.left = c.style.top = '0'; stack.append(c); }
     this.glCanvas.style.visibility = 'hidden';
     this.host.append(stack); this.attach(parent);
-    try { this.gl = createCityGlRenderer(this.glCanvas, { allowSoftware: SOFTWARE_CHECKS, onInvalidate: () => { this.glCanvas.style.visibility = 'hidden'; this.request(); } }); }
+    try { this.gl = createCityGlRenderer(this.glCanvas, { allowSoftware: CITY_GL_SOFTWARE, onInvalidate: () => { this.glCanvas.style.visibility = 'hidden'; this.request(); } }); }
     catch (error) { console.warn('Rendu WebGL2 de la ville indisponible, Canvas 2D utilisé', error); this.glCanvas.remove(); }
   }
   attach(parent: Element): void { if (this.host.parentNode !== parent) parent.append(this.host); }

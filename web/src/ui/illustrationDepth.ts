@@ -1,5 +1,5 @@
 /** Read the just-rendered frame, including buildings, without preserving its drawing buffer. */
-export function captureWebGlFrame(gl: WebGL2RenderingContext, near: number, far: number): { color: HTMLCanvasElement; depth: HTMLCanvasElement } {
+export function captureWebGlFrame(gl: WebGL2RenderingContext, near: number, far: number, depthSource: WebGLFramebuffer | null = null): { color: HTMLCanvasElement; depth: HTMLCanvasElement } {
   const width = gl.drawingBufferWidth, height = gl.drawingBufferHeight;
   const pixels = (): Uint8Array => {
     const values = new Uint8Array(width * height * 4); gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, values); return values;
@@ -33,7 +33,7 @@ export function captureWebGlFrame(gl: WebGL2RenderingContext, near: number, far:
       gl.bindFramebuffer(gl.FRAMEBUFFER, depthFrame); gl.framebufferTexture2D(gl.DRAW_FRAMEBUFFER, attachment, gl.TEXTURE_2D, candidate, 0);
       gl.drawBuffers([gl.NONE]); gl.readBuffer(gl.NONE);
       if (gl.checkFramebufferStatus(gl.DRAW_FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) continue;
-      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null); gl.readBuffer(gl.BACK);
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, depthSource); gl.readBuffer(depthSource ? gl.COLOR_ATTACHMENT0 : gl.BACK);
       gl.blitFramebuffer(0, 0, width, height, 0, 0, width, height, gl.DEPTH_BUFFER_BIT, gl.NEAREST);
       if (gl.getError() === gl.NO_ERROR) { depth = candidate; break; }
     }

@@ -20,6 +20,14 @@ use super::super::{Parcel, Point, Shape, Surface};
 pub(super) const CLEARANCE: f64 = 0.6;
 /// Houses' foundation limit sent with every request (`max_foundation_step_m`).
 pub(super) const MAX_FOUNDATION_STEP: f64 = 0.75;
+/// Highest stepped plinth a slope-relaxed town builds (`foundation_step`), m.
+const MAX_TERRACED_STEP: f64 = 6.0;
+/// Foundation step of a town whose house slope gates were relaxed by
+/// `relax` (`ProgrammeContext::slope_relax`): the houses' limit widened like
+/// the slope limit, up to a stepped plinth of `MAX_TERRACED_STEP`.
+pub(super) fn foundation_step(relax: f64) -> f64 {
+    super::super::profiles::relaxed(MAX_FOUNDATION_STEP, relax).min(MAX_TERRACED_STEP)
+}
 
 /// One supported native recipe/variant witness.
 pub(super) struct Witness {

@@ -338,18 +338,19 @@ fn lot_deficit(
     lot: &super::Shape,
     dirs: &[super::Point],
     gradient: [f64; 2],
+    step: f64,
 ) -> Option<&'static str> {
     if drawable.is_empty() || dirs.is_empty() || !drawable.iter().all(|w| w.ground) {
         return None;
     }
-    let limit = feasibility::MAX_FOUNDATION_STEP + 0.02;
+    let limit = step + 0.02;
     // Round 6 only proved lots whose centre gradient was visibly steep.
     let narrow = drawable
         .iter()
         .filter_map(|w| w.nominal)
         .map(|n| n[0].min(n[1]))
         .fold(f64::INFINITY, f64::min);
-    if !round7() && gradient[0].hypot(gradient[1]) * narrow <= feasibility::MAX_FOUNDATION_STEP {
+    if !round7() && gradient[0].hypot(gradient[1]) * narrow <= step {
         return drawable
             .iter()
             .all(|w| {
@@ -1244,8 +1245,11 @@ impl BuildingSiteIndex {
         } else {
             Vec::new()
         };
+        // A town relaxed onto a slope (`ProgrammeContext::slope_relax`) stands
+        // on stepped plinths: its foundation step widens with the house slope.
+        let foundation_step = feasibility::foundation_step(pr.context.slope_relax);
         let deficit = if source_gap.is_some() { Some("source_absente") }
-            else { lot_deficit(&drawable, surface, &parcel.shape, &dirs, gradient) };
+            else { lot_deficit(&drawable, surface, &parcel.shape, &dirs, gradient, foundation_step) };
         if let Some(cause) = deficit {
             programme["deficit"] = json!({"cause":cause,"households":allocation.households.max(0.0),
                 "message":deficit_message(cause)});
@@ -1373,7 +1377,7 @@ impl BuildingSiteIndex {
             "culture":{"culture":building_culture,"pack":culture.architecture_pack,"mode":mode,
                 "borrowing":if culture.borrowing.is_empty(){None}else{Some(&culture.borrowing)}},
             "function":function,"seed":site_seed,"config":config,
-            "terrain":{"grid":grid,"origin":center,"ground_z_m":ground,"gradient":gradient,"water_z_m":water,"max_foundation_step_m":0.75}});
+            "terrain":{"grid":grid,"origin":center,"ground_z_m":ground,"gradient":gradient,"water_z_m":water,"max_foundation_step_m":foundation_step}});
         if !candidates.is_empty() {
             request[if probe {
                 "native_minimum_probe"
@@ -2426,6 +2430,9 @@ pub(super) fn previewed_parcels(
 /// `previewed_parcels` asked lot by lot, each site previewed at most once.
 /// Construction runs the failing part of every site (mappings, retained
 /// references), so it fails exactly when `previewed_parcels` would.
+/// `trim::finish` now previews every site up front (`previewed_parcels`);
+/// the lazy form stays as the reference its test compares against.
+#[cfg_attr(not(test), allow(dead_code))]
 pub(super) struct SitePreviews<'a> {
     index: &'a BuildingSiteIndex,
     seed: &'a str,
@@ -2435,6 +2442,7 @@ pub(super) struct SitePreviews<'a> {
     by_parcel: HashMap<&'a str, Vec<usize>>,
     memo: std::cell::RefCell<HashMap<usize, bool>>,
 }
+#[cfg_attr(not(test), allow(dead_code))]
 impl<'a> SitePreviews<'a> {
     pub(super) fn new(index: &'a BuildingSiteIndex, seed: &'a str, layouts: &'a [Layout], partitions: &'a [Partition]) -> Result<Self, String> {
         let topology = preview_topology_enabled();

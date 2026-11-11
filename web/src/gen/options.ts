@@ -48,9 +48,52 @@ export interface SitePrefs {
 }
 /** Culture preset id (URBAN_MORPHOLOGY.md §3; registry in urban/cultures.ts). */
 export type Culture = string;
-export const CULTURES: Culture[] = CULTURE_IDS;
+/** English labels of the cultures the Rust engine supports but the legacy TS registry does not define. */
+const RUST_CULTURE_LABELS: Record<string, string> = {
+  'egyptian-planned': 'Egypt · planned Nile city',
+  'nubian-fortified': 'Nubia · fortified town',
+  mesopotamian: 'Mesopotamia · courtyard quarters',
+  'levantine-tell': 'Levant · fortified tell town',
+  'oasis-caravan': 'Central Asia · caravan oasis city',
+  'ksar-oasis': 'Maghreb · oasis ksar',
+  yoruba: 'Yoruba · compound town',
+  'himalayan-terraces': 'Tibet and Ladakh · terraced settlement',
+  newar: 'Newar Nepal · town of ritual squares',
+  'indus-planned': 'Indus · Harappan city',
+  'javanese-courts': 'Java · town of courts and enclosures',
+  mississippian: 'Mississippian · palisaded plaza centre',
+  'al-andalus': 'Al-Andalus · Iberian patio medina',
+  'italian-comune': 'Italy · comune with piazza and towers',
+  'flemish-cloth-town': 'Flanders · cloth town with belfry',
+  'rynek-town': 'Central Europe · rynek town',
+  'slavic-gord': 'Slavs · palisaded gord and podgrodzie',
+  'caucasian-highland': 'Caucasus · Georgian and Armenian fortified town',
+  'ethiopian-highland': 'Ethiopia · highland city (Aksum, Lalibela)',
+  'great-zimbabwe': 'Zimbabwe · dry-stone enclosures',
+  'hausa-kano': 'Hausa · earth-walled city-state (Kano)',
+  'hadhrami-tower': 'Hadramawt · vertical city of tower houses (Shibam)',
+  'rajput-fort': 'Rajputana · town below the fort (Jaisalmer, Amber)',
+  'dravidian-temple': 'South India · temple town with concentric streets (Madurai)',
+  bagan: 'Burma · royal city of Pagan',
+  'vietnamese-citadel': 'Viet · citadel and merchant quarter (Thang Long)',
+  'tibetan-monastery': 'Tibet · hillside monastic town',
+  'mongol-ordu': 'Mongols · ordu, princely yurt camp',
+  'maori-pa': 'Maori · terraced fortified pa',
+  'pnw-plank-village': 'Northwest Coast · plank house village',
+  'inuit-camp': 'Arctic · Inuit winter camp',
+  'siberian-camp': 'Siberia · reindeer herders chum camp',
+  'guarani-village': 'Guarani · great house village (tekoha)',
+  'budj-bim': 'Australia · Budj Bim stone village',
+  'lizardfolk-swamp': 'Lizardfolk · stilted lake city',
+  'merfolk-tidal': 'Merfolk · tidal shore and sea-cave village',
+  'giant-hold': 'Giants · megalithic hold',
+  'goblin-warren': 'Goblins · hillside warren',
+};
+/** Every culture the engine supports: the legacy TS registry plus the Rust-only cultures above
+ *  (rust/crates/core/src/urban/catalogue.json is 2.7 MB, too heavy to bundle for its ids). */
+export const CULTURES: Culture[] = [...CULTURE_IDS, ...Object.keys(RUST_CULTURE_LABELS).filter((id) => !CULTURE_IDS.includes(id))];
 /** [id, label] pairs for selectors. */
-export const CULTURE_LABELS: [string, string][] = CULTURE_IDS.map((id) => [id, CULTURE_REGISTRY[id].label]);
+export const CULTURE_LABELS: [string, string][] = CULTURES.map((id) => [id, CULTURE_REGISTRY[id]?.label ?? RUST_CULTURE_LABELS[id] ?? id]);
 export type { CultureMix, PlanOverride };
 
 export interface Options {

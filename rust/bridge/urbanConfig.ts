@@ -109,6 +109,8 @@ export interface LayoutConfig extends Omit<ParcelConfig, 'operator' | 'zoneOpera
   powerHighGround: boolean; mergeParallelStreets: boolean; parallelMerge: number; regularGridOutline: boolean;
   /** Roads round of 2026-10-31, each on by default: widths by settlement size, regional = main street in the built land, end polish, low rural houses. */
   roadWidthBySize: boolean; townMainRoad: boolean; polishRoadEnds: boolean; lowRuralHouses: boolean; /** Share (0..1) of village, hamlet and faubourg homes keeping their outbuildings (farms included). */ outbuildings: number;
+  /** Road invariants, default on in Rust and shared by every city consumer. */
+  riverSpurFilter?: boolean; harbourBridgeClearance?: boolean; wallGatePolicy?: boolean; smallRoadLoops?: boolean; isolatedAccess?: boolean;
   /** Under test, off by default: access-way mouths on the axis, crossing remnants, joined road ends, small-place capacity tolerance. */
   roadMouths: boolean; roadRemnants: boolean; roadEndJoins: boolean; smallPlaceCapacity: boolean;
   naturalCampApproaches: boolean; streetFrontage: boolean; alignEnclosedGrid: boolean; hideUnusedQuarters: boolean; deepBlockLanes: boolean; villageBridgeBudget: boolean; linksJoinRoads: boolean; organicBranchVariation: number; ribbonWidthVariation: number;

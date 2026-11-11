@@ -66,6 +66,8 @@ export function validateSettings(value: unknown): asserts value is V2Settings {
   if (value.extent !== 'auto') finite(value.extent, 'étendue', TERRAIN_EXTENT_MIN, TERRAIN_EXTENT_MAX);
   if (value.terrain !== undefined) validateTerrainSettings(value.terrain);
   if (value.region !== undefined) validateRegionSettings(value.region);
+  if (value.decor !== undefined && (!isRecord(value.decor) || typeof value.decor.id !== 'string' || !/^[\w.-]{1,160}$/.test(value.decor.id)
+    || !(value.decor.bytes instanceof Uint8Array) || value.decor.bytes.length < 12)) throw new Error('Invalid saved decor.');
   finite(value.settlementCount, 'nombre de lieux', 0, 100);
   if (!Number.isInteger(value.settlementCount)) throw new Error('Le nombre de lieux doit être entier.');
   checkEnum(value.generation, ['procedural', 'neural'], 'génération');
@@ -130,6 +132,8 @@ export function validateSettings(value: unknown): asserts value is V2Settings {
     validateUrbanSeed(value.urban.seed);
     validateStageSeeds(value.urban.seeds);
     checkEnum(value.urban.through, stages, 'étape urbaine');
+    const architectures = ['silhouette', 'compact', 'detailed'];
+    checkEnum(value.urban.architecture, architectures, 'urban architecture');
     if (value.urban.local !== undefined) {
       if (!isRecord(value.urban.local)) throw new Error('Contrôles urbains locaux invalides.');
       for (const local of Object.values(value.urban.local)) {
@@ -137,6 +141,7 @@ export function validateSettings(value: unknown): asserts value is V2Settings {
         validateUrbanSeed(local.seed);
         validateStageSeeds(local.seeds);
         checkEnum(local.through, stages, 'étape urbaine locale');
+        checkEnum(local.architecture, architectures, 'local urban architecture');
       }
     }
     if (value.urban.buildings !== undefined && !isRecord(value.urban.buildings)) throw new Error('Contrôles des maisons invalides.');

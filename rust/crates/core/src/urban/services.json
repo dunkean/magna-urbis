@@ -1,5 +1,10 @@
 {
   "version": 2,
+  "cultureServices": {
+    "wizard-city": [
+      { "role": "civic.wizard-tower", "function": "collective", "per": 2000, "minPop": 15, "max": 64, "site": "nucleus", "area": [120, 700], "perCapita": 0.2, "landmark": true, "district": "civic" }
+    ]
+  },
   "_doc": "Service catalogue for urban programmes. One entry = one building role. count = 0 below minPop, else 1 when per = 0, else clamp(floor(pop / per), 1, max). area = useful m2 per site, interpolated between area[0] and area[1] by log10(pop / minPop) / 2 (perCapita overrides it, clamped to area). site: nucleus | gate | waterfront | river (mills: river front, else any shore) | quay (port: in a town whose plan has quay streets, only a block a quay serves (roles::site_admissible), and the quays' quarters form the port district; without quays, sea or lake shore first, then river) | downstream (lowest river reach) | hill | edge | spread. maxPop (optional) drops the entry above that population. requires: water = only on a waterfront block. function stays one of the six houses functions (market/common are the open_space demands). district = preferred district role prefix. The nucleus table maps catalogue.json cultures[c].nucleus.kind to the role that becomes the central landmark.",
   "_docStates": "Programme context state. decay = share of built allocations given the suffix (households 0, label suffix); a declining town raises its dwelling demand by 1/(1-decay) so the living population keeps its homes and the surplus stands empty.",
   "states": {

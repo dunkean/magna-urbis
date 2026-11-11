@@ -131,10 +131,24 @@ export function shoreRingGrid(layer: ForestBeachLayer, resolution: number): Shor
   const data = new Float32Array(resolution * resolution * 2), c = layer.width / resolution, cell = layer.width / layer.n;
   const r = Math.max(300, 2 * cell), r2 = r * .5, none = 65000;
   const dx = DIRS.map(d => d[0]), dy = DIRS.map(d => d[1]);
+  // Exact skips: the B-spline weights are non-negative and sum to 1, so a ring sample is below 0 only if one of its
+  // 4x4 base cells is, and surely below 0 when all are. Ring box (radius r plus the stencil) without a negative cell:
+  // shore = none, open = 0; with only negative cells: shore = r/2, open = 1.
+  const n = layer.n, last = n - 1, src = layer.data, neg = new Int32Array((n + 1) * (n + 1));
+  for (let y = 0; y < n; y++) {
+    let row = 0;
+    for (let x = 0; x < n; x++) { if (src[y * n + x] < 0) row++; neg[(y + 1) * (n + 1) + x + 1] = neg[y * (n + 1) + x + 1] + row; }
+  }
+  const lo = (w: number, origin: number): number => Math.min(last, Math.max(0, Math.floor((w - r - origin) / cell - .5) - 1));
+  const hi = (w: number, origin: number): number => Math.min(last, Math.max(0, Math.floor((w + r - origin) / cell - .5) + 2));
   for (let j = 0; j < resolution; j++) {
-    const wy0 = layer.y + (j + .5) * c;
+    const wy0 = layer.y + (j + .5) * c, ya = lo(wy0, layer.y), yb = hi(wy0, layer.y) + 1;
     for (let i = 0; i < resolution; i++) {
-      const o = (j * resolution + i) * 2, wx0 = layer.x + (i + .5) * c;
+      const o = (j * resolution + i) * 2, wx0 = layer.x + (i + .5) * c, xa = lo(wx0, layer.x), xb = hi(wx0, layer.x) + 1;
+      const below = neg[yb * (n + 1) + xb] - neg[ya * (n + 1) + xb] - neg[yb * (n + 1) + xa] + neg[ya * (n + 1) + xa];
+      if (below === 0) { data[o] = none; continue; }
+      // Open water: every sample of the ring is below 0 (shore = r/2, every direction open).
+      if (below === (yb - ya) * (xb - xa)) { data[o] = r2; data[o + 1] = 1; continue; }
       surface(layer, cell, wx0, wy0);
       if (sh >= 40) { data[o] = none; continue; }
       let shore = none, open = 0;

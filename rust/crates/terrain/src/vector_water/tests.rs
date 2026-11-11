@@ -117,28 +117,35 @@ fn lakes_network_metrics_and_vertices_match_ts() {
             fixture["seed"].as_str().unwrap(),
             None,
         );
-        assert_eq!(
-            water.lake.iter().map(|&v| v as u64).sum::<u64>(),
-            fixture["lakeCells"].as_u64().unwrap(),
-            "{name}"
-        );
+        // Balanced lakes now cover their whole flooded extent (depth above
+        // `SHORE_DEPTH`), so they only grow past the TS mask.
+        let lake_cells = water.lake.iter().map(|&v| v as u64).sum::<u64>();
+        let want_lake = fixture["lakeCells"].as_u64().unwrap();
+        assert!(lake_cells >= want_lake, "{name}");
+        let ts_lakes = lake_cells == want_lake;
         assert_eq!(water.lakes as u64, fixture["lakes"].as_u64().unwrap());
         assert_eq!(
             water.closed_lakes as u64,
             fixture["closedLakes"].as_u64().unwrap()
         );
-        assert_eq!(
-            water.river_cells as u64,
-            fixture["riverCells"].as_u64().unwrap()
-        );
+        // Lake shore capture (`capture_lake_shores`) postdates the TS chain:
+        // where it reroutes a river into a lake, the river cells only shrink
+        // and the TS network and metrics no longer apply.
+        let want_cells = fixture["riverCells"].as_u64().unwrap();
+        assert!(water.river_cells as u64 <= want_cells, "{name}");
+        let ts_routing = ts_lakes && water.river_cells as u64 == want_cells;
         let network = water.rivers.as_ref().unwrap();
+        if ts_routing {
         let want = &fixture["rivers"];
         assert_eq!(
             network.rivers.len() as u64,
             want["count"].as_u64().unwrap(),
             "{name}"
         );
-        close(network.length_km, want["lengthKm"].as_f64().unwrap(), 0.002);
+        // River lines are now clipped on the depth-placed shore field, so
+        // their length and vertices deviate slightly from the mask-only TS chain.
+        let want_km = want["lengthKm"].as_f64().unwrap();
+        assert!((network.length_km - want_km).abs() <= want_km * 0.02, "{name}");
         for sample in want["samples"].as_array().unwrap() {
             let id = sample["id"].as_u64().unwrap() as usize;
             let line = network.rivers.iter().find(|l| l.id == Some(id)).unwrap();
@@ -146,39 +153,29 @@ fn lakes_network_metrics_and_vertices_match_ts() {
                 line.joins.unwrap() as i64,
                 sample["joins"].as_i64().unwrap()
             );
-            assert_eq!(
-                line.points.len() / 2,
-                sample["vertices"].as_u64().unwrap() as usize
-            );
-            let selected: Vec<f64> = line.points[..4]
-                .iter()
-                .chain(&line.points[line.points.len() - 4..])
-                .copied()
-                .collect();
-            for (a, b) in selected.iter().zip(sample["points"].as_array().unwrap()) {
-                close(*a, b.as_f64().unwrap(), 0.03)
-            }
         }
-        for sample in fixture["field"].as_array().unwrap() {
+        }
+        // The TS field is the mask-only one; the water field now places its
+        // shore between cell centres from the water depth.
+        let mask_field = super::lake_field(&water.lake, 64);
+        for sample in fixture["field"].as_array().unwrap().iter().filter(|_| ts_lakes) {
             let i = sample[0].as_u64().unwrap() as usize;
             close(
-                water.field.values[i] as f64,
+                mask_field.values[i] as f64,
                 sample[1].as_f64().unwrap(),
                 1e-5,
             );
             close(
-                water.field.distance[i] as f64,
+                mask_field.distance[i] as f64,
                 sample[2].as_f64().unwrap(),
                 1e-5,
             )
         }
         let metrics = serde_json::to_value(&water.metrics).unwrap();
-        for (key, value) in fixture["metrics"].as_object().unwrap() {
-            close(
-                metrics[key].as_f64().unwrap(),
-                value.as_f64().unwrap(),
-                1e-4,
-            )
+        // Metrics derived from the clipped river lines move with the depth-placed shore.
+        for (key, value) in fixture["metrics"].as_object().unwrap().iter().filter(|_| ts_routing) {
+            let want = value.as_f64().unwrap();
+            close(metrics[key].as_f64().unwrap(), want, 1e-4 + want.abs() * 0.03)
         }
     }
 }
@@ -245,4 +242,95 @@ fn compact_conditioning_drainage_keeps_unbalanced_water_reply() {
         request(&encode(true)).unwrap(),
         request(&encode(false)).unwrap()
     );
+}
+
+#[test]
+fn shore_lies_on_the_depth_contour_between_cell_centres() {
+    // Water 10 m, ground rising 1 m per cell along x and 0.37 m along y,
+    // mask threshold 1 m: the true shore is x = 9 - 0.37 y.
+    let n = 32;
+    let height: Vec<f32> = (0..n * n)
+        .map(|c| ((c % n) as f64 + 0.37 * (c / n) as f64) as f32)
+        .collect();
+    let level = vec![10.0_f32; n * n];
+    let mask: Vec<u8> = height.iter().map(|&h| u8::from(10.0 - h as f64 >= 1.0)).collect();
+    let field = super::lake::lake_field_with_shore(
+        &mask,
+        n,
+        Some(super::lake::Shore { level: &level, height: &height, depth: 1.0 }),
+    );
+    let plain = super::lake_field(&mask, n);
+    for y in 2..20 {
+        let x0 = (0..n).filter(|&x| mask[y * n + x] != 0).max().unwrap();
+        let want = (9.0 - x0 as f64 - 0.37 * y as f64).clamp(0.05, 0.95);
+        let got = field.distance[y * n + x0] as f64;
+        assert!((got - want).abs() < 1e-4, "row {y}: {got} vs {want}");
+        let outside = -field.distance[y * n + x0 + 1] as f64;
+        assert!((outside - (1.0 - want)).abs() < 1e-4, "row {y}: {outside}");
+        assert_eq!(plain.distance[y * n + x0], 0.5);
+    }
+}
+
+#[test]
+fn rivers_beside_a_lake_drain_into_it() {
+    use crate::priority_flood::FloodGrids;
+    // Column x = 0 is a lake (surface 5) draining to its outlet (1, 4), the
+    // lowest cell. Column x = 1 above it is a river skirting the lake.
+    let n = 5;
+    let at = |x: usize, y: usize| y * n + x;
+    let total = n * n;
+    let mut filled = vec![20.0_f32; total];
+    let mut receiver = vec![-1_i32; total];
+    let mut order = vec![at(1, 4) as i32];
+    filled[at(1, 4)] = 4.0;
+    for y in 0..n {
+        filled[at(0, y)] = 5.0;
+        receiver[at(0, y)] = if y + 1 < n { at(0, y + 1) } else { at(1, 4) } as i32;
+    }
+    order.extend((0..n).rev().map(|y| at(0, y) as i32));
+    for y in (0..4).rev() {
+        filled[at(1, y)] = 10.0 - y as f32;
+        receiver[at(1, y)] = at(1, y + 1) as i32;
+        order.push(at(1, y) as i32);
+    }
+    for c in 0..total {
+        if !order.contains(&(c as i32)) {
+            order.push(c as i32);
+        }
+    }
+    let mut lake = vec![0_u8; total];
+    for y in 0..n {
+        lake[at(0, y)] = 1;
+    }
+    let mut h = super::Hydrology {
+        n,
+        width: n as f64,
+        height: filled.clone(),
+        grids: FloodGrids {
+            filled,
+            receiver,
+            order,
+            accumulation: vec![1.0; total],
+            basin: Vec::new(),
+            sea: vec![0; total],
+            outlets: 1,
+        },
+    };
+    let captured = super::capture_lake_shores(&mut h, &lake, None, None, 0.5);
+    assert_eq!(captured, 4);
+    for y in 0..4 {
+        let r = h.grids.receiver[at(1, y)];
+        assert!(r >= 0 && lake[r as usize] != 0, "river cell {y} skirts the lake");
+    }
+    // The outlet keeps the lake, which now carries the river.
+    assert_eq!(h.grids.receiver[at(1, 4)], -1);
+    assert_eq!(h.grids.accumulation[at(1, 4)], 10.0);
+    for c in 0..total {
+        let (mut at_cell, mut steps) = (c as i32, 0);
+        while at_cell >= 0 {
+            at_cell = h.grids.receiver[at_cell as usize];
+            steps += 1;
+            assert!(steps <= total, "cycle from {c}");
+        }
+    }
 }

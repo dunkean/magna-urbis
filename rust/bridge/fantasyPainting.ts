@@ -358,6 +358,13 @@ export function planPainting(bounds: PaintBounds, sample: (x: number, y: number)
         // painted over it (fantasyRaster), so one field never removes a whole mountain. A hill keeps clear of the
         // holdings over most of its footprint (no hills on fields).
         if (cultivated(x, y) || s.occupied) continue;
+        // The silhouette stays on the relief: its base must stand on land (not sea, lake or off the map). A stamp that
+        // overhangs is shrunk towards its anchor until its whole base is dry land, and dropped when it cannot fit.
+        const onLand = (width: number): boolean => [-.4, -.2, 0, .2, .4].every(dx => { const n = sample(px + dx * width, py); return !!n && !n.water && n.height > 0; });
+        let fitted = 1;
+        while (!onLand(w * fitted) && fitted > .4) fitted *= .8;
+        if (!onLand(w * fitted)) continue;
+        w *= fitted; py = y + .2 * w;
         if (brush === BRUSH.hills) {
           let tilled = 0;
           for (const dx of [-.3, 0, .3]) for (const dy of [-.3, -.15, 0]) if (cultivated(x + dx * w, py + dy * w)) tilled++;

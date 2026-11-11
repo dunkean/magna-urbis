@@ -22,6 +22,7 @@ mod footprint;
 mod fortification;
 mod fringe;
 mod geography;
+mod generation_limits;
 mod springs;
 mod shanty;
 mod lagoon;
@@ -646,6 +647,16 @@ pub struct LayoutConfig {
     /// Final pass trimming tails that overshoot a junction and spurs that
     /// never leave their host road.
     pub polish_road_ends: bool,
+    /// Remove unused bank-ended branches after the final bridge selection.
+    pub river_spur_filter: bool,
+    /// Keep bridge decks outside the navigable water in front of a port.
+    pub harbour_bridge_clearance: bool,
+    /// Collapse grazing wall approaches onto a single, spaced gate passage.
+    pub wall_gate_policy: bool,
+    /// Remove short redundant triangular links before cutting the blocks.
+    pub small_road_loops: bool,
+    /// Connect isolated establishments to the retained regional network.
+    pub isolated_access: bool,
     /// Village, hamlet and rural homes are low (two storeys under the
     /// tradition) and mostly small; faubourg homes one storey lower.
     pub low_rural_houses: bool,
@@ -821,6 +832,11 @@ impl Default for LayoutConfig {
             road_width_by_size: true,
             town_main_road: true,
             polish_road_ends: true,
+            river_spur_filter: true,
+            harbour_bridge_clearance: true,
+            wall_gate_policy: true,
+            small_road_loops: true,
+            isolated_access: true,
             low_rural_houses: true,
             outbuildings: 0.5,
             road_mouths: false,
@@ -1596,6 +1612,9 @@ pub fn generate_quarters(
         )?;
         let morph = with_tissue(morph, &config.tissue);
         let key_seed = format!("{seed}\u{1}settlement:{}", site.key);
+        // One full quarter pass at the given configuration (its slope
+        // relaxation included); `lay(config)` is the strict pass.
+        let lay = |config: &LayoutConfig| -> Result<Layout, String> {
         // edits hook (urban/edits.rs): structural quarter edits splice a
         // variant plan into this one; without them this is plan then finish.
         let plan_at = |config: &LayoutConfig, site: &Site| -> Result<Layout, String> {
@@ -1689,6 +1708,35 @@ pub fn generate_quarters(
         let mut layout = edits::with_quarter_edits(config, plan, finish)?;
         shanty::extend(seed, &mut layout, site, config, kind, physical_surface, roads);
         Ok(layout)
+        };
+        let mut layout = lay(config)?;
+        // A town whose strict house gates refuse most of its land (a user-placed
+        // town on a mountain flank) is laid out again with the slope gates
+        // relaxed step by step, until its houses may use half of its land or
+        // the gates are open. The strict pass alone runs on easy ground.
+        if config.programme.slope_relax == 0.0 && config.programme.intent == "settlement" && site.population > 0 {
+            let mut share = housable_share(&layout);
+            let mut chosen = 0.0;
+            for relax in profiles::SLOPE_RELAX_STEPS {
+                if share >= profiles::SLOPE_RELAX_GOAL {
+                    break;
+                }
+                let mut relaxed = config.clone();
+                relaxed.programme.slope_relax = relax;
+                let Ok(next) = lay(&relaxed) else { continue };
+                let next_share = housable_share(&next);
+                if next_share > share {
+                    (layout, share, chosen) = (next, next_share, relax);
+                }
+            }
+            if chosen > 0.0 {
+                layout.warnings.push(format!(
+                    "Site trop pentu pour les règles ordinaires : maisons admises sur des pentes plus fortes, sur soubassements en gradins (assouplissement {:.0} %).",
+                    chosen * 100.0
+                ));
+            }
+        }
+        Ok(layout)
     });
     let mut out = Vec::with_capacity(laid.len());
     for layout in laid {
@@ -1698,6 +1746,33 @@ pub fn generate_quarters(
         return Err("Settlement urbain invalide".into());
     }
     Ok(out)
+}
+/// Share of a town's land (its ordinary blocks and the blocks released to the
+/// fields) that its houses may use: dry blocks within the house slope gate of
+/// the layout's programme, relaxation included. 1 for a layout without land.
+fn housable_share(layout: &Layout) -> f64 {
+    let Some(pr) = &layout.programme else { return 0.0 };
+    let max_slope = culture::mapping_for(&layout.culture, &pr.context.period).map_or(f64::INFINITY, |m| {
+        profiles::house_slope(&layout.culture, m.admissibility.max_slope, pr.context.slope_relax)
+    });
+    let mut environment = vec![None; layout.blocks.len()];
+    for e in &pr.environment {
+        if let Some(slot) = environment.get_mut(e.block) {
+            *slot = Some(e);
+        }
+    }
+    let (mut total, mut housable) = (0.0, 0.0);
+    for (b, e) in layout.blocks.iter().zip(&environment) {
+        if !matches!(b.kind.as_str(), "block" | "reserve") {
+            continue;
+        }
+        let area = geometry::area(&b.shape);
+        total += area;
+        if e.is_some_and(|e| !e.wet && e.slope <= max_slope) {
+            housable += area;
+        }
+    }
+    if total <= 0.0 { 1.0 } else { housable / total }
 }
 pub fn generate_parcels(
     seed: &str,

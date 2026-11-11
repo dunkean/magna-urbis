@@ -147,6 +147,7 @@ function composeMaterialRaster(terrain: TerrainData, settings: Pick<TerrainSetti
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, n, n, 0, gl.RED, gl.FLOAT, terrain.height);
   const u = (name: string): WebGLUniformLocation | null => gl.getUniformLocation(program, name);
+  gl.uniform1i(u('uQuality'), 0); // Raster products and exports always retain full detail.
   gl.uniform1i(u('heights'), 0); gl.uniform1i(u('n'), n); gl.uniform1f(u('cell'), terrain.width / n); gl.uniform2f(u('origin'), terrain.x, terrain.y);
   const climate = settings.climateValues ?? CLIMATE_VALUES[settings.climate ?? 'temperate'];
   gl.uniform2f(u('uMaterialClimate'), climate.temperature, climate.precipitation); gl.uniform1ui(u('uMaterialSeed'), seedHash(settings.seed));

@@ -1321,9 +1321,11 @@ pub(super) fn fit_enclosures(layout: &mut super::Layout, population: u32, surfac
     let reserved: std::collections::HashSet<_> = layout.programme.iter().flat_map(|p|p.reservations.iter()
         .filter(|r|!p.demands.iter().any(|d|d.id==r.demand_id && d.role.starts_with("open.")))).map(|r|r.block).collect();
     let reach = street_reach(layout);
-    let occupied: Vec<_> = layout.blocks.iter().enumerate()
-        .filter(|(i,b)|matches!(b.kind.as_str(),"block"|"place") || reserved.contains(i))
-        .flat_map(|(_,b)| if b.kind == "block" { built_part(&b.shape,&reach) } else { vec![b.shape.clone()] }).collect();
+    let kept: Vec<&super::Block> = layout.blocks.iter().enumerate()
+        .filter(|(i,b)|matches!(b.kind.as_str(),"block"|"place") || reserved.contains(i)).map(|(_,b)|b).collect();
+    // Per-block clips are independent: in parallel, flattened in block order.
+    let occupied: Vec<_> = super::par::map(&kept, |_, b| if b.kind == "block" { built_part(&b.shape,&reach) } else { vec![b.shape.clone()] })
+        .into_iter().flatten().collect();
     let mut result = vec![];
     for e in &layout.enclosures {
         if !e.purpose.is_empty() { result.push(e.clone());continue; }
@@ -1366,9 +1368,12 @@ fn fit_to_built(layout: &mut super::Layout, surface: Surface<'_>) {
     if !layout.enclosures.iter().any(|e| e.purpose.is_empty() && e.path.len() >= 4) { return; }
     let reserved: std::collections::HashSet<_> = layout.programme.iter().flat_map(|p| p.reservations.iter().map(|r| r.block)).collect();
     let reach = street_reach(layout);
-    let occupied: Vec<(Shape, (f64, f64, f64, f64))> = layout.blocks.iter().enumerate()
-        .filter(|(i, b)| matches!(b.kind.as_str(), "block" | "place") || reserved.contains(i))
-        .flat_map(|(_, b)| if b.kind == "block" { built_part(&b.shape, &reach) } else { vec![b.shape.clone()] })
+    let kept: Vec<&super::Block> = layout.blocks.iter().enumerate()
+        .filter(|(i, b)| matches!(b.kind.as_str(), "block" | "place") || reserved.contains(i)).map(|(_, b)| b).collect();
+    // Per-block clips are independent: in parallel, flattened in block order.
+    let occupied: Vec<(Shape, (f64, f64, f64, f64))> = super::par::map(&kept, |_, b|
+            if b.kind == "block" { built_part(&b.shape, &reach) } else { vec![b.shape.clone()] })
+        .into_iter().flatten()
         .map(|s| { let bb = g::bbox(&s); (s, bb) }).collect();
     let safe = |f: &dyn Fn() -> MultiPolygon<f64>| std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).ok();
     let mp = |v: &[Shape]| MultiPolygon(v.iter().map(g::polygon).collect());

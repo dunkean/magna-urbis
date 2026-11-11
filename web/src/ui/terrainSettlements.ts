@@ -4,6 +4,7 @@ import { terrainStyle } from '../render/terrainStyle';
 import { recordStageMs } from './benchTimings';
 import { resolveBenchAppearance } from './benchComposition';
 import { retainCityPlacement } from './cityRetainedPlacement';
+import { cityPlacementRequest, withCulturePrefs } from './cityPlacementRule';
 import { setupSettlementLocale } from './settlementLocale';
 import { urbanText } from './urbanPanelLocale';
 import { LOCALE_KEY } from './shellLocale';
@@ -16,7 +17,7 @@ import { defaultSettlementConfig, defaultSettlementSpec, settlementRaster, runSe
 import type { TerrainData, TerrainSettings } from '../../../rust/bridge/terrain';
 import { CLIMATE_VALUES } from '../../../rust/bridge/terrainClimate';
 import type { View } from '../render/view';
-import { CULTURES, getCulture } from '../gen/urban/culture';
+import { CULTURES } from '../gen/urban/culture';
 import { SITE_ARCHETYPES, classOfPop } from '../gen/options';
 import { localizedDemographicLabel, settlementPopulationChoices } from './settlementKinds';
 import { bindGear, gearButton } from './mapGroup';
@@ -48,10 +49,8 @@ const classIcon = (cls: string): string => `<svg viewBox="-18 -20 36 32" aria-hi
 const shortPop = (n: number): string => n < 1000 ? String(n) : n < 10000 ? `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k` : n < 1e6 ? `${Math.round(n / 1000)}k` : `${(n / 1e6).toFixed(1).replace(/\.0$/, '')}M`;
 const clone = <T>(value: T): T => structuredClone(value);
 const esc = (text: string): string => text.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!);
-function prefs(spec: SettlementSpec): SettlementSpec {
-  const p = getCulture(spec.culture).sitePrefs ?? {};
-  return { ...spec, sitePrefs: { mountainFace: p.mountainFace ?? 0, woodland: p.woodland ?? 0, weights: { ...p.weights }, ...spec.sitePrefs } };
-}
+/** City Bench and the V2 send the same placement request (cityPlacementRule.ts). */
+const prefs = withCulturePrefs;
 /** Saved placement options: known keys only (older links also carried road options). */
 function restore(saved: Partial<SettlementConfig> | undefined, base: SettlementConfig): SettlementConfig {
   const config = clone(base);
@@ -327,7 +326,7 @@ export function createTerrainSettlements(options: {
     }
     const place = options.city ? citySearchRequested : needsPlacement || !output;
     const request: SettlementRequest = { id: ++id, seed: options.getSettings().seed, roads: roads.enabled ? clone(roads.config) : null, runtime: executionRuntime };
-    if (place) request.place = { ...config, main: prefs(config.main), list: config.list.map(prefs) };
+    if (place) request.place = cityPlacementRequest(config);
     else request.sites = sites(output!);
     if (!worker && !fallback) {
       try {

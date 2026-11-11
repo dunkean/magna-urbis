@@ -7,7 +7,7 @@ import { TileIndex, boxesOf } from './tileindex';
 import { TREE_CELLS, treeMask } from './parchmentTrees';
 
 export type VegetationStyle = 'classic' | 'canopy';
-/** `conifer` is a forest crown drawn as an engraved star of boughs (cold and mixed woods). */
+/** `conifer` is a dense rounded conifer crown seen from above (cold and mixed woods). */
 export type CanopyKind = 'forest' | 'orchard' | 'conifer';
 /** A filled shape, or with `line` a closed ink contour of that width (glyph units). */
 interface LeafShape { points: Vec2[]; fill: string; alpha: number; line?: number; /** Polyline: the contour stays open. */ open?: boolean }
@@ -107,27 +107,38 @@ export function canopyGlyph(kind: CanopyKind, variant: number, pal: Palette, ton
   ];
 }
 
-/** Engraved conifer seen from above: a star of boughs, lit half and shaded half, ink rays and a dark leader at the centre. */
+/** Conifer crown seen from above (satellite view): a dense, slightly irregular rounded mass with a soft rim of
+ * bough clusters, a lit upper-left flank, a darker shaded lower right and a dark core. No radiating spikes. */
 function coniferGlyph(variant: number, pal: Palette, tone: number): LeafShape[] {
   const h = (salt: number): number => hash3(variant, 307, salt);
-  const r = 4.9 * (.9 + .2 * h(1)), points = 8 + Math.floor(h(2) * 4), phase = h(3) * Math.PI * 2;
-  const star = Array.from({ length: points * 2 }, (_, k) => {
-    const a = phase + k * Math.PI / points, out = k % 2 === 0, rr = r * (out ? .88 + .14 * h(10 + k) : .5 + .08 * h(10 + k));
-    return { x: Math.cos(a) * rr, y: Math.sin(a) * rr };
+  const r = 4.7 * (.92 + .16 * h(1)), phase = h(3) * Math.PI * 2, phase2 = h(5) * Math.PI * 2, n = 56, stretch = 1 + .1 * h(6);
+  const clusters = 9 + Math.floor(h(2) * 4);
+  const ring = (scale: number, dx = 0, dy = 0): Vec2[] => Array.from({ length: n }, (_, k) => {
+    const a = k * Math.PI * 2 / n;
+    const mass = .86 + .07 * Math.sin(a * 2 + phase2) + .04 * Math.sin(a * 3 + phase) + .04 * h(40 + Math.floor(k * clusters / n));
+    const soft = .93 + .07 * Math.pow(Math.abs(Math.sin(a * clusters / 2 + phase)), .6);
+    const rr = r * mass * soft * scale;
+    return { x: Math.cos(a) * rr * stretch + dx, y: Math.sin(a) * rr + dy };
   });
   const mono = ['engraving', 'blueprint', 'night'].includes(pal.name), base = canopyColor(pal, tone);
-  const crown = mix(pal.name === 'parchment' ? mix(mix(base, mix(pal.paper, pal.ink, .42), .2), pal.treeInk, .14) : base, pal.treeInk, .22);
+  const crown = mix(mix(base, pal.treeInk, .38), '#1f3a24', mono ? 0 : .22);
   const ink = mono ? pal.treeInk : mix(pal.treeInk, pal.ink, .35);
-  // Shaded half towards the lower right, the side away from the light.
-  const shade = [{ x: 0, y: 0 }, ...star.filter(p => p.x + p.y > -r * .15)];
-  const rays: LeafShape[] = star.filter((_, k) => k % 2 === 0).map(p => ({ points: [{ x: p.x * .15, y: p.y * .15 }, { x: p.x * .8, y: p.y * .8 }], fill: ink, alpha: .34, line: .24, open: true }));
+  const dark = mix(crown, pal.treeInk, .55), light = mix(crown, mono ? pal.paper : '#6f8f4e', .32);
+  // Needle clusters: small lit and shaded blobs scattered inside the crown give the dense textured look.
+  const tufts: LeafShape[] = [];
+  for (let i = 0; i < 9; i++) {
+    const a = h(60 + i) * Math.PI * 2, d = r * .62 * Math.sqrt(h(80 + i)), tr = r * (.17 + .08 * h(100 + i));
+    const lit = (Math.cos(a) + Math.sin(a)) < 0.2;
+    tufts.push({ points: Array.from({ length: 10 }, (_, k) => ({ x: Math.cos(a) * d + Math.cos(k * Math.PI / 5) * tr, y: Math.sin(a) * d + Math.sin(k * Math.PI / 5) * tr * .85 })), fill: lit ? light : dark, alpha: lit ? .34 : .3 });
+  }
   return [
-    { points: star.map(p => ({ x: p.x + .6, y: p.y + .85 })), fill: pal.treeInk, alpha: .26 },
-    { points: star, fill: crown, alpha: .94 },
-    { points: shade, fill: mix(crown, pal.treeInk, .45), alpha: .55 },
-    ...rays,
-    { points: star, fill: ink, alpha: .72, line: .3 },
-    { points: Array.from({ length: 8 }, (_, k) => ({ x: Math.cos(k * Math.PI / 4) * .55, y: Math.sin(k * Math.PI / 4) * .55 })), fill: ink, alpha: .7 },
+    { points: ring(1, .6, .85), fill: pal.treeInk, alpha: .28 },
+    { points: ring(1), fill: crown, alpha: .97 },
+    { points: ring(.82, .5, .6), fill: dark, alpha: .5 },
+    { points: ring(.62, -r * .16, -r * .18), fill: light, alpha: .5 },
+    ...tufts,
+    { points: ring(.3, .15, .2), fill: dark, alpha: .6 },
+    { points: ring(1), fill: ink, alpha: .3, line: .22 },
   ];
 }
 
@@ -159,16 +170,15 @@ export class CanvasCanopy {
   private paintEngraved(cx: CanvasRenderingContext2D, kind: CanopyKind, variant: number, tone: number): void {
     const pal = this.pal, h = (salt: number): number => hash3(variant, kind === 'orchard' ? 211 : kind === 'conifer' ? 307 : 101, salt + 500);
     const pick = (cells: readonly number[], t: number): number => cells[Math.min(cells.length - 1, Math.floor(t * cells.length))];
-    let cell: number, span: number, rotate = true;
+    let cell = 0, span: number;
     if (kind === 'orchard') { cell = pick(TREE_CELLS.fruit, h(1)); span = 10; }
-    else if (kind === 'conifer') { const side = h(2) < .4; cell = pick(side ? TREE_CELLS.coniferSide : TREE_CELLS.coniferPlan, h(1)); span = side ? 12.5 : 12; rotate = !side; }
-    else if (variant === 23) { cell = pick(TREE_CELLS.clump, h(1)); span = 19; }
+    else if (kind === 'conifer') { this.paintConiferCrown(cx, variant, tone, 11 * (.9 + .2 * h(3)), h); return; }
     else { cell = pick(TREE_CELLS.broadleaf, h(1)); span = 14.5; }
     span *= .9 + .2 * h(3);
-    const angle = rotate ? (h(4) - .5) * .9 : 0, half = span / 2;
+    const angle = (h(4) - .5) * .9, half = span / 2;
     const fill = treeMask(cell, 'fill', pal.treeInk, this.makeCanvas), ink = treeMask(cell, 'ink', mix(pal.treeInk, pal.ink, .4), this.makeCanvas);
     if (!fill || !ink) return;
-    const crown = mix(mix(mix(canopyColor(pal, tone), mix(pal.paper, pal.ink, .42), .2), pal.treeInk, .14), pal.treeInk, kind === 'conifer' ? .34 : .2);
+    const crown = mix(mix(mix(canopyColor(pal, tone), mix(pal.paper, pal.ink, .42), .2), pal.treeInk, .14), pal.treeInk, .2);
     const rgba = (hex: string, a: number): string => { const v = parseInt(hex.slice(1, 7), 16); return `rgba(${(v >> 16) & 255},${(v >> 8) & 255},${v & 255},${a})`; };
     cx.save(); cx.beginPath(); cx.rect(-10, -10, 20, 20); cx.clip();
     cx.save(); cx.rotate(angle); cx.globalAlpha = .96; cx.drawImage(fill, -half, -half, span, span); cx.restore();
@@ -181,6 +191,34 @@ export class CanvasCanopy {
     cx.save(); cx.rotate(angle); cx.globalAlpha = 1; cx.drawImage(ink, -half, -half, span, span); cx.globalAlpha = .6; cx.drawImage(ink, -half, -half, span, span); cx.restore();
     cx.globalCompositeOperation = 'destination-over'; cx.globalAlpha = .18;
     cx.save(); cx.translate(.8, 1.05); cx.rotate(angle); cx.drawImage(fill, -half, -half, span, span); cx.restore();
+    cx.restore();
+  }
+
+  /** Conifer seen from above: a compact filled crown with 5 to 7 short pointed lobes (three variants), washed, shaded and
+   * inked like the round engraved crowns so both read as one family. */
+  private paintConiferCrown(cx: CanvasRenderingContext2D, variant: number, tone: number, span: number, h: (salt: number) => number): void {
+    const pal = this.pal, teeth = [8, 10, 11][Math.min(2, Math.floor(h(1) * 3))], R = span * .44, angle = h(4) * Math.PI * 2;
+    const trace = (dx: number, dy: number): void => {
+      cx.beginPath();
+      for (let i = 0; i < teeth * 2; i++) {
+        const outer = i % 2 === 0, step = Math.PI / teeth, a = angle + i * step + (h(30 + i) - .5) * step * .45;
+        const rr = R * (outer ? .98 + .16 * (h(10 + i) - .5) : .82 + .04 * (h(50 + i) - .5));
+        const x = dx + Math.cos(a) * rr, y = dy + Math.sin(a) * rr;
+        if (i === 0) cx.moveTo(x, y); else cx.lineTo(x, y);
+      }
+      cx.closePath();
+    };
+    const base = mix(mix(mix(canopyColor(pal, tone), mix(pal.paper, pal.ink, .42), .2), pal.treeInk, .14), pal.treeInk, .34);
+    const crown = mix(base, '#2c4a52', .28);
+    const rgba = (hex: string, a: number): string => { const v = parseInt(hex.slice(1, 7), 16); return `rgba(${(v >> 16) & 255},${(v >> 8) & 255},${v & 255},${a})`; };
+    cx.save(); cx.beginPath(); cx.rect(-10, -10, 20, 20); cx.clip();
+    cx.fillStyle = crown; cx.globalAlpha = .96; trace(0, 0); cx.fill(); cx.globalAlpha = 1;
+    const light = cx.createLinearGradient(-R * .8, -R * .8, R * .8, R * .8);
+    light.addColorStop(0, rgba(pal.paper, .2)); light.addColorStop(.45, rgba(pal.paper, 0)); light.addColorStop(.55, rgba(pal.treeInk, 0)); light.addColorStop(1, rgba(pal.treeInk, .5));
+    cx.fillStyle = light; trace(0, 0); cx.fill();
+    cx.fillStyle = rgba(mix(pal.treeInk, '#1c3038', .5), .38); cx.beginPath(); cx.arc(0, 0, R * .36, 0, Math.PI * 2); cx.fill();
+    cx.strokeStyle = mix(pal.treeInk, pal.ink, .4); cx.lineWidth = .28; cx.lineJoin = 'round'; trace(0, 0); cx.stroke();
+    cx.globalCompositeOperation = 'destination-over'; cx.globalAlpha = .18; cx.fillStyle = pal.treeInk; trace(.8, 1.05); cx.fill();
     cx.restore();
   }
 

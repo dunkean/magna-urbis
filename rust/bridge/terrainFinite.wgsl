@@ -6,8 +6,17 @@ fn volcanoGeometry(xy:vec2<f32>)->vec3<f32> {
   let geographic=fbm((xy+vec2<f32>(c.x,0.0))/(620.0*c.y),1u,3u,0.5,0.0);
   let wobble=1.0+select(0.12,0.18,c.z!=0.0)*outline+0.055*geographic;
   let radius=length(rotated)/(a.z*wobble);
-  let rim=select(0.255,0.55,c.z!=0.0)+select(0.030,0.045,c.z!=0.0)*fbm(xy/(420.0*c.y)+vec2<f32>(c.x,0.0),1u,3u,0.5,0.0);
-  return vec3<f32>(radius,rim,atan2(rotated.y,rotated.x));
+  let azimuth=atan2(rotated.y,rotated.x);
+  // Low azimuthal harmonics: lobed or elongated rims, as VolcanoShape::geometry.
+  let lobes=1.0+(0.04+0.08*volcanoVariety(0u))*cos(2.0*(azimuth-6.283185307*volcanoVariety(1u)))
+    +0.06*volcanoVariety(2u)*cos(3.0*(azimuth-6.283185307*volcanoVariety(3u)));
+  let rim=(select(0.255,0.55,c.z!=0.0)+select(0.030,0.045,c.z!=0.0)*fbm(xy/(420.0*c.y)+vec2<f32>(c.x,0.0),1u,3u,0.5,0.0))*lobes;
+  return vec3<f32>(radius,rim,azimuth);
+}
+// Seeded shape variety in [0, 1) from the phase; VolcanoShape::variety.
+fn volcanoVariety(k:u32)->f32 {
+  let keys=array<f32,6>(0.618034,0.414214,0.732051,0.236068,0.645751,0.302776);
+  return fract(volcanicParams(2u).x*keys[k]);
 }
 fn volcanoOpening(g:vec3<f32>)->f32 {
   if(volcanicParams(2u).z==0.0){return 0.0;}
@@ -30,21 +39,43 @@ fn volcanoInfluence(xy:vec2<f32>)->f32 {
 }
 fn volcanoElevation(xy:vec2<f32>)->f32 {
   if(volcanicParams(2u).z==2.0){return plateauElevation(xy);}
-  let g=volcanoGeometry(xy); let c=volcanicParams(2u); let collapsed=c.z!=0.0;
-  let floor=select(0.36,0.06,collapsed); let start=select(0.36,0.58,collapsed);
-  let crest=select(0.98,0.96,collapsed); let apron=select(1.05,1.18,collapsed);
+  let g=volcanoGeometry(xy); let b=volcanicParams(1u); let c=volcanicParams(2u); let collapsed=c.z!=0.0;
+  let v0=volcanoVariety(0u); let v1=volcanoVariety(1u); let v2=volcanoVariety(2u);
+  let v3=volcanoVariety(3u); let v4=volcanoVariety(4u); let v5=volcanoVariety(5u);
+  var floor=select(0.26+0.20*v0,0.03+0.12*v2,collapsed); let start=select(0.36,0.58,collapsed);
+  let sag=0.5+0.5*cos(g.z-6.283185307*v5);
+  let crest=select(0.98,0.96,collapsed)*(1.0-0.18*v4*sag*sag); let apron=select(1.05,1.18,collapsed);
+  let exponent=select(1.6,1.45,collapsed)*(0.8+0.45*v1);
+  let uw=g.x*vec2<f32>(cos(g.z),sin(g.z));
+  let tilt=select(6.283185307*v2,b.z,collapsed);
+  floor+=0.035*(0.4+v4)*dot(uw,vec2<f32>(cos(tilt),sin(tilt)))/g.y;
   let t=clamp((g.x/g.y-start)/(1.0-start),0.0,1.0);
   let bowl=floor+(crest-floor)*t*t*t*(t*(6.0*t-15.0)+10.0);
-  let outer=crest*pow(max(0.0,1.0-(g.x-g.y)/(apron-g.y)),select(1.6,1.45,collapsed));
-  var cone=mix(bowl,outer,smooth01((g.x/g.y-0.94)/0.12));
+  let outer=crest*pow(max(0.0,1.0-(g.x-g.y)/(apron-g.y)),exponent);
+  let crown=smooth01((g.x/g.y-0.94)/0.12);
+  var cone=mix(bowl,outer,crown);
+  if(v3>0.4){
+    let base=select(0.255,0.55,collapsed); let angle=6.283185307*v0+1.3;
+    let offset=(0.15+0.45*v4)*base;
+    let size=base*select(0.30+0.20*v5,0.14+0.12*v5,collapsed);
+    let d=length(uw-offset*vec2<f32>(cos(angle),sin(angle)))/size;
+    let inside=1.0-smooth01((g.x/g.y-0.70)/0.20);
+    let height=0.10+0.25*v1;
+    let vent=select(-(0.06+0.10*v1)*(1.0-smooth01(d)),height*(1.0-smooth01(d))-0.45*height*(1.0-smooth01(d/0.35)),collapsed);
+    cone+=vent*inside;
+  }
   let opening=volcanoOpening(g);
-  if(collapsed){let outlet=0.06*(1.0-smooth01((g.x-g.y*0.65)/(1.18-g.y*0.65)));cone=mix(cone,outlet,opening);}
+  if(collapsed){let outlet=floor*(1.0-smooth01((g.x-g.y*0.65)/(1.18-g.y*0.65)));cone=mix(cone,outlet,opening);}
   let flutes=ridge(xy/(360.0*c.y),3u)-0.5;
   let wall=fbm(xy/(150.0*c.y),0u,3u,0.5,0.0);
   let interior=1.0-smooth01((g.x/g.y-0.82)/0.18);
   let crater=fbm(xy/(380.0*c.y),1u,3u,0.5,0.0);
+  let warp=g.z+0.45*fbm(vec2<f32>(cos(g.z)*1.3+c.x,sin(g.z)*1.3),0u,2u,0.5,0.0);
+  let gate=smooth01((fbm(vec2<f32>(cos(g.z)*2.6-c.x,sin(g.z)*2.6+g.x*1.4),1u,2u,0.5,0.0)+0.15)/0.45);
+  let gullies=(ridge(vec2<f32>(cos(warp)*4.5+c.x,sin(warp)*4.5+g.x*2.3),3u)-0.5)*gate;
+  let flank=crown*(1.0-smooth01(((g.x-g.y)/(apron-g.y)-0.55)/0.40));
   let rough=fbm((xy+vec2<f32>(volcanicParams(3u).x,0.0))/(720.0*c.y),0u,4u,0.5,0.0);
-  let texture=(0.018*rough+(0.055*flutes+0.025*wall)*cone)*(1.0-interior)+0.012*crater*interior;
+  let texture=(0.018*rough+(0.055*flutes+0.025*wall)*cone+(0.02+0.05*v5)*gullies*flank)*(1.0-interior)+0.012*crater*interior;
   return c.w*(0.035+cone+texture*(1.0-opening));
 }
 

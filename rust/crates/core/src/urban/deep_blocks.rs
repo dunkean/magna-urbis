@@ -37,17 +37,10 @@ pub(super) fn inscribed_radius(s: &Shape) -> f64 {
     let (x0, y0, x1, y1) = g::bbox(s);
     let grid = (g::area(s).sqrt() / 40.0).clamp(2.0, 8.0);
     let mut best = 0.0_f64;
-    let mut y = y0 + grid * 0.5;
-    while y < y1 {
-        let mut x = x0 + grid * 0.5;
-        while x < x1 {
-            let p = Point { x, y };
+    for p in super::generation_limits::samples((x0, y0, x1, y1), grid, 16_384) {
             if g::contains(s, p) {
                 best = best.max(edge_distance(s, p));
             }
-            x += grid;
-        }
-        y += grid;
     }
     best
 }
@@ -109,11 +102,7 @@ fn cut(s: &Shape, streets: &[Street], width: f64) -> Option<(Vec<Point>, Vec<Sha
     let mut best = (0.0, Point { x: 0.0, y: 0.0 });
     let (mut n, mut mx, mut my) = (0.0, 0.0, 0.0);
     let mut pts = vec![];
-    let mut y = y0 + grid * 0.5;
-    while y < y1 {
-        let mut x = x0 + grid * 0.5;
-        while x < x1 {
-            let p = Point { x, y };
+    for p in super::generation_limits::samples((x0, y0, x1, y1), grid, 16_384) {
             if g::contains(s, p) {
                 let r = edge_distance(s, p);
                 if r > best.0 {
@@ -121,12 +110,9 @@ fn cut(s: &Shape, streets: &[Street], width: f64) -> Option<(Vec<Point>, Vec<Sha
                 }
                 pts.push(p);
                 n += 1.0;
-                mx += x;
-                my += y;
+                mx += p.x;
+                my += p.y;
             }
-            x += grid;
-        }
-        y += grid;
     }
     if best.0 <= DEPTH || n < 4.0 {
         return None;

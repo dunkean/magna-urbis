@@ -980,6 +980,13 @@ pub(super) fn massing(m: &Input) -> Value {
     let main_c = super::geometry::centroid(&m.parts[main].0);
     let detail_rng = rng.fork("details");
     let look = lot_look(m, &tr);
+    // A stepped landmark's preview is concentric terrace rings plus a shrine.
+    // Their heights follow nesting, independent of culture, roof tradition or
+    // preview order; each inner tier stands above the outer retaining wall.
+    let terraces: Vec<&Shape> = m.parts.iter().filter(|(_, label)| *label == "terrace").map(|(s, _)| s).collect();
+    let stepped = m.landmark && !terraces.is_empty() && m.parts.iter().any(|(_, label)| *label == "shrine");
+    let tier_height = (terraces.iter().filter_map(|s| min_frame(&s.outer)).map(|f| 2.0 * f.half_w).fold(0.0_f64, f64::max)
+        / (2.0 * (terraces.len() + 1) as f64)).clamp(1.2 * metric_scale, 4.0 * metric_scale);
     let out: Vec<Value> = m
         .parts
         .iter()
@@ -988,6 +995,13 @@ pub(super) fn massing(m: &Input) -> Value {
             let area = areas[i];
             let ring = &shape.outer;
             let mut drng = detail_rng.fork(&i.to_string());
+            if stepped && matches!(*label, "terrace" | "shrine") {
+                let tier = if *label == "shrine" { terraces.len() + 1 } else {
+                    1 + terraces.iter().filter(|s| ring_area(&s.outer) > ring_area(ring) + 1e-6).count()
+                };
+                return json!({"floors":1,"eave_m":round2(tier_height * tier as f64),"rise_m":0.0,"roof":"flat",
+                    "ridges":[],"cover":"stone","wall":"stone","tone":round2(lot_tone),"openings":"none"});
+            }
             if super::parcels::ruins::is_ruin(label) {
                 return ruin_piece(label, metric_scale * floors.min(2) as f64 * storey_m, tr.wall, lot_tone, &mut drng);
             }
@@ -1423,6 +1437,28 @@ mod tests {
     fn input<'a>(parts: &'a [(Shape, &'static str)], arch: &'a Value, fronts: &'a [[Point; 2]], seed: &'a str) -> Input<'a> {
         Input { parts, arch, culture: "european-organic", zone: "core", role: "dwelling.row", function: "domestic",
             landmark: false, wealth: 0.5, pressure: 0.8, small_home: false, population: 0, fronts, seed, low_rural: true, distance: 0.0, archetype: "" }
+    }
+
+    #[test]
+    fn stepped_landmark_heights_follow_nested_terraces() {
+        let terrace = |outer: f64, inner: f64| Shape {
+            outer: rect(-outer, -outer, outer, outer).outer,
+            holes: vec![rect(-inner, -inner, inner, inner).outer],
+        };
+        // Deliberately shuffled: preview order must not determine tier height.
+        let parts = [(terrace(6.0, 3.0), "terrace"), (rect(-3.0, -3.0, 3.0, 3.0), "shrine"),
+            (terrace(12.0, 9.0), "terrace"), (terrace(9.0, 6.0), "terrace")];
+        let arch = json!({"roof":"thatch-round","storeys":[1,1],"material":"thatch"});
+        let m = massing(&Input { culture: "maya", role: "worship.pyramid-precinct", function: "religious", landmark: true,
+            ..input(&parts, &arch, &[], "stepped") });
+        let heights: Vec<f64> = m.as_array().unwrap().iter().map(|p| {
+            assert_eq!(p["roof"], "flat");
+            assert_eq!(p["rise_m"], 0.0);
+            assert_eq!(p["cover"], "stone");
+            assert_eq!(p["openings"], "none");
+            p["eave_m"].as_f64().unwrap()
+        }).collect();
+        assert_eq!(heights, vec![9.0, 12.0, 3.0, 6.0]);
     }
 
     /// A river mill draws a water gristmill (an inca one never a water or

@@ -1888,11 +1888,7 @@ fn tree_closes(
         let mut samples = vec![];
         // Four metre samples as in the source; cap only the lattice resolution on oversized wards.
         let step = 4.0_f64.max(((x1 - x0) * (y1 - y0) / 100_000.0).sqrt());
-        let mut y = y0 + 2.0;
-        while y < y1 {
-            let mut x = x0 + 2.0;
-            while x < x1 {
-                let p = Point { x, y };
+        for p in super::generation_limits::samples((x0, y0, x1, y1), step, 100_000) {
                 if g::contains(&pc.shape, p) && boundary_distance(p) > 2.0 {
                     let d = access
                         .iter()
@@ -1900,9 +1896,6 @@ fn tree_closes(
                         .fold(f64::INFINITY, f64::min);
                     samples.push((p, d));
                 }
-                x += step;
-            }
-            y += step;
         }
         let mut slits: Vec<Vec<Point>> = vec![];
         let budget = if op == "roji" {
@@ -2533,6 +2526,13 @@ fn serve_quarters(
             (start, side, targets, feeder)
         }))
         .collect();
+    // A settlement none of whose quarters any street reaches (a place set on a
+    // flank steeper than its feeders can climb) is not returned whole to the
+    // countryside: its largest quarter is served by a level street along the
+    // contour, the terrace a hill village strings its houses on.
+    let rescue = (!touched.iter().any(|&t| t) && planned.values().all(|p| p.3.is_none()))
+        .then(|| (0..quarters.len()).max_by(|&a, &b| g::area(&quarters[a].shape).total_cmp(&g::area(&quarters[b].shape))))
+        .flatten();
     for (qi, (q, touched)) in quarters.drain(..).zip(touched).enumerate() {
         let bb = g::bbox(&q.shape);
         if touched
@@ -2553,6 +2553,9 @@ fn serve_quarters(
         } else {
             plan
         };
+        let feeder = feeder.or_else(|| {
+            (rescue == Some(qi)).then(|| contour_spine(&q.shape, start, surface)).flatten().map(|path| (path, "street", 2))
+        });
         if let Some((path, role, rank)) = feeder {
             add(streets, path, rank, role, m, rng);
             kept.push(q);
@@ -2590,6 +2593,39 @@ fn serve_quarters(
         "{} quartier(s) sans accès carrossable rendu(s) à la campagne ({lost:.0} m², comptés en déficit).",
         dropped.len()
     ))
+}
+
+/// A level street through `start` that follows the contour across `shape`
+/// both ways (on a cone it bends round the hill), sampled every 6 m and kept
+/// every 18 m; `None` when it is shorter than 30 m.
+fn contour_spine(shape: &Shape, start: Point, surface: Surface<'_>) -> Option<Vec<Point>> {
+    const STEP: f64 = 6.0;
+    let walk = |sign: f64| {
+        let (mut p, mut heading, mut out) = (start, None::<Point>, vec![]);
+        for _ in 0..400 {
+            let r = 4.0;
+            let gx = (surface.height_at(Point { x: p.x + r, y: p.y }) - surface.height_at(Point { x: p.x - r, y: p.y })) / (2.0 * r);
+            let gy = (surface.height_at(Point { x: p.x, y: p.y + r }) - surface.height_at(Point { x: p.x, y: p.y - r })) / (2.0 * r);
+            let n = gx.hypot(gy);
+            let mut d = if n > 1e-6 { Point { x: -gy / n * sign, y: gx / n * sign } } else { heading.unwrap_or(Point { x: sign, y: 0.0 }) };
+            if let Some(h) = heading && d.x * h.x + d.y * h.y < 0.0 {
+                d = Point { x: -d.x, y: -d.y };
+            }
+            let q = Point { x: p.x + d.x * STEP, y: p.y + d.y * STEP };
+            if !g::contains(shape, q) || surface.wet(q) {
+                break;
+            }
+            out.push(q);
+            (p, heading) = (q, Some(d));
+        }
+        out
+    };
+    let mut path: Vec<Point> = walk(-1.0).into_iter().rev().collect();
+    path.push(start);
+    path.extend(walk(1.0));
+    let last = path.len() - 1;
+    let path: Vec<Point> = path.into_iter().enumerate().filter(|&(i, _)| i % 3 == 0 || i == last).map(|(_, p)| p).collect();
+    (len(&path) >= 30.0).then_some(path)
 }
 
 /// Vacant blocks on the town's outer edge (reserve land the capacity plan
@@ -3169,7 +3205,7 @@ fn generate_once(
             blocks: vec![],
             warnings: vec![
                 "Aucun quartier constructible à cet emplacement et avec ce rayon.".into(),
-            ],
+            ].into_iter().chain(warnings).chain(super::generation_limits::population_warning(0, site.population)).collect(),
             enclosures,
             phases,
             archetype,
@@ -4189,7 +4225,11 @@ fn generate_once(
     }
     // Piers, landing stages and moles stand on the finished quays, over the
     // water: they cut no block.
-    if macroplan::harbour::port_town(cfg) {macroplan::harbour::keep_sea_access(&mut streets,surface,roads);}
+    // Keep crossing demand until final harbour clearance can relocate it inland.
+    if macroplan::harbour::port_town(cfg)
+        && !(cfg.harbour_bridge_clearance && streets.iter().any(|s| s.role == "quay")) {
+        macroplan::harbour::keep_sea_access(&mut streets,surface,roads);
+    }
     let works = macroplan::harbour::configured_works(
         &streets,
         surface,

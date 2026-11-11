@@ -6,7 +6,7 @@ import { calendarSeason, seasonWeights, type SeasonCalendar } from '../../../rus
 import { CLIMATE_ZONE_VALUES, type ClimateValues, type ClimateZone } from '../../../rust/bridge/terrainClimate';
 import type { Palette } from './styles';
 
-export interface SeasonPaint { herb: readonly [number, number, number]; leaf: number; evergreen: number; snow: number; spring: number; autumn: number }
+export interface SeasonPaint { herb: readonly [number, number, number]; leaf: number; evergreen: number; snow: number; spring: number; autumn: number; seaIce: number; winter: number }
 const SNOW = '#f1f3ef', BARE_WOOD = '#8d8373', AUTUMN_WOOD = '#b78a3e', SPRING_WOOD = '#a6bc72', YOUNG_CROP = '#b4c47c', STUBBLE = '#c29a5c';
 /** Summer is the palette as authored. */
 const SUMMER = .5;
@@ -34,7 +34,7 @@ export function mapGroundSnow(altitude = 0, settings?: GroundSnowSettings): numb
 }
 export const roofSeasonKey = (): string => `${zone}|${season}|${JSON.stringify(calendar)}|${JSON.stringify(climate)}`;
 /** Part of every cache key of a seasonal map layer. */
-export const mapSeasonKey = (): string => zone && season !== SUMMER ? `${zone}:${Math.round(season * 100)}:${JSON.stringify(calendar ?? {})}` : '';
+export const mapSeasonKey = (): string => zone ? `${zone}:${Math.round(season * 100)}:${JSON.stringify(calendar ?? {})}` : '';
 
 const rgb = (hex: string): [number, number, number] => { const v = parseInt(hex.slice(1), 16); return [(v >> 16) & 255, (v >> 8) & 255, v & 255]; };
 const hex = (c: readonly number[]): string => '#' + c.map(x => Math.round(Math.max(0, Math.min(255, x))).toString(16).padStart(2, '0')).join('');
@@ -45,7 +45,17 @@ const tinted = (c: string, ratio: readonly number[]): string => isHex(c) ? hex(r
 /** The zone's year at this point of the cycle. */
 export function seasonPaint(value: number, climateZone: ClimateZone, edits?: SeasonCalendar): SeasonPaint {
   const w = seasonWeights(value), year = calendarSeason(climateZone, edits), blend = (row: readonly number[]): number => row.reduce((sum, v, i) => sum + v * w[i], 0);
-  return { herb: [0, 1, 2].map(i => blend(year.herb.map(c => c[i]))) as unknown as SeasonPaint['herb'], leaf: blend(year.leaf), evergreen: year.leaf[0], snow: blend(year.snow), spring: w[1], autumn: w[3] };
+  return { herb: [0, 1, 2].map(i => blend(year.herb.map(c => c[i]))) as unknown as SeasonPaint['herb'], leaf: blend(year.leaf), evergreen: year.leaf[0], snow: blend(year.snow), spring: w[1], autumn: w[3], seaIce: blend(year.seaIce), winter: w[0] };
+}
+
+/** Cartographic water follows the same calendar as land; shore ice is strongest at the coastal end. */
+const waterSources = new WeakMap<Palette, Palette>();
+function waterSeason(pal: Palette, s: SeasonPaint): Palette {
+  const source = waterSources.get(pal) ?? pal;
+  const water = { ...source.water, stops: source.water.stops.map(([position, color]) => [position,
+    mix(mix(color, '#365566', .16 * s.winter + .05 * s.autumn), '#d7e3e7', s.seaIce * (.92 - .55 * Math.min(1, position)))] as const) };
+  const result = { ...pal, water, riverFill: water.stops[0][1], waterEdge: water.stops[0][1], lakeFill: water.stops.at(-1)![1], seaFill: water.stops.at(-1)![1] };
+  waterSources.set(result, source); return result;
 }
 /** Crops follow the herbs: green while they grow, ochre once they ripen or lie dry. */
 function cropTone(c: string, herb: SeasonPaint['herb']): string {
@@ -56,24 +66,36 @@ function woodTone(c: string, s: SeasonPaint): string {
   const deciduous = 1 - s.evergreen;
   return mix(mix(mix(c, BARE_WOOD, .7 * (1 - s.leaf)), AUTUMN_WOOD, .35 * s.autumn * deciduous), SPRING_WOOD, .15 * s.spring * deciduous);
 }
-/** Only the land use follows the season: paper, relief ramp and water stay as drawn. */
+/** Land use and water share the calendar; paper and relief keep their authored tones. */
 export function applySeason(pal: Palette, s: SeasonPaint): Palette {
   const snowed = (c: string, cover = .85): string => mix(c, SNOW, s.snow * cover);
   const herbs = (c: string): string => snowed(tinted(c, s.herb));
   const crops = (c: string): string => snowed(cropTone(c, s.herb), .8);
   const wood = (c: string): string => snowed(woodTone(c, s), .4);
-  return { ...pal,
+  return { ...waterSeason(pal, s),
     land: { ...pal.land, field: crops(pal.land.field), meadow: herbs(pal.land.meadow), pasture: herbs(pal.land.pasture), commons: herbs(pal.land.commons), garden: herbs(pal.land.garden), orchard: wood(pal.land.orchard), forest: wood(pal.land.forest), marsh: herbs(pal.land.marsh) },
     stripA: crops(pal.stripA), stripB: crops(pal.stripB), furrow: snowed(pal.furrow, .6), hedge: wood(pal.hedge),
     treeFill: wood(pal.treeFill), treeInk: snowed(pal.treeInk, .25), orchardDot: snowed(pal.orchardDot, .25), grass: snowed(tinted(pal.grass, s.herb), .6), reed: snowed(tinted(pal.reed, s.herb), .5) };
 }
 const MONOCHROME = new Set(['engraving', 'blueprint', 'night']);
 const cache = new WeakMap<Palette, Map<string, Palette>>();
+/** Terrain material ramps need the water tokens alone; biomePalette owns seasonal land. */
+export function seasonalWaterPalette(pal: Palette): Palette {
+  const key = mapSeasonKey(); if (!key || MONOCHROME.has(pal.name)) return pal;
+  let entries = cache.get(pal); if (!entries) cache.set(pal, entries = new Map());
+  let found = entries.get(`water:${key}`); if (!found) entries.set(`water:${key}`, found = waterSeason(pal, seasonPaint(season, zone!, calendar)));
+  return found;
+}
+/** Small shared material payload, also bound for the draped-map 3D shader. */
+export function waterSeasonUniforms(value = season, climateZone = zone, edits = calendar): [number, number] {
+  if (!climateZone) return [0, 0];
+  const paint = seasonPaint(value, climateZone, edits); return [paint.winter, paint.seaIce];
+}
 /** Same palette object for the same season: renderers compare palettes by identity. */
 export function seasonalPalette(pal: Palette): Palette {
   const key = mapSeasonKey();
   if (!key || MONOCHROME.has(pal.name)) return pal;
   let entries = cache.get(pal); if (!entries) cache.set(pal, entries = new Map());
-  let found = entries.get(key); if (!found) entries.set(key, found = applySeason(pal, seasonPaint(season, zone!, calendar)));
+  let found = entries.get(key); if (!found) { const paint = seasonPaint(season, zone!, calendar); entries.set(key, found = season === SUMMER ? waterSeason(pal, paint) : applySeason(pal, paint)); }
   return found;
 }

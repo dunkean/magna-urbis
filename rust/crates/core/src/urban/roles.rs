@@ -66,6 +66,8 @@ struct Catalogue {
     occupancy: BTreeMap<String, serde_json::Value>,
     families: BTreeMap<String, Vec<ServiceEntry>>,
     #[serde(default)]
+    culture_services: BTreeMap<String, Vec<ServiceEntry>>,
+    #[serde(default)]
     states: BTreeMap<String, StateRule>,
     #[serde(default)]
     isolated: BTreeMap<String, IsolatedRule>,
@@ -117,6 +119,7 @@ pub fn role_function(role: &str) -> Option<&'static str> {
     cat.families
         .values()
         .flatten()
+        .chain(cat.culture_services.values().flatten())
         .chain(&cat.rural)
         .chain(&cat.harbour)
         .find(|e| e.role == role)
@@ -133,6 +136,7 @@ pub fn is_landmark(role: &str) -> bool {
     cat.families
         .values()
         .flatten()
+        .chain(cat.culture_services.values().flatten())
         .any(|e| e.role == role && e.landmark)
 }
 /// Longest known dotted (or `craft:`) prefix of `id` in `table`, family table first.
@@ -213,6 +217,7 @@ pub fn services_with_functions(culture: &str, population: u32, functions: super:
         .cloned()
         .unwrap_or_default();
     entries.extend(cat.rural.iter().cloned());
+    entries.extend(cat.culture_services.get(culture).into_iter().flatten().cloned());
     entries.retain(|e| e.max_pop <= 0.0 || pop <= e.max_pop);
     let nucleus = &super::catalogue()["cultures"][culture]["nucleus"];
     if let Some(role) = nucleus["kind"].as_str().and_then(|k| cat.nucleus.get(k)) {
@@ -1038,42 +1043,54 @@ fn port_quarters(layout: &mut Layout, env: &[BlockEnvironment]) {
     if layout.structure.is_none() { return; }
     let contact = quay_contacts(layout);
     let original = layout.quarters.len();
-    for qi in 0..original {
-        if layout.config.as_ref().is_some_and(|c| c.overrides.quarters.contains_key(&qi.to_string())) { continue; }
-        let parent = layout.quarters[qi].clone();
-        let protected: std::collections::BTreeSet<usize> = layout.programme.iter().flat_map(|pr| {
-            pr.reservations.iter().filter(|r| pr.demands.iter().any(|d| d.id == r.demand_id && d.site != "quay"))
-                .map(|r| r.block)
-        }).collect();
-        let reserved: std::collections::BTreeSet<usize> = layout.programme.iter().flat_map(|pr|
-            pr.reservations.iter().filter(|r| pr.demands.iter().any(|d| d.id == r.demand_id && d.site == "quay")).map(|r| r.block)).collect();
+    let protected: std::collections::BTreeSet<usize> = layout.programme.iter().flat_map(|pr| {
+        pr.reservations.iter().filter(|r| pr.demands.iter().any(|d| d.id == r.demand_id && d.site != "quay"))
+            .map(|r| r.block)
+    }).collect();
+    let reserved: std::collections::BTreeSet<usize> = layout.programme.iter().flat_map(|pr|
+        pr.reservations.iter().filter(|r| pr.demands.iter().any(|d| d.id == r.demand_id && d.site == "quay")).map(|r| r.block)).collect();
+    let margin=layout.streets.iter().filter(|s|s.role=="quay").flat_map(|s|&s.widths).copied().fold(6.0,f64::max)*3.0;
+    // A quarter's plan reads only its own outline and blocks: applying the plan
+    // of one quarter moves blocks of that quarter alone (to new quarters past
+    // `original`), so every plan can be computed first, in parallel, and the
+    // plans applied in quarter order as before.
+    let jobs: Vec<(usize, Vec<usize>)> = (0..original).filter_map(|qi| {
+        if layout.config.as_ref().is_some_and(|c| c.overrides.quarters.contains_key(&qi.to_string())) { return None; }
         let chosen: Vec<usize> = layout.blocks.iter().enumerate().filter(|(bi,b)|
             b.quarter == qi && (b.kind == "block" || reserved.contains(bi)) && contact[*bi] >= QUAY_FRONT
             && !env.get(*bi).is_some_and(|e| e.wet) && !protected.contains(bi)
             && !g::contains(&b.shape, layout.center)).map(|(bi,_)|bi).collect();
-        if chosen.is_empty() { continue; }
+        if chosen.is_empty() { return None; }
         // A quarter already made of waterfront blocks needs no refinement.
-        if !layout.blocks.iter().enumerate().any(|(bi,b)|b.quarter==qi && !chosen.contains(&bi)) { continue; }
-        let margin=layout.streets.iter().filter(|s|s.role=="quay").flat_map(|s|&s.widths).copied().fold(6.0,f64::max)*3.0;
+        if !layout.blocks.iter().enumerate().any(|(bi,b)|b.quarter==qi && !chosen.contains(&bi)) { return None; }
+        Some((qi, chosen))
+    }).collect();
+    let shared: &Layout = layout;
+    let plans = super::par::map(&jobs, |_, (qi, chosen)| {
+        let (qi, parent) = (*qi, &shared.quarters[*qi]);
         // The refinement is a pure function of the parent outline, the
         // quarter's blocks (and which are chosen), the centre and the margin:
         // the repeated programme probes of one run share it (`probe_cache`).
         let key = super::probe_cache::enabled().then(|| {
             let mut k = super::probe_cache::Key::new("roles.port_quarter/v1");
-            k.shape(&parent.shape).point(layout.center).f64(margin);
-            for (bi, b) in layout.blocks.iter().enumerate().filter(|(_, b)| b.quarter == qi) {
+            k.shape(&parent.shape).point(shared.center).f64(margin);
+            for (bi, b) in shared.blocks.iter().enumerate().filter(|(_, b)| b.quarter == qi) {
                 k.usize(bi).shape(&b.shape).bool(chosen.contains(&bi));
             }
             k
         });
-        let plan = match key.as_ref().and_then(|k| PORT_QUARTERS.get(k)) {
+        match key.as_ref().and_then(|k| PORT_QUARTERS.get(k)) {
             Some(plan) => plan,
             None => {
-                let plan = std::sync::Arc::new(port_quarter_plan(layout, qi, &parent.shape, &chosen, margin));
+                let plan = std::sync::Arc::new(port_quarter_plan(shared, qi, &parent.shape, chosen, margin));
                 if let Some(k) = key { PORT_QUARTERS.put(k, plan.clone()); }
                 plan
             }
-        };
+        }
+    });
+    for ((qi, _), plan) in jobs.iter().zip(plans) {
+        let qi = *qi;
+        let parent = layout.quarters[qi].clone();
         let Some(plan) = plan.as_ref() else { continue };
         layout.quarters[qi].shape = plan.main.clone();
         let mut added = vec![];

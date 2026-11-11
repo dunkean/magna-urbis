@@ -215,6 +215,9 @@ pub(super) fn water_balance(
         lake_area,
     }
 }
+/// Water depth of a balanced lake's shore: the drawn lake and its sub-cell
+/// shoreline both stop where the water gets shallower than this.
+pub(super) const SHORE_DEPTH: f64 = 0.1;
 pub(super) fn balanced_bodies(
     b: &Balance,
     height: &[f32],
@@ -250,10 +253,12 @@ pub(super) fn balanced_bodies(
     let mut lake = vec![0; total];
     let mut cells = 0;
     for c in 0..total {
-        let mut drawn = deep[c];
-        if !drawn && b.lake_of[c] >= 0 && b.level[c] as f64 - height[c] as f64 > 0.1 {
-            drawn = neighbours(c, n).filter(|&(nb, _)| deep[nb]).count() >= 5
-        }
+        // A kept lake covers its whole flooded extent: a shallow margin left
+        // dry let rivers skirt the water inside the basin, or stop short of it.
+        let drawn = deep[c]
+            || (b.lake_of[c] >= 0
+                && kept[b.lake_of[c] as usize]
+                && b.level[c] as f64 - height[c] as f64 > SHORE_DEPTH);
         if drawn {
             lake[c] = 1;
             cells += 1

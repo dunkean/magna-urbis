@@ -4,9 +4,12 @@
  * Display only: nothing is generated here. */
 import type { World } from '../gen/types';
 import type { ActivitySite } from '../../../rust/bridge/settlements';
-import type { PlacedBuilding, PlacementBatch } from '../../../rust/bridge/urbanArchitecture';
-import type { HouseMaterial, MaterialPattern, Surface, Vertex3 } from '../../../rust/bridge/housesContract';
+import type { PlacedBuilding, PlacementBatch, PlacementRequest } from '../../../rust/bridge/urbanArchitecture';
+import type { HouseMaterial, MaterialPattern, Point, Surface, Vertex3 } from '../../../rust/bridge/housesContract';
 import { buildingRoof, readMassing } from '../render/cityMassing';
+import { cityArchitectureOf } from '../render/cityContract';
+import type { V2Settings } from './contracts';
+import { nativeCityRecords } from './nativeProducts';
 
 const PATTERN: Record<string, MaterialPattern> = {
   tile: 'tile', slate: 'stone', stone: 'stone', thatch: 'thatch', reed: 'thatch', shingle: 'wood', wood: 'wood', bark: 'wood',
@@ -70,12 +73,21 @@ export function drawInstallations(ctx: CanvasRenderingContext2D, sites: readonly
 }
 
 const scenes = new WeakMap<readonly ActivitySite[], PlacementBatch>();
-/** One scene for every activity building, or undefined when there is none. */
+/** Native plans of the activity buildings (compact/detailed architecture), retained on the world by `planActivityArchitecture`. */
+interface ActivityPlans { sites: readonly ActivitySite[]; key: string; scene: PlacementBatch }
+const plansOf = (world: World | undefined): ActivityPlans | undefined => world?.debug?.v2ActivityPlans as ActivityPlans | undefined;
+/** One scene for every activity building, or undefined when there is none.
+ * Buildings follow the architecture in use: massing silhouettes, or native house plans when the planning step produced them. */
 export function activityScene(world: World | undefined): PlacementBatch | undefined {
   const sites = activitySitesOf(world);
   if (!sites.length) return undefined;
+  const held = plansOf(world);
+  if (held && held.sites === sites) return held.scene;
+  return massingScene(sites);
+}
+function massingScene(sites: readonly ActivitySite[]): PlacementBatch {
   const cached = scenes.get(sites);
-  if (cached) return cached;
+  if (cached) return cached!;
   const buildings: PlacedBuilding[] = [], covers = new Set<string>();
   for (const site of sites) site.buildings.forEach((b, k) => {
     const footprint: Surface = [{ outer: b.ring, holes: [] }];
@@ -94,7 +106,7 @@ export function activityScene(world: World | undefined): PlacementBatch | undefi
     const slots = { frame: cover, infill: cover, coating: cover, cladding: cover, base: cover, roof_frame: cover };
     const [a, c] = [b.ring[0], b.ring[1]];
     buildings.push({
-      id, parcel_id: site.id, function: 'workshop', culture: { culture: site.culture, pack: '', mode: 'inspired', borrowing: null },
+      id, parcel_id: site.id, function: 'workshop', culture: { culture: site.culture, pack: '', mode: 'historical_inspired', borrowing: null },
       recipe_id: `activity:${b.archetype}`, variant_id: b.look, transform: { origin: { x: site.x, y: site.y }, orientation_deg: Math.atan2(c.y - a.y, c.x - a.x) * 180 / Math.PI },
       ground_z_m: site.ground, footprint, roof_footprint: footprint, courtyards: [], circulation: [], entrance: { x: (a.x + c.x) / 2, y: (a.y + c.y) / 2 }, access_id: '',
       volumes: [{ id: `${id}/v`, footprint, levels: [], z_m: site.ground, wall_height_m: eave, roof_height_m: Math.max(0, top - eave), roof_system: massing[0].roof.toUpperCase(),
@@ -106,4 +118,61 @@ export function activityScene(world: World | undefined): PlacementBatch | undefi
   const scene: PlacementBatch = { schema_version: '1', generator_version: 'activity-sites-1', materials: [...covers].map(material), buildings, refusals: [], open_spaces: [] };
   scenes.set(sites, scene);
   return scene;
+}
+
+const DOMESTIC = /farm|hut|house|cabin|hamlet|shelter|lodge|steading|cottage|yurt|tent/, COLLECTIVE = /chapel|shrine|church|temple|hermitage|chantry/;
+const functionOf = (archetype: string): 'domestic' | 'collective' | 'workshop' => DOMESTIC.test(archetype) ? 'domestic' : COLLECTIVE.test(archetype) ? 'collective' : 'workshop';
+/** The ring scaled about its centroid: the lot given to the house generator around the retained footprint. */
+function enlarged(ring: Point[], k: number): Point[] {
+  const cx = ring.reduce((s, p) => s + p.x, 0) / ring.length, cy = ring.reduce((s, p) => s + p.y, 0) / ring.length;
+  return ring.map(p => ({ x: cx + (p.x - cx) * k, y: cy + (p.y - cy) * k }));
+}
+/** Culture id to house pack, read from the retained towns (requests, else scene buildings). The Rust site stage owns the mapping. */
+function packsOf(world: World): { byCulture: Map<string, string>; any?: string } {
+  const byCulture = new Map<string, string>();
+  for (const city of Object.values(nativeCityRecords(world) ?? {}))
+    for (const item of [...city.requests ?? [], ...city.scene?.buildings ?? []]) if (item.culture?.pack && !byCulture.has(item.culture.culture)) byCulture.set(item.culture.culture, item.culture.pack);
+  return { byCulture, any: byCulture.values().next().value };
+}
+/**
+ * Follow the architecture in use for the isolated buildings: with compact or detailed architecture each activity building
+ * is planned by the houses crate (same `plans` call as the towns) on its retained massing footprint. A building the
+ * generator refuses, or whose culture has no known pack, keeps its massing. Silhouette architecture clears the plans.
+ * Never throws: a failure leaves the massing scene.
+ */
+export async function planActivityArchitecture(world: World, settings: V2Settings): Promise<void> {
+  const sites = activitySitesOf(world), architecture = cityArchitectureOf(settings.urban?.architecture);
+  world.debug ??= {};
+  if (!sites.length || architecture === 'silhouette') { delete world.debug.v2ActivityPlans; return; }
+  const { byCulture, any } = packsOf(world);
+  const key = JSON.stringify([architecture, settings.urban?.houses, settings.urban?.backend, [...byCulture]]);
+  const held = plansOf(world);
+  if (held?.sites === sites && held.key === key) return;
+  try {
+    const base = massingScene(sites), massed = new Map(base.buildings.map(b => [b.id, b]));
+    const requests: PlacementRequest[] = [], footprints: Record<string, Surface> = {};
+    for (const site of sites) site.buildings.forEach((b, k) => {
+      const id = `${site.id}/${k}`, pack = byCulture.get(site.culture) ?? any;
+      if (!pack || !massed.has(id) || b.ring.length < 3) return;
+      const lot: Surface = [{ outer: enlarged(b.ring, 1.3), holes: [] }], front = lot[0].outer;
+      footprints[id] = [{ outer: b.ring, holes: [] }];
+      requests.push({ id, parcel_id: site.id, cadastral: lot, buildable: lot, reserves: [], roof_domain: lot,
+        accesses: [{ id: `${id}/front`, segment: [front[0], front[1]], kind: 'public', width_m: 1.5 }], party_boundaries: [], neighbors: [],
+        culture: { culture: site.culture, pack, mode: 'historical_inspired', borrowing: null }, function: functionOf(b.archetype),
+        seed: `${world.seed}/activity/${id}`, terrain: { origin: { x: site.x, y: site.y }, ground_z_m: site.ground, gradient: [0, 0], water_z_m: null, max_foundation_step_m: 1.5 },
+        parcel_fit: true, programme: { archetype: b.archetype, role: site.template } });
+    });
+    if (!requests.length) { delete world.debug.v2ActivityPlans; return; }
+    const { planUrbanBuildings } = await import('../../../rust/bridge/architecture');
+    const runtime = settings.urban?.backend === 'native' ? { profile: 'local' as const, server: settings.runtime?.localServer ?? 'http://127.0.0.1:8791' } : undefined;
+    const planned = await planUrbanBuildings({ schema_version: '1', requests, settings: { ...settings.urban?.houses, floors: undefined }, footprints } as Parameters<typeof planUrbanBuildings>[0], runtime);
+    const plans = new Map(planned.buildings.filter(b => massed.has(b.id)).map(b => [b.id, b]));
+    if (!plans.size) { delete world.debug.v2ActivityPlans; return; }
+    const materials = new Map([...base.materials ?? [], ...planned.materials ?? []].map(m => [m.id, m]));
+    world.debug.v2ActivityPlans = { sites, key, scene: { ...base, generator_version: planned.generator_version, materials: [...materials.values()],
+      buildings: base.buildings.map(b => plans.get(b.id) ?? b), ...(planned.plan_archives ? { plan_archives: planned.plan_archives } : {}) } } satisfies ActivityPlans;
+  } catch (error) {
+    delete world.debug.v2ActivityPlans;
+    world.stats['v2.activityArchitecture'] = String(error instanceof Error ? error.message : error);
+  }
 }

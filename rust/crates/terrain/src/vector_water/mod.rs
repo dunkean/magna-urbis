@@ -250,6 +250,7 @@ fn compute_water_timed(
                 lake_area_km2 += h.cell_area() / 1e6
             }
         }
+        capture_lake_shores(&mut h, &lake, Some(&b.weight), Some(&b.loss), s.river_area * 1e6);
         let mut kind = vec![0; total];
         for c in 0..total {
             if b.lake_of[c] >= 0 {
@@ -260,6 +261,7 @@ fn compute_water_timed(
         lake_kind = Some(kind);
     } else {
         (lake, lakes, lake_area_km2) = water_bodies(&h, s);
+        capture_lake_shores(&mut h, &lake, None, None, s.river_area * 1e6);
         closed_lakes = 0;
     }
     let river_cells = (0..total)
@@ -272,7 +274,18 @@ fn compute_water_timed(
     let confluence_angle = (s.confluence == "climate")
         .then(|| 45.0 + 27.0 * ((runoff.aridity - 0.2) / 0.8).clamp(0.0, 1.0));
     let hydrology_ms = now() - started - balance_ms;
-    let field = lake_field(&lake, n);
+    let field = {
+        let level = lake_level.as_deref().unwrap_or(&h.grids.filled[..]);
+        lake::lake_field_with_shore(
+            &lake,
+            n,
+            Some(lake::Shore {
+                level,
+                height,
+                depth: if s.balance { balance::SHORE_DEPTH } else { s.lake_depth },
+            }),
+        )
+    };
     let rivers = (s.river_mode == "vector").then(|| {
         let river_started = now();
         let mut network = rivers::vector_rivers(
@@ -306,6 +319,92 @@ fn compute_water_timed(
         hydrology_ms,
         balance_ms,
     }
+}
+/// Invariant: a river that reaches a lake shore drains into the lake. D8 on
+/// the filled surface may let a river skirt a lake, along its shallow margin
+/// or a lower neighbour, a cell away from the water. A river cell beside a lake
+/// cell whose surface is not above its own is routed into the lake instead.
+/// The lake must precede the cell in flood order, so receivers still point
+/// strictly backwards in `order` (no cycle, `order` stays topological), and the
+/// lake's own outlet, flooded through the spill cell, is never captured.
+/// Upstream areas are then summed again with the same weights and losses.
+pub(super) fn capture_lake_shores(
+    h: &mut Hydrology,
+    lake: &[u8],
+    weight: Option<&[f32]>,
+    loss: Option<&[f32]>,
+    river_area: f64,
+) -> usize {
+    let n = h.n;
+    let total = n * n;
+    let cell_area = h.cell_area();
+    let g = &mut h.grids;
+    if g.order.len() != total || g.accumulation.len() != total {
+        return 0;
+    }
+    let mut rank = vec![u32::MAX; total];
+    for (i, &c) in g.order.iter().enumerate() {
+        rank[c as usize] = i as u32;
+    }
+    let mut captured = 0;
+    for c in 0..total {
+        if lake[c] != 0 || g.sea[c] != 0 || (g.accumulation[c] as f64) < river_area {
+            continue;
+        }
+        let r = g.receiver[c];
+        if r >= 0 && lake[r as usize] != 0 {
+            continue;
+        }
+        let mut best: Option<usize> = None;
+        for (nb, _) in neighbours(c, n) {
+            if lake[nb] != 0
+                && g.sea[nb] == 0
+                && rank[nb] < rank[c]
+                && g.filled[nb] <= g.filled[c]
+                && best.map_or(true, |b| g.filled[nb] < g.filled[b])
+            {
+                best = Some(nb);
+            }
+        }
+        if let Some(l) = best {
+            g.receiver[c] = l as i32;
+            captured += 1;
+        }
+    }
+    if captured == 0 {
+        return 0;
+    }
+    for c in 0..total {
+        g.accumulation[c] = if g.sea[c] == 0 {
+            (cell_area * weight.map_or(1.0, |w| w[c] as f64)) as f32
+        } else {
+            0.0
+        };
+    }
+    for &cc in g.order.iter().rev() {
+        let c = cc as usize;
+        if let Some(l) = loss {
+            let v = l[c];
+            if v != 0.0 && !v.is_nan() {
+                g.accumulation[c] = (g.accumulation[c] as f64 - v as f64).max(0.0) as f32;
+            }
+        }
+        let r = g.receiver[c];
+        if r >= 0 {
+            let up = g.accumulation[c] as f64;
+            g.accumulation[r as usize] = (g.accumulation[r as usize] as f64 + up) as f32;
+        }
+    }
+    if g.basin.len() == total {
+        // Roots keep their labels; captured cells join their lake's basin.
+        for &cc in g.order.iter() {
+            let r = g.receiver[cc as usize];
+            if r >= 0 {
+                g.basin[cc as usize] = g.basin[r as usize];
+            }
+        }
+    }
+    captured
 }
 fn water_bodies(h: &Hydrology, s: &Settings) -> (Vec<u8>, usize, f64) {
     let n = h.n;

@@ -1,14 +1,21 @@
-import { terrainStyle } from '../render/terrainStyle';
-/** Retained City Bench plans and native roofs on the V2 2D camera. No generation. */
+/** Retained City Bench plans and native roofs on the V2 2D camera. No generation.
+ * Same 2D engine as City Bench: WebGL2 cityGl (render/cityGlView.ts) draws the plans and city volumes
+ * whenever the shared rule allows it (cityContract.cityGlBlockReason); Canvas 2D drawCity paints the
+ * overlay (labels, glyphs, diagnostics, native house plans) and the whole frame otherwise. */
 import type { World } from '../gen/types';
 import type { View } from '../render/view';
 import type { ExportLayers } from '../render/exportLayers';
 import { viewRect } from '../render/view';
 import { buildCityBuildings, buildCityScene, drawCity, selectCityLod, type Box, type CityBuildings, type CityFrameStats, type CityLayers, type CityLod, type CityScene } from '../render/cityCanvas';
 import { DEFAULT_LAYERS } from '../render/cityGlStyle';
+import { CityGlComposite, cityGlDrawOptions, mergeCityPlans } from '../render/cityGlView';
+import type { CityGlFrame } from '../render/cityGl';
+import { cityGlBlockReason, usesNativeHouseRenderer } from '../render/cityContract';
+import { getRenderMode, onRenderMode, reportRenderStats } from '../render/renderMode';
 import { UrbanBuildingLodRenderer, type BuildingRenderMetrics, type BuildingViewport } from '../render/urbanBuildingLod';
 import { coverLayer, layerPattern, materialImagesNow, type MaterialImages } from '../render/buildingMaterials';
-import { buildingColors, type UrbanBuildingAppearance } from '../render/urbanBuildingStyle';
+import type { UrbanBuildingAppearance } from '../render/urbanBuildingStyle';
+import { cityBuildingAppearance, cityDrawOptions, finishCityFrame } from '../render/cityDrawOptions';
 import type { HouseMaterial, Surface } from '../../../rust/bridge/housesContract';
 import type { PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
 import type { ResolvedAppearance } from '../render/appearanceRecipe';
@@ -16,8 +23,6 @@ import { nativeCitiesOf } from './nativeProducts';
 import { cityGroundOf } from './rustUrban';
 import { activityScene, activitySitesOf, drawInstallations } from './activitySites';
 
-/** Roof slopes show as soon as a house is large enough to read them, on more houses than the default budget. */
-const HOUSE_LOD = { ridgeThresholdPx: 6, facetThresholdPx: 12, maxFacetBuildings: 1500 };
 export interface NativeCityMapStats {
   native: boolean;
   cities: number;
@@ -25,7 +30,10 @@ export interface NativeCityMapStats {
   buildings: number;
   visibleBuildings: number;
   lod?: CityLod;
-  renderer: 'canvas2d';
+  renderer: 'canvas2d' | 'webgl2';
+  /** Why Canvas 2D drew the plan (null: WebGL2 drew it). */
+  reason?: string | null;
+  drawCalls?: number;
   pending: boolean;
   ms: number;
   materialFaces: number;
@@ -38,14 +46,18 @@ export interface NativeCityMap {
   draw(ctx: CanvasRenderingContext2D, view: View, w: number, h: number, dpr: number, appearance: ResolvedAppearance, visibility?: Partial<ExportLayers>, hooks?: NativeCityHooks): NativeCityMapStats;
   /** The city plans (activity sites included), for the semantic district layer. */
   scenes(): readonly CityScene[];
+  /** Uploads the WebGL2 plan a frame with this appearance would use, if any (exports draw synchronously). */
+  prepare(appearance: ResolvedAppearance, visibility?: Partial<ExportLayers>): Promise<void>;
   dispose(): void;
 }
 interface Entry {
   plan: CityScene;
   buildings: CityBuildings;
-  houses: UrbanBuildingLodRenderer;
+  /** Native house plans (houses crate); city volumes have none and draw as plan silhouettes, like City Bench. */
+  houses?: UrbanBuildingLodRenderer;
   materials: ReadonlyMap<string, HouseMaterial>;
   refused: ReadonlySet<string>;
+  canopyBuildings?: readonly PlacedBuilding[];
 }
 interface MaterialFace { path: Path2D; layer: number; angle: number; z: number }
 interface MaterialGeometry { faces: MaterialFace[]; outline: Path2D }
@@ -108,7 +120,7 @@ export function createNativeCityMap(world: World, onInvalidate: () => void): Nat
   const raster = cities.length ? cityGroundOf(world) : undefined;
   const entries: Entry[] = cities.map(city => {
     const plan = buildCityScene(city.layouts, city.partitions ?? [], raster);
-    return { plan, buildings: buildCityBuildings(city.scene, plan), houses: new UrbanBuildingLodRenderer(city.scene ?? { buildings: [] }, HOUSE_LOD),
+    return { plan, canopyBuildings: city.scene?.buildings, buildings: buildCityBuildings(city.scene, plan), houses: usesNativeHouseRenderer(city.scene) ? new UrbanBuildingLodRenderer(city.scene!) : undefined,
       materials: new Map((city.scene?.materials ?? []).map(material => [material.id, material])),
       refused: new Set(city.scene?.refusals.map(refusal => refusal.parcel_id)) };
   });
@@ -116,7 +128,7 @@ export function createNativeCityMap(world: World, onInvalidate: () => void): Nat
   const activities = activityScene(world), sites = activitySitesOf(world);
   if (activities) {
     const plan = buildCityScene([], []);
-    entries.push({ plan, buildings: buildCityBuildings(activities, plan), houses: new UrbanBuildingLodRenderer(activities, HOUSE_LOD),
+    entries.push({ plan, canopyBuildings: activities.buildings, buildings: buildCityBuildings(activities, plan), houses: usesNativeHouseRenderer(activities) ? new UrbanBuildingLodRenderer(activities) : undefined,
       materials: new Map((activities.materials ?? []).map(material => [material.id, material])), refused: new Set() });
   }
   const textScenes = entries.map(entry => entry.plan);
@@ -130,6 +142,21 @@ export function createNativeCityMap(world: World, onInvalidate: () => void): Nat
     queued = true;
     queueMicrotask(() => { queued = false; if (!disposed) onInvalidate(); });
   };
+  // WebGL2: every city in one GL scene (one context, one upload), built on the first GL frame.
+  // Native house plans stay on Canvas 2D over it, as in City Bench.
+  let gl: CityGlComposite | undefined, glScene: ReturnType<typeof mergeCityPlans> | undefined;
+  const offRenderMode = onRenderMode(invalidate);
+  /** Why this frame cannot use WebGL2 before any upload (null: it can). Partial exports (streets only,
+   * no buildings...) keep Canvas 2D, which honours each layer switch. */
+  const glBlockReason = (appearance: ResolvedAppearance, visibility: Partial<ExportLayers>): string | null =>
+    visibility.city === false || visibility.roads === false || visibility.streets === false ? 'export-layers'
+      : cityGlBlockReason({ mode: getRenderMode(), appearance, palette: appearance.city.palette, ready: true });
+  /** Creates the GL layer and starts the merged upload; true once it can draw. */
+  function prepareGl(): boolean {
+    gl ??= new CityGlComposite(invalidate);
+    glScene ??= mergeCityPlans(entries.map(entry => ({ plan: entry.plan, buildings: entry.houses ? undefined : entry.buildings })));
+    return gl.prepare(glScene.plan, glScene.buildings);
+  }
   function textureRoofs(ctx: CanvasRenderingContext2D, entry: Entry, viewport: BuildingViewport, mpp: number,
     appearance: UrbanBuildingAppearance, images: MaterialImages): number {
     if (typeof Path2D === 'undefined' || appearance.style === 'silhouette' || appearance.diagnostic !== 'none' || mpp > 2.2) return 0;
@@ -140,7 +167,7 @@ export function createNativeCityMap(world: World, onInvalidate: () => void): Nat
       // The shared 2D material atlas adds grain over the native facet lighting.
       // Normal-mapped wall lighting remains the perspective renderer's job.
       ctx.globalCompositeOperation = 'soft-light'; ctx.globalAlpha = .28;
-      for (const visible of entry.houses.query(viewport, mpp, appearance).visible) {
+      for (const visible of entry.houses?.query(viewport, mpp, appearance).visible ?? []) {
         if (visible.lod === 'silhouette' || candidates++ >= 128) continue;
         const building = visible.building;
         let geometry = textures.get(building);
@@ -185,33 +212,48 @@ export function createNativeCityMap(world: World, onInvalidate: () => void): Nat
       }
       const viewport = viewRect(view, w, h), mpp = 1 / view.scale;
       lod = selectCityLod(mpp, lod); stats.lod = lod;
-      const palette = city.palette, colors = appearance.palette.colors, buildingAppearance: UrbanBuildingAppearance = {
-        colors: buildingColors(colors, appearance.composition.ambience), ambience: appearance.composition.ambience, style: city.buildingStyle, diagnostic: city.diagnostic };
+      const palette = city.palette, buildingAppearance: UrbanBuildingAppearance = cityBuildingAppearance(appearance);
       const requestedLayers = city.plan ? city.layers : EMPTY_LAYERS;
       const layers = { ...(visibility.city === false ? EMPTY_LAYERS : requestedLayers),
         streets: appearance.composition.networks.roads.visible && visibility.roads !== false && visibility.streets !== false && requestedLayers.streets, ...(appearance.composition.networks.water.visible ? {} : { waterways: false }) };
       const painted = city.painted, textured = city.textured;
       const images = textured && palette !== 'parchment' && palette !== 'ink' ? materialImagesNow(invalidate) : undefined;
+      const buildingsVisible = visibility.city !== false && city.visible;
+      let reason = glBlockReason(appearance, visibility);
+      let glFrame: CityGlFrame | undefined;
       ctx.save();
       try {
         ctx.setTransform(view.scale * dpr, 0, 0, view.scale * dpr, (w / 2 - view.cx * view.scale) * dpr, (h / 2 - view.cy * view.scale) * dpr);
         // Activity / node installations: flat ground under every building.
-        if (visibility.city !== false && city.visible) drawInstallations(ctx, sites, viewport, mpp);
+        if (buildingsVisible) drawInstallations(ctx, sites, viewport, mpp);
+        if (!reason) {
+          if (!prepareGl()) reason = gl?.unavailable !== false ? 'gl-unavailable' : 'gl-not-ready';
+          else {
+            glFrame = gl!.draw(ctx, Math.round(w * dpr), Math.round(h * dpr), cityGlDrawOptions({ viewport, mpp, lod, view: city.view, palette, layers,
+              buildingStyle: buildingAppearance.style, painted, buildingsVisible, diagnostic: buildingAppearance.diagnostic,
+              refusedParcels: buildingAppearance.diagnostic === 'access' ? new Set(entries.flatMap(entry => [...entry.refused])) : undefined, textured, colors: appearance.palette.colors }));
+            if (!glFrame) reason = 'gl-unavailable';
+          }
+        }
+        stats.renderer = glFrame ? 'webgl2' : 'canvas2d'; stats.reason = reason; stats.drawCalls = glFrame?.drawCalls ?? 0;
         for (const entry of entries) {
-          const frame = drawCity(ctx, entry.plan, { colors: buildingAppearance.colors, roadEmphasis: appearance.composition.networks.roads.emphasis, night: appearance.composition.ambience === 'night', viewport, mpp, dpr, lod, view: city.view, palette, layers,
-            width: finite(city.width, .6, 0, 5), labels: visibility.labels !== false && appearance.cartography.labels, text: appearance.composition.text, textPalette: terrainStyle(appearance.composition.variant, colors).palette,
-            buildings: entry.buildings, buildingsVisible: visibility.city !== false && city.visible,
-            appearance: buildingAppearance, textured, onTexturesReady: invalidate, roadLook: appearance.composition.networks.roads.look, groundBlend: city.groundBlend === 'blended',
+          const frame = drawCity(ctx, entry.plan, cityDrawOptions({ appearance, city, frame: { viewport, mpp, dpr }, lod, layers, glFrame,
+            labelsAllowed: visibility.labels !== false, buildingAppearance,
+            page: { buildings: entry.buildings, buildingsVisible: buildingsVisible && (!glFrame || !!entry.houses), onTexturesReady: invalidate,
             refusedParcels: buildingAppearance.diagnostic === 'access' ? entry.refused : undefined,
             beforeBuildings: visibility.city !== false && hooks?.beforeBuildings ? (hookCtx => hooks.beforeBuildings!(hookCtx, entry.plan, { viewport, mpp })) : undefined,
-            renderer: { draw(houseCtx, options) {
-              const metrics = entry.houses.draw(houseCtx, { ...options, painted });
+            renderer: entry.houses && { draw(houseCtx, options) {
+              const metrics = entry.houses!.draw(houseCtx, { ...options, painted });
               stats.houses.push(metrics); stats.visibleBuildings += metrics.visibleBuildings;
               if (images) stats.materialFaces += textureRoofs(houseCtx, entry, viewport, mpp, buildingAppearance, images);
               return metrics;
-            } } });
+            } } } }));
+          finishCityFrame(ctx, entry.plan, entry.canopyBuildings, { viewport, mpp, view: city.view, palette,
+            visible: buildingsVisible, diagnostic: buildingAppearance.diagnostic, night: appearance.composition.ambience === 'night', streets: layers.streets });
           stats.frames.push(frame); stats.pending ||= frame.pending;
-          if (city.view !== 'buildings' || buildingAppearance.style === 'silhouette') stats.visibleBuildings += frame.buildings;
+          if (!entry.houses || city.view !== 'buildings' || buildingAppearance.style === 'silhouette') stats.visibleBuildings += frame.buildings;
+          // City volumes drawn by WebGL2: counted from the plan bins (drawCity painted none of them).
+          if (glFrame && !entry.houses && buildingsVisible) stats.visibleBuildings += entry.buildings.bins.query(viewport).length;
         }
       } finally { ctx.restore(); }
       if (isolated) {
@@ -221,12 +263,17 @@ export function createNativeCityMap(world: World, onInvalidate: () => void): Nat
       }
       if (stats.pending) invalidate();
       stats.ms = performance.now() - started;
+      reportRenderStats({ path: glFrame ? 'gpu' : 'cpu', ms: stats.ms, drawCalls: stats.drawCalls ?? 0, reason: glFrame ? undefined : reason ?? undefined });
       return stats;
+    },
+    async prepare(appearance, visibility = {}) {
+      if (disposed || !entries.length || glBlockReason(appearance, visibility)) return;
+      if (!prepareGl()) await gl?.ready();
     },
     dispose() {
       if (disposed) return;
-      disposed = true;
-      for (const entry of entries) entry.houses.replaceScene({ buildings: [] });
+      disposed = true; offRenderMode(); gl?.dispose(); gl = undefined; glScene = undefined;
+      for (const entry of entries) entry.houses?.replaceScene({ buildings: [] });
       entries.length = 0; textures.clear();
       if (layer) layer.width = layer.height = 1;
       layer = undefined; context = undefined;

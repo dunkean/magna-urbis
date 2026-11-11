@@ -28,7 +28,7 @@ export interface MassingPiece {
 /** One roof face: 3D polygon (z above the building ground) and its upward unit normal.
  * `vol` is the volume index inside the piece (0 when the piece has none), `cover`/`wall`/`tone`
  * the materials and 0..1 shade of that volume. */
-export interface RoofFace { points: Vertex3[]; normal: [number, number, number]; piece: number; vol: number; cover: string; wall: string; tone: number }
+export interface RoofFace { points: Vertex3[]; holes?: Point[][]; normal: [number, number, number]; piece: number; vol: number; cover: string; wall: string; tone: number }
 
 /** A piece resolved to the volumes to draw (the piece itself when it has no `volumes`). */
 export interface ResolvedVolume { shape: Shape; floors: number; eave_m: number; rise_m: number; roof: MassingRoof; ridges: [number, number, number, number][]; cover: string; wall: string; tone: number; detail?: VolumeDetail; tree?: TreeDwelling }
@@ -316,7 +316,11 @@ export function volumeRoof(v: ResolvedVolume, piece: number, vol: number): RoofF
   else if (v.roof === 'barrel' && ridges.length) barrel(f, outer, ridges[0], eave, rise);
   else if (rise > 0.05 && ridges.length) lofted(f, outer, ridges, eave, eave + rise);
   else if (rise > 0.05 && (v.roof === 'pyramid' || v.roof === 'cone' || v.roof === 'hip')) { const c = centroid(outer); lofted(f, outer, [[c, c]], eave, eave + rise); }
-  else flat(f, outer, eave);
+  else {
+    flat(f, outer, eave);
+    // Flat terraces retain the opening occupied by the next tier (or court).
+    if (shape.holes.length && f.list.length) f.list[0].holes = shape.holes;
+  }
   return f.list;
 }
 /** Roof faces of one piece (one face set per volume), z relative to the building ground. */

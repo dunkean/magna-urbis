@@ -774,6 +774,13 @@ impl VolcanoShape {
         ]
     }
 
+    /// Seeded shape variety in [0, 1), derived from the stored f32 phase so the
+    /// GPU kernel (`terrainFinite.wgsl`, `volcanoVariety`) reproduces it.
+    fn variety(&self, k: usize) -> f64 {
+        const KEYS: [f64; 6] = [0.618034, 0.414214, 0.732051, 0.236068, 0.645751, 0.302776];
+        (self.phase as f32 as f64 * KEYS[k]).fract()
+    }
+
     fn geometry(&self, px: f64, py: f64, noise: &Noise, noise2: &Noise) -> (f64, f64, f64) {
         let dx = px - self.center.0;
         let dy = py - self.center.1;
@@ -795,13 +802,19 @@ impl VolcanoShape {
         let wobble =
             1.0 + (if self.collapsed { 0.18 } else { 0.12 }) * outline + 0.055 * geographic;
         let radius = x.hypot(y) / (self.radius * wobble);
-        let rim = (if self.collapsed { 0.55 } else { 0.255 })
+        // Low azimuthal harmonics make each rim lobed or elongated in its own way.
+        let lobes = 1.0
+            + (0.04 + 0.08 * self.variety(0))
+                * (2.0 * (azimuth - TAU * self.variety(1))).cos()
+            + 0.06 * self.variety(2) * (3.0 * (azimuth - TAU * self.variety(3))).cos();
+        let rim = ((if self.collapsed { 0.55 } else { 0.255 })
             + (if self.collapsed { 0.045 } else { 0.030 })
                 * noise2.fbm(
                     px / (420.0 * self.scale) + self.phase,
                     py / (420.0 * self.scale),
                     3,
-                );
+                ))
+            * lobes;
         (radius, rim, azimuth)
     }
 
@@ -843,11 +856,21 @@ impl VolcanoShape {
 
     fn elevation(&self, px: f64, py: f64, rough: f64, noise: &Noise, noise2: &Noise) -> f64 {
         let (radius, rim, azimuth) = self.geometry(px, py, noise, noise2);
+        let v = |k| self.variety(k);
+        // Seeded floor depth, flank steepness and a sagging rim sector.
         let (floor, start, crest, apron, exponent) = if self.collapsed {
-            (0.06, 0.58, 0.96, 1.18, 1.45)
+            (0.03 + 0.12 * v(2), 0.58, 0.96, 1.18, 1.45 * (0.8 + 0.45 * v(1)))
         } else {
-            (0.36, 0.36, 0.98, 1.05, 1.6)
+            (0.26 + 0.20 * v(0), 0.36, 0.98, 1.05, 1.6 * (0.8 + 0.45 * v(1)))
         };
+        let sag = 0.5 + 0.5 * (azimuth - TAU * v(5)).cos();
+        let crest = crest * (1.0 - 0.18 * v(4) * sag * sag);
+        // The floor tilts gently, so a crater lake has one deep side and a
+        // gradual, well-defined shore instead of a perfectly flat bottom.
+        let (u, w) = (radius * azimuth.cos(), radius * azimuth.sin());
+        let tilt_angle = if self.collapsed { self.breach_angle } else { TAU * v(2) };
+        let floor = floor
+            + 0.035 * (0.4 + v(4)) * (u * tilt_angle.cos() + w * tilt_angle.sin()) / rim;
         let t = ((radius / rim - start) / (1.0 - start)).clamp(0.0, 1.0);
         let bowl = floor + (crest - floor) * t.powi(3) * (t * (6.0 * t - 15.0) + 10.0);
         let outer = crest
@@ -857,18 +880,57 @@ impl VolcanoShape {
         // Round the crest instead of meeting two profiles at a hard slope break.
         let crown = smooth((radius / rim - 0.94) / 0.12);
         let mut cone = bowl * (1.0 - crown) + outer * crown;
+        // An offset nested vent: a post-caldera cone with its own summit pit,
+        // or a secondary pit in a summit crater.
+        if v(3) > 0.4 {
+            let base = if self.collapsed { 0.55 } else { 0.255 };
+            let angle = TAU * v(0) + 1.3;
+            let offset = (0.15 + 0.45 * v(4)) * base;
+            let size = base * if self.collapsed { 0.14 + 0.12 * v(5) } else { 0.30 + 0.20 * v(5) };
+            let d = (u - offset * angle.cos()).hypot(w - offset * angle.sin()) / size;
+            let inside = 1.0 - smooth((radius / rim - 0.70) / 0.20);
+            let vent = if self.collapsed {
+                let height = 0.10 + 0.25 * v(1);
+                height * (1.0 - smooth(d)) - 0.45 * height * (1.0 - smooth(d / 0.35))
+            } else {
+                -(0.06 + 0.10 * v(1)) * (1.0 - smooth(d))
+            };
+            cone += vent * inside;
+        }
         let opening = self.opening(radius, rim, azimuth);
         if self.collapsed {
             // A full-width sector reaches exactly the basin floor, then falls to the apron.
             // Multiplying the rim by a percentage left a closed barrier at the outlet.
-            let outlet = 0.06 * (1.0 - smooth((radius - rim * 0.65) / (1.18 - rim * 0.65)));
+            let outlet = floor * (1.0 - smooth((radius - rim * 0.65) / (1.18 - rim * 0.65)));
             cone = cone * (1.0 - opening) + outlet * opening;
         }
         let flutes = noise2.ridged(px / (360.0 * self.scale), py / (360.0 * self.scale), 3) - 0.5;
         let wall_noise = noise.fbm(px / (150.0 * self.scale), py / (150.0 * self.scale), 3);
         let interior = 1.0 - smooth((radius / rim - 0.82) / 0.18);
         let crater_noise = noise2.fbm(px / (380.0 * self.scale), py / (380.0 * self.scale), 3);
-        let texture = (0.018 * rough + (0.055 * flutes + 0.025 * wall_noise) * cone)
+        // Radial gullies: ridged noise sampled on a circle of the azimuth (no
+        // seam), drifting with the radius so the channels branch downslope. A
+        // warped azimuth varies their spacing, a gate their length and presence.
+        let warp = azimuth
+            + 0.45 * noise.fbm(azimuth.cos() * 1.3 + self.phase, azimuth.sin() * 1.3, 2);
+        let gate = smooth(
+            (noise2.fbm(
+                azimuth.cos() * 2.6 - self.phase,
+                azimuth.sin() * 2.6 + radius * 1.4,
+                2,
+            ) + 0.15)
+                / 0.45,
+        );
+        let gullies = (noise2.ridged(
+            warp.cos() * 4.5 + self.phase,
+            warp.sin() * 4.5 + radius * 2.3,
+            3,
+        ) - 0.5)
+            * gate;
+        let flank = crown * (1.0 - smooth(((radius - rim) / (apron - rim) - 0.55) / 0.40));
+        let texture = (0.018 * rough
+            + (0.055 * flutes + 0.025 * wall_noise) * cone
+            + (0.02 + 0.05 * v(5)) * gullies * flank)
             * (1.0 - interior)
             + 0.012 * crater_noise * interior;
         0.035 + cone + texture * (1.0 - opening)

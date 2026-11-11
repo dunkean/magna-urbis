@@ -1,13 +1,17 @@
+import { defaultCityLayoutConfig as defaultLayoutConfig } from '../render/cityGeneration';
 import type { V2Settings, V2UrbanControls } from './contracts';
 import type { HouseMix } from '../../../rust/bridge/urbanArchitecture';
 import { SITE_ARCHETYPES } from '../gen/options';
-import { defaultLayoutConfig, defaultParcelConfig } from '../../../rust/bridge/urbanConfig';
+import { defaultParcelConfig } from '../../../rust/bridge/urbanConfig';
 import type { CatalogueBundle, HouseConfig } from '../../../rust/bridge/housesContract';
 import type { Options } from '../gen/types';
 import { bindTree, registerMessages, setDynamicText, setText, translate } from './i18n';
 import { mountParameterForm, readSettingPath, writeSettingPath, type ParameterForm } from './parameterForm';
 import { houseControlDefaults, workshopControlDefaults, morphologyTemplate, urbanCatalogue, urbanChoiceNames, urbanControlFields, urbanField, urbanFieldNames, urbanName, urbanSectionNames, URBAN_ZONES, type UrbanParameterField } from './urbanControlSchema';
 import './urbanControls.css';
+import { CITY_ARCHITECTURES, DEFAULT_CITY_ARCHITECTURE, type CityArchitecture } from '../render/cityContract';
+
+const architectureNames: Record<CityArchitecture, string> = { silhouette: 'City volumes', compact: 'Compact plans (houses generator)', detailed: 'Detailed houses (houses generator)' };
 
 export type UrbanControlScope =
   | { kind: 'global' }
@@ -66,7 +70,7 @@ export function urbanScopeValues(settings: V2Settings, scope: UrbanControlScope 
 }
 function nativeDefaults(settings: V2Settings, key?: string, place?: Partial<Options>): Record<string, unknown> {
   const options = { ...settings.options, ...place, ...(key ? settings.local[key] : {}) };
-  return { through: 'buildings', layout: mergeUrbanControlValues(defaultLayoutConfig(), { culture: options.culture, density: 1 / (options.sprawl ?? 1), radiusScale: Math.sqrt(options.sprawl ?? 1),
+  return { through: 'buildings', architecture: DEFAULT_CITY_ARCHITECTURE, layout: mergeUrbanControlValues(defaultLayoutConfig(), { culture: options.culture, density: 1 / (options.sprawl ?? 1), radiusScale: Math.sqrt(options.sprawl ?? 1),
     fortification: options.walls === 'none' || options.walls === 'no' ? 'none' : options.walls === 'auto' ? 'culture' : 'wall', suburbs: options.suburbs === 'some' ? 'few' : options.suburbs,
     ...(options.castle === 'yes' || Number(options.castles) > 0 ? { monument: 'castle' } : {}), ...(options.cathedral === 'yes' ? { monument: 'cathedral' } : {}), ...(options.palace === 'yes' ? { monument: 'palace' } : {}),
     ...(options.cultureMix ? { mixCulture: options.cultureMix.id, mixMode: options.cultureMix.mode, mixShare: options.cultureMix.t } : {}),
@@ -76,7 +80,7 @@ function nativeDefaults(settings: V2Settings, key?: string, place?: Partial<Opti
  * also owns every settlement/house patch; cloning that unrelated database on
  * each keystroke makes large projects needlessly expensive. */
 function controlProducts(controls: V2UrbanControls | undefined): Record<string, unknown> {
-  return { ...(controls?.through ? { through: controls.through } : {}), ...(controls?.layout ? { layout: controls.layout } : {}), ...(controls?.parcels ? { parcels: controls.parcels } : {}), ...(controls?.houses ? { houses: controls.houses } : {}) };
+  return { ...(controls?.through ? { through: controls.through } : {}), ...(controls?.architecture ? { architecture: controls.architecture } : {}), ...(controls?.layout ? { layout: controls.layout } : {}), ...(controls?.parcels ? { parcels: controls.parcels } : {}), ...(controls?.houses ? { houses: controls.houses } : {}) };
 }
 function morphologyDefaults(effective: Record<string, unknown>): Record<string, unknown> {
   const out = clone(effective);
@@ -158,7 +162,7 @@ const textMessages: Record<string, string> = {
   'Cultural rules by growth zone': 'Règles culturelles par zone de croissance', 'Mixed architectural styles': 'Styles architecturaux mélangés', 'Whole settlement': 'Tout le lieu', 'Core': 'Cœur', Middle: 'Extension', Edge: 'Périphérie', Faubourg: 'Faubourg', Village: 'Village',
   'Inherit architecture styles': 'Hériter des styles architecturaux', 'Add a style': 'Ajouter un style', 'Remove style': 'Supprimer le style', 'Weight': 'Poids', 'Spread': 'Répartition', Lot: 'Lot', Block: 'Îlot', Quarter: 'Quartier', 'Quarter identifier': 'Identifiant de quartier', 'Add quarter styles': 'Ajouter les styles du quartier',
   'Native outline coordinates (metres)': 'Coordonnées du contour natif (mètres)', 'Outer boundary': 'Contour extérieur', 'Hole': 'Trou', 'Add vertex': 'Ajouter un sommet', 'Remove vertex': 'Supprimer le sommet', 'Add hole': 'Ajouter un trou', 'Remove hole': 'Supprimer le trou', 'Clear outline override': 'Supprimer la modification du contour',
-  'At least three finite vertices per ring are required.': 'Chaque anneau requiert au moins trois sommets finis.', 'Generate through': 'Générer jusqu’à', Layout: 'Plan', Parcels: 'Parcelles', Programme: 'Programme', Buildings: 'Bâtiments',
+  'At least three finite vertices per ring are required.': 'Chaque anneau requiert au moins trois sommets finis.', 'Generate through': 'Générer jusqu’à', Architecture: 'Architecture', 'City volumes': 'Volumes de la ville', 'Compact plans (houses generator)': 'Plans compacts (générateur houses)', 'Detailed houses (houses generator)': 'Maisons détaillées (générateur houses)', Layout: 'Plan', Parcels: 'Parcelles', Programme: 'Programme', Buildings: 'Bâtiments',
   'Merge into neighbours': 'Fusionner avec les voisins', 'Keep as a garden': 'Conserver en jardin',
   'Site archetypes by settlement identifier': 'Archétypes de site par identifiant de lieu', 'Settlement identifier': 'Identifiant de lieu', 'Add site rule': 'Ajouter une règle de site', 'Remove site rule': 'Supprimer une règle de site',
 };
@@ -209,14 +213,15 @@ export function mountUrbanControls(root: HTMLElement, getSettings: () => V2Setti
   button(root, 'Restore default settings', () => {
     for (const target of scopes()) {
       const settings = getSettings(), values = urbanScopeValues(settings, target);
-      if (target.kind === 'global') { delete values.seed; delete values.seeds; delete values.layout; delete values.parcels; delete values.houses; delete values.through; }
+      if (target.kind === 'global') { delete values.seed; delete values.seeds; delete values.layout; delete values.parcels; delete values.houses; delete values.through; delete values.architecture; }
       else for (const key of Object.keys(values)) delete values[key];
     }
     changed(); sync();
   }).className = 'subtle';
   if (global) {
     const stageRoot = document.createElement('div'); root.append(stageRoot);
-    forms.push(mountParameterForm(stageRoot, [{ path: 'through', label: 'Generate through', type: 'select', options: ['layout', 'parcels', 'programme', 'buildings'].map(value => ({ value, label: value[0].toUpperCase() + value.slice(1) })) }], { getValue: effective, isMixed, setValue: set, disabled: parts?.disabled }));
+    forms.push(mountParameterForm(stageRoot, [{ path: 'through', label: 'Generate through', type: 'select', options: ['layout', 'parcels', 'programme', 'buildings'].map(value => ({ value, label: value[0].toUpperCase() + value.slice(1) })) },
+      { path: 'architecture', label: 'Architecture', type: 'select', options: CITY_ARCHITECTURES.map(value => ({ value, label: architectureNames[value] })) }], { getValue: effective, isMixed, setValue: set, disabled: parts?.disabled }));
   }
   }
   let modelEnabled: HTMLInputElement | undefined;

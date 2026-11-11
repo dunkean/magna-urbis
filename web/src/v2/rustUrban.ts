@@ -1,9 +1,11 @@
+import { defaultCityLayoutConfig as defaultLayoutConfig } from '../render/cityGeneration';
 import { springPoints } from '../../../rust/bridge/urbanGeography';
 import type { World, UrbanLayer, UrbanBuilding, PolyH, UrbanZone, StreetRole, Options } from '../gen/types';
 import type { Layout, Partition, UrbanResponse, Street, UrbanEngine } from '../../../rust/bridge/urban';
 import type { LayoutConfig, ParcelConfig } from '../../../rust/bridge/urbanConfig';
-import { defaultLayoutConfig, defaultParcelConfig, normalizeLayoutConfig, normalizeParcelConfig } from '../../../rust/bridge/urbanConfig';
+import { defaultParcelConfig, normalizeLayoutConfig, normalizeParcelConfig } from '../../../rust/bridge/urbanConfig';
 import { settlementRaster, type SettlementRaster } from '../../../rust/bridge/settlements';
+import { cityRasterSide } from '../render/cityGeneration';
 import type { PlacementBatch, PlacementRequest, PlacementBatchSettings } from '../../../rust/bridge/urbanArchitecture';
 import type { HouseConfig } from '../../../rust/bridge/housesContract';
 import { carryUrbanOpenDeficits } from '../../../rust/bridge/urbanOpenDeficits';
@@ -14,6 +16,8 @@ import { ribbon } from '../gen/geo/offset';
 import { pointInRing } from '../gen/geo/poly';
 import { streetSeedConfig, urbanSeed } from './urbanSeeds';
 import type { CityGroundRaster } from '../render/cityGround';
+import { cityArchitectureOf } from '../render/cityContract';
+import { silhouetteScene, type CityPlacementRequest } from '../ui/urbanSilhouettes';
 
 export interface RustTownSnapshot {
   backend: 'rust-wasm-cpu' | 'rust-native-cpu';
@@ -74,9 +78,11 @@ export function urbanBackend(settings: V2Settings): 'typescript' | 'rust' | 'nat
 /** Retain cell-centred physical metres and the existing vector geography; never rerun terrain. */
 export function rustSettlementRaster(world: World): SettlementRaster {
   const terrain = world.terrain, grid = terrain.height;
+  // A world opened from a saved decor keeps the decor's own raster: placement, roads and towns read City Bench's exact ground.
+  const decor = (terrain as typeof terrain & { v2DecorRaster?: SettlementRaster }).v2DecorRaster;
+  if (decor && decor.width === world.mapSize) return decor;
   const native = (terrain as typeof terrain & { v2NativeTerrain?: import('../../../rust/bridge/terrain').TerrainData }).v2NativeTerrain;
-  const n = world.mapSize > 40000 && native?.physical && grid.w < 1024
-    ? Math.min(1024, Math.max(16, native.physical.n)) : grid.w;
+  const n = cityRasterSide({ mapSize: world.mapSize, gridSide: grid.w, nativeSide: native?.physical?.n });
   const cell = world.mapSize / n;
   const source = native?.physical, field = native?.field && source && native.field.n === source.n ? native.field : undefined;
   const sameHeight = !field && source?.n === grid.w && source.height.length === grid.data.length && source.height.every((h, i) => h === grid.data[i]);
@@ -360,8 +366,36 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
       const patch = settings.urban?.buildings?.[`${key}/${request.id}`] ?? settings.urban?.buildings?.[request.id];
       return patch ? [[request.id, patch]] : [];
     }));
-    const buildingKey = fingerprint(houseSeed === seed ? [requestKey, config.houses, relevantOverrides] : [requestKey, config.houses, relevantOverrides, houseSeed]);
-    if (!snapshot.scene || snapshot.buildingKey !== buildingKey) {
+    // Same default as City Bench and the v7 sheets: city volumes raised by urban/massing.rs.
+    // The houses crate only runs for the compact/detailed architectures and for edited houses.
+    const architecture = cityArchitectureOf(local?.architecture ?? settings.urban?.architecture);
+    const buildingKey = fingerprint(houseSeed === seed ? [architecture, requestKey, config.houses, relevantOverrides] : [architecture, requestKey, config.houses, relevantOverrides, houseSeed]);
+    if (architecture === 'silhouette' && (!snapshot.scene || snapshot.buildingKey !== buildingKey)) {
+      report('urban-buildings', 'Rust · city volumes…', 4);
+      let scene = silhouetteScene(snapshot.requests as CityPlacementRequest[]);
+      const edited = snapshot.requests.filter(request => relevantOverrides[request.id]);
+      if (edited.length) {
+        // An edited house is planned by the houses crate inside its lot; every other lot keeps its volume.
+        const { planUrbanBuildings } = await import('../../../rust/bridge/architecture');
+        const { defaultHouseConfig } = await import('../../../rust/bridge/houses');
+        const parcels = new Set(edited.map(request => request.parcel_id));
+        const requests = withRetainedNeighbors(edited.map(request => {
+          const patch = relevantOverrides[request.id], draw = patch.seed ?? (houseSeed === seed ? request.seed : `${houseSeed}/${request.id}`);
+          return { ...request, seed: draw, config: merge<HouseConfig>(defaultHouseConfig(), { pack: request.culture.pack, mode: request.culture.mode },
+            request.config, config.houses.house_config, patch, { seed: draw, count: 1 }) };
+        }), scene.buildings.filter(building => !parcels.has(building.parcel_id)));
+        const planned = await planUrbanBuildings({ schema_version: '1', requests, settings: { ...config.houses, floors: undefined } }, runtime);
+        scene = { ...scene, buildings: [...scene.buildings.filter(building => !parcels.has(building.parcel_id)), ...planned.buildings],
+          refusals: planned.refusals, open_spaces: [...scene.open_spaces.filter(space => !parcels.has(space.parcel_id)), ...planned.open_spaces],
+          materials: planned.materials, ...(planned.plan_archives ? { plan_archives: planned.plan_archives } : {}) };
+      }
+      snapshot.scene = scene; snapshot.houseBaseline = undefined; snapshot.lastBuildingRequests = edited.length;
+      snapshot.partitions = snapshot.programmePartitions ?? snapshot.partitions;
+      snapshot.houseOverrides = structuredClone(relevantOverrides); snapshot.buildingKey = buildingKey;
+      // As in City Bench, volumes keep the programme's own capacities (no built-capacity balance).
+      snapshot.capacityKey = buildingKey;
+    } else if (architecture === 'silhouette') { snapshot.lastBuildingRequests = 0; report('urban-buildings', 'Rust · city volumes reused', 5); }
+    else if (!snapshot.scene || snapshot.buildingKey !== buildingKey) {
       report('urban-buildings', 'Chargement du moteur Rust des maisons…', 4);
       const { planUrbanBuildings } = await import('../../../rust/bridge/architecture');
       const houseSettingsKey = fingerprint(houseSeed === seed ? config.houses : [config.houses, houseSeed]), baselineKey = fingerprint([requestKey, houseSettingsKey]);

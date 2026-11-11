@@ -981,7 +981,7 @@ pub(in crate::urban) fn measure(
     // A block steeper than the culture's houses admit holds none
     // (`programme` admission): it is neither sampled nor extrapolated.
     let max_slope = super::super::culture::mapping_for(&layout.culture, &cfg.programme.period)
-        .map_or(f64::INFINITY, |m| super::super::profiles::house_slope(&layout.culture, m.admissibility.max_slope));
+        .map_or(f64::INFINITY, |m| super::super::profiles::house_slope(&layout.culture, m.admissibility.max_slope, cfg.programme.slope_relax));
     let land: Vec<f64> = areas
         .iter()
         .zip(&reserved)

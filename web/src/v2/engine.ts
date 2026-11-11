@@ -72,7 +72,8 @@ export function terrainCacheKey(settings: V2Settings): string {
   return stableStringify([V2_ENGINE_VERSION, settings.generation, seedSubset(o.seed, key => /^(relief-|water-)/.test(key)), adaptedExtent(settings), o.relief, o.coast,
     o.river, o.seaLevel ?? 0, (o as Options & { lakes?: string }).lakes ?? 'auto',
     physics, compactTerrain,
-    image ? [image.w, image.h, fingerprintBytes(image.elevations ? new Uint8Array(image.elevations.buffer, image.elevations.byteOffset, image.elevations.byteLength) : image.rgba), o.heightScale ?? 120, o.importSea ?? 0] : null]);
+    image ? [image.w, image.h, fingerprintBytes(image.elevations ? new Uint8Array(image.elevations.buffer, image.elevations.byteOffset, image.elevations.byteLength) : image.rgba), o.heightScale ?? 120, o.importSea ?? 0]
+      : settings.decor ? ['decor', settings.decor.id, fingerprintBytes(settings.decor.bytes)] : null]);
 }
 const LEGACY_BENCH_KEY = 'mu-v2-bench-terrain-2026-10-28.2';
 const LEGACY_TS_KEY = 'mu-v2-ts-2026-10-28.1';
@@ -157,7 +158,12 @@ export async function generateTerrain(settings: V2Settings, onProgress?: Progres
     report(onProgress, 'terrain', 'Calcul du relief, du drainage, des riviÃ¨res et des lacsâ€¦', 0, 3, 'miss');
     let engineStats: Record<string, string | number> = { backend: 'typescript-cpu' };
     let nativeTerrain: TerrainLayer | undefined;
-    if (nativeEngine) {
+    if (settings.decor) {
+      // A saved decor is the whole world: its relief, sea, lakes and rivers are kept, never regenerated.
+      report(onProgress, 'terrain', `Opening the saved decor ${settings.decor.id}…`, 0, 3, 'miss');
+      nativeTerrain = await (await import('./decorTerrain')).settingsDecorTerrain(settings.decor);
+      engineStats = { backend: 'decor', decor: settings.decor.id };
+    } else if (nativeEngine) {
       const runtime = settings.runtime, { generateEngineHeight } = await import('./platform');
       const remoteNeural = !options.importedHeight && !configuration.sketch?.processing && (runtime!.source === 'neural-python' || runtime!.source === 'neural');
       let compute: 'cpu' | 'gpu' = runtime!.compute === 'gpu' ? 'gpu' : 'cpu',softwareGpu=false;
@@ -478,6 +484,8 @@ async function finishTowns(world: World, settings: V2Settings, onProgress?: Prog
   }
   nameWorld(world, settings.local.main);
   refreshCavernMask(world);
+  // Isolated buildings (farms, mills, chapels…) follow the architecture in use, like the towns.
+  await (await import('./activitySites')).planActivityArchitecture(world, settings);
   report(onProgress, 'complete', 'Lieux gÃ©nÃ©rÃ©s', 1, 1);
 }
 export async function generateTown(regionWorld: World, settings: V2Settings, key: string, onProgress?: ProgressCallback): Promise<World> {

@@ -4,8 +4,26 @@ import type { HouseMaterial } from '../../../rust/bridge/housesContract';
 import type { NativeBuildingProjection } from '../ui/urbanBuildingProjection';
 import type { ParentMember3dVisual } from '../ui/urbanParent3d';
 import { retainBuildingFeature, type BuildingFeatureLod } from './urbanBuildingFeatureLod';
+import { earcut } from './cityGlEarcut';
 
 export type BuildingVector = [number, number, number];
+type RoofMesh = PlacedBuilding['volumes'][number]['roof_mesh'];
+const FACE_TRIANGLES = new WeakMap<object, number[]>();
+/** Native roof pans can be concave. Triangulate in their own plane so a fan
+ * cannot cover a neighbouring pan or courtyard when the near LOD appears. */
+function faceTriangles(mesh: RoofMesh, face: RoofMesh['faces'][number]): number[] {
+  const cached = FACE_TRIANGLES.get(face); if (cached) return cached;
+  const indices = face.vertices;
+  if (indices.length === 3) return indices;
+  if (indices.some(i => !mesh.vertices[i])) return [];
+  const n = face.normal.map(Math.abs), drop = n.indexOf(Math.max(...n));
+  const coords = indices.flatMap(i => {
+    const p = mesh.vertices[i];
+    return drop === 0 ? [p.y, p.z] : drop === 1 ? [p.x, p.z] : [p.x, p.y];
+  });
+  const triangles = earcut(coords).map(i => indices[i]);
+  FACE_TRIANGLES.set(face, triangles); return triangles;
+}
 /** `yard`: a lot boundary, its own class: the building colours never reach it. `ground`: the ground under each point, when the
  * mesh does not stand on one level. */
 export interface BuildingTriangle { points: [BuildingVector, BuildingVector, BuildingVector]; normal: BuildingVector; surface: 'wall' | 'roof' | 'yard'; materials: MaterialSlots; material?: string; ground?: [number, number, number] }
@@ -144,10 +162,13 @@ export function eachBuildingTriangle(building: Building3dVisual, emit: (triangle
       continue;
     }
     const roof = volume.roof_mesh;
-    if (roof) for (const face of roof.faces) for (let i = 1; i + 1 < face.vertices.length; i++) {
-      const points = [face.vertices[0], face.vertices[i], face.vertices[i + 1]].map(index => roof.vertices[index]);
-      if (points.some(p => !p)) continue;
-      emit({ points: points.map(p => [p.x, p.y, p.z]) as BuildingTriangle['points'], normal: face.normal, materials: volume.materials, material: face.material, surface: 'roof' });
+    if (roof) for (const face of roof.faces) {
+      const triangles = faceTriangles(roof, face);
+      for (let i = 0; i + 2 < triangles.length; i += 3) {
+        const points = triangles.slice(i, i + 3).map(index => roof.vertices[index]);
+        if (points.some(p => !p)) continue;
+        emit({ points: points.map(p => [p.x, p.y, p.z]) as BuildingTriangle['points'], normal: face.normal, materials: volume.materials, material: face.material, surface: 'roof' });
+      }
     }
   }
   const materials = building.volumes[0]?.materials;

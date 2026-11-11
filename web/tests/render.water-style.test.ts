@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { PALETTES } from '../src/render/styles';
 import { TERRAIN_STYLE_LIST, terrainStyle, waterShoreColor } from '../src/render/terrainStyle';
 import { waterSampler } from '../src/render/waterStyle';
+import { applySeason, seasonPaint, waterSeasonUniforms } from '../src/render/seasonPalette';
 import { encodeWaterField, decodeWaterField, lakeDistances, waterMaterialPixels } from '../src/render/terrainWater';
 import { diagnosticDefinition, diagnosticAvailable } from '../src/render/displayDiagnostics';
 import { decorWaterSvg } from '../src/ui/decorWater';
@@ -22,6 +23,19 @@ function fixture(): Decor {
 }
 
 describe('shared water appearance and display semantics', () => {
+  it('follows the zone calendar for water colors and material ice, including arctic summer', () => {
+    const base = PALETTES.atlas;
+    const summer = applySeason(base, seasonPaint(.5, 'nordic'));
+    const winter = applySeason(base, seasonPaint(0, 'nordic'));
+    expect(winter.water.stops).not.toEqual(summer.water.stops);
+    expect(winter.riverFill).toBe(winter.water.stops[0][1]);
+    expect(winter.seaFill).toBe(winter.lakeFill);
+    expect(waterSeasonUniforms(0, 'nordic')[1]).toBeGreaterThan(waterSeasonUniforms(.5, 'nordic')[1]);
+    expect(waterSeasonUniforms(.5, 'arctic')[1]).toBeGreaterThan(0);
+    expect(waterSeasonUniforms(0, 'desert')[1]).toBe(0);
+    expect(waterSeasonUniforms(0, 'nordic', { seaIceWinter: 0 })[1]).toBe(0);
+  });
+
   it.each(TERRAIN_STYLE_LIST.map(style => style.id))('%s retains its ramp endpoints and physical source scale', id => {
     const definition = terrainStyle(id), distance = new Float32Array([0, 2, 8, 16, 100]);
     const sea = waterMaterialPixels(distance, definition.water, 1000);

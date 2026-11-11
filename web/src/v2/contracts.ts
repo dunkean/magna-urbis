@@ -23,6 +23,8 @@ export interface V2UrbanControls {
   seed?: string;
   seeds?: Partial<Record<UrbanSeedStage, string>>;
   through?: V2TownStage;
+  /** Building architecture (render/cityContract.ts); absent = city volumes, as in City Bench. */
+  architecture?: import('../render/cityContract').CityArchitecture;
   layout?: Partial<LayoutConfig>;
   parcels?: Partial<ParcelConfig>;
   houses?: PlacementBatchSettings;
@@ -95,6 +97,8 @@ export interface V2Settings {
   /** Full bench terrain recipe; legacy Options remain the settlement/biome defaults. */
   terrain?: V2TerrainSettings;
   region?: V2RegionSettings;
+  /** A saved decor opened as the whole world (relief, sea, lakes, rivers): `bytes` = the gzip file web/decors/<id>.decor. */
+  decor?: { id: string; bytes: Uint8Array };
   urban?: V2UrbanSettings;
   appearance?: V2Appearance;
   /** Cartographic names can be edited without regenerating terrain or buildings. */

@@ -75,10 +75,27 @@ pub(super) const TERRACE_SLOPE: f64 = 0.577;
 /// Invariant: a culture that builds terraces (stairs or a terraces pattern) cuts
 /// its house platforms into the slope; its lots admit ground up to
 /// `TERRACE_SLOPE`, beyond the native houses' own limit.
-pub(super) fn house_slope(culture: &str, native: f64) -> f64 {
+///
+/// `relax` (`ProgrammeContext::slope_relax`, 0 to 1) widens that limit for a
+/// town whose strict gates refuse most of its land (a user-placed town on a
+/// mountain flank): the limit is divided by `1 - relax`, so 0.5 doubles it and
+/// 1 opens the gate entirely.
+pub(super) fn house_slope(culture: &str, native: f64, relax: f64) -> f64 {
     let p = profile(culture);
-    if p.stairs || p.pattern == "terraces" { native.max(TERRACE_SLOPE) } else { native }
+    let strict = if p.stairs || p.pattern == "terraces" { native.max(TERRACE_SLOPE) } else { native };
+    relaxed(strict, relax)
 }
+/// A strict terrain limit widened by the slope relaxation (see `house_slope`).
+pub(super) fn relaxed(strict: f64, relax: f64) -> f64 {
+    let relax = if relax.is_finite() { relax.clamp(0.0, 1.0) } else { 0.0 };
+    if relax >= 1.0 { f64::INFINITY } else { strict / (1.0 - relax) }
+}
+/// Slope relaxation steps tried, in order, when the strict pass leaves most of
+/// a town's land unbuildable (`generate_quarters`).
+pub(super) const SLOPE_RELAX_STEPS: [f64; 3] = [0.5, 0.75, 1.0];
+/// Share of a town's land its houses must be able to use before the slope
+/// gates stop relaxing.
+pub(super) const SLOPE_RELAX_GOAL: f64 = 0.5;
 pub(super) fn fortification(profile: UrbanProfile, selected: &str, population: u32) -> &str {
     let selected = if selected == "culture" {
         profile.fortification

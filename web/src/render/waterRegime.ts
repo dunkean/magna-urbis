@@ -56,8 +56,9 @@ export function riverState(c: WaterClimate, q: number, slope: number): RiverStat
     // A desert never runs fully: even the courses that carry water show their bars.
     dry = Math.max(dry, .12 * c.aridity * (1 - q));
   }
-  // Trunks freeze last: they keep a little open water in a partial freeze.
-  const ice = c.ice >= .999 ? 1 : clamp01(c.ice * (1.15 - .35 * q));
+  // A river is frozen or open as a whole, by the same rule as lakes (ice >= .5): never by section size, which painted
+  // white patches on some reaches of a course only.
+  const ice = c.ice >= .5 ? 1 : 0;
   // Whitewater on steep reaches of running water; channel slope in m/m.
   const foam = (1 - dry) * (1 - ice) * smooth(.012, .05, slope);
   return { dry, ice, foam };

@@ -18,7 +18,7 @@ import { ParchmentSymbols, SYMBOL_CELLS } from './parchmentSymbols';
  */
 import { CanvasBrushes } from './brushCanvas';
 import { CanvasCanopy, canopyMarks, CANOPY_MARGIN, type VegetationStyle } from './canopy';
-import { ForestRoom, farmClearings, forestCorridors } from './forestRoom';
+import { FARM_MARGIN, ForestRoom, farmClearings, forestCorridors, growRing } from './forestRoom';
 import { brushTextureOn, isBrushKind, supportsPaintedBiome, type BrushImages, type BrushKind } from './brushes';
 import { bridgeShapes, isKinded, type BridgeShapes } from './townbridges';
 import type { World, LandKind, Vec2 } from '../gen/types';
@@ -44,7 +44,8 @@ import { emphasisAlpha, regionalRank, roadWidth, strokeNaturalRoad, trackInk, ty
 import { worldWaterPixels } from './terrainWater';
 import { renderTerrainPixels } from './raster';
 import { RasterTileCache } from './rasterTiles';
-import { buildScene, type SceneMask, Scene, PolyLayer, LineLayer, TextureLayer, textureMarks, pointInPoly, type Mark, LAND_ORDER, WALL_LINE_W, CAMP_FENCE_W, FENCE_STYLE } from './scene';
+import { LiveTileFill } from './liveTileFill';
+import { buildScene, type SceneMask, Scene, PolyLayer, LineLayer, TextureLayer, textureMarks, pointInRenderPoly, type Mark, LAND_ORDER, WALL_LINE_W, CAMP_FENCE_W, FENCE_STYLE } from './scene';
 import { renderView } from '../gen/settlements/merge';
 import { selectLod, lineWidth, Lod, BAND_MIN_EDGE, WAY_SCALE, FURROW_MIN_PX, FURROW_HOLDER_BUDGET } from './lod';
 import { View, viewRect, Rect4 } from './view';
@@ -55,10 +56,13 @@ import { cartoucheModel, legendModel, compactMapPanels, compactScaleModel, drawP
 import { appendUnderdarkMark, underdarkMark, underdarkTextureSpec } from './underdark';
 import { frameModel, panelMargin } from './frame';
 import { litDots } from './extras';
+import { displayQualityFor, type ResolvedDisplayQuality } from './displayQuality';
 
 export interface CanvasLike { width: number; height: number; getContext(id: '2d'): CanvasRenderingContext2D | null }
 
 export interface CanvasRendererDeps {
+  /** Footprints of isolated houses and farms (native scenes): woods are cleared around them like around a farmstead. */
+  buildingClearings?(): readonly import('../gen/types').Polygon[];
   separateText?: boolean;
   textSources?(): readonly CityScene[] | undefined;
   colors?: RenderColors;
@@ -81,6 +85,8 @@ export interface CanvasRendererDeps {
   /** Disable the raster tile path for diagnostics or constrained hosts. */
   raster?: boolean;
   rasterBytes?: number;
+  /** Request a live frame after a progressive raster slice. Captures never schedule work. */
+  invalidate?: () => void;
   /** Decoded display-only atlases; undefined is the unchanged classic renderer. */
   brushes?: BrushImages;
   /** Irregular, shaded foliage in place of round forest/orchard symbols. */
@@ -90,7 +96,7 @@ export interface CanvasRendererDeps {
   /** Natural layers owned by another pass (no fabricated world): they are neither built nor drawn. Absent = all. */
   mask?: SceneMask;
   /** Semantic land use of another pass, painted after the land-use layers and before water, roads and labels. `key` joins the raster tile keys, so a new look repaints the tiles; `draw` gets the world-coordinate context, the culling rect and the world units per screen pixel. */
-  semantic?: { key(): string; draw(ctx: CanvasRenderingContext2D, rect: Rect4, mpp: number): void; legend?(): readonly SemanticLegendEntry[] };
+  semantic?: { key(): string; draw(ctx: CanvasRenderingContext2D, rect: Rect4, mpp: number, quality?: ResolvedDisplayQuality): void; legend?(): readonly SemanticLegendEntry[] };
 }
 
 export interface FrameStats {
@@ -101,6 +107,7 @@ export interface FrameStats {
   furrowCache?: number; furrowsDrawn?: number;
   brushBytes?: number;
   rasterHits?: number; rasterBuilt?: number; rasterBytes?: number;
+  rasterPending?: number;
 }
 
 export interface Overlays { text?: Readonly<TextSettings>; labels: boolean; legend: boolean; cartouche: boolean }
@@ -108,10 +115,14 @@ export interface Overlays { text?: Readonly<TextSettings>; labels: boolean; lege
 export interface CanvasRenderer {
   scene: Scene;
   palette: Palette;
-  draw(view: View): FrameStats;
+  /** Only explicit live draws use density buckets, progressive filling and the browser quality policy. */
+  draw(view: View, options?: { live: boolean }): FrameStats;
+  suspendLive(): void;
   drawText(target: CanvasRenderingContext2D, view: View, width: number, height: number): void;
   /** Physical land use alone (no grid, semantics, water or roads) on the transparent `target`, which covers the world square `box`. False: nothing there. */
-  drawGround(target: CanvasLike, box: Rect4): boolean;
+  drawGround(target: CanvasLike, box: Rect4, options?: { live: boolean }): boolean;
+  /** Read-only live pyramid preview. Never rasterises a missing tile or includes labels. */
+  drawCachedMap(target: CanvasLike, box: Rect4): boolean;
   /** Reuse immutable scene tiles and resources after detail arrival. False requires a new renderer. */
   update(world: World, scene: Scene, style?: MapStyle | Palette): boolean;
   setLabels(labels: Label[]): void;
@@ -140,6 +151,14 @@ const mixHex = (a: string, b: string, t: number): string => {
 };
 const lumHex = (h: string): number => { const c = hexRgb(h); return c ? (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255 : 0.5; };
 const CACHE_MAX = 8000;
+/** Sprite layers (woods, parchment symbols) are pre-composited in tiles of this many pixels, one tile set per
+ * power-of-two pixel density up to LAYER_TILE_MAX_DENSITY px/m; closer views stamp their few sprites directly. */
+const LAYER_TILE_PX = 512, LAYER_TILE_GUTTER = 2, LAYER_TILE_MAX_DENSITY = 4, LAYER_TILE_BYTES = 128 * 1024 * 1024;
+/** Farthest reach of a sprite from its mark (m): the largest canopy crown is 10 x 1.59 m from its centre. */
+const LAYER_TILE_REACH = 16;
+/** Side of the coarse whole-map raster shown under the missing live tiles. */
+const PREVIEW_PX = 2048;
+const growRect = (r: Rect4, d: number): Rect4 => ({ minX: r.minX - d, minY: r.minY - d, maxX: r.maxX + d, maxY: r.maxY + d });
 const TAU = Math.PI * 2;
 const frac = (v: number): number => v - Math.floor(v);
 const vhash = (i: number, j: number, salt: number): number => frac(Math.sin(i * 127.1 + j * 311.7 + salt * 74.7) * 43758.5453);
@@ -357,7 +376,23 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
   let forestRoom: ForestRoom | undefined;
   let stats: FrameStats = { band: 0, scale: 0, ms: 0, tilesDrawn: 0, bigDrawn: 0, pathsBuilt: 0, pathCache: 0, buildingsCandidate: 0, buildingsDrawn: false, textureTiles: 0 };
   const rasterCache = new RasterTileCache<CanvasImageSource>(deps.rasterBytes);
+  const mapPyramid = new Map<string, { x: number; y: number; span: number; pixels: number; gutter: number; density: number; semantic: string; light: boolean }>();
+  let activeLight = false, activeLive = false, activeDpr: number | undefined;
+  const rasterFill = new LiveTileFill(now);
+  let lastRaster: { canvas: CanvasLike; view: View; dpr: number } | undefined;
+  const suspendLive = (): void => rasterFill.suspend();
+  const dropLastRaster = (): void => { if (lastRaster) { lastRaster.canvas.width = 0; lastRaster.canvas.height = 0; } lastRaster = undefined; };
+  /** The whole map rasterised once at a coarse density: a live view shows it under its missing tiles, never blank tiles. */
+  let preview: { key: string; canvas: CanvasLike } | undefined;
+  const dropPreview = (): void => { if (preview) { preview.canvas.width = 0; preview.canvas.height = 0; } preview = undefined; };
   let rasterFailed = false;
+  /** Pre-composited sprite layers (drawLayerTiles); null marks a tile with nothing to draw. */
+  const layerTiles = new RasterTileCache<CanvasImageSource | null>(LAYER_TILE_BYTES);
+  let layerTilesFailed = false;
+  /** False when the sprite-layer tiles of the whole view would not fit the cache together (they would evict each other). */
+  let layerTilesFit = true;
+  /** Lone trees stepping out of the woods, per open land layer and index tile. */
+  const strayMarks = new Map<TextureLayer, Map<number, Mark[]>>();
 
   const polyL = (n: string): PolyLayer | undefined => scene.poly.get(n);
   const linesOf = (pred: (l: LineLayer) => boolean): LineLayer[] => scene.lines.filter(pred);
@@ -491,6 +526,20 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     return width + (sh ? Math.max(Math.abs(sh.dx), Math.abs(sh.dy)) : 2) + 32 / scale;
   }
 
+  // One measure function for the renderer's life (its identity keys the layout memo); it measures on the context of the current draw.
+  let measureCtx: CanvasRenderingContext2D | undefined;
+  const measureLabel = (text: string, size: number, st: KindStyle): number => {
+    const key = `${st.family ?? family}|${st.italic ? 'i' : ''}${st.bold ? 'b' : ''}|${Math.round(size * 10)}|${text}`;
+    let w = widthCache.get(key);
+    if (w === undefined) {
+      measureCtx!.font = fontString(st, Math.round(size * 10) / 10, st.family ?? family);
+      w = measureCtx!.measureText(text).width;
+      if (widthCache.size > 20000) widthCache.clear();
+      widthCache.set(key, w);
+    }
+    return w;
+  };
+  let placementLast: { labels: MapLabel[]; cx: number; cy: number; scale: number; w: number; h: number; maxLabels: number; pad: number; reserved: boolean; placed: PlacedMapLabel[] } | undefined;
   let textSourcesOf: readonly CityScene[] | undefined, textLabelsOf: MapLabel[] | undefined, combinedLabels: MapLabel[] = mapLabels;
   function drawText(ctx: CanvasRenderingContext2D, view: View, cssW: number, cssH: number): void {
     const sources = deps.textSources?.();
@@ -501,19 +550,17 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     }
     placedLast = [];
     if (overlays.labels && combinedLabels.length) {
-      const measure = (text: string, size: number, st: KindStyle): number => {
-        const key = `${st.family ?? family}|${st.italic ? 'i' : ''}${st.bold ? 'b' : ''}|${Math.round(size * 10)}|${text}`;
-        let w = widthCache.get(key);
-        if (w === undefined) {
-          ctx.font = fontString(st, Math.round(size * 10) / 10, st.family ?? family);
-          w = ctx.measureText(text).width;
-          if (widthCache.size > 20000) widthCache.clear();
-          widthCache.set(key, w);
-        }
-        return w;
-      };
+      measureCtx = ctx;
       const reserved = compactMapPanels(cssW, cssH) && overlays.cartouche ? [{ x0: 12, y0: cssH - 40, x1: 132, y1: cssH - 12 }] : undefined;
-      placedLast = placeMapLabels(combinedLabels, view, cssW, cssH, measure, { ...textPlacement(text), reserved });
+      // Same labels, view and options as the last frame (tile arrivals, style repaints): the placement is the same.
+      const placement = textPlacement(text), last = placementLast;
+      if (last && last.labels === combinedLabels && last.cx === view.cx && last.cy === view.cy && last.scale === view.scale && last.w === cssW && last.h === cssH
+        && last.maxLabels === placement.maxLabels && last.pad === placement.pad && !last.reserved === !reserved) placedLast = last.placed;
+      else {
+        // Layouts are memoised per (measure, label style, text, size): a pan at a constant zoom lays nothing out again.
+        placedLast = placeMapLabels(combinedLabels, view, cssW, cssH, measureLabel, { ...placement, reserved });
+        placementLast = { labels: combinedLabels, cx: view.cx, cy: view.cy, scale: view.scale, w: cssW, h: cssH, maxLabels: placement.maxLabels, pad: placement.pad, reserved: !!reserved, placed: placedLast };
+      }
       drawMapLabels(ctx, placedLast, pal, family);
     }
   }
@@ -521,6 +568,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
   function update(nextSource: World, nextScene: Scene, nextStyle: MapStyle | Palette = style): boolean {
     if ((brushes || canopy) && nextSource.seed !== sourceWorld.seed) return false;
     if (nextSource.mapSize !== S || biomePalette(nextStyle, nextSource.options.biome) !== basePalette) return false;
+    suspendLive(); dropLastRaster(); dropPreview(); mapPyramid.clear();
     // Prepare potentially fallible metadata before committing the replacement.
     const nextWorld = cavernDisplayWorld(nextScene.renderedWorld ? { ...nextScene.renderedWorld, options: nextSource.options } : renderView(cavernDisplayWorld(nextSource)));
     const nextLabels = buildMapLabels(nextWorld, pal.name, pal, text);
@@ -530,7 +578,9 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     if (terrainChanged) { terrainImg = waterImg = undefined; cache.clear(); rasterCache.clear(); }
     if (nextScene.density?.cov !== scene.density?.cov) densityImg = undefined;
     if (nextScene.furrows !== scene.furrows) furrowCache.clear();
-    if (nextScene !== scene) { treeMarks.clear(); penMarks.clear(); forestWashes.clear(); }
+    if (nextScene !== scene) { treeMarks.clear(); penMarks.clear(); forestWashes.clear(); strayMarks.clear(); }
+    // Woods depend on the scene, the forest wash and the roads/farms that clear them (forestRoom below): rebuild them all.
+    if (nextScene !== scene || terrainChanged || nextSource.roads !== sourceWorld.roads || nextSource.landuse !== sourceWorld.landuse) layerTiles.clear();
     if (nextScene !== scene && !nextScene.dirty) cache.clear();
     if (world.options.landuse !== nextSource.options.landuse || world.options.contours !== nextSource.options.contours) rasterCache.clear();
     // Entries can predate several scene updates; expand by the new absolute paint radius, not a last-update delta.
@@ -653,67 +703,142 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       scene.textures.map((tl) => `${tl.kind}:${tl.index.tilesInRect(rect).length <= 500}`).join(',');
   }
 
-  /** Rasterize map geometry once per exact scale/DPR tile; labels and panels stay crisp and viewport-aware. */
-  function draw(view: View): FrameStats {
+  /** Capture callers omit options: exact scale, synchronous completion, full detail. */
+  function draw(view: View, options?: { live: boolean }): FrameStats {
+    activeLive = !!options?.live; activeLight = displayQualityFor(activeLive) === 'light';
+    if (!activeLive) suspendLive();
+    try { return drawFrame(view); }
+    finally { activeLight = activeLive = false; activeDpr = undefined; }
+  }
+
+  /** Half-octave live tiles stretch by at most sqrt(2); exports retain their exact raster density. */
+  function drawFrame(view: View): FrameStats {
     if (deps.raster === false || rasterFailed) return drawVector(view);
     const start = now(), dpr = deps.dpr ?? (globalThis as { devicePixelRatio?: number }).devicePixelRatio ?? 1;
     const ctx = canvas.getContext('2d');
     if (!ctx) return stats;
     const cssW = canvas.width / dpr, cssH = canvas.height / dpr, rect = viewRect(view, cssW, cssH);
-    const k = view.scale * dpr, tilePx = 512, gutter = 32, tileSize = tilePx / k;
+    const live = activeLive && !!deps.invalidate && typeof requestAnimationFrame === 'function';
+    const scale = live ? 2 ** (Math.floor(2 * Math.log2(view.scale)) / 2) : view.scale;
+    const k = scale * dpr, outputK = view.scale * dpr, ratio = view.scale / scale;
+    // Live tiles bound the indivisible raster operation; captures keep the original tile size. Every tile repaints the
+    // whole paths that reach it (a fixed cost per tile), so 256 px halves the per-pixel overhead of 128 px tiles.
+    const tilePx = live ? 256 : 512, gutter = live ? 8 : 32, tileSize = tilePx / k;
     const x0 = Math.floor(rect.minX / tileSize), y0 = Math.floor(rect.minY / tileSize);
     const x1 = Math.floor(rect.maxX / tileSize), y1 = Math.floor(rect.maxY / tileSize);
-    const budget = rasterBudget(rect, view.scale);
+    const budget = rasterBudget(rect, scale);
+    layerTilesFit = activeLight && scale < 1 || layerTilesFitView(rect, k);
     const requests: { key: string; x: number; y: number }[] = [];
     const semanticKey = `${deps.semantic?.key() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}`;
-    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) requests.push({ key: `${view.scale}|${dpr}|${budget}|${semanticKey}|${x},${y}`, x, y });
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) requests.push({ key: `${scale}|${dpr}|${live ? 'live' : 'exact'}|${activeLight}|${budget}|${semanticKey}|${x},${y}`, x, y });
     if (requests.length * (tilePx + 2 * gutter) ** 2 * 4 > rasterCache.maxBytes) return drawVector(view);
-    // Resolve every missing resource before painting the target, so allocation refusal retains the vector fallback.
+    const buildTile = (request: typeof requests[number]): CanvasImageSource => {
+      const target = makeCanvas(tilePx + 2 * gutter, tilePx + 2 * gutter);
+      if (!target?.getContext('2d')) throw new Error('Overlay tile allocation failed');
+      const tileView = { cx: (request.x + 0.5) * tileSize, cy: (request.y + 0.5) * tileSize, scale };
+      const st = drawVector(tileView, target, 'map', rect); pathsBuilt += st.pathsBuilt; mapStats = st;
+      // The canvas itself is the tile: transferToImageBitmap waits for the GPU raster of the tile on the main thread.
+      const bytes = target.width * target.height * 4, resource = target as unknown as CanvasImageSource;
+      const margin = paintMargin(scale) + gutter / k;
+      rasterCache.put(request.key, { value: resource, bytes,
+        bounds: { minX: request.x * tileSize - margin, minY: request.y * tileSize - margin,
+          maxX: (request.x + 1) * tileSize + margin, maxY: (request.y + 1) * tileSize + margin },
+        release: () => { target.width = 0; target.height = 0; } });
+      if (live) {
+        mapPyramid.set(request.key, { x: request.x * tileSize, y: request.y * tileSize, span: tileSize,
+          pixels: tilePx, gutter, density: k, semantic: semanticKey, light: activeLight });
+        // Metadata owns no images; prune descriptors when their LRU images have gone away.
+        if (mapPyramid.size > 2048) for (const key of mapPyramid.keys()) if (!rasterCache.get(key)) mapPyramid.delete(key);
+      }
+      rasterBuilt++; return resource;
+    };
     const tiles: { image: CanvasImageSource; x: number; y: number }[] = [];
-    let rasterBuilt = 0, rasterHits = 0, pathsBuilt = 0;
+    let rasterBuilt = 0, rasterHits = 0, pathsBuilt = 0, missing = 0;
     let mapStats: FrameStats | undefined;
     try {
       for (const request of requests) {
         let image = rasterCache.get(request.key);
         if (image) rasterHits++;
-        else {
-          const target = makeCanvas(tilePx + 2 * gutter, tilePx + 2 * gutter);
-          if (!target?.getContext('2d')) { rasterFailed = true; rasterCache.clear(); return drawVector(view); }
-          const tileView = { cx: (request.x + 0.5) * tileSize, cy: (request.y + 0.5) * tileSize, scale: view.scale };
-          const st = drawVector(tileView, target, 'map', rect); pathsBuilt += st.pathsBuilt; mapStats = st;
-          const offscreen = target as CanvasLike & { transferToImageBitmap?: () => ImageBitmap };
-          const bytes = target.width * target.height * 4;
-          image = offscreen.transferToImageBitmap ? offscreen.transferToImageBitmap() : target as unknown as CanvasImageSource;
-          if (offscreen.transferToImageBitmap) { target.width = 0; target.height = 0; }
-          const resource = image;
-          const margin = paintMargin(view.scale) + gutter / k;
-          rasterCache.put(request.key, { value: resource, bytes,
-            bounds: { minX: request.x * tileSize - margin, minY: request.y * tileSize - margin,
-              maxX: (request.x + 1) * tileSize + margin, maxY: (request.y + 1) * tileSize + margin },
-            release: () => { if ('close' in resource && typeof resource.close === 'function') resource.close(); else { target.width = 0; target.height = 0; } } });
-          rasterBuilt++;
-        }
+        else if (live) { missing++; continue; }
+        else image = buildTile(request);
         tiles.push({ image, x: request.x, y: request.y });
       }
+      if (live && missing) {
+        const jobKey = requests.map(r => r.key).join(';') + `|${rect.minX},${rect.minY},${rect.maxX},${rect.maxY}`;
+        const light = activeLight, fit = layerTilesFit;
+        rasterFill.start(jobKey, function* () {
+          const cx = view.cx / tileSize - .5, cy = view.cy / tileSize - .5;
+          const queue = requests.filter(r => !rasterCache.get(r.key)).sort((a, b) => (a.x - cx) ** 2 + (a.y - cy) ** 2 - (b.x - cx) ** 2 - (b.y - cy) ** 2);
+          // The coarse map stands in meanwhile: the view sharpens at once when its tiles are ready (a long job shows its
+          // progress once a second), instead of a repaint per tile that shows the tiles filling one by one.
+          let shown = now();
+          for (let i = 0; i < queue.length; i++) {
+            const request = queue[i];
+            activeLive = true; activeLight = light; activeDpr = dpr; layerTilesFit = fit;
+            try {
+              if (!rasterCache.get(request.key)) buildTile(request);
+            }
+            finally { activeLive = activeLight = false; activeDpr = undefined; }
+            const present = i === queue.length - 1 || now() - shown > 1000;
+            if (present) shown = now();
+            yield present;
+          }
+        }, deps.invalidate!, () => { rasterFailed = true; });
+      } else suspendLive();
       ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.imageSmoothingEnabled = true;
+      const coarse = live && missing ? mapPreview(semanticKey) : undefined;
+      if (coarse) { ctx.save(); ctx.setTransform(outputK, 0, 0, outputK, -rect.minX * outputK, -rect.minY * outputK); ctx.drawImage(coarse, 0, 0, S, S); ctx.restore(); }
+      if (live && missing && lastRaster) {
+        const old = lastRaster, factor = view.scale / old.view.scale * dpr / old.dpr;
+        const x = canvas.width / 2 + (old.view.cx - view.cx) * outputK - old.canvas.width * factor / 2;
+        const y = canvas.height / 2 + (old.view.cy - view.cy) * outputK - old.canvas.height * factor / 2;
+        // Replaces the coarse map where it reaches (translucent tints never double).
+        if (coarse) ctx.clearRect(x, y, old.canvas.width * factor, old.canvas.height * factor);
+        ctx.drawImage(old.canvas as unknown as CanvasImageSource, x, y, old.canvas.width * factor, old.canvas.height * factor);
+      }
       for (const tile of tiles) {
-        const x = (tile.x * tileSize - rect.minX) * k, y = (tile.y * tileSize - rect.minY) * k;
+        const x = (tile.x * tileSize - rect.minX) * outputK, y = (tile.y * tileSize - rect.minY) * outputK;
         // Gutters supply filtering samples, but each output pixel belongs to one
         // tile only. Overpainting them darkens transparent land-use overlays.
         // Integer device-pixel partitions also avoid fractional clipping seams.
         const left = Math.round(x), top = Math.round(y);
-        ctx.save(); ctx.beginPath(); ctx.rect(left, top, Math.round(x + tilePx) - left, Math.round(y + tilePx) - top); ctx.clip();
-        ctx.drawImage(tile.image, x - gutter, y - gutter); ctx.restore();
+        const width = Math.round(x + tilePx * ratio) - left, height = Math.round(y + tilePx * ratio) - top;
+        ctx.save(); ctx.beginPath(); ctx.rect(left, top, width, height); ctx.clip();
+        ctx.clearRect(left, top, width, height);
+        ctx.drawImage(tile.image, x - gutter * ratio, y - gutter * ratio, (tilePx + 2 * gutter) * ratio, (tilePx + 2 * gutter) * ratio); ctx.restore();
+      }
+      if (live) {
+        if (!lastRaster || lastRaster.canvas.width !== canvas.width || lastRaster.canvas.height !== canvas.height) {
+          dropLastRaster(); const target = makeCanvas(canvas.width, canvas.height);
+          if (target) lastRaster = { canvas: target, view: { ...view }, dpr };
+        }
+        const retained = lastRaster?.canvas.getContext('2d');
+        if (retained && lastRaster) { retained.clearRect(0, 0, canvas.width, canvas.height); retained.drawImage(canvas as unknown as CanvasImageSource, 0, 0); lastRaster.view = { ...view }; lastRaster.dpr = dpr; }
       }
       const overlay = drawVector(view, canvas, 'overlays');
       stats = { ...(mapStats ?? overlay), ms: now() - start, band: selectLod(view.scale).band, scale: view.scale,
-        pathsBuilt, pathCache: cache.size, rasterHits, rasterBuilt, rasterBytes: rasterCache.bytes };
+        pathsBuilt, pathCache: cache.size, rasterHits, rasterBuilt, rasterPending: missing, rasterBytes: rasterCache.bytes };
       return stats;
     } catch {
       rasterFailed = true; rasterCache.clear(); return drawVector(view);
     }
+  }
+
+  /** The coarse whole-map raster for this semantic key and quality tier, built on first need (one map-sized draw). */
+  function mapPreview(semantic: string): CanvasImageSource | undefined {
+    const key = `${semantic}|${activeLight}`;
+    if (preview?.key === key) return preview.canvas as unknown as CanvasImageSource;
+    dropPreview();
+    const px = PREVIEW_PX, target = makeCanvas(px, px);
+    if (!target?.getContext('2d')) return undefined;
+    const whole = { minX: 0, minY: 0, maxX: S, maxY: S }, saved = { dpr: activeDpr, fit: layerTilesFit };
+    activeDpr = 1; layerTilesFit = layerTilesFitView(whole, px / S);
+    try { drawVector({ cx: S / 2, cy: S / 2, scale: px / S }, target, 'map', whole); }
+    finally { activeDpr = saved.dpr; layerTilesFit = saved.fit; }
+    preview = { key, canvas: target };
+    return target as unknown as CanvasImageSource;
   }
 
   function exactCavernPath(which: 'floor' | 'solid' | 'fungalRooms'): Path2D | null {
@@ -728,7 +853,34 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     });
   }
 
-  function drawGround(target: CanvasLike, box: Rect4): boolean {
+  function drawCachedMap(target: CanvasLike, box: Rect4): boolean {
+    const ctx = target.getContext('2d'); if (!ctx) return false;
+    const semantic = `${deps.semantic?.key() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}`;
+    const light = displayQualityFor(true) === 'light', density = target.width / (box.maxX - box.minX);
+    // Coarse first; a finer cached quadrant replaces it without doubling translucent ink.
+    const tiles = [...mapPyramid].filter(([, t]) => t.semantic === semantic && t.light === light && t.density <= density * 2
+      && t.x < box.maxX && t.y < box.maxY && t.x + t.span > box.minX && t.y + t.span > box.minY)
+      .sort((a, b) => a[1].density - b[1].density);
+    let drawn = false;
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+    for (const [key, tile] of tiles) {
+      const image = rasterCache.get(key); if (!image) { mapPyramid.delete(key); continue; }
+      const x = (tile.x - box.minX) * density, y = (tile.y - box.minY) * density, size = tile.span * density;
+      ctx.save(); ctx.beginPath(); ctx.rect(x, y, size, size); ctx.clip(); ctx.clearRect(x, y, size, size);
+      ctx.drawImage(image, tile.gutter, tile.gutter, tile.pixels, tile.pixels, x, y, size, size);
+      ctx.restore(); drawn = true;
+    }
+    ctx.restore(); return drawn;
+  }
+
+  function drawGround(target: CanvasLike, box: Rect4, options?: { live: boolean }): boolean {
+    const previousLive = activeLive, previousLight = activeLight;
+    activeLive = !!options?.live; activeLight = displayQualityFor(activeLive) === 'light';
+    try { return paintGround(target, box); }
+    finally { activeLive = previousLive; activeLight = previousLight; }
+  }
+  function paintGround(target: CanvasLike, box: Rect4): boolean {
     const dpr = deps.dpr ?? (globalThis as { devicePixelRatio?: number }).devicePixelRatio ?? 1;
     const fs = drawVector({ cx: (box.minX + box.maxX) / 2, cy: (box.minY + box.maxY) / 2, scale: target.width / (box.maxX - box.minX) / dpr }, target, 'ground');
     return fs.tilesDrawn + fs.bigDrawn + fs.textureTiles > 0;
@@ -739,13 +891,14 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     const ctx = target.getContext('2d');
     if (!ctx) return stats;
     const built0 = built;
-    const dpr = deps.dpr ?? (globalThis as unknown as { devicePixelRatio?: number }).devicePixelRatio ?? 1;
+    const dpr = activeDpr ?? deps.dpr ?? (globalThis as unknown as { devicePixelRatio?: number }).devicePixelRatio ?? 1;
     const cssW = target.width / dpr, cssH = target.height / dpr;
     const trueScale = view.scale, sc = trueScale;
     const lod: Lod = selectLod(sc);
     const band = lod.band;
     const rect: Rect4 = viewRect(view, cssW, cssH, fullRect ? paintMargin(view.scale) : 0);
     const budgetRect = fullRect ?? rect;
+    if (!fullRect && mode !== 'overlays') layerTilesFit = layerTilesFitView(rect, trueScale * dpr);
     const fs: FrameStats = { band, scale: sc, ms: 0, tilesDrawn: 0, bigDrawn: 0, pathsBuilt: 0, pathCache: 0, buildingsCandidate: 0, buildingsDrawn: false, textureTiles: 0 };
     const minEdge = BAND_MIN_EDGE[band];
 
@@ -898,6 +1051,19 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     const landFill = (kind: keyof Palette['land']): string => kind === 'forest' ? forestLandPaint(pal).color : pal.land[kind];
     const landAlpha = (kind: keyof Palette['land']): number => kind === 'forest' ? forestLandPaint(pal).alpha : luAlpha;
     const fillLand = (name: string, kind: keyof Palette['land']): void => {
+      if (activeLight && pal.name === 'parchment' && sc < 1) {
+        fillPolys(name, landFill(kind), landAlpha(kind));
+        if (kind === 'forest') {
+          const gap = Math.max(6, 4 / sc);
+          const hatch = getPattern(ctx, `light-forest:${gap}`, gap, gap, 35, (c, k) => {
+            c.strokeStyle = pal.treeInk; c.globalAlpha = .3; c.lineWidth = .65 / sc * k;
+            c.beginPath(); c.moveTo(0, gap * k / 2); c.lineTo(gap * k, gap * k / 2); c.stroke();
+          });
+          const layer = polyL(name);
+          if (hatch && layer) { ctx.fillStyle = hatch; for (const p of polyPaths(layer)) ctx.fill(p, 'evenodd'); }
+        }
+        return;
+      }
       if (kind === 'forest' && !isUnderdarkBiome(world.options.biome)) {
         const wash = forestWash(name);
         if (wash) {
@@ -1025,7 +1191,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       }
     }
     // textures (procedural marks, visible tiles only, cached per tile)
-    if (mode === 'ground' && canopy && pal.name === 'parchment') {
+    if (mode === 'ground' && canopy && pal.name === 'parchment' && !(activeLight && sc < 1)) {
       // 3D drape tiles come at many scales side by side: a scale-dependent choice of marks shows each tile as a rectangle.
       // Woods are drawn from world-space tree positions at every scale.
       if (luOn) for (const tl of scene.textures) {
@@ -1043,7 +1209,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     }
 
     // Semantic land use: above every physical land-use layer, below water, roads and labels.
-    deps.semantic?.draw(ctx, rect, 1 / sc);
+    deps.semantic?.draw(ctx, rect, 1 / sc, activeLight ? 'light' : 'full');
 
     // 3. rivers + water
     const rivers = polyL('rivers');
@@ -1625,36 +1791,123 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     ctx.globalAlpha = 1; ctx.lineWidth = w; ctx.stroke(path);
   }
 
+  /** Woods leave room for roads, rivers and farmsteads; crowns rooted at the edge overhang them a little. */
+  const roomOf = (): ForestRoom => forestRoom ??= new ForestRoom(forestCorridors(world), [...farmClearings(world.landuse), ...(deps.buildingClearings?.() ?? []).map(r => growRing(r, FARM_MARGIN))]);
+
+  /** Tree centres of a wood or orchard layer within `area`, in draw order (cached per index tile). */
+  function treeMarksIn(tl: TextureLayer, area: Rect4): Mark[] {
+    const marks: Mark[] = [];
+    let entries = treeMarks.get(tl); if (!entries) { entries = new Map(); treeMarks.set(tl, entries); }
+    const exclusion = tl.kind === 'forest' ? polyL('u-forest-clearings') : undefined;
+    const room = tl.kind === 'forest' ? roomOf() : undefined;
+    for (const tile of tl.index.tilesInRect(area)) {
+      let points = entries.get(tile);
+      if (!points) {
+        points = canopyMarks(tl, tile, world.seed).filter(m => (tl.kind !== 'forest' || m.k < (canopy ? .5 + .5 * forestWeight(m.x, m.y) : forestWeight(m.x, m.y)))
+          && (!room || room.keeps(m.x, m.y, (m.k * 37.17) % 1))
+          // Parchment woods grow in clumps: small glades let the dark shaded floor show between them.
+          && (tl.kind !== 'forest' || !canopy || pal.name !== 'parchment' || clumpNoise(m.x, m.y, 26, 5) > .27) && (!exclusion || !exclusion.index.query({ minX: m.x, minY: m.y, maxX: m.x, maxY: m.y }).some(i =>
+          pointInRenderPoly(exclusion.polys[i], m.x, m.y) && !(exclusion.holes?.[i] ?? []).some(h => pointInRenderPoly(h, m.x, m.y)))));
+        // Marks are small and zoom-independent: keep a whole map of them, or every zoom step recomputes them.
+        if (entries.size >= 8192) entries.delete(entries.keys().next().value!);
+        entries.set(tile, points);
+      }
+      for (const m of points) if (m.x >= area.minX && m.x <= area.maxX && m.y >= area.minY && m.y <= area.maxY) marks.push(m);
+    }
+    return marks.sort((a, b) => a.y - b.y || a.x - b.x);
+  }
+
+  /** Whole trees at their marks: painted brushes, or the canopy sprites (engraved on parchment). */
+  function paintTrees(ctx: CanvasRenderingContext2D, tl: TextureLayer, marks: Mark[], pxPerMetre: number): void {
+    if (brushes) for (const m of marks) {
+      ctx.globalAlpha = .88 + .12 * m.k;
+      brushes.tree(ctx, m.x, m.y, (tl.kind === 'orchard' ? 3.5 : 4.75) * m.r, tl.kind === 'orchard');
+    }
+    else canopy!.draw(ctx, marks, tl.kind === 'orchard' ? 'orchard' : 'forest', pxPerMetre, 1, tl.kind === 'forest' ? coniferOf : undefined);
+    ctx.globalAlpha = 1;
+  }
+
+  /** Whether every non-empty sprite-layer tile of a view fits the tile cache at once (`pxPerMetre`: device pixels). */
+  function layerTilesFitView(rect: Rect4, pxPerMetre: number): boolean {
+    if (!(pxPerMetre > 0)) return false;
+    const density = 2 ** Math.ceil(Math.log2(pxPerMetre));
+    if (density > LAYER_TILE_MAX_DENSITY) return true;
+    const span = LAYER_TILE_PX / density, side = LAYER_TILE_PX + 2 * LAYER_TILE_GUTTER, limit = layerTiles.maxBytes * .75;
+    const x0 = Math.floor(rect.minX / span), x1 = Math.floor(rect.maxX / span), y0 = Math.floor(rect.minY / span), y1 = Math.floor(rect.maxY / span);
+    let bytes = 0;
+    for (const tl of scene.textures) for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      if (!tl.index.query(growRect({ minX: x * span, minY: y * span, maxX: (x + 1) * span, maxY: (y + 1) * span }, LAYER_TILE_REACH + LAYER_TILE_GUTTER)).length) continue;
+      if ((bytes += side * side * 4) > limit) return false;
+    }
+    return true;
+  }
+
+  /**
+   * Sprite layers (woods, parchment symbols) pre-composited per (layer, power-of-two pixel density, 512 px tile).
+   * A tile holds every mark whose sprite reaches it, in the global draw order, so neighbouring tiles join exactly and
+   * the result is the one of stamping the marks one by one. A frame then draws a few bitmaps instead of thousands of
+   * sprites, and zooming within a density octave or panning back redraws nothing. False: draw directly.
+   */
+  function drawLayerTiles(ctx: CanvasRenderingContext2D, tl: TextureLayer, part: string, rect: Rect4,
+    paint: (target: CanvasRenderingContext2D, area: Rect4, pxPerMetre: number) => void): boolean {
+    if (layerTilesFailed || !layerTilesFit) return false;
+    const t = ctx.getTransform();
+    if (t.b || t.c || !(t.a > 0) || Math.abs(t.d - t.a) > t.a * 1e-6) return false;
+    const density = 2 ** Math.ceil(Math.log2(t.a));
+    if (density > LAYER_TILE_MAX_DENSITY) return false;
+    // A cold sprite tile must not expand one small progressive map tile into a 512 px raster job.
+    const tilePx = activeLive ? 256 : LAYER_TILE_PX;
+    const span = tilePx / density, g = LAYER_TILE_GUTTER, side = tilePx + 2 * g;
+    const x0 = Math.floor(rect.minX / span), x1 = Math.floor(rect.maxX / span), y0 = Math.floor(rect.minY / span), y1 = Math.floor(rect.maxY / span);
+    if ((x1 - x0 + 1) * (y1 - y0 + 1) * side * side * 4 > layerTiles.maxBytes * .75) return false;
+    let id = brushIds.get(tl); if (id === undefined) { id = ++brushId; brushIds.set(tl, id); }
+    // Resolve every tile before painting the target, so an allocation refusal still leaves the direct path.
+    const tiles: { image: CanvasImageSource; x: number; y: number }[] = [];
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      const key = `${id}|${part}|${density}|${tilePx}|${x},${y}`;
+      let image = layerTiles.get(key);
+      if (image === undefined) {
+        const area = { minX: x * span - g / density, minY: y * span - g / density, maxX: (x + 1) * span + g / density, maxY: (y + 1) * span + g / density };
+        const bounds = growRect(area, LAYER_TILE_REACH);
+        if (!tl.index.query(bounds).length) {
+          image = null; layerTiles.put(key, { value: null, bytes: 0, bounds, release: () => {} });
+        } else {
+          const target = makeCanvas(side, side), tx = target?.getContext('2d');
+          if (!target || !tx) { layerTilesFailed = true; layerTiles.clear(); return false; }
+          tx.setTransform(density, 0, 0, density, -area.minX * density, -area.minY * density);
+          paint(tx, area, density);
+          // The canvas is the tile (no transferToImageBitmap: it would wait for the GPU raster on the main thread).
+          const value = target as unknown as CanvasImageSource;
+          image = value;
+          layerTiles.put(key, { value, bytes: side * side * 4, bounds, release: () => { target.width = 0; target.height = 0; } });
+        }
+      }
+      if (image) tiles.push({ image, x, y });
+    }
+    // Each device pixel belongs to one tile (integer partition); the gutters only feed the filtering at the seams.
+    const k = t.a / density;
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1;
+    for (const tile of tiles) {
+      const sx = t.a * tile.x * span + t.e, sy = t.d * tile.y * span + t.f;
+      const left = Math.round(sx), top = Math.round(sy), right = Math.round(sx + t.a * span), bottom = Math.round(sy + t.d * span);
+      ctx.save(); ctx.beginPath(); ctx.rect(left, top, right - left, bottom - top); ctx.clip();
+      ctx.drawImage(tile.image, sx - g * k, sy - g * k, side * k, side * k); ctx.restore();
+    }
+    ctx.restore();
+    return true;
+  }
+
   function drawTexture(ctx: CanvasRenderingContext2D, tl: TextureLayer, rect: Rect4, band: number, lw: (w: number, m: number) => number, budgetRect: Rect4 = rect): number {
+    // The polygon wash above carries light parchment woods; keep individual trees only at close zoom.
+    const scale = ctx.getTransform().a / (activeDpr ?? deps.dpr ?? 1);
+    if (activeLight && pal.name === 'parchment' && scale < 1 && ['forest', 'commons', 'pasture', 'meadow', 'marsh'].includes(tl.kind)) return 0;
     if ((canopy || brushes) && (tl.kind === 'forest' || tl.kind === 'orchard')) {
       // Select centres inside the cover, then draw whole trees, including overhanging crowns.
-      const expanded = { minX: rect.minX - CANOPY_MARGIN, minY: rect.minY - CANOPY_MARGIN,
-        maxX: rect.maxX + CANOPY_MARGIN, maxY: rect.maxY + CANOPY_MARGIN };
-      const tiles = tl.index.tilesInRect(expanded), marks: Mark[] = [];
-      let entries = treeMarks.get(tl); if (!entries) { entries = new Map(); treeMarks.set(tl, entries); }
-      const exclusion = tl.kind === 'forest' ? polyL('u-forest-clearings') : undefined;
-      // Woods leave room for roads, rivers and farmsteads; crowns rooted at the edge overhang them a little.
-      const room = tl.kind === 'forest' ? forestRoom ??= new ForestRoom(forestCorridors(world), farmClearings(world.landuse)) : undefined;
-      for (const tile of tiles) {
-        let points = entries.get(tile);
-        if (!points) {
-          points = canopyMarks(tl, tile, world.seed).filter(m => (tl.kind !== 'forest' || m.k < (canopy ? .5 + .5 * forestWeight(m.x, m.y) : forestWeight(m.x, m.y)))
-            && (!room || room.keeps(m.x, m.y, (m.k * 37.17) % 1))
-            // Parchment woods grow in clumps: small glades let the dark shaded floor show between them.
-            && (tl.kind !== 'forest' || !canopy || pal.name !== 'parchment' || clumpNoise(m.x, m.y, 26, 5) > .27) && (!exclusion || !exclusion.index.query({ minX: m.x, minY: m.y, maxX: m.x, maxY: m.y }).some(i =>
-            pointInPoly(exclusion.polys[i], m.x, m.y) && !(exclusion.holes?.[i] ?? []).some(h => pointInPoly(h, m.x, m.y)))));
-          if (entries.size >= 128) entries.delete(entries.keys().next().value!);
-          entries.set(tile, points);
-        }
-        for (const m of points) if (m.x >= expanded.minX && m.x <= expanded.maxX && m.y >= expanded.minY && m.y <= expanded.maxY) marks.push(m);
-      }
-      marks.sort((a, b) => a.y - b.y || a.x - b.x);
-      if (brushes) for (const m of marks) {
-        ctx.globalAlpha = .88 + .12 * m.k;
-        brushes.tree(ctx, m.x, m.y, (tl.kind === 'orchard' ? 3.5 : 4.75) * m.r, tl.kind === 'orchard');
-      }
-      else canopy!.draw(ctx, marks, tl.kind, ctx.getTransform().a / (deps.dpr ?? 1), deps.dpr ?? 1, tl.kind === 'forest' ? coniferOf : undefined);
-      ctx.globalAlpha = 1; return tiles.length;
+      const expanded = growRect(rect, CANOPY_MARGIN), count = tl.index.tilesInRect(expanded).length;
+      // Thousands of sprites per view: stamp them once per density and tile, then reuse the bitmaps while panning and zooming.
+      if (!drawLayerTiles(ctx, tl, 'trees', rect, (target, area, pxPerMetre) => paintTrees(target, tl, treeMarksIn(tl, growRect(area, LAYER_TILE_REACH)), pxPerMetre)))
+        paintTrees(ctx, tl, treeMarksIn(tl, expanded), ctx.getTransform().a);
+      return count;
     }
     if (tl.kind !== 'forest') return drawTextureMarks(ctx, tl, rect, band, lw, budgetRect);
     ctx.save(); const clip = forestClip(rect); if (clip) ctx.clip(clip, 'nonzero');
@@ -1674,10 +1927,12 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     const f = 2 ** Math.max(0, Math.ceil(Math.log2(.5 / Math.max(1e-6, pxPerMetre)))), sp = 6 * f;
     const boxes = ids.map(i => bboxOf(tl.areas[i].poly)).map(b => ({ minX: Math.max(rect.minX, b.x0) - 14 * f, minY: Math.max(rect.minY, b.y0) - 14 * f, maxX: Math.min(rect.maxX, b.x1) + 14 * f, maxY: Math.min(rect.maxY, b.y1) + 14 * f }));
     const marks: Mark[] = [], i0 = Math.floor((rect.minX - 14 * f) / sp), i1 = Math.ceil((rect.maxX + 14 * f) / sp), j0 = Math.floor((rect.minY - 14 * f) / sp), j1 = Math.ceil((rect.maxY + 14 * f) / sp);
+    // The same room as the 2D woods: farmsteads, roads and rivers stay clear of trunks.
+    const room = roomOf();
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
       const hh = (salt: number): number => vhash(i, j, salt + f), x = (i + .1 + .8 * hh(1)) * sp, y = (j + .1 + .8 * hh(2)) * sp;
       if (!boxes.some(b => x >= b.minX && x <= b.maxX && y >= b.minY && y <= b.maxY)) continue;
-      if (clumpNoise(x, y, 26 * f, 5) <= .27) continue;
+      if (clumpNoise(x, y, 26 * f, 5) <= .27 || !room.keeps(x, y, hh(5))) continue;
       const size01 = hh(3);
       marks.push({ x, y, r: (size01 > .94 ? 1.35 + (size01 - .94) * 4 : .72 + .55 * size01 * size01) * f, k: hh(4) });
     }
@@ -1714,7 +1969,8 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     if (!sheet) { sheet = new ParchmentSymbols(ink, wash, .6, makeCanvas); penSheets.set(key, sheet); }
     return sheet;
   }
-  function drawPenSymbols(ctx: CanvasRenderingContext2D, tl: TextureLayer, tiles: number[]): void {
+  /** `area`: only the marks inside it (a layer tile and the reach of its sprites); all marks of `tiles` otherwise. */
+  function drawPenSymbols(ctx: CanvasRenderingContext2D, tl: TextureLayer, tiles: number[], area?: Rect4): void {
     const sheet = penSheet(tl.kind), sp = tl.kind === 'pasture' ? 9 : 7.5, list: PenMark[] = [];
     for (const t of tiles) {
       const key = `${tl.kind}|${tl.areas.length}|${t}`;
@@ -1725,12 +1981,32 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
         if (penMarks.size >= 4096) penMarks.delete(penMarks.keys().next().value!);
         penMarks.set(key, marks);
       }
-      for (const m of marks) list.push(m);
+      for (const m of marks) if (!area || (m.x >= area.minX && m.x <= area.maxX && m.y >= area.minY && m.y <= area.maxY)) list.push(m);
     }
     list.sort((a, b) => a.y - b.y);
     ctx.save(); ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; ctx.globalAlpha = .8;
     for (const m of list) sheet.draw(ctx, m.cell, m.x, m.y, m.size);
     ctx.restore();
+  }
+
+  /** Canopy lone trees of an open land layer (cached per index tile); `area` keeps only the marks inside it. */
+  function drawStrays(ctx: CanvasRenderingContext2D, tl: TextureLayer, tiles: number[], pxPerMetre: number, area?: Rect4): void {
+    let entries = strayMarks.get(tl); if (!entries) { entries = new Map(); strayMarks.set(tl, entries); }
+    const lone: Mark[] = [];
+    for (const t of tiles) {
+      let marks = entries.get(t);
+      if (!marks) {
+        marks = [];
+        for (const m of textureMarks(tl, t, TEX.forest.sp, TEX_SALT.forest, world.seed)) if (m.k < forestStray(m.x, m.y) * .5) marks.push({ x: m.x, y: m.y, r: .55 + .22 * frac(m.k * 9.7), k: frac(m.k * 37.3) });
+        if (entries.size >= 512) entries.delete(entries.keys().next().value!);
+        entries.set(t, marks);
+      }
+      for (const m of marks) if (!area || (m.x >= area.minX && m.x <= area.maxX && m.y >= area.minY && m.y <= area.maxY)) lone.push(m);
+    }
+    if (!lone.length) return;
+    lone.sort((a, b) => a.y - b.y || a.x - b.x);
+    canopy!.draw(ctx, lone, 'forest', pxPerMetre, 1);
+    ctx.globalAlpha = 1;
   }
 
   function drawTextureMarks(ctx: CanvasRenderingContext2D, tl: TextureLayer, rect: Rect4, band: number, lw: (w: number, m: number) => number, budgetRect: Rect4): number {
@@ -1772,7 +2048,21 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     const pen = !underground && pal.name === 'parchment';
     // Hand-drawn sheet symbols (parchmentSymbols.ts) replace the vector marks of the open land kinds.
     const sprites = pen && spec.shape !== 'circle';
-    if (sprites) drawPenSymbols(ctx, tl, tiles);
+    // Lone trees at the edge of the woods, drawn as canopy sprites over the open land.
+    const strayKind = !underground && (tl.kind === 'commons' || tl.kind === 'pasture' || tl.kind === 'meadow');
+    const spriteStrays = strayKind && !!canopy;
+    if (sprites) {
+      // Thousands of small stamps per view: pre-composited per density and tile like the woods (drawLayerTiles).
+      const painted = drawLayerTiles(ctx, tl, 'pen', rect, (target, area, pxPerMetre) => {
+        const reach = growRect(area, LAYER_TILE_REACH), owners = tl.index.tilesInRect(reach);
+        drawPenSymbols(target, tl, owners, reach);
+        if (spriteStrays) drawStrays(target, tl, owners, pxPerMetre, reach);
+      });
+      if (!painted) {
+        drawPenSymbols(ctx, tl, tiles);
+        if (spriteStrays) drawStrays(ctx, tl, tiles, ctx.getTransform().a);
+      }
+    }
     const fillP: Path2D[] = [], strokeP: Path2D[] = [];
     for (const t of sprites ? [] : tiles) {
       const key = `tex-${tl.kind}|${band}|${pen ? 'pen' : 'mark'}|t${t}`;
@@ -1817,13 +2107,10 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     if (pen) { ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; }
     for (const p of strokeP) ctx.stroke(p);
     if (pen) ctx.restore();
-    if (!underground && (tl.kind === 'commons' || tl.kind === 'pasture' || tl.kind === 'meadow')) {
+    if (strayKind) {
       const tree = TEX.forest, strays: Path2D[] = [];
       if (canopy) {
-        const lone: Mark[] = [];
-        for (const t of tiles) for (const m of textureMarks(tl, t, tree.sp, TEX_SALT.forest, world.seed)) if (m.k < forestStray(m.x, m.y) * .5) lone.push({ x: m.x, y: m.y, r: .55 + .22 * frac(m.k * 9.7), k: frac(m.k * 37.3) });
-        lone.sort((a, b) => a.y - b.y || a.x - b.x);
-        canopy.draw(ctx, lone, 'forest', ctx.getTransform().a / (deps.dpr ?? 1), deps.dpr ?? 1);
+        if (!sprites) drawStrays(ctx, tl, tiles, ctx.getTransform().a);
       } else for (const t of tiles) {
         const p = cached(`stray-${tl.kind}|t${t}`, () => {
           const marks = textureMarks(tl, t, tree.sp, TEX_SALT.forest, world.seed);
@@ -1899,14 +2186,14 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
 
   return {
     get scene() { return scene; }, palette: pal,
-    draw, drawText, drawGround, update,
+    draw, drawText, drawGround, drawCachedMap, update, suspendLive,
     setLabels(l: Label[]) { labels = l; },
     setOverlays(o: Partial<Overlays>) { if (o.text && JSON.stringify(o.text) !== JSON.stringify(text)) { text = o.text; mapLabels = buildMapLabels(world, pal.name, pal, text); widthCache.clear(); } Object.assign(overlays, o); },
     lastPlaced: () => placedLast,
     drawMinimap,
     lastStats: () => stats,
     getMapInfo: () => ({ cartouche: infoPanel ??= cartoucheModel(world, pal, 1, false), legend: legendNow(), fontFamily: family }),
-    dispose() { canopy?.dispose(); brushes?.dispose(); treeMarks.clear(); forestWashes.clear(); patterns.clear(); cache.clear(); furrowCache.clear(); rasterCache.clear(); terrainImg = waterImg = densityImg = cavernRockImg = undefined; },
+    dispose() { suspendLive(); dropLastRaster(); dropPreview(); canopy?.dispose(); brushes?.dispose(); treeMarks.clear(); strayMarks.clear(); layerTiles.clear(); forestWashes.clear(); patterns.clear(); cache.clear(); furrowCache.clear(); rasterCache.clear(); mapPyramid.clear(); terrainImg = waterImg = densityImg = cavernRockImg = undefined; },
   };
 }
 

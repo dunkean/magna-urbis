@@ -11,7 +11,7 @@ import { farmClearings, type ForestCorridor } from '../render/forestRoom';
  * (road corridor or farmstead ground, see render/forestRoom.ts): grass ground where no crown is rooted,
  * though crowns rooted outside may overhang it. */
 const CLASS: Partial<Record<LandKind, number>> = { field: 1, meadow: 2, pasture: 3, orchard: 4, garden: 5, commons: 6, marsh: 10 };
-const BUILT = 7, OCCUPIED = 8, CLEARANCE = 9, CLEARING = 11, RANGE = 8;
+const BUILT = 7, OCCUPIED = 8, CLEARANCE = 9, CLEARING = 11, RANGE = 8, MIN_HALF = .6;
 
 /** Merge accepted footprints and authorized circulation into the same retained
  * occupation contract, regardless of the building layer's visibility. */
@@ -177,8 +177,14 @@ export function forestOccupation(landuse: LandUseLayer, maxN = 1536, minCell = 2
 function corridorDistance(corridors: readonly ForestCorridor[], x0: number, y0: number, cell: number, n: number): Float32Array | undefined {
   if (!corridors.length) return undefined;
   const out = new Float32Array(n * n).fill(-RANGE), reach = RANGE * cell;
+  // A corridor narrower than the texel pitch is sampled at texel centres only: the field then dips below zero
+  // between samples and the bilinear read breaks the lane into a chain of beads (and the class channel into dots).
+  // Flooring the half width at MIN_HALF texels keeps every point of the centre line inside the interpolated
+  // zero contour (worst bilinear dip on a line is half a texel), so the corridor stays one continuous lane.
+  const floor = MIN_HALF * cell;
   for (const c of corridors) for (let k = 1; k < c.path.length; k++) {
-    const a = c.path[k - 1], b = c.path[k], ha = typeof c.half === 'number' ? c.half : c.half[k - 1], hb = typeof c.half === 'number' ? c.half : c.half[k];
+    const a = c.path[k - 1], b = c.path[k];
+    const ha = Math.max(floor, typeof c.half === 'number' ? c.half : c.half[k - 1]), hb = Math.max(floor, typeof c.half === 'number' ? c.half : c.half[k]);
     const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy, r = Math.max(ha, hb) + reach;
     const i0 = Math.max(0, Math.floor((Math.min(a.x, b.x) - r - x0) / cell)), i1 = Math.min(n - 1, Math.ceil((Math.max(a.x, b.x) + r - x0) / cell));
     const j0 = Math.max(0, Math.floor((Math.min(a.y, b.y) - r - y0) / cell)), j1 = Math.min(n - 1, Math.ceil((Math.max(a.y, b.y) + r - y0) / cell));

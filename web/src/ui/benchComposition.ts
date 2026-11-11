@@ -1,7 +1,8 @@
 import { buildMapLabels, placeMapLabels, estimateWidth, type MapLabelWorld, type MapLabel } from '../render/mapLabels';
 import { cityTextLabels, textPlacement } from '../render/textLayer';
 import { placedMapLabelsSvg } from '../render/svgLabels';
-import { presetComposition, validateComposition, type CompositionRecipe, type Limitation } from '../render/composition';
+import { presetComposition, validateComposition, withCompositionQuality, type CompositionRecipe, type Limitation } from '../render/composition';
+import { setDisplayAppearanceQuality, setDisplayQualityPreference, onDisplayQualityChange } from '../render/displayQuality';
 import { resolveAppearance, type AppearanceInput, type RenderCapabilities, type RenderTarget } from '../render/appearanceRecipe';
 import { getBenchRenderColors } from './benchRenderColors';
 import { writeSettingPath } from './parameterForm';
@@ -25,6 +26,7 @@ function load(): CompositionRecipe {
   return presetComposition('parchment');
 }
 let composition = load();
+setDisplayAppearanceQuality(composition.quality ?? 'full');
 let overlayChange = false;
 let materialNightChange=false;
 export const benchOverlayChange = (): boolean => overlayChange;
@@ -36,13 +38,18 @@ export const getBenchComposition = (): CompositionRecipe => composition;
 export function writeBenchCompositionQuery(query: URLSearchParams): void { query.set('composition', JSON.stringify(composition)); }
 export function setBenchComposition(next: CompositionRecipe): void {
   validateComposition(next);
+  if (composition.quality === 'light' && next.quality === 'full' && next.preset !== 'custom') setDisplayQualityPreference('full');
   const stable = (value: CompositionRecipe) => JSON.stringify({ ...value, preset: 'custom', text: undefined, annotations: undefined });
   const nightStable=(value:CompositionRecipe)=>JSON.stringify({...value,preset:'custom',effects:{...value.effects,ambience:undefined}});
   materialNightChange=composition.effects.ambience!==next.effects.ambience && nightStable(composition)===nightStable(next) && styleTraits(next.ground.variant).family==='material';
   overlayChange = stable(composition) === stable(next); composition = structuredClone(next);
+  setDisplayAppearanceQuality(composition.quality ?? 'full');
   try { localStorage.setItem(STORAGE, JSON.stringify(composition)); } catch { /* Storage is optional. */ }
   window.dispatchEvent(new Event('bench-composition-change')); overlayChange = false;materialNightChange=false;
 }
+onDisplayQualityChange(change => {
+  if (change.reason === 'auto' && (composition.preset === 'satellite' || composition.preset === 'parchment')) setBenchComposition(withCompositionQuality(composition, 'light'));
+});
 export function setBenchAppearanceField(path: string, value: unknown): void {
   writeSettingPath(advanced, path.replace(/^appearance\./, ''), value);
   window.dispatchEvent(new Event('bench-composition-change'));
@@ -81,7 +88,7 @@ export function resolveBenchAppearance(extra: Partial<AppearanceInput> = {}, nex
 
 window.addEventListener('storage', event => {
   if (event.key !== STORAGE || !event.newValue) return;
-  try { const value: unknown = JSON.parse(event.newValue); validateComposition(value); composition = value; window.dispatchEvent(new Event('bench-composition-change')); } catch { /* Ignore invalid external state. */ }
+  try { const value: unknown = JSON.parse(event.newValue); validateComposition(value); composition = value; setDisplayAppearanceQuality(composition.quality ?? 'full'); window.dispatchEvent(new Event('bench-composition-change')); } catch { /* Ignore invalid external state. */ }
 });
 
 const textCache = new WeakMap<SVGSVGElement, { key: string; world?: MapLabelWorld; scenes: readonly CityScene[]; labels: MapLabel[] }>();

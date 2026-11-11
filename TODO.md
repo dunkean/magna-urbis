@@ -1,13 +1,55 @@
-# TODO (
+# TODO
+
+share marche pas.
+les rivieres en 3D ne sont pas affinées à la source.
+
+# critical
+
+en v2, en 3D, les batiments n'ont pas de fenetre. Pourtant elles y sont. Globalement j'ia l'impression que les rendus de la planche v7 et ce que j'ai en vue 2D/3D dans la v2, ne sont pas synchro. J'ai beaucoup de bugs en v2.
+J'ai beaucoup utilisé la v2, mais j'ai peur que tu travailles sur une branche pas intégrée puisque j'ai travaillé depuis planche v7. la v2 est super lente et les rendus sont pas identiques. Regarde ce qui varie, fais moi un point (je veux garder les arbres 3D par contre).
+
+- [invalid_json] unknown variant `inspired`, expected one of `historical_strict`, `historical_inspired`, `fantasy_mix` at line 1 column 229459
+MU3.AZT-ltZ1ks2VEzEMx7U7HjvO8nhABTSQAzSwTXDiptiaid96ZD_bk2y2AHqAaiiBKzeq4Iyc7GO54JMs6-P3l7VR-vWCM-NuLftQd8eP6vt72CrYYs6EBdmRvYU7l5acamghsbVwh8ypYb9VebUOS0urO9At6EgzsRfnfg3RB56rHUHvY3IPVbw-1FaCa2KrmNKDfuOpYYjkd8cU14UqmIzFUZQIcww17CMNYGiaSLKsgg0u-0DCpQePZ9jEMB-a9JE2Bp_CsraD-q3AUqTjBVF9lnRGqeMHeEWPOM9Uri9STXCIZ8kR9kIx0DSAroQ18QiX8-se9FzSyt4OsHGJRWv5y28rNooxNBJcLAG5aSslPRWZJpiI7NdKAj56yu2gTV3LhE7CU0YX2nn89rWfn_cwlrVg1EOaJhjlQ5Cv9oapnVJ56MMeS0JfOwkt-YA1VCG_ohjG1gv8M7fxJHRF0v4boXOhSsL8okM1emxWg_HE8udnrTmVRbIuY8jVGlAdfOh7sXIr5xq8lLJd64LCKWUvncSpcuB-z1E0i3ElEv8BY9Jaxp94fsZTFbmCquGJRNQL4_YoS3XdN5GynZIgt0-JSevejvxz_ttckiPfFe4ccspnGGs7RzIfOtDSt-RGVhT3sl4W1PbmnfrxZTDbGzAuhkXItDlR6zr-AA
+et dans cette map en vue parchemin , les fleuves sont flous. 
+
+- "Déficit architectural : demande, fonction, rôle ou quantité incompatibles avec l’allocation."
+MU3.Ae0F5a91kk1u3DAMhTljWR45QVH0HrNoLpATdNdVd7RF28LIkiHKk0yAArlGe7N2VaAn6KbLotQYRbqJVvoj-T3yHZR-M-MY8LimzvHxfKe-_9yp51-qbaDFZSFMGHoye7jp47xEdtnFYAzcYAgxYzmxvJoeU45rP9EetKeRgpXLbnXeujCyqUF3PvYnrsBYxzm5PvMelI_xpN9ayug82eM5-nUmhmbB1JOXH83Zses8VdDQMJBEGQUHnDtHwqUrixc4eDdOWepImQaf3LzmSf1WYMjT-YqoPkl4QMljK7ilRxxHStuLZBMcCqPECHsi72ioQDMhx1DDdf24Bz2muAZrKjj0MYjWJFqu_M2dUGJyGHLZegx2ZRLM2tKSJ93wmgbsCZq4YO_ypf76paxv91CnNaHXVRwGqGUEGLTmtcue4BAoP8R0Kt2tU0TLpTTNy4TsWFC33jUuTJRc_q9R9QNmShL26g-9JGIqtCrTYzYaGktBZnvROsQ0o9_kLmwaUAW5KvNfQ04XdlYymKJyRsGTbAHzmuRSLS6U8-JFrWw2ELmf0McXjg1LMQYGxe6JRMwLW3sW92zGEgntEAU1f4yBtC71yP6TxZe5i56h5nzx1LzfCzuVdhagubhhJ1bETmxkQLW7d-r5c93uKn2zfTs-IM9a3TatlO-9mwVWa_Fddr34OSLnD8gn9af6Cw
+"et derriere je vois l'ombre de la ville mais pas de ville, très bizarre"
+> Ca doit pas arriver
+
+Dans une crique, il peut y avoir un pont qui traverse devant le port: 
+MU3.AeH22jF1kkuS1DAMhjUTx2n3UBQcpBdwgTkBO1bsFFtJXO3YLsvpmcxN4GbsOAVLCrl7oNjglSzr8Un-D0q_XXGOeNrK6Pl0-agOcOzgiDkTFoyWzD082LTmxL76FI2BB4wxVWw3lldjsdS02YXuQQeaKTpxjpsPzseZTQ96DMmeWbzOcy3eVrFVSOms3zmq6AO50yWFbSWGIWOxFCRiuHj2Y6AOBpomkiyj4IDr6Em4dOdwh0Pw81Klj7QZ8MWvW13UTwWGAl2uiOqLpEeUOq6DN_SM80zl9iLVBIfiLDnCXih4mjrQTMgp9nA9Px5BzyVt0ZkODjZFmbX85TeMlULwlQQXi8dYtZGSjoosE4aA0W1MAt47ynXRA29lQivhKaP1de-_fW3n-yP0ZSsYdJemCXr5D4w3-xCpPqVybsvuS0LHjYTWvCB7FvIbyhCxtgL_7K1_Eroiaf-N0LkQU9XablzTCqrSczUaBkdRPnzXOqaySsp1B5nNAKpRd00UW6xlZ--kjmmDriiQUvPaRpwq-9juOcjAYtxwxL9gSFrL7lOcX9kUY2RQ7F9IJvoDeA_HiyjqJjaZ4zgl4a2fUyStWztyr_nvc0mWXBvvZDGmvEPPdQ80fGhAa5PInegTR9GWgeF4J8JNyPUT8ln96n4D
+> Ca doit pas arriver
+
+
+medina sur une ile a planté. Le calcul tourne indéfiniment et globalement beaucoup de problèmes en espaces restreints
+Dans ce cas là il faut construire en indiquant: population target not reached.
+
+- Les bruits orientés sur les pentes de montagnes sont trop comme des fils. C'est pas mal mais il faudrait une composant un peu plus rocheuse des fois. LE rendu satellite déset avec des strates (ancienne version) me manque pour le coup. Ca marche super bien en montagne enneigées moins dans le désert et dans les tempérées. Et en 3D ca cache les ombres du relief donc on le voit moins. Faut trouver un juste milieu. Mais les déserts étaient bien mieux avant (il y a 2 semaines).
+
+
+
+# Important
+- echelle du relief par défaut: 10km
+- dans l'ui, 1 ligne par param. Param - bar - value. 
+- un boite progress bar quand on change le rendu, c'est long, il faut qu'on voit que ca progresse.
+
+- Et y a un gros bug sur les petits tailles > maisons. J'ai un oppidum celtique de 200 hb avec 6 maisons.  (et d'ans l'oppidum en 3D, les murs dépassent des toits).
+
+
+- Les arbres pour le parchemins sont hyper lents faut optimiser ca. alors que "peinte" ne rame pas. (tu peux mettre qu'un symbole par type de foret par exemple si ca aide. sinon juste optimise).
+
+- Les préparations de rendu sont trop lentes sur le web; on peut mieux faire ?
+
+- Outreterre: considérer des vallées et inverser le relief. On garde les cavité pour les routes, les villes, les champignonières, les fleuves. Les tunnels des chemin suivent le relief. La vue 3D montre le volume en transparence. Un truc du genre.
+- systeme impérial.
+
+# Probleme
 
 Pourquoi l'interface v2 montre pas toutes les cultures qu'on a dans v 7 ? 
 
 En 3D satellite j'ai pas le fond de la 2D. et ca revient après une génération.
 
-Les préparations de rendu sont trop lentes sur le web; on peut mieux faire ?
-Les bruits orientés sur les pentes de montagnes sont trop comme des fils. C'est pas mal mais il faudrait une composant un peu plus rocheuse des fois. LE rendu satellite déset avec des strates (ancienne version) me manque pour le coup. Ca marche super bien en montagne enneigées moins dans le désert et dans les tempérées. Et en 3D ca cache les ombres du relief donc on le voit moins. Faut trouver un juste milieu.
-
-Les arbres pour le parchemins sont hyper lents faut optimiser ca. alors que "peinte" ne rame pas. (tu peux mettre qu'un symbole par type de foret par exemple si ca aide. sinon juste optimise).
 
 Quand on change la saison, la mer ne bouge pas. Elle ne réagit pas à la saison, elle devrait.
 
@@ -15,33 +57,16 @@ J'ai une ville mage de 800hb y a pas une seule tour de mage. Il en faut
 
 Les routes qui arrive en angle ultra aigu sur des murailles ne marchent pas. J'ai 3 gates d'affilée parce qu'elle longe et crois la muraille. (pas d'exemple, juste une politique à gérer sur les murailles).
 
-Et y a un gros bug sur les petits tailles > maisons. J'ai un oppidum celtique de 200 hb avec 6 maisons.  (et d'ans l'oppidum en 3D, les murs dépassent des toits).
-
 J'ai des "u" comme pattern en gros zoom de satellite.
 satellite 2 devraient avec les arbres de satellites. D'ailleurs les pins avec un long tronc c'est bizarre, fais plus des sapins.
-
-
-"Déficit architectural : demande, fonction, rôle ou quantité incompatibles avec l’allocation."
-MU3.Ae0F5a91kk1u3DAMhTljWR45QVH0HrNoLpATdNdVd7RF28LIkiHKk0yAArlGe7N2VaAn6KbLotQYRbqJVvoj-T3yHZR-M-MY8LimzvHxfKe-_9yp51-qbaDFZSFMGHoye7jp47xEdtnFYAzcYAgxYzmxvJoeU45rP9EetKeRgpXLbnXeujCyqUF3PvYnrsBYxzm5PvMelI_xpN9ayug82eM5-nUmhmbB1JOXH83Zses8VdDQMJBEGQUHnDtHwqUrixc4eDdOWepImQaf3LzmSf1WYMjT-YqoPkl4QMljK7ilRxxHStuLZBMcCqPECHsi72ioQDMhx1DDdf24Bz2muAZrKjj0MYjWJFqu_M2dUGJyGHLZegx2ZRLM2tKSJ93wmgbsCZq4YO_ypf76paxv91CnNaHXVRwGqGUEGLTmtcue4BAoP8R0Kt2tU0TLpTTNy4TsWFC33jUuTJRc_q9R9QNmShL26g-9JGIqtCrTYzYaGktBZnvROsQ0o9_kLmwaUAW5KvNfQ04XdlYymKJyRsGTbAHzmuRSLS6U8-JFrWw2ELmf0McXjg1LMQYGxe6JRMwLW3sW92zGEgntEAU1f4yBtC71yP6TxZe5i56h5nzx1LzfCzuVdhagubhhJ1bETmxkQLW7d-r5c93uKn2zfTs-IM9a3TatlO-9mwVWa_Fddr34OSLnD8gn9af6Cw
-"et derriere je vois l'ombre de la ville mais pas de ville, très bizarre"
-> Ca doit pas arriver
-
-medina sur une ile a planté. Le calcul tourne indéfiniment et globalement beaucoup de problèmes en espaces restreints
-Dans ce cas là il faut construire en indiquant: population target not reached.
-
-
-Dans une crique, il peut y avoir un pont qui traverse devant le port: 
-MU3.AeH22jF1kkuS1DAMhjUTx2n3UBQcpBdwgTkBO1bsFFtJXO3YLsvpmcxN4GbsOAVLCrl7oNjglSzr8Un-D0q_XXGOeNrK6Pl0-agOcOzgiDkTFoyWzD082LTmxL76FI2BB4wxVWw3lldjsdS02YXuQQeaKTpxjpsPzseZTQ96DMmeWbzOcy3eVrFVSOms3zmq6AO50yWFbSWGIWOxFCRiuHj2Y6AOBpomkiyj4IDr6Em4dOdwh0Pw81Klj7QZ8MWvW13UTwWGAl2uiOqLpEeUOq6DN_SM80zl9iLVBIfiLDnCXih4mjrQTMgp9nA9Px5BzyVt0ZkODjZFmbX85TeMlULwlQQXi8dYtZGSjoosE4aA0W1MAt47ynXRA29lQivhKaP1de-_fW3n-yP0ZSsYdJemCXr5D4w3-xCpPqVybsvuS0LHjYTWvCB7FvIbyhCxtgL_7K1_Eroiaf-N0LkQU9XablzTCqrSczUaBkdRPnzXOqaySsp1B5nNAKpRd00UW6xlZ--kjmmDriiQUvPaRpwq-9juOcjAYtxwxL9gSFrL7lOcX9kUY2RQ7F9IJvoDeA_HiyjqJjaZ4zgl4a2fUyStWztyr_nvc0mWXBvvZDGmvEPPdQ80fGhAa5PInegTR9GWgeF4J8JNyPUT8ln96n4D
-> Ca doit pas arriver
 
 
 Vue parchemin:
 - vue > enlever "peinte", procedurale et celle de parchemin est mieux
 
-
 Manque les sentiers vers les batiments isolés. il manque pas mal de sentiers en fait.
 
-3D organic, il n'y a plus de fenetres
+
 
 J'ai aussi des bugs de clippings et des toits qui se traversent: ca n'apparait que quand je m'approche beaucoup, on dirait qu'un deuxième toit s'ajoute. (organique)
 

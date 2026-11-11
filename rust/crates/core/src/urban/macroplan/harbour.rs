@@ -967,6 +967,10 @@ pub(in super::super) fn keep_sea_access(streets: &mut Vec<Street>, surface: Surf
 }
 
 pub(in super::super) fn protect_navigation(layout: &mut super::super::Layout, surface: Surface<'_>, roads: &[Street]) {
+    // Final network clearance already rejected obstructing decks and connected
+    // admissible inland replacements, including those behind a marine basin.
+    if layout.config.as_ref().is_some_and(|c| c.harbour_bridge_clearance)
+        && layout.streets.iter().any(|s| s.role == "quay") { return; }
     let reserved:Vec<_>=layout.programme.iter().flat_map(|p|&p.reservations).map(|r|layout.streets.get(r.street).cloned()).collect();
     keep_sea_access(&mut layout.streets,surface,roads);
     if let Some(p)=&mut layout.programme {

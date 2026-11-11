@@ -1,3 +1,4 @@
+import { waterSeasonUniforms } from '../render/seasonPalette';
 /**
  * WebGPU renderer of the 2D terrain map, with the public surface and the passes of TerrainGl
  * (terrainGl.ts). The shaders are TerrainGl's, translated to WGSL by web/scripts/wgsl_shaders.ts
@@ -9,9 +10,8 @@
  *   an offscreen RGBA8 target and flipped once onto the canvas;
  * - uniforms live in one storage block per program, written per draw into a frame buffer slot;
  * - look switches are pipeline overrides; pipelines are created with createRenderPipelineAsync, the last
- *   drawn (or the preview) pipeline stands in meanwhile. The heavy looks (Render v2, Render3D with and
- *   without forest, Render, their auxiliary passes) are created in the background from device creation
- *   (GpuShared.prewarm), as TerrainGl.prewarmVariants does on ANGLE/D3D11;
+ *   drawn (or the preview) pipeline stands in meanwhile. Only requested looks are compiled: eagerly
+ *   compiling every heavy look competes with the selected one in Tint/DXC and retains unused pipelines;
  * - captures read a separate WebGPU canvas through drawImage, in the same task (no async readback). The
  *   capture methods stay synchronous: a pipeline still missing then is created synchronously, and the
  *   drawImage readback waits for its compilation (about 3-4 s for Render v2 on D3D12). Async callers await
@@ -21,6 +21,8 @@
  *   as a TerrainGl on a WebGL2 canvas when one can be had, otherwise captures throw a clear error.
  */
 import { unzlibSync } from 'fflate';
+import { LiveGround } from './liveGround';
+import { displayQualityUniform, onDisplayQualityChange } from '../render/displayQuality';
 import atlas from '../render/assets/fantasy/forest-brushes.json';
 import { shoreRingFor } from '../../../rust/bridge/terrainForestBeach';
 import type { ForestField, ForestOccupation, LandDetail } from '../../../rust/bridge/terrainForest';
@@ -160,25 +162,20 @@ class GpuShared {
   pipeline(key: string, descriptor: () => GPURenderPipelineDescriptor, wait = false): GPURenderPipeline | undefined {
     let entry = this.pipelines.get(key);
     if (!entry) {
-      const created: Pipeline = entry = {};
+      const created: Pipeline = entry = {}, started = performance.now();
       this.pipelines.set(key, created);
       this.device.createRenderPipelineAsync(descriptor()).then(pipeline => {
+        console.debug(`WebGPU map pipeline ${key}: ${Math.round(performance.now() - started)} ms (async)`);
         created.pipeline = pipeline; for (const listener of this.listeners) listener();
       }, error => { if (!created.pipeline) { created.failed = true; console.error(`WebGPU pipeline ${key}:`, error); } });
     }
     if (entry.pipeline || entry.failed || !wait) return entry.pipeline;
-    return entry.pipeline = this.device.createRenderPipeline(descriptor());
+    const started = performance.now();
+    entry.pipeline = this.device.createRenderPipeline(descriptor());
+    console.debug(`WebGPU map pipeline ${key}: ${Math.round(performance.now() - started)} ms (sync capture)`);
+    return entry.pipeline;
   }
   adopt(key: string, pipeline: GPURenderPipeline): void { this.pipelines.set(key, { pipeline }); }
-  /** Render v2 and Render3D (with and without forest), Render, and their auxiliary passes: 3-4 s each on
-   * D3D12, so they are created in the background from device creation, as TerrainGl.prewarmVariants on
-   * ANGLE/D3D11. Detail layers (alpha-blended map) only appear on the 2D looks: Render3D looks drop them. */
-  prewarm(): void {
-    const variants: TerrainVariant[] = [{ mode: 3, v2: 1, forest: true }, { mode: 3, v2: 1, forest: false }, { mode: 3, v2: 0, forest: true },
-      { mode: 3, v2: 0, forest: false }, { mode: 2, v2: 0, forest: false }].map(v => ({ ...v, brushes: false }));
-    for (const v of variants) for (const pass of mapPasses(v)) this.pipeline(this.terrainKey(v, pass, 'none'), () => this.terrainDescriptor(v, pass, 'none'));
-    for (const v of [variants[4], PREVIEW_VARIANT]) this.pipeline(this.terrainKey(v, 'map', 'alpha'), () => this.terrainDescriptor(v, 'map', 'alpha'));
-  }
   /** Resolves once a pipeline is created (or failed). */
   async settled(key: string): Promise<boolean> {
     for (;;) {
@@ -233,7 +230,6 @@ function sharedGpu(forced: boolean): Promise<GpuShared | undefined> {
     try { gpu = await prepare(device); } catch (error) { destroyedHere.add(device); device.destroy(); throw error; }
     if (gpu.lost) throw new Error('WebGPU : appareil perdu pendant la préparation de la carte.');
     current = gpu;
-    gpu.prewarm();
     return gpu;
   })().catch(error => { shared = undefined; throw error; });
 }
@@ -294,6 +290,14 @@ export class TerrainGpu implements TerrainRenderer {
   private auxKey = '';
   private forestVersion = 0;
   private capturing = false;
+  private liveGround = new LiveGround();
+  private livePaused = false;
+  setLivePaused(paused: boolean): void {
+    this.livePaused = paused;
+    if (this.fallback) this.fallback.setLivePaused(paused);
+    if (paused) { cancelAnimationFrame(this.frame); this.frame = 0; }
+    else this.request();
+  }
   private mapTarget?: Target; private riverTarget?: Target; private waterTarget?: Target;
   private retainedWaterKey = '';
   private retainedWaterPaths: readonly RetainedWaterPath[] = [];
@@ -320,6 +324,7 @@ export class TerrainGpu implements TerrainRenderer {
   private view?: { view: View; width: number; height: number };
   private frame = 0;
   private disposed = false;
+  private unlistenQuality?: () => void;
   private empty!: GpuImage; private emptyUint!: GpuImage;
   private readonly terrainParams = new Params(WGSL.WGSL_PARAMS.terrain);
   private readonly riverParams = new Params(WGSL.WGSL_PARAMS.river);
@@ -352,6 +357,7 @@ export class TerrainGpu implements TerrainRenderer {
     if (!context) throw new Error('WebGPU indisponible sur ce canevas');
     this.context = context;
     this.attach(gpu);
+    this.unlistenQuality = onDisplayQualityChange(() => this.request());
   }
 
   /** Binds the renderer to a (new) device: canvas configuration, listeners and the device-wide images. */
@@ -435,6 +441,7 @@ export class TerrainGpu implements TerrainRenderer {
     try {
       if (!canvas) throw new Error('aucun canevas WebGL2 disponible');
       const gl = new TerrainGl(canvas);
+      gl.setLivePaused(this.livePaused);
       TerrainGpu.restore(gl, inputs);
       this.fallback = gl; this.canvas = canvas;
       console.warn(`WebGPU map: device lost for good (${reason}); continuing with WebGL2.`);
@@ -625,11 +632,18 @@ export class TerrainGpu implements TerrainRenderer {
   }
 
   /** Present in the caller's animation frame without entering the capture/readback path. */
-  redrawNow(view?: View, width?: number, height?: number): void {
+  redrawNow(view?: View, width?: number, height?: number, interacting = false, pixelRatio = Math.min(2, window.devicePixelRatio || 1)): void {
     if (this.frame) cancelAnimationFrame(this.frame);
     this.frame = 0;
-    if (this.fallback) this.fallback.redrawNow(view, width, height);
-    else { if (view && width && height) this.view = { view, width, height }; this.draw(); }
+    if (this.fallback) this.fallback.redrawNow(view, width, height, interacting, pixelRatio);
+    else {
+      if (view && width && height) this.view = { view, width, height };
+      const state = this.view;
+      if (state) this.liveGround.present(this.canvas, state.view, state.width, state.height, pixelRatio, interacting, (ratio, renderWidth, renderHeight) => {
+        this.view = { ...state, width: renderWidth, height: renderHeight };
+        try { return this.draw(ratio, pixelRatio); } finally { this.view = state; }
+      });
+    }
   }
 
   /** The capture canvas (its own WebGPU context), configured for opaque or premultiplied output. */
@@ -663,7 +677,9 @@ export class TerrainGpu implements TerrainRenderer {
       // The ground overlay keeps premultiplied coverage (TerrainGl reads it back from its own target, waiting
       // for the link); the colour capture is opaque, like the WebGL2 canvas it is copied from.
       const surface = this.captureSurface(!groundOverlay);
-      this.draw(1, includeDetails ? Math.min(2, window.devicePixelRatio || 1) : 1, surface, groundOverlay);
+      // Every capture needs the requested look, including the opaque whole-map background.
+      // A stand-in copied here would otherwise remain cached by the 3D view after compilation.
+      this.draw(1, includeDetails ? Math.min(2, window.devicePixelRatio || 1) : 1, surface, true);
       context.drawImage(surface.canvas, 0, 0);
       if (alphaOnly) {
         const rgba = context.getImageData(0, 0, size, size).data;
@@ -764,7 +780,8 @@ export class TerrainGpu implements TerrainRenderer {
   }
 
   private request(): void {
-    if (this.disposed || this.frame || this.fallback) return;
+    this.liveGround.invalidate(this.canvas);
+    if (this.disposed || this.frame || this.fallback || this.livePaused) return;
     this.frame = requestAnimationFrame(() => { this.frame = 0; this.draw(); });
   }
 
@@ -776,12 +793,14 @@ export class TerrainGpu implements TerrainRenderer {
     return { buffer: s.buffer, offset, size: params.bytes.length };
   }
 
-  private draw(pixelRatio = Math.min(2, window.devicePixelRatio || 1), stylePixelRatio = pixelRatio, capture?: Surface, waitCapture = false): void {
+  private draw(pixelRatio = Math.min(2, window.devicePixelRatio || 1), stylePixelRatio = pixelRatio, capture?: Surface, waitCapture = false): boolean {
+    this.liveGround.invalidate(this.canvas);
     const look = this.look, state = this.view, device = this.device;
-    if (this.disposed || !look || !state || !this.base || this.gpu.lost) return;
+    if (this.disposed || !look || !state || !this.base || this.gpu.lost) return false;
+    const quality = displayQualityUniform(!(this.capturing || capture !== undefined || waitCapture || look.mesh3d === true));
     const wait = this.capturing || waitCapture;
     const chosen = this.mapVariant(look, wait);
-    if (!chosen) return;
+    if (!chosen) return false;
     const started = performance.now();
     const dpr = pixelRatio;
     const width = Math.max(1, Math.round(state.width * dpr)), height = Math.max(1, Math.round(state.height * dpr));
@@ -801,6 +820,7 @@ export class TerrainGpu implements TerrainRenderer {
     let enhancedAlpha = 1;
     // Every parameter of the look; replayed for the auxiliary pass (same names, same values).
     const setup = (): void => {
+      p.set('uQuality', quality);
       textures = Object.fromEntries(TERRAIN_TEXTURES.map(name => [name, empty]));
       textures.uForestBrushAtlas = this.brushes.image.view; textures.uAux = this.emptyUint.view;
       p.set('uCanvas', width, height);
@@ -825,6 +845,7 @@ export class TerrainGpu implements TerrainRenderer {
       this.bindBrushes(textures, styleTraits(look.style).forestBrushes && mode === 3);
       p.set('uV2WaterVisible', look.layers.water === false ? 0 : 1);
       if (this.base && look.climate) p.setArray('uV2GlacierSources', renderV2GlacierSources(this.base.layer, look.climate));
+      p.setArray('uWaterSeason', waterSeasonUniforms(look.v2Season, look.climateZone, look.v2Calendar));
       p.set('uV2Season', look.v2Season ?? .5); setSeasonCalendarGpu(p, look.climateZone, look.v2Calendar); p.set('uMaterialZone', renderV2ZoneUniform(look.climateZone)); p.set('uCityWater', this.retainedCity[0], this.retainedCity[1]);
       p.set('uEnhanced3d', look.mesh3d || styleTraits(look.style).ground3d ? 1 : 0);
       p.set('uRefinementMode', look.refinement3d === 'source' ? 0 : isNeuralRefinement(look.refinement3d ?? 'noise') ? 2 : 1);
@@ -869,7 +890,7 @@ export class TerrainGpu implements TerrainRenderer {
       const d = look.detail;
       p.set('uDetailA', d.amplitude, d.hurst, Math.max(1.1, d.lacunarity), d.start);
       p.set('uDetailB', d.slope, d.flat, d.shore);
-      p.set('uOctaves', Math.min(FRACTAL_ROTATIONS.length, Math.round(d.octaves)));
+      p.set('uOctaves', Math.min(quality ? 2 : FRACTAL_ROTATIONS.length, Math.round(d.octaves)));
       textures.uCoastDistance = this.coastDistance?.view ?? empty;
       textures.uLake = this.lake?.view ?? empty;
       p.set('uHasLake', this.lake ? this.lakeMode : 0); p.set('uLakeN', this.lakeN);
@@ -987,7 +1008,7 @@ export class TerrainGpu implements TerrainRenderer {
     const v = this.lookVariant(look);
     if (mapPasses(v).includes('aux')) {
       const aux = this.terrainPipeline(v, 'aux', 'none', wait);
-      const key = aux && JSON.stringify([width, height, origin, px, look.seed, look.climate, look.lighting, look.v2Season, look.v2Calendar, look.layers, look.refinement3d,
+      const key = aux && JSON.stringify([quality, width, height, origin, px, look.seed, look.climate, look.lighting, look.v2Season, look.v2Calendar, look.layers, look.refinement3d,
         look.mesh3d, look.style, look.waterLook, this.forestVersion, this.riverCount, this.retainedWaterKey, this.lakeN, separateWater, this.base.layer.width, this.base.layer.n,
         this.enhanced.at(-1)?.fadeStart, this.coastDistance ? 1 : 0]);
       if (this.auxTarget?.width !== width || this.auxTarget.height !== height) this.auxKey = '';
@@ -1026,6 +1047,7 @@ export class TerrainGpu implements TerrainRenderer {
     device.queue.submit([encoder.finish()]);
     this.gpuDrawMs = performance.now() - started;
     if (animating) this.request();
+    return true;
   }
 
   /** Forest textures and parameters shared with TerrainGl's bindForest. */
@@ -1062,6 +1084,7 @@ export class TerrainGpu implements TerrainRenderer {
 
   dispose(): void {
     if (this.disposed) return;
+    this.unlistenQuality?.();
     this.disposed = true; cancelAnimationFrame(this.frame); this.frame = 0;
     this.gpu.listeners.delete(this.redraw); this.gpu.lostListeners.delete(this.onLost);
     if (this.fallback) { this.fallback.dispose(); return; }

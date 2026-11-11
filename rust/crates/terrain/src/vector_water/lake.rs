@@ -5,6 +5,32 @@ pub struct LakeField {
     pub n: usize,
 }
 pub fn lake_field(mask: &[u8], n: usize) -> LakeField {
+    lake_field_with_shore(mask, n, None)
+}
+/// Water surface and ground of a lake mask: `level` (read on lake cells),
+/// `height`, and the depth threshold that defines the mask.
+pub struct Shore<'a> {
+    pub level: &'a [f32],
+    pub height: &'a [f32],
+    pub depth: f64,
+}
+/// Signed distance to the shore, in cells, from both sides of a mask edge.
+/// With the water surface, the shore lies where the depth reaches the mask's
+/// threshold between the two cell centres, instead of on the cell edge: the
+/// spline then follows the terrain contour rather than the cell staircase.
+fn shore_offset(mask: &[u8], shore: Option<&Shore>, c: usize, nb: usize) -> f32 {
+    let Some(s) = shore else { return 0.5 };
+    let (wet, dry) = if mask[c] != 0 { (c, nb) } else { (nb, c) };
+    let level = s.level[wet] as f64;
+    let inside = level - s.height[wet] as f64 - s.depth;
+    let outside = level - s.height[dry] as f64 - s.depth;
+    if !(inside > 0.0 && outside < 0.0) {
+        return 0.5;
+    }
+    let t = (inside / (inside - outside)).clamp(0.05, 0.95);
+    (if c == wet { t } else { 1.0 - t }) as f32
+}
+pub fn lake_field_with_shore(mask: &[u8], n: usize, shore: Option<Shore>) -> LakeField {
     // No shore exists in an empty mask: both distance sweeps and both spline
     // recurrences would keep their constant initial values exactly.
     if mask.iter().all(|&v| v == 0) {
@@ -26,12 +52,17 @@ pub fn lake_field(mask: &[u8], n: usize) -> LakeField {
         for x in 0..n {
             let (x, y) = (x as isize, y as isize);
             let inside = wet(x, y);
-            if wet(x - 1, y) != inside
-                || wet(x + 1, y) != inside
-                || wet(x, y - 1) != inside
-                || wet(x, y + 1) != inside
-            {
-                distance[y as usize * n + x as usize] = 0.5
+            let c = y as usize * n + x as usize;
+            for (xx, yy) in [(x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)] {
+                let off = xx < 0 || yy < 0 || xx >= n as isize || yy >= n as isize;
+                if wet(xx, yy) != inside {
+                    let offset = if off {
+                        0.5
+                    } else {
+                        shore_offset(mask, shore.as_ref(), c, yy as usize * n + xx as usize)
+                    };
+                    distance[c] = distance[c].min(offset)
+                }
             }
         }
     }
