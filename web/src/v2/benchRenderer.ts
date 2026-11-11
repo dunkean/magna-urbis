@@ -16,7 +16,7 @@ import { createCanvasRenderer, type CanvasRenderer } from '../render/canvas';
 import { roadGroundTones, setRoadGround } from '../render/roadStyle';
 import { displayWorld } from '../render/displayWorld';
 import { buildingOccupationShapes } from '../ui/forestOccupation';
-import { v2DisplayForestAsync, v2ForestOccupation, v2ForestOccupationAsync, withBuildingOccupationAsync } from './displayForest';
+import { v2DisplayForestAsync, v2ForestOccupation, v2ForestOccupationParts, withBuildingOccupationAsync } from './displayForest';
 import type { ForestOccupation } from '../../../rust/bridge/terrainForest';
 import { nativeCitiesOf } from './nativeProducts';
 import { activityScene } from './activitySites';
@@ -327,10 +327,12 @@ export class BenchRenderer {
     const world = this.world!, v = this.scene!.revisions;
     const revision = JSON.stringify([v.landuse, v.cities, v.settlements]);
     if (this.occupationCache?.world !== world || this.occupationCache.revision !== revision) {
-      const data = v2ForestOccupationAsync(world).then(base => {
+      // The building merge needs only the occupation raster; the holdings detail joins at the end.
+      const parts = v2ForestOccupationParts(world);
+      const data = Promise.all([parts.occupation.then(base => {
         const buildings = [...nativeCitiesOf(world).flatMap(city => city.scene?.buildings ?? []), ...(activityScene(world)?.buildings ?? [])];
         return withBuildingOccupationAsync(base, { buildings });
-      });
+      }), parts.occupation, parts.detail]).then(([occupation, base, detail]) => occupation && { ...occupation, detail: base ? detail : undefined });
       data.catch(() => { if (this.occupationCache?.data === data) this.occupationCache = undefined; });
       this.occupationCache = { world, revision, data };
     }
@@ -339,7 +341,8 @@ export class BenchRenderer {
   private async forestPass(): Promise<void> {
     if (!this.gpuActive) return;
     this.dropBackground();
-    const field = await v2DisplayForestAsync(this.world!, this.settings!, this.resolved!), occupation = await this.groundOccupation();
+    // The Rust forest field and the occupation worker are independent: run them at once.
+    const [field, occupation] = await Promise.all([v2DisplayForestAsync(this.world!, this.settings!, this.resolved!), this.groundOccupation()]);
     if (this.gpuActive) this.gpu!.setForest(field, occupation);
   }
   /** The parchment tints multiply over the lit ground: the overlay gets it as a backdrop, transparent on the water below. */
@@ -647,6 +650,8 @@ export class BenchRenderer {
     this.cartography?.suspendLive();
     if (this.fantasy) suspendFantasyRaster(this.fantasy);
   }
+  /** Display work still owed to the last live frame (missing overlay tiles); 0 once the map is complete. */
+  pendingWork(): number { return this.preparing ? 1 : this.cartography?.lastStats().rasterPending ?? 0; }
   /** Explicit readback for screenshots/illustration; ordinary navigation never calls it. */
   prepareCapture(): void {
     const frame = this.livePending ?? this.liveShown;

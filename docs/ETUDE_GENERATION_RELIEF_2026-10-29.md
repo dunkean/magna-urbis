@@ -20,7 +20,7 @@ La priorité « rapide » impose une hiérarchie : calcul régional à quelques 
 
 ### 2.1 Magna Urbis
 
-L'inspection porte sur le répertoire de travail, qui contenait déjà de nombreuses modifications. Les essais utilisent ses sources courantes ; leur provenance est conservée dans [provenance.json](evidence/terrain-study-2026-10-29/provenance.json).
+L'inspection porte sur le répertoire de travail, qui contenait déjà de nombreuses modifications. Les essais utilisent ses sources courantes ; leur provenance est conservée dans provenance.json (historical validation, archived locally).
 
 | Partie | Code inspecté | Conséquence |
 | --- | --- | --- |
@@ -60,7 +60,7 @@ Le build et les appels au service réel passent. Le contrôle interactif dans un
 
 ### 3.2 Relief régional et coût de l'hydrologie
 
-Le programme `terrain_literature_probe` construit un vrai terrain du moteur Rust, avec érosion 1 et motif 8 km, puis appelle `HydrologyEngine` sur ce terrain. Graine : `literature-2026-10-29`, largeur 50 000 m. Les rapports complets sont dans [les preuves de l'étude](evidence/terrain-study-2026-10-29/provenance.json).
+Le programme `terrain_literature_probe` construit un vrai terrain du moteur Rust, avec érosion 1 et motif 8 km, puis appelle `HydrologyEngine` sur ce terrain. Graine : `literature-2026-10-29`, largeur 50 000 m. Les rapports complets sont dans les preuves de l'étude (historical validation, archived locally).
 
 | Source | Raster | Pas | Génération CPU native | Préparation hydro | Hydro tempérée | Correction RMS | Correction maximale |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -72,7 +72,7 @@ Il s'agit de mesures uniques sur cette machine, avec une activité de développe
 
 Ces durées CPU ne permettent pas de juger la vitesse du procédural GPU existant, ni de conclure qu'un autre générateur serait plus rapide. Le benchmark prioritaire manquant est bien « procédural GPU seul / même source avec Phasor GPU », à budget régional et qualité identiques.
 
-Ces maxima ne prouvent pas à eux seuls une erreur du modèle : une incision ou une politique de lac peut modifier le sol volontairement. Ils montrent néanmoins pourquoi « l'hydrologie réussit » ne suffit pas pour juger un générateur. Il faut également connaître **où et pourquoi le relief a dû changer**. Les rapports [montagnes](evidence/terrain-study-2026-10-29/mountains.json), [collines](evidence/terrain-study-2026-10-29/hills.json) et [montagnes 1024²](evidence/terrain-study-2026-10-29/mountains-1024.json) permettent de vérifier ces valeurs.
+Ces maxima ne prouvent pas à eux seuls une erreur du modèle : une incision ou une politique de lac peut modifier le sol volontairement. Ils montrent néanmoins pourquoi « l'hydrologie réussit » ne suffit pas pour juger un générateur. Il faut également connaître **où et pourquoi le relief a dû changer**. Les rapports montagnes (historical validation, archived locally), collines (historical validation, archived locally) et montagnes 1024² (historical validation, archived locally) permettent de vérifier ces valeurs.
 
 ### 3.3 Amplification locale sur le même terrain réel
 
@@ -87,13 +87,13 @@ Une fenêtre rugueuse intérieure est sélectionnée dans le vrai terrain montag
 
 Le résidu est mesuré par rapport à la spline conservée de Magna, pas par rapport à un terrain fin de référence. Les premières requêtes comprennent initialisation et compilation : 13,06 s pour le premier appel classique, puis 207 ms Phasor, 592 ms hybride et 644 ms MSE au niveau 2. L'ordre de passage et les caches partagés empêchent d'en faire un classement équitable du démarrage à froid. Une relecture exacte en cache coûte environ 5–7 ms ; elle n'est pas confondue avec le calcul d'une autre tuile.
 
-Les huit combinaisons méthode/niveau sont finies, déterministes, et identiques bit à bit lorsque la même fenêtre est assemblée en quatre quadrants. La conservation du signe terre/mer passe sur ce cas terrestre ; ce n'est pas une validation côtière. [Données détaillées](evidence/terrain-study-2026-10-29/amplification.json).
+Les huit combinaisons méthode/niveau sont finies, déterministes, et identiques bit à bit lorsque la même fenêtre est assemblée en quatre quadrants. La conservation du signe terre/mer passe sur ce cas terrestre ; ce n'est pas une validation côtière. Données détaillées (historical validation, archived locally).
 
 ![Même fenêtre réelle de Magna : classique, Phasor, hybride et MSE. Pour chaque échelle, l'ombrage est suivi du résidu sur une échelle commune.](evidence/terrain-study-2026-10-29/amplification-comparison.png)
 
 **Lecture visuelle :** Phasor ajoute clairement des ravines, avec un motif encore assez ondulé sur ce terrain lisse. L'hybride concentre davantage ses changements. MSE et classique se distinguent à peine. L'hybride de Neural Earth n'est donc pas automatiquement le meilleur réglage visuel de Magna : le résultat dépend de la rugosité et du drainage de la source.
 
-Le même moteur hydrologique Rust accepte les quatre sorties à 7,5 m. Chaque fenêtre produit ici une rivière et aucun lac. La correction RMS reste entre 0,0459 et 0,0465 m ; le maximum varie de 0,686 à 0,734 m. C'est un contrôle de compatibilité local à frontières ouvertes, sans débit amont régional. Il **ne valide pas** la connectivité de tous les bassins d'une région raffinée. Rapports : [classique](evidence/terrain-study-2026-10-29/hydro-classic.json), [Phasor](evidence/terrain-study-2026-10-29/hydro-phasor.json), [hybride](evidence/terrain-study-2026-10-29/hydro-hybrid.json), [MSE](evidence/terrain-study-2026-10-29/hydro-mse.json).
+Le même moteur hydrologique Rust accepte les quatre sorties à 7,5 m. Chaque fenêtre produit ici une rivière et aucun lac. La correction RMS reste entre 0,0459 et 0,0465 m ; le maximum varie de 0,686 à 0,734 m. C'est un contrôle de compatibilité local à frontières ouvertes, sans débit amont régional. Il **ne valide pas** la connectivité de tous les bassins d'une région raffinée. Rapports : classique (historical validation, archived locally), Phasor (historical validation, archived locally), hybride (historical validation, archived locally), MSE (historical validation, archived locally).
 
 ## 4. Ce que veut dire rapide à 50 km
 
@@ -375,7 +375,7 @@ node web/scripts/check_neural_amplification.mjs .tmp/terrain-study/mountains/hei
 
 Le second script teste le vrai contrat HTTP registration/tuile/libération, les quatre identités de méthode, ainsi que le refus des modes et intensités invalides. `MAGNA_NEURAL_EARTH` permet de choisir un autre emplacement du dépôt voisin. Le benchmark accepte `--device cpu`, d'autres résolutions et d'autres niveaux ; la vitesse sera différente. Les grands rasters et sorties temporaires restent dans `.tmp/terrain-study`, les petits rapports et la planche inspectée sont conservés sous `docs/evidence/terrain-study-2026-10-29`.
 
-Les [vérifications conservées](evidence/terrain-study-2026-10-29/validation.json) comprennent 22 tests de raffinement, d'érosion et d'hydrologie, le typage TypeScript, le build du banc terrain, la syntaxe Python et les appels HTTP réels. Elles ne valident pas les performances web des candidats proposés.
+Les vérifications conservées (historical validation, archived locally) comprennent 22 tests de raffinement, d'érosion et d'hydrologie, le typage TypeScript, le build du banc terrain, la syntaxe Python et les appels HTTP réels. Elles ne valident pas les performances web des candidats proposés.
 
 ## 11. Bibliographie de travail classée
 

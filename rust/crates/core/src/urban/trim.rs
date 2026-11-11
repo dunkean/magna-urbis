@@ -402,26 +402,59 @@ fn prune_with(layout: &mut Layout, open: &[bool], lots: &[Shape], doors: Option<
         };
         far(y).total_cmp(&far(x))
     });
-    let connected = |segs: &[Seg], from: usize, to: usize| {
-        let mut seen = vec![false; n];
-        let mut stack = vec![from];
-        let mut useful = false;
-        seen[from] = true;
-        while let Some(v) = stack.pop() {
-            if v == to {
-                return (true, useful);
+    // Whether removing a loop link cuts two useful places apart: `a` and `b`
+    // no longer connected, and each side holds a useful node. Two breadth
+    // first searches grow from `a` and `b` in turn: they meet close by when
+    // a detour exists; otherwise the smaller side is exhausted first, and
+    // the other side is searched only until its first useful node. Visited
+    // marks are stamped per call instead of cleared.
+    let mut seen = [vec![0u32; n], vec![0u32; n]];
+    let mut stamp = 0u32;
+    let mut queues = [std::collections::VecDeque::new(), std::collections::VecDeque::new()];
+    let useful_node = |segs: &[Seg], v: usize| anchored[v] || adj[v].iter().any(|&k| segs[k].alive && (segs[k].lined || !segs[k].prunable));
+    let mut cut_apart = |segs: &[Seg], a: usize, b: usize| -> bool {
+        stamp += 1;
+        let mut useful = [false, false];
+        for (side, start) in [a, b].into_iter().enumerate() {
+            queues[side].clear();
+            queues[side].push_back(start);
+            seen[side][start] = stamp;
+        }
+        if a == b { return false; }
+        let mut side = 0;
+        loop {
+            let other = 1 - side;
+            if queues[side].is_empty() {
+                // This side is a whole component apart from the other.
+                if !useful[side] { return false; }
+                // The other side: up to its first useful node.
+                if useful[other] { return true; }
+                while let Some(v) = queues[other].pop_front() {
+                    if useful_node(segs, v) { return true; }
+                    let next = adj[v].iter().filter(|&&k| segs[k].alive).map(|&k| if segs[k].a == v { segs[k].b } else { segs[k].a })
+                        .chain(link[v].iter().filter(|&&(_, x, y)| segs[x].alive && segs[y].alive).map(|&(to, _, _)| to));
+                    for w in next {
+                        if seen[other][w] != stamp {
+                            seen[other][w] = stamp;
+                            queues[other].push_back(w);
+                        }
+                    }
+                }
+                return false;
             }
-            useful |= anchored[v] || adj[v].iter().any(|&k| segs[k].alive && (segs[k].lined || !segs[k].prunable));
+            let v = queues[side].pop_front().expect("non-empty queue");
+            useful[side] |= useful_node(segs, v);
             let next = adj[v].iter().filter(|&&k| segs[k].alive).map(|&k| if segs[k].a == v { segs[k].b } else { segs[k].a })
-                .chain(link[v].iter().filter(|&&(_, a, b)| segs[a].alive && segs[b].alive).map(|&(to, _, _)| to));
+                .chain(link[v].iter().filter(|&&(_, x, y)| segs[x].alive && segs[y].alive).map(|&(to, _, _)| to));
             for w in next {
-                if !seen[w] {
-                    seen[w] = true;
-                    stack.push(w);
+                if seen[other][w] == stamp { return false; } // the searches meet: still connected
+                if seen[side][w] != stamp {
+                    seen[side][w] = stamp;
+                    queues[side].push_back(w);
                 }
             }
+            side = other;
         }
-        (false, useful)
     };
     // A crossing's last link to the land is no loop link either.
     let last_link = |segs: &[Seg], k: usize| [segs[k].a, segs[k].b].iter().any(|&v|
@@ -433,10 +466,9 @@ fn prune_with(layout: &mut Layout, open: &[bool], lots: &[Shape], doors: Option<
         segs[k].alive = false;
         let (mut a, mut b) = (segs[k].a, segs[k].b);
         if degree(&segs, a) > degree(&segs, b) { std::mem::swap(&mut a, &mut b); }
-        let (joined, useful) = connected(&segs, a, b);
         // A disappearing side-contact may isolate an unused endpoint, rather
         // than a place. Preserve connectivity between useful places only.
-        if !joined && useful && connected(&segs, b, a).1 {
+        if cut_apart(&segs, a, b) {
             segs[k].alive = true;
         }
     }

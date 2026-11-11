@@ -1,7 +1,5 @@
 # Sharing recipes
 
-[French original](MAP_RECIPES_FR.md).
-
 In the Rust workshops (terrain, settlements, urban planning and houses), **Export code** opens a `MU.…` recipe. You can copy this text or download a **.murecipe** file. **Import code** accepts pasted text, including line breaks, or the same file. Import automatically opens the right workshop.
 
 The recipe retains applied parameters, seeds, pins and notes when present, the camera, and display settings serialized by the workshop. Generation drafts do not replace the applied state. No URL-shortening service or account is required.

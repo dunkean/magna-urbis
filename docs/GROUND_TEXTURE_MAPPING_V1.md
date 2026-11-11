@@ -2,8 +2,6 @@
 
 Palette and classification proposal for Test-Render, October 25, 2026.
 
-> English translation of the [French original](GROUND_TEXTURE_MAPPING_V1_FR.md).
-
 The package selects **90 visual types** associated with **142 candidate textures** from Poly Haven and ambientCG. It includes earths, sands and fragments, **22 rock types**, forest soils and litter, grasslands, steppes, savannas, mosses, snow, and surface ice. Trees, their crowns, and buildings remain separate. Ground-level cover textures are part of this map, as requested for this scope.
 
 The four **N1–N4 blocks of section 4.1** of the [comprehensive study](GROUND_MATERIAL_MAPPING.md) are assumed available. Its section 4.2 physical and historical extensions are not required. Types are appearance choices: forest ground, veined rock, or transformed snow can be represented without simulating their formation.
@@ -356,4 +354,3 @@ These plates show library albedos or previews to compare material diversity. The
 ### Snow and ice: fine textures, ripples, and partial cover
 
 ![Snow and ice: fine textures, ripples, and partial cover](surface/evidence/ground-texture-palette-v1/snow-sources.png)
-

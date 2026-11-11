@@ -43,9 +43,26 @@ let singleModule: Promise<WebAssembly.Module> | undefined;
 const initWith = (init: unknown, module_or_path: WebAssembly.Module | ArrayBuffer) =>
   (init as (options: { module_or_path: WebAssembly.Module | ArrayBuffer }) => Promise<unknown>)({ module_or_path });
 
+/**
+ * Streaming compilation: the module compiles while it downloads, and the browser
+ * keeps the optimised code in its cache for the next visit (array-buffer
+ * compiles are never code-cached). Falls back when the server sends another MIME type.
+ */
+export async function compileWasm(url: string): Promise<WebAssembly.Module> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`WASM download failed: HTTP ${response.status} (${url.slice(0, 80)})`);
+  if (typeof WebAssembly.compileStreaming === 'function' && /^application\/wasm/.test(response.headers.get('content-type') ?? '')) return WebAssembly.compileStreaming(response);
+  return WebAssembly.compile(await response.arrayBuffer());
+}
 /** The compiled single-thread module (pool workers instantiate it without recompiling). */
 export function singleWasmModule(): Promise<WebAssembly.Module> {
-  return singleModule ??= fetch(singleWasmUrl).then(r => r.arrayBuffer()).then(bytes => WebAssembly.compile(bytes));
+  return singleModule ??= compileWasm(singleWasmUrl).catch(error => { singleModule = undefined; throw error; });
+}
+/** A rayon pool whose workers never report (blocked worker scripts in some WebViews) must not hold the engine forever. */
+export const THREAD_POOL_START_MS = 15000;
+function deadline<T>(operation: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([operation, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(message)), ms); })]).finally(() => clearTimeout(timer));
 }
 /** The single-thread package, initialised once per realm. */
 export function loadSingleWasm(): Promise<CoreWasm> {
@@ -76,8 +93,9 @@ export function loadCoreWasm(): Promise<CoreWasm> {
       const expected = expectedWasmThreads();
       try {
         const [mod, url] = await Promise.all([threadsJsLoad() as Promise<ThreadsWasm>, threadsWasmLoad()]);
-        await initWith(mod.default, await (await fetch(url)).arrayBuffer());
-        await mod.initThreadPool!(expected.threads);
+        // Compiled once (streaming, code-cached); rayon workers receive this module, they never recompile it.
+        await initWith(mod.default, await compileWasm(url));
+        await deadline(mod.initThreadPool!(expected.threads), THREAD_POOL_START_MS, `rayon pool of ${expected.threads} workers did not start within ${THREAD_POOL_START_MS / 1000} s`);
         setWasmThreadsInfo(expected);
         threadsModule = mod;
         return select(mod);

@@ -287,7 +287,8 @@ function nameWorld(world: World, mainOptions?: Partial<Options>): void {
 }
 
 /** This stage never invokes the urban generator: the retained region contains only sites and regional routes. */
-export async function planRegion(terrainWorld: World, settings: V2Settings, onProgress?: ProgressCallback): Promise<World> {
+/** `deferSite`: the town stages follow in this request (whole chain): the native site fields may arrive during them (finishTowns). */
+export async function planRegion(terrainWorld: World, settings: V2Settings, onProgress?: ProgressCallback, deferSite = false): Promise<World> {
   validateSettings(settings); assertTerrain(terrainWorld, settings);
   const t0 = performance.now(), root = new Rng('magna-urbis:' + stepSeed(settings.options.seed, 'settle-sites'));
   const roadRoot = stepSeed(settings.options.seed, 'settle-roads') === stepSeed(settings.options.seed, 'settle-sites') ? root : new Rng('magna-urbis:' + stepSeed(settings.options.seed, 'settle-roads'));
@@ -304,7 +305,7 @@ export async function planRegion(terrainWorld: World, settings: V2Settings, onPr
     terrain: cloneV2TerrainForStage(terrainWorld.terrain), landuse: terrainWorld.landuse,
     stats: { ...terrainWorld.stats, 'v2.stage': 'region' } };
   if(settings.runtime?.backend&&settings.runtime.backend!=='typescript'){
-    await (await import('./region')).planRustRegion(world,settings,onProgress);
+    await (await import('./region')).planRustRegion(world,settings,onProgress,false,deferSite);
     world.stats['v2.planKey']=regionKey(settings);world.stats['v2.placementKey']=placementKey(settings);nameWorld(world,mainOptions);
     const native=(world.debug?.v2RustRegion as import('./region').RustRegionSnapshot).placement;
     for(const spec of native.settlements)if(spec.name){const place=world.settlements!.find(s=>s.key===spec.key);if(place){place.name=spec.name;if(place.main){world.names!.town=spec.name;const entry=world.names!.entries.find(e=>e.kind==='town');if(entry)entry.text=spec.name;}else{const entry=world.names!.entries.find(e=>e.sub==='settlement:'+place.key);if(entry)entry.text=spec.name;}}}
@@ -473,6 +474,7 @@ async function buildTown(world: World, settings: V2Settings, key: string, onProg
 
 async function finishTowns(world: World, settings: V2Settings, onProgress?: ProgressCallback): Promise<void> {
   // Rebuild cultivation from the retained plans, never from the expensive terrain stage.
+  await (await import('./region')).settleRegionSite(world);
   report(onProgress, 'landuse', 'Mise Ã  jour des terres cultivÃ©es et des nomsâ€¦', 0, 1);
   world.options = { ...effectiveOptions(settings, world.mapSize), workflow: world.options.workflow };
   const nativeRegion = world.debug?.v2RustRegion as import('./region').RustRegionSnapshot | undefined;

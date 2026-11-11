@@ -1,5 +1,4 @@
-import init, { SettlementTerrain } from '../pkg/wasm/magna_urbis_wasm.js';
-import wasmUrl from '../pkg/wasm/magna_urbis_wasm_bg.wasm?url&inline';
+import { loadCoreWasm } from './wasmRuntime';
 import type { RoadOutput, SettlementOutput, SettlementRequest, SettlementResponse } from './settlements';
 import type { ResourcePayload } from './resources';
 import { nativeRasterClient } from './nativeEngine';
@@ -13,8 +12,10 @@ export interface SettlementEngine { run(request: SettlementRequest): SettlementR
  * arrives. Shared by the settlement worker and the main-thread fallback.
  */
 export async function createSettlementEngine(runtime?: ExecutionRuntime): Promise<SettlementEngine> {
-  if (runtime?.profile !== 'local') await init({ module_or_path: await (await fetch(wasmUrl)).arrayBuffer() });
-  let terrain: SettlementTerrain | undefined;
+  // The realm's core package: in an isolated worker the threads build, so placement, road search and
+  // resources run on the rayon pool (they were serial on a second, single-thread instance).
+  const SettlementTerrain = runtime?.profile !== 'local' ? (await loadCoreWasm()).SettlementTerrain : undefined;
+  let terrain: InstanceType<NonNullable<typeof SettlementTerrain>> | undefined;
   const native = nativeRasterClient();
   return {
     dispose() { terrain?.free(); terrain = undefined; },
@@ -28,9 +29,10 @@ export async function createSettlementEngine(runtime?: ExecutionRuntime): Promis
           const r = request.raster;
           terrain?.free();
           validatePhysicalTerrain(r.physical);
+          if (!SettlementTerrain) throw new Error('Core WASM is not loaded.');
           terrain = new SettlementTerrain(r.width, r.n, r.height, r.water, r.waterLevel, r.riverWidth, r.riverIds);
           if (r.physical) {
-            const physical = terrain as SettlementTerrain & {
+            const physical = terrain as typeof terrain & {
               set_physical_height(n: number, height: Float32Array): void;
               set_physical_height_spline(n: number, height: Float32Array, floor: number): void;
             };

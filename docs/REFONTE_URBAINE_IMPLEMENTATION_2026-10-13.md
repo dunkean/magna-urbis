@@ -1,7 +1,5 @@
 # Native urban redesign — implementation of October 13, 2026
 
-[French original](REFONTE_URBAINE_IMPLEMENTATION_2026-10-13_FR.md).
-
 The redesign now separates footprint, centers and history, street fabrics, computation sectors, blocks and parcels. It runs in Rust/WASM in Terrain Bench and Urban Bench through parcel generation. The existing cultural catalog remains available; the historical TypeScript application retains its independent engine.
 
 ## Delivered mechanisms

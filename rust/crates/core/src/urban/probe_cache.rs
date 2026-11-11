@@ -42,6 +42,7 @@ impl Drop for Scope {
         if self.on && ACTIVE.fetch_sub(1, Ordering::SeqCst) == 1 {
             super::parcels::clear_probe_cache();
             super::roles::clear_probe_cache();
+            super::building_sites::clear_probe_cache();
         }
     }
 }

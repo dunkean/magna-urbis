@@ -1,7 +1,5 @@
 # Neighborhoods and parcels in Terrain Bench
 
-[Français](README_FR.md)
-
 ## Dispersion and gaps — October 20, 2026
 
 Under **Neighborhoods → Complete settlement → Dispersion and gaps**, four settings complement natural shapes independently of the street fabric:

@@ -135,14 +135,16 @@ function base(t: TerrainLayer, root: Rng, biome: string | undefined): Record<str
     seaLevel: t.seaLevel, seaFraction: t.seaFraction };
 }
 function ruralRequest(world: World, root: Rng, mainRoads?: number, stripLod?: { center: Vec2; radius: number }, plan?: RuralPlan, soilField?: RuralSoil) {
-  const t = world.terrain, fields = world.site!.fields, soil = soilField?.landuseGrid;
+  const t = world.terrain, fields = world.site!.fields, soil = soilField?.landuseGrid, travel = world.site!.travel;
   if (soilField && !soil) throw new Error('A rural soil sampler must expose its source landuseGrid.');
   const { naturalForest, ...scalars } = plan ?? {};
   return request({ ...base(t, root, world.options.biome), operation: 'rural', mapSize: world.mapSize,
     options: { mapSize: world.options.mapSize, size: world.options.size, culture: world.options.culture, relief: world.options.relief },
     geometry: geometry(world), plan: plan && scalars, mainRoads, stripLod,
     soilContext: soil && { w: soil.w, h: soil.h, cell: soil.cell, x0: soil.x0, y0: soil.y0 },
-  }, [['height', t.height.data], ['slope', t.slope.data], ['water', t.water], ['cost', world.site!.cost.data],
+    travelFrom: travel?.from,
+  }, [['height', t.height.data], ['slope', t.slope.data], ['water', t.water],
+    travel ? ['pass', travel.pass] as const : ['cost', world.site!.cost.data] as const,
     ['hab', fields.hab], ['dWater', fields.dWater], ['dSea', fields.dSea],
     ...(naturalForest ? [['naturalForest', naturalForest] as const] : []), ...(soil ? [['soil', soil.data] as const] : [])]);
 }

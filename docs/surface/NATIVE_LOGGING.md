@@ -40,7 +40,7 @@ the historical stalls, or a global real-time performance qualification. A/B
 navigation on the same retained source/session is a separate required proof.
 ## V13 A/B diagnostic: two strictly failed phases
 
-The [compact report](evidence/native-log-modes-v13.json) retains the diagnostic run on `cf760322364c5efa94ad58bebecbfa2aeb40234b`, with **613 identical runtime hashes** and clean before/after snapshots. Both native processes exit zero and their timing/source criteria pass, but both phases remain **FAILED**: each contains the real `SCRIPT ERROR` in `SurfaceGroundResponse.expected_wire_dtype`, comparing a float JSON array index to a String. The later `e75e54a` fix and its successful CPU decoding do not retroactively change these verdicts. `diagnostic-complete` and supervisor exit zero mean only that collection finished.
+The compact report (historical validation, archived locally) retains the diagnostic run on `cf760322364c5efa94ad58bebecbfa2aeb40234b`, with **613 identical runtime hashes** and clean before/after snapshots. Both native processes exit zero and their timing/source criteria pass, but both phases remain **FAILED**: each contains the real `SCRIPT ERROR` in `SurfaceGroundResponse.expected_wire_dtype`, comparing a float JSON array index to a String. The later `e75e54a` fix and its successful CPU decoding do not retroactively change these verdicts. `diagnostic-complete` and supervisor exit zero mean only that collection finished.
 
 A single fresh generation supplies the same 91,626,097-byte packet to both modes, in the same browser, context and session. Order is fixed: synchronous, then threaded. Caches may therefore be warmer on the second pass. Requests and displayed worlds differ slightly with input timing; this is not a causal comparison with identical requests. Both use Forward+ on RTX 5090, Dummy audio and the same PBR manifest. No experimental tree or grass asset flag is enabled.
 
@@ -61,4 +61,4 @@ The threaded writer snapshot reports **64 accepted and written, 0 rejected, 0 pe
 
 `navigationFrameWallMs` comes from `all_frame_times`, which covers warmup, movement and drain after `_ready`, not only the 20 seconds of input. Its maxima of 3,630.672 / 741.844 ms are therefore neither a measurement of freezes during movement nor proof of 60 FPS. Reducing enqueue span does not prove physical I/O is faster. Fixed order, shared caches, different requests and the runtime defect prevent causal conclusions, artistic qualification or validation of a complete fresh campaign.
 
-[Original version, including the French diagnostic](NATIVE_LOGGING_FR.md).
+[Original version, including the English diagnostic](NATIVE_LOGGING.md).

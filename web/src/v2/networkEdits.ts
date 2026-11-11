@@ -587,7 +587,7 @@ function chamfer(w: number, h: number, cell: number, source: (i: number) => bool
 /** Site fields on the planning grid: masks cleared, distances to water and to the main river lengthened where they ran to the deleted river. */
 function siteAfter(site: World['site'], terrain: TerrainLayer, cleared: Uint8Array): World['site'] {
   const fields = site?.fields;
-  if (!site || !fields || fields.riverMask.length !== cleared.length) return site;
+  if (!site || !fields || fields.riverMask?.length !== cleared.length) return site;
   const { w, h, cell } = terrain.height, next: SiteFields = { ...fields, riverMask: fields.riverMask.slice(), bridgeZone: fields.bridgeZone.slice(), ...(fields.wide ? { wide: fields.wide.slice() } : {}) };
   const main = new Uint8Array(cleared.length);
   for (let i = 0; i < cleared.length; i++) if (cleared[i]) { if (next.riverMask[i] === 1) main[i] = 1; next.riverMask[i] = 0; next.bridgeZone[i] = 0; if (next.wide) next.wide[i] = 0; }

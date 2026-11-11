@@ -48,5 +48,3 @@ godot --path godot-render --script res://tests/rock_detail_benchmark.gd
 ```
 
 Tests using `frame_post_draw` require a rendered viewport, without `--headless`. JSON reports, P95, palette hashes and captures remain in `godot-render/evidence/`, outside Git. Existing regressions cover gradients, actual triangles/picking, transitions, snow, water, shadows and canopy.
-
-[Original French version](ROCK_CLOSE_DETAIL_FR.md).

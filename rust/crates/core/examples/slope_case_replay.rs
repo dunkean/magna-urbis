@@ -68,8 +68,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let buildings: usize = requests.iter()
         .filter(|r| r["function"] != "open_space" && r["programme"]["deficit"].is_null())
         .map(|r| r["preview"].as_array().map_or(0, Vec::len)).sum();
+    let (wanted, housed) = partitions.iter().filter_map(|p| p.programme.as_ref())
+        .flat_map(|p| &p.demands).filter(|d| d.unit == "domesticUnits")
+        .fold((0.0, 0.0), |(w, h), d| (w + d.requested, h + d.parcel_capacity.min(d.requested)));
     for layout in &layouts { for warning in &layout.warnings { eprintln!("{warning}"); } }
-    let metrics = serde_json::json!({"buildings":buildings,"quartersMs":quarters_ms,"parcelsMs":parcels_ms,"sitesMs":sites_ms,
+    let metrics = serde_json::json!({"buildings":buildings,"wantedHouseholds":wanted,"housedHouseholds":housed,"quartersMs":quarters_ms,"parcelsMs":parcels_ms,"sitesMs":sites_ms,
         "sites":requests.len(),"blocks":layouts.iter().map(|l|l.blocks.len()).sum::<usize>(),
         "quays":layouts.iter().flat_map(|l|&l.streets).filter(|s|s.role=="quay").count()});
     std::fs::write(out.join("metrics.json"), serde_json::to_vec_pretty(&metrics)?)?;

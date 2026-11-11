@@ -87,9 +87,13 @@ export function layoutExtent(layouts?: Layout[]): { center: Point; radius: numbe
 
 /** Regional roads as urban streets (pure, `urbanRoads.ts`). */
 export { regionalStreets } from './urbanRoads';
-export interface UrbanRequest { id: number; seed: string; kind: 'quarters' | 'parcels' | 'programme' | 'buildingSites' | 'builtCapacity'; architectureCulture?: string; scene?: import('./urbanArchitecture').PlacementBatch; raster?: SettlementRaster; sites?: RoadSite[]; roads?: Street[]; layoutConfig?: LayoutConfig; parcelConfig?: ParcelConfig; layouts?: Layout[]; partitions?: Partition[]; layoutsId?: number; runtime?: ExecutionRuntime;
+export interface UrbanRequest { id: number; seed: string; kind: 'quarters' | 'parcels' | 'programme' | 'buildingSites' | 'builtCapacity';
+  /** Native parcels: `handle` returns only the retained source, the programme continues on the engine's parcels. */
+  reply?: 'handle'; architectureCulture?: string; scene?: import('./urbanArchitecture').PlacementBatch; raster?: SettlementRaster; sites?: RoadSite[]; roads?: Street[]; layoutConfig?: LayoutConfig; parcelConfig?: ParcelConfig; layouts?: Layout[]; partitions?: Partition[]; layoutsId?: number; runtime?: ExecutionRuntime;
   /** Read a retained native snapshot across workers, without uploading geometry. */
-  source?: UrbanSourceHandle; keys?: string[] }
+  source?: UrbanSourceHandle; keys?: string[];
+  /** Native programme: continue from the parcels the engine session holds (no layouts/partitions upload). */
+  retained?: boolean }
 export interface UrbanResponse { id: number; layouts?: Layout[]; partitions?: Partition[]; placementRequests?: import('./urbanArchitecture').PlacementRequest[]; ms?: number; error?: string;
   urbanSource?: UrbanSourceHandle;
   /** Browser WASM execution mode that produced this response (threads/single/pool). */

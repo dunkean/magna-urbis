@@ -1,7 +1,5 @@
 # Magna Urbis — Repenser l’empreinte, les quartiers, les îlots et les parcelles
 
-[English](REFONTE_GENERATION_URBAINE_2026-10-13.md)
-
 **Date : 13 octobre 2026.** Document d’analyse et de proposition, destiné à préparer les décisions de conception. Les bâtiments sont volontairement différés, sauf lorsque leur génération actuelle influence le parcellaire ou la surface urbaine.
 
 **Conclusion de travail :** Magna Urbis utilise déjà plusieurs bonnes méthodes : croissance guidée par le site, champs d’orientation, subdivision hiérarchique, découpage depuis les façades et conservation des partitions. La refonte devrait surtout clarifier les objets et les responsabilités, diversifier les mécanismes de formation de l’empreinte, et faire intervenir l’accessibilité avant les réparations finales. Remplacer tout cela par une méthode unique, Voronoï ou diffusion, ne résoudrait pas les difficultés.
@@ -21,7 +19,7 @@ Il existe actuellement deux réalisations urbaines pertinentes.
 | Application TypeScript historique | Génération complète du site et de l’agglomération, avec phases, rues, îlots, parcelles, bâtiments et équipements | Référence la plus riche en comportements et cas particuliers |
 | Terrain Bench / Urban Bench Rust | Composition de l’agglomération, quartiers, rues, îlots, puis parcelles ; géographie et routes proviennent du terrain ou d’un décor importé | Prototype actuel pour les étapes à repenser, indépendant des maisons |
 
-Les README généraux indiquent encore que la génération urbaine Rust est à venir, alors que le [guide des étapes urbaines Rust](../rust/crates/core/src/urban/README_FR.md) et les sources contiennent déjà cette génération. Pour cette analyse, les sources et ce guide spécialisé priment sur cette présentation générale.
+Les README généraux indiquent encore que la génération urbaine Rust est à venir, alors que le [guide des étapes urbaines Rust](../rust/crates/core/src/urban/README.md) et les sources contiennent déjà cette génération. Pour cette analyse, les sources et ce guide spécialisé priment sur cette présentation générale.
 
 L’héritage Watabou explique l’origine du projet, mais le moteur TypeScript actuel ne se résume plus à un ensemble de cellules de Voronoï. Son organisation centrale est désormais une succession de partitions guidées.
 
@@ -206,7 +204,7 @@ Les principales pièces consultées sont :
 
 - [Orchestration TypeScript](../web/src/gen/urban/index.ts), [planification des phases](../web/src/gen/urban/phases.ts), [axes et quartiers](../web/src/gen/urban/primary.ts).
 - [Champs d’orientation](../web/src/gen/urban/field.ts), [subdivision et îlots](../web/src/gen/urban/blocks.ts), [parcelles](../web/src/gen/urban/plots.ts), [emprise desservie](../web/src/gen/urban/footprint.ts).
-- [Guide Rust](../rust/crates/core/src/urban/README_FR.md), [composition](../rust/crates/core/src/urban/composition.rs), [macroplan](../rust/crates/core/src/urban/macroplan.rs), [quartiers](../rust/crates/core/src/urban/quarters.rs), [parcelles](../rust/crates/core/src/urban/parcels.rs), [routage](../rust/crates/core/src/urban/routing.rs), [réseau](../rust/crates/core/src/urban/network.rs).
+- [Guide Rust](../rust/crates/core/src/urban/README.md), [composition](../rust/crates/core/src/urban/composition.rs), [macroplan](../rust/crates/core/src/urban/macroplan.rs), [quartiers](../rust/crates/core/src/urban/quarters.rs), [parcelles](../rust/crates/core/src/urban/parcels.rs), [routage](../rust/crates/core/src/urban/routing.rs), [réseau](../rust/crates/core/src/urban/network.rs).
 - Documents archivés : [HANDOFF](../.local-archive/publication-2026-10-09/repository/HANDOFF.md), [BUGS](../.local-archive/publication-2026-10-09/repository/BUGS.md), [géométrie urbaine](../.local-archive/publication-2026-10-09/repository/web/URBAN_GEOMETRY.md), [morphologie urbaine](../.local-archive/publication-2026-10-09/repository/web/URBAN_MORPHOLOGY.md).
 - [Catalogue historique local des settlements](catalogue_settlements_antiquite_moyen_age_rpg.md), pour conserver la distinction entre forme, usage, milieu et origine.
 

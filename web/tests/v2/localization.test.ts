@@ -20,6 +20,8 @@ describe('V2 culture, UI language and physical display units', () => {
   });
   it('translates both source languages and complete runtime templates without changing user values', () => {
     registerMessages({ 'Map title': { en: 'Map title', fr: 'Titre de la carte' } });
+    registerMessages({ ' Colour': { en: ' Colour', fr: ' Couleur' } });
+    expect(translate(' Colour','fr')).toBe(' Couleur');
     for (const language of ['es','pt','zh','ar','ru','ja'] as const) {
       expect(translate('Map title', language)).toBe(localeMessages[language]['Map title']);
       expect(translate('Titre de la carte', language)).toBe(localeMessages[language]['Map title']);

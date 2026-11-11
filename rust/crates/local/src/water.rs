@@ -1,5 +1,5 @@
 //! Stateless V2 water endpoint; the same framed request serves native and WASM.
-use crate::{ApiResult, Reply};
+use super::{ApiResult, Reply};
 pub(crate) fn handle(body: &[u8]) -> ApiResult<Reply> {
     let started = std::time::Instant::now();
     Ok(Reply {

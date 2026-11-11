@@ -74,7 +74,7 @@ water/bed consistency. See the accompanying report for whether that GPU control
 has actually run; code availability alone is not a passing result.
 
 The historical post-only control remains preserved in
-[the version 1 evidence](evidence/water-symbols-v9-gpu.json).
+the version 1 evidence (historical validation, archived locally).
 The vector control passed on Forward+/RTX 4090: 182,735 bank samples were checked
 at half-screen-pixel spacing, with a 3x3 visibility neighbourhood. All were visible
 under vector symbols; 863 had been absent under post-only. All 13,392 newly
@@ -86,7 +86,7 @@ previously water-colored pixels; zero remained blue. Vector bake cost was 593 ms
 The images were opened and the recovered branches follow the original traces.
 This is a bounded display control, not a survey/topology or production-style
 claim. Exact digests and scope are in
-[the vector evidence](evidence/water-vector-symbols-v9-gpu.json).
+the vector evidence (historical validation, archived locally).
 
 ## Tint of untyped polygons: comparison option
 
@@ -94,4 +94,4 @@ claim. Exact digests and scope are in
 
 The DTO distinguishes a vector-vertex prefix and sea suffix, with explicit bounded counts divisible by three. The option rejects a missing, partial or inconsistent partition or generic fallback; it is forbidden in physical `source-levels` mode. Cache keys and `sourceVectorTintVersion:source-vector-tint-1` diagnostics distinguish the policies. Contours, levels, archived classes, area and alluvial support remain unchanged. This choice harmonises a representation; it is neither a hydrological correction nor proof of flow. Its GPU comparison remains separate evidence.
 
-[Original version, including the French comparison section](WATER_SYMBOLS_FR.md).
+[Original version, including the English comparison section](WATER_SYMBOLS.md).

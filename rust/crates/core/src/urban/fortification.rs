@@ -907,16 +907,49 @@ pub(super) fn straight_across(shape: &Shape, surface: Surface<'_>) -> Shape {
 fn fill_pockets(shape: &Shape, surface: Surface<'_>, limits: PocketLimits, max_span: f64) -> Shape {
     if !g::simple(shape) { return shape.clone(); }
     let mut trace = shape.clone();
+    // The dry test of a pocket, by its exact chord and chain: the cut piece is
+    // the region between them (the bridge changes nothing else), so pockets a
+    // repair leaves untouched are not cut and clipped again next round.
+    let mut dry: std::collections::HashMap<Vec<u64>, bool> = Default::default();
+    // A bridge refused because its new sides touch a side of the trace stays
+    // refused while that side is on the trace: the same pocket between the
+    // same neighbours makes the same new sides (keyed by chain and
+    // neighbours), and a side that survives a repair is no neighbour of them.
+    let mut crossed: std::collections::HashMap<Vec<u64>, [u64; 4]> = Default::default();
     loop {
         let mut repairs = candidates(&trace, limits);
         repairs.retain(|p| dist(p.a, p.b) <= max_span);
         repairs.sort_by(|a, b| a.length.total_cmp(&b.length));
         // The trace is simple (checked above, then kept by every repair).
         let base = sides(&trace.outer);
-        let Some(next) = repairs.iter().filter_map(|p| bridged(&trace, p, Some(&base))).find(|next| {
+        let r = &trace.outer;
+        let bits = |q: &Point| [q.x.to_bits(), q.y.to_bits()];
+        let Some(next) = repairs.iter().filter_map(|p| {
+            let chain = p.chain(r);
+            let mut context: Vec<u64> = chain.iter().flat_map(bits).collect();
+            context.extend(bits(&r[p.start]));
+            context.extend(bits(&r[(p.end + 1) % r.len()]));
+            if crossed.get(&context).is_some_and(|side| base.contains(side)) {
+                return None;
+            }
+            let next = p.bridge(&trace);
+            let o = &next.outer;
+            let fresh: Vec<usize> = (0..o.len()).filter(|&i| !base.contains(&side_key(o[i], o[(i + 1) % o.len()]))).collect();
+            match g::touching_side(o, &fresh) {
+                Err(Some(j)) => {
+                    crossed.insert(context, side_key(o[j], o[(j + 1) % o.len()]));
+                    return None;
+                }
+                Err(None) => return None,
+                Ok(()) => {}
+            }
+            (g::area(&next) > g::area(&trace)).then_some((chain, next))
+        }).find_map(|(chain, next)| {
+            let key: Vec<u64> = chain.iter().flat_map(bits).collect();
             // A pocket cut never creates an empty corner across a river.
-            g::difference(next, &trace).iter().all(|s|
-                g::area(s) - area(&g::dry_clip(&surface, s)) < 1.0)
+            let ok = *dry.entry(key).or_insert_with(|| g::difference(&next, &trace).iter().all(|s|
+                g::area(s) - area(&g::dry_clip(&surface, s)) < 1.0));
+            ok.then_some(next)
         }) else { return trace; };
         trace = next;
     }

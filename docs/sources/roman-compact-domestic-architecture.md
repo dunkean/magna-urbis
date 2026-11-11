@@ -29,5 +29,3 @@ Role `communal_dwelling`, requested `dwelling.tenement/domestic/row`, context ME
 Tradition `roman_urban`, independent of S04 market-street context for B12 and S03 for B13. Both recipes are explicitly assigned; their native validations and urban-connection limits remain distinct. No automatic roman-core filter to this pair alone is enabled: existing Roman recipes must be examined before such a connection. Explicit Greek/Punic choices remain accessible.
 
 Era A, exact dates unknown, `late_only=false`, `inspired_only=true`, confidence `stylized`, chronology `broad_tradition` and roof `uncertain`. First–second-century examples justify an Imperial Roman context, not all produced dimensions or their extension to every region. Pins, variants and explicit overrides do not bypass strict rejection of these interpretations.
-
-[Original French version](roman-compact-domestic-architecture_FR.md).

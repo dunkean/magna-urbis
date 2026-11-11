@@ -626,9 +626,151 @@ fn pose_lower_bound_step(
     stop_below: f64,
     step: f64,
 ) -> f64 {
-    let indexed = !std::env::var("URBAN_FOUNDATION_INDEX").is_ok_and(|v| v=="off");
-    pose_lower_bound_step_mode(surface,lot,dirs,w,stop_below,step,indexed)
+    (!geometry::reference_search())
+        .then(|| pose_lower_bound_sweep(surface, lot, dirs, w, stop_below, step))
+        .flatten()
+        .unwrap_or_else(|| pose_lower_bound_step_mode(surface, lot, dirs, w, stop_below, step, true))
 }
+
+/// `pose_lower_bound_step_mode`, bit for bit, with the position grid swept
+/// one column (fixed `a`) at a time. Per column, each boundary edge clipped
+/// to the rectangle's band gives the interval of `b` it blocks, and the
+/// centre line's crossings give the even/odd parity, so a position costs a
+/// lookup instead of a scan of every edge. Positions within `TIE` of an
+/// interval end take the original exact test; a position free of every edge
+/// lies at least half a footing from the contour, where the parity is exact.
+/// Height samples go corners first and stop once the position cannot lower
+/// the bound. `None` for inputs the sweep does not cover (the caller then
+/// runs the reference search).
+fn pose_lower_bound_sweep(
+    surface: Surface<'_>,
+    lot: &Shape,
+    dirs: &[Point],
+    w: &Witness,
+    stop_below: f64,
+    step: f64,
+) -> Option<f64> {
+    const EPS: f64 = 1e-4;
+    let Some([width, depth]) = w.footing() else {
+        return Some(0.0);
+    };
+    let half = step * 0.5;
+    let (sw, sd) = (width - 2.0 * half, depth - 2.0 * half);
+    let finite = |p: &Point| p.x.is_finite() && p.y.is_finite();
+    if !(step > 0.0 && sw > 8.0 * EPS && sd > 8.0 * EPS)
+        || !lot.outer.iter().chain(lot.holes.iter().flatten()).all(finite)
+        || !dirs.iter().all(finite)
+    {
+        return None;
+    }
+    let inset = half
+        + if w.bearing == Bearing::Ring && !super::round7() {
+            1.0
+        } else {
+            0.0
+        };
+    let ring = w.bearing == Bearing::Ring;
+    let (n, corners) = (if ring && !super::round7() { 1 } else { 4 }, ring);
+    let (iw, id) = (
+        (width - 2.0 * inset).max(0.0),
+        (depth - 2.0 * inset).max(0.0),
+    );
+    // Sample offsets, the original expressions, corners first.
+    let mut samples: Vec<(usize, usize)> = vec![(0, 0), (n, n), (0, n), (n, 0)];
+    for i in 0..=n {
+        for j in 0..=n {
+            if corners && i != 0 && i != n && j != 0 && j != n {
+                continue;
+            }
+            if !samples.contains(&(i, j)) {
+                samples.push((i, j));
+            }
+        }
+    }
+    let samples: Vec<(f64, f64)> = samples
+        .into_iter()
+        .map(|(i, j)| (iw * i as f64 / n as f64, id * j as f64 / n as f64))
+        .collect();
+    let (mut certain, mut possible, mut crossings, mut inside) =
+        (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    let mut best = f64::INFINITY;
+    let mut seen: Vec<Point> = Vec::new();
+    for &u in dirs {
+        // A repeated direction repeats the same positions and samples.
+        if seen.iter().any(|s| s.x.to_bits() == u.x.to_bits() && s.y.to_bits() == u.y.to_bits()) {
+            continue;
+        }
+        seen.push(u);
+        let v = Point { x: -u.y, y: u.x };
+        let (mut u0, mut u1, mut v0, mut v1) = (
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+        );
+        for p in &lot.outer {
+            let (a, b) = (p.x * u.x + p.y * u.y, p.x * v.x + p.y * v.y);
+            (u0, u1, v0, v1) = (u0.min(a), u1.max(a), v0.min(b), v1.max(b));
+        }
+        if u1 - u0 < width || v1 - v0 < depth {
+            continue;
+        }
+        let at = |a: f64, b: f64| Point {
+            x: u.x * a + v.x * b,
+            y: u.y * a + v.y * b,
+        };
+        // The original accumulated grids.
+        let mut bs = Vec::new();
+        let mut b = v0 - half;
+        while b + depth <= v1 + half + 1e-9 {
+            bs.push(b);
+            b += step;
+        }
+        let ps: Vec<f64> = bs.iter().map(|b| b + half).collect();
+        let edges = geometry::band_edges(lot, v, u);
+        let mut a = u0 - half;
+        while a + width <= u1 + half + 1e-9 {
+            geometry::band_within(
+                &edges,
+                a + half,
+                a + half + sw,
+                sd,
+                &ps,
+                |k| rect_within_search(lot, at(a + half, bs[k] + half), u, v, sw, sd, None, &mut None),
+                &mut certain,
+                &mut possible,
+                &mut crossings,
+                &mut inside,
+            );
+            for (k, &b) in bs.iter().enumerate() {
+                let contained = inside[k];
+                if !contained {
+                    continue;
+                }
+                if w.bearing == Bearing::Extent {
+                    return Some(0.0);
+                }
+                let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
+                let (x, y) = (a + inset, b + inset);
+                for &(di, dj) in &samples {
+                    let h = surface.height_at(at(x + di, y + dj));
+                    lo = lo.min(h);
+                    hi = hi.max(h);
+                    if hi - lo >= best {
+                        break;
+                    }
+                }
+                best = best.min(hi - lo);
+                if best <= stop_below {
+                    return Some(best);
+                }
+            }
+            a += step;
+        }
+    }
+    Some(best)
+}
+
 fn pose_lower_bound_step_mode(
     surface: Surface<'_>, lot:&Shape, dirs:&[Point], w:&Witness,
     stop_below:f64, step:f64, indexed:bool,
@@ -786,8 +928,10 @@ pub(super) fn pose_witness(style_id: &str) -> Option<&'static PoseWitness> {
         .find(|w| w.style_id == style_id)
 }
 
-/// Bilinear foundation step over a rectangle, sampled at most 0.5 m apart.
-fn rect_step(surface: Surface<'_>, o: Point, u: Point, v: Point, w: f64, d: f64) -> f64 {
+/// Bilinear foundation step over a rectangle, sampled at most 0.5 m apart,
+/// when it is at most `cap`; otherwise some value above `cap` (the sampling
+/// stops as soon as the step exceeds it).
+fn rect_step_below(surface: Surface<'_>, o: Point, u: Point, v: Point, w: f64, d: f64, cap: f64) -> f64 {
     let (nu, nv) = (
         ((w / 0.5).ceil() as usize).max(1),
         ((d / 0.5).ceil() as usize).max(1),
@@ -802,6 +946,9 @@ fn rect_step(surface: Surface<'_>, o: Point, u: Point, v: Point, w: f64, d: f64)
             });
             lo = lo.min(h);
             hi = hi.max(h);
+            if hi - lo > cap {
+                return hi - lo;
+            }
         }
     }
     hi - lo
@@ -891,7 +1038,8 @@ pub(super) fn minimum_candidates(
             y: v["y"].as_f64()?,
         })
     };
-    let mut found: Vec<(f64, Point, serde_json::Value)> = Vec::new();
+    // Candidates are written out only for the (at most four) kept poses.
+    let mut found: Vec<(f64, Point, (usize, Point, f64))> = Vec::new();
     for (k, access) in accesses.iter().enumerate() {
         // Houses resolves `access_id` to the first access of that id: a lot
         // with several contacts on one street only poses on the first.
@@ -939,44 +1087,71 @@ pub(super) fn minimum_candidates(
         let nx = Point { x: ny.y, y: -ny.x };
         let angle = nx.y.atan2(nx.x).to_degrees();
         let steps = ((len - width) / 0.5).floor() as usize;
-        for i in 0..=steps {
-            let along = width * 0.5 + 0.5 * i as f64;
-            let contact = Point {
-                x: a.x + t.x * along,
-                y: a.y + t.y * along,
-            };
-            let door = Point {
-                x: contact.x + n.x * gap,
-                y: contact.y + n.y * gap,
-            };
-            let origin = Point {
-                x: door.x - nx.x * w.entry[0] - ny.x * w.entry[1],
-                y: door.y - nx.y * w.entry[0] - ny.y * w.entry[1],
-            };
-            let at = |x: f64, y: f64| Point {
-                x: origin.x + nx.x * x + ny.x * y,
-                y: origin.y + nx.y * x + ny.y * y,
-            };
-            let [bx0, by0, bx1, by1] = w.bounds;
-            if !rect_within(lot, at(bx0, by0), nx, ny, bx1 - bx0, by1 - by0) {
+        let [bx0, by0, bx1, by1] = w.bounds;
+        let (bw, bd) = (bx1 - bx0, by1 - by0);
+        let poses: Vec<(Point, Point)> = (0..=steps)
+            .map(|i| {
+                let along = width * 0.5 + 0.5 * i as f64;
+                let contact = Point {
+                    x: a.x + t.x * along,
+                    y: a.y + t.y * along,
+                };
+                let door = Point {
+                    x: contact.x + n.x * gap,
+                    y: contact.y + n.y * gap,
+                };
+                let origin = Point {
+                    x: door.x - nx.x * w.entry[0] - ny.x * w.entry[1],
+                    y: door.y - nx.y * w.entry[0] - ny.y * w.entry[1],
+                };
+                (contact, origin)
+            })
+            .collect();
+        let at = |origin: Point, x: f64, y: f64| Point {
+            x: origin.x + nx.x * x + ny.x * y,
+            y: origin.y + nx.y * x + ny.y * y,
+        };
+        // The site bounds slide along the access (`nx` is the access
+        // direction): one band sweep decides every pose.
+        let corners: Vec<Point> = poses.iter().map(|&(_, o)| at(o, bx0, by0)).collect();
+        let exact = |i: usize| rect_within(lot, corners[i], nx, ny, bw, bd);
+        let held: Vec<bool> = if geometry::reference_search() || corners.is_empty() {
+            (0..corners.len()).map(exact).collect()
+        } else {
+            let mut ps: Vec<f64> = corners.iter().map(|c| c.x * nx.x + c.y * nx.y).collect();
+            let reversed = ps.len() > 1 && ps[0] > ps[ps.len() - 1];
+            if reversed {
+                ps.reverse();
+            }
+            if ps.windows(2).all(|p| p[0] < p[1]) {
+                let lo = corners[0].x * ny.x + corners[0].y * ny.y;
+                let index = |k: usize| if reversed { corners.len() - 1 - k } else { k };
+                let (mut c, mut p, mut x, mut held) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+                geometry::band_within(&geometry::band_edges(lot, nx, ny), lo, lo + bd, bw, &ps,
+                    |k| exact(index(k)), &mut c, &mut p, &mut x, &mut held);
+                if reversed {
+                    held.reverse();
+                }
+                held
+            } else {
+                (0..corners.len()).map(exact).collect()
+            }
+        };
+        let [x0, y0, x1, y1] = w.body;
+        for (i, &(contact, origin)) in poses.iter().enumerate() {
+            if !held[i] {
                 continue;
             }
-            let [x0, y0, x1, y1] = w.body;
-            let step = rect_step(surface, at(x0, y0), nx, ny, x1 - x0, y1 - y0);
+            let step = rect_step_below(surface, at(origin, x0, y0), nx, ny, x1 - x0, y1 - y0,
+                MAX_FOUNDATION_STEP - 0.02);
             if step > MAX_FOUNDATION_STEP - 0.02 {
                 continue;
             }
-            found.push((
-                step,
-                contact,
-                serde_json::json!({"identity":w.identity,
-                    "transform":{"origin":{"x":origin.x,"y":origin.y},"orientation_deg":angle},
-                    "access_id":access["id"],"contact":{"x":contact.x,"y":contact.y}}),
-            ));
+            found.push((step, contact, (k, origin, angle)));
         }
     }
     found.sort_by(|a, b| a.0.total_cmp(&b.0));
-    let mut out: Vec<(Point, serde_json::Value)> = Vec::new();
+    let mut out: Vec<(Point, (usize, Point, f64))> = Vec::new();
     for (_, contact, candidate) in found {
         if out
             .iter()
@@ -988,7 +1163,13 @@ pub(super) fn minimum_candidates(
             }
         }
     }
-    out.into_iter().map(|(_, c)| c).collect()
+    out.into_iter()
+        .map(|(contact, (k, origin, angle))| {
+            serde_json::json!({"identity":w.identity,
+                "transform":{"origin":{"x":origin.x,"y":origin.y},"orientation_deg":angle},
+                "access_id":accesses[k]["id"],"contact":{"x":contact.x,"y":contact.y}})
+        })
+        .collect()
 }
 
 #[cfg(test)]

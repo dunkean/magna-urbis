@@ -1,6 +1,6 @@
 # Rust workshop workflow
 
-[French original](RUST_BENCH_PIPELINE_FR.md). This document records the workflow as described in that source; workshop routes and labels may evolve.
+[English original](RUST_BENCH_PIPELINE.md). This document records the workflow as described in that source; workshop routes and labels may evolve.
 
 The `/rustbench.html` container offers separate, successive sessions. Direct HTTP addresses for the workshops (`/terrainbench.html`, `/urbanbench.html`, `/housebench.html`) enter this container while retaining their parameters, including the 3D camera and drawn zones. The tab bar is available in both 2D and 3D. “Open ↗” uses `standalone=1` to deliberately open a workshop on its own. HTML files opened without a server remain self-contained.
 

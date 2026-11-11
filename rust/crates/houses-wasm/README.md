@@ -1,7 +1,5 @@
 # House WASM boundary
 
-[Français](README_FR.md)
-
 Bundled bindings for the [house engine](../houses/README.md), with no terrain or rendering dependency. The generated package is in `rust/pkg/houses/`. The engine README describes the bench, its modes, replays and exports.
 
 Three exports return a JSON string with a `{ok:true,data}` or `{ok:false,error:{code,field,message}}` envelope:

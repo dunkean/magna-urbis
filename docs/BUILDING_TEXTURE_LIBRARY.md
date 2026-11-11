@@ -1,7 +1,5 @@
 # Building texture library
 
-[Français](BUILDING_TEXTURE_LIBRARY_FR.md)
-
 This collection prepares roof, wall and wood textures for future integration. Files are in [`assets/materials/buildings/`](../assets/materials/buildings/README.md), outside assets loaded by the browser. No renderer or building generator is modified.
 
 It follows the recommendations of [RENDER_SURFACE_DESIGN §7.1](RENDER_SURFACE_DESIGN.md#71-un-catalogue-de-recettes-alimenté-par-les-assets-existants) and [RENDER_REVIEW](RENDER_REVIEW.md): existing Poly Haven and ambientCG materials, with provenance and dimensions retained. The architectural scope is the **32 packs and 39 materials** in [`recipes.json`](../rust/crates/houses/data/recipes.json), used by [urban cultures](CITY_CULTURES.md). Associations are documentary; they do not replace native-recipe material choices.

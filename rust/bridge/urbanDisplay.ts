@@ -26,3 +26,18 @@ export async function readUrbanDisplayBuffers(input: UrbanDisplayRequest, runtim
   }
   return response.arrayBuffer();
 }
+
+export interface UrbanSiteVisualsRequest { source: UrbanSourceHandle; seed: string; architectureCulture?: string }
+/** Binary display projection of every building site of a retained native snapshot. The complete
+ * placement requests stay in the engine session; read one with `readUrbanBuildingSite`. */
+export async function readUrbanSiteVisuals(input: UrbanSiteVisualsRequest, runtime: ExecutionRuntime): Promise<ArrayBuffer> {
+  if (runtime.profile !== 'local') throw new Error('Retained urban site visuals require the local runtime.');
+  validateUrbanSource(input.source);
+  const response = await nativeRequest(runtime, '/urban', JSON.stringify({
+    kind: 'buildingSiteVisuals', source: input.source, seed: input.seed, architectureCulture: input.architectureCulture,
+  }));
+  if (response.headers.get('content-type')?.split(';', 1)[0].trim() !== 'application/octet-stream') {
+    throw new Error('The local runtime did not return binary urban site visuals.');
+  }
+  return response.arrayBuffer();
+}

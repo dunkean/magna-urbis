@@ -1537,11 +1537,17 @@ pub(super) fn join_side_by_side(layout: &mut super::Layout, surface: Surface<'_>
     let town = |e: &Enclosure| e.purpose.is_empty() && e.path.len() >= 4;
     let grown = |s: &Shape, d: f64| std::panic::catch_unwind(std::panic::AssertUnwindSafe(||
         g::shapes(g::polygon(s).buffer(d)))).unwrap_or_default();
+    // A pair refused once is refused again while neither circuit changes:
+    // circuits carry ids, a join gives the merged one a new id.
+    let mut ids: Vec<usize> = (0..layout.enclosures.len()).collect();
+    let mut fresh = ids.len();
+    let mut refused: std::collections::HashSet<(usize, usize)> = Default::default();
     loop {
         let n = layout.enclosures.len();
         let mut joined = None;
         'pairs: for i in 0..n {
             for j in i + 1..n {
+                if !refused.insert((ids[i], ids[j])) { continue; }
                 let (a, b) = (&layout.enclosures[i], &layout.enclosures[j]);
                 if !town(a) || !town(b) { continue; }
                 let (sa, sb) = (closed_shape(a), closed_shape(b));
@@ -1573,6 +1579,10 @@ pub(super) fn join_side_by_side(layout: &mut super::Layout, surface: Surface<'_>
         let path = closed(&trace.outer);
         layout.enclosures.remove(j);
         layout.enclosures.remove(i);
+        ids.remove(j);
+        ids.remove(i);
+        ids.insert(i, fresh);
+        fresh += 1;
         let gates = gates(&path, &layout.streets);
         layout.enclosures.insert(i, Enclosure { gates, path, kind, ..Default::default() });
     }

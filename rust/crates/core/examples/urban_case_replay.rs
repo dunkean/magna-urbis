@@ -44,6 +44,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let start = Instant::now();
     let partitions = generate_parcels(&f.seed, &layouts, &f.parcel_config)?;
     let parcels_ms = start.elapsed().as_secs_f64() * 1000.;
+    eprintln!("quarters {quarters_ms:.0} ms, parcels {parcels_ms:.0} ms");
     let selected: Vec<_> = (0..layouts.len()).collect();
     let sites_start = Instant::now();
     let mut index = BuildingSiteIndex::prepare(&layouts, &partitions, &selected)?;
@@ -54,6 +55,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let total = page.total;
         if page.requests.is_empty() && requests.len() < total { return Err("Empty incomplete page".into()); }
         requests.extend(page.requests);
+        if requests.len() % 1024 < 64 {
+            eprintln!("sites {}/{} at {:.0} ms", requests.len(), total, sites_start.elapsed().as_secs_f64() * 1000.);
+        }
         if requests.len() == total { break; }
     }
     let sites_ms = sites_start.elapsed().as_secs_f64() * 1000.;

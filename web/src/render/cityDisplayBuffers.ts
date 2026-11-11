@@ -64,3 +64,51 @@ export function polygonRings(p: DisplayPolygons, i: number, origin: { x: number;
   }
   return rings;
 }
+
+/** Display projection of the native building sites (`site_display_buffers` in display.rs): what the city
+ * volumes draw, with world coordinates restored. The complete requests stay in the engine (read by id). */
+export interface CitySiteVisual {
+  id: string; parcel_id: string; offset: number; function: string; culture: { culture: string; pack: string; mode: string; borrowing: string | null };
+  programme?: Record<string, unknown>; surface: { outer: { x: number; y: number }[]; holes: { x: number; y: number }[][] }[];
+  preview: boolean; ground_z_m: number; entrance: { x: number; y: number }; access_id: string;
+}
+export function decodeCitySiteVisuals(buffer: ArrayBuffer): CitySiteVisual[] {
+  const headLength = new DataView(buffer).getUint32(0, true);
+  const header = JSON.parse(new TextDecoder().decode(new Uint8Array(buffer, 4, headLength))) as {
+    format: string; version: number; origin: { x: number; y: number }; count: number; tables: Record<string, string[]>; sections: Record<string, Section>;
+  };
+  if (header.format !== 'magna-city-sites' || header.version !== 1) throw new Error('Unknown city site display buffers.');
+  const body = 4 + headLength;
+  const view = <K extends keyof typeof VIEWS>(name: string, type: K): InstanceType<(typeof VIEWS)[K]> => {
+    const s = header.sections[name];
+    if (!s || s.type !== type) throw new Error(`Section ${name} missing or mistyped.`);
+    return new VIEWS[type](buffer, body + s.offset, s.length) as InstanceType<(typeof VIEWS)[K]>;
+  };
+  const strings = (name: string): string[] => {
+    const offsets = view(`${name}.offsets`, 'u32'), text = new TextDecoder().decode(view(`${name}.text`, 'u8')), out: string[] = [];
+    for (let i = 0; i + 1 < offsets.length; i++) out.push(text.slice(offsets[i], offsets[i + 1]));
+    return out;
+  };
+  const { x: ox, y: oy } = header.origin, n = header.count;
+  const polys = view('sites.polys', 'u32'), pieces = view('sites.pieces', 'u32'), rings = view('sites.rings', 'u32'), coords = view('sites.coords', 'f32');
+  const fn = view('sites.function', 'u16'), culture = view('sites.culture', 'u16'), preview = view('sites.preview', 'u8');
+  const ground = view('sites.groundZ', 'f32'), entrance = view('sites.entrance', 'f32');
+  const ids = strings('sites.id'), parcels = strings('sites.parcelId'), accesses = strings('sites.accessId');
+  const programmes = n ? JSON.parse(new TextDecoder().decode(view('sites.programme', 'u8'))) as (Record<string, unknown> | null)[] : [];
+  const functions = header.tables.function ?? [''], cultures = (header.tables.culture ?? ['']).map(text => text ? JSON.parse(text) as CitySiteVisual['culture'] : null);
+  const ring = (r: number) => { const out: { x: number; y: number }[] = []; for (let k = rings[r]; k < rings[r + 1]; k++) out.push({ x: coords[2 * k] + ox, y: coords[2 * k + 1] + oy }); return out; };
+  const sites: CitySiteVisual[] = [];
+  for (let i = 0; i < n; i++) {
+    const surface: CitySiteVisual['surface'] = [];
+    for (let piece = polys[i]; piece < polys[i + 1]; piece++) {
+      const outer = ring(pieces[piece]), holes: { x: number; y: number }[][] = [];
+      for (let r = pieces[piece] + 1; r < pieces[piece + 1]; r++) holes.push(ring(r));
+      surface.push({ outer, holes });
+    }
+    const programme = programmes[i];
+    sites.push({ id: ids[i], parcel_id: parcels[i], offset: i, function: functions[fn[i]], culture: cultures[culture[i]]!,
+      ...(programme ? { programme } : {}), surface, preview: preview[i] === 1, ground_z_m: ground[i],
+      entrance: { x: entrance[2 * i] + ox, y: entrance[2 * i + 1] + oy }, access_id: accesses[i] });
+  }
+  return sites;
+}

@@ -917,21 +917,35 @@ pub(super) fn join_bank_networks(layout: &mut super::Layout, surface: super::Sur
             .min_by(|&c, &e| (distance(p, c) + distance(c, q)).total_cmp(&(distance(p, e) + distance(e, q))))
             .map(|c| vec![p, c, q])
     };
+    // The shortest admissible link from network `a` to network `b` (the
+    // first of `a`'s points on a tie). It does not depend on the links
+    // already added, so each pair is searched once. A path is never shorter
+    // than its straight span, which prunes the search.
+    let pair_link = |a: usize, b: usize| -> Option<(f64, Vec<Point>)> {
+        let mut best: Option<(f64, Vec<Point>)> = None;
+        for &p in &points[a] {
+            let Some((d, q)) = segments[b].iter().map(|&(u, v)| { let (d, _, q) = g::distance(p, u, v); (d, q) })
+                .min_by(|x, y| x.0.total_cmp(&y.0)) else { continue };
+            if d < 1.0 || d > REACH || best.as_ref().is_some_and(|x| d >= x.0) { continue; }
+            let path = if dry_leg(p, q) { Some(vec![p, q]) } else if routing::water_intervals(surface, p, q).is_empty() { detour(p, q) } else { None };
+            let Some(path) = path else { continue };
+            let length: f64 = path.windows(2).map(|w| distance(w[0], w[1])).sum();
+            if length <= REACH * 1.25 && best.as_ref().is_none_or(|x| length < x.0) { best = Some((length, path)); }
+        }
+        best
+    };
+    let mut links: std::collections::HashMap<(usize, usize), Option<(f64, Vec<Point>)>> = Default::default();
     loop {
-        // The shortest admissible link between two networks not yet joined.
+        // The shortest admissible link between two networks not yet joined
+        // (the first pair in order on a tie).
         let mut best: Option<(f64, Vec<Point>, usize, usize)> = None;
         for a in 0..count {
             if graph.length[a] < 15.0 { continue; }
             for b in 0..count {
                 if a == b || graph.length[b] < 15.0 || !near(a, b) || root(&mut set, a) == root(&mut set, b) { continue; }
-                for &p in &points[a] {
-                    let Some((d, q)) = segments[b].iter().map(|&(u, v)| { let (d, _, q) = g::distance(p, u, v); (d, q) })
-                        .min_by(|x, y| x.0.total_cmp(&y.0)) else { continue };
-                    if d < 1.0 || d > REACH || best.as_ref().is_some_and(|x| d >= x.0) { continue; }
-                    let path = if dry_leg(p, q) { Some(vec![p, q]) } else if routing::water_intervals(surface, p, q).is_empty() { detour(p, q) } else { None };
-                    let Some(path) = path else { continue };
-                    let length: f64 = path.windows(2).map(|w| distance(w[0], w[1])).sum();
-                    if length <= REACH * 1.25 && best.as_ref().is_none_or(|x| length < x.0) { best = Some((length, path, a, b)); }
+                if let Some((length, path)) = links.entry((a, b)).or_insert_with(|| pair_link(a, b))
+                    && best.as_ref().is_none_or(|x| *length < x.0) {
+                    best = Some((*length, path.clone(), a, b));
                 }
             }
         }

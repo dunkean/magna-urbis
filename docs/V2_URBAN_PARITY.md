@@ -44,7 +44,7 @@ Urban placement owns **one request per lot, its transform and the batch seed**. 
 
 [urban3d.ts](../web/src/v2/urban3d.ts) mounts the **same City Bench 3D renderer** inside V2. It supplies the actual physical raster, native layouts, partitions, regional streets, fortifications and retained house scenes. It preserves compressed native plan archives. Close-up exteriors use the existing bounded detail controller and the V2-selected WASM/native runtime. Rendering is not a new admission or a source of capacity certification. The 3D view uses WebGL2; native urban construction itself uses CPU, while terrain generation can use its supported CPU/GPU paths.
 
-The [urban optimisation audit](V2_OPTIMIZATION_URBAN.md) records measured cache/projection/form/3D work reductions, exact-output checks and the remaining software-driver shader compilation limit.
+The urban optimisation audit (historical validation, archived locally) records measured cache/projection/form/3D work reductions, exact-output checks and the remaining software-driver shader compilation limit.
 
 ## Boundaries still visible in this alpha
 

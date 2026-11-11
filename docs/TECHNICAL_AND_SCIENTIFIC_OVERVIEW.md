@@ -1,7 +1,5 @@
 # Magna Urbis: technical architecture and scientific foundations
 
-[French original](TECHNICAL_AND_SCIENTIFIC_OVERVIEW_FR.md).
-
 Document status: **October 14, 2026**. Magna Urbis is a prototype for generating landscapes and preindustrial settlements. The TypeScript application remains the most complete reference; the Rust/WebAssembly version is **being implemented and integrated**. This document describes paths present in the repository and their foundations, without proposing a new definitive architecture.
 
 Code links distinguish methods actually used from scientific references that explain or compare an approach. The cited papers do not constitute scientific validation of Magna Urbis: the project's parameters, simplifications and artistic choices have their own domain of validity.

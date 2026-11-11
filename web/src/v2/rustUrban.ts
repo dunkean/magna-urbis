@@ -19,7 +19,9 @@ import { pointInRing } from '../gen/geo/poly';
 import { streetSeedConfig, urbanSeed } from './urbanSeeds';
 import type { CityGroundRaster } from '../render/cityGround';
 import { cityArchitectureOf } from '../render/cityContract';
-import { silhouetteScene, type CityPlacementRequest } from '../ui/urbanSilhouettes';
+import { siteVisualScene, type CityPlacementRequest } from '../ui/urbanSilhouettes';
+import { projectUrbanSite, type UrbanSiteVisual } from '../ui/urbanSiteStore';
+import type { UrbanBuildingSiteQuery } from '../../../rust/bridge/urbanBuildingSite';
 
 export interface RustTownSnapshot {
   backend: 'rust-wasm-cpu' | 'rust-native-cpu';
@@ -37,7 +39,12 @@ export interface RustTownSnapshot {
   partitions?: Partition[];
   cadastralPartitions?: Partition[];
   programmePartitions?: Partition[];
+  /** Complete placement requests: only for the houses crate (compact/detailed architecture); the city volumes need none. */
   requests?: PlacementRequest[];
+  /** Display projection of the building sites (drawn surface, function, programme, entrance) in site order. */
+  sites?: UrbanSiteVisual[];
+  /** Native descriptor to read one complete site by offset/id while the engine retains this snapshot. */
+  siteQuery?: UrbanBuildingSiteQuery;
   scene?: PlacementBatch;
   houseSettingsKey?: string;
   houseOverrides?: Record<string, Partial<HouseConfig>>;
@@ -48,7 +55,10 @@ export interface RustTownSnapshot {
   warnings: string[];
 }
 export interface RustTownResult { urban: UrbanLayer; snapshot: RustTownSnapshot; stats: Record<string, string | number> }
-const engines = new Map<string, { engine: Promise<UrbanEngine>; terrainKey?: string; priming?: Promise<void> }>();
+/** `layouts`/`partitions`: the products the native engine session holds (the last quarters, parcels or programme reply),
+ * by identity; a later stage that reads exactly these sends their handle instead of re-uploading the geometry. */
+const engines = new Map<string, { engine: Promise<UrbanEngine>; terrainKey?: string; priming?: Promise<void>;
+  layouts?: Layout[]; partitions?: Partition[]; source?: import('../../../rust/bridge/urban').UrbanSourceHandle }>();
 interface RasterCacheEntry {
   width: number; cell: number; height: World['terrain']['height']['data']; water: World['terrain']['water']; filled: World['terrain']['filled']; seaLevel: number;
   physical?: Float32Array; physicalFloor?: number; physicalInterpolation?: 'bspline';
@@ -56,6 +66,11 @@ interface RasterCacheEntry {
   rivers: { path: World['terrain']['rivers'][number]['path']; width: World['terrain']['rivers'][number]['width']; id: number | undefined }[];
   raster: SettlementRaster;
 }
+/** Parcels kept only engine-side (`reply: 'handle'`): a unique empty marker per reply, never uploaded. */
+const heldPartitions = new WeakSet<Partition[]>();
+/** WASM: complete requests of a site projection, kept in the urban worker and never sent to the page. */
+const wasmSiteRequests = new WeakMap<UrbanSiteVisual[], PlacementRequest[]>();
+type SiteResponse = UrbanResponse & { sites?: UrbanSiteVisual[]; siteQuery?: UrbanBuildingSiteQuery };
 const physicalRasters = new WeakMap<World['terrain']['height'], RasterCacheEntry>();
 /** Native stage products are immutable. Transitions replace only changed
  * containers; old snapshots, geometry and compressed plans remain exact. */
@@ -213,8 +228,8 @@ function mergeHouseDelta(previous: PlacementBatch, delta: PlacementBatch, change
 const zones = new Set<UrbanZone>(['core', 'middle', 'edge', 'faubourg', 'village']);
 const zone = (value?: string): UrbanZone => zones.has(value as UrbanZone) ? value as UrbanZone : 'core';
 const roles = new Set<StreetRole>(['radial', 'ring', 'street', 'lane', 'close', 'quay', 'wall-lane', 'track', 'boundary']);
-const nativeRequestIndexes = new WeakMap<PlacementRequest[], Map<string, string>>();
-function requestIndex(requests?: PlacementRequest[]): ReadonlyMap<string, string> {
+const nativeRequestIndexes = new WeakMap<object, Map<string, string>>();
+function requestIndex(requests?: readonly { id: string; parcel_id: string }[]): ReadonlyMap<string, string> {
   if (!requests) return new Map();
   let index = nativeRequestIndexes.get(requests);
   if (!index) {
@@ -233,7 +248,7 @@ export function projectRustTown(snapshot: RustTownSnapshot, population: number, 
   const buildings: UrbanBuilding[] = [], ids: string[] = [];
   // Preserve Array.find's first-match rule while avoiding a complete request
   // scan for every projected building/component of a large city.
-  const requestByParcel = snapshot.scene?.buildings.length ? requestIndex(snapshot.requests) : new Map<string, string>();
+  const requestByParcel = snapshot.scene?.buildings.length ? requestIndex(snapshot.sites ?? snapshot.requests) : new Map<string, string>();
   for (const building of snapshot.scene?.buildings ?? []) {
     const volumes = building.volumes, height = Math.max(0, ...volumes.map(v => v.z_m + v.wall_height_m + v.roof_height_m - building.ground_z_m));
     const nativeRoof = volumes[0]?.roof_system ?? building.cartographic?.roof_system ?? '';
@@ -316,7 +331,7 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
     backend: backend === 'native' ? 'rust-native-cpu' : 'rust-wasm-cpu', stage: 'layout', layoutKey, compositionKey, compositionLayouts: previousComposition, layouts: [], buildingIds: [], warnings: [] };
   // Reuse one terrain handle for this ordered request chain, not one copy for each urban step.
   let engine: UrbanEngine | undefined;
-  const request = async (kind: 'quarters' | 'parcels' | 'programme' | 'buildingSites' | 'builtCapacity', extras: Record<string, unknown>): Promise<UrbanResponse> => {
+  const request = async (kind: 'quarters' | 'parcels' | 'programme' | 'buildingSites' | 'builtCapacity', extras: Record<string, unknown>): Promise<SiteResponse> => {
     let raster: SettlementRaster | undefined;
     const engineKey = `${backend}|${runtime?.server ?? ''}${lane === undefined ? '' : `|lane${lane}`}`;
     let retained = engines.get(engineKey);
@@ -335,9 +350,51 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
       retained.priming = new Promise<void>(resolve => { primed = resolve; });
       break;
     }
+    // Native session chain: send handles for the products the engine already holds (never with a terrain upload).
+    const held = backend === 'native' && !raster ? retained : undefined;
+    let input = extras;
+    if (held && kind === 'parcels' && held.layouts && extras.layouts === held.layouts) { const { layouts: _sent, ...rest } = extras; input = { ...rest, layoutsId: 1 }; }
+    else if (held && kind === 'programme' && held.layouts && held.partitions && extras.layouts === held.layouts && extras.partitions === held.partitions) { const { layouts: _l, partitions: _p, ...rest } = extras; input = { ...rest, retained: true }; }
+    else if (held && kind === 'buildingSites' && held.source && held.partitions && extras.partitions === held.partitions && extras.layouts === held.layouts) { const { layouts: _l, partitions: _p, ...rest } = extras; input = { ...rest, source: held.source }; }
+    if (raster || kind === 'quarters') { retained.layouts = retained.partitions = retained.source = undefined; }
+    // Engine-held parcels are never uploaded: a programme that cannot continue the session asks for them again.
+    if (kind === 'programme' && heldPartitions.has(extras.partitions as Partition[]) && input === extras) {
+      if (primed) { retained.priming = undefined; primed(); }
+      return { id: 1, error: '[held_partitions] The engine no longer holds these parcels.' };
+    }
+    const { visuals, ...sent } = input as Record<string, unknown> & { visuals?: boolean };
+    // City volumes: the binary site projection of the retained snapshot; complete requests stay in the engine.
+    if (kind === 'buildingSites' && visuals && held?.source && input !== extras && runtime) {
+      const query: UrbanBuildingSiteQuery = { source: held.source, seed: String(extras.seed),
+        ...(typeof extras.architectureCulture === 'string' ? { architectureCulture: extras.architectureCulture } : {}) };
+      try {
+        const [{ readUrbanSiteVisuals }, { decodeCitySiteVisuals }] = await Promise.all([import('../../../rust/bridge/urbanDisplay'), import('../render/cityDisplayBuffers')]);
+        return { id: 1, sites: decodeCitySiteVisuals(await readUrbanSiteVisuals(query, runtime)) as unknown as UrbanSiteVisual[], siteQuery: query };
+      } catch (error) { return { id: 1, error: String(error) }; }
+    }
+    input = sent;
+    const { visuals: _visuals, ...plain } = extras;
+    extras = plain;
     try {
-      const result = await engine.run({ id: 1, kind, seed, runtime, ...(raster ? { raster } : {}), ...extras });
+      const pending = engine.run({ id: 1, kind, seed, runtime, ...(raster ? { raster } : {}), ...input } as Parameters<UrbanEngine['run']>[0]);
+      if (kind === 'quarters' && backend === 'native') {
+        // The engine composes the town on its own thread: meanwhile this worker computes the raster-only fields of the
+        // land-use stage that follows (finishTowns), once the request has left (one macrotask).
+        await new Promise(resolve => setTimeout(resolve, 0));
+        try { (await import('../ui/urbanLanduseData')).prewarmUrbanLanduse(rustSettlementRaster(world)); } catch (error) { console.warn('Land-use prewarm failed:', error); }
+      }
+      let result = await pending;
+      // An engine without the retained chain (or a session evicted meanwhile): upload the geometry as before.
+      if (result.error && input !== extras && !heldPartitions.has(extras.partitions as Partition[])) result = await engine.run({ id: 1, kind, seed, runtime, ...extras });
       if (!result.error && raster) retained.terrainKey = terrainKey;
+      if (backend === 'native' && !result.error) {
+        if (kind === 'quarters') retained.layouts = result.layouts;
+        else if (kind === 'parcels' || kind === 'programme') {
+          // A handle-only parcels reply: the engine holds them; a unique marker stands for them in this chain.
+          if (!result.partitions && result.urbanSource) { const marker: Partition[] = []; heldPartitions.add(marker); result.partitions = marker; }
+          retained.partitions = result.partitions; retained.source = result.urbanSource;
+        }
+      } else if (backend === 'native') retained.layouts = retained.partitions = retained.source = undefined;
       return result;
     } finally { if (primed) { retained.priming = undefined; primed(); } }
   };
@@ -361,39 +418,75 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
   const parcelSeed = urbanSeed(settings, key, 'parcels'), programmeSeed = urbanSeed(settings, key, 'programme');
   const buildingSeed = urbanSeed(settings, key, 'buildings'), houseSeed = urbanSeed(settings, key, 'houses');
   const parcelKey = fingerprint(parcelSeed === seed ? [layoutKey, config.parcels] : [layoutKey, config.parcels, parcelSeed]);
-  if (stageIndex >= 1 && (!snapshot.partitions || snapshot.parcelKey !== parcelKey)) {
-    report('urban-parcels', 'Rust · découpage des parcelles et accès cadastraux…', 1);
-    snapshot.partitions = required<Partition[]>(await request('parcels', { seed: parcelSeed, layouts: snapshot.layouts, parcelConfig: config.parcels }), 'partitions');
-    snapshot.cadastralPartitions = snapshot.partitions; snapshot.programmePartitions = undefined;
-    snapshot.parcelKey = parcelKey; snapshot.programmeKey = undefined; snapshot.requests = undefined; snapshot.scene = undefined;
-  }
   const programmeKey = programmeSeed === seed ? parcelKey : fingerprint([parcelKey, programmeSeed]);
+  // Native chain through the programme: the cadastre stays in the engine (handle only, no download). A
+  // programme rerun needs the cadastre again (the engine then holds the programme), so it recuts the parcels.
+  const heldCadastre = backend === 'native' && stageIndex >= 2;
+  const cadastre = async (handle: boolean): Promise<void> => {
+    report('urban-parcels', 'Rust · découpage des parcelles et accès cadastraux…', 1);
+    const response = await request('parcels', { seed: parcelSeed, layouts: snapshot.layouts, parcelConfig: config.parcels, ...(handle ? { reply: 'handle' } : {}) });
+    snapshot.partitions = required<Partition[]>(response, 'partitions');
+    snapshot.cadastralPartitions = snapshot.partitions; snapshot.programmePartitions = undefined;
+    snapshot.parcelKey = parcelKey; snapshot.programmeKey = undefined; snapshot.requests = snapshot.sites = snapshot.siteQuery = undefined; snapshot.scene = undefined;
+  };
+  if (stageIndex >= 1 && (!snapshot.partitions || snapshot.parcelKey !== parcelKey
+    || (heldCadastre && snapshot.programmeKey !== programmeKey && !snapshot.cadastralPartitions))) await cadastre(heldCadastre);
   if (stageIndex >= 2 && snapshot.programmeKey !== programmeKey) {
     report('urban-programme', 'Rust · fonctions, besoins, capacités et affectation des parcelles…', 2);
-    snapshot.partitions = required<Partition[]>(await request('programme', { seed: programmeSeed, layouts: snapshot.layouts, partitions: snapshot.cadastralPartitions ?? snapshot.partitions, parcelConfig: config.parcels }), 'partitions');
+    const programme = () => request('programme', { seed: programmeSeed, layouts: snapshot.layouts, partitions: snapshot.cadastralPartitions ?? snapshot.partitions, parcelConfig: config.parcels });
+    let response = await programme();
+    if (response.error?.includes('[held_partitions]')) { await cadastre(false); response = await programme(); }
+    snapshot.partitions = required<Partition[]>(response, 'partitions');
+    if (snapshot.cadastralPartitions && heldPartitions.has(snapshot.cadastralPartitions)) snapshot.cadastralPartitions = undefined;
     snapshot.programmePartitions = snapshot.partitions;
-    snapshot.programmeKey = programmeKey; snapshot.requests = undefined; snapshot.scene = undefined; snapshot.capacityKey = undefined;
+    snapshot.programmeKey = programmeKey; snapshot.requests = snapshot.sites = snapshot.siteQuery = undefined; snapshot.scene = undefined; snapshot.capacityKey = undefined;
   }
   if (stageIndex >= 3) {
     const { architectureProfile } = await import('../../../rust/bridge/urbanArchitecture');
     const profile = architectureProfile(config.houses), requestKey = fingerprint(buildingSeed === seed ? [programmeKey, profile] : [programmeKey, profile, buildingSeed]);
-    if (!snapshot.requests || snapshot.requestKey !== requestKey) {
-      report('urban-building-sites', 'Rust · domaines constructibles, accès et contraintes des maisons…', 3);
-      snapshot.requests = required<PlacementRequest[]>(await request('buildingSites', { seed: buildingSeed, layouts: snapshot.layouts, partitions: snapshot.programmePartitions ?? snapshot.partitions, architectureCulture: profile }), 'placementRequests');
-      snapshot.requestKey = requestKey; snapshot.scene = undefined;
-    }
-    const relevantOverrides = Object.fromEntries((snapshot.requests ?? []).flatMap(request => {
-      const patch = settings.urban?.buildings?.[`${key}/${request.id}`] ?? settings.urban?.buildings?.[request.id];
-      return patch ? [[request.id, patch]] : [];
-    }));
     // Same default as City Bench and the v7 sheets: city volumes raised by urban/massing.rs.
     // The houses crate only runs for the compact/detailed architectures and for edited houses.
     const architecture = cityArchitectureOf(local?.architecture ?? settings.urban?.architecture);
+    const siteInput = () => ({ seed: buildingSeed, layouts: snapshot.layouts, partitions: snapshot.programmePartitions ?? snapshot.partitions, architectureCulture: profile });
+    /** Complete requests from the JSON stage (houses crate input). */
+    const fullSites = async (): Promise<PlacementRequest[]> => required<PlacementRequest[]>(await request('buildingSites', siteInput()), 'placementRequests');
+    if (!snapshot.sites || snapshot.requestKey !== requestKey) {
+      report('urban-building-sites', 'Rust · domaines constructibles, accès et contraintes des maisons…', 3);
+      snapshot.requests = snapshot.siteQuery = undefined;
+      const response = await request('buildingSites', { ...siteInput(), visuals: architecture === 'silhouette' });
+      if (response.error) throw new Error(response.error);
+      if (response.sites) { snapshot.sites = response.sites; snapshot.siteQuery = response.siteQuery; }
+      else {
+        const requests = required<PlacementRequest[]>(response, 'placementRequests');
+        snapshot.sites = requests.map((request, offset) => projectUrbanSite(request as CityPlacementRequest, offset));
+        // City volumes keep only the projection; the complete requests stay in this worker for edits.
+        if (architecture === 'silhouette') wasmSiteRequests.set(snapshot.sites, requests); else snapshot.requests = requests;
+      }
+      snapshot.requestKey = requestKey; snapshot.scene = undefined;
+    }
+    const sites = snapshot.sites!;
+    /** Complete requests of the given sites: read by id from the engine session, else from this worker's retained stage. */
+    const completeSites = async (ids: Set<string>): Promise<PlacementRequest[]> => {
+      if (snapshot.requests) return snapshot.requests.filter(request => ids.has(request.id));
+      const picked = sites.filter(site => ids.has(site.id));
+      // A few edited houses read their sites by id; a whole town (houses crate) takes the stage in one reply.
+      if (snapshot.siteQuery && runtime && picked.length <= 32) {
+        const { readUrbanBuildingSite } = await import('../../../rust/bridge/urbanBuildingSite');
+        try { return await Promise.all(picked.map(site => readUrbanBuildingSite(snapshot.siteQuery!, runtime, site.offset, site.id, sites.length))); }
+        catch { /* The engine moved on to another snapshot: recompute the stage below. */ }
+      }
+      const all = wasmSiteRequests.get(sites) ?? await fullSites();
+      return all.filter(request => ids.has(request.id));
+    };
+    const relevantOverrides = Object.fromEntries(sites.flatMap(request => {
+      const patch = settings.urban?.buildings?.[`${key}/${request.id}`] ?? settings.urban?.buildings?.[request.id];
+      return patch ? [[request.id, patch]] : [];
+    }));
     const buildingKey = fingerprint(houseSeed === seed ? [architecture, requestKey, config.houses, relevantOverrides] : [architecture, requestKey, config.houses, relevantOverrides, houseSeed]);
     if (architecture === 'silhouette' && (!snapshot.scene || snapshot.buildingKey !== buildingKey)) {
       report('urban-buildings', 'Rust · city volumes…', 4);
-      let scene = silhouetteScene(snapshot.requests as CityPlacementRequest[]);
-      const edited = snapshot.requests.filter(request => relevantOverrides[request.id]);
+      let scene = siteVisualScene(sites);
+      const edited = Object.keys(relevantOverrides).length ? await completeSites(new Set(Object.keys(relevantOverrides))) : [];
       if (edited.length) {
         // An edited house is planned by the houses crate inside its lot; every other lot keeps its volume.
         const { planUrbanBuildings } = await import('../../../rust/bridge/architecture');
@@ -417,6 +510,7 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
     } else if (architecture === 'silhouette') { snapshot.lastBuildingRequests = 0; report('urban-buildings', 'Rust · city volumes reused', 5); }
     else if (!snapshot.scene || snapshot.buildingKey !== buildingKey) {
       report('urban-buildings', 'Chargement du moteur Rust des maisons…', 4);
+      snapshot.requests ??= await completeSites(new Set(sites.map(site => site.id)));
       const { planUrbanBuildings } = await import('../../../rust/bridge/architecture');
       const houseSettingsKey = fingerprint(houseSeed === seed ? config.houses : [config.houses, houseSeed]), baselineKey = fingerprint([requestKey, houseSettingsKey]);
       const sourceRequests = houseSeed === seed ? snapshot.requests : snapshot.requests.map(request => {

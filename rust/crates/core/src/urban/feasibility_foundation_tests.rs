@@ -78,3 +78,34 @@ fn foundation_index_center_is_only_necessary_and_never_admits_a_rectangle_crossi
         assert!(!rect_within(shape,a,u,v,width,depth));
     }
 }
+
+#[test]
+fn foundation_sweep_matches_the_reference_search_bit_for_bit() {
+    let mut holed=dense_rect(40.);let mut hole=dense_rect(10.).outer;for p in &mut hole {p.x+=15.;p.y+=15.;}holed.holes.push(hole);
+    let concave=Shape {outer:vec![Point{x:0.,y:0.},Point{x:30.,y:0.},Point{x:30.,y:30.},Point{x:18.,y:30.},Point{x:18.,y:12.},Point{x:12.,y:12.},Point{x:12.,y:30.},Point{x:0.,y:30.}],holes:vec![]};
+    let mut shapes=vec![holed,concave];
+    for s in [real(),real41()] {
+        // Move the medina blocks into the 100 m test raster.
+        let(x0,y0,_,_)=geometry::bbox(&s);let mut s=s;
+        for p in s.outer.iter_mut().chain(s.holes.iter_mut().flatten()) {p.x-=x0-5.;p.y-=y0-5.;}
+        shapes.push(s);
+    }
+    let n=32;let water=vec![0;n*n];let flat=vec![0.;n*n];
+    let hill:Vec<f32>=(0..n*n).map(|i|((i%n)as f32)*0.025+((i/n)as f32)*0.011).collect();
+    let steep:Vec<f32>=(0..n*n).map(|i|((i%n)as f32)*0.4+(((i/n)*7%5)as f32)*0.3).collect();
+    let dirs=[Point{x:1.,y:0.},Point{x:0.6,y:0.8},Point{x:0.6,y:0.8},Point{x:std::f64::consts::FRAC_1_SQRT_2,y:-std::f64::consts::FRAC_1_SQRT_2}];
+    for shape in &shapes {
+        for height in [&flat,&hill,&steep] {
+            let surface=Surface{geometry:None,width:100.,n,height,water:&water, interpolation: Default::default(),};
+            let mut ws:Vec<&Witness>=recipe_sources("AF-MAG-B01");ws.extend(recipe_sources("AF-MAG-B02"));
+            for bearing in [Bearing::Body,Bearing::Ring,Bearing::Extent] {ws.extend(witnesses().iter().filter(|w|w.bearing==bearing&&w.footing().is_some()).take(2));}
+            {for w in ws.iter().copied() {
+                for step in [0.5,1.] {if shape.outer.len()>100 && step<1. {continue;} for stop in [-1.,MAX_FOUNDATION_STEP+0.02,f64::INFINITY] {
+                    let old=pose_lower_bound_step_mode(surface,shape,&dirs,w,stop,step,false);
+                    let new=pose_lower_bound_sweep(surface,shape,&dirs,w,stop,step).unwrap();
+                    assert_eq!(old.to_bits(),new.to_bits(),"{}, step={step}, stop={stop}: {old} vs {new}",w.style_id);
+                }}
+            }}
+        }
+    }
+}

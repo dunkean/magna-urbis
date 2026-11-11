@@ -284,7 +284,7 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
   provideFurniture3d(options.host, () => {
     const world = options.getWorld(); if (!world) return;
     const r = v2Resolved3d(options.getSettings(), world), lu = r.composition.landuse, plan = r.cartography.legend && lu.urban !== 'off' ? legendScene() : undefined;
-    return { world: textWorld(), palette: terrainStyle(r.composition.variant, r.palette.colors).palette, legend: r.cartography.legend, cartouche: r.cartography.cartouche,
+    return { world: textWorld()!, palette: terrainStyle(r.composition.variant, r.palette.colors).palette, legend: r.cartography.legend, cartouche: r.cartography.cartouche,
       semantic: [...ruralSemanticLegend(world.landuse, lu.classes, lu.rural), ...(plan ? urbanSemanticLegend([plan], lu.urban) : [])] };
   });
   const view = mountCity3d({ host: options.host, navigation: true, fastTerrain: true, materialGrounds: true, softwareMaterialFallback: !!options.getBackground, getDecor: () => decor, getLayouts: () => layouts, getPartitions: () => partitions, getRegionalStreets: () => cityRegionalStreets(v2Resolved3d(options.getSettings(), options.getWorld()), roads),

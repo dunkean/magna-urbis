@@ -191,7 +191,7 @@ Les ombres portées des maisons sont celles du rendu natif 2D ; le moteur partag
 Les inventaires de correspondance avec les bancs sont dans
 [la matrice terrain](v2-terrain-controls.md) et
 [la matrice urbaine](V2_URBAN_PARITY.md).
-La [revue d’optimisation](V2_OPTIMIZATION.md) détaille les copies supprimées,
+La revue d’optimisation (historical validation, archived locally) détaille les copies supprimées,
 les caches, le rendu, les mesures avant/après et les vérifications d’identité
 des résultats.
 

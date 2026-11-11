@@ -2,8 +2,6 @@
 
 Repository state reviewed October 24, 2026. This inventory describes code behavior and limitations; undelivered proposals are identified as such. Catalog appendices are extracted from existing data without running generation. Controls expose combinable functions, the distinction between demographic class and morphological grammar, profiles and independent overrides, admission policy, and period filtering. Links and imports retain explicit values; the report distinguishes requested settings from data returned with the plan. These controls introduce no historical ceiling or plausibility engine: undocumented cultural or historical coverage remains unknown.
 
-> English translation of the [French original](CITY_VARIATION_VARIABLES_FR.md).
-
 ## 1. Answers to the three questions
 
 ### 1.1 What does “vocation” do?
@@ -290,7 +288,7 @@ These variables are upstream of the city. A CityBench scenario on fixed scenery 
 5. **Six functions are combinable; general taxonomy remains open.** Isolated intention and weights are exposed with existing effects. Additional activities/institutions/resources should not become options without consumers or be equated with a simulated economy.
 6. **The catalog must state its support level.** Historical reference, morphological recipe, architectural admission, and visual validation are four different things. An entry or successful capture does not demonstrate all four.
 7. **Resolved variables must accompany requested variables.** Record at least culture(s), requested population, class, resolved type, recipe per phase, resolved footprint and mesh, program, land capacity, actually housed inhabitants, deficits, and substitution reasons.
-8. **Cleanup must reach the interface.** User-facing axes must be accessible in CityBench with distinct labels, combinable weighted functions, resolved automatic choices, and explained substitutions. Dependent options should follow context: phases and suburbs are not relevant settings for an isolated mill. Generation, inspector, examples, reset, and links/imports must share one model. This user requirement is tracked in [TODO](../TODO.md#cohérence-des-paramètres-et-accès-ui--priorité-haute). Weighted functions, classes, and grammars are active; section 1.4 covers labels/policies/imports. General contextual disabling and decomposed cultural model remain unfinished.
+8. **Cleanup must reach the interface.** User-facing axes must be accessible in CityBench with distinct labels, combinable weighted functions, resolved automatic choices, and explained substitutions. Dependent options should follow context: phases and suburbs are not relevant settings for an isolated mill. Generation, inspector, examples, reset, and links/imports must share one model. This user requirement is tracked in TODO (historical validation, archived locally). Weighted functions, classes, and grammars are active; section 1.4 covers labels/policies/imports. General contextual disabling and decomposed cultural model remain unfinished.
 
 To enumerate combinations, start from `culture × population/scale × intention × terrain context`, resolve cultural defaults, then apply only relevant overrides. A scenario must carry these columns, even when some are “not applicable”:
 

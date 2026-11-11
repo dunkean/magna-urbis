@@ -131,7 +131,7 @@ function enlarged(ring: Point[], k: number): Point[] {
 function packsOf(world: World): { byCulture: Map<string, string>; any?: string } {
   const byCulture = new Map<string, string>();
   for (const city of Object.values(nativeCityRecords(world) ?? {}))
-    for (const item of [...city.requests ?? [], ...city.scene?.buildings ?? []]) if (item.culture?.pack && !byCulture.has(item.culture.culture)) byCulture.set(item.culture.culture, item.culture.pack);
+    for (const item of [...city.sites ?? city.requests ?? [], ...city.scene?.buildings ?? []]) if (item.culture?.pack && !byCulture.has(item.culture.culture)) byCulture.set(item.culture.culture, item.culture.pack);
   return { byCulture, any: byCulture.values().next().value };
 }
 /**

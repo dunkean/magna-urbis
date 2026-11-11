@@ -1,7 +1,5 @@
 # City Bench urban cultures
 
-[Français](CITY_CULTURES_FR.md)
-
 The native catalogue `rust/crates/core/src/urban/catalogue.json` describes **79 cultures**: the original 53 and 26 added on October 22, 2026 for a medieval and fantasy world inspired by reality. Each culture is an **urban-form** recipe (fabric, enclosure, core, densities, lots and phases) linked to an **existing house pack** by `urban/culture.rs::MAPPINGS`. No house recipe is invented by the city stage: packs belong to the `houses` engine.
 
 Numerical values are **artistic generation ranges**, not surveys. `XX-YY-Snn` references point to the [architectural atlas](styles_architecturaux_mondiaux_city_mapper.md).

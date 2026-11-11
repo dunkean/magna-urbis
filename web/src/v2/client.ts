@@ -18,6 +18,7 @@ import type { ExportLayers } from '../render/exportLayers';
 import { publishWasmThreads, wasmWorkerFailed, wasmWorkerOptions } from '../../../rust/bridge/wasmThreads';
 import { loadRenderGeometry, renderGeometryReady } from '../../../rust/bridge/renderGeometry';
 import { mapPresentation } from './mapPresentation';
+import { ensureDesktopNeuralServer } from './desktopNeural';
 
 /** Delay of the miniature after a new live frame (its first frame must not wait for it). */
 const MINI_DELAY_MS = 350;
@@ -105,7 +106,18 @@ export class StudioClient {
     const id = ++this.id;
     return new Promise((resolve, reject) => {
       this.pending = { id, resolve, reject };
-      try{this.engine.postMessage({ id, action, settings, ...generationWorldInput(action,world,this.retained),key, keys, townStage,terrainStage,cityOutput,assetBase:document.baseURI });}catch(error){this.pending=null;reject(error instanceof Error?error:new Error(String(error)));}
+      const dispatch = async () => {
+        if (['terrain', 'all'].includes(action) && settings.runtime?.source === 'neural'
+          && !settings.options.importedHeight && !settings.decor && !settings.terrain?.sketch?.processing) {
+          const neuralServer = await ensureDesktopNeuralServer(settings.runtime.neuralServer ?? 'http://127.0.0.1:8792',
+            label => this.onProgress({ stage: 'neural-startup', label, completed: 0, total: 0 }));
+          settings = { ...settings, runtime: { ...settings.runtime, neuralServer } };
+        }
+        // Cancellation may have replaced the worker while native weights were loading.
+        if (this.pending?.id !== id) return;
+        this.engine.postMessage({ id, action, settings, ...generationWorldInput(action,world,this.retained),key, keys, townStage,terrainStage,cityOutput,assetBase:document.baseURI });
+      };
+      void dispatch().catch(error => { if (this.pending?.id === id) { this.pending=null;reject(error instanceof Error?error:new Error(String(error))); } });
     });
   }
   cancel(): void {
@@ -146,6 +158,8 @@ export class StudioClient {
     const mapChanged = this.world?.mapSize !== world.mapSize;
     if(this.world!==world){this.benchMiniRevision=-1;this.resolutions=[];if(this.world?.stats['v2.terrainKey']!==world.stats['v2.terrainKey'])this.resourceCache=undefined;}
     this.world = world;
+    // A language/unit change redraws the same retained world with different labels.
+    this.benchMiniRevision = -1;
     world = mapPresentation(world, this.appearanceSettings);
     this.syncRenderer?.dispose(); this.syncRenderer = null;
     const settings=this.appearanceSettings;
@@ -199,7 +213,7 @@ export class StudioClient {
     renderer.drawLive(frame.view,frame.w,frame.h,frame.dpr);
     this.canvas.dataset.renderer=String(renderer.stats.renderer);this.canvas.dataset.renderStyle=String(renderer.stats.style);
     this.canvas.dataset.terrainBackend=String(renderer.stats.terrainBackend);
-    this.canvas.dataset.cityRender=JSON.stringify(renderer.stats.city??{});this.canvas.dataset.renderPasses=JSON.stringify(renderer.stats.passes??[]);
+    this.canvas.dataset.cityRender=JSON.stringify(renderer.stats.city??{});this.canvas.dataset.renderPending=String(renderer.pendingWork());this.canvas.dataset.renderPasses=JSON.stringify(renderer.stats.passes??[]);
     return{mini,ms:performance.now()-started,band:0,scale:frame.view.scale};
   }
   prepareViewportCapture():void{if(this.benchActive)this.bench?.prepareCapture();}

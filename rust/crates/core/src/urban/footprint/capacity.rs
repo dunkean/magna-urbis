@@ -111,7 +111,8 @@ pub(in crate::urban) fn enabled(cfg: &LayoutConfig) -> bool {
         && cfg.footprint.gross_density <= 0.0
         && cfg.preset == "culture"
         && cfg.recipe == "auto"
-        && cfg.tissue == "culture"
+        && (cfg.tissue == "culture"
+            || cfg.tissue == "terraces" && cfg.programme.slope_relax > 0.0)
         && cfg.scope == "settlement"
         && cfg.placement == "center"
         && cfg.params.as_object().is_none_or(|p| p.is_empty())

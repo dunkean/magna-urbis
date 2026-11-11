@@ -58,6 +58,8 @@ const P = {
   caucasian: constructed('caucasian', 'italian'), ethiopian: constructed('ethiopian', 'arabic'),
   dravidian: constructed('dravidian', 'sanskrit'), arabian: constructed('arabian', 'arabic'),
 } satisfies Record<string, ToponymProfile>;
+/** Countries of the geographic profiles: the only corpus pools the generator can reach (names-pack-runtime.json). */
+export const PROFILE_COUNTRIES: readonly string[] = [...new Set(Object.values(P).flatMap(p => 'country' in p && p.country ? [p.country] : []))].sort();
 
 /** Explicit mapping covers the native catalogue and the web culture registry. */
 export const CULTURE_PROFILES: Readonly<Record<string, ToponymProfile>> = {

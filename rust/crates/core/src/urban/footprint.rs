@@ -2492,12 +2492,18 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
                 }
             },
         };
-        let grade = if cfg.tissue == "terraces" { 0.5 } else { buildable_grade(site, cfg) };
+        let slope_growth = cfg.tissue == "terraces" && cfg.programme.slope_relax > 0.0;
+        let grade = if slope_growth { 0.75 } else if cfg.tissue == "terraces" { 0.5 } else { buildable_grade(site, cfg) };
+        let service = if slope_growth {
+            Service { grade: service.grade.max(grade), ..service }
+        } else { service };
         let grow = |centers: &mut Vec<UrbanCenter>, grade: f64, service: Service, capacity_seed: bool| {
             accessible(site.population, target, family, cfg, centers, radius, angle, &fractions, surface, &growth_roads, &rng, grade, water_affinity, service, capacity_seed)
         };
         let before = centers.clone();
-        let first = grow(&mut centers, grade, service, cfg.tissue == "terraces");
+        // Component seeding belongs to slope-adapted growth only: an ordinary
+        // (flat, island or spit) town keeps its exact nearest-dry seed.
+        let first = grow(&mut centers, grade, service, slope_growth);
         // A site whose streets cannot climb out of the core would leave the place almost
         // without land (under a quarter of its budget): it then grows by stairs and
         // terraces, on steeper ground step by step, and says so. The ladder runs up to
@@ -2505,14 +2511,16 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
         let got = |r: &(Vec<Shape>, Vec<Vec<Shape>>, Vec<Street>)| area(&union(&r.1.iter().flatten().cloned().collect::<Vec<_>>()));
         let first_area = got(&first);
         let mut best = first;
+        // The emergency land ladder stays the last resort of every place; the
+        // household ladder (`slopes`) runs after it, on the finished layout.
         for steep_grade in [grade.max(0.5), 0.75, 1.0, 1.5] {
-            if got(&best) >= 0.25 * target {
+            if got(&best) >= (if slope_growth { 0.95 } else { 0.25 }) * target {
                 break;
             }
             let mut again = before.clone();
             let steep = Service { grade: service.grade.max(cfg.max_stair_grade).max(steep_grade), ..service };
-            let second = grow(&mut again, steep_grade, steep, true);
-            if got(&second) > 2.0 * got(&best) {
+            let second = grow(&mut again, steep_grade, steep, slope_growth);
+            if got(&second) > (if slope_growth { 1.01 } else { 2.0 }) * got(&best) {
                 centers = again;
                 best = second;
             }

@@ -45,8 +45,6 @@ node --import tsx scripts/compose_surface_map.ts `
   --out out/surface/map-composition/city419-blueprint
 ```
 
-The [CITY evidence](evidence/map-composition-city419.json) retains the packet of 419 native realizations and 81 rejections, the retained 15.625 m parent and legacy 1.5.3 ground. It produces a 400 m plan with a blueprint frame, grid north, 25 m scale bar, 5 m grid and five legend entries. The packet archives no names in the expected location: zero place names and zero POIs are added. The embedded raster SHA is exactly `c69ecb23fc11944e7553908834b1fa934634869b9ef121ce8068e909fb0d2452`. The composed PNG SHA is `75621009d8f089f98e7949f152ea2af9cff72b00dfbf4d0a6c32263aa98fbb26`.
+The CITY evidence (historical validation, archived locally) retains the packet of 419 native realizations and 81 rejections, the retained 15.625 m parent and legacy 1.5.3 ground. It produces a 400 m plan with a blueprint frame, grid north, 25 m scale bar, 5 m grid and five legend entries. The packet archives no names in the expected location: zero place names and zero POIs are added. The embedded raster SHA is exactly `c69ecb23fc11944e7553908834b1fa934634869b9ef121ce8068e909fb0d2452`. The composed PNG SHA is `75621009d8f089f98e7949f152ea2af9cff72b00dfbf4d0a6c32263aa98fbb26`.
 
 Nine map palettes are shared (`styles.ts`), distinct from the fifteen terrain styles. Tests exercise all nine overlays; they do not qualify fifteen final native realizations. Changing the frame palette does not repaint the raster. Missing SVG brushes, relief hatching and names are not invented. Fonts use existing system stacks and are not embedded, so identical PNGs across machines are not promised. This evidence is a CPU composition over a retained capture, without new GPU rendering, neural generation, overall artistic acceptance or an FPS claim.
-
-[Original French version](MAP_COMPOSITION_FR.md).

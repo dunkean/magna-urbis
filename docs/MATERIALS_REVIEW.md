@@ -1,7 +1,5 @@
 # Atlas of terrestrial natural textures — Catalog for Neural Earth
 
-> English translation of the [French original](MATERIALS_REVIEW_FR.md).
-
 For a global procedural generator, approximately 15 major landscape families can be distinguished, with over 200 types and variants of visually recognizable surfaces. The aim is not to classify biomes but to ask:
 
 > Looking at any place on Earth from above, what natural surface types, colors, structures, and patterns might be encountered?

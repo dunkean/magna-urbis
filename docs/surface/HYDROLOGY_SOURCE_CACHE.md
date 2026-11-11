@@ -1,6 +1,6 @@
 # Exact source hydrology memoization
 
-The [V11 CPU attribution](archive/diagnostics/NATIVE_V11_CPU_PROFILE.md) measured repeated archive
+The V11 CPU attribution (historical validation, archived locally) measured repeated archive
 JSON decoding and validation of the same immutable water classes. The adapter
 now memoizes those two pure operations, independently of display preparation.
 
@@ -21,7 +21,7 @@ generation remain evaluated on every call. There is no cache of a mesh, clipped
 contour, water level, frame, hydrological network or spatial result. A common
 translation therefore never requires editing or reusing translated source points.
 
-[CPU evidence](evidence/hydrology-source-cache-cpu.json) contains 51 passing checks:
+CPU evidence (historical validation, archived locally) contains 51 passing checks:
 all buffers, image bytes, metadata and rejection/fallback outputs match the frozen
 adapter, excluding only elapsed `buildMs`. Cases include cold/hot repetition,
 alternating ±1e9 m frames, a one-byte source edit under the same ID, changed valid

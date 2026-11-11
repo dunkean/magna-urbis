@@ -62,5 +62,3 @@ Preparers accept `--tile <id>`. Derived data and reports remain outside Git. God
 Existing geometry, normals, material, transition, cover, shadow/snow, palette and navigation tests supplement these controls.
 
 GPU comparison uses commit `338efaf`, ABBA protocol at 1280×800, 30 warmup frames and 45 measurements. `prepare_meso_baseline.py` extracts earlier sources, rebuilds their amplitudes and redirects only their caches and base forest field; native data and palettes are shared. Results concern viewport GPU time, excluding loading. Final figures are reported in [TERRAIN_MESOSCALE.md](TERRAIN_MESOSCALE.md).
-
-[Original French version](SUPPORT_SHORES_REFINEMENT_FR.md).

@@ -2,14 +2,14 @@
 
 The opt-in renderer is now implemented by `--tree-assets <resolved.json>` in
 aerial views. Its budget, filtering certificate and approximations are described
-in [the renderer contract](evidence/vegetation-tree-v13/EXPERIMENTAL_RENDERER.md).
-The [bounded GPU evidence](evidence/vegetation-tree-v13/GPU.md) distinguishes
+in the renderer contract (historical validation, archived locally).
+The bounded GPU evidence (historical validation, archived locally) distinguishes
 actual TOP coverage, cartographic invariance and the retained oblique fallback.
 The staged data-loader description below remains the basis of its source/asset
 separation. CPU checks do not substitute for the subsequent GPU/campaign results.
 
 The prepared CC0 asset and its limitations are recorded in
-[the offline evidence](evidence/vegetation-tree-v13/README.md). This document
+the offline evidence (historical validation, archived locally). This document
 tracks the consumer work; no production default changes in the data-loader step.
 
 Prepare a resolved local manifest after the offline bake/calibration:

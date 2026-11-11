@@ -2,9 +2,7 @@
 
 Design document and backlog — October 23, 2026.
 
-> English translation of the [French original](RENDER_SURFACE_DESIGN_FR.md).
-
-This document describes the initial design. The state of the code, evidence actually collected, and remaining gaps are maintained in [SurfaceWorld — implementation](surface/IMPLEMENTATION.md). The distinction between **ground, low cover, and trees** is specified in the [layer contract](SURFACE_RENDER_LAYERS.md): a historical visual composite does not replace the ground material under grasses or crowns.
+This document describes the initial design. The state of the code, evidence actually collected, and remaining gaps are maintained in SurfaceWorld — implementation (historical validation, archived locally). The distinction between **ground, low cover, and trees** is specified in the [layer contract](SURFACE_RENDER_LAYERS.md): a historical visual composite does not replace the ground material under grasses or crowns.
 
 **Proposal: build an explicit surface world, then render it using a combination of existing PBR materials, procedural patterns, and instanced objects.** The main work is deciding what exists at each location and how that description crosses scales. Building a new texture library is not the central task.
 

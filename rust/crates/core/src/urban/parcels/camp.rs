@@ -55,36 +55,54 @@ pub(super) fn lots(
     });
     let index = FrontageIndex::new(layout);
     let reached = regional_streets(layout);
-    assemble_with_contacts(shape, block, axis, fronts, morph, tiles, |path| {
+    assemble_with_contacts(shape, block, axis, fronts, morph, &tiles, |path| {
         contacts::street_contacts(path, layout, &index).into_iter()
             .filter(|f| reached.get(f.street).copied().unwrap_or(false)).collect()
     })
 }
 
 type Plan = (Vec<Tile>, Vec<Shape>);
+type Bx = (f64, f64, f64, f64);
+/// A whole-settlement plan with what every block reads from it computed
+/// once: tile and path boxes, the union of the paths and its pieces' boxes.
+pub(super) struct Prepared {
+    tiles: Vec<Tile>,
+    tile_boxes: Vec<Bx>,
+    paths: Vec<Shape>,
+    path_boxes: Vec<Bx>,
+    unioned: Vec<(Shape, Bx)>,
+}
+impl From<Plan> for Prepared {
+    fn from((tiles, paths): Plan) -> Self {
+        let tile_boxes = tiles.iter().map(|t| bbox(&t.shape)).collect();
+        let path_boxes = paths.iter().map(bbox).collect();
+        let unioned = union(&paths).into_iter().map(|p| { let b = bbox(&p); (p, b) }).collect();
+        Prepared { tiles, tile_boxes, paths, path_boxes, unioned }
+    }
+}
 /// Whole-settlement plans laid out in the current probe scope
 /// (`probe_cache`): every camp block of a layout lays out the same figure, and
 /// the quarters run asks again on unchanged layouts. Keyed by the exact layout
 /// and morph bytes (a hit is the value a recomputation gives); blocks asking
 /// at the same time wait for the first instead of laying it out again.
-static PLANS: std::sync::Mutex<Option<std::collections::HashMap<Vec<u8>, std::sync::Arc<std::sync::OnceLock<Plan>>>>> =
+static PLANS: std::sync::Mutex<Option<std::collections::HashMap<Vec<u8>, std::sync::Arc<std::sync::OnceLock<std::sync::Arc<Prepared>>>>>> =
     std::sync::Mutex::new(None);
 pub(super) fn clear_probe_cache() {
     *PLANS.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
-fn shared_plan(layout: &Layout, morph: &Morph, make: impl FnOnce() -> Plan) -> Plan {
+fn shared_plan(layout: &Layout, morph: &Morph, make: impl FnOnce() -> Plan) -> std::sync::Arc<Prepared> {
     if !super::super::probe_cache::enabled() {
-        return make();
+        return std::sync::Arc::new(make().into());
     }
     let (Ok(mut key), Ok(lanes)) = (serde_json::to_vec(layout),
-        serde_json::to_vec(&layout.structure.as_ref().map(|s| &s.gate_village_lanes))) else { return make() };
+        serde_json::to_vec(&layout.structure.as_ref().map(|s| &s.gate_village_lanes))) else { return std::sync::Arc::new(make().into()) };
     key.push(0);
     key.extend(lanes);
     key.push(0);
     key.extend(morph.value.to_string().bytes());
     let cell = PLANS.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(Default::default)
         .entry(key).or_default().clone();
-    cell.get_or_init(|| super::super::par::holding_cell(make)).clone()
+    cell.get_or_init(|| super::super::par::holding_cell(|| std::sync::Arc::new(make().into()))).clone()
 }
 
 /// Clipped or inaccessible pitches do not house the population. Compare a
@@ -98,12 +116,13 @@ fn admitted_form(frame:&Frame,morph:&Morph,layout:&Layout)->(Vec<Tile>,Vec<Shape
     if wanted<=0.0{return best;}
     let index=FrontageIndex::new(layout);let reached=regional_streets(layout);
     let score=|plan:&(Vec<Tile>,Vec<Shape>)| {
+        let prepared=Prepared::from(plan.clone());
         let mut part=Partition{key:layout.key.clone(),config:Some(ParcelConfig::default()),programme:None,
             parcels:vec![],warnings:vec![],diagnostics:None,enclosure:None};
         for (bi,b) in layout.blocks.iter().enumerate().filter(|(_,b)|b.kind=="block") {
             let native=|p:&Shape|contacts::street_contacts(p,layout,&index).into_iter().filter(|f|reached[f.street]).collect::<Vec<_>>();
             let mut fronts=native(&b.shape);
-            let mut cells=assemble_with_contacts(&b.shape,bi,b.axis,&mut fronts,morph,plan.clone(),native);
+            let mut cells=assemble_with_contacts(&b.shape,bi,b.axis,&mut fronts,morph,&prepared,native);
             let Some(c)=super::super::culture::contextual_mapping(&layout.culture,&pr.context.period,&b.zone,morph.text("plotOp"),"domestic") else{continue;};
             let fallback=compact_fallback(&c.architecture_pack,&pr.context.period,&c.admissibility);
             let mut admission=c.admissibility;admission.shared_access=true;
@@ -813,6 +832,42 @@ fn rows(frame: &Frame, morph: &Morph, layout: &Layout) -> (Vec<Tile>, Vec<Shape>
     (tiles, paths)
 }
 
+/// Boxes binned on a coarse grid: the boxes that may meet a query box, in
+/// their original order (the exact box test stays with the caller).
+struct BoxGrid { cell: f64, bins: std::collections::HashMap<(i64, i64), Vec<usize>>, all: Vec<usize>, count: usize }
+impl BoxGrid {
+    const CELL: f64 = 25.0;
+    fn new(boxes: impl Iterator<Item = Bx>) -> Self {
+        let mut grid = BoxGrid { cell: Self::CELL, bins: Default::default(), all: vec![], count: 0 };
+        for (k, b) in boxes.enumerate() {
+            grid.count = k + 1;
+            let (i0, j0, i1, j1) = grid.span(b, 0.0);
+            // A box no finite grid can hold is checked on every query.
+            if !(b.0.is_finite() && b.1.is_finite() && b.2.is_finite() && b.3.is_finite()) || i1.saturating_sub(i0).saturating_add(1).saturating_mul(j1.saturating_sub(j0).saturating_add(1)) > 4096 {
+                grid.all.push(k);
+                continue;
+            }
+            for i in i0..=i1 { for j in j0..=j1 { grid.bins.entry((i, j)).or_default().push(k); } }
+        }
+        grid
+    }
+    fn span(&self, b: Bx, pad: f64) -> (i64, i64, i64, i64) {
+        let f = |v: f64| (v / self.cell).floor() as i64;
+        (f(b.0 - pad), f(b.1 - pad), f(b.2 + pad), f(b.3 + pad))
+    }
+    fn near(&self, b: Bx, pad: f64) -> Vec<usize> {
+        let (i0, j0, i1, j1) = self.span(b, pad);
+        if !(b.0.is_finite() && b.1.is_finite() && b.2.is_finite() && b.3.is_finite())
+            || i1.saturating_sub(i0).saturating_add(1).saturating_mul(j1.saturating_sub(j0).saturating_add(1)) > 1 << 16 {
+            return (0..self.count).collect();
+        }
+        let mut out = self.all.clone();
+        for i in i0..=i1 { for j in j0..=j1 { if let Some(v) = self.bins.get(&(i, j)) { out.extend(v); } } }
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+}
 fn boxes_overlap(a: (f64, f64, f64, f64), b: (f64, f64, f64, f64)) -> bool {
     a.0 <= b.2 && b.0 <= a.2 && a.1 <= b.3 && b.1 <= a.3
 }
@@ -999,12 +1054,12 @@ fn assemble(
     morph: &Morph,
     (tiles, paths): (Vec<Tile>, Vec<Shape>),
 ) -> Vec<Parcel> {
-    assemble_with_contacts(shape, block, axis, fronts, morph, (tiles, paths), |_| vec![])
+    assemble_with_contacts(shape, block, axis, fronts, morph, &(tiles, paths).into(), |_| vec![])
 }
 
 fn assemble_with_contacts(
     shape: &Shape, block: usize, axis: Point, fronts: &mut Vec<Front>, morph: &Morph,
-    (tiles, paths): (Vec<Tile>, Vec<Shape>),
+    plan: &Prepared,
     native_contacts: impl Fn(&Shape) -> Vec<Front>,
 ) -> Vec<Parcel> {
     let b = bbox(shape);
@@ -1016,8 +1071,8 @@ fn assemble_with_contacts(
     };
     // Preserve which side of each original ring/row is a front, but do not
     // attach access to its unclipped global geometry or its nearest street.
-    let eligible: Vec<Front> = paths.iter().filter(|p| boxes_overlap(bbox(p), b))
-        .flat_map(|p| {
+    let eligible: Vec<Front> = plan.paths.iter().zip(&plan.path_boxes).filter(|(_, pb)| boxes_overlap(**pb, b))
+        .flat_map(|(p, _)| {
             let p=super::super::geometry::normalized(p.clone());
             // A unioned lane grid has holes: their banks serve the homes
             // inside just as its outer banks serve the homes outside.
@@ -1028,9 +1083,9 @@ fn assemble_with_contacts(
                 }).collect::<Vec<_>>()
             }).collect::<Vec<_>>()
         }).collect();
-    let (paths,rejected):(Vec<Shape>,Vec<Shape>) = union(&paths).iter()
-        .filter(|p| boxes_overlap(bbox(p), b))
-        .flat_map(|p| intersection(p, shape)).partition(|p| area(p)>0.5);
+    let (paths,rejected):(Vec<Shape>,Vec<Shape>) = plan.unioned.iter()
+        .filter(|(_, pb)| boxes_overlap(*pb, b))
+        .flat_map(|(p, _)| intersection(p, shape)).partition(|p| area(p)>0.5);
     // A lane meeting a road slantwise, or against the corner of a notch cut
     // for the road, keeps less than its full width as contact: a gate needs
     // only a passage's width (2 m), not the lane's.
@@ -1045,21 +1100,24 @@ fn assemble_with_contacts(
         _ => "garden",
     };
     let mut cells: Vec<(Shape, Hold, f64)> = vec![];
-    for tile in tiles {
-        if !boxes_overlap(bbox(&tile.shape), b) {
+    let clipped_boxes: Vec<Bx> = paths.iter().map(bbox).collect();
+    // The block's vertices by abscissa: a tile box holds one only in its x span.
+    let mut by_x: Vec<Point> = std::iter::once(&shape.outer).chain(shape.holes.iter()).flatten().copied().collect();
+    by_x.sort_by(|a, b| a.x.total_cmp(&b.x));
+    for (tile, &tb) in plan.tiles.iter().zip(&plan.tile_boxes) {
+        if !boxes_overlap(tb, b) {
             continue;
         }
         // A tile wholly inside the block needs no clip (most of them).
-        let tb = bbox(&tile.shape);
         let inside = tile
             .shape
             .outer
             .iter()
             .all(|&v| super::super::geometry::contains(shape, v))
-            && !std::iter::once(&shape.outer)
-                .chain(shape.holes.iter())
-                .flatten()
-                .any(|v| v.x > tb.0 && v.x < tb.2 && v.y > tb.1 && v.y < tb.3)
+            && !by_x[by_x.partition_point(|v| v.x <= tb.0)..]
+                .iter()
+                .take_while(|v| v.x < tb.2)
+                .any(|v| v.y > tb.1 && v.y < tb.3)
             // A narrow access notch (or hole) can cross a tile while every
             // endpoint lies outside its bbox. Test the whole tile boundary,
             // with the existing interval predicate, before skipping the clip.
@@ -1074,11 +1132,10 @@ fn assemble_with_contacts(
         };
         for piece in clipped {
             let mut pieces = vec![piece];
-            for p in paths.iter().filter(|_| tile.cut) {
+            for (p, &pb) in paths.iter().zip(&clipped_boxes).filter(|_| tile.cut) {
                 if pieces.is_empty() {
                     break;
                 }
-                let pb = bbox(p);
                 pieces = pieces
                     .iter()
                     .flat_map(|q| {
@@ -1126,6 +1183,7 @@ fn assemble_with_contacts(
     }).collect();
     fronts.extend(link_fronts);
     let mut out = Vec::with_capacity(cells.len() + paths.len() + links.len());
+    let front_grid = BoxGrid::new(fronts.iter().map(|f| (f.a.x.min(f.b.x), f.a.y.min(f.b.y), f.a.x.max(f.b.x), f.a.y.max(f.b.y))));
     for (cell, hold, nominal) in cells {
         for piece in super::organic::cut_out(cell, &raw)
             .into_iter()
@@ -1145,15 +1203,15 @@ fn assemble_with_contacts(
                 _ => ("garden", "camp-open"),
             };
             let pb = bbox(&piece);
-            let near: Vec<Front> = fronts
-                .iter()
+            let near: Vec<Front> = front_grid.near(pb, 0.1)
+                .into_iter()
+                .map(|k| fronts[k])
                 .filter(|f| {
                     f.a.x.max(f.b.x) >= pb.0 - 0.1
                         && f.a.x.min(f.b.x) <= pb.2 + 0.1
                         && f.a.y.max(f.b.y) >= pb.1 - 0.1
                         && f.a.y.min(f.b.y) <= pb.3 + 0.1
                 })
-                .copied()
                 .collect();
             let mut p = parcel(piece, block, axis, &near, kind);
             p.use_kind = kind.into();

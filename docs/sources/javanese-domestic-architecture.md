@@ -27,5 +27,3 @@ B06 Joglo, B14 Kampung and B15 Limasan share the tradition ID `javanese`. S05 re
 The surveys are late and do not directly prove eighth–fifteenth-century states. B14/B15 have unknown exact dates and era; `inspired_only=true` reserves them for inspired/fantasy modes independently of `late_only`. Precise periods are not invented. Confidence `stylized`, chronology `undated_tradition` and artistic-parameter notes accompany each recipe.
 
 **Production weights:** B14=50 and B15=25, from the mapper's P0/P1 artistic priorities; B06 retains weight 25. These determine the procedural draw, not ethnographic frequency. No automatic Java city filter is enabled by this DATA extension alone.
-
-[Original French version](javanese-domestic-architecture_FR.md).

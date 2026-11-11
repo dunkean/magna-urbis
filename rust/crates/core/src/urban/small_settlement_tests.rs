@@ -878,8 +878,97 @@ fn a_town_and_village_use_the_buildable_terraces_of_a_volcano_flank() {
         eprintln!("volcano {population}, grade {grade}: {buildings} buildings, {domestic} domestic sites; {:?}", layouts[0].warnings);
         assert!(buildings >= minimum, "{population} on grade {grade}: {buildings} buildings");
         assert!(domestic >= minimum / 2, "{population} on grade {grade}: {domestic} domestic sites");
-        assert!(layouts[0].warnings.iter().any(|w| w.contains("Site de pente")));
+        // The 2k town fills on its normal build and never enters the ladder.
+        if population == 10_000 {
+            assert!(layouts[0].warnings.iter().any(|w| w == super::slopes::TERRACED || w == super::slopes::FRONTAGE));
+        }
         assert!(layouts[0].streets.iter().any(|s| matches!(s.role.as_str(), "street" | "lane" | "stairs")));
         assert!(layouts[0].structure.as_ref().is_some_and(|s| s.metrics.allocated_area >= 10_000.0));
+    }
+}
+
+/// A 10k river canyon and a volcanic flank retain their normal core and use
+/// contour terraces when the actual household allocation falls short.
+#[test]
+fn slope_ladder_houses_10k_canyon_and_volcano_towns() {
+    let (n, width) = (256, 6000.0);
+    for (canyon, culture) in [(true, "byzantine-greek"), (false, "javanese-courts")] {
+        let mut water = vec![0_u8; n * n];
+        let mut level = vec![0.0_f32; n * n];
+        let height: Vec<f32> = (0..n * n).map(|i| {
+            let x = (i % n) as f64 * width / n as f64;
+            let y = (i / n) as f64 * width / n as f64;
+            if canyon {
+                if (x-3000.0).abs()<24.0 {water[i]=3;level[i]=12.0;}
+                (10.0+0.75*((x-3000.0).abs()-65.0).max(0.0)) as f32
+            } else {
+                (10.0+0.55*(2800.0-(x-3000.0).hypot(y-3000.0)).max(0.0)) as f32
+            }
+        }).collect();
+        let surface = Surface {geometry:None,width,n,height:&height,water:&water,interpolation:Default::default()};
+        let center = if canyon {Point{x:3080.0,y:3000.0}} else {Point{x:4200.0,y:3000.0}};
+        let site = Site {key:"slope-town".into(),name:String::new(),population:10_000,culture:culture.into(),center,radius:735.0};
+        let mut cfg: LayoutConfig = serde_json::from_str(include_str!("fixtures/small-layout-config.json")).unwrap();
+        cfg.street_frontage=true;cfg.align_enclosed_grid=true;cfg.hide_unused_quarters=true;
+        cfg.organic_branch_variation=0.5;cfg.ribbon_width_variation=0.5;
+        let path = if canyon {
+            vec![Point{x:3100.0,y:2300.0},Point{x:3160.0,y:3700.0},Point{x:3220.0,y:2300.0},Point{x:3280.0,y:3700.0}]
+        } else {
+            vec![Point{x:4300.0,y:2300.0},Point{x:4240.0,y:3700.0},Point{x:4180.0,y:2300.0},Point{x:4120.0,y:3700.0}]
+        };
+        let roads=vec![Street {widths:vec![4.0;path.len()],path,rank:2,role:"regional".into()}];
+        let layouts=generate_quarters("slope-ladder",&[site],&cfg,surface,&roads).unwrap();
+        let parts=generate_parcels("slope-ladder",&layouts,&ParcelConfig::default()).unwrap();
+        let parts=programme::reallocate(&layouts,&parts).unwrap();
+        let pr=parts[0].programme.as_ref().unwrap();
+        let (wanted,housed)=pr.demands.iter().filter(|d|d.unit=="domesticUnits")
+            .fold((0.0,0.0),|(w,h),d|(w+d.requested,h+d.parcel_capacity.min(d.requested)));
+        let requests=building_sites::requests("slope-ladder",&layouts,&parts,surface,&level,None).unwrap();
+        let buildings:usize=requests.iter().filter(|r|r["function"]!="open_space"&&r["programme"]["deficit"].is_null())
+            .map(|r|r["preview"].as_array().map_or(0,Vec::len)).sum();
+        eprintln!("{culture}: {buildings} buildings, {housed:.0}/{wanted:.0} households; {:?}",layouts[0].warnings);
+        // Requirement: the town is filled, or it says it is full.
+        let exhausted=layouts[0].warnings.iter().any(|w|w==super::slopes::EXHAUSTED);
+        assert!(housed>=wanted*0.95||exhausted,"{culture}: {housed}/{wanted} households, no shortfall warning");
+        assert!(housed>=wanted*0.5,"{culture}: {housed}/{wanted} households");
+        assert!(buildings>=250,"{culture}: only {buildings} buildings");
+        // The map road is never copied whole into the town: the town keeps
+        // only the pieces it uses, none beyond the frontage reach.
+        assert!(!layouts[0].streets.iter().any(|s|s.path==roads[0].path));
+        assert!(layouts[0].streets.iter().filter(|s|s.role=="regional").flat_map(|s|&s.path)
+            .all(|p|(p.x-center.x).hypot(p.y-center.y)<=735.0*1.8+50.0));
+        // At least some actual admitted buildings occupy the flank above the
+        // narrow river floor / the starting contour, rather than all at its foot.
+        assert!(parts[0].parcels.iter().any(|p|pr.allocations.iter().any(|a|a.parcel_id==p.id&&a.households>0.0)
+            && surface.height_at(g::interior_point(&p.shape)) > if canyon {80.0} else {900.0}));
+    }
+}
+
+/// Flat towns never enter the slope ladder: their layout is the normal one,
+/// byte for byte (500 and 10k, with a hill just outside the 10k town's disc).
+#[test]
+fn flat_towns_keep_the_normal_layout() {
+    let (n, width) = (256, 6000.0);
+    let water = vec![0_u8; n * n];
+    let height: Vec<f32> = (0..n * n).map(|i| {
+        let x = (i % n) as f64 * width / n as f64;
+        let y = (i / n) as f64 * width / n as f64;
+        // A steep knoll 1.2 radii from the 10k centre, at the old square survey's corner.
+        (20.0 + 0.002 * x + 0.8 * (180.0 - (x - 3620.0).hypot(y - 3620.0)).max(0.0)) as f32
+    }).collect();
+    let surface = Surface { geometry: None, width, n, height: &height, water: &water, interpolation: Default::default() };
+    let mut cfg: LayoutConfig = serde_json::from_str(include_str!("fixtures/small-layout-config.json")).unwrap();
+    cfg.street_frontage = true;
+    for (population, radius) in [(500, 330.0), (10_000, 735.0)] {
+        let site = Site { key: "flat".into(), name: String::new(), population, culture: "european-organic".into(),
+            center: Point { x: 3000.0, y: 3000.0 }, radius };
+        let layouts = generate_quarters("flat-town", std::slice::from_ref(&site), &cfg, surface, &[]).unwrap();
+        let (effective, kind) = kinds::effective(&site, &cfg, &[]);
+        assert!(!super::slopes::eligible(&site, &effective, surface, kind), "{population}: flat site surveyed as a slope");
+        for w in [super::slopes::DENSIFIED, super::slopes::TERRACED, super::slopes::FRONTAGE, super::slopes::EXHAUSTED] {
+            assert!(!layouts[0].warnings.iter().any(|x| x == w), "{population}: {w}");
+        }
+        let again = generate_quarters("flat-town", &[site], &cfg, surface, &[]).unwrap();
+        assert_eq!(serde_json::to_vec(&layouts).unwrap(), serde_json::to_vec(&again).unwrap());
     }
 }

@@ -9,6 +9,10 @@ import { localeMessages } from './localeMessages';
 export type RuntimeLanguage = Language;
 
 const entries: readonly (readonly [string, string])[] = [
+  ["Ville de pente : des parcelles plus petites et des maisons plus hautes, dans les limites de la culture, ont été essayées avant l’extension sur les versants.", "Slope town: smaller plots and taller houses within the culture's limits were tried before extending onto the slopes."],
+  ["Ville de pente : des terrasses suivant les courbes de niveau, sur fondations en gradins, étendent l’habitat sur les versants que la ville avait laissés de côté.", "Slope town: contour terraces with stepped foundations extend housing onto the flanks the town had left aside."],
+  ["Ville de pente : des parcelles en terrasses bordent les deux côtés des routes existantes sur les versants.", "Slope town: terraced plots line both sides of the existing roads on the flanks."],
+  ["Déficit de logements en pente : les terrasses utilisables et la densité maximale de la culture ne permettent pas de loger tous les ménages demandés.", "Slope town housing shortfall: usable terraces and the culture's maximum density cannot accommodate all requested households."],
   ['Stockage des modèles neuronaux indisponible ; les poids devront être téléchargés à nouveau.', 'Neural model storage unavailable; weights will need to be downloaded again.'],
   ['Chargement du moteur Rust/WASM…','Loading the Rust/WASM engine…'],
   ['Chargement du module de génération du terrain…','Loading the terrain generation module…'],

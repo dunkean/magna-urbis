@@ -397,6 +397,11 @@ pub fn serve(
     warmup: bool,
 ) -> Result<(), String> {
     let listener = TcpListener::bind(address).map_err(|e| format!("{address} : {e}"))?;
+    // Desktop launches with port zero; report the actual listener without a port race.
+    println!(
+        "{}",
+        serde_json::json!({ "ready": true, "port": listener.local_addr().map_err(|e| e.to_string())?.port() })
+    );
     let status = Arc::new(Mutex::new(Status {
         state: "loading",
         message: "Chargement des poids…".into(),

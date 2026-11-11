@@ -21,4 +21,4 @@ Godot --headless --audio-driver Dummy --path viewer-local --script tests/surface
 Godot --headless --audio-driver Dummy --path viewer-local --script tests/pbr_real_cache_parity.gd -- <manifest> <frozen-material_library.gd> <new-owned-cache-dir> <report.json>
 ```
 
-The first real comparison had a test-only non-static hash call error; its negative log is preserved. After correcting the probe call, all 41 real comparisons pass with empty stderr. The smaller 18 checks cover exact bytes, key changes, payload/fallback corruption, atomic replacement, byte/file budgets and writer locking. No GPU was used. See [the compact CPU evidence](evidence/pbr-prepared-cache-cpu.json).
+The first real comparison had a test-only non-static hash call error; its negative log is preserved. After correcting the probe call, all 41 real comparisons pass with empty stderr. The smaller 18 checks cover exact bytes, key changes, payload/fallback corruption, atomic replacement, byte/file budgets and writer locking. No GPU was used. See the compact CPU evidence (historical validation, archived locally).

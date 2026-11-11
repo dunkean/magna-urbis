@@ -1585,8 +1585,7 @@ pub fn generate_quarters(
         // user's configuration (`kinds::finish`).
         let original = config;
         let (effective, kind) = kinds::effective(site, original, roads);
-        let slope_config = slopes::adapt(site, &effective, surface);
-        let config = slope_config.as_ref().unwrap_or(&effective);
+        let config = &effective;
         let culture = if config.culture == "site" {
             &site.culture
         } else {
@@ -1599,6 +1598,10 @@ pub fn generate_quarters(
         let (site, surface) = stilt
             .as_ref()
             .map_or((site, surface), |ground| (&ground.site, ground.surface(surface)));
+        let key_seed = format!("{seed}\u{1}settlement:{}", site.key);
+        // Resolve the tissue for each attempt: the capacity ladder starts with
+        // the culture's normal streets and only later tries contour terraces.
+        let lay = |config: &LayoutConfig| -> Result<Layout, String> {
         let morph = resolve(
             culture,
             &config.preset,
@@ -1613,10 +1616,8 @@ pub fn generate_quarters(
             "quarters",
         )?;
         let morph = with_tissue(morph, &config.tissue);
-        let key_seed = format!("{seed}\u{1}settlement:{}", site.key);
         // One full quarter pass at the given configuration (its slope
         // relaxation included); `lay(config)` is the strict pass.
-        let lay = |config: &LayoutConfig| -> Result<Layout, String> {
         // edits hook (urban/edits.rs): structural quarter edits splice a
         // variant plan into this one; without them this is plan then finish.
         let plan_at = |config: &LayoutConfig, site: &Site| -> Result<Layout, String> {
@@ -1716,7 +1717,34 @@ pub fn generate_quarters(
         // town on a mountain flank) is laid out again with the slope gates
         // relaxed step by step, until its houses may use half of its land or
         // the gates are open. The strict pass alone runs on easy ground.
-        if config.programme.slope_relax == 0.0 && config.programme.intent == "settlement" && site.population > 0 {
+        // A slope town whose normal build falls short because of its slopes
+        // runs the household ladder (`slopes`); every other place keeps the
+        // normal layout and the flank ladder below, unchanged.
+        let mut sloped = false;
+        if slopes::eligible(site, config, surface, kind) && slopes::short(&layout) {
+            // After a ward is added to a finished layout: access and programme
+            // for each trial; the rest of the `finish` tail once, on the
+            // adopted layout (`last`). `trim::finish` is not rerun: its
+            // door-based pass releases the new fringe wards to the fields.
+            let retail = |layout: &mut Layout, context: &ProgrammeContext, last: bool| -> Result<(), String> {
+                if !last {
+                    access::summarize(layout, config);
+                    return programme::prepare(layout, site.population, context, surface);
+                }
+                fortification::sync_gates(layout, surface);
+                trim::footprint(layout);
+                if springs::reserve(layout, site, physical_surface, config) {
+                    programme::prepare(layout, site.population, context, surface)?;
+                }
+                Ok(())
+            };
+            let others: Vec<Point> = sites[..valid].iter().filter(|s| s.key != site.key).map(|s| s.center).collect();
+            layout = match slopes::complete(seed, site, config, surface, roads, &others, layout, &lay, retail) {
+                Ok(done) => { sloped = true; done }
+                Err(normal) => normal,
+            };
+        }
+        if !sloped && config.programme.slope_relax == 0.0 && config.programme.intent == "settlement" && site.population > 0 {
             let mut share = housable_share(&layout);
             let mut chosen = 0.0;
             for relax in profiles::SLOPE_RELAX_STEPS {
@@ -1737,9 +1765,6 @@ pub fn generate_quarters(
                     chosen * 100.0
                 ));
             }
-        }
-        if slope_config.is_some() {
-            layout.warnings.push("Site de pente : rues suivant les courbes de niveau, escaliers et fondations en gradins ; la capacité bâtie reste limitée au terrain utilisable.".into());
         }
         Ok(layout)
     });

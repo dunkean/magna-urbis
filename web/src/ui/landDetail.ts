@@ -45,18 +45,27 @@ export function landDetail(landuse: LandUseLayer, maxN = 3072, minCell = 1): Lan
   const side = Math.max(maxX - minX, maxY - minY), cell = Math.max(minCell, side / (maxN - 4)), n = Math.min(maxN, Math.ceil(side / cell) + 4);
   const x = (Math.floor(minX / cell) - 2) * cell, y = (Math.floor(minY / cell) - 2) * cell;
   const owner = new Uint32Array(n * n), edge = new Float32Array(n * n).fill(LAND_EDGE_RANGE), crop: number[] = [0], angle: number[] = [0];
-  // Exact distance to a ring: walk each segment and refresh the texels within reach of the walker.
-  const reach = Math.ceil(LAND_EDGE_RANGE / cell);
+  // Exact distance to a ring: per segment, refresh only the texels of its capsule of radius LAND_EDGE_RANGE (only
+  // d < LAND_EDGE_RANGE can lower `edge`). Row by row, the texel centres within R of the segment lie within R in x of
+  // the part of the segment whose y is within R of the row: a superset of the capsule, so the result is exact.
+  const R = LAND_EDGE_RANGE;
   const stamp = (ring: Polygon): void => {
     for (let k = 0; k < ring.length; k++) {
       const a = ring[k], b = ring[(k + 1) % ring.length], dx = b.x - a.x, dy = b.y - a.y, length2 = dx * dx + dy * dy;
-      const steps = Math.max(1, Math.ceil(Math.sqrt(length2) / (cell * reach)));
-      for (let s = 0; s <= steps; s++) {
-        const ci = Math.floor((a.x + dx * s / steps - x) / cell), cj = Math.floor((a.y + dy * s / steps - y) / cell);
-        for (let j = Math.max(0, cj - 2 * reach); j <= Math.min(n - 1, cj + 2 * reach); j++) for (let i = Math.max(0, ci - 2 * reach); i <= Math.min(n - 1, ci + 2 * reach); i++) {
-          const px = x + (i + .5) * cell - a.x, py = y + (j + .5) * cell - a.y, t = length2 ? Math.max(0, Math.min(1, (px * dx + py * dy) / length2)) : 0;
-          const d = Math.hypot(px - t * dx, py - t * dy), at = j * n + i;
-          if (d < edge[at]) edge[at] = d;
+      const j0 = Math.max(0, Math.floor((Math.min(a.y, b.y) - R - y) / cell - .5)), j1 = Math.min(n - 1, Math.ceil((Math.max(a.y, b.y) + R - y) / cell - .5));
+      for (let j = j0; j <= j1; j++) {
+        const yc = y + (j + .5) * cell;
+        // Segment parameters with |a.y + t dy - yc| <= R.
+        let t0 = 0, t1 = 1;
+        if (dy !== 0) { const u = (yc - R - a.y) / dy, v = (yc + R - a.y) / dy; t0 = Math.max(0, Math.min(u, v)); t1 = Math.min(1, Math.max(u, v)); if (t0 > t1) continue; }
+        else if (Math.abs(a.y - yc) > R) continue;
+        const xa = a.x + t0 * dx, xb = a.x + t1 * dx;
+        const i0 = Math.max(0, Math.floor((Math.min(xa, xb) - R - x) / cell - .5)), i1 = Math.min(n - 1, Math.ceil((Math.max(xa, xb) + R - x) / cell - .5));
+        const py = yc - a.y, row = j * n;
+        for (let i = i0; i <= i1; i++) {
+          const px = x + (i + .5) * cell - a.x, t = length2 ? Math.max(0, Math.min(1, (px * dx + py * dy) / length2)) : 0;
+          const qx = px - t * dx, qy = py - t * dy, d2 = qx * qx + qy * qy, at = row + i, e = edge[at];
+          if (d2 < e * e) edge[at] = Math.sqrt(d2);
         }
       }
     }

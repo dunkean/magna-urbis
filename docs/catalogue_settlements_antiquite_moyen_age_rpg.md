@@ -6,8 +6,6 @@
 >
 > **Principle:** favor **morphological diversity useful on a map** over a purely lexical inventory. Descriptions are deliberately brief.
 
-> English translation of the [French original](catalogue_settlements_antiquite_moyen_age_rpg_FR.md).
-
 ## How to read and use this catalog
 
 The three inventories answer different questions:

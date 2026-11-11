@@ -1,6 +1,6 @@
 # Next artistic step: close vegetation
 
-This page preserves the initial audit, before import. Work executed since is documented separately: [GPU grasses](evidence/vegetation-grass-v13/README.md), [tree preparation](evidence/vegetation-tree-v13/README.md), [experimental consumer](TREE_ASSET_EXPERIMENT.md) and [independent optical audit](TREE_OPTICAL_INDEPENDENT_REVIEW.md).
+This page preserves the initial audit, before import. Work executed since is documented separately: GPU grasses (historical validation, archived locally), tree preparation (historical validation, archived locally), [experimental consumer](TREE_ASSET_EXPERIMENT.md) and independent optical audit (historical validation, archived locally).
 
 Audit of 24 October 2026 during the Opus V12 review. Proposal only: no import, geometry download, runtime code, GPU test or ROOT change. V12 remains frozen. Figures below come from metadata and small official glTF documents consulted; they do not measure rendering.
 
@@ -40,5 +40,3 @@ Adapt the vegetation shader for albedo/normal/roughness and tested/hashed alpha,
 - QoS: strict 20 s navigation, measured memory, loaded bytes, triangles/draws and upload. [MultiMeshes do not cull individually](https://docs.godotengine.org/en/stable/tutorials/performance/using_multimesh.html); large batches must remain bounded. That page itself notes an incomplete 4.7 update: verify on the pinned engine.
 
 Main risks: foliage overdraw, multiple surfaces, preparation cost and optical parity in oblique views. None of these new assets was imported or rendered here; no photorealism or FPS promise. Recommended first delivery: real clumps, then a prepared and qualified tree, without physical-data changes.
-
-[Original French version](VEGETATION_ASSET_NEXT_FR.md).

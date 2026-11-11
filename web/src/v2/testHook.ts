@@ -34,6 +34,8 @@ export interface V2TestBindings {
   getViewer(): { getView(): View; setView(view: View): void };
   get3d(): { getCamera(): unknown; setCamera(camera: any): void } | undefined;
   prepareCapture?(): void;
+  /** Rerolls one town's composition seed and rebuilds that town alone (the "Build town" path). */
+  rerollTown?(key: string): void;
 }
 export interface V2TestRequest {
   decor: string; culture: string; population: number; seed: string;
@@ -143,6 +145,12 @@ export function mountV2TestHook(bindings: V2TestBindings): void {
       request = req;
       await bindings.load({ settings, mods: [] });
       return { mapSize: width, options: urban.options, edgeMargin, ...(spec.position ? { position: spec.position } : {}) };
+    },
+    /** Town edit: new composition seed for the first town, rebuilt alone; resolves when the page is idle again. */
+    async rerollTown(): Promise<void> {
+      const { place } = town(); if (!place || !bindings.rerollTown) throw new Error('No town');
+      bindings.rerollTown(place.key);
+      while (bindings.isBusy()) await new Promise(resolve => setTimeout(resolve, 20));
     },
     async run(): Promise<void> {
       if (!request) throw new Error('prepare() first');

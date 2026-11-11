@@ -108,6 +108,12 @@ pub struct Input {
     pub water: Vec<u8>,
     #[serde(default)]
     pub cost: Vec<f32>,
+    /// Without a `cost` plane: travel cost is computed here from this cell over the `pass` plane
+    /// (0 blocked, 1 land, 2 brook, 3 bridged), as `site::travel_cost`.
+    #[serde(default)]
+    pub travel_from: Option<usize>,
+    #[serde(skip)]
+    pub pass: Vec<u8>,
     #[serde(default)]
     pub hab: Vec<f32>,
     #[serde(default)]

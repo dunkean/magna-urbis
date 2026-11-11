@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import catalogue from '../../rust/crates/core/src/urban/catalogue.json';
 import pack from '../src/gen/names/data/names-pack.json';
+import runtimePack from '../src/gen/names/data/names-pack-runtime.json';
 import { CULTURES } from '../src/gen/urban/culture';
 import { Rng } from '../src/gen/core/rng';
-import { CULTURE_PROFILES, resolveToponymProfile } from '../src/gen/names/profiles';
+import { CULTURE_PROFILES, PROFILE_COUNTRIES, resolveToponymProfile } from '../src/gen/names/profiles';
 import { frenchDe, frenchRoad, formatToponym } from '../src/gen/names/syntax';
 import { generateToponym, readGenerator, type ToponymKind } from '../src/gen/names/toponyms';
 
@@ -29,6 +30,12 @@ describe('toponym profiles', () => {
     const after = Object.fromEntries([...keys].reverse().map(k => [k, make(k, 'town')]));
     expect(after).toEqual(before);
     for (const kind of ['town', 'river', 'lake', 'forest', 'hill', 'region', 'farm'] as const) expect(make('x', kind)).toBeTruthy();
+  });
+  it('ships exactly the reachable countries of the full pack (npx tsx scripts/names_runtime_pack.ts)', () => {
+    const { countries, ...rest } = pack, { countries: shipped, ...shippedRest } = runtimePack;
+    expect(shippedRest).toEqual(rest);
+    expect(Object.keys(shipped).sort()).toEqual([...PROFILE_COUNTRIES]);
+    for (const id of PROFILE_COUNTRIES) expect((shipped as Record<string, unknown>)[id], id).toEqual((countries as Record<string, unknown>)[id]);
   });
   it('uses non-empty corpus pools for distinct regions', () => {
     const countries: Record<string, { settlements: string[] }> = pack.countries;

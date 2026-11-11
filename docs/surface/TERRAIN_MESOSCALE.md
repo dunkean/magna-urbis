@@ -88,5 +88,3 @@ At medium zoom, this iteration's overhead is 0.46–1.56 ms in these scenes, app
 Elevation reading is timed separately, with vertex cache cleared before each of five rays. In perspective at 1.8 km: median 1.98 ms (2.80 ms max), versus 1.77 ms (2.59 ms max) in baseline. At 160 m, cold queries remain more costly: median 7.77 ms and 14.52 ms max, versus 5.91 / 12.26 ms. Hierarchical bounds can be reused. These figures concern this hardware and scenes; they do not predict cost at every resolution or performance on another machine.
 
 GPU triangle readback differs from picking by less than 2 mm over 24 top/perspective checks. HDR fields differ by less than 4 mm (probe half-precision storage). Round-trip zoom reproduces complete images exactly, byte for byte, in three sequences; measured sub-pixel movement remains below 0.012 at the 99th percentile of RGB channel changes.
-
-[Original French version](TERRAIN_MESOSCALE_FR.md).

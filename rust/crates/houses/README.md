@@ -1,7 +1,5 @@
 # House engine and bench
 
-[Français](README_FR.md)
-
 The Rust engine produces houses and domestic compounds from the project's architectural catalogue. It is independent of terrain, browser and rendering. The web bench uses a temporary SVG adapter; its model is not imposed on the engine.
 
 The catalogue explicitly maps recipes to the 32 packs and to entries in [architectural styles](../../../docs/styles_architecturaux_mondiaux_city_mapper.md) and the [settlement catalogue](../../../docs/catalogue_settlements_antiquite_moyen_age_rpg.md). `data/source-inventory.json` retains their texts and fingerprints; `data/recipes.json` comes from the `../../scripts/house-recipes.py` mapping, with no runtime keyword inference. Recipe counts and coverage statuses describe this catalogue; they do not prove generation for every configuration. Physical constraints or engine budgets can still reject a recipe; the bench displays the error.

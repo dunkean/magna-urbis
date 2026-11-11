@@ -4,6 +4,8 @@
   <img src="docs/logo_magna_urbis.png" alt="Magna Urbis — city map and compass logo" width="360">
 </p>
 
+See the [documentation index](docs/README.md) and [contribution guide](CONTRIBUTING.md) for project structure, setup and collaboration.
+
 DEMO: https://dunkean.github.io/magna-urbis/
 
 PREVIEW Magna Urbis V2 (gallery of every culture, village and town, 2D and 3D): https://dunkean.github.io/magna-urbis/gallery/v2/
@@ -20,7 +22,7 @@ There are two implementations: **TypeScript**, currently the most complete, and 
 
 **The Rust version is actively being implemented.** Its dedicated benches already expose terrain, erosion, hydrology, settlement placement, regional roads, streets, blocks and parcels. A separate Rust house generator is also under development; assembling these stages into the complete application is ongoing.
 
-Read the [technical and scientific overview](docs/TECHNICAL_AND_SCIENTIFIC_OVERVIEW.md) for the generation pipeline, InfiniteDiffusion / Terrain Diffusion, erosion, rivers and lakes, urban plans, and the Rust / WASM / neural-network stack. It includes research citations, source-code links and the current implementation boundaries. A [French version](docs/TECHNICAL_AND_SCIENTIFIC_OVERVIEW_FR.md) is also available.
+Read the [technical and scientific overview](docs/TECHNICAL_AND_SCIENTIFIC_OVERVIEW.md) for the generation pipeline, research sources, implementation boundaries and Rust/WASM stack.
 
 The [illustrated methods atlas](docs/scientific/index.html) is available in English (default) and [French](docs/scientific/fr.html). It follows the full process from terrain to accepted buildings in 19 chapters, with primary references, explicit assumptions and limitations, real screenshots, diagrams and source provenance. The V2 application also defaults to English and provides a live language selector; both remember an explicit language choice. The atlas works offline.
 
@@ -256,9 +258,8 @@ The [river synthesis study](docs/synthese_rivieres_heightmap.md) reviews hydrolo
 
 The [building texture library](docs/BUILDING_TEXTURE_LIBRARY.md) documents the offline collection, provenance and material coverage; it is not yet integrated into the renderer.
 
-The [world architectural styles atlas](docs/styles_architecturaux_mondiaux_city_mapper.md) surveys regional building and settlement forms; its [French original](docs/styles_architecturaux_mondiaux_city_mapper_FR.md) is preserved for reference.
 
-The [settlement and building catalog](docs/catalogue_settlements_antiquite_moyen_age_rpg.md) covers historical and fantasy archetypes, with a preserved [French version](docs/catalogue_settlements_antiquite_moyen_age_rpg_FR.md).
+The [world architectural styles atlas](docs/styles_architecturaux_mondiaux_city_mapper.md) surveys regional building and settlement forms. The [settlement and building catalog](docs/catalogue_settlements_antiquite_moyen_age_rpg.md) covers historical and fantasy archetypes.
 
 The [City Bench culture guide](docs/CITY_CULTURES.md) describes the urban catalogue, its architectural mappings and known gaps. The [settlement variation inventory](docs/CITY_VARIATION_VARIABLES.md) documents available controls, recipes and their limits.
 

@@ -190,15 +190,33 @@ pub(super) fn free_envelope(
             axes.push(d);
         }
     }
+    // The smallest mark-to-side distance (`distance`, a hypot). Squared
+    // lengths of the same offset vectors rank the pairs first; only pairs
+    // within a relative 1e-9 of the smallest take the exact hypot, so the
+    // value is the original minimum bit for bit.
     let gap = |c: &[Point; 4]| {
-        marks
-            .iter()
-            .map(|&m| {
-                (0..4)
-                    .map(|k| distance(m, c[k], c[(k + 1) % 4]))
-                    .fold(f64::INFINITY, f64::min)
-            })
-            .fold(f64::INFINITY, f64::min)
+        let offset = |m: Point, a: Point, b: Point| {
+            let d = sub(b, a);
+            sub(m, add(a, scale(d, (dot(sub(m, a), d) / dot(d, d).max(1e-12)).clamp(0.0, 1.0))))
+        };
+        let mut least = f64::INFINITY;
+        for &m in &marks {
+            for k in 0..4 {
+                let o = offset(m, c[k], c[(k + 1) % 4]);
+                least = least.min(o.x * o.x + o.y * o.y);
+            }
+        }
+        let cut = least * (1.0 + 1e-9) + 1e-300;
+        let mut g = f64::INFINITY;
+        for &m in &marks {
+            for k in 0..4 {
+                let o = offset(m, c[k], c[(k + 1) % 4]);
+                if o.x * o.x + o.y * o.y <= cut {
+                    g = g.min(distance(m, c[k], c[(k + 1) % 4]));
+                }
+            }
+        }
+        g
     };
     let mut best: Option<(f64, Shape)> = None;
     let mut swapped = false;

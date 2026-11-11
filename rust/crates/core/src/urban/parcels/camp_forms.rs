@@ -1075,7 +1075,7 @@ mod tests {
         let mut fronts = native(&shape);
         assert!(!fronts.is_empty(), "the block has a real regional kerb");
         let plan = tiles(&Frame::of(&l), &morph, &l);
-        let mut cells = assemble_with_contacts(&shape, 0, l.blocks[0].axis, &mut fronts, &morph, plan, native);
+        let mut cells = assemble_with_contacts(&shape, 0, l.blocks[0].axis, &mut fronts, &morph, &plan.into(), native);
         assert!(fronts.iter().any(|f| f.shared && f.gate), "internal tracks must actually reach the road");
         let mapping = crate::urban::culture::contextual_mapping("mongol-ordu", "", "village", morph.text("plotOp"), "domestic").unwrap();
         let fallback = compact_fallback(&mapping.architecture_pack, "", &mapping.admissibility);

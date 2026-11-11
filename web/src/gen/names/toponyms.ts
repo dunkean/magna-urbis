@@ -1,4 +1,5 @@
-import pack from './data/names-pack.json';
+// Countries reachable by a profile only (scripts/names_runtime_pack.ts); the full corpus stays the source.
+import pack from './data/names-pack-runtime.json';
 import manifest from './data/names-manifest.json';
 import { Rng } from '../core/rng';
 import authored from './data/cultural-roots.json';

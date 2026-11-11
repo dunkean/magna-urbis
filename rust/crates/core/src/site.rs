@@ -68,6 +68,10 @@ pub struct RiverIn {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Header {
+    /// Reply with the display planes only (dWater, hab): the V2 keeps the native placement and
+    /// land use computes its own fields, so the other planes would cross the wire unused.
+    #[serde(default)]
+    pub display_only: bool,
     pub seed_key: String,
     pub n: usize,
     pub cell: f64,
@@ -611,7 +615,7 @@ impl PartialOrd for HeapItem {
 const D8: [(i64, i64); 8] = [(1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1)];
 
 /// Travel cost from `start` over passability classes (0 blocked, 1 land, 2 brook, 3 bridgeable river).
-fn travel_cost(n: usize, cell: f64, start: usize, pass: &[u8], h: &[f32]) -> Vec<f32> {
+pub(crate) fn travel_cost(n: usize, cell: f64, start: usize, pass: &[u8], h: &[f32]) -> Vec<f32> {
     let total = n * n;
     let mut d = vec![f64::INFINITY; total];
     let mut heap = BinaryHeap::new();
@@ -1589,6 +1593,7 @@ pub fn choose_site_framed(body: &[u8]) -> Result<Vec<u8>, String> {
     let xy = f64s(take(np * 16)?);
     let widths = f64s(take(nw * 8)?);
     let points: Vec<P> = xy.chunks_exact(2).map(|c| P { x: c[0], y: c[1] }).collect();
+    let display_only = header.display_only;
     let out = choose_site(&SiteInput { header, height: &height, slope: &slope, water, points, widths })?;
     let mut head = serde_json::to_vec(&out.header).map_err(|e| e.to_string())?;
     while head.len() % 4 != 0 {
@@ -1597,6 +1602,12 @@ pub fn choose_site_framed(body: &[u8]) -> Result<Vec<u8>, String> {
     let mut reply = Vec::with_capacity(4 + head.len() + total * 27);
     reply.extend_from_slice(&(head.len() as u32).to_le_bytes());
     reply.extend_from_slice(&head);
+    if display_only {
+        for plane in [&out.d_water, &out.hab] {
+            put_f32(&mut reply, plane);
+        }
+        return Ok(reply);
+    }
     for plane in [&out.d_water, &out.d_sea, &out.d_main, &out.hab, &out.slope_s, &out.cost] {
         put_f32(&mut reply, plane);
     }

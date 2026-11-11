@@ -1,6 +1,5 @@
 # Magna Urbis — Rethinking footprints, neighborhoods, blocks and parcels
 
-[Français](REFONTE_GENERATION_URBAINE_2026-10-13_FR.md)
 
 **Date: October 13, 2026.** Analysis and proposals intended to prepare design decisions. Buildings are deliberately deferred except where their current generation affects parcels or urban area.
 

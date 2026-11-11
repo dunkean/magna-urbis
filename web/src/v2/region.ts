@@ -1,4 +1,4 @@
-import type { World, Settlement, Options, SiteArchetype } from '../gen/types';
+import type { World, Settlement, Options, SiteArchetype, SiteLayer } from '../gen/types';
 import type { SettlementOutput, RoadOutput, SettlementRaster, RoadSite } from '../../../rust/bridge/settlements';
 import type { TerrainData } from '../../../rust/bridge/terrain';
 import { Rng } from '../gen/core/rng';
@@ -66,7 +66,16 @@ export async function regionResources(world:World,settings:V2Settings):Promise<R
   if(!response.resources)throw new Error('The engine returned no resource payload.');
   retainedResources={key,payload:response.resources};return response.resources;
 }
-export async function planRustRegion(world:World,settings:V2Settings,onProgress?:ProgressCallback,roadsOnly=false):Promise<World>{
+/** Main-town site fields (a whole-map Rust request) still in flight while the town stages run: see planRustRegion `deferSite`. */
+let pendingSite:{token:string;site:Promise<SiteLayer>}|undefined;
+const siteToken=(world:World):string=>{const main=world.settlements?.find(s=>s.main);return `${world.seed}|${main?.key}|${main?.center.x},${main?.center.y}|${world.stats['v2.terrainKey']}`;};
+/** Install the deferred site of this world (no-op when its site was chosen in planRustRegion). */
+export async function settleRegionSite(world:World):Promise<void>{
+  const pending=pendingSite;if(!pending)return;pendingSite=undefined;
+  if(pending.token===siteToken(world))world.site=await pending.site;
+}
+export async function planRustRegion(world:World,settings:V2Settings,onProgress?:ProgressCallback,roadsOnly=false,deferSite=false):Promise<World>{
+  pendingSite=undefined;
   const t0=performance.now(),{placement,roads,resolution}=effectiveRegion(settings);
   validateRegionSettings({placement,roads,resolution},world.mapSize);
   const runtime=runtimeOf(settings);
@@ -98,9 +107,14 @@ export async function planRustRegion(world:World,settings:V2Settings,onProgress?
     const regions=voronoiRegions(output.settlements.map(s=>s.center),world.mapSize);
     world.settlements=output.settlements.map((s,index):Settlement=>({key:s.key,index,main:index===0,cls:s.cls as Settlement['cls'],population:s.population,culture:s.culture,center:s.center,archetype:s.archetype as SiteArchetype,radius:s.radius,extent:clipConvex(circle(s.center,s.radius),regions[index]),region:regions[index],fixed:s.scores.manual,name:s.name||undefined,detail:index===0?'main':s.cls==='farmstead'?'farmstead':'lazy'}));
     const main=world.settlements[0],opts:Options={...settings.options,...settings.local[main.key],population:main.population,culture:main.culture,size:sizeForPop(main.population),center:main.center,siteType:main.archetype,mapSize:world.mapSize};
-    world.site=await chooseSiteRust(world.terrain,opts,world.mapSize,new Rng('magna-urbis:'+world.seed),runtime);
-    // Native placement owns the site. The legacy adapter only supplies travel/site fields for land use.
-    world.site.center={...main.center};world.site.archetype=main.archetype;world.site.reserveRadius=main.radius;
+    // Native placement owns the site and land use computes its own fields: only the display planes (dWater, hab) are requested.
+    const site=chooseSiteRust(world.terrain,opts,world.mapSize,new Rng('magna-urbis:'+world.seed),runtime,true)
+      .then(site=>{site.center={...main.center};site.archetype=main.archetype;site.reserveRadius=main.radius;return site;});
+    if(deferSite&&runtime.profile==='local'&&(settings.urban?.backend??settings.runtime?.backend)!=='typescript'){
+      // The native engine answers it on its own connection while the town stages run; finishTowns installs it.
+      site.catch(()=>undefined);pendingSite={token:siteToken(world),site};
+      world.site={center:{...main.center},archetype:main.archetype,reserveRadius:main.radius,offers:{}} as unknown as SiteLayer;
+    } else world.site=await site;
     for(const s of world.settlements){world.stats['v2.population:'+s.key]=s.population;world.stats['v2.culture:'+s.key]=s.culture;}
   }
   onProgress?.({stage:'roads',label:'Rust · projecting regional routes and crossings…',completed:2,total:3});

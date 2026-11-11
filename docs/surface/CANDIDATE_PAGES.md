@@ -94,7 +94,7 @@ must be a new file. The declared producer is `explicit-retained-refresh`; this
 is a retained query, not a fresh generation, refinement or visual qualification.
 
 The CPU city419 refresh evidence is recorded in
-[`evidence/native419-pages-v9.json`](evidence/native419-pages-v9.json):
+`evidence/native419-pages-v9.json` (historical validation, archived locally):
 77,412 candidates, including 71,834 trees in a complete 4 km square, all supported
 by the actual retained bilinear parent; 9,593 old records replay exactly. The
 packet's other bytes are unchanged. Its newer focus is disjoint from the old

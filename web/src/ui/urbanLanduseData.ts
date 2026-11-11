@@ -5,7 +5,6 @@ import { Rng } from '../gen/core/rng';
 import { createGrid, slopeGrid, blurGrid, visitSegmentCells } from '../gen/core/grid';
 import { distanceField } from '../gen/core/field';
 import { differenceS, unionS } from '../gen/geo/bool';
-import { dijkstra } from '../gen/site/site';
 import { DEFAULTS, SITE_ARCHETYPES, classOfPop, sizeForPop } from '../gen/options';
 import type { Relief, SiteArchetype } from '../gen/options';
 import type { BiomeName } from '../gen/biomes';
@@ -72,13 +71,21 @@ function ruralFootprint(layout: Layout): PolyH[] {
     ? layout.structure.allocated : unionS(layout.quarters.map(q => q.shape)), open);
 }
 
-/** Adapt cell-centred metres and water levels, without generating or relocating anything. */
-export function urbanLanduseWorld(input: UrbanLanduseInput): World {
-  const { raster: r, city } = input, n = r.n, cell = r.width / n, count = n * n;
+/** Raster-only site fields (slope, water masks, water/sea/river distances, habitability): the same for every town of a
+ * raster, so they are computed once per retained raster (and ahead of time, while the engine builds the town). Read-only. */
+interface RuralBase {
+  slope: ReturnType<typeof slopeGrid>; wet: Uint8Array; sea: Uint8Array; riverMask: Uint8Array; wide: Uint8Array;
+  seaCount: number; waterCount: number; waterDistance: ReturnType<typeof distanceField>; dSea: Float32Array; dMain: Float32Array; hab: Float32Array; slopeS: Float32Array;
+}
+const ruralBases = new WeakMap<Float32Array, { water: Uint8Array; riverWidth: Float32Array; waterLevel: Float32Array; width: number; n: number; base: RuralBase }>();
+function ruralBase(r: SettlementRaster): RuralBase {
+  const hit = ruralBases.get(r.height);
+  if (hit && hit.water === r.water && hit.riverWidth === r.riverWidth && hit.waterLevel === r.waterLevel && hit.width === r.width && hit.n === r.n) return hit.base;
+  const n = r.n, cell = r.width / n, count = n * n;
   const height = { w: n, h: n, cell, data: r.height };
   const slope = slopeGrid(height);
   const wet = new Uint8Array(count), sea = new Uint8Array(count), riverMask = new Uint8Array(count);
-  const wide = new Uint8Array(count), bridgeZone = new Uint8Array(count);
+  const wide = new Uint8Array(count);
   let seaCount = 0, waterCount = 0;
   for (let i = 0; i < count; i++) {
     // Native value 4 is cavern rock, not a water source for irrigation.
@@ -86,6 +93,23 @@ export function urbanLanduseWorld(input: UrbanLanduseInput): World {
     if (r.water[i] === 1) { sea[i] = 1; seaCount++; }
     if (r.water[i] === 3) { riverMask[i] = r.riverWidth[i] >= 4.5 ? 1 : 2; wide[i] = r.riverWidth[i] > 3.7 ? 1 : 0; }
   }
+  const waterDistance = distanceField(wet, n, n, cell, r.waterLevel);
+  const base: RuralBase = { slope, wet, sea, riverMask, wide, seaCount, waterCount, waterDistance,
+    dSea: distanceField(sea, n, n, cell).dist, dMain: distanceField(Uint8Array.from(riverMask, v => v === 1 ? 1 : 0), n, n, cell).dist,
+    hab: Float32Array.from(r.height, (h, i) => waterCount ? h - waterDistance.val![i] : 99),
+    slopeS: blurGrid(slope, Math.max(1, Math.round(100 / cell)), 2).data };
+  ruralBases.set(r.height, { water: r.water, riverWidth: r.riverWidth, waterLevel: r.waterLevel, width: r.width, n: r.n, base });
+  return base;
+}
+/** Compute the raster-only rural fields of `raster` now (call it while waiting on the engine); the land-use stage then reuses them. */
+export function prewarmUrbanLanduse(raster: SettlementRaster): void { ruralBase(ruralResolution({ raster } as UrbanLanduseInput).raster); }
+
+/** Adapt cell-centred metres and water levels, without generating or relocating anything. */
+export function urbanLanduseWorld(input: UrbanLanduseInput): World {
+  const { raster: r, city } = input, n = r.n, cell = r.width / n, count = n * n;
+  const height = { w: n, h: n, cell, data: r.height };
+  const { slope, sea: _sea, riverMask, wide, seaCount, waterCount, waterDistance, dSea, dMain, hab, slopeS } = ruralBase(r);
+  const bridgeZone = new Uint8Array(count);
   const terrain: TerrainLayer = {
     height, slope, water: r.water, flow: createGrid(n, n, cell), seaLevel: 0, seaFraction: seaCount / count,
     coastline: [], lakes: [], rivers: [], receiver: new Int32Array(count).fill(-1), filled: r.height,
@@ -112,25 +136,15 @@ export function urbanLanduseWorld(input: UrbanLanduseInput): World {
   for (const road of world.roads) for (let i = 1; i < road.path.length; i++) {
     visitSegmentCells(height, road.path[i - 1], road.path[i], index => { bridgeZone[index] = 1; });
   }
-  const waterDistance = distanceField(wet, n, n, cell, r.waterLevel);
-  const hab = Float32Array.from(r.height, (h, i) => waterCount ? h - waterDistance.val![i] : 99);
-  const fields: SiteFields = {
-    dWater: waterDistance.dist, dSea: distanceField(sea, n, n, cell).dist,
-    dMain: distanceField(Uint8Array.from(riverMask, v => v === 1 ? 1 : 0), n, n, cell).dist,
-    hab, slopeS: blurGrid(slope, Math.max(1, Math.round(100 / cell)), 2).data, riverMask, bridgeZone, wide,
-  };
-  const pass = (i: number): number => r.water[i] === 0 ? 1 : r.water[i] === 4 ? 0
+  const fields: SiteFields = { dWater: waterDistance.dist, dSea, dMain, hab, slopeS, riverMask, bridgeZone, wide };
+  // Passability classes; the engine runs the travel-cost search from the town centre (site::travel_cost).
+  const pass = new Uint8Array(count);
+  for (let i = 0; i < count; i++) pass[i] = r.water[i] === 0 ? 1 : r.water[i] === 4 ? 0
     : bridgeZone[i] ? 3 : r.water[i] === 3 && !wide[i] ? 2 : 0;
   const index = Math.max(0, Math.min(n - 1, Math.floor(city.center.y / cell))) * n
     + Math.max(0, Math.min(n - 1, Math.floor(city.center.x / cell)));
-  const cost = dijkstra(n, n, index, (from, to, d) => {
-    const pt = pass(to);
-    if (!pt) return Infinity;
-    const grade = pt >= 2 || pass(from) >= 2 ? 0 : Math.abs(r.height[to] - r.height[from]) / (d * cell);
-    return d * cell * (1 + 100 * grade * grade) * (pt === 1 ? 1 : pt === 2 ? 4 : 3);
-  });
   world.site = { center: city.center, archetype: siteArchetype(city), offers: { ...city.offers }, reserveRadius: layoutExtent(input.layouts?.filter(layout => layout.key === city.key))?.radius ?? city.radius,
-    cost: { w: n, h: n, cell, data: cost }, fields };
+    cost: { w: n, h: n, cell, data: new Float32Array(0) }, travel: { from: index, pass }, fields };
   world.settlements = input.neighbours.filter(s => s.key !== city.key).map((s, i) => ({
     ...s, index: i + 1, cls: classOfPop(s.population), archetype: siteArchetype(s), extent: extent(s).outer, region: [], detail: 'lazy',
   }));
@@ -145,14 +159,15 @@ export async function generateUrbanLanduse(input: UrbanLanduseInput): Promise<Ur
     seed: seedHash(resolved.seed), climate: [CLIMATE_VALUES.temperate.temperature, CLIMATE_VALUES.temperate.precipitation],
     height: { x: 0, y: 0, width: r.width, n: r.n, data: r.height }, water: r.water,
   } satisfies ForestFieldInput;
-  return generateUrbanLanduseWith(input, await buildForestField(forestInput, resolved.forest && { ...resolved.forest.settings, enabled: true }, input.runtime));
+  // The field request runs while the site fields are built below (both read the same retained raster).
+  return generateUrbanLanduseWith(resolved, buildForestField(forestInput, resolved.forest && { ...resolved.forest.settings, enabled: true }, input.runtime));
 }
 
-export async function generateUrbanLanduseWith(input: UrbanLanduseInput, built?: ForestField): Promise<UrbanLanduseScene> {
+export async function generateUrbanLanduseWith(input: UrbanLanduseInput, building?: ForestField | Promise<ForestField>): Promise<UrbanLanduseScene> {
   const start = performance.now();
   input = ruralResolution(input);
   const world = urbanLanduseWorld(input), root = new Rng('magna-urbis:' + input.seed);
-  const r = input.raster;
+  const r = input.raster, built = await building;
   const forest = input.biome === 'underdark' || input.biome === 'underdark-caverns' ? undefined : input.forest?.field ?? built;
   if (forest && (Math.abs(forest.x) > .001 || Math.abs(forest.y) > .001 || Math.abs(forest.width - r.width) > .001)) {
     throw new Error('Le couvert forestier et le terrain doivent partager la même emprise.');
@@ -206,9 +221,17 @@ export async function generateUrbanLanduseWith(input: UrbanLanduseInput, built?:
  * not. Refine the display adapter only, with a bounded 1024² working grid.
  * Heights remain an interpolation of retained samples, water keeps its native
  * classification and the source arrays are never modified. */
+const resolutions = new WeakMap<Float32Array, { water: Uint8Array; width: number; n: number; raster: SettlementRaster }>();
 function ruralResolution(input: UrbanLanduseInput): UrbanLanduseInput {
   const r = input.raster, n = Math.min(1024, Math.ceil(r.width / 20));
   if (n <= r.n) return input;
+  const hit = resolutions.get(r.height);
+  if (hit && hit.water === r.water && hit.width === r.width && hit.n === r.n) return { ...input, raster: hit.raster };
+  const raster = upsampledRaster(r, n);
+  resolutions.set(r.height, { water: r.water, width: r.width, n: r.n, raster });
+  return { ...input, raster };
+}
+function upsampledRaster(r: SettlementRaster, n: number): SettlementRaster {
   const height = new Float32Array(n * n), water = new Uint8Array(n * n), waterLevel = new Float32Array(n * n);
   const riverWidth = new Float32Array(n * n), riverIds = new Int32Array(n * n);
   // Agricultural geometry always uses the retained placement raster. Reusing a
@@ -224,7 +247,7 @@ function ruralResolution(input: UrbanLanduseInput): UrbanLanduseInput {
     const j = Math.min(r.n - 1, Math.floor((y + .5) / n * r.n)) * r.n + Math.min(r.n - 1, Math.floor((x + .5) / n * r.n));
     water[i] = r.water[j]; waterLevel[i] = r.waterLevel[j]; riverWidth[i] = r.riverWidth[j]; riverIds[i] = r.riverIds[j];
   }
-  return { ...input, raster: { ...r, n, height, water, waterLevel, riverWidth, riverIds } };
+  return { ...r, n, height, water, waterLevel, riverWidth, riverIds };
 }
 
 /** Programme and enclosure choices feeding the countryside on both pages. */

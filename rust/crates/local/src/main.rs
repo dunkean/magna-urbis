@@ -357,7 +357,10 @@ fn terrain_reply(input: TerrainRequest, state: &mut Session) -> ApiResult<Reply>
 #[derive(Deserialize)]
 struct RasterHeader {
     session: String,
+    // Absent on a header-only `shared` attach; an upload is validated below.
+    #[serde(default)]
     width: f64,
+    #[serde(default)]
     n: usize,
     #[serde(rename = "physicalN")]
     physical_n: Option<usize>,
@@ -407,6 +410,9 @@ fn raster_upload(body: &[u8], sessions: &Mutex<Sessions>) -> ApiResult<Reply> {
     }
     if header.raster_id.as_ref().is_some_and(|id| id.is_empty() || id.len() > 128) {
         return Err("Identifiant de raster invalide.".into());
+    }
+    if !(header.width.is_finite() && header.width > 0.0) {
+        return Err("Raster width missing.".into());
     }
     let session = sessions
         .lock()
@@ -716,6 +722,32 @@ fn urban_reply(input: Value, state: &mut Session, session: &str) -> ApiResult<Re
             body,
         });
     }
+    if input["kind"] == "buildingSiteVisuals" {
+        // Display projection of every building site of the retained snapshot (binary);
+        // the complete requests stay here and are read one by one (`buildingSite`).
+        let source: UrbanSourceHandle = value(&input["source"])?;
+        let seed = input["seed"].as_str().ok_or("Graine absente.")?;
+        let culture = input["architectureCulture"].as_str();
+        let terrain = state
+            .settlements
+            .as_ref()
+            .ok_or("Missing retained terrain for buildings")?;
+        let snapshot = state.urban.validate_source(session, &source)?;
+        let output = terrain.urban_building_sites_with_culture(
+            seed,
+            snapshot.layouts,
+            snapshot.partitions,
+            culture,
+        )?;
+        let origin = snapshot
+            .layouts
+            .first()
+            .map_or(urban::Point { x: 0.0, y: 0.0 }, |layout| layout.center);
+        return Ok(Reply {
+            kind: "application/octet-stream",
+            body: urban::display::site_display_buffers(&output, origin),
+        });
+    }
     if input["kind"] == "displayBuffers" {
         let source: UrbanSourceHandle = value(&input["source"])?;
         let snapshot = state.urban.validate_source(session, &source)?;
@@ -752,6 +784,15 @@ fn urban_reply(input: Value, state: &mut Session, session: &str) -> ApiResult<Re
             body: urban::display::display_buffers_refs(&layouts, &partitions, ids),
         });
     }
+    // `retained: true` continues the session's chain: the programme reads the
+    // parcels' layouts and partitions kept here instead of a JSON upload.
+    let continued = if input["kind"] == "programme" && input["retained"] == true {
+        Some(state.urban.current().ok_or(
+            "[urban_source_invalid] No retained parcels for the programme: regenerate the parcels.",
+        )?)
+    } else {
+        None
+    };
     // Invalidate before parsing generation arguments, so a failed replacement
     // cannot leave a previously issued handle silently pointing at old data.
     match input["kind"].as_str() {
@@ -822,14 +863,21 @@ fn urban_reply(input: Value, state: &mut Session, session: &str) -> ApiResult<Re
         };
         let config: urban::ParcelConfig = value(&input["parcelConfig"])?;
         let partitions = urban::generate_parcels(seed, &layouts, &config)?;
-        retained_parcels_reply(
+        let reply = retained_parcels_reply(
             &input["id"],
             session,
             layouts,
             partitions,
             &mut state.urban,
             started,
-        )
+        )?;
+        // `reply: "handle"`: the programme follows on the retained parcels, so
+        // the caller needs only the source handle, not the whole cadastre.
+        if input["reply"] == "handle" {
+            let source = state.urban.source(session)?;
+            return json_reply(json!({"id": input["id"], "urbanSource": source, "ms": millis(started)}));
+        }
+        Ok(reply)
     } else if input["kind"] == "buildingSites" {
         let terrain = state
             .settlements
@@ -887,10 +935,16 @@ fn urban_reply(input: Value, state: &mut Session, session: &str) -> ApiResult<Re
         let output = urban::programme::reconcile_built(&partitions, &scene)?;
         product_reply(&input["id"], "partitions", &output, started)
     } else if input["kind"] == "programme" {
-        let layouts: Vec<urban::Layout> = value(&input["layouts"])?;
-        let partitions: Vec<urban::Partition> = value(&input["partitions"])?;
+        let (layouts, partitions) = match continued {
+            Some(pair) => pair,
+            None => (
+                Arc::new(value::<Vec<urban::Layout>>(&input["layouts"])?),
+                Arc::new(value::<Vec<urban::Partition>>(&input["partitions"])?),
+            ),
+        };
         let output = urban::programme::reallocate(&layouts, &partitions)?;
-        product_reply(&input["id"], "partitions", &output, started)
+        // Retained like the parcels: building sites then read them through the source handle.
+        retained_parcels_reply(&input["id"], session, layouts, output, &mut state.urban, started)
     } else {
         Err("ÃƒÆ’Ã¢â‚¬Â°tape urbaine inconnue.".into())
     }
@@ -1076,7 +1130,7 @@ pub(crate) fn dispatch(path: &str, body: &[u8], sessions: &Mutex<Sessions>) -> A
     if path == "/urban"
         && matches!(
             input["kind"].as_str(),
-            Some("displayBuffers" | "buildingSitesBegin" | "buildingSitesPage" | "buildingSite")
+            Some("displayBuffers" | "buildingSitesBegin" | "buildingSitesPage" | "buildingSite" | "buildingSiteVisuals")
         )
         && source.is_none()
     {
@@ -1089,6 +1143,7 @@ pub(crate) fn dispatch(path: &str, body: &[u8], sessions: &Mutex<Sessions>) -> A
                 input["kind"].as_str(),
                 Some(
                     "buildingSites"
+                        | "buildingSiteVisuals"
                         | "displayBuffers"
                         | "buildingSitesBegin"
                         | "buildingSitesPage"

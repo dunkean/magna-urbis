@@ -1,7 +1,5 @@
 # Styles, layers, diagnostics and masks
 
-[French original](RENDERING_FR.md).
-
 Rendering combines four distinct concepts without changing generation:
 
 | Concept | Role | Example |

@@ -2,8 +2,6 @@
 
 Design study for Test-Render, October 24, 2026.
 
-> English translation of the [French original](GROUND_MATERIAL_MAPPING_FR.md).
-
 The target is a **natural ground composition map**, visible from above when plants, trees, and buildings are removed. Already generated information supports a first version: it constrains exposed rock, earth, sand, stony material, deposits, and wet states. It does not determine one unique material everywhere. Output must retain several admissible materials, their proportions, and local organization.
 
 The proposal is a small rule compiler over existing fields. It requires neither a new engine, geological simulation, nor complete generation of catalog landscapes. **Rules determine what is possible; stable spatial randomness chooses among remaining possibilities.** Cases needing missing information receive an explicit scenario or stay disabled. Dry climate alone cannot create sand, salt, or gypsum; basaltic rock alone cannot identify a recent lava flow.

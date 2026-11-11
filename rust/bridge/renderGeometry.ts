@@ -5,7 +5,7 @@
 // import; V2 awaits it before generating and drawing). Never the threads package:
 // these kernels are serial and the main thread cannot block on a rayon pool.
 import type { Point, Shape } from './urban';
-import { loadSingleWasm, onCoreWasmReset } from './wasmRuntime';
+import { inWorker, loadCoreWasm, loadSingleWasm, onCoreWasmReset } from './wasmRuntime';
 
 interface RenderGeometryWasm {
   render_city_canals(groups: Float64Array): Float64Array;
@@ -16,9 +16,12 @@ interface RenderGeometryWasm {
 
 let wasm: RenderGeometryWasm | undefined;
 let loading: Promise<void> | undefined;
-/** Loads the single-thread package of this realm (once). */
+// Generation workers (created with `wasmWorkerOptions`, whose name carries `threads=`) load the core
+// package anyway: they reuse it instead of compiling and instantiating a second 17 MB module.
+const generationRealm = inWorker() && /(?:^|\s)threads=/.test((globalThis as { name?: string }).name ?? '');
+/** Loads the single-thread package of this realm (once); a generation worker's core package. */
 export function loadRenderGeometry(): Promise<void> {
-  return loading ??= loadSingleWasm().then(module => { wasm = module as unknown as RenderGeometryWasm; }, error => { loading = undefined; throw error; });
+  return loading ??= (generationRealm ? loadCoreWasm() : loadSingleWasm()).then(module => { wasm = module as unknown as RenderGeometryWasm; }, error => { loading = undefined; throw error; });
 }
 /** Whether the synchronous calls work in this realm. */
 onCoreWasmReset(() => { wasm = undefined; loading = undefined; void loadRenderGeometry(); });

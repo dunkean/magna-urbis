@@ -90,8 +90,10 @@ export interface SiteLayer {
   feature?: Vec2;
   /** Quality (0..1) of the best site of each archetype the terrain offers (absent = not available). */
   offers: Partial<Record<SiteArchetype, number>>;
-  /** Travel cost (m-equivalents) from the center; Infinity where unreachable. */
+  /** Travel cost (m-equivalents) from the center; Infinity where unreachable. Empty when `travel` is set. */
   cost: Grid;
+  /** Land-use adapter only: the engine computes `cost` from this cell over passability (0 blocked, 1 land, 2 brook, 3 bridged). */
+  travel?: { from: number; pass: Uint8Array };
   /** Approximate radius (m) of the urban footprint reserved for the town (M3). */
   reserveRadius: number;
   fields: SiteFields;

@@ -31,7 +31,7 @@ scope.onmessage = ({ data: request }: MessageEvent<V2WorkerRequest|V2ResourceReq
       let world = retained.resolve(request.retainedWorldId,request.world);
       if (action === 'terrain' || action === 'all') world = await generateTerrain(settings, progress, undefined, request.assetBase, request.terrainStage);
       if (!world) throw new Error('Aucune carte à traiter.');
-      if (action === 'region' || action === 'settlements' || action === 'all') world = await planRegion(world, settings, progress);
+      if (action === 'region' || action === 'settlements' || action === 'all') world = await planRegion(world, settings, progress, action === 'all');
       if (action === 'roads') world = await rerouteRegion(world, settings, progress);
       if (action === 'towns' || action === 'all') world = await generateTowns(world, settings, progress, action === 'towns' ? request.keys : undefined, action === 'towns' ? request.townStage : undefined);
       if (action === 'town') {

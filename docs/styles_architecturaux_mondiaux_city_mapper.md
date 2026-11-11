@@ -5,7 +5,7 @@
 >
 > **Scope:** worldwide, favoring forms attested before the 16th century; traditions whose best-preserved examples are later are clearly marked. **This is not a literally exhaustive inventory of every culture**, but deliberately broad worldwide coverage organized for implementation.
 
-> The [original French edition](styles_architecturaux_mondiaux_city_mapper_FR.md) is preserved for reference.
+> The [original English edition](styles_architecturaux_mondiaux_city_mapper.md) is preserved for reference.
 
 ## How to use: four scales, not one “style”
 

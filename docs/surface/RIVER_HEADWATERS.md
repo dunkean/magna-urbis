@@ -17,5 +17,3 @@ python godot-render/tools/validate_ground_surface.py
 ```
 
 The preparer accepts `--tile mountains--temperate`. Tests cover width progression, preservation of lake outlets and connections, map-edge inflows and restoration of downstream width for short lines. The validator checks all 42 masks and their consistency with N1–N4.
-
-[Original French version](RIVER_HEADWATERS_FR.md).

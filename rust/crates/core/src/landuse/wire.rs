@@ -38,10 +38,11 @@ pub fn execute(header: &str, bytes: &[u8]) -> Result<Vec<u8>, String> {
             .get(plane.offset..end)
             .ok_or("Incomplete landuse plane")?;
         if plane.kind == "u8" {
-            if plane.name != "water" {
-                return Err("Unknown byte landuse plane".into());
+            match plane.name.as_str() {
+                "water" => input.water = data.to_vec(),
+                "pass" => input.pass = data.to_vec(),
+                _ => return Err("Unknown byte landuse plane".into()),
             }
-            input.water = data.to_vec();
             continue;
         }
         let values = data
@@ -59,6 +60,13 @@ pub fn execute(header: &str, bytes: &[u8]) -> Result<Vec<u8>, String> {
             "soil" => input.soil = values,
             _ => return Err("Unknown float landuse plane".into()),
         }
+    }
+    if let Some(start) = input.travel_from.filter(|_| input.cost.is_empty()) {
+        let n = input.w;
+        if input.w != input.h || start >= n * n || input.pass.len() != n * n || input.height.len() != n * n {
+            return Err("Invalid travel cost request".into());
+        }
+        input.cost = crate::site::travel_cost(n, input.cell, start, &input.pass, &input.height);
     }
     match s(&v["operation"]) {
         "rural" => encode(&generate_rural(&input)?),

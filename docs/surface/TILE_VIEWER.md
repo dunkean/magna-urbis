@@ -1,6 +1,6 @@
 # 40 × 40 km comparison viewer
 
-> The [original French version](TILE_VIEWER_FR.md) is preserved for reference.
+> The [original English version](TILE_VIEWER.md) is preserved for reference.
 
 ## Visible ground: N1–N4 and textures
 

@@ -5,11 +5,11 @@ import type { SiteArchetype, SiteLayer, TerrainLayer } from '../../web/src/gen/t
 import type { Rng } from '../../web/src/gen/core/rng';
 
 /** Request body: u32 header length, JSON header (padded to 4), then height f32, slope f32, water u8, river points f64, widths f64. */
-export function encodeSiteRequest(terrain: TerrainLayer, opts: Options, mapSize: number, root: Rng): Uint8Array<ArrayBuffer> {
+export function encodeSiteRequest(terrain: TerrainLayer, opts: Options, mapSize: number, root: Rng, displayOnly = false): Uint8Array<ArrayBuffer> {
   const { w: n, cell } = terrain.height;
   const rivers = terrain.rivers;
   const header = {
-    seedKey: root.seedKey, n, cell, mapSize, seaFraction: terrain.seaFraction,
+    ...(displayOnly ? { displayOnly } : {}), seedKey: root.seedKey, n, cell, mapSize, seaFraction: terrain.seaFraction,
     size: opts.size, relief: opts.relief, siteType: opts.siteType ?? null, center: opts.center ?? null, sitePrefs: opts.sitePrefs ?? null,
     rivers: rivers.map(r => ({ len: r.path.length, wlen: r.width.length, main: !!r.main, mouth: r.mouth ?? null, id: r.id ?? null, host: r.host ?? null })),
   };
@@ -37,15 +37,18 @@ interface SiteHeader {
   offers: [SiteArchetype, number][]; reserveRadius: number; warning: string | null;
 }
 
-export function decodeSiteReply(bytes: Uint8Array, n: number, cell: number): SiteLayer {
+/** `displayOnly`: the reply holds dWater and hab only; the other fields are empty and `cost` has no data. */
+export function decodeSiteReply(bytes: Uint8Array, n: number, cell: number, displayOnly = false): SiteLayer {
   const hl = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(0, true);
   const h = JSON.parse(new TextDecoder().decode(bytes.subarray(4, 4 + hl))) as SiteHeader;
   const total = n * n;
   let off = bytes.byteOffset + 4 + hl;
   const f32 = () => { const a = new Float32Array(bytes.buffer.slice(off, off + total * 4)); off += total * 4; return a; };
-  const dWater = f32(), dSea = f32(), dMain = f32(), hab = f32(), slopeS = f32(), cost = f32();
+  const none = new Float32Array(0), u8none = new Uint8Array(0);
+  const dWater = f32(), dSea = displayOnly ? none : f32(), dMain = displayOnly ? none : f32(), hab = f32();
+  const slopeS = displayOnly ? none : f32(), cost = displayOnly ? none : f32();
   const u8 = () => { const a = new Uint8Array(bytes.buffer.slice(off, off + total)); off += total; return a; };
-  const riverMask = u8(), bridgeZone = u8(), wide = u8();
+  const riverMask = displayOnly ? u8none : u8(), bridgeZone = displayOnly ? u8none : u8(), wide = displayOnly ? u8none : u8();
   const offers: SiteLayer['offers'] = {};
   for (const a of SITE_ARCHETYPES) { const hit = h.offers.find(o => o[0] === a); if (hit) offers[a] = hit[1]; }
   return {

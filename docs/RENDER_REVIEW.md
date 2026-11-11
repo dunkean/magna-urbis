@@ -2,8 +2,6 @@
 
 Technical and scientific review · October 23, 2026 · Neural Earth / Magna Urbis
 
-> English translation of the [French original](RENDER_REVIEW_FR.md).
-
 ## 1. Summary: what exists and what is relevant
 
 Neural Earth and Magna Urbis have a particular objective: produce realistic surface detail at scales from 10 cm to 1 cm over potentially immense territories, while allowing free zoom without visible seams or repetition.

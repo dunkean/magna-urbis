@@ -165,6 +165,15 @@ impl RetainedUrban {
         Ok(())
     }
 
+    /// The current layouts and partitions, for a stage that continues the
+    /// retained chain (programme after parcels) without a geometry upload.
+    pub fn current(&self) -> Option<(Arc<Vec<Layout>>, Arc<Vec<Partition>>)> {
+        Some((
+            Arc::clone(&self.layouts.as_ref()?.values),
+            Arc::clone(&self.partitions.as_ref()?.values),
+        ))
+    }
+
     pub fn source(&self, session: &str) -> Result<UrbanSourceHandle> {
         let handle = UrbanSourceHandle {
             version: 1,

@@ -20,8 +20,10 @@ const dynamicBindings=new Map<Element,()=>string>();
 const registeredMessages:Record<string,{en:string;fr:string}>=Object.create(null);
 /** Feature modules register intentional UI copy without translating user values. */
 export function registerMessages(messages:Record<string,{en:string;fr:string}>):void{
-  Object.assign(registeredMessages,messages);
-  for (const message of Object.values(messages)) registeredMessages[message.fr] = message;
+  for (const [key, message] of Object.entries(messages)) {
+    const normalized={en:message.en.trim(),fr:message.fr.trim()};
+    registeredMessages[key.trim()]=normalized;registeredMessages[normalized.en]=normalized;registeredMessages[normalized.fr]=normalized;
+  }
 }
 registerMessages({
   'Magna Urbis · V2 Workshop': { en: 'Magna Urbis · V2 Workshop', fr: 'Magna Urbis · Atelier V2' },

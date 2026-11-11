@@ -2,6 +2,184 @@
 use super::{Point, Shape, Surface};
 use geo::{Area, BooleanOps, Centroid, Coord, InteriorPoint, LineString, Polygon};
 
+/// `URBAN_GEOMETRY_REFERENCE=1` runs the original per-position searches in
+/// place of the swept ones (they decide identically; kept to check it).
+pub(super) fn reference_search() -> bool {
+    static FLAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *FLAG.get_or_init(|| std::env::var("URBAN_GEOMETRY_REFERENCE").is_ok_and(|v| v == "1"))
+}
+
+/// The rings of a shape projected on an orthonormal frame `(along, across)`,
+/// each edge as `[p.along, p.across, q.along, q.across]` with its ring, and
+/// binned by its across range so a band query visits only nearby edges.
+pub(super) struct BandEdges {
+    rings: usize,
+    edges: Vec<(usize, [f64; 4])>,
+    low: f64,
+    cell: f64,
+    bins: Vec<Vec<u32>>,
+}
+impl BandEdges {
+    fn bin(&self, c: f64) -> usize {
+        (((c - self.low) / self.cell).floor().max(0.0) as usize).min(self.bins.len() - 1)
+    }
+}
+pub(super) fn band_edges(shape: &Shape, along: Point, across: Point) -> BandEdges {
+    let rings: Vec<&Vec<Point>> = std::iter::once(&shape.outer).chain(shape.holes.iter()).collect();
+    let edges: Vec<(usize, [f64; 4])> = rings
+        .iter()
+        .enumerate()
+        .flat_map(|(k, r)| {
+            r.iter().zip(r.iter().cycle().skip(1)).take(r.len()).map(move |(p, q)| {
+                (k, [
+                    p.x * along.x + p.y * along.y,
+                    p.x * across.x + p.y * across.y,
+                    q.x * along.x + q.y * along.y,
+                    q.x * across.x + q.y * across.y,
+                ])
+            })
+        })
+        .collect();
+    let (lo, hi) = edges.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), (_, e)| {
+        (lo.min(e[1]).min(e[3]), hi.max(e[1]).max(e[3]))
+    });
+    let (low, span) = if lo.is_finite() && hi.is_finite() { (lo, hi - lo) } else { (0.0, 0.0) };
+    let count = (edges.len() / 2).clamp(1, 512);
+    let mut index = BandEdges { rings: rings.len(), edges, low, cell: (span / count as f64).max(1e-6), bins: vec![Vec::new(); count] };
+    for (k, (_, e)) in index.edges.iter().enumerate() {
+        let (b0, b1) = (index.bin(e[1].min(e[3])), index.bin(e[1].max(e[3])));
+        for b in b0..=b1 {
+            index.bins[b].push(k as u32);
+        }
+    }
+    index
+}
+
+/// Exact rectangle containment for a row of positions, swept once instead
+/// of one edge scan per position. The rectangles are `[p, p + len]` along
+/// (`p` in `ps`, ascending) × `[lo, hi]` across, in the frame of `edges`
+/// (`band_edges`), and are decided like the cadastral `rect_within`: no
+/// boundary edge enters the rectangle shrunk by 0.1 mm, and its centre is
+/// inside (even/odd, holes excluded). Each edge clipped to the band gives
+/// the interval of positions it blocks; positions within `TIE` of an
+/// interval end are left to `exact` (the original test), so the verdicts
+/// are the original ones. A position free of every edge is half the
+/// rectangle away from the contour, where the centre's parity along the
+/// band's middle line is exact. `out[k]` receives the verdict of `ps[k]`.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn band_within(
+    edges: &BandEdges,
+    lo: f64,
+    hi: f64,
+    len: f64,
+    ps: &[f64],
+    mut exact: impl FnMut(usize) -> bool,
+    certain: &mut Vec<i32>,
+    possible: &mut Vec<i32>,
+    crossings: &mut Vec<Vec<f64>>,
+    out: &mut Vec<bool>,
+) {
+    const EPS: f64 = 1e-4;
+    const TIE: f64 = 1e-6;
+    certain.clear();
+    certain.resize(ps.len() + 1, 0);
+    possible.clear();
+    possible.resize(ps.len() + 1, 0);
+    crossings.resize(edges.rings, Vec::new());
+    crossings.iter_mut().for_each(Vec::clear);
+    out.clear();
+    let (s0, s1) = (lo + EPS, hi - EPS);
+    let mid = lo + (hi - lo) * 0.5;
+    // First position index with p > x (or p >= x when `inclusive`): the
+    // positions are an even grid, so start from its arithmetic guess and walk
+    // to the exact partition point (the same answer as a binary search).
+    let (p0, pitch) = match ps {
+        [first, .., last] if last > first => (*first, (last - first) / (ps.len() - 1) as f64),
+        _ => (0.0, 0.0),
+    };
+    let first = |x: f64, inclusive: bool| {
+        let before = |p: f64| if inclusive { p < x } else { p <= x };
+        let mut k = if pitch > 0.0 {
+            ((x - p0) / pitch).floor().clamp(0.0, ps.len() as f64) as usize
+        } else {
+            0
+        };
+        while k > 0 && !before(ps[k - 1]) {
+            k -= 1;
+        }
+        while k < ps.len() && before(ps[k]) {
+            k += 1;
+        }
+        k
+    };
+    // Only edges whose across range meets the widened band can enter a
+    // rectangle or cross the middle line; each is visited once, in the
+    // first bin of the query it occupies.
+    let (q0, q1) = (edges.bin(s0 - 2.0 * TIE), edges.bin(s1 + 2.0 * TIE));
+    for b in q0..=q1 {
+        for &e in &edges.bins[b] {
+            let (k, [pa, pc, qa, qc]) = edges.edges[e as usize];
+            if edges.bin(pc.min(qc)).max(q0) != b {
+                continue;
+            }
+            if (pc > mid) != (qc > mid) {
+                crossings[k].push(pa + (mid - pc) * (qa - pa) / (qc - pc));
+            }
+            // The edge clipped to the across band [l, h]: its along range.
+            let clip = |l: f64, h: f64| -> Option<(f64, f64)> {
+                if pc.max(qc) < l || pc.min(qc) > h {
+                    return None;
+                }
+                let dc = qc - pc;
+                let (t0, t1) = if dc.abs() < 1e-12 {
+                    (0.0, 1.0)
+                } else {
+                    let (x, y) = ((l - pc) / dc, (h - pc) / dc);
+                    (x.min(y).max(0.0), x.max(y).min(1.0))
+                };
+                if t0 > t1 {
+                    return None;
+                }
+                let (y0, y1) = (pa + (qa - pa) * t0, pa + (qa - pa) * t1);
+                Some((y0.min(y1), y0.max(y1)))
+            };
+            // Possibly entering: band and rectangle widened by TIE.
+            if let Some((m0, m1)) = clip(s0 - TIE, s1 + TIE) {
+                let (i, j) = (first(m0 - len + EPS - TIE, true), first(m1 - EPS + TIE, false));
+                if i < j {
+                    possible[i] += 1;
+                    possible[j] -= 1;
+                }
+            }
+            // Certainly entering: a point strictly inside the shrunk rectangle.
+            if s1 - s0 > 2.0 * TIE
+                && let Some((m0, m1)) = clip(s0 + TIE, s1 - TIE)
+            {
+                let (i, j) = (first(m0 - len + EPS + TIE, false), first(m1 - EPS - TIE, true));
+                if i < j {
+                    certain[i] += 1;
+                    certain[j] -= 1;
+                }
+            }
+        }
+    }
+    crossings.iter_mut().for_each(|c| c.sort_by(f64::total_cmp));
+    let (mut c, mut q) = (0i32, 0i32);
+    for (k, &p) in ps.iter().enumerate() {
+        c += certain[k];
+        q += possible[k];
+        out.push(if c > 0 {
+            false
+        } else if q > 0 {
+            exact(k)
+        } else {
+            let centre = p + len * 0.5;
+            let odd = |xs: &Vec<f64>| (xs.len() - xs.partition_point(|&x| x <= centre)) % 2 == 1;
+            !crossings.is_empty() && odd(&crossings[0]) && !crossings[1..].iter().any(odd)
+        });
+    }
+}
+
 pub(super) fn signed(r: &[Point]) -> f64 {
     r.iter()
         .zip(r.iter().cycle().skip(1))
@@ -586,6 +764,21 @@ pub(super) fn simple(s: &Shape) -> bool {
 /// `simple` for a ring that is simple apart from the sides listed in `fresh`
 /// (side `i` runs from `r[i]` to `r[i + 1]`): only those sides are tested,
 /// against every other side, with the same rule. Linear per fresh side.
+/// `simple_around`, telling why not: `Ok` when simple, `Err(Some(j))` with
+/// the first side `j` a fresh side touches, `Err(None)` for a degenerate ring.
+pub(super) fn touching_side(r: &[Point], fresh: &[usize]) -> Result<(), Option<usize>> {
+    let n = r.len();
+    if n < 3 {
+        return Err(None);
+    }
+    for &i in fresh {
+        let (a, b) = (r[i], r[(i + 1) % n]);
+        if let Some(j) = (0..n).find(|&j| !(j == i || (j + 1) % n == i || (i + 1) % n == j || !sides_touch(a, b, r[j], r[(j + 1) % n]))) {
+            return Err(Some(j));
+        }
+    }
+    Ok(())
+}
 pub(super) fn simple_around(r: &[Point], fresh: &[usize]) -> bool {
     let n = r.len();
     if n < 3 {

@@ -359,7 +359,19 @@ fn lot_deficit(
             .then_some("forme");
     }
     let mut placeable = false;
+    // The bound reads only a source's footing and bearing: sources sharing
+    // both are searched once.
+    let mut searched: Vec<(Option<[u64; 2]>, bool, bool)> = Vec::new();
     for w in drawable {
+        let key = (
+            w.footing().map(|f| f.map(f64::to_bits)),
+            w.bearing == feasibility::Bearing::Ring,
+            w.bearing == feasibility::Bearing::Extent,
+        );
+        if searched.contains(&key) {
+            continue;
+        }
+        searched.push(key);
         let bound = feasibility::pose_lower_bound(surface, lot, dirs, w, limit);
         if bound <= limit {
             return None;
@@ -384,10 +396,61 @@ pub(super) fn recipe_foundable(
     if sources.is_empty() || dirs.is_empty() || !sources.iter().all(|w| w.ground) {
         return true;
     }
+    // The trim passes ask again for the same blocks: memoised for the run,
+    // keyed by the exact block, directions, recipe and the heights the poses
+    // can read (the raster window under the block, with the interpolation
+    // stencil's margin).
+    let mut key = super::probe_cache::Key::new("building_sites.recipe_foundable/v2");
+    key.shape(shape).usize(dirs.len());
+    for &d in dirs {
+        key.point(d);
+    }
+    key.str(recipe).f64(surface.width).usize(surface.n).usize(surface.height.len());
+    match surface.interpolation {
+        super::HeightInterpolation::Bilinear => key.usize(0),
+        super::HeightInterpolation::PhysicalBilinear => key.usize(1),
+        super::HeightInterpolation::BSpline { floor } => key.usize(2).f64(f64::from(floor)),
+    };
+    let r = surface.height_resolution();
+    let (x0, y0, x1, y1) = super::geometry::bbox(shape);
+    let cell = |v: f64| (v / surface.width * r as f64 - 0.5).floor();
+    let span = |a: f64, b: f64| {
+        let lo = (cell(a) - 2.0).clamp(0.0, r.saturating_sub(1) as f64) as usize;
+        let hi = (cell(b) + 3.0).clamp(0.0, r.saturating_sub(1) as f64) as usize;
+        (lo, hi)
+    };
+    let ((i0, i1), (j0, j1)) = (span(x0, x1), span(y0, y1));
+    key.usize(i0).usize(i1).usize(j0).usize(j1);
+    for j in j0..=j1 {
+        for i in i0..=i1 {
+            key.u64(u64::from(surface.height.get(j * r + i).map_or(u32::MAX, |h| h.to_bits())));
+        }
+    }
+    if let Some(hit) = FOUNDABLE.get(&key) {
+        return hit;
+    }
     let limit = feasibility::MAX_FOUNDATION_STEP + 0.02;
-    sources
-        .iter()
-        .any(|w| feasibility::pose_lower_bound(surface, shape, dirs, w, limit) <= limit)
+    // The bound reads only a source's footing and bearing: sources sharing
+    // both are searched once.
+    let mut searched: Vec<(Option<[u64; 2]>, bool, bool)> = Vec::new();
+    let found = sources.iter().any(|w| {
+        let key = (
+            w.footing().map(|f| f.map(f64::to_bits)),
+            w.bearing == feasibility::Bearing::Ring,
+            w.bearing == feasibility::Bearing::Extent,
+        );
+        if searched.contains(&key) {
+            return false;
+        }
+        searched.push(key);
+        feasibility::pose_lower_bound(surface, shape, dirs, w, limit) <= limit
+    });
+    FOUNDABLE.put(key, found);
+    found
+}
+static FOUNDABLE: super::probe_cache::Memo<bool> = super::probe_cache::Memo::new();
+pub(super) fn clear_probe_cache() {
+    FOUNDABLE.clear();
 }
 fn deficit_message(cause: &str) -> &'static str {
     match cause {

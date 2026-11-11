@@ -1,7 +1,5 @@
 # River synthesis on heightmaps: state of the art and development plan
 
-[Français](synthese_rivieres_heightmap_FR.md)
-
 > **Purpose:** situate Magna Urbis's hydrological pipelines (Rust `rust/crates/core`, TypeScript `web/src/gen/terrain`, neural bench `web/src/ui/riverVectors.ts`) against the literature, and define improvements to implement.
 >
 > **Date:** 2026-10-12. Baseline before implementation: tag `rivers-neural-best-2026-10-12`. Implementation: section 6.
