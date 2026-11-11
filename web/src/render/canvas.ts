@@ -35,7 +35,7 @@ import { applyRenderColors, type RenderColors } from './customColors';
 import { fieldBoundaryStyle, fieldHedgeStyle } from './hedges';
 import { furrowLines, furrowSpacing } from './furrows';
 import { orientPos } from '../gen/geo/poly';
-import { unionMany } from '../gen/geo/bool';
+import { clipRingBox, unionMany } from '../gen/geo/bool';
 import { CANVAS_MAP_STROKES as MAP_STROKES, mapStrokeWidth } from './strokes';
 import { NATURAL_LAND_KINDS, countryKind, FRINGE_ORDER, FRINGE_PAINT } from './countryside';
 import { TERRACE_STROKES as TS, terraceDetailAlpha } from './terraces';
@@ -59,7 +59,7 @@ import { frameModel, panelMargin } from './frame';
 import { litDots } from './extras';
 import { displayQualityFor, type ResolvedDisplayQuality } from './displayQuality';
 
-export interface CanvasLike { width: number; height: number; getContext(id: '2d'): CanvasRenderingContext2D | null }
+export interface CanvasLike { width: number; height: number; getContext(id: '2d', options?: CanvasRenderingContext2DSettings): CanvasRenderingContext2D | null }
 
 export interface CanvasRendererDeps {
   /** Footprints of isolated houses and farms (native scenes): woods are cleared around them like around a farmstead. */
@@ -258,16 +258,21 @@ function addRing(path: Path2D, ring: Vec2[]): void {
   path.closePath();
 }
 
-function polyPath(P: new () => Path2D, l: PolyLayer, ids: ArrayLike<number>, minEdge: number): Path2D | null {
+function polyPath(P: new () => Path2D, l: PolyLayer, ids: ArrayLike<number>, minEdge: number, rect?: Rect4): Path2D | null {
   const path = new P();
   const e2 = minEdge * minEdge;
   let any = false;
   for (let n = 0; n < ids.length; n++) {
     const i = ids[n];
+    if (rect && !l.index.boxHits(i, rect)) continue;
     const rings: Vec2[][] = [l.polys[i]];
     const h = l.holes?.[i];
     if (h) for (const x of h) rings.push(x);
-    for (const pts of rings) {
+    for (const ring of rings) {
+      // Clip before submitting to Canvas: the GPU otherwise replays map-sized
+      // forest/wash paths for every tile and every multiply stamp.
+      const pts = rect ? clipRingBox([...ring.map(p => [p.x, p.y] as [number, number]),
+        [ring[0]?.x ?? 0, ring[0]?.y ?? 0]], { x0: rect.minX, y0: rect.minY, x1: rect.maxX, y1: rect.maxY }).map(([x, y]) => ({ x, y })) : ring;
       if (pts.length < 3) continue;
       let lx = pts[0].x, ly = pts[0].y, kept = 1;
       path.moveTo(lx, ly);
@@ -350,7 +355,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
   const furrowCache = new Map<number, FurrowPaths>();
   const treeMarks = new Map<TextureLayer, Map<number, Mark[]>>();
   const penMarks = new Map<string, PenMark[]>(), penSheets = new Map<string, ParchmentSymbols>();
-  const forestWashes = new Map<string, { levels: PolyLayer[]; fringe: PolyLayer[]; depth: Float32Array; reach: Float32Array; n: number }>();
+  const forestWashes = new Map<string, ForestWash>();
   let built = 0;
   let labels: Label[] = [];
   const overlays: Overlays = { labels: world.options.labels !== false, legend: !!world.options.legend, cartouche: true };
@@ -380,12 +385,13 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
   const mapPyramid = new Map<string, { x: number; y: number; span: number; pixels: number; gutter: number; density: number; semantic: string; light: boolean }>();
   let activeLight = false, activeLive = false, activeDpr: number | undefined;
   const rasterFill = new LiveTileFill(now);
+  const previewFill = new LiveTileFill(now);
   let lastRaster: { canvas: CanvasLike; view: View; dpr: number } | undefined;
   const suspendLive = (): void => rasterFill.suspend();
   const dropLastRaster = (): void => { if (lastRaster) { lastRaster.canvas.width = 0; lastRaster.canvas.height = 0; } lastRaster = undefined; };
   /** The whole map rasterised once at a coarse density: a live view shows it under its missing tiles, never blank tiles. */
   let preview: { key: string; canvas: CanvasLike } | undefined;
-  const dropPreview = (): void => { if (preview) { preview.canvas.width = 0; preview.canvas.height = 0; } preview = undefined; };
+  const dropPreview = (): void => { previewFill.suspend(); if (preview) { preview.canvas.width = 0; preview.canvas.height = 0; } preview = undefined; };
   let rasterFailed = false;
   /** Pre-composited sprite layers (drawLayerTiles); null marks a tile with nothing to draw. */
   const layerTiles = new RasterTileCache<CanvasImageSource | null>(LAYER_TILE_BYTES);
@@ -440,11 +446,11 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     const tiles = l.index.tilesInRect(rect), big = l.index.bigInRect(rect);
     const stamp = tiles.map((t) => `${t}:${l.tileKeys?.[t] ?? ''}`).join(';') + '|' + big.map((i) =>
       `${i}:${l.bigKeys?.[Array.prototype.indexOf.call(l.index.big, i)] ?? ''}`).join(';');
-    return cached(`${l.name}|clip|${stamp}`, () => {
+    return cached(`${l.name}|clip|${rect.minX},${rect.minY},${rect.maxX},${rect.maxY}|${stamp}`, () => {
       const ids: number[] = [];
       for (const t of tiles) for (const i of l.index.itemsOf(t)) ids.push(i);
       ids.push(...big);
-      return polyPath(P, l, ids, 0);
+      return polyPath(P, l, ids, 0, rect);
     });
   }
 
@@ -471,7 +477,13 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
   }
 
   /** Fade inside the retained woodland boundary; no cover polygon is displaced. */
-  function forestWash(name: string): { levels: PolyLayer[]; fringe: PolyLayer[]; depth: Float32Array; reach: Float32Array; n: number } | undefined {
+  function forestWash(name: string): ForestWash | undefined {
+    const steps = forestWashSteps(name);
+    let step = steps.next();
+    while (!step.done) step = steps.next();
+    return step.value;
+  }
+  function* forestWashSteps(name: string): Generator<boolean, ForestWash | undefined> {
     const retained = forestWashes.get(name);
     if (retained) return retained;
     const layer = polyL(name);
@@ -484,8 +496,11 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     const mask = new Uint8Array(n * n);
     for (let i = 0; i < layer.polys.length; i++) {
       rasterizePolys([layer.polys[i], ...(layer.holes?.[i] ?? [])], n, n, cell, mask);
+      if ((i & 31) === 31) yield false;
     }
+    yield false;
     const reach = distanceField(mask, n, n, cell).dist;
+    yield false;
     // Tracks and streams cut narrow gaps: the wood carries on across them, only its true edges fade.
     const depth = distanceField(Uint8Array.from(mask, (v, j) => v || reach[j] < 20 ? 0 : 1), n, n, cell).dist;
     const layerOf = (suffix: string, ind: Float32Array): PolyLayer => {
@@ -493,9 +508,17 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       const polys = regions.map(r => r.outer), holes = regions.map(r => r.holes);
       return { name: `${name}-${suffix}`, polys, holes, index: new TileIndex(S, scene.tileSize, boxesOf(polys), 'center') };
     };
-    const levels = [.125, .3125, .5625, .875].map((fraction, i) => layerOf(`edge-${i}`, indicator(depth, (d, j) => mask[j] !== 0 && d >= FOREST_EDGE_WIDTH * fraction)));
+    yield false;
+    const levels: PolyLayer[] = [], fringe: PolyLayer[] = [];
+    for (const [i, fraction] of [.125, .3125, .5625, .875].entries()) {
+      levels.push(layerOf(`edge-${i}`, indicator(depth, (d, j) => mask[j] !== 0 && d >= FOREST_EDGE_WIDTH * fraction)));
+      yield false;
+    }
     // Shade of the woods on the rough ground around them, in steps like the V1 halo.
-    const fringe = [14, 30, 48, 68, 90, 114, 140].map((distance, i) => layerOf(`fringe-${i}`, indicator(reach, d => d < distance)));
+    for (const [i, distance] of [14, 30, 48, 68, 90, 114, 140].entries()) {
+      fringe.push(layerOf(`fringe-${i}`, indicator(reach, d => d < distance)));
+      yield false;
+    }
     const result = { levels, fringe, depth, reach, n };
     forestWashes.set(name, result);
     sharedForestWashes.set(shareKey, result); if (sharedForestWashes.size > 3) sharedForestWashes.delete(sharedForestWashes.keys().next().value!);
@@ -722,8 +745,8 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     const live = activeLive && !!deps.invalidate && typeof requestAnimationFrame === 'function';
     const scale = live ? 2 ** (Math.floor(2 * Math.log2(view.scale)) / 2) : view.scale;
     const k = scale * dpr, outputK = view.scale * dpr, ratio = view.scale / scale;
-    // Live tiles bound the indivisible raster operation; captures keep the original tile size. Every tile repaints the
-    // whole paths that reach it (a fixed cost per tile), so 256 px halves the per-pixel overhead of 128 px tiles.
+    // Small live CPU tiles bound each indivisible raster operation; captures
+    // retain their exact density and larger tiles. Polygon paths are clipped below.
     const tilePx = live ? 256 : 512, gutter = live ? 8 : 32, tileSize = tilePx / k;
     const x0 = Math.floor(rect.minX / tileSize), y0 = Math.floor(rect.minY / tileSize);
     const x1 = Math.floor(rect.maxX / tileSize), y1 = Math.floor(rect.maxY / tileSize);
@@ -735,7 +758,9 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     if (requests.length * (tilePx + 2 * gutter) ** 2 * 4 > rasterCache.maxBytes) return drawVector(view);
     const buildTile = (request: typeof requests[number]): CanvasImageSource => {
       const target = makeCanvas(tilePx + 2 * gutter, tilePx + 2 * gutter);
-      if (!target?.getContext('2d')) throw new Error('Overlay tile allocation failed');
+      // Keep vector replay local to a small CPU surface. Only the finished tile
+      // is uploaded; multiply display lists cannot accumulate in Chrome's GPU queue.
+      if (!target?.getContext('2d', { willReadFrequently: true })) throw new Error('Overlay tile allocation failed');
       const tileView = { cx: (request.x + 0.5) * tileSize, cy: (request.y + 0.5) * tileSize, scale };
       const st = drawVector(tileView, target, 'map', rect); pathsBuilt += st.pathsBuilt; mapStats = st;
       // The canvas itself is the tile: transferToImageBitmap waits for the GPU raster of the tile on the main thread.
@@ -768,6 +793,11 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
         const jobKey = requests.map(r => r.key).join(';') + `|${rect.minX},${rect.minY},${rect.maxX},${rect.maxY}`;
         const light = activeLight, fit = layerTilesFit;
         rasterFill.start(jobKey, function* () {
+          // The first forest tile must not build eleven whole-map wash layers in
+          // one frame. Captures drain the same generator synchronously.
+          if (!isUnderdarkBiome(world.options.biome) && !(light && pal.name === 'parchment' && scale < 1)) {
+            for (const name of ['lu-forest', 'u-cover-forest']) yield* forestWashSteps(name);
+          }
           const cx = view.cx / tileSize - .5, cy = view.cy / tileSize - .5;
           const queue = requests.filter(r => !rasterCache.get(r.key)).sort((a, b) => (a.x - cx) ** 2 + (a.y - cy) ** 2 - (b.x - cx) ** 2 - (b.y - cy) ** 2);
           // The coarse map stands in meanwhile: the view sharpens at once when its tiles are ready (a long job shows its
@@ -827,18 +857,51 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     }
   }
 
-  /** The coarse whole-map raster for this semantic key and quality tier, built on first need (one map-sized draw). */
+  /** A CPU preview with a fixed geometry budget, refined cooperatively. Never run
+   * the full renderer (wash/stamp passes) over the whole map just to hide a missing tile. */
   function mapPreview(semantic: string): CanvasImageSource | undefined {
     const key = `${semantic}|${activeLight}`;
     if (preview?.key === key) return preview.canvas as unknown as CanvasImageSource;
     dropPreview();
     const px = PREVIEW_PX, target = makeCanvas(px, px);
-    if (!target?.getContext('2d')) return undefined;
-    const whole = { minX: 0, minY: 0, maxX: S, maxY: S }, saved = { dpr: activeDpr, fit: layerTilesFit };
-    activeDpr = 1; layerTilesFit = layerTilesFitView(whole, px / S);
-    try { drawVector({ cx: S / 2, cy: S / 2, scale: px / S }, target, 'map', whole); }
-    finally { activeDpr = saved.dpr; layerTilesFit = saved.fit; }
+    const ctx = target?.getContext('2d', { willReadFrequently: true });
+    if (!target || !ctx) return undefined;
+    ctx.setTransform(px / S, 0, 0, px / S, 0, 0);
+    if (!deps.transparentBackground) { ctx.fillStyle = pal.paper; ctx.fillRect(0, 0, S, S); }
     preview = { key, canvas: target };
+    previewFill.start(key, function* () {
+      const tex = getTerrain(); if (tex) ctx.drawImage(tex, 0, 0, S, S);
+      yield true;
+      let remaining = 32768, shapes = 4096;
+      const names = [...LAND_ORDER.map(kind => 'lu-' + kind), 'sea', 'lakes', 'rivers', 'u-masses'];
+      for (const name of names) {
+        const layer = polyL(name); if (!layer) continue;
+        const kind = name.slice(3) as keyof Palette['land'];
+        if (name.startsWith('lu-') && !(deps.mask?.landuse ?? world.options.landuse)) continue;
+        ctx.fillStyle = name === 'sea' ? pal.seaFill : name === 'lakes' ? pal.lakeFill : name === 'rivers' ? pal.riverFill : name === 'u-masses' ? pal.urban.mass : pal.land[kind];
+        ctx.globalAlpha = name.startsWith('lu-') ? pal.landOpacity : 1;
+        ctx.globalCompositeOperation = name.startsWith('lu-') && pal.landBlend === 'multiply' ? 'multiply' : 'source-over';
+        for (let i = 0; i < layer.polys.length && remaining > 0 && shapes > 0; i++) {
+          const b = i * 4, box = layer.index.boxes;
+          if ((box[b + 2] - box[b]) * (box[b + 3] - box[b + 1]) < (S / px) ** 2) continue;
+          const path = new P(); let vertices = 0;
+          for (const ring of [layer.polys[i], ...(layer.holes?.[i] ?? [])]) {
+            if (remaining < 3) break;
+            const stride = Math.max(1, Math.ceil(ring.length / Math.min(256, remaining)));
+            const points: Vec2[] = []; let last: Vec2 | undefined;
+            for (let j = 0; j < ring.length && remaining > 0; j += stride) {
+              const p = ring[j];
+              if (last && (p.x - last.x) ** 2 + (p.y - last.y) ** 2 < (S / px) ** 2) continue;
+              points.push(p); last = p; remaining--; vertices++;
+            }
+            addRing(path, points);
+          }
+          if (vertices >= 3) { ctx.fill(path, 'evenodd'); shapes--; }
+          // At most one small polygon per cooperative step; no stamp passes.
+          yield true;
+        }
+      }
+    }, deps.invalidate ?? (() => {}), () => {});
     return target as unknown as CanvasImageSource;
   }
 
@@ -865,6 +928,11 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     let drawn = false;
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+    if (preview?.key === `${semantic}|${light}`) {
+      ctx.drawImage(preview.canvas as unknown as CanvasImageSource,
+        -box.minX * density, -box.minY * density, S * density, S * density);
+      drawn = true;
+    }
     for (const [key, tile] of tiles) {
       const image = rasterCache.get(key); if (!image) { mapPyramid.delete(key); continue; }
       const x = (tile.x - box.minX) * density, y = (tile.y - box.minY) * density, size = tile.span * density;
@@ -924,17 +992,30 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     const lw = (w: number, minPx: number): number => lineWidth(w, minPx, sc);
 
     // helpers ---------------------------------------------------------------------------
+    // Include the stamp/shadow reach and put artificial clipping edges safely
+    // outside the canvas, so stroked polygons retain their original borders.
+    const pathRect = growRect(rect, Math.max(16, paintMargin(sc)));
+    const rectKey = `${pathRect.minX},${pathRect.minY},${pathRect.maxX},${pathRect.maxY}`;
+    const framePaths = new Map<PolyLayer, Path2D[]>();
     const polyPaths = (l: PolyLayer): Path2D[] => {
+      const retained = framePaths.get(l); if (retained) return retained;
       const out: Path2D[] = [];
-      for (const t of l.index.tilesInRect(rect)) {
-        const p = cached(`${l.name}|${band}|t${t}|${l.tileKeys?.[t] ?? ""}`, () => polyPath(P, l, l.index.itemsOf(t), minEdge));
+      for (const t of l.index.tilesInRect(pathRect)) {
+        const p = cached(`${l.name}|${band}|${rectKey}|t${t}|${l.tileKeys?.[t] ?? ""}`, () => polyPath(P, l, l.index.itemsOf(t), minEdge, pathRect));
         if (p) { out.push(p); fs.tilesDrawn++; }
       }
-      for (const i of l.index.bigInRect(rect)) {
-        const p = cached(`${l.name}|${band}|b${i}|${l.bigKeys?.[Array.prototype.indexOf.call(l.index.big, i)] ?? ""}`, () => polyPath(P, l, [i], minEdge));
+      const big = l.index.bigInRect(pathRect);
+      // Vectorized wash regions are disjoint. Batch them after clipping rather
+      // than enqueueing thousands of identical multiply operations per stamp.
+      if (l.name.includes('-edge-') || l.name.includes('-fringe-')) {
+        const stamp = l.bigKeys?.join(';') ?? '';
+        const p = cached(`${l.name}|${band}|${rectKey}|big|${stamp}`, () => polyPath(P, l, big, minEdge, pathRect));
+        if (p) { out.push(p); fs.bigDrawn += big.length; }
+      } else for (const i of big) {
+        const p = cached(`${l.name}|${band}|${rectKey}|b${i}|${l.bigKeys?.[Array.prototype.indexOf.call(l.index.big, i)] ?? ""}`, () => polyPath(P, l, [i], minEdge, pathRect));
         if (p) { out.push(p); fs.bigDrawn++; }
       }
-      return out;
+      framePaths.set(l, out); return out;
     };
     const linePaths = (l: LineLayer): Path2D[] => {
       const out: Path2D[] = [];

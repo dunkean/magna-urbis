@@ -1,3 +1,4 @@
+import { rasterizeSvg as imageOf } from '../render/svgRaster';
 import { cityOverlayLandKinds, cityOverlayLandKey, cityWaterCutsLand, cityCountrysideCanvasOptions } from '../render/cityEnvironment';
 import { retainedDecorOf } from './decorTerrain';
 import { decorWaterSvg } from '../ui/decorWater';
@@ -56,11 +57,6 @@ import { isResourceDiagnostic } from '../render/displayDiagnostics';
 import { resourceOverlayBody, type ResourceSource } from './resourceLayer';
 import { getDisplayQuality, initializeDisplayQuality, noteDisplayNavigation, reportDisplayRenderer, onDisplayQualityChange, setDisplayAppearanceQuality } from '../render/displayQuality';
 
-const imageOf = async (svg: string): Promise<HTMLImageElement> => {
-  const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
-  try { const image = new Image(); image.src = url; await image.decode(); return image; }
-  finally { URL.revokeObjectURL(url); }
-};
 let brushes: Promise<BrushImages | null> | undefined;
 export async function paintedBrushes(): Promise<BrushImages | null> {
   return brushes ??= import('../render/assets/brushAssets').then(({ BRUSH_SOURCES }) => decodeBrushes(BRUSH_SOURCES));
@@ -74,7 +70,7 @@ const wholeMap = (width: number): ViewRasterRegion => ({ x: 0, y: 0, width, heig
 /** Resources a live renderer shares with its exports: derived products keyed by revisions, and the native city map. */
 export interface SharedPassResources { cache: ResourceCache; city?: { key: string; map: ReturnType<typeof createNativeCityMap> } }
 /** `svg`: the terrain of the 3D background; `image`: the 2D base, with the crowns of a hidden relief. */
-type BaseRaster = { svg: string; image?: HTMLImageElement; fantasy?: FantasyRaster };
+type BaseRaster = { svg: string; image?: HTMLCanvasElement; fantasy?: FantasyRaster };
 /** Contour width factor on the 3D drape tiles. */
 const DRAPE_CONTOUR_WEIGHT = 1.8;
 /** Parsed contour paths, kept as long as their cached strings. */
@@ -121,11 +117,11 @@ export class BenchRenderer {
   private cartography?: CanvasRenderer;
   private physical?: PhysicalGround;
   /** renderSvg overlay of an export (explicit layers), whole map at EXPORT_OVERLAY_PX: used only where it is not stretched. */
-  private exportOverlay?:HTMLImageElement;
+  private exportOverlay?:HTMLCanvasElement;
   /** Physical land use of an export when a rural semantic look is on: drawn under the semantics, the rest of the overlay above. */
-  private exportGround?:HTMLImageElement;
+  private exportGround?:HTMLCanvasElement;
   /** Terrain raster (CPU relief, sea): natural content, whole map. */
-  private base?: HTMLImageElement;
+  private base?: HTMLCanvasElement;
   private terrainSvg = '';
   /** Illustrated grounds: washes and stamps painted on canvas over `base` (web/src/ui/fantasyRaster.ts). */
   private fantasy?: FantasyRaster;
@@ -136,8 +132,8 @@ export class BenchRenderer {
   private frameSvg = '';
   private vectors = '';
   private vectorsDirty = false;
-  private vectorBase?: { image: HTMLImageElement; region: ViewRasterRegion };
-  private vectorView?: { image: HTMLImageElement; region: ViewRasterRegion };
+  private vectorBase?: { image: HTMLCanvasElement; region: ViewRasterRegion };
+  private vectorView?: { image: HTMLCanvasElement; region: ViewRasterRegion };
   private vectorRequest?: Promise<void>;
   private backgroundHref?: string;
   private backgroundImage?: HTMLCanvasElement;
@@ -549,7 +545,17 @@ export class BenchRenderer {
   }
   drawMini(size: number): HTMLCanvasElement {
     const width = this.world!.mapSize;
-    return this.draw({ cx: width / 2, cy: width / 2, scale: size / width }, size, size, 1, this.miniature);
+    // A live miniature must not synchronously render the entire map, cancel
+    // progressive tile filling or restore the camera through another full draw.
+    const canvas = this.miniature; canvas.width = canvas.height = size;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+    ctx.fillStyle = this.paper; ctx.fillRect(0, 0, size, size);
+    if (this.base) ctx.drawImage(this.base, 0, 0, size, size);
+    this.cartography?.drawCachedMap(canvas, { minX: 0, minY: 0, maxX: width, maxY: width });
+    const vectors = this.vectorBase;
+    if (vectors) ctx.drawImage(vectors.image, vectors.region.x * size / width, vectors.region.y * size / width,
+      vectors.region.width * size / width, vectors.region.height * size / width);
+    return canvas;
   }
   /** No GPU readback, intermediate bitmap or full-frame copy in the live display path. */
   drawLive(view: View, w: number, h: number, dpr: number): void {
@@ -668,7 +674,7 @@ export class BenchRenderer {
     const vectors = this.vectorRaster(view, w, h, dpr);
     if (vectors) ctx.drawImage(vectors.image, vectors.region.x, vectors.region.y, vectors.region.width, vectors.region.height);
     // The export overlay is one whole-map raster: only where it is at least as fine as the frame.
-    const overlay = this.exportOverlay && view.scale * dpr * size <= this.exportOverlay.naturalWidth * 1.01 ? this.exportOverlay : undefined;
+    const overlay = this.exportOverlay && view.scale * dpr * size <= this.exportOverlay.width * 1.01 ? this.exportOverlay : undefined;
     // Export order: physical land use, rural semantics, then roads/labels/furniture (as on screen).
     if (overlay) {
       if (this.exportGround) ctx.drawImage(this.exportGround, 0, 0, size, size);
@@ -689,7 +695,7 @@ export class BenchRenderer {
   }
   /** The vector raster for this frame: the view raster when it fits, else the whole-map one while a
    * view raster at the frame's density is prepared (the frame is redrawn when it is ready). */
-  private vectorRaster(view: View, w: number, h: number, dpr: number): { image: HTMLImageElement; region: ViewRasterRegion } | undefined {
+  private vectorRaster(view: View, w: number, h: number, dpr: number): { image: HTMLCanvasElement; region: ViewRasterRegion } | undefined {
     if (!this.vectors) return undefined;
     const size = this.world!.mapSize, rect = viewRect(view, w, h), density = view.scale * dpr;
     if (viewRasterFits(this.vectorView?.region, rect, density, size)) return this.vectorView;

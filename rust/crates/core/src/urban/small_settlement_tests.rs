@@ -778,3 +778,55 @@ fn a_village_placed_on_a_volcano_flank_still_builds_houses() {
         assert!(far <= 500.0, "grade {grade}: a plot {far:.0} m from the village site");
     }
 }
+
+#[test]
+fn small_farms_and_roadside_shrines_on_a_steep_cone_keep_their_buildings() {
+    let (n, width) = (128, 6000.0);
+    let water = vec![0_u8; n * n];
+    let level = vec![0.0_f32; n * n];
+    // These real failed layouts lost their residential admission envelopes to
+    // road cuts, while retaining their smaller utility bodies. Replay their
+    // geometry on the same synthetic cone as the generated sites below.
+    let clipped: Vec<Layout> = serde_json::from_str(include_str!("fixtures/clipped-utility-layouts.json")).unwrap();
+    for grade in [0.0, 0.55, 0.8] {
+        let height: Vec<f32> = (0..n * n).map(|i| {
+            let x = (i % n) as f64 * width / n as f64;
+            let y = (i / n) as f64 * width / n as f64;
+            (10.0 + grade * (2800.0 - (x - 3000.0).hypot(y - 3000.0)).max(0.0)) as f32
+        }).collect();
+        let surface = Surface { geometry: None, width, n, height: &height, water: &water, interpolation: Default::default() };
+        for (index, (template, culture)) in [("small_farm", "yoruba"), ("roadside_shrine", "chinese")].into_iter().enumerate() {
+            let mut cfg: LayoutConfig = serde_json::from_str(include_str!("fixtures/small-layout-config.json")).unwrap();
+            cfg.programme.intent = "activity".into();
+            cfg.programme.template = template.into();
+            cfg.street_frontage = true;
+            cfg.align_enclosed_grid = true;
+            cfg.hide_unused_quarters = true;
+            cfg.natural_camp_approaches = true;
+            cfg.organic_branch_variation = 0.5;
+            cfg.ribbon_width_variation = 0.5;
+            let site = Site { key: "city".into(), name: String::new(), population: 500, culture: culture.into(),
+                center: Point { x: 4200.0, y: 3000.0 }, radius: 221.25 };
+            let generated = generate_quarters("utility-cone", &[site], &cfg, surface, &[]).unwrap();
+            let mut replay = clipped[index].clone();
+            programme::prepare(&mut replay, 500, &cfg.programme, surface).unwrap();
+            for (name, layouts) in [("generated", generated), ("road-clipped", vec![replay])] {
+                let parts = generate_parcels("utility-cone", &layouts, &ParcelConfig::default()).unwrap();
+                // V2 explicitly reapplies the programme after the cadastre.
+                let parts = programme::reallocate(&layouts, &parts).unwrap();
+                let requests = building_sites::requests("utility-cone", &layouts, &parts, surface, &level, None).unwrap();
+                let buildings: usize = requests.iter().filter(|r| r["programme"]["activity"]["template"] == template
+                    && r["function"] != "open_space" && r["programme"]["deficit"].is_null())
+                    .map(|r| r["preview"].as_array().map_or(0, Vec::len)).sum();
+                assert!(buildings > 0, "{template}/{culture} {name} grade {grade}: no utility buildings; {:?}", parts[0].programme);
+                if grade > 0.0 {
+                    assert!(requests.iter().any(|r| r["terrain"]["max_foundation_step_m"].as_f64().unwrap_or(0.0) > 0.75),
+                        "{template} {name} grade {grade}: foundation did not adapt");
+                    assert!(layouts[0].programme.as_ref().unwrap().warnings.iter().any(|w| w.contains("gradins")),
+                        "{template} {name} grade {grade}: missing terrain warning");
+                }
+                eprintln!("utility cone {template}/{culture} {name} grade {grade}: {buildings} buildings");
+            }
+        }
+    }
+}

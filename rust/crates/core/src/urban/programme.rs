@@ -772,6 +772,10 @@ fn prepare_inner(
             if front < minimum {
                 return None;
             }
+            let activity = context.intent == "activity" && d.role == "craft.activity";
+            if activity && super::activities::retained_yard(layout, &context.template, bi, &b.shape, &surface).is_empty() {
+                return None;
+            }
             let envelope = || {
                 super::parcels::contact_envelope(
                     &b.shape,
@@ -782,7 +786,9 @@ fn prepare_inner(
                 )
                 .is_some()
             };
-            if (isolated || matches!(d.function.as_str(), "warehouse" | "collective" | "workshop"))
+            // A shrine or farm yard need not hold the culture's residential
+            // courtyard/compound. Its actual bodies above are the witness.
+            if !activity && (isolated || matches!(d.function.as_str(), "warehouse" | "collective" | "workshop"))
                 && !if isolated {
                     envelope()
                 } else {
@@ -940,6 +946,13 @@ fn prepare_inner(
         };
         let mut reserved_capacity = 0.0;
         for &(bi, street, front) in &picks {
+            if context.intent == "activity" {
+                let yard = super::activities::retained_yard(layout, &context.template, bi, &layout.blocks[bi].shape, &surface);
+                let step = super::activities::yard_step(&yard, &surface);
+                if step > 0.75 {
+                    warnings.push(format!("Site utilitaire pentu : bâtiments conservés sur des soubassements en gradins (dénivelé maximal {:.2} m par bâtiment).", step));
+                }
+            }
             used.insert(bi);
             if layout.blocks[bi].kind == "block" {
                 layout.blocks[bi].kind = "reserve:programme".into();
@@ -1444,6 +1457,11 @@ fn eligible_memo(
         }
         if matches!(d.function.as_str(), "market" | "common") {
             return open_access_with(p, c.min_access_width, memo.frontage(pi, p).1);
+        }
+        if pr.context.intent == "activity" && d.role == "craft.activity" {
+            // The reserved domain already holds the actual yard. Keep that
+            // proof only while the whole domain survives cadastral edits.
+            return super::geometry::difference(&res.shape, &p.shape).iter().map(area).sum::<f64>() <= 0.01;
         }
         if d.landmark && has_envelope(p, 4.0, 4.0) { return true; }
         return envelope(memo) || memo.block_witness(layout, pi, p, c.min_frontage, c.min_depth);

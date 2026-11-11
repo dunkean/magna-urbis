@@ -39,6 +39,13 @@ fn samples(s: &Shape) -> Vec<Point> {
 }
 
 pub(super) fn refine(layout: &mut Layout, cfg: &LayoutConfig, morph: &Morph, surface: Surface<'_>) {
+    // The activity grammar already lays the complete yard and its access track.
+    // Residential frontage depths must not carve lanes through its buildings.
+    if cfg.programme.intent == "activity"
+        && layout.structure.as_ref().is_some_and(|s| s.mechanism == "kind")
+    {
+        return;
+    }
     if cfg.access_mode != "adaptive" || cfg.access_budget == 0 {
         return;
     }

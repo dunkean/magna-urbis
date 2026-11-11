@@ -228,6 +228,38 @@ pub(crate) fn site_yard(template: &str, culture: &str, key: &str, centre: super:
     sites::yard(&format!("activity:{key}"), culture, &names, centre, angle, &mut rng, ground, &|_| true)
 }
 
+/// The activity grammar certifies its own buildings, rather than a residential
+/// admission envelope. Recheck containment after road cuts or parcel edits.
+pub(crate) fn retained_yard(layout: &super::Layout, template: &str, block: usize, shape: &super::Shape, ground: &dyn crate::settlements::installations::Ground) -> Vec<crate::settlements::activities::ActivityBuilding> {
+    let Some(structure) = layout.structure.as_ref().filter(|s| s.mechanism == "kind") else { return vec![] };
+    let Some(centre) = structure.centers.first().map(|c| c.point) else { return vec![] };
+    let Some(block) = layout.blocks.get(block) else { return vec![] };
+    let yard = site_yard(template, &layout.culture, &layout.key, centre, block.axis.y.atan2(block.axis.x), ground);
+    if yard.iter().all(|b| {
+        let body = super::Shape { outer: b.ring.clone(), holes: vec![] };
+        super::geometry::difference(&body, shape).iter().map(super::geometry::area).sum::<f64>() <= 0.01
+    }) { yard } else { vec![] }
+}
+
+/// Required stepped plinth for the actual utility bodies. Each body has its
+/// own platform; the difference in elevation across the entire yard is irrelevant.
+pub(crate) fn yard_step(yard: &[crate::settlements::activities::ActivityBuilding], ground: &dyn crate::settlements::installations::Ground) -> f64 {
+    yard.iter().map(|b| {
+        let shape = super::Shape { outer: b.ring.clone(), holes: vec![] };
+        let (x0, y0, x1, y1) = super::geometry::bbox(&shape);
+        let nx = ((x1 - x0) / 0.5).ceil().max(1.0) as usize;
+        let ny = ((y1 - y0) / 0.5).ceil().max(1.0) as usize;
+        let (mut low, mut high) = (f64::INFINITY, f64::NEG_INFINITY);
+        // The bounding rectangle conservatively includes the whole footing.
+        for y in 0..=ny { for x in 0..=nx {
+            let h = ground.height_at(super::Point { x: x0 + (x1 - x0) * x as f64 / nx as f64, y: y0 + (y1 - y0) * y as f64 / ny as f64 });
+            low = low.min(h);
+            high = high.max(h);
+        }}
+        high - low
+    }).fold(0.0, f64::max)
+}
+
 /// Dispersed-farm density of a culture (farmsteads.rs).
 pub(crate) fn farm_density(culture: &str) -> f64 { super::farmsteads::density(culture) }
 

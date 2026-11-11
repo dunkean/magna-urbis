@@ -1108,12 +1108,12 @@ impl BuildingSiteIndex {
         // City Bench `activity` intent: the template's yard (laid again from the centre and
         // axis kept by kinds.rs), one part per building, each with its archetype massing.
         let mut activity_massing: Option<Vec<Value>> = None;
+        let mut activity_step = None;
         if pr.context.intent == "activity" && role == "craft.activity"
-            && let Some(centre) = layout.structure.as_ref().and_then(|s| s.centers.first()).map(|c| c.point)
-            && let Some(block) = layout.blocks.get(parcel.block)
         {
-            let yard = super::activities::site_yard(&pr.context.template, &layout.culture, &layout.key, centre, block.axis.y.atan2(block.axis.x), &surface);
+            let yard = super::activities::retained_yard(layout, &pr.context.template, parcel.block, &lot, &surface);
             if !yard.is_empty() {
+                activity_step = Some(super::activities::yard_step(&yard, &surface));
                 parts = yard.iter().map(|b| (super::Shape { outer: b.ring.clone(), holes: vec![] }, "building")).collect();
                 activity_massing = Some(yard.iter().flat_map(|b| b.massing.as_array().cloned().unwrap_or_default()).collect());
                 programme["activity"] = json!({"template": pr.context.template, "archetypes": yard.iter().map(|b| b.archetype.clone()).collect::<Vec<_>>()});
@@ -1247,8 +1247,12 @@ impl BuildingSiteIndex {
         };
         // A town relaxed onto a slope (`ProgrammeContext::slope_relax`) stands
         // on stepped plinths: its foundation step widens with the house slope.
-        let foundation_step = feasibility::foundation_step(pr.context.slope_relax);
-        let deficit = if source_gap.is_some() { Some("source_absente") }
+        let foundation_step = feasibility::foundation_step(pr.context.slope_relax)
+            .max(activity_step.map_or(0.0, |step| step + 0.02));
+        // Activity bodies were laid and checked against this exact domain;
+        // a different residential recipe cannot disqualify their footprint.
+        let deficit = if activity_step.is_some() { None }
+            else if source_gap.is_some() { Some("source_absente") }
             else { lot_deficit(&drawable, surface, &parcel.shape, &dirs, gradient, foundation_step) };
         if let Some(cause) = deficit {
             programme["deficit"] = json!({"cause":cause,"households":allocation.households.max(0.0),

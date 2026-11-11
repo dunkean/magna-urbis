@@ -78,7 +78,7 @@ const geomBox = (g: Geom): Box => {
 const boxMeets = (a: Box, b: Box): boolean => !(a.x0 > b.x1 + 1e-6 || a.x1 < b.x0 - 1e-6 || a.y0 > b.y1 + 1e-6 || a.y1 < b.y0 - 1e-6);
 
 /** Sutherland–Hodgman clip of a closed ring ([first] repeated last) to a box; open vertex list out. */
-function clipRingBox(r: Ring, b: Box): [number, number][] {
+export function clipRingBox(r: Ring, b: Box): [number, number][] {
   let pts: [number, number][] = r.slice(0, -1);
   const planes: [(p: [number, number]) => number][] = [[(p) => p[0] - b.x0], [(p) => b.x1 - p[0]], [(p) => p[1] - b.y0], [(p) => b.y1 - p[1]]];
   for (const [side] of planes) {

@@ -277,7 +277,8 @@ for (let i = from; i < from + count; i++) {
       const good = inside && (central || attempt >= 3 ? bf >= MIN_BUILDABLE && slope <= MAX_SLOPE : bf >= 0.6);
       if (!good) {
         if (!inside) console.log(`${v.id}: site ${Math.round(edge)} m from the map edge (radius ${Math.round(site.radius)} m)`);
-        const rank = bf - slope - (inside ? 0 : 10);
+        // A site with no buildable land gives an empty town: rank it below a site close to the edge.
+        const rank = bf - slope - (inside ? 0 : 1) - (bf < 0.05 ? 20 : 0);
         if (!best || rank > best.rank) best = { bytes, bf, slope, rank, seed: v.tags.seed };
         if (!central && attempt < 3) {
           console.log(`${v.id}: centre ${(bf * 100).toFixed(0)} % buildable, placing in the central area`);
