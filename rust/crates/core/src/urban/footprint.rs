@@ -1591,6 +1591,7 @@ fn accessible(
     grade_limit: f64,
     water_affinity: f64,
     service: Service,
+    capacity_seed: bool,
 ) -> (Vec<Shape>, Vec<Vec<Shape>>, Vec<Street>) {
     // A small settlement is a compact cluster: its growth window and its far-field cost shrink
     // with its population, so a thin buildable strip (a road bench, a contour) is not stretched
@@ -1804,12 +1805,52 @@ fn accessible(
     let mut arrivals = vec![f64::INFINITY; n];
     let mut parents = vec![usize::MAX; n];
     let mut heap = BinaryHeap::new();
+    // A terrace nucleus needs usable land around it. The nearest dry cell can
+    // be a one-cell ledge enclosed by cliffs, even beside a broad buildable
+    // flank. Label physical components only for slope-adapted growth; ordinary
+    // sites retain their exact seed and arithmetic.
+    let mut components = vec![usize::MAX; n];
+    let mut component_sizes = vec![];
+    if capacity_seed {
+        for root in 0..n {
+            if !dry_mask[root] || components[root] != usize::MAX { continue; }
+            let id = component_sizes.len();
+            components[root] = id;
+            let mut queue = vec![root];
+            let mut cursor = 0;
+            while cursor < queue.len() {
+                let i = queue[cursor];
+                cursor += 1;
+                let (x, y) = (i % grid.nx, i / grid.nx);
+                for (dx, dy) in [(1isize, 0isize), (-1, 0), (0, 1), (0, -1)] {
+                    let (nx, ny) = (x as isize + dx, y as isize + dy);
+                    if nx < 0 || ny < 0 || nx >= grid.nx as isize || ny >= grid.ny as isize { continue; }
+                    let j = ny as usize * grid.nx + nx as usize;
+                    if dry_mask[j] && components[j] == usize::MAX
+                        && routing::segment_clear(surface, grid.point(i), grid.point(j), service.grade) {
+                        components[j] = id;
+                        queue.push(j);
+                    }
+                }
+            }
+            component_sizes.push(queue.len());
+        }
+    }
     let mut active_centers = vec![];
     for c in centers.iter_mut() {
         let nominal = grid.nearest(c.point);
-        let seed = (0..n).filter(|&i| dry_mask[i]).min_by(|&a, &b| {
-            distance(grid.point(a), c.point).total_cmp(&distance(grid.point(b), c.point))
-        });
+        let candidates = || (0..n).filter(|&i| dry_mask[i]);
+        let needed = if capacity_seed {
+            let available = candidates()
+                .filter(|&i| distance(grid.point(i), c.point) < radius * 0.7)
+                .map(|i| component_sizes[components[i]]).max().unwrap_or(0);
+            available.min((target * 0.25 / step.powi(2)).ceil() as usize)
+        } else { 0 };
+        let seed = candidates()
+            .filter(|&i| !capacity_seed || component_sizes[components[i]] >= needed)
+            .min_by(|&a, &b| {
+                distance(grid.point(a), c.point).total_cmp(&distance(grid.point(b), c.point))
+            });
         if let Some(i) =
             seed.filter(|&i| distance(grid.point(i), grid.point(nominal)) < radius * 0.7)
         {
@@ -2452,11 +2493,11 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
             },
         };
         let grade = if cfg.tissue == "terraces" { 0.5 } else { buildable_grade(site, cfg) };
-        let grow = |centers: &mut Vec<UrbanCenter>, grade: f64, service: Service| {
-            accessible(site.population, target, family, cfg, centers, radius, angle, &fractions, surface, &growth_roads, &rng, grade, water_affinity, service)
+        let grow = |centers: &mut Vec<UrbanCenter>, grade: f64, service: Service, capacity_seed: bool| {
+            accessible(site.population, target, family, cfg, centers, radius, angle, &fractions, surface, &growth_roads, &rng, grade, water_affinity, service, capacity_seed)
         };
         let before = centers.clone();
-        let first = grow(&mut centers, grade, service);
+        let first = grow(&mut centers, grade, service, cfg.tissue == "terraces");
         // A site whose streets cannot climb out of the core would leave the place almost
         // without land (under a quarter of its budget): it then grows by stairs and
         // terraces, on steeper ground step by step, and says so. The ladder runs up to
@@ -2470,7 +2511,7 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
             }
             let mut again = before.clone();
             let steep = Service { grade: service.grade.max(cfg.max_stair_grade).max(steep_grade), ..service };
-            let second = grow(&mut again, steep_grade, steep);
+            let second = grow(&mut again, steep_grade, steep, true);
             if got(&second) > 2.0 * got(&best) {
                 centers = again;
                 best = second;

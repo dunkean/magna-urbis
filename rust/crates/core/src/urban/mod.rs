@@ -53,6 +53,7 @@ mod panic20k_tests;
 pub mod roles;
 mod routing;
 mod trim;
+mod slopes;
 mod widths;
 
 use crate::rng::Rng;
@@ -1584,7 +1585,8 @@ pub fn generate_quarters(
         // user's configuration (`kinds::finish`).
         let original = config;
         let (effective, kind) = kinds::effective(site, original, roads);
-        let config = &effective;
+        let slope_config = slopes::adapt(site, &effective, surface);
+        let config = slope_config.as_ref().unwrap_or(&effective);
         let culture = if config.culture == "site" {
             &site.culture
         } else {
@@ -1735,6 +1737,9 @@ pub fn generate_quarters(
                     chosen * 100.0
                 ));
             }
+        }
+        if slope_config.is_some() {
+            layout.warnings.push("Site de pente : rues suivant les courbes de niveau, escaliers et fondations en gradins ; la capacité bâtie reste limitée au terrain utilisable.".into());
         }
         Ok(layout)
     });

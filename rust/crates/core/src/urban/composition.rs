@@ -1208,13 +1208,21 @@ fn absorbed_villages(
 /// the enclosure, so the curtain crosses the water on water gates instead of
 /// running along both banks. Dry land between the arms is never enclosed.
 const WATER_REACH: f64 = 60.0;
+/// Morphological closing (grow then shrink by `reach`). geo's offset never
+/// ends on a ring with long runs of millimetre zigzag edges (a 150k
+/// persian+medina outline carried 1236 edges under 5 cm along 6 m); the
+/// closing only looks for gaps metres wide, so it drops sub-centimetre detail.
+pub(super) fn closing(shapes: &geo::MultiPolygon<f64>, reach: f64) -> geo::MultiPolygon<f64> {
+    use geo::{Buffer, Simplify};
+    shapes.simplify(0.01).buffer(reach).buffer(-reach)
+}
 fn across_water(pieces: Vec<Shape>, surface: Surface<'_>) -> Vec<Shape> {
-    use geo::{BooleanOps, Buffer, MultiPolygon};
+    use geo::{BooleanOps, MultiPolygon};
     if pieces.len() < 2 {
         return pieces;
     }
     let town = MultiPolygon(pieces.iter().map(g::polygon).collect());
-    let closed = town.buffer(WATER_REACH).buffer(-WATER_REACH);
+    let closed = closing(&town, WATER_REACH);
     let wet_gaps: Vec<Shape> = g::shapes(closed.difference(&town))
         .into_iter()
         .filter(|gap| {

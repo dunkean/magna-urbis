@@ -926,7 +926,7 @@ fn fill_pockets(shape: &Shape, surface: Surface<'_>, limits: PocketLimits, max_s
 /// reaches an empty far bank, return to the occupied bank; genuine occupied
 /// crossings retain the original circuit and its water gates.
 fn occupied_banks(shape: &Shape, occupied: &[Shape], surface: Surface<'_>) -> Vec<Shape> {
-    use geo::{BooleanOps, Buffer, MultiPolygon};
+    use geo::{BooleanOps, MultiPolygon};
     let dry = g::dry_clip(&surface, shape);
     let supported = |s: &Shape| occupied.iter().any(|q| area(&g::intersection(s, q)) > 1.0);
     if !dry.iter().any(|s| g::area(s) > 1.0 && !supported(s)) { return vec![shape.clone()]; }
@@ -935,7 +935,7 @@ fn occupied_banks(shape: &Shape, occupied: &[Shape], surface: Surface<'_>) -> Ve
     // Keep genuine crossings between occupied banks even when a third bank
     // or island is empty. The closing only supplies water, never dry wedges.
     let land = MultiPolygon(kept.iter().map(g::polygon).collect());
-    let closed = land.buffer(60.0).buffer(-60.0);
+    let closed = super::composition::closing(&land, 60.0);
     let mut water = vec![shape.clone()];
     for bank in &dry { water = water.iter().flat_map(|s| g::difference(s, bank)).collect(); }
     let links: Vec<_> = g::shapes(closed.difference(&land)).iter()

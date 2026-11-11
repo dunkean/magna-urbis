@@ -8,6 +8,7 @@ import { programmeIntentLabel, programmeSpecialisationSummary } from './urbanPro
 import { programmeBalanceEvidence } from './urbanProgrammeEvidence';
 import { localizedDemographicLabel } from './settlementKinds';
 import { urbanText } from './urbanPanelLocale';
+import { cityReachedPopulation, populationText, populationShortfallText } from '../render/cityPopulation';
 
 export interface CitySummaryInput {
   /** Requested population of the site (the city's input, not a capacity). */
@@ -76,7 +77,8 @@ export function citySummaryHtml(input: CitySummaryInput): string {
     row('site', t('Contexte mesuré', 'Measured context'), xml(`${programme.navigableFrontage ? t('quai navigable mesuré', 'measured navigable quay') : t('aucun quai navigable', 'no navigable quay')} · ${waterfront}/${environment.length} ${t('îlots en rive', 'waterfront blocks')}${config?.siteArchetype ? ` · ${t('site', 'site')} ${config.siteArchetype}` : ''}`)),
     ...(substitutions.length ? [row('substitutions', t('Substitutions motivées', 'Motivated substitutions'), `<ul>${substitutions.slice(0, 4).map(s => `<li>${xml(s)}</li>`).join('')}${substitutions.length > 4 ? `<li>+${substitutions.length - 4}</li>` : ''}</ul>`)] : []),
   ];
-  const s = citySupport(programme, scene);
+  const s = citySupport(programme, scene), reached = cityReachedPopulation(pop, [programme], scene);
+  const fmt = { t: (template: string): string => t(frTemplate(template), template) };
   const persons = (households: number): string => s.size ? ` (≈ ${n(households * s.size)} ${t('hab.', 'inh.')})` : '';
   const housed = s.known !== undefined ? `${n(s.known)} ${t('ménages', 'households')}${persons(s.known)}`
     : scene ? `${t('inconnue', 'unknown')}${s.unknownLots ? ` · ${n(s.unknownLots)} ${t('lots domestiques admis à capacité inconnue', 'domestic lots admitted with unknown capacity')}` : ''}`
@@ -86,8 +88,12 @@ export function citySummaryHtml(input: CitySummaryInput): string {
     row('land', t('Capacité du sol', 'Land capacity'), `${n(s.land)} ${t('ménages sur les lots habitables', 'households on habitable lots')} · ${n(s.parcels)} ${t('affectés', 'allocated')}`),
     row('buildings', t('Bâtiments admis', 'Admitted buildings'), scene ? `${n(s.buildings)} · ${n(s.refusals)} ${t('refus', 'refusals')}` : '—'),
     row('housed', t('Population logée', 'Housed population'), housed),
+    ...(reached ? [row('reached', t('Population atteinte', 'Reached population'), xml(populationText(pop, reached, fmt) + (populationShortfallText(reached, fmt) ? ' · ' + populationShortfallText(reached, fmt) : '')))] : []),
     row('deficit', t('Déficit', 'Deficit'), `${n(s.deficit)} ${t('ménages', 'households')}${persons(s.deficit)}${s.known === undefined ? ` · ${t('capacité inconnue non créditée', 'unknown capacity not credited')}` : ''}`),
   ];
   const group = (title: string, rows: string[]): string => `<h4>${xml(title)}</h4><dl class="urban-inspection">${rows.join('')}</dl>`;
   return `${group(t('Demandé', 'Requested'), requested)}${group(t('Résolu', 'Resolved'), resolved)}${group(t('Supporté', 'Supported'), supported)}`;
 }
+
+const frTemplate = (template: string): string => template === '{count} inh.' ? '{count} hab.' : template === '{count} inh. (target {target})' ? '{count} hab. (cible {target})'
+  : 'Capacité insuffisante : {households} ménages (≈ {people} hab.) non logés.';

@@ -830,3 +830,56 @@ fn small_farms_and_roadside_shrines_on_a_steep_cone_keep_their_buildings() {
         }
     }
 }
+
+#[test]
+fn a_town_and_village_use_the_buildable_terraces_of_a_volcano_flank() {
+    let (n, width) = (256, 6000.0);
+    let water = vec![0_u8; n * n];
+    let level = vec![0.0_f32; n * n];
+    for (population, grade, culture, minimum) in [
+        (10_000, 0.55, "swahili-stone-town", 100),
+        (2_000, 0.8, "european-organic", 40),
+    ] {
+        let center = Point { x: 4200.0, y: 3000.0 };
+        let height: Vec<f32> = (0..n * n).map(|i| {
+            let x = (i % n) as f64 * width / n as f64;
+            let y = (i / n) as f64 * width / n as f64;
+            let cone = 10.0 + grade * (2800.0 - (x - 3000.0).hypot(y - 3000.0)).max(0.0);
+            // A tiny low-gradient ledge at the marker, enclosed by a steep
+            // volcanic ridge. The town must select the usable flank beside
+            // it, rather than spend its whole budget on the nearest speck.
+            let r = (x - center.x).hypot(y - center.y);
+            if population == 10_000 && r < 65.0 {
+                (10.0 + grade * 1600.0 + 100.0 * (1.0 - ((r - 20.0) / 45.0).clamp(0.0, 1.0))) as f32
+            } else { cone as f32 }
+        }).collect();
+        let surface = Surface { geometry: None, width, n, height: &height, water: &water,
+            interpolation: Default::default() };
+        let site = Site { key: "cone".into(), name: String::new(), population,
+            culture: culture.into(), center, radius: if population == 10_000 { 735.0 } else { 330.0 } };
+        let mut cfg: LayoutConfig = serde_json::from_str(include_str!("fixtures/small-layout-config.json")).unwrap();
+        cfg.street_frontage = true;
+        cfg.align_enclosed_grid = true;
+        cfg.hide_unused_quarters = true;
+        cfg.natural_camp_approaches = true;
+        cfg.organic_branch_variation = 0.5;
+        cfg.ribbon_width_variation = 0.5;
+        let layouts = generate_quarters("large-cone", &[site], &cfg, surface, &[]).unwrap();
+        let parts = generate_parcels("large-cone", &layouts, &ParcelConfig::default()).unwrap();
+        // V2 reconciles the programme after subdivision, before building sites.
+        let parts = programme::reallocate(&layouts, &parts).unwrap();
+        let requests = building_sites::requests("large-cone", &layouts, &parts, surface, &level, None).unwrap();
+        let buildings: usize = requests.iter()
+            .filter(|r| r["function"] != "open_space" && r["programme"]["deficit"].is_null())
+            .map(|r| r["preview"].as_array().map_or(0, Vec::len)).sum();
+        let domestic = requests.iter().filter(|r| r["programme"]["deficit"].is_null()
+            && r["programme"]["role"].as_str().is_some_and(|role| role.starts_with("dwelling")))
+            .filter(|r| r["preview"].as_array().is_some_and(|p| !p.is_empty())).count();
+        eprintln!("volcano {population}, grade {grade}: {buildings} buildings, {domestic} domestic sites; {:?}", layouts[0].warnings);
+        assert!(buildings >= minimum, "{population} on grade {grade}: {buildings} buildings");
+        assert!(domestic >= minimum / 2, "{population} on grade {grade}: {domestic} domestic sites");
+        assert!(layouts[0].warnings.iter().any(|w| w.contains("Site de pente")));
+        assert!(layouts[0].streets.iter().any(|s| matches!(s.role.as_str(), "street" | "lane" | "stairs")));
+        assert!(layouts[0].structure.as_ref().is_some_and(|s| s.metrics.allocated_area >= 10_000.0));
+    }
+}

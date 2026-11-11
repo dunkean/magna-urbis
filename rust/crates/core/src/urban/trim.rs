@@ -255,6 +255,23 @@ fn prune_with(layout: &mut Layout, open: &[bool], lots: &[Shape], doors: Option<
     let mut segs: Vec<Seg> = vec![];
     let mut first_seg: Vec<usize> = vec![];
     let mut ends: Vec<(usize, usize, usize)> = vec![];
+    // Each street's fronts in 32 m cells: a long street with thousands of fronts
+    // otherwise tests every front against each of its 10 m pieces (quadratic;
+    // a 150k persian+medina city never left this loop).
+    const FRONT_CELL: f64 = 32.0;
+    let front_cell = |x: f64, y: f64| ((x / FRONT_CELL).floor() as i64, (y / FRONT_CELL).floor() as i64);
+    let index = |list: &Fronts| -> Vec<HashMap<(i64, i64), Vec<usize>>> {
+        list.iter().map(|fronts| {
+            let mut cells: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
+            for (k, f) in fronts.iter().enumerate() {
+                let (x0, y0) = front_cell(f[0].x.min(f[1].x), f[0].y.min(f[1].y));
+                let (x1, y1) = front_cell(f[0].x.max(f[1].x), f[0].y.max(f[1].y));
+                for cx in x0..=x1 { for cy in y0..=y1 { cells.entry((cx, cy)).or_default().push(k); } }
+            }
+            cells
+        }).collect()
+    };
+    let front_index = fronts.as_ref().map(|(d, sd)| (index(d), index(sd)));
     for (si, s) in layout.streets.iter().enumerate() {
         first_seg.push(segs.len());
         // Strict: field paths, gate streets and processional ways must earn their place too.
@@ -265,11 +282,18 @@ fn prune_with(layout: &mut Layout, open: &[bool], lots: &[Shape], doors: Option<
             let (p, q) = (s.path[i - 1], s.path[i]);
             let w = s.widths.get(i - 1).or(s.widths.first()).copied().unwrap_or(4.0);
             let reach = w * 0.5 + 3.0;
-            let near = |list: &Fronts| list.get(si).is_some_and(|fronts| fronts.iter().any(|f| g::distance(f[0], p, q).0 <= reach
-                || g::distance(f[1], p, q).0 <= reach || g::distance(p, f[0], f[1]).0 <= reach || g::distance(q, f[0], f[1]).0 <= reach));
-            let (serves, lined) = match &fronts {
-                Some((d, sd)) => (near(d), near(sd)),
-                None => { let t = touches(&hash, p, q, reach); (t, t) }
+            // Only fronts whose box comes within `reach` of the piece's box can pass.
+            let near = |list: &Fronts, cells: &[HashMap<(i64, i64), Vec<usize>>]| list.get(si).is_some_and(|fronts| {
+                let hit = |f: &[Point; 2]| g::distance(f[0], p, q).0 <= reach
+                    || g::distance(f[1], p, q).0 <= reach || g::distance(p, f[0], f[1]).0 <= reach || g::distance(q, f[0], f[1]).0 <= reach;
+                let Some(cells) = cells.get(si) else { return fronts.iter().any(hit) };
+                let (x0, y0) = front_cell(p.x.min(q.x) - reach, p.y.min(q.y) - reach);
+                let (x1, y1) = front_cell(p.x.max(q.x) + reach, p.y.max(q.y) + reach);
+                (x0..=x1).any(|cx| (y0..=y1).any(|cy| cells.get(&(cx, cy)).is_some_and(|ks| ks.iter().any(|&k| hit(&fronts[k])))))
+            });
+            let (serves, lined) = match (&fronts, &front_index) {
+                (Some((d, sd)), Some((di, sdi))) => (near(d, di), near(sd, sdi)),
+                _ => { let t = touches(&hash, p, q, reach); (t, t) }
             };
             segs.push(Seg { street: si, a: node(p), b: node(q), prunable: can, serves, lined, alive: true });
         }
