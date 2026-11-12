@@ -596,6 +596,20 @@ export class BenchRenderer {
   draw(view: View, w: number, h: number, dpr: number, canvas = this.surface): HTMLCanvasElement {
     return this.drawInto(canvas, view, w, h, dpr, false);
   }
+  /** The GPU capture copied to a 2D canvas right after the readback (a WebGPU canvas is blank once its frame is gone). */
+  private miniGroundCopy?: { source: HTMLCanvasElement; copy: HTMLCanvasElement };
+  private miniGround(): HTMLCanvasElement | undefined {
+    const source = this.groundBackground();
+    if (!source) return undefined;
+    if (this.miniGroundCopy?.source !== source) {
+      const copy = document.createElement('canvas'); copy.width = source.width; copy.height = source.height;
+      copy.getContext('2d')!.drawImage(source, 0, 0);
+      this.miniGroundCopy = { source, copy };
+    }
+    return this.miniGroundCopy.copy;
+  }
+  /** True when the last miniature had its map content (cached ground/vectors) and no work was pending: otherwise it must be drawn again. */
+  miniComplete = false;
   drawMini(size: number): HTMLCanvasElement {
     const width = this.world!.mapSize;
     // A live miniature must not synchronously render the entire map, cancel
@@ -604,8 +618,12 @@ export class BenchRenderer {
     const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
     ctx.fillStyle = this.paper; ctx.fillRect(0, 0, size, size);
     if (this.base) ctx.drawImage(this.base, 0, 0, size, size);
-    this.cartography?.drawCachedMap(canvas, { minX: 0, minY: 0, maxX: width, maxY: width });
+    // GPU ground: no CPU raster; the cached ground capture (also the 3D background) is the miniature's terrain.
+    const gpuGround = this.gpuActive ? this.miniGround() : undefined;
+    if (gpuGround) ctx.drawImage(gpuGround, 0, 0, size, size);
+    const cached = this.cartography?.drawCachedMap(canvas, { minX: 0, minY: 0, maxX: width, maxY: width }) ?? false;
     const vectors = this.vectorBase;
+    this.miniComplete = (cached || !!this.base || !!gpuGround || !!vectors) && this.pendingWork() === 0;
     if (vectors) ctx.drawImage(vectors.image, vectors.region.x * size / width, vectors.region.y * size / width,
       vectors.region.width * size / width, vectors.region.height * size / width);
     return canvas;

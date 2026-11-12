@@ -169,7 +169,7 @@ export class StudioClient {
     const useBench=!!settings&&resolved!.path==='composite';
     if(useBench){
       const {BenchRenderer}=await import('./benchRenderer');
-      this.bench??=new BenchRenderer(()=>{if(this.benchActive&&this.world)this.viewer.contentChanged(this.world.mapSize,true);});
+      this.bench??=new BenchRenderer(()=>{if(this.benchActive&&this.world){this.benchMiniRevision=-1;}if(this.benchActive&&this.world)this.viewer.contentChanged(this.world.mapSize,true);});
       this.bench.resourceSource=w=>this.resources(w);
       this.benchPreparing++;
       try{await this.bench.set(world,settings!,resolved!);}finally{this.benchPreparing--;}
@@ -209,7 +209,10 @@ export class StudioClient {
     // The whole-map miniature costs as much as a full frame: the live view shows first, the miniature follows in a later frame.
     if(frame.mini&&!this.benchPreparing&&(this.benchMiniRevision!==this.appearanceRevision||this.benchMiniSize!==frame.mini)){
       if(this.benchMiniDue){
-        this.benchMiniDue=false;mini=renderer.drawMini(frame.mini);this.benchMiniRevision=this.appearanceRevision;this.benchMiniSize=frame.mini;
+        this.benchMiniDue=false;mini=renderer.drawMini(frame.mini);
+        // Content still arriving (progressive display, dirty tiles): keep the revision stale so the miniature is drawn again.
+        if(renderer.miniComplete){this.benchMiniRevision=this.appearanceRevision;this.benchMiniSize=frame.mini;}
+        else if(!this.benchMiniTimer)this.benchMiniTimer=setTimeout(()=>{this.benchMiniTimer=undefined;if(!this.benchActive)return;this.benchMiniDue=true;this.viewer.invalidate();},MINI_DELAY_MS);
       }else if(!this.benchMiniTimer)this.benchMiniTimer=setTimeout(()=>{this.benchMiniTimer=undefined;if(!this.benchActive)return;this.benchMiniDue=true;this.viewer.invalidate();},MINI_DELAY_MS);
     }
     // Restore the live camera after a miniature capture, in this same animation frame.
