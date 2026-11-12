@@ -112,9 +112,7 @@ V2Env v2Local(vec3 s,vec2 world,float tpi,float footprint){
   if(v2Zoned())e.leaf=mix(v2SeasonLeaf(),1.,e.needle);
   v2ZoneWet=0.;v2ZoneBare=0.;if(v2Zoned())v2ZoneEnv(e,s,world,tpi,footprint);
   // Construction excludes tree roots, not the surrounding soil/grass response: changing it made a pale pad per house.
-  if(uHasOccupation==1){vec2 uv=(world-uOccupationRect.xy)/uOccupationRect.z;if(all(greaterThanEqual(uv,vec2(0.)))&&all(lessThanEqual(uv,vec2(1.)))){int cls=int(groundOccupation(world).z);if(cls==8)e.woody=0.;
-    // Towns, yards and lanes: trampled and cleared snow, thinner and darker, so the settlement stays readable.
-    if(cls==7||cls==8||cls==9||cls==11)e.snow*=.45;}}
+  if(uHasOccupation==1){vec2 uv=(world-uOccupationRect.xy)/uOccupationRect.z;if(all(greaterThanEqual(uv,vec2(0.)))&&all(lessThanEqual(uv,vec2(1.)))){int cls=int(groundOccupation(world).z);if(cls==8)e.woody=0.;}}
   float water=forestWaterCoverage(world);e.woody*=1.-water;e.grass*=1.-water;
   // Preserve the retained physical beach footprint at every detail level.
   // Its 0.8 factor belongs to legacy colour blending, not vegetation cover.

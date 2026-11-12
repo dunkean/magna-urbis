@@ -43,7 +43,7 @@ export const ZONE_SEASONS: Readonly<Record<ClimateZone, ZoneSeason>> = {
 };
 /** Edits of the zone's year from the appearance panel. An absent field keeps the zone's value. */
 export interface SeasonCalendar {
-  thawSpring?: number; thawAutumn?: number; winterCold?: number; rain?: number;
+  thawSpring?: number; thawAutumn?: number; /** °C added to the winter low, like the thaws: negative is colder. */ winterCold?: number; rain?: number;
   leafWinter?: number; leafSpring?: number; leafAutumn?: number; larch?: number;
   seaIceWinter?: number; seaIceSpring?: number; seaIceSummer?: number; seaIceAutumn?: number;
   /** Strength of the seasonal colours of herbs and crops: 0 none, 1 the zone's, 2 doubled. */
@@ -56,7 +56,7 @@ export type SeasonCalendarKey = keyof SeasonCalendar;
 export const SEASON_CALENDAR_FIELDS: readonly { key: SeasonCalendarKey; en: string; fr: string; min: number; max: number; step: number }[] = [
   { key: 'thawSpring', en: 'Spring thaw of the snow line (°C)', fr: 'Dégel de printemps de la limite des neiges (°C)', min: -10, max: 20, step: .5 },
   { key: 'thawAutumn', en: 'Autumn thaw of the snow line (°C)', fr: 'Dégel d’automne de la limite des neiges (°C)', min: -10, max: 20, step: .5 },
-  { key: 'winterCold', en: 'Winter cold (°C)', fr: 'Froid hivernal (°C)', min: -10, max: 20, step: .5 },
+  { key: 'winterCold', en: 'Winter temperature shift (°C, negative is colder)', fr: 'Décalage de température hivernale (°C, négatif = plus froid)', min: -20, max: 10, step: .5 },
   { key: 'snowPatches', en: 'Snow patchiness', fr: 'Morcellement de la neige', min: 0, max: 1, step: .05 },
   { key: 'rain', en: 'Rain regime (−1 winter, +1 summer)', fr: 'Régime des pluies (−1 hiver, +1 été)', min: -1, max: 1, step: .05 },
   { key: 'greenery', en: 'Seasonal colour strength', fr: 'Intensité des couleurs de saison', min: 0, max: 2, step: .05 },
@@ -73,7 +73,7 @@ const SNOW_PATCHES = .4;
 /** The zone's own values, in calendar form. A map without a zone follows the temperate year. */
 export function zoneCalendar(zone: ClimateZone = 'temperate'): Required<SeasonCalendar> {
   const z = ZONE_SEASONS[zone], thaw = z.thaw ?? NO_ICE;
-  return { thawSpring: thaw[1], thawAutumn: thaw[3], winterCold: z.cool, rain: z.rain, leafWinter: z.leaf[0], leafSpring: z.leaf[1], leafAutumn: z.leaf[3], larch: z.larch,
+  return { thawSpring: thaw[1], thawAutumn: thaw[3], winterCold: -z.cool, rain: z.rain, leafWinter: z.leaf[0], leafSpring: z.leaf[1], leafAutumn: z.leaf[3], larch: z.larch,
     seaIceWinter: z.seaIce[0], seaIceSpring: z.seaIce[1], seaIceSummer: z.seaIce[2], seaIceAutumn: z.seaIce[3], greenery: 1, snowPatches: SNOW_PATCHES };
 }
 const edited = (calendar?: SeasonCalendar): boolean => !!calendar && Object.values(calendar).some(value => typeof value === 'number' && Number.isFinite(value));
@@ -83,13 +83,13 @@ export function calendarSeason(zone: ClimateZone = 'temperate', calendar?: Seaso
   if (!edited(calendar)) return z;
   const c = { ...zoneCalendar(zone), ...Object.fromEntries(Object.entries(calendar!).filter(([, v]) => typeof v === 'number')) } as Required<SeasonCalendar>;
   const herb = z.herb.map(t => t.map(v => 1 + (v - 1) * c.greenery)) as unknown as Year<Tint>;
-  return { ...z, herb, leaf: [c.leafWinter, c.leafSpring, 1, c.leafAutumn], seaIce: [c.seaIceWinter, c.seaIceSpring, c.seaIceSummer, c.seaIceAutumn], rain: c.rain, cool: c.winterCold, larch: c.larch, thaw: [0, c.thawSpring, 0, c.thawAutumn] };
+  return { ...z, herb, leaf: [c.leafWinter, c.leafSpring, 1, c.leafAutumn], seaIce: [c.seaIceWinter, c.seaIceSpring, c.seaIceSummer, c.seaIceAutumn], rain: c.rain, cool: -c.winterCold, larch: c.larch, thaw: [0, c.thawSpring, 0, c.thawAutumn] };
 }
 /** Uniform values of the calendar; `uV2Calendar` 0 keeps the compiled zone tables. */
 export function seasonCalendarUniforms(zone?: ClimateZone, calendar?: SeasonCalendar): { on: number; leaf: number[]; ice: number[]; thaw: number[]; climate: number[]; snow: number[] } {
   const c = { ...zoneCalendar(zone), ...Object.fromEntries(Object.entries(calendar ?? {}).filter(([, v]) => typeof v === 'number')) } as Required<SeasonCalendar>;
   return { on: edited(calendar) ? 1 : 0, leaf: [c.leafWinter, c.leafSpring, 1, c.leafAutumn], ice: [c.seaIceWinter, c.seaIceSpring, c.seaIceSummer, c.seaIceAutumn],
-    thaw: [0, c.thawSpring, 0, c.thawAutumn], climate: [c.rain, c.winterCold, c.larch, c.greenery], snow: [c.snowPatches, 0, 0, 0] };
+    thaw: [0, c.thawSpring, 0, c.thawAutumn], climate: [c.rain, -c.winterCold, c.larch, c.greenery], snow: [c.snowPatches, 0, 0, 0] };
 }
 /** Sets the calendar uniforms on a WebGL program; `u` resolves a uniform location. */
 export function setSeasonCalendarGl(gl: WebGL2RenderingContext, u: (name: string) => WebGLUniformLocation | null, zone?: ClimateZone, calendar?: SeasonCalendar): void {
