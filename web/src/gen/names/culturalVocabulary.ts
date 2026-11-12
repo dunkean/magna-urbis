@@ -2,6 +2,7 @@ import type { Vocab } from './grammar';
 import type { ToponymProfile } from './profiles';
 import { Rng } from '../core/rng';
 import { CULTURAL_TERMS, formatToponym, type CulturalTerms } from './syntax';
+import type { NameMeaning } from './types';
 
 const label = (t: CulturalTerms, noun: string, name: string): string => {
   if (!name) return noun;
@@ -14,7 +15,7 @@ const label = (t: CulturalTerms, noun: string, name: string): string => {
  * own local or explicitly authored convention; see NAMEBENCH_GRAMMAR_SOURCES.md.
  */
 export function vocabularyForProfile(profile: ToponymProfile, legacy: Vocab, createProper?: (rng: Rng, kind: 'place' | 'river') => string): Vocab {
-  if (profile.id === profile.family) return legacy;
+  if (profile.id === profile.family) return annotateVocabulary(profile, legacy, createProper);
   const t = CULTURAL_TERMS[profile.id];
   if (!t) throw new Error(`No cultural vocabulary for profile ${profile.id}`);
   const descriptions = new Map<string, { proper: string; opaque: boolean }>();
@@ -69,6 +70,55 @@ export function vocabularyForProfile(profile: ToponymProfile, legacy: Vocab, cre
     forest: n => feature('forest', n), hill: n => feature('hill', n), farm: n => feature('farm', n),
     gateDir: d => named(t.gate, d), gateOf: p => feature('gate', p),
     class: [t.farm, t.ward, t.ward, t.region, t.region],
+  };
+  return annotateVocabulary(profile, result, createProper);
+}
+
+/** Metadata is recorded while composing, including legacy arrays; nothing is stripped from a full label. */
+function annotateVocabulary(profile: ToponymProfile, source: Vocab, createProper?: (rng: Rng, kind: 'place' | 'river') => string): Vocab {
+  type Description = NonNullable<ReturnType<NonNullable<Vocab['describeName']>>>;
+  const descriptions = new Map<string, Description>();
+  const t = CULTURAL_TERMS[profile.id];
+  const remember = (text: string, proper = '', meaning?: NameMeaning, role?: string): string => {
+    descriptions.set(text, { proper, opaque: false, ...(meaning ? { meaning } : {}), ...(role ? { role } : {}) });
+    return text;
+  };
+  const staticNames = (values: string[], concept: string) => values.map(text => remember(text, '', { concept }));
+  const proper = (r: Rng) => createProper?.(r, 'place') ?? source.place(r, 1);
+  const named = (noun: string, name: string) => profile.id === 'french' ? `${noun} ${name}` : label(t, noun, name);
+  const craftId = (word: string) => Object.keys(source.crafts).find(key => source.crafts[key] === word);
+  const directionId = (word: string) => ['north','east','south','west'][source.dirs.indexOf(word)];
+  const street = (name: string) => formatToponym(profile, 'street', name);
+  const dedication=(s:string)=>profile.id==='french'?`${['Marie','Anne','Catherine','Madeleine','Foy','Geneviève','Radegonde'].includes(s)?'Sainte':'Saint'}-${s}`:profile.id==='english'?`St ${s}`:profile.id==='german'?`St. ${s}`:profile.id==='italian'?`San ${s}`:s;
+  const result: Vocab = { ...source,
+    describeName: text => descriptions.get(text) ?? source.describeName?.(text),
+    old: staticNames(source.old, 'old-town'),
+    ward: (r, kind, saint, direction, craft) => {
+      const association = r.fork('association').pick(['place','craft','direction'] as const);
+      // A profile without an authored craft/direction lexicon uses a named place association.
+      const hasLexicon = profile.id === profile.family;
+      const value = hasLexicon && association === 'craft' ? craft : hasLexicon && association === 'direction' ? direction : proper(r.fork('proper'));
+      const meaning: NameMeaning | undefined = hasLexicon && association === 'craft' ? { concept:'craft', qualifier:craftId(craft) }
+        : hasLexicon && association === 'direction' ? { concept:'direction', qualifier:directionId(direction) } : undefined;
+      const cultural = profile.id === 'french' && meaning?.concept === 'craft' ? `Quartier des ${value}` : named(t.ward, value);
+      return remember(cultural, value, meaning);
+    },
+    st: { ...source.st,
+      main: staticNames(source.st.main, 'street-main'), market: staticNames(source.st.market, 'street-market'),
+      ring: staticNames(source.st.ring, 'street-ring'), wall: staticNames(source.st.wall, 'street-wall'),
+      quay: staticNames(source.st.quay, 'street-quay'), bridge: staticNames(source.st.bridge, 'street-bridge'), riverside: staticNames(source.st.riverside, 'street-riverside'),
+      church: s => remember(source.st.church(s), dedication(s)),
+      dest: s => remember(source.st.dest(s), s), road: s => remember(source.st.road(s), s),
+      gate: s => remember(source.st.gate(s), s, { concept:'destination', viaGate:true }),
+      craft: s => remember(source.st.craft(s), s, craftId(s) ? { concept:'craft', qualifier:craftId(s) } : undefined),
+      minor: r => { const n = proper(r.fork('minor-place')); return remember(street(n), n); },
+    },
+    sq: { ...source.sq, market: staticNames(source.sq.market, 'square-market'), green: staticNames(source.sq.green, 'square-green'),
+      plain: (r, saint) => remember(source.sq.plain(r, saint), dedication(saint)), church: s => remember(source.sq.church(s), dedication(s)) },
+    worship: (s, big, kind) => remember(source.worship(s, big, kind), dedication(s), undefined, kind ?? (big ? 'worship.cathedral' : 'worship.shrine')),
+    castle: s => remember(source.castle(s), s),
+    gateDir: s => remember(source.gateDir(s), s, { concept:'direction', qualifier:directionId(s) }),
+    gateOf: s => remember(source.gateOf?.(s) ?? formatToponym(profile, 'gate', s), s),
   };
   return result;
 }

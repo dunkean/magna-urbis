@@ -102,8 +102,7 @@ export interface V2Settings {
   urban?: V2UrbanSettings;
   appearance?: V2Appearance;
   /** Cartographic names can be edited without regenerating terrain or buildings. */
-  naming?: { title?: string; places?: Record<string, string>; mode?: 'cultural' | 'localized'; /** Legacy import only; generic terms follow the UI language. */ displayLanguage?: import('./languages').Language;
-    labels?: Record<string, import('./mapLabels').LabelEdit> };
+  naming?: import('../gen/names/types').NamingSettings;
   runtime?: {
     compute: 'auto' | 'cpu' | 'gpu';
     backend: 'typescript' | 'rust' | 'native';

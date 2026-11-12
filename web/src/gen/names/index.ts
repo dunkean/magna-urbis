@@ -13,8 +13,9 @@ import { cleanSettlementName } from '../options';
 import { resolveToponymProfile, type ToponymProfile } from './profiles';
 import { generateToponym, generateToponymRecord, ALGORITHM_VERSION, CORPUS_VERSION, CORPUS_FINGERPRINT, type ToponymKind } from './toponyms';
 import { vocabularyForProfile } from './culturalVocabulary';
-import { NameEntry, NameFamily, NameKind, NamesLayer, NAME_FAMILIES, type NameParts, type NamePresentation } from './types';
+import { NameEntry, NameFamily, NameKind, NamesLayer, NAME_FAMILIES, type NameParts, type NamePresentation, type NamingPolicy } from './types';
 import { presentName } from './displayNames';
+import { featureNameKey, nameHash } from './identity';
 
 export { NAME_FAMILIES };
 export type { NameEntry, NameFamily, NameKind, NamesLayer, NameParts, NamePresentation };
@@ -40,7 +41,7 @@ function generatedSettlementRecord(world: World, place: NonNullable<World['settl
   const manual = manualPlaceName(world, place.main ? 'main' : place.key);
   if (manual) return { proper: manual, cultural: manual, opaque: true };
   return generateToponymRecord({ seed: world.seed, key: `settlement:${place.key}`, kind: place.detail === 'farmstead' ? 'farm' : 'town',
-    culture: place.culture, language: place.options?.language ?? world.options.language });
+    culture: place.culture, language: place.options?.language ?? world.options.language, source: place.options?.nameSource ?? world.options.nameSource });
 }
 
 function generatedSettlementName(world: World, place: NonNullable<World['settlements']>[number]): string {
@@ -68,7 +69,7 @@ export function setSettlementName(world: World, key: string, value: string): voi
       const profile = resolveToponymProfile(ref.culture ?? ref.family, ref.language ?? ref.family, world.seed);
       const previous = entry.canonicalText ?? entry.text;
       const cultural = referenceText(profile, ref.form, name);
-      entry.parts = { proper: name, cultural, kind: entry.kind, opaque: ref.form === 'name', ...(entry.parts?.generic ? { generic: entry.parts.generic } : {}) };
+      entry.parts = { ...entry.parts, proper: name, cultural, kind: entry.kind, opaque: ref.form === 'name', ...(ref.form === 'gate-street' ? { meaning:{concept:'destination',viaGate:true} } : { meaning:undefined }) };
       entry.canonicalText = cultural;
       entry.text = presentName(entry.parts, names.presentation);
       if (ref.form === 'castle') for (const site of world.urban?.sites ?? []) if (site.name === previous) { site.name = cultural; if (site.generatedName === previous) site.generatedName = cultural; }
@@ -116,18 +117,18 @@ const dirOf = (from: Vec2, to: Vec2): Dir4 => {
 };
 
 /* ---------------------------------------------------------------- generator */
-export function generateNames(world: World, root: Rng, presentation: NamePresentation = { mode: 'cultural' }): NamesLayer {
+export function generateNames(world: World, root: Rng, presentation: NamePresentation = { mode: 'cultural' }, regionPolicy?: NamingPolicy): NamesLayer {
   const rng = root.fork('names');
   const opts = world.options;
   const family = familyFor(opts.culture, opts.language, world.seed);
   const profile = resolveToponymProfile(opts.culture, opts.language, world.seed);
   const vocabularies = new Map<string, Vocab>();
-  const vocabulary = (culture: string = opts.culture): Vocab => {
-    const selected = resolveToponymProfile(culture, opts.language, world.seed);
-    let result = vocabularies.get(selected.id);
+  const vocabulary = (culture: string = opts.culture, language=opts.language, source=opts.nameSource): Vocab => {
+    const selected = resolveToponymProfile(culture, language, world.seed),cacheKey=selected.id+':'+source;
+    let result = vocabularies.get(cacheKey);
     if (!result) { result = vocabularyForProfile(selected, VOCAB[selected.family], r => generateToponym({
-      seed: world.seed, key: 'urban:' + r.seedKey, kind: 'place', culture, language: opts.language,
-    })); vocabularies.set(selected.id, result); }
+      seed: world.seed, key: 'urban:' + r.seedKey, kind: 'place', culture, language, source,
+    })); vocabularies.set(cacheKey, result); }
     return result;
   };
   const V = vocabulary();
@@ -146,17 +147,20 @@ export function generateNames(world: World, root: Rng, presentation: NamePresent
   const partsFor = (kind: NameParts['kind'], proper: string, cultural: string, opaque = false): NameParts => ({ kind, proper, cultural, opaque });
   const add = (e: Omit<NameEntry, 'id'>): NameEntry => {
     const composed = V.describeName?.(e.text);
-    const parts = e.parts ?? partsFor(e.kind, composed?.proper ?? e.text, e.text, composed?.opaque ?? true);
-    const x = { ...e, id: `n${idn++}`, parts, canonicalText: parts.cultural, text: presentName(parts, presentation) };
+    const parts = e.parts ?? { ...partsFor(e.kind, composed?.proper ?? e.text, e.text, composed?.opaque ?? true), ...(composed?.meaning ? { meaning:composed.meaning } : {}), ...(composed?.role ? { role:composed.role } : {}) };
+    parts.profile ??= profile.id;
+    parts.sourceMode ??= opts.nameSource ?? profile.sourceMode;
+    const entityKey = e.entityKey ?? (e.kind === 'town' ? 'settlement:main' : `${e.kind}:${nameHash(e.path ? shapeKey(e.path) : pointKey(e.anchor))}`);
+    const x = { ...e, generated:e.generated ?? true, entityKey, id:entityKey, legacyId: `n${idn++}`, parts, canonicalText: parts.cultural, text: presentName(parts, presentation) };
     entries.push(x); return x;
   };
 
   // Complete corpus names are opaque: never add guessed articles or river suffixes.
-  const properRecord = (kind: ToponymKind, key: string) => generateToponymRecord({ seed: world.seed, key, kind, culture: opts.culture, language: opts.language });
+  const properRecord = (kind: ToponymKind, key: string) => generateToponymRecord({ seed: world.seed, key, kind, culture: opts.culture, language: regionPolicy?.profile ?? opts.language, source: regionPolicy?.source ?? opts.nameSource });
   const proper = (kind: ToponymKind, key: string): string => properRecord(kind, key).cultural;
   const feature = (kind: NameKind | 'region', key: string): NameParts => {
     const record = properRecord(kind as ToponymKind, key);
-    return partsFor(kind, record.proper, record.cultural, record.opaque);
+    return { ...partsFor(kind, record.proper, record.cultural, record.opaque), profile:record.profile, sourceMode:record.sourceMode, diagnostic:record.diagnostic };
   };
   const unique = (label: string, _tier: 0 | 1 | 2 = 1): string => proper('town', label);
   const center: Vec2 = world.site?.center ?? { x: S / 2, y: S / 2 };
@@ -165,11 +169,13 @@ export function generateNames(world: World, root: Rng, presentation: NamePresent
   // ---- rivers (stable native id, otherwise exact path identity)
   t.rivers.forEach((rv) => {
     const len = polylineLength(rv.path);
-    if (rv.path.length < 2 || len < (rv.main ? 120 : 350)) return;
-    const parts = feature('river', 'river:' + (rv.id ?? shapeKey(rv.path)));
+    if (rv.path.length < 2) return;
+    const key = featureNameKey(rv, 'river', shapeKey(rv.path));
+    const parts = feature('river', key);
+    if(rv.cls)parts.role=`water.${rv.cls}`;
     const text = parts.cultural;
     rv.name = text;
-    add({ kind: 'river', text, parts, rank: rv.main ? 1 : 3, anchor: pathMid(rv.path), path: rv.path });
+    add({ entityKey:key, kind: 'river', text, parts, rank: rv.main ? 1 : 3, anchor: pathMid(rv.path), path: rv.path, detail:rv.main ? 0 : Math.max(.12, Math.min(1, 1-len/S)) });
   });
 
   // ---- town: manual names are resolved before castles and destination labels.
@@ -182,9 +188,9 @@ export function generateNames(world: World, root: Rng, presentation: NamePresent
     const existing = siteId ? castleLabels.get(siteId) : castles.find((e) => dist(e.anchor, anchor) < 150);
     if (existing) return existing.text;
     const usesTown = !castles.length;
-    const base = usesTown ? town : generateToponym({ seed: world.seed, key: 'castle:' + (siteId ?? pointKey(anchor)), kind: 'town', culture, language: opts.language });
+    const base = usesTown ? town : generateToponym({ seed: world.seed, key: 'castle:' + (siteId ?? pointKey(anchor)), kind: 'town', culture, language: opts.language, source:opts.nameSource });
     const text = providedName ?? vocabulary(culture).castle(base);
-    const entry = add({ kind: 'castle', text, rank: 2, anchor, parts: { ...partsFor('castle', base, text, !!providedName), ...(familyFor(culture, opts.language, world.seed) === 'elven' ? { generic: 'tower' as const } : {}) }, generated: !providedName, ...(!providedName && usesTown ? { reference: referenceTo('main', 'castle', culture) } : {}) });
+    const entry = add({ entityKey:siteId ? 'castle:'+siteId : undefined, kind: 'castle', text, rank: 2, detail:.1, anchor, parts: { ...partsFor('castle', base, text, !!providedName), profile:resolveToponymProfile(culture,opts.language).id, ...(familyFor(culture, opts.language, world.seed) === 'elven' ? { generic: 'tower' as const } : {}) }, generated: !providedName, ...(!providedName && usesTown ? { reference: referenceTo('main', 'castle', culture) } : {}) });
     if (siteId) castleLabels.set(siteId, entry);
     return text;
   };
@@ -202,7 +208,7 @@ export function generateNames(world: World, root: Rng, presentation: NamePresent
   }
 
   // ---- roads: neighbouring villages at the exits
-  interface RoadInfo { path: Polyline; exit: Vec2; dest: string; kind: string; target?: string }
+  interface RoadInfo { key:string; path: Polyline; exit: Vec2; dest: string; kind: string; target?: string }
   const roadInfos: RoadInfo[] = [];
   // Internal roads refer to settlement identities; only edge exits get extra village labels.
   const onEdge = (p: Vec2): boolean => p.x < 1 || p.y < 1 || p.x > S - 1 || p.y > S - 1;
@@ -212,8 +218,8 @@ export function generateNames(world: World, root: Rng, presentation: NamePresent
     const internal = world.settlements && world.settlements.length > 1 && !onEdge(a) && !onEdge(b);
     const exit = dist(a, center) > dist(b, center) ? a : b;
     const target = internal ? world.settlements?.filter(s => !s.main).map(s => ({ s, d: dist(s.center, exit) })).sort((a, b) => a.d - b.d)[0]?.s : undefined;
-    const dest = target ? generatedSettlementName(world, target) : unique('dest:' + shapeKey(r.path), 1);
-    roadInfos.push({ path: r.path, exit, dest, kind: r.kind, target: target?.key });
+    const dest = target ? generatedSettlementName(world, target) : unique('dest:' + featureNameKey(r,'road',shapeKey(r.path)), 1);
+    roadInfos.push({ key:featureNameKey(r,'road',shapeKey(r.path)),path: r.path, exit, dest, kind: r.kind, target: target?.key });
     if (internal) return;
     const inward = { x: center.x - exit.x, y: center.y - exit.y };
     const l = Math.hypot(inward.x, inward.y) || 1;
@@ -226,15 +232,15 @@ export function generateNames(world: World, root: Rng, presentation: NamePresent
     return best;
   };
   // regional road labels outside the footprint
-  if (u) {
+  {
     for (const r of roadInfos) {
-      if (r.kind !== 'major' || polylineLength(r.path) < 300) continue;
+      if (polylineLength(r.path) < 25) continue;
       let bestRun: Polyline = [], run: Polyline = [];
       for (const p of r.path) {
-        if (u.footprint.some((f) => polygonContains(f, p))) { if (run.length > bestRun.length) bestRun = run; run = []; } else run.push(p);
+        if (u?.footprint.some((f) => polygonContains(f, p))) { if (run.length > bestRun.length) bestRun = run; run = []; } else run.push(p);
       }
       if (run.length > bestRun.length) bestRun = run;
-      if (bestRun.length >= 3 && polylineLength(bestRun) > 250) add({ kind: 'road', text: V.st.road(r.dest), parts: partsFor('road', r.dest, V.st.road(r.dest)), rank: 4, anchor: pathMid(bestRun), path: bestRun, ...(r.target ? { reference: referenceTo(r.target, 'road') } : {}) });
+      if (bestRun.length >= 2) add({ entityKey:r.key,kind: 'road', text: V.st.road(r.dest), parts: partsFor('road', r.dest, V.st.road(r.dest)), rank: r.kind==='major'?1:4, anchor: pathMid(bestRun), path: bestRun, ...(r.target ? { reference: referenceTo(r.target, 'road') } : {}) });
     }
   }
 
@@ -262,15 +268,16 @@ export function generateNames(world: World, root: Rng, presentation: NamePresent
     }
     picks.sort((a, b) => b.h - a.h);
     const chosen: typeof picks = [];
-    for (const c of picks) { if (chosen.every((o) => dist(o.p, c.p) > S * 0.18) && chosen.length < 3) chosen.push(c); }
+    for (const c of picks) { if (chosen.every((o) => dist(o.p, c.p) > Math.max(hg.cell*R,S*.025))) chosen.push(c); }
     chosen.forEach((c) => add({ kind: 'hill', text: proper('hill', 'hill:' + pointKey(c.p)), parts: feature('hill', 'hill:' + pointKey(c.p)), rank: 4, anchor: c.p }));
   }
 
   // ---- water bodies, forests
   t.lakes.forEach((lk, i) => {
-    if (lk.length < 3 || areaOf(lk) < 9000 || i >= 5) return;
+    if (lk.length < 3 || areaOf(lk) < 1) return;
     const pole = poleOf(lk);
-    add({ kind: 'lake', text: proper('lake', 'lake:' + shapeKey(lk)), parts: feature('lake', 'lake:' + shapeKey(lk)), rank: 2, anchor: pole.p, span: horizontalSpan(lk, pole.p.x, pole.p.y) });
+    const key = featureNameKey(lk,'lake',shapeKey(lk));
+    add({ entityKey:key, kind: 'lake', text: proper('lake', key), parts: feature('lake', key), rank: 2, anchor: pole.p, span: horizontalSpan(lk, pole.p.x, pole.p.y) });
   });
   if (t.seaFraction > 0.02) {
     const hg = t.height;
@@ -288,16 +295,16 @@ export function generateNames(world: World, root: Rng, presentation: NamePresent
   }
   if (world.landuse) {
     const forests = world.landuse.areas.filter((a) => a.kind === 'forest' && a.poly.length >= 3)
-      .map((a) => ({ a, ar: areaOf(a.poly) })).filter((x) => x.ar > 30000).sort((p, q) => q.ar - p.ar);
+      .map((a) => ({ a, ar: areaOf(a.poly) })).filter((x) => x.ar > 100).sort((p, q) => q.ar - p.ar);
     const taken: Vec2[] = [];
     for (const f of forests) {
-      if (taken.length >= 6) break;
       const pole = poleOf(f.a.poly, f.a.holes);
-      if (pole.r < 25 || taken.some((p) => dist(p, pole.p) < 350)) continue;
+      if (pole.r < 2) continue;
       taken.push(pole.p);
-      add({ kind: 'forest', text: proper('forest', 'forest:' + shapeKey(f.a.poly)), parts: feature('forest', 'forest:' + shapeKey(f.a.poly)), rank: 3, anchor: pole.p, span: Math.min(horizontalSpan(f.a.poly, pole.p.x, pole.p.y), pole.r * 2.6) });
+      const key = featureNameKey(f.a,'forest',shapeKey(f.a.poly));
+      add({ entityKey:key, kind: 'forest', text: proper('forest', key), parts: feature('forest', key), rank: 3, anchor: pole.p, span: Math.min(horizontalSpan(f.a.poly, pole.p.x, pole.p.y), pole.r * 2.6) });
     }
-    world.landuse.farmsteads.slice(0, 10).forEach((f) => add({ kind: 'farm', text: proper('farm', 'farm:' + pointKey(f.pos)), parts: feature('farm', 'farm:' + pointKey(f.pos)), rank: 6, anchor: f.pos }));
+    world.landuse.farmsteads.forEach((f) => { const key=featureNameKey(f,'farm',pointKey(f.pos)); add({ entityKey:key, kind: 'farm', text: proper('farm', key), parts: feature('farm', key), rank: 6, anchor: f.pos }); });
   }
 
   // ---- urban names
@@ -333,7 +340,7 @@ export function generateNames(world: World, root: Rng, presentation: NamePresent
       const described = W.describeName?.(text);
       const generic: NameParts['generic'] = /mosque|madrasa/.test(w0.kind) ? 'mosque' : /cathedral/.test(w0.kind) ? 'cathedral'
         : /monastery|abbey/.test(w0.kind) ? 'monastery' : /church|minster/.test(w0.kind) ? 'church' : /temple/.test(w0.kind) ? 'temple' : 'shrine';
-      add({ kind: 'church', text, parts: { ...partsFor('church', described?.proper ?? sname, text, !!w0.authored || !described), generic }, rank: w0.big ? 1 : 2, anchor: w0.c, sub: sname });
+      add({ entityKey:w0.siteId ? 'worship:'+w0.siteId : undefined, kind: 'church', text, parts: { ...partsFor('church', described?.proper ?? sname, text, !!w0.authored || !described), profile:resolveToponymProfile(w0.culture ?? opts.culture,opts.language).id, generic }, rank: w0.big ? 1 : 2, detail:w0.big ? .1 : .45, anchor: w0.c, sub: sname });
     });
 
     // M4 name hooks: landmark sites get a name unless a user generator already set one
@@ -386,9 +393,10 @@ export function generateNames(world: World, root: Rng, presentation: NamePresent
     }
 
     // streets
-    const maxNamed = pop < 1500 ? 14 : pop < 8000 ? 40 : 70;
+    // Visibility belongs to the renderer. Generate every eligible feature once.
+    const maxNamed = Infinity;
     const cands = u.streets.map((s, i) => ({ s, i, len: polylineLength(s.path) }))
-      .filter((x) => x.s.role !== 'close' && x.s.role !== 'track' && x.s.role !== 'boundary' && x.s.path.length >= 2 && x.len >= (x.s.rank <= 2 ? 40 : 80))
+      .filter((x) => x.s.role !== 'boundary' && x.s.path.length >= 2 && x.len >= 8)
       .sort((a, b) => a.s.rank - b.s.rank || b.len - a.len);
     const mainRivers = t.rivers.filter((r) => r.path.length > 4);
     const bridgePts = (world.bridges ?? []).map((b) => ({ x: (b.a.x + b.b.x) / 2, y: (b.a.y + b.b.y) / 2 }));
@@ -401,6 +409,10 @@ export function generateNames(world: World, root: Rng, presentation: NamePresent
       if (named >= maxNamed) break;
       const r = rng.fork('street:' + shapeKey(s.path));
       const mid = pathMid(s.path);
+      const quarter=u.quarters.find(q => polygonContains(q.poly.outer,mid));
+      const localCulture = (s as typeof s & {culture?:string}).culture ?? quarter?.culture ?? opts.culture;
+      const localProfile=quarter?.nameProfile ?? opts.language,localSource=quarter?.nameSource ?? opts.nameSource;
+      const V = vocabulary(localCulture,localProfile,localSource);
       let text: string | null = null;
       let reference: NameEntry['reference'];
       if (s.role === 'quay' && flags.quay < 2) { text = use(pickFrom(V.st.quay, r)); if (text) flags.quay++; }
@@ -436,7 +448,11 @@ export function generateNames(world: World, root: Rng, presentation: NamePresent
       if (!text) { text = V.st.minor(r); }
       if (!text) continue;
       named++;
-      add({ kind: 'street', text, ...(reference ? { parts: partsFor('street', roadInfos.find(road => road.target === reference?.key)?.dest ?? text, text) } : {}), rank: s.rank, anchor: mid, path: s.path, sub: String(len | 0), ...(reference ? { reference } : {}) });
+      const described = V.describeName?.(text);
+      if(reference){reference.culture=localCulture;reference.language=localProfile;reference.family=familyFor(localCulture,localProfile,world.seed);}
+      add({ entityKey:featureNameKey(s,'street',shapeKey(s.path)), parentKey:quarter?.nameScope, kind: 'street', text, parts: reference
+        ? { ...partsFor('street',roadInfos.find(road => road.target === reference?.key)?.dest ?? text,text), profile:resolveToponymProfile(localCulture,localProfile).id, ...(reference.form==='gate-street'?{meaning:{concept:'destination',viaGate:true}}:{}) }
+        : { ...partsFor('street',described?.proper ?? text,text,described?.opaque ?? true), meaning:described?.meaning, profile:resolveToponymProfile(localCulture,localProfile).id,sourceMode:localSource }, rank: s.rank, anchor: mid, path: s.path, sub: String(len | 0), ...(reference ? { reference } : {}) });
     }
 
     // megacity (macro plan): district names, not one per quarter — the old town, the fused towns and absorbed
@@ -502,8 +518,9 @@ export function generateNames(world: World, root: Rng, presentation: NamePresent
       }
       const order = u.quarters.map((q, i) => ({ q, i, ar: areaOf(q.poly.outer) })).sort((a, b) => b.ar - a.ar);
       for (const { q, i, ar } of order) {
-        if (ar < 2500 || (groupCore && q.zone === 'core')) continue;
+        if (ar < 100) continue;
         const r = rng.fork('quarter:' + shapeKey(q.poly.outer));
+        const V = vocabulary(q.culture ?? opts.culture,q.nameProfile ?? opts.language,q.nameSource ?? opts.nameSource);
         const pole = poleOf(q.poly.outer, q.poly.holes);
         const c = polygonCentroid(q.poly.outer);
         const kind = q.zone === 'faubourg' ? 'faubourg' : q.zone === 'village' ? 'village' : q.zone === 'edge' ? 'edge' : 'ring';
@@ -512,7 +529,7 @@ export function generateNames(world: World, root: Rng, presentation: NamePresent
           const rr = r.fork('q' + a);
           text = use(V.ward(rr, kind, saintOf(`q${shapeKey(q.poly.outer)}:${a}`), V.dirs[dirOf(center, c)], V.crafts[rr.pick(crafts)]));
         }
-        if (text) add({ kind: 'quarter', text, rank: 2, anchor: pole.p, span: horizontalSpan(q.poly.outer, pole.p.x, pole.p.y) || pole.r * 2 });
+        if (text) { const d=V.describeName?.(text); add({ entityKey:featureNameKey(q,'quarter',shapeKey(q.poly.outer)), kind: 'quarter', text, parts:{...partsFor('quarter',d?.proper ?? text,text,d?.opaque ?? true),meaning:d?.meaning,profile:resolveToponymProfile(q.culture ?? opts.culture,q.nameProfile ?? opts.language).id}, rank: 2, anchor: pole.p, span: horizontalSpan(q.poly.outer, pole.p.x, pole.p.y) || pole.r * 2 }); }
       }
     }
   }
@@ -543,9 +560,9 @@ export function settlementNames(world: World, _root: Rng): void {
     s.name = text;
     const tier = s.population >= 1000 ? 0 : s.population >= 150 ? 1 : 2;
     const isFarm = s.detail === 'farmstead';
-    const parts: NameParts = { kind: isFarm ? 'farm' : 'village', proper: record.proper, cultural: text, opaque: record.opaque };
+    const parts: NameParts = { kind: isFarm ? 'farm' : 'village', proper: record.proper, cultural: text, opaque: record.opaque,profile:'profile' in record ? record.profile : undefined,sourceMode:'sourceMode' in record ? record.sourceMode : undefined };
     names.entries.push({
-      id: `settlement:${s.key}`, kind: isFarm ? 'farm' : 'village', text: presentName(parts, names.presentation), canonicalText: text, parts, rank: isFarm ? 6 : tier, anchor: s.center,
+      id: `settlement:${s.key}`, entityKey:`settlement:${s.key}`, generated:true, detail:isFarm ? 1 : s.population >= 5000 ? .1 : s.population >= 1000 ? .3 : s.population >= 150 ? .65 : .9, kind: isFarm ? 'farm' : 'village', text: presentName(parts, names.presentation), canonicalText: text, parts, rank: isFarm ? 6 : tier, anchor: s.center,
       sub: 'settlement:' + s.key, reference: { key: s.key, form: 'name', family: familyFor(s.culture, s.options?.language ?? world.options.language, world.seed) },
     });
   }

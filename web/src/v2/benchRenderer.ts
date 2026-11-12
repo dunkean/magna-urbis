@@ -1,3 +1,5 @@
+import { getLanguage } from './i18n';
+import { getDistanceUnit } from './units';
 import { rasterizeSvg as imageOf } from '../render/svgRaster';
 import { cityOverlayLandKinds, cityOverlayLandKey, cityWaterCutsLand, cityCountrysideCanvasOptions } from '../render/cityEnvironment';
 import { retainedDecorOf } from './decorTerrain';
@@ -202,7 +204,7 @@ export class BenchRenderer {
     setRoadGround(world.landuse, world.mapSize, roadGroundTones(r.ground.traits.family === 'material', biomePalette(r.palette.mapStyle, world.options.biome)), r.composition.ambience === 'night');
     const effectiveKey = JSON.stringify([effective.relief, effective.refine, effective.detailNoise, effective.climate, effective.climateValues, effective.climateZone, effective.hydrology?.riverMode]);
     const forestKey = JSON.stringify([effective.forest, effective.climateValues]);
-    const worldSig = JSON.stringify([world.mapSize, world.seed, world.options.biome]);
+    const worldSig = JSON.stringify([world.mapSize, world.seed, world.options.biome, getLanguage(), getDistanceUnit(), settings.naming?.mode,settings.naming?.mapLanguage,settings.naming?.script]);
     this.input = () => ({ r, revisions: scene.revisions, layers, mode: this.mode(), effective: effectiveKey, forestEffective: forestKey, worldSig });
     this.paper = terrainStyle(r.styleId, r.palette.colors).palette.paper;
       const ran = await this.passes.run(() => passKeys(this.input()), {

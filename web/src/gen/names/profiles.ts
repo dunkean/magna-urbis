@@ -1,4 +1,3 @@
-import { Rng } from '../core/rng';
 import type { NameFamily } from './types';
 
 /** Every profile declares its source policy; geographic pools never imply historical authenticity. */
@@ -89,13 +88,15 @@ export const CULTURE_PROFILES: Readonly<Record<string, ToponymProfile>> = {
   'giant-hold': P.norse, 'goblin-warren': P.orcish,
 };
 const EXPLICIT: Record<string, ToponymProfile> = Object.fromEntries(Object.values(P).map(value => [value.id, value]));
+export const TOPONYM_PROFILES: readonly ToponymProfile[] = Object.values(EXPLICIT);
+const ALIASES: Record<string, string> = { west: 'european-organic', mongol: 'mongol-ordu', japan: 'japanese-jokamachi', roman: 'roman-core', swahili: 'swahili-stone-town' };
 
 export function resolveToponymProfile(culture: string, language?: string, seed: string | number = ''): ToponymProfile {
+  culture = ALIASES[culture] ?? culture;
   const requested = language?.trim().toLowerCase();
   if (requested && requested !== 'auto') {
     if (EXPLICIT[requested]) return EXPLICIT[requested];
-    return { ...(CULTURE_PROFILES[culture] ?? P.french), diagnostic: `Unknown language: ${language}; using culture profile` };
+    return { ...(CULTURE_PROFILES[culture] ?? P.english), diagnostic: `Unknown language: ${language}; using culture profile` };
   }
-  if (culture === 'european-organic') return new Rng(String(seed)).fork('profile').chance(0.5) ? P.french : P.english;
-  return CULTURE_PROFILES[culture] ?? { ...P.french, diagnostic: `Unknown culture: ${culture}; using french profile` };
+  return CULTURE_PROFILES[culture] ?? { ...P.english, diagnostic: `Unknown culture: ${culture}; using english profile` };
 }

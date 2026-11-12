@@ -572,7 +572,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     if (sources !== textSourcesOf || textLabelsOf !== mapLabels) {
       textSourcesOf = sources; textLabelsOf = mapLabels;
       const replaced = (world.names?.entries ?? []).flatMap(e => e.replacedAnchor ? [e.replacedAnchor] : []);
-      combinedLabels = sources?.length ? [...mapLabels, ...sources.flatMap(scene => cityTextLabels(scene, text, pal)).filter(label => !replaced.some(p => Math.abs(p.x-label.x)<.01 && Math.abs(p.y-label.y)<.01))] : mapLabels;
+      combinedLabels = sources?.length ? [...mapLabels, ...sources.flatMap(scene => cityTextLabels(scene, text, pal, world)).filter(label => !replaced.some(p => Math.abs(p.x-label.x)<.01 && Math.abs(p.y-label.y)<.01))] : mapLabels;
     }
     placedLast = [];
     if (overlays.labels && combinedLabels.length) {

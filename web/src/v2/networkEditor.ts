@@ -18,6 +18,8 @@ import {
 import { polylineLength } from '../gen/core/geom';
 import { roadControlIndices, roadControlMidpoint, deformRoadControl, removeRoadControl } from './roadControls';
 import RoadRouteWorker from './roadRoute.worker?worker';
+import { namePresentation } from './mapPresentation';
+import { presentName } from '../gen/names/displayNames';
 
 export type NetworkTool = 'off' | 'roads' | 'draw' | 'rivers';
 export interface NetworkEditorHost {
@@ -483,7 +485,8 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
       row.append(button(T.finish, () => void finishDraft(), { primary: true, disabled: draft.length < 2 }),cancel);
       detail.append(method,...(drawMethod==='free'?[classSelect(drawClass, cls => { drawClass = cls; })]:[]), count, row);
     } else if (current === 'rivers' && plan?.world === w) {
-      const river = w.terrain.rivers[plan.plan.selected], name = river?.name || translate(T.aRiver), extra = plan.plan.rivers.length - 1;
+      const river = w.terrain.rivers[plan.plan.selected],entry=w.names?.entries.find(e=>e.kind==='river'&&(e.path===river?.path||e.id===`river:${river?.id}`));
+      const name = entry?.parts?presentName(entry.parts,namePresentation(host.getSettings?.())):entry?.text??river?.name??translate(T.aRiver), extra = plan.plan.rivers.length - 1;
       const summary = el('strong'); summary.textContent = extra > 0 ? fmt(T.riverPlan, { name, n: extra }) : fmt(T.riverOnly, { name });
       const row = el('div', 'v2-network-row');
       row.append(button(T.deleteRiver, () => void deletePlannedRiver(), { primary: true }), button(T.cancel, () => { plan = undefined; drawOverlay(); render(); }));

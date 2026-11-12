@@ -294,7 +294,7 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
   };
   let presentedSource: World | undefined, presentedKey = '', presentedWorld: World | undefined;
   const textWorld = (): World | undefined => {
-    const world = options.getWorld(), key = `${getLanguage()}:${getDistanceUnit()}:${options.getSettings().naming?.mode ?? 'localized'}`;
+    const world = options.getWorld(), key = JSON.stringify([getLanguage(),getDistanceUnit(),options.getSettings().naming?.mode,options.getSettings().naming?.mapLanguage,options.getSettings().naming?.script]);
     if (world !== presentedSource || key !== presentedKey) { presentedSource = world; presentedKey = key; presentedWorld = world ? mapPresentation(world, options.getSettings()) : undefined; }
     return presentedWorld;
   };

@@ -1321,7 +1321,7 @@ function syncBenchText(): void {
   const { text, palette } = benchTextLayer(), sites = settlements.illustrationSettlements, scene = settlements.urban.semanticScenes[0], key = JSON.stringify([text, palette.name, palette.lab]);
   if (benchTextInputs?.key === key && benchTextInputs.sites === sites && benchTextInputs.scene === scene) return;
   const world = benchSettlementTextWorld(sites);
-  const labels = [...(world ? buildMapLabels(world, palette.name, palette, text) : []), ...(scene ? cityTextLabels(scene, text, palette) : [])].sort((a, b) => b.st.priority - a.st.priority);
+  const labels = [...(world ? buildMapLabels(world, palette.name, palette, text) : []), ...(scene ? cityTextLabels(scene, text, palette, world) : [])].sort((a, b) => b.st.priority - a.st.priority);
   benchTextInputs = { key, sites, scene, labels }; benchTextOverlay.set({ labels, text, palette });
 }
 function drawBenchGround(ctx: CanvasRenderingContext2D, region: { x: number; y: number; width: number }, size: number): void {

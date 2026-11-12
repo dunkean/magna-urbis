@@ -2,9 +2,12 @@ import type { World, Vec2 } from '../gen/types';
 import type { NameEntry } from '../gen/names/types';
 import { nativeCityRecords } from './nativeProducts';
 import { roleLabel } from '../render/cityRoles';
+import { renameParts } from '../gen/names/rename';
+import { presentName, setSettlementName } from '../gen/names';
 
 export interface LabelEdit {
-  text: string;
+  text?: string;
+  mode?: 'label' | 'proper';
   anchor?: Vec2;
   style?: { color?: string; size?: number; bold?: boolean; italic?: boolean };
   /** New free labels and names attached to previously unnamed native city objects. */
@@ -78,16 +81,22 @@ export function applyLabelEdits(world: World, edits?: Record<string, LabelEdit>)
   const originals = new Map(world.names.entries.map(e => [e.id, e]));
   const extra = new Map(nativeLabelCandidates(world).map(e => [e.id, e]));
   for (const [id, edit] of Object.entries(edits)) {
-    if (!edit.text.trim()) continue;
     const existing = originals.get(id), candidate = extra.get(id);
     if (existing) {
-      existing.text = edit.text; existing.canonicalText = edit.text;
-      existing.parts = { kind: existing.kind, proper: edit.text, cultural: edit.text, opaque: true };
-      existing.reference = undefined; existing.generated = false;
+      if(edit.text?.trim()){
+        if(edit.mode==='proper'&&existing.parts){
+          if(existing.reference?.form==='name')setSettlementName(world,existing.reference.key,edit.text);
+          else {existing.parts=renameParts(existing.parts,edit.text);existing.canonicalText=existing.parts.cultural;existing.text=presentName(existing.parts,world.names.presentation);setSettlementName(world,existing.entityKey ?? existing.id,edit.text);}
+        }else{
+          existing.text = edit.text; existing.canonicalText = edit.text;
+          existing.parts = { kind: existing.kind, proper: edit.text, cultural: edit.text, opaque: true };
+          existing.reference = undefined; existing.generated = false;
+        }
+      }
       if (edit.anchor) { existing.anchor = edit.anchor; existing.path = undefined; existing.span = undefined; existing.manual = true; }
       existing.labelStyle = edit.style;
-    } else if ((candidate || edit.kind === 'free') && (edit.anchor || candidate?.anchor)) {
-      const entry: NameEntry = { id, kind: candidate?.kind === 'quarter' ? 'quarter' : 'square', text: edit.text, rank: 0,
+    } else if (edit.text?.trim() && (candidate || edit.kind === 'free') && (edit.anchor || candidate?.anchor)) {
+      const entry: NameEntry = { id, kind: candidate?.kind === 'quarter' ? 'quarter' : candidate?.kind==='building'?'building':'square', text: edit.text, rank: 0,
         anchor: edit.anchor ?? candidate!.anchor, manual: true, labelStyle: edit.style, sub: candidate?.kind ?? 'free', ...(candidate?.text ? { replacedAnchor:candidate.anchor } : {}) };
       world.names.entries.push(entry);
     }

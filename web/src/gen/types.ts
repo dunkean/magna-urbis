@@ -263,7 +263,7 @@ export interface UrbanSite {
   tags?: Record<string, string>;
 }
 export interface UrbanPhase { id: number; kind: 'core' | 'ring' | 'faubourg' | 'village'; zone: UrbanZone; region: PolyH[]; walled: boolean; fossil: boolean }
-export interface UrbanQuarter { poly: PolyH; phase: number; zone: UrbanZone; streetSpace: PolyH[] }
+export interface UrbanQuarter { poly: PolyH; phase: number; zone: UrbanZone; streetSpace: PolyH[]; culture?: string; nativeId?: string; nameProfile?:string; nameScope?:string; nameSource?:import('./names/types').NameSource }
 
 export interface UrbanLayer {
   footprint: Polygon[];

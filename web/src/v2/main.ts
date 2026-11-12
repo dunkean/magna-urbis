@@ -1,6 +1,6 @@
 import { setHTML, insertHTML, setText, setUserText, setDynamicText, bindTree, translate, getLanguage, setLanguage, onLanguageChange, initializeLanguage, numberLocale, nameHTML, numberHTML, registerMessages, LANGUAGES, type Language } from './i18n';
 import { getDistanceUnit, setDistanceUnit, onUnitsChange, formatDistance, unitFactor, type DistanceUnit } from './units';
-import { mapPresentation } from './mapPresentation';
+import { mapPresentation, settlementDisplayName } from './mapPresentation';
 import './ui.css';
 import './editing.css';
 import logo from '../ui/assets/logo-magna-urbis.png';
@@ -357,24 +357,19 @@ const mapControls=mountMapControls(chain.body('map-naming'),chain.body('map-expo
 });
 let labelBaseline:World|undefined;
 const labelEditor=mountMapLabelEditor(chain.body('map-naming'),{
-  getWorld:()=>previewBase?undefined:world,getSettings:()=>settings,onChange:redrawEditedLabels,
+  getWorld:()=>previewBase?undefined:world,getSettings:()=>settings,onChange:redrawEditedLabels,onNames:()=>{void redrawNames();},
 });
 labelEditor.sync();
 function redrawEditedLabels():void{
-  if(busy||!world)return;
-  const source=labelBaseline??=pristine??world;
-  const names=source.names??renameMap(source,settings,getLanguage()).names!;
-  const labels=settings.naming?.labels;
-  const next:World={...source,names:{...names,entries:names.entries.filter(e=>!(/^(free:|urban:|classic:)/.test(e.id)&&e.manual&&!labels?.[e.id])).map(e=>({...e}))}};
-  applyLabelEdits(next,labels);pristine=next;world=applyBuildingEdits(next,mods).world;
-  const shown=world;projectRevision++;
-  void client.show(shown,true).then(()=>{if(world===shown)updateWorld();}).catch(reportAppearanceError);
+  // Recompose from the frozen generated names before applying the current edits.
+  // Clearing a moved label or a free-text replacement therefore restores its original name and placement.
+  void redrawNames();
 }
 registerMessages({'Names & labels':{en:'Names & labels',fr:'Noms et étiquettes'}});
 insertHTML($('.style-control'),'beforeend','<button class="edit-open" id="labels-open" type="button">Names & labels</button>');
 $('#labels-open').onclick=()=>{selectTab('map');const body=chain.body('map-naming');const title=body.closest('.stage-row')?.querySelector<HTMLButtonElement>('.stage-title');if(title?.getAttribute('aria-expanded')!=='true')title?.click();body.scrollIntoView({block:'nearest'});};
 const riverEditorHost=document.createElement('div');riverEditorHost.id='river-editor';$('#family-region .family-general').append(riverEditorHost);
-const networkHost={map:$('#map'),getWorld:()=>previewBase?undefined:world,setWorld:applyDirectMapEdit,getView:()=>client.viewer.getView(),busy:()=>busy,toast};
+const networkHost={map:$('#map'),getWorld:()=>previewBase?undefined:world,setWorld:applyDirectMapEdit,getView:()=>client.viewer.getView(),getSettings:()=>settings,busy:()=>busy,toast};
 const riverEditor=mountNetworkEditor({...networkHost,panel:riverEditorHost,tools:['rivers']});
 const roadEditor=mountNetworkEditor({...networkHost,panel:$('#family-settlements .family-general'),tools:['roads','draw'],getSettings:()=>settings});
 $('#header-menu').prepend($('.v2-network-shortcuts'));
@@ -529,7 +524,7 @@ function updateWorld(): void {
   riverEditor.sync();roadEditor.sync();townMover.sync();
   mapControls.sync();
   disposeInspectorForms();regionControls.sync();terrainControls.sync();city3d?.refresh();
-  const towns = world.settlements ?? [];
+  const towns = (world.settlements ?? []).map(place=>({...place,name:settlementDisplayName(world!,place.key,settings)}));
   setText($('#map-metrics'), `${world.terrain.rivers.length} cours d’eau\n${towns.length} peuplements`);
   const preview = stageById.get(String(world.stats['v2.previewStage'] ?? ''));
   $('#preview-close').hidden = !preview || !previewBase?.world;
@@ -552,7 +547,7 @@ async function applyDirectMapEdit(next:World):Promise<void>{
   await client.show(next,true);updateWorld();
 }
 function showInspector(key: string, focus = false): void {
-  if (!world) return; const s = world.settlements?.find(s=>s.key===key); if (!s) return;
+  if (!world) return; const source = world.settlements?.find(s=>s.key===key); if (!source) return; const s={...source,name:settlementDisplayName(world,key,settings)};
   window.dispatchEvent(new CustomEvent('v2-edit-mode',{detail:'selection'}));
   disposeInspectorForms();selectedTown = key; selectedBuilding = null;
   document.querySelectorAll<HTMLButtonElement>('[data-town]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.town===key)));$('#places-panel').hidden=false;chain.sync();
@@ -691,7 +686,7 @@ async function loadProject(project: { settings: V2Settings; mods: unknown[]; wor
   labelBaseline=undefined;
   const connections={localServer:settings.runtime?.localServer??bootRuntime.localServer,pythonServer:settings.runtime?.pythonServer??bootRuntime.pythonServer};
   if(connectLocal&&project.settings.runtime)project.settings.runtime={...project.settings.runtime,...connections};
-  client.invalidateRetained();chain.clearResults();previewBase=undefined;selectedCities.clear();settings=project.settings;mods=project.mods;pristine=project.world;world=pristine?applyBuildingEdits(pristine,mods).world:undefined;
+  client.invalidateRetained();chain.clearResults();previewBase=undefined;selectedCities.clear();settings=project.settings;mods=project.mods;pristine=project.world?renameMap(project.world,settings,getLanguage()):undefined;world=pristine?applyBuildingEdits(pristine,mods).world:undefined;
   if(world)applyLabelEdits(world,settings.naming?.labels);
   touchRecipe();await syncControls();
   if(world){await client.show(world);canvas.hidden=false;$('#empty-map').hidden=true;updateWorld();const notice=world.stats['v2.compositionNotice'];if(notice)toast(String(notice));}

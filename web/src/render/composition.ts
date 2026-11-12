@@ -5,7 +5,7 @@
  * Pure module: no DOM, no engine, no I/O.
  */
 import { SEASON_CALENDAR_FIELDS, type SeasonCalendar } from '../../../rust/bridge/terrainRenderV2Zones';
-import { TEXT_GROUPS, defaultText, type TextGroup, type TextSettings } from './textLayer';
+import { TEXT_GROUPS, NAME_LEVELS, defaultText, type TextGroup, type TextSettings } from './textLayer';
 import type { LandKind } from '../gen/types';
 import { isMapStyle } from './styles';
 import { isTerrainStyle, styleTraits, type StyleTraits, type TerrainStyle } from './terrainStyle';
@@ -232,4 +232,9 @@ export function validateComposition(value: unknown): asserts value is Compositio
   flags(text, ['visible'], 'text'); flags(text.groups, TEXT_GROUPS, 'text.groups');
   oneOf(text.look, ['inherit', 'serif', 'sans'], 'text.look'); oneOf(text.density, ['low', 'normal', 'high'], 'text.density'); oneOf(text.halo, ['inherit', 'strong'], 'text.halo');
   if (typeof text.size !== 'number' || !(text.size >= .6 && text.size <= 1.8)) throw new Error('appearance.composition.text.size: expected a number in 0.6–1.8.');
+  if(text.levels!==undefined){
+    if(!record(text.levels))throw new Error('appearance.composition.text.levels: expected an object.');
+    for(const [key,level] of Object.entries(text.levels))if(!(NAME_LEVELS as readonly string[]).includes(key)||typeof level!=='number'||!Number.isFinite(level)||level<0||level>100)throw new Error('appearance.composition.text.levels: expected values in 0–100.');
+  }
+
 }

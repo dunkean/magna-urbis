@@ -1,6 +1,7 @@
 import { localeExtraLatin } from './localeExtraLatin';
 import { localeExtraAsia } from './localeExtraAsia';
 import { localeExtraArRu } from './localeExtraArRu';
+import { localeNaming } from './localeNaming';
 
 /** Translations keyed by canonical English presentation text; schema catalogs are reviewed separately. */
 export const localeMessages: Record<'es' | 'pt' | 'zh' | 'ar' | 'ru' | 'ja', Record<string, string>> = {
@@ -8337,3 +8338,4 @@ export const localeMessages: Record<'es' | 'pt' | 'zh' | 'ar' | 'ru' | 'ja', Rec
 for (const [language, messages] of Object.entries({ ...localeExtraLatin, ...localeExtraAsia, ...localeExtraArRu })) {
   Object.assign(localeMessages[language as keyof typeof localeMessages], messages);
 }
+for(const [language,messages] of Object.entries(localeNaming))Object.assign(localeMessages[language as keyof typeof localeMessages],messages);

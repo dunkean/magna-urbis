@@ -5,17 +5,60 @@ import { fontString, kindStyles, type KindStyle } from './labelStyles';
 import type { Palette } from './styles';
 import type { CityScene } from './cityCanvas';
 import { roleLabel } from './cityRoles';
+import { authoredProper } from '../gen/names/roots';
+import { Rng } from '../gen/core/rng';
+import { resolveToponymProfile } from '../gen/names/profiles';
+import { CULTURAL_TERMS } from '../gen/names/syntax';
+import { presentName } from '../gen/names/displayNames';
 
 export const TEXT_GROUPS = ['places', 'water', 'nature', 'countryside', 'city', 'landmarks', 'pins'] as const;
 export type TextGroup = typeof TEXT_GROUPS[number];
-export interface TextSettings { visible: boolean; groups: Record<TextGroup, boolean>; look: 'inherit' | 'serif' | 'sans'; size: number; density: 'low' | 'normal' | 'high'; halo: 'inherit' | 'strong' }
+export const NAME_LEVELS = ['places','rivers','water','nature','districts','streets','buildings','landmarks','pins'] as const;
+export type NameLevel = typeof NAME_LEVELS[number];
+const levelDefaults:Record<NameLevel,number>={places:70,rivers:55,water:70,nature:55,districts:45,streets:45,buildings:15,landmarks:70,pins:100};
+export interface TextSettings { visible: boolean; groups: Record<TextGroup, boolean>; look: 'inherit' | 'serif' | 'sans'; size: number; density: 'low' | 'normal' | 'high'; halo: 'inherit' | 'strong'; /** 0 = none, 1 = principal feature, 100 = every candidate (collisions still apply). */ levels?: Partial<Record<NameLevel,number>> }
 export const TEXT_SOURCE_GROUP: Record<NameKind | 'district' | 'landmark' | 'rpg' | 'site', TextGroup> = {
-  town: 'places', village: 'places', sea: 'water', lake: 'water', river: 'water', hill: 'nature', forest: 'nature', farm: 'countryside', road: 'countryside', bridge: 'countryside', quarter: 'city', street: 'city', square: 'city', district: 'city', castle: 'landmarks', church: 'landmarks', gate: 'landmarks', landmark: 'landmarks', rpg: 'pins', site: 'pins',
+  town: 'places', village: 'places', sea: 'water', lake: 'water', river: 'water', hill: 'nature', forest: 'nature', farm: 'countryside', road: 'countryside', bridge: 'countryside', quarter: 'city', street: 'city', square: 'city', district: 'city', castle: 'landmarks', church: 'landmarks', gate: 'landmarks', landmark: 'landmarks', building:'landmarks', rpg: 'pins', site: 'pins',
 };
 export function defaultText(overrides: Partial<TextSettings> = {}): TextSettings {
-  return { visible: true, groups: { places: true, water: true, nature: true, countryside: true, city: true, landmarks: true, pins: true }, look: 'inherit', size: 1, density: 'normal', halo: 'inherit', ...overrides };
+  return { visible: true, groups: { places: true, water: true, nature: true, countryside: true, city: true, landmarks: true, pins: true }, look: 'inherit', size: 1, density: 'normal', halo: 'inherit', levels:{...levelDefaults}, ...overrides };
 }
 export const DEFAULT_TEXT = defaultText();
+export function nameLevel(kind:string):NameLevel {
+  if(['town','village','farm'].includes(kind))return 'places';
+  if(kind==='river')return 'rivers';
+  if(['lake','sea'].includes(kind))return 'water';
+  if(['forest','hill'].includes(kind))return 'nature';
+  if(['district','quarter'].includes(kind))return 'districts';
+  if(['street','road','bridge'].includes(kind))return 'streets';
+  if(kind==='building')return 'buildings';
+  if(kind==='site'||kind.startsWith('rpg:'))return 'pins';
+  return 'landmarks';
+}
+export function nameLevelValue(text:Readonly<TextSettings>,category:NameLevel):number {return text.levels?.[category] ?? levelDefaults[category];}
+/** Monotone selection by semantic importance, then size, then stable id. Never random sampling. */
+export function selectNameLevels(labels:MapLabel[],text:Readonly<TextSettings>):MapLabel[] {
+  if(!text.levels)return labels; // Old compositions keep their historical visibility.
+  const selected=new Set<MapLabel>();
+  for(const category of NAME_LEVELS){
+    const level=nameLevelValue(text,category);if(level<=0)continue;
+    const candidates=labels.filter(l=>nameLevel(l.kind)===category).sort((a,b)=>
+      (a.detail??defaultDetail(a))-(b.detail??defaultDetail(b)) || labelExtent(b)-labelExtent(a) || a.id.localeCompare(b.id));
+    // The first step shows only the most important object; every further step adds candidates.
+    const count=level>=100?candidates.length:Math.min(candidates.length,1+Math.floor((candidates.length-1)*Math.pow((level-1)/99,2)));
+    for(let i=0;i<count;i++)selected.add(candidates[i]);
+  }
+  return labels.filter(l=>selected.has(l));
+}
+function defaultDetail(l:MapLabel):number {
+  if(l.kind==='town'||l.kind==='sea')return 0;
+  if(l.kind==='village')return .2+(l.rank??1)*.15;
+  if(l.kind==='farm'||l.kind==='building')return .95;
+  if(l.kind==='river')return (l.rank??3)/10;
+  if(l.kind==='street'||l.kind==='road')return (l.rank??3)/5;
+  return .4;
+}
+function labelExtent(l:MapLabel):number {return l.path?.reduce((n,p,i,ps)=>n+(i?Math.hypot(p.x-ps[i-1].x,p.y-ps[i-1].y):0),0) ?? l.span ?? 0;}
 export function textGroup(kind: string): TextGroup { return TEXT_SOURCE_GROUP[kind.startsWith('rpg:') ? 'rpg' : kind as keyof typeof TEXT_SOURCE_GROUP] ?? 'landmarks'; }
 export function textFamily(text: Readonly<TextSettings>, pal: Palette): string { return text.look === 'serif' ? "Georgia, 'Times New Roman', serif" : text.look === 'sans' ? 'Verdana, Arial, sans-serif' : pal.fontFamily; }
 export function textStyle(st: KindStyle, text: Readonly<TextSettings>, pal: Palette): KindStyle {
@@ -26,16 +69,29 @@ export function textStyle(st: KindStyle, text: Readonly<TextSettings>, pal: Pale
 }
 export function styleTextLabels(labels: MapLabel[], text: Readonly<TextSettings>, pal: Palette): MapLabel[] {
   if (!text.visible) return [];
-  return labels.filter(l => text.groups[textGroup(l.kind)]).map(l => ({ ...l, st: textStyle(l.st, text, pal) }));
+  return selectNameLevels(labels.filter(l => text.groups[textGroup(l.kind)]),text).map(l => ({ ...l, st: textStyle(l.st, text, pal) }));
 }
 export function textPlacement(text: Readonly<TextSettings>): { maxLabels: number; pad: number } { return { maxLabels: text.density === 'low' ? 100 : text.density === 'high' ? 480 : 320, pad: text.density === 'low' ? 6 : text.density === 'high' ? 1.5 : 2.5 }; }
 const cityCache = new WeakMap<CityScene, { key: string; labels: MapLabel[] }>();
-export function cityTextLabels(scene: CityScene, text: Readonly<TextSettings>, pal: Palette): MapLabel[] {
-  const key = JSON.stringify([text, pal.name, pal.ink, pal.lab]);
+export function cityTextLabels(scene: CityScene, text: Readonly<TextSettings>, pal: Palette, world?: {names?:import('../gen/names/types').NamesLayer}): MapLabel[] {
+  if(world?.names?.nativeManaged)return [];
+  const presentation=world?.names?.presentation ?? {mode:'localized' as const,language:'en' as const};
+  const key = JSON.stringify([text, pal.name, pal.ink, pal.lab,presentation]);
   const old = cityCache.get(scene); if (old?.key === key) return old.labels;
   const styles = kindStyles(pal.name, pal), labels: MapLabel[] = [];
-  for (const d of scene.districts) if (d.anchor && (d.role || d.label)) labels.push({ id: `district:${d.layout}:${d.id}`, kind: 'district', text: d.label || roleLabel(d.role!), ...d.anchor, st: { ...styles.quarter, shape: 'point', minScale: .09, maxScale: Infinity, stretch: 0 } });
-  for (const l of scene.landmarks) labels.push({ id: `landmark:${labels.length}`, kind: 'landmark', text: l.label, ...l.point, st: { ...styles.church, symbol: undefined, minScale: .3, maxScale: Infinity } });
+  for (const d of scene.districts) if (d.anchor && (d.role || d.label)) {
+    const culture=scene.layouts[d.layout]?.culture ?? 'european-organic',profile=resolveToponymProfile(culture),terms=CULTURAL_TERMS[profile.id];
+    const record=authoredProper(profile,'place',new Rng(scene.layouts[d.layout]?.key ?? 'city').fork(`district:${d.id}`));
+    const cultural=terms.order==='prefix'?`${terms.ward} ${record.proper}`:`${record.proper} ${terms.ward}`;
+    labels.push({id:`district:${d.layout}:${d.id}`,kind:'district',text:presentName({kind:'quarter',proper:record.proper,cultural,opaque:false,profile:profile.id},presentation),...d.anchor,st:{...styles.quarter,shape:'point',minScale:.09,maxScale:Infinity,stretch:0}});
+  }
+  for (const l of scene.landmarks) {
+    const culture=scene.layouts[0]?.culture ?? 'european-organic',profile=resolveToponymProfile(culture);
+    const record=authoredProper(profile,'place',new Rng(scene.layouts[0]?.key ?? 'city').fork(`landmark:${l.point.x},${l.point.y}`));
+    const terms=CULTURAL_TERMS[profile.id],role=l.family==='defence'?'defence.castle':l.family==='worship'?'worship.shrine':l.family==='commerce'?'commerce.market':'civic.hall';
+    const term=l.family==='worship'?terms.worship:l.family==='defence'?terms.castle:terms.square,cultural=terms.order==='prefix'?`${term} ${record.proper}`:`${record.proper} ${term}`;
+    labels.push({id:`landmark:${labels.length}`,kind:'landmark',text:presentName({kind:'building',proper:record.proper,cultural,opaque:false,role,profile:profile.id},presentation),...l.point,st:{...styles.church,symbol:undefined,minScale:.3,maxScale:Infinity}});
+  }
   const result = styleTextLabels(labels, text, pal); cityCache.set(scene, { key, labels: result }); return result;
 }
 
@@ -51,7 +107,7 @@ function curvedHalo(ctx: CanvasRenderingContext2D, ch: string): void {
     const canvas = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(width, height) : Object.assign(document.createElement('canvas'), { width, height });
     const c = canvas.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D;
     c.setTransform(density, 0, 0, density, -x * density, -y * density);
-    c.font = ctx.font; c.textAlign = 'center'; c.textBaseline = 'middle'; c.lineJoin = 'round'; c.lineWidth = ctx.lineWidth; c.strokeStyle = ctx.strokeStyle;
+    c.font = ctx.font; c.direction=ctx.direction; c.textAlign = 'center'; c.textBaseline = 'middle'; c.lineJoin = 'round'; c.lineWidth = ctx.lineWidth; c.strokeStyle = ctx.strokeStyle;
     c.strokeText(ch, 0, 0);
     glyph = { canvas, x, y, w: width / density, h: height / density };
     if (curvedHalos.size >= 512) curvedHalos.delete(curvedHalos.keys().next().value!);
@@ -73,6 +129,7 @@ export function drawMapLabels(ctx: CanvasRenderingContext2D, placed: PlacedMapLa
       for (const g of pl.glyphs) {
         if (g.ch === ' ') continue;
         if (g.size !== lastSize) { ctx.font = fontString(st, Math.round(g.size * 10) / 10, st.family ?? family); lastSize = g.size; }
+        ctx.direction=/[\u0590-\u08ff]/u.test(g.ch)?'rtl':'ltr';
         if (curved) {
           ctx.save(); ctx.translate(g.x, g.y); ctx.rotate(g.a);
           if (pass === 0) curvedHalo(ctx, g.ch); else ctx.fillText(g.ch, 0, 0);
@@ -94,7 +151,7 @@ export function drawMapLabels(ctx: CanvasRenderingContext2D, placed: PlacedMapLa
       }
     }
   }
-  ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
+  ctx.direction='inherit'; ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
 }
 
 const widths = new WeakMap<CanvasRenderingContext2D, Map<string, number>>();

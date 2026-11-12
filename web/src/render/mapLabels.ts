@@ -54,6 +54,7 @@ export function nativeLandmarkLabels(layouts: Layout[] = [], partitions: Partiti
 
 export interface MapLabel {
   id: string; kind: string; text: string; st: KindStyle;
+  detail?: number;
   x: number; y: number; path?: Vec2[]; span?: number;
   /** Street rank when kind === 'street'. */
   rank?: number;
@@ -71,9 +72,10 @@ export function buildMapLabels(world: MapLabelWorld, style: MapStyle, pal: Palet
   for (const e of names?.entries ?? []) {
     let st = styles[e.kind];
     if (!st) continue;
+    if(e.kind==='church'&&(e.parts?.role||e.parts?.generic)&&!/^church$|^cathedral$/.test(e.parts?.generic??'')&&!/church|cathedral|parish|minster/.test(e.parts?.role??''))st={...st,symbol:'ring'};
     if (e.kind === 'street') st = streetRankStyle(st, e.rank);
     if (e.manual) st = { ...st, shape: 'point', symbol: undefined, stretch: 0, minScale: 0, maxScale: Infinity, priority: 110 };
-    out.push({ id: e.id, kind: e.kind, text: e.text, st, x: e.anchor.x, y: e.anchor.y, path: e.path, span: e.span, rank: e.rank });
+    out.push({ id: e.id, kind: e.kind, text: e.text, st, x: e.anchor.x, y: e.anchor.y, path: e.path, span: e.span, rank: e.rank,detail:e.detail });
   }
   if (world.mapAnnotations?.enabled) {
     for (const l of world.mapAnnotations.landmarks ?? []) if (l.text.trim()) out.push({ ...l, st: { ...styles[l.kind], minScale: 0, maxScale: Infinity } });
@@ -107,6 +109,8 @@ export interface PlacedMapLabel {
 }
 interface Box { x0: number; y0: number; x1: number; y1: number }
 interface LGlyph { ch: string; size: number; w: number }
+/** Joining scripts and combining sequences must be shaped as a complete run by the browser. */
+export const shapedText = (text:string):boolean => /[\u0300-\u036f\u0590-\u0fff\u1100-\u11ff\u1ab0-\u1aff\u200c-\u200f\u2066-\u2069]/u.test(text);
 
 const SMALL_CAP = 0.82;
 
@@ -125,6 +129,7 @@ export function layoutGlyphs(text: string, st: KindStyle, size: number, spacingP
 }
 const layoutMemo = new WeakMap<Measure, WeakMap<KindStyle, Map<string, { glyphs: LGlyph[]; total: number }>>>();
 function layoutGlyphsUncached(text: string, st: KindStyle, size: number, spacingPx: number, measure: Measure): { glyphs: LGlyph[]; total: number } {
+  if(shapedText(text)){const width=measure(text,size,st);return {glyphs:[{ch:text,size,w:width+spacingPx}],total:width};}
   const glyphs: LGlyph[] = [];
   let newWord = true;
   for (const raw of text) {

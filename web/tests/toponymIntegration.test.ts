@@ -136,13 +136,14 @@ describe('Namebench pipeline integration', () => {
     expect(renamed.terrain.rivers[0]).not.toBe(source.terrain.rivers[0]);
     expect(renamed.terrain.rivers[0].path).toBe(source.terrain.rivers[0].path);
     expect(renamed.terrain.rivers[0].width).toBe(source.terrain.rivers[0].width);
-    expect(renamed.roads).toBe(source.roads);
+    expect(renamed.roads).toEqual(source.roads);
+    expect(renamed.roads![0].path).toBe(source.roads![0].path);
     expect(renamed.urban!.sites![0].lot).toBe(source.urban!.sites![0].lot);
     expect(renamed.urban!.footprint).toBe(source.urban!.footprint);
     expect(renamed.names!.town).toBe('Copper Coast');
     expect(renamed.names!.entries.find(e => e.kind === 'town')?.text).toBe('Valmont');
     expect(renamed.names!.entries.find(e => e.kind === 'gate')?.text).toBe('Rivermeet Gate');
-    expect(renamed.names!.family).toBe('french'); // V2 proper names follow culture, independently of UI/legacy language.
+    expect(renamed.names!.family).toBe('english'); // An explicit naming profile takes priority over the culture default.
   });
   it.each([
     ['persian', /^Kucheh/, /^Meydān/, /^Mahalleh/, /^Masjed/],
@@ -202,7 +203,8 @@ describe('Namebench pipeline integration', () => {
     expect(road.text).not.toBe(road.canonicalText);
     expect(localized.names!.entries.find(e => e.kind === 'town')?.text).toBe('Valmont');
     expect(localized.terrain.height).toBe(source.terrain.height);
-    expect(localized.roads).toBe(source.roads);
+    expect(localized.roads).toEqual(source.roads);
+    expect(localized.roads![0].path).toBe(source.roads![0].path);
     settings.naming.mode = 'cultural';
     const restored = renameMap(localized, settings);
     expect(restored.names!.entries).toEqual(cultural.names!.entries);

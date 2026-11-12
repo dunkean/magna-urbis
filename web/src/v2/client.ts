@@ -1,3 +1,5 @@
+import { getLanguage } from './i18n';
+import { getDistanceUnit } from './units';
 import EngineWorker from './engine.worker?worker';
 import RenderWorker from '../ui/renderWorker?worker';
 import { internTerrain } from './terrainIntern';
@@ -51,6 +53,17 @@ export class StudioClient {
   private benchMiniRevision = -1;
   /** One resolution per (settings, world, preview): show() and applyAppearance() share it. */
   private resolutions: { settings: V2Settings; world: World | undefined; preview: boolean; resolved: ResolvedAppearance }[] = [];
+  private presentations = new WeakMap<World, { key: string; inputs: unknown[]; world: World }>();
+  /** Presentation creates a names product. Its identity changes with its inputs,
+   * never merely because the same retained map is shown in another style. */
+  private presentWorld(world: World): World {
+    const key = JSON.stringify([getLanguage(), getDistanceUnit(), this.appearanceSettings?.naming?.mode,this.appearanceSettings?.naming?.mapLanguage,this.appearanceSettings?.naming?.script]);
+    const inputs = [world.terrain, world.roads, world.landuse, world.settlements, world.names, world.options, world.debug, world.urban, world.site, world.stats, world.seed, world.mapSize];
+    const hit = this.presentations.get(world);
+    if (hit?.key === key && inputs.every((input, i) => input === hit.inputs[i])) return hit.world;
+    const shown = mapPresentation(world, this.appearanceSettings);
+    this.presentations.set(world, { key, inputs, world: shown }); return shown;
+  }
   private benchMiniSize = 0;
   private benchMiniDue = false;
   private benchMiniTimer?: ReturnType<typeof setTimeout>;
@@ -149,7 +162,7 @@ export class StudioClient {
   invalidateRetained():void{this.retained=undefined;this.engine.postMessage({type:'release'});}
   async clear():Promise<void>{
     this.viewer.clear();
-    this.resolutions=[];this.resourceCache=undefined;
+    this.resolutions=[];this.presentations=new WeakMap();this.resourceCache=undefined;
     this.benchActive=false;this.appearanceRevision++;this.bench?.dispose();this.bench=undefined;this.classicBackground=undefined;
     this.invalidateRetained();this.world=null;this.syncRenderer?.dispose();this.syncRenderer=null;
     if(this.pendingDraw){clearTimeout(this.pendingDraw.timer);this.pendingDraw.resolve();this.pendingDraw=null;}
@@ -162,7 +175,7 @@ export class StudioClient {
     this.world = world;
     // A language/unit change redraws the same retained world with different labels.
     this.benchMiniRevision = -1;
-    world = mapPresentation(world, this.appearanceSettings);
+    world = this.presentWorld(world);
     this.syncRenderer?.dispose(); this.syncRenderer = null;
     const settings=this.appearanceSettings;
     const resolved=settings&&this.resolve(settings,world,true);

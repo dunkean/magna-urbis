@@ -5,8 +5,10 @@ import { Rng } from '../core/rng';
 import authored from './data/cultural-roots.json';
 import { resolveToponymProfile, type ToponymProfile, type ToponymSourceMode, type ToponymCoherence } from './profiles';
 import { formatToponym, type ToponymForm } from './syntax';
+import type { NameSource } from './types';
+import { authoredProper } from './roots';
 
-export const ALGORITHM_VERSION = '2';
+export const ALGORITHM_VERSION = '3';
 export const CORPUS_VERSION = `${pack.version}/${authored.version}`;
 export const BASE_CORPUS_SHA256 = manifest.artifact.sha256;
 /** SHA-256 of the exact authored JSON bytes; checked against the source file in corpus-quality tests. */
@@ -15,15 +17,12 @@ export const AUTHORED_CORPUS_SHA256 = '72fa7b7d7ed46a85b6cad23ec6ed6f11679529535
 export const CORPUS_FINGERPRINT = 'bae38bc101a567e331ba69fa94621e1fd6b9a6305880930d2708256e52a5975d';
 export const CORPUS_SHA256 = CORPUS_FINGERPRINT;
 export type ToponymKind = 'place' | 'town' | 'city' | 'village' | 'hamlet' | 'river' | 'lake' | 'sea' | 'forest' | 'hill' | 'region' | 'farm';
-export interface ToponymContext { seed: string | number; key: string; kind: ToponymKind; culture: string; language?: string }
+export interface ToponymContext { seed: string | number; key: string; kind: ToponymKind; culture: string; language?: string; source?: NameSource }
 type Country = { settlements: string[]; water: string[]; lakes: string[]; relief: string[]; regions: string[] };
 type Generator = { pattern: { variants: Array<{ concat: string[]; space?: boolean; space_pos?: number }> }; arrays: Record<string, string[]> };
 const countries: Record<string, Country> = pack.countries;
 const generators: Record<string, Generator> = pack.generators;
 type RootKind = 'habitation' | 'river' | 'lake' | 'sea' | 'forest' | 'hill' | 'region' | 'farm';
-interface RootForm { suffixes: string[]; culturalTemplate?: string }
-interface RootGrammar { onsets: string[]; vowels: string[]; codas: string[]; syllables: number[]; roots: Record<RootKind, RootForm> }
-const rootGrammars: Record<string, RootGrammar> = authored.profiles;
 const SETTLEMENT_KINDS = new Set<ToponymKind>(['place', 'town', 'city', 'village', 'hamlet']);
 
 /** Names retain their original proper string independently of display-language descriptors. */
@@ -35,6 +34,7 @@ export interface ToponymRecord {
   profile: string;
   sourceMode: ToponymSourceMode;
   coherence: ToponymCoherence;
+  diagnostic?: string;
   /** Exact original entry, when this record comes from the geographic corpus. */
   corpusLabel?: string;
 }
@@ -57,24 +57,6 @@ export function isOpaqueCorpusLabel(kind: ToponymKind, name: string): boolean {
   return DESCRIPTORS[kind as Exclude<RootKind, 'habitation'>].test(name);
 }
 
-/** Feature lexemes selected explicitly; a settlement suffix is never reused for a water/land feature. */
-function authoredProper(profile: ToponymProfile, kind: ToponymKind, rng: Rng): { proper: string; template?: string } {
-  const grammar = rootGrammars[profile.rootGrammar];
-  if (!grammar) throw new Error(`Missing authored root grammar: ${profile.rootGrammar}`);
-  const rootKind: RootKind = SETTLEMENT_KINDS.has(kind) ? 'habitation' : kind as RootKind;
-  const form = grammar.roots[rootKind];
-  const count = rng.fork('syllable-count').pick(grammar.syllables);
-  let stem = '';
-  for (let i = 0; i < count; i++) {
-    const r = rng.fork(`syllable:${i}`);
-    stem += r.pick(grammar.onsets) + r.pick(grammar.vowels) + r.pick(grammar.codas);
-  }
-  const ending = rng.fork(`typed-root:${rootKind}`).pick(form.suffixes);
-  // Only merge an identical boundary character; preserve meaningful vowel sequences and digraphs.
-  const proper = (stem + (stem.endsWith(ending[0]) ? ending.slice(1) : ending)).normalize('NFC');
-  return { proper: proper[0].toUpperCase() + proper.slice(1), template: form.culturalTemplate };
-}
-
 /** Evaluate only the exported concatenation format; missing arrays invalidate a variant. */
 export function readGenerator(generator: Generator | undefined, rng: Rng): string | undefined {
   if (!generator || !Array.isArray(generator.pattern?.variants)) return undefined;
@@ -92,11 +74,18 @@ export function readGenerator(generator: Generator | undefined, rng: Rng): strin
 export function generateToponymRecord(context: ToponymContext): ToponymRecord {
   const { culture, language, kind, key } = context;
   const seed = String(context.seed);
-  const profile = resolveToponymProfile(culture, language, seed);
-  const r = new Rng(seed).fork(`toponym:${ALGORITHM_VERSION}:${CORPUS_FINGERPRINT}:${authored.version}`).fork(profile.id).fork(kind).fork(key);
+  const selected = resolveToponymProfile(culture, language, seed);
+  const profile = { ...selected };
+  const source = context.source ?? 'auto';
+  const r = new Rng(seed).fork(`toponym:${ALGORITHM_VERSION}`).fork(profile.id).fork(kind).fork(key);
+  if (source === 'invented' || source === 'mixed' && r.fork('source').chance(.5)) profile.sourceMode = profile.generator ? 'generator' : 'constructed';
+  if (source === 'geographic' || source === 'mixed' && profile.sourceMode !== 'constructed') {
+    if (profile.country) profile.sourceMode = 'country';
+    else profile.diagnostic = `No geographic corpus for ${profile.id}; using its invented names`;
+  }
   const record = (proper: string, cultural: string, opaque: boolean, sourceMode: ToponymSourceMode,
     coherence: ToponymCoherence, corpusLabel?: string): ToponymRecord =>
-    ({ proper, cultural, kind, opaque, profile: profile.id, sourceMode, coherence, ...(corpusLabel === undefined ? {} : { corpusLabel }) });
+    ({ proper, cultural, kind, opaque, profile: profile.id, sourceMode, coherence, ...(profile.diagnostic ? { diagnostic: profile.diagnostic } : {}), ...(corpusLabel === undefined ? {} : { corpusLabel }) });
   const settlement = SETTLEMENT_KINDS.has(kind);
   if (profile.sourceMode === 'country' && profile.country) {
     const country = countries[profile.country];
@@ -112,16 +101,8 @@ export function generateToponymRecord(context: ToponymContext): ToponymRecord {
     const name = readGenerator(generators[profile.generator], r.fork('settlement-generator'));
     if (name) return record(name, name, false, 'generator', 'fantasy-generator');
   }
-  // English-language fantasy geography has explicit feature generators. They never
-  // receive a town generator or a settlement proper name as their source material.
-  const featureGenerators: Partial<Record<ToponymKind, string>> = {
-    river: 'rivers', lake: 'lakes', forest: 'forests', hill: 'mountains', region: 'lands',
-  };
-  const featureGenerator = (profile.id === 'english' || profile.id === 'halfling') ? featureGenerators[kind] : undefined;
-  if (featureGenerator) {
-    const name = readGenerator(generators[`places.${featureGenerator}`], r.fork(`feature-generator:${kind}`));
-    if (name) return record(name, name, true, 'generator', 'fantasy-generator');
-  }
+  // Complete English feature generators have no semantic boundaries. Typed roots
+  // keep the cultural generic localizable without parsing their output.
   const root = authoredProper(profile, kind, r.fork('authored-root'));
   const cultural = settlement ? root.proper : root.template
     ? root.template.replace('{proper}', root.proper)

@@ -60,6 +60,7 @@ export function mountParameterForm(root: HTMLElement, fields: readonly Parameter
   const controls: { field: ParameterField; input: HTMLInputElement | HTMLSelectElement; slider?: HTMLInputElement; reset?: HTMLButtonElement }[] = [];
   for (const field of fields) {
     const label = document.createElement('label'); label.className = `parameter-field parameter-${field.type}`;
+    if(field.path.includes('.text.levels.'))label.classList.add('name-importance-field');
     label.dataset.fieldPath = field.path;
     const caption = document.createElement('span'); caption.className = 'parameter-caption'; setDynamicText(caption, () => fieldCaption(field)); label.append(caption);
     let input: HTMLInputElement | HTMLSelectElement;

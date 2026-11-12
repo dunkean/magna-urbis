@@ -42,7 +42,7 @@ export interface StreetVocab {
 }
 export interface Vocab {
   /** Composition metadata recorded before rendering; complete labels are never reparsed. */
-  describeName?(cultural: string): { proper: string; opaque: boolean } | undefined;
+  describeName?(cultural: string): { proper: string; opaque: boolean; meaning?: import('./types').NameMeaning; role?: string } | undefined;
   /** tier 0 = town, 1 = village, 2 = hamlet / farm cluster */
   place(r: Rng, tier: 0 | 1 | 2): string;
   /** Dedication: a saint in Europe, a deity / ancestor elsewhere. */

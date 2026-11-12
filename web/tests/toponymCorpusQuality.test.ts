@@ -95,6 +95,6 @@ describe('cultural corpus source quality', () => {
     const bytes = readFileSync(new URL('../src/gen/names/data/cultural-roots.json', import.meta.url));
     expect(createHash('sha256').update(bytes).digest('hex')).toBe(AUTHORED_CORPUS_SHA256);
     expect(createHash('sha256').update(`${BASE_CORPUS_SHA256}:${AUTHORED_CORPUS_SHA256}`).digest('hex')).toBe(CORPUS_FINGERPRINT);
-    expect(ALGORITHM_VERSION).toBe('2');
+    expect(ALGORITHM_VERSION).toBe('3');
   });
 });

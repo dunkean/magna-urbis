@@ -5,7 +5,7 @@ import { DEFAULT_TEXT, textPlacement, type TextSettings } from './textLayer';
  */
 import type { World } from '../gen/types';
 import type { Palette } from './styles';
-import { buildMapLabels, placeMapLabels, estimateWidth, Measure, PlacedMapLabel, type MapLabelWorld } from './mapLabels';
+import { buildMapLabels, placeMapLabels, estimateWidth, Measure, PlacedMapLabel, shapedText, type MapLabelWorld } from './mapLabels';
 import { FONT_STACKS } from './labelStyles';
 import { f1 } from './util';
 
@@ -46,7 +46,7 @@ export function placedMapLabelsSvg(placed: PlacedMapLabel[], pal: Palette, scale
     const halo = Math.max(2.4, pl.size * (st.haloWidth ?? .26)) * k;
     const attrs = `font-family="${esc(st.family ?? family)}" font-size="${f1(size)}" fill="${st.color}"${st.italic ? ' font-style="italic"' : ''}${st.bold ? ' font-weight="600"' : ''}` +
       ` stroke="${st.halo ?? pal.lab.halo}" stroke-width="${f1(halo)}" stroke-opacity="${st.haloOpacity ?? pal.lab.haloOp}" stroke-linejoin="round" paint-order="stroke"` +
-      (pl.spacing ? ` letter-spacing="${f1(pl.spacing * k)}"` : '');
+      (pl.spacing && !shapedText(pl.label.text) ? ` letter-spacing="${f1(pl.spacing * k)}"` : '') + (shapedText(pl.label.text) ? ` direction="${/[\u0590-\u08ff]/u.test(pl.label.text)?'rtl':'ltr'}" unicode-bidi="plaintext"` : '');
     // runs of equal glyph size (small caps produce several)
     const runs: { s: string; size: number }[] = [];
     for (const g of pl.glyphs) {
@@ -60,8 +60,8 @@ export function placedMapLabelsSvg(placed: PlacedMapLabel[], pal: Palette, scale
       defs += `<path id="lp${i}" d="${d}"/>`;
       body += `<text ${attrs}><textPath xlink:href="#lp${i}" href="#lp${i}" startOffset="50%" text-anchor="middle"><tspan dy="${dy}">${tspans}</tspan></textPath></text>`;
     } else {
-      const x0 = pl.glyphs[0].x - pl.glyphs[0].w / 2;
-      body += `<text x="${f1(x0 * k)}" y="${f1((pl.cy) * k + pl.size * 0.34 * k)}" ${attrs}>${tspans}</text>`;
+      const shaped=shapedText(pl.label.text),x0 = shaped ? pl.glyphs[0].x : pl.glyphs[0].x - pl.glyphs[0].w / 2;
+      body += `<text x="${f1(x0 * k)}" y="${f1((pl.cy) * k + pl.size * 0.34 * k)}" ${attrs}${shaped?' text-anchor="middle"':''}>${tspans}</text>`;
     }
     if (pl.symbol) {
       const { x, y, r } = pl.symbol;

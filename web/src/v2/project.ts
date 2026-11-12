@@ -11,6 +11,7 @@ import { sourceDefinition, terrainCapability } from '../../../rust/bridge/terrai
 import { projectJsonChunks } from './projectJson';
 import { validateAppearance } from './appearance';
 import { NAME_FAMILIES } from '../gen/names/types';
+import { TOPONYM_PROFILES } from '../gen/names/profiles';
 import { URBAN_SEED_STAGES } from './urbanSeeds';
 import { seedRoot } from '../../../rust/bridge/generationSeed';
 
@@ -36,7 +37,8 @@ function validateOptions(o: unknown, partial = false): asserts o is Options {
   if (!partial || o.culture !== undefined) if (typeof o.culture !== 'string' || o.culture.length > 200) throw new Error('Culture invalide.');
   if (o.culture !== undefined && !CULTURES.includes(o.culture as string)) throw new Error('Culture inconnue.');
   checkEnum(o.siteType, ['auto', ...SITE_ARCHETYPES], 'type de site');
-  checkEnum(o.language, ['auto', ...NAME_FAMILIES], 'langue des noms');
+  checkEnum(o.language, ['auto', ...TOPONYM_PROFILES.map(p=>p.id)], 'langue des noms');
+  checkEnum(o.nameSource,['auto','geographic','invented','mixed'],'source des noms');
   checkEnum(o.workflow, ['environment', 'automatic', 'list'], 'parcours');
   for (const key of ['moat', 'cathedral', 'palace', 'monasteries', 'port', 'arena', 'activities']) checkEnum(o[key], ['auto', 'yes', 'no'], key);
   for (const key of ['suburbs', 'shantytowns']) checkEnum(o[key], ['auto', 'none', 'some', 'many'], key);
@@ -96,6 +98,12 @@ export function validateSettings(value: unknown): asserts value is V2Settings {
     if (!isRecord(value.naming)) throw new Error('Nommage invalide.');
     checkEnum(value.naming.mode, ['cultural', 'localized'], 'mode des toponymes');
     checkEnum(value.naming.displayLanguage, ['fr', 'en', 'ja', 'ar', 'es', 'pt', 'zh', 'ru'], 'langue d’affichage des toponymes');
+    checkEnum(value.naming.mapLanguage,['ui','fr','en','ja','ar','es','pt','zh','ru'],'langue de la carte');
+    checkEnum(value.naming.script,['source','latin'],'écriture des noms');
+    const policy=(v:unknown)=>{if(!isRecord(v))throw new Error('Profil de nommage invalide.');checkEnum(v.profile,['auto',...TOPONYM_PROFILES.map(p=>p.id)],'profil des noms');checkEnum(v.source,['auto','geographic','invented','mixed'],'source des noms');};
+    policy(value.naming);if(value.naming.region!==undefined)policy(value.naming.region);
+    for(const key of ['local','features'] as const)if(value.naming[key]!==undefined){const map=value.naming[key];if(!isRecord(map)||Object.keys(map).length>50000)throw new Error('Portées de nommage invalides.');for(const [id,v]of Object.entries(map)){if(!id||id.length>500)throw new Error('Identité de nommage invalide.');policy(v);}}
+    if(value.naming.variations!==undefined){if(!isRecord(value.naming.variations)||Object.keys(value.naming.variations).length>50000)throw new Error('Variations invalides.');for(const [id,v]of Object.entries(value.naming.variations))if(!id||id.length>510||typeof v!=='number'||!Number.isSafeInteger(v)||v<0)throw new Error('Variation de nom invalide.');}
     if (value.naming.title !== undefined && (typeof value.naming.title !== 'string' || value.naming.title.length > 200)) throw new Error('Titre de carte invalide.');
     if (value.naming.places !== undefined) {
       if (!isRecord(value.naming.places) || Object.keys(value.naming.places).length > 2000) throw new Error('Noms des lieux invalides.');
@@ -104,7 +112,8 @@ export function validateSettings(value: unknown): asserts value is V2Settings {
     if (value.naming.labels !== undefined) {
       if (!isRecord(value.naming.labels) || Object.keys(value.naming.labels).length > 50000) throw new Error('Étiquettes invalides.');
       for (const [id, edit] of Object.entries(value.naming.labels)) {
-        if (!id || id.length > 500 || !isRecord(edit) || typeof edit.text !== 'string' || edit.text.length > 200) throw new Error('Étiquette invalide.');
+        if (!id || id.length > 500 || !isRecord(edit) || edit.text!==undefined&&(typeof edit.text !== 'string' || edit.text.length > 200)) throw new Error('Étiquette invalide.');
+        checkEnum(edit.mode,['label','proper'],'mode de renommage');
         checkEnum(edit.kind, ['free', 'quarter', 'parcel', 'building'], 'type d’étiquette');
         if (edit.anchor !== undefined) {
           if (!isRecord(edit.anchor)) throw new Error('Position d’étiquette invalide.');

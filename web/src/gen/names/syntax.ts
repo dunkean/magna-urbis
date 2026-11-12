@@ -17,6 +17,15 @@ export function frenchDe(name: string, options?: ToponymTraits): string {
 }
 export const frenchRoad = (name: string): string => `Route ${frenchDe(name)}`;
 
+/** Urban houses never reuse the farm generic. Profiles without an authored house noun keep a bare name. */
+export function culturalBuildingName(profile:ToponymProfile,name:string):string {
+  if(profile.id==='french')return `Maison ${frenchDe(name)}`;
+  if(profile.id==='italian')return `Casa ${italianDi(name)}`;
+  const noun:Record<string,string>={english:'House',german:'Haus',arabic:'Dar',chinese:'Wu',japanese:'Ie',sanskrit:'Griha',norse:'Hus',elven:'Hall',dwarven:'Delve',orcish:'Hut',halfling:'Burrow',roman:'Domus',dutch:'Huis',persian:'Khaneh',turkish:'Ev',korean:'Jip',swahili:'Nyumba',maori:'Whare'};
+  const term=noun[profile.id];
+  return !term?name:CULTURAL_TERMS[profile.id].order==='suffix'?`${name} ${term}`:`${term} ${name}`;
+}
+
 /** Format a bare name; a complete corpus label is opaque and must not be redecorated. */
 export function formatToponym(profile: ToponymProfile, kind: ToponymForm, name: string, options?: ToponymTraits): string {
   if (options?.opaque) return name;
@@ -95,6 +104,15 @@ const terms = (order: CulturalTerms['order'], values: [string,string,string,stri
 // Word order is intentionally simple and invariable: names from geographic pools have
 // no reliable case, gender or pronunciation metadata from which to inflect them.
 export const CULTURAL_TERMS: Readonly<Record<string, CulturalTerms>> = {
+  french: terms('prefix',['Route','Porte','Château','Rivière','Lac','Mer','Forêt','Mont','Pays','Ferme','Rue','Quartier','Place','Église','Artisans']),
+  english: terms('suffix',['Road','Gate','Castle','River','Lake','Sea','Forest','Hill','Region','Farm','Street','Quarter','Square','Church','Crafts']),
+  german: terms('suffix',['Straße','Tor','Burg','Fluss','See','Meer','Wald','Berg','Land','Hof','Gasse','Viertel','Platz','Kirche','Handwerk']),
+  italian: terms('prefix',['Strada','Porta','Castello','Fiume','Lago','Mare','Bosco','Monte','Terra','Podere','Via','Quartiere','Piazza','Chiesa','Artigiani']),
+  arabic: terms('prefix',['Tariq','Bab','Qasr','Nahr','Buhayrat','Bahr','Ghabat','Jabal','Bilad','Mazraat','Darb','Harat','Rahba','Masjid','Suq']),
+  elven: terms('suffix',['Way','Gate','Tower','River','Lake','Sea','Wood','Peak','Realm','Garden','Path','Grove','Glade','Shrine','Craft']),
+  dwarven: terms('suffix',['Road','Door','Keep','Stream','Lake','Sea','Wood','Peak','Hold','Steading','Way','Hall','Court','Shrine','Forge']),
+  orcish: terms('suffix',['Trail','Gate','Hold','River','Bog','Sea','Thicket','Mound','Land','Pen','Row','Camp','Pit','Altar','Craft']),
+  halfling: terms('suffix',['Road','Gate','Hall','Water','Pond','Sea','Wood','Hill','Shire','Farm','Lane','Farthing','Green','Chapel','Craft']),
   chinese: terms('suffix',['Lu','Men','Cheng','He','Hu','Hai','Lin','Shan','Qu','Zhuang','Jie','Fang','Guangchang','Si','Gong']),
   japanese: terms('suffix',['Kaido','Mon','Jo','Gawa','Ko','Nada','Mori','Yama','Chiho','Mura','Dori','Machi','Hiroba','Tera','Shokunin']),
   sanskrit: terms('suffix',['Marga','Dvara','Durga','Nadi','Sarovara','Sagara','Vana','Giri','Desha','Grama','Vithi','Pura','Chowk','Mandira','Shilpi']),

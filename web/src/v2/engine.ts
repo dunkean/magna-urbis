@@ -282,7 +282,9 @@ function assertTerrain(world: World, settings: V2Settings): void {
 }
 function nameWorld(world: World, mainOptions?: Partial<Options>): void {
   const root = new Rng('magna-urbis:' + world.seed);
+  const bank=world.names?.bank;
   world.names = generateNames(mainOptions ? { ...world, options: { ...world.options, ...mainOptions } } : world, root);
+  world.names.bank=bank;
   settlementNames(world, root);
   applyNameOverrides(world);
 }

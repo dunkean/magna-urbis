@@ -2,7 +2,7 @@ import { SEASON_CALENDAR_FIELDS } from '../../../rust/bridge/terrainRenderV2Zone
 import { DIAGNOSTICS } from '../render/displayDiagnostics';
 import { POTENTIAL_IDS } from '../../../rust/bridge/resources';
 import { STYLE_IDS, GROUND_VARIANTS, LAND_KINDS, presetComposition, withGroundVariant, type StyleId, type PresetId, type CompositionRecipe, type Limitation } from '../render/composition';
-import { TEXT_GROUPS, type TextGroup } from '../render/textLayer';
+import { TEXT_GROUPS, NAME_LEVELS, nameLevelValue, DEFAULT_TEXT, type TextGroup, type NameLevel } from '../render/textLayer';
 import { TERRAIN_STYLE_LIST, type TerrainStyle } from '../render/terrainStyle';
 import { writeSettingPath, type ParameterField } from './parameterForm';
 import type { RenderSection, RenderText, SectionLevels } from './renderSettingsPanel';
@@ -15,6 +15,7 @@ const flag = (path: string, en: string, fr: string): ParameterField => ({ path: 
 const number = (path: string, en: string, fr: string, min: number, max: number, step: number): ParameterField => ({ path: `appearance.${path}`, type: 'number', label: copy(en, fr), min, max, step });
 const fontEntries = [['inherit', 'Inherit', 'Hérité'], ['serif', 'Serif', 'Avec empattements'], ['sans', 'Sans serif', 'Sans empattements']] as const;
 const TEXT_GROUP_LABELS: Record<TextGroup, readonly [string, string]> = { places: ['Places', 'Lieux'], water: ['Water', 'Eau'], nature: ['Nature', 'Nature'], countryside: ['Countryside', 'Campagne'], city: ['City', 'Ville'], landmarks: ['Landmarks', 'Monuments'], pins: ['Pins and sites', 'Repères et sites'] };
+const NAME_LEVEL_LABELS:Record<NameLevel,readonly [string,string]>={places:['Cities → hamlets and localities','Villes → hameaux et lieux-dits'],rivers:['Main river → all streams','Fleuve principal → tous les ruisseaux'],water:['Seas → small lakes','Mers → petits lacs'],nature:['Major landscapes → local features','Grands paysages → lieux naturels'],districts:['Main districts → all quarters','Grands quartiers → tous les secteurs'],streets:['Main roads → all lanes','Axes principaux → toutes les ruelles'],buildings:['Major buildings → all buildings','Grands édifices → tous les bâtiments'],landmarks:['Major monuments → all landmarks','Monuments majeurs → tous les repères'],pins:['Selected pins → all pins','Repères choisis → tous les repères']};
 const LAND_KIND_LABELS: Record<typeof LAND_KINDS[number], readonly [string, string]> = { field: ['Fields', 'Champs'], meadow: ['Meadows', 'Prairies'], pasture: ['Pastures', 'Pâtures'], forest: ['Forests', 'Forêts'],
   orchard: ['Orchards', 'Vergers'], garden: ['Gardens', 'Jardins'], marsh: ['Marshes', 'Marais'], commons: ['Commons', 'Communs'] };
 export const incompatibilityText: Record<string, string> = {
@@ -87,6 +88,7 @@ export const compositionFields: Record<string, ParameterField> = Object.fromEntr
   choice('composition.buildings.look', 'Building look', 'Aspect des bâtiments', [['footprints', 'Footprints', 'Emprises'], ['cartographic-roofs', 'Cartographic roofs', 'Toits cartographiques'], ['simple-volumes', 'Simple volumes', 'Volumes simples'], ['detailed-volumes', 'Detailed volumes', 'Volumes détaillés']]),
   flag('composition.buildings.parcels', 'Parcels', 'Parcelles'), flag('composition.buildings.blocks', 'Blocks', 'Îlots'), flag('composition.buildings.districts', 'Districts', 'Quartiers'),
   flag('composition.text.visible', 'Text', 'Textes'),
+  ...NAME_LEVELS.map(category=>({...number(`composition.text.levels.${category}`,...NAME_LEVEL_LABELS[category],0,100,1),defaultValue:nameLevelValue(DEFAULT_TEXT,category),help:category==='places'?copy('0: none · 1: most important · 100: all candidates. Zoom and overlap still control legibility.','0 : aucun · 1 : le plus important · 100 : tous les noms. Le zoom et les collisions préservent la lisibilité.'):undefined})),
   ...TEXT_GROUPS.map(group => flag(`composition.text.groups.${group}`, ...TEXT_GROUP_LABELS[group])),
   choice('composition.text.look', 'Style', 'Style', fontEntries),
   number('composition.text.size', 'Size', 'Taille', .6, 1.8, .05),
@@ -105,7 +107,7 @@ export const RENDER_COMPOSITION_ROWS: Record<RenderSection, readonly string[]> =
   roads: ['composition.networks.roads.visible', 'composition.networks.roads.look', 'composition.networks.roads.emphasis'],
   water: ['composition.networks.water.visible', 'composition.networks.water.look'],
   buildings: ['composition.buildings.visible', 'composition.buildings.look', 'composition.buildings.parcels', 'composition.buildings.blocks', 'composition.buildings.districts'],
-  text: ['composition.text.visible', 'composition.text.look', 'composition.text.size', 'composition.text.density', 'composition.text.halo', ...TEXT_GROUPS.map(g => `composition.text.groups.${g}`)],
+  text: ['composition.text.visible', ...NAME_LEVELS.map(g=>`composition.text.levels.${g}`), 'composition.text.look', 'composition.text.size', 'composition.text.density', 'composition.text.halo', ...TEXT_GROUPS.map(g => `composition.text.groups.${g}`)],
   diagnostics: [],
 };
 /** Semantic display of land use, kept apart from the physical cover: hiding it never hides fields, forests or marshes. */

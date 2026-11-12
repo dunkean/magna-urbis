@@ -339,7 +339,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     const semantic=options.getSemantic?.();
     if(semantic)textOverlay.setLimits({...semantic,scenes:scene?[scene]:[]});
     if (!textInputs || textInputs.world !== world || textInputs.plan !== scene || textInputs.key !== key) {
-      const labels = options.labels === false ? [] : [...(world ? buildMapLabels(world, palette.name, palette, text) : []), ...(scene ? cityTextLabels(scene, text, palette) : [])];
+      const labels = options.labels === false ? [] : [...(world ? buildMapLabels(world, palette.name, palette, text) : []), ...(scene ? cityTextLabels(scene, text, palette, world) : [])];
       labels.sort((a, b) => b.st.priority - a.st.priority);
       textInputs = { world, plan: scene, key, labels };
       textOverlay.set({ labels, text, palette });

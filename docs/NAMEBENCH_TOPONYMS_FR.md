@@ -12,31 +12,41 @@ Les générateurs romain et viking dont les tableaux source référencés étaie
 
 ## Usage et règles
 
-### Culture intégrale ou traduction partielle
+### Présentation, profils et sources
 
-Dans **Carte → Nommage**, le réglage **Présentation des toponymes** propose deux modes :
+Dans **Carte → Nommage**, la présentation par défaut traduit les éléments génériques dans la langue de l’interface (français, anglais, espagnol, portugais, chinois, arabe, russe et japonais). Le mode **Culture intégrale** conserve la forme culturelle. Une langue de carte indépendante peut être choisie pour une carte destinée à une autre langue, sans changer l’interface.
 
-- **Culture intégrale**, par défaut : conserver la forme culturelle complète.
-- **Traduction partielle** : adapter uniquement les termes génériques à la langue d’affichage choisie : français, anglais, japonais, arabe, espagnol, portugais ou chinois.
+Les réglages de profil et de source portent au choix sur les réglages communs, le paysage régional ou une ville. L’éditeur de noms permet aussi une surcharge par objet ou quartier. L’héritage suit objet → quartier → ville → réglages communs ; le paysage régional possède sa propre surcharge. Les rues et objets natifs suivent la culture locale des phases/quartiers, sauf profil linguistique explicitement choisi.
 
-Exemple de nom propre : `Tsing Tao` donne `Fleuve Tsing Tao` en français ou `Tsing Tao River` en anglais. Le nom propre, la forme culturelle et le texte affiché sont enregistrés séparément. Revenir au mode culturel restaure sa forme complète ; la langue d’affichage ne participe jamais au tirage des noms. Les choix sont conservés dans le projet. Ces sept langues concernent les noms de lieux ; l’interface globale reste en français et anglais.
+Tous les profils du registre sont accessibles, y compris les profils fins. Le profil européen automatique est stable (français), indépendamment de la graine. Les alias natifs `west` et `mongol` sont normalisés. Une culture inconnue possède un repli anglais diagnostiqué ; elle ne reçoit pas silencieusement un nom français.
 
-Les noms opaques, dont les éléments ne peuvent être séparés avec certitude, restent intacts. Les noms nus identifiés par leur type peuvent recevoir un générique localisé ; les noms complets contenant déjà leur descripteur ne sont pas découpés par un remplacement de texte global. Le rendu arabe isole le nom propre pour préserver l’ordre bidirectionnel.
+Les sources sont **selon le profil**, **géographique**, **inventée** ou **mixte**. Les sources géographiques sont des sélections de pays modernes, sans garantie de langue ou d’époque historique. Un profil sans corpus géographique garde sa palette inventée et fournit un diagnostic. Les palettes inventées sont des conventions fictionnelles, sans prétention de reconstruction historique.
 
-### Profils et vocabulaire
+La lecture latine conserve les noms déjà latins et applique les correspondances explicites disponibles pour les sources grecques et cyrilliques. Une écriture sans lecture disponible reste intacte ; le système n’invente pas de transcription ni d’écriture originale à partir d’une palette latine.
 
-- Le choix automatique suit la culture de chaque établissement. Les choix explicites de langue disponibles dans les réglages restent prioritaires.
-- Les éléments naturels suivent le profil de la région, qui utilise actuellement la culture de l’établissement principal.
-- Les noms complets importés sont opaques : ils ne reçoivent pas arbitrairement un second article ou un suffixe. Les petits générateurs évaluent seulement leurs tableaux et patrons de concaténation.
-- Les relations de destination sont conservées dans les étiquettes dérivées. Les corrections utilisateur sont appliquées avant leur composition, sans remplacement global de texte.
-- Les contractions françaises prennent en compte les articles lexicaux ; les autres profils définissent leurs propres connecteurs. Une morphologie non définie reste simple, sans déclinaison inventée.
-- Un renommage détache les métadonnées modifiables et conserve les tableaux physiques, chemins, rues et bâtiments. Il n’exécute pas le générateur de terrain ou d’urbanisme.
+### Modèle commun et références
 
-Les profils et générateurs sont dans [profiles.ts](../web/src/gen/names/profiles.ts), [toponyms.ts](../web/src/gen/names/toponyms.ts) et [syntax.ts](../web/src/gen/names/syntax.ts). L’identité de rejeu comprend la graine, les versions, l’empreinte du corpus, le profil et la clé du lieu. Les homonymes sont permis entre identités distinctes. Les noms de quartiers et rues conservent aussi les petits vocabulaires urbains existants ; toutes les grammaires ne sont pas des modèles linguistiques complets.
+Les noms propres, formes culturelles et textes affichés sont séparés. Les descriptions connues (marché, vieux quartier, direction, métier) sont conservées comme concepts multilingues au moment de la composition. Les vocabulaires historiques fournissent eux aussi ces métadonnées. Un nom importé complet reste opaque lorsqu’aucune décomposition fiable n’est disponible.
 
-La révision de qualité du 6 novembre ajoute un vocabulaire urbain propre à chaque profil fin et **55 palettes phonotactiques originales**, pour éviter notamment de tirer des noms coloniaux américains pour un village pueblo ou des villes italiennes modernes pour un site romain. Ces palettes sont des conventions fictionnelles cohérentes, pas des reconstructions historiques attestées. Le [choix des sources](NAMEBENCH_CULTURAL_SOURCES.md) et les [règles grammaticales et leurs références](NAMEBENCH_GRAMMAR_SOURCES.md) détaillent cette distinction. Les deux corpus participent à l’empreinte de rejeu de l’algorithme 2.
+Les quartiers, rues, portes, édifices et monuments natifs sont convertis en enregistrements de noms avec identité, culture et rôle. Leurs anciens libellés français de diagnostic ne servent plus de toponymes. Les étiquettes natives et classiques partagent la présentation de la carte, de la 3D et des exports. Les textes arabes et les séquences combinées sont façonnés en un seul segment, pour préserver les ligatures et l’ordre bidirectionnel.
 
-Les tests vérifient notamment les contractions et particules, les descripteurs déjà présents, le vocabulaire des sites minoritaires, les changements de langue, les références après correction manuelle et la restauration de la forme culturelle. Le paquet Namebench brut reste inchangé ; les palettes supplémentaires occupent environ 90 Kio de JSON.
+L’éditeur distingue **nom propre et références**, **texte libre complet**, et les modifications de placement/typographie. Modifier uniquement le style ou la position ne fige pas la langue de l’étiquette. Les noms d’établissements modifiés mettent à jour les routes, portes et châteaux qui les référencent.
+
+### Conservation et régénération
+
+Les identifiants sont attachés aux objets, sans dépendance à l’ordre des étiquettes. Les métadonnées d’identité des rues, rivières, routes et quartiers sont conservées lors des déplacements et dans le projet. Les anciennes modifications `n0`, `n1`, etc. sont migrées grâce au type et à l’ancre de leur objet dans la carte enregistrée, jamais à leur nouvelle position dans la liste.
+
+Un registre de noms générés (`NamesLayer.bank`) est enregistré avec le monde. À profil et politique inchangés, les noms sont réutilisés après mise à jour du corpus. **Générer d’autres noms** change explicitement la variation de la portée choisie (carte, région, ville ou objet) ; les autres portées sont conservées. Les corrections de l’auteur sont réappliquées après composition. Changer de langue, de style ou de quantité visible ne régénère pas les noms.
+
+L’algorithme 3 garde les empreintes de corpus comme provenance, sans les injecter dans la graine de tous les objets. Les corpus, générateurs et palettes restent locaux, sans appel réseau. Le titre de carte peut être personnalisé indépendamment du nom de la ville.
+
+### Quantité visible par importance
+
+Dans **Affichage → Textes**, neuf curseurs indépendants règlent les lieux habités, rivières, autres eaux, paysages, quartiers, rues, bâtiments, monuments et repères. **0** masque la catégorie, **1** conserve son élément principal, **100** autorise tous les candidats. Les étapes intermédiaires ajoutent progressivement les objets selon leur importance, puis leur étendue et leur identité stable. Les noms de petites rivières, des rues secondaires et des objets natifs sont produits même lorsqu’ils sont masqués.
+
+Le zoom, les groupes visibles, les collisions et le budget global d’étiquettes continuent de protéger la lisibilité. Le maximum du curseur autorise tous les noms ; il ne force pas leur superposition. Les anciennes compositions sans curseurs conservent leur comportement de visibilité antérieur. Les réglages sont enregistrés dans la composition et utilisés par les rendus 2D, 3D et les exports vectoriels/raster.
+
+Les principaux modules sont `gen/names/{profiles,toponyms,culturalVocabulary,meanings,identity,policy,displayNames}.ts`, `v2/{mapNaming,nativeNames,mapLabels}.ts` et `render/{textLayer,mapLabels,svgLabels}.ts`. Les tests `namingSystem.test.ts` couvrent l’intégration des profils, sources, références, noms conservés, éditions, objets natifs, curseurs et écritures.
 
 ## Refaire l’extraction
 
@@ -49,4 +59,4 @@ python tools/namebench/export.py --check
 
 L’exporteur ouvre la source SQLite en lecture seule et immuable. Il sélectionne les noms normalisés NFC par classement de hachage stable, sans tirage SQL aléatoire. Le contrôle recalcule les sorties et compare les octets. La base de 1,2 Go reste locale ; les builds web utilisent directement les fichiers JSON suivis avec le code. Aucun environnement Python Namebench n’est nécessaire à l’exécution web.
 
-Depuis `web/`, le contrôle navigateur dédié est `node scripts/namebench_browser_check.mjs`. Il construit un bundle à partir du véritable moteur de nommage et de ses contrôles, le charge dans Edge sans interface visible, coupe le réseau et vérifie le rejeu sur tous les profils culturels, les sept traductions génériques et les deux modes du panneau. Son rapport est écrit dans `web/out/namebench-browser-check.json`. Il ne teste pas le placement graphique des étiquettes.
+Depuis `web/`, le contrôle navigateur dédié est `node scripts/namebench_browser_check.mjs`. Il construit un bundle à partir du véritable moteur de nommage et de ses contrôles, le charge dans Edge sans interface visible, coupe le réseau et vérifie le rejeu sur tous les profils culturels, les huit traductions génériques et les deux modes du panneau. Son rapport est écrit dans `web/out/namebench-browser-check.json`. Il ne teste pas le placement graphique des étiquettes.

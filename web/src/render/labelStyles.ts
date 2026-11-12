@@ -57,6 +57,7 @@ export function kindStyles(_style: MapStyle, pal: Palette): Record<NameKind, Kin
     village: k({ shape: 'point', symbol: 'dot', bold: false, sizeM: 14, minPx: 11.5, maxPx: 16, maxScale: 0.7, priority: 75 }),
     farm: k({ shape: 'point', italic: true, color: soft, sizeM: 6, minPx: 9.5, maxPx: 11, minScale: 0.22, priority: 28 }),
     bridge: k({ shape: 'point', italic: true, sizeM: 6, minPx: 10, maxPx: 12, minScale: 0.5, priority: 34 }),
+    building: k({shape:'point',sizeM:5,minPx:9,maxPx:12,minScale:.7,priority:25}),
   };
 }
 

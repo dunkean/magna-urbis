@@ -108,7 +108,7 @@ export function syncBenchAnnotations(map: SVGSVGElement, view: View, width: numb
   const key = JSON.stringify([r.composition.text, pal.name, pal.lab]), previous = textCache.get(map);
   let labels = previous?.labels;
   if (!previous || previous.key !== key || previous.world !== data.world || previous.scenes.length !== data.scenes.length || previous.scenes.some((scene, i) => scene !== data.scenes[i])) {
-    labels = [...(data.world ? buildMapLabels(data.world, pal.name, pal, r.composition.text) : []), ...data.scenes.flatMap(scene => cityTextLabels(scene, r.composition.text, pal))];
+    labels = [...(data.world ? buildMapLabels(data.world, pal.name, pal, r.composition.text) : []), ...data.scenes.flatMap(scene => cityTextLabels(scene, r.composition.text, pal, data.world))];
     textCache.set(map, { key, world: data.world, scenes: data.scenes, labels });
   }
   const placed = placeMapLabels(labels!, view, width, height, estimateWidth, textPlacement(r.composition.text));

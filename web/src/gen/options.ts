@@ -2,6 +2,8 @@ import { demographicClass, DEMOGRAPHIC_CLASSES, DEMOGRAPHIC_CLASS_FLOORS, type D
 import type { NameFamily } from './names/types';
 import { expandMapQuery, encodeMapId } from './mapId';
 import { NAME_FAMILIES } from './names/types';
+import { TOPONYM_PROFILES } from './names/profiles';
+const NAME_PROFILE_IDS=TOPONYM_PROFILES.map(p=>p.id);
 import { BIOME_NAMES, biomeName, type BiomeName } from './biomes';
 import type { ImportedHeight } from './terrain/import';
 import { CULTURE_IDS, CULTURES as CULTURE_REGISTRY, mixToString, mixFromString, planToString, planFromString } from './urban/culture';
@@ -152,7 +154,8 @@ export interface Options {
   /** Sprawl 0.5 (compact, dense) … 2 (loose, gardens, spread suburbs) for the same population; 1 = the culture's baseline. */
   sprawl?: number;
   /** Toponym language family; 'auto' (default) follows the culture. */
-  language?: NameFamily | 'auto';
+  language?: string;
+  nameSource?: import('./names/types').NameSource;
   /** Draw labels (names) / legend on the map. Display only. */
   labels?: boolean;
   legend?: boolean;
@@ -208,7 +211,7 @@ export function cleanSettlementName(value: unknown): string | undefined {
 export type SettlementOverrides = Partial<Pick<Options,
   'size' | 'sitePrefs' | 'walls' | 'moat' | 'castles' | 'castle' | 'cathedral' | 'palace' |
   'monasteries' | 'port' | 'arena' | 'activities' | 'suburbs' | 'shantytowns' |
-  'roads' | 'cultureMix' | 'plan' | 'sprawl' | 'language'
+  'roads' | 'cultureMix' | 'plan' | 'sprawl' | 'language' | 'nameSource'
 >>;
 export type SettlementsOpt = 'auto' | 'none' | { counts: SettlementCounts } | { list: SettlementSpec[] };
 
@@ -282,7 +285,7 @@ export function settlementsFromString(v: string | null): SettlementsOpt {
 export const SETTLEMENT_OVERRIDE_KEYS = [
   'size', 'sitePrefs', 'walls', 'moat', 'castles', 'castle', 'cathedral', 'palace',
   'monasteries', 'port', 'arena', 'activities', 'suburbs', 'shantytowns',
-  'roads', 'cultureMix', 'plan', 'sprawl', 'language',
+  'roads', 'cultureMix', 'plan', 'sprawl', 'language', 'nameSource',
 ] as const;
 
 /** The first entry is the main settlement in workflow=list. Legacy settl=L... remains secondary-only. */
@@ -362,7 +365,8 @@ function validOverrides(raw: unknown): SettlementOverrides | undefined {
   const sprawl = value('sprawl');
   if (typeof sprawl === 'number' && Number.isFinite(sprawl)) out.sprawl = Math.max(0.5, Math.min(2, sprawl));
   const language = value('language');
-  if (language === 'auto' || (typeof language === 'string' && (NAME_FAMILIES as string[]).includes(language))) out.language = language as Options['language'];
+  if (language === 'auto' || (typeof language === 'string' && NAME_PROFILE_IDS.includes(language))) out.language = language;
+  const source=value('nameSource');if(typeof source==='string'&&['auto','geographic','invented','mixed'].includes(source))out.nameSource=source as Options['nameSource'];
   return Object.values(out).some((v) => v !== undefined) ? out : undefined;
 }
 
@@ -551,6 +555,7 @@ function queryForOptions(o: Options, includeUid: boolean): string {
   if (o.contours !== DEFAULTS.contours) p.set('contours', o.contours ? '1' : '0');
   if (o.landuse !== DEFAULTS.landuse) p.set('landuse', o.landuse ? '1' : '0');
   if (o.language && o.language !== 'auto') p.set('lang', o.language);
+  if(o.nameSource&&o.nameSource!=='auto')p.set('nameSource',o.nameSource);
   if (o.labels === false) p.set('labels', '0');
   if (o.legend) p.set('legend', '1');
   if (o.sprawl !== undefined && o.sprawl !== 1) p.set('sprawl', String(o.sprawl));
@@ -638,7 +643,8 @@ export function fromQuery(q: string | URLSearchParams): Options {
   const lu = p.get('landuse');
   o.landuse = lu === null ? DEFAULTS.landuse : lu === '1' || lu === 'true';
   const lang = p.get('lang');
-  o.language = lang !== null && (NAME_FAMILIES as string[]).includes(lang) ? (lang as NameFamily) : 'auto';
+  o.language = lang !== null && NAME_PROFILE_IDS.includes(lang) ? lang : 'auto';
+  const ns=p.get('nameSource');if(ns&&['auto','geographic','invented','mixed'].includes(ns))o.nameSource=ns as Options['nameSource'];
   o.labels = p.get('labels') !== '0' && p.get('labels') !== 'false';
   o.legend = p.get('legend') === '1' || p.get('legend') === 'true';
   const sp = Number(p.get('sprawl'));

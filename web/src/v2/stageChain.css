@@ -261,3 +261,9 @@
 .parameter-field:has(>.parameter-slider)>.parameter-slider{grid-column:2!important;grid-row:1;width:100%;min-width:0}
 .parameter-field:has(>.parameter-slider)>input:not(.parameter-slider){grid-column:3;grid-row:1;width:100%;min-width:0}
 .parameter-field:has(>.parameter-slider)>:not(.parameter-caption):not(input){grid-column:1/-1}
+
+/* Importance sliders keep their explanatory endpoints readable in the narrow map panel. */
+.stage-body .parameter-field.name-importance-field:has(>.parameter-slider){grid-template-columns:minmax(0,1fr) 62px!important;gap:5px 8px}
+.stage-body .name-importance-field:has(>.parameter-slider)>.parameter-caption{grid-column:1/-1;grid-row:1;line-height:1.4}
+.stage-body .name-importance-field:has(>.parameter-slider)>.parameter-slider{grid-column:1!important;grid-row:2}
+.stage-body .name-importance-field:has(>.parameter-slider)>input:not(.parameter-slider){grid-column:2;grid-row:2}
