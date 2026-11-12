@@ -5,6 +5,7 @@ import { WorkerWorld } from './workerWorld';
 import { renameMap } from './mapNaming';
 import { wasmThreadsInfo } from '../../../rust/bridge/wasmThreads';
 import { showCityStageOutput } from './cityStageOutput';
+import { packWorldLanduse } from './landusePack';
 
 const scope = self as unknown as DedicatedWorkerGlobalScope;
 // Serialize actions; the procedural cores retain per-thread scratch buffers.
@@ -45,7 +46,9 @@ scope.onmessage = ({ data: request }: MessageEvent<V2WorkerRequest|V2ResourceReq
       else if (world.stats['v2.cityOutput']) { world = { ...world, stats: { ...world.stats } }; delete world.stats['v2.cityOutput']; delete world.stats['v2.cityOutputKeys']; }
       retained.retain(id,world);
       // The WASM mode this worker actually runs (window.magnaWasmThreads on the page).
-      send({ id, type: 'result', world, wasm: wasmThreadsInfo() });
+      // Land-use areas travel packed (landusePack.ts); the retained world keeps its own objects.
+      const packed = packWorldLanduse(world);
+      scope.postMessage({ id, type: 'result', world: packed.world, wasm: wasmThreadsInfo() } satisfies V2WorkerResponse, packed.transfer);
     } catch (error) { send({ id, type: 'error', error: error instanceof Error ? error.message : String(error), wasm: wasmThreadsInfo() }); }
   });
 };

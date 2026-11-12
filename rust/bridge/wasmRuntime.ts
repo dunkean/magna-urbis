@@ -40,8 +40,14 @@ function select(mod: CoreWasm): CoreWasm {
 let loading: Promise<CoreWasm> | undefined;
 let singleLoading: Promise<CoreWasm> | undefined;
 let singleModule: Promise<WebAssembly.Module> | undefined;
-const initWith = (init: unknown, module_or_path: WebAssembly.Module | ArrayBuffer) =>
-  (init as (options: { module_or_path: WebAssembly.Module | ArrayBuffer }) => Promise<unknown>)({ module_or_path });
+// Diagnostics (memory probes, devtools): linear memory bytes of every core instance of this realm.
+const instanceMemories: WebAssembly.Memory[] = [];
+(globalThis as { magnaWasmMemoryBytes?: () => number[] }).magnaWasmMemoryBytes = () => instanceMemories.map(memory => memory.buffer.byteLength);
+const initWith = async (init: unknown, module_or_path: WebAssembly.Module | ArrayBuffer) => {
+  const exports = await (init as (options: { module_or_path: WebAssembly.Module | ArrayBuffer }) => Promise<{ memory?: WebAssembly.Memory }>)({ module_or_path });
+  if (exports?.memory instanceof WebAssembly.Memory && !instanceMemories.includes(exports.memory)) instanceMemories.push(exports.memory);
+  return exports;
+};
 
 /**
  * Streaming compilation: the module compiles while it downloads, and the browser

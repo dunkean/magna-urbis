@@ -14,8 +14,9 @@ import settlementStylesNote from '../../../docs/methods/urban-settlement-styles.
 import { urbanText } from './urbanPanelLocale';
 import { LOCALE_KEY } from './shellLocale';
 
+// Figure URLs (separate cached files, fetched when a note shows them), not ~1 MB of base64 in the page bundle.
 const bundledFigures = import.meta.glob<string>('../../../docs/methods/images/*.webp', {
-  eager: true, query: '?inline', import: 'default',
+  eager: true, query: '?url', import: 'default',
 });
 const figures = Object.fromEntries(Object.entries(bundledFigures).map(([path, image]) => [path.slice(path.indexOf('images/')), image]));
 

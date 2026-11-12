@@ -12,6 +12,8 @@ export class RasterTileCache<T> {
   get bytes(): number { return this.used; }
   get size(): number { return this.entries.size; }
 
+  has(key: string): boolean { return this.entries.has(key); }
+
   get(key: string): T | undefined {
     const tile = this.entries.get(key);
     if (!tile) return undefined;

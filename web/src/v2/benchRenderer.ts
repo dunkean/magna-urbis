@@ -48,6 +48,10 @@ import type { SemanticLook } from '../render/composition';
 import type { SemanticLegendEntry } from '../render/legend';
 import type { CityScene } from '../render/cityCanvas';
 import { viewRect } from '../render/view';
+import { sceneDirty, worldDirty, changedShapes, shapeKey, mergeRects } from '../render/sceneDiff';
+import type { Scene } from '../render/scene';
+import type { Rect } from '../render/tileindex';
+import { seedSubset } from '../../../rust/bridge/generationSeed';
 /** Overlay repaints slower than this follow pan/zoom as a transformed bitmap, repainted LIVE_SETTLE_MS after the view rests. */
 const LIVE_DEFER_MS = 40, LIVE_SETTLE_MS = 160;
 import { cityContourPaths, cityFineContours } from '../render/cityContours';
@@ -67,6 +71,12 @@ const svgOf = (body: string, region: ViewRasterRegion): string =>
 /** Pixel width of the whole-map renderSvg overlay of exports. */
 const EXPORT_OVERLAY_PX = 4096;
 const wholeMap = (width: number): ViewRasterRegion => ({ x: 0, y: 0, width, height: width, density: 2048 / width });
+/** The overlay decorations (tree marks, brushes) follow the map, not a town's own variations: rerolling a town must not reshuffle every wood. */
+const displaySeed = (seed: string): string => seedSubset(seed, key => !key.startsWith('city/'));
+/** Building footprints and activity yards: the woods clear around them (the cartography buildingClearings hook). */
+const clearingBuildings = (world: World) => [...nativeCitiesOf(world).flatMap(city => city.scene?.buildings ?? []), ...(activityScene(world)?.buildings ?? [])];
+/** Reach of the overlay products derived from a changed shape (forest wash fringe 140 m, lone trees 120 m, clearings, sprites). */
+const DERIVED_REACH = 220;
 /** Resources a live renderer shares with its exports: derived products keyed by revisions, and the native city map. */
 export interface SharedPassResources { cache: ResourceCache; city?: { key: string; map: ReturnType<typeof createNativeCityMap> } }
 /** `svg`: the terrain of the 3D background; `image`: the 2D base, with the crowns of a hidden relief. */
@@ -256,7 +266,7 @@ export class BenchRenderer {
         if (/swiftshader|llvmpipe|software/i.test(name)) {
           this.gpuUnavailable = true; this.stats.gpuFallback = 'Software WebGL material raster on the map context'; return;
         }
-        this.gpu = await createTerrainRenderer(this.gpuCanvas, document.createElement('canvas'));
+        this.gpu = await createTerrainRenderer(this.gpuCanvas, document.createElement('canvas')); this.forestShown = false;
         this.gpu.setLivePaused(this.preparing);
       }
       if (this.uploaded !== t) { this.gpu.setBase({ x: 0, y: 0, width: t.width, n: source.n, data: source.data, cave: source.cave, waterSurface: t.waterSurface }); this.uploaded = t; }
@@ -338,12 +348,26 @@ export class BenchRenderer {
     }
     return this.occupationCache.data;
   }
+  /** Live forest update still running after set() returned (progressive display). */
+  private forestJob?: Promise<void>;
+  private forestShown = false;
   private async forestPass(): Promise<void> {
     if (!this.gpuActive) return;
     this.dropBackground();
     // The Rust forest field and the occupation worker are independent: run them at once.
-    const [field, occupation] = await Promise.all([v2DisplayForestAsync(this.world!, this.settings!, this.resolved!), this.groundOccupation()]);
-    if (this.gpuActive) this.gpu!.setForest(field, occupation);
+    const job = Promise.all([v2DisplayForestAsync(this.world!, this.settings!, this.resolved!), this.groundOccupation()]);
+    // Progressive display: a live map that already shows woods shows the new town at once, the woods follow when ready.
+    if (this.forestShown && this.resolved!.target !== 'export') {
+      const gpu = this.gpu!, world = this.world;
+      const update: Promise<void> = job.then(([field, occupation]) => {
+        if (this.disposed || this.gpu !== gpu || this.world !== world || !this.gpuActive) return;
+        gpu.setForest(field, occupation); this.dropBackground(); this.invalidate();
+      }, error => console.warn('Forest update failed:', error)).finally(() => { if (this.forestJob === update) { this.forestJob = undefined; this.invalidate(); } });
+      this.forestJob = update;
+      return;
+    }
+    const [field, occupation] = await job;
+    if (this.gpuActive) { this.gpu!.setForest(field, occupation); this.forestShown = true; }
   }
   /** The parchment tints multiply over the lit ground: the overlay gets it as a backdrop, transparent on the water below. */
   private landBackdrop(): HTMLCanvasElement | null {
@@ -409,7 +433,8 @@ export class BenchRenderer {
     const world = this.world!, layers = this.exportLayers, r = this.resolved!;
     // Native city plans and houses are drawn exactly once by CityBench. Natural vegetation, regional roads and names still use the original map renderer.
     const hideUrban = this.scene!.capabilities.nativeCities || layers.city === false;
-    return displayWorld(world, { roads: layers.roads, city: hideUrban ? false : undefined }, r.city.visible);
+    const shown = displayWorld(world, { roads: layers.roads, city: hideUrban ? false : undefined }, r.city.visible), seed = displaySeed(world.seed);
+    return shown.seed === seed ? shown : { ...shown, seed };
   }
   /** Land classes the vector overlay paints. A material ground draws the physical land use in its shader, so the overlay keeps only the vegetation symbols asked for. */
   private overlayLandKinds(): true | ((kind: LandKind) => boolean) {
@@ -420,25 +445,50 @@ export class BenchRenderer {
     const world = this.world!, r = this.resolved!, layers = this.exportLayers, scene = this.scene!;
     // Before the dispose: 3D tiles may paint through the current renderer during this wait.
     const brushes = r.cartography.painted ? await paintedBrushes() ?? undefined : undefined;
-    this.cartography?.dispose();
     const shown = this.shownWorld();
     const landuse = layers.landuse !== false && r.cartography.landuse;
     // The physical land use keeps its own vegetation drawing only where the composition asks for it on the vector overlay; the semantic layer is separate (hook below).
     const cartographic = r.composition.vegetation.cartographic;
     const mask: SceneMask = { water: false, contours: false, landuse: !landuse ? false : this.overlayLandKinds() };
-    const v = scene.revisions, sceneKey = JSON.stringify(['scene', mapSeasonKey(), cityOverlayLandKey(r), v.roads, v.landuse, v.settlements, v.terrain, v.cities, shown === world, layers.roads, layers.city, r.city.visible, landuse, cartographic, world.mapSize, world.seed, world.options.biome]);
+    const v = scene.revisions, sceneKey = JSON.stringify(['scene', mapSeasonKey(), cityOverlayLandKey(r), v.roads, v.landuse, v.settlements, v.terrain, v.cities, layers.roads, layers.city, r.city.visible, landuse, cartographic, world.mapSize, shown.seed, world.options.biome]);
     const built = this.shared.cache.get(sceneKey, () => buildScene(shown, undefined, { mask }));
+    // Same overlay configuration on the same map (a town build or edit): keep the renderer and its tiles, repaint only the changed areas.
+    const config = JSON.stringify([r.keys.cartography, v.terrain, mapSeasonKey(), cityOverlayLandKey(r), landuse, cartographic, !!brushes, r.palette.colors, r.vegetation.symbols, r.composition.networks.roads.look,
+      layers.decor, layers.roads, layers.city, layers.landuse, layers.labels, layers.streets, layers.background, layers.terrain, layers.water, r.city.visible, shown.seed, world.mapSize, world.options.biome]);
+    const previous = this.cartographyState;
+    if (this.cartography && previous && previous.config === config && previous.scene !== built) {
+      const started = performance.now();
+      const dirty = sceneDirty(previous.scene, built);
+      if (dirty) {
+        const extra: Rect[] = worldDirty(previous.world, shown, 300);
+        changedShapes(clearingBuildings(previous.world), clearingBuildings(shown), b => `${b.id}|${shapeKey(b.footprint[0]?.outer ?? [])}`, b => b.footprint[0]?.outer ?? [], extra);
+        const rects = mergeRects([...dirty, ...extra].map(d => ({ minX: d.minX - DERIVED_REACH, minY: d.minY - DERIVED_REACH, maxX: d.maxX + DERIVED_REACH, maxY: d.maxY + DERIVED_REACH })));
+        const next: Scene = { ...built, dirty: rects };
+        if (this.cartography.update(shown, next)) {
+          this.cartographyState = { config, scene: built, world: shown };
+          this.stats.cartographyUpdate = { dirty: rects.length, area: Math.round(rects.reduce((sum, d) => sum + (d.maxX - d.minX) * (d.maxY - d.minY), 0) / (world.mapSize * world.mapSize) * 1000) / 10, ms: Math.round(performance.now() - started) };
+          performance.measure('v2:cartography-dirty', { start: started });
+          this.passes.reset('overlays');
+          return;
+        }
+      }
+    }
+    this.cartography?.dispose();
+    this.stats.cartographyUpdate = 'rebuilt';
     const state=this;
     const palette={...biomePalette(r.palette.mapStyle,world.options.biome),frameKind:'none' as const,...(layers.decor===false?{grid:null}:{})};
-    this.cartography = createCanvasRenderer(this.overlay, shown, palette, { colors: r.palette.colors, separateText: true, textSources: () => this.city?.scenes(), ...cityCountrysideCanvasOptions(r, world.mapSize), buildingClearings: () => buildingOccupationShapes({ buildings: [...nativeCitiesOf(world).flatMap(city => city.scene?.buildings ?? []), ...(activityScene(world)?.buildings ?? [])] } as never)?.map(shape => shape.outer) ?? [], transparentBackground: true, terrain: () => this.landBackdrop(), scene: built, mask, roadLook: r.composition.networks.roads.look, roadStyle: () => { const c = this.resolved!.composition; return { look: c.networks.roads.look, emphasis: c.networks.roads.emphasis, night: c.ambience === 'night', colors: this.resolved!.palette.colors }; },
+    this.cartography = createCanvasRenderer(this.overlay, shown, palette, { colors: r.palette.colors, separateText: true, textSources: () => this.city?.scenes(), ...cityCountrysideCanvasOptions(r, world.mapSize), buildingClearings: () => buildingOccupationShapes({ buildings: clearingBuildings(this.world!) } as never)?.map(shape => shape.outer) ?? [], transparentBackground: true, terrain: () => this.landBackdrop(), scene: built, mask, roadLook: r.composition.networks.roads.look, roadStyle: () => { const c = this.resolved!.composition; return { look: c.networks.roads.look, emphasis: c.networks.roads.emphasis, night: c.ambience === 'night', colors: this.resolved!.palette.colors }; },
       // Read per frame: a new look repaints the raster tiles through `key`, never the cartography pass.
       semantic: { key: () => `${this.semantic?.key ?? ''}|c${this.contourLook()?.landform ?? ''}|w${this.waterAboveLand() ? this.waterMaskVersion : ''}`, draw: (ctx, rect, mpp, quality) => { this.paintRural(ctx, rect, mpp, quality === 'light'); this.cutWater(ctx, rect); }, legend: () => this.semanticLegend() },
       invalidate: () => this.invalidate(), brushes, vegetation: r.vegetation.symbols, get dpr() { return state.dpr; } });
     const renderer = this.cartography;
+    this.cartographyState = { config, scene: built, world: shown };
     // The 3D drape tiles take the physical land use without the semantic hook: their contours are inked here, at the tile's scale.
     this.physical = { key: passKeys(this.input()).cartography, preview: (target, box) => renderer.drawCachedMap(target, box), paint: (target, box, options) => { const ground = renderer.drawGround(target, box, options); return this.drapeContours(target, box, displayQualityFor(!!options?.live) === 'light') || ground; } };
     this.passes.reset('overlays');
   }
+  /** Overlay renderer inputs: a matching configuration reuses the renderer through a dirty-region update. */
+  private cartographyState?: { config: string; scene: Scene; world: World };
   /** The physical land use of the overlay above (composition mask, painted brushes, path caches) for the 3D ground tiles: no second scene. */
   physicalGround(): PhysicalGround | undefined { return this.physical; }
   /** Labels, legend and cartouche on the overlay renderer; the explicit-layers export raster. */
@@ -650,8 +700,10 @@ export class BenchRenderer {
     this.cartography?.suspendLive();
     if (this.fantasy) suspendFantasyRaster(this.fantasy);
   }
+  /** Resolves once the progressive updates (woods after a town build) are on screen. */
+  async settled(): Promise<void> { while (this.forestJob) await this.forestJob; }
   /** Display work still owed to the last live frame (missing overlay tiles); 0 once the map is complete. */
-  pendingWork(): number { return this.preparing ? 1 : this.cartography?.lastStats().rasterPending ?? 0; }
+  pendingWork(): number { return this.preparing || this.forestJob ? 1 : this.cartography?.lastStats().rasterPending ?? 0; }
   /** Explicit readback for screenshots/illustration; ordinary navigation never calls it. */
   prepareCapture(): void {
     const frame = this.livePending ?? this.liveShown;
@@ -741,6 +793,7 @@ export class BenchRenderer {
   }
   async capture(size: number, layers?: Partial<ExportLayers>): Promise<HTMLCanvasElement> {
     if (layers) await this.set(this.world!, this.settings!, this.resolved!, layers);
+    await this.settled();
     if (this.gpuActive) await this.gpu!.variantReady();   // draw() is synchronous: it would create a missing pipeline in place
     const view = { cx: this.world!.mapSize / 2, cy: this.world!.mapSize / 2, scale: size / this.world!.mapSize };
     // Vectors at the export density before the synchronous draw.

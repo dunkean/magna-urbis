@@ -36,6 +36,8 @@ export interface V2TestBindings {
   prepareCapture?(): void;
   /** Rerolls one town's composition seed and rebuilds that town alone (the "Build town" path). */
   rerollTown?(key: string): void;
+  /** Resolves when the progressive display (woods after a town build) has caught up. */
+  displaySettled?(): Promise<void>;
 }
 export interface V2TestRequest {
   decor: string; culture: string; population: number; seed: string;
@@ -151,10 +153,12 @@ export function mountV2TestHook(bindings: V2TestBindings): void {
       const { place } = town(); if (!place || !bindings.rerollTown) throw new Error('No town');
       bindings.rerollTown(place.key);
       while (bindings.isBusy()) await new Promise(resolve => setTimeout(resolve, 20));
+      await bindings.displaySettled?.();
     },
     async run(): Promise<void> {
       if (!request) throw new Error('prepare() first');
       await bindings.run();
+      await bindings.displaySettled?.();
       const world = bindings.getWorld();
       if (!world?.settlements?.length) throw new Error(`The chain produced no placed town (stage ${world?.stats?.['v2.stage'] ?? '?'}, backend ${world?.stats?.['v2.regionBackend'] ?? '?'}, requested ${world?.stats?.['settlements.requested'] ?? '?'}, warning: ${world?.stats?.['settlements.warning'] || 'none'})`);
       if (world.stats.decor !== request.decor) throw new Error(`The world is not the saved decor ${request.decor} (terrain backend ${world.stats.backend})`);
@@ -219,6 +223,7 @@ export function mountV2TestHook(bindings: V2TestBindings): void {
       request = undefined;
       await bindings.load({ settings, mods: [] });
       await bindings.run();
+      await bindings.displaySettled?.();
       if (!bindings.getWorld()?.settlements?.length) throw new Error('The region has no placed town');
     },
     /** The 2D view (centre in metres, px/m), for capture scripts that move the camera frame by frame. */

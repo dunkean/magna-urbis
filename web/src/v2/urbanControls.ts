@@ -27,7 +27,16 @@ export interface UrbanControlParts {
   placeDefaults?: (key: string) => Partial<Options> | undefined;
   disabled?: () => boolean;
 }
-const clone = <T>(value: T): T => value === null || typeof value !== 'object' ? value : structuredClone(value);
+// Plain JSON-like values are copied by hand: the forms merge thousands of small leaves while they
+// mount, and one structuredClone call per leaf was 1.3 s of the page's start-up at 4x CPU throttling.
+const clone = <T>(value: T): T => {
+  if (value === null || typeof value !== 'object') return value;
+  if (Array.isArray(value)) return value.map(clone) as T;
+  if (Object.getPrototypeOf(value) !== Object.prototype) return structuredClone(value);
+  const out: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value)) out[key] = clone(item);
+  return out as T;
+};
 let effectiveMemo: { settings?: V2Settings; values: Map<string, Record<string, unknown>> } | undefined;
 /** The stage forms of one panel read the same effective values: inside a batch each scope is resolved once
  * (settings are not edited while the forms sync). */

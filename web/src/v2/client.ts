@@ -1,5 +1,6 @@
 import EngineWorker from './engine.worker?worker';
 import RenderWorker from '../ui/renderWorker?worker';
+import { internTerrain } from './terrainIntern';
 import { createViewer, type Viewer } from '../ui/viewer';
 import { createCanvasRenderer, type CanvasRenderer } from '../render/canvas';
 import { displayWorld } from '../render/displayWorld';
@@ -9,6 +10,7 @@ import type { ResourcePayload } from '../../../rust/bridge/resources';
 import type { DisplayOpts, RResponse } from '../ui/protocol';
 import { generationWorldInput } from './workerWorld';
 import { renderProjection } from './renderProjection';
+import { packWorldLanduse, unpackWorldLanduse } from './landusePack';
 import { sameDisplay } from './displayState';
 import type { BenchRenderer } from './benchRenderer';
 import { resolveSettingsAppearance, resolvedDisplayOptions } from './appearance';
@@ -70,7 +72,7 @@ export class StudioClient {
       if (lazy) { this.resourceRequests.delete(m.id); if (m.type === 'resources') lazy.resolve(m.payload); else if (m.type === 'error') lazy.reject(new Error(m.error)); return; }
       if (m.id !== this.pending?.id) return;
       if (m.type === 'progress') this.onProgress(m.progress);
-      else if (m.type === 'result') { const p = this.pending!; this.pending = null; this.retained={id:m.id,world:m.world};p.resolve(m.world); }
+      else if (m.type === 'result') { const p = this.pending!; this.pending = null; const world=internTerrain(this.world,unpackWorldLanduse(m.world)); this.retained={id:m.id,world};p.resolve(world); }
       else if (m.type === 'error') { const p = this.pending!; this.pending = null; p.reject(new Error(m.error)); }
     };
     this.engine.onerror = e => { this.failResources(new Error(e.message || 'engine worker error')); wasmWorkerFailed(e.message || 'engine worker error'); this.pending?.reject(new Error(e.message || 'Le moteur de génération a été interrompu.')); this.pending = null; this.retained=undefined;this.engine.terminate(); this.engine = new EngineWorker(wasmWorkerOptions('magna-v2')); this.attachEngine(); this.onEngineReset?.(); };
@@ -185,7 +187,8 @@ export class StudioClient {
       if(this.pendingDraw){clearTimeout(this.pendingDraw.timer);this.pendingDraw.resolve();this.pendingDraw=null;}
       const drawn=new Promise<void>((resolve,reject)=>{const timer=setTimeout(()=>{this.pendingDraw=null;reject(new Error('Le rendu de la carte a dépassé 60 secondes.'));},60000);this.pendingDraw={gen,resolve,reject,timer};});
       this.render.postMessage({ type: 'attach', gen, port: channel.port1, display: this.display }, [channel.port1]);
-      channel.port2.postMessage({ type: 'world', gen, world:renderProjection(world),final: true, stage: 'done' });
+      const projected=packWorldLanduse(renderProjection(world));
+      channel.port2.postMessage({ type: 'world', gen, world:projected.world,final: true, stage: 'done' },projected.transfer);
       channel.port2.close();
       this.viewer.contentChanged(world.mapSize, keepView && !mapChanged);
       return drawn;
@@ -216,6 +219,8 @@ export class StudioClient {
     this.canvas.dataset.cityRender=JSON.stringify(renderer.stats.city??{});this.canvas.dataset.renderPending=String(renderer.pendingWork());this.canvas.dataset.renderPasses=JSON.stringify(renderer.stats.passes??[]);
     return{mini,ms:performance.now()-started,band:0,scale:frame.view.scale};
   }
+  /** Progressive display finished (captures and test scripts wait for it). */
+  displaySettled():Promise<void>{return this.benchActive&&this.bench?this.bench.settled():Promise.resolve();}
   prepareViewportCapture():void{if(this.benchActive)this.bench?.prepareCapture();}
   /** Resolve the appearance for the current products. `previewAware`: a stage-preview world is inspected through its elevation. */
   private resolve(settings:V2Settings,world:World|undefined,previewAware:boolean):ResolvedAppearance{

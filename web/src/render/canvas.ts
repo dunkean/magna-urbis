@@ -592,23 +592,33 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
   function update(nextSource: World, nextScene: Scene, nextStyle: MapStyle | Palette = style): boolean {
     if ((brushes || canopy) && nextSource.seed !== sourceWorld.seed) return false;
     if (nextSource.mapSize !== S || biomePalette(nextStyle, nextSource.options.biome) !== basePalette) return false;
-    suspendLive(); dropLastRaster(); dropPreview(); mapPyramid.clear();
     // Prepare potentially fallible metadata before committing the replacement.
     const nextWorld = cavernDisplayWorld(nextScene.renderedWorld ? { ...nextScene.renderedWorld, options: nextSource.options } : renderView(cavernDisplayWorld(nextSource)));
     const nextLabels = buildMapLabels(nextWorld, pal.name, pal, text);
     const terrainChanged = nextSource.terrain !== sourceWorld.terrain;
+    // Dirty-region update (a town build or edit on the same terrain): tiles outside the changed areas stay cached,
+    // and the last frame stands in for the repainted tiles until they are ready.
+    const local = !!nextScene.dirty && nextScene !== scene && !terrainChanged && world.options.landuse === nextSource.options.landuse && world.options.contours === nextSource.options.contours;
+    suspendLive(); if (!local) dropLastRaster(); dropPreview();
+    if (!local) mapPyramid.clear();
     if (nextSource.seed !== sourceWorld.seed) cavernRockImg = undefined;
     if (terrainChanged || nextScene.poly.get('sea') !== scene.poly.get('sea') || nextScene.poly.get('lakes') !== scene.poly.get('lakes')) landPath = undefined;
     if (terrainChanged) { terrainImg = waterImg = undefined; cache.clear(); rasterCache.clear(); }
     if (nextScene.density?.cov !== scene.density?.cov) densityImg = undefined;
     if (nextScene.furrows !== scene.furrows) furrowCache.clear();
     if (nextScene !== scene) { treeMarks.clear(); penMarks.clear(); forestWashes.clear(); strayMarks.clear(); }
-    // Woods depend on the scene, the forest wash and the roads/farms that clear them (forestRoom below): rebuild them all.
-    if (nextScene !== scene || terrainChanged || nextSource.roads !== sourceWorld.roads || nextSource.landuse !== sourceWorld.landuse) layerTiles.clear();
-    if (nextScene !== scene && !nextScene.dirty) cache.clear();
+    // Woods depend on the scene, the forest wash and the roads/farms that clear them (forestRoom below): rebuild them all,
+    // or, on a local update, those near the changed areas (the dirty rects already include the reach of the derived products).
+    if (local) {
+      for (const tl of nextScene.textures) { const old = scene.textures.find(o => o.kind === tl.kind), id = old && brushIds.get(old); if (id !== undefined) brushIds.set(tl, id); }
+      layerTiles.invalidate(nextScene.dirty, LAYER_TILE_REACH + LAYER_TILE_GUTTER);
+    } else if (nextScene !== scene || terrainChanged || nextSource.roads !== sourceWorld.roads || nextSource.landuse !== sourceWorld.landuse) layerTiles.clear();
+    // Path caches are keyed by index tile: only the incremental builder's tile keys tell a rebuilt tile from a retained one.
+    if (nextScene !== scene && (!nextScene.dirty || ![...nextScene.poly.values()].some(l => l.tileKeys))) cache.clear();
     if (world.options.landuse !== nextSource.options.landuse || world.options.contours !== nextSource.options.contours) rasterCache.clear();
     // Entries can predate several scene updates; expand by the new absolute paint radius, not a last-update delta.
     else if (nextScene !== scene) rasterCache.invalidate(nextScene.dirty, paintMargin(1, nextScene));
+    if (local) for (const key of [...mapPyramid.keys()]) if (!rasterCache.has(key)) mapPyramid.delete(key);
     scene = nextScene; sourceWorld = nextSource; world = nextWorld; mapLabels = nextLabels;
     overlays.labels = world.options.labels !== false; overlays.legend = !!world.options.legend;
     legendPanel = infoPanel = null; litCache = undefined; forestRoom = undefined;

@@ -20,9 +20,9 @@ try {
   const logs = [];
   page.on('console', m => { if (m.type() === 'error') logs.push(m.text()); });
   page.on('pageerror', e => logs.push(`[pageerror] ${e.message}`));
-  const params = new URLSearchParams({ city: code });
+  const BASEPORT = process.env.SHOT_PORT ?? port; const params = new URLSearchParams({ city: code });
   // profile=local runs the chain on the native :8791 engine instead of WASM.
-  await page.goto(`http://127.0.0.1:${port}/v2.html?test=1&quality=full&profile=local#${params}`, { waitUntil: 'domcontentloaded', timeout: 90000 });
+  await page.goto(`http://127.0.0.1:${BASEPORT}/v2.html?test=1&quality=full&profile=local#${params}`, { waitUntil: 'domcontentloaded', timeout: 90000 });
   const settle = async (delay = 3000) => {
     await page.waitForFunction(() => document.querySelector('#app')?.getAttribute('aria-busy') === 'false', null, { timeout: 600000 });
     await page.waitForTimeout(delay);

@@ -93,9 +93,17 @@ async function freePort(port) {
   });
 }
 
+async function waitForCargo() {
+  if (windows) await run('powershell.exe', ['-NoProfile', '-Command',
+    'while (Get-Process cargo,rustc -ErrorAction SilentlyContinue) { Start-Sleep -Seconds 2 }; exit 0'], rust);
+}
+
 async function nativeBinary() {
   if (!args.includes('--no-build')) {
-    await run(cargo, ['build', '--release', '-p', 'magna-urbis-local'], rust);
+    await waitForCargo();
+    const packages = ['-p', 'magna-urbis-local', ...(['desktop-build', 'desktop-dev'].includes(action) ? ['-p', 'magna-urbis-neural', '--bin', 'magna-urbis-local', '--bin', 'neural'] : [])];
+    if (windows) await run('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', join(rust, 'scripts/cargo-sync.ps1'), 'build', '--release', ...packages], rust);
+    else await run(cargo, ['build', '--release', ...packages], rust);
   }
   const metadata = JSON.parse(await start(cargo,
     ['metadata', '--format-version', '1', '--no-deps'], rust, {}, true).done);
@@ -157,7 +165,8 @@ function tauri(commandArgs) {
   // npm supplies its own CLI path on every platform; no Cargo CLI installation.
   const npm = process.env.npm_execpath;
   if (!npm) throw new Error('Lance cette commande via npm run app:dev ou npm run app:build.');
-  return run(process.execPath, [npm, 'exec', '--yes', '--package=@tauri-apps/cli@^2', '--', 'tauri', ...commandArgs], desktop);
+  return start(process.execPath, [npm, 'exec', '--yes', '--package=@tauri-apps/cli@^2', '--', 'tauri', ...commandArgs], desktop,
+    { CARGO_TARGET_DIR: join(rust, 'target'), CARGO_BUILD_JOBS: '21' }).done;
 }
 
 async function main() {
@@ -167,10 +176,22 @@ async function main() {
     await mkdir(join(desktop, 'resources'), { recursive: true });
     const bundledBinary = join(desktop, 'resources', `magna-urbis-local${windows ? '.exe' : ''}`);
     await copyFile(binary, bundledBinary);
+    const neuralName = `neural${windows ? '.exe' : ''}`;
+    const neuralBinary = join(rust, 'target/release', neuralName);
+    const weights = join(rust, 'pkg/neural-weights');
+    if (!existsSync(neuralBinary)) throw new Error('Native neural binary is missing. Run npm run build:neural first.');
+    await copyFile(neuralBinary, join(desktop, 'resources', neuralName));
+    await mkdir(join(desktop, 'resources/neural-weights'), { recursive: true });
+    for (const name of ['coarse', 'base', 'decoder']) {
+      await copyFile(join(weights, `${name}.safetensors`), join(desktop, 'resources/neural-weights', `${name}.safetensors`));
+    }
     await cp(join(root, 'illustration'), join(desktop, 'resources/illustration'), {
       recursive: true, filter: source => !source.includes('__pycache__') && !source.endsWith('.pyc') && !source.includes('tests'),
     });
-    if (!windows) await chmod(bundledBinary, 0o755);
+    if (!windows) {
+      await chmod(bundledBinary, 0o755);
+      await chmod(join(desktop, 'resources', neuralName), 0o755);
+    }
     if (!existsSync(join(desktop, 'icons/icon.ico'))) {
       await tauri(['icon', join(web, 'src/ui/assets/logo-magna-urbis.png'), '--output', join(desktop, 'icons')]);
     }
@@ -185,9 +206,9 @@ async function main() {
       await copyFile(join(app, 'rustbench.html'), join(app, 'benches.html'));
     } else {
       await vite();
-      await neural();
       await illustration();
     }
+    await waitForCargo();
     await tauri([action === 'desktop-build' ? 'build' : 'dev',
         ...args.filter(arg => !['--no-build', '--no-neural', '--no-illustration', '--no-open', action].includes(arg))]);
     return;

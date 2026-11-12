@@ -117,8 +117,17 @@ unsafe impl GlobalAlloc for ThreadCachingAlloc {
         // SAFETY (caller contract): new_size is valid for layout.align().
         let new_layout = unsafe { Layout::from_size_align_unchecked(new_size, layout.align()) };
         match (class(&layout), class(&new_layout)) {
-            // Both large: dlmalloc may grow in place.
-            (None, None) => unsafe { System.realloc(ptr, layout, new_size) },
+            // Both large: dlmalloc's realloc copies under its global spin lock while
+            // the other pool threads spin (vector growth in the parallel urban
+            // kernels); allocate, copy outside the lock, then free.
+            (None, None) => unsafe {
+                let next = System.alloc(new_layout);
+                if !next.is_null() {
+                    std::ptr::copy_nonoverlapping(ptr, next, layout.size().min(new_size));
+                    System.dealloc(ptr, layout);
+                }
+                next
+            },
             // Same small class: the block already has room.
             (Some(a), Some(b)) if a == b => ptr,
             _ => {

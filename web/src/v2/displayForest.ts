@@ -12,8 +12,10 @@ import type { Building3dScene } from '../render/urbanBuildingGeometry';
 import { landDetail, withLandDetail } from '../ui/landDetail';
 import OccupationWorker from './occupation.worker?worker';
 import { forestCorridors } from '../render/forestRoom';
+import { seedSubset } from '../../../rust/bridge/generationSeed';
 
-const cache = new WeakMap<World, Map<string, ForestField>>();
+/** Fields are terrain products: keyed by the terrain object (kept across town builds, see terrainIntern.ts), not the World. */
+const cache = new WeakMap<object, Map<string, ForestField>>();
 const occupations = new WeakMap<LandUseLayer, ForestOccupation | undefined>();
 /** Product identity is the land-use revision; neither appearance nor visibility is an input. */
 export function v2ForestOccupation(world: World): ForestOccupation | undefined {
@@ -69,7 +71,7 @@ export function withBuildingOccupationAsync(base: ForestOccupation | undefined, 
     worker.postMessage({ source: base && { x: base.x, y: base.y, width: base.width, n: base.n, rgba: base.rgba, key: base.key }, shapes: packed }, [packed.buffer]);
   });
 }
-const pending = new WeakMap<World, Map<string, Promise<ForestField | undefined>>>();
+const pending = new WeakMap<object, Map<string, Promise<ForestField | undefined>>>();
 function displayForestRequest(world: World, settings: V2Settings, resolved: ResolvedAppearance): { key: string; build: () => Promise<ForestField> } | ForestField | undefined {
   if (!resolved.composition.vegetation.procedural) return;
   const configuration = effectiveTerrainSettings(settings, world.mapSize), overrides = resolved.vegetation.forest;
@@ -77,9 +79,11 @@ function displayForestRequest(world: World, settings: V2Settings, resolved: Reso
   const decor = retainedDecorOf(world.terrain);
   if (!decor && !Object.keys(parameters).length) return nativeTerrainLayer(world)?.v2ForestField;
   const climate = configuration.climateValues!, clearingProfile = resolved.traits.forestClearingProfile;
-  const key = JSON.stringify([forest, climate, world.seed, clearingProfile]);
+  // A town's own seed variations never move the woods of the whole map.
+  const seed = seedSubset(world.seed, step => !step.startsWith('city/'));
+  const key = JSON.stringify([forest, climate, seed, clearingProfile]);
   const raster = decor?.raster;
-  return { key, build: () => buildForestField(cityForestInput(world.seed, climate,
+  return { key, build: () => buildForestField(cityForestInput(seed, climate,
     raster ? { x: 0, y: 0, width: raster.width, n: raster.n, data: raster.height }
       : { x: 0, y: 0, width: world.mapSize, n: world.terrain.height.w, data: world.terrain.height.data },
     raster?.water ?? world.terrain.water, { clearingProfile,
@@ -90,9 +94,9 @@ const isField = (v: unknown): v is ForestField => !!v && typeof (v as ForestFiel
 export async function v2DisplayForestAsync(world: World, settings: V2Settings, resolved: ResolvedAppearance): Promise<ForestField | undefined> {
   const request = displayForestRequest(world, settings, resolved);
   if (!request || isField(request)) return request;
-  let fields = cache.get(world); if (!fields) { fields = new Map(); cache.set(world, fields); }
+  let fields = cache.get(world.terrain); if (!fields) { fields = new Map(); cache.set(world.terrain, fields); }
   const found = fields.get(request.key); if (found) return found;
-  let jobs = pending.get(world); if (!jobs) { jobs = new Map(); pending.set(world, jobs); }
+  let jobs = pending.get(world.terrain); if (!jobs) { jobs = new Map(); pending.set(world.terrain, jobs); }
   let job = jobs.get(request.key);
   if (!job) {
     job = request.build().then(field => {
@@ -107,7 +111,7 @@ export async function v2DisplayForestAsync(world: World, settings: V2Settings, r
 export function v2DisplayForest(world: World, settings: V2Settings, resolved: ResolvedAppearance, onReady?: () => void): ForestField | undefined {
   const request = displayForestRequest(world, settings, resolved);
   if (!request || isField(request)) return request;
-  const found = cache.get(world)?.get(request.key); if (found) return found;
-  if (!pending.get(world)?.has(request.key)) void v2DisplayForestAsync(world, settings, resolved).then(() => onReady?.(), error => console.warn('Forest field failed:', error));
+  const found = cache.get(world.terrain)?.get(request.key); if (found) return found;
+  if (!pending.get(world.terrain)?.has(request.key)) void v2DisplayForestAsync(world, settings, resolved).then(() => onReady?.(), error => console.warn('Forest field failed:', error));
   return undefined;
 }

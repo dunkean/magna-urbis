@@ -1,5 +1,6 @@
 use wasm_bindgen::prelude::*;
 
+mod fast_math;
 mod flood;
 mod landuse;
 mod forest;

@@ -18,6 +18,7 @@ import { decodeBrushes, type BrushImages } from '../render/brushes';
 import { worldMeta } from './worldMeta';
 import { refreshCavernMask } from '../gen/terrain/caverns';
 import { loadRenderGeometry } from '../../../rust/bridge/renderGeometry';
+import { unpackWorldLanduse } from '../v2/landusePack';
 
 const ctx = self as unknown as Worker;
 const post = (r: RResponse, transfer: Transferable[] = []): void => ctx.postMessage(r, transfer);
@@ -92,7 +93,7 @@ function announce(sceneMs: number): void {
 function onWorld(m: WorldMsg): void {
   if (m.gen !== gen || !m.final) return;
   const previous = { world, worldGen, final, sceneCache, sceneBuilder };
-  world = m.world; worldGen = m.gen; final = true;
+  world = unpackWorldLanduse(m.world); worldGen = m.gen; final = true;
   sceneCache = null;
   sceneBuilder = new SceneBuilder();
   let sceneMs: number;
