@@ -176,7 +176,7 @@ export function mountIllustration({ host, capture, navigation, defaultService = 
     <button type="button" class="illustration-primary illustration-full" data-generate>Générer l’illustration</button><button type="button" data-cancel hidden>Annuler</button></div>
     <div><div class="illustration-preview"><div class="illustration-placeholder">Préparation de la capture…</div><img data-source alt="Vue capturée" hidden><img data-result class="illustration-result" alt="Illustration générée" hidden></div>
     <label data-compare hidden>Original ↔ illustration<input type="range" min="0" max="100" value="50" aria-label="Comparer original et illustration"></label>
-    <div class="illustration-actions"><button type="button" data-recapture>Capturer la vue actuelle</button><button type="button" data-source-download hidden>Source PNG</button><button type="button" data-download hidden>Illustration PNG</button><button type="button" data-artwork hidden>Sans grille PNG</button><button type="button" data-recipe hidden>Recette JSON</button><button type="button" data-explore hidden>Explorer / prolonger la battlemap</button></div><div data-atlas hidden></div>
+    <div class="illustration-actions"><button type="button" data-recapture>Capturer la vue actuelle</button><button type="button" data-source-download hidden>Source PNG</button><button type="button" data-download hidden>Illustration PNG</button><button type="button" data-artwork hidden>Sans grille PNG</button><button type="button" data-recipe hidden>Recette JSON</button><button type="button" data-explore hidden>Explorer / prolonger la battlemap</button></div><div class="illustration-actions" data-current-neighbours hidden><button type="button" data-current-move="north">↑ Nord</button><button type="button" data-current-move="west">← Ouest</button><button type="button" data-current-move="east">Est →</button><button type="button" data-current-move="south">Sud ↓</button><small>Explorer depuis cette illustration · les voisins existants sont réutilisés.</small></div><div data-atlas hidden></div>
     <progress value="0" max="1" hidden></progress><div class="illustration-status" role="status" aria-live="polite"></div>
     <details><summary>Description et prompt</summary><p data-scene-description></p><small data-prompt-state>Template automatique</small><pre class="illustration-prompt"></pre><textarea data-prompt-editor rows="10" aria-label="Prompt complet" spellcheck="false" hidden></textarea><small>Les templates suivent le style choisi. Vos modifications sont conservées pour chaque combinaison de réglages, pendant cette session. L’image de référence reste jointe.</small><div class="illustration-actions"><button type="button" data-prompt-edit>Modifier le prompt</button><button type="button" data-prompt-reset>Revenir au template</button><button type="button" data-prompt-preview>Actualiser le prompt</button></div></details><details data-history><summary>Historique local</summary><div class="illustration-history"></div></details></div></div>`;
   document.body.append(dialog);
@@ -198,13 +198,17 @@ export function mountIllustration({ host, capture, navigation, defaultService = 
   const renderPrompt = prompt => { $('.illustration-prompt').textContent = prompt; $('[data-prompt-editor]').value = prompt; };
   const api = async (path, options = {}, server = serviceUrl(field('service').value)) => {
     let response;
-    try { response = await fetch(server + path, { ...options, headers: { 'Content-Type': 'application/json', ...options.headers }, signal: AbortSignal.timeout(12000) }); }
+    const { timeoutMs = 12000, ...request } = options;
+    try { response = await fetch(server + path, { ...request, headers: { 'Content-Type': 'application/json', ...request.headers }, signal: AbortSignal.timeout(timeoutMs) }); }
     catch (error) {
       throw Error(`Connecteur d’illustration injoignable à ${server}. Depuis web/, lancez npm run illustration:serve, ou relancez start-terrainbench.bat. ${error.name === 'TimeoutError' ? 'Délai de connexion dépassé.' : 'Vérifiez aussi l’autorisation d’accès au réseau local du navigateur.'}`);
     }
     const result = await response.json(); if (!response.ok) throw Error(result.error || `Service HTTP ${response.status}`); return result;
   };
-  const atlas = mountBattlemapAtlas({ host: $('[data-atlas]'), onStatus: status, requestNeighbour: async (parent, direction, neighbours, server) => {
+  const atlas = mountBattlemapAtlas({ host: $('[data-atlas]'), onStatus: status,
+    getRelated: (job, server) => api(`/v1/illustrations/jobs/${job.id}/atlas`, {}, server),
+    requestMosaic: (jobs, server) => api('/v1/illustrations/mosaics', {method:'POST',timeoutMs:600000,body:JSON.stringify({version:1,jobs})}, server),
+    requestNeighbour: async (parent, direction, neighbours, server) => {
     if (!navigation || busy) throw Error('La capture d’une zone voisine est déjà en cours.');
     busy = true; sync(); $('progress').hidden = false; $('progress').value = 0;
     let completed;
@@ -303,13 +307,14 @@ export function mountIllustration({ host, capture, navigation, defaultService = 
     $('[data-prompt-editor]').maxLength = { fast: 3000, quality: 6000, cloud: 28000 }[mode];
     $('[data-prompt-reset]').disabled = busy || !promptDrafts.has(promptKey());
     $('[data-explore]').disabled = busy;
+    for (const button of dialog.querySelectorAll('[data-current-move]')) button.disabled = busy;
     $('[data-prompt-state]').textContent = promptDrafts.has(promptKey()) ? 'Prompt personnalisé · texte transmis tel que modifié' : 'Template automatique · ' + (styles.find(([key]) => key === field('style').value)?.[1] || 'Style de la vue');
     for (const name of ['mode', 'style', 'output', 'grid', 'cellMetres', 'outputPixels', 'fidelity', 'instruction', 'pixels', 'provider', 'model', 'seed', 'service']) field(name).disabled = busy;
   }
   async function recapture() {
     const ticket = ++captureTicket; ++snapshotRevision; ++previewTicket; clearTimeout(previewTimer); ++guideTicket; $('[data-guide-previews]').hidden = true; snapshot = undefined; metadata = undefined; resultBlob = undefined; artworkBlob = undefined; resultServer = undefined; sync(); status('Capture de la vue…');
     $('[data-result]').hidden = true; $('[data-compare]').hidden = true; $('[data-download]').hidden = true; $('[data-artwork]').hidden = true; $('[data-recipe]').hidden = true;
-    $('[data-explore]').hidden = true; $('[data-atlas]').hidden = true; $('.illustration-preview').hidden = false;
+    $('[data-explore]').hidden = true; $('[data-current-neighbours]').hidden = true; $('[data-atlas]').hidden = true; $('.illustration-preview').hidden = false;
     try {
       const captured = await capture(); if (disposed || ticket !== captureTicket) return;
       if (!(captured.image instanceof Blob)) throw Error('Capture invalide.');
@@ -360,6 +365,8 @@ export function mountIllustration({ host, capture, navigation, defaultService = 
     $('[data-artwork]').hidden = !artworkBlob;
     $('[data-atlas]').hidden = true; $('.illustration-preview').hidden = false;
     $('[data-explore]').hidden = !(navigation && job.settings.output === 'battlemap' && job.settings.mode === 'cloud' && (job.settings.provider || 'openai') === 'openai' && job.context.projection === 'orthographic');
+    $('[data-current-neighbours]').hidden = $('[data-explore]').hidden;
+    $('[data-explore]').textContent = 'Explorer / prolonger la battlemap';
     $('[data-scene-description]').textContent = job.description || '';
     renderPrompt(job.settings.mode === 'cloud' ? job.prompt : job.localPrompt || job.prompt);
     status(`Illustration terminée · ${job.totalSeconds}s · ${job.outputSize.join(' × ')} px${job.upscaled ? ` · agrandie depuis ${job.nativeOutputSize.join(' × ')} px` : ''}`); sync();
@@ -401,13 +408,31 @@ export function mountIllustration({ host, capture, navigation, defaultService = 
   button.onclick = () => { dialog.showModal(); if (!busy) { void recapture(); void connection().then(history).catch(() => {}); } };
   $('[data-illustration-close]').onclick = () => dialog.close(); dialog.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); dialog.close(); } }); $('[data-recapture]').onclick = () => void recapture(); $('[data-generate]').onclick = () => void generate();
   $('[data-prompt-preview]').onclick = () => void previewPrompt();
+  async function openAtlas() {
+    if (!metadata || !resultBlob) return;
+    $('[data-atlas]').hidden = false; $('.illustration-preview').hidden = true; $('[data-compare]').hidden = true; $('[data-current-neighbours]').hidden = true;
+    $('[data-explore]').textContent = 'Revenir à l’illustration';
+    await atlas.setRoot(metadata,resultBlob,resultServer);
+    $('[data-atlas-pane]').scrollIntoView({block:'nearest'});
+  }
   $('[data-explore]').onclick = async () => {
-    const active = $('[data-atlas]').hidden;
-    $('[data-atlas]').hidden = !active; $('.illustration-preview').hidden = active; $('[data-compare]').hidden = active;
-    $('[data-explore]').textContent = active ? 'Revenir à l’illustration' : 'Explorer / prolonger la battlemap';
-    if (active && metadata && resultBlob) {
-      try { await atlas.setRoot(metadata,resultBlob,resultServer); $('[data-atlas-pane]').scrollIntoView({block:'nearest'}); } catch(error) { status(error.message,true); }
-    }
+    try {
+      if ($('[data-atlas]').hidden) await openAtlas();
+      else {
+        const selected = atlas.current();
+        if (selected && selected.job.id !== metadata?.id) {
+          busy=true;sync();
+          try { await showResult(selected.job,selected.server,true); } finally {busy=false;sync();}
+        } else {
+          $('[data-atlas]').hidden=true;$('.illustration-preview').hidden=false;$('[data-compare]').hidden=false;$('[data-current-neighbours]').hidden=false;
+          $('[data-explore]').textContent='Explorer / prolonger la battlemap';
+        }
+      }
+    } catch(error) {status(error.message,true);}
+  };
+  for (const button of dialog.querySelectorAll('[data-current-move]')) button.onclick = async () => {
+    if (busy) return;
+    try { await openAtlas(); await atlas.move(button.dataset.currentMove); } catch(error) {status(error.message,true);}
   };
   $('[data-preview-guides]').onclick = async () => {
     if (!snapshot || busy) return;
@@ -449,15 +474,17 @@ export function mountIllustration({ host, capture, navigation, defaultService = 
       if (info.service !== 'magna-illustration' || info.protocol !== 1) throw Error('Service incompatible : démarrez le connecteur de cette version de Magna Urbis.');
       // A newer connector can run beside an older, still loaded local runtime.
       // Keep explicit custom addresses; only discover the adjacent default port.
-      if ((info.promptRevision || 0) < 5 && serviceUrl(field('service').value) === serviceUrl(defaultService)) {
-        const candidate = new URL(defaultService); candidate.port = '8795';
-        try {
-          const updated = await api('/status', {}, candidate.origin);
-          if (updated.service === 'magna-illustration' && updated.protocol === 1 && updated.promptRevision >= 5) {
-            field('service').value = candidate.origin; info = updated;
-            schedulePreview();
-          }
-        } catch { /* The ordinary connector can still handle its existing features. */ }
+      const configured = new URL(serviceUrl(field('service').value)), base = new URL(defaultService);
+      if ((info.promptRevision || 0) < 6 && configured.hostname === base.hostname && ['8794','8795','8796'].includes(configured.port)) {
+        for (const port of ['8796','8795']) {
+          const candidate = new URL(defaultService); candidate.port = port;
+          try {
+            const updated = await api('/status', {}, candidate.origin);
+            if (updated.service === 'magna-illustration' && updated.protocol === 1 && updated.promptRevision >= 6) {
+              field('service').value = candidate.origin; info = updated; schedulePreview(); break;
+            }
+          } catch { /* Keep an older connector available for its existing features. */ }
+        }
       }
       if (field('output').value === 'battlemap' && !info.outputs?.includes('battlemap')) throw Error('Mettez à jour et redémarrez le connecteur local pour générer une battlemap.');
       if ((field('grid').value === 'hex' || +field('cellMetres').value !== 1.5 || +field('outputPixels').value || +field('pixels').value > 2097152) && (info.promptRevision || 0) < 5) throw Error('Redémarrez le connecteur local pour charger les grilles et tailles configurables.');

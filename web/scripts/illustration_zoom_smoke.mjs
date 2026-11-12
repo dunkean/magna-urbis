@@ -15,7 +15,7 @@ try {
     await page.route('http://127.0.0.1:8794/**', route => {
       const path = new URL(route.request().url()).pathname;
       if (path.endsWith('/prompt')) return route.fulfill({ json: { description: 'Measured viewer crop', prompt: 'Measured viewer crop' } });
-      if (path === '/status') return route.fulfill({ json: { service: 'magna-illustration', protocol: 1, promptRevision: 5, localDependencies: true, outputs: ['illustration', 'battlemap'] } });
+      if (path === '/status') return route.fulfill({ json: { service: 'magna-illustration', protocol: 1, promptRevision: 6, localDependencies: true, outputs: ['illustration', 'battlemap'] } });
       if (route.request().method() === 'POST') submissions++;
       return route.fulfill({ json: { jobs: [] } });
     });

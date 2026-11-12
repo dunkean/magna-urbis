@@ -228,10 +228,18 @@ scrollable mosaic. Drag, scroll or use the compass buttons to generate neighbour
 tiles. Each new tile captures the same retained world at the same scale with a
 20% overlap, sends an alpha mask plus the new procedural layout to OpenAI's edit
 endpoint, then restores the known overlap pixels before drawing the aligned grid.
-Revisiting tiles reuses their images. New tiles use the initial style, model and
+Each finished illustration has compass controls that continue from that view.
+The explorer's controls follow the selected/central tile, including generated
+neighbours restored from history. Known neighbours remain navigable while another
+tile is being generated. Revisiting tiles reuses their images. New tiles use the initial style, model and
 cell size; each is a provider-billed generation. Individual PNGs and recipes remain
 in history. Continuous extension is limited to 2D OpenAI maps and 128 tiles per
 mosaic; FLUX/SDXL extension is deferred.
+**Exporter la carte globale PNG** assembles all finished tiles into one image at
+their original pixel density, with overlaps counted once and ungenerated holes
+left transparent. The connector composes strips and streams the PNG to disk and
+the browser; it does not require a browser canvas large enough for the full map.
+Exporting and reopening existing tiles do not generate another image.
 Strong fidelity remains a generative constraint, not a
 guarantee of geometrically exact output. Seed reproducibility also depends on
 runtime, hardware and model versions. Cloud output may use the provider's nearest

@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+import shutil
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 from .service import IllustrationService
@@ -43,6 +44,22 @@ def handler_for(service):
         def do_OPTIONS(self):
             self.reply(204 if origin_allowed(self.headers.get("Origin")) else 403, b"", "text/plain")
 
+        def reply_png_file(self, path, filename):
+            self.send_response(200)
+            origin = self.headers.get('Origin')
+            if origin and origin_allowed(origin):
+                self.send_header('Access-Control-Allow-Origin', origin)
+                self.send_header('Vary', 'Origin')
+            self.send_header('Access-Control-Allow-Private-Network', 'true')
+            self.send_header('Content-Type', 'image/png')
+            self.send_header('Content-Length', str(path.stat().st_size))
+            self.send_header('Content-Disposition', f'attachment; filename="{filename}"')
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('X-Content-Type-Options', 'nosniff')
+            self.end_headers()
+            with path.open('rb') as source:
+                shutil.copyfileobj(source, self.wfile, 1024*1024)
+
         def do_GET(self):
             self.dispatch()
 
@@ -66,7 +83,10 @@ def handler_for(service):
                     self.reply(200, service.capabilities())
                 elif path == "/v1/illustrations/jobs" and self.command == "GET":
                     self.reply(200, {"jobs": service.history()})
-                elif path in ("/v1/illustrations/jobs", "/v1/illustrations/prompt", "/v1/illustrations/guides") and self.command == "POST":
+                elif path.startswith('/v1/illustrations/mosaics/') and self.command == 'GET':
+                    asset = service.mosaic_asset(path.removeprefix('/v1/illustrations/mosaics/'))
+                    self.reply_png_file(asset, 'battlemap-globale.png')
+                elif path in ("/v1/illustrations/jobs", "/v1/illustrations/prompt", "/v1/illustrations/guides", '/v1/illustrations/mosaics') and self.command == "POST":
                     length = int(self.headers.get("Content-Length", "0"))
                     limit = (2 if path.endswith("/prompt") else 48) * 1024 * 1024
                     if not 0 < length <= limit:
@@ -75,7 +95,9 @@ def handler_for(service):
                     if self.headers.get_content_type() != "application/json":
                         raise ValueError("Le service attend application/json.")
                     body = json.loads(self.rfile.read(length))
-                    if path.endswith("/prompt"):
+                    if path.endswith('/mosaics'):
+                        self.reply(200, service.export_mosaic(body))
+                    elif path.endswith("/prompt"):
                         self.reply(200, service.preview_prompt(body))
                     elif path.endswith('/guides'):
                         self.reply(200, service.preview_guides(body))
@@ -89,6 +111,8 @@ def handler_for(service):
                         service.delete(tail[0]); self.reply(200, {"deleted": True})
                     elif len(tail) == 2 and tail[1] == "cancel" and self.command == "POST":
                         self.reply(200, service.cancel(tail[0]))
+                    elif len(tail) == 2 and tail[1] == 'atlas' and self.command == 'GET':
+                        self.reply(200, service.atlas(tail[0]))
                     elif len(tail) == 2 and self.command == "GET":
                         asset = service.asset(*tail)
                         downloading = parse_qs(urlsplit(self.path).query).get("download") == ["1"]

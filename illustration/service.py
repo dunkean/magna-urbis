@@ -18,7 +18,7 @@ from .providers import DEFAULT_MODELS
 from .settings import local_settings, CONTROL_PRESETS
 from .battlemap import draw_grid, cell_size, availability
 from .resolution import GENERATION_PIXELS, EXPORT_PIXELS, resolution_settings
-from . import outpaint
+from . import outpaint, mosaic
 
 TERMINAL = {"succeeded", "failed", "cancelled"}
 
@@ -66,9 +66,10 @@ class IllustrationService:
                 "steps": {"fast": [4, 8, 20, 30, 40, 50], "quality": [4, 20, 30, 40, 50]},
                 "variants": {"fast": ["base", "lightning"], "quality": ["base", "distilled"]},
                 "controlPresets": CONTROL_PRESETS, "queueLimit": 6,
-                "promptRevision": 5, "outputs": ["illustration", "battlemap"], "battlemapCellMetres": 1.5,
+                "promptRevision": 6, "outputs": ["illustration", "battlemap"], "battlemapCellMetres": 1.5,
                 "gridTypes": ['square', 'hex', 'none'], "cellMetresRange": [.5, 100],
                 'outpainting': ['openai-orthographic'],
+                'mosaicExport': True,
                 "generationPixels": list(GENERATION_PIXELS), "exportPixels": list(EXPORT_PIXELS)}
 
     def preview_prompt(self, body):
@@ -218,6 +219,17 @@ class IllustrationService:
                 continue
         return result
 
+    def atlas(self, job_id):
+        return mosaic.atlas_jobs(self, job_id)
+
+    def export_mosaic(self, body):
+        if not isinstance(body, dict) or body.get('version') != PROTOCOL:
+            raise ValueError('Version d’export incompatible.')
+        return mosaic.export(self, body.get('jobs'))
+
+    def mosaic_asset(self, name):
+        return mosaic.asset(self, name)
+
     def cancel(self, job_id):
         with self.lock:
             job = self.jobs.get(job_id)
@@ -243,9 +255,20 @@ class IllustrationService:
 
     def asset(self, job_id, name):
         self.get(job_id)
-        if name not in ("result.png", "artwork.png", "mask.png", "source.png", "edges.png", "depth.png", "normal.png", "segmentation.png", "metadata.json"):
+        if name not in ("result.png", "preview.png", "artwork.png", "mask.png", "source.png", "edges.png", "depth.png", "normal.png", "segmentation.png", "metadata.json"):
             raise KeyError("Fichier inconnu.")
         path = self.output / job_id / name
+        if name == 'preview.png' and not path.is_file():
+            with self.lock:
+                original = self.output / job_id / 'result.png'
+                if not original.is_file():
+                    raise KeyError('Illustration indisponible.')
+                with Image.open(original) as image:
+                    image.thumbnail((1536, 1536), Image.Resampling.LANCZOS)
+                    data = png(image)
+                temporary = path.with_suffix('.tmp')
+                temporary.write_bytes(data)
+                temporary.replace(path)
         if not path.is_file():
             raise KeyError("Fichier indisponible.")
         return path

@@ -39,7 +39,7 @@ try {
     const request = route.request(), path = new URL(request.url()).pathname;
     if (path === '/status') {
       if (connectionState === 'offline') return route.abort('connectionrefused');
-      return route.fulfill({ json: { service: connectionState === 'incompatible' ? 'other-service' : 'magna-illustration', protocol: 1, promptRevision: 5, localDependencies: connectionState !== 'missing' } });
+      return route.fulfill({ json: { service: connectionState === 'incompatible' ? 'other-service' : 'magna-illustration', protocol: 1, promptRevision: 6, localDependencies: connectionState !== 'missing' } });
     }
     if (path.endsWith('/jobs') && request.method() === 'POST') { submissions++; return route.fulfill({ status: 500, json: { error: 'Unexpected generation' } }); }
     if (path.endsWith('/prompt')) return route.fulfill({ json: { description: 'Test scene', prompt: 'Test prompt ' + request.postDataJSON().settings.output + ' ' + request.postDataJSON().settings.style } });
