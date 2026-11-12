@@ -492,6 +492,7 @@ version = "0.1.0"
 dependencies = [
  "delaunator",
  "geo",
+ "i_overlay",
  "magna-urbis-random",
  "magna-urbis-terrain",
  "rayon",

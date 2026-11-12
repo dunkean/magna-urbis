@@ -55,7 +55,7 @@ jobs:
           git -C ../infinite_map remote add origin https://github.com/dunkean/neural-earth.git
           git -C ../infinite_map sparse-checkout init --cone
           git -C ../infinite_map sparse-checkout set native/neural-earth tools/wasm
-          git -C ../infinite_map fetch --depth 1 --filter=blob:none origin 1b44228f504f4d01ef396914b8debec56249ffc7
+          git -C ../infinite_map fetch --depth 1 --filter=blob:none origin 20fd8543b50da1d6ae839c01e0230cb8ee59ee8a
           git -C ../infinite_map checkout --detach FETCH_HEAD
       - name: Prepare WASM
         working-directory: web

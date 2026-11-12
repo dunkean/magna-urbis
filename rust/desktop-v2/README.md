@@ -93,7 +93,7 @@ Les commandes desktop le compilent automatiquement si `../infinite_map` contient
 `native/neural-earth` et `tools/wasm`. On peut aussi le préparer explicitement
 avec `node scripts/neural_wasm.mjs --conditioning-only` depuis `web/` : aucun
 poids navigateur n’est nécessaire. Le workflow de release récupère ces sources
-à la révision `1b44228f504f4d01ef396914b8debec56249ffc7`.
+à la révision `20fd8543b50da1d6ae839c01e0230cb8ee59ee8a`.
 
 Le relief neuronal du navigateur reste facultatif. Pour l’embarquer :
 

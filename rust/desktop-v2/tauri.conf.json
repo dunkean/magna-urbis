@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Magna Urbis V2",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "identifier": "community.magna-urbis.v2.desktop",
   "build": {
     "devUrl": "http://127.0.0.1:5174",
